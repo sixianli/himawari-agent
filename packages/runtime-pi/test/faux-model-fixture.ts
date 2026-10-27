@@ -8,11 +8,11 @@ interface FauxTool {
   readonly arguments: Record<string, unknown>;
 }
 
-/** Real pinned Pi runtime with its local deterministic provider; no network or credentials. */
 export async function createFauxModelFixture(
   answer: string,
   tool?: FauxTool | readonly FauxTool[],
   followingBatches: readonly (readonly FauxTool[])[] = [],
+  laterAnswers: readonly string[] = [],
 ) {
   const aiEntry = new URL(
     "../node_modules/@earendil-works/pi-ai/dist/index.js",
@@ -48,10 +48,10 @@ export async function createFauxModelFixture(
         { stopReason: "toolUse" },
       );
     }),
-    (context: unknown) => {
+    ...[answer, ...laterAnswers].map((text) => (context: unknown) => {
       observed.push(context);
-      return ai.fauxAssistantMessage(answer);
-    },
+      return ai.fauxAssistantMessage(text);
+    }),
   ]);
   const runtime = await ModelRuntime.create({
     credentials: new ai.InMemoryCredentialStore() as never,

@@ -40,6 +40,7 @@ export type {
   ModelProviderRouting,
   ModelSecretRequirement,
   RuntimeApprovalWait,
+  RuntimeBackgroundCommandNotice,
   RuntimeCompactionProposal,
   RuntimeContinuationPort,
   RuntimeEvent,

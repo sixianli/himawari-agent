@@ -84,6 +84,8 @@ export interface DeadlineConfiguration {
   readonly runMs: number;
   readonly workerRequestMs: number;
   readonly providerRequestMs: number;
+  readonly commandWaitMs?: number;
+  readonly backgroundCommandMs?: number;
 }
 
 export interface HttpConfiguration {

@@ -55,6 +55,7 @@ date: "2026-10-26"
   28. [回答下方一行、每轮 token 和“真能用”的附件](#case-answer-line-attachments)
   29. [工具已经交回结果，任务宿主却被自己人“补刀”，第十四次上线因此回滚](#case-job-host-heartbeat-after-result)
   30. [改登录方式时网页没接上，回滚又被授权编号检查拦住，停服约 9 分钟](#case-login-switch-outage)
+  33. [长命令要么等到超时被杀，要么放不进后台：让 bash 自动转后台并在结束时通知模型](#case-background-bash)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -77,7 +78,7 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令自动转后台](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
@@ -1975,6 +1976,65 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **面试 30 秒版**
 
 “为了让用户只用 Cloudflare 的邮箱验证码登录，我直接在生产上改了身份配置，结果停服约 9 分钟。原因有两层：服务只在‘对公网开放’或‘自带登录’时才开网页端口，我少改了一个开关，服务报就绪却没接上网页；回滚时我把整个数据库换回了备份，但启动时领的授权编号还留在镜像文件里，启动检查发现镜像比数据库新，拒绝启动。这条检查本身是对的，我没放宽它，而是把镜像改回一致后恢复。教训是配置变更也是发布：先在测试机试通，停服前按程序真实规则预检，回滚只撤回本次改动。”
+
+[返回目录](#contents)
+
+<a id="case-background-bash"></a>
+
+## 案例 33：长命令要么等到超时被杀，要么放不进后台：让 bash 自动转后台并在结束时通知模型
+
+**背景与现象**
+
+2026-10-27 复盘“贪吃蛇”对话时发现：模型在 Himawari 里用 `bash` 工具（在授权目录的沙箱里执行一条 shell 命令）只能在前台等。单次工具调用最长 120 秒（配置 `deadlines.workerRequestMs`），沙箱签名里还有墙钟 300 秒、CPU 30 秒的上限，一轮回答（Run）最长 300 秒（`deadlines.runMs`）。真遇到要跑 10 分钟的测试，模型要么等到超时、命令被杀，要么根本放不进后台：已有的 `execution_task_start` 只能启动事先授权、绑定为后台模式的命令，而生产绑定没有声明后台模式。就算放进后台，跑完也没有通知，模型只能反复调用 `execution_task_status` 查。另外，没有任何启动工具时，三个管理工具也照样发给模型。Andy 当天拍板：“就这么做，必须学习业界最佳实践！”
+
+**根因**
+
+- 代码证据：`ProductionRuntimeTools.#dispatch`（`apps/agent-service/src/production-runtime-tools.ts`）在同一个调用里一直等执行进程交回 `work.result`，等不到就到截止时间；截止时间由 `workerRequestMs` 和本轮截止时间决定，到点由任务宿主强杀进程组。
+- 设计缺口：工具层只有“等结果”一种模式，没有“先交回、后通知”的通道；Pi 的 `AgentSession` 本身支持往正在进行的一轮里插消息（steer）和结束后追加一轮（followUp / `triggerTurn`），Himawari 的运行时适配层没有用。
+- 管理工具多发：`listAuthorized` 只判断“管理服务是否配置”，没判断“有没有可管理的对象”。
+
+**我们的方案**
+
+- 等待窗口：`bash` 调用先等最多 30 秒（`deadlines.commandWaitMs`）。到点没结束，就交给模型一条“已转入后台”的结果：任务编号、“结束时会自动通知你，不要反复查询”、最晚停止时间。命令继续在原来的前台沙箱路径里跑，仍复用常驻沙箱，失败输出和“效果未核实”提醒都不变。
+- 主动通知：运行时适配层订阅本轮后台命令。模型还在工作时，用 Pi 的 `sendCustomMessage(..., { deliverAs: "steer" })` 把结果插到下一次模型调用之前；模型已经答完而命令还在跑时，这一轮先不结束，等命令结束再用 `triggerTurn: true` 让模型看结果补答一轮。通知是自定义消息，不显示成用户的话。
+- 管理和清理：沿用 `execution_task_status/output/cancel`，认得新的任务编号；停止走原有的 `work.cancel` 路径。本轮结束、失败、被停止或等待审批时，停掉本轮全部后台命令。`bash` 的最长时长单独配置（`deadlines.backgroundCommandMs`，默认 30 分钟），实际取它、沙箱签名上限、句柄有效期、本轮截止时间中最小的一个。
+- 管理工具只在有对象时发：有可启动任务，或本轮有 `bash` 且后台功能开启。
+- Pi 复用：不改 Pi，用 Pi 0.84.2 自带的 `sendCustomMessage`、steer 队列和 `agent.continue()`；Himawari 负责等待窗口、任务登记、授权边界和清理。
+
+**方案讨论与备选**
+
+- 每条 bash 都按后台模式启动：已有输出分页现成，但生产绑定没声明后台模式，后台模式不复用常驻沙箱（每条命令多几秒新建沙箱），失败处理和前台不一致（BL-20261016-003）。放弃。
+- 照 Codex 返回会话编号让模型轮询：最简单，但轮询烧 token，也分不清安静运行和卡死。放弃。
+- 后台命令跨轮存活、结束时系统另起一轮：最接近 Claude Code 交互模式，但要改沙箱资源、句柄和授权的生命周期，还要新增“系统发起一轮”的入口。记为 BL-20261027-012。
+- 放弃的东西：转后台那一刻和运行期间读不到已有输出（前台沙箱只在结束时交回结果），记为 BL-20261027-011。
+
+**业界主流做法**
+
+- ✅ Claude Code [Tools reference](https://code.claude.com/docs/en/tools-reference)：“When a foreground command reaches its timeout without finishing, Claude Code moves it to the background instead of stopping it”。
+- ✅ Claude Code [Interactive mode](https://code.claude.com/docs/en/interactive-mode)：“Background tasks are automatically cleaned up when Claude Code exits”。
+- ✅ OpenAI Codex [unified_exec/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/unified_exec/mod.rs)：`MIN_YIELD_TIME_MS` 250、`MAX_YIELD_TIME_MS` 30_000，等到点交回已有输出和会话编号，之后由模型用 `write_stdin` 轮询。
+- 🟡 OpenAI Codex issue [#38495](https://github.com/openai/codex/issues/38495)：报告一次删除命令让模型轮询 90 轮、约 2160 万输入 token（经抓取工具摘要读到，数字为 issue 作者自报）。
+- ✅ OpenHands [software-agent-sdk](https://github.com/OpenHands/software-agent-sdk) 的 terminal 工具：“the command will instead pause and ask for confirmation when it produces no new output for 30 seconds”。
+- ✅ Pi 社区扩展 [omp-unified-exec](https://github.com/mouriya-s-lab/omp-unified-exec)：进程结束用 `triggerTurn: true` 和 `deliverAs: "followUp"` 唤醒 Agent，“never interrupt a running turn”。
+
+**对比与取舍**
+
+- 和 Claude Code 相同：超时转后台而不是杀掉；结束时主动让模型再走一轮；退出（本轮结束）时清理。不同：Claude Code 交互模式下后台命令跨轮存活、转后台时给出输出文件；Himawari 第一步只在本轮内存活、运行中读不到输出，原因是前台沙箱结果只在结束时交回、生命周期以本轮为界，两项都已记 Backlog。
+- 和 Codex、OpenHands 不同：不靠模型轮询，结束时推送，避免 #38495 那种 token 消耗。
+- 等待窗口取 30 秒：介于 Codex 最长 30 秒、OpenHands 30 秒无输出、Claude Code 默认 120 秒之间，偏短是因为聊天界面里等 2 分钟太久。
+
+**结果数据**
+
+- 测试（云端容器，2026-10-27）：运行时适配层 3 个新测试用真实 Pi 0.84.2 会话和确定性测试模型，验证“答完后等命令结束再补答一轮”“运行中插到下一次模型调用之前”“用户停止时不再等待”；去掉等待逻辑后其中 2 个失败，恢复后通过。后台命令登记、通知、状态、分页、停止、清理 8 个单元测试；管理工具发放 1 个单元测试。相关测试文件合计 813 项通过，沙箱范围集成测试 26 项通过。
+- 生产效果：未测量。生产实际上限仍被 `runMs` 300 秒和沙箱签名（墙钟 300 秒、CPU 30 秒）卡住，放宽多少由 Andy 决定，随完整版本上线后再补数据。
+
+**相关 ADR/PR**
+
+[ADR 0095](adr/0095-move-long-bash-commands-to-background.md)；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](backlog/BL-20261027-012-background-commands-outlive-turn.md)；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
+
+**面试 30 秒版**
+
+“我们的 Agent 跑 10 分钟的测试时，要么等到超时被杀，要么只能让模型反复轮询。我参考 Claude Code、Codex、OpenHands 的做法，在工具层加了 30 秒等待窗口：超时不杀而是转后台、立刻把任务编号交回模型；命令结束时用 Pi 自带的 steer 和 followUp 消息主动把结果推给模型，模型答完而命令还没完时这一轮先等命令再补答。这样既不改 Pi、不改沙箱协议，也避开了 Codex issue 里那种轮询 90 轮烧掉两千多万 token 的问题。”
 
 [返回目录](#contents)
 

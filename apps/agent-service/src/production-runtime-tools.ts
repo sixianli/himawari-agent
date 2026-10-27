@@ -19,6 +19,7 @@ import {
   type ProductConfiguration,
   RECOVERY_SETTLE_WAIT_MS,
   type RunPayloadArtifactPort,
+  type RuntimeBackgroundCommandNotice,
   type RuntimeRequest,
   type RuntimeToolDescriptor,
   type RuntimeToolExecutionResult,
@@ -41,6 +42,10 @@ import {
   executionV2MessageSchema,
   piFileRecoveryOperationKey,
 } from "@himawari-agent/execution-contracts";
+import {
+  type BackgroundCommandLimits,
+  ProductionBackgroundCommands,
+} from "./production-background-commands.js";
 import {
   executeProductionCodingRequest,
   fileVersionConflictResult,
@@ -280,6 +285,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly fileReadEnabled?: boolean;
   readonly sandbox?: ProductionRuntimeSandbox;
   readonly managedTasks?: ProductionManagedTasks;
+  readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recall">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
@@ -316,9 +322,31 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     string,
     { fingerprint: string; result: Promise<RuntimeToolExecutionResult> }
   >();
+  readonly #background: ProductionBackgroundCommands | undefined;
   constructor(options: ProductionRuntimeToolsOptions) {
     this.#options = options;
     this.#delegation = this.#createDelegation();
+    this.#background = options.backgroundCommands
+      ? new ProductionBackgroundCommands({
+          limits: options.backgroundCommands,
+          now: () => options.clock.now(),
+        })
+      : undefined;
+  }
+
+  backgroundRunning(runId: RuntimeRequest["runId"]): number {
+    return this.#background?.running(runId) ?? 0;
+  }
+
+  subscribeBackground(
+    runId: RuntimeRequest["runId"],
+    listener: (notice: RuntimeBackgroundCommandNotice) => void,
+  ): () => void {
+    return this.#background?.subscribe(runId, listener) ?? (() => undefined);
+  }
+
+  async stopBackground(runId: RuntimeRequest["runId"]): Promise<void> {
+    await this.#background?.stopRun(runId);
   }
 
   #createDelegation(sandbox?: SandboxAdmission) {
@@ -466,9 +494,18 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         },
       });
     }
-    if (this.#options.managedTasks) {
+    const startable = this.#options.managedTasks !== undefined && tasks.length > 0;
+    const backgroundBash =
+      this.#background !== undefined &&
+      descriptors.some(
+        (descriptor) =>
+          "definition" in descriptor &&
+          descriptor.definition === "builtin-coding" &&
+          descriptor.name === "bash",
+      );
+    if (startable || backgroundBash) {
       descriptors.push(...managedTaskDescriptors());
-      if (tasks.length)
+      if (startable)
         descriptors.push({
           capabilityRef: "execution.task.start",
           capabilityHandleRef: null,
@@ -604,7 +641,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
       return {
-        allowed: this.#exposed.has(invocation.runId) && this.#options.managedTasks !== undefined,
+        allowed:
+          this.#exposed.has(invocation.runId) &&
+          (this.#background?.manages(invocation) ? true : this.#options.managedTasks !== undefined),
         permissionDecisionRef: `task-management:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",
       };
@@ -915,6 +954,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     signal?.throwIfAborted();
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
+      if (this.#background?.manages(invocation)) {
+        if (!this.#exposed.has(invocation.runId)) reject();
+        const key = digest([invocation.runId, invocation.toolCallId]);
+        return this.#background.manage(invocation, (value) =>
+          this.#writeJson(invocation, `runtime-background-management:${key}`, value),
+        );
+      }
       if (!this.#exposed.has(invocation.runId) || !this.#options.managedTasks) reject();
       const key = digest([invocation.runId, invocation.toolCallId]);
       const fingerprint = digest(executionIdentity(invocation));
@@ -931,6 +977,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return this.#options.managedTasks.execute(invocation);
     }
     if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
+    if (this.#background && this.#codingTool(invocation) === "bash") {
+      const key = digest([invocation.runId, invocation.toolCallId]);
+      return this.#background.run(
+        invocation,
+        signal,
+        (combined) => this.#executeCanonical(invocation, combined),
+        (value) => this.#writeJson(invocation, `runtime-background-command:${key}`, value),
+      );
+    }
     return this.#executeCanonical(invocation, signal);
   }
   #executeCanonical(
@@ -1226,7 +1281,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       handle.capabilityRef,
       handle.capabilityVersion,
     );
-    const configured = this.#options.ceiling;
+    const configured =
+      this.#background && handle.operation === "bash"
+        ? {
+            ...this.#options.ceiling,
+            maxWallTimeMs: this.#background.maximumMs,
+            maxCpuTimeMs: this.#background.maximumMs,
+          }
+        : this.#options.ceiling;
     const ceiling = maximum
       ? {
           maxWallTimeMs: Math.min(configured.maxWallTimeMs, maximum.maxWallTimeMs),

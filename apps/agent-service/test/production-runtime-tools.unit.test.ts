@@ -1425,3 +1425,52 @@ it("[NL-11] tells the model how to continue reading a long page with offset", as
   });
   expect(fetch && "description" in fetch ? fetch.description : "").toMatch(/nextOffset/);
 });
+
+it("exposes task management only when a task can start or bash can move to the background", async () => {
+  const f = fixture();
+  const execute = vi.fn(
+    async (_input: ProductionHostReadOnlyInput): Promise<ProductionHostReadOnlyResult> => ({
+      modelContent: "unused",
+      isError: false,
+      errorCode: null,
+    }),
+  );
+  const base = hostOptions(f, execute);
+  const managedTasks = { execute: vi.fn() };
+  const names = async (options: ConstructorParameters<typeof ProductionRuntimeTools>[0]) =>
+    (await new ProductionRuntimeTools(options).listAuthorized(invocation.runId, []))
+      .map((descriptor) => descriptor.name)
+      .filter((name) => name.startsWith("execution_task_"));
+  expect(await names({ ...base, managedTasks, taskHandle: async () => false })).toEqual([]);
+  expect(
+    await names({
+      ...base,
+      managedTasks,
+      backgroundCommands: { waitMs: 30_000, maximumMs: 60_000 },
+    }),
+  ).toEqual([]);
+  const bash = {
+    ...base,
+    coding: { ...base.coding, enabledTools: ["read", "bash"] as const },
+    backgroundCommands: { waitMs: 30_000, maximumMs: 60_000 },
+  };
+  expect(await names(bash)).toEqual([
+    "execution_task_status",
+    "execution_task_output",
+    "execution_task_cancel",
+  ]);
+  const tools = new ProductionRuntimeTools(bash);
+  await tools.listAuthorized(invocation.runId, []);
+  const status = {
+    ...invocation,
+    capabilityRef: "execution.task.status",
+    capabilityHandleRef: null,
+    arguments: { resourceRef: "background-command:000000000000000000000000" },
+  };
+  expect((await tools.preflight(status)).allowed).toBe(true);
+  expect(await tools.execute(status)).toMatchObject({
+    outcome: "failed",
+    errorCode: "BACKGROUND_COMMAND_NOT_FOUND",
+  });
+  expect(f.request).not.toHaveBeenCalled();
+});

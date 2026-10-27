@@ -65,6 +65,7 @@ import {
 } from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
+import { backgroundCommandLimits } from "./production-background-commands.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -1102,6 +1103,7 @@ export async function runAgentService(
           ? { publicFetch: configuration.runPolicy.publicFetch }
           : {}),
         ...(configuration.runPolicy?.coding ? { coding: configuration.runPolicy.coding } : {}),
+        backgroundCommands: backgroundCommandLimits(configuration.deadlines),
         fileRead: fileReadServices,
         ...(sandboxServices
           ? {
