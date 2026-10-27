@@ -284,6 +284,8 @@ data = (json.dumps(binding, ensure_ascii=False, indent=2) + '\n').encode()
 files = []
 if reference:
     for filename in sorted(root.rglob('*')):
+        if filename.relative_to(root).parts[0] == 'run-logs':
+            continue
         require(not filename.is_symlink(), '__PKT_LABEL_UPPER___FROZEN_MEMBER_SYMLINK')
         if filename.is_file() and str(filename.relative_to(root)) != 'freeze-manifest.json':
             bytes_of(filename)

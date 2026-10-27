@@ -143,7 +143,7 @@ def frozen(root, report):
     manifest = json.loads((root / 'freeze-manifest.json').read_text())
     assert report['status'] == result['status'] == manifest['status'] == 'frozen-approved'
     assert manifest['approvalRef'] == result['approvals']['packageRef'] == 'round2/R2-L13/__PKT_LABEL__-__PKT_DATE_COMPACT__/reviewed'
-    expected = {str(path.relative_to(root)) for path in root.rglob('*') if path.is_file() and str(path.relative_to(root)) != 'freeze-manifest.json'}
+    expected = {str(path.relative_to(root)) for path in root.rglob('*') if path.is_file() and str(path.relative_to(root)) != 'freeze-manifest.json' and path.relative_to(root).parts[0] != 'run-logs'}
     assert {entry['path'] for entry in manifest['files']} == expected, 'freeze member set differs from actual ordinary files'
     for entry in manifest['files']:
         data = (root / entry['path']).read_bytes()
@@ -251,6 +251,16 @@ test('rejects a new unit that still holds a placeholder', mutate=lambda root: (r
 test('rejects a missing new unit', mutate=lambda root: (root / 'systemd/himawari-prod.service.draft').unlink(), rejected=True)
 test('permits released historical reservations with old count 3 and unresolved count 0', edit('inputs/s0-db-readback.json', lambda value: value['gate'].__setitem__('oldReservedCount', 3)), verify=reviewed)
 test('explicit reviewed approval freezes every ordinary file', args=['--freeze-reviewed-packet', 'round2/R2-L13/__PKT_LABEL__-__PKT_DATE_COMPACT__/reviewed'], verify=frozen)
+def leaves_deploy_logs_unfrozen(root, report):
+    frozen(root, report)
+    manifest = json.loads((root / 'freeze-manifest.json').read_text())
+    assert not any(entry['path'].startswith('run-logs/') for entry in manifest['files']), 'deploy logs were frozen'
+
+def add_deploy_logs(root):
+    (root / 'run-logs').mkdir(mode=0o700)
+    (root / 'run-logs/deploy-20261027T010201Z.log').write_text('fictitious earlier deploy log')
+
+test('deploy logs from an earlier attempt stay out of the freeze', mutate=add_deploy_logs, args=['--freeze-reviewed-packet', reviewed_ref], verify=leaves_deploy_logs_unfrozen)
 test('nested freeze-manifest.json is retained as an ordinary member', mutate=lambda root: (root / 'signing/freeze-manifest.json').write_text('fictitious nested input'), args=['--freeze-reviewed-packet', 'round2/R2-L13/__PKT_LABEL__-__PKT_DATE_COMPACT__/reviewed'], verify=frozen)
 for args in [[], ['--freeze-reviewed-packet'], ['--freeze-reviewed-packet', 'PENDING/approval'], ['--freeze-reviewed-packet', 'REPLACE_approval'], ['--freeze-reviewed-packet', 'short'], ['--candidate-from-s0', 'unapproved']]:
     test('rejects missing or invalid explicit operation ' + json.dumps(args), args=args, rejected=True)
