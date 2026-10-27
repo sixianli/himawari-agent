@@ -1954,6 +1954,14 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 - 数据：11:53:16 到 11:56:38 之间的数据库写入随回滚丢弃。这段时间网页端口没开，Andy 没有写入；后台任务有没有写入没有核对（未测量）。
 - 备份留在生产机：改动前的配置在 `/root/config-backups/`，数据库在 `/root/db-backups/before-cfaccess-20261027T025315Z/`，修复前的镜像文件在 `/root/db-backups/`。
 
+**后续（2026-10-27 12:51–13:16）：第二次切换成功，补上邮箱验证码**
+
+- 按 BL-20261027-008 改了切换脚本再上：停服前先用程序自己的配置检查 `parseProductConfiguration` 验新配置，`publicMode` 一起改成 `true`；停服后先把数据库和 `authority.json` 拍成同一时刻的快照；回滚分两级，先只撤回配置和绑定那一行，起不来再把快照里的数据库和镜像文件成对换回。仍然没有先在 Hermes 测试机上试：那台机器上的服务从约 10 月 13 日起一直启动失败、反复重启，修它要 sudo（记为 [BL-20261027-009](backlog/BL-20261027-009-hermes-test-service-restart-loop.md)）。
+- 12:51:11 第一次停服：改绑定那一步要用服务账号 `himawari-prod` 运行放在 `/root` 下的脚本，这个账号读不了 `/root`，脚本按设计换回快照，12:52:22 恢复（约 1 分 11 秒）。改成从标准输入把脚本喂进去后，12:52:52 再停服，12:54:11 以 `cloudflare-access` 就绪（约 1 分 19 秒），就绪日志里有 `"listenPort":8400`。两次都没有再出现授权编号不一致。
+- 当天三次停服合计约 11 分 23 秒（8 分 53 秒、1 分 11 秒、1 分 19 秒）。
+- 13:02 Andy 同意后在 Access 加了 One-time PIN（邮箱验证码登录方式；原来只有“用 Cloudflare 账号登录”一种）。Andy 先填了另一个邮箱，一直收不到码：Access 只给策略允许的那一个邮箱发码。换成允许的邮箱后 13:13 登录成功，13:16 iPhone 收到测试通知，推送入口可用。
+- 切换后又查出上线工具里两处还按旧入口写死：第十五版上线包的启动检查要求 `publicMode` 必须是 `false`，照旧会让上线停在启动检查；回滚脚本用 `http://127.0.0.1:8400/` 查首页，而服务现在只认 `himawari.siyi.win` 这个 Host，会得到 403，回滚明明成功也会报 `ROLLBACK_HOMEPAGE_NOT_READY:403`。两处和这条后续一起修了。入口、登录和退回自带登录的做法写进了[生产网页入口与登录 Runbook](runbooks/production-web-entry-runbook.md)。
+
 **相关 ADR/PR**
 
 [ADR 0089](adr/0089-web-push-only-owner-entry.md)；[BL-20261027-008](backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md)；相关：[案例 27](#case-web-push-only)、[案例 25](#case-packet-generator)、[案例 29](#case-job-host-heartbeat-after-result)。

@@ -257,7 +257,7 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 
 历史授权（2026-09-11/12，仅适用当时现场）：用户允许在Hermes安装、使用机械盘、复用当时OpenRouter凭据进行累计不超过 1 美元的验收，并批准内置账号登录。2026-09-12 全功能 E2E 另获最多 2 美元模型与搜索预算，优先使用 DeepSeek V4 Flash 0731；两笔预算分别记录，不能把额外上限当作剩余额度。模型调用只使用验收文本，文件操作只针对明确授权工作目录的验收文件。预算包含已发生费用及不能确定实际费用的预留，不将失败调用算作免费。
 
-当前目标是 `hermes-home`，SSH 为 `hermes`，Cloudflare 认证无法及时完成时使用已授权的 `hermes-tailscale-breakglass`。公开入口是 `https://himawari.siyi.win`，保留现有 Cloudflare Access 和 tunnel，只更新本机 127.0.0.1:18082 的产品服务。不得改变其他账号、网络规则或共享磁盘挂载。
+当前目标是 `hermes-home`，SSH 为 `hermes`，Cloudflare 认证无法及时完成时使用已授权的 `hermes-tailscale-breakglass`。公开入口是 `https://himawari-test.siyi.win`（2026-10-27 起；原来的 `himawari.siyi.win` 改指生产机，见[生产网页入口与登录 Runbook](production-web-entry-runbook.md)），保留现有 Cloudflare Access 应用 “Himawari Test (Hermes)” 和隧道 `hermes-edge`，只更新本机 127.0.0.1:18082 的产品服务。不得改变其他账号、网络规则或共享磁盘挂载。
 
 ## Live-State Preflight
 
