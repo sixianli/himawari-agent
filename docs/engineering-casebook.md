@@ -1812,7 +1812,9 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 所以没有加第二个模型（那会和 ADR 0048 “文本模型只能用 DeepSeek V4.1 Flash”冲突，还多一次调用），而是补齐 Himawari 负责的部分：浏览器把图片长边缩到 1568 像素以内，经新的图片接口加密保存，消息里仍然只带一行引用，上下文投影只把当前这条消息的图片交给 Pi（详见 [ADR 0092](adr/0092-chat-attachments-images.md#image-path)）。
 
-取舍：没有服务端压缩，所以 iPhone 的 HEIC 照片暂不支持；网关列表没写每家供应商是否真收图片，这一点云端没有密钥测不了，上线后必须用真图实测一次。结果（来自本次提交的测试记录）：新加的图片测试 12 个全过（浏览器端 9 个、接口合同 1 个、上下文投影 1 个、Pi 真实会话收到图片内容 1 个）。真实模型看图的回答质量：未上线，未测量。
+复核时又查了两处一手资料：DeepSeek 官方视觉指南写明 `deepseek-flash` 收 “JPEG, PNG, GIF, and WebP”，图片 token “are billed together with your text tokens”（✅ `https://api-docs.deepseek.com/guides/vision`，2026-10-27 读取）；网关上生产路由用的 digitalocean、fireworks、morph 等供应商标签都带 `vision`（✅ 上面的 endpoints 列表）。
+
+取舍：没有服务端压缩，所以 iPhone 的 HEIC 照片暂不支持；真实请求云端没有密钥测不了，上线后必须用真图实测一次。结果（来自本次提交的测试记录）：新加的图片测试 12 个全过（浏览器端 9 个、接口合同 1 个、上下文投影 1 个、Pi 真实会话收到图片内容 1 个）。真实模型看图的回答质量：未上线，未测量。
 
 [返回目录](#contents)
 
