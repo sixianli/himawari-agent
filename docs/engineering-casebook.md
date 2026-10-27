@@ -54,6 +54,7 @@ date: "2026-10-26"
   27. [推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送](#case-web-push-only)
   28. [回答下方一行、每轮 token 和“真能用”的附件](#case-answer-line-attachments)
   29. [工具已经交回结果，任务宿主却被自己人“补刀”，第十四次上线因此回滚](#case-job-host-heartbeat-after-result)
+  30. [改登录方式时网页没接上，回滚又被授权编号检查拦住，停服约 9 分钟](#case-login-switch-outage)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -80,11 +81,11 @@ date: "2026-10-26"
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
-| 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
+| 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt) |
 
@@ -1893,6 +1894,73 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **面试 30 秒版**
 
 “一次上线在停服后的验收里失败回滚了。验收要求调用方、任务宿主和 SDK 三方都留下计时记录，缺了任务宿主那份。查下来是任务宿主交完结果、主动断开通道准备退出时，调用方还在发心跳，发送失败就按‘宿主失联’把整个进程组 SIGKILL 了，被强杀的进程来不及写记录。我们改成交回结果后就不再监护它，只靠已有的收尾期限兜底，并用一个修复前失败、修复后通过的测试锁住。验收脚本一行没改，因为正是它发现了这个真问题。”
+
+[返回目录](#contents)
+
+<a id="case-login-switch-outage"></a>
+
+## 案例 30：改登录方式时网页没接上，回滚又被授权编号检查拦住，停服约 9 分钟
+
+**背景与现象**
+
+2026-10-27（本案例时间都是日本时间 JST），为了让 iPhone 能收网页推送（见[案例 27](#case-web-push-only)），生产入口改成从公网域名 `himawari.siyi.win` 进来，外面先过一层 Cloudflare Access（Cloudflare 提供的登录关卡，这里只放 Andy 一人的邮箱，用邮箱验证码登录）。[ADR 0089](adr/0089-web-push-only-owner-entry.md) 定的是：进了 Access 之后，Himawari 直接认 Access 的身份，不再要 Himawari 自己的密码和验证器。
+
+11:49 Andy 在手机上过了 Access，却停在 Himawari 自带的登录页：他在用户名一栏填了邮箱，而自带登录的用户名是 `andy`，所以报“认证失败”。为了让他不用再登第二次，我（Claude）当场用一段手写脚本把登录方式切到 Cloudflare Access。结果：
+
+- 11:53:15 停服，11:53:16 用新配置启动，11:54:18 服务报“就绪”，但网页端口没有打开，外面打不开。
+- 脚本等了 3 分钟没等到网页，11:56:38 自动回滚：停服，换回旧配置和改动前的数据库备份，再启动。
+- 回滚后的启动在 11:57:12 报 `PRODUCTION_AUTHORITY_MIRROR_MISMATCH` 退出，systemd（Linux 的服务管理程序）自动重启三次都是同样的错。我手动停住它，查清原因后修好，12:02:08 服务恢复，登录方式仍是原来的自带登录。
+
+从停服到恢复共 8 分 53 秒，这段时间 Himawari 完全不能用。
+
+**根因**
+
+1. **网页没接上：配置少改了一项。** `apps/agent-service/src/service-main.ts` 只在两种情况下打开网页端口：`publicMode`（“对公网开放”开关）为真，或者身份方式是 `built-in`（自带登录）。生产配置的 `publicMode` 一直是 `false`，以前靠 `built-in` 满足条件；身份一改成 `cloudflare-access`，两个条件都不满足，服务就不开网页端口。它不报错，照样报“就绪”，只是就绪日志里少了 `listenPort` 一项（改前那次启动的日志里有 `"listenPort":8400`）。证据是代码和两次就绪日志的对比；没有在测试机上复现。
+2. **回滚卡住：只换回了一半状态。** 服务每次启动都会领一个新的授权编号（fencing token，一个只增不减的数字，用来保证同一时间只有一个服务进程在写数据），并写到两个地方：数据库的 `deployments` 表，和一个镜像文件 `/var/lib/himawari/state/authority.json`。用新配置启动的那次把编号从 38 领到 39，两处都写成了 39。回滚时脚本把整个数据库换回改动前的备份（38），镜像文件却还是 39。启动检查（`apps/agent-service/src/production-authority-lifecycle.ts` 的 `assertMirror`）发现镜像里的编号比数据库大，就判为状态不一致、拒绝启动。这个检查本身是对的：它防的正是“数据库被换回旧版本而没人知道”。我当场读出了两处的值（文件 39/39，数据库 38/38），对上了这个判断。
+3. **为什么会写出这样的脚本：** 这次没有走上线工具，而是手写了一段“停服、备份、改配置、改绑定、启动、等待、失败就整体换回”的脚本。它没有先在 Hermes 测试机上用同样的配置试一遍，也没有在停服前用程序自己的启动规则检查新配置；回滚的写法是“整份换回数据库”，而不是“只撤回刚才改的那一行”。
+
+**我们的方案**
+
+- 当场恢复：先备份镜像文件，再把它改回和数据库一致（编号 38、修订号 38），然后启动。服务正常领到 39，12:02:08 就绪。从外网检查：首页跳转到 Access 登录，`/manifest.webmanifest` 和 `/sw.js` 返回 200。
+- 登录方式这次不再硬切，Andy 先用自带登录（用户名 `andy`）。
+- 记下 [BL-20261027-008](backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md)：改登录方式先在 Hermes 测试机试通；生产上改配置也走上线那一套保护，即停服前按程序的真实规则检查新配置、失败自动回滚、回滚后确认网页真的能用；回滚只撤回本次改动；配置自相矛盾时启动直接失败，不要“静默不开端口”。
+- 和 Pi（Himawari 依赖的开源 Agent 框架）无关，全部是 Himawari 自己的启动和运维代码。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 当场把 `publicMode` 也改成 `true`，再切一次 | 可能几分钟就能让 Andy 只用邮箱验证码 | 已经停过一次服，`publicMode` 还会打开别的启动检查，没在测试机试过；再失败又是一次停服 |
+| 回滚时把旧的镜像文件也一起换回 | 状态一致，回滚能直接成功 | 当时没有备份镜像文件；事后看，正确做法是只把绑定那一行改回原值，根本不动数据库的其他内容 |
+| 放宽 `assertMirror`，允许镜像编号大于数据库 | 回滚不会被拦 | 这条检查正是用来发现“数据库被换回旧版本”的，放宽它等于把这类事故藏起来 |
+| 先不改登录，只告诉 Andy 正确的用户名 | 不用停服 | 事后看这是当时最稳的做法；我为了少让他登一次就直接上了生产 |
+
+放弃了什么：Andy 暂时还要登两次（先 Access 邮箱验证码，再 Himawari 密码和验证器），直到切换在测试机上试通。
+
+**业界主流做法**
+
+- ✅ Google SRE Workbook [Canarying Releases](https://sre.google/workbook/canarying-releases/)：金丝雀发布（先在一小部分环境上试新版本）适用于“a new version of a system or its key components (such as configuration or data)”，也就是配置变更和程序发布一样，要先小范围试、能回滚。
+- ✅ Cloudflare 文档 [Application token](https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/application-token/)：Access 令牌里的 `sub` 是“The ID of the user. This value is unique to an email address per account.”。这说明用 Access 的用户编号去绑定 Himawari 的主人是可行的，这次失败与身份绑定本身无关。
+
+**对比与取舍**
+
+我们的程序发布已经有一套保护：按参数生成操作包、停服前预检、失败自动回滚并检查首页（见[案例 25](#case-packet-generator)、[案例 29](#case-job-host-heartbeat-after-result)）。这次的问题是把“改配置”当成了小事，绕开了这套保护，正好违背了上面 SRE 那条“配置变更也是发布”的做法。不同点是：业界一般用多台机器做金丝雀，我们只有一台生产机，所以对应的做法是先在 Hermes 测试机上用同样的配置试通，再上生产。
+
+**结果数据**
+
+- 停服 8 分 53 秒（11:53:15 停服，12:02:08 就绪，来自生产机 `journalctl -u himawari-prod.service`）。
+- 新配置下就绪日志没有 `listenPort`；回滚后启动四次都报 `PRODUCTION_AUTHORITY_MIRROR_MISMATCH`（11:57:12、11:57:55、11:58:35、11:59:20）。
+- 修复前镜像文件编号 39、数据库 38；修复后两处一致，服务领到 39 并就绪。
+- 数据：11:53:16 到 11:56:38 之间的数据库写入随回滚丢弃。这段时间网页端口没开，Andy 没有写入；后台任务有没有写入没有核对（未测量）。
+- 备份留在生产机：改动前的配置在 `/root/config-backups/`，数据库在 `/root/db-backups/before-cfaccess-20261027T025315Z/`，修复前的镜像文件在 `/root/db-backups/`。
+
+**相关 ADR/PR**
+
+[ADR 0089](adr/0089-web-push-only-owner-entry.md)；[BL-20261027-008](backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md)；相关：[案例 27](#case-web-push-only)、[案例 25](#case-packet-generator)、[案例 29](#case-job-host-heartbeat-after-result)。
+
+**面试 30 秒版**
+
+“为了让用户只用 Cloudflare 的邮箱验证码登录，我直接在生产上改了身份配置，结果停服约 9 分钟。原因有两层：服务只在‘对公网开放’或‘自带登录’时才开网页端口，我少改了一个开关，服务报就绪却没接上网页；回滚时我把整个数据库换回了备份，但启动时领的授权编号还留在镜像文件里，启动检查发现镜像比数据库新，拒绝启动。这条检查本身是对的，我没放宽它，而是把镜像改回一致后恢复。教训是配置变更也是发布：先在测试机试通，停服前按程序真实规则预检，回滚只撤回本次改动。”
 
 [返回目录](#contents)
 
