@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 AUTHORITY_COLUMNS = (('id', 'id'), ('ownerId', 'owner_id'), ('agentId', 'agent_id'), ('revision', 'revision'), ('status', 'status'), ('authorityEpoch', 'authority_epoch'), ('fencingToken', 'fencing_token'), ('transferId', 'transfer_id'))
@@ -155,14 +156,15 @@ def prepare(plan):
     return result
 
 
-def homepage_url(config_path):
-    http = json.loads(Path(config_path).read_text())['http']
-    return 'http://' + http['listenHost'] + ':' + str(http['listenPort']) + '/'
+def homepage_target(config_path):
+    configuration = json.loads(Path(config_path).read_text())
+    http = configuration['http']
+    return {'url': 'http://' + http['listenHost'] + ':' + str(http['listenPort']) + '/', 'host': urllib.parse.urlsplit(configuration['publicOrigin']).netloc}
 
 
-def homepage_status(url):
+def homepage_status(target):
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        with urllib.request.urlopen(urllib.request.Request(target['url'], headers={'Host': target['host']}), timeout=10) as response:
             return response.status
     except urllib.error.HTTPError as error:
         return error.code
@@ -170,10 +172,10 @@ def homepage_status(url):
         return None
 
 
-def wait_for_homepage(url, timeout_seconds=180, interval_seconds=2):
+def wait_for_homepage(target, timeout_seconds=180, interval_seconds=2):
     deadline = time.monotonic() + timeout_seconds
     while True:
-        status = homepage_status(url)
+        status = homepage_status(target)
         if status == 200:
             return status
         if time.monotonic() > deadline:
@@ -192,16 +194,16 @@ def start(plan, settle_seconds=20, homepage_timeout_seconds=180):
             fail('ROLLBACK_SERVICE_DID_NOT_START')
         time.sleep(1)
     first = service(plan['unit'])
-    url = homepage_url(plan['config'])
-    wait_for_homepage(url, homepage_timeout_seconds)
+    target = homepage_target(plan['config'])
+    wait_for_homepage(target, homepage_timeout_seconds)
     time.sleep(settle_seconds)
     settled = service(plan['unit'])
     if settled.get('SubState') != 'running' or settled.get('MainPID') != first.get('MainPID') or settled.get('NRestarts') != first.get('NRestarts'):
         fail('ROLLBACK_SERVICE_NOT_STABLE')
-    homepage = homepage_status(url)
+    homepage = homepage_status(target)
     if homepage != 200:
         fail('ROLLBACK_HOMEPAGE_NOT_STABLE:' + str(homepage))
-    return {'serviceBefore': before, 'serviceAfter': settled, 'homepage': {'url': url, 'status': homepage}}
+    return {'serviceBefore': before, 'serviceAfter': settled, 'homepage': {**target, 'status': homepage}}
 
 
 def main():

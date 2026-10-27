@@ -23,9 +23,10 @@ INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
     'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 's0-db/read-s0-db.mjs',
     'steps/README.md', 'steps/run-step.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
-    'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
+    'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
 INSTANCE = json.loads((HERE / 'instances' / 'andy-production.json').read_text())
 
@@ -108,6 +109,11 @@ class TemplateTest(RenderedPacket):
             if path.is_file():
                 self.assertNotIn('__PKT_', path.read_text(), path)
         self.assertTrue((packet / 'install' / 'twelfth-artifact-install.mjs').is_file())
+
+    def test_startup_readback_expects_the_public_mode_the_loaded_configuration_sets(self):
+        source = (self.render() / 'systemd' / 'S7-startup-readback.mjs').read_text()
+        self.assertNotRegex(source, r'publicMode,\s*false')
+        self.assertIn('assert.equal(agentReady[0].publicMode, configuration.publicMode, "TWELFTH_STARTUP_PUBLIC_MODE_CHANGED");', source)
 
     def test_a_missing_parameter_is_refused(self):
         parameters = dict(TWELFTH)
