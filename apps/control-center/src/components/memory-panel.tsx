@@ -9,8 +9,12 @@ export const OPEN_MEMORY_SETTINGS = "himawari:open-memory-settings";
 
 export const OPEN_NOTIFICATION_SETTINGS = "himawari:open-notification-settings";
 
-export function openMemorySettings() {
-  window.dispatchEvent(new Event(OPEN_MEMORY_SETTINGS));
+export function openMemorySettings(memoryIds: readonly string[] = []) {
+  window.dispatchEvent(new CustomEvent(OPEN_MEMORY_SETTINGS, { detail: memoryIds }));
+}
+
+export function focusedMemoryIds(event: Event): readonly string[] {
+  return event instanceof CustomEvent && Array.isArray(event.detail) ? event.detail : [];
 }
 
 export function openNotificationSettings() {
@@ -165,17 +169,17 @@ export function MemoryTurnNote({
         <MemoryApprovalCard key={item.requestId} item={item} memory={memory} message={message} />
       ))}
       {saved.length ? (
-        <details className="memory-saved">
-          <summary>{message("memory.saved", { count: saved.length })}</summary>
-          <ul>
-            {saved.map((item) => (
-              <li key={item.memoryId}>{item.text}</li>
-            ))}
-          </ul>
-          <ActionButton variant="quiet" onClick={openMemorySettings}>
-            {message("memory.manage")}
-          </ActionButton>
-        </details>
+        <button
+          type="button"
+          className="memory-saved"
+          onClick={() => openMemorySettings(saved.map((item) => item.memoryId))}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 4.5h10v15.5l-5-3.5-5 3.5z" />
+          </svg>
+          <span>{message("memory.saved", { count: saved.length })}</span>
+          <span className="memory-saved-link">{message("memory.view")}</span>
+        </button>
       ) : null}
     </div>
   );

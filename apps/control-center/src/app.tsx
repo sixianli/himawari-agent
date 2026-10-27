@@ -26,7 +26,12 @@ import {
 import { useGovernanceControlCenter } from "./governance-control-center.js";
 import { HealthControlCenter } from "./health-control-center.js";
 import { useMemory } from "./memory.js";
-import { MemoryReminders, MemoryTurnNote } from "./components/memory-panel.js";
+import {
+  focusedMemoryIds,
+  MemoryReminders,
+  MemoryTurnNote,
+  OPEN_MEMORY_SETTINGS,
+} from "./components/memory-panel.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
@@ -315,6 +320,12 @@ function LocalizedControlCenterApp({
     };
   }, [configuration, storage, clearPrivateViewState]);
 
+  const [memoryFocus, setMemoryFocus] = useState<readonly string[]>([]);
+  useEffect(() => {
+    const focus = (event: Event) => setMemoryFocus(focusedMemoryIds(event));
+    window.addEventListener(OPEN_MEMORY_SETTINGS, focus);
+    return () => window.removeEventListener(OPEN_MEMORY_SETTINGS, focus);
+  }, []);
   const memory = useMemory({
     client,
     configuration,
@@ -384,6 +395,8 @@ function LocalizedControlCenterApp({
             <MemorySettings
               memory={memory}
               message={message}
+              focus={memoryFocus}
+              focusThreadTitle={threadModel.title}
               onOpenThread={(threadId) =>
                 navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
               }

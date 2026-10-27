@@ -130,3 +130,18 @@ Andy 选了“加一个看图模型”；主模型 DeepSeek V4.1 Flash 本身能
 4. 扫描件和旧版 Office 文件仍不支持（[BL-20261026-012](../../backlog/BL-20261026-012-attachments-images-pdf-office.md)）。
 
 [↑ 返回目标与确认](#目标与确认)
+
+<a id="v7-phone-chat-page"></a>
+
+## v7 增补：手机对话页（2026-10-27 批准）
+
+Andy 在 iPhone 上看对话页后提了六条意见，原型 <https://claude.ai/artifact/BGa1vxG7DHy9GQKBQLatSS> 于 2026-10-27 13:49（日本时间）审核通过。决定、原因和参考资料见 [ADR 0096](../../adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)。下面几条改变了 [v6 第二期增补](#v6-answer-and-composer)里回答下方一行的写法，其余要求不变。
+
+1. 回答下方一行：复制图标、“⋯”、灰色“用时 · 时刻 · N tokens”，不显示模型名，手机和电脑一样。
+2. 记忆：一行小字“记下了 N 条新记忆 · 查看”，点开记忆页，这一轮记下的那几条排在最上面，标“刚记住”，可编辑、删除。
+3. 页面按 iPhone 安全区留边，输入框离开底部横条；对话区不能横向拖动。
+4. 发送按钮是圆形：空着浅灰，能发深色，回答中显示停止方块；手机上点按区域 44px。
+
+实现截图（测试夹具数据，模拟上 47px、下 34px 安全区）：[浅色中文](../../assets/control-center/2026-10-27-v7/phone-light-zh.png)、[深色中文](../../assets/control-center/2026-10-27-v7/phone-dark-zh.png)、[浅色英文](../../assets/control-center/2026-10-27-v7/phone-light-en.png)、[深色日文](../../assets/control-center/2026-10-27-v7/phone-dark-ja.png)、[校验清单](../../assets/control-center/2026-10-27-v7/SHA256SUMS)。
+
+[↑ 返回目标与确认](#目标与确认)

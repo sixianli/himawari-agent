@@ -192,7 +192,7 @@ export function ThreadSidebar({
           <SidebarIcon name="search" />
           {message("threads.search")}
         </ActionButton>
-        <ActionButton onClick={openMemorySettings} variant="quiet">
+        <ActionButton onClick={() => openMemorySettings()} variant="quiet">
           <SidebarIcon name="memory" />
           {message("nav.memory")}
         </ActionButton>

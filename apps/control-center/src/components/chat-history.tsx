@@ -95,9 +95,6 @@ export function ChatHistory({
         {!groups.size ? <p className="chat-empty">{message("threads.messagesEmpty")}</p> : null}
         {[...groups].map(([key, group]) => {
           const records = group.run ? (execution[group.run.runId] ?? []) : [];
-          const actualModel = records.findLast(
-            (item) => item.kind === "message" && item.name,
-          )?.name;
           const agentMessages = group.messages.filter((item) => item.role === "agent");
           const items = executionItems(records);
           const partialItem = items
@@ -184,7 +181,6 @@ export function ChatHistory({
                       text={agentMessages
                         .map((item) => contentByRef[item.contentRef] ?? "")
                         .join("\n\n")}
-                      model={actualModel}
                       duration={(() => {
                         if (!group.run) return undefined;
                         const total = executionTimeline(
