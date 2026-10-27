@@ -53,6 +53,7 @@ date: "2026-10-26"
   26. [每一步的时间要准：把一轮回答画成一条时间线](#case-process-timeline)
   27. [推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送](#case-web-push-only)
   28. [回答下方一行、每轮 token 和“真能用”的附件](#case-answer-line-attachments)
+  29. [工具已经交回结果，任务宿主却被自己人“补刀”，第十四次上线因此回滚](#case-job-host-heartbeat-after-result)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -79,8 +80,8 @@ date: "2026-10-26"
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result) |
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
@@ -1599,6 +1600,12 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 - 修复：用一个永远不会出现的序号 1000000 造缺号（提交 `ec49a24`，[PR #53](https://github.com/sixianli/himawari-agent/pull/53)）。检查在出包阶段就拦住了它，生产没有停服。
 - 教训：模板里凡是会和“当前数据库版本”撞上的数字，要么换成 `__PKT_*__` 参数，要么用不可能出现的值；夹具“改了再改回”时，改回的条件必须只命中自己改过的那一行。
 
+**后续（2026-10-27）：同一次出包又卡了两处，都是“合并前没人跑出包才跑的检查”**
+
+- 构建缺依赖：第十四版第一次出包在 Hermes 构建一步失败（`HERMES_BUILD_FAILED BUILD_NOT_PASSED`）。PR #49 新加了 `web-push` 依赖，但 Hermes 测试目录里装好的依赖还是旧的，`scripts/delivery-mode/hermes/build-candidate.sh` 只切到新提交就构建，不会因为 `package-lock.json` 变了而重装。手动跑 `scripts/ci/install-dependencies.mjs` 后才过。改进记在 [BL-20261027-003](backlog/BL-20261027-003-build-candidate-reinstall-dependencies-on-lockfile-change.md)。
+- 走查找不到输入框：修好夹具序号后，网页走查失败（`HERMES_WALKTHROUGH_FAILED VITEST_EXIT 1`）。PR #48 改了输入框的提示文字，走查测试 `test/integration/product-path-browser.test.ts` 还按旧文字找输入框。这条测试只在出包时跑，改界面的 PR 合并前没人跑它。[PR #54](https://github.com/sixianli/himawari-agent/pull/54) 改成按无障碍名称“消息草稿”找。改进记在 [BL-20261027-004](backlog/BL-20261027-004-ui-pr-runs-release-walkthrough.md)、[BL-20261027-005](backlog/BL-20261027-005-walkthrough-stable-locators.md)。
+- 教训：出包阶段的检查拦住了这三处（连同上面的序号问题），生产都没停；但每处都要多改一个 PR、多出一次包。只在出包时才跑的检查，要么在环境变化时自己补齐前提（依赖），要么在会影响它的 PR 合并前就跑（走查）；测试定位界面元素用稳定的名字，不用给人看的文案。
+
 **相关 ADR/PR**
 
 [ADR 0086](adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
@@ -1808,6 +1815,65 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
 
 取舍：放弃了图片、PDF、命令生成的文件和超过 64K 字的文件，换来不加任何服务端读取路径。结果（来自本次提交的测试记录）：控制中心单元测试 459 个通过；真实 Chromium 在中英日、深浅色和 390 像素手机宽度下打开 Markdown、CSV 和改动三种预览，页面没有报错。走查时还发现勾选清单每项画了两个框，已修。真实对话里的使用情况：未上线，未测量。
+
+[返回目录](#contents)
+
+<a id="case-job-host-heartbeat-after-result"></a>
+
+## 案例 29：工具已经交回结果，任务宿主却被自己人“补刀”，第十四次上线因此回滚
+
+**背景与现象**
+
+2026-10-27（本案例时间都是日本时间 JST）第十四次上线，包 `2026-10-27-fourteenth-change-packet-02`（提交 `662016b8`）。停服前的步骤都通过了，09:36:07 停服，之后的切换步骤也都通过，09:38:15 开始的 `S6_READ`（停服后读服务实际运行情况的验收步骤）失败，报 `COMPLETE_CALLER_HOST_SDK_MEASUREMENTS_REQUIRED`，上线脚本自动回滚到第十三版，停服 3 分 05 秒。用户这段时间看到的是服务暂停，回滚后一切照旧。
+
+**根因**
+
+1. `S6_READ` 的探针 `run-service-probe.py` 会真的跑一次工具，并要求三方各留一份计时记录：调用方（agent-service）、Job Host（任务宿主，替每个沙箱任务单独起的子进程）和 SDK 线程。记录由 `observe.mjs` 在进程 `exit` 事件里写。这次缺的是 Job Host 那份。
+2. Job Host 交回最终结果后会调用 `process.disconnect()` 关掉和调用方之间的通道，再自己退出。调用方（`packages/runtime-sandbox/src/job-host.ts`）却在收到结果后仍按 250 毫秒发心跳。通道刚关、调用方还没收到 `disconnect` 事件的那一小段时间里，心跳发送失败，失败回调调用 `force()`，`force()` 用 `SIGKILL` 杀掉 Job Host 整个进程组。
+3. 被 `SIGKILL` 杀掉的进程不会触发 `exit` 事件，所以 Job Host 的计时记录没写出来，验收判失败。工具结果在被杀之前已经交回，用户看到的回答不受影响；问题是正常结束的任务被强杀了。
+4. 确认方法：在 Hermes 测试机上写了一个单元测试，模拟“交回结果、通道关闭、之后心跳发送报错”，断言不出现 `SIGKILL`。修复前这个测试失败（`expected "kill" to not be called with arguments: [ -12345, 'SIGKILL' ]`），修复后通过。这个时序在第十三版就存在，第十三版的 `S6_READ` 通过只是没撞上（推断，没有复现第十三版当时的时序）。
+
+**我们的方案**
+
+- 调用方收到最终结果后，停止心跳和 1.5 秒租约检查；Job Host 如果迟迟不退出，仍由原有的收尾期限 `cleanupTimeoutMs` 兜底（[ADR 0093](adr/0093-stop-job-host-supervision-after-final-result.md)，[PR #56](https://github.com/sixianli/himawari-agent/pull/56)）。
+- 交回结果之前的规则不变：那时心跳发不出去说明 Job Host 已经不在，立刻清理整组。
+- 不改验收脚本。这次是验收脚本发现了真问题，放宽它只会把问题藏起来。
+- 这件事和 Pi（Himawari 依赖的开源 Agent 框架）无关，全部是 Himawari 自己的沙箱代码。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 发送失败时先看通道是否已关，关了就不强杀 | 改一行 | 结果之后仍在检查 1.5 秒租约，Job Host 收尾稍慢就会被判心跳超时取消，同类问题换个样子还在 |
+| 让 Job Host 先退出、不主动断开通道 | 调用方先看到 `exit` 再停心跳 | 要改 Job Host 的退出顺序和协议，结果送达和进程退出绑在一起，改动面更大 |
+| 验收允许缺 Job Host 的计时记录 | 马上能上线 | 问题还在，计时数据也照样缺 |
+| 直接重试上线 | 竞争条件不一定每次撞上 | 根因没修，再撞上又要停服回滚；Andy 的习惯是修好再上 |
+
+放弃了什么：结果交回后到 Job Host 退出之间，发现“卡住不退”要等收尾期限，比原来的 1.5 秒慢。
+
+**业界主流做法**
+
+- ✅ Node.js 官方文档 [Child process](https://nodejs.org/api/child_process.html)：`'disconnect'` 之后“it is no longer possible to send or receive messages”；`subprocess.send()` 的回调“is invoked after the message is sent but before the child process may have received it”。也就是说，对方主动断开后再发消息失败是正常现象，不能当成对方出事的证据。
+- ✅ Kubernetes [Pod 生命周期](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)：停止容器时先发 TERM，“Once the grace period has expired, the KILL signal is sent to any remaining processes”。强杀只留给宽限期满还没退出的进程。
+
+**对比与取舍**
+
+和 Kubernetes 一样，正在正常退出的进程给它时间自己退，宽限期满才强杀；我们的宽限期就是已有的收尾期限，没有另加新的等待时间。不同点是 Kubernetes 由外部发起停止，我们这里是 Job Host 交完结果自己退出，所以调用方要做的是“交回结果后不再把它当成需要监护的进程”。
+
+**结果数据**
+
+- 复现：新单元测试修复前失败，修复后通过；`job-host.unit.test.ts` 41/41 通过，`packages/runtime-sandbox` 21 个测试文件 435/435 通过，`npm run check` 通过（Hermes 测试机，2026-10-27 09:45–09:48 JST）。
+- 第一次上线：停服 3 分 05 秒后自动回滚到第十三版，回滚成功、首页返回 200（`rollback-20261027T003828Z.log`）。
+- 带修复重新出包：384.3 秒，17 项检查和网页走查都通过（`2026-10-27-fourteenth-change-packet-03`，提交 `76930db6`）。
+- 重新上线的结果：等上线后补。
+
+**相关 ADR/PR**
+
+[ADR 0093](adr/0093-stop-job-host-supervision-after-final-result.md)、[ADR 0031](adr/0031-isolated-tool-execution.md)、[ADR 0054](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)；[PR #56](https://github.com/sixianli/himawari-agent/pull/56)；相关：[案例 19](#case-sandbox-lost-race)（同样是沙箱收尾那几十毫秒里的状态判错）、[案例 25](#case-packet-generator)。
+
+**面试 30 秒版**
+
+“一次上线在停服后的验收里失败回滚了。验收要求调用方、任务宿主和 SDK 三方都留下计时记录，缺了任务宿主那份。查下来是任务宿主交完结果、主动断开通道准备退出时，调用方还在发心跳，发送失败就按‘宿主失联’把整个进程组 SIGKILL 了，被强杀的进程来不及写记录。我们改成交回结果后就不再监护它，只靠已有的收尾期限兜底，并用一个修复前失败、修复后通过的测试锁住。验收脚本一行没改，因为正是它发现了这个真问题。”
 
 [返回目录](#contents)
 
