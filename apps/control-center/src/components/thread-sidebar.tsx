@@ -1,14 +1,41 @@
-import { useState, type ReactNode } from "react";
 import type { ThreadGatewaySnapshot } from "@himawari-agent/gateway-contracts";
-import { controlCenterHref, type ControlCenterRouteState } from "../app/router.js";
+import { type ReactNode, useState } from "react";
+import { type ControlCenterRouteState, controlCenterHref } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
-import { ActionButton, AppLink, ActionMenu, ModalDialog } from "./index.js";
+import { ActionButton, ActionMenu, AppLink, ModalDialog } from "./index.js";
+import { openMemorySettings } from "./memory-panel.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
+
 type Thread = Extract<
   ThreadGatewaySnapshot,
   { type: "thread.detail_snapshot" }
 >["payload"]["thread"];
+type RecentGroup = "threads.today" | "threads.yesterday" | "threads.earlier";
+
+const dayStart = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+export function recentGroups<T extends { readonly updatedAt: string }>(
+  threads: readonly T[],
+  now = new Date(),
+): readonly (readonly [RecentGroup, readonly T[]])[] {
+  const today = dayStart(now);
+  const yesterday = dayStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  const groups: Record<RecentGroup, T[]> = {
+    "threads.today": [],
+    "threads.yesterday": [],
+    "threads.earlier": [],
+  };
+  for (const thread of threads) {
+    const at = Date.parse(thread.updatedAt);
+    groups[
+      at >= today ? "threads.today" : at >= yesterday ? "threads.yesterday" : "threads.earlier"
+    ].push(thread);
+  }
+  return (Object.entries(groups) as [RecentGroup, T[]][]).filter(([, items]) => items.length);
+}
+
 export interface ThreadSidebarProps {
   readonly threads: readonly Thread[];
   readonly searchResults?: readonly Thread[];
@@ -165,6 +192,10 @@ export function ThreadSidebar({
           <SidebarIcon name="search" />
           {message("threads.search")}
         </ActionButton>
+        <ActionButton onClick={openMemorySettings} variant="quiet">
+          <SidebarIcon name="memory" />
+          {message("nav.memory")}
+        </ActionButton>
       </nav>
       <div
         className="thread-sidebar-records"
@@ -182,10 +213,12 @@ export function ThreadSidebar({
             <ul>{pinned.map(row)}</ul>
           </section>
         ) : null}
-        <section className="thread-group">
-          <h2>{message("threads.recent")}</h2>
-          <ul>{recent.map(row)}</ul>
-        </section>
+        {recentGroups(recent).map(([id, items]) => (
+          <section className="thread-group" key={id}>
+            <h2>{message(id)}</h2>
+            <ul>{items.map(row)}</ul>
+          </section>
+        ))}
         {onLoadMore ? (
           <ActionButton variant="quiet" disabled={loading} onClick={onLoadMore}>
             {message("review.loadMore")}

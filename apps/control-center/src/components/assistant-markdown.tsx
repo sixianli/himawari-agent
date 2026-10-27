@@ -12,7 +12,6 @@ function safeLink(value: string): string | undefined {
   }
 }
 function children(tokens: readonly Token[]): ReactNode {
-  // No lexer extensions: all tokens come from Marked's built-in discriminated union.
   return tokens.map((token, index) =>
     h(Fragment, { key: `${index}:${token.type}` }, renderToken(token as MarkedToken)),
   );
@@ -53,8 +52,6 @@ function renderToken(token: MarkedToken): ReactNode {
     case "blockquote":
       return h(token.type, null, children(token.tokens));
     case "link": {
-      // GFM bare-URL detection can absorb CJK sentence punctuation. Trim only
-      // automatically detected links; explicit Markdown destinations stay exact.
       const boundary =
         token.raw === token.text && /^(?:https?:\/\/|www\.)/.test(token.raw)
           ? token.raw.search(/[，。；：！？（）【】《》「」『』、]/u)
@@ -83,12 +80,7 @@ function renderToken(token: MarkedToken): ReactNode {
     case "checkbox":
       return token.checked ? "☑ " : "☐ ";
     case "list_item":
-      return h(
-        "li",
-        null,
-        token.task ? (token.checked ? "☑ " : "☐ ") : null,
-        children(token.tokens),
-      );
+      return h("li", null, children(token.tokens));
     case "list":
       return h(
         token.ordered ? "ol" : "ul",
@@ -126,7 +118,6 @@ function renderToken(token: MarkedToken): ReactNode {
       );
   }
 }
-/** Parse Markdown to React nodes, never HTML. Remote images and implicit URLs are inert. */
 export function AssistantMarkdown({ text }: { readonly text: string }) {
   return h(
     "div",

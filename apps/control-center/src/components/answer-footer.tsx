@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MessageId } from "../i18n/message-ids.js";
+import { fileExtension, lineCount, type TurnFile } from "../turn-files.js";
 import { formatCost, formatTokens, type TurnSource, type TurnUsage } from "../turn-summary.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
@@ -11,6 +12,7 @@ const icons = {
   fork: "M6 3v12m0 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm12-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 0c0 6-12 3-12 9",
   chevron: "m9 6 6 6-6 6",
   file: "M14 3H6.5v18h11V6.5L14 3Zm0 0v3.5h3.5",
+  widen: "M4 5h16v14H4zM14 5v14",
 };
 
 export function LineIcon({ name }: { readonly name: keyof typeof icons }) {
@@ -187,5 +189,71 @@ export function AnswerSources({
         </ul>
       ) : null}
     </div>
+  );
+}
+
+const KIND_LABELS: Readonly<Record<TurnFile["kind"], MessageId>> = {
+  markdown: "files.kind.markdown",
+  csv: "files.kind.csv",
+  html: "files.kind.html",
+  code: "files.kind.code",
+  text: "files.kind.text",
+};
+
+export function AnswerFiles({
+  files,
+  openKey,
+  onOpen,
+  message,
+}: {
+  readonly files: readonly TurnFile[];
+  readonly openKey: string | undefined;
+  readonly onOpen: (file: TurnFile) => void;
+  readonly message: Message;
+}) {
+  if (!files.length) return null;
+  return (
+    <ul className="answer-files" aria-label={message("files.label")}>
+      {files.map((file) => {
+        const open = file.key === openKey;
+        const badge = fileExtension(file.name).slice(0, 4).toUpperCase() || "TXT";
+        return (
+          <li key={file.key}>
+            <button
+              type="button"
+              className="file-card"
+              aria-pressed={open}
+              title={file.path}
+              onClick={() => onOpen(file)}
+            >
+              <span className="file-tile" aria-hidden="true">
+                <LineIcon name="file" />
+                <small>{badge}</small>
+              </span>
+              <span className="file-main">
+                <span className="file-name">{file.name}</span>
+                <span className="file-meta">
+                  {message(KIND_LABELS[file.kind])}
+                  {file.content !== undefined
+                    ? ` · ${message("files.lines", { count: lineCount(file.content) })}`
+                    : null}
+                  {file.diff.length ? (
+                    <>
+                      {" · "}
+                      <span className="is-added">+{file.added}</span>{" "}
+                      <span className="is-removed">−{file.removed}</span>
+                    </>
+                  ) : null}
+                </span>
+              </span>
+              <span className="file-open">
+                {message(open ? "files.opened" : "files.open")}
+                <LineIcon name="chevron" />
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
