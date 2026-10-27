@@ -162,24 +162,49 @@ class HomepageTest(unittest.TestCase):
         self.addCleanup(server.shutdown)
         return 'http://127.0.0.1:' + str(server.server_address[1]) + '/'
 
+    def target(self, url, host=None):
+        return {'url': url, 'host': host or url.split('/')[2]}
+
     def test_homepage_address_comes_from_the_restored_config(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / 'config.json'
-            config.write_text(json.dumps({'http': {'listenHost': '127.0.0.1', 'listenPort': 8400}}))
-            self.assertEqual(remote.homepage_url(config), 'http://127.0.0.1:8400/')
+            config.write_text(json.dumps({'publicOrigin': 'https://himawari.siyi.win', 'http': {'listenHost': '127.0.0.1', 'listenPort': 8400}}))
+            self.assertEqual(remote.homepage_target(config), {'url': 'http://127.0.0.1:8400/', 'host': 'himawari.siyi.win'})
+
+    def test_homepage_is_asked_for_under_the_public_host_the_service_accepts(self):
+        seen = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.headers['Host'])
+                self.send_response(200 if self.headers['Host'] == 'himawari.siyi.win' else 403)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'config.json'
+            config.write_text(json.dumps({'publicOrigin': 'https://himawari.siyi.win', 'http': {'listenHost': '127.0.0.1', 'listenPort': server.server_address[1]}}))
+            self.assertEqual(remote.wait_for_homepage(remote.homepage_target(config), timeout_seconds=1, interval_seconds=0.05), 200)
+        self.assertEqual(seen, ['himawari.siyi.win'])
 
     def test_rollback_waits_until_the_homepage_answers_200(self):
         url = self.serve([503, 503, 200])
-        self.assertEqual(remote.wait_for_homepage(url, timeout_seconds=10, interval_seconds=0.05), 200)
+        self.assertEqual(remote.wait_for_homepage(self.target(url), timeout_seconds=10, interval_seconds=0.05), 200)
 
     def test_rollback_fails_when_the_homepage_never_answers_200(self):
         url = self.serve([503])
         with self.assertRaisesRegex(RuntimeError, 'ROLLBACK_HOMEPAGE_NOT_READY:503'):
-            remote.wait_for_homepage(url, timeout_seconds=0.3, interval_seconds=0.05)
+            remote.wait_for_homepage(self.target(url), timeout_seconds=0.3, interval_seconds=0.05)
 
     def test_rollback_fails_when_nothing_listens(self):
         with self.assertRaisesRegex(RuntimeError, 'ROLLBACK_HOMEPAGE_NOT_READY:None'):
-            remote.wait_for_homepage('http://127.0.0.1:9/', timeout_seconds=0.2, interval_seconds=0.05)
+            remote.wait_for_homepage(self.target('http://127.0.0.1:9/'), timeout_seconds=0.2, interval_seconds=0.05)
 
 
 if __name__ == '__main__':
