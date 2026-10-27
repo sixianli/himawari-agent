@@ -7,6 +7,7 @@ import {
   type ClockPort,
   type HostDirectoryGrant,
   type HostReadOnlyPort,
+  type HostWorkspaceSnapshotPort,
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
   type ProductConfiguration,
@@ -25,6 +26,7 @@ import { configuredModelDisclosureIdentity } from "./production-model-disclosure
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 import { WebToolMemory } from "./web-tool-memory.js";
 import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
+import { createProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 
 export function createProductionFileReadServices(options: {
   readonly configuration: ProductConfiguration;
@@ -44,6 +46,7 @@ export function createProductionFileReadServices(options: {
   readonly automaticReview?: AutomaticActionReviewPort;
   readonly workspaceAuto?: WorkspaceAutoAuthorization;
   readonly hostReadOnlyPort?: HostReadOnlyPort;
+  readonly workspaceSnapshotPort?: HostReadOnlyPort & HostWorkspaceSnapshotPort;
   readonly hostWeb?: ProductionHostWeb;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
@@ -73,6 +76,10 @@ export function createProductionFileReadServices(options: {
   const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
   const hostPort = options.hostReadOnlyPort;
   const hostReadOnly = hostPort?.available ? createProductionHostReadOnly(hostPort) : undefined;
+  const snapshotPort = options.workspaceSnapshotPort;
+  const workspaceLedger = snapshotPort?.available
+    ? createProductionWorkspaceLedger({ port: snapshotPort })
+    : undefined;
   const webMemory =
     configuration.runPolicy?.publicSearch || configuration.runPolicy?.publicFetch
       ? new WebToolMemory({ now: () => Date.parse(clock.now()) })
@@ -92,6 +99,7 @@ export function createProductionFileReadServices(options: {
     });
   return {
     ...(hostReadOnly ? { hostReadOnly } : {}),
+    ...(workspaceLedger ? { workspaceLedger } : {}),
     ...(webMemory && options.hostWeb ? { hostWeb: options.hostWeb } : {}),
     ...(webMemory ? { webMemory } : {}),
     binding: async (call) => {

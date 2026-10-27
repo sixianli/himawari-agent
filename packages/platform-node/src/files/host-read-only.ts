@@ -15,10 +15,17 @@ import {
   type HostReadOnlyDirectoryEntry,
   type HostReadOnlyEntryKind,
   type HostReadOnlyPort,
+  type HostWorkspaceSnapshot,
+  type HostWorkspaceSnapshotEntry,
+  type HostWorkspaceSnapshotPort,
 } from "@himawari-agent/application";
-import { firstProtectedDirectoryEntry } from "@himawari-agent/execution-contracts";
+import {
+  firstProtectedDirectoryEntry,
+  isProtectedDirectoryEntry,
+  isRejectedPathComponent,
+} from "@himawari-agent/execution-contracts";
 
-export class DescriptorRelativeReadOnly implements HostReadOnlyPort {
+export class DescriptorRelativeReadOnly implements HostReadOnlyPort, HostWorkspaceSnapshotPort {
   readonly available: boolean;
 
   constructor() {
@@ -150,6 +157,64 @@ export class DescriptorRelativeReadOnly implements HostReadOnlyPort {
     });
   }
 
+  async snapshotWorkspace(input: {
+    readonly grant: HostDirectoryGrant;
+    readonly maximumEntries: number;
+  }): Promise<HostWorkspaceSnapshot> {
+    if (!Number.isSafeInteger(input.maximumEntries) || input.maximumEntries < 1)
+      throw new HostReadOnlyError(CODES.LENGTH_EXCEEDED);
+    return this.#withRoot(input.grant, (rootFd, device) => {
+      const entries: HostWorkspaceSnapshotEntry[] = [];
+      const pending: string[] = [""];
+      let complete = true;
+      while (complete && pending.length > 0) {
+        const path = pending.pop() ?? "";
+        let directory: { readonly fd: number; readonly owned: boolean };
+        try {
+          directory = openDirectoryFrom(rootFd, relativeComponents(path), device);
+        } catch (error) {
+          if (error instanceof HostReadOnlyError) continue;
+          throw error;
+        }
+        try {
+          const names = readdirSync(`${PROC_FD}/${directory.fd}`).sort();
+          const children: string[] = [];
+          for (const name of names) {
+            const child = path === "" ? name : `${path}/${name}`;
+            if (isRejectedPathComponent(name) || isProtectedDirectoryEntry(child, name)) continue;
+            if (entries.length >= input.maximumEntries) {
+              complete = false;
+              break;
+            }
+            let info: BigIntStats;
+            try {
+              info = lstatSync(`${PROC_FD}/${directory.fd}/${name}`, { bigint: true });
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+              throw error;
+            }
+            const kind = snapshotKindOf(info);
+            entries.push(
+              Object.freeze({
+                path: child,
+                kind,
+                size: info.size.toString(),
+                modifiedAtNs: info.mtimeNs.toString(),
+                inode: info.ino.toString(),
+              }),
+            );
+            if (kind === "directory" && info.dev === device) children.push(child);
+          }
+          pending.push(...children.reverse());
+        } finally {
+          if (directory.owned) closeSync(directory.fd);
+        }
+      }
+      entries.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+      return Object.freeze({ entries: Object.freeze(entries), complete });
+    });
+  }
+
   #withRoot<T>(grant: HostDirectoryGrant, run: (rootFd: number, device: bigint) => T): T {
     if (!this.available) throw new HostReadOnlyError(CODES.PROC_UNAVAILABLE);
     const device = deviceOf(grant);
@@ -248,4 +313,9 @@ function kindOf(info: { isFile(): boolean; isDirectory(): boolean }): HostReadOn
   if (info.isFile()) return "file";
   if (info.isDirectory()) return "directory";
   return "other";
+}
+
+function snapshotKindOf(info: BigIntStats): HostWorkspaceSnapshotEntry["kind"] {
+  if (info.isSymbolicLink()) return "symlink";
+  return kindOf(info);
 }

@@ -1,0 +1,60 @@
+{
+  "task": "bash-workspace-write",
+  "prefix": "BW",
+  "decisions": {
+    "G1": "durable"
+  },
+  "fingerprint": {
+    "test_exclude": ["docs/"]
+  },
+  "items": [
+    {
+      "id": "BW-1",
+      "title": "命令可以写授权工作目录，目录外和受保护条目仍不能写",
+      "goal_ref": ["G1"],
+      "done_when": [{ "type": "test", "tag": "R2-T5" }],
+      "added": { "by": "claude", "on": "2026-10-27" }
+    },
+    {
+      "id": "BW-2",
+      "title": "主进程能安全地给工作目录拍快照",
+      "goal_ref": ["G1"],
+      "done_when": [{ "type": "test", "tag": "BW-2" }],
+      "added": { "by": "claude", "on": "2026-10-27" }
+    },
+    {
+      "id": "BW-3",
+      "title": "每条命令前后对比工作目录并留档，摘要交给模型",
+      "goal_ref": ["G1"],
+      "done_when": [{ "type": "test", "tag": "BW-3" }],
+      "added": { "by": "claude", "on": "2026-10-27" }
+    },
+    {
+      "id": "BW-4",
+      "title": "给模型的能力说明写明命令可写、留档、临时文件放 $TMPDIR",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "apps/agent-service/test/production-model-composition.unit.test.ts",
+          "name": "tells the model what it cannot reach when no search is configured"
+        }
+      ],
+      "added": { "by": "claude", "on": "2026-10-27" }
+    },
+    {
+      "id": "BW-5",
+      "title": "B 方案写进 ADR 0097",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0097-bash-writes-workspace-with-change-ledger.md",
+          "heading": "背景",
+          "quotes": "G1"
+        }
+      ],
+      "added": { "by": "claude", "on": "2026-10-27" }
+    }
+  ]
+}

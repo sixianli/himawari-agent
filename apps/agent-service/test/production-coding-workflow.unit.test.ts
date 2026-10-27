@@ -939,3 +939,106 @@ it("[NL-2] still asks for permission before a host web search and stops when it 
   expect(f.authorize).toHaveBeenCalledTimes(1);
   expect(execute).not.toHaveBeenCalled();
 });
+
+function ledgerFixture() {
+  const f = fixture();
+  const baselineValue = { snapshot: { complete: true, entries: [] }, scanMs: 3 };
+  const ledger = {
+    baseline: vi.fn(async () => baselineValue),
+    record: vi.fn(async () => ({
+      version: "workspace-changes.v1" as const,
+      complete: true,
+      beforeScanMs: 3,
+      afterScanMs: 4,
+      changes: [],
+      summary: "工作目录改动：新建 out.txt",
+    })),
+  };
+  const issue = vi.fn(async () => ({ ref: "handle:bash" }));
+  const services = {
+    ...f.services,
+    authorize: allowRead(),
+    issue,
+    workspaceLedger: ledger,
+  } as unknown as typeof f.services;
+  const call = {
+    ...f.call,
+    capabilityRef: "coding.bash",
+    arguments: { command: "echo hi > out.txt" },
+  };
+  return { f, ledger, services, call, baselineValue };
+}
+
+it("[BW-3] records workspace changes around a command and tells the model what changed", async () => {
+  const { f, ledger, services, call, baselineValue } = ledgerFixture();
+  const order: string[] = [];
+  ledger.baseline.mockImplementation(async () => {
+    order.push("before");
+    return baselineValue;
+  });
+  vi.mocked(f.ctx.phase).mockImplementation(async () => {
+    order.push("command");
+    return {
+      outcome: "succeeded" as const,
+      resultRef: "result:tool",
+      errorCode: null,
+      externalActionId: null,
+      modelContent: "actual tool result",
+    };
+  });
+  ledger.record.mockImplementation(async () => {
+    order.push("after");
+    return {
+      version: "workspace-changes.v1" as const,
+      complete: true,
+      beforeScanMs: 3,
+      afterScanMs: 4,
+      changes: [],
+      summary: "工作目录改动：新建 out.txt",
+    };
+  });
+  const result = await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(order).toEqual(["before", "command", "after"]);
+  expect(result).toMatchObject({
+    outcome: "succeeded",
+    modelContent: "actual tool result\n\n工作目录改动：新建 out.txt",
+  });
+  expect(f.values.get("workspace-changes")).toMatchObject({
+    runId: call.runId,
+    toolCallId: call.toolCallId,
+    threadId: f.binding.threadId,
+    grantId: f.binding.grant.id,
+    command: "echo hi > out.txt",
+    summary: "工作目录改动：新建 out.txt",
+  });
+});
+
+it("[BW-3] reuses the saved baseline and change record when a command is resumed", async () => {
+  const { f, ledger, services, call } = ledgerFixture();
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  const again = await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(ledger.baseline).toHaveBeenCalledTimes(1);
+  expect(ledger.record).toHaveBeenCalledTimes(1);
+  expect(again.modelContent).toContain("工作目录改动：新建 out.txt");
+});
+
+it("[BW-3] does not run a command whose workspace baseline cannot be taken", async () => {
+  const { f, ledger, services, call } = ledgerFixture();
+  ledger.baseline.mockRejectedValue(new Error("HOST_READ_ROOT_IDENTITY_CHANGED"));
+  const result = await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(result).toMatchObject({ outcome: "failed", errorCode: "WORKSPACE_LEDGER_UNAVAILABLE" });
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+});
+
+it("[BW-3] keeps the command result and notes a failed change record", async () => {
+  const { f, ledger, services, call } = ledgerFixture();
+  ledger.record.mockRejectedValue(new Error("HOST_READ_ROOT_IDENTITY_CHANGED"));
+  const result = await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(result).toMatchObject({
+    outcome: "succeeded",
+    modelContent: "actual tool result\n\n工作目录改动：这次没能记录",
+  });
+  expect(f.values.get("workspace-changes")).toMatchObject({
+    errorCode: "HOST_READ_ROOT_IDENTITY_CHANGED",
+  });
+});
