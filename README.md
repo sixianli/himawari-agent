@@ -36,6 +36,8 @@ export PATH="$PWD/.ci-output/tools/bin:$PATH"
 
 ## CI 与质量门禁
 
+> 2026-10-26 起 GitHub Actions（GitHub 自带的自动构建和测试服务）在仓库设置里关闭，CI 不再运行；质量门槛是快速模式的本地检查（相关测试、`npm run check`、`npm run build`），见 [ADR 0092](docs/adr/0092-pause-github-actions.md)。下面描述的是 CI 打开时的配置，文件保持不变，重新打开 Actions 即恢复。
+
 `ci/policy.json` 定义必需检查、矩阵和测试归属；`scripts/ci/run.mjs` 执行检查并记录身份、退出码、计数与文件摘要；`aggregate.mjs` 核对同一 run/attempt 的完整报告。GitHub 配置保存在 `.github/workflows/ci.yml`，完整集合是 policy、static、双平台 build/test、最低 Node、三个浏览器、coverage、security 和 `ci/required`。
 
 在固定工具环境下，本地入口为：

@@ -16,7 +16,8 @@
     "G12": "durable",
     "G13": "durable",
     "G14": "durable",
-    "G15": "once"
+    "G15": "once",
+    "G16": "durable"
   },
   "items": [
     {
@@ -389,6 +390,96 @@
         "by": "claude",
         "on": "2026-10-26",
         "why": "从 UI-16 拆出"
+      }
+    },
+    {
+      "id": "UI-18",
+      "title": "回答下方列出这一轮写出和改过的文件；点开在右侧预览：Markdown 阅读排版带目录、CSV 表格带合计、代码带行号、改动显示增删对照，可放宽、复制、关闭",
+      "goal_ref": [
+        "G16",
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-18"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "第三期，协调者转达可与 #48 并行推进"
+      }
+    },
+    {
+      "id": "UI-19",
+      "title": "侧栏对话按今天/昨天/更早分组，加“记忆”入口",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-19"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "第三期，按 v6 原型侧栏"
+      }
+    },
+    {
+      "id": "UI-20",
+      "title": "新对话页：葵盘大标志慢转，按早上/下午/晚上问好",
+      "goal_ref": [
+        "G1",
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-20"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "第三期，按 v6 原型空状态"
+      }
+    },
+    {
+      "id": "UI-21",
+      "title": "第三期文字中英日三语齐全，ADR 与 Spec 增补，npm run check 和 npm run build 通过",
+      "goal_ref": [
+        "G5",
+        "G16"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-21"
+        },
+        {
+          "type": "doc",
+          "path": "docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md",
+          "quotes": [
+            "G16"
+          ]
+        },
+        {
+          "type": "command",
+          "run": "npm run check"
+        },
+        {
+          "type": "command",
+          "run": "npm run build"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "第三期收尾"
       }
     }
   ]

@@ -9,6 +9,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ArchivedConversations } from "./components/archived-conversations.js";
+import { SunflowerMark } from "./components/brand.js";
 import { ChatComposer } from "./components/chat-composer.js";
 import { ChatHistory } from "./components/chat-history.js";
 import { ContentPreview, type ContentPreviewValue } from "./components/content-preview.js";
@@ -87,6 +88,14 @@ export interface ThreadControlCenterModel {
   readonly refresh: () => Promise<void>;
 }
 
+export function greetingOf(now: Date): MessageId {
+  const hour = now.getHours();
+  return hour >= 5 && hour < 12
+    ? "chat.greetMorning"
+    : hour >= 12 && hour < 18
+      ? "chat.greetAfternoon"
+      : "chat.greetEvening";
+}
 function mutationMessageId(status: MutationStatus | null): MessageId {
   return status ? (`mutation.${status}` as MessageId) : "mutation.none";
 }
@@ -1147,8 +1156,11 @@ export function useThreadControlCenter(
           <ThreadLoadingSkeleton scope="conversation" />
         ) : !detail ? (
           <div className="thread-welcome">
-            <h2>{message("chat.welcome")}</h2>
-            <p>{message("chat.welcomeHint")}</p>
+            <span className="welcome-mark">
+              <SunflowerMark />
+            </span>
+            <h2>{message(greetingOf(new Date()))}</h2>
+            <p>{message("chat.welcome")}</p>
           </div>
         ) : (
           <>
@@ -1159,7 +1171,10 @@ export function useThreadControlCenter(
               execution={execution}
               executionStates={currentExecutionStates}
               executionStateAvailable={configuration?.executionStateAvailable}
-              onPreview={setPreview}
+              onPreview={(value) =>
+                setPreview((current) => (value.key && current?.key === value.key ? null : value))
+              }
+              previewKey={preview?.key}
               connection={connection}
               renderMemory={options.renderMemory}
               renderApproval={(runId, records) =>
@@ -1270,7 +1285,13 @@ export function useThreadControlCenter(
           <output className="composer-readiness">{message("review.preparing")}</output>
         ) : null}
       </div>
-      {preview ? <ContentPreview value={preview} onClose={() => setPreview(null)} /> : null}
+      {preview ? (
+        <ContentPreview
+          key={preview.key ?? preview.title}
+          value={preview}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </div>
   );
 
