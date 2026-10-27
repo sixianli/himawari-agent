@@ -358,8 +358,15 @@ export const messages = {
   "chat.workTime": "Working {time}",
   "chat.executionTime": "Tool execution {time}",
 
-  "authentication.required": "Sign in to connect this browser",
-  "authentication.signIn": "Sign in to Himawari",
+  "entry.opening": "Opening Himawari…",
+  "entry.expired.title": "Verify your email again",
+  "entry.expired.body":
+    "For your security, email verification expires after a while. Enter one more code and you'll be back where you left off.",
+  "entry.expired.action": "Verify email",
+  "entry.unreachable.title": "Can't reach Himawari right now",
+  "entry.unreachable.body":
+    "Your network may be down, or Himawari is updating. Your conversations are safe and will come back once it reconnects.",
+  "entry.unreachable.retrying": "Retrying in {seconds} s",
   "authentication.deviceLabel": "Himawari web browser",
   "app.skipToMain": "Skip to main content",
   "bootstrap.loading": "Loading Control Center",

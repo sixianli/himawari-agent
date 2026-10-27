@@ -330,8 +330,14 @@ export const messages = {
   "chat.workTime": "工作 {time}",
   "chat.executionTime": "工具执行 {time}",
 
-  "authentication.required": "请登录以连接此浏览器",
-  "authentication.signIn": "登录 Himawari",
+  "entry.opening": "正在进入 Himawari…",
+  "entry.expired.title": "需要重新验证邮箱",
+  "entry.expired.body":
+    "为了安全，邮箱验证隔一段时间要重做一次。再收一次验证码，就回到刚才的对话。",
+  "entry.expired.action": "重新验证邮箱",
+  "entry.unreachable.title": "Himawari 暂时连不上",
+  "entry.unreachable.body": "可能是网络断了，或服务正在更新。你的对话都还在，连上后会自己回来。",
+  "entry.unreachable.retrying": "{seconds} 秒后自动重试",
   "authentication.deviceLabel": "Himawari 网页浏览器",
   "app.skipToMain": "跳到主要内容",
   "bootstrap.loading": "正在加载控制中心",

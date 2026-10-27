@@ -359,8 +359,15 @@ export const messages = {
   "chat.workTime": "作業 {time}",
   "chat.executionTime": "ツール実行 {time}",
 
-  "authentication.required": "このブラウザーでログインしてください",
-  "authentication.signIn": "Himawari にログイン",
+  "entry.opening": "Himawari を開いています…",
+  "entry.expired.title": "メールの再確認が必要です",
+  "entry.expired.body":
+    "安全のため、メール確認は一定期間で切れます。もう一度コードを入力すると、元の会話に戻ります。",
+  "entry.expired.action": "メールを再確認",
+  "entry.unreachable.title": "Himawari に接続できません",
+  "entry.unreachable.body":
+    "ネットワークが切れているか、更新中の可能性があります。会話はそのまま残っていて、つながれば自動で戻ります。",
+  "entry.unreachable.retrying": "{seconds} 秒後に自動で再試行",
   "authentication.deviceLabel": "Himawari ウェブブラウザー",
   "app.skipToMain": "メインコンテンツへ移動",
   "bootstrap.loading": "コントロールセンターを読み込み中",

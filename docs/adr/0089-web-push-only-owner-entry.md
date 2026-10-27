@@ -103,5 +103,6 @@ date: "2026-10-26"
 - [SOURCE: docs/engineering-casebook.md#case-web-push-only]
 - 设计文档：<https://claude.ai/artifact/5WezX9kCNWhdpU7ttck7BG>
 - 界面原型：<https://claude.ai/artifact/E1BP6KR7gqYrXkgEcxqghv>
+- [SOURCE: docs/adr/0095-silent-session-exchange-behind-cloudflare-access.md]（第 4 条“一道门”在网页上的实现：过了验证码自动进入）
 
 [↑ 返回阅读导航](#contents)

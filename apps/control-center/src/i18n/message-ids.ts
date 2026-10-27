@@ -314,8 +314,13 @@ export const MESSAGE_IDS = [
 
   "app.skipToMain",
   "bootstrap.loading",
-  "authentication.required",
-  "authentication.signIn",
+  "entry.opening",
+  "entry.expired.title",
+  "entry.expired.body",
+  "entry.expired.action",
+  "entry.unreachable.title",
+  "entry.unreachable.body",
+  "entry.unreachable.retrying",
   "authentication.deviceLabel",
   "nav.label",
   "nav.threads",
@@ -663,6 +668,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   Partial<Record<MessageId, Readonly<Record<string, string | number>>>>
 > = Object.freeze({
   "chat.environment.running": { count: 2 },
+  "entry.unreachable.retrying": { seconds: 5 },
   "chat.environment.startedAt": { time: "12:04" },
   "chat.environment.openThread": { title: "研究记录" },
   "chat.workTime": { time: "00:42" },
