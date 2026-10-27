@@ -245,7 +245,7 @@ async function inspect(mode, invocationId) {
   assert.equal(agentReady[0].workerSchemaVersion, "execution.v2", "__PKT_LABEL_UPPER___STARTUP_HANDSHAKE_SCHEMA_CHANGED");
   assert.equal(workerReady[0].schemaVersion, "execution.v2", "__PKT_LABEL_UPPER___STARTUP_WORKER_SCHEMA_CHANGED");
   assert.equal(workerReady[0].adapterRegistry, "snapshot-qualified", "__PKT_LABEL_UPPER___STARTUP_WORKER_REGISTRY_UNQUALIFIED");
-  assert.equal(agentReady[0].publicMode, false, "__PKT_LABEL_UPPER___STARTUP_PUBLIC_MODE_CHANGED");
+  assert.equal(agentReady[0].publicMode, configuration.publicMode, "__PKT_LABEL_UPPER___STARTUP_PUBLIC_MODE_CHANGED");
   assert.equal(agentReady[0].modelPath, "pi-production", "__PKT_LABEL_UPPER___STARTUP_MODEL_PATH_CHANGED");
   assert.equal(agentReady[0].memoryPath, "memory-engine-production", "__PKT_LABEL_UPPER___STARTUP_MEMORY_PATH_CHANGED");
   const spawned = records.filter((item) => item.event === "pair.child_spawned");
