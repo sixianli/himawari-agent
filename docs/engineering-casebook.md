@@ -59,6 +59,7 @@ date: "2026-10-26"
   32. [iPhone 上输入框贴底、上方多出一条灰色横条：安全区和横向滚动](#case-ios-safe-area-scrollbar)
   33. [长命令要么等到超时被杀，要么卡住整个对话：让 bash 转后台、先答完，跑完由系统另起一轮汇报](#case-background-bash)
   34. [模型写贪吃蛇时命令报“只读文件系统”：放开工作目录写入，每条命令留改动记录](#case-bash-workspace-write)
+  35. [生产机没有防火墙，安全只靠“恰好没人监听公网”：启用 ufw 只留 SSH](#case-prod-firewall)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -82,7 +83,7 @@ date: "2026-10-26"
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
@@ -2223,6 +2224,58 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 **面试 30 秒版**
 
 “模型写小游戏时命令报只读文件系统。查下来是部署时封存的权限只给了命令读，和我们自己参照 Codex 定的‘工作目录内可读写执行’不一致。我放开了工作目录写入，但不是裸放：每条命令前后由主进程扫一遍工作目录，记下新建、修改、删除了哪些文件和内容指纹，摘要直接回给模型。这比 Claude Code 的检查点多覆盖了命令改动的文件，37 个文件的生产目录扫描成本可以忽略。”
+
+[返回目录](#contents)
+
+<a id="case-prod-firewall"></a>
+
+## 案例 35：生产机没有防火墙，安全只靠“恰好没人监听公网”：启用 ufw 只留 SSH
+
+**背景与现象**
+
+2026-10-28 做公网安全只读审计（从外部找有没有绕过登录直达 Himawari 的路）。外部探测一切正常：两个域名的请求都被 Cloudflare Access（Cloudflare 的登录拦截）挡住，直连源站 IP 只有 22 端口通。但登录生产机后发现，服务器上根本没有防火墙：`ufw`（Ubuntu 自带的防火墙管理工具）是 `inactive`，`iptables` 和 `ip6tables`（Linux 内核的包过滤规则）全部默认放行。
+
+**根因**
+
+“只有 22 通”不是防火墙的功劳，而是机器上对外监听的程序恰好只有 `sshd`：Himawari 服务监听 `127.0.0.1:8400`，`cloudflared`（Cloudflare 隧道客户端）只听本机。这是一个没被写下来的假设。Himawari 的模型能用 `bash` 工具执行命令，只要某条命令起了监听 `0.0.0.0` 的临时服务，或者某个软件包默认开了端口，它就会直接暴露在公网，绕过 Access 登录。证据是审计脚本的 `ss -ltnu`、`ufw status`、`iptables -S`、`ip6tables -S` 输出。
+
+**我们的方案**
+
+在生产机启用 `ufw`：入站默认拒绝，只放行 `22/tcp`（IPv4 和 IPv6 同时生效），出站不限，转发拒绝。不开 80/443/8400，因为网页流量走 Cloudflare 隧道，是服务器主动连出。执行顺序专门防止把自己锁在外面：备份现有规则 → 用 `systemd-run --on-active=10min ufw disable` 设一个 10 分钟后自动关防火墙的保险 → 先放行 22 再启用 → 保持旧连接、另开新 `ssh` 连接验证 → 取消保险。最后的兜底是 Contabo 面板的 VNC 控制台。启用前还确认了服务器没装 Docker（Docker 自己写 `iptables` 规则，会绕过 `ufw`）、没开转发、没有 Tailscale。
+
+**方案讨论与备选**
+
+- 维持现状：不改，但任何新监听都会暴露，模型能执行命令，风险不是假设。不采用。
+- 只用 Contabo 面板防火墙（在服务器外面的网络层拦截）：服务器配错也不受影响，但必须 Andy 手动在面板操作，Claude 无法执行、验证和留档。暂不采用，留作第二道。
+- 直接写 `nftables`：更灵活，但持久化、IPv6、ICMPv6 邻居发现都要自己处理，容易漏。不采用。
+- SSH 只允许固定来源 IP：Andy 的 Mac 没有固定公网 IP。不采用。
+- SSH 用 `ufw limit` 限速：上线脚本会连续开很多 `ssh` 连接，会把自己挡住；SSH 已经只认密钥，限速收益很小。不采用。
+
+**业界主流做法**
+
+- ✅ Cloudflare 隧道文档：`cloudflared` 只需要出站 7844 端口，推荐“阻止所有入站流量，只允许 `cloudflared` 的出站流量”，示例中唯一的入站规则是管理用 SSH。[Cloudflare：Tunnel with firewall](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)
+- ✅ Ubuntu Server 文档：`ufw` 默认关闭，`ufw allow 22` 后 `ufw enable`。[Ubuntu Server：Firewalls](https://ubuntu.com/server/docs/how-to/security/firewalls/)
+- ✅ Contabo 博客：面板防火墙免费，“runs independently of your instance”，启用后入站默认全拦。[Contabo Firewall Is Here](https://contabo.com/blog/contabo-firewall/)
+
+**对比与取舍**
+
+和 Cloudflare 推荐的形态一致：入站只留 SSH，业务流量全走出站隧道。和大型云厂商常见的“安全组 + 主机防火墙”两层相比，我们目前只有主机这一层，原因是面板操作只能 Andy 做；代价是服务器本身配错时没有外层兜底，所以执行时用了 10 分钟自动关闭的保险。
+
+**结果数据**
+
+- 启用后从 Mac 探测 IPv4：22 通；80、443、8400、20241、3000、8080 都不通。
+- `iptables` 和 `ip6tables` 的 `INPUT` 默认策略都变为 `DROP`；`ufw.service` 开机启用。
+- 启用后几分钟内内核日志已有 16 条 `UFW BLOCK`（外部扫描被拦）。
+- Himawari 网页照常返回 302（跳到 Access 登录），隧道就绪连接 4 条，`himawari-prod.service` 重启次数 0，整个过程没有停服。
+- 未测量：IPv6 外部实测（Mac 没有 IPv6）；服务器重启后的规则保持（未重启生产机，依据是 `ENABLED=yes`）。
+
+**相关 ADR/PR**
+
+[ADR 0099](adr/0099-production-host-firewall-ssh-only.md)、[生产云服务器访问 Runbook 的防火墙一节](runbooks/production-server-access-runbook.md#firewall)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)；PR 见分支 `claude/prod-firewall`。
+
+**面试 30 秒版**
+
+安全审计时外部只看到 22 端口开着，看起来没问题；但登录服务器发现根本没有防火墙，“只开 22”只是因为恰好只有 sshd 监听公网。我们的 Agent 能执行命令，任何一个临时服务都可能直接暴露并绕过登录网关。于是启用主机防火墙只放行 SSH，业务流量本来就走出站的 Cloudflare 隧道；执行时先设 10 分钟自动关闭的保险再启用，验证新连接后才取消，零停服完成。
 
 [返回目录](#contents)
 
