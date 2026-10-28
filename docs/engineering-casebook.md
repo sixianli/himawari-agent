@@ -65,6 +65,7 @@ date: "2026-10-26"
   38. [主动提醒发出去就不管了：记录每条通知的送达、点开和划掉，为“该不该打扰”积累数据](#case-push-feedback)
   39. [让真模型跑 Jarvis Test：编出来的报错会被模型看穿，裁判也要先过校准](#case-jarvis-test-evals)
   40. [域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配](#case-min-tls)
+  41. [按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送](#case-optimistic-send)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -89,11 +90,11 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
@@ -2613,6 +2614,73 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 **面试 30 秒版**
 
 安全审计发现域名还接受已被 RFC 8996 禁用的 TLS 1.0 和 1.1。我先从公网测出改前确实能握手，再用一把只限这个域名、只能改域名设置、次日过期的 Token，读出原值存档、改成 1.2、读回确认，然后对三个子域名逐版本复测，确认手机安装和推送不受影响。顺带说清了一个限制：Cloudflare Access 的放行路径是前缀匹配，做不到精确，所以最后一道门要靠应用自己只认白名单文件。
+
+[返回目录](#contents)
+
+<a id="case-optimistic-send"></a>
+
+## 案例 41：按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送
+
+**背景与现象**
+
+2026-10-28 18:33（日本时间），Andy 反映：在 Himawari 网页输入问题按回车后，要卡大约两秒，消息才出现在对话里，“给人的感觉很卡顿”。这两秒里输入框里的字还在，界面没有任何反应。
+
+**根因**
+
+读了发送链路的代码（`apps/control-center/src/thread-control-center.tsx` 的 `submitDraft` 和 `performIntent`），再用真浏览器把每个请求的发出时间记下来，确认原因是：网页要等服务器把消息存好、再把整段对话重新读回来，才把消息画出来。中间是六个一个接一个的请求：
+
+1. 上传“结果存放位置”占位文字（`/api/payload/v1/text`）；
+2. 上传消息正文（同一个接口，要等第 1 个回来才发，其实两者互不依赖）；
+3. 发送命令 `thread.message.submit`；
+4. 读对话列表 `thread.list`；
+5. 读这段对话 `thread.detail`；
+6. 再按引用把刚才自己发的正文读回来（`/api/payload/v1/text/read`），这时消息才出现。
+
+服务端本身不慢：用 `production-http-composition` 单元测试的临时计时副本在本地测，上传、发命令、读对话每个请求只要 2.7–7.5 毫秒。所以时间花在六次往返上。每次往返包括网络、Cloudflare 隧道、一次等硬盘确认的会话写入，以及一次额外的外部调用：服务端认证每个请求时都会向 Cloudflare Access 的 `get-identity` 接口要一次“最近登录时间”（本地测试里每个请求 `identityCalls=1`）。生产里这一步各花多少时间没有请求日志，未测量，记为 [BL-20261028-007](backlog/BL-20261028-007-per-request-access-identity-lookup.md)。
+
+**我们的方案**
+
+1. **先上屏再发送**：按下回车的同一帧，消息就作为“发送中”出现在对话末尾（带一个时钟图标，下面跟着 Himawari 的转圈标志），输入框清空。服务器保存成功、对话重新读回后，用消息编号对上，换成正式消息，只留一份。
+2. **发送失败要看得见**：没发出去时，这条消息留在原地，标“没发出去”，旁边有“重试”。重试沿用原来的幂等键（防止重复提交的编号），服务器不会存两份。浏览器刷新后，未确认的消息也会按本地保存的待发记录显示出来；如果服务器其实已经存了，就不再显示。
+3. **少两次往返**：两次上传同时发；正文的引用拿到后直接把正文放进本地缓存，不再从服务器读回来。
+4. 新建对话也一样：创建对话、跳转、读回期间，消息一直显示，不会先闪回欢迎页或加载骨架。
+5. 界面新增的三句文字（发送中、没发出去、重试）中、英、日都有。
+
+这是纯前端的改动，不涉及 Pi（项目底层的 Agent 框架）。服务端每次都去问 Cloudflare 的那一步，等生产计时量出来再改。
+
+**方案讨论与备选**
+
+- **只减少请求次数**：把六次压成三四次，消息还是要等服务器回来才出现，网络差时照样卡。只能治一半，所以和“先上屏”一起做。
+- **服务端合并接口**（一个请求里同时上传正文和发命令）：往返最少，但要改网关协议和幂等规则，改动大；先上屏后，剩下的往返只影响“发送中”变成“已送达”的时间，不再影响手感。
+- **用 React 19 的 `useOptimistic`**：适合“动作结束就丢弃临时状态”的场景；但这里服务器确认后还要等对话读回来才能替换，中间不能闪，所以用普通状态加“按消息编号对上再删”的规则。
+- **失败时把文字退回输入框**：会和“重试”按钮各留一份，用户不知道该点哪个；改成消息留在原位标出“没发出去”并给“重试”。只有连对话都没建成（没有待发记录）时，才把文字退回输入框。
+- **立刻改掉每次请求都问 Cloudflare 的身份接口**：可能是每次往返里最大的一块，但它关系到删除对话等高风险操作的“最近登录”校验，没有生产数据就改，违反“先量再改”，放进 Backlog。
+
+**业界主流做法**
+
+- ✅ Vercel AI SDK（[`packages/ai/src/ui/chat.ts`](https://github.com/vercel/ai/blob/main/packages/ai/src/ui/chat.ts)，`useChat` 背后的实现）：`sendMessage` 先执行 `this.state.pushMessage({ role: uiMessage.role ?? 'user', ...})` 把用户消息放进列表，再 `this.setStatus({ status: 'submitted', ... })`，最后才 `await this.transport.sendMessages(...)` 发请求。文档（[useChat 参考](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat)）里状态的含义是 `"submitted" (request sent)`。
+- ✅ Open WebUI（[`src/lib/components/chat/Chat.svelte`](https://github.com/open-webui/open-webui/blob/main/src/lib/components/chat/Chat.svelte)）：`submitPrompt` 里先建 `userMessage`，再 `history.messages[userMessageId] = userMessage;`，之后才调用 `sendMessage` 去请求模型。
+- ✅ React 官方文档（[useOptimistic](https://react.dev/reference/react/useOptimistic)）：“`useOptimistic` is a React Hook that lets you optimistically update the UI.”；列表例子里每个临时条目带 `pending: true`，界面显示“(Adding...)”。
+
+**对比与取舍**
+
+和 Vercel AI SDK、Open WebUI 一样，先把用户消息放进列表再发请求。不同的是 Himawari 的消息必须先存进服务器（正文加密保存、命令带幂等键、对话有版本号），所以“发送中”要一直留到对话读回、消息编号对上；而上面两个项目的消息列表本身就以浏览器为准。代价是本地多一份“正在发送”的状态，需要处理刷新、失败、换对话三种情况，这三种都写了测试。
+
+**结果数据**
+
+- 真浏览器测量（云端容器里的 Chromium 加项目自带的界面测试服务器，人为给每个接口加 200 毫秒延迟模拟网络，脚本只记时间不读内容）：
+  - 改前：两次上传 13 毫秒和 233 毫秒发出，发命令 441 毫秒，读列表 653 毫秒，读对话 861 毫秒，之后还要读回正文，消息最早约 1.3 秒才出现（六次请求 × 约 210 毫秒）。
+  - 改后：按回车到消息出现 37–47 毫秒（中文、英文、日文、手机宽度各一次，含 Playwright 自身的检测开销）；两次上传同时在 24–32 毫秒发出，发命令提前到约 240 毫秒，读回正文这次请求没有了。
+- 服务端单个请求的本地耗时 2.7–7.5 毫秒（见根因）。生产里每次往返的实际耗时未测量；按 Andy 感受到的约 2 秒反推，每次往返约 300 毫秒。
+- 测试：新增一条组件测试，在两次上传都还没返回时就断言消息已显示、输入框已清空、两次上传都已发出；服务器确认后只剩一份、且没有读回正文。改写一条旧测试：发送失败时消息留在原位标“没发出去”，点重试会用原来的编号再发一次。`apps/control-center/test/` 下 34 个文件 502 个测试全部通过。
+
+**相关 ADR/PR**
+
+[BL-20261028-007](backlog/BL-20261028-007-per-request-access-identity-lookup.md)（每个请求都问 Cloudflare 身份接口，待量）；PR 见分支 `claude/project-thread-xpbmhj`。这次没有新 ADR：只改了发送时的显示顺序，没有改接口或数据。
+
+**面试 30 秒版**
+
+“用户说按回车后要两秒消息才出现。我顺着代码和浏览器请求时间线查，发现网页要等六个串行请求，包括上传、发命令、重新读整段对话、再把自己刚发的正文读回来，才把消息画出来，而服务端每个请求其实只要几毫秒。我照 Vercel AI SDK 和 Open WebUI 的做法改成先上屏：按回车同一帧显示‘发送中’，服务器确认后按消息编号替换；失败就原地标出并可重试，重试沿用幂等键不会重复。另外把两次上传改成并行、去掉读回。模拟每次请求 200 毫秒时，上屏从约 1.3 秒降到约 40 毫秒。”
 
 [返回目录](#contents)
 
