@@ -16,7 +16,7 @@ date: "2026-10-26"
 - 给 Andy 准备简历和面试。应聘 AI Application Engineer（AI 应用工程师）或 AI Agent Engineer（AI 智能体工程师）时，可以挑其中几个案例，按“现象 → 根因 → 方案 → 取舍 → 数据”讲清楚。
 - 给以后的线程留下“为什么这样做”的完整理由，避免同样的讨论重来一遍。
 
-项目一句话：Himawari 是只属于 Andy 一个人的个人 Agent（能自己调用工具、多步完成任务的 AI 助手），本地优先、以长期记忆为核心，建在开源的 Pi Coding Agent（一个可扩展的编程智能体框架，代码在 `pi-mono` 仓库）之上，单机部署在一台 Linux 云服务器上。
+项目一句话：Himawari 是只属于 Andy 一个人的个人 Agent（能自己调用工具、多步完成任务的 AI 助手），自有优先、数据自持（运行环境和数据由 Andy 控制，见[产品愿景](product-vision.md)）、以长期记忆为核心，建在开源的 Pi Coding Agent（一个可扩展的编程智能体框架，代码在 `pi-mono` 仓库）之上，单机部署在一台 Linux 云服务器上。
 
 **诚信说明（面试时请照实讲）：** 产品方向、架构取舍和上线授权都由 Andy 拍板，ADR（架构决策记录，每份记下一个重要决定和理由）里保留了 Andy 的原话；具体代码主要由 AI 编码代理（Claude、Codex、opencode 等）在 Andy 的指挥和审查下写成。本文的数字都来自提交说明、ADR、测试记录或生产日志，出处写在每个案例的“相关 ADR/PR”里；没量过的地方写明“未测量”。
 
@@ -61,6 +61,7 @@ date: "2026-10-26"
   34. [模型写贪吃蛇时命令报“只读文件系统”：放开工作目录写入，每条命令留改动记录](#case-bash-workspace-write)
   35. [生产机没有防火墙，安全只靠“恰好没人监听公网”：启用 ufw 只留 SSH](#case-prod-firewall)
   36. [对话做出的文件和后台命令放进同一个“更多”栏，不在对话里抢注意力](#case-more-panel)
+  37. [愿景散在三处、原则冲突没有裁决顺序：把产品愿景定为顶层文档，把“像贾维斯”变成可测的评测](#case-product-vision)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -93,7 +94,8 @@ date: "2026-10-26"
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
-| 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt) |
+| 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
+| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client) |
 
 [返回目录](#contents)
 
@@ -2363,6 +2365,57 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 - 难点二：网页接口客户端（`gateway-client.ts`）也被后端的类型检查引用，新代码让它连带引入了只能在浏览器里用的附件解析代码，后端类型检查报“找不到 `document`”。把登记表的数据结构和解析单独放进 `registered-files.ts`，客户端只引用它。
 - 预览按类型选显示方式：图片直接显示，PDF 用浏览器自带的阅读器，网页和 SVG 只在单独的预览域名上用隔离框运行（没配时说明并给下载），文本超过 2 MiB 只给下载；多版本时可切换版本，并能回到“来自「对话名」第 N 轮”。
 - 测试（云端容器）：网页新增 6 项（分组和合并、卡片折叠、5 种预览方式、版本和下载、文件页只留最新版和日期），网页 34 个测试文件 500 项全部通过；后端相关 3 个文件 101 项通过；`npm run check`、`npm run build` 通过。真浏览器端到端未跑，留到出包时补。
+
+[返回目录](#contents)
+
+<a id="case-product-vision"></a>
+
+## 案例 37：愿景散在三处、原则冲突没有裁决顺序：把产品愿景定为顶层文档，把“像贾维斯”变成可测的评测
+
+**背景与现象**
+
+2026-10-28 13:55（日本时间），Andy 交来修订后的产品愿景 v2.1，要求放进项目、贯穿整个开发周期。此前仓库没有单独的愿景文档：README 第一句写“本地优先”，PRD v0.2 写一版的目标，系统提示的身份说明（ADR 0084）写了几条原则，三处互不引用，也没有一处写原则冲突时谁优先。“本地优先”还和实际部署（自租 Contabo 云主机 + Cloudflare 隧道）字面矛盾。
+
+**根因**
+
+这是文档结构问题，不是故障。治理规则只有 PRD、架构、ADR 等类型，PRD 每版一份、会被新版取代，没有一个跨版本的位置放愿景；所以愿景只能零散地写进各处，冲突时没有依据可引。
+
+**我们的方案**
+
+- 愿景原文一字不改放在 `docs/product-vision.md`，只加文档头、锚点和一段说明地位的注；它在 PRD 之上，各版 PRD 只决定先做哪些，不得违背愿景和原则优先级（用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性与效率）。
+- AGENTS.md 新增 “Product Vision” 一节，所有线程在改功能、记忆、主动行为、工具、权限前先读愿景；README、案例库里的“本地优先”改为“自有优先、数据自持”。
+- 同时交了一份逐章评审：找出原则 8 “受成本预算约束”和 ADR 0076 “不设费用上限”字面上的冲突。Andy 定保留成本上限，理由是后台任务无限期跑会耗光 token 额度和费用；我们把两者区分为“全局累计上限”（ADR 0076 已删，用满全站被拦）和“按任务的上限”（超限只停这一个任务并汇报），后者记为 BL-20261028-002；按代码逐条核对 Jarvis Test 10 个场景，只有 #1、#6、#8 现在能直接写成自动评测；建议马上开始记录每次主动提醒和 Andy 的反应，因为 #10 要 30 天数据。
+
+**方案讨论与备选**
+
+- 合进 PRD 出 v0.3：类型现成，但愿景会随下一版 PRD 被取代。不采用。
+- 只写在 README：显眼，但 README 是安装和接口说明，治理校验不管它。不采用。
+- 在治理技能里新增“愿景”类型：最规整，但技能只能在 `sixianli/agent-skills` 仓库改。暂不做。
+- 采用：`docs/` 顶层单独一份，带通用生命周期字段，PRD 和 AGENTS.md 指向它。放弃的是“由校验器强制检查愿景结构”。
+
+**业界主流做法**
+
+- ✅ Ink & Switch《Local-first software》：把“the copy of the data on your local device”当作主副本，七条理想最后一条是 “You retain ultimate ownership and control”。Himawari 取所有权这一条，不取“主副本在本地设备”，所以改称自有优先。[原文](https://www.inkandswitch.com/essay/local-first/)
+- ✅ Anthropic《Demystifying evals for AI agents》：“20-50 simple tasks drawn from real failures is a great start”，回归评测问 “Does the agent still handle all the tasks it used to?”。Jarvis Test 按此先做能力评测，过了再转回归评测。[原文](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
+- ✅ OWASP LLM06:2025 Excessive Agency：根源是 “excessive functionality”“excessive permissions”“excessive autonomy”。愿景原则 7 “自造工具不得扩大权限”对应后两条；评审指出自造工具本身就在加功能，所以 eval 门不能省。[原文](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)
+
+**对比与取舍**
+
+和常见做法一样，愿景与每版需求分开、愿景不随版本取代；不同的是 Himawari 把“差异化”写成 10 个可判通过的场景，并要求“全过才可以说更像贾维斯”，用评测而不是自称来证明产品价值。代价是愿景里很多内容现在做不到（自造工具、跨表面连续、打扰统计），读者要分清目标和现状，现状仍以架构文档和代码为准。
+
+**结果数据**
+
+- 文档：`npm run check:docs` 通过（快速模式，8 条 Runbook 封签问题按规则暂缓，和改动前相同）。
+- Jarvis Test 现状（按 main 332a7ae 的代码和 ADR 判断，未实际运行评测）：能测 3 条，部分 3 条，缺能力或缺数据 4 条。
+- 评审网页：<https://claude.ai/artifact/G7qKTu3gw38PFGpWVzohZF>。
+
+**相关 ADR/PR**
+
+[ADR 0101](adr/0101-adopt-product-vision-v2-1.md)、[产品愿景](product-vision.md)、[ADR 0076](adr/0076-no-model-cost-budget-limits.md)、[ADR 0084](adr/0084-himawari-identity-system-prompt.md)、[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)；PR 见分支 `claude/project-thread-rfq0gv`。
+
+**面试 30 秒版**
+
+个人 Agent 的愿景原来散在 README、PRD 和系统提示三处，原则冲突时没有裁决顺序。我把愿景定为 PRD 之上的顶层文档，写明“用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性”，让所有编码代理改功能前先读。更关键的是把“像贾维斯”拆成 10 个可判通过的场景，按代码逐条核对，只有 3 条现在能测，于是先补最依赖时间积累的提醒反馈记录，再按 Anthropic 的评测方法把场景做成回归评测。
 
 [返回目录](#contents)
 

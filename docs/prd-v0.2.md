@@ -9,6 +9,8 @@ date: "2026-08-26"
 
 # Himawari Agent 产品需求 v0.2
 
+本 PRD 只规定 v0.2 这一版做什么、不做什么；长期愿景、核心原则及原则冲突时的优先顺序以[产品愿景](product-vision.md)为准，本 PRD 不得违背 [SOURCE: docs/product-vision.md]。
+
 ## 已确认的控制中心交互补充（2026-09-10）
 
 控制中心保留既有管理入口与授权流程，采用已确认的聊天布局、Logo、Light/Dark 和六种独立主题色。每个产品 Turn 的输出、工具与执行状态可独立回看；模型选择只影响下一次提交，并显示当前 Run 的实际选择。仅展示模型明确可展示的内容和真实事件，缺少 thinking 摘要时明确说明。附件限定为用户主动选择的 UTF-8 文本，沿用 private Payload；执行模式只有实际支持的执行。详细范围及本机验收限制见 [重构设计](archive/specs/2026-09-10-control-center-product-refactor-design.md)。
