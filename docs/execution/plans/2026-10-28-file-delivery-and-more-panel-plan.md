@@ -117,6 +117,8 @@ PR #63 合并后，基于新 main：
 - 侧栏“记忆”下面加“文件”入口；文件页每个文件只列最新一版，按今天、昨天、更早分组，可以按文件名搜索、按类型筛选；从文件页打开的预览，点“来自「对话名」第 N 轮 →”会进入那个对话并定位到那一轮。
 - 读文件列表的数据结构单独放在 `apps/control-center/src/registered-files.ts`，因为接口客户端也被后端的类型检查引用，不能连带引入只在浏览器里能用的代码。
 
+2026-10-28，公网安全审查线程复核预览子域名时发现：没配 `http.previewOrigin` 的服务收到 `himawari-files.siyi.win` 的 POST 请求（如 `POST /bootstrap`、`POST /api/identity/v1/sessions`），会走到登录凭证校验才被拒；这个子域名前面没有 Cloudflare Access，只剩应用这一道。修复：网关在收到请求时先看 Host，不是主站的一律 403，只放行 `/health/*` 和预览域名上的 `GET /preview/<签名链接>`，不分请求方法。
+
 ## 收尾
 
 - [ ] 测试结果写进提交说明和 PR。
