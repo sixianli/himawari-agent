@@ -3,7 +3,8 @@
   "prefix": "BG",
   "decisions": {
     "G1": "durable",
-    "G2": "once"
+    "G2": "once",
+    "G3": "durable"
   },
   "items": [
     {"id": "BG-1", "title": "后台命令登记表：本轮答完后轮次保持 running 并登记后台命令，执行许可只限登记过的那一轮", "goal_ref": ["G1"], "done_when": [{"type": "test", "tag": "BG-1"}], "added": {"by": "claude", "on": "2026-10-27"}},

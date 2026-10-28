@@ -94,10 +94,16 @@ date: "2026-10-27"
 ## 后果
 
 - 好处：30 秒以上的命令不卡住对话；命令跑完一定会有一轮汇报；重启、停止、超时都会告诉用户结果；管理工具只在有对象时出现。
-- 限制一：后台命令的最长时间取 `deadlines.backgroundCommandMs`（默认 30 分钟）、沙箱签名上限、执行句柄有效期和本轮截止时间（从这一轮开始算 `runMs`）中最小的一个。生产 `runMs` 是 300 秒、签名墙钟 300 秒、CPU 30 秒，所以生产上线前要把它们放宽到 Andy 选定的上限（2026-10-27 已请他选择），改生产配置 `deadlines.runMs`、`deadlines.backgroundCommandMs` 和签名模板 `scripts/delivery-mode/packet-template/signing/cloud-seal.mjs` 的 `maximumResourceCeiling`，随“完整版本”一起上线。放宽 `runMs` 也会放宽普通轮次的最长时间。
+- 限制一：后台命令的最长时间取 `deadlines.backgroundCommandMs`、沙箱签名上限、执行句柄有效期和本轮截止时间（从这一轮开始算 `runMs`）中最小的一个；执行句柄有效期本身也取本轮截止时间。2026-10-28 Andy 定最长 30 分钟（原话“30 分钟”）。代码默认值 `backgroundCommandMs` 已是 30 分钟，签名模板 `scripts/delivery-mode/packet-template/signing/cloud-seal.mjs` 的 `maximumResourceCeiling` 在本 PR 改为墙钟 1800000 毫秒、CPU 1800000 毫秒（下一次出包生效）。生产配置要在上线“完整版本”时改，见[上线时要改的生产项](#release-steps)。放宽 `runMs` 的代价是普通轮次卡住时也要 35 分钟才会被判超时（用户仍可随时点停止）；让后台命令期限不再受 `runMs` 约束记为 [BL-20261028-001](../backlog/BL-20261028-001-background-command-deadline-independent-of-run.md)。
 - 限制二：挂着期间这一轮的沙箱环境和工作目录占用不释放；同一工作目录的下一轮会不会因此排队，没有在真实沙箱里验证。
 - 限制三：第一轮的回答不单独发手机推送，推送来自汇报那一轮。
 - 限制四：网页上的后台提示行不显示命令原文：登记表不保存命令（命令可能含敏感内容，内容只放在加密的通知里）。命令原文在这一轮的执行过程里能看到。
+<a id="release-steps"></a>
+- 上线时要改的生产项（随“完整版本”，由负责上线的线程执行，改前备份 `/etc/himawari/config.json`）：
+  1. 生产配置 `deadlines.runMs` 从 300000 改为 2100000（35 分钟：命令最多在一轮开始后约 5 分钟内启动，再跑满 30 分钟）。
+  2. 生产配置写明 `deadlines.backgroundCommandMs: 1800000`（和代码默认值相同，写出来便于核对）；`deadlines.commandWaitMs` 不写，用默认 30 秒。
+  3. 用本分支合并后的签名模板重新出包，新的沙箱签名上限是墙钟 1800000 毫秒、CPU 1800000 毫秒；旧签名下命令仍会在 300 秒 / CPU 30 秒被停。
+  4. 验收：在生产网页让模型跑一条超过 30 秒的命令（例如 `sleep 45; echo done`），确认第一轮先答完、能发第二条消息、命令结束后系统另起一轮汇报。
 - 验证范围：持久层、协调器、调度器、看守者有单元和集成测试；一条端到端集成测试用真实 Pi 0.84.2 会话和确定性测试模型走完“第一轮答完 → 第二条消息照常回答 → 命令结束 → 系统另起一轮汇报”。没有在生产沙箱里实际跑一条超过 30 秒的命令，这要在上线验收时做。
 - 案例：[工程案例库案例 33](../engineering-casebook.md#case-background-bash)。
 
