@@ -53,6 +53,15 @@ describe("Jarvis Test dataset", () => {
     }
   });
 
+  it("judges every case against its own written expectations", () => {
+    for (const item of dataset.cases) {
+      expect(item.answer.expectations.length, item.id).toBeGreaterThan(0);
+      expect(item.judgeRules[0], item.id).toBe("case_expectations_met");
+      if (item.answer.fullRead)
+        expect(item.answer.conclusionCues?.length ?? 0, item.id).toBeGreaterThan(0);
+    }
+  });
+
   it("calibrates every judge rule with at least eight samples of both labels", () => {
     const ruleIds = dataset.judgeRules.map(({ id }) => id);
     for (const item of dataset.cases)

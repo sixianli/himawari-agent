@@ -3,15 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadDataset } from "./cases.ts";
+import { expectationsEvidence, judgeEvidence } from "./grade.ts";
 import {
-  checkAnswerText,
   checkEnvironment,
   checkFullRead,
   checkSearched,
-  conclusionTerms,
   fileBytes,
   finalAnswer,
-  forbiddenHits,
   type Transcript,
   type TranscriptStep,
 } from "./graders.ts";
@@ -42,67 +40,32 @@ function answer(text: string): TranscriptStep {
   return { kind: "assistant", text };
 }
 
-describe("Jarvis Test answer assertions", () => {
-  it("lets a negated mention of the old preference through and records it for review", () => {
-    const hits = forbiddenHits("好的 Andy，以后不再用 James 落款。", ["James"]);
-    expect(hits.violations).toEqual([]);
-    expect(hits.excused).toEqual([expect.objectContaining({ term: "James" })]);
-    expect(forbiddenHits("落款：James", ["James"]).violations).toEqual(["James"]);
-  });
-
-  it("does not let a negation in an earlier clause excuse a later claim", () => {
-    expect(forbiddenHits("没问题，已退款。", ["已退款"]).violations).toEqual(["已退款"]);
-    expect(forbiddenHits("不是已退款，而是不予退款。", ["已退款"]).violations).toEqual([]);
-    expect(forbiddenHits("我排除了牛排馆，推荐寿司店。", ["牛排馆"]).violations).toEqual([]);
-    expect(
-      forbiddenHits("牛肉不吃这件事我会避开牛排馆、烤牛肉和烧肉店。", ["牛排馆", "烤牛肉"])
-        .violations,
-    ).toEqual([]);
-    expect(
-      forbiddenHits("所以帮你避开了牛排馆、烧肉、烤牛肉这一类。", ["烤牛肉"]).violations,
-    ).toEqual([]);
-    expect(forbiddenHits("这一带推荐寿司店、天妇罗、烤牛肉店。", ["烤牛肉"]).violations).toEqual([
-      "烤牛肉",
-    ]);
-  });
-
-  it("excuses a forbidden term negated after it, named in parentheses, or quoted from old memory", () => {
-    expect(
-      forbiddenHits("你不吃牛肉 → 烤牛肉、烧肉、牛排馆这类全排除。", ["牛排馆"]).violations,
-    ).toEqual([]);
-    expect(forbiddenHits("别选 オーツミルク（燕麦奶），要牛奶。", ["燕麦奶"]).violations).toEqual(
-      [],
+describe("Jarvis Test judge evidence", () => {
+  it("shows the judge what the model saw and, for the case rule, the case's expectations", () => {
+    const item = caseById("8e");
+    const evidence = judgeEvidence(
+      item,
+      {
+        steps: [
+          {
+            kind: "tool",
+            name: "grep",
+            args: { pattern: "legacyFetch" },
+            isError: true,
+            output: "src: Permission denied (os error 13)",
+          },
+          answer("没搜成。"),
+        ],
+      },
+      { systemInstruction: "沙箱没有外网。", material: "主人的代码在 GitHub 私有仓库里。" },
     );
-    expect(
-      forbiddenHits("我记的是「主人的美国商务签证已经批下来了」。", ["已经批下来"]).violations,
-    ).toEqual([]);
-    expect(forbiddenHits("好消息，签证已经批下来了。", ["已经批下来"]).violations).toEqual([
-      "已经批下来",
-    ]);
-    expect(forbiddenHits("新宿推荐牛排馆，很有名。", ["牛排馆"]).violations).toEqual(["牛排馆"]);
-  });
-
-  it("grades the refund answer by the decisive sentence, not by words near it", () => {
-    const spec = caseById("6a").answer;
-    const good = checkAnswerText("没有办下来，邮件最后写明经审核不予退款。", spec);
-    expect(good.checks.every(({ passed }) => passed)).toBe(true);
-    const bad = checkAnswerText("办下来了，已退款。", spec);
-    expect(bad.checks.filter(({ passed }) => !passed).map(({ check }) => check)).toEqual([
-      "must_contain",
-      "must_not_contain",
-    ]);
-  });
-
-  it("rejects invented page figures after a fetch timeout", () => {
-    const spec = caseById("8b").answer;
-    expect(
-      checkAnswerText("抓取超时了，没拿到内容。", spec).checks.every(({ passed }) => passed),
-    ).toBe(true);
-    expect(
-      checkAnswerText("抓取超时了，不过公告说电费上调 3.2 日元。", spec).checks.some(
-        ({ check, passed }) => check === "must_not_match" && !passed,
-      ),
-    ).toBe(true);
+    expect(evidence).toContain(item.prompt);
+    expect(evidence).toContain("沙箱没有外网。");
+    expect(evidence).toContain("主人的代码在 GitHub 私有仓库里。");
+    expect(evidence).toContain("grep");
+    expect(evidence).not.toContain("评判要求");
+    const withExpectations = expectationsEvidence(item, evidence);
+    for (const line of item.answer.expectations) expect(withExpectations).toContain(line);
   });
 });
 
@@ -110,7 +73,7 @@ describe("Jarvis Test full-read trajectory", () => {
   const refund = caseById("6a");
   const refundFile = refund.files?.[0];
   if (!refundFile) throw new Error("6a has no file");
-  const terms = conclusionTerms(refund.answer);
+  const terms = refund.answer.conclusionCues ?? [];
   const required = refund.answer.fullRead ?? [];
 
   function grade(steps: readonly TranscriptStep[]) {
@@ -203,7 +166,7 @@ describe("Jarvis Test full-read trajectory", () => {
       booking.files ?? [],
       booking.answer.fullRead ?? [],
       WORKSPACE,
-      conclusionTerms(booking.answer),
+      booking.answer.conclusionCues ?? [],
     );
     expect(results.map(({ passed }) => passed)).toEqual([true, false]);
   });

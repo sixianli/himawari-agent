@@ -140,6 +140,7 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
               dataset,
               item,
               transcript: result.transcript,
+              context: result.context,
               workspaceRoot: result.workspaceRoot,
               judges: { decision, reasoning },
             });

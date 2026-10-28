@@ -28,10 +28,9 @@ export function fileBytes(file: CaseFile): Buffer {
 }
 
 export interface AnswerSpec {
-  readonly mustContain: readonly (readonly string[])[];
-  readonly mustNotContain: readonly string[];
-  readonly mustNotMatch?: readonly string[];
+  readonly expectations: readonly string[];
   readonly fullRead?: readonly string[];
+  readonly conclusionCues?: readonly string[];
   readonly searched?: boolean;
 }
 
@@ -46,46 +45,6 @@ export interface CheckResult {
   readonly detail: string;
 }
 
-export interface ExcusedHit {
-  readonly term: string;
-  readonly excerpt: string;
-}
-
-const NEGATION_CUES = [
-  "不是",
-  "不再",
-  "不要",
-  "不用",
-  "不会",
-  "并非",
-  "并未",
-  "没有",
-  "没",
-  "未",
-  "别",
-  "非",
-  "排除",
-  "避开",
-  "避免",
-  "而不是",
-  "改掉",
-  "取代",
-  "以前",
-  "之前",
-  "原来",
-  "旧的",
-  "不",
-];
-const TRAILING_NEGATION_CUES = ["排除", "不选", "避开", "去掉", "不吃", "不要"];
-const RECALL_CUES = ["记的是", "记忆里", "记忆中", "记着", "记录的是", "以前", "之前", "原来"];
-const QUOTE_PAIRS: readonly (readonly [string, string])[] = [
-  ["「", "」"],
-  ["“", "”"],
-  ['"', '"'],
-];
-const NEGATION_WINDOW = 12;
-const CLAUSE_BREAK = /[，,。.;；！!？?\n]/u;
-const LIST_BREAK = /[、]/u;
 const SEARCH_TOOLS = new Set(["grep", "find", "ls", "read", "bash"]);
 
 export function finalAnswer(transcript: Transcript): string {
@@ -100,94 +59,6 @@ function finalAnswerIndex(transcript: Transcript): number {
   for (let index = transcript.steps.length - 1; index >= 0; index -= 1)
     if (transcript.steps[index]?.kind === "assistant") return index;
   return -1;
-}
-
-function clauseBefore(text: string, at: number): string {
-  let start = at;
-  let sinceListBreak = 0;
-  while (
-    start > 0 &&
-    sinceListBreak < NEGATION_WINDOW &&
-    !CLAUSE_BREAK.test(text[start - 1] ?? "")
-  ) {
-    start -= 1;
-    sinceListBreak = LIST_BREAK.test(text[start] ?? "") ? 0 : sinceListBreak + 1;
-  }
-  return text.slice(start, at);
-}
-
-function clauseAfter(text: string, at: number): string {
-  let end = at;
-  while (end < text.length && end - at < NEGATION_WINDOW + 4 && !CLAUSE_BREAK.test(text[end] ?? ""))
-    end += 1;
-  return text.slice(at, end);
-}
-
-function insideRecalledQuote(text: string, at: number): boolean {
-  return QUOTE_PAIRS.some(([open, close]) => {
-    const opened = text.lastIndexOf(open, at - 1);
-    if (opened < 0) return false;
-    const closed = text.indexOf(close, opened + 1);
-    if (closed >= 0 && closed < at) return false;
-    const lead = text.slice(Math.max(0, opened - NEGATION_WINDOW), opened);
-    return RECALL_CUES.some((cue) => lead.includes(cue));
-  });
-}
-
-function excusedAt(text: string, at: number, term: string): boolean {
-  if (NEGATION_CUES.some((cue) => clauseBefore(text, at).includes(cue))) return true;
-  if (TRAILING_NEGATION_CUES.some((cue) => clauseAfter(text, at + term.length).includes(cue)))
-    return true;
-  return insideRecalledQuote(text, at);
-}
-
-export function forbiddenHits(
-  text: string,
-  terms: readonly string[],
-): { readonly violations: readonly string[]; readonly excused: readonly ExcusedHit[] } {
-  const violations: string[] = [];
-  const excused: ExcusedHit[] = [];
-  for (const term of terms) {
-    let from = 0;
-    for (;;) {
-      const at = text.indexOf(term, from);
-      if (at < 0) break;
-      if (excusedAt(text, at, term))
-        excused.push({
-          term,
-          excerpt: text.slice(Math.max(0, at - NEGATION_WINDOW), at + term.length),
-        });
-      else violations.push(term);
-      from = at + term.length;
-    }
-  }
-  return { violations: [...new Set(violations)], excused };
-}
-
-export function checkAnswerText(
-  answer: string,
-  spec: AnswerSpec,
-): { readonly checks: readonly CheckResult[]; readonly excused: readonly ExcusedHit[] } {
-  const checks: CheckResult[] = [];
-  for (const group of spec.mustContain) {
-    const found = group.find((alternative) => answer.includes(alternative));
-    checks.push({
-      check: "must_contain",
-      passed: found !== undefined,
-      detail: found ?? `none of ${group.join(" / ")}`,
-    });
-  }
-  const forbidden = forbiddenHits(answer, spec.mustNotContain);
-  checks.push({
-    check: "must_not_contain",
-    passed: forbidden.violations.length === 0,
-    detail: forbidden.violations.join(" / "),
-  });
-  for (const pattern of spec.mustNotMatch ?? []) {
-    const match = new RegExp(pattern, "u").exec(answer);
-    checks.push({ check: "must_not_match", passed: match === null, detail: match?.[0] ?? "" });
-  }
-  return { checks, excused: forbidden.excused };
 }
 
 function normalizedPath(value: unknown, workspaceRoot: string): string | null {
@@ -314,8 +185,4 @@ export async function checkEnvironment(
     });
   }
   return checks;
-}
-
-export function conclusionTerms(spec: AnswerSpec): readonly string[] {
-  return [...spec.mustContain.flat(), ...spec.mustNotContain];
 }

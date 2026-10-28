@@ -32,6 +32,7 @@ import {
   MEMORY_LIMIT,
   OWNER_ID,
 } from "./context.ts";
+import type { TrialContext } from "./grade.ts";
 import { fileBytes, type Transcript, type TranscriptStep } from "./graders.ts";
 
 export const SUBJECT_MODEL = {
@@ -57,6 +58,7 @@ export interface TrialUsage {
 
 export interface TrialResult {
   readonly transcript: Transcript;
+  readonly context: TrialContext;
   readonly workspaceRoot: string;
   readonly events: readonly RuntimeEvent["type"][];
   readonly outcome: "completed" | "failed" | "cancelled" | "stopped_by_limit";
@@ -483,7 +485,7 @@ export async function runTrial(options: TrialOptions): Promise<TrialResult> {
   await chmod(trialRoot, 0o711);
   await prepareWorkspace(item, workspaceRoot);
   const runId = createRunId(`run-jarvis-${item.id}-${options.trial}`);
-  const { formed, adapters, clock, sessionId } = await assembleContext(
+  const { formed, material, adapters, clock, sessionId } = await assembleContext(
     dataset,
     item,
     stateRoot,
@@ -503,10 +505,18 @@ export async function runTrial(options: TrialOptions): Promise<TrialResult> {
     dataClassification: "private",
     occurredAt: dataset.today,
   };
+  const instructions: string[] = [];
   const policy = await createProductionRunPolicy({
     configuration,
     artifacts: adapters.runPayloadArtifacts,
-    protector: adapters.payloadProtector,
+    protector: {
+      protect: async (input) => {
+        instructions.push(new TextDecoder().decode(input.plaintext));
+        return adapters.payloadProtector.protect(input);
+      },
+      unprotect: (input) => adapters.payloadProtector.unprotect(input),
+      rewrap: (input) => adapters.payloadProtector.rewrap(input),
+    },
     handles: { listRunExecutionHandles: async () => [] },
     clock,
     ids: adapters.ids,
@@ -592,5 +602,12 @@ export async function runTrial(options: TrialOptions): Promise<TrialResult> {
     await models.composition.close();
   }
   if (outcome !== "completed" && options.overLimit()) outcome = "stopped_by_limit";
-  return { transcript: { steps }, workspaceRoot, events, outcome, errorCode };
+  return {
+    transcript: { steps },
+    context: { systemInstruction: instructions.join("\n"), material },
+    workspaceRoot,
+    events,
+    outcome,
+    errorCode,
+  };
 }
