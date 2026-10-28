@@ -380,8 +380,8 @@ it("[BG-9] lists this conversation's files by turn, newest first, and points to 
       commandKey: null,
       commands: command,
       fileGroups: [
-        { runId: "run:4", turn: 4, files: [file("test-report.md")] },
-        { runId: "run:1", turn: 1, files: [file("README.md")] },
+        { runId: "run:4", turn: 4, title: undefined, files: [file("test-report.md")] },
+        { runId: "run:1", turn: 1, title: "做一个贪吃蛇", files: [file("README.md")] },
       ],
       stoppingRunIds: [],
       openFileKey: undefined,
@@ -401,5 +401,7 @@ it("[BG-9] lists this conversation's files by turn, newest first, and points to 
   expect(html).toContain("more.runningHint(count=1)");
   expect(html.indexOf("test-report.md")).toBeLessThan(html.indexOf("README.md"));
   expect(html).toContain("more.turn(turn=4)");
+  expect(html).toContain("more.files.group(turn=1,title=做一个贪吃蛇)");
+  expect(html).toContain('class="more-badge" aria-hidden="true">MD</span>');
   expect(html).not.toContain("more-stop");
 });

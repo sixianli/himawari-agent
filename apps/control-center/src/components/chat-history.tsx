@@ -205,6 +205,17 @@ export function ChatHistory({
                       <AssistantMarkdown text={partial} />
                     </>
                   ) : null}
+                  {backgroundCommands
+                    .filter((command) => command.runId === group.run?.runId)
+                    .map((command) => (
+                      <BackgroundCommandLine
+                        key={command.key}
+                        command={command}
+                        stopping={stoppingRunIds.includes(command.runId)}
+                        onOpen={onOpenCommand ? () => onOpenCommand(command.key) : undefined}
+                        message={message}
+                      />
+                    ))}
                   {agentMessages.length && (!group.run || isAnsweredRun(group.run)) ? (
                     <AnswerActions
                       text={agentMessages
@@ -230,17 +241,6 @@ export function ChatHistory({
                       message={message}
                     />
                   ) : null}
-                  {backgroundCommands
-                    .filter((command) => command.runId === group.run?.runId)
-                    .map((command) => (
-                      <BackgroundCommandLine
-                        key={command.key}
-                        command={command}
-                        stopping={stoppingRunIds.includes(command.runId)}
-                        onOpen={onOpenCommand ? () => onOpenCommand(command.key) : undefined}
-                        message={message}
-                      />
-                    ))}
                   <AnswerSources sources={turnSources(records)} message={message} />
                   {group.run && onPreview ? (
                     <AnswerFiles

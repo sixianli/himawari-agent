@@ -1,3 +1,4 @@
+import { splitDraft } from "./draft-attachments.js";
 import type { RunSummary } from "./execution-view.js";
 
 export type BackgroundCommandState =
@@ -12,6 +13,7 @@ export interface BackgroundCommandView {
   readonly key: string;
   readonly runId: string;
   readonly turn: number;
+  readonly turnTitle: string | undefined;
   readonly label: string | undefined;
   readonly state: BackgroundCommandState;
   readonly startedAt: string;
@@ -26,12 +28,14 @@ export interface BackgroundCommandView {
 export function backgroundCommands(
   runs: readonly RunSummary[],
   contentByRef: Readonly<Record<string, string>>,
+  titles: Readonly<Record<string, string>> = {},
 ): readonly BackgroundCommandView[] {
   return runs.flatMap((run, index) =>
     run.backgroundCommands.map((command) => ({
       key: command.taskRef,
       runId: run.runId,
       turn: index + 1,
+      turnTitle: titles[run.runId],
       label: command.commandRef ? contentByRef[command.commandRef] : undefined,
       state: command.endedAt === null ? "running" : (command.outcome ?? "completed"),
       startedAt: command.startedAt,
@@ -55,3 +59,25 @@ export function backgroundPayloadRefs(runs: readonly RunSummary[]): readonly str
 
 export const runningBackgroundCommands = (commands: readonly BackgroundCommandView[]) =>
   commands.filter((command) => command.state === "running");
+
+const TITLE_LIMIT = 30;
+
+export function turnTitles(
+  messages: readonly {
+    readonly role: string;
+    readonly runId: string | null;
+    readonly contentRef: string;
+  }[],
+  contentByRef: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+  const titles: Record<string, string> = {};
+  for (const message of messages) {
+    if (message.role !== "owner" || !message.runId || titles[message.runId]) continue;
+    const content = contentByRef[message.contentRef];
+    if (content === undefined) continue;
+    const line = (splitDraft(content).text || content).trim().split("\n")[0]?.trim() ?? "";
+    if (line)
+      titles[message.runId] = line.length > TITLE_LIMIT ? `${line.slice(0, TITLE_LIMIT)}…` : line;
+  }
+  return titles;
+}
