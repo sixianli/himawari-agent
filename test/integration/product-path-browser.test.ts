@@ -899,6 +899,9 @@ async function expectFinishedTurnShowsStep(turn: Locator, step: string) {
   await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
     timeout: 120_000,
   });
+  const process = turn.locator(".turn-process").last();
+  if ((await process.getAttribute("open")) === null)
+    await process.locator(":scope > summary").click();
   await uiExpect(turn.getByText(step).first()).toBeVisible({ timeout: 30_000 });
   await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
   await uiExpect(page.getByText("没有可展示的过程记录")).toHaveCount(0);
@@ -5485,7 +5488,7 @@ const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => 
   return { kind: "text", text: "普通回答已完成" };
 };
 
-async function openSettingsTab(tab: "工具与权限" | "记忆") {
+async function openSettingsTab(tab: "工具与权限") {
   const dialog = page.getByRole("dialog");
   if (!(await dialog.isVisible()))
     await page.getByRole("button", { name: "设置", exact: true }).first().click();
@@ -5506,14 +5509,14 @@ async function searchToggleUsable(name: "允许联网搜索" | "撤销联网搜�
       async () => {
         const dialog = await openSettingsTab("工具与权限");
         return dialog
-          .getByRole("checkbox", { name, exact: true })
+          .getByRole("switch", { name, exact: true })
           .isEnabled({ timeout: 1_000 })
           .catch(() => false);
       },
       { timeout: 60_000, intervals: [1_000] },
     )
     .toBe(true);
-  return page.getByRole("dialog").getByRole("checkbox", { name, exact: true });
+  return page.getByRole("dialog").getByRole("switch", { name, exact: true });
 }
 
 async function expectNewsSearchResults(text: string) {
@@ -5604,7 +5607,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await toggle.click();
       const enabled = page
         .getByRole("dialog")
-        .getByRole("checkbox", { name: "撤销联网搜索授权", exact: true });
+        .getByRole("switch", { name: "撤销联网搜索授权", exact: true });
       await uiExpect(enabled).toBeChecked({ timeout: 30_000 });
       await uiExpect(enabled).toBeEnabled();
       await closeSettings();
@@ -5621,12 +5624,17 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
     });
     await scenario("accept-memory-page", async () => {
-      const dialog = await openSettingsTab("记忆");
-      await uiExpect(dialog.getByText(/记住了 \d+ 条关于你的事/)).toBeVisible({
+      await page
+        .getByRole("navigation", { name: "对话" })
+        .getByRole("button", { name: "记忆", exact: true })
+        .click();
+      const memory = page.getByRole("region", { name: "记忆", exact: true });
+      await uiExpect(memory.getByText(/记住了 \d+ 条关于你的事/)).toBeVisible({
         timeout: 30_000,
       });
-      await uiExpect(dialog.getByRole("alert")).toHaveCount(0);
-      await closeSettings();
+      await uiExpect(memory.getByRole("alert")).toHaveCount(0);
+      await memory.getByRole("button", { name: "返回", exact: true }).click();
+      await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-after-restart", async () => {
       await installation.stop();
