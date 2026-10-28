@@ -112,4 +112,4 @@ date: "2026-10-29"
 - [产品愿景](../product-vision.md)
 - [ADR 0102 推送反馈记录](0102-record-push-notification-feedback.md)
 - [ADR 0105 提醒页和设置四页](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)
-- [案例 46](../engineering-casebook.md#case-proactive-gmail)
+- [案例 45](../engineering-casebook.md#case-proactive-gmail)
