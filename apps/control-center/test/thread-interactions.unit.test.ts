@@ -2534,13 +2534,11 @@ describe("more panel", () => {
       type: "thread.run.cancel",
       payload: { runId: "run-ui", expectedRunRevision: 7 },
     });
-    expect(container.querySelector(".more-panel .more-stop")?.textContent).toBe("more.stopping");
-    expect(container.querySelector<HTMLButtonElement>(".more-panel .more-stop")?.disabled).toBe(
-      true,
-    );
+    expect(container.querySelector(".more-panel .more-stop")).toBeNull();
     expect(line?.textContent).toContain("more.line.stopping");
     await click("common.back");
     expect(panelText()).toContain("more.section.running");
+    expect(panelText()).toContain("more.stopping");
     await click("common.close");
     expect(container.querySelector(".more-panel")).toBeNull();
   });
@@ -2590,7 +2588,7 @@ describe("more panel", () => {
     expect(container.querySelector(".background-report")?.textContent).toContain(
       "more.report.completed",
     );
-    await click("more.button");
+    await click("more.label");
     expect(panelText()).toContain("more.section.finished");
     expect(panelText()).not.toContain("more.section.running");
     const row = container.querySelector<HTMLButtonElement>(".more-panel .more-row");

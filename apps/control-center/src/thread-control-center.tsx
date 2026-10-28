@@ -13,6 +13,7 @@ import {
   backgroundCommands,
   backgroundPayloadRefs,
   runningBackgroundCommands,
+  turnTitles,
 } from "./background-commands.js";
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import { SunflowerMark } from "./components/brand.js";
@@ -1180,9 +1181,13 @@ export function useThreadControlCenter(
     selectedThreadId ?? pendingCreation?.threadId ?? "new",
   );
 
-  const commands = useMemo(
-    () => (detail ? backgroundCommands(detail.payload.runs, contentByRef) : []),
+  const titles = useMemo(
+    () => (detail ? turnTitles(detail.payload.messages, contentByRef) : {}),
     [detail, contentByRef],
+  );
+  const commands = useMemo(
+    () => (detail ? backgroundCommands(detail.payload.runs, contentByRef, titles) : []),
+    [detail, contentByRef, titles],
   );
   const runningCommands = runningBackgroundCommands(commands);
   const fileGroups = useMemo<readonly MoreFileGroup[]>(
@@ -1191,11 +1196,12 @@ export function useThreadControlCenter(
         .map((run, index) => ({
           runId: run.runId,
           turn: index + 1,
+          title: titles[run.runId],
           files: turnFiles(run.runId, execution[run.runId] ?? []),
         }))
         .filter((group) => group.files.length)
         .reverse(),
-    [detail, execution],
+    [detail, execution, titles],
   );
   const hasMore = commands.length > 0 || fileGroups.length > 0;
   useEffect(() => {
@@ -1231,15 +1237,15 @@ export function useThreadControlCenter(
   const showReport = (command: BackgroundCommandView) => {
     if (!command.noticeRunId) return;
     if (window.matchMedia?.("(max-width: 760px)").matches) closeMore();
+    else setMore((current) => ({ ...current, command: null }));
     const turn = [...document.querySelectorAll<HTMLElement>(".chat-turn[data-run-id]")].find(
       (element) => element.dataset["runId"] === command.noticeRunId,
     );
     if (!turn) return;
-    turn.scrollIntoView({ block: "start", behavior: "smooth" });
+    turn.scrollIntoView({ block: "center", behavior: "smooth" });
     turn.classList.remove("is-flash");
-    void turn.offsetWidth;
     turn.classList.add("is-flash");
-    window.setTimeout(() => turn.classList.remove("is-flash"), 1600);
+    window.setTimeout(() => turn.classList.remove("is-flash"), 1800);
   };
   const actions =
     detail && hasMore ? (
