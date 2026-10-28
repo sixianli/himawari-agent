@@ -66,6 +66,22 @@ describe("Jarvis Test answer assertions", () => {
     ]);
   });
 
+  it("excuses a forbidden term negated after it, named in parentheses, or quoted from old memory", () => {
+    expect(
+      forbiddenHits("你不吃牛肉 → 烤牛肉、烧肉、牛排馆这类全排除。", ["牛排馆"]).violations,
+    ).toEqual([]);
+    expect(forbiddenHits("别选 オーツミルク（燕麦奶），要牛奶。", ["燕麦奶"]).violations).toEqual(
+      [],
+    );
+    expect(
+      forbiddenHits("我记的是「主人的美国商务签证已经批下来了」。", ["已经批下来"]).violations,
+    ).toEqual([]);
+    expect(forbiddenHits("好消息，签证已经批下来了。", ["已经批下来"]).violations).toEqual([
+      "已经批下来",
+    ]);
+    expect(forbiddenHits("新宿推荐牛排馆，很有名。", ["牛排馆"]).violations).toEqual(["牛排馆"]);
+  });
+
   it("grades the refund answer by the decisive sentence, not by words near it", () => {
     const spec = caseById("6a").answer;
     const good = checkAnswerText("没有办下来，邮件最后写明经审核不予退款。", spec);

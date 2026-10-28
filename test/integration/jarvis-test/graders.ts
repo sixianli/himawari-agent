@@ -76,7 +76,14 @@ const NEGATION_CUES = [
   "旧的",
   "不",
 ];
-const NEGATION_WINDOW = 8;
+const TRAILING_NEGATION_CUES = ["排除", "不选", "避开", "去掉", "不吃", "不要"];
+const RECALL_CUES = ["记的是", "记忆里", "记忆中", "记着", "记录的是", "以前", "之前", "原来"];
+const QUOTE_PAIRS: readonly (readonly [string, string])[] = [
+  ["「", "」"],
+  ["“", "”"],
+  ['"', '"'],
+];
+const NEGATION_WINDOW = 12;
 const CLAUSE_BREAK = /[，,。.;；！!？?\n]/u;
 const LIST_BREAK = /[、]/u;
 const SEARCH_TOOLS = new Set(["grep", "find", "ls", "read", "bash"]);
@@ -109,6 +116,31 @@ function clauseBefore(text: string, at: number): string {
   return text.slice(start, at);
 }
 
+function clauseAfter(text: string, at: number): string {
+  let end = at;
+  while (end < text.length && end - at < NEGATION_WINDOW + 4 && !CLAUSE_BREAK.test(text[end] ?? ""))
+    end += 1;
+  return text.slice(at, end);
+}
+
+function insideRecalledQuote(text: string, at: number): boolean {
+  return QUOTE_PAIRS.some(([open, close]) => {
+    const opened = text.lastIndexOf(open, at - 1);
+    if (opened < 0) return false;
+    const closed = text.indexOf(close, opened + 1);
+    if (closed >= 0 && closed < at) return false;
+    const lead = text.slice(Math.max(0, opened - NEGATION_WINDOW), opened);
+    return RECALL_CUES.some((cue) => lead.includes(cue));
+  });
+}
+
+function excusedAt(text: string, at: number, term: string): boolean {
+  if (NEGATION_CUES.some((cue) => clauseBefore(text, at).includes(cue))) return true;
+  if (TRAILING_NEGATION_CUES.some((cue) => clauseAfter(text, at + term.length).includes(cue)))
+    return true;
+  return insideRecalledQuote(text, at);
+}
+
 export function forbiddenHits(
   text: string,
   terms: readonly string[],
@@ -120,8 +152,7 @@ export function forbiddenHits(
     for (;;) {
       const at = text.indexOf(term, from);
       if (at < 0) break;
-      const before = clauseBefore(text, at);
-      if (NEGATION_CUES.some((cue) => before.includes(cue)))
+      if (excusedAt(text, at, term))
         excused.push({
           term,
           excerpt: text.slice(Math.max(0, at - NEGATION_WINDOW), at + term.length),
