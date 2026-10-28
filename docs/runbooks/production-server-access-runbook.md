@@ -5,7 +5,7 @@ execution_risk: critical
 contract_sha256: "sha256:f361c193b5349520fd45a3aa82eaf70e569d4297fa2f609f6193f3752326b97d"
 supersedes: ""
 superseded_by: ""
-date: "2026-10-22"
+date: "2026-10-28"
 ---
 
 # 生产云服务器访问与系统更新 Runbook
@@ -13,6 +13,7 @@ date: "2026-10-22"
 <!-- runbook-contract:
 - docs/adr/0056-cloud-server-also-test-host.md
 - docs/backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md
+- docs/adr/0099-production-host-firewall-ssh-only.md
 -->
 
 本手册记录用户怎样登录生产云服务器 `84.247.157.41`（主机商 Contabo 的虚拟服务器，主机名 `vmi3618928`，Ubuntu 24.04），以及服务器上为保护生产服务而锁定的内核和系统程序。起因是 2026-10-19 服务器重启进入自动安装的新内核后，生产服务的启动前检查因内核版本与安装回执不符而连续失败约 51 小时（[BL-20261021-009](../backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md)）。测试账号 `himawari-ci` 的用法不在这里，见[测试主机操作 Runbook](test-host-operations-runbook.md)。
@@ -28,6 +29,7 @@ date: "2026-10-22"
 - [证据](#evidence)
 - [回退](#rollback)
 - [停止条件](#stop-conditions)
+- [防火墙](#firewall)
 - [排障](#troubleshooting)
 
 <a id="scope"></a>
@@ -133,6 +135,23 @@ date: "2026-10-22"
 
 [返回导航](#阅读导航)
 
+<a id="firewall"></a>
+
+## 防火墙
+
+2026-10-28 起生产机启用了 `ufw`（Ubuntu 自带的防火墙管理工具），决定见 [ADR 0099](../adr/0099-production-host-firewall-ssh-only.md)：入站默认拒绝，只放行 `22/tcp`（IPv4 和 IPv6），出站不限。网页流量走 Cloudflare 隧道（`cloudflared` 从服务器主动连出），不需要开 80、443 或 8400。
+
+- **查看**：`ufw status verbose` 应显示 `Default: deny (incoming), allow (outgoing)`，规则只有 `22/tcp` 和 `22/tcp (v6)`；`systemctl is-enabled ufw.service` 为 `enabled`，`grep ENABLED /etc/ufw/ufw.conf` 为 `ENABLED=yes`（开机自动生效）。
+- **被拦的连接**：`journalctl -k --since "-1h" --no-pager | grep "UFW BLOCK"`。
+- **改规则前**：先备份 `iptables-save`、`ip6tables-save` 和 `/etc/ufw` 到 `/root/firewall-backup-<UTC 时间>/`；再设防锁死保险 `systemd-run --unit=ufw-deadman --on-active=10min /usr/sbin/ufw disable`；改完保持旧连接，另开新 `ssh` 连接确认能登录，最后 `systemctl stop ufw-deadman.timer` 取消保险。
+- **不要**给 SSH 用 `ufw limit`：上线脚本会连续开很多 `ssh` 连接，30 秒内超过 6 次会被拒。不要随手删掉 `22/tcp` 规则。
+- **公网验证**（在 Mac 上）：`nc -z -G 4 -w 4 84.247.157.41 22` 成功，80、443、8400 不通；`curl -s -o /dev/null -w '%{http_code}' https://himawari.siyi.win/` 返回 `302`（跳到 Cloudflare Access 登录）。服务器上 `curl -s 127.0.0.1:20241/ready` 的 `readyConnections` 大于 0 表示隧道正常。
+- **锁在外面时**：等 10 分钟让保险自动关闭防火墙；保险已取消或无效时，按[步骤](#procedure)第 2 步用 Contabo 面板 VNC 控制台以 `root` 登录，执行 `ufw disable`，再按上面的步骤重新启用。
+- **撤销**：`ufw disable`（规则保留，开机不再启用）；需要回到启用前的状态时用备份目录里的 `etc-ufw` 和 `default-ufw` 覆盖 `/etc/ufw` 和 `/etc/default/ufw`。2026-10-28 的备份在 `/root/firewall-backup-20261028T014151Z/`。
+- Contabo 面板另有免费的网络层防火墙（Network Services → Firewall），目前没有启用；启用时入站同样只放行 22/tcp。
+
+[返回导航](#阅读导航)
+
 <a id="troubleshooting"></a>
 
 ## Troubleshooting
@@ -142,6 +161,7 @@ date: "2026-10-22"
 | `Permission denied (publickey)` | 服务器只认密钥，Mac 没提供对得上的那把 | 用[步骤](#procedure)第 1 步的 `ssh -v` 看试了哪把；必要时用 VNC 控制台登录后把公钥加进 `/root/.ssh/authorized_keys` |
 | VNC 报 `Connection failed`，`nc` 显示 `Connection refused` | 主机商的 VNC 端口没有程序在听 | 面板里设密码后点 “Confirm”，等几分钟；端口可能变化，以面板显示为准 |
 | `journalctl` 显示 `AssertionError` 且 `actual`/`expected` 是两个内核版本 | 服务器换了内核 | 按[回退](#rollback)回到已验收内核 |
+| `ssh` 连接超时（不是 `Connection refused`），VNC 能登录 | 防火墙规则里没有 22 | 按[防火墙](#firewall)的“锁在外面时”处理 |
 | 登录提示 “updates can be applied” 或 “New release available” | 普通提示 | 不运行 `apt upgrade` 或 `do-release-upgrade`，见[安全前提](#safety-and-preconditions) |
 
 [返回导航](#阅读导航)
