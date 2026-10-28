@@ -23,6 +23,11 @@ import { BackgroundCommandLine, BackgroundReportLine } from "./more-panel.js";
 import { ActionButton } from "./primitives.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
+export interface OutgoingMessage {
+  readonly key: string;
+  readonly content: string;
+  readonly failed: boolean;
+}
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 export function ChatHistory({
   detail,
@@ -45,8 +50,12 @@ export function ChatHistory({
   readImage,
   renderApproval,
   renderMemory,
+  outgoing,
+  onRetry,
 }: {
-  readonly detail: Detail;
+  readonly detail: Detail | undefined;
+  readonly outgoing?: OutgoingMessage | null | undefined;
+  readonly onRetry?: (() => void) | undefined;
   readonly contentByRef: Readonly<Record<string, string>>;
   readonly execution: Readonly<Record<string, readonly ThreadExecutionRecord[]>>;
   readonly executionStates?: Readonly<Record<string, ThreadExecutionState>> | undefined;
@@ -76,20 +85,29 @@ export function ChatHistory({
     if (following.current && scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [contentByRef, execution]);
+  const outgoingKey = outgoing?.key;
+  useEffect(() => {
+    if (!outgoingKey || !scrollRef.current) return;
+    following.current = true;
+    setShowLatest(false);
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [outgoingKey]);
+  const messages = detail?.payload.messages ?? [];
+  const runs = detail?.payload.runs ?? [];
   const groups = new Map<
     string,
     { messages: Detail["payload"]["messages"][number][]; run: RunSummary | undefined }
   >();
-  for (const item of detail.payload.messages) {
+  for (const item of messages) {
     const key = item.runId ?? item.turnId ?? item.messageId;
     const group = groups.get(key) ?? {
       messages: [],
-      run: detail.payload.runs.find((run) => run.runId === item.runId),
+      run: runs.find((run) => run.runId === item.runId),
     };
     group.messages.push(item);
     groups.set(key, group);
   }
-  for (const run of detail.payload.runs)
+  for (const run of runs)
     if (![...groups.values()].some((group) => group.run?.runId === run.runId))
       groups.set(run.runId, { messages: [], run });
   return (
@@ -107,7 +125,9 @@ export function ChatHistory({
           setShowLatest(!following.current);
         }}
       >
-        {!groups.size ? <p className="chat-empty">{message("threads.messagesEmpty")}</p> : null}
+        {!groups.size && !outgoing ? (
+          <p className="chat-empty">{message("threads.messagesEmpty")}</p>
+        ) : null}
         {[...groups].map(([key, group]) => {
           const records = group.run ? (execution[group.run.runId] ?? []) : [];
           const agentMessages = group.messages.filter((item) => item.role === "agent");
@@ -284,6 +304,22 @@ export function ChatHistory({
             </div>
           );
         })}
+        {outgoing ? (
+          <div className="chat-turn chat-turn-outgoing">
+            <div className="owner-turn">
+              <OwnerMessage content={outgoing.content} readImage={readImage} />
+              <OutgoingMessageMeta failed={outgoing.failed} onRetry={onRetry} message={message} />
+            </div>
+            {outgoing.failed ? null : (
+              <article className="thread-message thread-message-agent">
+                <header>
+                  <HimawariBrand busy />
+                  <strong>Himawari</strong>
+                </header>
+              </article>
+            )}
+          </div>
+        ) : null}
       </section>
       {showLatest ? (
         <ActionButton
@@ -340,6 +376,37 @@ function OwnerMessage({
         </ul>
       ) : null}
     </article>
+  );
+}
+
+function OutgoingMessageMeta({
+  failed,
+  onRetry,
+  message,
+}: {
+  readonly failed: boolean;
+  readonly onRetry?: (() => void) | undefined;
+  readonly message: Message;
+}) {
+  return failed ? (
+    <div className="owner-meta owner-meta-failed" role="alert">
+      <span>{message("message.status.failed")}</span>
+      {onRetry ? (
+        <button type="button" className="owner-retry" onClick={onRetry}>
+          {message("message.retry")}
+        </button>
+      ) : null}
+    </div>
+  ) : (
+    <div className="owner-meta">
+      <output className="owner-status" aria-label={message("message.status.sending")}>
+        <svg className="owner-tick is-sending" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v4l2.5 2" />
+        </svg>
+        <span>{message("message.status.sending")}</span>
+      </output>
+    </div>
   );
 }
 

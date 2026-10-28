@@ -1890,6 +1890,54 @@ describe("thread control center interactions", () => {
       expect(container.querySelector("textarea")?.value).toBe("");
     },
   );
+  it("shows a sent message at once, uploads its parts together and keeps one copy after the server confirms it", async () => {
+    await render();
+    await refresh();
+    await input(container.querySelector("textarea"), "马上显示");
+    const releases: Array<() => void> = [];
+    protect.mockImplementation(
+      (_text: string, _classification: string, ref: string) =>
+        new Promise((resolve) => releases.push(() => resolve(ref))),
+    );
+    await act(async () => {
+      container
+        .querySelector("form.composer")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector("textarea")?.value).toBe("");
+    const outgoing = container.querySelector(".chat-turn-outgoing");
+    expect(outgoing?.textContent).toContain("马上显示");
+    expect(outgoing?.textContent).toContain("message.status.sending");
+    expect(protect).toHaveBeenCalledTimes(2);
+    expect(mutate).not.toHaveBeenCalled();
+    await act(async () => {
+      for (const release of releases) release();
+    });
+    expect(mutate).toHaveBeenCalledOnce();
+    const sent = mutate.mock.calls[0]?.[0];
+    threadMessages = [
+      {
+        messageId: sent.payload.messageId,
+        sequence: 1,
+        role: "owner",
+        contentRef: sent.payload.contentRef,
+        dataClassification: "private",
+        status: "committed",
+        turnId: sent.payload.turnId,
+        runId: sent.payload.runId,
+        committedAt: NOW,
+      },
+    ];
+    readText.mockClear();
+    await refresh();
+    expect(container.querySelector(".chat-turn-outgoing")).toBeNull();
+    expect(
+      [...container.querySelectorAll(".owner-turn")].filter((item) =>
+        item.textContent?.includes("马上显示"),
+      ),
+    ).toHaveLength(1);
+    expect(readText.mock.calls.some(([ref]) => ref === sent.payload.contentRef)).toBe(false);
+  });
   it("[UI-16] uploads pasted and dropped files, sends only their references and drops a removed one", async () => {
     const uploaded: string[] = [];
     options = {
@@ -2034,12 +2082,25 @@ describe("thread control center interactions", () => {
       });
     };
     await send();
-    expect(options.storage.readDraft(thread.threadId)).toBe("未发送的内容");
+    expect(options.storage.readPendingThreadSubmission(thread.threadId)?.content).toBe(
+      "未发送的内容",
+    );
+    expect(container.querySelector(".chat-turn-outgoing")?.textContent).toContain("未发送的内容");
+    expect(container.querySelector(".owner-meta-failed")?.textContent).toContain(
+      "message.status.failed",
+    );
     expect(container.textContent).toContain("controlled request failure");
+    mutate.mockClear();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".owner-retry")?.click();
+    });
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(protect.mock.calls.filter(([text]) => text === "未发送的内容")).toHaveLength(2);
+    mutate.mockClear();
     options = { ...options, connection: "offline" };
     await render();
     await send();
-    expect(mutate).toHaveBeenCalledOnce();
+    expect(mutate).not.toHaveBeenCalled();
   });
   it("[R2-U4] keeps a conversation's send closed until its content has loaded, then sends once", async () => {
     const send = async () => {
