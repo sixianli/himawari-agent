@@ -60,6 +60,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .gh:first-of-type{padding-top:0}
 .row{display:grid;grid-template-columns:112px 1fr auto;gap:2px 12px;padding:10px 4px;border-bottom:1px solid var(--border);align-items:start;transition:background .6s}
 .phone .row{grid-template-columns:1fr}
+.acts{display:flex;gap:4px;align-items:center}
 .phone .acts{margin-left:-8px}
 .row.urgent{box-shadow:inset 3px 0 0 var(--danger);background:var(--danger-soft);padding-left:14px}
 .row.check{box-shadow:inset 3px 0 0 var(--warning);background:var(--warning-soft);padding-left:14px}
@@ -78,7 +79,6 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .rate{display:inline-flex;gap:8px}
 .rate button{background:none;border:0;padding:0;cursor:pointer;color:var(--muted);font-size:12px;text-decoration:underline;text-underline-offset:2px}
 .rate button.on{color:var(--text);text-decoration:none;font-weight:600}
-.acts{display:flex;gap:4px;align-items:center}
 .act{background:none;border:0;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:14px;white-space:nowrap}
 .act:hover{background:var(--hover)}
 .foot{font-size:12.5px;color:var(--muted);padding-top:14px}
@@ -86,9 +86,9 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .audh{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted)}
 .audn{font-size:12.5px;color:var(--muted);padding:2px 0 6px}
 .audr{display:grid;grid-template-columns:150px 1fr auto;gap:2px 12px;padding:7px 4px;border-bottom:1px solid var(--border);align-items:center}
+.auds{min-width:0}
 .phone .audr{grid-template-columns:1fr auto}.phone .auds{grid-column:1/-1;grid-row:2}
 .audf{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.auds{min-width:0}
 .audb{padding-top:10px}
 .foot button{color:var(--accent);background:none;border:0;padding:0;cursor:pointer;font-size:12.5px}
 .sum{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted);padding:0 0 6px;font-variant-numeric:tabular-nums}
@@ -102,14 +102,14 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .lh .v.spoke{color:var(--text);font-weight:600}.lh .v.warn{color:var(--warning);font-weight:600}.lh .v.need{color:var(--danger);font-weight:600}.lh .v.held{color:var(--text)}
 .lr.quiet .lh,.lr.quiet .lt{color:var(--muted)}
 .lr.need{box-shadow:inset 3px 0 0 var(--danger);background:var(--danger-soft);padding-left:14px}
+.btn{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:7px 14px;cursor:pointer;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
 .lr .btn{align-self:flex-start;margin-top:6px;font-size:13px;padding:5px 12px}
 .ls{font-size:13px;color:var(--muted);line-height:1.55}
 .connect{border:1px dashed var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin:4px 0 18px}
 .connect h2{margin:0;font-size:15px;font-weight:600}
 .connect p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.7}
-.btn{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:7px 14px;cursor:pointer;font-size:14px}
-.btn:hover{border-color:var(--muted)}
-.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
 .shade{position:absolute;inset:0;background:var(--shade);z-index:30;display:flex;align-items:center;justify-content:center}
 .modal{background:var(--surface);border-radius:16px;width:680px;max-width:calc(100% - 32px);height:520px;max-height:calc(100% - 40px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.25)}
 .phone .shade{align-items:stretch}
@@ -146,7 +146,7 @@ details ul{margin:6px 0 2px;padding-left:18px;line-height:1.75}
 .dc{min-width:24px;height:24px;border-radius:12px;border:0;background:none;color:var(--muted);font-size:11.5px;cursor:pointer;padding:0 4px}
 .dc.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
 .toast{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);border-radius:18px;padding:8px 16px;font-size:13px;z-index:40;max-width:calc(100% - 32px);text-align:center}
-@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+@media (prefers-reduced-motion: reduce){*{transition:none}}
 </style>
 
 <div class="demo" id="demo"></div>
@@ -237,7 +237,7 @@ const LOG=[
 ];
 const S={lang:"zh",device:"desktop",connected:true,view:"list",modal:null,drawer:false,rated:{},gone:{},hl:null,toast:null,push:true,pro:true,
   periods:[{n:"p1",from:"23:00",to:"07:00",days:[1,1,1,1,1,1,1]},{n:"p2",from:"07:00",to:"09:30",days:[0,0,0,0,0,1,1]}]};
-try{const s=JSON.parse(localStorage.getItem("hw-rem-proto2")||"{}");if(s.lang)S.lang=s.lang;if(s.device)S.device=s.device;}catch(e){}
+try{const s=JSON.parse(localStorage.getItem("hw-rem-proto2")||"{}");if(s.lang)S.lang=s.lang;if(s.device)S.device=s.device;}catch{}
 const t=k=>T[S.lang][k]??k, L=o=>o?(o[S.lang]??o.zh):"";
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
 const DAYS={zh:["一","二","三","四","五","六","日"],en:["Mo","Tu","We","Th","Fr","Sa","Su"],ja:["月","火","水","木","金","土","日"]};
@@ -324,7 +324,7 @@ function render(){
   w.className="win"+(S.device==="phone"?" phone":"");
   w.innerHTML=side()+`<main class="main"><div class="top"><button class="ib menu" data-act="drawer" aria-label="${t("openMenu")}">${I.menu}</button><div class="ttl">${t("reminders")}</div><button class="ib" data-act="openGeneral" aria-label="${t("settings")}">${I.gear}</button></div><div class="body" id="scroll"><div class="col">${S.view==="log"?logView():listView()}</div></div></main>`+modal()+(S.toast?`<div class="toast" role="status">${esc(S.toast)}</div>`:"");
   const sc=document.getElementById("scroll"); if(sc) sc.scrollTop=y;
-  try{localStorage.setItem("hw-rem-proto2",JSON.stringify({lang:S.lang,device:S.device}))}catch(e){}
+  try{localStorage.setItem("hw-rem-proto2",JSON.stringify({lang:S.lang,device:S.device}))}catch{}
 }
 let tt; function toast(m){S.toast=m;render();clearTimeout(tt);tt=setTimeout(()=>{S.toast=null;render()},2400);}
 document.addEventListener("click",e=>{
