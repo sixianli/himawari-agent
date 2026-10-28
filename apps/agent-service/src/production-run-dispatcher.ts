@@ -96,7 +96,6 @@ export interface ProductionRunDispatcherOptions {
   readonly reconcile: ProductionRunReconciler;
   readonly clock: ClockPort;
   readonly executionLeaseDurationMs: number;
-  /** Defaults to half of executionLeaseDurationMs. */
   readonly executionLeaseRenewalIntervalMs?: number;
   readonly maximumRunsPerPump: number;
   readonly instanceId?: string;
@@ -105,6 +104,10 @@ export interface ProductionRunDispatcherOptions {
     readonly candidate: RunDispatchCandidate;
     readonly expectedLeaseRevision: number;
   }) => RunExecutionLeaseId;
+  readonly background?: {
+    adopt(lease: RunExecutionLease): void;
+    recover(): Promise<number>;
+  };
 }
 
 export interface ProductionRunDispatchPumpResult {
@@ -354,6 +357,7 @@ export class ProductionRunDispatcher {
     await this.#options.authority.assertActive();
 
     const reconciled = await this.recover(limit);
+    await this.#options.background?.recover();
 
     if (!this.isAccepting()) {
       return Object.freeze({
@@ -506,6 +510,11 @@ export class ProductionRunDispatcher {
           await reconcileLeaseFailure();
           continue;
         }
+        if (result.parked && this.#options.background) {
+          this.#options.background.adopt(renewal.currentLease());
+          settled += 1;
+          continue;
+        }
         if (result.run.run.status === "reconciling_external_result") {
           reconciliationAttempted = true;
           await this.reconcileUnknown(
@@ -542,8 +551,6 @@ export class ProductionRunDispatcher {
           conflicts += 1;
           continue;
         }
-        // Persist uncertainty before surfacing the failure. Merely expiring the
-        // lease would redispatch accepted Runs whose input factory keeps failing.
         await this.reconcileUnknown(
           candidate,
           candidate.action === "deliver_completed"

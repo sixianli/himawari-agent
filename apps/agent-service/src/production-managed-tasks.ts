@@ -19,10 +19,10 @@ export function managedTaskDescriptors(): RuntimeToolDescriptor[] {
     name: `execution_task_${action}`,
     description:
       action === "status"
-        ? "查询本 Run 创建任务的实际状态、观察时间和过期标记。"
+        ? "查询本轮转入后台的命令或已启动任务的实际状态。后台命令结束时系统会主动通知，不要反复轮询。"
         : action === "output"
-          ? "分页读取本 Run 任务已保存的输出；不会启动或重启任务。"
-          : "停止本 Run 创建的原任务，返回实际停止或待核查状态。",
+          ? "分页读取本轮后台命令或任务已保存的输出；不会启动或重启任何命令。"
+          : "停止本轮转入后台的命令或已启动的任务，返回实际停止或待核查状态。",
     parameters: {
       type: "object",
       properties: {
@@ -39,8 +39,6 @@ export function managedTaskDescriptors(): RuntimeToolDescriptor[] {
     },
   }));
 }
-/** Management never consumes an execution Grant or constructs a launch request.
- * The original resource and current caller must both pass the product authority reader. */
 export function createProductionManagedTasks(options: {
   resolve(invocation: RuntimeToolInvocation, resourceRef: string): Promise<SandboxExecutionRecord>;
   observe(record: SandboxExecutionRecord, stop: boolean): Promise<SandboxExecutionRecord>;
@@ -113,9 +111,7 @@ export function createProductionManagedTasks(options: {
             Buffer.byteLength(JSON.stringify(decoded)) <= 16384
           )
             readable = decoded;
-        } catch {
-          /* Binary or a code point split at the page boundary stays lossless base64. */
-        }
+        } catch {}
         value = { ...page, encoding: "base64", bytesBase64: text, text: readable };
       } else {
         record = await options.observe(record, action === "cancel");

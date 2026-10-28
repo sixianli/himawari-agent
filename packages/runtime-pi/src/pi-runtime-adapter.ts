@@ -37,6 +37,7 @@ import type {
   ModelInvocationPricing,
   ModelInvocationUsage,
   RuntimeApprovalWait,
+  RuntimeBackgroundCommandNotice,
   RuntimeContinuationPort,
   RuntimeEvent,
   RuntimeProjection,
@@ -270,6 +271,16 @@ function toolProgressOutput(
 
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
+const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
+
+function backgroundCommandMessage(notice: RuntimeBackgroundCommandNotice) {
+  return {
+    customType: BACKGROUND_COMMAND_MESSAGE_TYPE,
+    content: notice.modelContent,
+    display: false,
+    details: { taskRef: notice.taskRef },
+  };
+}
 
 function modelFailureCode(errorMessage: string | undefined): string {
   if (errorMessage === PI_CONTEXT_WINDOW_EXHAUSTED) return PI_CONTEXT_WINDOW_EXHAUSTED;
@@ -879,6 +890,17 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     await this.#historyWrites.get(runId);
   }
 
+  async #continueForSteeredNotices(
+    session: AgentSession,
+    canContinue: () => boolean,
+  ): Promise<void> {
+    if (!this.#dependencies.tools.subscribeBackground) return;
+    while (canContinue() && session.agent.hasQueuedMessages()) {
+      await session.agent.continue();
+      await session.waitForIdle();
+    }
+  }
+
   private async produce(
     request: RuntimeRequest,
     emit: (event: RuntimeEvent) => Promise<void>,
@@ -1207,6 +1229,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         );
       };
       this.#activeSessions.set(request.runId, session);
+      const unsubscribeBackground = this.#dependencies.tools.subscribeBackground?.(
+        request.runId,
+        (notice) => {
+          if (!session.isStreaming) return false;
+          void session
+            .sendCustomMessage(backgroundCommandMessage(notice), { deliverAs: "steer" })
+            .catch(() => session.agent.abort());
+          return true;
+        },
+      );
 
       const unsubscribe = session.subscribe((event) => {
         if (
@@ -1293,8 +1325,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           });
         await session.waitForIdle();
         await eventChain;
+        await this.#continueForSteeredNotices(session, () => {
+          return (
+            !suspended &&
+            !unknownTool &&
+            !failed &&
+            !aborted &&
+            !toolProgress.blocked &&
+            !this.#cancelledRuns.has(request.runId)
+          );
+        });
+        await eventChain;
         await this.#historyWrites.get(request.runId);
       } finally {
+        unsubscribeBackground?.();
         unsubscribe();
         session.dispose();
         this.#activeSessions.delete(request.runId);

@@ -4313,4 +4313,521 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       }
     },
   );
+
+  describe("background commands after the answer [BG-1]", () => {
+    async function parkedFixture() {
+      const setup = await executionFixture({
+        executionLeaseExpiresAt: "2026-09-04T00:00:01.000Z",
+      });
+      await setup.runs.transitionRun(transition(setup.runId, "building_context", 1));
+      await setup.runs.transitionRun(transition(setup.runId, "running", 2));
+      const holds = [
+        {
+          taskRef: "background-command:aaaaaaaaaaaaaaaaaaaaaaaa",
+          startedAt: clock.now(),
+          deadlineAt: "2026-09-04T00:30:00.000Z",
+        },
+      ];
+      await setup.runs.completeRun({ ...completionInput(setup), background: { holds } });
+      const noticeContent = "background-notice-payload";
+      await setup.repository.payloadStore(ownerId, agentId).put(
+        await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref: noticeContent,
+          dataClassification: "private",
+          contentType: "text/plain",
+          createdAt: clock.now(),
+          plaintext: new TextEncoder().encode("后台命令 npm test 已结束"),
+        }),
+      );
+      return { ...setup, holds, noticeContent };
+    }
+
+    function finishInput(
+      setup: Awaited<ReturnType<typeof parkedFixture>>,
+      options: { readonly withLease?: boolean } = {},
+    ) {
+      return {
+        ownerId,
+        agentId,
+        runId: setup.runId,
+        idempotencyKey: createIdempotencyKey(`background-finish:${setup.runId}`),
+        authority: lease,
+        ...(options.withLease === false ? {} : { executionLease: executionLease(setup.runId) }),
+        outcomes: [{ taskRef: setup.holds[0]?.taskRef ?? "", outcome: "completed" as const }],
+        notice: {
+          triggerId: `trigger:background:${setup.runId}`,
+          runId: createRunId(`run:background:${setup.runId}`),
+          turnId: `turn:background:${setup.runId}`,
+          messageId: `message:background:${setup.runId}`,
+          contentRef: setup.noticeContent,
+          dataClassification: "private" as const,
+        },
+      };
+    }
+
+    it("commits the answer, keeps the Run running and lets the next message start", async () => {
+      const setup = await parkedFixture();
+      expect((await setup.runs.readRun(setup.runId))?.run.status).toBe("running");
+      const database = openQualifiedDatabase(setup.databasePath);
+      try {
+        expect(
+          database
+            .prepare("SELECT role FROM thread_messages WHERE run_id = ? ORDER BY sequence")
+            .pluck()
+            .all(setup.runId),
+        ).toEqual(["owner", "agent"]);
+        expect(
+          database
+            .prepare("SELECT committed_at FROM turns WHERE run_id = ?")
+            .pluck()
+            .get(setup.runId),
+        ).toBe(clock.now());
+      } finally {
+        database.close();
+      }
+      const thread = await setup.repository
+        .threadRepository()
+        .read(ownerId, agentId, setup.admitted.thread.id);
+      if (!thread) throw new Error("thread missing");
+      const next = await setup.commands.admitOwnerMessage({
+        ownerId,
+        agentId,
+        threadId: thread.id,
+        expectedThreadRevision: thread.revision,
+        sessionId: createSessionId("session-run-lifecycle"),
+        idempotencyKey: "thread-submit-second",
+        contentRef: "payload-run-lifecycle",
+        sourceProofRef: "proof:owner",
+        dataClassification: "private",
+        resultRef: "payload-run-lifecycle",
+      });
+      const dispatch = setup.repository.runDispatch(
+        ownerId,
+        agentId,
+        authority,
+        lease,
+        "thread-run-lifecycle",
+      );
+      const afterLeaseExpiry = "2026-09-04T00:00:02.000Z";
+      const claimable = await dispatch.listClaimable({ now: afterLeaseExpiry, limit: 10 });
+      expect(claimable.map((candidate) => candidate.runId)).toEqual([next.message.runId]);
+      expect(
+        (await dispatch.listReconciliationRequired({ now: afterLeaseExpiry, limit: 10 })).map(
+          (candidate) => candidate.runId,
+        ),
+      ).not.toContain(setup.runId);
+      expect(await setup.runs.listBackgroundRuns?.()).toEqual([
+        {
+          runId: setup.runId,
+          threadId: setup.admitted.thread.id,
+          holds: setup.holds,
+          runStatus: "running",
+          leaseLive: true,
+          resourcesReleased: true,
+        },
+      ]);
+    });
+
+    it("finishes the Run and starts a system notice Run that can complete", async () => {
+      const setup = await parkedFixture();
+      const finished = await setup.runs.finishBackgroundRun?.(finishInput(setup));
+      expect(finished).toEqual({
+        finished: true,
+        noticeRunId: `run:background:${setup.runId}`,
+      });
+      expect(await setup.runs.finishBackgroundRun?.(finishInput(setup))).toEqual({
+        finished: false,
+        noticeRunId: `run:background:${setup.runId}`,
+      });
+      expect((await setup.runs.readRun(setup.runId))?.run.status).toBe("completed");
+      expect(await setup.runs.listBackgroundRuns?.()).toEqual([]);
+      const noticeRunId = createRunId(`run:background:${setup.runId}`);
+      const notice = await setup.runs.readRun(noticeRunId);
+      expect(notice?.run).toMatchObject({ status: "accepted", threadId: setup.admitted.thread.id });
+      const source = await setup.repository.runExecutionSource(ownerId, agentId).read(noticeRunId);
+      expect(source).toMatchObject({
+        sourceType: "external_event",
+        payloadRef: setup.noticeContent,
+      });
+      const database = openQualifiedDatabase(setup.databasePath);
+      try {
+        expect(
+          database
+            .prepare("SELECT role FROM thread_messages WHERE thread_id = ? ORDER BY sequence")
+            .pluck()
+            .all(setup.admitted.thread.id),
+        ).toEqual(["owner", "agent", "system"]);
+        expect(
+          database
+            .prepare("SELECT outcome, notice_run_id FROM run_background_holds WHERE run_id = ?")
+            .get(setup.runId),
+        ).toEqual({ outcome: "completed", notice_run_id: noticeRunId });
+        expect(
+          database
+            .prepare("SELECT released_at IS NOT NULL FROM run_execution_leases WHERE run_id = ?")
+            .pluck()
+            .get(setup.runId),
+        ).toBe(1);
+      } finally {
+        database.close();
+      }
+      const dispatch = setup.repository.runDispatch(
+        ownerId,
+        agentId,
+        authority,
+        lease,
+        "thread-run-lifecycle",
+      );
+      expect(
+        (await dispatch.listClaimable({ now: clock.now(), limit: 10 })).map(
+          (candidate) => candidate.runId,
+        ),
+      ).toEqual([noticeRunId]);
+      await dispatch.claim({
+        runId: noticeRunId,
+        expectedRunRevision: 1,
+        expectedLeaseRevision: 0,
+        executionLeaseId: createRunExecutionLeaseId(`execution-${noticeRunId}`),
+        claimedAt: clock.now(),
+        expiresAt: "2026-09-05T00:00:00.000Z",
+      });
+      await setup.runs.transitionRun(
+        transition(noticeRunId, "building_context", 1, "notice-build"),
+      );
+      await setup.runs.transitionRun(transition(noticeRunId, "running", 2, "notice-running"));
+      await setup.runs.completeRun({
+        ownerId,
+        agentId,
+        runId: noticeRunId,
+        expectedRevision: 3,
+        idempotencyKey: createIdempotencyKey("notice-complete"),
+        commandFingerprint: "notice-complete",
+        authority: lease,
+        payloadRef: "payload-run-lifecycle",
+        executionLease: executionLease(noticeRunId),
+        dataClassification: "private",
+        output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+      });
+      expect((await setup.runs.readRun(noticeRunId))?.run.status).toBe("completed");
+    });
+
+    it("refuses to finish while the sandbox resources are still held or the lease is live", async () => {
+      const setup = await parkedFixture();
+      await expect(
+        setup.runs.finishBackgroundRun?.(finishInput(setup, { withLease: false })),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      await expect(
+        setup.runs.finishBackgroundRun?.({
+          ...finishInput(setup),
+          outcomes: [{ taskRef: "background-command:other", outcome: "completed" }],
+        }),
+      ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      expect((await setup.runs.readRun(setup.runId))?.run.status).toBe("running");
+    });
+
+    it("releases the commands without a notice when the owner cancelled the Run", async () => {
+      const setup = await parkedFixture();
+      const stored = await setup.runs.readRun(setup.runId);
+      if (!stored) throw new Error("run missing");
+      await setup.runs.cancelRun({
+        ownerId,
+        agentId,
+        runId: setup.runId,
+        expectedRevision: stored.revision,
+        idempotencyKey: createIdempotencyKey("owner-cancel-background"),
+        commandFingerprint: "owner-cancel-background",
+        authority: lease,
+        payloadRef: "payload-run-lifecycle",
+      });
+      expect(await setup.runs.finishBackgroundRun?.(finishInput(setup))).toEqual({
+        finished: false,
+        noticeRunId: null,
+      });
+      expect(await setup.runs.listBackgroundRuns?.()).toEqual([]);
+    });
+  });
+
+  describe("coordinator hands background commands over after the answer [BG-2]", () => {
+    function coordinatorWith(
+      setup: Awaited<ReturnType<typeof executionFixture>>,
+      held: readonly { taskRef: string; startedAt: string; deadlineAt: string }[],
+    ) {
+      const stop = vi.fn(async () => undefined);
+      const coordinator = new RunCoordinator({
+        clock,
+        runs: setup.runs,
+        checkpoints: setup.checkpoints,
+        context: setup.context,
+        runtime: setup.runtime,
+        workers: new ScriptedWorkerRunPort(),
+        trace: setup.trace,
+        background: { held: () => held, stop },
+      });
+      return { coordinator, stop };
+    }
+
+    it("parks a Run whose answer left a command running", async () => {
+      const setup = await executionFixture();
+      const { coordinator, stop } = coordinatorWith(setup, [
+        {
+          taskRef: "background-command:bbbbbbbbbbbbbbbbbbbbbbbb",
+          startedAt: clock.now(),
+          deadlineAt: "2026-09-04T00:30:00.000Z",
+        },
+      ]);
+      const result = await coordinator.execute(setup.input);
+      expect(result.parked).toBe(true);
+      expect(result.run.run.status).toBe("running");
+      expect(stop).not.toHaveBeenCalled();
+      expect(await setup.runs.listBackgroundRuns?.()).toEqual([
+        expect.objectContaining({ runId: setup.runId, runStatus: "running" }),
+      ]);
+    });
+
+    it("stops leftover commands and completes normally when nothing is held", async () => {
+      const setup = await executionFixture();
+      const { coordinator, stop } = coordinatorWith(setup, []);
+      const result = await coordinator.execute(setup.input);
+      expect(result.parked).toBeUndefined();
+      expect(result.run.run.status).toBe("completed");
+      expect(stop).toHaveBeenCalledWith(setup.runId);
+    });
+  });
+
+  it("[BG-3] answers, takes the next message while a command runs, then reports it in a new turn", async () => {
+    const { createFauxModelFixture } = await import(
+      "../../packages/runtime-pi/test/faux-model-fixture.js"
+    );
+    const { createProductionRunComposition } = await import(
+      "../../apps/agent-service/src/production-run-composition.js"
+    );
+    const { ProductionBackgroundCommands } = await import(
+      "../../apps/agent-service/src/production-background-commands.js"
+    );
+    const setup = await executionFixture();
+    const adapters = createReferenceAdapterSet({ clock });
+    const model = await createFauxModelFixture(
+      "测试已经在后台跑了，跑完我会告诉你。",
+      { name: "run_command", id: "long-tests", arguments: { command: "npm test" } },
+      [],
+      ["明天东京白天多云。", "测试跑完了：42 个全部通过。"],
+    );
+    const payloads = setup.repository.payloadStore(ownerId, agentId);
+    for (const [ref, text] of [
+      ["bg-prompt-1", "帮我跑一下全部测试"],
+      ["bg-prompt-2", "明天东京下雨吗？"],
+      ["bg-system", "你是助手。"],
+    ] as const)
+      await payloads.put(
+        await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: clock.now(),
+        }),
+      );
+    const thread = await setup.commands.create({
+      ownerId,
+      agentId,
+      idempotencyKey: "bg-thread",
+      resultRef: "bg-prompt-1",
+    });
+    const first = await setup.commands.admitOwnerMessage({
+      ownerId,
+      agentId,
+      threadId: thread.thread.id,
+      expectedThreadRevision: thread.thread.revision,
+      sessionId: createSessionId("bg-session"),
+      idempotencyKey: "bg-message-1",
+      contentRef: "bg-prompt-1",
+      sourceProofRef: "owner:bg-test",
+      dataClassification: "private",
+      resultRef: "bg-prompt-1",
+    });
+    const labels: string[] = [];
+    const background = new ProductionBackgroundCommands({
+      limits: { waitMs: 20, maximumMs: 60_000 },
+      now: () => clock.now(),
+    });
+    let finishCommand: (text: string) => void = () => undefined;
+    const command = new Promise<string>((resolve) => {
+      finishCommand = resolve;
+    });
+    const stopRun = vi.fn(async () => ({ released: true }));
+    const failure = vi.fn();
+    const backgroundFailure = vi.fn();
+    const composed = createProductionRunComposition({
+      configuration: {
+        ownerId,
+        agentId,
+        concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+        deadlines: { runMs: 60_000, workerRequestMs: 10_000, providerRequestMs: 10_000 },
+      },
+      repository: setup.repository,
+      authority: {
+        authorityFence: () => authority,
+        authorityLease: () => lease,
+        assertActive: async () => undefined,
+        isAccepting: () => true,
+      },
+      models: model.models,
+      modelRegistry: [model.descriptor],
+      protector: setup.protector,
+      memory: adapters.memory,
+      tools: {
+        listAuthorized: async () => [
+          {
+            name: "run_command",
+            capabilityRef: "project.coding.bash",
+            capabilityHandleRef: "bash-handle",
+            description: "Run a shell command",
+            parameters: {
+              type: "object",
+              properties: { command: { type: "string" } },
+              required: ["command"],
+            },
+          },
+        ],
+        preflight: async () => ({
+          allowed: true,
+          permissionDecisionRef: "test-policy",
+          reasonCode: "test",
+        }),
+        execute: (invocation, options) =>
+          background.run(
+            invocation,
+            options?.signal,
+            async () => ({
+              outcome: "succeeded" as const,
+              resultRef: null,
+              errorCode: null,
+              externalActionId: null,
+              modelContent: await command,
+            }),
+            async () => ({ ref: "bg-receipt" }),
+            async (text) => {
+              labels.push(text);
+              return { ref: "bg-command-label" };
+            },
+          ),
+        subscribeBackground: (runId, listener) => background.subscribe(runId, listener),
+      },
+      backgroundCommands: background,
+      resources: { stopRun },
+      workers: new ScriptedWorkerRunPort(),
+      policy: async () => ({
+        modelRef: model.descriptor.ref,
+        systemInstructionRef: "bg-system",
+        policyVersion: "bg-test-policy",
+        policies: [],
+        capabilities: [],
+        capabilityHandleRefs: ["bash-handle"],
+        maxMemoryClassification: "private",
+        memoryLimit: 5,
+        maxSelectedMemories: 0,
+      }),
+      clock,
+      ids: adapters.ids,
+      instanceId: "bg-composition-test",
+      cwd: setup.stateRoot,
+      agentDir: path.join(setup.stateRoot, "pi-agent"),
+      onFailure: failure,
+      onBackgroundFailure: backgroundFailure,
+    });
+    const firstRunId = first.message.runId;
+    if (!firstRunId) throw new Error("missing first run");
+    await composed.dispatcher.pump();
+    expect((await setup.runs.readRun(firstRunId))?.run.status).toBe("running");
+    expect(composed.background?.holding(firstRunId)).toBe(true);
+
+    const current = await setup.repository
+      .threadRepository()
+      .read(ownerId, agentId, thread.thread.id);
+    if (!current) throw new Error("thread missing");
+    const second = await setup.commands.admitOwnerMessage({
+      ownerId,
+      agentId,
+      threadId: thread.thread.id,
+      expectedThreadRevision: current.revision,
+      sessionId: createSessionId("bg-session"),
+      idempotencyKey: "bg-message-2",
+      contentRef: "bg-prompt-2",
+      sourceProofRef: "owner:bg-test",
+      dataClassification: "private",
+      resultRef: "bg-prompt-2",
+    });
+    const secondRunId = second.message.runId;
+    if (!secondRunId) throw new Error("missing second run");
+    await composed.dispatcher.pump();
+    expect((await setup.runs.readRun(secondRunId))?.run.status).toBe("completed");
+    expect((await setup.runs.readRun(firstRunId))?.run.status).toBe("running");
+    const parkedSummary = (
+      await setup.repository.threadRepository().listRuns(ownerId, agentId, thread.thread.id)
+    ).find((run) => run.runId === firstRunId);
+    expect(parkedSummary?.background).toMatchObject({ count: 1 });
+    expect(parkedSummary?.backgroundCommands).toEqual([
+      expect.objectContaining({
+        commandRef: "bg-command-label",
+        outputRef: null,
+        endedAt: null,
+        outcome: null,
+        noticeRunId: null,
+      }),
+    ]);
+    expect(labels).toHaveLength(1);
+
+    finishCommand("Tests 42 passed");
+    await composed.background?.drain();
+    expect(backgroundFailure).not.toHaveBeenCalled();
+    expect(stopRun).toHaveBeenCalledWith(firstRunId, "run_finished");
+    expect((await setup.runs.readRun(firstRunId))?.run.status).toBe("completed");
+    await composed.dispatcher.pump();
+    expect(failure).not.toHaveBeenCalled();
+
+    const messages = await setup.repository
+      .threadRepository()
+      .listMessages(ownerId, agentId, thread.thread.id, 0, 20);
+    expect(messages.map((message) => message.role)).toEqual([
+      "owner",
+      "agent",
+      "owner",
+      "agent",
+      "system",
+      "agent",
+    ]);
+    const noticeRunId = messages[4]?.runId;
+    if (!noticeRunId) throw new Error("missing notice run");
+    expect((await setup.runs.readRun(noticeRunId))?.run.status).toBe("completed");
+    const lastContext = JSON.stringify(model.observed.at(-1));
+    expect(lastContext).toContain("Tests 42 passed");
+    expect(lastContext).toContain("系统通知");
+    expect(lastContext).toContain("明天东京下雨吗");
+    expect(await setup.runs.listBackgroundRuns?.()).toEqual([]);
+    expect(
+      (await setup.repository.threadRepository().listRuns(ownerId, agentId, thread.thread.id)).map(
+        (run) => run.background,
+      ),
+    ).toEqual([null, null, null]);
+    const finished = (
+      await setup.repository.threadRepository().listRuns(ownerId, agentId, thread.thread.id)
+    ).find((run) => run.runId === firstRunId)?.backgroundCommands;
+    expect(finished).toEqual([
+      expect.objectContaining({
+        commandRef: "bg-command-label",
+        outcome: "completed",
+        noticeRunId,
+        outputRef: expect.stringMatching(/^background-output:/),
+      }),
+    ]);
+    const outputRef = finished?.[0]?.outputRef;
+    if (!outputRef) throw new Error("missing output ref");
+    expect(await setup.repository.payloadStore(ownerId, agentId).get(outputRef)).toMatchObject({
+      contentType: "text/plain",
+    });
+  });
 });

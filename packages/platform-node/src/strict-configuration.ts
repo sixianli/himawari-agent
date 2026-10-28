@@ -1211,7 +1211,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const deadlines = record(input["deadlines"], "configuration.deadlines");
   rejectUnknown(
     deadlines,
-    ["runMs", "workerRequestMs", "providerRequestMs"],
+    ["runMs", "workerRequestMs", "providerRequestMs", "commandWaitMs", "backgroundCommandMs"],
     "configuration.deadlines",
   );
   const runPolicy =
@@ -1285,6 +1285,26 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
         100,
         86_400_000,
       ),
+      ...(deadlines["commandWaitMs"] === undefined
+        ? {}
+        : {
+            commandWaitMs: integer(
+              deadlines["commandWaitMs"],
+              "configuration.deadlines.commandWaitMs",
+              1000,
+              600_000,
+            ),
+          }),
+      ...(deadlines["backgroundCommandMs"] === undefined
+        ? {}
+        : {
+            backgroundCommandMs: integer(
+              deadlines["backgroundCommandMs"],
+              "configuration.deadlines.backgroundCommandMs",
+              1000,
+              86_400_000,
+            ),
+          }),
     }),
     loadedAt,
   });

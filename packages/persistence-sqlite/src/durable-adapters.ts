@@ -147,6 +147,16 @@ export class SqliteDurableAdapters {
           input,
           now: now(),
         }),
+      finishBackgroundRun: (input) =>
+        this.context.write("runLifecycle.finishBackground", {
+          ownerId,
+          agentId,
+          authority,
+          input,
+          now: now(),
+        }),
+      listBackgroundRuns: () =>
+        this.context.read("runLifecycle.listBackground", { ownerId, agentId, now: now() }),
     });
   }
 

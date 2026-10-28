@@ -390,6 +390,27 @@ export const threadRunSummaryV3Schema = object({
   status: runStatusSchema,
   createdAt: timestamp,
   updatedAt: timestamp,
+  background: nullable(
+    object({
+      count: integer(1, 16),
+      startedAt: timestamp,
+      deadlineAt: timestamp,
+    }),
+  ),
+  backgroundCommands: array(
+    object({
+      taskRef: machineString,
+      commandRef: nullable(machineString),
+      outputRef: nullable(machineString),
+      startedAt: timestamp,
+      deadlineAt: timestamp,
+      endedAt: nullable(timestamp),
+      outcome: nullable(
+        enumeration(["completed", "failed", "stopped", "timed_out", "interrupted"]),
+      ),
+      noticeRunId: nullable(machineString),
+    }),
+  ),
 });
 
 export const threadCollectionSnapshotV3Schema = object({

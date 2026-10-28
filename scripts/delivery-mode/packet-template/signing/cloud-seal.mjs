@@ -360,8 +360,8 @@ const base = {
     ...input.authorizedRoots.flatMap((entry) => [entry.canonicalPath + "/.env", entry.canonicalPath + "/.git"]),
   ],
   maximumResourceCeiling: {
-    maxWallTimeMs: 300000,
-    maxCpuTimeMs: 30000,
+    maxWallTimeMs: 1800000,
+    maxCpuTimeMs: 1800000,
     maxMemoryBytes: 536870912,
     maxOutputBytes: 524288,
     maxProgressEvents: 256,

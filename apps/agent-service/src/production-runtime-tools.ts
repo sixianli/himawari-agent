@@ -19,6 +19,7 @@ import {
   type ProductConfiguration,
   RECOVERY_SETTLE_WAIT_MS,
   type RunPayloadArtifactPort,
+  type RuntimeBackgroundCommandNotice,
   type RuntimeRequest,
   type RuntimeToolDescriptor,
   type RuntimeToolExecutionResult,
@@ -41,6 +42,10 @@ import {
   executionV2MessageSchema,
   piFileRecoveryOperationKey,
 } from "@himawari-agent/execution-contracts";
+import {
+  type BackgroundCommandLimits,
+  ProductionBackgroundCommands,
+} from "./production-background-commands.js";
 import {
   executeProductionCodingRequest,
   fileVersionConflictResult,
@@ -280,6 +285,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly fileReadEnabled?: boolean;
   readonly sandbox?: ProductionRuntimeSandbox;
   readonly managedTasks?: ProductionManagedTasks;
+  readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recall">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
@@ -316,9 +322,27 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     string,
     { fingerprint: string; result: Promise<RuntimeToolExecutionResult> }
   >();
+  readonly #background: ProductionBackgroundCommands | undefined;
   constructor(options: ProductionRuntimeToolsOptions) {
     this.#options = options;
     this.#delegation = this.#createDelegation();
+    this.#background = options.backgroundCommands
+      ? new ProductionBackgroundCommands({
+          limits: options.backgroundCommands,
+          now: () => options.clock.now(),
+        })
+      : undefined;
+  }
+
+  subscribeBackground(
+    runId: RuntimeRequest["runId"],
+    listener: (notice: RuntimeBackgroundCommandNotice) => boolean,
+  ): () => void {
+    return this.#background?.subscribe(runId, listener) ?? (() => undefined);
+  }
+
+  get background(): ProductionBackgroundCommands | undefined {
+    return this.#background;
   }
 
   #createDelegation(sandbox?: SandboxAdmission) {
@@ -466,9 +490,18 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         },
       });
     }
-    if (this.#options.managedTasks) {
+    const startable = this.#options.managedTasks !== undefined && tasks.length > 0;
+    const backgroundBash =
+      this.#background !== undefined &&
+      descriptors.some(
+        (descriptor) =>
+          "definition" in descriptor &&
+          descriptor.definition === "builtin-coding" &&
+          descriptor.name === "bash",
+      );
+    if (startable || backgroundBash) {
       descriptors.push(...managedTaskDescriptors());
-      if (tasks.length)
+      if (startable)
         descriptors.push({
           capabilityRef: "execution.task.start",
           capabilityHandleRef: null,
@@ -604,7 +637,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
       return {
-        allowed: this.#exposed.has(invocation.runId) && this.#options.managedTasks !== undefined,
+        allowed:
+          this.#exposed.has(invocation.runId) &&
+          (this.#background?.manages(invocation) ? true : this.#options.managedTasks !== undefined),
         permissionDecisionRef: `task-management:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",
       };
@@ -656,9 +691,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
 
   async recoverResult(
-    invocation: RuntimeToolInvocation,
+    value: RuntimeToolInvocation,
     recovery: NonNullable<RuntimeRequest["knownToolResult"]>,
   ): Promise<RuntimeToolSettledResult> {
+    const invocation = await this.#commandDeadline(value, false);
     const recoveryLease = invocation.context?.executionLease;
     const recoveryDeadline = invocation.executionDeadlineAt;
     if (
@@ -915,6 +951,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     signal?.throwIfAborted();
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
+      if (this.#background?.manages(invocation)) {
+        if (!this.#exposed.has(invocation.runId)) reject();
+        const key = digest([invocation.runId, invocation.toolCallId]);
+        return this.#background.manage(invocation, (value) =>
+          this.#writeJson(invocation, `runtime-background-management:${key}`, value),
+        );
+      }
       if (!this.#exposed.has(invocation.runId) || !this.#options.managedTasks) reject();
       const key = digest([invocation.runId, invocation.toolCallId]);
       const fingerprint = digest(executionIdentity(invocation));
@@ -931,7 +974,45 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return this.#options.managedTasks.execute(invocation);
     }
     if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
+    if (this.#background && this.#codingTool(invocation) === "bash") {
+      const key = digest([invocation.runId, invocation.toolCallId]);
+      const command = await this.#commandDeadline(invocation, true);
+      return this.#background.run(
+        command,
+        signal,
+        (combined) => this.#executeCanonical(command, combined),
+        (value) => this.#writeJson(command, `runtime-background-command:${key}`, value),
+        (text) => this.#writeText(command, `runtime-background-command-label:${key}`, text),
+      );
+    }
     return this.#executeCanonical(invocation, signal);
+  }
+
+  async #commandDeadline(
+    invocation: RuntimeToolInvocation,
+    create: boolean,
+  ): Promise<RuntimeToolInvocation> {
+    if (!this.#background || this.#codingTool(invocation) !== "bash") return invocation;
+    const operationKey = `runtime-command-deadline:${digest([invocation.runId, invocation.toolCallId])}`;
+    const existing = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey,
+    });
+    if (!existing && !create) return invocation;
+    const ref = existing
+      ? existing.payloadRef
+      : (
+          await this.#writeJson(invocation, operationKey, {
+            deadlineAt: new Date(
+              Date.parse(this.#options.clock.now()) + this.#background.maximumMs,
+            ).toISOString(),
+          })
+        ).ref;
+    const saved = (await this.#readJson(ref)) as { deadlineAt?: unknown };
+    if (typeof saved.deadlineAt !== "string" || !Number.isFinite(Date.parse(saved.deadlineAt)))
+      reject();
+    return { ...invocation, executionDeadlineAt: saved.deadlineAt };
   }
   #executeCanonical(
     invocation: RuntimeToolInvocation,
@@ -1226,7 +1307,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       handle.capabilityRef,
       handle.capabilityVersion,
     );
-    const configured = this.#options.ceiling;
+    const configured =
+      this.#background && handle.operation === "bash"
+        ? {
+            ...this.#options.ceiling,
+            maxWallTimeMs: this.#background.maximumMs,
+            maxCpuTimeMs: this.#background.maximumMs,
+          }
+        : this.#options.ceiling;
     const ceiling = maximum
       ? {
           maxWallTimeMs: Math.min(configured.maxWallTimeMs, maximum.maxWallTimeMs),
@@ -2035,14 +2123,23 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   }
 
-  async #writeJson(invocation: RuntimeToolInvocation, operationKey: string, value: unknown) {
+  #writeJson(invocation: RuntimeToolInvocation, operationKey: string, value: unknown) {
+    return this.#writeText(invocation, operationKey, JSON.stringify(value), "application/json");
+  }
+
+  async #writeText(
+    invocation: RuntimeToolInvocation,
+    operationKey: string,
+    text: string,
+    contentType: "application/json" | "text/plain" = "text/plain",
+  ) {
     const payload = await this.#options.protector.protect({
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
       ref: this.#options.ids.next("runtime-tool-record"),
       dataClassification: invocation.dataClassification,
-      contentType: "application/json",
-      plaintext: new TextEncoder().encode(JSON.stringify(value)),
+      contentType,
+      plaintext: new TextEncoder().encode(text),
       createdAt: this.#options.clock.now(),
     });
     return this.#options.artifacts.commit({

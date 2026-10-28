@@ -28,6 +28,8 @@ const run: RunSummary = {
   status: "failed",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(100000).toISOString(),
+  background: null,
+  backgroundCommands: [],
 };
 
 describe("plain-language step summaries", () => {

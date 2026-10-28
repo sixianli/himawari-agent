@@ -32,6 +32,7 @@ export type RunSummary = Extract<
 >["payload"]["runs"][number];
 export const isTerminalRun = (run: RunSummary) =>
   ["completed", "failed", "cancelled"].includes(run.status);
+export const isAnsweredRun = (run: RunSummary) => isTerminalRun(run) || Boolean(run.background);
 
 const authorizationReviewLabels = {
   "runtime.authorization_review.started": "review.authorizationStarted",

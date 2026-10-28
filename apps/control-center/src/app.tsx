@@ -473,6 +473,7 @@ function LocalizedControlCenterApp({
               ? governanceModel.details
               : null
       }
+      topbarActions={route.surfaceId === "threads" ? threadModel.actions : null}
       list={governanceSurface ? governanceModel.list : threadModel.list}
       locale={locale}
       onLocaleChange={onLocaleChange}

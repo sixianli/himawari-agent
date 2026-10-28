@@ -57,6 +57,7 @@ date: "2026-10-26"
   30. [改登录方式时网页没接上，回滚又被授权编号检查拦住，停服约 9 分钟](#case-login-switch-outage)
   31. [输完邮箱验证码还要再点一次“登录”：让网页自己换取会话](#case-silent-access-entry)
   32. [iPhone 上输入框贴底、上方多出一条灰色横条：安全区和横向滚动](#case-ios-safe-area-scrollbar)
+  33. [长命令要么等到超时被杀，要么卡住整个对话：让 bash 转后台、先答完，跑完由系统另起一轮汇报](#case-background-bash)
   34. [模型写贪吃蛇时命令报“只读文件系统”：放开工作目录写入，每条命令留改动记录](#case-bash-workspace-write)
   35. [生产机没有防火墙，安全只靠“恰好没人监听公网”：启用 ufw 只留 SSH](#case-prod-firewall)
   36. [对话做出的文件和后台命令放进同一个“更多”栏，不在对话里抢注意力](#case-more-panel)
@@ -82,13 +83,13 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[文件和后台命令的“更多”栏](#case-more-panel) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
@@ -2099,6 +2100,84 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **面试 30 秒版**
 
 “用户在 iPhone 主屏幕打开我们的 PWA，输入框贴着底部横条，上方还多了一条灰色横条。贴底是因为没写 `viewport-fit=cover`、也没用安全区变量，而且手机下边距被另一份样式表覆盖成 0。灰条是对话区只写了 `overflow-y: auto`，按 CSS 规则横向也变成可滚动，回答下面一行超宽 9px，iOS 就画出几乎满屏的横向滚动条。我铺满整屏再按安全区留边，关掉对话区横向滚动，同时去掉超宽内容；改前先出原型给用户批注，改后在模拟安全区的手机视口里测了没有元素超宽。”
+
+[返回目录](#contents)
+
+<a id="case-background-bash"></a>
+
+## 案例 33：长命令要么等到超时被杀，要么卡住整个对话：让 bash 转后台、先答完，跑完由系统另起一轮汇报
+
+**背景与现象**
+
+2026-10-27 复盘“贪吃蛇”对话时发现：模型在 Himawari 里用 `bash` 工具（在授权目录的沙箱里执行一条 shell 命令）只能在前台等。单次工具调用最长 120 秒（配置 `deadlines.workerRequestMs`），沙箱签名里还有墙钟 300 秒、CPU 30 秒的上限，一轮回答（Run，用户发一条消息后系统完成回答的整个过程）最长 300 秒（`deadlines.runMs`）。真遇到要跑 10 分钟的测试，模型要么等到超时、命令被杀，要么根本放不进后台：已有的 `execution_task_start` 只能启动事先授权、绑定为后台模式的命令，而生产绑定没有声明后台模式。就算放进后台，跑完也没有通知，模型只能反复调用 `execution_task_status` 查。另外，没有任何启动工具时，三个管理工具也照样发给模型。Andy 当天拍板：“就这么做，必须学习业界最佳实践！”
+
+第一版只让后台命令活在本轮里：模型答完后这一轮还要等命令跑完再补答，期间这个对话发不了下一条。Andy 看了原型后要求照 Claude Code 做完整版：“这第一轮如果有一个长命令一直在后台跑，那么也不能阻止用户跑第二轮呢……如果这个命令跑完了，它自己主动汇报它的结果的话，然后模型的话又再来根据工具的输出结果，然后再跑一轮。”
+
+**根因**
+
+- 代码证据：`ProductionRuntimeTools.#dispatch`（`apps/agent-service/src/production-runtime-tools.ts`）在同一个调用里一直等执行进程交回 `work.result`，等不到就到截止时间，到点由任务宿主强杀进程组。
+- 设计缺口一：工具层只有“等结果”一种模式，没有“先交回、后通知”的通道。
+- 设计缺口二：一轮回答的生命周期把“回答写进对话”和“资源全部释放”绑在一起：`completeRun` 要求沙箱资源已放，排队查询 `listClaimable` 只要同一对话里有更早的轮次没结束就不让后面的轮次开跑。所以只要命令没跑完，这一轮就结束不了，下一条消息只能等。
+- 管理工具多发：`listAuthorized` 只判断“管理服务是否配置”，没判断“有没有可管理的对象”。
+
+**我们的方案**
+
+- 等待窗口：`bash` 调用先等最多 30 秒（`deadlines.commandWaitMs`）。到点没结束，就交给模型一条“已转入后台”的结果：任务编号、“可以先回答用户，结束时系统会通知你”、最晚停止时间。命令继续在原来的前台沙箱路径里跑，仍复用常驻沙箱。
+- 先答完、轮次挂着：模型答完而命令还在跑时，数据库一个事务写入回答、把这一轮的 turn 标为已提交、在新表 `run_background_holds` 登记后台命令，轮次状态保持 `running`。排队查询改成只让“回答还没提交”的更早轮次挡路，所以下一条消息照常开跑。轮次保持 `running` 是故意的：回执、执行租约、工作进程 250 毫秒复核这些执行许可检查一处都不用放宽。
+- 看守和汇报：`ProductionBackgroundRuns` 每 10 秒续一次执行租约；命令全部结束后先停沙箱环境，再在一个事务里给登记写结果、把原轮次标为 completed、放掉租约，并新建一轮“系统通知”回答（触发来源 `external_event`，对话里一条 `system` 消息，内容加密存放）。这一轮照常排队，模型看着结果和这期间的聊天再答一次。通知编号由原轮次算出，重复调用只生效一次。
+- 停止和重启：网页的“停止”在轮次挂着时只停命令，然后照常另起一轮说明“已按要求停止”。服务重启后，调度器巡检时把租约已过期、登记还没放的轮次以 `interrupted` 结束，另起一轮告诉用户结果没拿到、重跑前先核实效果。
+- 网页：挂着的轮次当作已结束，可以照常发送；回答下方一行“后台命令运行中 · 已运行 2m 14s · 停止”；汇报那一轮前面一行“后台命令有了结果 · 时间”，中英日三语。
+- Pi 复用：不改 Pi。模型还在工作时用 Pi 0.84.2 自带的 `sendCustomMessage(..., { deliverAs: "steer" })` 把结果插到下一次模型调用之前；模型答完以后的汇报由 Himawari 另起一轮完成，因为那时 Pi 会话已经结束、轮次和对话的持久状态归 Himawari 管。
+
+**方案讨论与备选**
+
+- 本轮内等命令结束再补答（第一版）：改动小，但命令跑完前对话被卡住，现在同时只能跑一轮回答，其他对话也排队。Andy 否定。
+- 新增轮次状态 `background_waiting`：状态清楚，但 SQLite 改取值约束要重建 `runs` 表，几十张表的外键指向它，执行许可检查也都要加例外。放弃。
+- 先把轮次标 completed、另记一把锁：completed 在 SQL 里是“资源已全部放掉”的保证，完成、清理、恢复、到期结算十几处都靠它。放弃。
+- 每条 bash 都按后台模式启动：生产绑定没声明后台模式，后台模式不复用常驻沙箱（每条命令多几秒新建沙箱），失败处理和前台不一致。放弃。
+- 照 Codex 返回会话编号让模型轮询：最简单，但轮询烧 token，也分不清安静运行和卡死。放弃。
+- 放弃的东西：运行期间读不到已有输出（BL-20261027-011）；后台命令仍受本轮截止时间 `runMs` 约束；挂着期间这一轮的沙箱环境一直占着。
+
+**业界主流做法**
+
+- ✅ Claude Code [Tools reference](https://code.claude.com/docs/en/tools-reference)：“When a foreground command reaches its timeout without finishing, Claude Code moves it to the background instead of stopping it”。
+- ✅ Claude Code [Interactive mode](https://code.claude.com/docs/en/interactive-mode)：“Background tasks are automatically cleaned up when Claude Code exits”。
+- ✅ OpenAI Codex [unified_exec/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/unified_exec/mod.rs)：`MIN_YIELD_TIME_MS` 250、`MAX_YIELD_TIME_MS` 30_000，等到点交回已有输出和会话编号，之后由模型用 `write_stdin` 轮询。
+- 🟡 OpenAI Codex issue [#38495](https://github.com/openai/codex/issues/38495)：报告一次删除命令让模型轮询 90 轮、约 2160 万输入 token（经抓取工具摘要读到，数字为 issue 作者自报）。
+- ✅ OpenHands [software-agent-sdk](https://github.com/OpenHands/software-agent-sdk) 的 terminal 工具：“the command will instead pause and ask for confirmation when it produces no new output for 30 seconds”。
+- ✅ Pi 社区扩展 [omp-unified-exec](https://github.com/mouriya-s-lab/omp-unified-exec)：进程结束用 `triggerTurn: true` 和 `deliverAs: "followUp"` 唤醒 Agent，“never interrupt a running turn”。
+
+**对比与取舍**
+
+- 和 Claude Code 相同：超时转后台而不是杀掉；命令跑着时用户照常聊；结束时主动让模型再走一轮。不同：Claude Code 转后台时给出输出文件、运行中能看输出；Himawari 运行中读不到输出，因为前台沙箱只在结束时交回结果（已记 Backlog）。
+- 和 omp-unified-exec 相同：结束时唤醒 Agent 而不打断正在进行的一轮。不同：它在同一个进程内的 Pi 会话里追加一轮；Himawari 的回答要能跨服务重启、要经过排队和预算，所以另起的一轮是数据库里一轮真正的回答。
+- 和 Codex、OpenHands 不同：不靠模型轮询，结束时推送。
+- 等待窗口取 30 秒：介于 Codex 最长 30 秒、OpenHands 30 秒无输出、Claude Code 默认 120 秒之间，偏短是因为聊天界面里等 2 分钟太久。
+
+**结果数据**
+
+- 测试（云端容器，2026-10-28，`npx vitest run --config vitest.workspace.ts` 全量，含脱钩改动）：9343 项，9120 通过、118 跳过、105 失败。失败全部在 14 个本 PR 没改的文件里，它们需要容器运行时、预编译产物或 Hermes 工具链，云端容器没有；抽查其中 2 个工具测试文件，在不含本次改动的代码上同样失败（40 项）。新增的 [BG-1] 到 [BG-8] 测试全部通过。
+- 生产效果：未测量。生产实际上限仍被 `runMs` 300 秒和沙箱签名（墙钟 300 秒、CPU 30 秒）卡住，放宽多少由 Andy 决定，随完整版本上线后再补数据。
+
+**相关 ADR/PR**
+
+[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)；PR #63；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](backlog/BL-20261027-012-background-commands-outlive-turn.md)（已完成）；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
+
+**面试 30 秒版**
+
+“我们的 Agent 跑 10 分钟的测试时，要么等到超时被杀，要么卡住整个对话。我照 Claude Code 的做法改成：命令等 30 秒还没完就转后台，模型先回答，用户可以接着聊别的；命令跑完时系统自动另起一轮，让模型看着结果主动汇报。难点在于一轮回答的‘写进对话’和‘资源释放’原本绑在一起，我没有新增状态，而是让轮次保持运行、用一张登记表标记‘已回答、只剩后台命令’，这样所有执行许可检查都不用放宽；另起的一轮和普通消息走同一条排队和预算路径，重启后也能接着汇报。”
+
+**后续（2026-10-28）：命令时限和一轮回答脱钩**
+
+Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求“现在脱钩”：不能靠把一轮回答的总时限 `runMs` 放宽到 35 分钟来凑。查代码发现命令被卡在一轮截止时间上的地方有 7 处：执行句柄（系统发给这次工具调用的一次性执行许可）有效期、编码工作流冻结的期限、沙箱执行计划、整轮共用的沙箱环境期限、排队计划重新绑定时的检查、轮次到期结算，以及没有生产调用方的预热。做法：每条 bash 命令开始时记下“开始 + 30 分钟”作为自己的截止时间（存成一条记录，重启后恢复用同一个值），句柄、计划和结果恢复都用它；沙箱环境期限改为“第一次用沙箱时的截止时间 + 30 分钟”，覆盖同一轮里最晚开始的命令；到期结算对 bash 计划放行更晚的期限，仍要求期限已过、资源已释放。普通一轮仍是 5 分钟。业界对照：Claude Code 的后台命令跨轮运行直到结束或程序退出；Codex 的后台终端会话也比单次工具调用活得久；它们都不把命令寿命绑在一轮回答上。新增测试 [BG-8] 三条，都先在改动前跑失败、改动后通过。生产效果未测量，随完整版本上线验收。
+
+**后续（2026-10-28）：后台命令收进“更多”栏**
+
+问题：第一版在回答下面放一行“后台命令运行中 · 停止”，Andy 嫌后台命令在主界面抢注意力，要求收进对话右上的“更多”栏，并和“对话产物”一起出综合设计；他批准设计时的原话是“原型和方案都审核了，全部按照你的设计和推荐来做！”。整体设计记在 [ADR 0100（更多面板综合设计）](adr/0100-conversation-more-panel-files-and-background-commands.md)（见[案例 36](#case-more-panel)），本案例只记和后台命令有关的实现。
+
+难点是网页要列出每条命令的原文和输出，而第一版刻意没把命令原文写进登记表（可能含密码之类）。做法：登记表只多存两个加密内容的编号（命令前 300 个字符、结束时输出的最后 20 行），原文和输出仍是加密存放，网页用已有的读加密文本接口按编号读，和读聊天消息走同一条路；轮次摘要多一个 `backgroundCommands` 列表，含已结束的命令和汇报那一轮的编号，网页据此算出“第几轮启动”和“看汇报”跳到哪。主界面只留三处轻提示：按钮上正在跑的个数、回答下一行可点的灰字、汇报前一条灰色分隔线；“停止”点了就停、不弹确认，按钮变成“正在停止…”。
+
+放弃了什么：运行中的实时输出（后端还不能边跑边读，[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)）、命令改了哪些文件和下载全部输出（等设计第二期的产物登记表）。业界对照（设计文档里打开过的一手资料）：Claude Code 桌面版把后台任务放在对话旁的栏里，“listed once the session has something to show”；Codex 命令行的 `/ps` 只列命令和最近几行输出；Devin 能从命令跳回会话里那一刻，我们的“看汇报”学的是这个。结果：网页测试 [BG-9] 四条和改写后的 [BG-5] 通过，电脑和手机宽度用真浏览器截图核对过（测试数据）；生产效果未测量。
 
 [返回目录](#contents)
 

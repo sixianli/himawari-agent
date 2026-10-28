@@ -97,4 +97,6 @@ export const completedRun: RunSummary = {
   status: "completed",
   createdAt: at(0),
   updatedAt: at(27082),
+  background: null,
+  backgroundCommands: [],
 };

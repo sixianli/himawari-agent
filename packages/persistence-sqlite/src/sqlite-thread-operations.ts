@@ -17,6 +17,7 @@ import type {
   ThreadGatewayEventRecord,
   ThreadListQuery,
   ThreadMutationReceipt,
+  ThreadRunBackgroundCommand,
   ThreadRunSummaryRecord,
   ThreadSearchProjectionInput,
   ThreadSearchProjectionSource,
@@ -110,6 +111,9 @@ interface RunSummaryRow {
   readonly status: ThreadRunSummaryRecord["status"];
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly backgroundCount: number;
+  readonly backgroundStartedAt: string | null;
+  readonly backgroundDeadlineAt: string | null;
 }
 
 interface ThreadGatewayEventRow {
@@ -448,7 +452,6 @@ export class SqliteThreadOperations {
     return status === "active" || status === "archived" ? "open" : status;
   }
 
-  /** The caller owns the transaction containing the corresponding state mutation. */
   appendGatewayEventInTransaction(input: {
     ownerId: OwnerId;
     agentId: AgentId;
@@ -938,6 +941,127 @@ export class SqliteThreadOperations {
     return row ? this.messageFromRow(row) : undefined;
   }
 
+  admitBackgroundNoticeInTransaction(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly parentRunId: string;
+    readonly triggerId: string;
+    readonly runId: string;
+    readonly turnId: string;
+    readonly messageId: string;
+    readonly idempotencyKey: ThreadMutationReceipt["idempotencyKey"];
+    readonly contentRef: string;
+    readonly dataClassification: string;
+    readonly occurredAt: string;
+    readonly authority: ThreadCreateInput["authority"];
+  }): void {
+    this.assertAuthority(input.ownerId, input.agentId, input.authority);
+    this.assertPayload(input.ownerId, input.agentId, input.contentRef);
+    const parent = this.database
+      .prepare(
+        `SELECT session_id, model_selection_json FROM runs
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND thread_id = ?`,
+      )
+      .get(input.parentRunId, input.ownerId, input.agentId, input.threadId) as
+      | { session_id: string; model_selection_json: string | null }
+      | undefined;
+    if (!parent) this.fail("PORT_NOT_FOUND", "Background notice parent Run is missing");
+    const current = this.read(input.ownerId, input.agentId, input.threadId);
+    if (!current || current.status !== "active")
+      this.fail("PORT_CONFLICT", "Background notice Thread is not active");
+    if (!parent || !current) return;
+    const sequence = current.messageWatermark + 1;
+    this.database
+      .prepare(
+        `INSERT INTO triggers (
+          id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+          source_id, payload_ref, source_proof_ref, occurred_at
+        ) VALUES (?, ?, ?, ?, ?, 'external_event', ?, ?, ?, ?)`,
+      )
+      .run(
+        input.triggerId,
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        input.idempotencyKey,
+        input.messageId,
+        input.contentRef,
+        `run:${input.parentRunId}`,
+        input.occurredAt,
+      );
+    this.database
+      .prepare(
+        `INSERT INTO runs (
+          id, owner_id, agent_id, thread_id, session_id, trigger_id,
+          revision, status, created_at, updated_at, model_selection_json
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, 'accepted', ?, ?, ?)`,
+      )
+      .run(
+        input.runId,
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        parent.session_id,
+        input.triggerId,
+        input.occurredAt,
+        input.occurredAt,
+        parent.model_selection_json,
+      );
+    this.database
+      .prepare(
+        `INSERT INTO turns (
+          id, owner_id, agent_id, thread_id, session_id, run_id, turn_index, committed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        input.turnId,
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        parent.session_id,
+        input.runId,
+        sequence,
+      );
+    this.database
+      .prepare(
+        `INSERT INTO thread_messages (
+          id, owner_id, agent_id, thread_id, revision, sequence, role,
+          content_ref, classification, committed_at, turn_id, run_id, message_status
+        ) VALUES (?, ?, ?, ?, 1, ?, 'system', ?, ?, ?, ?, ?, 'committed')`,
+      )
+      .run(
+        input.messageId,
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        sequence,
+        input.contentRef,
+        input.dataClassification,
+        input.occurredAt,
+        input.turnId,
+        input.runId,
+      );
+    const nextRevision = current.revision + 1;
+    this.database
+      .prepare(
+        "UPDATE threads SET revision = ?, message_watermark = ?, updated_at = ? WHERE id = ? AND revision = ?",
+      )
+      .run(nextRevision, sequence, input.occurredAt, input.threadId, current.revision);
+    this.writeReceipt({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      idempotencyKey: input.idempotencyKey,
+      commandType: "thread.message.background_notice",
+      semanticFingerprint: `background-notice:${input.parentRunId}:${input.contentRef}`,
+      threadId: input.threadId,
+      threadRevision: nextRevision,
+      resultRef: input.contentRef,
+      committedAt: input.occurredAt,
+      authority: input.authority,
+    });
+  }
+
   private admitOwnerMessage(input: AdmitOwnerMessageInput) {
     this.assertDiskHeadroom();
     const transaction = this.database.transaction(() => {
@@ -1082,7 +1206,10 @@ export class SqliteThreadOperations {
     return transaction.immediate();
   }
 
-  commitAssistantMessage(input: CommitAssistantMessageInput) {
+  commitAssistantMessage(
+    input: CommitAssistantMessageInput,
+    options: { readonly keepRunOpen?: boolean } = {},
+  ) {
     this.assertDiskHeadroom();
     const transaction = this.database.transaction(() => {
       const replay = this.replay(
@@ -1127,6 +1254,9 @@ export class SqliteThreadOperations {
       if (!run || !turn || ["completed", "failed", "cancelled"].includes(run.status)) {
         this.fail("PORT_INVALID_OPERATION", "Assistant commit requires an active Run and Turn");
       }
+      if (options.keepRunOpen && run?.status !== "running") {
+        this.fail("PORT_INVALID_OPERATION", "Only a running Run can keep running after its answer");
+      }
       const sequence = current.messageWatermark + 1;
       this.database
         .prepare(
@@ -1152,7 +1282,9 @@ export class SqliteThreadOperations {
         .run(input.committedAt, input.turnId);
       this.database
         .prepare(
-          "UPDATE runs SET status = 'completed', revision = revision + 1, updated_at = ? WHERE id = ?",
+          options.keepRunOpen
+            ? "UPDATE runs SET revision = revision + 1, updated_at = ? WHERE id = ?"
+            : "UPDATE runs SET status = 'completed', revision = revision + 1, updated_at = ? WHERE id = ?",
         )
         .run(input.committedAt, input.runId);
       const nextRevision = current.revision + 1;
@@ -1353,8 +1485,6 @@ export class SqliteThreadOperations {
   }
 
   private readDetailSnapshot(query: ThreadDetailSnapshotQuery): ThreadDetailSnapshot | undefined {
-    // The same SQLite read transaction binds watermark, messages and Run states.
-    // A completion cannot appear between separate Worker round trips anymore.
     return this.database
       .transaction(() => {
         const thread = this.read(query.ownerId, query.agentId, query.threadId);
@@ -1467,7 +1597,7 @@ export class SqliteThreadOperations {
         | undefined;
       if (!trigger) return undefined;
       const sourceMessage =
-        trigger.sourceType === "user_message"
+        trigger.sourceType === "user_message" || trigger.sourceType === "external_event"
           ? (this.database
               .prepare(
                 `SELECT sequence FROM thread_messages
@@ -1526,8 +1656,6 @@ export class SqliteThreadOperations {
           return state;
         },
       );
-      // Freeze a native snapshot in the same read transaction as the visible message frontier.
-      // A snapshot is an immutable protected artifact, not a presentation Trace event.
       const runtimeHistory = this.readNativeHistory(
         query.ownerId,
         query.agentId,
@@ -1583,7 +1711,6 @@ export class SqliteThreadOperations {
     if (thread.lineage?.sourceContentAvailable) {
       const parent = this.read(ownerId, agentId, thread.lineage.sourceThreadId);
       if (parent && (parent.status === "active" || parent.status === "archived")) {
-        // Freeze the actual snapshot at Fork creation. Never follow a parent's later head.
         const pinned = this.database
           .prepare(`SELECT runtime_history_json AS json FROM thread_fork_lineage
           WHERE thread_id = ? AND owner_id = ? AND agent_id = ?`)
@@ -1631,12 +1758,46 @@ export class SqliteThreadOperations {
   ): readonly ThreadRunSummaryRecord[] {
     const rows = this.database
       .prepare(
-        `SELECT id AS runId, revision, status, created_at AS createdAt, updated_at AS updatedAt
-        FROM runs WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
-        ORDER BY created_at, id`,
+        `SELECT r.id AS runId, r.revision, r.status, r.created_at AS createdAt,
+          r.updated_at AS updatedAt, COUNT(h.task_ref) AS backgroundCount,
+          MIN(h.started_at) AS backgroundStartedAt, MAX(h.deadline_at) AS backgroundDeadlineAt
+        FROM runs r
+        LEFT JOIN run_background_holds h ON h.run_id = r.id AND h.owner_id = r.owner_id
+          AND h.agent_id = r.agent_id AND h.released_at IS NULL
+        WHERE r.owner_id = ? AND r.agent_id = ? AND r.thread_id = ?
+        GROUP BY r.id
+        ORDER BY r.created_at, r.id`,
       )
       .all(ownerId, agentId, threadId) as RunSummaryRow[];
-    return rows.map((row) => Object.freeze({ ...row, runId: row.runId as RunId }));
+    const commands = new Map<string, ThreadRunBackgroundCommand[]>();
+    for (const hold of this.database
+      .prepare(
+        `SELECT run_id AS runId, task_ref AS taskRef, command_ref AS commandRef,
+          output_ref AS outputRef, started_at AS startedAt, deadline_at AS deadlineAt,
+          released_at AS endedAt, outcome, notice_run_id AS noticeRunId
+        FROM run_background_holds
+        WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
+        ORDER BY started_at, task_ref`,
+      )
+      .all(ownerId, agentId, threadId) as (ThreadRunBackgroundCommand & { runId: string })[]) {
+      const { runId, ...command } = hold;
+      commands.set(runId, [...(commands.get(runId) ?? []), Object.freeze(command)]);
+    }
+    return rows.map(({ backgroundCount, backgroundStartedAt, backgroundDeadlineAt, ...row }) =>
+      Object.freeze({
+        ...row,
+        runId: row.runId as RunId,
+        backgroundCommands: Object.freeze(commands.get(row.runId) ?? []),
+        background:
+          backgroundCount > 0 && backgroundStartedAt && backgroundDeadlineAt
+            ? Object.freeze({
+                count: backgroundCount,
+                startedAt: backgroundStartedAt,
+                deadlineAt: backgroundDeadlineAt,
+              })
+            : null,
+      }),
+    );
   }
 
   private listGatewayEvents(

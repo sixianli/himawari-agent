@@ -65,6 +65,7 @@ import {
 } from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
+import { backgroundCommandLimits } from "./production-background-commands.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -751,6 +752,7 @@ export async function runAgentService(
     const taskEnvironmentConfiguration = configuration.taskEnvironments;
     const sandboxServices = await createProductionSandboxServices({
       diagnosticOutput: errorOutput,
+      backgroundCommandMs: backgroundCommandLimits(configuration.deadlines).maximumMs,
       createPiFilePreparation: () => {
         piFilePreparationPool = createPiFilePreparationPool({
           maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,
@@ -1104,6 +1106,7 @@ export async function runAgentService(
           ? { publicFetch: configuration.runPolicy.publicFetch }
           : {}),
         ...(configuration.runPolicy?.coding ? { coding: configuration.runPolicy.coding } : {}),
+        backgroundCommands: backgroundCommandLimits(configuration.deadlines),
         fileRead: fileReadServices,
         ...(sandboxServices
           ? {
@@ -1355,6 +1358,14 @@ export async function runAgentService(
         webPush.start();
       }
       runs = createProductionRunComposition({
+        ...(tools.background ? { backgroundCommands: tools.background } : {}),
+        onBackgroundFailure: (runId, error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "background-command.finish_failed",
+            runId,
+            code: stableErrorCode(error),
+          }),
         onRunTiming: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
@@ -1520,6 +1531,7 @@ export async function runAgentService(
         },
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
+          if (await runs.background?.cancel(input.runId)) return;
           await runs.coordinator.cancel({
             ownerId: configuration.ownerId,
             agentId: configuration.agentId,

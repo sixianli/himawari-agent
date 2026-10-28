@@ -22,6 +22,7 @@ import {
   executionTime,
   executionToolPhase,
   executionWaitReason,
+  isAnsweredRun,
   isNarration,
   isTerminalRun,
   type RunSummary,
@@ -76,7 +77,7 @@ export function ExecutionProcess({
   const stateEnded = ["completed", "failed", "stopped", "not_dispatched"].includes(
     state?.displayPhase ?? "",
   );
-  const activityEnded = (isTerminalRun(run) || stateEnded) && state?.displayPhase !== "unresolved";
+  const activityEnded = (isAnsweredRun(run) || stateEnded) && state?.displayPhase !== "unresolved";
   useEffect(() => {
     if (activityEnded || connection !== "connected") return;
     const timer = window.setInterval(() => setNow(Date.now()), 100);

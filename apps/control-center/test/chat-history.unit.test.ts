@@ -69,6 +69,8 @@ function renderRun(
           status,
           createdAt: "2026-09-11T00:00:00Z",
           updatedAt: "2026-09-11T00:00:12Z",
+          background: null,
+          backgroundCommands: [],
         },
       ],
     },
