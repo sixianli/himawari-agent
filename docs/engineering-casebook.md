@@ -63,6 +63,7 @@ date: "2026-10-26"
   36. [对话做出的文件和后台命令放进同一个“更多”栏，不在对话里抢注意力](#case-more-panel)
   37. [愿景散在三处、原则冲突没有裁决顺序：把产品愿景定为顶层文档，把“像贾维斯”变成可测的评测](#case-product-vision)
   38. [主动提醒发出去就不管了：记录每条通知的送达、点开和划掉，为“该不该打扰”积累数据](#case-push-feedback)
+  40. [域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配](#case-min-tls)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -86,7 +87,7 @@ date: "2026-10-26"
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
@@ -2479,6 +2480,63 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 **面试 30 秒版**
 
 个人 Agent 的主动提醒要知道“哪次打扰值、哪次不值”，可原来的推送只管送到，记录 7 天就删。我加了一张反馈表，每条送达的通知一行，记点开和划掉；点开靠页面地址里的短编号回报，划掉靠后台脚本存进浏览器缓存、下次打开时回报，都走已授权的命令通道，不存通知正文。参照 Firebase 的送达/点开/划掉三类事件，也接受 iPhone 拿不到“划掉”的平台限制，为 30 天的命中率统计打基础。
+
+[返回目录](#contents)
+
+<a id="case-min-tls"></a>
+
+## 案例 40：域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配
+
+**背景与现象**
+
+2026-10-28 的公网安全只读审计（报告第 8 版）发现，`siyi.win` 整个域名允许的最低 TLS 版本（TLS 是 HTTPS 用的加密协议）还是 `1.0`。改前 14:57（日本时间）从 Mac 实测：TLS 1.0 和 1.1 都能和 `himawari.siyi.win` 握手成功。审计还发现两件相关的事：Access（Cloudflare 的登录关卡）里为手机安装和推送设的放行应用按路径前缀、不分大小写放行；新加的 `himawari-files.siyi.win` 的 http 请求不跳 https，以明文到达应用。
+
+**根因**
+
+- 最低 TLS 是 Cloudflare 新域名的默认值，接入时没人改过；入口上线时只验了登录和推送，没有核对域名整域设置。
+- `himawari.siyi.win` 的 http 会跳 https，是 Access 顺带做的；“始终用 HTTPS”开关其实一直关着。新子域名没有 Access，这一层就没了。
+- 放行规则偏宽的原因是 Access 应用路径本身就是前缀匹配，官方文档没有“只匹配这一个路径”的选项。
+
+**我们的方案**
+
+- Andy 在对话里亲手授权后，请他建一把只含 `Zone → Zone Settings → Edit`、只限 `siyi.win`、次日过期的 Token，存在 Mac 的 `~/.cloudflare-edit-token`（权限 600）。先用它读出 `min_tls_version`、`always_use_https`、`tls_1_3`、`ssl` 的当前值存档，再 `PATCH` `min_tls_version` 为 `1.2`，读回确认。
+- 改后从公网对三个子域名逐版本复测，并确认手机安装和推送用的 6 个公开文件仍是 200。
+- 放行规则：对照代码列出真正需要公开的 6 个文件，把整个 `/icons/` 收窄成 3 个具体图标的方案交给 Andy 决定，同时写明收窄后 `/sw.js/x` 这类子路径仍会被放行，真正挡住它们的是应用只认这 6 个文件。
+- “始终用 HTTPS”同样是整域开关，Andy 单独点头后 15:09 用同一把 Token 打开。
+- 改法写进[生产网页入口 Runbook](runbooks/production-web-entry-runbook.md) 步骤第 5 步，包括基线、存档、读回、复测和撤回命令。
+
+**方案讨论与备选**
+
+- 借用 Mac 上别的任务留下的 Cloudflare 凭据：省 Andy 一步，但那把凭据是为隧道和 DNS 建的、权限比这次大，Andy 也没让这次任务用它。不采用。
+- 在 Andy 已登录的 Chrome 控制台里点按钮改：不用建 Token，但改前改后的值只能截图，不如 API 读回的 JSON 好存档和复核。不采用。
+- 按主机名单独设最低 TLS：Cloudflare 要求付费的 Advanced Certificate Manager；三个子域名的要求一样，整域设置就够。不采用。
+- 直接改到 1.3：主流浏览器都支持，但部分老设备和工具只有 1.2，业界基线是禁 1.0/1.1，没有必要更激进。不采用。
+
+**业界主流做法**
+
+- ✅ IETF RFC 8996（2021 年 3 月，BCP 195）：“TLS 1.0 MUST NOT be used. Negotiation of TLS 1.0 from any version of TLS MUST NOT be permitted.” 对 TLS 1.1 写法相同。[原文](https://datatracker.ietf.org/doc/html/rfc8996)
+- ✅ Cloudflare《Minimum TLS Version》：整域设置用 `PATCH /zones/$ZONE_ID/settings/min_tls_version`，需要 Zone Settings Write 权限；低于最低版本的访问会被拒绝（“visitors attempting to connect using TLS 1.0 will be rejected”），选了最低版本不影响更高版本。[原文](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/minimum-tls/)
+- ✅ Cloudflare《Application paths》：路径通配和继承规则只说明了“更宽的路径覆盖下层”，没有精确匹配选项，也没写大小写规则；本项目审计实测不分大小写。[原文](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
+
+**对比与取舍**
+
+最低版本取 1.2，和 RFC 8996 的要求一致；TLS 1.3 照常开着。凭据按“最小权限、单一域名、短期、用完即删”给，和改生产机防火墙时先备份、能撤回的做法一致。放行规则这一项接受了 Cloudflare 的限制：路径收窄只能防止“以后往 `/icons/` 放新文件自动变公开”，彻底精确要靠应用自己拒绝，Himawari 的网关本来就只认 6 个文件名。
+
+**结果数据**
+
+- `min_tls_version`：改前 `1.0`，2026-10-28 15:04（日本时间）改为 `1.2`，读回一致。
+- 公网实测（OpenSSL 3.6.4）：改前 TLS 1.0、1.1 都能握手；改后 `himawari`、`himawari-test`、`himawari-files` 三个子域名的 TLS 1.0、1.1 都报 `tlsv1 alert protocol version`，1.2 和 1.3 正常。
+- `always_use_https`：改前 `off`，15:09 改为 `on`；之后 `himawari-files.siyi.win` 的 http 首页从直接到达应用（403）变成 301 跳 https，另两个子域名同样 301。
+- 首页仍 302 到 Access 登录，6 个公开文件都是 200，没有停服。
+- 坑：本机 OpenSSL 默认安全级别会自己拒绝发起 TLS 1.0/1.1，必须加 `-cipher 'DEFAULT@SECLEVEL=0'`，否则会误以为服务器已经拒绝。
+
+**相关 ADR/PR**
+
+[生产网页入口 Runbook](runbooks/production-web-entry-runbook.md)、[ADR 0089](adr/0089-web-push-only-owner-entry.md)、[生产机防火墙](#case-prod-firewall)；PR 见分支 `claude/cloudflare-min-tls`。
+
+**面试 30 秒版**
+
+安全审计发现域名还接受已被 RFC 8996 禁用的 TLS 1.0 和 1.1。我先从公网测出改前确实能握手，再用一把只限这个域名、只能改域名设置、次日过期的 Token，读出原值存档、改成 1.2、读回确认，然后对三个子域名逐版本复测，确认手机安装和推送不受影响。顺带说清了一个限制：Cloudflare Access 的放行路径是前缀匹配，做不到精确，所以最后一道门要靠应用自己只认白名单文件。
 
 [返回目录](#contents)
 
