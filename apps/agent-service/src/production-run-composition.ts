@@ -116,6 +116,7 @@ export interface ProductionRunCompositionOptions {
   readonly instanceId: string;
   readonly cwd: string;
   readonly agentDir: string;
+  readonly timeZone?: string;
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
   readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
   readonly onBackgroundFailure?: (runId: string, error: unknown) => void;
@@ -339,6 +340,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     models: options.models,
     cwd: options.cwd,
     agentDir: options.agentDir,
+    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
     admission,
     now: () => clock.now(),
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,

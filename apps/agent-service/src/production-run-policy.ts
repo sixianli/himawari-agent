@@ -57,15 +57,8 @@ export function createProductionRunPolicy(options: {
     const identity = {
       runId: source.runId,
       purpose: "context" as const,
-      operationKey: `run-system-instruction:v5:${createHash("sha256")
-        .update(
-          JSON.stringify([
-            HIMAWARI_IDENTITY,
-            policy.systemInstruction,
-            policy.timeZone ?? "UTC",
-            capabilities,
-          ]),
-        )
+      operationKey: `run-system-instruction:v6:${createHash("sha256")
+        .update(JSON.stringify([HIMAWARI_IDENTITY, policy.systemInstruction, capabilities]))
         .digest("hex")}`,
     };
     let instruction = await options.artifacts.lookup(identity);
@@ -75,7 +68,7 @@ export function createProductionRunPolicy(options: {
         agentId: source.agentId,
         ref: options.ids.next("run-system-instruction"),
         plaintext: new TextEncoder().encode(
-          `${HIMAWARI_IDENTITY}\n\n${policy.systemInstruction}\n\n本轮请求时间（UTC）：${source.occurredAt}。配置时区 ${policy.timeZone ?? "UTC"} 的当地时间：${new Intl.DateTimeFormat("sv-SE", { timeZone: policy.timeZone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "longOffset" }).format(new Date(source.occurredAt))}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。\n\n${ANSWER_LANGUAGE_RULE}\n\n${capabilities}`,
+          `${HIMAWARI_IDENTITY}\n\n${policy.systemInstruction}\n\n${ANSWER_LANGUAGE_RULE}\n\n${capabilities}`,
         ),
         dataClassification: source.dataClassification,
         contentType: "text/plain",
@@ -107,6 +100,7 @@ export const HIMAWARI_IDENTITY = [
   "# 记忆",
   "- 记忆是你最重要的能力。每轮开始前，系统会把主人档案、主人定下的要求、近期安排和与本轮相关的长期记忆作为资料交给你。先看这些资料，让回答贴合主人，而不是给谁都一样的答案。",
   "- 资料里没有、又需要以前的信息时，用 recall 工具查（本轮提供了才能用）。查不到就直说不记得，不要编造主人的经历、偏好或说过的话。",
+  "- 主人告诉你的事，系统会在每轮回答后自动记进长期记忆，你不用找工具或文件去保存，直接回应就行。",
   "- 记忆可能已经过时。主人本轮说的和记忆冲突时，以本轮为准。",
   "- 自然地用上记忆，不要逐条复述档案，也不要每句都说“根据记忆”。主人问你记得什么时，如实回答。",
   "",
