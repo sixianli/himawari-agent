@@ -230,3 +230,59 @@ export function startPresenceHeartbeat(input: {
     input.document.removeEventListener("visibilitychange", onVisibility);
   };
 }
+
+export const PUSH_FEEDBACK_CACHE = "himawari-push-feedback";
+const PUSH_TAG = /^[A-Za-z0-9_-]{1,64}$/;
+
+interface PushFeedbackEvent {
+  readonly tag: string;
+  readonly reaction: "opened" | "dismissed";
+  readonly occurredAt: string;
+}
+
+function feedbackEvent(value: unknown): PushFeedbackEvent | null {
+  if (!value || typeof value !== "object") return null;
+  const { tag, reaction, occurredAt } = value as Record<string, unknown>;
+  if (typeof tag !== "string" || !PUSH_TAG.test(tag)) return null;
+  if (reaction !== "opened" && reaction !== "dismissed") return null;
+  if (typeof occurredAt !== "string" || Number.isNaN(Date.parse(occurredAt))) return null;
+  return { tag, reaction, occurredAt: new Date(occurredAt).toISOString() };
+}
+
+export async function reportPushFeedback(input: {
+  readonly client: Pick<GatewayClient, "mutate">;
+  readonly configuration: ControlCenterRuntimeConfiguration;
+  readonly location: Pick<Location, "href">;
+  readonly history: Pick<History, "replaceState" | "state">;
+  readonly caches: Pick<CacheStorage, "open"> | undefined;
+  readonly now: () => Date;
+}): Promise<void> {
+  const url = new URL(input.location.href);
+  const opened = url.searchParams.get("push");
+  const events: PushFeedbackEvent[] = [];
+  if (opened !== null) {
+    url.searchParams.delete("push");
+    input.history.replaceState(input.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    if (PUSH_TAG.test(opened))
+      events.push({ tag: opened, reaction: "opened", occurredAt: input.now().toISOString() });
+  }
+  const cache = await input.caches?.open(PUSH_FEEDBACK_CACHE).catch(() => undefined);
+  const stored = cache ? await cache.keys().catch(() => [] as readonly Request[]) : [];
+  for (const request of stored.slice(0, 50 - events.length)) {
+    const event = feedbackEvent(await (await cache?.match(request))?.json().catch(() => null));
+    if (event) events.push(event);
+    else await cache?.delete(request);
+  }
+  if (events.length === 0) return;
+  await input.client.mutate(
+    commandMessage(
+      input.configuration,
+      "push.feedback.record",
+      { events },
+      input.configuration.authorizationRef
+        ? { authorizationRef: input.configuration.authorizationRef }
+        : {},
+    ),
+  );
+  await Promise.all(stored.slice(0, 50).map((request) => cache?.delete(request)));
+}

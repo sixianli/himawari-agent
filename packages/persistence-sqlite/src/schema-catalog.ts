@@ -720,6 +720,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its outbox row",
   ),
   entry(
+    "web_push_feedback",
+    "WebPushStorePort",
+    "one row per notification delivered to at least one device; first open and first dismissal recorded once; kept after the outbox row is pruned",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "web_push_cursors",
     "WebPushStorePort",
     "one read position per push source",
