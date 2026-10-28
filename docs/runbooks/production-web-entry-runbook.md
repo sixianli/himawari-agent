@@ -62,7 +62,7 @@ date: "2026-10-27"
   - Access 应用 “Himawari” 拦在前面：策略 “Allow James only” 只放一个邮箱，会话 1 个月；登录方式只开了 One-time PIN（邮箱验证码，Access 往允许的邮箱发 6 位码）。应用 “Himawari public files (bypass)” 对 `manifest.webmanifest`、`sw.js` 和图标放行所有人，因为 iPhone 添加到主屏幕和注册推送时不带登录 cookie。
   - 生产配置：`publicOrigin` 是 `https://himawari.siyi.win`，`publicMode` 是 `true`，`identity.kind` 是 `cloudflare-access`（`audience` 是 “Himawari” 应用的 AUD，一串应用标识）。`bootstrap.enabled` 是 `false`。
   - 放行应用的路径不是精确匹配：Cloudflare 的 Access 应用路径会连带覆盖它下面的子路径，而且实测不分大小写，所以放行 `/sw.js` 也会放行 `/sw.js/x`、`/SW.JS`。这些请求到了应用只会得到 404，挡住它们靠的是应用自己只认这 6 个公开文件（`packages/platform-node/src/http-gateway-server.ts` 的 `sendHomeScreenFile`）。
-  - 域名 `siyi.win` 的整域设置（2026-10-28 15:04 读回）：最低 TLS 版本（TLS 是 HTTPS 用的加密协议）`1.2`，TLS 1.3 开，SSL 模式 `full`，自动 HTTPS 改写开，“始终用 HTTPS”（Always Use HTTPS，http 请求自动跳到 https）关。`himawari.siyi.win` 的 http 请求由 Access 跳到 https；没有 Access 的子域名（例如 `himawari-files.siyi.win`）在“始终用 HTTPS”关着时会以明文 http 到达应用。
+  - 域名 `siyi.win` 的整域设置（2026-10-28 15:04 读回）：最低 TLS 版本（TLS 是 HTTPS 用的加密协议）`1.2`，TLS 1.3 开，SSL 模式 `full`，自动 HTTPS 改写开；“始终用 HTTPS”（Always Use HTTPS，http 请求自动跳到 https）2026-10-28 15:09 起开。在那之前 `himawari.siyi.win` 的 http 跳转是 Access 顺带做的，没有 Access 的 `himawari-files.siyi.win` 会以明文 http 到达应用。
 - **允许的邮箱只有一个**。其他邮箱在 Access 登录页也能填，但 Access 不会给它发码，表现为“完全收不到验证码”。换允许的邮箱会换掉 `sub`，Himawari 就认不出主人，要按[步骤](#procedure)第 4 步重新绑定。
 - **改 Cloudflare 账号设置要用户在对话里明确同意**（加减登录方式、改策略、改隧道），Claude 的自动权限检查也会拦。
 - **服务按 Host 头核对来源**：只认 `publicOrigin` 的主机名。所以 Mac 上的 ssh 隧道 `127.0.0.1:8400` 在浏览器里不能用，生产机上 `curl http://127.0.0.1:8400/` 也会得到 403；本机检查要带 `-H "Host: himawari.siyi.win"`。回滚脚本 `scripts/delivery-mode/rollback-remote.py` 查首页时也按这个 Host 发请求。
@@ -108,7 +108,7 @@ date: "2026-10-27"
    3. 读出当前值存档：`GET https://api.cloudflare.com/client/v4/zones/<zone_id>/settings/<设置名>`，设置名是 `min_tls_version`、`always_use_https`、`tls_1_3`、`ssl`。`siyi.win` 的 zone 编号是 `b94608b666d43ee024b95a21a337fdd8`。
    4. 修改：`PATCH` 同一地址，正文是 `{"value":"1.2"}` 或 `{"value":"on"}`；再 `GET` 一次，读回的值要和请求的一致。
    5. 按[结果验证](#verification)最后两条从外网复测，然后删掉 `~/.cloudflare-edit-token`，请用户在控制台删掉这把 Token。
-   2026-10-28 15:04 用这套步骤把最低 TLS 从 `1.0` 改成了 `1.2`（[工程案例 40](../engineering-casebook.md#case-min-tls)）。
+   2026-10-28 15:04 用这套步骤把最低 TLS 从 `1.0` 改成了 `1.2`，15:09 把“始终用 HTTPS”从 `off` 改成了 `on`（[工程案例 40](../engineering-casebook.md#case-min-tls)）。
 
 [返回导航](#阅读导航)
 
@@ -132,7 +132,7 @@ date: "2026-10-27"
 - 2026-10-27 切换的备份和快照在生产机：`/root/cfaccess-20261027T035251Z/`（成功那次：`config.before.json`、`config.next.json`、`snapshot/` 里的数据库和 `authority.json`）、`/root/cfaccess-20261027T035109Z/`（因读不到 `/root` 失败那次）、`/root/config-backups/`、`/root/db-backups/`。
 - 每次执行新建 `/root/cfaccess-<UTC 时间>/` 放备份和快照，不复用旧目录；过程结论记进当次的案例或 Backlog，不写进本手册。
 - 不记录隧道令牌、Access 令牌、cookie、推送私钥或 `secrets/` 目录的内容。
-- 2026-10-28 最低 TLS 改动：改前读回 `min_tls_version` 是 `1.0`，`always_use_https` 是 `off`；改前外网实测 TLS 1.0 和 1.1 都能握手，改后三个子域名都报 `tlsv1 alert protocol version`，1.2 和 1.3 正常，6 个公开文件都是 200。
+- 2026-10-28 最低 TLS 改动：改前读回 `min_tls_version` 是 `1.0`，`always_use_https` 是 `off`；改前外网实测 TLS 1.0 和 1.1 都能握手，改后三个子域名都报 `tlsv1 alert protocol version`，1.2 和 1.3 正常，6 个公开文件都是 200。15:09 打开“始终用 HTTPS”后，三个子域名的 `http://` 首页都是 301 跳到对应的 https 地址。
 
 [返回导航](#阅读导航)
 

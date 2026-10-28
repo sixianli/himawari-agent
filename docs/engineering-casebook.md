@@ -2439,7 +2439,7 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 - Andy 在对话里亲手授权后，请他建一把只含 `Zone → Zone Settings → Edit`、只限 `siyi.win`、次日过期的 Token，存在 Mac 的 `~/.cloudflare-edit-token`（权限 600）。先用它读出 `min_tls_version`、`always_use_https`、`tls_1_3`、`ssl` 的当前值存档，再 `PATCH` `min_tls_version` 为 `1.2`，读回确认。
 - 改后从公网对三个子域名逐版本复测，并确认手机安装和推送用的 6 个公开文件仍是 200。
 - 放行规则：对照代码列出真正需要公开的 6 个文件，把整个 `/icons/` 收窄成 3 个具体图标的方案交给 Andy 决定，同时写明收窄后 `/sw.js/x` 这类子路径仍会被放行，真正挡住它们的是应用只认这 6 个文件。
-- “始终用 HTTPS”同样是整域开关，单独请 Andy 点头再改。
+- “始终用 HTTPS”同样是整域开关，Andy 单独点头后 15:09 用同一把 Token 打开。
 - 改法写进[生产网页入口 Runbook](runbooks/production-web-entry-runbook.md) 步骤第 5 步，包括基线、存档、读回、复测和撤回命令。
 
 **方案讨论与备选**
@@ -2463,6 +2463,7 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 - `min_tls_version`：改前 `1.0`，2026-10-28 15:04（日本时间）改为 `1.2`，读回一致。
 - 公网实测（OpenSSL 3.6.4）：改前 TLS 1.0、1.1 都能握手；改后 `himawari`、`himawari-test`、`himawari-files` 三个子域名的 TLS 1.0、1.1 都报 `tlsv1 alert protocol version`，1.2 和 1.3 正常。
+- `always_use_https`：改前 `off`，15:09 改为 `on`；之后 `himawari-files.siyi.win` 的 http 首页从直接到达应用（403）变成 301 跳 https，另两个子域名同样 301。
 - 首页仍 302 到 Access 登录，6 个公开文件都是 200，没有停服。
 - 坑：本机 OpenSSL 默认安全级别会自己拒绝发起 TLS 1.0/1.1，必须加 `-cipher 'DEFAULT@SECLEVEL=0'`，否则会误以为服务器已经拒绝。
 
