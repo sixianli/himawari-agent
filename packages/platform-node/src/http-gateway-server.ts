@@ -242,6 +242,7 @@ function assertMutationBoundary(request: FastifyRequest, publicOrigin: URL): voi
 }
 
 const FILE_CONTENT_PATH = /^\/api\/files\/v1\/content\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
+const HEALTH_PATH = /^\/health\/[a-z]+$/;
 const FILE_PREVIEW_PATH = /^\/preview\/([A-Za-z0-9_-]{1,512}\.[A-Za-z0-9_-]{1,128})$/;
 const FILE_KINDS = ["document", "code", "web", "image", "pdf", "data", "other"] as const;
 
@@ -767,12 +768,10 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     previewOrigin !== undefined && header(request, "host") === previewOrigin.host;
 
   app.addHook("onRequest", async (request) => {
-    if (
-      previewRequest(request) &&
-      (request.method !== "GET" || !FILE_PREVIEW_PATH.test(requestPath(request)))
-    ) {
-      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
-    }
+    const path = requestPath(request);
+    if (header(request, "host") === publicOrigin.host || HEALTH_PATH.test(path)) return;
+    if (previewRequest(request) && request.method === "GET" && FILE_PREVIEW_PATH.test(path)) return;
+    throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.ORIGIN_REJECTED, 403);
   });
 
   app.addHook("onSend", async (request, reply) => {

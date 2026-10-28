@@ -65,7 +65,7 @@ date: "2026-10-27"
   - 域名 `siyi.win` 的整域设置（2026-10-28 15:04 读回）：最低 TLS 版本（TLS 是 HTTPS 用的加密协议）`1.2`，TLS 1.3 开，SSL 模式 `full`，自动 HTTPS 改写开；“始终用 HTTPS”（Always Use HTTPS，http 请求自动跳到 https）2026-10-28 15:09 起开。在那之前 `himawari.siyi.win` 的 http 跳转是 Access 顺带做的，没有 Access 的 `himawari-files.siyi.win` 会以明文 http 到达应用。
 - **允许的邮箱只有一个**。其他邮箱在 Access 登录页也能填，但 Access 不会给它发码，表现为“完全收不到验证码”。换允许的邮箱会换掉 `sub`，Himawari 就认不出主人，要按[步骤](#procedure)第 4 步重新绑定。
 - **改 Cloudflare 账号设置要用户在对话里明确同意**（加减登录方式、改策略、改隧道），Claude 的自动权限检查也会拦。
-- **服务按 Host 头核对来源**：只认 `publicOrigin` 的主机名。所以 Mac 上的 ssh 隧道 `127.0.0.1:8400` 在浏览器里不能用，生产机上 `curl http://127.0.0.1:8400/` 也会得到 403；本机检查要带 `-H "Host: himawari.siyi.win"`。回滚脚本 `scripts/delivery-mode/rollback-remote.py` 查首页时也按这个 Host 发请求。
+- **服务按 Host 头核对来源**：只认 `publicOrigin` 的主机名。2026-10-28 起这条检查在收到请求时就做，不分 GET、POST 还是 WebSocket 升级：主机名不是 `publicOrigin` 的请求一律 403（`HTTP_GATEWAY_ORIGIN_REJECTED`），不进任何业务处理；例外只有 `/health/*`，以及预览域名 `http.previewOrigin` 上的 `GET /preview/<签名链接>`。所以 Mac 上的 ssh 隧道 `127.0.0.1:8400` 在浏览器里不能用，生产机上 `curl http://127.0.0.1:8400/` 也会得到 403；本机检查要带 `-H "Host: himawari.siyi.win"`。回滚脚本 `scripts/delivery-mode/rollback-remote.py` 查首页时也按这个 Host 发请求。
 - **最近认证**：批准需要“最近认证”的操作和删除对话时，Himawari 要求 5 分钟内登录过。用 Access 时这指的是 Access 登录时间，过期了就打开 `https://himawari.siyi.win/cdn-cgi/access/logout` 退出再登一次。
 - **授权编号要两处一致**：服务每次启动都把授权编号（fencing token，只增不减）写进数据库 `deployments` 表和 `/var/lib/himawari/state/authority.json`。只换回数据库而不换镜像文件，启动会报 `PRODUCTION_AUTHORITY_MIRROR_MISMATCH`。回退时要么只撤回改过的那一行，要么把同一时刻的数据库和 `authority.json` 一起换回。
 - 第一项现场改动是停服（`systemctl stop himawari-prod.service`），停服前要用户当次同意或已有覆盖这一目标和动作的授权。

@@ -270,6 +270,19 @@ describe("[WP-3] web push dispatch", () => {
       "normal",
     );
     expect(context.failures).toEqual([]);
+    const feedback = await context.store.listFeedback({ ...scope, sentFrom: START, limit: 50 });
+    expect(
+      feedback.map(({ kind, devices, tag, sourceKey }) => [
+        kind,
+        devices,
+        tag === webPushTopic(sourceKey),
+      ]),
+    ).toEqual([
+      ["approval", 2, true],
+      ["reminder", 2, true],
+      ["run", 2, true],
+      ["run", 2, true],
+    ]);
 
     const restarted = context.create();
     context.setClock(at(T0, 30));

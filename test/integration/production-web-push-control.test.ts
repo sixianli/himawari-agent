@@ -14,7 +14,7 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebPushPresence } from "../../apps/agent-service/src/production-web-push.ts";
+import { WebPushPresence, webPushTopic } from "../../apps/agent-service/src/production-web-push.ts";
 import {
   ProductionWebPushControl,
   webPushSubscriptionId,
@@ -103,7 +103,7 @@ describe("[WP-5] web push gateway control", () => {
         : undefined,
       clock: { now: () => T0 },
     });
-    return { control, presence, tests };
+    return { control, presence, tests, store: repository.webPush() };
   }
 
   const status = async (control: ProductionWebPushControl) => {
@@ -114,6 +114,81 @@ describe("[WP-5] web push gateway control", () => {
     if (snapshot.type !== "push.status.snapshot") throw new Error("unexpected snapshot");
     return snapshot.payload;
   };
+
+  it("[WP-11] records the owner opening and dismissing a delivered notification, once each", async () => {
+    const { control, store } = await setup(false);
+    const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+    const endpoint = "https://web.push.apple.com/QGuQyavXutnMH8Ta";
+    await store.saveSubscription({
+      ...scope,
+      id: webPushSubscriptionId(endpoint),
+      endpoint,
+      p256dh: P256DH,
+      auth: "BTBZMqHH6r4Tts7J_aSIgg",
+      locale: "zh-CN",
+      deviceLabel: "iPhone",
+      kinds: ["run"],
+      now: T0,
+    });
+    await store.enqueue({
+      ...scope,
+      items: [
+        {
+          ...scope,
+          sourceKey: "run:r1:completed",
+          kind: "run",
+          sourceRef: "r1",
+          threadId: "thread-1",
+          createdAt: T0,
+          expiresAt: "2026-10-26T13:00:00.000Z",
+        },
+      ],
+      cursor: null,
+      now: T0,
+    });
+    const tag = webPushTopic("run:r1:completed");
+    await store.recordAttempt({
+      ...scope,
+      sourceKey: "run:r1:completed",
+      subscriptionId: webPushSubscriptionId(endpoint),
+      status: "sent",
+      attempts: 1,
+      nextAttemptAt: null,
+      lastCode: null,
+      tag,
+      now: T0,
+    });
+    const feedback = (events: unknown[]) =>
+      control.execute(message("command", "push.feedback.record", { events }) as GatewayV2Command);
+    expect(
+      await feedback([
+        { tag, reaction: "opened", occurredAt: T0 },
+        { tag, reaction: "dismissed", occurredAt: T0 },
+      ]),
+    ).toEqual({ resultRef: "web-push-feedback:2", replayed: false });
+    expect(await feedback([{ tag, reaction: "opened", occurredAt: T0 }])).toEqual({
+      resultRef: "web-push-feedback:0",
+      replayed: false,
+    });
+    expect(await store.listFeedback({ ...scope, sentFrom: T0, limit: 10 })).toMatchObject([
+      { tag, kind: "run", threadId: "thread-1", devices: 1, openedAt: T0, dismissedAt: T0 },
+    ]);
+    expect(() =>
+      message("command", "push.feedback.record", {
+        events: Array.from({ length: 51 }, () => ({ tag, reaction: "opened", occurredAt: T0 })),
+      }),
+    ).toThrow();
+    await expect(
+      control.execute(
+        message(
+          "command",
+          "push.feedback.record",
+          { events: [{ tag, reaction: "opened", occurredAt: T0 }] },
+          "system",
+        ) as GatewayV2Command,
+      ),
+    ).rejects.toThrow("WEB_PUSH_OWNER_REQUIRED");
+  });
 
   it("[WP-5] subscribes, lists devices without keys, sends a test and unsubscribes", async () => {
     const { control, tests } = await setup(true);

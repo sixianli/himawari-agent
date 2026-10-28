@@ -22,12 +22,12 @@ import {
 } from "@himawari-agent/platform-node";
 import { exportJWK, importJWK, type JSONWebKeySet, SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
 } from "../src/production-http-composition.js";
+import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
 const ORIGIN = "https://agent.example.test";
 const ISSUER = "https://team.cloudflareaccess.com";
@@ -296,6 +296,7 @@ describe("production HTTP composition", () => {
       const bootstrap = await composition.app.inject({
         method: "POST",
         url: "/bootstrap",
+        headers: { host: "agent.example.test" },
         payload: {
           token: "bootstrap-token-production-fixture",
           ownerId: OWNER_ID,
@@ -336,6 +337,7 @@ describe("production HTTP composition", () => {
           "push.subscription.set",
           "push.test",
           "presence.heartbeat",
+          "push.feedback.record",
         ],
         healthDependenciesAvailable: true,
       });

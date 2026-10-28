@@ -1596,13 +1596,13 @@ describe("HTTP Gateway contract and security boundary", () => {
     const forged = Buffer.from(JSON.stringify(["file-png", "2099-01-01T00:00:00.000Z"])).toString(
       "base64url",
     );
-    for (const url of [
-      `/preview/${forged}.${signature}`,
-      `/preview/${body}.${"A".repeat(signature?.length ?? 43)}`,
-      "/api/files/v1/content/file-png",
-      "/",
-      "/assets/app.js",
-    ]) {
+    for (const [url, status] of [
+      [`/preview/${forged}.${signature}`, 404],
+      [`/preview/${body}.${"A".repeat(signature?.length ?? 43)}`, 404],
+      ["/api/files/v1/content/file-png", 403],
+      ["/", 403],
+      ["/assets/app.js", 403],
+    ] as const) {
       expect(
         (
           await app.inject({
@@ -1611,7 +1611,7 @@ describe("HTTP Gateway contract and security boundary", () => {
             headers: { ...contentHeaders, host: "files.example.test" },
           })
         ).statusCode,
-      ).toBe(404);
+      ).toBe(status);
     }
     expect(
       (
@@ -1622,7 +1622,7 @@ describe("HTTP Gateway contract and security boundary", () => {
           payload: {},
         })
       ).statusCode,
-    ).toBe(404);
+    ).toBe(403);
     clock = "2026-08-27T00:05:00.000Z";
     expect(
       (
@@ -1648,6 +1648,64 @@ describe("HTTP Gateway contract and security boundary", () => {
       filesAvailable: true,
       filePreviewAvailable: true,
     });
+  });
+
+  it("[FD-3] answers a host other than the public one only with previews and health checks, whatever the method", async () => {
+    for (const previewOrigin of ["https://files.example.test", undefined]) {
+      const { app } = createFixture(undefined, undefined, previewOrigin ? { previewOrigin } : {});
+      const reached: string[] = [];
+      app.post("/bootstrap", async (request) => {
+        reached.push(request.url);
+        return { ok: true };
+      });
+      app.post("/api/identity/v1/sessions", async (request) => {
+        reached.push(request.url);
+        return { ok: true };
+      });
+      for (const request of [
+        { method: "POST", url: "/bootstrap" },
+        { method: "POST", url: "/api/identity/v1/sessions" },
+        { method: "POST", url: "/api/gateway/v1/commands" },
+        { method: "PUT", url: "/preview/abc.def" },
+        { method: "POST", url: "/preview/abc.def" },
+        { method: "DELETE", url: "/api/files/v1/content/file-png" },
+        { method: "OPTIONS", url: "/bootstrap" },
+        {
+          method: "GET",
+          url: "/api/gateway/v1/events",
+          headers: { connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13" },
+        },
+      ] as const) {
+        const response = await app.inject({
+          method: request.method,
+          url: request.url,
+          headers: {
+            ...requestHeaders(),
+            ...("headers" in request ? request.headers : {}),
+            host: "files.example.test",
+            origin: "https://files.example.test",
+          },
+          ...(request.method === "GET" || request.method === "OPTIONS" ? {} : { payload: {} }),
+        });
+        expect(response.statusCode, `${previewOrigin} ${request.method} ${request.url}`).toBe(403);
+        expect(response.json()).toEqual({ error: { code: "HTTP_GATEWAY_ORIGIN_REJECTED" } });
+      }
+      expect(reached).toEqual([]);
+      const health = await app.inject({
+        method: "GET",
+        url: "/health/live",
+        headers: { host: "files.example.test" },
+      });
+      expect(health.statusCode).toBe(200);
+      const bootstrap = await app.inject({
+        method: "POST",
+        url: "/bootstrap",
+        headers: requestHeaders(),
+        payload: {},
+      });
+      expect(bootstrap.statusCode).toBe(200);
+      expect(reached).toEqual(["/bootstrap"]);
+    }
   });
 
   it("does not advertise a session reference as recent authentication proof", async () => {
