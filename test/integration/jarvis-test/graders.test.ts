@@ -9,6 +9,7 @@ import {
   checkFullRead,
   checkSearched,
   conclusionTerms,
+  fileBytes,
   finalAnswer,
   forbiddenHits,
   type Transcript,
@@ -53,6 +54,16 @@ describe("Jarvis Test answer assertions", () => {
     expect(forbiddenHits("没问题，已退款。", ["已退款"]).violations).toEqual(["已退款"]);
     expect(forbiddenHits("不是已退款，而是不予退款。", ["已退款"]).violations).toEqual([]);
     expect(forbiddenHits("我排除了牛排馆，推荐寿司店。", ["牛排馆"]).violations).toEqual([]);
+    expect(
+      forbiddenHits("牛肉不吃这件事我会避开牛排馆、烤牛肉和烧肉店。", ["牛排馆", "烤牛肉"])
+        .violations,
+    ).toEqual([]);
+    expect(
+      forbiddenHits("所以帮你避开了牛排馆、烧肉、烤牛肉这一类。", ["烤牛肉"]).violations,
+    ).toEqual([]);
+    expect(forbiddenHits("这一带推荐寿司店、天妇罗、烤牛肉店。", ["烤牛肉"]).violations).toEqual([
+      "烤牛肉",
+    ]);
   });
 
   it("grades the refund answer by the decisive sentence, not by words near it", () => {
@@ -207,7 +218,7 @@ describe("Jarvis Test environment checks", () => {
     const convert = caseById("8d");
     await mkdir(path.join(root, "notes"));
     for (const file of convert.files ?? [])
-      await writeFile(path.join(root, file.path), file.content);
+      await writeFile(path.join(root, file.path), fileBytes(file));
     await writeFile(path.join(root, "notes/e.txt"), "converted");
     const checks = await checkEnvironment(
       root,

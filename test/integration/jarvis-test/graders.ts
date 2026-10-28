@@ -18,6 +18,13 @@ export interface Transcript {
 export interface CaseFile {
   readonly path: string;
   readonly content: string;
+  readonly bytesHex?: string;
+}
+
+export function fileBytes(file: CaseFile): Buffer {
+  return file.bytesHex === undefined
+    ? Buffer.from(file.content, "utf8")
+    : Buffer.from(file.bytesHex, "hex");
 }
 
 export interface AnswerSpec {
@@ -58,6 +65,8 @@ const NEGATION_CUES = [
   "别",
   "非",
   "排除",
+  "避开",
+  "避免",
   "而不是",
   "改掉",
   "取代",
@@ -69,6 +78,7 @@ const NEGATION_CUES = [
 ];
 const NEGATION_WINDOW = 8;
 const CLAUSE_BREAK = /[，,。.;；！!？?\n]/u;
+const LIST_BREAK = /[、]/u;
 const SEARCH_TOOLS = new Set(["grep", "find", "ls", "read", "bash"]);
 
 export function finalAnswer(transcript: Transcript): string {
@@ -87,8 +97,15 @@ function finalAnswerIndex(transcript: Transcript): number {
 
 function clauseBefore(text: string, at: number): string {
   let start = at;
-  while (start > 0 && at - start < NEGATION_WINDOW && !CLAUSE_BREAK.test(text[start - 1] ?? ""))
+  let sinceListBreak = 0;
+  while (
+    start > 0 &&
+    sinceListBreak < NEGATION_WINDOW &&
+    !CLAUSE_BREAK.test(text[start - 1] ?? "")
+  ) {
     start -= 1;
+    sinceListBreak = LIST_BREAK.test(text[start] ?? "") ? 0 : sinceListBreak + 1;
+  }
   return text.slice(start, at);
 }
 
@@ -258,10 +275,10 @@ export async function checkEnvironment(
   }
   for (const unchanged of spec.unchanged ?? []) {
     const original = originals.find(({ path: filePath }) => filePath === unchanged);
-    const current = await readFile(path.join(workspaceRoot, unchanged), "utf8").catch(() => null);
+    const current = await readFile(path.join(workspaceRoot, unchanged)).catch(() => null);
     checks.push({
       check: "environment_unchanged",
-      passed: original !== undefined && current === original.content,
+      passed: original !== undefined && current !== null && current.equals(fileBytes(original)),
       detail: unchanged,
     });
   }

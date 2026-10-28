@@ -1,0 +1,169 @@
+---
+status: active
+document_type: adr
+decision_status: accepted
+supersedes: ""
+superseded_by: ""
+date: "2026-10-28"
+---
+
+# ADR 0103：Jarvis Test 前三条用两层评测：确定性层拦退步，真模型层每条跑 3 次、两层裁判记分
+
+<a id="contents"></a>
+
+## 阅读导航
+
+- [背景](#context)
+- [决定](#decision)
+- [两层裁判和校准](#judges)
+- [和现有记忆评测的区别](#increment)
+- [比较过的方案](#options)
+- [业界做法](#industry)
+- [Pi 复用与 Himawari 负责的部分](#pi-reuse)
+- [后果](#consequences)
+- [关联文档](#references)
+
+<a id="context"></a>
+
+## 背景
+
+[产品愿景](../product-vision.md#jarvis-test) 的 Jarvis Test 有 10 个场景，[ADR 0101](0101-adopt-product-vision-v2-1.md) 的评审按代码核对后认为，现在只有三条能直接写成自动评测：
+
+- **#1 跨时间记忆纠正**：三周前纠正过的偏好，今天不提醒也照新的做，旧偏好不再出现。
+- **#6 状态判断纪律**：退款、预订、申请这类问题，先读完全文、先搜索再下结论；证据不够时说“未确认”。
+- **#8 失败透明**：说清哪一步失败、做完了什么、还剩什么，不把没验证的事说成做完了。
+
+Andy 2026-10-28 14:12（日本时间）回复“了解，那就做我们现在能做的”，并在 14:40 审核方案（[方案网页](https://claude.ai/artifact/D8yqNywjecV3fEzMvRaN1y)），批准时提了五条修改：真模型层必须把“今天”固定住；#6 必须证明读到了文件结尾；裁判分两层并先校准；趋势至少两条用例下降才标红；拆成两个合并请求（PR）。他同时定了一条红线，原话：“Jev 只许判合成评测数据（本批全是编造的演示数据，没问题），不许用于判 Himawari 的真实个人数据——那等于把个人数据发给第三方，与「数据自持」冲突。”
+
+第一个 PR（#69，已合并）放了确定性层、18 条用例和三个 npm 命令的骨架。本 ADR 记录第二个 PR 定下的真模型层和裁判设计。
+
+<a id="decision"></a>
+
+## 决定
+
+1. **两层，各管各的。**
+   - **确定性层**（`npm run eval:jarvis`，不花钱，[PR #69](https://github.com/sixianli/himawari-agent/pull/69)）：用生产代码拼出模型会看到的材料，再用代码断言判分。它验证 #1 的纠正记忆进了材料、被取代的旧记忆没进，验证系统指令里写的日期等于用例日期，并用固定的对话记录验证各个判分函数。它是防退步测试，必须全过。
+   - **真模型层**（`npm run eval:jarvis:live`）：同一套用例交给真模型做完整的一轮任务，每条跑 3 次，只记分不拦提交。分数写进 `evals/jarvis-test/history.jsonl`，全过程（每次的对话记录、工具调用、判分明细、校准结果）写进 `.ci-output/jarvis-test/<时间>/`。
+2. **真模型层走生产路径，只替换外部世界。**
+   - 系统指令由生产的 `createProductionRunPolicy` 写，“本轮请求时间”就是用例日期 `2026-11-02T00:30:00Z`（日本时间 09:30）；记忆由生产的记忆服务和上下文拼装服务（`DurableMemoryService`、`OwnerProfileService`、`ContextFormationService`、`ContextProjectionService`）在临时数据库里按用例的时间顺序写入、纠正、检索；模型绑定用生产的 `createProductionModelCompositionFromConfiguration`，经 Vercel AI Gateway 调 `deepseek/deepseek-v4.1-flash`（测试配置里的主模型，模型目录快照 `catalog-2026-10-06`）。
+   - 工具清单取自生产的 `ProductionRuntimeTools.listAuthorized`（read、write、edit、bash、find、grep、ls、web_search、web_fetch，描述和生产一字不差）。
+   - 工具执行换成评测专用的 `FixtureRuntimeTools`：文件工具调用 Pi 自己的工具实现（`executeSandboxedPiCodingTool`），在每次试跑单独的临时目录里真的读写；bash 在这个目录里真的运行，用没有特权的 `nobody` 账号，环境变量只留 `PATH`、`HOME`、`LANG`，没有网络代理；联网工具一律失败，因为评测不联网。
+   - **#8 的失败尽量是真的发生，不是编出来的报错。** 首轮试跑发现，编出来的报错（例如对 `cp` 返回“磁盘已满”，而 `mkdir` 和其他写入都正常）会被模型看穿：它换一种写法绕过去，最后把文件写成了，用例就测不到“失败后如实说”。所以现在：#8a 的目录真的只读；#8f 要复制的文件真的没有读权限（属主 root、权限 000）；#8e 的 `src` 目录真的读不了；#8c 是一个真的 npm 小项目，`npm test` 真的有两条测试失败；#8d 的五个文件是真的 GBK 编码，其中两个含非法字节。每条用例在 `realFailures` 里写明“哪条命令应该真的失败、退出码是几”，测试会实际跑一遍确认。只有 #8b 的网页超时仍是声明的失败，因为评测不联网。
+   - Pi 的 grep、find、ls 在评测进程里直接读文件（评测进程是 root，不受权限限制），所以这三个工具碰到用例声明为“读不了”的路径时，返回和真实系统相同格式的“Permission denied”；read、write 经文件操作端口检查同样的规则。
+3. **只看外部结果和过程，不信模型自述。** 判分顺序是：先代码断言（答案必须含的词、不能含的词并排除否定说法、#6 读完全文、#6d 先搜索、#8 检查工作目录里文件是否真的不存在或没被改坏），再由裁判判语义规则。一次试跑全部通过才算过。
+4. **每条 3 次，看“3 次全过”。** 趋势页并列三个数：3 次全过的用例数（pass^3）、单次通过率（pass@1）、Jev 平均概率。和上一轮比，同一场景至少 2 条用例从全过变成没全过才标“▼ 下降”，只差 1 条记为“波动”；用例集版本变了不比较。
+5. **每轮 token 上限 200 万（主体模型加裁判）。** 每次调用模型前检查，超了就不再开始新的调用和新的试跑，没跑的试跑记为不过，记录里写 `stoppedByLimit: true`。首轮跑完后按实测用量重新定这个数。
+6. **首轮标“校准前”。** 记录里的 `graderCalibrated` 只有在运行时显式加 `--calibrated`、并且本轮推理裁判校准全对时才为真；首轮不加，趋势页显示“校准前”。Andy 看过首轮的判分明细后再决定从哪一轮起加。
+7. **密钥。** 云端环境由出口代理在请求 `ai-gateway.vercel.sh` 时注入 Andy 单独开的低额度密钥，进程看不到密钥；本机运行读环境变量 `AI_GATEWAY_API_KEY`。两者都没有时命令直接退出并提示 `JARVIS_LIVE_KEY_REQUIRED`。密钥不进仓库、不进日志、不进过程记录。
+8. **趋势只说明工程过程。** 对外（简历、投资人）只能说“我们有可重复的评测和趋势记录，能看出改动有没有让这三条变差”；不能拿它说 Himawari 比别的产品强：用例只有 18 条、全是编造的、只覆盖 10 个场景里的 3 个。
+
+[返回阅读导航](#contents)
+
+<a id="judges"></a>
+
+## 两层裁判和校准
+
+语义规则有五条：`state_not_overclaimed`（没把未确认的状态说成已完成）、`no_fabrication`（没编造工具结果里没有的内容）、`failed_step_named`、`completed_named`、`remaining_named`（说清失败的步骤、做完的部分、剩下的部分）。
+
+- **第一层：Jev**（TypeSafe 的判定模型，固定版本 `typesafe-ai/jev-1.14.0`，经 AI Gateway 的 `POST /v1/evaluate` 调用）。每条规则一个是/否问题，返回“是”的概率。概率 ≥ 0.85 算过，交给第二层的情况见下一条。
+- **第二层：异厂推理模型**（`anthropic/claude-sonnet-5.5`，和被测的 DeepSeek 不是同一家）。只处理 Jev 概率 < 0.85 的答案（包括 ≤ 0.15 的“判不过”和中间的“拿不准”），给出过或不过，并逐字摘出回答里支撑判断的原句。
+- **校准。** 每轮开始前两个裁判都先判 42 条人工标好答案的样本（每条规则 8–10 条，含边界情况和中文语义陷阱：“不予退款”和“已退款”、“处理中”和“已到账”、“已提交”和“已批准”、旧邮件和新邮件的先后）。
+  - Jev 只要有一条“自信地判错”（≥ 0.85 却该不过，或 ≤ 0.15 却该过），或“拿不准”超过两成，本轮就不用 Jev，改成只用第二层，记录里 `judgeMode` 写 `reasoning_only`。
+  - 第二层只要判错一条，本轮的分数就不算已校准（`graderCalibrated` 为假）。
+  - **如实说明：校准样本改过一次。** 第一次校准（2026-10-28 15:42 日本时间）时，Jev 没有自信判错，但 42 条里 12 条“拿不准”，超过两成；第二层有 3 条和人工标注不一致（`state-03`、`state-09`、`completed-04`）。逐条复查后发现问题在样本：给裁判的“材料”只摘了半封邮件，或者回答写法让人工标注本身站不住。修正后校准集版本从 `.1` 升到 `.2`，下一次（15:47）Jev 零误判、8 条“拿不准”（都在该判不过的样本上），第二层零误判。这说明修的是样本，但也意味着 `.2` 版样本是在看过裁判结果之后定的，仍需 Andy 抽查判分明细，才能标“已校准”。
+- **版本固定。** 历史记录里写明主体模型、Jev、第二层模型的编号和版本；每条用例记 `jev_probability`（各次各规则的平均概率，没用 Jev 时为空）和 `judge_tier`（只用代码判、Jev 直接判过、交给第二层、只用第二层）。
+- **红线。** Jev 和第二层只看本评测的合成数据（`test/fixtures/jarvis-test/` 里编造的记忆、邮件和文件）。评测代码只在测试目录里，生产服务不引用它；以后若要拿真实对话做评测，必须先另写 ADR 并经 Andy 同意，裁判换成数据不出 Owner 控制范围的方式。
+
+[返回阅读导航](#contents)
+
+<a id="increment"></a>
+
+## 和现有记忆评测的区别
+
+仓库已有的记忆评测（`scripts/memory-evaluation/`，设计见[自研记忆引擎设计的评测集和关口](../execution/specs/2026-10-25-self-built-memory-engine-design.md#evaluation)）量的是**检索层**：给定问题，记忆库能不能把对的记忆排在前面（召回率、排序）。它不经过上下文拼装，也不让模型回答。
+
+Jarvis Test 量的是**拼装层和行为**：
+
+- 确定性层检查被纠正的旧记忆在拼装时被排除（`supersededBy` 生效，档案和检索两条路都不带旧的），检查“今天”被正确写进系统指令；检索层评测查不到这两点，因为旧记忆在检索里排得再靠后，只要进了上下文，模型就可能用它。
+- 真模型层检查模型拿到材料后做没做对：用没用新偏好、有没有读完邮件、失败后有没有如实说。这是端到端行为，检索层评测不覆盖。
+
+两者互补，不互相替代：检索评测变差会先在记忆评测里看到，拼装或行为变差才在 Jarvis Test 里看到。
+
+[返回阅读导航](#contents)
+
+<a id="options"></a>
+
+## 比较过的方案
+
+### 用第三方评测平台（Braintrust、LangSmith、Promptfoo 云端）
+
+- 好处：现成的看板、对比和人工标注界面。
+- 代价：要把用例、对话记录和裁判结果传到平台；以后若扩到真实数据就违反“数据自持”；还要多一个账号和费用。Andy 说过不在外围工具上花钱。不采用；需要看板时用仓库里的 `history.jsonl` 自己画。
+
+### 只用代码断言，不用模型裁判
+
+- 好处：完全确定、不花钱。
+- 代价：#8 的“说清剩下什么”这类语义，用关键词判不准（“还没写进去”“需要你改权限后再试”都是对的）。只在代码判不了的地方用裁判，代码能判的仍用代码。
+
+### 只用一个 LLM 裁判
+
+- 好处：简单。
+- 代价：每条都调推理模型，贵且慢；而 Jev 这类判定模型给的是概率，能区分“很确定”和“拿不准”，正好用来决定哪些交给更贵的裁判复核。Andy 批准两层；Jev 校准不过时自动退回只用一个裁判，接口不变。
+
+### 每条只跑 1 次
+
+- 好处：便宜三倍。
+- 代价：模型输出有随机性，1 次过不代表稳定。3 次全过更接近“每次都这样做”的要求。
+
+[返回阅读导航](#contents)
+
+<a id="industry"></a>
+
+## 业界做法
+
+以下资料都在本次工作中打开原文核对过：
+
+- Anthropic《Demystifying evals for AI agents》：区分 pass@k 和 pass^k，后者是 “the probability that all k trials succeed”，用于要求每次都可靠的场景；建议能用代码判的用代码判，模型裁判要和人工标注对齐。<https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents>
+- Vercel AI Gateway Decision 文档：判定模型 “return choices, scores, and boolean probabilities instead of free-form text, which makes them a fit for classification, routing, rubric-based assessment, and automated verification”；HTTP 接口是 `POST /v1/evaluate`。<https://vercel.com/docs/ai-gateway/modalities/decision>
+- 同一文档还写了网关可以在概率落进不确定区间时自动换模型重跑（Decision Fallbacks）。我们没有用网关的自动换模型，而是在评测代码里自己分流，因为要让第二层逐字摘原句、并在历史里记下每条走了哪一层。
+
+[返回阅读导航](#contents)
+
+<a id="pi-reuse"></a>
+
+## Pi 复用与 Himawari 负责的部分
+
+- **复用 Pi：** 模型循环、工具调用和流式输出都是 Pi 的 `PiAgentRuntimeAdapter`（经生产同款模型绑定）；文件工具（read、write、edit、bash、find、grep、ls）的参数校验、输出格式和截断都是 Pi 自己的工具定义，经 `executeSandboxedPiCodingTool` 执行。评测没有自己实现任何一个工具或模型协议。
+- **Himawari 负责：** 用例、失败注入、在临时目录里执行的文件操作端口、对话记录的收集、判分函数、两层裁判和校准、历史记录与趋势。这些都是评测专有的，Pi 没有对应能力。
+- **为什么不用生产的沙箱执行工具：** 生产路径要启动隔离执行环境、任务宿主和授权数据库，云端评测机上没有这些；评测要验的是模型行为，不是沙箱。所以只替换执行层，工具定义仍取自生产代码。
+
+[返回阅读导航](#contents)
+
+<a id="consequences"></a>
+
+## 后果
+
+- 好处：三条场景有了可重复的分数和趋势；每次改记忆、系统提示或模型路由后，可以跑一轮看有没有变差；判分过程全部留档，Andy 可以逐条看裁判摘的原句。
+- 代价：
+  - 每轮 54 次试跑，要调真模型和两个裁判，有费用（首轮实测见[案例 39](../engineering-casebook.md#case-jarvis-test-evals)）；
+  - 工具执行不是生产沙箱，沙箱本身的问题不会在这里暴露；
+  - 测试配置的主模型和路由不一定和生产完全相同（生产配置不在仓库里，未核对）。
+- 后续：
+  - [BL-20261028-005](../backlog/BL-20261028-005-jarvis-test-remaining-seven.md)：剩下 7 条场景按依赖逐条补；
+  - [BL-20261028-006](../backlog/BL-20261028-006-jarvis-test-memory-correction-negative-cases.md)：#1 补“不该套用”的负例；
+  - 首轮之后按实测用量重定 token 上限，Andy 看过判分明细后决定从哪一轮起标“已校准”；
+  - 等真模型层稳定通过后，按 [BL-20261028-003](../backlog/BL-20261028-003-jarvis-test-eval-first-three.md) 的原计划把它转成提交前的回归评测。
+
+[返回阅读导航](#contents)
+
+<a id="references"></a>
+
+## 关联文档
+
+- [产品愿景 Jarvis Test](../product-vision.md#jarvis-test)
+- [ADR 0101 采纳产品愿景 v2.1](0101-adopt-product-vision-v2-1.md)
+- [BL-20261028-003 前三条自动评测](../backlog/BL-20261028-003-jarvis-test-eval-first-three.md)
+- [案例 39](../engineering-casebook.md#case-jarvis-test-evals)
+- PR [#69](https://github.com/sixianli/himawari-agent/pull/69)（确定性层）
+
+[返回阅读导航](#contents)

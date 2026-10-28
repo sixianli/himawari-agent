@@ -1,0 +1,10 @@
+export const HISTORY_SCHEMA_VERSION: number;
+export const SCENARIOS: readonly string[];
+export const SCENARIO_LABELS: Readonly<Record<string, string>>;
+export const RED_FLAG_DROP: number;
+export function validateRecord<T>(record: T): T;
+export function appendHistory(file: string, record: unknown): Promise<void>;
+export function readHistory(file: string): Promise<unknown[]>;
+export function summarize(record: unknown): Record<string, unknown>;
+export function compare(previous: unknown, current: unknown): Record<string, string>;
+export function renderTrend(records: readonly unknown[]): string;

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -115,5 +115,21 @@ describe("Jarvis Test score history", () => {
       encoding: "utf8",
     });
     expect(output).toContain("还没有真模型评测记录");
+  });
+
+  it("refuses a live round when no gateway key can reach the request", () => {
+    const environment = { PATH: process.env.PATH ?? "" };
+    const result = spawnSync(process.execPath, ["scripts/jarvis-test/live.mjs"], {
+      encoding: "utf8",
+      env: environment,
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("JARVIS_LIVE_KEY_REQUIRED");
+    const unknown = spawnSync(process.execPath, ["scripts/jarvis-test/live.mjs", "--trails=1"], {
+      encoding: "utf8",
+      env: environment,
+    });
+    expect(unknown.status).toBe(2);
+    expect(unknown.stderr).toContain("JARVIS_LIVE_UNKNOWN_OPTION");
   });
 });
