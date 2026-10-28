@@ -17,6 +17,7 @@ date: "2026-10-28"
 - [决定](#decision)
 - [比较过的方案](#options)
 - [后果](#consequences)
+  - [原则 8 的成本上限和 ADR 0076 的关系](#per-task-budget)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -60,12 +61,27 @@ v2.1 还把“本地优先”（local-first，数据的主副本放在用户自�
 - 代价：愿景里不少内容现在还没做到（例如自造工具、跨表面连续、30 天打扰统计），读者要分清“目标”和“现状”。现状仍以架构文档和代码为准。
 - 后续：愿景和现状的差距、以及把 Jarvis Test 做成可运行评测集等建议，写在本次评审网页 <https://claude.ai/artifact/G7qKTu3gw38PFGpWVzohZF> 里，由 Andy 决定哪些记成 Backlog；本 ADR 不替他做这个决定。
 
+<a id="per-task-budget"></a>
+
+### 原则 8 的成本上限和 ADR 0076 的关系（2026-10-28 补记）
+
+评审指出原则 8 “推进受成本、资源与时间预算约束，超限即停”和 [ADR 0076](0076-no-model-cost-budget-limits.md) “不设费用上限”字面上相反。Andy 当天 14:11（日本时间）定：保留成本上限，原话：“我的意思是，这里还是要加一个成本上限，不然的话，一个后台任务如果无限期跑的话，我的那个模型的 token 额度，还有模型 token 的这个费用，我可能接受不了。”
+
+两者不矛盾，管的是不同的东西：
+
+- ADR 0076 删掉的是**全局累计上限**：全站所有调用加起来用满就一律拦住，当时正是它把所有对话拦死。
+- 原则 8 要的是**按任务的上限**：每个后台任务或无人值守推进各带自己的费用、token 和时间预算，超限只停这一个任务并汇报，不影响其他对话。
+
+所以 ADR 0076 继续有效，不被取代；按任务的上限作为新功能记在 [BL-20261028-002](../backlog/BL-20261028-002-per-task-budget-for-unattended-work.md)，默认值上线前问 Andy。正文不改。
+
 <a id="references"></a>
 
 ## 关联文档
 
 - [SOURCE: docs/product-vision.md]
 - [SOURCE: docs/prd-v0.2.md]
+- [SOURCE: docs/adr/0076-no-model-cost-budget-limits.md]
+- [SOURCE: docs/backlog/BL-20261028-002-per-task-budget-for-unattended-work.md]
 - [SOURCE: docs/adr/0084-himawari-identity-system-prompt.md]
 - [SOURCE: docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]
 - 工程案例库：[案例 37](../engineering-casebook.md#case-product-vision)
