@@ -556,6 +556,7 @@ describe("production memory capture", () => {
         text: "主人答应老板周五下午三点前交季度报告",
         dueAt: "2026-10-30T07:00:00.000Z",
         remindAt: "2026-10-30T06:00:00.000Z",
+        sourceThreadId: THREAD_ID,
       },
     ]);
     const answer = (action: "dismiss" | "snooze") =>
@@ -622,6 +623,7 @@ describe("production memory capture", () => {
         text: "主人妈妈的生日是 5 月 12 日",
         dueAt: "2028-05-12T01:00:00.000Z",
         repeat: "yearly",
+        sourceThreadId: THREAD_ID,
       },
     ]);
     await context.control.execute({

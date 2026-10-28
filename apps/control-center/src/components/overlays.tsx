@@ -3,9 +3,9 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
-  useLayoutEffect,
 } from "react";
 import { createPortal } from "react-dom";
 import { nextRovingIndex } from "./collections.js";
@@ -69,8 +69,6 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
       {children}
     </dialog>
   );
-  // Mobile layouts hide inactive panes. Mount the modal outside those panes
-  // so a dialog opened from the details drawer stays visible and focusable.
   return typeof document === "undefined" ? dialog : createPortal(dialog, document.body);
 }
 
@@ -79,6 +77,7 @@ export interface ActionMenuItem {
   readonly id: string;
   readonly label: ReactNode;
   readonly onSelect: () => void;
+  readonly separated?: boolean;
 }
 
 export interface ActionMenuProps {
@@ -209,7 +208,10 @@ export function ActionMenu({ items, label }: ActionMenuProps) {
               onKeyDown={handleMenuKeyDown}
               role="menu"
             >
-              {items.map((item, index) => (
+              {items.map((item, index) => [
+                item.separated ? (
+                  <hr key={`${item.id}:separator`} className="menu-separator" />
+                ) : null,
                 <button
                   disabled={item.disabled}
                   key={item.id}
@@ -226,8 +228,8 @@ export function ActionMenu({ items, label }: ActionMenuProps) {
                   type="button"
                 >
                   {item.label}
-                </button>
-              ))}
+                </button>,
+              ])}
             </div>,
             document.body,
           )

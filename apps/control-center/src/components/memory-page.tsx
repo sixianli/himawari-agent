@@ -8,17 +8,21 @@ import {
   parseMemoryExport,
   parseMemoryText,
 } from "../memory-import.js";
+import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
-type Tab = "pending" | "reminders" | "profile" | "all" | "timeline";
+type Tab = "pending" | "profile" | "all" | "timeline";
 type Notice = { readonly text: string; readonly undo?: () => void } | null;
 type Person = MemoryOverview["people"][number];
 
 const DAY_MS = 86_400_000;
 const VISIBLE_CHIPS = 5;
 const PROFILE_PREVIEW = 3;
+const PROFILE_EXPANDED = 8;
+const HISTORY_HEAD = 2;
+const HISTORY_STEP = 10;
 const NOTICE_MS = 6000;
 const MAXIMUM_IMPORT_BYTES = 200 * 1024;
 const MAXIMUM_IMPORT_ITEMS = 500;
@@ -29,6 +33,7 @@ const live = (item: MemoryItem) => !item.supersededBy && !item.tentative;
 const date = (value: string) => new Date(value).toLocaleDateString();
 const time = (value: string) =>
   new Date(value).toLocaleString(undefined, {
+    ...(new Date(value).getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -75,10 +80,68 @@ function Chips<T extends string>({
   );
 }
 
+function MemoryHistory({
+  item,
+  history,
+  older,
+  onMore,
+  memory,
+  message,
+}: {
+  item: MemoryItem;
+  history: readonly MemoryItem[];
+  older: number;
+  onMore: () => void;
+  memory: MemoryModel;
+  message: Message;
+}) {
+  const past = [...history].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
+  const hidden = past.length - HISTORY_HEAD - older;
+  const folded = hidden > 1 ? hidden : 0;
+  const head = folded ? past.slice(0, HISTORY_HEAD - 1 + older) : past;
+  const tail = folded ? past.slice(-1) : [];
+  const point = (entry: MemoryItem, current: boolean) => (
+    <li key={entry.memoryId} data-current={current || undefined}>
+      <span className="memory-history-dot" aria-hidden="true" />
+      <div>
+        <small>
+          {time(entry.recordedAt)} · {message(current ? "memory.page.now" : "memory.page.replaced")}
+        </small>
+        <p>{entry.text}</p>
+        {current ? null : (
+          <button
+            type="button"
+            className="memory-link"
+            disabled={memory.busy}
+            onClick={() => void memory.restore(entry)}
+          >
+            {message("memory.page.useThis")}
+          </button>
+        )}
+      </div>
+    </li>
+  );
+  return (
+    <ol className="memory-history-line" data-scroll={older > 0 || undefined}>
+      {point(item, true)}
+      {head.map((entry) => point(entry, false))}
+      {folded ? (
+        <li className="memory-history-fold">
+          <button type="button" onClick={onMore}>
+            {message("memory.page.olderChanges", { count: folded })}
+          </button>
+        </li>
+      ) : null}
+      {tail.map((entry) => point(entry, false))}
+    </ol>
+  );
+}
+
 function MemoryRow({
   item,
   history,
   reminder,
+  justSaved,
   memory,
   message,
   notify,
@@ -87,6 +150,7 @@ function MemoryRow({
   item: MemoryItem;
   history: readonly MemoryItem[];
   reminder: string | null;
+  justSaved: boolean;
   memory: MemoryModel;
   message: Message;
   notify: (notice: Notice) => void;
@@ -94,6 +158,7 @@ function MemoryRow({
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [older, setOlder] = useState(0);
   const sensitive = item.dataClassification === "sensitive" || item.topic;
   const origin = item.importBatchId
     ? "import"
@@ -116,7 +181,7 @@ function MemoryRow({
       </li>
     );
   return (
-    <li className="memory-row" data-status={item.status}>
+    <li className="memory-row" data-status={item.status} data-just-saved={justSaved || undefined}>
       <button
         type="button"
         className="memory-row-head"
@@ -125,6 +190,11 @@ function MemoryRow({
       >
         <span className="memory-text">{item.text}</span>
         <span className="memory-tags">
+          {justSaved ? (
+            <span className="memory-tag" data-kind="new">
+              {message("memory.justSaved")}
+            </span>
+          ) : null}
           <span className="memory-tag">
             {message("memory.cat", { c: item.category })}
             {item.subCategory ? ` · ${item.subCategory}` : ""}
@@ -156,12 +226,13 @@ function MemoryRow({
             {origin ? (
               message("memory.page.origin", { o: origin })
             ) : (
-              <ActionButton
-                variant="quiet"
+              <button
+                type="button"
+                className="memory-link"
                 onClick={() => item.sourceThreadId && onOpenThread(item.sourceThreadId)}
               >
                 {message("memory.source")}
-              </ActionButton>
+              </button>
             )}
             {` · ${time(item.recordedAt)}`}
           </dd>
@@ -177,28 +248,18 @@ function MemoryRow({
             <>
               <dt>{message("memory.page.history")}</dt>
               <dd>
-                <ol className="memory-steps">
-                  <li>
-                    {item.text} <span className="memory-tag">{message("memory.page.now")}</span>
-                  </li>
-                  {history.map((old) => (
-                    <li key={old.memoryId}>
-                      <s>{old.text}</s>
-                      <ActionButton
-                        variant="quiet"
-                        disabled={memory.busy}
-                        onClick={() => void memory.restore(old)}
-                      >
-                        {message("memory.page.useThis")}
-                      </ActionButton>
-                    </li>
-                  ))}
-                </ol>
+                <MemoryHistory
+                  item={item}
+                  history={history}
+                  older={older}
+                  onMore={() => setOlder(older + HISTORY_STEP)}
+                  memory={memory}
+                  message={message}
+                />
               </dd>
             </>
           ) : null}
-          <dt />
-          <dd className="actions">
+          <dd className="actions memory-detail-actions">
             {item.status === "trashed" ? (
               <>
                 <small>{message("memory.page.trashNote")}</small>
@@ -311,83 +372,140 @@ function PendingTab({ memory, message }: { memory: MemoryModel; message: Message
   );
 }
 
-function RemindersTab({
+export function RemindersPage({
   memory,
   message,
-  notify,
+  onBack,
+  onOpenThread,
 }: {
-  memory: MemoryModel;
+  memory: MemoryModel | null;
   message: Message;
-  notify: (notice: Notice) => void;
+  onBack: () => void;
+  onOpenThread: (threadId: string) => void;
 }) {
-  const overview = memory.overview;
-  if (!overview) return null;
+  const [notice, setNotice] = useState<string | null>(null);
+  const overview = memory?.overview;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).valueOf();
+  const groupOf = (at: string) => {
+    const value = Date.parse(at);
+    return value < today + DAY_MS ? "today" : value < today + 7 * DAY_MS ? "week" : "later";
+  };
+  const groups = new Map<string, NonNullable<typeof overview>["upcoming"][number][]>();
+  for (const item of [...(overview?.upcoming ?? [])].sort((a, b) => a.dueAt.localeCompare(b.dueAt)))
+    groups.set(groupOf(item.dueAt), [...(groups.get(groupOf(item.dueAt)) ?? []), item]);
+  const meta = (yearly: boolean, threadId: string | null) =>
+    yearly || threadId ? (
+      <small>
+        {yearly ? message("memory.page.yearly") : null}
+        {yearly && threadId ? " · " : null}
+        {threadId ? (
+          <button
+            type="button"
+            className="memory-link reminder-source"
+            onClick={() => onOpenThread(threadId)}
+          >
+            {message("memory.source")}
+          </button>
+        ) : null}
+      </small>
+    ) : null;
+  const when = (at: string) =>
+    groupOf(at) === "today"
+      ? new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+      : time(at);
   return (
-    <>
-      <p className="settings-note">{message("memory.page.remindersNote")}</p>
-      {overview.reminders.length ? <h4>{message("memory.page.dueNow")}</h4> : null}
-      {overview.reminders.map((item) => (
-        <section className="memory-card" data-kind="due" key={item.reminderId}>
-          <p className="memory-text">{item.text}</p>
-          <small>{time(item.dueAt)}</small>
-          <div className="actions">
-            <ActionButton
-              disabled={memory.busy}
-              onClick={() => void memory.respondReminder(item, "dismiss")}
-            >
-              {message("memory.reminderDismiss")}
-            </ActionButton>
-            <ActionButton
-              variant="secondary"
-              disabled={memory.busy}
-              onClick={() => void memory.respondReminder(item, "snooze")}
-            >
-              {message("memory.reminderSnooze")}
-            </ActionButton>
-          </div>
-        </section>
-      ))}
-      <h4>{message("memory.page.upcoming")}</h4>
-      {overview.upcoming.length ? (
-        <ul className="memory-list">
-          {overview.upcoming.map((item) => (
-            <li className="memory-upcoming" key={item.reminderId}>
-              <strong>{new Date(item.dueAt).getDate()}</strong>
-              <span>
-                {item.text}
-                <small>
-                  {time(item.dueAt)}
-                  {item.repeat === "yearly" ? ` · ${message("memory.page.yearly")}` : ""}
-                </small>
-              </span>
-              <ActionButton
-                variant="quiet"
-                disabled={memory.busy}
-                onClick={() =>
-                  void memory
-                    .respondReminder(item, "cancel")
-                    .then(
-                      (ok) =>
-                        ok &&
-                        notify({ text: message("memory.page.cancelled", { text: item.text }) }),
-                    )
-                }
-              >
-                {message("memory.reminderDismiss")}
-              </ActionButton>
-            </li>
-          ))}
-        </ul>
+    <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
+      <header className="memory-header">
+        <div className="side-page-title">
+          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
+            <LineIcon name="back" />
+          </ActionButton>
+          <h1>{message("nav.reminders")}</h1>
+        </div>
+      </header>
+      {!memory ? (
+        <p className="settings-note">{message("common.notConfigured")}</p>
+      ) : !overview ? (
+        <div className="files-library-skeleton" aria-hidden="true">
+          <i />
+          <i />
+        </div>
       ) : (
-        <p className="settings-note">{message("memory.page.noUpcoming")}</p>
+        <>
+          {overview.reminders.length ? (
+            <section>
+              <h2 className="memory-group">{message("memory.page.dueNow")}</h2>
+              {overview.reminders.map((item) => (
+                <div className="reminder-row" data-kind="due" key={item.reminderId}>
+                  <span className="reminder-when">{when(item.dueAt)}</span>
+                  <span className="reminder-text">
+                    {item.text}
+                    {meta(false, item.sourceThreadId)}
+                  </span>
+                  <span className="actions">
+                    <ActionButton
+                      disabled={memory.busy}
+                      onClick={() => void memory.respondReminder(item, "dismiss")}
+                    >
+                      {message("memory.reminderDismiss")}
+                    </ActionButton>
+                    <ActionButton
+                      variant="secondary"
+                      disabled={memory.busy}
+                      onClick={() => void memory.respondReminder(item, "snooze")}
+                    >
+                      {message("memory.reminderSnooze")}
+                    </ActionButton>
+                  </span>
+                </div>
+              ))}
+            </section>
+          ) : null}
+          {[...groups].map(([group, items]) => (
+            <section key={group}>
+              <h2 className="memory-group">{message("reminders.group", { g: group })}</h2>
+              {items.map((item) => (
+                <div className="reminder-row" key={item.reminderId}>
+                  <span className="reminder-when">{when(item.dueAt)}</span>
+                  <span className="reminder-text">
+                    {item.text}
+                    {meta(item.repeat === "yearly", item.sourceThreadId)}
+                  </span>
+                  <span className="actions">
+                    <ActionButton
+                      variant="quiet"
+                      disabled={memory.busy}
+                      onClick={() =>
+                        void memory
+                          .respondReminder(item, "cancel")
+                          .then(
+                            (ok) =>
+                              ok &&
+                              setNotice(message("memory.page.cancelled", { text: item.text })),
+                          )
+                      }
+                    >
+                      {message("memory.reminderDismiss")}
+                    </ActionButton>
+                  </span>
+                </div>
+              ))}
+            </section>
+          ))}
+          {!overview.reminders.length && !overview.upcoming.length ? (
+            <p className="reminders-empty">{message("reminders.empty")}</p>
+          ) : null}
+          <p className="settings-note reminders-notify">
+            {message("memory.page.notify")}{" "}
+            <button type="button" className="reminders-link" onClick={openNotificationSettings}>
+              {message("push.openSettings")}
+            </button>
+          </p>
+        </>
       )}
-      <p className="memory-banner">
-        {message("memory.page.notify")}
-        <ActionButton variant="secondary" onClick={openNotificationSettings}>
-          {message("push.openSettings")}
-        </ActionButton>
-      </p>
-    </>
+      {notice ? <output className="memory-notice">{notice}</output> : null}
+    </section>
   );
 }
 
@@ -439,12 +557,24 @@ function PeopleCard({
                   width: GRAPH.r,
                   transform: `rotate(${(a * 180) / Math.PI}deg)`,
                 }}
-              >
-                <small style={{ transform: `rotate(${(-a * 180) / Math.PI}deg)` }}>
-                  {entry.rel}
-                </small>
-              </span>
+              />
             );
+          })}
+          {shown.map((entry, index) => {
+            const a = angle(index);
+            const along = shown.length > 8 && index % 2 ? 0.62 : 0.46;
+            return entry.rel ? (
+              <small
+                key={`${entry.id}-rel`}
+                className="memory-edge-label"
+                style={{
+                  left: Math.round(GRAPH.x + GRAPH.r * along * Math.cos(a)),
+                  top: Math.round(GRAPH.y + GRAPH.r * along * Math.sin(a)),
+                }}
+              >
+                {entry.rel}
+              </small>
+            ) : null;
           })}
           <button
             type="button"
@@ -524,7 +654,17 @@ function PeopleCard({
   );
 }
 
-function ProfileTab({ memory, message }: { memory: MemoryModel; message: Message }) {
+function ProfileTab({
+  memory,
+  message,
+  focus,
+  onViewAll,
+}: {
+  memory: MemoryModel;
+  message: Message;
+  focus: readonly string[];
+  onViewAll: (category: string) => void;
+}) {
   const [more, setMore] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const overview = memory.overview;
@@ -534,7 +674,7 @@ function ProfileTab({ memory, message }: { memory: MemoryModel; message: Message
   return (
     <>
       <p className="settings-note">{message("memory.page.profileNote")}</p>
-      <div className="memory-profile-grid">
+      <div className="memory-profile-columns">
         {overview.profile.map((section) => {
           const groups = new Map<string, typeof section.lines>();
           for (const line of section.lines) {
@@ -544,8 +684,20 @@ function ProfileTab({ memory, message }: { memory: MemoryModel; message: Message
           const ordered = [...groups.values()].flat();
           const open = more[section.kind] === true;
           const visible = new Set(
-            (open ? ordered : ordered.slice(0, PROFILE_PREVIEW)).map((line) => line.memoryId),
+            ordered
+              .slice(0, open ? PROFILE_EXPANDED : PROFILE_PREVIEW)
+              .map((line) => line.memoryId),
           );
+          const categories = section.lines.flatMap((line) => {
+            const category = items.get(line.memoryId)?.category;
+            return category ? [category] : [];
+          });
+          const category =
+            [...new Set(categories)].sort(
+              (a, b) =>
+                categories.filter((value) => value === b).length -
+                categories.filter((value) => value === a).length,
+            )[0] ?? "all";
           return (
             <section className="memory-card" key={section.kind}>
               <h4>
@@ -582,7 +734,11 @@ function ProfileTab({ memory, message }: { memory: MemoryModel; message: Message
                             onClick={() => setEditing(line.memoryId)}
                           >
                             <span>{line.text}</span>
-                            {Date.parse(line.updatedAt) > recent ? (
+                            {focus.includes(line.memoryId) ? (
+                              <span className="memory-tag" data-kind="new">
+                                {message("memory.justSaved")}
+                              </span>
+                            ) : Date.parse(line.updatedAt) > recent ? (
                               <span className="memory-tag" data-kind="new">
                                 {message("memory.recent")}
                               </span>
@@ -599,15 +755,27 @@ function ProfileTab({ memory, message }: { memory: MemoryModel; message: Message
                 ) : null,
               )}
               {ordered.length > PROFILE_PREVIEW ? (
-                <ActionButton
-                  variant="quiet"
-                  aria-expanded={open}
-                  onClick={() => setMore({ ...more, [section.kind]: !open })}
-                >
-                  {open
-                    ? message("memory.page.less")
-                    : message("memory.page.more", { count: ordered.length - PROFILE_PREVIEW })}
-                </ActionButton>
+                <div className="memory-card-more">
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setMore({ ...more, [section.kind]: !open })}
+                  >
+                    {open
+                      ? message("memory.page.less")
+                      : message("memory.page.more", {
+                          count: Math.min(ordered.length, PROFILE_EXPANDED) - PROFILE_PREVIEW,
+                        })}
+                  </button>
+                  {ordered.length > PROFILE_EXPANDED ? (
+                    <button type="button" onClick={() => onViewAll(category)}>
+                      {message("memory.page.viewAll", {
+                        count: ordered.length,
+                        kind: message(`memory.profile.${section.kind}`),
+                      })}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </section>
           );
@@ -620,80 +788,23 @@ function ProfileTab({ memory, message }: { memory: MemoryModel; message: Message
   );
 }
 
-function JustSavedRow({
-  item,
-  memory,
-  message,
-  notify,
-}: {
-  item: MemoryItem;
-  memory: MemoryModel;
-  message: Message;
-  notify: (notice: Notice) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  return (
-    <li className="memory-just-saved-item">
-      <span className="memory-tags">
-        <span className="memory-tag" data-kind="new">
-          {message("memory.justSaved")}
-        </span>
-        <span className="memory-tag">
-          {message("memory.cat", { c: item.category })}
-          {item.subCategory ? ` · ${item.subCategory}` : ""}
-        </span>
-      </span>
-      {editing ? (
-        <TextEditor
-          initial={item.text}
-          busy={memory.busy}
-          message={message}
-          onCancel={() => setEditing(false)}
-          onSave={(text) => void memory.correct(item, text).then((ok) => ok && setEditing(false))}
-        />
-      ) : (
-        <>
-          <p className="memory-text">{item.text}</p>
-          <span className="actions">
-            <ActionButton variant="secondary" onClick={() => setEditing(true)}>
-              {message("memory.editAction")}
-            </ActionButton>
-            <ActionButton
-              variant="secondary"
-              disabled={memory.busy}
-              onClick={() =>
-                void memory.remove(item).then(
-                  (ok) =>
-                    ok &&
-                    notify({
-                      text: message("memory.page.deleted"),
-                      undo: () => void memory.recover({ ...item, revision: item.revision + 1 }),
-                    }),
-                )
-              }
-            >
-              {message("memory.deleteAction")}
-            </ActionButton>
-          </span>
-        </>
-      )}
-    </li>
-  );
-}
-
 function AllTab({
   memory,
   message,
   notify,
   onOpenThread,
+  focus,
+  initialCategory,
 }: {
   memory: MemoryModel;
   message: Message;
   notify: (notice: Notice) => void;
   onOpenThread: (threadId: string) => void;
+  focus: readonly string[];
+  initialCategory: string;
 }) {
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState(initialCategory);
   const [sub, setSub] = useState("all");
   const [status, setStatus] = useState<MemoryItem["status"]>("active");
   const overview = memory.overview;
@@ -751,22 +862,26 @@ function AllTab({
       count: visible.filter((item) => item.status === key).length,
     }))
     .filter((entry) => entry.key !== "trashed" || entry.count > 0 || status === "trashed");
-  const shown = pool.filter(
-    (item) =>
-      (category === "all" || item.category === category) &&
-      (sub === "all" || item.subCategory === sub) &&
-      (!needle || item.text.toLowerCase().includes(needle)),
-  );
+  const shown = pool
+    .filter(
+      (item) =>
+        (category === "all" || item.category === category) &&
+        (sub === "all" || item.subCategory === sub) &&
+        (!needle || item.text.toLowerCase().includes(needle)),
+    )
+    .sort((a, b) => Number(focus.includes(b.memoryId)) - Number(focus.includes(a.memoryId)));
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).valueOf();
   const groupOf = (item: MemoryItem) =>
-    status !== "active"
-      ? status
-      : Date.parse(item.recordedAt) >= today
-        ? "today"
-        : Date.parse(item.recordedAt) >= today - 6 * DAY_MS
-          ? "week"
-          : "earlier";
+    focus.includes(item.memoryId) && status === "active"
+      ? "today"
+      : status !== "active"
+        ? status
+        : Date.parse(item.recordedAt) >= today
+          ? "today"
+          : Date.parse(item.recordedAt) >= today - 6 * DAY_MS
+            ? "week"
+            : "earlier";
   const groups = new Map<string, MemoryItem[]>();
   for (const item of shown) groups.set(groupOf(item), [...(groups.get(groupOf(item)) ?? []), item]);
   return (
@@ -822,6 +937,7 @@ function AllTab({
                   item={item}
                   history={history.get(item.memoryId) ?? []}
                   reminder={reminders.get(item.memoryId) ?? null}
+                  justSaved={focus.includes(item.memoryId)}
                   memory={memory}
                   message={message}
                   notify={notify}
@@ -1278,20 +1394,21 @@ function AddForm({
   );
 }
 
-export function MemorySettings({
+export function MemoryPage({
   memory,
   message,
   focus = [],
-  focusThreadTitle,
+  onBack,
   onOpenThread,
 }: {
   memory: MemoryModel | null;
   message: Message;
   focus?: readonly string[];
-  focusThreadTitle?: string;
+  onBack: () => void;
   onOpenThread: (threadId: string) => void;
 }) {
-  const [tab, setTab] = useState<Tab>("pending");
+  const [tab, setTab] = useState<Tab>(focus.length ? "all" : "pending");
+  const [allCategory, setAllCategory] = useState("all");
   const [panel, setPanel] = useState<"add" | "import" | "export" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const timer = useRef(0);
@@ -1305,40 +1422,44 @@ export function MemorySettings({
   };
   const memories = overview?.memories.filter(live) ?? [];
   const active = memories.filter((item) => item.status === "active");
-  const justSaved = active.filter((item) => focus.includes(item.memoryId));
-  const savedAt = justSaved
-    .map((item) => item.recordedAt)
-    .sort()
-    .at(-1);
   const queue =
     (overview?.pending.length ?? 0) +
     (overview?.personSuggestions.length ?? 0) +
     (overview?.memories.filter(
       (item) => item.tentative && !item.supersededBy && item.status === "active",
     ).length ?? 0);
-  const due = overview?.reminders.length ?? 0;
   const current: Tab = tab === "pending" && !queue ? "profile" : tab;
   const paused = overview?.capturePaused ?? false;
   const ready = overview?.manualAddReady ?? false;
   const tabs: { key: Tab; count?: string; urgent?: boolean }[] = [
     ...(queue ? [{ key: "pending" as const, count: String(queue), urgent: true }] : []),
-    {
-      key: "reminders",
-      count: due
-        ? message("memory.page.due", { count: due })
-        : String(overview?.upcoming.length ?? 0),
-      urgent: due > 0,
-    },
     { key: "profile" },
     { key: "all", count: String(active.length) },
     { key: "timeline" },
   ];
   const body: Record<Tab, () => ReactNode> = {
     pending: () => <PendingTab memory={memory} message={message} />,
-    reminders: () => <RemindersTab memory={memory} message={message} notify={notify} />,
-    profile: () => <ProfileTab memory={memory} message={message} />,
+    profile: () => (
+      <ProfileTab
+        memory={memory}
+        message={message}
+        focus={focus}
+        onViewAll={(category) => {
+          setAllCategory(category);
+          setTab("all");
+        }}
+      />
+    ),
     all: () => (
-      <AllTab memory={memory} message={message} notify={notify} onOpenThread={onOpenThread} />
+      <AllTab
+        key={allCategory}
+        memory={memory}
+        message={message}
+        notify={notify}
+        onOpenThread={onOpenThread}
+        focus={focus}
+        initialCategory={allCategory}
+      />
     ),
     timeline: () => (
       <TimelineTab memory={memory} message={message} onConfirm={() => setTab("pending")} />
@@ -1346,10 +1467,13 @@ export function MemorySettings({
   };
   const week = Date.now() - 7 * DAY_MS;
   return (
-    <section className="memory-settings memory-page">
+    <section className="memory-page side-page-body" aria-label={message("nav.memory")}>
       <header className="memory-header">
-        <div>
-          <h3>{message("review.settings.memory")}</h3>
+        <div className="side-page-title">
+          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
+            <LineIcon name="back" />
+          </ActionButton>
+          <h1>{message("nav.memory")}</h1>
           <small>
             {message("memory.page.summary", {
               live: active.length,
@@ -1400,30 +1524,7 @@ export function MemorySettings({
       {panel === "add" ? (
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
       ) : null}
-      {justSaved.length ? (
-        <section className="memory-just-saved" aria-label={message("memory.justSaved")}>
-          {focusThreadTitle && savedAt ? (
-            <p className="settings-note">
-              {message("memory.justSavedFrom", {
-                title: focusThreadTitle,
-                time: time(savedAt),
-              })}
-            </p>
-          ) : null}
-          <ul className="memory-list">
-            {justSaved.map((item) => (
-              <JustSavedRow
-                key={`${item.memoryId}:${item.revision}`}
-                item={item}
-                memory={memory}
-                message={message}
-                notify={notify}
-              />
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      <div role="tablist" className="memory-tabs" aria-label={message("review.settings.memory")}>
+      <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
         {tabs.map((item) => (
           <button
             type="button"

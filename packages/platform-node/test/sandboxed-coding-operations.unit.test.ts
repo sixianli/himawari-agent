@@ -115,7 +115,6 @@ describe("sandboxed coding file operations", () => {
       complete = true;
     });
     await entered;
-    // An observable filesystem read allows the old, unawaited callback path to finish.
     expect(await readFile(file, "utf8")).toBe("new bytes");
     const completedBeforeReceipt = complete;
     release();
@@ -187,19 +186,41 @@ describe("sandboxed coding file operations", () => {
     await symlink(path.join(root, "other"), file);
     await expect(port.writeFile(file, "replacement")).rejects.toThrow();
   });
-  it("does not turn a partial file write grant into arbitrary shell authority", async () => {
+  it("runs a shell command with the read, create and update workspace grant", async () => {
     const { root, grant } = await setup();
-    // Exercise the real command adapter; the fixed-file adapter rejects earlier.
     const port = await createSandboxedCodingOperations({
       grant,
       shell: "/bin/bash",
       privateDirectory: root,
-      commandPath: "/usr/bin",
+      commandPath: "/usr/bin:/bin",
       maxCommandOutputBytes: 4096,
     });
-    await expect(port.executeCommand({ cwd: root, command: "true", onData() {} })).rejects.toThrow(
-      "PI_SHELL_EFFECT_SCOPE_INCOMPLETE",
-    );
+    const output: Uint8Array[] = [];
+    await port.executeCommand({
+      cwd: root,
+      command: "printf done > made.txt && cat made.txt",
+      onData: (bytes) => output.push(bytes),
+    });
+    expect(Buffer.concat(output).toString()).toBe("done");
+    expect(await readFile(path.join(root, "made.txt"), "utf8")).toBe("done");
+  });
+  it("does not turn a partial file write grant into arbitrary shell authority", async () => {
+    const { root, grant } = await setup();
+    for (const operations of [
+      ["read", "update"],
+      ["read", "create"],
+    ] as const) {
+      const port = await createSandboxedCodingOperations({
+        grant: { ...grant, operations },
+        shell: "/bin/bash",
+        privateDirectory: root,
+        commandPath: "/usr/bin:/bin",
+        maxCommandOutputBytes: 4096,
+      });
+      await expect(
+        port.executeCommand({ cwd: root, command: "true", onData() {} }),
+      ).rejects.toThrow("PI_SHELL_EFFECT_SCOPE_INCOMPLETE");
+    }
   });
 });
 describe("Pi output export", () => {

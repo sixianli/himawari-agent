@@ -301,15 +301,27 @@ describe("control center application bootstrap and interaction", () => {
       await loadMessageCatalog("en");
     });
     expect(document.querySelector<HTMLDialogElement>("dialog")?.open).toBe(true);
-    const theme = document.querySelector<HTMLSelectElement>('select[aria-label="Theme"]');
+    const theme = document.querySelector<HTMLInputElement>(
+      'input[name="setting-theme"][value="light"]',
+    );
     if (!theme) throw new Error("Missing theme setting");
-    await act(async () => {
-      theme.value = "light";
-      theme.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(theme.closest("label")?.textContent).toBe("Light");
+    await act(async () => theme.click());
+    expect(theme.checked).toBe(true);
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(new ControlCenterBrowserStorage(window.localStorage).readPreferences().theme).toBe(
       "light",
+    );
+    const name = document.querySelector<HTMLInputElement>(
+      'input[aria-label="What should I call you?"]',
+    );
+    if (!name) throw new Error("Missing name setting");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Andy");
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(new ControlCenterBrowserStorage(window.localStorage).readPreferences().name).toBe(
+      "Andy",
     );
   });
   it("routes installed /approvals to the governance model", async () => {

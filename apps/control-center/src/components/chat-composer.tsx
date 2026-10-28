@@ -328,11 +328,6 @@ export function ChatComposer({
       {retryPending && !pending ? (
         <output className="composer-readiness">{message("review.pendingSend")}</output>
       ) : null}
-      {fresh ? (
-        <div className="composer-hint">
-          <span className="composer-permission">{message("chat.permission")}</span>
-        </div>
-      ) : null}
     </>
   );
 }

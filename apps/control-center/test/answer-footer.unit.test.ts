@@ -133,7 +133,7 @@ const render = (records = turnRecords(), message: Message = ids, run = completed
     }),
   );
 
-it("[UI-9] puts copy and the turn facts in one line right under the answer, before the sources", () => {
+it("[UI-9] keeps only actions under the answer: copy, start a new conversation from here, and the time", () => {
   const html = render();
   const answer = html.indexOf("今日要闻");
   const actions = html.indexOf('class="answer-actions"');
@@ -141,21 +141,20 @@ it("[UI-9] puts copy and the turn facts in one line right under the answer, befo
   expect(answer).toBeGreaterThan(0);
   expect(actions).toBeGreaterThan(answer);
   expect(sources).toBeGreaterThan(actions);
-  expect(html).toContain('title="answer.copyHint" aria-label="answer.copy"');
-  expect(html).toContain(
-    '<span class="answer-meta">27.1s · answer.at(at=2026-10-26T12:24:24.777Z)',
+  const line = html.slice(actions, sources);
+  expect(line).toContain('title="answer.copyHint" aria-label="answer.copy"');
+  expect(line).toContain('title="answer.forkHint" aria-label="answer.fork"');
+  expect(line).toContain(
+    '<time class="answer-time" dateTime="2026-10-26T12:24:24.777Z">answer.at(at=2026-10-26T12:24:24.777Z)</time>',
   );
+  expect(line).not.toContain("27.1s");
+  expect(line).not.toContain("tokens");
+  expect(line).not.toContain("answer.more");
   expect(html).not.toContain("deepseek-v4-flash");
-  expect(html).toContain("answer.tokens(count=21.5k)");
-  expect(html).toContain(
-    'title="answer.tokenDetail(input=21,000,cached=18,000,output=480,cost=$0.0042)"',
-  );
   expect(html).not.toContain("turn-model");
-  expect(html).toContain('aria-label="answer.more"');
 });
 
-it("[UI-9] leaves the token count out when the turn has no usage record and hides the line while running", () => {
-  expect(render(turnRecords(false))).not.toContain("answer.tokens");
+it("[UI-9] hides the action line while the turn is still running", () => {
   expect(render(turnRecords(), ids, { ...completedRun, status: "running" })).not.toContain(
     "answer-actions",
   );
@@ -248,12 +247,15 @@ it("[BG-9] marks the report turn with a divider that names the command, its dura
   expect(html.indexOf("background-report")).toBeGreaterThan(html.indexOf("background-line"));
 });
 
-it("[UI-10] folds the sources into one line and lists each page once when opened", () => {
+it("[UI-10] names the first sites in the folded sources line and marks every source as an external link", () => {
   const html = render();
-  expect(html).toContain('class="sources-toggle" aria-expanded="false"');
-  expect(html).toContain("answer.sources(count=2)");
+  expect(html).toContain(
+    'class="sources-toggle" aria-expanded="false" aria-label="answer.sources(count=2)"',
+  );
+  expect(html).toContain('<span class="source-sites">apnews.com · reuters.com</span>');
+  expect(html).not.toContain("source-more");
   expect(html).not.toContain("source-list");
-  expect(html.match(/<i>/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(html).not.toMatch(/<i>[A-Z]<\/i>/);
 });
 
 it("[UI-11] marks your message as received once the model started, with a copy button and the time", () => {

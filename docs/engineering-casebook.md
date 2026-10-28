@@ -66,7 +66,9 @@ date: "2026-10-26"
   39. [让真模型跑 Jarvis Test：编出来的报错会被模型看穿，裁判也要先过校准](#case-jarvis-test-evals)
   40. [域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配](#case-min-tls)
   41. [按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送](#case-optimistic-send)
+  42. [什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算](#case-memory-embedding-route)
   43. [说“我老婆叫管冬融”，Himawari 却又讲了一遍天气：主人档案作为一条用户消息紧贴新消息](#case-owner-material-position)
+  44. [22 条界面意见归成一句话：“站在用户的角度想他要知道什么”，把内部数字移出视线，记忆和提醒各有入口](#case-ui-batch-1028)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -88,14 +90,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[新消息被当成档案的一行](#case-owner-material-position) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
@@ -2685,6 +2687,84 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 [返回目录](#contents)
 
+<a id="case-memory-embedding-route"></a>
+
+## 案例 42：什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算
+
+**背景与现象**
+
+2026-10-28 19:00 左右（日本时间），Andy 在生产网页问“搜一下今天东京的天气，简短回答”。过程时间线第一步“按这句话找到 0 条相关记忆”用了 1.4 秒（整轮 9.2 秒）。他的批注：“这里啥也没找到，为什么还耗时这么久！？排查！优化！”
+
+**根因**
+
+“找记忆”这一步做四件事：读出这句话、把它变成向量（向量化：用模型把一句话变成 4096 个数字，意思相近的话数字也相近）、在本机 SQLite 里按向量和关键词找候选、写下候选和选中结果。找到 0 条不代表没做事：比对之前必须先拿到这句话的向量。
+
+用生产数据库只读拆分了最近 40 轮的时间点（每轮已有的事件时间，加上向量化调用在额度表里记下的“开始”和“结算”时间，脚本在项目共享文件 `memory-search-latency/`）：
+
+| 环节 | 中位数 | p90 |
+| --- | --- | --- |
+| 找记忆开始 → 向量化登记 | 49 ms | 263 ms |
+| 登记 → 发出请求 | 28 ms | 70 ms |
+| **向量化网络请求** | **1392 ms** | **2288 ms** |
+| 请求结束 → 写出候选（含本机检索） | 45 ms | 124 ms |
+| 候选 → 选中 | 28 ms | 64 ms |
+| 整步合计 | 1580 ms | 2787 ms |
+
+向量化占了 88%。请求发到 Vercel AI Gateway（把多家模型供应商统一成一个接口的网关），模型是 `alibaba/qwen3-embedding-8b`。生产机在东京（Contabo 东京机房），但响应头 `x-vercel-id` 是 `hnd1::syd1`：东京的接入点把请求转到悉尼处理，网关再把请求发给美国的 DeepInfra 计算，算完原路返回。一句话的向量要绕两段跨洋网络。本机检索不是问题：在云端用 4096 维向量复现，300 条记忆检索约 13 毫秒，1000 条约 25 毫秒，生产里只有 11 条。
+
+另一个放大因素是返回格式：项目一直要求 `encoding_format: "float"`，4096 个数字写成 JSON 文本约 89 KB；同样的数字按 float32 二进制再 base64 编码只有约 22 KB。这 89 KB 要从美国的供应商传回悉尼、再传回东京。
+
+**方案讨论与备选**
+
+在生产机上用生产密钥做了一次 30 次的对比探测（每种方式 6 次，同一时段，花费约 0.00001 美元）：
+
+| 方式 | 中位数 | 区间 |
+| --- | --- | --- |
+| 每次新连接、float（等于现状） | 1048 ms | 826–1398 ms |
+| 每次新连接、base64 | 769 ms | 672–1038 ms |
+| 复用连接、float | 1022 ms | 548–1493 ms |
+| 复用连接、base64 | 677 ms | 661–1062 ms |
+| 只走 nebius 供应商、float | 2833 ms | 2122–4863 ms |
+
+- **改用 base64 返回格式**：数值逐位相同（在云端对同一句话比对，最大差 0.0），每次约省 0.2–0.3 秒，没有代价。这次就做。
+- **保持连接不断**（Node 的 fetch 底层 undici 默认空闲 4 秒就关连接，而两轮对话通常隔几分钟）：实测只省几十毫秒，还要自己管连接池，不做。
+- **换供应商**：这个模型在网关上只有 DeepInfra 和 nebius 两家，nebius 慢得多；网关在哪个机房处理请求由 Vercel 决定，我们改不了。
+- **换成别的托管向量模型**：请求照样先绕到悉尼，治标不治本，还要重建索引。
+- **在生产机本机算向量**（Qwen3-Embedding-0.6B，同家族的小模型，int8 量化）：云端 4 核实测一次查询约 90 毫秒，加载约 20 秒，进程约 1.4 GB 内存；对话内容也不再发给第三方。代价是准确度比 8B 低，要新增依赖和约 600 MB 模型文件。这是改变产品取舍的决定，交给 Andy 选（见后续）。
+
+**我们的方案**
+
+`packages/memory-engine/src/embedding.ts` 的 `GatewayEmbedder` 改为请求 `encoding_format: "base64"`，收到后按小端 float32 解码成数字数组，再交给原有的用量和向量校验；字节数不等于“维度 × 4”就报 `EMBEDDING_VECTOR_INVALID`。网关若返回数字数组也照常接受（这是同一接口规定的两种合法格式）。写入记忆时的向量化也走这条路，一起受益。
+
+**业界主流做法**
+
+- ✅ OpenAI 官方 Node SDK（[`src/lib/embeddings.ts`](https://github.com/openai/openai-node/blob/master/src/lib/embeddings.ts)）：调用方没指定格式时，SDK 主动改用 base64：“No encoding_format specified, defaulting to base64 for performance reasons.”，再在客户端解码回数字。
+- ✅ OpenAI 接口定义（[openapi.yaml](https://github.com/openai/openai-openapi/blob/master/openapi.yaml)）：`encoding_format` “The format to return the embeddings in. Can be either `float` or `base64`.”
+- ✅ Vercel AI Gateway 文档（[Provider Routing and Fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/provider-options)）：“By default, Vercel AI Gateway dynamically chooses the default providers to give you the best experience based on a combination of recent uptime and latency.” 文档只给了选供应商的 `order`、`only`，没有选处理机房的选项。
+- ✅ undici 文档（[Client.md](https://github.com/nodejs/undici/blob/main/docs/docs/api/Client.md)）：`keepAliveTimeout` “The timeout, in milliseconds, after which a socket with no active requests times out ... **Default:** `4e3`.”
+- ✅ Qwen3-Embedding-0.6B 模型卡（[Hugging Face](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)）：MTEB 多语言平均分 0.6B 为 64.33，8B 为 70.58。
+
+**对比与取舍**
+
+和 OpenAI SDK 一样默认走 base64；不同的是我们的向量化有“先登记额度、再发请求、再结算”的边界，所以在发送函数里就解码，边界之后的校验和原来完全一样。没有采用“保持连接”和“换供应商”，因为实测收益小或更慢。真正的大头是网络绕路，只能靠不走网络解决，这一步涉及准确度和内存，由 Andy 决定。
+
+**结果数据**
+
+- 生产实测（2026-10-28，最近 40 轮）：找记忆中位数 1580 ms，向量化 1392 ms；本机其他环节各约 30–50 ms。
+- 生产机同时段探测：新连接下向量化中位数 1048 ms → 769 ms（base64），约省 0.28 秒；响应体 89 KB → 22.8 KB。上线后的生产中位数未测量，上线后用同一脚本复测补到这里。
+- 云端复现：本机检索 300 条 13 ms、1000 条 25 ms；本机小模型一次查询约 90 ms（云端 4 核，不代表生产机）。
+- 测试：新增两条单元测试（请求带 base64、边界拿到解码后的数字；字节数不对时报错），改了一条请求体断言；记忆引擎和生产组合相关的 6 个单元测试文件 93 个测试通过。
+
+**相关 ADR/PR**
+
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+
+**面试 30 秒版**
+
+“用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
+
+[返回目录](#contents)
+
 <a id="case-owner-material-position"></a>
 
 ## 案例 43：说“我老婆叫管冬融”，Himawari 却又讲了一遍天气：主人档案作为一条用户消息紧贴新消息，模型把新消息当成了档案的一行
@@ -2755,11 +2835,76 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-[ADR 0104](adr/0104-turn-material-in-last-user-message.md)；PR 见分支 `claude/project-thread-cb6021`。
+[ADR 0104](adr/0104-turn-material-in-last-user-message.md)；PR #81（分支 `claude/project-thread-cb6021`）。
 
 **面试 30 秒版**
 
 用户说“我老婆叫某某”，Agent 却把上一轮的天气又讲了一遍。我从生产库取出那一轮真正发给模型的请求，发现主人档案被当成一条用户消息紧贴在新消息前，模型把新消息读成档案的最后一行，以为用户没提新要求，就接着旧话题说。用真实模型重放 140 次，复现率约 19%。最后把本轮的时间和资料放进最后一条用户消息的标签里、主人的话单独包在最后，系统提示和历史保持不变：重放 80 次 0 次跑题，提示缓存命中从 512 个 token 升到 4,224 个。
+
+[返回目录](#contents)
+
+<a id="case-ui-batch-1028"></a>
+
+## 案例 44：22 条界面意见归成一句话：“站在用户的角度想他要知道什么”，把内部数字移出视线，记忆和提醒各有入口
+
+**背景与现象**
+
+2026-10-28 18:44–19:27（日本时间），第十六版上线后，Andy 逐条发了 22 条 Himawari 网页的界面意见（清单和原话在项目共享文件 `ui-feedback/2026-10-28-ui-ux-batch.md`）。最重的一句是：“你得站在用户的角度思考用户想要知道什么信息，而不是你以为！”具体例子：回答上方写“最久：搜索网页 3.1s”，步骤里写“从第 0.2s 到第 1.6s”，Token 行带费用和一段说明；提醒藏在记忆页里，“你必须好好思考提醒是否应该放在记忆这个模块中！！！！”；设置里有主人从来不会改的项；品牌字样、步骤图标、记忆详情对不齐等细节粗糙。
+
+**根因**
+
+逐条对照代码后，问题不是某一个组件写错，而是三条设计习惯：
+
+1. **按“我们手里有什么数据”来摆界面，而不是按“主人想知道什么”。** 执行记录里有每步的起止时间、分类合计、费用，界面就全部摆出来（`execution-process.tsx` 的 `StepTiming`、`CategoryBar`、`TimeLedger`，`turn-summary.ts` 的 `cost`）。同一个耗时在收起行、明细和分类合计里出现三次。
+2. **按代码模块而不是按主人的心智归类。** 提醒在数据上挂在记忆下面（提醒记录只存 `memoryId`），界面就把它做成记忆页的一个标签。
+3. **能点不能点没有区分。** 每个步骤都做成按钮，没有内容的步骤点开是空的。
+
+**我们的方案**
+
+先做三语可点原型（<https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>），几处给多套方案，Andy 逐条批注选定后再改代码，决定写进 [ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)：
+
+1. 过程区收起时一句话说做了什么和总用时（“搜索了 2 次网页，用时 13.1s”），从这一轮步骤种类计数生成；展开后每步只写自己的耗时；最下面一行只有 Token 总数和“缓存命中 N%”。
+2. “缓存命中”按 Andy 的要求写明是模型服务商的 KV 缓存（服务商把算过的前文存起来，同样开头的输入直接复用）：命中率 = 缓存读取 ÷（普通输入 + 缓存读取 + 缓存写入）。不显示费用。
+3. 只有有内容可看的步骤才能展开、才显示箭头，其余是普通行。步骤图标改成小方框里的线条图标。
+4. 回答下方只放操作（复制、从这里开新对话），时刻悬停才显示；来源显示前两个域名加“+N”。
+5. 侧栏顺序改为记忆、提醒、文件，提醒是独立页面，只在有到期提醒时显示一个小圆点。
+6. 设置只留四页：通用（称呼、语言、外观、主题色）、通知、工具与权限、数据；称呼用在欢迎页的问候里，欢迎语随时间段变化。
+7. 品牌字样两行 Himawari + ひまわり，两种字体只取用到的字形随网页发布，内容安全策略加 `font-src 'self'`。
+8. 回答里过多加粗：网页只在模型写了 `**` 时加粗，问题在模型写法，所以在系统提示里加一条“加粗只用在最值得注意的一两处”，不在网页上去掉加粗。
+
+这是纯网页和系统提示的改动，不涉及 Pi（项目底层的 Agent 框架）的模型、工具或会话部分；缓存读取数字来自 Pi 已经统一好的用量字段。
+
+**方案讨论与备选**
+
+- **收起行保留细时间条**：一眼看出哪段长，但主人看这一行只想知道“做了什么、多久”；时间条留在展开后的每一步上。
+- **回答下方保留常驻时刻**：手机上有用，电脑上是噪声。改成悬停显示，触屏设备没有悬停就一直淡淡显示。
+- **原型里的“⋯”菜单**：“从这里开新对话”拿出来后菜单里没有别的操作，空菜单就是摆设，没做。
+- **数据页放“退出登录”**：生产登录由 Cloudflare Access（网页前面的邮箱验证码）负责，网页里没有可退出的会话，按钮不会生效，没做。
+- **只改文字不改结构**：能修掉几条，但提醒位置、设置项取舍和“能点才有箭头”是结构问题，下一批意见还会重来。
+
+**业界主流做法**
+
+- ✅ Anthropic 提示缓存文档（<https://platform.claude.com/docs/en/build-with-claude/prompt-caching>）：“`cache_read_input_tokens`: Number of tokens retrieved from the cache for this request”，以及 “total_input_tokens = cache_read_input_tokens + cache_creation_input_tokens + input_tokens”。命中率的分母按这个算法取全部输入。
+- ✅ DeepSeek 上下文硬盘缓存文档（<https://api-docs.deepseek.com/guides/kv_cache>，生产主模型来自 DeepSeek）：“`prompt_cache_hit_tokens`: The number of tokens in the input of this request that resulted in a cache hit.”
+- ⚠ ChatGPT 和 Claude 网页的回答底栏只放操作，不放耗时和 token：这是原型阶段对两家网页的观察，没有一手文档可引。OpenAI 帮助中心“自定义说明”一页打开返回 HTTP 403，未核对。
+
+**对比与取舍**
+
+和 ChatGPT、Claude 一样，回答下方只放操作。不同的是 Himawari 仍然把“做了什么、用了多久、多少 Token、缓存命中多少”放在过程区里：Andy 关心 token 花费和速度，这些数字对他是有用信息，只是不该挤在回答下方，也不该重复三次。代价是费用不在网页上显示，要查用量账本；“最久的一步”要展开才看得出来。
+
+**结果数据**
+
+- 测试：`apps/control-center/test/` 下 35 个文件 516 个测试全部通过（合并 main 之后，含本批改写的过程区、回答底栏、设置、欢迎语、文件筛选测试）；`npm run check` 和 `npm run build` 通过。
+- 三语排版：改过的过程区、设置、文件页、侧栏在中英日三种语言、电脑和手机两种宽度、亮暗两种主题下截图检查，截图存为基线 `docs/assets/control-center/2026-10-28-v9/`。
+- 页面加载和渲染耗时：未测量。加粗规则的效果：未在生产回答上测量，也没有用评测集实测。
+
+**相关 ADR/PR**
+
+[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](execution/specs/2026-09-15-control-center-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
+
+**面试 30 秒版**
+
+“用户一次给了 22 条界面意见，我没有逐条打补丁，而是先找共同原因：界面按‘我们有什么数据’来摆，而不是按‘用户想知道什么’。同一个耗时出现三次，费用、分段起止时间都摆在眼前；提醒因为数据上挂在记忆下，就藏进了记忆页。我先做三语原型让用户逐条选方案，再改成：收起时一句话说做了什么、多久，最下面只留 Token 和按 Anthropic 公式算的 KV 缓存命中率；能点开的才有箭头；提醒有独立入口。516 个前端测试通过，三语两种宽度截图存为新基线。”
 
 [返回目录](#contents)
 

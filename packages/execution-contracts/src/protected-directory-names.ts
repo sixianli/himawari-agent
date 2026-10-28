@@ -19,6 +19,31 @@ export const PROTECTED_DIRECTORY_SUFFIXES: readonly string[] = Object.freeze([".
 
 export const PROTECTED_DIRECTORY_PATH = ".docker/config.json";
 
+export const SANDBOX_RUNTIME_WORKSPACE_MOUNT_PATHS: readonly string[] = Object.freeze([
+  ".gitconfig",
+  ".gitmodules",
+  ".bashrc",
+  ".bash_profile",
+  ".zshrc",
+  ".zprofile",
+  ".profile",
+  ".ripgreprc",
+  ".mcp.json",
+  ".vscode",
+  ".idea",
+  ".claude/commands",
+  ".claude/agents",
+]);
+
+export function isSandboxRuntimeWorkspaceMountPath(relativePath: string): boolean {
+  return SANDBOX_RUNTIME_WORKSPACE_MOUNT_PATHS.some(
+    (mount) =>
+      relativePath === mount ||
+      relativePath.startsWith(`${mount}/`) ||
+      mount.startsWith(`${relativePath}/`),
+  );
+}
+
 export const REJECTED_PATH_COMPONENT_PREFIX = ".himawari-";
 
 export function isRejectedPathComponent(name: string): boolean {

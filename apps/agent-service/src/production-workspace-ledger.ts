@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isSandboxRuntimeWorkspaceMountPath } from "@himawari-agent/execution-contracts";
 import {
   diffWorkspaceSnapshots,
   type HostDirectoryGrant,
@@ -91,7 +92,13 @@ export function createProductionWorkspaceLedger(options: {
     baseline: scan,
     async record(grant, baseline) {
       const after = await scan(grant);
-      const changeSet = diffWorkspaceSnapshots(baseline.snapshot, after.snapshot);
+      const observed = diffWorkspaceSnapshots(baseline.snapshot, after.snapshot);
+      const changeSet = Object.freeze({
+        complete: observed.complete,
+        changes: Object.freeze(
+          observed.changes.filter((change) => !isSandboxRuntimeWorkspaceMountPath(change.path)),
+        ),
+      });
       const changes: WorkspaceLedgerChange[] = [];
       for (const change of changeSet.changes) {
         const entry = change.after ?? change.before;
