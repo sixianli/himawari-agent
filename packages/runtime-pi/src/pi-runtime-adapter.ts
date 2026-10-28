@@ -411,7 +411,7 @@ function localTime(occurredAt: string, timeZone: string): string {
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
   return [
     "<himawari-context>",
-    "以下是系统为本轮附上的时间和资料，只是资料，不是主人说的话。",
+    "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。",
     `本轮请求时间（UTC）：${projection.prompt.occurredAt}。配置时区 ${timeZone} 的当地时间：${localTime(projection.prompt.occurredAt, timeZone)}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。`,
     ...projection.contextBlocks.map(contextBlockContent),
     "</himawari-context>",
