@@ -59,6 +59,19 @@ async function loadCatalogReader() {
   return import(pathToFileURL(operations + "/maintenance/maintenance-common.mjs").href);
 }
 
+const startupReadyBudgetMs = __PKT_STARTUP_READY_BUDGET_MS__;
+
+function startupReadiness(journal, budgetMs) {
+  const timed = journal.map((entry) => { let message = null; try { message = JSON.parse(entry.MESSAGE); } catch {} return message && typeof message === "object" ? { message, at: Number(entry.__REALTIME_TIMESTAMP) / 1000 } : null; }).filter(Boolean);
+  const spawned = timed.filter(({ message }) => message.event === "pair.child_spawned");
+  const ready = ["agent-service", "execution-worker"].map((component) => timed.filter(({ message }) => message.component === component && message.event === "service.ready"));
+  assert(spawned.length === 2 && ready.every((items) => items.length === 1) && [...spawned, ...ready.flat()].every(({ at }) => Number.isFinite(at) && at > 0), "__PKT_LABEL_UPPER___STARTUP_READY_TIMES_MISSING");
+  const startedAt = Math.min(...spawned.map(({ at }) => at));
+  const readyMs = Math.round(Math.max(...ready.map(([item]) => item.at)) - startedAt);
+  assert(readyMs >= 0 && readyMs <= budgetMs, "__PKT_LABEL_UPPER___STARTUP_READY_TOO_SLOW:" + readyMs);
+  return { startupReadyMs: readyMs, startupReadyBudgetMs: budgetMs };
+}
+
 async function inspect(mode, invocationId) {
   assert.equal(process.platform, "linux", "__PKT_LABEL_UPPER___STARTUP_LINUX_REQUIRED");
   assert.equal(hostname(), "__PKT_HOSTNAME__", "__PKT_LABEL_UPPER___STARTUP_HOST_CHANGED");
@@ -192,6 +205,7 @@ async function inspect(mode, invocationId) {
   assert(/^[a-f0-9]{32}$/.test(invocationId), "__PKT_LABEL_UPPER___STARTUP_INVOCATION_INVALID");
   const journal = readFileSync(0, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
   assert(journal.every((item) => item._SYSTEMD_INVOCATION_ID === invocationId), "__PKT_LABEL_UPPER___STARTUP_JOURNAL_INVOCATION_CHANGED");
+  const readiness = startupReadiness(journal, startupReadyBudgetMs);
   const records = journal.map((item) => { try { return JSON.parse(item.MESSAGE); } catch { return null; } }).filter((item) => item && typeof item === "object");
   assert(!records.some((item) => /(?:failed|failure|error|timeout|lost|quarantined|child_exit|child_error)/i.test(String(item.event))), "__PKT_LABEL_UPPER___STARTUP_FAILURE_EVENT_OBSERVED");
   const prepared = records.filter((item) => item.event === "installation-verified");
@@ -272,7 +286,7 @@ async function inspect(mode, invocationId) {
   assert(listeners.length > 0 && listeners.every((item) => ["0100007F", "00000000000000000000000001000000"].includes(item.address) && item.uid === 999 && socketInodes.has(item.inode)), "__PKT_LABEL_UPPER___STARTUP_LISTENER_NOT_OWNED_LOOPBACK");
   const socket = lstatSync(stateRoot + "/runtime/execution.sock");
   assert(socket.isSocket() && socket.uid === 999 && socket.gid === 988 && (socket.mode & 0o7777) === 0o600, "__PKT_LABEL_UPPER___STARTUP_EXECUTION_SOCKET_CHANGED");
-  return { schemaVersion: "himawari.__PKT_LABEL__-change-startup-verification.v1", passed: true, checkedAt: new Date().toISOString(), scope: "startup-readback-only-no-paid-request", configurationSha256: hash(configurationBytes), snapshotSha256: hash(snapshotBytes), receiptSha256: hash(receiptBytes), runtimeDigest: receipt.runtimeDigest, signatureVerified: true, liveHostVerified: true, runtimeProtectionVerified: true, invocationId, pairRunId: spawned[0].pairRunId, mainPid, processes, authority: { ...authority, deploymentId: authority.id }, currentEpoch: authority.authorityEpoch, currentFencingToken: authority.fencingToken, agentBinding: agent, workerBinding: worker, agentReady: agentReady[0], workerReady: workerReady[0], listeners, catalogUpgradeSha256: upgrade.sha256, catalog, actualSystemdCrashRestartVerified: false };
+  return { schemaVersion: "himawari.__PKT_LABEL__-change-startup-verification.v1", passed: true, checkedAt: new Date().toISOString(), scope: "startup-readback-only-no-paid-request", configurationSha256: hash(configurationBytes), snapshotSha256: hash(snapshotBytes), receiptSha256: hash(receiptBytes), runtimeDigest: receipt.runtimeDigest, signatureVerified: true, liveHostVerified: true, runtimeProtectionVerified: true, invocationId, pairRunId: spawned[0].pairRunId, mainPid, processes, authority: { ...authority, deploymentId: authority.id }, currentEpoch: authority.authorityEpoch, currentFencingToken: authority.fencingToken, agentBinding: agent, workerBinding: worker, agentReady: agentReady[0], workerReady: workerReady[0], ...readiness, listeners, catalogUpgradeSha256: upgrade.sha256, catalog, actualSystemdCrashRestartVerified: false };
 }
 
 try {

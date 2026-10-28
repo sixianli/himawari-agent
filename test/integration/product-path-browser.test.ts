@@ -43,6 +43,10 @@ import {
   readResidentJobHostStart,
   readResidentTaskEnvironments,
 } from "../fixtures/product-path-processes.ts";
+import {
+  RELEASE_WALKTHROUGH_UI as UI,
+  type WalkthroughTarget,
+} from "../../apps/control-center/test/release-walkthrough-ui.ts";
 
 const enabled = process.env["HIMAWARI_PRODUCT_PATH_E2E"] === "1";
 const productDescribe = enabled ? describe : describe.skip;
@@ -462,27 +466,32 @@ function noteAnswer() {
   return toolAnswers().filter({ hasText: NOTE }).first();
 }
 
+function target(scope: Page | Locator, item: WalkthroughTarget) {
+  return scope.getByRole(item.role, {
+    ...(item.name === undefined ? {} : { name: item.name }),
+    ...(item.exact ? { exact: true } : {}),
+  });
+}
+
 function composer() {
-  return page.getByRole("textbox", { name: "消息草稿", exact: true });
+  return target(page, UI.composer);
 }
 
 let activeTurn: Locator | undefined;
 
 async function send(text: string) {
-  const button = page.getByRole("button", { name: "发送", exact: true });
-  await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+  const button = target(page, UI.send);
+  await uiExpect(target(page, UI.stop)).toHaveCount(0, {
     timeout: 300_000,
   });
   await composer().fill(text);
   await uiExpect(button).toBeEnabled({ timeout: 20_000 });
-  await uiExpect(page.locator('.thread-loading-skeleton[data-scope="conversation"]')).toHaveCount(
-    0,
-  );
-  const before = await page.locator(".chat-turn").count();
+  await uiExpect(page.locator(UI.conversationLoading)).toHaveCount(0);
+  const before = await page.locator(UI.turn).count();
   await button.click();
-  const turn = page.locator(".chat-turn").nth(before);
+  const turn = page.locator(UI.turn).nth(before);
   await uiExpect(turn).toHaveCount(1, { timeout: 20_000 });
-  await uiExpect(turn.getByRole("article").filter({ hasText: text }).last()).toBeVisible({
+  await uiExpect(target(turn, UI.message).filter({ hasText: text }).last()).toBeVisible({
     timeout: 20_000,
   });
   activeTurn = turn;
@@ -896,23 +905,20 @@ async function toolDeliveryAfter(before: ReadonlySet<string>) {
 }
 
 async function expectFinishedTurnShowsStep(turn: Locator, step: string) {
-  await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+  await uiExpect(target(page, UI.stop)).toHaveCount(0, {
     timeout: 120_000,
   });
-  const process = turn.locator(".turn-process").last();
+  const process = turn.locator(UI.turnProcess).last();
   if ((await process.getAttribute("open")) === null)
-    await process.locator(":scope > summary").click();
+    await process.locator(UI.turnProcessToggle).click();
   await uiExpect(turn.getByText(step).first()).toBeVisible({ timeout: 30_000 });
-  await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
-  await uiExpect(page.getByText("没有可展示的过程记录")).toHaveCount(0);
+  await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
+  await uiExpect(page.getByText(UI.noProcessRecords)).toHaveCount(0);
 }
 
 async function newThread() {
-  await page
-    .getByRole("link", { name: "新建对话" })
-    .or(page.getByRole("button", { name: "新建对话" }))
-    .first()
-    .click();
+  const [link, button] = UI.newThread;
+  await target(page, link).or(target(page, button)).first().click();
   await uiExpect(composer()).toBeVisible({ timeout: 20_000 });
 }
 
@@ -5488,35 +5494,33 @@ const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => 
   return { kind: "text", text: "普通回答已完成" };
 };
 
-async function openSettingsTab(tab: "工具与权限") {
-  const dialog = page.getByRole("dialog");
-  if (!(await dialog.isVisible()))
-    await page.getByRole("button", { name: "设置", exact: true }).first().click();
+async function openToolsSettings() {
+  const dialog = target(page, UI.settingsDialog);
+  if (!(await dialog.isVisible())) await target(page, UI.openSettings).first().click();
   await uiExpect(dialog).toBeVisible({ timeout: 20_000 });
-  await dialog.getByRole("button", { name: tab, exact: true }).click();
+  await target(dialog, UI.settingsToolsTab).click();
   return dialog;
 }
 
 async function closeSettings() {
-  const dialog = page.getByRole("dialog");
-  if (await dialog.isVisible()) await dialog.getByRole("button", { name: "关闭" }).first().click();
+  const dialog = target(page, UI.settingsDialog);
+  if (await dialog.isVisible()) await target(dialog, UI.closeSettings).first().click();
   await uiExpect(dialog).toHaveCount(0, { timeout: 20_000 });
 }
 
-async function searchToggleUsable(name: "允许联网搜索" | "撤销联网搜索授权") {
+async function searchToggleUsable(toggle: WalkthroughTarget) {
   await uiExpect
     .poll(
       async () => {
-        const dialog = await openSettingsTab("工具与权限");
-        return dialog
-          .getByRole("switch", { name, exact: true })
+        const dialog = await openToolsSettings();
+        return target(dialog, toggle)
           .isEnabled({ timeout: 1_000 })
           .catch(() => false);
       },
       { timeout: 60_000, intervals: [1_000] },
     )
     .toBe(true);
-  return page.getByRole("dialog").getByRole("switch", { name, exact: true });
+  return target(target(page, UI.settingsDialog), toggle);
 }
 
 async function expectNewsSearchResults(text: string) {
@@ -5525,9 +5529,9 @@ async function expectNewsSearchResults(text: string) {
   const answer = turn.getByText(/工具返回：/);
   await uiExpect(answer).toHaveCount(1, { timeout: 120_000 });
   await uiExpect(answer).toContainText("https://");
-  await uiExpect(turn.getByRole("button", { name: "允许这一次" })).toHaveCount(0);
-  await uiExpect(page.getByText("正在加载…")).toHaveCount(0);
-  await expectFinishedTurnShowsStep(turn, "搜索网页");
+  await uiExpect(target(turn, UI.approveOnce)).toHaveCount(0);
+  await uiExpect(page.getByText(UI.stillLoading)).toHaveCount(0);
+  await expectFinishedTurnShowsStep(turn, UI.searchStep);
 }
 
 productDescribe("product path: release acceptance in a real browser", { timeout: 900_000 }, () => {
@@ -5602,12 +5606,10 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
     });
     await scenario("accept-search-toggle", async () => {
-      const toggle = await searchToggleUsable("允许联网搜索");
+      const toggle = await searchToggleUsable(UI.searchEnable);
       await uiExpect(toggle).not.toBeChecked();
       await toggle.click();
-      const enabled = page
-        .getByRole("dialog")
-        .getByRole("switch", { name: "撤销联网搜索授权", exact: true });
+      const enabled = target(target(page, UI.settingsDialog), UI.searchRevoke);
       await uiExpect(enabled).toBeChecked({ timeout: 30_000 });
       await uiExpect(enabled).toBeEnabled();
       await closeSettings();
@@ -5621,25 +5623,22 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(turn.getByText(LONG_ANSWER_END)).toBeVisible({ timeout: 120_000 });
       await uiExpect(turn.getByText("第1段：", { exact: false })).toHaveCount(1);
       await uiExpect(turn.getByText("第600段：", { exact: false })).toHaveCount(1);
-      await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
+      await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
     });
     await scenario("accept-memory-page", async () => {
-      await page
-        .getByRole("navigation", { name: "对话" })
-        .getByRole("button", { name: "记忆", exact: true })
-        .click();
-      const memory = page.getByRole("region", { name: "记忆", exact: true });
-      await uiExpect(memory.getByText(/记住了 \d+ 条关于你的事/)).toBeVisible({
+      await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
+      const memory = target(page, UI.memoryPage);
+      await uiExpect(memory.getByText(UI.memorySummary)).toBeVisible({
         timeout: 30_000,
       });
-      await uiExpect(memory.getByRole("alert")).toHaveCount(0);
-      await memory.getByRole("button", { name: "返回", exact: true }).click();
+      await uiExpect(target(memory, UI.pageError)).toHaveCount(0);
+      await target(memory, UI.memoryBack).click();
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-after-restart", async () => {
       await installation.stop();
       await installation.start();
-      const toggle = await searchToggleUsable("撤销联网搜索授权");
+      const toggle = await searchToggleUsable(UI.searchRevoke);
       await uiExpect(toggle).toBeChecked();
       await closeSettings();
       await expectNewsSearchResults("重启后请联网搜索今天的新闻");

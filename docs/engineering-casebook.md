@@ -71,6 +71,7 @@ date: "2026-10-26"
   44. [22 条界面意见归成一句话：“站在用户的角度想他要知道什么”，把内部数字移出视线，记忆和提醒各有入口](#case-ui-batch-1028)
   45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
   46. [第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒](#case-startup-permission-audit)
+  47. [修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛](#case-incident-gates)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -98,9 +99,9 @@ date: "2026-10-26"
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
-| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
+| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
@@ -3039,6 +3040,61 @@ agent 和 worker 同时启动，worker 先写出自己的启动记录，再等 a
 **面试 30 秒版**
 
 “一次上线后服务起不来，worker 等 agent 30 秒超时。我在生产机上用私有挂载把生产数据副本挂到原路径，复现后抓 CPU 剖析，发现 agent 有 28 秒在一个一个地 await lstat，查 3.4 万个文件的权限，CPU 大部分时间在空等。改成在后台线程里同步一次走完，同一个目录从 11–28 秒降到 1 秒左右，检查规则和顺序都没变。另外给每个启动步骤加了耗时日志，worker 的等待时间按实测留了 2 倍余量。”
+
+[返回目录](#contents)
+
+<a id="case-incident-gates"></a>
+
+## 案例 47：修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛
+
+**背景与现象**
+
+2026-10-28 晚（日本时间）出了两件事。第十八版上线时，worker（执行命令的后台进程）报 `WORKER_STARTUP_TIMEOUT`，自动回退，停服约 9 分钟；回头看日志，第十七版上线时已经超时过 2 次，只是 systemd 自动重启后碰巧起来了。另一件是 PR #80 改了网页界面，发布走查测试（出包时用真实浏览器按 Andy 的用法走一遍的测试）的页面定位没跟上，到出包时才被拦下，又多做一个 PR（#87）和一次出包。两件事都是“以前吃过亏，却没有任何检查拦住”。
+
+**根因**
+
+处理事故的习惯是“修掉这一个问题，再写进案例库或 lessons”，没有人要求回答“下一次会被什么自动拦住”。已有的 [ADR 0060](adr/0060-hard-constraint-on-third-repeat.md) 只管编码代理自己第三次犯的操作错误，不管产品和上线事故。具体到两件事：
+
+1. 启动超时：worker 只等 agent 30 秒，agent 启动要 35–55 秒（启动时对沙箱运行目录 34456 个文件逐个检查权限，串行约 28 秒，见[案例 46](#case-startup-permission-audit)）。没有任何检查看“启动用了多久”，只看“最后起没起来”，所以慢启动碰巧成功时完全没人察觉。
+2. 走查没跟上界面：走查测试里的定位是写死的字面量（例如找 `checkbox`），界面从复选框改成开关后，提交前跑的测试没有一个会失败，只有在 Hermes 上真正走查时才暴露。
+
+**我们的方案**
+
+Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)：每个事故落成一道自动检查才算关闭，只写文档不算；同一错误第三次出现时必须已有硬门槛挡住第四次。
+
+1. **一张能被脚本核对的清单。** [docs/incidents-and-gates.md](incidents-and-gates.md) 每条写日期、现象、根因、次数、门槛文件和状态，回填了 10 条历史事故。`scripts/check-incident-gates.mjs` 进了 `npm run check`：标“已落门槛”的必须写出仓库里真实存在的门槛文件，次数到 3 的不能是“缺门槛”。
+2. **启动时间门槛。** 切换后的启动读回 `S7-startup-readback.mjs` 从 systemd 日志算出“worker 启动到两边都报就绪”的时间，超过 30 秒就判失败、按已有流程回退；出包时 `make-packet.py` 读出该提交里 worker 的等待时间，要求“30 秒上限 + 15 秒余量”不超过它，否则拒绝出包。这样碰巧起来的慢启动也会被拦住，等待时间和启动时间不会再悄悄错开。
+3. **走查定位的唯一来源和契约测试。** 走查用到的定位集中到 `apps/control-center/test/release-walkthrough-ui.ts`；`release-walkthrough.unit.test.ts` 用真实网页组件（只把网络换成假数据）按走查的顺序点一遍，并检查走查代码不再自己写定位。约 3 秒，云端线程也能跑。
+
+**方案讨论与备选**
+
+- **保持 ADR 0060**：今晚两件事都不算“代理第三次”，照样不会有检查。
+- **写进案例库和 lessons，加更详细的提醒**：ADR 0060 已经证明文字挡不住，Andy 也明确说只写文档不算关闭。
+- **界面 PR 合并前必须在 Hermes 上跑真实走查**：最真实，但每次要约 6 分钟出安装包加约 2 分钟走查，云端线程还连不上 Hermes。改用契约测试，代价是 jsdom（在 Node 里模拟浏览器页面的库）看不到样式和真实后端问题，仍由出包时的真实走查兜底。
+- **启动上限定为 worker 等待时间的一半**：最初的想法，但出包线程实测修复后 agent 约 22 秒、等待改为 45 秒，一半（22.5 秒）几乎没有余地，改成“上限 + 余量 ≤ 等待时间”。
+
+**业界主流做法**
+
+- ✅ Google《Site Reliability Engineering》第 15 章 Postmortem Culture（<https://sre.google/sre-book/postmortem-culture/>）：复盘要写 “the follow-up actions to prevent the incident from recurring”，并且 “Unless we have some formalized process of learning from these incidents in place, they may recur ad infinitum.”；书里列的复盘触发条件包括 “On-call engineer intervention (release rollback, rerouting of traffic, etc.)” 和 “A monitoring failure (which usually implies manual incident discovery)”。
+
+**对比与取舍**
+
+和 Google 一样，触发条件包括回滚和“靠人发现”，复盘要有防止复发的行动项。不同的是，Google 的行动项可以是任何改进（包括流程），我们要求行动项必须是一道自动运行的检查，而且清单本身也被脚本核对。原因是这里主要靠 AI 编码代理干活，代理每个线程都从头开始，不会“记住教训”，只有会失败的检查能跨线程起作用。代价是每次事故多花修门槛的时间，门槛也会误拦（例如启动上限在慢机器上），要按实测调参数；清单核对只能证明门槛文件存在，证明不了它真能拦住，后者靠每道门槛自己的复现测试。
+
+**结果数据**
+
+- 走查契约测试：用 #80 之前的旧定位重现，三处都失败（开关找成复选框、不先展开折叠的过程、去设置里找记忆）；换回共享定位后通过，约 3 秒（本线程本机运行）。
+- 启动门槛：对 29.35 秒、35 秒、55 秒的启动都报 `STARTUP_READY_TOO_SLOW`，9 秒的启动通过（`scripts/delivery-mode/test_make_packet.py`）。
+- 清单：回填 10 条事故，7 条已落门槛，1 条缺门槛（第十六版命令全被拒，缺“模型跑一条命令”的走查项），1 条等 Andy 决定，1 条原因在仓库外。
+- 上线后真实启动时间：未测量，第十九版上线后按日志补。
+
+**相关 ADR/PR**
+
+[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)（取代 [ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)）；[事故与门槛清单](incidents-and-gates.md)；[管住 AI 编码代理](#case-agent-governance)；启动慢的根因修复见[案例 46](#case-startup-permission-audit)（PR #89）；本案例的 PR 在分支 `claude/project-thread-9rgrtl`。
+
+**面试 30 秒版**
+
+“我们发现事故修完了还会复发，因为修复只落在那一处代码和一篇文档里。于是定了一条规则：每个事故必须落成一道自动检查才算关闭，同一错误第三次必须有硬门槛。清单本身也被脚本核对，不能写一个不存在的门槛就算完。比如 worker 启动超时，以前只看最后起没起来，碰巧成功就没人管；现在切换后量启动时间，超过 30 秒就回退，出包时还核对等待时间留够余量。每道门槛都要证明在事故重现上会失败。”
 
 [返回目录](#contents)
 
