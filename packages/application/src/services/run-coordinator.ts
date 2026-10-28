@@ -15,6 +15,7 @@ import type {
   RunCheckpoint,
   RunCheckpointStore,
   RunExecutionLeaseClaim,
+  RunBackgroundHold,
   RunLifecyclePort,
   RuntimeEvent,
   RuntimeRequest,
@@ -59,9 +60,7 @@ export interface ExecuteCoordinatedRunInput {
   readonly agentId: AgentId;
   readonly runId: RunId;
   readonly authority: AuthorityFence;
-  /** Execution claim supplied by the canonical dispatch pump. */
   readonly executionLease: RunExecutionLeaseClaim;
-  /** Absolute deadline frozen by the production input service, across retries. */
   readonly executionDeadlineAt?: string;
   readonly context: ContextFormationRequest;
   readonly runtime: Omit<
@@ -79,6 +78,7 @@ export interface CoordinatedRunResult {
   readonly checkpoint: RunCheckpoint;
   readonly workerResultRefs: readonly PayloadRef[];
   readonly resumed: boolean;
+  readonly parked?: boolean;
 }
 
 export interface CancelCoordinatedRunInput {
@@ -136,6 +136,10 @@ export interface RunCoordinatorDependencies {
   readonly runtime: AgentRuntimePort;
   readonly workers?: WorkerRunPort;
   readonly trace: SessionTraceRecorder;
+  readonly background?: {
+    held(runId: RunId): readonly RunBackgroundHold[];
+    stop(runId: RunId): Promise<void>;
+  };
 }
 
 function defaultCheckpoint(): RunCheckpoint {
@@ -170,8 +174,6 @@ interface ExecutionAttempt {
   readonly cancelledWorkerRunIds: Set<string>;
 }
 
-// Risk-reduction waiting is separate from the Run's execution deadline. A
-// timeout reports unknown cleanup; it never releases claims or proves exit.
 const CLEANUP_WAIT_LIMIT_MS = 30_000;
 
 export class RunCoordinator {
@@ -247,8 +249,6 @@ export class RunCoordinator {
       );
     if (isTerminalStatus(stored.run.status))
       return this.result(stored, checkpoint.checkpoint, true);
-    // A durable wait has no in-flight tool. Expiry can fail it without inventing
-    // an unknown external result or restarting Pi. Writes still require the lease.
     const failed = await this.transition(input, stored, "failed");
     const saved = await this.saveCheckpoint(input, checkpoint, {
       ...checkpoint.checkpoint,
@@ -587,6 +587,11 @@ export class RunCoordinator {
       storedCheckpoint = terminal.checkpoint;
     }
 
+    if (
+      storedCheckpoint.checkpoint.phase === "awaiting_approval" ||
+      storedCheckpoint.checkpoint.phase === "reconciling_external_result"
+    )
+      await this.dependencies.background?.stop(input.runId);
     if (storedCheckpoint.checkpoint.phase === "awaiting_approval") {
       storedRun = await this.transition(
         input,
@@ -609,6 +614,26 @@ export class RunCoordinator {
         { runId: input.runId },
       );
     }
+    const holds =
+      terminalStatus === "completed" &&
+      storedCheckpoint.checkpoint.output?.kind === "assistant-answer" &&
+      this.dependencies.runs.finishBackgroundRun
+        ? (this.dependencies.background?.held(input.runId) ?? [])
+        : [];
+    if (holds.length > 0) {
+      storedRun = await this.commitCompletedOutput(
+        input,
+        storedCheckpoint,
+        attempt,
+        undefined,
+        holds,
+      );
+      return Object.freeze({
+        ...this.result(storedRun, storedCheckpoint.checkpoint, resumed),
+        parked: true,
+      });
+    }
+    await this.dependencies.background?.stop(input.runId);
     const resourcePort = this.dependencies.resources;
     let resources: { readonly released: boolean } | undefined;
     if (resourcePort) {
@@ -683,6 +708,7 @@ export class RunCoordinator {
     storedCheckpoint: StoredRunCheckpoint,
     attempt: ExecutionAttempt,
     recoveryCheckpointRevision?: number,
+    holds: readonly RunBackgroundHold[] = [],
   ): Promise<StoredRun> {
     const output = storedCheckpoint.checkpoint.output;
     if (!output)
@@ -717,16 +743,13 @@ export class RunCoordinator {
         dataClassification,
         executionLease: input.executionLease,
         ...(recoveryCheckpointRevision === undefined ? {} : { recoveryCheckpointRevision }),
+        ...(holds.length > 0 ? { background: { holds } } : {}),
       });
     }
     this.assertExecutionActive(attempt);
     return this.requireRun(input.runId);
   }
 
-  /** Deliver only a previously completed runtime output. This never forms
-   * context, runs Pi/Workers, or extends the original execution deadline.
-   * Current lease and resource checks still fence the final durable commit.
-   */
   async recoverCompleted(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
     this.assertScope(input);
     const { executionDeadlineAt: _executionDeadlineAt, ...delivery } = input;
@@ -764,8 +787,6 @@ export class RunCoordinator {
           PORT_ERROR_CODES.INVALID_OPERATION,
           "RUN_COMPLETION_RECOVERY_NOT_ELIGIBLE",
         );
-      // The lifecycle writer checks every durable resource in the same
-      // transaction as the answer. Recovery must not start another cleanup loop.
       const current = await this.readCheckpoint(input.runId);
       this.assertExecutionActive(attempt);
       if (!current || current.revision !== checkpoint.revision)
@@ -803,8 +824,6 @@ export class RunCoordinator {
         "Cancellation scope does not match the canonical Run",
       );
     if (isTerminalStatus(existing.run.status)) {
-      // Cancellation is terminal for model execution, but cleanup may need a
-      // later attempt after the original supervisor finishes. Never restart it.
       if (existing.run.status === "cancelled" || existing.run.status === "failed")
         await this.cancelExecutionTargets(
           input,
@@ -836,8 +855,6 @@ export class RunCoordinator {
         () => reject(new Error("RUN_CLEANUP_TIMEOUT")),
         CLEANUP_WAIT_LIMIT_MS,
       );
-      // Retain handlers after timeout so a late rejection is observed. A late
-      // success cannot rewrite the already-returned uncertainty or restart work.
       Promise.resolve()
         .then(stop)
         .then(
@@ -857,9 +874,6 @@ export class RunCoordinator {
     input: Pick<CancelCoordinatedRunInput, "runId" | "reasonCode">,
     cancelRuntime: boolean,
   ): Promise<void> {
-    // Capture active workers before cancellation can finish their iterators.
-    // Every stop must be issued even when another target rejects or is still
-    // waiting. A committed cancellation is not evidence of resource release.
     const resources = this.dependencies.resources;
     const stops: (() => Promise<unknown>)[] = [
       ...(cancelRuntime ? [() => this.dependencies.runtime.cancel(input.runId)] : []),

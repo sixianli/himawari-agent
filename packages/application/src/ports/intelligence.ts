@@ -484,7 +484,16 @@ export interface RuntimeToolSuspendedResult {
 
 export type RuntimeToolExecutionResult = RuntimeToolSettledResult | RuntimeToolSuspendedResult;
 
+export interface RuntimeBackgroundCommandNotice {
+  readonly taskRef: string;
+  readonly modelContent: string;
+}
+
 export interface RuntimeToolPort {
+  subscribeBackground?(
+    runId: RunId,
+    listener: (notice: RuntimeBackgroundCommandNotice) => boolean,
+  ): () => void;
   recoverResult?(
     invocation: RuntimeToolInvocation,
     recovery: RuntimeKnownToolResult,

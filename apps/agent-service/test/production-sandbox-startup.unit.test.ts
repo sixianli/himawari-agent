@@ -9,7 +9,10 @@ vi.mock("@himawari-agent/platform-node", async (importOriginal) => ({
   verifySandboxHost: fixture.verify,
 }));
 
-import { createProductionSandboxServices } from "../src/production-sandbox-services.js";
+import {
+  createProductionSandboxServices,
+  sandboxEnvironmentDeadline,
+} from "../src/production-sandbox-services.js";
 
 const binding = { hostId: "host:test" };
 const qualification = { qualificationRef: "qualification:test" };
@@ -127,4 +130,18 @@ it("verifies every sandbox capability and ignores non-sandbox inventory", async 
     hostId: binding.hostId,
   });
   expect(repositoryAccess).toHaveBeenCalledOnce();
+});
+
+it("[BG-8] keeps a Run's sandbox environment alive for a bash command started at the end of the answer", () => {
+  const answerDeadline = "2026-09-06T00:05:00.000Z";
+  const lastCommandDeadline = new Date(Date.parse(answerDeadline) + 1_800_000).toISOString();
+  expect(sandboxEnvironmentDeadline(answerDeadline, "2026-09-07T00:00:00.000Z", 1_800_000)).toBe(
+    lastCommandDeadline,
+  );
+  expect(sandboxEnvironmentDeadline(answerDeadline, "2026-09-06T00:10:00.000Z", 1_800_000)).toBe(
+    "2026-09-06T00:10:00.000Z",
+  );
+  expect(sandboxEnvironmentDeadline(answerDeadline, "2026-09-07T00:00:00.000Z", 0)).toBe(
+    answerDeadline,
+  );
 });

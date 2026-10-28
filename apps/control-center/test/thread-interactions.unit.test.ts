@@ -128,6 +128,7 @@ function View() {
     h("h1", null, model.title),
     model.list,
     model.content,
+    model.actions,
     model.details,
     model.settingsData,
   );
@@ -421,7 +422,17 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
   it("uses backend phases and actions, keeps connection loss separate, and refreshes state without new trace", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -601,7 +612,17 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-D3] shows a deadline-ended Run with an unknown tool and no active or cleanup action", async () => {
-    runs = [{ runId: "run-ui", revision: 5, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 5,
+        status: "failed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -709,7 +730,17 @@ describe("thread control center interactions", () => {
   ] as const)(
     "[R2-S3] shows a $displayPhase Run ($reasonCode) once when its execution state is newer than the turn detail",
     async ({ displayPhase, reasonCode, label }) => {
-      runs = [{ runId: "run-ui", revision: 4, status: "running", createdAt: NOW, updatedAt: NOW }];
+      runs = [
+        {
+          runId: "run-ui",
+          revision: 4,
+          status: "running",
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+          backgroundCommands: [],
+        },
+      ];
       options = {
         ...options,
         message: (id) => messages[id],
@@ -775,6 +806,8 @@ describe("thread control center interactions", () => {
         status: "reconciling_external_result",
         createdAt: NOW,
         updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
       },
     ];
     options = {
@@ -874,7 +907,17 @@ describe("thread control center interactions", () => {
     ).toEqual([]);
     expect(container.textContent).not.toContain("没有程序在运行");
 
-    runs = [{ runId: "run-ui", revision: 8, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 8,
+        status: "failed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     state = {
       ...state,
       runRevision: 8,
@@ -893,7 +936,17 @@ describe("thread control center interactions", () => {
   });
 
   it("adopts an advancing Run without hiding displayed text or reporting a failed conversation", async () => {
-    runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 5,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -1022,7 +1075,17 @@ describe("thread control center interactions", () => {
   it.each(["thread", "run", "older revision", "read error"])(
     "rejects an invalid backend state but still loads message text (%s)",
     async (mismatch) => {
-      runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+      runs = [
+        {
+          runId: "run-ui",
+          revision: 3,
+          status: "running",
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+          backgroundCommands: [],
+        },
+      ];
       threadMessages = [
         {
           messageId: "assistant-ui",
@@ -1069,7 +1132,17 @@ describe("thread control center interactions", () => {
   );
 
   it("[R2-U1] keeps a displayed conversation quiet while a brief state read failure retries", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1217,7 +1290,17 @@ describe("thread control center interactions", () => {
   });
 
   it("shows no slow-load notice once the first read has displayed the conversation", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1286,7 +1369,17 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-U3] shows a finished tool's result and duration while the Run keeps advancing past the summary", async () => {
-    runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 5,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -1390,7 +1483,17 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-U3] recovers a briefly failing state read without a load notice", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1465,7 +1568,17 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-U3] reports a persistent scope rejection of the state read after repeated failures", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1523,7 +1636,17 @@ describe("thread control center interactions", () => {
   });
 
   it("paginates tool records, preserves their input, and resumes from the last confirmed sequence", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     options = {
       ...options,
       configuration: { ...configuration, executionPresentationAvailable: true },
@@ -1586,7 +1709,15 @@ describe("thread control center interactions", () => {
     "handles an invalid execution page (%s) without displaying invented progress",
     async (kind) => {
       runs = [
-        { runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW },
+        {
+          runId: "run-ui",
+          revision: 3,
+          status: "completed",
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+          backgroundCommands: [],
+        },
       ];
       options = {
         ...options,
@@ -2016,7 +2147,17 @@ describe("thread control center interactions", () => {
   it.each(["running", "cancelled", "failed"] as const)(
     "requests cancellation or cleanup for %s using the current run revision",
     async (status) => {
-      runs = [{ runId: "run-ui", revision: 7, status, createdAt: NOW, updatedAt: NOW }];
+      runs = [
+        {
+          runId: "run-ui",
+          revision: 7,
+          status,
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+          backgroundCommands: [],
+        },
+      ];
       await render();
       await refresh();
       await click(status === "running" ? "chat.stop" : "chat.retryCleanup");
@@ -2136,7 +2277,17 @@ describe("pushed conversation updates", () => {
     queue = [];
     signal = 0;
     stubEventSource(sources);
-    runs = [{ runId: "run-1", revision: 4, status: "completed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-1",
+        revision: 4,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
     threadMessages = [message(1), message(2)];
     const original = query.getMockImplementation();
     query.mockImplementation(async (request, abort) => {
@@ -2231,7 +2382,15 @@ describe("pushed conversation updates", () => {
     threadMessages = [message(1), message(2), message(3)];
     runs = [
       ...runs,
-      { runId: "run-2", revision: 1, status: "running", createdAt: NOW, updatedAt: NOW },
+      {
+        runId: "run-2",
+        revision: 1,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
     ];
     from = query.mock.calls.length;
     await threadEvent("thread-ui");
@@ -2317,5 +2476,146 @@ describe("pushed conversation updates", () => {
     await settle();
     expect(first?.closed).toBe(true);
     expect(sources.at(-1)?.url).not.toBe(first?.url);
+  });
+});
+
+describe("more panel", () => {
+  const command = {
+    taskRef: "background-command:aaaaaaaaaaaaaaaaaaaaaaaa",
+    commandRef: "command-ref",
+    outputRef: null,
+    startedAt: NOW,
+    deadlineAt: "2026-09-14T00:30:00Z",
+    endedAt: null,
+    outcome: null,
+    noticeRunId: null,
+  };
+  const agentMessage = (runId: string, sequence: number, role: "owner" | "agent" | "system") => ({
+    messageId: `message-${runId}-${role}`,
+    sequence,
+    role,
+    contentRef: `content-${runId}-${role}`,
+    dataClassification: "private" as const,
+    status: "committed" as const,
+    turnId: `turn-${runId}`,
+    runId,
+    committedAt: NOW,
+  });
+  const panelText = () => container.querySelector(".more-panel")?.textContent ?? "";
+
+  it("[BG-9] counts running commands on the More button, opens the command from the answer line and stops it without asking", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: { count: 1, startedAt: NOW, deadlineAt: command.deadlineAt },
+        backgroundCommands: [command],
+      },
+    ];
+    threadMessages = [agentMessage("run-ui", 1, "owner"), agentMessage("run-ui", 2, "agent")];
+    readText.mockImplementation(async (ref: string) => ({
+      content: ref === "command-ref" ? "npm test" : "已保存的回答",
+    }));
+    await render();
+    await refresh();
+    expect(container.querySelector(".more-count")?.textContent).toBe("1");
+    expect(container.querySelector(".more-panel")).toBeNull();
+    const line = container.querySelector<HTMLButtonElement>(".background-line");
+    expect(line?.textContent).toContain("more.line.running");
+    await act(async () => line?.click());
+    expect(container.querySelector(".more-title")?.textContent).toBe("npm test");
+    expect(panelText()).toContain("more.detail.outputLater");
+    const stop = container.querySelector<HTMLButtonElement>(".more-panel .more-stop");
+    await act(async () => stop?.click());
+    expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: "thread.run.cancel",
+      payload: { runId: "run-ui", expectedRunRevision: 7 },
+    });
+    expect(container.querySelector(".more-panel .more-stop")?.textContent).toBe("more.stopping");
+    expect(container.querySelector<HTMLButtonElement>(".more-panel .more-stop")?.disabled).toBe(
+      true,
+    );
+    expect(line?.textContent).toContain("more.line.stopping");
+    await click("common.back");
+    expect(panelText()).toContain("more.section.running");
+    await click("common.close");
+    expect(container.querySelector(".more-panel")).toBeNull();
+  });
+
+  it("[BG-9] shows the finished command's last output lines and jumps to the report turn", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 8,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [
+          {
+            ...command,
+            outputRef: "output-ref",
+            endedAt: "2026-09-14T00:08:12Z",
+            outcome: "completed",
+            noticeRunId: "run-notice",
+          },
+        ],
+      },
+      {
+        runId: "run-notice",
+        revision: 2,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    threadMessages = [
+      agentMessage("run-ui", 1, "owner"),
+      agentMessage("run-ui", 2, "agent"),
+      agentMessage("run-notice", 3, "system"),
+      agentMessage("run-notice", 4, "agent"),
+    ];
+    readText.mockImplementation(async (ref: string) => ({
+      content:
+        ref === "command-ref" ? "npm test" : ref === "output-ref" ? "Tests 42 passed" : "回答",
+    }));
+    await render();
+    await refresh();
+    expect(container.querySelector(".more-count")).toBeNull();
+    expect(container.querySelector(".background-report")?.textContent).toContain(
+      "more.report.completed",
+    );
+    await click("more.button");
+    expect(panelText()).toContain("more.section.finished");
+    expect(panelText()).not.toContain("more.section.running");
+    const row = container.querySelector<HTMLButtonElement>(".more-panel .more-row");
+    await act(async () => row?.click());
+    expect(container.querySelector(".more-output")?.textContent).toBe("Tests 42 passed");
+    await click("more.report");
+    const report = container.querySelector<HTMLElement>('.chat-turn[data-run-id="run-notice"]');
+    expect(report?.scrollIntoView).toHaveBeenCalled();
+    expect(report?.classList.contains("is-flash")).toBe(true);
+  });
+
+  it("[BG-9] hides the More button while the conversation has no files and no background commands", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    await render();
+    await refresh();
+    expect(container.querySelector(".more-button")).toBeNull();
   });
 });

@@ -6,7 +6,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createIntl, createIntlCache } from "react-intl";
 import { expect, it } from "vitest";
+import { backgroundCommands } from "../src/background-commands.js";
 import { ChatHistory } from "../src/components/chat-history.js";
+import { MorePanel } from "../src/components/more-panel.js";
 import type { MessageId } from "../src/i18n/message-ids.js";
 import { loadMessageCatalog } from "../src/i18n/runtime.js";
 import { at, completedRun, newsRun } from "./news-run-fixture.js";
@@ -159,6 +161,93 @@ it("[UI-9] leaves the token count out when the turn has no usage record and hide
   );
 });
 
+const bgHistory = (finished: boolean) => {
+  const command = {
+    taskRef: "background-command:aaaaaaaaaaaaaaaaaaaaaaaa",
+    commandRef: "content:command",
+    outputRef: finished ? "content:output" : null,
+    startedAt: at(27000),
+    deadlineAt: at(1_827_000),
+    endedAt: finished ? at(519_000) : null,
+    outcome: finished ? ("completed" as const) : null,
+    noticeRunId: finished ? "run:notice" : null,
+  };
+  const parked = {
+    ...completedRun,
+    status: finished ? ("completed" as const) : ("running" as const),
+    background: finished ? null : { count: 1, startedAt: at(27000), deadlineAt: at(1_827_000) },
+    backgroundCommands: [command],
+  };
+  const base = detail();
+  const contentByRef = {
+    "content:owner": "跑一下全部测试",
+    "content:agent": "测试在后台跑着",
+    "content:notice": "【系统通知，不是用户发的消息】",
+    "content:command": "npm test",
+    "content:output": "Tests 42 passed",
+  };
+  const runs = [parked];
+  return renderToStaticMarkup(
+    createElement(ChatHistory, {
+      detail: {
+        ...base,
+        payload: {
+          ...base.payload,
+          runs,
+          messages: [
+            ...base.payload.messages,
+            ...(finished
+              ? [
+                  {
+                    messageId: "message:notice",
+                    sequence: 3,
+                    role: "system" as const,
+                    contentRef: "content:notice",
+                    dataClassification: "private" as const,
+                    status: "committed" as const,
+                    turnId: "turn:notice",
+                    runId: "run:notice",
+                    committedAt: at(520_000),
+                  },
+                ]
+              : []),
+          ],
+        },
+      },
+      contentByRef,
+      execution: { [completedRun.runId]: turnRecords() },
+      connection: "connected",
+      message: ids,
+      onFork: () => {},
+      backgroundCommands: backgroundCommands(runs, contentByRef),
+      onOpenCommand: () => {},
+      renderApproval: () => null,
+    }),
+  );
+};
+
+it("[BG-5] ends the turn after the answer and shows a quiet clickable line instead of a stop button", () => {
+  const html = bgHistory(false);
+  expect(html).toContain("answer-actions");
+  expect(html).toContain('class="background-line"');
+  expect(html).toMatch(/more\.line\.running\(command=npm test,elapsed=more\.duration\.minutes/);
+  expect(html).toContain('class="more-spin"');
+  expect(html).not.toContain("chat.stop");
+  expect(html).not.toContain("is-busy");
+  expect(html).toContain(`data-run-id="${completedRun.runId}"`);
+});
+
+it("[BG-9] marks the report turn with a divider that names the command, its duration and time", () => {
+  const html = bgHistory(true);
+  expect(html).toContain("more.line.completed(command=npm test)");
+  expect(html).toContain('class="background-report"');
+  expect(html).toContain(
+    `more.report.completed(command=npm test,duration=more.duration.minutes(minutes=8,seconds=12),at=${at(520_000)})`,
+  );
+  expect(html).not.toContain("【系统通知");
+  expect(html.indexOf("background-report")).toBeGreaterThan(html.indexOf("background-line"));
+});
+
 it("[UI-10] folds the sources into one line and lists each page once when opened", () => {
   const html = render();
   expect(html).toContain('class="sources-toggle" aria-expanded="false"');
@@ -252,3 +341,65 @@ it.each([
     expect(html).not.toMatch(/\b(answer|message)\.[a-zA-Z]/);
   },
 );
+
+it("[BG-9] lists this conversation's files by turn, newest first, and points to running commands from the Files tab", () => {
+  const command = backgroundCommands(
+    [
+      {
+        ...completedRun,
+        backgroundCommands: [
+          {
+            taskRef: "background-command:aaaaaaaaaaaaaaaaaaaaaaaa",
+            commandRef: null,
+            outputRef: null,
+            startedAt: at(0),
+            deadlineAt: at(1_800_000),
+            endedAt: null,
+            outcome: null,
+            noticeRunId: null,
+          },
+        ],
+      },
+    ],
+    {},
+  );
+  const file = (name: string) => ({
+    key: `file:${name}`,
+    path: `/workspace/${name}`,
+    name,
+    kind: "markdown" as const,
+    content: "# 标题\n",
+    diff: [],
+    added: 1,
+    removed: 0,
+    recorded: true,
+  });
+  const html = renderToStaticMarkup(
+    createElement(MorePanel, {
+      tab: "files",
+      commandKey: null,
+      commands: command,
+      fileGroups: [
+        { runId: "run:4", turn: 4, files: [file("test-report.md")] },
+        { runId: "run:1", turn: 1, files: [file("README.md")] },
+      ],
+      stoppingRunIds: [],
+      openFileKey: undefined,
+      onTab: () => {},
+      onCommand: () => {},
+      onStop: undefined,
+      onReport: () => {},
+      onOpenFile: () => {},
+      onClose: () => {},
+      message: ids,
+    }),
+  );
+  expect(html).toContain(
+    'aria-selected="true">more.tab.files<span class="more-tab-count">2</span>',
+  );
+  expect(html).toContain("more.tab.commands");
+  expect(html).toContain("more.runningHint(count=1)");
+  expect(html.indexOf("test-report.md")).toBeLessThan(html.indexOf("README.md"));
+  expect(html).toContain("more.turn(turn=4)");
+  expect(html).not.toContain("more-stop");
+});

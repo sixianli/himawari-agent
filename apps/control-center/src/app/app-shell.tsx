@@ -16,6 +16,7 @@ export interface ControlCenterShellProps {
   readonly connection: "connecting" | "connected" | "offline" | null;
   readonly content: ReactNode;
   readonly details: ReactNode;
+  readonly topbarActions?: ReactNode;
   readonly settingsTools?: ReactNode;
   readonly settingsData?: ReactNode;
   readonly settingsMemory?: ReactNode;
@@ -38,6 +39,7 @@ export function ControlCenterShell({
   content,
   connection,
   details,
+  topbarActions,
   settingsTools,
   settingsData,
   settingsMemory,
@@ -165,6 +167,7 @@ export function ControlCenterShell({
             </h1>
           </div>
           <div className="topbar-controls">
+            {topbarActions}
             <ActionButton
               aria-label={message("settings.title")}
               variant="quiet"

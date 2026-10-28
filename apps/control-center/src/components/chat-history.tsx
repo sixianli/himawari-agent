@@ -6,8 +6,9 @@ import type {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { formatBytes, splitDraft } from "../draft-attachments.js";
 import { executionTimeline, timelineDuration } from "../execution-timeline.js";
+import type { BackgroundCommandView } from "../background-commands.js";
 import type { RunSummary } from "../execution-view.js";
-import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
+import { executionItems, isAnsweredRun, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { turnFiles } from "../turn-files.js";
 import { turnSources, turnUsage } from "../turn-summary.js";
@@ -15,8 +16,9 @@ import { AnswerActions, AnswerFiles, AnswerSources, LineIcon, useCopied } from "
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { AttachmentThumb } from "./attachment-thumb.js";
 import { HimawariBrand } from "./brand.js";
-import type { ContentPreviewValue } from "./content-preview.js";
+import { type ContentPreviewValue, previewOfFile } from "./content-preview.js";
 import { ExecutionProcess } from "./execution-process.js";
+import { BackgroundCommandLine, BackgroundReportLine } from "./more-panel.js";
 import { ActionButton } from "./primitives.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
@@ -31,6 +33,9 @@ export function ChatHistory({
   message,
   onFork,
   onCleanup,
+  backgroundCommands = [],
+  stoppingRunIds = [],
+  onOpenCommand,
   onPreview,
   previewKey,
   readImage,
@@ -50,6 +55,9 @@ export function ChatHistory({
   readonly previewKey?: string | undefined;
   readonly readImage?: ((ref: string) => Promise<string>) | undefined;
   readonly onCleanup?: ((run: RunSummary) => void) | undefined;
+  readonly backgroundCommands?: readonly BackgroundCommandView[] | undefined;
+  readonly stoppingRunIds?: readonly string[] | undefined;
+  readonly onOpenCommand?: ((key: string | null) => void) | undefined;
   readonly onFork: (turnId: string, sequence: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -102,7 +110,7 @@ export function ChatHistory({
             .at(-1);
           const partial = partialItem?.text;
           return (
-            <div className="chat-turn" key={key}>
+            <div className="chat-turn" key={key} data-run-id={group.run?.runId}>
               {group.messages
                 .filter((item) => item.role !== "agent")
                 .map((item) =>
@@ -118,6 +126,27 @@ export function ChatHistory({
                         message={message}
                       />
                     </div>
+                  ) : item.role === "system" ? (
+                    <BackgroundReportLine
+                      key={item.messageId}
+                      commands={backgroundCommands.filter(
+                        (command) => item.runId && command.noticeRunId === item.runId,
+                      )}
+                      committedAt={item.committedAt}
+                      onOpen={
+                        onOpenCommand
+                          ? () => {
+                              const reported = backgroundCommands.filter(
+                                (command) => item.runId && command.noticeRunId === item.runId,
+                              );
+                              onOpenCommand(
+                                reported.length === 1 ? (reported[0]?.key ?? null) : null,
+                              );
+                            }
+                          : undefined
+                      }
+                      message={message}
+                    />
                   ) : (
                     <article
                       key={item.messageId}
@@ -132,7 +161,7 @@ export function ChatHistory({
               {group.run || agentMessages.length ? (
                 <article className="thread-message thread-message-agent">
                   <header>
-                    <HimawariBrand busy={!!group.run && !isTerminalRun(group.run)} />
+                    <HimawariBrand busy={!!group.run && !isAnsweredRun(group.run)} />
                     <strong>Himawari</strong>
                   </header>
                   {group.run ? (
@@ -176,7 +205,7 @@ export function ChatHistory({
                       <AssistantMarkdown text={partial} />
                     </>
                   ) : null}
-                  {agentMessages.length && (!group.run || isTerminalRun(group.run)) ? (
+                  {agentMessages.length && (!group.run || isAnsweredRun(group.run)) ? (
                     <AnswerActions
                       text={agentMessages
                         .map((item) => contentByRef[item.contentRef] ?? "")
@@ -201,22 +230,23 @@ export function ChatHistory({
                       message={message}
                     />
                   ) : null}
+                  {backgroundCommands
+                    .filter((command) => command.runId === group.run?.runId)
+                    .map((command) => (
+                      <BackgroundCommandLine
+                        key={command.key}
+                        command={command}
+                        stopping={stoppingRunIds.includes(command.runId)}
+                        onOpen={onOpenCommand ? () => onOpenCommand(command.key) : undefined}
+                        message={message}
+                      />
+                    ))}
                   <AnswerSources sources={turnSources(records)} message={message} />
                   {group.run && onPreview ? (
                     <AnswerFiles
                       files={turnFiles(group.run.runId, records)}
                       openKey={previewKey}
-                      onOpen={(file) =>
-                        onPreview({
-                          key: file.key,
-                          title: file.name,
-                          path: file.path,
-                          kind: file.kind,
-                          text: file.content ?? "",
-                          diff: file.diff,
-                          missing: file.content === undefined,
-                        })
-                      }
+                      onOpen={(file) => onPreview(previewOfFile(file))}
                       message={message}
                     />
                   ) : null}

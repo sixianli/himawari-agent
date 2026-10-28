@@ -8,18 +8,34 @@ import type {
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
+import {
+  type BackgroundCommandView,
+  backgroundCommands,
+  backgroundPayloadRefs,
+  runningBackgroundCommands,
+} from "./background-commands.js";
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import { SunflowerMark } from "./components/brand.js";
 import { ChatComposer } from "./components/chat-composer.js";
 import { ChatHistory } from "./components/chat-history.js";
-import { ContentPreview, type ContentPreviewValue } from "./components/content-preview.js";
+import {
+  ContentPreview,
+  type ContentPreviewValue,
+  previewOfFile,
+} from "./components/content-preview.js";
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
+import {
+  MoreButton,
+  type MoreFileGroup,
+  MorePanel,
+  type MoreTab,
+} from "./components/more-panel.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
-import { isTerminalRun } from "./execution-view.js";
+import { isAnsweredRun, isTerminalRun, type RunSummary } from "./execution-view.js";
 import type {
   ControlCenterRuntimeConfiguration,
   GatewayClient,
@@ -30,6 +46,7 @@ import { threadCommandMessage, threadQueryMessage } from "./messages.js";
 
 import { listPendingRunApprovals } from "./run-approval.js";
 import { ThreadExecutionSynchronizer } from "./thread-execution-synchronizer.js";
+import { turnFiles } from "./turn-files.js";
 
 type ThreadCollectionSnapshot = Extract<
   ThreadGatewaySnapshot,
@@ -83,6 +100,7 @@ export interface ThreadControlCenterModel {
   readonly title: string;
   readonly content: ReactNode;
   readonly details: ReactNode;
+  readonly actions: ReactNode;
   readonly settingsData: ReactNode;
   readonly list: ReactNode;
   readonly refresh: () => Promise<void>;
@@ -149,6 +167,12 @@ export function useThreadControlCenter(
     return () => window.clearTimeout(timer);
   }, [connection]);
   const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
+  const [more, setMore] = useState<{
+    readonly open: boolean;
+    readonly tab: MoreTab;
+    readonly command: string | null;
+  }>({ open: false, tab: "files", command: null });
+  const [stoppingRunIds, setStoppingRunIds] = useState<readonly string[]>([]);
   const [pendingThreadIds, setPendingThreadIds] = useState<readonly string[]>([]);
   const [environment, setEnvironment] = useState<ThreadExecutionEnvironment>();
   const listPages = useRef(1);
@@ -220,6 +244,8 @@ export function useThreadControlCenter(
     refreshSequence.current++;
     setDetail(undefined);
     setPreview(null);
+    setMore((current) => ({ ...current, open: false, command: null }));
+    setStoppingRunIds([]);
     setDraft(storage.readDraft(selectedThreadId ?? "new"));
     setConflict(null);
     setMutationStatus(null);
@@ -466,6 +492,7 @@ export function useThreadControlCenter(
         void loadPayloads([
           ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
           ...current.payload.messages.map(({ contentRef }) => contentRef),
+          ...backgroundPayloadRefs(current.payload.runs),
         ]);
         const changedRuns = current.payload.runs.filter(
           (run) =>
@@ -999,10 +1026,10 @@ export function useThreadControlCenter(
       return state && state.runRevision >= run.revision ? [[run.runId, state]] : [];
     }),
   );
-  const canStop = (run: { runId: string; status: string }) =>
+  const canStop = (run: RunSummary) =>
     configuration?.executionStateAvailable
       ? currentExecutionStates[run.runId]?.availableActions.includes("stop") === true
-      : !["completed", "failed", "cancelled"].includes(run.status);
+      : !["completed", "failed", "cancelled"].includes(run.status) && !run.background;
   const projectedPendingThreadIds =
     detail &&
     configuration?.executionStateAvailable &&
@@ -1153,6 +1180,77 @@ export function useThreadControlCenter(
     selectedThreadId ?? pendingCreation?.threadId ?? "new",
   );
 
+  const commands = useMemo(
+    () => (detail ? backgroundCommands(detail.payload.runs, contentByRef) : []),
+    [detail, contentByRef],
+  );
+  const runningCommands = runningBackgroundCommands(commands);
+  const fileGroups = useMemo<readonly MoreFileGroup[]>(
+    () =>
+      (detail?.payload.runs ?? [])
+        .map((run, index) => ({
+          runId: run.runId,
+          turn: index + 1,
+          files: turnFiles(run.runId, execution[run.runId] ?? []),
+        }))
+        .filter((group) => group.files.length)
+        .reverse(),
+    [detail, execution],
+  );
+  const hasMore = commands.length > 0 || fileGroups.length > 0;
+  useEffect(() => {
+    setStoppingRunIds((current) => {
+      const next = current.filter((runId) =>
+        commands.some((command) => command.runId === runId && command.state === "running"),
+      );
+      return next.length === current.length ? current : next;
+    });
+  }, [commands]);
+  const openMore = (tab?: MoreTab, command: string | null = null) => {
+    setPreview(null);
+    setMore((current) => ({
+      open: true,
+      tab: tab ?? (runningBackgroundCommands(commands).length ? "commands" : current.tab),
+      command,
+    }));
+  };
+  const closeMore = () => setMore((current) => ({ ...current, open: false, command: null }));
+  const stopCommand = (command: BackgroundCommandView) => {
+    setStoppingRunIds((current) =>
+      current.includes(command.runId) ? current : [...current, command.runId],
+    );
+    void performIntent({
+      kind: "stop",
+      runId: command.run.runId,
+      revision: command.run.revision,
+    }).then((result) => {
+      if (!result)
+        setStoppingRunIds((current) => current.filter((runId) => runId !== command.runId));
+    });
+  };
+  const showReport = (command: BackgroundCommandView) => {
+    if (!command.noticeRunId) return;
+    if (window.matchMedia?.("(max-width: 760px)").matches) closeMore();
+    const turn = [...document.querySelectorAll<HTMLElement>(".chat-turn[data-run-id]")].find(
+      (element) => element.dataset["runId"] === command.noticeRunId,
+    );
+    if (!turn) return;
+    turn.scrollIntoView({ block: "start", behavior: "smooth" });
+    turn.classList.remove("is-flash");
+    void turn.offsetWidth;
+    turn.classList.add("is-flash");
+    window.setTimeout(() => turn.classList.remove("is-flash"), 1600);
+  };
+  const actions =
+    detail && hasMore ? (
+      <MoreButton
+        running={runningCommands.length}
+        open={more.open && !preview}
+        onClick={() => (more.open && !preview ? closeMore() : openMore())}
+        message={message}
+      />
+    ) : null;
+
   const content = (
     <div className="thread-workarea">
       <div className="thread-content">
@@ -1176,9 +1274,10 @@ export function useThreadControlCenter(
               execution={execution}
               executionStates={currentExecutionStates}
               executionStateAvailable={configuration?.executionStateAvailable}
-              onPreview={(value) =>
-                setPreview((current) => (value.key && current?.key === value.key ? null : value))
-              }
+              onPreview={(value) => {
+                closeMore();
+                setPreview((current) => (value.key && current?.key === value.key ? null : value));
+              }}
               previewKey={preview?.key}
               readImage={readImage}
               connection={connection}
@@ -1207,6 +1306,9 @@ export function useThreadControlCenter(
                       void performIntent({ kind: "stop", runId: run.runId, revision: run.revision })
                   : undefined
               }
+              backgroundCommands={commands}
+              stoppingRunIds={stoppingRunIds}
+              onOpenCommand={(key) => openMore("commands", key)}
               onFork={(turnId, sequence) =>
                 void performIntent({
                   kind: "fork",
@@ -1290,9 +1392,7 @@ export function useThreadControlCenter(
             (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
             (Boolean(unresolvedSubmission) ||
               ((!detail || detail.payload.thread.status === "active") &&
-                !(detail?.payload.runs ?? []).some(
-                  (run) => !["completed", "failed", "cancelled"].includes(run.status),
-                )))
+                !(detail?.payload.runs ?? []).some((run) => !isAnsweredRun(run))))
           }
         />
         {!client || !configuration ? (
@@ -1303,7 +1403,27 @@ export function useThreadControlCenter(
         <ContentPreview
           key={preview.key ?? preview.title}
           value={preview}
-          onClose={() => setPreview(null)}
+          onBack={more.open && hasMore ? () => setPreview(null) : undefined}
+          onClose={() => {
+            setPreview(null);
+            closeMore();
+          }}
+        />
+      ) : more.open && hasMore ? (
+        <MorePanel
+          tab={more.tab}
+          commandKey={more.command}
+          commands={commands}
+          fileGroups={fileGroups}
+          stoppingRunIds={stoppingRunIds}
+          openFileKey={undefined}
+          onTab={(tab) => setMore((current) => ({ ...current, tab, command: null }))}
+          onCommand={(command) => setMore((current) => ({ ...current, tab: "commands", command }))}
+          onStop={configuration?.canCancelRun ? stopCommand : undefined}
+          onReport={showReport}
+          onOpenFile={(file) => setPreview(previewOfFile(file))}
+          onClose={closeMore}
+          message={message}
         />
       ) : null}
     </div>
@@ -1352,6 +1472,7 @@ export function useThreadControlCenter(
       />
     ),
     details,
+    actions,
     list,
     refresh,
     title: selectedSummary?.titleRef

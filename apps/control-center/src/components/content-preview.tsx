@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { parseDelimited } from "../delimited-text.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
-import { type DiffLine, fileExtension, type PreviewKind } from "../turn-files.js";
+import { type DiffLine, fileExtension, type PreviewKind, type TurnFile } from "../turn-files.js";
 import { LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { ActionButton } from "./primitives.js";
@@ -17,6 +17,16 @@ export interface ContentPreviewValue {
   readonly diff?: readonly DiffLine[];
   readonly missing?: boolean;
 }
+
+export const previewOfFile = (file: TurnFile): ContentPreviewValue => ({
+  key: file.key,
+  title: file.name,
+  path: file.path,
+  kind: file.kind,
+  text: file.content ?? "",
+  diff: file.diff,
+  missing: file.content === undefined,
+});
 
 type View = "preview" | "raw" | "diff";
 
@@ -174,9 +184,11 @@ function MarkdownReader({ text, label }: { readonly text: string; readonly label
 
 export function ContentPreview({
   value,
+  onBack,
   onClose,
 }: {
   value: ContentPreviewValue;
+  onBack?: (() => void) | undefined;
   onClose: () => void;
 }) {
   const { message } = useControlCenterIntl();
@@ -217,9 +229,15 @@ export function ContentPreview({
       }}
     >
       <header>
-        <span className="preview-icon">
-          <LineIcon name="file" />
-        </span>
+        {onBack ? (
+          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
+            <LineIcon name="back" />
+          </ActionButton>
+        ) : (
+          <span className="preview-icon">
+            <LineIcon name="file" />
+          </span>
+        )}
         <span className="preview-title">
           <strong>{value.title}</strong>
           {value.path && value.path !== value.title ? <small>{value.path}</small> : null}

@@ -685,6 +685,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with either person",
   ),
   entry(
+    "run_background_holds",
+    "RunLifecyclePort",
+    "one row per bash command still running after its Run answered; released with an outcome when the command ends",
+    "metadata_only",
+    "cascade with Run deletion",
+  ),
+  entry(
     "web_push_subscriptions",
     "WebPushStorePort",
     "one row per device push endpoint, active or paused by a rejected key; removed when the push service says it is gone",

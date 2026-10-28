@@ -270,8 +270,10 @@ export function projectThreadExecutionState(
     !resources?.pendingResources;
   const expired = expiredAndReleased || expiredWithoutSandboxResources;
   if (expired) displayPhase = "failed";
+  const answeredWithBackground = run.status === "running" && run.background !== null;
+  if (answeredWithBackground) displayPhase = "completed";
   const availableActions: ThreadExecutionState["availableActions"][number][] = [];
-  if (!terminal && canCancelRun) availableActions.push("stop");
+  if (!terminal && !answeredWithBackground && canCancelRun) availableActions.push("stop");
   if (
     canCancelRun &&
     ["failed", "cancelled"].includes(run.status) &&
@@ -293,30 +295,32 @@ export function projectThreadExecutionState(
     displayPhase,
     reasonCode: expired
       ? "RUN_EXECUTION_DEADLINE_EXCEEDED"
-      : resources?.phase
-        ? displayPhase === "unresolved" &&
-          ["queued", "preparing", "executing"].includes(resources.phase)
-          ? "RESOURCE_STATE_UNCONFIRMED"
-          : resources.reasonCode
-        : resourceResultUnconfirmed
-          ? "EXECUTION_RESULT_UNCONFIRMED"
-          : displayPhase === "not_dispatched"
-            ? "RUN_CANCELLED_BEFORE_DISPATCH"
-            : displayPhase === "stopped"
-              ? resources?.operations.some(
-                  (operation) => operation.reasonCode === "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
-                )
-                ? "RUN_STOPPED_NOT_STRICTLY_CONFIRMED"
-                : "RUN_CANCELLED_RESOURCES_RELEASED"
-              : run.status === "cancelled"
-                ? "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED"
-                : displayPhase === "unresolved"
-                  ? "EXECUTION_RESULT_UNCONFIRMED"
-                  : displayPhase === "preparing" &&
-                      run.status === "building_context" &&
-                      operations.length === 0
-                    ? "RUN_BUILDING_CONTEXT"
-                    : `EXECUTION_${displayPhase.toUpperCase()}`,
+      : answeredWithBackground
+        ? "RUN_ANSWERED_BACKGROUND_RUNNING"
+        : resources?.phase
+          ? displayPhase === "unresolved" &&
+            ["queued", "preparing", "executing"].includes(resources.phase)
+            ? "RESOURCE_STATE_UNCONFIRMED"
+            : resources.reasonCode
+          : resourceResultUnconfirmed
+            ? "EXECUTION_RESULT_UNCONFIRMED"
+            : displayPhase === "not_dispatched"
+              ? "RUN_CANCELLED_BEFORE_DISPATCH"
+              : displayPhase === "stopped"
+                ? resources?.operations.some(
+                    (operation) => operation.reasonCode === "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+                  )
+                  ? "RUN_STOPPED_NOT_STRICTLY_CONFIRMED"
+                  : "RUN_CANCELLED_RESOURCES_RELEASED"
+                : run.status === "cancelled"
+                  ? "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED"
+                  : displayPhase === "unresolved"
+                    ? "EXECUTION_RESULT_UNCONFIRMED"
+                    : displayPhase === "preparing" &&
+                        run.status === "building_context" &&
+                        operations.length === 0
+                      ? "RUN_BUILDING_CONTEXT"
+                      : `EXECUTION_${displayPhase.toUpperCase()}`,
     availableActions,
     needsAttention: availableActions.includes("review_approval"),
     timing: {
