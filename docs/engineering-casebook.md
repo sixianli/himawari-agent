@@ -67,6 +67,7 @@ date: "2026-10-26"
   40. [域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配](#case-min-tls)
   41. [按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送](#case-optimistic-send)
   42. [什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算](#case-memory-embedding-route)
+  44. [22 条界面意见归成一句话：“站在用户的角度想他要知道什么”，把内部数字移出视线，记忆和提醒各有入口](#case-ui-batch-1028)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -95,7 +96,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
@@ -2760,6 +2761,71 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 **面试 30 秒版**
 
 “用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
+
+[返回目录](#contents)
+
+<a id="case-ui-batch-1028"></a>
+
+## 案例 44：22 条界面意见归成一句话：“站在用户的角度想他要知道什么”，把内部数字移出视线，记忆和提醒各有入口
+
+**背景与现象**
+
+2026-10-28 18:44–19:27（日本时间），第十六版上线后，Andy 逐条发了 22 条 Himawari 网页的界面意见（清单和原话在项目共享文件 `ui-feedback/2026-10-28-ui-ux-batch.md`）。最重的一句是：“你得站在用户的角度思考用户想要知道什么信息，而不是你以为！”具体例子：回答上方写“最久：搜索网页 3.1s”，步骤里写“从第 0.2s 到第 1.6s”，Token 行带费用和一段说明；提醒藏在记忆页里，“你必须好好思考提醒是否应该放在记忆这个模块中！！！！”；设置里有主人从来不会改的项；品牌字样、步骤图标、记忆详情对不齐等细节粗糙。
+
+**根因**
+
+逐条对照代码后，问题不是某一个组件写错，而是三条设计习惯：
+
+1. **按“我们手里有什么数据”来摆界面，而不是按“主人想知道什么”。** 执行记录里有每步的起止时间、分类合计、费用，界面就全部摆出来（`execution-process.tsx` 的 `StepTiming`、`CategoryBar`、`TimeLedger`，`turn-summary.ts` 的 `cost`）。同一个耗时在收起行、明细和分类合计里出现三次。
+2. **按代码模块而不是按主人的心智归类。** 提醒在数据上挂在记忆下面（提醒记录只存 `memoryId`），界面就把它做成记忆页的一个标签。
+3. **能点不能点没有区分。** 每个步骤都做成按钮，没有内容的步骤点开是空的。
+
+**我们的方案**
+
+先做三语可点原型（<https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>），几处给多套方案，Andy 逐条批注选定后再改代码，决定写进 [ADR 0104](adr/0104-ui-batch-2026-10-28-show-what-the-owner-needs.md)：
+
+1. 过程区收起时一句话说做了什么和总用时（“搜索了 2 次网页，用时 13.1s”），从这一轮步骤种类计数生成；展开后每步只写自己的耗时；最下面一行只有 Token 总数和“缓存命中 N%”。
+2. “缓存命中”按 Andy 的要求写明是模型服务商的 KV 缓存（服务商把算过的前文存起来，同样开头的输入直接复用）：命中率 = 缓存读取 ÷（普通输入 + 缓存读取 + 缓存写入）。不显示费用。
+3. 只有有内容可看的步骤才能展开、才显示箭头，其余是普通行。步骤图标改成小方框里的线条图标。
+4. 回答下方只放操作（复制、从这里开新对话），时刻悬停才显示；来源显示前两个域名加“+N”。
+5. 侧栏顺序改为记忆、提醒、文件，提醒是独立页面，只在有到期提醒时显示一个小圆点。
+6. 设置只留四页：通用（称呼、语言、外观、主题色）、通知、工具与权限、数据；称呼用在欢迎页的问候里，欢迎语随时间段变化。
+7. 品牌字样两行 Himawari + ひまわり，两种字体只取用到的字形随网页发布，内容安全策略加 `font-src 'self'`。
+8. 回答里过多加粗：网页只在模型写了 `**` 时加粗，问题在模型写法，所以在系统提示里加一条“加粗只用在最值得注意的一两处”，不在网页上去掉加粗。
+
+这是纯网页和系统提示的改动，不涉及 Pi（项目底层的 Agent 框架）的模型、工具或会话部分；缓存读取数字来自 Pi 已经统一好的用量字段。
+
+**方案讨论与备选**
+
+- **收起行保留细时间条**：一眼看出哪段长，但主人看这一行只想知道“做了什么、多久”；时间条留在展开后的每一步上。
+- **回答下方保留常驻时刻**：手机上有用，电脑上是噪声。改成悬停显示，触屏设备没有悬停就一直淡淡显示。
+- **原型里的“⋯”菜单**：“从这里开新对话”拿出来后菜单里没有别的操作，空菜单就是摆设，没做。
+- **数据页放“退出登录”**：生产登录由 Cloudflare Access（网页前面的邮箱验证码）负责，网页里没有可退出的会话，按钮不会生效，没做。
+- **只改文字不改结构**：能修掉几条，但提醒位置、设置项取舍和“能点才有箭头”是结构问题，下一批意见还会重来。
+
+**业界主流做法**
+
+- ✅ Anthropic 提示缓存文档（<https://platform.claude.com/docs/en/build-with-claude/prompt-caching>）：“`cache_read_input_tokens`: Number of tokens retrieved from the cache for this request”，以及 “total_input_tokens = cache_read_input_tokens + cache_creation_input_tokens + input_tokens”。命中率的分母按这个算法取全部输入。
+- ✅ DeepSeek 上下文硬盘缓存文档（<https://api-docs.deepseek.com/guides/kv_cache>，生产主模型来自 DeepSeek）：“`prompt_cache_hit_tokens`: The number of tokens in the input of this request that resulted in a cache hit.”
+- ⚠ ChatGPT 和 Claude 网页的回答底栏只放操作，不放耗时和 token：这是原型阶段对两家网页的观察，没有一手文档可引。OpenAI 帮助中心“自定义说明”一页打开返回 HTTP 403，未核对。
+
+**对比与取舍**
+
+和 ChatGPT、Claude 一样，回答下方只放操作。不同的是 Himawari 仍然把“做了什么、用了多久、多少 Token、缓存命中多少”放在过程区里：Andy 关心 token 花费和速度，这些数字对他是有用信息，只是不该挤在回答下方，也不该重复三次。代价是费用不在网页上显示，要查用量账本；“最久的一步”要展开才看得出来。
+
+**结果数据**
+
+- 测试：`apps/control-center/test/` 下 35 个文件 516 个测试全部通过（合并 main 之后，含本批改写的过程区、回答底栏、设置、欢迎语、文件筛选测试）；`npm run check` 和 `npm run build` 通过。
+- 三语排版：改过的过程区、设置、文件页、侧栏在中英日三种语言、电脑和手机两种宽度、亮暗两种主题下截图检查，截图存为基线 `docs/assets/control-center/2026-10-28-v9/`。
+- 页面加载和渲染耗时：未测量。加粗规则的效果：未在生产回答上测量，也没有用评测集实测。
+
+**相关 ADR/PR**
+
+[ADR 0104](adr/0104-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](execution/specs/2026-09-15-control-center-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
+
+**面试 30 秒版**
+
+“用户一次给了 22 条界面意见，我没有逐条打补丁，而是先找共同原因：界面按‘我们有什么数据’来摆，而不是按‘用户想知道什么’。同一个耗时出现三次，费用、分段起止时间都摆在眼前；提醒因为数据上挂在记忆下，就藏进了记忆页。我先做三语原型让用户逐条选方案，再改成：收起时一句话说做了什么、多久，最下面只留 Token 和按 Anthropic 公式算的 KV 缓存命中率；能点开的才有箭头；提醒有独立入口。516 个前端测试通过，三语两种宽度截图存为新基线。”
 
 [返回目录](#contents)
 

@@ -20,6 +20,7 @@ date: "2026-10-26"
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [关联文档](#references)
+- [后续说明（2026-10-28）](#follow-up-2026-10-28)
 
 <a id="context"></a>
 
@@ -104,3 +105,11 @@ Andy 要求把整个对话界面重做得“简洁、高级、一目了然”，
 - [工程案例库：每一步的时间要准](../engineering-casebook.md#case-process-timeline)
 - [ADR 0085：去掉每轮回答里 Himawari 自己造成的等待](0085-remove-per-turn-system-gaps.md)
 - [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md]
+
+<a id="follow-up-2026-10-28"></a>
+
+## 后续说明（2026-10-28）
+
+本记录不改动上面的决定。[ADR 0104](0104-ui-batch-2026-10-28-show-what-the-owner-needs.md) 按 Andy 当天的界面意见改掉了其中三处：过程区收起时不再显示分类时间条和“最久”，改为一句话说做了什么和总用时；展开后不再有分段起止时间和分类合计，每步只写自己的耗时；最下面一行只留 Token 总数和 KV 缓存命中率，不显示费用。每步的时间条、葵盘标志、前端体积不设上限和界面三语等其余决定继续有效。
+
+[↑ 返回阅读导航](#contents)

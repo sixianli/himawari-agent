@@ -20,6 +20,7 @@ date: "2026-10-27"
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [关联文档](#references)
+- [后续说明（2026-10-28）](#follow-up-2026-10-28)
 
 <a id="context"></a>
 
@@ -102,5 +103,13 @@ date: "2026-10-27"
 - 原型：<https://claude.ai/artifact/BGa1vxG7DHy9GQKBQLatSS>
 - 实现截图：[docs/assets/control-center/2026-10-27-v7/](../assets/control-center/2026-10-27-v7/SHA256SUMS)
 - 代码：`apps/control-center/index.html`、`apps/control-center/src/components/answer-footer.tsx`、`apps/control-center/src/components/memory-panel.tsx`、`apps/control-center/src/components/memory-page.tsx`、`apps/control-center/src/components/chat-composer.tsx`、`apps/control-center/src/chat-layout.css`、`apps/control-center/src/review-v4.css`
+
+[↑ 返回阅读导航](#contents)
+
+<a id="follow-up-2026-10-28"></a>
+
+## 后续说明（2026-10-28）
+
+本记录不改动上面的决定。[ADR 0104](0104-ui-batch-2026-10-28-show-what-the-owner-needs.md) 把回答下方一行里的用时和 token 移回过程区，这一行只留操作（复制、从这里开新对话），时刻悬停才显示，触屏设备上一直淡淡显示。不显示模型名、安全区留边、一行记忆说明和圆形发送按钮等其余决定继续有效。
 
 [↑ 返回阅读导航](#contents)
