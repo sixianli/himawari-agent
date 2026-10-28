@@ -3,15 +3,15 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
-import { chromium, devices, firefox, webkit, expect } from "@playwright/test";
+import { chromium, devices, expect, firefox, webkit } from "@playwright/test";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-import { parseArguments } from "./ci/contracts.mjs";
 import { createBrowserObservation } from "./ci/browser-observation.mjs";
+import { parseArguments } from "./ci/contracts.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
-import { qualifyExecutionChainFixture } from "./test-execution-chain-browser.mjs";
 import { qualifyControlCenterV4 } from "./test-control-center-v4.mjs";
+import { qualifyExecutionChainFixture } from "./test-execution-chain-browser.mjs";
 import { qualifyMobileComposer } from "./test-mobile-composer-browser.mjs";
 
 const profiles = {
@@ -697,11 +697,7 @@ export async function qualifyBrowser({
 
     await page.goto(`${baseUrl}/approvals`);
     await showNavigation(page);
-    await page
-      .getByText("正在加载权威状态", { exact: true })
-      .filter({ visible: true })
-      .first()
-      .waitFor();
+    await page.getByText("正在加载…", { exact: true }).filter({ visible: true }).first().waitFor();
     releaseLoading?.();
     await loadingComplete;
     await page.unroute("**/api/gateway/v2/queries", loadingHandler);

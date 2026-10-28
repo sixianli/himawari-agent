@@ -51,12 +51,12 @@ describe("thread sidebar navigation", () => {
   it("shows quiet placeholders only before the first collection arrives", () => {
     const markup = render([], true, false);
     expect(markup).toContain('class="thread-loading-skeleton"');
-    expect(markup).not.toContain("正在加载权威状态");
+    expect(markup).not.toContain("正在加载…");
   });
 
   it("keeps a loaded empty collection quiet during background refresh", () => {
     const markup = render([], true, true);
-    expect(markup).not.toContain("正在加载权威状态");
+    expect(markup).not.toContain("正在加载…");
     expect(markup).not.toContain('class="thread-loading-skeleton"');
   });
 

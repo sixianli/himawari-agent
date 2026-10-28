@@ -3845,3 +3845,29 @@ code.more-row-name {
 .preview-meta-actions .preview-action {
   gap: 5px;
 }
+.files-library-skeleton {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+.files-library-skeleton i {
+  display: block;
+  height: 44px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--input), var(--surface-muted), var(--input));
+  background-size: 200% 100%;
+  animation: files-library-shimmer 1.4s linear infinite;
+}
+.files-library-skeleton i:last-child {
+  width: 70%;
+}
+@keyframes files-library-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .files-library-skeleton i {
+    animation: none;
+  }
+}

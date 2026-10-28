@@ -478,7 +478,7 @@ export const messages = {
   "loading.failedConversation": "暂时无法加载这段对话，请重试。",
   "loading.failedSearch": "搜索未完成，请重试。",
   "loading.retry": "重试",
-  "state.loading": "正在加载权威状态",
+  "state.loading": "正在加载…",
   "state.error": "加载失败",
   "state.offline": "离线期间只保留未发送草稿",
   "surface.notInstalled.title": "当前部署未启用此功能",

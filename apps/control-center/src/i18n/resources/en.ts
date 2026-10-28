@@ -512,7 +512,7 @@ export const messages = {
   "loading.failedConversation": "Could not load this conversation. Please retry.",
   "loading.failedSearch": "Search could not finish. Please retry.",
   "loading.retry": "Retry",
-  "state.loading": "Loading authoritative state",
+  "state.loading": "Loading…",
   "state.error": "Load failed",
   "state.offline": "Only unsent drafts remain available offline",
   "surface.notInstalled.title": "This feature is not enabled in this deployment",

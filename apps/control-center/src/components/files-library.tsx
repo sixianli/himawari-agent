@@ -91,7 +91,10 @@ export function FilesLibrary({
   const [cursor, setCursor] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [loading, setLoading] = useState(true);
   const sequence = useRef(0);
+  const listRef = useRef(list);
+  listRef.current = list;
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 250);
     return () => window.clearTimeout(timer);
@@ -102,13 +105,16 @@ export function FilesLibrary({
     void attempt;
     const current = ++sequence.current;
     setFailed(false);
-    setItems(undefined);
+    setLoading(true);
     const selected = kindKey ? (kindKey.split(",") as RegisteredFileKind[]) : [undefined];
     Promise.all(
-      selected.map((kind) => list({ ...(kind ? { kind } : {}), search: query, limit: PAGE })),
+      selected.map((kind) =>
+        listRef.current({ ...(kind ? { kind } : {}), search: query, limit: PAGE }),
+      ),
     ).then(
       (pages) => {
         if (current !== sequence.current) return;
+        setLoading(false);
         setItems(
           pages
             .flatMap((page) => page.items)
@@ -116,18 +122,23 @@ export function FilesLibrary({
         );
         setCursor(selected.length === 1 ? (pages[0]?.nextCursor ?? null) : null);
       },
-      () => current === sequence.current && setFailed(true),
+      () => {
+        if (current !== sequence.current) return;
+        setLoading(false);
+        setFailed(true);
+      },
     );
-  }, [list, kindKey, query, attempt]);
+  }, [kindKey, query, attempt]);
   const loadMore = () => {
     if (!cursor) return;
     const current = sequence.current;
-    void list({
-      ...(kinds[0] ? { kind: kinds[0] } : {}),
-      search: query,
-      before: cursor,
-      limit: PAGE,
-    })
+    void listRef
+      .current({
+        ...(kinds[0] ? { kind: kinds[0] } : {}),
+        search: query,
+        before: cursor,
+        limit: PAGE,
+      })
       .then((page) => {
         if (current !== sequence.current) return;
         setItems((prior) => [...(prior ?? []), ...page.items]);
@@ -142,7 +153,7 @@ export function FilesLibrary({
     now,
   );
   return (
-    <section className="files-library" aria-label={message("library.title")}>
+    <section className="files-library" aria-label={message("library.title")} aria-busy={loading}>
       <header className="files-library-head">
         {onBack ? (
           <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
@@ -191,7 +202,11 @@ export function FilesLibrary({
             </button>
           </p>
         ) : !items ? (
-          <p className="files-library-note">{message("state.loading")}</p>
+          <div className="files-library-skeleton" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
         ) : !files.length ? (
           <p className="files-library-note">
             {message(query || category !== "all" ? "library.noMatch" : "library.empty")}
