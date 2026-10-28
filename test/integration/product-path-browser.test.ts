@@ -5506,14 +5506,14 @@ async function searchToggleUsable(name: "允许联网搜索" | "撤销联网搜�
       async () => {
         const dialog = await openSettingsTab("工具与权限");
         return dialog
-          .getByRole("checkbox", { name, exact: true })
+          .getByRole("switch", { name, exact: true })
           .isEnabled({ timeout: 1_000 })
           .catch(() => false);
       },
       { timeout: 60_000, intervals: [1_000] },
     )
     .toBe(true);
-  return page.getByRole("dialog").getByRole("checkbox", { name, exact: true });
+  return page.getByRole("dialog").getByRole("switch", { name, exact: true });
 }
 
 async function expectNewsSearchResults(text: string) {
@@ -5604,7 +5604,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await toggle.click();
       const enabled = page
         .getByRole("dialog")
-        .getByRole("checkbox", { name: "撤销联网搜索授权", exact: true });
+        .getByRole("switch", { name: "撤销联网搜索授权", exact: true });
       await uiExpect(enabled).toBeChecked({ timeout: 30_000 });
       await uiExpect(enabled).toBeEnabled();
       await closeSettings();
