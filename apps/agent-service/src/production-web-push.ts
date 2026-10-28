@@ -17,6 +17,7 @@ import type {
 const DEFAULT_INTERVAL_MS = 10_000;
 const PRESENCE_WINDOW_MS = 45_000;
 const REMINDER_WINDOW_MS = 6 * 3_600_000;
+const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
 const RUN_WINDOW_MS = 24 * 3_600_000;
 const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
@@ -35,6 +36,9 @@ export const WEB_PUSH_TEXT = {
     untitled: "新对话",
     test: "通知已开启",
     testBody: "Himawari 会在这里提醒你。",
+    mailAct: "邮件里有件事要你处理",
+    mailCheck: "有封邮件可能重要，请看原信",
+    mailMore: (count: number) => `还有 ${count} 件`,
   },
   en: {
     reminder: "Himawari reminder",
@@ -46,6 +50,9 @@ export const WEB_PUSH_TEXT = {
     untitled: "New chat",
     test: "Notifications are on",
     testBody: "Himawari will remind you here.",
+    mailAct: "An email needs you to act",
+    mailCheck: "An email may be important. Please read it",
+    mailMore: (count: number) => `${count} more`,
   },
   ja: {
     reminder: "Himawari リマインダー",
@@ -57,6 +64,9 @@ export const WEB_PUSH_TEXT = {
     untitled: "新しいチャット",
     test: "通知がオンになりました",
     testBody: "Himawari からのお知らせがここに届きます。",
+    mailAct: "メールに対応が必要な件があります",
+    mailCheck: "重要かもしれないメールがあります。原文をご確認ください",
+    mailMore: (count: number) => `ほか ${count} 件`,
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -137,6 +147,7 @@ export interface ProductionWebPushOptions {
   readonly memories: Pick<ProductMemoryStatePort, "readMany">;
   readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
+  readonly proactive?: ProactivePushSource;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
   readonly publicOrigin: string;
@@ -145,6 +156,21 @@ export interface ProductionWebPushOptions {
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
   readonly onFailure: (error: unknown) => void;
+}
+
+export interface ProactivePushSource {
+  listReady(now: string): Promise<readonly { readonly id: string; readonly readyAt: string }[]>;
+  markEnqueued(pushId: string, now: string): Promise<void>;
+  content(pushId: string): Promise<
+    | {
+        readonly insightId: string;
+        readonly result: "act" | "know" | "check";
+        readonly text: string;
+        readonly dueAt: string | null;
+        readonly more: number;
+      }
+    | undefined
+  >;
 }
 
 type Content =
@@ -309,6 +335,17 @@ export class ProductionWebPush {
           createdAt: now,
           expiresAt: new Date(Date.parse(run.finishedAt) + RUN_WINDOW_MS).toISOString(),
         });
+    const proactive = (await this.#options.proactive?.listReady(now)) ?? [];
+    for (const push of proactive)
+      items.push({
+        ...scope,
+        sourceKey: `proactive:${push.id}`,
+        kind: "reminder",
+        sourceRef: push.id,
+        threadId: null,
+        createdAt: now,
+        expiresAt: new Date(Date.parse(push.readyAt) + PROACTIVE_WINDOW_MS).toISOString(),
+      });
     const next = cursor ? runs.at(-1)?.cursor : now;
     if (items.length === 0 && !next) return;
     await store.enqueue({
@@ -317,6 +354,7 @@ export class ProductionWebPush {
       cursor: next ? { source: "finished-runs", value: next } : null,
       now,
     });
+    for (const push of proactive) await this.#options.proactive?.markEnqueued(push.id, now);
   }
 
   async #runThread(runId: string): Promise<string | null> {
@@ -364,6 +402,26 @@ export class ProductionWebPush {
     const origin = this.#options.publicOrigin;
     const threadUrl = (threadId: string | null) =>
       threadId ? `${origin}/threads/${encodeURIComponent(threadId)}` : `${origin}/`;
+    if (item.kind === "reminder" && item.sourceKey.startsWith("proactive:")) {
+      const mail = await this.#options.proactive?.content(item.sourceRef);
+      if (!mail) return { expired: true };
+      return {
+        expired: false,
+        build: (locale) => {
+          const text = WEB_PUSH_TEXT[locale];
+          const lines = [
+            mail.dueAt ? `${mail.text}\n${this.#formatTime(mail.dueAt, locale)}` : mail.text,
+            ...(mail.more > 0 ? [text.mailMore(mail.more)] : []),
+          ];
+          return {
+            title: mail.result === "check" ? text.mailCheck : text.mailAct,
+            body: lines.join("\n"),
+            navigate: `${origin}/?reminder=${encodeURIComponent(mail.insightId)}`,
+            lang: locale,
+          };
+        },
+      };
+    }
     if (item.kind === "reminder") {
       const reminder = await this.#options.reminders.read(item.sourceRef);
       if (

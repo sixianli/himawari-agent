@@ -27,6 +27,7 @@ date: "2026-10-29"
 - [出错处理](#errors)
 - [验收标准](#acceptance)
 - [验证方式](#verification)
+- [实现说明](#implementation)
 
 <a id="goal"></a>
 
@@ -83,7 +84,7 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
    - 垃圾邮件，以及被 Gmail 归为推广、社交、论坛的邮件，跳过。但“重要发件人名单”里的发件人除外。
    - 摘要里有验证码、卡号、密码的，复用记忆采集已有的密钥扫描（`scanMachineSecrets`），不发给模型，只记一句“跳过：含敏感信息”。
    - Andy 自己发出的邮件不判断，只用来把对应条目标成“你已回复”。
-4. **模型判断。** 剩下的邮件按批交给模型，模型只看发件人、标题、摘要。每封给出：结果（四选一）、有把握 / 拿不准、待办一句话、截止时间、优先级（高中低）、给 Andy 看的一句原因。模型调用走 Pi 运行时（`packages/runtime-pi`），费用记在已有的用量账本里。
+4. **模型判断。** 剩下的邮件按批交给模型，模型只看发件人、标题、摘要。每封给出：结果（四选一）、有把握 / 拿不准、待办一句话、截止时间、优先级（高中低）、给 Andy 看的一句原因。模型调用走 Pi 运行时（`packages/runtime-pi`），每次检查实际花的钱记在 `proactive_decisions.cost_micros`（单位是百万分之一美元），每日上限按这一列当天的合计来算；不走对话用的用量账本，原因见[实现说明](#implementation)。
 5. **地板规则**，见[判断规则和地板规则](#rules)。
 6. **写结果和推送。** 写 `source_insights` 和 `proactive_decisions`，再按[推送](#push)决定是否推送。
 
@@ -146,7 +147,7 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 
 ## 数据
 
-两张新表，迁移号在合并前和 main 对齐。都不存邮件正文。提炼出的待办和关键信息按现有的受保护数据方式加密存储。不自动删除，Andy 可以在设置“数据”里全部删除。
+迁移 `0062_proactive_checks` 新建六张表：设置、连接、决策日志、内容条目、已处理邮件、待发推送；下面列出 Andy 能在页面上看到的两张。都不存邮件正文。提炼出的待办和关键信息按现有的受保护数据方式加密存储。不自动删除，Andy 可以在设置“数据”里全部删除。
 
 **`proactive_decisions`：每次检查一行**
 
@@ -157,7 +158,7 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 | `verdict` | 推送 / 没开口 / 顺延 / 失败 / 到上限 / 到上限（日） / 要你处理 |
 | `reason` | 给 Andy 看的一句话 |
 | `push_source_key` | 对应的推送，关联 `web_push_feedback` |
-| `cost_usd`、`duration_ms` | 这次实际花的钱和时间 |
+| `cost_micros`、`duration_ms` | 这次实际花的钱（百万分之一美元）和时间（毫秒） |
 | `owner_rating` | Andy 的评价：有用 / 没必要 / 该说没说 |
 
 **`source_insights`：每条有结果的内容一行**
@@ -283,5 +284,21 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
   - Jarvis Test 的真模型层，只记分、不拦截；
   - 上线第一周 Andy 对真实提醒的评价。
 - 第一周把实际花费报给 Andy。现在每封邮件花多少钱还没测量。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="implementation"></a>
+
+## 实现说明
+
+2026-10-29 后台 PR 按本规格实现时定下的几处做法，界面 PR 和上线按这里来。
+
+- **费用怎么记。** 对话用的用量账本（`model_budget`）要求每次模型调用挂在一个正在执行的对话 Run（一次对话回合）下面，后台检查没有 Run。所以检查时给模型调用单独发一个只在本次有效的编号 `proactive:<调用编号>`，费用取模型返回的实际花费，写进 `proactive_decisions.cost_micros`。模型调用仍然经过 Pi 的 `PiModelTransport` 和现有的 `TrustedModelProviderAdapter`（负责取密钥、检查数据能不能发出），只是不经过对话账本。
+- **推送用哪一类。** 复用已有的“提醒”类推送，来源键是 `proactive:<推送编号>`，所以手机上关掉“提醒”类推送也会关掉邮件推送。点开后打开 `/?reminder=<条目编号>`，由界面 PR 落到提醒页对应那一条并高亮。
+- **Gmail 代码放在哪。** 读取和授权在 `packages/platform-node/src/gmail-source.ts`，没有新建单独的包，免得多一套构建和依赖配置。
+- **生产配置。** 在 `/etc/himawari/config.json` 的 `runPolicy.proactive` 里写：`modelRef`（用哪个模型，必须允许私密数据）、`gmail.clientId`、`gmail.clientSecretRef`（指向 `secretReferences` 里 `purpose` 为 `google-oauth-client` 的一项），可选 `intervalMs`（默认 900000，即 15 分钟）、`perCheckCostMicros`（默认 100000，即 0.1 美元）、`perCheckMs`（默认 180000，即 3 分钟）、`dailyCostMicros`（默认 1000000，即 1 美元）。没有这一节时主动检查完全不启动，界面也不显示相关入口。
+- **Google 里要填的回调地址。** 固定为网站地址加 `/api/proactive/v1/google/callback`，生产机是 `https://himawari.siyi.win/api/proactive/v1/google/callback`。Andy 建 OAuth 客户端时把它填进“已获授权的重定向 URI”。
+- **连接流程。** 设置里的“连接 Gmail”打开 `/api/proactive/v1/google/start`，服务生成一次性的 `state`（防止别人伪造回调，10 分钟有效，只认发起连接的同一台已登录设备），跳到 Google；Google 回到回调地址后，服务换取 refresh token、读出账号邮箱、加密保存，第一次连接时自动打开“主动提醒”，然后跳回 `/?settings=apps&gmail=connected`（失败是 `failed`，Andy 在 Google 页点了取消是 `denied`）。
+- **网页接口。** 查询 `proactive.overview.read`；命令 `proactive.settings.set`（开关、不推送时段、重要发件人）、`proactive.insight.respond`（完成、不再提醒、恢复、评价）、`proactive.decision.rate`、`proactive.audit.respond`（看完了、该说没说）、`proactive.source.manage`（断开 Gmail、删除全部记录）。
 
 [↑ 返回阅读导航](#contents)

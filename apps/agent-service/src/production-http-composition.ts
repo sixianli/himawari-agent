@@ -62,13 +62,14 @@ import {
   type ProductSessionAuthenticationServiceOptions,
   RuntimeHealthModel,
   RuntimeMetricsRegistry,
+  authenticateHttpRequest,
   registerBuiltInIdentityRoutes,
   registerIdentityAuthenticationRoutes,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
   ThreadSearchProjector,
 } from "@himawari-agent/platform-node";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
@@ -78,6 +79,12 @@ import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
+import {
+  PROACTIVE_GOOGLE_CALLBACK_PATH,
+  PROACTIVE_GOOGLE_START_PATH,
+  PRODUCTION_PROACTIVE_OPERATIONS,
+  type ProductionProactive,
+} from "./production-proactive.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -157,6 +164,7 @@ export interface ProductionHttpCompositionOptions {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
   };
+  readonly proactive?: ProductionProactive;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly authority: () => ProductAuthorityFence;
@@ -498,6 +506,57 @@ function authorityForConfiguration(
   return authority;
 }
 
+export function registerProactiveRoutes(
+  app: FastifyInstance,
+  proactive: ProductionProactive,
+  input: {
+    readonly authentication: HttpGatewayAuthenticationPort;
+    readonly sessionCookieName: string;
+    readonly ownerId: string;
+  },
+): void {
+  const owner = async (request: FastifyRequest) => {
+    const authentication = await authenticateHttpRequest(request, input).catch(() => undefined);
+    return authentication && authentication.ownerId === input.ownerId
+      ? `${authentication.subjectId}:${authentication.deviceId}`
+      : undefined;
+  };
+  const settingsPage = (reply: FastifyReply, outcome: string) =>
+    reply
+      .header("cache-control", "no-store")
+      .header("referrer-policy", "no-referrer")
+      .redirect(`/?settings=apps&gmail=${outcome}`, 303);
+  app.get(PROACTIVE_GOOGLE_START_PATH, async (request, reply) => {
+    const site = request.headers["sec-fetch-site"];
+    if (site !== undefined && site !== "same-origin" && site !== "none")
+      return reply.code(403).header("cache-control", "no-store").send();
+    const subject = await owner(request);
+    if (!subject) return reply.code(401).header("cache-control", "no-store").send();
+    return reply
+      .header("cache-control", "no-store")
+      .header("referrer-policy", "no-referrer")
+      .redirect(proactive.beginAuthorization(subject), 303);
+  });
+  app.get(PROACTIVE_GOOGLE_CALLBACK_PATH, async (request, reply) => {
+    const subject = await owner(request);
+    if (!subject) return reply.code(401).header("cache-control", "no-store").send();
+    const query = request.query as Record<string, unknown>;
+    const text = (key: string) =>
+      typeof query[key] === "string" && (query[key] as string).length <= 2048
+        ? (query[key] as string)
+        : null;
+    return settingsPage(
+      reply,
+      await proactive.completeAuthorization({
+        owner: subject,
+        state: text("state"),
+        code: text("code"),
+        error: text("error"),
+      }),
+    );
+  });
+}
+
 function routeOptions(
   configuration: ProductConfiguration,
   identity: HttpGatewayAuthenticationPort,
@@ -514,6 +573,7 @@ function routeOptions(
   workspaceCopiesAvailable: boolean,
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
+  proactiveAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -545,6 +605,7 @@ function routeOptions(
         ...(workspaceCopiesAvailable ? PRODUCTION_COPY_OPERATIONS : []),
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
+        ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -930,6 +991,7 @@ export async function createProductionHttpComposition(
       push: options.webPush?.push,
       clock: { now: clock },
     }),
+    ...(options.proactive ? { proactiveControl: options.proactive } : {}),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -948,6 +1010,7 @@ export async function createProductionHttpComposition(
       Boolean(workspaceCopies),
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
+      Boolean(options.proactive),
     ),
     gatewayV2,
     threadSearch,
@@ -959,6 +1022,12 @@ export async function createProductionHttpComposition(
       method: identityConfiguration.kind === "built-in" ? "built-in" : "cloudflare-access",
     }),
   );
+  if (options.proactive)
+    registerProactiveRoutes(app, options.proactive, {
+      authentication,
+      sessionCookieName: httpConfiguration.sessionCookieName,
+      ownerId,
+    });
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)

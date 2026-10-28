@@ -1,0 +1,222 @@
+import type {
+  ProactiveCounts,
+  ProactiveInsight,
+  ProactiveInsightContent,
+  ProactiveQuietPeriod,
+  ProactiveRating,
+  ProactiveScope,
+  ProactiveSealPort,
+  ProactiveSource,
+  ProactiveStorePort,
+  ProactiveVerdict,
+} from "../ports/proactive-checks.js";
+import type { WebPushFeedback } from "../ports/web-push.js";
+import { startOfZonedDay } from "./proactive-rules.js";
+
+const AUDIT_DAYS = 14;
+const METRIC_DAYS = 30;
+const REACTION_WINDOW_MS = 24 * 3_600_000;
+const DAY_MS = 24 * 3_600_000;
+
+export interface ProactiveOverviewInsight {
+  readonly id: string;
+  readonly result: ProactiveInsight["result"];
+  readonly floorRaised: boolean;
+  readonly summary: string;
+  readonly reason: string;
+  readonly basis: ProactiveInsightContent["basis"];
+  readonly from: string;
+  readonly subject: string;
+  readonly link: string;
+  readonly dueAt: string | null;
+  readonly priority: ProactiveInsight["priority"];
+  readonly status: ProactiveInsight["status"];
+  readonly pushed: boolean;
+  readonly rating: ProactiveRating | null;
+  readonly updatedAt: string;
+}
+
+export interface ProactiveOverviewDecision {
+  readonly id: string;
+  readonly checkedAt: string;
+  readonly verdict: ProactiveVerdict;
+  readonly reasonCode: string;
+  readonly counts: ProactiveCounts;
+  readonly opened: boolean;
+  readonly rating: ProactiveRating | null;
+}
+
+export interface ProactiveOverview {
+  readonly source: ProactiveSource;
+  readonly connection: {
+    readonly status: "disconnected" | "connected" | "needs_reconnect";
+    readonly account: string | null;
+    readonly connectedAt: string | null;
+  };
+  readonly enabled: boolean;
+  readonly quietHours: readonly ProactiveQuietPeriod[];
+  readonly importantSenders: readonly string[];
+  readonly dailyLimitReached: boolean;
+  readonly insights: readonly ProactiveOverviewInsight[];
+  readonly audit: {
+    readonly active: boolean;
+    readonly since: string;
+    readonly items: readonly {
+      readonly messageId: string;
+      readonly from: string;
+      readonly subject: string;
+      readonly link: string;
+      readonly rating: ProactiveRating | null;
+    }[];
+    readonly pending: number;
+  };
+  readonly decisions: readonly ProactiveOverviewDecision[];
+  readonly metrics: {
+    readonly spoke: number;
+    readonly hits: number;
+    readonly misfires: number;
+    readonly missed: number;
+    readonly reviewed: number;
+  };
+}
+
+function parse<T>(text: string | undefined): Partial<T> {
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as Partial<T>;
+  } catch {
+    return {};
+  }
+}
+
+export async function readProactiveOverview(options: {
+  readonly scope: ProactiveScope;
+  readonly source: ProactiveSource;
+  readonly store: ProactiveStorePort;
+  readonly seal: ProactiveSealPort;
+  readonly timeZone: string;
+  readonly dailyCostMicros: number;
+  readonly now: string;
+  readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
+}): Promise<ProactiveOverview> {
+  const { scope, store, seal, now } = options;
+  const settings = await store.readSettings(scope);
+  const connection = await store.readConnection({ ...scope, source: options.source });
+  const open = (ref: string) => seal.open({ ...scope, ref });
+  const account = connection ? ((await open(connection.accountRef)) ?? null) : null;
+  const today = startOfZonedDay(now, options.timeZone);
+  const decisionsToday = await store.listDecisions({ ...scope, since: today, limit: 500 });
+  const dailyLimitReached =
+    (await store.costSince({ ...scope, since: today })) >= options.dailyCostMicros ||
+    decisionsToday.some(({ verdict }) => verdict === "capped_daily");
+  const insights: ProactiveOverviewInsight[] = [];
+  for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
+    const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
+    insights.push(
+      Object.freeze({
+        id: insight.id,
+        result: insight.result,
+        floorRaised: insight.floorRaised,
+        summary: content.summary ?? "",
+        reason: content.reason ?? "",
+        basis: content.basis ?? "model",
+        from: content.from ?? "",
+        subject: content.subject ?? "",
+        link: content.link ?? "",
+        dueAt: insight.dueAt,
+        priority: insight.priority,
+        status: insight.status,
+        pushed: insight.pushSourceKey !== null,
+        rating: insight.ownerRating,
+        updatedAt: insight.updatedAt,
+      }),
+    );
+  }
+  const auditActive =
+    connection !== undefined &&
+    Date.parse(now) - Date.parse(connection.connectedAt) < AUDIT_DAYS * DAY_MS;
+  const ignored = auditActive
+    ? await store.listProcessed({ ...scope, since: today, outcome: "ignore", limit: 500 })
+    : [];
+  const auditItems = [];
+  for (const message of ignored) {
+    const header = parse<{ from: string; subject: string; link: string }>(
+      message.headerRef ? await open(message.headerRef) : undefined,
+    );
+    auditItems.push(
+      Object.freeze({
+        messageId: message.messageId,
+        from: header.from ?? "",
+        subject: header.subject ?? "",
+        link: header.link ?? "",
+        rating: message.ownerRating,
+      }),
+    );
+  }
+  const metricSince = new Date(Date.parse(now) - METRIC_DAYS * DAY_MS).toISOString();
+  const recent = await store.listDecisions({ ...scope, since: metricSince, limit: 500 });
+  const feedback = new Map(
+    (await options.feedback(metricSince)).map((entry) => [entry.sourceKey, entry]),
+  );
+  let hits = 0;
+  let misfires = 0;
+  for (const decision of recent) {
+    if (decision.verdict !== "pushed" && decision.verdict !== "deferred") continue;
+    const sent = decision.pushSourceKey ? feedback.get(decision.pushSourceKey) : undefined;
+    const opened =
+      sent?.openedAt !== null &&
+      sent?.openedAt !== undefined &&
+      Date.parse(sent.openedAt) - Date.parse(sent.firstSentAt) <= REACTION_WINDOW_MS;
+    if (decision.ownerRating === "useful" || opened) hits += 1;
+    else if (
+      decision.ownerRating === "unneeded" ||
+      (sent !== undefined &&
+        (sent.dismissedAt !== null ||
+          Date.parse(now) - Date.parse(sent.firstSentAt) > REACTION_WINDOW_MS))
+    )
+      misfires += 1;
+  }
+  const missedAudit = (
+    await store.listProcessed({ ...scope, since: metricSince, outcome: "ignore", limit: 500 })
+  ).filter(({ ownerRating }) => ownerRating === "missed").length;
+  const decisions: ProactiveOverviewDecision[] = recent.slice(0, 200).map((decision) =>
+    Object.freeze({
+      id: decision.id,
+      checkedAt: decision.checkedAt,
+      verdict: decision.verdict,
+      reasonCode: decision.reasonCode,
+      counts: decision.counts,
+      opened: decision.pushSourceKey
+        ? (feedback.get(decision.pushSourceKey)?.openedAt ?? null) !== null
+        : false,
+      rating: decision.ownerRating,
+    }),
+  );
+  return Object.freeze({
+    source: options.source,
+    connection: Object.freeze({
+      status: connection?.status ?? "disconnected",
+      account,
+      connectedAt: connection?.connectedAt ?? null,
+    }),
+    enabled: settings.enabled,
+    quietHours: settings.quietHours,
+    importantSenders: settings.importantSenders,
+    dailyLimitReached,
+    insights: Object.freeze(insights),
+    audit: Object.freeze({
+      active: auditActive,
+      since: today,
+      items: Object.freeze(auditItems),
+      pending: ignored.filter(({ reviewedAt }) => reviewedAt === null).length,
+    }),
+    decisions: Object.freeze(decisions),
+    metrics: Object.freeze({
+      spoke: recent.filter(({ verdict }) => verdict === "pushed" || verdict === "deferred").length,
+      hits,
+      misfires,
+      missed: recent.filter(({ ownerRating }) => ownerRating === "missed").length + missedAudit,
+      reviewed: await store.reviewedCount(scope),
+    }),
+  });
+}

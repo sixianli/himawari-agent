@@ -29,6 +29,13 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "push.feedback.record",
   "push.status.read",
   "push.status.snapshot",
+  "proactive.overview.read",
+  "proactive.overview.snapshot",
+  "proactive.settings.set",
+  "proactive.insight.respond",
+  "proactive.decision.rate",
+  "proactive.audit.respond",
+  "proactive.source.manage",
   "memory.overview.read",
   "memory.overview.snapshot",
   "memory.approval.respond",
@@ -301,6 +308,188 @@ const pushStatusSnapshotSchema = object({
       }),
     ),
     generatedAt: timestamp,
+  }),
+});
+
+const proactiveTextSchema = (maximum: number): Schema<string> => ({
+  parse(input, path = "$") {
+    if (input === "") return "";
+    return boundedString(maximum).parse(input, path);
+  },
+});
+const proactiveClockSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input))
+      throw new ContractValidationError(path, "expected an HH:MM clock time");
+    return input;
+  },
+};
+const proactiveDaysSchema: Schema<readonly number[]> = {
+  parse(input, path = "$") {
+    const days = array(integer(0, 6)).parse(input, path);
+    if (days.length < 1 || new Set(days).size !== days.length)
+      throw new ContractValidationError(path, "expected distinct weekdays");
+    return days;
+  },
+};
+const proactiveQuietPeriodSchema = object({
+  days: proactiveDaysSchema,
+  start: proactiveClockSchema,
+  end: proactiveClockSchema,
+});
+const proactiveQuietHoursSchema: Schema<readonly InferSchema<typeof proactiveQuietPeriodSchema>[]> =
+  {
+    parse(input, path = "$") {
+      const periods = array(proactiveQuietPeriodSchema).parse(input, path);
+      if (periods.length > 8) throw new ContractValidationError(path, "expected at most 8 periods");
+      if (periods.some(({ start, end }) => start === end))
+        throw new ContractValidationError(path, "expected a period with different start and end");
+      return periods;
+    },
+  };
+const proactiveSendersSchema: Schema<readonly string[]> = {
+  parse(input, path = "$") {
+    const senders = array(boundedString(320)).parse(input, path);
+    if (
+      senders.length > 200 ||
+      senders.some((sender) => !/^@?[^\s@]*@?[a-z0-9.-]+\.[a-z]{2,}$/i.test(sender))
+    )
+      throw new ContractValidationError(path, "expected at most 200 addresses or domains");
+    return senders;
+  },
+};
+const proactiveRatingSchema = enumeration(["useful", "unneeded", "missed"]);
+const proactiveCountsSchema = object({
+  fetched: integer(0),
+  skipped: integer(0),
+  judged: integer(0),
+  act: integer(0),
+  know: integer(0),
+  check: integer(0),
+  ignore: integer(0),
+  floorRaised: integer(0),
+  pushed: integer(0),
+});
+const proactiveOverviewQuerySchema = object({
+  ...envelope("query", "proactive.overview.read"),
+  payload: object({}),
+});
+const proactiveOverviewSnapshotSchema = object({
+  ...envelope("snapshot", "proactive.overview.snapshot"),
+  payload: object({
+    source: enumeration(["gmail"]),
+    connection: object({
+      status: enumeration(["disconnected", "connected", "needs_reconnect"]),
+      account: nullable(boundedString(320)),
+      connectedAt: nullable(timestamp),
+    }),
+    enabled: booleanValue,
+    quietHours: proactiveQuietHoursSchema,
+    importantSenders: proactiveSendersSchema,
+    dailyLimitReached: booleanValue,
+    insights: array(
+      object({
+        id: machineString,
+        result: enumeration(["act", "know", "check"]),
+        floorRaised: booleanValue,
+        summary: proactiveTextSchema(500),
+        reason: proactiveTextSchema(500),
+        basis: enumeration(["model", "daily_limit"]),
+        from: proactiveTextSchema(320),
+        subject: proactiveTextSchema(500),
+        link: proactiveTextSchema(512),
+        dueAt: nullable(timestamp),
+        priority: nullable(enumeration(["high", "medium", "low"])),
+        status: enumeration(["open", "replied", "done", "muted"]),
+        pushed: booleanValue,
+        rating: nullable(proactiveRatingSchema),
+        updatedAt: timestamp,
+      }),
+    ),
+    audit: object({
+      active: booleanValue,
+      since: timestamp,
+      items: array(
+        object({
+          messageId: machineString,
+          from: proactiveTextSchema(320),
+          subject: proactiveTextSchema(500),
+          link: proactiveTextSchema(512),
+          rating: nullable(proactiveRatingSchema),
+        }),
+      ),
+      pending: integer(0),
+    }),
+    decisions: array(
+      object({
+        id: machineString,
+        checkedAt: timestamp,
+        verdict: enumeration([
+          "pushed",
+          "silent",
+          "deferred",
+          "failed",
+          "capped",
+          "capped_daily",
+          "needs_owner",
+        ]),
+        reasonCode: machineString,
+        counts: proactiveCountsSchema,
+        opened: booleanValue,
+        rating: nullable(proactiveRatingSchema),
+      }),
+    ),
+    metrics: object({
+      spoke: integer(0),
+      hits: integer(0),
+      misfires: integer(0),
+      missed: integer(0),
+      reviewed: integer(0),
+    }),
+    generatedAt: timestamp,
+  }),
+});
+const proactiveSettingsSetCommandSchema = object({
+  ...commandEnvelope("proactive.settings.set"),
+  payload: object({
+    enabled: booleanValue,
+    quietHours: proactiveQuietHoursSchema,
+    importantSenders: proactiveSendersSchema,
+  }),
+});
+const proactiveInsightRespondCommandSchema = object({
+  ...commandEnvelope("proactive.insight.respond"),
+  payload: object({
+    insightId: machineString,
+    action: enumeration(["done", "mute", "reopen", "rate"]),
+    rating: nullable(proactiveRatingSchema),
+  }),
+});
+const proactiveDecisionRateCommandSchema = object({
+  ...commandEnvelope("proactive.decision.rate"),
+  payload: object({ decisionId: machineString, rating: nullable(proactiveRatingSchema) }),
+});
+const proactiveMessageIdsSchema: Schema<readonly string[]> = {
+  parse(input, path = "$") {
+    const ids = array(machineString).parse(input, path);
+    if (ids.length < 1 || ids.length > 500)
+      throw new ContractValidationError(path, "expected 1 to 500 message ids");
+    return ids;
+  },
+};
+const proactiveAuditRespondCommandSchema = object({
+  ...commandEnvelope("proactive.audit.respond"),
+  payload: object({
+    action: enumeration(["review", "rate"]),
+    messageIds: proactiveMessageIdsSchema,
+    rating: nullable(proactiveRatingSchema),
+  }),
+});
+const proactiveSourceManageCommandSchema = object({
+  ...commandEnvelope("proactive.source.manage"),
+  payload: object({
+    source: enumeration(["gmail"]),
+    action: enumeration(["disconnect", "clear_records"]),
   }),
 });
 
@@ -1632,6 +1821,13 @@ const schemasByType = {
   "push.feedback.record": pushFeedbackCommandSchema,
   "push.status.read": pushStatusQuerySchema,
   "push.status.snapshot": pushStatusSnapshotSchema,
+  "proactive.overview.read": proactiveOverviewQuerySchema,
+  "proactive.overview.snapshot": proactiveOverviewSnapshotSchema,
+  "proactive.settings.set": proactiveSettingsSetCommandSchema,
+  "proactive.insight.respond": proactiveInsightRespondCommandSchema,
+  "proactive.decision.rate": proactiveDecisionRateCommandSchema,
+  "proactive.audit.respond": proactiveAuditRespondCommandSchema,
+  "proactive.source.manage": proactiveSourceManageCommandSchema,
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,

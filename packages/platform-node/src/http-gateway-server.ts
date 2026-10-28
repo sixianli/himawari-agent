@@ -701,9 +701,16 @@ async function* streamThreadExecutionEvents(input: {
   }
 }
 
+export function authenticateHttpRequest(
+  request: FastifyRequest,
+  options: Pick<HttpGatewayServerOptions, "authentication" | "sessionCookieName">,
+): Promise<GatewayAuthenticationContext> {
+  return authenticate(request, options);
+}
+
 async function authenticate(
   request: FastifyRequest,
-  options: HttpGatewayServerOptions,
+  options: Pick<HttpGatewayServerOptions, "authentication" | "sessionCookieName">,
 ): Promise<GatewayAuthenticationContext> {
   try {
     return await options.authentication.authenticate({

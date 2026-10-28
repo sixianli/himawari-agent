@@ -1,0 +1,806 @@
+import type {
+  ProactiveConnection,
+  ProactiveCounts,
+  ProactiveDecision,
+  ProactiveInsight,
+  ProactiveProcessedMessage,
+  ProactivePush,
+  ProactiveQuietPeriod,
+  ProactiveRecordResult,
+  ProactiveScope,
+  ProactiveSettings,
+  ProactiveStorePort,
+} from "@himawari-agent/application";
+import type Database from "better-sqlite3";
+import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+
+type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
+
+const SOURCES = ["gmail"] as const;
+const RESULTS = ["act", "know", "check", "ignore"] as const;
+const INSIGHT_STATUSES = ["open", "replied", "done", "muted"] as const;
+const RATINGS = ["useful", "unneeded", "missed"] as const;
+const VERDICTS = [
+  "pushed",
+  "silent",
+  "deferred",
+  "failed",
+  "capped",
+  "capped_daily",
+  "needs_owner",
+] as const;
+const SKIP_REASONS = ["category", "sensitive", "own_mail"] as const;
+const PRIORITIES = ["high", "medium", "low"] as const;
+const COUNT_KEYS: readonly (keyof ProactiveCounts)[] = [
+  "fetched",
+  "skipped",
+  "judged",
+  "act",
+  "know",
+  "check",
+  "ignore",
+  "floorRaised",
+  "pushed",
+];
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/u;
+
+const decisionColumns = `id, scenario, checked_at AS checkedAt, counts, verdict,
+  reason_code AS reasonCode, push_source_key AS pushSourceKey, cost_micros AS costMicros,
+  duration_ms AS durationMs, owner_rating AS ownerRating, rated_at AS ratedAt`;
+
+const insightColumns = `id, source, thread_id AS threadId, last_message_id AS lastMessageId, result,
+  floor_raised AS floorRaised, content_ref AS contentRef, due_at AS dueAt, priority, status,
+  decision_id AS decisionId, owner_rating AS ownerRating, push_source_key AS pushSourceKey,
+  created_at AS createdAt, updated_at AS updatedAt`;
+
+const processedColumns = `source, message_id AS messageId, thread_id AS threadId,
+  decision_id AS decisionId, outcome, skip_reason AS skipReason, header_ref AS headerRef,
+  processed_at AS processedAt, reviewed_at AS reviewedAt, owner_rating AS ownerRating`;
+
+const pushColumns = `id, ready_at AS readyAt, insight_ids AS insightIds, status,
+  created_at AS createdAt`;
+
+function valid(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function includes<T extends string>(values: readonly T[], value: unknown): value is T {
+  return typeof value === "string" && (values as readonly string[]).includes(value);
+}
+
+function decisionFromRow(row: Record<string, unknown>): ProactiveDecision {
+  return Object.freeze({
+    ...(row as unknown as ProactiveDecision),
+    counts: Object.freeze(JSON.parse(row["counts"] as string) as ProactiveCounts),
+  });
+}
+
+function insightFromRow(row: Record<string, unknown>): ProactiveInsight {
+  return Object.freeze({
+    ...(row as unknown as ProactiveInsight),
+    floorRaised: row["floorRaised"] === 1,
+  });
+}
+
+function pushFromRow(row: Record<string, unknown>): ProactivePush {
+  return Object.freeze({
+    ...(row as unknown as ProactivePush),
+    insightIds: Object.freeze(JSON.parse(row["insightIds"] as string) as string[]),
+  });
+}
+
+export class SqliteProactiveOperations {
+  private readonly database: Database.Database;
+  private readonly fail: SqliteApplicationFailure;
+  private readonly assertDiskHeadroom: () => void;
+
+  constructor(
+    database: Database.Database,
+    fail: SqliteApplicationFailure,
+    assertDiskHeadroom: () => void,
+  ) {
+    this.database = database;
+    this.fail = fail;
+    this.assertDiskHeadroom = assertDiskHeadroom;
+  }
+
+  execute(operation: string, payload: unknown): unknown {
+    switch (operation) {
+      case "proactive.readSettings":
+        return this.readSettings(payload as ProactiveScope);
+      case "proactive.writeSettings":
+        return this.writeSettings(payload as Input<"writeSettings">);
+      case "proactive.readConnection":
+        return this.readConnection(payload as Input<"readConnection">);
+      case "proactive.saveConnection":
+        return this.saveConnection(payload as Input<"saveConnection">);
+      case "proactive.markConnection":
+        return this.markConnection(payload as Input<"markConnection">);
+      case "proactive.removeSource":
+        return this.removeSource(payload as Input<"removeSource">);
+      case "proactive.clearRecords":
+        return this.clearRecords(payload as ProactiveScope);
+      case "proactive.unprocessed":
+        return this.unprocessed(payload as Input<"unprocessed">);
+      case "proactive.readInsight":
+        return this.readInsight(payload as Input<"readInsight">);
+      case "proactive.record":
+        return this.record(payload as Input<"record">);
+      case "proactive.costSince":
+        return this.costSince(payload as Input<"costSince">);
+      case "proactive.listInsights":
+        return this.listInsights(payload as Input<"listInsights">);
+      case "proactive.listDecisions":
+        return this.listDecisions(payload as Input<"listDecisions">);
+      case "proactive.listProcessed":
+        return this.listProcessed(payload as Input<"listProcessed">);
+      case "proactive.reviewedCount":
+        return this.reviewedCount(payload as ProactiveScope);
+      case "proactive.updateInsight":
+        return this.updateInsight(payload as Input<"updateInsight">);
+      case "proactive.rateDecision":
+        return this.rateDecision(payload as Input<"rateDecision">);
+      case "proactive.rateProcessed":
+        return this.rateProcessed(payload as Input<"rateProcessed">);
+      case "proactive.markReviewed":
+        return this.markReviewed(payload as Input<"markReviewed">);
+      case "proactive.pendingPush":
+        return this.pendingPush(payload as Input<"pendingPush">);
+      case "proactive.listReadyPushes":
+        return this.listReadyPushes(payload as Input<"listReadyPushes">);
+      case "proactive.markPushEnqueued":
+        return this.markPushEnqueued(payload as Input<"markPushEnqueued">);
+      case "proactive.readPush":
+        return this.readPush(payload as Input<"readPush">);
+      case "proactive.readInsights":
+        return this.readInsights(payload as Input<"readInsights">);
+      default:
+        return this.fail("PORT_INVALID_OPERATION", `Unknown proactive operation ${operation}`);
+    }
+  }
+
+  private invalid(message: string): never {
+    return this.fail("PORT_INVALID_OPERATION", message) as never;
+  }
+
+  private time(value: string | null) {
+    if (value !== null && !valid(value)) this.invalid("Proactive time is invalid");
+  }
+
+  private limit(value: number) {
+    if (!Number.isSafeInteger(value) || value < 1 || value > 500)
+      this.invalid("Proactive limit is invalid");
+  }
+
+  private source(value: unknown) {
+    if (!includes(SOURCES, value)) this.invalid("Proactive source is invalid");
+  }
+
+  private rating(value: unknown) {
+    if (value !== null && !includes(RATINGS, value)) this.invalid("Proactive rating is invalid");
+  }
+
+  private readSettings(scope: ProactiveScope): ProactiveSettings {
+    const row = this.database
+      .prepare(
+        `SELECT enabled, quiet_hours AS quietHours, important_senders AS importantSenders,
+          updated_at AS updatedAt FROM proactive_settings WHERE owner_id = ? AND agent_id = ?`,
+      )
+      .get(scope.ownerId, scope.agentId) as
+      | { enabled: number; quietHours: string; importantSenders: string; updatedAt: string }
+      | undefined;
+    if (!row)
+      return Object.freeze({
+        enabled: false,
+        quietHours: Object.freeze([
+          Object.freeze({
+            days: Object.freeze([0, 1, 2, 3, 4, 5, 6]),
+            start: "23:00",
+            end: "07:00",
+          }),
+        ]),
+        importantSenders: Object.freeze([]),
+        updatedAt: null,
+      });
+    return Object.freeze({
+      enabled: row.enabled === 1,
+      quietHours: Object.freeze(JSON.parse(row.quietHours) as ProactiveQuietPeriod[]),
+      importantSenders: Object.freeze(JSON.parse(row.importantSenders) as string[]),
+      updatedAt: row.updatedAt,
+    });
+  }
+
+  private writeSettings(input: Input<"writeSettings">): void {
+    this.assertDiskHeadroom();
+    this.time(input.now);
+    if (
+      typeof input.enabled !== "boolean" ||
+      input.quietHours.length > 14 ||
+      input.quietHours.some(
+        (period) =>
+          !CLOCK.test(period.start) ||
+          !CLOCK.test(period.end) ||
+          period.start === period.end ||
+          period.days.length < 1 ||
+          period.days.length > 7 ||
+          new Set(period.days).size !== period.days.length ||
+          period.days.some((day) => !Number.isInteger(day) || day < 0 || day > 6),
+      ) ||
+      input.importantSenders.length > 200 ||
+      input.importantSenders.some(
+        (sender) => typeof sender !== "string" || sender.length < 1 || sender.length > 254,
+      )
+    )
+      this.invalid("Proactive settings are invalid");
+    this.database
+      .prepare(
+        `INSERT INTO proactive_settings (
+          owner_id, agent_id, enabled, quiet_hours, important_senders, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (owner_id, agent_id) DO UPDATE SET enabled = excluded.enabled,
+          quiet_hours = excluded.quiet_hours, important_senders = excluded.important_senders,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.ownerId,
+        input.agentId,
+        input.enabled ? 1 : 0,
+        JSON.stringify(
+          input.quietHours.map(({ days, start, end }) => ({
+            days: [...days].sort((left, right) => left - right),
+            start,
+            end,
+          })),
+        ),
+        JSON.stringify(input.importantSenders),
+        input.now,
+      );
+  }
+
+  private readConnection(input: Input<"readConnection">): ProactiveConnection | undefined {
+    this.source(input.source);
+    const row = this.database
+      .prepare(
+        `SELECT source, account_ref AS accountRef, token_ref AS tokenRef, cursor, status,
+          connected_at AS connectedAt, updated_at AS updatedAt
+         FROM proactive_connections WHERE owner_id = ? AND agent_id = ? AND source = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.source) as ProactiveConnection | undefined;
+    return row ? Object.freeze({ ...row }) : undefined;
+  }
+
+  private saveConnection(input: Input<"saveConnection">): readonly string[] {
+    this.assertDiskHeadroom();
+    const { connection } = input;
+    this.source(connection.source);
+    this.time(connection.connectedAt);
+    this.time(connection.updatedAt);
+    if (!["connected", "needs_reconnect"].includes(connection.status))
+      this.invalid("Proactive connection status is invalid");
+    return this.database.transaction(() => {
+      const before = this.readConnection({ ...input, source: connection.source });
+      this.database
+        .prepare(
+          `INSERT INTO proactive_connections (
+            owner_id, agent_id, source, account_ref, token_ref, cursor, status, connected_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (owner_id, agent_id, source) DO UPDATE SET
+            account_ref = excluded.account_ref, token_ref = excluded.token_ref,
+            cursor = excluded.cursor, status = excluded.status,
+            connected_at = excluded.connected_at, updated_at = excluded.updated_at`,
+        )
+        .run(
+          input.ownerId,
+          input.agentId,
+          connection.source,
+          connection.accountRef,
+          connection.tokenRef,
+          connection.cursor,
+          connection.status,
+          connection.connectedAt,
+          connection.updatedAt,
+        );
+      return before
+        ? [before.accountRef, before.tokenRef].filter(
+            (ref) => ref !== connection.accountRef && ref !== connection.tokenRef,
+          )
+        : [];
+    })();
+  }
+
+  private markConnection(input: Input<"markConnection">): void {
+    this.source(input.source);
+    this.time(input.now);
+    if (!["connected", "needs_reconnect"].includes(input.status))
+      this.invalid("Proactive connection status is invalid");
+    this.database
+      .prepare(
+        `UPDATE proactive_connections SET status = ?, cursor = COALESCE(?, cursor), updated_at = ?
+         WHERE owner_id = ? AND agent_id = ? AND source = ?`,
+      )
+      .run(input.status, input.cursor, input.now, input.ownerId, input.agentId, input.source);
+  }
+
+  private collectRefs(scope: ProactiveScope, sourceFilter: string | null): string[] {
+    const where = sourceFilter === null ? "" : " AND source = ?";
+    const parameters = [scope.ownerId, scope.agentId, ...(sourceFilter ? [sourceFilter] : [])];
+    const insightRefs = this.database
+      .prepare(
+        `SELECT content_ref AS ref FROM source_insights WHERE owner_id = ? AND agent_id = ?${where}`,
+      )
+      .all(...parameters) as { ref: string }[];
+    const headerRefs = this.database
+      .prepare(
+        `SELECT header_ref AS ref FROM proactive_processed_messages
+         WHERE owner_id = ? AND agent_id = ? AND header_ref IS NOT NULL${where}`,
+      )
+      .all(...parameters) as { ref: string }[];
+    return [...insightRefs, ...headerRefs].map(({ ref }) => ref);
+  }
+
+  private removeSource(input: Input<"removeSource">): readonly string[] {
+    this.source(input.source);
+    return this.database.transaction(() => {
+      const refs = this.collectRefs(input, input.source);
+      const connection = this.readConnection(input);
+      const scope = [input.ownerId, input.agentId, input.source] as const;
+      this.database
+        .prepare("DELETE FROM source_insights WHERE owner_id = ? AND agent_id = ? AND source = ?")
+        .run(...scope);
+      this.database
+        .prepare(
+          "DELETE FROM proactive_processed_messages WHERE owner_id = ? AND agent_id = ? AND source = ?",
+        )
+        .run(...scope);
+      this.database
+        .prepare(
+          "DELETE FROM proactive_connections WHERE owner_id = ? AND agent_id = ? AND source = ?",
+        )
+        .run(...scope);
+      this.database
+        .prepare(
+          "DELETE FROM proactive_pushes WHERE owner_id = ? AND agent_id = ? AND status = 'pending'",
+        )
+        .run(input.ownerId, input.agentId);
+      return connection ? [...refs, connection.accountRef, connection.tokenRef] : refs;
+    })();
+  }
+
+  private clearRecords(scope: ProactiveScope): readonly string[] {
+    return this.database.transaction(() => {
+      const refs = this.collectRefs(scope, null);
+      for (const table of [
+        "source_insights",
+        "proactive_processed_messages",
+        "proactive_pushes",
+        "proactive_decisions",
+      ])
+        this.database
+          .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ?`)
+          .run(scope.ownerId, scope.agentId);
+      return refs;
+    })();
+  }
+
+  private unprocessed(input: Input<"unprocessed">): readonly string[] {
+    this.source(input.source);
+    if (input.messageIds.length > 2000) this.invalid("Proactive message list is too long");
+    const known = this.database.prepare(
+      `SELECT 1 FROM proactive_processed_messages
+       WHERE owner_id = ? AND agent_id = ? AND source = ? AND message_id = ?`,
+    );
+    return input.messageIds.filter(
+      (messageId, index, all) =>
+        all.indexOf(messageId) === index &&
+        known.get(input.ownerId, input.agentId, input.source, messageId) === undefined,
+    );
+  }
+
+  private readInsight(input: Input<"readInsight">): ProactiveInsight | undefined {
+    this.source(input.source);
+    const row = this.database
+      .prepare(
+        `SELECT ${insightColumns} FROM source_insights
+         WHERE owner_id = ? AND agent_id = ? AND source = ? AND thread_id = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.source, input.threadId) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? insightFromRow(row) : undefined;
+  }
+
+  private validateDecision(decision: ProactiveDecision) {
+    this.time(decision.checkedAt);
+    this.source(decision.scenario);
+    if (
+      !includes(VERDICTS, decision.verdict) ||
+      typeof decision.reasonCode !== "string" ||
+      decision.reasonCode.length < 1 ||
+      decision.reasonCode.length > 64 ||
+      !Number.isSafeInteger(decision.costMicros) ||
+      decision.costMicros < 0 ||
+      !Number.isSafeInteger(decision.durationMs) ||
+      decision.durationMs < 0 ||
+      COUNT_KEYS.some((key) => {
+        const value = decision.counts[key];
+        return !Number.isSafeInteger(value) || value < 0;
+      })
+    )
+      this.invalid("Proactive decision is invalid");
+  }
+
+  private record(input: Input<"record">): ProactiveRecordResult {
+    this.assertDiskHeadroom();
+    const { decision } = input;
+    this.validateDecision(decision);
+    if (input.push) this.time(input.push.readyAt);
+    for (const message of input.processed)
+      if (
+        !includes(SOURCES, message.source) ||
+        !(includes(RESULTS, message.outcome) || message.outcome === "skipped") ||
+        (message.outcome === "skipped") !== includes(SKIP_REASONS, message.skipReason)
+      )
+        this.invalid("Proactive processed message is invalid");
+    for (const insight of input.insights) {
+      this.time(insight.dueAt);
+      if (
+        !["act", "know", "check"].includes(insight.result) ||
+        (insight.priority !== null && !includes(PRIORITIES, insight.priority))
+      )
+        this.invalid("Proactive insight is invalid");
+    }
+    return this.database.transaction(() => {
+      const scope = [input.ownerId, input.agentId] as const;
+      this.database
+        .prepare(
+          `INSERT INTO proactive_decisions (
+            id, owner_id, agent_id, scenario, checked_at, counts, verdict, reason_code,
+            push_source_key, cost_micros, duration_ms, owner_rating, rated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+        )
+        .run(
+          decision.id,
+          ...scope,
+          decision.scenario,
+          decision.checkedAt,
+          JSON.stringify(Object.fromEntries(COUNT_KEYS.map((key) => [key, decision.counts[key]]))),
+          decision.verdict,
+          decision.reasonCode,
+          decision.pushSourceKey,
+          decision.costMicros,
+          decision.durationMs,
+        );
+      const insertProcessed = this.database.prepare(
+        `INSERT INTO proactive_processed_messages (
+          owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, skip_reason,
+          header_ref, processed_at, reviewed_at, owner_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+        ON CONFLICT (owner_id, agent_id, source, message_id) DO NOTHING`,
+      );
+      const releasedRefs: string[] = [];
+      for (const message of input.processed) {
+        const inserted = insertProcessed.run(
+          ...scope,
+          message.source,
+          message.messageId,
+          message.threadId,
+          decision.id,
+          message.outcome,
+          message.skipReason,
+          message.headerRef,
+          decision.checkedAt,
+        ).changes;
+        if (inserted === 0 && message.headerRef) releasedRefs.push(message.headerRef);
+      }
+      const insightIds: string[] = [];
+      for (const insight of input.insights) {
+        const existing = this.readInsight({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          source: decision.scenario,
+          threadId: insight.threadId,
+        });
+        if (existing) {
+          if (existing.contentRef !== insight.contentRef) releasedRefs.push(existing.contentRef);
+          this.database
+            .prepare(
+              `UPDATE source_insights SET last_message_id = ?, result = ?, floor_raised = ?,
+                content_ref = ?, due_at = ?, priority = ?,
+                status = CASE WHEN status = 'muted' THEN 'muted' ELSE 'open' END,
+                decision_id = ?, updated_at = ?
+               WHERE id = ?`,
+            )
+            .run(
+              insight.lastMessageId,
+              insight.result,
+              insight.floorRaised ? 1 : 0,
+              insight.contentRef,
+              insight.dueAt,
+              insight.priority,
+              decision.id,
+              decision.checkedAt,
+              existing.id,
+            );
+          insightIds.push(existing.id);
+        } else {
+          this.database
+            .prepare(
+              `INSERT INTO source_insights (
+                id, owner_id, agent_id, source, thread_id, last_message_id, result, floor_raised,
+                content_ref, due_at, priority, status, decision_id, owner_rating, push_source_key,
+                created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, NULL, NULL, ?, ?)`,
+            )
+            .run(
+              insight.id,
+              ...scope,
+              decision.scenario,
+              insight.threadId,
+              insight.lastMessageId,
+              insight.result,
+              insight.floorRaised ? 1 : 0,
+              insight.contentRef,
+              insight.dueAt,
+              insight.priority,
+              decision.id,
+              decision.checkedAt,
+              decision.checkedAt,
+            );
+          insightIds.push(insight.id);
+        }
+      }
+      const markReplied = this.database.prepare(
+        `UPDATE source_insights SET status = 'replied', updated_at = ?
+         WHERE owner_id = ? AND agent_id = ? AND source = ? AND thread_id = ? AND status = 'open'`,
+      );
+      for (const threadId of input.repliedThreadIds)
+        markReplied.run(decision.checkedAt, ...scope, decision.scenario, threadId);
+      if (input.push) {
+        const pushed = input.insights
+          .map((insight, index) => ({ insight, id: insightIds[index] as string }))
+          .filter(({ insight }) => insight.push)
+          .map(({ id }) => id);
+        const current = this.readPush({ ...input, pushId: input.push.id });
+        if (current && current.status !== "pending") this.invalid("Proactive push is closed");
+        const ids = [...new Set([...(current?.insightIds ?? []), ...pushed])];
+        if (current)
+          this.database
+            .prepare("UPDATE proactive_pushes SET insight_ids = ? WHERE id = ?")
+            .run(JSON.stringify(ids), input.push.id);
+        else
+          this.database
+            .prepare(
+              `INSERT INTO proactive_pushes (
+                id, owner_id, agent_id, ready_at, insight_ids, status, created_at, enqueued_at
+              ) VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL)`,
+            )
+            .run(
+              input.push.id,
+              ...scope,
+              input.push.readyAt,
+              JSON.stringify(ids),
+              decision.checkedAt,
+            );
+        const setKey = this.database.prepare(
+          "UPDATE source_insights SET push_source_key = ? WHERE id = ?",
+        );
+        for (const id of pushed) setKey.run(`proactive:${input.push.id}`, id);
+      }
+      if (input.cursor !== null)
+        this.database
+          .prepare(
+            `UPDATE proactive_connections SET cursor = ?, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND source = ?`,
+          )
+          .run(input.cursor, decision.checkedAt, ...scope, decision.scenario);
+      return Object.freeze({
+        insightIds: Object.freeze(insightIds),
+        releasedRefs: Object.freeze(releasedRefs),
+      });
+    })();
+  }
+
+  private costSince(input: Input<"costSince">): number {
+    this.time(input.since);
+    const row = this.database
+      .prepare(
+        `SELECT COALESCE(SUM(cost_micros), 0) AS total FROM proactive_decisions
+         WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?`,
+      )
+      .get(input.ownerId, input.agentId, input.since) as { total: number };
+    return row.total;
+  }
+
+  private listInsights(input: Input<"listInsights">): readonly ProactiveInsight[] {
+    if (input.statuses.some((status) => !includes(INSIGHT_STATUSES, status)))
+      this.invalid("Proactive insight status is invalid");
+    if (input.statuses.length === 0) return [];
+    return this.database
+      .prepare(
+        `SELECT ${insightColumns} FROM source_insights
+         WHERE owner_id = ? AND agent_id = ? AND status IN (${input.statuses.map(() => "?").join(", ")})
+         ORDER BY due_at IS NULL, due_at, updated_at DESC, id LIMIT 500`,
+      )
+      .all(input.ownerId, input.agentId, ...input.statuses)
+      .map((row) => insightFromRow(row as Record<string, unknown>));
+  }
+
+  private listDecisions(input: Input<"listDecisions">): readonly ProactiveDecision[] {
+    this.time(input.since);
+    this.limit(input.limit);
+    return this.database
+      .prepare(
+        `SELECT ${decisionColumns} FROM proactive_decisions
+         WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
+         ORDER BY checked_at DESC, id DESC LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.since, input.limit)
+      .map((row) => decisionFromRow(row as Record<string, unknown>));
+  }
+
+  private listProcessed(input: Input<"listProcessed">): readonly ProactiveProcessedMessage[] {
+    this.time(input.since);
+    this.limit(input.limit);
+    if (!includes(RESULTS, input.outcome) && input.outcome !== "skipped")
+      this.invalid("Proactive outcome is invalid");
+    return this.database
+      .prepare(
+        `SELECT ${processedColumns} FROM proactive_processed_messages
+         WHERE owner_id = ? AND agent_id = ? AND outcome = ? AND processed_at >= ?
+         ORDER BY processed_at DESC, message_id LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.outcome, input.since, input.limit)
+      .map((row) => Object.freeze({ ...(row as ProactiveProcessedMessage) }));
+  }
+
+  private reviewedCount(scope: ProactiveScope): number {
+    const reviewed = this.database
+      .prepare(
+        `SELECT COUNT(*) AS total FROM proactive_processed_messages
+         WHERE owner_id = ? AND agent_id = ? AND reviewed_at IS NOT NULL`,
+      )
+      .get(scope.ownerId, scope.agentId) as { total: number };
+    const rated = this.database
+      .prepare(
+        `SELECT COUNT(*) AS total FROM proactive_decisions
+         WHERE owner_id = ? AND agent_id = ? AND owner_rating IS NOT NULL`,
+      )
+      .get(scope.ownerId, scope.agentId) as { total: number };
+    return reviewed.total + rated.total;
+  }
+
+  private updateInsight(input: Input<"updateInsight">): boolean {
+    this.time(input.now);
+    if (input.status !== undefined && !includes(INSIGHT_STATUSES, input.status))
+      this.invalid("Proactive insight status is invalid");
+    if (input.rating !== undefined) this.rating(input.rating);
+    return (
+      this.database
+        .prepare(
+          `UPDATE source_insights SET status = COALESCE(?, status),
+            owner_rating = CASE WHEN ? THEN ? ELSE owner_rating END, updated_at = ?
+           WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+        )
+        .run(
+          input.status ?? null,
+          input.rating === undefined ? 0 : 1,
+          input.rating ?? null,
+          input.now,
+          input.ownerId,
+          input.agentId,
+          input.insightId,
+        ).changes > 0
+    );
+  }
+
+  private rateDecision(input: Input<"rateDecision">): boolean {
+    this.time(input.now);
+    this.rating(input.rating);
+    return (
+      this.database
+        .prepare(
+          `UPDATE proactive_decisions SET owner_rating = ?, rated_at = ?
+           WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+        )
+        .run(
+          input.rating,
+          input.rating === null ? null : input.now,
+          input.ownerId,
+          input.agentId,
+          input.decisionId,
+        ).changes > 0
+    );
+  }
+
+  private rateProcessed(input: Input<"rateProcessed">): boolean {
+    this.source(input.source);
+    this.time(input.now);
+    this.rating(input.rating);
+    return (
+      this.database
+        .prepare(
+          `UPDATE proactive_processed_messages SET owner_rating = ?
+           WHERE owner_id = ? AND agent_id = ? AND source = ? AND message_id = ?`,
+        )
+        .run(input.rating, input.ownerId, input.agentId, input.source, input.messageId).changes > 0
+    );
+  }
+
+  private markReviewed(input: Input<"markReviewed">): number {
+    this.source(input.source);
+    this.time(input.now);
+    if (input.messageIds.length > 500) this.invalid("Proactive message list is too long");
+    const mark = this.database.prepare(
+      `UPDATE proactive_processed_messages SET reviewed_at = ?
+       WHERE owner_id = ? AND agent_id = ? AND source = ? AND message_id = ?
+         AND reviewed_at IS NULL`,
+    );
+    return this.database.transaction(() =>
+      input.messageIds.reduce(
+        (total, messageId) =>
+          total +
+          mark.run(input.now, input.ownerId, input.agentId, input.source, messageId).changes,
+        0,
+      ),
+    )();
+  }
+
+  private pendingPush(input: Input<"pendingPush">): ProactivePush | undefined {
+    this.time(input.readyAt);
+    const row = this.database
+      .prepare(
+        `SELECT ${pushColumns} FROM proactive_pushes
+         WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND ready_at = ?
+         ORDER BY created_at LIMIT 1`,
+      )
+      .get(input.ownerId, input.agentId, input.readyAt) as Record<string, unknown> | undefined;
+    return row ? pushFromRow(row) : undefined;
+  }
+
+  private listReadyPushes(input: Input<"listReadyPushes">): readonly ProactivePush[] {
+    this.time(input.now);
+    this.limit(input.limit);
+    return this.database
+      .prepare(
+        `SELECT ${pushColumns} FROM proactive_pushes
+         WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND ready_at <= ?
+         ORDER BY ready_at, id LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.now, input.limit)
+      .map((row) => pushFromRow(row as Record<string, unknown>));
+  }
+
+  private markPushEnqueued(input: Input<"markPushEnqueued">): boolean {
+    this.time(input.now);
+    return (
+      this.database
+        .prepare(
+          `UPDATE proactive_pushes SET status = 'enqueued', enqueued_at = ?
+           WHERE owner_id = ? AND agent_id = ? AND id = ? AND status = 'pending'`,
+        )
+        .run(input.now, input.ownerId, input.agentId, input.pushId).changes > 0
+    );
+  }
+
+  private readPush(input: Input<"readPush">): ProactivePush | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT ${pushColumns} FROM proactive_pushes WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+      )
+      .get(input.ownerId, input.agentId, input.pushId) as Record<string, unknown> | undefined;
+    return row ? pushFromRow(row) : undefined;
+  }
+
+  private readInsights(input: Input<"readInsights">): readonly ProactiveInsight[] {
+    if (input.insightIds.length > 500) this.invalid("Proactive insight list is too long");
+    const read = this.database.prepare(
+      `SELECT ${insightColumns} FROM source_insights WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+    );
+    return input.insightIds.flatMap((id) => {
+      const row = read.get(input.ownerId, input.agentId, id) as Record<string, unknown> | undefined;
+      return row ? [insightFromRow(row)] : [];
+    });
+  }
+}

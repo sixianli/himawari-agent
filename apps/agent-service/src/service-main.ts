@@ -7,6 +7,7 @@ import type {
 import {
   type ClockPort,
   claimFromRunExecutionLease,
+  createProactiveSeal,
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
@@ -32,7 +33,10 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   assertProductionSecretSource,
+  createGmailReader,
+  createGoogleOAuth,
   createWebPushSender,
+  GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   DescriptorRelativeReadOnly,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
@@ -47,6 +51,7 @@ import {
   parseServiceArguments,
   RuntimeHealthModel,
   readAuthorityFile,
+  readGmailAccount,
   readRestrictedExecutionTokenFile,
   readWorkerServiceBootBinding,
   SERVICE_RUNTIME_ERROR_CODES,
@@ -100,6 +105,13 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import {
+  createProactivePushSource,
+  PROACTIVE_MAX_OUTPUT_TOKENS,
+  ProductionProactive,
+  proactiveCostEstimator,
+  proactiveRedirectUri,
+} from "./production-proactive.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -425,6 +437,7 @@ export async function runAgentService(
   let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let webPush: ProductionWebPush | undefined;
+  let proactive: ProductionProactive | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -504,6 +517,7 @@ export async function runAgentService(
         await runs?.memoryEpisodes?.stop();
         await runs?.memoryConsolidation?.stop();
         await webPush?.stop();
+        await proactive?.stop();
       }
     },
   });
@@ -1296,6 +1310,87 @@ export async function runAgentService(
           : undefined;
       const consolidationProjection = memoryComposition.projection;
       runMemoryEpisodes = memoryEpisodes;
+      const proactiveConfiguration = configuration.runPolicy?.proactive;
+      const proactiveSecret = proactiveConfiguration
+        ? configuration.secretReferences.find(
+            ({ ref, purpose }) =>
+              ref === proactiveConfiguration.gmail.clientSecretRef &&
+              purpose === GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+          )
+        : undefined;
+      const proactiveDescriptor = proactiveConfiguration
+        ? modelComposition.descriptors.generation.find(
+            ({ ref }) => ref === proactiveConfiguration.modelRef,
+          )
+        : undefined;
+      const proactiveScope = { ownerId: configuration.ownerId, agentId: configuration.agentId };
+      const proactiveStore =
+        proactiveConfiguration && proactiveSecret && proactiveDescriptor
+          ? repository.proactive()
+          : undefined;
+      const proactiveSeal =
+        proactiveStore && protector
+          ? createProactiveSeal({
+              payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+              protector,
+              ids,
+            })
+          : undefined;
+      if (
+        proactiveConfiguration &&
+        proactiveSecret &&
+        proactiveDescriptor &&
+        proactiveStore &&
+        proactiveSeal
+      ) {
+        const oauth = createGoogleOAuth({
+          clientId: proactiveConfiguration.gmail.clientId,
+          clientSecret: await hostModelSources(configuration).provider.resolve(
+            proactiveSecret.ref,
+            proactiveSecret.version,
+          ),
+          redirectUri: proactiveRedirectUri(configuration.publicOrigin),
+        });
+        const feedbackStore = repository.webPush();
+        proactive = new ProductionProactive({
+          scope: proactiveScope,
+          configuration: proactiveConfiguration,
+          timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+          store: proactiveStore,
+          seal: proactiveSeal,
+          oauth,
+          reader: createGmailReader({ oauth }),
+          readAccount: (accessToken) => readGmailAccount({ accessToken }),
+          model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
+            maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
+            requestTimeoutMs: proactiveConfiguration.perCheckMs,
+          }),
+          estimateCostMicros: proactiveCostEstimator(
+            proactiveDescriptor.cost,
+            PROACTIVE_MAX_OUTPUT_TOKENS,
+          ),
+          feedback: (sentFrom) =>
+            feedbackStore.listFeedback({ ...proactiveScope, sentFrom, limit: 500 }),
+          clock,
+          ids,
+          onDecision: (decision) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.checked",
+              verdict: decision.verdict,
+              code: decision.reasonCode,
+              fetched: decision.counts.fetched,
+              pushed: decision.counts.pushed,
+              costMicros: decision.costMicros,
+            }),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.failed",
+              code: stableErrorCode(error),
+            }),
+        });
+      }
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
         ? configuration.secretReferences.find(
@@ -1332,6 +1427,15 @@ export async function runAgentService(
             pushRepository
               .authorizationStore()
               .listApprovals(configuration.ownerId, configuration.agentId),
+          ...(proactive && proactiveStore && proactiveSeal
+            ? {
+                proactive: createProactivePushSource({
+                  scope: proactiveScope,
+                  store: proactiveStore,
+                  seal: proactiveSeal,
+                }),
+              }
+            : {}),
           runThread: async (runId) =>
             (
               await pushRepository
@@ -1375,6 +1479,7 @@ export async function runAgentService(
         });
         webPush.start();
       }
+      proactive?.start();
       runs = createProductionRunComposition({
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         onBackgroundFailure: (runId, error) =>
@@ -1525,6 +1630,7 @@ export async function runAgentService(
       const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
         webPush: { presence: webPushPresence, push: webPush },
+        ...(proactive ? { proactive } : {}),
         memory: {
           service: activeDurableMemory,
           onAudit: (record) =>

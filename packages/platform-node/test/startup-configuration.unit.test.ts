@@ -1250,3 +1250,43 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
   raw["runPolicy"] = { ...policy, reminderPush: { channel: "bark", secretRef: "web-push-vapid" } };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });
+
+it("[PG-12] accepts proactive Gmail checks only with a Google client secret and a private-capable model", () => {
+  const raw = config("/tmp/himawari-proactive-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "google-oauth", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const proactive = {
+    modelRef: "model-primary",
+    gmail: { clientId: "123-abc.apps.googleusercontent.com", clientSecretRef: "google-oauth" },
+  };
+  raw["runPolicy"] = { ...policy, proactive };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive).toEqual({
+    ...proactive,
+    intervalMs: 900_000,
+    perCheckCostMicros: 100_000,
+    perCheckMs: 180_000,
+    dailyCostMicros: 1_000_000,
+  });
+  for (const invalid of [
+    { ...proactive, modelRef: "model-embedding" },
+    { ...proactive, modelRef: "model-missing" },
+    { ...proactive, gmail: { ...proactive.gmail, clientSecretRef: "missing-secret" } },
+    { ...proactive, gmail: { ...proactive.gmail, clientId: "bad id" } },
+    { ...proactive, gmail: { ...proactive.gmail, clientSecret: "inline" } },
+    { ...proactive, perCheckCostMicros: 2_000_000 },
+    { ...proactive, intervalMs: 1_000 },
+  ]) {
+    raw["runPolicy"] = { ...policy, proactive: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});

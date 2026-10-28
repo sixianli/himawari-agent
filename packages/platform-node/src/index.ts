@@ -12,6 +12,7 @@ export * from "./ciphertext-file-store.js";
 export * from "./deepseek-web-provider.js";
 export * from "./ephemeral-secret-port.js";
 export * from "./exa-public-search.js";
+export * from "./gmail-source.js";
 export * from "./execution-admission-uds-transport.js";
 export * from "./execution-uds-transport.js";
 export * from "./files/directory-move.js";
