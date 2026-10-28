@@ -3584,8 +3584,12 @@ code.more-row-name {
   border: 0;
 }
 .files-library-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
   height: 30px;
-  padding: 0 12px;
+  padding: 0 12px 0 10px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
@@ -3598,6 +3602,16 @@ code.more-row-name {
   background: var(--text);
   border-color: var(--text);
   color: var(--surface);
+}
+.files-library-chips svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .files-library-note {
   margin: 0;
@@ -4158,5 +4172,10 @@ code.more-row-name {
 @media (max-width: 640px) {
   .accent-swatches {
     grid-template-columns: repeat(2, max-content);
+  }
+}
+@media (max-width: 640px) {
+  .files-library-chips button {
+    height: 34px;
   }
 }

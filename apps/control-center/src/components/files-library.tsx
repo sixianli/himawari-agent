@@ -24,6 +24,15 @@ export const LIBRARY_CATEGORIES: readonly (readonly [
   ["code", "library.code", ["code"]],
 ];
 
+const categoryIcons: Readonly<Record<LibraryCategory, string>> = {
+  all: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  documents: "M6.5 3.5h7l4 4v13h-11ZM13.5 3.5v4h4M9 12h6M9 15.5h4",
+  tables: "M3.5 5h17v14h-17zM3.5 10h17M3.5 14.5h17M10 10v9",
+  web: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5s1.1-6.1 3.5-8.5Z",
+  images: "M3.5 5h17v14h-17zM4 17.5l5-4.5 4 3.5 3-2.5 4 3.5M9 8.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2Z",
+  code: "m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5.5l-3 13",
+};
+
 const PAGE = 100;
 
 export interface LibraryQuery {
@@ -190,6 +199,9 @@ export function FilesLibrary({
               aria-pressed={category === id}
               onClick={() => setCategory(id)}
             >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d={categoryIcons[id]} />
+              </svg>
               {message(label)}
             </button>
           ))}

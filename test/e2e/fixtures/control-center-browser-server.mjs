@@ -471,6 +471,33 @@ const settings = {
 let cursorSequence = 1;
 let healthDegraded = false;
 
+function fixtureFiles() {
+  return [
+    ["snake.html", "web", "text/html", 18432, 1],
+    ["东京天气汇总.md", "document", "text/markdown", 2048, 2],
+    ["expenses-2026-10.csv", "data", "text/csv", 5120, 1],
+    ["sunflower.png", "image", "image/png", 245760, 1],
+  ].map(([name, kind, mediaType, sizeBytes, version], index) => ({
+    id: `file:${index}`,
+    threadId: "thread-main",
+    runId: "run-01",
+    toolCallId: `call:${index}`,
+    toolItemId: `item:${index}`,
+    source: "write",
+    path: name,
+    name,
+    kind,
+    mediaType,
+    sizeBytes,
+    version,
+    turn: 1,
+    commandKey: null,
+    stored: true,
+    overlapped: false,
+    createdAt: now,
+  }));
+}
+
 function json(response, status, body) {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -1442,6 +1469,7 @@ async function handleRequest(request, response) {
       recentAuthenticationRef: recentAuthenticationAvailable ? governanceAuthorizationRef : null,
       primaryModel: { provider: "fixture-provider", model: "fixture-primary", version: "v1" },
       primaryModelRef: "model:fixture-primary:v1",
+      filesAvailable: memoryFixture,
       repositoryAllowlistRefs: ["fixture-owner/fixture-repository"],
       disclosedDataClassifications: ["private"],
     });
@@ -1570,6 +1598,18 @@ async function handleRequest(request, response) {
       }
     }
     json(response, 200, { accepted: true });
+    return;
+  }
+  if (memoryFixture && request.method === "POST" && url.pathname === "/api/files/v1/list") {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+    const items = fixtureFiles().filter(
+      (file) =>
+        (!input.kind || file.kind === input.kind) &&
+        (!input.search || file.name.toLowerCase().includes(input.search.toLowerCase())),
+    );
+    json(response, 200, { items, nextCursor: null });
     return;
   }
   if (request.method === "POST" && url.pathname === "/__fixture/degrade") {
