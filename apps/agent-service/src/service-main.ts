@@ -752,6 +752,7 @@ export async function runAgentService(
     const taskEnvironmentConfiguration = configuration.taskEnvironments;
     const sandboxServices = await createProductionSandboxServices({
       diagnosticOutput: errorOutput,
+      backgroundCommandMs: backgroundCommandLimits(configuration.deadlines).maximumMs,
       createPiFilePreparation: () => {
         piFilePreparationPool = createPiFilePreparationPool({
           maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,

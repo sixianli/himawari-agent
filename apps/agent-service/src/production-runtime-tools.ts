@@ -691,9 +691,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
 
   async recoverResult(
-    invocation: RuntimeToolInvocation,
+    value: RuntimeToolInvocation,
     recovery: NonNullable<RuntimeRequest["knownToolResult"]>,
   ): Promise<RuntimeToolSettledResult> {
+    const invocation = await this.#commandDeadline(value, false);
     const recoveryLease = invocation.context?.executionLease;
     const recoveryDeadline = invocation.executionDeadlineAt;
     if (
@@ -975,14 +976,42 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
     if (this.#background && this.#codingTool(invocation) === "bash") {
       const key = digest([invocation.runId, invocation.toolCallId]);
+      const command = await this.#commandDeadline(invocation, true);
       return this.#background.run(
-        invocation,
+        command,
         signal,
-        (combined) => this.#executeCanonical(invocation, combined),
-        (value) => this.#writeJson(invocation, `runtime-background-command:${key}`, value),
+        (combined) => this.#executeCanonical(command, combined),
+        (value) => this.#writeJson(command, `runtime-background-command:${key}`, value),
       );
     }
     return this.#executeCanonical(invocation, signal);
+  }
+
+  async #commandDeadline(
+    invocation: RuntimeToolInvocation,
+    create: boolean,
+  ): Promise<RuntimeToolInvocation> {
+    if (!this.#background || this.#codingTool(invocation) !== "bash") return invocation;
+    const operationKey = `runtime-command-deadline:${digest([invocation.runId, invocation.toolCallId])}`;
+    const existing = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey,
+    });
+    if (!existing && !create) return invocation;
+    const ref = existing
+      ? existing.payloadRef
+      : (
+          await this.#writeJson(invocation, operationKey, {
+            deadlineAt: new Date(
+              Date.parse(this.#options.clock.now()) + this.#background.maximumMs,
+            ).toISOString(),
+          })
+        ).ref;
+    const saved = (await this.#readJson(ref)) as { deadlineAt?: unknown };
+    if (typeof saved.deadlineAt !== "string" || !Number.isFinite(Date.parse(saved.deadlineAt)))
+      reject();
+    return { ...invocation, executionDeadlineAt: saved.deadlineAt };
   }
   #executeCanonical(
     invocation: RuntimeToolInvocation,

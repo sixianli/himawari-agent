@@ -1041,6 +1041,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "input-ref",
     "input-digest",
     "deadline-changed",
+    "bash-own-deadline",
     "revoked-authority",
     "cancelled",
     "completed",
@@ -1153,6 +1154,12 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
         .run(T1, runId);
       now = scenario === "before-deadline" ? T1 : T2;
+      if (scenario === "bash-own-deadline")
+        f.database
+          .prepare(
+            "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.operation','bash')",
+          )
+          .run();
       const leaseExpiresAt = new Date(Date.parse(T2) + 30_000).toISOString();
       if (scenario === "missing-receipt")
         f.database.prepare("DELETE FROM sandbox_release_receipts").run();
@@ -1263,11 +1270,11 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         frozenInputRef: scenario === "input-ref" ? "missing" : payload.ref,
         frozenInputDigest:
           scenario === "input-digest" ? `sha256:${"0".repeat(64)}` : payload.contentDigest,
-        originalDeadlineAt: scenario === "deadline-changed" ? T1 : T2,
+        originalDeadlineAt: ["deadline-changed", "bash-own-deadline"].includes(scenario) ? T1 : T2,
         at: now,
         leaseExpiresAt,
       };
-      if (["released", "standalone", "budget-unknown"].includes(scenario)) {
+      if (["released", "standalone", "budget-unknown", "bash-own-deadline"].includes(scenario)) {
         const dispatch = opened.runDispatch(
           OWNER_ID,
           AGENT_ID,

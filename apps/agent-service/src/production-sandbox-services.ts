@@ -106,6 +106,16 @@ const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("
 const PREWARM_WAIT_MS = 10_000;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
+export function sandboxEnvironmentDeadline(
+  callDeadlineAt: string,
+  grantExpiresAt: string,
+  backgroundCommandMs: number,
+): string {
+  return new Date(
+    Math.min(Date.parse(callDeadlineAt) + backgroundCommandMs, Date.parse(grantExpiresAt)),
+  ).toISOString();
+}
+
 export async function createProductionSandboxServices(options: {
   readonly configuration: Pick<
     ProductConfiguration,
@@ -123,8 +133,12 @@ export async function createProductionSandboxServices(options: {
   readonly srtTaskEnvironments?: ProductionTaskEnvironments;
   readonly piFilePreparation?: typeof preparePiFileMutation;
   readonly createPiFilePreparation?: () => typeof preparePiFileMutation;
+  readonly backgroundCommandMs?: number;
 }) {
   const { configuration, repository, protector, clock, ids } = options;
+  const backgroundCommandMs = options.backgroundCommandMs ?? 0;
+  const environmentDeadline = (callDeadlineAt: string, grantExpiresAt: string) =>
+    sandboxEnvironmentDeadline(callDeadlineAt, grantExpiresAt, backgroundCommandMs);
   if (!configuration.capabilityDeployment) return undefined;
   const loader = new CapabilityDeploymentSnapshotLoader({
     ...configuration.capabilityDeployment,
@@ -1102,9 +1116,7 @@ export async function createProductionSandboxServices(options: {
         grant,
         claims: "directoryClaim" in resolved ? [resolved.directoryClaim] : [],
         binding,
-        deadlineAt: new Date(
-          Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),
-        ).toISOString(),
+        deadlineAt: environmentDeadline(call.executionDeadlineAt, grant.expiresAt),
       });
     }
     const reservation = sandboxExecutionReservationSchema.parse({
@@ -1131,9 +1143,7 @@ export async function createProductionSandboxServices(options: {
         : {}),
       ...(srtFacade && grant
         ? {
-            environmentDeadlineAt: new Date(
-              Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),
-            ).toISOString(),
+            environmentDeadlineAt: environmentDeadline(call.executionDeadlineAt, grant.expiresAt),
           }
         : {}),
       plan,
@@ -2453,7 +2463,10 @@ export async function createProductionSandboxServices(options: {
           plan.identity.threadId !== request.threadId ||
           plan.modelRef !== request.modelRef ||
           (!request.capabilityHandleRefs.includes(plan.handleRef) && !privateChild) ||
-          (request.executionDeadlineAt && plan.effectiveDeadlineAt > request.executionDeadlineAt)
+          (request.executionDeadlineAt &&
+            Date.parse(plan.effectiveDeadlineAt) >
+              Date.parse(request.executionDeadlineAt) +
+                (plan.operation === "bash" ? backgroundCommandMs : 0))
         )
           throw new Error("SANDBOX_QUEUE_RUN_CONTEXT_CHANGED");
         await resolve(plan);

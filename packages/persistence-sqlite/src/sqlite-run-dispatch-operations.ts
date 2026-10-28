@@ -425,7 +425,9 @@ export class SqliteRunDispatchOperations {
           AND (${RUN_EXPIRED_RECONCILIATION_SQL})
           AND NOT EXISTS (SELECT 1 FROM sandbox_execution_records plan
             WHERE plan.owner_id=r.owner_id AND plan.agent_id=r.agent_id AND plan.run_id=r.id
-              AND json_extract(plan.plan_json,'$.originalDeadlineAt')<>@deadlineAt)
+              AND json_extract(plan.plan_json,'$.originalDeadlineAt')<>@deadlineAt
+              AND NOT (json_extract(plan.plan_json,'$.operation')='bash'
+                AND json_extract(plan.plan_json,'$.originalDeadlineAt')>@deadlineAt))
           AND EXISTS (SELECT 1 FROM run_payload_artifacts input
             JOIN payloads payload ON payload.ref=input.payload_ref AND payload.owner_id=input.owner_id AND payload.agent_id=input.agent_id
             WHERE input.owner_id=r.owner_id AND input.agent_id=r.agent_id AND input.run_id=r.id

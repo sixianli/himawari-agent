@@ -4,7 +4,8 @@
   "decisions": {
     "G1": "durable",
     "G2": "once",
-    "G3": "durable"
+    "G3": "durable",
+    "G4": "durable"
   },
   "items": [
     {"id": "BG-1", "title": "后台命令登记表：本轮答完后轮次保持 running 并登记后台命令，执行许可只限登记过的那一轮", "goal_ref": ["G1"], "done_when": [{"type": "test", "tag": "BG-1"}], "added": {"by": "claude", "on": "2026-10-27"}},
@@ -13,6 +14,7 @@
     {"id": "BG-4", "title": "服务重启时把没结束的后台命令如实标成被打断，并在对话里留说明", "goal_ref": ["G1"], "done_when": [{"type": "test", "tag": "BG-4"}], "added": {"by": "claude", "on": "2026-10-27"}},
     {"id": "BG-5", "title": "网页：回答下面“后台命令运行中 · 停止”一行、结束说明行、等待期间可以发送；中英日三语", "goal_ref": ["G1"], "done_when": [{"type": "test", "tag": "BG-5"}], "added": {"by": "claude", "on": "2026-10-27"}},
     {"id": "BG-6", "title": "ADR、案例 33、Backlog 更新，npm run check 与 npm run build 通过", "goal_ref": ["G1", "G2"], "done_when": [{"type": "doc", "path": "docs/adr/0098-move-long-bash-commands-to-background.md", "quotes": "G1"}, {"type": "command", "run": "npm run check:docs"}], "added": {"by": "claude", "on": "2026-10-27"}},
-    {"id": "BG-7", "title": "后台命令最长 30 分钟：签名模板上限改为 30 分钟，ADR 写明上线时要改的生产配置", "goal_ref": ["G3"], "done_when": [{"type": "doc", "path": "docs/adr/0098-move-long-bash-commands-to-background.md", "quotes": "G3"}], "added": {"by": "claude", "on": "2026-10-28"}}
+    {"id": "BG-7", "title": "后台命令最长 30 分钟：签名模板上限改为 30 分钟，ADR 写明上线时要改的生产配置", "goal_ref": ["G3"], "done_when": [{"type": "doc", "path": "docs/adr/0098-move-long-bash-commands-to-background.md", "quotes": "G3"}], "added": {"by": "claude", "on": "2026-10-28"}},
+    {"id": "BG-8", "title": "后台命令按自己的开始时间单独计时 30 分钟，不再受一轮回答 5 分钟总时限约束；普通一轮仍 5 分钟", "goal_ref": ["G4"], "done_when": [{"type": "test", "tag": "BG-8"}, {"type": "doc", "path": "docs/adr/0098-move-long-bash-commands-to-background.md", "quotes": "G4"}], "added": {"by": "claude", "on": "2026-10-28"}}
   ]
 }
