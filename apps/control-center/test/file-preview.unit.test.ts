@@ -3,14 +3,23 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { IntlProvider } from "react-intl";
 import { describe, expect, it } from "vitest";
-import { AnswerFiles } from "../src/components/answer-footer.js";
-import { ContentPreview, type ContentPreviewValue } from "../src/components/content-preview.js";
+import type { BackgroundCommandView } from "../src/background-commands.js";
+import {
+  ContentPreview,
+  type ContentPreviewValue,
+  previewOfDelivered,
+} from "../src/components/content-preview.js";
+import { DeliveredFileCards } from "../src/components/delivered-file.js";
+import { latestFiles, libraryFile, libraryTime } from "../src/components/files-library.js";
 import { recentGroups } from "../src/components/thread-sidebar.js";
 import { parseDelimited } from "../src/delimited-text.js";
+import { deliveredFileGroups } from "../src/delivered-files.js";
+import type { RunSummary } from "../src/execution-view.js";
 import type { MessageId } from "../src/i18n/message-ids.js";
 import { messages as en } from "../src/i18n/resources/en.js";
 import { messages as ja } from "../src/i18n/resources/ja.js";
 import { messages as zh } from "../src/i18n/resources/zh-CN.js";
+import { parseRegisteredFilePage, type RegisteredFile } from "../src/registered-files.js";
 import { greetingOf } from "../src/thread-control-center.js";
 import { lineDiff, previewKind, turnFiles } from "../src/turn-files.js";
 
@@ -107,19 +116,183 @@ describe("files written in a turn", () => {
   });
 
   it("[UI-18] lists the files under the answer and marks the one that is open", () => {
-    const files = turnFiles("run:1", [
-      tool("w1", "write", { path: "poem.md", content: "一\n二\n三" }),
-      tool("e1", "edit", { path: "src/a.ts", edits: [{ oldText: "x", newText: "y\nz" }] }),
-    ]);
+    const groups = deliveredFileGroups({
+      runs: [{ runId: "run:1" } as RunSummary],
+      execution: {
+        "run:1": [
+          tool("w1", "write", { path: "poem.md", content: "一\n二\n三" }),
+          tool("e1", "edit", { path: "src/a.ts", edits: [{ oldText: "x", newText: "y\nz" }] }),
+        ],
+      },
+      registered: undefined,
+      commands: [],
+      titles: {},
+    });
     const html = renderToStaticMarkup(
-      h(AnswerFiles, { files, openKey: "run:1:poem.md", onOpen: () => {}, message: ids }),
+      h(DeliveredFileCards, {
+        files: groups[0]?.files ?? [],
+        openKey: "run:1:poem.md",
+        onOpen: () => {},
+        onMore: () => {},
+        message: ids,
+      }),
     );
     expect(html).toContain("poem.md");
-    expect(html).toContain("files.kind.markdown · files.lines(3)");
-    expect(html).toContain('<span class="is-added">+2</span> <span class="is-removed">−1</span>');
+    expect(html).toContain("files.kind.document · files.lines(3)");
+    expect(html).toContain("files.kind.code · +2 −1");
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("files.opened");
-    expect(html.match(/files\.open</g)).toHaveLength(1);
+  });
+});
+
+const registered = (overrides: Partial<RegisteredFile>): RegisteredFile => ({
+  id: "file:1",
+  threadId: "thread:1",
+  runId: "run:1",
+  toolCallId: "call:1",
+  toolItemId: "item:1",
+  source: "write",
+  path: "report.md",
+  name: "report.md",
+  kind: "document",
+  mediaType: "text/markdown",
+  sizeBytes: 2048,
+  version: 1,
+  turn: 1,
+  commandKey: null,
+  stored: true,
+  overlapped: false,
+  createdAt: "2026-10-28T06:12:00.000Z",
+  ...overrides,
+});
+
+describe("[FD-5] files delivered in a conversation", () => {
+  it("joins registered copies with the turn trace and files a background command's output under its report turn", () => {
+    const runs = ["run:1", "run:2", "run:3"].map((runId) => ({ runId }) as RunSummary);
+    const commands = [
+      {
+        key: "background-command:abc",
+        runId: "run:2",
+        label: "npm test -- --coverage\nsecond line",
+        noticeRunId: "run:3",
+      } as BackgroundCommandView,
+    ];
+    const groups = deliveredFileGroups({
+      runs,
+      execution: {
+        "run:1": [
+          tool("w1", "write", { path: "/workspace/snake.html", content: "<p>1</p>" }),
+          tool("w2", "write", { path: "/workspace/notes.md", content: "# 笔记" }),
+        ],
+        "run:2": [tool("b1", "bash", { command: "npm test -- --coverage" })],
+      },
+      registered: [
+        registered({
+          id: "file:snake:2",
+          runId: "run:1",
+          toolItemId: "w1",
+          path: "snake.html",
+          name: "snake.html",
+          kind: "web",
+          mediaType: "text/html",
+          version: 2,
+        }),
+        registered({
+          id: "file:snake:1",
+          runId: "run:1",
+          path: "snake.html",
+          name: "snake.html",
+          kind: "web",
+          mediaType: "text/html",
+          version: 1,
+        }),
+        registered({
+          id: "file:coverage",
+          runId: "run:2",
+          source: "bash",
+          path: "coverage/summary.csv",
+          name: "summary.csv",
+          kind: "data",
+          mediaType: "text/csv",
+          commandKey: "background-command:abc",
+        }),
+      ],
+      commands,
+      titles: { "run:1": "做一个贪吃蛇" },
+    });
+    expect(groups.map((group) => [group.runId, group.turn, group.command])).toEqual([
+      ["run:3", 3, "npm test -- --coverage"],
+      ["run:1", 1, undefined],
+    ]);
+    expect(groups[0]?.files.map((file) => [file.path, file.source, file.command])).toEqual([
+      ["coverage/summary.csv", "bash", "npm test -- --coverage"],
+    ]);
+    const first = groups[1]?.files ?? [];
+    expect(first.map((file) => [file.path, file.versions, file.registered?.id])).toEqual([
+      ["snake.html", 2, "file:snake:2"],
+      ["/workspace/notes.md", 1, undefined],
+    ]);
+    expect(first[0]?.trace?.path).toBe("/workspace/snake.html");
+  });
+
+  it("shows three cards under an answer and folds the rest into one button", () => {
+    const files = [1, 2, 3, 4, 5].map((index) =>
+      libraryFile(registered({ id: `file:${index}`, path: `f${index}.md`, name: `f${index}.md` })),
+    );
+    const html = renderToStaticMarkup(
+      h(DeliveredFileCards, {
+        files,
+        openKey: undefined,
+        onOpen: () => {},
+        onMore: () => {},
+        message: ids,
+      }),
+    );
+    expect(html.match(/class="file-card"/g)).toHaveLength(3);
+    expect(html).toContain('class="file-more">files.more(2)</button>');
+    expect(html).not.toContain("f4.md");
+  });
+
+  it.each([
+    [{ kind: "image", mediaType: "image/png", name: "route.png" }, "<img"],
+    [{ kind: "pdf", mediaType: "application/pdf", name: "trip.pdf" }, "<iframe"],
+    [{ kind: "web", mediaType: "text/html", name: "snake.html" }, "网页预览还没开通"],
+    [{ kind: "other", mediaType: "application/zip", name: "a.zip" }, "这种文件不能在这里预览"],
+    [{ kind: "document", stored: false }, "没有留副本"],
+  ] as const)("picks the preview body for %o", (overrides, expected) => {
+    const file = libraryFile(registered({ id: "file:x", ...overrides }));
+    const html = preview(
+      previewOfDelivered(file, { label: "来自「贪吃蛇」第 1 轮", onOpen: () => {} }),
+    );
+    expect(html).toContain(expected);
+    expect(html).toContain("来自「贪吃蛇」第 1 轮 →");
+    if (overrides.kind === "image" || overrides.kind === "pdf")
+      expect(html).toContain('src="/api/files/v1/content/file%3Ax"');
+  });
+
+  it("offers the version picker and a download link for a file written more than once", () => {
+    const file = { ...libraryFile(registered({ id: "file:v3", version: 3 })), versions: 3 };
+    const html = preview(previewOfDelivered(file));
+    expect(html).toContain('class="preview-versions"');
+    expect(html).toContain('href="/api/files/v1/content/file%3Av3?download=1"');
+  });
+
+  it("keeps the newest version of each file on the files page and dates older ones", () => {
+    const items = parseRegisteredFilePage({
+      items: [
+        registered({ id: "a2", version: 2 }),
+        registered({ id: "a1", version: 1 }),
+        registered({ id: "b1", threadId: "thread:2" }),
+      ],
+      nextCursor: null,
+    }).items;
+    expect(latestFiles(items).map((item) => item.id)).toEqual(["a2", "b1"]);
+    const now = new Date("2026-10-28T08:00:00.000Z");
+    expect(libraryTime("2026-10-28T06:12:00.000Z", now, ids)).toMatch(/^more\.time/);
+    expect(libraryTime("2026-10-24T06:12:00.000Z", now, ids)).toMatch(/^library\.date/);
+    expect(() => parseRegisteredFilePage({ items: [{ ...items[0], kind: "exe" }] })).toThrow(
+      "CONTROL_CENTER_RESPONSE_INVALID",
+    );
   });
 });
 
@@ -139,7 +312,9 @@ describe("the preview panel", () => {
     expect(html).toContain('aria-pressed="true">预览</button>');
     expect(html).toContain("原文</button>");
     expect(html).toContain("notes/trip.md");
-    expect(html).toContain('aria-label="放宽预览"');
+    expect(html).toContain(
+      'class="preview-action preview-widen" aria-pressed="false">放宽预览</button>',
+    );
   });
 
   it("[UI-18] shows CSV as a table with row numbers, right-aligned numbers and a total", () => {

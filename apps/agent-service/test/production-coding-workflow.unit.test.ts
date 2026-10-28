@@ -1066,7 +1066,7 @@ function memoryArtifactStore() {
       const previous = latest(artifact.threadId, artifact.path);
       if (previous && artifact.sha256 !== null && previous.sha256 === artifact.sha256)
         return { artifact: previous, created: false };
-      const row = { ...artifact, version: (previous?.version ?? 0) + 1 };
+      const row = { ...artifact, version: (previous?.version ?? 0) + 1, turn: 1 };
       rows.push(row);
       return { artifact: row, created: true };
     },

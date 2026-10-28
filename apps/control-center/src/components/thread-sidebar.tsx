@@ -56,6 +56,8 @@ export interface ThreadSidebarProps {
   readonly onRename?: (thread: Thread) => void;
   readonly onPin?: (thread: Thread) => void;
   readonly onArchive?: (thread: Thread) => void;
+  readonly onOpenFiles?: (() => void) | undefined;
+  readonly filesOpen?: boolean;
   readonly pendingThreadIds?: readonly string[];
   readonly runningThreadIds?: readonly string[];
 }
@@ -78,6 +80,8 @@ export function ThreadSidebar({
   onRename,
   onPin,
   onArchive,
+  onOpenFiles,
+  filesOpen = false,
   pendingThreadIds = [],
   runningThreadIds = [],
 }: ThreadSidebarProps) {
@@ -94,7 +98,7 @@ export function ThreadSidebar({
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const link = (thread: Thread) => (
     <AppLink
-      current={thread.threadId === selectedThreadId}
+      current={!filesOpen && thread.threadId === selectedThreadId}
       href={controlCenterHref({
         ...route,
         objectId: thread.threadId,
@@ -196,6 +200,12 @@ export function ThreadSidebar({
           <SidebarIcon name="memory" />
           {message("nav.memory")}
         </ActionButton>
+        {onOpenFiles ? (
+          <ActionButton onClick={onOpenFiles} variant="quiet" aria-pressed={filesOpen}>
+            <SidebarIcon name="files" />
+            {message("library.title")}
+          </ActionButton>
+        ) : null}
       </nav>
       <div
         className="thread-sidebar-records"

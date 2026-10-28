@@ -11,9 +11,14 @@ import {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
-const columns = `id, thread_id AS threadId, run_id AS runId, tool_call_id AS toolCallId, source, path,
-  kind, media_type AS mediaType, size_bytes AS sizeBytes, sha256, version, copy_ref AS copyRef,
-  overlapped, created_at AS createdAt`;
+const columns = `a.id, a.thread_id AS threadId, a.run_id AS runId, a.tool_call_id AS toolCallId,
+  a.source, a.path, a.kind, a.media_type AS mediaType, a.size_bytes AS sizeBytes, a.sha256,
+  a.version, a.copy_ref AS copyRef, a.overlapped, a.created_at AS createdAt,
+  (SELECT count(*) FROM runs run JOIN runs earlier ON earlier.owner_id = run.owner_id
+     AND earlier.agent_id = run.agent_id AND earlier.thread_id = run.thread_id
+     AND (earlier.created_at < run.created_at OR (earlier.created_at = run.created_at AND earlier.id <= run.id))
+   WHERE run.id = a.run_id AND run.owner_id = a.owner_id AND run.agent_id = a.agent_id) AS turn`;
+const source = "thread_artifacts a";
 
 type Row = Omit<ThreadArtifact, "overlapped"> & { readonly overlapped: number };
 
@@ -100,8 +105,8 @@ export class SqliteThreadArtifactOperations {
       .transaction(() => {
         const replayed = this.database
           .prepare(
-            `SELECT ${columns} FROM thread_artifacts
-             WHERE owner_id = ? AND agent_id = ? AND run_id = ? AND tool_call_id = ? AND path = ?`,
+            `SELECT ${columns} FROM ${source}
+             WHERE a.owner_id = ? AND a.agent_id = ? AND a.run_id = ? AND a.tool_call_id = ? AND a.path = ?`,
           )
           .get(input.ownerId, input.agentId, artifact.runId, artifact.toolCallId, artifact.path) as
           | Row
@@ -141,7 +146,13 @@ export class SqliteThreadArtifactOperations {
             artifact.overlapped ? 1 : 0,
             artifact.createdAt,
           );
-        return { artifact: Object.freeze({ ...artifact, version }), created: true };
+        const created = this.get({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          id: artifact.id,
+        });
+        if (!created) return this.fail("PORT_INVALID_OPERATION", "Thread artifact was not stored");
+        return { artifact: created, created: true };
       })
       .immediate();
   }
@@ -151,9 +162,9 @@ export class SqliteThreadArtifactOperations {
   ): ThreadArtifact | null {
     const row = this.database
       .prepare(
-        `SELECT ${columns} FROM thread_artifacts
-         WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND path = ?
-         ORDER BY version DESC LIMIT 1`,
+        `SELECT ${columns} FROM ${source}
+         WHERE a.owner_id = ? AND a.agent_id = ? AND a.thread_id = ? AND a.path = ?
+         ORDER BY a.version DESC LIMIT 1`,
       )
       .get(input.ownerId, input.agentId, input.threadId, input.path) as Row | undefined;
     return row ? fromRow(row) : null;
@@ -162,7 +173,7 @@ export class SqliteThreadArtifactOperations {
   private get(input: ThreadArtifactScope & { readonly id: string }): ThreadArtifact | null {
     const row = this.database
       .prepare(
-        `SELECT ${columns} FROM thread_artifacts WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+        `SELECT ${columns} FROM ${source} WHERE a.owner_id = ? AND a.agent_id = ? AND a.id = ?`,
       )
       .get(input.ownerId, input.agentId, input.id) as Row | undefined;
     return row ? fromRow(row) : null;
@@ -174,9 +185,9 @@ export class SqliteThreadArtifactOperations {
     return (
       this.database
         .prepare(
-          `SELECT ${columns} FROM thread_artifacts
-           WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND path = ?
-           ORDER BY version`,
+          `SELECT ${columns} FROM ${source}
+           WHERE a.owner_id = ? AND a.agent_id = ? AND a.thread_id = ? AND a.path = ?
+           ORDER BY a.version`,
         )
         .all(input.ownerId, input.agentId, input.threadId, input.path) as Row[]
     ).map(fromRow);
@@ -193,29 +204,29 @@ export class SqliteThreadArtifactOperations {
     const cursor = input.before === null ? null : decodeCursor(input.before);
     if (input.before !== null && cursor === null)
       return this.fail("PORT_INVALID_OPERATION", "Thread artifact cursor is invalid");
-    const conditions = ["owner_id = ?", "agent_id = ?"];
+    const conditions = ["a.owner_id = ?", "a.agent_id = ?"];
     const parameters: (string | number)[] = [input.ownerId, input.agentId];
     if (input.threadId !== null) {
-      conditions.push("thread_id = ?");
+      conditions.push("a.thread_id = ?");
       parameters.push(input.threadId);
     }
     if (input.kind !== null) {
-      conditions.push("kind = ?");
+      conditions.push("a.kind = ?");
       parameters.push(input.kind);
     }
     const search = input.search?.trim();
     if (search) {
-      conditions.push("path LIKE ? ESCAPE '\\'");
+      conditions.push("a.path LIKE ? ESCAPE '\\'");
       parameters.push(`%${escapeLike(search)}%`);
     }
     if (cursor) {
-      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      conditions.push("(a.created_at < ? OR (a.created_at = ? AND a.id < ?))");
       parameters.push(cursor[0], cursor[0], cursor[1]);
     }
     const rows = this.database
       .prepare(
-        `SELECT ${columns} FROM thread_artifacts WHERE ${conditions.join(" AND ")}
-         ORDER BY created_at DESC, id DESC LIMIT ?`,
+        `SELECT ${columns} FROM ${source} WHERE ${conditions.join(" AND ")}
+         ORDER BY a.created_at DESC, a.id DESC LIMIT ?`,
       )
       .all(...parameters, input.limit + 1) as Row[];
     const items = rows.slice(0, input.limit).map(fromRow);

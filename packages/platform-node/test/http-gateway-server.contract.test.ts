@@ -1395,6 +1395,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       sizeBytes: 5,
       sha256: null,
       version: version as number,
+      turn: 2,
       copyRef: `copy-${id}`,
       overlapped: false,
       createdAt: NOW,
@@ -1424,6 +1425,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       previewOrigin: PREVIEW,
       ticketKey: new Uint8Array(32).fill(7),
       now: () => clock,
+      commandKey: (runId, toolCallId) => `background-command:${runId}:${toolCallId}`,
     });
     const { app } = createFixture(undefined, undefined, {
       browserConfiguration: {
@@ -1457,6 +1459,10 @@ describe("HTTP Gateway contract and security boundary", () => {
       ["file-png", "图表.png", true],
     ]);
     expect(list.json().items[0]).not.toHaveProperty("copyRef");
+    expect(list.json().items[0]).toMatchObject({
+      turn: 2,
+      commandKey: "background-command:run-01:call-file-html-1",
+    });
     expect(
       (
         await app.inject({
@@ -1633,6 +1639,15 @@ describe("HTTP Gateway contract and security boundary", () => {
       headers: { host: "agent.example.test" },
     });
     expect(mainPage.headers["content-security-policy"]).toContain(`frame-src 'self' ${PREVIEW};`);
+    const configuration = await app.inject({
+      method: "GET",
+      url: "/api/control-center/v1/config",
+      headers: requestHeaders(),
+    });
+    expect(configuration.json()).toMatchObject({
+      filesAvailable: true,
+      filePreviewAvailable: true,
+    });
   });
 
   it("does not advertise a session reference as recent authentication proof", async () => {

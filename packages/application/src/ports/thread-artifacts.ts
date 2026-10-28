@@ -33,12 +33,13 @@ export interface ThreadArtifact {
   readonly sizeBytes: number;
   readonly sha256: string | null;
   readonly version: number;
+  readonly turn: number;
   readonly copyRef: string | null;
   readonly overlapped: boolean;
   readonly createdAt: string;
 }
 
-export type ThreadArtifactRegistration = Omit<ThreadArtifact, "version">;
+export type ThreadArtifactRegistration = Omit<ThreadArtifact, "version" | "turn">;
 
 export interface ThreadArtifactListQuery extends ThreadArtifactScope {
   readonly threadId: string | null;

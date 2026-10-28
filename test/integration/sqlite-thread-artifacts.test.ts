@@ -116,8 +116,9 @@ describe("[FD-1] thread artifact storage", () => {
       });
       expect(changed).toMatchObject({
         created: true,
-        artifact: { id: "a3", version: 2, overlapped: true },
+        artifact: { id: "a3", version: 2, overlapped: true, turn: 2 },
       });
+      expect(first.artifact.turn).toBe(1);
       expect(
         (await store.versions({ ...scope, threadId: "thread-1", path: "game/index.html" })).map(
           ({ id, version }) => [id, version],

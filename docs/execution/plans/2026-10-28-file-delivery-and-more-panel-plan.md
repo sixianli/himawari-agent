@@ -87,7 +87,13 @@ PR #63 合并后，基于新 main：
 
 ## 需要 Andy 的事
 
-- 预览子域名的名字，和在 Cloudflare 上加 DNS、隧道路由（不放进登录拦截）的批准。
+- 预览子域名：Andy 2026-10-28 14:16（日本时间）定为 `himawari-files.siyi.win`（原话“子域名可以”）。
+- 上线时的 Cloudflare 步骤（Mac 远程线程做，Andy 在那个线程里亲手打一句授权后才动手）：
+  1. 在 `siyi.win` 区域给 `himawari-files` 加一条指向现有隧道的 DNS 记录（隧道的公共主机名），回源到生产机 `http://127.0.0.1:8400`，和主站同一个服务。
+  2. 确认 Cloudflare Access 的应用只拦 `himawari.siyi.win`，没有覆盖 `himawari-files.siyi.win`（内嵌框里没法登录）；不要给它加 Access 应用。
+  3. 生产 `/etc/himawari/config.json` 的 `http` 里加 `"previewOrigin": "https://himawari-files.siyi.win"`，改前先备份，改后重启服务。
+  4. 验收：主站打开一个模型写的网页文件，预览框能运行；直接打开 `https://himawari-files.siyi.win/` 返回 404；在预览页里读不到主站 Cookie。
+  5. 请做公网安全审查的线程复核这个子域名。
 - 上线照旧并入“完整版本”。
 
 ## 进度记录
@@ -101,6 +107,15 @@ PR #63 合并后，基于新 main：
 - 主站安全策略只加了 `frame-src 'self' <预览域名>`；读文件接口单独用 `frame-ancestors 'self'` 和 `X-Frame-Options: SAMEORIGIN`，让 PDF 能在本站内嵌框里显示。预览页的安全策略允许 `https:` 的脚本和样式（模型写的网页常用外部库），但 `connect-src 'none'`，页面不能向外发请求。
 - 新配置 `http.previewOrigin` 可不填；不填时预览接口返回“未安装”，其他功能照常。必须是 https 来源，且不能和主站同一个主机名。上线包模板暂不改，等 Andy 定子域名后再加。
 - 第四步的说明加在运行系统提示里，缓存键 `run-system-instruction:v5`。
+
+2026-10-28，第五步网页部分完成，照 Andy 批准的 [v8 原型](../../assets/control-center/2026-10-28-v8/desktop.dc.html)做。和上面写的不同或补充的地方：
+
+- 列表接口每条加了 `turn`（这次运行在对话里的第几轮，查询时按运行创建时间现算，不存进表）、`toolItemId`（对应过程记录里那一步工具调用，用来找到命令原文）和 `commandKey`（后台命令产生的文件，填那条后台命令的编号）。配置接口加 `filesAvailable`、`filePreviewAvailable` 两个开关，网页据此决定显示“文件”入口和网页预览。
+- 后台命令做出的文件放在它汇报的那一轮下面（和原型的“第 4 轮 · 后台命令 npm test”一致），不放在启动命令的那一轮。
+- 登记表里没有、过程记录里有的文件（例如登记功能上线前的旧对话）照旧从过程记录出卡片，能看全文和改动，但没有版本和下载。
+- 网页文件和 SVG 只在配好预览域名时用隔离框打开；没配时写明“网页预览还没开通”，可以下载。文本文件超过 2 MiB 不在预览里读，只给下载。
+- 侧栏“记忆”下面加“文件”入口；文件页每个文件只列最新一版，按今天、昨天、更早分组，可以按文件名搜索、按类型筛选；从文件页打开的预览，点“来自「对话名」第 N 轮 →”会进入那个对话并定位到那一轮。
+- 读文件列表的数据结构单独放在 `apps/control-center/src/registered-files.ts`，因为接口客户端也被后端的类型检查引用，不能连带引入只在浏览器里能用的代码。
 
 ## 收尾
 

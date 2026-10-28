@@ -1,12 +1,29 @@
 import { lexer } from "marked";
 import { useEffect, useRef, useState } from "react";
 import { parseDelimited } from "../delimited-text.js";
+import type { DeliveredFile } from "../delivered-files.js";
+import { fileContentUrl } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
-import { type DiffLine, fileExtension, type PreviewKind, type TurnFile } from "../turn-files.js";
+import type { RegisteredFile } from "../registered-files.js";
+import { type DiffLine, fileExtension, type PreviewKind, previewKind } from "../turn-files.js";
 import { LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
+import { fileFacts, fileSourceText } from "./delivered-file.js";
 import { ActionButton } from "./primitives.js";
+
+export const FILE_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
+
+export interface FilePreviewAccess {
+  readonly text: (fileId: string) => Promise<string>;
+  readonly versions: (fileId: string) => Promise<readonly RegisteredFile[]>;
+  readonly previewUrl: ((fileId: string) => Promise<string>) | undefined;
+}
+
+export interface DeliveredPreview {
+  readonly file: DeliveredFile;
+  readonly source: { readonly label: string; readonly onOpen: () => void } | undefined;
+}
 
 export interface ContentPreviewValue {
   readonly title: string;
@@ -16,17 +33,54 @@ export interface ContentPreviewValue {
   readonly kind?: PreviewKind;
   readonly diff?: readonly DiffLine[];
   readonly missing?: boolean;
+  readonly delivered?: DeliveredPreview;
 }
 
-export const previewOfFile = (file: TurnFile): ContentPreviewValue => ({
+export const previewOfDelivered = (
+  file: DeliveredFile,
+  source?: DeliveredPreview["source"],
+): ContentPreviewValue => ({
   key: file.key,
   title: file.name,
   path: file.path,
-  kind: file.kind,
-  text: file.content ?? "",
-  diff: file.diff,
-  missing: file.content === undefined,
+  kind: previewKind(file.name),
+  text: file.trace?.content ?? "",
+  diff: file.trace?.diff ?? [],
+  missing: !file.registered && file.trace?.content === undefined,
+  delivered: { file, source },
 });
+
+const TEXT_MEDIA = /^(text\/|application\/(json|x-ndjson|xml|yaml))/;
+
+type Body =
+  | { readonly kind: "text" }
+  | { readonly kind: "image"; readonly url: string }
+  | { readonly kind: "pdf"; readonly url: string }
+  | { readonly kind: "web" }
+  | { readonly kind: "notice"; readonly id: MessageId };
+
+function bodyOf(file: RegisteredFile, previewAvailable: boolean): Body {
+  if (!file.stored) return { kind: "notice", id: "preview.notStored" };
+  if (file.kind === "image" && file.mediaType !== "image/svg+xml")
+    return { kind: "image", url: fileContentUrl(file.id) };
+  if (file.kind === "pdf") return { kind: "pdf", url: fileContentUrl(file.id) };
+  if (file.mediaType === "text/html" || file.mediaType === "image/svg+xml")
+    return previewAvailable ? { kind: "web" } : { kind: "notice", id: "preview.webUnavailable" };
+  if (!TEXT_MEDIA.test(file.mediaType) && file.kind !== "code")
+    return { kind: "notice", id: "preview.unsupported" };
+  if (file.sizeBytes > FILE_TEXT_PREVIEW_BYTES) return { kind: "notice", id: "preview.tooLarge" };
+  return { kind: "text" };
+}
+
+function openInNewTab(load: () => Promise<string>) {
+  const opened = window.open("about:blank", "_blank");
+  if (!opened) return;
+  opened.opener = null;
+  void load().then(
+    (url) => opened.location.replace(url),
+    () => opened.close(),
+  );
+}
 
 type View = "preview" | "raw" | "diff";
 
@@ -35,11 +89,16 @@ const PREVIEW_LABELS: Readonly<Partial<Record<PreviewKind, MessageId>>> = {
   csv: "preview.table",
 };
 
-function viewsOf(value: ContentPreviewValue): readonly View[] {
+function viewsOf(
+  value: ContentPreviewValue,
+  body: Body | undefined,
+  diff: boolean,
+): readonly View[] {
+  if (body && body.kind !== "text") return body.kind === "notice" && diff ? ["diff"] : [];
   const views: View[] = [];
   if (!value.missing && value.kind && PREVIEW_LABELS[value.kind]) views.push("preview");
   if (!value.missing) views.push("raw");
-  if (value.diff?.length) views.push("diff");
+  if (diff && value.diff?.length) views.push("diff");
   return views;
 }
 
@@ -182,19 +241,75 @@ function MarkdownReader({ text, label }: { readonly text: string; readonly label
   );
 }
 
+function useDeliveredContent(
+  selected: RegisteredFile | undefined,
+  body: Body | undefined,
+  access: FilePreviewAccess | undefined,
+) {
+  const [state, setState] = useState<{
+    readonly id: string;
+    readonly text?: string;
+    readonly url?: string;
+    readonly failed?: boolean;
+  }>();
+  const [attempt, setAttempt] = useState(0);
+  const id = selected?.id;
+  const kind = body?.kind;
+  useEffect(() => {
+    void attempt;
+    if (!id || !access || (kind !== "text" && kind !== "web")) return;
+    let current = true;
+    setState({ id });
+    const load =
+      kind === "text"
+        ? access.text(id).then((text) => ({ id, text }))
+        : (access.previewUrl?.(id) ?? Promise.reject(new Error("PREVIEW_UNAVAILABLE"))).then(
+            (url) => ({ id, url }),
+          );
+    load.then(
+      (next) => current && setState(next),
+      () => current && setState({ id, failed: true }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [id, kind, access, attempt]);
+  return {
+    loaded: state?.id === id ? state : undefined,
+    retry: () => setAttempt((value) => value + 1),
+  };
+}
+
 export function ContentPreview({
   value,
+  access,
   onBack,
   onClose,
 }: {
   value: ContentPreviewValue;
+  access?: FilePreviewAccess | undefined;
   onBack?: (() => void) | undefined;
   onClose: () => void;
 }) {
   const { message } = useControlCenterIntl();
   const panel = useRef<HTMLElement>(null);
-  const views = viewsOf(value);
-  const [view, setView] = useState<View>(views[0] ?? "raw");
+  const delivered = value.delivered;
+  const latest = delivered?.file.registered;
+  const [versions, setVersions] = useState<readonly RegisteredFile[]>();
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState(latest?.id);
+  const selected = versions?.find((item) => item.id === selectedId) ?? latest;
+  const body = selected ? bodyOf(selected, Boolean(access?.previewUrl)) : undefined;
+  const { loaded, retry } = useDeliveredContent(selected, body, access);
+  const showsTrace = !latest || selected?.id === latest.id;
+  const shown: ContentPreviewValue =
+    body?.kind === "text" && loaded?.text !== undefined
+      ? { ...value, text: loaded.text, missing: false }
+      : body?.kind === "text"
+        ? { ...value, missing: true }
+        : value;
+  const views = viewsOf(shown, body, showsTrace);
+  const [view, setView] = useState<View>();
   const [wide, setWide] = useState(false);
   const [copied, copy] = useCopied();
   useEffect(() => {
@@ -204,17 +319,66 @@ export function ContentPreview({
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
     };
   }, []);
-  const current = views.includes(view) ? view : (views[0] ?? "raw");
-  const kind = value.kind ?? "text";
+  const latestId = latest?.id;
+  const versionCount = delivered?.file.versions ?? 1;
+  useEffect(() => {
+    if (!latestId || !access || versionCount < 2) return;
+    let current = true;
+    access.versions(latestId).then(
+      (items) => current && setVersions([...items].sort((a, b) => b.version - a.version)),
+      () => {},
+    );
+    return () => {
+      current = false;
+    };
+  }, [latestId, access, versionCount]);
+  const current = view && views.includes(view) ? view : (views[0] ?? "raw");
+  const kind = shown.kind ?? "text";
   const copyText =
     current === "diff"
-      ? (value.diff ?? []).map((line) => `${line.sign}${line.text}`).join("\n")
-      : value.text;
+      ? (shown.diff ?? []).map((line) => `${line.sign}${line.text}`).join("\n")
+      : shown.text;
   const labels: Readonly<Record<View, MessageId>> = {
     preview: PREVIEW_LABELS[kind] ?? "preview.raw",
     raw: kind === "markdown" || kind === "csv" ? "preview.raw" : "preview.source",
     diff: "preview.diff",
   };
+  const textReady = !body || (body.kind === "text" && loaded?.text !== undefined);
+  const loading = body && (body.kind === "text" || body.kind === "web") && !loaded?.failed;
+  const pending =
+    loading && (body.kind === "text" ? loaded?.text === undefined : loaded?.url === undefined);
+  const versionLabel = (item: RegisteredFile) =>
+    [
+      message("files.version", { version: item.version }),
+      delivered
+        ? fileSourceText({ ...delivered.file, source: item.source, turn: item.turn }, message)
+        : "",
+      message("more.time", { at: new Date(item.createdAt) }),
+      item.id === latest?.id ? message("preview.versionCurrent") : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const fileActions = (
+    <>
+      {selected && body?.kind === "web" ? (
+        <button
+          type="button"
+          className="preview-action"
+          onClick={() => {
+            const preview = access?.previewUrl;
+            if (preview) openInNewTab(() => preview(selected.id));
+          }}
+        >
+          {message("preview.openTab")}
+        </button>
+      ) : null}
+      {selected?.stored ? (
+        <a className="preview-action" href={fileContentUrl(selected.id, true)} download>
+          {message("preview.download")}
+        </a>
+      ) : null}
+    </>
+  );
   return (
     <aside
       className={wide ? "content-preview is-wide" : "content-preview"}
@@ -240,7 +404,9 @@ export function ContentPreview({
         )}
         <span className="preview-title">
           <strong>{value.title}</strong>
-          {value.path && value.path !== value.title ? <small>{value.path}</small> : null}
+          {!delivered && value.path && value.path !== value.title ? (
+            <small>{value.path}</small>
+          ) : null}
         </span>
         {views.length > 1 ? (
           <fieldset className="preview-tabs">
@@ -257,17 +423,16 @@ export function ContentPreview({
             ))}
           </fieldset>
         ) : null}
-        <ActionButton
-          className="preview-widen"
-          variant="quiet"
-          aria-label={message(wide ? "preview.narrow" : "preview.widen")}
-          title={message(wide ? "preview.narrow" : "preview.widen")}
+        {fileActions}
+        <button
+          type="button"
+          className="preview-action preview-widen"
           aria-pressed={wide}
           onClick={() => setWide(!wide)}
         >
-          <LineIcon name="widen" />
-        </ActionButton>
-        {value.missing && !value.diff?.length ? null : (
+          {message(wide ? "preview.narrow" : "preview.widen")}
+        </button>
+        {(shown.missing && !shown.diff?.length) || !textReady ? null : (
           <ActionButton
             variant="quiet"
             aria-label={message("preview.copy")}
@@ -281,29 +446,126 @@ export function ContentPreview({
           ×
         </ActionButton>
       </header>
-      {value.missing ? (
+      {delivered ? (
+        <div className="preview-meta">
+          {selected?.stored ? <span className="preview-meta-actions">{fileActions}</span> : null}
+          <span>
+            {fileFacts(
+              selected
+                ? {
+                    ...delivered.file,
+                    registered: selected,
+                    source: selected.source,
+                    turn: selected.turn,
+                  }
+                : delivered.file,
+              message,
+              { source: true, time: true },
+            )}
+          </span>
+          {latest && versionCount > 1 ? (
+            <button
+              type="button"
+              className="preview-versions"
+              aria-expanded={versionsOpen}
+              onClick={() => setVersionsOpen(!versionsOpen)}
+            >
+              {message("preview.versionOf", {
+                version: selected?.version ?? latest.version,
+                count: versionCount,
+              })}
+              <LineIcon name="chevron" />
+            </button>
+          ) : null}
+          {versionsOpen && versions ? (
+            <ul className="preview-version-list" aria-label={message("preview.versions")}>
+              {versions.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    aria-pressed={item.id === selected?.id}
+                    onClick={() => {
+                      setSelectedId(item.id);
+                      setVersionsOpen(false);
+                    }}
+                  >
+                    {versionLabel(item)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {delivered.source ? (
+            <button type="button" className="preview-source-link" onClick={delivered.source.onOpen}>
+              {delivered.source.label} →
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {selected?.overlapped ? (
+        <p className="preview-notice">{message("preview.overlapped")}</p>
+      ) : null}
+      {body?.kind === "notice" ? <p className="preview-notice">{message(body.id)}</p> : null}
+      {loaded?.failed ? (
         <p className="preview-notice">
-          {message(value.diff?.length ? "preview.editOnly" : "preview.missing")}
+          {message("preview.loadFailed")}{" "}
+          <button type="button" className="preview-retry" onClick={retry}>
+            {message("loading.retry")}
+          </button>
         </p>
       ) : null}
-      {kind === "html" && current === "raw" ? (
+      {!body && shown.missing ? (
+        <p className="preview-notice">
+          {message(shown.diff?.length ? "preview.editOnly" : "preview.missing")}
+        </p>
+      ) : null}
+      {!body && kind === "html" && current === "raw" ? (
         <p className="preview-notice">{message("preview.htmlLater")}</p>
       ) : null}
+      {current === "diff" && delivered && views.length ? (
+        <p className="preview-notice">{message("preview.diffNote")}</p>
+      ) : null}
       <div className="preview-body">
-        {current === "diff" ? (
-          <DiffLines lines={value.diff ?? []} />
-        ) : current === "preview" && kind === "markdown" ? (
-          <MarkdownReader text={value.text} label={message("preview.contents")} />
+        {pending ? (
+          <p className="preview-loading">{message("preview.loading")}</p>
+        ) : current === "diff" && views.length ? (
+          <DiffLines lines={shown.diff ?? []} />
+        ) : body?.kind === "image" ? (
+          <div className="preview-media">
+            <img src={body.url} alt={value.title} />
+          </div>
+        ) : body?.kind === "pdf" ? (
+          <iframe className="preview-frame is-pdf" src={body.url} title={value.title} />
+        ) : body?.kind === "web" ? (
+          loaded?.url ? (
+            <div className="preview-isolated">
+              <p className="preview-isolated-bar">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 11h14v9H5zM8 11V8a4 4 0 0 1 8 0v3" />
+                </svg>
+                {message("preview.isolated")}
+              </p>
+              <iframe
+                className="preview-frame"
+                src={loaded.url}
+                title={value.title}
+                sandbox="allow-scripts allow-modals allow-popups allow-downloads"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ) : null
+        ) : body?.kind === "notice" ? null : current === "preview" && kind === "markdown" ? (
+          <MarkdownReader text={shown.text} label={message("preview.contents")} />
         ) : current === "preview" && kind === "csv" ? (
           <CsvTable
-            text={value.text}
+            text={shown.text}
             delimiter={fileExtension(value.title) === "tsv" ? "\t" : ","}
             message={message}
           />
-        ) : value.missing ? null : kind === "text" && !value.path ? (
-          <pre className="preview-plain">{value.text}</pre>
+        ) : shown.missing ? null : kind === "text" && !shown.path ? (
+          <pre className="preview-plain">{shown.text}</pre>
         ) : (
-          <SourceLines text={value.text} />
+          <SourceLines text={shown.text} />
         )}
       </div>
     </aside>

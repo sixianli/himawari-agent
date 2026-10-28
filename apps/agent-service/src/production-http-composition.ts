@@ -73,6 +73,7 @@ import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
 } from "./production-approval-gateway.js";
+import { backgroundCommandRef } from "./production-background-commands.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
@@ -836,6 +837,7 @@ export async function createProductionHttpComposition(
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ticketKey: createHmac("sha256", csrfKey).update("himawari.file-preview.key.v1").digest(),
     now: clock,
+    commandKey: backgroundCommandRef,
   });
   const searchKey = createHmac("sha256", csrfKey).update("himawari.search.key.v2").digest();
   const searchTokenizer = new ScopedThreadSearchTokenizer({

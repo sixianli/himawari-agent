@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   ApplicationPortError,
+  executionToolItemId,
   type GatewayAuthenticationContext,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -29,6 +30,7 @@ export interface BrowserThreadFile {
   readonly threadId: string;
   readonly runId: string;
   readonly toolCallId: string;
+  readonly toolItemId: string;
   readonly source: ThreadArtifact["source"];
   readonly path: string;
   readonly name: string;
@@ -36,6 +38,8 @@ export interface BrowserThreadFile {
   readonly mediaType: string;
   readonly sizeBytes: number;
   readonly version: number;
+  readonly turn: number;
+  readonly commandKey: string | null;
   readonly stored: boolean;
   readonly overlapped: boolean;
   readonly createdAt: string;
@@ -86,18 +90,23 @@ export interface BrowserThreadFilesOptions {
   readonly previewOrigin?: string;
   readonly ticketKey: Uint8Array;
   readonly now: () => string;
+  readonly commandKey?: (runId: string, toolCallId: string) => string;
 }
 
 function fileName(path: string): string {
   return path.split("/").at(-1) || path;
 }
 
-function browserFile(artifact: ThreadArtifact): BrowserThreadFile {
+function browserFile(
+  artifact: ThreadArtifact,
+  commandKey: BrowserThreadFilesOptions["commandKey"],
+): BrowserThreadFile {
   return Object.freeze({
     id: artifact.id,
     threadId: artifact.threadId,
     runId: artifact.runId,
     toolCallId: artifact.toolCallId,
+    toolItemId: executionToolItemId(artifact.toolCallId),
     source: artifact.source,
     path: artifact.path,
     name: fileName(artifact.path),
@@ -105,6 +114,11 @@ function browserFile(artifact: ThreadArtifact): BrowserThreadFile {
     mediaType: artifact.mediaType,
     sizeBytes: artifact.sizeBytes,
     version: artifact.version,
+    turn: artifact.turn,
+    commandKey:
+      artifact.source === "bash" && commandKey
+        ? commandKey(artifact.runId, artifact.toolCallId)
+        : null,
     stored: artifact.copyRef !== null,
     overlapped: artifact.overlapped,
     createdAt: artifact.createdAt,
@@ -117,6 +131,8 @@ function notFound(): never {
 
 export class BrowserThreadFiles implements HttpGatewayFilesPort {
   readonly #options: BrowserThreadFilesOptions;
+
+  #file = (artifact: ThreadArtifact) => browserFile(artifact, this.#options.commandKey);
 
   constructor(options: BrowserThreadFilesOptions) {
     if (options.ticketKey.byteLength < 32) throw new Error("FILE_PREVIEW_KEY_INVALID");
@@ -142,7 +158,7 @@ export class BrowserThreadFiles implements HttpGatewayFilesPort {
       before: input.before,
       limit: input.limit,
     });
-    return Object.freeze({ items: page.items.map(browserFile), nextCursor: page.nextCursor });
+    return Object.freeze({ items: page.items.map(this.#file), nextCursor: page.nextCursor });
   }
 
   async versions(input: Parameters<HttpGatewayFilesPort["versions"]>[0]) {
@@ -153,7 +169,7 @@ export class BrowserThreadFiles implements HttpGatewayFilesPort {
       threadId: artifact.threadId,
       path: artifact.path,
     });
-    return Object.freeze({ items: items.map(browserFile) });
+    return Object.freeze({ items: items.map(this.#file) });
   }
 
   async content(input: Parameters<HttpGatewayFilesPort["content"]>[0]) {

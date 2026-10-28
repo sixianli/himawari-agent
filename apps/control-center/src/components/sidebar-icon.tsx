@@ -63,6 +63,7 @@ const paths = {
   memory: (
     <path d="M5 4.5h10.5A3.5 3.5 0 0 1 19 8v12H8.5A3.5 3.5 0 0 1 5 16.5zM5 16.5A3.5 3.5 0 0 1 8.5 13H19" />
   ),
+  files: <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />,
 } satisfies Record<string, ReactNode>;
 
 export function SidebarIcon({ name }: { readonly name: keyof typeof paths }) {

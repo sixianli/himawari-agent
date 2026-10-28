@@ -880,6 +880,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         ownerId: authentication.ownerId,
         installedGatewayV2Operations: configuration.installedGatewayV2Operations ?? [],
         healthDependenciesAvailable: options.health !== undefined,
+        filesAvailable: options.files !== undefined,
+        filePreviewAvailable: options.files !== undefined && previewOrigin !== undefined,
         agentId: configuration.agentId,
         deploymentId: configuration.deploymentId,
         authorityEpoch: configuration.authorityEpoch,
