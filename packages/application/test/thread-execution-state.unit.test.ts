@@ -16,6 +16,7 @@ const run: ThreadRunSummaryRecord = {
   createdAt: at(0),
   updatedAt: at(1),
   background: null,
+  backgroundCommands: [],
 };
 const record = (
   sequence: number,

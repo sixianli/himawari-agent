@@ -107,6 +107,7 @@ export class ProductionBackgroundRuns {
     const results = record.holds.map((hold) => ({
       taskRef: hold.taskRef,
       command: "",
+      output: "",
       dataClassification: "private" as const,
       outcome: "interrupted" as const,
       notice: "",
@@ -184,6 +185,20 @@ export class ProductionBackgroundRuns {
       text: noticeText(results),
       dataClassification,
     });
+    const outputRefs = new Map<string, string>();
+    for (const result of results) {
+      if (!result.output) continue;
+      const ref = `background-output:${createHash("sha256")
+        .update(JSON.stringify([runId, result.taskRef]))
+        .digest("hex")
+        .slice(0, 32)}`;
+      await this.#options.storeNotice({
+        ref,
+        text: result.output,
+        dataClassification: result.dataClassification,
+      });
+      outputRefs.set(result.taskRef, ref);
+    }
     let lastError: unknown;
     for (let attempt = 0; attempt < FINISH_ATTEMPTS; attempt += 1) {
       try {
@@ -198,7 +213,14 @@ export class ProductionBackgroundRuns {
             ? { leaseId: lease.authorityLeaseId, fencingToken: lease.fencingToken }
             : this.#options.authority(),
           ...(lease ? { executionLease: claimFromRunExecutionLease(lease) } : {}),
-          outcomes: results.map((result) => ({ taskRef: result.taskRef, outcome: result.outcome })),
+          outcomes: results.map((result) => {
+            const outputRef = outputRefs.get(result.taskRef);
+            return {
+              taskRef: result.taskRef,
+              outcome: result.outcome,
+              ...(outputRef ? { outputRef } : {}),
+            };
+          }),
           notice: {
             triggerId: `trigger:${identity}`,
             runId: `run:${identity}` as RunId,

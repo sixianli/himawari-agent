@@ -4649,6 +4649,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       dataClassification: "private",
       resultRef: "bg-prompt-1",
     });
+    const labels: string[] = [];
     const background = new ProductionBackgroundCommands({
       limits: { waitMs: 20, maximumMs: 60_000 },
       now: () => clock.now(),
@@ -4709,6 +4710,10 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
               modelContent: await command,
             }),
             async () => ({ ref: "bg-receipt" }),
+            async (text) => {
+              labels.push(text);
+              return { ref: "bg-command-label" };
+            },
           ),
         subscribeBackground: (runId, listener) => background.subscribe(runId, listener),
       },
@@ -4765,6 +4770,16 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       await setup.repository.threadRepository().listRuns(ownerId, agentId, thread.thread.id)
     ).find((run) => run.runId === firstRunId);
     expect(parkedSummary?.background).toMatchObject({ count: 1 });
+    expect(parkedSummary?.backgroundCommands).toEqual([
+      expect.objectContaining({
+        commandRef: "bg-command-label",
+        outputRef: null,
+        endedAt: null,
+        outcome: null,
+        noticeRunId: null,
+      }),
+    ]);
+    expect(labels).toHaveLength(1);
 
     finishCommand("Tests 42 passed");
     await composed.background?.drain();
@@ -4798,5 +4813,21 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         (run) => run.background,
       ),
     ).toEqual([null, null, null]);
+    const finished = (
+      await setup.repository.threadRepository().listRuns(ownerId, agentId, thread.thread.id)
+    ).find((run) => run.runId === firstRunId)?.backgroundCommands;
+    expect(finished).toEqual([
+      expect.objectContaining({
+        commandRef: "bg-command-label",
+        outcome: "completed",
+        noticeRunId,
+        outputRef: expect.stringMatching(/^background-output:/),
+      }),
+    ]);
+    const outputRef = finished?.[0]?.outputRef;
+    if (!outputRef) throw new Error("missing output ref");
+    expect(await setup.repository.payloadStore(ownerId, agentId).get(outputRef)).toMatchObject({
+      contentType: "text/plain",
+    });
   });
 });

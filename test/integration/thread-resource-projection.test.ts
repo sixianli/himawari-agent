@@ -73,6 +73,7 @@ it("keeps a currently observed execution active until its missing result becomes
       createdAt: T1,
       updatedAt: T1,
       background: null,
+      backgroundCommands: [],
     };
     expect(projectThreadExecutionState(run, [], true, running)).toMatchObject({
       displayPhase: "preparing",
@@ -460,6 +461,7 @@ describe("task environment execution display", () => {
             createdAt: T1,
             updatedAt: T1,
             background: null,
+            backgroundCommands: [],
           },
           [],
           true,

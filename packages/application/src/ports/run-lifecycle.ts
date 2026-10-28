@@ -41,6 +41,7 @@ export interface RunBackgroundHold {
   readonly taskRef: string;
   readonly startedAt: string;
   readonly deadlineAt: string;
+  readonly commandRef?: string;
 }
 
 export type RunBackgroundOutcome = "completed" | "failed" | "stopped" | "timed_out" | "interrupted";
@@ -69,6 +70,7 @@ export interface FinishBackgroundRunInput {
   readonly outcomes: readonly {
     readonly taskRef: string;
     readonly outcome: RunBackgroundOutcome;
+    readonly outputRef?: string;
   }[];
   readonly notice: {
     readonly triggerId: string;

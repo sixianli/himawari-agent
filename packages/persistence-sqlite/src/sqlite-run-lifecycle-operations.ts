@@ -166,6 +166,13 @@ function instantText(value: unknown): string {
   return text;
 }
 
+function optionalRef(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const ref = string(value);
+  if (ref.length > 128) throw new TypeError("Run background payload ref is invalid");
+  return ref;
+}
+
 function backgroundHolds(value: unknown): NonNullable<RunCompletionInput["background"]> {
   const holds = record(value)["holds"];
   if (!Array.isArray(holds) || holds.length < 1 || holds.length > 16)
@@ -175,10 +182,12 @@ function backgroundHolds(value: unknown): NonNullable<RunCompletionInput["backgr
       const item = record(hold);
       const taskRef = string(item["taskRef"]);
       if (taskRef.length > 128) throw new TypeError("Run background task ref is invalid");
+      const commandRef = optionalRef(item["commandRef"]);
       return {
         taskRef,
         startedAt: instantText(item["startedAt"]),
         deadlineAt: instantText(item["deadlineAt"]),
+        ...(commandRef ? { commandRef } : {}),
       };
     }),
   };
@@ -208,7 +217,8 @@ function finishInput(value: unknown): FinishBackgroundRunInput {
       const item = record(entry);
       const outcome = BACKGROUND_OUTCOMES.find((candidate) => candidate === item["outcome"]);
       if (!outcome) throw new TypeError("Run background outcome is invalid");
-      return { taskRef: string(item["taskRef"]), outcome };
+      const outputRef = optionalRef(item["outputRef"]);
+      return { taskRef: string(item["taskRef"]), outcome, ...(outputRef ? { outputRef } : {}) };
     }),
     notice: {
       triggerId: string(notice["triggerId"]),
@@ -846,8 +856,9 @@ export class SqliteRunLifecycleOperations {
           for (const hold of input.background?.holds ?? [])
             this.database
               .prepare(`INSERT INTO run_background_holds (
-                owner_id, agent_id, run_id, task_ref, thread_id, started_at, deadline_at, parked_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+                owner_id, agent_id, run_id, task_ref, thread_id, started_at, deadline_at, parked_at,
+                command_ref
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
               .run(
                 input.ownerId,
                 input.agentId,
@@ -857,6 +868,7 @@ export class SqliteRunLifecycleOperations {
                 hold.startedAt,
                 hold.deadlineAt,
                 now,
+                hold.commandRef ?? null,
               );
         } else {
           this.database
@@ -955,7 +967,7 @@ export class SqliteRunLifecycleOperations {
         if (!stored || !stored.run.threadId)
           return this.fail("PORT_NOT_FOUND", "Background Run is missing from the bound scope");
         const release = this.database.prepare(
-          `UPDATE run_background_holds SET released_at=?, outcome=?, notice_run_id=?
+          `UPDATE run_background_holds SET released_at=?, outcome=?, notice_run_id=?, output_ref=?
             WHERE owner_id=? AND agent_id=? AND run_id=? AND task_ref=? AND released_at IS NULL`,
         );
         if (stored.run.status !== "running") {
@@ -964,6 +976,7 @@ export class SqliteRunLifecycleOperations {
               now,
               entry.outcome,
               null,
+              entry.outputRef ?? null,
               input.ownerId,
               input.agentId,
               input.runId,
@@ -999,6 +1012,7 @@ export class SqliteRunLifecycleOperations {
             now,
             entry.outcome,
             input.notice.runId,
+            entry.outputRef ?? null,
             input.ownerId,
             input.agentId,
             input.runId,

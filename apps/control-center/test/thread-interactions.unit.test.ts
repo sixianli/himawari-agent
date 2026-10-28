@@ -128,6 +128,7 @@ function View() {
     h("h1", null, model.title),
     model.list,
     model.content,
+    model.actions,
     model.details,
     model.settingsData,
   );
@@ -429,6 +430,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     options = {
@@ -618,6 +620,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     options = {
@@ -735,6 +738,7 @@ describe("thread control center interactions", () => {
           createdAt: NOW,
           updatedAt: NOW,
           background: null,
+          backgroundCommands: [],
         },
       ];
       options = {
@@ -803,6 +807,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     options = {
@@ -910,6 +915,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     state = {
@@ -938,6 +944,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     options = {
@@ -1076,6 +1083,7 @@ describe("thread control center interactions", () => {
           createdAt: NOW,
           updatedAt: NOW,
           background: null,
+          backgroundCommands: [],
         },
       ];
       threadMessages = [
@@ -1132,6 +1140,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     threadMessages = [
@@ -1289,6 +1298,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     threadMessages = [
@@ -1367,6 +1377,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     options = {
@@ -1480,6 +1491,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     threadMessages = [
@@ -1564,6 +1576,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     threadMessages = [
@@ -1631,6 +1644,7 @@ describe("thread control center interactions", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     options = {
@@ -1702,6 +1716,7 @@ describe("thread control center interactions", () => {
           createdAt: NOW,
           updatedAt: NOW,
           background: null,
+          backgroundCommands: [],
         },
       ];
       options = {
@@ -2133,7 +2148,15 @@ describe("thread control center interactions", () => {
     "requests cancellation or cleanup for %s using the current run revision",
     async (status) => {
       runs = [
-        { runId: "run-ui", revision: 7, status, createdAt: NOW, updatedAt: NOW, background: null },
+        {
+          runId: "run-ui",
+          revision: 7,
+          status,
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+          backgroundCommands: [],
+        },
       ];
       await render();
       await refresh();
@@ -2262,6 +2285,7 @@ describe("pushed conversation updates", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     threadMessages = [message(1), message(2)];
@@ -2365,6 +2389,7 @@ describe("pushed conversation updates", () => {
         createdAt: NOW,
         updatedAt: NOW,
         background: null,
+        backgroundCommands: [],
       },
     ];
     from = query.mock.calls.length;
@@ -2451,5 +2476,146 @@ describe("pushed conversation updates", () => {
     await settle();
     expect(first?.closed).toBe(true);
     expect(sources.at(-1)?.url).not.toBe(first?.url);
+  });
+});
+
+describe("more panel", () => {
+  const command = {
+    taskRef: "background-command:aaaaaaaaaaaaaaaaaaaaaaaa",
+    commandRef: "command-ref",
+    outputRef: null,
+    startedAt: NOW,
+    deadlineAt: "2026-09-14T00:30:00Z",
+    endedAt: null,
+    outcome: null,
+    noticeRunId: null,
+  };
+  const agentMessage = (runId: string, sequence: number, role: "owner" | "agent" | "system") => ({
+    messageId: `message-${runId}-${role}`,
+    sequence,
+    role,
+    contentRef: `content-${runId}-${role}`,
+    dataClassification: "private" as const,
+    status: "committed" as const,
+    turnId: `turn-${runId}`,
+    runId,
+    committedAt: NOW,
+  });
+  const panelText = () => container.querySelector(".more-panel")?.textContent ?? "";
+
+  it("[BG-9] counts running commands on the More button, opens the command from the answer line and stops it without asking", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: { count: 1, startedAt: NOW, deadlineAt: command.deadlineAt },
+        backgroundCommands: [command],
+      },
+    ];
+    threadMessages = [agentMessage("run-ui", 1, "owner"), agentMessage("run-ui", 2, "agent")];
+    readText.mockImplementation(async (ref: string) => ({
+      content: ref === "command-ref" ? "npm test" : "已保存的回答",
+    }));
+    await render();
+    await refresh();
+    expect(container.querySelector(".more-count")?.textContent).toBe("1");
+    expect(container.querySelector(".more-panel")).toBeNull();
+    const line = container.querySelector<HTMLButtonElement>(".background-line");
+    expect(line?.textContent).toContain("more.line.running");
+    await act(async () => line?.click());
+    expect(container.querySelector(".more-title")?.textContent).toBe("npm test");
+    expect(panelText()).toContain("more.detail.outputLater");
+    const stop = container.querySelector<HTMLButtonElement>(".more-panel .more-stop");
+    await act(async () => stop?.click());
+    expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: "thread.run.cancel",
+      payload: { runId: "run-ui", expectedRunRevision: 7 },
+    });
+    expect(container.querySelector(".more-panel .more-stop")?.textContent).toBe("more.stopping");
+    expect(container.querySelector<HTMLButtonElement>(".more-panel .more-stop")?.disabled).toBe(
+      true,
+    );
+    expect(line?.textContent).toContain("more.line.stopping");
+    await click("common.back");
+    expect(panelText()).toContain("more.section.running");
+    await click("common.close");
+    expect(container.querySelector(".more-panel")).toBeNull();
+  });
+
+  it("[BG-9] shows the finished command's last output lines and jumps to the report turn", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 8,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [
+          {
+            ...command,
+            outputRef: "output-ref",
+            endedAt: "2026-09-14T00:08:12Z",
+            outcome: "completed",
+            noticeRunId: "run-notice",
+          },
+        ],
+      },
+      {
+        runId: "run-notice",
+        revision: 2,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    threadMessages = [
+      agentMessage("run-ui", 1, "owner"),
+      agentMessage("run-ui", 2, "agent"),
+      agentMessage("run-notice", 3, "system"),
+      agentMessage("run-notice", 4, "agent"),
+    ];
+    readText.mockImplementation(async (ref: string) => ({
+      content:
+        ref === "command-ref" ? "npm test" : ref === "output-ref" ? "Tests 42 passed" : "回答",
+    }));
+    await render();
+    await refresh();
+    expect(container.querySelector(".more-count")).toBeNull();
+    expect(container.querySelector(".background-report")?.textContent).toContain(
+      "more.report.completed",
+    );
+    await click("more.button");
+    expect(panelText()).toContain("more.section.finished");
+    expect(panelText()).not.toContain("more.section.running");
+    const row = container.querySelector<HTMLButtonElement>(".more-panel .more-row");
+    await act(async () => row?.click());
+    expect(container.querySelector(".more-output")?.textContent).toBe("Tests 42 passed");
+    await click("more.report");
+    const report = container.querySelector<HTMLElement>('.chat-turn[data-run-id="run-notice"]');
+    expect(report?.scrollIntoView).toHaveBeenCalled();
+    expect(report?.classList.contains("is-flash")).toBe(true);
+  });
+
+  it("[BG-9] hides the More button while the conversation has no files and no background commands", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    await render();
+    await refresh();
+    expect(container.querySelector(".more-button")).toBeNull();
   });
 });

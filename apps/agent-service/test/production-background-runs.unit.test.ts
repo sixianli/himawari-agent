@@ -118,8 +118,10 @@ describe("ProductionBackgroundRuns", () => {
   it("[BG-3] keeps the lease alive, then stops the sandbox and starts the notice turn", async () => {
     const h = harness();
     const command = controlled();
-    await h.commands.run(bash, undefined, command.execute, h.receipt);
-    expect(h.runs.held(runId)).toHaveLength(1);
+    await h.commands.run(bash, undefined, command.execute, h.receipt, async (text) => ({
+      ref: `label:${text}`,
+    }));
+    expect(h.runs.held(runId)).toEqual([expect.objectContaining({ commandRef: "label:npm test" })]);
     h.runs.adopt(lease);
     expect(h.runs.holding(runId)).toBe(true);
     await vi.waitFor(() => expect(h.renew).toHaveBeenCalled());
@@ -137,6 +139,9 @@ describe("ProductionBackgroundRuns", () => {
     expect(h.notices[0]?.text).toContain("系统通知");
     expect(h.notices[0]?.text).toContain("Tests 42 passed");
     expect(h.notices[0]?.ref).toBe(h.finished[0]?.notice.contentRef);
+    const outputRef = h.finished[0]?.outcomes[0]?.outputRef;
+    expect(outputRef).toMatch(/^background-output:/);
+    expect(h.notices.find((notice) => notice.ref === outputRef)?.text).toBe("Tests 42 passed");
     expect(h.runs.holding(runId)).toBe(false);
   });
 

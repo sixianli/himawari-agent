@@ -39,6 +39,7 @@ type CommandState = "running" | "finished" | "stopped";
 export interface BackgroundCommandResult {
   readonly taskRef: string;
   readonly command: string;
+  readonly output: string;
   readonly dataClassification: RuntimeToolInvocation["dataClassification"];
   readonly outcome: RunBackgroundOutcome;
   readonly notice: string;
@@ -51,6 +52,7 @@ interface BackgroundCommand {
   readonly threadId: string | null;
   readonly dataClassification: RuntimeToolInvocation["dataClassification"];
   readonly command: string;
+  readonly commandRef: string | undefined;
   readonly startedAt: number;
   readonly deadlineAt: number;
   readonly controller: AbortController;
@@ -92,6 +94,7 @@ export class ProductionBackgroundCommands {
     signal: AbortSignal | undefined,
     execute: (signal: AbortSignal) => Promise<RuntimeToolExecutionResult>,
     receipt: Receipt,
+    label?: (command: string) => Promise<{ readonly ref: string }>,
   ): Promise<RuntimeToolExecutionResult> {
     const controller = new AbortController();
     const forward = () => controller.abort(signal?.reason);
@@ -123,12 +126,16 @@ export class ProductionBackgroundCommands {
     );
     const command =
       typeof invocation.arguments["command"] === "string" ? invocation.arguments["command"] : "";
+    const commandRef = label
+      ? (await label(command.slice(0, COMMAND_PREVIEW_CHARACTERS))).ref
+      : undefined;
     const task: BackgroundCommand = {
       taskRef,
       runId: invocation.runId,
       threadId: invocation.context?.threadId ?? null,
       dataClassification: invocation.dataClassification,
       command,
+      commandRef,
       startedAt,
       deadlineAt,
       controller,
@@ -236,6 +243,7 @@ export class ProductionBackgroundCommands {
         taskRef: task.taskRef,
         startedAt: new Date(task.startedAt).toISOString(),
         deadlineAt: new Date(task.deadlineAt).toISOString(),
+        ...(task.commandRef ? { commandRef: task.commandRef } : {}),
       }));
   }
 
@@ -264,6 +272,7 @@ export class ProductionBackgroundCommands {
         return tasks.map((task) => ({
           taskRef: task.taskRef,
           command: task.command.slice(0, COMMAND_PREVIEW_CHARACTERS),
+          output: outputTail(task.result?.modelContent ?? ""),
           dataClassification: task.dataClassification,
           outcome: backgroundOutcome(task),
           notice: this.#notice(task),
@@ -375,6 +384,14 @@ export class ProductionBackgroundCommands {
       totalCharacters: content.length,
     };
   }
+}
+
+const OUTPUT_TAIL_LINES = 20;
+const OUTPUT_TAIL_CHARACTERS = 4000;
+
+function outputTail(content: string): string {
+  const lines = content.replace(/\r\n?/g, "\n").trimEnd().split("\n");
+  return lines.slice(-OUTPUT_TAIL_LINES).join("\n").slice(-OUTPUT_TAIL_CHARACTERS);
 }
 
 function backgroundOutcome(task: BackgroundCommand): RunBackgroundOutcome {

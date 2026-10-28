@@ -98,4 +98,5 @@ export const completedRun: RunSummary = {
   createdAt: at(0),
   updatedAt: at(27082),
   background: null,
+  backgroundCommands: [],
 };

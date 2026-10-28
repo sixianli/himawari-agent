@@ -982,6 +982,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         signal,
         (combined) => this.#executeCanonical(command, combined),
         (value) => this.#writeJson(command, `runtime-background-command:${key}`, value),
+        (text) => this.#writeText(command, `runtime-background-command-label:${key}`, text),
       );
     }
     return this.#executeCanonical(invocation, signal);
@@ -2122,14 +2123,23 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   }
 
-  async #writeJson(invocation: RuntimeToolInvocation, operationKey: string, value: unknown) {
+  #writeJson(invocation: RuntimeToolInvocation, operationKey: string, value: unknown) {
+    return this.#writeText(invocation, operationKey, JSON.stringify(value), "application/json");
+  }
+
+  async #writeText(
+    invocation: RuntimeToolInvocation,
+    operationKey: string,
+    text: string,
+    contentType: "application/json" | "text/plain" = "text/plain",
+  ) {
     const payload = await this.#options.protector.protect({
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
       ref: this.#options.ids.next("runtime-tool-record"),
       dataClassification: invocation.dataClassification,
-      contentType: "application/json",
-      plaintext: new TextEncoder().encode(JSON.stringify(value)),
+      contentType,
+      plaintext: new TextEncoder().encode(text),
       createdAt: this.#options.clock.now(),
     });
     return this.#options.artifacts.commit({

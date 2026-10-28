@@ -6,14 +6,9 @@ import type {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { formatBytes, splitDraft } from "../draft-attachments.js";
 import { executionTimeline, timelineDuration } from "../execution-timeline.js";
+import type { BackgroundCommandView } from "../background-commands.js";
 import type { RunSummary } from "../execution-view.js";
-import {
-  duration,
-  executionItems,
-  isAnsweredRun,
-  isNarration,
-  isTerminalRun,
-} from "../execution-view.js";
+import { executionItems, isAnsweredRun, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { turnFiles } from "../turn-files.js";
 import { turnSources, turnUsage } from "../turn-summary.js";
@@ -21,8 +16,9 @@ import { AnswerActions, AnswerFiles, AnswerSources, LineIcon, useCopied } from "
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { AttachmentThumb } from "./attachment-thumb.js";
 import { HimawariBrand } from "./brand.js";
-import type { ContentPreviewValue } from "./content-preview.js";
+import { type ContentPreviewValue, previewOfFile } from "./content-preview.js";
 import { ExecutionProcess } from "./execution-process.js";
+import { BackgroundCommandLine, BackgroundReportLine } from "./more-panel.js";
 import { ActionButton } from "./primitives.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
@@ -37,7 +33,9 @@ export function ChatHistory({
   message,
   onFork,
   onCleanup,
-  onStopBackground,
+  backgroundCommands = [],
+  stoppingRunIds = [],
+  onOpenCommand,
   onPreview,
   previewKey,
   readImage,
@@ -57,7 +55,9 @@ export function ChatHistory({
   readonly previewKey?: string | undefined;
   readonly readImage?: ((ref: string) => Promise<string>) | undefined;
   readonly onCleanup?: ((run: RunSummary) => void) | undefined;
-  readonly onStopBackground?: ((run: RunSummary) => void) | undefined;
+  readonly backgroundCommands?: readonly BackgroundCommandView[] | undefined;
+  readonly stoppingRunIds?: readonly string[] | undefined;
+  readonly onOpenCommand?: ((key: string | null) => void) | undefined;
   readonly onFork: (turnId: string, sequence: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -110,7 +110,7 @@ export function ChatHistory({
             .at(-1);
           const partial = partialItem?.text;
           return (
-            <div className="chat-turn" key={key}>
+            <div className="chat-turn" key={key} data-run-id={group.run?.runId}>
               {group.messages
                 .filter((item) => item.role !== "agent")
                 .map((item) =>
@@ -127,12 +127,26 @@ export function ChatHistory({
                       />
                     </div>
                   ) : item.role === "system" ? (
-                    <p className="background-notice" key={item.messageId}>
-                      <LineIcon name="terminal" />
-                      <span>
-                        {message("chat.background.notice", { at: new Date(item.committedAt) })}
-                      </span>
-                    </p>
+                    <BackgroundReportLine
+                      key={item.messageId}
+                      commands={backgroundCommands.filter(
+                        (command) => item.runId && command.noticeRunId === item.runId,
+                      )}
+                      committedAt={item.committedAt}
+                      onOpen={
+                        onOpenCommand
+                          ? () => {
+                              const reported = backgroundCommands.filter(
+                                (command) => item.runId && command.noticeRunId === item.runId,
+                              );
+                              onOpenCommand(
+                                reported.length === 1 ? (reported[0]?.key ?? null) : null,
+                              );
+                            }
+                          : undefined
+                      }
+                      message={message}
+                    />
                   ) : (
                     <article
                       key={item.messageId}
@@ -216,33 +230,23 @@ export function ChatHistory({
                       message={message}
                     />
                   ) : null}
-                  {group.run?.background ? (
-                    <BackgroundCommandLine
-                      background={group.run.background}
-                      onStop={
-                        onStopBackground && group.run
-                          ? () => group.run && onStopBackground(group.run)
-                          : undefined
-                      }
-                      message={message}
-                    />
-                  ) : null}
+                  {backgroundCommands
+                    .filter((command) => command.runId === group.run?.runId)
+                    .map((command) => (
+                      <BackgroundCommandLine
+                        key={command.key}
+                        command={command}
+                        stopping={stoppingRunIds.includes(command.runId)}
+                        onOpen={onOpenCommand ? () => onOpenCommand(command.key) : undefined}
+                        message={message}
+                      />
+                    ))}
                   <AnswerSources sources={turnSources(records)} message={message} />
                   {group.run && onPreview ? (
                     <AnswerFiles
                       files={turnFiles(group.run.runId, records)}
                       openKey={previewKey}
-                      onOpen={(file) =>
-                        onPreview({
-                          key: file.key,
-                          title: file.name,
-                          path: file.path,
-                          kind: file.kind,
-                          text: file.content ?? "",
-                          diff: file.diff,
-                          missing: file.content === undefined,
-                        })
-                      }
+                      onOpen={(file) => onPreview(previewOfFile(file))}
                       message={message}
                     />
                   ) : null}
@@ -328,38 +332,6 @@ function OwnerMessage({
         </ul>
       ) : null}
     </article>
-  );
-}
-
-function BackgroundCommandLine({
-  background,
-  onStop,
-  message,
-}: {
-  readonly background: NonNullable<RunSummary["background"]>;
-  readonly onStop: (() => void) | undefined;
-  readonly message: Message;
-}) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const time = duration(Math.floor((now - Date.parse(background.startedAt)) / 1000) * 1000);
-  return (
-    <p className="background-command">
-      <span className="background-command-dot" aria-hidden="true" />
-      <output>
-        {background.count > 1
-          ? message("chat.background.runningMany", { count: background.count, time })
-          : message("chat.background.running", { time })}
-      </output>
-      {onStop ? (
-        <button type="button" className="background-command-stop" onClick={onStop}>
-          {message("chat.stop")}
-        </button>
-      ) : null}
-    </p>
   );
 }
 

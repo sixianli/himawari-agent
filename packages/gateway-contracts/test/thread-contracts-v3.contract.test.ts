@@ -343,6 +343,18 @@ describe("Thread Gateway v3 contracts", () => {
                 startedAt: "2026-08-28T00:00:40.000Z",
                 deadlineAt: "2026-08-28T00:30:40.000Z",
               },
+              backgroundCommands: [
+                {
+                  taskRef: "background-command:s2",
+                  commandRef: "payload:command-s2",
+                  outputRef: null,
+                  startedAt: "2026-08-28T00:00:40.000Z",
+                  deadlineAt: "2026-08-28T00:30:40.000Z",
+                  endedAt: null,
+                  outcome: null,
+                  noticeRunId: null,
+                },
+              ],
             },
           ],
           nextSequence: null,

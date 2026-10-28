@@ -15,6 +15,10 @@ const icons = {
   widen: "M4 5h16v14H4zM14 5v14",
   image: "M4 5h16v14H4zM4 16l4.5-4.5L13 16m-1.5-1.5 2.5-2.5 6 6M15.5 9h.01",
   terminal: "M3 5h18v14H3zM7 10l3 2-3 2M12 14h5",
+  back: "m15 6-6 6 6 6",
+  stop: "M7 7h10v10H7z",
+  alert: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4.5v6m0 3.5v.5",
+  panel: "M3.5 4.5h17v15h-17zM14.5 4.5v15",
 };
 
 export function LineIcon({ name }: { readonly name: keyof typeof icons }) {

@@ -17,6 +17,7 @@ import type {
   ThreadGatewayEventRecord,
   ThreadListQuery,
   ThreadMutationReceipt,
+  ThreadRunBackgroundCommand,
   ThreadRunSummaryRecord,
   ThreadSearchProjectionInput,
   ThreadSearchProjectionSource,
@@ -1768,10 +1769,25 @@ export class SqliteThreadOperations {
         ORDER BY r.created_at, r.id`,
       )
       .all(ownerId, agentId, threadId) as RunSummaryRow[];
+    const commands = new Map<string, ThreadRunBackgroundCommand[]>();
+    for (const hold of this.database
+      .prepare(
+        `SELECT run_id AS runId, task_ref AS taskRef, command_ref AS commandRef,
+          output_ref AS outputRef, started_at AS startedAt, deadline_at AS deadlineAt,
+          released_at AS endedAt, outcome, notice_run_id AS noticeRunId
+        FROM run_background_holds
+        WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
+        ORDER BY started_at, task_ref`,
+      )
+      .all(ownerId, agentId, threadId) as (ThreadRunBackgroundCommand & { runId: string })[]) {
+      const { runId, ...command } = hold;
+      commands.set(runId, [...(commands.get(runId) ?? []), Object.freeze(command)]);
+    }
     return rows.map(({ backgroundCount, backgroundStartedAt, backgroundDeadlineAt, ...row }) =>
       Object.freeze({
         ...row,
         runId: row.runId as RunId,
+        backgroundCommands: Object.freeze(commands.get(row.runId) ?? []),
         background:
           backgroundCount > 0 && backgroundStartedAt && backgroundDeadlineAt
             ? Object.freeze({

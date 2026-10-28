@@ -10,6 +10,8 @@ CREATE TABLE run_background_holds (
   released_at TEXT,
   outcome TEXT CHECK (outcome IS NULL OR outcome IN ('completed', 'failed', 'stopped', 'timed_out', 'interrupted')),
   notice_run_id TEXT,
+  command_ref TEXT CHECK (command_ref IS NULL OR length(command_ref) BETWEEN 1 AND 128),
+  output_ref TEXT CHECK (output_ref IS NULL OR length(output_ref) BETWEEN 1 AND 128),
   PRIMARY KEY (owner_id, agent_id, run_id, task_ref),
   CHECK ((released_at IS NULL) = (outcome IS NULL))
 ) STRICT;
