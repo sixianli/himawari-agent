@@ -337,6 +337,7 @@ describe("production HTTP composition", () => {
           "push.subscription.set",
           "push.test",
           "presence.heartbeat",
+          "push.feedback.record",
         ],
         healthDependenciesAvailable: true,
       });

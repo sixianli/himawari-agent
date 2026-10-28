@@ -51,7 +51,10 @@
     "check:ci-policy": "node scripts/ci/check-policy.mjs",
     "ci:local": "node scripts/ci/local.mjs",
     "ci:tools": "node scripts/ci/install-tools.mjs --directory .ci-output/tools",
-    "ci:install": "node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation"
+    "ci:install": "node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation",
+    "eval:jarvis": "vitest run --config vitest.workspace.ts --project integration --project tooling test/integration/jarvis-test test/tooling/jarvis-test-history.test.mjs",
+    "eval:jarvis:live": "node scripts/jarvis-test/live.mjs",
+    "eval:jarvis:trend": "node scripts/jarvis-test/trend.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

@@ -27,4 +27,5 @@ superseded_by: ""
 
 ## Notes
 
-- 设计和实现由“把产品愿景定稿放进项目”线程在 PR #67 合并后接着做，另开 PR；数据库迁移号 0061，决策记录 ADR 0102。
+- 设计和实现由“把产品愿景定稿放进项目”线程在 PR #67 合并后接着做，另开 PR；数据库迁移号 0061，决策记录 [ADR 0102](../adr/0102-record-push-notification-feedback.md)。
+- 2026-10-28：记录部分已实现（表 `web_push_feedback`、命令 `push.feedback.record`、Service Worker 回报），尚未上线。剩下：上线后在 iPhone 上实测点开能否记录；30 天后按 ADR 0102 的定义算命中率和误扰率，并复核定义；统计页面先出原型给 Andy 批。

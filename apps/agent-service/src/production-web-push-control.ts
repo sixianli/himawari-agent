@@ -18,6 +18,7 @@ export const PRODUCTION_WEB_PUSH_OPERATIONS = Object.freeze([
   "push.subscription.set",
   "push.test",
   "presence.heartbeat",
+  "push.feedback.record",
 ] as const);
 
 export function webPushSubscriptionId(endpoint: string): string {
@@ -88,6 +89,15 @@ export class ProductionWebPushControl {
         now,
       );
       return { resultRef: "presence", replayed: false };
+    }
+    if (command.type === "push.feedback.record") {
+      const recorded = await this.#options.store.recordReactions({
+        ownerId,
+        agentId,
+        reactions: command.payload.events,
+        now,
+      });
+      return { resultRef: `web-push-feedback:${recorded}`, replayed: false };
     }
     const push = this.#options.push;
     if (!push)

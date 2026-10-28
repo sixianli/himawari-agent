@@ -150,7 +150,7 @@ describe("[WP-2] web push storage", () => {
       cursor: null,
       now: T0,
     });
-    const base = { ...scope, subscriptionId: "s1", lastCode: null, now: T1 };
+    const base = { ...scope, subscriptionId: "s1", lastCode: null, tag: "tag-base", now: T1 };
     expect(
       await store.recordAttempt({
         ...base,
@@ -233,6 +233,7 @@ describe("[WP-2] web push storage", () => {
         attempts: 0,
         nextAttemptAt: null,
         lastCode: null,
+        tag: "tag-old",
         now: T1,
       });
       const due = await store.listDue({ ...scope, now: T1, limit: 50 });
@@ -246,6 +247,98 @@ describe("[WP-2] web push storage", () => {
         expect(database.prepare("SELECT source_key FROM web_push_outbox").pluck().all()).toEqual([
           "reminder:new:x",
         ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WP-11] keeps one feedback row per delivered notification, first reaction wins, and outlives the outbox", async () => {
+    const { stateRoot, repository, store } = await open();
+    try {
+      await store.saveSubscription(subscription("s1", "https://push.example/a"));
+      await store.saveSubscription(subscription("s2", "https://push.example/b"));
+      await store.enqueue({
+        ...scope,
+        items: [
+          item("reminder:r1:x", T1),
+          { ...item("run:r9:completed", T1), kind: "run", threadId: "thread-9" },
+          item("approval:a2", T1),
+        ],
+        cursor: null,
+        now: T0,
+      });
+      const attempt = (
+        sourceKey: string,
+        subscriptionId: string,
+        status: "sent" | "suppressed" | "failed",
+        tag: string,
+      ) =>
+        store.recordAttempt({
+          ...scope,
+          sourceKey,
+          subscriptionId,
+          status,
+          attempts: status === "suppressed" ? 0 : 1,
+          nextAttemptAt: null,
+          lastCode: null,
+          tag,
+          now: T0,
+        });
+      await attempt("reminder:r1:x", "s1", "sent", "tag-r1");
+      await attempt("reminder:r1:x", "s2", "sent", "tag-r1");
+      await attempt("run:r9:completed", "s1", "sent", "tag-r9");
+      await attempt("run:r9:completed", "s1", "sent", "tag-r9");
+      await attempt("approval:a2", "s1", "suppressed", "tag-a2");
+      await attempt("approval:a2", "s2", "failed", "tag-a2");
+
+      expect(
+        await store.recordReactions({
+          ...scope,
+          reactions: [
+            { tag: "tag-r1", reaction: "opened", occurredAt: T1 },
+            { tag: "tag-r1", reaction: "opened", occurredAt: T2 },
+            { tag: "tag-r9", reaction: "dismissed", occurredAt: "2026-10-26T11:00:00.000Z" },
+            { tag: "tag-r9", reaction: "opened", occurredAt: "2026-10-27T00:00:00.000Z" },
+            { tag: "tag-a2", reaction: "opened", occurredAt: T1 },
+            { tag: "unknown", reaction: "opened", occurredAt: T1 },
+          ],
+          now: T2,
+        }),
+      ).toBe(3);
+      expect(await store.prune({ ...scope, expiredBefore: T2, limit: 200 })).toBe(3);
+      expect(await store.listFeedback({ ...scope, sentFrom: T0, limit: 50 })).toEqual([
+        {
+          sourceKey: "reminder:r1:x",
+          tag: "tag-r1",
+          kind: "reminder",
+          sourceRef: "reminder:r1:x",
+          threadId: null,
+          channel: "web_push",
+          firstSentAt: T0,
+          devices: 2,
+          openedAt: T1,
+          dismissedAt: null,
+        },
+        {
+          sourceKey: "run:r9:completed",
+          tag: "tag-r9",
+          kind: "run",
+          sourceRef: "run:r9:completed",
+          threadId: "thread-9",
+          channel: "web_push",
+          firstSentAt: T0,
+          devices: 1,
+          openedAt: T2,
+          dismissedAt: T0,
+        },
+      ]);
+      expect(await store.listFeedback({ ...scope, sentFrom: T1, limit: 50 })).toEqual([]);
+      const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      try {
+        expect(database.prepare("SELECT count(*) FROM web_push_outbox").pluck().get()).toBe(0);
       } finally {
         database.close();
       }

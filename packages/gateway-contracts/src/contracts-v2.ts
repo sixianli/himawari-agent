@@ -26,6 +26,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "push.subscription.set",
   "push.test",
   "presence.heartbeat",
+  "push.feedback.record",
   "push.status.read",
   "push.status.snapshot",
   "memory.overview.read",
@@ -259,6 +260,23 @@ const pushTestCommandSchema = object({
 const presenceHeartbeatCommandSchema = object({
   ...commandEnvelope("presence.heartbeat"),
   payload: object({ clientId: machineString, visible: booleanValue }),
+});
+const pushFeedbackEventSchema = object({
+  tag: pushKeySchema,
+  reaction: enumeration(["opened", "dismissed"]),
+  occurredAt: timestamp,
+});
+const pushFeedbackEventsSchema: Schema<readonly InferSchema<typeof pushFeedbackEventSchema>[]> = {
+  parse(input, path = "$") {
+    const events = array(pushFeedbackEventSchema).parse(input, path);
+    if (events.length < 1 || events.length > 50)
+      throw new ContractValidationError(path, "expected 1 to 50 feedback events");
+    return events;
+  },
+};
+const pushFeedbackCommandSchema = object({
+  ...commandEnvelope("push.feedback.record"),
+  payload: object({ events: pushFeedbackEventsSchema }),
 });
 const pushStatusQuerySchema = object({
   ...envelope("query", "push.status.read"),
@@ -1609,6 +1627,7 @@ const schemasByType = {
   "push.subscription.set": pushSubscriptionCommandSchema,
   "push.test": pushTestCommandSchema,
   "presence.heartbeat": presenceHeartbeatCommandSchema,
+  "push.feedback.record": pushFeedbackCommandSchema,
   "push.status.read": pushStatusQuerySchema,
   "push.status.snapshot": pushStatusSnapshotSchema,
   "memory.overview.read": memoryOverviewQuerySchema,

@@ -13,6 +13,7 @@ import {
   type PushBrowser,
   type PushStatus,
   pushSupport,
+  reportPushFeedback,
   startPresenceHeartbeat,
   webPushSubscriptionId,
 } from "../src/web-push.ts";
@@ -341,5 +342,55 @@ describe("[WP-8] notification settings", () => {
     expect(new Set(beats.map((command) => command.payload.clientId)).size).toBe(1);
     stop();
     expect(listeners.size).toBe(0);
+  });
+
+  it("[WP-11] reports an opened notification from the address and dismissals kept by the worker, then forgets them", async () => {
+    const TAG = "q1c2Zt9sV0Kx3mWbYp7aLrUe4nHd8fGj";
+    const entries = new Map<string, unknown>([
+      [
+        "/push-feedback/d1/dismissed",
+        { tag: "dismissedTag", reaction: "dismissed", occurredAt: "2026-10-28T05:00:00.000Z" },
+      ],
+      ["/push-feedback/bad/dismissed", { tag: "bad tag!", reaction: "dismissed", occurredAt: "x" }],
+    ]);
+    const cache = {
+      keys: async () => [...entries.keys()].map((url) => ({ url }) as Request),
+      match: async (request: Request) =>
+        ({ json: async () => entries.get(request.url) }) as Response,
+      delete: async (request: Request) => entries.delete(request.url),
+    };
+    const replaceState = vi.fn();
+    await reportPushFeedback({
+      client,
+      configuration,
+      location: { href: `https://himawari.example/threads/t1?push=${TAG}&x=1#end` },
+      history: { replaceState, state: { kept: true } },
+      caches: { open: async () => cache as unknown as Cache },
+      now: () => new Date("2026-10-28T05:01:00.000Z"),
+    });
+    expect(replaceState).toHaveBeenCalledWith({ kept: true }, "", "/threads/t1?x=1#end");
+    const [command] = mutate.mock.calls.at(-1) ?? [];
+    expect(command).toMatchObject({
+      type: "push.feedback.record",
+      authorizationRef: "authorization-01",
+      payload: {
+        events: [
+          { tag: TAG, reaction: "opened", occurredAt: "2026-10-28T05:01:00.000Z" },
+          { tag: "dismissedTag", reaction: "dismissed", occurredAt: "2026-10-28T05:00:00.000Z" },
+        ],
+      },
+    });
+    expect(entries.size).toBe(0);
+
+    mutate.mockClear();
+    await reportPushFeedback({
+      client,
+      configuration,
+      location: { href: "https://himawari.example/threads/t1" },
+      history: { replaceState, state: null },
+      caches: undefined,
+      now: () => new Date(),
+    });
+    expect(mutate).not.toHaveBeenCalled();
   });
 });
