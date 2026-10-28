@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "datasetVersion": "jarvis-test-2026-10-28.5",
+  "datasetVersion": "jarvis-test-2026-10-28.6",
   "today": "2026-11-02T00:30:00.000Z",
   "timeZone": "Asia/Tokyo",
   "sharedMemories": [
@@ -225,7 +225,7 @@
       "id": "1e",
       "scenario": "memory_correction",
       "title": "用词：控制中心改成 Himawari 网页",
-      "prompt": "推送开关在哪里设置？",
+      "prompt": "我想关掉 Himawari 发到手机上的提醒推送，在哪儿设置？",
       "memories": [
         {
           "id": "1e-old",
@@ -248,7 +248,10 @@
         "absent": ["1e-old"]
       },
       "answer": {
-        "expectations": ["把设置推送开关的地方称作“Himawari 网页”。", "不把它称作“控制中心”。"]
+        "expectations": [
+          "说明去 Himawari 网页里设置（例如它的设置或通知页面），并把这个界面称作“Himawari 网页”。",
+          "不把它称作“控制中心”。"
+        ]
       },
       "judgeRules": ["case_expectations_met"]
     },
