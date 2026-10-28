@@ -327,6 +327,15 @@ async function waitForWorkerBootBinding(input: {
   }
 }
 
+function writeStartupStep(output: NodeJS.WritableStream, step: string): void {
+  writeServiceDiagnostic(output, {
+    component: "agent-service",
+    event: "startup.step",
+    step,
+    elapsedMs: Math.round(performance.now()),
+  });
+}
+
 function retryableWorkerStartupError(error: unknown): boolean {
   return (
     error instanceof ExecutionUdsError &&
@@ -572,6 +581,7 @@ export async function runAgentService(
       stateRoot: configuration.stateRoot,
       databasePath: path.join(layout.data, "product.sqlite"),
     });
+    writeStartupStep(output, "state-opened");
     const activeRepository = repository;
     const clock = productionClock();
     const ids = productionIds();
@@ -596,6 +606,7 @@ export async function runAgentService(
       },
     });
     await authorityLifecycle.start();
+    writeStartupStep(output, "authority-claimed");
     authorityLifecycle.startAutomaticRenewal(AUTHORITY_RENEWAL_INTERVAL_MS);
     const claimedAuthority = await readAuthorityFile(layout);
     const authority = authorityLifecycle.authorityFence();
@@ -684,6 +695,7 @@ export async function runAgentService(
       authority: claimedAuthority,
       isAuthorityActive: () => authorityLifecycle?.isAccepting() === true && !authorityLost,
     });
+    writeStartupStep(output, "worker-binding-read");
     const peerBinding: ExecutionAdmissionPeerBinding = Object.freeze({
       agentServiceInstanceId,
       agentServiceBootId,
@@ -719,7 +731,9 @@ export async function runAgentService(
       authority: invocationAuthority,
       now: () => clock.now(),
     });
+    writeStartupStep(output, "sandbox-recovered");
     const workspaceNetwork = await resolveCodingNetworkFacts(configuration, clock);
+    writeStartupStep(output, "coding-network-resolved");
     const workspaceAuto =
       workspaceNetwork && configuration.runPolicy?.coding
         ? new WorkspaceAutoAuthorization({
@@ -731,6 +745,7 @@ export async function runAgentService(
           })
         : undefined;
     if (workspaceAuto) await workspaceAuto.sync(invocationAuthority().lease);
+    writeStartupStep(output, "workspace-synced");
     const hostWeb = createConfiguredHostWeb({
       runPolicy: configuration.runPolicy,
       secrets: sources.provider,
@@ -834,6 +849,7 @@ export async function runAgentService(
       clock,
       ids,
     });
+    writeStartupStep(output, "sandbox-services-created");
     const admission = new WorkerDelegationAdmissionService({
       ...(sandboxServices ? { sandbox: sandboxServices.child } : {}),
       invocations: repository.capabilityInvocationReceiptPort(
@@ -936,6 +952,7 @@ export async function runAgentService(
       authorityLeaseId: authorityLease.leaseId,
       authority: claimedAuthority,
     });
+    writeStartupStep(output, "agent-binding-written");
     let idSequence = 0;
     worker = new AgentServiceExecutionClient({
       socketPath: path.join(configuration.runtimeDirectory, "execution.sock"),
@@ -957,6 +974,7 @@ export async function runAgentService(
       configuration.deadlines.workerRequestMs,
       () => authorityLifecycle?.isAccepting() === true && !authorityLost,
     );
+    writeStartupStep(output, "worker-connected");
     workerSandboxSupport = handshake.payload.supportedExecutions;
     if (authorityLost || !authorityLifecycle.isAccepting()) {
       throw authorityLossError ?? new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);

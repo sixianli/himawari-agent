@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
+import { lstat, open, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import { Worker } from "node:worker_threads";
 import { digestRegularFile } from "./artifact-verifier.js";
+import type { ProtectedRuntimeAuditRequest } from "./protected-runtime-audit-worker.js";
 
 interface RuntimeArtifact {
   readonly path: string;
@@ -47,16 +49,39 @@ function parse(value: unknown): Protection {
   return input as unknown as Protection;
 }
 
-/** A deployment administrator, not the runtime user, owns this authority.
- * Instances retain only a successful audit of one exact installation identity.
- * This is not a TTL cache and cannot qualify a writable installation. */
+export function auditProtectedRuntime(root: string, ownerUid: number): Promise<void> {
+  const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+  const request: ProtectedRuntimeAuditRequest = { root, ownerUid };
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(
+      new URL(`./protected-runtime-audit-worker.${extension}`, import.meta.url),
+      { workerData: request },
+    );
+    let received = false;
+    worker.once("message", (value: unknown) => {
+      received = true;
+      if ((value as { protected?: unknown } | null)?.protected === true) resolve();
+      else reject(failure());
+    });
+    worker.once("error", reject);
+    worker.once("exit", (code) => {
+      if (!received) reject(new Error(`SANDBOX_RUNTIME_AUDIT_WORKER_EXIT:${code}`));
+    });
+  });
+}
+
 export class ProtectedRuntimeVerifier {
   readonly #manifestPath: string;
+  readonly #auditInstallation: (root: string) => Promise<void>;
   readonly #audits = new Map<string, Promise<void>>();
   readonly #artifactAudits = new Map<string, Promise<void>>();
-  constructor(manifestPath: string) {
+  constructor(
+    manifestPath: string,
+    auditInstallation: (root: string) => Promise<void> = (root) => auditProtectedRuntime(root, 0),
+  ) {
     if (!canonical(manifestPath)) throw failure();
     this.#manifestPath = manifestPath;
+    this.#auditInstallation = auditInstallation;
   }
 
   async #process(uid: number): Promise<void> {
@@ -115,16 +140,6 @@ export class ProtectedRuntimeVerifier {
     }
   }
 
-  async #auditPermissions(root: string): Promise<void> {
-    const info = await lstat(root);
-    // ACL write grants are covered by the group-class mask bits. The runtime
-    // must not own any descendant, including helper executables and scripts.
-    if (info.uid !== 0 || info.mode & 0o022 || (!info.isFile() && !info.isDirectory()))
-      throw failure();
-    if (info.isDirectory())
-      for (const entry of await readdir(root)) await this.#auditPermissions(path.join(root, entry));
-  }
-
   async verify(
     runtimeRoot: string,
     runtimeDigest: string,
@@ -168,12 +183,10 @@ export class ProtectedRuntimeVerifier {
     const key = `${identity}\n${parents}`;
     let audit = this.#audits.get(key);
     if (!audit) {
-      // A version switch invalidates the previous audit even if it later switches
-      // back. Concurrent callers share only the same in-flight initial audit.
       this.#audits.clear();
       this.#artifactAudits.clear();
       audit = (async () => {
-        await this.#auditPermissions(runtimeRoot);
+        await this.#auditInstallation(runtimeRoot);
         if ((await digest(runtimeRoot)) !== runtimeDigest) throw failure();
         const latest = await this.#manifest();
         if (
@@ -206,8 +219,6 @@ export class ProtectedRuntimeVerifier {
         this.#artifactAudits.delete(artifactCacheKey);
       throw error;
     }
-    // Protection applies only to this installation; external executables retain
-    // their per-invocation byte verification, even if the runtime is protected.
     for (const artifact of artifacts)
       if (!protectedArtifacts.includes(artifact)) await verifyArtifact(artifact);
   }

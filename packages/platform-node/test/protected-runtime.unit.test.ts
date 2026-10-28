@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-// Controlled Linux filesystem/process evidence. These tests do not qualify an
-// installed host; the deployment acceptance must run real denied writes too.
 const fixture = vi.hoisted(() => ({
   artifactDigest: vi.fn(),
+  audit: vi.fn(),
   manifest: "",
   status: "",
   nodes: new Map<
@@ -32,10 +31,6 @@ vi.mock("node:fs/promises", () => {
     lstat: async (name: string) => metadata(name),
     realpath: async (name: string) => name,
     readFile: async () => fixture.status,
-    readdir: async (name: string) =>
-      [...fixture.nodes.keys()]
-        .filter((key) => key.startsWith(`${name}/`) && !key.slice(name.length + 1).includes("/"))
-        .map((key) => key.slice(name.length + 1)),
     open: async (name: string) => ({
       stat: async () => metadata(name),
       readFile: async () => Buffer.from(fixture.manifest),
@@ -55,10 +50,12 @@ function node(name: string) {
 }
 
 const root = "/data/himawari/releases/v1";
+const verifierFor = () => new ProtectedRuntimeVerifier(manifestPath, fixture.audit);
 const manifestPath = "/etc/himawari/runtime.json";
 const digest = "a".repeat(64);
 beforeEach(() => {
   fixture.artifactDigest.mockReset().mockResolvedValue(`sha256:${digest}`);
+  fixture.audit.mockReset().mockResolvedValue(undefined);
   fixture.nodes.clear();
   let ino = 1;
   for (const name of [
@@ -93,7 +90,7 @@ beforeEach(() => {
 });
 
 it("reuses protected artifact bytes only for unchanged installation and file identities", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const readBytes = vi.fn(async () => digest);
   const artifacts = [{ path: `${root}/helper.js`, sha256: digest }];
   await verifier.verify(root, digest, readBytes, artifacts);
@@ -108,7 +105,7 @@ it("reuses protected artifact bytes only for unchanged installation and file ide
 });
 
 it("never trusts a different expected artifact digest or retains a failed check", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const artifacts = [{ path: `${root}/helper.js`, sha256: "b".repeat(64) }];
   for (let attempt = 0; attempt < 2; attempt++)
     await expect(verifier.verify(root, digest, async () => digest, artifacts)).rejects.toThrow(
@@ -119,7 +116,7 @@ it("never trusts a different expected artifact digest or retains a failed check"
 
 it("does not cache artifact bytes outside the protected runtime", async () => {
   fixture.nodes.set("/data/external", { uid: 0, mode: 0o644, ino: 99, directory: false });
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const artifacts = [{ path: "/data/external", sha256: digest }];
   await verifier.verify(root, digest, async () => digest, artifacts);
   await verifier.verify(root, digest, async () => digest, artifacts);
@@ -128,7 +125,7 @@ it("does not cache artifact bytes outside the protected runtime", async () => {
 
 it("shares one installation audit across different protected runners", async () => {
   fixture.nodes.set(`${root}/search.js`, { uid: 0, mode: 0o644, ino: 99, directory: false });
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const readBytes = vi.fn(async () => digest);
   for (const name of ["helper.js", "search.js", "helper.js", "search.js"])
     await verifier.verify(root, digest, readBytes, [{ path: `${root}/${name}`, sha256: digest }]);
@@ -144,7 +141,7 @@ it("finishes the installation audit before validating reusable artifact bytes", 
         finish = resolve;
       }),
   );
-  const verifying = new ProtectedRuntimeVerifier(manifestPath).verify(root, digest, readBytes, [
+  const verifying = verifierFor().verify(root, digest, readBytes, [
     { path: `${root}/helper.js`, sha256: digest },
   ]);
   await vi.waitFor(() => expect(readBytes).toHaveBeenCalledOnce());
@@ -157,7 +154,7 @@ it("finishes the installation audit before validating reusable artifact bytes", 
 });
 
 it("rejects changed artifact permissions after a successful cached audit", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const artifacts = [{ path: `${root}/helper.js`, sha256: digest }];
   await verifier.verify(root, digest, async () => digest, artifacts);
   node(`${root}/helper.js`).mode = 0o666;
@@ -168,7 +165,7 @@ it("rejects changed artifact permissions after a successful cached audit", async
 afterEach(() => vi.unstubAllGlobals());
 
 it("shares the initial byte audit but rechecks protection for later calls", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const readBytes = vi.fn(async () => digest);
   await Promise.all([
     verifier.verify(root, digest, readBytes),
@@ -182,7 +179,7 @@ it("shares the initial byte audit but rechecks protection for later calls", asyn
 });
 
 it("requires a new audit after the deployment record or directory is replaced", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const readBytes = vi.fn(async () => digest);
   await verifier.verify(root, digest, readBytes);
   node(manifestPath).ino++;
@@ -193,7 +190,7 @@ it("requires a new audit after the deployment record or directory is replaced", 
 });
 
 it("does not retain a failed content audit as trusted", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const readBytes = vi.fn().mockResolvedValueOnce("b".repeat(64)).mockResolvedValue(digest);
   await expect(verifier.verify(root, digest, readBytes)).rejects.toThrow("PROTECTION_INVALID");
   await verifier.verify(root, digest, readBytes);
@@ -205,25 +202,29 @@ it.each([
   ["writable deployment record", manifestPath, "mode", 0o666],
   ["writable authority parent", "/etc/himawari", "mode", 0o777],
   ["runtime-owned installation parent", "/data/himawari", "uid", 1234],
-  ["runtime-owned helper", `${root}/helper.js`, "uid", 1234],
-  ["writable helper", `${root}/helper.js`, "mode", 0o666],
 ] as const)(
   "rejects %s before trusting the initial content audit",
   async (_label, name, key, value) => {
     node(name)[key] = value;
     const readBytes = vi.fn(async () => digest);
-    await expect(
-      new ProtectedRuntimeVerifier(manifestPath).verify(root, digest, readBytes),
-    ).rejects.toThrow("PROTECTION_INVALID");
+    await expect(verifierFor().verify(root, digest, readBytes)).rejects.toThrow(
+      "PROTECTION_INVALID",
+    );
     expect(readBytes).not.toHaveBeenCalled();
   },
 );
 
-it("rejects a helper symlink, even when it is root owned", async () => {
-  node(`${root}/helper.js`).link = true;
-  await expect(
-    new ProtectedRuntimeVerifier(manifestPath).verify(root, digest, async () => digest),
-  ).rejects.toThrow("PROTECTION_INVALID");
+it("audits the whole installation before reading its bytes and keeps no failed audit", async () => {
+  const verifier = verifierFor();
+  const readBytes = vi.fn(async () => digest);
+  fixture.audit.mockRejectedValueOnce(new Error("SANDBOX_RUNTIME_PROTECTION_INVALID"));
+  await expect(verifier.verify(root, digest, readBytes)).rejects.toThrow("PROTECTION_INVALID");
+  expect(fixture.audit).toHaveBeenCalledExactlyOnceWith(root);
+  expect(readBytes).not.toHaveBeenCalled();
+  await verifier.verify(root, digest, readBytes);
+  await verifier.verify(root, digest, readBytes);
+  expect(fixture.audit).toHaveBeenCalledTimes(2);
+  expect(readBytes).toHaveBeenCalledOnce();
 });
 
 it.each([
@@ -232,13 +233,13 @@ it.each([
   ["1234\t1234\t1234\t1234", "1234\t1234\t0\t1234"],
 ])("rejects unsafe process credentials (%s)", async (before, after) => {
   fixture.status = fixture.status.replace(before, after);
-  await expect(
-    new ProtectedRuntimeVerifier(manifestPath).verify(root, digest, async () => digest),
-  ).rejects.toThrow("PROTECTION_INVALID");
+  await expect(verifierFor().verify(root, digest, async () => digest)).rejects.toThrow(
+    "PROTECTION_INVALID",
+  );
 });
 
 it("cannot authorize another runtime or digest through the protected record", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   await expect(verifier.verify(`${root}-other`, digest, async () => digest)).rejects.toThrow(
     "PROTECTION_INVALID",
   );
@@ -248,7 +249,7 @@ it("cannot authorize another runtime or digest through the protected record", as
 });
 
 it("rechecks process protection even after a successful audit", async () => {
-  const verifier = new ProtectedRuntimeVerifier(manifestPath);
+  const verifier = verifierFor();
   const readBytes = vi.fn(async () => digest);
   await verifier.verify(root, digest, readBytes);
   fixture.status = fixture.status.replace("NoNewPrivs:\t1", "NoNewPrivs:\t0");

@@ -350,6 +350,32 @@ describe("agent service startup ownership", () => {
     if (!line) throw new Error("SERVICE_READY_MISSING");
     expect(JSON.parse(line).listenPort).toBe(80);
   });
+  it("reports each startup step in order with the time since the process started", async () => {
+    start();
+    await settle();
+    const lines = stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const steps = lines.filter((line) => line["event"] === "startup.step");
+    expect(steps.map((line) => line["step"])).toEqual([
+      "state-opened",
+      "authority-claimed",
+      "worker-binding-read",
+      "sandbox-recovered",
+      "coding-network-resolved",
+      "workspace-synced",
+      "sandbox-services-created",
+      "agent-binding-written",
+      "worker-connected",
+    ]);
+    const elapsed = steps.map((line) => line["elapsedMs"] as number);
+    expect(elapsed.every((value) => Number.isInteger(value) && value >= 0)).toBe(true);
+    expect([...elapsed].sort((left, right) => left - right)).toEqual(elapsed);
+    expect(lines.findIndex((line) => line["event"] === "service.ready")).toBeGreaterThan(
+      lines.indexOf(steps.at(-1) as Record<string, unknown>),
+    );
+  });
   it("recovers before publishing boot, connects the worker, then drains in dependency order", async () => {
     start();
     await settle();
