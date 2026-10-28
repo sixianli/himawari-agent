@@ -21,8 +21,11 @@ import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 
 export const COMMAND_OUTPUT_CEILING_MULTIPLIER = 64;
 
-/** A per-invocation adapter inside SRT, not an isolation backend or authority
- * store. The Worker supplies the already resolved directory grant. */
+const SHELL_WRITE_OPERATIONS: readonly HostDirectoryGrant["operations"][number][] = [
+  "create",
+  "update",
+];
+
 export async function createSandboxedCodingOperations(input: {
   readonly grant: HostDirectoryGrant;
   readonly targetPath?: string;
@@ -164,8 +167,6 @@ export async function createSandboxedCodingOperations(input: {
       return bytes;
     },
     async makeDirectory(absolute) {
-      // createExclusive creates missing parents through the same no-link walk.
-      // Pi calls mkdir before writeFile; do not introduce a separate raw mkdir.
       check();
       if (fixedTarget !== undefined) {
         if (path.resolve(absolute) !== path.dirname(fixedTarget))
@@ -237,13 +238,9 @@ export async function createSandboxedCodingOperations(input: {
       check();
       if (fixedTarget !== undefined) throw new Error("PI_FIXED_FILE_COMMAND_DENIED");
       if (command.cwd !== grant.displayPath) throw new Error("PI_COMMAND_CWD_CHANGED");
-      // Arbitrary shell can delete and move files. A partial write grant cannot
-      // be promoted to a shell grant merely because the tool is called bash.
       if (
         grant.operations.some((operation) => operation !== "read") &&
-        !["create", "update", "move", "trash", "restore", "permanent_delete"].every((operation) =>
-          grant.operations.includes(operation as HostDirectoryGrant["operations"][number]),
-        )
+        !SHELL_WRITE_OPERATIONS.every((operation) => grant.operations.includes(operation))
       )
         throw new Error("PI_SHELL_EFFECT_SCOPE_INCOMPLETE");
       const child = spawn(input.shell, ["--noprofile", "--norc", "-c", command.command], {
