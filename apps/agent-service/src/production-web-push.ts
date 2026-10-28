@@ -541,6 +541,7 @@ export class ProductionWebPush {
       attempts,
       nextAttemptAt: retry ? new Date(Date.parse(now) + retry.delayMs).toISOString() : null,
       lastCode: code,
+      tag: webPushTopic(entry.item.sourceKey),
       now,
     });
   }

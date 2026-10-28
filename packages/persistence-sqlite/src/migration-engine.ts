@@ -497,6 +497,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0060_thread_artifacts.sql",
   },
+  {
+    sequence: 61,
+    name: "web_push_feedback",
+    changeSet: "web-push-feedback",
+    phase: "expand" as const,
+    file: "0061_web_push_feedback.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

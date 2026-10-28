@@ -56,6 +56,15 @@ export const governanceMessages = [
   }),
   fixture("command", "push.test", { subscriptionId: "web-push-01" }),
   fixture("command", "presence.heartbeat", { clientId: "tab-01", visible: true }),
+  fixture("command", "push.feedback.record", {
+    events: [
+      {
+        tag: "q1c2Zt9sV0Kx3mWbYp7aLrUe4nHd8fGj",
+        reaction: "opened",
+        occurredAt: "2026-10-28T05:30:00.000Z",
+      },
+    ],
+  }),
   fixture("query", "push.status.read", {}),
   fixture("snapshot", "push.status.snapshot", {
     available: true,

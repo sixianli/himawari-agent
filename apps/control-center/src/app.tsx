@@ -41,7 +41,7 @@ import {
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
-import { startPresenceHeartbeat } from "./web-push.js";
+import { reportPushFeedback, startPresenceHeartbeat } from "./web-push.js";
 
 const MemorySettings = lazy(() =>
   import("./components/memory-page.js").then((module) => ({ default: module.MemorySettings })),
@@ -365,6 +365,26 @@ function LocalizedControlCenterApp({
       clearInterval: (handle) => window.clearInterval(handle as number),
     });
   }, [client, configuration, presenceInstalled]);
+  const pushFeedbackInstalled =
+    configuration?.installedGatewayV2Operations?.includes("push.feedback.record") ?? false;
+  useEffect(() => {
+    if (!client || !configuration || !pushFeedbackInstalled) return;
+    const report = () =>
+      void reportPushFeedback({
+        client,
+        configuration,
+        location: window.location,
+        history: window.history,
+        caches: typeof caches === "undefined" ? undefined : caches,
+        now: () => new Date(),
+      }).catch(() => undefined);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") report();
+    };
+    report();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [client, configuration, pushFeedbackInstalled]);
   const governanceSurface = [
     "approvals",
     "capabilities-adapters",

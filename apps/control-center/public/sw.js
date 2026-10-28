@@ -28,10 +28,33 @@ self.addEventListener("push", (event) => {
   );
 });
 
+const FEEDBACK_CACHE = "himawari-push-feedback";
+
+self.addEventListener("notificationclose", (event) => {
+  const tag = event.notification.tag;
+  if (typeof tag !== "string" || !tag) return;
+  const occurredAt = new Date().toISOString();
+  event.waitUntil(
+    caches
+      .open(FEEDBACK_CACHE)
+      .then((cache) =>
+        cache.put(
+          new Request(`/push-feedback/${encodeURIComponent(tag)}/dismissed`),
+          new Response(JSON.stringify({ tag, reaction: "dismissed", occurredAt }), {
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      )
+      .catch(() => undefined),
+  );
+});
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = new URL(event.notification.data?.navigate ?? "/", self.location.origin);
   if (target.origin !== self.location.origin) return;
+  if (typeof event.notification.tag === "string" && event.notification.tag)
+    target.searchParams.set("push", event.notification.tag);
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
       const open = windows.find((client) => new URL(client.url).origin === target.origin);

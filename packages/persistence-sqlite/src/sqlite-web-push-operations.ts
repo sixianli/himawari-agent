@@ -2,6 +2,7 @@ import type {
   WebPushAttempt,
   WebPushAttemptStatus,
   WebPushDue,
+  WebPushFeedback,
   WebPushFinishedRun,
   WebPushKind,
   WebPushOutboxItem,
@@ -83,6 +84,10 @@ export class SqliteWebPushOperations {
         return this.listDue(payload as Input<"listDue">);
       case "webPush.recordAttempt":
         return this.recordAttempt(payload as Input<"recordAttempt">);
+      case "webPush.recordReactions":
+        return this.recordReactions(payload as Input<"recordReactions">);
+      case "webPush.listFeedback":
+        return this.listFeedback(payload as Input<"listFeedback">);
       case "webPush.listFinishedRuns":
         return this.listFinishedRuns(payload as Input<"listFinishedRuns">);
       case "webPush.prune":
@@ -350,39 +355,110 @@ export class SqliteWebPushOperations {
       !ATTEMPT_STATUSES.includes(input.status) ||
       !Number.isSafeInteger(input.attempts) ||
       input.attempts < 0 ||
-      input.attempts > 100
+      input.attempts > 100 ||
+      input.tag.length < 1 ||
+      input.tag.length > 64
     )
       this.fail("PORT_INVALID_OPERATION", "Web push attempt is invalid");
-    return (
-      this.database
-        .prepare(
-          `INSERT INTO web_push_attempts (
-            owner_id, agent_id, source_key, subscription_id, status, attempts, next_attempt_at,
-            last_code, updated_at
-          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-            WHERE EXISTS (SELECT 1 FROM web_push_outbox
-              WHERE owner_id = ? AND agent_id = ? AND source_key = ?)
-          ON CONFLICT (owner_id, agent_id, source_key, subscription_id) DO UPDATE SET
-            status = excluded.status, attempts = excluded.attempts,
-            next_attempt_at = excluded.next_attempt_at, last_code = excluded.last_code,
-            updated_at = excluded.updated_at
-          WHERE web_push_attempts.status = 'pending'`,
-        )
-        .run(
-          input.ownerId,
-          input.agentId,
-          input.sourceKey,
-          input.subscriptionId,
-          input.status,
-          input.attempts,
-          input.nextAttemptAt,
-          input.lastCode,
+    return this.database.transaction(() => {
+      const recorded =
+        this.database
+          .prepare(
+            `INSERT INTO web_push_attempts (
+              owner_id, agent_id, source_key, subscription_id, status, attempts, next_attempt_at,
+              last_code, updated_at
+            ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+              WHERE EXISTS (SELECT 1 FROM web_push_outbox
+                WHERE owner_id = ? AND agent_id = ? AND source_key = ?)
+            ON CONFLICT (owner_id, agent_id, source_key, subscription_id) DO UPDATE SET
+              status = excluded.status, attempts = excluded.attempts,
+              next_attempt_at = excluded.next_attempt_at, last_code = excluded.last_code,
+              updated_at = excluded.updated_at
+            WHERE web_push_attempts.status = 'pending'`,
+          )
+          .run(
+            input.ownerId,
+            input.agentId,
+            input.sourceKey,
+            input.subscriptionId,
+            input.status,
+            input.attempts,
+            input.nextAttemptAt,
+            input.lastCode,
+            input.now,
+            input.ownerId,
+            input.agentId,
+            input.sourceKey,
+          ).changes > 0;
+      if (recorded && input.status === "sent")
+        this.database
+          .prepare(
+            `INSERT INTO web_push_feedback (
+              owner_id, agent_id, source_key, tag, kind, source_ref, thread_id, channel,
+              first_sent_at, devices, opened_at, dismissed_at, updated_at
+            ) SELECT owner_id, agent_id, source_key, ?, kind, source_ref, thread_id, 'web_push',
+                ?, 1, NULL, NULL, ?
+              FROM web_push_outbox WHERE owner_id = ? AND agent_id = ? AND source_key = ?
+            ON CONFLICT (owner_id, agent_id, source_key) DO UPDATE SET
+              devices = min(100, web_push_feedback.devices + 1), updated_at = excluded.updated_at`,
+          )
+          .run(input.tag, input.now, input.now, input.ownerId, input.agentId, input.sourceKey);
+      return recorded;
+    })();
+  }
+
+  private recordReactions(input: Input<"recordReactions">): number {
+    this.assertDiskHeadroom();
+    this.time(input.now);
+    if (input.reactions.length > 50)
+      this.fail("PORT_INVALID_OPERATION", "Web push reactions are invalid");
+    for (const event of input.reactions) {
+      this.time(event.occurredAt);
+      if (
+        !["opened", "dismissed"].includes(event.reaction) ||
+        event.tag.length < 1 ||
+        event.tag.length > 64
+      )
+        this.fail("PORT_INVALID_OPERATION", "Web push reaction is invalid");
+    }
+    const statements = {
+      opened: this.database.prepare(
+        `UPDATE web_push_feedback SET opened_at = max(first_sent_at, min(?, ?)), updated_at = ?
+         WHERE owner_id = ? AND agent_id = ? AND tag = ? AND opened_at IS NULL`,
+      ),
+      dismissed: this.database.prepare(
+        `UPDATE web_push_feedback SET dismissed_at = max(first_sent_at, min(?, ?)), updated_at = ?
+         WHERE owner_id = ? AND agent_id = ? AND tag = ? AND dismissed_at IS NULL`,
+      ),
+    };
+    return this.database.transaction(() => {
+      let recorded = 0;
+      for (const event of input.reactions)
+        recorded += statements[event.reaction].run(
+          event.occurredAt,
+          input.now,
           input.now,
           input.ownerId,
           input.agentId,
-          input.sourceKey,
-        ).changes > 0
-    );
+          event.tag,
+        ).changes;
+      return recorded;
+    })();
+  }
+
+  private listFeedback(input: Input<"listFeedback">): readonly WebPushFeedback[] {
+    this.time(input.sentFrom);
+    this.limit(input.limit);
+    return this.database
+      .prepare(
+        `SELECT source_key AS sourceKey, tag, kind, source_ref AS sourceRef,
+           thread_id AS threadId, channel, first_sent_at AS firstSentAt, devices,
+           opened_at AS openedAt, dismissed_at AS dismissedAt
+         FROM web_push_feedback
+         WHERE owner_id = ? AND agent_id = ? AND first_sent_at >= ?
+         ORDER BY first_sent_at, source_key LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.sentFrom, input.limit) as WebPushFeedback[];
   }
 
   private listFinishedRuns(input: Input<"listFinishedRuns">): readonly WebPushFinishedRun[] {

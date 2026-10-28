@@ -50,6 +50,28 @@ export interface WebPushAttempt {
   readonly updatedAt: string;
 }
 
+export const WEB_PUSH_REACTIONS = ["opened", "dismissed"] as const;
+export type WebPushReaction = (typeof WEB_PUSH_REACTIONS)[number];
+
+export interface WebPushReactionEvent {
+  readonly tag: string;
+  readonly reaction: WebPushReaction;
+  readonly occurredAt: string;
+}
+
+export interface WebPushFeedback {
+  readonly sourceKey: string;
+  readonly tag: string;
+  readonly kind: WebPushKind;
+  readonly sourceRef: string;
+  readonly threadId: string | null;
+  readonly channel: "web_push";
+  readonly firstSentAt: string;
+  readonly devices: number;
+  readonly openedAt: string | null;
+  readonly dismissedAt: string | null;
+}
+
 export interface WebPushDue {
   readonly item: WebPushOutboxItem;
   readonly subscription: WebPushSubscription;
@@ -107,9 +129,19 @@ export interface WebPushStorePort {
       readonly attempts: number;
       readonly nextAttemptAt: string | null;
       readonly lastCode: string | null;
+      readonly tag: string;
       readonly now: string;
     },
   ): Promise<boolean>;
+  recordReactions(
+    input: WebPushScope & {
+      readonly reactions: readonly WebPushReactionEvent[];
+      readonly now: string;
+    },
+  ): Promise<number>;
+  listFeedback(
+    input: WebPushScope & { readonly sentFrom: string; readonly limit: number },
+  ): Promise<readonly WebPushFeedback[]>;
   listFinishedRuns(
     input: WebPushScope & { readonly afterCursor: string; readonly limit: number },
   ): Promise<readonly WebPushFinishedRun[]>;

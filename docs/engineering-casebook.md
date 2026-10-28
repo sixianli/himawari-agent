@@ -62,6 +62,7 @@ date: "2026-10-26"
   35. [生产机没有防火墙，安全只靠“恰好没人监听公网”：启用 ufw 只留 SSH](#case-prod-firewall)
   36. [对话做出的文件和后台命令放进同一个“更多”栏，不在对话里抢注意力](#case-more-panel)
   37. [愿景散在三处、原则冲突没有裁决顺序：把产品愿景定为顶层文档，把“像贾维斯”变成可测的评测](#case-product-vision)
+  38. [主动提醒发出去就不管了：记录每条通知的送达、点开和划掉，为“该不该打扰”积累数据](#case-push-feedback)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -93,9 +94,9 @@ date: "2026-10-26"
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
-| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
+| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
-| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client) |
+| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client) |
 
 [返回目录](#contents)
 
@@ -2416,6 +2417,61 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 **面试 30 秒版**
 
 个人 Agent 的愿景原来散在 README、PRD 和系统提示三处，原则冲突时没有裁决顺序。我把愿景定为 PRD 之上的顶层文档，写明“用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性”，让所有编码代理改功能前先读。更关键的是把“像贾维斯”拆成 10 个可判通过的场景，按代码逐条核对，只有 3 条现在能测，于是先补最依赖时间积累的提醒反馈记录，再按 Anthropic 的评测方法把场景做成回归评测。
+
+[返回目录](#contents)
+
+<a id="case-push-feedback"></a>
+
+## 案例 38：主动提醒发出去就不管了：记录每条通知的送达、点开和划掉，为“该不该打扰”积累数据
+
+**背景与现象**
+
+产品愿景的 Jarvis Test 第 10 条要求连续 30 天统计主动提醒的命中率和误扰率。2026-10-28 评审时发现系统不记录“发了哪条提醒、Andy 怎么反应”：网页推送的发送队列在过期 7 天后连同每台设备的发送记录一起删除；设备上的后台脚本（Service Worker，页面关着也能运行的浏览器脚本）点通知时只负责打开页面，划掉时什么都不做。Andy 同意马上开始记录。
+
+**根因**
+
+推送功能（ADR 0089）当初只为“把通知可靠送到”设计：队列表是待发和重试用的，过期清理是它的职责；反应数据没有地方存，也没有回报路径。
+
+**我们的方案**
+
+- 新表 `web_push_feedback`（迁移 0061）：每条至少送达一台设备的通知一行，记类型、来源编号、对应对话、首次送达时间、送达设备数、第一次点开和第一次划掉的时间；不随发送队列删除，不存通知正文。
+- 送达记录和“这台设备发送成功”在同一个数据库事务里写，重复记录不会多算设备。
+- 点开：后台脚本在打开的页面地址后加通知的短编号，页面加载后用已授权的命令 `push.feedback.record` 回报，再把参数从地址栏去掉。划掉：后台脚本把编号和时间存进浏览器缓存，下次打开页面时一并回报。回报时间被限制在“首次送达”到“服务器当前时间”之间。
+- “回复”不另存，统计时用对话消息表算：送达后 Andy 在对应对话里发的第一条消息。
+- Pi 复用：推送是 Himawari 自己的功能，不涉及 Pi。
+
+**方案讨论与备选**
+
+- 延长发送队列的保留期并加反应字段：改动少，但把“待发重试”和“统计”混在一张表里。不采用。
+- 每个反应一行的事件表：灵活，但现在只要两种反应的第一次，还得再聚合。不采用。
+- 后台脚本直接发请求回报：点开不必等页面，但后台脚本没有页面的授权编号，要么开免授权接口，要么把授权编号存进缓存。不采用。
+- 存通知正文方便查看：违反愿景原则 1“只在必需范围内使用和披露”。不采用。
+- 放弃的部分：这次不做统计页面（要先出原型给 Andy 批）；iPhone 上的“划掉”大概率拿不到。
+
+**业界主流做法**
+
+以下资料 2026-10-28 打开核对。
+
+- ✅ Google Analytics 自动事件：Firebase 推送记 `notification_receive`、`notification_open`（“when a user opens a notification sent by FCM”）和 `notification_dismiss`（“when a user dismisses a notification sent by FCM”，仅 Android）。[GA4 自动事件](https://support.google.com/analytics/answer/9234069)
+- ✅ MDN：`notificationclose`“fires when a user closes a displayed notification”，标注 “Limited availability”。[MDN](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerGlobalScope/notificationclose_event)
+- ✅ MDN 浏览器兼容数据：`notificationclose` 在 Chrome 50、Firefox 44、macOS Safari 16 起支持，iOS Safari 标为不支持。[browser-compat-data](https://github.com/mdn/browser-compat-data)
+
+**对比与取舍**
+
+和 Firebase 一样分“送达 / 点开 / 划掉”三件事，也同样接受“划掉只在部分平台拿得到”。不同的是 Himawari 不用第三方统计服务：数据只存在自己的数据库里，只有编号和时间，符合“自有优先、数据自持”。代价是 iPhone 上误扰主要靠“24 小时没反应”判断，会把“看到了但不需要点”的通知也算进去，30 天后按数据调定义。
+
+**结果数据**
+
+- 测试：新增存储、网关命令、发送流程、页面回报和后台脚本五处测试，全部通过（见 PR 提交说明）；后台脚本的测试在改动前的 `sw.js` 上先跑失败。
+- 真实命中率和误扰率：未测量（上线后开始积累，30 天后才有）。
+
+**相关 ADR/PR**
+
+[ADR 0102](adr/0102-record-push-notification-feedback.md)、[ADR 0089](adr/0089-web-push-only-owner-entry.md)、[ADR 0101](adr/0101-adopt-product-vision-v2-1.md)、[BL-20261028-004](backlog/BL-20261028-004-proactive-notification-feedback-log.md)；PR 见分支 `claude/project-thread-rfq0gv`。
+
+**面试 30 秒版**
+
+个人 Agent 的主动提醒要知道“哪次打扰值、哪次不值”，可原来的推送只管送到，记录 7 天就删。我加了一张反馈表，每条送达的通知一行，记点开和划掉；点开靠页面地址里的短编号回报，划掉靠后台脚本存进浏览器缓存、下次打开时回报，都走已授权的命令通道，不存通知正文。参照 Firebase 的送达/点开/划掉三类事件，也接受 iPhone 拿不到“划掉”的平台限制，为 30 天的命中率统计打基础。
 
 [返回目录](#contents)
 
