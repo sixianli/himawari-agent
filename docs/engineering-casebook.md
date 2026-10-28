@@ -69,6 +69,7 @@ date: "2026-10-26"
   42. [什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算](#case-memory-embedding-route)
   43. [说“我老婆叫管冬融”，Himawari 却又讲了一遍天气：主人档案作为一条用户消息紧贴新消息](#case-owner-material-position)
   44. [22 条界面意见归成一句话：“站在用户的角度想他要知道什么”，把内部数字移出视线，记忆和提醒各有入口](#case-ui-batch-1028)
+  45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -95,14 +96,14 @@ date: "2026-10-26"
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
-| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
+| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
-| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client) |
+| 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 
 [返回目录](#contents)
 
@@ -2916,6 +2917,75 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 **面试 30 秒版**
 
 “用户一次给了 22 条界面意见，我没有逐条打补丁，而是先找共同原因：界面按‘我们有什么数据’来摆，而不是按‘用户想知道什么’。同一个耗时出现三次，费用、分段起止时间都摆在眼前；提醒因为数据上挂在记忆下，就藏进了记忆页。我先做三语原型让用户逐条选方案，再改成：收起时一句话说做了什么、多久，最下面只留 Token 和按 Anthropic 公式算的 KV 缓存命中率；能点开的才有箭头；提醒有独立入口。516 个前端测试通过，三语两种宽度截图存为新基线。”
+
+[返回目录](#contents)
+
+<a id="case-proactive-gmail"></a>
+
+## 案例 45：让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志
+
+**背景与现象**
+
+产品愿景要 Himawari 主动替 Andy 盯事（Jarvis Test 第 3 条“主动拦截”、第 10 条“打扰要有收益”），但到 2026-10-28 为止，它只会被动回答。仓库里也没有“主动闭环”这个任务的定义。起草方案时先推荐了“明天的安排 × 天气”，Andy 批注说“只做截止日期还不够，我希望可以完全接入我的gmail，然后主动帮我看邮件，管理邮件中的待办事项，管理邮件的优先级，管理邮件中我可能没有注意到的关键信息”。难点有三个：怎么在不把邮件正文交给模型的前提下判断重要性；怎么防止模型把重要来信静默判成“不用管”；后台任务没人看着，怎么防止它持续花钱。
+
+**根因**
+
+这不是缺陷，是设计问题：主动的 Agent 有两种失败，而只看提醒页时，两种都不显眼。
+
+1. **说多了（误扰）**：每封信都推送，Andy 很快就会关掉功能。
+2. **说少了（漏报）**：模型把银行、入管局的来信判成“不用管”，Andy 根本看不到这些信，也就不会去纠正，漏报率因此被系统性低估。
+
+此外，只设单次费用上限挡不住“每轮都重判旧邮件”这类缺陷全天持续花钱。
+
+**我们的方案**
+
+方案和原型都由 Andy 逐条批注；2026-10-29 他给出“有条件批准”，加了 4 条必改，决定记在 [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)：
+
+1. **少披露。** 模型只看发件人、标题和 Gmail 自带的一行摘要，不看正文。判断不了但可能重要的，给第四种结果“可能重要，请看原信”。摘要里有验证码、卡号的，不发给模型。
+2. **地板规则（确定性的后置检查）。** 模型判断之后，用 0 费用的规则检查。发件人在重要名单里、域名是 `go.jp` / `ac.jp` 这类公共机构后缀、或者标题和摘要里有金钱词，就算命中地板。命中地板的邮件不得低于“值得知道”，模型拿不准时强制为“可能重要”，被抬升的都写进日志。模型只能往高判。
+3. **决策日志。** 每次检查都记一行，不管开没开口。推送用 `push_source_key` 连到推送反馈表，算出命中率和误扰率。
+4. **漏报审计。** 上线头 14 天，每天给一份“今天判为不用管”的清单，只列发件人和标题。Andy 点“看完了”才计入已审数。漏报率标为“已审样本内”，同时显示分母。
+5. **两层费用上限。** 单次 0.1 美元 / 3 分钟，每天累计 1 美元。到日上限只停模型，不停 0 费用的规则检查，所以那天的银行来信仍会出现。
+6. **可重复的验收。** 自动测试里的模型一律用 `ScriptedModelPort` 返回剧本结果，只测程序行为，100 次必须 100 次通过；模型判得准不准，交给 Jarvis Test 真模型层和 Andy 的真实评价去衡量。
+
+模型调用复用 Pi 运行时（`packages/runtime-pi`）。Himawari 自己负责的是 Pi 没有的部分：披露范围、地板规则、费用上限、决策日志和推送。
+
+**方案讨论与备选**
+
+- **把正文前 4000 字发给模型**：判断更准，但违反“只在必需范围内披露”，Andy 选择只发摘要。
+- **用 Pub/Sub 即时推送**：更及时，但要多开一个云服务；对一个人的邮箱，15 分钟够用。
+- **把“公司类”发件人也写进地板规则**：几乎所有邮件都来自公司，规则没法判断，所以改成 Andy 维护的名单。
+- **日上限后完全停止检查**：Andy 最初的要求。我指出这样地板规则也会跟着停，Andy 同意改成只停模型。
+- **去重只按 `message_id` 唯一**：和“老线程有新回复时更新原条目”矛盾，所以改成两层唯一约束。
+
+**业界主流做法**
+
+- ✅ Claude Google Workspace 连接器帮助页（<https://support.claude.com/en/articles/10166901-use-google-workspace-connectors>）：“only accesses your data when you explicitly ask”。
+- ✅ Meta AI 连接 Gmail 帮助页（<https://www.meta.com/help/artificial-intelligence/1687253048996149/>）：“won’t download your whole inbox”。
+- ⚠ ChatGPT Pulse 连上 Gmail 后每晚在后台读一次，早上给简报：OpenAI 帮助页和发布页都返回 HTTP 403，只看到报道，未核对原文，面试时不要引用。
+- ✅ Google OAuth 文档（<https://developers.google.com/identity/protocols/oauth2#expiration>）：测试状态的应用 “is issued a refresh token expiring in 7 days”。
+- ✅ Horvitz《Principles of Mixed-Initiative User Interfaces》（CHI 1999，<https://erichorvitz.com/chi99horvitz.pdf>）：“Autonomous actions should be taken only when an agent believes that they will have greater expected value than inaction for the user”。
+
+**对比与取舍**
+
+大厂的连接器多数是“你问才读”；Pulse 是每天一次的简报。Himawari 每 15 分钟看一次，急事当场推送，每次判断都留日志、可以评价。代价有四个：
+
+- 只看摘要，判断比看正文粗。
+- 地板规则会把一部分银行营销信抬到“值得知道”。
+- 头 14 天 Andy 每天要抽查一下。
+- 授权凭证和加密密钥在同一台机器上，整机被攻破时加密挡不住，个人使用接受这个风险。
+
+**结果数据**
+
+截至设计定稿（2026-10-29）还没有代码。命中率、误扰率、漏报率和每封邮件的花费都未测量，上线第一周再补。原型存为基线 `docs/assets/control-center/2026-10-29-v10/`：中英日三种语言、电脑和手机两种宽度，共 42 张截图。
+
+**相关 ADR/PR**
+
+[ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)；[设计规格](execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)；[ADR 0102](adr/0102-record-push-notification-feedback.md)；[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)；PR 1 在分支 `claude/project-thread-6gwe3i`。
+
+**面试 30 秒版**
+
+“我给个人 Agent 做主动看邮件。难点不是调模型，是不乱打扰又不漏掉重要的信。我只把发件人、标题和一行摘要交给模型，判断不了就提示用户去看原信。模型之后再加一道确定性的地板规则：银行、政府域名、带金钱词的邮件，不允许被判成‘不用管’。每次判断都记日志，把命中、误扰和已审样本内的漏报分开算。费用是单次加每日两层上限，到上限只停模型、不停规则。自动测试用剧本模型，保证 100 次跑 100 次通过，模型准不准另外用真实评测和用户评价来量。”
 
 [返回目录](#contents)
 
