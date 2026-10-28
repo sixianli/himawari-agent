@@ -96,6 +96,7 @@ export interface HttpConfiguration {
   readonly maximumBodyBytes: number;
   readonly maximumStaticAssetBytes: number;
   readonly heartbeatMilliseconds: number;
+  readonly previewOrigin?: string;
 }
 
 export interface RecentAuthenticationConfiguration {

@@ -692,6 +692,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Run deletion",
   ),
   entry(
+    "thread_artifacts",
+    "ThreadArtifactStorePort",
+    "one row per version of a file Himawari wrote or changed in a conversation; a new version only when the content fingerprint changes",
+    "metadata_only",
+    "cascade with Run deletion",
+  ),
+  entry(
     "web_push_subscriptions",
     "WebPushStorePort",
     "one row per device push endpoint, active or paused by a rejected key; removed when the push service says it is gone",

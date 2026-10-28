@@ -4,6 +4,14 @@
 
 Read `DELIVERY_MODE` at the repository root before deciding which tests, documentation steps, merge checks, or production steps a change needs. While it says `fast`, [.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) replaces the rules it names in this file and in the files under `.agents/instructions/` (user decision, 2026-10-25). Only the user switches the mode. GitHub Actions is turned off ([ADR 0092](docs/adr/0092-pause-github-actions.md)): no CI runs, so the local fast-mode checks are the only quality gate, and a missing CI result on a PR is expected.
 
+## Product Vision
+
+[docs/product-vision.md](docs/product-vision.md) is the top-level product document for the whole development cycle (user decision, 2026-10-28, [ADR 0101](docs/adr/0101-adopt-product-vision-v2-1.md)). Every session, including cloud threads, reads it before designing or changing a user-facing feature, memory, proactive behavior, tools, permissions, or self-improvement.
+
+- Its principles decide conflicts in this order: owner sovereignty, then boundaries and reversibility, then memory reliability, then proactivity and efficiency. Name the principle a design relies on when it trades one against another.
+- "Owned first, data held by the owner" (自有优先、数据自持) replaces the earlier "local-first" wording: the owner controls where Himawari runs and where its data lives, which may be a server the owner rents. Do not describe Himawari as local-first.
+- A PRD sets the scope of one version and may postpone parts of the vision, but must not contradict it. Only the user changes the vision text; a new version replaces the whole document and records its changes in the appendix.
+
 ## Owner's Global Instructions and Skills
 
 The owner's global instructions are copied into [.claude/rules/owner-global-instructions.md](.claude/rules/owner-global-instructions.md). Claude Code loads that file on its own; any other agent whose session did not load the owner's global instructions from the owner's machine, such as a cloud session, reads it before starting work. The owner's skills are copied under `.claude/skills/`; [.claude/rules/owner-skills.md](.claude/rules/owner-skills.md) lists them and says how to use a copy when the Skill tool does not list that skill.

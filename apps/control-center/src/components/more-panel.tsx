@@ -1,18 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { BackgroundCommandState, BackgroundCommandView } from "../background-commands.js";
+import type { DeliveredFile, DeliveredFileGroup } from "../delivered-files.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import { fileExtension, lineCount, type TurnFile } from "../turn-files.js";
+import { DeliveredFileRow } from "./delivered-file.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 
 export type MoreTab = "files" | "commands";
-
-export interface MoreFileGroup {
-  readonly runId: string;
-  readonly turn: number;
-  readonly title: string | undefined;
-  readonly files: readonly TurnFile[];
-}
 
 const STATE_KEYS: Readonly<Record<BackgroundCommandState, string>> = {
   running: "running",
@@ -21,14 +15,6 @@ const STATE_KEYS: Readonly<Record<BackgroundCommandState, string>> = {
   stopped: "stopped",
   timed_out: "timedOut",
   interrupted: "interrupted",
-};
-
-const KIND_LABELS: Readonly<Record<TurnFile["kind"], MessageId>> = {
-  markdown: "files.kind.markdown",
-  csv: "files.kind.csv",
-  html: "files.kind.html",
-  code: "files.kind.code",
-  text: "files.kind.text",
 };
 
 const stateMessage = (prefix: string, state: BackgroundCommandState) =>
@@ -218,52 +204,6 @@ export function BackgroundReportLine({
   );
 }
 
-function FileRow({
-  file,
-  turn,
-  open,
-  onOpen,
-  message,
-}: {
-  readonly file: TurnFile;
-  readonly turn: number;
-  readonly open: boolean;
-  readonly onOpen: () => void;
-  readonly message: Message;
-}) {
-  const edited = file.content === undefined || file.diff.length > 0;
-  return (
-    <button
-      type="button"
-      className={open ? "more-row is-open" : "more-row"}
-      title={file.path}
-      aria-pressed={open}
-      onClick={onOpen}
-    >
-      <span className="more-badge" aria-hidden="true">
-        {fileExtension(file.name).slice(0, 4).toUpperCase() || "TXT"}
-      </span>
-      <span className="more-row-text">
-        <span className="more-row-name">{file.name}</span>
-        <small>
-          {message(KIND_LABELS[file.kind])}
-          {" · "}
-          {file.diff.length ? (
-            <>
-              <span className="is-added">+{file.added}</span>{" "}
-              <span className="is-removed">−{file.removed}</span>
-            </>
-          ) : (
-            message("files.lines", { count: lineCount(file.content ?? "") })
-          )}
-          {" · "}
-          {message(edited ? "more.file.edited" : "more.file.written", { turn })}
-        </small>
-      </span>
-    </button>
-  );
-}
-
 export function MorePanel({
   tab,
   commandKey,
@@ -282,14 +222,14 @@ export function MorePanel({
   readonly tab: MoreTab;
   readonly commandKey: string | null;
   readonly commands: readonly BackgroundCommandView[];
-  readonly fileGroups: readonly MoreFileGroup[];
+  readonly fileGroups: readonly DeliveredFileGroup[];
   readonly stoppingRunIds: readonly string[];
   readonly openFileKey: string | undefined;
   readonly onTab: (tab: MoreTab) => void;
   readonly onCommand: (key: string | null) => void;
   readonly onStop: ((command: BackgroundCommandView) => void) | undefined;
   readonly onReport: (command: BackgroundCommandView) => void;
-  readonly onOpenFile: (file: TurnFile) => void;
+  readonly onOpenFile: (file: DeliveredFile) => void;
   readonly onClose: () => void;
   readonly message: Message;
 }) {
@@ -310,6 +250,10 @@ export function MorePanel({
   ];
   const current = tabs.some((item) => item.id === tab) ? tab : (tabs[0]?.id ?? "commands");
   const detail = commandKey ? commands.find((command) => command.key === commandKey) : undefined;
+  const changedBy = (command: BackgroundCommandView) =>
+    fileGroups.flatMap((group) =>
+      group.files.filter((file) => file.registered?.commandKey === command.key),
+    );
   const now = useNow(running.length > 0);
   useEffect(() => {
     const trigger = document.activeElement;
@@ -381,7 +325,15 @@ export function MorePanel({
                     at: new Date(command.endedAt ?? ""),
                   })}
           </small>
-          {command.state === "running" ? <small>{startedIn(command, message)}</small> : null}
+          {command.state === "running" ? (
+            <small>{startedIn(command, message)}</small>
+          ) : command.state !== "interrupted" ? (
+            <small>
+              {changedBy(command).length
+                ? message("more.changed", { count: changedBy(command).length })
+                : message("more.noChange")}
+            </small>
+          ) : null}
         </span>
       </button>
       {stopButton(command)}
@@ -437,6 +389,24 @@ export function MorePanel({
                   </div>
                 ))}
               </dl>
+              <h3 className="more-section">{message("more.detail.files")}</h3>
+              {changedBy(detail).length ? (
+                <div>
+                  {changedBy(detail).map((file) => (
+                    <DeliveredFileRow
+                      key={file.key}
+                      file={file}
+                      open={file.key === openFileKey}
+                      onOpen={() => onOpenFile(file)}
+                      message={message}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="more-note">
+                  {message(detail.state === "running" ? "more.filesLater" : "more.noChange")}
+                </p>
+              )}
               <h3 className="more-section">{message("more.detail.output")}</h3>
               {detail.state === "interrupted" ? (
                 <p className="more-note">{message("more.detail.interrupted")}</p>
@@ -483,15 +453,19 @@ export function MorePanel({
                   {fileGroups.map((group) => (
                     <section key={group.runId}>
                       <h3 className="more-section">
-                        {group.title
-                          ? message("more.files.group", { turn: group.turn, title: group.title })
-                          : message("more.turn", { turn: group.turn })}
+                        {group.command
+                          ? message("files.group.command", {
+                              turn: group.turn,
+                              command: group.command,
+                            })
+                          : group.title
+                            ? message("more.files.group", { turn: group.turn, title: group.title })
+                            : message("more.turn", { turn: group.turn })}
                       </h3>
                       {group.files.map((file) => (
-                        <FileRow
+                        <DeliveredFileRow
                           key={file.key}
                           file={file}
-                          turn={group.turn}
                           open={file.key === openFileKey}
                           onOpen={() => onOpenFile(file)}
                           message={message}

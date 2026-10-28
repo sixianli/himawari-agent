@@ -7,7 +7,6 @@ import type {
 } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ControlCenterRouteState } from "./app/router.js";
-import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import {
   type BackgroundCommandView,
   backgroundCommands,
@@ -15,6 +14,7 @@ import {
   runningBackgroundCommands,
   turnTitles,
 } from "./background-commands.js";
+import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import { SunflowerMark } from "./components/brand.js";
 import { ChatComposer } from "./components/chat-composer.js";
@@ -22,20 +22,18 @@ import { ChatHistory } from "./components/chat-history.js";
 import {
   ContentPreview,
   type ContentPreviewValue,
-  previewOfFile,
+  type FilePreviewAccess,
+  previewOfDelivered,
 } from "./components/content-preview.js";
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
+import { FilesLibrary } from "./components/files-library.js";
 import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
-import {
-  MoreButton,
-  type MoreFileGroup,
-  MorePanel,
-  type MoreTab,
-} from "./components/more-panel.js";
+import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
+import { type DeliveredFile, deliveredFileGroups } from "./delivered-files.js";
 import { isAnsweredRun, isTerminalRun, type RunSummary } from "./execution-view.js";
 import type {
   ControlCenterRuntimeConfiguration,
@@ -45,9 +43,9 @@ import type {
 import type { MessageId } from "./i18n/message-ids.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
 
+import type { RegisteredFile } from "./registered-files.js";
 import { listPendingRunApprovals } from "./run-approval.js";
 import { ThreadExecutionSynchronizer } from "./thread-execution-synchronizer.js";
-import { turnFiles } from "./turn-files.js";
 
 type ThreadCollectionSnapshot = Extract<
   ThreadGatewaySnapshot,
@@ -168,6 +166,9 @@ export function useThreadControlCenter(
     return () => window.clearTimeout(timer);
   }, [connection]);
   const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
+  const [library, setLibrary] = useState(false);
+  const [registered, setRegistered] = useState<readonly RegisteredFile[]>();
+  const pendingTurn = useRef<string | null>(null);
   const [more, setMore] = useState<{
     readonly open: boolean;
     readonly tab: MoreTab;
@@ -245,6 +246,8 @@ export function useThreadControlCenter(
     refreshSequence.current++;
     setDetail(undefined);
     setPreview(null);
+    setLibrary(false);
+    setRegistered(undefined);
     setMore((current) => ({ ...current, open: false, command: null }));
     setStoppingRunIds([]);
     setDraft(storage.readDraft(selectedThreadId ?? "new"));
@@ -1096,7 +1099,12 @@ export function useThreadControlCenter(
       selectedThreadId={selectedThreadId}
       onSearchTextChange={setSearchText}
       onSearch={() => void search()}
-      onCreate={() => void createThread()}
+      onCreate={() => {
+        setLibrary(false);
+        void createThread();
+      }}
+      onOpenFiles={configuration?.filesAvailable ? () => openLibrary() : undefined}
+      filesOpen={library}
       onRefresh={() => void refresh(true)}
       onRename={(thread) => {
         setRenameTarget(thread);
@@ -1120,7 +1128,10 @@ export function useThreadControlCenter(
           thread,
         );
       }}
-      onNavigate={navigate}
+      onNavigate={(state) => {
+        setLibrary(false);
+        navigate(state);
+      }}
     />
   );
 
@@ -1190,20 +1201,124 @@ export function useThreadControlCenter(
     [detail, contentByRef, titles],
   );
   const runningCommands = runningBackgroundCommands(commands);
-  const fileGroups = useMemo<readonly MoreFileGroup[]>(
+  const filesThreadId = configuration?.filesAvailable ? shownDetailThreadId : null;
+  const filesSignal = (detail?.payload.runs ?? [])
+    .map((run) => `${run.runId}:${run.revision}:${run.status}`)
+    .join(",");
+  useEffect(() => {
+    void filesSignal;
+    if (!client || !filesThreadId) return;
+    let current = true;
+    void (async () => {
+      const items: RegisteredFile[] = [];
+      let before: string | null = null;
+      do {
+        const page = await client.listFiles({ threadId: filesThreadId, before, limit: 200 });
+        items.push(...page.items);
+        before = page.nextCursor;
+      } while (before && current);
+      if (current) setRegistered(items);
+    })().catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [client, filesThreadId, filesSignal]);
+  const fileGroups = useMemo(
     () =>
-      (detail?.payload.runs ?? [])
-        .map((run, index) => ({
-          runId: run.runId,
-          turn: index + 1,
-          title: titles[run.runId],
-          files: turnFiles(run.runId, execution[run.runId] ?? []),
-        }))
-        .filter((group) => group.files.length)
-        .reverse(),
-    [detail, execution, titles],
+      deliveredFileGroups({
+        runs: detail?.payload.runs ?? [],
+        execution,
+        registered,
+        commands,
+        titles,
+      }),
+    [detail, execution, registered, commands, titles],
+  );
+  const filesByRun = useMemo(
+    () => Object.fromEntries(fileGroups.map((group) => [group.runId, group.files])),
+    [fileGroups],
   );
   const hasMore = commands.length > 0 || fileGroups.length > 0;
+  const fileAccess = useMemo<FilePreviewAccess | undefined>(
+    () =>
+      client
+        ? {
+            text: (fileId) => client.fileText(fileId),
+            versions: (fileId) => client.fileVersions(fileId),
+            previewUrl: configuration?.filePreviewAvailable
+              ? (fileId) => client.filePreviewUrl(fileId)
+              : undefined,
+          }
+        : undefined,
+    [client, configuration?.filePreviewAvailable],
+  );
+  const flashTurn = useCallback((runId: string) => {
+    const turn = [...document.querySelectorAll<HTMLElement>(".chat-turn[data-run-id]")].find(
+      (element) => element.dataset["runId"] === runId,
+    );
+    if (!turn) return false;
+    turn.scrollIntoView({ block: "center", behavior: "smooth" });
+    turn.classList.remove("is-flash");
+    turn.classList.add("is-flash");
+    window.setTimeout(() => turn.classList.remove("is-flash"), 1800);
+    return true;
+  }, []);
+  useEffect(() => {
+    void detail;
+    const runId = pendingTurn.current;
+    if (runId && flashTurn(runId)) pendingTurn.current = null;
+  }, [detail, flashTurn]);
+  const threadTitle = (threadId: string) => {
+    const thread = [...threadItems, ...(searchResults?.payload.threads ?? [])].find(
+      (item) => item.threadId === threadId,
+    );
+    if (!thread) return undefined;
+    return (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
+  };
+  const openFile = (file: DeliveredFile) => {
+    const title = detail ? threadTitle(detail.payload.thread.threadId) : undefined;
+    setPreview((current) =>
+      current?.key === file.key
+        ? null
+        : previewOfDelivered(file, {
+            label: title
+              ? message("files.from", { title, turn: file.turn })
+              : message("files.fromPlain", { turn: file.turn }),
+            onOpen: () => {
+              if (window.matchMedia?.("(max-width: 760px)").matches) setPreview(null);
+              flashTurn(file.runId);
+            },
+          }),
+    );
+  };
+  const openLibraryFile = (file: DeliveredFile) => {
+    const threadId = file.registered?.threadId;
+    const title = threadId ? threadTitle(threadId) : undefined;
+    setPreview((current) =>
+      current?.key === file.key
+        ? null
+        : previewOfDelivered(file, {
+            label: title
+              ? message("files.from", { title, turn: file.turn })
+              : message("files.fromPlain", { turn: file.turn }),
+            onOpen: () => {
+              if (!threadId) return;
+              pendingTurn.current = file.runId;
+              setLibrary(false);
+              setPreview(null);
+              if (threadId === selectedThreadId) {
+                if (flashTurn(file.runId)) pendingTurn.current = null;
+              } else navigate({ ...route, objectId: threadId, status: null, view: "content" });
+            },
+          }),
+    );
+  };
+  const openLibrary = () => {
+    setPreview(null);
+    closeMore();
+    setLibrary(true);
+    navigate({ ...route, view: "content" });
+  };
   useEffect(() => {
     setStoppingRunIds((current) => {
       const next = current.filter((runId) =>
@@ -1238,17 +1353,10 @@ export function useThreadControlCenter(
     if (!command.noticeRunId) return;
     if (window.matchMedia?.("(max-width: 760px)").matches) closeMore();
     else setMore((current) => ({ ...current, command: null }));
-    const turn = [...document.querySelectorAll<HTMLElement>(".chat-turn[data-run-id]")].find(
-      (element) => element.dataset["runId"] === command.noticeRunId,
-    );
-    if (!turn) return;
-    turn.scrollIntoView({ block: "center", behavior: "smooth" });
-    turn.classList.remove("is-flash");
-    turn.classList.add("is-flash");
-    window.setTimeout(() => turn.classList.remove("is-flash"), 1800);
+    flashTurn(command.noticeRunId);
   };
   const actions =
-    detail && hasMore ? (
+    detail && hasMore && !library ? (
       <MoreButton
         running={runningCommands.length}
         open={more.open && !preview}
@@ -1259,163 +1367,181 @@ export function useThreadControlCenter(
 
   const content = (
     <div className="thread-workarea">
-      <div className="thread-content">
-        {feedback}
-        {!detail && selectedThreadId ? (
-          <ThreadLoadingSkeleton scope="conversation" />
-        ) : !detail ? (
-          <div className="thread-welcome">
-            <span className="welcome-mark">
-              <SunflowerMark />
-            </span>
-            <h2>{message(greetingOf(new Date()))}</h2>
-            <p>{message("chat.welcome")}</p>
-          </div>
-        ) : (
-          <>
-            <ChatHistory
-              key={detail.payload.thread.threadId}
-              detail={detail}
-              contentByRef={contentByRef}
-              execution={execution}
-              executionStates={currentExecutionStates}
-              executionStateAvailable={configuration?.executionStateAvailable}
-              onPreview={(value) => {
-                closeMore();
-                setPreview((current) => (value.key && current?.key === value.key ? null : value));
-              }}
-              previewKey={preview?.key}
-              readImage={readImage}
-              connection={connection}
-              renderMemory={options.renderMemory}
-              renderApproval={(runId, records) =>
-                client && configuration ? (
-                  <RunApprovalCard
-                    onPreview={setPreview}
-                    runId={runId}
-                    records={records}
-                    client={client}
-                    configuration={configuration}
-                    storage={storage}
-                    connection={connection}
-                    refreshSignal={refreshSignal}
-                    message={message}
-                    onSettled={refresh}
-                    onUnauthorized={onUnauthorized}
-                  />
-                ) : null
-              }
-              message={message}
-              onCleanup={
-                configuration?.canCancelRun
-                  ? (run) =>
-                      void performIntent({ kind: "stop", runId: run.runId, revision: run.revision })
-                  : undefined
-              }
-              backgroundCommands={commands}
-              stoppingRunIds={stoppingRunIds}
-              onOpenCommand={(key) => openMore("commands", key)}
-              onFork={(turnId, sequence) =>
-                void performIntent({
-                  kind: "fork",
-                  sourceTurnId: turnId,
-                  sourceWatermark: sequence,
-                })
-              }
-            />
-          </>
-        )}
-        <ChatComposer
-          key={`composer:${selectedThreadId ?? "new"}`}
-          fresh={!selectedThreadId}
-          onUpload={
-            client
-              ? (content, as) =>
-                  as === "image"
-                    ? client.protectImage(content, "private")
-                    : client.protectAttachment(content, "private")
-              : undefined
-          }
-          readImage={readImage}
-          draft={draft}
-          onDraft={(value) => {
-            setDraft(value);
-            storage.saveDraft(selectedThreadId ?? "new", value);
+      {library && client && configuration?.filesAvailable ? (
+        <FilesLibrary
+          list={(query) => client.listFiles(query)}
+          threadTitle={threadTitle}
+          openKey={preview?.key}
+          onOpen={openLibraryFile}
+          onBack={() => {
+            setPreview(null);
+            setLibrary(false);
           }}
-          onSubmit={() => void submitDraft()}
-          retryPending={Boolean(unresolvedSubmission)}
-          connected={Boolean(client && configuration) && connection !== "offline"}
-          pending={mutationStatus === "pending"}
-          model={configuration?.primaryModel?.model}
-          models={availableModels}
-          modelRef={selectedModel?.ref ?? ""}
-          thinkingLevel={selectedThinking}
-          onModelChange={(ref) => {
-            setModelRef(ref);
-            setThinkingLevel(
-              defaultThinkingLevel(
-                availableModels.find((item) => item.ref === ref)?.thinkingLevels ?? [],
-              ),
-            );
-          }}
-          onThinkingChange={setThinkingLevel}
-          onStop={
-            configuration?.canCancelRun && (detail?.payload.runs ?? []).some((run) => canStop(run))
-              ? () => {
-                  const run = (detail?.payload.runs ?? []).find((item) => canStop(item));
-                  if (run)
-                    void performIntent({
-                      kind: "stop",
-                      runId: run.runId,
-                      revision: run.revision,
-                    });
-                }
-              : undefined
-          }
           message={message}
-          environment={
-            configuration?.executionEnvironmentAvailable ? (
-              <ExecutionEnvironmentLine
-                environment={environment}
-                threadTitle={(threadId) => {
-                  const thread = [...threadItems, ...(searchResults?.payload.threads ?? [])].find(
-                    (item) => item.threadId === threadId,
-                  );
-                  if (!thread) return undefined;
-                  return (
-                    (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled")
-                  );
+        />
+      ) : (
+        <div className="thread-content">
+          {feedback}
+          {!detail && selectedThreadId ? (
+            <ThreadLoadingSkeleton scope="conversation" />
+          ) : !detail ? (
+            <div className="thread-welcome">
+              <span className="welcome-mark">
+                <SunflowerMark />
+              </span>
+              <h2>{message(greetingOf(new Date()))}</h2>
+              <p>{message("chat.welcome")}</p>
+            </div>
+          ) : (
+            <>
+              <ChatHistory
+                key={detail.payload.thread.threadId}
+                detail={detail}
+                contentByRef={contentByRef}
+                execution={execution}
+                executionStates={currentExecutionStates}
+                executionStateAvailable={configuration?.executionStateAvailable}
+                onPreview={(value) => {
+                  closeMore();
+                  setPreview((current) => (value.key && current?.key === value.key ? null : value));
                 }}
-                onOpen={() => void loadEnvironment()}
-                onOpenThread={(threadId) =>
-                  navigate({ ...route, objectId: threadId, status: null, view: "content" })
+                previewKey={preview?.key}
+                filesByRun={filesByRun}
+                onOpenFile={(file) => {
+                  closeMore();
+                  openFile(file);
+                }}
+                onMoreFiles={() => openMore("files")}
+                readImage={readImage}
+                connection={connection}
+                renderMemory={options.renderMemory}
+                renderApproval={(runId, records) =>
+                  client && configuration ? (
+                    <RunApprovalCard
+                      onPreview={setPreview}
+                      runId={runId}
+                      records={records}
+                      client={client}
+                      configuration={configuration}
+                      storage={storage}
+                      connection={connection}
+                      refreshSignal={refreshSignal}
+                      message={message}
+                      onSettled={refresh}
+                      onUnauthorized={onUnauthorized}
+                    />
+                  ) : null
                 }
                 message={message}
+                onCleanup={
+                  configuration?.canCancelRun
+                    ? (run) =>
+                        void performIntent({
+                          kind: "stop",
+                          runId: run.runId,
+                          revision: run.revision,
+                        })
+                    : undefined
+                }
+                backgroundCommands={commands}
+                stoppingRunIds={stoppingRunIds}
+                onOpenCommand={(key) => openMore("commands", key)}
+                onFork={(turnId, sequence) =>
+                  void performIntent({
+                    kind: "fork",
+                    sourceTurnId: turnId,
+                    sourceWatermark: sequence,
+                  })
+                }
               />
-            ) : null
-          }
-          canSend={
-            (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
-            (Boolean(unresolvedSubmission) ||
-              ((!detail || detail.payload.thread.status === "active") &&
-                !(detail?.payload.runs ?? []).some((run) => !isAnsweredRun(run))))
-          }
-        />
-        {!client || !configuration ? (
-          <output className="composer-readiness">{message("review.preparing")}</output>
-        ) : null}
-      </div>
+            </>
+          )}
+          <ChatComposer
+            key={`composer:${selectedThreadId ?? "new"}`}
+            fresh={!selectedThreadId}
+            onUpload={
+              client
+                ? (content, as) =>
+                    as === "image"
+                      ? client.protectImage(content, "private")
+                      : client.protectAttachment(content, "private")
+                : undefined
+            }
+            readImage={readImage}
+            draft={draft}
+            onDraft={(value) => {
+              setDraft(value);
+              storage.saveDraft(selectedThreadId ?? "new", value);
+            }}
+            onSubmit={() => void submitDraft()}
+            retryPending={Boolean(unresolvedSubmission)}
+            connected={Boolean(client && configuration) && connection !== "offline"}
+            pending={mutationStatus === "pending"}
+            model={configuration?.primaryModel?.model}
+            models={availableModels}
+            modelRef={selectedModel?.ref ?? ""}
+            thinkingLevel={selectedThinking}
+            onModelChange={(ref) => {
+              setModelRef(ref);
+              setThinkingLevel(
+                defaultThinkingLevel(
+                  availableModels.find((item) => item.ref === ref)?.thinkingLevels ?? [],
+                ),
+              );
+            }}
+            onThinkingChange={setThinkingLevel}
+            onStop={
+              configuration?.canCancelRun &&
+              (detail?.payload.runs ?? []).some((run) => canStop(run))
+                ? () => {
+                    const run = (detail?.payload.runs ?? []).find((item) => canStop(item));
+                    if (run)
+                      void performIntent({
+                        kind: "stop",
+                        runId: run.runId,
+                        revision: run.revision,
+                      });
+                  }
+                : undefined
+            }
+            message={message}
+            environment={
+              configuration?.executionEnvironmentAvailable ? (
+                <ExecutionEnvironmentLine
+                  environment={environment}
+                  threadTitle={threadTitle}
+                  onOpen={() => void loadEnvironment()}
+                  onOpenThread={(threadId) =>
+                    navigate({ ...route, objectId: threadId, status: null, view: "content" })
+                  }
+                  message={message}
+                />
+              ) : null
+            }
+            canSend={
+              (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
+              (Boolean(unresolvedSubmission) ||
+                ((!detail || detail.payload.thread.status === "active") &&
+                  !(detail?.payload.runs ?? []).some((run) => !isAnsweredRun(run))))
+            }
+          />
+          {!client || !configuration ? (
+            <output className="composer-readiness">{message("review.preparing")}</output>
+          ) : null}
+        </div>
+      )}
       {preview ? (
         <ContentPreview
           key={preview.key ?? preview.title}
           value={preview}
-          onBack={more.open && hasMore ? () => setPreview(null) : undefined}
+          access={fileAccess}
+          onBack={more.open && hasMore && !library ? () => setPreview(null) : undefined}
           onClose={() => {
             setPreview(null);
             closeMore();
           }}
         />
-      ) : more.open && hasMore ? (
+      ) : more.open && hasMore && !library ? (
         <MorePanel
           tab={more.tab}
           commandKey={more.command}
@@ -1427,7 +1553,7 @@ export function useThreadControlCenter(
           onCommand={(command) => setMore((current) => ({ ...current, tab: "commands", command }))}
           onStop={configuration?.canCancelRun ? stopCommand : undefined}
           onReport={showReport}
-          onOpenFile={(file) => setPreview(previewOfFile(file))}
+          onOpenFile={openFile}
           onClose={closeMore}
           message={message}
         />
@@ -1481,9 +1607,11 @@ export function useThreadControlCenter(
     actions,
     list,
     refresh,
-    title: selectedSummary?.titleRef
-      ? (contentByRef[selectedSummary.titleRef] ?? message("chat.untitled"))
-      : message("chat.untitled"),
+    title: library
+      ? message("library.title")
+      : selectedSummary?.titleRef
+        ? (contentByRef[selectedSummary.titleRef] ?? message("chat.untitled"))
+        : message("chat.untitled"),
   });
 }
 

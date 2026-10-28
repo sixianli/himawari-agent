@@ -1144,6 +1144,29 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         const saved = await this.#writeJson(invocation, operationKey(suffix), value);
         return { ref: saved.ref, value: await this.#readJson(saved.ref) };
       },
+      saveCopy: async (suffix, bytes, contentType) => {
+        const existing = await this.#options.artifacts.lookup({
+          runId: invocation.runId,
+          purpose: "trace",
+          operationKey: operationKey(suffix),
+        });
+        if (existing) return { ref: existing.payloadRef };
+        const payload = await this.#options.protector.protect({
+          ownerId: this.#options.ownerId,
+          agentId: this.#options.agentId,
+          ref: this.#options.ids.next("thread-artifact-copy"),
+          dataClassification: invocation.dataClassification,
+          contentType,
+          plaintext: bytes,
+          createdAt: this.#options.clock.now(),
+        });
+        return this.#options.artifacts.commit({
+          runId: invocation.runId,
+          purpose: "trace",
+          operationKey: operationKey(suffix),
+          payload,
+        });
+      },
       fileConflict: async (toolCallId) => {
         if (!toolCallId) return undefined;
         const previousKey = digest([invocation.runId, toolCallId]);
