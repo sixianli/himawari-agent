@@ -232,7 +232,7 @@ it("lists the memories brought to the model as steps instead of reporting no pro
     record(4, "message:answer", "message", "completed", "蓝色。"),
   ]);
   expect(html).not.toContain("chat.noProcess");
-  expect(html.match(/data-tool-category="database"/g)).toHaveLength(2);
+  expect(html.match(/data-tool-category="memory"/g)).toHaveLength(2);
   expect(html.indexOf("step.memoryFound")).toBeLessThan(html.indexOf("step.memoryProfile"));
   expect(html).toContain("主人喜欢喝乌龙茶");
   expect(html).toContain("主人最喜欢的颜色是蓝色");

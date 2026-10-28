@@ -5523,7 +5523,7 @@ async function expectNewsSearchResults(text: string) {
   await uiExpect(answer).toHaveCount(1, { timeout: 120_000 });
   await uiExpect(answer).toContainText("https://");
   await uiExpect(turn.getByRole("button", { name: "允许这一次" })).toHaveCount(0);
-  await uiExpect(page.getByText("正在加载权威状态")).toHaveCount(0);
+  await uiExpect(page.getByText("正在加载…")).toHaveCount(0);
   await expectFinishedTurnShowsStep(turn, "搜索网页");
 }
 

@@ -20,7 +20,7 @@ import { messages as en } from "../src/i18n/resources/en.js";
 import { messages as ja } from "../src/i18n/resources/ja.js";
 import { messages as zh } from "../src/i18n/resources/zh-CN.js";
 import { parseRegisteredFilePage, type RegisteredFile } from "../src/registered-files.js";
-import { greetingOf } from "../src/thread-control-center.js";
+import { greetingOf, welcomeLinesOf } from "../src/thread-control-center.js";
 import { lineDiff, previewKind, turnFiles } from "../src/turn-files.js";
 
 let sequence = 0;
@@ -413,6 +413,20 @@ describe("sidebar and new conversation", () => {
       ["threads.earlier", ["20-12"]],
     ]);
     expect(recentGroups([at(26, 1)], now).map(([id]) => id)).toEqual(["threads.today"]);
+  });
+
+  it("[UI-20] picks the welcome line from the general set plus one line for mornings and late nights", () => {
+    const at = (hour: number) => welcomeLinesOf(new Date(2026, 9, 26, hour));
+    expect(at(8)).toContain("chat.welcome.morning");
+    expect(at(8)).not.toContain("chat.welcome.late");
+    expect(at(23)).toContain("chat.welcome.late");
+    expect(at(2)).toContain("chat.welcome.late");
+    expect(at(15)).toEqual([
+      "chat.welcome.here",
+      "chat.welcome.hand",
+      "chat.welcome.remember",
+      "chat.welcome.stuck",
+    ]);
   });
 
   it("[UI-20] greets by the time of day", () => {

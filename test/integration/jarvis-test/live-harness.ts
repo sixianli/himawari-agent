@@ -565,6 +565,7 @@ export async function runTrial(options: TrialOptions): Promise<TrialResult> {
     tools,
     models: models.composition.piModels,
     cwd: workspaceRoot,
+    timeZone: dataset.timeZone,
     agentDir: path.join(trialRoot, "pi-agent"),
     admission: countingAdmission(options.usage, options.overLimit),
     now: () => clock.now(),

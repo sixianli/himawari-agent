@@ -8,7 +8,8 @@ it("[UI-2] draws the sunflower disc as 96 seeds in twelve rings without any imag
   expect(markup.match(/<circle /g)).toHaveLength(96);
   expect(markup).not.toContain("<img");
   expect(markup).toContain('class="himawari-mark"');
-  expect(markup).toContain(">himawari</span>");
+  expect(markup).toContain('<span class="himawari-wordmark-latin">Himawari</span>');
+  expect(markup).toContain('<span class="himawari-wordmark-kana" lang="ja">ひまわり</span>');
   expect(new Set(sunflowerSeeds.map((seed) => seed.ring))).toEqual(
     new Set(Array.from({ length: 12 }, (_, ring) => ring)),
   );

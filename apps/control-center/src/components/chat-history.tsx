@@ -7,11 +7,10 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { BackgroundCommandView } from "../background-commands.js";
 import type { DeliveredFile } from "../delivered-files.js";
 import { formatBytes, splitDraft } from "../draft-attachments.js";
-import { executionTimeline, timelineDuration } from "../execution-timeline.js";
 import type { RunSummary } from "../execution-view.js";
 import { executionItems, isAnsweredRun, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import { turnSources, turnUsage } from "../turn-summary.js";
+import { turnSources } from "../turn-summary.js";
 import { AnswerActions, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { AttachmentThumb } from "./attachment-thumb.js";
@@ -248,17 +247,7 @@ export function ChatHistory({
                       text={agentMessages
                         .map((item) => contentByRef[item.contentRef] ?? "")
                         .join("\n\n")}
-                      duration={(() => {
-                        if (!group.run) return undefined;
-                        const total = executionTimeline(
-                          records,
-                          group.run,
-                          Date.parse(group.run.updatedAt),
-                        )?.total;
-                        return total === undefined ? undefined : timelineDuration(total);
-                      })()}
                       committedAt={agentMessages.at(-1)?.committedAt}
-                      usage={turnUsage(records)}
                       onFork={(() => {
                         const last = agentMessages.findLast((item) => item.turnId);
                         return last

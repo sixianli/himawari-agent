@@ -1498,6 +1498,9 @@ export async function runAgentService(
         instanceId: agentServiceBootId,
         cwd: configuration.stateRoot,
         agentDir: path.join(configuration.cacheDirectory, "pi-agent"),
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
         onFailure: ({ phase, error }) => failRuntime(error, phase),
       });
       const configuredPiModels = modelComposition.composition.piModels;

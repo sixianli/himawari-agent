@@ -23,6 +23,7 @@ const RENEWAL_INTERVAL_MS = 10_000;
 const LEASE_DURATION_MS = 30_000;
 const FINISH_ATTEMPTS = 5;
 const FINISH_RETRY_MS = 2_000;
+const RELEASE_RETRY_MS = 2_000;
 
 export interface ProductionBackgroundRunsOptions {
   readonly ownerId: RunExecutionLease["ownerId"];
@@ -45,6 +46,7 @@ export interface ProductionBackgroundRunsOptions {
   readonly renewalIntervalMs?: number;
   readonly leaseDurationMs?: number;
   readonly finishRetryMs?: number;
+  readonly releaseRetryMs?: number;
 }
 
 export class ProductionBackgroundRuns {
@@ -104,15 +106,18 @@ export class ProductionBackgroundRuns {
       const stopped = await this.#options.resources?.stopRun(record.runId, "run_finished");
       if (stopped && !stopped.released) return false;
     }
-    const results = record.holds.map((hold) => ({
-      taskRef: hold.taskRef,
-      command: "",
-      output: "",
-      dataClassification: "private" as const,
-      outcome: "interrupted" as const,
-      notice: "",
-      delivered: false,
-    }));
+    const results = record.holds.map(
+      (hold): BackgroundCommandResult =>
+        this.#options.commands.result(hold.taskRef) ?? {
+          taskRef: hold.taskRef,
+          command: "",
+          output: "",
+          dataClassification: "private",
+          outcome: "interrupted",
+          notice: "",
+          delivered: false,
+        },
+    );
     await this.#finish(record.runId, results, undefined);
     return true;
   }
@@ -154,14 +159,26 @@ export class ProductionBackgroundRuns {
       const results = settled.filter((result) => held.has(result.taskRef) || !result.delivered);
       if (renewing) await renewing;
       if (renewalFailure) throw renewalFailure;
-      const released = await this.#options.resources?.stopRun(lease.runId, "run_finished");
-      if (released && !released.released) throw new Error("BACKGROUND_RUN_RESOURCES_NOT_RELEASED");
+      await this.#release(lease.runId, () => renewalFailure);
       clearInterval(interval);
       if (renewing) await renewing;
       if (renewalFailure) throw renewalFailure;
       await this.#finish(lease.runId, results, current);
     } finally {
       clearInterval(interval);
+    }
+  }
+
+  async #release(runId: RunId, failure: () => unknown): Promise<void> {
+    const resources = this.#options.resources;
+    if (!resources) return;
+    for (;;) {
+      if ((await resources.stopRun(runId, "run_finished")).released) return;
+      const lost = failure();
+      if (lost) throw lost;
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.#options.releaseRetryMs ?? RELEASE_RETRY_MS),
+      );
     }
   }
 

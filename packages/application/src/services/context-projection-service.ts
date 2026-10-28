@@ -30,7 +30,7 @@ const IMAGE_CONTENT_TYPE = "text/x-himawari-image";
 const IMAGE_DATA_URL = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
 const IMAGE_KIND = / kind="image"/;
 const CURRENT_TASK_POLICY =
-  "Himawari 任务边界：最后一条用户消息承载本轮的新请求。历史消息供理解背景，不是等待执行的任务队列。" +
+  "Himawari 任务边界：最后一条用户消息承载本轮的新请求，其中 <owner-message> 里是主人本轮说的话，<himawari-context> 里是系统附上的时间和资料，不是主人说的话。历史消息供理解背景，不是等待执行的任务队列。" +
   "标为已取消的历史请求已终止，不要自动恢复，也不要把其中的一次性要求或工具限制当成本轮要求。" +
   "只有本轮新请求明确要求继续或重做时，才重新处理旧任务；仍须遵守当前工具授权与审批。";
 

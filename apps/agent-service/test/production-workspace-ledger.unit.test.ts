@@ -114,4 +114,37 @@ describe("production workspace ledger", () => {
       durationMs: 250,
     });
   });
+  it("leaves out the empty mount points the sandbox runtime places in the workspace", async () => {
+    const directory = (path: string, modifiedAtNs: string) => ({
+      path,
+      kind: "directory" as const,
+      size: "0",
+      modifiedAtNs,
+      inode: path,
+    });
+    const { value } = port(
+      [
+        { complete: true, entries: [file("keep", "1", "1")] },
+        {
+          complete: true,
+          entries: [
+            file("keep", "1", "1"),
+            file(".bashrc", "0", "2"),
+            file(".gitconfig", "0", "2"),
+            file(".mcp.json", "0", "2"),
+            file(".idea", "0", "2"),
+            file(".vscode", "0", "2"),
+            directory(".claude", "2"),
+            file("snake.html", "2", "3"),
+            file("sub/.bashrc", "2", "3"),
+          ],
+        },
+      ],
+      { "snake.html": "hi", "sub/.bashrc": "hi" },
+    );
+    const ledger = createProductionWorkspaceLedger({ port: value, warn: () => {} });
+    const record = await ledger.record(grant, await ledger.baseline(grant));
+    expect(record.changes.map(({ path }) => path)).toEqual(["snake.html", "sub/.bashrc"]);
+    expect(record.summary).toBe("工作目录改动：新建 snake.html、sub/.bashrc");
+  });
 });

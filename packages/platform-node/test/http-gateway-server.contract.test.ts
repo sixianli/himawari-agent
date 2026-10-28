@@ -42,6 +42,7 @@ import {
   type HttpGatewayAuthenticationPort,
   type HttpGatewayServerOptions,
 } from "../src/http-gateway-server.js";
+import { PREVIEW_STORAGE_SCRIPT } from "../src/preview-page-storage.js";
 import { RuntimeHealthModel } from "../src/runtime-health.js";
 import { RuntimeMetricsRegistry } from "../src/runtime-observability.js";
 
@@ -232,6 +233,10 @@ beforeAll(async () => {
   await writeFile(path.join(staticRoot, "index.html"), "<!doctype html><title>Himawari</title>");
   await writeFile(path.join(staticRoot, "assets", "app.js"), "globalThis.__himawari = true;");
   await writeFile(path.join(staticRoot, "assets", "worker.mjs"), "self.onmessage = () => {};");
+  await writeFile(
+    path.join(staticRoot, "assets", "brand.woff2"),
+    Buffer.from([0x77, 0x4f, 0x46, 0x32]),
+  );
 });
 
 afterAll(async () => {
@@ -421,6 +426,15 @@ describe("HTTP Gateway contract and security boundary", () => {
       headers: { host: "agent.example.test" },
     });
     expect(worker.headers["content-type"]).toBe("text/javascript; charset=utf-8");
+    const font = await app.inject({
+      method: "GET",
+      url: "/assets/brand.woff2",
+      headers: { host: "agent.example.test" },
+    });
+    expect(font.statusCode).toBe(200);
+    expect(font.headers["content-type"]).toBe("font/woff2");
+    expect(font.rawPayload).toEqual(Buffer.from([0x77, 0x4f, 0x46, 0x32]));
+    expect(page.headers["content-security-policy"]).toContain("font-src 'self'");
   });
 
   it("[WP-6] serves the home screen app files with their types and lets the page install a worker", async () => {
@@ -1383,6 +1397,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       ["file-html-1", "game/index.html", "web", "text/html", 1],
       ["file-html-2", "game/index.html", "web", "text/html", 2],
       ["file-png", "out/图表.png", "image", "image/png", 1],
+      ["thread-artifact:4dbdf5fa-e238-4e2a-9958-564a64351b80", "snake.html", "web", "text/html", 1],
     ].map(([id, path, kind, mediaType, version]) => ({
       id: id as string,
       threadId: "thread-01",
@@ -1457,6 +1472,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       ["file-html-1", "index.html", true],
       ["file-html-2", "index.html", true],
       ["file-png", "图表.png", true],
+      ["thread-artifact:4dbdf5fa-e238-4e2a-9958-564a64351b80", "snake.html", true],
     ]);
     expect(list.json().items[0]).not.toHaveProperty("copyRef");
     expect(list.json().items[0]).toMatchObject({
@@ -1575,7 +1591,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       headers: { host: "files.example.test" },
     });
     expect(preview.statusCode).toBe(200);
-    expect(preview.body).toBe("bytes:copy-file-html-2");
+    expect(preview.body).toBe(`${PREVIEW_STORAGE_SCRIPT}bytes:copy-file-html-2`);
     expect(preview.headers["content-type"]).toBe("text/html; charset=utf-8");
     expect(preview.headers["content-security-policy"]).toMatch(
       /^sandbox allow-scripts allow-modals allow-popups allow-downloads; /,
@@ -1583,6 +1599,35 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(preview.headers["content-security-policy"]).toContain(`frame-ancestors ${ORIGIN}`);
     expect(preview.headers["content-security-policy"]).toContain("connect-src 'none'");
     expect(preview.headers["set-cookie"]).toBeUndefined();
+    const storedId = "thread-artifact:4dbdf5fa-e238-4e2a-9958-564a64351b80";
+    const storedDownload = await app.inject({
+      method: "GET",
+      url: `/api/files/v1/content/${encodeURIComponent(storedId)}?download=1`,
+      headers: contentHeaders,
+    });
+    expect(storedDownload.statusCode).toBe(200);
+    expect(storedDownload.body).toBe(`bytes:copy-${storedId}`);
+    expect(storedDownload.headers["content-disposition"]).toBe(
+      `attachment; filename="snake.html"; filename*=UTF-8''snake.html`,
+    );
+    expect(storedDownload.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    const storedTicket = (
+      await app.inject({
+        method: "POST",
+        url: "/api/files/v1/preview-ticket",
+        headers: requestHeaders(),
+        payload: { fileId: storedId },
+      })
+    ).json() as { url: string };
+    const storedPreviewPath = new URL(storedTicket.url).pathname;
+    expect(storedPreviewPath.length).toBeGreaterThan(160);
+    const storedPreview = await app.inject({
+      method: "GET",
+      url: storedPreviewPath,
+      headers: { host: "files.example.test" },
+    });
+    expect(storedPreview.statusCode).toBe(200);
+    expect(storedPreview.body).toBe(`${PREVIEW_STORAGE_SCRIPT}bytes:copy-${storedId}`);
     expect(
       (
         await app.inject({

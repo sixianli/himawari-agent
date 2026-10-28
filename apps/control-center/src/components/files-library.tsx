@@ -24,6 +24,16 @@ export const LIBRARY_CATEGORIES: readonly (readonly [
   ["code", "library.code", ["code"]],
 ];
 
+const categoryIcons: Readonly<Record<LibraryCategory, string>> = {
+  all: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  documents: "M6.5 3.5h7l4 4v13h-11ZM13.5 3.5v4h4M9 12h6M9 15.5h4",
+  tables: "M3.5 5h17v14h-17zM3.5 10h17M3.5 14.5h17M10 10v9",
+  web: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5s1.1-6.1 3.5-8.5Z",
+  images:
+    "M3.5 5h17v14h-17zM4 17.5l5-4.5 4 3.5 3-2.5 4 3.5M9 8.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2Z",
+  code: "m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5.5l-3 13",
+};
+
 const PAGE = 100;
 
 export interface LibraryQuery {
@@ -91,7 +101,10 @@ export function FilesLibrary({
   const [cursor, setCursor] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [loading, setLoading] = useState(true);
   const sequence = useRef(0);
+  const listRef = useRef(list);
+  listRef.current = list;
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 250);
     return () => window.clearTimeout(timer);
@@ -102,13 +115,16 @@ export function FilesLibrary({
     void attempt;
     const current = ++sequence.current;
     setFailed(false);
-    setItems(undefined);
+    setLoading(true);
     const selected = kindKey ? (kindKey.split(",") as RegisteredFileKind[]) : [undefined];
     Promise.all(
-      selected.map((kind) => list({ ...(kind ? { kind } : {}), search: query, limit: PAGE })),
+      selected.map((kind) =>
+        listRef.current({ ...(kind ? { kind } : {}), search: query, limit: PAGE }),
+      ),
     ).then(
       (pages) => {
         if (current !== sequence.current) return;
+        setLoading(false);
         setItems(
           pages
             .flatMap((page) => page.items)
@@ -116,18 +132,23 @@ export function FilesLibrary({
         );
         setCursor(selected.length === 1 ? (pages[0]?.nextCursor ?? null) : null);
       },
-      () => current === sequence.current && setFailed(true),
+      () => {
+        if (current !== sequence.current) return;
+        setLoading(false);
+        setFailed(true);
+      },
     );
-  }, [list, kindKey, query, attempt]);
+  }, [kindKey, query, attempt]);
   const loadMore = () => {
     if (!cursor) return;
     const current = sequence.current;
-    void list({
-      ...(kinds[0] ? { kind: kinds[0] } : {}),
-      search: query,
-      before: cursor,
-      limit: PAGE,
-    })
+    void listRef
+      .current({
+        ...(kinds[0] ? { kind: kinds[0] } : {}),
+        search: query,
+        before: cursor,
+        limit: PAGE,
+      })
       .then((page) => {
         if (current !== sequence.current) return;
         setItems((prior) => [...(prior ?? []), ...page.items]);
@@ -142,7 +163,7 @@ export function FilesLibrary({
     now,
   );
   return (
-    <section className="files-library" aria-label={message("library.title")}>
+    <section className="files-library" aria-label={message("library.title")} aria-busy={loading}>
       <header className="files-library-head">
         {onBack ? (
           <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
@@ -179,6 +200,9 @@ export function FilesLibrary({
               aria-pressed={category === id}
               onClick={() => setCategory(id)}
             >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d={categoryIcons[id]} />
+              </svg>
               {message(label)}
             </button>
           ))}
@@ -191,7 +215,11 @@ export function FilesLibrary({
             </button>
           </p>
         ) : !items ? (
-          <p className="files-library-note">{message("state.loading")}</p>
+          <div className="files-library-skeleton" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
         ) : !files.length ? (
           <p className="files-library-note">
             {message(query || category !== "all" ? "library.noMatch" : "library.empty")}

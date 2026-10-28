@@ -521,12 +521,8 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(instructionText.startsWith(`${HIMAWARI_IDENTITY}\n\n可信系统指令\n\n`)).toBe(true);
   expect(instructionText).toContain("你是 Himawari");
   expect(instructionText).not.toContain("coding assistant");
-  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
-    source.occurredAt,
-  );
-  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
-    "2026-09-11 08:04:00 GMT+09:00",
-  );
+  expect(instructionText).not.toContain("本轮请求时间");
+  expect(instructionText).not.toContain("2026-09-1");
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
     "本轮没有联网搜索工具",
   );

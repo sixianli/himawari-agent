@@ -44,7 +44,7 @@ describe("Jarvis Test #1 memory correction: the material given to the model", ()
 });
 
 describe("Jarvis Test fixed today", () => {
-  it("writes the case date, and no other date, into the production system instruction", async () => {
+  it("keeps every date out of the production system instruction, so the case date reaches the model only in the turn", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "himawari-jarvis-date-"));
     try {
       const adapters = createReferenceAdapterSet({ clock: new ManualClock(dataset.today) });
@@ -82,10 +82,9 @@ describe("Jarvis Test fixed today", () => {
         ids: adapters.ids,
       })(source);
       const instruction = new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext);
-      expect(instruction).toContain(`本轮请求时间（UTC）：${dataset.today}`);
-      expect(instruction).toContain("2026-11-02 09:30:00 GMT+09:00");
-      const dates = new Set(instruction.match(/\d{4}-\d{2}-\d{2}/gu) ?? []);
-      expect([...dates]).toEqual(["2026-11-02"]);
+      expect(instruction).toContain("可信系统指令");
+      expect(instruction).not.toContain("本轮请求时间");
+      expect(instruction.match(/\d{4}-\d{2}-\d{2}/gu) ?? []).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

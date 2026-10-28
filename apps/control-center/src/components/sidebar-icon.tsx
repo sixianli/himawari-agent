@@ -10,14 +10,21 @@ const paths = {
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   pin: (
     <>
-      <path d="m16 3 5 5-4 1-2 5-3 1-3 5-1-1 3-5-1-3 5-2Z" />
-      <path d="m3 21 6-6" />
+      <path d="M9 3.5h6l-1 5.5 3.5 3.5h-11L10 9Z" />
+      <path d="M12 12.5v8" />
     </>
   ),
   archive: (
     <>
-      <rect x="3" y="3" width="18" height="5" rx="1" />
-      <path d="M5 8v12h14V8m-9 4h4" />
+      <rect x="3.5" y="4" width="17" height="4.5" rx="1.2" />
+      <path d="M5.5 8.5v10A1.5 1.5 0 0 0 7 20h10a1.5 1.5 0 0 0 1.5-1.5v-10" />
+      <path d="M12 11.5v5M9.8 14.3 12 16.5l2.2-2.2" />
+    </>
+  ),
+  rename: (
+    <>
+      <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+      <path d="m14.5 7.5 3 3" />
     </>
   ),
   settings: (
@@ -61,7 +68,16 @@ const paths = {
     </>
   ),
   memory: (
-    <path d="M5 4.5h10.5A3.5 3.5 0 0 1 19 8v12H8.5A3.5 3.5 0 0 1 5 16.5zM5 16.5A3.5 3.5 0 0 1 8.5 13H19" />
+    <>
+      <path d="M6.5 3.5h11v17l-5.5-4-5.5 4Z" />
+      <path d="M12 7.2l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z" />
+    </>
+  ),
+  reminders: (
+    <>
+      <path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2H5Z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" />
+    </>
   ),
   files: <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />,
 } satisfies Record<string, ReactNode>;

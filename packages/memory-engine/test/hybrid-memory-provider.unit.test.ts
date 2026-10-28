@@ -224,6 +224,67 @@ describe("Gateway embedder", () => {
     );
   });
 
+  it("asks for base64 vectors and hands the boundary the decoded float32 values", async () => {
+    const values = Float32Array.from([3, 0, 4]);
+    const encoded = Buffer.from(values.buffer).toString("base64");
+    const bodies: unknown[] = [];
+    const client = new GatewayEmbedder({
+      baseUrl: "https://gateway.invalid/v1",
+      model: "fixture-embedding",
+      dimensions: 3,
+      apiKey: async () => "fixture-value",
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({
+            model: "fixture-embedding",
+            data: [{ index: 0, embedding: encoded }],
+            usage: { prompt_tokens: 1, total_tokens: 1 },
+          }),
+        );
+      },
+    });
+    const seen: unknown[] = [];
+    client.bindBoundary(async (_request, send) => {
+      const response = await send();
+      seen.push(response.data[0]?.embedding);
+      return response;
+    }, 1000);
+    expect(Array.from(await client.embed("你好"))).toEqual([
+      expect.closeTo(0.6),
+      0,
+      expect.closeTo(0.8),
+    ]);
+    expect(bodies).toEqual([
+      { model: "fixture-embedding", input: "你好", dimensions: 3, encoding_format: "base64" },
+    ]);
+    expect(seen).toEqual([[3, 0, 4]]);
+  });
+
+  it("rejects a base64 vector whose length does not match the dimensions", async () => {
+    const client = new GatewayEmbedder({
+      baseUrl: "https://gateway.invalid/v1",
+      model: "fixture-embedding",
+      dimensions: 3,
+      apiKey: async () => "fixture-value",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            model: "fixture-embedding",
+            data: [
+              {
+                index: 0,
+                embedding: Buffer.from(Float32Array.from([1, 2]).buffer).toString("base64"),
+              },
+            ],
+            usage: { prompt_tokens: 1, total_tokens: 1 },
+          }),
+        ),
+    });
+    client.bindBoundary((_request, send) => send(), 1000);
+    await expect(client.embed("你好")).rejects.toThrow("EMBEDDING_VECTOR_INVALID");
+  });
+
   it("reports a provider HTTP failure", async () => {
     const client = new GatewayEmbedder({
       baseUrl: "https://gateway.invalid/v1",

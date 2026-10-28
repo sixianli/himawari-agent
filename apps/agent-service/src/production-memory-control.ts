@@ -365,6 +365,7 @@ export class ProductionMemoryControl {
         text,
         dueAt: reminder.dueAt,
         remindAt: reminder.remindAt,
+        sourceThreadId: memory?.sourceThreadId ?? null,
       });
     }
     const now = this.options.clock.now();
@@ -398,6 +399,7 @@ export class ProductionMemoryControl {
         text,
         dueAt: reminder.dueAt,
         repeat: reminder.repeat,
+        sourceThreadId: memory?.sourceThreadId ?? null,
       });
     }
     const people = (await this.options.book.listPeople(scope)).map((person) => ({

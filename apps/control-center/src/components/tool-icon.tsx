@@ -26,15 +26,20 @@ const symbols = {
   ),
   search: (
     <>
-      <circle cx="10.5" cy="10.5" r="7.5" />
-      <path d="m16 16 5 5" />
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </>
+  ),
+  page: (
+    <>
+      <path d="M6.5 3.5h7l4 4v13h-11Z" />
+      <path d="M13.5 3.5v4h4M9 12h6M9 15.5h6" />
     </>
   ),
   web: (
     <>
-      <circle cx="12" cy="12" r="10" />
-      <ellipse cx="12" cy="12" rx="4" ry="10" />
-      <path d="M2 12h20" />
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5s1.1-6.1 3.5-8.5Z" />
     </>
   ),
   browser: (
@@ -45,7 +50,26 @@ const symbols = {
   ),
   bash: (
     <>
-      <path d="m4 5 6 7-6 7m9 0h7" />
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <path d="m7.5 10 2.5 2-2.5 2M12.5 15h4" />
+    </>
+  ),
+  memory: (
+    <>
+      <path d="M6.5 3.5h11v17l-5.5-4-5.5 4Z" />
+      <path d="M12 7.2l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z" />
+    </>
+  ),
+  answer: (
+    <>
+      <path d="M4 19.5h16" />
+      <path d="M6 16l9.5-9.5a2 2 0 0 1 3 3L9 19H6Z" />
+    </>
+  ),
+  you: (
+    <>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5" />
     </>
   ),
   database: (
@@ -63,7 +87,8 @@ const symbols = {
   ),
   thinking: (
     <>
-      <path d="M12 18V5a3 3 0 0 0-6-1 4 4 0 0 0-3 6 4 4 0 0 0 1 7 4 4 0 0 0 8 2m0-14a3 3 0 0 1 6-1 4 4 0 0 1 3 6 4 4 0 0 1-1 7 4 4 0 0 1-8 2M6 9l-2 1m14-1 2 1" />
+      <path d="M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7L12 16.5l-1.7-4.8L5.5 10l4.8-1.7Z" />
+      <path d="M18 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z" />
     </>
   ),
   note: (
@@ -84,24 +109,17 @@ export function toolCategory(name: string): keyof typeof symbols {
   if (/^(edit|apply_patch|edit_file|patch)$/.test(value)) return "edit";
   if (/^(bash|exec|exec_command|shell|terminal)$/.test(value)) return "bash";
   if (/browser|navigate|screenshot/.test(value)) return "browser";
-  if (/web|exa|fetch|browse/.test(value)) return "web";
+  if (/fetch|browse/.test(value)) return "page";
   if (/grep|glob|find|search/.test(value)) return "search";
+  if (/web|exa/.test(value)) return "web";
+  if (/^(memory|recall)$/.test(value)) return "memory";
   if (/sql|database|memory|recall/.test(value)) return "database";
   if (/delegate|spawn|worker/.test(value)) return "delegate";
   return "unknown";
 }
-export function ToolIcon({
-  name,
-  thinking = false,
-  review = false,
-  note = false,
-}: {
-  name: string;
-  thinking?: boolean;
-  review?: boolean;
-  note?: boolean;
-}) {
-  const category = review ? "review" : thinking ? "thinking" : note ? "note" : toolCategory(name);
+export type ToolGlyph = keyof typeof symbols;
+export function ToolIcon({ name, glyph }: { name: string; glyph?: ToolGlyph | undefined }) {
+  const category = glyph ?? toolCategory(name);
   return (
     <svg
       className="tool-icon"
@@ -110,7 +128,7 @@ export function ToolIcon({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.65"
+      strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
     >

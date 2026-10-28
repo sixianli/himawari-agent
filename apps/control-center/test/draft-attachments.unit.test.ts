@@ -90,8 +90,8 @@ describe("[UI-16] attached files on screen", () => {
         "chat.removeAttachment",
         "chat.placeholderNew",
         "chat.moreModels",
-        "answer.tokens",
         "process.tokens",
+        "process.cacheHit",
       ] as const)
         expect(catalog[id]).toBeTruthy();
     },

@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import {
   type ExecutionTimeline,
   executionTimeline,
-  type TimelineCategory,
   type TimelineStep,
   timelineDuration,
 } from "../execution-timeline.js";
@@ -31,11 +30,11 @@ import {
 } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { toolStepSummary } from "../step-summary.js";
-import { formatCost, type TurnUsage, turnUsage } from "../turn-summary.js";
+import { formatTokens, type TurnUsage, turnUsage } from "../turn-summary.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { ActionButton } from "./primitives.js";
-import { ToolIcon } from "./tool-icon.js";
+import { ToolIcon, type ToolGlyph } from "./tool-icon.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 function statusId(run: RunSummary): MessageId {
@@ -87,7 +86,6 @@ export function ExecutionProcess({
   const timeline = executionTimeline(records, run, now);
   const rows = processRows(records, items, timeline);
   const expanded = expandedChoice ?? !activityEnded;
-  const longest = timeline?.steps.find((step) => step.id === timeline.longest);
   const stepLabel = (step: TimelineStep) => {
     if (step.kind === "tool") {
       const tool = items.find((item) => item.itemId === step.itemId);
@@ -167,24 +165,8 @@ export function ExecutionProcess({
         }}
       >
         <summary>
-          <span className="process-chevron" aria-hidden="true">
-            ›
-          </span>
           {timeline ? (
-            <>
-              <span className="process-took">
-                {message("process.took", { time: timelineDuration(timeline.total) })}
-              </span>
-              <CategoryBar timeline={timeline} message={message} />
-              {longest && activityEnded ? (
-                <span className="process-longest">
-                  {message("process.longest", {
-                    step: stepLabel(longest),
-                    time: timelineDuration(longest.end - longest.start),
-                  })}
-                </span>
-              ) : null}
-            </>
+            <span className="process-took">{processHeadline(timeline, items, message)}</span>
           ) : null}
           <span
             className={`process-result run-text-${state?.displayPhase ?? run.status}${
@@ -193,6 +175,7 @@ export function ExecutionProcess({
           >
             {message(stateLabel ?? statusId(run))}
           </span>
+          <RowChevron />
         </summary>
         <ol className="execution-chain" aria-label={message("chat.process")}>
           {rows.map((row) => {
@@ -200,7 +183,7 @@ export function ExecutionProcess({
               return (
                 <li className="execution-stage authorization-review" key={row.review.id}>
                   <span className="row-icon">
-                    <ToolIcon name="" review />
+                    <ToolIcon name="" glyph="review" />
                   </span>
                   <span>{message(row.review.label)}</span>
                   {row.review.elapsed === null ? null : (
@@ -214,7 +197,7 @@ export function ExecutionProcess({
               return (
                 <li className="execution-stage execution-note" key={row.note.itemId}>
                   <span className="row-icon">
-                    <ToolIcon name="" note />
+                    <ToolIcon name="" glyph="note" />
                   </span>
                   <span>{row.note.text}</span>
                 </li>
@@ -223,7 +206,7 @@ export function ExecutionProcess({
               return (
                 <li className="execution-stage" key={row.stage.id}>
                   <span className="row-icon">
-                    <ToolIcon name="" thinking />
+                    <ToolIcon name="" glyph="thinking" />
                   </span>
                   <span>
                     {row.stage.elapsed === null
@@ -246,38 +229,44 @@ export function ExecutionProcess({
                         isNarration(candidate, items),
                     )?.text
                   : undefined;
+              const head = (
+                <>
+                  <span className="row-icon">
+                    <ToolIcon name="" glyph={stepGlyphs[step.kind]} />
+                  </span>
+                  <span className="row-main">
+                    <span className="step-summary">{stepLabel(step)}</span>
+                    {step.kind === "write" && step.characters !== undefined ? (
+                      <span className="step-preview">
+                        {message("process.characters", { count: step.characters })}
+                      </span>
+                    ) : null}
+                  </span>
+                  <TimelineBar step={step} total={timeline?.total ?? 0} />
+                  <span className="row-duration">{timelineDuration(step.end - step.start)}</span>
+                </>
+              );
               return (
                 <li
                   key={step.id}
                   className={`execution-step timeline-row${step.running ? " is-running" : ""}`}
                 >
-                  <details className={memory ? "tool-record memory-record" : "timeline-record"}>
-                    <summary>
-                      <span className="row-icon">
-                        <ToolIcon
-                          name={memory ? "memory" : step.kind === "write" ? "edit" : ""}
-                          thinking={step.kind === "think"}
-                          review={step.kind === "you"}
-                        />
-                      </span>
-                      <span className="row-main">
-                        <span className="step-summary">{stepLabel(step)}</span>
-                        {step.kind === "write" && step.characters !== undefined ? (
-                          <span className="step-preview">
-                            {message("process.characters", { count: step.characters })}
-                          </span>
-                        ) : null}
-                      </span>
-                      <TimelineBar step={step} total={timeline?.total ?? 0} />
-                      <span className="row-duration">
-                        {timelineDuration(step.end - step.start)}
-                      </span>
-                    </summary>
-                    <div className="step-detail">
-                      <StepTiming step={step} message={message} />
-                      {detailRecord?.output ? <pre>{detailRecord.output}</pre> : null}
+                  {detailRecord?.output ? (
+                    <details className="timeline-record memory-record">
+                      <summary>
+                        {head}
+                        <RowChevron />
+                      </summary>
+                      <div className="step-detail">
+                        <pre>{detailRecord.output}</pre>
+                      </div>
+                    </details>
+                  ) : (
+                    <div className="timeline-record is-static">
+                      {head}
+                      <span className="row-chevron" />
                     </div>
-                  </details>
+                  )}
                   {quote?.trim() ? (
                     <p className="row-quote">
                       <q>{quote.trim()}</q>
@@ -324,9 +313,11 @@ export function ExecutionProcess({
                   ? (executionToolPhase(item, records, run) ?? "chat.phase.failed")
                   : undefined
               : undefined;
-            const elapsed = operation
-              ? operation.executionMilliseconds
-              : recordedInterval(records, item.itemId, "runtime.tool_execution");
+            const elapsed = step
+              ? null
+              : operation
+                ? operation.executionMilliseconds
+                : recordedInterval(records, item.itemId, "runtime.tool_execution");
             const status = (
               <span className="step-status" title={message("review.workerTiming")}>
                 {retainedEffect ? `${message(retainedEffect)} · ` : ""}
@@ -364,9 +355,9 @@ export function ExecutionProcess({
                         {timelineDuration(step.end - step.start)}
                       </span>
                     ) : null}
+                    <RowChevron />
                   </summary>
                   <div className="step-detail">
-                    {step ? <StepTiming step={step} message={message} /> : null}
                     {step && phase === "chat.phase.completed" && !retainedEffect ? status : null}
                     {item.kind === "tool" ? (
                       <>
@@ -441,9 +432,7 @@ export function ExecutionProcess({
         {records.some((item) => item.phase === "unavailable") ? (
           <output>{message("chat.recordUnavailable")}</output>
         ) : null}
-        {timeline && activityEnded ? (
-          <TimeLedger timeline={timeline} usage={turnUsage(records)} message={message} />
-        ) : null}
+        {activityEnded ? <TokenLine usage={turnUsage(records)} message={message} /> : null}
       </details>
     </>
   );
@@ -460,6 +449,14 @@ type ProcessRow =
   | { type: "note"; sequence: number; note: ExecutionItem }
   | { type: "thinking"; sequence: number; stage: ReturnType<typeof thinkingSteps>[number] };
 
+const stepGlyphs: Readonly<Record<TimelineStep["kind"], ToolGlyph>> = {
+  memory: "memory",
+  context: "memory",
+  think: "thinking",
+  write: "answer",
+  you: "you",
+  tool: "unknown",
+};
 const stepLabels: Readonly<Record<Exclude<TimelineStep["kind"], "tool">, MessageId>> = {
   memory: "step.memoryFound",
   context: "step.memoryProfile",
@@ -467,19 +464,25 @@ const stepLabels: Readonly<Record<Exclude<TimelineStep["kind"], "tool">, Message
   write: "process.step.write",
   you: "process.step.you",
 };
-const categoryLabels: Readonly<Record<TimelineCategory, MessageId>> = {
-  model: "process.category.model",
-  tool: "process.category.tool",
-  you: "process.category.you",
-  prep: "process.category.prep",
+const didOrder = ["search", "fetch", "command", "read", "change", "recall", "other"] as const;
+type DidKind = (typeof didOrder)[number];
+const didLabels: Readonly<Record<DidKind, MessageId>> = {
+  search: "process.did.search",
+  fetch: "process.did.fetch",
+  command: "process.did.command",
+  read: "process.did.read",
+  change: "process.did.change",
+  recall: "process.did.recall",
+  other: "process.did.other",
 };
-const categoryOrder: readonly TimelineCategory[] = ["model", "tool", "you", "prep"];
-const segmentLabels: Readonly<Record<TimelineStep["segments"][number]["kind"], MessageId>> = {
-  wait: "process.segment.wait",
-  reason: "process.segment.reason",
-  output: "process.segment.output",
-  queue: "process.segment.queue",
-  run: "process.segment.run",
+const didKinds: Readonly<Partial<Record<MessageId, DidKind>>> = {
+  "step.search": "search",
+  "step.fetch": "fetch",
+  "step.command": "command",
+  "step.read": "read",
+  "step.write": "change",
+  "step.edit": "change",
+  "step.recall": "recall",
 };
 const percent = (part: number, whole: number) =>
   `${whole > 0 ? Math.min(100, Math.max(0, (part / whole) * 100)) : 0}%`;
@@ -525,29 +528,32 @@ function processRows(
   ].sort((a, b) => a.sequence - b.sequence);
 }
 
-function CategoryBar({ timeline, message }: { timeline: ExecutionTimeline; message: Message }) {
-  const parts = categoryOrder.filter((category) => timeline.categories[category] > 0);
+function processHeadline(
+  timeline: ExecutionTimeline,
+  items: readonly ExecutionItem[],
+  message: Message,
+): string {
+  const counts = new Map<DidKind, number>();
+  for (const step of timeline.steps) {
+    if (step.kind !== "tool") continue;
+    const tool = items.find((item) => item.itemId === step.itemId);
+    const kind = (tool && didKinds[toolStepSummary(tool.name, tool.input).id]) ?? "other";
+    counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  }
+  const time = timelineDuration(timeline.total);
+  const [first, second] = [...counts]
+    .sort((a, b) => b[1] - a[1] || didOrder.indexOf(a[0]) - didOrder.indexOf(b[0]))
+    .map(([kind, count]) => message(didLabels[kind], { count }));
+  if (!first) return message("process.took", { time });
+  const actions = second ? message("process.didBoth", { first, second }) : first;
+  return message("process.headline", { actions, time });
+}
+
+function RowChevron() {
   return (
-    <span
-      className="process-stack"
-      role="img"
-      aria-label={parts
-        .map((category) =>
-          message("process.categoryTime", {
-            category: message(categoryLabels[category]),
-            time: timelineDuration(timeline.categories[category]),
-          }),
-        )
-        .join(", ")}
-    >
-      {parts.map((category) => (
-        <i
-          key={category}
-          className={`category-${category}`}
-          style={{ width: percent(timeline.categories[category], timeline.total) }}
-        />
-      ))}
-    </span>
+    <svg className="row-chevron" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m9.5 6 6 6-6 6" />
+    </svg>
   );
 }
 
@@ -574,75 +580,17 @@ function TimelineBar({ step, total }: { step: TimelineStep; total: number }) {
   );
 }
 
-function StepTiming({ step, message }: { step: TimelineStep; message: Message }) {
+function TokenLine({ usage, message }: { usage: TurnUsage | undefined; message: Message }) {
+  if (!usage) return null;
+  const hit = usage.input > 0 ? Math.round((usage.cacheRead / usage.input) * 100) : 0;
   return (
-    <>
-      {step.segments.length ? (
-        <p className="segment-list">
-          {step.segments.map((segment) => (
-            <span className="segment-item" key={`${segment.kind}-${segment.start}`}>
-              <i className={`category-${step.category} segment-${segment.kind}`} />
-              {message(segmentLabels[segment.kind])}{" "}
-              <em>{timelineDuration(segment.end - segment.start)}</em>
-            </span>
-          ))}
-        </p>
-      ) : null}
-      <p className="step-span">
-        {message("process.span", {
-          start: timelineDuration(step.start),
-          end: timelineDuration(step.end),
-          time: timelineDuration(step.end - step.start),
-        })}
-      </p>
-    </>
-  );
-}
-
-function TimeLedger({
-  timeline,
-  usage,
-  message,
-}: {
-  timeline: ExecutionTimeline;
-  usage: TurnUsage | undefined;
-  message: Message;
-}) {
-  return (
-    <div className="process-ledger">
-      <CategoryBar timeline={timeline} message={message} />
-      <p className="process-legend">
-        {categoryOrder
-          .filter((category) => timeline.categories[category] > 0)
-          .map((category) => (
-            <span className="legend-item" key={category}>
-              <i className={`category-${category}`} />
-              {message(categoryLabels[category])}{" "}
-              <b>{timelineDuration(timeline.categories[category])}</b>
-            </span>
-          ))}
-        <span className="process-sum">
-          {message("process.total", { time: timelineDuration(timeline.total) })}
-        </span>
-      </p>
-      {usage ? (
-        <p className="process-legend process-tokens">
-          <span className="legend-item">{message("process.tokens")}</span>
-          <span className="legend-item">
-            {message("process.tokenInput", {
-              count: usage.input.toLocaleString(),
-              cached: usage.cached.toLocaleString(),
-            })}
-          </span>
-          <span className="legend-item">
-            {message("process.tokenOutput", { count: usage.output.toLocaleString() })}
-          </span>
-          <span className="process-sum">
-            {message("process.tokenCost", { cost: formatCost(usage.costUsd) })}
-          </span>
-        </p>
-      ) : null}
-      <p className="process-note">{message("process.note")}</p>
-    </div>
+    <p className="process-tokens">
+      <span>{message("process.tokens")}</span>
+      <b>{formatTokens(usage.total)}</b>
+      <span aria-hidden="true">·</span>
+      <span className="process-cache" title={message("process.cacheHitHint")}>
+        {message("process.cacheHit", { percent: hit })}
+      </span>
+    </p>
   );
 }
