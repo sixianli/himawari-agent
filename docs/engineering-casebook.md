@@ -70,6 +70,7 @@ date: "2026-10-26"
   43. [说“我老婆叫管冬融”，Himawari 却又讲了一遍天气：主人档案作为一条用户消息紧贴新消息](#case-owner-material-position)
   44. [22 条界面意见归成一句话：“站在用户的角度想他要知道什么”，把内部数字移出视线，记忆和提醒各有入口](#case-ui-batch-1028)
   45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
+  46. [第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒](#case-startup-permission-audit)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -94,10 +95,10 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
@@ -2986,6 +2987,58 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 **面试 30 秒版**
 
 “我给个人 Agent 做主动看邮件。难点不是调模型，是不乱打扰又不漏掉重要的信。我只把发件人、标题和一行摘要交给模型，判断不了就提示用户去看原信。模型之后再加一道确定性的地板规则：银行、政府域名、带金钱词的邮件，不允许被判成‘不用管’。每次判断都记日志，把命中、误扰和已审样本内的漏报分开算。费用是单次加每日两层上限，到上限只停模型、不停规则。自动测试用剧本模型，保证 100 次跑 100 次通过，模型准不准另外用真实评测和用户评价来量。”
+
+[返回目录](#contents)
+
+<a id="case-startup-permission-audit"></a>
+
+## 案例 46：第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒
+
+**背景与现象**
+
+2026-10-28 第十八次上线，服务重启后起不来，日志里 worker（执行工具的后台进程）报 `WORKER_STARTUP_TIMEOUT`，上线脚本按规程回滚。第十七次也有 2 次同样的失败，成功的几次从进程启动到就绪要 38–55 秒。Andy 的要求是“找到根因，解决掉，不要再出现”，只把 worker 的等待时间放宽不算解决。
+
+**根因**
+
+agent 和 worker 同时启动，worker 先写出自己的启动记录，再等 agent 写出它的启动记录，最多等 30 秒。agent 在写启动记录之前要先核对沙箱运行环境（Himawari 安装目录，生产上 34456 个文件和目录、485 MB）没被改过，其中权限检查 `#auditPermissions`（packages/platform-node/src/capabilities/protected-runtime.ts）对每个文件先 `await lstat` 再处理下一个，一次只查一个。
+
+确认方法：在生产机上用私有挂载把生产状态副本挂到原路径，以生产用户和相同的进程限制启动 agent 和 worker，并抓 CPU 剖析。复现了 35 秒时的 `WORKER_STARTUP_TIMEOUT`。按每 2 秒统计 agent 主线程在做什么：0–12 秒是加载模块、打开数据库和领取权限；12–40 秒一直在 `#auditPermissions`，CPU 每 2 秒只忙 0.3–0.6 秒，其余时间都在等文件系统返回；40–49 秒算运行环境校验值、核对可执行文件；约 48 秒才写出启动记录，worker 已经在 35 秒退出。单独在生产机上空闲时测同一个目录：一次一个 `await lstat` 要 11.2 秒，全部并发 2.8 秒，同步一次走完 0.5–0.7 秒。启动时 worker 和启动前检查同时在抢 4 核 CPU，所以拉长到 28 秒。
+
+**我们的方案**
+
+- 权限检查改到单独的后台线程里，用同步的 `lstatSync`/`readdirSync` 一次走完，规则不变：每一项都必须归 root 所有、组和其他人不可写、只能是普通文件或目录（符号链接拒绝）。主线程不被卡住。生产目录实测 0.66–1.1 秒。
+- 检查顺序不变：先查权限，再算校验值，权限不过就不读文件内容；失败的检查结果不缓存。
+- agent 每完成一个启动步骤就写一行 `startup.step` 日志，带从进程启动算起的毫秒数，下次再慢能直接看出是哪一步。
+- worker 等 agent 的时间从 30 秒改为 45 秒：修好后预计 agent 约 22 秒写出启动记录，45 秒约留 2 倍余量；启动前检查最长 38 秒，加 45 秒仍在单元 90 秒的启动上限之内。这一项只是留余量，根因修复是上面第一条。
+
+**方案讨论与备选**
+
+- 只放宽 worker 等待时间：不解决问题，安装目录越大越慢，迟早又超时，Andy 明确不接受。
+- 在主线程并发 `lstat`：从 11.2 秒降到 2.8 秒，但几万个并发请求排队占满 libuv 线程池（Node.js 做文件操作用的 4 个后台线程），同时会拖慢其他文件操作。
+- 在主线程同步走一遍：最快，但会卡住 agent 的事件循环，版本切换后的重新检查会让正在服务的请求停顿。
+- 把权限检查合进已有的校验值线程：只走一遍目录，但校验值函数是调用方传进来的，合并后权限规则就要靠调用方保证，安全边界变模糊。所以选了单独的后台线程。
+
+**业界主流做法**
+
+- ✅ [Node.js 文件系统文档](https://nodejs.org/api/fs.html)：“The promise APIs use the underlying Node.js threadpool to perform file system operations off the event loop thread.” 每次 promise 调用都要在主线程和线程池之间来回一趟，几万次串起来就是这次的 11–28 秒。
+- ✅ 同一文档：“The synchronous APIs block the Node.js event loop and further JavaScript execution until the operation is complete.” 所以同步版本放在后台线程里跑，项目里已有的校验值线程（sandbox-runtime-digest-worker.ts）也是这样做的。
+
+**对比与取舍**
+
+和 Node.js 文档的建议一致：大量小文件操作不在主线程逐个 await，同步操作放到后台线程。不同点是我们保留了“先查权限、再读内容”的两步顺序，多走一遍目录（约 1 秒）换安全规则的清楚。
+
+**结果数据**
+
+- 修复前：生产副本复现，权限检查 28 秒（第 12–40 秒），agent 约 48 秒才写出启动记录；生产机空闲时单独测 11.2 秒。
+- 修复后：生产目录上后台线程检查 0.66–1.1 秒（3 次）。整条启动链上线后用 `startup.step` 日志补实测数据。
+
+**相关 ADR/PR**
+
+分支 `claude/worker-startup-wait`；第十八版操作包 `.ci-output/production/2026-10-28-eighteenth-change-packet-02`。
+
+**面试 30 秒版**
+
+“一次上线后服务起不来，worker 等 agent 30 秒超时。我在生产机上用私有挂载把生产数据副本挂到原路径，复现后抓 CPU 剖析，发现 agent 有 28 秒在一个一个地 await lstat，查 3.4 万个文件的权限，CPU 大部分时间在空等。改成在后台线程里同步一次走完，同一个目录从 11–28 秒降到 1 秒左右，检查规则和顺序都没变。另外给每个启动步骤加了耗时日志，worker 的等待时间按实测留了 2 倍余量。”
 
 [返回目录](#contents)
 
