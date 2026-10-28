@@ -22,6 +22,7 @@ import type {
   ProductionFileReadServices,
   WorkflowAuthority,
 } from "./production-file-read-workflow.js";
+import type { WorkspaceLedgerBaseline } from "./production-workspace-ledger.js";
 
 type Tool =
   | "read"
@@ -133,7 +134,7 @@ export async function executeProductionCodingRequest(
       ? ["read", binding.copySaveOperation.operation]
       : tool === "move_directory"
         ? ["move"]
-        : tool === "write"
+        : tool === "write" || (tool === "bash" && !binding.workspaceCopy)
           ? ["read", "create", "update"]
           : tool === "edit"
             ? ["read", "update"]
@@ -517,6 +518,51 @@ export async function executeProductionCodingRequest(
   }
   if (!saved) throw new Error("CODING_HANDLE_UNAVAILABLE");
   await active();
+  const ledger =
+    tool === "bash" && grant !== null && !binding.workspaceCopy
+      ? services.workspaceLedger
+      : undefined;
+  if (ledger && grant !== null) {
+    let baseline = (await ctx.load("workspace-before")) as WorkspaceLedgerBaseline | undefined;
+    if (!baseline) {
+      try {
+        baseline = await ledger.baseline(grant);
+      } catch {
+        return failed("WORKSPACE_LEDGER_UNAVAILABLE");
+      }
+      baseline = (await ctx.save("workspace-before", baseline)).value as WorkspaceLedgerBaseline;
+    }
+    const executed = await ctx.phase(saved.handle, tool, saved.inputRef);
+    if (executed.outcome === "awaiting_approval") return executed;
+    let changes = (await ctx.load("workspace-changes")) as { readonly summary: string } | undefined;
+    if (!changes) {
+      const identity = {
+        runId: call.runId,
+        toolCallId: call.toolCallId,
+        threadId: binding.threadId,
+        grantId: grant.id,
+        command: typeof args["command"] === "string" ? args["command"] : null,
+      };
+      let recorded: Record<string, unknown>;
+      try {
+        recorded = { ...identity, ...(await ledger.record(grant, baseline)) };
+      } catch (error) {
+        recorded = {
+          ...identity,
+          version: "workspace-changes.v1",
+          errorCode: error instanceof Error ? error.message : "WORKSPACE_LEDGER_FAILED",
+          summary: "工作目录改动：这次没能记录",
+        };
+      }
+      changes = (await ctx.save("workspace-changes", recorded)).value as { summary: string };
+    }
+    return {
+      ...executed,
+      modelContent: executed.modelContent
+        ? `${executed.modelContent}\n\n${changes.summary}`
+        : changes.summary,
+    };
+  }
   const result = await ctx.phase(saved.handle, tool, saved.inputRef);
   if (memory && memoryKey) {
     memory.observe(providers, result);

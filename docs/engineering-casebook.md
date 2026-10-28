@@ -57,6 +57,7 @@ date: "2026-10-26"
   30. [改登录方式时网页没接上，回滚又被授权编号检查拦住，停服约 9 分钟](#case-login-switch-outage)
   31. [输完邮箱验证码还要再点一次“登录”：让网页自己换取会话](#case-silent-access-entry)
   32. [iPhone 上输入框贴底、上方多出一条灰色横条：安全区和横向滚动](#case-ios-safe-area-scrollbar)
+  34. [模型写贪吃蛇时命令报“只读文件系统”：放开工作目录写入，每条命令留改动记录](#case-bash-workspace-write)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -80,7 +81,7 @@ date: "2026-10-26"
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
@@ -2096,6 +2097,61 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **面试 30 秒版**
 
 “用户在 iPhone 主屏幕打开我们的 PWA，输入框贴着底部横条，上方还多了一条灰色横条。贴底是因为没写 `viewport-fit=cover`、也没用安全区变量，而且手机下边距被另一份样式表覆盖成 0。灰条是对话区只写了 `overflow-y: auto`，按 CSS 规则横向也变成可滚动，回答下面一行超宽 9px，iOS 就画出几乎满屏的横向滚动条。我铺满整屏再按安全区留边，关掉对话区横向滚动，同时去掉超宽内容；改前先出原型给用户批注，改后在模拟安全区的手机视口里测了没有元素超宽。”
+
+[返回目录](#contents)
+
+<a id="case-bash-workspace-write"></a>
+
+## 案例 34：模型写贪吃蛇时命令报“只读文件系统”：放开工作目录写入，每条命令留改动记录
+
+**背景与现象**
+
+2026-10-27，Andy 在 Himawari 网页里让 Himawari 写一个贪吃蛇小游戏。模型用 `bash`（在沙箱里执行命令的工具）往工作目录（交给 Himawari 使用的目录，生产上是 `/var/lib/himawari/workspace`）写文件，命令报 `Read-only file system`，模型只好改成把脚本从标准输入喂给 `node`、不落文件，多绕了一轮；事先也没人告诉模型工作目录对命令是只读的。分析页：<https://claude.ai/artifact/3rQVWJt5pGVM1e9WhaE5ou>。Andy 问：工作目录就是给 Agent 用的，为什么命令不能写？
+
+**根因**
+
+代码确认：沙箱里工作目录能不能写，取决于部署时封存的能力配置给每个工具开了哪些目录操作。`scripts/delivery-mode/packet-template/signing/cloud-seal.mjs` 给 `bash` 只封了 `["read"]`，沙箱据此把工作目录挂成只读（`packages/runtime-sandbox/src/policy.ts` 里“有任何非 read 操作才可写”）。而 [ADR 0053](adr/0053-workspace-auto-approval-like-codex.md) 当初的决定是参照 Codex `Auto` 模式，工作目录内读写和执行命令都默认允许。也就是说，封存配置比决定更严，两者从一开始就不一致，没有测试发现。
+
+**我们的方案**
+
+- 封存配置、自动授权、执行前权限检查三处，把 `bash` 的目录操作改成 `["read", "create", "update"]`，和 `write` 一致。工作目录以外、受保护的条目（`.git`、`.env`、`.himawari-recovery`、`*.pem` 等）照旧不能写。
+- 每条直接在工作目录里执行的命令，Himawari 主进程在执行前后各扫一次工作目录（逐级打开目录、不跟随符号链接、不跨设备），对比出新建、修改、删除的文件；新建和修改的文件算 SHA-256 指纹。记录写进这次运行的持久记录，一句中文摘要（“工作目录改动：新建 a；修改 b”）附在命令结果末尾给模型看。
+- 崩溃恢复复用已保存的执行前快照和记录；执行前快照拍不出来就不执行命令；执行后对比失败，命令结果照常返回并写明“这次没能记录”。
+- 给模型的能力说明加一句：命令可以改工作目录、改动会留档、临时文件放 `$TMPDIR`。
+- 这一切都在 Himawari 自己的产品层，没有改 Pi（Himawari 依赖的开源 Agent 框架）。决定记在 [ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 维持命令只读 | 所有写入都经过带版本检查的文件工具 | 生成、解压、移动文件这类常见任务做不成，和 ADR 0053 矛盾 |
+| 命令先在副本或覆盖层里跑，确认后再合并 | 可以整体撤销 | 要引入覆盖文件系统或整目录复制，改动大、慢，还要设计合并冲突；工作目录变大后再评估 |
+| 放开写入、不留档 | 最简单 | 出问题时不知道哪条命令改了什么 |
+
+放弃了什么：这次只记“改了什么”和内容指纹，不存文件副本，所以还不能一键恢复被命令改坏的文件；副本和文件卡片归到“产出文件交付”专题。同一工作目录里并发的命令，改动可能互相记到对方头上，已写进 ADR。
+
+**业界主流做法**
+
+- ✅ Codex [审批与安全文档](https://learn.chatgpt.com/docs/agent-approvals-security)：`Auto` 模式预设 `workspace-write`，工作目录内读写文件、执行命令不需要批准，越界写入和联网才询问。
+- ✅ Claude Code [检查点文档](https://code.claude.com/docs/en/checkpointing)：“A file that only Bash commands changed isn't tracked and stays as it is. To revert it, use version control, such as Git.”
+
+**对比与取舍**
+
+写权限和 Codex 一致。留档比 Claude Code 多一步：Claude Code 的检查点不跟踪只被命令改过的文件，我们每条命令都对比整个工作目录，所以命令改的文件也查得到。代价是每条命令多两次目录扫描，按 Mac 上实测约每个文件 20 微秒；超过 0.2 秒写警告日志，再决定要不要跳过依赖目录或换覆盖层。和 Claude Code 一样，目前还不能自动恢复命令改动的内容。
+
+**结果数据**
+
+- 扫描成本（Andy 的 Mac 实测）：11.7 万个文件约 2.4 秒；200 个文件（4.9 MB）算指纹约 65 毫秒。
+- 生产工作目录：37 个文件、720 KB（2026-10-27 只读登录生产机查看），扫描时间可以忽略。
+- 测试：见 PR 说明里的云端测试记录；生产上线后的实际扫描耗时未测量。
+
+**相关 ADR/PR**
+
+[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)、[ADR 0053](adr/0053-workspace-auto-approval-like-codex.md)；PR 见本分支 `claude/bash-workspace-write`。
+
+**面试 30 秒版**
+
+“模型写小游戏时命令报只读文件系统。查下来是部署时封存的权限只给了命令读，和我们自己参照 Codex 定的‘工作目录内可读写执行’不一致。我放开了工作目录写入，但不是裸放：每条命令前后由主进程扫一遍工作目录，记下新建、修改、删除了哪些文件和内容指纹，摘要直接回给模型。这比 Claude Code 的检查点多覆盖了命令改动的文件，37 个文件的生产目录扫描成本可以忽略。”
 
 [返回目录](#contents)
 

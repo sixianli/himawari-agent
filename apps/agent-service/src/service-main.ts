@@ -734,13 +734,15 @@ export async function runAgentService(
       runPolicy: configuration.runPolicy,
       secrets: sources.provider,
     });
+    const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     const fileReadServices = createProductionFileReadServices({
       configuration,
       repository,
       authority: invocationAuthority,
       clock,
       ids,
-      hostReadOnlyPort: new DescriptorRelativeReadOnly(),
+      hostReadOnlyPort,
+      workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
       ...(automaticReview ? { automaticReview } : {}),
       ...(workspaceAuto ? { workspaceAuto } : {}),

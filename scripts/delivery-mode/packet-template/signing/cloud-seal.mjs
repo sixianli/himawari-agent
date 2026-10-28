@@ -409,7 +409,7 @@ for (const [key, ref, file, operations, domains] of [
         directoryOperations:
           key !== "pi"
             ? []
-            : operation === "write"
+            : operation === "write" || operation === "bash"
               ? ["read", "create", "update"]
               : operation === "edit"
                 ? ["read", "update"]
@@ -501,7 +501,7 @@ const receipt = {
     searchNetwork: [...webNetwork],
     fetchNetwork: [...webNetwork],
     webProviderSecrets: [webProviderSecretRef],
-    bashDirectoryOperations: ["read"],
+    bashDirectoryOperations: ["read", "create", "update"],
     macAgentInstalled: false,
   },
   limitations: ["资源限制为观测后停止，不是硬配额", "搜索返回摘录，不代表打开网页全文", "读网页只返回长度受限的正文"],

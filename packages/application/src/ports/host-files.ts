@@ -49,7 +49,6 @@ export interface HostFileIdentity {
   readonly modifiedAtMillis: number;
 }
 
-/** Metadata observation on the selected host, not a read or disclosure permission. */
 export interface ResolvedHostFileReadTarget {
   readonly hostId: string;
   readonly grantId: string;
@@ -67,7 +66,6 @@ export interface FileCopyDependency {
   readonly path: string;
   readonly identity: HostFileIdentity | null;
   readonly digest: string | null;
-  /** Earlier save in the same copy batch; only its verified publication may replace this baseline. */
   readonly priorOperationRef?: string;
 }
 
@@ -89,7 +87,6 @@ export interface PreparedFileOperation {
   readonly canonicalHash: string;
   readonly expiresAt: string;
   readonly status: "prepared" | "executing" | "verified" | "invalidated" | "failed";
-  /** Persisted before publishing; matching bytes alone never establish operation ownership. */
   readonly publication?: HostFilePublication;
   readonly copyDependencies?: readonly FileCopyDependency[];
   readonly copyAuthority?: { readonly grantRevision: number; readonly canonicalRootId: string };
@@ -101,10 +98,8 @@ export interface HostFilePublication {
 }
 
 export interface HostFilePublishHooks {
-  /** Persist the exact staged inode and recheck authority before any final-path effect. */
   beforePublish(publication: HostFilePublication): Promise<void>;
   assertCurrentAuthority?(): Promise<void>;
-  /** Durable commit intent immediately before the first final-path syscall. */
   commitStarting?(): Promise<void>;
 }
 
@@ -306,4 +301,24 @@ export interface HostReadOnlyPort {
     readonly relativePath: string;
     readonly maximumBytes: number;
   }): Promise<Uint8Array>;
+}
+
+export interface HostWorkspaceSnapshotEntry {
+  readonly path: string;
+  readonly kind: "file" | "directory" | "symlink" | "other";
+  readonly size: string;
+  readonly modifiedAtNs: string;
+  readonly inode: string;
+}
+
+export interface HostWorkspaceSnapshot {
+  readonly entries: readonly HostWorkspaceSnapshotEntry[];
+  readonly complete: boolean;
+}
+
+export interface HostWorkspaceSnapshotPort {
+  snapshotWorkspace(input: {
+    readonly grant: HostDirectoryGrant;
+    readonly maximumEntries: number;
+  }): Promise<HostWorkspaceSnapshot>;
 }
