@@ -867,4 +867,12 @@ export const messages = {
   "push.deviceApp": "{platform} ホーム画面アプリ",
   "push.deviceBrowser": "{platform} ブラウザ",
   "push.openSettings": "通知の設定",
+  "nav.reminders": "リマインダー",
+  "memory.page.replaced": "置き換え済み",
+  "memory.page.olderChanges": "さらに前の変更 {count} 件",
+  "memory.page.viewAll": "{kind}をすべて表示（{count} 件）",
+  "reminders.group": "{g, select, today {今日} week {7 日以内} other {それ以降}}",
+  "reminders.empty":
+    "リマインダーはまだありません。会話で「明日の朝 8 時に傘を持っていくよう知らせて」と言えば設定できます。",
+  "reminders.due": "時間になったリマインダーが {count} 件あります",
 } satisfies MessageCatalog;

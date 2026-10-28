@@ -817,4 +817,11 @@ export const messages = {
   "push.deviceApp": "{platform} 主屏应用",
   "push.deviceBrowser": "{platform} 浏览器",
   "push.openSettings": "通知设置",
+  "nav.reminders": "提醒",
+  "memory.page.replaced": "被替换",
+  "memory.page.olderChanges": "还有 {count} 次更早的变化",
+  "memory.page.viewAll": "查看全部 {count} 条{kind}",
+  "reminders.group": "{g, select, today {今天} week {未来 7 天} other {更晚}}",
+  "reminders.empty": "还没有提醒。在对话里说“明早 8 点提醒我带伞”就行。",
+  "reminders.due": "有 {count} 个提醒到点了",
 } satisfies MessageCatalog;

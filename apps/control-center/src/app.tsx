@@ -1,6 +1,3 @@
-import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
-import { NotificationSettings } from "./components/notification-settings.js";
-import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
@@ -9,15 +6,24 @@ import {
   isSurfaceInstalled,
 } from "./app/control-center-inventory.js";
 import { routeForSurface, useControlCenterRouter } from "./app/router.js";
+import { type BrowserEntry, recoverBrowserEntry } from "./browser-entry.js";
 import {
   ControlCenterBrowserStorage,
   type ControlCenterPreferences,
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
-import { Banner } from "./components/index.js";
+import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
-import { type BrowserEntry, recoverBrowserEntry } from "./browser-entry.js";
+import { Banner } from "./components/index.js";
+import {
+  focusedMemoryIds,
+  MemoryReminders,
+  MemoryTurnNote,
+  OPEN_MEMORY_PAGE,
+} from "./components/memory-panel.js";
+import { NotificationSettings } from "./components/notification-settings.js";
+import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import {
   GatewayClient,
   loadRuntimeConfiguration,
@@ -25,26 +31,23 @@ import {
 } from "./gateway-client.js";
 import { useGovernanceControlCenter } from "./governance-control-center.js";
 import { HealthControlCenter } from "./health-control-center.js";
-import { useMemory } from "./memory.js";
-import {
-  focusedMemoryIds,
-  MemoryReminders,
-  MemoryTurnNote,
-  OPEN_MEMORY_SETTINGS,
-} from "./components/memory-panel.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
+import { useMemory } from "./memory.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
-import { useThreadControlCenter } from "./thread-control-center.js";
+import { type SidePage, useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
 import { reportPushFeedback, startPresenceHeartbeat } from "./web-push.js";
 
-const MemorySettings = lazy(() =>
-  import("./components/memory-page.js").then((module) => ({ default: module.MemorySettings })),
+const MemoryPage = lazy(() =>
+  import("./components/memory-page.js").then((module) => ({ default: module.MemoryPage })),
+);
+const RemindersPage = lazy(() =>
+  import("./components/memory-page.js").then((module) => ({ default: module.RemindersPage })),
 );
 
 type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
@@ -323,8 +326,8 @@ function LocalizedControlCenterApp({
   const [memoryFocus, setMemoryFocus] = useState<readonly string[]>([]);
   useEffect(() => {
     const focus = (event: Event) => setMemoryFocus(focusedMemoryIds(event));
-    window.addEventListener(OPEN_MEMORY_SETTINGS, focus);
-    return () => window.removeEventListener(OPEN_MEMORY_SETTINGS, focus);
+    window.addEventListener(OPEN_MEMORY_PAGE, focus);
+    return () => window.removeEventListener(OPEN_MEMORY_PAGE, focus);
   }, []);
   const memory = useMemory({
     client,
@@ -337,6 +340,24 @@ function LocalizedControlCenterApp({
       ? {
           renderMemory: (ownerRefs: readonly string[]) => (
             <MemoryTurnNote ownerRefs={ownerRefs} memory={memory} message={message} />
+          ),
+          remindersDue: memory.overview?.reminders.length ?? 0,
+          renderPage: (page: SidePage, onBack: () => void) => (
+            <Suspense fallback={null}>
+              {page === "memory" ? (
+                <MemoryPage
+                  memory={memory}
+                  message={message}
+                  focus={memoryFocus}
+                  onBack={onBack}
+                  onOpenThread={(threadId) =>
+                    navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
+                  }
+                />
+              ) : (
+                <RemindersPage memory={memory} message={message} onBack={onBack} />
+              )}
+            </Suspense>
           ),
         }
       : {}),
@@ -409,21 +430,6 @@ function LocalizedControlCenterApp({
   return (
     <ControlCenterShell
       settingsData={threadModel.settingsData}
-      settingsMemory={
-        memory ? (
-          <Suspense fallback={<p>{message("state.loading")}</p>}>
-            <MemorySettings
-              memory={memory}
-              message={message}
-              focus={memoryFocus}
-              focusThreadTitle={threadModel.title}
-              onOpenThread={(threadId) =>
-                navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
-              }
-            />
-          </Suspense>
-        ) : undefined
-      }
       settingsNotifications={
         client && configuration?.installedGatewayV2Operations?.includes("push.status.read") ? (
           <NotificationSettings

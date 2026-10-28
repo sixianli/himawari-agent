@@ -3,12 +3,12 @@ import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemorySettings } from "../src/components/memory-page.tsx";
+import { MemoryPage, RemindersPage } from "../src/components/memory-page.tsx";
 import {
   focusedMemoryIds,
   MemoryReminders,
   MemoryTurnNote,
-  OPEN_MEMORY_SETTINGS,
+  OPEN_MEMORY_PAGE,
 } from "../src/components/memory-panel.tsx";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/gateway-client.ts";
 import type { MessageId } from "../src/i18n/message-ids.ts";
@@ -71,22 +71,31 @@ function Harness({ ownerRefs }: { ownerRefs: readonly string[] }) {
     "div",
     null,
     h("div", { id: "turn" }, h(MemoryTurnNote, { ownerRefs, memory, message })),
-    h("div", { id: "settings" }, h(MemorySettings, { memory, message, onOpenThread: opened })),
+    h(
+      "div",
+      { id: "settings" },
+      h(MemoryPage, { memory, message, onBack: () => undefined, onOpenThread: opened }),
+    ),
     h("div", { id: "reminders" }, h(MemoryReminders, { memory, message })),
+    h(
+      "div",
+      { id: "reminders-page" },
+      h(RemindersPage, { memory, message, onBack: () => undefined }),
+    ),
   );
 }
 
-function MemorySettingsWithFocus({ focus, title }: { focus: readonly string[]; title: string }) {
+function MemoryPageWithFocus({ focus }: { focus: readonly string[] }) {
   const memory = useMemory({ client, configuration, connected: true, refreshSignal: 0 });
   if (!memory) return null;
   return h(
     "div",
     { id: "settings" },
-    h(MemorySettings, {
+    h(MemoryPage, {
       memory,
       message,
       focus,
-      focusThreadTitle: title,
+      onBack: () => undefined,
       onOpenThread: opened,
     }),
   );
@@ -282,25 +291,25 @@ describe("memory approval and management", () => {
     });
   });
 
-  it("opens memory settings on the memory the reply just saved", async () => {
+  it("opens the memory page with the memory the reply just saved marked in place", async () => {
     const listener = vi.fn((event: Event) => focusedMemoryIds(event));
-    window.addEventListener(OPEN_MEMORY_SETTINGS, listener);
+    window.addEventListener(OPEN_MEMORY_PAGE, listener);
     await render();
     await click("#turn", "记下了 1 条新记忆");
     expect(listener).toHaveReturnedWith(["memory-color"]);
-    window.removeEventListener(OPEN_MEMORY_SETTINGS, listener);
-    await act(async () =>
-      root.render(
-        h(MemorySettingsWithFocus, { focus: ["memory-color"], title: "记住我喜欢的颜色" }),
-      ),
-    );
+    window.removeEventListener(OPEN_MEMORY_PAGE, listener);
+    await act(async () => root.render(h(MemoryPageWithFocus, { focus: ["memory-color"] })));
     await act(async () => {});
-    const saved = text("#settings .memory-just-saved");
-    expect(saved).toContain("刚记住");
-    expect(saved).toContain("主人最喜欢的颜色是蓝色");
-    expect(saved).toContain("来自对话“记住我喜欢的颜色”");
-    expect(saved).not.toContain("主人住在上海");
-    await click("#settings .memory-just-saved", "删除");
+    expect(document.querySelector("#settings .memory-just-saved")).toBeNull();
+    expect(text("#settings [role=tab][aria-selected=true]")).toContain("全部记忆");
+    const rows = [...document.querySelectorAll("#settings .memory-row")];
+    expect(rows[0]?.getAttribute("data-just-saved")).toBe("true");
+    expect(rows[0]?.textContent).toContain("刚记住");
+    expect(rows[0]?.textContent).toContain("主人最喜欢的颜色是蓝色");
+    expect(rows[1]?.textContent).not.toContain("刚记住");
+    expect(document.querySelector("#settings .memory-detail")).toBeNull();
+    await click("#settings .memory-list", "主人最喜欢的颜色是蓝色");
+    await click("#settings .memory-detail", "删除");
     expect(lastCommand()).toMatchObject({
       payload: { memoryId: "memory-color", action: "delete" },
     });
@@ -319,6 +328,67 @@ describe("memory approval and management", () => {
     await act(async () => root.render(h(Hidden)));
     expect(container.textContent).toBe("");
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("keeps a long profile section to a few lines and hands the rest to the full list", async () => {
+    const likes = Array.from({ length: 12 }, (_, index) =>
+      memoryItem(`memory-like-${index}`, `喜欢第 ${index + 1} 样东西`, { category: "preference" }),
+    );
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [...overview.memories, ...likes],
+      profile: [
+        {
+          kind: "preference",
+          lines: likes.map((item) => ({
+            memoryId: item.memoryId,
+            text: item.text,
+            updatedAt: "2026-10-25T12:00:00.000Z",
+          })),
+        },
+      ],
+    };
+    await render();
+    const card = () => text("#settings .memory-profile-columns");
+    expect(card()).toContain("喜欢第 3 样东西");
+    expect(card()).not.toContain("喜欢第 4 样东西");
+    await click("#settings .memory-card-more", "展开其余 5 条");
+    expect(card()).toContain("喜欢第 8 样东西");
+    expect(card()).not.toContain("喜欢第 9 样东西");
+    await click("#settings .memory-card-more", "查看全部 12 条偏好");
+    expect(text("#settings [role=tab][aria-selected=true]")).toContain("全部记忆");
+    expect(text("#settings .memory-chips button[aria-pressed=true]")).toContain("偏好");
+    expect(text("#settings .memory-list")).toContain("喜欢第 12 样东西");
+    expect(text("#settings .memory-list")).not.toContain("主人住在上海");
+  });
+
+  it("draws a long change history as a timeline with the middle folded", async () => {
+    const versions = Array.from({ length: 6 }, (_, index) =>
+      memoryItem(`memory-city-v${index}`, `住在第 ${index + 1} 个城市`, {
+        category: "identity",
+        supersededBy: "memory-city",
+        recordedAt: `2026-10-0${index + 1}T12:00:00.000Z`,
+      }),
+    );
+    overview = { ...overview, pending: [], memories: [...overview.memories, ...versions] };
+    await render();
+    await tab("全部记忆");
+    await click("#settings .memory-list", "主人住在上海");
+    const points = () =>
+      [...document.querySelectorAll("#settings .memory-history-line > li")].map(
+        (item) => item.textContent ?? "",
+      );
+    expect(points()).toHaveLength(4);
+    expect(points()[0]).toContain("现在");
+    expect(points()[0]).toContain("主人住在上海");
+    expect(points()[1]).toContain("住在第 6 个城市");
+    expect(points()[2]).toBe("还有 4 次更早的变化");
+    expect(points()[3]).toContain("住在第 1 个城市");
+    expect(document.querySelectorAll("#settings .memory-detail s")).toHaveLength(0);
+    await click("#settings .memory-history-fold", "还有 4 次更早的变化");
+    expect(points()).toHaveLength(7);
+    expect(points().join("")).toContain("住在第 3 个城市");
   });
 
   it("[MP-8] groups the profile by sub-category, draws people and restores an earlier wording", async () => {
@@ -374,7 +444,7 @@ describe("memory approval and management", () => {
       ],
     };
     await render();
-    const profile = text("#settings .memory-profile-grid");
+    const profile = text("#settings .memory-profile-columns");
     expect(profile).toContain("偏好");
     expect(profile).toContain("颜色");
     expect(profile).toContain("饮食");
@@ -384,8 +454,8 @@ describe("memory approval and management", () => {
     expect(person).toContain("也叫：妈妈");
     expect(person).toContain("李秀英的妹妹");
     expect(person).toContain("李秀英是主人的妈妈");
-    await click("#settings .memory-profile-grid", "喝咖啡不加糖");
-    expect(document.querySelector("#settings .memory-profile-grid textarea")).not.toBeNull();
+    await click("#settings .memory-profile-columns", "喝咖啡不加糖");
+    expect(document.querySelector("#settings .memory-profile-columns textarea")).not.toBeNull();
     await tab("全部记忆");
     await click("#settings .memory-list", "主人住在上海");
     expect(text("#settings .memory-detail")).toContain("主人住在北京");
@@ -526,14 +596,15 @@ describe("memory approval and management", () => {
     });
     await click("#reminders", "不再提醒");
     expect(lastCommand()).toMatchObject({ payload: { action: "dismiss" } });
-    expect(text("#settings [role=tablist]")).toContain("提醒1 到期");
-    await tab("提醒");
-    await click("#settings .memory-upcoming", "不再提醒");
+    expect(text("#settings [role=tablist]")).not.toContain("提醒");
+    expect(text("#reminders-page")).toContain("到时间了");
+    expect(text("#reminders-page")).toContain("每年");
+    await click("#reminders-page .reminder-row:not([data-kind])", "不再提醒");
     expect(lastCommand()).toMatchObject({
       type: "memory.reminder.respond",
       payload: { reminderId: "reminder:memory-color", action: "cancel" },
     });
-    expect(text("#settings .memory-notice")).toContain("记忆本身保留");
+    expect(text("#reminders-page .memory-notice")).toContain("记忆本身保留");
     await tab("全部记忆");
     await click("#settings .memory-list", "主人最喜欢的颜色是蓝色");
     expect(text("#settings .memory-detail")).toContain("每年");

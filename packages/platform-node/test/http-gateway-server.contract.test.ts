@@ -232,6 +232,10 @@ beforeAll(async () => {
   await writeFile(path.join(staticRoot, "index.html"), "<!doctype html><title>Himawari</title>");
   await writeFile(path.join(staticRoot, "assets", "app.js"), "globalThis.__himawari = true;");
   await writeFile(path.join(staticRoot, "assets", "worker.mjs"), "self.onmessage = () => {};");
+  await writeFile(
+    path.join(staticRoot, "assets", "brand.woff2"),
+    Buffer.from([0x77, 0x4f, 0x46, 0x32]),
+  );
 });
 
 afterAll(async () => {
@@ -421,6 +425,15 @@ describe("HTTP Gateway contract and security boundary", () => {
       headers: { host: "agent.example.test" },
     });
     expect(worker.headers["content-type"]).toBe("text/javascript; charset=utf-8");
+    const font = await app.inject({
+      method: "GET",
+      url: "/assets/brand.woff2",
+      headers: { host: "agent.example.test" },
+    });
+    expect(font.statusCode).toBe(200);
+    expect(font.headers["content-type"]).toBe("font/woff2");
+    expect(font.rawPayload).toEqual(Buffer.from([0x77, 0x4f, 0x46, 0x32]));
+    expect(page.headers["content-security-policy"]).toContain("font-src 'self'");
   });
 
   it("[WP-6] serves the home screen app files with their types and lets the page install a worker", async () => {

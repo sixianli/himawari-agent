@@ -1938,11 +1938,13 @@ body {
   font-weight: 400;
   color: var(--text-muted);
 }
-.memory-profile-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  align-items: start;
+.memory-profile-columns {
+  columns: 2 280px;
+  column-gap: 12px;
+}
+.memory-profile-columns > .memory-card {
+  break-inside: avoid;
+  margin: 0 0 12px;
 }
 .memory-line,
 .memory-row-head {
@@ -2027,7 +2029,7 @@ body {
 }
 .memory-detail {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
   gap: 8px 12px;
   margin: 0 4px 14px;
   padding: 12px 14px;
@@ -2040,13 +2042,6 @@ body {
 }
 .memory-detail dd {
   margin: 0;
-}
-.memory-steps {
-  margin: 0;
-  padding-left: 18px;
-}
-.memory-steps s {
-  color: var(--text-muted);
 }
 .memory-upcoming {
   display: flex;
@@ -2087,15 +2082,21 @@ body {
   background: var(--border);
   transform-origin: 0 0;
 }
-.memory-edge small {
+.memory-edge-label {
   position: absolute;
-  left: 50%;
-  top: -9px;
+  z-index: 1;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-muted);
   color: var(--text-muted);
   font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
 }
 .memory-node {
   position: absolute;
+  z-index: 2;
   min-height: 0;
   padding: 4px 12px;
   border: 1px solid var(--border);
@@ -2195,9 +2196,6 @@ body {
   cursor: pointer;
 }
 @media (max-width: 760px) {
-  .memory-profile-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .memory-graph {
     display: none;
   }
@@ -3019,36 +3017,6 @@ body {
 .memory-saved:hover {
   color: var(--text);
 }
-.memory-just-saved {
-  display: grid;
-  gap: 8px;
-  margin: 4px 0 16px;
-}
-.memory-just-saved .settings-note {
-  margin: 0;
-}
-.memory-just-saved .memory-list {
-  margin: 0;
-  display: grid;
-  gap: 8px;
-}
-.memory-just-saved-item {
-  display: grid;
-  gap: 10px;
-  padding: 14px 16px;
-  border: 1.5px solid var(--accent);
-  border-radius: 14px;
-  background: var(--surface);
-}
-.memory-just-saved-item .memory-text {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.6;
-}
-.memory-just-saved-item .actions {
-  display: flex;
-  gap: 8px;
-}
 .memory-tag[data-kind="new"] {
   color: var(--accent);
   font-weight: 600;
@@ -3869,5 +3837,276 @@ code.more-row-name {
 @media (prefers-reduced-motion: reduce) {
   .files-library-skeleton i {
     animation: none;
+  }
+}
+@font-face {
+  font-family: "Himawari Outfit";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/outfit-latin-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Himawari Maru";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/zen-maru-gothic-kana-500.woff2") format("woff2");
+  unicode-range: U+3041-309F;
+}
+.himawari-wordmark {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.05;
+  gap: 2px;
+}
+.himawari-wordmark-latin {
+  font-family: "Himawari Outfit", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+.himawari-wordmark-kana {
+  font-family: "Himawari Maru", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif;
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 0.3em;
+  color: var(--text-muted);
+}
+
+.thread-context-menu {
+  min-width: 188px;
+  padding: 5px;
+  border-radius: 12px;
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 22%),
+    0 1px 3px rgb(0 0 0 / 14%);
+}
+.thread-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+.thread-context-menu button .sidebar-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.thread-context-menu button:hover,
+.thread-context-menu button:focus-visible {
+  background: var(--surface-muted);
+  outline: none;
+}
+.menu-separator {
+  height: 0;
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.nav-dot {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.side-page {
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+.side-page-body {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+.side-page-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+}
+.side-page-title h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.side-page-title small {
+  grid-column: 2;
+}
+.memory-card-more {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 6px;
+}
+.memory-card-more button {
+  min-height: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.memory-row[data-just-saved] > .memory-row-head {
+  animation: memory-just-saved 2s ease-out 1;
+}
+@keyframes memory-just-saved {
+  from {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .memory-row[data-just-saved] > .memory-row-head {
+    animation: none;
+  }
+}
+.memory-detail-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+.memory-history-line {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.memory-history-line[data-scroll] {
+  max-height: 420px;
+  overflow-y: auto;
+}
+.memory-history-line > li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.memory-history-line > li::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 16px;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.memory-history-line > li:last-child {
+  padding-bottom: 0;
+}
+.memory-history-line > li:last-child::before {
+  display: none;
+}
+.memory-history-dot {
+  width: 13px;
+  height: 13px;
+  margin-top: 3px;
+  border: 2px solid var(--text-muted);
+  border-radius: 50%;
+  background: var(--surface-muted);
+}
+.memory-history-line > li[data-current] .memory-history-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.memory-history-line p {
+  margin: 1px 0 0;
+}
+.memory-history-line > li:not([data-current]) p {
+  color: var(--text-muted);
+}
+.memory-link {
+  min-height: 0;
+  padding: 0;
+  vertical-align: baseline;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.memory-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.memory-history-line .memory-link {
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+.memory-history-line > li.memory-history-fold {
+  display: block;
+  padding-left: 23px;
+}
+.memory-history-fold button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.reminder-row {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 4px;
+  border-top: 1px solid var(--border);
+}
+.reminder-when {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.reminder-row[data-kind="due"] .reminder-when {
+  color: var(--accent);
+}
+.reminder-text small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.reminder-row .action-button {
+  min-height: 0;
+  padding: 2px 8px;
+}
+.reminders-empty {
+  padding: 40px 8px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.reminders-link {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+@media (max-width: 760px) {
+  .side-page-body {
+    padding: 14px 16px 40px;
+  }
+  .reminder-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .reminder-when {
+    grid-column: 1 / -1;
   }
 }

@@ -862,4 +862,12 @@ export const messages = {
   "push.deviceApp": "{platform} Home Screen app",
   "push.deviceBrowser": "{platform} browser",
   "push.openSettings": "Notification settings",
+  "nav.reminders": "Reminders",
+  "memory.page.replaced": "Replaced",
+  "memory.page.olderChanges": "{count} earlier changes",
+  "memory.page.viewAll": "View all {count} in {kind}",
+  "reminders.group": "{g, select, today {Today} week {Next 7 days} other {Later}}",
+  "reminders.empty":
+    "No reminders yet. Just say “Remind me to take an umbrella at 8 tomorrow” in a chat.",
+  "reminders.due": "{count, plural, one {# reminder is due} other {# reminders are due}}",
 } satisfies MessageCatalog;

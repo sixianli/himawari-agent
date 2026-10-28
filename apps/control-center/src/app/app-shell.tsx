@@ -1,11 +1,11 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
-import { OPEN_MEMORY_SETTINGS, OPEN_NOTIFICATION_SETTINGS } from "../components/memory-panel.js";
-import { SettingsDialog } from "../components/settings-dialog.js";
-import { SidebarIcon } from "../components/sidebar-icon.js";
 import { HimawariBrand } from "../components/brand.js";
 import { ActionButton, AppLink } from "../components/index.js";
+import { OPEN_NOTIFICATION_SETTINGS } from "../components/memory-panel.js";
+import { SettingsDialog } from "../components/settings-dialog.js";
+import { SidebarIcon } from "../components/sidebar-icon.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { type ControlCenterRouteState, routeForSurface } from "./router.js";
 
@@ -19,7 +19,6 @@ export interface ControlCenterShellProps {
   readonly topbarActions?: ReactNode;
   readonly settingsTools?: ReactNode;
   readonly settingsData?: ReactNode;
-  readonly settingsMemory?: ReactNode;
   readonly settingsNotifications?: ReactNode;
   readonly list: ReactNode;
   readonly locale: ControlCenterUiLocale;
@@ -42,7 +41,6 @@ export function ControlCenterShell({
   topbarActions,
   settingsTools,
   settingsData,
-  settingsMemory,
   settingsNotifications,
   list,
   locale,
@@ -70,18 +68,12 @@ export function ControlCenterShell({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("general");
   useEffect(() => {
-    const open = () => {
-      setSettingsTab("memory");
-      setSettingsOpen(true);
-    };
     const openNotifications = () => {
       setSettingsTab("notifications");
       setSettingsOpen(true);
     };
-    window.addEventListener(OPEN_MEMORY_SETTINGS, open);
     window.addEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
     return () => {
-      window.removeEventListener(OPEN_MEMORY_SETTINGS, open);
       window.removeEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
     };
   }, []);
@@ -200,7 +192,6 @@ export function ControlCenterShell({
         onPreferencesChange={onPreferencesChange}
         tools={settingsTools}
         data={settingsData}
-        memory={settingsMemory}
         notifications={settingsNotifications}
         initialTab={settingsTab}
       />

@@ -767,6 +767,13 @@ export const MESSAGE_IDS = [
   "push.deviceApp",
   "push.deviceBrowser",
   "push.openSettings",
+  "nav.reminders",
+  "memory.page.replaced",
+  "memory.page.olderChanges",
+  "memory.page.viewAll",
+  "reminders.group",
+  "reminders.empty",
+  "reminders.due",
 ] as const;
 
 export type MessageId = (typeof MESSAGE_IDS)[number];
@@ -917,4 +924,8 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "push.pausedBody": { code: "WEB_PUSH_HTTP_403" },
   "push.deviceApp": { platform: "iPhone" },
   "push.deviceBrowser": { platform: "Mac" },
+  "memory.page.olderChanges": { count: 7 },
+  "memory.page.viewAll": { count: 100, kind: "偏好" },
+  "reminders.group": { g: "week" },
+  "reminders.due": { count: 2 },
 });

@@ -293,7 +293,7 @@ function setSecurityHeaders(reply: FastifyReply, previewOrigin?: URL): void {
   reply
     .header(
       "content-security-policy",
-      `default-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'self'${previewOrigin ? ` ${previewOrigin.origin}` : ""}; img-src 'self' data:; manifest-src 'self'; script-src 'self'; style-src 'self'; worker-src 'self'`,
+      `default-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; font-src 'self'; frame-ancestors 'none'; frame-src 'self'${previewOrigin ? ` ${previewOrigin.origin}` : ""}; img-src 'self' data:; manifest-src 'self'; script-src 'self'; style-src 'self'; worker-src 'self'`,
     )
     .header("cross-origin-opener-policy", "same-origin")
     .header("cross-origin-resource-policy", "same-origin")
@@ -734,6 +734,8 @@ function staticContentType(target: string): string {
       return "image/svg+xml";
     case ".png":
       return "image/png";
+    case ".woff2":
+      return "font/woff2";
     case ".webmanifest":
       return "application/manifest+json";
     default:
