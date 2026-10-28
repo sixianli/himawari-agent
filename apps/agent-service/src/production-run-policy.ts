@@ -57,15 +57,8 @@ export function createProductionRunPolicy(options: {
     const identity = {
       runId: source.runId,
       purpose: "context" as const,
-      operationKey: `run-system-instruction:v5:${createHash("sha256")
-        .update(
-          JSON.stringify([
-            HIMAWARI_IDENTITY,
-            policy.systemInstruction,
-            policy.timeZone ?? "UTC",
-            capabilities,
-          ]),
-        )
+      operationKey: `run-system-instruction:v6:${createHash("sha256")
+        .update(JSON.stringify([HIMAWARI_IDENTITY, policy.systemInstruction, capabilities]))
         .digest("hex")}`,
     };
     let instruction = await options.artifacts.lookup(identity);
@@ -75,7 +68,7 @@ export function createProductionRunPolicy(options: {
         agentId: source.agentId,
         ref: options.ids.next("run-system-instruction"),
         plaintext: new TextEncoder().encode(
-          `${HIMAWARI_IDENTITY}\n\n${policy.systemInstruction}\n\n本轮请求时间（UTC）：${source.occurredAt}。配置时区 ${policy.timeZone ?? "UTC"} 的当地时间：${new Intl.DateTimeFormat("sv-SE", { timeZone: policy.timeZone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "longOffset" }).format(new Date(source.occurredAt))}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。\n\n${ANSWER_LANGUAGE_RULE}\n\n${capabilities}`,
+          `${HIMAWARI_IDENTITY}\n\n${policy.systemInstruction}\n\n${ANSWER_LANGUAGE_RULE}\n\n${capabilities}`,
         ),
         dataClassification: source.dataClassification,
         contentType: "text/plain",

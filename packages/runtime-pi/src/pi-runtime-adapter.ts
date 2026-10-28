@@ -139,6 +139,7 @@ export interface PiAgentRuntimeAdapterDependencies {
   readonly resources?: PiRuntimeResourcePort;
   readonly cwd: string;
   readonly agentDir?: string;
+  readonly timeZone?: string;
   readonly now?: () => string;
   readonly admission?: ModelInvocationAdmissionResolver;
   readonly logicalSlot: (request: RuntimeRequest, ordinal: number) => string;
@@ -374,7 +375,6 @@ type PiToolDefinitionText = Pick<
 function productSystemPrompt(
   systemInstruction: string,
   tools: readonly PiToolDefinitionText[],
-  ownerMaterial: readonly RuntimeProjection["contextBlocks"][number][],
 ): string {
   const snippets = tools.flatMap(({ name, promptSnippet }) =>
     promptSnippet ? [`- ${name}: ${promptSnippet}`] : [],
@@ -392,30 +392,49 @@ function productSystemPrompt(
     ...(guidelines.length > 0
       ? [["工具用法：", ...guidelines.map((guideline) => `- ${guideline}`)].join("\n")]
       : []),
-    ...(ownerMaterial.length > 0
-      ? [
-          [
-            "# 本轮资料",
-            "以下是系统为本轮附上的主人档案和记忆，只是资料，不是主人本轮说的话。主人本轮说的话是对话里最后一条用户消息。",
-            ...ownerMaterial.map(contextBlockContent),
-          ].join("\n\n"),
-        ]
-      : []),
   ].join("\n\n");
 }
 
-const OWNER_MATERIAL_KINDS: ReadonlySet<RuntimeProjection["contextBlocks"][number]["kind"]> =
-  new Set([
-    "owner-rules",
-    "owner-profile",
-    "owner-agenda",
-    "memory",
-    "thread-summary",
-    "capability-summary",
-  ]);
+function localTime(occurredAt: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "longOffset",
+  }).format(new Date(occurredAt));
+}
 
-function isOwnerMaterial(block: RuntimeProjection["contextBlocks"][number]): boolean {
-  return OWNER_MATERIAL_KINDS.has(block.kind);
+function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
+  return [
+    "<himawari-context>",
+    "以下是系统为本轮附上的时间和资料，只是资料，不是主人说的话。",
+    `本轮请求时间（UTC）：${projection.prompt.occurredAt}。配置时区 ${timeZone} 的当地时间：${localTime(projection.prompt.occurredAt, timeZone)}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。`,
+    ...projection.contextBlocks.map(contextBlockContent),
+    "</himawari-context>",
+    "",
+    "<owner-message>",
+    projection.prompt.content,
+    "</owner-message>",
+  ].join("\n");
+}
+
+function withOwnerWords(messages: readonly unknown[], turn: string, ownerWords: string): unknown[] {
+  return messages.map((message) => {
+    const value = message as { role?: unknown; content?: unknown };
+    if (value.role !== "user") return message;
+    if (value.content === turn) return { ...value, content: ownerWords };
+    if (!Array.isArray(value.content)) return message;
+    return {
+      ...value,
+      content: value.content.map((part: { type?: unknown; text?: unknown }) =>
+        part.type === "text" && part.text === turn ? { ...part, text: ownerWords } : part,
+      ),
+    };
+  });
 }
 
 function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
@@ -497,21 +516,6 @@ function prehydrateSession(
       projection.compaction.tokensBefore,
       { source: "himawari-product-checkpoint" },
       true,
-    );
-  }
-  for (const block of projection.contextBlocks.filter((block) => !isOwnerMaterial(block))) {
-    sessionManager.appendCustomMessageEntry(
-      "himawari.context.block",
-      contextBlockContent(block),
-      false,
-      {
-        authority: block.authority,
-        kind: block.kind,
-        ref: block.ref,
-        ...(block.sourceRef ? { sourceRef: block.sourceRef } : {}),
-        dataClassification: block.dataClassification,
-        ...(block.productRole ? { productRole: block.productRole } : {}),
-      },
     );
   }
   return sessionManager;
@@ -973,6 +977,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (projection.prompt.content.trim().length === 0) {
         throw new TypeError("RUNTIME_PROJECTION_EMPTY_PROMPT");
       }
+      const turn = turnPrompt(projection, this.#dependencies.timeZone ?? "UTC");
+      const systemPrompt = productSystemPrompt(
+        projection.systemInstruction,
+        descriptors.map((descriptor) => this.toolDefinition(descriptor)),
+      );
       const identity = createHash("sha256")
         .update(
           JSON.stringify({
@@ -1043,12 +1052,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         noThemes: true,
         noContextFiles: true,
         systemPrompt: "",
-        systemPromptOverride: () =>
-          productSystemPrompt(
-            projection.systemInstruction,
-            descriptors.map((descriptor) => this.toolDefinition(descriptor)),
-            projection.contextBlocks.filter(isOwnerMaterial),
-          ),
+        systemPromptOverride: () => systemPrompt,
         appendSystemPrompt: [],
         appendSystemPromptOverride: () => [],
         additionalExtensionPaths: authorizedPaths(resources.extensionPaths, "extensionPaths"),
@@ -1086,6 +1090,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                 )
                   return { isError: true };
               });
+            },
+          },
+          {
+            name: "himawari-system-prompt",
+            hidden: true,
+            factory: (pi: ExtensionAPI) => {
+              pi.on("before_agent_start", () => ({ systemPrompt }));
             },
           },
           {
@@ -1271,7 +1282,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           this.#dependencies.projection.captureHistory &&
           (event.type === "message_end" || event.type === "compaction_end")
         ) {
-          const messages = structuredClone(session.agent.state.messages);
+          const messages = withOwnerWords(
+            structuredClone(session.agent.state.messages),
+            turn,
+            projection.prompt.content,
+          );
           const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
             this.#dependencies.projection.captureHistory?.({
               runId: request.runId,
@@ -1335,7 +1350,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       try {
         if (restored) await session.agent.continue();
         else
-          await session.prompt(projection.prompt.content, {
+          await session.prompt(turn, {
             expandPromptTemplates: false,
             source: "extension",
             ...(projection.prompt.images?.length

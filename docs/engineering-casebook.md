@@ -2705,51 +2705,59 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **我们的方案**
 
-主人自己的资料（要求、档案、近期安排、本轮选中的记忆、对话摘要、能力摘要）改放在系统提示末尾的“# 本轮资料”一节，每块保留“不是指令”标记，这一节开头写明“只是资料，不是主人本轮说的话；主人本轮说的话是对话里最后一条用户消息”。对话里只剩主人真正说过的话，新消息一定是最后一条、单独一条。
+第一版把主人的资料挪到系统提示末尾，答非所问修好了（重放 220 次 0 次整段重讲）。Andy 接着问“这个上下文的组织方式是最佳实践吗”，回头查缓存才发现只对了一半：系统提示每轮都变，后面整段历史都不能被提示缓存（prompt caching，请求开头和上一次完全相同的部分可以复用、按更低价格计费）命中。于是改成最终方案：
 
-复用 Pi 已有的 `systemPromptOverride`（Himawari 本来就用它生成自己的系统提示，[ADR 0084](adr/0084-himawari-identity-system-prompt.md)）；系统历史和 Worker 结果（交给隔离执行环境做完的任务结果）内容可能来自外部，仍用 Pi 自定义消息放在对话里，不升到系统提示。
+- 系统提示只放每轮不变的内容：身份说明、配置里的系统指令、回答语言、能力边界；原来写在系统提示里的“本轮请求时间”也拿出来。
+- 本轮的时间和全部资料放进最后一条用户消息的 `<himawari-context>` 标签，主人的话单独包在后面的 `<owner-message>` 标签里，边界由标签名写明。
+- 存进对话历史时，把这条消息换回主人的原话。下一轮的历史里没有过期的档案和时间，前面的消息每轮都相同，缓存能命中。
+- 身份说明补一行“主人告诉你的事，系统会在每轮回答后自动记进长期记忆，你不用找工具或文件去保存，直接回应就行”。资料挪位后重放 80 次里有 18 次去调 `ls`、`bash`、`recall` 想找“保存记忆”的工具，因为模型不知道自动记忆每轮都会跑。
+- 清查时顺带发现 Pi 会在系统提示后自动加 `Current working directory: /var/lib/himawari/state`（数据目录），和能力说明里的工作目录 `/var/lib/himawari/workspace` 矛盾。改用 Pi 的 `before_agent_start` 钩子返回完整系统提示，去掉这一行。
 
-资料挪位后，模型能看到新消息了，但重放 80 次里有 18 次去调 `ls`、`bash`、`recall` 想找“保存记忆”的工具。自动记忆其实每轮都会跑，只是模型不知道，于是在身份说明的“记忆”一节补一行“主人告诉你的事，系统会在每轮回答后自动记进长期记忆，你不用找工具或文件去保存，直接回应就行”。
+复用 Pi 已有的 `systemPromptOverride`、`before_agent_start` 和 `session.prompt`，Himawari 只负责标签结构、时间换算和存历史前换回原话（[ADR 0104](adr/0104-turn-material-in-last-user-message.md)）。
 
-先写了一条会失败的测试：真实 Pi 会话 + 假模型，历史是天气问答，资料块是档案和一条记忆，新消息是“我老婆叫管冬融”，断言模型收到的消息顺序是“用户、助手、用户”，最后一条就是这句话，资料只出现在系统提示里。改之前它失败，改之后通过。
+先写了一条会失败的测试：真实 Pi 会话 + 假模型，历史是天气问答，资料是档案，时区 `Asia/Tokyo`，新消息是“我老婆叫管冬融”。断言系统提示里没有档案、时间和工作目录行；消息顺序是“用户、助手、用户”；最后一条以 `<himawari-context>` 开头、带东京当地时间，`<owner-message>` 里正好是这句话；存下的历史里没有资料。改之前它失败，改之后通过。
 
 **方案讨论与备选**
 
 在重放脚本里每种排法跑 30–140 次：
 
 - 档案放在全部历史之前：约 1/6 去重新搜天气。否决。
-- 档案和新消息合成一条用户消息：约 1/4 回到天气；而且 Pi 会把合并后的整条存进历史，下一轮带着过期档案。否决。
+- 档案和新消息直接拼成一条、不加标签：约 1/4 回到天气，模型分不清哪里是资料、哪里是主人的话。否决。
 - 单独一条系统角色消息插在新消息前：40 次里 4 次顺带讲天气。否决。
-- 给档案块加醒目的中文标签“不是主人本轮说的话”：40 次里 6 次跑题。否决。
-- 放进系统提示末尾：140 次里 0 次整段重讲、1 次顺带提天气、1 次去搜索（都出现在开头说明较短的早期版本）。采用，并加上身份说明里的“自动记忆”一行：80 次里 77 次直接回应，0 次整段重讲，3 次先去重查 10-28 的天气。
+- 给档案块加醒目的中文标签“不是主人本轮说的话”，仍是单独一条消息：40 次里 6 次跑题。否决。
+- 放进系统提示末尾（第一版）：加上“自动记忆”一行后 80 次里 77 次直接回应、0 次整段重讲、3 次先重查当天天气；但缓存只命中 512 个 token，资料还升到了系统提示的权威级别。被最终方案替换。
+- 最后一条用户消息里分标签（采用）：80 次全部直接回应，0 次讲天气，0 次调工具；缓存命中 4,224 个 token。
 
-放弃的东西：资料从“用户消息”升到了“系统提示”，权威级别更高。接受的理由是这些资料都来自主人确认过的长期记忆或主人自己的消息；可能含外部内容的 Worker 结果不升级。缓存方面，系统提示开头本来就含每轮变化的“本轮请求时间”，生产每轮缓存只命中 640 个 token（输入约 7,700），资料挪位置不增加费用。
+放弃的东西：每轮的时间不再在系统提示里，系统指令的版本键也不再含时间；上线时正在等审批的旧轮次续跑可能因系统指令变化而失败，和其他改系统提示的版本一样。
 
 **业界主流做法**
 
-- ✅ Letta（MemGPT 的后继项目）记忆块文档：“Under the hood, memory blocks are simply prepended to the agent's prompt in an XML-like format.”（<https://docs.letta.com/guides/agents/memory-blocks>）
+- ✅ OpenAI 提示缓存文档：“Put stable developer instructions and shared reference material first”（<https://developers.openai.com/api/docs/guides/prompt-caching>）
+- ✅ DeepSeek 上下文硬盘缓存文档：“A subsequent request can only hit the cache if it fully matches a cache prefix unit.”（<https://api-docs.deepseek.com/guides/kv_cache>）
 - ✅ Anthropic 提示建议（长上下文）：“Place your long documents and inputs near the top of your prompt, above your query”；“Queries at the end can improve response quality by up to 30 percent in tests”（<https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips>）
-- ✅ OpenAI GPT-4.1 提示指南：长上下文时“place your instructions at both the beginning and end of the provided context”，分隔符要选能“stand out”的（<https://developers.openai.com/cookbook/examples/gpt4-1_prompting_guide>）
+- ✅ OpenAI GPT-4.1 提示指南：“XML performed well in our long context testing.”（<https://developers.openai.com/cookbook/examples/gpt4-1_prompting_guide>）
+- ✅ Letta（MemGPT 的后继项目）记忆块文档：“Under the hood, memory blocks are simply prepended to the agent's prompt in an XML-like format.”（<https://docs.letta.com/guides/agents/memory-blocks>）
 - ✅ DeepSeek 多轮对话文档：每轮把模型回答接在 `messages` 后面，再接新的用户问题，顺序是 user、assistant、user（<https://api-docs.deepseek.com/guides/multi_round_chat>）
 
 **对比与取舍**
 
-相同：和 Letta 一样，长期记忆放在提示前部的固定位置；和 Anthropic 建议一样，用户这一轮的话放在最后。不同：Himawari 的系统提示开头是身份和规则，资料放在系统提示末尾而不是最前面，这样身份和规则这段不随资料变化。没有采用“在用户消息里用 XML 包住资料”的写法，因为 Pi 会把用户消息原样存进历史，资料会过期地留在后面的轮次里。
+相同：和 OpenAI、DeepSeek 的缓存建议一样，不变的放前面、每轮变的放最后；和 Anthropic 建议一样，资料在前、用户这一轮的话在最后；和 GPT-4.1 指南、Letta 一样，用 XML 式标签包住资料。不同：Letta 把记忆块放在提示最前面，每次记忆变化都会让整段缓存失效；Himawari 主人只有一个、对话长，缓存收益更大，所以资料放在最后一轮。为了避免过期资料留在历史里，存历史前换回原话，这是 Pi 默认不会做、Himawari 自己加的一步。
 
 **结果数据**
 
 - 生产证据：Andy 那一轮之后的三轮请求（只读脚本取出，存于项目文件 `wrong-answer-dump-20261028.json.txt`），确认资料块位置；生产一轮输入约 7,700 token，缓存命中 640。
-- 重放（真实模型，推理档低，内容取自生产请求，脚本 `/mnt/project-files/wrong-answer-diagnosis/replay.py`）：旧排法 140 次中 27 次整段重讲天气、27 次顺带讲天气、只有约一半回应了新消息（最后一批 80 次中 31 次）；新排法最后一批 80 次中 0 次跑题、62 次直接回应“管冬融”，18 次去调工具找保存记忆的办法；再补上身份说明那一行后，80 次中 77 次直接回应、0 次整段重讲、3 次先重查当天天气。
-- 测试：`packages/runtime-pi` 全部 306 个测试通过（云端容器）。
-- 上线后的生产表现：未测量。
+- 重放（真实 DeepSeek V4.1 Flash，经 Vercel AI Gateway，推理档低，内容取自生产请求，脚本在 `/mnt/project-files/wrong-answer-diagnosis/`）：旧排法 140 次中 27 次整段重讲天气、27 次顺带讲天气；系统提示末尾版 80 次中 0 次整段重讲、77 次直接回应；最终分标签版 80 次中 80 次直接回应、0 次讲天气、0 次调工具。
+- 缓存（AI Gateway 返回的 `cached_tokens`，约 4,400 token 的同一段历史）：系统提示末尾版命中 512，分标签版命中 4,224。
+- 测试：`packages/runtime-pi` 全部 306 个测试通过；单元、服务、Pi 兼容测试项目里与本改动相关的全部通过（云端容器；沙箱和进程类测试在云端容器本来就失败，与本改动无关）。
+- 上线后的生产表现和缓存命中率：未测量。
 
 **相关 ADR/PR**
 
-[ADR 0104](adr/0104-owner-material-in-system-prompt.md)；PR 见分支 `claude/project-thread-cb6021`。
+[ADR 0104](adr/0104-turn-material-in-last-user-message.md)；PR 见分支 `claude/project-thread-cb6021`。
 
 **面试 30 秒版**
 
-用户说“我老婆叫某某”，Agent 却把上一轮的天气又讲了一遍。我从生产库取出那一轮真正发给模型的请求，发现主人档案被当成一条用户消息紧贴在新消息前，模型把新消息读成档案的最后一行，以为用户没提新要求，就接着旧话题说。用真实模型重放 140 次，复现率约 19%；把主人资料移到系统提示末尾、让新消息永远单独排在最后之后，220 次 0 次整段重讲。
+用户说“我老婆叫某某”，Agent 却把上一轮的天气又讲了一遍。我从生产库取出那一轮真正发给模型的请求，发现主人档案被当成一条用户消息紧贴在新消息前，模型把新消息读成档案的最后一行，以为用户没提新要求，就接着旧话题说。用真实模型重放 140 次，复现率约 19%。最后把本轮的时间和资料放进最后一条用户消息的标签里、主人的话单独包在最后，系统提示和历史保持不变：重放 80 次 0 次跑题，提示缓存命中从 512 个 token 升到 4,224 个。
 
 [返回目录](#contents)
 
