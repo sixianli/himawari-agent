@@ -65,6 +65,8 @@ date: "2026-10-26"
   38. [主动提醒发出去就不管了：记录每条通知的送达、点开和划掉，为“该不该打扰”积累数据](#case-push-feedback)
   39. [让真模型跑 Jarvis Test：编出来的报错会被模型看穿，裁判也要先过校准](#case-jarvis-test-evals)
   40. [域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配](#case-min-tls)
+  41. [按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送](#case-optimistic-send)
+  42. [什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算](#case-memory-embedding-route)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -86,14 +88,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
@@ -2613,6 +2615,151 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 **面试 30 秒版**
 
 安全审计发现域名还接受已被 RFC 8996 禁用的 TLS 1.0 和 1.1。我先从公网测出改前确实能握手，再用一把只限这个域名、只能改域名设置、次日过期的 Token，读出原值存档、改成 1.2、读回确认，然后对三个子域名逐版本复测，确认手机安装和推送不受影响。顺带说清了一个限制：Cloudflare Access 的放行路径是前缀匹配，做不到精确，所以最后一道门要靠应用自己只认白名单文件。
+
+[返回目录](#contents)
+
+<a id="case-optimistic-send"></a>
+
+## 案例 41：按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送
+
+**背景与现象**
+
+2026-10-28 18:33（日本时间），Andy 反映：在 Himawari 网页输入问题按回车后，要卡大约两秒，消息才出现在对话里，“给人的感觉很卡顿”。这两秒里输入框里的字还在，界面没有任何反应。
+
+**根因**
+
+读了发送链路的代码（`apps/control-center/src/thread-control-center.tsx` 的 `submitDraft` 和 `performIntent`），再用真浏览器把每个请求的发出时间记下来，确认原因是：网页要等服务器把消息存好、再把整段对话重新读回来，才把消息画出来。中间是六个一个接一个的请求：
+
+1. 上传“结果存放位置”占位文字（`/api/payload/v1/text`）；
+2. 上传消息正文（同一个接口，要等第 1 个回来才发，其实两者互不依赖）；
+3. 发送命令 `thread.message.submit`；
+4. 读对话列表 `thread.list`；
+5. 读这段对话 `thread.detail`；
+6. 再按引用把刚才自己发的正文读回来（`/api/payload/v1/text/read`），这时消息才出现。
+
+服务端本身不慢：用 `production-http-composition` 单元测试的临时计时副本在本地测，上传、发命令、读对话每个请求只要 2.7–7.5 毫秒。所以时间花在六次往返上。每次往返包括网络、Cloudflare 隧道、一次等硬盘确认的会话写入，以及一次额外的外部调用：服务端认证每个请求时都会向 Cloudflare Access 的 `get-identity` 接口要一次“最近登录时间”（本地测试里每个请求 `identityCalls=1`）。生产里这一步各花多少时间没有请求日志，未测量，记为 [BL-20261028-007](backlog/BL-20261028-007-per-request-access-identity-lookup.md)。
+
+**我们的方案**
+
+1. **先上屏再发送**：按下回车的同一帧，消息就作为“发送中”出现在对话末尾（带一个时钟图标，下面跟着 Himawari 的转圈标志），输入框清空。服务器保存成功、对话重新读回后，用消息编号对上，换成正式消息，只留一份。
+2. **发送失败要看得见**：没发出去时，这条消息留在原地，标“没发出去”，旁边有“重试”。重试沿用原来的幂等键（防止重复提交的编号），服务器不会存两份。浏览器刷新后，未确认的消息也会按本地保存的待发记录显示出来；如果服务器其实已经存了，就不再显示。
+3. **少两次往返**：两次上传同时发；正文的引用拿到后直接把正文放进本地缓存，不再从服务器读回来。
+4. 新建对话也一样：创建对话、跳转、读回期间，消息一直显示，不会先闪回欢迎页或加载骨架。
+5. 界面新增的三句文字（发送中、没发出去、重试）中、英、日都有。
+
+这是纯前端的改动，不涉及 Pi（项目底层的 Agent 框架）。服务端每次都去问 Cloudflare 的那一步，等生产计时量出来再改。
+
+**方案讨论与备选**
+
+- **只减少请求次数**：把六次压成三四次，消息还是要等服务器回来才出现，网络差时照样卡。只能治一半，所以和“先上屏”一起做。
+- **服务端合并接口**（一个请求里同时上传正文和发命令）：往返最少，但要改网关协议和幂等规则，改动大；先上屏后，剩下的往返只影响“发送中”变成“已送达”的时间，不再影响手感。
+- **用 React 19 的 `useOptimistic`**：适合“动作结束就丢弃临时状态”的场景；但这里服务器确认后还要等对话读回来才能替换，中间不能闪，所以用普通状态加“按消息编号对上再删”的规则。
+- **失败时把文字退回输入框**：会和“重试”按钮各留一份，用户不知道该点哪个；改成消息留在原位标出“没发出去”并给“重试”。只有连对话都没建成（没有待发记录）时，才把文字退回输入框。
+- **立刻改掉每次请求都问 Cloudflare 的身份接口**：可能是每次往返里最大的一块，但它关系到删除对话等高风险操作的“最近登录”校验，没有生产数据就改，违反“先量再改”，放进 Backlog。
+
+**业界主流做法**
+
+- ✅ Vercel AI SDK（[`packages/ai/src/ui/chat.ts`](https://github.com/vercel/ai/blob/main/packages/ai/src/ui/chat.ts)，`useChat` 背后的实现）：`sendMessage` 先执行 `this.state.pushMessage({ role: uiMessage.role ?? 'user', ...})` 把用户消息放进列表，再 `this.setStatus({ status: 'submitted', ... })`，最后才 `await this.transport.sendMessages(...)` 发请求。文档（[useChat 参考](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat)）里状态的含义是 `"submitted" (request sent)`。
+- ✅ Open WebUI（[`src/lib/components/chat/Chat.svelte`](https://github.com/open-webui/open-webui/blob/main/src/lib/components/chat/Chat.svelte)）：`submitPrompt` 里先建 `userMessage`，再 `history.messages[userMessageId] = userMessage;`，之后才调用 `sendMessage` 去请求模型。
+- ✅ React 官方文档（[useOptimistic](https://react.dev/reference/react/useOptimistic)）：“`useOptimistic` is a React Hook that lets you optimistically update the UI.”；列表例子里每个临时条目带 `pending: true`，界面显示“(Adding...)”。
+
+**对比与取舍**
+
+和 Vercel AI SDK、Open WebUI 一样，先把用户消息放进列表再发请求。不同的是 Himawari 的消息必须先存进服务器（正文加密保存、命令带幂等键、对话有版本号），所以“发送中”要一直留到对话读回、消息编号对上；而上面两个项目的消息列表本身就以浏览器为准。代价是本地多一份“正在发送”的状态，需要处理刷新、失败、换对话三种情况，这三种都写了测试。
+
+**结果数据**
+
+- 真浏览器测量（云端容器里的 Chromium 加项目自带的界面测试服务器，人为给每个接口加 200 毫秒延迟模拟网络，脚本只记时间不读内容）：
+  - 改前：两次上传 13 毫秒和 233 毫秒发出，发命令 441 毫秒，读列表 653 毫秒，读对话 861 毫秒，之后还要读回正文，消息最早约 1.3 秒才出现（六次请求 × 约 210 毫秒）。
+  - 改后：按回车到消息出现 37–47 毫秒（中文、英文、日文、手机宽度各一次，含 Playwright 自身的检测开销）；两次上传同时在 24–32 毫秒发出，发命令提前到约 240 毫秒，读回正文这次请求没有了。
+- 服务端单个请求的本地耗时 2.7–7.5 毫秒（见根因）。生产里每次往返的实际耗时未测量；按 Andy 感受到的约 2 秒反推，每次往返约 300 毫秒。
+- 测试：新增一条组件测试，在两次上传都还没返回时就断言消息已显示、输入框已清空、两次上传都已发出；服务器确认后只剩一份、且没有读回正文。改写一条旧测试：发送失败时消息留在原位标“没发出去”，点重试会用原来的编号再发一次。`apps/control-center/test/` 下 34 个文件 502 个测试全部通过。
+
+**相关 ADR/PR**
+
+[BL-20261028-007](backlog/BL-20261028-007-per-request-access-identity-lookup.md)（每个请求都问 Cloudflare 身份接口，待量）；PR 见分支 `claude/project-thread-xpbmhj`。这次没有新 ADR：只改了发送时的显示顺序，没有改接口或数据。
+
+**面试 30 秒版**
+
+“用户说按回车后要两秒消息才出现。我顺着代码和浏览器请求时间线查，发现网页要等六个串行请求，包括上传、发命令、重新读整段对话、再把自己刚发的正文读回来，才把消息画出来，而服务端每个请求其实只要几毫秒。我照 Vercel AI SDK 和 Open WebUI 的做法改成先上屏：按回车同一帧显示‘发送中’，服务器确认后按消息编号替换；失败就原地标出并可重试，重试沿用幂等键不会重复。另外把两次上传改成并行、去掉读回。模拟每次请求 200 毫秒时，上屏从约 1.3 秒降到约 40 毫秒。”
+
+[返回目录](#contents)
+
+<a id="case-memory-embedding-route"></a>
+
+## 案例 42：什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算
+
+**背景与现象**
+
+2026-10-28 19:00 左右（日本时间），Andy 在生产网页问“搜一下今天东京的天气，简短回答”。过程时间线第一步“按这句话找到 0 条相关记忆”用了 1.4 秒（整轮 9.2 秒）。他的批注：“这里啥也没找到，为什么还耗时这么久！？排查！优化！”
+
+**根因**
+
+“找记忆”这一步做四件事：读出这句话、把它变成向量（向量化：用模型把一句话变成 4096 个数字，意思相近的话数字也相近）、在本机 SQLite 里按向量和关键词找候选、写下候选和选中结果。找到 0 条不代表没做事：比对之前必须先拿到这句话的向量。
+
+用生产数据库只读拆分了最近 40 轮的时间点（每轮已有的事件时间，加上向量化调用在额度表里记下的“开始”和“结算”时间，脚本在项目共享文件 `memory-search-latency/`）：
+
+| 环节 | 中位数 | p90 |
+| --- | --- | --- |
+| 找记忆开始 → 向量化登记 | 49 ms | 263 ms |
+| 登记 → 发出请求 | 28 ms | 70 ms |
+| **向量化网络请求** | **1392 ms** | **2288 ms** |
+| 请求结束 → 写出候选（含本机检索） | 45 ms | 124 ms |
+| 候选 → 选中 | 28 ms | 64 ms |
+| 整步合计 | 1580 ms | 2787 ms |
+
+向量化占了 88%。请求发到 Vercel AI Gateway（把多家模型供应商统一成一个接口的网关），模型是 `alibaba/qwen3-embedding-8b`。生产机在东京（Contabo 东京机房），但响应头 `x-vercel-id` 是 `hnd1::syd1`：东京的接入点把请求转到悉尼处理，网关再把请求发给美国的 DeepInfra 计算，算完原路返回。一句话的向量要绕两段跨洋网络。本机检索不是问题：在云端用 4096 维向量复现，300 条记忆检索约 13 毫秒，1000 条约 25 毫秒，生产里只有 11 条。
+
+另一个放大因素是返回格式：项目一直要求 `encoding_format: "float"`，4096 个数字写成 JSON 文本约 89 KB；同样的数字按 float32 二进制再 base64 编码只有约 22 KB。这 89 KB 要从美国的供应商传回悉尼、再传回东京。
+
+**方案讨论与备选**
+
+在生产机上用生产密钥做了一次 30 次的对比探测（每种方式 6 次，同一时段，花费约 0.00001 美元）：
+
+| 方式 | 中位数 | 区间 |
+| --- | --- | --- |
+| 每次新连接、float（等于现状） | 1048 ms | 826–1398 ms |
+| 每次新连接、base64 | 769 ms | 672–1038 ms |
+| 复用连接、float | 1022 ms | 548–1493 ms |
+| 复用连接、base64 | 677 ms | 661–1062 ms |
+| 只走 nebius 供应商、float | 2833 ms | 2122–4863 ms |
+
+- **改用 base64 返回格式**：数值逐位相同（在云端对同一句话比对，最大差 0.0），每次约省 0.2–0.3 秒，没有代价。这次就做。
+- **保持连接不断**（Node 的 fetch 底层 undici 默认空闲 4 秒就关连接，而两轮对话通常隔几分钟）：实测只省几十毫秒，还要自己管连接池，不做。
+- **换供应商**：这个模型在网关上只有 DeepInfra 和 nebius 两家，nebius 慢得多；网关在哪个机房处理请求由 Vercel 决定，我们改不了。
+- **换成别的托管向量模型**：请求照样先绕到悉尼，治标不治本，还要重建索引。
+- **在生产机本机算向量**（Qwen3-Embedding-0.6B，同家族的小模型，int8 量化）：云端 4 核实测一次查询约 90 毫秒，加载约 20 秒，进程约 1.4 GB 内存；对话内容也不再发给第三方。代价是准确度比 8B 低，要新增依赖和约 600 MB 模型文件。这是改变产品取舍的决定，交给 Andy 选（见后续）。
+
+**我们的方案**
+
+`packages/memory-engine/src/embedding.ts` 的 `GatewayEmbedder` 改为请求 `encoding_format: "base64"`，收到后按小端 float32 解码成数字数组，再交给原有的用量和向量校验；字节数不等于“维度 × 4”就报 `EMBEDDING_VECTOR_INVALID`。网关若返回数字数组也照常接受（这是同一接口规定的两种合法格式）。写入记忆时的向量化也走这条路，一起受益。
+
+**业界主流做法**
+
+- ✅ OpenAI 官方 Node SDK（[`src/lib/embeddings.ts`](https://github.com/openai/openai-node/blob/master/src/lib/embeddings.ts)）：调用方没指定格式时，SDK 主动改用 base64：“No encoding_format specified, defaulting to base64 for performance reasons.”，再在客户端解码回数字。
+- ✅ OpenAI 接口定义（[openapi.yaml](https://github.com/openai/openai-openapi/blob/master/openapi.yaml)）：`encoding_format` “The format to return the embeddings in. Can be either `float` or `base64`.”
+- ✅ Vercel AI Gateway 文档（[Provider Routing and Fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/provider-options)）：“By default, Vercel AI Gateway dynamically chooses the default providers to give you the best experience based on a combination of recent uptime and latency.” 文档只给了选供应商的 `order`、`only`，没有选处理机房的选项。
+- ✅ undici 文档（[Client.md](https://github.com/nodejs/undici/blob/main/docs/docs/api/Client.md)）：`keepAliveTimeout` “The timeout, in milliseconds, after which a socket with no active requests times out ... **Default:** `4e3`.”
+- ✅ Qwen3-Embedding-0.6B 模型卡（[Hugging Face](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)）：MTEB 多语言平均分 0.6B 为 64.33，8B 为 70.58。
+
+**对比与取舍**
+
+和 OpenAI SDK 一样默认走 base64；不同的是我们的向量化有“先登记额度、再发请求、再结算”的边界，所以在发送函数里就解码，边界之后的校验和原来完全一样。没有采用“保持连接”和“换供应商”，因为实测收益小或更慢。真正的大头是网络绕路，只能靠不走网络解决，这一步涉及准确度和内存，由 Andy 决定。
+
+**结果数据**
+
+- 生产实测（2026-10-28，最近 40 轮）：找记忆中位数 1580 ms，向量化 1392 ms；本机其他环节各约 30–50 ms。
+- 生产机同时段探测：新连接下向量化中位数 1048 ms → 769 ms（base64），约省 0.28 秒；响应体 89 KB → 22.8 KB。上线后的生产中位数未测量，上线后用同一脚本复测补到这里。
+- 云端复现：本机检索 300 条 13 ms、1000 条 25 ms；本机小模型一次查询约 90 ms（云端 4 核，不代表生产机）。
+- 测试：新增两条单元测试（请求带 base64、边界拿到解码后的数字；字节数不对时报错），改了一条请求体断言；记忆引擎和生产组合相关的 6 个单元测试文件 93 个测试通过。
+
+**相关 ADR/PR**
+
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+
+**面试 30 秒版**
+
+“用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
 
 [返回目录](#contents)
 

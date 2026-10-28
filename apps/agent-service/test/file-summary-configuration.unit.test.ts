@@ -152,7 +152,7 @@ describe("file summary qualification configuration", () => {
             model: "alibaba/qwen3-embedding-8b",
             input: instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, "图书角"),
             dimensions: 4096,
-            encoding_format: "float",
+            encoding_format: "base64",
           },
         },
       ]);

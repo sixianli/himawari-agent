@@ -165,6 +165,19 @@ function operationKey(kind: string, threadId: string, revision: number | string)
   return `op:${kind}:${revision}:${threadId.slice(-32)}`.slice(0, 128);
 }
 
+interface OutgoingSubmission {
+  readonly origin: string | null;
+  readonly threadId: string | null;
+  readonly messageId: string | null;
+  readonly content: string;
+  readonly at: string;
+  readonly failed: boolean;
+}
+
+function submittedMessageId(idempotencyKey: string): string {
+  return `message:${idempotencyKey.split(":").at(-1) ?? ""}`;
+}
+
 function mutationIdentity(
   storage: ControlCenterBrowserStorage,
   input: {
@@ -235,6 +248,7 @@ export function useThreadControlCenter(
   const [detail, setDetail] = useState<ThreadDetailSnapshot>();
   const [contentByRef, setContentByRef] = useState<Readonly<Record<string, string>>>({});
   const [draft, setDraft] = useState("");
+  const [outgoing, setOutgoing] = useState<OutgoingSubmission | null>(null);
   const [execution, setExecution] = useState<
     Readonly<Record<string, readonly ThreadExecutionRecord[]>>
   >({});
@@ -807,6 +821,18 @@ export function useThreadControlCenter(
       setError(null);
       try {
         const stableSuffix = identity.idempotencyKey.split(":").at(-1) ?? crypto.randomUUID();
+        if (intent.kind === "submit") {
+          if (!configuration.sessionId) throw new Error("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+          const messageId = submittedMessageId(identity.idempotencyKey);
+          setOutgoing((current) =>
+            current ? { ...current, threadId: thread.threadId, messageId } : current,
+          );
+        }
+        const contentRefRequest =
+          intent.kind === "submit"
+            ? client.protectText(intent.content, "private", `payload-content:${stableSuffix}`)
+            : null;
+        contentRefRequest?.catch(() => undefined);
         const resultRef = await client.protectText(
           `thread-action:${intent.kind}`,
           "private",
@@ -824,13 +850,11 @@ export function useThreadControlCenter(
           | "thread.fork";
         switch (intent.kind) {
           case "submit": {
-            if (!configuration.sessionId)
+            const contentRef = await contentRefRequest;
+            if (!contentRef || !configuration.sessionId)
               throw new Error("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
-            const contentRef = await client.protectText(
-              intent.content,
-              "private",
-              `payload-content:${stableSuffix}`,
-            );
+            payloadCache.current[contentRef] = intent.content;
+            setContentByRef((current) => ({ ...current, [contentRef]: intent.content }));
             type = intent.selection ? "thread.message.submit_configured" : "thread.message.submit";
             payload = {
               ...(intent.selection ?? {}),
@@ -963,6 +987,29 @@ export function useThreadControlCenter(
       origin ?? pendingNew?.threadId ?? "new",
     );
     const content = pendingSubmission?.content ?? draft;
+    const draftKey = origin ?? "new";
+    setOutgoing({
+      origin,
+      threadId: origin ?? pendingNew?.threadId ?? null,
+      messageId: null,
+      content,
+      at: new Date().toISOString(),
+      failed: false,
+    });
+    if (!pendingSubmission) {
+      setDraft("");
+      if (origin) storage.saveDraft(draftKey, "");
+    }
+    const settleOutgoing = (threadId: string | null) => {
+      if (threadId && storage.readPendingThreadSubmission(threadId)) {
+        setOutgoing((current) => (current ? { ...current, failed: true } : current));
+        return;
+      }
+      setOutgoing(null);
+      const stored = storage.readDraft(draftKey);
+      if (!stored) storage.saveDraft(draftKey, content);
+      if (selectedIdRef.current === origin && (!stored || stored === content)) setDraft(content);
+    };
     const selection =
       pendingSubmission?.selection ??
       (selectedModel
@@ -1004,12 +1051,16 @@ export function useThreadControlCenter(
           throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
         target = snapshot.payload.thread;
       }
-      if (!target) return;
+      if (!target) {
+        settleOutgoing(null);
+        return;
+      }
       const result = await performIntent(
         { kind: "submit", content, ...(selection ? { selection } : {}) },
         undefined,
         target,
       );
+      if (result?.kind !== "result") settleOutgoing(target.threadId);
       if (result?.kind === "result" && !origin) {
         storage.clearPendingThreadMutation("new-draft-create");
         if (storage.readDraft("new") === content) storage.saveDraft("new", "");
@@ -1023,6 +1074,7 @@ export function useThreadControlCenter(
         }
       }
     } catch (caught) {
+      settleOutgoing(null);
       if (origin !== selectedIdRef.current) return;
       setMutationStatus("rejected");
       setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
@@ -1246,6 +1298,35 @@ export function useThreadControlCenter(
   const unresolvedSubmission = storage.readPendingThreadSubmission(
     selectedThreadId ?? pendingCreation?.threadId ?? "new",
   );
+  const committedMessageIds = useMemo(
+    () => new Set(detail?.payload.messages.map((item) => item.messageId) ?? []),
+    [detail],
+  );
+  useEffect(() => {
+    if (outgoing?.messageId && committedMessageIds.has(outgoing.messageId)) setOutgoing(null);
+  }, [committedMessageIds, outgoing]);
+  const unresolvedMessageId = (() => {
+    if (!unresolvedSubmission) return null;
+    const identity = storage.readPendingThreadMutation(
+      operationKey("submit", unresolvedSubmission.threadId, "pending"),
+    );
+    return identity ? submittedMessageId(identity.idempotencyKey) : null;
+  })();
+  const shownOutgoing =
+    outgoing &&
+    (outgoing.origin === selectedThreadId || outgoing.threadId === selectedThreadId) &&
+    !(outgoing.messageId && committedMessageIds.has(outgoing.messageId))
+      ? { key: outgoing.at, content: outgoing.content, failed: outgoing.failed }
+      : unresolvedSubmission &&
+          detail &&
+          mutationStatus !== "pending" &&
+          !(unresolvedMessageId && committedMessageIds.has(unresolvedMessageId))
+        ? {
+            key: unresolvedSubmission.threadId,
+            content: unresolvedSubmission.content,
+            failed: true,
+          }
+        : null;
 
   const titles = useMemo(
     () => (detail ? turnTitles(detail.payload.messages, contentByRef) : {}),
@@ -1445,15 +1526,17 @@ export function useThreadControlCenter(
       ) : (
         <div className="thread-content">
           {feedback}
-          {!detail && selectedThreadId ? (
+          {!detail && selectedThreadId && !shownOutgoing ? (
             <ThreadLoadingSkeleton scope="conversation" />
-          ) : !detail ? (
+          ) : !detail && !shownOutgoing ? (
             <ThreadWelcome name={options.ownerName} message={message} />
           ) : (
             <>
               <ChatHistory
-                key={detail.payload.thread.threadId}
+                key={detail?.payload.thread.threadId ?? selectedThreadId ?? "new"}
                 detail={detail}
+                outgoing={shownOutgoing}
+                onRetry={() => void submitDraft()}
                 contentByRef={contentByRef}
                 execution={execution}
                 executionStates={currentExecutionStates}
@@ -1576,6 +1659,7 @@ export function useThreadControlCenter(
               ) : null
             }
             canSend={
+              !(shownOutgoing && !shownOutgoing.failed) &&
               (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
               (Boolean(unresolvedSubmission) ||
                 ((!detail || detail.payload.thread.status === "active") &&

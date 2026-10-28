@@ -3654,6 +3654,29 @@ code.more-row-name {
 .preview-versions[aria-expanded="true"] .line-icon {
   transform: rotate(-90deg);
 }
+.owner-tick.is-sending {
+  stroke: var(--text-muted);
+}
+output.owner-status {
+  align-items: center;
+  gap: 4px;
+}
+.owner-meta-failed {
+  color: var(--danger);
+}
+.owner-retry {
+  border: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.owner-retry:hover,
+.owner-retry:focus-visible {
+  background: var(--surface-muted);
+}
 .preview-tool {
   position: relative;
   flex: none;
