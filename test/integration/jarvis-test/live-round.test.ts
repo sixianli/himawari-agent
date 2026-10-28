@@ -25,7 +25,7 @@ interface LiveEnvironment {
 
 const environment = process.env as unknown as LiveEnvironment;
 const LIVE = environment.HIMAWARI_JARVIS_LIVE === "1";
-const DEFAULT_TOKEN_LIMIT = 2_000_000;
+const DEFAULT_TOKEN_LIMIT = 2_500_000;
 const PARALLEL_CASES = 3;
 const ROUND_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const PROXY_INJECTED_KEY = "proxy-injected";

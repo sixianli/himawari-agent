@@ -110,11 +110,20 @@ describe("Jarvis Test score history", () => {
     expect(text).toContain("费用 未测量");
   });
 
-  it("prints an empty-history notice from the npm script", () => {
+  it("explains an empty history instead of printing a blank trend", () => {
+    expect(renderTrend([])).toContain("还没有真模型评测记录");
+  });
+
+  it("prints every committed round from the npm script", () => {
     const output = execFileSync(process.execPath, ["scripts/jarvis-test/trend.mjs"], {
       encoding: "utf8",
     });
-    expect(output).toContain("还没有真模型评测记录");
+    const rounds = readFileSync("evals/jarvis-test/history.jsonl", "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line));
+    expect(rounds.length).toBeGreaterThan(0);
+    for (const round of rounds) expect(output).toContain(`提交 ${round.commit.slice(0, 7)}`);
   });
 
   it("refuses a live round when no gateway key can reach the request", () => {
