@@ -216,6 +216,28 @@ describe("ProductionBackgroundCommands", () => {
     expect(background.held(bash.runId).map((hold) => hold.taskRef)).toEqual([ref]);
   });
 
+  it("keeps only the command's own output lines for the web, not the tool envelope", async () => {
+    const { background, receipt } = commands();
+    const command = controlled();
+    await background.run(bash, undefined, command.execute, receipt);
+    const settled = background.settled(bash.runId);
+    command.resolve(
+      finished(
+        JSON.stringify({
+          schemaVersion: "pi-result.v1",
+          tool: "bash",
+          isError: false,
+          content: [{ type: "text", text: "Test Files  3 passed\nTests  42 passed\n" }],
+          details: {},
+          fullOutput: null,
+          commandExitCode: 0,
+          source: { toolCallId: "call-tests" },
+        }),
+      ),
+    );
+    expect((await settled)[0]?.output).toBe("Test Files  3 passed\nTests  42 passed");
+  });
+
   it("[BG-2] marks a requested stop and lets another Run of the same thread read it", async () => {
     const { background, receipt } = commands();
     const command = controlled();
