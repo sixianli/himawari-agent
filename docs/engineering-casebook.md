@@ -59,6 +59,7 @@ date: "2026-10-26"
   32. [iPhone 上输入框贴底、上方多出一条灰色横条：安全区和横向滚动](#case-ios-safe-area-scrollbar)
   34. [模型写贪吃蛇时命令报“只读文件系统”：放开工作目录写入，每条命令留改动记录](#case-bash-workspace-write)
   35. [生产机没有防火墙，安全只靠“恰好没人监听公网”：启用 ufw 只留 SSH](#case-prod-firewall)
+  36. [对话做出的文件和后台命令放进同一个“更多”栏，不在对话里抢注意力](#case-more-panel)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -87,7 +88,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[文件和后台命令的“更多”栏](#case-more-panel) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
@@ -2205,6 +2206,68 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **面试 30 秒版**
 
 安全审计时外部只看到 22 端口开着，看起来没问题；但登录服务器发现根本没有防火墙，“只开 22”只是因为恰好只有 sshd 监听公网。我们的 Agent 能执行命令，任何一个临时服务都可能直接暴露并绕过登录网关。于是启用主机防火墙只放行 SSH，业务流量本来就走出站的 Cloudflare 隧道；执行时先设 10 分钟自动关闭的保险再启用，验证新连接后才取消，零停服完成。
+
+[返回目录](#contents)
+
+<a id="case-more-panel"></a>
+
+## 案例 36：对话做出的文件和后台命令放进同一个“更多”栏，不在对话里抢注意力
+
+**背景与现象**
+
+2026-10-28，长命令自动转后台的改动（PR #63）原计划把后台命令的状态和“停止”按钮放在回答下方。Andy 看原型时提出：后台命令应该和对话做出的文件一样，收进对话的“更多”栏，“不直接在线程用户界面展示抢用户注意力”；并且要求两者“一起出一个完美的综合设计，而不是分别设计的中间状态”，兼顾手机和电脑。同时，文件交付本身也有缺口：回答下方的文件卡片只认 `write`、`edit` 两个工具的参数（最多 64 KiB），模型用命令做出的文件看不到，网关也没有任何能返回文件内容的接口。
+
+**根因**
+
+这是一个设计问题，不是故障。两类信息都是“这一轮做了什么”的附属结果，本来就该从主界面退到次要位置；如果各自设计一个入口，界面上会出现两个按钮、两种侧栏，同一轮里“命令”和“命令写出的文件”也连不起来。文件交付的缺口由代码确认：`apps/control-center/src/turn-files.ts` 只读 `write`、`edit` 的输入；命令的改动记录（ADR 0097）只存加密的过程记录，不留文件副本，也不发给浏览器；`packages/platform-node/src/http-gateway-server.ts` 里没有返回文件字节的路由，安全策略是 `default-src 'none'`、`frame-ancestors 'none'`。
+
+**我们的方案**
+
+- 标题栏右端一个“更多”按钮，按钮上只显示正在运行的后台命令个数；对话里还没有文件和命令时按钮不出现，某一页没内容时那一页不出现。
+- 栏里两页：“产物”和“后台命令”，都按轮次分组，命令详情里列它改动的文件，文件预览里写“来自第 N 轮”，两页可以互相跳转。
+- 电脑上是右侧 400 像素的一栏，和已有的文件预览（ADR 0091）共用这一栏；手机上是底部抽屉，可停在半屏和全屏，文件预览全屏打开。
+- 主界面只留两处轻提示：转后台的那一轮回答下面一行灰字，系统自动汇报那一轮前面一条灰色分隔线。
+- 侧栏“记忆”下面新增“文件”页，跨对话按类型和文件名找文件。
+- 后端：新的产物登记表给每个文件的每个版本留加密副本；读文件接口要登录、只按编号放行；模型做的网页文件放在单独的子域名里、用签名链接和 `sandbox` 隔离运行，拿不到主站的登录信息。
+- Pi 复用：文件是 Pi 自带的 `write`、`edit`、`bash` 工具做出来的，不另造工具；Himawari 只负责登记、加密存储、登录校验和隔离预览这些 Pi 不管的部分。
+
+**方案讨论与备选**
+
+- 方案 A，后台命令留在回答下方、文件卡片照旧：不用新栏，但命令状态常驻在对话里抢注意力，Andy 明确不要。不采用。
+- 方案 B，产物和后台命令各开一个入口：各自简单，但就是 Andy 不要的“分别设计的中间状态”。不采用。
+- 方案 C，一个“更多”栏两页、轮次互跳、电脑右侧栏、手机底部抽屉：一个入口，复用 ADR 0091 的预览栏；代价是要新做登记表、读文件接口和隔离预览。采用。
+- 方案 D，一个常驻右栏放所有运行信息：信息最全，但违反设计基线里“不新增通用详情侧栏”的规定，也抢注意力。不采用。
+- 放弃的部分：后台命令的实时输出先不做（BL-20261027-011）；文件页先不收用户上传的附件。
+
+**业界主流做法**
+
+以下页面在 2026-10-28 打开过。
+
+- ✅ Claude Code 桌面版：后台任务栏“shows the background work running inside the current session”，并且“listed once the session has something to show”。[Claude Code 桌面版文档](https://code.claude.com/docs/en/desktop)
+- ✅ Claude Code 命令行：“a ⧉ pill below the prompt shows the artifact’s name, or a count when the session has several”。[Claude Code Artifacts 文档](https://code.claude.com/docs/en/artifacts)
+- ✅ Claude 网页和 App：“Everything you make is saved to the Artifacts tab in your Claude sidebar”。[What are artifacts](https://support.claude.com/en/articles/17153992-what-are-artifacts-and-how-do-i-use-them)
+- 🟡 ChatGPT 的 Library 在侧栏，可按来源和文件类型筛选、按文件名搜索；页面返回 403，只核对到官方搜索摘要。[Library for ChatGPT](https://help.openai.com/en/articles/20001052-library-for-chatgpt)
+- ✅ Codex 命令行 `/ps`“shows each background terminal’s command plus up to three recent, non-empty output lines”。[Codex 斜杠命令](https://developers.openai.com/codex/cli/slash-commands)
+- ✅ Devin 的命令历史里点一条命令就跳到会话里那一刻。[Devin session tools](https://docs.devin.ai/work-with-devin/devin-session-tools)
+- ✅ Apple 设计规范：底部抽屉可停在几档高度，“medium is about half of the fully expanded height”。[HIG Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets)
+- Manus、Cursor、Antigravity 没找到能打开的一手文档，没有采用。
+
+**对比与取舍**
+
+入口和“没东西就不显示”学 Claude Code 桌面版；按钮上只给一个数字学 Claude Code 的小标；侧栏文件页学 Claude 的 Artifacts 标签和 ChatGPT 的 Library；命令和对话互跳学 Devin；手机抽屉照 Apple 规范。和这些产品不同的是，它们把文件和后台任务分在两个地方，Himawari 放进同一个栏、用轮次连起来，因为个人 Agent 的一段对话里，一条命令和它写出的文件本来是一件事。代价是要自己做文件登记和隔离预览；网页文件放单独子域名、不放进登录拦截，靠 5 分钟过期的签名链接把关，要改 Cloudflare 设置，需要 Andy 批准。
+
+**结果数据**
+
+- 设计：电脑和手机原型、中英日三种语言、三个场景，Andy 2026-10-28 11:44（日本时间）批准：“原型和方案都审核了，全部按照你的设计和推荐来做！”定稿副本在 `docs/assets/control-center/2026-10-28-v8/`。
+- 实现后的效果：未测量（实施计划见下）。
+
+**相关 ADR/PR**
+
+[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+
+**面试 30 秒版**
+
+Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，放在对话里会抢注意力。我调研了 Claude、ChatGPT、Codex、Devin 的一手文档，把两者收进同一个“更多”栏：按钮只显示运行中的命令数，栏里按轮次把命令和它写出的文件连起来；电脑用右侧栏，手机用半屏抽屉。后端补上文件登记和登录校验的读文件接口，模型做的网页放在单独子域名的沙箱里运行，拿不到主站登录信息。
 
 [返回目录](#contents)
 
