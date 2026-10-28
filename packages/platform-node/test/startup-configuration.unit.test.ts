@@ -453,6 +453,34 @@ describe("strict product configuration", () => {
     );
     const parsed = parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
     expect(parsed.http).toEqual(input["http"]);
+    const http = input["http"] as Record<string, unknown>;
+    expect(
+      parseProductConfiguration(
+        { ...input, http: { ...http, previewOrigin: "https://files.example.test" } },
+        "2026-08-27T00:00:00.000Z",
+      ).http?.previewOrigin,
+    ).toBe("https://files.example.test");
+    for (const previewOrigin of [
+      "http://files.example.test",
+      "https://files.example.test/",
+      "https://files.example.test/preview",
+      "https://user@files.example.test",
+      "files.example.test",
+      new URL(String(input["publicOrigin"])).origin,
+    ]) {
+      expect(
+        () =>
+          parseProductConfiguration(
+            { ...input, http: { ...http, previewOrigin } },
+            "2026-08-27T00:00:00.000Z",
+          ),
+        previewOrigin,
+      ).toThrowError(
+        expect.objectContaining({
+          details: expect.objectContaining({ field: "configuration.http.previewOrigin" }),
+        }),
+      );
+    }
     expect(parsed.identity).toMatchObject({
       issuer: "https://team.cloudflareaccess.com",
       jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",

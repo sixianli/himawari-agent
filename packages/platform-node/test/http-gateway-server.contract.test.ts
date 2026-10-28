@@ -12,7 +12,12 @@ import {
   type GatewayCommandExecution,
   type GatewayControlPlanePort,
   type GatewayReadModelPort,
+  type PayloadProtectorPort,
+  type PayloadRecord,
+  type PayloadStorePort,
   PORT_ERROR_CODES,
+  type ThreadArtifact,
+  type ThreadArtifactStorePort,
 } from "@himawari-agent/application";
 import {
   type EventSubscription,
@@ -30,6 +35,7 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { BrowserThreadFiles } from "../src/browser-thread-files.js";
 import {
   buildHttpGatewayServer,
   HTTP_GATEWAY_ERROR_CODES,
@@ -261,6 +267,8 @@ function createFixture(
     | "payloadRead"
     | "threadSearch"
     | "heartbeatMilliseconds"
+    | "files"
+    | "previewOrigin"
   > = {},
 ) {
   const access = new AccessPolicy();
@@ -1366,6 +1374,280 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect([svg.statusCode, text.statusCode]).toEqual([400, 400]);
     expect([400, 413]).toContain(huge.statusCode);
     expect(calls).toEqual([`text/x-himawari-image:${photo.length}`]);
+  });
+
+  it("[FD-2] [FD-3] serves delivered files only to the signed-in owner and previews HTML on its own origin", async () => {
+    const PREVIEW = "https://files.example.test";
+    let clock = NOW;
+    const artifacts: ThreadArtifact[] = [
+      ["file-html-1", "game/index.html", "web", "text/html", 1],
+      ["file-html-2", "game/index.html", "web", "text/html", 2],
+      ["file-png", "out/图表.png", "image", "image/png", 1],
+    ].map(([id, path, kind, mediaType, version]) => ({
+      id: id as string,
+      threadId: "thread-01",
+      runId: "run-01",
+      toolCallId: `call-${id}`,
+      source: "bash",
+      path: path as string,
+      kind: kind as ThreadArtifact["kind"],
+      mediaType: mediaType as string,
+      sizeBytes: 5,
+      sha256: null,
+      version: version as number,
+      turn: 2,
+      copyRef: `copy-${id}`,
+      overlapped: false,
+      createdAt: NOW,
+    }));
+    const store: ThreadArtifactStorePort = {
+      register: async () => {
+        throw new Error("unused");
+      },
+      latest: async () => null,
+      get: async ({ id }) => artifacts.find((artifact) => artifact.id === id) ?? null,
+      versions: async ({ path }) => artifacts.filter((artifact) => artifact.path === path),
+      list: async () => ({ items: artifacts, nextCursor: null }),
+    };
+    const payloads = {
+      get: async (ref: string) => ({ ref }) as unknown as PayloadRecord,
+    } as unknown as PayloadStorePort;
+    const protector = {
+      unprotect: async ({ payload }: { payload: { ref: string } }) =>
+        new TextEncoder().encode(`bytes:${payload.ref}`),
+    } as unknown as PayloadProtectorPort;
+    const files = new BrowserThreadFiles({
+      ownerId: "owner-01",
+      agentId: "agent-01",
+      store,
+      payloads: () => payloads,
+      protector,
+      previewOrigin: PREVIEW,
+      ticketKey: new Uint8Array(32).fill(7),
+      now: () => clock,
+      commandKey: (runId, toolCallId) => `background-command:${runId}:${toolCallId}`,
+    });
+    const { app } = createFixture(undefined, undefined, {
+      browserConfiguration: {
+        agentId: "agent-01",
+        deploymentId: "deployment-01",
+        authorityEpoch: 1,
+        fencingToken: 1,
+      },
+      files,
+      previewOrigin: PREVIEW,
+    });
+    const contentHeaders = {
+      host: "agent.example.test",
+      "sec-fetch-site": "same-origin",
+      "cf-access-jwt-assertion": "assertion-01",
+      cookie: "himawari_session=session-token-01",
+    };
+
+    const list = await app.inject({
+      method: "POST",
+      url: "/api/files/v1/list",
+      headers: requestHeaders(),
+      payload: { kind: "web", limit: 20 },
+    });
+    expect(list.statusCode).toBe(200);
+    expect(
+      list.json().items.map(({ id, name, stored }: Record<string, unknown>) => [id, name, stored]),
+    ).toEqual([
+      ["file-html-1", "index.html", true],
+      ["file-html-2", "index.html", true],
+      ["file-png", "图表.png", true],
+    ]);
+    expect(list.json().items[0]).not.toHaveProperty("copyRef");
+    expect(list.json().items[0]).toMatchObject({
+      turn: 2,
+      commandKey: "background-command:run-01:call-file-html-1",
+    });
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/files/v1/list",
+          headers: omitHeader(requestHeaders(), "x-csrf-token"),
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/files/v1/list",
+          headers: requestHeaders(),
+          payload: { path: "/etc/passwd" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    const versions = await app.inject({
+      method: "POST",
+      url: "/api/files/v1/versions",
+      headers: requestHeaders(),
+      payload: { fileId: "file-html-2" },
+    });
+    expect(versions.json().items.map(({ version }: { version: number }) => version)).toEqual([
+      1, 2,
+    ]);
+
+    const signedOut = await app.inject({
+      method: "GET",
+      url: "/api/files/v1/content/file-png",
+      headers: { host: "agent.example.test" },
+    });
+    expect(signedOut.statusCode).toBe(401);
+    const image = await app.inject({
+      method: "GET",
+      url: "/api/files/v1/content/file-png",
+      headers: contentHeaders,
+    });
+    expect(image.statusCode).toBe(200);
+    expect(image.body).toBe("bytes:copy-file-png");
+    expect(image.headers["content-type"]).toBe("image/png");
+    expect(image.headers["content-disposition"]).toBe(
+      `inline; filename="__.png"; filename*=UTF-8''${encodeURIComponent("图表.png")}`,
+    );
+    expect(image.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    expect(image.headers["cache-control"]).toBe("private, no-store");
+    const htmlOnMainSite = await app.inject({
+      method: "GET",
+      url: "/api/files/v1/content/file-html-2",
+      headers: contentHeaders,
+    });
+    expect(htmlOnMainSite.headers["content-disposition"]).toMatch(/^attachment;/);
+    const download = await app.inject({
+      method: "GET",
+      url: "/api/files/v1/content/file-png?download=1",
+      headers: contentHeaders,
+    });
+    expect(download.headers["content-disposition"]).toMatch(/^attachment;/);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/files/v1/content/file-png",
+          headers: { ...contentHeaders, "sec-fetch-site": "cross-site" },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/files/v1/content/missing",
+          headers: contentHeaders,
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/files/v1/content/..%2F..%2Fetc%2Fpasswd",
+          headers: contentHeaders,
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    const imageTicket = await app.inject({
+      method: "POST",
+      url: "/api/files/v1/preview-ticket",
+      headers: requestHeaders(),
+      payload: { fileId: "file-png" },
+    });
+    expect(imageTicket.statusCode).toBe(404);
+    const ticketResponse = await app.inject({
+      method: "POST",
+      url: "/api/files/v1/preview-ticket",
+      headers: requestHeaders(),
+      payload: { fileId: "file-html-2" },
+    });
+    const ticket = ticketResponse.json() as { url: string; expiresAt: string };
+    expect(ticket.url.startsWith(`${PREVIEW}/preview/`)).toBe(true);
+    expect(ticket.expiresAt).toBe("2026-08-27T00:05:00.000Z");
+    const previewPath = new URL(ticket.url).pathname;
+    const preview = await app.inject({
+      method: "GET",
+      url: previewPath,
+      headers: { host: "files.example.test" },
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.body).toBe("bytes:copy-file-html-2");
+    expect(preview.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(preview.headers["content-security-policy"]).toMatch(
+      /^sandbox allow-scripts allow-modals allow-popups allow-downloads; /,
+    );
+    expect(preview.headers["content-security-policy"]).toContain(`frame-ancestors ${ORIGIN}`);
+    expect(preview.headers["content-security-policy"]).toContain("connect-src 'none'");
+    expect(preview.headers["set-cookie"]).toBeUndefined();
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: previewPath,
+          headers: { host: "agent.example.test" },
+        })
+      ).statusCode,
+    ).toBe(404);
+    const [body, signature] = previewPath.slice("/preview/".length).split(".");
+    const forged = Buffer.from(JSON.stringify(["file-png", "2099-01-01T00:00:00.000Z"])).toString(
+      "base64url",
+    );
+    for (const url of [
+      `/preview/${forged}.${signature}`,
+      `/preview/${body}.${"A".repeat(signature?.length ?? 43)}`,
+      "/api/files/v1/content/file-png",
+      "/",
+      "/assets/app.js",
+    ]) {
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url,
+            headers: { ...contentHeaders, host: "files.example.test" },
+          })
+        ).statusCode,
+      ).toBe(404);
+    }
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/files/v1/list",
+          headers: { ...requestHeaders(), host: "files.example.test" },
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(404);
+    clock = "2026-08-27T00:05:00.000Z";
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: previewPath,
+          headers: { host: "files.example.test" },
+        })
+      ).statusCode,
+    ).toBe(404);
+    const mainPage = await app.inject({
+      method: "GET",
+      url: "/",
+      headers: { host: "agent.example.test" },
+    });
+    expect(mainPage.headers["content-security-policy"]).toContain(`frame-src 'self' ${PREVIEW};`);
+    const configuration = await app.inject({
+      method: "GET",
+      url: "/api/control-center/v1/config",
+      headers: requestHeaders(),
+    });
+    expect(configuration.json()).toMatchObject({
+      filesAvailable: true,
+      filePreviewAvailable: true,
+    });
   });
 
   it("does not advertise a session reference as recent authentication proof", async () => {

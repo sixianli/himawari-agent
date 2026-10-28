@@ -4,19 +4,20 @@ import type {
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import type { BackgroundCommandView } from "../background-commands.js";
+import type { DeliveredFile } from "../delivered-files.js";
 import { formatBytes, splitDraft } from "../draft-attachments.js";
 import { executionTimeline, timelineDuration } from "../execution-timeline.js";
-import type { BackgroundCommandView } from "../background-commands.js";
 import type { RunSummary } from "../execution-view.js";
 import { executionItems, isAnsweredRun, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import { turnFiles } from "../turn-files.js";
 import { turnSources, turnUsage } from "../turn-summary.js";
-import { AnswerActions, AnswerFiles, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
+import { AnswerActions, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { AttachmentThumb } from "./attachment-thumb.js";
 import { HimawariBrand } from "./brand.js";
-import { type ContentPreviewValue, previewOfFile } from "./content-preview.js";
+import type { ContentPreviewValue } from "./content-preview.js";
+import { DeliveredFileCards } from "./delivered-file.js";
 import { ExecutionProcess } from "./execution-process.js";
 import { BackgroundCommandLine, BackgroundReportLine } from "./more-panel.js";
 import { ActionButton } from "./primitives.js";
@@ -37,6 +38,9 @@ export function ChatHistory({
   stoppingRunIds = [],
   onOpenCommand,
   onPreview,
+  onOpenFile,
+  onMoreFiles,
+  filesByRun = {},
   previewKey,
   readImage,
   renderApproval,
@@ -52,6 +56,9 @@ export function ChatHistory({
   readonly renderApproval: (runId: string, records: readonly ThreadExecutionRecord[]) => ReactNode;
   readonly renderMemory?: ((ownerRefs: readonly string[]) => ReactNode) | undefined;
   readonly onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
+  readonly onOpenFile?: ((file: DeliveredFile) => void) | undefined;
+  readonly onMoreFiles?: (() => void) | undefined;
+  readonly filesByRun?: Readonly<Record<string, readonly DeliveredFile[]>> | undefined;
   readonly previewKey?: string | undefined;
   readonly readImage?: ((ref: string) => Promise<string>) | undefined;
   readonly onCleanup?: ((run: RunSummary) => void) | undefined;
@@ -242,11 +249,12 @@ export function ChatHistory({
                     />
                   ) : null}
                   <AnswerSources sources={turnSources(records)} message={message} />
-                  {group.run && onPreview ? (
-                    <AnswerFiles
-                      files={turnFiles(group.run.runId, records)}
+                  {group.run && onOpenFile ? (
+                    <DeliveredFileCards
+                      files={filesByRun[group.run.runId] ?? []}
                       openKey={previewKey}
-                      onOpen={(file) => onPreview(previewOfFile(file))}
+                      onOpen={onOpenFile}
+                      onMore={onMoreFiles}
                       message={message}
                     />
                   ) : null}

@@ -1,7 +1,11 @@
 import {
   type GovernedActionIntent,
+  HOST_READ_ONLY_ERROR_CODES,
+  HostReadOnlyError,
   type PermissionDecision,
   type RuntimeToolInvocation,
+  type ThreadArtifact,
+  type ThreadArtifactStorePort,
   validateGovernedActionIntent,
 } from "@himawari-agent/application";
 import { describe, expect, it, vi } from "vitest";
@@ -11,6 +15,7 @@ import type {
   FileReadExecutionContext,
   ProductionFileReadServices,
 } from "../src/production-file-read-workflow.js";
+import { ProductionThreadArtifacts } from "../src/production-thread-artifacts.js";
 import { WebToolMemory } from "../src/web-tool-memory.js";
 import { invocation, now, runtimeToolFixture } from "./runtime-tools.fixture.js";
 
@@ -1041,4 +1046,189 @@ it("[BW-3] keeps the command result and notes a failed change record", async () 
   expect(f.values.get("workspace-changes")).toMatchObject({
     errorCode: "HOST_READ_ROOT_IDENTITY_CHANGED",
   });
+});
+
+function memoryArtifactStore() {
+  const rows: ThreadArtifact[] = [];
+  const latest = (threadId: string, path: string) =>
+    rows
+      .filter((row) => row.threadId === threadId && row.path === path)
+      .sort((left, right) => right.version - left.version)[0] ?? null;
+  const store: ThreadArtifactStorePort = {
+    register: async ({ artifact }) => {
+      const replayed = rows.find(
+        (row) =>
+          row.runId === artifact.runId &&
+          row.toolCallId === artifact.toolCallId &&
+          row.path === artifact.path,
+      );
+      if (replayed) return { artifact: replayed, created: false };
+      const previous = latest(artifact.threadId, artifact.path);
+      if (previous && artifact.sha256 !== null && previous.sha256 === artifact.sha256)
+        return { artifact: previous, created: false };
+      const row = { ...artifact, version: (previous?.version ?? 0) + 1, turn: 1 };
+      rows.push(row);
+      return { artifact: row, created: true };
+    },
+    latest: async ({ threadId, path }) => latest(threadId, path),
+    get: async ({ id }) => rows.find((row) => row.id === id) ?? null,
+    versions: async ({ threadId, path }) =>
+      rows.filter((row) => row.threadId === threadId && row.path === path),
+    list: async () => ({ items: rows, nextCursor: null }),
+  };
+  return { rows, store };
+}
+
+function artifactFixture(files: Record<string, string>) {
+  const { f, ledger, services, call } = ledgerFixture();
+  const { rows, store } = memoryArtifactStore();
+  let counter = 0;
+  const readFile = vi.fn(async ({ relativePath }: { relativePath: string }) => {
+    const content = files[relativePath];
+    if (content === undefined) throw new HostReadOnlyError(HOST_READ_ONLY_ERROR_CODES.PROTECTED);
+    return new TextEncoder().encode(content);
+  });
+  const threadArtifacts = new ProductionThreadArtifacts({
+    store,
+    files: { readFile },
+    ids: { next: (scope) => `${scope}:${++counter}` },
+    now: () => now,
+    warn: () => {},
+  });
+  const copies = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  f.ctx.saveCopy = async (key, bytes, contentType) => {
+    copies.set(key, { bytes, contentType });
+    return { ref: `copy:${key}` };
+  };
+  const withArtifacts = { ...services, threadArtifacts } as typeof services;
+  return { f, ledger, services: withArtifacts, call, rows, copies, readFile, threadArtifacts };
+}
+
+const ledgerRecord = (changes: readonly Record<string, unknown>[]) => ({
+  version: "workspace-changes.v1" as const,
+  complete: true,
+  beforeScanMs: 3,
+  afterScanMs: 4,
+  changes,
+  summary: "工作目录改动：新建 game/index.html",
+});
+
+const fileChange = (path: string, change = "created", size = 5) => ({
+  path,
+  kind: "file",
+  change,
+  before: null,
+  after: { size: String(size), modifiedAtNs: "1", sha256: null },
+});
+
+it("[FD-1] registers files a command created or changed and keeps an encrypted copy", async () => {
+  const { f, ledger, services, call, rows, copies } = artifactFixture({
+    "game/index.html": "<html>",
+    "node_modules/x/a.js": "x",
+  });
+  ledger.record.mockResolvedValue(
+    ledgerRecord([
+      fileChange("game/index.html"),
+      fileChange("node_modules/x/a.js"),
+      fileChange("old.txt", "deleted"),
+      { ...fileChange("game"), kind: "directory" },
+    ]) as never,
+  );
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(rows).toMatchObject([
+    {
+      threadId: f.binding.threadId,
+      runId: call.runId,
+      toolCallId: call.toolCallId,
+      source: "bash",
+      path: "game/index.html",
+      kind: "web",
+      mediaType: "text/html",
+      sizeBytes: 6,
+      version: 1,
+      overlapped: false,
+    },
+  ]);
+  expect(rows[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
+  expect([...copies.values()]).toMatchObject([{ contentType: "text/html" }]);
+  expect(rows[0]?.copyRef).toBe(`copy:${[...copies.keys()][0]}`);
+});
+
+it("[FD-1] records one version per command end and none when the content did not change", async () => {
+  const files: Record<string, string> = { "notes.md": "one" };
+  const { f, ledger, services, call, rows, copies } = artifactFixture(files);
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("notes.md", "modified")]) as never);
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  const second = { ...call, toolCallId: "tool:second" };
+  f.values.clear();
+  await executeProductionCodingRequest(second, "bash", services, f.ctx);
+  expect(rows).toHaveLength(1);
+  expect(copies.size).toBe(1);
+  files["notes.md"] = "two";
+  const third = { ...call, toolCallId: "tool:third" };
+  f.values.clear();
+  await executeProductionCodingRequest(third, "bash", services, f.ctx);
+  expect(rows.map(({ version, toolCallId }) => [version, toolCallId])).toEqual([
+    [1, call.toolCallId],
+    [2, "tool:third"],
+  ]);
+});
+
+it("[FD-1] marks a version when another command ran in the same directory at the same time", async () => {
+  const { f, ledger, services, call, rows, threadArtifacts } = artifactFixture({ "out.csv": "a" });
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("out.csv")]) as never);
+  const finishOther = threadArtifacts.begin(f.binding.grant.id);
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(finishOther()).toBe(true);
+  expect(rows).toMatchObject([{ path: "out.csv", kind: "data", overlapped: true }]);
+});
+
+it("[FD-1] registers a file without a copy when it is over the copy limit", async () => {
+  const { f, ledger, services, call, rows, copies, readFile } = artifactFixture({});
+  ledger.record.mockResolvedValue(
+    ledgerRecord([
+      {
+        ...fileChange("video.bin", "created", 40 * 1024 * 1024),
+        after: { size: String(40 * 1024 * 1024), modifiedAtNs: "1", sha256: null },
+      },
+    ]) as never,
+  );
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(readFile).not.toHaveBeenCalled();
+  expect(copies.size).toBe(0);
+  expect(rows).toMatchObject([
+    { path: "video.bin", copyRef: null, sha256: null, sizeBytes: 40 * 1024 * 1024 },
+  ]);
+});
+
+it("[FD-1] registers the file a write or edit changed under its workspace-relative path", async () => {
+  const { f, call, rows, services } = artifactFixture({ "report.md": "# hi" });
+  const write = {
+    ...call,
+    capabilityRef: "coding.write",
+    arguments: { path: "/workspace/report.md", content: "# hi" },
+  };
+  const result = await executeProductionCodingRequest(write, "write", services, f.ctx);
+  expect(result.outcome).toBe("succeeded");
+  expect(rows).toMatchObject([
+    { source: "write", path: "report.md", kind: "document", mediaType: "text/markdown" },
+  ]);
+});
+
+it("[FD-1] does not register anything when the write failed", async () => {
+  const { f, call, rows, services } = artifactFixture({ "report.md": "# hi" });
+  vi.mocked(f.ctx.phase).mockResolvedValue({
+    outcome: "failed",
+    resultRef: null,
+    errorCode: "FILE_VERSION_CONFLICT",
+    externalActionId: null,
+    modelContent: "failed",
+  });
+  await executeProductionCodingRequest(
+    { ...call, capabilityRef: "coding.write", arguments: { path: "report.md", content: "x" } },
+    "write",
+    services,
+    f.ctx,
+  );
+  expect(rows).toEqual([]);
 });

@@ -8,6 +8,13 @@ import type {
 } from "@himawari-agent/application";
 
 export const BACKGROUND_COMMAND_REF_PREFIX = "background-command:";
+
+export function backgroundCommandRef(runId: string, toolCallId: string): string {
+  return `${BACKGROUND_COMMAND_REF_PREFIX}${createHash("sha256")
+    .update(JSON.stringify([runId, toolCallId]))
+    .digest("hex")
+    .slice(0, 24)}`;
+}
 const NOTICE_OUTPUT_CHARACTERS = 16384;
 const COMMAND_PREVIEW_CHARACTERS = 300;
 const STOP_SETTLE_MS = 15_000;
@@ -114,10 +121,7 @@ export class ProductionBackgroundCommands {
       return early ? early.value : result;
     }
     signal?.removeEventListener("abort", forward);
-    const taskRef = `${BACKGROUND_COMMAND_REF_PREFIX}${createHash("sha256")
-      .update(JSON.stringify([invocation.runId, invocation.toolCallId]))
-      .digest("hex")
-      .slice(0, 24)}`;
+    const taskRef = backgroundCommandRef(invocation.runId, invocation.toolCallId);
     const deadlineAt = Math.min(
       startedAt + this.#limits.maximumMs,
       invocation.executionDeadlineAt === undefined

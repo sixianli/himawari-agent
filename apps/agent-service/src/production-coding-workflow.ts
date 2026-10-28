@@ -12,6 +12,7 @@ import {
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
   scanMachineSecrets,
+  type ThreadArtifactSource,
   WEB_FETCH_MAXIMUM_OFFSET,
   webProviderEgress,
   webProviderRecipients,
@@ -22,7 +23,11 @@ import type {
   ProductionFileReadServices,
   WorkflowAuthority,
 } from "./production-file-read-workflow.js";
-import type { WorkspaceLedgerBaseline } from "./production-workspace-ledger.js";
+import type { ThreadArtifactCandidate } from "./production-thread-artifacts.js";
+import type {
+  WorkspaceLedgerBaseline,
+  WorkspaceLedgerChange,
+} from "./production-workspace-ledger.js";
 
 type Tool =
   | "read"
@@ -532,7 +537,14 @@ export async function executeProductionCodingRequest(
       }
       baseline = (await ctx.save("workspace-before", baseline)).value as WorkspaceLedgerBaseline;
     }
-    const executed = await ctx.phase(saved.handle, tool, saved.inputRef);
+    const finishOverlap = services.threadArtifacts?.begin(grant.id);
+    let overlapped = false;
+    let executed: RuntimeToolExecutionResult;
+    try {
+      executed = await ctx.phase(saved.handle, tool, saved.inputRef);
+    } finally {
+      overlapped = finishOverlap?.() ?? false;
+    }
     if (executed.outcome === "awaiting_approval") return executed;
     let changes = (await ctx.load("workspace-changes")) as { readonly summary: string } | undefined;
     if (!changes) {
@@ -555,6 +567,16 @@ export async function executeProductionCodingRequest(
         };
       }
       changes = (await ctx.save("workspace-changes", recorded)).value as { summary: string };
+      await recordThreadArtifacts(
+        services,
+        ctx,
+        call,
+        binding.threadId,
+        grant,
+        "bash",
+        overlapped,
+        [...ledgerCandidates(recorded)],
+      );
     }
     return {
       ...executed,
@@ -564,9 +586,65 @@ export async function executeProductionCodingRequest(
     };
   }
   const result = await ctx.phase(saved.handle, tool, saved.inputRef);
+  if (
+    (tool === "write" || tool === "edit") &&
+    grant !== null &&
+    result.outcome === "succeeded" &&
+    typeof args["path"] === "string"
+  )
+    await recordThreadArtifacts(services, ctx, call, binding.threadId, grant, tool, false, [
+      {
+        path: resolveHostFileReadPath(grant, args["path"]),
+        ...(tool === "write" && typeof args["content"] === "string"
+          ? { sizeBytes: Buffer.byteLength(args["content"]) }
+          : {}),
+      },
+    ]);
   if (memory && memoryKey) {
     memory.observe(providers, result);
     memory.remember(memoryKey, tool as "web_search" | "web_fetch", result);
   }
   return result;
+}
+
+function ledgerCandidates(recorded: Record<string, unknown>): ThreadArtifactCandidate[] {
+  const changes = recorded["changes"];
+  if (!Array.isArray(changes)) return [];
+  return changes.flatMap((change: WorkspaceLedgerChange) =>
+    change.kind === "file" && change.change !== "deleted" && change.after
+      ? [
+          {
+            path: change.path,
+            sizeBytes: Number(change.after.size),
+            sha256: change.after.sha256 ?? null,
+          },
+        ]
+      : [],
+  );
+}
+
+async function recordThreadArtifacts(
+  services: ProductionFileReadServices,
+  ctx: FileReadExecutionContext,
+  call: RuntimeToolInvocation,
+  threadId: string,
+  grant: HostDirectoryGrant,
+  source: ThreadArtifactSource,
+  overlapped: boolean,
+  candidates: readonly ThreadArtifactCandidate[],
+): Promise<void> {
+  const saveCopy = ctx.saveCopy;
+  if (!services.threadArtifacts || !saveCopy || candidates.length === 0) return;
+  await services.threadArtifacts.record({
+    ownerId: ctx.ownerId,
+    agentId: ctx.agentId,
+    threadId,
+    runId: call.runId,
+    toolCallId: call.toolCallId,
+    source,
+    grant,
+    candidates,
+    overlapped,
+    saveCopy: (key, bytes, mediaType) => saveCopy(key, bytes, mediaType),
+  });
 }

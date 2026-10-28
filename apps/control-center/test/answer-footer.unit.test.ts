@@ -363,16 +363,36 @@ it("[BG-9] lists this conversation's files by turn, newest first, and points to 
     ],
     {},
   );
-  const file = (name: string) => ({
+  const file = (name: string, runId: string, turn: number, version = 1) => ({
     key: `file:${name}`,
-    path: `/workspace/${name}`,
+    path: name,
     name,
-    kind: "markdown" as const,
-    content: "# 标题\n",
-    diff: [],
-    added: 1,
-    removed: 0,
-    recorded: true,
+    kind: "document" as const,
+    runId,
+    turn,
+    source: "write" as const,
+    command: undefined,
+    versions: version,
+    registered: {
+      id: `file:${name}`,
+      threadId: "thread:1",
+      runId,
+      toolCallId: `call:${name}`,
+      toolItemId: `item:${name}`,
+      source: "write" as const,
+      path: name,
+      name,
+      kind: "document" as const,
+      mediaType: "text/markdown",
+      sizeBytes: 2048,
+      version,
+      turn,
+      commandKey: null,
+      stored: true,
+      overlapped: false,
+      createdAt: at(0),
+    },
+    trace: undefined,
   });
   const html = renderToStaticMarkup(
     createElement(MorePanel, {
@@ -380,8 +400,20 @@ it("[BG-9] lists this conversation's files by turn, newest first, and points to 
       commandKey: null,
       commands: command,
       fileGroups: [
-        { runId: "run:4", turn: 4, title: undefined, files: [file("test-report.md")] },
-        { runId: "run:1", turn: 1, title: "做一个贪吃蛇", files: [file("README.md")] },
+        {
+          runId: "run:4",
+          turn: 4,
+          title: undefined,
+          command: undefined,
+          files: [file("test-report.md", "run:4", 4)],
+        },
+        {
+          runId: "run:1",
+          turn: 1,
+          title: "做一个贪吃蛇",
+          command: undefined,
+          files: [file("README.md", "run:1", 1, 2)],
+        },
       ],
       stoppingRunIds: [],
       openFileKey: undefined,
@@ -402,6 +434,7 @@ it("[BG-9] lists this conversation's files by turn, newest first, and points to 
   expect(html.indexOf("test-report.md")).toBeLessThan(html.indexOf("README.md"));
   expect(html).toContain("more.turn(turn=4)");
   expect(html).toContain("more.files.group(turn=1,title=做一个贪吃蛇)");
-  expect(html).toContain('class="more-badge" aria-hidden="true">MD</span>');
+  expect(html).toContain('class="delivered-badge" aria-hidden="true">MD</span>');
+  expect(html).toContain("files.kind.document · 2 KB · files.version(version=2)");
   expect(html).not.toContain("more-stop");
 });

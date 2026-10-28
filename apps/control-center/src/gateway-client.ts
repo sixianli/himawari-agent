@@ -12,6 +12,12 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { IMAGE_DATA_URL, IMAGE_DATA_URL_CHARACTERS } from "./image-data-url.js";
+import {
+  parseRegisteredFilePage,
+  type RegisteredFile,
+  type RegisteredFileKind,
+  type RegisteredFilePage,
+} from "./registered-files.js";
 
 export type MutationStatus = "pending" | "accepted" | "rejected" | "expired" | "replayed";
 
@@ -58,6 +64,8 @@ export interface ControlCenterRuntimeConfiguration {
   readonly canCancelRun?: boolean;
   readonly availableModels?: readonly AvailableModel[];
   readonly healthDependenciesAvailable?: boolean;
+  readonly filesAvailable?: boolean;
+  readonly filePreviewAvailable?: boolean;
   readonly installedGatewayV2Operations?: readonly string[];
   readonly ownerId: string;
   readonly agentId: string;
@@ -118,6 +126,8 @@ export async function loadRuntimeConfiguration(
     readonly canCancelRun?: unknown;
     readonly availableModels?: unknown;
     readonly healthDependenciesAvailable?: unknown;
+    readonly filesAvailable?: unknown;
+    readonly filePreviewAvailable?: unknown;
     readonly installedGatewayV2Operations?: unknown;
     readonly ownerId?: unknown;
     readonly agentId?: unknown;
@@ -242,6 +252,8 @@ export async function loadRuntimeConfiguration(
     authorizationRef,
     installedGatewayV2Operations: Object.freeze([...installedGatewayV2Operations]),
     healthDependenciesAvailable: value.healthDependenciesAvailable === true,
+    filesAvailable: value.filesAvailable === true,
+    filePreviewAvailable: value.filesAvailable === true && value.filePreviewAvailable === true,
     recentAuthenticationRef,
     primaryModel: normalizedPrimary,
     primaryModelRef,
@@ -655,6 +667,65 @@ export class GatewayClient {
       projectionVersion: value.projectionVersion,
     });
   }
+
+  async #filesRequest(path: string, body: Record<string, unknown>): Promise<unknown> {
+    return json(
+      await this.authenticatedFetch(`/api/files/v1/${path}`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": this.options.csrfToken(),
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+  }
+
+  async listFiles(query: {
+    readonly threadId?: string;
+    readonly kind?: RegisteredFileKind;
+    readonly search?: string;
+    readonly before?: string | null;
+    readonly limit?: number;
+  }): Promise<RegisteredFilePage> {
+    return parseRegisteredFilePage(
+      await this.#filesRequest("list", {
+        ...(query.threadId ? { threadId: query.threadId } : {}),
+        ...(query.kind ? { kind: query.kind } : {}),
+        ...(query.search?.trim() ? { search: query.search.trim() } : {}),
+        ...(query.before ? { before: query.before } : {}),
+        limit: query.limit ?? 200,
+      }),
+    );
+  }
+
+  async fileVersions(fileId: string): Promise<readonly RegisteredFile[]> {
+    return parseRegisteredFilePage(await this.#filesRequest("versions", { fileId })).items;
+  }
+
+  async filePreviewUrl(fileId: string): Promise<string> {
+    const body = await this.#filesRequest("preview-ticket", { fileId });
+    const url =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as { url?: unknown }).url
+        : undefined;
+    if (typeof url !== "string" || !url.startsWith("https://"))
+      throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    return url;
+  }
+
+  async fileText(fileId: string): Promise<string> {
+    const response = await this.request(fileContentUrl(fileId), {
+      credentials: "same-origin",
+    });
+    if (!response.ok) await json(response);
+    return response.text();
+  }
+}
+
+export function fileContentUrl(fileId: string, download = false): string {
+  return `/api/files/v1/content/${encodeURIComponent(fileId)}${download ? "?download=1" : ""}`;
 }
 
 export interface SafeBrowserLogEntry {

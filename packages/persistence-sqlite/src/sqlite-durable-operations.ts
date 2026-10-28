@@ -89,6 +89,7 @@ import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
+import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -349,6 +350,7 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly webPush: SqliteWebPushOperations;
+  private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly memoryBook: SqliteMemoryBookOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
@@ -418,6 +420,7 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
+    this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.memoryBook = new SqliteMemoryBookOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
@@ -520,6 +523,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("memoryReminder."))
       return this.memoryReminders.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
+    if (operation.startsWith("threadArtifact."))
+      return this.threadArtifacts.execute(operation, payload);
     if (operation.startsWith("memoryBook.")) return this.memoryBook.execute(operation, payload);
     switch (operation) {
       case "event.append":

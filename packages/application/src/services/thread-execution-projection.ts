@@ -69,6 +69,10 @@ function text(value: unknown): string {
       : value
     : "";
 }
+export function executionToolItemId(toolCallId: string): string {
+  return identifier(toolCallId, toolCallId);
+}
+
 function identifier(value: unknown, fallback: string, prefix = "tool"): string {
   return typeof value === "string" && value.length > 0
     ? `${prefix}:${threadCommandFingerprint({ value })

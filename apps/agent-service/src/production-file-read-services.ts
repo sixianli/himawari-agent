@@ -23,10 +23,11 @@ import type {
 import { createProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
+import { createProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 import { WebToolMemory } from "./web-tool-memory.js";
 import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
-import { createProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 
 export function createProductionFileReadServices(options: {
   readonly configuration: ProductConfiguration;
@@ -39,6 +40,7 @@ export function createProductionFileReadServices(options: {
     | "runDispatch"
     | "authorizationStore"
     | "capabilityStore"
+    | "threadArtifacts"
   >;
   readonly authority: () => CapabilityInvocationAuthority;
   readonly clock: ClockPort;
@@ -80,6 +82,14 @@ export function createProductionFileReadServices(options: {
   const workspaceLedger = snapshotPort?.available
     ? createProductionWorkspaceLedger({ port: snapshotPort })
     : undefined;
+  const threadArtifacts = snapshotPort?.available
+    ? new ProductionThreadArtifacts({
+        store: repository.threadArtifacts(),
+        files: snapshotPort,
+        ids,
+        now: () => clock.now(),
+      })
+    : undefined;
   const webMemory =
     configuration.runPolicy?.publicSearch || configuration.runPolicy?.publicFetch
       ? new WebToolMemory({ now: () => Date.parse(clock.now()) })
@@ -100,6 +110,7 @@ export function createProductionFileReadServices(options: {
   return {
     ...(hostReadOnly ? { hostReadOnly } : {}),
     ...(workspaceLedger ? { workspaceLedger } : {}),
+    ...(threadArtifacts ? { threadArtifacts } : {}),
     ...(webMemory && options.hostWeb ? { hostWeb: options.hostWeb } : {}),
     ...(webMemory ? { webMemory } : {}),
     binding: async (call) => {

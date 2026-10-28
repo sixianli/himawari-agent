@@ -490,6 +490,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0059_run_background_holds.sql",
   },
+  {
+    sequence: 60,
+    name: "thread_artifacts",
+    changeSet: "thread-artifacts",
+    phase: "expand" as const,
+    file: "0060_thread_artifacts.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {
