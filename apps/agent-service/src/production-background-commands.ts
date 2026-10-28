@@ -273,21 +273,30 @@ export class ProductionBackgroundCommands {
     for (;;) {
       const tasks = [...this.#commands.values()].filter((task) => task.runId === runId);
       if (tasks.every((task) => task.state !== "running"))
-        return tasks.map((task) => ({
-          taskRef: task.taskRef,
-          command: task.command.slice(0, COMMAND_PREVIEW_CHARACTERS),
-          output: outputTail(task.result?.modelContent ?? ""),
-          dataClassification: task.dataClassification,
-          outcome: backgroundOutcome(task),
-          notice: this.#notice(task),
-          delivered: task.delivered,
-        }));
+        return tasks.map((task) => this.#result(task));
       await new Promise<void>((resolve) => {
         const waiters = this.#settledWaiters.get(runId) ?? new Set<() => void>();
         waiters.add(resolve);
         this.#settledWaiters.set(runId, waiters);
       });
     }
+  }
+
+  result(taskRef: string): BackgroundCommandResult | undefined {
+    const task = this.#commands.get(taskRef);
+    return task && task.state !== "running" ? this.#result(task) : undefined;
+  }
+
+  #result(task: BackgroundCommand): BackgroundCommandResult {
+    return {
+      taskRef: task.taskRef,
+      command: task.command.slice(0, COMMAND_PREVIEW_CHARACTERS),
+      output: outputTail(commandOutput(task.result?.modelContent ?? "")),
+      dataClassification: task.dataClassification,
+      outcome: backgroundOutcome(task),
+      notice: this.#notice(task),
+      delivered: task.delivered,
+    };
   }
 
   async cancelRun(runId: string): Promise<void> {
@@ -392,6 +401,29 @@ export class ProductionBackgroundCommands {
 
 const OUTPUT_TAIL_LINES = 20;
 const OUTPUT_TAIL_CHARACTERS = 4000;
+
+function commandOutput(content: string): string {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(content);
+  } catch {
+    return content;
+  }
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) return content;
+  const fields = envelope as Record<string, unknown>;
+  if (fields["schemaVersion"] !== "pi-result.v1" || !Array.isArray(fields["content"]))
+    return content;
+  return fields["content"]
+    .flatMap((part: unknown) =>
+      part &&
+      typeof part === "object" &&
+      (part as Record<string, unknown>)["type"] === "text" &&
+      typeof (part as Record<string, unknown>)["text"] === "string"
+        ? [(part as Record<string, string>)["text"]]
+        : [],
+    )
+    .join("\n");
+}
 
 function outputTail(content: string): string {
   const lines = content.replace(/\r\n?/g, "\n").trimEnd().split("\n");

@@ -99,6 +99,7 @@ function harness(records: BackgroundRunRecord[] = []) {
     onFailure: (_runId, error) => failures.push(error),
     renewalIntervalMs: 5,
     finishRetryMs: 1,
+    releaseRetryMs: 1,
   });
   const receipt = async () => ({ ref: "receipt" });
   return { commands, runs, finished, notices, order, failures, renew, stopRun, receipt };
@@ -155,6 +156,71 @@ describe("ProductionBackgroundRuns", () => {
     expect(h.finished[0]?.outcomes).toEqual([expect.objectContaining({ outcome: "stopped" })]);
     expect(h.notices[0]?.text).toContain("已被停止");
     expect(await h.runs.cancel(runId)).toBe(false);
+  });
+
+  it("[BG-3] keeps the owner's stop when the sandbox takes a while to release", async () => {
+    const h = harness();
+    h.stopRun.mockResolvedValueOnce({ released: false }).mockResolvedValueOnce({ released: false });
+    const command = controlled();
+    await h.commands.run(bash, undefined, command.execute, h.receipt);
+    h.runs.adopt(lease);
+    expect(await h.runs.cancel(runId)).toBe(true);
+    await h.runs.drain();
+    expect(h.failures).toEqual([]);
+    expect(h.stopRun).toHaveBeenCalledTimes(3);
+    expect(h.finished[0]?.outcomes).toEqual([expect.objectContaining({ outcome: "stopped" })]);
+    expect(h.notices[0]?.text).toContain("已被停止");
+    expect(h.notices[0]?.text).not.toContain("重启");
+  });
+
+  it("[BG-4] reports what this process saw instead of a restart when only the lease was lost", async () => {
+    const h = harness();
+    h.renew.mockRejectedValue(new Error("lease gone"));
+    const command = controlled();
+    const moved = await h.commands.run(bash, undefined, command.execute, h.receipt);
+    const taskRef = moved.modelContent.match(/background-command:[0-9a-f]{24}/)?.[0] ?? "";
+    h.runs.adopt(lease);
+    await h.runs.drain();
+    expect(h.finished).toEqual([]);
+    const records: BackgroundRunRecord[] = [
+      {
+        runId,
+        threadId: "thread-background",
+        holds: [{ taskRef, startedAt: lease.claimedAt, deadlineAt: lease.expiresAt }],
+        runStatus: "running",
+        leaseLive: false,
+        resourcesReleased: true,
+      },
+    ];
+    const recovering = new ProductionBackgroundRuns({
+      ownerId,
+      agentId,
+      commands: h.commands,
+      dispatch: { renew: h.renew },
+      runs: {
+        finishBackgroundRun: async (input) => {
+          h.finished.push(input);
+          return { finished: true, noticeRunId: input.notice.runId };
+        },
+        listBackgroundRuns: async () => records,
+      },
+      resources: { stopRun: h.stopRun },
+      storeNotice: async (input) => {
+        h.notices.push(input);
+      },
+      authority: () => ({
+        leaseId: "authority-current" as RunExecutionLease["authorityLeaseId"],
+        fencingToken: 4,
+      }),
+      assertActive: async () => undefined,
+      clock: { now: () => new Date().toISOString() },
+      finishRetryMs: 1,
+    });
+    expect(await recovering.recover()).toBe(1);
+    expect(h.finished[0]?.outcomes).toEqual([
+      expect.objectContaining({ taskRef, outcome: "stopped" }),
+    ]);
+    expect(h.notices[0]?.text).not.toContain("重启");
   });
 
   it("[BG-3] stops the command and leaves recovery to restart when the lease is lost", async () => {
