@@ -5488,7 +5488,7 @@ const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => 
   return { kind: "text", text: "普通回答已完成" };
 };
 
-async function openSettingsTab(tab: "工具与权限" | "记忆") {
+async function openSettingsTab(tab: "工具与权限") {
   const dialog = page.getByRole("dialog");
   if (!(await dialog.isVisible()))
     await page.getByRole("button", { name: "设置", exact: true }).first().click();
@@ -5624,12 +5624,17 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
     });
     await scenario("accept-memory-page", async () => {
-      const dialog = await openSettingsTab("记忆");
-      await uiExpect(dialog.getByText(/记住了 \d+ 条关于你的事/)).toBeVisible({
+      await page
+        .getByRole("navigation", { name: "对话" })
+        .getByRole("button", { name: "记忆", exact: true })
+        .click();
+      const memory = page.getByRole("region", { name: "记忆", exact: true });
+      await uiExpect(memory.getByText(/记住了 \d+ 条关于你的事/)).toBeVisible({
         timeout: 30_000,
       });
-      await uiExpect(dialog.getByRole("alert")).toHaveCount(0);
-      await closeSettings();
+      await uiExpect(memory.getByRole("alert")).toHaveCount(0);
+      await memory.getByRole("button", { name: "返回", exact: true }).click();
+      await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-after-restart", async () => {
       await installation.stop();
