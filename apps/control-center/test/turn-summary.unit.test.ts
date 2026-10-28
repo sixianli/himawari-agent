@@ -41,11 +41,10 @@ it("[UI-9] adds up every model call of the turn and counts cached input as input
   ]);
   expect(total).toEqual({
     input: 8600,
-    cached: 7100,
+    cacheRead: 7000,
     output: 1000,
     reasoning: 50,
     total: 9600,
-    costUsd: 0.003,
   });
 });
 

@@ -76,7 +76,17 @@ const threads = new Map([
           committedAt: now,
         },
       ],
-      runs: [{ runId: "run-01", revision: 2, status: "completed", createdAt: now, updatedAt: now }],
+      runs: [
+        {
+          runId: "run-01",
+          revision: 2,
+          status: "completed",
+          createdAt: now,
+          updatedAt: now,
+          background: null,
+          backgroundCommands: [],
+        },
+      ],
     },
   ],
   [
@@ -1287,6 +1297,8 @@ function handleThreadCommand(message) {
         status: "accepted",
         createdAt: message.payload.occurredAt,
         updatedAt: message.payload.occurredAt,
+        background: null,
+        backgroundCommands: [],
       });
       break;
     case "thread.run.cancel": {

@@ -1256,15 +1256,6 @@
 .turn-process summary::-webkit-details-marker {
   display: none;
 }
-.process-chevron {
-  flex: none;
-  font-size: 18px;
-  transition: transform 120ms;
-}
-.turn-process[open] > summary > .process-chevron,
-.tool-record[open] > summary > .process-chevron {
-  transform: rotate(90deg);
-}
 .process-result,
 .step-status {
   margin-left: auto;

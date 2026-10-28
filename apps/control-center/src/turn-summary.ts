@@ -2,11 +2,10 @@ import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 
 export interface TurnUsage {
   readonly input: number;
-  readonly cached: number;
+  readonly cacheRead: number;
   readonly output: number;
   readonly reasoning: number;
   readonly total: number;
-  readonly costUsd: number;
 }
 
 export interface TurnSource {
@@ -35,16 +34,15 @@ export function turnUsage(records: readonly ThreadExecutionRecord[]): TurnUsage 
     .filter((value) => value !== undefined);
   if (!calls.length) return undefined;
   const sum = (key: string) => calls.reduce((total, call) => total + count(call[key]), 0);
-  const cached = sum("cacheRead") + sum("cacheWrite");
-  const input = sum("input") + cached;
+  const cacheRead = sum("cacheRead");
+  const input = sum("input") + cacheRead + sum("cacheWrite");
   const output = sum("output");
   return {
     input,
-    cached,
+    cacheRead,
     output,
     reasoning: sum("reasoning"),
     total: input + output,
-    costUsd: Math.round(sum("costUsd") * 1e6) / 1e6,
   };
 }
 
@@ -52,10 +50,6 @@ export function formatTokens(value: number): string {
   if (value < 1000) return String(value);
   if (value < 1_000_000) return `${(value / 1000).toFixed(1)}k`;
   return `${(value / 1_000_000).toFixed(1)}M`;
-}
-
-export function formatCost(value: number): string {
-  return `$${value < 0.01 ? value.toFixed(4) : value.toFixed(2)}`;
 }
 
 export function turnSources(records: readonly ThreadExecutionRecord[]): readonly TurnSource[] {

@@ -349,10 +349,7 @@ describe("thread control center interactions", () => {
       ];
       await render();
       await refresh();
-      await click("answer.more");
-      await act(async () =>
-        (document.querySelector('[role="menuitem"]') as HTMLButtonElement | null)?.click(),
-      );
+      await click("answer.fork");
       expect(mutate).toHaveBeenCalledTimes(1);
       expect(mutate.mock.calls[0]?.[0]).toMatchObject({
         type: "thread.fork",
