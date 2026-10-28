@@ -66,6 +66,7 @@ date: "2026-10-26"
   39. [让真模型跑 Jarvis Test：编出来的报错会被模型看穿，裁判也要先过校准](#case-jarvis-test-evals)
   40. [域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配](#case-min-tls)
   41. [按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送](#case-optimistic-send)
+  42. [什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算](#case-memory-embedding-route)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -87,10 +88,10 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
@@ -2681,6 +2682,84 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 **面试 30 秒版**
 
 “用户说按回车后要两秒消息才出现。我顺着代码和浏览器请求时间线查，发现网页要等六个串行请求，包括上传、发命令、重新读整段对话、再把自己刚发的正文读回来，才把消息画出来，而服务端每个请求其实只要几毫秒。我照 Vercel AI SDK 和 Open WebUI 的做法改成先上屏：按回车同一帧显示‘发送中’，服务器确认后按消息编号替换；失败就原地标出并可重试，重试沿用幂等键不会重复。另外把两次上传改成并行、去掉读回。模拟每次请求 200 毫秒时，上屏从约 1.3 秒降到约 40 毫秒。”
+
+[返回目录](#contents)
+
+<a id="case-memory-embedding-route"></a>
+
+## 案例 42：什么记忆都没找到也要 1.4 秒：向量化请求从东京绕到悉尼再到美国，先压缩返回格式，根治要在本机算
+
+**背景与现象**
+
+2026-10-28 19:00 左右（日本时间），Andy 在生产网页问“搜一下今天东京的天气，简短回答”。过程时间线第一步“按这句话找到 0 条相关记忆”用了 1.4 秒（整轮 9.2 秒）。他的批注：“这里啥也没找到，为什么还耗时这么久！？排查！优化！”
+
+**根因**
+
+“找记忆”这一步做四件事：读出这句话、把它变成向量（向量化：用模型把一句话变成 4096 个数字，意思相近的话数字也相近）、在本机 SQLite 里按向量和关键词找候选、写下候选和选中结果。找到 0 条不代表没做事：比对之前必须先拿到这句话的向量。
+
+用生产数据库只读拆分了最近 40 轮的时间点（每轮已有的事件时间，加上向量化调用在额度表里记下的“开始”和“结算”时间，脚本在项目共享文件 `memory-search-latency/`）：
+
+| 环节 | 中位数 | p90 |
+| --- | --- | --- |
+| 找记忆开始 → 向量化登记 | 49 ms | 263 ms |
+| 登记 → 发出请求 | 28 ms | 70 ms |
+| **向量化网络请求** | **1392 ms** | **2288 ms** |
+| 请求结束 → 写出候选（含本机检索） | 45 ms | 124 ms |
+| 候选 → 选中 | 28 ms | 64 ms |
+| 整步合计 | 1580 ms | 2787 ms |
+
+向量化占了 88%。请求发到 Vercel AI Gateway（把多家模型供应商统一成一个接口的网关），模型是 `alibaba/qwen3-embedding-8b`。生产机在东京（Contabo 东京机房），但响应头 `x-vercel-id` 是 `hnd1::syd1`：东京的接入点把请求转到悉尼处理，网关再把请求发给美国的 DeepInfra 计算，算完原路返回。一句话的向量要绕两段跨洋网络。本机检索不是问题：在云端用 4096 维向量复现，300 条记忆检索约 13 毫秒，1000 条约 25 毫秒，生产里只有 11 条。
+
+另一个放大因素是返回格式：项目一直要求 `encoding_format: "float"`，4096 个数字写成 JSON 文本约 89 KB；同样的数字按 float32 二进制再 base64 编码只有约 22 KB。这 89 KB 要从美国的供应商传回悉尼、再传回东京。
+
+**方案讨论与备选**
+
+在生产机上用生产密钥做了一次 30 次的对比探测（每种方式 6 次，同一时段，花费约 0.00001 美元）：
+
+| 方式 | 中位数 | 区间 |
+| --- | --- | --- |
+| 每次新连接、float（等于现状） | 1048 ms | 826–1398 ms |
+| 每次新连接、base64 | 769 ms | 672–1038 ms |
+| 复用连接、float | 1022 ms | 548–1493 ms |
+| 复用连接、base64 | 677 ms | 661–1062 ms |
+| 只走 nebius 供应商、float | 2833 ms | 2122–4863 ms |
+
+- **改用 base64 返回格式**：数值逐位相同（在云端对同一句话比对，最大差 0.0），每次约省 0.2–0.3 秒，没有代价。这次就做。
+- **保持连接不断**（Node 的 fetch 底层 undici 默认空闲 4 秒就关连接，而两轮对话通常隔几分钟）：实测只省几十毫秒，还要自己管连接池，不做。
+- **换供应商**：这个模型在网关上只有 DeepInfra 和 nebius 两家，nebius 慢得多；网关在哪个机房处理请求由 Vercel 决定，我们改不了。
+- **换成别的托管向量模型**：请求照样先绕到悉尼，治标不治本，还要重建索引。
+- **在生产机本机算向量**（Qwen3-Embedding-0.6B，同家族的小模型，int8 量化）：云端 4 核实测一次查询约 90 毫秒，加载约 20 秒，进程约 1.4 GB 内存；对话内容也不再发给第三方。代价是准确度比 8B 低，要新增依赖和约 600 MB 模型文件。这是改变产品取舍的决定，交给 Andy 选（见后续）。
+
+**我们的方案**
+
+`packages/memory-engine/src/embedding.ts` 的 `GatewayEmbedder` 改为请求 `encoding_format: "base64"`，收到后按小端 float32 解码成数字数组，再交给原有的用量和向量校验；字节数不等于“维度 × 4”就报 `EMBEDDING_VECTOR_INVALID`。网关若返回数字数组也照常接受（这是同一接口规定的两种合法格式）。写入记忆时的向量化也走这条路，一起受益。
+
+**业界主流做法**
+
+- ✅ OpenAI 官方 Node SDK（[`src/lib/embeddings.ts`](https://github.com/openai/openai-node/blob/master/src/lib/embeddings.ts)）：调用方没指定格式时，SDK 主动改用 base64：“No encoding_format specified, defaulting to base64 for performance reasons.”，再在客户端解码回数字。
+- ✅ OpenAI 接口定义（[openapi.yaml](https://github.com/openai/openai-openapi/blob/master/openapi.yaml)）：`encoding_format` “The format to return the embeddings in. Can be either `float` or `base64`.”
+- ✅ Vercel AI Gateway 文档（[Provider Routing and Fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/provider-options)）：“By default, Vercel AI Gateway dynamically chooses the default providers to give you the best experience based on a combination of recent uptime and latency.” 文档只给了选供应商的 `order`、`only`，没有选处理机房的选项。
+- ✅ undici 文档（[Client.md](https://github.com/nodejs/undici/blob/main/docs/docs/api/Client.md)）：`keepAliveTimeout` “The timeout, in milliseconds, after which a socket with no active requests times out ... **Default:** `4e3`.”
+- ✅ Qwen3-Embedding-0.6B 模型卡（[Hugging Face](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)）：MTEB 多语言平均分 0.6B 为 64.33，8B 为 70.58。
+
+**对比与取舍**
+
+和 OpenAI SDK 一样默认走 base64；不同的是我们的向量化有“先登记额度、再发请求、再结算”的边界，所以在发送函数里就解码，边界之后的校验和原来完全一样。没有采用“保持连接”和“换供应商”，因为实测收益小或更慢。真正的大头是网络绕路，只能靠不走网络解决，这一步涉及准确度和内存，由 Andy 决定。
+
+**结果数据**
+
+- 生产实测（2026-10-28，最近 40 轮）：找记忆中位数 1580 ms，向量化 1392 ms；本机其他环节各约 30–50 ms。
+- 生产机同时段探测：新连接下向量化中位数 1048 ms → 769 ms（base64），约省 0.28 秒；响应体 89 KB → 22.8 KB。上线后的生产中位数未测量，上线后用同一脚本复测补到这里。
+- 云端复现：本机检索 300 条 13 ms、1000 条 25 ms；本机小模型一次查询约 90 ms（云端 4 核，不代表生产机）。
+- 测试：新增两条单元测试（请求带 base64、边界拿到解码后的数字；字节数不对时报错），改了一条请求体断言；记忆引擎和生产组合相关的 6 个单元测试文件 93 个测试通过。
+
+**相关 ADR/PR**
+
+PR 见分支 `claude/project-thread-56hpqy`。只改了返回格式、没改模型和数据，没有新 ADR；改成本机模型时另写 ADR。
+
+**面试 30 秒版**
+
+“用户看到‘找到 0 条记忆’也花了 1.4 秒。我没有猜，用生产库里已有的时间点把这一步拆成五段，发现 88% 是一次向量化网络请求。看响应头才知道，东京的请求被网关转到悉尼，再去美国的供应商，绕了两段跨洋路。能在代码里改的，是照 OpenAI SDK 的做法改用 base64 返回格式，数值逐位相同，生产机上实测从 1.05 秒降到 0.77 秒。绕路本身是网关路由，根治只能在本机算向量，小模型 90 毫秒，但准确度和内存是产品取舍，我把数据摆给产品负责人来选。”
 
 [返回目录](#contents)
 
