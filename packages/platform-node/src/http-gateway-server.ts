@@ -32,6 +32,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
+import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
@@ -1396,7 +1397,10 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         if (!previewRequest(request) || !match?.[1]) {
           throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
         }
-        return sendFileContent(reply, await files.preview({ ticket: match[1] }));
+        return sendFileContent(
+          reply,
+          withPreviewStorage(await files.preview({ ticket: match[1] })),
+        );
       });
     }
   }

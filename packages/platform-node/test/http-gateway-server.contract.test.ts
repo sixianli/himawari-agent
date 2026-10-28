@@ -42,6 +42,7 @@ import {
   type HttpGatewayAuthenticationPort,
   type HttpGatewayServerOptions,
 } from "../src/http-gateway-server.js";
+import { PREVIEW_STORAGE_SCRIPT } from "../src/preview-page-storage.js";
 import { RuntimeHealthModel } from "../src/runtime-health.js";
 import { RuntimeMetricsRegistry } from "../src/runtime-observability.js";
 
@@ -1577,7 +1578,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       headers: { host: "files.example.test" },
     });
     expect(preview.statusCode).toBe(200);
-    expect(preview.body).toBe("bytes:copy-file-html-2");
+    expect(preview.body).toBe(`${PREVIEW_STORAGE_SCRIPT}bytes:copy-file-html-2`);
     expect(preview.headers["content-type"]).toBe("text/html; charset=utf-8");
     expect(preview.headers["content-security-policy"]).toMatch(
       /^sandbox allow-scripts allow-modals allow-popups allow-downloads; /,
@@ -1613,7 +1614,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       headers: { host: "files.example.test" },
     });
     expect(storedPreview.statusCode).toBe(200);
-    expect(storedPreview.body).toBe(`bytes:copy-${storedId}`);
+    expect(storedPreview.body).toBe(`${PREVIEW_STORAGE_SCRIPT}bytes:copy-${storedId}`);
     expect(
       (
         await app.inject({
