@@ -1383,6 +1383,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       ["file-html-1", "game/index.html", "web", "text/html", 1],
       ["file-html-2", "game/index.html", "web", "text/html", 2],
       ["file-png", "out/图表.png", "image", "image/png", 1],
+      ["thread-artifact:4dbdf5fa-e238-4e2a-9958-564a64351b80", "snake.html", "web", "text/html", 1],
     ].map(([id, path, kind, mediaType, version]) => ({
       id: id as string,
       threadId: "thread-01",
@@ -1457,6 +1458,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       ["file-html-1", "index.html", true],
       ["file-html-2", "index.html", true],
       ["file-png", "图表.png", true],
+      ["thread-artifact:4dbdf5fa-e238-4e2a-9958-564a64351b80", "snake.html", true],
     ]);
     expect(list.json().items[0]).not.toHaveProperty("copyRef");
     expect(list.json().items[0]).toMatchObject({
@@ -1583,6 +1585,35 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(preview.headers["content-security-policy"]).toContain(`frame-ancestors ${ORIGIN}`);
     expect(preview.headers["content-security-policy"]).toContain("connect-src 'none'");
     expect(preview.headers["set-cookie"]).toBeUndefined();
+    const storedId = "thread-artifact:4dbdf5fa-e238-4e2a-9958-564a64351b80";
+    const storedDownload = await app.inject({
+      method: "GET",
+      url: `/api/files/v1/content/${encodeURIComponent(storedId)}?download=1`,
+      headers: contentHeaders,
+    });
+    expect(storedDownload.statusCode).toBe(200);
+    expect(storedDownload.body).toBe(`bytes:copy-${storedId}`);
+    expect(storedDownload.headers["content-disposition"]).toBe(
+      `attachment; filename="snake.html"; filename*=UTF-8''snake.html`,
+    );
+    expect(storedDownload.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    const storedTicket = (
+      await app.inject({
+        method: "POST",
+        url: "/api/files/v1/preview-ticket",
+        headers: requestHeaders(),
+        payload: { fileId: storedId },
+      })
+    ).json() as { url: string };
+    const storedPreviewPath = new URL(storedTicket.url).pathname;
+    expect(storedPreviewPath.length).toBeGreaterThan(160);
+    const storedPreview = await app.inject({
+      method: "GET",
+      url: storedPreviewPath,
+      headers: { host: "files.example.test" },
+    });
+    expect(storedPreview.statusCode).toBe(200);
+    expect(storedPreview.body).toBe(`bytes:copy-${storedId}`);
     expect(
       (
         await app.inject({

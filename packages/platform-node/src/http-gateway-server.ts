@@ -221,6 +221,16 @@ function requestPath(request: FastifyRequest): string {
   return request.url.split("?", 1)[0] ?? request.url;
 }
 
+function fileContentId(request: FastifyRequest): string | null {
+  let path: string;
+  try {
+    path = decodeURIComponent(requestPath(request));
+  } catch {
+    return null;
+  }
+  return FILE_CONTENT_PATH.exec(path)?.[1] ?? null;
+}
+
 function assertPublicHost(request: FastifyRequest, publicOrigin: URL): void {
   if (header(request, "host") !== publicOrigin.host) {
     throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.ORIGIN_REJECTED, 403);
@@ -244,6 +254,7 @@ function assertMutationBoundary(request: FastifyRequest, publicOrigin: URL): voi
 const FILE_CONTENT_PATH = /^\/api\/files\/v1\/content\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 const HEALTH_PATH = /^\/health\/[a-z]+$/;
 const FILE_PREVIEW_PATH = /^\/preview\/([A-Za-z0-9_-]{1,512}\.[A-Za-z0-9_-]{1,128})$/;
+const FILE_PREVIEW_TICKET_MAXIMUM_LENGTH = 512 + 1 + 128;
 const FILE_KINDS = ["document", "code", "web", "image", "pdf", "data", "other"] as const;
 
 function setPreviewHeaders(reply: FastifyReply, publicOrigin: URL): void {
@@ -755,6 +766,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     logger: false,
     trustProxy: false,
     forceCloseConnections: true,
+    routerOptions: { maxParamLength: FILE_PREVIEW_TICKET_MAXIMUM_LENGTH },
   });
 
   const previewOrigin = options.previewOrigin ? new URL(options.previewOrigin) : undefined;
@@ -779,7 +791,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       setPreviewHeaders(reply, publicOrigin);
       return;
     }
-    if (FILE_CONTENT_PATH.test(requestPath(request)) && reply.statusCode === 200) {
+    if (fileContentId(request) !== null && reply.statusCode === 200) {
       setFileContentHeaders(reply);
       return;
     }
@@ -1351,8 +1363,8 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     });
     app.get("/api/files/v1/content/:fileId", async (request, reply) => {
       assertPublicHost(request, publicOrigin);
-      const match = FILE_CONTENT_PATH.exec(requestPath(request));
-      if (!match?.[1]) {
+      const contentId = fileContentId(request);
+      if (!contentId) {
         throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
       }
       const site = header(request, "sec-fetch-site");
@@ -1373,7 +1385,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         await files.content({
           authentication,
           agentId,
-          fileId: match[1],
+          fileId: contentId,
           download: query["download"] === "1",
         }),
       );
