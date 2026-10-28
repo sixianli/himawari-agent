@@ -166,6 +166,44 @@ const registered = (overrides: Partial<RegisteredFile>): RegisteredFile => ({
   ...overrides,
 });
 
+describe("file preview header", () => {
+  it.each([
+    ["zh-CN", zh, "新标签打开", "下载", "放宽预览", "关闭"],
+    ["en", en, "Open in new tab", "Download", "Widen preview", "Close"],
+    ["ja", ja, "新しいタブで開く", "ダウンロード", "プレビューを広げる", "閉じる"],
+  ] as const)(
+    "shows icon-only actions named by aria-label and hover tip in %s",
+    (locale, messages, ...labels) => {
+      const file = libraryFile(
+        registered({ name: "snake.html", path: "snake.html", kind: "web", mediaType: "text/html" }),
+      );
+      const html = renderToStaticMarkup(
+        h(
+          IntlProvider,
+          { locale, messages },
+          h(ContentPreview, {
+            value: previewOfDelivered(file),
+            access: {
+              text: async () => "",
+              versions: async () => [],
+              previewUrl: async () => "https://preview.example/snake.html",
+            },
+            onClose: () => {},
+          }),
+        ),
+      );
+      const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
+      for (const label of labels) {
+        expect(header).toContain(`aria-label="${label}" data-tip="${label}"`);
+        expect(header).not.toContain(`>${label}<`);
+      }
+      const meta = html.slice(html.indexOf('class="preview-meta-actions"'));
+      expect(meta).toContain(`${labels[0]}</button>`);
+      expect(meta).toContain(`${labels[1]}</a>`);
+    },
+  );
+});
+
 describe("[FD-5] files delivered in a conversation", () => {
   it("joins registered copies with the turn trace and files a background command's output under its report turn", () => {
     const runs = ["run:1", "run:2", "run:3"].map((runId) => ({ runId }) as RunSummary);
@@ -313,7 +351,7 @@ describe("the preview panel", () => {
     expect(html).toContain("原文</button>");
     expect(html).toContain("notes/trip.md");
     expect(html).toContain(
-      'class="preview-action preview-widen" aria-pressed="false">放宽预览</button>',
+      'class="preview-action preview-tool preview-widen" aria-label="放宽预览" data-tip="放宽预览" aria-pressed="false"><svg',
     );
   });
 

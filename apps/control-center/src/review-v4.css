@@ -3783,3 +3783,88 @@ output.owner-status {
 .owner-retry:focus-visible {
   background: var(--surface-muted);
 }
+.preview-tool {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.preview-tool:hover,
+.preview-tool[aria-pressed="true"] {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+.preview-tool:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.preview-tool .line-icon {
+  width: 16px;
+  height: 16px;
+}
+.preview-tool[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 30;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--background);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -2px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+.content-preview > header .preview-tool:last-child[data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: translateY(-2px);
+}
+.content-preview > header .preview-tool:first-child[data-tip]::after {
+  left: 0;
+  transform: translateY(-2px);
+}
+.preview-tool[data-tip]:hover::after,
+.preview-tool[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 0.25s;
+}
+.content-preview > header .preview-tool:last-child[data-tip]:hover::after,
+.content-preview > header .preview-tool:last-child[data-tip]:focus-visible::after,
+.content-preview > header .preview-tool:first-child[data-tip]:hover::after,
+.content-preview > header .preview-tool:first-child[data-tip]:focus-visible::after {
+  transform: none;
+}
+@media (hover: none) {
+  .preview-tool[data-tip]::after {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .preview-tool[data-tip]::after {
+    transition: none;
+  }
+}
+.preview-meta-actions .preview-action {
+  gap: 5px;
+}

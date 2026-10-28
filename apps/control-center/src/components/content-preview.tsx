@@ -10,7 +10,6 @@ import { type DiffLine, fileExtension, type PreviewKind, previewKind } from "../
 import { LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { fileFacts, fileSourceText } from "./delivered-file.js";
-import { ActionButton } from "./primitives.js";
 
 export const FILE_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
 
@@ -358,23 +357,33 @@ export function ContentPreview({
     ]
       .filter(Boolean)
       .join(" · ");
-  const fileActions = (
+  const fileActions = (labelled: boolean) => (
     <>
       {selected && body?.kind === "web" ? (
         <button
           type="button"
-          className="preview-action"
+          className={labelled ? "preview-action" : "preview-action preview-tool"}
+          aria-label={labelled ? undefined : message("preview.openTab")}
+          data-tip={labelled ? undefined : message("preview.openTab")}
           onClick={() => {
             const preview = access?.previewUrl;
             if (preview) openInNewTab(() => preview(selected.id));
           }}
         >
-          {message("preview.openTab")}
+          <LineIcon name="external" />
+          {labelled ? message("preview.openTab") : null}
         </button>
       ) : null}
       {selected?.stored ? (
-        <a className="preview-action" href={fileContentUrl(selected.id, true)} download>
-          {message("preview.download")}
+        <a
+          className={labelled ? "preview-action" : "preview-action preview-tool"}
+          href={fileContentUrl(selected.id, true)}
+          download
+          aria-label={labelled ? undefined : message("preview.download")}
+          data-tip={labelled ? undefined : message("preview.download")}
+        >
+          <LineIcon name="download" />
+          {labelled ? message("preview.download") : null}
         </a>
       ) : null}
     </>
@@ -394,9 +403,15 @@ export function ContentPreview({
     >
       <header>
         {onBack ? (
-          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
+          <button
+            type="button"
+            className="preview-tool"
+            aria-label={message("common.back")}
+            data-tip={message("common.back")}
+            onClick={onBack}
+          >
             <LineIcon name="back" />
-          </ActionButton>
+          </button>
         ) : (
           <span className="preview-icon">
             <LineIcon name="file" />
@@ -423,32 +438,43 @@ export function ContentPreview({
             ))}
           </fieldset>
         ) : null}
-        {fileActions}
+        {fileActions(false)}
         <button
           type="button"
-          className="preview-action preview-widen"
+          className="preview-action preview-tool preview-widen"
+          aria-label={message(wide ? "preview.narrow" : "preview.widen")}
+          data-tip={message(wide ? "preview.narrow" : "preview.widen")}
           aria-pressed={wide}
           onClick={() => setWide(!wide)}
         >
-          {message(wide ? "preview.narrow" : "preview.widen")}
+          <LineIcon name={wide ? "collapse" : "expand"} />
         </button>
         {(shown.missing && !shown.diff?.length) || !textReady ? null : (
-          <ActionButton
-            variant="quiet"
+          <button
+            type="button"
+            className="preview-tool"
             aria-label={message("preview.copy")}
-            title={message("preview.copy")}
+            data-tip={message("preview.copy")}
             onClick={() => copy(copyText)}
           >
             <LineIcon name={copied ? "check" : "copy"} />
-          </ActionButton>
+          </button>
         )}
-        <ActionButton variant="quiet" aria-label={message("common.close")} onClick={onClose}>
-          ×
-        </ActionButton>
+        <button
+          type="button"
+          className="preview-tool"
+          aria-label={message("common.close")}
+          data-tip={message("common.close")}
+          onClick={onClose}
+        >
+          <LineIcon name="close" />
+        </button>
       </header>
       {delivered ? (
         <div className="preview-meta">
-          {selected?.stored ? <span className="preview-meta-actions">{fileActions}</span> : null}
+          {selected?.stored ? (
+            <span className="preview-meta-actions">{fileActions(true)}</span>
+          ) : null}
           <span>
             {fileFacts(
               selected
