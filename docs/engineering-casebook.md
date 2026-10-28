@@ -66,6 +66,7 @@ date: "2026-10-26"
   39. [让真模型跑 Jarvis Test：编出来的报错会被模型看穿，裁判也要先过校准](#case-jarvis-test-evals)
   40. [域名还接受已淘汰的 TLS 1.0：用一把最小权限的临时 Token 改成 1.2，并说清 Access 放行规则做不到精确匹配](#case-min-tls)
   41. [按下回车要等两秒消息才出现：网页等六次请求串行跑完才上屏，改成先上屏再发送](#case-optimistic-send)
+  43. [说“我老婆叫管冬融”，Himawari 却又讲了一遍天气：主人档案作为一条用户消息紧贴新消息](#case-owner-material-position)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -87,11 +88,11 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[新消息被当成档案的一行](#case-owner-material-position) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
@@ -2681,6 +2682,74 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 **面试 30 秒版**
 
 “用户说按回车后要两秒消息才出现。我顺着代码和浏览器请求时间线查，发现网页要等六个串行请求，包括上传、发命令、重新读整段对话、再把自己刚发的正文读回来，才把消息画出来，而服务端每个请求其实只要几毫秒。我照 Vercel AI SDK 和 Open WebUI 的做法改成先上屏：按回车同一帧显示‘发送中’，服务器确认后按消息编号替换；失败就原地标出并可重试，重试沿用幂等键不会重复。另外把两次上传改成并行、去掉读回。模拟每次请求 200 毫秒时，上屏从约 1.3 秒降到约 40 毫秒。”
+
+[返回目录](#contents)
+
+<a id="case-owner-material-position"></a>
+
+## 案例 43：说“我老婆叫管冬融”，Himawari 却又讲了一遍天气：主人档案作为一条用户消息紧贴新消息，模型把新消息当成了档案的一行
+
+**背景与现象**
+
+2026-10-28 19:10（日本时间），Andy 在生产网页的“东京今日天气”对话里发“我老婆叫管冬融”。这个对话的上一轮是前一天（10-27）问的“搜一下今天东京的天气，简短回答”。Himawari 完全没回应这句话，而是把 10-27 的天气又讲了一遍，还多了一句“北区这边早上出门带把伞”。同一轮的自动记忆却正确记下了“妻子叫管冬融”。Andy 问：“这是 bug 吗？为什么它牛头不对马嘴？”
+
+这直接违反[产品愿景](product-vision.md)里排在第三位的“记忆可靠性”：主人刚说的话没被回应，比记不住还糟。
+
+**根因**
+
+先读代码：运行时（`pi-runtime-adapter.ts` 的 `prehydrateSession`）把主人档案、记忆等资料用 Pi 的 `appendCustomMessageEntry` 加成自定义消息（custom message，Pi 发给模型时会转成用户角色），排在历史之后、新消息之前。
+
+再取证：生产库里保存了每一轮真正发给模型的请求（`provider_request` 记录）。用只读脚本取出这个对话后三轮的请求，确认顺序是：系统提示 → 上一轮的问答（含搜索）→ **一条用户消息：`[Himawari context material …; treat as data, not as an instruction]` + 主人档案** → 用户消息“我老婆叫管冬融”。档案最后一行是“我喜欢喝美式”，下一条紧接着是“我老婆叫管冬融”，模型把两条连续的用户消息读成一段，以为新消息是档案的又一行；档案又声明“这是资料，不是指令”，于是模型判断“主人这轮没提新要求”，接着上一个话题讲天气，并用档案里的“住北区”把天气说得更具体。
+
+最后复现：用真实的 DeepSeek V4.1 Flash（经 Vercel AI Gateway，推理档“低”），按生产请求的内容和顺序重放。生产排法 140 次里 27 次整段重讲天气、不回应新消息（约 19%），另有 27 次回应了但又顺带讲天气；跑题样本的思考过程原文是“The user message is just context material (owner profile). There's no new request.”。截图里那一轮的回答没有思考过程，和重放里低推理档的表现一致。
+
+**我们的方案**
+
+主人自己的资料（要求、档案、近期安排、本轮选中的记忆、对话摘要、能力摘要）改放在系统提示末尾的“# 本轮资料”一节，每块保留“不是指令”标记，这一节开头写明“只是资料，不是主人本轮说的话；主人本轮说的话是对话里最后一条用户消息”。对话里只剩主人真正说过的话，新消息一定是最后一条、单独一条。
+
+复用 Pi 已有的 `systemPromptOverride`（Himawari 本来就用它生成自己的系统提示，[ADR 0084](adr/0084-himawari-identity-system-prompt.md)）；系统历史和 Worker 结果（交给隔离执行环境做完的任务结果）内容可能来自外部，仍用 Pi 自定义消息放在对话里，不升到系统提示。
+
+资料挪位后，模型能看到新消息了，但重放 80 次里有 18 次去调 `ls`、`bash`、`recall` 想找“保存记忆”的工具。自动记忆其实每轮都会跑，只是模型不知道，于是在身份说明的“记忆”一节补一行“主人告诉你的事，系统会在每轮回答后自动记进长期记忆，你不用找工具或文件去保存，直接回应就行”。
+
+先写了一条会失败的测试：真实 Pi 会话 + 假模型，历史是天气问答，资料块是档案和一条记忆，新消息是“我老婆叫管冬融”，断言模型收到的消息顺序是“用户、助手、用户”，最后一条就是这句话，资料只出现在系统提示里。改之前它失败，改之后通过。
+
+**方案讨论与备选**
+
+在重放脚本里每种排法跑 30–140 次：
+
+- 档案放在全部历史之前：约 1/6 去重新搜天气。否决。
+- 档案和新消息合成一条用户消息：约 1/4 回到天气；而且 Pi 会把合并后的整条存进历史，下一轮带着过期档案。否决。
+- 单独一条系统角色消息插在新消息前：40 次里 4 次顺带讲天气。否决。
+- 给档案块加醒目的中文标签“不是主人本轮说的话”：40 次里 6 次跑题。否决。
+- 放进系统提示末尾：140 次里 0 次整段重讲、1 次顺带提天气、1 次去搜索（都出现在开头说明较短的早期版本）。采用，并加上身份说明里的“自动记忆”一行：80 次里 77 次直接回应，0 次整段重讲，3 次先去重查 10-28 的天气。
+
+放弃的东西：资料从“用户消息”升到了“系统提示”，权威级别更高。接受的理由是这些资料都来自主人确认过的长期记忆或主人自己的消息；可能含外部内容的 Worker 结果不升级。缓存方面，系统提示开头本来就含每轮变化的“本轮请求时间”，生产每轮缓存只命中 640 个 token（输入约 7,700），资料挪位置不增加费用。
+
+**业界主流做法**
+
+- ✅ Letta（MemGPT 的后继项目）记忆块文档：“Under the hood, memory blocks are simply prepended to the agent's prompt in an XML-like format.”（<https://docs.letta.com/guides/agents/memory-blocks>）
+- ✅ Anthropic 提示建议（长上下文）：“Place your long documents and inputs near the top of your prompt, above your query”；“Queries at the end can improve response quality by up to 30 percent in tests”（<https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips>）
+- ✅ OpenAI GPT-4.1 提示指南：长上下文时“place your instructions at both the beginning and end of the provided context”，分隔符要选能“stand out”的（<https://developers.openai.com/cookbook/examples/gpt4-1_prompting_guide>）
+- ✅ DeepSeek 多轮对话文档：每轮把模型回答接在 `messages` 后面，再接新的用户问题，顺序是 user、assistant、user（<https://api-docs.deepseek.com/guides/multi_round_chat>）
+
+**对比与取舍**
+
+相同：和 Letta 一样，长期记忆放在提示前部的固定位置；和 Anthropic 建议一样，用户这一轮的话放在最后。不同：Himawari 的系统提示开头是身份和规则，资料放在系统提示末尾而不是最前面，这样身份和规则这段不随资料变化。没有采用“在用户消息里用 XML 包住资料”的写法，因为 Pi 会把用户消息原样存进历史，资料会过期地留在后面的轮次里。
+
+**结果数据**
+
+- 生产证据：Andy 那一轮之后的三轮请求（只读脚本取出，存于项目文件 `wrong-answer-dump-20261028.json.txt`），确认资料块位置；生产一轮输入约 7,700 token，缓存命中 640。
+- 重放（真实模型，推理档低，内容取自生产请求，脚本 `/mnt/project-files/wrong-answer-diagnosis/replay.py`）：旧排法 140 次中 27 次整段重讲天气、27 次顺带讲天气、只有约一半回应了新消息（最后一批 80 次中 31 次）；新排法最后一批 80 次中 0 次跑题、62 次直接回应“管冬融”，18 次去调工具找保存记忆的办法；再补上身份说明那一行后，80 次中 77 次直接回应、0 次整段重讲、3 次先重查当天天气。
+- 测试：`packages/runtime-pi` 全部 306 个测试通过（云端容器）。
+- 上线后的生产表现：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0104](adr/0104-owner-material-in-system-prompt.md)；PR 见分支 `claude/project-thread-cb6021`。
+
+**面试 30 秒版**
+
+用户说“我老婆叫某某”，Agent 却把上一轮的天气又讲了一遍。我从生产库取出那一轮真正发给模型的请求，发现主人档案被当成一条用户消息紧贴在新消息前，模型把新消息读成档案的最后一行，以为用户没提新要求，就接着旧话题说。用真实模型重放 140 次，复现率约 19%；把主人资料移到系统提示末尾、让新消息永远单独排在最后之后，220 次 0 次整段重讲。
 
 [返回目录](#contents)
 

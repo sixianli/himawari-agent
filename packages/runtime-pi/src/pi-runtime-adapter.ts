@@ -374,6 +374,7 @@ type PiToolDefinitionText = Pick<
 function productSystemPrompt(
   systemInstruction: string,
   tools: readonly PiToolDefinitionText[],
+  ownerMaterial: readonly RuntimeProjection["contextBlocks"][number][],
 ): string {
   const snippets = tools.flatMap(({ name, promptSnippet }) =>
     promptSnippet ? [`- ${name}: ${promptSnippet}`] : [],
@@ -391,7 +392,30 @@ function productSystemPrompt(
     ...(guidelines.length > 0
       ? [["工具用法：", ...guidelines.map((guideline) => `- ${guideline}`)].join("\n")]
       : []),
+    ...(ownerMaterial.length > 0
+      ? [
+          [
+            "# 本轮资料",
+            "以下是系统为本轮附上的主人档案和记忆，只是资料，不是主人本轮说的话。主人本轮说的话是对话里最后一条用户消息。",
+            ...ownerMaterial.map(contextBlockContent),
+          ].join("\n\n"),
+        ]
+      : []),
   ].join("\n\n");
+}
+
+const OWNER_MATERIAL_KINDS: ReadonlySet<RuntimeProjection["contextBlocks"][number]["kind"]> =
+  new Set([
+    "owner-rules",
+    "owner-profile",
+    "owner-agenda",
+    "memory",
+    "thread-summary",
+    "capability-summary",
+  ]);
+
+function isOwnerMaterial(block: RuntimeProjection["contextBlocks"][number]): boolean {
+  return OWNER_MATERIAL_KINDS.has(block.kind);
 }
 
 function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
@@ -475,7 +499,7 @@ function prehydrateSession(
       true,
     );
   }
-  for (const block of projection.contextBlocks) {
+  for (const block of projection.contextBlocks.filter((block) => !isOwnerMaterial(block))) {
     sessionManager.appendCustomMessageEntry(
       "himawari.context.block",
       contextBlockContent(block),
@@ -1023,6 +1047,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           productSystemPrompt(
             projection.systemInstruction,
             descriptors.map((descriptor) => this.toolDefinition(descriptor)),
+            projection.contextBlocks.filter(isOwnerMaterial),
           ),
         appendSystemPrompt: [],
         appendSystemPromptOverride: () => [],

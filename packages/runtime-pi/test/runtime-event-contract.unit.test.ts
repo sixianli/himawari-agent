@@ -521,8 +521,8 @@ describe("product history hydration before a Pi session", () => {
       contextBlocks: [
         {
           authority: "data",
-          kind: "memory",
-          ref: "memory-ref",
+          kind: "worker-result",
+          ref: "worker-ref",
           sourceRef: "source-doc",
           productRole: "reference",
           content: "Context content",
