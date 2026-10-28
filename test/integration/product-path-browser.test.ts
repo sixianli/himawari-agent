@@ -899,6 +899,9 @@ async function expectFinishedTurnShowsStep(turn: Locator, step: string) {
   await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
     timeout: 120_000,
   });
+  const process = turn.locator(".turn-process").last();
+  if ((await process.getAttribute("open")) === null)
+    await process.locator(":scope > summary").click();
   await uiExpect(turn.getByText(step).first()).toBeVisible({ timeout: 30_000 });
   await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
   await uiExpect(page.getByText("没有可展示的过程记录")).toHaveCount(0);

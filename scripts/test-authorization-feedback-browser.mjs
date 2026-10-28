@@ -129,9 +129,7 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
       await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "offline");
       await page.evaluate(() => window.dispatchEvent(new Event("online")));
       await expect.poll(() => searchReads).toBeGreaterThan(failedReads);
-      await expect(
-        search.getByRole("switch", { name: "允许联网搜索", exact: true }),
-      ).toBeEnabled();
+      await expect(search.getByRole("switch", { name: "允许联网搜索", exact: true })).toBeEnabled();
       await expect(search.getByRole("alert")).toHaveCount(0);
       await page.getByRole("dialog", { name: "设置", exact: true }).press("Escape");
       const approval = page.locator("#approval-run-01");
