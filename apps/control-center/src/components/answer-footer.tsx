@@ -123,7 +123,7 @@ export function AnswerSources({
         <ul className="source-list">
           {sources.map((source) => (
             <li key={source.url}>
-              <a href={source.url} target="_blank" rel="noopener noreferrer">
+              <a href={source.url} title={source.url} target="_blank" rel="noopener noreferrer">
                 <span className="source-title">{source.title}</span>
                 <small>{source.site}</small>
                 <LineIcon name="external" />

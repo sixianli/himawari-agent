@@ -696,6 +696,7 @@ function memoryOverview() {
         text: "交面试作业",
         dueAt: "2026-10-31T01:00:00.000Z",
         repeat: "none",
+        sourceThreadId: "thread-main",
       },
     ],
     people: [

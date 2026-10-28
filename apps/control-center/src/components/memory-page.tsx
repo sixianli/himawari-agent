@@ -376,10 +376,12 @@ export function RemindersPage({
   memory,
   message,
   onBack,
+  onOpenThread,
 }: {
   memory: MemoryModel | null;
   message: Message;
   onBack: () => void;
+  onOpenThread: (threadId: string) => void;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const overview = memory?.overview;
@@ -392,6 +394,22 @@ export function RemindersPage({
   const groups = new Map<string, NonNullable<typeof overview>["upcoming"][number][]>();
   for (const item of [...(overview?.upcoming ?? [])].sort((a, b) => a.dueAt.localeCompare(b.dueAt)))
     groups.set(groupOf(item.dueAt), [...(groups.get(groupOf(item.dueAt)) ?? []), item]);
+  const meta = (yearly: boolean, threadId: string | null) =>
+    yearly || threadId ? (
+      <small>
+        {yearly ? message("memory.page.yearly") : null}
+        {yearly && threadId ? " · " : null}
+        {threadId ? (
+          <button
+            type="button"
+            className="memory-link reminder-source"
+            onClick={() => onOpenThread(threadId)}
+          >
+            {message("memory.source")}
+          </button>
+        ) : null}
+      </small>
+    ) : null;
   const when = (at: string) =>
     groupOf(at) === "today"
       ? new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
@@ -421,7 +439,10 @@ export function RemindersPage({
               {overview.reminders.map((item) => (
                 <div className="reminder-row" data-kind="due" key={item.reminderId}>
                   <span className="reminder-when">{when(item.dueAt)}</span>
-                  <span className="reminder-text">{item.text}</span>
+                  <span className="reminder-text">
+                    {item.text}
+                    {meta(false, item.sourceThreadId)}
+                  </span>
                   <span className="actions">
                     <ActionButton
                       disabled={memory.busy}
@@ -449,9 +470,7 @@ export function RemindersPage({
                   <span className="reminder-when">{when(item.dueAt)}</span>
                   <span className="reminder-text">
                     {item.text}
-                    {item.repeat === "yearly" ? (
-                      <small>{message("memory.page.yearly")}</small>
-                    ) : null}
+                    {meta(item.repeat === "yearly", item.sourceThreadId)}
                   </span>
                   <span className="actions">
                     <ActionButton

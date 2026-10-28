@@ -80,7 +80,7 @@ function Harness({ ownerRefs }: { ownerRefs: readonly string[] }) {
     h(
       "div",
       { id: "reminders-page" },
-      h(RemindersPage, { memory, message, onBack: () => undefined }),
+      h(RemindersPage, { memory, message, onBack: () => undefined, onOpenThread: opened }),
     ),
   );
 }
@@ -575,6 +575,7 @@ describe("memory approval and management", () => {
           text: "主人周五下午三点要交季度报告",
           dueAt: "2026-10-30T07:00:00.000Z",
           remindAt: "2026-10-30T06:00:00.000Z",
+          sourceThreadId: null,
         },
       ],
       upcoming: [
@@ -584,6 +585,7 @@ describe("memory approval and management", () => {
           text: "妈妈的生日是 3 月 14 日",
           dueAt: "2027-03-14T01:00:00.000Z",
           repeat: "yearly",
+          sourceThreadId: "thread-main",
         },
       ],
     };
@@ -599,6 +601,9 @@ describe("memory approval and management", () => {
     expect(text("#settings [role=tablist]")).not.toContain("提醒");
     expect(text("#reminders-page")).toContain("到时间了");
     expect(text("#reminders-page")).toContain("每年");
+    expect(document.querySelectorAll("#reminders-page .reminder-source")).toHaveLength(1);
+    await click("#reminders-page .reminder-row:not([data-kind])", "来源对话");
+    expect(opened).toHaveBeenCalledWith("thread-main");
     await click("#reminders-page .reminder-row:not([data-kind])", "不再提醒");
     expect(lastCommand()).toMatchObject({
       type: "memory.reminder.respond",

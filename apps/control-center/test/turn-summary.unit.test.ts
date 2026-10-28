@@ -91,3 +91,30 @@ it("[UI-10] lists each web page the searches returned once, in result order", ()
     { url: "https://npr.org/c", title: "npr.org", site: "npr.org" },
   ]);
 });
+
+it("[UI-10] names a source by its registrable domain, not the full host", () => {
+  const sources = turnSources([
+    record({
+      kind: "tool",
+      name: "web_search",
+      phase: "completed",
+      output: JSON.stringify({
+        source: "Exa public web search",
+        results: [
+          { url: "https://www3.nhk.or.jp/news/html/20261028/k1.html", title: "NHK" },
+          { url: "https://news.yahoo.co.jp/articles/abc", title: "Yahoo" },
+          { url: "https://andy.github.io/post", title: "Blog" },
+          { url: "http://192.168.1.20:8080/page", title: "Router" },
+          { url: "http://localhost:3000/", title: "Local" },
+        ],
+      }),
+    }),
+  ]);
+  expect(sources.map(({ site }) => site)).toEqual([
+    "nhk.or.jp",
+    "yahoo.co.jp",
+    "andy.github.io",
+    "192.168.1.20",
+    "localhost",
+  ]);
+});

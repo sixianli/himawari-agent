@@ -124,6 +124,7 @@ export const browserExternalPackages = new Set([
   "marked",
   "pdfjs-dist",
   "fflate",
+  "tldts",
   "vite",
   "vitest",
 ]);

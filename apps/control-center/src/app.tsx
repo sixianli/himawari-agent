@@ -355,7 +355,14 @@ function LocalizedControlCenterApp({
                   }
                 />
               ) : (
-                <RemindersPage memory={memory} message={message} onBack={onBack} />
+                <RemindersPage
+                  memory={memory}
+                  message={message}
+                  onBack={onBack}
+                  onOpenThread={(threadId) =>
+                    navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
+                  }
+                />
               )}
             </Suspense>
           ),

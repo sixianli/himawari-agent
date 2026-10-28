@@ -1,4 +1,5 @@
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
+import { getDomain } from "tldts";
 
 export interface TurnUsage {
   readonly input: number;
@@ -69,7 +70,7 @@ export function turnSources(records: readonly ThreadExecutionRecord[]): readonly
         continue;
       }
       if (!["http:", "https:"].includes(url.protocol) || sources.has(url.href)) continue;
-      const site = url.hostname.replace(/^www\./, "");
+      const site = getDomain(url.hostname, { allowPrivateDomains: true }) ?? url.hostname;
       const title = typeof entry["title"] === "string" ? entry["title"].trim() : "";
       sources.set(url.href, { url: url.href, title: title || site, site });
     }

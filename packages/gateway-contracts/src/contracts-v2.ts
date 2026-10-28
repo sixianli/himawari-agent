@@ -382,6 +382,7 @@ const memoryOverviewSnapshotSchema = object({
         text: boundedString(2000),
         dueAt: timestamp,
         remindAt: timestamp,
+        sourceThreadId: nullable(machineString),
       }),
     ),
     upcoming: array(
@@ -391,6 +392,7 @@ const memoryOverviewSnapshotSchema = object({
         text: boundedString(2000),
         dueAt: timestamp,
         repeat: enumeration(["none", "yearly"]),
+        sourceThreadId: nullable(machineString),
       }),
     ),
     people: array(
