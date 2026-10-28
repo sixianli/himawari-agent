@@ -19,6 +19,7 @@ import {
 import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
 import type { ProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
+import type { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
 import type { ProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 import type { WebToolMemory } from "./web-tool-memory.js";
 
@@ -59,6 +60,7 @@ export interface ProductionFileReadServices {
   ): ReturnType<CapabilityHandleService["issue"]>;
   readonly hostReadOnly?: ProductionHostReadOnly;
   readonly workspaceLedger?: ProductionWorkspaceLedger;
+  readonly threadArtifacts?: ProductionThreadArtifacts;
   readonly hostWeb?: ProductionHostWeb;
   readonly webMemory?: WebToolMemory;
 }
@@ -88,6 +90,7 @@ export interface FileReadExecutionContext {
   assertActive(): Promise<void>;
   load(key: string): Promise<unknown | undefined>;
   save(key: string, value: unknown): Promise<{ readonly ref: string; readonly value: unknown }>;
+  saveCopy?(key: string, bytes: Uint8Array, contentType: string): Promise<{ readonly ref: string }>;
   phase(
     handle: GovernedCapabilityExecutionHandle,
     phase:

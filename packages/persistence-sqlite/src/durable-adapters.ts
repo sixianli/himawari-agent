@@ -17,6 +17,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryReminderStorePort,
+  ThreadArtifactStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
   MemoryIndexStorePort,
@@ -958,6 +959,16 @@ export class SqliteDurableAdapters {
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
       listFinishedRuns: (input) => this.context.read("webPush.listFinishedRuns", input),
       prune: (input) => this.context.write("webPush.prune", input),
+    });
+  }
+
+  threadArtifacts(): ThreadArtifactStorePort {
+    return Object.freeze<ThreadArtifactStorePort>({
+      register: (input) => this.context.write("threadArtifact.register", input),
+      latest: (input) => this.context.read("threadArtifact.latest", input),
+      get: (input) => this.context.read("threadArtifact.get", input),
+      versions: (input) => this.context.read("threadArtifact.versions", input),
+      list: (input) => this.context.read("threadArtifact.list", input),
     });
   }
 

@@ -8,7 +8,7 @@ date: "2026-10-28"
 
 # 文件交付和“更多”栏产物页实施计划
 
-依据 [ADR 0100](../../adr/0100-conversation-more-panel-files-and-background-commands.md) [SOURCE: docs/adr/0100-conversation-more-panel-files-and-background-commands.md] 和 [控制中心 Spec 的 v8 增补](../specs/2026-09-15-control-center-v4-design.md#v8-more-panel) [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel]（Andy 2026-10-28 11:44 日本时间批准）。
+依据 [ADR 0100](../../adr/0100-conversation-more-panel-files-and-background-commands.md) [SOURCE: docs/adr/0100-conversation-more-panel-files-and-background-commands.md] 和 [控制中心 Spec 的 v8 增补](../specs/2026-09-15-control-center-v4-design.md#v8-more-panel) [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel]（Andy 2026-10-28 11:44 日本时间批准：“原型和方案都审核了，全部按照你的设计和推荐来做！”）。
 
 **目标：** Himawari 在对话里做出的每个文件都登记、留副本、能在“更多”栏和侧栏“文件”页里预览和下载；网页文件在单独子域名里隔离运行。
 
@@ -24,6 +24,7 @@ date: "2026-10-28"
 - [第五步：产物页、文件预览和文件页](#第五步产物页文件预览和文件页)
 - [测试](#测试)
 - [需要 Andy 的事](#需要-andy-的事)
+- [进度记录](#进度记录)
 - [收尾](#收尾)
 
 ## 现状
@@ -88,6 +89,18 @@ PR #63 合并后，基于新 main：
 
 - 预览子域名的名字，和在 Cloudflare 上加 DNS、隧道路由（不放进登录拦截）的批准。
 - 上线照旧并入“完整版本”。
+
+## 进度记录
+
+2026-10-28，后端第一步到第四步完成（分支 `claude/project-thread-3hdzxk`，基于 main 332a7ae）。和上面写的计划有这些不同：
+
+- 每个版本有自己的编号，读文件接口是 `GET /api/files/v1/content/<编号>`，下载加 `?download=1`，不用 `?version=N`；`POST /api/files/v1/versions` 列出同一文件的各版本。
+- 登记表没有存“命令原文”和“轮次”：每行有运行编号和工具调用编号，界面从已有的过程记录找到对应的命令和轮次，不重复存。
+- 不和改动记录里的 SHA-256 比对：登记时自己读一次文件，用这一份字节算指纹并存副本。
+- 副本存在加密过程记录（`run_payload_artifacts`）里，操作键 `runtime-file-read:<键>:artifact-copy:<指纹>`。
+- 主站安全策略只加了 `frame-src 'self' <预览域名>`；读文件接口单独用 `frame-ancestors 'self'` 和 `X-Frame-Options: SAMEORIGIN`，让 PDF 能在本站内嵌框里显示。预览页的安全策略允许 `https:` 的脚本和样式（模型写的网页常用外部库），但 `connect-src 'none'`，页面不能向外发请求。
+- 新配置 `http.previewOrigin` 可不填；不填时预览接口返回“未安装”，其他功能照常。必须是 https 来源，且不能和主站同一个主机名。上线包模板暂不改，等 Andy 定子域名后再加。
+- 第四步的说明加在运行系统提示里，缓存键 `run-system-instruction:v5`。
 
 ## 收尾
 

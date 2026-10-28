@@ -57,7 +57,7 @@ export function createProductionRunPolicy(options: {
     const identity = {
       runId: source.runId,
       purpose: "context" as const,
-      operationKey: `run-system-instruction:v4:${createHash("sha256")
+      operationKey: `run-system-instruction:v5:${createHash("sha256")
         .update(
           JSON.stringify([
             HIMAWARI_IDENTITY,
@@ -145,6 +145,7 @@ export function runCapabilityNotice(input: {
       lines.push(
         `- 工作目录是 ${input.workspaceRoot}。读写文件用相对路径或这个目录下的路径，目录之外的路径会被拒绝。`,
         "- 命令可以在工作目录里新建、修改和删除文件。每条命令前后系统会对比工作目录，把改了哪些文件附在命令结果末尾并留档。临时文件放到 $TMPDIR，不要放进工作目录。.git、.env、.himawari-recovery 等受保护的文件和文件夹不能读也不能写。",
+        "- 你在工作目录里写出或改动的文件，界面会自动在回答下方显示文件卡片，用户点开就能预览和下载。回答里提到这些文件时只写文件名，不要写服务器上的完整路径，也不要让用户自己去服务器上找。",
       );
   }
   lines.push(

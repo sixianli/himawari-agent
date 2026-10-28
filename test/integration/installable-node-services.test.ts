@@ -11,8 +11,8 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 let testRoot = "";
@@ -484,7 +484,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 59,
+      schemaSequence: 60,
       quickCheck: "ok",
     });
 

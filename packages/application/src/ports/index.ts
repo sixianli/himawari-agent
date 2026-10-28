@@ -51,4 +51,5 @@ export * from "./web.js";
 export * from "./web-providers.js";
 export * from "./workspaces.js";
 
+export * from "./thread-artifacts.js";
 export * from "./thread-search-projection.js";

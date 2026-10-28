@@ -31,6 +31,7 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
@@ -87,6 +88,8 @@ export interface HttpGatewayServerOptions {
   readonly payloadAdmission?: HttpGatewayPayloadAdmissionPort;
   readonly payloadRead?: HttpGatewayPayloadReadPort;
   readonly threadSearch?: HttpGatewayThreadSearchPort;
+  readonly files?: HttpGatewayFilesPort;
+  readonly previewOrigin?: string;
   readonly authentication: HttpGatewayAuthenticationPort;
   readonly recentAuthentication?: RecentAuthenticationGuardPort;
   readonly csrf: HttpGatewayCsrfPort;
@@ -238,11 +241,58 @@ function assertMutationBoundary(request: FastifyRequest, publicOrigin: URL): voi
   }
 }
 
-function setSecurityHeaders(reply: FastifyReply): void {
+const FILE_CONTENT_PATH = /^\/api\/files\/v1\/content\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
+const FILE_PREVIEW_PATH = /^\/preview\/([A-Za-z0-9_-]{1,512}\.[A-Za-z0-9_-]{1,128})$/;
+const FILE_KINDS = ["document", "code", "web", "image", "pdf", "data", "other"] as const;
+
+function setPreviewHeaders(reply: FastifyReply, publicOrigin: URL): void {
   reply
     .header(
       "content-security-policy",
-      "default-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; manifest-src 'self'; script-src 'self'; style-src 'self'; worker-src 'self'",
+      `sandbox allow-scripts allow-modals allow-popups allow-downloads; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' data: blob: https:; style-src 'unsafe-inline' data: https:; img-src data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${publicOrigin.origin}`,
+    )
+    .header("cross-origin-resource-policy", "cross-origin")
+    .header("referrer-policy", "no-referrer")
+    .header("x-content-type-options", "nosniff")
+    .header("cache-control", "no-store");
+}
+
+function setFileContentHeaders(reply: FastifyReply): void {
+  reply
+    .header(
+      "content-security-policy",
+      "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'",
+    )
+    .header("cross-origin-opener-policy", "same-origin")
+    .header("cross-origin-resource-policy", "same-origin")
+    .header("referrer-policy", "no-referrer")
+    .header("x-content-type-options", "nosniff")
+    .header("x-frame-options", "SAMEORIGIN")
+    .header("cache-control", "private, no-store");
+}
+
+function contentDisposition(content: BrowserThreadFileContent): string {
+  const ascii = content.fileName.replace(/[^\x20-\x7e]|["\\]/g, "_") || "file";
+  return `${content.disposition}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(content.fileName)}`;
+}
+
+function sendFileContent(reply: FastifyReply, content: BrowserThreadFileContent): FastifyReply {
+  return reply
+    .code(200)
+    .header("content-disposition", contentDisposition(content))
+    .type(
+      content.mediaType.startsWith("text/")
+        ? `${content.mediaType}; charset=utf-8`
+        : content.mediaType,
+    )
+    .send(Buffer.from(content.bytes));
+}
+
+function setSecurityHeaders(reply: FastifyReply, previewOrigin?: URL): void {
+  reply
+    .header(
+      "content-security-policy",
+      `default-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'self'${previewOrigin ? ` ${previewOrigin.origin}` : ""}; img-src 'self' data:; manifest-src 'self'; script-src 'self'; style-src 'self'; worker-src 'self'`,
     )
     .header("cross-origin-opener-policy", "same-origin")
     .header("cross-origin-resource-policy", "same-origin")
@@ -706,8 +756,35 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     forceCloseConnections: true,
   });
 
-  app.addHook("onSend", async (_request, reply) => {
-    setSecurityHeaders(reply);
+  const previewOrigin = options.previewOrigin ? new URL(options.previewOrigin) : undefined;
+  if (
+    previewOrigin &&
+    (previewOrigin.origin !== options.previewOrigin || previewOrigin.host === publicOrigin.host)
+  ) {
+    throw new Error("HTTP_GATEWAY_PREVIEW_ORIGIN_INVALID");
+  }
+  const previewRequest = (request: FastifyRequest) =>
+    previewOrigin !== undefined && header(request, "host") === previewOrigin.host;
+
+  app.addHook("onRequest", async (request) => {
+    if (
+      previewRequest(request) &&
+      (request.method !== "GET" || !FILE_PREVIEW_PATH.test(requestPath(request)))
+    ) {
+      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
+    }
+  });
+
+  app.addHook("onSend", async (request, reply) => {
+    if (previewRequest(request)) {
+      setPreviewHeaders(reply, publicOrigin);
+      return;
+    }
+    if (FILE_CONTENT_PATH.test(requestPath(request)) && reply.statusCode === 200) {
+      setFileContentHeaders(reply);
+      return;
+    }
+    setSecurityHeaders(reply, previewOrigin);
   });
 
   app.setErrorHandler((error, _request, reply) => {
@@ -905,7 +982,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
                 ],
           );
         }
-        setSecurityHeaders(reply);
+        setSecurityHeaders(reply, previewOrigin);
         reply
           .header("cache-control", "no-cache, no-store")
           .header("connection", "keep-alive")
@@ -970,7 +1047,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             signal: controller.signal,
           }),
         );
-        setSecurityHeaders(reply);
+        setSecurityHeaders(reply, previewOrigin);
         reply
           .header("cache-control", "no-cache, no-store")
           .header("connection", "keep-alive")
@@ -1025,7 +1102,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
               options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
           }),
         );
-        setSecurityHeaders(reply);
+        setSecurityHeaders(reply, previewOrigin);
         reply
           .header("cache-control", "no-cache, no-store")
           .header("connection", "keep-alive")
@@ -1053,7 +1130,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
                 options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
             }),
           );
-          setSecurityHeaders(reply);
+          setSecurityHeaders(reply, previewOrigin);
           reply
             .header("cache-control", "no-cache, no-store")
             .header("connection", "keep-alive")
@@ -1183,6 +1260,132 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         }),
       );
     });
+  }
+
+  if (options.files) {
+    const files = options.files;
+    const filesRequest = async (request: FastifyRequest) => {
+      assertMutationBoundary(request, publicOrigin);
+      const authentication = await authenticate(request, options);
+      const csrfAccepted = await options.csrf.verify({
+        authentication,
+        token: header(request, "x-csrf-token"),
+        method: request.method,
+        path: requestPath(request),
+      });
+      if (!csrfAccepted) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+      }
+      const agentId = options.browserConfiguration?.agentId;
+      if (!agentId) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.SCOPE_REJECTED, 403);
+      }
+      if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      return { authentication, agentId, body: request.body as Record<string, unknown> };
+    };
+    const fileId = (body: Record<string, unknown>): string => {
+      if (
+        Object.keys(body).some((key) => key !== "fileId") ||
+        typeof body["fileId"] !== "string" ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(body["fileId"])
+      ) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      return body["fileId"];
+    };
+    const optionalText = (value: unknown, maximum: number): string | null => {
+      if (value === undefined || value === null) return null;
+      if (typeof value !== "string" || value.length > maximum) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      return value;
+    };
+    app.post("/api/files/v1/list", async (request, reply) => {
+      const { authentication, agentId, body } = await filesRequest(request);
+      if (
+        Object.keys(body).some(
+          (key) => !["threadId", "kind", "search", "before", "limit"].includes(key),
+        ) ||
+        (body["kind"] !== undefined &&
+          body["kind"] !== null &&
+          !FILE_KINDS.includes(body["kind"] as (typeof FILE_KINDS)[number])) ||
+        (body["limit"] !== undefined &&
+          (!Number.isSafeInteger(body["limit"]) ||
+            Number(body["limit"]) < 1 ||
+            Number(body["limit"]) > 200))
+      ) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+      }
+      return sendJson(
+        reply,
+        200,
+        await files.list({
+          authentication,
+          agentId,
+          threadId: optionalText(body["threadId"], 128),
+          kind: (body["kind"] ?? null) as (typeof FILE_KINDS)[number] | null,
+          search: optionalText(body["search"], 256),
+          before: optionalText(body["before"], 512),
+          limit: (body["limit"] as number | undefined) ?? 50,
+        }),
+      );
+    });
+    app.post("/api/files/v1/versions", async (request, reply) => {
+      const { authentication, agentId, body } = await filesRequest(request);
+      return sendJson(
+        reply,
+        200,
+        await files.versions({ authentication, agentId, fileId: fileId(body) }),
+      );
+    });
+    app.post("/api/files/v1/preview-ticket", async (request, reply) => {
+      const { authentication, agentId, body } = await filesRequest(request);
+      return sendJson(
+        reply,
+        200,
+        await files.previewTicket({ authentication, agentId, fileId: fileId(body) }),
+      );
+    });
+    app.get("/api/files/v1/content/:fileId", async (request, reply) => {
+      assertPublicHost(request, publicOrigin);
+      const match = FILE_CONTENT_PATH.exec(requestPath(request));
+      if (!match?.[1]) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
+      }
+      const site = header(request, "sec-fetch-site");
+      if (site !== null && site !== "same-origin" && site !== "none") {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.ORIGIN_REJECTED, 403);
+      }
+      const authentication = await authenticate(request, options);
+      const agentId = options.browserConfiguration?.agentId;
+      if (!agentId) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.SCOPE_REJECTED, 403);
+      }
+      const query = request.query as Record<string, unknown>;
+      if (Object.keys(query).some((key) => key !== "download")) {
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
+      }
+      return sendFileContent(
+        reply,
+        await files.content({
+          authentication,
+          agentId,
+          fileId: match[1],
+          download: query["download"] === "1",
+        }),
+      );
+    });
+    if (previewOrigin) {
+      app.get("/preview/:ticket", async (request, reply) => {
+        const match = FILE_PREVIEW_PATH.exec(requestPath(request));
+        if (!previewRequest(request) || !match?.[1]) {
+          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
+        }
+        return sendFileContent(reply, await files.preview({ ticket: match[1] }));
+      });
+    }
   }
 
   if (options.threadSearch) {

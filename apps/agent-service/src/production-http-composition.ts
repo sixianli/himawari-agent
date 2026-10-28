@@ -40,6 +40,7 @@ import {
   assertProductionSecretSource,
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
+  BrowserThreadFiles,
   BrowserThreadSearchPreparer,
   BuiltInAuthenticationService,
   buildHttpGatewayServer,
@@ -826,6 +827,16 @@ export async function createProductionHttpComposition(
     payloads: () => repository.payloadStore(ownerId, agentId),
     protector: payloadProtector,
   });
+  const files = new BrowserThreadFiles({
+    ownerId,
+    agentId,
+    store: repository.threadArtifacts(),
+    payloads: () => repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
+    ticketKey: createHmac("sha256", csrfKey).update("himawari.file-preview.key.v1").digest(),
+    now: clock,
+  });
   const searchKey = createHmac("sha256", csrfKey).update("himawari.search.key.v2").digest();
   const searchTokenizer = new ScopedThreadSearchTokenizer({
     keys: { resolve: async () => searchKey },
@@ -938,6 +949,8 @@ export async function createProductionHttpComposition(
     ),
     gatewayV2,
     threadSearch,
+    files,
+    ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
   });
   app.get("/api/identity/v1/method", async (_request, reply) =>
     reply.header("cache-control", "no-store").send({

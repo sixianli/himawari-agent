@@ -1,6 +1,7 @@
 export * from "./authenticated-uds-transport.js";
 export * from "./bounded-jwks-fetcher.js";
 export * from "./browser-text-payload-reader.js";
+export * from "./browser-thread-files.js";
 export * from "./browser-thread-search.js";
 export * from "./built-in-identity.js";
 export * from "./built-in-identity-routes.js";

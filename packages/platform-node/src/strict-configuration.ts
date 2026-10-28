@@ -472,6 +472,7 @@ function parseHttpConfiguration(value: unknown): HttpConfiguration {
       "maximumBodyBytes",
       "maximumStaticAssetBytes",
       "heartbeatMilliseconds",
+      "previewOrigin",
     ],
     "configuration.http",
   );
@@ -485,6 +486,26 @@ function parseHttpConfiguration(value: unknown): HttpConfiguration {
   );
   if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(sessionCookieName)) {
     throw invalid("configuration.http.sessionCookieName", "must be a safe HTTP cookie name");
+  }
+  const previewOrigin =
+    input["previewOrigin"] === undefined
+      ? undefined
+      : string(input["previewOrigin"], "configuration.http.previewOrigin");
+  if (previewOrigin !== undefined) {
+    let preview: URL;
+    try {
+      preview = new URL(previewOrigin);
+    } catch {
+      throw invalid("configuration.http.previewOrigin", "must be an absolute URL origin");
+    }
+    if (
+      preview.origin !== previewOrigin ||
+      preview.protocol !== "https:" ||
+      preview.username ||
+      preview.password
+    ) {
+      throw invalid("configuration.http.previewOrigin", "must be an https origin");
+    }
   }
   return Object.freeze({
     listenHost,
@@ -509,6 +530,7 @@ function parseHttpConfiguration(value: unknown): HttpConfiguration {
       10,
       300_000,
     ),
+    ...(previewOrigin === undefined ? {} : { previewOrigin }),
   });
 }
 
@@ -1085,6 +1107,9 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     input["taskEnvironments"] === undefined
       ? undefined
       : parseTaskEnvironmentConfiguration(input["taskEnvironments"]);
+  if (http?.previewOrigin !== undefined && new URL(http.previewOrigin).host === origin.host) {
+    throw invalid("configuration.http.previewOrigin", "must differ from the public origin");
+  }
   if ((http === undefined) !== (identity === undefined)) {
     throw invalid("configuration", "http and identity must be configured together");
   }
