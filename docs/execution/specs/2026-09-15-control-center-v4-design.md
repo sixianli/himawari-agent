@@ -170,7 +170,7 @@ Andy 要求把对话产物和后台命令合成一个完整设计，放进对话
 
 ## v9 增补：品牌字样、侧栏、记忆页与提醒页（2026-10-28 批准）
 
-Andy 在 2026-10-28 18:44–19:27（日本时间）提了 22 条界面意见，可点原型 <https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>（中英日三语，演示数据）由他逐条批注选定。下面分四组写，全部已实现，决定和取舍见 [ADR 0104](../../adr/0104-ui-batch-2026-10-28-show-what-the-owner-needs.md)。实现后的截图（中英日三语、电脑 1280 像素和手机 390 像素宽）存为基线 [`docs/assets/control-center/2026-10-28-v9/`](../../assets/control-center/2026-10-28-v9/SHA256SUMS)，其中的消息、记忆和文件都是测试用的演示数据。其余要求不变。
+Andy 在 2026-10-28 18:44–19:27（日本时间）提了 22 条界面意见，可点原型 <https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>（中英日三语，演示数据）由他逐条批注选定。下面分四组写，全部已实现，决定和取舍见 [ADR 0105](../../adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)。实现后的截图（中英日三语、电脑 1280 像素和手机 390 像素宽）存为基线 [`docs/assets/control-center/2026-10-28-v9/`](../../assets/control-center/2026-10-28-v9/SHA256SUMS)，其中的消息、记忆和文件都是测试用的演示数据。其余要求不变。
 
 1. 品牌字样：侧栏 logo 旁写两行，上行英文“Himawari”（Outfit 600），下行假名“ひまわり”（Zen Maru Gothic 500）；两种字体只取用到的字形，随网页一起发布，不连外网字体服务。
 2. 侧栏导航顺序：新对话、搜索、记忆、提醒、文件。“提醒”有到期的提醒时右侧显示一个小圆点，不写文字。

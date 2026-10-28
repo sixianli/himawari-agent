@@ -2782,7 +2782,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **我们的方案**
 
-先做三语可点原型（<https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>），几处给多套方案，Andy 逐条批注选定后再改代码，决定写进 [ADR 0104](adr/0104-ui-batch-2026-10-28-show-what-the-owner-needs.md)：
+先做三语可点原型（<https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>），几处给多套方案，Andy 逐条批注选定后再改代码，决定写进 [ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)：
 
 1. 过程区收起时一句话说做了什么和总用时（“搜索了 2 次网页，用时 13.1s”），从这一轮步骤种类计数生成；展开后每步只写自己的耗时；最下面一行只有 Token 总数和“缓存命中 N%”。
 2. “缓存命中”按 Andy 的要求写明是模型服务商的 KV 缓存（服务商把算过的前文存起来，同样开头的输入直接复用）：命中率 = 缓存读取 ÷（普通输入 + 缓存读取 + 缓存写入）。不显示费用。
@@ -2821,7 +2821,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **相关 ADR/PR**
 
-[ADR 0104](adr/0104-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](execution/specs/2026-09-15-control-center-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
+[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)（部分替换 [ADR 0087](adr/0087-chat-ui-v6-process-timeline.md) 和 [ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)）；[v4 设计说明 · v9 增补](execution/specs/2026-09-15-control-center-v4-design.md#v9-ui-batch)；PR #80（分支 `claude/project-thread-di5x9h`）。
 
 **面试 30 秒版**
 
