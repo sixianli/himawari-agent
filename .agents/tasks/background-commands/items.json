@@ -11,6 +11,6 @@
     {"id": "BG-3", "title": "命令结束（完成/停止/超时）后系统自己在同一对话开新一轮，模型根据结果回答，并照常发推送", "goal_ref": ["G1"], "done_when": [{"type": "test", "tag": "BG-3"}], "added": {"by": "claude", "on": "2026-10-27"}},
     {"id": "BG-4", "title": "服务重启时把没结束的后台命令如实标成被打断，并在对话里留说明", "goal_ref": ["G1"], "done_when": [{"type": "test", "tag": "BG-4"}], "added": {"by": "claude", "on": "2026-10-27"}},
     {"id": "BG-5", "title": "网页：回答下面“后台命令运行中 · 停止”一行、结束说明行、等待期间可以发送；中英日三语", "goal_ref": ["G1"], "done_when": [{"type": "test", "tag": "BG-5"}], "added": {"by": "claude", "on": "2026-10-27"}},
-    {"id": "BG-6", "title": "ADR、案例 33、Backlog 更新，npm run check 与 npm run build 通过", "goal_ref": ["G1", "G2"], "done_when": [{"type": "doc", "path": "docs/adr/0097-move-long-bash-commands-to-background.md", "quotes": "G1"}, {"type": "command", "run": "npm run check:docs"}], "added": {"by": "claude", "on": "2026-10-27"}}
+    {"id": "BG-6", "title": "ADR、案例 33、Backlog 更新，npm run check 与 npm run build 通过", "goal_ref": ["G1", "G2"], "done_when": [{"type": "doc", "path": "docs/adr/0098-move-long-bash-commands-to-background.md", "quotes": "G1"}, {"type": "command", "run": "npm run check:docs"}], "added": {"by": "claude", "on": "2026-10-27"}}
   ]
 }

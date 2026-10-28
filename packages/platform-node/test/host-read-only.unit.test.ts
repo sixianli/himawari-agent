@@ -375,4 +375,56 @@ describe("descriptor-relative read-only port", () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  it("[BW-2] snapshots the workspace without following links or entering protected entries", async () => {
+    const directory = workspace();
+    const outside = workspace();
+    mkdirSync(path.join(directory, "src"));
+    writeFileSync(path.join(directory, "src", "a.txt"), "alpha");
+    writeFileSync(path.join(directory, "b.txt"), "bravo");
+    mkdirSync(path.join(directory, ".git"));
+    writeFileSync(path.join(directory, ".git", "HEAD"), "ref");
+    mkdirSync(path.join(directory, ".himawari-recovery"));
+    writeFileSync(path.join(directory, ".himawari-recovery", "copy"), "secret");
+    writeFileSync(path.join(directory, "server.pem"), "key");
+    writeFileSync(path.join(outside, "hidden.txt"), "outside");
+    symlinkSync(outside, path.join(directory, "escape"));
+    const port = new DescriptorRelativeReadOnly();
+    try {
+      const snapshot = await port.snapshotWorkspace({
+        grant: grantFor(directory),
+        maximumEntries: 100,
+      });
+      expect(snapshot.complete).toBe(true);
+      expect(snapshot.entries.map(({ path: entry, kind }) => `${entry}:${kind}`)).toEqual([
+        "b.txt:file",
+        "escape:symlink",
+        "src:directory",
+        "src/a.txt:file",
+      ]);
+      expect(snapshot.entries.find(({ path: entry }) => entry === "b.txt")?.size).toBe("5");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("[BW-2] marks a snapshot incomplete when the workspace exceeds the entry limit", async () => {
+    const directory = workspace();
+    for (let index = 0; index < 5; index++)
+      writeFileSync(path.join(directory, `file-${index}.txt`), `${index}`);
+    const port = new DescriptorRelativeReadOnly();
+    const before = readdirSync("/proc/self/fd").length;
+    try {
+      const snapshot = await port.snapshotWorkspace({
+        grant: grantFor(directory),
+        maximumEntries: 3,
+      });
+      expect(snapshot.complete).toBe(false);
+      expect(snapshot.entries).toHaveLength(3);
+      expect(readdirSync("/proc/self/fd").length).toBe(before);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });

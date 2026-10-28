@@ -1667,7 +1667,7 @@ productDescribe(
       });
     });
 
-    it("[R2-T5] rejects writes outside the authorized workspace and private directory", async () => {
+    it("[R2-T5] writes inside the authorized workspace and rejects writes outside it and the private directory", async () => {
       await scenario("r2t5-write-boundary", async () => {
         const answer = await sendToolRequest("请核对其它路径的写入");
         const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
@@ -1746,9 +1746,9 @@ productDescribe(
         expect(readback.trapRc.trim()).not.toBe("0");
         expect(readback.trapErr).toContain("Read-only file system");
         expect(readback.trapContent).toBe("HOST-ORIGINAL");
-        expect(readback.workspaceRc.trim()).not.toBe("0");
-        expect(readback.workspaceErr).toContain("Read-only file system");
-        expect(readback.workspaceExists).toBe(false);
+        expect(readback.workspaceRc.trim()).toBe("0");
+        expect(readback.workspaceExists).toBe(true);
+        expect(readback.answer).toMatch(/工作目录改动：[^\n]*新建[^\n；]*r2t5-workspace\.txt/);
         expect(readback.pythonRc.trim()).toBe("0");
         const [created, privateDir] = readback.pythonOut.trim().split("\n");
         expect(created && privateDir).toBeTruthy();

@@ -1601,7 +1601,7 @@ async function writeCodingSnapshot(input: {
         backendRef: "srt",
         scopeSource: "grant_targets",
         directoryOperations:
-          operation === "write"
+          operation === "write" || operation === "bash"
             ? ["read", "create", "update"]
             : operation === "edit"
               ? ["read", "update"]

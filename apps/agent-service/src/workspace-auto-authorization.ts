@@ -29,7 +29,7 @@ const REQUIRED_DIRECTORY_OPERATIONS: Readonly<
   grep: ["read"],
   write: ["read", "create", "update"],
   edit: ["read", "update"],
-  bash: ["read"],
+  bash: ["read", "create", "update"],
 });
 
 export interface CodingNetworkFacts {

@@ -575,6 +575,8 @@ describe("Run capability notice", () => {
     });
     expect(notice).toContain("沙箱没有外网");
     expect(notice).toContain("工作目录是 /var/lib/himawari/workspace");
+    expect(notice).toContain("命令可以在工作目录里新建、修改和删除文件");
+    expect(notice).toContain("临时文件放到 $TMPDIR");
     expect(notice).toContain("本轮没有联网搜索工具");
     expect(notice).toContain("不要让用户去配置网络或代理");
     expect(notice).not.toContain("web_search");
