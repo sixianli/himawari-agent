@@ -303,6 +303,7 @@ export class ProductionProactive {
           priority: insight.priority,
           status: insight.status,
           pushed: insight.pushed,
+          pushReaction: insight.pushReaction,
           rating: insight.rating,
           updatedAt: insight.updatedAt,
         })),

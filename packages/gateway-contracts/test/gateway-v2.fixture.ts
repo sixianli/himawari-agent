@@ -112,6 +112,7 @@ export const governanceMessages = [
         priority: "high",
         status: "open",
         pushed: true,
+        pushReaction: "opened",
         rating: null,
         updatedAt: "2026-11-04T01:00:00.000Z",
       },

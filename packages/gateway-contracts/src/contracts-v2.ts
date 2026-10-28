@@ -402,6 +402,7 @@ const proactiveOverviewSnapshotSchema = object({
         priority: nullable(enumeration(["high", "medium", "low"])),
         status: enumeration(["open", "replied", "done", "muted"]),
         pushed: booleanValue,
+        pushReaction: nullable(enumeration(["opened", "dismissed"])),
         rating: nullable(proactiveRatingSchema),
         updatedAt: timestamp,
       }),

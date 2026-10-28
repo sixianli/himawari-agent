@@ -683,7 +683,7 @@ export const messages = {
   "memory.page.same": "{merge, select, true {同じ人} other {別の人}}",
   "memory.page.remindersNote":
     "会話に出た約束・予定・締め切りをお知らせします。時刻があるものは 1 時間前、日付だけのものは当日 9 時、誕生日は毎年です。このページを開いている間だけ通知します。",
-  "memory.page.dueNow": "時間になりました",
+  "memory.page.dueNow": "期限切れ",
   "memory.page.upcoming": "今後",
   "memory.page.noUpcoming": "今後 60 日間の予定はありません。",
   "memory.page.yearly": "毎年",
@@ -876,4 +876,132 @@ export const messages = {
   "chat.welcome.stuck": "何か詰まっていますか？一緒に考えましょう。",
   "chat.welcome.late": "こんな時間までお疲れさま。仕上げ、手伝いましょうか？",
   "chat.welcome.morning": "おはようございます。今日は何から始めましょう？",
+  "proactive.log": "判断の記録",
+  "proactive.group":
+    "{g, select, check {重要かも、元のメールを確認} none {期限なし} other {知っておくべきこと}}",
+  "proactive.when.due": "{time} 締切",
+  "proactive.when.received": "{date} 受信",
+  "proactive.priority": "{p, select, high {高} medium {中} other {低}}",
+  "proactive.openMail": "元のメール",
+  "proactive.replied": "返信済み",
+  "proactive.pushed":
+    "{reaction, select, opened {通知済み · 開きました} dismissed {通知済み · 閉じました} other {通知済み}}",
+  "proactive.rate":
+    "{r, select, useful {役立った} unneeded {不要だった} other {知らせてほしかった}}",
+  "proactive.done": "完了",
+  "proactive.mute": "通知しない",
+  "proactive.doneNotice": "完了にしました：{text}",
+  "proactive.mutedNotice": "今後は通知しません：{text}",
+  "proactive.dailyBasis":
+    "本日の費用上限に達したため、このメールはモデルを使わずルールで振り分けました",
+  "proactive.floorRaised":
+    "銀行・学校・役所からのメールに見えるため、「重要なメールは見逃さない」ルールでここに残しました",
+  "proactive.connect.title": "Gmail をつなぐと、Himawari が受信トレイを見守ります",
+  "proactive.connect.body":
+    "読み取りのみ。15 分ごとに新着メールを読み、対応が必要なこと・期限・見落としそうな情報をここに置きます。急ぎで期限が近いものだけ通知します。",
+  "proactive.connect.button": "Gmail をつなぐ",
+  "proactive.reconnect.title": "Google の許可が切れ、Gmail を読めません",
+  "proactive.reconnect.body":
+    "{time} 以降メールを確認していません。再接続すると、その間の新着も確認します",
+  "proactive.reconnect.button": "再接続",
+  "proactive.dailyLimit":
+    "本日のメール確認が 1 日の費用上限に達しました。モデルは止めていますが、銀行・学校などのメールはルールで引き続き表示します。0:00 に自動再開し、チャットへの影響はありません。",
+  "proactive.paused": "自発的なリマインダーはオフです。メールの確認・記録・通知をしていません。",
+  "proactive.foot": "期限が来たリマインダーと急ぎのメールは、通知をオンにした端末に届きます。",
+  "proactive.audit.title": "今日「対応不要」と判断した {count} 通",
+  "proactive.audit.open": "確認する",
+  "proactive.audit.hide": "閉じる",
+  "proactive.audit.note":
+    "公開後 14 日間、毎日 1 回。差出人と件名だけを表示します。「確認済み」を押すと確認件数に入ります。",
+  "proactive.audit.done": "確認済み",
+  "proactive.audit.doneOk": "確認件数に追加しました",
+  "proactive.log.range": "直近 30 日 · {days} 日分を記録",
+  "proactive.log.note": "確認のたびに 1 行残します。通知しなかった回も残します。",
+  "proactive.log.empty":
+    "まだ確認の記録はありません。Gmail をつなぐと 15 分ごとに 1 行記録します。",
+  "proactive.log.today": "今日",
+  "proactive.log.yesterday": "昨日",
+  "proactive.metric.spoke": "通知",
+  "proactive.metric.hits": "役立った",
+  "proactive.metric.misfires": "不要",
+  "proactive.metric.missed": "確認済みの中の見逃し",
+  "proactive.metric.reviewed": "{count} 通確認",
+  "proactive.verdict":
+    "{v, select, pushed {通知} silent {通知せず} deferred {保留} failed {失敗} capped {上限到達} capped_daily {上限到達（1 日）} other {対応が必要}}",
+  "proactive.line.needsOwner":
+    "Google の許可が切れ、Gmail を読めません。再接続まで確認を止めています",
+  "proactive.line.pushed": "対応が必要なこと {count} 件を通知",
+  "proactive.line.deferred":
+    "知らせるべきと判断。ただし通知しない時間帯中のため、終わったときに 1 件にまとめて通知します",
+  "proactive.line.capped": "今回の確認が 1 回分の費用上限に達しました。残りは次回確認します",
+  "proactive.line.cappedDaily":
+    "今日の累計が 1 日の費用上限に達しました。モデルは 0:00 まで停止し、ルールは継続、チャットへの影響はありません",
+  "proactive.line.modelFailed":
+    "モデルの回答の形式が正しくありませんでした。通知はせず、次回同じメールを確認し直します",
+  "proactive.line.readFailed":
+    "Gmail の読み取りに失敗しました。今回は通知せず、15 分後に再確認します",
+  "proactive.line.noMail": "新着メールなし",
+  "proactive.line.floorRaised":
+    "新着 {count} 通。うち {raised} 通は「重要なメールは見逃さない」ルールでリマインダーに残しました",
+  "proactive.line.quiet":
+    "新着 {count} 通。{skipped, plural, =0 {} other {# 通はルールでスキップ（プロモーションなど）、}}急ぎはなし",
+  "proactive.line.judged": "モデルが {judged} 通を確認：対応 {act} · 要確認 {check} · 参考 {know}",
+  "proactive.line.opened": "開きました",
+  "proactive.settings.enabled": "自発的なリマインダー",
+  "proactive.settings.enabledHint":
+    "オフにするとメールの確認・記録・通知を止めます。時刻指定のリマインダーは届きます",
+  "proactive.settings.quiet": "通知しない時間帯",
+  "proactive.settings.quietHint":
+    "時間帯中に判断した内容は消えず、終わったときに 1 件にまとめて通知します",
+  "proactive.settings.period": "時間帯 {n}",
+  "proactive.settings.periodStart": "時間帯 {n} の開始",
+  "proactive.settings.periodEnd": "時間帯 {n} の終了",
+  "proactive.settings.to": "〜",
+  "proactive.settings.removePeriod": "時間帯 {n} を削除",
+  "proactive.settings.addPeriod": "+ 時間帯を追加",
+  "proactive.settings.sameTime":
+    "開始と終了を同じ時刻にはできません。この時間帯はまだ保存されていません",
+  "proactive.settings.noDays": "少なくとも 1 日選んでください。この時間帯はまだ保存されていません",
+  "proactive.apps.title": "接続したアプリ",
+  "proactive.apps.intro":
+    "Himawari は接続したアプリを読むだけです。アプリごとに接続・切断でき、何を読み誰に送るかも個別に示します。",
+  "proactive.apps.gmail": "Gmail（読み取りのみ）",
+  "proactive.apps.connectedAs": "接続済み · {account}",
+  "proactive.apps.needsReconnect": "許可が切れました。再接続してください",
+  "proactive.apps.notConnected": "未接続",
+  "proactive.apps.disconnect": "切断",
+  "proactive.apps.disconnectConfirm":
+    "切断すると Google 側の許可を取り消し、メールから抜き出した対応事項と要点をすべて削除します。切断しますか？",
+  "proactive.apps.disconnected": "切断し、Google 側の許可も取り消しました。",
+  "proactive.apps.outcome":
+    "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} other {接続できませんでした。もう一度お試しください。}}",
+  "proactive.apps.what": "Himawari が読むものと送り先",
+  "proactive.apps.what1": "新着メールを読むだけ。アーカイブ・ラベル付け・返信はしません",
+  "proactive.apps.what2": "プロモーション・ソーシャル・フォーラム・迷惑メールは読みません",
+  "proactive.apps.what3":
+    "差出人・件名・Gmail の 1 行要約だけをモデルに送り、本文は送りません。要約に認証コード・カード番号・パスワードを含む場合は送りません",
+  "proactive.apps.what4": "メール本文は保存せず、抜き出した対応事項と要点だけを保存します",
+  "proactive.apps.what5": "切断すると Google 側の許可を取り消し、抜き出した結果をすべて削除します",
+  "proactive.apps.senders": "重要な差出人",
+  "proactive.apps.sendersHint":
+    "銀行・学校・入管・区役所・応募先企業・回線・携帯会社など。ここにある差出人のメールは「対応不要」にも、プロモーションとしてのスキップにもなりません",
+  "proactive.apps.sendersCount": "{count} 件",
+  "proactive.apps.manage": "管理",
+  "proactive.apps.sendersPlaceholder":
+    "1 行に 1 件：info@bank.co.jp のようなアドレス、または @city.shinjuku.lg.jp のようなドメイン",
+  "proactive.apps.sendersInvalid": "「{value}」はメールアドレスでもドメインでもありません",
+  "proactive.apps.save": "保存",
+  "proactive.apps.more":
+    "今後 Notion・Slack・Outlook などを追加した場合も、ここに 1 行ずつ並びます。",
+  "proactive.data.title": "自発的なリマインダーの記録",
+  "proactive.data.hint": "判断の記録とメールから抜き出した結果",
+  "proactive.data.delete": "すべて削除",
+  "proactive.data.confirm":
+    "判断の記録・メールから抜き出した結果・確認の記録をすべて削除します。Gmail の接続は残ります。削除しますか？",
+  "proactive.data.cleared": "すべて削除しました。",
+  "proactive.when.dueToday": "本日 {time} 締切",
+  "proactive.line.allSkipped":
+    "新着 {count} 通。すべてプロモーションなどのためルールでスキップし、モデルには送っていません",
+  "proactive.settings.badTime":
+    "23:00 のような 24 時間表記で入力してください。この時間帯はまだ保存されていません",
 } satisfies MessageCatalog;

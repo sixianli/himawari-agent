@@ -302,3 +302,12 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 - **网页接口。** 查询 `proactive.overview.read`；命令 `proactive.settings.set`（开关、不推送时段、重要发件人）、`proactive.insight.respond`（完成、不再提醒、恢复、评价）、`proactive.decision.rate`、`proactive.audit.respond`（看完了、该说没说）、`proactive.source.manage`（断开 Gmail、删除全部记录）。
 
 [↑ 返回阅读导航](#contents)
+- **界面怎么落地（2026-10-28 界面提交）。**
+  - 提醒页把邮件条目和记忆提醒放进同一组分组：已到期、今天、可能重要请看原信、未来 7 天、以后、没有截止日期、值得知道。到期和今天截止的条目整行红底，“可能重要”整行琥珀底。
+  - 快照里每个条目多一个 `pushReaction`（推送后你点开了是 `opened`，划掉了是 `dismissed`，没推送或还没反应是空），条目下方据此显示“推送过 · 你点开了”。
+  - 点推送打开 `/?reminder=<条目编号>`：网页读完这个参数就从地址栏去掉，打开提醒页，把那一条滚到中间并高亮约 2.6 秒。Google 授权回来的 `/?settings=apps&gmail=connected|failed|denied` 也一样，打开设置的“工具与权限”，在“连接的应用”上方说明结果。
+  - “连接 Gmail”“重新连接”直接跳到 `/api/proactive/v1/google/start`。“断开”和“全部删除”先在页内确认，不用浏览器弹窗。
+  - 不推送时段用 `HH:MM` 文本框，离开输入框或按回车才保存；格式不对、开始和结束相同、一天都没选时，只在页内提示，不保存。
+  - 重要发件人名单点“管理”后一行一个，支持完整地址和 `@域名`，格式不对的项不让保存。
+  - 样式单独放在 `apps/control-center/src/proactive.css`。
+

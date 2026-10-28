@@ -19,11 +19,15 @@
 - PG-13 重复 100 次的脚本。
 - PG-14 npm run check 和 npm run build。
 - PG-1 ADR 0106 已在 main，跑 check:docs。
+- PG-15 界面：提醒页邮件条目、抽查、决策记录，设置的通知、连接的应用、数据三处；推送和 Google 回调落地；用 jsdom 测试加真实浏览器三语截图对照 v10。
 
 ## 计划改动记录
 
 - 2026-10-28 15:35 建立任务。
 - 2026-10-28 16:30 PG-11 改为放在 platform-node，不新建 integration-gmail 包（省掉一套构建、依赖和覆盖率配置）；Google 连接改为 GET /api/proactive/v1/google/start 跳转，不经网关命令返回网址（命令结果只能是机器字符串）。
+
+- 2026-10-28 17:20 加 PG-15 界面条目，界面提交和后台提交放在同一个 PR #92（Andy 说过所有需求做完再一起上）。
+- 2026-10-28 17:20 提醒条目要显示“推送过 · 你点开了”，快照的每个条目加 pushReaction（opened/dismissed/空），后台跟着改。
 
 ## 意外和发现
 
@@ -33,3 +37,5 @@
 ## 决定
 
 - 2026-10-28 设计取舍：推送复用现有 reminder 种类（来源键 proactive:<推送号>），避免重建 0058/0061 三张带 CHECK 的表；费用记在 proactive_decisions.cost_micros 并按它算日累计，不进 model_budget 账本（账本要求 Run 执行租约，加新父类型需要重建三张表）。模型调用仍走 Pi（PiModelTransport + TrustedModelProviderAdapter），只把 TrustedModelProviderAdapter 的准入类型收窄到它实际用到的字段。
+- 2026-10-28 不推送时段的时间框改成 HH:MM 文本框、离开时才保存：系统自带的时间框在英文系统上显示 AM/PM，和 v10 基线的 24 小时写法不符；每打一个字就保存会让输入框在保存时被禁用而丢焦点。
+- 2026-10-28 提醒页“到时间了”按 v10 基线改成“已到期”（日文“期限切れ”），到期的记忆提醒也用红色底，和邮件条目一致。

@@ -43,6 +43,7 @@ import type {
 } from "./gateway-client.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
+import { OPEN_REMINDERS_PAGE } from "./proactive.js";
 
 import type { RegisteredFile } from "./registered-files.js";
 import { listPendingRunApprovals } from "./run-approval.js";
@@ -229,8 +230,13 @@ export function useThreadControlCenter(
   const library = page === "files";
   useEffect(() => {
     const open = () => setPage("memory");
+    const openReminders = () => setPage("reminders");
     window.addEventListener(OPEN_MEMORY_PAGE, open);
-    return () => window.removeEventListener(OPEN_MEMORY_PAGE, open);
+    window.addEventListener(OPEN_REMINDERS_PAGE, openReminders);
+    return () => {
+      window.removeEventListener(OPEN_MEMORY_PAGE, open);
+      window.removeEventListener(OPEN_REMINDERS_PAGE, openReminders);
+    };
   }, []);
   const [registered, setRegistered] = useState<readonly RegisteredFile[]>();
   const pendingTurn = useRef<string | null>(null);

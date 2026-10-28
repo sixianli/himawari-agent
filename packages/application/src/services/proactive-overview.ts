@@ -32,6 +32,7 @@ export interface ProactiveOverviewInsight {
   readonly priority: ProactiveInsight["priority"];
   readonly status: ProactiveInsight["status"];
   readonly pushed: boolean;
+  readonly pushReaction: "opened" | "dismissed" | null;
   readonly rating: ProactiveRating | null;
   readonly updatedAt: string;
 }
@@ -109,6 +110,14 @@ export async function readProactiveOverview(options: {
   const dailyLimitReached =
     (await store.costSince({ ...scope, since: today })) >= options.dailyCostMicros ||
     decisionsToday.some(({ verdict }) => verdict === "capped_daily");
+  const metricSince = new Date(Date.parse(now) - METRIC_DAYS * DAY_MS).toISOString();
+  const feedback = new Map(
+    (await options.feedback(metricSince)).map((entry) => [entry.sourceKey, entry]),
+  );
+  const reaction = (sourceKey: string | null) => {
+    const sent = sourceKey ? feedback.get(sourceKey) : undefined;
+    return sent?.openedAt ? "opened" : sent?.dismissedAt ? "dismissed" : null;
+  };
   const insights: ProactiveOverviewInsight[] = [];
   for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
@@ -127,6 +136,7 @@ export async function readProactiveOverview(options: {
         priority: insight.priority,
         status: insight.status,
         pushed: insight.pushSourceKey !== null,
+        pushReaction: reaction(insight.pushSourceKey),
         rating: insight.ownerRating,
         updatedAt: insight.updatedAt,
       }),
@@ -153,11 +163,7 @@ export async function readProactiveOverview(options: {
       }),
     );
   }
-  const metricSince = new Date(Date.parse(now) - METRIC_DAYS * DAY_MS).toISOString();
   const recent = await store.listDecisions({ ...scope, since: metricSince, limit: 500 });
-  const feedback = new Map(
-    (await options.feedback(metricSince)).map((entry) => [entry.sourceKey, entry]),
-  );
   let hits = 0;
   let misfires = 0;
   for (const decision of recent) {

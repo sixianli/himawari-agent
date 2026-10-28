@@ -872,4 +872,136 @@ export const messages = {
   "chat.welcome.stuck": "Stuck on something? Let's think it through together.",
   "chat.welcome.late": "Still at it this late? Want me to help you wrap up?",
   "chat.welcome.morning": "Morning! What shall we start with today?",
+  "proactive.log": "Decision log",
+  "proactive.group":
+    "{g, select, check {Might matter, read the email} none {No deadline} other {Good to know}}",
+  "proactive.when.due": "Due {time}",
+  "proactive.when.received": "Received {date}",
+  "proactive.priority": "{p, select, high {High} medium {Medium} other {Low}}",
+  "proactive.openMail": "Open email",
+  "proactive.replied": "You replied",
+  "proactive.pushed":
+    "{reaction, select, opened {Pushed · you opened it} dismissed {Pushed · you dismissed it} other {Pushed to you}}",
+  "proactive.rate":
+    "{r, select, useful {Useful} unneeded {Not needed} other {Should have told me}}",
+  "proactive.done": "Done",
+  "proactive.mute": "Don’t remind",
+  "proactive.doneNotice": "Marked done: {text}",
+  "proactive.mutedNotice": "Won’t remind you again: {text}",
+  "proactive.dailyBasis":
+    "Today’s spending limit was reached, so this email was sorted by rule without the model",
+  "proactive.floorRaised":
+    "Looks like mail from a bank, school or government office, so the “never drop important mail” rule kept it here",
+  "proactive.connect.title": "Connect Gmail and let Himawari watch your inbox",
+  "proactive.connect.body":
+    "Read-only. Every 15 minutes it reads new mail and puts what needs you, deadlines and things you may have missed here. It pushes only what is urgent and due soon.",
+  "proactive.connect.button": "Connect Gmail",
+  "proactive.reconnect.title": "Google access expired, so Gmail can’t be read",
+  "proactive.reconnect.body":
+    "No mail checked since {time}; reconnecting catches up on what arrived meanwhile",
+  "proactive.reconnect.button": "Reconnect",
+  "proactive.dailyLimit":
+    "Mail checks hit today’s spending limit. The model is paused, but rules still bring in mail from banks, schools and the like. It resumes at 0:00, and chat is unaffected.",
+  "proactive.paused": "Proactive reminders are off: no mail is read, logged or pushed.",
+  "proactive.foot":
+    "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
+  "proactive.audit.title": "{count, plural, one {# email} other {# emails}} marked “ignore” today",
+  "proactive.audit.open": "Review",
+  "proactive.audit.hide": "Hide",
+  "proactive.audit.note":
+    "One list a day for the first 14 days, showing sender and subject only. They count as reviewed only after you tap “Done reviewing”.",
+  "proactive.audit.done": "Done reviewing",
+  "proactive.audit.doneOk": "Counted as reviewed",
+  "proactive.log.range": "Last 30 days · {days, plural, one {# day} other {# days}} recorded",
+  "proactive.log.note":
+    "Every check adds one line, including the ones where Himawari stayed quiet.",
+  "proactive.log.empty":
+    "No checks yet. After Gmail is connected, a line is added every 15 minutes.",
+  "proactive.log.today": "Today",
+  "proactive.log.yesterday": "Yesterday",
+  "proactive.metric.spoke": "Spoke up",
+  "proactive.metric.hits": "Helpful",
+  "proactive.metric.misfires": "Unwanted",
+  "proactive.metric.missed": "Missed (in reviewed sample)",
+  "proactive.metric.reviewed": "{count} reviewed",
+  "proactive.verdict":
+    "{v, select, pushed {Pushed} silent {Stayed quiet} deferred {Held} failed {Failed} capped {Hit limit} capped_daily {Hit daily limit} other {Needs you}}",
+  "proactive.line.needsOwner":
+    "Google access expired, so Gmail can’t be read. Checks are paused until you reconnect",
+  "proactive.line.pushed":
+    "Pushed {count, plural, one {# thing that needs you} other {# things that need you}}",
+  "proactive.line.deferred":
+    "Worth telling you, but inside quiet hours; it is sent as one push when they end",
+  "proactive.line.capped": "This check hit its spending limit; the rest is read in the next check",
+  "proactive.line.cappedDaily":
+    "Today’s spending reached the daily limit. The model is paused until 0:00, rules keep running, and chat is unaffected",
+  "proactive.line.modelFailed":
+    "The model’s answer was malformed. Nothing was pushed, and these emails are read again next time",
+  "proactive.line.readFailed":
+    "Could not read Gmail. Nothing was pushed; the next check runs in 15 minutes",
+  "proactive.line.noMail": "No new mail",
+  "proactive.line.floorRaised":
+    "{count, plural, one {# new email} other {# new emails}}; {raised} kept on Reminders by the “never drop important mail” rule",
+  "proactive.line.quiet":
+    "{count, plural, one {# new email} other {# new emails}}{skipped, plural, =0 {} other {, # skipped by rule (promotions and the like)}}, nothing urgent",
+  "proactive.line.judged":
+    "The model read {judged}: {act} to do · {check} to check · {know} good to know",
+  "proactive.line.opened": "You opened it",
+  "proactive.settings.enabled": "Proactive reminders",
+  "proactive.settings.enabledHint":
+    "When off, no mail is read, logged or pushed; timed reminders still arrive",
+  "proactive.settings.quiet": "Quiet hours",
+  "proactive.settings.quietHint":
+    "Anything decided during quiet hours is kept and sent as one push when they end",
+  "proactive.settings.period": "Period {n}",
+  "proactive.settings.periodStart": "Period {n} start",
+  "proactive.settings.periodEnd": "Period {n} end",
+  "proactive.settings.to": "to",
+  "proactive.settings.removePeriod": "Remove period {n}",
+  "proactive.settings.addPeriod": "+ Add period",
+  "proactive.settings.sameTime":
+    "Start and end can’t be the same time; this period isn’t saved yet",
+  "proactive.settings.noDays": "Pick at least one day; this period isn’t saved yet",
+  "proactive.apps.title": "Connected apps",
+  "proactive.apps.intro":
+    "Himawari only reads the apps you connect. Each one connects and disconnects on its own, with its own note on what is read and who receives it.",
+  "proactive.apps.gmail": "Gmail (read-only)",
+  "proactive.apps.connectedAs": "Connected · {account}",
+  "proactive.apps.needsReconnect": "Access expired; reconnect to continue",
+  "proactive.apps.notConnected": "Not connected",
+  "proactive.apps.disconnect": "Disconnect",
+  "proactive.apps.disconnectConfirm":
+    "Disconnecting revokes access at Google and deletes every to-do and key point extracted from your mail. Disconnect?",
+  "proactive.apps.disconnected": "Disconnected, and access was revoked at Google.",
+  "proactive.apps.outcome":
+    "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} other {Connecting didn’t work. Please try again.}}",
+  "proactive.apps.what": "What Himawari reads and who receives it",
+  "proactive.apps.what1": "Reads new mail only; never archives, labels or replies",
+  "proactive.apps.what2": "Skips promotions, social, forums and spam",
+  "proactive.apps.what3":
+    "Sends only the sender, subject and Gmail’s one-line snippet to the model, never the body; snippets with codes, card numbers or passwords are not sent",
+  "proactive.apps.what4": "Stores no email text, only the extracted to-dos and key points",
+  "proactive.apps.what5":
+    "Disconnecting revokes access at Google and deletes every extracted result",
+  "proactive.apps.senders": "Important senders",
+  "proactive.apps.sendersHint":
+    "Banks, schools, immigration, ward office, employers, broadband, mobile carrier and so on. Their mail is never marked “ignore” or skipped as a promotion",
+  "proactive.apps.sendersCount": "{count, plural, one {# sender} other {# senders}}",
+  "proactive.apps.manage": "Manage",
+  "proactive.apps.sendersPlaceholder":
+    "One per line: a full address such as info@bank.co.jp, or a whole domain such as @city.shinjuku.lg.jp",
+  "proactive.apps.sendersInvalid": "“{value}” is not an email address or domain",
+  "proactive.apps.save": "Save",
+  "proactive.apps.more":
+    "Apps added later, such as Notion, Slack or Outlook, will each get a row here.",
+  "proactive.data.title": "Proactive reminder records",
+  "proactive.data.hint": "Decision log and extracted email results",
+  "proactive.data.delete": "Delete all",
+  "proactive.data.confirm":
+    "This deletes every decision log line, extracted email result and review record. Gmail stays connected. Delete?",
+  "proactive.data.cleared": "All deleted.",
+  "proactive.when.dueToday": "Due today {time}",
+  "proactive.line.allSkipped":
+    "{count, plural, one {# new email} other {# new emails}}, all promotions and the like, skipped by rule and not sent to the model",
+  "proactive.settings.badTime": "Use a 24-hour time such as 23:00; this period isn’t saved yet",
 } satisfies MessageCatalog;

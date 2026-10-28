@@ -6,6 +6,7 @@ import { installQuietScrollbars } from "./quiet-scrollbars.js";
 import "./styles.css";
 import "./chat-layout.css";
 import "./review-v4.css";
+import "./proactive.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 

@@ -23,6 +23,11 @@ import {
   OPEN_MEMORY_PAGE,
 } from "./components/memory-panel.js";
 import { NotificationSettings } from "./components/notification-settings.js";
+import {
+  ProactiveAppsSettings,
+  ProactiveDataSettings,
+  ProactiveNotificationSettings,
+} from "./components/proactive-settings.js";
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import {
   GatewayClient,
@@ -38,6 +43,15 @@ import {
   useControlCenterIntl,
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
+import {
+  OPEN_REMINDERS_PAGE,
+  openRemindersPage,
+  openSettings,
+  proactiveDueCount,
+  readLaunchIntent,
+  reminderFocusOf,
+  useProactive,
+} from "./proactive.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { type SidePage, useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
@@ -135,6 +149,7 @@ function LocalizedControlCenterApp({
   storage,
 }: LocalizedControlCenterAppProps) {
   const { message } = useControlCenterIntl();
+  const [launch] = useState(() => readLaunchIntent(window.location, window.history));
   const { match, navigate } = useControlCenterRouter();
   const route =
     match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
@@ -335,13 +350,27 @@ function LocalizedControlCenterApp({
     connected: connection !== "offline",
     refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
   });
+  const proactive = useProactive({
+    client,
+    configuration,
+    connected: connection !== "offline",
+    refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
+  });
+  const [reminderFocus, setReminderFocus] = useState<string | null>(null);
+  useEffect(() => {
+    const focus = (event: Event) => setReminderFocus(reminderFocusOf(event));
+    window.addEventListener(OPEN_REMINDERS_PAGE, focus);
+    return () => window.removeEventListener(OPEN_REMINDERS_PAGE, focus);
+  }, []);
   const threadModel = useThreadControlCenter({
     ...(memory
       ? {
           renderMemory: (ownerRefs: readonly string[]) => (
             <MemoryTurnNote ownerRefs={ownerRefs} memory={memory} message={message} />
           ),
-          remindersDue: memory.overview?.reminders.length ?? 0,
+          remindersDue:
+            (memory.overview?.reminders.length ?? 0) +
+            proactiveDueCount(proactive?.overview ?? null, new Date()),
           renderPage: (page: SidePage, onBack: () => void) => (
             <Suspense fallback={null}>
               {page === "memory" ? (
@@ -357,6 +386,9 @@ function LocalizedControlCenterApp({
               ) : (
                 <RemindersPage
                   memory={memory}
+                  proactive={proactive}
+                  focus={reminderFocus}
+                  locale={locale}
                   message={message}
                   onBack={onBack}
                   onOpenThread={(threadId) =>
@@ -382,6 +414,16 @@ function LocalizedControlCenterApp({
     storage,
     onUnauthorized: clearPrivateViewState,
   });
+  const launchReminder = launch.reminder;
+  const launchSettings = launch.settings;
+  const memoryReady = memory !== null;
+  const proactiveReady = proactive !== null;
+  useEffect(() => {
+    if (launchReminder && memoryReady) openRemindersPage(launchReminder);
+  }, [launchReminder, memoryReady]);
+  useEffect(() => {
+    if (launchSettings && proactiveReady) openSettings(launchSettings);
+  }, [launchSettings, proactiveReady]);
   const presenceInstalled =
     configuration?.installedGatewayV2Operations?.includes("presence.heartbeat") ?? false;
   useEffect(() => {
@@ -437,29 +479,59 @@ function LocalizedControlCenterApp({
 
   return (
     <ControlCenterShell
-      settingsData={threadModel.settingsData}
+      settingsData={
+        <>
+          {threadModel.settingsData}
+          {proactive ? <ProactiveDataSettings proactive={proactive} message={message} /> : null}
+        </>
+      }
       settingsNotifications={
-        client && configuration?.installedGatewayV2Operations?.includes("push.status.read") ? (
-          <NotificationSettings
-            client={client}
-            configuration={configuration}
-            locale={locale}
-            connected={threadConnection !== "offline"}
-            message={message}
-          />
+        (client && configuration?.installedGatewayV2Operations?.includes("push.status.read")) ||
+        proactive ? (
+          <>
+            {client && configuration?.installedGatewayV2Operations?.includes("push.status.read") ? (
+              <NotificationSettings
+                client={client}
+                configuration={configuration}
+                locale={locale}
+                connected={threadConnection !== "offline"}
+                message={message}
+              />
+            ) : null}
+            {proactive ? (
+              <ProactiveNotificationSettings
+                proactive={proactive}
+                locale={locale}
+                message={message}
+              />
+            ) : null}
+          </>
         ) : undefined
       }
       settingsTools={
-        client &&
-        configuration?.installedGatewayV2Operations?.includes("search.authorization.set") ? (
-          <SearchAuthorizationControl
-            client={client}
-            configuration={configuration}
-            storage={storage}
-            connected={threadConnection !== "offline"}
-            refreshSignal={gatewayRefreshSignal}
-            message={message}
-          />
+        (client &&
+          configuration?.installedGatewayV2Operations?.includes("search.authorization.set")) ||
+        proactive ? (
+          <>
+            {client &&
+            configuration?.installedGatewayV2Operations?.includes("search.authorization.set") ? (
+              <SearchAuthorizationControl
+                client={client}
+                configuration={configuration}
+                storage={storage}
+                connected={threadConnection !== "offline"}
+                refreshSignal={gatewayRefreshSignal}
+                message={message}
+              />
+            ) : null}
+            {proactive ? (
+              <ProactiveAppsSettings
+                proactive={proactive}
+                message={message}
+                outcome={launch.gmail}
+              />
+            ) : null}
+          </>
         ) : (
           <p>{message("common.notConfigured")}</p>
         )

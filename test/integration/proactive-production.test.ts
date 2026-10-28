@@ -327,6 +327,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       script,
       sent,
       store,
+      webPushStore,
     };
   }
 
@@ -425,6 +426,16 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       lang: "zh-CN",
     });
     expect(notification.body).toContain("11/5 前付清 SMBC 账单");
+    expect((await h.overview()).insights[0]?.pushReaction).toBeNull();
+    await h.webPushStore.recordReactions({
+      ...scope,
+      reactions: [{ tag: notification.tag, reaction: "opened", occurredAt: h.clock.now() }],
+      now: h.clock.now(),
+    });
+    expect((await h.overview()).insights[0]).toMatchObject({
+      pushed: true,
+      pushReaction: "opened",
+    });
     expect(
       h.google.calls.filter(
         ({ url, method }) => url.startsWith("https://gmail.googleapis.com/") && method !== "GET",

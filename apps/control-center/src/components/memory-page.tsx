@@ -8,9 +8,20 @@ import {
   parseMemoryExport,
   parseMemoryText,
 } from "../memory-import.js";
+import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
 import { ActionButton } from "./primitives.js";
+import {
+  clock,
+  dayAndClock,
+  groupInsights,
+  ProactiveAudit,
+  ProactiveBanners,
+  ProactiveDecisionLog,
+  ProactiveInsightRow,
+  useHighlight,
+} from "./proactive-reminders.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 type Tab = "pending" | "profile" | "all" | "timeline";
@@ -374,16 +385,32 @@ function PendingTab({ memory, message }: { memory: MemoryModel; message: Message
 
 export function RemindersPage({
   memory,
+  proactive = null,
+  focus = null,
+  locale,
   message,
   onBack,
   onOpenThread,
 }: {
   memory: MemoryModel | null;
+  proactive?: ProactiveModel | null;
+  focus?: string | null;
+  locale?: string | undefined;
   message: Message;
   onBack: () => void;
   onOpenThread: (threadId: string) => void;
 }) {
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice>(null);
+  const [view, setView] = useState<"list" | "log">("list");
+  const highlight = useHighlight(focus);
+  useEffect(() => {
+    if (focus) setView("list");
+  }, [focus]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const overview = memory?.overview;
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).valueOf();
@@ -394,6 +421,7 @@ export function RemindersPage({
   const groups = new Map<string, NonNullable<typeof overview>["upcoming"][number][]>();
   for (const item of [...(overview?.upcoming ?? [])].sort((a, b) => a.dueAt.localeCompare(b.dueAt)))
     groups.set(groupOf(item.dueAt), [...(groups.get(groupOf(item.dueAt)) ?? []), item]);
+  const mail = groupInsights(proactive?.overview, now);
   const meta = (yearly: boolean, threadId: string | null) =>
     yearly || threadId ? (
       <small>
@@ -411,9 +439,82 @@ export function RemindersPage({
       </small>
     ) : null;
   const when = (at: string) =>
-    groupOf(at) === "today"
-      ? new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
-      : time(at);
+    groupOf(at) === "today" ? clock(at, locale) : dayAndClock(at, locale);
+  const mailRows = (group: ProactiveGroup) =>
+    proactive
+      ? (mail.get(group) ?? []).map((insight) => (
+          <ProactiveInsightRow
+            key={insight.id}
+            insight={insight}
+            group={group}
+            proactive={proactive}
+            message={message}
+            highlighted={highlight === insight.id}
+            locale={locale}
+            onNotice={(text, undo) => setNotice({ text, undo })}
+          />
+        ))
+      : [];
+  const mailGroup = (group: "check" | "none" | "know") => {
+    const rows = mailRows(group);
+    return rows.length ? (
+      <section key={group}>
+        <h2 className="memory-group" data-tone={group === "check" ? "check" : undefined}>
+          {message("proactive.group", { g: group })}
+        </h2>
+        {rows}
+      </section>
+    ) : null;
+  };
+  const dueRows = mailRows("due");
+  const reminderGroups = (["today", "week", "later"] as const).map((group) => {
+    const items = groups.get(group) ?? [];
+    const rows = mailRows(group);
+    if (!items.length && !rows.length) return null;
+    return (
+      <section key={group}>
+        <h2 className="memory-group">{message("reminders.group", { g: group })}</h2>
+        {items.map((item) => (
+          <div className="reminder-row" key={item.reminderId}>
+            <span className="reminder-when">{when(item.dueAt)}</span>
+            <span className="reminder-text">
+              {item.text}
+              {meta(item.repeat === "yearly", item.sourceThreadId)}
+            </span>
+            <span className="actions">
+              <ActionButton
+                variant="quiet"
+                disabled={memory?.busy}
+                onClick={() =>
+                  void memory
+                    ?.respondReminder(item, "cancel")
+                    .then(
+                      (ok) =>
+                        ok &&
+                        setNotice({ text: message("memory.page.cancelled", { text: item.text }) }),
+                    )
+                }
+              >
+                {message("memory.reminderDismiss")}
+              </ActionButton>
+            </span>
+          </div>
+        ))}
+        {rows}
+      </section>
+    );
+  });
+  if (view === "log" && proactive)
+    return (
+      <ProactiveDecisionLog
+        proactive={proactive}
+        message={message}
+        locale={locale}
+        onBack={() => setView("list")}
+      />
+    );
+  const mailCount = [...mail.values()].reduce((total, rows) => total + rows.length, 0);
+  const watching = proactive?.overview && proactive.overview.connection.status !== "disconnected";
   return (
     <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
       <header className="memory-header">
@@ -422,6 +523,15 @@ export function RemindersPage({
             <LineIcon name="back" />
           </ActionButton>
           <h1>{message("nav.reminders")}</h1>
+          {watching ? (
+            <button
+              type="button"
+              className="reminders-link reminders-log-link"
+              onClick={() => setView("log")}
+            >
+              {message("proactive.log")}
+            </button>
+          ) : null}
         </div>
       </header>
       {!memory ? (
@@ -433,9 +543,14 @@ export function RemindersPage({
         </div>
       ) : (
         <>
-          {overview.reminders.length ? (
+          {proactive ? (
+            <ProactiveBanners proactive={proactive} message={message} locale={locale} />
+          ) : null}
+          {overview.reminders.length || dueRows.length ? (
             <section>
-              <h2 className="memory-group">{message("memory.page.dueNow")}</h2>
+              <h2 className="memory-group" data-tone="urgent">
+                {message("memory.page.dueNow")}
+              </h2>
               {overview.reminders.map((item) => (
                 <div className="reminder-row" data-kind="due" key={item.reminderId}>
                   <span className="reminder-when">{when(item.dueAt)}</span>
@@ -460,51 +575,43 @@ export function RemindersPage({
                   </span>
                 </div>
               ))}
+              {dueRows}
             </section>
           ) : null}
-          {[...groups].map(([group, items]) => (
-            <section key={group}>
-              <h2 className="memory-group">{message("reminders.group", { g: group })}</h2>
-              {items.map((item) => (
-                <div className="reminder-row" key={item.reminderId}>
-                  <span className="reminder-when">{when(item.dueAt)}</span>
-                  <span className="reminder-text">
-                    {item.text}
-                    {meta(item.repeat === "yearly", item.sourceThreadId)}
-                  </span>
-                  <span className="actions">
-                    <ActionButton
-                      variant="quiet"
-                      disabled={memory.busy}
-                      onClick={() =>
-                        void memory
-                          .respondReminder(item, "cancel")
-                          .then(
-                            (ok) =>
-                              ok &&
-                              setNotice(message("memory.page.cancelled", { text: item.text })),
-                          )
-                      }
-                    >
-                      {message("memory.reminderDismiss")}
-                    </ActionButton>
-                  </span>
-                </div>
-              ))}
-            </section>
-          ))}
-          {!overview.reminders.length && !overview.upcoming.length ? (
+          {reminderGroups[0]}
+          {mailGroup("check")}
+          {reminderGroups[1]}
+          {reminderGroups[2]}
+          {mailGroup("none")}
+          {mailGroup("know")}
+          {!overview.reminders.length && !overview.upcoming.length && !mailCount ? (
             <p className="reminders-empty">{message("reminders.empty")}</p>
           ) : null}
+          {proactive ? <ProactiveAudit proactive={proactive} message={message} /> : null}
           <p className="settings-note reminders-notify">
-            {message("memory.page.notify")}{" "}
+            {message(watching ? "proactive.foot" : "memory.page.notify")}{" "}
             <button type="button" className="reminders-link" onClick={openNotificationSettings}>
               {message("push.openSettings")}
             </button>
           </p>
         </>
       )}
-      {notice ? <output className="memory-notice">{notice}</output> : null}
+      {notice ? (
+        <output className="memory-notice">
+          {notice.text}
+          {notice.undo ? (
+            <button
+              type="button"
+              onClick={() => {
+                notice.undo?.();
+                setNotice(null);
+              }}
+            >
+              {message("memory.undo")}
+            </button>
+          ) : null}
+        </output>
+      ) : null}
     </section>
   );
 }
