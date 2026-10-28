@@ -209,6 +209,7 @@
         "test/integration/thread-scale-qualification.test.ts",
         "test/integration/openrouter-generation-live.test.ts",
         "test/integration/openrouter-embedding-live.test.ts",
+        "test/integration/jarvis-test/live-round.test.ts",
         "test/integration/container-execution-backend-qualification.test.ts",
         "test/integration/container-runtime-restart-qualification.test.ts",
         "test/integration/container-browser-qualification.test.ts",
@@ -261,6 +262,13 @@
       "kind": "qualification",
       "project": "qualification-generation-live",
       "reason": "真实生成 provider 需要单独凭据与授权",
+      "allowedModifiers": ["skipIf"]
+    },
+    {
+      "path": "test/integration/jarvis-test/live-round.test.ts",
+      "kind": "qualification",
+      "project": "qualification-jarvis-live",
+      "reason": "Jarvis Test 真模型评测需要 AI Gateway 密钥并产生费用，只在显式运行时执行",
       "allowedModifiers": ["skipIf"]
     },
     {

@@ -18,13 +18,19 @@ export interface Transcript {
 export interface CaseFile {
   readonly path: string;
   readonly content: string;
+  readonly bytesHex?: string;
+}
+
+export function fileBytes(file: CaseFile): Buffer {
+  return file.bytesHex === undefined
+    ? Buffer.from(file.content, "utf8")
+    : Buffer.from(file.bytesHex, "hex");
 }
 
 export interface AnswerSpec {
-  readonly mustContain: readonly (readonly string[])[];
-  readonly mustNotContain: readonly string[];
-  readonly mustNotMatch?: readonly string[];
+  readonly expectations: readonly string[];
   readonly fullRead?: readonly string[];
+  readonly conclusionCues?: readonly string[];
   readonly searched?: boolean;
 }
 
@@ -39,36 +45,6 @@ export interface CheckResult {
   readonly detail: string;
 }
 
-export interface ExcusedHit {
-  readonly term: string;
-  readonly excerpt: string;
-}
-
-const NEGATION_CUES = [
-  "不是",
-  "不再",
-  "不要",
-  "不用",
-  "不会",
-  "并非",
-  "并未",
-  "没有",
-  "没",
-  "未",
-  "别",
-  "非",
-  "排除",
-  "而不是",
-  "改掉",
-  "取代",
-  "以前",
-  "之前",
-  "原来",
-  "旧的",
-  "不",
-];
-const NEGATION_WINDOW = 8;
-const CLAUSE_BREAK = /[，,。.;；！!？?\n]/u;
 const SEARCH_TOOLS = new Set(["grep", "find", "ls", "read", "bash"]);
 
 export function finalAnswer(transcript: Transcript): string {
@@ -83,63 +59,6 @@ function finalAnswerIndex(transcript: Transcript): number {
   for (let index = transcript.steps.length - 1; index >= 0; index -= 1)
     if (transcript.steps[index]?.kind === "assistant") return index;
   return -1;
-}
-
-function clauseBefore(text: string, at: number): string {
-  let start = at;
-  while (start > 0 && at - start < NEGATION_WINDOW && !CLAUSE_BREAK.test(text[start - 1] ?? ""))
-    start -= 1;
-  return text.slice(start, at);
-}
-
-export function forbiddenHits(
-  text: string,
-  terms: readonly string[],
-): { readonly violations: readonly string[]; readonly excused: readonly ExcusedHit[] } {
-  const violations: string[] = [];
-  const excused: ExcusedHit[] = [];
-  for (const term of terms) {
-    let from = 0;
-    for (;;) {
-      const at = text.indexOf(term, from);
-      if (at < 0) break;
-      const before = clauseBefore(text, at);
-      if (NEGATION_CUES.some((cue) => before.includes(cue)))
-        excused.push({
-          term,
-          excerpt: text.slice(Math.max(0, at - NEGATION_WINDOW), at + term.length),
-        });
-      else violations.push(term);
-      from = at + term.length;
-    }
-  }
-  return { violations: [...new Set(violations)], excused };
-}
-
-export function checkAnswerText(
-  answer: string,
-  spec: AnswerSpec,
-): { readonly checks: readonly CheckResult[]; readonly excused: readonly ExcusedHit[] } {
-  const checks: CheckResult[] = [];
-  for (const group of spec.mustContain) {
-    const found = group.find((alternative) => answer.includes(alternative));
-    checks.push({
-      check: "must_contain",
-      passed: found !== undefined,
-      detail: found ?? `none of ${group.join(" / ")}`,
-    });
-  }
-  const forbidden = forbiddenHits(answer, spec.mustNotContain);
-  checks.push({
-    check: "must_not_contain",
-    passed: forbidden.violations.length === 0,
-    detail: forbidden.violations.join(" / "),
-  });
-  for (const pattern of spec.mustNotMatch ?? []) {
-    const match = new RegExp(pattern, "u").exec(answer);
-    checks.push({ check: "must_not_match", passed: match === null, detail: match?.[0] ?? "" });
-  }
-  return { checks, excused: forbidden.excused };
 }
 
 function normalizedPath(value: unknown, workspaceRoot: string): string | null {
@@ -258,16 +177,12 @@ export async function checkEnvironment(
   }
   for (const unchanged of spec.unchanged ?? []) {
     const original = originals.find(({ path: filePath }) => filePath === unchanged);
-    const current = await readFile(path.join(workspaceRoot, unchanged), "utf8").catch(() => null);
+    const current = await readFile(path.join(workspaceRoot, unchanged)).catch(() => null);
     checks.push({
       check: "environment_unchanged",
-      passed: original !== undefined && current === original.content,
+      passed: original !== undefined && current !== null && current.equals(fileBytes(original)),
       detail: unchanged,
     });
   }
   return checks;
-}
-
-export function conclusionTerms(spec: AnswerSpec): readonly string[] {
-  return [...spec.mustContain.flat(), ...spec.mustNotContain];
 }

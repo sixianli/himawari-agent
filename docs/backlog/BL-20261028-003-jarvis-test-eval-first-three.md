@@ -28,3 +28,4 @@ superseded_by: ""
 ## Notes
 
 - 由另一个线程负责。
+- 2026-10-28：第一层（只用代码判分、不调模型）已随 PR #69 合并。第二层（真模型跑用例、两层模型裁判、每轮分数写进 `evals/jarvis-test/history.jsonl`）的决定见 [ADR 0103](../adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)。其余七条见 [BL-20261028-005](BL-20261028-005-jarvis-test-remaining-seven.md)，#1 的反例见 [BL-20261028-006](BL-20261028-006-jarvis-test-memory-correction-negative-cases.md)。

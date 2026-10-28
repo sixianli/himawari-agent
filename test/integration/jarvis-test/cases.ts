@@ -24,6 +24,17 @@ export interface CaseFailure {
   readonly output?: string;
 }
 
+export interface CasePermissions {
+  readonly readOnly?: readonly string[];
+  readonly unreadable?: readonly string[];
+}
+
+export interface RealFailure {
+  readonly command: string;
+  readonly exitCode: number;
+  readonly output?: string;
+}
+
 export interface JarvisCase {
   readonly id: string;
   readonly scenario: Scenario;
@@ -32,6 +43,8 @@ export interface JarvisCase {
   readonly memories?: readonly CaseMemory[];
   readonly files?: readonly CaseFile[];
   readonly failures?: readonly CaseFailure[];
+  readonly permissions?: CasePermissions;
+  readonly realFailures?: readonly RealFailure[];
   readonly context?: { readonly present: readonly string[]; readonly absent: readonly string[] };
   readonly environment?: EnvironmentSpec;
   readonly answer: AnswerSpec;

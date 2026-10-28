@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -110,10 +110,35 @@ describe("Jarvis Test score history", () => {
     expect(text).toContain("费用 未测量");
   });
 
-  it("prints an empty-history notice from the npm script", () => {
+  it("explains an empty history instead of printing a blank trend", () => {
+    expect(renderTrend([])).toContain("还没有真模型评测记录");
+  });
+
+  it("prints every committed round from the npm script", () => {
     const output = execFileSync(process.execPath, ["scripts/jarvis-test/trend.mjs"], {
       encoding: "utf8",
     });
-    expect(output).toContain("还没有真模型评测记录");
+    const rounds = readFileSync("evals/jarvis-test/history.jsonl", "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line));
+    expect(rounds.length).toBeGreaterThan(0);
+    for (const round of rounds) expect(output).toContain(`提交 ${round.commit.slice(0, 7)}`);
+  });
+
+  it("refuses a live round when no gateway key can reach the request", () => {
+    const environment = { PATH: process.env.PATH ?? "" };
+    const result = spawnSync(process.execPath, ["scripts/jarvis-test/live.mjs"], {
+      encoding: "utf8",
+      env: environment,
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("JARVIS_LIVE_KEY_REQUIRED");
+    const unknown = spawnSync(process.execPath, ["scripts/jarvis-test/live.mjs", "--trails=1"], {
+      encoding: "utf8",
+      env: environment,
+    });
+    expect(unknown.status).toBe(2);
+    expect(unknown.stderr).toContain("JARVIS_LIVE_UNKNOWN_OPTION");
   });
 });

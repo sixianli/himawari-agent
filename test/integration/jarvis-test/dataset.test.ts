@@ -37,7 +37,7 @@ describe("Jarvis Test dataset", () => {
       expect(ageInDays(memory.recordedAt), memory.id).toBeGreaterThan(0);
   });
 
-  it("gives every state question files to read and every failure case a declared failure", () => {
+  it("gives every state question files to read and every failure case a declared or real failure", () => {
     for (const item of dataset.cases) {
       const paths = (item.files ?? []).map(({ path }) => path);
       for (const required of item.answer.fullRead ?? []) expect(paths, item.id).toContain(required);
@@ -46,7 +46,19 @@ describe("Jarvis Test dataset", () => {
           true,
         );
       if (item.scenario === "failure_transparency")
-        expect(item.failures?.length ?? 0, item.id).toBeGreaterThan(0);
+        expect(
+          (item.failures?.length ?? 0) + (item.realFailures?.length ?? 0),
+          item.id,
+        ).toBeGreaterThan(0);
+    }
+  });
+
+  it("judges every case against its own written expectations", () => {
+    for (const item of dataset.cases) {
+      expect(item.answer.expectations.length, item.id).toBeGreaterThan(0);
+      expect(item.judgeRules[0], item.id).toBe("case_expectations_met");
+      if (item.answer.fullRead)
+        expect(item.answer.conclusionCues?.length ?? 0, item.id).toBeGreaterThan(0);
     }
   });
 

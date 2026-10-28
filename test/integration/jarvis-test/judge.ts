@@ -54,10 +54,18 @@ export interface CalibrationSample {
   readonly trap?: string;
 }
 
+export interface CalibrationDetail {
+  readonly id: string;
+  readonly expected: boolean;
+  readonly probability: number | null;
+  readonly verdict: ReasoningVerdict | null;
+}
+
 export interface CalibrationResult {
   readonly qualified: boolean;
   readonly confidentMistakes: readonly string[];
   readonly uncertain: readonly string[];
+  readonly details: readonly CalibrationDetail[];
 }
 
 function question(rules: readonly JudgeRule[], sample: CalibrationSample): JudgeQuestion {
@@ -89,6 +97,12 @@ export async function calibrateDecisionJudge(
       uncertain.length <= samples.length * MAXIMUM_UNCERTAIN_SHARE,
     confidentMistakes,
     uncertain,
+    details: samples.map((sample, index) => ({
+      id: sample.id,
+      expected: sample.expected,
+      probability: probabilities[index] ?? null,
+      verdict: null,
+    })),
   };
 }
 
@@ -97,12 +111,18 @@ export async function calibrateReasoningJudge(
   rules: readonly JudgeRule[],
   samples: readonly CalibrationSample[],
 ): Promise<CalibrationResult> {
-  const mistakes: string[] = [];
-  for (const sample of samples) {
-    const verdict = await judge.judge(question(rules, sample));
-    if (verdict.passed !== sample.expected) mistakes.push(sample.id);
-  }
-  return { qualified: mistakes.length === 0, confidentMistakes: mistakes, uncertain: [] };
+  const details = await Promise.all(
+    samples.map(async (sample) => ({
+      id: sample.id,
+      expected: sample.expected,
+      probability: null,
+      verdict: await judge.judge(question(rules, sample)),
+    })),
+  );
+  const mistakes = details
+    .filter(({ expected, verdict }) => verdict.passed !== expected)
+    .map(({ id }) => id);
+  return { qualified: mistakes.length === 0, confidentMistakes: mistakes, uncertain: [], details };
 }
 
 export async function judgeAnswer(

@@ -4,8 +4,8 @@ import {
   calibrateDecisionJudge,
   calibrateReasoningJudge,
   type DecisionJudge,
-  judgeAnswer,
   type JudgeQuestion,
+  judgeAnswer,
   type ReasoningJudge,
 } from "./judge.ts";
 
@@ -91,7 +91,8 @@ describe("Jarvis Test two-tier judge", () => {
       dataset.judgeRules,
       calibration.samples,
     );
-    expect(result).toEqual({ qualified: true, confidentMistakes: [], uncertain: [] });
+    expect(result).toMatchObject({ qualified: true, confidentMistakes: [], uncertain: [] });
+    expect(result.details).toHaveLength(calibration.samples.length);
   });
 
   it("disqualifies a decision judge that confidently misreads one negation trap", async () => {
@@ -129,7 +130,7 @@ describe("Jarvis Test two-tier judge", () => {
         dataset.judgeRules,
         calibration.samples,
       ),
-    ).toEqual({ qualified: true, confidentMistakes: [], uncertain: [] });
+    ).toMatchObject({ qualified: true, confidentMistakes: [], uncertain: [] });
     const flipped = await calibrateReasoningJudge(
       reasoningJudge((question) =>
         question.answer.includes("处理中") ? false : expected(question),
