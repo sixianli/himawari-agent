@@ -543,7 +543,7 @@ export async function qualifyBrowser({
     await threadAction(page, "归档", "thread-research");
     await waitForAccepted(page);
     await page.getByRole("button", { name: "设置", exact: true }).click();
-    await page.getByRole("button", { name: "会话与数据", exact: true }).click();
+    await page.getByRole("button", { name: "数据", exact: true }).click();
     await page.getByRole("button", { name: /已归档会话/ }).click();
     await page
       .locator(".archived-conversations li")

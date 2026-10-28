@@ -50,7 +50,6 @@ export const MESSAGE_IDS = [
   "review.effortDescription.max",
 
   "layout.hideList",
-  "chat.welcome",
   "account.signIn",
   "account.reauthenticate",
   "account.passwordHelp",
@@ -136,13 +135,10 @@ export const MESSAGE_IDS = [
   "chat.search.disclosure",
   "chat.search.recipients",
   "chat.search.remember",
-  "chat.search.scope",
   "chat.search.afterRevoke",
   "chat.search.other",
-  "review.inlineConsent",
   "review.archiveDescription",
   "review.manageArchives",
-  "review.localDataTitle",
   "chat.search.enable",
   "chat.search.revoke",
 
@@ -240,7 +236,6 @@ export const MESSAGE_IDS = [
   "chat.latest",
   "chat.placeholder",
   "chat.keyboard",
-  "chat.permission",
   "chat.process",
   "chat.noProcess",
   "chat.modelUnavailable",
@@ -551,7 +546,6 @@ export const MESSAGE_IDS = [
   "inbox.title",
   "inbox.digest",
   "memory.title",
-  "review.settings.memory",
   "memory.proposal",
   "memory.pendingReason",
   "memory.topic.health",
@@ -765,6 +759,19 @@ export const MESSAGE_IDS = [
   "process.headline",
   "process.cacheHit",
   "process.cacheHitHint",
+  "chat.search.purpose",
+  "chat.search.whatIsSent",
+  "chat.search.otherScope",
+  "chat.search.alwaysOn",
+  "settings.name",
+  "settings.nameHint",
+  "chat.greetNamed",
+  "chat.welcome.here",
+  "chat.welcome.hand",
+  "chat.welcome.remember",
+  "chat.welcome.stuck",
+  "chat.welcome.late",
+  "chat.welcome.morning",
 ] as const;
 
 export type MessageId = (typeof MESSAGE_IDS)[number];
@@ -920,4 +927,5 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "process.didBoth": { first: "a", second: "b" },
   "process.headline": { actions: "a", time: "9.2s" },
   "process.cacheHit": { percent: 78 },
+  "chat.greetNamed": { greeting: "Good evening", name: "Andy" },
 });

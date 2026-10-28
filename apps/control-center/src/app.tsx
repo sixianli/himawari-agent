@@ -362,6 +362,7 @@ function LocalizedControlCenterApp({
         }
       : {}),
     active: route.surfaceId === "threads",
+    ownerName: preferences.name,
     client,
     configuration,
     connection: threadConnection,

@@ -1,5 +1,6 @@
 export const ACCENT_COLORS = ["violet", "blue", "teal", "amber", "rose", "graphite"] as const;
 export type AccentColor = (typeof ACCENT_COLORS)[number];
+export const OWNER_NAME_LIMIT = 40;
 
 export interface ControlCenterPreferences {
   readonly density: "comfortable" | "compact";
@@ -7,6 +8,7 @@ export interface ControlCenterPreferences {
   readonly listPanePercent: number;
   readonly theme: "light" | "dark" | "system";
   readonly accent?: AccentColor;
+  readonly name?: string;
 }
 
 export const CONTROL_CENTER_UI_LOCALES = ["zh-CN", "en", "ja"] as const;
@@ -238,6 +240,9 @@ export class ControlCenterBrowserStorage {
         accent: ACCENT_COLORS.includes(parsed.accent as AccentColor)
           ? (parsed.accent as AccentColor)
           : "violet",
+        ...(typeof parsed.name === "string" && parsed.name.trim()
+          ? { name: parsed.name.trim().slice(0, OWNER_NAME_LIMIT) }
+          : {}),
       };
     } catch {
       return fallback;

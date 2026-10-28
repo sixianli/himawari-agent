@@ -96,6 +96,7 @@ export interface ThreadControlCenterOptions {
   readonly renderMemory?: (ownerRefs: readonly string[]) => ReactNode;
   readonly renderPage?: (page: SidePage, onBack: () => void) => ReactNode;
   readonly remindersDue?: number;
+  readonly ownerName?: string | undefined;
 }
 
 export type SidePage = "memory" | "reminders";
@@ -118,6 +119,43 @@ export function greetingOf(now: Date): MessageId {
     : hour >= 12 && hour < 18
       ? "chat.greetAfternoon"
       : "chat.greetEvening";
+}
+const welcomeLines: readonly MessageId[] = [
+  "chat.welcome.here",
+  "chat.welcome.hand",
+  "chat.welcome.remember",
+  "chat.welcome.stuck",
+];
+export function welcomeLinesOf(now: Date): readonly MessageId[] {
+  const hour = now.getHours();
+  return hour >= 5 && hour < 11
+    ? [...welcomeLines, "chat.welcome.morning"]
+    : hour >= 22 || hour < 5
+      ? [...welcomeLines, "chat.welcome.late"]
+      : welcomeLines;
+}
+function ThreadWelcome({
+  name,
+  message,
+}: {
+  readonly name: string | undefined;
+  readonly message: (id: MessageId, values?: Record<string, string>) => string;
+}) {
+  const [now] = useState(() => new Date());
+  const [line] = useState(() => {
+    const lines = welcomeLinesOf(now);
+    return lines[Math.floor(Math.random() * lines.length)] as MessageId;
+  });
+  const greeting = message(greetingOf(now));
+  return (
+    <div className="thread-welcome">
+      <span className="welcome-mark">
+        <SunflowerMark />
+      </span>
+      <h2>{name ? message("chat.greetNamed", { greeting, name }) : greeting}</h2>
+      <p>{message(line)}</p>
+    </div>
+  );
 }
 function mutationMessageId(status: MutationStatus | null): MessageId {
   return status ? (`mutation.${status}` as MessageId) : "mutation.none";
@@ -1410,13 +1448,7 @@ export function useThreadControlCenter(
           {!detail && selectedThreadId ? (
             <ThreadLoadingSkeleton scope="conversation" />
           ) : !detail ? (
-            <div className="thread-welcome">
-              <span className="welcome-mark">
-                <SunflowerMark />
-              </span>
-              <h2>{message(greetingOf(new Date()))}</h2>
-              <p>{message("chat.welcome")}</p>
-            </div>
+            <ThreadWelcome name={options.ownerName} message={message} />
           ) : (
             <>
               <ChatHistory

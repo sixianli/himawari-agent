@@ -26,11 +26,11 @@ export const messages = {
   "review.impact.irreversible": "The operation may not be reversible",
   "review.settings.general": "General",
   "review.settings.tools": "Tools & permissions",
-  "review.settings.data": "Conversations & data",
+  "review.settings.data": "Data",
   "review.light": "Light",
   "review.dark": "Dark",
   "review.localData":
-    "This browser stores interface preferences and unsent drafts. Conversation history is stored on the server.",
+    "This browser only keeps your interface language, appearance, name and unsent drafts. Conversations and memories stay on your server.",
   "review.archives": "Archived conversations",
   "review.loading": "Loading…",
   "review.preparing": "Preparing the service. You can start typing.",
@@ -58,7 +58,6 @@ export const messages = {
     "Most reasoning for the hardest tasks; slowest and most expensive.",
 
   "layout.hideList": "Hide sidebar",
-  "chat.welcome": "What would you like to work on?",
   "account.signIn": "Sign in to Himawari",
   "account.reauthenticate": "Verify your identity again",
   "account.passwordHelp": "Use the account created on this Himawari service.",
@@ -151,14 +150,11 @@ export const messages = {
     "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
   "chat.search.recipients": "Recipients:",
   "chat.search.remember": "Remember my choice and allow future web searches",
-  "chat.search.scope": "Applies to this account until revoked.",
   "chat.search.afterRevoke":
     "After turning this off, the next search asks for permission in its conversation.",
-  "chat.search.other": "Other permissions",
-  "review.inlineConsent": "Confirm the specific action and scope in its conversation.",
+  "chat.search.other": "Actions that ask you first",
   "review.archiveDescription": "Archiving tidies the list and keeps the conversation.",
   "review.manageArchives": "Manage",
-  "review.localDataTitle": "What does this browser store?",
   "chat.search.enable": "Allow web search",
   "chat.search.revoke": "Revoke web search permission",
   "chat.allowOnce": "Allow once",
@@ -277,8 +273,6 @@ export const messages = {
   "chat.placeholder": "Go on, I remember everything we've talked about 🌻",
   "chat.placeholderNew": "News, little things to remember, a poem to write: toss it to me 🌻",
   "chat.keyboard": "Enter to send · Shift Enter for a new line",
-  "chat.permission":
-    "Deleting files, networked commands and actions outside the workspace ask you first",
   "chat.process": "Thinking and tools",
   "chat.noProcess": "No displayable process records",
   "chat.modelUnavailable": "Model information unavailable",
@@ -608,7 +602,6 @@ export const messages = {
   "inbox.title": "Inbox and digest",
   "inbox.digest": "Current digest",
   "memory.title": "Memory",
-  "review.settings.memory": "Memory",
   "memory.proposal": "Himawari would like to remember this",
   "memory.pendingReason":
     "This involves {topic}. Sensitive details are only used in later conversations after you confirm.",
@@ -862,4 +855,18 @@ export const messages = {
   "process.cacheHit": "Cache hit {percent}%",
   "process.cacheHitHint":
     "The share of this turn's input that the model provider reused from context it had already processed (the LLM's KV cache). That part is faster and cheaper.",
+  "chat.search.purpose": "Search the web automatically when a question needs current information",
+  "chat.search.whatIsSent": "What the search services receive",
+  "chat.search.otherScope":
+    "Deleting files, running commands that use the network, and reading or writing files outside the workspace",
+  "chat.search.alwaysOn": "Always on",
+  "settings.name": "What should I call you?",
+  "settings.nameHint": "Used in the welcome greeting. Leave it empty for a plain greeting.",
+  "chat.greetNamed": "{greeting}, {name}",
+  "chat.welcome.here": "I'm here. Something to look up, something to write, or just a chat?",
+  "chat.welcome.hand": "Hand me something to do today 🌻",
+  "chat.welcome.remember": "Go ahead. I remember what we've talked about.",
+  "chat.welcome.stuck": "Stuck on something? Let's think it through together.",
+  "chat.welcome.late": "Still at it this late? Want me to help you wrap up?",
+  "chat.welcome.morning": "Morning! What shall we start with today?",
 } satisfies MessageCatalog;

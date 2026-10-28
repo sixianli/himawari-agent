@@ -751,6 +751,19 @@ function handleOperationsQuery(message) {
       return memoryFixture
         ? { ...envelope("snapshot", "memory.overview.snapshot"), payload: memoryOverview() }
         : undefined;
+    case "search.authorization.read":
+      return memoryFixture
+        ? {
+            ...envelope("snapshot", "search.authorization.snapshot"),
+            payload: {
+              enabled: true,
+              revision: 1,
+              available: true,
+              recipients: ["https://mcp.exa.ai"],
+              generatedAt: now,
+            },
+          }
+        : undefined;
     case "identity.session_detail": {
       const value = sessions.get(message.payload.sessionId);
       return value ? operationsSnapshot("session.snapshot", value) : null;
@@ -1421,7 +1434,9 @@ async function handleRequest(request, response) {
         "identity.session_detail",
         "session.revoke",
         "health.status",
-        ...(memoryFixture ? ["memory.overview.read"] : []),
+        ...(memoryFixture
+          ? ["memory.overview.read", "search.authorization.read", "search.authorization.set"]
+          : []),
       ],
       authorizationRef: governanceAuthorizationRef,
       recentAuthenticationRef: recentAuthenticationAvailable ? governanceAuthorizationRef : null,
