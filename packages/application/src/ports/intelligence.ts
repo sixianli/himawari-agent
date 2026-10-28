@@ -490,12 +490,10 @@ export interface RuntimeBackgroundCommandNotice {
 }
 
 export interface RuntimeToolPort {
-  backgroundRunning?(runId: RunId): number;
   subscribeBackground?(
     runId: RunId,
-    listener: (notice: RuntimeBackgroundCommandNotice) => void,
+    listener: (notice: RuntimeBackgroundCommandNotice) => boolean,
   ): () => void;
-  stopBackground?(runId: RunId): Promise<void>;
   recoverResult?(
     invocation: RuntimeToolInvocation,
     recovery: RuntimeKnownToolResult,

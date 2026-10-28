@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
+  RunBackgroundHold,
+  RunBackgroundOutcome,
   RuntimeBackgroundCommandNotice,
   RuntimeToolExecutionResult,
   RuntimeToolInvocation,
@@ -11,6 +13,7 @@ const COMMAND_PREVIEW_CHARACTERS = 300;
 const STOP_SETTLE_MS = 15_000;
 const DEFAULT_OUTPUT_LIMIT = 8192;
 const MAXIMUM_OUTPUT_LIMIT = 32768;
+const KEPT_FINISHED_COMMANDS = 64;
 
 export const DEFAULT_COMMAND_WAIT_MS = 30_000;
 export const DEFAULT_BACKGROUND_COMMAND_MS = 1_800_000;
@@ -33,9 +36,20 @@ export function backgroundCommandLimits(deadlines: {
 
 type CommandState = "running" | "finished" | "stopped";
 
+export interface BackgroundCommandResult {
+  readonly taskRef: string;
+  readonly command: string;
+  readonly dataClassification: RuntimeToolInvocation["dataClassification"];
+  readonly outcome: RunBackgroundOutcome;
+  readonly notice: string;
+  readonly delivered: boolean;
+}
+
 interface BackgroundCommand {
   readonly taskRef: string;
   readonly runId: string;
+  readonly threadId: string | null;
+  readonly dataClassification: RuntimeToolInvocation["dataClassification"];
   readonly command: string;
   readonly startedAt: number;
   readonly deadlineAt: number;
@@ -45,6 +59,7 @@ interface BackgroundCommand {
   stopReason: "requested" | "run_ended" | null;
   result: RuntimeToolExecutionResult | null;
   endedAt: number | null;
+  delivered: boolean;
 }
 
 type Receipt = (value: unknown) => Promise<{ readonly ref: string }>;
@@ -53,8 +68,8 @@ export class ProductionBackgroundCommands {
   readonly #limits: BackgroundCommandLimits;
   readonly #now: () => string;
   readonly #commands = new Map<string, BackgroundCommand>();
-  readonly #listeners = new Map<string, (notice: RuntimeBackgroundCommandNotice) => void>();
-  readonly #pending = new Map<string, RuntimeBackgroundCommandNotice[]>();
+  readonly #listeners = new Map<string, (notice: RuntimeBackgroundCommandNotice) => boolean>();
+  readonly #settledWaiters = new Map<string, Set<() => void>>();
 
   constructor(options: { readonly limits: BackgroundCommandLimits; readonly now: () => string }) {
     if (
@@ -79,10 +94,11 @@ export class ProductionBackgroundCommands {
     receipt: Receipt,
   ): Promise<RuntimeToolExecutionResult> {
     const controller = new AbortController();
+    const forward = () => controller.abort(signal?.reason);
+    if (signal?.aborted) controller.abort(signal.reason);
+    else signal?.addEventListener("abort", forward, { once: true });
     const startedAt = Date.parse(this.#now());
-    const result = execute(
-      signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
-    );
+    const result = execute(controller.signal);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const early = await Promise.race([
       result.then((value) => ({ value })),
@@ -90,8 +106,11 @@ export class ProductionBackgroundCommands {
         timer = setTimeout(() => resolve(undefined), this.#limits.waitMs);
       }),
     ]).finally(() => clearTimeout(timer));
-    if (early) return early.value;
-    if (signal?.aborted) return result;
+    if (early || signal?.aborted) {
+      signal?.removeEventListener("abort", forward);
+      return early ? early.value : result;
+    }
+    signal?.removeEventListener("abort", forward);
     const taskRef = `${BACKGROUND_COMMAND_REF_PREFIX}${createHash("sha256")
       .update(JSON.stringify([invocation.runId, invocation.toolCallId]))
       .digest("hex")
@@ -107,6 +126,8 @@ export class ProductionBackgroundCommands {
     const task: BackgroundCommand = {
       taskRef,
       runId: invocation.runId,
+      threadId: invocation.context?.threadId ?? null,
+      dataClassification: invocation.dataClassification,
       command,
       startedAt,
       deadlineAt,
@@ -119,6 +140,7 @@ export class ProductionBackgroundCommands {
       stopReason: null,
       result: null,
       endedAt: null,
+      delivered: false,
     };
     this.#commands.set(taskRef, task);
     const saved = await receipt({
@@ -136,9 +158,10 @@ export class ProductionBackgroundCommands {
       modelContent: [
         `命令运行超过 ${Math.round(this.#limits.waitMs / 1000)} 秒还没结束，已转入后台继续运行，没有被停止。`,
         `任务编号：${taskRef}`,
-        "命令结束时系统会自动把结果发给你，不需要反复查询状态；在此期间可以先做别的事。",
+        "命令结束时系统会自动把结果发给你，不需要反复查询状态，也不要为了等它而拖住这一轮：可以直接回答用户，告诉他命令在后台运行、结束后会主动汇报。",
+        "如果命令在你还在回答时结束，结果会马上插进来；如果在你答完之后结束，系统会在这个对话里开新的一轮把结果交给你。",
         "需要时用 execution_task_status 查看状态，用 execution_task_cancel 停止；命令结束后可用 execution_task_output 分页读取输出。",
-        `这条命令最晚运行到 ${new Date(deadlineAt).toISOString()}，到时还没结束会被停止。本轮回答结束时，仍在运行的后台命令也会被停止。`,
+        `这条命令最晚运行到 ${new Date(deadlineAt).toISOString()}，到时还没结束会被停止。`,
       ].join("\n"),
     };
   }
@@ -169,10 +192,14 @@ export class ProductionBackgroundCommands {
     )
       return refused("MANAGED_TASK_INPUT_INVALID", "参数不正确，没有执行任何操作。");
     const task = this.#commands.get(String(args["resourceRef"]));
-    if (!task || task.runId !== invocation.runId)
+    const threadId = invocation.context?.threadId ?? null;
+    if (
+      !task ||
+      (task.runId !== invocation.runId && (task.threadId === null || task.threadId !== threadId))
+    )
       return refused(
         "BACKGROUND_COMMAND_NOT_FOUND",
-        "找不到这个后台命令。只能管理本轮回答里转入后台的命令；本轮结束后它们已被停止。",
+        "找不到这个后台命令。只能管理这个对话里转入后台的命令；服务重启后，之前的后台命令都已停止。",
       );
     if (action === "cancel" && task.state === "running") {
       task.stopReason = "requested";
@@ -198,14 +225,66 @@ export class ProductionBackgroundCommands {
     return count;
   }
 
-  subscribe(runId: string, listener: (notice: RuntimeBackgroundCommandNotice) => void): () => void {
+  held(runId: string): readonly RunBackgroundHold[] {
+    return [...this.#commands.values()]
+      .filter(
+        (task) =>
+          task.runId === runId &&
+          (task.state === "running" || (!task.delivered && task.stopReason !== "run_ended")),
+      )
+      .map((task) => ({
+        taskRef: task.taskRef,
+        startedAt: new Date(task.startedAt).toISOString(),
+        deadlineAt: new Date(task.deadlineAt).toISOString(),
+      }));
+  }
+
+  subscribe(
+    runId: string,
+    listener: (notice: RuntimeBackgroundCommandNotice) => boolean,
+  ): () => void {
     this.#listeners.set(runId, listener);
-    const pending = this.#pending.get(runId) ?? [];
-    this.#pending.delete(runId);
-    for (const notice of pending) listener(notice);
+    for (const task of this.#commands.values())
+      if (
+        task.runId === runId &&
+        task.state !== "running" &&
+        !task.delivered &&
+        task.stopReason !== "run_ended"
+      )
+        task.delivered = listener({ taskRef: task.taskRef, modelContent: this.#notice(task) });
     return () => {
       if (this.#listeners.get(runId) === listener) this.#listeners.delete(runId);
     };
+  }
+
+  async settled(runId: string): Promise<readonly BackgroundCommandResult[]> {
+    for (;;) {
+      const tasks = [...this.#commands.values()].filter((task) => task.runId === runId);
+      if (tasks.every((task) => task.state !== "running"))
+        return tasks.map((task) => ({
+          taskRef: task.taskRef,
+          command: task.command.slice(0, COMMAND_PREVIEW_CHARACTERS),
+          dataClassification: task.dataClassification,
+          outcome: backgroundOutcome(task),
+          notice: this.#notice(task),
+          delivered: task.delivered,
+        }));
+      await new Promise<void>((resolve) => {
+        const waiters = this.#settledWaiters.get(runId) ?? new Set<() => void>();
+        waiters.add(resolve);
+        this.#settledWaiters.set(runId, waiters);
+      });
+    }
+  }
+
+  async cancelRun(runId: string): Promise<void> {
+    const tasks = [...this.#commands.values()].filter((task) => task.runId === runId);
+    for (const task of tasks)
+      if (task.state === "running") {
+        task.stopReason = "requested";
+        task.controller.abort();
+      }
+    await settleWithin(Promise.allSettled(tasks.map((task) => task.settled)), STOP_SETTLE_MS);
   }
 
   async stopRun(runId: string): Promise<void> {
@@ -216,8 +295,6 @@ export class ProductionBackgroundCommands {
         task.controller.abort();
       }
     await settleWithin(Promise.allSettled(tasks.map((task) => task.settled)), STOP_SETTLE_MS);
-    for (const task of tasks) this.#commands.delete(task.taskRef);
-    this.#pending.delete(runId);
     this.#listeners.delete(runId);
   }
 
@@ -225,11 +302,21 @@ export class ProductionBackgroundCommands {
     task.result = result;
     task.endedAt = Date.parse(this.#now());
     task.state = task.stopReason ? "stopped" : "finished";
-    if (task.stopReason === "run_ended") return;
-    const notice = { taskRef: task.taskRef, modelContent: this.#notice(task) };
-    const listener = this.#listeners.get(task.runId);
-    if (listener) listener(notice);
-    else this.#pending.set(task.runId, [...(this.#pending.get(task.runId) ?? []), notice]);
+    if (task.stopReason !== "run_ended") {
+      const listener = this.#listeners.get(task.runId);
+      task.delivered =
+        listener?.({ taskRef: task.taskRef, modelContent: this.#notice(task) }) ?? false;
+    }
+    const waiters = this.#settledWaiters.get(task.runId);
+    this.#settledWaiters.delete(task.runId);
+    for (const wake of waiters ?? []) wake();
+    this.#prune();
+  }
+
+  #prune() {
+    const finished = [...this.#commands.values()].filter((task) => task.state !== "running");
+    for (const task of finished.slice(0, Math.max(0, finished.length - KEPT_FINISHED_COMMANDS)))
+      this.#commands.delete(task.taskRef);
   }
 
   #notice(task: BackgroundCommand): string {
@@ -290,8 +377,17 @@ export class ProductionBackgroundCommands {
   }
 }
 
+function backgroundOutcome(task: BackgroundCommand): RunBackgroundOutcome {
+  if (task.stopReason !== null) return "stopped";
+  const result = task.result;
+  if (result?.outcome === "succeeded") return "completed";
+  if (result?.errorCode && /DEADLINE|TIMEOUT|WALL_TIME/.test(result.errorCode)) return "timed_out";
+  return "failed";
+}
+
 function outcomeText(task: BackgroundCommand): string {
-  if (task.stopReason === "requested") return "已按你的要求停止，命令可能只执行了一部分。";
+  if (task.stopReason === "requested") return "已按要求停止，命令可能只执行了一部分。";
+  if (task.stopReason === "run_ended") return "已停止，命令可能只执行了一部分。";
   const result = task.result;
   if (!result || result.outcome === "result_unknown")
     return `结果未知（${result?.errorCode ?? "BACKGROUND_COMMAND_RESULT_UNKNOWN"}），不要直接重复执行，先核实已经产生的效果。`;

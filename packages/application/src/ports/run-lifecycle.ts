@@ -18,7 +18,6 @@ export interface RunCommandContext {
   readonly commandFingerprint: string;
   readonly authority: AuthorityFence;
   readonly payloadRef: PayloadRef;
-  /** Required for execution-owned writes; omitted only for explicit Owner cancellation. */
   readonly executionLease?: RunExecutionLeaseClaim;
 }
 
@@ -38,12 +37,20 @@ export interface StoredRun {
   readonly revision: number;
 }
 
+export interface RunBackgroundHold {
+  readonly taskRef: string;
+  readonly startedAt: string;
+  readonly deadlineAt: string;
+}
+
+export type RunBackgroundOutcome = "completed" | "failed" | "stopped" | "timed_out" | "interrupted";
+
 export interface RunCompletionInput extends RunCommandContext {
   readonly runId: RunId;
   readonly expectedRevision: number;
   readonly output: RuntimeSuccessfulOutput;
   readonly dataClassification: DataClassification;
-  /** Result-only recovery compares the original checkpoint inside the commit. */
+  readonly background?: { readonly holds: readonly RunBackgroundHold[] };
   readonly recoveryCheckpointRevision?: number;
 }
 
@@ -52,12 +59,46 @@ export interface RunTransitionReceipt {
   readonly replayed: boolean;
 }
 
+export interface FinishBackgroundRunInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly runId: RunId;
+  readonly idempotencyKey: IdempotencyKey;
+  readonly authority: AuthorityFence;
+  readonly executionLease?: RunExecutionLeaseClaim;
+  readonly outcomes: readonly {
+    readonly taskRef: string;
+    readonly outcome: RunBackgroundOutcome;
+  }[];
+  readonly notice: {
+    readonly triggerId: string;
+    readonly runId: RunId;
+    readonly turnId: string;
+    readonly messageId: string;
+    readonly contentRef: PayloadRef;
+    readonly dataClassification: DataClassification;
+  };
+}
+
+export interface FinishBackgroundRunResult {
+  readonly finished: boolean;
+  readonly noticeRunId: RunId | null;
+}
+
+export interface BackgroundRunRecord {
+  readonly runId: RunId;
+  readonly threadId: string;
+  readonly holds: readonly RunBackgroundHold[];
+  readonly runStatus: RunStatus;
+  readonly leaseLive: boolean;
+  readonly resourcesReleased: boolean;
+}
+
 export interface RunLifecyclePort {
   readRun(runId: RunId): Promise<StoredRun | undefined>;
   transitionRun(input: TransitionRunStateInput): Promise<RunTransitionReceipt>;
   cancelRun(input: RunCancellationInput): Promise<RunTransitionReceipt>;
-  /** Commit only under the current lease, with no pending durable sandbox
-   * resource, queue or barrier. Recovery must match the original stored output;
-   * these guards and the answer write belong to one atomic transaction. */
   completeRun(input: RunCompletionInput): Promise<RunTransitionReceipt>;
+  finishBackgroundRun?(input: FinishBackgroundRunInput): Promise<FinishBackgroundRunResult>;
+  listBackgroundRuns?(): Promise<readonly BackgroundRunRecord[]>;
 }

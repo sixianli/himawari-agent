@@ -3375,17 +3375,13 @@ describe("[NL-1] product-selected tool execution mode", () => {
 });
 
 class BackgroundRuntimeTools extends RecordingRuntimeTools {
-  running = 0;
-  listener: ((notice: RuntimeBackgroundCommandNotice) => void) | undefined;
-  readonly stopBackground = vi.fn(async () => {
-    this.running = 0;
-  });
+  listener: ((notice: RuntimeBackgroundCommandNotice) => boolean) | undefined;
+  delivered: boolean[] = [];
 
-  backgroundRunning(): number {
-    return this.running;
-  }
-
-  subscribeBackground(_runId: string, listener: (notice: RuntimeBackgroundCommandNotice) => void) {
+  subscribeBackground(
+    _runId: string,
+    listener: (notice: RuntimeBackgroundCommandNotice) => boolean,
+  ) {
     this.listener = listener;
     return () => {
       this.listener = undefined;
@@ -3393,8 +3389,9 @@ class BackgroundRuntimeTools extends RecordingRuntimeTools {
   }
 
   finish(text: string) {
-    this.running = 0;
-    this.listener?.({ taskRef: "background-command:test", modelContent: text });
+    this.delivered.push(
+      this.listener?.({ taskRef: "background-command:test", modelContent: text }) ?? false,
+    );
   }
 }
 
@@ -3414,67 +3411,24 @@ function messageText(context: unknown): string {
   return JSON.stringify((context as { messages: unknown[] }).messages);
 }
 
-it("waits for a background command after the answer and answers again with its result", async () => {
-  const model = await createFauxModelFixture(
-    "测试还在后台运行，结束后我再告诉你",
-    { name: "restaurant_search", id: "long-test", arguments: { query: "run tests" } },
-    [],
-    ["测试全部通过：42 passed"],
-  );
-  const tools = new BackgroundRuntimeTools();
-  tools.execute.mockImplementation(async () => {
-    tools.running = 1;
-    setTimeout(() => tools.finish("后台命令已结束。输出：42 passed"), 50);
-    return {
-      outcome: "succeeded",
-      resultRef: "payload-background",
-      errorCode: null,
-      externalActionId: null,
-      modelContent: "命令已转入后台继续运行。",
-    };
-  });
-  const projection = new RecordingProjection();
-  const adapter = new PiAgentRuntimeAdapter({
-    projection,
-    tools,
-    models: model.models,
-    cwd: process.cwd(),
-    now: () => new Date().toISOString(),
-    admission: async (scope) => allowAdmission(scope),
-    logicalSlot: (_request, ordinal) => `background:${ordinal}`,
-  });
-  const events = await collect(
-    adapter.run({
-      ...request,
-      modelRef: model.descriptor.ref,
-      executionDeadlineAt: new Date(Date.now() + 60_000).toISOString(),
-    }),
-  );
-  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
-  expect(model.observed).toHaveLength(3);
-  expect(messageText(model.observed.at(-1))).toContain("42 passed");
-  expect(projection.finalAnswers.at(-1)?.text).toBe("测试全部通过：42 passed");
-  expect(tools.stopBackground).toHaveBeenCalledWith(request.runId);
-});
+function movedToBackground() {
+  return {
+    outcome: "succeeded" as const,
+    resultRef: "payload-background",
+    errorCode: null,
+    externalActionId: null,
+    modelContent: "命令已转入后台继续运行。",
+  };
+}
 
-it("delivers a background result before the next model call while the run is still working", async () => {
-  const model = await createFauxModelFixture("已经看到后台结果", {
+it("[BG-2] answers right away and leaves a later background result for a new turn", async () => {
+  const model = await createFauxModelFixture("测试还在后台运行，结束后我再告诉你", {
     name: "restaurant_search",
-    id: "quick-finish",
+    id: "long-test",
     arguments: { query: "run tests" },
   });
   const tools = new BackgroundRuntimeTools();
-  tools.execute.mockImplementation(async () => {
-    tools.running = 1;
-    tools.finish("后台命令已结束。输出：7 passed");
-    return {
-      outcome: "succeeded",
-      resultRef: "payload-background",
-      errorCode: null,
-      externalActionId: null,
-      modelContent: "命令已转入后台继续运行。",
-    };
-  });
+  tools.execute.mockImplementation(async () => movedToBackground());
   const adapter = backgroundAdapter(tools, model);
   const events = await collect(
     adapter.run({
@@ -3485,38 +3439,32 @@ it("delivers a background result before the next model call while the run is sti
   );
   expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
   expect(model.observed).toHaveLength(2);
-  expect(messageText(model.observed.at(-1))).toContain("7 passed");
+  tools.finish("后台命令已结束。输出：42 passed");
+  expect(tools.delivered).toEqual([false]);
+  expect(model.observed).toHaveLength(2);
 });
 
-it("stops waiting for background commands when the owner cancels the run", async () => {
-  const model = await createFauxModelFixture("测试还在后台运行", {
+it("[BG-2] delivers a background result before the next model call while the run is still working", async () => {
+  const model = await createFauxModelFixture("已经看到后台结果", {
     name: "restaurant_search",
-    id: "cancelled-wait",
+    id: "quick-finish",
     arguments: { query: "run tests" },
   });
   const tools = new BackgroundRuntimeTools();
   tools.execute.mockImplementation(async () => {
-    tools.running = 1;
-    return {
-      outcome: "succeeded",
-      resultRef: "payload-background",
-      errorCode: null,
-      externalActionId: null,
-      modelContent: "命令已转入后台继续运行。",
-    };
+    tools.finish("后台命令已结束。输出：7 passed");
+    return movedToBackground();
   });
   const adapter = backgroundAdapter(tools, model);
-  const running = collect(
+  const events = await collect(
     adapter.run({
       ...request,
       modelRef: model.descriptor.ref,
       executionDeadlineAt: new Date(Date.now() + 60_000).toISOString(),
     }),
   );
-  await vi.waitFor(() => expect(model.observed).toHaveLength(2));
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  await adapter.cancel(request.runId);
-  const events = await running;
-  expect(events.at(-1)).toMatchObject({ type: "runtime.cancelled" });
-  expect(tools.stopBackground).toHaveBeenCalledWith(request.runId);
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(tools.delivered).toEqual([true]);
+  expect(model.observed).toHaveLength(2);
+  expect(messageText(model.observed.at(-1))).toContain("7 passed");
 });

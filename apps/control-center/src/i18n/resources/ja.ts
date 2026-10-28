@@ -307,6 +307,9 @@ export const messages = {
   "chat.modelUnavailable": "モデル情報がありません",
   "chat.attach": "画像やファイルを追加",
   "chat.retryCleanup": "停止と終了処理の確認を再試行",
+  "chat.background.running": "バックグラウンドでコマンド実行中 · {time} 経過",
+  "chat.background.runningMany": "{count} 件のコマンドをバックグラウンドで実行中 · {time} 経過",
+  "chat.background.notice": "バックグラウンドのコマンドが終了 · {at, time, short}",
   "chat.stop": "停止",
   "chat.pendingModel": "次のメッセージに適用",
   "chat.attachHint":

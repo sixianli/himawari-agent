@@ -7,7 +7,13 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { formatBytes, splitDraft } from "../draft-attachments.js";
 import { executionTimeline, timelineDuration } from "../execution-timeline.js";
 import type { RunSummary } from "../execution-view.js";
-import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
+import {
+  duration,
+  executionItems,
+  isAnsweredRun,
+  isNarration,
+  isTerminalRun,
+} from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { turnFiles } from "../turn-files.js";
 import { turnSources, turnUsage } from "../turn-summary.js";
@@ -31,6 +37,7 @@ export function ChatHistory({
   message,
   onFork,
   onCleanup,
+  onStopBackground,
   onPreview,
   previewKey,
   readImage,
@@ -50,6 +57,7 @@ export function ChatHistory({
   readonly previewKey?: string | undefined;
   readonly readImage?: ((ref: string) => Promise<string>) | undefined;
   readonly onCleanup?: ((run: RunSummary) => void) | undefined;
+  readonly onStopBackground?: ((run: RunSummary) => void) | undefined;
   readonly onFork: (turnId: string, sequence: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -118,6 +126,13 @@ export function ChatHistory({
                         message={message}
                       />
                     </div>
+                  ) : item.role === "system" ? (
+                    <p className="background-notice" key={item.messageId}>
+                      <LineIcon name="terminal" />
+                      <span>
+                        {message("chat.background.notice", { at: new Date(item.committedAt) })}
+                      </span>
+                    </p>
                   ) : (
                     <article
                       key={item.messageId}
@@ -132,7 +147,7 @@ export function ChatHistory({
               {group.run || agentMessages.length ? (
                 <article className="thread-message thread-message-agent">
                   <header>
-                    <HimawariBrand busy={!!group.run && !isTerminalRun(group.run)} />
+                    <HimawariBrand busy={!!group.run && !isAnsweredRun(group.run)} />
                     <strong>Himawari</strong>
                   </header>
                   {group.run ? (
@@ -176,7 +191,7 @@ export function ChatHistory({
                       <AssistantMarkdown text={partial} />
                     </>
                   ) : null}
-                  {agentMessages.length && (!group.run || isTerminalRun(group.run)) ? (
+                  {agentMessages.length && (!group.run || isAnsweredRun(group.run)) ? (
                     <AnswerActions
                       text={agentMessages
                         .map((item) => contentByRef[item.contentRef] ?? "")
@@ -198,6 +213,17 @@ export function ChatHistory({
                           ? () => onFork(last.turnId as string, last.sequence)
                           : undefined;
                       })()}
+                      message={message}
+                    />
+                  ) : null}
+                  {group.run?.background ? (
+                    <BackgroundCommandLine
+                      background={group.run.background}
+                      onStop={
+                        onStopBackground && group.run
+                          ? () => group.run && onStopBackground(group.run)
+                          : undefined
+                      }
                       message={message}
                     />
                   ) : null}
@@ -302,6 +328,38 @@ function OwnerMessage({
         </ul>
       ) : null}
     </article>
+  );
+}
+
+function BackgroundCommandLine({
+  background,
+  onStop,
+  message,
+}: {
+  readonly background: NonNullable<RunSummary["background"]>;
+  readonly onStop: (() => void) | undefined;
+  readonly message: Message;
+}) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const time = duration(Math.floor((now - Date.parse(background.startedAt)) / 1000) * 1000);
+  return (
+    <p className="background-command">
+      <span className="background-command-dot" aria-hidden="true" />
+      <output>
+        {background.count > 1
+          ? message("chat.background.runningMany", { count: background.count, time })
+          : message("chat.background.running", { time })}
+      </output>
+      {onStop ? (
+        <button type="button" className="background-command-stop" onClick={onStop}>
+          {message("chat.stop")}
+        </button>
+      ) : null}
+    </p>
   );
 }
 

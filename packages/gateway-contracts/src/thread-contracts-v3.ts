@@ -390,6 +390,13 @@ export const threadRunSummaryV3Schema = object({
   status: runStatusSchema,
   createdAt: timestamp,
   updatedAt: timestamp,
+  background: nullable(
+    object({
+      count: integer(1, 16),
+      startedAt: timestamp,
+      deadlineAt: timestamp,
+    }),
+  ),
 });
 
 export const threadCollectionSnapshotV3Schema = object({

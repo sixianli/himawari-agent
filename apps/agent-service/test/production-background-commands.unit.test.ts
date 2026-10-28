@@ -93,7 +93,10 @@ describe("ProductionBackgroundCommands", () => {
     const { background, receipt } = commands();
     const command = controlled();
     const notices: RuntimeBackgroundCommandNotice[] = [];
-    background.subscribe(bash.runId, (notice) => notices.push(notice));
+    background.subscribe(bash.runId, (notice) => {
+      notices.push(notice);
+      return true;
+    });
     const moved = await background.run(bash, undefined, command.execute, receipt);
     expect(moved).toMatchObject({ outcome: "succeeded", resultRef: "receipt-1" });
     expect(moved.modelContent).toContain("已转入后台继续运行，没有被停止");
@@ -115,7 +118,10 @@ describe("ProductionBackgroundCommands", () => {
     command.resolve(finished("done early"));
     await vi.waitFor(() => expect(background.running(bash.runId)).toBe(0));
     const notices: RuntimeBackgroundCommandNotice[] = [];
-    background.subscribe(bash.runId, (notice) => notices.push(notice));
+    background.subscribe(bash.runId, (notice) => {
+      notices.push(notice);
+      return true;
+    });
     expect(notices.map((notice) => notice.modelContent).join("")).toContain("done early");
   });
 
@@ -148,29 +154,87 @@ describe("ProductionBackgroundCommands", () => {
     const { background, receipt } = commands();
     const command = controlled();
     const notices: RuntimeBackgroundCommandNotice[] = [];
-    background.subscribe(bash.runId, (notice) => notices.push(notice));
+    background.subscribe(bash.runId, (notice) => {
+      notices.push(notice);
+      return true;
+    });
     const ref = taskRefOf(await background.run(bash, undefined, command.execute, receipt));
     const stopped = JSON.parse(
       (await background.manage(manage("cancel", ref), receipt)).modelContent,
     );
     expect(command.signal()?.aborted).toBe(true);
     expect(stopped).toMatchObject({ status: "stopped" });
-    expect(notices[0]?.modelContent).toContain("已按你的要求停止");
+    expect(notices[0]?.modelContent).toContain("已按要求停止");
   });
 
   it("stops every command of a Run when the Run ends without sending a notice", async () => {
     const { background, receipt } = commands();
     const command = controlled();
     const notices: RuntimeBackgroundCommandNotice[] = [];
-    background.subscribe(bash.runId, (notice) => notices.push(notice));
-    const ref = taskRefOf(await background.run(bash, undefined, command.execute, receipt));
+    background.subscribe(bash.runId, (notice) => {
+      notices.push(notice);
+      return true;
+    });
+    await background.run(bash, undefined, command.execute, receipt);
     await background.stopRun(bash.runId);
     expect(command.signal()?.aborted).toBe(true);
     expect(notices).toHaveLength(0);
     expect(background.running(bash.runId)).toBe(0);
-    expect(await background.manage(manage("status", ref), receipt)).toMatchObject({
-      outcome: "failed",
-      errorCode: "BACKGROUND_COMMAND_NOT_FOUND",
+    expect(background.held(bash.runId)).toEqual([]);
+  });
+
+  it("[BG-2] keeps running after the caller's signal ends once the command is in the background", async () => {
+    const { background, receipt } = commands();
+    const command = controlled();
+    const caller = new AbortController();
+    await background.run(bash, caller.signal, command.execute, receipt);
+    caller.abort();
+    expect(command.signal()?.aborted).toBe(false);
+    expect(background.held(bash.runId)).toHaveLength(1);
+  });
+
+  it("[BG-2] stops a command whose caller gives up inside the wait window", async () => {
+    const { background, receipt } = commands(200);
+    const command = controlled();
+    const caller = new AbortController();
+    const result = background.run(bash, caller.signal, command.execute, receipt);
+    caller.abort();
+    expect((await result).outcome).toBe("result_unknown");
+    expect(background.held(bash.runId)).toEqual([]);
+  });
+
+  it("[BG-2] holds a finished result nobody received and reports it once settled", async () => {
+    const { background, receipt } = commands();
+    const command = controlled();
+    const ref = taskRefOf(await background.run(bash, undefined, command.execute, receipt));
+    background.subscribe(bash.runId, () => false)();
+    const settled = background.settled(bash.runId);
+    command.resolve(finished("Tests 42 passed"));
+    expect(await settled).toEqual([
+      expect.objectContaining({ taskRef: ref, outcome: "completed", delivered: false }),
+    ]);
+    expect(background.held(bash.runId).map((hold) => hold.taskRef)).toEqual([ref]);
+  });
+
+  it("[BG-2] marks a requested stop and lets another Run of the same thread read it", async () => {
+    const { background, receipt } = commands();
+    const command = controlled();
+    const threaded = {
+      ...bash,
+      context: { threadId: "thread-background" },
+    } as unknown as RuntimeToolInvocation;
+    const ref = taskRefOf(await background.run(threaded, undefined, command.execute, receipt));
+    await background.cancelRun(bash.runId);
+    expect(await background.settled(bash.runId)).toEqual([
+      expect.objectContaining({ taskRef: ref, outcome: "stopped" }),
+    ]);
+    const later = {
+      ...manage("status", ref),
+      runId: "run-later",
+      context: { threadId: "thread-background" },
+    } as unknown as RuntimeToolInvocation;
+    expect(JSON.parse((await background.manage(later, receipt)).modelContent)).toMatchObject({
+      status: "stopped",
     });
   });
 

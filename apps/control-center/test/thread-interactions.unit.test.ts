@@ -421,7 +421,16 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
   it("uses backend phases and actions, keeps connection loss separate, and refreshes state without new trace", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -601,7 +610,16 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-D3] shows a deadline-ended Run with an unknown tool and no active or cleanup action", async () => {
-    runs = [{ runId: "run-ui", revision: 5, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 5,
+        status: "failed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -709,7 +727,16 @@ describe("thread control center interactions", () => {
   ] as const)(
     "[R2-S3] shows a $displayPhase Run ($reasonCode) once when its execution state is newer than the turn detail",
     async ({ displayPhase, reasonCode, label }) => {
-      runs = [{ runId: "run-ui", revision: 4, status: "running", createdAt: NOW, updatedAt: NOW }];
+      runs = [
+        {
+          runId: "run-ui",
+          revision: 4,
+          status: "running",
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+        },
+      ];
       options = {
         ...options,
         message: (id) => messages[id],
@@ -775,6 +802,7 @@ describe("thread control center interactions", () => {
         status: "reconciling_external_result",
         createdAt: NOW,
         updatedAt: NOW,
+        background: null,
       },
     ];
     options = {
@@ -874,7 +902,16 @@ describe("thread control center interactions", () => {
     ).toEqual([]);
     expect(container.textContent).not.toContain("没有程序在运行");
 
-    runs = [{ runId: "run-ui", revision: 8, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 8,
+        status: "failed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     state = {
       ...state,
       runRevision: 8,
@@ -893,7 +930,16 @@ describe("thread control center interactions", () => {
   });
 
   it("adopts an advancing Run without hiding displayed text or reporting a failed conversation", async () => {
-    runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 5,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -1022,7 +1068,16 @@ describe("thread control center interactions", () => {
   it.each(["thread", "run", "older revision", "read error"])(
     "rejects an invalid backend state but still loads message text (%s)",
     async (mismatch) => {
-      runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+      runs = [
+        {
+          runId: "run-ui",
+          revision: 3,
+          status: "running",
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+        },
+      ];
       threadMessages = [
         {
           messageId: "assistant-ui",
@@ -1069,7 +1124,16 @@ describe("thread control center interactions", () => {
   );
 
   it("[R2-U1] keeps a displayed conversation quiet while a brief state read failure retries", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1217,7 +1281,16 @@ describe("thread control center interactions", () => {
   });
 
   it("shows no slow-load notice once the first read has displayed the conversation", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1286,7 +1359,16 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-U3] shows a finished tool's result and duration while the Run keeps advancing past the summary", async () => {
-    runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 5,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     options = {
       ...options,
       message: (id) => messages[id],
@@ -1390,7 +1472,16 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-U3] recovers a briefly failing state read without a load notice", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1465,7 +1556,16 @@ describe("thread control center interactions", () => {
   });
 
   it("[R2-U3] reports a persistent scope rejection of the state read after repeated failures", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     threadMessages = [
       {
         messageId: "assistant-ui",
@@ -1523,7 +1623,16 @@ describe("thread control center interactions", () => {
   });
 
   it("paginates tool records, preserves their input, and resumes from the last confirmed sequence", async () => {
-    runs = [{ runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     options = {
       ...options,
       configuration: { ...configuration, executionPresentationAvailable: true },
@@ -1586,7 +1695,14 @@ describe("thread control center interactions", () => {
     "handles an invalid execution page (%s) without displaying invented progress",
     async (kind) => {
       runs = [
-        { runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW },
+        {
+          runId: "run-ui",
+          revision: 3,
+          status: "completed",
+          createdAt: NOW,
+          updatedAt: NOW,
+          background: null,
+        },
       ];
       options = {
         ...options,
@@ -2016,7 +2132,9 @@ describe("thread control center interactions", () => {
   it.each(["running", "cancelled", "failed"] as const)(
     "requests cancellation or cleanup for %s using the current run revision",
     async (status) => {
-      runs = [{ runId: "run-ui", revision: 7, status, createdAt: NOW, updatedAt: NOW }];
+      runs = [
+        { runId: "run-ui", revision: 7, status, createdAt: NOW, updatedAt: NOW, background: null },
+      ];
       await render();
       await refresh();
       await click(status === "running" ? "chat.stop" : "chat.retryCleanup");
@@ -2136,7 +2254,16 @@ describe("pushed conversation updates", () => {
     queue = [];
     signal = 0;
     stubEventSource(sources);
-    runs = [{ runId: "run-1", revision: 4, status: "completed", createdAt: NOW, updatedAt: NOW }];
+    runs = [
+      {
+        runId: "run-1",
+        revision: 4,
+        status: "completed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
+    ];
     threadMessages = [message(1), message(2)];
     const original = query.getMockImplementation();
     query.mockImplementation(async (request, abort) => {
@@ -2231,7 +2358,14 @@ describe("pushed conversation updates", () => {
     threadMessages = [message(1), message(2), message(3)];
     runs = [
       ...runs,
-      { runId: "run-2", revision: 1, status: "running", createdAt: NOW, updatedAt: NOW },
+      {
+        runId: "run-2",
+        revision: 1,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+      },
     ];
     from = query.mock.calls.length;
     await threadEvent("thread-ui");

@@ -14,6 +14,7 @@ const icons = {
   file: "M14 3H6.5v18h11V6.5L14 3Zm0 0v3.5h3.5",
   widen: "M4 5h16v14H4zM14 5v14",
   image: "M4 5h16v14H4zM4 16l4.5-4.5L13 16m-1.5-1.5 2.5-2.5 6 6M15.5 9h.01",
+  terminal: "M3 5h18v14H3zM7 10l3 2-3 2M12 14h5",
 };
 
 export function LineIcon({ name }: { readonly name: keyof typeof icons }) {

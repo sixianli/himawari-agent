@@ -334,19 +334,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       : undefined;
   }
 
-  backgroundRunning(runId: RuntimeRequest["runId"]): number {
-    return this.#background?.running(runId) ?? 0;
-  }
-
   subscribeBackground(
     runId: RuntimeRequest["runId"],
-    listener: (notice: RuntimeBackgroundCommandNotice) => void,
+    listener: (notice: RuntimeBackgroundCommandNotice) => boolean,
   ): () => void {
     return this.#background?.subscribe(runId, listener) ?? (() => undefined);
   }
 
-  async stopBackground(runId: RuntimeRequest["runId"]): Promise<void> {
-    await this.#background?.stopRun(runId);
+  get background(): ProductionBackgroundCommands | undefined {
+    return this.#background;
   }
 
   #createDelegation(sandbox?: SandboxAdmission) {

@@ -2898,3 +2898,37 @@ body {
     background-clip: padding-box;
   }
 }
+.background-command,
+.background-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.background-command-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+.background-command-stop {
+  min-height: 44px;
+  margin: -12px 0;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--danger);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.background-notice {
+  margin: 0 0 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}

@@ -248,6 +248,10 @@ function dispatcher(
     readonly executionLeaseRenewalIntervalMs?: number;
     readonly input?: ProductionRunInputFactory;
     readonly prepareToolResultRecovery?: (candidate: RunDispatchCandidate) => Promise<undefined>;
+    readonly background?: {
+      adopt(lease: RunExecutionLease): void;
+      recover(): Promise<number>;
+    };
   } = {},
 ): ProductionRunDispatcher {
   const boundCoordinator = {
@@ -281,10 +285,35 @@ function dispatcher(
     ...(options.prepareToolResultRecovery
       ? { prepareToolResultRecovery: options.prepareToolResultRecovery }
       : {}),
+    ...(options.background ? { background: options.background } : {}),
   });
 }
 
 describe("ProductionRunDispatcher", () => {
+  it("[BG-2] hands a parked Run's live lease to the background holder instead of releasing it", async () => {
+    const dispatch = new DispatchFixture([candidate()]);
+    const adopted: RunExecutionLease[] = [];
+    let recovered = 0;
+    const service = dispatcher(
+      dispatch,
+      { execute: async () => ({ ...result("running"), parked: true }) },
+      async () => undefined,
+      {
+        background: {
+          adopt: (current) => adopted.push(current),
+          recover: async () => {
+            recovered += 1;
+            return 0;
+          },
+        },
+      },
+    );
+    await expect(service.pump()).resolves.toMatchObject({ claimed: 1, settled: 1, unknown: 0 });
+    expect(adopted).toEqual([expect.objectContaining({ runId: RUN_ID, releasedAt: null })]);
+    expect(dispatch.releases).toEqual([]);
+    expect(recovered).toBe(1);
+  });
+
   it("claims one canonical Run, executes with that claim, and releases it after settlement", async () => {
     const dispatch = new DispatchFixture([candidate()]);
     const seen: ExecuteCoordinatedRunInput[] = [];

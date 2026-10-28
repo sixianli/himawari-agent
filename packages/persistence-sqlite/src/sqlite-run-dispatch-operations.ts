@@ -277,9 +277,20 @@ export class SqliteRunDispatchOperations {
              WHERE current_turn.thread_id IS NOT NULL
                AND earlier_turn.thread_id = current_turn.thread_id
                AND earlier_turn.turn_index < current_turn.turn_index
+               AND NOT EXISTS (
+                 SELECT 1 FROM run_background_holds earlier_hold
+                 WHERE earlier_hold.owner_id = earlier_run.owner_id
+                   AND earlier_hold.agent_id = earlier_run.agent_id
+                   AND earlier_hold.run_id = earlier_run.id AND earlier_hold.released_at IS NULL
+               )
                AND earlier_run.status IN (
                  'accepted', 'building_context', 'running', 'reconciling_external_result'
                )
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM run_background_holds hold
+             WHERE hold.owner_id = r.owner_id AND hold.agent_id = r.agent_id
+               AND hold.run_id = r.id AND hold.released_at IS NULL
            )
          ORDER BY r.created_at, r.id
          LIMIT @limit`,
@@ -346,6 +357,11 @@ export class SqliteRunDispatchOperations {
            )
            ) OR (${RUN_EXPIRED_RECONCILIATION_SQL}))
            AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= @resourceNow)
+           AND NOT EXISTS (
+             SELECT 1 FROM run_background_holds hold
+             WHERE hold.owner_id = r.owner_id AND hold.agent_id = r.agent_id
+               AND hold.run_id = r.id AND hold.released_at IS NULL
+           )
          ORDER BY r.created_at, r.id
          LIMIT @limit`,
       )
@@ -529,7 +545,6 @@ export class SqliteRunDispatchOperations {
         if (!run) return this.fail("PORT_NOT_AUTHORITATIVE", "Run is outside the bound scope");
         if (run.revision !== revision || run.leaseRevision !== leaseRevision)
           return this.fail("PORT_CONFLICT", "Run changed before reconciliation", { runId });
-        // Never reopen a completed or Owner-cancelled Run.
         if (["completed", "failed", "cancelled"].includes(run.status)) return;
         if (
           !["accepted", "building_context", "running", "reconciling_external_result"].includes(
@@ -567,7 +582,6 @@ export class SqliteRunDispatchOperations {
           .prepare(`UPDATE runs SET status = 'reconciling_external_result',
         revision = revision + 1, updated_at = ? WHERE id = ? AND owner_id = ? AND agent_id = ?`)
           .run(at, runId, this.scope.ownerId, this.scope.agentId);
-        // Preserve every context, observed output and Worker result reference.
         this.database
           .prepare(`INSERT INTO run_coordination_checkpoints
         (run_id, owner_id, agent_id, revision, phase, runtime_event_count, diagnostic_code, updated_at)
@@ -856,11 +870,6 @@ export class SqliteRunDispatchOperations {
     return release.immediate();
   }
 
-  /**
-   * Assert an execution lease while the caller's synchronous SQLite
-   * transaction is open.  This method intentionally does not start a nested
-   * transaction and must be called before the caller's guarded write.
-   */
   assertHeldInTransaction(input: {
     readonly runId: string;
     readonly expectedLeaseRevision: number;
@@ -889,11 +898,6 @@ export class SqliteRunDispatchOperations {
     return this.assertHeldSync(input);
   }
 
-  /**
-   * Read-only current lease, including its live revision. The caller still has to
-   * compare it against the authority it already holds and revalidate in its own
-   * transaction; this never extends or renews a lease.
-   */
   async currentExecutionLease(input: { readonly runId: string; readonly at: string }) {
     return this.currentExecutionLeaseSync(input);
   }
@@ -925,11 +929,6 @@ export class SqliteRunDispatchOperations {
     return assertHeld();
   }
 
-  /**
-   * Invalidate the current execution lease as part of the canonical Owner
-   * cancellation transaction.  This method never mutates `runs.status`; the
-   * Run lifecycle writer remains the sole owner of that state transition.
-   */
   invalidateForOwnerCancellationInTransaction(input: {
     readonly runId: string;
     readonly at: string;
@@ -1285,6 +1284,12 @@ export class SqliteRunDispatchOperations {
              AND earlier_run.agent_id = earlier_turn.agent_id
            WHERE earlier_turn.owner_id = ? AND earlier_turn.agent_id = ?
              AND earlier_turn.thread_id = ? AND earlier_turn.turn_index < ?
+             AND NOT EXISTS (
+               SELECT 1 FROM run_background_holds earlier_hold
+               WHERE earlier_hold.owner_id = earlier_run.owner_id
+                 AND earlier_hold.agent_id = earlier_run.agent_id
+                 AND earlier_hold.run_id = earlier_run.id AND earlier_hold.released_at IS NULL
+             )
              AND earlier_run.status IN (
                'accepted', 'building_context', 'running', 'reconciling_external_result'
              )

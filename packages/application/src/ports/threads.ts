@@ -184,12 +184,19 @@ export interface ThreadDeletionImpact {
   readonly activeTaskIds: readonly string[];
 }
 
+export interface ThreadRunBackgroundSummary {
+  readonly count: number;
+  readonly startedAt: string;
+  readonly deadlineAt: string;
+}
+
 export interface ThreadRunSummaryRecord {
   readonly runId: RunId;
   readonly revision: number;
   readonly status: RunStatus;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly background: ThreadRunBackgroundSummary | null;
 }
 
 export interface ThreadGatewayEventRecord {

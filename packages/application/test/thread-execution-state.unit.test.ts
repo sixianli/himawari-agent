@@ -15,6 +15,7 @@ const run: ThreadRunSummaryRecord = {
   status: "running",
   createdAt: at(0),
   updatedAt: at(1),
+  background: null,
 };
 const record = (
   sequence: number,
@@ -61,6 +62,23 @@ describe("backend execution state", () => {
         reasonCode: expected,
       }),
     ]);
+    expect(threadExecutionStateSchema.parse(state)).toEqual(state);
+  });
+
+  it("[BG-5] shows an answered Run with background commands as completed without a run stop", () => {
+    const state = projectThreadExecutionState(
+      {
+        ...run,
+        background: { count: 1, startedAt: at(1), deadlineAt: at(59) },
+      },
+      [record(1, "long-tests", "completed")],
+      true,
+    );
+    expect(state).toMatchObject({
+      displayPhase: "completed",
+      reasonCode: "RUN_ANSWERED_BACKGROUND_RUNNING",
+      availableActions: [],
+    });
     expect(threadExecutionStateSchema.parse(state)).toEqual(state);
   });
 

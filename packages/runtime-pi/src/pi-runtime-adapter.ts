@@ -271,7 +271,6 @@ function toolProgressOutput(
 
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
-const BACKGROUND_WAIT_SLICE_MS = 1000;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
 
 function backgroundCommandMessage(notice: RuntimeBackgroundCommandNotice) {
@@ -863,7 +862,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
   readonly #activeSessions = new Map<RuntimeRequest["runId"], AgentSession>();
   readonly #cancelledRuns = new Set<RuntimeRequest["runId"]>();
   readonly #historyWrites = new Map<RuntimeRequest["runId"], Promise<unknown>>();
-  readonly #backgroundWakes = new Map<RuntimeRequest["runId"], () => void>();
 
   constructor(dependencies: PiAgentRuntimeAdapterDependencies) {
     this.#dependencies = dependencies;
@@ -887,46 +885,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
 
   async cancel(runId: RuntimeRequest["runId"]): Promise<void> {
     this.#cancelledRuns.add(runId);
-    this.#backgroundWakes.get(runId)?.();
     const session = this.#activeSessions.get(runId);
     if (session) await session.abort();
     await this.#historyWrites.get(runId);
   }
 
-  async #continueForBackgroundCommands(
-    request: RuntimeRequest,
+  async #continueForSteeredNotices(
     session: AgentSession,
-    notices: RuntimeBackgroundCommandNotice[],
     canContinue: () => boolean,
   ): Promise<void> {
-    const tools = this.#dependencies.tools;
-    if (!tools.backgroundRunning) return;
-    const deadline =
-      request.executionDeadlineAt === undefined
-        ? Number.POSITIVE_INFINITY
-        : Date.parse(request.executionDeadlineAt);
-    while (canContinue()) {
-      if (session.agent.hasQueuedMessages()) {
-        await session.agent.continue();
-        await session.waitForIdle();
-        continue;
-      }
-      const notice = notices.shift();
-      if (notice) {
-        await session.sendCustomMessage(backgroundCommandMessage(notice), { triggerTurn: true });
-        await session.waitForIdle();
-        continue;
-      }
-      const remaining = deadline - Date.parse(this.now());
-      if (tools.backgroundRunning(request.runId) === 0 || remaining <= 0) return;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, Math.min(remaining, BACKGROUND_WAIT_SLICE_MS));
-        this.#backgroundWakes.set(request.runId, () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-      this.#backgroundWakes.delete(request.runId);
+    if (!this.#dependencies.tools.subscribeBackground) return;
+    while (canContinue() && session.agent.hasQueuedMessages()) {
+      await session.agent.continue();
+      await session.waitForIdle();
     }
   }
 
@@ -1258,18 +1229,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         );
       };
       this.#activeSessions.set(request.runId, session);
-      const backgroundNotices: RuntimeBackgroundCommandNotice[] = [];
       const unsubscribeBackground = this.#dependencies.tools.subscribeBackground?.(
         request.runId,
         (notice) => {
-          if (!session.isStreaming) {
-            backgroundNotices.push(notice);
-            this.#backgroundWakes.get(request.runId)?.();
-            return;
-          }
+          if (!session.isStreaming) return false;
           void session
             .sendCustomMessage(backgroundCommandMessage(notice), { deliverAs: "steer" })
             .catch(() => session.agent.abort());
+          return true;
         },
       );
 
@@ -1358,7 +1325,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           });
         await session.waitForIdle();
         await eventChain;
-        await this.#continueForBackgroundCommands(request, session, backgroundNotices, () => {
+        await this.#continueForSteeredNotices(session, () => {
           return (
             !suspended &&
             !unknownTool &&
@@ -1372,7 +1339,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         await this.#historyWrites.get(request.runId);
       } finally {
         unsubscribeBackground?.();
-        await this.#dependencies.tools.stopBackground?.(request.runId).catch(() => undefined);
         unsubscribe();
         session.dispose();
         this.#activeSessions.delete(request.runId);

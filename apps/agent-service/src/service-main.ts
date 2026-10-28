@@ -1355,6 +1355,14 @@ export async function runAgentService(
         webPush.start();
       }
       runs = createProductionRunComposition({
+        ...(tools.background ? { backgroundCommands: tools.background } : {}),
+        onBackgroundFailure: (runId, error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "background-command.finish_failed",
+            runId,
+            code: stableErrorCode(error),
+          }),
         onRunTiming: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
@@ -1520,6 +1528,7 @@ export async function runAgentService(
         },
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
+          if (await runs.background?.cancel(input.runId)) return;
           await runs.coordinator.cancel({
             ownerId: configuration.ownerId,
             agentId: configuration.agentId,

@@ -305,6 +305,9 @@ export const messages = {
   "chat.modelUnavailable": "Model information unavailable",
   "chat.attach": "Add images or files",
   "chat.retryCleanup": "Retry stop and cleanup check",
+  "chat.background.running": "Background command running · {time}",
+  "chat.background.runningMany": "{count} background commands running · {time}",
+  "chat.background.notice": "Background command finished · {at, time, short}",
   "chat.stop": "Stop",
   "chat.pendingModel": "For the next message",
   "chat.attachHint":

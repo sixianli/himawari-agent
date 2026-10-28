@@ -32,6 +32,8 @@ import {
   type ProductionRunDispatchLoopFailure,
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
+import type { ProductionBackgroundCommands } from "./production-background-commands.js";
+import { ProductionBackgroundRuns } from "./production-background-runs.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
 import { createProductionRunExpiry } from "./production-run-expiry.js";
 import {
@@ -105,6 +107,7 @@ export interface ProductionRunCompositionOptions {
   readonly protector: PayloadProtectorPort;
   readonly memory: Pick<MemoryPort, "search">;
   readonly tools: RuntimeToolPort;
+  readonly backgroundCommands?: ProductionBackgroundCommands;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
@@ -115,6 +118,7 @@ export interface ProductionRunCompositionOptions {
   readonly agentDir: string;
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
   readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
+  readonly onBackgroundFailure?: (runId: string, error: unknown) => void;
 }
 
 export function createProductionRunComposition(options: ProductionRunCompositionOptions) {
@@ -484,12 +488,41 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ...(memoryConsolidation ? { memoryConsolidation } : {}),
     memoryPaused,
   });
+  const runLifecycle = repository.runLifecycle(ownerId, agentId, fence);
+  const background = options.backgroundCommands
+    ? new ProductionBackgroundRuns({
+        ownerId,
+        agentId,
+        commands: options.backgroundCommands,
+        dispatch,
+        runs: runLifecycle,
+        ...(options.resources ? { resources: options.resources } : {}),
+        storeNotice: async (input) => {
+          if (await payloads.get(input.ref)) return;
+          await payloads.put(
+            await protector.protect({
+              ownerId,
+              agentId,
+              ref: input.ref,
+              contentType: "text/plain",
+              dataClassification: input.dataClassification,
+              plaintext: new TextEncoder().encode(input.text),
+              createdAt: clock.now(),
+            }),
+          );
+        },
+        authority: () => authority.authorityLease(),
+        assertActive: () => authority.assertActive(),
+        clock,
+        ...(options.onBackgroundFailure ? { onFailure: options.onBackgroundFailure } : {}),
+      })
+    : undefined;
   const coordinator = new RunCoordinator({
     ...(options.resources
       ? { resources: timings.methods(options.resources, { stopRun: "resources.stop" }) }
       : {}),
     clock,
-    runs: timings.methods(repository.runLifecycle(ownerId, agentId, fence), {
+    runs: timings.methods(runLifecycle, {
       readRun: "run.read",
       transitionRun: "run.transition",
       completeRun: "run.complete",
@@ -499,6 +532,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     runtime: timings.runtime(titledRuntime, "runtime"),
     ...(options.workers ? { workers: options.workers } : {}),
     trace,
+    ...(background ? { background } : {}),
   });
   const input = new RunExecutionInputService({
     maximumRunDurationMs: configuration.deadlines.runMs,
@@ -555,6 +589,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     executionLeaseDurationMs: 30_000,
     maximumRunsPerPump: configuration.concurrency.totalRuns,
     instanceId: options.instanceId,
+    ...(background ? { background } : {}),
   });
   const loop = new ProductionRunDispatchLoop({
     dispatcher,
@@ -581,5 +616,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     memoryCapture,
     memoryEpisodes,
     memoryConsolidation,
+    background,
   });
 }

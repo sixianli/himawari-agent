@@ -159,6 +159,58 @@ it("[UI-9] leaves the token count out when the turn has no usage record and hide
   );
 });
 
+it("[BG-5] ends the turn after the answer, shows the background line with stop, and marks the later notice", () => {
+  const parked = {
+    ...completedRun,
+    status: "running" as const,
+    background: { count: 1, startedAt: at(27000), deadlineAt: at(1_827_000) },
+  };
+  const base = detail();
+  const tree = createElement(ChatHistory, {
+    detail: {
+      ...base,
+      payload: {
+        ...base.payload,
+        runs: [parked],
+        messages: [
+          ...base.payload.messages,
+          {
+            messageId: "message:notice",
+            sequence: 3,
+            role: "system",
+            contentRef: "content:notice",
+            dataClassification: "private",
+            status: "committed",
+            turnId: "turn:notice",
+            runId: "run:notice",
+            committedAt: at(500_000),
+          },
+        ],
+      },
+    },
+    contentByRef: {
+      "content:owner": "跑一下全部测试",
+      "content:agent": "测试在后台跑着",
+      "content:notice": "【系统通知，不是用户发的消息】",
+    },
+    execution: { [completedRun.runId]: turnRecords() },
+    connection: "connected",
+    message: ids,
+    onFork: () => {},
+    onStopBackground: () => {},
+    renderApproval: () => null,
+  });
+  const html = renderToStaticMarkup(tree);
+  expect(html).toContain("answer-actions");
+  expect(html).toContain('class="background-command"');
+  expect(html).toMatch(/chat\.background\.running\(time=\d/);
+  expect(html).toContain('class="background-command-stop"');
+  expect(html).toContain('class="background-notice"');
+  expect(html).toContain(`chat.background.notice(at=${at(500_000)})`);
+  expect(html).not.toContain("【系统通知");
+  expect(html).not.toContain("is-busy");
+});
+
 it("[UI-10] folds the sources into one line and lists each page once when opened", () => {
   const html = render();
   expect(html).toContain('class="sources-toggle" aria-expanded="false"');

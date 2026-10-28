@@ -9,6 +9,9 @@ import type {
   DataClassification,
   RunExecutionLeaseClaim,
   RunExecutionLeaseTransactionGuard,
+  FinishBackgroundRunInput,
+  FinishBackgroundRunResult,
+  BackgroundRunRecord,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -150,14 +153,77 @@ function completion(value: unknown): RunCompletionInput {
     ...base,
     output: parsed,
     dataClassification: classification(raw["dataClassification"]),
+    ...(raw["background"] === undefined ? {} : { background: backgroundHolds(raw["background"]) }),
     ...(raw["recoveryCheckpointRevision"] === undefined
       ? {}
       : { recoveryCheckpointRevision: integer(raw["recoveryCheckpointRevision"]) }),
   };
 }
 
-function commandType(input: RunMutationInput): "run.transition" | "run.complete" {
-  return "nextStatus" in input ? "run.transition" : "run.complete";
+function instantText(value: unknown): string {
+  const text = string(value);
+  if (!Number.isFinite(Date.parse(text))) throw new TypeError("Run lifecycle time is invalid");
+  return text;
+}
+
+function backgroundHolds(value: unknown): NonNullable<RunCompletionInput["background"]> {
+  const holds = record(value)["holds"];
+  if (!Array.isArray(holds) || holds.length < 1 || holds.length > 16)
+    throw new TypeError("Run background holds are invalid");
+  return {
+    holds: holds.map((hold) => {
+      const item = record(hold);
+      const taskRef = string(item["taskRef"]);
+      if (taskRef.length > 128) throw new TypeError("Run background task ref is invalid");
+      return {
+        taskRef,
+        startedAt: instantText(item["startedAt"]),
+        deadlineAt: instantText(item["deadlineAt"]),
+      };
+    }),
+  };
+}
+
+const BACKGROUND_OUTCOMES = ["completed", "failed", "stopped", "timed_out", "interrupted"] as const;
+
+function finishInput(value: unknown): FinishBackgroundRunInput {
+  const input = record(value);
+  const fence = record(input["authority"]);
+  const executionLease = optionalExecutionLease(input["executionLease"]);
+  const outcomes = input["outcomes"];
+  if (!Array.isArray(outcomes) || outcomes.length < 1 || outcomes.length > 16)
+    throw new TypeError("Run background outcomes are invalid");
+  const notice = record(input["notice"]);
+  return {
+    ownerId: createOwnerId(string(input["ownerId"])),
+    agentId: createAgentId(string(input["agentId"])),
+    runId: createRunId(string(input["runId"])),
+    idempotencyKey: createIdempotencyKey(string(input["idempotencyKey"])),
+    authority: {
+      leaseId: createAuthorityLeaseId(string(fence["leaseId"])),
+      fencingToken: integer(fence["fencingToken"]),
+    },
+    ...(executionLease ? { executionLease } : {}),
+    outcomes: outcomes.map((entry) => {
+      const item = record(entry);
+      const outcome = BACKGROUND_OUTCOMES.find((candidate) => candidate === item["outcome"]);
+      if (!outcome) throw new TypeError("Run background outcome is invalid");
+      return { taskRef: string(item["taskRef"]), outcome };
+    }),
+    notice: {
+      triggerId: string(notice["triggerId"]),
+      runId: createRunId(string(notice["runId"])),
+      turnId: string(notice["turnId"]),
+      messageId: string(notice["messageId"]),
+      contentRef: string(notice["contentRef"]),
+      dataClassification: classification(notice["dataClassification"]),
+    },
+  };
+}
+
+function commandType(input: RunMutationInput): "run.transition" | "run.complete" | "run.park" {
+  if ("nextStatus" in input) return "run.transition";
+  return input.background ? "run.park" : "run.complete";
 }
 
 function fingerprint(input: RunMutationInput): string {
@@ -167,7 +233,11 @@ function fingerprint(input: RunMutationInput): string {
         input.ownerId,
         input.agentId,
         input.runId,
-        "nextStatus" in input ? input.nextStatus : [input.output, input.dataClassification],
+        "nextStatus" in input
+          ? input.nextStatus
+          : input.background
+            ? [input.output, input.dataClassification, input.background]
+            : [input.output, input.dataClassification],
         input.payloadRef,
         input.commandFingerprint,
       ]),
@@ -215,12 +285,10 @@ export function writeRunReceiptInTransaction(
       input["ownerId"],
       input["agentId"],
       input["idempotencyKey"],
-      `run.${"nextStatus" in input ? input.nextStatus : "completed"}`,
+      `run.${"nextStatus" in input ? input.nextStatus : input.background ? "parked" : "completed"}`,
       input["payloadRef"],
       now,
     );
-  // A Run status is part of the Thread view. Commit its revision and durable
-  // notification with the Run so a waiting approval is visible without polling.
   if ("nextStatus" in input) {
     const changedThread = database
       .prepare(`UPDATE threads
@@ -265,14 +333,20 @@ export class SqliteRunLifecycleOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
-  private readonly thread: Pick<SqliteThreadOperations, "commitAssistantMessage">;
+  private readonly thread: Pick<
+    SqliteThreadOperations,
+    "commitAssistantMessage" | "admitBackgroundNoticeInTransaction"
+  >;
   private readonly executionLease: ExecutionLeaseGuardFactory;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
-    thread: Pick<SqliteThreadOperations, "commitAssistantMessage">,
+    thread: Pick<
+      SqliteThreadOperations,
+      "commitAssistantMessage" | "admitBackgroundNoticeInTransaction"
+    >,
     executionLease: ExecutionLeaseGuardFactory,
   ) {
     this.database = database;
@@ -288,8 +362,11 @@ export class SqliteRunLifecycleOperations {
     const agentId = createAgentId(string(parsed["agentId"]));
     if (operation === "runLifecycle.read")
       return this.read(ownerId, agentId, createRunId(string(parsed["runId"])));
+    if (operation === "runLifecycle.listBackground")
+      return this.listBackground(ownerId, agentId, instantText(parsed["now"]));
     if (
       operation !== "runLifecycle.transition" &&
+      operation !== "runLifecycle.finishBackground" &&
       operation !== "runLifecycle.cancel" &&
       operation !== "runLifecycle.complete"
     )
@@ -300,6 +377,12 @@ export class SqliteRunLifecycleOperations {
       authorityEpoch: integer(fence["authorityEpoch"]),
       fencingToken: integer(fence["fencingToken"]),
     };
+    if (operation === "runLifecycle.finishBackground") {
+      const input = finishInput(parsed["input"]);
+      if (input.ownerId !== ownerId || input.agentId !== agentId)
+        return this.fail("PORT_NOT_AUTHORITATIVE", "Run command is outside the bound scope");
+      return this.finishBackground(input, authority, instantText(parsed["now"]));
+    }
     if (operation === "runLifecycle.cancel") {
       const input = cancellation(parsed["input"]);
       if (input["ownerId"] !== ownerId || input["agentId"] !== agentId)
@@ -432,7 +515,7 @@ export class SqliteRunLifecycleOperations {
   }
 
   private assertAuthority(
-    input: RunAuthorityInput,
+    input: Pick<RunAuthorityInput, "ownerId" | "agentId" | "authority">,
     authority: ProductAuthorityFence,
     now: string,
   ): void {
@@ -479,7 +562,7 @@ export class SqliteRunLifecycleOperations {
   }
 
   private assertExecutionLease(
-    input: RunMutationInput,
+    input: Pick<RunMutationInput, "ownerId" | "agentId" | "runId" | "authority" | "executionLease">,
     authority: ProductAuthorityFence,
     now: string,
   ): void {
@@ -568,12 +651,6 @@ export class SqliteRunLifecycleOperations {
       .immediate();
   }
 
-  /**
-   * Owner cancellation is the one lifecycle operation that changes the
-   * canonical Run and its coordination checkpoint together.  Existing
-   * observed output and worker/context references remain attached to the Run;
-   * only publication is prevented by the terminal Run status.
-   */
   private writeCancelledCheckpoint(input: RunCancellationInput, now: string): void {
     const existing = this.database
       .prepare(`SELECT revision, context_ref, runtime_event_count, last_trace_event_id,
@@ -623,17 +700,24 @@ export class SqliteRunLifecycleOperations {
         if (stored.revision !== input.expectedRevision)
           return this.fail("PORT_CONFLICT", "Run completion revision conflict");
         this.assertTransition(stored, "completed");
-        const pendingResource = this.database
-          .prepare(
-            `SELECT 1 FROM runs r WHERE r.owner_id=@ownerId AND r.agent_id=@agentId AND r.id=@runId
+        if (input.background && (stored.run.status !== "running" || !stored.run.threadId))
+          return this.fail(
+            "PORT_INVALID_OPERATION",
+            "Only a running Thread Run can keep background commands after its answer",
+          );
+        const pendingResource = input.background
+          ? undefined
+          : this.database
+              .prepare(
+                `SELECT 1 FROM runs r WHERE r.owner_id=@ownerId AND r.agent_id=@agentId AND r.id=@runId
               AND NOT (${RUN_RESOURCES_RELEASED_SQL})`,
-          )
-          .get({
-            ownerId: input.ownerId,
-            agentId: input.agentId,
-            runId: input.runId,
-            resourceNow: now,
-          });
+              )
+              .get({
+                ownerId: input.ownerId,
+                agentId: input.agentId,
+                runId: input.runId,
+                resourceNow: now,
+              });
         if (pendingResource)
           return this.fail("PORT_CONFLICT", "Run still owns unreleased sandbox resources");
         if (
@@ -710,7 +794,7 @@ export class SqliteRunLifecycleOperations {
           ON m.turn_id = u.id AND m.run_id = u.run_id AND m.thread_id = u.thread_id
             AND m.owner_id = u.owner_id AND m.agent_id = u.agent_id
           WHERE u.run_id = ? AND u.thread_id = ? AND u.owner_id = ? AND u.agent_id = ?
-            AND u.session_id = ? AND u.committed_at IS NULL AND m.role = 'owner'
+            AND u.session_id = ? AND u.committed_at IS NULL AND m.role IN ('owner', 'system')
             AND m.message_status = 'committed'`)
             .all(
               input.runId,
@@ -740,22 +824,40 @@ export class SqliteRunLifecycleOperations {
               ]),
             )
             .digest("hex");
-          this.thread.commitAssistantMessage({
-            ownerId: input.ownerId,
-            agentId: input.agentId,
-            threadId: stored.run.threadId,
-            runId: input.runId,
-            turnId: createTurnId(string(turn["id"])),
-            messageId: createMessageId(`assistant:${identity}`),
-            idempotencyKey: createIdempotencyKey(`runtime-assistant:${identity}`),
-            semanticFingerprint: fingerprint(input),
-            contentRef: input.output.contentRef,
-            dataClassification,
-            resultRef: input.payloadRef,
-            expectedThreadRevision: integer(record(threadValue)["revision"]),
-            committedAt: now,
-            authority,
-          });
+          this.thread.commitAssistantMessage(
+            {
+              ownerId: input.ownerId,
+              agentId: input.agentId,
+              threadId: stored.run.threadId,
+              runId: input.runId,
+              turnId: createTurnId(string(turn["id"])),
+              messageId: createMessageId(`assistant:${identity}`),
+              idempotencyKey: createIdempotencyKey(`runtime-assistant:${identity}`),
+              semanticFingerprint: fingerprint(input),
+              contentRef: input.output.contentRef,
+              dataClassification,
+              resultRef: input.payloadRef,
+              expectedThreadRevision: integer(record(threadValue)["revision"]),
+              committedAt: now,
+              authority,
+            },
+            { keepRunOpen: input.background !== undefined },
+          );
+          for (const hold of input.background?.holds ?? [])
+            this.database
+              .prepare(`INSERT INTO run_background_holds (
+                owner_id, agent_id, run_id, task_ref, thread_id, started_at, deadline_at, parked_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+              .run(
+                input.ownerId,
+                input.agentId,
+                input.runId,
+                hold.taskRef,
+                stored.run.threadId,
+                hold.startedAt,
+                hold.deadlineAt,
+                now,
+              );
         } else {
           this.database
             .prepare(
@@ -771,6 +873,173 @@ export class SqliteRunLifecycleOperations {
           now,
           stored.revision + 1,
         );
+      })
+      .immediate();
+  }
+
+  private listBackground(ownerId: OwnerId, agentId: AgentId, now: string): BackgroundRunRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT h.run_id, h.thread_id, h.task_ref, h.started_at, h.deadline_at, r.status,
+          EXISTS (SELECT 1 FROM run_execution_leases l
+            WHERE l.run_id=r.id AND l.owner_id=r.owner_id AND l.agent_id=r.agent_id
+              AND l.released_at IS NULL AND l.expires_at > @resourceNow) AS lease_live,
+          (${RUN_RESOURCES_RELEASED_SQL}) AS resources_released
+        FROM run_background_holds h
+        JOIN runs r ON r.id=h.run_id AND r.owner_id=h.owner_id AND r.agent_id=h.agent_id
+        WHERE h.owner_id=@ownerId AND h.agent_id=@agentId AND h.released_at IS NULL
+        ORDER BY h.parked_at, h.run_id, h.task_ref`,
+      )
+      .all({ ownerId, agentId, resourceNow: now }) as Record<string, unknown>[];
+    const runs = new Map<string, BackgroundRunRecord>();
+    for (const row of rows) {
+      const runId = string(row["run_id"]);
+      const hold = {
+        taskRef: string(row["task_ref"]),
+        startedAt: string(row["started_at"]),
+        deadlineAt: string(row["deadline_at"]),
+      };
+      const existing = runs.get(runId);
+      runs.set(
+        runId,
+        existing
+          ? { ...existing, holds: [...existing.holds, hold] }
+          : {
+              runId: createRunId(runId),
+              threadId: string(row["thread_id"]),
+              holds: [hold],
+              runStatus: status(row["status"]),
+              leaseLive: row["lease_live"] === 1,
+              resourcesReleased: row["resources_released"] === 1,
+            },
+      );
+    }
+    return [...runs.values()];
+  }
+
+  private finishBackground(
+    input: FinishBackgroundRunInput,
+    authority: ProductAuthorityFence,
+    now: string,
+  ): FinishBackgroundRunResult {
+    this.assertDiskHeadroom();
+    return this.database
+      .transaction((): FinishBackgroundRunResult => {
+        const done = this.database
+          .prepare(
+            `SELECT notice_run_id FROM run_background_holds
+              WHERE owner_id=? AND agent_id=? AND run_id=? AND released_at IS NOT NULL LIMIT 1`,
+          )
+          .get(input.ownerId, input.agentId, input.runId) as
+          | { notice_run_id: string | null }
+          | undefined;
+        const open = this.database
+          .prepare(
+            `SELECT task_ref FROM run_background_holds
+              WHERE owner_id=? AND agent_id=? AND run_id=? AND released_at IS NULL ORDER BY task_ref`,
+          )
+          .pluck()
+          .all(input.ownerId, input.agentId, input.runId) as string[];
+        if (open.length === 0) {
+          if (!done) return this.fail("PORT_NOT_FOUND", "Run has no background commands");
+          return {
+            finished: false,
+            noticeRunId: done.notice_run_id === null ? null : createRunId(done.notice_run_id),
+          };
+        }
+        const reported = input.outcomes.map((entry) => entry.taskRef).sort();
+        if (reported.length !== open.length || reported.some((ref, index) => ref !== open[index]))
+          return this.fail("PORT_CONFLICT", "Background outcomes do not match the open commands");
+        this.assertAuthority(input, authority, now);
+        const stored = this.read(input.ownerId, input.agentId, input.runId);
+        if (!stored || !stored.run.threadId)
+          return this.fail("PORT_NOT_FOUND", "Background Run is missing from the bound scope");
+        const release = this.database.prepare(
+          `UPDATE run_background_holds SET released_at=?, outcome=?, notice_run_id=?
+            WHERE owner_id=? AND agent_id=? AND run_id=? AND task_ref=? AND released_at IS NULL`,
+        );
+        if (stored.run.status !== "running") {
+          for (const entry of input.outcomes)
+            release.run(
+              now,
+              entry.outcome,
+              null,
+              input.ownerId,
+              input.agentId,
+              input.runId,
+              entry.taskRef,
+            );
+          return { finished: false, noticeRunId: null };
+        }
+        const pendingResource = this.database
+          .prepare(
+            `SELECT 1 FROM runs r WHERE r.owner_id=@ownerId AND r.agent_id=@agentId AND r.id=@runId
+              AND NOT (${RUN_RESOURCES_RELEASED_SQL})`,
+          )
+          .get({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            runId: input.runId,
+            resourceNow: now,
+          });
+        if (pendingResource)
+          return this.fail("PORT_CONFLICT", "Run still owns unreleased sandbox resources");
+        if (input.executionLease) this.assertExecutionLease(input, authority, now);
+        else if (
+          this.database
+            .prepare(
+              `SELECT 1 FROM run_execution_leases WHERE run_id=? AND owner_id=? AND agent_id=?
+                AND released_at IS NULL AND expires_at > ?`,
+            )
+            .get(input.runId, input.ownerId, input.agentId, now)
+        )
+          return this.fail("PORT_CONFLICT", "Background Run still has a live execution lease");
+        for (const entry of input.outcomes)
+          release.run(
+            now,
+            entry.outcome,
+            input.notice.runId,
+            input.ownerId,
+            input.agentId,
+            input.runId,
+            entry.taskRef,
+          );
+        this.database
+          .prepare(
+            `UPDATE runs SET status='completed', revision=revision+1, updated_at=?
+              WHERE id=? AND owner_id=? AND agent_id=? AND status='running'`,
+          )
+          .run(now, input.runId, input.ownerId, input.agentId);
+        this.database
+          .prepare(
+            `UPDATE run_coordination_checkpoints SET revision=revision+1, phase='completed',
+              terminal_status='completed', updated_at=?
+              WHERE run_id=? AND owner_id=? AND agent_id=?`,
+          )
+          .run(now, input.runId, input.ownerId, input.agentId);
+        if (input.executionLease)
+          this.database
+            .prepare(
+              `UPDATE run_execution_leases SET revision=revision+1, released_at=?
+                WHERE run_id=? AND owner_id=? AND agent_id=? AND released_at IS NULL`,
+            )
+            .run(now, input.runId, input.ownerId, input.agentId);
+        this.thread.admitBackgroundNoticeInTransaction({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          threadId: stored.run.threadId,
+          parentRunId: input.runId,
+          triggerId: input.notice.triggerId,
+          runId: input.notice.runId,
+          turnId: input.notice.turnId,
+          messageId: input.notice.messageId,
+          idempotencyKey: input.idempotencyKey,
+          contentRef: input.notice.contentRef,
+          dataClassification: input.notice.dataClassification,
+          occurredAt: now,
+          authority,
+        });
+        return { finished: true, noticeRunId: input.notice.runId };
       })
       .immediate();
   }

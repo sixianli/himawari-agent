@@ -19,7 +19,7 @@ import { defaultThinkingLevel } from "./components/model-picker.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
-import { isTerminalRun } from "./execution-view.js";
+import { isAnsweredRun, isTerminalRun, type RunSummary } from "./execution-view.js";
 import type {
   ControlCenterRuntimeConfiguration,
   GatewayClient,
@@ -999,10 +999,10 @@ export function useThreadControlCenter(
       return state && state.runRevision >= run.revision ? [[run.runId, state]] : [];
     }),
   );
-  const canStop = (run: { runId: string; status: string }) =>
+  const canStop = (run: RunSummary) =>
     configuration?.executionStateAvailable
       ? currentExecutionStates[run.runId]?.availableActions.includes("stop") === true
-      : !["completed", "failed", "cancelled"].includes(run.status);
+      : !["completed", "failed", "cancelled"].includes(run.status) && !run.background;
   const projectedPendingThreadIds =
     detail &&
     configuration?.executionStateAvailable &&
@@ -1207,6 +1207,12 @@ export function useThreadControlCenter(
                       void performIntent({ kind: "stop", runId: run.runId, revision: run.revision })
                   : undefined
               }
+              onStopBackground={
+                configuration?.canCancelRun
+                  ? (run) =>
+                      void performIntent({ kind: "stop", runId: run.runId, revision: run.revision })
+                  : undefined
+              }
               onFork={(turnId, sequence) =>
                 void performIntent({
                   kind: "fork",
@@ -1290,9 +1296,7 @@ export function useThreadControlCenter(
             (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
             (Boolean(unresolvedSubmission) ||
               ((!detail || detail.payload.thread.status === "active") &&
-                !(detail?.payload.runs ?? []).some(
-                  (run) => !["completed", "failed", "cancelled"].includes(run.status),
-                )))
+                !(detail?.payload.runs ?? []).some((run) => !isAnsweredRun(run))))
           }
         />
         {!client || !configuration ? (
