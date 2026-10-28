@@ -116,6 +116,18 @@ export function normalizedVector(values: readonly number[]): Float32Array {
   return vector;
 }
 
+function decodedEmbedding(value: unknown, dimensions: number): readonly number[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") throw new Error("EMBEDDING_VECTOR_INVALID");
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.byteLength !== dimensions * Float32Array.BYTES_PER_ELEMENT)
+    throw new Error("EMBEDDING_VECTOR_INVALID");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return Array.from({ length: dimensions }, (_, index) =>
+    view.getFloat32(index * Float32Array.BYTES_PER_ELEMENT, true),
+  );
+}
+
 export interface GatewayEmbedderOptions {
   readonly baseUrl: string;
   readonly model: string;
@@ -184,7 +196,7 @@ export class GatewayEmbedder implements Embedder {
           model: request.model,
           input: request.input,
           dimensions: request.dimensions,
-          encoding_format: "float",
+          encoding_format: "base64",
         }),
         signal,
       },
@@ -193,6 +205,17 @@ export class GatewayEmbedder implements Embedder {
       throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, "EMBEDDING_HTTP_FAILURE", {
         status: String(response.status),
       });
-    return (await response.json()) as EmbeddingResponse;
+    const body = (await response.json()) as Omit<EmbeddingResponse, "data"> & {
+      readonly data: readonly { readonly embedding: unknown; readonly index: number }[];
+    };
+    return {
+      ...body,
+      data: Array.isArray(body.data)
+        ? body.data.map((entry) => ({
+            ...entry,
+            embedding: decodedEmbedding(entry?.embedding, request.dimensions),
+          }))
+        : [],
+    };
   }
 }
