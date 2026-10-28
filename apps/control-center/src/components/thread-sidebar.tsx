@@ -3,7 +3,6 @@ import { type ReactNode, useState } from "react";
 import { type ControlCenterRouteState, controlCenterHref } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { ActionButton, ActionMenu, AppLink, ModalDialog } from "./index.js";
-import { openMemorySettings } from "./memory-panel.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
 
@@ -57,7 +56,10 @@ export interface ThreadSidebarProps {
   readonly onPin?: (thread: Thread) => void;
   readonly onArchive?: (thread: Thread) => void;
   readonly onOpenFiles?: (() => void) | undefined;
-  readonly filesOpen?: boolean;
+  readonly onOpenMemory?: (() => void) | undefined;
+  readonly onOpenReminders?: (() => void) | undefined;
+  readonly openPage?: "files" | "memory" | "reminders" | null;
+  readonly remindersDue?: number;
   readonly pendingThreadIds?: readonly string[];
   readonly runningThreadIds?: readonly string[];
 }
@@ -81,12 +83,16 @@ export function ThreadSidebar({
   onPin,
   onArchive,
   onOpenFiles,
-  filesOpen = false,
+  onOpenMemory,
+  onOpenReminders,
+  openPage = null,
+  remindersDue = 0,
   pendingThreadIds = [],
   runningThreadIds = [],
 }: ThreadSidebarProps) {
   const { message } = useControlCenterIntl();
   const [searchOpen, setSearchOpen] = useState(false);
+  const filesOpen = openPage !== null;
   const title = (thread: Thread) =>
     (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
   const list = threads.filter((thread) => thread.status === "active");
@@ -155,7 +161,7 @@ export function ThreadSidebar({
             id: "rename",
             label: (
               <>
-                <SidebarIcon name="compose" />
+                <SidebarIcon name="rename" />
                 {message("threads.rename")}
               </>
             ),
@@ -173,6 +179,7 @@ export function ThreadSidebar({
           },
           {
             id: "archive",
+            separated: true,
             label: (
               <>
                 <SidebarIcon name="archive" />
@@ -196,12 +203,31 @@ export function ThreadSidebar({
           <SidebarIcon name="search" />
           {message("threads.search")}
         </ActionButton>
-        <ActionButton onClick={() => openMemorySettings()} variant="quiet">
-          <SidebarIcon name="memory" />
-          {message("nav.memory")}
-        </ActionButton>
+        {onOpenMemory ? (
+          <ActionButton onClick={onOpenMemory} variant="quiet" aria-pressed={openPage === "memory"}>
+            <SidebarIcon name="memory" />
+            {message("nav.memory")}
+          </ActionButton>
+        ) : null}
+        {onOpenReminders ? (
+          <ActionButton
+            onClick={onOpenReminders}
+            variant="quiet"
+            aria-pressed={openPage === "reminders"}
+          >
+            <SidebarIcon name="reminders" />
+            {message("nav.reminders")}
+            {remindersDue ? (
+              <span
+                className="nav-dot"
+                role="img"
+                aria-label={message("reminders.due", { count: remindersDue })}
+              />
+            ) : null}
+          </ActionButton>
+        ) : null}
         {onOpenFiles ? (
-          <ActionButton onClick={onOpenFiles} variant="quiet" aria-pressed={filesOpen}>
+          <ActionButton onClick={onOpenFiles} variant="quiet" aria-pressed={openPage === "files"}>
             <SidebarIcon name="files" />
             {message("library.title")}
           </ActionButton>

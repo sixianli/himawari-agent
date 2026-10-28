@@ -15,6 +15,7 @@ if (!Number.isInteger(port) || port < 0 || port > 65535)
   throw new Error("CONTROL_CENTER_PORT_INVALID");
 const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
+const memoryFixture = process.env.HIMAWARI_MEMORY_FIXTURE === "1";
 const executionRecords = new Map();
 const executionStates = new Map();
 let executionEnvironment;
@@ -75,7 +76,17 @@ const threads = new Map([
           committedAt: now,
         },
       ],
-      runs: [{ runId: "run-01", revision: 2, status: "completed", createdAt: now, updatedAt: now }],
+      runs: [
+        {
+          runId: "run-01",
+          revision: 2,
+          status: "completed",
+          createdAt: now,
+          updatedAt: now,
+          background: null,
+          backgroundCommands: [],
+        },
+      ],
     },
   ],
   [
@@ -460,6 +471,33 @@ const settings = {
 let cursorSequence = 1;
 let healthDegraded = false;
 
+function fixtureFiles() {
+  return [
+    ["snake.html", "web", "text/html", 18432, 1],
+    ["东京天气汇总.md", "document", "text/markdown", 2048, 2],
+    ["expenses-2026-10.csv", "data", "text/csv", 5120, 1],
+    ["sunflower.png", "image", "image/png", 245760, 1],
+  ].map(([name, kind, mediaType, sizeBytes, version], index) => ({
+    id: `file:${index}`,
+    threadId: "thread-main",
+    runId: "run-01",
+    toolCallId: `call:${index}`,
+    toolItemId: `item:${index}`,
+    source: "write",
+    path: name,
+    name,
+    kind,
+    mediaType,
+    sizeBytes,
+    version,
+    turn: 1,
+    commandKey: null,
+    stored: true,
+    overlapped: false,
+    createdAt: now,
+  }));
+}
+
 function json(response, status, body) {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -601,6 +639,112 @@ function collectionCategory(type) {
   }[type];
 }
 
+function memoryOverview() {
+  const item = (memoryId, text, category, change = {}) => ({
+    memoryId,
+    revision: 1,
+    text,
+    dataClassification: "private",
+    topic: null,
+    inference: false,
+    sourceThreadId: "thread-main",
+    sourceRefs: [],
+    updatedAt: "2026-10-28T10:21:00.000Z",
+    supersededBy: null,
+    validTo: null,
+    tentative: false,
+    category,
+    subCategory: null,
+    status: "active",
+    recordedAt: "2026-10-28T10:21:00.000Z",
+    lastUsedAt: "2026-10-28T10:40:00.000Z",
+    importBatchId: null,
+    ...change,
+  });
+  const memories = [
+    item("memory-fish", "主人从 2026 年 10 月 28 日起喜欢吃鱼了", "preference"),
+    item("memory-fish-v2", "主人不太喜欢吃鱼", "preference", {
+      supersededBy: "memory-fish",
+      recordedAt: "2026-10-12T08:03:00.000Z",
+    }),
+    item("memory-fish-v1", "主人喜欢吃寿司", "preference", {
+      supersededBy: "memory-fish",
+      recordedAt: "2025-03-02T01:00:00.000Z",
+      importBatchId: "import-1",
+    }),
+    item("memory-blue", "主人最喜欢的颜色是蓝色", "preference"),
+    item("memory-short", "回答要先给结论", "preference"),
+    item("memory-jst", "时间一律用日本时间", "preference"),
+    item("memory-city", "主人住在东京都北区", "identity"),
+    item("memory-job", "主人正在应聘 AI 应用工程师", "identity"),
+    item("memory-peikun", "陪坤是主人的前同事", "relationship"),
+    item("memory-lilei", "李雷是主人的前同事", "relationship"),
+  ];
+  const lines = (ids) =>
+    ids.map((memoryId) => {
+      const found = memories.find((entry) => entry.memoryId === memoryId);
+      return { memoryId, text: found.text, updatedAt: found.updatedAt };
+    });
+  return {
+    memories,
+    tidyUps: [],
+    reminders: [],
+    upcoming: [
+      {
+        reminderId: "reminder-report",
+        memoryId: "memory-job",
+        text: "交面试作业",
+        dueAt: "2026-10-31T01:00:00.000Z",
+        repeat: "none",
+        sourceThreadId: "thread-main",
+      },
+    ],
+    people: [
+      {
+        personId: "person-peikun",
+        name: "陪坤",
+        aliases: [],
+        relation: "前同事",
+        reverseRelation: null,
+        links: [],
+        memoryIds: ["memory-peikun"],
+      },
+      {
+        personId: "person-lilei",
+        name: "李雷",
+        aliases: [],
+        relation: "前同事",
+        reverseRelation: null,
+        links: [],
+        memoryIds: ["memory-lilei"],
+      },
+      {
+        personId: "person-mina",
+        name: "Mina",
+        aliases: [],
+        relation: "大学同学",
+        reverseRelation: null,
+        links: [],
+        memoryIds: [],
+      },
+    ],
+    personSuggestions: [],
+    imports: [],
+    capturePaused: false,
+    manualAddReady: true,
+    profile: [
+      { kind: "identity", lines: lines(["memory-city", "memory-job"]) },
+      {
+        kind: "preference",
+        lines: lines(["memory-fish", "memory-blue", "memory-short", "memory-jst"]),
+      },
+      { kind: "relationship", lines: lines(["memory-peikun", "memory-lilei"]) },
+    ],
+    pending: [],
+    generatedAt: now,
+  };
+}
+
 function operationsSnapshot(type, payload) {
   return {
     ...envelope("snapshot", type),
@@ -631,6 +775,23 @@ function handleOperationsQuery(message) {
     }
     case "settings.read":
       return operationsSnapshot("settings.snapshot", settings);
+    case "memory.overview.read":
+      return memoryFixture
+        ? { ...envelope("snapshot", "memory.overview.snapshot"), payload: memoryOverview() }
+        : undefined;
+    case "search.authorization.read":
+      return memoryFixture
+        ? {
+            ...envelope("snapshot", "search.authorization.snapshot"),
+            payload: {
+              enabled: true,
+              revision: 1,
+              available: true,
+              recipients: ["https://mcp.exa.ai"],
+              generatedAt: now,
+            },
+          }
+        : undefined;
     case "identity.session_detail": {
       const value = sessions.get(message.payload.sessionId);
       return value ? operationsSnapshot("session.snapshot", value) : null;
@@ -1177,6 +1338,8 @@ function handleThreadCommand(message) {
         status: "accepted",
         createdAt: message.payload.occurredAt,
         updatedAt: message.payload.occurredAt,
+        background: null,
+        backgroundCommands: [],
       });
       break;
     case "thread.run.cancel": {
@@ -1299,11 +1462,15 @@ async function handleRequest(request, response) {
         "identity.session_detail",
         "session.revoke",
         "health.status",
+        ...(memoryFixture
+          ? ["memory.overview.read", "search.authorization.read", "search.authorization.set"]
+          : []),
       ],
       authorizationRef: governanceAuthorizationRef,
       recentAuthenticationRef: recentAuthenticationAvailable ? governanceAuthorizationRef : null,
       primaryModel: { provider: "fixture-provider", model: "fixture-primary", version: "v1" },
       primaryModelRef: "model:fixture-primary:v1",
+      filesAvailable: memoryFixture,
       repositoryAllowlistRefs: ["fixture-owner/fixture-repository"],
       disclosedDataClassifications: ["private"],
     });
@@ -1432,6 +1599,18 @@ async function handleRequest(request, response) {
       }
     }
     json(response, 200, { accepted: true });
+    return;
+  }
+  if (memoryFixture && request.method === "POST" && url.pathname === "/api/files/v1/list") {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+    const items = fixtureFiles().filter(
+      (file) =>
+        (!input.kind || file.kind === input.kind) &&
+        (!input.search || file.name.toLowerCase().includes(input.search.toLowerCase())),
+    );
+    json(response, 200, { items, nextCursor: null });
     return;
   }
   if (request.method === "POST" && url.pathname === "/__fixture/degrade") {

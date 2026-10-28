@@ -76,7 +76,7 @@ try {
       await expect(page.locator('.thread-loading-skeleton[data-scope="list"]')).toBeVisible();
       await expect(page.locator(".thread-load-feedback")).toHaveCount(0);
       await expect(page.locator(".thread-welcome")).toBeVisible();
-      await expect(page.locator(".thread-content")).not.toContainText("正在加载权威状态");
+      await expect(page.locator(".thread-content")).not.toContainText("正在加载…");
       await expect(page.locator(".thread-load-feedback")).toBeVisible({ timeout: 6000 });
       await page.screenshot({ path: path.join(output, `${label}-slow.png`) });
       await page.locator(".thread-load-feedback button").click();

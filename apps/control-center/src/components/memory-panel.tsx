@@ -5,12 +5,12 @@ import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 
-export const OPEN_MEMORY_SETTINGS = "himawari:open-memory-settings";
+export const OPEN_MEMORY_PAGE = "himawari:open-memory-page";
 
 export const OPEN_NOTIFICATION_SETTINGS = "himawari:open-notification-settings";
 
-export function openMemorySettings(memoryIds: readonly string[] = []) {
-  window.dispatchEvent(new CustomEvent(OPEN_MEMORY_SETTINGS, { detail: memoryIds }));
+export function openMemoryPage(memoryIds: readonly string[] = []) {
+  window.dispatchEvent(new CustomEvent(OPEN_MEMORY_PAGE, { detail: memoryIds }));
 }
 
 export function focusedMemoryIds(event: Event): readonly string[] {
@@ -172,7 +172,7 @@ export function MemoryTurnNote({
         <button
           type="button"
           className="memory-saved"
-          onClick={() => openMemorySettings(saved.map((item) => item.memoryId))}
+          onClick={() => openMemoryPage(saved.map((item) => item.memoryId))}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M7 4.5h10v15.5l-5-3.5-5 3.5z" />

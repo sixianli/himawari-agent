@@ -49,7 +49,14 @@ export function HimawariBrand({
   return (
     <span className="himawari-brand">
       <SunflowerMark busy={busy} />
-      {wordmark ? <span>himawari</span> : null}
+      {wordmark ? (
+        <span className="himawari-wordmark">
+          <span className="himawari-wordmark-latin">Himawari</span>
+          <span className="himawari-wordmark-kana" lang="ja">
+            ひまわり
+          </span>
+        </span>
+      ) : null}
     </span>
   );
 }

@@ -20,7 +20,12 @@ const thread = (id: string, pinOrder: number | null): ThreadSidebarProps["thread
   updatedAt: "2026-09-13T00:00:00Z",
 });
 
-function render(threads: ThreadSidebarProps["threads"], loading = false, hasLoaded = true) {
+function render(
+  threads: ThreadSidebarProps["threads"],
+  loading = false,
+  hasLoaded = true,
+  extra: Partial<ThreadSidebarProps> = {},
+) {
   return renderToStaticMarkup(
     h(
       IntlProvider,
@@ -42,21 +47,39 @@ function render(threads: ThreadSidebarProps["threads"], loading = false, hasLoad
         onCreate: vi.fn(),
         onRefresh: vi.fn(),
         onNavigate: vi.fn(),
+        ...extra,
       }),
     ),
   );
 }
 
 describe("thread sidebar navigation", () => {
+  it("lists memory and reminders as their own pages and marks due reminders with a dot", () => {
+    const quiet = render([], false, true, {
+      onOpenMemory: vi.fn(),
+      onOpenReminders: vi.fn(),
+      onOpenFiles: vi.fn(),
+      openPage: "memory",
+    });
+    const labels = [...quiet.matchAll(/<button[^>]*>(?:<svg.*?<\/svg>)?([^<]+)/g)].map(
+      (match) => match[1],
+    );
+    expect(labels.slice(0, 5)).toEqual(["新建对话", "搜索对话", "记忆", "提醒", "文件"]);
+    expect(quiet).toMatch(/aria-pressed="true"[^>]*><svg[^>]*>.*?<\/svg>记忆/);
+    expect(quiet).not.toContain("nav-dot");
+    const due = render([], false, true, { onOpenReminders: vi.fn(), remindersDue: 2 });
+    expect(due).toContain('class="nav-dot" role="img" aria-label="有 2 个提醒到点了"');
+  });
+
   it("shows quiet placeholders only before the first collection arrives", () => {
     const markup = render([], true, false);
     expect(markup).toContain('class="thread-loading-skeleton"');
-    expect(markup).not.toContain("正在加载权威状态");
+    expect(markup).not.toContain("正在加载…");
   });
 
   it("keeps a loaded empty collection quiet during background refresh", () => {
     const markup = render([], true, true);
-    expect(markup).not.toContain("正在加载权威状态");
+    expect(markup).not.toContain("正在加载…");
     expect(markup).not.toContain('class="thread-loading-skeleton"');
   });
 

@@ -147,6 +147,7 @@ export const governanceMessages = [
         text: "主人周五下午三点要交季度报告",
         dueAt: "2026-09-12T07:00:00.000Z",
         remindAt: "2026-09-12T06:00:00.000Z",
+        sourceThreadId: null,
       },
     ],
     upcoming: [
@@ -156,6 +157,7 @@ export const governanceMessages = [
         text: "妈妈的生日是 3 月 14 日",
         dueAt: "2027-03-14T01:00:00.000Z",
         repeat: "yearly",
+        sourceThreadId: "thread-01",
       },
     ],
     people: [

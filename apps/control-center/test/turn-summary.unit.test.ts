@@ -41,11 +41,10 @@ it("[UI-9] adds up every model call of the turn and counts cached input as input
   ]);
   expect(total).toEqual({
     input: 8600,
-    cached: 7100,
+    cacheRead: 7000,
     output: 1000,
     reasoning: 50,
     total: 9600,
-    costUsd: 0.003,
   });
 });
 
@@ -90,5 +89,32 @@ it("[UI-10] lists each web page the searches returned once, in result order", ()
     { url: "https://apnews.com/a", title: "AP headline", site: "apnews.com" },
     { url: "https://www.reuters.com/b", title: "Reuters story", site: "reuters.com" },
     { url: "https://npr.org/c", title: "npr.org", site: "npr.org" },
+  ]);
+});
+
+it("[UI-10] names a source by its registrable domain, not the full host", () => {
+  const sources = turnSources([
+    record({
+      kind: "tool",
+      name: "web_search",
+      phase: "completed",
+      output: JSON.stringify({
+        source: "Exa public web search",
+        results: [
+          { url: "https://www3.nhk.or.jp/news/html/20261028/k1.html", title: "NHK" },
+          { url: "https://news.yahoo.co.jp/articles/abc", title: "Yahoo" },
+          { url: "https://andy.github.io/post", title: "Blog" },
+          { url: "http://192.168.1.20:8080/page", title: "Router" },
+          { url: "http://localhost:3000/", title: "Local" },
+        ],
+      }),
+    }),
+  ]);
+  expect(sources.map(({ site }) => site)).toEqual([
+    "nhk.or.jp",
+    "yahoo.co.jp",
+    "andy.github.io",
+    "192.168.1.20",
+    "localhost",
   ]);
 });

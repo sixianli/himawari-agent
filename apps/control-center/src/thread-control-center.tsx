@@ -28,6 +28,7 @@ import {
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { FilesLibrary } from "./components/files-library.js";
 import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
+import { OPEN_MEMORY_PAGE } from "./components/memory-panel.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
 import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
@@ -93,7 +94,13 @@ export interface ThreadControlCenterOptions {
   readonly storage: ControlCenterBrowserStorage;
   readonly onUnauthorized: () => void;
   readonly renderMemory?: (ownerRefs: readonly string[]) => ReactNode;
+  readonly renderPage?: (page: SidePage, onBack: () => void) => ReactNode;
+  readonly remindersDue?: number;
+  readonly ownerName?: string | undefined;
 }
+
+export type SidePage = "memory" | "reminders";
+type WorkPage = SidePage | "files" | null;
 
 export interface ThreadControlCenterModel {
   readonly title: string;
@@ -112,6 +119,43 @@ export function greetingOf(now: Date): MessageId {
     : hour >= 12 && hour < 18
       ? "chat.greetAfternoon"
       : "chat.greetEvening";
+}
+const welcomeLines: readonly MessageId[] = [
+  "chat.welcome.here",
+  "chat.welcome.hand",
+  "chat.welcome.remember",
+  "chat.welcome.stuck",
+];
+export function welcomeLinesOf(now: Date): readonly MessageId[] {
+  const hour = now.getHours();
+  return hour >= 5 && hour < 11
+    ? [...welcomeLines, "chat.welcome.morning"]
+    : hour >= 22 || hour < 5
+      ? [...welcomeLines, "chat.welcome.late"]
+      : welcomeLines;
+}
+function ThreadWelcome({
+  name,
+  message,
+}: {
+  readonly name: string | undefined;
+  readonly message: (id: MessageId, values?: Record<string, string>) => string;
+}) {
+  const [now] = useState(() => new Date());
+  const [line] = useState(() => {
+    const lines = welcomeLinesOf(now);
+    return lines[Math.floor(Math.random() * lines.length)] as MessageId;
+  });
+  const greeting = message(greetingOf(now));
+  return (
+    <div className="thread-welcome">
+      <span className="welcome-mark">
+        <SunflowerMark />
+      </span>
+      <h2>{name ? message("chat.greetNamed", { greeting, name }) : greeting}</h2>
+      <p>{message(line)}</p>
+    </div>
+  );
 }
 function mutationMessageId(status: MutationStatus | null): MessageId {
   return status ? (`mutation.${status}` as MessageId) : "mutation.none";
@@ -168,6 +212,8 @@ export function useThreadControlCenter(
     threadEvents,
     route,
     storage,
+    renderPage,
+    remindersDue = 0,
   } = options;
   const [showOffline, setShowOffline] = useState(false);
   useEffect(() => {
@@ -179,7 +225,13 @@ export function useThreadControlCenter(
     return () => window.clearTimeout(timer);
   }, [connection]);
   const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
-  const [library, setLibrary] = useState(false);
+  const [page, setPage] = useState<WorkPage>(null);
+  const library = page === "files";
+  useEffect(() => {
+    const open = () => setPage("memory");
+    window.addEventListener(OPEN_MEMORY_PAGE, open);
+    return () => window.removeEventListener(OPEN_MEMORY_PAGE, open);
+  }, []);
   const [registered, setRegistered] = useState<readonly RegisteredFile[]>();
   const pendingTurn = useRef<string | null>(null);
   const [more, setMore] = useState<{
@@ -260,7 +312,7 @@ export function useThreadControlCenter(
     refreshSequence.current++;
     setDetail(undefined);
     setPreview(null);
-    setLibrary(false);
+    setPage(null);
     setRegistered(undefined);
     setMore((current) => ({ ...current, open: false, command: null }));
     setStoppingRunIds([]);
@@ -1152,11 +1204,14 @@ export function useThreadControlCenter(
       onSearchTextChange={setSearchText}
       onSearch={() => void search()}
       onCreate={() => {
-        setLibrary(false);
+        setPage(null);
         void createThread();
       }}
       onOpenFiles={configuration?.filesAvailable ? () => openLibrary() : undefined}
-      filesOpen={library}
+      onOpenMemory={renderPage ? () => openSidePage("memory") : undefined}
+      onOpenReminders={renderPage ? () => openSidePage("reminders") : undefined}
+      openPage={page}
+      remindersDue={remindersDue}
       onRefresh={() => void refresh(true)}
       onRename={(thread) => {
         setRenameTarget(thread);
@@ -1181,7 +1236,7 @@ export function useThreadControlCenter(
         );
       }}
       onNavigate={(state) => {
-        setLibrary(false);
+        setPage(null);
         navigate(state);
       }}
     />
@@ -1385,7 +1440,7 @@ export function useThreadControlCenter(
             onOpen: () => {
               if (!threadId) return;
               pendingTurn.current = file.runId;
-              setLibrary(false);
+              setPage(null);
               setPreview(null);
               if (threadId === selectedThreadId) {
                 if (flashTurn(file.runId)) pendingTurn.current = null;
@@ -1394,10 +1449,16 @@ export function useThreadControlCenter(
           }),
     );
   };
+  const openSidePage = (next: SidePage) => {
+    setPreview(null);
+    closeMore();
+    setPage(next);
+    navigate({ ...route, view: "content" });
+  };
   const openLibrary = () => {
     setPreview(null);
     closeMore();
-    setLibrary(true);
+    setPage("files");
     navigate({ ...route, view: "content" });
   };
   useEffect(() => {
@@ -1437,7 +1498,7 @@ export function useThreadControlCenter(
     flashTurn(command.noticeRunId);
   };
   const actions =
-    detail && hasMore && !library ? (
+    detail && hasMore && !page ? (
       <MoreButton
         running={runningCommands.length}
         open={more.open && !preview}
@@ -1448,7 +1509,9 @@ export function useThreadControlCenter(
 
   const content = (
     <div className="thread-workarea">
-      {library && client && configuration?.filesAvailable ? (
+      {(page === "memory" || page === "reminders") && renderPage ? (
+        <div className="side-page">{renderPage(page, () => setPage(null))}</div>
+      ) : library && client && configuration?.filesAvailable ? (
         <FilesLibrary
           list={(query) => client.listFiles(query)}
           threadTitle={threadTitle}
@@ -1456,7 +1519,7 @@ export function useThreadControlCenter(
           onOpen={openLibraryFile}
           onBack={() => {
             setPreview(null);
-            setLibrary(false);
+            setPage(null);
           }}
           message={message}
         />
@@ -1466,13 +1529,7 @@ export function useThreadControlCenter(
           {!detail && selectedThreadId && !shownOutgoing ? (
             <ThreadLoadingSkeleton scope="conversation" />
           ) : !detail && !shownOutgoing ? (
-            <div className="thread-welcome">
-              <span className="welcome-mark">
-                <SunflowerMark />
-              </span>
-              <h2>{message(greetingOf(new Date()))}</h2>
-              <p>{message("chat.welcome")}</p>
-            </div>
+            <ThreadWelcome name={options.ownerName} message={message} />
           ) : (
             <>
               <ChatHistory
@@ -1619,13 +1676,13 @@ export function useThreadControlCenter(
           key={preview.key ?? preview.title}
           value={preview}
           access={fileAccess}
-          onBack={more.open && hasMore && !library ? () => setPreview(null) : undefined}
+          onBack={more.open && hasMore && !page ? () => setPreview(null) : undefined}
           onClose={() => {
             setPreview(null);
             closeMore();
           }}
         />
-      ) : more.open && hasMore && !library ? (
+      ) : more.open && hasMore && !page ? (
         <MorePanel
           tab={more.tab}
           commandKey={more.command}
@@ -1691,8 +1748,10 @@ export function useThreadControlCenter(
     actions,
     list,
     refresh,
-    title: library
-      ? message("library.title")
+    title: page
+      ? message(
+          page === "files" ? "library.title" : page === "memory" ? "nav.memory" : "nav.reminders",
+        )
       : selectedSummary?.titleRef
         ? (contentByRef[selectedSummary.titleRef] ?? message("chat.untitled"))
         : message("chat.untitled"),

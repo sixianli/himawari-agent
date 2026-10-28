@@ -693,24 +693,6 @@
   margin-left: auto;
   min-width: 0;
 }
-.composer-hint {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin: -6px max(24px, calc((100% - 720px) / 2)) 14px;
-  color: var(--text-muted);
-  font-size: 10px;
-}
-.composer-permission {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.composer-permission svg {
-  flex: none;
-  width: 14px;
-  height: 14px;
-}
 .chat-latest {
   align-self: center;
   min-height: 32px;
@@ -829,13 +811,6 @@
   }
   .composer-tools select {
     max-width: 132px;
-  }
-  .composer-hint {
-    margin: -4px 14px 12px;
-    font-size: 10px;
-  }
-  .composer-hint .keyboard-hint {
-    display: none;
   }
   .thread-message header time {
     display: none;
@@ -1255,15 +1230,6 @@
 }
 .turn-process summary::-webkit-details-marker {
   display: none;
-}
-.process-chevron {
-  flex: none;
-  font-size: 18px;
-  transition: transform 120ms;
-}
-.turn-process[open] > summary > .process-chevron,
-.tool-record[open] > summary > .process-chevron {
-  transform: rotate(90deg);
 }
 .process-result,
 .step-status {

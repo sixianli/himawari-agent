@@ -136,9 +136,14 @@ describe("search authorization menu", () => {
       expectedRevision: 3,
     });
   });
-  it("renders authorization inside settings without a separate execution menu", async () => {
+  it("renders authorization inside settings with the disclosure folded away", async () => {
     await render(SearchAuthorizationControl, searchProps());
-    expect(container.querySelector("details")).toBeNull();
+    const details = container.querySelectorAll("details");
+    expect(details).toHaveLength(1);
+    expect(details[0]?.className).toBe("settings-details");
+    expect(details[0]?.open).toBe(false);
+    expect(details[0]?.textContent).toContain("允许后，生成的查询词");
+    expect(container.querySelector('input[role="switch"]')).not.toBeNull();
     expect(container.querySelector(".search-authorization")).not.toBeNull();
     expect(button("chat.search.enable")).toBeDefined();
   });

@@ -78,10 +78,12 @@ export function SearchAuthorizationControl({
         <label className="setting-row">
           <span>
             {message("chat.search.enable")}
-            <small className="setting-description">{message("chat.search.scope")}</small>
+            <small className="setting-description">{message("chat.search.purpose")}</small>
           </span>
           <input
             type="checkbox"
+            role="switch"
+            aria-checked={snapshot?.payload.enabled ?? false}
             aria-label={message(
               snapshot?.payload.enabled ? "chat.search.revoke" : "chat.search.enable",
             )}
@@ -96,18 +98,22 @@ export function SearchAuthorizationControl({
             onChange={() => void change()}
           />
         </label>
-        <p className="settings-note">{message("chat.search.disclosure")}</p>
-        {snapshot?.payload.recipients.length ? (
-          <p className="settings-note">
-            {message("chat.search.recipients")} {snapshot.payload.recipients.join(", ")}
-          </p>
-        ) : null}
-        <p className="settings-note">{message("chat.search.afterRevoke")}</p>
+        <details className="settings-details">
+          <summary>{message("chat.search.whatIsSent")}</summary>
+          <p>{message("chat.search.disclosure")}</p>
+          {snapshot?.payload.recipients.length ? (
+            <p>
+              {message("chat.search.recipients")} {snapshot.payload.recipients.join(", ")}
+            </p>
+          ) : null}
+          <p>{message("chat.search.afterRevoke")}</p>
+        </details>
         <div className="setting-row">
           <span>
             {message("chat.search.other")}
-            <small className="setting-description">{message("review.inlineConsent")}</small>
+            <small className="setting-description">{message("chat.search.otherScope")}</small>
           </span>
+          <span className="setting-fixed">{message("chat.search.alwaysOn")}</span>
         </div>
         {error || loadError ? (
           <div role="alert">
