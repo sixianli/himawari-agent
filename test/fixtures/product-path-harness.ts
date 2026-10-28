@@ -1214,12 +1214,29 @@ export async function installProductPath(options: {
     await writeListenerPorts();
     if (!bootstrapped) {
       const assertion = await signAssertion();
-      const answer = await fetch(`http://127.0.0.1:${appPort}/bootstrap`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: bootstrapToken, ownerId, assertionToken: assertion }),
+      const body = JSON.stringify({ token: bootstrapToken, ownerId, assertionToken: assertion });
+      const status = await new Promise<number>((resolve, reject) => {
+        const outgoing = requestHttp(
+          {
+            host: "127.0.0.1",
+            port: appPort,
+            method: "POST",
+            path: "/bootstrap",
+            headers: {
+              host: publicHost,
+              "content-type": "application/json",
+              "content-length": Buffer.byteLength(body),
+            },
+          },
+          (answer) => {
+            answer.resume();
+            resolve(answer.statusCode ?? 0);
+          },
+        );
+        outgoing.once("error", reject);
+        outgoing.end(body);
       });
-      if (answer.status !== 201) throw new Error(`PRODUCT_PATH_BOOTSTRAP_FAILED:${answer.status}`);
+      if (status !== 201) throw new Error(`PRODUCT_PATH_BOOTSTRAP_FAILED:${status}`);
       bootstrapped = true;
     }
   };
