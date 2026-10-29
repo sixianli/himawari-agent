@@ -379,6 +379,14 @@ describe("production memory capture", () => {
     expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
+  it("asks the model to keep who the Owner's family are and the Owner's rules private, and only their private matters sensitive", () => {
+    const prompt = memoryCapturePrompt("我老婆叫陈静，在医院当药剂师", [], null, null, null);
+    expect(prompt).toContain("主人身边的人是谁（名字、和主人的关系、职业、住在哪个城市）");
+    expect(prompt).toContain("主人给 Himawari 定的做事要求（即使提到钱");
+    expect(prompt).toContain("他人的私事（别人的健康、钱、感情、行踪等）");
+    expect(prompt).not.toContain("他人隐私");
+  });
+
   it("never stores identity or card numbers, even when asked to remember them", async () => {
     const context = await setup(
       "记住我的身份证号 110101199003071234。",
