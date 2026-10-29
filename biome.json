@@ -65,7 +65,8 @@
         "docs/assets/control-center/2026-10-26-v6/mark-options.html",
         "docs/assets/control-center/2026-10-28-v8/desktop.dc.html",
         "docs/assets/control-center/2026-10-28-v8/phone.dc.html",
-        "docs/assets/control-center/2026-10-28-v8/canvas.json"
+        "docs/assets/control-center/2026-10-28-v8/canvas.json",
+        "docs/assets/control-center/2026-10-29-v11/memory-page-prototype.html"
       ],
       "formatter": {
         "enabled": false

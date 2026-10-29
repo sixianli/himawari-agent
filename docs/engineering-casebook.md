@@ -76,6 +76,7 @@ date: "2026-10-26"
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
   51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
   53. [评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住](#case-no-expensive-models)
+  54. [“档案”到底是什么：把它从一个页签改成记忆上的“每次对话都带上”开关，由用户说了算](#case-carried-memories)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -97,14 +98,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -1061,6 +1062,8 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 **相关 ADR/PR**
 
 [ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆）；原型 <https://claude.ai/artifact/SJkcL4hNPHeM2V6Nk3V4jL>；设计说明 <https://claude.ai/artifact/CykKuRNV26pNSBcfvNsDNR>；数据库迁移 `0057_memory_page.sql`；[PR #34](https://github.com/sixianli/himawari-agent/pull/34)（提交 bfa6162）。
+
+**后续（2026-10-29）**：四个页签又被 Andy 问出了问题：“档案”看起来像一份能单独编辑的资料，其实是每轮从记忆里现挑的；“新”标签没有信息量；三行筛选难懂。页面改成“记忆”“变化记录”两个标签和按主题浏览，档案改成每条记忆上的“每次对话都带上”开关，见[案例 54](#case-carried-memories) 和 [ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)。
 
 **面试 30 秒版**
 
@@ -3341,6 +3344,75 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “我们的评测裁判一个月花的钱比生产主模型还多。我在网关日志里逐条核对，发现是设计裁判时只要求‘和被测模型不是同一家’，没比价格，选了最贵的一档，还写死在代码里。修法是三件事：模型名集中到一个配置文件；裁判换成同样异厂、价格约二十分之一的模型，保留每轮校准和人工抽查来兜住判错；再加一道提交前的检查，代码里出现贵模型名就失败。网关层的模型白名单更硬，但要付费套餐，记成以后的第二道防线。”
+
+[返回目录](#contents)
+
+<a id="case-carried-memories"></a>
+
+## 案例 54：“档案”到底是什么：把它从一个页签改成记忆上的“每次对话都带上”开关，由用户说了算
+
+**背景与现象**
+
+2026-10-29（日本时间），记忆页已经按[案例 17](#case-memory-page) 分成待确认、档案、全部记忆、时间线四个页签。Andy 用了几天后连着提问：“档案到底是什么，跟记忆什么关系，为什么能单独编辑？”“哪些记忆能进档案，是不是全凭大模型？”“每行后面的‘新’有什么意义？”“如果有 100 个类、每类 100 条怎么办？”“大类、小类、状态三行按钮是什么关系？”
+
+**根因**
+
+查代码发现，界面和后台对“档案”的理解不一致：
+
+1. 后台没有“档案”这份资料。`OwnerProfileService` 每轮对话前从当前记忆里现挑一遍：五个类别之一、重要度 ≥600、非敏感、总长 ≤2000 字。网页却把它做成一个能单独编辑的页签，看上去像是另一份资料。
+2. 进不进档案全由模型打的分决定，用户没有办法干预。600 这个门槛没有测量依据。
+3. 手动添加有缺陷（[事故 I-21](incidents-and-gates.md#incidents)）。分类靠关键词猜，没猜中就默认“身份”；重要度写死 600，正好等于门槛。所以手动添加的每一条都进了档案，“我每天必须喝咖啡”被当成身份，每轮都带给模型。
+4. “新”的意思是“7 天内更新过”，和用户有没有看过无关。三行筛选的数字口径也不一致。
+
+**我们的方案**
+
+先调研，再按[产品愿景](product-vision.md)核对，然后发可切换的原型（方案 A/B/C、电脑和手机、13 条和 1 万条、三语）。Andy 选了方案 A（[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)）：
+
+- **档案改成记忆身上的一个标记。** 界面上叫“每次对话都会带上的记忆”。每条记忆有开关“每次对话都带上”，用户的选择优先于自动挑选：打开的排在最前，关掉的不再自动带上。用户没碰过的仍按原规则挑。选择存在新表 `memory_profile_pins`。敏感记忆和事件、健康、财务、其他类不能打开，服务端也会拒绝。
+- **把预算摆出来。** 顶部卡片写明带上几条、已用多少字（满 2000 字）、几条放不下，展开后能看到放不下的和自己关掉的。
+- **手动添加不再自动进档案。** 没猜中归“其他”；重要度改为 500（要求类 800）；表单里有开关，默认关。
+- **页面结构。** 只留“记忆”“变化记录”两个标签，待确认的事放在页面顶部，有才出现。按主题浏览：电脑上是左侧目录，手机上是下拉列表。全部主题下每个主题先显示最新 3 条，选中主题后每次显示 30 条。已归档和最近删除改成列表下方的链接。详情在电脑上从右侧滑出，在手机上从底部弹出。
+- **“新”改成“自你上次打开后新记住 N 条”。** 打开时间存在 `memory_settings.last_viewed_at`。
+- **打开开关不花钱。** 开关只写一张表，不经过会重新生成向量的 `saveWithProjection`。也因为这个原因，“换主题”这次没做。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 方案 B：保留四个页签，只改文案和筛选 | 改动最小 | 解决不了“档案为什么能单独编辑”的误解 |
+| 方案 C：首页是主题格子，点进去看列表 | 一眼看出各主题多少条 | 多一层点击；搜索和开关没地方放，手机上更挤 |
+| 让用户直接编辑一段档案文本 | 像 ChatGPT 的个性化说明一样直观 | 档案和记忆会成为两份互相矛盾的事实，违背“记忆可靠” |
+| 手动添加时调用模型分类 | 分得更准 | 每次添加都要花模型调用的钱；先用“猜一个、让用户改”，模型分类记为 [BL-20261029-001](backlog/BL-20261029-001-manual-memory-model-category.md) |
+| 重新校准 600 门槛 | 有测量依据 | 要跑评测、要花钱，按“花钱先问”等 Andy 决定 |
+
+放弃了什么：自动挑选的规则仍然没有测量依据；“换主题”要等确认能跳过重新嵌入后再做（[BL-20261029-002](backlog/BL-20261029-002-memory-change-topic.md)）。
+
+**业界主流做法**
+
+- ✅ Claude 官方博客（[Claude's memory works everywhere, and you decide what's in it](https://claude.com/blog/claudes-memory-works-everywhere-and-you-decide-whats-in-it)）：“Everything Claude remembers is in a list of files under Topics in Memory settings.” 也就是按主题列出、逐条可看可改。
+- ✅ Claude 帮助中心（[How does Claude's memory work](https://support.claude.com/en/articles/11817273)）：Claude “saves memory as a set of individual topics as you chat”；每个项目有自己的记忆，可以关掉“Use account memory”。
+- ✅ Nielsen Norman Group（[Filters vs. Facets](https://www.nngroup.com/articles/filters-vs-facets/)）：多维筛选的成本高，“A simple filter can often be easier to understand and faster to use.” 这支持把三行筛选减成一个主题目录。
+- ⚠ ChatGPT 记忆 FAQ：本次打开仍返回 HTTP 403，没有核对，面试时不要引用。
+
+**对比与取舍**
+
+Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实际带上了哪些。Himawari 的底层是一条条带来源和更正历史的事实（[ADR 0075](adr/0075-self-built-memory-engine.md)），所以我们没有合成主题段落，而是在每条事实上加一个“每次都带上”的开关，并把 2000 字的预算和放不下的条目明着给用户看。代价是多一张表和一层“用户选择优先”的排序；好处是用户能解释、也能纠正“模型为什么总记得这件事”。
+
+**结果数据**
+
+- 测试（本线程云端容器）：`npx vitest run --config vitest.workspace.ts apps/control-center/test` 共 76 个文件 1074 条通过；新增的 `[MEM-PIN]` 测试覆盖开关、放不下的条目、上次打开以来新记住的条数、45 条分页、手动添加的主题和开关。
+- 事故 I-21 的门槛：没猜中关键词时归“其他”的测试在修复前的代码上失败（`expected { category: 'identity' } to deeply equal { category: 'other' }`），修复后通过。
+- 截图核对：中英日三语、电脑 1280 像素和手机 390 像素共 21 张，无横向滚动、无页面报错（脚本输出 `NO_PROBLEMS`），存为基线 `docs/assets/control-center/2026-10-29-v11/`。
+- 记忆页脚本体积（`npm run build` 输出）：50.88 kB，gzip 后 13.46 kB；改动前的体积未测量。
+- 真实使用效果（Andy 是否更快找到记忆、开关用了几次）：未测量，等上线后看。
+
+**相关 ADR/PR**
+
+[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)、[ADR 0075](adr/0075-self-built-memory-engine.md)、[事故清单 I-21](incidents-and-gates.md#incidents)；原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；迁移 `0063_memory_profile_pins.sql`；本案例的 PR 在分支 `claude/project-thread-44hlmo`；前情见[案例 17](#case-memory-page)。
+
+**面试 30 秒版**
+
+“用户问我‘档案到底是什么，为什么能单独编辑’。我查代码发现，后台根本没有档案这份资料：它是每轮对话前按类别、重要度和 2000 字预算，从记忆里现挑出来的。挑选全凭模型打分，手动添加的记忆还因为一个默认值全部被挑了进去。我把档案改成每条记忆上的‘每次都带上’开关，用户的选择优先于模型，同时把预算用了多少、哪些放不下明着给用户看。页面也从四个页签减到两个，按主题浏览。数据量从 13 条涨到 1 万条，结构不用改。”
 
 [返回目录](#contents)
 
