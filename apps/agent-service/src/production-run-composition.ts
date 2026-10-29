@@ -110,6 +110,7 @@ export interface ProductionRunCompositionOptions {
   readonly tools: RuntimeToolPort;
   readonly backgroundCommands?: ProductionBackgroundCommands;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
+  readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
   readonly clock: ClockPort;
@@ -347,6 +348,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     measure: (runId, name, work) => timings.measure(runId, name, work),
     now: () => clock.now(),
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
+    ...(options.onToolCallStarted ? { onToolCallStarted: options.onToolCallStarted } : {}),
   });
   const titles = options.generateTitle
     ? new ProductionThreadTitles({

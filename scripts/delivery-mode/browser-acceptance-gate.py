@@ -14,6 +14,10 @@ REQUIRED_SCENARIOS = (
     'accept-phone-layout',
     'accept-after-restart',
 )
+ANSWER_MS_LIMITS = {
+    'accept-unrelated-no-memory': 20000,
+    'accept-run-command': 60000,
+}
 WALKTHROUGH = Path('browser-acceptance') / 'walkthrough.json'
 
 
@@ -29,11 +33,19 @@ def problems(packet):
     if walkthrough.get('artifactSha256') != expected:
         found.append('BROWSER_ACCEPTANCE_OTHER_ARTIFACT walked=' + str(walkthrough.get('artifactSha256')) + ' packet=' + expected)
     statuses = {}
+    timings = {}
     for result in walkthrough.get('results', []):
         statuses.setdefault(result.get('scenario'), []).append(result.get('status'))
+        timings[result.get('scenario')] = result.get('answerMs')
     for scenario in REQUIRED_SCENARIOS:
         if statuses.get(scenario) != ['passed']:
             found.append('BROWSER_ACCEPTANCE_NOT_PASSED ' + scenario + ' ' + json.dumps(statuses.get(scenario)))
+    for scenario, limit in ANSWER_MS_LIMITS.items():
+        answer_ms = timings.get(scenario)
+        if not isinstance(answer_ms, (int, float)) or isinstance(answer_ms, bool):
+            found.append('BROWSER_ACCEPTANCE_UNTIMED ' + scenario)
+        elif answer_ms > limit:
+            found.append('BROWSER_ACCEPTANCE_TOO_SLOW ' + scenario + ' answerMs=' + str(answer_ms) + ' limit=' + str(limit))
     return found
 
 

@@ -110,6 +110,7 @@ import {
   createProductionSandboxServices,
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
+import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -180,6 +181,13 @@ function srtTaskEnvironmentRoute(lifecycle: RemoteExecutionBackend): ProductionT
     lifecycle,
     prewarm: (input) => lifecycle.prewarm(input),
   };
+}
+
+function toolCallPrewarm<Route>(
+  route: Route | undefined,
+  create: (route: Route) => (request: RuntimeRequest, toolName: string) => void,
+): { readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void } {
+  return route ? { onToolCallStarted: create(route) } : {};
 }
 
 function configuredEmbedding(configuration: ProductConfiguration) {
@@ -1590,6 +1598,14 @@ export async function runAgentService(
               resources: sandboxServices.resources,
               recoverMissingToolResult: sandboxServices.recoverMissingToolResult,
               prepareQueuedSandboxExecutions: sandboxServices.rebindQueuedRun,
+              ...toolCallPrewarm(configuration.runPolicy?.coding, (route) =>
+                toolCallSandboxPrewarm({
+                  enabledTools: route.enabledTools,
+                  prewarm: (request) => sandboxServices.prewarmEnvironment(request, route),
+                  report: (event) =>
+                    writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+                }),
+              ),
             }
           : {}),
         configuration,

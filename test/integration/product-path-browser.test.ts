@@ -381,7 +381,12 @@ let installation: ProductPathInstallation;
 let browser: Browser;
 let context: BrowserContext;
 let page: Page;
-const results: Array<{ scenario: string; status: "passed" | "failed"; error?: string }> = [];
+const results: Array<{
+  scenario: string;
+  status: "passed" | "failed";
+  error?: string;
+  answerMs?: number;
+}> = [];
 
 async function cleanupWithEvidence(
   filename: string,
@@ -444,10 +449,17 @@ async function capture(name: string) {
   );
 }
 
+const answerTimes = new Map<string, number>();
+
 async function scenario(name: string, body: () => Promise<void>) {
   try {
     await body();
-    results.push({ scenario: name, status: "passed" });
+    const answerMs = answerTimes.get(name);
+    results.push({
+      scenario: name,
+      status: "passed",
+      ...(answerMs === undefined ? {} : { answerMs }),
+    });
     await capture(name);
   } catch (error) {
     results.push({ scenario: name, status: "failed", error: String(error) });
@@ -5711,6 +5723,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     });
     await scenario("accept-run-command", async () => {
       await newThread();
+      const startedAt = Date.now();
       const turn = await send(RUN_COMMAND_REQUEST);
       const answer = turn.getByText(/工具返回：/);
       const allow = target(turn, UI.approveOnce);
@@ -5721,13 +5734,16 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         .toBe(true);
       if ((await allow.count()) > 0) await allow.first().click();
       await uiExpect(answer).toHaveCount(1, { timeout: 300_000 });
+      answerTimes.set("accept-run-command", Date.now() - startedAt);
       await uiExpect(answer).toContainText(RUN_COMMAND_OUTPUT);
       await expectFinishedTurnShowsStep(turn, UI.commandStep);
     });
     await scenario("accept-unrelated-no-memory", async () => {
       await newThread();
+      const startedAt = Date.now();
       const turn = await send(UNRELATED_REQUEST);
       await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
+      answerTimes.set("accept-unrelated-no-memory", Date.now() - startedAt);
       await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
       const process = turn.locator(UI.turnProcess).last();
       if ((await process.getAttribute("open")) === null)

@@ -148,6 +148,7 @@ export interface PiAgentRuntimeAdapterDependencies {
     options: CreateAgentSessionOptions,
   ) => Promise<CreateAgentSessionResult>;
   readonly measure?: <T>(runId: string, name: string, work: () => Promise<T>) => Promise<T>;
+  readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void;
 }
 
 const KNOWN_IGNORED_EVENTS = new Set([
@@ -1301,6 +1302,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           );
           this.#historyWrites.set(request.runId, pending);
           void pending.catch(() => session.agent.abort());
+        }
+
+        if (
+          event.type === "message_update" &&
+          event.assistantMessageEvent?.type === "toolcall_start"
+        ) {
+          const content = event.message.role === "assistant" ? event.message.content : [];
+          const block = content[event.assistantMessageEvent.contentIndex];
+          if (block?.type === "toolCall" && block.name.length > 0)
+            this.#dependencies.onToolCallStarted?.(request, block.name);
         }
 
         const observed = {
