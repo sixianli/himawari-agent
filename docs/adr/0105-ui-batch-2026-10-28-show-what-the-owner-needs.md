@@ -20,6 +20,7 @@ date: "2026-10-28"
 - [业界做法](#industry)
 - [后果](#consequences)
 - [关联文档](#references)
+- [后续](#follow-up)
 
 <a id="context"></a>
 
@@ -108,5 +109,13 @@ Claude 做了可点原型（<https://claude.ai/artifact/KYcGzu8DdXoLNUT8XuD8JL>�
 - 面试案例：[案例 44](../engineering-casebook.md#case-ui-batch-1028)
 - PR #80
 - [ADR 0087](0087-chat-ui-v6-process-timeline.md)、[ADR 0096](0096-phone-chat-page-safe-area-and-quiet-answer-line.md)、[ADR 0100](0100-conversation-more-panel-files-and-background-commands.md)
+
+[↑ 返回阅读导航](#contents)
+
+<a id="follow-up"></a>
+
+## 后续
+
+- 2026-10-29：[ADR 0110](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md) 第 3 条替换本 ADR 第 4 条“称呼只存在浏览器里”：称呼、界面语言和主题色改存服务器，跨设备一致。回答下方的“从这里开新对话”改名“分出新对话”。其余决定不变。
 
 [↑ 返回阅读导航](#contents)

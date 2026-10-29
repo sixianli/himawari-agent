@@ -154,7 +154,7 @@ export function findLayoutProblems(locale) {
   return [...new Set(problems)];
 }
 
-function labels(locale) {
+export function labels(locale) {
   const text = readFileSync(path.join(APP, `src/i18n/resources/${locale}.ts`), "utf8");
   const value = (key) => {
     const found = text.match(new RegExp(`"${key.replace(/\./g, "\\.")}":\\s*"([^"]*)"`));
@@ -192,7 +192,7 @@ async function openSettings(page, text, tab) {
   await page.waitForTimeout(200);
 }
 
-const SCENES = {
+export const SCENES = {
   welcome: { path: "/threads", act: async () => {} },
   conversation: { path: "/threads/thread-main", act: async () => {} },
   process: {
