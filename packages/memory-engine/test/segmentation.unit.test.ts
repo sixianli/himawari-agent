@@ -26,6 +26,11 @@ describe("Chinese memory segmentation", () => {
   });
 
   it("lowercases Latin words and normalizes full-width characters", () => {
-    expect(queryTerms("ＨＥＲＭＥＳ 测试机")).toEqual(["hermes", "测试", "机"]);
+    expect(queryTerms("ＨＥＲＭＥＳ 测试机")).toEqual(["hermes", "测试"]);
+  });
+
+  it("drops single Chinese characters that match almost every memory", () => {
+    expect(queryTerms("git rebase 怎么用")).toEqual(["git", "rebase"]);
+    expect(queryTerms("我老婆叫什么名字")).toEqual(["老婆", "名字"]);
   });
 });

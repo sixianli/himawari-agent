@@ -8,6 +8,7 @@ REQUIRED_SCENARIOS = (
     'accept-news-search',
     'accept-long-answer',
     'accept-run-command',
+    'accept-unrelated-no-memory',
     'accept-memory-page',
     'accept-phone-layout',
     'accept-after-restart',

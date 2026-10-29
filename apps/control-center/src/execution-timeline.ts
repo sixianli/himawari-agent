@@ -123,12 +123,18 @@ export function executionTimeline(
     const at = time(record);
     if (record.name === "memory.query") memoryStart ??= at;
     else if (record.name === "memory.selection" && record.phase === "completed") {
-      steps.push({
-        ...step("memory", record.id, record.sequence, memoryStart ?? at, at, false, []),
-        count: Number(record.text) || 0,
-      });
+      const count = Number(record.text) || 0;
+      if (count > 0)
+        steps.push({
+          ...step("memory", record.id, record.sequence, memoryStart ?? at, at, false, []),
+          count,
+        });
       selectionEnd = at;
-    } else if (record.name === "context.formed" && record.phase === "completed") {
+    } else if (
+      record.name === "context.formed" &&
+      record.phase === "completed" &&
+      (Number(record.text) || 0) > 0
+    ) {
       steps.push({
         ...step(
           "context",
