@@ -17,6 +17,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryReminderStorePort,
+  OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
   WebPushStorePort,
@@ -976,6 +977,13 @@ export class SqliteDurableAdapters {
       readInsights: (input) => this.context.read("proactive.readInsights", input),
     });
   }
+  ownerPreferences(): OwnerPreferencesStorePort {
+    return Object.freeze<OwnerPreferencesStorePort>({
+      read: (input) => this.context.read("ownerPreferences.read", input),
+      write: (input) => this.context.write("ownerPreferences.write", input),
+    });
+  }
+
   webPush(): WebPushStorePort {
     return Object.freeze<WebPushStorePort>({
       saveSubscription: (input) => this.context.write("webPush.saveSubscription", input),

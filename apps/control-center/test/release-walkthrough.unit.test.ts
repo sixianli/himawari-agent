@@ -25,6 +25,8 @@ const thread = {
   pinOrder: null,
   answerLocale: "zh-CN",
   messageWatermark: 2,
+  sourceThreadId: null,
+  sourceWatermark: null,
   createdAt: NOW,
   updatedAt: NOW,
 };

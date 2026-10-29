@@ -24,6 +24,7 @@ const boundary = vi.hoisted(() => ({
   threads: vi.fn(),
   governance: vi.fn(),
   query: vi.fn(),
+  mutate: vi.fn(),
 }));
 vi.mock("../src/gateway-client.js", async (original) => ({
   ...(await original<object>()),
@@ -32,6 +33,7 @@ vi.mock("../src/gateway-client.js", async (original) => ({
   createBrowserSession: boundary.login,
   GatewayClient: class {
     query = (request: unknown) => boundary.query(request);
+    mutate = (request: unknown) => boundary.mutate(request);
     constructor(options: unknown) {
       boundary.client(options);
     }
@@ -110,6 +112,7 @@ beforeEach(() => {
   boundary.login.mockReset().mockResolvedValue(undefined);
   boundary.client.mockReset();
   boundary.query.mockReset().mockRejectedValue(new Error("QUERY_NOT_EXPECTED"));
+  boundary.mutate.mockReset().mockRejectedValue(new Error("MUTATION_NOT_EXPECTED"));
   const child = (name: string) => ({
     title: name,
     content: createElement("div", { "data-child": name }, `${name} content`),
@@ -347,17 +350,30 @@ describe("control center application bootstrap and interaction", () => {
     await act(async () => root.render(null));
     await expect(options.refreshCsrfToken()).rejects.toThrow("CONTROL_CENTER_CLIENT_DISPOSED");
   });
+  it("opens settings without putting focus, and its focus ring, on the close button", async () => {
+    await render();
+    await click(messages["settings.title"]);
+    const dialog = document.querySelector<HTMLDialogElement>("dialog");
+    expect(dialog?.open).toBe(true);
+    expect(document.activeElement).toBe(dialog);
+    expect(document.activeElement?.getAttribute("aria-label")).not.toBe(messages["common.close"]);
+  });
   it("persists interface language and appearance through the actual shell controls", async () => {
     await render();
     await click(messages["settings.title"]);
-    const locale = document.querySelector<HTMLSelectElement>(
-      'select[aria-label="' + messages["locale.label"] + '"]',
+    expect(document.querySelector("dialog select")).toBeNull();
+    const locale = document.querySelector<HTMLButtonElement>(
+      `button[aria-haspopup="listbox"][aria-label="${messages["locale.label"]}"]`,
     );
     if (!locale) throw new Error("missing language selector");
-    await act(async () => {
-      locale.value = "en";
-      locale.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(locale.textContent).toBe(messages["locale.zhCN"]);
+    await act(async () => locale.click());
+    const english = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (option) => option.textContent === messages["locale.en"],
+    );
+    if (!english) throw new Error("missing English option");
+    await act(async () => english.click());
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
     expect(new ControlCenterBrowserStorage(window.localStorage).readLocale([])).toBe("en");
     await act(async () => {
       await loadMessageCatalog("en");
@@ -385,6 +401,98 @@ describe("control center application bootstrap and interaction", () => {
     expect(new ControlCenterBrowserStorage(window.localStorage).readPreferences().name).toBe(
       "Andy",
     );
+  });
+  it("[I-16] shows on a second device the name, language and color set on the first", async () => {
+    let saved = { name: null, locale: null, accent: null, updatedAt: null } as Record<
+      string,
+      string | null
+    >;
+    boundary.load.mockResolvedValue({
+      ...configuration,
+      installedGatewayV2Operations: [
+        ...(configuration.installedGatewayV2Operations ?? []),
+        "owner.preferences.read",
+        "owner.preferences.set",
+      ],
+    });
+    boundary.query.mockImplementation(async (request: { type: string }) => {
+      if (request.type !== "owner.preferences.read") throw new Error("QUERY_NOT_EXPECTED");
+      return { type: "owner.preferences.snapshot", payload: saved };
+    });
+    boundary.mutate.mockImplementation(
+      async (request: { type: string; payload: Record<string, string | null> }) => {
+        if (request.type !== "owner.preferences.set") throw new Error("MUTATION_NOT_EXPECTED");
+        saved = { ...request.payload, updatedAt: "2026-10-29T05:00:00.000Z" };
+        return { resultRef: "owner-preferences", replayed: false };
+      },
+    );
+    await render();
+    await settle();
+    await click(messages["settings.title"]);
+    const name = document.querySelector<HTMLInputElement>(
+      `input[aria-label="${messages["settings.name"]}"]`,
+    );
+    if (!name) throw new Error("Missing name setting");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Andy");
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const teal = document.querySelector<HTMLInputElement>(
+      'input[name="setting-accent"][value="teal"]',
+    );
+    if (!teal) throw new Error("Missing accent setting");
+    await act(async () => teal.click());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    });
+    expect(saved).toEqual({
+      name: "Andy",
+      locale: "zh-CN",
+      accent: "teal",
+      updatedAt: "2026-10-29T05:00:00.000Z",
+    });
+    saved = { ...saved, locale: "ja" };
+    await act(async () => root.unmount());
+    window.localStorage.clear();
+    document.documentElement.removeAttribute("data-accent");
+    root = createRoot(container);
+    await render();
+    await settle();
+    expect(boundary.threads.mock.lastCall?.[0]).toMatchObject({ ownerName: "Andy" });
+    expect(document.documentElement.getAttribute("data-accent")).toBe("teal");
+    expect(new ControlCenterBrowserStorage(window.localStorage).readLocale([])).toBe("ja");
+    expect(boundary.mutate).toHaveBeenCalledTimes(1);
+  });
+  it("[I-16] keeps a change that could not reach the server and sends it on the next visit", async () => {
+    boundary.load.mockResolvedValue({
+      ...configuration,
+      installedGatewayV2Operations: [
+        ...(configuration.installedGatewayV2Operations ?? []),
+        "owner.preferences.read",
+        "owner.preferences.set",
+      ],
+    });
+    boundary.query.mockResolvedValue({
+      type: "owner.preferences.snapshot",
+      payload: {
+        name: "Old",
+        locale: "zh-CN",
+        accent: "violet",
+        updatedAt: "2026-10-28T00:00:00.000Z",
+      },
+    });
+    const storage = new ControlCenterBrowserStorage(window.localStorage);
+    storage.savePreferences({ ...storage.readPreferences(), name: "Andy", accent: "rose" });
+    storage.markPreferencesUnsynced(true);
+    boundary.mutate.mockResolvedValue({ resultRef: "owner-preferences", replayed: false });
+    await render();
+    await settle();
+    expect(boundary.mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "owner.preferences.set",
+      payload: { name: "Andy", locale: "zh-CN", accent: "rose" },
+    });
+    expect(boundary.threads.mock.lastCall?.[0]).toMatchObject({ ownerName: "Andy" });
+    expect(storage.readPreferencesUnsynced()).toBe(false);
   });
   it("routes installed /approvals to the governance model", async () => {
     window.history.replaceState(null, "", "/approvals");

@@ -20,9 +20,14 @@ export function fileSourceText(file: DeliveredFile, message: Message): string {
     return file.command
       ? message("files.byCommand", { command: file.command })
       : message("files.byCommandPlain");
-  return message(file.source === "write" ? "more.file.written" : "more.file.edited", {
-    turn: file.turn,
-  });
+  return message(
+    file.source === "upload"
+      ? "more.file.uploaded"
+      : file.source === "write"
+        ? "more.file.written"
+        : "more.file.edited",
+    { turn: file.turn },
+  );
 }
 
 export function fileFacts(

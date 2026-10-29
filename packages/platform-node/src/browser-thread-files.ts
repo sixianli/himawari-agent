@@ -8,12 +8,16 @@ import {
   PORT_ERROR_CODES,
   type ThreadArtifact,
   type ThreadArtifactKind,
+  type ThreadArtifactOrigin,
   type ThreadArtifactScope,
   type ThreadArtifactStorePort,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 
 export const FILE_PREVIEW_TICKET_MS = 5 * 60 * 1000;
+
+const UPLOADED_IMAGE_CONTENT_TYPE = "text/x-himawari-image";
+const UPLOADED_IMAGE = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
 
 const PREVIEW_MEDIA_TYPES = new Set(["text/html", "image/svg+xml"]);
 const INLINE_MEDIA_TYPES = new Set([
@@ -58,6 +62,7 @@ export interface HttpGatewayFilesPort {
     readonly agentId: string;
     readonly threadId: string | null;
     readonly kind: ThreadArtifactKind | null;
+    readonly origin: ThreadArtifactOrigin | null;
     readonly search: string | null;
     readonly before: string | null;
     readonly limit: number;
@@ -154,6 +159,7 @@ export class BrowserThreadFiles implements HttpGatewayFilesPort {
       ...this.#scope(input.authentication, input.agentId),
       threadId: input.threadId,
       kind: input.kind,
+      origin: input.origin,
       search: input.search,
       before: input.before,
       limit: input.limit,
@@ -175,10 +181,10 @@ export class BrowserThreadFiles implements HttpGatewayFilesPort {
   async content(input: Parameters<HttpGatewayFilesPort["content"]>[0]) {
     const scope = this.#scope(input.authentication, input.agentId);
     const artifact = (await this.#options.store.get({ ...scope, id: input.fileId })) ?? notFound();
-    const bytes = await this.#read(scope, artifact);
+    const { bytes, mediaType } = await this.#read(scope, artifact);
     return Object.freeze({
       bytes,
-      mediaType: artifact.mediaType,
+      mediaType,
       fileName: fileName(artifact.path),
       disposition:
         !input.download && INLINE_MEDIA_TYPES.has(artifact.mediaType) ? "inline" : "attachment",
@@ -231,9 +237,10 @@ export class BrowserThreadFiles implements HttpGatewayFilesPort {
     const scope = this.#scope(null, this.#options.agentId);
     const artifact = (await this.#options.store.get({ ...scope, id: fileId })) ?? notFound();
     if (!PREVIEW_MEDIA_TYPES.has(artifact.mediaType)) notFound();
+    const { bytes, mediaType } = await this.#read(scope, artifact);
     return Object.freeze({
-      bytes: await this.#read(scope, artifact),
-      mediaType: artifact.mediaType,
+      bytes,
+      mediaType,
       fileName: fileName(artifact.path),
       disposition: "inline",
     } as const);
@@ -245,10 +252,20 @@ export class BrowserThreadFiles implements HttpGatewayFilesPort {
       .digest("base64url");
   }
 
-  async #read(scope: ThreadArtifactScope, artifact: ThreadArtifact): Promise<Uint8Array> {
+  async #read(
+    scope: ThreadArtifactScope,
+    artifact: ThreadArtifact,
+  ): Promise<{ readonly bytes: Uint8Array; readonly mediaType: string }> {
     if (artifact.copyRef === null)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "File copy was not kept");
     const payload = (await this.#options.payloads().get(artifact.copyRef)) ?? notFound();
-    return this.#options.protector.unprotect({ ...scope, payload });
+    const bytes = await this.#options.protector.unprotect({ ...scope, payload });
+    if (artifact.source !== "upload" || payload.contentType !== UPLOADED_IMAGE_CONTENT_TYPE)
+      return { bytes, mediaType: artifact.mediaType };
+    const image = UPLOADED_IMAGE.exec(new TextDecoder().decode(bytes)) ?? notFound();
+    return {
+      bytes: Buffer.from(image[2] ?? "", "base64"),
+      mediaType: image[1] ?? artifact.mediaType,
+    };
   }
 }

@@ -18,7 +18,7 @@ import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./brows
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import { SunflowerMark } from "./components/brand.js";
 import { ChatComposer } from "./components/chat-composer.js";
-import { ChatHistory } from "./components/chat-history.js";
+import { ChatHistory, type InheritedConversation } from "./components/chat-history.js";
 import {
   ContentPreview,
   type ContentPreviewValue,
@@ -27,12 +27,21 @@ import {
 } from "./components/content-preview.js";
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { FilesLibrary } from "./components/files-library.js";
-import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
+import {
+  ActionButton,
+  ActionMenu,
+  Banner,
+  EditActions,
+  Field,
+  ModalDialog,
+  StatusRegion,
+} from "./components/index.js";
 import { OPEN_MEMORY_PAGE } from "./components/memory-panel.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
 import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
+import { SidebarIcon } from "./components/sidebar-icon.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { type DeliveredFile, deliveredFileGroups } from "./delivered-files.js";
 import { isAnsweredRun, isTerminalRun, type RunSummary } from "./execution-view.js";
@@ -73,6 +82,14 @@ type ThreadIntent =
       readonly sourceWatermark: number;
     };
 
+interface InheritedMessages {
+  readonly forkThreadId: string;
+  readonly sourceThreadId: string;
+  readonly titleRef: string | null;
+  readonly messages: ThreadDetailSnapshot["payload"]["messages"];
+  readonly available: boolean;
+}
+
 interface ConflictState {
   readonly intent: ThreadIntent;
   readonly latest: ThreadSummary | null;
@@ -108,6 +125,7 @@ export interface ThreadControlCenterModel {
   readonly content: ReactNode;
   readonly details: ReactNode;
   readonly actions: ReactNode;
+  readonly start: ReactNode;
   readonly settingsData: ReactNode;
   readonly list: ReactNode;
   readonly refresh: () => Promise<void>;
@@ -252,6 +270,8 @@ export function useThreadControlCenter(
   const [collection, setCollection] = useState<ThreadCollectionSnapshot>();
   const [searchResults, setSearchResults] = useState<ThreadCollectionSnapshot>();
   const [detail, setDetail] = useState<ThreadDetailSnapshot>();
+  const [inherited, setInherited] = useState<InheritedMessages>();
+  const inheritedCache = useRef<Record<string, InheritedMessages>>({});
   const [contentByRef, setContentByRef] = useState<Readonly<Record<string, string>>>({});
   const [draft, setDraft] = useState("");
   const [outgoing, setOutgoing] = useState<OutgoingSubmission | null>(null);
@@ -275,6 +295,7 @@ export function useThreadControlCenter(
   const payloadCache = useRef<Record<string, string>>({});
   const executionCache = useRef<Record<string, ThreadExecutionRecord[]>>({});
   const [renameTitle, setRenameTitle] = useState("");
+  const [renameInitial, setRenameInitial] = useState("");
   const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
   const submissionLock = useRef(false);
   const [searchText, setSearchText] = useState("");
@@ -376,6 +397,57 @@ export function useThreadControlCenter(
       setContentByRef({ ...payloadCache.current });
     },
     [client, message],
+  );
+
+  const loadInherited = useCallback(
+    async (thread: ThreadSummary) => {
+      const { threadId, sourceThreadId, sourceWatermark } = thread;
+      if (!client || !configuration || !sourceThreadId || sourceWatermark === null) return;
+      const cached = inheritedCache.current[threadId];
+      if (cached) {
+        setInherited(cached);
+        return;
+      }
+      let value: InheritedMessages;
+      try {
+        const messages: ThreadDetailSnapshot["payload"]["messages"][number][] = [];
+        let titleRef: string | null = null;
+        let afterSequence = 0;
+        for (;;) {
+          const page = await client.queryThread(
+            threadQueryMessage(configuration, "thread.detail", {
+              threadId: sourceThreadId,
+              afterSequence,
+              limit: 1000,
+            }),
+          );
+          if (page.type !== "thread.detail_snapshot") throw new Error("THREAD_SOURCE_UNAVAILABLE");
+          titleRef = page.payload.thread.titleRef;
+          messages.push(
+            ...page.payload.messages.filter((item) => item.sequence <= sourceWatermark),
+          );
+          const next = page.payload.nextSequence;
+          if (next === null || next >= sourceWatermark || next <= afterSequence) break;
+          afterSequence = next;
+        }
+        value = { forkThreadId: threadId, sourceThreadId, titleRef, messages, available: true };
+        void loadPayloads([
+          ...(titleRef ? [titleRef] : []),
+          ...messages.map(({ contentRef }) => contentRef),
+        ]);
+      } catch {
+        value = {
+          forkThreadId: threadId,
+          sourceThreadId,
+          titleRef: null,
+          messages: [],
+          available: false,
+        };
+      }
+      inheritedCache.current[threadId] = value;
+      if (selectedIdRef.current === threadId) setInherited(value);
+    },
+    [client, configuration, loadPayloads],
   );
 
   const readImage = useMemo(
@@ -563,6 +635,7 @@ export function useThreadControlCenter(
           },
         };
         setDetail(current);
+        void loadInherited(current.payload.thread);
         conversationShown = true;
         setReadInBackground(true);
         void loadPayloads([
@@ -618,6 +691,7 @@ export function useThreadControlCenter(
       client,
       configuration,
       loadEnvironment,
+      loadInherited,
       loadPayloads,
       onUnauthorized,
       route.afterCursor,
@@ -1157,6 +1231,33 @@ export function useThreadControlCenter(
       : pendingThreadIds;
 
   const threadItems = collection?.payload.threads ?? [];
+  const startNewThread = () => {
+    setPage(null);
+    void createThread();
+  };
+  const renameThread = (thread: ThreadSummary) => {
+    setRenameTarget(thread);
+    const current = thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "";
+    setRenameTitle(current);
+    setRenameInitial(current);
+  };
+  const pinThread = (thread: ThreadSummary) =>
+    void performIntent(
+      { kind: "pin", pinOrder: thread.pinOrder === null ? 0 : null },
+      undefined,
+      thread,
+    );
+  const archiveThread = (thread: ThreadSummary) => {
+    if (projectedPendingThreadIds.includes(thread.threadId)) {
+      setError(message("review.archivePending"));
+      return;
+    }
+    void performIntent(
+      { kind: thread.status === "archived" ? "restore" : "archive" },
+      undefined,
+      thread,
+    );
+  };
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
 
@@ -1209,38 +1310,16 @@ export function useThreadControlCenter(
       selectedThreadId={selectedThreadId}
       onSearchTextChange={setSearchText}
       onSearch={() => void search()}
-      onCreate={() => {
-        setPage(null);
-        void createThread();
-      }}
+      onCreate={startNewThread}
       onOpenFiles={configuration?.filesAvailable ? () => openLibrary() : undefined}
       onOpenMemory={renderPage ? () => openSidePage("memory") : undefined}
       onOpenReminders={renderPage ? () => openSidePage("reminders") : undefined}
       openPage={page}
       remindersDue={remindersDue}
       onRefresh={() => void refresh(true)}
-      onRename={(thread) => {
-        setRenameTarget(thread);
-        setRenameTitle(thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "");
-      }}
-      onPin={(thread) =>
-        void performIntent(
-          { kind: "pin", pinOrder: thread.pinOrder === null ? 0 : null },
-          undefined,
-          thread,
-        )
-      }
-      onArchive={(thread) => {
-        if (projectedPendingThreadIds.includes(thread.threadId)) {
-          setError(message("review.archivePending"));
-          return;
-        }
-        void performIntent(
-          { kind: thread.status === "archived" ? "restore" : "archive" },
-          undefined,
-          thread,
-        );
-      }}
+      onRename={renameThread}
+      onPin={pinThread}
+      onArchive={archiveThread}
       onNavigate={(state) => {
         setPage(null);
         navigate(state);
@@ -1503,15 +1582,85 @@ export function useThreadControlCenter(
     else setMore((current) => ({ ...current, command: null }));
     flashTurn(command.noticeRunId);
   };
-  const actions =
-    detail && hasMore && !page ? (
-      <MoreButton
-        running={runningCommands.length}
-        open={more.open && !preview}
-        onClick={() => (more.open && !preview ? closeMore() : openMore())}
-        message={message}
+  const openThread = detail && !page ? (selectedSummary ?? detail.payload.thread) : undefined;
+  const actions = openThread ? (
+    <>
+      {hasMore ? (
+        <MoreButton
+          running={runningCommands.length}
+          open={more.open && !preview}
+          onClick={() => (more.open && !preview ? closeMore() : openMore())}
+          message={message}
+        />
+      ) : null}
+      <ActionMenu
+        label={
+          <>
+            <SidebarIcon name="more" />
+            <span className="sr-only">{message("review.conversationActions")}</span>
+          </>
+        }
+        items={[
+          {
+            id: "rename",
+            label: (
+              <>
+                <SidebarIcon name="rename" />
+                {message("threads.rename")}
+              </>
+            ),
+            onSelect: () => renameThread(openThread),
+          },
+          {
+            id: "pin",
+            label: (
+              <>
+                <SidebarIcon name="pin" />
+                {message(openThread.pinOrder === null ? "threads.pin" : "threads.unpin")}
+              </>
+            ),
+            onSelect: () => pinThread(openThread),
+          },
+          {
+            id: "archive",
+            separated: true,
+            label: (
+              <>
+                <SidebarIcon name="archive" />
+                {message("threads.archive")}
+              </>
+            ),
+            onSelect: () => archiveThread(openThread),
+          },
+        ]}
       />
-    ) : null;
+    </>
+  ) : null;
+  const start = (
+    <ActionButton
+      className="topbar-new"
+      variant="quiet"
+      aria-label={message("threads.new")}
+      onClick={startNewThread}
+    >
+      <SidebarIcon name="compose" />
+    </ActionButton>
+  );
+
+  const forkedThread = detail?.payload.thread.sourceThreadId ? detail.payload.thread : undefined;
+  const shownInherited: InheritedConversation | undefined =
+    forkedThread && inherited?.forkThreadId === forkedThread.threadId
+      ? {
+          title:
+            (inherited.titleRef && contentByRef[inherited.titleRef]) ||
+            threadTitle(inherited.sourceThreadId) ||
+            message("chat.untitled"),
+          messages: inherited.messages,
+          available: inherited.available,
+          onOpenSource: () =>
+            navigate({ ...route, objectId: inherited.sourceThreadId, view: "content" }),
+        }
+      : undefined;
 
   const content = (
     <div className="thread-workarea">
@@ -1534,13 +1683,16 @@ export function useThreadControlCenter(
           {feedback}
           {!detail && selectedThreadId && !shownOutgoing ? (
             <ThreadLoadingSkeleton scope="conversation" />
-          ) : !detail && !shownOutgoing ? (
+          ) : (!detail ||
+              (!detail.payload.messages.length && !detail.payload.runs.length && !forkedThread)) &&
+            !shownOutgoing ? (
             <ThreadWelcome name={options.ownerName} message={message} />
           ) : (
             <>
               <ChatHistory
                 key={detail?.payload.thread.threadId ?? selectedThreadId ?? "new"}
                 detail={detail}
+                inherited={shownInherited}
                 outgoing={shownOutgoing}
                 onRetry={() => void submitDraft()}
                 contentByRef={contentByRef}
@@ -1708,6 +1860,16 @@ export function useThreadControlCenter(
     </div>
   );
 
+  const renameChanged = Boolean(renameTitle.trim()) && renameTitle.trim() !== renameInitial.trim();
+  const saveRename = async () => {
+    if (!renameTarget || !renameChanged) return;
+    const result = await performIntent(
+      { kind: "rename", title: renameTitle },
+      undefined,
+      renameTarget,
+    );
+    if (result) setRenameTarget(null);
+  };
   const details = (
     <ModalDialog
       open={renameTarget !== null}
@@ -1716,22 +1878,25 @@ export function useThreadControlCenter(
       onClose={() => setRenameTarget(null)}
     >
       <Field label={message("review.conversationName")}>
-        <input value={renameTitle} onChange={(event) => setRenameTitle(event.target.value)} />
+        <input
+          data-autofocus
+          value={renameTitle}
+          onChange={(event) => setRenameTitle(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (renameChanged) void saveRename();
+            }
+          }}
+        />
       </Field>
-      <ActionButton
-        disabled={!renameTitle.trim()}
-        onClick={async () => {
-          if (!renameTarget) return;
-          const result = await performIntent(
-            { kind: "rename", title: renameTitle },
-            undefined,
-            renameTarget,
-          );
-          if (result) setRenameTarget(null);
-        }}
-      >
-        {message("review.save")}
-      </ActionButton>
+      <EditActions
+        changed={renameChanged}
+        saveLabel={message("review.save")}
+        cancelLabel={message("governed.cancel")}
+        onSave={() => void saveRename()}
+        onCancel={() => setRenameTarget(null)}
+      />
     </ModalDialog>
   );
 
@@ -1752,6 +1917,7 @@ export function useThreadControlCenter(
     ),
     details,
     actions,
+    start,
     list,
     refresh,
     title: page

@@ -102,7 +102,9 @@ const summary = (
   titleRevision: 1,
   pinOrder: null,
   answerLocale: "zh-CN",
-  messageWatermark: 0,
+  messageWatermark: 1,
+  sourceThreadId: null,
+  sourceWatermark: null,
   createdAt: NOW,
   updatedAt: NOW,
 });
@@ -362,6 +364,69 @@ describe("thread control center interactions", () => {
       });
     },
   );
+  it("[I-17] shows a branched chat's inherited turns, where it came from, and a way back", async () => {
+    const original = query.getMockImplementation();
+    const row = (
+      sequence: number,
+      role: "owner" | "agent",
+    ): Detail["payload"]["messages"][number] => ({
+      messageId: `source-${sequence}`,
+      sequence,
+      role,
+      contentRef: `source-content-${sequence}`,
+      dataClassification: "private",
+      status: "committed",
+      turnId: `source-turn-${Math.ceil(sequence / 2)}`,
+      runId: null,
+      committedAt: NOW,
+    });
+    readText.mockImplementation(async (ref: string) => ({
+      content: ref === "title-source" ? "原来的对话" : ref,
+    }));
+    query.mockImplementation(async (request) => {
+      if (request.type === "thread.detail" && request.payload.threadId === "thread-source")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.detail_snapshot",
+          payload: {
+            thread: { ...summary(), threadId: "thread-source", titleRef: "title-source" },
+            messages: [row(1, "owner"), row(2, "agent"), row(3, "owner"), row(4, "agent")],
+            runs: [],
+            nextSequence: null,
+          },
+        };
+      return original?.(request);
+    });
+    thread = { ...thread, sourceThreadId: "thread-source", sourceWatermark: 2 };
+    options = {
+      ...options,
+      message: (id, values) =>
+        values
+          ? `${id}(${Object.entries(values)
+              .map(([key, value]) => `${key}=${value}`)
+              .join(", ")})`
+          : id,
+    };
+    await render();
+    await refresh();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const text = container.querySelector(".chat-scroll")?.textContent ?? "";
+    expect(text).toContain("source-content-1");
+    expect(text).toContain("source-content-2");
+    expect(text).not.toContain("source-content-3");
+    expect(container.querySelector(".fork-origin")?.textContent).toContain(
+      "fork.banner(title=原来的对话, turn=1)",
+    );
+    expect(container.querySelector(".fork-divider")?.textContent).toBe("fork.divider");
+    expect(container.querySelector(".thread-row .thread-fork-mark")).not.toBeNull();
+    await click("fork.openSource");
+    expect(navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ objectId: "thread-source", view: "content" }),
+    );
+  });
   it("loads every message page, removes overlap, and renders chronological content", async () => {
     const original = query.getMockImplementation();
     const row = (sequence: number): Detail["payload"]["messages"][number] => ({
@@ -2187,6 +2252,26 @@ describe("thread control center interactions", () => {
     expect(mutate.mock.calls[1]?.[0].payload.expectedRevision).toBe(4);
     expect(protect.mock.calls.filter(([text]) => text === "自定义标题")).toHaveLength(2);
     expect(container.textContent).not.toContain("threads.conflictTitle");
+  });
+  it("lights the rename save button only after the title changes", async () => {
+    await render();
+    await refresh();
+    await chooseAction("rename");
+    const save = () =>
+      [...document.querySelectorAll<HTMLButtonElement>(".edit-save")].find(
+        (button) => button.textContent?.trim() === "review.save",
+      );
+    expect(save()?.disabled).toBe(true);
+    await input(field("review.conversationName"), "组件交互测试");
+    expect(save()?.disabled).toBe(true);
+    await input(field("review.conversationName"), "新标题");
+    expect(save()?.disabled).toBe(false);
+  });
+  it("greets the owner in a conversation that has no messages yet instead of a system notice", async () => {
+    await render();
+    await refresh();
+    expect(container.querySelector(".thread-welcome")).not.toBeNull();
+    expect(container.textContent).not.toContain("threads.messagesEmpty");
   });
   it("creates a conversation from the empty welcome page and navigates to the accepted ID", async () => {
     options = { ...options, route: routeForSurface("threads") };

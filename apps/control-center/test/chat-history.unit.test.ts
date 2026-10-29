@@ -55,6 +55,8 @@ function renderRun(
         pinOrder: null,
         answerLocale: "zh-CN",
         messageWatermark: 0,
+        sourceThreadId: null,
+        sourceWatermark: null,
         createdAt: "2026-09-11T00:00:00Z",
         updatedAt: "2026-09-11T00:00:12Z",
       },

@@ -53,6 +53,7 @@ import {
   type ProductionMemoryConsolidationOptions,
 } from "./production-memory-consolidation.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
+import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 import { ProductionRunTimings, type RunTimingDiagnostic } from "./production-run-timing.js";
 import { createProductionTitledRuntime } from "./production-titled-runtime.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
@@ -485,6 +486,14 @@ export function createProductionRunComposition(options: ProductionRunComposition
         }
       : {}),
     ...(titles ? { titles } : {}),
+    uploads: new ProductionUploadedFiles({
+      threads: repository.threadRepository(),
+      payloads,
+      protector,
+      store: repository.threadArtifacts(),
+      ids,
+      now: () => clock.now(),
+    }),
     ...(memoryCapture ? { memoryCapture } : {}),
     ...(memoryEpisodes ? { memoryEpisodes } : {}),
     ...(memoryConsolidation ? { memoryConsolidation } : {}),

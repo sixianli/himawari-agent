@@ -168,9 +168,9 @@ const registered = (overrides: Partial<RegisteredFile>): RegisteredFile => ({
 
 describe("file preview header", () => {
   it.each([
-    ["zh-CN", zh, "新标签打开", "下载", "放宽预览", "关闭"],
-    ["en", en, "Open in new tab", "Download", "Widen preview", "Close"],
-    ["ja", ja, "新しいタブで開く", "ダウンロード", "プレビューを広げる", "閉じる"],
+    ["zh-CN", zh, "新标签打开", "下载", "放宽预览", "文件信息", "关闭"],
+    ["en", en, "Open in new tab", "Download", "Widen preview", "File info", "Close"],
+    ["ja", ja, "新しいタブで開く", "ダウンロード", "プレビューを広げる", "ファイル情報", "閉じる"],
   ] as const)(
     "shows icon-only actions named by aria-label and hover tip in %s",
     (locale, messages, ...labels) => {
@@ -197,9 +197,7 @@ describe("file preview header", () => {
         expect(header).toContain(`aria-label="${label}" data-tip="${label}"`);
         expect(header).not.toContain(`>${label}<`);
       }
-      const meta = html.slice(html.indexOf('class="preview-meta-actions"'));
-      expect(meta).toContain(`${labels[0]}</button>`);
-      expect(meta).toContain(`${labels[1]}</a>`);
+      expect(html).not.toContain('class="preview-meta"');
     },
   );
 });
@@ -303,16 +301,18 @@ describe("[FD-5] files delivered in a conversation", () => {
       previewOfDelivered(file, { label: "来自「贪吃蛇」第 1 轮", onOpen: () => {} }),
     );
     expect(html).toContain(expected);
-    expect(html).toContain("来自「贪吃蛇」第 1 轮 →");
+    expect(html).not.toContain("来自「贪吃蛇」第 1 轮 →");
+    expect(html).toContain('aria-label="文件信息" data-tip="文件信息" aria-expanded="false"');
     if (overrides.kind === "image" || overrides.kind === "pdf")
       expect(html).toContain('src="/api/files/v1/content/file%3Ax"');
   });
 
-  it("offers the version picker and a download link for a file written more than once", () => {
+  it("keeps the download link in the header and the version picker inside file info", () => {
     const file = { ...libraryFile(registered({ id: "file:v3", version: 3 })), versions: 3 };
     const html = preview(previewOfDelivered(file));
-    expect(html).toContain('class="preview-versions"');
-    expect(html).toContain('href="/api/files/v1/content/file%3Av3?download=1"');
+    const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
+    expect(header).toContain('href="/api/files/v1/content/file%3Av3?download=1"');
+    expect(html).not.toContain('class="preview-versions"');
   });
 
   it("keeps the newest version of each file on the files page and dates older ones", () => {

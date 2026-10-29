@@ -80,6 +80,7 @@ import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
+import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
@@ -351,6 +352,7 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly proactive: SqliteProactiveOperations;
+  private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
   private readonly webPush: SqliteWebPushOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly memoryBook: SqliteMemoryBookOperations;
@@ -422,6 +424,11 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
+    this.ownerPreferences = new SqliteOwnerPreferencesOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.memoryBook = new SqliteMemoryBookOperations(database, fail, assertDiskHeadroom);
@@ -526,6 +533,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("memoryReminder."))
       return this.memoryReminders.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
+    if (operation.startsWith("ownerPreferences."))
+      return this.ownerPreferences.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);
