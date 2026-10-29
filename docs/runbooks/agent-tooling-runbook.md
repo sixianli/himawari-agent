@@ -84,7 +84,7 @@ date: "2026-10-21"
 6. **检查命令的退出码。** 管道的退出码只来自最后一段；把输出写进文件，单独记下 `$?`，再显示尾部。只想知道有没有匹配时用 `grep -q`。
 7. **结束。** 批次以停止文件为结束标志。读它的摘要，核实每条说法，在权限内裁决，写回复文件后用 `oc-launch.sh resume` 续跑同一会话；任务结束时 `oc-server.sh stop <前缀目录>/oc-server`。
 8. **审查。** Claude 逐行审 opencode 的每个改动和它跑过的每条命令（事件流 `<前缀>.jsonl`），用 `longtask.py record --review --by claude` 记录；Claude 自己写的代码由 opencode 审，`--by opencode`。
-9. **第 0 层清单和提交钩子。** 写第 0 层脚本前运行 `python3 "$(git rev-parse --git-common-dir)/hooks/check-layer0-tests.py" derive`（工作区相对 `HEAD`；`derive --staged` 看暂存区，`derive <提交>` 看某个提交），把列出的文件全部放进第 0 层，只可增加。改了 `apps/*/src/`、`packages/*/src/` 的提交，说明里每个第 0 层文件一行 `Layer-0-tests: <仓库相对路径>`，推导为空时写 `Layer-0-tests: none`。钩子装在仓库共享的 git 目录（`git rev-parse --git-common-dir` 下的 `hooks/`）：`check-layer0-tests.py`、`commit-msg`（`exec python3 "$common/hooks/check-layer0-tests.py" commit-msg "$1"`）、`pre-push`（`exec python3 "$common/hooks/check-layer0-tests.py" pre-push`），三个文件和自测的来源与 SHA-256 记在 [docs/lessons.md](../lessons.md#layer0-related-tests)；`git worktree` 建的工作树里 `.git` 是文件，脚本一律用共享 git 目录下的路径；新克隆或换机器后从 `.ci-output/handoff/l0-guard/` 复制安装，核对摘要，再跑一次自测（[ADR 0066](../adr/0066-layer0-related-tests-declared.md)）。
+9. **第 0 层清单和提交钩子。** 写第 0 层脚本前运行 `python3 scripts/layer0-tests/check-layer0-tests.py derive`（工作区相对 `HEAD`；`derive --staged` 看暂存区，`derive <提交>` 看某个提交），把列出的文件全部放进第 0 层，只可增加。改了 `apps/*/src/`、`packages/*/src/` 的提交，说明里每个第 0 层文件一行 `Layer-0-tests: <仓库相对路径>`，推导为空时写 `Layer-0-tests: none`，快速模式下也一样。脚本和钩子都在仓库里：`scripts/layer0-tests/check-layer0-tests.py`、`scripts/git-hooks/commit-msg`、`scripts/git-hooks/pre-push`；`npm run check`（其中的 `check:layer0-hooks`）把 `core.hooksPath` 设为 `scripts/git-hooks`，已经设成别的路径时报 `LAYER0_HOOKS_PATH_CONFLICT` 并失败。`scripts/git-hooks/pre-commit` 会接着运行共享 git 目录里原有的 `pre-commit`（例如本机检查新注释的钩子）。新克隆不用再手动复制（[ADR 0108](../adr/0108-layer0-check-in-repository-and-fast-mode.md)）。
 
 <a id="verification"></a>
 
@@ -93,7 +93,7 @@ date: "2026-10-21"
 - 启动输出含 `started pid=… session=… model=…`；只读批次另有 `READ_ONLY_BRIEF`。
 - 事件流里没有访问禁止主机或在 MacBook 上跑测试的命令；代理声称的测试确实在所述版本上跑过。
 - `test-ssh-wrappers.sh` 对替身 `ssh` 全部打印 `ok`。
-- `bash .ci-output/handoff/l0-guard/selftest.sh <仓库根目录>` 最后一行是 `SELFTEST passed=<数> failed=0`，退出码 0；它只用 git 和 Python，在本机跑，不是项目测试。
+- `npx vitest run --config vitest.workspace.ts --project tooling test/tooling/layer0-hooks.test.mjs` 全部通过：缺声明、漏文件被拒，补上后放行，跳过 `commit-msg` 的提交在推送时被拦。
 - 等待脚本的证据门禁（`evidence-gate.sh`，由 `oc-wait.sh` 调用）通过：本轮新增的证据里没有 `node_modules`、`.git`、含它们的压缩包或超过 50 MB 的文件，除非同目录的 `EVIDENCE-REASONS.txt` 写明 `文件名: 理由`。
 
 <a id="evidence"></a>
