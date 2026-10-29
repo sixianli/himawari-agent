@@ -3910,6 +3910,10 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 - 上线后的速度和质量：未测量（上线后在真实网页验收时补）。
 - 免费模型（2026-10-29 19:26 JST 生产机实测，见路由线程记录）：冷却一小时后各调一次，OpenCode Zen 两个免费模型第一次请求就回 429“免费额度已用完”，DeepSeek 免费版约 0.51 秒被拒，GLM 免费版被 Magpie 本地冷却挡下约 0.02 秒。原因未查清；主人决定先留在组里，代价是约每小时一次多等约 0.5 秒。
 
+**后续（2026-10-29 晚间）**
+
+上面“腾讯 CodeBuddy 不接、SuperGrok 接”的结论后来反过来了。我先前以为 Magpie 只能把自己的模型给 CodeBuddy 用，其实社区插件能让 Magpie 调用 CodeBuddy 的模型。主人 18:31 授权在生产机装插件并登录国际版，条款风险由他承担；国际版数据在新加坡保留 14 天，所以排在组里最后。SuperGrok 主人选了先不接。最终顺序是：OpenCode Zen 两个免费模型 → OpenCode Go 两个模型 → CodeBuddy 国际版，组里没有 Vercel。主人还决定私人数据不必特意避开 CodeBuddy。详见 [ADR 0117 晚间修订](adr/0117-magpie-routes-models-through-owned-subscriptions.md#revision-1029-evening)。这件事的教训：判断“某个套餐能不能接”之前，要先查这个网关的插件生态，而不是只看它的主文档。
+
 **相关 ADR/PR**
 
 [ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`。
