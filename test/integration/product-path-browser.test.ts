@@ -5731,6 +5731,8 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await phone.goto(`${installation.origin}/`);
         await uiExpect(target(phone, UI.composer)).toBeVisible({ timeout: 30_000 });
         await expectPhoneLayout(phone, "chat");
+        await target(phone, UI.showList).click();
+        await uiExpect(target(phone, UI.sidebarNavigation)).toBeVisible({ timeout: 20_000 });
         await target(phone, UI.openSettings).first().click();
         const dialog = target(phone, UI.settingsDialog);
         const settingsTabs = target(target(dialog, UI.settingsTabs), UI.settingsTab);
@@ -5741,7 +5743,6 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         }
         await target(dialog, UI.closeSettings).first().click();
         await uiExpect(dialog).toHaveCount(0, { timeout: 20_000 });
-        await target(phone, UI.showList).click();
         await target(target(phone, UI.sidebarNavigation), UI.openMemory).click();
         const memory = target(phone, UI.memoryPage);
         await uiExpect(memory.getByText(UI.memorySummary)).toBeVisible({ timeout: 30_000 });
