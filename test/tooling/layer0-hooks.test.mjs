@@ -1,0 +1,109 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { ensureLayer0Hooks, HOOKS_PATH } from "../../scripts/check-layer0-hooks.mjs";
+
+const repositoryRoot = path.resolve(import.meta.dirname, "../..");
+const roots = [];
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+const identity = ["-c", "user.name=test", "-c", "user.email=test@example.invalid"];
+const git = (cwd, ...args) =>
+  execFileSync("git", [...identity, ...args], { cwd, encoding: "utf8" });
+const tryGit = (cwd, ...args) =>
+  spawnSync("git", [...identity, ...args], { cwd, encoding: "utf8" });
+
+function write(root, file, text) {
+  mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+  writeFileSync(path.join(root, file), text);
+}
+
+function fixture() {
+  const root = mkdtempSync(path.join(tmpdir(), "layer0-hooks-"));
+  roots.push(root);
+  git(root, "init", "-q", "-b", "main");
+  cpSync(path.join(repositoryRoot, "scripts/git-hooks"), path.join(root, "scripts/git-hooks"), {
+    recursive: true,
+  });
+  cpSync(
+    path.join(repositoryRoot, "scripts/layer0-tests"),
+    path.join(root, "scripts/layer0-tests"),
+    { recursive: true },
+  );
+  write(root, "DELIVERY_MODE", "fast\n");
+  write(
+    root,
+    "ci/policy.json",
+    JSON.stringify({ testProjects: [{ id: "unit", include: ["packages/*/test/**/*.test.ts"] }] }),
+  );
+  write(root, "packages/a/package.json", JSON.stringify({ name: "@fixture/a" }));
+  write(root, "packages/a/src/value.ts", "export const value = 1;\n");
+  write(
+    root,
+    "packages/a/test/value.unit.test.ts",
+    'import { value } from "../src/value.js";\nvoid value;\n',
+  );
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "--no-verify", "-m", "base");
+  expect(ensureLayer0Hooks({ cwd: root })).toEqual({ status: "set", hooksPath: HOOKS_PATH });
+  write(root, "packages/a/src/value.ts", "export const value = 2;\n");
+  git(root, "add", "-A");
+  return root;
+}
+
+const head = (root) => git(root, "rev-parse", "HEAD").trim();
+
+describe("Layer 0 hooks from the repository", () => {
+  it("refuses a product change without the related test even in fast mode", () => {
+    const root = fixture();
+    const before = head(root);
+    const refused = tryGit(root, "commit", "-q", "-m", "change value");
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain("L0_RELATED_TESTS_UNDECLARED");
+    expect(refused.stderr).toContain("packages/a/test/value.unit.test.ts");
+    expect(head(root)).toBe(before);
+    const omitted = tryGit(root, "commit", "-q", "-m", "change value\n\nLayer-0-tests: none");
+    expect(omitted.stderr).toContain("L0_RELATED_TESTS_OMITTED");
+    expect(head(root)).toBe(before);
+  });
+
+  it("accepts the commit once the related test is declared", () => {
+    const root = fixture();
+    const accepted = tryGit(
+      root,
+      "commit",
+      "-q",
+      "-m",
+      "change value\n\nLayer-0-tests: packages/a/test/value.unit.test.ts",
+    );
+    expect(accepted.status).toBe(0);
+    expect(accepted.stderr).toContain("L0_RELATED_TESTS_OK");
+  });
+
+  it("refuses at push a commit that skipped the commit-msg hook", () => {
+    const root = fixture();
+    git(root, "commit", "-q", "--no-verify", "-m", "change value");
+    const remote = mkdtempSync(path.join(tmpdir(), "layer0-remote-"));
+    roots.push(remote);
+    git(remote, "init", "-q", "--bare");
+    git(root, "remote", "add", "origin", remote);
+    const pushed = tryGit(root, "push", "-q", "origin", "main");
+    expect(pushed.status).not.toBe(0);
+    expect(pushed.stderr).toContain("L0_RELATED_TESTS_UNDECLARED");
+  });
+
+  it("keeps an existing hooks path instead of overwriting it", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "layer0-conflict-"));
+    roots.push(root);
+    git(root, "init", "-q");
+    git(root, "config", "core.hooksPath", "elsewhere");
+    expect(ensureLayer0Hooks({ cwd: root })).toEqual({
+      status: "conflict",
+      hooksPath: "elsewhere",
+    });
+  });
+});

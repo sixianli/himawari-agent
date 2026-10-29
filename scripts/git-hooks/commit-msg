@@ -1,0 +1,3 @@
+#!/bin/sh
+root=$(git rev-parse --show-toplevel) || exit 1
+exec python3 "$root/scripts/layer0-tests/check-layer0-tests.py" commit-msg "$1"
