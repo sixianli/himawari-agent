@@ -4033,7 +4033,9 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 - 诊断基线（生产只读，13 轮，原始输出 `result-20261029T1530Z.json`、`journal-20261029T1530Z.txt`）：首字中位数 5.1 秒；工具开工前中位数 3.2 秒；模型开工前中位数 3.4 秒；找记忆中位数 1.5 秒、最慢 9.1 秒；思考阶段中位数 1.5 秒。
 - 首字探测（生产机，每组 5 次短请求，`model-latency-20261029T1537Z.txt`）：路由组 3.0 秒、直指 Go 2.5 秒、CodeBuddy 1.1 秒。
 - 门槛自证：去掉适配层的回调后，`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的新测试失败（`expected +0 to be 1`），恢复后通过；去掉向量请求的 3 秒上限后，`apps/agent-service/test/production-model-composition.unit.test.ts` 的新测试失败，恢复后通过。
-- 上线后的节省：未测量。合并上线后用真实网页同样的问题做前后对比，追加到本案例。
+- 路由改顺序后（10-30 01:04 日本时间，生产机每组 5 次短请求，项目共享目录 `model-latency-after-codebuddy-first-20261029T1605Z.txt`）：5 次全由 CodeBuddy 回答，首字节 3.26 秒（冷）、0.97、1.13、1.07、0.93 秒，中位数 1.07 秒（改前路由组 3.0 秒）。真实大小的请求未测量。
+- 防退化门槛（事故 I-30）：上线前网页走查记下“简单问题”和“执行命令”两个场景的 `answerMs`，`scripts/delivery-mode/browser-acceptance-gate.py` 超过 20 秒 / 60 秒或没有计时就拒绝出包和上线；`scripts/delivery-mode/test_deploy.py` 的新测试在没有这段检查时失败（`AssertionError: Tuples differ: (0, 'passed') != (5, 'no-browser-acceptance')`），加上后 32 条全过。上限是第一版宽松值，未测量走查的实际耗时。
+- 上线后的节省：未测量。测法：第十九版和第二十版在同一时段各发 5 次同样的三句话（“你是谁”“东京现在几点”、一个写小文件的任务），每次新开对话，用 `speed-profile.mjs` 比首字时间和整轮时长的中位数；反向检查不用工具的轮次没有 `sandbox.srt_prewarm`。结果追加到本案例。
 
 **相关 ADR/PR**
 
