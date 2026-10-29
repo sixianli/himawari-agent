@@ -43,7 +43,7 @@ export function guessCategory(text: string): { category: MemoryCategory; sensiti
               ? "goal"
               : /项目|在做|开发/.test(text)
                 ? "project"
-                : "identity";
+                : "other";
   return { category, sensitive: false };
 }
 

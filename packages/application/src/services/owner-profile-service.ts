@@ -1,6 +1,7 @@
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type {
   DataClassification,
+  MemoryBookStorePort,
   MemoryCategory,
   MemoryReminderStorePort,
   PayloadRef,
@@ -47,7 +48,14 @@ export interface OwnerProfileLine {
   readonly updatedAt: string;
 }
 
+export interface OwnerProfileUsage {
+  readonly used: number;
+  readonly limit: number;
+  readonly queued: readonly MemoryId[];
+}
+
 export interface OwnerProfileOutline {
+  readonly usage: OwnerProfileUsage;
   readonly rules: readonly OwnerProfileLine[];
   readonly sections: readonly {
     readonly category: MemoryCategory;
@@ -78,6 +86,7 @@ export interface OwnerProfileServiceOptions {
   readonly digest: (text: string) => string;
   readonly characterBudget?: number;
   readonly reminders?: Pick<MemoryReminderStorePort, "listUpcoming">;
+  readonly pins?: Pick<MemoryBookStorePort, "listProfilePins">;
   readonly timeZone?: string;
 }
 
@@ -95,6 +104,11 @@ function byImportance(left: ProductMemoryRecord, right: ProductMemoryRecord): nu
   );
 }
 
+function ownerFirst(pinned: ReadonlySet<MemoryId>) {
+  return (left: ProductMemoryRecord, right: ProductMemoryRecord): number =>
+    Number(pinned.has(right.id)) - Number(pinned.has(left.id)) || byImportance(left, right);
+}
+
 export class OwnerProfileService implements OwnerProfilePort {
   readonly #options: OwnerProfileServiceOptions;
 
@@ -108,10 +122,11 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly maxClassification: DataClassification;
     readonly now: string;
   }): Promise<OwnerProfileOutline> {
-    const { rules, sections } = await this.#select(input);
+    const { rules, sections, usage } = await this.#select(input);
     const line = ({ memory, text }: { memory: ProductMemoryRecord; text: string }) =>
       Object.freeze({ memoryId: memory.id, text, updatedAt: memory.updatedAt });
     return Object.freeze({
+      usage,
       rules: Object.freeze(rules.map(line)),
       sections: Object.freeze(
         sections.map(({ category, title, lines }) =>
@@ -131,19 +146,35 @@ export class OwnerProfileService implements OwnerProfilePort {
       CLASSIFICATION_RANK[input.maxClassification],
       CLASSIFICATION_RANK.private,
     );
-    const eligible = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
+    const choices = new Map(
+      (
+        (await this.#options.pins?.listProfilePins({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+        })) ?? []
+      ).map(({ memoryId, pinned }) => [memoryId, pinned]),
+    );
+    const pinned = new Set([...choices].flatMap(([memoryId, on]) => (on ? [memoryId] : [])));
+    const valid = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
       (memory) =>
         memory.status === "active" &&
         PROFILE_CLASSIFICATIONS.has(memory.dataClassification) &&
         CLASSIFICATION_RANK[memory.dataClassification] <= ceiling &&
         currentlyValid(memory, input.now),
     );
-    let remaining = this.#options.characterBudget ?? OWNER_PROFILE_CHARACTER_BUDGET;
+    const eligible = valid.filter((memory) => choices.get(memory.id) !== false);
+    const limit = this.#options.characterBudget ?? OWNER_PROFILE_CHARACTER_BUDGET;
+    let remaining = limit;
+    const queued: MemoryId[] = [];
     const take = async (memories: readonly ProductMemoryRecord[]) => {
       const lines: { memory: ProductMemoryRecord; text: string }[] = [];
-      for (const memory of [...memories].sort(byImportance)) {
+      for (const memory of [...memories].sort(ownerFirst(pinned))) {
         const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
-        if (!text || text.length + 3 > remaining) continue;
+        if (!text) continue;
+        if (text.length + 3 > remaining) {
+          queued.push(memory.id);
+          continue;
+        }
         remaining -= text.length + 3;
         lines.push({ memory, text });
       }
@@ -156,7 +187,9 @@ export class OwnerProfileService implements OwnerProfilePort {
       lines: { memory: ProductMemoryRecord; text: string }[];
     }[] = [];
     const profileCandidates = eligible.filter(
-      (memory) => (memory.attributes?.importancePermille ?? 0) >= PROFILE_MINIMUM_IMPORTANCE,
+      (memory) =>
+        pinned.has(memory.id) ||
+        (memory.attributes?.importancePermille ?? 0) >= PROFILE_MINIMUM_IMPORTANCE,
     );
     const chosen = await take(
       profileCandidates.filter((memory) =>
@@ -166,10 +199,15 @@ export class OwnerProfileService implements OwnerProfilePort {
     for (const [category, title] of PROFILE_SECTIONS) {
       const lines = chosen
         .filter(({ memory }) => memory.attributes?.category === category)
-        .sort((left, right) => byImportance(left.memory, right.memory));
+        .sort((left, right) => ownerFirst(pinned)(left.memory, right.memory));
       if (lines.length > 0) sections.push({ category, title, lines });
     }
-    return { rules, sections, eligible };
+    const usage = Object.freeze({
+      used: limit - remaining,
+      limit,
+      queued: Object.freeze(queued),
+    });
+    return { rules, sections, eligible: valid, usage };
   }
 
   async #agenda(
