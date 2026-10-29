@@ -76,6 +76,7 @@ date: "2026-10-26"
   49. [模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗](#case-answer-weight)
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
   51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
+  52. [19 条界面意见里一半是低级错误：让真浏览器检查在每次提交时先找一遍](#case-ui-batch-1029)
   53. [评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住](#case-no-expensive-models)
   56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
 - [小案例速查](#small-cases)
@@ -106,7 +107,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3344,6 +3345,66 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “用户在 iPhone 上一点输入框整页就放大、设置面板关不掉。根因一是 iOS 对小于 16px 的输入框会自动放大且不回弹，我们的对话框平时 16px、一聚焦被一条更具体的 `:focus` 规则改成 14px；二是弹窗高度用 100vh，没扣状态栏安全区。修法是手机上输入控件统一 16px、不用关缩放的偷懒写法，弹窗按 env(safe-area-inset) 算高度、标题固定内容内滚。再加两道门槛：提交时的静态检查和上线前手机尺寸的真实浏览器走查，两道都证明在旧版本上会失败。”
+
+[返回目录](#contents)
+
+<a id="case-ui-batch-1029"></a>
+
+## 案例 52：19 条界面意见里一半是低级错误：让真浏览器检查在每次提交时先找一遍，不再等主人一个个指出来
+
+**背景与现象**
+
+2026-10-29（日本时间），Andy 在第十八版上逐条发了第二批界面意见，编号 23–41。一半是低级错误：设置弹窗被撑出屏幕、关闭按钮被遮住；提醒页空状态三行一行偏左一行居中；中文界面的记忆时间线写着“Thu, October 29”；一打开设置，关闭按钮没点过就带焦点描边（键盘操作时用来标出当前位置的框）；界面语言下拉弹出浏览器自带的深色菜单。另一半是功能缺口：手机上设的称呼电脑上看不到（第 24 条）；点“分出新对话”后新对话是空的，看不出带上了什么（第 28 条）；文件页没有自己上传的文件（第 32 条）。第 27 条原话：“你能不能整体的查一下，然后不要我。不要我一个一个的去找这种低级的错误。”第一批（[案例 44](#case-ui-batch-1028)）交付时也截了三语图人工看过，第二批仍然出了这么多低级错误。
+
+**根因**
+
+- **低级错误漏到主人手里**：交付前只靠人看截图，而 3 种语言 × 2 种宽度 × 2 种主题 × 10 个页面就是 120 张图，人看不过来，也没有一项规则说“看到什么算错”。仓库里已有的手机检查（[案例 51](#case-phone-input-zoom) 的 `check-phone-layout.mjs`）只读 CSS 文本，看不到页面真正排出来的样子。
+- **分出的对话是空的（I-17）**：真实服务器分出新对话时只记下“来自哪个对话、到第几条消息为止”（`ProductThread.lineage`），不复制消息；网页从来不读这条来源记录。测试用的假服务器反而把原消息复制进了新对话，所以所有测试都看到“有内容”。这是用复现确认的：把假服务器改成和真实服务器一样之后，新写的测试在旧代码上失败，报 “expected '' to contain 'source-content-1'”。
+- **称呼不跨设备**：[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 当时决定称呼只存在浏览器本地存储里，换一台设备自然是空的。
+
+**我们的方案**
+
+- **每次提交都跑的真浏览器检查** `scripts/check-layout-audit.mjs`（`npm run check:layout`，是 `npm run check` 的一步）：先用 vite 把网页构建到临时目录，用假服务器开起来，再用 Playwright（浏览器自动化工具）的 Chromium 打开 10 个页面（欢迎页、对话、执行过程、分出的对话、设置三个标签、记忆、提醒、文件），在中英日 × 1280/390 宽 × 浅色深色下逐个检查：横向滚动、元素超出屏幕、按钮被别的元素盖住、文字被挤成竖排、截断没有省略号、浏览器原生下拉框、没点过就有焦点描边、中日界面里的英文月份星期和 AM/PM。每次运行先在一页故意做坏的页面和一页干净的页面上自检，坏页面查不出问题就直接失败，避免检查本身悄悄失效。
+- **分出的对话显示来源**：对话摘要加上 `sourceThreadId` 和 `sourceWatermark` 两个字段；网页按来源记录分页读原对话，把到分出那一轮为止的消息颜色稍淡地显示在分隔线上方，顶部写“从「原标题」第 N 轮分出 · 打开原对话”，原对话被删时写明“原对话已删除”。假服务器的分出行为改成和真实服务器一样。
+- **设置存在服务器上**：称呼、界面语言、主题色进新表 `owner_preferences`（迁移 0063），没送到服务器的本地改动下次打开先补发。
+- **其余按 Andy 的批注做**：顶栏改成左右两组彼此分开的悬浮圆按钮（防误触），设置挪到侧栏底部；“运行命令”只显示成没成功，命令本身收进“命令详情”；联网搜索说明列出配置里真正会收到数据的网址，不写厂商名，换厂商时不用改文字；上传的文件进文件页（迁移 0064）；页面自己画下拉菜单；没发过消息的空对话不进侧栏。
+- **经验沉淀**：按 Andy 第 27 条批注，新建 [docs/ui-ux-design-guide.md](ui-ux-design-guide.md)，记规则、他批准并喜欢的设计、遇到过的不良设计，AGENTS.md 要求改界面前读、交付时补。
+
+这次不涉及 Pi（Himawari 所基于的开源智能体框架）的能力：对话分支的来源记录本来就在 Himawari 自己的对话存储里，缺的只是网页读它。
+
+**方案讨论与备选**
+
+- **截图后让模型看图找错**：能发现“看起来怪”的问题，但每次提交都要花钱、结果不稳定，Andy 又极在意钱。选了规则明确、结果确定、不花钱的浏览器检查，代价是它只查得出写成规则的问题，“对齐好不好看”“这一块该不该显示”仍要人看。
+- **像素对比（和基线截图逐像素比）**：能抓到任何变化，但每次正常的界面改动都要重新批准一整套截图，120 张图一起变时人仍然看不过来。这次只把截图存成 v11 基线供人对照，不做自动像素对比。
+- **分出的对话（第 28 条）：A 原内容全部显示、颜色稍淡 / B 收成一行，点开再看。** Andy 选 A。也考虑过服务器分出时直接复制消息，但那会让同一条消息在两个对话里各存一份，以后修改或删除原消息时两边会不一致，所以只读来源记录。
+- **顶栏（第 33 条）**：Claude 推荐“标题下拉 + 新对话”，Andy 选两侧悬浮按钮并要求分开。为了不动刚修好的手机安全区（I-14），没做“内容从屏幕最上沿开始、往上滚时在按钮下淡出”。
+
+**业界主流做法**
+
+- ✅ MDN `:focus-visible`（<https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible>，2026-10-29 打开）：“focus styles are not required when the user knows where they are putting focus, such as when they use a pointing device such as a mouse or finger”。焦点描边只给键盘用户，检查里的“没点过就有焦点描边”按这个判断。
+- ✅ W3C WAI-ARIA 编写实践 Listbox 模式（<https://www.w3.org/WAI/ARIA/apg/patterns/listbox/>，2026-10-29 打开）：“A listbox widget presents a list of options and allows a user to select one or more of them.”自己画的下拉菜单按这个模式给 `role="listbox"` 和方向键，这样换掉原生下拉框不丢键盘和读屏可用性。
+- ⚠ ChatGPT 网页的“在新对话中分支”能在新对话里看到原内容，这是原型阶段对 ChatGPT 网页的观察；OpenAI 帮助中心的说明页本次打开返回 HTTP 403，未核对一手文档。
+
+**对比与取舍**
+
+和业界一样遵守 `:focus-visible` 和 Listbox 模式。不同的是，业界通常靠设计评审和视觉回归测试（逐像素对比）守界面，我们把“低级错误”写成浏览器里可判定的规则，每次提交都跑，因为这个项目只有 Andy 一个人在用、在验收，他找到的每个低级错误都是一次失败。代价是 `npm run check` 多约 76 秒，并依赖假服务器：假服务器没有的页面（通知设置）查不到，假服务器和真实服务器行为不同时也会漏掉，I-17 正是这样漏掉的，所以这次顺手把假服务器的分出行为改成和真实服务器一致。
+
+**结果数据**
+
+- 布局检查：120 种组合全部通过，耗时 76.2 秒（提交 `456aac5` 的说明，本线程云端容器）。
+- 检查会失败的证据：把设置弹窗换回改原生下拉框之前的版本（`0dc5bc7^`），`settingsGeneral` 场景报 NATIVE_SELECT “Interface language”，12 个页面组合失败（提交 `456aac5` 的说明）。
+- I-17 测试在修复前失败（“expected '' to contain 'source-content-1'”），修复后通过（提交 `900f901` 的说明）。
+- 网页测试：548 条通过（提交 `597c49e` 的说明）。
+- 真 iPhone 上的顶栏和分出的对话：未测量，等 Andy 确认。
+- 这次检查能否让第三批的低级错误变少：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)；[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 的后续说明；[事故与门槛清单 I-15 至 I-18](incidents-and-gates.md)；[设计规范](ui-ux-design-guide.md)；截图基线 `docs/assets/control-center/2026-10-29-v11/`；PR #99（分支 `claude/project-thread-89xntg`）。
+
+**面试 30 秒版**
+
+“用户一次报了 19 条界面问题，一半是对不齐、英文日期、原生下拉框这种低级错误，他说‘不要我一个一个去找’。根因是交付前只靠人看 120 张截图，没有可判定的规则。我写了一个每次提交都跑的真浏览器检查，在三语、两种宽度、两种主题下打开 10 个页面，按规则判横向溢出、被遮挡、文字截断、意外焦点框和残留英文，每次先在故意做坏的页面上自检。它对旧版本会报错，对新版本 120 种组合全过，约 76 秒。同一批里还查出测试用假服务器和真实服务器行为不同，导致‘分出的对话是空的’从没被测到。”
 
 [返回目录](#contents)
 

@@ -34,6 +34,7 @@ export * from "./memory-projection.js";
 export * from "./model-budget.js";
 export * from "./model-invocation.js";
 export * from "./observability.js";
+export * from "./owner-preferences.js";
 export * from "./persistence.js";
 export * from "./proactive-checks.js";
 export * from "./proactivity.js";

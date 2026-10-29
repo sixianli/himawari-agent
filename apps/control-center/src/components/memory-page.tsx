@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryItem, MemoryModel, MemoryOverview } from "../memory.js";
 import {
@@ -11,7 +12,7 @@ import {
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
-import { ActionButton } from "./primitives.js";
+import { ActionButton, EmptyState } from "./primitives.js";
 import {
   clock,
   dayAndClock,
@@ -41,15 +42,6 @@ const GRAPH = { x: 190, y: 150, r: 112 };
 
 const reveal = (element: HTMLElement | null) => element?.scrollIntoView?.({ block: "nearest" });
 const live = (item: MemoryItem) => !item.supersededBy && !item.tentative;
-const date = (value: string) => new Date(value).toLocaleDateString();
-const time = (value: string) =>
-  new Date(value).toLocaleString(undefined, {
-    ...(new Date(value).getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 function Chips<T extends string>({
   label,
@@ -106,6 +98,7 @@ function MemoryHistory({
   memory: MemoryModel;
   message: Message;
 }) {
+  const { moment: time } = useLocaleFormat();
   const past = [...history].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
   const hidden = past.length - HISTORY_HEAD - older;
   const folded = hidden > 1 ? hidden : 0;
@@ -167,6 +160,7 @@ function MemoryRow({
   notify: (notice: Notice) => void;
   onOpenThread: (threadId: string) => void;
 }) {
+  const { day: date, moment: time } = useLocaleFormat();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [older, setOlder] = useState(0);
@@ -515,6 +509,14 @@ export function RemindersPage({
     );
   const mailCount = [...mail.values()].reduce((total, rows) => total + rows.length, 0);
   const watching = proactive?.overview && proactive.overview.connection.status !== "disconnected";
+  const notifyNote = (
+    <>
+      {message(watching ? "proactive.foot" : "memory.page.notify")}{" "}
+      <button type="button" className="reminders-link" onClick={openNotificationSettings}>
+        {message("push.openSettings")}
+      </button>
+    </>
+  );
   return (
     <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
       <header className="memory-header">
@@ -585,15 +587,18 @@ export function RemindersPage({
           {mailGroup("none")}
           {mailGroup("know")}
           {!overview.reminders.length && !overview.upcoming.length && !mailCount ? (
-            <p className="reminders-empty">{message("reminders.empty")}</p>
+            <EmptyState
+              icon={<LineIcon name="bell" />}
+              title={message("reminders.emptyTitle")}
+              footer={notifyNote}
+            >
+              {message("reminders.empty")}
+            </EmptyState>
           ) : null}
           {proactive ? <ProactiveAudit proactive={proactive} message={message} /> : null}
-          <p className="settings-note reminders-notify">
-            {message(watching ? "proactive.foot" : "memory.page.notify")}{" "}
-            <button type="button" className="reminders-link" onClick={openNotificationSettings}>
-              {message("push.openSettings")}
-            </button>
-          </p>
+          {overview.reminders.length || overview.upcoming.length || mailCount ? (
+            <p className="settings-note reminders-notify">{notifyNote}</p>
+          ) : null}
         </>
       )}
       {notice ? (
@@ -910,6 +915,7 @@ function AllTab({
   focus: readonly string[];
   initialCategory: string;
 }) {
+  const { moment: time } = useLocaleFormat();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(initialCategory);
   const [sub, setSub] = useState("all");
@@ -1086,6 +1092,7 @@ function TimelineTab({
   message: Message;
   onConfirm: () => void;
 }) {
+  const { dayHeading } = useLocaleFormat();
   const [filter, setFilter] = useState("all");
   const overview = memory.overview;
   if (!overview) return null;
@@ -1158,11 +1165,7 @@ function TimelineTab({
     .sort((a, b) => b.at.localeCompare(a.at));
   const days = new Map<string, Event[]>();
   for (const event of events) {
-    const day = new Date(event.at).toLocaleDateString(undefined, {
-      month: "long",
-      day: "numeric",
-      weekday: "short",
-    });
+    const day = dayHeading(event.at);
     days.set(day, [...(days.get(day) ?? []), event]);
   }
   const pending = new Set(

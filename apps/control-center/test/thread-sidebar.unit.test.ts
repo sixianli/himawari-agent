@@ -15,7 +15,9 @@ const thread = (id: string, pinOrder: number | null): ThreadSidebarProps["thread
   titleRevision: 1,
   pinOrder,
   answerLocale: "zh-CN",
-  messageWatermark: 0,
+  messageWatermark: 2,
+  sourceThreadId: null,
+  sourceWatermark: null,
   createdAt: "2026-09-13T00:00:00Z",
   updatedAt: "2026-09-13T00:00:00Z",
 });
@@ -54,6 +56,24 @@ function render(
 }
 
 describe("thread sidebar navigation", () => {
+  it("[UI-27] leaves conversations that never got a message out of the list, except the open one and branches", () => {
+    const empty = { ...thread("empty", null), messageWatermark: 0 };
+    const html = render([
+      empty,
+      {
+        ...thread("branch", null),
+        messageWatermark: 0,
+        sourceThreadId: "first",
+        sourceWatermark: 2,
+      },
+      { ...thread("recent", null), messageWatermark: 0 },
+      thread("first", null),
+    ]);
+    expect(html).not.toContain('href="/threads/empty"');
+    expect(html).toContain('href="/threads/branch"');
+    expect(html).toContain('href="/threads/recent"');
+    expect(html).toContain('href="/threads/first"');
+  });
   it("lists memory and reminders as their own pages and marks due reminders with a dot", () => {
     const quiet = render([], false, true, {
       onOpenMemory: vi.fn(),

@@ -368,6 +368,8 @@ export const threadSummaryV3Schema = object({
   pinOrder: nullable(integer(0)),
   answerLocale: answerLocaleSchema,
   messageWatermark: integer(0),
+  sourceThreadId: nullable(machineString),
+  sourceWatermark: nullable(integer(1)),
   createdAt: timestamp,
   updatedAt: timestamp,
 });

@@ -1,0 +1,459 @@
+#!/usr/bin/env node
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const APP = path.join(repositoryRoot, "apps/control-center");
+const LOCALES = ["zh-CN", "en", "ja"];
+const VIEWPORTS = [
+  { width: 1280, height: 820 },
+  { width: 390, height: 844 },
+];
+const THEMES = ["light", "dark"];
+
+export function findLayoutProblems(locale) {
+  const problems = [];
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const describe = (element) => {
+    const label =
+      element.getAttribute("aria-label") ||
+      (element.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+    const classes = typeof element.className === "string" ? element.className.trim() : "";
+    return `${element.tagName.toLowerCase()}${classes ? `.${classes.split(/\s+/).join(".")}` : ""}${
+      label ? ` "${label}"` : ""
+    }`;
+  };
+  const shown = (element) => {
+    if (!element.getClientRects().length) return false;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (
+        style.visibility === "hidden" ||
+        style.opacity === "0" ||
+        node.inert ||
+        style.clipPath.startsWith("inset(50%")
+      )
+        return false;
+    }
+    return true;
+  };
+  const visibleRect = (element) => {
+    const rect = element.getBoundingClientRect();
+    let left = rect.left;
+    let right = rect.right;
+    let top = rect.top;
+    let bottom = rect.bottom;
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.overflowX !== "visible" || style.overflowY !== "visible") {
+        const clip = node.getBoundingClientRect();
+        if (style.overflowX !== "visible") {
+          left = Math.max(left, clip.left);
+          right = Math.min(right, clip.right);
+        }
+        if (style.overflowY !== "visible") {
+          top = Math.max(top, clip.top);
+          bottom = Math.min(bottom, clip.bottom);
+        }
+      }
+      if (style.position === "fixed") break;
+    }
+    return { left, right, top, bottom, rect };
+  };
+  if (document.documentElement.scrollWidth > width + 1)
+    problems.push(`PAGE_SCROLLS_SIDEWAYS scrollWidth=${document.documentElement.scrollWidth}`);
+  const modal = document.querySelector("dialog[open]");
+  for (const element of document.body.querySelectorAll("*")) {
+    if (!shown(element)) continue;
+    const { left, right, top, bottom, rect } = visibleRect(element);
+    if (rect.width <= 1 || rect.height <= 1) continue;
+    if (right - left > 0 && bottom - top > 0 && (right > width + 1 || left < -1))
+      problems.push(
+        `OUTSIDE_SCREEN ${describe(element)} left=${Math.round(left)} right=${Math.round(right)}`,
+      );
+    if (element.matches("select")) problems.push(`NATIVE_SELECT ${describe(element)}`);
+    const style = getComputedStyle(element);
+    const ownText = [...element.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? "")
+      .join("")
+      .trim();
+    const fontSize = Number.parseFloat(style.fontSize) || 14;
+    const lineHeight = Number.parseFloat(style.lineHeight) || fontSize * 1.4;
+    if (
+      [...ownText].length >= 4 &&
+      rect.width < fontSize * 2.5 &&
+      rect.height > lineHeight * 3.5 &&
+      style.writingMode === "horizontal-tb"
+    )
+      problems.push(
+        `TEXT_SQUEEZED ${describe(element)} ${Math.round(rect.width)}x${Math.round(rect.height)}`,
+      );
+    if (
+      ownText &&
+      style.whiteSpace === "nowrap" &&
+      style.overflowX !== "visible" &&
+      style.textOverflow !== "ellipsis" &&
+      element.scrollWidth > element.clientWidth + 1
+    )
+      problems.push(`TEXT_CUT_WITHOUT_ELLIPSIS ${describe(element)}`);
+    if (
+      element.matches("button, a[href], summary, [role='button'], [role='switch']") &&
+      (!modal || modal.contains(element))
+    ) {
+      const fully =
+        right - left >= rect.width - 0.5 &&
+        bottom - top >= rect.height - 0.5 &&
+        rect.left >= 0 &&
+        rect.right <= width &&
+        rect.top >= 0 &&
+        rect.bottom <= height;
+      if (fully) {
+        const hit = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        if (hit && hit !== element && !element.contains(hit) && !hit.contains(element))
+          problems.push(`CONTROL_COVERED ${describe(element)} by ${describe(hit)}`);
+      }
+    }
+  }
+  const active = document.activeElement;
+  if (
+    active &&
+    active !== document.body &&
+    !active.matches("input, textarea, [contenteditable='true']") &&
+    active.matches(":focus-visible")
+  ) {
+    const style = getComputedStyle(active);
+    if (style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0)
+      problems.push(`UNASKED_FOCUS_RING ${describe(active)}`);
+  }
+  if (locale !== "en") {
+    const englishDate =
+      /\b(January|February|March|April|June|July|August|September|October|November|December|Jan|Feb|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|AM|PM)\b/;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      if (!parent || !shown(parent)) continue;
+      if (parent.closest("pre, code, .assistant-markdown, .owner-message, .thread-message-content"))
+        continue;
+      const text = node.textContent ?? "";
+      const match = text.match(englishDate);
+      if (match) problems.push(`ENGLISH_IN_${locale} "${match[0]}" in ${describe(parent)}`);
+    }
+  }
+  return [...new Set(problems)];
+}
+
+export function labels(locale) {
+  const text = readFileSync(path.join(APP, `src/i18n/resources/${locale}.ts`), "utf8");
+  const value = (key) => {
+    const found = text.match(new RegExp(`"${key.replace(/\./g, "\\.")}":\\s*"([^"]*)"`));
+    if (!found) throw new Error(`LAYOUT_AUDIT_LABEL_MISSING ${locale} ${key}`);
+    return found[1];
+  };
+  return {
+    settings: value("settings.title"),
+    memory: value("nav.memory"),
+    reminders: value("nav.reminders"),
+    files: value("library.title"),
+    fork: value("answer.fork"),
+    general: value("review.settings.general"),
+    tools: value("review.settings.tools"),
+    data: value("review.settings.data"),
+  };
+}
+
+async function openSidebarOnPhone(page) {
+  const toggle = page.locator(".mobile-sidebar-toggle");
+  if (await toggle.isVisible()) {
+    await toggle.click();
+    await page.waitForTimeout(250);
+  }
+}
+
+async function openSettings(page, text, tab) {
+  await openSidebarOnPhone(page);
+  await page.getByRole("button", { name: text.settings, exact: true }).first().click();
+  await page.waitForTimeout(250);
+  await page
+    .locator("dialog[open] .settings-nav")
+    .getByRole("button", { name: text[tab], exact: true })
+    .click();
+  await page.waitForTimeout(200);
+}
+
+export const SCENES = {
+  welcome: { path: "/threads", act: async () => {} },
+  conversation: { path: "/threads/thread-main", act: async () => {} },
+  process: {
+    path: "/threads/thread-main",
+    act: async (page) => {
+      await page.locator(".turn-process > summary").first().click();
+      await page.waitForTimeout(200);
+    },
+  },
+  branched: {
+    path: "/threads/thread-main",
+    act: async (page, text) => {
+      await page.getByRole("button", { name: text.fork, exact: true }).first().click();
+      await page.waitForTimeout(700);
+      await page.mouse.move(1, 1);
+    },
+  },
+  settingsGeneral: { path: "/threads", act: (page, text) => openSettings(page, text, "general") },
+  settingsTools: { path: "/threads", act: (page, text) => openSettings(page, text, "tools") },
+  settingsData: { path: "/threads", act: (page, text) => openSettings(page, text, "data") },
+  memory: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.memory, exact: true }).first().click();
+      await page.waitForTimeout(400);
+    },
+  },
+  reminders: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
+      await page.waitForTimeout(400);
+    },
+  },
+  files: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.files, exact: true }).first().click();
+      await page.waitForTimeout(400);
+    },
+  },
+};
+
+function launch() {
+  const bundled = "/opt/pw-browsers/chromium";
+  return chromium.launch(
+    process.env.HIMAWARI_LAYOUT_AUDIT_CHROMIUM
+      ? { executablePath: process.env.HIMAWARI_LAYOUT_AUDIT_CHROMIUM }
+      : existsSync(bundled)
+        ? { executablePath: bundled }
+        : {},
+  );
+}
+
+const REPRODUCTION = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><style>
+body{margin:0;font:14px/1.4 sans-serif} .wide{width:520px;height:20px;background:#eee}
+.narrow{width:20px} .cut{width:60px;white-space:nowrap;overflow:hidden}
+.cover{position:relative;height:40px} .cover button{position:absolute;left:0;top:0}
+.cover span{position:absolute;left:0;top:0;width:120px;height:40px;background:#fff}
+#focused:focus-visible{outline:2px solid blue}</style></head><body>
+<div class="wide">超出屏幕的一行</div><select><option>原生下拉</option></select>
+<p class="narrow">被挤成竖排的一段文字</p><p class="cut">没有省略号的长标题文字</p>
+<div class="cover"><button>被挡住的按钮</button><span></span></div>
+<p>日期 Thu, October 29 11:55 AM</p><button id="focused">关闭</button>
+<script>document.getElementById("focused").focus()</script></body></html>`;
+
+const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;font:14px/1.4 sans-serif"><p>10月29日 星期四 11:55</p><button>好的</button></body></html>`;
+
+export const REQUIRED_KINDS = [
+  "PAGE_SCROLLS_SIDEWAYS",
+  "OUTSIDE_SCREEN",
+  "NATIVE_SELECT",
+  "TEXT_SQUEEZED",
+  "TEXT_CUT_WITHOUT_ELLIPSIS",
+  "CONTROL_COVERED",
+  "UNASKED_FOCUS_RING",
+  "ENGLISH_IN_zh-CN",
+];
+
+async function selfTest(browser) {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent(REPRODUCTION);
+    const found = await page.evaluate(findLayoutProblems, "zh-CN");
+    const missing = REQUIRED_KINDS.filter((kind) => !found.some((item) => item.startsWith(kind)));
+    await page.setContent(CLEAN);
+    const clean = await page.evaluate(findLayoutProblems, "zh-CN");
+    const errors = [
+      ...missing.map((kind) => `LAYOUT_AUDIT_SELF_TEST_MISSED ${kind}`),
+      ...clean.map((item) => `LAYOUT_AUDIT_SELF_TEST_FALSE_ALARM ${item}`),
+    ];
+    return errors;
+  } finally {
+    await page.close();
+  }
+}
+
+async function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+async function build(outDir) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(repositoryRoot, "node_modules/vite/bin/vite.js"),
+        "build",
+        "--outDir",
+        outDir,
+        "--emptyOutDir",
+        "--logLevel",
+        "error",
+      ],
+      { cwd: APP, stdio: ["ignore", "ignore", "inherit"] },
+    );
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`LAYOUT_AUDIT_BUILD_FAILED ${code}`)),
+    );
+  });
+}
+
+async function startFixture(staticRoot) {
+  const port = await freePort();
+  const child = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      HIMAWARI_BROWSER_FIXTURE_PORT: String(port),
+      HIMAWARI_BROWSER_STATIC_ROOT: staticRoot,
+      HIMAWARI_MEMORY_FIXTURE: "1",
+    },
+    stdio: "ignore",
+  });
+  const base = `http://127.0.0.1:${port}`;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      const response = await fetch(`${base}/threads`);
+      if (response.ok) return { base, child };
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  child.kill();
+  throw new Error("LAYOUT_AUDIT_FIXTURE_DID_NOT_START");
+}
+
+async function auditApp(browser, base, only) {
+  const jobs = [];
+  for (const locale of LOCALES)
+    for (const viewport of VIEWPORTS)
+      for (const theme of THEMES)
+        for (const [name, scene] of Object.entries(SCENES))
+          if (!only.length || only.includes(name))
+            jobs.push({ locale, viewport, theme, name, scene });
+  const problems = [];
+  let next = 0;
+  const worker = async () => {
+    for (let job = jobs[next++]; job; job = jobs[next++]) {
+      const where = `${job.name} ${job.locale} ${job.viewport.width} ${job.theme}`;
+      const context = await browser.newContext({
+        viewport: job.viewport,
+        locale: "en-US",
+        timezoneId: "Asia/Tokyo",
+        reducedMotion: "reduce",
+      });
+      try {
+        await context.addInitScript(
+          ([locale, theme]) => {
+            localStorage.setItem("himawari.control-center.v1.locale", locale);
+            localStorage.setItem(
+              "himawari.control-center.v1.preferences",
+              JSON.stringify({
+                density: "comfortable",
+                detailPanePercent: 24,
+                listPanePercent: 26,
+                theme,
+                accent: "violet",
+              }),
+            );
+          },
+          [job.locale, job.theme],
+        );
+        await context.addInitScript(() => {
+          document.addEventListener("DOMContentLoaded", () => {
+            const style = document.createElement("style");
+            style.textContent =
+              "*,*::before,*::after{transition:none!important;animation:none!important}";
+            document.head.append(style);
+          });
+        });
+        const page = await context.newPage();
+        page.setDefaultTimeout(10000);
+        page.on("pageerror", (error) => problems.push(`${where}: PAGE_ERROR ${error.message}`));
+        await page.goto(`${base}${job.scene.path}`);
+        await page.waitForTimeout(600);
+        await job.scene.act(page, labels(job.locale));
+        await page.evaluate(() => document.fonts.ready);
+        await page.waitForTimeout(150);
+        for (const item of await page.evaluate(findLayoutProblems, job.locale))
+          problems.push(`${where}: ${item}`);
+      } catch (error) {
+        problems.push(
+          `${where}: SCENE_FAILED ${error instanceof Error ? error.message.split("\n")[0] : error}`,
+        );
+      } finally {
+        await context.close();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  return problems;
+}
+
+async function main() {
+  const only = process.argv.slice(2).filter((item) => !item.startsWith("--"));
+  const started = Date.now();
+  const browser = await launch();
+  const temporary = await mkdtemp(path.join(tmpdir(), "himawari-layout-audit-"));
+  let fixture;
+  try {
+    const selfErrors = await selfTest(browser);
+    if (selfErrors.length) {
+      for (const error of selfErrors) console.error(error);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`LAYOUT_AUDIT self-test passed kinds=${REQUIRED_KINDS.length}`);
+    if (process.argv.includes("--self-test")) return;
+    await build(temporary);
+    await writeFile(path.join(temporary, ".layout-audit"), "");
+    fixture = await startFixture(temporary);
+    const problems = await auditApp(browser, fixture.base, only);
+    for (const problem of problems) console.error(`LAYOUT_AUDIT ${problem}`);
+    const seconds = ((Date.now() - started) / 1000).toFixed(1);
+    if (problems.length) {
+      console.error(`LAYOUT_AUDIT failed problems=${problems.length} seconds=${seconds}`);
+      process.exitCode = 1;
+    } else
+      console.log(
+        `LAYOUT_AUDIT passed scenes=${Object.keys(SCENES).length * 12} seconds=${seconds}`,
+      );
+  } finally {
+    fixture?.child.kill();
+    await browser.close();
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  await main();

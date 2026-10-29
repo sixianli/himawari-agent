@@ -293,6 +293,8 @@ describe("Thread Gateway v3 contracts", () => {
       pinOrder: 0,
       answerLocale: "ja",
       messageWatermark: 2,
+      sourceThreadId: null,
+      sourceWatermark: null,
       createdAt: "2026-08-28T00:00:00.000Z",
       updatedAt: "2026-08-28T00:01:00.000Z",
     } as const;

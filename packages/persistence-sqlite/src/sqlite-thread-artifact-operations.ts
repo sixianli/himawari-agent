@@ -1,6 +1,7 @@
 import {
   THREAD_ARTIFACT_KINDS,
   THREAD_ARTIFACT_LIST_LIMIT,
+  THREAD_ARTIFACT_ORIGINS,
   THREAD_ARTIFACT_SOURCES,
   type ThreadArtifact,
   type ThreadArtifactListQuery,
@@ -198,7 +199,8 @@ export class SqliteThreadArtifactOperations {
       !Number.isSafeInteger(input.limit) ||
       input.limit < 1 ||
       input.limit > THREAD_ARTIFACT_LIST_LIMIT ||
-      (input.kind !== null && !THREAD_ARTIFACT_KINDS.includes(input.kind))
+      (input.kind !== null && !THREAD_ARTIFACT_KINDS.includes(input.kind)) ||
+      (input.origin != null && !THREAD_ARTIFACT_ORIGINS.includes(input.origin))
     )
       return this.fail("PORT_INVALID_OPERATION", "Thread artifact list query is invalid");
     const cursor = input.before === null ? null : decodeCursor(input.before);
@@ -214,6 +216,8 @@ export class SqliteThreadArtifactOperations {
       conditions.push("a.kind = ?");
       parameters.push(input.kind);
     }
+    if (input.origin != null)
+      conditions.push(input.origin === "uploaded" ? "a.source = 'upload'" : "a.source != 'upload'");
     const search = input.search?.trim();
     if (search) {
       conditions.push("a.path LIKE ? ESCAPE '\\'");
