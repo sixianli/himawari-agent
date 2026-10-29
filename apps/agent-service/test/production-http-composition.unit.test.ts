@@ -338,6 +338,8 @@ describe("production HTTP composition", () => {
           "push.test",
           "presence.heartbeat",
           "push.feedback.record",
+          "owner.preferences.read",
+          "owner.preferences.set",
         ],
         healthDependenciesAvailable: true,
       });

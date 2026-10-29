@@ -43,6 +43,7 @@ import {
   useControlCenterIntl,
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
+import { useOwnerPreferenceSync } from "./owner-preferences.js";
 import {
   OPEN_REMINDERS_PAGE,
   openRemindersPage,
@@ -356,6 +357,16 @@ function LocalizedControlCenterApp({
     connected: connection !== "offline",
     refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
   });
+  const ownerPreferences = useOwnerPreferenceSync({
+    client,
+    configuration,
+    connected: connection !== "offline",
+    storage,
+    preferences,
+    locale,
+    onPreferencesChange,
+    onLocaleChange,
+  });
   const [reminderFocus, setReminderFocus] = useState<string | null>(null);
   useEffect(() => {
     const focus = (event: Event) => setReminderFocus(reminderFocusOf(event));
@@ -582,9 +593,9 @@ function LocalizedControlCenterApp({
       topbarActions={route.surfaceId === "threads" ? threadModel.actions : null}
       list={governanceSurface ? governanceModel.list : threadModel.list}
       locale={locale}
-      onLocaleChange={onLocaleChange}
+      onLocaleChange={ownerPreferences.changeLocale}
       onNavigate={navigate}
-      onPreferencesChange={onPreferencesChange}
+      onPreferencesChange={ownerPreferences.changePreferences}
       pageTitle={
         route.surfaceId === "threads" ? threadModel.title : message(titleIds[route.surfaceId])
       }

@@ -26,6 +26,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryReminderStorePort,
+  OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
   WebPushStorePort,
@@ -494,6 +495,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   proactive(): ProactiveStorePort {
     return this.durable.proactive();
+  }
+
+  ownerPreferences(): OwnerPreferencesStorePort {
+    return this.durable.ownerPreferences();
   }
 
   threadArtifacts(): ThreadArtifactStorePort {
