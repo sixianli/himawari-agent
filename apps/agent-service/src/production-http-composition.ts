@@ -54,6 +54,7 @@ import {
   type HttpGatewayPayloadAdmissionPort,
   type HttpGatewayPayloadContentType,
   type HttpGatewayServerOptions,
+  type HttpGatewaySlowRequest,
   IDENTITY_GATEWAY_ERROR_CODES,
   IdentityGatewayError,
   type JwksFetcher,
@@ -145,6 +146,7 @@ export interface ProductionHttpCompositionOptions {
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
   readonly onCommandAccepted?: (path: string) => void;
+  readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -1027,6 +1029,7 @@ export async function createProductionHttpComposition(
     threadSearch,
     files,
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
+    ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
   });
   app.get("/api/identity/v1/method", async (_request, reply) =>
     reply.header("cache-control", "no-store").send({

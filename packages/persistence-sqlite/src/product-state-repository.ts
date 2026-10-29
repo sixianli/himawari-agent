@@ -86,6 +86,7 @@ import {
 } from "./migration-engine.js";
 import {
   SqliteExecutionContext,
+  type SqliteSlowOperation,
   type SqliteWorkerConfiguration,
 } from "./sqlite-execution-context.js";
 import { SqliteGitHubMonitorHistoryPolicyAdapter } from "./sqlite-github-history-policy.js";
@@ -105,6 +106,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly warningFreeBytes?: number;
   readonly now?: () => string;
   readonly qualification?: SqliteWorkerConfiguration["qualification"];
+  readonly onSlowOperation?: (operation: SqliteSlowOperation) => void;
 }
 
 export interface SqliteCheckpointResult {
@@ -208,14 +210,17 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       } finally {
         database.close();
       }
-      const context = await SqliteExecutionContext.start({
-        databasePath,
-        writerSequence: migrations.length,
-        busyTimeoutMs,
-        minimumFreeBytes,
-        warningFreeBytes,
-        ...(options.qualification ? { qualification: options.qualification } : {}),
-      });
+      const context = await SqliteExecutionContext.start(
+        {
+          databasePath,
+          writerSequence: migrations.length,
+          busyTimeoutMs,
+          minimumFreeBytes,
+          warningFreeBytes,
+          ...(options.qualification ? { qualification: options.qualification } : {}),
+        },
+        options.onSlowOperation,
+      );
       return new SqliteProductStateRepository({
         stateRoot,
         databasePath,

@@ -588,6 +588,12 @@ export async function runAgentService(
     repository = await SqliteProductStateRepository.open({
       stateRoot: configuration.stateRoot,
       databasePath: path.join(layout.data, "product.sqlite"),
+      onSlowOperation: (operation) =>
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "sqlite.slow_operation",
+          ...operation,
+        }),
     });
     writeStartupStep(output, "state-opened");
     const activeRepository = repository;
@@ -1651,6 +1657,12 @@ export async function runAgentService(
         onCommandAccepted: () => {
           runs?.loop.wakeup();
         },
+        onSlowRequest: (request) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "http.slow_request",
+            ...request,
+          }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
           if (await runs.background?.cancel(input.runId)) return;
