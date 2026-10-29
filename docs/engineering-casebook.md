@@ -86,6 +86,7 @@ date: "2026-10-26"
   59. [一轮 185 秒里有 60 秒在工具调用前后空等：同一次调用把几秒内不会变的宿主文件查了 7 遍](#case-tool-gap-host-check)
   60. [想要“隐私最好、价格最低”，最后改成“先用自己已付费的套餐”：本机 Magpie 网关替 Agent 在多个套餐之间切换](#case-magpie-subscriptions)
   61. [做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索](#case-document-tools)
+  63. [问个简单问题也要 10 秒：13 轮真实对话拆出三处空等，模型真正思考只占 1.5 秒](#case-conversation-speed)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -110,8 +111,8 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview) |
@@ -3981,6 +3982,66 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 **面试 30 秒版**
 
 “用户说做一份 Word 要等 50 秒。我把那一轮按步骤拆开，发现有 30 秒和 77% 的输出 token 花在模型自己摸索上：服务器没装文档库，它先探测，再手写 Word 的 XML。PDF 难看是因为沙箱连字体目录都读不到。我先在生产机上模拟安装量出代价，再请负责人批准，只用官方源装库和字体，放开沙箱的字体目录；然后学 Anthropic 和 OpenAI 的技能格式，提示里只加一行索引，详细做法用到时再读。最后加了上线检查，缺库就拒绝上线。”
+
+[返回目录](#contents)
+
+<a id="case-conversation-speed"></a>
+
+## 案例 63：问个简单问题也要 10 秒：13 轮真实对话拆出三处空等，模型真正思考只占 1.5 秒
+
+**背景与现象**
+
+2026-10-30 00:18（日本时间），Andy 在 iPhone 上用第十九版试了几轮对话后说：“问一个很简单问题，都要花很久的时间。”只调一次模型的简单问题，从按发送到看到第一个字用了 6.5–16.3 秒；带工具的轮次 30–110 秒。他要求做一个“对话提速专项”。
+
+**根因**
+
+写了一个只读脚本 `speed-profile.mjs`：在生产机上读最近的轮次，只输出时间、次数和长度，不输出对话内容；把每轮拆成“发送 → 找记忆 → 第一次模型请求 → 等到第一个字 → 思考 → 写字 → 工具开工 → 工具执行”，审批等待单独列出并剔除。13 轮（10-29 23:46 到 10-30 00:22）的结果：
+
+1. **模型出第一个字前等 5.1 秒（中位数，28 次请求，合计 142 秒，占 32%）。** 等待时间和请求大小无关：4 千 token、没命中缓存的请求等 5.0 秒，2 万 token、大部分命中缓存的请求也等 5.1 秒，所以不是提示词太长。再在生产机上用短请求实测（每组 5 次）：经 Magpie（本机模型路由程序）路由组中位数 3.0 秒，直指 OpenCode Go 2.5 秒，走 CodeBuddy 新加坡 1.1 秒，生产机到 opencode.ai 的网络只占约 0.5 秒。路由组每次先试两个在生产机上一直被拒（429）的免费模型，平时多花约 0.5 秒，冷却过后的第一次多花约 4 秒（23:46 那一轮等了 9.0 秒，Magpie 日志同一分钟有两条 429）。
+2. **每个工具开工前空等 3.2 秒（中位数）。** 日志 `sandbox.srt_session.timing` 显示：写文件、执行命令各要新开一个常驻沙箱会话，各 3.2–5.0 秒；而 [ADR 0085](adr/0085-remove-per-turn-system-gaps.md) 去掉每轮预热后，会话要等工具请求走完准入和派发（2.4–6.7 秒）才开始启动，两段串行。
+3. **模型开工前 3.4 秒（中位数）。** 其中找记忆要先经 Vercel 把问题变成向量，中位数 1.5 秒；隔几分钟再发的第一轮 1.9–9.1 秒，而向量请求的超时等于整个模型请求的时限，慢的那次只能干等。
+
+模型真正“思考”的时间中位数只有 1.5 秒。
+
+**我们的方案**（[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)）
+
+1. Pi（Himawari 所基于的 Agent 框架）的流式事件里本来就有“工具调用开始”（`toolcall_start`），并带工具名。Himawari 的 Pi 适配层看到它就立即回调，服务对 `bash`、`write`、`edit` 调用 ADR 0054 留下的预热入口，同时启动两个会话，同一轮只一次。真正的调用照旧走完整准入，只复用已经启动的沙箱进程。
+2. 找记忆的向量请求第一次最多等 3 秒；超时记为“结果不确定”，用新的调用序号重新登记再发一次。3 秒取自 10-28 的 40 轮实测（第 90 百分位 2.29 秒）。
+3. Andy 在选择卡上定了 Magpie 路由顺序：CodeBuddy 新加坡 → Go DeepSeek → Go GLM → 免费模型挪到最后。
+
+**方案讨论与备选**
+
+- **恢复每轮开始就预热**：最早启动，但 10-26 实测每轮 4.9–7.5 秒，不用工具的轮次也付，还和流式写盘抢磁盘（ADR 0085 否定过）。
+- **按对话常驻沙箱、跨轮复用**：第二轮起完全不用启动，但要改复用键、租约和停沙箱的时机，涉及安全设计，留作后续。
+- **工具调用开始时预热（选用）**：只在真的要用工具时付，启动和模型写参数、准入、派发重叠；代价是模型写了调用又没执行时白启动一次。
+- **找记忆改本机小向量模型**：每次约 90 毫秒，但常驻约 1.4 GB 内存、要重建索引，Andy 10-28 定“以后做”。
+- **两个向量请求同时发、先回先用**：尾部最短，但每轮都花两份钱、两条记账；超时后再发只在慢时多花一份。
+- **路由去掉免费模型 / 把 CodeBuddy 排第一**：前者零代价，省约 0.5 秒；后者再省约 1.4 秒，但更多私人对话经新加坡（留存 14 天、经社区登录插件），额度上限未核实。交给 Andy 选，他选了后者。不换贵模型。
+
+**业界主流做法**
+
+- ✅ OpenAI《Latency optimization》（<https://developers.openai.com/api/docs/guides/latency-optimization>）列了七条原则：“Process tokens faster. Generate fewer tokens. Use fewer input tokens. Make fewer requests. Parallelize. Make your users wait less. Don't default to an LLM.”流式输出“cuts the waiting time to a second or less”；并行：“If the steps are not strictly sequential, you can split them out into parallel calls.”
+- ✅ LiteLLM Router 文档（<https://docs.litellm.ai/docs/routing>）：限流时“Immediate on 429 response”就把该部署暂时移出，默认冷却 5 秒。
+- ✅ SQLite《Write-Ahead Logging》（<https://www.sqlite.org/wal.html>）：`synchronous=NORMAL` 下“the checkpoint is the only operation to issue an I/O barrier”，触发检查点的那次提交会“much slower”。用来解释流式写盘偶尔 1–2 秒的尖峰，本次没处理。
+
+**对比与取舍**
+
+OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒，流式帮不上；我们做的是它说的“Parallelize”（沙箱启动和模型写参数、准入并行）和“Make your users wait less”（砍掉找记忆的长尾）。LiteLLM 遇 429 只冷却 5 秒，冷却一过又先去撞被拒的免费模型；Magpie 的行为类似，所以最稳妥的做法是把一直被拒的来源挪到最后，而不是靠冷却。
+
+**结果数据**
+
+- 诊断基线（生产只读，13 轮，原始输出 `result-20261029T1530Z.json`、`journal-20261029T1530Z.txt`）：首字中位数 5.1 秒；工具开工前中位数 3.2 秒；模型开工前中位数 3.4 秒；找记忆中位数 1.5 秒、最慢 9.1 秒；思考阶段中位数 1.5 秒。
+- 首字探测（生产机，每组 5 次短请求，`model-latency-20261029T1537Z.txt`）：路由组 3.0 秒、直指 Go 2.5 秒、CodeBuddy 1.1 秒。
+- 门槛自证：去掉适配层的回调后，`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的新测试失败（`expected +0 to be 1`），恢复后通过；去掉向量请求的 3 秒上限后，`apps/agent-service/test/production-model-composition.unit.test.ts` 的新测试失败，恢复后通过。
+- 上线后的节省：未测量。合并上线后用真实网页同样的问题做前后对比，追加到本案例。
+
+**相关 ADR/PR**
+
+[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
+
+**面试 30 秒版**
+
+“用户说简单问题也要等十几秒。我没急着换模型，而是写了只读脚本，把 13 轮真实对话按步骤拆开，剔除等用户确认的时间。结果模型真正思考只占 1.5 秒，慢在三处空等：路由每次先撞两个被拒的免费模型、工具开工前才去冷启动沙箱、找记忆的向量请求偶尔 9 秒。我在模型刚开始写工具调用时就并行预热沙箱，给向量请求设 3 秒上限后重发一次，并用生产机实测的首字数据让负责人自己定路由顺序。”
 
 [返回目录](#contents)
 

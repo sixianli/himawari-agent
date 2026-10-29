@@ -18,7 +18,14 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
-import { type EmbeddingBoundary, gatewayEmbeddingUsage } from "@himawari-agent/memory-engine";
+import {
+  type EmbeddingBoundary,
+  type EmbeddingRequest,
+  gatewayEmbeddingUsage,
+} from "@himawari-agent/memory-engine";
+
+const FIRST_EMBEDDING_ATTEMPT_MS = 3_000;
+const EMBEDDING_ATTEMPT_TIMED_OUT = "EMBEDDING_ATTEMPT_TIMED_OUT";
 
 export function embeddingAdmissionDescriptor(
   configuration: ProductConfiguration,
@@ -81,7 +88,12 @@ export function createProductionRunMemory(options: {
     memory: ProductMemoryRecord;
   }>();
   const descriptor = embeddingAdmissionDescriptor(options.configuration);
-  options.projection.bindEmbeddingBoundary(async (request, send) => {
+  const embedOnce = async (
+    request: EmbeddingRequest,
+    send: Parameters<EmbeddingBoundary>[1],
+    ordinal: number,
+    attemptMs?: number,
+  ) => {
     const context = scope.getStore();
     const projection = projectionScope.getStore();
     context?.signal?.throwIfAborted();
@@ -182,7 +194,7 @@ export function createProductionRunMemory(options: {
         dataClassification: classification,
         logicalSlot: context.embeddingSlot ?? "context-memory-search:v1",
         source: "embedding",
-        ordinal: 1,
+        ordinal,
         estimatedCostMicros: descriptor.estimatedCostMicros,
         pricing: descriptor.pricing,
       });
@@ -201,7 +213,10 @@ export function createProductionRunMemory(options: {
       if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
       await permit.markStarted();
       started = true;
-      const timeoutMs = Math.max(1, Math.floor(remaining()));
+      const timeoutMs = Math.max(
+        1,
+        Math.floor(Math.min(remaining(), attemptMs ?? Number.POSITIVE_INFINITY)),
+      );
       const timeout = AbortSignal.timeout(timeoutMs);
       const signal = context?.signal ? AbortSignal.any([context.signal, timeout]) : timeout;
       let response: Awaited<ReturnType<typeof send>>;
@@ -216,6 +231,8 @@ export function createProductionRunMemory(options: {
           options.configuration.memory.dimensions,
         );
       } catch (error) {
+        if (attemptMs !== undefined && timeout.aborted && !context?.signal?.aborted)
+          throw new Error(EMBEDDING_ATTEMPT_TIMED_OUT);
         if (context && !context.signal?.aborted)
           providerFailedSearches.set(context, embeddingFailureCode(error));
         options.diagnostic?.(embeddingFailureDiagnostic(error));
@@ -232,6 +249,20 @@ export function createProductionRunMemory(options: {
       if (started && !settled) await permit.markUnknown("transport_unresolved");
       else if (!started) await permit.releaseReserved();
       throw error;
+    }
+  };
+  options.projection.bindEmbeddingBoundary(async (request, send) => {
+    if (projectionScope.getStore() || !scope.getStore()?.runId) return embedOnce(request, send, 1);
+    try {
+      return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
+      options.diagnostic?.({
+        component: "agent-service",
+        event: "memory.embedding_retried",
+        afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),
+      });
+      return embedOnce(request, send, 2);
     }
   }, options.configuration.deadlines.providerRequestMs);
   return {
