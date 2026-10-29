@@ -3396,6 +3396,10 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 [ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)、[事故清单 I-19](incidents-and-gates.md#incidents)、[案例 39 真模型跑 Jarvis Test](#case-jarvis-test-evals)。
 
+**后续（2026-10-29）**
+
+Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.15 / 0.47 和 0.15 / 0.50 美元每百万 token，都不是 DeepSeek 一家；两者当裁判谁更准都没测过），14:44 选定 `zai/glm-5.3-flash`。因为模型名已经集中在一个文件里，这次只改了 `test/fixtures/jarvis-test/models.json` 一行，校准和抽查照旧。
+
 **面试 30 秒版**
 
 “我们的评测裁判一个月花的钱比生产主模型还多。我在网关日志里逐条核对，发现是设计裁判时只要求‘和被测模型不是同一家’，没比价格，选了最贵的一档，还写死在代码里。修法是三件事：模型名集中到一个配置文件；裁判换成同样异厂、价格约二十分之一的模型，保留每轮校准和人工抽查来兜住判错；再加一道提交前的检查，代码里出现贵模型名就失败。网关层的模型白名单更硬，但要付费套餐，记成以后的第二道防线。”
