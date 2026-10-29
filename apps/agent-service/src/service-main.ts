@@ -36,13 +36,13 @@ import {
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
-  GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   DescriptorRelativeReadOnly,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
   EXECUTION_UDS_ERROR_CODES,
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
+  GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
@@ -92,6 +92,13 @@ import {
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
+import {
+  createProactivePushSource,
+  PROACTIVE_MAX_OUTPUT_TOKENS,
+  ProductionProactive,
+  proactiveCostEstimator,
+  proactiveRedirectUri,
+} from "./production-proactive.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -105,13 +112,6 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
-import {
-  createProactivePushSource,
-  PROACTIVE_MAX_OUTPUT_TOKENS,
-  ProductionProactive,
-  proactiveCostEstimator,
-  proactiveRedirectUri,
-} from "./production-proactive.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -1200,6 +1200,7 @@ export async function runAgentService(
         now: () => clock.now(),
         payloads,
         admission,
+        diagnostic: (event) => writeServiceDiagnostic(errorOutput, event),
       });
       governedMemory = memory;
       const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);

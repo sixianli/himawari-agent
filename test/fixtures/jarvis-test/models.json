@@ -1,5 +1,5 @@
 {
   "schemaVersion": 1,
   "decisionJudge": { "id": "typesafe-ai/jev-1.14.0", "version": "jev-1.14.0" },
-  "reasoningJudge": { "id": "alibaba/qwen3.8-flash", "version": "qwen3.8-flash" }
+  "reasoningJudge": { "id": "zai/glm-5.3-flash", "version": "glm-5.3-flash" }
 }

@@ -1,5 +1,6 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -128,10 +129,11 @@ describe("Jarvis Test score history", () => {
 
   it("refuses a live round when no gateway key can reach the request", () => {
     const environment = { PATH: process.env.PATH ?? "" };
-    const result = spawnSync(process.execPath, ["scripts/jarvis-test/live.mjs"], {
-      encoding: "utf8",
-      env: environment,
-    });
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/jarvis-test/live.mjs", "--confirm-cost=1"],
+      { encoding: "utf8", env: environment },
+    );
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("JARVIS_LIVE_KEY_REQUIRED");
     const unknown = spawnSync(process.execPath, ["scripts/jarvis-test/live.mjs", "--trails=1"], {
@@ -140,5 +142,59 @@ describe("Jarvis Test score history", () => {
     });
     expect(unknown.status).toBe(2);
     expect(unknown.stderr).toContain("JARVIS_LIVE_UNKNOWN_OPTION");
+  });
+
+  it("refuses a live round until a spending cap is confirmed", () => {
+    const environment = { PATH: process.env.PATH ?? "", AI_GATEWAY_API_KEY: "unused" };
+    for (const options of [[], ["--confirm-cost=0"], ["--confirm-cost=abc"], ["--trials=1"]]) {
+      const result = spawnSync(process.execPath, ["scripts/jarvis-test/live.mjs", ...options], {
+        encoding: "utf8",
+        env: environment,
+      });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("JARVIS_LIVE_COST_APPROVAL_REQUIRED");
+      expect(result.stderr).toContain("美元");
+    }
+  });
+
+  it("refuses a live round when the gateway already rejects a one-token request", async () => {
+    const refusal = JSON.stringify({
+      error: {
+        message: "User budget exceeded. Current spend: $3.16, limit: $3.00.",
+        type: "quota_for_entity_exceeded",
+      },
+    });
+    const server = http.createServer((_request, response) => {
+      response.writeHead(402, { "content-type": "application/json" });
+      response.end(refusal);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address();
+      const result = await new Promise((resolve) => {
+        const child = spawn(
+          process.execPath,
+          ["scripts/jarvis-test/live.mjs", "--confirm-cost=1"],
+          {
+            env: {
+              PATH: process.env.PATH ?? "",
+              AI_GATEWAY_API_KEY: "unused",
+              HIMAWARI_JARVIS_PREFLIGHT_URL: `http://127.0.0.1:${port}/v1`,
+            },
+          },
+        );
+        let stderr = "";
+        child.stderr.on("data", (chunk) => {
+          stderr += chunk;
+        });
+        child.on("close", (status) => resolve({ status, stderr }));
+      });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("JARVIS_LIVE_GATEWAY_REFUSED");
+      expect(result.stderr).toContain("HTTP 402");
+      expect(result.stderr).toContain("User budget exceeded");
+    } finally {
+      server.close();
+    }
   });
 });

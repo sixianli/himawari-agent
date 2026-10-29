@@ -1709,6 +1709,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
   it.each([
     ["429: provider overloaded PRIVATE_PROVIDER_DATA", "PI_MODEL_RATE_LIMITED"],
     ["401: PRIVATE_CREDENTIAL", "PI_MODEL_AUTH_FAILED"],
+    ["402: User budget exceeded PRIVATE_SPEND", "PI_MODEL_QUOTA_EXCEEDED"],
     ["503: provider unavailable", "PI_MODEL_UNAVAILABLE"],
     ["arbitrary message containing 429", "PI_MODEL_ERROR"],
   ])(
