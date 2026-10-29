@@ -41,7 +41,7 @@ const message = (id: MessageId, values?: Record<string, unknown>) =>
   `${id}${values ? JSON.stringify(values) : ""}`;
 
 const render = (
-  list: (query: LibraryQuery) => Promise<{ items: RegisteredFile[]; nextCursor: null }>,
+  list: (query: LibraryQuery) => Promise<{ items: RegisteredFile[]; nextCursor: string | null }>,
 ) =>
   act(async () =>
     root.render(
@@ -100,4 +100,20 @@ it("words the shared loading text plainly in every language", () => {
   expect(zh["state.loading"]).toBe("正在加载…");
   expect(en["state.loading"]).toBe("Loading…");
   expect(ja["state.loading"]).toBe("読み込み中…");
+});
+
+it("says the file count is a lower bound while more pages are still on the server", async () => {
+  await render(async () => ({ items: [file("f1", "report.md")], nextCursor: "cursor-2" }));
+  await act(async () => {});
+  expect(container.querySelector(".files-library-count")?.textContent).toBe(
+    'library.count{"count":1,"more":"yes"}',
+  );
+});
+
+it("gives the exact file count once the server has no more pages", async () => {
+  await render(async () => ({ items: [file("f1", "report.md")], nextCursor: null }));
+  await act(async () => {});
+  expect(container.querySelector(".files-library-count")?.textContent).toBe(
+    'library.count{"count":1,"more":"no"}',
+  );
 });
