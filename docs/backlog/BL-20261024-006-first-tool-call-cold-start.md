@@ -4,7 +4,7 @@ document_type: "backlog"
 record_id: "BL-20261024-006"
 record_state: "open"
 date: "2026-10-24"
-updated: "2026-10-26"
+updated: "2026-10-30"
 priority: "normal"
 item_type: "defect"
 source_idea: ""
@@ -33,3 +33,4 @@ superseded_by: ""
 - 2026-10-25 方案 3 已实现：打包时把 Pi runner 合并成少量文件，云端容器里从启动到就绪约 1.2 秒降到约 0.2 秒，ls、grep、read、write、edit、bash（含大输出）结果与原来逐字节一致；Job Host 在 runner 就绪时结束 launch 步骤并发一次心跳，计时日志里能看到 launch 本身的耗时，Job Host 自己的 Node 启动时间可由总时间减出。部署影响：runner 字节每次都会变，部署须走能力升级两步命令。
 - 2026-10-25 同一 Run 复用已修：重新认领执行租约（审批等待后）不再改变复用键；方案 1 已实现：Run 开始时预热常驻环境和两个会话，失败只写诊断、退回冷启动。设计记在 [ADR 0054 的 2026-10-25 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)。待 Hermes 第 0–4 层和新的计时确认效果后关闭。
 - 2026-10-26 生产日志显示每轮预热用 4.9–7.5 秒，并和事件写入变慢、运行完成推迟重合，而不用工具的轮次也在预热。按 Andy 同意的方案 B，已去掉每轮预热，改为第一次用到 `bash`、`write`、`edit` 时才启动（[ADR 0085](../adr/0085-remove-per-turn-system-gaps.md#decision)）；按对话复用常驻沙箱是方案 B 的下一步。第一次工具调用的实际耗时上线后按 `run.timing` 和 `sandbox.srt_session.timing` 实测。
+- 2026-10-30 第十九版 13 轮生产数据：工具开工前中位数仍空等 3.2 秒，新开一个会话 3.2–5.0 秒，且要等准入和派发（2.4–6.7 秒）走完才开始启动。改为模型一开始写 `bash`、`write`、`edit` 调用就预热（[ADR 0119](../adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)），效果上线后用真实网页前后对比确认；按对话复用常驻沙箱仍是下一步。

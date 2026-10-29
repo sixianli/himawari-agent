@@ -857,6 +857,100 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
   expect(send).toHaveBeenCalledTimes(1);
 });
 
+it("gives a slow memory-search embedding three seconds, then asks once more under a new invocation", async () => {
+  const selected = selectedEmbeddingConfiguration(temporaryDirectory);
+  const configuration = {
+    ...selected,
+    deadlines: { ...selected.deadlines, providerRequestMs: 30_000 },
+  };
+  let boundary: EmbeddingBoundary | undefined;
+  const now = "2026-09-06T00:00:00.000Z";
+  const permits: ModelInvocationPermit[] = [];
+  const begin = vi.fn(async (_input: { readonly ordinal: number }) => {
+    const permit: ModelInvocationPermit = {
+      assertActive: vi.fn(async () => {}),
+      markStarted: vi.fn(async () => {}),
+      releaseReserved: vi.fn(async () => {}),
+      settle: vi.fn(async () => {}),
+      markUnknown: vi.fn(async () => {}),
+    };
+    permits.push(permit);
+    return { disposition: "fresh", permit };
+  });
+  const diagnostics: Readonly<Record<string, string>>[] = [];
+  const send = vi
+    .fn()
+    .mockImplementationOnce(
+      (options?: { timeoutMs?: number; signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          expect(options?.timeoutMs).toBe(3000);
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason));
+        }),
+    )
+    .mockImplementationOnce(async (options?: { timeoutMs?: number }) => {
+      expect(options?.timeoutMs).toBe(30_000);
+      return {
+        data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => 0.1) }],
+        model: "alibaba/qwen3-embedding-8b",
+        providerMetadata: {
+          gateway: {
+            cost: "0.00000019",
+            generationId: "retry-generation",
+            routing: { finalProvider: "deepinfra" },
+          },
+        },
+        usage: { prompt_tokens: 8, total_tokens: 8 },
+      };
+    });
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: {
+      bindEmbeddingBoundary: (value) => {
+        boundary = value;
+      },
+    },
+    payloads: { get: async () => ({ dataClassification: "private" }) as never },
+    memory: {
+      search: async () => {
+        if (!boundary) throw new Error("BOUNDARY_MISSING");
+        await boundary(
+          { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4096 },
+          send,
+        );
+        return [];
+      },
+    },
+    admission: async () => ({ begin }) as never,
+    budget: {} as never,
+    assertActive: async () => {},
+    now: () => now,
+    diagnostic: (event) => diagnostics.push(event),
+  });
+  const started = performance.now();
+  await expect(
+    memory.search({
+      ownerId: configuration.ownerId,
+      agentId: configuration.agentId,
+      runId: "run-embedding-retry" as never,
+      executionLease: {} as never,
+      dataClassification: "private",
+      queryRef: "query" as never,
+      queryTerms: [],
+      limit: 3,
+      deadlineAt: "2026-09-06T00:01:00.000Z",
+    }),
+  ).resolves.toEqual([]);
+  expect(performance.now() - started).toBeGreaterThanOrEqual(2900);
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(begin.mock.calls.map(([input]) => input.ordinal)).toEqual([1, 2]);
+  expect(permits[0]?.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+  expect(permits[0]?.settle).not.toHaveBeenCalled();
+  expect(permits[1]?.settle).toHaveBeenCalledTimes(1);
+  expect(diagnostics).toEqual([
+    { component: "agent-service", event: "memory.embedding_retried", afterMs: "3000" },
+  ]);
+});
+
 it("retries only unstarted projection reservations and never repeats an uncertain provider request", async () => {
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
   let boundary: EmbeddingBoundary | undefined;

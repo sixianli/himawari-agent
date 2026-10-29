@@ -430,8 +430,10 @@ function createAdapter(
   createSession: ReturnType<typeof fakeSessionFactory>,
   model: Partial<Model<Api>> = {},
   now: () => string = () => NOW,
+  onToolCallStarted?: PiAgentRuntimeAdapterDependencies["onToolCallStarted"],
 ) {
   return new PiAgentRuntimeAdapter({
+    ...(onToolCallStarted ? { onToolCallStarted } : {}),
     projection,
     tools,
     models: {
@@ -1130,6 +1132,64 @@ describe("Pi Agent Runtime adapter compatibility", () => {
         ?.occurredAt;
     expect(timeOf(boundaries[0]?.ref)).toBe(expected["text_start"]);
     expect(timeOf(boundaries[1]?.ref)).toBe(expected["toolcall_start"]);
+  });
+
+  it("announces a streamed tool call by name as soon as it starts, before its events are recorded", async () => {
+    const projection = new RecordingProjection();
+    const started: [string, string][] = [];
+    let startedWhenArgumentsBegan = -1;
+    const message = {
+      role: "assistant",
+      timestamp: 456,
+      content: [
+        { type: "thinking", thinking: "plan" },
+        { type: "toolCall", id: "call-1", name: "write", arguments: {} },
+        { type: "toolCall", id: "call-2", name: "bash", arguments: {} },
+      ],
+    };
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({ type: "agent_start" });
+        emit({ type: "message_start", message });
+        emit({
+          type: "message_update",
+          message,
+          assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+        });
+        emit({
+          type: "message_update",
+          message,
+          assistantMessageEvent: { type: "toolcall_start", contentIndex: 1 },
+        });
+        startedWhenArgumentsBegan = started.length;
+        emit({
+          type: "message_update",
+          message,
+          assistantMessageEvent: { type: "toolcall_delta", contentIndex: 1 },
+        });
+        emit({
+          type: "message_update",
+          message,
+          assistantMessageEvent: { type: "toolcall_start", contentIndex: 2 },
+        });
+        emit({
+          type: "message_end",
+          message: { ...message, content: [{ type: "text", text: "Done" }], stopReason: "stop" },
+        });
+        emit({ type: "agent_settled" });
+      }),
+      {},
+      () => NOW,
+      (runRequest, toolName) => started.push([runRequest.runId, toolName]),
+    );
+    await collect(adapter.run(request));
+    expect(startedWhenArgumentsBegan).toBe(1);
+    expect(started).toEqual([
+      [request.runId, "write"],
+      [request.runId, "bash"],
+    ]);
   });
 
   it("exposes only authorized custom tools and maps Pi lifecycle events after settlement", async () => {
