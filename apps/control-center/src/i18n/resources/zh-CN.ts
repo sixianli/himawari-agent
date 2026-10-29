@@ -145,9 +145,8 @@ export const messages = {
   "chat.depth": "思考深度（下一轮）",
   "chat.search.disclosure":
     "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询仍会拦截。撤销后，后续搜索重新确认。",
-  "chat.search.recipients": "接收方：",
   "chat.search.remember": "记住我的选择，之后允许联网搜索",
-  "chat.search.afterRevoke": "关闭后，下一次需要联网搜索时会在对应会话中询问。",
+  "chat.search.afterRevoke": "现在关着，需要联网搜索时会先在对话里问你。",
   "chat.search.other": "先问你再做的操作",
   "review.archiveDescription": "归档只整理列表，会话内容仍保留。",
   "review.manageArchives": "管理",
@@ -817,7 +816,10 @@ export const messages = {
   "process.cacheHitHint":
     "这一轮输入里，模型服务商直接复用之前已算过的前文（大模型的 KV 缓存）所占的比例；这部分更快、更便宜。",
   "chat.search.purpose": "问题需要最新信息时，自动搜索网页",
-  "chat.search.whatIsSent": "搜索服务会收到什么",
+  "chat.search.whatIsSent": "搜索时会发出什么",
+  "chat.search.sentQuery":
+    "你的问题会被改写成搜索词，发给 {services}；打开网页时，网址也会发给它们。",
+  "chat.search.sentLimits": "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会被拦下。",
   "chat.search.otherScope": "删除文件、联网执行命令、读写工作目录以外的文件",
   "chat.search.alwaysOn": "固定开启",
   "settings.name": "怎么称呼你",

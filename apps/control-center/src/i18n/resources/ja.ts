@@ -156,9 +156,8 @@ export const messages = {
   "chat.depth": "思考の深さ（次のターン）",
   "chat.search.disclosure":
     "生成した検索語を 下記のウェブ検索サービスに送信します（ページを読む場合はその URL も送信します）。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。認証情報は引き続き検出・遮断します。取り消すと以後の検索に確認が必要です。",
-  "chat.search.recipients": "送信先：",
   "chat.search.remember": "選択を記憶して、今後のウェブ検索を許可する",
-  "chat.search.afterRevoke": "オフにすると、次の検索時に該当する会話で確認します。",
+  "chat.search.afterRevoke": "いまはオフなので、検索が必要なときは会話で先に確認します。",
   "chat.search.other": "先に確認する操作",
   "review.archiveDescription": "アーカイブは一覧を整理し、会話の内容を保持します。",
   "review.manageArchives": "管理",
@@ -863,7 +862,11 @@ export const messages = {
   "process.cacheHitHint":
     "このターンの入力のうち、モデル提供元が以前に処理した文脈（LLM の KV キャッシュ）をそのまま再利用した割合です。この部分は速く、安くなります。",
   "chat.search.purpose": "最新の情報が必要な質問では、自動でウェブを検索します",
-  "chat.search.whatIsSent": "検索サービスに送られる内容",
+  "chat.search.whatIsSent": "検索で送られるもの",
+  "chat.search.sentQuery":
+    "質問は検索語に書き換えられて {services} に送られます。Web ページを開くときは、その URL も送られます。",
+  "chat.search.sentLimits":
+    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
   "chat.search.otherScope":
     "ファイルの削除、ネットワークを使うコマンドの実行、作業フォルダー外のファイルの読み書き",
   "chat.search.alwaysOn": "常にオン",

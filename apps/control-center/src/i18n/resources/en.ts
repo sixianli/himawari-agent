@@ -151,10 +151,8 @@ export const messages = {
   "chat.depth": "Thinking depth (next turn)",
   "chat.search.disclosure":
     "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
-  "chat.search.recipients": "Recipients:",
   "chat.search.remember": "Remember my choice and allow future web searches",
-  "chat.search.afterRevoke":
-    "After turning this off, the next search asks for permission in its conversation.",
+  "chat.search.afterRevoke": "It’s off now, so Himawari asks in the chat before it searches.",
   "chat.search.other": "Actions that ask you first",
   "review.archiveDescription": "Archiving tidies the list and keeps the conversation.",
   "review.manageArchives": "Manage",
@@ -861,7 +859,11 @@ export const messages = {
   "process.cacheHitHint":
     "The share of this turn's input that the model provider reused from context it had already processed (the LLM's KV cache). That part is faster and cheaper.",
   "chat.search.purpose": "Search the web automatically when a question needs current information",
-  "chat.search.whatIsSent": "What the search services receive",
+  "chat.search.whatIsSent": "What a search sends",
+  "chat.search.sentQuery":
+    "Your question is turned into search terms and sent to {services}. When a web page is opened, its address is sent to them too.",
+  "chat.search.sentLimits":
+    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
   "chat.search.otherScope":
     "Deleting files, running commands that use the network, and reading or writing files outside the workspace",
   "chat.search.alwaysOn": "Always on",

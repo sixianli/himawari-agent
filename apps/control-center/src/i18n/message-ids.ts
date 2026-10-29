@@ -136,7 +136,6 @@ export const MESSAGE_IDS = [
   "chat.depth",
   "chat.allowOnce",
   "chat.search.disclosure",
-  "chat.search.recipients",
   "chat.search.remember",
   "chat.search.afterRevoke",
   "chat.search.other",
@@ -766,6 +765,8 @@ export const MESSAGE_IDS = [
   "process.cacheHitHint",
   "chat.search.purpose",
   "chat.search.whatIsSent",
+  "chat.search.sentQuery",
+  "chat.search.sentLimits",
   "chat.search.otherScope",
   "chat.search.alwaysOn",
   "settings.name",
@@ -883,6 +884,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   Partial<Record<MessageId, Readonly<Record<string, string | number>>>>
 > = Object.freeze({
   "chat.environment.running": { count: 2 },
+  "chat.search.sentQuery": { services: "Exa" },
   "entry.unreachable.retrying": { seconds: 5 },
   "chat.environment.startedAt": { time: "12:04" },
   "chat.environment.openThread": { title: "研究记录" },
