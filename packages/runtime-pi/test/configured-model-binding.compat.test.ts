@@ -272,6 +272,55 @@ describe("ConfiguredPiModelBindingPort", () => {
     ).toThrow("model is unsupported");
   });
 
+  it("binds a Magpie routing group on a loopback address without gateway routing", async () => {
+    const runtime = new RecordingRuntime();
+    const { providerRouting: _routing, ...base } = modelDescriptor("primary");
+    const binding = new ConfiguredPiModelBindingPort({
+      descriptors: [
+        {
+          ...base,
+          provider: "magpie",
+          model: "group/himawari-main",
+          reasoning: true,
+          baseUrl: "http://127.0.0.1:3425/v1",
+        },
+      ],
+      secretSource: { productionSuitable: true, resolve: async () => SECRET },
+      runtimeFactory: { create: async () => runtime as unknown as PiModelRuntime },
+    });
+
+    const primary = await binding.resolve(PRIMARY_REF);
+
+    expect(primary.model).toBe(runtime.models.get("magpie:group/himawari-main"));
+    expect(runtime.registered[0]?.providerId).toBe("magpie");
+    expect(runtime.registered[0]?.config["baseUrl"]).toBe("http://127.0.0.1:3425/v1");
+    expect(primary.descriptor?.providerRouting).toBeUndefined();
+    const registeredModel = (runtime.registered[0]?.config["models"] as unknown[])[0];
+    expect(registeredModel).not.toHaveProperty("compat.thinkingFormat");
+    await binding.close();
+  });
+
+  it.each([
+    ["no base URL", {}, "baseUrl is required"],
+    ["a remote base URL", { baseUrl: "https://example.com/v1" }, "loopback HTTP URL"],
+    [
+      "gateway routing",
+      { baseUrl: "http://127.0.0.1:3425/v1", providerRouting: ROUTING },
+      "providerRouting",
+    ],
+  ] as const)("rejects a Magpie descriptor with %s", (_name, overrides, message) => {
+    const { providerRouting: _routing, ...base } = modelDescriptor("primary");
+    expect(
+      () =>
+        new ConfiguredPiModelBindingPort({
+          descriptors: [
+            { ...base, provider: "magpie", model: "group/himawari-main", ...overrides },
+          ],
+          secretSource: { productionSuitable: true, resolve: async () => SECRET },
+        }),
+    ).toThrow(message);
+  });
+
   it("works with the pinned Pi runtime without disk model discovery", async () => {
     const binding = new ConfiguredPiModelBindingPort({
       descriptors: descriptors(),

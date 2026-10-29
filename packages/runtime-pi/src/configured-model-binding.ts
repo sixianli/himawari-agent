@@ -51,11 +51,13 @@ export interface PiModelAdmissionCost {
   readonly estimatedCostMicros: number;
 }
 
+export type ConfiguredPiModelProvider = "vercel-ai-gateway" | "magpie";
+
 export interface ConfiguredPiModelDescriptor extends ModelDescriptor {
-  readonly provider: "vercel-ai-gateway";
+  readonly provider: ConfiguredPiModelProvider;
   readonly routingClass: "primary";
   readonly secretRequirement: ModelSecretRequirement;
-  readonly providerRouting: ModelProviderRouting;
+  readonly providerRouting?: ModelProviderRouting;
   readonly name: string;
   readonly api: "openai-completions";
   readonly baseUrl?: string;
@@ -121,7 +123,14 @@ function assertBaseUrl(value: string): void {
   }
 }
 
-function freezeRouting(routing: ModelProviderRouting): ModelProviderRouting {
+function assertMagpieBaseUrl(value: string, field: string): void {
+  const url = new URL(value);
+  if (url.protocol !== "http:" || !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname)) {
+    throw new TypeError(`${field} must be a loopback HTTP URL`);
+  }
+}
+
+function freezeRouting(routing: ModelProviderRouting | undefined): ModelProviderRouting {
   if (
     routing === undefined ||
     !Array.isArray(routing.order) ||
@@ -143,16 +152,21 @@ function freezeRouting(routing: ModelProviderRouting): ModelProviderRouting {
 }
 
 function freezeDescriptor(descriptor: ConfiguredPiModelDescriptor): ConfiguredPiModelDescriptor {
-  const providerRouting = freezeRouting(descriptor.providerRouting);
-  return Object.freeze({
+  const frozen = {
     ...descriptor,
     input: Object.freeze([...descriptor.input]),
     cost: Object.freeze({ ...descriptor.cost }),
     capabilities: Object.freeze([...descriptor.capabilities]),
     allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement: Object.freeze({ ...descriptor.secretRequirement }),
-    providerRouting,
-  });
+  };
+  if (descriptor.provider === "magpie") {
+    if (descriptor.providerRouting !== undefined) {
+      throw new TypeError("providerRouting is only supported for vercel-ai-gateway");
+    }
+    return Object.freeze(frozen);
+  }
+  return Object.freeze({ ...frozen, providerRouting: freezeRouting(descriptor.providerRouting) });
 }
 
 function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: number): void {
@@ -175,10 +189,15 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   ) {
     throw new TypeError(`${field}.reasoningRequired requires reasoning capability`);
   }
-  if (descriptor.provider !== "vercel-ai-gateway")
+  if (descriptor.provider === "vercel-ai-gateway") {
+    if (descriptor.model !== "deepseek/deepseek-v4.1-flash")
+      throw new TypeError(`${field}.model is unsupported`);
+  } else if (descriptor.provider === "magpie") {
+    if (descriptor.baseUrl === undefined) throw new TypeError(`${field}.baseUrl is required`);
+    assertMagpieBaseUrl(descriptor.baseUrl, `${field}.baseUrl`);
+  } else {
     throw new TypeError(`${field}.provider is unsupported`);
-  if (descriptor.model !== "deepseek/deepseek-v4.1-flash")
-    throw new TypeError(`${field}.model is unsupported`);
+  }
   if (descriptor.routingClass !== "primary")
     throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_PRIMARY");
   if (descriptor.api !== "openai-completions") throw new TypeError(`${field}.api is unsupported`);
@@ -245,7 +264,9 @@ function providerModelConfig(
       maxTokensField: "max_tokens",
       supportsUsageInStreaming: true,
       supportsStrictMode: descriptor.capabilities.includes("structured_outputs"),
-      ...(descriptor.reasoning ? { thinkingFormat: "openrouter" as const } : {}),
+      ...(descriptor.reasoning && descriptor.provider === "vercel-ai-gateway"
+        ? { thinkingFormat: "openrouter" as const }
+        : {}),
     },
   };
 }
@@ -333,7 +354,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     });
     try {
       runtime.registerProvider(first.provider, {
-        name: "Himawari AI Gateway",
+        name: first.provider === "magpie" ? "Himawari Magpie" : "Himawari AI Gateway",
         baseUrl,
         api: first.api,
         authHeader: true,

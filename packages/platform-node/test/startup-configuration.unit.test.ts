@@ -162,6 +162,61 @@ describe("strict product configuration", () => {
       ).toThrow();
   });
 
+  it("accepts a Magpie primary on a loopback address without gateway routing", () => {
+    const input = config(path.join(tmpdir(), "himawari-magpie-primary"));
+    const models = input["modelDescriptors"] as Record<string, unknown>[];
+    const { providerRouting: _routing, ...primary } = models[0] ?? {};
+    input["modelDescriptors"] = [
+      {
+        ...primary,
+        provider: "magpie",
+        model: "group/himawari-main",
+        baseUrl: "http://127.0.0.1:3425/v1",
+      },
+      models[1],
+    ];
+    const parsed = parseProductConfiguration(input, "2026-10-29T00:00:00.000Z");
+    expect(parsed.modelDescriptors[0]).toMatchObject({
+      provider: "magpie",
+      model: "group/himawari-main",
+      baseUrl: "http://127.0.0.1:3425/v1",
+    });
+    expect(parsed.modelDescriptors[0]?.providerRouting).toBeUndefined();
+  });
+
+  it.each([
+    { name: "a missing base URL", change: { baseUrl: undefined } },
+    { name: "a remote base URL", change: { baseUrl: "http://203.0.113.5:3425/v1" } },
+    { name: "an HTTPS base URL", change: { baseUrl: "https://127.0.0.1:3425/v1" } },
+    {
+      name: "gateway routing",
+      change: { providerRouting: { order: ["runware"], sort: "cost" } },
+    },
+    { name: "a missing credential", change: { secretRef: null } },
+  ])("refuses $name in a Magpie configuration", ({ change }) => {
+    const input = config(path.join(tmpdir(), "himawari-magpie-invalid"));
+    const models = input["modelDescriptors"] as Record<string, unknown>[];
+    const { providerRouting: _routing, ...primary } = models[0] ?? {};
+    input["modelDescriptors"] = [
+      {
+        ...primary,
+        provider: "magpie",
+        model: "group/himawari-main",
+        baseUrl: "http://127.0.0.1:3425/v1",
+        ...change,
+      },
+      models[1],
+    ];
+    expect(() => parseProductConfiguration(input, "2026-10-29T00:00:00.000Z")).toThrow();
+  });
+
+  it("refuses a base URL on an AI Gateway primary", () => {
+    const input = config(path.join(tmpdir(), "himawari-gateway-base-url"));
+    const models = input["modelDescriptors"] as Record<string, unknown>[];
+    input["modelDescriptors"] = [{ ...models[0], baseUrl: "http://127.0.0.1:3425/v1" }, models[1]];
+    expect(() => parseProductConfiguration(input, "2026-10-29T00:00:00.000Z")).toThrow();
+  });
+
   it("loads a versioned configuration without deriving paths from cwd", async () => {
     const stateRoot = path.join(tmpdir(), "himawari-explicit-state-root");
     const parsed = parseProductConfiguration(config(stateRoot), "2026-08-27T00:00:00.000Z");

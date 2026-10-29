@@ -181,15 +181,19 @@ function piGenerationDescriptor(
   configuration: ProductConfiguration,
   descriptor: ConfiguredCompletionsGenerationModelDescriptor,
 ): ConfiguredPiModelDescriptor {
-  if (descriptor.provider !== "vercel-ai-gateway") {
+  const provider = descriptor.provider;
+  if (provider !== "vercel-ai-gateway" && provider !== "magpie") {
     throw new Error("MODEL_PI_PROVIDER_UNSUPPORTED");
   }
   const secretRequirement = resolveConfiguredSecretRequirement(configuration, descriptor.secretRef);
   if (secretRequirement === null) throw new Error("MODEL_PI_SECRET_REQUIRED");
-  if (descriptor.providerRouting === undefined) throw new Error("MODEL_PI_ROUTING_REQUIRED");
+  if (provider === "vercel-ai-gateway" && descriptor.providerRouting === undefined)
+    throw new Error("MODEL_PI_ROUTING_REQUIRED");
+  if (provider === "magpie" && descriptor.baseUrl === undefined)
+    throw new Error("MODEL_PI_BASE_URL_REQUIRED");
   return Object.freeze({
     ref: descriptor.ref,
-    provider: "vercel-ai-gateway",
+    provider,
     model: descriptor.model,
     version: descriptor.version,
     routingClass: descriptor.role,
@@ -198,10 +202,15 @@ function piGenerationDescriptor(
     capabilities: Object.freeze([...descriptor.capabilities]),
     allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement,
-    providerRouting: Object.freeze({
-      order: Object.freeze([...descriptor.providerRouting.order]),
-      sort: descriptor.providerRouting.sort,
-    }),
+    ...(descriptor.providerRouting === undefined
+      ? {}
+      : {
+          providerRouting: Object.freeze({
+            order: Object.freeze([...descriptor.providerRouting.order]),
+            sort: descriptor.providerRouting.sort,
+          }),
+        }),
+    ...(descriptor.baseUrl === undefined ? {} : { baseUrl: descriptor.baseUrl }),
     name: descriptor.name,
     api: descriptor.api,
     reasoning: descriptor.reasoning,

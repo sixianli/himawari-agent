@@ -81,6 +81,7 @@ date: "2026-10-26"
   55. [来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文](#case-memory-history)
   56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
   57. [问“写到一个pdf文件”却带出前同事：记忆搜索没有相关度门槛，界面把“最不远的几条”说成“相关记忆”](#case-memory-relevance-threshold)
+  60. [想要“隐私最好、价格最低”，最后改成“先用自己已付费的套餐”：本机 Magpie 网关替 Agent 在多个套餐之间切换](#case-magpie-subscriptions)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -106,7 +107,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history) |
@@ -3649,6 +3650,74 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 **面试 30 秒版**
 
 “用户问‘写到一个 pdf 文件’，界面却说‘找到 3 条相关记忆’，带出的是前同事。查下来，混合检索只排序不判断，相似度门槛默认 0，记忆少的时候每轮都会带满，界面又把‘最近的几条’说成‘相关’。我用自己的数据实测相似度分布定了门槛，允许返回 0 条，0 条时界面整步不显示；把这个场景写成在旧代码上失败的测试接进检查；再建了一个固定评测集，修改前无关问题 100% 带出记忆，修改后 2.1%，代价是需要联想的问题召回下降，这个取舍和下一步要不要加重排，都由同一套基线来回答。”
+
+[返回目录](#contents)
+
+<a id="case-magpie-subscriptions"></a>
+
+## 案例 60：想要“隐私最好、价格最低”，最后改成“先用自己已付费的套餐”：本机 Magpie 网关替 Agent 在多个套餐之间切换
+
+**背景与现象**
+
+2026-10-29，Himawari 的主模型是 DeepSeek V4.1 Flash，经 Vercel AI Gateway（Vercel 的模型网关）调用。生产实际走的厂商是 Runware，每百万 token 输入 0.15 美元、输出 0.60 美元。Vercel 免费的 Hobby 套餐打不开“强制零保留”（数据不留存）开关。
+
+Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12 个候选，推荐的是：模型不换，改经 OpenRouter（一家模型路由公司）强制零保留，优先发给 Morph（一家推理厂商），单价约 0.046 / 0.404 美元。这时 Andy 又提出新目标：他已经付费订阅了 OpenCode Go、SuperGrok 等套餐，希望 Himawari 尽量用这些套餐里的额度，不再另外给路由商付钱，并点名要用 Magpie（一个开源的本地模型网关）。
+
+**根因**
+
+真正的问题不在选哪家，而在三个限制：
+
+- Himawari 只认一个写死的模型 `deepseek/deepseek-v4.1-flash` 和 Vercel 的地址。
+- 每次调用的费用只认 Vercel 返回的账单字段，别的通道一律当作“账单缺失”拒绝。
+- 订阅套餐和 API 不是一回事。很多套餐的额度只允许在官方认可的客户端里用，接到自己的服务上要看条款。
+
+**我们的方案**（[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)）
+
+1. 在生产机装 Magpie v0.1.2001：用固定版本，做 SHA256 校验，用专用系统用户，只监听本机 `127.0.0.1:3425`，关掉统计上报，也关掉它读取其他客户端登录信息的功能。
+2. Himawari 新增 `provider: "magpie"`。配置里写 Magpie 的路由组名和本机地址；校验只接受回环地址的 http，也不接受 Vercel 专用的路由参数。
+3. Pi（Himawari 底层的 Agent 框架）的 `openai-completions` 接口本来就支持自定义地址，所以直接复用，没有另写协议。Himawari 自己负责配置校验和费用记账：Magpie 不返回账单字段，就按配置里的单价乘以 token 数记账，没有单价就拒绝。
+4. Magpie 里按顺序排：先用 OpenCode Go 的 DeepSeek，再用 Go 的 GLM，再用 SuperGrok，最后才用 Vercel 上的 Morph 兜底。
+
+**方案讨论与备选**
+
+- **OpenRouter 加强制零保留**：隐私最好，但每次调用都要付钱，用不上已付费的套餐。Andy 明确不要。
+- **不经 Magpie，Himawari 直接连各家 API Key**：少一个常驻服务，但“额度用完换下一家”要自己写，SuperGrok 也没有 API Key 可用。
+- **借用订阅登录（Magpie 的卖点之一）**：额度最多，但 Anthropic 条款明文禁止经第三方用 Max 的登录凭证。腾讯 CodeBuddy 的免费额度只给客户端用，条款还禁止用脚本刷奖励。所以这两个不接。SuperGrok 也没有条款支持，Andy 知道风险后自己决定接。
+
+**业界主流做法**
+
+- ✅ Magpie README：“Keep going when a quota runs out: a provider's next account takes over, and a routing group moves on to another model or provider”。同一段对话固定用同一个账号，以保住提示词缓存：“A conversation stays on the account that answered it”。（[github.com/yetone/magpie](https://github.com/yetone/magpie)）
+- ✅ OpenRouter 价格页：“Zero Data Retention routing is available on every plan”。（[openrouter.ai/pricing](https://openrouter.ai/pricing)）
+- ✅ Vercel 零保留文档：“Zero data retention (ZDR) is available for Pro and Enterprise users on AI Gateway”。（[vercel.com/docs/ai-gateway/security-and-compliance/zdr](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)）
+- ✅ Claude Code 法律页：Anthropic 不允许第三方“route requests through Free, Pro, or Max plan credentials”。（[code.claude.com/docs/en/legal-and-compliance](https://code.claude.com/docs/en/legal-and-compliance)）
+- ✅ OpenCode Go 文档：“OpenCode Go is designed for OpenCode and other coding agents that produce similar types of requests.”（[opencode.ai/docs/go](https://opencode.ai/docs/go/)）
+
+**对比与取舍**
+
+业界的模型网关（OpenRouter、Vercel、LiteLLM 一类）解决的是“付钱买 token，按价格或速度选厂商”。Magpie 解决的是另一件事：手里已经有几份付了钱的额度，怎样不浪费。我们用了它的“额度用完自动换下一家”，只在条款允许、或者 Andy 自己承担风险的地方用订阅登录。
+
+代价有三个：
+
+- 多了一个 0.1.x 版本的常驻服务。
+- Himawari 看不到最终用了哪家，费用只能按单价估算。
+- Magpie 只监听本机时不检查访问密钥，生产机上的本地程序都能调用它。我们核对过，Himawari 执行命令的沙箱都用 `--unshare-all` 切断了网络，连不到这个端口。
+
+隐私上也有让步：Go 里的 DeepSeek 要打开“Global”地区才能用，数据可能离开美国和欧盟。这个让步是 Andy 在“只用套餐”和“隐私最好”之间亲自选的。
+
+**结果数据**
+
+- 安装：命令行版 61,681,826 字节，安装前后根分区剩余都是 18G；Magpie 常驻内存约 47 MB；Himawari 在整个过程中保持运行，重启次数 0（10-29 17:13 JST 的生产机读数）。
+- 新增测试：在本机起一个假的 Magpie，用固定版本的 Pi 真实发出流式请求。1000 个输入 token、100 个输出 token，按单价算出 630 微美元，与配置一致；请求里没有 Vercel 的路由参数。
+- 套餐额度：OpenCode Go 的 DeepSeek V4.1 Flash 每月 80 美元额度，官方估计约 17.3 万次。
+- 上线后的速度和质量：未测量（上线后在真实网页验收时补）。
+
+**相关 ADR/PR**
+
+[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`。
+
+**面试 30 秒版**
+
+“主人想把模型费用降到零，因为他已经付了好几个订阅套餐。我先调研了 12 个方案，确认订阅额度和 API 是两回事，有的条款明文禁止接到第三方服务上。最后在生产机本机放了一个开源网关 Magpie，只接条款允许或主人自己承担风险的套餐，额度用完自动换下一家，最后才用付费通道兜底。Agent 这边复用 Pi 的 OpenAI 兼容接口，只加了本机地址校验和按 token 记账，还用一个假网关的端到端测试证明了整条链路。”
 
 [返回目录](#contents)
 
