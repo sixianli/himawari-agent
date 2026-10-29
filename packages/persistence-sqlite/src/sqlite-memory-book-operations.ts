@@ -4,6 +4,7 @@ import type {
   MemoryPersonLinkMention,
   MemoryPersonMention,
   MemoryPersonSuggestion,
+  MemoryProfilePin,
   MemorySettings,
   MemorySubCategoryCount,
 } from "@himawari-agent/application";
@@ -64,6 +65,14 @@ export class SqliteMemoryBookOperations {
         return this.readSettings(payload as Scope);
       case "memoryBook.writeSettings":
         return this.writeSettings(payload as Scope & { capturePaused: boolean; updatedAt: string });
+      case "memoryBook.markViewed":
+        return this.markViewed(payload as Scope & { viewedAt: string });
+      case "memoryBook.setProfilePin":
+        return this.setProfilePin(
+          payload as Scope & { memoryId: MemoryId; pinned: boolean; updatedAt: string },
+        );
+      case "memoryBook.listProfilePins":
+        return this.listProfilePins(payload as Scope);
       case "memoryBook.latestGeneration":
         return this.latestGeneration(payload as Scope);
       case "memoryBook.listExpiredTrash":
@@ -106,13 +115,74 @@ export class SqliteMemoryBookOperations {
   private readSettings(scope: Scope): MemorySettings {
     const row = this.database
       .prepare(
-        `SELECT capture_paused AS capturePaused, updated_at AS updatedAt FROM memory_settings
+        `SELECT capture_paused AS capturePaused, updated_at AS updatedAt,
+          last_viewed_at AS lastViewedAt FROM memory_settings
         WHERE owner_id = ? AND agent_id = ?`,
       )
       .get(scope.ownerId, scope.agentId) as
-      | { readonly capturePaused: number; readonly updatedAt: string }
+      | {
+          readonly capturePaused: number;
+          readonly updatedAt: string;
+          readonly lastViewedAt: string | null;
+        }
       | undefined;
-    return { capturePaused: row?.capturePaused === 1, updatedAt: row?.updatedAt ?? null };
+    return {
+      capturePaused: row?.capturePaused === 1,
+      updatedAt: row?.updatedAt ?? null,
+      lastViewedAt: row?.lastViewedAt ?? null,
+    };
+  }
+
+  private markViewed(input: Scope & { viewedAt: string }): void {
+    this.assertDiskHeadroom();
+    if (!validTime(input.viewedAt))
+      this.fail("PORT_INVALID_OPERATION", "Memory page view time is invalid");
+    this.database
+      .prepare(
+        `INSERT INTO memory_settings (owner_id, agent_id, capture_paused, updated_at, last_viewed_at)
+        VALUES (?, ?, 0, ?, ?)
+        ON CONFLICT (owner_id, agent_id) DO UPDATE SET last_viewed_at = excluded.last_viewed_at`,
+      )
+      .run(input.ownerId, input.agentId, input.viewedAt, input.viewedAt);
+  }
+
+  private setProfilePin(
+    input: Scope & { memoryId: MemoryId; pinned: boolean; updatedAt: string },
+  ): void {
+    this.assertDiskHeadroom();
+    if (typeof input.pinned !== "boolean" || !validTime(input.updatedAt))
+      this.fail("PORT_INVALID_OPERATION", "Memory profile choice is invalid");
+    const owned = this.database
+      .prepare("SELECT 1 FROM memory_records WHERE id = ? AND owner_id = ? AND agent_id = ?")
+      .get(input.memoryId, input.ownerId, input.agentId);
+    if (!owned) this.fail("PORT_NOT_FOUND", `Memory ${input.memoryId} not found`);
+    this.database
+      .prepare(
+        `INSERT INTO memory_profile_pins (memory_id, owner_id, agent_id, pinned, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (memory_id) DO UPDATE SET pinned = excluded.pinned,
+          updated_at = excluded.updated_at`,
+      )
+      .run(input.memoryId, input.ownerId, input.agentId, input.pinned ? 1 : 0, input.updatedAt);
+  }
+
+  private listProfilePins(scope: Scope): MemoryProfilePin[] {
+    return (
+      this.database
+        .prepare(
+          `SELECT memory_id AS memoryId, pinned, updated_at AS updatedAt FROM memory_profile_pins
+          WHERE owner_id = ? AND agent_id = ? ORDER BY memory_id`,
+        )
+        .all(scope.ownerId, scope.agentId) as {
+        memoryId: MemoryId;
+        pinned: number;
+        updatedAt: string;
+      }[]
+    ).map((row) => ({
+      memoryId: row.memoryId,
+      pinned: row.pinned === 1,
+      updatedAt: row.updatedAt,
+    }));
   }
 
   private writeSettings(input: Scope & { capturePaused: boolean; updatedAt: string }): void {

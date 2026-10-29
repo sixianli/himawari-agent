@@ -243,6 +243,14 @@ class TemplateTest(RenderedPacket):
         return json.loads(child.stdout)['problems']
 
 
+class SandboxReadPathsTest(RenderedPacket):
+    def test_model_sandbox_can_read_fonts_and_font_configuration(self):
+        seal = (self.render() / 'signing' / 'cloud-seal.mjs').read_text()
+        listed = seal.split('readOnlyToolchainPaths: [', 1)[1].split('].map(', 1)[0]
+        for path in ('"/usr/share"', '"/etc/fonts"', '"/var/cache/fontconfig"'):
+            self.assertIn(path, listed)
+
+
 class DerivedExpectationsTest(RenderedPacket):
     TAG = '[PG-2]'
 

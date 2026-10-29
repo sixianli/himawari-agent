@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 65;
+const CURRENT_SCHEMA_SEQUENCE = 66;
 
 afterEach(async () => {
   await Promise.all(
@@ -140,9 +140,9 @@ describe("immutable SQLite migration engine", () => {
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
         appliedSequences: [
           29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
-          51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
+          51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
         ],
-        currentSequence: 65,
+        currentSequence: 66,
       });
       expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);
@@ -170,9 +170,9 @@ describe("immutable SQLite migration engine", () => {
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
         appliedSequences: [
           40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
-          62, 63, 64, 65,
+          62, 63, 64, 65, 66,
         ],
-        currentSequence: 65,
+        currentSequence: 66,
       });
       expect(readMigrationLedger(database).slice(0, 39)).toEqual(ledger);
       expect(
@@ -204,9 +204,9 @@ describe("immutable SQLite migration engine", () => {
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
         appliedSequences: [
           41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62,
-          63, 64, 65,
+          63, 64, 65, 66,
         ],
-        currentSequence: 65,
+        currentSequence: 66,
       });
       expect(readMigrationLedger(database).slice(0, 40)).toEqual(before);
       expect(
@@ -334,9 +334,9 @@ it("preserves schema 43 history and bars writers that cannot read queue authorit
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
       appliedSequences: [
-        44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
+        44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
       ],
-      currentSequence: 65,
+      currentSequence: 66,
     });
     expect(readMigrationLedger(database).slice(0, 43)).toEqual(history);
     expect(
@@ -346,7 +346,7 @@ it("preserves schema 43 history and bars writers that cannot read queue authorit
       () => assertWritableSchema(database, 43),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 65)).not.toThrow();
+    expect(() => assertWritableSchema(database, 66)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -363,16 +363,16 @@ it("preserves schema 44 history and fences writers without queued Pi recovery", 
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
       appliedSequences: [
-        45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
+        45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
       ],
-      currentSequence: 65,
+      currentSequence: 66,
     });
     expect(readMigrationLedger(database).slice(0, 44)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 44),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 65)).not.toThrow();
+    expect(() => assertWritableSchema(database, 66)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -389,16 +389,16 @@ it("preserves schema 45 history and fences writers without directory move claims
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
       appliedSequences: [
-        46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
+        46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
       ],
-      currentSequence: 65,
+      currentSequence: 66,
     });
     expect(readMigrationLedger(database).slice(0, 45)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 45),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 65)).not.toThrow();
+    expect(() => assertWritableSchema(database, 66)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -415,16 +415,16 @@ it("preserves schema 46 history and rejects writers that ignore copy authority a
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
       appliedSequences: [
-        47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
+        47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
       ],
-      currentSequence: 65,
+      currentSequence: 66,
     });
     expect(readMigrationLedger(database).slice(0, 46)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 46),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 65)).not.toThrow();
+    expect(() => assertWritableSchema(database, 66)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -440,15 +440,17 @@ it("preserves schema 47 history and fences writers that cannot keep task environ
     const history = readMigrationLedger(database);
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-      appliedSequences: [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65],
-      currentSequence: 65,
+      appliedSequences: [
+        48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
+      ],
+      currentSequence: 66,
     });
     expect(readMigrationLedger(database).slice(0, 47)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 47),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 65)).not.toThrow();
+    expect(() => assertWritableSchema(database, 66)).not.toThrow();
     expect(database.pragma("foreign_key_check")).toEqual([]);
   } finally {
     database.close();
@@ -464,15 +466,15 @@ it("preserves schema 48 history and fences writers that cannot read thread title
     const history = readMigrationLedger(database);
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-      appliedSequences: [49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65],
-      currentSequence: 65,
+      appliedSequences: [49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66],
+      currentSequence: 66,
     });
     expect(readMigrationLedger(database).slice(0, 48)).toEqual(history);
     expectMigrationCode(
       () => assertWritableSchema(database, 48),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 65)).not.toThrow();
+    expect(() => assertWritableSchema(database, 66)).not.toThrow();
     expect(
       database
         .prepare("SELECT 1 FROM pragma_table_info('model_budget_accounts') WHERE name = ?")
@@ -497,8 +499,8 @@ it("preserves schema 49 history and fences writers without administrator reserva
     expect(() => assertWritableSchema(database, 49)).not.toThrow();
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-      appliedSequences: [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65],
-      currentSequence: 65,
+      appliedSequences: [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66],
+      currentSequence: 66,
     });
     expect(readMigrationLedger(database).slice(0, 49)).toEqual(history);
     expect(
@@ -508,14 +510,14 @@ it("preserves schema 49 history and fences writers without administrator reserva
         )
         .all(),
     ).toEqual([
-      { key: "current_sequence", value: "65" },
-      { key: "minimum_writer_sequence", value: "65" },
+      { key: "current_sequence", value: "66" },
+      { key: "minimum_writer_sequence", value: "66" },
     ]);
     expectMigrationCode(
       () => assertWritableSchema(database, 49),
       SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
     );
-    expect(() => assertWritableSchema(database, 65)).not.toThrow();
+    expect(() => assertWritableSchema(database, 66)).not.toThrow();
     expect(
       database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
     ).toBe(0);

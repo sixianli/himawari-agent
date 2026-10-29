@@ -78,10 +78,14 @@ date: "2026-10-26"
   51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
   52. [19 条界面意见里一半是低级错误：让真浏览器检查在每次提交时先找一遍](#case-ui-batch-1029)
   53. [评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住](#case-no-expensive-models)
+  54. [“档案”到底是什么：把它从一个页签改成记忆上的“每次对话都带上”开关，由用户说了算](#case-carried-memories)
   55. [来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文](#case-memory-history)
   56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
   57. [问“写到一个pdf文件”却带出前同事：记忆搜索没有相关度门槛，界面把“最不远的几条”说成“相关记忆”](#case-memory-relevance-threshold)
+  58. [模型写的 Word 在预览栏里只显示“不能预览”：九个开源方案实跑对比，在严格安全策略下把 Word 样式装进影子根](#case-file-preview)
+  59. [一轮 185 秒里有 60 秒在工具调用前后空等：同一次调用把几秒内不会变的宿主文件查了 7 遍](#case-tool-gap-host-check)
   60. [想要“隐私最好、价格最低”，最后改成“先用自己已付费的套餐”：本机 Magpie 网关替 Agent 在多个套餐之间切换](#case-magpie-subscriptions)
+  61. [做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索](#case-document-tools)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -103,14 +107,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -1067,6 +1071,8 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 **相关 ADR/PR**
 
 [ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆）；原型 <https://claude.ai/artifact/SJkcL4hNPHeM2V6Nk3V4jL>；设计说明 <https://claude.ai/artifact/CykKuRNV26pNSBcfvNsDNR>；数据库迁移 `0057_memory_page.sql`；[PR #34](https://github.com/sixianli/himawari-agent/pull/34)（提交 bfa6162）。
+
+**后续（2026-10-29）**：四个页签又被 Andy 问出了问题：“档案”看起来像一份能单独编辑的资料，其实是每轮从记忆里现挑的；“新”标签没有信息量；三行筛选难懂。页面改成“记忆”“变化记录”两个标签和按主题浏览，档案改成每条记忆上的“每次对话都带上”开关，见[案例 54](#case-carried-memories) 和 [ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)。
 
 **面试 30 秒版**
 
@@ -3471,6 +3477,73 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 
 [返回目录](#contents)
 
+<a id="case-carried-memories"></a>
+
+## 案例 54：“档案”到底是什么：把它从一个页签改成记忆上的“每次对话都带上”开关，由用户说了算
+
+**背景与现象**
+
+2026-10-29（日本时间），记忆页已经按[案例 17](#case-memory-page) 分成待确认、档案、全部记忆、时间线四个页签。Andy 用了几天后连着提问：“档案到底是什么，跟记忆什么关系，为什么能单独编辑？”“哪些记忆能进档案，是不是全凭大模型？”“每行后面的‘新’有什么意义？”“如果有 100 个类、每类 100 条怎么办？”“大类、小类、状态三行按钮是什么关系？”
+
+**根因**
+
+查代码发现，界面和后台对“档案”的理解不一致：
+
+1. 后台没有“档案”这份资料。`OwnerProfileService` 每轮对话前从当前记忆里现挑一遍：五个类别之一、重要度 ≥600、非敏感、总长 ≤2000 字。网页却把它做成一个能单独编辑的页签，看上去像是另一份资料。
+2. 进不进档案全由模型打的分决定，用户没有办法干预。600 这个门槛没有测量依据。
+3. 手动添加有缺陷（[事故 I-21](incidents-and-gates.md#incidents)）。分类靠关键词猜，没猜中就默认“身份”；重要度写死 600，正好等于门槛。所以手动添加的每一条都进了档案，“我每天必须喝咖啡”被当成身份，每轮都带给模型。
+4. “新”的意思是“7 天内更新过”，和用户有没有看过无关。三行筛选的数字口径也不一致。
+
+**我们的方案**
+
+先调研，再按[产品愿景](product-vision.md)核对，然后发可切换的原型（方案 A/B/C、电脑和手机、13 条和 1 万条、三语）。Andy 选了方案 A（[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)）：
+
+- **档案改成记忆身上的一个标记。** 界面上叫“每次对话都会带上的记忆”。每条记忆有开关“每次对话都带上”，用户的选择优先于自动挑选：打开的排在最前，关掉的不再自动带上。用户没碰过的仍按原规则挑。选择存在新表 `memory_profile_pins`。敏感记忆和事件、健康、财务、其他类不能打开，服务端也会拒绝。
+- **把预算摆出来。** 顶部卡片写明带上几条、已用多少字（满 2000 字）、几条放不下，展开后能看到放不下的和自己关掉的。
+- **手动添加不再自动进档案。** 没猜中归“其他”；重要度改为 500（要求类 800）；表单里有开关，默认关。
+- **页面结构。** 只留“记忆”“变化记录”两个标签，待确认的事放在页面顶部，有才出现。按主题浏览：电脑上是左侧目录，手机上是下拉列表。全部主题下每个主题先显示最新 3 条，选中主题后每次显示 30 条。已归档和最近删除改成列表下方的链接。详情在电脑上从右侧滑出，在手机上从底部弹出。
+- **“新”改成“自你上次打开后新记住 N 条”。** 打开时间存在 `memory_settings.last_viewed_at`。
+- **打开开关不花钱。** 开关只写一张表，不经过会重新生成向量的 `saveWithProjection`。也因为这个原因，“换主题”这次没做。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 方案 B：保留四个页签，只改文案和筛选 | 改动最小 | 解决不了“档案为什么能单独编辑”的误解 |
+| 方案 C：首页是主题格子，点进去看列表 | 一眼看出各主题多少条 | 多一层点击；搜索和开关没地方放，手机上更挤 |
+| 让用户直接编辑一段档案文本 | 像 ChatGPT 的个性化说明一样直观 | 档案和记忆会成为两份互相矛盾的事实，违背“记忆可靠” |
+| 手动添加时调用模型分类 | 分得更准 | 每次添加都要花模型调用的钱；先用“猜一个、让用户改”，模型分类记为 [BL-20261029-001](backlog/BL-20261029-001-manual-memory-model-category.md) |
+| 重新校准 600 门槛 | 有测量依据 | 要跑评测、要花钱，按“花钱先问”等 Andy 决定 |
+
+放弃了什么：自动挑选的规则仍然没有测量依据；“换主题”要等确认能跳过重新嵌入后再做（[BL-20261029-002](backlog/BL-20261029-002-memory-change-topic.md)）。
+
+**业界主流做法**
+
+- ✅ Claude 官方博客（[Claude's memory works everywhere, and you decide what's in it](https://claude.com/blog/claudes-memory-works-everywhere-and-you-decide-whats-in-it)）：“Everything Claude remembers is in a list of files under Topics in Memory settings.” 也就是按主题列出、逐条可看可改。
+- ✅ Claude 帮助中心（[How does Claude's memory work](https://support.claude.com/en/articles/11817273)）：Claude “saves memory as a set of individual topics as you chat”；每个项目有自己的记忆，可以关掉“Use account memory”。
+- ✅ Nielsen Norman Group（[Filters vs. Facets](https://www.nngroup.com/articles/filters-vs-facets/)）：多维筛选的成本高，“A simple filter can often be easier to understand and faster to use.” 这支持把三行筛选减成一个主题目录。
+- ⚠ ChatGPT 记忆 FAQ：本次打开仍返回 HTTP 403，没有核对，面试时不要引用。
+
+**对比与取舍**
+
+Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实际带上了哪些。Himawari 的底层是一条条带来源和更正历史的事实（[ADR 0075](adr/0075-self-built-memory-engine.md)），所以我们没有合成主题段落，而是在每条事实上加一个“每次都带上”的开关，并把 2000 字的预算和放不下的条目明着给用户看。代价是多一张表和一层“用户选择优先”的排序；好处是用户能解释、也能纠正“模型为什么总记得这件事”。
+
+**结果数据**
+
+- 测试（本线程云端容器）：`npx vitest run --config vitest.workspace.ts apps/control-center/test` 共 76 个文件 1074 条通过；新增的 `[MEM-PIN]` 测试覆盖开关、放不下的条目、上次打开以来新记住的条数、45 条分页、手动添加的主题和开关。
+- 事故 I-21 的门槛：没猜中关键词时归“其他”的测试在修复前的代码上失败（`expected { category: 'identity' } to deeply equal { category: 'other' }`），修复后通过。
+- 截图核对：中英日三语、电脑 1280 像素和手机 390 像素共 21 张，无横向滚动、无页面报错（脚本输出 `NO_PROBLEMS`），存为基线 `docs/assets/control-center/2026-10-29-v12/`。
+- 记忆页脚本体积（`npm run build` 输出）：50.88 kB，gzip 后 13.46 kB；改动前的体积未测量。
+- 真实使用效果（Andy 是否更快找到记忆、开关用了几次）：未测量，等上线后看。
+- 2026-10-29 追加（合成数据对比，Andy 同意后跑，数据和脚本在项目文件 `memory-importance-eval/`）：用 36 句虚构主人说的话，比较现行规则（DeepSeek V4.1 Flash 打分）和 Jev 判断“该不该每次都带上”。28 句明确的里，现行规则判对 24 句、Jev 21 句，两者都没有把不该带的错带上；两次重跑结果完全一致。现行规则漏掉的 4 句重要度都在 850 以上，原因是提取提示词把家人的名字和职业算成“他人隐私”、把“花钱先问我”算成“财务”，都标成敏感，敏感记忆不进档案。改了提示词的分类说明后复测 11 句：家人 3 句和这条规矩两次都改判为普通信息并进档案，家人的心理咨询、存款、朋友分手 3 句仍是敏感。费用：对比 0.0798 美元，复测 0.0228 美元。
+
+**相关 ADR/PR**
+
+[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)、[ADR 0075](adr/0075-self-built-memory-engine.md)、[事故清单 I-21](incidents-and-gates.md#incidents)；原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；迁移 `0066_memory_profile_pins.sql`；本案例的 PR 在分支 `claude/project-thread-44hlmo`；前情见[案例 17](#case-memory-page)。
+
+**面试 30 秒版**
+
+“用户问我‘档案到底是什么，为什么能单独编辑’。我查代码发现，后台根本没有档案这份资料：它是每轮对话前按类别、重要度和 2000 字预算，从记忆里现挑出来的。挑选全凭模型打分，手动添加的记忆还因为一个默认值全部被挑了进去。我把档案改成每条记忆上的‘每次都带上’开关，用户的选择优先于模型，同时把预算用了多少、哪些放不下明着给用户看。页面也从四个页签减到两个，按主题浏览。数据量从 13 条涨到 1 万条，结构不用改。”
 <a id="case-memory-history"></a>
 
 ## 案例 55：来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文
@@ -3653,6 +3726,131 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 
 [返回目录](#contents)
 
+<a id="case-file-preview"></a>
+
+## 案例 58：模型写的 Word 在预览栏里只显示“不能预览”：九个开源方案放在同一页实跑对比，再在严格的安全策略下把 Word 样式装进影子根
+
+**背景与现象**
+
+2026-10-29，Andy 让 Himawari 把当天日本新闻头条写成 Word。文件做出来了，可在 Himawari 网页右侧的预览栏点开，只看到一句“这种文件不能在这里预览，可以下载后打开”（UI 第二批第 31 条）。PDF 虽然能看，但用的是浏览器自带的查看器，外观、语言、深浅色都跟 Himawari 不一样，手机上的表现也没保证。Andy 的要求是：去看开源预览工具里“显示效果最好、用户体验最好”的是哪些，“给我看看效果，我再决定”。
+
+**根因**
+
+这不是一个 bug，是功能缺口：预览栏只认文本、图片、网页和浏览器能原生打开的 PDF；`.docx`、`.xlsx` 是压缩包里装 XML（一种带标签的文本格式），浏览器不会显示，要有人把它们“排版”成网页。难点在两处：
+
+- 选哪种排版方式。在浏览器里转，还是在服务器上用 LibreOffice（开源办公套件）转成 PDF，还是部署一个完整的在线文档服务，效果、体积、许可证、隐私差别很大。
+- Himawari 主站的内容安全策略（Content Security Policy，浏览器按它拒绝不允许的脚本和样式）只允许本站的样式文件：`style-src 'self'`，图片只允许本站和 `data:`。主流的 Word 网页渲染库会往页面里插 `<style>` 元素、把图片做成 `blob:` 地址，这两样都会被策略拒绝，结果就是一页没样式、没图片的白板。
+
+**我们的方案**
+
+- **先给效果再决定。** 用同一批含中、日、英文的样例（两页 Word：页眉、彩色字、表格底色、合并单元格、图片、编号列表；两张表的 Excel：合并标题、填充色、边框、百分比公式、日元金额、冻结表头；由 Word 导出的 PDF；含长行的 txt），在一个演示页里让 9 个方案现场渲染，服务器方案用 LibreOffice 真转。Andy 看完问“LibreOffice 效果这么好为什么不用”，我们把代价讲清楚后，他选了推荐方案。
+- **PDF：** pdf.js（Mozilla 的开源 PDF 渲染库）逐页画到画布上，按栏宽铺满，叠透明文字层可选中复制，只画滚到附近的页。
+- **Word：** docx-preview。把它生成的 `<style>` 写进一个不挂在页面上的元素，再把样式文本转成“可构造样式表”（`new CSSStyleSheet()` + `replaceSync`），挂到预览框自己的影子根（Shadow DOM，样式和主页面互不影响的一块区域）上；图片改成 `data:` 地址；关掉会继承主站来源的嵌入 HTML 块；链接只留 http、https、mailto。Symbol 字体的项目符号字符在没有该字体的设备上会变方框，渲染前换成普通圆点。
+- **Excel：** ExcelJS 只负责读文件，Himawari 自己写一个纯函数模块把工作表变成“表格模型”（列宽、行高、合并、颜色、边框、数字格式、冻结行、隐藏行列、2000 行上限），再用 React 画成普通网页表格。
+- 三个库都按需加载，不打开对应文件就不下载；文件只从本站读文件接口读取。
+
+**方案讨论与备选**
+
+| 方案 | 好处 | 代价 | 结论 |
+| --- | --- | --- | --- |
+| 浏览器自带 PDF 查看器（原做法） | 零代码 | 外观和语言不受控，手机表现无保证 | 换掉 |
+| docx-preview | 最像 Word，约 49 KB | 只在手动分页处分页，不支持目录域 | Word 采用 |
+| mammoth | 干净的网页文字，手机上最好读 | 故意丢颜色、字号、页眉、分页 | 不用 |
+| @js-preview/excel | 拿来即用，像 Excel 的网格 | 百分比、金额格式丢失（0.2142857）；canvas 上不能选中；界面文字写死中文；约 458 KB | 不用 |
+| SheetJS 社区版 | 读得最全最快 | 不读颜色、字体、边框；新版不在 npm | 不用 |
+| ExcelJS + 自己画表 | 样式全、格式对、可选中、三语和主题可控 | 画表代码要自己写和维护 | Excel 采用 |
+| 服务器 LibreOffice 转 PDF | Word 还原度最高，以后可顺带支持老格式 | 生产机要装约 313 MB 和中日文字体；每个文件首开多等约 1.3 秒；Excel 被按 A4 切页；在服务器上解析外来文件要沙箱 | 以后需要老格式时再加 |
+| OnlyOffice / Collabora | 能看能改，效果最好 | 要单独部署重服务；OnlyOffice 社区版 AGPL-3.0 | 违背“不堆集成”，不用 |
+| @cyntler/react-doc-viewer | 一个组件覆盖多种格式 | Word、Excel 交给微软在线服务，只支持公开网址 | 违背“数据自持”，排除 |
+
+放弃的东西：Word 不能像 LibreOffice 那样按内容自动分页；Excel 不显示图表、图片和条件格式；不支持 `.doc`、`.xls`、`.pptx`。
+
+**业界主流做法**
+
+- ✅ pdf.js 官网：“A general-purpose, web standards-based platform for parsing and rendering PDFs.” [mozilla.github.io/pdf.js](https://mozilla.github.io/pdf.js/)
+- ✅ docx-preview README 写明它的取舍：“library is limited by HTML capabilities”，并且“Realtime page breaking is not implemented”。[github.com/VolodymyrBaydalka/docxjs](https://github.com/VolodymyrBaydalka/docxjs)
+- ✅ react-doc-viewer README：“This library uses the official MS Office online document viewing service”，Office 文件“only supports public file URLs”。[github.com/cyntler/react-doc-viewer](https://github.com/cyntler/react-doc-viewer)
+- ✅ Univer 导入导出文档：“The APIs below need a conversion backend.” [docs.univer.ai](https://docs.univer.ai/guides/sheets/features/import-export)
+- ✅ OnlyOffice README：“ONLYOFFICE Docs is licensed under the GNU Affero Public License, version 3.0.” [github.com/ONLYOFFICE/DocumentServer](https://github.com/ONLYOFFICE/DocumentServer)
+- ✅ SheetJS 安装文档：第三方托管的版本“Due to syncing issues, they are generally out of date.” [docs.sheetjs.com](https://docs.sheetjs.com/docs/getting-started/installation/standalone)
+- ✅ MDN 关于可构造样式表：“A constructed stylesheet is a stylesheet created programmatically using the CSSStyleSheet() constructor”，可以被影子根采用。[developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/ShadowRoot/adoptedStyleSheets)
+
+**对比与取舍**
+
+业界常见两条路：要“能改”的产品部署 OnlyOffice、Collabora 这类文档服务；只要“能看”的产品在浏览器里渲染，或者交给微软、谷歌的在线查看器。Himawari 是一个人的私有 Agent，文件只该留在主人自己的服务器和浏览器里，所以排除了在线查看器；只读预览不值得多养一个服务，所以排除了文档服务。和很多直接把库塞进页面的做法不同，我们不放宽主站安全策略（不加 `'unsafe-inline'`），而是把 Word 的样式转成可构造样式表、装进影子根，既过了策略，又让 Word 的样式不会泄漏到 Himawari 自己的界面上。
+
+**结果数据**
+
+- 演示页实测（2026-10-29，云端容器 Chrome，九个方案同时开跑）：各方案渲染耗时数百毫秒到约 1 秒，只作参考；LibreOffice 转一份两页 Word 实测 1.43、1.27、1.31 秒。出处：本线程演示页和命令输出。
+- 构建实测（`npm run build:browser` 的体积报告）：首页脚本压缩后 306,735 → 312,232 字节；按需加载的 docx-preview 48,738 字节、ExcelJS 255,576 字节、pdf.js 128,205 字节（另有 worker）。
+- 浏览器测试 `scripts/test-file-preview-browser.mjs`：套用生产安全策略，Chromium 和 WebKit 各 6 组（中英日 × 1280/390 宽）全部通过，无策略拒绝、无横向滚动。
+- 单元测试：表格模型 4 条、预览面板 33 条（含新增 Word、Excel、过大文件、PowerPoint 分支和 Excel 真文件渲染、坏文件提示）通过。
+- 真 iPhone 上的效果：未测量，等下一次完整版本上线后 Andy 看。
+
+**相关 ADR/PR**
+
+[ADR 0114](adr/0114-file-preview-pdf-word-excel-in-browser.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[案例 36 “更多”栏](#case-more-panel)。PR 见 ADR 0114 所在分支 `claude/project-thread-6vnjqg`。
+
+**面试 30 秒版**
+
+“我们的 Agent 会写 Word 和 Excel，但预览栏打不开。我没有直接挑一个库，而是把九个开源方案放在同一页、用同一批中日英样例实跑，让产品负责人看效果再选；服务器转 PDF 效果最好，但要多装 300 多 MB、每个文件多等 1.3 秒，Excel 还会被切成 A4 页，所以没选。最后 PDF 用 pdf.js，Word 用 docx-preview，Excel 用 ExcelJS 读、自己画表。最难的是主站安全策略不允许内嵌样式，我把 Word 的样式转成可构造样式表装进影子根，没放宽策略就让它在 Chrome 和 Safari 内核里都正常显示，并用一套套着生产策略的浏览器测试守住。”
+
+[返回目录](#contents)
+
+<a id="case-tool-gap-host-check"></a>
+
+## 案例 59：一轮 185 秒里有 60 秒在工具调用前后空等：同一次调用把几秒内不会变的宿主文件查了 7 遍
+
+**背景与现象**
+
+2026-10-29 12:51（日本时间），Andy 在生产网页让 Himawari 规划一条至少 80 公里的骑行路线并输出 PDF，整轮 185.3 秒、花费 0.067 美元。他问慢在哪。按每次模型请求和工具调用的起止时间逐段拆开（诊断脚本 `run-trace.mjs`，Mac 线程在生产机上只读运行）：模型生成 72.5 秒，沙箱（用操作系统机制限制程序能访问的文件和网络的隔离环境）里命令真正执行 44.2 秒，剩下 60.1 秒是工具调用前后的空等，平均每次调用前约 3.0 秒、调用后约 2.0 秒。KV 缓存（模型把已经算过的前文存起来，下次同样的开头不用重算）命中 92.4%，12 次请求都是严格追加，这一部分已经是最优。
+
+**根因**
+
+第二次只读诊断导出了这一轮的 `sandbox.admission.timing` 日志：
+
+1. 11 次沙箱工具调用一共做了 77 次完整核对（`resolve`，确认这次执行仍被允许），合计 27.98 秒。其中宿主核验（核对沙箱程序、工作区和工具链文件没被替换、没被改权限）12.6 秒，每次平均 163 毫秒；授权判断 6.4 秒；读执行范围 2.9 秒；工作区身份 2.0 秒；部署快照 1.2 秒。
+2. 每次调用在 Worker（受限执行进程）启动前做 4 次，运行中再做约 3 次。[ADR 0078](adr/0078-authority-check-once-then-version-compare.md) 只让运行中的执行复用结果，准入和绑定每次完整重做，所以同一批文件在几秒内被查 7 遍。这是代码证据加日志数据确认的。
+3. 还没确认的：模型说完到第一次核对之间 0.5–2.5 秒、Worker 结束到结果交回模型之间约 2.1 秒，这两段没有任何分段日志，只能推断（流式事件逐条写盘、保存续跑点、写结果日志）。
+
+**我们的方案**（[ADR 0116](adr/0116-reuse-host-file-check-by-file-state.md)）
+
+1. 服务进程里的宿主核验按“文件状态”复用最长 10 秒：每次先做不碰磁盘的计划核对，再用 `lstat` 并行读所有受检路径的设备号、inode 编号、权限、所有者（普通文件加大小和纳秒级时间），算成摘要；10 秒内同一摘要核验通过过就跳过重的检查。核验前后摘要一致、并且没有文件在 2 秒内刚被改过，才记下结果。
+2. 授权判断、读执行范围、工作区身份每次照常做；Worker 启动时自己的宿主核验也照常完整做。撤销授权的生效时间不变。
+3. 给剩下两段没解释的空等加分段计时：`tool.dispatch.timing`、`tool.workflow.timing`、`sandbox.tool_result.timing` 三条日志，以及 Pi（Himawari 所基于的 Agent 框架）适配层在工具执行前的三段等待 `tool.history_wait`、`tool.checkpoint.drain`、`tool.checkpoint.save`，记进每轮的 `run.timing`。Pi 自己的工具循环不改，只在 Himawari 的适配层外面包一层计时。
+
+**方案讨论与备选**
+
+- **按版本号复用整份核对结果（含授权）**：能省约 21 秒，但授权判断也不再每次做，改动 ADR 0078 已验证过的逻辑。用选择卡问 Andy，等计时数据出来再定。
+- **只按时间缓存宿主核验**：最简单，但 ADR 0067 已否决只按时间信任结果，文件被替换时发现不了。
+- **什么都不复用，只加计时**：最安全，但 12.6 秒照旧。
+- 选了“按文件状态复用宿主核验”：只省最确定的重复工作，任何受检文件的信息一变就完整重查。放弃的是“上层目录被换掉而受检路径信息不变”这种情况的即时发现，最长晚 10 秒，且 Worker 启动时还有一次完整核验兜住。
+
+**业界主流做法**
+
+- ✅ Git 文档《Use of index and Racy Git problem》（<https://git-scm.com/docs/racy-git>）：“the index entries record the information obtained from the filesystem via `lstat`(`2`) system call when they were last updated”，“If some of these "cached stat information" fields do not match, Git can tell that the files are modified without even looking at their contents.” 同文指出时间戳精度内的原地改写会让文件“racily clean”（看起来没变其实变了）。
+
+**对比与取舍**
+
+和 Git 一样，我们用 `lstat` 信息判断文件有没有变，没变就不重读内容；也和 Git 一样，对“刚改过的文件”不信任时间戳（Git 把修改时间不早于索引写入时间的条目当作可疑，我们要求文件稳定 2 秒以上）。不同的是 Git 的目的是省时间，信息看错最多是漏报一次修改；我们的目的是安全核验，所以另加了 10 秒上限，并保留 Worker 启动时的完整核验。
+
+**结果数据**
+
+- 诊断基线：185.3 秒 = 模型 72.5 + 命令 44.2 + 空等 60.1；77 次完整核对 27.98 秒，宿主核验 12.6 秒（生产日志，2026-10-29 只读导出）。
+- 云端容器里一次完整宿主核验约 0.85 毫秒，复用约 0.41 毫秒（本线程临时基准测试）；和生产 163 毫秒差两个数量级，生产上的时间花在哪还未测量。
+- 上线后的节省：未测量。第十九版上线后用真实对话按新日志逐段对比。
+- 门槛自证：把“2 秒内刚改过不复用”改成 0 时，`packages/platform-node/test/sandbox-host-reuse.unit.test.ts` 对应测试失败，恢复后 4 条全过。
+
+**相关 ADR/PR**
+
+[ADR 0116](adr/0116-reuse-host-file-check-by-file-state.md)、[ADR 0078](adr/0078-authority-check-once-then-version-compare.md)、[事故清单 I-25](incidents-and-gates.md#incidents)、[案例 4：授权核对太频繁](#case-authority-checks)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-63bqwj`。
+
+**面试 30 秒版**
+
+“一轮 185 秒的对话，我先按请求逐段拆时间，发现模型和命令只占 117 秒，60 秒是工具前后的空等。日志显示 11 次工具调用做了 77 次完整安全核对，其中宿主文件核验在同一次调用里重复 7 遍。我借鉴 Git 用 `lstat` 信息判断文件没变的做法，让这项核验按文件状态复用 10 秒，授权判断仍然每次做，并照 Git 的 racy 问题拒绝信任刚改过的文件；剩下没日志可查的两段先加分段计时，上线后用数据再修。”
+
+[返回目录](#contents)
+
 <a id="case-magpie-subscriptions"></a>
 
 ## 案例 60：想要“隐私最好、价格最低”，最后改成“先用自己已付费的套餐”：本机 Magpie 网关替 Agent 在多个套餐之间切换
@@ -3710,6 +3908,7 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 - 新增测试：在本机起一个假的 Magpie，用固定版本的 Pi 真实发出流式请求。1000 个输入 token、100 个输出 token，按单价算出 630 微美元，与配置一致；请求里没有 Vercel 的路由参数。
 - 套餐额度：OpenCode Go 的 DeepSeek V4.1 Flash 每月 80 美元额度，官方估计约 17.3 万次。
 - 上线后的速度和质量：未测量（上线后在真实网页验收时补）。
+- 免费模型（2026-10-29 19:26 JST 生产机实测，见路由线程记录）：冷却一小时后各调一次，OpenCode Zen 两个免费模型第一次请求就回 429“免费额度已用完”，DeepSeek 免费版约 0.51 秒被拒，GLM 免费版被 Magpie 本地冷却挡下约 0.02 秒。原因未查清；主人决定先留在组里，代价是约每小时一次多等约 0.5 秒。
 
 **相关 ADR/PR**
 
@@ -3718,6 +3917,66 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 **面试 30 秒版**
 
 “主人想把模型费用降到零，因为他已经付了好几个订阅套餐。我先调研了 12 个方案，确认订阅额度和 API 是两回事，有的条款明文禁止接到第三方服务上。最后在生产机本机放了一个开源网关 Magpie，只接条款允许或主人自己承担风险的套餐，额度用完自动换下一家，最后才用付费通道兜底。Agent 这边复用 Pi 的 OpenAI 兼容接口，只加了本机地址校验和按 token 记账，还用一个假网关的端到端测试证明了整条链路。”
+
+[返回目录](#contents)
+
+<a id="case-document-tools"></a>
+
+## 案例 61：做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索
+
+**背景与现象**
+
+2026-10-29（日本时间），Andy 在生产网页（第十八版）让 Himawari 把新闻整理成 Word，一轮用了 50.4 秒，生成的文件点开预览又是空的。他问：“是不是没有文本的处理工具，导致模型思考了很久？”同一天另一轮做骑行 PDF，模型在沙箱里“找不到任何字体”，只能手写 PDF 坐标，字体也没嵌进文件，做出来很难看。记为事故 [I-26](incidents-and-gates.md#incidents)。
+
+**根因**
+
+1. 用只读诊断脚本把那一轮（运行 `fee9ac00`）按步骤拆开：模型约 23 秒，工具约 23 秒，前后准备约 4 秒。多出的约 30 秒、约 3,300 个输出 token（占这一轮输出的 77%）花在三轮多余的步骤上：先探测有没有 python-docx，发现没有，再手写一段 7.5 KB 的脚本拼 Word 的内部 XML，最后补字体。
+2. 在生产机上逐个检查：pandoc、LibreOffice、python-docx、openpyxl、python-pptx、pypdf、reportlab 全都没有装。模型也不知道这一点，只能每次先试。
+3. PDF 难看还有第二层原因：沙箱只允许读 `/usr/bin`、`/usr/lib` 等几个目录（出包脚本 `cloud-seal.mjs` 的 `readOnlyToolchainPaths`），字体目录 `/usr/share/fonts` 和字体配置 `/etc/fonts` 都不在里面。所以就算装了字体，沙箱里的命令也读不到。骑行那轮“找不到字体”很可能就是这个原因，但没有逐条核对那一轮的命令。
+4. 预览为空是另一个问题：网页不能预览 Office 文件。这个由预览线程的 PR #106 解决，本案例不展开。
+
+**我们的方案**
+
+1. 只用 Ubuntu 官方源装文档库和字体：python-docx、openpyxl、pypdf、pdfminer、WeasyPrint（把 HTML 排成 PDF）、pandoc（文档格式转换）、Noto 中日文字体、霞鹜文楷。生产机上先模拟安装，量出前 8 个包下载 125.4 MB、装完占 467.1 MB，再请 Andy 批准。
+2. 沙箱只读白名单加上 `/usr/share`、`/etc/fonts`、`/var/cache/fontconfig`。
+3. 按大厂的“技能”格式告诉模型：系统提示只加一行，写明做文档时先读哪个 `SKILL.md`；完整做法、A4 排版模板、Word 样式和生成 PDF 后自动检查的脚本都放在技能目录里，用到时才读。`SKILL.md` 第一句写明“库已装好，不要探测或安装”，直接对应 Word 那轮浪费的第一步。
+4. 上线前自动检查：生产机缺库或字体，`deploy.sh` 拒绝上线。
+
+工具还是原来的 bash，只是服务器上多了库，提示里多了一行。Pi（Himawari 底层的 Agent 框架）自带技能加载，但它生成的说明让模型“用 read 工具读技能文件”，而 Himawari 的 read 工具只能读工作目录，所以这次没有接 Pi 的这一段，改在 Himawari 的能力说明里写明用 bash 读；技能文件按标准格式写好，以后放开读取范围就能交给 Pi（见 [ADR 0118 方案 E](adr/0118-preinstalled-document-tools-and-document-skill.md#options)）。
+
+**方案讨论与备选**
+
+- **在系统提示里写一段长说明**：省掉探测，但每轮多带几百个 token，大部分对话根本不做文档。没选。
+- **每轮在沙箱里临时安装**：沙箱没有外网，装不了。
+- **装 LibreOffice 统一转换**：装完 1 GB 以上，排版不如 HTML 加 CSS 好控制，先不装。
+- **PDF 用 Ubuntu 自带的 WeasyPrint 61.1 还是从 PyPI 装 70**：61.1 用 Noto 字体每份 20 到 22 秒，70 只算渲染约 0.5 秒（加上启动约 2.5 秒），但要离开官方源。交给 Andy 决定，他选了 70：从 PyPI 装进单独的 Python 环境，版本和文件哈希都固定，见 [ADR 0118](adr/0118-preinstalled-document-tools-and-document-skill.md#decision)。
+
+**业界主流做法**
+
+- ✅ Anthropic 工程博客《Equipping agents for the real world with Agent Skills》（<https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills>）：“pre-loads the name and description of every installed skill into its system prompt”。
+- ✅ Anthropic 官方 docx 技能（<https://github.com/anthropics/skills/blob/main/skills/docx/SKILL.md>）：“docx is preinstalled — do not run npm install first”。
+- ✅ OpenAI Skills 文档（<https://developers.openai.com/api/docs/guides/tools-skills>）：“adds each available skill's name, description, and path to user prompt context”。
+- ✅ Manus《Context Engineering for AI Agents》（<https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus>）：“avoid dynamically adding or removing tools mid-iteration”。
+
+**对比与取舍**
+
+相同点：提示里只放一行索引，全文用到时再读；技能里直接说清楚“已预装”。不同点：大厂的执行环境是自己的容器，镜像里预装好；我们用的是主人自己的服务器（[自有优先、数据自持](product-vision.md)），只能用 apt 装到主机上，再用上线检查保证不漏装。Anthropic 的 PDF 技能没有中日文字体的说明，我们补了字体和嵌入检查。那一行索引每轮内容固定，不随问题增减，按 Manus 的经验保持缓存命中。
+
+**结果数据**
+
+- 慢的那一轮：50.4 秒，其中多余三轮约 30 秒、约 3,300 个输出 token，花费 0.0225 美元（运行 `fee9ac00`，诊断结果 `result-20261029.txt`）。
+- 安装规模：51 个包，下载 125.4 MB，装完 467.1 MB（生产机模拟安装）；加上霞鹜文楷整包约 113 MB。
+- PDF 生成速度（云端实测，同一份样张）：WeasyPrint 61.1 + Noto 21.6、22.5 秒；WeasyPrint 70 + HarfBuzz 0.5 秒（只算渲染）；61.1 + 霞鹜文楷约 2.3 秒（kami 线程）。按同样的固定版本装到生产机后实测（2026-10-29 09:08Z）：同一进程里只算渲染 0.36 秒；每次新起进程的整条命令 2.41、2.52、2.48 秒，约 2.1 秒是启动 Python、导入 WeasyPrint 和加载字体，所以用户实际感到的是约 2.5 秒，不是 0.5 秒。云端 Python 3.12 上用 `make_pdf.py` 跑 2 页样张（含检查）是 2.73、2.39 秒。常驻进程能否省掉这 2 秒记为 BL-20261029-004。
+- 技能触发测试（2026-10-29，DeepSeek V4.1 Flash，经 Vercel 评测专用密钥，每句只跑一次）：10 句该做文档的问句（Word、Excel、PDF、读 PDF，含英文和日文）10 句第一步就用 bash `cat` 读了 SKILL.md；10 句不该做文档的问句（天气、改错别字、写脚本、“PDF 和 Word 哪个适合简历”等）0 句误读。20 次调用输入 32,810 token、输出 4,831 token，花费 0.0098 美元。系统提示用的是生产同款的身份说明和能力说明，但没有主人自定的系统说明，工具定义也是简化版，所以这是近似结果；脚本和原始结果在项目共享目录 `doc-skill/trigger-eval/`。Vercel 公开评测里约 56% 的情况模型没去用该用的技能，这次没有出现，可能和“先读”这一行写在每轮固定的能力说明里有关，未单独验证。
+- 装库以后同一任务的耗时：未测量，等第十九版上线后在真实网页重跑。
+
+**相关 ADR/PR**
+
+[ADR 0118](adr/0118-preinstalled-document-tools-and-document-skill.md)；[事故 I-26](incidents-and-gates.md#incidents)；Office 预览见 PR #106；本案例的 PR 在分支 `claude/project-thread-qlqysx`。
+
+**面试 30 秒版**
+
+“用户说做一份 Word 要等 50 秒。我把那一轮按步骤拆开，发现有 30 秒和 77% 的输出 token 花在模型自己摸索上：服务器没装文档库，它先探测，再手写 Word 的 XML。PDF 难看是因为沙箱连字体目录都读不到。我先在生产机上模拟安装量出代价，再请负责人批准，只用官方源装库和字体，放开沙箱的字体目录；然后学 Anthropic 和 OpenAI 的技能格式，提示里只加一行索引，详细做法用到时再读。最后加了上线检查，缺库就拒绝上线。”
 
 [返回目录](#contents)
 

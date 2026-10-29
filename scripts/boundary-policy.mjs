@@ -123,6 +123,8 @@ export const browserExternalPackages = new Set([
   "react-intl",
   "marked",
   "pdfjs-dist",
+  "docx-preview",
+  "exceljs",
   "fflate",
   "tldts",
   "vite",

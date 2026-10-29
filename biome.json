@@ -34,6 +34,16 @@
       }
     },
     {
+      "includes": ["apps/agent-service/src/document-skill/a4.css"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnknownFunction": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["ci/rules/fixtures/unsafe.fixture.ts"],
       "linter": {
         "rules": {
@@ -66,7 +76,8 @@
         "docs/assets/control-center/2026-10-28-v8/desktop.dc.html",
         "docs/assets/control-center/2026-10-28-v8/phone.dc.html",
         "docs/assets/control-center/2026-10-28-v8/canvas.json",
-        "docs/assets/control-center/2026-10-29-v11/prototype.html"
+        "docs/assets/control-center/2026-10-29-v11/prototype.html",
+        "docs/assets/control-center/2026-10-29-v12/memory-page-prototype.html"
       ],
       "formatter": {
         "enabled": false

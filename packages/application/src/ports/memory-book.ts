@@ -9,6 +9,13 @@ export interface MemoryBookScope {
 export interface MemorySettings {
   readonly capturePaused: boolean;
   readonly updatedAt: string | null;
+  readonly lastViewedAt: string | null;
+}
+
+export interface MemoryProfilePin {
+  readonly memoryId: MemoryId;
+  readonly pinned: boolean;
+  readonly updatedAt: string;
 }
 
 export interface MemoryPerson {
@@ -67,6 +74,15 @@ export interface MemoryBookStorePort {
   writeSettings(
     input: MemoryBookScope & { readonly capturePaused: boolean; readonly updatedAt: string },
   ): Promise<void>;
+  markViewed(input: MemoryBookScope & { readonly viewedAt: string }): Promise<void>;
+  setProfilePin(
+    input: MemoryBookScope & {
+      readonly memoryId: MemoryId;
+      readonly pinned: boolean;
+      readonly updatedAt: string;
+    },
+  ): Promise<void>;
+  listProfilePins(scope: MemoryBookScope): Promise<readonly MemoryProfilePin[]>;
   latestGeneration(scope: MemoryBookScope): Promise<MemoryGenerationId | undefined>;
   listInactive(
     input: MemoryBookScope & { readonly trashedAfter: string; readonly limit: number },

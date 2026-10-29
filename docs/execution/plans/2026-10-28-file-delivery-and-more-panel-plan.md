@@ -119,6 +119,8 @@ PR #63 合并后，基于新 main：
 
 2026-10-28，公网安全审查线程复核预览子域名时发现：没配 `http.previewOrigin` 的服务收到 `himawari-files.siyi.win` 的 POST 请求（如 `POST /bootstrap`、`POST /api/identity/v1/sessions`），会走到登录凭证校验才被拒；这个子域名前面没有 Cloudflare Access，只剩应用这一道。修复：网关在收到请求时先看 Host，不是主站的一律 403，只放行 `/health/*` 和预览域名上的 `GET /preview/<签名链接>`，不分请求方法。
 
+2026-10-29，预览栏补上 Word（`.docx`）和 Excel（`.xlsx`），PDF 改用 pdf.js 逐页渲染，不再用浏览器自带查看器的内嵌框（Andy 看过九个方案的实跑对比后同意，[ADR 0114](../../adr/0114-file-preview-pdf-word-excel-in-browser.md)）。网页通过新的 `bytes` 读法从同一个读文件接口拿字节；读文件接口为 PDF 内嵌框加的 `frame-ancestors 'self'` 和 `X-Frame-Options: SAMEORIGIN` 不再需要，但没有坏处，暂时保留。真浏览器检查用 `scripts/test-file-preview-browser.mjs`。
+
 ## 收尾
 
 - [ ] 测试结果写进提交说明和 PR。

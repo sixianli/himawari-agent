@@ -82,6 +82,7 @@ import {
   type SandboxToolCompletion,
   type SandboxToolDelivery,
 } from "./production-sandbox-tool-result.js";
+import { type StageTiming, stageTiming } from "./production-stage-timing.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
@@ -1325,7 +1326,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     parentCall?: RuntimeToolInvocation,
     signal?: AbortSignal,
   ): Promise<RuntimeToolExecutionResult> {
+    const timing = stageTiming("tool.dispatch.timing", {
+      runId: invocation.runId,
+      toolCallId: invocation.toolCallId,
+    });
     const handle = await this.#validate(invocation, internal);
+    timing.mark("validate");
     const maximum = await this.#options.maximumResourceCeiling?.(
       handle.capabilityRef,
       handle.capabilityVersion,
@@ -1522,7 +1528,18 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     });
     if (committed.replayed)
       return this.#execute(invocation, key, fingerprint, internal, parentCall, signal);
-    return this.#dispatch(invocation, key, handle, request, ceiling, internal, parentCall, signal);
+    timing.mark("intent");
+    return this.#dispatch(
+      invocation,
+      key,
+      handle,
+      request,
+      ceiling,
+      internal,
+      parentCall,
+      signal,
+      timing,
+    );
   }
 
   async #dispatch(
@@ -1534,6 +1551,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     internal: boolean,
     parentCall?: RuntimeToolInvocation,
     signal?: AbortSignal,
+    timing: StageTiming = stageTiming("tool.dispatch.timing", {
+      runId: invocation.runId,
+      toolCallId: invocation.toolCallId,
+    }),
   ): Promise<RuntimeToolExecutionResult> {
     const deadlineAt = request.payload.deadlineAt;
     if (
@@ -1634,6 +1655,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     };
     try {
       await this.#options.assertRunActive(invocation.runId);
+      timing.mark("run_active");
       const sandbox = this.#options.sandbox;
       let dispatchPlan: Parameters<SandboxAdmission["scopes"]["read"]>[0] | undefined;
       const delegation = sandbox
@@ -1670,6 +1692,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         monotonicDeadline,
       );
       possiblySent = true;
+      timing.mark("dispatch");
       let cursor: string | null = null;
       let workerStartedAt: string | undefined;
       while (
@@ -1698,6 +1721,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               event.correlationId === request.correlationId &&
               digest(event.scope) === digest(scope)
             ) {
+              if (workerStartedAt === undefined) timing.mark("worker_start");
               workerStartedAt ??= event.payload.occurredAt;
               continue;
             }
@@ -1709,6 +1733,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               digest(event.scope) !== digest(scope)
             )
               continue;
+            timing.mark("worker_result");
             await assertResultCurrent();
             let completion: WorkerToolCompletion | undefined =
               event.type === "work.result" ? event.payload : undefined;
@@ -1737,6 +1762,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                     event.type === "work.result" ? event.payload.externalActionId : null,
                 };
             }
+            timing.mark("complete");
             if (event.type === "work.cancelled")
               await this.#writeJson(invocation, `runtime-tool-diagnostic:${key}`, {
                 stage: "accepted",
@@ -1776,6 +1802,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                   : undefined,
               );
             }
+            timing.mark("outcome");
             const workerEndedAt = event.type === "work.result" ? event.payload.completedAt : null;
             if (
               workerStartedAt &&
@@ -1790,6 +1817,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             await assertResultCurrent();
             await this.#writeJson(invocation, `runtime-tool-result:${key}`, outcome);
             await assertResultCurrent();
+            timing.finish("result_write");
             return outcome;
           }
         } finally {
@@ -1893,6 +1921,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     await this.#options.assertRunActive(invocation.runId);
     await this.#writeJson(invocation, `runtime-tool-result:${key}`, outcome);
+    timing.finish("unsettled_result_write");
     return outcome;
   }
 

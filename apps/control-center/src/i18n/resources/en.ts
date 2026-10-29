@@ -115,7 +115,7 @@ export const messages = {
   "step.active": "{step}",
   "step.thinking": "Thought",
   "step.memoryFound": "Related memories found: {count}",
-  "step.memoryProfile": "Always-included profile: {count} (every turn)",
+  "step.memoryProfile": "Memories brought into every conversation: {count}",
   "step.thinkingFor": "Thought for {time}",
   "process.took": "Took {time}",
   "chat.moreModels": "More models ({count})",
@@ -420,6 +420,12 @@ export const messages = {
   "preview.webUnavailable":
     "Web page preview isn’t set up yet: it needs a separate preview domain. You can download the file for now.",
   "preview.diffNote": "Showing this turn’s changes only",
+  "preview.page": "Page {page} of {count}",
+  "preview.renderFailed": "This file couldn’t be shown here. Download it to open it.",
+  "preview.sheets": "Sheets",
+  "preview.sheetTruncated":
+    "This sheet is large, so only the first 2,000 rows and 100 columns are shown. Download it to see everything.",
+  "preview.sheetEmpty": "This workbook has no sheet to show.",
   "library.title": "Files",
   "library.search": "Search file names",
   "library.count":
@@ -642,8 +648,8 @@ export const messages = {
   "memory.justSaved": "Just saved",
   "memory.justSavedFrom": "From “{title}”, saved at {time}",
   "memory.search": "Search memory",
-  "memory.empty":
-    "No memories yet. Preferences, habits and long-term goals you mention will appear here.",
+  "memory.empty": "Preferences, habits and long-term goals you mention will appear here.",
+  "memory.emptyTitle": "No memories yet",
   "memory.sensitive": "Sensitive",
   "memory.inferred": "Inferred",
   "memory.source": "Source conversation",
@@ -657,7 +663,6 @@ export const messages = {
   "memory.profile.relationship": "People",
   "memory.profile.goal": "Long-term goals",
   "memory.profile.project": "In progress",
-  "memory.recent": "New",
   "memory.tidyKept": "(kept: {text})",
   "memory.undo": "Undo",
   "memory.undone": "Undone",
@@ -679,14 +684,14 @@ export const messages = {
   "memory.page.add": "Add a memory",
   "memory.page.addTitle": "Tell Himawari something to remember",
   "memory.page.addNote":
-    "Write it in one sentence. The category is chosen for you; health or money details are stored as sensitive without asking again, since you wrote them yourself.",
+    "Write it in one sentence. A topic is guessed from your words, and you can change it below. Health or money details are stored as sensitive without asking again, since you wrote them yourself.",
   "memory.page.addPlaceholder": "For example: no reminders before 9 am on weekends",
-  "memory.page.added": "Saved under “{cat}”. Edit it in All memories if that is wrong.",
-  "memory.page.tab":
-    "{t, select, pending {To confirm} reminders {Reminders} profile {Profile} all {All memories} other {Timeline}}",
+  "memory.page.added":
+    "Saved under “{cat}”{pinned, select, true {, and brought into every conversation} other {}}. Open it to change anything that is wrong.",
+  "memory.page.tab": "{t, select, memories {Memories} other {Changes}}",
   "memory.page.due": "{count} due",
   "memory.page.pendingNote":
-    "These are not used yet: sensitive details, guesses, rules you stated once, and people who may be the same person. Himawari waits for your answer; the tab disappears when everything is handled.",
+    "These are not used yet: sensitive details, guesses, rules you stated once, and people who may be the same person. Himawari waits for your answer; this part disappears when everything is handled.",
   "memory.page.kind": "{k, select, rule {Rule} person {Same person?} other {Guess}}",
   "memory.page.reason":
     "{k, select, rule {You said this once. If kept, Himawari follows it every time.} person {Two names may mean the same person, so Himawari asks first.} other {You never said this directly; Himawari guessed it and may be wrong.}}",
@@ -701,10 +706,7 @@ export const messages = {
   "memory.page.cancelled": "No more reminders for “{text}”; the memory stays",
   "memory.page.notify":
     "Due reminders are pushed to every device where you turned on notifications.",
-  "memory.page.profileNote":
-    "Himawari reads this profile before every answer. Click a line to change it; the old wording is kept. Sensitive memories are not shown here and are used only when relevant.",
   "memory.page.lines": "{count}",
-  "memory.page.more": "Show {count} more",
   "memory.page.less": "Collapse",
   "memory.page.people": "People",
   "memory.page.peopleCount": "{count, plural, one {# person} other {# people}}",
@@ -716,15 +718,7 @@ export const messages = {
   "memory.page.aliases": "Also called: {names}",
   "memory.page.knows": "Knows",
   "memory.page.facts": "Memories about this person",
-  "memory.page.allNote":
-    "Every fact Himawari remembers, including sensitive memories and events. Open one to see its source and history. Deleted memories stay in Recently deleted for 7 days.",
-  "memory.page.everything": "All",
   "memory.page.moreCats": "{count} more",
-  "memory.page.sub": "Topic",
-  "memory.page.state": "State",
-  "memory.page.status": "{s, select, active {In use} archived {Archived} other {Recently deleted}}",
-  "memory.page.statusHint":
-    "{s, select, active {Used in answers} archived {Outdated, duplicate or long unused; not used in answers, can be restored} other {Deleted by you; recoverable for 7 days, then erased}}",
   "memory.page.group":
     "{g, select, today {Today} week {This week} earlier {Earlier} archived {Archived: not used in answers} other {Recently deleted: erased after 7 days}} · {count}",
   "memory.page.noResults": "No memories match. Try another word or clear the filters.",
@@ -869,7 +863,47 @@ export const messages = {
   "memory.page.nowIs": "Now: {text}",
   "memory.page.changeNo": "Change {n}",
   "memory.page.seeAllChanges": "See every change to this memory",
-  "memory.page.viewAll": "View all {count} in {kind}",
+  "memory.page.confirmTitle": "Needs your answer · {count}",
+  "memory.page.carry.title": "Brought into every conversation",
+  "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
+  "memory.page.carry.queued": "{count} more do not fit",
+  "memory.page.carry.open": "View and adjust",
+  "memory.page.carry.meter": "Characters used",
+  "memory.page.carry.note":
+    "Himawari reads these before every answer. They are picked by importance, highest first, from your rules, identity, preferences, people, goals and work in progress, until {limit} characters are used. Sensitive memories such as health or money, and events, are never included here; they come up only when relevant. When you turn “Bring into every conversation” on or off for a memory, your choice wins.",
+  "memory.page.carry.none":
+    "Nothing is brought into every conversation yet. Your identity, preferences and long-term goals are added as you mention them.",
+  "memory.page.carry.yours": "Your choice",
+  "memory.page.carry.queuedTitle": "Do not fit",
+  "memory.page.carry.queuedNote":
+    "The character budget is used up, so these less important ones come up only when relevant. Turn one on to bring it in first.",
+  "memory.page.carry.offTitle": "Turned off by you",
+  "memory.page.carry.offNote":
+    "You chose not to bring these into every conversation. They come up only when relevant.",
+  "memory.page.carried": "Every conversation",
+  "memory.page.pin": "Bring into every conversation",
+  "memory.page.pinFor": "Bring into every conversation: {text}",
+  "memory.page.pinDone":
+    "{on, select, true {This memory is now brought into every conversation} other {This memory now comes up only when relevant}}",
+  "memory.page.pinHint":
+    "{r, select, sensitive {Sensitive memories are never brought into every conversation; they come up only when relevant} category {Events, health, money and other memories come up only when relevant} on {You turned this on, so it goes before the automatic picks} off {You turned this off, so it comes up only when relevant} add {Turn on to bring it into every conversation; otherwise its importance decides} other {Its importance decides for now; once you change it, your choice wins}}",
+  "memory.page.detail": "Memory details",
+  "memory.page.topic": "Topic",
+  "memory.page.importance": "Importance",
+  "memory.page.importanceValue":
+    "{value} / 1000 · {by, select, owner {default for memories you add} other {scored by the model when saved}}",
+  "memory.page.topics": "Topics",
+  "memory.page.allTopics": "All topics",
+  "memory.page.topicNow": "Topic: {topic}",
+  "memory.page.newSince": "{count} new since you last looked",
+  "memory.page.showNew": "Show them",
+  "memory.page.clearNew": "Show all",
+  "memory.page.backToActive": "Back to memories in use",
+  "memory.page.groupedNote": "{count} in all · the newest {preview} of each topic first",
+  "memory.page.seeAll": "See all {count}",
+  "memory.page.loadMore": "Show {count} more",
+  "memory.page.statusLink":
+    "{s, select, archived {Archived ({count})} other {Recently deleted ({count})}}",
   "reminders.group": "{g, select, today {Today} week {Next 7 days} other {Later}}",
   "reminders.emptyTitle": "No reminders yet",
   "reminders.empty": "Just say “Remind me to take an umbrella at 8 tomorrow” in a chat.",

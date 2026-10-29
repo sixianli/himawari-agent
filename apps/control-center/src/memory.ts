@@ -29,12 +29,19 @@ export interface MemoryModel {
   readonly restore: (item: MemoryItem) => Promise<boolean>;
   readonly recover: (item: MemoryItem) => Promise<boolean>;
   readonly confirm: (item: MemoryItem) => Promise<boolean>;
+  readonly setPinned: (item: MemoryItem, pinned: boolean) => Promise<boolean>;
+  readonly markViewed: () => Promise<boolean>;
   readonly undoTidy: (item: MemoryTidyUp) => Promise<boolean>;
   readonly respondReminder: (
     item: { readonly reminderId: string },
     action: "dismiss" | "snooze" | "cancel",
   ) => Promise<boolean>;
-  readonly create: (text: string, category: MemoryCategory, sensitive: boolean) => Promise<boolean>;
+  readonly create: (
+    text: string,
+    category: MemoryCategory,
+    sensitive: boolean,
+    pinned: boolean,
+  ) => Promise<boolean>;
   readonly setPaused: (paused: boolean) => Promise<boolean>;
   readonly respondPerson: (suggestionId: string, merge: boolean) => Promise<boolean>;
   readonly importCommit: (
@@ -130,14 +137,17 @@ export function useMemory(input: {
     restore: (item) => mutate(item, "restore"),
     recover: (item) => mutate(item, "recover"),
     confirm: (item) => mutate(item, "confirm"),
+    setPinned: (item, pinned) => mutate(item, pinned ? "pin" : "unpin"),
+    markViewed: () => send("memory.page.viewed", () => ({})),
     undoTidy: (item) => send("memory.tidy.undo", () => ({ changeId: item.changeId })),
     respondReminder: (item, action) =>
       send("memory.reminder.respond", () => ({ reminderId: item.reminderId, action })),
-    create: (text, category, sensitive) =>
+    create: (text, category, sensitive, pinned) =>
       send("memory.create", async () => ({
         contentRef: await client.protectText(text, sensitive ? "sensitive" : "private"),
         category,
         subCategory: null,
+        pinned: pinned && !sensitive,
       })),
     setPaused: (paused) => send("memory.settings.set", () => ({ capturePaused: paused })),
     respondPerson: (suggestionId, merge) =>

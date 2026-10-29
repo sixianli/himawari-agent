@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@himawari-agent/gateway-contracts": "0.0.0",
+    "docx-preview": "0.4.1",
+    "exceljs": "4.4.0",
     "fflate": "0.8.3",
     "marked": "18.0.5",
     "pdfjs-dist": "6.4.299",

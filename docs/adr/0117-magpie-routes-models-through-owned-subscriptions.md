@@ -108,7 +108,7 @@ OpenCode Go 的 DeepSeek 要在设置里打开“Global”地区才能用，数�
 - 风险：**Magpie 只监听本机时不检查访问密钥**（启动日志：“anything works; the gateway only listens on localhost”），所以生产机上任何本地程序都能用 Andy 的套餐额度。我们核对过：Himawari 让模型执行命令的沙箱（`linux-bubblewrap-command-provider.ts`、`capabilities/isolation.ts`）都用 `--unshare-all` 切断网络，连不到宿主的 `127.0.0.1`。剩下能调用的只有生产机上的 root 和几个系统服务。我们判断这个风险可以接受。Himawari 仍然带上 Magpie 生成的网关密钥，以后 Magpie 对外监听时密钥照样生效。
 - 风险：SuperGrok 的接法没有条款支持，可能被拒绝，也可能影响 Andy 的 X/Grok 账号。
 - 风险：OpenCode Go 说套餐是为编程 Agent 设计的。Himawari 的后台邮件判断不像编程请求，可能被当成滥用。
-- 隐私：邮件判断现在和主对话共用一个路由组，所以 Go 的 DeepSeek 打开 Global 地区后，邮件的发件人、标题和摘要也可能出美国和欧盟。邮件判断改用单独的、只在美欧运行的模型，已记为 [BL-20261029-001](../backlog/BL-20261029-001-gmail-judge-separate-model.md)。
+- 隐私：邮件判断现在和主对话共用一个路由组，所以 Go 的 DeepSeek 打开 Global 地区后，邮件的发件人、标题和摘要也可能出美国和欧盟。邮件判断改用单独的、只在美欧运行的模型，已记为 [BL-20261029-005](../backlog/BL-20261029-005-gmail-judge-separate-model.md)。2026-10-29 19:55 JST 主人决定：邮件、记忆这类私人数据不必特意避开 CodeBuddy，不另建私人路由组。
 - 后续：在 Magpie 里配好 OpenCode Go 的 Key 和 SuperGrok 登录，建 `himawari-main` 路由组，再出包把生产配置的主模型改成 Magpie，然后在真实网页里验收。
 
 [↑ 返回阅读导航](#contents)

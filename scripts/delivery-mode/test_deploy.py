@@ -19,7 +19,7 @@ SCENARIOS = ['accept-homepage', 'accept-search-toggle', 'accept-news-search', 'a
 def walkthrough(sha=ARTIFACT_SHA256, statuses=None):
     statuses = statuses or {}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed')} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -99,6 +99,44 @@ class LeftoverPreflightTest(unittest.TestCase):
         self.assertIn('/usr/bin/systemctl show -p LoadState --value ' + self.UNIT, script)
         self.assertIn("[ -e /var/tmp/himawari-fourteenth-20261027 ]", script)
         self.assertIn('df --output=avail -B1 /', script)
+
+
+class DocumentToolsPreflightTest(unittest.TestCase):
+    def failed(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update(changes)
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000) if not passed]
+
+    def test_server_without_document_libraries_or_fonts_is_refused(self):
+        self.assertEqual(self.failed(documentTools='missing'), ['DOCUMENT_TOOLS_INSTALLED'])
+        self.assertEqual(self.failed(documentTools=''), ['DOCUMENT_TOOLS_INSTALLED'])
+
+    def test_remote_script_checks_libraries_pandoc_and_cjk_fonts(self):
+        script = preflight.remote_script(BINDING)
+        for needle in ('import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown', '/usr/bin/pandoc --version', '/usr/bin/fc-list :lang=zh family', 'Noto Sans CJK', 'LXGW WenKai', '/usr/lib/himawari-document-python/bin/python', 'harfbuzz_subset'):
+            self.assertIn(needle, script)
+
+    def test_remote_document_check_passes_only_when_everything_is_present(self):
+        script = preflight.DOCUMENT_TOOLS_CHECK
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory)
+            for name in ('python3', 'python', 'pandoc', 'fc-list'):
+                (fake / name).write_text('#!/bin/sh\nexit 0\n')
+                (fake / name).chmod(0o755)
+            (fake / 'fc-list').write_text('#!/bin/sh\necho "Noto Sans CJK SC"; echo "LXGW WenKai"\n')
+            (fake / 'grep').symlink_to(shutil.which('grep'))
+            local = script.replace('/usr/bin/', str(fake) + '/').replace('/usr/lib/himawari-document-python/bin/', str(fake) + '/')
+            self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=ok')
+            (fake / 'fc-list').write_text('#!/bin/sh\necho "DejaVu Sans"\n')
+            self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
+            (fake / 'fc-list').write_text('#!/bin/sh\necho "Noto Sans CJK SC"\n')
+            self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
+            (fake / 'fc-list').write_text('#!/bin/sh\necho "Noto Sans CJK SC"; echo "LXGW WenKai"\n')
+            (fake / 'python3').write_text('#!/bin/sh\nexit 1\n')
+            self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
+            (fake / 'python3').write_text('#!/bin/sh\nexit 0\n')
+            (fake / 'python').write_text('#!/bin/sh\nexit 1\n')
+            self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
 
 
 class FrozenStatePreflightTest(unittest.TestCase):

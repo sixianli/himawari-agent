@@ -1,6 +1,7 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
@@ -34,6 +35,7 @@ import {
 import {
   configuredWorkspaceRoot,
   createProductionRunPolicy,
+  DOCUMENT_SKILL_DIRECTORY,
   HIMAWARI_IDENTITY,
   runCapabilityNotice,
 } from "../src/production-run-policy.js";
@@ -722,6 +724,33 @@ describe("Run capability notice", () => {
     expect(notice).toContain("本轮没有联网搜索工具");
     expect(notice).toContain("不要让用户去配置网络或代理");
     expect(notice).not.toContain("web_search");
+  });
+
+  it("points the model to the document skill only when it has the coding sandbox", () => {
+    const withSandbox = runCapabilityNotice({
+      publicSearch: false,
+      coding: true,
+      workspaceRoot: "/var/lib/himawari/workspace",
+      documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
+    });
+    expect(withSandbox).toContain(`cat ${DOCUMENT_SKILL_DIRECTORY}SKILL.md`);
+    expect(withSandbox).toContain("不要探测或安装");
+    expect(
+      runCapabilityNotice({
+        publicSearch: true,
+        coding: false,
+        workspaceRoot: null,
+        documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
+      }),
+    ).not.toContain("SKILL.md");
+  });
+
+  it("ships every file the document skill names next to it", async () => {
+    const skill = await readFile(path.join(DOCUMENT_SKILL_DIRECTORY, "SKILL.md"), "utf8");
+    for (const name of ["make_pdf.py", "a4.css", "reference.docx"]) {
+      expect(skill).toContain(name);
+      expect(existsSync(path.join(DOCUMENT_SKILL_DIRECTORY, name))).toBe(true);
+    }
   });
 
   it("points the model to web_search when search is configured", () => {

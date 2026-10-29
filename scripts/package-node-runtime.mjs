@@ -98,6 +98,13 @@ export async function packageNodeRuntime({
         path.join(destination, "dist/files/rename-native"),
       ]);
     }
+    if (relativeRoot === "apps/agent-service") {
+      await cp(
+        path.join(repositoryRoot, relativeRoot, "src/document-skill"),
+        path.join(destination, "dist/document-skill"),
+        { recursive: true },
+      );
+    }
     if (relativeRoot === "packages/persistence-sqlite") {
       await cp(
         path.join(repositoryRoot, relativeRoot, "src/migrations"),

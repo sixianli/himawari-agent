@@ -717,6 +717,14 @@ export class GatewayClient {
     return url;
   }
 
+  async fileBytes(fileId: string): Promise<ArrayBuffer> {
+    const response = await this.request(fileContentUrl(fileId), {
+      credentials: "same-origin",
+    });
+    if (!response.ok) await json(response);
+    return response.arrayBuffer();
+  }
+
   async fileText(fileId: string): Promise<string> {
     const response = await this.request(fileContentUrl(fileId), {
       credentials: "same-origin",

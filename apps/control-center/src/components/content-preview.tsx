@@ -11,11 +11,14 @@ import { type DiffLine, fileExtension, type PreviewKind, previewKind } from "../
 import { LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { fileFacts, fileSourceText } from "./delivered-file.js";
+import { type DocumentKind, DocumentPreview } from "./document-preview.js";
 
 export const FILE_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
+export const FILE_DOCUMENT_PREVIEW_BYTES = 25 * 1024 * 1024;
 
 export interface FilePreviewAccess {
   readonly text: (fileId: string) => Promise<string>;
+  readonly bytes: (fileId: string) => Promise<ArrayBuffer>;
   readonly versions: (fileId: string) => Promise<readonly RegisteredFile[]>;
   readonly previewUrl: ((fileId: string) => Promise<string>) | undefined;
 }
@@ -51,19 +54,28 @@ export const previewOfDelivered = (
 });
 
 const TEXT_MEDIA = /^(text\/|application\/(json|x-ndjson|xml|yaml))/;
+const DOCUMENT_MEDIA: Readonly<Record<string, DocumentKind>> = {
+  "application/pdf": "pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "word",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "sheet",
+};
 
 type Body =
   | { readonly kind: "text" }
   | { readonly kind: "image"; readonly url: string }
-  | { readonly kind: "pdf"; readonly url: string }
+  | { readonly kind: "document"; readonly document: DocumentKind }
   | { readonly kind: "web" }
   | { readonly kind: "notice"; readonly id: MessageId };
 
-function bodyOf(file: RegisteredFile, previewAvailable: boolean): Body {
+export function bodyOf(file: RegisteredFile, previewAvailable: boolean): Body {
   if (!file.stored) return { kind: "notice", id: "preview.notStored" };
   if (file.kind === "image" && file.mediaType !== "image/svg+xml")
     return { kind: "image", url: fileContentUrl(file.id) };
-  if (file.kind === "pdf") return { kind: "pdf", url: fileContentUrl(file.id) };
+  const document = file.kind === "pdf" ? "pdf" : DOCUMENT_MEDIA[file.mediaType];
+  if (document)
+    return file.sizeBytes > FILE_DOCUMENT_PREVIEW_BYTES
+      ? { kind: "notice", id: "preview.tooLarge" }
+      : { kind: "document", document };
   if (file.mediaType === "text/html" || file.mediaType === "image/svg+xml")
     return previewAvailable ? { kind: "web" } : { kind: "notice", id: "preview.webUnavailable" };
   if (!TEXT_MEDIA.test(file.mediaType) && file.kind !== "code")
@@ -253,6 +265,7 @@ function useDeliveredContent(
     readonly id: string;
     readonly text?: string;
     readonly url?: string;
+    readonly bytes?: ArrayBuffer;
     readonly failed?: boolean;
   }>();
   const [attempt, setAttempt] = useState(0);
@@ -260,15 +273,17 @@ function useDeliveredContent(
   const kind = body?.kind;
   useEffect(() => {
     void attempt;
-    if (!id || !access || (kind !== "text" && kind !== "web")) return;
+    if (!id || !access || (kind !== "text" && kind !== "web" && kind !== "document")) return;
     let current = true;
     setState({ id });
     const load =
       kind === "text"
         ? access.text(id).then((text) => ({ id, text }))
-        : (access.previewUrl?.(id) ?? Promise.reject(new Error("PREVIEW_UNAVAILABLE"))).then(
-            (url) => ({ id, url }),
-          );
+        : kind === "document"
+          ? access.bytes(id).then((bytes) => ({ id, bytes }))
+          : (access.previewUrl?.(id) ?? Promise.reject(new Error("PREVIEW_UNAVAILABLE"))).then(
+              (url) => ({ id, url }),
+            );
     load.then(
       (next) => current && setState(next),
       () => current && setState({ id, failed: true }),
@@ -348,9 +363,17 @@ export function ContentPreview({
     diff: "preview.diff",
   };
   const textReady = !body || (body.kind === "text" && loaded?.text !== undefined);
-  const loading = body && (body.kind === "text" || body.kind === "web") && !loaded?.failed;
+  const loading =
+    body &&
+    (body.kind === "text" || body.kind === "web" || body.kind === "document") &&
+    !loaded?.failed;
   const pending =
-    loading && (body.kind === "text" ? loaded?.text === undefined : loaded?.url === undefined);
+    loading &&
+    (body.kind === "text"
+      ? loaded?.text === undefined
+      : body.kind === "document"
+        ? loaded?.bytes === undefined
+        : loaded?.url === undefined);
   const versionLabel = (item: RegisteredFile) =>
     [
       message("files.version", { version: item.version }),
@@ -580,8 +603,10 @@ export function ContentPreview({
           <div className="preview-media">
             <img src={body.url} alt={value.title} />
           </div>
-        ) : body?.kind === "pdf" ? (
-          <iframe className="preview-frame is-pdf" src={body.url} title={value.title} />
+        ) : body?.kind === "document" ? (
+          loaded?.bytes ? (
+            <DocumentPreview kind={body.document} data={loaded.bytes} />
+          ) : null
         ) : body?.kind === "web" ? (
           loaded?.url ? (
             <div className="preview-isolated">

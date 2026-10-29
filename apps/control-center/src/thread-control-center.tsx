@@ -1465,6 +1465,7 @@ export function useThreadControlCenter(
       client
         ? {
             text: (fileId) => client.fileText(fileId),
+            bytes: (fileId) => client.fileBytes(fileId),
             versions: (fileId) => client.fileVersions(fileId),
             previewUrl: configuration?.filePreviewAvailable
               ? (fileId) => client.filePreviewUrl(fileId)
