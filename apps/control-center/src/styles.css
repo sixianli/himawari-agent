@@ -456,6 +456,43 @@ footer {
   font-weight: 700;
 }
 
+.edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.edit-actions .action-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.edit-actions .action-button-secondary {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.edit-actions .edit-save {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--surface);
+}
+
+.edit-actions .edit-save:disabled {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 1;
+}
+
 .empty-panel {
   display: flex;
   flex-direction: column;

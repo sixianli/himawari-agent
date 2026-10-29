@@ -2188,6 +2188,20 @@ describe("thread control center interactions", () => {
     expect(protect.mock.calls.filter(([text]) => text === "自定义标题")).toHaveLength(2);
     expect(container.textContent).not.toContain("threads.conflictTitle");
   });
+  it("lights the rename save button only after the title changes", async () => {
+    await render();
+    await refresh();
+    await chooseAction("rename");
+    const save = () =>
+      [...document.querySelectorAll<HTMLButtonElement>(".edit-save")].find(
+        (button) => button.textContent?.trim() === "review.save",
+      );
+    expect(save()?.disabled).toBe(true);
+    await input(field("review.conversationName"), "组件交互测试");
+    expect(save()?.disabled).toBe(true);
+    await input(field("review.conversationName"), "新标题");
+    expect(save()?.disabled).toBe(false);
+  });
   it("greets the owner in a conversation that has no messages yet instead of a system notice", async () => {
     await render();
     await refresh();

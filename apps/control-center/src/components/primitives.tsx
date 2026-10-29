@@ -4,6 +4,7 @@ import {
   type ButtonHTMLAttributes,
   cloneElement,
   forwardRef,
+  type KeyboardEvent,
   type ReactElement,
   type ReactNode,
   useEffect,
@@ -113,6 +114,50 @@ export function Field({ children, error, hint, label, required = false }: FieldP
       ) : null}
     </div>
   );
+}
+
+export interface EditActionsProps {
+  readonly changed: boolean;
+  readonly busy?: boolean;
+  readonly saveLabel: string;
+  readonly cancelLabel?: string;
+  readonly onSave: () => void;
+  readonly onCancel?: () => void;
+}
+
+export function EditActions({
+  changed,
+  busy = false,
+  saveLabel,
+  cancelLabel,
+  onSave,
+  onCancel,
+}: EditActionsProps) {
+  return (
+    <div className="edit-actions">
+      {onCancel && cancelLabel ? (
+        <ActionButton variant="secondary" disabled={busy} onClick={onCancel}>
+          {cancelLabel}
+        </ActionButton>
+      ) : null}
+      <ActionButton className="edit-save" disabled={!changed || busy} onClick={onSave}>
+        {saveLabel}
+      </ActionButton>
+    </div>
+  );
+}
+
+export function editorKeys(save: (() => void) | null, cancel: () => void) {
+  return (event: KeyboardEvent) => {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      save?.();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      cancel();
+    }
+  };
 }
 
 export interface EmptyStateProps {

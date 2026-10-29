@@ -27,7 +27,14 @@ import {
 } from "./components/content-preview.js";
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { FilesLibrary } from "./components/files-library.js";
-import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
+import {
+  ActionButton,
+  Banner,
+  EditActions,
+  Field,
+  ModalDialog,
+  StatusRegion,
+} from "./components/index.js";
 import { OPEN_MEMORY_PAGE } from "./components/memory-panel.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
 import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
@@ -275,6 +282,7 @@ export function useThreadControlCenter(
   const payloadCache = useRef<Record<string, string>>({});
   const executionCache = useRef<Record<string, ThreadExecutionRecord[]>>({});
   const [renameTitle, setRenameTitle] = useState("");
+  const [renameInitial, setRenameInitial] = useState("");
   const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
   const submissionLock = useRef(false);
   const [searchText, setSearchText] = useState("");
@@ -1221,7 +1229,9 @@ export function useThreadControlCenter(
       onRefresh={() => void refresh(true)}
       onRename={(thread) => {
         setRenameTarget(thread);
-        setRenameTitle(thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "");
+        const current = thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "";
+        setRenameTitle(current);
+        setRenameInitial(current);
       }}
       onPin={(thread) =>
         void performIntent(
@@ -1709,6 +1719,16 @@ export function useThreadControlCenter(
     </div>
   );
 
+  const renameChanged = Boolean(renameTitle.trim()) && renameTitle.trim() !== renameInitial.trim();
+  const saveRename = async () => {
+    if (!renameTarget || !renameChanged) return;
+    const result = await performIntent(
+      { kind: "rename", title: renameTitle },
+      undefined,
+      renameTarget,
+    );
+    if (result) setRenameTarget(null);
+  };
   const details = (
     <ModalDialog
       open={renameTarget !== null}
@@ -1721,22 +1741,21 @@ export function useThreadControlCenter(
           data-autofocus
           value={renameTitle}
           onChange={(event) => setRenameTitle(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (renameChanged) void saveRename();
+            }
+          }}
         />
       </Field>
-      <ActionButton
-        disabled={!renameTitle.trim()}
-        onClick={async () => {
-          if (!renameTarget) return;
-          const result = await performIntent(
-            { kind: "rename", title: renameTitle },
-            undefined,
-            renameTarget,
-          );
-          if (result) setRenameTarget(null);
-        }}
-      >
-        {message("review.save")}
-      </ActionButton>
+      <EditActions
+        changed={renameChanged}
+        saveLabel={message("review.save")}
+        cancelLabel={message("governed.cancel")}
+        onSave={() => void saveRename()}
+        onCancel={() => setRenameTarget(null)}
+      />
     </ModalDialog>
   );
 

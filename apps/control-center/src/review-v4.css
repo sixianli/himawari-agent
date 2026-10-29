@@ -1710,13 +1710,6 @@ body {
 }
 .memory-row .actions,
 .memory-approval .actions,
-.memory-editor .actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
 .memory-editor textarea,
 .memory-search {
   width: 100%;
