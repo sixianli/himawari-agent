@@ -8,6 +8,7 @@ import sys
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']
 MINIMUM_FREE_FACTOR = 2
 ACCEPTANCE_ROOT_FREE_BYTES = 10 * 1024 ** 3
+DOCUMENT_TOOLS_CHECK = 'if /usr/bin/python3 -I -c "import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown" >/dev/null 2>&1 && /usr/bin/pandoc --version >/dev/null 2>&1 && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "Noto Sans CJK" && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "LXGW WenKai"; then echo documentTools=ok; else echo documentTools=missing; fi'
 PROBE_UNIT_LINE = re.compile(r"^unit = '([A-Za-z0-9@._-]+\.service)'$", re.MULTILINE)
 
 
@@ -42,6 +43,7 @@ def remote_script(binding, units=(), paths=()):
         'echo "unitSha256=$(/usr/bin/sha256sum ' + shlex.quote(binding['service']['unitFragmentPath']) + ' | /usr/bin/cut -d \' \' -f 1)"',
         'echo "authority=$(/usr/bin/python3 -I -c \'import json, sys; mirror = json.load(open(sys.argv[1])); print(mirror["authorityEpoch"], mirror["fencingToken"])\' ' + shlex.quote(mirror) + ')"',
         'echo "rootFree=$(/usr/bin/df --output=avail -B1 / | /usr/bin/tail -n 1 | /usr/bin/tr -d \' \')"',
+        DOCUMENT_TOOLS_CHECK,
         *['echo ' + shlex.quote('probeUnit.' + unit) + '="$(/usr/bin/systemctl show -p LoadState --value ' + shlex.quote(unit) + ')"' for unit in units],
         *['if [ -e ' + shlex.quote(path) + ' ] || [ -L ' + shlex.quote(path) + ' ]; then echo ' + shlex.quote('targetPath.' + path + '=present') + '; else echo ' + shlex.quote('targetPath.' + path + '=absent') + '; fi' for path in paths],
     ])
@@ -63,6 +65,7 @@ def checks(binding, facts, size, units=(), paths=()):
         ('UNIT_UNCHANGED_SINCE_FREEZE', facts.get('unitSha256') == binding['service']['oldUnitSha256']),
         ('AUTHORITY_UNCHANGED_SINCE_FREEZE', facts.get('authority') == authority),
         ('ROOT_FREE_FOR_ACCEPTANCE', int(facts.get('rootFree') or 0) >= ACCEPTANCE_ROOT_FREE_BYTES + needed),
+        ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
         *[('PROBE_UNIT_UNUSED ' + unit, facts.get('probeUnit.' + unit) == 'not-found') for unit in units],
         *[('TARGET_PATH_ABSENT ' + path, facts.get('targetPath.' + path) == 'absent') for path in paths],
     ]
@@ -88,6 +91,8 @@ def main():
             print('PREFLIGHT_LEFTOVER_UNIT a failed earlier attempt left this transient unit loaded; after saving its status and journal run: systemctl reset-failed ' + name.split(' ', 1)[1])
         if not passed and name.startswith('TARGET_PATH_ABSENT '):
             print('PREFLIGHT_LEFTOVER_PATH an earlier attempt left this path; rename it with a .attemptN-failed-YYYYMMDD suffix: ' + name.split(' ', 1)[1])
+    if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
+        print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai')
     if any(name in FROZEN_STATE_CHECKS and not passed for name, passed in results):
         print('PREFLIGHT_REFREEZE the production service restarted or changed after this packet was frozen; run: python3 ' + str(Path(__file__).resolve().parent / 'make-packet.py') + ' freeze ' + str(packet))
     return 1 if failed else 0

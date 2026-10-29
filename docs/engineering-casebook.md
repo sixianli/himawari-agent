@@ -81,6 +81,7 @@ date: "2026-10-26"
   55. [来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文](#case-memory-history)
   56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
   57. [问“写到一个pdf文件”却带出前同事：记忆搜索没有相关度门槛，界面把“最不远的几条”说成“相关记忆”](#case-memory-relevance-threshold)
+  61. [做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索](#case-document-tools)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -103,9 +104,9 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
@@ -3649,6 +3650,65 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 **面试 30 秒版**
 
 “用户问‘写到一个 pdf 文件’，界面却说‘找到 3 条相关记忆’，带出的是前同事。查下来，混合检索只排序不判断，相似度门槛默认 0，记忆少的时候每轮都会带满，界面又把‘最近的几条’说成‘相关’。我用自己的数据实测相似度分布定了门槛，允许返回 0 条，0 条时界面整步不显示；把这个场景写成在旧代码上失败的测试接进检查；再建了一个固定评测集，修改前无关问题 100% 带出记忆，修改后 2.1%，代价是需要联想的问题召回下降，这个取舍和下一步要不要加重排，都由同一套基线来回答。”
+
+[返回目录](#contents)
+
+<a id="case-document-tools"></a>
+
+## 案例 61：做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索
+
+**背景与现象**
+
+2026-10-29（日本时间），Andy 在生产网页（第十八版）让 Himawari 把新闻整理成 Word，一轮用了 50.4 秒，生成的文件点开预览又是空的。他问：“是不是没有文本的处理工具，导致模型思考了很久？”同一天另一轮做骑行 PDF，模型在沙箱里“找不到任何字体”，只能手写 PDF 坐标，字体也没嵌进文件，做出来很难看。记为事故 [I-26](incidents-and-gates.md#incidents)。
+
+**根因**
+
+1. 用只读诊断脚本把那一轮（运行 `fee9ac00`）按步骤拆开：模型约 23 秒，工具约 23 秒，前后准备约 4 秒。多出的约 30 秒、约 3,300 个输出 token（占这一轮输出的 77%）花在三轮多余的步骤上：先探测有没有 python-docx，发现没有，再手写一段 7.5 KB 的脚本拼 Word 的内部 XML，最后补字体。
+2. 在生产机上逐个检查：pandoc、LibreOffice、python-docx、openpyxl、python-pptx、pypdf、reportlab 全都没有装。模型也不知道这一点，只能每次先试。
+3. PDF 难看还有第二层原因：沙箱只允许读 `/usr/bin`、`/usr/lib` 等几个目录（出包脚本 `cloud-seal.mjs` 的 `readOnlyToolchainPaths`），字体目录 `/usr/share/fonts` 和字体配置 `/etc/fonts` 都不在里面。所以就算装了字体，沙箱里的命令也读不到。骑行那轮“找不到字体”很可能就是这个原因，但没有逐条核对那一轮的命令。
+4. 预览为空是另一个问题：网页不能预览 Office 文件。这个由预览线程的 PR #106 解决，本案例不展开。
+
+**我们的方案**
+
+1. 只用 Ubuntu 官方源装文档库和字体：python-docx、openpyxl、pypdf、pdfminer、WeasyPrint（把 HTML 排成 PDF）、pandoc（文档格式转换）、Noto 中日文字体、霞鹜文楷。生产机上先模拟安装，量出前 8 个包下载 125.4 MB、装完占 467.1 MB，再请 Andy 批准。
+2. 沙箱只读白名单加上 `/usr/share`、`/etc/fonts`、`/var/cache/fontconfig`。
+3. 按大厂的“技能”格式告诉模型：系统提示只加一行，写明做文档时先读哪个 `SKILL.md`；完整做法、A4 排版模板、Word 样式和生成 PDF 后自动检查的脚本都放在技能目录里，用到时才读。`SKILL.md` 第一句写明“库已装好，不要探测或安装”，直接对应 Word 那轮浪费的第一步。
+4. 上线前自动检查：生产机缺库或字体，`deploy.sh` 拒绝上线。
+
+工具还是原来的 bash，只是服务器上多了库，提示里多了一行。Pi（Himawari 底层的 Agent 框架）自带技能加载，但它生成的说明让模型“用 read 工具读技能文件”，而 Himawari 的 read 工具只能读工作目录，所以这次没有接 Pi 的这一段，改在 Himawari 的能力说明里写明用 bash 读；技能文件按标准格式写好，以后放开读取范围就能交给 Pi（见 [ADR 0118 方案 E](adr/0118-preinstalled-document-tools-and-document-skill.md#options)）。
+
+**方案讨论与备选**
+
+- **在系统提示里写一段长说明**：省掉探测，但每轮多带几百个 token，大部分对话根本不做文档。没选。
+- **每轮在沙箱里临时安装**：沙箱没有外网，装不了。
+- **装 LibreOffice 统一转换**：装完 1 GB 以上，排版不如 HTML 加 CSS 好控制，先不装。
+- **PDF 用 Ubuntu 自带的 WeasyPrint 61.1 还是从 PyPI 装 70**：61.1 用 Noto 字体每份 20 到 22 秒，70 只要约 0.5 秒，但要离开官方源。交给 Andy 决定，见 [ADR 0118](adr/0118-preinstalled-document-tools-and-document-skill.md#decision)。
+
+**业界主流做法**
+
+- ✅ Anthropic 工程博客《Equipping agents for the real world with Agent Skills》（<https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills>）：“pre-loads the name and description of every installed skill into its system prompt”。
+- ✅ Anthropic 官方 docx 技能（<https://github.com/anthropics/skills/blob/main/skills/docx/SKILL.md>）：“docx is preinstalled — do not run npm install first”。
+- ✅ OpenAI Skills 文档（<https://developers.openai.com/api/docs/guides/tools-skills>）：“adds each available skill's name, description, and path to user prompt context”。
+- ✅ Manus《Context Engineering for AI Agents》（<https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus>）：“avoid dynamically adding or removing tools mid-iteration”。
+
+**对比与取舍**
+
+相同点：提示里只放一行索引，全文用到时再读；技能里直接说清楚“已预装”。不同点：大厂的执行环境是自己的容器，镜像里预装好；我们用的是主人自己的服务器（[自有优先、数据自持](product-vision.md)），只能用 apt 装到主机上，再用上线检查保证不漏装。Anthropic 的 PDF 技能没有中日文字体的说明，我们补了字体和嵌入检查。那一行索引每轮内容固定，不随问题增减，按 Manus 的经验保持缓存命中。
+
+**结果数据**
+
+- 慢的那一轮：50.4 秒，其中多余三轮约 30 秒、约 3,300 个输出 token，花费 0.0225 美元（运行 `fee9ac00`，诊断结果 `result-20261029.txt`）。
+- 安装规模：51 个包，下载 125.4 MB，装完 467.1 MB（生产机模拟安装）；加上霞鹜文楷整包约 113 MB。
+- PDF 生成速度（云端实测，同一份样张）：WeasyPrint 61.1 + Noto 21.6、22.5 秒；WeasyPrint 70 + HarfBuzz 0.5 秒；61.1 + 霞鹜文楷约 2.3 秒（kami 线程）。
+- 装库以后同一任务的耗时：未测量，等第十九版上线后在真实网页重跑。
+
+**相关 ADR/PR**
+
+[ADR 0118](adr/0118-preinstalled-document-tools-and-document-skill.md)；[事故 I-26](incidents-and-gates.md#incidents)；Office 预览见 PR #106；本案例的 PR 在分支 `claude/project-thread-qlqysx`。
+
+**面试 30 秒版**
+
+“用户说做一份 Word 要等 50 秒。我把那一轮按步骤拆开，发现有 30 秒和 77% 的输出 token 花在模型自己摸索上：服务器没装文档库，它先探测，再手写 Word 的 XML。PDF 难看是因为沙箱连字体目录都读不到。我先在生产机上模拟安装量出代价，再请负责人批准，只用官方源装库和字体，放开沙箱的字体目录；然后学 Anthropic 和 OpenAI 的技能格式，提示里只加一行索引，详细做法用到时再读。最后加了上线检查，缺库就拒绝上线。”
 
 [返回目录](#contents)
 

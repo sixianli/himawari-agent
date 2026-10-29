@@ -34,6 +34,16 @@
       }
     },
     {
+      "includes": ["apps/agent-service/src/document-skill/a4.css"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnknownFunction": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["ci/rules/fixtures/unsafe.fixture.ts"],
       "linter": {
         "rules": {
