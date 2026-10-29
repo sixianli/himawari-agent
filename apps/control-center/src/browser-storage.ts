@@ -260,6 +260,15 @@ export class ControlCenterBrowserStorage {
     );
   }
 
+  readPreferencesUnsynced(): boolean {
+    return this.storage.getItem(`${KEY_PREFIX}.preferencesUnsynced`) === "1";
+  }
+
+  markPreferencesUnsynced(unsynced: boolean): void {
+    if (unsynced) this.storage.setItem(`${KEY_PREFIX}.preferencesUnsynced`, "1");
+    else this.storage.removeItem(`${KEY_PREFIX}.preferencesUnsynced`);
+  }
+
   readLocale(preferredLanguages: readonly string[] = []): ControlCenterUiLocale {
     const stored = this.storage.getItem(`${KEY_PREFIX}.locale`);
     if (isUiLocale(stored)) return stored;

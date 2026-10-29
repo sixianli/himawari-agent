@@ -570,7 +570,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "ProductMemoryStatePort",
     "one row per change of a Memory: kind, the text Payload at that point, short stance, owner quote Payload, source Thread",
     "metadata_only",
-    "cascade with its Memory; the quote Payload is deleted with its source Thread",
+    "cascade with its Memory; the quote Payload stays when its source Thread is deleted and goes with its Memory",
   ),
   entry(
     "memory_episodes",
@@ -701,7 +701,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "thread_artifacts",
     "ThreadArtifactStorePort",
-    "one row per version of a file Himawari wrote or changed in a conversation; a new version only when the content fingerprint changes",
+    "one row per version of a file Himawari wrote or changed in a conversation, or the owner attached to a message; a new version only when the content fingerprint changes",
     "metadata_only",
     "cascade with Run deletion",
   ),
@@ -737,6 +737,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "web_push_cursors",
     "WebPushStorePort",
     "one read position per push source",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "owner_preferences",
+    "OwnerPreferencesStorePort",
+    "one row per Agent: the name Himawari calls the owner, the page language and the accent color, shared by every signed-in device",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),

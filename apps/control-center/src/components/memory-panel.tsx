@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryModel, MemoryReminder, PendingMemory } from "../memory.js";
-import { ActionButton } from "./primitives.js";
+import { ActionButton, EditActions, editorKeys } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 
@@ -37,6 +38,8 @@ export function TextEditor({
   onCancel: () => void;
 }) {
   const [text, setText] = useState(initial);
+  const changed = Boolean(text.trim()) && text.trim() !== initial.trim();
+  const save = changed && !busy ? () => onSave(text.trim()) : null;
   return (
     <div className="memory-editor">
       <textarea
@@ -45,15 +48,16 @@ export function TextEditor({
         placeholder={placeholder}
         value={text}
         onChange={(event) => setText(event.currentTarget.value)}
+        onKeyDown={editorKeys(save, onCancel)}
       />
-      <div className="actions">
-        <ActionButton disabled={busy || !text.trim()} onClick={() => onSave(text.trim())}>
-          {message("memory.save")}
-        </ActionButton>
-        <ActionButton variant="quiet" disabled={busy} onClick={onCancel}>
-          {message("governed.cancel")}
-        </ActionButton>
-      </div>
+      <EditActions
+        changed={changed}
+        busy={busy}
+        saveLabel={message("memory.save")}
+        cancelLabel={message("governed.cancel")}
+        onSave={() => save?.()}
+        onCancel={onCancel}
+      />
     </div>
   );
 }
@@ -110,15 +114,10 @@ export function MemoryApprovalCard({
 }
 
 export function MemoryReminders({ memory, message }: { memory: MemoryModel; message: Message }) {
+  const format = useLocaleFormat();
   const items: readonly MemoryReminder[] = memory.overview?.reminders ?? [];
   if (!items.length) return null;
-  const time = (value: string) =>
-    new Date(value).toLocaleString(undefined, {
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const time = (value: string) => format.moment(value);
   return (
     <aside className="memory-reminders" aria-live="polite">
       {items.map((item) => (

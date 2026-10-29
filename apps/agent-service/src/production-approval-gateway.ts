@@ -25,6 +25,10 @@ import {
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
 import {
+  PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+  type ProductionOwnerPreferencesControl,
+} from "./production-owner-preferences-control.js";
+import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
@@ -56,6 +60,7 @@ export function createProductionApprovalGateway(options: {
   readonly memoryControl?: ProductionMemoryControl;
   readonly webPushControl?: ProductionWebPushControl;
   readonly proactiveControl?: Pick<ProductionProactive, "query" | "execute">;
+  readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -87,7 +92,9 @@ export function createProductionApprovalGateway(options: {
             ? options.webPushControl.query(query)
             : query.type.startsWith("proactive.") && options.proactiveControl
               ? options.proactiveControl.query(query)
-              : searchAuthorization.query(query),
+              : query.type.startsWith("owner.preferences.") && options.ownerPreferencesControl
+                ? options.ownerPreferencesControl.query(query)
+                : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -186,6 +193,8 @@ export function createProductionApprovalGateway(options: {
           return options.webPushControl.execute(command);
         if (command.type.startsWith("proactive.") && options.proactiveControl)
           return options.proactiveControl.execute(command);
+        if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
+          return options.ownerPreferencesControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -208,6 +217,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.memoryControl ? PRODUCTION_MEMORY_OPERATIONS : []),
       ...(options.webPushControl ? PRODUCTION_WEB_PUSH_OPERATIONS : []),
       ...(options.proactiveControl ? PRODUCTION_PROACTIVE_OPERATIONS : []),
+      ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
     ],
     reads,
     controlPlane,

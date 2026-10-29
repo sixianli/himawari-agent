@@ -6,7 +6,7 @@ import {
   OWNER_NAME_LIMIT,
 } from "../browser-storage.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
-import { ActionButton, ModalDialog } from "./index.js";
+import { ActionButton, Dropdown, ModalDialog } from "./index.js";
 
 const THEMES = ["light", "dark", "system"] as const;
 const themeIcons: Readonly<Record<(typeof THEMES)[number], ReactNode>> = {
@@ -105,29 +105,27 @@ export function SettingsDialog({
                   }}
                 />
               </label>
-              <label className="setting-row">
+              <div className="setting-row">
                 <span>
                   {message("locale.label")}
                   <small className="setting-description">{message("review.localeNote")}</small>
                 </span>
-                <select
-                  aria-label={message("locale.label")}
+                <Dropdown
+                  label={message("locale.label")}
                   value={locale}
-                  onChange={(e) => onLocaleChange(e.target.value as ControlCenterUiLocale)}
-                >
-                  {UI_LOCALES.map((value) => (
-                    <option key={value} value={value}>
-                      {message(
-                        value === "zh-CN"
-                          ? "locale.zhCN"
-                          : value === "ja"
-                            ? "locale.ja"
-                            : "locale.en",
-                      )}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={UI_LOCALES.map((value) => ({
+                    value,
+                    label: message(
+                      value === "zh-CN"
+                        ? "locale.zhCN"
+                        : value === "ja"
+                          ? "locale.ja"
+                          : "locale.en",
+                    ),
+                  }))}
+                  onChange={onLocaleChange}
+                />
+              </div>
               <div className="setting-row">
                 <span id="setting-theme">{message("appearance.theme")}</span>
                 <fieldset className="theme-switch" aria-labelledby="setting-theme">

@@ -12,10 +12,10 @@ import type {
   AuthorityFence,
   ClockPort,
   PayloadRef,
+  RunBackgroundHold,
   RunCheckpoint,
   RunCheckpointStore,
   RunExecutionLeaseClaim,
-  RunBackgroundHold,
   RunLifecyclePort,
   RuntimeEvent,
   RuntimeRequest,
@@ -28,6 +28,7 @@ import type {
 } from "../ports/index.js";
 import {
   ApplicationPortError,
+  CONTEXT_MEMORY_QUOTA_EXCEEDED,
   CONTEXT_MEMORY_UNAVAILABLE,
   PORT_ERROR_CODES,
 } from "../ports/index.js";
@@ -475,6 +476,7 @@ export class RunCoordinator {
       storedCheckpoint.checkpoint.contextRef === null &&
       storedCheckpoint.checkpoint.terminalStatus === null
     ) {
+      let contextFailure: string = CONTEXT_MEMORY_UNAVAILABLE;
       const formed = await this.dependencies.context
         .form({
           ...input.context,
@@ -487,10 +489,13 @@ export class RunCoordinator {
           if (
             error instanceof ApplicationPortError &&
             error.code === PORT_ERROR_CODES.PROVIDER_FAILURE &&
-            error.message === CONTEXT_MEMORY_UNAVAILABLE &&
+            (error.message === CONTEXT_MEMORY_UNAVAILABLE ||
+              error.message === CONTEXT_MEMORY_QUOTA_EXCEEDED) &&
             !attempt.cancellation.signal.aborted
-          )
+          ) {
+            contextFailure = error.message;
             return undefined;
+          }
           throw error;
         });
       this.assertExecutionActive(attempt);
@@ -510,7 +515,7 @@ export class RunCoordinator {
           payload: {
             type: "runtime.failed",
             runId: input.runId,
-            errorCode: CONTEXT_MEMORY_UNAVAILABLE,
+            errorCode: contextFailure,
             occurredAt: new Date(this.executionNow()).toISOString(),
           },
         });
@@ -521,7 +526,7 @@ export class RunCoordinator {
           lastTraceEventId: failure.event.id,
           terminalStatus: "failed",
           output: null,
-          diagnosticCode: CONTEXT_MEMORY_UNAVAILABLE,
+          diagnosticCode: contextFailure,
         });
       }
       this.assertExecutionActive(attempt);

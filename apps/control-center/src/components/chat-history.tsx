@@ -51,8 +51,10 @@ export function ChatHistory({
   renderMemory,
   outgoing,
   onRetry,
+  inherited,
 }: {
   readonly detail: Detail | undefined;
+  readonly inherited?: InheritedConversation | undefined;
   readonly outgoing?: OutgoingMessage | null | undefined;
   readonly onRetry?: (() => void) | undefined;
   readonly contentByRef: Readonly<Record<string, string>>;
@@ -124,8 +126,13 @@ export function ChatHistory({
           setShowLatest(!following.current);
         }}
       >
-        {!groups.size && !outgoing ? (
-          <p className="chat-empty">{message("threads.messagesEmpty")}</p>
+        {inherited ? (
+          <InheritedHistory
+            inherited={inherited}
+            contentByRef={contentByRef}
+            readImage={readImage}
+            message={message}
+          />
         ) : null}
         {[...groups].map(([key, group]) => {
           const records = group.run ? (execution[group.run.runId] ?? []) : [];
@@ -311,9 +318,11 @@ export function ChatHistory({
         ) : null}
       </section>
       {showLatest ? (
-        <ActionButton
+        <button
+          type="button"
           className="chat-latest"
-          variant="secondary"
+          aria-label={message("chat.latest")}
+          title={message("chat.latest")}
           onClick={() => {
             const el = scrollRef.current;
             if (el) el.scrollTop = el.scrollHeight;
@@ -321,8 +330,64 @@ export function ChatHistory({
             setShowLatest(false);
           }}
         >
-          ↓ {message("chat.latest")}
-        </ActionButton>
+          <LineIcon name="arrowDown" />
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+export interface InheritedConversation {
+  readonly title: string;
+  readonly messages: Detail["payload"]["messages"];
+  readonly available: boolean;
+  readonly onOpenSource: () => void;
+}
+
+function InheritedHistory({
+  inherited,
+  contentByRef,
+  readImage,
+  message,
+}: {
+  readonly inherited: InheritedConversation;
+  readonly contentByRef: Readonly<Record<string, string>>;
+  readonly readImage?: ((ref: string) => Promise<string>) | undefined;
+  readonly message: Message;
+}) {
+  const turn = inherited.messages.filter((item) => item.role === "owner").length;
+  return (
+    <>
+      <div className="fork-origin">
+        <LineIcon name="fork" />
+        <span className="fork-origin-text">
+          {inherited.available
+            ? message("fork.banner", { title: inherited.title, turn })
+            : message("fork.bannerMissing")}
+        </span>
+        {inherited.available ? (
+          <button type="button" className="fork-origin-open" onClick={inherited.onOpenSource}>
+            {message("fork.openSource")}
+          </button>
+        ) : null}
+      </div>
+      {inherited.messages.length ? (
+        <>
+          <section className="fork-inherited" aria-label={message("fork.inheritedLabel")}>
+            {inherited.messages.map((item) =>
+              item.role === "owner" ? (
+                <div className="owner-turn" key={item.messageId}>
+                  <OwnerMessage content={contentByRef[item.contentRef]} readImage={readImage} />
+                </div>
+              ) : item.role === "agent" ? (
+                <article key={item.messageId} className="thread-message thread-message-agent">
+                  <AssistantMarkdown text={contentByRef[item.contentRef] ?? "…"} />
+                </article>
+              ) : null,
+            )}
+          </section>
+          <p className="fork-divider">{message("fork.divider")}</p>
+        </>
       ) : null}
     </>
   );

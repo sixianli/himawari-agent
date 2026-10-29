@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { DEFAULT_UI_LOCALE } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import {
   openSettings,
@@ -12,25 +13,25 @@ import {
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { openNotificationSettings } from "./memory-panel.js";
-import { ActionButton } from "./primitives.js";
+import { ActionButton, EmptyState } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 
 const HIGHLIGHT_MS = 2600;
 const DAY_MS = 86_400_000;
 
-export const clock = (value: string, locale?: string) =>
-  new Date(value).toLocaleTimeString(locale, {
+export const clock = (value: string, locale: string | undefined) =>
+  new Intl.DateTimeFormat(locale ?? DEFAULT_UI_LOCALE, {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-  });
-export const day = (value: string, locale?: string) =>
-  new Date(value).toLocaleDateString(locale, {
+  }).format(new Date(value));
+export const day = (value: string, locale: string | undefined) =>
+  new Intl.DateTimeFormat(locale ?? DEFAULT_UI_LOCALE, {
     month: locale?.startsWith("en") ? "short" : "numeric",
     day: "numeric",
-  });
-export const dayAndClock = (value: string, locale?: string) =>
+  }).format(new Date(value));
+export const dayAndClock = (value: string, locale: string | undefined) =>
   `${day(value, locale)} ${clock(value, locale)}`;
 const midnight = (value: string) => {
   const date = new Date(value);
@@ -443,9 +444,7 @@ export function ProactiveDecisionLog({
             </span>
           </p>
           <p className="settings-note proactive-log-note">{message("proactive.log.note")}</p>
-          {decisions.length === 0 ? (
-            <p className="reminders-empty">{message("proactive.log.empty")}</p>
-          ) : null}
+          {decisions.length === 0 ? <EmptyState title={message("proactive.log.empty")} /> : null}
           {decisions.map((decision) => {
             const label = dayLabel(decision.checkedAt);
             const heading = label !== last ? <h2 className="memory-group">{label}</h2> : null;

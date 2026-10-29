@@ -27,7 +27,11 @@ const query = vi.fn(),
   settled = vi.fn(),
   unauthorized = vi.fn();
 const client = { query, mutate } as unknown as GatewayClient;
-const message = (id: MessageId) => messages[id];
+const message = (id: MessageId, values?: Record<string, string>) =>
+  Object.entries(values ?? {}).reduce(
+    (text, [key, value]) => text.replace(`{${key}}`, value),
+    messages[id],
+  );
 let enabled: boolean, revision: number, approvalSnapshot: ReturnType<typeof approval>;
 function searchProps(connected = true) {
   return { client, configuration, storage, connected, refreshSignal: 0, message };
@@ -142,7 +146,11 @@ describe("search authorization menu", () => {
     expect(details).toHaveLength(1);
     expect(details[0]?.className).toBe("settings-details");
     expect(details[0]?.open).toBe(false);
-    expect(details[0]?.textContent).toContain("允许后，生成的查询词");
+    expect(details[0]?.textContent).toContain("发到下面这些网址");
+    expect(details[0]?.querySelector(".search-recipients")?.textContent).toBe("mcp.exa.ai");
+    expect(details[0]?.textContent).not.toContain("Exa");
+    expect(details[0]?.textContent).not.toContain("https://");
+    expect(container.querySelector(".setting-row details")).toBe(details[0]);
     expect(container.querySelector('input[role="switch"]')).not.toBeNull();
     expect(container.querySelector(".search-authorization")).not.toBeNull();
     expect(button("chat.search.enable")).toBeDefined();

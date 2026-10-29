@@ -31,10 +31,7 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
       returnFocusRef.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
       dialog.showModal();
-      const initial = dialog.querySelector<HTMLElement>(
-        "[data-autofocus], button, input, select, textarea, a[href]",
-      );
-      initial?.focus();
+      (dialog.querySelector<HTMLElement>("[data-autofocus]") ?? dialog).focus();
     } else if (!open && dialog.open) {
       dialog.close();
     }
@@ -59,6 +56,7 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
       }}
       onClose={onClose}
       ref={dialogRef}
+      tabIndex={-1}
     >
       <div className="dialog-heading">
         <h2 id={titleId}>{title}</h2>

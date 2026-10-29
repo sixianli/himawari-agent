@@ -123,6 +123,8 @@ function threadSummary(thread: ProductThread) {
     pinOrder: thread.pinOrder,
     answerLocale: thread.answerLocale,
     messageWatermark: thread.messageWatermark,
+    sourceThreadId: thread.lineage?.sourceThreadId ?? null,
+    sourceWatermark: thread.lineage?.sourceWatermark ?? null,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
   } as const;

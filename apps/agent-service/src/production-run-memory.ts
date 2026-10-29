@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
+  CONTEXT_MEMORY_QUOTA_EXCEEDED,
   CONTEXT_MEMORY_UNAVAILABLE,
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
@@ -65,12 +66,16 @@ export function createProductionRunMemory(options: {
   readonly budget: ModelBudgetPort;
   readonly assertActive: () => Promise<void>;
   readonly now: () => string;
+  readonly diagnostic?: (event: Readonly<Record<string, string>>) => void;
 }): Pick<MemoryPort, "search"> & {
   project: NonNullable<DurableMemoryServiceOptions["project"]>;
   embedWithin: <T>(context: RunEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
 } {
   const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
-  const providerFailedSearches = new WeakSet<MemorySearchRequest>();
+  const providerFailedSearches = new WeakMap<
+    MemorySearchRequest,
+    typeof CONTEXT_MEMORY_UNAVAILABLE | typeof CONTEXT_MEMORY_QUOTA_EXCEEDED
+  >();
   const projectionScope = new AsyncLocalStorage<{
     job: MemoryProjectionJob;
     memory: ProductMemoryRecord;
@@ -211,7 +216,9 @@ export function createProductionRunMemory(options: {
           options.configuration.memory.dimensions,
         );
       } catch (error) {
-        if (context && !context.signal?.aborted) providerFailedSearches.add(context);
+        if (context && !context.signal?.aborted)
+          providerFailedSearches.set(context, embeddingFailureCode(error));
+        options.diagnostic?.(embeddingFailureDiagnostic(error));
         throw error;
       }
       await permit.assertActive();
@@ -275,17 +282,12 @@ export function createProductionRunMemory(options: {
             },
           })
           .catch((error: unknown) => {
-            if (!providerFailedSearches.has(request)) throw error;
-            throw new ApplicationPortError(
-              PORT_ERROR_CODES.PROVIDER_FAILURE,
-              CONTEXT_MEMORY_UNAVAILABLE,
-            );
+            const failure = providerFailedSearches.get(request);
+            if (!failure) throw error;
+            throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, failure);
           });
-        if (providerFailedSearches.has(request))
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.PROVIDER_FAILURE,
-            CONTEXT_MEMORY_UNAVAILABLE,
-          );
+        const failure = providerFailedSearches.get(request);
+        if (failure) throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, failure);
         return found.map(({ memory, score }) => ({
           id: memory.id,
           ownerId: memory.ownerId,
@@ -299,5 +301,23 @@ export function createProductionRunMemory(options: {
         }));
       });
     },
+  };
+}
+
+function embeddingFailureCode(error: unknown) {
+  return error instanceof ApplicationPortError &&
+    (error.details["status"] === "402" ||
+      error.details["gatewayErrorType"] === "quota_for_entity_exceeded")
+    ? CONTEXT_MEMORY_QUOTA_EXCEEDED
+    : CONTEXT_MEMORY_UNAVAILABLE;
+}
+
+function embeddingFailureDiagnostic(error: unknown): Readonly<Record<string, string>> {
+  return {
+    component: "agent-service",
+    event: "memory.embedding_failed",
+    failure: embeddingFailureCode(error),
+    error: error instanceof Error ? error.message : "EMBEDDING_FAILED",
+    ...(error instanceof ApplicationPortError ? error.details : {}),
   };
 }

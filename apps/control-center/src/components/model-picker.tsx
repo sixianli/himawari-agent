@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
+import { LineIcon } from "./answer-footer.js";
 import { ActionButton } from "./primitives.js";
 
 const PRIMARY_MODEL_COUNT = 3;
@@ -74,7 +75,9 @@ export function ModelPicker({
             <span className="depth-label">{label(thinkingLevel)}</span>
           </>
         ) : null}
-        <span aria-hidden="true">⌄</span>
+        <span className="model-picker-chevron">
+          <LineIcon name="chevron" />
+        </span>
       </summary>
       <div className="model-panel">
         {choosing && models.length > 1 ? (

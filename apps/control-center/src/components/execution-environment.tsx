@@ -1,5 +1,6 @@
 import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
 import { useEffect, useRef, useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -17,6 +18,7 @@ export function ExecutionEnvironmentLine({
   readonly onOpenThread: (threadId: string) => void;
   readonly message: Message;
 }) {
+  const format = useLocaleFormat();
   const root = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -79,10 +81,7 @@ export function ExecutionEnvironmentLine({
                         <small>
                           {message(`chat.environment.kind.${program.kind}` as MessageId)} ·{" "}
                           {message("chat.environment.startedAt", {
-                            time: new Date(program.startedAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            }),
+                            time: format.clockShort(program.startedAt),
                           })}
                         </small>
                       </span>

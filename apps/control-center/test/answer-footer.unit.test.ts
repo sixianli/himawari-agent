@@ -79,6 +79,8 @@ const detail = (): Detail => ({
       pinOrder: null,
       answerLocale: "zh-CN",
       messageWatermark: 2,
+      sourceThreadId: null,
+      sourceWatermark: null,
       createdAt: at(0),
       updatedAt: at(27082),
     },
@@ -142,8 +144,8 @@ it("[UI-9] keeps only actions under the answer: copy, start a new conversation f
   expect(actions).toBeGreaterThan(answer);
   expect(sources).toBeGreaterThan(actions);
   const line = html.slice(actions, sources);
-  expect(line).toContain('title="answer.copyHint" aria-label="answer.copy"');
-  expect(line).toContain('title="answer.forkHint" aria-label="answer.fork"');
+  expect(line).toContain('data-tip="answer.copyHint" aria-label="answer.copy"');
+  expect(line).toContain('data-tip="answer.forkHint" aria-label="answer.fork"');
   expect(line).toContain(
     '<time class="answer-time" dateTime="2026-10-26T12:24:24.777Z">answer.at(at=2026-10-26T12:24:24.777Z)</time>',
   );

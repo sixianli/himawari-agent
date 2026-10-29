@@ -1,11 +1,20 @@
 import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ControlCenterBrowserStorage } from "../browser-storage.js";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { queryMessage } from "../messages.js";
 import { setSearchAuthorization } from "../search-authorization.js";
+import { LineIcon } from "./answer-footer.js";
 import { ActionButton } from "./primitives.js";
+
+export function searchRecipientHost(origin: string): string {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return origin;
+  }
+}
 
 export function SearchAuthorizationControl({
   client,
@@ -20,12 +29,13 @@ export function SearchAuthorizationControl({
   storage: ControlCenterBrowserStorage;
   connected: boolean;
   refreshSignal: number;
-  message: (id: MessageId) => string;
+  message: (id: MessageId, values?: Record<string, string>) => string;
 }) {
   const [snapshot, setSnapshot] = useState<Extract<
     GatewayV2Snapshot,
     { type: "search.authorization.snapshot" }
   > | null>(null);
+  const switchId = useId();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(false),
     [loadError, setLoadError] = useState(false),
@@ -75,12 +85,37 @@ export function SearchAuthorizationControl({
     <section className="search-authorization">
       <div className="search-authorization-panel">
         <h3>{message("review.settings.tools")}</h3>
-        <label className="setting-row">
+        <div className="setting-row">
           <span>
-            {message("chat.search.enable")}
-            <small className="setting-description">{message("chat.search.purpose")}</small>
+            <label htmlFor={switchId}>{message("chat.search.enable")}</label>
+            <small className="setting-description">
+              {message("chat.search.purpose")}
+              {snapshot && !snapshot.payload.enabled
+                ? ` ${message("chat.search.afterRevoke")}`
+                : ""}
+            </small>
+            <details className="settings-details">
+              <summary>
+                {message("chat.search.whatIsSent")}
+                <LineIcon name="chevron" />
+              </summary>
+              <p>{message("chat.search.sentQuery")}</p>
+              {snapshot?.payload.recipients.length ? (
+                <ul className="search-recipients">
+                  {[...new Set(snapshot.payload.recipients.map(searchRecipientHost))].map(
+                    (host) => (
+                      <li key={host}>
+                        <code>{host}</code>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              ) : null}
+              <p>{message("chat.search.sentLimits")}</p>
+            </details>
           </span>
           <input
+            id={switchId}
             type="checkbox"
             role="switch"
             aria-checked={snapshot?.payload.enabled ?? false}
@@ -97,17 +132,7 @@ export function SearchAuthorizationControl({
             }
             onChange={() => void change()}
           />
-        </label>
-        <details className="settings-details">
-          <summary>{message("chat.search.whatIsSent")}</summary>
-          <p>{message("chat.search.disclosure")}</p>
-          {snapshot?.payload.recipients.length ? (
-            <p>
-              {message("chat.search.recipients")} {snapshot.payload.recipients.join(", ")}
-            </p>
-          ) : null}
-          <p>{message("chat.search.afterRevoke")}</p>
-        </details>
+        </div>
         <div className="setting-row">
           <span>
             {message("chat.search.other")}
