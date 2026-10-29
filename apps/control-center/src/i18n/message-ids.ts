@@ -381,6 +381,7 @@ export const MESSAGE_IDS = [
   "preview.widen",
   "preview.narrow",
   "preview.copy",
+  "preview.info",
   "preview.contents",
   "preview.total",
   "preview.missing",

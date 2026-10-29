@@ -401,6 +401,7 @@ export const messages = {
   "preview.widen": "放宽预览",
   "preview.narrow": "收窄预览",
   "preview.copy": "复制文件内容",
+  "preview.info": "文件信息",
   "preview.contents": "目录",
   "preview.total": "合计",
   "preview.missing": "这个文件超过 64K 字，记录里没有存下完整内容，预览不了。",

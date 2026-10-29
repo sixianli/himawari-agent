@@ -432,6 +432,7 @@ export const messages = {
   "preview.widen": "プレビューを広げる",
   "preview.narrow": "プレビューを狭める",
   "preview.copy": "ファイルの内容をコピー",
+  "preview.info": "ファイル情報",
   "preview.contents": "目次",
   "preview.total": "合計",
   "preview.missing":

@@ -1068,7 +1068,9 @@ body {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  padding: 10px 16px 0;
+  padding: 10px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
@@ -1095,6 +1097,14 @@ body {
 .preview-source-link:hover,
 .preview-retry:hover {
   color: var(--text);
+}
+.preview-meta .preview-versions,
+.preview-meta .preview-source-link {
+  min-height: 28px;
+}
+.preview-meta .preview-source-link {
+  color: var(--accent);
+  text-decoration: none;
 }
 .preview-version-list {
   align-self: stretch;
@@ -1147,18 +1157,13 @@ body {
   border-radius: 10px;
   overflow: hidden;
 }
-.preview-isolated-bar {
+.preview-isolated-note {
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 0;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-muted);
-  color: var(--text-muted);
-  font-size: 11.5px;
 }
-.preview-isolated-bar svg {
+.preview-isolated-note svg {
   width: 12px;
   height: 12px;
   fill: none;
@@ -1362,18 +1367,9 @@ body {
     min-width: 0;
     z-index: 20;
   }
-  .preview-widen,
-  .content-preview > header .preview-action {
+  .preview-widen {
     display: none;
   }
-  .preview-meta-actions {
-    display: flex;
-  }
-}
-.preview-meta-actions {
-  display: none;
-  order: 1;
-  gap: 8px;
 }
 
 .answer-files {
@@ -3769,9 +3765,6 @@ output.owner-status {
   .preview-tool[data-tip]::after {
     transition: none;
   }
-}
-.preview-meta-actions .preview-action {
-  gap: 5px;
 }
 .files-library-skeleton {
   display: grid;

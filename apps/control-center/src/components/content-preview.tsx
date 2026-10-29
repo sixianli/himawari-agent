@@ -314,6 +314,7 @@ export function ContentPreview({
   const views = viewsOf(shown, body, showsTrace);
   const [view, setView] = useState<View>();
   const [wide, setWide] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [copied, copy] = useCopied();
   useEffect(() => {
     const trigger = document.activeElement;
@@ -361,33 +362,31 @@ export function ContentPreview({
     ]
       .filter(Boolean)
       .join(" · ");
-  const fileActions = (labelled: boolean) => (
+  const fileActions = (
     <>
       {selected && body?.kind === "web" ? (
         <button
           type="button"
-          className={labelled ? "preview-action" : "preview-action preview-tool"}
-          aria-label={labelled ? undefined : message("preview.openTab")}
-          data-tip={labelled ? undefined : message("preview.openTab")}
+          className="preview-action preview-tool"
+          aria-label={message("preview.openTab")}
+          data-tip={message("preview.openTab")}
           onClick={() => {
             const preview = access?.previewUrl;
             if (preview) openInNewTab(() => preview(selected.id));
           }}
         >
           <LineIcon name="external" />
-          {labelled ? message("preview.openTab") : null}
         </button>
       ) : null}
       {selected?.stored ? (
         <a
-          className={labelled ? "preview-action" : "preview-action preview-tool"}
+          className="preview-action preview-tool"
           href={fileContentUrl(selected.id, true)}
           download
-          aria-label={labelled ? undefined : message("preview.download")}
-          data-tip={labelled ? undefined : message("preview.download")}
+          aria-label={message("preview.download")}
+          data-tip={message("preview.download")}
         >
           <LineIcon name="download" />
-          {labelled ? message("preview.download") : null}
         </a>
       ) : null}
     </>
@@ -442,7 +441,7 @@ export function ContentPreview({
             ))}
           </fieldset>
         ) : null}
-        {fileActions(false)}
+        {fileActions}
         <button
           type="button"
           className="preview-action preview-tool preview-widen"
@@ -464,6 +463,18 @@ export function ContentPreview({
             <LineIcon name={copied ? "check" : "copy"} />
           </button>
         )}
+        {delivered ? (
+          <button
+            type="button"
+            className="preview-tool"
+            aria-label={message("preview.info")}
+            data-tip={message("preview.info")}
+            aria-expanded={infoOpen}
+            onClick={() => setInfoOpen(!infoOpen)}
+          >
+            <LineIcon name="info" />
+          </button>
+        ) : null}
         <button
           type="button"
           className="preview-tool"
@@ -474,11 +485,8 @@ export function ContentPreview({
           <LineIcon name="close" />
         </button>
       </header>
-      {delivered ? (
+      {delivered && infoOpen ? (
         <div className="preview-meta">
-          {selected?.stored ? (
-            <span className="preview-meta-actions">{fileActions(true)}</span>
-          ) : null}
           <span>
             {fileFacts(
               selected
@@ -530,6 +538,14 @@ export function ContentPreview({
               {delivered.source.label} →
             </button>
           ) : null}
+          {body?.kind === "web" ? (
+            <p className="preview-isolated-note">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 11h14v9H5zM8 11V8a4 4 0 0 1 8 0v3" />
+              </svg>
+              {message("preview.isolated")}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {selected?.overlapped ? (
@@ -569,12 +585,6 @@ export function ContentPreview({
         ) : body?.kind === "web" ? (
           loaded?.url ? (
             <div className="preview-isolated">
-              <p className="preview-isolated-bar">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 11h14v9H5zM8 11V8a4 4 0 0 1 8 0v3" />
-                </svg>
-                {message("preview.isolated")}
-              </p>
               <iframe
                 className="preview-frame"
                 src={loaded.url}

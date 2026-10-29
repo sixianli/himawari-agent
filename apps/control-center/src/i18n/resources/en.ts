@@ -430,6 +430,7 @@ export const messages = {
   "preview.widen": "Widen preview",
   "preview.narrow": "Narrow preview",
   "preview.copy": "Copy file contents",
+  "preview.info": "File info",
   "preview.contents": "Contents",
   "preview.total": "Total",
   "preview.missing":
