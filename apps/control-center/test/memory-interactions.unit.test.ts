@@ -691,6 +691,80 @@ describe("memory approval and management", () => {
     expect(text("#settings")).toContain("要先从对话里记下第一条记忆，才能手动添加和导入");
     expect(document.querySelector("#settings .memory-card[data-kind=add]")).toBeNull();
   });
+
+  it("[MP-8] shows no counts before the memories arrive", async () => {
+    query.mockImplementation(() => new Promise(() => undefined));
+    await render();
+    expect(text("#settings [role=tablist]")).not.toMatch(/\d/);
+    expect(text("#settings")).not.toContain("记住了");
+    expect(text("#settings")).toContain("正在加载");
+  });
+
+  it("[MP-8] every filter number is what clicking that filter shows, whatever was clicked before", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        memoryItem("m-coffee", "我喜欢喝美式", { subCategory: "饮食" }),
+        memoryItem("m-fish", "主人从10月28日起喜欢吃鱼", { subCategory: "饮食" }),
+        memoryItem("m-fish-old", "主人不太喜欢吃鱼", { supersededBy: "m-fish" }),
+        memoryItem("m-out", "主人最近一个月都不想出去玩", { subCategory: "社交" }),
+        memoryItem("m-out-old", "主人不爱出去玩", { supersededBy: "m-out" }),
+        memoryItem("m-blue", "主人最喜欢蓝色"),
+        memoryItem("m-city", "主人住在上海", { category: "identity" }),
+        memoryItem("m-mentor", "主人的导师是张伟", { category: "relationship" }),
+        memoryItem("m-old-pref", "主人喜欢喝拿铁", { status: "archived", subCategory: "饮食" }),
+        memoryItem("m-old-city", "主人住在北京", { category: "identity", status: "archived" }),
+        memoryItem("m-gone", "主人喜欢绿色", { status: "trashed" }),
+        memoryItem("m-import", "回答一律用简体中文", { category: "rule", importBatchId: "b1" }),
+      ],
+      tidyUps: [
+        {
+          changeId: "tidy-1",
+          action: "merge",
+          text: "主人住在上海",
+          relatedText: "主人在上海住",
+          createdAt: "2026-10-25T12:00:00.000Z",
+          undone: false,
+        },
+      ],
+      imports: [
+        {
+          batchId: "b1",
+          source: "codex",
+          itemCount: 1,
+          createdAt: "2026-10-25T13:00:00.000Z",
+          undone: false,
+        },
+      ],
+    };
+    await render();
+    const rows = () => [...document.querySelectorAll<HTMLElement>("#settings .memory-chips")];
+    const numberOf = (chip: HTMLButtonElement) =>
+      Number(chip.querySelector("small")?.textContent ?? Number.NaN);
+    const sweep = async (shown: () => number) => {
+      for (let row = 0; row < rows().length; row++)
+        for (let at = 0; at < (rows()[row]?.querySelectorAll("button small").length ?? 0); at++) {
+          const chip = [
+            ...(rows()[row]?.querySelectorAll<HTMLButtonElement>("button") ?? []),
+          ].filter((item) => item.querySelector("small"))[at];
+          if (!chip) continue;
+          const label = chip.textContent ?? "";
+          const promised = numberOf(chip);
+          await act(async () => chip.click());
+          expect({ label, shown: shown() }).toEqual({ label, shown: promised });
+        }
+    };
+    await tab("全部记忆");
+    const memoryRows = () => document.querySelectorAll("#settings .memory-row").length;
+    await sweep(memoryRows);
+    await sweep(memoryRows);
+    await type("#settings input[type=search]", "喜欢");
+    await sweep(memoryRows);
+    await tab("时间线");
+    const events = () => document.querySelectorAll("#settings .memory-day p").length;
+    await sweep(events);
+    await sweep(events);
+  });
 });
 
 describe("memory import parsing", () => {

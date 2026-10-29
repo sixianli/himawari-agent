@@ -380,7 +380,7 @@ export const messages = {
   "preview.diffNote": "只显示这一轮的改动",
   "library.title": "文件",
   "library.search": "搜索文件名",
-  "library.count": "{count} 个文件",
+  "library.count": "{count}{more, select, yes {+} other {}} 个文件",
   "library.all": "全部",
   "library.documents": "文档",
   "library.tables": "表格",
