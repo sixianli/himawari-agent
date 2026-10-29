@@ -2820,7 +2820,14 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         expect(JSON.stringify(submitted.messages.at(-2)?.content)).toContain(
           "这是 Pi 执行后持久保存的回答。",
         );
-        expect(submitted.messages.at(-1)?.content).toEqual([{ type: "text", text: nextPrompt }]);
+        const lastContent = submitted.messages.at(-1)?.content as { type: string; text: string }[];
+        expect(lastContent).toHaveLength(1);
+        expect(lastContent[0]?.type).toBe("text");
+        expect(lastContent[0]?.text.startsWith("<himawari-context>\n")).toBe(true);
+        expect(
+          lastContent[0]?.text.endsWith(`<owner-message>\n${nextPrompt}\n</owner-message>`),
+        ).toBe(true);
+        expect(JSON.stringify(submitted.messages.slice(0, -1))).not.toContain("<himawari-context>");
         await restarted.loop.stop(1000);
         await restarted.titles?.stop();
 
