@@ -1,11 +1,9 @@
+import { loadJudgeModels } from "./cases.ts";
 import type { DecisionJudge, JudgeQuestion, ReasoningJudge, ReasoningVerdict } from "./judge.ts";
 
 export const GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1";
-export const DECISION_JUDGE_MODEL = { id: "typesafe-ai/jev-1.14.0", version: "jev-1.14.0" };
-export const REASONING_JUDGE_MODEL = {
-  id: "anthropic/claude-sonnet-5.5",
-  version: "claude-sonnet-5.5",
-};
+export const { decisionJudge: DECISION_JUDGE_MODEL, reasoningJudge: REASONING_JUDGE_MODEL } =
+  loadJudgeModels();
 
 export interface JudgeUsage {
   inputTokens: number;
