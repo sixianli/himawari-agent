@@ -274,6 +274,12 @@ it("shows only known failure messages from replayed execution records", () => {
     "chat.error.failed",
   );
   expect(executionFailureMessage([])).toBe("chat.error.failed");
+  expect(executionFailureMessage([{ ...failed, text: "CONTEXT_MEMORY_QUOTA_EXCEEDED" }])).toBe(
+    "chat.error.quotaExceeded",
+  );
+  expect(executionFailureMessage([{ ...failed, text: "PI_MODEL_QUOTA_EXCEEDED" }])).toBe(
+    "chat.error.quotaExceeded",
+  );
   expect(executionFailureMessage([{ ...failed, text: "CONTEXT_MEMORY_UNAVAILABLE" }])).toBe(
     "chat.error.contextMemoryUnavailable",
   );

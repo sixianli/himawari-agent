@@ -72,6 +72,7 @@ date: "2026-10-26"
   45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
   46. [第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒](#case-startup-permission-audit)
   47. [修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛](#case-incident-gates)
+  48. [一次对比评测把生产对话拖垮：Vercel 预算按人汇总](#case-eval-budget-outage)
   49. [模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗](#case-answer-weight)
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
   51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
@@ -101,9 +102,9 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
@@ -3113,6 +3114,63 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “我们发现事故修完了还会复发，因为修复只落在那一处代码和一篇文档里。于是定了一条规则：每个事故必须落成一道自动检查才算关闭，同一错误第三次必须有硬门槛。清单本身也被脚本核对，不能写一个不存在的门槛就算完。比如 worker 启动超时，以前只看最后起没起来，碰巧成功就没人管；现在切换后量启动时间，超过 30 秒就回退，出包时还核对等待时间留够余量。每道门槛都要证明在事故重现上会失败。”
+
+<a id="case-eval-budget-outage"></a>
+
+## 案例 48：一次对比评测把生产对话拖垮：Vercel 预算按人汇总，评测和生产共用一个额度
+
+**背景与现象**
+
+2026-10-29 上午（日本时间），Andy 问要不要把问答从 DeepSeek V4.1 Flash 换成 Claude Haiku 5.5 或 Sonnet 5.5。线程给 Jarvis Test 真模型评测加了“换被测模型”的开关，然后没报费用就同时跑了三个模型，每条用例跑 3 次。大约 1 分半后，三轮评测都收到网关的 HTTP 402：`User budget exceeded. Current spend: $3.16, limit: $3.00`。11:25 Andy 发现生产对话报“查找相关记忆时，连接模型服务失败”。
+
+**根因**
+
+1. Vercel AI Gateway 的“用户预算”按人汇总：同一个成员建的所有 API key 的花费记在一起，任何一个超了，这个人名下所有 key 的请求都被拒。生产 key 和评测 key 都是 Andy 建的，所以评测花超，生产也一起被拦。生产日志里的 402 还要出包线程核实，这里的判断来自报错原文和 Vercel 文档，属于推断。
+2. 评测脚本没有任何费用闸门：不报预计费用、不要同意、不先看预算还剩多少，直接开跑。
+
+确认方法：线程用评测 key 发了一个只要 1 个 token 的请求，对话接口和向量化（嵌入）接口都返回同样的 402 原文。
+
+**我们的方案**
+
+- `npm run eval:jarvis:live` 不带 `--confirm-cost=<美元>` 就拒跑，并打印上一轮完整跑的实际花费，方便先报预计费用、等 Andy 同意。跑的过程中，花费到上限就停。
+- 开跑前先发 1 个 token 的请求试探网关，被拒就不跑，并贴出网关原文。
+- 请 Andy 删掉按人的用户预算，改成按 key 设：评测 key 单独封顶，生产 key 放宽（[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)）。
+- 生产这次只记下 `transport_unresolved`，看不出是额度被拒。现在嵌入失败会写一行带 HTTP 状态和网关原文的 `memory.embedding_failed` 日志；402 单独记成 `CONTEXT_MEMORY_QUOTA_EXCEEDED` 或 `PI_MODEL_QUOTA_EXCEEDED`，网页用三语告诉主人是额度用完了，不是网络不通。
+- 给 Andy 的对比结论改为不再花钱：用官方价目表和已经跑完的第 1 组数据给推荐。Andy 决定先不换。
+- 换被测模型的开关已删掉：Andy 在 13:31 定下任何场景都不调用 Claude、OpenAI 等贵模型，评测只测生产用的 DeepSeek V4.1 Flash。
+
+**方案讨论与备选**
+
+| 方案 | 好处 | 代价 |
+| --- | --- | --- |
+| 只写“花钱前先问” | 不用写代码 | 不算门槛；这次正是这条习惯没做到 |
+| 开跑前读预算余量 | 快到上限时就能停 | 需要 Vercel 账户 token，云端线程没有 |
+| 检查评测没用生产 key | 直觉上能隔开 | 两个 key 本来就不同，出问题的是按人汇总的预算 |
+| 费用上限参数 + 1 token 试探（采用） | 无新凭据，自动运行 | 只能发现“已经超了”，根治要按 key 设预算 |
+
+**业界主流做法**
+
+- ✅ Vercel 文档 [AI Gateway Budgets](https://vercel.com/docs/ai-gateway/observability-and-spend/budgets)：“A user budget caps how much a single team member can spend, across every API key attributed to that member”；“A request has to pass every budget in scope”；以及给实验 key 单独封顶：“this is how you cap a contractor or experiment key”。
+
+**对比与取舍**
+
+我们照 Vercel 的建议，把隔离放在 key 一级。仓库里的门槛只管“开跑前要有上限、网关要可用”。预算的结构在 Vercel 账户里，仓库管不到，所以事故清单里 I-11 的状态是“等 Andy”。
+
+**结果数据**
+
+- 本次评测花费约 1.0 美元：评测期间网关余额从 21.40 降到 20.53 美元，减少 0.88；开跑前的单条试跑按记录估约 0.15 美元。
+- 已跑完的第 1 组（记忆纠正，6 条×3 次）：DeepSeek 18 次过 17 次，平均 4.9 秒；Haiku 5.5 18 次全过，平均 7.4 秒；Sonnet 5.5 跑完 12 次全过，平均 11.4 秒。第 6、8 组没跑完，质量差别未测量。
+- 门槛验证：两条新测试在改动前的脚本上失败，在改动后通过。生产停了多久：未测量（等 Andy 改完预算后由出包线程核实）。
+
+**相关 ADR/PR**
+
+[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)、PR #95、[事故清单 I-11](incidents-and-gates.md#incidents)。
+
+**面试 30 秒版**
+
+“我们做模型对比评测时，没先报费用就并行跑了三个模型。网关按人汇总的 3 美元预算被打满，生产对话跟着报错，因为生产 key 也挂在同一个人名下。修法分两层：账户上改成按 key 设预算，评测和生产互不牵连；仓库里给评测脚本加闸门，不带费用上限就不跑，开跑前先用 1 个 token 试探网关。两条测试证明改动前会放行、改动后会拦住。”
+
+[返回目录](#contents)
 
 <a id="case-answer-weight"></a>
 
