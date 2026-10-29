@@ -88,6 +88,7 @@ date: "2026-10-26"
   61. [做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索](#case-document-tools)
   62. [问一次天气弹两次审批，批准后页面一直“正在加载”：并行搜索各要一次审批，网页读请求没有时限](#case-approval-stall)
   63. [问个简单问题也要 10 秒：13 轮真实对话拆出三处空等，模型真正思考只占 1.5 秒](#case-conversation-speed)
+  64. [第二十次上线被自己的检查脚本拦下：检查跑得太快，结果里少了一栏，读结果的脚本直接报错](#case-s6-report-contract)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -115,7 +116,7 @@ date: "2026-10-26"
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
@@ -4110,6 +4111,58 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户说简单问题也要等十几秒。我没急着换模型，而是写了只读脚本，把 13 轮真实对话按步骤拆开，剔除等用户确认的时间。结果模型真正思考只占 1.5 秒，慢在三处空等：路由每次先撞两个被拒的免费模型、工具开工前才去冷启动沙箱、找记忆的向量请求偶尔 9 秒。我在模型刚开始写工具调用时就并行预热沙箱，给向量请求设 3 秒上限后重发一次，并用生产机实测的首字数据让负责人自己定路由顺序。”
+
+[返回目录](#contents)
+
+<a id="case-s6-report-contract"></a>
+
+## 案例 64：第二十次上线被自己的检查脚本拦下：检查跑得太快，结果里少了一栏，读结果的脚本直接报错
+
+**背景与现象**
+
+2026-10-30 08:29 JST 开始第二十次上线。上线脚本按顺序跑一串步骤，其中 S6 在新版本上做验收和一次只读检查，S7 停旧服务、切到新版本再启动。S7 一开头就报错退出：`KeyError: 'cgroupReadback'`（Python 读字典时找不到这个键）。这时还没切换，回滚脚本自动恢复第十九版，08:34 服务恢复，中间停了约 5 分钟。同一个操作包在 Hermes（Andy 的测试服务器）上的 17 项出包检查和 10 项上线走查全部通过。
+
+**根因**
+
+读了生产机上第二十版和第十九版的 S6 检查结果文件 `s6-service-read-launch.json` 后确认：
+
+- S6 用 `systemd-run` 让 systemd 临时起一个服务，用生产服务同样的用户和限制跑一次只读检查。跑完后去看这个临时服务的进程组（cgroup，Linux 用来归拢一个服务全部进程的目录）里还剩几个进程，写进 `cgroupReadback` 一栏，证明检查没留下后台进程。
+- 进程组路径取自启动时读到的服务属性 `ControlGroup`。脚本写的是“读到路径才写这一栏”。
+- 第十九版读属性时检查还在启动（`activating`），路径有值；第二十版检查跑得快，读属性时它已经结束（`inactive`），系统已删掉进程组，路径为空，这一栏就没写。检查本身是通过的。
+- S7 和之后的清理步骤 S9 都直接读这一栏。写结果的 S6 和读结果的 S7、S9 是三个独立脚本，没有任何检查核对“读的字段一定会写”。Hermes 上不跑真实的 systemd 检查，所以走查也看不到这个时间差。
+
+**我们的方案**
+
+- 修复：S6 不再依赖读到的路径，直接看这个临时服务固定的进程组位置 `/system.slice/<服务名>`，每次都写 `cgroupReadback`。进程组已被删就是 0 个剩余进程；读到的路径和固定位置不一致就报错。
+- 门槛：新增出包检查 `measurement/verify-s6-report-contract.py`。它不运行这三个脚本，只读它们的代码：找出 S7、S9 从 S6 结果里读的每个字段，再看 S6 是否在所有路径上都会写这个字段（写在 `if`、循环、`except` 里的不算），有一个对不上就失败。这项检查跟其他出包检查一起在 Hermes 上跑，`deploy.sh` 看到它没通过就不上线。
+
+**方案讨论与备选**
+
+- 只修 S6：能解决这一次，但下次别的字段再出现“只在某种情况下写”，还是要到生产机上才发现。
+- 在出包时用一份真实的 S6 结果跑一遍 S7 的前置检查：最接近真实，但 S7 前置检查还依赖数据库、配置、签名等十几份文件，要在 Hermes 上伪造整套生产状态，维护成本高；而且这次的问题取决于检查跑多快，伪造的结果照样可能带着那一栏。
+- 读代码对字段（选用）：不需要生产状态，几毫秒跑完；它管的正是这次出错的那类问题，即读的一方假设一定有、写的一方只在部分情况下写。代价是只认 `record['字段']` 和 `probe['字段']` 这种写法，换了写法要同时改检查。
+
+**业界主流做法**
+
+本案例没有查业界资料。
+
+**对比与取舍**
+
+未与业界做法对比。
+
+**结果数据**
+
+- 新检查在未修的 S6 上失败，指出 S7 和 S9 读的 `cgroupReadback`；修后通过，S6 总是写的字段从 17 个变成 18 个。
+- `scripts/delivery-mode/test_make_packet.py` 的 `ServiceReadReportContractTest` 3 条测试通过，其中一条把修好的写法改回“有路径才写”，检查失败。
+- 重新上线的结果：未测量，等 Andy 同意后重新出包上线。
+
+**相关 ADR/PR**
+
+[事故 I-32](incidents-and-gates.md#incidents)；本案例的 PR 在分支 `claude/project-thread-s6-cgroup-readback`。没有新 ADR，沿用 [ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md) 的“每个事故落一道自动检查”。
+
+**面试 30 秒版**
+
+“一次上线在切换前被我们自己的检查脚本拦下。原因是一个验收步骤只在‘读到进程组路径’时才写某个字段，而这次检查跑得太快，读属性时已经结束，路径是空的，下一个脚本读这个字段就报错。我把写法改成总是写，并加了一项出包检查：读三个脚本的代码，确认后面读的每个字段前面在所有路径上都会写，没对上就不出包。”
 
 [返回目录](#contents)
 

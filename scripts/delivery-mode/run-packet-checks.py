@@ -25,6 +25,7 @@ PYTHON_FIXTURES = (
     'install/verify-s9-clean-transport-fixtures.py',
     'acceptance/cloud/verify-failure-scene-fixtures.py',
     'signing/verify-finalize-capability-check.py',
+    'measurement/verify-s6-report-contract.py',
 )
 HERMES_ONLY = ('steps/verify-steps.py',)
 MIGRATE_FIXTURE = 'maintenance/verify-migrate-fixtures.mjs'

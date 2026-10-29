@@ -18,14 +18,14 @@ TWELFTH = json.loads((FIXTURES / 'twelfth-parameters.json').read_text())
 TWELFTH_FROZEN = json.loads((FIXTURES / 'twelfth-frozen-sha256.json').read_text())
 TWELFTH_COMMIT = TWELFTH['COMMIT']
 MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
-ADDED_FILES = {'maintenance/verify-migrate-fixtures.mjs', 'systemd/verify-startup-readiness-fixtures.mjs'}
+ADDED_FILES = {'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
     'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
-    'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 's0-db/read-s0-db.mjs',
+    'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 's0-db/read-s0-db.mjs',
     'signing/cloud-seal.mjs', 'steps/README.md', 'steps/run-step.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
@@ -150,6 +150,33 @@ class StartupPhaseTest(RenderedPacket):
         final = readback[readback.index('finally:'):]
         self.assertIn("orchestration['startupPhases'] = startup_phases(captured.stdout, orchestration['startInvocationId'], startup_phase_baseline_ms)", final)
         self.assertIn("'startupPhases': orchestration.get('startupPhases')", final)
+
+
+class ServiceReadReportContractTest(RenderedPacket):
+    TAG = '[PG-5]'
+
+    def contract(self, packet):
+        return subprocess.run([sys.executable, '-I', str(packet / 'measurement/verify-s6-report-contract.py')], capture_output=True, text=True, check=False)
+
+    def test_the_packet_checks_run_the_service_read_report_contract(self):
+        self.assertIn('measurement/verify-s6-report-contract.py', checks_runner.PYTHON_FIXTURES)
+
+    def test_every_field_the_switch_and_cleanup_read_is_written_on_every_path(self):
+        run = self.contract(self.render())
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn('S6_REPORT_CONTRACT passed', run.stdout)
+
+    def test_twentieth_incident_cgroup_readback_written_only_while_the_unit_runs_is_refused(self):
+        packet = self.render()
+        producer = packet / 'measurement/S6-service-read.py'
+        source = producer.read_text()
+        written = "    record['cgroupReadback'] = "
+        self.assertIn(written, source)
+        producer.write_text(source.replace(written, "    if record.get('effectiveProperties', {}).get('ControlGroup'):\n        record['cgroupReadback'] = ", 1))
+        run = self.contract(packet)
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("S6_REPORT_FIELD_NOT_ALWAYS_WRITTEN systemd/S7-switch-start-readback.py reads probe['cgroupReadback']", run.stdout)
+        self.assertIn("install/S9-clean-transport.py reads service_read['cgroupReadback']", run.stdout)
 
 
 class TemplateTest(RenderedPacket):
