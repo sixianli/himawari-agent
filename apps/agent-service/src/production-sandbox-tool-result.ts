@@ -24,6 +24,7 @@ import {
   SANDBOX_TOOL_NOT_STARTED,
   SRT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
+import { stageTiming } from "./production-stage-timing.js";
 
 export const SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE =
   "执行宿主报告的退出结果前后不一致，本次结果按失败处理，没有重新执行。工具可能已经运行，是否重做请先确认。";
@@ -139,7 +140,9 @@ export function createProductionSandboxToolResult(options: {
     input: { runId: string; invocationId: string },
     delivery: SandboxToolDelivery,
   ): Promise<SandboxToolCompletion | null | undefined> => {
+    const timing = stageTiming("sandbox.tool_result.timing", { ...input });
     const admission = await options.preparations.readAdmissionByInvocation(input);
+    timing.mark("admission_read");
     if (!admission) return null;
     if (admission.phase === "reserved") {
       let reserved = admission;
@@ -214,7 +217,9 @@ export function createProductionSandboxToolResult(options: {
           const result = record.facts.result;
           if (!result || result.kind === "unknown" || result.kind === "started") return undefined;
           await delivery.assertDisclosure();
+          timing.mark("disclosure");
           const verification = await options.verifyFresh(record);
+          timing.mark("verify_fresh");
           const context: SandboxExecutionProjectionContext = {
             ...(delivery.resultRecovery
               ? { resultDeliveryDeadlineAt: delivery.resultRecovery.deadlineAt }
@@ -261,7 +266,9 @@ export function createProductionSandboxToolResult(options: {
             now: options.now(),
             context,
           });
+          timing.mark("journal_append");
           await options.journal.prepareIntent(intent());
+          timing.mark("prepare_intent");
           return { result, projection, context, intent };
         } catch (error) {
           if (!(error instanceof Error) || !("code" in error) || error.code !== "PORT_CONFLICT")
@@ -282,6 +289,7 @@ export function createProductionSandboxToolResult(options: {
     const { result, projection, context, intent } = prepared;
     await delivery.assertDisclosure();
     await options.journal.dispatchIntent(intent());
+    timing.mark("dispatch_intent");
     try {
       await delivery.assertDisclosure();
       const hostResultRejected =
@@ -324,6 +332,7 @@ export function createProductionSandboxToolResult(options: {
               ...(processExitCode === undefined ? {} : { processExitCode }),
             };
       await delivery.saveReceipt(completion);
+      timing.mark("receipt");
       await options.journal.acknowledgeIntent({
         identity: plan.identity,
         intentId,
@@ -331,6 +340,7 @@ export function createProductionSandboxToolResult(options: {
         now: options.now(),
         context,
       });
+      timing.finish("acknowledge");
       return completion;
     } catch (error) {
       await options.journal.observeIntent({
