@@ -17,7 +17,7 @@ TWELFTH = json.loads((FIXTURES / 'twelfth-parameters.json').read_text())
 TWELFTH_FROZEN = json.loads((FIXTURES / 'twelfth-frozen-sha256.json').read_text())
 TWELFTH_COMMIT = TWELFTH['COMMIT']
 MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
-ADDED_FILES = {'maintenance/verify-migrate-fixtures.mjs'}
+ADDED_FILES = {'maintenance/verify-migrate-fixtures.mjs', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/cloud-inputs.draft.json',
@@ -114,6 +114,47 @@ class TemplateTest(RenderedPacket):
         source = (self.render() / 'systemd' / 'S7-startup-readback.mjs').read_text()
         self.assertNotRegex(source, r'publicMode,\s*false')
         self.assertIn('assert.equal(agentReady[0].publicMode, configuration.publicMode, "TWELFTH_STARTUP_PUBLIC_MODE_CHANGED");', source)
+
+    def run_readiness(self, packet, *arguments):
+        return subprocess.run(['node', str(packet / 'systemd' / 'verify-startup-readiness-fixtures.mjs'), *arguments], capture_output=True, text=True, check=False)
+
+    def startup_journal(self, ready_ms):
+        directory = self.root / ('journal-' + str(ready_ms))
+        directory.mkdir()
+        start = 1793200000000000
+        rows = [
+            {'__REALTIME_TIMESTAMP': str(start), 'MESSAGE': json.dumps({'event': 'pair.child_spawned', 'name': 'worker'})},
+            {'__REALTIME_TIMESTAMP': str(start + 40000), 'MESSAGE': json.dumps({'event': 'pair.child_spawned', 'name': 'agent'})},
+            {'__REALTIME_TIMESTAMP': str(start + ready_ms * 1000), 'MESSAGE': json.dumps({'component': 'agent-service', 'event': 'service.ready'})},
+            {'__REALTIME_TIMESTAMP': str(start + ready_ms * 1000 + 50000), 'MESSAGE': json.dumps({'component': 'execution-worker', 'event': 'service.ready'})},
+        ]
+        path = directory / 'journal.jsonl'
+        path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        return str(path)
+
+    def test_startup_readback_refuses_a_start_slower_than_the_budget(self):
+        packet = self.render()
+        fixtures = self.run_readiness(packet)
+        self.assertEqual(fixtures.returncode, 0, fixtures.stdout + fixtures.stderr)
+        self.assertIn('STARTUP_READINESS_FIXTURES_PASSED 6 budgetMs=15000', fixtures.stdout)
+        quick = self.run_readiness(packet, self.startup_journal(9000))
+        self.assertEqual(quick.returncode, 0, quick.stderr)
+        self.assertEqual(json.loads(quick.stdout), {'startupReadyMs': 9050, 'startupReadyBudgetMs': 15000})
+        for ready_ms in (29350, 35000, 55000):
+            slow = self.run_readiness(packet, self.startup_journal(ready_ms))
+            self.assertNotEqual(slow.returncode, 0)
+            self.assertIn('TWELFTH_STARTUP_READY_TOO_SLOW:' + str(ready_ms + 50), slow.stderr)
+
+    def test_startup_budget_leaves_the_worker_wait_a_margin(self):
+        worker = lambda wait: 'const DEFAULT_STARTUP_WAIT_TIMEOUT_MS = ' + wait + ';\n'
+        self.assertEqual(packet_maker.startup_ready_budget(INSTANCE, worker('45_000')), 30000)
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STARTUP_BUDGET_LEAVES_NO_MARGIN budgetMs=30000 marginMs=15000 workerWaitMs=30000'):
+            packet_maker.startup_ready_budget(INSTANCE, worker('30_000'))
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_WORKER_STARTUP_WAIT_NOT_READABLE'):
+            packet_maker.startup_ready_budget(INSTANCE, 'const STARTUP_WAIT = 45_000;\n')
+        for key, invalid in (('startupReadyBudgetSeconds', None), ('startupReadyBudgetSeconds', 0), ('startupReadyMarginSeconds', -1), ('startupReadyMarginSeconds', 1.5), ('startupReadyBudgetSeconds', '30')):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STARTUP_BUDGET_INVALID'):
+                packet_maker.startup_ready_budget({**INSTANCE, key: invalid}, worker('45_000'))
 
     def test_a_missing_parameter_is_refused(self):
         parameters = dict(TWELFTH)

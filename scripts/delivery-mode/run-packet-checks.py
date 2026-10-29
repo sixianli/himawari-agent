@@ -17,6 +17,7 @@ NODE_FIXTURES = (
     'maintenance/verify-sidecar-tidy-fixtures.mjs',
     's0-db/verify-catalog-runtime-switch.mjs',
     'signing/verify-capability-manifest.mjs',
+    'systemd/verify-startup-readiness-fixtures.mjs',
 )
 PYTHON_FIXTURES = (
     'maintenance/verify-s9-control-fixtures.py',
