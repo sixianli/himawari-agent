@@ -26,6 +26,7 @@ interface LiveEnvironment {
   readonly HIMAWARI_JARVIS_CALIBRATED?: string;
   readonly HIMAWARI_JARVIS_RECORD?: string;
   readonly HIMAWARI_JARVIS_OUTPUT?: string;
+  readonly HIMAWARI_JARVIS_COST_LIMIT_MICROS?: string;
   readonly AI_GATEWAY_API_KEY?: string;
 }
 
@@ -106,7 +107,10 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
         subjectUsage.outputTokens +
         judgeUsage.inputTokens +
         judgeUsage.outputTokens;
-      const overLimit = () => spent() >= tokenLimit;
+      const costLimitMicros = Number(environment.HIMAWARI_JARVIS_COST_LIMIT_MICROS);
+      expect(costLimitMicros).toBeGreaterThan(0);
+      const costSpent = () => subjectUsage.costMicros + judgeUsage.costMicros;
+      const overLimit = () => spent() >= tokenLimit || costSpent() >= costLimitMicros;
 
       const reasoning = gatewayReasoningJudge({ secret, usage: judgeUsage });
       const decisionCandidate = gatewayDecisionJudge({ secret, usage: judgeUsage });
@@ -186,6 +190,7 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
             judge: judgeUsage.inputTokens + judgeUsage.outputTokens,
           },
           tokenLimit,
+          costLimitMicros,
           costMicros: subjectUsage.costReported
             ? subjectUsage.costMicros + judgeUsage.costMicros
             : null,
