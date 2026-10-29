@@ -1,6 +1,10 @@
 import { expect, it, vi } from "vitest";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
-import { findPendingRunApproval, respondToRunApproval } from "../src/run-approval.js";
+import {
+  approvalsDecidedTogether,
+  findPendingRunApprovals,
+  respondToRunApproval,
+} from "../src/run-approval.js";
 import { approval, collection } from "./approval.fixture.ts";
 
 const configuration = {
@@ -20,7 +24,8 @@ it("finds the current Run across pages and skips another Run or a stale decision
     .mockResolvedValueOnce(approval("stale", "target-run", "approved"))
     .mockResolvedValueOnce(collection(["target"], null))
     .mockResolvedValueOnce(approval("target", "target-run", "pending"));
-  expect(await findPendingRunApproval({ query }, configuration, "target-run")).toBe("target");
+  const found = await findPendingRunApprovals({ query }, configuration, "target-run");
+  expect(found.map((item) => item.payload.approvalRequestId)).toEqual(["target"]);
   expect(query.mock.calls[3]?.[0]).toMatchObject({
     type: "approval.list",
     payload: { afterCursor: "page-2" },
@@ -28,14 +33,43 @@ it("finds the current Run across pages and skips another Run or a stale decision
 });
 it("stops on a repeated pagination cursor", async () => {
   const query = vi.fn().mockResolvedValue(collection([], "same-page"));
-  await expect(findPendingRunApproval({ query }, configuration, "target-run")).rejects.toThrow(
+  await expect(findPendingRunApprovals({ query }, configuration, "target-run")).rejects.toThrow(
     "APPROVAL_CURSOR_REPEATED",
   );
   expect(query).toHaveBeenCalledTimes(2);
 });
 it("returns no pending approval when the collection is empty", async () => {
   const query = vi.fn().mockResolvedValue(collection([], null));
-  expect(await findPendingRunApproval({ query }, configuration, "target-run")).toBeNull();
+  expect(await findPendingRunApprovals({ query }, configuration, "target-run")).toEqual([]);
+});
+it("returns every pending approval of the Run in request order", async () => {
+  const later = approval("later", "target-run", "pending");
+  const earlier = approval("earlier", "target-run", "pending");
+  const query = vi
+    .fn()
+    .mockResolvedValueOnce(collection(["later", "earlier"], null))
+    .mockResolvedValueOnce({
+      ...later,
+      payload: { ...later.payload, requestedAt: "2026-09-07T00:00:00.007Z" },
+    })
+    .mockResolvedValueOnce(earlier);
+  const found = await findPendingRunApprovals({ query }, configuration, "target-run");
+  expect(found.map((item) => item.payload.approvalRequestId)).toEqual(["earlier", "later"]);
+});
+it("decides only approvals of the same kind together", () => {
+  const first = approval("first", "run", "pending");
+  const second = approval("second", "run", "pending");
+  const other = approval("other", "run", "pending");
+  const different = {
+    ...other,
+    payload: { ...other.payload, intent: { ...other.payload.intent, operation: "write" } },
+  };
+  expect(
+    approvalsDecidedTogether([first, different, second]).map(
+      (item) => item.payload.approvalRequestId,
+    ),
+  ).toEqual(["first", "second"]);
+  expect(approvalsDecidedTogether([])).toEqual([]);
 });
 
 it("retains approval retry identity and keeps the exact Run, revision and disclosure hash", async () => {

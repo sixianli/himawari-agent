@@ -6,7 +6,12 @@ import { executionItems } from "../execution-view.js";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { queryMessage } from "../messages.js";
-import { findPendingRunApproval, type RunApproval, respondToRunApproval } from "../run-approval.js";
+import {
+  approvalsDecidedTogether,
+  findPendingRunApprovals,
+  type RunApproval,
+  respondToRunApproval,
+} from "../run-approval.js";
 import { setSearchAuthorization } from "../search-authorization.js";
 import { ActionButton } from "./primitives.js";
 
@@ -31,11 +36,13 @@ export function RunApprovalCard({
   storage: ControlCenterBrowserStorage;
   connection: string;
   refreshSignal: number;
-  message: (id: MessageId) => string;
+  message: (id: MessageId, values?: Record<string, string>) => string;
   onSettled: () => Promise<void>;
   onUnauthorized: () => void;
 }) {
-  const [snapshot, setSnapshot] = useState<RunApproval | null>(null);
+  const [group, setGroup] = useState<readonly RunApproval[]>([]);
+  const [continuing, setContinuing] = useState(false);
+  const snapshot = group[0] ?? null;
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rememberSearch, setRememberSearch] = useState(true);
@@ -53,21 +60,11 @@ export function RunApprovalCard({
     if (connection !== "connected") return;
     void (async () => {
       try {
-        const id = await findPendingRunApproval(client, configuration, runId);
-        const detail = id
-          ? await client.query(
-              queryMessage(configuration, "approval.detail", { approvalRequestId: id }),
-            )
-          : null;
+        const pending = await findPendingRunApprovals(client, configuration, runId);
         if (disposed) return;
         setLoadError(null);
-        if (
-          detail?.type === "approval.snapshot" &&
-          detail.payload.intent.runId === runId &&
-          detail.payload.status === "pending"
-        ) {
-          setSnapshot(detail);
-        } else setSnapshot(null);
+        setGroup(approvalsDecidedTogether(pending));
+        if (pending.length > 0) setContinuing(false);
       } catch (caught) {
         if (!disposed)
           setLoadError(
@@ -112,16 +109,20 @@ export function RunApprovalCard({
             enabled: true,
           });
       }
-      const result = await respondToRunApproval({
-        client,
-        configuration,
-        storage,
-        snapshot,
-        runId,
-        decision,
-      });
-      if (result.status === "accepted" || result.status === "replayed") setSnapshot(null);
-      else setError(message("mutation.rejected"));
+      for (const approval of group) {
+        const result = await respondToRunApproval({
+          client,
+          configuration,
+          storage,
+          snapshot: approval,
+          runId,
+          decision,
+        });
+        if (result.status !== "accepted" && result.status !== "replayed")
+          throw new Error(message("mutation.rejected"));
+      }
+      setGroup([]);
+      setContinuing(true);
       await onSettled();
     } catch (caught) {
       if (caught && typeof caught === "object" && "status" in caught && caught.status === 401)
@@ -140,14 +141,18 @@ export function RunApprovalCard({
       setReload((value) => value + 1);
     }
   };
-  const input = snapshot
-    ? executionItems(records).findLast(
-        (item) =>
-          item.kind === "tool" &&
-          ["started", "updated"].includes(item.phase) &&
-          item.name === snapshot.payload.intent.operation,
-      )?.input
-    : null;
+  const inputs = snapshot
+    ? executionItems(records)
+        .filter(
+          (item) =>
+            item.kind === "tool" &&
+            ["started", "updated"].includes(item.phase) &&
+            item.name === snapshot.payload.intent.operation,
+        )
+        .map((item) => item.input)
+        .filter((value): value is string => Boolean(value))
+    : [];
+  const input = inputs.at(-1);
   let draft: { title: string; text: string } | undefined;
   if (input)
     try {
@@ -174,7 +179,18 @@ export function RunApprovalCard({
             <dt>{message("governance.sideEffect")}</dt>
             <dd>{message(`review.impact.${snapshot.payload.intent.sideEffect}`)}</dd>
           </dl>
-          {input ? <pre className="approval-input">{input}</pre> : null}
+          {group.length > 1 ? (
+            <p>
+              {message(isSearch ? "chat.approval.searchBatch" : "chat.approval.batch", {
+                count: String(group.length),
+              })}
+            </p>
+          ) : null}
+          {(group.length > 1 ? inputs : inputs.slice(-1)).map((value, index) => (
+            <pre key={`${index}:${value}`} className="approval-input">
+              {value}
+            </pre>
+          ))}
           <details>
             <summary>{message("common.details")}</summary>
             <dl>
@@ -209,7 +225,11 @@ export function RunApprovalCard({
               disabled={busy || connection !== "connected"}
               onClick={() => void respond("approved")}
             >
-              {message(isSearch ? "chat.search.enable" : "chat.allowOnce")}
+              {isSearch
+                ? message("chat.search.enable")
+                : group.length > 1
+                  ? message("chat.allowAll", { count: String(group.length) })
+                  : message("chat.allowOnce")}
             </ActionButton>
             {draft && onPreview ? (
               <ActionButton variant="quiet" onClick={() => draft && onPreview(draft)}>
@@ -226,7 +246,7 @@ export function RunApprovalCard({
           </div>
         </>
       ) : (
-        <p>{message("state.loading")}</p>
+        <p>{message(continuing ? "chat.approval.continuing" : "state.loading")}</p>
       )}
       {loadError ? (
         <ActionButton

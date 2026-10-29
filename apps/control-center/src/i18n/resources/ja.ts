@@ -179,6 +179,12 @@ export const messages = {
   "chat.search.enable": "ウェブ検索を許可",
   "chat.search.revoke": "ウェブ検索の許可を取り消す",
   "chat.allowOnce": "今回のみ許可",
+  "chat.allowAll": "{count} 件すべて許可",
+  "chat.approval.batch":
+    "このステップには同じ操作が {count} 件あります。一度の許可ですべて実行します。",
+  "chat.approval.searchBatch":
+    "このステップでは {count} 回検索します。一度の許可ですべて実行します。",
+  "chat.approval.continuing": "受け付けました。続行しています…",
   "chat.activity.tool": "{tool} を実行中",
   "chat.activity.thinking": "思考中",
   "chat.activity.output": "回答を生成中",

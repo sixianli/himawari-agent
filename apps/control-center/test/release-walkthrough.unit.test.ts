@@ -403,4 +403,12 @@ describe("release walkthrough locators against the real control center", () => {
     expect(messages["step.command"]).toBe(UI.commandStep);
     expect(messages["step.memoryFound"]).toMatch(UI.memoryFoundStep);
   });
+  it("names the approval card controls exactly as the page shows them", () => {
+    expect(UI.approveSearch.name).toBe(messages["chat.search.enable"]);
+    expect(UI.rememberSearch.name).toBe(messages["chat.search.remember"]);
+    expect(UI.approvalContinuing).toBe(messages["chat.approval.continuing"]);
+    expect(UI.searchBatch.test(messages["chat.approval.searchBatch"].replace("{count}", "2"))).toBe(
+      true,
+    );
+  });
 });

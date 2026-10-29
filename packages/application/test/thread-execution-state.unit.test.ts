@@ -593,6 +593,30 @@ describe("execution state history read boundary", () => {
     });
     expect(read.mock.calls.map(([query]) => query.afterSequence)).toEqual([0, 1000]);
   });
+  it("rereads only new events once earlier ones were read, and rereads an unreadable event until it can be read", async () => {
+    const { projection, read } = fixture();
+    read.mockResolvedValueOnce({
+      records: [
+        record(1, "first", "started"),
+        record(2, "first", "completed"),
+        record(3, "second", "unavailable", "runtime.tool_intent"),
+      ],
+      nextSequence: null,
+    });
+    read.mockResolvedValueOnce({
+      records: [record(3, "second", "started"), record(4, "second", "completed")],
+      nextSequence: null,
+    });
+    read.mockResolvedValueOnce({ records: [], nextSequence: null });
+    await projection.readState(input);
+    expect(await projection.readState(input)).toMatchObject({
+      operations: [{ itemId: "first" }, { itemId: "second" }],
+    });
+    expect(await projection.readState(input)).toMatchObject({
+      operations: [{ itemId: "first" }, { itemId: "second" }],
+    });
+    expect(read.mock.calls.map(([query]) => query.afterSequence)).toEqual([0, 2, 4]);
+  });
   it("projects a safe product failure reason to the tool row without exposing raw diagnostics", async () => {
     const payloadValues = new Map([
       ["outer", { payloadRef: "tool-result" }],

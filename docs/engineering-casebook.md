@@ -86,6 +86,7 @@ date: "2026-10-26"
   59. [一轮 185 秒里有 60 秒在工具调用前后空等：同一次调用把几秒内不会变的宿主文件查了 7 遍](#case-tool-gap-host-check)
   60. [想要“隐私最好、价格最低”，最后改成“先用自己已付费的套餐”：本机 Magpie 网关替 Agent 在多个套餐之间切换](#case-magpie-subscriptions)
   61. [做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索](#case-document-tools)
+  62. [问一次天气弹两次审批，批准后页面一直“正在加载”：并行搜索各要一次审批，网页读请求没有时限](#case-approval-stall)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -108,13 +109,13 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3981,6 +3982,61 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 **面试 30 秒版**
 
 “用户说做一份 Word 要等 50 秒。我把那一轮按步骤拆开，发现有 30 秒和 77% 的输出 token 花在模型自己摸索上：服务器没装文档库，它先探测，再手写 Word 的 XML。PDF 难看是因为沙箱连字体目录都读不到。我先在生产机上模拟安装量出代价，再请负责人批准，只用官方源装库和字体，放开沙箱的字体目录；然后学 Anthropic 和 OpenAI 的技能格式，提示里只加一行索引，详细做法用到时再读。最后加了上线检查，缺库就拒绝上线。”
+
+[返回目录](#contents)
+
+<a id="case-approval-stall"></a>
+
+## 案例 62：问一次天气弹两次审批，批准后页面一直“正在加载”：并行搜索各要一次审批，网页读请求没有时限
+
+**背景与现象**
+
+2026-10-30 00:08（日本时间），Andy 在 iPhone 上用生产网页（第十九版）问天气。“搜索网页”的审批卡片弹了一次，他点了允许；马上又弹一次，他再点允许，之后页面一直显示“正在加载…”。他打开侧栏、重新进入这个对话，才发现回答早就写完了。他说这是很影响体验的严重问题。记为事故 [I-29](incidents-and-gates.md#incidents)。
+
+**根因**
+
+1. **为什么弹两次。** 用只读脚本 `approval-timeline.mjs` 读生产数据库（运行 `b9029700`）：模型在 15:08:25Z 一次发起两个 `web_search`（搜索网页工具）调用。Pi（Himawari 底层的 Agent 框架）把联网搜索设成可以并行执行，两个调用各自建了一个审批，相差 7 毫秒。网页的审批卡片一次只取一个待批项，所以主人批完第一个，后台恢复后马上又停下等第二个，卡片又弹一次。
+2. **为什么批准后卡住。** 后台没有卡：第二次批准在 15:08:51，三秒内两个搜索结果回来，15:09:05 回答写完，同一时段没有别的任务占着派发。卡住在网页这边。Cloudflare 隧道（cloudflared，把公网请求转到服务器的程序）的日志显示，页面读对话的 4 个 `thread/v3/queries` 请求一直没等到服务器回答，到 15:09:56 Andy 切走对话时才被浏览器取消。网页的刷新是“同时只跑一个、其余排队”，而读请求没有时限：只要一个请求不回，后面所有刷新都排在它后面，整页停在“正在加载…”。切换对话会中止旧请求、清掉排队状态，所以重进对话就好了。
+3. **为什么服务器那几个请求没回，只确认了一部分。** 量过（`execution-read-cost.mjs`，只读）：读执行状态时服务器每次都把这一轮的全部记录从头解密一遍，那一轮 100 条事件要 0.4 秒，最大的一轮 397 条要 1.9 秒，单靠它解释不了几十秒不回。同一时段这一轮自己写一条执行记录最慢用了 1.8 秒（平时 0.4 秒以内，见 `run.timing` 日志），说明所有数据库操作共用的那一个工作线程在排队，但到底是哪些请求占住了它，服务器没有按请求记耗时，无法确认。
+
+**我们的方案**
+
+1. **同一步的同类审批一次放行。** 网页取出这一轮全部待批项，把操作、能力、外发对象、数据级别都相同的合成一张卡片，写“这一步要搜索 2 次，一次允许就都放行”，点一次就逐个提交；不同类的仍然分开问。没有改后台的审批规则，每个调用仍然有自己的审批记录，审计不受影响。
+2. **批准后马上给回应。** 卡片立刻变成“已收到，正在继续…”，不再退回“正在加载…”。
+3. **读请求加 15 秒时限。** 对话详情和执行记录的读取都带上时限，超时就放弃这一次、按原有的退避重试，不会再让一个不回的请求挡住整页。复现测试让一次读请求永远不回：修改前 20 秒后卡片还在，修改后自动恢复。
+4. **服务器少做重复的事。** 读执行状态时记住已经读过、内容可读的那部分记录，下次只读新增的事件；遇到暂时读不到的记录就从那里开始重读，保证状态不会停在旧的样子。最多记 200 轮，记录里只留算状态用的字段，不留工具输出。
+5. **上线前自动检查。** 上线走查新增 `accept-search-approval`：模型一次发两个搜索，页面必须只出一张卡片；点一次允许后 10 秒内回答必须出现，不能停在“正在加载…”。`browser-acceptance-gate.py` 要求它通过才能上线。
+
+**方案讨论与备选**
+
+- **让模型一次只发一个搜索（关掉并行）**：最省事，但两次搜索要排队，回答更慢，而且没解决“一个请求不回整页卡住”。没选。
+- **后台把同一步的多个调用合成一个审批**：要改审批记录的结构和恢复逻辑，影响审计和已有数据。网页合并已经能让主人只点一次，先不动后台。
+- **批准后强制整页刷新**：能“修好”这一次，但掩盖了读请求没有时限的问题，下次别的请求不回照样卡。没选。
+- **批准一次就永久允许搜索**：卡片上已有“记住我的选择，之后允许联网搜索”的勾选，由主人自己决定，不替他默认。
+
+**业界主流做法**
+
+- ✅ OpenAI Agents SDK 人工审批文档（<https://openai.github.io/openai-agents-python/human_in_the_loop/>）：一轮里的待批项一起返回，“You do not need to resolve every pending approval in the same pass.”；记住决定用 “pass `always_approve=True` or `always_reject=True` to persist the same decision for future calls”。
+- ✅ Claude Code 权限文档（<https://code.claude.com/docs/en/permissions>）：Web search 的“Yes, and don't ask again”是 “Permanently per repository”，Web fetch 是 “Permanently per repository and domain”。
+
+**对比与取舍**
+
+两家都把“同一类操作”当作审批的单位：OpenAI 把一轮的待批项一起交给应用，由应用决定怎么展示；Claude Code 让用户按工具记住选择。我们和 OpenAI 一样一次拿到这一轮全部待批项，再按“同类”合成一张卡片；“记住选择”沿用已有的联网搜索授权开关，由主人勾选。和它们不同的是，Himawari 的审批要留审计记录，所以合并只发生在界面上，后台仍然一个调用一条记录。读请求加时限是通用的网页做法，本身不是根因的修复；服务器那几个请求为什么没回，还要在服务器按请求记耗时后才能定论。
+
+**结果数据**
+
+- 生产时间线（运行 `b9029700`）：两次批准相隔 15.8 秒；第二次批准后 14 秒回答写完；网页从第二次批准到 Andy 切走对话约 65 秒没有任何一次读取成功。
+- 读执行状态的服务器耗时（生产只读实测）：45–404 毫秒（本次对话的三轮），最大 1,860 毫秒（397 条事件、解密 4.2 MB）。
+- 复现测试：`apps/control-center/test/thread-interactions.unit.test.ts` 两条，修改前失败、修改后通过；服务器只读新增事件的测试在 `packages/application/test/thread-execution-state.unit.test.ts`。
+- 改后在真实网页上的效果：未测量，等上线后 Andy 在 iPhone 上重试，以及上线走查 `accept-search-approval` 的结果。
+
+**相关 ADR/PR**
+
+[事故 I-29](incidents-and-gates.md#incidents)；[设计规范第 31 条](ui-ux-design-guide.md#rules)；本案例的 PR 在分支 `claude/project-thread-6m6dar`。没有新 ADR：审批规则和数据结构没变。
+
+**面试 30 秒版**
+
+“用户问一次天气，审批弹了两次，第二次批完页面就一直转圈，重进才看到答案。我先读生产数据，确认后台 14 秒就答完了，问题在网页：模型并行发了两个搜索，各要一次审批；网页刷新是单线排队、读请求没有时限，一个请求服务器不回整页就停住。修法是学 OpenAI Agents SDK 一次拿到一轮全部待批项，同类合成一张卡片点一次放行；读请求加 15 秒时限；服务器读状态改成只读新增记录。再把‘两次搜索一张卡、批准后 10 秒内出答案’加进上线走查，不过就不能上线。”
 
 [返回目录](#contents)
 

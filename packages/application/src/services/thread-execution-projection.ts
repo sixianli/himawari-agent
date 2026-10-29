@@ -118,7 +118,13 @@ interface ThreadExecutionResourceReader {
   readonly digest: (bytes: Uint8Array) => string;
 }
 
+const STATE_RECORD_CACHE_RUNS = 200;
+
 export class ThreadExecutionProjection {
+  private readonly stateRecords = new Map<
+    string,
+    { readonly sequence: number; readonly records: readonly ThreadExecutionRecord[] }
+  >();
   private readonly dependencies: {
     readonly threads: ThreadRepositoryPort;
     readonly trace: TraceStorePort;
@@ -610,8 +616,10 @@ export class ThreadExecutionProjection {
     const resourceReader = this.dependencies.resources;
     const inventory = await resourceReader?.readInventory({ ownerId, agentId, runId });
     const resourceRevision = inventory ? threadCommandFingerprint(inventory) : null;
-    const records: ThreadExecutionRecord[] = [];
-    let afterSequence = 0;
+    const cacheKey = JSON.stringify([ownerId, agentId, threadId, runId]);
+    const cached = this.stateRecords.get(cacheKey);
+    const records: ThreadExecutionRecord[] = [...(cached?.records ?? [])];
+    let afterSequence = cached?.sequence ?? 0;
     for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
       const page = await this.read({ ...input, afterSequence, limit: 1000 });
       records.push(...page.records);
@@ -650,6 +658,7 @@ export class ThreadExecutionProjection {
             PORT_ERROR_CODES.NOT_AUTHORITATIVE,
             "THREAD_EXECUTION_CHANGED_DURING_READ",
           );
+        this.rememberStateRecords(cacheKey, records);
         return projectThreadExecutionState(
           after,
           records,
@@ -670,6 +679,21 @@ export class ThreadExecutionProjection {
       PORT_ERROR_CODES.NOT_AUTHORITATIVE,
       "THREAD_EXECUTION_HISTORY_LIMIT",
     );
+  }
+
+  private rememberStateRecords(key: string, records: readonly ThreadExecutionRecord[]) {
+    const unreadable = records.find((record) => record.phase === "unavailable")?.sequence;
+    const settled = records
+      .filter((record) => unreadable === undefined || record.sequence < unreadable)
+      .map((record) => ({ ...record, text: "", input: "", output: "" }));
+    this.stateRecords.delete(key);
+    const sequence = settled.at(-1)?.sequence;
+    if (sequence === undefined) return;
+    this.stateRecords.set(key, { sequence, records: settled });
+    for (const oldest of this.stateRecords.keys()) {
+      if (this.stateRecords.size <= STATE_RECORD_CACHE_RUNS) break;
+      this.stateRecords.delete(oldest);
+    }
   }
 
   private async memoryLines(event: TraceEvent, memoryIds: readonly string[]): Promise<string> {

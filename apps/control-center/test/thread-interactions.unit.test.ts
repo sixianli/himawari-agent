@@ -2609,6 +2609,189 @@ describe("pushed conversation updates", () => {
     ]);
   });
 
+  it("approves both parallel search approvals of one step with one click and then shows the finished answer", async () => {
+    const approvalFixture = (id: string, status: "pending" | "approved") => ({
+      schemaVersion: "gateway.v2",
+      kind: "snapshot",
+      messageId: `snapshot-${id}`,
+      correlationId: "correlation",
+      causationId: null,
+      dataClassification: "private",
+      risk: "medium",
+      authorizationRef: null,
+      scope: { ownerId: "owner-ui", agentId: "agent-ui" },
+      authority: { deploymentId: "deployment-ui", authorityEpoch: 1, fencingToken: 1 },
+      actor: { actorType: "system", actorId: "system" },
+      type: "approval.snapshot",
+      payload: {
+        approvalRequestId: id,
+        revision: status === "pending" ? 1 : 2,
+        status,
+        deliveryState: "deliverable",
+        semanticSnapshotHash: `hash-${id}`,
+        finalRisk: "medium",
+        recentAuthenticationRequired: false,
+        recentAuthenticationRef: null,
+        requestedAt: NOW,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        decidedAt: null,
+        grantId: null,
+        trueResultRef: null,
+        generatedAt: NOW,
+        intent: {
+          intentId: id,
+          threadId: "thread-ui",
+          runId: "run-1",
+          actionKind: "COMMUNICATE",
+          capabilityRef: "search.web_search",
+          capabilityVersion: "1",
+          operation: "web_search",
+          targetRefs: ["target"],
+          resourceRefs: ["target"],
+          dataClassification: "private",
+          disclosure: "named_recipients",
+          recipientRefs: ["https://search.example"],
+          sideEffect: "none",
+          estimatedCostMicros: 0,
+          frequency: { count: 1, intervalMs: null },
+          credentialOrAccessChange: false,
+          reversible: false,
+          idempotencyKey: id,
+          deterministicFactCodes: [],
+          modelReasonCode: "controlled",
+          requestedAt: NOW,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+      },
+    });
+    const approvals = new Map<string, "pending" | "approved">([
+      ["approval-a", "pending"],
+      ["approval-b", "pending"],
+    ]);
+    runs = [
+      { ...runs[0], revision: 3, status: "awaiting_approval" } as Detail["payload"]["runs"][number],
+    ];
+    const gatewayQuery = vi.fn(
+      async (request: { type: string; payload: Record<string, unknown> }) => {
+        if (request.type === "approval.list")
+          return {
+            type: "collection.snapshot",
+            payload: {
+              category: "approvals",
+              itemRefs: [...approvals].filter(([, s]) => s === "pending").map(([id]) => id),
+              nextCursor: null,
+            },
+          };
+        if (request.type === "approval.detail") {
+          const id = String(request.payload["approvalRequestId"]);
+          return approvalFixture(id, approvals.get(id) ?? "approved");
+        }
+        if (request.type === "search.authorization.read")
+          return {
+            type: "search.authorization.snapshot",
+            payload: { enabled: true, recipients: ["https://search.example"], revision: 2 },
+          };
+        throw new Error(`Unexpected gateway query ${request.type}`);
+      },
+    );
+    const gatewayMutate = vi.fn(
+      async (request: { type: string; payload: Record<string, unknown> }) => {
+        approvals.set(String(request.payload["approvalRequestId"]), "approved");
+        return { status: "accepted" };
+      },
+    );
+    options = {
+      ...options,
+      message: (id, values) =>
+        Object.entries(values ?? {}).reduce(
+          (text, [key, value]) => text.replace(`{${key}}`, String(value)),
+          messages[id] as string,
+        ),
+      client: {
+        ...options.client,
+        query: gatewayQuery,
+        mutate: gatewayMutate,
+      } as unknown as GatewayClient,
+      configuration: {
+        ...options.configuration,
+        authorizationRef: "authorization-ui",
+      } as ControlCenterRuntimeConfiguration,
+    };
+    let gatewaySignal = 0;
+    const gatewayChanged = async () => {
+      options = { ...options, refreshSignal: ++gatewaySignal };
+      await render();
+      await settle();
+    };
+    await render();
+    await settle();
+    const stream = sources.filter((source) => source.url.includes("execution-events")).at(-1);
+    if (!stream) throw new Error("Missing execution stream");
+    stream.open();
+    await settle();
+    expect(container.querySelector(".approval-inline")?.textContent).toContain(
+      messages["chat.approval.searchBatch"].replace("{count}", "2"),
+    );
+    await click("chat.search.enable");
+    await settle();
+    expect(
+      gatewayMutate.mock.calls.map(([request]) => request.payload["approvalRequestId"]),
+    ).toEqual(["approval-a", "approval-b"]);
+    await gatewayChanged();
+    expect(container.querySelector(".approval-inline button")).toBeNull();
+    expect(container.querySelector(".approval-inline")?.textContent).toContain(
+      messages["chat.approval.continuing"],
+    );
+    runs = [{ ...runs[0], revision: 4, status: "running" } as Detail["payload"]["runs"][number]];
+    await act(async () =>
+      stream.emit("thread.execution_changed", executionChanged("run-1", 4, 53)),
+    );
+    await settle();
+    runs = [{ ...runs[0], revision: 6, status: "completed" } as Detail["payload"]["runs"][number]];
+    await act(async () =>
+      stream.emit("thread.execution_changed", executionChanged("run-1", 6, 100)),
+    );
+    await settle(1000);
+    expect(container.querySelector(".approval-inline")).toBeNull();
+  });
+
+  it("recovers on its own when one conversation read never answers", async () => {
+    runs = [
+      { ...runs[0], revision: 5, status: "awaiting_approval" } as Detail["payload"]["runs"][number],
+    ];
+    await render();
+    await settle();
+    const stream = sources.filter((source) => source.url.includes("execution-events")).at(-1);
+    if (!stream) throw new Error("Missing execution stream");
+    stream.open();
+    await settle();
+    const answering = query.getMockImplementation();
+    let hung = 0;
+    query.mockImplementation(async (request, abort?: AbortSignal) => {
+      if (request.type === "thread.detail" && hung === 0) {
+        hung += 1;
+        return new Promise((_resolve, reject) =>
+          abort?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))),
+        );
+      }
+      return answering?.(request, abort);
+    });
+    runs = [{ ...runs[0], revision: 6, status: "running" } as Detail["payload"]["runs"][number]];
+    await act(async () =>
+      stream.emit("thread.execution_changed", executionChanged("run-1", 6, 61)),
+    );
+    await settle();
+    expect(hung).toBe(1);
+    runs = [{ ...runs[0], revision: 8, status: "completed" } as Detail["payload"]["runs"][number]];
+    await act(async () =>
+      stream.emit("thread.execution_changed", executionChanged("run-1", 8, 100)),
+    );
+    await settle(20_000);
+    const shown = query.mock.calls.filter(([request]) => request.type === "thread.detail").length;
+    expect(shown).toBeGreaterThan(2);
+    expect(container.querySelector(".approval-inline")).toBeNull();
+  });
+
   it("closes the execution stream when the conversation changes", async () => {
     runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
     await render();
