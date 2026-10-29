@@ -35,10 +35,73 @@ import {
 import type { TrialContext } from "./grade.ts";
 import { fileBytes, type Transcript, type TranscriptStep } from "./graders.ts";
 
+const SUBJECT_ALTERNATIVES = ["anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-5.5"] as const;
+type SubjectAlternative = (typeof SUBJECT_ALTERNATIVES)[number];
+
+function selectedSubject(): SubjectAlternative | null {
+  const requested = process.env["HIMAWARI_JARVIS_SUBJECT_MODEL"]?.trim();
+  if (!requested || requested === AI_GATEWAY_PRIMARY_MODEL) return null;
+  if (!SUBJECT_ALTERNATIVES.includes(requested as SubjectAlternative))
+    throw new Error(`JARVIS_LIVE_UNKNOWN_SUBJECT_MODEL: ${requested}`);
+  return requested as SubjectAlternative;
+}
+
+const SUBJECT = selectedSubject();
+
 export const SUBJECT_MODEL = {
-  id: AI_GATEWAY_PRIMARY_MODEL,
+  id: SUBJECT ?? AI_GATEWAY_PRIMARY_MODEL,
   version: AI_GATEWAY_GENERATION_SNAPSHOT,
 };
+
+function renameModel(subject: string): TransformStream<Uint8Array, Uint8Array> {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  const from = `"model":"${subject}"`;
+  const to = `"model":"${AI_GATEWAY_PRIMARY_MODEL}"`;
+  let pending = "";
+  return new TransformStream({
+    transform(chunk, controller) {
+      pending += decoder.decode(chunk, { stream: true });
+      const cut = pending.lastIndexOf("\n") + 1;
+      if (cut === 0) return;
+      controller.enqueue(encoder.encode(pending.slice(0, cut).replaceAll(from, to)));
+      pending = pending.slice(cut);
+    },
+    flush(controller) {
+      pending += decoder.decode();
+      if (pending.length > 0) controller.enqueue(encoder.encode(pending.replaceAll(from, to)));
+    },
+  });
+}
+
+export function routeSubjectRequests(): void {
+  if (SUBJECT === null) return;
+  const subject = SUBJECT;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (!url.endsWith("/chat/completions") || typeof init?.body !== "string")
+      return original(input, init);
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    if (body["model"] !== AI_GATEWAY_PRIMARY_MODEL) return original(input, init);
+    const providerOptions = (body["providerOptions"] ?? {}) as Record<string, unknown>;
+    const response = await original(input, {
+      ...init,
+      body: JSON.stringify({
+        ...body,
+        model: subject,
+        providerOptions: { ...providerOptions, gateway: { order: ["anthropic"], sort: "cost" } },
+      }),
+    });
+    if (response.body === null) return response;
+    return new Response(response.body.pipeThrough(renameModel(subject)), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
 export const LIVE_SYSTEM_INSTRUCTION = "按用户请求执行已授权任务。";
 const COMMAND_TIMEOUT_MS = 30_000;
 const UNPRIVILEGED = 65_534;

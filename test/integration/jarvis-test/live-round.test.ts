@@ -10,7 +10,13 @@ import { type JarvisCase, loadCalibration, loadDataset } from "./cases.ts";
 import { gatewayDecisionJudge, gatewayReasoningJudge, type JudgeUsage } from "./gateway-judges.ts";
 import { gradeTrial, type TrialGrade } from "./grade.ts";
 import { calibrateDecisionJudge, calibrateReasoningJudge, type RuleVerdict } from "./judge.ts";
-import { runTrial, SUBJECT_MODEL, type TrialResult, type TrialUsage } from "./live-harness.ts";
+import {
+  routeSubjectRequests,
+  runTrial,
+  SUBJECT_MODEL,
+  type TrialResult,
+  type TrialUsage,
+} from "./live-harness.ts";
 
 interface LiveEnvironment {
   readonly HIMAWARI_JARVIS_LIVE?: string;
@@ -32,7 +38,11 @@ const PROXY_INJECTED_KEY = "proxy-injected";
 
 interface CaseOutcome {
   readonly item: JarvisCase;
-  readonly trials: { readonly result: TrialResult | null; readonly grade: TrialGrade | null }[];
+  readonly trials: {
+    readonly result: TrialResult | null;
+    readonly grade: TrialGrade | null;
+    readonly durationMs: number | null;
+  }[];
 }
 
 function judgeTier(verdicts: readonly RuleVerdict[], judged: boolean) {
@@ -62,6 +72,7 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
   beforeAll(() => {
     if (process.env["HTTPS_PROXY"] || process.env["https_proxy"])
       setGlobalDispatcher(new EnvHttpProxyAgent());
+    routeSubjectRequests();
   });
 
   it(
@@ -123,9 +134,10 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
           for (let trial = 1; trial <= trials; trial += 1) {
             if (overLimit()) {
               stoppedByLimit = true;
-              results.push({ result: null, grade: null });
+              results.push({ result: null, grade: null, durationMs: null });
               continue;
             }
+            const trialStartedAt = performance.now();
             const result = await runTrial({
               dataset,
               item,
@@ -135,6 +147,7 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
               usage: subjectUsage,
               overLimit,
             });
+            const durationMs = Math.round(performance.now() - trialStartedAt);
             if (result.outcome === "stopped_by_limit") stoppedByLimit = true;
             const grade = await gradeTrial({
               dataset,
@@ -146,9 +159,9 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
             });
             await writeFile(
               path.join(output, `${item.id}-trial-${trial}.json`),
-              `${JSON.stringify({ case: item.id, trial, result, grade }, null, 2)}\n`,
+              `${JSON.stringify({ case: item.id, trial, durationMs, result, grade }, null, 2)}\n`,
             );
-            results.push({ result, grade });
+            results.push({ result, grade, durationMs });
           }
           return { item, trials: results };
         });
@@ -176,6 +189,7 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
           costMicros: subjectUsage.costReported
             ? subjectUsage.costMicros + judgeUsage.costMicros
             : null,
+          subjectCostMicros: subjectUsage.costReported ? subjectUsage.costMicros : null,
           stoppedByLimit,
           cases: outcomes.map(({ item, trials: runs }) => {
             const verdicts = runs.flatMap(({ grade }) => grade?.verdicts ?? []);
@@ -187,6 +201,7 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
                 verdicts.flatMap(({ probability }) => (probability === null ? [] : [probability])),
               ),
               judge_tier: judgeTier(verdicts, item.judgeRules.length > 0),
+              durationsMs: runs.map(({ durationMs }) => durationMs),
             };
           }),
         };

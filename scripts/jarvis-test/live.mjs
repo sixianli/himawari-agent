@@ -19,7 +19,7 @@ const options = new Map(
     return [key, value];
   }),
 );
-const known = new Set(["cases", "trials", "token-limit", "calibrated", "no-record"]);
+const known = new Set(["cases", "trials", "token-limit", "calibrated", "no-record", "subject"]);
 for (const key of options.keys())
   if (!known.has(key)) {
     console.error(`JARVIS_LIVE_UNKNOWN_OPTION：不认识的参数 --${key}`);
@@ -49,6 +49,7 @@ const environment = {
   ...(options.has("token-limit")
     ? { HIMAWARI_JARVIS_TOKEN_LIMIT: options.get("token-limit") }
     : {}),
+  ...(options.has("subject") ? { HIMAWARI_JARVIS_SUBJECT_MODEL: options.get("subject") } : {}),
   ...(options.has("calibrated") ? { HIMAWARI_JARVIS_CALIBRATED: "1" } : {}),
 };
 const result = spawnSync("npx", VITEST_ARGS, { stdio: "inherit", env: environment });
