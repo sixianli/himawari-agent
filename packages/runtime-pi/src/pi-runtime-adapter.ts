@@ -287,6 +287,7 @@ function modelFailureCode(errorMessage: string | undefined): string {
   if (errorMessage === PI_CONTEXT_WINDOW_EXHAUSTED) return PI_CONTEXT_WINDOW_EXHAUSTED;
   const status = /^(\d{3})(?:\s|:)/.exec(errorMessage ?? "")?.[1];
   if (status === "429") return "PI_MODEL_RATE_LIMITED";
+  if (status === "402") return "PI_MODEL_QUOTA_EXCEEDED";
   if (status === "401" || status === "403") return "PI_MODEL_AUTH_FAILED";
   if (status !== undefined && Number(status) >= 500 && Number(status) <= 599)
     return "PI_MODEL_UNAVAILABLE";
