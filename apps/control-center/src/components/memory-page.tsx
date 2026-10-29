@@ -8,6 +8,14 @@ import {
   parseMemoryExport,
   parseMemoryText,
 } from "../memory-import.js";
+import {
+  changeCount,
+  type MemoryHistoryNode,
+  type MemoryStanceChart,
+  memoryChain,
+  memoryHeads,
+  stanceChart,
+} from "../memory-history.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
@@ -32,8 +40,8 @@ const DAY_MS = 86_400_000;
 const VISIBLE_CHIPS = 5;
 const PROFILE_PREVIEW = 3;
 const PROFILE_EXPANDED = 8;
-const HISTORY_HEAD = 2;
-const HISTORY_STEP = 10;
+const HISTORY_HEAD = 3;
+const CHART = { lane: 28, step: 44, label: 104, pad: 10, axis: 22 };
 const NOTICE_MS = 6000;
 const MAXIMUM_IMPORT_BYTES = 200 * 1024;
 const MAXIMUM_IMPORT_ITEMS = 500;
@@ -91,75 +99,174 @@ function Chips<T extends string>({
   );
 }
 
+function StanceChart({ chart, message }: { chart: MemoryStanceChart; message: Message }) {
+  const width = Math.max(320, CHART.label + CHART.pad * 2 + (chart.points.length - 1) * CHART.step);
+  const height = chart.lanes.length * CHART.lane + CHART.axis;
+  const span = width - CHART.label - CHART.pad * 2;
+  const x = (index: number) =>
+    CHART.label +
+    CHART.pad +
+    (chart.points.length > 1 ? (index * span) / (chart.points.length - 1) : span / 2);
+  const y = (lane: number) => CHART.lane / 2 + lane * CHART.lane;
+  const path = chart.points
+    .map(({ lane }, index) =>
+      index === 0
+        ? `M${x(0)} ${y(lane)}`
+        : `L${x(index)} ${y(chart.points[index - 1]?.lane ?? lane)} L${x(index)} ${y(lane)}`,
+    )
+    .join(" ");
+  const first = chart.points[0]?.node;
+  const last = chart.points.at(-1)?.node;
+  return (
+    <div className="memory-stance-chart">
+      <svg
+        role="img"
+        aria-label={message("memory.page.chartLabel", { lanes: chart.lanes.join(" / ") })}
+        viewBox={`0 0 ${width} ${height}`}
+        width={width}
+        height={height}
+      >
+        {chart.lanes.map((lane, index) => (
+          <g key={lane}>
+            <text x={0} y={y(index) + 4}>
+              {lane}
+            </text>
+            <line x1={CHART.label} x2={width - CHART.pad} y1={y(index)} y2={y(index)} />
+          </g>
+        ))}
+        <path d={path} />
+        {chart.points.map(({ lane, node }, index) => (
+          <circle
+            key={node.key}
+            cx={x(index)}
+            cy={y(lane)}
+            r={node.kind === "reaffirmed" ? 3 : 5}
+            data-current={node.current || undefined}
+          >
+            <title>{`${time(node.at)} · ${node.stance ?? ""}`}</title>
+          </circle>
+        ))}
+        {first ? (
+          <text className="memory-stance-axis" x={x(0)} y={height - 4} textAnchor="start">
+            {date(first.at)}
+          </text>
+        ) : null}
+        {last && chart.points.length > 1 ? (
+          <text
+            className="memory-stance-axis"
+            x={x(chart.points.length - 1)}
+            y={height - 4}
+            textAnchor="end"
+          >
+            {date(last.at)}
+          </text>
+        ) : null}
+      </svg>
+    </div>
+  );
+}
+
 function MemoryHistory({
-  item,
-  history,
-  older,
-  onMore,
+  chain,
   memory,
   message,
+  onOpenThread,
 }: {
-  item: MemoryItem;
-  history: readonly MemoryItem[];
-  older: number;
-  onMore: () => void;
+  chain: readonly MemoryHistoryNode[];
   memory: MemoryModel;
   message: Message;
+  onOpenThread: (threadId: string) => void;
 }) {
-  const past = [...history].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
-  const hidden = past.length - HISTORY_HEAD - older;
-  const folded = hidden > 1 ? hidden : 0;
-  const head = folded ? past.slice(0, HISTORY_HEAD - 1 + older) : past;
-  const tail = folded ? past.slice(-1) : [];
-  const point = (entry: MemoryItem, current: boolean) => (
-    <li key={entry.memoryId} data-current={current || undefined}>
-      <span className="memory-history-dot" aria-hidden="true" />
-      <div>
-        <small>
-          {time(entry.recordedAt)} · {message(current ? "memory.page.now" : "memory.page.replaced")}
-        </small>
-        <p>{entry.text}</p>
-        {current ? null : (
-          <button
-            type="button"
-            className="memory-link"
-            disabled={memory.busy}
-            onClick={() => void memory.restore(entry)}
-          >
-            {message("memory.page.useThis")}
-          </button>
-        )}
-      </div>
-    </li>
-  );
+  const [expanded, setExpanded] = useState(false);
+  const newest = [...chain].reverse();
+  const shown = expanded ? newest : newest.slice(0, HISTORY_HEAD);
+  const hidden = newest.length - shown.length;
+  const chart = stanceChart(chain);
   return (
-    <ol className="memory-history-line" data-scroll={older > 0 || undefined}>
-      {point(item, true)}
-      {head.map((entry) => point(entry, false))}
-      {folded ? (
-        <li className="memory-history-fold">
-          <button type="button" onClick={onMore}>
-            {message("memory.page.olderChanges", { count: folded })}
-          </button>
-        </li>
-      ) : null}
-      {tail.map((entry) => point(entry, false))}
-    </ol>
+    <div className="memory-history-block">
+      {chart ? <StanceChart chart={chart} message={message} /> : null}
+      <p className="memory-history-summary">
+        {message("memory.page.flips", {
+          changes: changeCount(chain),
+          again: chain.filter((node) => node.kind === "reaffirmed").length,
+        })}
+      </p>
+      <ol className="memory-history-line">
+        {shown.map((node) => (
+          <li
+            key={node.key}
+            data-current={node.current || undefined}
+            data-again={node.kind === "reaffirmed" || undefined}
+          >
+            <span className="memory-history-dot" aria-hidden="true" />
+            <div>
+              <small>
+                {time(node.at)} ·{" "}
+                {node.current
+                  ? message("memory.page.now")
+                  : message("memory.page.node", { k: node.kind })}
+                {node.sourceThreadId ? (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="memory-link"
+                      onClick={() => node.sourceThreadId && onOpenThread(node.sourceThreadId)}
+                    >
+                      {message("memory.source")}
+                    </button>
+                  </>
+                ) : node.sourceDeleted ? (
+                  ` · ${message("memory.page.sourceDeleted")}`
+                ) : null}
+              </small>
+              {node.kind === "reaffirmed" && !node.current ? null : <p>{node.text}</p>}
+              {node.quote ? (
+                <p className="memory-history-quote">
+                  {message("memory.page.quote", { quote: node.quote })}
+                </p>
+              ) : null}
+              {node.restorable ? (
+                <button
+                  type="button"
+                  className="memory-link"
+                  disabled={memory.busy}
+                  onClick={() => void memory.restore(node.record)}
+                >
+                  {message("memory.page.useThis")}
+                </button>
+              ) : null}
+            </div>
+          </li>
+        ))}
+        {hidden || expanded ? (
+          <li className="memory-history-fold">
+            <button type="button" onClick={() => setExpanded(!expanded)}>
+              {expanded
+                ? message("memory.page.collapseHistory")
+                : message("memory.page.olderChanges", { count: hidden })}
+            </button>
+          </li>
+        ) : null}
+      </ol>
+    </div>
   );
 }
 
 function MemoryRow({
   item,
-  history,
+  chain,
   reminder,
   justSaved,
+  initiallyOpen = false,
   memory,
   message,
   notify,
   onOpenThread,
 }: {
   item: MemoryItem;
-  history: readonly MemoryItem[];
+  chain: readonly MemoryHistoryNode[];
+  initiallyOpen?: boolean;
   reminder: string | null;
   justSaved: boolean;
   memory: MemoryModel;
@@ -167,9 +274,13 @@ function MemoryRow({
   notify: (notice: Notice) => void;
   onOpenThread: (threadId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [editing, setEditing] = useState(false);
-  const [older, setOlder] = useState(0);
+  const row = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (initiallyOpen) reveal(row.current);
+  }, [initiallyOpen]);
+  const changes = changeCount(chain);
   const sensitive = item.dataClassification === "sensitive" || item.topic;
   const origin = item.importBatchId
     ? "import"
@@ -177,7 +288,9 @@ function MemoryRow({
       ? "owner"
       : item.sourceThreadId
         ? null
-        : "tidy";
+        : item.history[0]?.sourceDeleted
+          ? "deleted"
+          : "tidy";
   if (editing)
     return (
       <li className="memory-row">
@@ -192,7 +305,12 @@ function MemoryRow({
       </li>
     );
   return (
-    <li className="memory-row" data-status={item.status} data-just-saved={justSaved || undefined}>
+    <li
+      ref={row}
+      className="memory-row"
+      data-status={item.status}
+      data-just-saved={justSaved || undefined}
+    >
       <button
         type="button"
         className="memory-row-head"
@@ -222,10 +340,8 @@ function MemoryRow({
             </span>
           ) : null}
           {reminder ? <span className="memory-tag">{message("memory.page.reminder")}</span> : null}
-          {history.length ? (
-            <span className="memory-tag">
-              {message("memory.page.changed", { count: history.length })}
-            </span>
+          {changes ? (
+            <span className="memory-tag">{message("memory.page.changed", { count: changes })}</span>
           ) : null}
           <small>{date(item.recordedAt)}</small>
         </span>
@@ -255,17 +371,15 @@ function MemoryRow({
               <dd>{reminder}</dd>
             </>
           ) : null}
-          {history.length ? (
+          {chain.length > 1 ? (
             <>
               <dt>{message("memory.page.history")}</dt>
               <dd>
                 <MemoryHistory
-                  item={item}
-                  history={history}
-                  older={older}
-                  onMore={() => setOlder(older + HISTORY_STEP)}
+                  chain={chain}
                   memory={memory}
                   message={message}
+                  onOpenThread={onOpenThread}
                 />
               </dd>
             </>
@@ -901,6 +1015,7 @@ function AllTab({
   notify,
   onOpenThread,
   focus,
+  openId,
   initialCategory,
 }: {
   memory: MemoryModel;
@@ -908,18 +1023,17 @@ function AllTab({
   notify: (notice: Notice) => void;
   onOpenThread: (threadId: string) => void;
   focus: readonly string[];
+  openId: string | null;
   initialCategory: string;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(initialCategory);
   const [sub, setSub] = useState("all");
-  const [status, setStatus] = useState<MemoryItem["status"]>("active");
+  const [status, setStatus] = useState<MemoryItem["status"]>(
+    () => memory.overview?.memories.find((item) => item.memoryId === openId)?.status ?? "active",
+  );
   const overview = memory.overview;
   if (!overview) return <p>{message("state.loading")}</p>;
-  const history = new Map<string, MemoryItem[]>();
-  for (const item of overview.memories)
-    if (item.supersededBy)
-      history.set(item.supersededBy, [...(history.get(item.supersededBy) ?? []), item]);
   const reminders = new Map(
     overview.upcoming.map((item) => [
       item.memoryId,
@@ -989,9 +1103,8 @@ function AllTab({
         status === "trashed" ||
         visible.some((item) => item.status === "trashed"),
     );
-  const shown = matching(picked).sort(
-    (a, b) => Number(focus.includes(b.memoryId)) - Number(focus.includes(a.memoryId)),
-  );
+  const pinned = (item: MemoryItem) => focus.includes(item.memoryId) || item.memoryId === openId;
+  const shown = matching(picked).sort((a, b) => Number(pinned(b)) - Number(pinned(a)));
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).valueOf();
   const groupOf = (item: MemoryItem) =>
@@ -1056,7 +1169,8 @@ function AllTab({
                 <MemoryRow
                   key={`${item.memoryId}:${item.revision}`}
                   item={item}
-                  history={history.get(item.memoryId) ?? []}
+                  chain={memoryChain(item, overview.memories)}
+                  initiallyOpen={item.memoryId === openId}
                   reminder={reminders.get(item.memoryId) ?? null}
                   justSaved={focus.includes(item.memoryId)}
                   memory={memory}
@@ -1081,10 +1195,12 @@ function TimelineTab({
   memory,
   message,
   onConfirm,
+  onShowMemory,
 }: {
   memory: MemoryModel;
   message: Message;
   onConfirm: () => void;
+  onShowMemory: (memoryId: string) => void;
 }) {
   const [filter, setFilter] = useState("all");
   const overview = memory.overview;
@@ -1099,34 +1215,28 @@ function TimelineTab({
     undone?: boolean;
     undo?: () => void;
     confirm?: boolean;
+    change?: number;
+    show?: () => void;
   };
-  const byId = new Map(overview.memories.map((item) => [item.memoryId, item]));
   const everything: Event[] = [
-    ...overview.memories.flatMap((item): Event[] =>
-      item.importBatchId
-        ? []
-        : item.supersededBy
-          ? [
-              {
-                key: item.memoryId,
-                at:
-                  item.validTo && !Number.isNaN(Date.parse(item.validTo))
-                    ? item.validTo
-                    : item.updatedAt,
-                type: "correct",
-                kind: "correct",
-                text: `${item.text} → ${byId.get(item.supersededBy)?.text ?? ""}`,
-              },
-            ]
-          : [
-              {
-                key: item.memoryId,
-                at: item.recordedAt,
-                type: "new",
-                kind: "new",
-                text: item.text,
-              },
-            ],
+    ...memoryHeads(overview.memories).flatMap((head) =>
+      memoryChain(head, overview.memories).flatMap((node): Event[] =>
+        node.kind === "reaffirmed" || (node.change === 0 && node.record.importBatchId)
+          ? []
+          : node.change === 0
+            ? [{ key: node.key, at: node.at, type: "new", kind: "new", text: node.text }]
+            : [
+                {
+                  key: node.key,
+                  at: node.at,
+                  type: "correct",
+                  kind: "correct",
+                  text: message("memory.page.nowIs", { text: node.text }),
+                  change: node.change,
+                  show: () => onShowMemory(head.memoryId),
+                },
+              ],
+      ),
     ),
     ...overview.tidyUps.map(
       (item): Event => ({
@@ -1195,6 +1305,15 @@ function TimelineTab({
               <span className={event.undone ? "memory-undone" : undefined}>
                 {event.text}
                 <small>{event.note}</small>
+                {event.change ? (
+                  <small>
+                    {message("memory.page.changeNo", { n: event.change })}
+                    {" · "}
+                    <button type="button" className="memory-link" onClick={event.show}>
+                      {message("memory.page.seeAllChanges")}
+                    </button>
+                  </small>
+                ) : null}
               </span>
               {event.undone ? (
                 <small>{message("memory.undone")}</small>
@@ -1533,6 +1652,7 @@ export function MemoryPage({
   onOpenThread: (threadId: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>(focus.length ? "all" : "pending");
+  const [openId, setOpenId] = useState<string | null>(null);
   const [allCategory, setAllCategory] = useState("all");
   const [panel, setPanel] = useState<"add" | "import" | "export" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -1571,23 +1691,34 @@ export function MemoryPage({
         focus={focus}
         onViewAll={(category) => {
           setAllCategory(category);
+          setOpenId(null);
           setTab("all");
         }}
       />
     ),
     all: () => (
       <AllTab
-        key={allCategory}
+        key={`${allCategory}:${openId ?? ""}`}
         memory={memory}
         message={message}
         notify={notify}
         onOpenThread={onOpenThread}
         focus={focus}
+        openId={openId}
         initialCategory={allCategory}
       />
     ),
     timeline: () => (
-      <TimelineTab memory={memory} message={message} onConfirm={() => setTab("pending")} />
+      <TimelineTab
+        memory={memory}
+        message={message}
+        onConfirm={() => setTab("pending")}
+        onShowMemory={(memoryId) => {
+          setAllCategory("all");
+          setOpenId(memoryId);
+          setTab("all");
+        }}
+      />
     ),
   };
   const week = Date.now() - 7 * DAY_MS;

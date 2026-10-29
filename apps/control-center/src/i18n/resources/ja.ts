@@ -720,7 +720,8 @@ export const messages = {
   "memory.page.reminder": "リマインダー",
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
-  "memory.page.origin": "{o, select, owner {手動で追加} import {インポート} other {毎日の整理}}",
+  "memory.page.origin":
+    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} other {毎日の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
@@ -844,7 +845,18 @@ export const messages = {
   "push.openSettings": "通知の設定",
   "nav.reminders": "リマインダー",
   "memory.page.replaced": "置き換え済み",
-  "memory.page.olderChanges": "さらに前の変更 {count} 件",
+  "memory.page.olderChanges": "前の {count} 件を表示",
+  "memory.page.node":
+    "{k, select, created {記録} updated {詳細を追加} edited {あなたが修正} restored {元に戻した} reaffirmed {同じ内容をもう一度} other {変更}}",
+  "memory.page.quote": "あなたの言葉：「{quote}」",
+  "memory.page.sourceDeleted": "元の会話は削除済み",
+  "memory.page.collapseHistory": "閉じる",
+  "memory.page.flips":
+    "{changes} 回変わりました{again, plural, =0 {} other {（ほかに同じ内容を # 回）}}",
+  "memory.page.chartLabel": "{lanes} の間でどう変わったか",
+  "memory.page.nowIs": "現在：{text}",
+  "memory.page.changeNo": "{n} 回目の変更",
+  "memory.page.seeAllChanges": "この記憶の変更をすべて見る",
   "memory.page.viewAll": "{kind}をすべて表示（{count} 件）",
   "reminders.group": "{g, select, today {今日} week {7 日以内} other {それ以降}}",
   "reminders.empty":

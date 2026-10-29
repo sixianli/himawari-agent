@@ -75,6 +75,7 @@ date: "2026-10-26"
   49. [模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗](#case-answer-weight)
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
   51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
+  55. [来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文](#case-memory-history)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -96,14 +97,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆变化历史完整保留](#case-memory-history) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[记忆变化画成两条线](#case-memory-history) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3284,6 +3285,68 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “用户在 iPhone 上一点输入框整页就放大、设置面板关不掉。根因一是 iOS 对小于 16px 的输入框会自动放大且不回弹，我们的对话框平时 16px、一聚焦被一条更具体的 `:focus` 规则改成 14px；二是弹窗高度用 100vh，没扣状态栏安全区。修法是手机上输入控件统一 16px、不用关缩放的偷懒写法，弹窗按 env(safe-area-inset) 算高度、标题固定内容内滚。再加两道门槛：提交时的静态检查和上线前手机尺寸的真实浏览器走查，两道都证明在旧版本上会失败。”
+
+[返回目录](#contents)
+
+<a id="case-memory-history"></a>
+
+## 案例 55：来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文
+
+**背景与现象**
+
+2026-10-29 中午（日本时间），Andy 在不同对话里反复说“我想出去玩”“我不想出去玩”，然后打开记忆页。记忆“主人最近一个月都不想出去玩”的历史只显示 2 版。他问这是不是 bug，并提出要求：用户要能看到“这一小块记忆这么多年来是怎么变化的”，而且是完整的时间线。他接着追问两件事：来源对话被删除或归档后怎么显示；历史很长时，如果用“旧 → 新”箭头一条接一条，会变成一长串。
+
+**根因**
+
+用代码阅读加生产库只读查询确认（脚本在项目共享目录 `memory-history/inspect-memory-chain.py`，由 Mac 线程在生产机只读运行）：
+
+1. **页面只看上一版**：记忆页的历史只取“被当前这条直接替换掉的”记录（`supersededBy` 等于当前编号），不沿着替换链往前走。生产库里这条记忆的链其实有 3 版（10:39、12:07、12:10 JST），页面只显示了 2 版。
+2. **补充细节直接覆盖原文**：自动记忆（模型从对话里提取值得记住的事）判断为“补充细节”（`update`）时，直接把记忆的正文指向新文字，旧文字没有留在任何地方。
+3. **“意思没变”不留痕迹**：模型判断“和已有记忆重复”（`unchanged`）时什么都不写，所以“又说了一次”在历史里看不到。
+4. **删对话后来源写错**：对话被永久删除时，记忆的来源对话被清空，页面把“没有来源”当成“每日整理”显示。
+5. **大部分轮次没写入**：生产日志显示当天只有 5 次提取写入了记忆。日志里没有失败，也没有“意思没变”之类的结果。代码里有三种情况不留日志（提取没启动、模型回答“没什么可记”、模型指向一条它没看到的记忆而被丢弃），原因还在用只读查询区分。
+
+**我们的方案**
+
+- 新增一张只追加的表 `memory_history_events`：一条记忆的每次变化写一行，种类是新记住、补充细节、又说了一次、主人手动改、换回。每行存当时的文字、立场标签、主人原话摘录、来源对话和时间。替换沿用原来的替换链，链上每条记录各有自己的历史行。
+- 记忆加一个“立场标签”（`stance`，不超过 16 个字，例如“想出去玩”“不想出去玩”）。它由提取记忆的模型在同一次调用里顺带给出，不增加模型调用。每次判断都要求模型给出主人原话摘录：至少 8 个字，而且必须真的出现在主人消息里。
+- 记忆页（Andy 选的方案 A）：立场只有 2–4 种时画“两条线图”，每次变化一个点，横轴是时间。下面列最近 3 次变化，更早的折叠在“展开更早的 N 条”里。变化记录页（方案 C）每次变化一行，只写“现在是：……·第 N 次变化”，不用箭头串。
+- 对话被永久删除时，原话摘录跟着删除，每次变化的文字保留，来源写“来源对话已删除”。
+- 回答时召回记忆仍只用最新版本，历史不进模型上下文。
+- 给“模型说没什么可记”和“候选被丢弃”补上日志结果 `nothing_to_remember`、`candidate_invalid`，以后不用再猜。
+
+**方案讨论与备选**
+
+- **只修页面，沿着替换链往前走**：改动最小，但只能找回第三版；被覆盖的文字和“又说了一次”仍然丢失，达不到“完整时间线”。
+- **“补充细节”也改成新建一条记忆再替换旧的**：不用新表，但“又说了一次”“换回”仍然没法记，记忆条数会膨胀，召回和去重都要处理更多已替换记录。
+- **网页端自己按文字相似度给立场分组**：同一立场的不同说法会被分成很多组，图会乱；改成在已有的提取调用里多要一个短字段。
+- **删对话时保留原话摘录**：保留更完整，但违背“删对话就删干净”的预期。按愿景里“主人说了算”排第一的原则，选择卡上推荐“一起删”，等 Andy 最终选。
+- **长历史的展示**：原型里比较了“只列表”（B）、“同一天的变化合成一组”（D）和 C+D。Andy 选 A 和 C。
+
+**业界主流做法**
+
+- ✅ Martin Fowler《Event Sourcing》（<https://martinfowler.com/eaaDev/EventSourcing.html>）：“Capture all changes to an application state as a sequence of events.” 我们的历史表就是按这个思路，只是只给记忆这一类数据做，当前状态仍然存在原表里。
+- ✅ Microsoft SQL Server 文档《Temporal Tables》（<https://learn.microsoft.com/en-us/sql/relational-databases/tables/temporal-tables>）：“A system-versioned temporal table is a type of user table designed to keep a full history of data changes, allowing point-in-time analysis.” SQLite 没有这种内置功能，所以我们在写入记忆的同一个事务里自己追加历史行。
+- ✅ Mem0 文档《Update Memory》（<https://docs.mem0.ai/core-concepts/memory-operations/update>）：“Mem0 overwrites the stored value and adjusts indexes.” 这和我们修复前的做法一样：更新直接覆盖。
+
+**对比与取舍**
+
+和数据库的“系统版本表”相比，我们多存了“为什么变”：变化种类、主人原话和来源对话，用户看得懂。代价是每次“又说了一次”也写一行，表会随对话增长；每行只有几百字节，实际增长未测量。和 Mem0 的覆盖更新相比，我们多了一张表，但满足了“中间版本不能丢”。迁移前已经被覆盖的旧文字找不回来，这一点在交付时如实告诉了 Andy。
+
+**结果数据**
+
+- 生产只读查询：这条记忆的替换链有 3 版，修复前页面显示 2 版；当天只有 5 次提取写入（10:20、10:39、12:07、12:09–12:10 批准、12:10 JST，来自生产日志 `memory-capture.audit`）。
+- 门槛自证：`apps/control-center/test/memory-interactions.unit.test.ts` 里四个标了 [MH-2]/[MH-3]/[MH-4] 的测试，在修复前的记忆页代码上全部失败，修复后通过。真实入口测试 [MH-1] 连续五轮加手动改和换回，每一步都留下节点（`test/integration/production-memory-capture.test.ts`）。
+- 相关测试共 2139 个，修复后除两个与本改动无关、在 main 上同样超时或缺构建产物的套件外全部通过。`npm run check`、`npm run build` 通过。
+- 线上效果：未测量，等上线后 Andy 在真实页面上看。
+
+**相关 ADR/PR**
+
+[ADR 0113：每条记忆的每次变化都留一条历史记录](adr/0113-memory-history-events-and-stance.md)；[事故与门槛清单 I-20](incidents-and-gates.md#incidents)；PR 在分支 `claude/project-thread-6k48tu`。
+
+**面试 30 秒版**
+
+“用户来回改主意很多次，记忆历史却只显示两版。查下来有三层原因：页面只看直接上一版；‘补充细节’直接覆盖原文；‘意思没变’不留痕迹。我们借鉴 event sourcing 和数据库的系统版本表，给记忆加了只追加的历史表，每次变化都存快照、原话和来源。再让提取模型顺带给一个立场标签，页面就能把‘想/不想’画成两条线，不会变成一长串箭头。删对话时原话一起删，来源如实写‘已删除’。门槛是四个界面测试和一个真实入口测试，都证明在旧代码上会失败。”
 
 [返回目录](#contents)
 

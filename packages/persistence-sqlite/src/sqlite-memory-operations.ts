@@ -5,6 +5,8 @@ import type {
   MemoryEpisodeDocument,
   MemoryEpisodeSearchResult,
   MemoryEpisodeThreadWatermark,
+  MemoryHistoryEvent,
+  MemoryHistoryNote,
   MemoryIndexCandidate,
   MemoryIndexDocument,
   MemoryIndexEmbedding,
@@ -51,6 +53,18 @@ interface MemoryRow {
   readonly tentative: number;
   readonly subCategory: string | null;
   readonly importBatchId: string | null;
+  readonly stance: string | null;
+}
+
+interface MemoryHistoryRow {
+  readonly memoryId: string;
+  readonly kind: MemoryHistoryEvent["kind"];
+  readonly contentRef: string;
+  readonly stance: string | null;
+  readonly quoteRef: string | null;
+  readonly sourceThreadId: string | null;
+  readonly sourceDeleted: number;
+  readonly occurredAt: string;
 }
 
 interface IndexCandidateRow {
@@ -212,7 +226,7 @@ const memorySelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revis
   valid_to AS validTo, superseded_by AS supersededBy, use_count AS useCount,
   evidence_verified AS evidenceVerified, sensitive_topic AS sensitiveTopic,
   recorded_at AS recordedAt, tentative, sub_category AS subCategory,
-  import_batch_id AS importBatchId
+  import_batch_id AS importBatchId, stance
   FROM memory_records`;
 
 const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
@@ -292,12 +306,21 @@ export class SqliteMemoryOperations {
             memory: ProductMemoryRecord;
             expectedRevision: number | null;
             job: MemoryProjectionJob;
+            history?: MemoryHistoryNote;
           },
         );
       case "memory.listActive":
         return this.listActive(payload as { ownerId: OwnerId; agentId: AgentId });
       case "memory.markUsed":
         return this.markUsed(payload as { memoryIds: readonly MemoryId[]; usedAt: string });
+      case "memory.appendHistory":
+        return this.appendHistory(
+          payload as { memoryId: MemoryId; note: MemoryHistoryNote; occurredAt: string },
+        );
+      case "memory.listHistory":
+        return this.listHistory(
+          payload as { ownerId: OwnerId; agentId: AgentId; memoryIds: readonly MemoryId[] },
+        );
       case "memory.listInactive":
         return this.listInactive(
           payload as { ownerId: OwnerId; agentId: AgentId; trashedAfter: string; limit: number },
@@ -466,6 +489,7 @@ export class SqliteMemoryOperations {
         ...(row.tentative === 1 ? { tentative: true } : {}),
         ...(row.subCategory ? { subCategory: row.subCategory } : {}),
         ...(row.importBatchId ? { importBatchId: row.importBatchId } : {}),
+        ...(row.stance ? { stance: row.stance } : {}),
       }),
       useCount: row.useCount,
     });
@@ -584,6 +608,8 @@ export class SqliteMemoryOperations {
       attributes.entities.length > MAXIMUM_ENTITIES ||
       (attributes.subCategory != null &&
         (attributes.subCategory.trim().length === 0 || [...attributes.subCategory].length > 32)) ||
+      (attributes.stance != null &&
+        (attributes.stance.trim().length === 0 || [...attributes.stance].length > 16)) ||
       attributes.entities.some((name) => {
         const normalized = normalizedEntity(name);
         return normalized.length === 0 || normalized.length > 64;
@@ -611,6 +637,7 @@ export class SqliteMemoryOperations {
     memory: ProductMemoryRecord;
     expectedRevision: number | null;
     job: MemoryProjectionJob;
+    history?: MemoryHistoryNote;
   }): ProductMemoryRecord {
     if (
       input.job.memoryId !== input.memory.id ||
@@ -633,6 +660,7 @@ export class SqliteMemoryOperations {
   private save(input: {
     memory: ProductMemoryRecord;
     expectedRevision: number | null;
+    history?: MemoryHistoryNote;
   }): ProductMemoryRecord {
     this.assertDiskHeadroom();
     this.assertMemoryShape(input.memory);
@@ -670,8 +698,8 @@ export class SqliteMemoryOperations {
               source_thread_id, inference, confidence_permille, policy_version,
               provider_record_id, last_used_at, updated_at, category, importance_permille,
               valid_from, valid_to, superseded_by, evidence_verified, sensitive_topic,
-              recorded_at, tentative, sub_category, import_batch_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              recorded_at, tentative, sub_category, import_batch_id, stance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.memory.id,
@@ -699,6 +727,7 @@ export class SqliteMemoryOperations {
             attributes.tentative === true ? 1 : 0,
             attributes.subCategory ?? null,
             attributes.importBatchId ?? null,
+            attributes.stance ?? null,
           );
       } else {
         if (
@@ -718,7 +747,7 @@ export class SqliteMemoryOperations {
               policy_version = ?, provider_record_id = ?, last_used_at = ?, updated_at = ?,
               category = ?, importance_permille = ?, valid_from = ?, valid_to = ?,
               superseded_by = ?, evidence_verified = ?, sensitive_topic = ?, tentative = ?,
-              sub_category = ?
+              sub_category = ?, stance = ?
             WHERE id = ?`,
           )
           .run(
@@ -742,9 +771,18 @@ export class SqliteMemoryOperations {
             attributes.sensitiveTopic ?? null,
             attributes.tentative === true ? 1 : 0,
             attributes.subCategory ?? null,
+            attributes.stance ?? null,
             input.memory.id,
           );
       }
+      const history =
+        input.history ??
+        (!current
+          ? { kind: "created" as const }
+          : current.contentRef !== input.memory.contentRef
+            ? { kind: "updated" as const }
+            : undefined);
+      if (history) this.insertHistory(input.memory, history, input.memory.updatedAt);
       this.database.prepare("DELETE FROM memory_entities WHERE memory_id = ?").run(input.memory.id);
       if (INDEXED_ENTITY_CLASSIFICATIONS.has(input.memory.dataClassification)) {
         const insertEntity = this.database.prepare(
@@ -763,6 +801,100 @@ export class SqliteMemoryOperations {
       return this.read(input.memory.id) as ProductMemoryRecord;
     });
     return transaction.immediate();
+  }
+
+  private insertHistory(
+    memory: ProductMemoryRecord,
+    note: MemoryHistoryNote,
+    occurredAt: string,
+  ): void {
+    if (!validIsoTimestamp(occurredAt)) this.fail("PORT_INVALID_OPERATION", "Invalid history time");
+    if (note.quoteRef) {
+      const quote = this.database
+        .prepare(
+          `SELECT classification FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?
+          AND lifecycle_state = 'active'`,
+        )
+        .get(note.quoteRef, memory.ownerId, memory.agentId) as
+        | { readonly classification: string }
+        | undefined;
+      if (!quote) this.fail("PORT_NOT_FOUND", `Memory quote Payload ${note.quoteRef} not found`);
+      if (quote.classification !== memory.dataClassification)
+        this.fail("PORT_INVALID_OPERATION", "Memory and quote classifications differ");
+    }
+    const sourceThreadId =
+      note.sourceThreadId === undefined ? memory.sourceThreadId : note.sourceThreadId;
+    const sourceExists =
+      sourceThreadId !== null &&
+      this.database
+        .prepare("SELECT 1 FROM threads WHERE id = ? AND owner_id = ? AND agent_id = ?")
+        .get(sourceThreadId, memory.ownerId, memory.agentId) !== undefined;
+    this.database
+      .prepare(
+        `INSERT INTO memory_history_events (
+          memory_id, kind, content_ref, stance, quote_ref, source_thread_id, occurred_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        memory.id,
+        note.kind,
+        memory.contentRef,
+        memory.attributes?.stance ?? null,
+        note.quoteRef ?? null,
+        sourceExists ? sourceThreadId : null,
+        occurredAt,
+      );
+  }
+
+  private appendHistory(input: {
+    memoryId: MemoryId;
+    note: MemoryHistoryNote;
+    occurredAt: string;
+  }): void {
+    this.assertDiskHeadroom();
+    this.database
+      .transaction(() => {
+        const memory = this.read(input.memoryId);
+        if (!memory) this.fail("PORT_NOT_FOUND", `Memory ${input.memoryId} not found`);
+        if (memory.status !== "active")
+          this.fail("PORT_INVALID_OPERATION", `Memory ${input.memoryId} is not active`);
+        this.insertHistory(memory, input.note, input.occurredAt);
+      })
+      .immediate();
+  }
+
+  private listHistory(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    memoryIds: readonly MemoryId[];
+  }): readonly MemoryHistoryEvent[] {
+    if (input.memoryIds.length === 0) return [];
+    if (input.memoryIds.length > 1000) {
+      this.fail("PORT_INVALID_OPERATION", "Memory history limit exceeds 1000");
+    }
+    const unique = [...new Set(input.memoryIds)];
+    const rows = this.database
+      .prepare(
+        `SELECT h.memory_id AS memoryId, h.kind, h.content_ref AS contentRef, h.stance,
+          h.quote_ref AS quoteRef, h.source_thread_id AS sourceThreadId,
+          h.source_deleted AS sourceDeleted, h.occurred_at AS occurredAt
+        FROM memory_history_events h JOIN memory_records m ON m.id = h.memory_id
+        WHERE m.owner_id = ? AND m.agent_id = ? AND h.memory_id IN (${unique.map(() => "?").join(", ")})
+        ORDER BY h.occurred_at, h.rowid`,
+      )
+      .all(input.ownerId, input.agentId, ...unique) as MemoryHistoryRow[];
+    return rows.map((row) =>
+      Object.freeze({
+        memoryId: row.memoryId as MemoryId,
+        kind: row.kind,
+        contentRef: row.contentRef,
+        stance: row.stance,
+        quoteRef: row.quoteRef,
+        sourceThreadId: row.sourceThreadId as ThreadId | null,
+        sourceDeleted: row.sourceDeleted === 1,
+        occurredAt: row.occurredAt,
+      }),
+    );
   }
 
   private listInactive(input: {

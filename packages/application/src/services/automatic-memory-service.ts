@@ -324,6 +324,17 @@ export class AutomaticMemoryService {
     candidateOrdinal: number,
     forcedMemoryId?: MemoryId,
   ): Promise<MemoryId> {
+    const quoteRef = candidate.quote
+      ? await this.options.content.store({
+          contentKey: `${input.generationId}:${candidateOrdinal}:quote`,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          text: candidate.quote,
+          dataClassification: candidate.dataClassification,
+          sourceRef: input.sourceRef,
+          createdAt: this.options.now(),
+        })
+      : null;
     if (candidate.decision === "unchanged") {
       if (!candidate.existingMemoryId) {
         throw new ApplicationPortError(
@@ -332,7 +343,12 @@ export class AutomaticMemoryService {
         );
       }
       const record = await this.options.product.applyProposal(
-        { decision: "unchanged", memoryId: candidate.existingMemoryId },
+        {
+          decision: "unchanged",
+          memoryId: candidate.existingMemoryId,
+          quoteRef,
+          sourceThreadId: input.threadId,
+        },
         input.generationId,
       );
       return record.id;
@@ -364,6 +380,7 @@ export class AutomaticMemoryService {
           ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
         },
         ...(candidate.supersedes ? { supersedes: candidate.supersedes } : {}),
+        quoteRef,
       };
     } else {
       if (!candidate.existingMemoryId) {
@@ -382,6 +399,8 @@ export class AutomaticMemoryService {
         confidencePermille: candidate.confidencePermille,
         policyVersion: input.policyVersion,
         ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
+        quoteRef,
+        sourceThreadId: input.threadId,
       };
     }
     const memoryId = (await this.options.product.applyProposal(proposal, input.generationId)).id;
