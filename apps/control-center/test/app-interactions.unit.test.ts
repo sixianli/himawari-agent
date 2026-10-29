@@ -347,6 +347,14 @@ describe("control center application bootstrap and interaction", () => {
     await act(async () => root.render(null));
     await expect(options.refreshCsrfToken()).rejects.toThrow("CONTROL_CENTER_CLIENT_DISPOSED");
   });
+  it("opens settings without putting focus, and its focus ring, on the close button", async () => {
+    await render();
+    await click(messages["settings.title"]);
+    const dialog = document.querySelector<HTMLDialogElement>("dialog");
+    expect(dialog?.open).toBe(true);
+    expect(document.activeElement).toBe(dialog);
+    expect(document.activeElement?.getAttribute("aria-label")).not.toBe(messages["common.close"]);
+  });
   it("persists interface language and appearance through the actual shell controls", async () => {
     await render();
     await click(messages["settings.title"]);

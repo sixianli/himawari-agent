@@ -1716,7 +1716,11 @@ export function useThreadControlCenter(
       onClose={() => setRenameTarget(null)}
     >
       <Field label={message("review.conversationName")}>
-        <input value={renameTitle} onChange={(event) => setRenameTitle(event.target.value)} />
+        <input
+          data-autofocus
+          value={renameTitle}
+          onChange={(event) => setRenameTitle(event.target.value)}
+        />
       </Field>
       <ActionButton
         disabled={!renameTitle.trim()}

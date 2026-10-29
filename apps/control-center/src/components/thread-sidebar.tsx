@@ -276,6 +276,7 @@ export function ThreadSidebar({
             }}
           >
             <input
+              data-autofocus
               type="search"
               autoComplete="off"
               aria-label={message("threads.search")}
