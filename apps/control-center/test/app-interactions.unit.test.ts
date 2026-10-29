@@ -9,6 +9,12 @@ import { ControlCenterBrowserStorage, THREAD_CURSOR_STORAGE_KEY } from "../src/b
 import type { ControlCenterRuntimeConfiguration } from "../src/gateway-client.js";
 import { messages } from "../src/i18n/resources/zh-CN.js";
 import { loadMessageCatalog } from "../src/i18n/runtime.js";
+import {
+  OPEN_REMINDERS_PAGE,
+  OPEN_SETTINGS,
+  reminderFocusOf,
+  settingsTabOf,
+} from "../src/proactive.js";
 
 const boundary = vi.hoisted(() => ({
   load: vi.fn(),
@@ -17,6 +23,7 @@ const boundary = vi.hoisted(() => ({
   client: vi.fn(),
   threads: vi.fn(),
   governance: vi.fn(),
+  query: vi.fn(),
 }));
 vi.mock("../src/gateway-client.js", async (original) => ({
   ...(await original<object>()),
@@ -24,6 +31,7 @@ vi.mock("../src/gateway-client.js", async (original) => ({
   refreshRuntimeConfiguration: boundary.refresh,
   createBrowserSession: boundary.login,
   GatewayClient: class {
+    query = (request: unknown) => boundary.query(request);
     constructor(options: unknown) {
       boundary.client(options);
     }
@@ -101,6 +109,7 @@ beforeEach(() => {
   boundary.refresh.mockReset().mockResolvedValue({ ...configuration, csrfToken: "csrf-fresh" });
   boundary.login.mockReset().mockResolvedValue(undefined);
   boundary.client.mockReset();
+  boundary.query.mockReset().mockRejectedValue(new Error("QUERY_NOT_EXPECTED"));
   const child = (name: string) => ({
     title: name,
     content: createElement("div", { "data-child": name }, `${name} content`),
@@ -165,6 +174,59 @@ describe("control center application bootstrap and interaction", () => {
       expect(Events.instances).toHaveLength(2);
     },
   );
+  it("[PG-15] opens the reminder a push points at and the apps settings after Google sign-in", async () => {
+    boundary.load.mockResolvedValue({
+      ...configuration,
+      installedGatewayV2Operations: [
+        ...(configuration.installedGatewayV2Operations ?? []),
+        "memory.overview.read",
+        "proactive.overview.read",
+      ],
+    });
+    boundary.query.mockImplementation(async (request: { type: string }) =>
+      request.type === "proactive.overview.read"
+        ? {
+            type: "proactive.overview.snapshot",
+            payload: {
+              source: "gmail",
+              connection: { status: "connected", account: "andy@example.com", connectedAt: null },
+              enabled: true,
+              quietHours: [],
+              importantSenders: [],
+              dailyLimitReached: false,
+              insights: [],
+              audit: { active: false, since: "2026-11-04T00:00:00.000Z", items: [], pending: 0 },
+              decisions: [],
+              metrics: { spoke: 0, hits: 0, misfires: 0, missed: 0, reviewed: 0 },
+              generatedAt: "2026-11-04T00:00:00.000Z",
+            },
+          }
+        : {
+            type: "memory.overview.snapshot",
+            payload: { reminders: [], upcoming: [], memories: [], pending: [] },
+          },
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/?reminder=proactive-insight-1&settings=apps&gmail=connected&push=tag-1",
+    );
+    const reminders = vi.fn();
+    const settings = vi.fn();
+    window.addEventListener(OPEN_REMINDERS_PAGE, reminders);
+    window.addEventListener(OPEN_SETTINGS, settings);
+    await render();
+    await settle();
+    window.removeEventListener(OPEN_REMINDERS_PAGE, reminders);
+    window.removeEventListener(OPEN_SETTINGS, settings);
+    expect(reminders).toHaveBeenCalledOnce();
+    expect(reminderFocusOf(reminders.mock.calls[0]?.[0])).toBe("proactive-insight-1");
+    expect(settingsTabOf(settings.mock.calls[0]?.[0])).toBe("tools");
+    expect(window.location.search).not.toContain("reminder=");
+    expect(window.location.search).not.toContain("gmail=");
+    expect(document.body.textContent).toContain(messages["proactive.apps.gmail"]);
+    expect(document.body.textContent).toContain("已连接 Gmail。第一次检查马上开始。");
+  });
   it("shows the opening state while the configuration is still loading", async () => {
     boundary.load.mockImplementation(() => new Promise(() => undefined));
     await render();

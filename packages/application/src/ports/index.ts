@@ -35,6 +35,7 @@ export * from "./model-budget.js";
 export * from "./model-invocation.js";
 export * from "./observability.js";
 export * from "./persistence.js";
+export * from "./proactive-checks.js";
 export * from "./proactivity.js";
 export * from "./recent-authentication.js";
 export * from "./run-checkpoints.js";

@@ -25,6 +25,10 @@ import {
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
 import {
+  PRODUCTION_PROACTIVE_OPERATIONS,
+  type ProductionProactive,
+} from "./production-proactive.js";
+import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
@@ -51,6 +55,7 @@ export function createProductionApprovalGateway(options: {
   readonly workspaceCopies?: GatewayV2ControlPlanePort;
   readonly memoryControl?: ProductionMemoryControl;
   readonly webPushControl?: ProductionWebPushControl;
+  readonly proactiveControl?: Pick<ProductionProactive, "query" | "execute">;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -80,7 +85,9 @@ export function createProductionApprovalGateway(options: {
           ? options.memoryControl.query(query)
           : query.type.startsWith("push.") && options.webPushControl
             ? options.webPushControl.query(query)
-            : searchAuthorization.query(query),
+            : query.type.startsWith("proactive.") && options.proactiveControl
+              ? options.proactiveControl.query(query)
+              : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -177,6 +184,8 @@ export function createProductionApprovalGateway(options: {
           options.webPushControl
         )
           return options.webPushControl.execute(command);
+        if (command.type.startsWith("proactive.") && options.proactiveControl)
+          return options.proactiveControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -198,6 +207,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.workspaceCopies ? PRODUCTION_COPY_OPERATIONS : []),
       ...(options.memoryControl ? PRODUCTION_MEMORY_OPERATIONS : []),
       ...(options.webPushControl ? PRODUCTION_WEB_PUSH_OPERATIONS : []),
+      ...(options.proactiveControl ? PRODUCTION_PROACTIVE_OPERATIONS : []),
     ],
     reads,
     controlPlane,

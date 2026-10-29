@@ -1,0 +1,508 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  createProactiveSeal,
+  type ModelDescriptor,
+  type ModelInvocationEvent,
+  type WebPushSendRequest,
+} from "@himawari-agent/application";
+import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import {
+  type GatewayV2Command,
+  type GatewayV2Query,
+  gatewayV2MessageSchema,
+} from "@himawari-agent/gateway-contracts";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import {
+  CALENDAR_READONLY_SCOPE,
+  createGmailReader,
+  createGoogleOAuth,
+  GMAIL_READONLY_SCOPE,
+  readGmailAccount,
+} from "@himawari-agent/platform-node";
+import {
+  DeterministicIdGenerator,
+  DeterministicPayloadProtector,
+  ManualClock,
+  ScriptedModelPort,
+} from "@himawari-agent/testing";
+import Fastify from "fastify";
+import { afterEach, describe, expect, it } from "vitest";
+import { registerProactiveRoutes } from "../../apps/agent-service/src/production-http-composition.ts";
+import {
+  createProactivePushSource,
+  PROACTIVE_GOOGLE_CALLBACK_PATH,
+  PROACTIVE_GOOGLE_START_PATH,
+  ProductionProactive,
+} from "../../apps/agent-service/src/production-proactive.ts";
+import {
+  ProductionWebPush,
+  WebPushPresence,
+} from "../../apps/agent-service/src/production-web-push.ts";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+
+const OWNER_ID = createOwnerId("owner-proactive-production");
+const AGENT_ID = createAgentId("agent-proactive-production");
+const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+const NOV_4_10AM_JST = "2026-11-04T01:00:00.000Z";
+const ORIGIN = "https://himawari.example";
+const MODEL_REF = "proactive-production-model";
+
+const descriptor: ModelDescriptor = {
+  ref: MODEL_REF,
+  provider: "deterministic",
+  model: MODEL_REF,
+  version: "1.0.0",
+  routingClass: "primary",
+  priority: 10,
+  disclosure: "trusted_remote",
+  capabilities: ["text"],
+  allowedDataClassifications: ["public", "private"],
+  secretRequirement: null,
+};
+
+const json = (value: unknown, status = 200) =>
+  new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+
+function message(kind: "command" | "query", type: string, payload: unknown) {
+  return gatewayV2MessageSchema.parse({
+    schemaVersion: "gateway.v2",
+    kind,
+    type,
+    messageId: `message-${type}`,
+    correlationId: `correlation-${type}`,
+    causationId: null,
+    dataClassification: "private",
+    risk: "low",
+    authorizationRef: kind === "command" ? "authorization-01" : null,
+    scope,
+    authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+    actor: { actorType: "owner", actorId: "owner-subject" },
+    ...(kind === "command" ? { idempotencyKey: `idempotency-${type}-${Math.random()}` } : {}),
+    payload,
+  });
+}
+
+function fakeGoogle() {
+  const calls: { url: string; method: string; body: string }[] = [];
+  const fetch = async (url: string, init: RequestInit) => {
+    const body = typeof init.body === "string" ? init.body : "";
+    calls.push({ url, method: init.method ?? "GET", body });
+    const target = new URL(url);
+    if (target.href === "https://oauth2.googleapis.com/token") {
+      const form = new URLSearchParams(body);
+      if (form.get("grant_type") === "authorization_code")
+        return form.get("code") === "code-1"
+          ? json({
+              refresh_token: "refresh-1",
+              access_token: "access-1",
+              scope: `${GMAIL_READONLY_SCOPE} ${CALENDAR_READONLY_SCOPE}`,
+            })
+          : json({ error: "invalid_grant" }, 400);
+      return json({ access_token: "access-1", expires_in: 3600 });
+    }
+    if (target.href === "https://oauth2.googleapis.com/revoke") return json({});
+    if (new Headers(init.headers).get("authorization") !== "Bearer access-1") return json({}, 401);
+    if (target.pathname.endsWith("/profile"))
+      return json({ emailAddress: "Andy@Example.com", historyId: "777" });
+    if (target.pathname.endsWith("/messages"))
+      return json({ messages: [{ id: "invoice" }, { id: "sale" }] });
+    const id = target.pathname.split("/").at(-1);
+    const headers = (from: string, subject: string) => [
+      { name: "From", value: from },
+      { name: "Subject", value: subject },
+    ];
+    if (id === "invoice")
+      return json({
+        id,
+        threadId: "thread-invoice",
+        labelIds: ["INBOX", "CATEGORY_UPDATES"],
+        snippet: "ご利用代金 12,000 円を 11/5 までにお支払いください",
+        internalDate: String(Date.parse("2026-11-04T00:20:00.000Z")),
+        payload: { headers: headers("SMBC <billing@smbc.co.jp>", "ご請求のお知らせ") },
+      });
+    if (id === "sale")
+      return json({
+        id,
+        threadId: "thread-sale",
+        labelIds: ["INBOX", "CATEGORY_PROMOTIONS"],
+        snippet: "今だけ 50% オフ",
+        internalDate: String(Date.parse("2026-11-04T00:10:00.000Z")),
+        payload: { headers: headers("Shop <news@shop.example>", "セール") },
+      });
+    return json({}, 404);
+  };
+  return { calls, fetch };
+}
+
+describe("[PG-12] proactive Gmail checks in the running service", () => {
+  useSqliteContractExecution("direct");
+  const directories: string[] = [];
+  const closers: (() => Promise<void>)[] = [];
+  afterEach(async () => {
+    await Promise.all(closers.splice(0).map((close) => close()));
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  async function setup() {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-production-"));
+    directories.push(stateRoot);
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    applyMigrations(database, await loadBundledMigrations());
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    database.close();
+    const clock = new ManualClock(NOV_4_10AM_JST);
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => clock.now(),
+    });
+    closers.push(() => repository.close());
+    const ids = new DeterministicIdGenerator();
+    const store = repository.proactive();
+    const seal = createProactiveSeal({
+      payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+      protector: new DeterministicPayloadProtector(),
+      ids,
+    });
+    const google = fakeGoogle();
+    const oauth = createGoogleOAuth({
+      clientId: "client-1",
+      clientSecret: "test-secret",
+      redirectUri: `${ORIGIN}${PROACTIVE_GOOGLE_CALLBACK_PATH}`,
+      fetch: google.fetch,
+    });
+    const outputs = new Map<string, string>();
+    let scripted = new ScriptedModelPort([descriptor], []);
+    const prompts: string[] = [];
+    const script = (items: readonly Record<string, unknown>[]) => {
+      const ref = `output-${outputs.size + 1}`;
+      outputs.set(ref, JSON.stringify({ items }));
+      const events: ModelInvocationEvent[] = [
+        { type: "model.started", invocationId: "scripted", occurredAt: clock.now() },
+        {
+          type: "model.output",
+          invocationId: "scripted",
+          sequence: 1,
+          payloadRef: ref,
+          occurredAt: clock.now(),
+        },
+        {
+          type: "model.completed",
+          invocationId: "scripted",
+          inputTokens: 300,
+          outputTokens: 40,
+          costMicros: 400,
+          latencyMs: 10,
+          occurredAt: clock.now(),
+        },
+      ];
+      scripted = new ScriptedModelPort([descriptor], events);
+    };
+    const webPushStore = repository.webPush();
+    const failures: unknown[] = [];
+    const proactive = new ProductionProactive({
+      scope,
+      configuration: {
+        modelRef: MODEL_REF,
+        gmail: { clientId: "client-1", clientSecretRef: "google-oauth" },
+        intervalMs: 900_000,
+        perCheckCostMicros: 100_000,
+        perCheckMs: 180_000,
+        dailyCostMicros: 1_000_000,
+      },
+      timeZone: "Asia/Tokyo",
+      store,
+      seal,
+      oauth,
+      reader: createGmailReader({ oauth, fetch: google.fetch }),
+      readAccount: (accessToken) => readGmailAccount({ accessToken, fetch: google.fetch }),
+      model: {
+        get model() {
+          return scripted;
+        },
+        modelRef: MODEL_REF,
+        async prepare({ invocationId, prompt }) {
+          prompts.push(prompt);
+          return {
+            runId: `proactive:${invocationId}` as never,
+            inputRef: `input-${invocationId}`,
+            allowedDisclosureRef: `input-${invocationId}`,
+            secretHandleRefs: [],
+            release: async () => undefined,
+          };
+        },
+        readOutput: async (ref) => outputs.get(ref) ?? "",
+      },
+      estimateCostMicros: () => 1_000,
+      feedback: (sentFrom) => webPushStore.listFeedback({ ...scope, sentFrom, limit: 500 }),
+      clock,
+      ids,
+      onFailure: (error) => failures.push(error),
+    });
+    const sent: WebPushSendRequest[] = [];
+    const presence = new WebPushPresence();
+    const push = new ProductionWebPush({
+      ...scope,
+      store: webPushStore,
+      sender: {
+        publicKey: "public-key",
+        send: async (request) => {
+          sent.push(request);
+          return { kind: "sent" };
+        },
+      },
+      presence,
+      reminders: { listDue: async () => [], read: async () => undefined },
+      memories: { readMany: async () => [] },
+      readMemoryText: async () => undefined,
+      listApprovals: async () => [],
+      runThread: async () => null,
+      threadTitle: async () => null,
+      proactive: createProactivePushSource({ scope, store, seal }),
+      publicOrigin: ORIGIN,
+      timeZone: "Asia/Tokyo",
+      now: () => clock.now(),
+      onFailure: (error) => failures.push(error),
+    });
+    await webPushStore.saveSubscription({
+      ...scope,
+      id: "iphone",
+      endpoint: "https://web.push.apple.com/iphone",
+      p256dh: "key-iphone",
+      auth: "auth-iphone",
+      locale: "zh-CN",
+      deviceLabel: "iPhone",
+      kinds: ["reminder"],
+      now: clock.now(),
+    });
+    const app = Fastify();
+    closers.push(() => app.close());
+    registerProactiveRoutes(app, proactive, {
+      authentication: {
+        authenticate: async (input) => {
+          if (input.sessionToken !== "owner-session") throw new Error("UNAUTHENTICATED");
+          return {
+            subjectId: "owner-subject",
+            ownerId: OWNER_ID,
+            deviceId: "device-1",
+            authenticatedAt: clock.now(),
+            authenticationRef: "session-1",
+          };
+        },
+      },
+      sessionCookieName: "himawari_session",
+      ownerId: OWNER_ID,
+    });
+    const overview = async () => {
+      const snapshot = await proactive.query(
+        message("query", "proactive.overview.read", {}) as GatewayV2Query,
+      );
+      gatewayV2MessageSchema.parse(snapshot);
+      if (snapshot.type !== "proactive.overview.snapshot") throw new Error("unexpected snapshot");
+      return snapshot.payload;
+    };
+    const command = (type: string, payload: unknown) =>
+      proactive.execute(message("command", type, payload) as GatewayV2Command);
+    return {
+      app,
+      clock,
+      command,
+      failures,
+      google,
+      overview,
+      presence,
+      proactive,
+      prompts,
+      push,
+      script,
+      sent,
+      store,
+      webPushStore,
+    };
+  }
+
+  const cookie = { cookie: "himawari_session=owner-session" };
+
+  async function connect(h: Awaited<ReturnType<typeof setup>>) {
+    const start = await h.app.inject({
+      method: "GET",
+      url: PROACTIVE_GOOGLE_START_PATH,
+      headers: { ...cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect(start.statusCode).toBe(303);
+    const google = new URL(String(start.headers["location"]));
+    expect(google.origin + google.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(google.searchParams.get("redirect_uri")).toBe(
+      `${ORIGIN}${PROACTIVE_GOOGLE_CALLBACK_PATH}`,
+    );
+    return google.searchParams.get("state") ?? "";
+  }
+
+  it("[PG-12] connects Gmail through Google, checks the inbox and pushes one reminder in the owner's language", async () => {
+    const h = await setup();
+    expect(
+      (
+        await h.app.inject({
+          method: "GET",
+          url: PROACTIVE_GOOGLE_START_PATH,
+          headers: { ...cookie, "sec-fetch-site": "cross-site" },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (await h.app.inject({ method: "GET", url: PROACTIVE_GOOGLE_START_PATH })).statusCode,
+    ).toBe(401);
+    const forged = await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=forged&code=code-1`,
+      headers: cookie,
+    });
+    expect(forged.headers["location"]).toBe("/?settings=apps&gmail=failed");
+    expect((await h.overview()).connection.status).toBe("disconnected");
+
+    const state = await connect(h);
+    h.script([
+      {
+        id: "invoice",
+        result: "act",
+        confidence: "sure",
+        todo: "11/5 前付清 SMBC 账单 12,000 円",
+        priority: "high",
+        dueAt: "2026-11-05T14:59:00.000Z",
+        reason: "",
+      },
+    ]);
+    const callback = await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1&scope=x`,
+      headers: cookie,
+    });
+    expect(callback.statusCode).toBe(303);
+    expect(callback.headers["location"]).toBe("/?settings=apps&gmail=connected");
+    await h.proactive.stop();
+    const replay = await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1`,
+      headers: cookie,
+    });
+    expect(replay.headers["location"]).toBe("/?settings=apps&gmail=failed");
+
+    const first = await h.overview();
+    expect(first.connection).toMatchObject({ status: "connected", account: "andy@example.com" });
+    expect(first.enabled).toBe(true);
+    expect(first.insights).toMatchObject([
+      {
+        result: "act",
+        summary: "11/5 前付清 SMBC 账单 12,000 円",
+        subject: "ご請求のお知らせ",
+        priority: "high",
+        pushed: true,
+      },
+    ]);
+    expect(first.decisions).toMatchObject([
+      { verdict: "pushed", reasonCode: "URGENT", counts: { fetched: 2, skipped: 1, act: 1 } },
+    ]);
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts[0]).toContain("ご請求のお知らせ");
+    expect(h.prompts[0]).not.toContain("セール");
+
+    await h.push.tick();
+    await h.push.tick();
+    expect(h.sent).toHaveLength(1);
+    const notification = JSON.parse(h.sent[0]?.payload ?? "{}").notification;
+    expect(notification).toMatchObject({
+      title: "邮件里有件事要你处理",
+      navigate: `${ORIGIN}/?reminder=${encodeURIComponent(first.insights[0]?.id ?? "")}`,
+      lang: "zh-CN",
+    });
+    expect(notification.body).toContain("11/5 前付清 SMBC 账单");
+    expect((await h.overview()).insights[0]?.pushReaction).toBeNull();
+    await h.webPushStore.recordReactions({
+      ...scope,
+      reactions: [{ tag: notification.tag, reaction: "opened", occurredAt: h.clock.now() }],
+      now: h.clock.now(),
+    });
+    expect((await h.overview()).insights[0]).toMatchObject({
+      pushed: true,
+      pushReaction: "opened",
+    });
+    expect(
+      h.google.calls.filter(
+        ({ url, method }) => url.startsWith("https://gmail.googleapis.com/") && method !== "GET",
+      ),
+    ).toEqual([]);
+    expect(h.google.calls.some(({ url }) => url.includes("calendar"))).toBe(false);
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[PG-12] lets the owner tune, mark done, rate and disconnect, which revokes Google access and forgets the mail", async () => {
+    const h = await setup();
+    const state = await connect(h);
+    h.script([
+      {
+        id: "invoice",
+        result: "act",
+        confidence: "sure",
+        todo: "付 SMBC 账单",
+        priority: "high",
+        dueAt: "2026-11-05T14:59:00.000Z",
+        reason: "",
+      },
+    ]);
+    await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1`,
+      headers: cookie,
+    });
+    await h.proactive.stop();
+    const before = await h.overview();
+    const insightId = before.insights[0]?.id ?? "";
+    const decisionId = before.decisions[0]?.id ?? "";
+
+    await h.command("proactive.settings.set", {
+      enabled: true,
+      quietHours: [{ days: [6, 0], start: "22:00", end: "08:00" }],
+      importantSenders: ["Teacher@School.example", "@city.shinjuku.lg.jp"],
+    });
+    await h.command("proactive.insight.respond", { insightId, action: "rate", rating: "useful" });
+    await h.command("proactive.decision.rate", { decisionId, rating: "useful" });
+    const tuned = await h.overview();
+    expect(tuned.quietHours).toEqual([{ days: [0, 6], start: "22:00", end: "08:00" }]);
+    expect(tuned.importantSenders).toEqual(["teacher@school.example", "@city.shinjuku.lg.jp"]);
+    expect(tuned.insights[0]?.rating).toBe("useful");
+    expect(tuned.decisions[0]?.rating).toBe("useful");
+    expect(tuned.metrics.hits).toBe(1);
+
+    await h.command("proactive.insight.respond", { insightId, action: "done", rating: null });
+    expect((await h.overview()).insights).toEqual([]);
+    await h.push.tick();
+    expect(h.sent).toEqual([]);
+    await expect(
+      h.command("proactive.insight.respond", {
+        insightId: "missing-insight",
+        action: "done",
+        rating: null,
+      }),
+    ).rejects.toThrow("PROACTIVE_RECORD_NOT_FOUND");
+
+    await h.command("proactive.source.manage", { source: "gmail", action: "disconnect" });
+    const revoke = h.google.calls.find(({ url }) => url === "https://oauth2.googleapis.com/revoke");
+    expect(new URLSearchParams(revoke?.body).get("token")).toBe("refresh-1");
+    const after = await h.overview();
+    expect(after.connection).toEqual({ status: "disconnected", account: null, connectedAt: null });
+    expect(after.insights).toEqual([]);
+    await h.command("proactive.source.manage", { source: "gmail", action: "clear_records" });
+    expect((await h.overview()).decisions).toEqual([]);
+    expect(h.failures).toEqual([]);
+  });
+});

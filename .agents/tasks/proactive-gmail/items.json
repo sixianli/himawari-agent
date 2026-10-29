@@ -1,0 +1,295 @@
+{
+  "task": "proactive-gmail",
+  "prefix": "PG",
+  "decisions": {
+    "G1": "once",
+    "G2": "durable",
+    "G3": "once",
+    "G4": "once",
+    "G5": "once"
+  },
+  "items": [
+    {
+      "id": "PG-1",
+      "title": "ADR 0106 记下 Gmail 只读主动提醒的决定",
+      "goal_ref": [
+        "G2"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0106-proactive-loop-v1-gmail-read-only.md",
+          "quotes": "G2"
+        },
+        {
+          "type": "command",
+          "run": "npm run check:docs"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-2",
+      "title": "验收 1：发票“11/5 前付款”高优先级 48 小时内截止，推送一条",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-2"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-3",
+      "title": "验收 2：推广邮件规则跳过不调模型、花费 0；摘要含验证码不发模型",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-3"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-4",
+      "title": "验收 3：区役所“请查看附件”给“可能重要”并推送；朋友同样摘要只进提醒页",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-4"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-5",
+      "title": "验收 4：去重（你已回复、history 404 重看 3 天不重复、老线程新回复更新原条目）",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-5"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-6",
+      "title": "验收 5：单次上限 0.0001 美元记“到上限”、不推送、下次接着看",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-6"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-7",
+      "title": "验收 6：不推送时段顺延合成一条；关掉开关不读不记不推",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-7"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-8",
+      "title": "验收 7：地板规则抬升到“值得知道”，拿不准强制“可能重要”",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-8"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-9",
+      "title": "验收 8：每日上限后只停模型、规则照跑，提醒页红色提示，次日恢复",
+      "goal_ref": [
+        "G2",
+        "G4",
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-9"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-10",
+      "title": "验收 9：抽查清单只含发件人和标题，点“看完了”前已审数不变，不调日历接口",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-10"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-11",
+      "title": "Gmail 只读读取和授权（history.list、404、刷新令牌、撤销）",
+      "goal_ref": [
+        "G2"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-11"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-12",
+      "title": "网页接口、定时检查和推送接线（提醒页数据、评价、设置、连接）",
+      "goal_ref": [
+        "G2"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-12"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-13",
+      "title": "自动验收 100 次 100 次通过",
+      "goal_ref": [
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "bash scripts/proactive/repeat-acceptance.sh 100"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-14",
+      "title": "fast 模式基本检查",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm run check"
+        },
+        {
+          "type": "command",
+          "run": "npm run build"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    },
+    {
+      "id": "PG-15",
+      "title": "界面：提醒页邮件条目和抽查、决策记录、设置三处，点推送落到那一条（中英日，按基线 v10）",
+      "goal_ref": [
+        "G2",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "PG-15"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-28"
+      }
+    }
+  ],
+  "fingerprint": {
+    "test_exclude": [
+      "docs/",
+      "AGENTS.md",
+      ".agents/"
+    ]
+  }
+}

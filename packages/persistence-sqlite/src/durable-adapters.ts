@@ -17,6 +17,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryReminderStorePort,
+  ProactiveStorePort,
   ThreadArtifactStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
@@ -945,6 +946,34 @@ export class SqliteDurableAdapters {
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),
+    });
+  }
+  proactive(): ProactiveStorePort {
+    return Object.freeze<ProactiveStorePort>({
+      readSettings: (input) => this.context.read("proactive.readSettings", input),
+      writeSettings: (input) => this.context.write("proactive.writeSettings", input),
+      readConnection: (input) => this.context.read("proactive.readConnection", input),
+      saveConnection: (input) => this.context.write("proactive.saveConnection", input),
+      markConnection: (input) => this.context.write("proactive.markConnection", input),
+      removeSource: (input) => this.context.write("proactive.removeSource", input),
+      clearRecords: (input) => this.context.write("proactive.clearRecords", input),
+      unprocessed: (input) => this.context.read("proactive.unprocessed", input),
+      readInsight: (input) => this.context.read("proactive.readInsight", input),
+      record: (input) => this.context.write("proactive.record", input),
+      costSince: (input) => this.context.read("proactive.costSince", input),
+      listInsights: (input) => this.context.read("proactive.listInsights", input),
+      listDecisions: (input) => this.context.read("proactive.listDecisions", input),
+      listProcessed: (input) => this.context.read("proactive.listProcessed", input),
+      reviewedCount: (input) => this.context.read("proactive.reviewedCount", input),
+      updateInsight: (input) => this.context.write("proactive.updateInsight", input),
+      rateDecision: (input) => this.context.write("proactive.rateDecision", input),
+      rateProcessed: (input) => this.context.write("proactive.rateProcessed", input),
+      markReviewed: (input) => this.context.write("proactive.markReviewed", input),
+      pendingPush: (input) => this.context.read("proactive.pendingPush", input),
+      listReadyPushes: (input) => this.context.read("proactive.listReadyPushes", input),
+      markPushEnqueued: (input) => this.context.write("proactive.markPushEnqueued", input),
+      readPush: (input) => this.context.read("proactive.readPush", input),
+      readInsights: (input) => this.context.read("proactive.readInsights", input),
     });
   }
   webPush(): WebPushStorePort {

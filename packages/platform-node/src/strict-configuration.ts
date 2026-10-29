@@ -935,6 +935,39 @@ function parseAutomaticReview(
 }
 
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
+export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
+
+function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
+  const field = "configuration.runPolicy.proactive";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["modelRef", "gmail", "intervalMs", "perCheckCostMicros", "perCheckMs", "dailyCostMicros"],
+    field,
+  );
+  const gmail = record(input["gmail"], `${field}.gmail`);
+  rejectUnknown(gmail, ["clientId", "clientSecretRef"], `${field}.gmail`);
+  const clientId = string(gmail["clientId"], `${field}.gmail.clientId`);
+  if (clientId.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(clientId))
+    throw invalid(`${field}.gmail.clientId`, "must be a Google OAuth client id");
+  const optional = (key: string, fallback: number, minimum: number, maximum: number) =>
+    input[key] === undefined ? fallback : integer(input[key], `${field}.${key}`, minimum, maximum);
+  const perCheckCostMicros = optional("perCheckCostMicros", 100_000, 1, 10_000_000);
+  const dailyCostMicros = optional("dailyCostMicros", 1_000_000, 1, 100_000_000);
+  if (perCheckCostMicros > dailyCostMicros)
+    throw invalid(`${field}.perCheckCostMicros`, "must not exceed dailyCostMicros");
+  return Object.freeze({
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+    gmail: Object.freeze({
+      clientId,
+      clientSecretRef: safeReference(gmail["clientSecretRef"], `${field}.gmail.clientSecretRef`),
+    }),
+    intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
+    perCheckCostMicros,
+    perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
+    dailyCostMicros,
+  });
+}
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
@@ -974,6 +1007,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicFetch",
       "automaticReview",
       "webPush",
+      "proactive",
     ],
     "configuration.runPolicy",
   );
@@ -1009,6 +1043,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
+    ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     memoryLimit,
@@ -1249,6 +1284,25 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
     );
+  const proactive = runPolicy?.proactive;
+  if (proactive) {
+    assertIdentitySecretReference(
+      secretReferences,
+      proactive.gmail.clientSecretRef,
+      GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+      "configuration.runPolicy.proactive.gmail.clientSecretRef",
+    );
+    const descriptor = modelDescriptors.find(({ ref }) => ref === proactive.modelRef);
+    if (
+      !descriptor ||
+      descriptor.role === "embedding" ||
+      !descriptor.allowedDataClassifications.includes("private")
+    )
+      throw invalid(
+        "configuration.runPolicy.proactive.modelRef",
+        "must name a configured generation model that accepts private data",
+      );
+  }
   const review = runPolicy?.automaticReview;
   if (review) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);

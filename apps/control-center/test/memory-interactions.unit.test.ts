@@ -599,7 +599,7 @@ describe("memory approval and management", () => {
     await click("#reminders", "不再提醒");
     expect(lastCommand()).toMatchObject({ payload: { action: "dismiss" } });
     expect(text("#settings [role=tablist]")).not.toContain("提醒");
-    expect(text("#reminders-page")).toContain("到时间了");
+    expect(text("#reminders-page")).toContain("已到期");
     expect(text("#reminders-page")).toContain("每年");
     expect(document.querySelectorAll("#reminders-page .reminder-source")).toHaveLength(1);
     await click("#reminders-page .reminder-row:not([data-kind])", "来源对话");

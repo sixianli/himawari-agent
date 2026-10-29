@@ -13,6 +13,7 @@ import type {
   PayloadProtectionRequest,
   PayloadProtectorPort,
   PayloadStorePort,
+  ProactiveModelInvoker,
   ProductConfiguration,
   RuntimeRequest,
   SecretPort,
@@ -20,6 +21,7 @@ import type {
 import {
   assertProductionSecretSource,
   type HostProviderSecretSource,
+  type TrustedModelAdmissionResolver,
   TrustedModelProviderAdapter,
   type TrustedModelTransport,
   TypeSafeJevTransport,
@@ -36,6 +38,15 @@ import {
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
+type RunId = RuntimeRequest["runId"];
+
+const UNMETERED_PERMIT = Object.freeze({
+  assertActive: async () => undefined,
+  markStarted: async () => undefined,
+  releaseReserved: async () => undefined,
+  settle: async () => undefined,
+  markUnknown: async () => undefined,
+});
 
 export interface ProductionEmbeddingModelDescriptor {
   readonly ref: string;
@@ -100,6 +111,10 @@ export interface ProductionModelComposition {
     admission: ModelInvocationAdmissionPort,
     options: AuxiliaryTextOptions,
   ): Promise<string>;
+  proactiveModel(
+    modelRef: string,
+    limits: { readonly maxOutputTokens: number; readonly requestTimeoutMs: number },
+  ): ProactiveModelInvoker;
   readonly piModels: PiModelBindingPort;
   readonly transport: PiModelTransport;
   readonly payloadBoundary: ProtectedPiModelPayloadBoundary;
@@ -382,6 +397,95 @@ export function createProductionModelComposition(
         : admissionCostForConfiguredPiModel(configured);
     },
   });
+  const auxiliaryModelFor = (
+    descriptor: ConfiguredPiModelDescriptor,
+    text: Pick<
+      AuxiliaryTextOptions,
+      "maxOutputTokens" | "reasoningOutputTokens" | "requestTimeoutMs"
+    >,
+    admission: TrustedModelAdmissionResolver,
+  ): TrustedModelProviderAdapter =>
+    new TrustedModelProviderAdapter({
+      ownerId: options.ownerId,
+      agentId: options.agentId,
+      descriptors: [descriptor],
+      handles: options.handles,
+      secretSource: options.secretSource,
+      transport: new PiModelTransport({
+        models: piModels,
+        payloads: payloadBoundary,
+        clock: options.clock,
+        maxOutputTokens: Math.min(
+          descriptor.maxTokens,
+          descriptor.reasoningRequired ? text.reasoningOutputTokens : text.maxOutputTokens,
+        ),
+        requestTimeoutMs: Math.min(
+          options.requestTimeoutMs ?? text.requestTimeoutMs,
+          text.requestTimeoutMs,
+        ),
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+      }),
+      clock: options.clock,
+      admission,
+      admissionCost: () => admissionCostForConfiguredPiModel(descriptor),
+    });
+  const proactiveModel = (
+    modelRef: string,
+    limits: { readonly maxOutputTokens: number; readonly requestTimeoutMs: number },
+  ): ProactiveModelInvoker => {
+    const descriptor = options.descriptors.find((item) => item.ref === modelRef);
+    if (
+      descriptor?.api !== "openai-completions" ||
+      !descriptor.allowedDataClassifications.includes("private")
+    )
+      throw new Error("PROACTIVE_MODEL_DISCLOSURE_DENIED");
+    const model = auxiliaryModelFor(
+      descriptor,
+      {
+        maxOutputTokens: limits.maxOutputTokens,
+        reasoningOutputTokens: limits.maxOutputTokens * 2,
+        requestTimeoutMs: limits.requestTimeoutMs,
+      },
+      ({ runId }) => ({
+        context: { ownerId: options.ownerId, agentId: options.agentId, runId },
+        begin: async () => ({ disposition: "fresh" as const, permit: UNMETERED_PERMIT }),
+      }),
+    );
+    return Object.freeze<ProactiveModelInvoker>({
+      model,
+      modelRef,
+      async prepare({ invocationId, prompt, deadlineAt }) {
+        const runId = `proactive:${invocationId}` as RunId;
+        const inputRef = await payloadBoundary.writeText({
+          invocationId,
+          sequence: 0,
+          dataClassification: "private",
+          content: prompt,
+          occurredAt: options.clock.now(),
+        });
+        const handle = descriptor.secretRequirement
+          ? await options.handles.issueHandle({
+              ownerId: options.ownerId,
+              agentId: options.agentId,
+              runId,
+              ...descriptor.secretRequirement,
+              scopeRef: invocationId,
+              expiresAt: deadlineAt,
+            })
+          : undefined;
+        return Object.freeze({
+          runId,
+          inputRef,
+          allowedDisclosureRef: inputRef,
+          secretHandleRefs: handle ? [handle.ref] : [],
+          release: async () => {
+            if (handle) await options.handles.revokeHandle(handle.ref, options.clock.now());
+          },
+        });
+      },
+      readOutput: (payloadRef) => payloadBoundary.readText(payloadRef),
+    });
+  };
   const generateText = async (
     request: RuntimeRequest,
     prompt: string,
@@ -402,31 +506,7 @@ export function createProductionModelComposition(
       content: prompt,
       occurredAt: options.clock.now(),
     });
-    const auxiliaryTransport = new PiModelTransport({
-      models: piModels,
-      payloads: payloadBoundary,
-      clock: options.clock,
-      maxOutputTokens: Math.min(
-        descriptor.maxTokens,
-        descriptor.reasoningRequired ? text.reasoningOutputTokens : text.maxOutputTokens,
-      ),
-      requestTimeoutMs: Math.min(
-        options.requestTimeoutMs ?? text.requestTimeoutMs,
-        text.requestTimeoutMs,
-      ),
-      ...(options.fetch ? { fetch: options.fetch } : {}),
-    });
-    const auxiliaryModel = new TrustedModelProviderAdapter({
-      ownerId: options.ownerId,
-      agentId: options.agentId,
-      descriptors: [descriptor],
-      handles: options.handles,
-      secretSource: options.secretSource,
-      transport: auxiliaryTransport,
-      clock: options.clock,
-      admission: async () => gate,
-      admissionCost: () => admissionCostForConfiguredPiModel(descriptor),
-    });
+    const auxiliaryModel = auxiliaryModelFor(descriptor, text, async () => gate);
     const handle = descriptor.secretRequirement
       ? await options.handles.issueHandle({
           ownerId: options.ownerId,
@@ -478,6 +558,7 @@ export function createProductionModelComposition(
         errorPrefix: "THREAD_TITLE",
       }),
     generateText,
+    proactiveModel,
     close: () => piModels.close(),
   });
 }

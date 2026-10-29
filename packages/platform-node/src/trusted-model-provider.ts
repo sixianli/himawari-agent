@@ -3,8 +3,10 @@ import {
   assertMachineSecretFree,
   type ClockPort,
   type ModelDescriptor,
+  type ModelInvocationAdmissionInput,
   type ModelInvocationAdmissionResolver,
   type ModelInvocationEvent,
+  type ModelInvocationExecutionContext,
   type ModelInvocationPermit,
   type ModelInvocationPricing,
   type ModelInvocationRequest,
@@ -29,6 +31,20 @@ export interface TrustedModelTransport {
   invoke(input: TrustedModelTransportInput): AsyncIterable<ModelInvocationEvent>;
 }
 
+export interface TrustedModelAdmissionGate {
+  readonly context: Pick<ModelInvocationExecutionContext, "ownerId" | "agentId" | "runId">;
+  begin(
+    input: ModelInvocationAdmissionInput,
+  ): Promise<
+    | { readonly disposition: "fresh"; readonly permit: ModelInvocationPermit }
+    | { readonly disposition: "replay" | "blocked" }
+  >;
+}
+
+export type TrustedModelAdmissionResolver = (
+  scope: Parameters<ModelInvocationAdmissionResolver>[0],
+) => TrustedModelAdmissionGate | undefined | Promise<TrustedModelAdmissionGate | undefined>;
+
 export interface TrustedModelProviderAdapterDependencies {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -37,9 +53,7 @@ export interface TrustedModelProviderAdapterDependencies {
   readonly secretSource: SecretMaterialSource;
   readonly transport: TrustedModelTransport;
   readonly clock: ClockPort;
-  /** Resolves a gate already bound to the current Run execution lease. */
-  readonly admission?: ModelInvocationAdmissionResolver;
-  /** Supplies frozen descriptor pricing and a conservative reservation estimate. */
+  readonly admission?: TrustedModelAdmissionResolver;
   readonly admissionCost: (descriptor: ModelDescriptor) => {
     readonly pricing: ModelInvocationPricing;
     readonly estimatedCostMicros: number;
@@ -144,9 +158,6 @@ export class TrustedModelProviderAdapter implements ModelPort {
         await permit.releaseReserved();
         reservationReleased = true;
       } catch {
-        // A rejected release can mean markStarted crossed the durable boundary.
-        // Preserve that uncertainty rather than presenting the reservation as
-        // safely cancelled.
         await permit.markUnknown("transport_unresolved").catch(() => undefined);
       }
       return reservationReleased;

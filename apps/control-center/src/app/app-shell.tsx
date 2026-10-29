@@ -7,6 +7,7 @@ import { OPEN_NOTIFICATION_SETTINGS } from "../components/memory-panel.js";
 import { SettingsDialog } from "../components/settings-dialog.js";
 import { SidebarIcon } from "../components/sidebar-icon.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
+import { OPEN_SETTINGS, settingsTabOf } from "../proactive.js";
 import { type ControlCenterRouteState, routeForSurface } from "./router.js";
 
 export interface ControlCenterShellProps {
@@ -72,9 +73,15 @@ export function ControlCenterShell({
       setSettingsTab("notifications");
       setSettingsOpen(true);
     };
+    const openTab = (event: Event) => {
+      setSettingsTab(settingsTabOf(event));
+      setSettingsOpen(true);
+    };
     window.addEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
+    window.addEventListener(OPEN_SETTINGS, openTab);
     return () => {
       window.removeEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
+      window.removeEventListener(OPEN_SETTINGS, openTab);
     };
   }, []);
   useEffect(() => {

@@ -891,6 +891,98 @@ it.each([false, true])(
   },
 );
 
+it("[PG-12] judges mail through the selected Pi transport with its own invocation and no Run lease", async () => {
+  const adapters = createReferenceAdapterSet();
+  const streamOptions: Record<string, unknown>[] = [];
+  class MailRuntime extends RecordingRuntime {
+    override getModel(providerId: string, modelId: string): unknown {
+      const value = super.getModel(providerId, modelId);
+      return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+    }
+    stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
+      streamOptions.push(options);
+      return (async function* () {
+        await (options["fetch"] as typeof fetch)(
+          "https://ai-gateway.vercel.sh/v1/chat/completions",
+        );
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: '{"items":[]}' }],
+            api: "openai-completions",
+            provider: "vercel-ai-gateway",
+            model: primaryModel.model,
+            stopReason: "stop",
+            timestamp: Date.now(),
+            usage: {
+              input: 300,
+              output: 20,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 320,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000002 },
+            },
+          },
+        };
+      })();
+    }
+  }
+  const prepared = compositionOptions(adapters, {
+    runtimeFactory: { create: async () => new MailRuntime() as unknown as PiModelRuntime },
+    fetch: vi.fn(
+      async () =>
+        new Response(
+          `data: ${JSON.stringify({ id: "generation:mail", model: primaryModel.model, usage: { cost: 0.000002 }, choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "generation:mail", routing: { finalProvider: "deepinfra" }, cost: 0.000002 } } } }] })}\n\ndata: [DONE]\n\n`,
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+    ),
+  });
+  const composition = createProductionModelComposition(prepared.options);
+  try {
+    expect(() =>
+      composition.proactiveModel("missing-model", { maxOutputTokens: 4096, requestTimeoutMs: 1 }),
+    ).toThrow("PROACTIVE_MODEL_DISCLOSURE_DENIED");
+    const invoker = composition.proactiveModel(primaryModel.ref, {
+      maxOutputTokens: 4096,
+      requestTimeoutMs: 60_000,
+    });
+    const authority = await invoker.prepare({
+      invocationId: "proactive-model-1",
+      prompt: "判断这些新邮件",
+      deadlineAt: "2099-01-01T00:00:00.000Z",
+    });
+    expect(authority.runId).toBe("proactive:proactive-model-1");
+    expect(authority.secretHandleRefs).toHaveLength(1);
+    let output = "";
+    let costMicros = -1;
+    for await (const event of invoker.model.invoke({
+      invocationId: "proactive-model-1",
+      runId: authority.runId,
+      modelRef: primaryModel.ref,
+      inputRef: authority.inputRef,
+      dataClassification: "private",
+      allowedDisclosureRef: authority.allowedDisclosureRef,
+      secretHandleRefs: [...authority.secretHandleRefs],
+      correlationId: "proactive-model-1" as never,
+    })) {
+      if (event.type === "model.output") output += await invoker.readOutput(event.payloadRef);
+      if (event.type === "model.completed") costMicros = event.costMicros;
+      if (event.type === "model.failed") throw new Error(event.errorCode);
+    }
+    await authority.release();
+    const [handleRef] = authority.secretHandleRefs;
+    expect(
+      (await prepared.options.handles.inspectHandle(handleRef ?? ""))?.revokedAt,
+    ).not.toBeNull();
+    expect(output).toBe('{"items":[]}');
+    expect(costMicros).toBe(2);
+    expect(streamOptions[0]).toMatchObject({ maxTokens: 4096, timeoutMs: 60_000, maxRetries: 0 });
+  } finally {
+    await composition.close();
+  }
+});
+
 function embeddingAccountingFixture(mode: "query" | "projection", response: unknown) {
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
   let boundary: EmbeddingBoundary | undefined;
