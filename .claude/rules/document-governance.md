@@ -17,7 +17,7 @@ These triggers apply in fast mode and in full mode:
 - When the user asks to keep an idea (for example "记下这个想法"), capture it with `idea_backlog.py idea capture`.
 - When a change makes a current-truth document plainly wrong (the PRD, the architecture document, an active Spec or Plan, a Runbook's steps), correct it in the same commit.
 - A closed Spec or Plan is archived only with `archive_doc.py`. ADRs are never archived.
-- A mistake that coding agents repeat goes to `docs/lessons.md` under [ADR 0060](../../docs/adr/0060-hard-constraint-on-third-repeat.md); one-off incidents and project status never do.
+- An incident and its gate go to `docs/incidents-and-gates.md`, and a mistake that coding agents repeat goes to `docs/lessons.md`, both under [ADR 0107](../../docs/adr/0107-every-incident-gets-an-automatic-gate.md) ([incident-gates.md](incident-gates.md)); project status never does.
 
 ## The Check Before Every Commit
 

@@ -30,6 +30,7 @@ MIGRATIONS = 'packages/persistence-sqlite/src/migrations'
 MIGRATION_ENGINE = 'packages/persistence-sqlite/src/migration-engine.ts'
 MIGRATION_COMPARED_TABLES = ('capability_declarations', 'product_state_records', 'execution_environment_release_receipts')
 REGRESSION_SOURCE = 'test/integration/product-path-browser.test.ts'
+WORKER_SERVICE_MAIN = 'apps/execution-worker/src/service-main.ts'
 S0_SCRIPTS = ('s0-db/read-s0-db.mjs', 'signing/collect-system-tools.mjs', 'signing/cloud-system-tool-bindings.mjs', 'acceptance/helpers/observe-production-npm.py')
 S0_OUTPUTS = ('s0-db-readback', 'system-tools-observed', 'npm-observed')
 FREEZE_OUTPUTS = ('inputs/bindings.json', 'inputs/bindings.reviewed.json', 'freeze-manifest.json')
@@ -102,6 +103,19 @@ def target_schema(commit):
     if not numbers or numbers != list(range(1, len(numbers) + 1)):
         refuse('PACKET_MIGRATIONS_NOT_CONTIGUOUS', numbers[-3:])
     return numbers[-1]
+
+
+def startup_ready_budget(instance, worker_source):
+    seconds, margin = instance.get('startupReadyBudgetSeconds'), instance.get('startupReadyMarginSeconds')
+    if type(seconds) is not int or seconds <= 0 or type(margin) is not int or margin <= 0:
+        refuse('PACKET_STARTUP_BUDGET_INVALID', str(seconds) + '/' + str(margin))
+    found = re.findall(r'^const DEFAULT_STARTUP_WAIT_TIMEOUT_MS = ([0-9_]+);$', worker_source, re.M)
+    if len(found) != 1:
+        refuse('PACKET_WORKER_STARTUP_WAIT_NOT_READABLE', WORKER_SERVICE_MAIN)
+    wait = int(found[0].replace('_', ''))
+    if (seconds + margin) * 1000 > wait:
+        refuse('PACKET_STARTUP_BUDGET_LEAVES_NO_MARGIN', 'budgetMs=' + str(seconds * 1000) + ' marginMs=' + str(margin * 1000) + ' workerWaitMs=' + str(wait))
+    return seconds * 1000
 
 
 def preserved_tables():
@@ -235,6 +249,7 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_CONTEXT_WINDOW': targets['contextWindow'],
         'TARGET_MAX_TOKENS': targets['maxTokens'],
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
+        'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
     }
 
 
