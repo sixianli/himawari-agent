@@ -122,7 +122,7 @@ date: "2026-10-29"
 - [工程案例 57](../engineering-casebook.md#case-memory-relevance-threshold)
 - [ADR 0075：自研长期记忆](0075-self-built-memory-engine.md)
 - [ADR 0109：花钱的评测要先报费用、设上限、先试探](0109-paid-eval-runs-need-cost-cap-and-preflight.md)
-- [界面与交互设计指南](../ui-ux-design-guide.md#bad-designs)
+- [界面与交互设计指南](../ui-ux-design-guide.md#bad)
 - [Control Center v4 设计规格](../execution/specs/2026-09-15-control-center-v4-design.md)
 - Anthropic, Introducing Contextual Retrieval：<https://www.anthropic.com/news/contextual-retrieval>
 - Google Vertex AI RAG Engine, Retrieval and ranking：<https://docs.cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/retrieval-and-ranking>

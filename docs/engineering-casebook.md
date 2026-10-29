@@ -3520,7 +3520,7 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 
 **相关 ADR/PR**
 
-[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)；[事故 I-23、I-13](incidents-and-gates.md#incidents)；[界面与交互设计指南的“不良设计”](ui-ux-design-guide.md#bad-designs)；[案例 1](#case-memory-engine)、[案例 23](#case-memory-steps)；本案例的 PR 在分支 `claude/project-thread-tk7qne`。
+[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)；[事故 I-23、I-13](incidents-and-gates.md#incidents)；[界面与交互设计指南的“不良设计”](ui-ux-design-guide.md#bad)；[案例 1](#case-memory-engine)、[案例 23](#case-memory-steps)；本案例的 PR 在分支 `claude/project-thread-tk7qne`。
 
 **面试 30 秒版**
 
