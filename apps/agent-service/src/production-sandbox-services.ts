@@ -71,6 +71,7 @@ import {
   revalidateCapabilityDeploymentSnapshot,
   verifiedPiWriteFailure,
   verifyPiWriteEvidence,
+  createReusingSandboxHostVerifier,
   sandboxHostIdentity,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
@@ -104,6 +105,7 @@ export type { ProductionTaskEnvironments } from "./production-task-environments.
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("base64url")}`;
 const PREWARM_WAIT_MS = 10_000;
+export const SANDBOX_HOST_REUSE_MS = 10_000;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 export function sandboxEnvironmentDeadline(
@@ -232,6 +234,9 @@ export async function createProductionSandboxServices(options: {
     if (bytes.byteLength > 65536) throw new Error("SANDBOX_CONTEXT_UNAVAILABLE");
     return JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes));
   };
+  const verifyHostForAdmission = createReusingSandboxHostVerifier({
+    reuseMs: SANDBOX_HOST_REUSE_MS,
+  });
   const entryFor = async (capabilityRef: string, capabilityVersion: string) => {
     const loaded = await revalidateCapabilityDeploymentSnapshot(initial);
     const entry = loaded.snapshot.capabilities.find(
@@ -381,7 +386,7 @@ export async function createProductionSandboxServices(options: {
       entryFor(plan.capabilityRef, plan.capabilityVersion),
     );
     await timed("host_verification", () =>
-      verifySandboxHost({ binding, qualification, hostId, plan }),
+      verifyHostForAdmission({ binding, qualification, hostId, plan }),
     );
     if (plan.schemaVersion === "sandbox-execution.v2") {
       assertSandboxExecutionSupport({ schemaVersion: plan.schemaVersion, mode: plan.mode }, [
