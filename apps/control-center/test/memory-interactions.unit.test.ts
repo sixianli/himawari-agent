@@ -14,7 +14,7 @@ import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/ga
 import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
 import { type MemoryItem, type MemoryOverview, useMemory } from "../src/memory.ts";
-import { parseMemoryExport, parseMemoryText } from "../src/memory-import.ts";
+import { guessCategory, parseMemoryExport, parseMemoryText } from "../src/memory-import.ts";
 
 const configuration: ControlCenterRuntimeConfiguration = {
   ownerId: "owner",
@@ -902,6 +902,11 @@ describe("memory approval and management", () => {
 });
 
 describe("memory import parsing", () => {
+  it("[MEM-PIN] files a hand-written memory that matches no keyword under other, not identity", () => {
+    expect(guessCategory("我每天必须喝咖啡")).toEqual({ category: "other", sensitive: false });
+    expect(guessCategory("我喜欢喝咖啡").category).toBe("preference");
+  });
+
   it("[MP-8] reads Codex memory files, drops secrets, skips duplicates and keeps coding notes off", () => {
     const summary = [
       "v1",

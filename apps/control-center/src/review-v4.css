@@ -4209,6 +4209,7 @@ output.owner-status {
 }
 .memory-carry-head h4 {
   margin: 0 0 2px;
+  color: inherit;
 }
 .memory-carry-head small {
   color: var(--text-muted);
@@ -4218,6 +4219,24 @@ output.owner-status {
   width: 100%;
   height: 6px;
   margin: 10px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  appearance: none;
+}
+.memory-carry-meter::-webkit-meter-bar {
+  height: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+.memory-carry-meter::-webkit-meter-optimum-value {
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+.memory-carry-meter::-moz-meter-bar {
+  border-radius: 999px;
+  background: var(--text-muted);
 }
 .memory-carry-kinds {
   display: flex;
@@ -4226,12 +4245,12 @@ output.owner-status {
   margin: 6px 0 0;
   font-size: 12px;
 }
-.memory-carry-kinds > span {
+.memory-carry-kind {
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--surface-muted);
 }
-.memory-carry-kinds small {
+.memory-carry-kind small {
   color: var(--text-muted);
 }
 .memory-carry-section + .memory-carry-section {
@@ -4406,8 +4425,11 @@ output.owner-status {
     font-size: 13px;
     cursor: pointer;
   }
+  .memory-topics-toggle .line-icon {
+    transform: rotate(90deg);
+  }
   .memory-topics-toggle[aria-expanded="true"] .line-icon {
-    transform: rotate(180deg);
+    transform: rotate(-90deg);
   }
   .memory-topics {
     position: static;

@@ -1046,7 +1046,7 @@ function CarryCard({
       ) : count ? (
         <p className="memory-carry-kinds">
           {overview.profile.map((section) => (
-            <span key={section.kind}>
+            <span key={section.kind} className="memory-carry-kind">
               {message(`memory.profile.${section.kind}`)} <small>{section.lines.length}</small>
             </span>
           ))}

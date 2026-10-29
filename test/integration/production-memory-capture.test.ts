@@ -232,13 +232,7 @@ describe("production memory capture", () => {
         readText: async (record) => {
           const payload = await payloads.get(record.contentRef);
           return payload
-            ? new TextDecoder().decode(
-                await adapters.payloadProtector.unprotect({
-                  ownerId: OWNER_ID,
-                  agentId: AGENT_ID,
-                  payload,
-                }),
-              )
+            ? new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }))
             : undefined;
         },
         storeText: async () => {},
