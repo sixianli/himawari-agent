@@ -43,6 +43,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.respond",
   "memory.create",
   "memory.settings.set",
+  "memory.page.viewed",
   "memory.person.respond",
   "memory.import.commit",
   "memory.import.undo",
@@ -554,6 +555,8 @@ const memoryOverviewSnapshotSchema = object({
         recordedAt: timestamp,
         lastUsedAt: nullable(timestamp),
         importBatchId: nullable(machineString),
+        importance: integer(0, 1000),
+        profilePin: nullable(enumeration(["on", "off"])),
       }),
     ),
     tidyUps: array(
@@ -615,6 +618,12 @@ const memoryOverviewSnapshotSchema = object({
     ),
     capturePaused: booleanValue,
     manualAddReady: booleanValue,
+    lastViewedAt: nullable(timestamp),
+    profileUsage: object({
+      used: integer(0),
+      limit: integer(1),
+      queued: array(machineString),
+    }),
     profile: array(
       object({
         kind: enumeration(MEMORY_PROFILE_KINDS),
@@ -657,11 +666,16 @@ const memoryCreateCommandSchema = object({
     contentRef: machineString,
     category: enumeration(MEMORY_CATEGORY_NAMES),
     subCategory: nullable(memoryLabelSchema),
+    pinned: booleanValue,
   }),
 });
 const memorySettingsSetCommandSchema = object({
   ...commandEnvelope("memory.settings.set"),
   payload: object({ capturePaused: booleanValue }),
+});
+const memoryPageViewedCommandSchema = object({
+  ...commandEnvelope("memory.page.viewed"),
+  payload: object({}),
 });
 const memoryPersonRespondCommandSchema = object({
   ...commandEnvelope("memory.person.respond"),
@@ -792,7 +806,16 @@ export const setGitHubMonitorStateCommandSchema = object({
 
 const memoryMutationPayloadSchema = object({
   memoryId: machineString,
-  action: enumeration(["correct", "archive", "delete", "restore", "confirm", "recover"]),
+  action: enumeration([
+    "correct",
+    "archive",
+    "delete",
+    "restore",
+    "confirm",
+    "recover",
+    "pin",
+    "unpin",
+  ]),
   expectedRevision: integer(0),
   contentRef: nullable(machineString),
 });
@@ -1836,6 +1859,7 @@ const schemasByType = {
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,
+  "memory.page.viewed": memoryPageViewedCommandSchema,
   "memory.person.respond": memoryPersonRespondCommandSchema,
   "memory.import.commit": memoryImportCommitCommandSchema,
   "memory.import.undo": memoryImportUndoCommandSchema,

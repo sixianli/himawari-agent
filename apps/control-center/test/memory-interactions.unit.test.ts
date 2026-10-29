@@ -58,6 +58,8 @@ function memoryItem(memoryId: string, text: string, change: Partial<MemoryItem> 
     subCategory: null,
     status: "active",
     recordedAt: "2026-10-25T12:00:00.000Z",
+    importance: 500,
+    profilePin: null,
     lastUsedAt: null,
     importBatchId: null,
     ...change,
@@ -163,6 +165,8 @@ beforeEach(() => {
       }),
     ],
     profile: [],
+    profileUsage: { used: 0, limit: 2000, queued: [] },
+    lastViewedAt: null,
     pending: [
       {
         requestId: "approval-health",

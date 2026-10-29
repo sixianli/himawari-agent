@@ -5,6 +5,7 @@ import {
   DurableMemoryService,
   type MemoryExtractionAuditRecord,
   type MemoryProviderProjectionPort,
+  OwnerProfileService,
   type ProductMemoryRecord,
   type RuntimeRequest,
   type ThreadRepositoryPort,
@@ -225,6 +226,24 @@ describe("production memory capture", () => {
       memory,
       reminders: repository.memoryReminders(),
       book: repository.memoryBook(),
+      profile: new OwnerProfileService({
+        state: repository.productMemoryState(),
+        pins: repository.memoryBook(),
+        readText: async (record) => {
+          const payload = await payloads.get(record.contentRef);
+          return payload
+            ? new TextDecoder().decode(
+                await adapters.payloadProtector.unprotect({
+                  ownerId: OWNER_ID,
+                  agentId: AGENT_ID,
+                  payload,
+                }),
+              )
+            : undefined;
+        },
+        storeText: async () => {},
+        digest: (text) => String(text.length),
+      }),
       payloads,
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
@@ -762,7 +781,7 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-manual", category: "preference", subCategory: "运动" },
+      { contentRef: "payload-manual", category: "preference", subCategory: "运动", pinned: false },
       "manual-1",
     );
     const added = (await overview(context.control)).memories.find(({ text }) =>
@@ -782,10 +801,100 @@ describe("production memory capture", () => {
       command(
         context.control,
         "memory.create",
-        { contentRef: "payload-card", category: "finance", subCategory: null },
+        { contentRef: "payload-card", category: "finance", subCategory: null, pinned: false },
         "manual-2",
       ),
     ).rejects.toThrow("MEMORY_TEXT_REFUSED");
+  });
+
+  it("[MEM-PIN] lets the Owner decide which memories every conversation brings", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"category":"preference","importance":650,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-coffee", "我每天必须喝咖啡");
+    await context.protect("payload-run", "主人喜欢早上跑步");
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-coffee", category: "preference", subCategory: null, pinned: true },
+      "manual-pinned",
+    );
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-run", category: "preference", subCategory: null, pinned: false },
+      "manual-plain",
+    );
+    let view = await overview(context.control);
+    const byText = (needle: string) => {
+      const found = view.memories.find(({ text }) => text.includes(needle));
+      if (!found) throw new Error(`missing ${needle}`);
+      return found;
+    };
+    const profiled = () => view.profile.flatMap(({ lines }) => lines.map(({ text }) => text));
+    expect(byText("跑步")).toMatchObject({ importance: 500, profilePin: null });
+    expect(byText("咖啡")).toMatchObject({ importance: 500, profilePin: "on" });
+    expect(byText("蓝色")).toMatchObject({ importance: 650, profilePin: null });
+    expect(profiled()).toEqual(["我每天必须喝咖啡", "主人最喜欢的颜色是蓝色"]);
+    expect(view.profileUsage).toEqual({
+      used: "我每天必须喝咖啡".length + 3 + "主人最喜欢的颜色是蓝色".length + 3,
+      limit: 2000,
+      queued: [],
+    });
+    const blue = byText("蓝色");
+    await command(
+      context.control,
+      "memory.mutate",
+      {
+        memoryId: blue.memoryId,
+        action: "unpin",
+        expectedRevision: blue.revision,
+        contentRef: null,
+      },
+      "unpin-blue",
+    );
+    view = await overview(context.control);
+    expect(byText("蓝色").profilePin).toBe("off");
+    expect(profiled()).toEqual(["我每天必须喝咖啡"]);
+    expect(view.lastViewedAt).toBeNull();
+    await command(context.control, "memory.page.viewed", {}, "viewed-1");
+    expect((await overview(context.control)).lastViewedAt).toBe(context.clock.value);
+  });
+
+  it("[MEM-PIN] refuses to bring a sensitive memory into every conversation", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-mood", "主人最近有点抑郁", "sensitive");
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      "manual-mood",
+    );
+    const mood = (await overview(context.control)).memories.find(({ text }) =>
+      text.includes("抑郁"),
+    );
+    if (!mood) throw new Error("missing mood");
+    await expect(
+      command(
+        context.control,
+        "memory.mutate",
+        {
+          memoryId: mood.memoryId,
+          action: "pin",
+          expectedRevision: mood.revision,
+          contentRef: null,
+        },
+        "pin-mood",
+      ),
+    ).rejects.toThrow("MEMORY_NOT_PINNABLE");
   });
 
   it("[MP-4] stops learning from conversations while memory is paused", async () => {

@@ -43,10 +43,19 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.reminder.respond",
   "memory.create",
   "memory.settings.set",
+  "memory.page.viewed",
   "memory.person.respond",
   "memory.import.commit",
   "memory.import.undo",
 ] as const);
+const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+]);
 const TIDY_UPS_SHOWN = 30;
 const REMINDERS_SHOWN = 10;
 const UPCOMING_SHOWN = 20;
@@ -56,6 +65,8 @@ const IMPORTS_SHOWN = 20;
 const TRASH_RETENTION_MS = 7 * 24 * 3_600_000;
 const SNOOZE_MS = 3_600_000;
 const OWNER_POLICY_VERSION = "memory-owner:v1";
+const OWNER_RULE_IMPORTANCE = 800;
+const OWNER_MEMORY_IMPORTANCE = 500;
 const IMPORT_POLICY_VERSION = "memory-import:v1";
 
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
@@ -186,6 +197,7 @@ export class ProductionMemoryControl {
     const people = await this.options.book.listPeople(scope);
     const suggestions = await this.options.book.listPersonSuggestions(scope);
     const imports = await this.options.book.listImportBatches({ ...scope, limit: IMPORTS_SHOWN });
+    const pins = await this.options.book.listProfilePins(scope);
     const pending = await this.options.approvals.listPending(ownerId, null);
     const changes =
       (await this.options.consolidation?.store.listChanges({
@@ -205,6 +217,7 @@ export class ProductionMemoryControl {
       people.map(({ id, updatedAt, memoryIds }) => [id, updatedAt, memoryIds.length]),
       suggestions.map(({ id }) => id),
       imports.map(({ id, undoneAt }) => [id, undoneAt]),
+      pins.map(({ memoryId, pinned, updatedAt }) => [memoryId, pinned, updatedAt]),
     ]);
   }
 
@@ -229,6 +242,12 @@ export class ProductionMemoryControl {
       ...(await this.options.state.listActive(ownerId, agentId)),
       ...(await this.#inactive()),
     ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const pins = new Map(
+      (await this.options.book.listProfilePins(scope)).map(({ memoryId, pinned }) => [
+        memoryId,
+        pinned ? ("on" as const) : ("off" as const),
+      ]),
+    );
     const memories: OverviewSnapshot["payload"]["memories"][number][] = [];
     for (const memory of records) {
       if (memory.status !== "active" && memory.status !== "archived" && memory.status !== "trashed")
@@ -254,6 +273,8 @@ export class ProductionMemoryControl {
         recordedAt: memory.recordedAt ?? memory.updatedAt,
         lastUsedAt: memory.lastUsedAt,
         importBatchId: memory.attributes?.importBatchId ?? null,
+        importance: memory.attributes?.importancePermille ?? 0,
+        profilePin: pins.get(memory.id) ?? null,
       });
     }
     const changes =
@@ -428,7 +449,7 @@ export class ProductionMemoryControl {
       createdAt,
       undone: undoneAt !== null,
     }));
-    const { capturePaused } = await this.options.book.readSettings(scope);
+    const { capturePaused, lastViewedAt } = await this.options.book.readSettings(scope);
     const manualAddReady = (await this.options.book.latestGeneration(scope)) !== undefined;
     return {
       ...query,
@@ -446,6 +467,12 @@ export class ProductionMemoryControl {
         imports,
         capturePaused,
         manualAddReady,
+        lastViewedAt,
+        profileUsage: {
+          used: outline?.usage.used ?? 0,
+          limit: outline?.usage.limit ?? 0,
+          queued: [...(outline?.usage.queued ?? [])],
+        },
         generatedAt: now,
       },
     } as GatewayV2Snapshot;
@@ -483,7 +510,8 @@ export class ProductionMemoryControl {
           policyVersion: input.policyVersion,
           attributes: {
             category: input.category,
-            importancePermille: input.category === "rule" ? 800 : 600,
+            importancePermille:
+              input.category === "rule" ? OWNER_RULE_IMPORTANCE : OWNER_MEMORY_IMPORTANCE,
             entities: [],
             validFrom: null,
             validTo: null,
@@ -502,7 +530,7 @@ export class ProductionMemoryControl {
   }
 
   async #create(command: Command<"memory.create">) {
-    const { contentRef, category, subCategory } = command.payload;
+    const { contentRef, category, subCategory, pinned } = command.payload;
     const saved = await this.#createMemory({
       id: `memory:owner:${command.idempotencyKey}` as MemoryId,
       contentRef,
@@ -511,6 +539,13 @@ export class ProductionMemoryControl {
       policyVersion: OWNER_POLICY_VERSION,
       importBatchId: null,
     });
+    if (pinned)
+      await this.options.book.setProfilePin({
+        ...this.#scope(),
+        memoryId: saved.id,
+        pinned: true,
+        updatedAt: this.options.clock.now(),
+      });
     return { resultRef: saved.id, replayed: false };
   }
 
@@ -581,6 +616,13 @@ export class ProductionMemoryControl {
         updatedAt: this.options.clock.now(),
       });
       return { resultRef: "memory-settings", replayed: false };
+    }
+    if (command.type === "memory.page.viewed") {
+      await this.options.book.markViewed({
+        ...this.#scope(),
+        viewedAt: this.options.clock.now(),
+      });
+      return { resultRef: "memory-page", replayed: false };
     }
     if (command.type === "memory.person.respond") {
       const decided = await this.options.book.decidePersonSuggestion({
@@ -712,6 +754,21 @@ export class ProductionMemoryControl {
       if (action === "recover") {
         const saved = await this.options.memory.recover(current.id, generationId);
         return { resultRef: saved.id, replayed: false };
+      }
+      if (action === "pin" || action === "unpin") {
+        if (
+          current.status !== "active" ||
+          !PINNABLE_CATEGORIES.has(current.attributes?.category ?? "other") ||
+          (current.dataClassification !== "public" && current.dataClassification !== "private")
+        )
+          throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_NOT_PINNABLE");
+        await this.options.book.setProfilePin({
+          ...this.#scope(),
+          memoryId: current.id,
+          pinned: action === "pin",
+          updatedAt: this.options.clock.now(),
+        });
+        return { resultRef: current.id, replayed: false };
       }
     }
     throw new ApplicationPortError(

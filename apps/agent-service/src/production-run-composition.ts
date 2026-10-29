@@ -191,6 +191,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const profileText = new Map<string, string>();
   const profile = new OwnerProfileService({
     state: repository.productMemoryState(),
+    pins: repository.memoryBook(),
     readText: async (record) => {
       const cached = profileText.get(record.contentRef);
       if (cached !== undefined) return cached;

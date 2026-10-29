@@ -511,6 +511,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0062_proactive_checks.sql",
   },
+  {
+    sequence: 63,
+    name: "memory_profile_pins",
+    changeSet: "memory-profile-pins",
+    phase: "expand" as const,
+    file: "0063_memory_profile_pins.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

@@ -197,8 +197,12 @@ export const governanceMessages = [
         recordedAt: "2026-09-11T00:00:00.000Z",
         lastUsedAt: null,
         importBatchId: null,
+        importance: 620,
+        profilePin: "on",
       },
     ],
+    profileUsage: { used: 14, limit: 2000, queued: [] },
+    lastViewedAt: "2026-09-10T00:00:00.000Z",
     profile: [
       {
         kind: "preference",
@@ -293,8 +297,10 @@ export const governanceMessages = [
     contentRef: "payload-03",
     category: "preference",
     subCategory: "饮食",
+    pinned: false,
   }),
   fixture("command", "memory.settings.set", { capturePaused: true }),
+  fixture("command", "memory.page.viewed", {}),
   fixture("command", "memory.person.respond", {
     suggestionId: "person-suggestion-01",
     merge: true,

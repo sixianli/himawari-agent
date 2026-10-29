@@ -1504,7 +1504,7 @@ function AddForm({
         onCancel={onDone}
         onSave={(text) => {
           const guess = guessCategory(text);
-          void memory.create(text, guess.category, guess.sensitive).then((ok) => {
+          void memory.create(text, guess.category, guess.sensitive, false).then((ok) => {
             if (!ok) return;
             notify({
               text: message("memory.page.added", {
