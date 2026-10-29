@@ -129,8 +129,7 @@ export function MoreButton({
         strokeWidth="1.6"
         aria-hidden="true"
       >
-        <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-        <path d="M14.5 4.5v15" />
+        <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
       </svg>
       {running ? (
         <span className="more-count" aria-hidden="true">

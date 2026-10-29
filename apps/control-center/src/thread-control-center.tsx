@@ -29,6 +29,7 @@ import { ExecutionEnvironmentLine } from "./components/execution-environment.js"
 import { FilesLibrary } from "./components/files-library.js";
 import {
   ActionButton,
+  ActionMenu,
   Banner,
   EditActions,
   Field,
@@ -40,6 +41,7 @@ import { defaultThinkingLevel } from "./components/model-picker.js";
 import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
+import { SidebarIcon } from "./components/sidebar-icon.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { type DeliveredFile, deliveredFileGroups } from "./delivered-files.js";
 import { isAnsweredRun, isTerminalRun, type RunSummary } from "./execution-view.js";
@@ -123,6 +125,7 @@ export interface ThreadControlCenterModel {
   readonly content: ReactNode;
   readonly details: ReactNode;
   readonly actions: ReactNode;
+  readonly start: ReactNode;
   readonly settingsData: ReactNode;
   readonly list: ReactNode;
   readonly refresh: () => Promise<void>;
@@ -1228,6 +1231,33 @@ export function useThreadControlCenter(
       : pendingThreadIds;
 
   const threadItems = collection?.payload.threads ?? [];
+  const startNewThread = () => {
+    setPage(null);
+    void createThread();
+  };
+  const renameThread = (thread: ThreadSummary) => {
+    setRenameTarget(thread);
+    const current = thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "";
+    setRenameTitle(current);
+    setRenameInitial(current);
+  };
+  const pinThread = (thread: ThreadSummary) =>
+    void performIntent(
+      { kind: "pin", pinOrder: thread.pinOrder === null ? 0 : null },
+      undefined,
+      thread,
+    );
+  const archiveThread = (thread: ThreadSummary) => {
+    if (projectedPendingThreadIds.includes(thread.threadId)) {
+      setError(message("review.archivePending"));
+      return;
+    }
+    void performIntent(
+      { kind: thread.status === "archived" ? "restore" : "archive" },
+      undefined,
+      thread,
+    );
+  };
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
 
@@ -1280,40 +1310,16 @@ export function useThreadControlCenter(
       selectedThreadId={selectedThreadId}
       onSearchTextChange={setSearchText}
       onSearch={() => void search()}
-      onCreate={() => {
-        setPage(null);
-        void createThread();
-      }}
+      onCreate={startNewThread}
       onOpenFiles={configuration?.filesAvailable ? () => openLibrary() : undefined}
       onOpenMemory={renderPage ? () => openSidePage("memory") : undefined}
       onOpenReminders={renderPage ? () => openSidePage("reminders") : undefined}
       openPage={page}
       remindersDue={remindersDue}
       onRefresh={() => void refresh(true)}
-      onRename={(thread) => {
-        setRenameTarget(thread);
-        const current = thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "";
-        setRenameTitle(current);
-        setRenameInitial(current);
-      }}
-      onPin={(thread) =>
-        void performIntent(
-          { kind: "pin", pinOrder: thread.pinOrder === null ? 0 : null },
-          undefined,
-          thread,
-        )
-      }
-      onArchive={(thread) => {
-        if (projectedPendingThreadIds.includes(thread.threadId)) {
-          setError(message("review.archivePending"));
-          return;
-        }
-        void performIntent(
-          { kind: thread.status === "archived" ? "restore" : "archive" },
-          undefined,
-          thread,
-        );
-      }}
+      onRename={renameThread}
+      onPin={pinThread}
+      onArchive={archiveThread}
       onNavigate={(state) => {
         setPage(null);
         navigate(state);
@@ -1576,15 +1582,70 @@ export function useThreadControlCenter(
     else setMore((current) => ({ ...current, command: null }));
     flashTurn(command.noticeRunId);
   };
-  const actions =
-    detail && hasMore && !page ? (
-      <MoreButton
-        running={runningCommands.length}
-        open={more.open && !preview}
-        onClick={() => (more.open && !preview ? closeMore() : openMore())}
-        message={message}
+  const openThread = detail && !page ? (selectedSummary ?? detail.payload.thread) : undefined;
+  const actions = openThread ? (
+    <>
+      {hasMore ? (
+        <MoreButton
+          running={runningCommands.length}
+          open={more.open && !preview}
+          onClick={() => (more.open && !preview ? closeMore() : openMore())}
+          message={message}
+        />
+      ) : null}
+      <ActionMenu
+        label={
+          <>
+            <SidebarIcon name="more" />
+            <span className="sr-only">{message("review.conversationActions")}</span>
+          </>
+        }
+        items={[
+          {
+            id: "rename",
+            label: (
+              <>
+                <SidebarIcon name="rename" />
+                {message("threads.rename")}
+              </>
+            ),
+            onSelect: () => renameThread(openThread),
+          },
+          {
+            id: "pin",
+            label: (
+              <>
+                <SidebarIcon name="pin" />
+                {message(openThread.pinOrder === null ? "threads.pin" : "threads.unpin")}
+              </>
+            ),
+            onSelect: () => pinThread(openThread),
+          },
+          {
+            id: "archive",
+            separated: true,
+            label: (
+              <>
+                <SidebarIcon name="archive" />
+                {message("threads.archive")}
+              </>
+            ),
+            onSelect: () => archiveThread(openThread),
+          },
+        ]}
       />
-    ) : null;
+    </>
+  ) : null;
+  const start = (
+    <ActionButton
+      className="topbar-new"
+      variant="quiet"
+      aria-label={message("threads.new")}
+      onClick={startNewThread}
+    >
+      <SidebarIcon name="compose" />
+    </ActionButton>
+  );
 
   const forkedThread = detail?.payload.thread.sourceThreadId ? detail.payload.thread : undefined;
   const shownInherited: InheritedConversation | undefined =
@@ -1856,6 +1917,7 @@ export function useThreadControlCenter(
     ),
     details,
     actions,
+    start,
     list,
     refresh,
     title: page

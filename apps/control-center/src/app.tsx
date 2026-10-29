@@ -590,6 +590,7 @@ function LocalizedControlCenterApp({
               ? governanceModel.details
               : null
       }
+      topbarStart={route.surfaceId === "threads" ? threadModel.start : null}
       topbarActions={route.surfaceId === "threads" ? threadModel.actions : null}
       list={governanceSurface ? governanceModel.list : threadModel.list}
       locale={locale}
