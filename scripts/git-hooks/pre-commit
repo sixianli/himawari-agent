@@ -1,0 +1,5 @@
+#!/bin/sh
+common=$(git rev-parse --path-format=absolute --git-common-dir) || exit 1
+if [ -x "$common/hooks/pre-commit" ]; then
+  exec "$common/hooks/pre-commit" "$@"
+fi

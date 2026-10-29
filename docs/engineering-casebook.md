@@ -3092,6 +3092,10 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 [ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)（取代 [ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)）；[事故与门槛清单](incidents-and-gates.md)；[管住 AI 编码代理](#case-agent-governance)；启动慢的根因修复见[案例 46](#case-startup-permission-audit)（PR #89）；本案例的 PR 在分支 `claude/project-thread-9rgrtl`。
 
+**后续（2026-10-29）**
+
+清单里 I-05（第 0 层漏跑相关测试）已经出现 6 次，检查脚本却只在 Andy 的 Mac 上、快速模式下还直接放行。Andy 先问“恢复检查会让一个版本发布多花多少时间”：检查只在提交时跑，不在上线时跑；对快速模式下漏跑的提交 `bfa6162` 实测约 1.2 秒，并且点名了当时漏掉的测试。他同意后，脚本原样放进仓库，钩子由 `npm run check` 装上，快速模式下也检查（[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)）。这说明“门槛存在”还不够：门槛还要在真正干活的地方（这里是云端线程）跑起来，并且不能被快速模式这类开关悄悄关掉。
+
 **面试 30 秒版**
 
 “我们发现事故修完了还会复发，因为修复只落在那一处代码和一篇文档里。于是定了一条规则：每个事故必须落成一道自动检查才算关闭，同一错误第三次必须有硬门槛。清单本身也被脚本核对，不能写一个不存在的门槛就算完。比如 worker 启动超时，以前只看最后起没起来，碰巧成功就没人管；现在切换后量启动时间，超过 30 秒就回退，出包时还核对等待时间留够余量。每道门槛都要证明在事故重现上会失败。”
