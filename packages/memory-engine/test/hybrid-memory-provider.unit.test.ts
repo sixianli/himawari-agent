@@ -296,4 +296,32 @@ describe("Gateway embedder", () => {
     client.bindBoundary((_request, send) => send(), 1000);
     await expect(client.embed("你好")).rejects.toThrow("EMBEDDING_HTTP_FAILURE");
   });
+
+  it("keeps the gateway's refusal reason when a budget rejects the request", async () => {
+    const client = new GatewayEmbedder({
+      baseUrl: "https://gateway.invalid/v1",
+      model: "fixture-embedding",
+      dimensions: 3,
+      apiKey: async () => "fixture-value",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "User budget exceeded. Current spend: $3.16, limit: $3.00.",
+              type: "quota_for_entity_exceeded",
+            },
+          }),
+          { status: 402 },
+        ),
+    });
+    client.bindBoundary((_request, send) => send(), 1000);
+    await expect(client.embed("你好")).rejects.toMatchObject({
+      message: "EMBEDDING_HTTP_FAILURE",
+      details: {
+        status: "402",
+        gatewayErrorType: "quota_for_entity_exceeded",
+        gatewayErrorMessage: "User budget exceeded. Current spend: $3.16, limit: $3.00.",
+      },
+    });
+  });
 });

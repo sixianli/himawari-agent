@@ -53,6 +53,7 @@ export interface MemoryCorrection {
 }
 
 export const CONTEXT_MEMORY_UNAVAILABLE = "CONTEXT_MEMORY_UNAVAILABLE";
+export const CONTEXT_MEMORY_QUOTA_EXCEEDED = "CONTEXT_MEMORY_QUOTA_EXCEEDED";
 
 export interface MemoryPort {
   search(request: MemorySearchRequest): Promise<readonly MemoryCandidate[]>;
