@@ -4602,3 +4602,98 @@ details.settings-details > summary::-webkit-details-marker {
   color: var(--text);
   font-size: 12px;
 }
+.topbar {
+  position: relative;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 0;
+  background: var(--background);
+}
+.topbar-start,
+.topbar > .topbar-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.topbar > .page-heading {
+  position: absolute;
+  left: 50%;
+  flex: none;
+  max-width: calc(100% - 300px);
+  text-align: center;
+  transform: translateX(-50%);
+}
+.topbar .topbar-start > .action-button,
+.topbar .topbar-controls > .action-button,
+.topbar .topbar-controls > .more-button,
+.topbar .topbar-controls > .action-menu > .action-button {
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 6%);
+  font-size: 18px;
+}
+.topbar .topbar-start > .action-button:hover,
+.topbar .topbar-controls > .action-button:hover,
+.topbar .topbar-controls > .more-button:hover,
+.topbar .topbar-controls > .action-menu > .action-button:hover,
+.topbar .topbar-controls > .more-button.is-open {
+  background: var(--surface-muted);
+}
+.topbar .topbar-start .sidebar-icon,
+.topbar .topbar-controls .sidebar-icon {
+  width: 18px;
+  height: 18px;
+}
+.topbar-settings {
+  display: none;
+}
+@media (min-width: 641px) {
+  .app-shell[data-sidebar-collapsed="true"] .topbar .topbar-settings {
+    display: inline-flex;
+  }
+}
+.sidebar-footer {
+  flex: none;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-footer > .sidebar-settings {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+@media (max-width: 640px) {
+  .topbar {
+    padding: 0 10px;
+  }
+  .topbar > .page-heading {
+    max-width: calc(100% - 210px);
+  }
+  .topbar .topbar-start > .action-button,
+  .topbar .topbar-controls > .action-button,
+  .topbar .topbar-controls > .more-button,
+  .topbar .topbar-controls > .action-menu > .action-button {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+}

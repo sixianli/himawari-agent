@@ -13,9 +13,9 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -58,6 +58,8 @@ let jwks: JSONWebKeySet;
 let providerAvailable = true;
 let dropEmbeddingConnections = false;
 let embeddingCostAvailable = true;
+let rejectEmbeddingsOverBudget = false;
+let mainDiagnostics = "";
 let providerSubject = subject;
 const providerRequests: Array<{
   readonly path: string;
@@ -177,6 +179,18 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
     if (requestPath === "/v1/embeddings") {
       if (dropEmbeddingConnections) {
         request.socket.destroy();
+        return;
+      }
+      if (rejectEmbeddingsOverBudget) {
+        response.writeHead(402, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            error: {
+              message: "User budget exceeded. Current spend: $3.16, limit: $3.00.",
+              type: "quota_for_entity_exceeded",
+            },
+          }),
+        );
         return;
       }
       let body = "";
@@ -1208,9 +1222,10 @@ async function openInstalledMain() {
     main.stdout.on("data", (chunk: Buffer) =>
       process.stderr.write(`[installed-main] ${chunk.toString("utf8")}`),
     );
-    main.stderr.on("data", (chunk: Buffer) =>
-      process.stderr.write(`[installed-main-error] ${chunk.toString("utf8")}`),
-    );
+    main.stderr.on("data", (chunk: Buffer) => {
+      mainDiagnostics += chunk.toString("utf8");
+      process.stderr.write(`[installed-main-error] ${chunk.toString("utf8")}`);
+    });
     const worker = spawn(path.join(runtimePrefix, "bin/himawari-execution-worker"), args, {
       cwd: testRoot,
       stdio: ["pipe", "pipe", "pipe"],
@@ -1614,7 +1629,7 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
   }
 }, 90_000);
 
-it.each(["connection loss", "missing cost"] as const)(
+it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
   "[R2-L5] retains one unknown embedding after %s and restart while the service keeps serving",
   async (failure) => {
     const service = await openInstalledMain();
@@ -1631,6 +1646,12 @@ it.each(["connection loss", "missing cost"] as const)(
       ).length;
       dropEmbeddingConnections = failure === "connection loss";
       embeddingCostAvailable = failure !== "missing cost";
+      rejectEmbeddingsOverBudget = failure === "budget exceeded";
+      const failureCode =
+        failure === "budget exceeded"
+          ? "CONTEXT_MEMORY_QUOTA_EXCEEDED"
+          : "CONTEXT_MEMORY_UNAVAILABLE";
+      mainDiagnostics = "";
       await service.submit({
         threadId,
         expectedRevision: 1,
@@ -1641,6 +1662,7 @@ it.each(["connection loss", "missing cost"] as const)(
       const failed = await waitForRunToLeaveExecution(service, threadId, "run:memory-lost-first");
       dropEmbeddingConnections = false;
       embeddingCostAvailable = true;
+      rejectEmbeddingsOverBudget = false;
       expect(failed.run?.status).toBe("failed");
       expect(providerRequests.filter(({ path: route }) => route === "/v1/embeddings").length).toBe(
         embeddingRequestsBefore + 1,
@@ -1666,9 +1688,15 @@ it.each(["connection loss", "missing cost"] as const)(
         expect.objectContaining({
           kind: "status",
           phase: "failed",
-          text: "CONTEXT_MEMORY_UNAVAILABLE",
+          text: failureCode,
         }),
       );
+      if (failure === "budget exceeded") {
+        expect(mainDiagnostics).toContain('"event":"memory.embedding_failed"');
+        expect(mainDiagnostics).toContain('"status":"402"');
+        expect(mainDiagnostics).toContain('"gatewayErrorType":"quota_for_entity_exceeded"');
+        expect(mainDiagnostics).toContain("User budget exceeded");
+      }
       expect(records.some((record) => record.kind === "tool")).toBe(false);
       const database = openQualifiedDatabase(databasePath);
       try {
@@ -1681,7 +1709,7 @@ it.each(["connection loss", "missing cost"] as const)(
         ).toEqual({
           phase: "failed",
           terminalStatus: "failed",
-          diagnosticCode: "CONTEXT_MEMORY_UNAVAILABLE",
+          diagnosticCode: failureCode,
         });
         expect(
           database
@@ -1751,6 +1779,7 @@ it.each(["connection loss", "missing cost"] as const)(
     } finally {
       dropEmbeddingConnections = false;
       embeddingCostAvailable = true;
+      rejectEmbeddingsOverBudget = false;
       await service.stop();
     }
   },

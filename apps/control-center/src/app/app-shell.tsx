@@ -17,6 +17,7 @@ export interface ControlCenterShellProps {
   readonly connection: "connecting" | "connected" | "offline" | null;
   readonly content: ReactNode;
   readonly details: ReactNode;
+  readonly topbarStart?: ReactNode;
   readonly topbarActions?: ReactNode;
   readonly settingsTools?: ReactNode;
   readonly settingsData?: ReactNode;
@@ -39,6 +40,7 @@ export function ControlCenterShell({
   content,
   connection,
   details,
+  topbarStart,
   topbarActions,
   settingsTools,
   settingsData,
@@ -96,6 +98,10 @@ export function ControlCenterShell({
     }
   }, [routeFocusKey]);
   const updateView = (view: ControlCenterRouteState["view"]) => onNavigate({ ...route, view });
+  const openSettings = () => {
+    setSettingsTab("general");
+    setSettingsOpen(true);
+  };
 
   return (
     <div
@@ -138,28 +144,37 @@ export function ControlCenterShell({
         <section className="list-pane" aria-label={message("common.currentRecords")}>
           {list}
         </section>
+        <div className="sidebar-footer">
+          <ActionButton className="sidebar-settings" variant="quiet" onClick={openSettings}>
+            <SidebarIcon name="settings" />
+            {message("settings.title")}
+          </ActionButton>
+        </div>
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <ActionButton
-            className="desktop-sidebar-restore"
-            ref={restoreRef}
-            variant="quiet"
-            aria-label={message("layout.showList")}
-            aria-expanded={!sidebarCollapsed}
-            onClick={() => toggleSidebar(false)}
-          >
-            <SidebarIcon name="panel" />
-          </ActionButton>
-          <ActionButton
-            className="mobile-sidebar-toggle"
-            aria-label={message("layout.showList")}
-            aria-expanded={route.view === "list"}
-            onClick={() => updateView(route.view === "list" ? "content" : "list")}
-            variant="quiet"
-          >
-            <SidebarIcon name="panel" />
-          </ActionButton>
+          <div className="topbar-start">
+            <ActionButton
+              className="desktop-sidebar-restore"
+              ref={restoreRef}
+              variant="quiet"
+              aria-label={message("layout.showList")}
+              aria-expanded={!sidebarCollapsed}
+              onClick={() => toggleSidebar(false)}
+            >
+              <SidebarIcon name="panel" />
+            </ActionButton>
+            <ActionButton
+              className="mobile-sidebar-toggle"
+              aria-label={message("layout.showList")}
+              aria-expanded={route.view === "list"}
+              onClick={() => updateView(route.view === "list" ? "content" : "list")}
+              variant="quiet"
+            >
+              <SidebarIcon name="panel" />
+            </ActionButton>
+            {topbarStart}
+          </div>
           <div className="page-heading">
             <h1 id="page-title" ref={headingRef} tabIndex={-1}>
               {pageTitle}
@@ -168,12 +183,10 @@ export function ControlCenterShell({
           <div className="topbar-controls">
             {topbarActions}
             <ActionButton
+              className="topbar-settings"
               aria-label={message("settings.title")}
               variant="quiet"
-              onClick={() => {
-                setSettingsTab("general");
-                setSettingsOpen(true);
-              }}
+              onClick={openSettings}
             >
               <SidebarIcon name="settings" />
             </ActionButton>
