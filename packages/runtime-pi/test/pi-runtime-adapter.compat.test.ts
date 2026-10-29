@@ -2560,6 +2560,38 @@ it("does not execute a tool when saving its assistant request fails", async () =
   expect(events.at(-1)?.type).not.toBe("runtime.completed");
 });
 
+it("[TG-1] times the waits before a tool runs: history write, event backlog and recovery save", async () => {
+  const model = await createFauxModelFixture("完成", {
+    name: "restaurant_search",
+    id: "timed-call",
+    arguments: { query: "test" },
+  });
+  const tools = new RecordingRuntimeTools();
+  const measured: string[] = [];
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection({ ...DEFAULT_CONTEXT, history: [] }),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_r, n) => `timed-tool:${n}`,
+    continuations: {
+      save: async () => "continuation:timed",
+      load: async () => null,
+    },
+    measure: async (runId, name, work) => {
+      expect(runId).toBe(request.runId);
+      measured.push(name);
+      return work();
+    },
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(tools.execute).toHaveBeenCalledTimes(1);
+  expect(events.at(-1)?.type).toBe("runtime.completed");
+  expect(measured).toEqual(["tool.history_wait", "tool.checkpoint.drain", "tool.checkpoint.save"]);
+});
+
 it("restores already disclosed batch results across consecutive approvals without re-entering expired executions", async () => {
   const model = await createFauxModelFixture("完成", [
     { name: "controlled_action", id: "completed-before-wait", arguments: { value: "first" } },

@@ -81,6 +81,7 @@ date: "2026-10-26"
   55. [来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文](#case-memory-history)
   56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
   57. [问“写到一个pdf文件”却带出前同事：记忆搜索没有相关度门槛，界面把“最不远的几条”说成“相关记忆”](#case-memory-relevance-threshold)
+  59. [一轮 185 秒里有 60 秒在工具调用前后空等：同一次调用把几秒内不会变的宿主文件查了 7 遍](#case-tool-gap-host-check)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -105,7 +106,7 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
@@ -3649,6 +3650,60 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 **面试 30 秒版**
 
 “用户问‘写到一个 pdf 文件’，界面却说‘找到 3 条相关记忆’，带出的是前同事。查下来，混合检索只排序不判断，相似度门槛默认 0，记忆少的时候每轮都会带满，界面又把‘最近的几条’说成‘相关’。我用自己的数据实测相似度分布定了门槛，允许返回 0 条，0 条时界面整步不显示；把这个场景写成在旧代码上失败的测试接进检查；再建了一个固定评测集，修改前无关问题 100% 带出记忆，修改后 2.1%，代价是需要联想的问题召回下降，这个取舍和下一步要不要加重排，都由同一套基线来回答。”
+
+[返回目录](#contents)
+
+<a id="case-tool-gap-host-check"></a>
+
+## 案例 59：一轮 185 秒里有 60 秒在工具调用前后空等：同一次调用把几秒内不会变的宿主文件查了 7 遍
+
+**背景与现象**
+
+2026-10-29 12:51（日本时间），Andy 在生产网页让 Himawari 规划一条至少 80 公里的骑行路线并输出 PDF，整轮 185.3 秒、花费 0.067 美元。他问慢在哪。按每次模型请求和工具调用的起止时间逐段拆开（诊断脚本 `run-trace.mjs`，Mac 线程在生产机上只读运行）：模型生成 72.5 秒，沙箱（用操作系统机制限制程序能访问的文件和网络的隔离环境）里命令真正执行 44.2 秒，剩下 60.1 秒是工具调用前后的空等，平均每次调用前约 3.0 秒、调用后约 2.0 秒。KV 缓存（模型把已经算过的前文存起来，下次同样的开头不用重算）命中 92.4%，12 次请求都是严格追加，这一部分已经是最优。
+
+**根因**
+
+第二次只读诊断导出了这一轮的 `sandbox.admission.timing` 日志：
+
+1. 11 次沙箱工具调用一共做了 77 次完整核对（`resolve`，确认这次执行仍被允许），合计 27.98 秒。其中宿主核验（核对沙箱程序、工作区和工具链文件没被替换、没被改权限）12.6 秒，每次平均 163 毫秒；授权判断 6.4 秒；读执行范围 2.9 秒；工作区身份 2.0 秒；部署快照 1.2 秒。
+2. 每次调用在 Worker（受限执行进程）启动前做 4 次，运行中再做约 3 次。[ADR 0078](adr/0078-authority-check-once-then-version-compare.md) 只让运行中的执行复用结果，准入和绑定每次完整重做，所以同一批文件在几秒内被查 7 遍。这是代码证据加日志数据确认的。
+3. 还没确认的：模型说完到第一次核对之间 0.5–2.5 秒、Worker 结束到结果交回模型之间约 2.1 秒，这两段没有任何分段日志，只能推断（流式事件逐条写盘、保存续跑点、写结果日志）。
+
+**我们的方案**（[ADR 0116](adr/0116-reuse-host-file-check-by-file-state.md)）
+
+1. 服务进程里的宿主核验按“文件状态”复用最长 10 秒：每次先做不碰磁盘的计划核对，再用 `lstat` 并行读所有受检路径的设备号、inode 编号、权限、所有者（普通文件加大小和纳秒级时间），算成摘要；10 秒内同一摘要核验通过过就跳过重的检查。核验前后摘要一致、并且没有文件在 2 秒内刚被改过，才记下结果。
+2. 授权判断、读执行范围、工作区身份每次照常做；Worker 启动时自己的宿主核验也照常完整做。撤销授权的生效时间不变。
+3. 给剩下两段没解释的空等加分段计时：`tool.dispatch.timing`、`tool.workflow.timing`、`sandbox.tool_result.timing` 三条日志，以及 Pi（Himawari 所基于的 Agent 框架）适配层在工具执行前的三段等待 `tool.history_wait`、`tool.checkpoint.drain`、`tool.checkpoint.save`，记进每轮的 `run.timing`。Pi 自己的工具循环不改，只在 Himawari 的适配层外面包一层计时。
+
+**方案讨论与备选**
+
+- **按版本号复用整份核对结果（含授权）**：能省约 21 秒，但授权判断也不再每次做，改动 ADR 0078 已验证过的逻辑。用选择卡问 Andy，等计时数据出来再定。
+- **只按时间缓存宿主核验**：最简单，但 ADR 0067 已否决只按时间信任结果，文件被替换时发现不了。
+- **什么都不复用，只加计时**：最安全，但 12.6 秒照旧。
+- 选了“按文件状态复用宿主核验”：只省最确定的重复工作，任何受检文件的信息一变就完整重查。放弃的是“上层目录被换掉而受检路径信息不变”这种情况的即时发现，最长晚 10 秒，且 Worker 启动时还有一次完整核验兜住。
+
+**业界主流做法**
+
+- ✅ Git 文档《Use of index and Racy Git problem》（<https://git-scm.com/docs/racy-git>）：“the index entries record the information obtained from the filesystem via `lstat`(`2`) system call when they were last updated”，“If some of these "cached stat information" fields do not match, Git can tell that the files are modified without even looking at their contents.” 同文指出时间戳精度内的原地改写会让文件“racily clean”（看起来没变其实变了）。
+
+**对比与取舍**
+
+和 Git 一样，我们用 `lstat` 信息判断文件有没有变，没变就不重读内容；也和 Git 一样，对“刚改过的文件”不信任时间戳（Git 把修改时间不早于索引写入时间的条目当作可疑，我们要求文件稳定 2 秒以上）。不同的是 Git 的目的是省时间，信息看错最多是漏报一次修改；我们的目的是安全核验，所以另加了 10 秒上限，并保留 Worker 启动时的完整核验。
+
+**结果数据**
+
+- 诊断基线：185.3 秒 = 模型 72.5 + 命令 44.2 + 空等 60.1；77 次完整核对 27.98 秒，宿主核验 12.6 秒（生产日志，2026-10-29 只读导出）。
+- 云端容器里一次完整宿主核验约 0.85 毫秒，复用约 0.41 毫秒（本线程临时基准测试）；和生产 163 毫秒差两个数量级，生产上的时间花在哪还未测量。
+- 上线后的节省：未测量。第十九版上线后用真实对话按新日志逐段对比。
+- 门槛自证：把“2 秒内刚改过不复用”改成 0 时，`packages/platform-node/test/sandbox-host-reuse.unit.test.ts` 对应测试失败，恢复后 4 条全过。
+
+**相关 ADR/PR**
+
+[ADR 0116](adr/0116-reuse-host-file-check-by-file-state.md)、[ADR 0078](adr/0078-authority-check-once-then-version-compare.md)、[事故清单 I-25](incidents-and-gates.md#incidents)、[案例 4：授权核对太频繁](#case-authority-checks)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-63bqwj`。
+
+**面试 30 秒版**
+
+“一轮 185 秒的对话，我先按请求逐段拆时间，发现模型和命令只占 117 秒，60 秒是工具前后的空等。日志显示 11 次工具调用做了 77 次完整安全核对，其中宿主文件核验在同一次调用里重复 7 遍。我借鉴 Git 用 `lstat` 信息判断文件没变的做法，让这项核验按文件状态复用 10 秒，授权判断仍然每次做，并照 Git 的 racy 问题拒绝信任刚改过的文件；剩下没日志可查的两段先加分段计时，上线后用数据再修。”
 
 [返回目录](#contents)
 
