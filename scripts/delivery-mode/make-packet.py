@@ -546,7 +546,7 @@ class Hermes:
 
     def install_scripts(self):
         self.ssh('mkdir -p ' + shlex.quote(self.scripts) + ' ' + shlex.quote(self.work + '-inputs'))
-        for name in ('build-candidate.sh', 'layer3-verdict.py', 'builder.json', 'run-release-walkthrough.sh', 'require-git-modes.sh', 'capture-build-source-inputs.template.mjs'):
+        for name in ('build-candidate.sh', 'layer3-verdict.py', 'builder.json', 'run-release-walkthrough.sh', 'require-git-modes.sh', 'install-dependencies-if-changed.sh', 'capture-build-source-inputs.template.mjs'):
             self.upload(BUILDER / name, self.scripts + '/' + name)
         self.upload(TEMPLATE / 'acceptance/helpers/collect-installer-dependencies.mjs', self.scripts + '/collect-installer-dependencies.mjs')
         self.upload(HERE / 'run-packet-checks.py', self.scripts + '/run-packet-checks.py')
