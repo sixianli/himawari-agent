@@ -311,9 +311,11 @@ export function ChatHistory({
         ) : null}
       </section>
       {showLatest ? (
-        <ActionButton
+        <button
+          type="button"
           className="chat-latest"
-          variant="secondary"
+          aria-label={message("chat.latest")}
+          title={message("chat.latest")}
           onClick={() => {
             const el = scrollRef.current;
             if (el) el.scrollTop = el.scrollHeight;
@@ -321,8 +323,8 @@ export function ChatHistory({
             setShowLatest(false);
           }}
         >
-          ↓ {message("chat.latest")}
-        </ActionButton>
+          <LineIcon name="arrowDown" />
+        </button>
       ) : null}
     </>
   );
