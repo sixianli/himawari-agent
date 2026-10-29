@@ -646,7 +646,6 @@ export const messages = {
   "memory.profile.relationship": "人間関係",
   "memory.profile.goal": "長期目標",
   "memory.profile.project": "進行中のこと",
-  "memory.recent": "新規",
   "memory.tidyKept": "（残した方：{text}）",
   "memory.undo": "元に戻す",
   "memory.undone": "元に戻しました",
@@ -668,14 +667,14 @@ export const messages = {
   "memory.page.add": "手動で追加",
   "memory.page.addTitle": "Himawari に覚えてほしいこと",
   "memory.page.addNote":
-    "1 文で書いてください。分類は自動で決まります。健康やお金の内容は機微な情報として保存し、ご自身で書いたので確認は不要です。",
+    "1 文で書いてください。トピックは言葉から推測し、下で変更できます。健康やお金の内容は機微な情報として保存し、ご自身で書いたので確認は不要です。",
   "memory.page.addPlaceholder": "例：週末の朝 9 時前は通知しないで",
-  "memory.page.added": "「{cat}」に記憶しました。違う場合は「すべての記憶」で編集できます。",
-  "memory.page.tab":
-    "{t, select, pending {確認待ち} reminders {リマインダー} profile {プロフィール} all {すべての記憶} other {タイムライン}}",
+  "memory.page.added":
+    "「{cat}」に記憶しました{pinned, select, true {。今後は毎回の会話に持っていきます} other {}}。違う場合は開いて直せます。",
+  "memory.page.tab": "{t, select, memories {記憶} other {変更履歴}}",
   "memory.page.due": "{count} 件期限",
   "memory.page.pendingNote":
-    "まだ使われていない記憶です。機微な情報、推測、一度だけ言われたルール、同一人物かもしれない人。確認するまで使いません。すべて処理するとこのタブは消えます。",
+    "まだ使われていない記憶です。機微な情報、推測、一度だけ言われたルール、同一人物かもしれない人。確認するまで使いません。すべて処理するとこの欄は消えます。",
   "memory.page.kind": "{k, select, rule {ルール} person {同じ人？} other {推測}}",
   "memory.page.reason":
     "{k, select, rule {一度だけ言われたことです。記憶すると毎回従います。} person {同じ人を指しているかもしれないので確認します。} other {直接言われたことではなく推測なので、違うかもしれません。}}",
@@ -689,10 +688,7 @@ export const messages = {
   "memory.page.yearly": "毎年",
   "memory.page.cancelled": "「{text}」の通知を止めました。記憶は残ります",
   "memory.page.notify": "時間になったリマインダーは、通知をオンにしたデバイスに届きます。",
-  "memory.page.profileNote":
-    "Himawari が毎回の回答前に読むプロフィールです。行をクリックすると編集でき、以前の表現も残ります。機微な記憶はここに載せず、関係するときだけ使います。",
   "memory.page.lines": "{count} 件",
-  "memory.page.more": "残り {count} 件を表示",
   "memory.page.less": "閉じる",
   "memory.page.people": "人物関係",
   "memory.page.peopleCount": "{count} 人",
@@ -704,15 +700,7 @@ export const messages = {
   "memory.page.aliases": "別名：{names}",
   "memory.page.knows": "知り合い",
   "memory.page.facts": "この人についての記憶",
-  "memory.page.allNote":
-    "Himawari が記憶しているすべての事実です。開くと出どころと変更履歴が見られます。削除したものは 7 日間「最近削除」から戻せます。",
-  "memory.page.everything": "すべて",
   "memory.page.moreCats": "ほか {count} 件",
-  "memory.page.sub": "小分類",
-  "memory.page.state": "状態",
-  "memory.page.status": "{s, select, active {使用中} archived {アーカイブ} other {最近削除}}",
-  "memory.page.statusHint":
-    "{s, select, active {回答に使う記憶} archived {古い・重複・長く未使用と判断され、回答に使いません。いつでも戻せます} other {削除した記憶。7 日間は戻せ、その後完全に消えます}}",
   "memory.page.group":
     "{g, select, today {今日} week {今週} earlier {それ以前} archived {アーカイブ：回答に使いません} other {最近削除：7 日後に完全に消えます}} · {count} 件",
   "memory.page.noResults":
@@ -845,7 +833,46 @@ export const messages = {
   "nav.reminders": "リマインダー",
   "memory.page.replaced": "置き換え済み",
   "memory.page.olderChanges": "さらに前の変更 {count} 件",
-  "memory.page.viewAll": "{kind}をすべて表示（{count} 件）",
+  "memory.page.confirmTitle": "確認が必要 · {count} 件",
+  "memory.page.carry.title": "毎回の会話に持っていく記憶",
+  "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
+  "memory.page.carry.queued": "ほかに {count} 件が入りきりません",
+  "memory.page.carry.open": "見る・調整する",
+  "memory.page.carry.meter": "使用中の文字数",
+  "memory.page.carry.note":
+    "Himawari は回答の前に毎回これを読みます。ルール、プロフィール、好み、人間関係、目標、進行中のことから重要度の高い順に選び、{limit} 字まで入れます。健康やお金などの機微な記憶と予定は入れず、関係があるときだけ使います。記憶ごとに「毎回の会話に持っていく」をオン・オフでき、その選択が優先されます。",
+  "memory.page.carry.none":
+    "毎回持っていく記憶はまだありません。会話で話したプロフィール、好み、長期目標が自動で入ります。",
+  "memory.page.carry.yours": "あなたが選択",
+  "memory.page.carry.queuedTitle": "入りきらない記憶",
+  "memory.page.carry.queuedNote":
+    "文字数の上限に達したため、重要度の低いこれらは関係があるときだけ使います。オンにすると優先して入ります。",
+  "memory.page.carry.offTitle": "あなたがオフにした記憶",
+  "memory.page.carry.offNote": "毎回は持っていかないと選んだ記憶です。関係があるときだけ使います。",
+  "memory.page.carried": "毎回の会話",
+  "memory.page.pin": "毎回の会話に持っていく",
+  "memory.page.pinFor": "毎回の会話に持っていく：{text}",
+  "memory.page.pinDone":
+    "{on, select, true {この記憶を毎回の会話に持っていきます} other {この記憶は関係があるときだけ使います}}",
+  "memory.page.pinHint":
+    "{r, select, sensitive {機微な記憶は毎回は持っていかず、関係があるときだけ使います} category {予定、健康、お金、その他の記憶は関係があるときだけ使います} on {あなたがオンにしたので、自動の選択より優先されます} off {あなたがオフにしたので、関係があるときだけ使います} add {オンにすると毎回の会話に持っていきます。オフなら重要度で決まります} other {今は重要度で決まります。変更すると、あなたの選択が優先されます}}",
+  "memory.page.detail": "記憶の詳細",
+  "memory.page.topic": "トピック",
+  "memory.page.importance": "重要度",
+  "memory.page.importanceValue":
+    "{value} / 1000 · {by, select, owner {手動で追加したときの既定値} other {保存時にモデルが採点}}",
+  "memory.page.topics": "トピック",
+  "memory.page.allTopics": "すべてのトピック",
+  "memory.page.topicNow": "トピック：{topic}",
+  "memory.page.newSince": "前回開いてから新しく {count} 件を記憶",
+  "memory.page.showNew": "見る",
+  "memory.page.clearNew": "すべて表示",
+  "memory.page.backToActive": "使用中の記憶に戻る",
+  "memory.page.groupedNote": "全 {count} 件 · トピックごとに新しい {preview} 件を表示",
+  "memory.page.seeAll": "{count} 件をすべて表示",
+  "memory.page.loadMore": "さらに {count} 件を表示",
+  "memory.page.statusLink":
+    "{s, select, archived {アーカイブ {count} 件} other {最近削除 {count} 件}}",
   "reminders.group": "{g, select, today {今日} week {7 日以内} other {それ以降}}",
   "reminders.empty":
     "リマインダーはまだありません。会話で「明日の朝 8 時に傘を持っていくよう知らせて」と言えば設定できます。",

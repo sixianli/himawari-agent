@@ -50,6 +50,7 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   memoryBack: { role: "button", name: "返回", exact: true },
   memoryTabs: { role: "tablist", name: "记忆", exact: true },
   memoryTab: { role: "tab" },
+  memoryCarry: { role: "region", name: "每次对话都会带上的记忆", exact: true },
   pageError: { role: "alert" },
   unreadableRecords: "部分执行记录暂不可读取",
   noProcessRecords: "没有可展示的过程记录",

@@ -604,7 +604,6 @@ export const messages = {
   "memory.profile.relationship": "人际关系",
   "memory.profile.goal": "长期目标",
   "memory.profile.project": "进行中的事",
-  "memory.recent": "新",
   "memory.tidyKept": "（保留：{text}）",
   "memory.undo": "撤销",
   "memory.undone": "已撤销",
@@ -626,14 +625,14 @@ export const messages = {
   "memory.page.add": "手动添加一条",
   "memory.page.addTitle": "让 Himawari 记住一件事",
   "memory.page.addNote":
-    "用一句话写清楚。分类会自动判断；健康、财务等内容按敏感信息保存，因为是你亲手写的，不用再确认。",
+    "用一句话写清楚。主题会先按关键词猜一个，猜错了可以在下面改；健康、财务按敏感信息保存，因为是你亲手写的，不用再确认。",
   "memory.page.addPlaceholder": "例如：周末早上 9 点前不要提醒我",
-  "memory.page.added": "已记住，归到“{cat}”；分错了可以在“全部记忆”里编辑",
-  "memory.page.tab":
-    "{t, select, pending {待确认} reminders {提醒} profile {档案} all {全部记忆} other {时间线}}",
+  "memory.page.added":
+    "已记住，归到“{cat}”{pinned, select, true {，以后每次对话都会带上} other {}}；分错了可以点开这条修改",
+  "memory.page.tab": "{t, select, memories {记忆} other {变化记录}}",
   "memory.page.due": "{count} 到期",
   "memory.page.pendingNote":
-    "这里是还没生效的记忆：健康、财务等敏感信息，推测出来的习惯，只说过一次的做事要求，以及拿不准是不是同一个人。你确认前 Himawari 不会用它们，全部处理完这个页签就会消失。",
+    "这些还没生效：健康、财务等敏感信息，推测出来的习惯，只说过一次的做事要求，以及拿不准是不是同一个人。你确认前 Himawari 不会用它们，全部处理完这一块就会消失。",
   "memory.page.kind": "{k, select, rule {做事要求} person {是同一个人吗} other {推测}}",
   "memory.page.reason":
     "{k, select, rule {你只说过一次；记住后以后每次都照做，不记就只管那一次} person {对话里的叫法可能指同一个人；没把握，所以先问你} other {你没直接说过，是 Himawari 推测的，可能不准}}",
@@ -647,10 +646,7 @@ export const messages = {
   "memory.page.yearly": "每年",
   "memory.page.cancelled": "不再提醒“{text}”，记忆本身保留",
   "memory.page.notify": "到点的提醒会推送到你开过通知的设备。",
-  "memory.page.profileNote":
-    "这是 Himawari 每次回答前都会先读的个人档案，按主题分组。点任意一行即可修改，旧说法会保留。健康、财务等敏感记忆不放在这里，只在相关时才调出。",
   "memory.page.lines": "{count} 条",
-  "memory.page.more": "展开其余 {count} 条",
   "memory.page.less": "收起",
   "memory.page.people": "人物关系",
   "memory.page.peopleCount": "{count} 个人",
@@ -662,15 +658,7 @@ export const messages = {
   "memory.page.aliases": "也叫：{names}",
   "memory.page.knows": "认识的人",
   "memory.page.facts": "关于这个人的记忆",
-  "memory.page.allNote":
-    "Himawari 记住的每一条事实都在这里，包括不放进档案的敏感记忆和事件。点开一条能看到来源和它是怎么变过来的。删除的先放进“最近删除”，7 天内都能恢复。",
-  "memory.page.everything": "全部",
   "memory.page.moreCats": "更多 {count} 个",
-  "memory.page.sub": "小类",
-  "memory.page.state": "状态",
-  "memory.page.status": "{s, select, active {在用} archived {已归档} other {最近删除}}",
-  "memory.page.statusHint":
-    "{s, select, active {回答时会用到的记忆} archived {每日整理时判断为过时、重复或长期没用到的，回答时不再用；随时可以恢复使用} other {你删除的记忆，7 天内可以恢复，之后彻底清除}}",
   "memory.page.group":
     "{g, select, today {今天} week {本周} earlier {更早} archived {已归档：回答时不再用} other {最近删除：7 天后自动彻底清除}} · {count} 条",
   "memory.page.noResults": "没有符合条件的记忆。换个关键词，或者清除筛选。",
@@ -798,7 +786,45 @@ export const messages = {
   "nav.reminders": "提醒",
   "memory.page.replaced": "被替换",
   "memory.page.olderChanges": "还有 {count} 次更早的变化",
-  "memory.page.viewAll": "查看全部 {count} 条{kind}",
+  "memory.page.confirmTitle": "需要你确认 · {count} 条",
+  "memory.page.carry.title": "每次对话都会带上的记忆",
+  "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
+  "memory.page.carry.queued": "还有 {count} 条放不下",
+  "memory.page.carry.open": "查看和调整",
+  "memory.page.carry.meter": "已用字数",
+  "memory.page.carry.note":
+    "Himawari 每次回答前都会先读这些。系统按重要度从高到低，从你的要求、身份、偏好、人际、长期目标和进行中的事里挑，放满 {limit} 字为止；健康、财务等敏感记忆和事件不会放进来，只在相关时才调出。你在任意一条记忆上打开或关掉“每次对话都带上”，以你的选择为准。",
+  "memory.page.carry.none":
+    "还没有每次都带上的记忆。聊天时提到的身份、偏好和长期目标会自动放进来。",
+  "memory.page.carry.yours": "你选的",
+  "memory.page.carry.queuedTitle": "放不下的",
+  "memory.page.carry.queuedNote":
+    "字数用完了，这些重要度较低的暂时没带上，只在相关时调出。打开开关就会优先带上。",
+  "memory.page.carry.offTitle": "你关掉的",
+  "memory.page.carry.offNote": "这些你选过不再每次都带上，只在相关时调出。",
+  "memory.page.carried": "每次都带上",
+  "memory.page.pin": "每次对话都带上",
+  "memory.page.pinFor": "每次对话都带上：{text}",
+  "memory.page.pinDone":
+    "{on, select, true {以后每次对话都会带上这条} other {以后这条只在相关时才调出}}",
+  "memory.page.pinHint":
+    "{r, select, sensitive {敏感记忆不会每次都带上，只在相关时才调出} category {事件、健康、财务和其他类的记忆只在相关时调出} on {这是你选的，会优先于自动挑选} off {你关掉了，只在相关时调出} add {打开后每次对话都会带上；不打开就由系统按重要度决定} other {现在由系统按重要度决定；你一改，就以你的选择为准}}",
+  "memory.page.detail": "记忆详情",
+  "memory.page.topic": "主题",
+  "memory.page.importance": "重要度",
+  "memory.page.importanceValue":
+    "{value} / 1000 · {by, select, owner {手动添加时的默认值} other {记下时由模型打分}}",
+  "memory.page.topics": "主题",
+  "memory.page.allTopics": "全部主题",
+  "memory.page.topicNow": "主题：{topic}",
+  "memory.page.newSince": "自你上次打开后新记住 {count} 条",
+  "memory.page.showNew": "看看",
+  "memory.page.clearNew": "看全部",
+  "memory.page.backToActive": "回到在用的记忆",
+  "memory.page.groupedNote": "{count} 条 · 每个主题先显示最新的 {preview} 条",
+  "memory.page.seeAll": "看全部 {count} 条",
+  "memory.page.loadMore": "再显示 {count} 条",
+  "memory.page.statusLink": "{s, select, archived {已归档 {count} 条} other {最近删除 {count} 条}}",
   "reminders.group": "{g, select, today {今天} week {未来 7 天} other {更晚}}",
   "reminders.empty": "还没有提醒。在对话里说“明早 8 点提醒我带伞”就行。",
   "reminders.due": "有 {count} 个提醒到点了",

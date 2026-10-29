@@ -5731,6 +5731,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await target(target(phone, UI.sidebarNavigation), UI.openMemory).click();
         const memory = target(phone, UI.memoryPage);
         await uiExpect(memory.getByText(UI.memorySummary)).toBeVisible({ timeout: 30_000 });
+        await uiExpect(target(memory, UI.memoryCarry)).toBeVisible();
         const memoryTabs = target(target(memory, UI.memoryTabs), UI.memoryTab);
         for (let index = 0; index < (await memoryTabs.count()); index += 1) {
           await memoryTabs.nth(index).click();

@@ -235,33 +235,36 @@ describe("memory approval and management", () => {
     expect(lastCommand()).toMatchObject({ payload: { resolution: "rejected" } });
   });
 
-  it("[MP-8] filters, opens the source, corrects, deletes and recovers memories in the all tab", async () => {
+  it("[MP-8] filters, opens the source, corrects, deletes and recovers memories", async () => {
     await render();
-    expect(text("#settings [role=tablist]")).toContain("待确认1");
-    await tab("全部记忆");
+    expect(text("#settings .memory-confirm")).toContain("需要你确认 · 1 条");
+    expect(text("#settings [role=tab][aria-selected=true]")).toContain("记忆");
     expect(text("#settings")).toContain("记住了 2 条关于你的事");
     await type("#settings input[type=search]", "上海");
-    expect(text("#settings .memory-list")).toContain("主人住在上海");
-    expect(text("#settings .memory-list")).not.toContain("蓝色");
+    expect(text("#settings .memory-results")).toContain("主人住在上海");
+    expect(text("#settings .memory-results")).not.toContain("蓝色");
     await type("#settings input[type=search]", "");
-    await click("#settings .memory-chips", "身份");
-    expect(text("#settings .memory-list")).not.toContain("蓝色");
+    await click("#settings .memory-topics", "身份");
+    expect(text("#settings .memory-results")).not.toContain("蓝色");
+    expect(text("#settings .memory-crumbs")).toContain("身份");
     await click("#settings .memory-list", "主人住在上海");
-    expect(text("#settings .memory-detail")).toContain("还没用到");
-    await click("#settings .memory-detail", "来源对话");
+    expect(text("#settings .memory-drawer")).toContain("还没用到");
+    expect(text("#settings .memory-drawer")).toContain("500 / 1000");
+    await click("#settings .memory-drawer", "来源对话");
     expect(opened).toHaveBeenCalledWith("thread-2");
-    await click("#settings .memory-detail", "编辑");
-    await type("#settings .memory-list textarea", "主人住在杭州");
-    await click("#settings .memory-list", "保存");
+    await click("#settings .memory-drawer", "编辑");
+    await type("#settings .memory-drawer textarea", "主人住在杭州");
+    await click("#settings .memory-drawer", "保存");
     expect(protectText).toHaveBeenCalledWith("主人住在杭州", "private");
     expect(lastCommand()).toMatchObject({
       type: "memory.mutate",
       payload: { memoryId: "memory-city", action: "correct", expectedRevision: 1 },
     });
-    await click("#settings .memory-detail", "删除");
+    await click("#settings .memory-drawer", "删除");
     expect(lastCommand()).toMatchObject({
       payload: { memoryId: "memory-city", action: "delete", contentRef: null },
     });
+    expect(document.querySelector("#settings .memory-drawer")).toBeNull();
     expect(text("#settings .memory-notice")).toContain("7 天内可在“最近删除”里恢复");
     await click("#settings .memory-notice", "撤销");
     expect(lastCommand()).toMatchObject({
@@ -279,20 +282,23 @@ describe("memory approval and management", () => {
       ],
     };
     await render();
-    await tab("全部记忆");
-    expect(text("#settings")).toContain("已归档 1 条");
-    await click("#settings .memory-chips", "已归档");
+    expect(text("#settings .memory-results")).not.toContain("在找二手 4K 显示器");
+    await click("#settings .memory-status-links", "已归档 1 条");
+    expect(text("#settings .memory-banner[data-kind=archived]")).toContain("回答时不再用");
     await click("#settings .memory-list", "在找二手 4K 显示器");
-    await click("#settings .memory-detail", "恢复使用");
+    expect(document.querySelector("#settings .memory-drawer [role=switch]")).toBeNull();
+    await click("#settings .memory-drawer", "恢复使用");
     expect(lastCommand()).toMatchObject({ payload: { memoryId: "memory-old", action: "recover" } });
-    await click("#settings .memory-chips", "最近删除");
+    await click("#settings .memory-status-links", "最近删除 1 条");
     expect(text("#settings .memory-list")).toContain("喜欢绿色");
     await click("#settings .memory-list", "喜欢绿色");
-    expect(text("#settings .memory-detail")).toContain("7 天后自动彻底清除");
-    await click("#settings .memory-detail", "恢复");
+    expect(text("#settings .memory-drawer")).toContain("7 天后自动彻底清除");
+    await click("#settings .memory-drawer", "恢复");
     expect(lastCommand()).toMatchObject({
       payload: { memoryId: "memory-gone", action: "recover", expectedRevision: 3 },
     });
+    await click("#settings .memory-banner", "回到在用的记忆");
+    expect(text("#settings .memory-results")).toContain("主人住在上海");
   });
 
   it("opens the memory page with the memory the reply just saved marked in place", async () => {
@@ -305,15 +311,16 @@ describe("memory approval and management", () => {
     await act(async () => root.render(h(MemoryPageWithFocus, { focus: ["memory-color"] })));
     await act(async () => {});
     expect(document.querySelector("#settings .memory-just-saved")).toBeNull();
-    expect(text("#settings [role=tab][aria-selected=true]")).toContain("全部记忆");
+    expect(text("#settings [role=tab][aria-selected=true]")).toContain("记忆");
     const rows = [...document.querySelectorAll("#settings .memory-row")];
     expect(rows[0]?.getAttribute("data-just-saved")).toBe("true");
     expect(rows[0]?.textContent).toContain("刚记住");
     expect(rows[0]?.textContent).toContain("主人最喜欢的颜色是蓝色");
     expect(rows[1]?.textContent).not.toContain("刚记住");
-    expect(document.querySelector("#settings .memory-detail")).toBeNull();
+    expect(rows.map((row) => row.textContent).join("")).not.toContain("新");
+    expect(document.querySelector("#settings .memory-drawer")).toBeNull();
     await click("#settings .memory-list", "主人最喜欢的颜色是蓝色");
-    await click("#settings .memory-detail", "删除");
+    await click("#settings .memory-drawer", "删除");
     expect(lastCommand()).toMatchObject({
       payload: { memoryId: "memory-color", action: "delete" },
     });
@@ -334,14 +341,27 @@ describe("memory approval and management", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it("keeps a long profile section to a few lines and hands the rest to the full list", async () => {
+  it("[MEM-PIN] shows what every conversation brings, what does not fit, and lets the owner change it", async () => {
     const likes = Array.from({ length: 12 }, (_, index) =>
-      memoryItem(`memory-like-${index}`, `喜欢第 ${index + 1} 样东西`, { category: "preference" }),
+      memoryItem(`memory-like-${index}`, `喜欢第 ${index + 1} 样东西`, {
+        profilePin: index === 0 ? "on" : null,
+      }),
     );
     overview = {
       ...overview,
       pending: [],
-      memories: [...overview.memories, ...likes],
+      memories: [
+        ...overview.memories,
+        ...likes,
+        memoryItem("memory-tea", "喝茶只喝乌龙", { importance: 300 }),
+        memoryItem("memory-noodle", "不吃香菜", { profilePin: "off" }),
+        memoryItem("memory-pill", "每天吃降压药", {
+          category: "health",
+          dataClassification: "sensitive",
+          topic: "health",
+        }),
+      ],
+      profileUsage: { used: 1980, limit: 2000, queued: ["memory-tea"] },
       profile: [
         {
           kind: "preference",
@@ -354,17 +374,94 @@ describe("memory approval and management", () => {
       ],
     };
     await render();
-    const card = () => text("#settings .memory-profile-columns");
-    expect(card()).toContain("喜欢第 3 样东西");
-    expect(card()).not.toContain("喜欢第 4 样东西");
-    await click("#settings .memory-card-more", "展开其余 5 条");
-    expect(card()).toContain("喜欢第 8 样东西");
-    expect(card()).not.toContain("喜欢第 9 样东西");
-    await click("#settings .memory-card-more", "查看全部 12 条偏好");
-    expect(text("#settings [role=tab][aria-selected=true]")).toContain("全部记忆");
-    expect(text("#settings .memory-chips button[aria-pressed=true]")).toContain("偏好");
-    expect(text("#settings .memory-list")).toContain("喜欢第 12 样东西");
-    expect(text("#settings .memory-list")).not.toContain("主人住在上海");
+    const card = () => text("#settings .memory-carry");
+    expect(card()).toContain("每次对话都会带上的记忆");
+    expect(card()).toContain("12 条 · 已用 1980 / 2000 字 · 还有 1 条放不下");
+    expect(card()).toContain("偏好 12");
+    expect(card()).not.toContain("喜欢第 1 样东西");
+    expect(document.querySelector<HTMLMeterElement>("#settings .memory-carry meter")?.value).toBe(
+      1980,
+    );
+    await click("#settings .memory-carry", "查看和调整");
+    expect(card()).toContain("喜欢第 12 样东西");
+    expect(card()).toContain("你选的");
+    expect(card()).toContain("放不下的");
+    expect(card()).toContain("喝茶只喝乌龙");
+    expect(card()).toContain("你关掉的");
+    expect(card()).toContain("不吃香菜");
+    const pin = (label: string) =>
+      document.querySelector<HTMLInputElement>(
+        `#settings .memory-carry [role=switch][aria-label="每次对话都带上：${label}"]`,
+      );
+    expect(pin("喜欢第 2 样东西")?.checked).toBe(true);
+    await act(async () => pin("喜欢第 2 样东西")?.click());
+    expect(lastCommand()).toMatchObject({
+      type: "memory.mutate",
+      payload: { memoryId: "memory-like-1", action: "unpin" },
+    });
+    expect(text("#settings .memory-notice")).toContain("以后这条只在相关时才调出");
+    await act(async () => pin("喝茶只喝乌龙")?.click());
+    expect(lastCommand()).toMatchObject({ payload: { memoryId: "memory-tea", action: "pin" } });
+    await act(async () => pin("不吃香菜")?.click());
+    expect(lastCommand()).toMatchObject({ payload: { memoryId: "memory-noodle", action: "pin" } });
+    await click("#settings .memory-carry", "喜欢第 3 样东西");
+    expect(text("#settings .memory-drawer")).toContain("喜欢第 3 样东西");
+    expect(text("#settings .memory-drawer")).toContain("现在由系统按重要度决定");
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>("#settings .memory-drawer [aria-label=关闭]")
+        ?.click(),
+    );
+    expect(document.querySelector("#settings .memory-drawer")).toBeNull();
+    await click("#settings .memory-topics", "健康");
+    await click("#settings .memory-list", "每天吃降压药");
+    expect(
+      document.querySelector<HTMLInputElement>("#settings .memory-drawer [role=switch]")?.disabled,
+    ).toBe(true);
+    expect(text("#settings .memory-drawer")).toContain("敏感记忆不会每次都带上");
+  });
+
+  it("[MEM-PIN] keeps a topic with many memories short until the owner opens it, then pages it", async () => {
+    const likes = Array.from({ length: 45 }, (_, index) =>
+      memoryItem(`memory-like-${index}`, `喜欢第 ${index + 1} 样东西`, {
+        recordedAt: new Date(Date.parse("2026-10-01T00:00:00.000Z") + index * 60_000).toISOString(),
+      }),
+    );
+    overview = { ...overview, pending: [], memories: [...overview.memories, ...likes] };
+    await render();
+    const rows = () => document.querySelectorAll("#settings .memory-results .memory-row").length;
+    expect(text("#settings .memory-crumbs")).toContain("47 条 · 每个主题先显示最新的 3 条");
+    expect(rows()).toBe(4);
+    expect(text("#settings .memory-topics")).toContain("偏好 46");
+    await click("#settings .memory-results", "看全部 46 条");
+    expect(text("#settings .memory-topics button[aria-pressed=true]")).toContain("偏好");
+    expect(rows()).toBe(30);
+    await click("#settings .memory-results", "再显示 16 条");
+    expect(rows()).toBe(46);
+    expect(text("#settings .memory-results")).not.toContain("主人住在上海");
+  });
+
+  it("[MEM-PIN] says how many memories are new since the last visit and records the visit once", async () => {
+    overview = { ...overview, lastViewedAt: "2026-10-25T00:00:00.000Z" };
+    await render();
+    const viewed = mutate.mock.calls.filter(([command]) => command.type === "memory.page.viewed");
+    expect(viewed).toHaveLength(1);
+    expect(text("#settings .memory-banner[data-kind=fresh]")).toContain(
+      "自你上次打开后新记住 1 条",
+    );
+    await click("#settings .memory-banner[data-kind=fresh]", "看看");
+    expect(text("#settings .memory-results")).toContain("主人最喜欢的颜色是蓝色");
+    expect(text("#settings .memory-results")).not.toContain("主人住在上海");
+    await click("#settings .memory-crumbs", "看全部");
+    expect(text("#settings .memory-results")).toContain("主人住在上海");
+    await click("#settings .memory-list", "主人住在上海");
+    const pin = document.querySelector<HTMLInputElement>("#settings .memory-drawer [role=switch]");
+    expect(pin?.checked).toBe(false);
+    await act(async () => pin?.click());
+    expect(lastCommand()).toMatchObject({ payload: { memoryId: "memory-city", action: "pin" } });
+    expect(
+      mutate.mock.calls.filter(([command]) => command.type === "memory.page.viewed"),
+    ).toHaveLength(1);
   });
 
   it("draws a long change history as a timeline with the middle folded", async () => {
@@ -377,7 +474,6 @@ describe("memory approval and management", () => {
     );
     overview = { ...overview, pending: [], memories: [...overview.memories, ...versions] };
     await render();
-    await tab("全部记忆");
     await click("#settings .memory-list", "主人住在上海");
     const points = () =>
       [...document.querySelectorAll("#settings .memory-history-line > li")].map(
@@ -389,7 +485,7 @@ describe("memory approval and management", () => {
     expect(points()[1]).toContain("住在第 6 个城市");
     expect(points()[2]).toBe("还有 4 次更早的变化");
     expect(points()[3]).toContain("住在第 1 个城市");
-    expect(document.querySelectorAll("#settings .memory-detail s")).toHaveLength(0);
+    expect(document.querySelectorAll("#settings .memory-drawer s")).toHaveLength(0);
     await click("#settings .memory-history-fold", "还有 4 次更早的变化");
     expect(points()).toHaveLength(7);
     expect(points().join("")).toContain("住在第 3 个城市");
@@ -448,22 +544,28 @@ describe("memory approval and management", () => {
       ],
     };
     await render();
-    const profile = text("#settings .memory-profile-columns");
-    expect(profile).toContain("偏好");
-    expect(profile).toContain("颜色");
-    expect(profile).toContain("饮食");
+    await click("#settings .memory-carry", "查看和调整");
+    const carry = text("#settings .memory-carry");
+    expect(carry).toContain("偏好");
+    expect(carry).toContain("喝咖啡不加糖");
+    await click("#settings .memory-topics", "偏好");
+    expect(text("#settings .memory-topics")).toContain("颜色");
+    expect(text("#settings .memory-topics")).toContain("饮食");
+    await click("#settings .memory-topics", "饮食");
+    expect(text("#settings .memory-results")).toContain("喝咖啡不加糖");
+    expect(text("#settings .memory-results")).not.toContain("蓝色");
+    expect(document.querySelector("#settings .memory-people")).toBeNull();
+    await click("#settings .memory-topics", "人际");
     expect(text("#settings .memory-people")).toContain("你的妈妈");
     await click("#settings .memory-people .memory-list", "李秀英");
     const person = text("#settings .memory-people");
     expect(person).toContain("也叫：妈妈");
     expect(person).toContain("李秀英的妹妹");
     expect(person).toContain("李秀英是主人的妈妈");
-    await click("#settings .memory-profile-columns", "喝咖啡不加糖");
-    expect(document.querySelector("#settings .memory-profile-columns textarea")).not.toBeNull();
-    await tab("全部记忆");
+    await click("#settings .memory-topics", "身份");
     await click("#settings .memory-list", "主人住在上海");
-    expect(text("#settings .memory-detail")).toContain("主人住在北京");
-    await click("#settings .memory-detail", "换回这个说法");
+    expect(text("#settings .memory-drawer")).toContain("主人住在北京");
+    await click("#settings .memory-drawer", "换回这个说法");
     expect(lastCommand()).toMatchObject({
       payload: { memoryId: "memory-city-old", action: "restore", contentRef: null },
     });
@@ -532,7 +634,7 @@ describe("memory approval and management", () => {
       ],
     };
     await render();
-    expect(text("#settings [role=tablist]")).toContain("待确认3");
+    expect(text("#settings .memory-confirm")).toContain("需要你确认 · 3 条");
     expect(text("#settings")).toContain("“张老师”和“张伟”是同一个人吗？");
     await click("#settings", "是同一个人");
     expect(lastCommand()).toMatchObject({
@@ -550,7 +652,7 @@ describe("memory approval and management", () => {
     expect(lastCommand()).toMatchObject({
       payload: { memoryId: "memory-guess", action: "confirm", contentRef: null },
     });
-    await tab("时间线");
+    await tab("变化记录");
     const timeline = text("#settings");
     expect(timeline).toContain("合并重复主人的女儿叫小葵");
     expect(timeline).toContain("从 Codex 导入 1 条");
@@ -614,9 +716,8 @@ describe("memory approval and management", () => {
       payload: { reminderId: "reminder:memory-color", action: "cancel" },
     });
     expect(text("#reminders-page .memory-notice")).toContain("记忆本身保留");
-    await tab("全部记忆");
     await click("#settings .memory-list", "主人最喜欢的颜色是蓝色");
-    expect(text("#settings .memory-detail")).toContain("每年");
+    expect(text("#settings .memory-drawer")).toContain("每年");
   });
 
   it("[MP-8] pauses learning, adds a memory by hand, imports pasted memories and exports", async () => {
@@ -628,14 +729,40 @@ describe("memory approval and management", () => {
       payload: { capturePaused: true },
     });
     await click("#settings .memory-header", "手动添加一条");
-    await type("#settings .memory-card textarea", "每天早上吃一片降压药");
-    await click("#settings .memory-card", "保存");
+    const add = "#settings .memory-card[data-kind=add]";
+    await type(`${add} textarea`, "每天早上吃一片降压药");
+    expect(document.querySelector<HTMLSelectElement>(`${add} select`)?.value).toBe("health");
+    expect(document.querySelector<HTMLInputElement>(`${add} [role=switch]`)?.disabled).toBe(true);
+    await click(add, "保存");
     expect(protectText).toHaveBeenLastCalledWith("每天早上吃一片降压药", "sensitive");
     expect(lastCommand()).toMatchObject({
       type: "memory.create",
-      payload: { contentRef: "payload-edit", category: "health", subCategory: null },
+      payload: {
+        contentRef: "payload-edit",
+        category: "health",
+        subCategory: null,
+        pinned: false,
+      },
     });
     expect(text("#settings .memory-notice")).toContain("归到“健康”");
+    await click("#settings .memory-header", "手动添加一条");
+    await type(`${add} textarea`, "今年想跑完一次半马");
+    await act(async () => {
+      const select = document.querySelector<HTMLSelectElement>(`${add} select`);
+      if (!select) return;
+      select.value = "goal";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () =>
+      document.querySelector<HTMLInputElement>(`${add} [role=switch]`)?.click(),
+    );
+    await click(add, "保存");
+    expect(protectText).toHaveBeenLastCalledWith("今年想跑完一次半马", "private");
+    expect(lastCommand()).toMatchObject({
+      type: "memory.create",
+      payload: { category: "goal", pinned: true },
+    });
+    expect(text("#settings .memory-notice")).toContain("归到“目标”，以后每次对话都会带上");
     await click("#settings .memory-footer", "导入记忆");
     await click("#settings .memory-sources", "ChatGPT、Claude 等其他 AI");
     expect(text("#settings .memory-import")).toContain("请把你记住的关于我的所有信息逐条列出来");
@@ -742,7 +869,11 @@ describe("memory approval and management", () => {
       ],
     };
     await render();
-    const rows = () => [...document.querySelectorAll<HTMLElement>("#settings .memory-chips")];
+    const rows = () => [
+      ...document.querySelectorAll<HTMLElement>(
+        "#settings .memory-topics, #settings .memory-chips",
+      ),
+    ];
     const numberOf = (chip: HTMLButtonElement) =>
       Number(chip.querySelector("small")?.textContent ?? Number.NaN);
     const sweep = async (shown: () => number) => {
@@ -758,13 +889,12 @@ describe("memory approval and management", () => {
           expect({ label, shown: shown() }).toEqual({ label, shown: promised });
         }
     };
-    await tab("全部记忆");
     const memoryRows = () => document.querySelectorAll("#settings .memory-row").length;
     await sweep(memoryRows);
     await sweep(memoryRows);
     await type("#settings input[type=search]", "喜欢");
     await sweep(memoryRows);
-    await tab("时间线");
+    await tab("变化记录");
     const events = () => document.querySelectorAll("#settings .memory-day p").length;
     await sweep(events);
     await sweep(events);
