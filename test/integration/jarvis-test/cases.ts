@@ -67,6 +67,17 @@ export interface CalibrationSet {
   readonly samples: readonly CalibrationSample[];
 }
 
+export interface JudgeModel {
+  readonly id: string;
+  readonly version: string;
+}
+
+export interface JudgeModels {
+  readonly schemaVersion: number;
+  readonly decisionJudge: JudgeModel;
+  readonly reasoningJudge: JudgeModel;
+}
+
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, "../../fixtures/jarvis-test");
 
 export function loadDataset(): JarvisDataset {
@@ -77,4 +88,8 @@ export function loadCalibration(): CalibrationSet {
   return JSON.parse(
     readFileSync(path.join(FIXTURE_ROOT, "judge-calibration.json"), "utf8"),
   ) as CalibrationSet;
+}
+
+export function loadJudgeModels(): JudgeModels {
+  return JSON.parse(readFileSync(path.join(FIXTURE_ROOT, "models.json"), "utf8")) as JudgeModels;
 }
