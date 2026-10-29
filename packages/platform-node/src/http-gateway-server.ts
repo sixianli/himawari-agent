@@ -82,7 +82,18 @@ export interface HttpGatewayMetricsPort {
   authenticatedSnapshot(authenticated: boolean): RuntimeMetricsSnapshot;
 }
 
+export interface HttpGatewaySlowRequest {
+  readonly method: string;
+  readonly path: string;
+  readonly operation?: string;
+  readonly outcome: "answered" | "aborted";
+  readonly statusCode?: number;
+  readonly totalMs: number;
+  readonly concurrentRequests: number;
+}
+
 export interface HttpGatewayServerOptions {
+  readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly gateway?: AgentGatewayPort;
   readonly gatewayV2?: AgentGatewayV2Port;
   readonly threadGateway?: AgentThreadGatewayPort;
@@ -185,6 +196,8 @@ const ATTACHMENT_BODY_LIMIT = 2 * 1024 * 1024;
 const IMAGE_DATA_URL_CHARACTERS = 1_500_000;
 const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
+const SLOW_REQUEST_MILLISECONDS = 2_000;
+const STREAM_PATH = /\/(?:execution-)?events$/;
 
 class HttpGatewayError extends Error {
   readonly code: string;
@@ -788,6 +801,43 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   }
   const previewRequest = (request: FastifyRequest) =>
     previewOrigin !== undefined && header(request, "host") === previewOrigin.host;
+
+  const onSlowRequest = options.onSlowRequest;
+  if (onSlowRequest) {
+    const started = new WeakMap<FastifyRequest, { at: number; concurrent: number }>();
+    let inFlight = 0;
+    const finish = (
+      request: FastifyRequest,
+      outcome: HttpGatewaySlowRequest["outcome"],
+      statusCode?: number,
+    ) => {
+      const start = started.get(request);
+      if (!start) return;
+      started.delete(request);
+      inFlight -= 1;
+      const totalMs = Math.round(performance.now() - start.at);
+      const path = requestPath(request);
+      if (totalMs < SLOW_REQUEST_MILLISECONDS || STREAM_PATH.test(path)) return;
+      const body = request.body as { readonly type?: unknown } | undefined;
+      onSlowRequest({
+        method: request.method,
+        path,
+        ...(typeof body?.type === "string" ? { operation: body.type } : {}),
+        outcome,
+        ...(statusCode === undefined ? {} : { statusCode }),
+        totalMs,
+        concurrentRequests: start.concurrent,
+      });
+    };
+    app.addHook("onRequest", async (request) => {
+      inFlight += 1;
+      started.set(request, { at: performance.now(), concurrent: inFlight });
+    });
+    app.addHook("onResponse", async (request, reply) =>
+      finish(request, "answered", reply.statusCode),
+    );
+    app.addHook("onRequestAbort", async (request) => finish(request, "aborted"));
+  }
 
   app.addHook("onRequest", async (request) => {
     const path = requestPath(request);

@@ -152,6 +152,8 @@ const approvalIntent = {
   requestedAt: now,
   expiresAt: "2026-08-28T00:00:00.000Z",
 };
+let unansweredDetailReads = 0;
+let stalledReads = 0;
 const approvals = new Map(
   ["approval-approve", "approval-deny", "approval-recent-auth"].map((approvalRequestId) => [
     approvalRequestId,
@@ -1027,6 +1029,7 @@ function handleGovernanceCommand(message) {
       if (
         message.payload.semanticSnapshotHash !== target.semanticSnapshotHash ||
         (message.payload.decision === "approved" &&
+          target.recentAuthenticationRequired &&
           message.payload.recentAuthenticationRef !== governanceAuthorizationRef)
       ) {
         return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
@@ -1516,6 +1519,60 @@ async function handleRequest(request, response) {
     });
     return;
   }
+  if (executionQualification && url.pathname === "/__fixture/run-approvals") {
+    if (request.method === "GET") {
+      json(response, 200, {
+        approvals: [...approvals.values()].map(({ approvalRequestId, status, intent }) => ({
+          approvalRequestId,
+          status,
+          runId: intent.runId,
+        })),
+        stalledReads,
+      });
+      return;
+    }
+    const input = await body(request);
+    for (const [approvalRequestId, approval] of approvals)
+      if (approval.intent.runId === input.runId) approvals.delete(approvalRequestId);
+    for (const approvalRequestId of input.approvalRequestIds)
+      approvals.set(approvalRequestId, {
+        approvalRequestId,
+        revision: 1,
+        status: "pending",
+        deliveryState: "deliverable",
+        semanticSnapshotHash: `sha256:${approvalRequestId}`,
+        finalRisk: "low",
+        recentAuthenticationRequired: false,
+        recentAuthenticationRef: null,
+        requestedAt: input.requestedAt ?? now,
+        expiresAt: "2026-08-28T00:00:00.000Z",
+        decidedAt: null,
+        grantId: null,
+        intent: {
+          ...approvalIntent,
+          intentId: `intent:${approvalRequestId}`,
+          threadId: input.threadId,
+          runId: input.runId,
+          capabilityRef: "capability-web-search",
+          operation: input.operation,
+          disclosure: "named_recipients",
+          recipientRefs: ["https://mcp.exa.ai"],
+          sideEffect: "none",
+          reversible: true,
+          deterministicFactCodes: [],
+          idempotencyKey: `intent:${approvalRequestId}`,
+        },
+        trueResultRef: null,
+        generatedAt: now,
+      });
+    json(response, 200, { accepted: true });
+    return;
+  }
+  if (executionQualification && url.pathname === "/__fixture/stall-detail-reads") {
+    unansweredDetailReads = (await body(request)).count;
+    json(response, 200, { accepted: true });
+    return;
+  }
   if (executionQualification && url.pathname === "/__fixture/execution-changed") {
     const input = await body(request);
     const thread = threads.get(input.threadId);
@@ -1604,13 +1661,13 @@ async function handleRequest(request, response) {
     }
     if (input.state) executionStates.set(run.runId, { ...input.state, runRevision: run.revision });
     if (input.answer) {
-      const ref = `payload:fixture-answer:${run.runId}`;
+      thread.messageWatermark += 1;
+      const ref = `payload:fixture-answer:${run.runId}:${thread.messageWatermark}`;
       payloads.set(ref, { content: input.answer, dataClassification: "private" });
       const ownerMessage = thread.messages.find((item) => item.runId === run.runId);
-      thread.messageWatermark += 1;
       thread.revision += 1;
       thread.messages.push({
-        messageId: `answer:${run.runId}`,
+        messageId: `answer:${run.runId}:${thread.messageWatermark}`,
         sequence: thread.messageWatermark,
         role: "agent",
         contentRef: ref,
@@ -1785,6 +1842,11 @@ async function handleRequest(request, response) {
   }
   if (request.method === "POST" && url.pathname === "/api/gateway/thread/v3/queries") {
     const message = await body(request);
+    if (message.type === "thread.detail" && unansweredDetailReads > 0) {
+      unansweredDetailReads -= 1;
+      stalledReads += 1;
+      return;
+    }
     const snapshot = handleThreadQuery(message);
     if (!snapshot) {
       json(response, 404, { error: { code: "PORT_NOT_FOUND" } });

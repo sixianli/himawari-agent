@@ -19,6 +19,7 @@ interface WorkerSuccess {
   readonly id: number;
   readonly ok: true;
   readonly value: unknown;
+  readonly runMs?: number;
 }
 
 interface WorkerFailure {
@@ -30,23 +31,39 @@ interface WorkerFailure {
     readonly message: string;
     readonly details: Readonly<Record<string, string>>;
   };
+  readonly runMs?: number;
 }
 
 type WorkerResponse = WorkerSuccess | WorkerFailure;
 
 interface PendingOperation {
+  readonly operation: string;
+  readonly queuedAt: number;
+  readonly queuedBehind: number;
   readonly resolve: (value: unknown) => void;
   readonly reject: (reason: unknown) => void;
 }
+
+export interface SqliteSlowOperation {
+  readonly operation: string;
+  readonly totalMs: number;
+  readonly queueWaitMs: number;
+  readonly runMs: number;
+  readonly queuedBehind: number;
+}
+
+const SLOW_OPERATION_MILLISECONDS = 500;
 
 export class SqliteExecutionContext {
   private readonly worker: Worker;
   private readonly pending = new Map<number, PendingOperation>();
   private nextId = 1;
   private exited = false;
+  private readonly onSlowOperation: ((operation: SqliteSlowOperation) => void) | undefined;
 
-  private constructor(worker: Worker) {
+  private constructor(worker: Worker, onSlowOperation?: (operation: SqliteSlowOperation) => void) {
     this.worker = worker;
+    this.onSlowOperation = onSlowOperation;
     worker.on("message", (message: WorkerResponse) => this.receive(message));
     worker.on("error", (error) => this.failAll(error));
     worker.on("exit", (code) => {
@@ -63,12 +80,15 @@ export class SqliteExecutionContext {
     });
   }
 
-  static async start(configuration: SqliteWorkerConfiguration): Promise<SqliteExecutionContext> {
+  static async start(
+    configuration: SqliteWorkerConfiguration,
+    onSlowOperation?: (operation: SqliteSlowOperation) => void,
+  ): Promise<SqliteExecutionContext> {
     const workerExtension = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
     const worker = new Worker(new URL(`./sqlite-worker${workerExtension}`, import.meta.url), {
       workerData: configuration,
     });
-    const context = new SqliteExecutionContext(worker);
+    const context = new SqliteExecutionContext(worker, onSlowOperation);
     await context.request<{ readonly writerSequence: number }>("ready", {});
     return context;
   }
@@ -85,7 +105,13 @@ export class SqliteExecutionContext {
     const id = this.nextId;
     this.nextId += 1;
     return new Promise<TResult>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      this.pending.set(id, {
+        operation,
+        queuedAt: performance.now(),
+        queuedBehind: this.pending.size,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      });
       this.worker.postMessage({ id, operation, payload });
     });
   }
@@ -99,6 +125,7 @@ export class SqliteExecutionContext {
     const operation = this.pending.get(message.id);
     if (!operation) return;
     this.pending.delete(message.id);
+    this.reportSlow(operation, message.runMs);
     if (message.ok) {
       operation.resolve(message.value);
       return;
@@ -117,6 +144,20 @@ export class SqliteExecutionContext {
         { workerCode: error.code, ...error.details },
       ),
     );
+  }
+
+  private reportSlow(operation: PendingOperation, reportedRunMs: number | undefined): void {
+    if (!this.onSlowOperation) return;
+    const totalMs = Math.round(performance.now() - operation.queuedAt);
+    if (totalMs < SLOW_OPERATION_MILLISECONDS) return;
+    const runMs = Math.min(totalMs, reportedRunMs ?? totalMs);
+    this.onSlowOperation({
+      operation: operation.operation,
+      totalMs,
+      queueWaitMs: totalMs - runMs,
+      runMs,
+      queuedBehind: operation.queuedBehind,
+    });
   }
 
   private failAll(error: unknown): void {

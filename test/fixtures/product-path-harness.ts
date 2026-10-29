@@ -67,6 +67,13 @@ export type ModelReply =
       readonly name: string;
       readonly arguments: Record<string, unknown>;
     }
+  | {
+      readonly kind: "tools";
+      readonly calls: readonly {
+        readonly name: string;
+        readonly arguments: Record<string, unknown>;
+      }[];
+    }
   | { readonly kind: "http-error"; readonly status: number }
   | { readonly kind: "drop" };
 
@@ -674,7 +681,8 @@ export async function installProductPath(options: {
           );
           return;
         }
-        if (reply.kind === "tool") {
+        if (reply.kind === "tool" || reply.kind === "tools") {
+          const calls = reply.kind === "tool" ? [reply] : reply.calls;
           sse(response, [
             {
               ...base,
@@ -683,14 +691,12 @@ export async function installProductPath(options: {
                   index: 0,
                   delta: {
                     role: "assistant",
-                    tool_calls: [
-                      {
-                        index: 0,
-                        id: `call-${modelRequests.length}`,
-                        type: "function",
-                        function: { name: reply.name, arguments: JSON.stringify(reply.arguments) },
-                      },
-                    ],
+                    tool_calls: calls.map((call, index) => ({
+                      index,
+                      id: `call-${modelRequests.length}-${index}`,
+                      type: "function",
+                      function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                    })),
                   },
                   finish_reason: null,
                 },

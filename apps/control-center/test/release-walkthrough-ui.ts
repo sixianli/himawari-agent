@@ -2,6 +2,7 @@ export type WalkthroughRole =
   | "alert"
   | "article"
   | "button"
+  | "checkbox"
   | "dialog"
   | "link"
   | "navigation"
@@ -43,6 +44,10 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   commandStep: "运行命令",
   memoryFoundStep: /条相关记忆/,
   approveOnce: { role: "button", name: "允许这一次" },
+  approveSearch: { role: "button", name: "允许联网搜索", exact: true },
+  rememberSearch: { role: "checkbox", name: "记住我的选择，之后允许联网搜索", exact: true },
+  searchBatch: /这一步要搜索 \d+ 次，一次允许就都放行。/,
+  approvalContinuing: "已收到，正在继续…",
   stillLoading: "正在加载…",
   sidebarNavigation: { role: "navigation", name: "对话" },
   openMemory: { role: "button", name: "记忆", exact: true },

@@ -5480,6 +5480,7 @@ productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
 
 const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-homepage",
+  "accept-search-approval",
   "accept-search-toggle",
   "accept-news-search",
   "accept-long-answer",
@@ -5490,6 +5491,8 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-after-restart",
 ] as const;
 const RUN_COMMAND_REQUEST = "请统计行数";
+const SEARCH_BATCH_REQUEST = "请查东京和大阪今天的天气";
+const APPROVAL_FOLLOW_UP_LIMIT_MS = 10_000;
 const RUN_COMMAND_OUTPUT = "lines=37";
 const UNRELATED_REQUEST = "写到一个pdf文件";
 const PLAIN_ANSWER = "普通回答已完成";
@@ -5502,6 +5505,14 @@ const LONG_ANSWER = [
   LONG_ANSWER_END,
 ].join("\n\n");
 const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => {
+  if (lastUserText.includes(SEARCH_BATCH_REQUEST) && toolResults.length === 0)
+    return {
+      kind: "tools",
+      calls: [
+        { name: "web_search", arguments: { query: "Tokyo weather today", limit: 3 } },
+        { name: "web_search", arguments: { query: "Osaka weather today", limit: 3 } },
+      ],
+    };
   if (lastUserText.includes("联网搜索今天的新闻") && toolResults.length === 0)
     return {
       kind: "tool",
@@ -5672,6 +5683,23 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       const response = await page.goto(`${installation.origin}/`);
       expect(response?.status()).toBe(200);
       await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+    });
+    await scenario("accept-search-approval", async () => {
+      await newThread();
+      const turn = await send(SEARCH_BATCH_REQUEST);
+      await uiExpect(turn.getByText(UI.searchBatch)).toBeVisible({ timeout: 120_000 });
+      const allow = target(turn, UI.approveSearch);
+      await uiExpect(allow).toHaveCount(1);
+      await target(turn, UI.rememberSearch).uncheck();
+      const approvedAt = Date.now();
+      await allow.click();
+      const answer = turn.getByText(/工具返回：/);
+      await uiExpect(answer).toHaveCount(1, { timeout: APPROVAL_FOLLOW_UP_LIMIT_MS });
+      expect(Date.now() - approvedAt).toBeLessThan(APPROVAL_FOLLOW_UP_LIMIT_MS);
+      await uiExpect(target(turn, UI.approveSearch)).toHaveCount(0);
+      await uiExpect(turn.getByText(UI.approvalContinuing)).toHaveCount(0);
+      await uiExpect(page.getByText(UI.stillLoading)).toHaveCount(0);
+      await expectFinishedTurnShowsStep(turn, UI.searchStep);
     });
     await scenario("accept-search-toggle", async () => {
       const toggle = await searchToggleUsable(UI.searchEnable);

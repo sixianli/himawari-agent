@@ -493,6 +493,10 @@ export function useThreadControlCenter(
       readController.current?.abort();
       const controller = new AbortController();
       readController.current = controller;
+      const deadline = window.setTimeout(
+        () => controller.abort(READ_DEADLINE_EXCEEDED),
+        READ_DEADLINE_MILLISECONDS,
+      );
       refreshing.current = true;
       const sequence = ++refreshSequence.current;
       const background = selectedThreadId !== null && shownThreadId.current === selectedThreadId;
@@ -614,6 +618,7 @@ export function useThreadControlCenter(
               afterSequence: current.payload.nextSequence,
               limit: 1000,
             }),
+            controller.signal,
           );
           if (sequence !== refreshSequence.current || page.type !== "thread.detail_snapshot")
             return;
@@ -662,7 +667,11 @@ export function useThreadControlCenter(
         if (sequence !== refreshSequence.current) return;
         succeeded();
       } catch (caught) {
-        if (controller.signal.aborted || sequence !== refreshSequence.current) return;
+        if (
+          (controller.signal.aborted && controller.signal.reason !== READ_DEADLINE_EXCEEDED) ||
+          sequence !== refreshSequence.current
+        )
+          return;
         if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
         fullRefreshRequested.current = true;
         readFailures.current++;
@@ -675,6 +684,7 @@ export function useThreadControlCenter(
           }
         }
       } finally {
+        window.clearTimeout(deadline);
         if (readController.current === controller) {
           readController.current = null;
           refreshing.current = false;
@@ -746,6 +756,11 @@ export function useThreadControlCenter(
     if (!runs.length) return;
     const epoch = refreshSequence.current;
     executionReading.current = true;
+    const controller = new AbortController();
+    const deadline = window.setTimeout(
+      () => controller.abort(READ_DEADLINE_EXCEEDED),
+      READ_DEADLINE_MILLISECONDS,
+    );
     try {
       await readRunExecution(
         client,
@@ -756,6 +771,7 @@ export function useThreadControlCenter(
         () => epoch === refreshSequence.current,
         setExecution,
         setExecutionStates,
+        controller.signal,
       );
       if (epoch !== refreshSequence.current) scheduleExecution(runs.map((run) => run.runId));
     } catch {
@@ -763,6 +779,7 @@ export function useThreadControlCenter(
       fullRefreshRequested.current = true;
       scheduleRefresh();
     } finally {
+      window.clearTimeout(deadline);
       executionReading.current = false;
     }
   };
@@ -1930,6 +1947,9 @@ export function useThreadControlCenter(
         : message("chat.untitled"),
   });
 }
+
+const READ_DEADLINE_MILLISECONDS = 15_000;
+const READ_DEADLINE_EXCEEDED = new Error("THREAD_READ_DEADLINE_EXCEEDED");
 
 async function readRunExecution(
   client: GatewayClient,

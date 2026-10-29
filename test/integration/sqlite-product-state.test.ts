@@ -5,10 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
-  PORT_ERROR_CODES,
   type AuthorityLeasePort,
   type ClockPort,
   type CommitStateAndEventsInput,
+  PORT_ERROR_CODES,
 } from "@himawari-agent/application";
 import {
   activateDeployment,
@@ -26,11 +26,12 @@ import {
   retireDeployment,
 } from "@himawari-agent/domain";
 import {
-  SQLITE_PERSISTENCE_ERROR_CODES,
-  SqliteProductStateRepository,
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  SQLITE_PERSISTENCE_ERROR_CODES,
+  SqliteProductStateRepository,
+  type SqliteSlowOperation,
 } from "@himawari-agent/persistence-sqlite";
 import {
   authorityLeasePortConformance,
@@ -354,6 +355,28 @@ describe("SQLite product-state transaction boundary", () => {
     expect(status.walBytes).toBeGreaterThanOrEqual(0);
     expect(status.lastTransactionDurationMs).toBeGreaterThan(0);
     await repository.close();
+  });
+
+  it("reports how long a read waited behind a slow write in the single database worker", async () => {
+    const slow: SqliteSlowOperation[] = [];
+    const { repository } = await integrationRepository("slow-report", {
+      stateRoot: "unused",
+      qualification: { holdBeforeCommitMs: 600 },
+      onSlowOperation: (operation) => slow.push(operation),
+    });
+    await Promise.all([
+      repository.commitStateAndEvents(commitInput("slow-report")),
+      repository.readAuthorityRevision(),
+    ]);
+    await repository.close();
+    expect(slow.find(({ operation }) => operation === "commit")).toMatchObject({
+      queuedBehind: 0,
+    });
+    expect(slow.find(({ operation }) => operation === "commit")?.runMs).toBeGreaterThanOrEqual(500);
+    const read = slow.find(({ operation }) => operation === "readAuthorityRevision");
+    expect(read).toMatchObject({ queuedBehind: 1 });
+    expect(read?.queueWaitMs).toBeGreaterThanOrEqual(500);
+    expect(read?.runMs).toBeLessThan(read?.queueWaitMs ?? 0);
   });
 
   it("holds one recoverable state-root lock", async () => {

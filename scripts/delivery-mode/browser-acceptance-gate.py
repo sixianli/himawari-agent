@@ -4,6 +4,7 @@ import sys
 
 REQUIRED_SCENARIOS = (
     'accept-homepage',
+    'accept-search-approval',
     'accept-search-toggle',
     'accept-news-search',
     'accept-long-answer',

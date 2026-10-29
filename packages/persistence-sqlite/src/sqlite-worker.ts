@@ -994,6 +994,8 @@ function failureResponse(error: unknown) {
 }
 
 channel.on("message", (request: WorkerRequest) => {
+  const startedAt = performance.now();
+  const runMs = () => Math.round(performance.now() - startedAt);
   try {
     let value: unknown;
     switch (request.operation) {
@@ -1096,9 +1098,14 @@ channel.on("message", (request: WorkerRequest) => {
         value = durableOperations.execute(request.operation, request.payload);
         break;
     }
-    channel.postMessage({ id: request.id, ok: true, value });
+    channel.postMessage({ id: request.id, ok: true, value, runMs: runMs() });
     if (request.operation === "close") channel.close();
   } catch (error) {
-    channel.postMessage({ id: request.id, ok: false, error: failureResponse(error) });
+    channel.postMessage({
+      id: request.id,
+      ok: false,
+      error: failureResponse(error),
+      runMs: runMs(),
+    });
   }
 });

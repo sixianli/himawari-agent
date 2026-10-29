@@ -6,7 +6,6 @@ import type { ControlCenterBrowserStorage } from "./browser-storage.js";
 
 export type RunApproval = Extract<GatewayV2Snapshot, { type: "approval.snapshot" }>;
 
-/** Same command, revision, disclosure hash and durable retry identity as the management page. */
 export async function respondToRunApproval(input: {
   client: Pick<GatewayClient, "mutate">;
   configuration: ControlCenterRuntimeConfiguration;
@@ -79,42 +78,38 @@ export async function respondToRunApproval(input: {
   }
 }
 
-/** Use the existing scoped approval contracts without expanding Thread snapshots. */
-export async function findPendingRunApproval(
+export async function findPendingRunApprovals(
   client: Pick<GatewayClient, "query">,
   configuration: ControlCenterRuntimeConfiguration,
   runId: string,
-): Promise<string | null> {
-  let afterCursor: string | null = null;
-  const seen = new Set<string>();
-  do {
-    const page = await client.query(
-      queryMessage(configuration, "approval.list", {
-        status: "pending",
-        afterCursor,
-        limit: 100,
-      }),
-    );
-    if (page.type !== "collection.snapshot") throw new Error("APPROVAL_LIST_INVALID");
-    for (const approvalRequestId of page.payload.itemRefs) {
-      const detail = await client.query(
-        queryMessage(configuration, "approval.detail", { approvalRequestId }),
-      );
-      if (
-        detail.type === "approval.snapshot" &&
-        detail.payload.status === "pending" &&
-        detail.payload.intent.runId === runId
-      )
-        return approvalRequestId;
-    }
-    afterCursor = page.payload.nextCursor;
-    if (afterCursor && seen.has(afterCursor)) throw new Error("APPROVAL_CURSOR_REPEATED");
-    if (afterCursor) seen.add(afterCursor);
-  } while (afterCursor);
-  return null;
+): Promise<readonly RunApproval[]> {
+  const approvals = await listPendingRunApprovals(client, configuration);
+  return approvals
+    .filter((approval) => approval.payload.intent.runId === runId)
+    .sort((a, b) => a.payload.requestedAt.localeCompare(b.payload.requestedAt));
 }
 
-/** Only pending approvals need detail reads; history length does not increase requests. */
+export function approvalsDecidedTogether(
+  approvals: readonly RunApproval[],
+): readonly RunApproval[] {
+  const first = approvals[0];
+  if (!first) return [];
+  const kind = (approval: RunApproval) => {
+    const intent = approval.payload.intent;
+    return JSON.stringify([
+      intent.capabilityRef,
+      intent.capabilityVersion,
+      intent.operation,
+      intent.sideEffect,
+      intent.disclosure,
+      [...intent.recipientRefs].sort(),
+      intent.dataClassification,
+      approval.payload.recentAuthenticationRequired,
+    ]);
+  };
+  return approvals.filter((approval) => kind(approval) === kind(first));
+}
+
 export async function listPendingRunApprovals(
   client: Pick<GatewayClient, "query">,
   configuration: ControlCenterRuntimeConfiguration,

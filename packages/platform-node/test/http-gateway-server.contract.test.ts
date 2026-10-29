@@ -34,13 +34,14 @@ import {
   type TraceQuery,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { BrowserThreadFiles } from "../src/browser-thread-files.js";
 import {
   buildHttpGatewayServer,
   HTTP_GATEWAY_ERROR_CODES,
   type HttpGatewayAuthenticationPort,
   type HttpGatewayServerOptions,
+  type HttpGatewaySlowRequest,
 } from "../src/http-gateway-server.js";
 import { PREVIEW_STORAGE_SCRIPT } from "../src/preview-page-storage.js";
 import { RuntimeHealthModel } from "../src/runtime-health.js";
@@ -274,6 +275,7 @@ function createFixture(
     | "heartbeatMilliseconds"
     | "files"
     | "previewOrigin"
+    | "onSlowRequest"
   > = {},
 ) {
   const access = new AccessPolicy();
@@ -305,6 +307,70 @@ function createFixture(
 }
 
 describe("HTTP Gateway contract and security boundary", () => {
+  it("reports a conversation read that the server took more than two seconds to answer", async () => {
+    let clock = 1_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const slow: HttpGatewaySlowRequest[] = [];
+    const threadGateway: AgentThreadGatewayPort = {
+      async request(_authentication, message) {
+        if (message.type === "thread.list" && message.payload.limit === 2) clock += 2_500;
+        return threadGatewayMessageSchema.parse({
+          ...message,
+          kind: "snapshot",
+          type: "thread.collection_snapshot",
+          messageId: "snapshot:thread-list",
+          causationId: message.messageId,
+          payload: {
+            threads: [],
+            nextCursor: null,
+            snapshotRef: "snapshot-ref-01",
+            generatedAt: NOW,
+          },
+        }) as ThreadGatewayRequestResult;
+      },
+      async *subscribe() {},
+    };
+    const { app } = createFixture(undefined, threadGateway, {
+      onSlowRequest: (request) => slow.push(request),
+    });
+    const query = (limit: number) =>
+      app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/queries",
+        headers: requestHeaders(),
+        payload: {
+          schemaVersion: "gateway.thread.v3",
+          messageId: `message:thread-v3-${limit}`,
+          correlationId: "correlation-01",
+          causationId: null,
+          scope: { ownerId: "owner-01", agentId: "agent-01" },
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          actor: { actorType: "owner", actorId: "owner-01" },
+          kind: "query",
+          type: "thread.list",
+          payload: { statuses: ["active"], pinnedOnly: false, afterCursor: null, limit },
+        },
+      });
+    try {
+      expect((await query(1)).statusCode).toBe(200);
+      expect(slow).toEqual([]);
+      expect((await query(2)).statusCode).toBe(200);
+      expect(slow).toEqual([
+        {
+          method: "POST",
+          path: "/api/gateway/thread/v3/queries",
+          operation: "thread.list",
+          outcome: "answered",
+          statusCode: 200,
+          totalMs: 2_500,
+          concurrentRequests: 1,
+        },
+      ]);
+    } finally {
+      now.mockRestore();
+      await app.close();
+    }
+  });
   it("stops an already open stream before emitting another event after session revocation", async () => {
     const fixture = createFixture({
       request: async () => {
