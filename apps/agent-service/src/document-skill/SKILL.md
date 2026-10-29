@@ -30,10 +30,10 @@ pandoc 内容.md -o 文件名.docx --reference-doc=技能目录/reference.docx
 ## 写 PDF
 
 1. 把内容写成 HTML，放在 `$TMPDIR`。只写结构，比如 `h1` 标题、`h2` 小节、`p` 段落、`ul` 列表和 `table` 表格，不要写字体、颜色或页面大小，这些由模板负责。
-2. 运行：
+2. 运行（必须用下面这个 Python，它装的是快速生成 PDF 的版本）：
 
 ```bash
-python3 技能目录/make_pdf.py $TMPDIR/内容.html 文件名.pdf
+/usr/lib/himawari-document-python/bin/python 技能目录/make_pdf.py $TMPDIR/内容.html 文件名.pdf
 ```
 
 它会套上 A4 模板 `技能目录/a4.css`（页边距、标题层级、表格、页眉、页码），把字体嵌进 PDF，然后检查结果，并打印一行 JSON。`problems` 为空就是合格；不为空就按提示改 HTML 再跑一次。

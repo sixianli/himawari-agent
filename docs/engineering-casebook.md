@@ -3734,7 +3734,7 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 - **在系统提示里写一段长说明**：省掉探测，但每轮多带几百个 token，大部分对话根本不做文档。没选。
 - **每轮在沙箱里临时安装**：沙箱没有外网，装不了。
 - **装 LibreOffice 统一转换**：装完 1 GB 以上，排版不如 HTML 加 CSS 好控制，先不装。
-- **PDF 用 Ubuntu 自带的 WeasyPrint 61.1 还是从 PyPI 装 70**：61.1 用 Noto 字体每份 20 到 22 秒，70 只要约 0.5 秒，但要离开官方源。交给 Andy 决定，见 [ADR 0118](adr/0118-preinstalled-document-tools-and-document-skill.md#decision)。
+- **PDF 用 Ubuntu 自带的 WeasyPrint 61.1 还是从 PyPI 装 70**：61.1 用 Noto 字体每份 20 到 22 秒，70 只要约 0.5 秒，但要离开官方源。交给 Andy 决定，他选了 70：从 PyPI 装进单独的 Python 环境，版本和文件哈希都固定，见 [ADR 0118](adr/0118-preinstalled-document-tools-and-document-skill.md#decision)。
 
 **业界主流做法**
 
@@ -3751,7 +3751,7 @@ Andy 看了 Qwen3.8 Flash 和 GLM 5.3 Flash 的对比（价格几乎相同：0.1
 
 - 慢的那一轮：50.4 秒，其中多余三轮约 30 秒、约 3,300 个输出 token，花费 0.0225 美元（运行 `fee9ac00`，诊断结果 `result-20261029.txt`）。
 - 安装规模：51 个包，下载 125.4 MB，装完 467.1 MB（生产机模拟安装）；加上霞鹜文楷整包约 113 MB。
-- PDF 生成速度（云端实测，同一份样张）：WeasyPrint 61.1 + Noto 21.6、22.5 秒；WeasyPrint 70 + HarfBuzz 0.5 秒；61.1 + 霞鹜文楷约 2.3 秒（kami 线程）。
+- PDF 生成速度（云端实测，同一份样张）：WeasyPrint 61.1 + Noto 21.6、22.5 秒；WeasyPrint 70 + HarfBuzz 0.5 秒；61.1 + 霞鹜文楷约 2.3 秒（kami 线程）。按装生产时同样的固定版本在云端 Python 3.12 上装好后，用 `make_pdf.py` 生成 2 页样张并检查，整条命令（含启动 Python 和检查）2.73、2.39 秒。
 - 技能触发测试（2026-10-29，DeepSeek V4.1 Flash，经 Vercel 评测专用密钥，每句只跑一次）：10 句该做文档的问句（Word、Excel、PDF、读 PDF，含英文和日文）10 句第一步就用 bash `cat` 读了 SKILL.md；10 句不该做文档的问句（天气、改错别字、写脚本、“PDF 和 Word 哪个适合简历”等）0 句误读。20 次调用输入 32,810 token、输出 4,831 token，花费 0.0098 美元。系统提示用的是生产同款的身份说明和能力说明，但没有主人自定的系统说明，工具定义也是简化版，所以这是近似结果；脚本和原始结果在项目共享目录 `doc-skill/trigger-eval/`。Vercel 公开评测里约 56% 的情况模型没去用该用的技能，这次没有出现，可能和“先读”这一行写在每轮固定的能力说明里有关，未单独验证。
 - 装库以后同一任务的耗时：未测量，等第十九版上线后在真实网页重跑。
 

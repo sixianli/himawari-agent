@@ -113,19 +113,19 @@ class DocumentToolsPreflightTest(unittest.TestCase):
 
     def test_remote_script_checks_libraries_pandoc_and_cjk_fonts(self):
         script = preflight.remote_script(BINDING)
-        for needle in ('import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown', '/usr/bin/pandoc --version', '/usr/bin/fc-list :lang=zh family', 'Noto Sans CJK', 'LXGW WenKai'):
+        for needle in ('import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown', '/usr/bin/pandoc --version', '/usr/bin/fc-list :lang=zh family', 'Noto Sans CJK', 'LXGW WenKai', '/usr/lib/himawari-document-python/bin/python', 'harfbuzz_subset'):
             self.assertIn(needle, script)
 
     def test_remote_document_check_passes_only_when_everything_is_present(self):
         script = preflight.DOCUMENT_TOOLS_CHECK
         with tempfile.TemporaryDirectory() as directory:
             fake = Path(directory)
-            for name in ('python3', 'pandoc', 'fc-list'):
+            for name in ('python3', 'python', 'pandoc', 'fc-list'):
                 (fake / name).write_text('#!/bin/sh\nexit 0\n')
                 (fake / name).chmod(0o755)
             (fake / 'fc-list').write_text('#!/bin/sh\necho "Noto Sans CJK SC"; echo "LXGW WenKai"\n')
             (fake / 'grep').symlink_to(shutil.which('grep'))
-            local = script.replace('/usr/bin/', str(fake) + '/')
+            local = script.replace('/usr/bin/', str(fake) + '/').replace('/usr/lib/himawari-document-python/bin/', str(fake) + '/')
             self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=ok')
             (fake / 'fc-list').write_text('#!/bin/sh\necho "DejaVu Sans"\n')
             self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
@@ -133,6 +133,9 @@ class DocumentToolsPreflightTest(unittest.TestCase):
             self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
             (fake / 'fc-list').write_text('#!/bin/sh\necho "Noto Sans CJK SC"; echo "LXGW WenKai"\n')
             (fake / 'python3').write_text('#!/bin/sh\nexit 1\n')
+            self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
+            (fake / 'python3').write_text('#!/bin/sh\nexit 0\n')
+            (fake / 'python').write_text('#!/bin/sh\nexit 1\n')
             self.assertEqual(subprocess.run(['/bin/sh', '-c', local], capture_output=True, text=True).stdout.strip(), 'documentTools=missing')
 
 
