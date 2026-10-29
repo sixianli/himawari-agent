@@ -205,6 +205,18 @@ export const governanceMessages = [
         recordedAt: "2026-09-11T00:00:00.000Z",
         lastUsedAt: null,
         importBatchId: null,
+        stance: "喜欢蓝色",
+        history: [
+          {
+            kind: "created",
+            text: "主人最喜欢的颜色是蓝色",
+            stance: "喜欢蓝色",
+            quote: "我最喜欢蓝色",
+            sourceThreadId: "thread-01",
+            sourceDeleted: false,
+            at: "2026-09-11T00:00:00.000Z",
+          },
+        ],
       },
     ],
     profile: [

@@ -4032,6 +4032,61 @@ output.owner-status {
   margin-top: 2px;
   font-size: 12.5px;
 }
+.memory-history-block {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.memory-history-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.memory-stance-chart {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.memory-stance-chart svg {
+  display: block;
+}
+.memory-stance-chart text {
+  fill: var(--text-muted);
+  font-size: 12px;
+}
+.memory-stance-chart line {
+  stroke: var(--border);
+  stroke-dasharray: 2 4;
+}
+.memory-stance-chart path {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+}
+.memory-stance-chart circle {
+  fill: var(--surface);
+  stroke: var(--text-muted);
+  stroke-width: 2;
+}
+.memory-stance-chart circle[data-current] {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.memory-stance-chart .memory-stance-axis {
+  font-size: 11px;
+}
+.memory-history-line > li[data-again] .memory-history-dot {
+  width: 9px;
+  height: 9px;
+  margin: 5px 2px 0;
+  border-width: 1px;
+}
+.memory-history-quote {
+  margin: 2px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
 .memory-history-line > li.memory-history-fold {
   display: block;
   padding-left: 23px;

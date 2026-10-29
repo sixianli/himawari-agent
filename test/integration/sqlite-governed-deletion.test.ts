@@ -452,6 +452,78 @@ describe("SQLite governed deletion", () => {
     expect(auditTombstone).not.toContain("owner-content");
   });
 
+  it("[MH-4] keeps the quotes and every wording when their Thread is deleted, and drops them with the Memory", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    insertPayload(database, { ref: "payload-memory-old" });
+    insertPayload(database, { ref: "payload-memory-quote" });
+    database
+      .prepare(
+        `INSERT INTO memory_history_events (
+          memory_id, kind, content_ref, stance, quote_ref, source_thread_id, occurred_at
+        ) VALUES
+          ('memory-retained', 'created', 'payload-memory-old', '想出去玩',
+            'payload-memory-quote', 'thread-delete', ?),
+          ('memory-retained', 'updated', 'payload-memory', '想出去玩', NULL, 'thread-delete', ?)`,
+      )
+      .run(T0, T0);
+    database
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    database.close();
+
+    const thread = await resource.adapter.deleteImmediately({
+      objectType: "thread",
+      objectId: "thread-delete",
+    });
+    expect(thread.lifecycle).toBe("deleted_verified");
+    const events = () => {
+      const reader = openQualifiedDatabase(resource.databasePath);
+      try {
+        return reader
+          .prepare(
+            `SELECT kind, content_ref AS contentRef, quote_ref AS quoteRef,
+              source_thread_id AS sourceThreadId, source_deleted AS sourceDeleted
+            FROM memory_history_events ORDER BY rowid`,
+          )
+          .all();
+      } finally {
+        reader.close();
+      }
+    };
+    expect(events()).toEqual([
+      {
+        kind: "created",
+        contentRef: "payload-memory-old",
+        quoteRef: "payload-memory-quote",
+        sourceThreadId: null,
+        sourceDeleted: 1,
+      },
+      {
+        kind: "updated",
+        contentRef: "payload-memory",
+        quoteRef: null,
+        sourceThreadId: null,
+        sourceDeleted: 1,
+      },
+    ]);
+    const payloadCount = (ref: string) =>
+      scalar(resource.databasePath, "SELECT COUNT(*) FROM payloads WHERE ref = ?", ref);
+    expect(payloadCount("payload-memory-quote")).toBe(1);
+    expect(payloadCount("payload-memory-old")).toBe(1);
+    expect(payloadCount("payload-memory")).toBe(1);
+
+    const memory = await resource.adapter.deleteImmediately({
+      objectType: "memory",
+      objectId: "memory-retained",
+    });
+    expect(memory.lifecycle).toBe("deleted_verified");
+    expect(events()).toEqual([]);
+    expect(payloadCount("payload-memory-old")).toBe(0);
+    expect(payloadCount("payload-memory")).toBe(0);
+    expect(payloadCount("payload-memory-quote")).toBe(0);
+  });
+
   it("persists Memory provider cleanup and rejects deleting a referenced Payload directly", async () => {
     const resource = await fixture();
     const database = openQualifiedDatabase(resource.databasePath);

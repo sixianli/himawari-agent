@@ -304,7 +304,7 @@ describe("production memory capture", () => {
     control: ProductionMemoryControl,
     memoryId: string,
     expectedRevision: number,
-    action: "correct" | "delete" | "recover",
+    action: "correct" | "delete" | "recover" | "restore",
     contentRef: string | null,
   ) =>
     control.execute({
@@ -313,6 +313,181 @@ describe("production memory capture", () => {
       type: "memory.mutate",
       payload: { memoryId, action, expectedRevision, contentRef },
     } as never);
+
+  it("[MH-1] keeps every round of a back-and-forth fact, its stance and the Owner's words", async () => {
+    const memoryOutput = (memory: Record<string, unknown>) =>
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            classification: "private",
+            confidence: 900,
+            category: "preference",
+            subCategory: "社交",
+            ...memory,
+          },
+        ],
+      });
+    const context = await setup(
+      "我超想出去玩，周末去哪儿都行",
+      memoryOutput({
+        decision: "create",
+        text: "主人很喜欢出去玩",
+        stance: "想出去玩",
+        quote: "我超想出去玩，周末去哪儿都行",
+      }),
+    );
+    const options = (
+      context.capture as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryCapture>[0];
+      }
+    ).options;
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const round = async (runId: string, ownerText: string, output: string) => {
+      await context.turn("owner", ownerText, runId);
+      context.outputs.push(output);
+      const capture = new ProductionMemoryCapture(options);
+      await capture.start(context.requestFor(runId));
+      await capture.stop();
+    };
+    const head = async () => {
+      const [current] = (
+        await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)
+      ).filter(({ attributes }) => !attributes?.supersededBy);
+      if (!current) throw new Error("no current memory");
+      return current.id;
+    };
+    const first = await head();
+    await round(
+      "run-out-2",
+      "其实我不爱出门，有点社恐",
+      memoryOutput({
+        decision: "supersede",
+        existingMemoryId: first,
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "其实我不爱出门，有点社恐",
+      }),
+    );
+    const second = await head();
+    await round(
+      "run-out-3",
+      "真的不想出去，别劝我",
+      memoryOutput({
+        decision: "unchanged",
+        existingMemoryId: second,
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "真的不想出去，别劝我",
+      }),
+    );
+    expect(context.prompts.at(-1)).toContain('"stance":"不想出去玩"');
+    await round(
+      "run-out-4",
+      "我不想出门，最近都宅在家打游戏",
+      memoryOutput({
+        decision: "update",
+        existingMemoryId: second,
+        text: "主人不想出门，最近都宅在家打游戏",
+        stance: "不想出去玩",
+        quote: "最近都宅在家打游戏",
+      }),
+    );
+    await round(
+      "run-out-5",
+      "现在又想出去玩了，想有人带我",
+      memoryOutput({
+        decision: "supersede",
+        existingMemoryId: second,
+        text: "主人想有人带他出去玩",
+        stance: "想出去玩",
+        quote: "现在又想出去玩了",
+      }),
+    );
+    const third = await head();
+    expect(context.failures).toEqual([]);
+    const byId = async () =>
+      new Map((await overview(context.control)).memories.map((item) => [item.memoryId, item]));
+    const nodes = (memory: { history: readonly Record<string, unknown>[] } | undefined) =>
+      memory?.history.map(({ kind, text, stance, quote, sourceThreadId, sourceDeleted }) => ({
+        kind,
+        text,
+        stance,
+        quote,
+        sourceThreadId,
+        sourceDeleted,
+      }));
+    const view = await byId();
+    expect(view.get(first)).toMatchObject({ supersededBy: second, stance: "想出去玩" });
+    expect(view.get(second)).toMatchObject({
+      supersededBy: third,
+      text: "主人不想出门，最近都宅在家打游戏",
+      stance: "不想出去玩",
+    });
+    expect(view.get(third)).toMatchObject({ supersededBy: null, stance: "想出去玩" });
+    const from = { sourceThreadId: THREAD_ID, sourceDeleted: false };
+    expect(nodes(view.get(first))).toEqual([
+      {
+        kind: "created",
+        text: "主人很喜欢出去玩",
+        stance: "想出去玩",
+        quote: "我超想出去玩，周末去哪儿都行",
+        ...from,
+      },
+    ]);
+    expect(nodes(view.get(second))).toEqual([
+      {
+        kind: "created",
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "其实我不爱出门，有点社恐",
+        ...from,
+      },
+      {
+        kind: "reaffirmed",
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "真的不想出去，别劝我",
+        ...from,
+      },
+      {
+        kind: "updated",
+        text: "主人不想出门，最近都宅在家打游戏",
+        stance: "不想出去玩",
+        quote: "最近都宅在家打游戏",
+        ...from,
+      },
+    ]);
+    expect(nodes(view.get(third))).toEqual([
+      {
+        kind: "created",
+        text: "主人想有人带他出去玩",
+        stance: "想出去玩",
+        quote: "现在又想出去玩了",
+        ...from,
+      },
+    ]);
+    const current = view.get(third);
+    if (!current) throw new Error("current");
+    await context.protect("payload-out-edit", "主人想有人带他去海边玩");
+    await mutate(context.control, third, current.revision, "correct", "payload-out-edit");
+    const restoredFrom = (await byId()).get(second);
+    if (!restoredFrom) throw new Error("second");
+    await mutate(context.control, second, restoredFrom.revision, "restore", null);
+    const after = await byId();
+    expect(nodes(after.get(third))?.map(({ kind, text }) => [kind, text])).toEqual([
+      ["created", "主人想有人带他出去玩"],
+      ["edited", "主人想有人带他去海边玩"],
+    ]);
+    expect(nodes(after.get(third))?.[1]).toMatchObject({ quote: null, sourceThreadId: null });
+    expect(nodes(after.get(second))?.map(({ kind }) => kind)).toEqual([
+      "created",
+      "reaffirmed",
+      "updated",
+      "restored",
+    ]);
+  });
 
   it("queues a sensitive Memory with its topic and commits it once the Owner approves", async () => {
     const context = await setup(
@@ -472,6 +647,22 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(0);
+  });
+
+  it("[MH-1] logs a round where the model kept nothing or named a memory it was not shown", async () => {
+    const empty = await setup("我今天又不想出去玩了。", '{"memories":[]}');
+    await empty.capture.start(empty.request);
+    await empty.capture.stop();
+    expect(empty.failures).toEqual([]);
+    expect(empty.audits.map(({ outcome }) => outcome)).toEqual(["nothing_to_remember"]);
+    const unknown = await setup(
+      "我今天又不想出去玩了，真的。",
+      '{"memories":[{"kind":"durable_fact","decision":"unchanged","existingMemoryId":"memory-not-shown","text":"主人最近不想出去玩","classification":"private","confidence":900,"quote":"我今天又不想出去玩了"}]}',
+    );
+    await unknown.capture.start(unknown.request);
+    await unknown.capture.stop();
+    expect(unknown.failures).toEqual([]);
+    expect(unknown.audits.map(({ outcome }) => outcome)).toEqual(["candidate_invalid"]);
   });
 
   it("reports an invalid model response without writing Memory", async () => {
