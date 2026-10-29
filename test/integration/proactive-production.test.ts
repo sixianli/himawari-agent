@@ -1,4 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -33,6 +35,7 @@ import {
   ScriptedModelPort,
 } from "@himawari-agent/testing";
 import Fastify from "fastify";
+import { chromium } from "playwright";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerProactiveRoutes } from "../../apps/agent-service/src/production-http-composition.ts";
 import {
@@ -444,6 +447,54 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(h.google.calls.some(({ url }) => url.includes("calendar"))).toBe(false);
     expect(h.failures).toEqual([]);
   });
+
+  it("[PG-12] finishes connecting when the browser holds back the strict session cookie on Google's cross-site return", async () => {
+    const h = await setup();
+    const state = await connect(h);
+    h.script([]);
+    await h.app.listen({ host: "127.0.0.1", port: 0 });
+    const himawari = `http://localhost:${(h.app.server.address() as AddressInfo).port}`;
+    const callback = `${himawari}${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1&scope=x`;
+    const google = createServer((request, response) => {
+      if (request.url === "/continue") response.writeHead(302, { location: callback }).end();
+      else
+        response
+          .writeHead(200, { "content-type": "text/html" })
+          .end('<a id="continue" href="/continue">Continue</a>');
+    });
+    await new Promise<void>((resolve) => google.listen(0, "127.0.0.1", resolve));
+    closers.push(() => new Promise<void>((resolve) => google.close(() => resolve())));
+    const browser = await chromium.launch(
+      process.env["HIMAWARI_CHROMIUM_PATH"]
+        ? { executablePath: process.env["HIMAWARI_CHROMIUM_PATH"] }
+        : {},
+    );
+    closers.push(() => browser.close());
+    const context = await browser.newContext();
+    await context.addCookies([
+      {
+        name: "himawari_session",
+        value: "owner-session",
+        domain: "localhost",
+        path: "/",
+        httpOnly: true,
+        secure: false,
+        sameSite: "Strict",
+      },
+    ]);
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${(google.address() as AddressInfo).port}/`);
+    await page.click("#continue");
+    await page.waitForURL(`${himawari}/?settings=apps&gmail=connected`, { timeout: 5_000 });
+    await h.proactive.stop();
+    expect((await h.overview()).connection.status).toBe("connected");
+    const signedOut = await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1&return=1`,
+    });
+    expect(signedOut.statusCode).toBe(303);
+    expect(signedOut.headers["location"]).toBe("/?settings=apps&gmail=failed");
+  }, 20_000);
 
   it("[PG-12] lets the owner tune, mark done, rate and disconnect, which revokes Google access and forgets the mail", async () => {
     const h = await setup();
