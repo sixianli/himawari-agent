@@ -3135,6 +3135,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 - 请 Andy 删掉按人的用户预算，改成按 key 设：评测 key 单独封顶，生产 key 放宽（[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)）。
 - 生产这次只记下 `transport_unresolved`，看不出是额度被拒。现在嵌入失败会写一行带 HTTP 状态和网关原文的 `memory.embedding_failed` 日志；402 单独记成 `CONTEXT_MEMORY_QUOTA_EXCEEDED` 或 `PI_MODEL_QUOTA_EXCEEDED`，网页用三语告诉主人是额度用完了，不是网络不通。
 - 给 Andy 的对比结论改为不再花钱：用官方价目表和已经跑完的第 1 组数据给推荐。Andy 决定先不换。
+- 换被测模型的开关已删掉：Andy 在 13:31 定下任何场景都不调用 Claude、OpenAI 等贵模型，评测只测生产用的 DeepSeek V4.1 Flash。
 
 **方案讨论与备选**
 

@@ -43,7 +43,7 @@ Vercel 文档原文（[Budgets 页 User budgets 一节](https://vercel.com/docs/
    - 状态码是 402，或网关错误类型是 `quota_for_entity_exceeded` 时，失败码记为 `CONTEXT_MEMORY_QUOTA_EXCEEDED`。对话模型返回 402 时，失败码记为 `PI_MODEL_QUOTA_EXCEEDED`。
    - 网页用中英日三语说明“模型服务的费用额度已用完，请求被拒绝了，不是网络问题”，不显示错误码。
    - 调用记录表（`model_invocation_identities`）的结构不改，要改得加数据库迁移，这次不做，以日志为准。
-5. **评测可以换被测模型。** `--subject=anthropic/claude-haiku-5.5` 或 `anthropic/claude-sonnet-5.5`。只在测试代码的请求层替换模型，产品代码不变（PR #95）。
+5. **评测不换被测模型。** 线程早先加过把被测模型换成 Claude 的开关（`--subject`），已从 PR #95 删掉：Andy 在 2026-10-29 13:31（日本时间）定下任何场景都不调用 Claude、OpenAI 等贵模型，代码和评测脚本不写死这类模型名。真模型评测只测生产用的 DeepSeek V4.1 Flash。
 
 <a id="options"></a>
 

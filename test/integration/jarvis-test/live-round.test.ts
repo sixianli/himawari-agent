@@ -10,13 +10,7 @@ import { type JarvisCase, loadCalibration, loadDataset } from "./cases.ts";
 import { gatewayDecisionJudge, gatewayReasoningJudge, type JudgeUsage } from "./gateway-judges.ts";
 import { gradeTrial, type TrialGrade } from "./grade.ts";
 import { calibrateDecisionJudge, calibrateReasoningJudge, type RuleVerdict } from "./judge.ts";
-import {
-  routeSubjectRequests,
-  runTrial,
-  SUBJECT_MODEL,
-  type TrialResult,
-  type TrialUsage,
-} from "./live-harness.ts";
+import { runTrial, SUBJECT_MODEL, type TrialResult, type TrialUsage } from "./live-harness.ts";
 
 interface LiveEnvironment {
   readonly HIMAWARI_JARVIS_LIVE?: string;
@@ -73,7 +67,6 @@ describe.skipIf(!LIVE)("Jarvis Test live round", () => {
   beforeAll(() => {
     if (process.env["HTTPS_PROXY"] || process.env["https_proxy"])
       setGlobalDispatcher(new EnvHttpProxyAgent());
-    routeSubjectRequests();
   });
 
   it(

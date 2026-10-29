@@ -25,7 +25,6 @@ const known = new Set([
   "token-limit",
   "calibrated",
   "no-record",
-  "subject",
   "confirm-cost",
 ]);
 for (const key of options.keys())
@@ -87,7 +86,6 @@ const environment = {
   ...(options.has("token-limit")
     ? { HIMAWARI_JARVIS_TOKEN_LIMIT: options.get("token-limit") }
     : {}),
-  ...(options.has("subject") ? { HIMAWARI_JARVIS_SUBJECT_MODEL: options.get("subject") } : {}),
   ...(options.has("calibrated") ? { HIMAWARI_JARVIS_CALIBRATED: "1" } : {}),
 };
 const result = spawnSync("npx", VITEST_ARGS, { stdio: "inherit", env: environment });
