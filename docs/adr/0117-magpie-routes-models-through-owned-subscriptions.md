@@ -20,6 +20,7 @@ date: "2026-10-29"
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [2026-10-29 晚间修订：实际接入情况](#revision-1029-evening)
+- [2026-10-30 顺序变更：CodeBuddy 排第一](#revision-1030-order)
 - [关联文档](#links)
 
 <a id="context"></a>
@@ -152,6 +153,22 @@ OpenCode Go 的 DeepSeek 要在设置里打开“Global”地区才能用，数�
 
 [↑ 返回阅读导航](#contents)
 
+<a id="revision-1030-order"></a>
+
+## 2026-10-30 顺序变更：CodeBuddy 排第一
+
+10-30 00:41（日本时间）Andy 在对话提速专项的选择卡上选定新顺序，理由和测量见 [ADR 0119](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)。01:04 Mac 线程在生产机改好并重启 `magpie.service`（`himawari-prod.service` 没动），改前的配置备份在生产机 `/root/config-backups/magpie-providers.json.before-codebuddy-first-20261029T160404Z`。路由组 `group/himawari-main` 现在的顺序：
+
+1. `workbuddy-ai/deepseek-v4.1-flash-sg`：腾讯 CodeBuddy 国际版（新加坡）。
+2. `opencode-go/deepseek-v4.1-flash`
+3. `opencode-go/glm-5.3-flash`
+4. `opencode-zen/deepseek-v4.1-flash-free`：免费模型挪到最后，不删。
+5. `opencode-zen/glm-5.3-flash-free`
+
+改后在生产机发 5 次短请求，响应头 `x-magpie-provider`（Magpie 标明实际由哪个来源回答）全是 `workbuddy-ai`，首字节 3.26 秒（冷）、0.97、1.13、1.07、0.93 秒；改前经路由组中位数 3.0 秒。上一节“免费模型排最前”和“CodeBuddy 排在最后”以本节为准。
+
+[↑ 返回阅读导航](#contents)
+
 <a id="links"></a>
 
 ## 关联文档
@@ -160,6 +177,7 @@ OpenCode Go 的 DeepSeek 要在设置里打开“Global”地区才能用，数�
 - [ADR 0048：Vercel AI Gateway 替代 OpenRouter](0048-vercel-ai-gateway-replaces-openrouter.md)
 - [ADR 0074：Claude 直接在生产机上线、回滚和诊断](0074-claude-runs-production-deployments.md)
 - [产品愿景](../product-vision.md)：这里取舍的是“主动性与效率”里的成本，换来了一部分隐私风险。按原则顺序，Andy 作为主人亲自做了这个选择（用户主权）。
+- [ADR 0119：对话提速](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)：10-30 顺序变更的理由和测量。
 - [工程案例库 案例 60：本机 Magpie 网关替 Agent 在多个套餐之间切换](../engineering-casebook.md#case-magpie-subscriptions)
 
 [↑ 返回阅读导航](#contents)
