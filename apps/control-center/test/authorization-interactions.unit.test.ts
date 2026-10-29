@@ -146,7 +146,9 @@ describe("search authorization menu", () => {
     expect(details).toHaveLength(1);
     expect(details[0]?.className).toBe("settings-details");
     expect(details[0]?.open).toBe(false);
-    expect(details[0]?.textContent).toContain("发给 Exa；打开网页时");
+    expect(details[0]?.textContent).toContain("发到下面这些网址");
+    expect(details[0]?.querySelector(".search-recipients")?.textContent).toBe("mcp.exa.ai");
+    expect(details[0]?.textContent).not.toContain("Exa");
     expect(details[0]?.textContent).not.toContain("https://");
     expect(container.querySelector(".setting-row details")).toBe(details[0]);
     expect(container.querySelector('input[role="switch"]')).not.toBeNull();

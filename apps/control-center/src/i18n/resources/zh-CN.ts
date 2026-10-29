@@ -831,8 +831,7 @@ export const messages = {
     "这一轮输入里，模型服务商直接复用之前已算过的前文（大模型的 KV 缓存）所占的比例；这部分更快、更便宜。",
   "chat.search.purpose": "问题需要最新信息时，自动搜索网页",
   "chat.search.whatIsSent": "搜索时会发出什么",
-  "chat.search.sentQuery":
-    "你的问题会被改写成搜索词，发给 {services}；打开网页时，网址也会发给它们。",
+  "chat.search.sentQuery": "你的问题会被改写成搜索词，发到下面这些网址；打开网页时，网页地址也会发过去：",
   "chat.search.sentLimits": "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会被拦下。",
   "chat.search.otherScope": "删除文件、联网执行命令、读写工作目录以外的文件",
   "chat.search.alwaysOn": "固定开启",

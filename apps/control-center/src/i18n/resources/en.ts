@@ -875,8 +875,7 @@ export const messages = {
     "The share of this turn's input that the model provider reused from context it had already processed (the LLM's KV cache). That part is faster and cheaper.",
   "chat.search.purpose": "Search the web automatically when a question needs current information",
   "chat.search.whatIsSent": "What a search sends",
-  "chat.search.sentQuery":
-    "Your question is turned into search terms and sent to {services}. When a web page is opened, its address is sent to them too.",
+  "chat.search.sentQuery": "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
   "chat.search.sentLimits":
     "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
   "chat.search.otherScope":

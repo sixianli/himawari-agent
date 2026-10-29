@@ -4443,3 +4443,19 @@ details.settings-details > summary::-webkit-details-marker {
   width: 13px;
   height: 13px;
 }
+.search-recipients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 6px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.search-recipients code {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 12px;
+}

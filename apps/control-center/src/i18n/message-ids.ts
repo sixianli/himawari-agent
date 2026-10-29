@@ -898,7 +898,6 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   Partial<Record<MessageId, Readonly<Record<string, string | number>>>>
 > = Object.freeze({
   "chat.environment.running": { count: 2 },
-  "chat.search.sentQuery": { services: "Exa" },
   "step.outcome.exitCode": { code: 1 },
   "entry.unreachable.retrying": { seconds: 5 },
   "chat.environment.startedAt": { time: "12:04" },

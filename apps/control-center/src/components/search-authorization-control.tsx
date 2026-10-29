@@ -2,19 +2,18 @@ import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useEffect, useId, useState } from "react";
 import type { ControlCenterBrowserStorage } from "../browser-storage.js";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
-import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { queryMessage } from "../messages.js";
 import { setSearchAuthorization } from "../search-authorization.js";
 import { LineIcon } from "./answer-footer.js";
 import { ActionButton } from "./primitives.js";
 
-const SERVICE_NAMES: Readonly<Record<string, string>> = { exa: "Exa", deepseek: "DeepSeek" };
-
-export function searchServiceName(origin: string): string {
-  const host = new URL(origin).hostname;
-  const labels = host.split(".");
-  return SERVICE_NAMES[labels.at(-2) ?? ""] ?? host;
+export function searchRecipientHost(origin: string): string {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return origin;
+  }
 }
 
 export function SearchAuthorizationControl({
@@ -32,7 +31,6 @@ export function SearchAuthorizationControl({
   refreshSignal: number;
   message: (id: MessageId, values?: Record<string, string>) => string;
 }) {
-  const { locale } = useLocaleFormat();
   const [snapshot, setSnapshot] = useState<Extract<
     GatewayV2Snapshot,
     { type: "search.authorization.snapshot" }
@@ -101,13 +99,18 @@ export function SearchAuthorizationControl({
                 {message("chat.search.whatIsSent")}
                 <LineIcon name="chevron" />
               </summary>
-              <p>
-                {message("chat.search.sentQuery", {
-                  services: new Intl.ListFormat(locale, { type: "conjunction" }).format(
-                    (snapshot?.payload.recipients ?? []).map(searchServiceName),
-                  ),
-                })}
-              </p>
+              <p>{message("chat.search.sentQuery")}</p>
+              {snapshot?.payload.recipients.length ? (
+                <ul className="search-recipients">
+                  {[...new Set(snapshot.payload.recipients.map(searchRecipientHost))].map(
+                    (host) => (
+                      <li key={host}>
+                        <code>{host}</code>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              ) : null}
               <p>{message("chat.search.sentLimits")}</p>
             </details>
           </span>
