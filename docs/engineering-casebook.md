@@ -75,6 +75,7 @@ date: "2026-10-26"
   49. [模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗](#case-answer-weight)
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
   51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
+  53. [评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住](#case-no-expensive-models)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -100,7 +101,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
@@ -3284,6 +3285,62 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “用户在 iPhone 上一点输入框整页就放大、设置面板关不掉。根因一是 iOS 对小于 16px 的输入框会自动放大且不回弹，我们的对话框平时 16px、一聚焦被一条更具体的 `:focus` 规则改成 14px；二是弹窗高度用 100vh，没扣状态栏安全区。修法是手机上输入控件统一 16px、不用关缩放的偷懒写法，弹窗按 env(safe-area-inset) 算高度、标题固定内容内滚。再加两道门槛：提交时的静态检查和上线前手机尺寸的真实浏览器走查，两道都证明在旧版本上会失败。”
+
+[返回目录](#contents)
+
+<a id="case-no-expensive-models"></a>
+
+## 案例 53：评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住
+
+**背景与现象**
+
+2026-10-29 13:31（日本时间），Andy 在 Vercel AI Gateway（Vercel 的模型网关，Himawari 经它调用所有模型）的账单页看到：本月花钱最多的是 `anthropic/claude-sonnet-5.5`，2.27 美元，缓存命中 0%；真正给 Andy 干活的生产主模型 DeepSeek V4.1 Flash 只花了 1.48 美元。Himawari 生产从来没用过 Claude，钱全花在评测上。Andy 定下长期规则：任何场景都不得调用 Claude、OpenAI 或同价位的贵模型，代码和脚本里不得再写死这类模型名。
+
+在 Andy 的浏览器里打开 Vercel Logs 逐行核对（Hobby 套餐不能用汇总报表接口），793 次 Sonnet 请求分成四段：10-28 15:31–15:54 第一次接真模型的裁判校准和小试跑 0.25 美元；16:03–16:41 三轮完整评测的裁判 0.46 美元；22:51–22:56 第一轮已校准评测的裁判 0.23 美元；10-29 10:54–10:58 三模型对比评测（Sonnet 既当被测又当裁判）约 1.33 美元。明细见 [ADR 0111](adr/0111-no-expensive-models-anywhere.md#bill)。
+
+**根因**
+
+1. [ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md#judges) 给第二层裁判提的要求只有“和被测的 DeepSeek 不是同一家”，选模型时没比价格，就选了熟悉的 Sonnet 5.5，并写死在 `gateway-judges.ts` 里。它的价格是每百万 token 输入 2 美元、输出 10 美元，是 DeepSeek V4.1 Flash 的 27 倍和 33 倍。
+2. 第二次是对比评测直接把 Claude 当被测模型跑，而且没先报费用（同一件事的预算部分见事故 I-11）。
+3. 没有任何检查看“代码里调用的是什么价位的模型”。生产的模型路由有配置和测试，评测和脚本没有。
+
+**方案讨论与备选**
+
+- **裁判保留 Sonnet，少跑几次**：违反 Andy 的规则，每轮裁判仍要 0.2 美元以上。不选。
+- **裁判也用 DeepSeek**：最便宜，但裁判和被测是同一个模型。LLM-as-a-judge（用大模型给回答打分）的研究指出模型裁判有“self-enhancement bias”（偏向自己生成的回答），ADR 0103 正是为此要求异厂。不选。
+- **在 Vercel 账户上开 Model Allowlist（模型白名单）**：网关直接 403，代码绕不过去，是最硬的一道。但只有 Pro 套餐能用，Andy 已定不升级。记为以后的第二道防线。
+- **只写进文档和项目指令**：按 [ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)，文档不算关闭事故。
+- **按价格设白名单，代码里每个模型都要查价**：最严，但要在仓库里维护一份价格表，网关调价就过时，现在是过度设计。先按厂商和型号名拦，再要求新增模型在 PR 里写价格。
+
+**我们的方案**
+
+1. 两个裁判模型从代码移到 `test/fixtures/jarvis-test/models.json`，代码只读这一处。
+2. 第二层裁判改成 `alibaba/qwen3.8-flash`（通义千问，带推理）：输入 0.15、输出 0.47 美元每百万 token，约是 Sonnet 的 1/13 和 1/21，和 DeepSeek 不是同一家。校准不过时按 GLM 5.3 Flash、Qwen3.7 Flash 的顺序换，只改这个文件。
+3. `scripts/check-expensive-models.mjs` 进了 `npm run check`：扫描代码、脚本、评测、配置，出现 `anthropic/…`、`openai/…` 或 `claude-sonnet…`、`gpt-6…` 这类型号名就失败，并打出文件和行号。`docs/` 和历次评测的原始记录 `history.jsonl` 不扫，GitHub 链接里的 `/openai/codex` 和 `@anthropic-ai/sdk` 这类包名不算。
+
+**业界主流做法**
+
+- ✅ Vercel AI Gateway 文档 [Model Allowlist](https://vercel.com/docs/ai-gateway/security-and-compliance/model-allowlist)：团队所有者可以限定可用模型，原文 “A request returns a `403` when the requested model is not on the allowlist”；但 “available on Pro and Enterprise plans”。
+- ✅ Vercel AI Gateway 文档 [Custom Reporting](https://vercel.com/docs/ai-gateway/observability-and-spend/custom-reporting)：按模型、用户、标签汇总花费的报表接口，原文 “The reporting endpoint is available on Pro and Enterprise plans”。所以本次只能在日志页逐行核对。
+- ✅ Zheng 等《Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena》（[arXiv 2306.05685](https://arxiv.org/abs/2306.05685)）摘要：模型裁判有 “position, verbosity, and self-enhancement biases”；强模型裁判和人的一致率 “over 80%”。这支持“裁判要异厂、要和人工标注对齐”，并没有要求裁判必须是最贵的模型。
+
+**对比与取舍**
+
+业界最硬的做法是在网关层按团队限定模型，请求直接被拒；我们受套餐限制，把同样的规则落在仓库的提交前检查里。代价是它只管写进仓库的代码，管不到有人在命令行里临时传一个模型名，也管不到不在仓库里的生产配置（生产目前只用 DeepSeek、Qwen3 Embedding 和两个重排模型，已在日志核对）。裁判换便宜模型的风险是判错变多，所以保留了 ADR 0103 的“每轮先校准、Andy 抽查”，换模型只改一个文件。
+
+**结果数据**
+
+- 账单核对：Sonnet 793 次、2.27 美元，四段明细见 ADR 0111；Haiku 5.5 29 次 0.03 美元；OpenAI 30 天内 2 次 0.01 美元（10-04 迁移网关时的连通验证）。数字来自 Vercel Logs 页，逐行读到 655 次 Sonnet 请求，差的 138 次都在 10-29 那 4 分钟里，按总数倒推。
+- 检查脚本：用改动前的 `gateway-judges.ts` 复现，报 2 处（`anthropic/claude-sonnet-5.5` 和 `claude-sonnet-5.5`）、退出码 1；换成集中配置后 0 处、退出码 0；扫 1515 个文件约 0.7 秒（本线程本机）。对草稿 PR #95 的 `live-harness.ts` 也报出 Claude Haiku 和 Sonnet 两处。
+- 新裁判每轮费用：按价格比例推算，一轮完整评测从 0.37 美元降到约 0.16 美元；未实测，等 Andy 同意费用后再跑校准。
+
+**相关 ADR/PR**
+
+[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)、[事故清单 I-19](incidents-and-gates.md#incidents)、[案例 39 真模型跑 Jarvis Test](#case-jarvis-test-evals)。
+
+**面试 30 秒版**
+
+“我们的评测裁判一个月花的钱比生产主模型还多。我在网关日志里逐条核对，发现是设计裁判时只要求‘和被测模型不是同一家’，没比价格，选了最贵的一档，还写死在代码里。修法是三件事：模型名集中到一个配置文件；裁判换成同样异厂、价格约二十分之一的模型，保留每轮校准和人工抽查来兜住判错；再加一道提交前的检查，代码里出现贵模型名就失败。网关层的模型白名单更硬，但要付费套餐，记成以后的第二道防线。”
 
 [返回目录](#contents)
 
