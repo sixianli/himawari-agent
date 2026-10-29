@@ -2375,6 +2375,54 @@ body {
 .timeline-row .step-detail > .step-status {
   margin: 0;
 }
+.timeline-row .step-command {
+  margin: 0;
+  max-height: calc(2 * 1.6em);
+  overflow: hidden;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.timeline-row .step-outcome.is-ok {
+  color: var(--text-muted);
+}
+.timeline-row .step-outcome.is-failed {
+  color: var(--text);
+}
+.step-link {
+  align-self: flex-start;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.step-technical {
+  color: var(--text-muted);
+}
+.step-technical > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  cursor: pointer;
+  list-style: none;
+}
+details.step-technical > summary::-webkit-details-marker {
+  display: none;
+}
+.step-technical[open] > summary > .row-chevron {
+  transform: rotate(90deg);
+}
+.step-technical pre {
+  max-height: 240px;
+  overflow: auto;
+}
 .timeline-row .step-detail > .step-status {
   margin-left: 0;
   padding-left: 0;

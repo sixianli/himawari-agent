@@ -148,6 +148,11 @@ export const messages = {
   "chat.callLifecycle": "呼び出しの流れ",
   "chat.requestArguments": "リクエスト引数",
   "chat.toolResult": "返却された結果",
+  "step.outcome.ok": "成功",
+  "step.outcome.failed": "失敗",
+  "step.outcome.exitCode": "終了コード {code}",
+  "step.viewOutput": "出力を見る",
+  "step.technical": "技術的な詳細",
   "chat.argumentsUnavailable": "リクエスト引数の記録がありません",
   "chat.resultUnavailable": "表示可能な結果がありません。ステップの状態を確認してください。",
   "chat.responseUnavailable":

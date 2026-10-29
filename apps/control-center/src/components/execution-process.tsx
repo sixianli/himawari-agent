@@ -30,11 +30,10 @@ import {
 } from "../execution-view.js";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import { toolStepSummary } from "../step-summary.js";
+import { exitCodeOf, toolCommand, toolStepSummary } from "../step-summary.js";
 import { formatTokens, type TurnUsage, turnUsage } from "../turn-summary.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import type { ContentPreviewValue } from "./content-preview.js";
-import { ActionButton } from "./primitives.js";
 import { type ToolGlyph, ToolIcon } from "./tool-icon.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
@@ -315,6 +314,15 @@ export function ExecutionProcess({
                   ? (executionToolPhase(item, records, run) ?? "chat.phase.failed")
                   : undefined
               : undefined;
+            const command = item.kind === "tool" ? toolCommand(item.input) : "";
+            const exitCode = item.output ? exitCodeOf(item.output) : null;
+            const outcome =
+              item.phase === "failed" ||
+              (retainedEffect && retainedEffect !== "chat.phase.completed")
+                ? "failed"
+                : phase === "chat.phase.completed" || retainedEffect === "chat.phase.completed"
+                  ? "ok"
+                  : "pending";
             const elapsed = step
               ? null
               : operation
@@ -360,59 +368,77 @@ export function ExecutionProcess({
                     <RowChevron />
                   </summary>
                   <div className="step-detail">
-                    {step && phase === "chat.phase.completed" && !retainedEffect ? status : null}
                     {item.kind === "tool" ? (
                       <>
-                        <p className="step-tool">
-                          <span className="step-name">{item.name}</span>
-                        </p>
-                        <ol className="call-lifecycle" aria-label={message("chat.callLifecycle")}>
-                          {item.requestedAt ? (
-                            <li>
-                              {message("chat.callRequested")}
-                              <RecordedTime at={item.requestedAt} />
-                            </li>
-                          ) : null}
-                          {item.startedAt ? (
-                            <li>
-                              {message("chat.callProcessing")}
-                              <RecordedTime at={item.startedAt} />
-                            </li>
-                          ) : null}
-                          {item.endedAt ? (
-                            <li>
-                              {message(
-                                item.phase === "failed" ? "chat.callFailed" : "chat.callReturned",
-                              )}
-                              <RecordedTime at={item.endedAt} />
-                            </li>
-                          ) : null}
-                        </ol>
-                        {item.text ? <p className="tool-description">{item.text}</p> : null}
-                        <h4>{message("chat.requestArguments")}</h4>
-                        <pre>{item.input || message("chat.argumentsUnavailable")}</pre>
-                        <h4>{message("chat.toolResult")}</h4>
-                        {item.output ? (
-                          <>
-                            <pre>{item.output}</pre>
-                            {onPreview ? (
-                              <ActionButton
-                                variant="quiet"
-                                onClick={() => onPreview({ title: item.name, text: item.output })}
-                              >
-                                {message("review.preview")}
-                              </ActionButton>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="step-empty">
-                            {message(
-                              incomplete && !isTerminalRun(run)
-                                ? "chat.waitingToolResult"
-                                : "chat.resultUnavailable",
-                            )}
+                        {command ? <pre className="step-command">{command}</pre> : null}
+                        {outcome === "pending" ? null : (
+                          <p className={`step-outcome is-${outcome}`}>
+                            {outcome === "ok"
+                              ? `✓ ${message("step.outcome.ok")}`
+                              : `✕ ${message("step.outcome.failed")}${
+                                  exitCode !== null
+                                    ? ` · ${message("step.outcome.exitCode", { code: exitCode })}`
+                                    : ""
+                                }`}
                           </p>
                         )}
+                        {item.output && onPreview ? (
+                          <button
+                            type="button"
+                            className="step-link"
+                            onClick={() =>
+                              onPreview({ title: command || item.name, text: item.output })
+                            }
+                          >
+                            {message("step.viewOutput")}
+                          </button>
+                        ) : null}
+                        <details className="step-technical">
+                          <summary>
+                            {message("step.technical")}
+                            <RowChevron />
+                          </summary>
+                          <p className="step-tool">
+                            <span className="step-name">{item.name}</span>
+                          </p>
+                          <ol className="call-lifecycle" aria-label={message("chat.callLifecycle")}>
+                            {item.requestedAt ? (
+                              <li>
+                                {message("chat.callRequested")}
+                                <RecordedTime at={item.requestedAt} />
+                              </li>
+                            ) : null}
+                            {item.startedAt ? (
+                              <li>
+                                {message("chat.callProcessing")}
+                                <RecordedTime at={item.startedAt} />
+                              </li>
+                            ) : null}
+                            {item.endedAt ? (
+                              <li>
+                                {message(
+                                  item.phase === "failed" ? "chat.callFailed" : "chat.callReturned",
+                                )}
+                                <RecordedTime at={item.endedAt} />
+                              </li>
+                            ) : null}
+                          </ol>
+                          {item.text ? <p className="tool-description">{item.text}</p> : null}
+                          <h4>{message("chat.requestArguments")}</h4>
+                          <pre>{item.input || message("chat.argumentsUnavailable")}</pre>
+                          <h4>{message("chat.toolResult")}</h4>
+                          {item.output ? (
+                            <pre>{item.output}</pre>
+                          ) : (
+                            <p className="step-empty">
+                              {message(
+                                incomplete && !isTerminalRun(run)
+                                  ? "chat.waitingToolResult"
+                                  : "chat.resultUnavailable",
+                              )}
+                            </p>
+                          )}
+                        </details>
                       </>
                     ) : (
                       <>
