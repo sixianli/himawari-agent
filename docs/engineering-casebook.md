@@ -72,7 +72,7 @@ date: "2026-10-26"
   45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
   46. [第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒](#case-startup-permission-audit)
   47. [修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛](#case-incident-gates)
-  50. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
+  51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -3113,7 +3113,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 <a id="case-phone-input-zoom"></a>
 
-## 案例 50：iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏
+## 案例 51：iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏
 
 **背景与现象**
 
@@ -3158,7 +3158,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 **相关 ADR/PR**
 
-[事故与门槛清单 I-13](incidents-and-gates.md)；[第十八版手机页面基线 ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)；本案例的 PR 在分支 `claude/project-thread-6cxbkp`。
+[事故与门槛清单 I-14](incidents-and-gates.md)；[第十八版手机页面基线 ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)；本案例的 PR 在分支 `claude/project-thread-6cxbkp`。
 
 **面试 30 秒版**
 
