@@ -679,10 +679,14 @@ function memoryOverview() {
     recordedAt: "2026-10-28T10:21:00.000Z",
     lastUsedAt: "2026-10-28T10:40:00.000Z",
     importBatchId: null,
+    importance: 700,
+    profilePin: null,
     ...change,
   });
   const memories = [
-    item("memory-fish", "主人从 2026 年 10 月 28 日起喜欢吃鱼了", "preference"),
+    item("memory-fish", "主人从 2026 年 10 月 28 日起喜欢吃鱼了", "preference", {
+      subCategory: "饮食",
+    }),
     item("memory-fish-v2", "主人不太喜欢吃鱼", "preference", {
       supersededBy: "memory-fish",
       recordedAt: "2026-10-12T08:03:00.000Z",
@@ -692,7 +696,18 @@ function memoryOverview() {
       recordedAt: "2025-03-02T01:00:00.000Z",
       importBatchId: "import-1",
     }),
-    item("memory-blue", "主人最喜欢的颜色是蓝色", "preference"),
+    item("memory-blue", "主人最喜欢的颜色是蓝色", "preference", { profilePin: "on" }),
+    item("memory-coffee", "主人喝咖啡不加糖", "preference", {
+      subCategory: "饮食",
+      importance: 450,
+      recordedAt: "2026-10-28T12:30:00.000Z",
+    }),
+    item("memory-pill", "主人每天早上吃降压药", "health", {
+      dataClassification: "sensitive",
+      topic: "health",
+      importance: 800,
+    }),
+    item("memory-trip", "主人 11 月 3 日去大阪出差", "event", { importance: 500 }),
     item("memory-short", "回答要先给结论", "preference"),
     item("memory-jst", "时间一律用日本时间", "preference"),
     item("memory-city", "主人住在东京都北区", "identity"),
@@ -752,6 +767,8 @@ function memoryOverview() {
     imports: [],
     capturePaused: false,
     manualAddReady: true,
+    lastViewedAt: "2026-10-28T12:00:00.000Z",
+    profileUsage: { used: 118, limit: 2000, queued: ["memory-coffee"] },
     profile: [
       { kind: "identity", lines: lines(["memory-city", "memory-job"]) },
       {

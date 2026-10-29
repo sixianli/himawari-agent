@@ -50,10 +50,22 @@ const TEXT: Record<string, string> = {
   "memory-public": "主人的博客地址是公开的",
 };
 
-function service(records: readonly ProductMemoryRecord[], characterBudget?: number) {
+function service(
+  records: readonly ProductMemoryRecord[],
+  characterBudget?: number,
+  pins: readonly (readonly [string, boolean])[] = [],
+) {
   const stored: { ref: string; text: string; dataClassification: string }[] = [];
   const profile = new OwnerProfileService({
     state: { listActive: async () => records },
+    pins: {
+      listProfilePins: async () =>
+        pins.map(([memoryId, pinned]) => ({
+          memoryId: createMemoryId(memoryId),
+          pinned,
+          updatedAt: NOW,
+        })),
+    },
     readText: async (record) => TEXT[record.id],
     storeText: async ({ ref, text, dataClassification }) => {
       stored.push({ ref, text, dataClassification });
@@ -134,6 +146,63 @@ describe("owner profile composition", () => {
       now: NOW,
     });
     expect(result.memoryIds).toEqual(["memory-language", "memory-name"]);
+  });
+
+  it("[MEM-PIN] brings what the Owner switched on and drops what the Owner switched off", async () => {
+    const { profile } = service(records, undefined, [
+      ["memory-snack", true],
+      ["memory-coffee", false],
+      ["memory-allergy", true],
+    ]);
+    const request = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private" as const,
+      now: NOW,
+    };
+    const result = await profile.compose(request);
+    expect(result.memoryIds).toEqual([
+      "memory-language",
+      "memory-name",
+      "memory-snack",
+      "memory-daughter",
+    ]);
+    const outline = await profile.outline(request);
+    expect(outline.sections.map(({ category }) => category)).toEqual([
+      "identity",
+      "preference",
+      "relationship",
+    ]);
+    expect(outline.usage).toEqual({
+      used: [
+        TEXT["memory-language"],
+        TEXT["memory-name"],
+        TEXT["memory-daughter"],
+        TEXT["memory-snack"],
+      ]
+        .map((text) => (text ?? "").length + 3)
+        .reduce((sum, length) => sum + length, 0),
+      limit: 2000,
+      queued: [],
+    });
+  });
+
+  it("[MEM-PIN] puts the Owner's picks ahead of automatic ones and reports what did not fit", async () => {
+    const { profile } = service(
+      [memory("memory-name", "identity", 900), memory("memory-snack", "preference", 400)],
+      12,
+      [["memory-snack", true]],
+    );
+    const outline = await profile.outline({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(outline.sections.flatMap(({ lines }) => lines.map(({ memoryId }) => memoryId))).toEqual([
+      "memory-snack",
+    ]);
+    expect(outline.usage.queued).toEqual(["memory-name"]);
   });
 
   it("returns no blocks when nothing qualifies", async () => {
