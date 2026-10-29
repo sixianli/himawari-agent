@@ -5,6 +5,8 @@
     "Helvetica Neue", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   font-size: 14px;
   line-height: 1.6;
   --background: #1e1e1e;
@@ -126,6 +128,14 @@ textarea {
 
 textarea {
   resize: vertical;
+}
+
+@media (pointer: coarse), (max-width: 560px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
 }
 
 code,
@@ -528,13 +538,35 @@ td {
 
 .modal-dialog {
   width: min(38rem, calc(100% - 2rem));
-  max-height: calc(100vh - 2rem);
+  inset-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+  max-height: calc(
+    100dvh -
+    env(safe-area-inset-top, 0px) -
+    env(safe-area-inset-bottom, 0px) -
+    2rem
+  );
   border: 1px solid var(--border);
   border-radius: 0.85rem;
   padding: 1.25rem;
-  overflow: auto;
+  overflow: hidden;
   color: var(--text);
   background: var(--surface);
+}
+
+.modal-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-dialog > .dialog-heading {
+  flex: none;
+}
+
+.dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-dialog::backdrop {

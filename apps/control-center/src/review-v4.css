@@ -666,6 +666,9 @@
     min-height: 0;
   }
   .settings-nav {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     width: 100%;
     display: flex;
     overflow: auto;
@@ -2022,7 +2025,7 @@ body {
   display: grid;
   grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
   gap: 8px 12px;
-  margin: 0 4px 14px;
+  margin: 0 0 14px;
   padding: 12px 14px;
   border-radius: 10px;
   background: var(--surface-muted);

@@ -74,6 +74,7 @@ date: "2026-10-26"
   47. [修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛](#case-incident-gates)
   49. [模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗](#case-answer-weight)
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
+  51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -101,8 +102,8 @@ date: "2026-10-26"
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[回答整段像粗体](#case-answer-weight)、[筛选按钮上的数字要真](#case-filter-counts) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[回答整段像粗体](#case-answer-weight)、[筛选按钮上的数字要真](#case-filter-counts)、[手机输入框整页放大](#case-phone-input-zoom) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3111,6 +3112,59 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “我们发现事故修完了还会复发，因为修复只落在那一处代码和一篇文档里。于是定了一条规则：每个事故必须落成一道自动检查才算关闭，同一错误第三次必须有硬门槛。清单本身也被脚本核对，不能写一个不存在的门槛就算完。比如 worker 启动超时，以前只看最后起没起来，碰巧成功就没人管；现在切换后量启动时间，超过 30 秒就回退，出包时还核对等待时间留够余量。每道门槛都要证明在事故重现上会失败。”
+
+<a id="case-phone-input-zoom"></a>
+
+## 案例 51：iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏
+
+**背景与现象**
+
+2026-10-29 上午（日本时间），Andy 在 iPhone 主屏应用（PWA，把网页加到主屏后像 App 一样全屏打开）上用第十八版时连报四处：记忆页整页被放大，左边文字被切掉；新对话里一点输入框，整页立刻放大，发送按钮只露一半；点开一条记忆后详情块往右溢出，删除按钮只露一半；设置面板上下撑满，关闭按钮被顶到状态栏（屏幕最上面显示时间和电量的一条）底下点不到，退不出通知设置。
+
+**根因**
+
+是两个问题，都用 iPhone 尺寸（393×852）的真实 Chromium 复现和代码确认：
+
+1. **整页放大**：iOS Safari 在输入框字号小于 16px 时，一聚焦就把整页放大，松手后不缩回。网页根字号是 14px，输入框都写了 `font: inherit`，所以称呼框、语言下拉框、记忆搜索框和编辑框都是 14px。对话输入框更隐蔽：手机宽度下有一条 16px 的规则，但另一条 `.composer textarea:focus` 规则写着 14px，选择器更具体，平时量是 16px，一聚焦就变 14px。实测第十八版构建：输入框聚焦前 16px、聚焦后 14px。iOS 不会在页面切换时复原缩放，所以在设置里点过称呼框后，记忆页也一直是放大的。页面本身并不比屏幕宽（`scrollWidth` 等于屏幕宽 393）。
+2. **设置关不掉**：弹窗最大高度是 `100vh - 2rem`。主屏应用用 `viewport-fit=cover` 和透明状态栏，`100vh` 包括状态栏和底部横条，弹窗居中后顶端离屏幕上沿约 14px，标题和关闭按钮落在 59pt 高的状态栏下面；而且整块弹窗一起滚动，标题还会被滚走。
+
+**我们的方案**
+
+- 手机上（`pointer: coarse` 或宽度不超过 560px）所有文字输入框、文本框和下拉框统一 `font-size: 16px !important`。用 `!important` 是为了不管哪条更具体的规则（包括 `:focus`）都压不过它，这正是对话框出问题的方式。
+- 弹窗高度改成 `100dvh` 减上下安全区（`env(safe-area-inset-top/bottom)`，系统告诉网页状态栏和底部横条各占多高）再减 2rem，位置也让开安全区；弹窗本身不滚，标题栏固定，内容放进新的 `.dialog-body` 里单独滚动；手机上设置的分类标签吸顶。
+- 记忆详情块左右边距改为 0，和上面的卡片对齐。
+- 两道门槛：每次提交跑的 `scripts/check-phone-layout.mjs`（`npm run check:phone-layout`），以及上线前真实浏览器走查新增必过项 `accept-phone-layout`。
+
+**方案讨论与备选**
+
+- **viewport 加 `maximum-scale=1` 或 `user-scalable=no`**：网上最常见的一行修法，能挡住自动放大，但也挡住双指放大，看小字、看图片时用户没法放大，属于为修一个问题拿走用户的能力。静态检查反过来禁止这两个写法。
+- **只把出问题的几个输入框改成 16px**：改得少，但下一个新输入框或新的 `:focus` 规则又会犯同样的错，对话框就是这样漏掉的。
+- **用 JavaScript 在聚焦前临时改 viewport**：依赖浏览器时序，iOS 版本一变就可能失效，也更难测。
+- **设置弹窗做成固定大小**：Andy 在 UI 第二批第 23 条提过，属于视觉重做，留给 UI 批次线程；这里只修“超出屏幕、点不到关闭”的根因。
+
+**业界主流做法**
+
+- ✅ WebKit 官方博客《Designing Websites for iPhone X》（<https://webkit.org/blog/7929/designing-websites-for-iphone-x/>）：“The default value of viewport-fit is auto, which results in the automatic insetting behavior”，用 `viewport-fit=cover` 后页面铺满全屏，要用 `env()` 读取安全区，“constant() has been removed and replaced with env()”。我们正是用了 cover，却在弹窗高度上忘了扣安全区。
+- 🟡 “输入框小于 16px 会触发自动放大”没有找到 Apple 或 WebKit 的官方文档，只有社区文章（例如 <https://weblog.west-wind.com/posts/2023/Apr/17/Preventing-iOS-Textbox-Auto-Zooming-and-ViewPort-Sizing>），它们同时提醒不要用 `maximum-scale` 关缩放。我们以自己的复现为准：对话框聚焦后实测 14px，和 Andy 的截图一致。
+
+**对比与取舍**
+
+和社区主流一样选“输入框不小于 16px”，不关缩放。不同的是用一条 `!important` 规则统一兜住所有输入控件，再用脚本检查别处不许出现能压过它的写法；代价是手机上设置里的输入框字比电脑上大 2px。弹窗安全区按 WebKit 的建议用 `env()`。Chromium 模拟器读不到真实安全区，所以走查只能检查“弹窗和关闭按钮在屏幕内、聚焦后字号”，状态栏遮挡仍要靠真机确认。
+
+**结果数据**
+
+- 复现（本线程云端 Chromium，393×852，`isMobile`）：第十八版构建对话框聚焦后 14px，称呼框 14px，语言下拉框 14px；修复后都是 16px。全部页面 `scrollWidth` 等于 393，没有横向溢出。
+- 设置弹窗（把安全区按 iPhone 的 59pt/34pt 代入）：修前弹窗顶端 14px、关闭按钮 27–63px，整个在状态栏下；修后弹窗顶端 73px、关闭按钮 86–122px。
+- 门槛自证：`check-phone-layout.mjs` 对修复前的代码报 5 项错误，修复后通过；`accept-phone-layout` 的步骤对第十八版构建报 “textarea focused at 14px” 失败，对修复后的构建通过（均在本线程用夹具服务器跑）。
+- 真机效果：未测量，等 Andy 在 iPhone 上确认。
+
+**相关 ADR/PR**
+
+[事故与门槛清单 I-14](incidents-and-gates.md)；[第十八版手机页面基线 ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)；本案例的 PR 在分支 `claude/project-thread-6cxbkp`。
+
+**面试 30 秒版**
+
+“用户在 iPhone 上一点输入框整页就放大、设置面板关不掉。根因一是 iOS 对小于 16px 的输入框会自动放大且不回弹，我们的对话框平时 16px、一聚焦被一条更具体的 `:focus` 规则改成 14px；二是弹窗高度用 100vh，没扣状态栏安全区。修法是手机上输入控件统一 16px、不用关缩放的偷懒写法，弹窗按 env(safe-area-inset) 算高度、标题固定内容内滚。再加两道门槛：提交时的静态检查和上线前手机尺寸的真实浏览器走查，两道都证明在旧版本上会失败。”
 
 [返回目录](#contents)
 
