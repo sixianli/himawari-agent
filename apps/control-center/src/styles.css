@@ -248,7 +248,7 @@ footer {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .app-link {
@@ -265,7 +265,7 @@ footer {
   border-radius: 999px;
   padding: 0.62rem 1rem;
   cursor: pointer;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .action-button-primary {
@@ -307,7 +307,7 @@ footer {
 .acknowledgement {
   display: block;
   margin-bottom: 0.35rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .field-hint,
@@ -322,7 +322,7 @@ footer {
 
 .field-error {
   color: var(--danger);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .banner {
@@ -453,7 +453,7 @@ footer {
 .semantic-list .app-link[aria-current="page"] {
   border-left: 4px solid var(--primary);
   background: var(--surface);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .empty-state {
@@ -488,7 +488,7 @@ footer {
 .object-details dd,
 .health-grid dd {
   margin: 0.25rem 0 0;
-  font-weight: 750;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
@@ -508,7 +508,7 @@ table {
 
 caption {
   padding: 0.5rem;
-  font-weight: 750;
+  font-weight: 700;
   text-align: left;
 }
 
@@ -622,7 +622,7 @@ td {
   padding: 0.65rem 0.8rem;
   color: var(--text);
   background: transparent;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .tabs [role="tab"][aria-selected="true"] {
