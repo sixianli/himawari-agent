@@ -105,12 +105,12 @@ export function NotificationSettings({
   const delivered = (value: string | null) =>
     value
       ? message("push.lastDelivered", {
-          time: new Date(value).toLocaleString(locale, {
+          time: new Intl.DateTimeFormat(locale, {
             month: "numeric",
             day: "numeric",
             hour: "2-digit",
             minute: "2-digit",
-          }),
+          }).format(new Date(value)),
         })
       : message("push.neverDelivered");
   const phone = platform === "iPhone" || platform === "iPad";

@@ -1,7 +1,8 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
-import { ActionButton } from "./index.js";
 import { HimawariBrand } from "./brand.js";
+import { ActionButton } from "./index.js";
 
 export async function accountRequest(
   path: string,
@@ -110,7 +111,6 @@ export function AccountLogin({
                 name="password"
                 type="password"
                 autoComplete="current-password"
-                // HTML counts UTF-16 units; the account accepts up to 128 Unicode code points.
                 maxLength={256}
                 required
               />
@@ -218,6 +218,7 @@ export function AccountDevices({
   readonly onReauthenticated: () => void;
 }) {
   const { message } = useControlCenterIntl();
+  const format = useLocaleFormat();
   const [devices, setDevices] = useState<readonly DeviceView[]>([]);
   const [error, setError] = useState(false);
   const [reauthenticate, setReauthenticate] = useState(false);
@@ -283,9 +284,7 @@ export function AccountDevices({
               {device.current ? <span> · {message("account.currentDevice")}</span> : null}
               <p>
                 {message("account.lastSeen")}:{" "}
-                <time dateTime={device.lastSeenAt}>
-                  {new Date(device.lastSeenAt).toLocaleString()}
-                </time>
+                <time dateTime={device.lastSeenAt}>{format.full(device.lastSeenAt)}</time>
               </p>
             </div>
             <ActionButton disabled={busy} variant="secondary" onClick={() => void mutate(device)}>

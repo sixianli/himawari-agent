@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryModel, MemoryReminder, PendingMemory } from "../memory.js";
 import { ActionButton } from "./primitives.js";
@@ -110,15 +111,10 @@ export function MemoryApprovalCard({
 }
 
 export function MemoryReminders({ memory, message }: { memory: MemoryModel; message: Message }) {
+  const format = useLocaleFormat();
   const items: readonly MemoryReminder[] = memory.overview?.reminders ?? [];
   if (!items.length) return null;
-  const time = (value: string) =>
-    new Date(value).toLocaleString(undefined, {
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const time = (value: string) => format.moment(value);
   return (
     <aside className="memory-reminders" aria-live="polite">
       {items.map((item) => (

@@ -28,13 +28,14 @@ import {
   recordedInterval,
   thinkingSteps,
 } from "../execution-view.js";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { toolStepSummary } from "../step-summary.js";
 import { formatTokens, type TurnUsage, turnUsage } from "../turn-summary.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { ActionButton } from "./primitives.js";
-import { ToolIcon, type ToolGlyph } from "./tool-icon.js";
+import { type ToolGlyph, ToolIcon } from "./tool-icon.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 function statusId(run: RunSummary): MessageId {
@@ -48,9 +49,10 @@ function statusId(run: RunSummary): MessageId {
   return `runs.status.${key}` as MessageId;
 }
 function RecordedTime({ at }: { at: string }) {
+  const format = useLocaleFormat();
   return (
-    <time dateTime={at} title={new Date(at).toLocaleString()}>
-      {new Date(at).toLocaleTimeString()}
+    <time dateTime={at} title={format.full(at)}>
+      {format.clock(at)}
     </time>
   );
 }

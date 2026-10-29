@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { parseDelimited } from "../delimited-text.js";
 import type { DeliveredFile } from "../delivered-files.js";
 import { fileContentUrl } from "../gateway-client.js";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import type { RegisteredFile } from "../registered-files.js";
@@ -144,6 +145,7 @@ function CsvTable({
   readonly delimiter: string;
   readonly message: (id: MessageId) => string;
 }) {
+  const format = useLocaleFormat();
   const [header = [], ...cells] = parseDelimited(text, delimiter);
   const rows = cells.map((values, index) => ({
     id: `row-${index + 1}`,
@@ -198,7 +200,9 @@ function CsvTable({
               <td className="row-number">{message("preview.total")}</td>
               {columns.map((column) => (
                 <td key={column.id} className={column.className}>
-                  {column.total?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? ""}
+                  {column.total === undefined
+                    ? ""
+                    : format.number(column.total, { maximumFractionDigits: 2 })}
                 </td>
               ))}
             </tr>
