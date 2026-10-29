@@ -126,15 +126,16 @@ finally:
     journal_path.chmod(0o600)
     record['journal'] = {'path': str(journal_path), 'sha256': hashlib.sha256(journal.stdout).hexdigest(), 'exitCode': journal.returncode}
     record['finalUnitProperties'] = show(unit)
-    cgroup = record.get('effectiveProperties', {}).get('ControlGroup')
-    if cgroup:
-        cgroup_path = Path('/sys/fs/cgroup') / cgroup.lstrip('/')
-        pids = cgroup_path / 'cgroup.procs'
-        remaining = pids.read_text().splitlines() if pids.is_file() else []
-        record['cgroupReadback'] = {'path': str(cgroup_path), 'remainingPids': remaining}
-        if remaining:
-            record['passed'] = False
-            record['errors'].append({'code': 'PROBE_CGROUP_STILL_HAS_PROCESSES'})
+    expected_cgroup = '/system.slice/' + unit
+    reported_cgroups = {value for value in [record.get('effectiveProperties', {}).get('ControlGroup'), record['finalUnitProperties'].get('ControlGroup')] if value}
+    cgroup_path = Path('/sys/fs/cgroup') / expected_cgroup.lstrip('/')
+    pids = cgroup_path / 'cgroup.procs'
+    remaining = pids.read_text().splitlines() if pids.is_file() else []
+    record['cgroupReadback'] = {'path': str(cgroup_path), 'reportedControlGroups': sorted(reported_cgroups), 'cgroupPresent': cgroup_path.is_dir(), 'remainingPids': remaining}
+    if reported_cgroups - {expected_cgroup}:
+        record['errors'].append({'code': 'PROBE_CGROUP_PATH_UNEXPECTED'})
+    if remaining:
+        record['errors'].append({'code': 'PROBE_CGROUP_STILL_HAS_PROCESSES'})
     record['passed'] = record['passed'] and not record['errors']
     receipt = write(report_path, record)
     print(json.dumps({'receipt': receipt, 'passed': record['passed']}))
