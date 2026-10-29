@@ -9,6 +9,7 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useRef,
   useState,
 } from "react";
 
@@ -158,6 +159,117 @@ export function editorKeys(save: (() => void) | null, cancel: () => void) {
       cancel();
     }
   };
+}
+
+export interface DropdownOption<TValue extends string> {
+  readonly value: TValue;
+  readonly label: string;
+}
+
+export interface DropdownProps<TValue extends string> {
+  readonly label: string;
+  readonly value: TValue;
+  readonly options: readonly DropdownOption<TValue>[];
+  readonly onChange: (value: TValue) => void;
+}
+
+export function Dropdown<TValue extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: DropdownProps<TValue>) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  const current = options.find((option) => option.value === value);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: Event) => {
+      if (root.current && event.target instanceof Node && !root.current.contains(event.target))
+        setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("focusin", dismiss);
+    root.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("focusin", dismiss);
+    };
+  }, [open]);
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const items = [...(root.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [])];
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    items[(index + step + items.length) % items.length]?.focus();
+  };
+  return (
+    <div className="dropdown" ref={root}>
+      <button
+        type="button"
+        ref={trigger}
+        className="dropdown-trigger"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <span>{current?.label}</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          className="dropdown-menu"
+          id={listId}
+          role="listbox"
+          aria-label={label}
+          tabIndex={-1}
+          onKeyDown={move}
+        >
+          {options.map((option) => (
+            <button
+              type="button"
+              role="option"
+              key={option.value}
+              aria-selected={option.value === value}
+              onClick={() => {
+                if (option.value !== value) onChange(option.value);
+                close();
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === value ? (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m5 12.5 4.5 4.5L19 7.5" />
+                </svg>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export interface EmptyStateProps {

@@ -361,14 +361,19 @@ describe("control center application bootstrap and interaction", () => {
   it("persists interface language and appearance through the actual shell controls", async () => {
     await render();
     await click(messages["settings.title"]);
-    const locale = document.querySelector<HTMLSelectElement>(
-      'select[aria-label="' + messages["locale.label"] + '"]',
+    expect(document.querySelector("dialog select")).toBeNull();
+    const locale = document.querySelector<HTMLButtonElement>(
+      `button[aria-haspopup="listbox"][aria-label="${messages["locale.label"]}"]`,
     );
     if (!locale) throw new Error("missing language selector");
-    await act(async () => {
-      locale.value = "en";
-      locale.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(locale.textContent).toBe(messages["locale.zhCN"]);
+    await act(async () => locale.click());
+    const english = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (option) => option.textContent === messages["locale.en"],
+    );
+    if (!english) throw new Error("missing English option");
+    await act(async () => english.click());
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
     expect(new ControlCenterBrowserStorage(window.localStorage).readLocale([])).toBe("en");
     await act(async () => {
       await loadMessageCatalog("en");
