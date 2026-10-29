@@ -12,6 +12,7 @@ import {
   type DataClassification,
   type ModelDescriptor,
   type ModelInvocationEvent,
+  type ModelInvocationPricing,
   type ModelInvocationRequest,
   type PayloadProtectionRequest,
   type PayloadProtectorPort,
@@ -247,6 +248,20 @@ function textOf(message: AssistantMessage): string {
     .join("");
 }
 
+function pricedCostMicros(
+  usage: AssistantMessage["usage"],
+  pricing: ModelInvocationPricing | undefined,
+): number | undefined {
+  if (pricing === undefined) return undefined;
+  const total = Math.ceil(
+    usage.input * pricing.input +
+      usage.output * pricing.output +
+      usage.cacheRead * pricing.cacheRead +
+      usage.cacheWrite * pricing.cacheWrite,
+  );
+  return Number.isSafeInteger(total) && total >= 0 ? total : undefined;
+}
+
 export class PiModelTransport {
   readonly #models: PiModelBindingPort;
   readonly #payloads: PiModelPayloadBoundary;
@@ -301,7 +316,8 @@ export class PiModelTransport {
       invocationId: request.invocationId,
       occurredAt: now(),
     });
-    if (descriptor.provider !== "vercel-ai-gateway" || request.modelRef !== descriptor.ref) {
+    const gatewayed = descriptor.provider === "vercel-ai-gateway";
+    if ((!gatewayed && descriptor.provider !== "magpie") || request.modelRef !== descriptor.ref) {
       yield failed(request, "AI_GATEWAY_PROVIDER_MISMATCH", false, Date.now() - startedAt, now());
       return;
     }
@@ -334,11 +350,12 @@ export class PiModelTransport {
     const message: UserMessage = { role: "user", content: prompt, timestamp: Date.now() };
     const context: Context = { messages: [message] };
     let responseStatus = 0;
-    const observed = observeGatewayFetch(async (fetchInput, init) => {
+    const statusFetch: FetchFunction = async (fetchInput, init) => {
       const response = await this.#fetch(fetchInput, init);
       responseStatus = response.status;
       return response;
-    }, descriptor.model);
+    };
+    const observed = gatewayed ? observeGatewayFetch(statusFetch, descriptor.model) : undefined;
 
     const redactor = new StreamingMachineSecretRedactor();
     let sequence = 0;
@@ -367,8 +384,10 @@ export class PiModelTransport {
       request.signal?.throwIfAborted();
       const stream = binding.modelRuntime.stream(binding.model, context, {
         apiKey: secret,
-        fetch: observed.fetch,
-        onPayload: (payload) => gatewayPayload(payload, descriptor.providerRouting),
+        fetch: observed?.fetch ?? statusFetch,
+        ...(gatewayed
+          ? { onPayload: (payload: unknown) => gatewayPayload(payload, descriptor.providerRouting) }
+          : { sessionId: request.runId }),
         maxTokens: Math.min(this.#maxOutputTokens, binding.model.maxTokens),
         maxRetries: 0,
         timeoutMs: this.#requestTimeoutMs,
@@ -473,19 +492,34 @@ export class PiModelTransport {
       return;
     }
 
-    const observedResponse = await observed.result();
-    if (observedResponse.status !== "verified") {
-      yield failed(
-        request,
-        "AI_GATEWAY_PROVIDER_METADATA_MISSING",
-        false,
-        Date.now() - startedAt,
-        now(),
-      );
-      return;
-    }
-    const observation = observedResponse.billing;
     const usage = terminalMessage.usage;
+    let observation: { provider: string; model: string; generationId: string; costMicros: number };
+    if (observed !== undefined) {
+      const observedResponse = await observed.result();
+      if (observedResponse.status !== "verified") {
+        yield failed(
+          request,
+          "AI_GATEWAY_PROVIDER_METADATA_MISSING",
+          false,
+          Date.now() - startedAt,
+          now(),
+        );
+        return;
+      }
+      observation = observedResponse.billing;
+    } else {
+      const costMicros = pricedCostMicros(usage, binding.admissionCost?.pricing);
+      if (costMicros === undefined) {
+        yield failed(request, "MODEL_PRICING_UNAVAILABLE", false, Date.now() - startedAt, now());
+        return;
+      }
+      observation = {
+        provider: descriptor.provider,
+        model: descriptor.model,
+        generationId: request.invocationId,
+        costMicros,
+      };
+    }
     const providerObservation = Object.freeze({
       provider: observation.provider,
       model: observation.model,

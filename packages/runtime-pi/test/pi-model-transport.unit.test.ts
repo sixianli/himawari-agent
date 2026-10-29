@@ -477,6 +477,102 @@ describe("PiModelTransport", () => {
     expect(stream).not.toHaveBeenCalled();
   });
 
+  it("prices a Magpie completion from the configured token rates without gateway metadata", async () => {
+    const payloads = payloadBoundary();
+    const magpieModel = {
+      ...model,
+      id: "group/himawari-main",
+      provider: "magpie",
+      baseUrl: "http://127.0.0.1:3425/v1",
+    };
+    const { providerRouting: _routing, ...gatewayFields } = descriptor;
+    const magpieDescriptor: ModelDescriptor = {
+      ...gatewayFields,
+      ref: "magpie-primary",
+      provider: "magpie",
+      model: magpieModel.id,
+    };
+    const runtime = {
+      stream(_model: Model<Api>, _context: Context, streamOptions?: Record<string, unknown>) {
+        expect(streamOptions?.["onPayload"]).toBeUndefined();
+        return runtimeWithTerminal(assistant("answer")).stream(_model, _context, streamOptions);
+      },
+    };
+    const transport = new PiModelTransport({
+      models: {
+        resolve: async () =>
+          ({
+            model: magpieModel,
+            modelRuntime: runtime,
+            admissionCost: {
+              pricing: { input: 0.5, output: 2, cacheRead: 0.1, cacheWrite: 0.5 },
+              estimatedCostMicros: 1,
+            },
+          }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () =>
+        new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } }),
+    });
+
+    const events = await collect(
+      transport.invoke({
+        descriptor: magpieDescriptor,
+        request: { ...request, modelRef: magpieDescriptor.ref },
+        secretValues: [PROVIDER_SECRET],
+      }),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "model.completed",
+      costMicros: 8,
+      providerObservation: {
+        provider: "magpie",
+        model: "group/himawari-main",
+        generationId: request.invocationId,
+      },
+    });
+    expect(payloads.writes.join("")).toBe("answer");
+  });
+
+  it("fails closed when a Magpie binding has no pricing", async () => {
+    const payloads = payloadBoundary();
+    const magpieModel = { ...model, id: "group/himawari-main", provider: "magpie" };
+    const { providerRouting: _routing, ...gatewayFields } = descriptor;
+    const magpieDescriptor: ModelDescriptor = {
+      ...gatewayFields,
+      ref: "magpie-primary",
+      provider: "magpie",
+      model: magpieModel.id,
+    };
+    const transport = new PiModelTransport({
+      models: {
+        resolve: async () =>
+          ({
+            model: magpieModel,
+            modelRuntime: runtimeWithTerminal(assistant("answer")),
+          }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () => new Response("data: [DONE]\n\n"),
+    });
+
+    const events = await collect(
+      transport.invoke({
+        descriptor: magpieDescriptor,
+        request: { ...request, modelRef: magpieDescriptor.ref },
+        secretValues: [PROVIDER_SECRET],
+      }),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "model.failed",
+      errorCode: "MODEL_PRICING_UNAVAILABLE",
+    });
+  });
+
   it("fails closed when AI Gateway omits actual provider or cost metadata", async () => {
     const payloads = payloadBoundary();
     const response = new Response(

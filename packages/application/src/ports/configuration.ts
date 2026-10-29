@@ -44,6 +44,7 @@ export interface ConfiguredCompletionsGenerationModelDescriptor
   readonly input: readonly ("text" | "image")[];
   readonly contextWindow: number;
   readonly maxTokens: number;
+  readonly baseUrl?: string;
 }
 
 export interface ConfiguredTypeSafeGenerationModelDescriptor

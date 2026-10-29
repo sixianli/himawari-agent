@@ -294,6 +294,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
               "contextWindow",
               "maxTokens",
               "providerRouting",
+              "baseUrl",
             ]
         : ["dimensions"]),
     ],
@@ -386,6 +387,9 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     ...(input["providerRouting"] === undefined
       ? {}
       : { providerRouting: providerRouting(input["providerRouting"], `${field}.providerRouting`) }),
+    ...(input["baseUrl"] === undefined
+      ? {}
+      : { baseUrl: loopbackHttpUrl(input["baseUrl"], `${field}.baseUrl`) }),
   };
   if (descriptor.reasoningRequired && !descriptor.reasoning) {
     throw invalid(`${field}.reasoningRequired`, "requires a reasoning-capable model");
@@ -397,6 +401,19 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       throw invalid(`${field}.secretRef`, "is required for AI Gateway");
     if (descriptor.providerRouting === undefined)
       throw invalid(`${field}.providerRouting`, "is required for AI Gateway");
+    if (descriptor.baseUrl !== undefined)
+      throw invalid(`${field}.baseUrl`, "is not supported for AI Gateway");
+  } else if (descriptor.provider === "magpie") {
+    if (descriptor.role !== "primary")
+      throw invalid(`${field}.role`, "Magpie requires the primary role");
+    if (descriptor.baseUrl === undefined)
+      throw invalid(`${field}.baseUrl`, "is required for Magpie");
+    if (descriptor.secretRef === null)
+      throw invalid(`${field}.secretRef`, "is required for Magpie");
+    if (descriptor.providerRouting !== undefined)
+      throw invalid(`${field}.providerRouting`, "is not supported for Magpie");
+  } else if (descriptor.baseUrl !== undefined) {
+    throw invalid(`${field}.baseUrl`, "is only supported for Magpie");
   }
   return Object.freeze(descriptor);
 }
@@ -409,6 +426,27 @@ function parseNumberMap(value: unknown, field: string): Readonly<Record<string, 
     result[key] = integer(entry, `${field}.${key}`, 0, 10_000);
   }
   return Object.freeze(result);
+}
+
+function loopbackHttpUrl(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw invalid(field, "must be a loopback HTTP URL");
+  }
+  if (
+    parsed.protocol !== "http:" ||
+    !["127.0.0.1", "[::1]", "localhost"].includes(parsed.hostname) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw invalid(field, "must be a loopback HTTP URL");
+  }
+  return candidate;
 }
 
 function httpsOrigin(value: unknown, field: string): string {

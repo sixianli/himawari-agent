@@ -405,6 +405,53 @@ describe("production model composition", () => {
     expect(piRoutes).toHaveLength(1);
   });
 
+  it("maps a Magpie primary to a loopback Pi route without gateway routing", () => {
+    const { providerRouting: _routing, ...primary } = primaryModel;
+    const configuration = {
+      modelDescriptors: [
+        {
+          ...primary,
+          role: "primary" as const,
+          provider: "magpie",
+          model: "group/himawari-main",
+          baseUrl: "http://127.0.0.1:3425/v1",
+          secretRef: "magpie-gateway-key",
+        },
+        {
+          ref: "model-embedding",
+          role: "embedding" as const,
+          provider: "deterministic",
+          model: "embedding-fixture",
+          version: "fixture-1",
+          dimensions: 8,
+          capabilities: ["embedding"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          allowedDataClassifications: ["public", "private"],
+          disclosure: "local_only" as const,
+          secretRef: null,
+        },
+      ],
+      memory: { dimensions: 8 },
+      secretReferences: [
+        {
+          ref: "magpie-gateway-key",
+          version: "v1",
+          purpose: "model-provider-auth",
+          scope: "model",
+        },
+      ],
+    } as never;
+
+    const resolved = resolveConfiguredModelDescriptorSet(configuration);
+
+    expect(resolved.generation[0]).toMatchObject({
+      provider: "magpie",
+      model: "group/himawari-main",
+      baseUrl: "http://127.0.0.1:3425/v1",
+    });
+    expect(resolved.generation[0]).not.toHaveProperty("providerRouting");
+  });
+
   it("fails closed instead of inventing a Pi route for an unregistered generation provider", () => {
     const configuration = {
       modelDescriptors: [
