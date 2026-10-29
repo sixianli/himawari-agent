@@ -42,7 +42,7 @@ Andy 16:07 在线程里同意在生产机安装 Magpie。17:10–17:13 已装好
 ## 决定
 
 1. **Himawari 的主模型可以配置成 `provider: "magpie"`。** 配置里写 Magpie 的路由组名（例如 `group/himawari-main`）和本机地址 `baseUrl: "http://127.0.0.1:3425/v1"`。只接受本机回环地址的 http，不接受其他主机，也不接受 Vercel 专用的 `providerRouting`。改动在 `packages/platform-node/src/strict-configuration.ts`、`packages/runtime-pi/src/configured-model-binding.ts` 和 `apps/agent-service/src/production-model-composition.ts`。
-2. **Pi 部分直接复用，不另写协议。** Pi（Himawari 底层的 Agent 框架）的 `openai-completions` 接口本来就支持自定义地址，Magpie 走的就是这个接口。Himawari 只负责配置校验和费用记账。只有 Vercel 才用 `openrouter` 格式的思考参数；Magpie 用 Pi 默认的 OpenAI 格式，由 Magpie 再翻译给后面的模型。
+2. **Pi 部分直接复用，不另写协议。** Pi（Himawari 底层的 Agent 框架）的 `openai-completions` 接口本来就支持自定义地址，Magpie 走的就是这个接口。Himawari 只负责配置校验和费用记账。只有 Vercel 才用 `openrouter` 格式的思考参数；Magpie 用 Pi 默认的 OpenAI 格式，由 Magpie 再翻译给后面的模型。Magpie 路线还打开 Pi 的 `sendSessionAffinityHeaders`（每次请求带上会话编号的开关）：主对话带 Pi 的会话编号，其他单次调用（例如邮件判断）带本次运行的编号，放在 `x-session-affinity` 和 `session_id` 请求头里。Magpie 据此给 OpenCode Go 生成固定的 `x-opencode-session`。Go 从 2026-09 起会拒绝不带这个头的请求；不带的话，Magpie 只能按对话第一句话推算，两段同样以“你好”开头的对话会被当成同一段。
 3. **费用按 token 自己算。** Magpie 不返回 Vercel 那样的账单字段，所以 `packages/runtime-pi/src/pi-model-transport.ts` 对 Magpie 用配置里的单价乘以 token 数来记账，没有单价就拒绝。主对话一路（`pi-runtime-adapter.ts`）和预算服务本来就对非 Vercel 厂商按单价计算，不用改。配置里的单价按 Vercel 上的保守价格写，保证每个任务的费用上限仍然有意义，尽管套餐内的实际花费是 0。
 4. **Magpie 只接 API Key 和 Andy 明确同意的订阅登录。** 详见[各套餐能不能接](#subscriptions)。
 5. **记忆检索用的向量模型（`alibaba/qwen3-embedding-8b`）暂时继续走 Vercel。** 它每百万 token 只要 0.01 美元，Magpie 也不提供向量接口。

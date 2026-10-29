@@ -267,6 +267,7 @@ function providerModelConfig(
       ...(descriptor.reasoning && descriptor.provider === "vercel-ai-gateway"
         ? { thinkingFormat: "openrouter" as const }
         : {}),
+      ...(descriptor.provider === "magpie" ? { sendSessionAffinityHeaders: true } : {}),
     },
   };
 }

@@ -27,13 +27,24 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
 
 async function fakeMagpie(): Promise<{
   readonly baseUrl: string;
-  readonly requests: { url: string; auth: string | undefined; body: Record<string, unknown> }[];
+  readonly requests: {
+    url: string;
+    auth: string | undefined;
+    session: string | string[] | undefined;
+    body: Record<string, unknown>;
+  }[];
 }> {
-  const requests: { url: string; auth: string | undefined; body: Record<string, unknown> }[] = [];
+  const requests: {
+    url: string;
+    auth: string | undefined;
+    session: string | string[] | undefined;
+    body: Record<string, unknown>;
+  }[] = [];
   const server = createServer(async (request, response) => {
     requests.push({
       url: request.url ?? "",
       auth: request.headers.authorization,
+      session: request.headers["x-session-affinity"],
       body: await body(request),
     });
     response.writeHead(200, { "content-type": "text/event-stream" });
@@ -131,6 +142,7 @@ it("streams through a loopback Magpie route with the pinned Pi runtime and price
   expect(magpie.requests).toHaveLength(1);
   expect(magpie.requests[0]?.url).toBe("/v1/chat/completions");
   expect(magpie.requests[0]?.auth).toBe(`Bearer ${GATEWAY_KEY}`);
+  expect(magpie.requests[0]?.session).toBe("run-magpie-01");
   expect(magpie.requests[0]?.body["model"]).toBe("group/himawari-main");
   expect(magpie.requests[0]?.body).not.toHaveProperty("providerOptions");
 });

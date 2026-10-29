@@ -387,7 +387,7 @@ export class PiModelTransport {
         fetch: observed?.fetch ?? statusFetch,
         ...(gatewayed
           ? { onPayload: (payload: unknown) => gatewayPayload(payload, descriptor.providerRouting) }
-          : {}),
+          : { sessionId: request.runId }),
         maxTokens: Math.min(this.#maxOutputTokens, binding.model.maxTokens),
         maxRetries: 0,
         timeoutMs: this.#requestTimeoutMs,

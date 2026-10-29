@@ -297,6 +297,7 @@ describe("ConfiguredPiModelBindingPort", () => {
     expect(primary.descriptor?.providerRouting).toBeUndefined();
     const registeredModel = (runtime.registered[0]?.config["models"] as unknown[])[0];
     expect(registeredModel).not.toHaveProperty("compat.thinkingFormat");
+    expect(registeredModel).toHaveProperty("compat.sendSessionAffinityHeaders", true);
     await binding.close();
   });
 
