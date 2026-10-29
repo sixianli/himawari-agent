@@ -767,18 +767,9 @@ export class SqliteGovernedDeletionAdapter {
         database
           .prepare("UPDATE memory_records SET source_thread_id = NULL WHERE source_thread_id = ?")
           .run(objectId);
-        payloadRefs.push(
-          ...this.#values(
-            database,
-            `SELECT quote_ref FROM memory_history_events
-            WHERE source_thread_id = ? AND quote_ref IS NOT NULL`,
-            [objectId],
-          ),
-        );
         database
           .prepare(
-            `UPDATE memory_history_events SET source_thread_id = NULL, source_deleted = 1,
-              quote_ref = NULL
+            `UPDATE memory_history_events SET source_thread_id = NULL, source_deleted = 1
             WHERE source_thread_id = ?`,
           )
           .run(objectId);

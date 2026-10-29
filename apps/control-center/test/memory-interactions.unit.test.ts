@@ -505,7 +505,7 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-history-summary")).toBe("变过 4 次，另外有 1 次说了同样的意思");
   });
 
-  it("[MH-4] says the source conversation was deleted instead of calling it a daily tidy-up", async () => {
+  it("[MH-4] says the source conversation was deleted, keeps the quote and never calls it a daily tidy-up", async () => {
     overview = {
       ...overview,
       pending: [],
@@ -517,10 +517,19 @@ describe("memory approval and management", () => {
               kind: "created",
               text: "主人喜欢爬山",
               stance: null,
-              quote: null,
+              quote: "我周末最喜欢去爬山了",
               sourceThreadId: null,
               sourceDeleted: true,
               at: "2026-10-25T12:00:00.000Z",
+            },
+            {
+              kind: "reaffirmed",
+              text: "主人喜欢爬山",
+              stance: null,
+              quote: null,
+              sourceThreadId: null,
+              sourceDeleted: true,
+              at: "2026-10-26T12:00:00.000Z",
             },
           ],
         }),
@@ -531,6 +540,7 @@ describe("memory approval and management", () => {
     await click("#settings .memory-page", "主人喜欢爬山");
     expect(text("#settings .memory-detail")).toContain("来源对话已删除");
     expect(text("#settings .memory-detail")).not.toContain("每日整理");
+    expect(text("#settings .memory-detail")).toContain("你说：“我周末最喜欢去爬山了”");
   });
 
   it("[MP-8] groups the profile by sub-category, draws people and restores an earlier wording", async () => {

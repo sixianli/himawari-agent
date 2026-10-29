@@ -452,7 +452,7 @@ describe("SQLite governed deletion", () => {
     expect(auditTombstone).not.toContain("owner-content");
   });
 
-  it("[MH-4] deletes the quotes a deleted Thread left in memory history and keeps every wording", async () => {
+  it("[MH-4] keeps the quotes and every wording when their Thread is deleted, and drops them with the Memory", async () => {
     const resource = await fixture();
     const database = openQualifiedDatabase(resource.databasePath);
     insertPayload(database, { ref: "payload-memory-old" });
@@ -495,7 +495,7 @@ describe("SQLite governed deletion", () => {
       {
         kind: "created",
         contentRef: "payload-memory-old",
-        quoteRef: null,
+        quoteRef: "payload-memory-quote",
         sourceThreadId: null,
         sourceDeleted: 1,
       },
@@ -509,7 +509,7 @@ describe("SQLite governed deletion", () => {
     ]);
     const payloadCount = (ref: string) =>
       scalar(resource.databasePath, "SELECT COUNT(*) FROM payloads WHERE ref = ?", ref);
-    expect(payloadCount("payload-memory-quote")).toBe(0);
+    expect(payloadCount("payload-memory-quote")).toBe(1);
     expect(payloadCount("payload-memory-old")).toBe(1);
     expect(payloadCount("payload-memory")).toBe(1);
 
@@ -521,6 +521,7 @@ describe("SQLite governed deletion", () => {
     expect(events()).toEqual([]);
     expect(payloadCount("payload-memory-old")).toBe(0);
     expect(payloadCount("payload-memory")).toBe(0);
+    expect(payloadCount("payload-memory-quote")).toBe(0);
   });
 
   it("persists Memory provider cleanup and rejects deleting a referenced Payload directly", async () => {
