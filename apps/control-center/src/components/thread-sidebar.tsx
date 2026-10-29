@@ -96,7 +96,13 @@ export function ThreadSidebar({
   const filesOpen = openPage !== null;
   const title = (thread: Thread) =>
     (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
-  const list = threads.filter((thread) => thread.status === "active");
+  const list = threads.filter(
+    (thread) =>
+      thread.status === "active" &&
+      (thread.messageWatermark > 0 ||
+        thread.sourceThreadId !== null ||
+        thread.threadId === selectedThreadId),
+  );
   const pinned = list
     .filter((thread) => thread.pinOrder !== null)
     .sort((a, b) => (a.pinOrder ?? 0) - (b.pinOrder ?? 0));

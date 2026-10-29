@@ -102,7 +102,7 @@ const summary = (
   titleRevision: 1,
   pinOrder: null,
   answerLocale: "zh-CN",
-  messageWatermark: 0,
+  messageWatermark: 1,
   sourceThreadId: null,
   sourceWatermark: null,
   createdAt: NOW,
