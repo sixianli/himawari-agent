@@ -370,34 +370,36 @@ export function ExecutionProcess({
                   <div className="step-detail">
                     {item.kind === "tool" ? (
                       <>
-                        {command ? <pre className="step-command">{command}</pre> : null}
-                        {outcome === "pending" ? null : (
-                          <p className={`step-outcome is-${outcome}`}>
-                            {outcome === "ok"
-                              ? `✓ ${message("step.outcome.ok")}`
-                              : `✕ ${message("step.outcome.failed")}${
-                                  exitCode !== null
-                                    ? ` · ${message("step.outcome.exitCode", { code: exitCode })}`
-                                    : ""
-                                }`}
-                          </p>
-                        )}
-                        {item.output && onPreview ? (
-                          <button
-                            type="button"
-                            className="step-link"
-                            onClick={() =>
-                              onPreview({ title: command || item.name, text: item.output })
-                            }
-                          >
-                            {message("step.viewOutput")}
-                          </button>
-                        ) : null}
+                        <div className="step-result">
+                          {outcome === "pending" ? null : (
+                            <p className={`step-outcome is-${outcome}`}>
+                              {outcome === "ok"
+                                ? `✓ ${message("step.outcome.ok")}`
+                                : `✕ ${message("step.outcome.failed")}${
+                                    exitCode !== null
+                                      ? ` · ${message("step.outcome.exitCode", { code: exitCode })}`
+                                      : ""
+                                  }`}
+                            </p>
+                          )}
+                          {item.output && onPreview ? (
+                            <button
+                              type="button"
+                              className="step-link"
+                              onClick={() =>
+                                onPreview({ title: command || item.name, text: item.output })
+                              }
+                            >
+                              {message("step.viewOutput")}
+                            </button>
+                          ) : null}
+                        </div>
                         <details className="step-technical">
                           <summary>
-                            {message("step.technical")}
+                            {message(command ? "step.commandDetails" : "step.technical")}
                             <RowChevron />
                           </summary>
+                          {command ? <pre className="step-command">{command}</pre> : null}
                           <p className="step-tool">
                             <span className="step-name">{item.name}</span>
                           </p>

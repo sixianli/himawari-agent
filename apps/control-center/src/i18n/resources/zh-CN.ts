@@ -149,6 +149,7 @@ export const messages = {
   "step.outcome.exitCode": "出错代码 {code}",
   "step.viewOutput": "查看输出",
   "step.technical": "技术细节",
+  "step.commandDetails": "命令详情",
   "chat.argumentsUnavailable": "未记录请求参数",
   "chat.resultUnavailable": "未收到可展示的返回结果，请结合步骤状态判断。",
   "chat.responseUnavailable": "此响应未留下可展示的文字，请查看执行状态。",

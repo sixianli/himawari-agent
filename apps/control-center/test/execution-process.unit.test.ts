@@ -177,7 +177,7 @@ it.each([
   },
 );
 
-it("[UI-30] opens a command step to the command and whether it worked, with raw details folded away", () => {
+it("[UI-30] opens a command step to whether it worked, with the command itself under command details", () => {
   const records = newsRun().map((record) =>
     record.itemId === "tool:zh" && record.kind === "tool"
       ? {
@@ -191,13 +191,15 @@ it("[UI-30] opens a command step to the command and whether it worked, with raw 
       : record,
   );
   const html = render(completedRun, records);
-  expect(html).toContain('<pre class="step-command">npm test</pre>');
   expect(html).toContain("✕ step.outcome.failed · step.outcome.exitCode(code=1)");
   expect(html).toContain("✓ step.outcome.ok");
   const technical = html.match(/<details class="step-technical">[\s\S]*?<\/details>/g) ?? [];
   expect(technical.length).toBeGreaterThan(0);
+  expect(technical.join("")).toContain("step.commandDetails");
+  expect(technical.join("")).toContain('<pre class="step-command">npm test</pre>');
   expect(technical.join("")).toContain('<span class="step-name">bash</span>');
   const outside = html.replace(/<details class="step-technical">[\s\S]*?<\/details>/g, "");
+  expect(outside).not.toContain("npm test");
   expect(outside).not.toContain('<span class="step-name">');
   expect(outside).not.toContain("chat.requestArguments");
 });

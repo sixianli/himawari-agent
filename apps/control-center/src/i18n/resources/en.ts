@@ -156,6 +156,7 @@ export const messages = {
   "step.outcome.exitCode": "exit code {code}",
   "step.viewOutput": "View output",
   "step.technical": "Technical details",
+  "step.commandDetails": "Command details",
   "chat.argumentsUnavailable": "Request arguments were not recorded",
   "chat.resultUnavailable": "No displayable result was received. See the step status.",
   "chat.responseUnavailable": "This response has no displayable text. See the execution status.",

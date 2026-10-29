@@ -160,6 +160,7 @@ export const messages = {
   "step.outcome.exitCode": "終了コード {code}",
   "step.viewOutput": "出力を見る",
   "step.technical": "技術的な詳細",
+  "step.commandDetails": "コマンドの詳細",
   "chat.argumentsUnavailable": "リクエスト引数の記録がありません",
   "chat.resultUnavailable": "表示可能な結果がありません。ステップの状態を確認してください。",
   "chat.responseUnavailable":

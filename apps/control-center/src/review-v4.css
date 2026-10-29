@@ -2356,10 +2356,19 @@ body {
 .timeline-row .step-detail > .step-status {
   margin: 0;
 }
-.timeline-row .step-command {
+.step-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+.step-result > .step-outcome {
   margin: 0;
-  max-height: calc(2 * 1.6em);
-  overflow: hidden;
+}
+.timeline-row .step-command {
+  margin: 0 0 8px;
+  max-height: 240px;
+  overflow: auto;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
   line-height: 1.6;

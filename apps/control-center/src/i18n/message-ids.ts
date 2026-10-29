@@ -140,6 +140,7 @@ export const MESSAGE_IDS = [
   "step.outcome.exitCode",
   "step.viewOutput",
   "step.technical",
+  "step.commandDetails",
   "chat.argumentsUnavailable",
   "chat.resultUnavailable",
   "chat.responseUnavailable",
