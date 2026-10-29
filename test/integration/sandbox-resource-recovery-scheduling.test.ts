@@ -1462,9 +1462,9 @@ it("migrates populated schema 42 without restarting old recovery or weakening it
     );
     expect(applyMigrations(old, migrations, { snapshot })).toEqual({
       appliedSequences: [
-        43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+        43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
       ],
-      currentSequence: 63,
+      currentSequence: 64,
     });
     expect(readMigrationLedger(old).slice(0, 42)).toEqual(ledger);
     const json = old
@@ -1483,7 +1483,7 @@ it("migrates populated schema 42 without restarting old recovery or weakening it
     expect(() => assertWritableSchema(migrated, 50)).toThrow();
     expect(() => assertWritableSchema(migrated, 54)).toThrow();
     expect(() => assertWritableSchema(migrated, 58)).toThrow();
-    expect(() => assertWritableSchema(migrated, 63)).not.toThrow();
+    expect(() => assertWritableSchema(migrated, 64)).not.toThrow();
     expect(old.pragma("foreign_key_check")).toEqual([]);
   } finally {
     old?.close();

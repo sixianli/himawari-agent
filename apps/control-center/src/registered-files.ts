@@ -15,7 +15,7 @@ export interface RegisteredFile {
   readonly runId: string;
   readonly toolCallId: string;
   readonly toolItemId: string;
-  readonly source: "write" | "edit" | "bash";
+  readonly source: "write" | "edit" | "bash" | "upload";
   readonly path: string;
   readonly name: string;
   readonly kind: RegisteredFileKind;
@@ -34,7 +34,7 @@ export interface RegisteredFilePage {
   readonly nextCursor: string | null;
 }
 
-const SOURCES = new Set(["write", "edit", "bash"]);
+const SOURCES = new Set(["write", "edit", "bash", "upload"]);
 
 export function parseRegisteredFile(value: unknown): RegisteredFile {
   const item =

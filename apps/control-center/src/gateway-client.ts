@@ -685,6 +685,7 @@ export class GatewayClient {
   async listFiles(query: {
     readonly threadId?: string;
     readonly kind?: RegisteredFileKind;
+    readonly origin?: "uploaded" | "generated";
     readonly search?: string;
     readonly before?: string | null;
     readonly limit?: number;
@@ -693,6 +694,7 @@ export class GatewayClient {
       await this.#filesRequest("list", {
         ...(query.threadId ? { threadId: query.threadId } : {}),
         ...(query.kind ? { kind: query.kind } : {}),
+        ...(query.origin ? { origin: query.origin } : {}),
         ...(query.search?.trim() ? { search: query.search.trim() } : {}),
         ...(query.before ? { before: query.before } : {}),
         limit: query.limit ?? 200,

@@ -694,7 +694,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "thread_artifacts",
     "ThreadArtifactStorePort",
-    "one row per version of a file Himawari wrote or changed in a conversation; a new version only when the content fingerprint changes",
+    "one row per version of a file Himawari wrote or changed in a conversation, or the owner attached to a message; a new version only when the content fingerprint changes",
     "metadata_only",
     "cascade with Run deletion",
   ),

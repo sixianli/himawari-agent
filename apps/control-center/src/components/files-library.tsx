@@ -38,6 +38,7 @@ const PAGE = 100;
 
 export interface LibraryQuery {
   readonly kind?: RegisteredFileKind;
+  readonly origin?: "uploaded";
   readonly search?: string;
   readonly before?: string | null;
   readonly limit?: number;
@@ -95,6 +96,7 @@ export function FilesLibrary({
   readonly message: Message;
 }) {
   const [category, setCategory] = useState<LibraryCategory>("all");
+  const [uploadedOnly, setUploadedOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<readonly RegisteredFile[]>();
@@ -120,7 +122,12 @@ export function FilesLibrary({
     const selected = kindKey ? (kindKey.split(",") as RegisteredFileKind[]) : [undefined];
     Promise.all(
       selected.map((kind) =>
-        listRef.current({ ...(kind ? { kind } : {}), search: query, limit: PAGE }),
+        listRef.current({
+          ...(kind ? { kind } : {}),
+          ...(uploadedOnly ? { origin: "uploaded" as const } : {}),
+          search: query,
+          limit: PAGE,
+        }),
       ),
     ).then(
       (pages) => {
@@ -140,13 +147,14 @@ export function FilesLibrary({
         setFailed(true);
       },
     );
-  }, [kindKey, query, attempt]);
+  }, [kindKey, uploadedOnly, query, attempt]);
   const loadMore = () => {
     if (!cursor) return;
     const current = sequence.current;
     void listRef
       .current({
         ...(kinds[0] ? { kind: kinds[0] } : {}),
+        ...(uploadedOnly ? { origin: "uploaded" as const } : {}),
         search: query,
         before: cursor,
         limit: PAGE,
@@ -209,6 +217,16 @@ export function FilesLibrary({
               {message(label)}
             </button>
           ))}
+          <button
+            type="button"
+            aria-pressed={uploadedOnly}
+            onClick={() => setUploadedOnly(!uploadedOnly)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15.5v-10M7.5 9.5 12 5l4.5 4.5M5 19.5h14" />
+            </svg>
+            {message("library.uploaded")}
+          </button>
         </fieldset>
         {failed ? (
           <p className="files-library-note">
@@ -224,7 +242,7 @@ export function FilesLibrary({
             <i />
           </div>
         ) : !files.length ? (
-          query || category !== "all" ? (
+          query || category !== "all" || uploadedOnly ? (
             <EmptyState title={message("library.noMatch")} />
           ) : (
             <EmptyState icon={<LineIcon name="file" />} title={message("library.emptyTitle")}>
@@ -246,6 +264,7 @@ export function FilesLibrary({
                     onOpen={() => onOpen(libraryFile(file))}
                     message={message}
                     subtitle={[
+                      ...(file.source === "upload" ? [message("library.uploaded")] : []),
                       message(FILE_KIND_LABELS[file.kind]),
                       fileSize(file.sizeBytes),
                       title

@@ -303,6 +303,7 @@ export const MESSAGE_IDS = [
   "more.files.group",
   "more.file.written",
   "more.file.edited",
+  "more.file.uploaded",
   "more.reportShort.completed",
   "more.reportShort.failed",
   "more.reportShort.stopped",
@@ -371,6 +372,7 @@ export const MESSAGE_IDS = [
   "library.web",
   "library.images",
   "library.code",
+  "library.uploaded",
   "library.emptyTitle",
   "library.empty",
   "library.noMatch",
@@ -934,6 +936,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "more.files.group": { turn: 1, title: "做一个贪吃蛇" },
   "more.file.written": { turn: 1 },
   "more.file.edited": { turn: 1 },
+  "more.file.uploaded": { turn: 1 },
   "more.report.stopped": { command: "npm test", duration: "8 分 12 秒" },
   "more.report.timedOut": { command: "npm test", duration: "30 分 0 秒" },
   "more.reportShort.completed": {

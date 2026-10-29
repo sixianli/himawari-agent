@@ -1,15 +1,23 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ThreadArtifactRegistration } from "@himawari-agent/application";
-import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import type {
+  GatewayAuthenticationContext,
+  PayloadProtectorPort,
+  PayloadStorePort,
+  RuntimeRequest,
+  ThreadArtifactRegistration,
+} from "@himawari-agent/application";
+import { createAgentId, createOwnerId, type ProductThreadMessage } from "@himawari-agent/domain";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { BrowserThreadFiles } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionUploadedFiles } from "../../apps/agent-service/src/production-uploaded-files.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-thread-artifacts");
@@ -231,6 +239,101 @@ describe("[FD-1] thread artifact storage", () => {
       await expect(
         store.list({ ...scope, threadId: null, kind: null, search: null, before: "x", limit: 10 }),
       ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[UI-32] records the files the owner attached to a message and serves an image as an image", async () => {
+    const { repository, store } = await open();
+    try {
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+      const payloads: Record<string, { ref: string; contentType: string; text: string }> = {
+        "message-1": {
+          ref: "message-1",
+          contentType: "text/plain",
+          text: [
+            "看看这张图和报告",
+            '<file name="IMG_0412.jpg" ref="image-1" bytes="7" kind="image"/>',
+            '<file name="报告.pdf" ref="text-1" bytes="2048" kind="pdf" truncated="1"/>',
+            '<file name="notes.md" ref="text-2" bytes="5" kind="text"/>',
+          ].join("\n\n"),
+        },
+        "image-1": {
+          ref: "image-1",
+          contentType: "text/x-himawari-image",
+          text: `data:image/png;base64,${png.toString("base64")}`,
+        },
+        "text-2": { ref: "text-2", contentType: "text/x-himawari-attachment", text: "# hi\n" },
+      };
+      const protector = {
+        unprotect: async ({ payload }: { payload: { ref: string } }) =>
+          new TextEncoder().encode(payloads[payload.ref]?.text ?? ""),
+      } as unknown as PayloadProtectorPort;
+      const payloadStore = {
+        get: async (ref: string) => payloads[ref],
+      } as unknown as PayloadStorePort;
+      let next = 0;
+      const uploads = new ProductionUploadedFiles({
+        threads: {
+          listMessages: async () => [
+            {
+              role: "owner",
+              runId: "run-2",
+              status: "committed",
+              contentRef: "message-1",
+              sequence: 3,
+              committedAt: "2026-10-28T05:09:00.000Z",
+            } as unknown as ProductThreadMessage,
+          ],
+        },
+        payloads: payloadStore,
+        protector,
+        store,
+        ids: { next: (scope: string) => `${scope}-${++next}` },
+        now: () => T0,
+      });
+      const request = {
+        ...scope,
+        threadId: "thread-1",
+        runId: "run-2",
+      } as unknown as RuntimeRequest;
+      await uploads.start(request);
+      await uploads.start(request);
+      const query = {
+        ...scope,
+        threadId: null,
+        kind: null,
+        search: null,
+        before: null,
+        limit: 10,
+      } as const;
+      const uploaded = (await store.list({ ...query, origin: "uploaded" })).items;
+      expect(uploaded.map(({ path, kind, source, turn }) => [path, kind, source, turn])).toEqual([
+        ["notes.md", "document", "upload", 2],
+        ["报告.pdf.txt", "document", "upload", 2],
+        ["IMG_0412.jpg", "image", "upload", 2],
+      ]);
+      expect((await store.list({ ...query, origin: "generated" })).items).toEqual([]);
+      const files = new BrowserThreadFiles({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        store,
+        payloads: () => payloadStore,
+        protector,
+        ticketKey: new Uint8Array(32).fill(7),
+        now: () => T0,
+      });
+      const image = uploaded.find(({ kind }) => kind === "image");
+      if (!image) throw new Error("missing uploaded image");
+      const content = await files.content({
+        authentication: null as unknown as GatewayAuthenticationContext,
+        agentId: AGENT_ID,
+        fileId: image.id,
+        download: false,
+      });
+      expect(content).toMatchObject({ mediaType: "image/png", disposition: "inline" });
+      expect(Buffer.from(content.bytes)).toEqual(png);
     } finally {
       await repository.close();
     }

@@ -125,3 +125,34 @@ it("shows an empty library as one centered panel with a title and a hint", async
   expect(panel?.querySelector(".empty-panel-body")?.textContent).toBe("library.empty");
   expect(container.querySelector(".files-library-note")).toBeNull();
 });
+
+it("[UI-32] lists files the owner uploaded, marks them, and can show only those", async () => {
+  const uploaded = {
+    ...file("u1", "IMG_0412.jpg"),
+    kind: "image",
+    source: "upload",
+  } as RegisteredFile;
+  const made = file("m1", "plan.md");
+  const list = vi.fn(async (query: LibraryQuery) => ({
+    items: query.origin === "uploaded" ? [uploaded] : [uploaded, made],
+    nextCursor: null,
+  }));
+  await render(list);
+  const rows = [...container.querySelectorAll(".files-library-row")].map(
+    (row) => row.textContent ?? "",
+  );
+  expect(rows).toHaveLength(2);
+  expect(rows.find((text) => text.includes("IMG_0412.jpg"))).toContain("library.uploaded");
+  expect(rows.find((text) => text.includes("plan.md"))).not.toContain("library.uploaded");
+  const chip = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "library.uploaded",
+  );
+  if (!chip) throw new Error("missing uploaded filter");
+  await act(async () => chip.click());
+  expect(chip.getAttribute("aria-pressed")).toBe("true");
+  expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ origin: "uploaded" }));
+  expect(container.querySelectorAll(".files-library-row")).toHaveLength(1);
+  expect(
+    [zh["library.uploaded"], en["library.uploaded"], ja["library.uploaded"]].every(Boolean),
+  ).toBe(true);
+});

@@ -12,7 +12,7 @@ export interface DeliveredFile {
   readonly kind: RegisteredFileKind;
   readonly runId: string;
   readonly turn: number;
-  readonly source: "write" | "edit" | "bash";
+  readonly source: "write" | "edit" | "bash" | "upload";
   readonly command: string | undefined;
   readonly versions: number;
   readonly registered: RegisteredFile | undefined;
