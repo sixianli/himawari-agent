@@ -109,7 +109,7 @@ export const messages = {
   "step.active": "正在{step}",
   "step.thinking": "思考",
   "step.memoryFound": "按这句话找到 {count} 条相关记忆",
-  "step.memoryProfile": "带上档案里的 {count} 条记忆",
+  "step.memoryProfile": "常驻档案 {count} 条（每轮都带）",
   "step.thinkingFor": "思考了 {time}",
   "process.took": "用时 {time}",
   "chat.moreModels": "更多模型（{count}）",

@@ -115,7 +115,7 @@ export const messages = {
   "step.active": "{step}",
   "step.thinking": "Thought",
   "step.memoryFound": "Related memories found: {count}",
-  "step.memoryProfile": "Memories from your profile: {count}",
+  "step.memoryProfile": "Always-included profile: {count} (every turn)",
   "step.thinkingFor": "Thought for {time}",
   "process.took": "Took {time}",
   "chat.moreModels": "More models ({count})",

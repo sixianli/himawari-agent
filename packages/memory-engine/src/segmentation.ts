@@ -112,7 +112,7 @@ export function indexTerms(text: string): string[] {
 export function queryTerms(text: string): string[] {
   const terms = new Set<string>();
   for (const word of segmentWords(text)) {
-    if (STOPWORDS.has(word)) continue;
+    if (STOPWORDS.has(word) || (word.length === 1 && HAN.test(word))) continue;
     terms.add(word);
     for (const bigram of hanBigrams(word)) terms.add(bigram);
   }

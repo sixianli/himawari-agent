@@ -9,6 +9,7 @@ import {
   GatewayEmbedder,
   HybridMemoryProvider,
   QWEN3_EMBEDDING_8B_MODEL,
+  QWEN3_MEMORY_MINIMUM_SIMILARITY,
   QWEN3_MEMORY_QUERY_INSTRUCTION,
 } from "@himawari-agent/memory-engine";
 import {
@@ -77,9 +78,15 @@ export async function createProductionMemoryCompositionFromConfiguration(
     },
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
+  const minimumSimilarity =
+    options.configuration.memory.minimumSimilarity ??
+    (embedding.model === QWEN3_EMBEDDING_8B_MODEL ? QWEN3_MEMORY_MINIMUM_SIMILARITY : undefined);
+  if (minimumSimilarity === undefined || minimumSimilarity <= 0)
+    throw new TypeError("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
   const projection = new HybridMemoryProvider({
     index: options.index,
     embedder,
+    minimumSimilarity,
     embeddableClassifications: embedding.allowedDataClassifications,
     ...(embedding.model === QWEN3_EMBEDDING_8B_MODEL
       ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION }

@@ -140,6 +140,28 @@ describe("strict product configuration", () => {
     expect(() => parseProductConfiguration(input, "2026-10-06T00:00:00.000Z")).toThrow();
   });
 
+  it("[I-23] accepts a memory relevance threshold only between 0 and 1", () => {
+    const withThreshold = (minimumSimilarity: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-memory-threshold"));
+      input["memory"] = { ...(input["memory"] as Record<string, unknown>), minimumSimilarity };
+      return input;
+    };
+    expect(
+      parseProductConfiguration(withThreshold(0.65), "2026-10-29T00:00:00.000Z").memory
+        .minimumSimilarity,
+    ).toBe(0.65);
+    expect(
+      parseProductConfiguration(
+        config(path.join(tmpdir(), "himawari-memory-threshold")),
+        "2026-10-29T00:00:00.000Z",
+      ).memory.minimumSimilarity,
+    ).toBeUndefined();
+    for (const invalid of [0, 1, 1.2, -0.1, "0.6"])
+      expect(() =>
+        parseProductConfiguration(withThreshold(invalid), "2026-10-29T00:00:00.000Z"),
+      ).toThrow();
+  });
+
   it("loads a versioned configuration without deriving paths from cwd", async () => {
     const stateRoot = path.join(tmpdir(), "himawari-explicit-state-root");
     const parsed = parseProductConfiguration(config(stateRoot), "2026-08-27T00:00:00.000Z");

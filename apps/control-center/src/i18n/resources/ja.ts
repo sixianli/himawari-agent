@@ -119,7 +119,7 @@ export const messages = {
   "step.active": "{step}中",
   "step.thinking": "推論",
   "step.memoryFound": "関連する記憶を {count} 件発見",
-  "step.memoryProfile": "プロフィールの記憶 {count} 件を参照",
+  "step.memoryProfile": "常に参照するプロフィール {count} 件（毎回）",
   "step.thinkingFor": "{time} 推論",
   "process.took": "所要 {time}",
   "chat.moreModels": "その他のモデル（{count}）",
