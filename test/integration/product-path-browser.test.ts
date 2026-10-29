@@ -5471,9 +5471,13 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-search-toggle",
   "accept-news-search",
   "accept-long-answer",
+  "accept-run-command",
   "accept-memory-page",
+  "accept-phone-layout",
   "accept-after-restart",
 ] as const;
+const RUN_COMMAND_REQUEST = "请统计行数";
+const RUN_COMMAND_OUTPUT = "lines=37";
 const LONG_ANSWER_END = "长回答验收到此结束";
 const LONG_ANSWER = [
   ...Array.from(
@@ -5488,6 +5492,12 @@ const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => 
       kind: "tool",
       name: "web_search",
       arguments: { query: "today top world news headlines", limit: 5 },
+    };
+  if (lastUserText.includes(RUN_COMMAND_REQUEST) && toolResults.length === 0)
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: `printf 'lines=%s\\n' "$(seq 1 37 | wc -l | tr -d ' ')"` },
     };
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
   if (lastUserText.includes("长回答")) return { kind: "text", text: LONG_ANSWER };
@@ -5506,6 +5516,49 @@ async function closeSettings() {
   const dialog = target(page, UI.settingsDialog);
   if (await dialog.isVisible()) await target(dialog, UI.closeSettings).first().click();
   await uiExpect(dialog).toHaveCount(0, { timeout: 20_000 });
+}
+
+const PHONE_VIEWPORT = { width: 393, height: 852 } as const;
+const PHONE_MINIMUM_INPUT_FONT_PX = 16;
+
+async function expectPhoneLayout(phone: Page, where: string) {
+  const problems = await phone.locator("html").evaluate((root, minimum) => {
+    const document = root.ownerDocument;
+    const view = document.defaultView;
+    if (!view) return ["no window"];
+    const found: string[] = [];
+    if (root.scrollWidth > root.clientWidth)
+      found.push(`page wider than screen ${root.scrollWidth}>${root.clientWidth}`);
+    const notTyped = ["checkbox", "radio", "range", "file", "color", "hidden", "button", "submit"];
+    for (const field of document.querySelectorAll("input, textarea, select")) {
+      if (field.tagName === "INPUT" && notTyped.includes(field.getAttribute("type") ?? "text"))
+        continue;
+      if (field.getClientRects().length === 0) continue;
+      const focusable = field as unknown as {
+        focus: (options: { preventScroll: boolean }) => void;
+        blur: () => void;
+      };
+      focusable.focus({ preventScroll: true });
+      const size = Number.parseFloat(view.getComputedStyle(field).fontSize);
+      focusable.blur();
+      const name = field.getAttribute("aria-label") ?? field.getAttribute("placeholder") ?? "";
+      if (size < minimum)
+        found.push(`${field.tagName.toLowerCase()} "${name}" focused at ${size}px`);
+    }
+    const dialog = document.querySelector("dialog[open]");
+    if (dialog) {
+      const box = dialog.getBoundingClientRect();
+      if (box.top < 0 || box.bottom > view.innerHeight)
+        found.push(
+          `dialog ${Math.round(box.top)}..${Math.round(box.bottom)} outside 0..${view.innerHeight}`,
+        );
+      const close = dialog.querySelector(".dialog-heading button")?.getBoundingClientRect();
+      if (!close || close.top < 0 || close.bottom > view.innerHeight)
+        found.push("dialog close button off screen");
+    }
+    return found;
+  }, PHONE_MINIMUM_INPUT_FONT_PX);
+  expect(problems, `phone layout: ${where}`).toEqual([]);
 }
 
 async function searchToggleUsable(toggle: WalkthroughTarget) {
@@ -5599,7 +5652,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     ]);
   }, 120_000);
 
-  it("walks the five release checks and keeps them working after a service restart", async () => {
+  it("walks the release checks and keeps them working after a service restart", async () => {
     await scenario("accept-homepage", async () => {
       const response = await page.goto(`${installation.origin}/`);
       expect(response?.status()).toBe(200);
@@ -5625,6 +5678,21 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(turn.getByText("第600段：", { exact: false })).toHaveCount(1);
       await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
     });
+    await scenario("accept-run-command", async () => {
+      await newThread();
+      const turn = await send(RUN_COMMAND_REQUEST);
+      const answer = turn.getByText(/工具返回：/);
+      const allow = target(turn, UI.approveOnce);
+      await uiExpect
+        .poll(async () => (await allow.count()) > 0 || (await answer.count()) > 0, {
+          timeout: 300_000,
+        })
+        .toBe(true);
+      if ((await allow.count()) > 0) await allow.first().click();
+      await uiExpect(answer).toHaveCount(1, { timeout: 300_000 });
+      await uiExpect(answer).toContainText(RUN_COMMAND_OUTPUT);
+      await expectFinishedTurnShowsStep(turn, UI.commandStep);
+    });
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
       const memory = target(page, UI.memoryPage);
@@ -5634,6 +5702,43 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(target(memory, UI.pageError)).toHaveCount(0);
       await target(memory, UI.memoryBack).click();
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
+    });
+    await scenario("accept-phone-layout", async () => {
+      const phoneContext = await browser.newContext({
+        ignoreHTTPSErrors: true,
+        locale: "zh-CN",
+        viewport: PHONE_VIEWPORT,
+        isMobile: true,
+        hasTouch: true,
+        storageState: await context.storageState(),
+      });
+      try {
+        const phone = await phoneContext.newPage();
+        await phone.goto(`${installation.origin}/`);
+        await uiExpect(target(phone, UI.composer)).toBeVisible({ timeout: 30_000 });
+        await expectPhoneLayout(phone, "chat");
+        await target(phone, UI.openSettings).first().click();
+        const dialog = target(phone, UI.settingsDialog);
+        const settingsTabs = target(target(dialog, UI.settingsTabs), UI.settingsTab);
+        await uiExpect(settingsTabs.first()).toBeVisible({ timeout: 20_000 });
+        for (let index = 0; index < (await settingsTabs.count()); index += 1) {
+          await settingsTabs.nth(index).click();
+          await expectPhoneLayout(phone, `settings tab ${index + 1}`);
+        }
+        await target(dialog, UI.closeSettings).first().click();
+        await uiExpect(dialog).toHaveCount(0, { timeout: 20_000 });
+        await target(phone, UI.showList).click();
+        await target(target(phone, UI.sidebarNavigation), UI.openMemory).click();
+        const memory = target(phone, UI.memoryPage);
+        await uiExpect(memory.getByText(UI.memorySummary)).toBeVisible({ timeout: 30_000 });
+        const memoryTabs = target(target(memory, UI.memoryTabs), UI.memoryTab);
+        for (let index = 0; index < (await memoryTabs.count()); index += 1) {
+          await memoryTabs.nth(index).click();
+          await expectPhoneLayout(phone, `memory tab ${index + 1}`);
+        }
+      } finally {
+        await phoneContext.close();
+      }
     });
     await scenario("accept-after-restart", async () => {
       await installation.stop();

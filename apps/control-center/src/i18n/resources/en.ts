@@ -410,7 +410,8 @@ export const messages = {
   "preview.diffNote": "Showing this turn’s changes only",
   "library.title": "Files",
   "library.search": "Search file names",
-  "library.count": "{count, plural, one {# file} other {# files}}",
+  "library.count":
+    "{more, select, yes {{count}+ files} other {{count, plural, one {# file} other {# files}}}}",
   "library.all": "All",
   "library.documents": "Documents",
   "library.tables": "Tables",

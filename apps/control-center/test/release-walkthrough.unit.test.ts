@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONTROL_CENTER_SURFACE_INVENTORY } from "../src/app/control-center-inventory.js";
 import { ControlCenterApp } from "../src/app.js";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
+import { messages } from "../src/i18n/resources/zh-CN.js";
 import { completedRun, newsRun, runStart } from "./news-run-fixture.js";
 import { RELEASE_WALKTHROUGH_UI as UI, type WalkthroughTarget } from "./release-walkthrough-ui.js";
 
@@ -338,6 +339,9 @@ describe("release walkthrough locators against the real control center", () => {
 
     await click(byRole(body, UI.openSettings));
     const dialog = byRole(body, UI.settingsDialog);
+    expect(
+      queryAllByRole(byRole(dialog, UI.settingsTabs), { role: "button" }).length,
+    ).toBeGreaterThanOrEqual(3);
     await click(byRole(dialog, UI.settingsToolsTab));
     const enable = byRole(dialog, UI.searchEnable) as HTMLInputElement;
     expect(enable.disabled).toBe(false);
@@ -370,6 +374,7 @@ describe("release walkthrough locators against the real control center", () => {
     expect(visibleText(body, UI.unreadableRecords)).toHaveLength(0);
     expect(visibleText(body, UI.noProcessRecords)).toHaveLength(0);
 
+    expect(byRole(body, UI.showList)).toBeDefined();
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.openMemory));
     const memory = await eventually(() => {
       const page = byRole(body, UI.memoryPage);
@@ -377,9 +382,17 @@ describe("release walkthrough locators against the real control center", () => {
       return page;
     });
     expect(queryAllByRole(memory, UI.pageError)).toHaveLength(0);
+    expect(
+      queryAllByRole(byRole(memory, UI.memoryTabs), UI.memoryTab).length,
+    ).toBeGreaterThanOrEqual(2);
     await click(byRole(memory, UI.memoryBack));
     expect(queryAllByRole(body, UI.memoryPage)).toHaveLength(0);
 
     expect(fake.unexpected).toEqual([]);
+  });
+
+  it("names the process steps the walkthrough waits for exactly as the interface shows them", () => {
+    expect(messages["step.search"]).toBe(UI.searchStep);
+    expect(messages["step.command"]).toBe(UI.commandStep);
   });
 });

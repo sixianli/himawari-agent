@@ -953,7 +953,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "files.from": { title: "做一个贪吃蛇", turn: 1 },
   "files.fromPlain": { turn: 1 },
   "preview.versionOf": { version: 2, count: 3 },
-  "library.count": { count: 8 },
+  "library.count": { count: 8, more: "no" },
   "more.duration.minutes": { minutes: 8, seconds: 12 },
   "more.duration.seconds": { seconds: 42 },
   "chat.activity.tool": { tool: "web_search" },

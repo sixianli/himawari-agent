@@ -413,7 +413,7 @@ export const messages = {
   "preview.diffNote": "このターンの変更のみ表示",
   "library.title": "ファイル",
   "library.search": "ファイル名で検索",
-  "library.count": "{count} 件のファイル",
+  "library.count": "{count}{more, select, yes {+} other {}} 件のファイル",
   "library.all": "すべて",
   "library.documents": "ドキュメント",
   "library.tables": "表",
