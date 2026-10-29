@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -528,6 +529,80 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         body = source[source.index('def prepare(arguments):'):]
         self.assertLess(body.index('hermes.preflight()'), body.index("step('discover'"))
         self.assertLess(body.index('hermes.preflight()'), body.index('hermes.build('))
+
+
+
+class DependencyReinstallTest(unittest.TestCase):
+    TAG = '[PG-4]'
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        root = Path(self.directory.name)
+        self.source = root / 'source'
+        self.source.mkdir()
+        (self.source / 'package-lock.json').write_text('{"lockfileVersion": 3, "packages": {"": {}}}')
+        self.tools = root / 'tools'
+        self.calls = root / 'node-calls'
+        self.outcome = root / 'node-outcome'
+        self.outcome.write_text('0')
+        bin_directory = root / 'bin'
+        bin_directory.mkdir()
+        node = bin_directory / 'node'
+        node.write_text('#!/bin/bash\necho "$PWD $*" >> ' + shlex.quote(str(self.calls)) + '\nmkdir -p node_modules\nexit "$(cat ' + shlex.quote(str(self.outcome)) + ')"\n')
+        node.chmod(0o755)
+        self.environment = dict(os.environ, PATH=str(bin_directory) + ':/usr/bin:/bin:/sbin')
+        self.evidence = root / 'evidence'
+        self.evidence.mkdir()
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def install(self, run):
+        return subprocess.run(['bash', str(HERE / 'hermes' / 'install-dependencies-if-changed.sh'), str(self.source), str(self.tools), str(self.evidence / ('install-' + run))], capture_output=True, text=True, env=self.environment, check=False)
+
+    def installs(self):
+        return self.calls.read_text().splitlines() if self.calls.exists() else []
+
+    def test_a_changed_dependency_lock_reinstalls_before_the_build_and_an_unchanged_one_does_not(self):
+        first = self.install('run-1')
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertTrue(first.stdout.startswith('dependencies=reinstalled'))
+        self.assertEqual(self.installs(), [str(self.source) + ' scripts/ci/install-dependencies.mjs --root . --tools ' + str(self.tools) + ' --evidence ' + str(self.evidence / 'install-run-1') + ' --cache .ci-output/npm-cache'])
+        second = self.install('run-2')
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertTrue(second.stdout.startswith('dependencies=unchanged'))
+        self.assertEqual(len(self.installs()), 1)
+        (self.source / 'package-lock.json').write_text('{"lockfileVersion": 3, "packages": {"": {}, "node_modules/docx-preview": {}}}')
+        third = self.install('run-3')
+        self.assertEqual(third.returncode, 0, third.stderr)
+        self.assertTrue(third.stdout.startswith('dependencies=reinstalled'))
+        self.assertEqual(len(self.installs()), 2)
+
+    def test_a_failed_install_stops_the_build_and_is_retried_next_time(self):
+        self.install('run-1')
+        (self.source / 'package-lock.json').write_text('{"lockfileVersion": 3, "packages": {"": {}, "node_modules/web-push": {}}}')
+        self.outcome.write_text('1')
+        failed = self.install('run-2')
+        self.assertEqual(failed.returncode, 5)
+        self.assertIn('DEPENDENCY_INSTALL_FAILED', failed.stderr)
+        self.outcome.write_text('0')
+        retried = self.install('run-3')
+        self.assertTrue(retried.stdout.startswith('dependencies=reinstalled'))
+        self.assertEqual(len(self.installs()), 3)
+
+    def test_missing_installed_dependencies_are_reinstalled_even_when_the_lock_matches(self):
+        self.install('run-1')
+        shutil.rmtree(self.source / 'node_modules')
+        again = self.install('run-2')
+        self.assertTrue(again.stdout.startswith('dependencies=reinstalled'))
+
+    def test_the_builder_checks_dependencies_after_checkout_and_before_building_and_ships_the_helper(self):
+        build = (HERE / 'hermes' / 'build-candidate.sh').read_text()
+        self.assertLess(build.index('git checkout -q --detach'), build.index('install-dependencies-if-changed.sh" "$source"'))
+        self.assertLess(build.index('install-dependencies-if-changed.sh" "$source"'), build.index('scripts/ci/local.mjs --check build'))
+        generator = (HERE / 'make-packet.py').read_text()
+        uploads = generator[generator.index('def install_scripts(self):'):generator.index('def start(self, name, command):')]
+        self.assertIn("'install-dependencies-if-changed.sh'", uploads)
 
 
 if __name__ == '__main__':

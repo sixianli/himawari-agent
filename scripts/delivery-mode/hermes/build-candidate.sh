@@ -22,7 +22,7 @@ source=$(setting source)
 out=$(setting workRoot)/$run
 capture=$(setting evidenceRoot)/sixth-source-inputs-$run
 export PATH=$tools/bin:/usr/bin:/bin HIMAWARI_CI_TOOLS=$tools HIMAWARI_CI_PYTHON=$tools/python/python/bin/python3 PLAYWRIGHT_BROWSERS_PATH=$(setting browsers)
-for required in "$(helper gitModesCheck)" "$(helper captureTemplate)" "$(helper installerDependencyCollector)" "$(setting pythonMaterial)"; do
+for required in "$here/install-dependencies-if-changed.sh" "$(helper gitModesCheck)" "$(helper captureTemplate)" "$(helper installerDependencyCollector)" "$(setting pythonMaterial)"; do
   [[ -f "$required" ]] || fail "HELPER_MISSING $required" 2
 done
 [[ ! -e "$out" && ! -e "$capture" ]] || fail "RUN_ID_ALREADY_USED $run" 2
@@ -34,6 +34,7 @@ git fetch -q "$bundle" HEAD || fail BUNDLE_FETCH_FAILED 4
 [[ "$(git rev-parse FETCH_HEAD)" == "$revision" ]] || fail "BUNDLE_HEAD_UNEXPECTED $(git rev-parse FETCH_HEAD)" 4
 git checkout -q --detach "$revision" || fail CHECKOUT_FAILED 4
 bash "$(helper gitModesCheck)" . >> "$out/summary" || fail GIT_MODES_GATE_FAILED 6
+bash "$here/install-dependencies-if-changed.sh" "$source" "$tools" "$(setting evidenceRoot)/install-$run" >> "$out/summary" || fail DEPENDENCY_INSTALL_FAILED 5
 scratch=$(mktemp -d /tmp/hXXXX)
 chmod 700 "$scratch"
 TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch node scripts/ci/local.mjs --check build --tools "$tools" --output ".ci-output/$run" > "$out/build.log" 2>&1
