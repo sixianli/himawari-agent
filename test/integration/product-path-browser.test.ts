@@ -5471,9 +5471,12 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-search-toggle",
   "accept-news-search",
   "accept-long-answer",
+  "accept-run-command",
   "accept-memory-page",
   "accept-after-restart",
 ] as const;
+const RUN_COMMAND_REQUEST = "请统计行数";
+const RUN_COMMAND_OUTPUT = "lines=37";
 const LONG_ANSWER_END = "长回答验收到此结束";
 const LONG_ANSWER = [
   ...Array.from(
@@ -5488,6 +5491,12 @@ const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => 
       kind: "tool",
       name: "web_search",
       arguments: { query: "today top world news headlines", limit: 5 },
+    };
+  if (lastUserText.includes(RUN_COMMAND_REQUEST) && toolResults.length === 0)
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: `printf 'lines=%s\\n' "$(seq 1 37 | wc -l | tr -d ' ')"` },
     };
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
   if (lastUserText.includes("长回答")) return { kind: "text", text: LONG_ANSWER };
@@ -5599,7 +5608,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     ]);
   }, 120_000);
 
-  it("walks the five release checks and keeps them working after a service restart", async () => {
+  it("walks the release checks and keeps them working after a service restart", async () => {
     await scenario("accept-homepage", async () => {
       const response = await page.goto(`${installation.origin}/`);
       expect(response?.status()).toBe(200);
@@ -5624,6 +5633,21 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(turn.getByText("第1段：", { exact: false })).toHaveCount(1);
       await uiExpect(turn.getByText("第600段：", { exact: false })).toHaveCount(1);
       await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
+    });
+    await scenario("accept-run-command", async () => {
+      await newThread();
+      const turn = await send(RUN_COMMAND_REQUEST);
+      const answer = turn.getByText(/工具返回：/);
+      const allow = target(turn, UI.approveOnce);
+      await uiExpect
+        .poll(async () => (await allow.count()) > 0 || (await answer.count()) > 0, {
+          timeout: 300_000,
+        })
+        .toBe(true);
+      if ((await allow.count()) > 0) await allow.first().click();
+      await uiExpect(answer).toHaveCount(1, { timeout: 300_000 });
+      await uiExpect(answer).toContainText(RUN_COMMAND_OUTPUT);
+      await expectFinishedTurnShowsStep(turn, UI.commandStep);
     });
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();

@@ -7,6 +7,7 @@ REQUIRED_SCENARIOS = (
     'accept-search-toggle',
     'accept-news-search',
     'accept-long-answer',
+    'accept-run-command',
     'accept-memory-page',
     'accept-after-restart',
 )

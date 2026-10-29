@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONTROL_CENTER_SURFACE_INVENTORY } from "../src/app/control-center-inventory.js";
 import { ControlCenterApp } from "../src/app.js";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
+import { messages } from "../src/i18n/resources/zh-CN.js";
 import { completedRun, newsRun, runStart } from "./news-run-fixture.js";
 import { RELEASE_WALKTHROUGH_UI as UI, type WalkthroughTarget } from "./release-walkthrough-ui.js";
 
@@ -381,5 +382,10 @@ describe("release walkthrough locators against the real control center", () => {
     expect(queryAllByRole(body, UI.memoryPage)).toHaveLength(0);
 
     expect(fake.unexpected).toEqual([]);
+  });
+
+  it("names the process steps the walkthrough waits for exactly as the interface shows them", () => {
+    expect(messages["step.search"]).toBe(UI.searchStep);
+    expect(messages["step.command"]).toBe(UI.commandStep);
   });
 });
