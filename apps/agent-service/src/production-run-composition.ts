@@ -343,6 +343,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     agentDir: options.agentDir,
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
     admission,
+    measure: (runId, name, work) => timings.measure(runId, name, work),
     now: () => clock.now(),
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
   });
