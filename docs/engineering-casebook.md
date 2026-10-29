@@ -72,6 +72,7 @@ date: "2026-10-26"
   45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
   46. [第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒](#case-startup-permission-audit)
   47. [修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛](#case-incident-gates)
+  49. [模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗](#case-answer-weight)
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
@@ -101,7 +102,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3113,6 +3114,66 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 [返回目录](#contents)
 
+<a id="case-answer-weight"></a>
+
+## 案例 49：模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗
+
+**背景与现象**
+
+2026-10-28 第一批界面意见第 9(c) 条，Andy 问“回答正文问什么都是粗体？”。当时的线程只查了把 Markdown（模型用来标格式的纯文本写法，`**文字**` 表示加粗）变成网页的代码，没发现问题，结论是“疑为模型输出了 `**`”，于是只在系统提示里加了一条“加粗只用在最值得主人注意的一两处”。2026-10-29 12:01（日本时间），Andy 在 Mac 的 Chrome 里看“今日日本新闻头条写入 Word”这一轮，正文、编号列表、结尾的问句仍然全都像粗体，第二次提出。
+
+**根因**
+
+不是模型，也不是 Markdown 渲染，是样式表里的字重（font-weight，字的粗细，400 是常规、700 是粗体）。
+
+1. 提交 `13cf0d6`（2026-10-26）在 `apps/control-center/src/review-v4.css` 里给整个页面加了 `.app-shell { font-weight: 430; }`，想让字比常规略重一点。对拉丁字母的可变字体（例如 SF Pro，粗细可以连续变化）这确实只重一点。
+2. Mac 上的中文字体苹方（PingFang SC）不是可变字体，只有 Ultralight、Thin、Light、Regular、Medium、Semibold 六个固定字形，对应 100–600。页面又设了 `font-synthesis: none`（不允许浏览器自己“描粗”）。浏览器按 CSS 字体匹配规则找最接近的字形：430 在 400 和 500 之间，规则是先往上找到 500，所以全部中文用的是 Medium（中粗）。
+3. 模型真正加粗的地方 `<strong>` 默认是 700，苹方最粗只有 Semibold 600。于是普通文字 500、加粗文字 600，只差一档，肉眼几乎分不出，看起来就是整段粗体。
+
+怎么确认的：
+
+- 用 Chromium 加载网页的四份真实样式表、按回答的页面结构摆好元素，读到回答段落和列表项的计算字重都是 430，`<strong>` 是 700。
+- 字体匹配：在 Chromium 里给同一个字体名登记 400、500、600 三个不同的字形，用 Chrome 开发者协议（DevTools Protocol）问每段文字实际用了哪个字形：430 用的是 500 那一个，700 用的是 600 那一个。
+- 截图里文件名“日本新闻头条_2026-10-29.docx”比周围的字稍粗一点，说明模型只加粗了文件名，其余文字没有 `**`；系统提示里已有“不要整句、整段加粗”的规则，模型守住了。第一次排查漏掉，是因为只看了“生成了哪些 HTML 标签”，没看“这些标签最后用什么粗细的字形画出来”。
+
+**我们的方案**
+
+1. 删掉 `.app-shell` 的 430，正文回到常规 400；加粗 700 在苹方上落到 Semibold 600，和正文差两档，一眼能看出来。
+2. 顺手把同类的非整百字重改成整百：标题的 650、680 改为 600，旧样式里的 750 改为 700。这些在苹方上本来就落到 600，中文显示不变，只是拉丁字母略有变化。
+3. 自动检查 `test/tooling/answer-font-weight.test.mjs`，进了 `npm run check`（命令 `npm run check:answer-weight`，约 0.1 秒；放在 `test/tooling/` 下，因为网页的类型配置里没有 Node 的文件读取接口）：样式里不许出现非整百字重；回答所在的那一串容器（`.app-shell`、`.chat-turn`、`.thread-message`、`.assistant-markdown` 等）不许设 400 以外的字重。
+
+这次只改网页样式，不涉及 Pi（Himawari 所基于的开源智能体框架）的任何模块。
+
+**方案讨论与备选**
+
+- **再改系统提示，要求模型更少加粗**：模型本来就只加粗了一处，改提示解决不了，还要花钱用真模型重放验证。放弃。
+- **给 `<strong>` 设 800 或 900，拉开和正文的差距**：苹方没有比 600 更粗的字形，中文仍然是 600，没用；而且正文 500 本身就偏重。放弃。
+- **换成带多档粗细的网页字体（例如自带 Noto Sans SC 可变字体）**：粗细能精确到 430，但中文字体文件很大（数 MB），要拖慢首屏，也偏离已批准的界面基线。放弃。
+- **门槛用真实浏览器量计算字重**：最接近 Andy 看到的效果，但要启动浏览器，而且云端没有苹方，量出来的是“设了多少”不是“画成什么”，和读样式表等价。选了直接读样式表的单元测试，快、哪里都能跑。代价是如果以后在组件里用内联样式设字重，这道检查看不到；目前组件里没有内联字重。
+
+**业界主流做法**
+
+- ✅ W3C《CSS Fonts Module Level 4》字体匹配算法（<https://www.w3.org/TR/css-fonts-4/>）：“If the desired weight is inclusively between 400 and 500, weights greater than or equal to the target weight are checked in ascending order until 500 is hit and checked, followed by weights less than the target weight in descending order”。这正是 430 被取成 500 的依据。
+- ✅ Apple《macOS 自带字体列表》（<https://support.apple.com/en-us/120414>）：苹方简体只列出 “PingFang SC Light / Medium / Regular / Semibold / Thin / Ultralight” 六个字形，没有 Bold，也不是连续粗细。
+
+**对比与取舍**
+
+规范只保证“找最接近的字形”，不保证视觉上“略重一点”；在只有固定几档的中文字体上，任何非整百的字重都会整档跳变。我们的做法是只用整百字重，并用测试把这条写死。取舍是放弃了拉丁字母上 430 那种“略重一点”的细腻效果，换来中英文粗细一致、加粗一眼可辨。
+
+**结果数据**
+
+- 修改前：回答段落、列表项的计算字重 430，在苹方上落到 Medium 500；加粗落到 Semibold 600（本线程 Chromium 复现）。
+- 修改后：段落、列表项 400，加粗 700（落到苹方 Semibold 600）。
+- 门槛：把 430 放回去时两项检查都失败（“非整百字重”列出 12 处，“回答容器字重”列出 `.app-shell`），改完后通过；网页的 38 个单元测试文件 531 项全部通过。
+- Andy 在 Mac 上看到的效果：未测量，等第十九版上线后在同一轮对话里核对。
+
+**相关 ADR/PR**
+
+[事故与门槛清单 I-12](incidents-and-gates.md#incidents)；引入 430 的提交 `13cf0d6`（随 PR #45 合入）；系统提示里的加粗规则来自 PR #80；本案例的 PR 在分支 `claude/project-thread-izuenj`。没有新 ADR：这是修复样式缺陷，不是新的设计决定。
+
+**面试 30 秒版**
+
+“用户说回答全是粗体。第一次只查了 Markdown 转 HTML，没问题，就以为是模型乱加粗。第二次我去量真正画出来的字：页面设了 430 字重，苹方只有 400、500、600 几档，按 CSS 字体匹配规则 430 被取成 500 中粗，而加粗的 700 最多只到 600，两者差一档看不出来。改回 400，再加一道测试禁止非整百字重，进了提交前的检查。教训是排查界面问题要量最终渲染结果，不能停在中间产物。”
 <a id="case-filter-counts"></a>
 
 ## 案例 50：筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表
