@@ -66,7 +66,7 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
           ×
         </ActionButton>
       </div>
-      {children}
+      <div className="dialog-body">{children}</div>
     </dialog>
   );
   return typeof document === "undefined" ? dialog : createPortal(dialog, document.body);
