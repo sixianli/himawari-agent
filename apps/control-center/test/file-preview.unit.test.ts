@@ -185,6 +185,7 @@ describe("file preview header", () => {
             value: previewOfDelivered(file),
             access: {
               text: async () => "",
+              bytes: async () => new ArrayBuffer(0),
               versions: async () => [],
               previewUrl: async () => "https://preview.example/snake.html",
             },
@@ -291,7 +292,40 @@ describe("[FD-5] files delivered in a conversation", () => {
 
   it.each([
     [{ kind: "image", mediaType: "image/png", name: "route.png" }, "<img"],
-    [{ kind: "pdf", mediaType: "application/pdf", name: "trip.pdf" }, "<iframe"],
+    [{ kind: "pdf", mediaType: "application/pdf", name: "trip.pdf" }, "正在读取文件…"],
+    [
+      {
+        kind: "document",
+        mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        name: "日本新闻头条.docx",
+      },
+      "正在读取文件…",
+    ],
+    [
+      {
+        kind: "data",
+        mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        name: "新闻来源统计.xlsx",
+      },
+      "正在读取文件…",
+    ],
+    [
+      {
+        kind: "document",
+        mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        name: "big.docx",
+        sizeBytes: 26 * 1024 * 1024,
+      },
+      "文件太大",
+    ],
+    [
+      {
+        kind: "document",
+        mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        name: "deck.pptx",
+      },
+      "这种文件不能在这里预览",
+    ],
     [{ kind: "web", mediaType: "text/html", name: "snake.html" }, "网页预览还没开通"],
     [{ kind: "other", mediaType: "application/zip", name: "a.zip" }, "这种文件不能在这里预览"],
     [{ kind: "document", stored: false }, "没有留副本"],
@@ -303,8 +337,8 @@ describe("[FD-5] files delivered in a conversation", () => {
     expect(html).toContain(expected);
     expect(html).not.toContain("来自「贪吃蛇」第 1 轮 →");
     expect(html).toContain('aria-label="文件信息" data-tip="文件信息" aria-expanded="false"');
-    if (overrides.kind === "image" || overrides.kind === "pdf")
-      expect(html).toContain('src="/api/files/v1/content/file%3Ax"');
+    if (overrides.kind === "image") expect(html).toContain('src="/api/files/v1/content/file%3Ax"');
+    expect(html).not.toContain("<iframe");
   });
 
   it("keeps the download link in the header and the version picker inside file info", () => {

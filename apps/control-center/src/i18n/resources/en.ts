@@ -418,6 +418,12 @@ export const messages = {
   "preview.webUnavailable":
     "Web page preview isn’t set up yet: it needs a separate preview domain. You can download the file for now.",
   "preview.diffNote": "Showing this turn’s changes only",
+  "preview.page": "Page {page} of {count}",
+  "preview.renderFailed": "This file couldn’t be shown here. Download it to open it.",
+  "preview.sheets": "Sheets",
+  "preview.sheetTruncated":
+    "This sheet is large, so only the first 2,000 rows and 100 columns are shown. Download it to see everything.",
+  "preview.sheetEmpty": "This workbook has no sheet to show.",
   "library.title": "Files",
   "library.search": "Search file names",
   "library.count":
@@ -875,7 +881,8 @@ export const messages = {
     "The share of this turn's input that the model provider reused from context it had already processed (the LLM's KV cache). That part is faster and cheaper.",
   "chat.search.purpose": "Search the web automatically when a question needs current information",
   "chat.search.whatIsSent": "What a search sends",
-  "chat.search.sentQuery": "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
+  "chat.search.sentQuery":
+    "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
   "chat.search.sentLimits":
     "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
   "chat.search.otherScope":

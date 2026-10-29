@@ -422,6 +422,13 @@ export const messages = {
   "preview.webUnavailable":
     "Web ページのプレビューはまだ使えません。別のプレビュー用ドメインの設定が必要です。今はダウンロードできます。",
   "preview.diffNote": "このターンの変更のみ表示",
+  "preview.page": "{count} ページ中 {page} ページ目",
+  "preview.renderFailed":
+    "このファイルはここでは表示できませんでした。ダウンロードして開いてください。",
+  "preview.sheets": "シート",
+  "preview.sheetTruncated":
+    "大きな表のため、最初の 2,000 行・100 列だけを表示しています。すべて見るにはダウンロードしてください。",
+  "preview.sheetEmpty": "このブックには表示できるシートがありません。",
   "library.title": "ファイル",
   "library.search": "ファイル名で検索",
   "library.count": "{count}{more, select, yes {+} other {}} 件のファイル",
@@ -879,7 +886,8 @@ export const messages = {
     "このターンの入力のうち、モデル提供元が以前に処理した文脈（LLM の KV キャッシュ）をそのまま再利用した割合です。この部分は速く、安くなります。",
   "chat.search.purpose": "最新の情報が必要な質問では、自動でウェブを検索します",
   "chat.search.whatIsSent": "検索で送られるもの",
-  "chat.search.sentQuery": "質問は検索語に書き換えられて下のアドレスに送られます。Web ページを開くときは、その URL も送られます：",
+  "chat.search.sentQuery":
+    "質問は検索語に書き換えられて下のアドレスに送られます。Web ページを開くときは、その URL も送られます：",
   "chat.search.sentLimits":
     "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
   "chat.search.otherScope":
