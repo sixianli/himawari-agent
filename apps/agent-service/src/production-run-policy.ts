@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import {
   ApplicationPortError,
   type CapabilityExecutionHandleStorePort,
@@ -53,6 +54,7 @@ export function createProductionRunPolicy(options: {
       publicSearch: policy.publicSearch !== undefined,
       coding: policy.coding !== undefined,
       workspaceRoot: policy.coding && options.workspaceRoot ? await options.workspaceRoot() : null,
+      documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
     });
     const identity = {
       runId: source.runId,
@@ -126,10 +128,15 @@ export const HIMAWARI_IDENTITY = [
 export const ANSWER_LANGUAGE_RULE =
   "回答语言：用用户本轮提问所用的语言回答；调用工具之前或之间写给用户看的说明也用这种语言。搜索关键词等工具参数可以用别的语言。";
 
+export const DOCUMENT_SKILL_DIRECTORY = fileURLToPath(
+  new URL("./document-skill/", import.meta.url),
+);
+
 export function runCapabilityNotice(input: {
   readonly publicSearch: boolean;
   readonly coding: boolean;
   readonly workspaceRoot: string | null;
+  readonly documentSkillDirectory?: string;
 }): string {
   const lines = ["本轮能力边界："];
   if (input.coding) {
@@ -141,6 +148,10 @@ export function runCapabilityNotice(input: {
         `- 工作目录是 ${input.workspaceRoot}。读写文件用相对路径或这个目录下的路径，目录之外的路径会被拒绝。`,
         "- 命令可以在工作目录里新建、修改和删除文件。每条命令前后系统会对比工作目录，把改了哪些文件附在命令结果末尾并留档。临时文件放到 $TMPDIR，不要放进工作目录。.git、.env、.himawari-recovery 等受保护的文件和文件夹不能读也不能写。",
         "- 你在工作目录里写出或改动的文件，界面会自动在回答下方显示文件卡片，用户点开就能预览和下载。回答里提到这些文件时只写文件名，不要写服务器上的完整路径，也不要让用户自己去服务器上找。",
+      );
+    if (input.documentSkillDirectory)
+      lines.push(
+        `- 做 Word、Excel、PDF 文档或读 PDF 时，先用 bash 运行 cat ${input.documentSkillDirectory}SKILL.md 读完并照做（read 工具只能读工作目录）：需要的库和中日文字体都已装好，不要探测或安装，也不要手写文件格式。`,
       );
   }
   lines.push(

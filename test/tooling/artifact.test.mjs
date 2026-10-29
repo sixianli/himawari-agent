@@ -7,8 +7,8 @@ import {
   lstat,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   rm,
   symlink,
   writeFile,
@@ -577,7 +577,7 @@ describe("same-artifact verification", () => {
       "packages/execution-contracts",
       "packages/gateway-contracts",
       "packages/integration-github",
-      "packages/memory-mem0",
+      "packages/memory-engine",
       "packages/persistence-sqlite",
       "packages/platform-node",
       "packages/runtime-pi",
@@ -614,6 +614,9 @@ describe("same-artifact verification", () => {
       runnerSource,
       'process.env.FIXTURE_ORDER = "configured";\nconst { read } = await import("outer-fixture");\nprocess.stdout.write(read());\n',
     );
+    const documentSkill = path.join(temporary, "apps/agent-service/src/document-skill");
+    await mkdir(documentSkill, { recursive: true });
+    await writeFile(path.join(documentSkill, "SKILL.md"), "# fixture skill\n");
     const nativeSource = "packages/platform-node/src/files/rename-native.c";
     await mkdir(path.join(temporary, path.dirname(nativeSource)), { recursive: true });
     await cp(path.join(repositoryRoot, nativeSource), path.join(temporary, nativeSource));
@@ -672,6 +675,15 @@ describe("same-artifact verification", () => {
       }).stdout,
     ).toBe("configured:1");
     expect((await lstat(path.join(programs, "rename-native"))).mode & 0o111).not.toBe(0);
+    expect(
+      await readFile(
+        path.join(
+          output,
+          "node_modules/@himawari-agent/agent-service/dist/document-skill/SKILL.md",
+        ),
+        "utf8",
+      ),
+    ).toBe("# fixture skill\n");
     const manifest = JSON.parse(await readFile(path.join(output, "runtime-manifest.json"), "utf8"));
     expect(
       manifest.externalDependencyClosure["outer-fixture/node_modules/inner-fixture"].version,
