@@ -163,7 +163,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 文件预览 | `node scripts/test-file-preview-browser.mjs chromium`（和 `webkit`），不在 `npm run check` 里 | 在生产安全策略下，PDF、Word、Excel 在三语、1280 和 390 宽下都能显示：PDF 有文字层，Word 有样式、图片和项目符号，Excel 填充色和数字格式对，页面不横向滚动 |
 | 界面走查脚本 | `npm run check:release-walkthrough` | 上线前走查脚本里的选择器和页面一致，包括审批卡片的按钮和“已收到，正在继续…”文字 |
 | 批准后继续 | 上线走查 `accept-search-approval`（`test/integration/product-path-browser.test.ts`，`scripts/delivery-mode/browser-acceptance-gate.py` 要求它通过才能上线） | 一步里两次搜索只弹一张卡片；点一次允许后 10 秒内回答出现，页面不停在“正在加载…”（I-29） |
-| 审批卡片本地浏览器验收 | `HIMAWARI_BROWSER_EXECUTABLE=<Chromium 路径，可省> node scripts/test-run-approval-browser.mjs chromium`，不在 `npm run check` 里 | 用假后台在真浏览器里走四遍：两个搜索一张卡片、一个搜索一张卡片、拒绝后不放行、一次读请求永远不回时 25 秒内自己恢复并显示回答 |
+| 审批卡片本地浏览器验收 | `HIMAWARI_CHROMIUM_PATH=<Chromium 路径，可省> node scripts/test-run-approval-browser.mjs chromium`，不在 `npm run check` 里 | 用假后台在真浏览器里走四遍：两个搜索一张卡片、一个搜索一张卡片、拒绝后不放行、一次读请求永远不回时 25 秒内自己恢复并显示回答 |
 | 回答字重 | `npm run check:answer-weight` | 回答正文字重（I-12） |
 
 还不能自动检查、要靠人看的：同一组元素的视觉对齐（第 8 条）、信息该不该显示（第 1 条）、颜色含义（第 21 条）。改界面时用三语截图自己看一遍。

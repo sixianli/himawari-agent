@@ -163,7 +163,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const staticRoot = process.argv[4];
   process.env.HIMAWARI_MEMORY_FIXTURE = "1";
   await mkdir(output, { recursive: true });
-  const executablePath = process.env.HIMAWARI_BROWSER_EXECUTABLE;
+  const executablePath = process.env.HIMAWARI_CHROMIUM_PATH;
   const browser = await (profile === "webkit" ? webkit : chromium).launch(
     executablePath ? { executablePath } : {},
   );
