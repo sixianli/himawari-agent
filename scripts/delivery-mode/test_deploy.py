@@ -16,9 +16,13 @@ BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service'
 SCENARIOS = ['accept-homepage', 'accept-search-toggle', 'accept-news-search', 'accept-long-answer', 'accept-run-command', 'accept-unrelated-no-memory', 'accept-memory-page', 'accept-phone-layout', 'accept-after-restart']
 
 
-def walkthrough(sha=ARTIFACT_SHA256, statuses=None):
+TIMED = {'accept-run-command': 9000, 'accept-unrelated-no-memory': 4000}
+
+
+def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
     statuses = statuses or {}
-    return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed')} for name in SCENARIOS]}
+    timings = {**TIMED, **(answer_ms or {})}
+    return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed'), **({'answerMs': timings[name]} if timings.get(name) is not None else {})} for name in SCENARIOS]}
 GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\n'
 
 
@@ -252,6 +256,13 @@ class DeployFlowTest(DeployHarness):
     def test_walkthrough_with_a_failed_or_missing_check_is_refused(self):
         for broken in ({'accept-search-toggle': 'failed'}, {'accept-memory-page': None}):
             self.walkthrough.write_text(json.dumps(walkthrough(statuses=broken)))
+            code, result, calls = self.deploy()
+            self.assertEqual((code, result['result']), (5, 'no-browser-acceptance'))
+            self.assertEqual(calls, [])
+
+    def test_walkthrough_that_answered_too_slowly_or_without_timing_is_refused(self):
+        for slow in ({'accept-unrelated-no-memory': 20001}, {'accept-run-command': 60001}, {'accept-unrelated-no-memory': None}):
+            self.walkthrough.write_text(json.dumps(walkthrough(answer_ms=slow)))
             code, result, calls = self.deploy()
             self.assertEqual((code, result['result']), (5, 'no-browser-acceptance'))
             self.assertEqual(calls, [])

@@ -47,7 +47,8 @@ date: "2026-10-30"
 
 1. **模型一开始写工具调用就预热沙箱。** Pi 运行适配器（`packages/runtime-pi/src/pi-runtime-adapter.ts`）在模型流式输出里看到工具调用开始（`toolcall_start`）时，立即用工具名回调 `onToolCallStarted`，不等过程记录写盘。服务（`apps/agent-service/src/production-tool-call-prewarm.ts`）只在工具是 `bash`、`write`、`edit` 之一、且在配置的 `runPolicy.coding.enabledTools` 里时，调用 [ADR 0054](0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm) 留下的 `prewarmEnvironment`，同一轮只调一次。预热启动命令和写文件两个会话；真正的调用照旧走完整准入，只复用已启动的沙箱进程；预热失败只写诊断（`sandbox.srt_prewarm.failed`），真正的调用按原来的冷启动走。没用这三个工具的轮次不预热。
 2. **找记忆的向量请求 3 秒没回就重发一次。** 在一轮对话里找记忆时，第一次向量请求最多等 3 秒；超时就把这次记为"结果不确定"（`markUnknown("transport_unresolved")`，和原来被取消时一样），用新的调用序号（`ordinal` 2）重新登记再发一次，第二次用剩下的全部时限。只重发一次，后台记忆整理不重发。重发时写诊断 `memory.embedding_retried`。3 秒取自 10-28 的 40 轮实测（中位数 1.39 秒，第 90 百分位 2.29 秒）。
-3. **Magpie 路由组把 CodeBuddy 排第一。** Andy 10-30 00:41（日本时间）在选择卡上选定：`group/himawari-main` 改为 CodeBuddy 新加坡 DeepSeek V4.1 Flash → Go DeepSeek V4.1 Flash → Go GLM-5.3-Flash → 两个免费模型（挪到最后，不删）。这是生产机上 Magpie 的配置，不在本仓库；改动和改前备份由 Mac 线程在 Andy 同意后执行。
+3. **Magpie 路由组把 CodeBuddy 排第一。** Andy 10-30 00:41（日本时间）在选择卡上选定：`group/himawari-main` 改为 CodeBuddy 新加坡 DeepSeek V4.1 Flash → Go DeepSeek V4.1 Flash → Go GLM-5.3-Flash → 两个免费模型（挪到最后，不删）。这是生产机上 Magpie 的配置，不在本仓库。10-30 01:04 Mac 线程已改好并重启 `magpie.service`，改前备份和改后实测记在 [ADR 0117 的 10-30 顺序变更](0117-magpie-routes-models-through-owned-subscriptions.md#revision-1030-order)。
+4. **上线前的网页走查给对话耗时设上限。** 走查（`test/integration/product-path-browser.test.ts`）记下“简单问题”和“执行命令”两个场景从按发送到答案出现的毫秒数 `answerMs`；`scripts/delivery-mode/browser-acceptance-gate.py` 在简单问题超过 20 秒、执行命令超过 60 秒或没有计时时拒绝出包和上线。走查用脚本模型，这个上限只管 Himawari 自己的耗时；它是第一版宽松值，第二十版走查拿到实测后按实测的两倍左右收紧。
 
 <a id="amendments"></a>
 
@@ -76,9 +77,10 @@ date: "2026-10-30"
 
 ## 后果
 
-- 预计每轮第一次用到 `bash`、`write`、`edit` 时省 3–5 秒，同一轮第一次用另一类会话时再省 3–5 秒（预热同时启动两个会话）。找记忆的最长等待从 9 秒降到约 3 + 1.5 秒。CodeBuddy 排第一后，按短请求的实测，每次模型请求再省约 1.4 秒（真实大小的请求还没测）。实际效果以上线后真实网页的前后对比为准，写进[案例 63](../engineering-casebook.md#case-conversation-speed)。
+- 预计每轮第一次用到 `bash`、`write`、`edit` 时省 3–5 秒，同一轮第一次用另一类会话时再省 3–5 秒（预热同时启动两个会话）。找记忆的最长等待从 9 秒降到约 3 + 1.5 秒。CodeBuddy 排第一后，按短请求的实测，每次模型请求再省约 1.4 秒（真实大小的请求还没测）。实际效果以上线后真实网页的前后对比为准（测法：同样三句话，同一时段各发 5 次，比首字和整轮时长的中位数，见[后果](#measure)），写进[案例 63](../engineering-casebook.md#case-conversation-speed)。
 - 预热会提前占用工作区租约：同一目录上另一轮的工具调用要等这一轮结束（ADR 0054 补充里已有的代价，只是开始时间从"第一次调用"提前到"开始写调用"）。
 - 更多私人对话经 CodeBuddy 新加坡（数据留存 14 天，经社区登录插件），额度上限未核实；额度用完时 Magpie 按顺序退回 Go。
+- <a id="measure"></a>前后对比的测法：上线前（第十九版）和上线后（第二十版）在同一时段（日本时间晚上）各发 5 次同样的三句话：“你是谁”“东京现在几点”（简单问题）和一个让它写一个小文件的任务。每次新开对话，跑 `conversation-speed/speed-profile.mjs` 读这些轮次的时间（不读内容），比较两组的首字时间中位数和整轮时长中位数；反向检查：不用工具的轮次日志里不能出现 `sandbox.srt_prewarm`。
 - 后续：工具准入一次调用跑 6 遍完整核对（`sandbox.admission.timing`），派发段 2.4–6.7 秒，仍是[事故 I-25](../incidents-and-gates.md#incidents) 的主要剩余；按对话常驻沙箱见上表。
 
 [↑ 返回阅读导航](#contents)
