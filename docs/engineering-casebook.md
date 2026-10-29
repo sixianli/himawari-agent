@@ -76,6 +76,7 @@ date: "2026-10-26"
   50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
   51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
   53. [评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住](#case-no-expensive-models)
+  56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -105,7 +106,7 @@ date: "2026-10-26"
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
-| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
+| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
@@ -3341,6 +3342,58 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “我们的评测裁判一个月花的钱比生产主模型还多。我在网关日志里逐条核对，发现是设计裁判时只要求‘和被测模型不是同一家’，没比价格，选了最贵的一档，还写死在代码里。修法是三件事：模型名集中到一个配置文件；裁判换成同样异厂、价格约二十分之一的模型，保留每轮校准和人工抽查来兜住判错；再加一道提交前的检查，代码里出现贵模型名就失败。网关层的模型白名单更硬，但要付费套餐，记成以后的第二道防线。”
+
+[返回目录](#contents)
+
+<a id="case-red-main-without-ci"></a>
+
+## 案例 56：CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言
+
+**背景与现象**
+
+2026-10-29 15:16（日本时间），UI 第二批线程报告：`main` 上 `test/integration/thread-run-lifecycle.test.ts`（对话从排队到执行完的整条链路测试）有 4 条失败，都是“executes persistent dispatch through the real Pi loop”，在 worker（独立执行进程）和直接执行两种方式下、工具被拒和不被拒两种情况各一条。查提交记录，从 10-28 21:51 的 `bd04dd1` 起就一直红；10-28 22:42 的 `32e2c0a` 的线程已经跑到这 4 条失败，只在提交说明里写了“在未改动的 main 上同样失败”，就推送了。
+
+**根因**
+
+1. 直接原因：`bd04dd1`（[案例 43](#case-owner-material-position) 的第二版修复）把发给模型的最后一条用户消息改成两段：`<himawari-context>` 里是本轮时间和资料，`<owner-message>` 里是主人原话。这个测试仍断言最后一条消息是纯文本“现在的天气怎么样？只处理本轮请求。”。本线程在 `main`（`6979f5a`）上复现：实际收到的是带两段标签的文本，原话在 `<owner-message>` 里。产品行为是对的，过期的是测试期望。
+2. 为什么没被发现：当时快速模式（[ADR 0080](adr/0080-document-governance-in-fast-mode.md)）只跑改动者自己挑的相关测试，`bd04dd1` 跑了 `packages/runtime-pi` 等，没挑到这个集成测试；GitHub Actions 已关（[ADR 0092](adr/0092-pause-github-actions.md)），没有任何地方跑全量测试。
+3. 为什么红了 17 小时：第二个看到失败的线程把它当成“别人的问题”，提交说明里写一句就推送了，既没修也没上报。
+
+**方案讨论与备选**
+
+- **只改测试期望**：必须做，但只解决这一次。
+- **恢复 CI**：最彻底，但 Andy 为了速度和费用关了 Actions，这是他的决定，本线程不改。
+- **推送前真的跑一遍声明的相关测试**：把第 0 层从“声明跑过”变成“真的跑过且通过”。代价是每次推送多等测试的时间；而且云端容器以 root 运行时 `container-execution-backend.unit.test.ts` 本来就有 12 条失败，不先处理会让改沙箱代码的提交推不上去。这是改所有代理工作方式的决定，交 Andy 选（事故 I-22 状态“等 Andy”）。
+- **提交说明里出现“失败”字样就拒绝**：容易绕过，也会误拦，不选。
+
+**我们的方案**
+
+1. 测试改为核对新格式：最后一条消息只有一段文本，以 `<himawari-context>` 开头，以 `<owner-message>` 包着的原话结尾；同时断言之前的历史消息里没有 `<himawari-context>`，也就是原生历史只存原话、不带过期资料，这是案例 43 方案的关键性质，旧测试没覆盖到。
+2. 漏选测试这一步，2026-10-29 已进仓库的第 0 层检查（[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)，事故 I-05）已经能拦：对 `bd04dd1` 运行 `check-commit`，以 `L0_RELATED_TESTS_UNDECLARED` 拒绝并点名这个测试文件。
+3. “声明了但其实是红的仍能推送”登记为事故 I-22，推送前跑测试的方案等 Andy 决定。
+
+**业界主流做法**
+
+- ✅ Martin Fowler《Continuous Integration》（<https://martinfowler.com/articles/continuousIntegration.html>）“Fix Broken Builds Immediately”一节：“Should the integration build fail, then it needs to be fixed right away.”“nobody has a higher priority task than fixing the build”，并建议 “Usually the best way to fix the build is to revert the latest commit from the mainline”。同文还要求 “every commit is verified in a reference environment”。
+
+**对比与取舍**
+
+业界做法是每次推送都在统一环境里跑构建，坏了立刻修。我们没有 CI，统一环境只能靠推送前在本机跑；这比 CI 弱（各台机器环境不同，例如云端容器是 root），但不花 CI 费用、也不用等排队。“看到红就修或上报”目前还只是规则，没有自动检查，这是本案例留下的缺口。
+
+**结果数据**
+
+- 复现：`main`（`6979f5a`）上该文件 206 条中 4 条失败；改测试后 206 条全过（本线程云端容器，约 53 秒）。
+- 红的时长：`bd04dd1` 10-28 21:51 到报告 10-29 15:16，约 17 小时（按提交时间和线程报告时间算）。
+- 门槛自证：`check-commit bd04dd1` 退出码 1，点名 9 个相关测试文件，含本文件，用时约 1 秒。
+- 云端 root 环境下沙箱相关三个目录 1241 条测试中 12 条失败，全在 `container-execution-backend.unit.test.ts`（本线程实测）。
+
+**相关 ADR/PR**
+
+[事故清单 I-22、I-05](incidents-and-gates.md#incidents)；[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)；[ADR 0092](adr/0092-pause-github-actions.md)；[案例 43](#case-owner-material-position)；本案例的 PR 在分支 `claude/project-thread-bns7ep`。
+
+**面试 30 秒版**
+
+“我们为了速度关掉了 CI，结果一个改提示词外壳的提交让集成测试红了 17 小时，期间另一个代理看到了却只在提交说明里写了一句。根因是三层：测试期望过期；改动者挑测试漏了它；没有任何地方跑全量。我补了测试，并顺带把‘历史里不带过期资料’这个关键性质写进断言；漏选那一层已有提交钩子能拦，并用这个提交复现证明；‘声明了却是红的’这层登记成事故，给出推送前真跑测试的方案，把它的成本和云端 root 环境的已知失败一起摆给负责人决定。”
 
 [返回目录](#contents)
 
