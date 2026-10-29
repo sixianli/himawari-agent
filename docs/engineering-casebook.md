@@ -72,6 +72,9 @@ date: "2026-10-26"
   45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
   46. [第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒](#case-startup-permission-audit)
   47. [修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛](#case-incident-gates)
+  49. [模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗](#case-answer-weight)
+  50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
+  51. [iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏](#case-phone-input-zoom)
   53. [评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住](#case-no-expensive-models)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
@@ -100,8 +103,8 @@ date: "2026-10-26"
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3110,6 +3113,178 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “我们发现事故修完了还会复发，因为修复只落在那一处代码和一篇文档里。于是定了一条规则：每个事故必须落成一道自动检查才算关闭，同一错误第三次必须有硬门槛。清单本身也被脚本核对，不能写一个不存在的门槛就算完。比如 worker 启动超时，以前只看最后起没起来，碰巧成功就没人管；现在切换后量启动时间，超过 30 秒就回退，出包时还核对等待时间留够余量。每道门槛都要证明在事故重现上会失败。”
+
+<a id="case-answer-weight"></a>
+
+## 案例 49：模型只加粗了一个文件名，网页却整段都像粗体：430 字重在中文字体上被取成中粗
+
+**背景与现象**
+
+2026-10-28 第一批界面意见第 9(c) 条，Andy 问“回答正文问什么都是粗体？”。当时的线程只查了把 Markdown（模型用来标格式的纯文本写法，`**文字**` 表示加粗）变成网页的代码，没发现问题，结论是“疑为模型输出了 `**`”，于是只在系统提示里加了一条“加粗只用在最值得主人注意的一两处”。2026-10-29 12:01（日本时间），Andy 在 Mac 的 Chrome 里看“今日日本新闻头条写入 Word”这一轮，正文、编号列表、结尾的问句仍然全都像粗体，第二次提出。
+
+**根因**
+
+不是模型，也不是 Markdown 渲染，是样式表里的字重（font-weight，字的粗细，400 是常规、700 是粗体）。
+
+1. 提交 `13cf0d6`（2026-10-26）在 `apps/control-center/src/review-v4.css` 里给整个页面加了 `.app-shell { font-weight: 430; }`，想让字比常规略重一点。对拉丁字母的可变字体（例如 SF Pro，粗细可以连续变化）这确实只重一点。
+2. Mac 上的中文字体苹方（PingFang SC）不是可变字体，只有 Ultralight、Thin、Light、Regular、Medium、Semibold 六个固定字形，对应 100–600。页面又设了 `font-synthesis: none`（不允许浏览器自己“描粗”）。浏览器按 CSS 字体匹配规则找最接近的字形：430 在 400 和 500 之间，规则是先往上找到 500，所以全部中文用的是 Medium（中粗）。
+3. 模型真正加粗的地方 `<strong>` 默认是 700，苹方最粗只有 Semibold 600。于是普通文字 500、加粗文字 600，只差一档，肉眼几乎分不出，看起来就是整段粗体。
+
+怎么确认的：
+
+- 用 Chromium 加载网页的四份真实样式表、按回答的页面结构摆好元素，读到回答段落和列表项的计算字重都是 430，`<strong>` 是 700。
+- 字体匹配：在 Chromium 里给同一个字体名登记 400、500、600 三个不同的字形，用 Chrome 开发者协议（DevTools Protocol）问每段文字实际用了哪个字形：430 用的是 500 那一个，700 用的是 600 那一个。
+- 截图里文件名“日本新闻头条_2026-10-29.docx”比周围的字稍粗一点，说明模型只加粗了文件名，其余文字没有 `**`；系统提示里已有“不要整句、整段加粗”的规则，模型守住了。第一次排查漏掉，是因为只看了“生成了哪些 HTML 标签”，没看“这些标签最后用什么粗细的字形画出来”。
+
+**我们的方案**
+
+1. 删掉 `.app-shell` 的 430，正文回到常规 400；加粗 700 在苹方上落到 Semibold 600，和正文差两档，一眼能看出来。
+2. 顺手把同类的非整百字重改成整百：标题的 650、680 改为 600，旧样式里的 750 改为 700。这些在苹方上本来就落到 600，中文显示不变，只是拉丁字母略有变化。
+3. 自动检查 `test/tooling/answer-font-weight.test.mjs`，进了 `npm run check`（命令 `npm run check:answer-weight`，约 0.1 秒；放在 `test/tooling/` 下，因为网页的类型配置里没有 Node 的文件读取接口）：样式里不许出现非整百字重；回答所在的那一串容器（`.app-shell`、`.chat-turn`、`.thread-message`、`.assistant-markdown` 等）不许设 400 以外的字重。
+
+这次只改网页样式，不涉及 Pi（Himawari 所基于的开源智能体框架）的任何模块。
+
+**方案讨论与备选**
+
+- **再改系统提示，要求模型更少加粗**：模型本来就只加粗了一处，改提示解决不了，还要花钱用真模型重放验证。放弃。
+- **给 `<strong>` 设 800 或 900，拉开和正文的差距**：苹方没有比 600 更粗的字形，中文仍然是 600，没用；而且正文 500 本身就偏重。放弃。
+- **换成带多档粗细的网页字体（例如自带 Noto Sans SC 可变字体）**：粗细能精确到 430，但中文字体文件很大（数 MB），要拖慢首屏，也偏离已批准的界面基线。放弃。
+- **门槛用真实浏览器量计算字重**：最接近 Andy 看到的效果，但要启动浏览器，而且云端没有苹方，量出来的是“设了多少”不是“画成什么”，和读样式表等价。选了直接读样式表的单元测试，快、哪里都能跑。代价是如果以后在组件里用内联样式设字重，这道检查看不到；目前组件里没有内联字重。
+
+**业界主流做法**
+
+- ✅ W3C《CSS Fonts Module Level 4》字体匹配算法（<https://www.w3.org/TR/css-fonts-4/>）：“If the desired weight is inclusively between 400 and 500, weights greater than or equal to the target weight are checked in ascending order until 500 is hit and checked, followed by weights less than the target weight in descending order”。这正是 430 被取成 500 的依据。
+- ✅ Apple《macOS 自带字体列表》（<https://support.apple.com/en-us/120414>）：苹方简体只列出 “PingFang SC Light / Medium / Regular / Semibold / Thin / Ultralight” 六个字形，没有 Bold，也不是连续粗细。
+
+**对比与取舍**
+
+规范只保证“找最接近的字形”，不保证视觉上“略重一点”；在只有固定几档的中文字体上，任何非整百的字重都会整档跳变。我们的做法是只用整百字重，并用测试把这条写死。取舍是放弃了拉丁字母上 430 那种“略重一点”的细腻效果，换来中英文粗细一致、加粗一眼可辨。
+
+**结果数据**
+
+- 修改前：回答段落、列表项的计算字重 430，在苹方上落到 Medium 500；加粗落到 Semibold 600（本线程 Chromium 复现）。
+- 修改后：段落、列表项 400，加粗 700（落到苹方 Semibold 600）。
+- 门槛：把 430 放回去时两项检查都失败（“非整百字重”列出 12 处，“回答容器字重”列出 `.app-shell`），改完后通过；网页的 38 个单元测试文件 531 项全部通过。
+- Andy 在 Mac 上看到的效果：未测量，等第十九版上线后在同一轮对话里核对。
+
+**相关 ADR/PR**
+
+[事故与门槛清单 I-12](incidents-and-gates.md#incidents)；引入 430 的提交 `13cf0d6`（随 PR #45 合入）；系统提示里的加粗规则来自 PR #80；本案例的 PR 在分支 `claude/project-thread-izuenj`。没有新 ADR：这是修复样式缺陷，不是新的设计决定。
+
+**面试 30 秒版**
+
+“用户说回答全是粗体。第一次只查了 Markdown 转 HTML，没问题，就以为是模型乱加粗。第二次我去量真正画出来的字：页面设了 430 字重，苹方只有 400、500、600 几档，按 CSS 字体匹配规则 430 被取成 500 中粗，而加粗的 700 最多只到 600，两者差一档看不出来。改回 400，再加一道测试禁止非整百字重，进了提交前的检查。教训是排查界面问题要量最终渲染结果，不能停在中间产物。”
+<a id="case-filter-counts"></a>
+
+## 案例 50：筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表
+
+**背景与现象**
+
+2026-10-29 中午（日本时间），Andy 在记忆页的“时间线”标签里看到五个筛选按钮“全部变化 / 新记住 / 整理 / 更正 / 导入”全是 0，列表也是空的；点了“更正”之后变成“全部变化 3 / 更正 3”，并列出 3 条更正。他问：“这个数字是假的吗？用户没点之前就应该显示正确的数字。”紧接着他又发现“全部记忆”里选了“偏好 5”之后，小类行跟着变成“全部 5”，状态行却还是“在用 12”，三行数字之间的关系说不清。
+
+**根因**
+
+用单元测试复现后确认有三处，都是“数字和点开后看到的东西不是同一个口径”：
+
+1. 时间线：代码先按当前选中的筛选把事件过滤掉，再在过滤后的列表上数每种类型有几条。选中“导入”时列表里只剩导入事件，其他类型自然都是 0；“全部变化”数的也是过滤后的条数。截图里的“全部 0”就是 Andy 刚点过“导入”（没有导入记录）时的样子。
+2. 全部记忆：大类行按当前状态数、但不管搜索词；状态行数的是全部记忆，不管已选的大类和搜索词；点状态时还会把大类悄悄重置成“全部”。所以“偏好 5”下面写着“在用 12”。
+3. 加载中：记忆数据还没到时，“全部记忆”标签显示 0，页头显示“记住了 0 条”，把“还不知道”显示成“没有”。
+
+文件页还有一个同类问题：每次只取 100 个文件，服务器还有下一页时，页头的“N 个文件”只是已经取到的数量。
+
+**我们的方案**
+
+定一条统一口径：筛选按钮上的数字 = 保持其他已选条件（包括搜索词）不变、点这个按钮之后会看到的条数。
+
+- 时间线先生成全部事件，计数在全部事件上数，显示时再过滤。
+- 全部记忆三行都用同一个过滤函数算数：大类数“当前状态 + 搜索词”，小类数“当前状态 + 大类 + 搜索词”，状态数“当前大类 + 搜索词”。点状态不再重置大类，只重置小类（小类行可能在新状态下不显示，留着会变成看不见的筛选）。已选的大类即使在新状态下是 0 也保留在行里，用户能看到为什么列表空了。
+- 数据到达前不显示任何数字。
+- 文件页在服务器还有下一页时写成“100+ 个文件”（三语）。
+
+三行标签的结构（哪个包含哪个）怎么重新设计，归 UI 意见第二批第 40 条，本次只保证数字真实、口径一致。
+
+**方案讨论与备选**
+
+- **数字一律显示全局总数，不随筛选变化**：最简单，也不会出现 0，但点开“偏好”后状态行写“在用 12”而列表只有 5 条，正是 Andy 困惑的地方。
+- **只修时间线那一处**：Andy 要求检查所有按钮，而且同一种写法在全部记忆里也错，只修一处会再被他找到。
+- **把三行改成一个级联下拉**：可能更清楚，但这是信息架构的改动，要先出原型给 Andy 批，交给 UI 线程。
+
+**业界主流做法**
+
+- 🟡 Algolia 分面（faceting，按属性分组计数的筛选）文档（<https://www.algolia.com/doc/guides/managing-results/refine-results/faceting/>）：“Enabling faceting on attributes computes facet counts for each facet value”，计数随每次查询和筛选一起返回；多选筛选时 “the engine handles the facet counts differently to keep a consistent user experience.” 本次通过网页摘要工具打开，只核对到这两句。
+
+**对比与取舍**
+
+和电商、搜索产品的分面计数一致：数字跟着其他已选条件和搜索词走，按钮上的数就是点开后的结果数。不同的是我们的数据全在浏览器里（一个人的记忆只有几十到几百条），不需要服务器算分面，也不需要近似计数。代价是点状态不再重置大类，可能出现“偏好”在“已归档”下为 0 的空列表，但按钮上已经写了 0，用户不会被骗。
+
+**结果数据**
+
+- 新门槛测试在修复前的代码上失败：时间线报“整理 0 点开有 1 条”，全部记忆报“在用 7 点开只看到 3 条”，加载中报标签里出现“全部记忆0”；修复后通过（`apps/control-center/test/memory-interactions.unit.test.ts`，本线程云端容器运行）。
+- `apps/control-center/test/` 全部 38 个测试文件、535 个测试通过（本线程运行）。
+- 上线后真实页面：未测量，等下一版上线后按发布走查确认。
+
+**相关 ADR/PR**
+
+[事故与门槛清单 I-13](incidents-and-gates.md)；[记忆管理页重设计](#case-memory-page)；本案例的 PR 在分支 `claude/project-thread-b7adoj`。没有新建 ADR：这是对已有页面的缺陷修复，计数口径写在测试名里。
+
+**面试 30 秒版**
+
+“用户发现筛选按钮上的数字点之前是 0、点之后才变对。根因是计数在已经筛过的列表上数，另一页的状态行又没跟着已选条件走。我们定了统一口径：按钮上的数字就是保持其他条件不变、点它之后看到的条数，跟搜索产品的分面计数一样；再加一道测试把每个按钮依次点两轮，核对数字和看到的条数相等。修复前这道测试在三处都失败。”
+
+[返回目录](#contents)
+
+<a id="case-phone-input-zoom"></a>
+
+## 案例 51：iPhone 上一点输入框整页放大、设置关不掉：字号 14px 触发自动缩放，弹窗高度没扣状态栏
+
+**背景与现象**
+
+2026-10-29 上午（日本时间），Andy 在 iPhone 主屏应用（PWA，把网页加到主屏后像 App 一样全屏打开）上用第十八版时连报四处：记忆页整页被放大，左边文字被切掉；新对话里一点输入框，整页立刻放大，发送按钮只露一半；点开一条记忆后详情块往右溢出，删除按钮只露一半；设置面板上下撑满，关闭按钮被顶到状态栏（屏幕最上面显示时间和电量的一条）底下点不到，退不出通知设置。
+
+**根因**
+
+是两个问题，都用 iPhone 尺寸（393×852）的真实 Chromium 复现和代码确认：
+
+1. **整页放大**：iOS Safari 在输入框字号小于 16px 时，一聚焦就把整页放大，松手后不缩回。网页根字号是 14px，输入框都写了 `font: inherit`，所以称呼框、语言下拉框、记忆搜索框和编辑框都是 14px。对话输入框更隐蔽：手机宽度下有一条 16px 的规则，但另一条 `.composer textarea:focus` 规则写着 14px，选择器更具体，平时量是 16px，一聚焦就变 14px。实测第十八版构建：输入框聚焦前 16px、聚焦后 14px。iOS 不会在页面切换时复原缩放，所以在设置里点过称呼框后，记忆页也一直是放大的。页面本身并不比屏幕宽（`scrollWidth` 等于屏幕宽 393）。
+2. **设置关不掉**：弹窗最大高度是 `100vh - 2rem`。主屏应用用 `viewport-fit=cover` 和透明状态栏，`100vh` 包括状态栏和底部横条，弹窗居中后顶端离屏幕上沿约 14px，标题和关闭按钮落在 59pt 高的状态栏下面；而且整块弹窗一起滚动，标题还会被滚走。
+
+**我们的方案**
+
+- 手机上（`pointer: coarse` 或宽度不超过 560px）所有文字输入框、文本框和下拉框统一 `font-size: 16px !important`。用 `!important` 是为了不管哪条更具体的规则（包括 `:focus`）都压不过它，这正是对话框出问题的方式。
+- 弹窗高度改成 `100dvh` 减上下安全区（`env(safe-area-inset-top/bottom)`，系统告诉网页状态栏和底部横条各占多高）再减 2rem，位置也让开安全区；弹窗本身不滚，标题栏固定，内容放进新的 `.dialog-body` 里单独滚动；手机上设置的分类标签吸顶。
+- 记忆详情块左右边距改为 0，和上面的卡片对齐。
+- 两道门槛：每次提交跑的 `scripts/check-phone-layout.mjs`（`npm run check:phone-layout`），以及上线前真实浏览器走查新增必过项 `accept-phone-layout`。
+
+**方案讨论与备选**
+
+- **viewport 加 `maximum-scale=1` 或 `user-scalable=no`**：网上最常见的一行修法，能挡住自动放大，但也挡住双指放大，看小字、看图片时用户没法放大，属于为修一个问题拿走用户的能力。静态检查反过来禁止这两个写法。
+- **只把出问题的几个输入框改成 16px**：改得少，但下一个新输入框或新的 `:focus` 规则又会犯同样的错，对话框就是这样漏掉的。
+- **用 JavaScript 在聚焦前临时改 viewport**：依赖浏览器时序，iOS 版本一变就可能失效，也更难测。
+- **设置弹窗做成固定大小**：Andy 在 UI 第二批第 23 条提过，属于视觉重做，留给 UI 批次线程；这里只修“超出屏幕、点不到关闭”的根因。
+
+**业界主流做法**
+
+- ✅ WebKit 官方博客《Designing Websites for iPhone X》（<https://webkit.org/blog/7929/designing-websites-for-iphone-x/>）：“The default value of viewport-fit is auto, which results in the automatic insetting behavior”，用 `viewport-fit=cover` 后页面铺满全屏，要用 `env()` 读取安全区，“constant() has been removed and replaced with env()”。我们正是用了 cover，却在弹窗高度上忘了扣安全区。
+- 🟡 “输入框小于 16px 会触发自动放大”没有找到 Apple 或 WebKit 的官方文档，只有社区文章（例如 <https://weblog.west-wind.com/posts/2023/Apr/17/Preventing-iOS-Textbox-Auto-Zooming-and-ViewPort-Sizing>），它们同时提醒不要用 `maximum-scale` 关缩放。我们以自己的复现为准：对话框聚焦后实测 14px，和 Andy 的截图一致。
+
+**对比与取舍**
+
+和社区主流一样选“输入框不小于 16px”，不关缩放。不同的是用一条 `!important` 规则统一兜住所有输入控件，再用脚本检查别处不许出现能压过它的写法；代价是手机上设置里的输入框字比电脑上大 2px。弹窗安全区按 WebKit 的建议用 `env()`。Chromium 模拟器读不到真实安全区，所以走查只能检查“弹窗和关闭按钮在屏幕内、聚焦后字号”，状态栏遮挡仍要靠真机确认。
+
+**结果数据**
+
+- 复现（本线程云端 Chromium，393×852，`isMobile`）：第十八版构建对话框聚焦后 14px，称呼框 14px，语言下拉框 14px；修复后都是 16px。全部页面 `scrollWidth` 等于 393，没有横向溢出。
+- 设置弹窗（把安全区按 iPhone 的 59pt/34pt 代入）：修前弹窗顶端 14px、关闭按钮 27–63px，整个在状态栏下；修后弹窗顶端 73px、关闭按钮 86–122px。
+- 门槛自证：`check-phone-layout.mjs` 对修复前的代码报 5 项错误，修复后通过；`accept-phone-layout` 的步骤对第十八版构建报 “textarea focused at 14px” 失败，对修复后的构建通过（均在本线程用夹具服务器跑）。
+- 真机效果：未测量，等 Andy 在 iPhone 上确认。
+
+**相关 ADR/PR**
+
+[事故与门槛清单 I-14](incidents-and-gates.md)；[第十八版手机页面基线 ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)；本案例的 PR 在分支 `claude/project-thread-6cxbkp`。
+
+**面试 30 秒版**
+
+“用户在 iPhone 上一点输入框整页就放大、设置面板关不掉。根因一是 iOS 对小于 16px 的输入框会自动放大且不回弹，我们的对话框平时 16px、一聚焦被一条更具体的 `:focus` 规则改成 14px；二是弹窗高度用 100vh，没扣状态栏安全区。修法是手机上输入控件统一 16px、不用关缩放的偷懒写法，弹窗按 env(safe-area-inset) 算高度、标题固定内容内滚。再加两道门槛：提交时的静态检查和上线前手机尺寸的真实浏览器走查，两道都证明在旧版本上会失败。”
 
 [返回目录](#contents)
 

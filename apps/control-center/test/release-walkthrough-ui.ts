@@ -7,6 +7,8 @@ export type WalkthroughRole =
   | "navigation"
   | "region"
   | "switch"
+  | "tab"
+  | "tablist"
   | "textbox";
 
 export type WalkthroughTarget = Readonly<{
@@ -32,6 +34,9 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   settingsDialog: { role: "dialog" },
   settingsToolsTab: { role: "button", name: "工具与权限", exact: true },
   closeSettings: { role: "button", name: "关闭" },
+  settingsTabs: { role: "navigation", name: "设置类别", exact: true },
+  settingsTab: { role: "button" },
+  showList: { role: "button", name: "显示列表", exact: true },
   searchEnable: { role: "switch", name: "允许联网搜索", exact: true },
   searchRevoke: { role: "switch", name: "撤销联网搜索授权", exact: true },
   searchStep: "搜索网页",
@@ -43,6 +48,8 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   memoryPage: { role: "region", name: "记忆", exact: true },
   memorySummary: /记住了 \d+ 条关于你的事/,
   memoryBack: { role: "button", name: "返回", exact: true },
+  memoryTabs: { role: "tablist", name: "记忆", exact: true },
+  memoryTab: { role: "tab" },
   pageError: { role: "alert" },
   unreadableRecords: "部分执行记录暂不可读取",
   noProcessRecords: "没有可展示的过程记录",

@@ -929,17 +929,26 @@ function AllTab({
   const visible = overview.memories.filter(live);
   const pool = visible.filter((item) => item.status === status);
   const needle = search.trim().toLowerCase();
-  const count = <K extends string>(keys: readonly K[], of: (item: MemoryItem) => string) =>
-    keys
-      .map((key) => ({
-        key,
-        count: pool.filter((item) => key === "all" || of(item) === key).length,
-      }))
-      .filter((entry) => entry.count > 0 || entry.key === "all")
+  type Facet = { status: MemoryItem["status"]; category: string; sub: string };
+  const picked: Facet = { status, category, sub };
+  const matching = (facet: Facet) =>
+    visible.filter(
+      (item) =>
+        item.status === facet.status &&
+        (facet.category === "all" || item.category === facet.category) &&
+        (facet.sub === "all" || item.subCategory === facet.sub) &&
+        (!needle || item.text.toLowerCase().includes(needle)),
+    );
+  const ranked = <K extends string>(entries: { key: K; count: number }[], current: string) =>
+    entries
+      .filter((entry) => entry.count > 0 || entry.key === "all" || entry.key === current)
       .sort((a, b) => (a.key === "all" ? -1 : b.key === "all" ? 1 : b.count - a.count));
-  const categories = count(
-    ["all", ...new Set(pool.map((item) => item.category))],
-    (item) => item.category,
+  const categories = ranked(
+    ["all", ...new Set([...pool.map((item) => item.category), category])].map((key) => ({
+      key,
+      count: matching({ ...picked, category: key, sub: "all" }).length,
+    })),
+    category,
   ).map((entry) => ({
     ...entry,
     label:
@@ -947,17 +956,23 @@ function AllTab({
         ? message("memory.page.everything")
         : message("memory.cat", { c: entry.key }),
   }));
-  const inCategory = pool.filter((item) => item.category === category);
   const subNames = [
-    ...new Set(inCategory.flatMap((item) => (item.subCategory ? [item.subCategory] : []))),
+    ...new Set(
+      pool.flatMap((item) =>
+        item.category === category && item.subCategory ? [item.subCategory] : [],
+      ),
+    ),
   ];
   const subs =
     category !== "all" && subNames.length > 1
-      ? count(["all", ...subNames], (item) =>
-          item.category === category ? (item.subCategory ?? "") : "",
+      ? ranked(
+          ["all", ...subNames].map((key) => ({
+            key,
+            count: matching({ ...picked, sub: key }).length,
+          })),
+          sub,
         ).map((entry) => ({
           ...entry,
-          count: entry.key === "all" ? inCategory.length : entry.count,
           label: entry.key === "all" ? message("memory.page.everything") : entry.key,
         }))
       : [];
@@ -966,17 +981,17 @@ function AllTab({
       key,
       label: message("memory.page.status", { s: key }),
       hint: message("memory.page.statusHint", { s: key }),
-      count: visible.filter((item) => item.status === key).length,
+      count: matching({ ...picked, status: key, sub: "all" }).length,
     }))
-    .filter((entry) => entry.key !== "trashed" || entry.count > 0 || status === "trashed");
-  const shown = pool
     .filter(
-      (item) =>
-        (category === "all" || item.category === category) &&
-        (sub === "all" || item.subCategory === sub) &&
-        (!needle || item.text.toLowerCase().includes(needle)),
-    )
-    .sort((a, b) => Number(focus.includes(b.memoryId)) - Number(focus.includes(a.memoryId)));
+      (entry) =>
+        entry.key !== "trashed" ||
+        status === "trashed" ||
+        visible.some((item) => item.status === "trashed"),
+    );
+  const shown = matching(picked).sort(
+    (a, b) => Number(focus.includes(b.memoryId)) - Number(focus.includes(a.memoryId)),
+  );
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).valueOf();
   const groupOf = (item: MemoryItem) =>
@@ -1027,7 +1042,6 @@ function AllTab({
         message={message}
         onPick={(key) => {
           setStatus(key);
-          setCategory("all");
           setSub("all");
         }}
       />
@@ -1087,7 +1101,7 @@ function TimelineTab({
     confirm?: boolean;
   };
   const byId = new Map(overview.memories.map((item) => [item.memoryId, item]));
-  const events: Event[] = [
+  const everything: Event[] = [
     ...overview.memories.flatMap((item): Event[] =>
       item.importBatchId
         ? []
@@ -1138,8 +1152,10 @@ function TimelineTab({
         undo: () => void memory.importUndo(item.batchId),
       }),
     ),
-  ].filter((event) => filter === "all" || event.type === filter);
-  events.sort((a, b) => b.at.localeCompare(a.at));
+  ];
+  const events = everything
+    .filter((event) => filter === "all" || event.type === filter)
+    .sort((a, b) => b.at.localeCompare(a.at));
   const days = new Map<string, Event[]>();
   for (const event of events) {
     const day = new Date(event.at).toLocaleDateString(undefined, {
@@ -1159,7 +1175,9 @@ function TimelineTab({
           key,
           label: message("memory.page.filter", { f: key }),
           count:
-            key === "all" ? events.length : events.filter((event) => event.type === key).length,
+            key === "all"
+              ? everything.length
+              : everything.filter((event) => event.type === key).length,
         }))}
         value={filter}
         message={message}
@@ -1541,7 +1559,7 @@ export function MemoryPage({
   const tabs: { key: Tab; count?: string; urgent?: boolean }[] = [
     ...(queue ? [{ key: "pending" as const, count: String(queue), urgent: true }] : []),
     { key: "profile" },
-    { key: "all", count: String(active.length) },
+    { key: "all", ...(overview ? { count: String(active.length) } : {}) },
     { key: "timeline" },
   ];
   const body: Record<Tab, () => ReactNode> = {
@@ -1581,13 +1599,15 @@ export function MemoryPage({
             <LineIcon name="back" />
           </ActionButton>
           <h1>{message("nav.memory")}</h1>
-          <small>
-            {message("memory.page.summary", {
-              live: active.length,
-              week: active.filter((item) => Date.parse(item.recordedAt) > week).length,
-              archived: memories.filter((item) => item.status === "archived").length,
-            })}
-          </small>
+          {overview ? (
+            <small>
+              {message("memory.page.summary", {
+                live: active.length,
+                week: active.filter((item) => Date.parse(item.recordedAt) > week).length,
+                archived: memories.filter((item) => item.status === "archived").length,
+              })}
+            </small>
+          ) : null}
         </div>
         <div className="actions">
           <label className="memory-switch">

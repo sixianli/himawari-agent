@@ -5,6 +5,8 @@
     "Helvetica Neue", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   font-size: 14px;
   line-height: 1.6;
   --background: #1e1e1e;
@@ -128,6 +130,15 @@ textarea {
   resize: vertical;
 }
 
+@media (pointer: coarse), (max-width: 560px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
+  textarea,
+  select {
+    /* biome-ignore lint/complexity/noImportantStyles: iOS zooms the page when a focused field is under 16px, so no later or more specific rule may lower it */
+    font-size: 16px !important;
+  }
+}
+
 code,
 pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -237,7 +248,7 @@ footer {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .app-link {
@@ -254,7 +265,7 @@ footer {
   border-radius: 999px;
   padding: 0.62rem 1rem;
   cursor: pointer;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .action-button-primary {
@@ -296,7 +307,7 @@ footer {
 .acknowledgement {
   display: block;
   margin-bottom: 0.35rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .field-hint,
@@ -311,7 +322,7 @@ footer {
 
 .field-error {
   color: var(--danger);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .banner {
@@ -442,7 +453,7 @@ footer {
 .semantic-list .app-link[aria-current="page"] {
   border-left: 4px solid var(--primary);
   background: var(--surface);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .empty-state {
@@ -477,7 +488,7 @@ footer {
 .object-details dd,
 .health-grid dd {
   margin: 0.25rem 0 0;
-  font-weight: 750;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
@@ -497,7 +508,7 @@ table {
 
 caption {
   padding: 0.5rem;
-  font-weight: 750;
+  font-weight: 700;
   text-align: left;
 }
 
@@ -528,13 +539,31 @@ td {
 
 .modal-dialog {
   width: min(38rem, calc(100% - 2rem));
-  max-height: calc(100vh - 2rem);
+  inset-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+  max-height: calc(
+    100dvh -
+    env(safe-area-inset-top, 0px) -
+    env(safe-area-inset-bottom, 0px) -
+    2rem
+  );
   border: 1px solid var(--border);
   border-radius: 0.85rem;
   padding: 1.25rem;
-  overflow: auto;
+  overflow: hidden;
   color: var(--text);
   background: var(--surface);
+}
+
+.modal-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-dialog::backdrop {
@@ -546,6 +575,10 @@ td {
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.modal-dialog > .dialog-heading {
+  flex: none;
 }
 
 .action-menu {
@@ -589,7 +622,7 @@ td {
   padding: 0.65rem 0.8rem;
   color: var(--text);
   background: transparent;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .tabs [role="tab"][aria-selected="true"] {

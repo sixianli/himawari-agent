@@ -339,6 +339,9 @@ describe("release walkthrough locators against the real control center", () => {
 
     await click(byRole(body, UI.openSettings));
     const dialog = byRole(body, UI.settingsDialog);
+    expect(
+      queryAllByRole(byRole(dialog, UI.settingsTabs), { role: "button" }).length,
+    ).toBeGreaterThanOrEqual(3);
     await click(byRole(dialog, UI.settingsToolsTab));
     const enable = byRole(dialog, UI.searchEnable) as HTMLInputElement;
     expect(enable.disabled).toBe(false);
@@ -371,6 +374,7 @@ describe("release walkthrough locators against the real control center", () => {
     expect(visibleText(body, UI.unreadableRecords)).toHaveLength(0);
     expect(visibleText(body, UI.noProcessRecords)).toHaveLength(0);
 
+    expect(byRole(body, UI.showList)).toBeDefined();
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.openMemory));
     const memory = await eventually(() => {
       const page = byRole(body, UI.memoryPage);
@@ -378,6 +382,9 @@ describe("release walkthrough locators against the real control center", () => {
       return page;
     });
     expect(queryAllByRole(memory, UI.pageError)).toHaveLength(0);
+    expect(
+      queryAllByRole(byRole(memory, UI.memoryTabs), UI.memoryTab).length,
+    ).toBeGreaterThanOrEqual(2);
     await click(byRole(memory, UI.memoryBack));
     expect(queryAllByRole(body, UI.memoryPage)).toHaveLength(0);
 
