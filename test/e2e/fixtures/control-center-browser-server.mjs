@@ -33,6 +33,10 @@ const payloads = new Map([
   ["payload:title-research", { content: "研究记录", dataClassification: "private" }],
   ["payload:message-01", { content: "请总结当前计划。", dataClassification: "private" }],
   ["payload:message-02", { content: "计划处于实施阶段。", dataClassification: "private" }],
+  [
+    "payload:message-research-01",
+    { content: "整理一下这周读过的资料。", dataClassification: "private" },
+  ],
 ]);
 const threadEvents = [];
 const threadEventClients = new Set();
@@ -102,12 +106,24 @@ const threads = new Map([
       titleRevision: 1,
       pinOrder: null,
       answerLocale: "ja",
-      messageWatermark: 0,
+      messageWatermark: 1,
       sourceThreadId: null,
       sourceWatermark: null,
       createdAt: now,
       updatedAt: now,
-      messages: [],
+      messages: [
+        {
+          messageId: "message-research-01",
+          sequence: 1,
+          role: "owner",
+          contentRef: "payload:message-research-01",
+          dataClassification: "private",
+          status: "committed",
+          turnId: "turn-research-01",
+          runId: null,
+          committedAt: now,
+        },
+      ],
       runs: [],
     },
   ],
