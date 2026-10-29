@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const APP = "apps/control-center";
 const INPUT_GUARD =
-  /@media \(pointer: coarse\), \(max-width: 560px\) \{\s*input:not\(\[type="checkbox"\], \[type="radio"\], \[type="range"\], \[type="file"\], \[type="color"\]\),\s*textarea,\s*select \{\s*font-size: 16px !important;\s*\}\s*\}/;
+  /@media \(pointer: coarse\), \(max-width: 560px\) \{\s*input:not\(\[type="checkbox"\], \[type="radio"\], \[type="range"\], \[type="file"\], \[type="color"\]\),\s*textarea,\s*select \{\s*(?:\/\* biome-ignore lint\/complexity\/noImportantStyles:[^*]*\*\/\s*)?font-size: 16px !important;\s*\}\s*\}/;
 
 function rules(css, selector) {
   const found = [];

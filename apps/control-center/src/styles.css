@@ -134,6 +134,7 @@ textarea {
   input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
   textarea,
   select {
+    /* biome-ignore lint/complexity/noImportantStyles: iOS zooms the page when a focused field is under 16px, so no later or more specific rule may lower it */
     font-size: 16px !important;
   }
 }
@@ -558,10 +559,6 @@ td {
   flex-direction: column;
 }
 
-.modal-dialog > .dialog-heading {
-  flex: none;
-}
-
 .dialog-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -578,6 +575,10 @@ td {
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.modal-dialog > .dialog-heading {
+  flex: none;
 }
 
 .action-menu {
