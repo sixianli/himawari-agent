@@ -537,6 +537,13 @@ export const MEMORY_CATEGORY_NAMES = [
   "event",
   "other",
 ] as const;
+export const MEMORY_HISTORY_KIND_NAMES = [
+  "created",
+  "updated",
+  "reaffirmed",
+  "edited",
+  "restored",
+] as const;
 export const MEMORY_IMPORT_SOURCE_NAMES = ["codex", "assistant", "himawari"] as const;
 const memoryLabelSchema = boundedString(32);
 const memoryNameSchema = boundedString(64);
@@ -577,6 +584,18 @@ const memoryOverviewSnapshotSchema = object({
         importBatchId: nullable(machineString),
         importance: integer(0, 1000),
         profilePin: nullable(enumeration(["on", "off"])),
+        stance: nullable(boundedString(16)),
+        history: array(
+          object({
+            kind: enumeration(MEMORY_HISTORY_KIND_NAMES),
+            text: boundedString(2000),
+            stance: nullable(boundedString(16)),
+            quote: nullable(boundedString(2000)),
+            sourceThreadId: nullable(machineString),
+            sourceDeleted: booleanValue,
+            at: timestamp,
+          }),
+        ),
       }),
     ),
     tidyUps: array(

@@ -35,6 +35,7 @@ export interface ProductMemoryAttributes {
   readonly tentative?: boolean;
   readonly subCategory?: string | null;
   readonly importBatchId?: string | null;
+  readonly stance?: string | null;
 }
 
 export const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
@@ -83,6 +84,33 @@ export interface MemoryProjectionJob {
   readonly claimExpiresAt: string | null;
 }
 
+export const MEMORY_HISTORY_KINDS = [
+  "created",
+  "updated",
+  "reaffirmed",
+  "edited",
+  "restored",
+] as const;
+
+export type MemoryHistoryKind = (typeof MEMORY_HISTORY_KINDS)[number];
+
+export interface MemoryHistoryNote {
+  readonly kind: MemoryHistoryKind;
+  readonly quoteRef?: PayloadRef | null;
+  readonly sourceThreadId?: ThreadId | null;
+}
+
+export interface MemoryHistoryEvent {
+  readonly memoryId: MemoryId;
+  readonly kind: MemoryHistoryKind;
+  readonly contentRef: PayloadRef;
+  readonly stance: string | null;
+  readonly quoteRef: PayloadRef | null;
+  readonly sourceThreadId: ThreadId | null;
+  readonly sourceDeleted: boolean;
+  readonly occurredAt: string;
+}
+
 export interface ProductMemoryStatePort {
   read(memoryId: MemoryId): Promise<ProductMemoryRecord | undefined>;
   readMany(input: {
@@ -101,9 +129,20 @@ export interface ProductMemoryStatePort {
     readonly memory: ProductMemoryRecord;
     readonly expectedRevision: number | null;
     readonly job: MemoryProjectionJob;
+    readonly history?: MemoryHistoryNote;
   }): Promise<ProductMemoryRecord>;
   listActive(ownerId: OwnerId, agentId: AgentId): Promise<readonly ProductMemoryRecord[]>;
   markUsed(memoryIds: readonly MemoryId[], usedAt: string): Promise<void>;
+  appendHistory(input: {
+    readonly memoryId: MemoryId;
+    readonly note: MemoryHistoryNote;
+    readonly occurredAt: string;
+  }): Promise<void>;
+  listHistory(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly memoryIds: readonly MemoryId[];
+  }): Promise<readonly MemoryHistoryEvent[]>;
 }
 
 export interface MemoryProjectionJobStatePort {
@@ -240,6 +279,7 @@ export type ProductMemoryProposal =
         | "recordedAt"
       >;
       readonly supersedes?: MemoryId | null;
+      readonly quoteRef?: PayloadRef | null;
     }
   | {
       readonly decision: "update" | "merge";
@@ -251,10 +291,14 @@ export type ProductMemoryProposal =
       readonly confidencePermille: number;
       readonly policyVersion: string;
       readonly attributes?: ProductMemoryAttributes;
+      readonly quoteRef?: PayloadRef | null;
+      readonly sourceThreadId?: ThreadId | null;
     }
   | {
       readonly decision: "unchanged";
       readonly memoryId: MemoryId;
+      readonly quoteRef?: PayloadRef | null;
+      readonly sourceThreadId?: ThreadId | null;
     };
 
 export interface ProductMemorySearchResult {

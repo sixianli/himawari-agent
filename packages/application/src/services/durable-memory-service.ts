@@ -4,6 +4,7 @@ import {
   PORT_ERROR_CODES,
   type DataClassification,
   type MemoryContentPort,
+  type MemoryHistoryNote,
   type MemoryProjectionJob,
   type MemoryProjectionJobStatePort,
   type MemoryProviderProjectionPort,
@@ -70,6 +71,19 @@ function nextRecord(
   });
 }
 
+function historyNote(
+  kind: MemoryHistoryNote["kind"],
+  proposal: ProductMemoryProposal,
+): MemoryHistoryNote {
+  const sourceThreadId =
+    proposal.decision === "create" ? proposal.memory.sourceThreadId : proposal.sourceThreadId;
+  return {
+    kind,
+    quoteRef: proposal.quoteRef ?? null,
+    ...(sourceThreadId === undefined ? {} : { sourceThreadId }),
+  };
+}
+
 export class DurableMemoryService {
   private readonly options: DurableMemoryServiceOptions;
 
@@ -86,6 +100,12 @@ export class DurableMemoryService {
         await this.options.state.read(proposal.memoryId),
         proposal.memoryId,
       );
+      if (current.status === "active" && (current.attributes?.supersededBy ?? null) === null)
+        await this.options.state.appendHistory({
+          memoryId: current.id,
+          note: historyNote("reaffirmed", proposal),
+          occurredAt: this.options.now(),
+        });
       return current.status === "active" && current.attributes?.tentative === true
         ? this.confirm(current.id, generationId)
         : current;
@@ -123,7 +143,13 @@ export class DurableMemoryService {
         lastUsedAt: null,
         updatedAt,
       });
-      const saved = await this.saveWithProjection(record, null, "upsert", generationId);
+      const saved = await this.saveWithProjection(
+        record,
+        null,
+        "upsert",
+        generationId,
+        historyNote("created", proposal),
+      );
       if (proposal.supersedes) await this.supersede(proposal.supersedes, saved, generationId);
       return saved;
     }
@@ -162,6 +188,7 @@ export class DurableMemoryService {
       current.revision,
       "upsert",
       generationId,
+      historyNote("updated", proposal),
     );
     return saved;
   }
@@ -193,6 +220,7 @@ export class DurableMemoryService {
       current.revision,
       "upsert",
       input.generationId,
+      { kind: "edited", sourceThreadId: null },
     );
     return saved;
   }
@@ -220,6 +248,7 @@ export class DurableMemoryService {
       current.revision,
       "upsert",
       generationId,
+      { kind: "restored", sourceThreadId: null },
     );
   }
 
@@ -506,11 +535,13 @@ export class DurableMemoryService {
     expectedRevision: number | null,
     operation: "upsert" | "delete",
     generationId: MemoryGenerationId,
+    history?: MemoryHistoryNote,
   ) {
     return this.options.state.saveWithProjection({
       memory,
       expectedRevision,
       job: this.projectionJob(memory, operation, generationId),
+      ...(history ? { history } : {}),
     });
   }
 

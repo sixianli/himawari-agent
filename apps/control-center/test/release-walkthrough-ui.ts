@@ -41,6 +41,7 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   searchRevoke: { role: "switch", name: "撤销联网搜索授权", exact: true },
   searchStep: "搜索网页",
   commandStep: "运行命令",
+  memoryFoundStep: /条相关记忆/,
   approveOnce: { role: "button", name: "允许这一次" },
   stillLoading: "正在加载…",
   sidebarNavigation: { role: "navigation", name: "对话" },

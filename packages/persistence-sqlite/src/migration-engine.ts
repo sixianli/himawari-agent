@@ -527,10 +527,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 65,
+    name: "memory_history",
+    changeSet: "memory-history",
+    phase: "expand" as const,
+    file: "0065_memory_history.sql",
+  },
+  {
+    sequence: 66,
     name: "memory_profile_pins",
     changeSet: "memory-profile-pins",
     phase: "expand" as const,
-    file: "0065_memory_profile_pins.sql",
+    file: "0066_memory_profile_pins.sql",
   },
 ] as const;
 

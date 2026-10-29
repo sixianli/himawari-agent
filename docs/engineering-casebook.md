@@ -79,7 +79,9 @@ date: "2026-10-26"
   52. [19 条界面意见里一半是低级错误：让真浏览器检查在每次提交时先找一遍](#case-ui-batch-1029)
   53. [评测裁判一个月花掉 2.27 美元，超过生产主模型：贵模型名不许进代码，由检查脚本拦住](#case-no-expensive-models)
   54. [“档案”到底是什么：把它从一个页签改成记忆上的“每次对话都带上”开关，由用户说了算](#case-carried-memories)
+  55. [来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文](#case-memory-history)
   56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
+  57. [问“写到一个pdf文件”却带出前同事：记忆搜索没有相关度门槛，界面把“最不远的几条”说成“相关记忆”](#case-memory-relevance-threshold)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -101,14 +103,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3533,11 +3535,73 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 **相关 ADR/PR**
 
-[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)、[ADR 0075](adr/0075-self-built-memory-engine.md)、[事故清单 I-21](incidents-and-gates.md#incidents)；原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；迁移 `0065_memory_profile_pins.sql`；本案例的 PR 在分支 `claude/project-thread-44hlmo`；前情见[案例 17](#case-memory-page)。
+[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)、[ADR 0075](adr/0075-self-built-memory-engine.md)、[事故清单 I-21](incidents-and-gates.md#incidents)；原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；迁移 `0066_memory_profile_pins.sql`；本案例的 PR 在分支 `claude/project-thread-44hlmo`；前情见[案例 17](#case-memory-page)。
 
 **面试 30 秒版**
 
 “用户问我‘档案到底是什么，为什么能单独编辑’。我查代码发现，后台根本没有档案这份资料：它是每轮对话前按类别、重要度和 2000 字预算，从记忆里现挑出来的。挑选全凭模型打分，手动添加的记忆还因为一个默认值全部被挑了进去。我把档案改成每条记忆上的‘每次都带上’开关，用户的选择优先于模型，同时把预算用了多少、哪些放不下明着给用户看。页面也从四个页签减到两个，按主题浏览。数据量从 13 条涨到 1 万条，结构不用改。”
+<a id="case-memory-history"></a>
+
+## 案例 55：来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文
+
+**背景与现象**
+
+2026-10-29 中午（日本时间），Andy 在不同对话里反复说“我想出去玩”“我不想出去玩”，然后打开记忆页。记忆“主人最近一个月都不想出去玩”的历史只显示 2 版。他问这是不是 bug，并提出要求：用户要能看到“这一小块记忆这么多年来是怎么变化的”，而且是完整的时间线。他接着追问两件事：来源对话被删除或归档后怎么显示；历史很长时，如果用“旧 → 新”箭头一条接一条，会变成一长串。
+
+**根因**
+
+用代码阅读加生产库只读查询确认（脚本在项目共享目录 `memory-history/inspect-memory-chain.py`，由 Mac 线程在生产机只读运行）：
+
+1. **页面只看上一版**：记忆页的历史只取“被当前这条直接替换掉的”记录（`supersededBy` 等于当前编号），不沿着替换链往前走。生产库里这条记忆的链其实有 3 版（10:39、12:07、12:10 JST），页面只显示了 2 版。
+2. **补充细节直接覆盖原文**：自动记忆（模型从对话里提取值得记住的事）判断为“补充细节”（`update`）时，直接把记忆的正文指向新文字，旧文字没有留在任何地方。
+3. **“意思没变”不留痕迹**：模型判断“和已有记忆重复”（`unchanged`）时什么都不写，所以“又说了一次”在历史里看不到。
+4. **删对话后来源写错**：对话被永久删除时，记忆的来源对话被清空，页面把“没有来源”当成“每日整理”显示。
+5. **大部分轮次没写入**：生产日志显示当天只有 5 次提取写入了记忆。日志里没有失败，也没有“意思没变”之类的结果。代码里有三种情况不留日志（提取没启动、模型回答“没什么可记”、模型指向一条它没看到的记忆而被丢弃），原因还在用只读查询区分。
+
+**我们的方案**
+
+- 新增一张只追加的表 `memory_history_events`：一条记忆的每次变化写一行，种类是新记住、补充细节、又说了一次、主人手动改、换回。每行存当时的文字、立场标签、主人原话摘录、来源对话和时间。替换沿用原来的替换链，链上每条记录各有自己的历史行。
+- 记忆加一个“立场标签”（`stance`，不超过 16 个字，例如“想出去玩”“不想出去玩”）。它由提取记忆的模型在同一次调用里顺带给出，不增加模型调用。每次判断都要求模型给出主人原话摘录：至少 8 个字，而且必须真的出现在主人消息里。
+- 记忆页（Andy 选的方案 A）：立场只有 2–4 种时画“两条线图”，每次变化一个点，横轴是时间。下面列最近 3 次变化，更早的折叠在“展开更早的 N 条”里。变化记录页（方案 C）每次变化一行，只写“现在是：……·第 N 次变化”，不用箭头串。
+- 对话被永久删除时，原话摘录和每次变化的文字都保留，来源写“来源对话已删除”；删除这条记忆本身时，摘录才一起删。
+- 回答时召回记忆仍只用最新版本，历史不进模型上下文。
+- 给“模型说没什么可记”和“候选被丢弃”补上日志结果 `nothing_to_remember`、`candidate_invalid`，以后不用再猜。
+
+**方案讨论与备选**
+
+- **只修页面，沿着替换链往前走**：改动最小，但只能找回第三版；被覆盖的文字和“又说了一次”仍然丢失，达不到“完整时间线”。
+- **“补充细节”也改成新建一条记忆再替换旧的**：不用新表，但“又说了一次”“换回”仍然没法记，记忆条数会膨胀，召回和去重都要处理更多已替换记录。
+- **网页端自己按文字相似度给立场分组**：同一立场的不同说法会被分成很多组，图会乱；改成在已有的提取调用里多要一个短字段。
+- **删对话时连原话摘录一起删**：更符合“删对话就删干净”的直觉，选择卡上原本推荐这个。Andy 在卡上选了保留摘录。按愿景里“主人说了算”排第一的原则照他的选择做，摘录只在删除那条记忆时才删。
+- **长历史的展示**：原型里比较了“只列表”（B）、“同一天的变化合成一组”（D）和 C+D。Andy 选 A 和 C。
+
+**业界主流做法**
+
+- ✅ Martin Fowler《Event Sourcing》（<https://martinfowler.com/eaaDev/EventSourcing.html>）：“Capture all changes to an application state as a sequence of events.” 我们的历史表就是按这个思路，只是只给记忆这一类数据做，当前状态仍然存在原表里。
+- ✅ Microsoft SQL Server 文档《Temporal Tables》（<https://learn.microsoft.com/en-us/sql/relational-databases/tables/temporal-tables>）：“A system-versioned temporal table is a type of user table designed to keep a full history of data changes, allowing point-in-time analysis.” SQLite 没有这种内置功能，所以我们在写入记忆的同一个事务里自己追加历史行。
+- ✅ Mem0 文档《Update Memory》（<https://docs.mem0.ai/core-concepts/memory-operations/update>）：“Mem0 overwrites the stored value and adjusts indexes.” 这和我们修复前的做法一样：更新直接覆盖。
+
+**对比与取舍**
+
+和数据库的“系统版本表”相比，我们多存了“为什么变”：变化种类、主人原话和来源对话，用户看得懂。代价是每次“又说了一次”也写一行，表会随对话增长；每行只有几百字节，实际增长未测量。和 Mem0 的覆盖更新相比，我们多了一张表，但满足了“中间版本不能丢”。迁移前已经被覆盖的旧文字找不回来，这一点在交付时如实告诉了 Andy。
+
+**结果数据**
+
+- 生产只读查询：这条记忆的替换链有 3 版，修复前页面显示 2 版；当天只有 5 次提取写入（10:20、10:39、12:07、12:09–12:10 批准、12:10 JST，来自生产日志 `memory-capture.audit`）。
+- 门槛自证：`apps/control-center/test/memory-interactions.unit.test.ts` 里四个标了 [MH-2]/[MH-3]/[MH-4] 的测试，在修复前的记忆页代码上全部失败，修复后通过。真实入口测试 [MH-1] 连续五轮加手动改和换回，每一步都留下节点（`test/integration/production-memory-capture.test.ts`）。
+- 相关测试共 2139 个，修复后除两个与本改动无关、在 main 上同样超时或缺构建产物的套件外全部通过。`npm run check`、`npm run build` 通过。
+- 线上效果：未测量，等上线后 Andy 在真实页面上看。
+
+**相关 ADR/PR**
+
+[ADR 0113：每条记忆的每次变化都留一条历史记录](adr/0113-memory-history-events-and-stance.md)；[事故与门槛清单 I-20](incidents-and-gates.md#incidents)；PR 在分支 `claude/project-thread-6k48tu`。
+
+**面试 30 秒版**
+
+“用户来回改主意很多次，记忆历史却只显示两版。查下来有三层原因：页面只看直接上一版；‘补充细节’直接覆盖原文；‘意思没变’不留痕迹。我们借鉴 event sourcing 和数据库的系统版本表，给记忆加了只追加的历史表，每次变化都存快照、原话和来源。再让提取模型顺带给一个立场标签，页面就能把‘想/不想’画成两条线，不会变成一长串箭头。删对话后原话照样保留，来源如实写‘已删除’。门槛是四个界面测试和一个真实入口测试，都证明在旧代码上会失败。”
+
+[返回目录](#contents)
+
 <a id="case-red-main-without-ci"></a>
 
 ## 案例 56：CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言
@@ -3587,6 +3651,74 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 **面试 30 秒版**
 
 “我们为了速度关掉了 CI，结果一个改提示词外壳的提交让集成测试红了 17 小时，期间另一个代理看到了却只在提交说明里写了一句。根因是三层：测试期望过期；改动者挑测试漏了它；没有任何地方跑全量。我补了测试，并顺带把‘历史里不带过期资料’这个关键性质写进断言；漏选那一层已有提交钩子能拦，并用这个提交复现证明；‘声明了却是红的’这层登记成事故，给出推送前真跑测试的方案，把它的成本和云端 root 环境的已知失败一起摆给负责人决定，他权衡速度后决定不做。”
+
+[返回目录](#contents)
+
+<a id="case-memory-relevance-threshold"></a>
+
+## 案例 57：问“写到一个pdf文件”却带出前同事：记忆搜索没有相关度门槛，界面把“最不远的几条”说成“相关记忆”
+
+**背景与现象**
+
+2026-10-29 11:55（日本时间），Andy 在生产网页（第十八版）发“写到一个pdf文件”。过程区显示“按这句话找到 3 条相关记忆”，展开是“主人有一个前同事叫……”和“两人是好朋友”，下面还有“带上档案里的 8 条记忆”。他的原话是：“你们连这种最基本的需求都敢骗我已经做了！这种低级错误如何避免？”记为事故 [I-23](incidents-and-gates.md#incidents)。
+
+**根因**
+
+1. 记忆搜索做了，但只排序不判断：主人的话转成向量（一串表示意思的数字），和每条记忆算相似度（0 到 1），再与关键词、人名两路合并排序取前几条。`HybridMemoryProvider` 有最低相似度参数 `minimumSimilarity`，生产组装从没设，默认 0，等于“多远都算相关”。主人只有十几条记忆，每轮都会带满。
+2. 用代码复现：在修复前的生产组装上，给“写到一个pdf文件”一个与前同事记忆相似度 0.55 的向量，搜索返回了这条记忆；同一测试在修复后返回空。
+3. 排除了另一种可能：生产当天 11:11 起向量请求因额度被拒（事故 I-11），但向量请求失败时整步会报“记忆暂时不可用”，不会退化成随便取几条，所以这 3 条确实是向量算出来的“最近的 3 条”。
+4. 界面层：过程区直接把这一步的条数写成“相关记忆”，没有人核对“相关”在代码里有没有定义。和 I-13（筛选按钮上的数字和点开后的条数对不上）是同一类错误。
+
+**方案讨论与备选**
+
+- **只按相似度门槛过滤（选用）**：改动小，不多花模型调用；代价是门槛和向量模型绑定，换模型要重新校准，需要联想的问题会漏。
+- **多取候选再用重排模型筛**（重排模型是专门给“问题和内容有多相关”打分的小模型）：效果更好，但每轮多一次调用和延迟，而且重排分数同样要定门槛。先用门槛止住问题，用评测集比较后再决定，记为 [BL-20261029-003](backlog/BL-20261029-003-memory-search-reranker.md)。
+- **让模型自己决定查不查记忆**：无关问题天然不会带出记忆，但漏查时主人会觉得它“忘了”。Himawari 已有 `memory.recall` 工具可供模型主动查，本次不改每轮自动带记忆的设计。
+- **固定取前 3 条（修改前）**：否决。个人记忆和文档问答不同，大多数话本来就没有相关记忆，必须允许 0 条。
+- **0 条时显示“这句话没有相关记忆”**：我先这么提，Andy 否决：“没有记忆的话就不要在过程中显示！否则就是此地无银三百两！”改为整步隐藏。
+
+**我们的方案**
+
+1. 门槛：`alibaba/qwen3-embedding-8b` 用 0.6，配置可改；换成别的向量模型又没配门槛时服务拒绝启动。门槛按 Cohere 建议的方法定：87 句话（32 句该找到、55 句不该带）实测相似度分布，无关句子最高 0.57，取 0.6。
+2. 关键词一路不再用单个汉字：“用”“叫”这类字几乎每条记忆都有，“git rebase 怎么用”会因为“用”带出“主人用的电脑是 MacBook Air”。
+3. 过程区：0 条整步隐藏；档案步骤改名为“常驻档案 N 条（每轮都带）”，和“按这句话找到的”分开。
+4. 门槛（自动检查）：`npm run check` 新增 `check:memory-relevance`，跑 3 条带 `[I-23]` 的测试，在修复前的代码上报“1 条通过”并失败；发布走查新增必过项 `accept-unrelated-no-memory`。
+5. 评测基线：`npm run eval:memory-retrieval` 用真实向量模型、真实 SQLite 索引和生产检索代码跑 24 条合成记忆、88 句话，结果追加到 `evals/memory-retrieval/history.jsonl`，以后每次改检索都和它比。
+
+复用与自有：检索主体是 Himawari 自研记忆引擎（[案例 1](#case-memory-engine)），Pi 不负责记忆，本次没有涉及 Pi 的模块。
+
+**业界主流做法**
+
+- ✅ Anthropic《Introducing Contextual Retrieval》（<https://www.anthropic.com/news/contextual-retrieval>）：“Embeddings+BM25 is better than embeddings on their own”；重排是“a commonly used filtering technique to ensure that only the most relevant chunks are passed to the model”；同时提醒“more information can be distracting for models”。文中固定取前 20 条，没有讲分数门槛。
+- ✅ Google Vertex AI RAG Engine《Retrieval and ranking》（<https://docs.cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/retrieval-and-ranking>）：提供独立的重排服务，“a standalone semantic reranker designed for highly-precise relevance scoring and low latency”，延迟“less than 100 milliseconds”；也可以用大模型重排，延迟 1 到 2 秒。
+- ✅ Cohere《Reranking best practices》（<https://docs.cohere.com/docs/reranking-best-practices>）：分数不能按比例理解，“you can't assume that a document with a relevance score of 0.9109375 is twice as relevant”；门槛要用自己领域的问题实测，“The average of sample_scores can then be used as a reference when deciding a threshold”。
+- ✅ Letta《Agent memory》（<https://docs.letta.com/guides/agents/memory>）：“Important "core" memories are injected into the context window of the LLM”，即少量核心记忆常驻上下文。
+
+**对比与取舍**
+
+相同点：和 Anthropic 一样用向量加关键词两路；和 Letta 一样把少量核心资料常驻上下文（我们的常驻档案）。不同点：Anthropic 那篇针对文档问答，每个问题都有答案，所以固定取前 20 条；个人助手的大多数话没有相关记忆，所以我们必须有门槛、允许 0 条。门槛按 Cohere 的方法用自己的数据定，而不是照搬数字。重排暂不加：先有了评测基线，加不加由数据决定。
+
+**结果数据**
+
+- 校准（87 句，与生产记忆同形态的 11 条记忆）：无关句子与最近记忆的相似度最高 0.57；门槛 0.6 时 55 句无关句子全部 0 条，32 句该找到的留下 18 句。花费约 0.00003 美元（网关返回的费用）。
+- 评测集第一轮（2026-10-29，24 条记忆、40 句相关、48 句无关，每句最多 5 条）：
+
+| 门槛 | 相关问题命中 | 直接问 | 需要联想 | 召回 | 准确率 | 无关问题带出 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0（修改前） | 100% | 100% | 100% | 98.1% | 26% | 100%（240 条） |
+| 0.55 | 90% | 100% | 55.6% | 84.9% | 86.5% | 4.2% |
+| 0.6（生产） | 80% | 93.5% | 33.3% | 77.4% | 85.4% | 2.1%（1 条） |
+
+- 一轮评测 112 次向量请求，0.000112 美元，约 2.5 分钟（云端容器实测）。
+- 剩下的短板：需要联想的问题只命中 33%（这类多在常驻档案里，每轮仍会带上）；“把刚才那段改成日语”因关键词“日语”带出“在准备日语 N2 考试”。
+
+**相关 ADR/PR**
+
+[ADR 0115](adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)；[事故 I-23、I-13](incidents-and-gates.md#incidents)；[界面与交互设计指南的“不良设计”](ui-ux-design-guide.md#bad)；[案例 1](#case-memory-engine)、[案例 23](#case-memory-steps)；本案例的 PR 在分支 `claude/project-thread-tk7qne`。
+
+**面试 30 秒版**
+
+“用户问‘写到一个 pdf 文件’，界面却说‘找到 3 条相关记忆’，带出的是前同事。查下来，混合检索只排序不判断，相似度门槛默认 0，记忆少的时候每轮都会带满，界面又把‘最近的几条’说成‘相关’。我用自己的数据实测相似度分布定了门槛，允许返回 0 条，0 条时界面整步不显示；把这个场景写成在旧代码上失败的测试接进检查；再建了一个固定评测集，修改前无关问题 100% 带出记忆，修改后 2.1%，代价是需要联想的问题召回下降，这个取舍和下一步要不要加重排，都由同一套基线来回答。”
 
 [返回目录](#contents)
 

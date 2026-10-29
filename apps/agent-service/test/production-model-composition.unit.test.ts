@@ -472,6 +472,105 @@ describe("production model composition", () => {
     expect(resolvedSecrets).toEqual(["vercel-ai-gateway-api-key@v1"]);
     await composition.close();
   });
+
+  it("[I-23] brings no Memory when the closest one is below the relevance threshold", async () => {
+    const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+    const basis = (weights: Readonly<Record<number, number>>) =>
+      Array.from({ length: 4096 }, (_value, index) => weights[index] ?? 0);
+    const vectors: Readonly<Record<string, readonly number[]>> = {
+      主人有一个前同事叫陪坤: basis({ 0: 1 }),
+      写到一个pdf文件: basis({ 0: 0.55, 2: Math.sqrt(1 - 0.55 ** 2) }),
+      陪坤是谁: basis({ 0: 0.9, 2: Math.sqrt(1 - 0.9 ** 2) }),
+    };
+    const memoryIndex = inMemoryMemoryIndex();
+    const composition = await createProductionMemoryCompositionFromConfiguration({
+      configuration,
+      secretSource: {
+        kind: "macos-keychain",
+        productionSuitable: true,
+        resolve: async () => "fixture-provider-value",
+      },
+      index: memoryIndex,
+      fetch: async (_url, init) => {
+        const input = String(JSON.parse(String(init?.body))["input"]);
+        const key = Object.keys(vectors).find((text) => input.endsWith(text));
+        return new Response(
+          JSON.stringify({
+            model: "alibaba/qwen3-embedding-8b",
+            data: [{ index: 0, embedding: key ? vectors[key] : basis({ 3: 1 }) }],
+            usage: { prompt_tokens: 3, total_tokens: 3 },
+          }),
+        );
+      },
+    });
+    composition.bindEmbeddingBoundary((_request, send) => send(), 1000);
+    const memoryId = "memory-former-colleague" as never;
+    await composition.projection.upsert({
+      memory: {
+        id: memoryId,
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        revision: 1,
+        status: "active",
+        contentRef: "memory-content:colleague",
+        dataClassification: "private",
+        sourceThreadId: null,
+        sourceRefs: ["source-colleague"],
+        inference: false,
+        confidencePermille: 1000,
+        policyVersion: "memory-capture:v2",
+        providerRecordId: null,
+        lastUsedAt: null,
+        updatedAt: "2026-10-29T00:00:00.000Z",
+      } as never,
+      content: "主人有一个前同事叫陪坤",
+    });
+    const search = (query: string) =>
+      composition.projection.search({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        query,
+        limit: 3,
+      });
+
+    expect(await search("写到一个pdf文件")).toEqual([]);
+    expect((await search("陪坤是谁")).map(({ productMemoryId }) => productMemoryId)).toEqual([
+      memoryId,
+    ]);
+    expect(composition.projection.minimumSimilarity).toBe(0.6);
+    await composition.close();
+  });
+
+  it("[I-23] refuses to start memory search without a relevance threshold for the embedding model", async () => {
+    const base = selectedEmbeddingConfiguration(temporaryDirectory);
+    const configuration = {
+      ...base,
+      modelDescriptors: base.modelDescriptors.map((descriptor) =>
+        descriptor.role === "embedding"
+          ? { ...descriptor, model: "fixture/unthresholded-embedding" }
+          : descriptor,
+      ),
+    };
+    const options = {
+      secretSource: {
+        kind: "macos-keychain" as const,
+        productionSuitable: true,
+        resolve: async () => "fixture-provider-value",
+      },
+      index: inMemoryMemoryIndex(),
+    };
+    await expect(
+      createProductionMemoryCompositionFromConfiguration({ ...options, configuration }),
+    ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
+    const configured = await createProductionMemoryCompositionFromConfiguration({
+      ...options,
+      configuration: {
+        ...configuration,
+        memory: { ...configuration.memory, minimumSimilarity: 0.7 },
+      },
+    });
+    expect(configured.projection.minimumSimilarity).toBe(0.7);
+  });
 });
 
 it("selects trusted Run policy and binds instruction content across configuration changes", async () => {

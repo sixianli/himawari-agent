@@ -20,6 +20,8 @@ export const QWEN3_EMBEDDING_8B_COST = Object.freeze({
 export const QWEN3_MEMORY_QUERY_INSTRUCTION =
   "Given a question from the owner of a personal assistant, retrieve the remembered facts about the owner that help answer it" as const;
 
+export const QWEN3_MEMORY_MINIMUM_SIMILARITY = 0.6 as const;
+
 export function instructedQuery(instruction: string, query: string): string {
   return `Instruct: ${instruction}\nQuery:${query}`;
 }

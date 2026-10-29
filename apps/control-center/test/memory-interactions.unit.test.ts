@@ -62,8 +62,65 @@ function memoryItem(memoryId: string, text: string, change: Partial<MemoryItem> 
     profilePin: null,
     lastUsedAt: null,
     importBatchId: null,
+    stance: null,
+    history: [],
     ...change,
   };
+}
+
+function node(
+  kind: MemoryItem["history"][number]["kind"],
+  text: string,
+  stance: string,
+  at: string,
+  change: Partial<MemoryItem["history"][number]> = {},
+): MemoryItem["history"][number] {
+  return {
+    kind,
+    text,
+    stance,
+    quote: null,
+    sourceThreadId: "thread-out",
+    sourceDeleted: false,
+    at,
+    ...change,
+  };
+}
+
+function outingChain(): MemoryItem[] {
+  const steps = [
+    ["主人很喜欢出去玩", "想出去玩", "2026-10-26T12:04:00.000Z"],
+    ["主人不爱出去玩，有社恐", "不想出去玩", "2026-10-27T00:12:00.000Z"],
+    ["主人最近想出去玩", "想出去玩", "2026-10-27T23:05:00.000Z"],
+    ["主人最近不想出去玩", "不想出去玩", "2026-10-28T04:30:00.000Z"],
+    ["主人最近一个月都不想出去玩", "不想出去玩", "2026-10-29T03:10:00.000Z"],
+  ] as const;
+  return steps.map(([wording, stance, at], index) =>
+    memoryItem(`memory-out-${index + 1}`, wording, {
+      category: "preference",
+      subCategory: "社交",
+      stance,
+      recordedAt: at,
+      updatedAt: at,
+      sourceThreadId: index === 1 ? null : `thread-out-${index + 1}`,
+      supersededBy: index < steps.length - 1 ? `memory-out-${index + 2}` : null,
+      history: [
+        node("created", wording, stance, at, {
+          sourceThreadId: index === 1 ? null : `thread-out-${index + 1}`,
+          sourceDeleted: index === 1,
+          quote: index === 1 ? null : wording.replace("主人", ""),
+        }),
+        ...(index === 3
+          ? [
+              node("reaffirmed", wording, stance, "2026-10-28T06:00:00.000Z", {
+                sourceThreadId: "thread-out-6",
+                quote: "真的不想出去",
+              }),
+            ]
+          : []),
+      ],
+    }),
+  );
 }
 
 function Harness({ ownerRefs }: { ownerRefs: readonly string[] }) {
@@ -464,31 +521,124 @@ describe("memory approval and management", () => {
     ).toHaveLength(1);
   });
 
-  it("draws a long change history as a timeline with the middle folded", async () => {
-    const versions = Array.from({ length: 6 }, (_, index) =>
-      memoryItem(`memory-city-v${index}`, `住在第 ${index + 1} 个城市`, {
-        category: "identity",
-        supersededBy: "memory-city",
-        recordedAt: `2026-10-0${index + 1}T12:00:00.000Z`,
-      }),
-    );
-    overview = { ...overview, pending: [], memories: [...overview.memories, ...versions] };
+  it("[MH-2] draws every change of a back-and-forth memory as two lanes and a folded list", async () => {
+    overview = { ...overview, pending: [], memories: [...overview.memories, ...outingChain()] };
     await render();
-    await click("#settings .memory-list", "主人住在上海");
+    expect(text("#settings .memory-page")).toContain("改过 4 次");
+    await click("#settings .memory-results", "主人最近一个月都不想出去玩");
+    const lanes = [...document.querySelectorAll("#settings .memory-stance-chart g text")].map(
+      (item) => item.textContent,
+    );
+    expect(lanes).toEqual(["想出去玩", "不想出去玩"]);
+    expect(document.querySelectorAll("#settings .memory-stance-chart circle")).toHaveLength(6);
+    expect(text("#settings .memory-history-summary")).toBe("变过 4 次，另外有 1 次说了同样的意思");
     const points = () =>
       [...document.querySelectorAll("#settings .memory-history-line > li")].map(
         (item) => item.textContent ?? "",
       );
     expect(points()).toHaveLength(4);
     expect(points()[0]).toContain("现在");
-    expect(points()[0]).toContain("主人住在上海");
-    expect(points()[1]).toContain("住在第 6 个城市");
-    expect(points()[2]).toBe("还有 4 次更早的变化");
-    expect(points()[3]).toContain("住在第 1 个城市");
-    expect(document.querySelectorAll("#settings .memory-drawer s")).toHaveLength(0);
-    await click("#settings .memory-history-fold", "还有 4 次更早的变化");
+    expect(points()[0]).toContain("你说：“最近一个月都不想出去玩”");
+    expect(points()[1]).toContain("又说了一次，意思没变");
+    expect(points()[3]).toBe("展开更早的 3 条");
+    expect(points().join("")).not.toContain("→");
+    await click("#settings .memory-history-fold", "展开更早的 3 条");
     expect(points()).toHaveLength(7);
-    expect(points().join("")).toContain("住在第 3 个城市");
+    expect(points()[4]).toContain("主人不爱出去玩，有社恐");
+    expect(points()[4]).toContain("来源对话已删除");
+    expect(points()[4]).not.toContain("你说");
+    expect(points()[5]).toContain("主人很喜欢出去玩");
+    expect(points()[6]).toBe("收起");
+    await click("#settings .memory-history-line > li:nth-child(2)", "来源对话");
+    expect(opened).toHaveBeenLastCalledWith("thread-out-6");
+    await click("#settings .memory-history-line > li:nth-child(3)", "换回这个说法");
+    expect(lastCommand()).toMatchObject({
+      payload: { memoryId: "memory-out-4", action: "restore", contentRef: null },
+    });
+    await click("#settings .memory-history-fold", "收起");
+    expect(points()).toHaveLength(4);
+  });
+
+  it("[MH-2] keeps the folded list without lanes when the old changes have no stance", async () => {
+    const versions = Array.from({ length: 6 }, (_, index) =>
+      memoryItem(`memory-city-v${index}`, `住在第 ${index + 1} 个城市`, {
+        category: "identity",
+        supersededBy: index === 5 ? "memory-city" : `memory-city-v${index + 1}`,
+        recordedAt: `2026-10-0${index + 1}T12:00:00.000Z`,
+      }),
+    );
+    overview = { ...overview, pending: [], memories: [...overview.memories, ...versions] };
+    await render();
+    await click("#settings .memory-results", "主人住在上海");
+    expect(document.querySelector("#settings .memory-stance-chart")).toBeNull();
+    expect(text("#settings .memory-history-summary")).toBe("变过 6 次");
+    await click("#settings .memory-history-fold", "展开更早的 4 条");
+    const points = [...document.querySelectorAll("#settings .memory-history-line > li")].map(
+      (item) => item.textContent ?? "",
+    );
+    expect(points).toHaveLength(8);
+    expect(points[6]).toContain("住在第 1 个城市");
+  });
+
+  it("[MH-3] lists each change on its own line with its number and opens the whole chain", async () => {
+    overview = { ...overview, pending: [], memories: [...overview.memories, ...outingChain()] };
+    await render();
+    await tab("变化记录");
+    const timeline = text("#settings .memory-page");
+    expect(timeline).not.toContain("→");
+    expect(timeline).toContain("现在是：主人最近一个月都不想出去玩");
+    expect(timeline).toContain("第 4 次变化");
+    expect(timeline).toContain("现在是：主人最近不想出去玩");
+    expect(timeline).toContain("第 2 次变化");
+    expect(timeline).not.toContain("又说了一次");
+    expect(text("#settings .memory-page")).toContain("新记住主人很喜欢出去玩");
+    const lines = [...document.querySelectorAll("#settings .memory-day p")].filter((line) =>
+      line.textContent?.includes("出去玩"),
+    );
+    expect(lines).toHaveLength(5);
+    await click("#settings .memory-day", "看这条记忆的全部变化");
+    expect(
+      document.querySelector("#settings [role=tab][aria-selected=true]")?.textContent,
+    ).toContain("记忆");
+    expect(text("#settings .memory-detail")).toContain("怎么变过来的");
+    expect(text("#settings .memory-history-summary")).toBe("变过 4 次，另外有 1 次说了同样的意思");
+  });
+
+  it("[MH-4] says the source conversation was deleted, keeps the quote and never calls it a daily tidy-up", async () => {
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [
+        memoryItem("memory-orphan", "主人喜欢爬山", {
+          sourceThreadId: null,
+          history: [
+            {
+              kind: "created",
+              text: "主人喜欢爬山",
+              stance: null,
+              quote: "我周末最喜欢去爬山了",
+              sourceThreadId: null,
+              sourceDeleted: true,
+              at: "2026-10-25T12:00:00.000Z",
+            },
+            {
+              kind: "reaffirmed",
+              text: "主人喜欢爬山",
+              stance: null,
+              quote: null,
+              sourceThreadId: null,
+              sourceDeleted: true,
+              at: "2026-10-26T12:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+    };
+    await render();
+    await click("#settings .memory-results", "主人喜欢爬山");
+    expect(text("#settings .memory-detail")).toContain("来源对话已删除");
+    expect(text("#settings .memory-detail")).not.toContain("每日整理");
+    expect(text("#settings .memory-detail")).toContain("你说：“我周末最喜欢去爬山了”");
   });
 
   it("[MP-8] groups the profile by sub-category, draws people and restores an earlier wording", async () => {

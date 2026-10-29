@@ -1,0 +1,705 @@
+{
+  "schema": "himawari-memory-retrieval-eval.v1",
+  "note": "合成数据，不含 Andy 的真实记忆。expected 为空表示这句话没有相关记忆，正确结果是一条都不带。提到同一个人的记忆都算相关（2026-10-29 首轮后把 6 句话补上同一人物的另一条记忆）。",
+  "today": "2026-10-29T00:00:00.000Z",
+  "memories": [
+    {
+      "id": "colleague-lin",
+      "text": "主人有一个前同事叫林峰。",
+      "category": "relationship",
+      "importancePermille": 600,
+      "entities": ["林峰"]
+    },
+    {
+      "id": "colleague-zhou",
+      "text": "主人有一个前同事叫周岚。",
+      "category": "relationship",
+      "importancePermille": 600,
+      "entities": ["周岚"]
+    },
+    {
+      "id": "lin-zhou-friends",
+      "text": "林峰和周岚是大学同学。",
+      "category": "relationship",
+      "importancePermille": 500,
+      "entities": ["林峰", "周岚"]
+    },
+    {
+      "id": "wife",
+      "text": "主人的妻子叫苏晴。",
+      "category": "relationship",
+      "importancePermille": 900,
+      "entities": ["苏晴"]
+    },
+    {
+      "id": "daughter",
+      "text": "主人有一个女儿，叫小禾。",
+      "category": "relationship",
+      "importancePermille": 900,
+      "entities": ["小禾"]
+    },
+    {
+      "id": "home",
+      "text": "主人住在大阪市北区。",
+      "category": "identity",
+      "importancePermille": 800,
+      "entities": ["大阪", "北区"]
+    },
+    {
+      "id": "color",
+      "text": "主人最喜欢绿色。",
+      "category": "preference",
+      "importancePermille": 700,
+      "entities": []
+    },
+    {
+      "id": "latte",
+      "text": "我喜欢喝拿铁",
+      "category": "preference",
+      "importancePermille": 600,
+      "entities": []
+    },
+    {
+      "id": "crowds",
+      "text": "主人不喜欢人多的地方。",
+      "category": "preference",
+      "importancePermille": 700,
+      "entities": []
+    },
+    {
+      "id": "shy",
+      "text": "主人不爱出去玩，有社恐。",
+      "category": "preference",
+      "importancePermille": 700,
+      "entities": []
+    },
+    {
+      "id": "vegetarian",
+      "text": "主人从2026年9月起开始吃素。",
+      "category": "preference",
+      "importancePermille": 800,
+      "entities": []
+    },
+    {
+      "id": "cilantro",
+      "text": "主人不吃香菜。",
+      "category": "preference",
+      "importancePermille": 600,
+      "entities": []
+    },
+    {
+      "id": "cat",
+      "text": "主人养了一只猫叫团子。",
+      "category": "relationship",
+      "importancePermille": 700,
+      "entities": ["团子"]
+    },
+    {
+      "id": "peanut",
+      "text": "主人对花生过敏。",
+      "category": "health",
+      "importancePermille": 900,
+      "entities": ["花生"]
+    },
+    {
+      "id": "badminton",
+      "text": "主人每周三晚上打羽毛球。",
+      "category": "event",
+      "importancePermille": 600,
+      "entities": []
+    },
+    {
+      "id": "laptop",
+      "text": "主人用的电脑是 MacBook Air。",
+      "category": "other",
+      "importancePermille": 500,
+      "entities": ["MacBook Air"]
+    },
+    {
+      "id": "car",
+      "text": "主人开一辆白色丰田卡罗拉。",
+      "category": "other",
+      "importancePermille": 500,
+      "entities": ["丰田"]
+    },
+    {
+      "id": "birthday",
+      "text": "主人的生日是3月14日。",
+      "category": "identity",
+      "importancePermille": 800,
+      "entities": []
+    },
+    {
+      "id": "mother",
+      "text": "主人的母亲住在成都。",
+      "category": "relationship",
+      "importancePermille": 700,
+      "entities": ["成都"]
+    },
+    {
+      "id": "japanese",
+      "text": "主人在准备日语 N2 考试。",
+      "category": "project",
+      "importancePermille": 600,
+      "entities": ["N2"]
+    },
+    {
+      "id": "job",
+      "text": "主人正在找 AI Agent 工程师的工作。",
+      "category": "project",
+      "importancePermille": 800,
+      "entities": []
+    },
+    {
+      "id": "library",
+      "text": "主人周末常去图书馆。",
+      "category": "event",
+      "importancePermille": 500,
+      "entities": []
+    },
+    {
+      "id": "dentist",
+      "text": "主人的牙医诊所在梅田。",
+      "category": "other",
+      "importancePermille": 500,
+      "entities": ["梅田"]
+    },
+    {
+      "id": "test-server",
+      "text": "主人的测试机叫 Hermes。",
+      "category": "project",
+      "importancePermille": 600,
+      "entities": ["Hermes"]
+    }
+  ],
+  "queries": [
+    {
+      "id": "r01",
+      "text": "林峰是谁？",
+      "expected": ["colleague-lin", "lin-zhou-friends"],
+      "kind": "direct"
+    },
+    {
+      "id": "r02",
+      "text": "周岚是我什么人",
+      "expected": ["colleague-zhou", "lin-zhou-friends"],
+      "kind": "direct"
+    },
+    {
+      "id": "r03",
+      "text": "林峰和周岚认识吗",
+      "expected": ["lin-zhou-friends", "colleague-lin", "colleague-zhou"],
+      "kind": "direct"
+    },
+    {
+      "id": "r04",
+      "text": "我前同事里谁和谁是同学",
+      "expected": ["lin-zhou-friends", "colleague-lin", "colleague-zhou"],
+      "kind": "direct"
+    },
+    {
+      "id": "r05",
+      "text": "我想约林峰吃饭",
+      "expected": ["colleague-lin", "lin-zhou-friends"],
+      "kind": "direct"
+    },
+    {
+      "id": "r06",
+      "text": "提醒我周五给周岚回消息",
+      "expected": ["colleague-zhou", "lin-zhou-friends"],
+      "kind": "direct"
+    },
+    {
+      "id": "r07",
+      "text": "我老婆叫什么名字",
+      "expected": ["wife"],
+      "kind": "direct"
+    },
+    {
+      "id": "r08",
+      "text": "给苏晴挑个生日礼物",
+      "expected": ["wife"],
+      "kind": "direct"
+    },
+    {
+      "id": "r09",
+      "text": "我女儿叫什么",
+      "expected": ["daughter"],
+      "kind": "direct"
+    },
+    {
+      "id": "r10",
+      "text": "给小禾讲个睡前故事",
+      "expected": ["daughter"],
+      "kind": "direct"
+    },
+    {
+      "id": "r11",
+      "text": "我住在哪里",
+      "expected": ["home"],
+      "kind": "direct"
+    },
+    {
+      "id": "r12",
+      "text": "北区附近有什么公园",
+      "expected": ["home"],
+      "kind": "direct"
+    },
+    {
+      "id": "r13",
+      "text": "我最喜欢什么颜色",
+      "expected": ["color"],
+      "kind": "direct"
+    },
+    {
+      "id": "r14",
+      "text": "帮我挑一件衣服的颜色",
+      "expected": ["color"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r15",
+      "text": "帮我点杯咖啡",
+      "expected": ["latte"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r16",
+      "text": "我喝咖啡一般喝什么",
+      "expected": ["latte"],
+      "kind": "direct"
+    },
+    {
+      "id": "r17",
+      "text": "帮我找个安静点的餐厅",
+      "expected": ["crowds"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r18",
+      "text": "演唱会人那么多我还去吗",
+      "expected": ["crowds"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r19",
+      "text": "周末推荐个地方去玩",
+      "expected": ["shy", "crowds", "library"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r20",
+      "text": "晚饭吃什么好",
+      "expected": ["vegetarian", "cilantro"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r21",
+      "text": "我现在还吃肉吗",
+      "expected": ["vegetarian"],
+      "kind": "direct"
+    },
+    {
+      "id": "r22",
+      "text": "点外卖要注意什么",
+      "expected": ["vegetarian", "cilantro", "peanut"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r23",
+      "text": "我对什么过敏",
+      "expected": ["peanut"],
+      "kind": "direct"
+    },
+    {
+      "id": "r24",
+      "text": "我的猫叫什么",
+      "expected": ["cat"],
+      "kind": "direct"
+    },
+    {
+      "id": "r25",
+      "text": "团子该打疫苗了",
+      "expected": ["cat"],
+      "kind": "direct"
+    },
+    {
+      "id": "r26",
+      "text": "我周三晚上有什么安排",
+      "expected": ["badminton"],
+      "kind": "direct"
+    },
+    {
+      "id": "r27",
+      "text": "我用的是什么电脑",
+      "expected": ["laptop"],
+      "kind": "direct"
+    },
+    {
+      "id": "r28",
+      "text": "我的车是什么颜色",
+      "expected": ["car"],
+      "kind": "direct"
+    },
+    {
+      "id": "r29",
+      "text": "我生日是哪天",
+      "expected": ["birthday"],
+      "kind": "direct"
+    },
+    {
+      "id": "r30",
+      "text": "我妈住在哪",
+      "expected": ["mother"],
+      "kind": "direct"
+    },
+    {
+      "id": "r31",
+      "text": "帮我订一张去成都的机票看我妈",
+      "expected": ["mother"],
+      "kind": "direct"
+    },
+    {
+      "id": "r32",
+      "text": "我在准备什么考试",
+      "expected": ["japanese"],
+      "kind": "direct"
+    },
+    {
+      "id": "r33",
+      "text": "帮我出几道日语题",
+      "expected": ["japanese"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r34",
+      "text": "帮我改一下简历",
+      "expected": ["job"],
+      "kind": "inferential"
+    },
+    {
+      "id": "r35",
+      "text": "我在找什么工作",
+      "expected": ["job"],
+      "kind": "direct"
+    },
+    {
+      "id": "r36",
+      "text": "我牙医在哪",
+      "expected": ["dentist"],
+      "kind": "direct"
+    },
+    {
+      "id": "r37",
+      "text": "我的测试机叫什么",
+      "expected": ["test-server"],
+      "kind": "direct"
+    },
+    {
+      "id": "r38",
+      "text": "Hermes 上的服务又挂了",
+      "expected": ["test-server"],
+      "kind": "direct"
+    },
+    {
+      "id": "r39",
+      "text": "我周末一般干嘛",
+      "expected": ["library"],
+      "kind": "direct"
+    },
+    {
+      "id": "r40",
+      "text": "给我女儿准备个周末活动",
+      "expected": ["daughter"],
+      "kind": "direct"
+    },
+    {
+      "id": "u01",
+      "text": "写到一个pdf文件",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u02",
+      "text": "把刚才的内容保存成markdown",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u03",
+      "text": "今天日本有什么新闻",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u04",
+      "text": "帮我写一首诗",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u05",
+      "text": "运行 ls -la",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u06",
+      "text": "后台运行300秒ticker",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u07",
+      "text": "1加1等于几",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u08",
+      "text": "解释一下快速排序",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u09",
+      "text": "翻译成英文",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u10",
+      "text": "继续",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u11",
+      "text": "好的",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u12",
+      "text": "再详细一点",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u13",
+      "text": "把这个表格转成CSV",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u14",
+      "text": "帮我总结上面的对话",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u15",
+      "text": "这段 Python 代码为什么报错",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u16",
+      "text": "写一个 bash 脚本统计行数",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u17",
+      "text": "现在几点了",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u18",
+      "text": "重写得更简洁",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u19",
+      "text": "打开文件 x.txt",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u20",
+      "text": "Bitcoin price today",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u21",
+      "text": "what is the capital of France",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u22",
+      "text": "git rebase 怎么用",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u23",
+      "text": "帮我检查一下这个正则",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u24",
+      "text": "把字号调大一点",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u25",
+      "text": "谢谢",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u26",
+      "text": "嗯",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u27",
+      "text": "你好",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u28",
+      "text": "你是谁",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u29",
+      "text": "你能做什么",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u30",
+      "text": "不对，重来",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u31",
+      "text": "停一下",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u32",
+      "text": "这个命令什么意思",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u33",
+      "text": "帮我把文件改名",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u34",
+      "text": "删除临时文件",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u35",
+      "text": "把图片压缩一下",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u36",
+      "text": "写个邮件给客户说项目延期",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u37",
+      "text": "帮我算一下汇率",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u38",
+      "text": "打开设置",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u39",
+      "text": "为什么这么慢",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u40",
+      "text": "把刚才那段改成日语",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u41",
+      "text": "总结这篇文章",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u42",
+      "text": "搜索一下 React 19 新功能",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u43",
+      "text": "装一下 numpy",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u44",
+      "text": "用表格列出来",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u45",
+      "text": "再来一个",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u46",
+      "text": "OK",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u47",
+      "text": "とりあえず続けて",
+      "expected": [],
+      "kind": "unrelated"
+    },
+    {
+      "id": "u48",
+      "text": "ファイルを保存して",
+      "expected": [],
+      "kind": "unrelated"
+    }
+  ]
+}

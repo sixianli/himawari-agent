@@ -207,6 +207,18 @@ export const governanceMessages = [
         importBatchId: null,
         importance: 620,
         profilePin: "on",
+        stance: "喜欢蓝色",
+        history: [
+          {
+            kind: "created",
+            text: "主人最喜欢的颜色是蓝色",
+            stance: "喜欢蓝色",
+            quote: "我最喜欢蓝色",
+            sourceThreadId: "thread-01",
+            sourceDeleted: false,
+            at: "2026-09-11T00:00:00.000Z",
+          },
+        ],
       },
     ],
     profileUsage: { used: 14, limit: 2000, queued: [] },

@@ -8,6 +8,7 @@ import {
   type MemoryCategory,
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
+  type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
   type OwnerProfileService,
@@ -61,6 +62,7 @@ const REMINDERS_SHOWN = 10;
 const UPCOMING_SHOWN = 20;
 const UPCOMING_WINDOW_MS = 60 * 24 * 3_600_000;
 const INACTIVE_SHOWN = 500;
+const HISTORY_BATCH = 1000;
 const IMPORTS_SHOWN = 20;
 const TRASH_RETENTION_MS = 7 * 24 * 3_600_000;
 const SNOOZE_MS = 3_600_000;
@@ -193,6 +195,15 @@ export class ProductionMemoryControl {
     const scope = this.#scope();
     const active = await this.options.state.listActive(ownerId, agentId);
     const inactive = await this.#inactive();
+    const historyCount = new Map<string, number>();
+    const tracked = [...active, ...inactive].map(({ id }) => id);
+    for (let index = 0; index < tracked.length; index += HISTORY_BATCH)
+      for (const { memoryId } of await this.options.state.listHistory({
+        ownerId,
+        agentId,
+        memoryIds: tracked.slice(index, index + HISTORY_BATCH),
+      }))
+        historyCount.set(memoryId, (historyCount.get(memoryId) ?? 0) + 1);
     const settings = await this.options.book.readSettings(scope);
     const people = await this.options.book.listPeople(scope);
     const suggestions = await this.options.book.listPersonSuggestions(scope);
@@ -207,7 +218,7 @@ export class ProductionMemoryControl {
       })) ?? [];
     const due = await this.#dueReminders();
     return JSON.stringify([
-      active.map(({ id, revision }) => [id, revision]),
+      active.map(({ id, revision }) => [id, revision, historyCount.get(id) ?? 0]),
       pending.map(({ id }) => id),
       changes.map(({ id, undoneAt }) => [id, undoneAt]),
       due.map(({ id, updatedAt }) => [id, updatedAt]),
@@ -249,11 +260,43 @@ export class ProductionMemoryControl {
       ]),
     );
     const memories: OverviewSnapshot["payload"]["memories"][number][] = [];
+    const texts = new Map<string, Promise<string>>();
+    const textOfRef = (ref: string) => {
+      const cached = texts.get(ref);
+      if (cached) return cached;
+      const read = this.readText(ref)
+        .then(singleLine)
+        .catch(() => "");
+      texts.set(ref, read);
+      return read;
+    };
+    const history = new Map<string, MemoryHistoryEvent[]>();
+    for (let index = 0; index < records.length; index += HISTORY_BATCH)
+      for (const event of await this.options.state.listHistory({
+        ownerId,
+        agentId,
+        memoryIds: records.slice(index, index + HISTORY_BATCH).map(({ id }) => id),
+      }))
+        history.set(event.memoryId, [...(history.get(event.memoryId) ?? []), event]);
     for (const memory of records) {
       if (memory.status !== "active" && memory.status !== "archived" && memory.status !== "trashed")
         continue;
-      const text = singleLine(await this.readText(memory.contentRef).catch(() => ""));
+      const text = await textOfRef(memory.contentRef);
       if (!text) continue;
+      const nodes: OverviewSnapshot["payload"]["memories"][number]["history"][number][] = [];
+      for (const event of history.get(memory.id) ?? []) {
+        const eventText = await textOfRef(event.contentRef);
+        if (!eventText) continue;
+        nodes.push({
+          kind: event.kind,
+          text: eventText,
+          stance: event.stance,
+          quote: event.quoteRef ? (await textOfRef(event.quoteRef)) || null : null,
+          sourceThreadId: event.sourceThreadId,
+          sourceDeleted: event.sourceDeleted,
+          at: event.occurredAt,
+        });
+      }
       memories.push({
         memoryId: memory.id,
         revision: memory.revision,
@@ -275,6 +318,8 @@ export class ProductionMemoryControl {
         importBatchId: memory.attributes?.importBatchId ?? null,
         importance: memory.attributes?.importancePermille ?? 0,
         profilePin: pins.get(memory.id) ?? null,
+        stance: memory.attributes?.stance ?? null,
+        history: nodes,
       });
     }
     const changes =
