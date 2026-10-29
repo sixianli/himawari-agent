@@ -118,6 +118,13 @@ def startup_ready_budget(instance, worker_source):
     return seconds * 1000
 
 
+def startup_phase_baseline(instance):
+    baseline = instance.get('startupPhaseBaselineMs')
+    if type(baseline) is not dict or not baseline or not all(type(step) is str and re.fullmatch(r'[a-z]+(?:-[a-z]+)*', step) and type(ms) is int and ms > 0 for step, ms in baseline.items()):
+        refuse('PACKET_STARTUP_PHASE_BASELINE_INVALID', json.dumps(baseline))
+    return json.dumps(baseline, sort_keys=True)
+
+
 def preserved_tables():
     source = (TEMPLATE / 's0-db' / 'read-s0-db.mjs').read_text()
     match = re.search(r'historyTables = Object\.freeze\(\[(.*?)\]\)', source, re.S)
@@ -250,6 +257,7 @@ def base_parameters(instance, commit, date, discovered):
         'TARGET_MAX_TOKENS': targets['maxTokens'],
         'TARGET_PUBLIC_FETCH_BYTES': targets['publicFetchMaximumBytes'],
         'STARTUP_READY_BUDGET_MS': startup_ready_budget(instance, git('show', commit + ':' + WORKER_SERVICE_MAIN)),
+        'STARTUP_PHASE_BASELINE_MS': startup_phase_baseline(instance),
     }
 
 

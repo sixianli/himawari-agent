@@ -71,6 +71,23 @@ def static_root_configuration(packet):
     return namespace['static_root_configuration']
 
 
+def startup_phases(packet):
+    source = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
+    tree = ast.parse(source)
+    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'startup_phases' or isinstance(node, ast.Assign) and [target.id for target in node.targets if isinstance(target, ast.Name)] == ['startup_phase_baseline_ms']]
+    namespace = {'json': json}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), 'S7-switch-start-readback.py', 'exec'), namespace)
+    return namespace['startup_phases'], namespace['startup_phase_baseline_ms']
+
+
+def startup_journal(invocation, offsets):
+    start = 1_793_200_000_000_000
+    rows = [{'_SYSTEMD_INVOCATION_ID': invocation, '__REALTIME_TIMESTAMP': str(start + offset * 1000), 'MESSAGE': json.dumps(message)} for offset, message in offsets]
+    rows.append({'_SYSTEMD_INVOCATION_ID': 'other', '__REALTIME_TIMESTAMP': str(start), 'MESSAGE': json.dumps({'event': 'pair.child_spawned'})})
+    rows.append({'_SYSTEMD_INVOCATION_ID': invocation, '__REALTIME_TIMESTAMP': str(start + 1000), 'MESSAGE': 'plain text line'})
+    return ''.join(json.dumps(row) + '\n' for row in rows).encode()
+
+
 def production_config(old_prefix, public_fetch, context_window=1000000, max_tokens=32768):
     return {
         'http': {'host': '127.0.0.1', 'port': 8400, 'staticRoot': old_prefix + '/share/control-center'},
@@ -91,6 +108,48 @@ class RenderedPacket(unittest.TestCase):
         packet = self.root / ('packet-' + str(len(list(self.root.iterdir()))))
         packet_maker.render(packet, {**TWELFTH, **changes})
         return packet
+
+
+class StartupPhaseTest(RenderedPacket):
+    TAG = '[PG-5]'
+
+    def journal(self, sandbox_services_ms):
+        step = lambda name: {'component': 'agent-service', 'event': 'startup.step', 'step': name}
+        return startup_journal('start', [
+            (0, {'component': 'pair-supervisor', 'event': 'pair.child_spawned', 'name': 'worker'}),
+            (25, {'component': 'pair-supervisor', 'event': 'pair.child_spawned', 'name': 'agent'}),
+            (8361, step('state-opened')),
+            (9019, step('workspace-synced')),
+            (9019 + sandbox_services_ms, step('sandbox-services-created')),
+            (9019 + sandbox_services_ms + 8400, {'component': 'execution-worker', 'event': 'service.ready'}),
+            (9019 + sandbox_services_ms + 8450, step('worker-connected')),
+            (9019 + sandbox_services_ms + 9800, {'component': 'agent-service', 'event': 'service.ready'}),
+        ])
+
+    def test_the_switch_report_times_every_startup_phase_and_warns_on_one_twice_its_usual_time(self):
+        phases, baseline = startup_phases(self.render())
+        self.assertEqual(baseline, {'sandbox-services-created': 6000, 'state-opened': 8200})
+        slow = phases(self.journal(18824), 'start', baseline)
+        self.assertEqual([(phase['step'], phase['durationMs']) for phase in slow['phases']], [
+            ('state-opened', 8361), ('workspace-synced', 658), ('sandbox-services-created', 18824),
+            ('execution-worker-ready', 8400), ('worker-connected', 50), ('agent-service-ready', 1350),
+        ])
+        self.assertEqual(slow['phases'][-1]['sinceSpawnMs'], 37643)
+        self.assertEqual(slow['warnings'], [{'step': 'sandbox-services-created', 'durationMs': 18824, 'sinceSpawnMs': 27843, 'baselineMs': 6000}])
+        self.assertEqual(phases(self.journal(12000), 'start', baseline)['warnings'], [])
+        self.assertEqual(phases(self.journal(18824), 'missing', baseline), {'invocationId': 'missing', 'phases': [], 'warnings': []})
+
+    def test_a_missing_or_malformed_phase_baseline_is_refused(self):
+        self.assertEqual(json.loads(packet_maker.startup_phase_baseline(INSTANCE))['sandbox-services-created'], 6000)
+        for invalid in (None, {}, {'State Opened': 1}, {'state-opened': 0}, {'state-opened': 1.5}, ['state-opened']):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STARTUP_PHASE_BASELINE_INVALID'):
+                packet_maker.startup_phase_baseline({**INSTANCE, 'startupPhaseBaselineMs': invalid})
+
+    def test_the_switch_report_carries_the_phases_on_success_and_failure(self):
+        readback = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
+        final = readback[readback.index('finally:'):]
+        self.assertIn("orchestration['startupPhases'] = startup_phases(captured.stdout, orchestration['startInvocationId'], startup_phase_baseline_ms)", final)
+        self.assertIn("'startupPhases': orchestration.get('startupPhases')", final)
 
 
 class TemplateTest(RenderedPacket):

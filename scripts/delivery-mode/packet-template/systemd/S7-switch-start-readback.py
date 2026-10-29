@@ -41,6 +41,34 @@ def directory(filename, uid, mode=None):
     if filename.resolve() != filename or not stat.S_ISDIR(info.st_mode) or info.st_uid != uid or info.st_mode & 0o022 or mode is not None and stat.S_IMODE(info.st_mode) != mode:
         raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_DIRECTORY_UNSAFE:' + str(filename))
 
+startup_phase_baseline_ms = __PKT_STARTUP_PHASE_BASELINE_MS__
+
+def startup_phases(journal, invocation, baseline):
+    timed = []
+    for line in journal.decode().splitlines():
+        entry = json.loads(line)
+        if entry.get('_SYSTEMD_INVOCATION_ID') != invocation:
+            continue
+        try:
+            message = json.loads(entry['MESSAGE'])
+            at = int(entry['__REALTIME_TIMESTAMP']) / 1000
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            continue
+        if isinstance(message, dict):
+            timed.append((at, message))
+    spawned = [at for at, message in timed if message.get('event') == 'pair.child_spawned']
+    if not spawned:
+        return {'invocationId': invocation, 'phases': [], 'warnings': []}
+    started = min(spawned)
+    marks = [(message['step'], at) for at, message in timed if message.get('component') == 'agent-service' and message.get('event') == 'startup.step' and isinstance(message.get('step'), str)]
+    marks += [(message['component'] + '-ready', at) for at, message in timed if message.get('event') == 'service.ready' and message.get('component') in ['agent-service', 'execution-worker']]
+    phases, previous = [], started
+    for step, at in sorted(marks, key=lambda mark: mark[1]):
+        phases.append({'step': step, 'durationMs': round(at - previous), 'sinceSpawnMs': round(at - started)})
+        previous = at
+    warnings = [{**phase, 'baselineMs': baseline[phase['step']]} for phase in phases if phase['step'] in baseline and phase['durationMs'] > 2 * baseline[phase['step']]]
+    return {'invocationId': invocation, 'phases': phases, 'warnings': warnings}
+
 def json_file(filename, uid=0, mode=None):
     return json.loads(regular(filename, uid, mode))
 
@@ -242,6 +270,7 @@ try:
     while True:
         current = show()
         invocation = current['InvocationID']
+        orchestration['startInvocationId'] = invocation
         if current['NRestarts'] != '0' or current['ActiveState'] not in ['active', 'activating'] or not invocation or current['InvocationID'] == original_properties['InvocationID']:
             raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_FIRST_START_NOT_HEALTHY')
         journal = subprocess.check_output(['/usr/bin/journalctl', '_SYSTEMD_INVOCATION_ID=' + invocation, '--output=json', '--no-pager'], timeout=15)
@@ -287,6 +316,8 @@ except Exception as error:
 finally:
     captured = subprocess.run(['/usr/bin/journalctl', '--unit=' + unit, '--since=@' + str(int(orchestration['startedAt'])), '--output=json', '--no-pager'], capture_output=True, timeout=15)
     orchestration['finalJournal'] = retain(evidence / 's7-final-journal.jsonl', captured.stdout)
+    if orchestration.get('startInvocationId'):
+        orchestration['startupPhases'] = startup_phases(captured.stdout, orchestration['startInvocationId'], startup_phase_baseline_ms)
     if captured.returncode != 0:
         orchestration['passed'] = False
         orchestration['errors'].append({'code': '__PKT_LABEL_UPPER___SWITCH_FINAL_JOURNAL_READ_FAILED'})
@@ -298,5 +329,5 @@ finally:
     orchestration['rootFreeAfterBytes'] = os.statvfs('/').f_bavail * os.statvfs('/').f_frsize
     orchestration['passed'] = orchestration['passed'] and not orchestration['errors']
     receipt = retain_json(evidence / 's7-orchestration-result.json', orchestration)
-    print(json.dumps({'passed': orchestration['passed'], 'receipt': receipt, 'rollbackPerformed': False}))
+    print(json.dumps({'passed': orchestration['passed'], 'receipt': receipt, 'rollbackPerformed': False, 'startupPhases': orchestration.get('startupPhases')}))
 sys.exit(0 if orchestration['passed'] else 1)

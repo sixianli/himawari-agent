@@ -23,5 +23,12 @@
     "publicFetchMaximumBytes": 102400
   },
   "startupReadyBudgetSeconds": 30,
-  "startupReadyMarginSeconds": 15
+  "startupReadyMarginSeconds": 15,
+  "startupPhaseBaselineMs": {
+    "state-opened": 8200,
+    "sandbox-recovered": 360,
+    "sandbox-services-created": 6000,
+    "execution-worker-ready": 5800,
+    "agent-service-ready": 830
+  }
 }
