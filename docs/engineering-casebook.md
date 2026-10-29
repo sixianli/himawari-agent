@@ -82,6 +82,7 @@ date: "2026-10-26"
   55. [来回说了很多次“想/不想出去玩”，记忆历史只显示 2 版：页面只看上一版，补充细节直接覆盖原文](#case-memory-history)
   56. [CI 关掉以后，main 上 4 条测试红了 17 个小时：改了提示词外壳，测试还按旧格式断言](#case-red-main-without-ci)
   57. [问“写到一个pdf文件”却带出前同事：记忆搜索没有相关度门槛，界面把“最不远的几条”说成“相关记忆”](#case-memory-relevance-threshold)
+  58. [模型写的 Word 在预览栏里只显示“不能预览”：九个开源方案实跑对比，在严格安全策略下把 Word 样式装进影子根](#case-file-preview)
   59. [一轮 185 秒里有 60 秒在工具调用前后空等：同一次调用把几秒内不会变的宿主文件查了 7 遍](#case-tool-gap-host-check)
   61. [做一份 Word 要 50 秒、PDF 找不到字体：服务器没装文档库，模型只能自己摸索](#case-document-tools)
 - [小案例速查](#small-cases)
@@ -107,12 +108,12 @@ date: "2026-10-26"
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3721,6 +3722,77 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 **面试 30 秒版**
 
 “用户问‘写到一个 pdf 文件’，界面却说‘找到 3 条相关记忆’，带出的是前同事。查下来，混合检索只排序不判断，相似度门槛默认 0，记忆少的时候每轮都会带满，界面又把‘最近的几条’说成‘相关’。我用自己的数据实测相似度分布定了门槛，允许返回 0 条，0 条时界面整步不显示；把这个场景写成在旧代码上失败的测试接进检查；再建了一个固定评测集，修改前无关问题 100% 带出记忆，修改后 2.1%，代价是需要联想的问题召回下降，这个取舍和下一步要不要加重排，都由同一套基线来回答。”
+
+[返回目录](#contents)
+
+<a id="case-file-preview"></a>
+
+## 案例 58：模型写的 Word 在预览栏里只显示“不能预览”：九个开源方案放在同一页实跑对比，再在严格的安全策略下把 Word 样式装进影子根
+
+**背景与现象**
+
+2026-10-29，Andy 让 Himawari 把当天日本新闻头条写成 Word。文件做出来了，可在 Himawari 网页右侧的预览栏点开，只看到一句“这种文件不能在这里预览，可以下载后打开”（UI 第二批第 31 条）。PDF 虽然能看，但用的是浏览器自带的查看器，外观、语言、深浅色都跟 Himawari 不一样，手机上的表现也没保证。Andy 的要求是：去看开源预览工具里“显示效果最好、用户体验最好”的是哪些，“给我看看效果，我再决定”。
+
+**根因**
+
+这不是一个 bug，是功能缺口：预览栏只认文本、图片、网页和浏览器能原生打开的 PDF；`.docx`、`.xlsx` 是压缩包里装 XML（一种带标签的文本格式），浏览器不会显示，要有人把它们“排版”成网页。难点在两处：
+
+- 选哪种排版方式。在浏览器里转，还是在服务器上用 LibreOffice（开源办公套件）转成 PDF，还是部署一个完整的在线文档服务，效果、体积、许可证、隐私差别很大。
+- Himawari 主站的内容安全策略（Content Security Policy，浏览器按它拒绝不允许的脚本和样式）只允许本站的样式文件：`style-src 'self'`，图片只允许本站和 `data:`。主流的 Word 网页渲染库会往页面里插 `<style>` 元素、把图片做成 `blob:` 地址，这两样都会被策略拒绝，结果就是一页没样式、没图片的白板。
+
+**我们的方案**
+
+- **先给效果再决定。** 用同一批含中、日、英文的样例（两页 Word：页眉、彩色字、表格底色、合并单元格、图片、编号列表；两张表的 Excel：合并标题、填充色、边框、百分比公式、日元金额、冻结表头；由 Word 导出的 PDF；含长行的 txt），在一个演示页里让 9 个方案现场渲染，服务器方案用 LibreOffice 真转。Andy 看完问“LibreOffice 效果这么好为什么不用”，我们把代价讲清楚后，他选了推荐方案。
+- **PDF：** pdf.js（Mozilla 的开源 PDF 渲染库）逐页画到画布上，按栏宽铺满，叠透明文字层可选中复制，只画滚到附近的页。
+- **Word：** docx-preview。把它生成的 `<style>` 写进一个不挂在页面上的元素，再把样式文本转成“可构造样式表”（`new CSSStyleSheet()` + `replaceSync`），挂到预览框自己的影子根（Shadow DOM，样式和主页面互不影响的一块区域）上；图片改成 `data:` 地址；关掉会继承主站来源的嵌入 HTML 块；链接只留 http、https、mailto。Symbol 字体的项目符号字符在没有该字体的设备上会变方框，渲染前换成普通圆点。
+- **Excel：** ExcelJS 只负责读文件，Himawari 自己写一个纯函数模块把工作表变成“表格模型”（列宽、行高、合并、颜色、边框、数字格式、冻结行、隐藏行列、2000 行上限），再用 React 画成普通网页表格。
+- 三个库都按需加载，不打开对应文件就不下载；文件只从本站读文件接口读取。
+
+**方案讨论与备选**
+
+| 方案 | 好处 | 代价 | 结论 |
+| --- | --- | --- | --- |
+| 浏览器自带 PDF 查看器（原做法） | 零代码 | 外观和语言不受控，手机表现无保证 | 换掉 |
+| docx-preview | 最像 Word，约 49 KB | 只在手动分页处分页，不支持目录域 | Word 采用 |
+| mammoth | 干净的网页文字，手机上最好读 | 故意丢颜色、字号、页眉、分页 | 不用 |
+| @js-preview/excel | 拿来即用，像 Excel 的网格 | 百分比、金额格式丢失（0.2142857）；canvas 上不能选中；界面文字写死中文；约 458 KB | 不用 |
+| SheetJS 社区版 | 读得最全最快 | 不读颜色、字体、边框；新版不在 npm | 不用 |
+| ExcelJS + 自己画表 | 样式全、格式对、可选中、三语和主题可控 | 画表代码要自己写和维护 | Excel 采用 |
+| 服务器 LibreOffice 转 PDF | Word 还原度最高，以后可顺带支持老格式 | 生产机要装约 313 MB 和中日文字体；每个文件首开多等约 1.3 秒；Excel 被按 A4 切页；在服务器上解析外来文件要沙箱 | 以后需要老格式时再加 |
+| OnlyOffice / Collabora | 能看能改，效果最好 | 要单独部署重服务；OnlyOffice 社区版 AGPL-3.0 | 违背“不堆集成”，不用 |
+| @cyntler/react-doc-viewer | 一个组件覆盖多种格式 | Word、Excel 交给微软在线服务，只支持公开网址 | 违背“数据自持”，排除 |
+
+放弃的东西：Word 不能像 LibreOffice 那样按内容自动分页；Excel 不显示图表、图片和条件格式；不支持 `.doc`、`.xls`、`.pptx`。
+
+**业界主流做法**
+
+- ✅ pdf.js 官网：“A general-purpose, web standards-based platform for parsing and rendering PDFs.” [mozilla.github.io/pdf.js](https://mozilla.github.io/pdf.js/)
+- ✅ docx-preview README 写明它的取舍：“library is limited by HTML capabilities”，并且“Realtime page breaking is not implemented”。[github.com/VolodymyrBaydalka/docxjs](https://github.com/VolodymyrBaydalka/docxjs)
+- ✅ react-doc-viewer README：“This library uses the official MS Office online document viewing service”，Office 文件“only supports public file URLs”。[github.com/cyntler/react-doc-viewer](https://github.com/cyntler/react-doc-viewer)
+- ✅ Univer 导入导出文档：“The APIs below need a conversion backend.” [docs.univer.ai](https://docs.univer.ai/guides/sheets/features/import-export)
+- ✅ OnlyOffice README：“ONLYOFFICE Docs is licensed under the GNU Affero Public License, version 3.0.” [github.com/ONLYOFFICE/DocumentServer](https://github.com/ONLYOFFICE/DocumentServer)
+- ✅ SheetJS 安装文档：第三方托管的版本“Due to syncing issues, they are generally out of date.” [docs.sheetjs.com](https://docs.sheetjs.com/docs/getting-started/installation/standalone)
+- ✅ MDN 关于可构造样式表：“A constructed stylesheet is a stylesheet created programmatically using the CSSStyleSheet() constructor”，可以被影子根采用。[developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/ShadowRoot/adoptedStyleSheets)
+
+**对比与取舍**
+
+业界常见两条路：要“能改”的产品部署 OnlyOffice、Collabora 这类文档服务；只要“能看”的产品在浏览器里渲染，或者交给微软、谷歌的在线查看器。Himawari 是一个人的私有 Agent，文件只该留在主人自己的服务器和浏览器里，所以排除了在线查看器；只读预览不值得多养一个服务，所以排除了文档服务。和很多直接把库塞进页面的做法不同，我们不放宽主站安全策略（不加 `'unsafe-inline'`），而是把 Word 的样式转成可构造样式表、装进影子根，既过了策略，又让 Word 的样式不会泄漏到 Himawari 自己的界面上。
+
+**结果数据**
+
+- 演示页实测（2026-10-29，云端容器 Chrome，九个方案同时开跑）：各方案渲染耗时数百毫秒到约 1 秒，只作参考；LibreOffice 转一份两页 Word 实测 1.43、1.27、1.31 秒。出处：本线程演示页和命令输出。
+- 构建实测（`npm run build:browser` 的体积报告）：首页脚本压缩后 306,735 → 312,232 字节；按需加载的 docx-preview 48,738 字节、ExcelJS 255,576 字节、pdf.js 128,205 字节（另有 worker）。
+- 浏览器测试 `scripts/test-file-preview-browser.mjs`：套用生产安全策略，Chromium 和 WebKit 各 6 组（中英日 × 1280/390 宽）全部通过，无策略拒绝、无横向滚动。
+- 单元测试：表格模型 4 条、预览面板 33 条（含新增 Word、Excel、过大文件、PowerPoint 分支和 Excel 真文件渲染、坏文件提示）通过。
+- 真 iPhone 上的效果：未测量，等下一次完整版本上线后 Andy 看。
+
+**相关 ADR/PR**
+
+[ADR 0114](adr/0114-file-preview-pdf-word-excel-in-browser.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[案例 36 “更多”栏](#case-more-panel)。PR 见 ADR 0114 所在分支 `claude/project-thread-6vnjqg`。
+
+**面试 30 秒版**
+
+“我们的 Agent 会写 Word 和 Excel，但预览栏打不开。我没有直接挑一个库，而是把九个开源方案放在同一页、用同一批中日英样例实跑，让产品负责人看效果再选；服务器转 PDF 效果最好，但要多装 300 多 MB、每个文件多等 1.3 秒，Excel 还会被切成 A4 页，所以没选。最后 PDF 用 pdf.js，Word 用 docx-preview，Excel 用 ExcelJS 读、自己画表。最难的是主站安全策略不允许内嵌样式，我把 Word 的样式转成可构造样式表装进影子根，没放宽策略就让它在 Chrome 和 Safari 内核里都正常显示，并用一套套着生产策略的浏览器测试守住。”
 
 [返回目录](#contents)
 
