@@ -19,6 +19,7 @@ date: "2026-10-29"
 - [各套餐能不能接](#subscriptions)
 - [比较过的方案](#options)
 - [后果](#consequences)
+- [2026-10-29 晚间修订：实际接入情况](#revision-1029-evening)
 - [关联文档](#links)
 
 <a id="context"></a>
@@ -53,6 +54,8 @@ Andy 16:07 在线程里同意在生产机安装 Magpie。17:10–17:13 已装好
 
 ## 路由顺序
 
+> 本节是 16:58 时的计划。实际接入的顺序和各套餐结论以[晚间修订](#revision-1029-evening)为准。
+
 Magpie 里建一个路由组 `himawari-main`，按顺序（`routing=order`）排：
 
 1. OpenCode Go 的 DeepSeek V4.1 Flash：套餐里每月 80 美元额度，官方估计约 17.3 万次。
@@ -67,6 +70,8 @@ Magpie 会对同一段对话固定用同一个账号，以保住厂商那边的�
 <a id="subscriptions"></a>
 
 ## 各套餐能不能接
+
+> 本表是 16:58 时的判断。CodeBuddy 和 SuperGrok 的结论后来变了，见[晚间修订](#revision-1029-evening)。
 
 | 套餐 | 接法 | 条款情况 | 决定 |
 | --- | --- | --- | --- |
@@ -106,10 +111,44 @@ OpenCode Go 的 DeepSeek 要在设置里打开“Global”地区才能用，数�
 
 - 好处：套餐内额度够用时，主模型不再花 Vercel 的钱。
 - 风险：**Magpie 只监听本机时不检查访问密钥**（启动日志：“anything works; the gateway only listens on localhost”），所以生产机上任何本地程序都能用 Andy 的套餐额度。我们核对过：Himawari 让模型执行命令的沙箱（`linux-bubblewrap-command-provider.ts`、`capabilities/isolation.ts`）都用 `--unshare-all` 切断网络，连不到宿主的 `127.0.0.1`。剩下能调用的只有生产机上的 root 和几个系统服务。我们判断这个风险可以接受。Himawari 仍然带上 Magpie 生成的网关密钥，以后 Magpie 对外监听时密钥照样生效。
-- 风险：SuperGrok 的接法没有条款支持，可能被拒绝，也可能影响 Andy 的 X/Grok 账号。
+- 风险：SuperGrok 的接法没有条款支持，可能被拒绝，也可能影响 Andy 的 X/Grok 账号。（后来没有接，见[晚间修订](#revision-1029-evening)。）
+- 风险：CodeBuddy 国际版经社区插件接入，条款风险由 Andy 承担；数据在新加坡保留 14 天。
 - 风险：OpenCode Go 说套餐是为编程 Agent 设计的。Himawari 的后台邮件判断不像编程请求，可能被当成滥用。
 - 隐私：邮件判断现在和主对话共用一个路由组，所以 Go 的 DeepSeek 打开 Global 地区后，邮件的发件人、标题和摘要也可能出美国和欧盟。邮件判断改用单独的、只在美欧运行的模型，已记为 [BL-20261029-005](../backlog/BL-20261029-005-gmail-judge-separate-model.md)。2026-10-29 19:55 JST 主人决定：邮件、记忆这类私人数据不必特意避开 CodeBuddy，不另建私人路由组。
 - 后续：在 Magpie 里配好 OpenCode Go 的 Key 和 SuperGrok 登录，建 `himawari-main` 路由组，再出包把生产配置的主模型改成 Magpie，然后在真实网页里验收。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="revision-1029-evening"></a>
+
+## 2026-10-29 晚间修订：实际接入情况
+
+当天 17:57–19:56（日本时间）Andy 又做了几项决定，生产机上的 Magpie 已按下面的样子配好。前面的计划文字保留原样，以本节为准。
+
+**路由组 `group/himawari-main`（按顺序，`routing=order`）**
+
+1. `opencode-zen/deepseek-v4.1-flash-free`：OpenCode Zen 的免费模型，零保留。Andy 18:22 说“接免费模型”，要求免费模型排在套餐模型前面。
+2. `opencode-zen/glm-5.3-flash-free`：同上。
+3. `opencode-go/deepseek-v4.1-flash`：OpenCode Go 套餐。
+4. `opencode-go/glm-5.3-flash`：OpenCode Go 套餐。
+5. `workbuddy-ai/deepseek-v4.1-flash-sg`：腾讯 CodeBuddy 国际版，排在最后。
+
+组里没有 Vercel。Andy 18:28 定：Vercel 只留嵌入模型（Go 和免费模型都没有嵌入模型），外加一个默认关闭的兜底。
+
+**各套餐的结论变化**
+
+| 套餐 | 原来的结论 | 现在 | 依据 |
+| --- | --- | --- | --- |
+| 腾讯 CodeBuddy | 不接（当时以为 Magpie 只能反过来给 CodeBuddy 用） | 接国际版，排最后 | 社区插件 `@magpie-community/opencode-workbuddy-auth` 0.1.47 能让 Magpie 调用 CodeBuddy 的模型，之前的判断错了。Andy 18:31 授权在生产机装 Bun 和这个插件并登录他的账号，条款风险由 Andy 承担。国际版隐私政策：数据保留 14 天，服务器在新加坡，中国大陆的团队可能访问，默认不用于训练。 |
+| SuperGrok | Andy 知道风险后选择接 | 先不接 | Andy 18:53 选“先不接”。已下载的 Grok Build 文件已删除，没有运行过。 |
+| OpenCode Zen 免费模型 | 未列入 | 接，排最前 | 见上。19:26 实测两个免费模型第一次请求就回 429“免费额度已用完”，原因未查清；Andy 19:56 选“先留着”。Magpie 在冷却期内本地跳过它们，约每小时一次多等约 0.5 秒。 |
+| Claude Max 附送的 API 额度 | 未定 | 先不接 | Andy 19:14：只用在评测器校准这类必须高能力模型的地方，接之前必须等他点头。 |
+
+**其他决定**
+
+- OpenCode 客户端身份：用 Magpie 的默认做法，按 OpenCode 官方客户端的样子发请求（Andy 19:12 选定）。
+- 私人数据：邮件、记忆这类私人数据不必特意避开 CodeBuddy，不另建私人路由组（Andy 19:55）。
+- 主模型切到 Magpie 随第十九版上线；配置写法见 `strict-configuration.ts` 对 `provider: "magpie"` 的校验。
 
 [↑ 返回阅读导航](#contents)
 
