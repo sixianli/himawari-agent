@@ -424,6 +424,13 @@ export const messages = {
   "preview.webUnavailable":
     "Web ページのプレビューはまだ使えません。別のプレビュー用ドメインの設定が必要です。今はダウンロードできます。",
   "preview.diffNote": "このターンの変更のみ表示",
+  "preview.page": "{count} ページ中 {page} ページ目",
+  "preview.renderFailed":
+    "このファイルはここでは表示できませんでした。ダウンロードして開いてください。",
+  "preview.sheets": "シート",
+  "preview.sheetTruncated":
+    "大きな表のため、最初の 2,000 行・100 列だけを表示しています。すべて見るにはダウンロードしてください。",
+  "preview.sheetEmpty": "このブックには表示できるシートがありません。",
   "library.title": "ファイル",
   "library.search": "ファイル名で検索",
   "library.count": "{count}{more, select, yes {+} other {}} 件のファイル",

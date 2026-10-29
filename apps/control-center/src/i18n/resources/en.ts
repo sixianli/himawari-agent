@@ -420,6 +420,12 @@ export const messages = {
   "preview.webUnavailable":
     "Web page preview isn’t set up yet: it needs a separate preview domain. You can download the file for now.",
   "preview.diffNote": "Showing this turn’s changes only",
+  "preview.page": "Page {page} of {count}",
+  "preview.renderFailed": "This file couldn’t be shown here. Download it to open it.",
+  "preview.sheets": "Sheets",
+  "preview.sheetTruncated":
+    "This sheet is large, so only the first 2,000 rows and 100 columns are shown. Download it to see everything.",
+  "preview.sheetEmpty": "This workbook has no sheet to show.",
   "library.title": "Files",
   "library.search": "Search file names",
   "library.count":
