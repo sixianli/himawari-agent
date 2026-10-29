@@ -490,6 +490,14 @@ class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort 
   }
 }
 
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -542,13 +550,29 @@ export function registerProactiveRoutes(
       .redirect(proactive.beginAuthorization(subject), 303);
   });
   app.get(PROACTIVE_GOOGLE_CALLBACK_PATH, async (request, reply) => {
-    const subject = await owner(request);
-    if (!subject) return reply.code(401).header("cache-control", "no-store").send();
     const query = request.query as Record<string, unknown>;
     const text = (key: string) =>
       typeof query[key] === "string" && (query[key] as string).length <= 2048
         ? (query[key] as string)
         : null;
+    const subject = await owner(request);
+    if (!subject) {
+      if (query["return"] !== undefined) return settingsPage(reply, "failed");
+      const sameSiteReturn = new URLSearchParams({ return: "1" });
+      for (const key of ["state", "code", "error"]) {
+        const value = text(key);
+        if (value !== null) sameSiteReturn.set(key, value);
+      }
+      return reply
+        .code(200)
+        .header("cache-control", "no-store")
+        .header("referrer-policy", "no-referrer")
+        .header("content-security-policy", "default-src 'none'; base-uri 'none'")
+        .type("text/html; charset=utf-8")
+        .send(
+          `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="refresh" content="0;url=${escapeHtmlAttribute(`${PROACTIVE_GOOGLE_CALLBACK_PATH}?${sameSiteReturn}`)}"><title>Himawari</title>`,
+        );
+    }
     return settingsPage(
       reply,
       await proactive.completeAuthorization({

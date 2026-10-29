@@ -297,7 +297,7 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 - **推送用哪一类。** 复用已有的“提醒”类推送，来源键是 `proactive:<推送编号>`，所以手机上关掉“提醒”类推送也会关掉邮件推送。点开后打开 `/?reminder=<条目编号>`，由界面 PR 落到提醒页对应那一条并高亮。
 - **Gmail 代码放在哪。** 读取和授权在 `packages/platform-node/src/gmail-source.ts`，没有新建单独的包，免得多一套构建和依赖配置。
 - **生产配置。** 在 `/etc/himawari/config.json` 的 `runPolicy.proactive` 里写：`modelRef`（用哪个模型，必须允许私密数据）、`gmail.clientId`、`gmail.clientSecretRef`（指向 `secretReferences` 里 `purpose` 为 `google-oauth-client` 的一项），可选 `intervalMs`（默认 900000，即 15 分钟）、`perCheckCostMicros`（默认 100000，即 0.1 美元）、`perCheckMs`（默认 180000，即 3 分钟）、`dailyCostMicros`（默认 1000000，即 1 美元）。没有这一节时主动检查完全不启动，界面也不显示相关入口。
-- **Google 里要填的回调地址。** 固定为网站地址加 `/api/proactive/v1/google/callback`，生产机是 `https://himawari.siyi.win/api/proactive/v1/google/callback`。Andy 建 OAuth 客户端时把它填进“已获授权的重定向 URI”。
+- **Google 里要填的回调地址。** 固定为网站地址加 `/api/proactive/v1/google/callback`，生产机是 `https://himawari.siyi.win/api/proactive/v1/google/callback`。Andy 建 OAuth 客户端时把它填进“已获授权的重定向 URI”。Himawari 的登录 Cookie 是 `SameSite=Strict`，从 Google 跳回时浏览器不会带上它，所以回调发现没有登录信息时，先返回一张只做跳转的页面，由本站页面带着 `return=1` 再访问一次回调，这一次浏览器会带上 Cookie；如果仍然认不出主人，就跳到设置页显示“连接失败”（I-31）。
 - **连接流程。** 设置里的“连接 Gmail”打开 `/api/proactive/v1/google/start`，服务生成一次性的 `state`（防止别人伪造回调，10 分钟有效，只认发起连接的同一台已登录设备），跳到 Google；Google 回到回调地址后，服务换取 refresh token、读出账号邮箱、加密保存，第一次连接时自动打开“主动提醒”，然后跳回 `/?settings=apps&gmail=connected`（失败是 `failed`，Andy 在 Google 页点了取消是 `denied`）。
 - **网页接口。** 查询 `proactive.overview.read`；命令 `proactive.settings.set`（开关、不推送时段、重要发件人）、`proactive.insight.respond`（完成、不再提醒、恢复、评价）、`proactive.decision.rate`、`proactive.audit.respond`（看完了、该说没说）、`proactive.source.manage`（断开 Gmail、删除全部记录）。
 
