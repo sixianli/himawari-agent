@@ -350,6 +350,14 @@ describe("agent service startup ownership", () => {
     if (!line) throw new Error("SERVICE_READY_MISSING");
     expect(JSON.parse(line).listenPort).toBe(80);
   });
+  it("leaves the whole-database check to the repository so one startup scans the database once", async () => {
+    start();
+    await settle();
+    expect(boundary.open).toHaveBeenCalledOnce();
+    expect(boundary.database).not.toHaveBeenCalled();
+    expect(boundary.status).not.toHaveBeenCalled();
+  });
+
   it("reports each startup step in order with the time since the process started", async () => {
     start();
     await settle();
@@ -411,7 +419,6 @@ describe("agent service startup ownership", () => {
     "inactive",
     "wrong-owner",
     "persisted-mismatch",
-    "sqlite",
     "open",
     "claim",
     "claimed-fence",
@@ -427,7 +434,6 @@ describe("agent service startup ownership", () => {
       boundary.authorityFile.mockResolvedValue({ ...authority, ownerId: "other" });
     if (kind === "persisted-mismatch")
       boundary.persistedAuthority.mockReturnValue({ ...authority, transferId: "transfer" });
-    if (kind === "sqlite") boundary.status.mockReturnValue({ quickCheck: "corrupt" });
     if (kind === "open") boundary.open.mockRejectedValue(new Error("SQLITE_STATE_ROOT_LOCKED"));
     if (kind === "claim") lease.start.mockRejectedValue(new Error("AGENT_AUTHORITY_INACTIVE"));
     if (kind === "claimed-fence")

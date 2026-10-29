@@ -20,6 +20,8 @@ import { udsFaultProxy } from "@himawari-agent/testing";
 import {
   createProductionWorkerComposition,
   PRODUCTION_WORKER_COMPOSITION_ERROR_CODES,
+  type ProductionWorkerCompositionOptions,
+  qualifyProductionWorkerDeployment,
 } from "../src/index.js";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
@@ -299,6 +301,13 @@ function composedInvocation(
   return request;
 }
 
+async function compose(options: ProductionWorkerCompositionOptions) {
+  return createProductionWorkerComposition(
+    options,
+    await qualifyProductionWorkerDeployment(options),
+  );
+}
+
 describe("production Worker composition", () => {
   it.each(["next-call", "readiness", "rejected", "closed", "shutdown-cleanup"] as const)(
     "runs the next invocation in the same Worker after a non-preparation Payload disconnect: %s",
@@ -306,7 +315,7 @@ describe("production Worker composition", () => {
       const root = await mkdtemp(`${testTemporaryRoot()}/h-f-worker-`);
       roots.push(root);
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
-      const composition = await createProductionWorkerComposition({
+      const composition = await compose({
         configuration: configuration(root, await snapshot(root)),
         credential: CREDENTIAL,
         authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -460,7 +469,7 @@ describe("production Worker composition", () => {
       const root = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-authority-"));
       roots.push(root);
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
-      const composition = await createProductionWorkerComposition({
+      const composition = await compose({
         configuration: configuration(root, await snapshot(root)),
         credential: CREDENTIAL,
         authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -517,7 +526,7 @@ describe("production Worker composition", () => {
   it("[R2-P2] moves a full-size payload both ways with the Worker's default limits", async () => {
     const root = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-full-payload-"));
     roots.push(root);
-    const composition = await createProductionWorkerComposition({
+    const composition = await compose({
       configuration: configuration(root, await snapshot(root)),
       credential: CREDENTIAL,
       authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -576,7 +585,7 @@ describe("production Worker composition", () => {
     const root = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-composition-"));
     roots.push(root);
     const deployment = await snapshot(root);
-    const composition = await createProductionWorkerComposition({
+    const composition = await compose({
       configuration: configuration(root, deployment),
       credential: CREDENTIAL,
       authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -620,7 +629,7 @@ describe("production Worker composition", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-composition-errors-"));
     roots.push(root);
     await expect(
-      createProductionWorkerComposition({
+      compose({
         configuration: configuration(root, undefined),
         credential: CREDENTIAL,
         authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -636,7 +645,7 @@ describe("production Worker composition", () => {
       endpointEntry({ runtimeIdentity: "fixture-qualifier:v1" }),
     ]);
     await expect(
-      createProductionWorkerComposition({
+      compose({
         configuration: configuration(root, deployment),
         credential: CREDENTIAL,
         authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -654,7 +663,7 @@ describe("production Worker composition", () => {
     roots.push(root);
     const deployment = await snapshot(root, [processEntry()]);
     await expect(
-      createProductionWorkerComposition({
+      compose({
         configuration: configuration(root, deployment),
         credential: CREDENTIAL,
         authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -739,7 +748,7 @@ describe("production Worker composition", () => {
       },
     ]);
     await expect(
-      createProductionWorkerComposition({
+      compose({
         configuration: configuration(root, deployment),
         credential: CREDENTIAL,
         authority: { authorityEpoch: 2, fencingToken: 3 },
@@ -755,7 +764,7 @@ describe("production Worker composition", () => {
     roots.push(root);
     const deployment = await snapshot(root, []);
     await expect(
-      createProductionWorkerComposition({
+      compose({
         configuration: configuration(root, deployment),
         credential: CREDENTIAL,
         authority: { authorityEpoch: 2, fencingToken: 3 },

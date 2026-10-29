@@ -98,6 +98,16 @@ export interface ProductionWorkerCompositionOptions {
   readonly maximumQualificationAgeMs?: number;
 }
 
+export type ProductionWorkerDeploymentOptions = Pick<
+  ProductionWorkerCompositionOptions,
+  "configuration" | "platform" | "clock" | "maximumQualificationAgeMs"
+>;
+
+export interface QualifiedProductionWorkerDeployment {
+  readonly deployment: LoadedCapabilityDeployment;
+  readonly isolation: SandboxedProcessIsolationBackend;
+}
+
 export interface ProductionWorkerReadiness {
   readonly live: boolean;
   readonly ready: boolean;
@@ -291,7 +301,7 @@ function secretSource(configuration: ProductConfiguration, platform: NodeJS.Plat
 }
 
 function loaderOptions(
-  options: ProductionWorkerCompositionOptions,
+  options: ProductionWorkerDeploymentOptions,
   clock: ClockPort,
   platform: NodeJS.Platform,
 ): CapabilityDeploymentSnapshotLoaderOptions {
@@ -384,15 +394,35 @@ async function qualifyDeployment(
   }
 }
 
-export async function createProductionWorkerComposition(
-  options: ProductionWorkerCompositionOptions,
-): Promise<ProductionWorkerComposition> {
+function supportedPlatform(options: ProductionWorkerDeploymentOptions): NodeJS.Platform {
   const platform = options.platform ?? process.platform;
   if (platform !== "linux" && platform !== "darwin") {
     throw new ProductionWorkerCompositionError(
       PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.PLATFORM_UNSUPPORTED,
     );
   }
+  return platform;
+}
+
+export async function qualifyProductionWorkerDeployment(
+  options: ProductionWorkerDeploymentOptions,
+): Promise<QualifiedProductionWorkerDeployment> {
+  const platform = supportedPlatform(options);
+  const clock = options.clock ?? productionClock();
+  const deployment = await new CapabilityDeploymentSnapshotLoader(
+    loaderOptions(options, clock, platform),
+  ).load();
+  completeDeployment(deployment);
+  const isolation = isolationBackend(deployment, clock, platform);
+  await qualifyDeployment(deployment, clock, platform, isolation);
+  return Object.freeze({ deployment, isolation });
+}
+
+export async function createProductionWorkerComposition(
+  options: ProductionWorkerCompositionOptions,
+  qualified: QualifiedProductionWorkerDeployment,
+): Promise<ProductionWorkerComposition> {
+  const platform = supportedPlatform(options);
   const clock = options.clock ?? productionClock();
   const ids = options.ids ?? productionIds();
   const nextId = options.nextId ?? ((scope: string) => ids.next(scope));
@@ -413,12 +443,7 @@ export async function createProductionWorkerComposition(
   positiveSafeInteger(options.authority.authorityEpoch, "authorityEpoch");
   positiveSafeInteger(options.authority.fencingToken, "fencingToken");
 
-  const deployment = await new CapabilityDeploymentSnapshotLoader(
-    loaderOptions(options, clock, platform),
-  ).load();
-  completeDeployment(deployment);
-  const isolation = isolationBackend(deployment, clock, platform);
-  await qualifyDeployment(deployment, clock, platform, isolation);
+  const { deployment, isolation } = qualified;
 
   const maximumBodyBytes = options.maximumBodyBytes ?? DEFAULT_MAXIMUM_BODY_BYTES;
   const maximumPayloadBytes = options.maximumPayloadBytes ?? DEFAULT_MAXIMUM_PAYLOAD_BYTES;
