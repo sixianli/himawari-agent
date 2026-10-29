@@ -27,9 +27,8 @@ import {
 import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
-  openQualifiedDatabase,
-  readSqliteRuntimeStatus,
   SqliteProductStateRepository,
+  sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
   assertProductionSecretSource,
@@ -123,7 +122,6 @@ export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
   AUTHORITY_INACTIVE: "AGENT_AUTHORITY_INACTIVE",
   AUTHORITY_MISMATCH: "AGENT_AUTHORITY_MISMATCH",
   AUTHORITY_LOST: "AGENT_AUTHORITY_LOST",
-  SQLITE_UNQUALIFIED: "AGENT_SQLITE_UNQUALIFIED",
   MODEL_PATH_UNSUPPORTED: "AGENT_MODEL_PATH_UNSUPPORTED",
   PAYLOAD_KEY_REFERENCE_INVALID: "AGENT_PAYLOAD_KEY_REFERENCE_INVALID",
   WORKER_BOOT_BINDING_INVALID: "AGENT_WORKER_BOOT_BINDING_INVALID",
@@ -587,10 +585,6 @@ export async function runAgentService(
     ) {
       throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
     }
-    const database = openQualifiedDatabase(path.join(layout.data, "product.sqlite"));
-    const sqlite = readSqliteRuntimeStatus(database);
-    database.close();
-    if (sqlite.quickCheck !== "ok") throw new Error(AGENT_SERVICE_ERROR_CODES.SQLITE_UNQUALIFIED);
     repository = await SqliteProductStateRepository.open({
       stateRoot: configuration.stateRoot,
       databasePath: path.join(layout.data, "product.sqlite"),
@@ -1792,7 +1786,7 @@ export async function runAgentService(
       deploymentId: configuration.deploymentId,
       authorityEpoch: authority.authorityEpoch,
       fencingToken: authority.fencingToken,
-      sqliteVersion: sqlite.sqliteVersion,
+      sqliteVersion: sqliteLibraryVersion(),
       workerSchemaVersion: handshake.payload.selectedSchemaVersion,
       publicMode: configuration.publicMode,
       ...(boundListenPort === undefined ? {} : { listenPort: boundListenPort }),

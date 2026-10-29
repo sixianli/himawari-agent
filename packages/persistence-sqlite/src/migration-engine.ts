@@ -828,6 +828,15 @@ export function assertWritableSchema(database: SqliteDatabase, writerSequence: n
   }
 }
 
+export function sqliteLibraryVersion(): string {
+  const database = new BetterSqlite3(":memory:");
+  try {
+    return database.prepare("SELECT sqlite_version()").pluck().get() as string;
+  } finally {
+    database.close();
+  }
+}
+
 export function readSqliteRuntimeStatus(database: SqliteDatabase) {
   const sqliteVersion = database.prepare("SELECT sqlite_version()").pluck().get() as string;
   return Object.freeze({

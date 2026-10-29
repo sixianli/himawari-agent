@@ -8,11 +8,26 @@ import {
   writeAuthorityFile,
 } from "@himawari-agent/platform-node";
 import { createV02Fixture } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EXECUTION_WORKER_SERVICE_ERROR_CODES,
   runExecutionWorkerService,
 } from "../src/service-main.js";
+
+const qualification = vi.hoisted(() => ({ started: 0 }));
+
+vi.mock("../src/production-worker-composition.js", async (original) => {
+  const actual = await original<typeof import("../src/production-worker-composition.js")>();
+  return {
+    ...actual,
+    qualifyProductionWorkerDeployment: (
+      options: Parameters<typeof actual.qualifyProductionWorkerDeployment>[0],
+    ) => {
+      qualification.started += 1;
+      return actual.qualifyProductionWorkerDeployment(options);
+    },
+  };
+});
 
 const roots: string[] = [];
 const FIXTURE_SCOPE = createV02Fixture().scope;
@@ -22,6 +37,7 @@ const FAST_STARTUP_TIMING = Object.freeze({
 });
 
 afterEach(async () => {
+  qualification.started = 0;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -153,6 +169,24 @@ describe("execution Worker service main", () => {
     expect(JSON.parse(diagnostics.text())).toMatchObject({
       component: "execution-worker",
       event: "service.failed",
+      code: EXECUTION_WORKER_SERVICE_ERROR_CODES.STARTUP_TIMEOUT,
+    });
+  }, 5_000);
+
+  it("checks its capability deployment while the Agent boot binding is still absent", async () => {
+    const { configurationPath } = await fixture();
+    const diagnostics = capture();
+
+    await expect(
+      runExecutionWorkerService(
+        serviceArguments(configurationPath),
+        diagnostics.stream,
+        diagnostics.stream,
+        FAST_STARTUP_TIMING,
+      ),
+    ).resolves.toBe(1);
+    expect(qualification.started).toBe(1);
+    expect(JSON.parse(diagnostics.text())).toMatchObject({
       code: EXECUTION_WORKER_SERVICE_ERROR_CODES.STARTUP_TIMEOUT,
     });
   }, 5_000);

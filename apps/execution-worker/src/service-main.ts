@@ -16,6 +16,7 @@ import {
 import {
   createProductionWorkerComposition,
   type ProductionWorkerComposition,
+  qualifyProductionWorkerDeployment,
 } from "./production-worker-composition.js";
 
 export const EXECUTION_WORKER_SERVICE_ERROR_CODES = Object.freeze({
@@ -121,6 +122,16 @@ async function waitForAgentBinding(input: {
   }
 }
 
+async function bindingThenQualification<Binding, Qualified>(
+  binding: Promise<Binding>,
+  qualification: Promise<Qualified>,
+): Promise<readonly [Binding, Qualified]> {
+  const [bound, qualified] = await Promise.allSettled([binding, qualification]);
+  if (bound.status === "rejected") throw bound.reason;
+  if (qualified.status === "rejected") throw qualified.reason;
+  return [bound.value, qualified.value] as const;
+}
+
 export async function runExecutionWorkerService(
   arguments_: readonly string[],
   output: NodeJS.WritableStream = process.stdout,
@@ -148,25 +159,31 @@ export async function runExecutionWorkerService(
     const workerInstanceId = `execution-worker:${configuration.deploymentId}`;
     const workerBootId = `worker-boot:${randomUUID()}`;
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
-    const binding = await waitForAgentBinding({
-      layout,
-      configuration,
-      workerInstanceId,
-      workerBootId,
-      timing,
-    });
-    composition = await createProductionWorkerComposition({
-      configuration,
-      credential,
-      authority: {
-        authorityEpoch: binding.authority.authorityEpoch,
-        fencingToken: binding.authority.fencingToken,
+    const [binding, qualified] = await bindingThenQualification(
+      waitForAgentBinding({
+        layout,
+        configuration,
+        workerInstanceId,
+        workerBootId,
+        timing,
+      }),
+      qualifyProductionWorkerDeployment({ configuration }),
+    );
+    composition = await createProductionWorkerComposition(
+      {
+        configuration,
+        credential,
+        authority: {
+          authorityEpoch: binding.authority.authorityEpoch,
+          fencingToken: binding.authority.fencingToken,
+        },
+        agentServiceInstanceId: `agent-service:${configuration.deploymentId}`,
+        agentServiceBootId: binding.agentServiceBootId,
+        workerInstanceId,
+        workerBootId,
       },
-      agentServiceInstanceId: `agent-service:${configuration.deploymentId}`,
-      agentServiceBootId: binding.agentServiceBootId,
-      workerInstanceId,
-      workerBootId,
-    });
+      qualified,
+    );
     server = new ExecutionUdsServer({
       runtimeDirectory: configuration.runtimeDirectory,
       credential,
