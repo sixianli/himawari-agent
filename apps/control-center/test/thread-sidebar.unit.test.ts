@@ -16,6 +16,8 @@ const thread = (id: string, pinOrder: number | null): ThreadSidebarProps["thread
   pinOrder,
   answerLocale: "zh-CN",
   messageWatermark: 0,
+  sourceThreadId: null,
+  sourceWatermark: null,
   createdAt: "2026-09-13T00:00:00Z",
   updatedAt: "2026-09-13T00:00:00Z",
 });

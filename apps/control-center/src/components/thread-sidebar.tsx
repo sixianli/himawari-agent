@@ -2,6 +2,7 @@ import type { ThreadGatewaySnapshot } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useState } from "react";
 import { type ControlCenterRouteState, controlCenterHref } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
+import { LineIcon } from "./answer-footer.js";
 import { ActionButton, ActionMenu, AppLink, ModalDialog } from "./index.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
@@ -135,6 +136,11 @@ export function ThreadSidebar({
       ) : (
         <span className="thread-dot-space" />
       )}
+      {thread.sourceThreadId ? (
+        <span className="thread-fork-mark" role="img" aria-label={message("fork.mark")}>
+          <LineIcon name="fork" />
+        </span>
+      ) : null}
       <span>{title(thread)}</span>
     </AppLink>
   );

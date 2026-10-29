@@ -18,7 +18,7 @@ import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./brows
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import { SunflowerMark } from "./components/brand.js";
 import { ChatComposer } from "./components/chat-composer.js";
-import { ChatHistory } from "./components/chat-history.js";
+import { ChatHistory, type InheritedConversation } from "./components/chat-history.js";
 import {
   ContentPreview,
   type ContentPreviewValue,
@@ -79,6 +79,14 @@ type ThreadIntent =
       readonly sourceTurnId: string;
       readonly sourceWatermark: number;
     };
+
+interface InheritedMessages {
+  readonly forkThreadId: string;
+  readonly sourceThreadId: string;
+  readonly titleRef: string | null;
+  readonly messages: ThreadDetailSnapshot["payload"]["messages"];
+  readonly available: boolean;
+}
 
 interface ConflictState {
   readonly intent: ThreadIntent;
@@ -259,6 +267,8 @@ export function useThreadControlCenter(
   const [collection, setCollection] = useState<ThreadCollectionSnapshot>();
   const [searchResults, setSearchResults] = useState<ThreadCollectionSnapshot>();
   const [detail, setDetail] = useState<ThreadDetailSnapshot>();
+  const [inherited, setInherited] = useState<InheritedMessages>();
+  const inheritedCache = useRef<Record<string, InheritedMessages>>({});
   const [contentByRef, setContentByRef] = useState<Readonly<Record<string, string>>>({});
   const [draft, setDraft] = useState("");
   const [outgoing, setOutgoing] = useState<OutgoingSubmission | null>(null);
@@ -384,6 +394,57 @@ export function useThreadControlCenter(
       setContentByRef({ ...payloadCache.current });
     },
     [client, message],
+  );
+
+  const loadInherited = useCallback(
+    async (thread: ThreadSummary) => {
+      const { threadId, sourceThreadId, sourceWatermark } = thread;
+      if (!client || !configuration || !sourceThreadId || sourceWatermark === null) return;
+      const cached = inheritedCache.current[threadId];
+      if (cached) {
+        setInherited(cached);
+        return;
+      }
+      let value: InheritedMessages;
+      try {
+        const messages: ThreadDetailSnapshot["payload"]["messages"][number][] = [];
+        let titleRef: string | null = null;
+        let afterSequence = 0;
+        for (;;) {
+          const page = await client.queryThread(
+            threadQueryMessage(configuration, "thread.detail", {
+              threadId: sourceThreadId,
+              afterSequence,
+              limit: 1000,
+            }),
+          );
+          if (page.type !== "thread.detail_snapshot") throw new Error("THREAD_SOURCE_UNAVAILABLE");
+          titleRef = page.payload.thread.titleRef;
+          messages.push(
+            ...page.payload.messages.filter((item) => item.sequence <= sourceWatermark),
+          );
+          const next = page.payload.nextSequence;
+          if (next === null || next >= sourceWatermark || next <= afterSequence) break;
+          afterSequence = next;
+        }
+        value = { forkThreadId: threadId, sourceThreadId, titleRef, messages, available: true };
+        void loadPayloads([
+          ...(titleRef ? [titleRef] : []),
+          ...messages.map(({ contentRef }) => contentRef),
+        ]);
+      } catch {
+        value = {
+          forkThreadId: threadId,
+          sourceThreadId,
+          titleRef: null,
+          messages: [],
+          available: false,
+        };
+      }
+      inheritedCache.current[threadId] = value;
+      if (selectedIdRef.current === threadId) setInherited(value);
+    },
+    [client, configuration, loadPayloads],
   );
 
   const readImage = useMemo(
@@ -571,6 +632,7 @@ export function useThreadControlCenter(
           },
         };
         setDetail(current);
+        void loadInherited(current.payload.thread);
         conversationShown = true;
         setReadInBackground(true);
         void loadPayloads([
@@ -626,6 +688,7 @@ export function useThreadControlCenter(
       client,
       configuration,
       loadEnvironment,
+      loadInherited,
       loadPayloads,
       onUnauthorized,
       route.afterCursor,
@@ -1523,6 +1586,21 @@ export function useThreadControlCenter(
       />
     ) : null;
 
+  const forkedThread = detail?.payload.thread.sourceThreadId ? detail.payload.thread : undefined;
+  const shownInherited: InheritedConversation | undefined =
+    forkedThread && inherited?.forkThreadId === forkedThread.threadId
+      ? {
+          title:
+            (inherited.titleRef && contentByRef[inherited.titleRef]) ||
+            threadTitle(inherited.sourceThreadId) ||
+            message("chat.untitled"),
+          messages: inherited.messages,
+          available: inherited.available,
+          onOpenSource: () =>
+            navigate({ ...route, objectId: inherited.sourceThreadId, view: "content" }),
+        }
+      : undefined;
+
   const content = (
     <div className="thread-workarea">
       {(page === "memory" || page === "reminders") && renderPage ? (
@@ -1544,7 +1622,8 @@ export function useThreadControlCenter(
           {feedback}
           {!detail && selectedThreadId && !shownOutgoing ? (
             <ThreadLoadingSkeleton scope="conversation" />
-          ) : (!detail || (!detail.payload.messages.length && !detail.payload.runs.length)) &&
+          ) : (!detail ||
+              (!detail.payload.messages.length && !detail.payload.runs.length && !forkedThread)) &&
             !shownOutgoing ? (
             <ThreadWelcome name={options.ownerName} message={message} />
           ) : (
@@ -1552,6 +1631,7 @@ export function useThreadControlCenter(
               <ChatHistory
                 key={detail?.payload.thread.threadId ?? selectedThreadId ?? "new"}
                 detail={detail}
+                inherited={shownInherited}
                 outgoing={shownOutgoing}
                 onRetry={() => void submitDraft()}
                 contentByRef={contentByRef}

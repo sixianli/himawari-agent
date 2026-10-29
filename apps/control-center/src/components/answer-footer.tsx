@@ -73,7 +73,7 @@ export function AnswerActions({
       <button
         type="button"
         className="answer-action icon-only"
-        title={message("answer.copyHint")}
+        data-tip={message("answer.copyHint")}
         aria-label={message(copied ? "answer.copied" : "answer.copy")}
         onClick={() => copy(text)}
       >
@@ -83,7 +83,7 @@ export function AnswerActions({
         <button
           type="button"
           className="answer-action icon-only"
-          title={message("answer.forkHint")}
+          data-tip={message("answer.forkHint")}
           aria-label={message("answer.fork")}
           onClick={onFork}
         >

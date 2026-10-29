@@ -2522,6 +2522,7 @@ details.step-technical > summary::-webkit-details-marker {
   align-items: center;
   gap: 5px;
   height: 28px;
+  min-height: 0;
   padding: 0 8px;
   border: 0;
   border-radius: 7px;
@@ -4330,4 +4331,106 @@ details.settings-details > summary::-webkit-details-marker {
 }
 .dropdown-menu button[aria-selected="true"] svg {
   color: var(--accent);
+}
+.answer-action[data-tip] {
+  position: relative;
+}
+.answer-action[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--text);
+  color: var(--background);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+.answer-action[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: none;
+}
+@media (hover: hover) {
+  .answer-action[data-tip]:hover::after {
+    opacity: 1;
+    transform: none;
+    transition-delay: 0.35s;
+  }
+}
+.fork-origin,
+.fork-inherited,
+.fork-divider {
+  max-width: 680px;
+  margin-inline: auto;
+}
+.fork-origin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.fork-origin-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fork-origin-open {
+  flex: none;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.fork-origin-open:hover {
+  text-decoration: underline;
+}
+.fork-inherited {
+  opacity: 0.62;
+}
+.fork-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  margin-bottom: 18px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.fork-divider::before,
+.fork-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.thread-fork-mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+}
+.thread-fork-mark .line-icon {
+  width: 13px;
+  height: 13px;
 }
