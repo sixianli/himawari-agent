@@ -8,6 +8,7 @@ export interface ProductionTitledRuntimeOptions {
   readonly runtime: AgentRuntimePort;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
   readonly titles?: BackgroundStart;
+  readonly uploads?: BackgroundStart;
   readonly memoryCapture?: BackgroundStart;
   readonly memoryEpisodes?: BackgroundStart & {
     recordCompaction(request: RuntimeRequest, proposalRef: string): Promise<void>;
@@ -31,6 +32,7 @@ export function createProductionTitledRuntime(
     cancel: (runId) => runtime.cancel(runId),
     async *run(request: RuntimeRequest) {
       await options.prepareQueuedSandboxExecutions?.(request);
+      const uploadsRecorded = options.uploads?.start(request);
       let requested = false;
       let titleAdmission: Promise<void> | undefined;
       let memoryAdmission: Promise<void> | undefined;
@@ -53,6 +55,7 @@ export function createProductionTitledRuntime(
             paused ? undefined : memoryEpisodes.recordCompaction(request, event.proposalRef),
           );
         if (ADMISSION_BARRIER_EVENTS.has(event.type)) {
+          await uploadsRecorded;
           await titleAdmission;
           await memoryAdmission;
         }

@@ -1329,8 +1329,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       const { authentication, agentId, body } = await filesRequest(request);
       if (
         Object.keys(body).some(
-          (key) => !["threadId", "kind", "search", "before", "limit"].includes(key),
+          (key) => !["threadId", "kind", "origin", "search", "before", "limit"].includes(key),
         ) ||
+        (body["origin"] !== undefined &&
+          body["origin"] !== null &&
+          body["origin"] !== "uploaded" &&
+          body["origin"] !== "generated") ||
         (body["kind"] !== undefined &&
           body["kind"] !== null &&
           !FILE_KINDS.includes(body["kind"] as (typeof FILE_KINDS)[number])) ||
@@ -1349,6 +1353,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
           agentId,
           threadId: optionalText(body["threadId"], 128),
           kind: (body["kind"] ?? null) as (typeof FILE_KINDS)[number] | null,
+          origin: (body["origin"] ?? null) as "uploaded" | "generated" | null,
           search: optionalText(body["search"], 256),
           before: optionalText(body["before"], 512),
           limit: (body["limit"] as number | undefined) ?? 50,

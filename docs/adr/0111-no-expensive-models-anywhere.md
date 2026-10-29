@@ -129,6 +129,7 @@ date: "2026-10-29"
 - 后续：
   - 草稿 PR #95 加的“被测模型换成 Claude”开关要删掉，否则合并后 `npm run check` 失败（已告知该线程）。
   - 新裁判校准和抽查：等 Andy 同意费用后再跑。
+- 2026-10-29 跟进：Andy 看过[价格对比](#prices)后 14:44 选定第二层裁判改用 `zai/glm-5.3-flash`（智谱，输入 0.15、输出 0.50 美元每百万 token，和 Qwen3.8 Flash 几乎同价，同样不是 DeepSeek 一家），只改了 `test/fixtures/jarvis-test/models.json`。两个模型当裁判谁更准都没测过；校准和抽查照旧，第一次跑前先报费用。
 
 [↑ 返回阅读导航](#contents)
 

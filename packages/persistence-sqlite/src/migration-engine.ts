@@ -513,10 +513,24 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 63,
+    name: "owner_preferences",
+    changeSet: "owner-preferences",
+    phase: "expand" as const,
+    file: "0063_owner_preferences.sql",
+  },
+  {
+    sequence: 64,
+    name: "uploaded_thread_files",
+    changeSet: "uploaded-thread-files",
+    phase: "expand" as const,
+    file: "0064_uploaded_thread_files.sql",
+  },
+  {
+    sequence: 65,
     name: "memory_profile_pins",
     changeSet: "memory-profile-pins",
     phase: "expand" as const,
-    file: "0063_memory_profile_pins.sql",
+    file: "0065_memory_profile_pins.sql",
   },
 ] as const;
 

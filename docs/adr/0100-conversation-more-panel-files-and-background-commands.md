@@ -22,6 +22,7 @@ date: "2026-10-28"
 - [Pi 复用与 Himawari 负责的部分](#pi-reuse)
 - [后果](#consequences)
 - [关联文档](#references)
+- [后续](#follow-up)
 
 <a id="context"></a>
 
@@ -175,5 +176,13 @@ AGENTS.md 和 [v5 增补第 5 条](../execution/specs/2026-09-15-control-center-
 - [SOURCE: docs/engineering-casebook.md#case-more-panel]
 - 定稿原型副本：`docs/assets/control-center/2026-10-28-v8/`（`desktop.dc.html`、`phone.dc.html`、`canvas.json`，需要 claude.ai 的 Design 画布才能运行；可点版本见上面的原型链接）
 - 设计说明：<https://claude.ai/artifact/VVkVvPptUS66XvXQ4HdQGJ>；上一份文件交付调研：<https://claude.ai/artifact/3DVB7FZb7SKpG1zw9JSVtR>
+
+[↑ 返回阅读导航](#contents)
+
+<a id="follow-up"></a>
+
+## 后续
+
+- 2026-10-29：[ADR 0110](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md) 按 Andy 选的顶栏方案 A，把“更多”按钮改成文件夹图标，旁边加一个“⋯”对话操作菜单（重命名、置顶、归档），两个按钮彼此分开；并把主人上传的文件列进全局文件页，标“我上传的”。本 ADR 的“更多”面板（文件和后台两个标签、按轮分组）和不加通用面板的基线规则不变。
 
 [↑ 返回阅读导航](#contents)

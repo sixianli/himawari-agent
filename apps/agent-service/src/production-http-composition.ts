@@ -80,6 +80,10 @@ import {
   ProductionMemoryControl,
 } from "./production-memory-control.js";
 import {
+  PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+  ProductionOwnerPreferencesControl,
+} from "./production-owner-preferences-control.js";
+import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
   PRODUCTION_PROACTIVE_OPERATIONS,
@@ -606,6 +610,7 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
+        ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -993,6 +998,11 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
+    ownerPreferencesControl: new ProductionOwnerPreferencesControl({
+      configuration,
+      store: repository.ownerPreferences(),
+      clock: { now: clock },
+    }),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(

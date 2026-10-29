@@ -175,6 +175,14 @@ export const governanceMessages = [
     rating: null,
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
+  fixture("query", "owner.preferences.read", {}),
+  fixture("snapshot", "owner.preferences.snapshot", {
+    name: "Andy",
+    locale: "zh-CN",
+    accent: "teal",
+    updatedAt: "2026-10-29T05:00:00.000Z",
+  }),
+  fixture("command", "owner.preferences.set", { name: null, locale: "ja", accent: null }),
   fixture("query", "memory.overview.read", {}),
   fixture("snapshot", "memory.overview.snapshot", {
     memories: [

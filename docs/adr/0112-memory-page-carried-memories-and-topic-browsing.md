@@ -33,7 +33,7 @@ date: "2026-10-29"
 - “全部记忆”里大类、小类、状态三行筛选按钮关系不清，用户会困惑。
 - 一条记忆改过很多次，用一个箭头连起来不好看。这一条交给记忆历史线程，本 ADR 不涉及。
 
-本线程先调研，再按[产品愿景](../product-vision.md)核对，然后发了可切换的原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>。原型有方案 A、B、C，可切电脑和手机、13 条和 1 万条两种数据量、中英日三种语言。Andy 在原型上批注“选方案A”。原型存为基线 [`docs/assets/control-center/2026-10-29-v11/`](../assets/control-center/2026-10-29-v11/SHA256SUMS)。
+本线程先调研，再按[产品愿景](../product-vision.md)核对，然后发了可切换的原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>。原型有方案 A、B、C，可切电脑和手机、13 条和 1 万条两种数据量、中英日三种语言。Andy 在原型上批注“选方案A”。原型存为基线 [`docs/assets/control-center/2026-10-29-v12/`](../assets/control-center/2026-10-29-v12/SHA256SUMS)。
 
 [↑ 返回阅读导航](#contents)
 
@@ -62,7 +62,7 @@ date: "2026-10-29"
 
 谁来决定带哪些，规则如下：
 
-1. Andy 的选择优先。每条记忆的详情里有开关“每次对话都带上”。打开后，这条一定排在自动挑选的前面。关掉后，这条不再自动带上，只在和当前对话相关时被检索出来。选择存在新表 `memory_profile_pins`（迁移 0063），按记忆编号一行，记忆删除时一起删除。
+1. Andy 的选择优先。每条记忆的详情里有开关“每次对话都带上”。打开后，这条一定排在自动挑选的前面。关掉后，这条不再自动带上，只在和当前对话相关时被检索出来。选择存在新表 `memory_profile_pins`（迁移 0065），按记忆编号一行，记忆删除时一起删除。
 2. Andy 没选过的记忆，仍按原来的自动规则挑选（类别、重要度 ≥600、非敏感）。
 3. 不能打开的情况：敏感记忆，以及事件、健康、财务、其他四类记忆，开关是灰的，旁边写原因。服务端也会拒绝，返回 `MEMORY_NOT_PINNABLE`。
 4. 总长仍然是 2000 字。放不下的条目会列出来，同时显示已用字数。
@@ -137,11 +137,11 @@ date: "2026-10-29"
 
 - [SOURCE: docs/product-vision.md]
 - [SOURCE: docs/execution/specs/2026-10-25-self-built-memory-engine-design.md#profile]
-- [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md#v11-memory-page]
+- [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md#v12-memory-page]
 - [ADR 0075 自研记忆引擎](0075-self-built-memory-engine.md)
 - [ADR 0105 UI 批次（记忆页独立）](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)
 - [工程案例库 案例 54](../engineering-casebook.md#case-carried-memories)
 - [事故与门槛清单 I-21](../incidents-and-gates.md)
-- 原型：<https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；基线：[`docs/assets/control-center/2026-10-29-v11/`](../assets/control-center/2026-10-29-v11/SHA256SUMS)
+- 原型：<https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>；基线：[`docs/assets/control-center/2026-10-29-v12/`](../assets/control-center/2026-10-29-v12/SHA256SUMS)
 
 [↑ 返回阅读导航](#contents)

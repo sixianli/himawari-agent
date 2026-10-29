@@ -2,6 +2,7 @@ import type { ThreadGatewaySnapshot } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useState } from "react";
 import { type ControlCenterRouteState, controlCenterHref } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
+import { LineIcon } from "./answer-footer.js";
 import { ActionButton, ActionMenu, AppLink, ModalDialog } from "./index.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
@@ -95,7 +96,13 @@ export function ThreadSidebar({
   const filesOpen = openPage !== null;
   const title = (thread: Thread) =>
     (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
-  const list = threads.filter((thread) => thread.status === "active");
+  const list = threads.filter(
+    (thread) =>
+      thread.status === "active" &&
+      (thread.messageWatermark > 0 ||
+        thread.sourceThreadId !== null ||
+        thread.threadId === selectedThreadId),
+  );
   const pinned = list
     .filter((thread) => thread.pinOrder !== null)
     .sort((a, b) => (a.pinOrder ?? 0) - (b.pinOrder ?? 0));
@@ -135,6 +142,11 @@ export function ThreadSidebar({
       ) : (
         <span className="thread-dot-space" />
       )}
+      {thread.sourceThreadId ? (
+        <span className="thread-fork-mark" role="img" aria-label={message("fork.mark")}>
+          <LineIcon name="fork" />
+        </span>
+      ) : null}
       <span>{title(thread)}</span>
     </AppLink>
   );
@@ -276,6 +288,7 @@ export function ThreadSidebar({
             }}
           >
             <input
+              data-autofocus
               type="search"
               autoComplete="off"
               aria-label={message("threads.search")}

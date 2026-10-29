@@ -1,6 +1,6 @@
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 
-export const THREAD_ARTIFACT_SOURCES = ["write", "edit", "bash"] as const;
+export const THREAD_ARTIFACT_SOURCES = ["write", "edit", "bash", "upload"] as const;
 export type ThreadArtifactSource = (typeof THREAD_ARTIFACT_SOURCES)[number];
 
 export const THREAD_ARTIFACT_KINDS = [
@@ -13,6 +13,9 @@ export const THREAD_ARTIFACT_KINDS = [
   "other",
 ] as const;
 export type ThreadArtifactKind = (typeof THREAD_ARTIFACT_KINDS)[number];
+
+export const THREAD_ARTIFACT_ORIGINS = ["uploaded", "generated"] as const;
+export type ThreadArtifactOrigin = (typeof THREAD_ARTIFACT_ORIGINS)[number];
 
 export const THREAD_ARTIFACT_LIST_LIMIT = 200;
 
@@ -44,6 +47,7 @@ export type ThreadArtifactRegistration = Omit<ThreadArtifact, "version" | "turn"
 export interface ThreadArtifactListQuery extends ThreadArtifactScope {
   readonly threadId: string | null;
   readonly kind: ThreadArtifactKind | null;
+  readonly origin?: ThreadArtifactOrigin | null;
   readonly search: string | null;
   readonly before: string | null;
   readonly limit: number;

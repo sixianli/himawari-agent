@@ -14,7 +14,7 @@ Only the user switches the mode. Change `DELIVERY_MODE` only when the user asks 
 Keep these basic checks for every change to product code, configuration, or tests:
 
 1. The targeted tests for the change: the new or reproducing test and the files `python3 scripts/layer0-tests/check-layer0-tests.py derive` lists. A bug fix still starts by reproducing the bug in a test.
-2. `npm run check` (format, lint, type checks, module boundaries, coverage and invariant checks, the machine-secret scan, and strict documentation validation).
+2. `npm run check` (format, lint, type checks, module boundaries, coverage and invariant checks, the machine-secret scan, a real-browser layout audit of the Himawari web page in three languages, two widths and both themes (`npm run check:layout`, about 80 seconds, needs Playwright's Chromium), and strict documentation validation).
 3. `npm run build`.
 
 Run them on the cloud server as `himawari-ci` or on Hermes, as [Test and Production Hosts](test-and-production-hosts.md) says; never on the MacBook. A failing basic check blocks the commit like before.

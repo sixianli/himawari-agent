@@ -91,6 +91,8 @@ export const messages = {
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
   "chat.error.contextMemoryUnavailable":
     "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
+  "chat.error.quotaExceeded":
+    "The model service turned this request down because its spending limit is used up. This is not a network problem. Raise or remove the limit in the Vercel AI Gateway budgets, then try again.",
   "chat.error.contextWindowExhausted":
     "This conversation used up the model's available context, so the model could not continue answering. Start a new conversation to continue; completed tool steps are kept.",
   "chat.error.failed": "This run failed. Saved messages and execution records remain available.",
@@ -113,15 +115,22 @@ export const messages = {
   "step.active": "{step}",
   "step.thinking": "Thought",
   "step.memoryFound": "Related memories found: {count}",
-  "step.memoryProfile": "Memories from your profile: {count}",
+  "step.memoryProfile": "Memories brought into every conversation: {count}",
   "step.thinkingFor": "Thought for {time}",
   "process.took": "Took {time}",
   "chat.moreModels": "More models ({count})",
   "answer.copy": "Copy answer",
   "answer.copied": "Copied",
   "answer.copyHint": "Copy only the answer text above, without sources or files",
-  "answer.fork": "Start a new chat from here",
-  "answer.forkHint": "The new chat keeps everything up to this turn; this chat stays as it is",
+  "answer.fork": "Branch into new chat",
+  "answer.forkHint":
+    "Branch into a new chat with everything up to this turn. The original stays as it is.",
+  "fork.banner": "Branched from “{title}” at turn {turn}",
+  "fork.bannerMissing": "Branched from another chat that no longer exists",
+  "fork.openSource": "Open original",
+  "fork.inheritedLabel": "From the original chat",
+  "fork.divider": "Above is from the original · New chat starts here",
+  "fork.mark": "Branched chat",
   "answer.at": "{at, time, short}",
   "answer.sources": "{count, plural, one {# source} other {# sources}}",
   "process.tokens": "Tokens",
@@ -144,6 +153,12 @@ export const messages = {
   "chat.callLifecycle": "Call lifecycle",
   "chat.requestArguments": "Request arguments",
   "chat.toolResult": "Returned result",
+  "step.outcome.ok": "Succeeded",
+  "step.outcome.failed": "Failed",
+  "step.outcome.exitCode": "exit code {code}",
+  "step.viewOutput": "View output",
+  "step.technical": "Technical details",
+  "step.commandDetails": "Command details",
   "chat.argumentsUnavailable": "Request arguments were not recorded",
   "chat.resultUnavailable": "No displayable result was received. See the step status.",
   "chat.responseUnavailable": "This response has no displayable text. See the execution status.",
@@ -151,10 +166,8 @@ export const messages = {
   "chat.depth": "Thinking depth (next turn)",
   "chat.search.disclosure":
     "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
-  "chat.search.recipients": "Recipients:",
   "chat.search.remember": "Remember my choice and allow future web searches",
-  "chat.search.afterRevoke":
-    "After turning this off, the next search asks for permission in its conversation.",
+  "chat.search.afterRevoke": "It’s off now, so Himawari asks in the chat before it searches.",
   "chat.search.other": "Actions that ask you first",
   "review.archiveDescription": "Archiving tidies the list and keeps the conversation.",
   "review.manageArchives": "Manage",
@@ -339,6 +352,7 @@ export const messages = {
   "more.files.group": "Turn {turn} · {title}",
   "more.file.written": "written in turn {turn}",
   "more.file.edited": "edited in turn {turn}",
+  "more.file.uploaded": "you uploaded in turn {turn}",
   "more.reportShort.completed": "{command} finished · {duration} · {at, time, short}",
   "more.reportShort.failed": "{command} failed · {duration} · {at, time, short}",
   "more.reportShort.stopped": "{command} stopped as you asked · ran {duration}",
@@ -416,7 +430,9 @@ export const messages = {
   "library.web": "Web pages",
   "library.images": "Images",
   "library.code": "Code",
-  "library.empty": "No files yet. Files Himawari makes in your chats will show up here.",
+  "library.uploaded": "My uploads",
+  "library.emptyTitle": "No files yet",
+  "library.empty": "Files Himawari makes in your chats and files you upload will show up here.",
   "library.noMatch": "No files match.",
   "library.loadFailed": "The file list couldn’t be loaded.",
   "library.date": "{at, date, ::Md}",
@@ -429,6 +445,7 @@ export const messages = {
   "preview.widen": "Widen preview",
   "preview.narrow": "Narrow preview",
   "preview.copy": "Copy file contents",
+  "preview.info": "File info",
   "preview.contents": "Contents",
   "preview.total": "Total",
   "preview.missing":
@@ -513,7 +530,6 @@ export const messages = {
   "threads.search": "Search threads",
   "threads.searchPlaceholder": "Search titles or message content you can access",
   "threads.messages": "Committed messages",
-  "threads.messagesEmpty": "No committed messages yet",
   "threads.rename": "Rename",
   "threads.pin": "Pin",
   "threads.unpin": "Unpin",
@@ -626,8 +642,8 @@ export const messages = {
   "memory.justSaved": "Just saved",
   "memory.justSavedFrom": "From “{title}”, saved at {time}",
   "memory.search": "Search memory",
-  "memory.empty":
-    "No memories yet. Preferences, habits and long-term goals you mention will appear here.",
+  "memory.empty": "Preferences, habits and long-term goals you mention will appear here.",
+  "memory.emptyTitle": "No memories yet",
   "memory.sensitive": "Sensitive",
   "memory.inferred": "Inferred",
   "memory.source": "Source conversation",
@@ -871,8 +887,8 @@ export const messages = {
   "memory.page.statusLink":
     "{s, select, archived {Archived ({count})} other {Recently deleted ({count})}}",
   "reminders.group": "{g, select, today {Today} week {Next 7 days} other {Later}}",
-  "reminders.empty":
-    "No reminders yet. Just say “Remind me to take an umbrella at 8 tomorrow” in a chat.",
+  "reminders.emptyTitle": "No reminders yet",
+  "reminders.empty": "Just say “Remind me to take an umbrella at 8 tomorrow” in a chat.",
   "reminders.due": "{count, plural, one {# reminder is due} other {# reminders are due}}",
   "process.did.search":
     "{count, plural, one {searched the web once} other {searched the web # times}}",
@@ -888,7 +904,11 @@ export const messages = {
   "process.cacheHitHint":
     "The share of this turn's input that the model provider reused from context it had already processed (the LLM's KV cache). That part is faster and cheaper.",
   "chat.search.purpose": "Search the web automatically when a question needs current information",
-  "chat.search.whatIsSent": "What the search services receive",
+  "chat.search.whatIsSent": "What a search sends",
+  "chat.search.sentQuery":
+    "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
+  "chat.search.sentLimits":
+    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
   "chat.search.otherScope":
     "Deleting files, running commands that use the network, and reading or writing files outside the workspace",
   "chat.search.alwaysOn": "Always on",

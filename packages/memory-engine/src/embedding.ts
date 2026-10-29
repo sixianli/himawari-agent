@@ -204,6 +204,7 @@ export class GatewayEmbedder implements Embedder {
     if (!response.ok)
       throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, "EMBEDDING_HTTP_FAILURE", {
         status: String(response.status),
+        ...(await gatewayErrorDetails(response)),
       });
     const body = (await response.json()) as Omit<EmbeddingResponse, "data"> & {
       readonly data: readonly { readonly embedding: unknown; readonly index: number }[];
@@ -218,4 +219,17 @@ export class GatewayEmbedder implements Embedder {
         : [],
     };
   }
+}
+
+async function gatewayErrorDetails(
+  response: Response,
+): Promise<{ readonly gatewayErrorType?: string; readonly gatewayErrorMessage?: string }> {
+  const body = await response.json().catch(() => null);
+  const error = body && typeof body === "object" ? (body as { error?: unknown }).error : undefined;
+  if (!error || typeof error !== "object") return {};
+  const { type, message } = error as { type?: unknown; message?: unknown };
+  return {
+    ...(typeof type === "string" ? { gatewayErrorType: type.slice(0, 80) } : {}),
+    ...(typeof message === "string" ? { gatewayErrorMessage: message.slice(0, 300) } : {}),
+  };
 }

@@ -36,6 +36,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.decision.rate",
   "proactive.audit.respond",
   "proactive.source.manage",
+  "owner.preferences.read",
+  "owner.preferences.snapshot",
+  "owner.preferences.set",
   "memory.overview.read",
   "memory.overview.snapshot",
   "memory.approval.respond",
@@ -450,6 +453,23 @@ const proactiveOverviewSnapshotSchema = object({
     }),
     generatedAt: timestamp,
   }),
+});
+const ownerPreferencesSchema = {
+  name: nullable(boundedString(40)),
+  locale: nullable(enumeration(["zh-CN", "en", "ja"])),
+  accent: nullable(enumeration(["violet", "blue", "teal", "amber", "rose", "graphite"])),
+};
+const ownerPreferencesQuerySchema = object({
+  ...envelope("query", "owner.preferences.read"),
+  payload: object({}),
+});
+const ownerPreferencesSnapshotSchema = object({
+  ...envelope("snapshot", "owner.preferences.snapshot"),
+  payload: object({ ...ownerPreferencesSchema, updatedAt: nullable(timestamp) }),
+});
+const ownerPreferencesSetCommandSchema = object({
+  ...commandEnvelope("owner.preferences.set"),
+  payload: object(ownerPreferencesSchema),
 });
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
@@ -1852,6 +1872,9 @@ const schemasByType = {
   "proactive.decision.rate": proactiveDecisionRateCommandSchema,
   "proactive.audit.respond": proactiveAuditRespondCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
+  "owner.preferences.read": ownerPreferencesQuerySchema,
+  "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
+  "owner.preferences.set": ownerPreferencesSetCommandSchema,
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,

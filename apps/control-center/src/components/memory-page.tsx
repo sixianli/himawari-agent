@@ -1,5 +1,6 @@
 import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryItem, MemoryModel, MemoryOverview } from "../memory.js";
 import {
@@ -13,7 +14,7 @@ import {
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
-import { ActionButton } from "./primitives.js";
+import { ActionButton, EmptyState } from "./primitives.js";
 import {
   clock,
   dayAndClock,
@@ -63,15 +64,6 @@ const pinBlock = (item: MemoryItem) =>
     : PINNABLE.has(item.category)
       ? null
       : "category";
-const date = (value: string) => new Date(value).toLocaleDateString();
-const time = (value: string) =>
-  new Date(value).toLocaleString(undefined, {
-    ...(new Date(value).getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 function Chips<T extends string>({
   label,
@@ -128,6 +120,7 @@ function MemoryHistory({
   memory: MemoryModel;
   message: Message;
 }) {
+  const { moment: time } = useLocaleFormat();
   const past = [...history].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
   const hidden = past.length - HISTORY_HEAD - older;
   const folded = hidden > 1 ? hidden : 0;
@@ -227,6 +220,7 @@ function MemoryLine({
   message: Message;
   onOpen: () => void;
 }) {
+  const { day: date } = useLocaleFormat();
   const sensitive = item.dataClassification === "sensitive" || item.topic;
   return (
     <li className="memory-row" data-status={item.status} data-just-saved={justSaved || undefined}>
@@ -292,6 +286,7 @@ function MemoryDetail({
   onOpenThread: (threadId: string) => void;
   onClose: () => void;
 }) {
+  const { moment: time } = useLocaleFormat();
   const [editing, setEditing] = useState(false);
   const [older, setOlder] = useState(0);
   const panel = useRef<HTMLElement>(null);
@@ -668,6 +663,14 @@ export function RemindersPage({
     );
   const mailCount = [...mail.values()].reduce((total, rows) => total + rows.length, 0);
   const watching = proactive?.overview && proactive.overview.connection.status !== "disconnected";
+  const notifyNote = (
+    <>
+      {message(watching ? "proactive.foot" : "memory.page.notify")}{" "}
+      <button type="button" className="reminders-link" onClick={openNotificationSettings}>
+        {message("push.openSettings")}
+      </button>
+    </>
+  );
   return (
     <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
       <header className="memory-header">
@@ -738,15 +741,18 @@ export function RemindersPage({
           {mailGroup("none")}
           {mailGroup("know")}
           {!overview.reminders.length && !overview.upcoming.length && !mailCount ? (
-            <p className="reminders-empty">{message("reminders.empty")}</p>
+            <EmptyState
+              icon={<LineIcon name="bell" />}
+              title={message("reminders.emptyTitle")}
+              footer={notifyNote}
+            >
+              {message("reminders.empty")}
+            </EmptyState>
           ) : null}
           {proactive ? <ProactiveAudit proactive={proactive} message={message} /> : null}
-          <p className="settings-note reminders-notify">
-            {message(watching ? "proactive.foot" : "memory.page.notify")}{" "}
-            <button type="button" className="reminders-link" onClick={openNotificationSettings}>
-              {message("push.openSettings")}
-            </button>
-          </p>
+          {overview.reminders.length || overview.upcoming.length || mailCount ? (
+            <p className="settings-note reminders-notify">{notifyNote}</p>
+          ) : null}
         </>
       )}
       {notice ? (
@@ -1075,6 +1081,7 @@ function MemoryBrowser({
   since: string | null;
   onOpenThread: (threadId: string) => void;
 }) {
+  const { moment: time } = useLocaleFormat();
   const [search, setSearch] = useState("");
   const [scope, setScope] = useState<Scope>({
     status: "active",
@@ -1275,9 +1282,13 @@ function MemoryBrowser({
             <PeopleCard people={overview.people} overview={overview} message={message} />
           ) : null}
           {!shown.length ? (
-            <p className="settings-note">
-              {visible.length ? message("memory.page.noResults") : message("memory.empty")}
-            </p>
+            visible.length ? (
+              <EmptyState title={message("memory.page.noResults")} />
+            ) : (
+              <EmptyState title={message("memory.emptyTitle")}>
+                {message("memory.empty")}
+              </EmptyState>
+            )
           ) : grouped ? (
             topics.map((topic) => {
               const rows = shown.filter((item) => item.category === topic.category);
@@ -1365,6 +1376,7 @@ function TimelineTab({
   message: Message;
   onConfirm: () => void;
 }) {
+  const { dayHeading } = useLocaleFormat();
   const [filter, setFilter] = useState("all");
   const overview = memory.overview;
   if (!overview) return null;
@@ -1437,11 +1449,7 @@ function TimelineTab({
     .sort((a, b) => b.at.localeCompare(a.at));
   const days = new Map<string, Event[]>();
   for (const event of events) {
-    const day = new Date(event.at).toLocaleDateString(undefined, {
-      month: "long",
-      day: "numeric",
-      weekday: "short",
-    });
+    const day = dayHeading(event.at);
     days.set(day, [...(days.get(day) ?? []), event]);
   }
   const pending = new Set(

@@ -94,6 +94,8 @@ export const messages = {
   "chat.error.unavailable": "モデルサービスを現在利用できません。後で再試行してください。",
   "chat.error.contextMemoryUnavailable":
     "関連する記憶の検索中にモデルサービスへの接続に失敗しました。このターンでは対話モデルを呼び出しておらず、ツールも実行していません。",
+  "chat.error.quotaExceeded":
+    "モデルサービスの利用上限に達したため、リクエストが拒否されました。ネットワークの問題ではありません。Vercel AI Gateway の予算で上限を引き上げるか解除してから、もう一度お試しください。",
   "chat.error.contextWindowExhausted":
     "この会話でモデルが使えるコンテキストを使い切ったため、回答を続けられませんでした。新しい会話で続けてください。完了したツール操作は保持されます。",
   "chat.error.failed":
@@ -117,15 +119,22 @@ export const messages = {
   "step.active": "{step}中",
   "step.thinking": "推論",
   "step.memoryFound": "関連する記憶を {count} 件発見",
-  "step.memoryProfile": "プロフィールの記憶 {count} 件を参照",
+  "step.memoryProfile": "毎回の会話に持っていく記憶 {count} 件を参照",
   "step.thinkingFor": "{time} 推論",
   "process.took": "所要 {time}",
   "chat.moreModels": "その他のモデル（{count}）",
   "answer.copy": "回答をコピー",
   "answer.copied": "コピーしました",
   "answer.copyHint": "上の回答本文だけをコピーします（出典とファイルは含みません）",
-  "answer.fork": "ここから新しい会話を始める",
-  "answer.forkHint": "新しい会話にはこのターンまでの内容が入り、元の会話はそのまま残ります",
+  "answer.fork": "新しい会話に分岐",
+  "answer.forkHint":
+    "このターンまでの内容をすべて引き継いで新しい会話に分岐します。元の会話はそのままです。",
+  "fork.banner": "「{title}」の第 {turn} ターンから分岐",
+  "fork.bannerMissing": "別の会話から分岐しました。元の会話はもうありません",
+  "fork.openSource": "元の会話を開く",
+  "fork.inheritedLabel": "元の会話の内容",
+  "fork.divider": "ここまで元の会話 · ここから新しい会話",
+  "fork.mark": "分岐した会話",
   "answer.at": "{at, time, short}",
   "answer.sources": "出典 {count} 件",
   "process.tokens": "トークン",
@@ -148,6 +157,12 @@ export const messages = {
   "chat.callLifecycle": "呼び出しの流れ",
   "chat.requestArguments": "リクエスト引数",
   "chat.toolResult": "返却された結果",
+  "step.outcome.ok": "成功",
+  "step.outcome.failed": "失敗",
+  "step.outcome.exitCode": "終了コード {code}",
+  "step.viewOutput": "出力を見る",
+  "step.technical": "技術的な詳細",
+  "step.commandDetails": "コマンドの詳細",
   "chat.argumentsUnavailable": "リクエスト引数の記録がありません",
   "chat.resultUnavailable": "表示可能な結果がありません。ステップの状態を確認してください。",
   "chat.responseUnavailable":
@@ -156,9 +171,8 @@ export const messages = {
   "chat.depth": "思考の深さ（次のターン）",
   "chat.search.disclosure":
     "生成した検索語を 下記のウェブ検索サービスに送信します（ページを読む場合はその URL も送信します）。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。認証情報は引き続き検出・遮断します。取り消すと以後の検索に確認が必要です。",
-  "chat.search.recipients": "送信先：",
   "chat.search.remember": "選択を記憶して、今後のウェブ検索を許可する",
-  "chat.search.afterRevoke": "オフにすると、次の検索時に該当する会話で確認します。",
+  "chat.search.afterRevoke": "いまはオフなので、検索が必要なときは会話で先に確認します。",
   "chat.search.other": "先に確認する操作",
   "review.archiveDescription": "アーカイブは一覧を整理し、会話の内容を保持します。",
   "review.manageArchives": "管理",
@@ -342,6 +356,7 @@ export const messages = {
   "more.files.group": "{turn}ターン目 · {title}",
   "more.file.written": "{turn}ターン目で作成",
   "more.file.edited": "{turn}ターン目で変更",
+  "more.file.uploaded": "{turn}ターン目であなたがアップロード",
   "more.reportShort.completed": "{command} が完了 · {duration} · {at, time, short}",
   "more.reportShort.failed": "{command} が失敗 · {duration} · {at, time, short}",
   "more.reportShort.stopped": "{command} をご指示により停止 · {duration} 実行",
@@ -418,8 +433,10 @@ export const messages = {
   "library.web": "Web ページ",
   "library.images": "画像",
   "library.code": "コード",
+  "library.uploaded": "自分のアップロード",
+  "library.emptyTitle": "まだファイルはありません",
   "library.empty":
-    "まだファイルはありません。Himawari がチャットで作ったファイルがここに表示されます。",
+    "Himawari がチャットで作ったファイルと、あなたがアップロードしたファイルがここに表示されます。",
   "library.noMatch": "条件に合うファイルはありません。",
   "library.loadFailed": "ファイル一覧を読み込めませんでした。",
   "library.date": "{at, date, ::Md}",
@@ -432,6 +449,7 @@ export const messages = {
   "preview.widen": "プレビューを広げる",
   "preview.narrow": "プレビューを狭める",
   "preview.copy": "ファイルの内容をコピー",
+  "preview.info": "ファイル情報",
   "preview.contents": "目次",
   "preview.total": "合計",
   "preview.missing":
@@ -518,7 +536,6 @@ export const messages = {
   "threads.search": "スレッドを検索",
   "threads.searchPlaceholder": "アクセス可能なタイトルまたはメッセージ内容を検索",
   "threads.messages": "確定済みメッセージ",
-  "threads.messagesEmpty": "確定済みメッセージはまだありません",
   "threads.rename": "名前を変更",
   "threads.pin": "ピン留め",
   "threads.unpin": "ピン留めを解除",
@@ -632,7 +649,8 @@ export const messages = {
   "memory.justSaved": "保存したばかり",
   "memory.justSavedFrom": "会話「{title}」から {time} に保存",
   "memory.search": "メモリを検索",
-  "memory.empty": "まだメモリはありません。会話で話した好みや習慣、長期目標がここに記録されます。",
+  "memory.empty": "会話で話した好みや習慣、長期目標がここに記録されます。",
+  "memory.emptyTitle": "まだメモリはありません",
   "memory.sensitive": "機微",
   "memory.inferred": "推測",
   "memory.source": "元の会話",
@@ -874,8 +892,8 @@ export const messages = {
   "memory.page.statusLink":
     "{s, select, archived {アーカイブ {count} 件} other {最近削除 {count} 件}}",
   "reminders.group": "{g, select, today {今日} week {7 日以内} other {それ以降}}",
-  "reminders.empty":
-    "リマインダーはまだありません。会話で「明日の朝 8 時に傘を持っていくよう知らせて」と言えば設定できます。",
+  "reminders.emptyTitle": "リマインダーはまだありません",
+  "reminders.empty": "会話で「明日の朝 8 時に傘を持っていくよう知らせて」と言えば設定できます。",
   "reminders.due": "時間になったリマインダーが {count} 件あります",
   "process.did.search": "ウェブを {count} 回検索",
   "process.did.fetch": "ページを {count} 件読み込み",
@@ -890,7 +908,11 @@ export const messages = {
   "process.cacheHitHint":
     "このターンの入力のうち、モデル提供元が以前に処理した文脈（LLM の KV キャッシュ）をそのまま再利用した割合です。この部分は速く、安くなります。",
   "chat.search.purpose": "最新の情報が必要な質問では、自動でウェブを検索します",
-  "chat.search.whatIsSent": "検索サービスに送られる内容",
+  "chat.search.whatIsSent": "検索で送られるもの",
+  "chat.search.sentQuery":
+    "質問は検索語に書き換えられて下のアドレスに送られます。Web ページを開くときは、その URL も送られます：",
+  "chat.search.sentLimits":
+    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
   "chat.search.otherScope":
     "ファイルの削除、ネットワークを使うコマンドの実行、作業フォルダー外のファイルの読み書き",
   "chat.search.alwaysOn": "常にオン",

@@ -62,7 +62,6 @@ function hostName(url: string) {
   }
 }
 
-/** One plain-language line per tool call; raw names and arguments stay in the step detail. */
 export function toolStepSummary(name: string, input: string): { id: MessageId; target: string } {
   const kind = stepKind(name);
   const args = argumentsOf(input);
@@ -79,4 +78,13 @@ export function toolStepSummary(name: string, input: string): { id: MessageId; t
               ? name
               : "";
   return { id: `step.${kind}` as MessageId, target };
+}
+
+export function toolCommand(input: string): string {
+  return field(argumentsOf(input), "command");
+}
+
+export function exitCodeOf(output: string): number | null {
+  const match = /exited with code (\d+)/.exec(output);
+  return match ? Number(match[1]) : null;
 }
