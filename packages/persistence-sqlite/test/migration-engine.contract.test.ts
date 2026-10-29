@@ -414,7 +414,9 @@ it("preserves schema 46 history and rejects writers that ignore copy authority a
     const history = readMigrationLedger(database);
     const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
     expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-      appliedSequences: [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65],
+      appliedSequences: [
+        47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
+      ],
       currentSequence: 65,
     });
     expect(readMigrationLedger(database).slice(0, 46)).toEqual(history);
