@@ -416,7 +416,8 @@ export const messages = {
   "library.web": "Web pages",
   "library.images": "Images",
   "library.code": "Code",
-  "library.empty": "No files yet. Files Himawari makes in your chats will show up here.",
+  "library.emptyTitle": "No files yet",
+  "library.empty": "Files Himawari makes in your chats will show up here.",
   "library.noMatch": "No files match.",
   "library.loadFailed": "The file list couldn’t be loaded.",
   "library.date": "{at, date, ::Md}",
@@ -513,7 +514,6 @@ export const messages = {
   "threads.search": "Search threads",
   "threads.searchPlaceholder": "Search titles or message content you can access",
   "threads.messages": "Committed messages",
-  "threads.messagesEmpty": "No committed messages yet",
   "threads.rename": "Rename",
   "threads.pin": "Pin",
   "threads.unpin": "Unpin",
@@ -843,8 +843,8 @@ export const messages = {
   "memory.page.olderChanges": "{count} earlier changes",
   "memory.page.viewAll": "View all {count} in {kind}",
   "reminders.group": "{g, select, today {Today} week {Next 7 days} other {Later}}",
-  "reminders.empty":
-    "No reminders yet. Just say “Remind me to take an umbrella at 8 tomorrow” in a chat.",
+  "reminders.emptyTitle": "No reminders yet",
+  "reminders.empty": "Just say “Remind me to take an umbrella at 8 tomorrow” in a chat.",
   "reminders.due": "{count, plural, one {# reminder is due} other {# reminders are due}}",
   "process.did.search":
     "{count, plural, one {searched the web once} other {searched the web # times}}",

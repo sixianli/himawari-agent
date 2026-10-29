@@ -218,7 +218,7 @@
   width: calc(100% - 60px);
   max-width: 680px;
   flex: none;
-  margin: 12px auto 0;
+  margin: 12px auto 16px;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--input);
@@ -2478,6 +2478,17 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.model-picker-chevron {
+  display: inline-flex;
+}
+.model-picker-chevron .line-icon {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+}
+.model-picker[open] .model-picker-chevron .line-icon {
+  transform: rotate(-90deg);
+}
 .answer-actions {
   display: flex;
   align-items: center;
@@ -4038,11 +4049,6 @@ output.owner-status {
 .reminder-row .action-button {
   min-height: 0;
   padding: 2px 8px;
-}
-.reminders-empty {
-  padding: 40px 8px;
-  color: var(--text-muted);
-  text-align: center;
 }
 .reminders-link {
   min-height: 0;

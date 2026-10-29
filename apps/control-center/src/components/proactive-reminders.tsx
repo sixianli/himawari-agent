@@ -13,7 +13,7 @@ import {
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { openNotificationSettings } from "./memory-panel.js";
-import { ActionButton } from "./primitives.js";
+import { ActionButton, EmptyState } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 
@@ -444,9 +444,7 @@ export function ProactiveDecisionLog({
             </span>
           </p>
           <p className="settings-note proactive-log-note">{message("proactive.log.note")}</p>
-          {decisions.length === 0 ? (
-            <p className="reminders-empty">{message("proactive.log.empty")}</p>
-          ) : null}
+          {decisions.length === 0 ? <EmptyState title={message("proactive.log.empty")} /> : null}
           {decisions.map((decision) => {
             const label = dayLabel(decision.checkedAt);
             const heading = label !== last ? <h2 className="memory-group">{label}</h2> : null;

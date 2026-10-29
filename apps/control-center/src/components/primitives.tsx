@@ -115,6 +115,28 @@ export function Field({ children, error, hint, label, required = false }: FieldP
   );
 }
 
+export interface EmptyStateProps {
+  readonly icon?: ReactNode;
+  readonly title: ReactNode;
+  readonly children?: ReactNode;
+  readonly footer?: ReactNode;
+}
+
+export function EmptyState({ icon, title, children, footer }: EmptyStateProps) {
+  return (
+    <div className="empty-panel">
+      {icon ? (
+        <span className="empty-panel-art" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
+      <p className="empty-panel-title">{title}</p>
+      {children ? <p className="empty-panel-body">{children}</p> : null}
+      {footer ? <p className="empty-panel-footer">{footer}</p> : null}
+    </div>
+  );
+}
+
 export interface StatusRegionProps {
   readonly children: ReactNode;
   readonly className?: string;

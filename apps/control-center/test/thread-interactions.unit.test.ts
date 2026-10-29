@@ -2188,6 +2188,12 @@ describe("thread control center interactions", () => {
     expect(protect.mock.calls.filter(([text]) => text === "自定义标题")).toHaveLength(2);
     expect(container.textContent).not.toContain("threads.conflictTitle");
   });
+  it("greets the owner in a conversation that has no messages yet instead of a system notice", async () => {
+    await render();
+    await refresh();
+    expect(container.querySelector(".thread-welcome")).not.toBeNull();
+    expect(container.textContent).not.toContain("threads.messagesEmpty");
+  });
   it("creates a conversation from the empty welcome page and navigates to the accepted ID", async () => {
     options = { ...options, route: routeForSurface("threads") };
     await render();

@@ -4,7 +4,7 @@ import type { MessageId } from "../i18n/message-ids.js";
 import type { RegisteredFile, RegisteredFileKind } from "../registered-files.js";
 import { LineIcon } from "./answer-footer.js";
 import { DeliveredFileRow } from "./delivered-file.js";
-import { ActionButton } from "./primitives.js";
+import { ActionButton, EmptyState } from "./primitives.js";
 import { recentGroups } from "./thread-sidebar.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
@@ -224,9 +224,13 @@ export function FilesLibrary({
             <i />
           </div>
         ) : !files.length ? (
-          <p className="files-library-note">
-            {message(query || category !== "all" ? "library.noMatch" : "library.empty")}
-          </p>
+          query || category !== "all" ? (
+            <EmptyState title={message("library.noMatch")} />
+          ) : (
+            <EmptyState icon={<LineIcon name="file" />} title={message("library.emptyTitle")}>
+              {message("library.empty")}
+            </EmptyState>
+          )
         ) : (
           groups.map(([label, group]) => (
             <section key={label}>

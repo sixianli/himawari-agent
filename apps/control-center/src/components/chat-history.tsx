@@ -124,9 +124,6 @@ export function ChatHistory({
           setShowLatest(!following.current);
         }}
       >
-        {!groups.size && !outgoing ? (
-          <p className="chat-empty">{message("threads.messagesEmpty")}</p>
-        ) : null}
         {[...groups].map(([key, group]) => {
           const records = group.run ? (execution[group.run.runId] ?? []) : [];
           const agentMessages = group.messages.filter((item) => item.role === "agent");

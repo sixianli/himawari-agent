@@ -1534,7 +1534,8 @@ export function useThreadControlCenter(
           {feedback}
           {!detail && selectedThreadId && !shownOutgoing ? (
             <ThreadLoadingSkeleton scope="conversation" />
-          ) : !detail && !shownOutgoing ? (
+          ) : (!detail || (!detail.payload.messages.length && !detail.payload.runs.length)) &&
+            !shownOutgoing ? (
             <ThreadWelcome name={options.ownerName} message={message} />
           ) : (
             <>

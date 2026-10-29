@@ -117,3 +117,11 @@ it("gives the exact file count once the server has no more pages", async () => {
     'library.count{"count":1,"more":"no"}',
   );
 });
+
+it("shows an empty library as one centered panel with a title and a hint", async () => {
+  await render(async () => ({ items: [], nextCursor: null }));
+  const panel = container.querySelector(".empty-panel");
+  expect(panel?.querySelector(".empty-panel-title")?.textContent).toBe("library.emptyTitle");
+  expect(panel?.querySelector(".empty-panel-body")?.textContent).toBe("library.empty");
+  expect(container.querySelector(".files-library-note")).toBeNull();
+});

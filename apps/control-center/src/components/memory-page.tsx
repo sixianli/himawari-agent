@@ -12,7 +12,7 @@ import {
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
-import { ActionButton } from "./primitives.js";
+import { ActionButton, EmptyState } from "./primitives.js";
 import {
   clock,
   dayAndClock,
@@ -509,6 +509,14 @@ export function RemindersPage({
     );
   const mailCount = [...mail.values()].reduce((total, rows) => total + rows.length, 0);
   const watching = proactive?.overview && proactive.overview.connection.status !== "disconnected";
+  const notifyNote = (
+    <>
+      {message(watching ? "proactive.foot" : "memory.page.notify")}{" "}
+      <button type="button" className="reminders-link" onClick={openNotificationSettings}>
+        {message("push.openSettings")}
+      </button>
+    </>
+  );
   return (
     <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
       <header className="memory-header">
@@ -579,15 +587,18 @@ export function RemindersPage({
           {mailGroup("none")}
           {mailGroup("know")}
           {!overview.reminders.length && !overview.upcoming.length && !mailCount ? (
-            <p className="reminders-empty">{message("reminders.empty")}</p>
+            <EmptyState
+              icon={<LineIcon name="bell" />}
+              title={message("reminders.emptyTitle")}
+              footer={notifyNote}
+            >
+              {message("reminders.empty")}
+            </EmptyState>
           ) : null}
           {proactive ? <ProactiveAudit proactive={proactive} message={message} /> : null}
-          <p className="settings-note reminders-notify">
-            {message(watching ? "proactive.foot" : "memory.page.notify")}{" "}
-            <button type="button" className="reminders-link" onClick={openNotificationSettings}>
-              {message("push.openSettings")}
-            </button>
-          </p>
+          {overview.reminders.length || overview.upcoming.length || mailCount ? (
+            <p className="settings-note reminders-notify">{notifyNote}</p>
+          ) : null}
         </>
       )}
       {notice ? (
