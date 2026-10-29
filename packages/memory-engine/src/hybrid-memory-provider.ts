@@ -45,12 +45,19 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
   readonly #embeddable: ReadonlySet<DataClassification>;
 
   constructor(options: HybridMemoryProviderOptions) {
+    const minimum = options.minimumSimilarity ?? 0;
+    if (!Number.isFinite(minimum) || minimum < 0 || minimum >= 1)
+      throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
     this.#options = options;
     this.#embeddable = new Set(options.embeddableClassifications);
   }
 
   get embedder(): Embedder | null {
     return this.#options.embedder;
+  }
+
+  get minimumSimilarity(): number {
+    return this.#options.minimumSimilarity ?? 0;
   }
 
   get queryInstruction(): string | undefined {

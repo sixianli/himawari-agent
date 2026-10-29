@@ -396,5 +396,6 @@ describe("release walkthrough locators against the real control center", () => {
   it("names the process steps the walkthrough waits for exactly as the interface shows them", () => {
     expect(messages["step.search"]).toBe(UI.searchStep);
     expect(messages["step.command"]).toBe(UI.commandStep);
+    expect(messages["step.memoryFound"]).toMatch(UI.memoryFoundStep);
   });
 });
