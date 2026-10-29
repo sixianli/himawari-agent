@@ -72,6 +72,7 @@ date: "2026-10-26"
   45. [让 Agent 主动看邮件又不乱打扰：模型只看标题和摘要，规则给重要来信兜底，每次判断都留日志](#case-proactive-gmail)
   46. [第十八次上线启动超时：agent 一个文件等一个文件地查 3.4 万个文件的权限，花 28 秒，worker 只等 30 秒](#case-startup-permission-audit)
   47. [修好了却一再复发：每个事故落一道自动检查，同一错误第三次必须有硬门槛](#case-incident-gates)
+  50. [筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表](#case-filter-counts)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -100,7 +101,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
@@ -3109,6 +3110,65 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 **面试 30 秒版**
 
 “我们发现事故修完了还会复发，因为修复只落在那一处代码和一篇文档里。于是定了一条规则：每个事故必须落成一道自动检查才算关闭，同一错误第三次必须有硬门槛。清单本身也被脚本核对，不能写一个不存在的门槛就算完。比如 worker 启动超时，以前只看最后起没起来，碰巧成功就没人管；现在切换后量启动时间，超过 30 秒就回退，出包时还核对等待时间留够余量。每道门槛都要证明在事故重现上会失败。”
+
+[返回目录](#contents)
+
+<a id="case-filter-counts"></a>
+
+## 案例 50：筛选按钮上的数字点之前是 0、点之后才变对：计数数的是已经筛过的列表
+
+**背景与现象**
+
+2026-10-29 中午（日本时间），Andy 在记忆页的“时间线”标签里看到五个筛选按钮“全部变化 / 新记住 / 整理 / 更正 / 导入”全是 0，列表也是空的；点了“更正”之后变成“全部变化 3 / 更正 3”，并列出 3 条更正。他问：“这个数字是假的吗？用户没点之前就应该显示正确的数字。”紧接着他又发现“全部记忆”里选了“偏好 5”之后，小类行跟着变成“全部 5”，状态行却还是“在用 12”，三行数字之间的关系说不清。
+
+**根因**
+
+用单元测试复现后确认有三处，都是“数字和点开后看到的东西不是同一个口径”：
+
+1. 时间线：代码先按当前选中的筛选把事件过滤掉，再在过滤后的列表上数每种类型有几条。选中“导入”时列表里只剩导入事件，其他类型自然都是 0；“全部变化”数的也是过滤后的条数。截图里的“全部 0”就是 Andy 刚点过“导入”（没有导入记录）时的样子。
+2. 全部记忆：大类行按当前状态数、但不管搜索词；状态行数的是全部记忆，不管已选的大类和搜索词；点状态时还会把大类悄悄重置成“全部”。所以“偏好 5”下面写着“在用 12”。
+3. 加载中：记忆数据还没到时，“全部记忆”标签显示 0，页头显示“记住了 0 条”，把“还不知道”显示成“没有”。
+
+文件页还有一个同类问题：每次只取 100 个文件，服务器还有下一页时，页头的“N 个文件”只是已经取到的数量。
+
+**我们的方案**
+
+定一条统一口径：筛选按钮上的数字 = 保持其他已选条件（包括搜索词）不变、点这个按钮之后会看到的条数。
+
+- 时间线先生成全部事件，计数在全部事件上数，显示时再过滤。
+- 全部记忆三行都用同一个过滤函数算数：大类数“当前状态 + 搜索词”，小类数“当前状态 + 大类 + 搜索词”，状态数“当前大类 + 搜索词”。点状态不再重置大类，只重置小类（小类行可能在新状态下不显示，留着会变成看不见的筛选）。已选的大类即使在新状态下是 0 也保留在行里，用户能看到为什么列表空了。
+- 数据到达前不显示任何数字。
+- 文件页在服务器还有下一页时写成“100+ 个文件”（三语）。
+
+三行标签的结构（哪个包含哪个）怎么重新设计，归 UI 意见第二批第 40 条，本次只保证数字真实、口径一致。
+
+**方案讨论与备选**
+
+- **数字一律显示全局总数，不随筛选变化**：最简单，也不会出现 0，但点开“偏好”后状态行写“在用 12”而列表只有 5 条，正是 Andy 困惑的地方。
+- **只修时间线那一处**：Andy 要求检查所有按钮，而且同一种写法在全部记忆里也错，只修一处会再被他找到。
+- **把三行改成一个级联下拉**：可能更清楚，但这是信息架构的改动，要先出原型给 Andy 批，交给 UI 线程。
+
+**业界主流做法**
+
+- 🟡 Algolia 分面（faceting，按属性分组计数的筛选）文档（<https://www.algolia.com/doc/guides/managing-results/refine-results/faceting/>）：“Enabling faceting on attributes computes facet counts for each facet value”，计数随每次查询和筛选一起返回；多选筛选时 “the engine handles the facet counts differently to keep a consistent user experience.” 本次通过网页摘要工具打开，只核对到这两句。
+
+**对比与取舍**
+
+和电商、搜索产品的分面计数一致：数字跟着其他已选条件和搜索词走，按钮上的数就是点开后的结果数。不同的是我们的数据全在浏览器里（一个人的记忆只有几十到几百条），不需要服务器算分面，也不需要近似计数。代价是点状态不再重置大类，可能出现“偏好”在“已归档”下为 0 的空列表，但按钮上已经写了 0，用户不会被骗。
+
+**结果数据**
+
+- 新门槛测试在修复前的代码上失败：时间线报“整理 0 点开有 1 条”，全部记忆报“在用 7 点开只看到 3 条”，加载中报标签里出现“全部记忆0”；修复后通过（`apps/control-center/test/memory-interactions.unit.test.ts`，本线程云端容器运行）。
+- `apps/control-center/test/` 全部 38 个测试文件、535 个测试通过（本线程运行）。
+- 上线后真实页面：未测量，等下一版上线后按发布走查确认。
+
+**相关 ADR/PR**
+
+[事故与门槛清单 I-13](incidents-and-gates.md)；[记忆管理页重设计](#case-memory-page)；本案例的 PR 在分支 `claude/project-thread-b7adoj`。没有新建 ADR：这是对已有页面的缺陷修复，计数口径写在测试名里。
+
+**面试 30 秒版**
+
+“用户发现筛选按钮上的数字点之前是 0、点之后才变对。根因是计数在已经筛过的列表上数，另一页的状态行又没跟着已选条件走。我们定了统一口径：按钮上的数字就是保持其他条件不变、点它之后看到的条数，跟搜索产品的分面计数一样；再加一道测试把每个按钮依次点两轮，核对数字和看到的条数相等。修复前这道测试在三处都失败。”
 
 [返回目录](#contents)
 
