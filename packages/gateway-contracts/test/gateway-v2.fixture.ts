@@ -205,8 +205,24 @@ export const governanceMessages = [
         recordedAt: "2026-09-11T00:00:00.000Z",
         lastUsedAt: null,
         importBatchId: null,
+        importance: 620,
+        profilePin: "on",
+        stance: "喜欢蓝色",
+        history: [
+          {
+            kind: "created",
+            text: "主人最喜欢的颜色是蓝色",
+            stance: "喜欢蓝色",
+            quote: "我最喜欢蓝色",
+            sourceThreadId: "thread-01",
+            sourceDeleted: false,
+            at: "2026-09-11T00:00:00.000Z",
+          },
+        ],
       },
     ],
+    profileUsage: { used: 14, limit: 2000, queued: [] },
+    lastViewedAt: "2026-09-10T00:00:00.000Z",
     profile: [
       {
         kind: "preference",
@@ -301,8 +317,10 @@ export const governanceMessages = [
     contentRef: "payload-03",
     category: "preference",
     subCategory: "饮食",
+    pinned: false,
   }),
   fixture("command", "memory.settings.set", { capturePaused: true }),
+  fixture("command", "memory.page.viewed", {}),
   fixture("command", "memory.person.respond", {
     suggestionId: "person-suggestion-01",
     merge: true,

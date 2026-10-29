@@ -37,6 +37,7 @@ export interface ExtractedMemoryCandidate {
   readonly reminder?: MemoryReminderSchedule;
   readonly people?: readonly MemoryPersonMention[];
   readonly personLinks?: readonly MemoryPersonLinkMention[];
+  readonly quote?: string;
 }
 
 export interface IncrementalMemoryExtractionPort {
@@ -143,6 +144,8 @@ export interface MemoryExtractionAuditRecord {
     | "restricted_excluded"
     | "extraction_failed"
     | "evidence_unverified"
+    | "candidate_invalid"
+    | "nothing_to_remember"
     | "transient_ignored"
     | "confidence_below_threshold"
     | "approval_requested"

@@ -8,6 +8,7 @@ import {
   type MemoryCategory,
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
+  type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
   type OwnerProfileService,
@@ -43,19 +44,31 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.reminder.respond",
   "memory.create",
   "memory.settings.set",
+  "memory.page.viewed",
   "memory.person.respond",
   "memory.import.commit",
   "memory.import.undo",
 ] as const);
+const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+]);
 const TIDY_UPS_SHOWN = 30;
 const REMINDERS_SHOWN = 10;
 const UPCOMING_SHOWN = 20;
 const UPCOMING_WINDOW_MS = 60 * 24 * 3_600_000;
 const INACTIVE_SHOWN = 500;
+const HISTORY_BATCH = 1000;
 const IMPORTS_SHOWN = 20;
 const TRASH_RETENTION_MS = 7 * 24 * 3_600_000;
 const SNOOZE_MS = 3_600_000;
 const OWNER_POLICY_VERSION = "memory-owner:v1";
+const OWNER_RULE_IMPORTANCE = 800;
+const OWNER_MEMORY_IMPORTANCE = 500;
 const IMPORT_POLICY_VERSION = "memory-import:v1";
 
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
@@ -182,10 +195,20 @@ export class ProductionMemoryControl {
     const scope = this.#scope();
     const active = await this.options.state.listActive(ownerId, agentId);
     const inactive = await this.#inactive();
+    const historyCount = new Map<string, number>();
+    const tracked = [...active, ...inactive].map(({ id }) => id);
+    for (let index = 0; index < tracked.length; index += HISTORY_BATCH)
+      for (const { memoryId } of await this.options.state.listHistory({
+        ownerId,
+        agentId,
+        memoryIds: tracked.slice(index, index + HISTORY_BATCH),
+      }))
+        historyCount.set(memoryId, (historyCount.get(memoryId) ?? 0) + 1);
     const settings = await this.options.book.readSettings(scope);
     const people = await this.options.book.listPeople(scope);
     const suggestions = await this.options.book.listPersonSuggestions(scope);
     const imports = await this.options.book.listImportBatches({ ...scope, limit: IMPORTS_SHOWN });
+    const pins = await this.options.book.listProfilePins(scope);
     const pending = await this.options.approvals.listPending(ownerId, null);
     const changes =
       (await this.options.consolidation?.store.listChanges({
@@ -195,7 +218,7 @@ export class ProductionMemoryControl {
       })) ?? [];
     const due = await this.#dueReminders();
     return JSON.stringify([
-      active.map(({ id, revision }) => [id, revision]),
+      active.map(({ id, revision }) => [id, revision, historyCount.get(id) ?? 0]),
       pending.map(({ id }) => id),
       changes.map(({ id, undoneAt }) => [id, undoneAt]),
       due.map(({ id, updatedAt }) => [id, updatedAt]),
@@ -205,6 +228,7 @@ export class ProductionMemoryControl {
       people.map(({ id, updatedAt, memoryIds }) => [id, updatedAt, memoryIds.length]),
       suggestions.map(({ id }) => id),
       imports.map(({ id, undoneAt }) => [id, undoneAt]),
+      pins.map(({ memoryId, pinned, updatedAt }) => [memoryId, pinned, updatedAt]),
     ]);
   }
 
@@ -229,12 +253,50 @@ export class ProductionMemoryControl {
       ...(await this.options.state.listActive(ownerId, agentId)),
       ...(await this.#inactive()),
     ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const pins = new Map(
+      (await this.options.book.listProfilePins(scope)).map(({ memoryId, pinned }) => [
+        memoryId,
+        pinned ? ("on" as const) : ("off" as const),
+      ]),
+    );
     const memories: OverviewSnapshot["payload"]["memories"][number][] = [];
+    const texts = new Map<string, Promise<string>>();
+    const textOfRef = (ref: string) => {
+      const cached = texts.get(ref);
+      if (cached) return cached;
+      const read = this.readText(ref)
+        .then(singleLine)
+        .catch(() => "");
+      texts.set(ref, read);
+      return read;
+    };
+    const history = new Map<string, MemoryHistoryEvent[]>();
+    for (let index = 0; index < records.length; index += HISTORY_BATCH)
+      for (const event of await this.options.state.listHistory({
+        ownerId,
+        agentId,
+        memoryIds: records.slice(index, index + HISTORY_BATCH).map(({ id }) => id),
+      }))
+        history.set(event.memoryId, [...(history.get(event.memoryId) ?? []), event]);
     for (const memory of records) {
       if (memory.status !== "active" && memory.status !== "archived" && memory.status !== "trashed")
         continue;
-      const text = singleLine(await this.readText(memory.contentRef).catch(() => ""));
+      const text = await textOfRef(memory.contentRef);
       if (!text) continue;
+      const nodes: OverviewSnapshot["payload"]["memories"][number]["history"][number][] = [];
+      for (const event of history.get(memory.id) ?? []) {
+        const eventText = await textOfRef(event.contentRef);
+        if (!eventText) continue;
+        nodes.push({
+          kind: event.kind,
+          text: eventText,
+          stance: event.stance,
+          quote: event.quoteRef ? (await textOfRef(event.quoteRef)) || null : null,
+          sourceThreadId: event.sourceThreadId,
+          sourceDeleted: event.sourceDeleted,
+          at: event.occurredAt,
+        });
+      }
       memories.push({
         memoryId: memory.id,
         revision: memory.revision,
@@ -254,6 +316,10 @@ export class ProductionMemoryControl {
         recordedAt: memory.recordedAt ?? memory.updatedAt,
         lastUsedAt: memory.lastUsedAt,
         importBatchId: memory.attributes?.importBatchId ?? null,
+        importance: memory.attributes?.importancePermille ?? 0,
+        profilePin: pins.get(memory.id) ?? null,
+        stance: memory.attributes?.stance ?? null,
+        history: nodes,
       });
     }
     const changes =
@@ -428,7 +494,7 @@ export class ProductionMemoryControl {
       createdAt,
       undone: undoneAt !== null,
     }));
-    const { capturePaused } = await this.options.book.readSettings(scope);
+    const { capturePaused, lastViewedAt } = await this.options.book.readSettings(scope);
     const manualAddReady = (await this.options.book.latestGeneration(scope)) !== undefined;
     return {
       ...query,
@@ -446,6 +512,12 @@ export class ProductionMemoryControl {
         imports,
         capturePaused,
         manualAddReady,
+        lastViewedAt,
+        profileUsage: {
+          used: outline?.usage.used ?? 0,
+          limit: outline?.usage.limit ?? 0,
+          queued: [...(outline?.usage.queued ?? [])],
+        },
         generatedAt: now,
       },
     } as GatewayV2Snapshot;
@@ -483,7 +555,8 @@ export class ProductionMemoryControl {
           policyVersion: input.policyVersion,
           attributes: {
             category: input.category,
-            importancePermille: input.category === "rule" ? 800 : 600,
+            importancePermille:
+              input.category === "rule" ? OWNER_RULE_IMPORTANCE : OWNER_MEMORY_IMPORTANCE,
             entities: [],
             validFrom: null,
             validTo: null,
@@ -502,7 +575,7 @@ export class ProductionMemoryControl {
   }
 
   async #create(command: Command<"memory.create">) {
-    const { contentRef, category, subCategory } = command.payload;
+    const { contentRef, category, subCategory, pinned } = command.payload;
     const saved = await this.#createMemory({
       id: `memory:owner:${command.idempotencyKey}` as MemoryId,
       contentRef,
@@ -511,6 +584,13 @@ export class ProductionMemoryControl {
       policyVersion: OWNER_POLICY_VERSION,
       importBatchId: null,
     });
+    if (pinned)
+      await this.options.book.setProfilePin({
+        ...this.#scope(),
+        memoryId: saved.id,
+        pinned: true,
+        updatedAt: this.options.clock.now(),
+      });
     return { resultRef: saved.id, replayed: false };
   }
 
@@ -581,6 +661,13 @@ export class ProductionMemoryControl {
         updatedAt: this.options.clock.now(),
       });
       return { resultRef: "memory-settings", replayed: false };
+    }
+    if (command.type === "memory.page.viewed") {
+      await this.options.book.markViewed({
+        ...this.#scope(),
+        viewedAt: this.options.clock.now(),
+      });
+      return { resultRef: "memory-page", replayed: false };
     }
     if (command.type === "memory.person.respond") {
       const decided = await this.options.book.decidePersonSuggestion({
@@ -712,6 +799,21 @@ export class ProductionMemoryControl {
       if (action === "recover") {
         const saved = await this.options.memory.recover(current.id, generationId);
         return { resultRef: saved.id, replayed: false };
+      }
+      if (action === "pin" || action === "unpin") {
+        if (
+          current.status !== "active" ||
+          !PINNABLE_CATEGORIES.has(current.attributes?.category ?? "other") ||
+          (current.dataClassification !== "public" && current.dataClassification !== "private")
+        )
+          throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_NOT_PINNABLE");
+        await this.options.book.setProfilePin({
+          ...this.#scope(),
+          memoryId: current.id,
+          pinned: action === "pin",
+          updatedAt: this.options.clock.now(),
+        });
+        return { resultRef: current.id, replayed: false };
       }
     }
     throw new ApplicationPortError(

@@ -1,3 +1,4 @@
+import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
@@ -6,9 +7,18 @@ import {
   guessCategory,
   type ImportCandidate,
   type ImportParse,
+  type MemoryCategory,
   parseMemoryExport,
   parseMemoryText,
 } from "../memory-import.js";
+import {
+  changeCount,
+  type MemoryHistoryNode,
+  type MemoryStanceChart,
+  memoryChain,
+  memoryHeads,
+  stanceChart,
+} from "../memory-history.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
@@ -25,16 +35,22 @@ import {
 } from "./proactive-reminders.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
-type Tab = "pending" | "profile" | "all" | "timeline";
+type Tab = "memories" | "changes";
 type Notice = { readonly text: string; readonly undo?: () => void } | null;
 type Person = MemoryOverview["people"][number];
+type Scope = {
+  readonly status: MemoryItem["status"];
+  readonly category: string;
+  readonly sub: string | null;
+  readonly fresh: boolean;
+};
 
 const DAY_MS = 86_400_000;
 const VISIBLE_CHIPS = 5;
-const PROFILE_PREVIEW = 3;
-const PROFILE_EXPANDED = 8;
-const HISTORY_HEAD = 2;
-const HISTORY_STEP = 10;
+const GROUP_PREVIEW = 3;
+const PAGE_SIZE = 30;
+const HISTORY_HEAD = 3;
+const CHART = { lane: 28, step: 44, label: 104, pad: 10, axis: 22 };
 const NOTICE_MS = 6000;
 const MAXIMUM_IMPORT_BYTES = 200 * 1024;
 const MAXIMUM_IMPORT_ITEMS = 500;
@@ -42,6 +58,20 @@ const GRAPH = { x: 190, y: 150, r: 112 };
 
 const reveal = (element: HTMLElement | null) => element?.scrollIntoView?.({ block: "nearest" });
 const live = (item: MemoryItem) => !item.supersededBy && !item.tentative;
+const PINNABLE: ReadonlySet<string> = new Set([
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+]);
+const pinBlock = (item: MemoryItem) =>
+  item.dataClassification === "sensitive" || item.topic
+    ? "sensitive"
+    : PINNABLE.has(item.category)
+      ? null
+      : "category";
 
 function Chips<T extends string>({
   label,
@@ -83,116 +113,224 @@ function Chips<T extends string>({
   );
 }
 
-function MemoryHistory({
-  item,
-  history,
-  older,
-  onMore,
-  memory,
-  message,
-}: {
-  item: MemoryItem;
-  history: readonly MemoryItem[];
-  older: number;
-  onMore: () => void;
-  memory: MemoryModel;
-  message: Message;
-}) {
-  const { moment: time } = useLocaleFormat();
-  const past = [...history].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
-  const hidden = past.length - HISTORY_HEAD - older;
-  const folded = hidden > 1 ? hidden : 0;
-  const head = folded ? past.slice(0, HISTORY_HEAD - 1 + older) : past;
-  const tail = folded ? past.slice(-1) : [];
-  const point = (entry: MemoryItem, current: boolean) => (
-    <li key={entry.memoryId} data-current={current || undefined}>
-      <span className="memory-history-dot" aria-hidden="true" />
-      <div>
-        <small>
-          {time(entry.recordedAt)} · {message(current ? "memory.page.now" : "memory.page.replaced")}
-        </small>
-        <p>{entry.text}</p>
-        {current ? null : (
-          <button
-            type="button"
-            className="memory-link"
-            disabled={memory.busy}
-            onClick={() => void memory.restore(entry)}
-          >
-            {message("memory.page.useThis")}
-          </button>
-        )}
-      </div>
-    </li>
-  );
+function StanceChart({ chart, message }: { chart: MemoryStanceChart; message: Message }) {
+  const { day: date, moment: time } = useLocaleFormat();
+  const width = Math.max(320, CHART.label + CHART.pad * 2 + (chart.points.length - 1) * CHART.step);
+  const height = chart.lanes.length * CHART.lane + CHART.axis;
+  const span = width - CHART.label - CHART.pad * 2;
+  const x = (index: number) =>
+    CHART.label +
+    CHART.pad +
+    (chart.points.length > 1 ? (index * span) / (chart.points.length - 1) : span / 2);
+  const y = (lane: number) => CHART.lane / 2 + lane * CHART.lane;
+  const path = chart.points
+    .map(({ lane }, index) =>
+      index === 0
+        ? `M${x(0)} ${y(lane)}`
+        : `L${x(index)} ${y(chart.points[index - 1]?.lane ?? lane)} L${x(index)} ${y(lane)}`,
+    )
+    .join(" ");
+  const first = chart.points[0]?.node;
+  const last = chart.points.at(-1)?.node;
   return (
-    <ol className="memory-history-line" data-scroll={older > 0 || undefined}>
-      {point(item, true)}
-      {head.map((entry) => point(entry, false))}
-      {folded ? (
-        <li className="memory-history-fold">
-          <button type="button" onClick={onMore}>
-            {message("memory.page.olderChanges", { count: folded })}
-          </button>
-        </li>
-      ) : null}
-      {tail.map((entry) => point(entry, false))}
-    </ol>
+    <div className="memory-stance-chart">
+      <svg
+        role="img"
+        aria-label={message("memory.page.chartLabel", { lanes: chart.lanes.join(" / ") })}
+        viewBox={`0 0 ${width} ${height}`}
+        width={width}
+        height={height}
+      >
+        {chart.lanes.map((lane, index) => (
+          <g key={lane}>
+            <text x={0} y={y(index) + 4}>
+              {lane}
+            </text>
+            <line x1={CHART.label} x2={width - CHART.pad} y1={y(index)} y2={y(index)} />
+          </g>
+        ))}
+        <path d={path} />
+        {chart.points.map(({ lane, node }, index) => (
+          <circle
+            key={node.key}
+            cx={x(index)}
+            cy={y(lane)}
+            r={node.kind === "reaffirmed" ? 3 : 5}
+            data-current={node.current || undefined}
+          >
+            <title>{`${time(node.at)} · ${node.stance ?? ""}`}</title>
+          </circle>
+        ))}
+        {first ? (
+          <text className="memory-stance-axis" x={x(0)} y={height - 4} textAnchor="start">
+            {date(first.at)}
+          </text>
+        ) : null}
+        {last && chart.points.length > 1 ? (
+          <text
+            className="memory-stance-axis"
+            x={x(chart.points.length - 1)}
+            y={height - 4}
+            textAnchor="end"
+          >
+            {date(last.at)}
+          </text>
+        ) : null}
+      </svg>
+    </div>
   );
 }
 
-function MemoryRow({
+function MemoryHistory({
+  chain,
+  memory,
+  message,
+  onOpenThread,
+}: {
+  chain: readonly MemoryHistoryNode[];
+  memory: MemoryModel;
+  message: Message;
+  onOpenThread: (threadId: string) => void;
+}) {
+  const { moment: time } = useLocaleFormat();
+  const [expanded, setExpanded] = useState(false);
+  const newest = [...chain].reverse();
+  const shown = expanded ? newest : newest.slice(0, HISTORY_HEAD);
+  const hidden = newest.length - shown.length;
+  const chart = stanceChart(chain);
+  return (
+    <div className="memory-history-block">
+      {chart ? <StanceChart chart={chart} message={message} /> : null}
+      <p className="memory-history-summary">
+        {message("memory.page.flips", {
+          changes: changeCount(chain),
+          again: chain.filter((node) => node.kind === "reaffirmed").length,
+        })}
+      </p>
+      <ol className="memory-history-line">
+        {shown.map((node) => (
+          <li
+            key={node.key}
+            data-current={node.current || undefined}
+            data-again={node.kind === "reaffirmed" || undefined}
+          >
+            <span className="memory-history-dot" aria-hidden="true" />
+            <div>
+              <small>
+                {time(node.at)} ·{" "}
+                {node.current
+                  ? message("memory.page.now")
+                  : message("memory.page.node", { k: node.kind })}
+                {node.sourceThreadId ? (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="memory-link"
+                      onClick={() => node.sourceThreadId && onOpenThread(node.sourceThreadId)}
+                    >
+                      {message("memory.source")}
+                    </button>
+                  </>
+                ) : node.sourceDeleted ? (
+                  ` · ${message("memory.page.sourceDeleted")}`
+                ) : null}
+              </small>
+              {node.kind === "reaffirmed" && !node.current ? null : <p>{node.text}</p>}
+              {node.quote ? (
+                <p className="memory-history-quote">
+                  {message("memory.page.quote", { quote: node.quote })}
+                </p>
+              ) : null}
+              {node.restorable ? (
+                <button
+                  type="button"
+                  className="memory-link"
+                  disabled={memory.busy}
+                  onClick={() => void memory.restore(node.record)}
+                >
+                  {message("memory.page.useThis")}
+                </button>
+              ) : null}
+            </div>
+          </li>
+        ))}
+        {hidden || expanded ? (
+          <li className="memory-history-fold">
+            <button type="button" onClick={() => setExpanded(!expanded)}>
+              {expanded
+                ? message("memory.page.collapseHistory")
+                : message("memory.page.olderChanges", { count: hidden })}
+            </button>
+          </li>
+        ) : null}
+      </ol>
+    </div>
+  );
+}
+
+function PinSwitch({
   item,
-  history,
-  reminder,
-  justSaved,
+  carried,
   memory,
   message,
   notify,
-  onOpenThread,
+  label,
 }: {
   item: MemoryItem;
-  history: readonly MemoryItem[];
-  reminder: string | null;
-  justSaved: boolean;
+  carried: boolean;
   memory: MemoryModel;
   message: Message;
   notify: (notice: Notice) => void;
-  onOpenThread: (threadId: string) => void;
+  label?: string;
 }) {
-  const { day: date, moment: time } = useLocaleFormat();
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [older, setOlder] = useState(0);
+  const on = item.profilePin ? item.profilePin === "on" : carried;
+  return (
+    <label className="memory-switch memory-pin">
+      {label ? null : message("memory.page.pin")}
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={label}
+        aria-checked={on}
+        checked={on}
+        disabled={memory.busy || pinBlock(item) !== null}
+        onChange={() =>
+          void memory
+            .setPinned(item, !on)
+            .then(
+              (ok) => ok && notify({ text: message("memory.page.pinDone", { on: String(!on) }) }),
+            )
+        }
+      />
+    </label>
+  );
+}
+
+function MemoryLine({
+  item,
+  changes,
+  reminder,
+  carried,
+  justSaved,
+  showTopic,
+  message,
+  onOpen,
+}: {
+  item: MemoryItem;
+  changes: number;
+  reminder: boolean;
+  carried: boolean;
+  justSaved: boolean;
+  showTopic: boolean;
+  message: Message;
+  onOpen: () => void;
+}) {
+  const { day: date } = useLocaleFormat();
   const sensitive = item.dataClassification === "sensitive" || item.topic;
-  const origin = item.importBatchId
-    ? "import"
-    : item.memoryId.startsWith("memory:owner:")
-      ? "owner"
-      : item.sourceThreadId
-        ? null
-        : "tidy";
-  if (editing)
-    return (
-      <li className="memory-row">
-        <TextEditor
-          initial={item.text}
-          busy={memory.busy}
-          message={message}
-          onCancel={() => setEditing(false)}
-          onSave={(text) => void memory.correct(item, text).then((ok) => ok && setEditing(false))}
-        />
-        <small className="settings-note">{message("memory.page.editNote")}</small>
-      </li>
-    );
   return (
     <li className="memory-row" data-status={item.status} data-just-saved={justSaved || undefined}>
-      <button
-        type="button"
-        className="memory-row-head"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
+      <button type="button" className="memory-row-head" aria-haspopup="dialog" onClick={onOpen}>
         <span className="memory-text">{item.text}</span>
         <span className="memory-tags">
           {justSaved ? (
@@ -200,10 +338,17 @@ function MemoryRow({
               {message("memory.justSaved")}
             </span>
           ) : null}
-          <span className="memory-tag">
-            {message("memory.cat", { c: item.category })}
-            {item.subCategory ? ` · ${item.subCategory}` : ""}
-          </span>
+          {carried ? (
+            <span className="memory-tag" data-kind="carried">
+              {message("memory.page.carried")}
+            </span>
+          ) : null}
+          {showTopic ? (
+            <span className="memory-tag">
+              {message("memory.cat", { c: item.category })}
+              {item.subCategory ? ` · ${item.subCategory}` : ""}
+            </span>
+          ) : null}
           {sensitive ? (
             <span className="memory-tag" data-kind="sensitive">
               {message("memory.sensitive")}
@@ -216,16 +361,124 @@ function MemoryRow({
             </span>
           ) : null}
           {reminder ? <span className="memory-tag">{message("memory.page.reminder")}</span> : null}
-          {history.length ? (
-            <span className="memory-tag">
-              {message("memory.page.changed", { count: history.length })}
-            </span>
+          {changes ? (
+            <span className="memory-tag">{message("memory.page.changed", { count: changes })}</span>
           ) : null}
           <small>{date(item.recordedAt)}</small>
         </span>
       </button>
-      {open ? (
+    </li>
+  );
+}
+
+function MemoryDetail({
+  item,
+  chain,
+  reminder,
+  carried,
+  memory,
+  message,
+  notify,
+  onOpenThread,
+  onClose,
+}: {
+  item: MemoryItem;
+  chain: readonly MemoryHistoryNode[];
+  reminder: string | null;
+  carried: boolean;
+  memory: MemoryModel;
+  message: Message;
+  notify: (notice: Notice) => void;
+  onOpenThread: (threadId: string) => void;
+  onClose: () => void;
+}) {
+  const { moment: time } = useLocaleFormat();
+  const [editing, setEditing] = useState(false);
+  const panel = useRef<HTMLElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    panel.current?.focus?.();
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && close.current();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const block = pinBlock(item);
+  const origin = item.importBatchId
+    ? "import"
+    : item.memoryId.startsWith("memory:owner:")
+      ? "owner"
+      : item.sourceThreadId
+        ? null
+        : item.history[0]?.sourceDeleted
+          ? "deleted"
+          : "tidy";
+  return (
+    <>
+      <button
+        type="button"
+        tabIndex={-1}
+        className="memory-drawer-backdrop"
+        aria-label={message("common.close")}
+        onClick={onClose}
+      />
+      <aside
+        ref={panel}
+        tabIndex={-1}
+        className="memory-drawer"
+        role="dialog"
+        aria-label={message("memory.page.detail")}
+        data-status={item.status}
+      >
+        <header>
+          <strong>{message("memory.page.detail")}</strong>
+          <ActionButton variant="quiet" aria-label={message("common.close")} onClick={onClose}>
+            <LineIcon name="close" />
+          </ActionButton>
+        </header>
+        {editing ? (
+          <>
+            <TextEditor
+              initial={item.text}
+              busy={memory.busy}
+              message={message}
+              onCancel={() => setEditing(false)}
+              onSave={(text) =>
+                void memory.correct(item, text).then((ok) => ok && setEditing(false))
+              }
+            />
+            <small className="settings-note">{message("memory.page.editNote")}</small>
+          </>
+        ) : (
+          <p className="memory-text memory-drawer-text">{item.text}</p>
+        )}
+        {item.status === "active" ? (
+          <div className="memory-drawer-pin">
+            <PinSwitch
+              item={item}
+              carried={carried}
+              memory={memory}
+              message={message}
+              notify={notify}
+            />
+            <small>
+              {message("memory.page.pinHint", { r: block ?? item.profilePin ?? "auto" })}
+            </small>
+          </div>
+        ) : null}
         <dl className="memory-detail">
+          <dt>{message("memory.page.topic")}</dt>
+          <dd>
+            {message("memory.cat", { c: item.category })}
+            {item.subCategory ? ` · ${item.subCategory}` : ""}
+          </dd>
+          <dt>{message("memory.page.importance")}</dt>
+          <dd>
+            {message("memory.page.importanceValue", {
+              value: item.importance,
+              by: origin === "owner" ? "owner" : "model",
+            })}
+          </dd>
           <dt>{message("memory.page.source")}</dt>
           <dd>
             {origin ? (
@@ -249,104 +502,110 @@ function MemoryRow({
               <dd>{reminder}</dd>
             </>
           ) : null}
-          {history.length ? (
+          {chain.length > 1 ? (
             <>
               <dt>{message("memory.page.history")}</dt>
               <dd>
                 <MemoryHistory
-                  item={item}
-                  history={history}
-                  older={older}
-                  onMore={() => setOlder(older + HISTORY_STEP)}
+                  chain={chain}
                   memory={memory}
                   message={message}
+                  onOpenThread={onOpenThread}
                 />
               </dd>
             </>
           ) : null}
-          <dd className="actions memory-detail-actions">
-            {item.status === "trashed" ? (
-              <>
-                <small>{message("memory.page.trashNote")}</small>
-                <ActionButton disabled={memory.busy} onClick={() => void memory.recover(item)}>
-                  {message("memory.page.recover")}
-                </ActionButton>
-              </>
-            ) : (
-              <>
-                {item.status === "archived" ? (
-                  <>
-                    <small>{message("memory.page.archivedNote")}</small>
-                    <ActionButton disabled={memory.busy} onClick={() => void memory.recover(item)}>
-                      {message("memory.page.unarchive")}
-                    </ActionButton>
-                  </>
-                ) : (
-                  <ActionButton variant="secondary" onClick={() => setEditing(true)}>
-                    {message("memory.editAction")}
-                  </ActionButton>
-                )}
-                <ActionButton
-                  variant="danger"
-                  disabled={memory.busy}
-                  onClick={() =>
-                    void memory.remove(item).then(
-                      (ok) =>
-                        ok &&
-                        notify({
-                          text: message("memory.page.deleted"),
-                          undo: () => void memory.recover({ ...item, revision: item.revision + 1 }),
-                        }),
-                    )
-                  }
-                >
-                  {message("memory.deleteAction")}
-                </ActionButton>
-              </>
-            )}
-          </dd>
         </dl>
-      ) : null}
-    </li>
+        <div className="actions memory-detail-actions">
+          {item.status === "trashed" ? (
+            <>
+              <small>{message("memory.page.trashNote")}</small>
+              <ActionButton disabled={memory.busy} onClick={() => void memory.recover(item)}>
+                {message("memory.page.recover")}
+              </ActionButton>
+            </>
+          ) : (
+            <>
+              {item.status === "archived" ? (
+                <>
+                  <small>{message("memory.page.archivedNote")}</small>
+                  <ActionButton disabled={memory.busy} onClick={() => void memory.recover(item)}>
+                    {message("memory.page.unarchive")}
+                  </ActionButton>
+                </>
+              ) : editing ? null : (
+                <ActionButton variant="secondary" onClick={() => setEditing(true)}>
+                  {message("memory.editAction")}
+                </ActionButton>
+              )}
+              <ActionButton
+                variant="danger"
+                disabled={memory.busy}
+                onClick={() =>
+                  void memory.remove(item).then((ok) => {
+                    if (!ok) return;
+                    notify({
+                      text: message("memory.page.deleted"),
+                      undo: () => void memory.recover({ ...item, revision: item.revision + 1 }),
+                    });
+                    onClose();
+                  })
+                }
+              >
+                {message("memory.deleteAction")}
+              </ActionButton>
+            </>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }
 
-function PendingTab({ memory, message }: { memory: MemoryModel; message: Message }) {
+function ConfirmSection({ memory, message }: { memory: MemoryModel; message: Message }) {
   const overview = memory.overview;
   if (!overview) return null;
   const people = new Map(overview.people.map((person) => [person.personId, person.name]));
+  const guesses = overview.memories.filter(
+    (item) => item.tentative && !item.supersededBy && item.status === "active",
+  );
+  const count = overview.pending.length + overview.personSuggestions.length + guesses.length;
+  if (!count) return null;
   return (
-    <>
+    <section
+      id="memory-confirm"
+      className="memory-confirm"
+      aria-label={message("memory.page.confirmTitle", { count })}
+    >
+      <h4>{message("memory.page.confirmTitle", { count })}</h4>
       <p className="settings-note">{message("memory.page.pendingNote")}</p>
       {overview.pending.map((item) => (
         <MemoryApprovalCard key={item.requestId} item={item} memory={memory} message={message} />
       ))}
-      {overview.memories
-        .filter((item) => item.tentative && !item.supersededBy && item.status === "active")
-        .map((item) => (
-          <section className="memory-card" key={item.memoryId}>
-            <span className="memory-tag" data-kind="inferred">
-              {message("memory.page.kind", { k: item.category === "rule" ? "rule" : "inferred" })}
-            </span>
-            <small>
-              {" "}
-              {message("memory.page.reason", { k: item.category === "rule" ? "rule" : "inferred" })}
-            </small>
-            <p className="memory-text">{item.text}</p>
-            <div className="actions">
-              <ActionButton disabled={memory.busy} onClick={() => void memory.confirm(item)}>
-                {message("memory.approve")}
-              </ActionButton>
-              <ActionButton
-                variant="quiet"
-                disabled={memory.busy}
-                onClick={() => void memory.remove(item)}
-              >
-                {message("memory.reject")}
-              </ActionButton>
-            </div>
-          </section>
-        ))}
+      {guesses.map((item) => (
+        <section className="memory-card" key={item.memoryId}>
+          <span className="memory-tag" data-kind="inferred">
+            {message("memory.page.kind", { k: item.category === "rule" ? "rule" : "inferred" })}
+          </span>
+          <small>
+            {" "}
+            {message("memory.page.reason", { k: item.category === "rule" ? "rule" : "inferred" })}
+          </small>
+          <p className="memory-text">{item.text}</p>
+          <div className="actions">
+            <ActionButton disabled={memory.busy} onClick={() => void memory.confirm(item)}>
+              {message("memory.approve")}
+            </ActionButton>
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void memory.remove(item)}
+            >
+              {message("memory.reject")}
+            </ActionButton>
+          </div>
+        </section>
+      ))}
       {overview.personSuggestions.map((suggestion) => (
         <section className="memory-card" key={suggestion.suggestionId}>
           <span className="memory-tag" data-kind="inferred">
@@ -373,7 +632,7 @@ function PendingTab({ memory, message }: { memory: MemoryModel; message: Message
           </div>
         </section>
       ))}
-    </>
+    </section>
   );
 }
 
@@ -766,166 +1025,184 @@ function PeopleCard({
   );
 }
 
-function ProfileTab({
-  memory,
-  message,
-  focus,
-  onViewAll,
-}: {
-  memory: MemoryModel;
-  message: Message;
-  focus: readonly string[];
-  onViewAll: (category: string) => void;
-}) {
-  const [more, setMore] = useState<Record<string, boolean>>({});
-  const [editing, setEditing] = useState<string | null>(null);
-  const overview = memory.overview;
-  if (!overview) return null;
-  const items = new Map(overview.memories.map((item) => [item.memoryId, item]));
-  const recent = Date.now() - 7 * DAY_MS;
-  return (
-    <>
-      <p className="settings-note">{message("memory.page.profileNote")}</p>
-      <div className="memory-profile-columns">
-        {overview.profile.map((section) => {
-          const groups = new Map<string, typeof section.lines>();
-          for (const line of section.lines) {
-            const sub = items.get(line.memoryId)?.subCategory ?? "";
-            groups.set(sub, [...(groups.get(sub) ?? []), line]);
-          }
-          const ordered = [...groups.values()].flat();
-          const open = more[section.kind] === true;
-          const visible = new Set(
-            ordered
-              .slice(0, open ? PROFILE_EXPANDED : PROFILE_PREVIEW)
-              .map((line) => line.memoryId),
-          );
-          const categories = section.lines.flatMap((line) => {
-            const category = items.get(line.memoryId)?.category;
-            return category ? [category] : [];
-          });
-          const category =
-            [...new Set(categories)].sort(
-              (a, b) =>
-                categories.filter((value) => value === b).length -
-                categories.filter((value) => value === a).length,
-            )[0] ?? "all";
-          return (
-            <section className="memory-card" key={section.kind}>
-              <h4>
-                {message(`memory.profile.${section.kind}`)}{" "}
-                <small>{message("memory.page.lines", { count: section.lines.length })}</small>
-              </h4>
-              {[...groups].map(([sub, lines]) =>
-                lines.some((line) => visible.has(line.memoryId)) ? (
-                  <div key={sub}>
-                    {groups.size > 1 || (sub && section.kind === "relationship") ? (
-                      <h5>{sub || message("memory.cat", { c: "other" })}</h5>
-                    ) : null}
-                    {lines
-                      .filter((line) => visible.has(line.memoryId))
-                      .map((line) => {
-                        const item = items.get(line.memoryId);
-                        return editing === line.memoryId && item ? (
-                          <TextEditor
-                            key={line.memoryId}
-                            initial={item.text}
-                            busy={memory.busy}
-                            message={message}
-                            onCancel={() => setEditing(null)}
-                            onSave={(text) =>
-                              void memory.correct(item, text).then((ok) => ok && setEditing(null))
-                            }
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            className="memory-line"
-                            key={line.memoryId}
-                            disabled={!item}
-                            onClick={() => setEditing(line.memoryId)}
-                          >
-                            <span>{line.text}</span>
-                            {focus.includes(line.memoryId) ? (
-                              <span className="memory-tag" data-kind="new">
-                                {message("memory.justSaved")}
-                              </span>
-                            ) : Date.parse(line.updatedAt) > recent ? (
-                              <span className="memory-tag" data-kind="new">
-                                {message("memory.recent")}
-                              </span>
-                            ) : null}
-                            {item?.inference ? (
-                              <span className="memory-tag" data-kind="inferred">
-                                {message("memory.inferred")}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                  </div>
-                ) : null,
-              )}
-              {ordered.length > PROFILE_PREVIEW ? (
-                <div className="memory-card-more">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => setMore({ ...more, [section.kind]: !open })}
-                  >
-                    {open
-                      ? message("memory.page.less")
-                      : message("memory.page.more", {
-                          count: Math.min(ordered.length, PROFILE_EXPANDED) - PROFILE_PREVIEW,
-                        })}
-                  </button>
-                  {ordered.length > PROFILE_EXPANDED ? (
-                    <button type="button" onClick={() => onViewAll(category)}>
-                      {message("memory.page.viewAll", {
-                        count: ordered.length,
-                        kind: message(`memory.profile.${section.kind}`),
-                      })}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
-      </div>
-      {overview.people.length ? (
-        <PeopleCard people={overview.people} overview={overview} message={message} />
-      ) : null}
-    </>
-  );
-}
-
-function AllTab({
+function CarryCard({
+  overview,
   memory,
   message,
   notify,
-  onOpenThread,
-  focus,
-  initialCategory,
+  onOpen,
 }: {
+  overview: MemoryOverview;
   memory: MemoryModel;
   message: Message;
   notify: (notice: Notice) => void;
-  onOpenThread: (threadId: string) => void;
+  onOpen: (item: MemoryItem) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const items = new Map(overview.memories.map((item) => [item.memoryId, item]));
+  const usage = overview.profileUsage;
+  const count = overview.profile.reduce((total, section) => total + section.lines.length, 0);
+  const queued = usage.queued.flatMap((id) => {
+    const item = items.get(id);
+    return item && live(item) && item.status === "active" ? [item] : [];
+  });
+  const off = overview.memories.filter(
+    (item) => live(item) && item.status === "active" && item.profilePin === "off",
+  );
+  const title = message("memory.page.carry.title");
+  const others = (heading: MessageId, list: readonly MemoryItem[], note: MessageId): ReactNode =>
+    list.length ? (
+      <div className="memory-carry-section">
+        <h5>
+          {message(heading)} <small>{message("memory.page.lines", { count: list.length })}</small>
+        </h5>
+        <p className="settings-note">{message(note)}</p>
+        <ul className="memory-list">
+          {list.map((item) => (
+            <li key={item.memoryId} className="memory-carry-line">
+              <button type="button" className="memory-line" onClick={() => onOpen(item)}>
+                <span>{item.text}</span>
+              </button>
+              <PinSwitch
+                item={item}
+                carried={false}
+                memory={memory}
+                message={message}
+                notify={notify}
+                label={message("memory.page.pinFor", { text: item.text })}
+              />
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+  return (
+    <section className="memory-card memory-carry" aria-label={title}>
+      <div className="memory-carry-head">
+        <div>
+          <h4>{title}</h4>
+          <small>
+            {message("memory.page.carry.summary", {
+              count,
+              used: usage.used,
+              limit: usage.limit,
+            })}
+            {queued.length
+              ? ` · ${message("memory.page.carry.queued", { count: queued.length })}`
+              : ""}
+          </small>
+        </div>
+        <ActionButton variant="secondary" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {message(open ? "memory.page.less" : "memory.page.carry.open")}
+        </ActionButton>
+      </div>
+      <meter
+        className="memory-carry-meter"
+        min={0}
+        max={usage.limit}
+        value={usage.used}
+        aria-label={message("memory.page.carry.meter")}
+      />
+      {open ? (
+        <>
+          <p className="settings-note">
+            {message("memory.page.carry.note", { limit: usage.limit })}
+          </p>
+          {overview.profile.length ? null : (
+            <p className="settings-note">{message("memory.page.carry.none")}</p>
+          )}
+          {overview.profile.map((section) => (
+            <div className="memory-carry-section" key={section.kind}>
+              <h5>
+                {message(`memory.profile.${section.kind}`)}{" "}
+                <small>{message("memory.page.lines", { count: section.lines.length })}</small>
+              </h5>
+              <ul className="memory-list">
+                {section.lines.map((line) => {
+                  const item = items.get(line.memoryId);
+                  return (
+                    <li key={line.memoryId} className="memory-carry-line">
+                      <button
+                        type="button"
+                        className="memory-line"
+                        disabled={!item}
+                        onClick={() => item && onOpen(item)}
+                      >
+                        <span>{line.text}</span>
+                        {item?.profilePin === "on" ? (
+                          <span className="memory-tag" data-kind="carried">
+                            {message("memory.page.carry.yours")}
+                          </span>
+                        ) : null}
+                      </button>
+                      {item ? (
+                        <PinSwitch
+                          item={item}
+                          carried
+                          memory={memory}
+                          message={message}
+                          notify={notify}
+                          label={message("memory.page.pinFor", { text: line.text })}
+                        />
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+          {others("memory.page.carry.queuedTitle", queued, "memory.page.carry.queuedNote")}
+          {others("memory.page.carry.offTitle", off, "memory.page.carry.offNote")}
+        </>
+      ) : count ? (
+        <p className="memory-carry-kinds">
+          {overview.profile.map((section) => (
+            <span key={section.kind} className="memory-carry-kind">
+              {message(`memory.profile.${section.kind}`)} <small>{section.lines.length}</small>
+            </span>
+          ))}
+        </p>
+      ) : (
+        <p className="settings-note">{message("memory.page.carry.none")}</p>
+      )}
+    </section>
+  );
+}
+
+function MemoryBrowser({
+  memory,
+  overview,
+  message,
+  notify,
+  focus,
+  since,
+  initialOpen,
+  onOpenThread,
+}: {
+  memory: MemoryModel;
+  overview: MemoryOverview;
+  message: Message;
+  notify: (notice: Notice) => void;
   focus: readonly string[];
-  initialCategory: string;
+  since: string | null;
+  initialOpen: string | null;
+  onOpenThread: (threadId: string) => void;
 }) {
   const { moment: time } = useLocaleFormat();
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState(initialCategory);
-  const [sub, setSub] = useState("all");
-  const [status, setStatus] = useState<MemoryItem["status"]>("active");
-  const overview = memory.overview;
-  if (!overview) return <p>{message("state.loading")}</p>;
-  const history = new Map<string, MemoryItem[]>();
-  for (const item of overview.memories)
-    if (item.supersededBy)
-      history.set(item.supersededBy, [...(history.get(item.supersededBy) ?? []), item]);
+  const [scope, setScope] = useState<Scope>({
+    status: "active",
+    category: "all",
+    sub: null,
+    fresh: false,
+  });
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const [topicsOpen, setTopicsOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(initialOpen);
+  const byId = new Map(overview.memories.map((item) => [item.memoryId, item]));
+  const carried = new Set(
+    overview.profile.flatMap((section) => section.lines.map((line) => line.memoryId)),
+  );
   const reminders = new Map(
     overview.upcoming.map((item) => [
       item.memoryId,
@@ -933,152 +1210,262 @@ function AllTab({
     ]),
   );
   const visible = overview.memories.filter(live);
-  const pool = visible.filter((item) => item.status === status);
+  const sinceAt = since ? Date.parse(since) : Number.NaN;
+  const fresh = (item: MemoryItem) =>
+    item.status === "active" && Date.parse(item.recordedAt) > sinceAt;
+  const freshCount = visible.filter(fresh).length;
   const needle = search.trim().toLowerCase();
-  type Facet = { status: MemoryItem["status"]; category: string; sub: string };
-  const picked: Facet = { status, category, sub };
-  const matching = (facet: Facet) =>
-    visible.filter(
-      (item) =>
-        item.status === facet.status &&
-        (facet.category === "all" || item.category === facet.category) &&
-        (facet.sub === "all" || item.subCategory === facet.sub) &&
-        (!needle || item.text.toLowerCase().includes(needle)),
-    );
-  const ranked = <K extends string>(entries: { key: K; count: number }[], current: string) =>
-    entries
-      .filter((entry) => entry.count > 0 || entry.key === "all" || entry.key === current)
-      .sort((a, b) => (a.key === "all" ? -1 : b.key === "all" ? 1 : b.count - a.count));
-  const categories = ranked(
-    ["all", ...new Set([...pool.map((item) => item.category), category])].map((key) => ({
-      key,
-      count: matching({ ...picked, category: key, sub: "all" }).length,
-    })),
-    category,
-  ).map((entry) => ({
-    ...entry,
-    label:
-      entry.key === "all"
-        ? message("memory.page.everything")
-        : message("memory.cat", { c: entry.key }),
-  }));
-  const subNames = [
-    ...new Set(
-      pool.flatMap((item) =>
-        item.category === category && item.subCategory ? [item.subCategory] : [],
-      ),
-    ),
-  ];
-  const subs =
-    category !== "all" && subNames.length > 1
-      ? ranked(
-          ["all", ...subNames].map((key) => ({
-            key,
-            count: matching({ ...picked, sub: key }).length,
-          })),
-          sub,
-        ).map((entry) => ({
-          ...entry,
-          label: entry.key === "all" ? message("memory.page.everything") : entry.key,
-        }))
-      : [];
-  const states = (["active", "archived", "trashed"] as const)
-    .map((key) => ({
-      key,
-      label: message("memory.page.status", { s: key }),
-      hint: message("memory.page.statusHint", { s: key }),
-      count: matching({ ...picked, status: key, sub: "all" }).length,
-    }))
-    .filter(
-      (entry) =>
-        entry.key !== "trashed" ||
-        status === "trashed" ||
-        visible.some((item) => item.status === "trashed"),
-    );
-  const shown = matching(picked).sort(
-    (a, b) => Number(focus.includes(b.memoryId)) - Number(focus.includes(a.memoryId)),
+  const pool = visible.filter(
+    (item) =>
+      item.status === scope.status &&
+      (!scope.fresh || fresh(item)) &&
+      (!needle || item.text.toLowerCase().includes(needle)),
   );
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).valueOf();
-  const groupOf = (item: MemoryItem) =>
-    focus.includes(item.memoryId) && status === "active"
-      ? "today"
-      : status !== "active"
-        ? status
-        : Date.parse(item.recordedAt) >= today
-          ? "today"
-          : Date.parse(item.recordedAt) >= today - 6 * DAY_MS
-            ? "week"
-            : "earlier";
-  const groups = new Map<string, MemoryItem[]>();
-  for (const item of shown) groups.set(groupOf(item), [...(groups.get(groupOf(item)) ?? []), item]);
+  const topics = [...new Set(pool.map((item) => item.category))]
+    .map((category) => {
+      const rows = pool.filter((item) => item.category === category);
+      const subs = [
+        ...new Set(rows.flatMap((item) => (item.subCategory ? [item.subCategory] : []))),
+      ]
+        .map((sub) => ({ sub, count: rows.filter((item) => item.subCategory === sub).length }))
+        .sort((a, b) => b.count - a.count);
+      return { category, count: rows.length, subs };
+    })
+    .sort((a, b) => b.count - a.count);
+  const rank = (a: MemoryItem, b: MemoryItem) =>
+    Number(focus.includes(b.memoryId)) - Number(focus.includes(a.memoryId)) ||
+    b.recordedAt.localeCompare(a.recordedAt);
+  const shown = pool
+    .filter(
+      (item) =>
+        (scope.category === "all" || item.category === scope.category) &&
+        (scope.sub === null || item.subCategory === scope.sub),
+    )
+    .sort(rank);
+  const go = (next: Partial<Scope>) => {
+    setScope({ ...scope, ...next });
+    setLimit(PAGE_SIZE);
+    setTopicsOpen(false);
+  };
+  const grouped = scope.category === "all" && !needle && !scope.fresh && scope.status === "active";
+  const line = (item: MemoryItem) => (
+    <MemoryLine
+      key={`${item.memoryId}:${item.revision}`}
+      item={item}
+      changes={changeCount(memoryChain(item, overview.memories))}
+      reminder={reminders.has(item.memoryId)}
+      carried={carried.has(item.memoryId)}
+      justSaved={focus.includes(item.memoryId)}
+      showTopic={scope.category === "all" && !grouped}
+      message={message}
+      onOpen={() => setOpenId(item.memoryId)}
+    />
+  );
+  let opened = openId ? byId.get(openId) : undefined;
+  while (opened?.supersededBy) opened = byId.get(opened.supersededBy);
+  const topicName =
+    scope.category === "all"
+      ? message("memory.page.allTopics")
+      : `${message("memory.cat", { c: scope.category })}${scope.sub ? ` · ${scope.sub}` : ""}`;
+  const archived = visible.filter((item) => item.status === "archived").length;
+  const trashed = visible.filter((item) => item.status === "trashed").length;
   return (
     <>
-      <p className="settings-note">{message("memory.page.allNote")}</p>
+      <CarryCard
+        overview={overview}
+        memory={memory}
+        message={message}
+        notify={notify}
+        onOpen={(item) => setOpenId(item.memoryId)}
+      />
+      {since && freshCount && !scope.fresh && scope.status === "active" ? (
+        <p className="memory-banner" data-kind="fresh">
+          {message("memory.page.newSince", { count: freshCount })}{" "}
+          <button type="button" className="memory-link" onClick={() => go({ fresh: true })}>
+            {message("memory.page.showNew")}
+          </button>
+        </p>
+      ) : null}
       <input
         type="search"
         className="memory-search"
         aria-label={message("memory.search")}
         placeholder={message("memory.search")}
         value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-      />
-      <Chips
-        items={categories}
-        value={category}
-        message={message}
-        onPick={(key) => {
-          setCategory(key);
-          setSub("all");
+        onChange={(event) => {
+          setSearch(event.currentTarget.value);
+          setLimit(PAGE_SIZE);
         }}
       />
-      {subs.length ? (
-        <Chips
-          label={message("memory.page.sub")}
-          items={subs}
-          value={sub}
-          message={message}
-          onPick={setSub}
-        />
-      ) : null}
-      <Chips
-        label={message("memory.page.state")}
-        items={states}
-        value={status}
-        message={message}
-        onPick={(key) => {
-          setStatus(key);
-          setSub("all");
-        }}
-      />
-      {groups.size ? (
-        [...groups].map(([group, rows]) => (
-          <section key={group}>
-            <h5 className="memory-group">
-              {message("memory.page.group", { g: group, count: rows.length })}
-            </h5>
-            <ul className="memory-list">
-              {rows.map((item) => (
-                <MemoryRow
-                  key={`${item.memoryId}:${item.revision}`}
-                  item={item}
-                  history={history.get(item.memoryId) ?? []}
-                  reminder={reminders.get(item.memoryId) ?? null}
-                  justSaved={focus.includes(item.memoryId)}
-                  memory={memory}
-                  message={message}
-                  notify={notify}
-                  onOpenThread={onOpenThread}
-                />
-              ))}
-            </ul>
-          </section>
-        ))
-      ) : (
-        <p className="settings-note">
-          {visible.length ? message("memory.page.noResults") : message("memory.empty")}
+      {scope.status === "active" ? null : (
+        <p className="memory-banner" data-kind={scope.status}>
+          {message("memory.page.group", { g: scope.status, count: pool.length })}{" "}
+          <button
+            type="button"
+            className="memory-link"
+            onClick={() => go({ status: "active", category: "all", sub: null })}
+          >
+            {message("memory.page.backToActive")}
+          </button>
         </p>
       )}
+      <div className="memory-browse">
+        <button
+          type="button"
+          className="memory-topics-toggle"
+          aria-expanded={topicsOpen}
+          onClick={() => setTopicsOpen(!topicsOpen)}
+        >
+          {message("memory.page.topicNow", { topic: topicName })}
+          <LineIcon name="chevron" />
+        </button>
+        <nav
+          className="memory-topics"
+          aria-label={message("memory.page.topics")}
+          data-open={topicsOpen || undefined}
+        >
+          <button
+            type="button"
+            aria-pressed={scope.category === "all"}
+            onClick={() => go({ category: "all", sub: null })}
+          >
+            {message("memory.page.allTopics")}
+          </button>
+          {topics.map((topic) => (
+            <div key={topic.category}>
+              <button
+                type="button"
+                aria-pressed={scope.category === topic.category && scope.sub === null}
+                onClick={() => go({ category: topic.category, sub: null })}
+              >
+                {message("memory.cat", { c: topic.category })} <small>{topic.count}</small>
+              </button>
+              {scope.category === topic.category && topic.subs.length > 1
+                ? topic.subs.map((entry) => (
+                    <button
+                      type="button"
+                      key={entry.sub}
+                      className="memory-topic-sub"
+                      aria-pressed={scope.sub === entry.sub}
+                      onClick={() => go({ category: topic.category, sub: entry.sub })}
+                    >
+                      {entry.sub} <small>{entry.count}</small>
+                    </button>
+                  ))
+                : null}
+            </div>
+          ))}
+        </nav>
+        <div className="memory-results">
+          <p className="memory-crumbs">
+            {scope.fresh ? (
+              <>
+                <strong>{message("memory.page.newSince", { count: pool.length })}</strong>{" "}
+                <button type="button" className="memory-link" onClick={() => go({ fresh: false })}>
+                  {message("memory.page.clearNew")}
+                </button>
+              </>
+            ) : (
+              <>
+                <strong>{topicName}</strong>{" "}
+                <small>
+                  {grouped
+                    ? message("memory.page.groupedNote", {
+                        count: shown.length,
+                        preview: GROUP_PREVIEW,
+                      })
+                    : message("memory.page.lines", { count: shown.length })}
+                </small>
+              </>
+            )}
+          </p>
+          {scope.category === "relationship" &&
+          scope.status === "active" &&
+          overview.people.length ? (
+            <PeopleCard people={overview.people} overview={overview} message={message} />
+          ) : null}
+          {!shown.length ? (
+            visible.length ? (
+              <EmptyState title={message("memory.page.noResults")} />
+            ) : (
+              <EmptyState title={message("memory.emptyTitle")}>
+                {message("memory.empty")}
+              </EmptyState>
+            )
+          ) : grouped ? (
+            topics.map((topic) => {
+              const rows = shown.filter((item) => item.category === topic.category);
+              return (
+                <section key={topic.category} className="memory-topic-group">
+                  <h5 className="memory-group">
+                    {message("memory.cat", { c: topic.category })}{" "}
+                    <small>{message("memory.page.lines", { count: rows.length })}</small>
+                  </h5>
+                  <ul className="memory-list">{rows.slice(0, GROUP_PREVIEW).map(line)}</ul>
+                  {rows.length > GROUP_PREVIEW ? (
+                    <button
+                      type="button"
+                      className="memory-link"
+                      onClick={() => go({ category: topic.category, sub: null })}
+                    >
+                      {message("memory.page.seeAll", { count: rows.length })}
+                    </button>
+                  ) : null}
+                </section>
+              );
+            })
+          ) : (
+            <>
+              <ul className="memory-list">{shown.slice(0, limit).map(line)}</ul>
+              {shown.length > limit ? (
+                <button
+                  type="button"
+                  className="memory-link memory-load-more"
+                  onClick={() => setLimit(limit + PAGE_SIZE)}
+                >
+                  {message("memory.page.loadMore", {
+                    count: Math.min(PAGE_SIZE, shown.length - limit),
+                  })}
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+      <p className="memory-status-links">
+        {scope.status !== "archived" && archived ? (
+          <button
+            type="button"
+            className="memory-link"
+            onClick={() => go({ status: "archived", category: "all", sub: null, fresh: false })}
+          >
+            {message("memory.page.statusLink", { s: "archived", count: archived })}
+          </button>
+        ) : null}
+        {scope.status !== "trashed" && trashed ? (
+          <button
+            type="button"
+            className="memory-link"
+            onClick={() => go({ status: "trashed", category: "all", sub: null, fresh: false })}
+          >
+            {message("memory.page.statusLink", { s: "trashed", count: trashed })}
+          </button>
+        ) : null}
+      </p>
+      {opened ? (
+        <MemoryDetail
+          key={opened.memoryId}
+          item={opened}
+          chain={memoryChain(opened, overview.memories)}
+          reminder={reminders.get(opened.memoryId) ?? null}
+          carried={carried.has(opened.memoryId)}
+          memory={memory}
+          message={message}
+          notify={notify}
+          onOpenThread={onOpenThread}
+          onClose={() => setOpenId(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -1087,10 +1474,12 @@ function TimelineTab({
   memory,
   message,
   onConfirm,
+  onShowMemory,
 }: {
   memory: MemoryModel;
   message: Message;
   onConfirm: () => void;
+  onShowMemory: (memoryId: string) => void;
 }) {
   const { dayHeading } = useLocaleFormat();
   const [filter, setFilter] = useState("all");
@@ -1106,34 +1495,28 @@ function TimelineTab({
     undone?: boolean;
     undo?: () => void;
     confirm?: boolean;
+    change?: number;
+    show?: () => void;
   };
-  const byId = new Map(overview.memories.map((item) => [item.memoryId, item]));
   const everything: Event[] = [
-    ...overview.memories.flatMap((item): Event[] =>
-      item.importBatchId
-        ? []
-        : item.supersededBy
-          ? [
-              {
-                key: item.memoryId,
-                at:
-                  item.validTo && !Number.isNaN(Date.parse(item.validTo))
-                    ? item.validTo
-                    : item.updatedAt,
-                type: "correct",
-                kind: "correct",
-                text: `${item.text} → ${byId.get(item.supersededBy)?.text ?? ""}`,
-              },
-            ]
-          : [
-              {
-                key: item.memoryId,
-                at: item.recordedAt,
-                type: "new",
-                kind: "new",
-                text: item.text,
-              },
-            ],
+    ...memoryHeads(overview.memories).flatMap((head) =>
+      memoryChain(head, overview.memories).flatMap((node): Event[] =>
+        node.kind === "reaffirmed" || (node.change === 0 && node.record.importBatchId)
+          ? []
+          : node.change === 0
+            ? [{ key: node.key, at: node.at, type: "new", kind: "new", text: node.text }]
+            : [
+                {
+                  key: node.key,
+                  at: node.at,
+                  type: "correct",
+                  kind: "correct",
+                  text: message("memory.page.nowIs", { text: node.text }),
+                  change: node.change,
+                  show: () => onShowMemory(head.memoryId),
+                },
+              ],
+      ),
     ),
     ...overview.tidyUps.map(
       (item): Event => ({
@@ -1198,6 +1581,15 @@ function TimelineTab({
               <span className={event.undone ? "memory-undone" : undefined}>
                 {event.text}
                 <small>{event.note}</small>
+                {event.change ? (
+                  <small>
+                    {message("memory.page.changeNo", { n: event.change })}
+                    {" · "}
+                    <button type="button" className="memory-link" onClick={event.show}>
+                      {message("memory.page.seeAllChanges")}
+                    </button>
+                  </small>
+                ) : null}
               </span>
               {event.undone ? (
                 <small>{message("memory.undone")}</small>
@@ -1495,29 +1887,75 @@ function AddForm({
   notify: (notice: Notice) => void;
   onDone: () => void;
 }) {
+  const [text, setText] = useState("");
+  const [picked, setPicked] = useState<MemoryCategory | null>(null);
+  const [pinned, setPinned] = useState(false);
+  const category = picked ?? guessCategory(text).category;
+  const sensitive = category === "health" || category === "finance";
+  const pinnable = PINNABLE.has(category) && !sensitive;
+  const save = () =>
+    void memory.create(text.trim(), category, sensitive, pinned && pinnable).then((ok) => {
+      if (!ok) return;
+      notify({
+        text: message("memory.page.added", {
+          cat: message("memory.cat", { c: category }),
+          pinned: String(pinned && pinnable),
+        }),
+      });
+      onDone();
+    });
   return (
     <section className="memory-card" data-kind="add">
       <strong>{message("memory.page.addTitle")}</strong>
       <p className="settings-note">{message("memory.page.addNote")}</p>
-      <TextEditor
-        initial=""
-        placeholder={message("memory.page.addPlaceholder")}
-        busy={memory.busy}
-        message={message}
-        onCancel={onDone}
-        onSave={(text) => {
-          const guess = guessCategory(text);
-          void memory.create(text, guess.category, guess.sensitive).then((ok) => {
-            if (!ok) return;
-            notify({
-              text: message("memory.page.added", {
-                cat: message("memory.cat", { c: guess.category }),
-              }),
-            });
-            onDone();
-          });
-        }}
-      />
+      <div className="memory-editor">
+        <textarea
+          aria-label={message("memory.page.addTitle")}
+          maxLength={500}
+          placeholder={message("memory.page.addPlaceholder")}
+          value={text}
+          onChange={(event) => setText(event.currentTarget.value)}
+        />
+        <div className="memory-add-options">
+          <label>
+            {message("memory.page.topic")}
+            <select
+              value={category}
+              onChange={(event) => setPicked(event.currentTarget.value as MemoryCategory)}
+            >
+              {MEMORY_CATEGORY_NAMES.map((key) => (
+                <option key={key} value={key}>
+                  {message("memory.cat", { c: key })}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="memory-switch">
+            {message("memory.page.pin")}
+            <input
+              type="checkbox"
+              role="switch"
+              aria-checked={pinned && pinnable}
+              checked={pinned && pinnable}
+              disabled={!pinnable}
+              onChange={() => setPinned(!pinned)}
+            />
+          </label>
+        </div>
+        <small className="settings-note">
+          {message("memory.page.pinHint", {
+            r: sensitive ? "sensitive" : pinnable ? "add" : "category",
+          })}
+        </small>
+        <div className="actions">
+          <ActionButton disabled={memory.busy || !text.trim()} onClick={save}>
+            {message("memory.save")}
+          </ActionButton>
+          <ActionButton variant="quiet" disabled={memory.busy} onClick={onDone}>
+            {message("governed.cancel")}
+          </ActionButton>
+        </div>
+      </div>
     </section>
   );
 }
@@ -1535,12 +1973,20 @@ export function MemoryPage({
   onBack: () => void;
   onOpenThread: (threadId: string) => void;
 }) {
-  const [tab, setTab] = useState<Tab>(focus.length ? "all" : "pending");
-  const [allCategory, setAllCategory] = useState("all");
+  const [tab, setTab] = useState<Tab>("memories");
+  const [showId, setShowId] = useState<string | null>(null);
   const [panel, setPanel] = useState<"add" | "import" | "export" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
+  const [since, setSince] = useState<string | null | undefined>(undefined);
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  const loaded = memory?.overview ? memory.overview.lastViewedAt : undefined;
+  const markViewed = memory?.markViewed;
+  useEffect(() => {
+    if (loaded === undefined || since !== undefined || !markViewed) return;
+    setSince(loaded);
+    void markViewed();
+  }, [loaded, since, markViewed]);
   if (!memory) return <p>{message("common.notConfigured")}</p>;
   const overview = memory.overview;
   const notify = (next: Notice) => {
@@ -1550,49 +1996,12 @@ export function MemoryPage({
   };
   const memories = overview?.memories.filter(live) ?? [];
   const active = memories.filter((item) => item.status === "active");
-  const queue =
-    (overview?.pending.length ?? 0) +
-    (overview?.personSuggestions.length ?? 0) +
-    (overview?.memories.filter(
-      (item) => item.tentative && !item.supersededBy && item.status === "active",
-    ).length ?? 0);
-  const current: Tab = tab === "pending" && !queue ? "profile" : tab;
   const paused = overview?.capturePaused ?? false;
   const ready = overview?.manualAddReady ?? false;
-  const tabs: { key: Tab; count?: string; urgent?: boolean }[] = [
-    ...(queue ? [{ key: "pending" as const, count: String(queue), urgent: true }] : []),
-    { key: "profile" },
-    { key: "all", ...(overview ? { count: String(active.length) } : {}) },
-    { key: "timeline" },
+  const tabs: { key: Tab; count?: string }[] = [
+    { key: "memories", ...(overview ? { count: String(active.length) } : {}) },
+    { key: "changes" },
   ];
-  const body: Record<Tab, () => ReactNode> = {
-    pending: () => <PendingTab memory={memory} message={message} />,
-    profile: () => (
-      <ProfileTab
-        memory={memory}
-        message={message}
-        focus={focus}
-        onViewAll={(category) => {
-          setAllCategory(category);
-          setTab("all");
-        }}
-      />
-    ),
-    all: () => (
-      <AllTab
-        key={allCategory}
-        memory={memory}
-        message={message}
-        notify={notify}
-        onOpenThread={onOpenThread}
-        focus={focus}
-        initialCategory={allCategory}
-      />
-    ),
-    timeline: () => (
-      <TimelineTab memory={memory} message={message} onConfirm={() => setTab("pending")} />
-    ),
-  };
   const week = Date.now() - 7 * DAY_MS;
   return (
     <section className="memory-page side-page-body" aria-label={message("nav.memory")}>
@@ -1654,15 +2063,14 @@ export function MemoryPage({
       {panel === "add" ? (
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
       ) : null}
+      <ConfirmSection memory={memory} message={message} />
       <div role="tablist" className="memory-tabs" aria-label={message("nav.memory")}>
         {tabs.map((item) => (
           <button
             type="button"
             role="tab"
             key={item.key}
-            aria-selected={current === item.key}
-            data-urgent={item.urgent || undefined}
-            className={item.key === "profile" ? "memory-tab-split" : undefined}
+            aria-selected={tab === item.key}
             onClick={() => setTab(item.key)}
           >
             {message("memory.page.tab", { t: item.key })}
@@ -1670,7 +2078,31 @@ export function MemoryPage({
           </button>
         ))}
       </div>
-      {overview ? body[current]() : <p>{message("state.loading")}</p>}
+      {!overview ? (
+        <p>{message("state.loading")}</p>
+      ) : tab === "memories" ? (
+        <MemoryBrowser
+          key={showId ?? ""}
+          memory={memory}
+          overview={overview}
+          message={message}
+          notify={notify}
+          focus={focus}
+          since={since ?? null}
+          initialOpen={showId}
+          onOpenThread={onOpenThread}
+        />
+      ) : (
+        <TimelineTab
+          memory={memory}
+          message={message}
+          onConfirm={() => reveal(document.getElementById("memory-confirm"))}
+          onShowMemory={(memoryId) => {
+            setShowId(memoryId);
+            setTab("memories");
+          }}
+        />
+      )}
       <footer className="memory-footer">
         <small>{message("memory.note")}</small>
         <span>

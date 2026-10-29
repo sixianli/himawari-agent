@@ -374,7 +374,7 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
   if (lastUserText.includes("模型故障")) return { kind: "http-error", status: 500 };
   if (lastUserText.includes("慢一点"))
     return { kind: "text", text: "慢回答已完成", delayMs: 2_500 };
-  return { kind: "text", text: "普通回答已完成" };
+  return { kind: "text", text: PLAIN_ANSWER };
 };
 
 let installation: ProductPathInstallation;
@@ -5472,12 +5472,15 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-news-search",
   "accept-long-answer",
   "accept-run-command",
+  "accept-unrelated-no-memory",
   "accept-memory-page",
   "accept-phone-layout",
   "accept-after-restart",
 ] as const;
 const RUN_COMMAND_REQUEST = "请统计行数";
 const RUN_COMMAND_OUTPUT = "lines=37";
+const UNRELATED_REQUEST = "写到一个pdf文件";
+const PLAIN_ANSWER = "普通回答已完成";
 const LONG_ANSWER_END = "长回答验收到此结束";
 const LONG_ANSWER = [
   ...Array.from(
@@ -5501,7 +5504,7 @@ const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => 
     };
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
   if (lastUserText.includes("长回答")) return { kind: "text", text: LONG_ANSWER };
-  return { kind: "text", text: "普通回答已完成" };
+  return { kind: "text", text: PLAIN_ANSWER };
 };
 
 async function openToolsSettings() {
@@ -5693,6 +5696,17 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(answer).toContainText(RUN_COMMAND_OUTPUT);
       await expectFinishedTurnShowsStep(turn, UI.commandStep);
     });
+    await scenario("accept-unrelated-no-memory", async () => {
+      await newThread();
+      const turn = await send(UNRELATED_REQUEST);
+      await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
+      await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+      const process = turn.locator(UI.turnProcess).last();
+      if ((await process.getAttribute("open")) === null)
+        await process.locator(UI.turnProcessToggle).click();
+      await uiExpect(turn.getByText(UI.memoryFoundStep)).toHaveCount(0);
+      await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
+    });
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
       const memory = target(page, UI.memoryPage);
@@ -5731,6 +5745,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await target(target(phone, UI.sidebarNavigation), UI.openMemory).click();
         const memory = target(phone, UI.memoryPage);
         await uiExpect(memory.getByText(UI.memorySummary)).toBeVisible({ timeout: 30_000 });
+        await uiExpect(target(memory, UI.memoryCarry)).toBeVisible();
         const memoryTabs = target(target(memory, UI.memoryTabs), UI.memoryTab);
         for (let index = 0; index < (await memoryTabs.count()); index += 1) {
           await memoryTabs.nth(index).click();

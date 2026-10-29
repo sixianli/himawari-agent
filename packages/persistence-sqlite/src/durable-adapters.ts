@@ -893,6 +893,8 @@ export class SqliteDurableAdapters {
       listActive: (ownerId, agentId) =>
         this.context.read("memory.listActive", { ownerId, agentId }),
       markUsed: (memoryIds, usedAt) => this.context.write("memory.markUsed", { memoryIds, usedAt }),
+      appendHistory: (input) => this.context.write("memory.appendHistory", input),
+      listHistory: (input) => this.context.read("memory.listHistory", input),
     });
   }
 
@@ -924,6 +926,9 @@ export class SqliteDurableAdapters {
     return Object.freeze<MemoryBookStorePort>({
       readSettings: (scope) => this.context.read("memoryBook.readSettings", scope),
       writeSettings: (input) => this.context.write("memoryBook.writeSettings", input),
+      markViewed: (input) => this.context.write("memoryBook.markViewed", input),
+      setProfilePin: (input) => this.context.write("memoryBook.setProfilePin", input),
+      listProfilePins: (scope) => this.context.read("memoryBook.listProfilePins", scope),
       latestGeneration: (scope) => this.context.read("memoryBook.latestGeneration", scope),
       listInactive: (input) => this.context.read("memory.listInactive", input),
       listExpiredTrash: (input) => this.context.read("memoryBook.listExpiredTrash", input),

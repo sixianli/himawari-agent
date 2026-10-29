@@ -23,6 +23,7 @@ import type {
   ProductionFileReadServices,
   WorkflowAuthority,
 } from "./production-file-read-workflow.js";
+import { stageTiming } from "./production-stage-timing.js";
 import type { ThreadArtifactCandidate } from "./production-thread-artifacts.js";
 import type {
   WorkspaceLedgerBaseline,
@@ -110,8 +111,14 @@ export async function executeProductionCodingRequest(
   services: ProductionFileReadServices,
   ctx: FileReadExecutionContext,
 ): Promise<RuntimeToolExecutionResult> {
+  const timing = stageTiming("tool.workflow.timing", {
+    runId: call.runId,
+    toolCallId: call.toolCallId,
+    tool,
+  });
   await ctx.assertActive();
   const binding = await services.binding(call);
+  timing.mark("binding");
   if (
     !binding ||
     !call.context ||
@@ -375,7 +382,9 @@ export async function executeProductionCodingRequest(
     });
   }
   await active();
+  timing.mark("prepare");
   const permission = await services.authorize(intent, ctx.signal);
+  timing.mark("authorize");
   if (permission.decision !== "ALLOW") {
     const result = runtimeToolAuthorizationResult(permission);
     return result.outcome === "failed" ? { ...result, dispatchState: "not_sent" } : result;
@@ -523,6 +532,7 @@ export async function executeProductionCodingRequest(
   }
   if (!saved) throw new Error("CODING_HANDLE_UNAVAILABLE");
   await active();
+  timing.mark("handle");
   const ledger =
     tool === "bash" && grant !== null && !binding.workspaceCopy
       ? services.workspaceLedger
@@ -537,6 +547,7 @@ export async function executeProductionCodingRequest(
       }
       baseline = (await ctx.save("workspace-before", baseline)).value as WorkspaceLedgerBaseline;
     }
+    timing.mark("ledger_before");
     const finishOverlap = services.threadArtifacts?.begin(grant.id);
     let overlapped = false;
     let executed: RuntimeToolExecutionResult;
@@ -545,6 +556,7 @@ export async function executeProductionCodingRequest(
     } finally {
       overlapped = finishOverlap?.() ?? false;
     }
+    timing.mark("phase");
     if (executed.outcome === "awaiting_approval") return executed;
     let changes = (await ctx.load("workspace-changes")) as { readonly summary: string } | undefined;
     if (!changes) {
@@ -578,6 +590,7 @@ export async function executeProductionCodingRequest(
         [...ledgerCandidates(recorded)],
       );
     }
+    timing.finish("ledger_after");
     return {
       ...executed,
       modelContent: executed.modelContent
@@ -586,6 +599,7 @@ export async function executeProductionCodingRequest(
     };
   }
   const result = await ctx.phase(saved.handle, tool, saved.inputRef);
+  timing.mark("phase");
   if (
     (tool === "write" || tool === "edit") &&
     grant !== null &&
@@ -604,6 +618,7 @@ export async function executeProductionCodingRequest(
     memory.observe(providers, result);
     memory.remember(memoryKey, tool as "web_search" | "web_fetch", result);
   }
+  timing.finish("artifacts");
   return result;
 }
 

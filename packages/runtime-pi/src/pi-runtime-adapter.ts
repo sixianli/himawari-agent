@@ -147,6 +147,7 @@ export interface PiAgentRuntimeAdapterDependencies {
   readonly createSession?: (
     options: CreateAgentSessionOptions,
   ) => Promise<CreateAgentSessionResult>;
+  readonly measure?: <T>(runId: string, name: string, work: () => Promise<T>) => Promise<T>;
 }
 
 const KNOWN_IGNORED_EVENTS = new Set([
@@ -1161,17 +1162,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         const saved = toolCheckpoints.get(key);
         if (saved) return saved;
         const active = this.#activeSessions.get(request.runId);
-        if (!active || !this.#dependencies.continuations)
-          throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
-        await eventChain;
+        const continuations = this.#dependencies.continuations;
+        if (!active || !continuations) throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
+        await this.#measure(request.runId, "tool.checkpoint.drain", () => eventChain);
         const batch = capturePiToolBatch(active, invocation.toolCallId, streamOrdinal);
-        const ref = await this.#dependencies.continuations.save(request, {
-          identity,
-          batch,
-          turnIndex,
-          messageSequence,
-          toolProgress: toolProgress.snapshot(),
-        });
+        const ref = await this.#measure(request.runId, "tool.checkpoint.save", () =>
+          continuations.save(request, {
+            identity,
+            batch,
+            turnIndex,
+            messageSequence,
+            toolProgress: toolProgress.snapshot(),
+          }),
+        );
         toolCheckpoints.set(key, ref);
         return ref;
       };
@@ -1558,7 +1561,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       ...definition,
       executionMode: parallel ? "parallel" : "sequential",
       execute: async (toolCallId, parameters, signal) => {
-        await this.#historyWrites.get(request.runId);
+        await this.#measure(
+          request.runId,
+          "tool.history_wait",
+          async () => await this.#historyWrites.get(request.runId),
+        );
         signal?.throwIfAborted();
         reconciliation.assertKnown();
         const completed = reconciliation.completedResult(toolCallId);
@@ -1863,6 +1870,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
   private turnId(request: RuntimeRequest, turnIndex: number): RuntimeTurnId {
     if (this.#dependencies.turnId) return this.#dependencies.turnId(request, turnIndex);
     return `${request.runId}:turn:${turnIndex}` as RuntimeTurnId;
+  }
+
+  #measure<T>(runId: string, name: string, work: () => Promise<T>): Promise<T> {
+    return this.#dependencies.measure ? this.#dependencies.measure(runId, name, work) : work();
   }
 
   private now(): string {

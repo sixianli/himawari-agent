@@ -5,6 +5,7 @@ import {
   DurableMemoryService,
   type MemoryExtractionAuditRecord,
   type MemoryProviderProjectionPort,
+  OwnerProfileService,
   type ProductMemoryRecord,
   type RuntimeRequest,
   type ThreadRepositoryPort,
@@ -225,6 +226,18 @@ describe("production memory capture", () => {
       memory,
       reminders: repository.memoryReminders(),
       book: repository.memoryBook(),
+      profile: new OwnerProfileService({
+        state: repository.productMemoryState(),
+        pins: repository.memoryBook(),
+        readText: async (record) => {
+          const payload = await payloads.get(record.contentRef);
+          return payload
+            ? new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }))
+            : undefined;
+        },
+        storeText: async () => {},
+        digest: (text) => String(text.length),
+      }),
       payloads,
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
@@ -304,7 +317,7 @@ describe("production memory capture", () => {
     control: ProductionMemoryControl,
     memoryId: string,
     expectedRevision: number,
-    action: "correct" | "delete" | "recover",
+    action: "correct" | "delete" | "recover" | "restore",
     contentRef: string | null,
   ) =>
     control.execute({
@@ -313,6 +326,181 @@ describe("production memory capture", () => {
       type: "memory.mutate",
       payload: { memoryId, action, expectedRevision, contentRef },
     } as never);
+
+  it("[MH-1] keeps every round of a back-and-forth fact, its stance and the Owner's words", async () => {
+    const memoryOutput = (memory: Record<string, unknown>) =>
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            classification: "private",
+            confidence: 900,
+            category: "preference",
+            subCategory: "社交",
+            ...memory,
+          },
+        ],
+      });
+    const context = await setup(
+      "我超想出去玩，周末去哪儿都行",
+      memoryOutput({
+        decision: "create",
+        text: "主人很喜欢出去玩",
+        stance: "想出去玩",
+        quote: "我超想出去玩，周末去哪儿都行",
+      }),
+    );
+    const options = (
+      context.capture as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryCapture>[0];
+      }
+    ).options;
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const round = async (runId: string, ownerText: string, output: string) => {
+      await context.turn("owner", ownerText, runId);
+      context.outputs.push(output);
+      const capture = new ProductionMemoryCapture(options);
+      await capture.start(context.requestFor(runId));
+      await capture.stop();
+    };
+    const head = async () => {
+      const [current] = (
+        await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)
+      ).filter(({ attributes }) => !attributes?.supersededBy);
+      if (!current) throw new Error("no current memory");
+      return current.id;
+    };
+    const first = await head();
+    await round(
+      "run-out-2",
+      "其实我不爱出门，有点社恐",
+      memoryOutput({
+        decision: "supersede",
+        existingMemoryId: first,
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "其实我不爱出门，有点社恐",
+      }),
+    );
+    const second = await head();
+    await round(
+      "run-out-3",
+      "真的不想出去，别劝我",
+      memoryOutput({
+        decision: "unchanged",
+        existingMemoryId: second,
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "真的不想出去，别劝我",
+      }),
+    );
+    expect(context.prompts.at(-1)).toContain('"stance":"不想出去玩"');
+    await round(
+      "run-out-4",
+      "我不想出门，最近都宅在家打游戏",
+      memoryOutput({
+        decision: "update",
+        existingMemoryId: second,
+        text: "主人不想出门，最近都宅在家打游戏",
+        stance: "不想出去玩",
+        quote: "最近都宅在家打游戏",
+      }),
+    );
+    await round(
+      "run-out-5",
+      "现在又想出去玩了，想有人带我",
+      memoryOutput({
+        decision: "supersede",
+        existingMemoryId: second,
+        text: "主人想有人带他出去玩",
+        stance: "想出去玩",
+        quote: "现在又想出去玩了",
+      }),
+    );
+    const third = await head();
+    expect(context.failures).toEqual([]);
+    const byId = async () =>
+      new Map((await overview(context.control)).memories.map((item) => [item.memoryId, item]));
+    const nodes = (memory: { history: readonly Record<string, unknown>[] } | undefined) =>
+      memory?.history.map(({ kind, text, stance, quote, sourceThreadId, sourceDeleted }) => ({
+        kind,
+        text,
+        stance,
+        quote,
+        sourceThreadId,
+        sourceDeleted,
+      }));
+    const view = await byId();
+    expect(view.get(first)).toMatchObject({ supersededBy: second, stance: "想出去玩" });
+    expect(view.get(second)).toMatchObject({
+      supersededBy: third,
+      text: "主人不想出门，最近都宅在家打游戏",
+      stance: "不想出去玩",
+    });
+    expect(view.get(third)).toMatchObject({ supersededBy: null, stance: "想出去玩" });
+    const from = { sourceThreadId: THREAD_ID, sourceDeleted: false };
+    expect(nodes(view.get(first))).toEqual([
+      {
+        kind: "created",
+        text: "主人很喜欢出去玩",
+        stance: "想出去玩",
+        quote: "我超想出去玩，周末去哪儿都行",
+        ...from,
+      },
+    ]);
+    expect(nodes(view.get(second))).toEqual([
+      {
+        kind: "created",
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "其实我不爱出门，有点社恐",
+        ...from,
+      },
+      {
+        kind: "reaffirmed",
+        text: "主人不爱出去玩，有社恐",
+        stance: "不想出去玩",
+        quote: "真的不想出去，别劝我",
+        ...from,
+      },
+      {
+        kind: "updated",
+        text: "主人不想出门，最近都宅在家打游戏",
+        stance: "不想出去玩",
+        quote: "最近都宅在家打游戏",
+        ...from,
+      },
+    ]);
+    expect(nodes(view.get(third))).toEqual([
+      {
+        kind: "created",
+        text: "主人想有人带他出去玩",
+        stance: "想出去玩",
+        quote: "现在又想出去玩了",
+        ...from,
+      },
+    ]);
+    const current = view.get(third);
+    if (!current) throw new Error("current");
+    await context.protect("payload-out-edit", "主人想有人带他去海边玩");
+    await mutate(context.control, third, current.revision, "correct", "payload-out-edit");
+    const restoredFrom = (await byId()).get(second);
+    if (!restoredFrom) throw new Error("second");
+    await mutate(context.control, second, restoredFrom.revision, "restore", null);
+    const after = await byId();
+    expect(nodes(after.get(third))?.map(({ kind, text }) => [kind, text])).toEqual([
+      ["created", "主人想有人带他出去玩"],
+      ["edited", "主人想有人带他去海边玩"],
+    ]);
+    expect(nodes(after.get(third))?.[1]).toMatchObject({ quote: null, sourceThreadId: null });
+    expect(nodes(after.get(second))?.map(({ kind }) => kind)).toEqual([
+      "created",
+      "reaffirmed",
+      "updated",
+      "restored",
+    ]);
+  });
 
   it("queues a sensitive Memory with its topic and commits it once the Owner approves", async () => {
     const context = await setup(
@@ -364,6 +552,14 @@ describe("production memory capture", () => {
     expect(pending.topic).toBe("finance");
     await respond(context.control, pending.requestId, "rejected");
     expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
+  });
+
+  it("asks the model to keep who the Owner's family are and the Owner's rules private, and only their private matters sensitive", () => {
+    const prompt = memoryCapturePrompt("我老婆叫陈静，在医院当药剂师", [], null, null, null);
+    expect(prompt).toContain("主人身边的人是谁（名字、和主人的关系、职业、住在哪个城市）");
+    expect(prompt).toContain("主人给 Himawari 定的做事要求（即使提到钱");
+    expect(prompt).toContain("他人的私事（别人的健康、钱、感情、行踪等）");
+    expect(prompt).not.toContain("他人隐私");
   });
 
   it("never stores identity or card numbers, even when asked to remember them", async () => {
@@ -472,6 +668,22 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(0);
+  });
+
+  it("[MH-1] logs a round where the model kept nothing or named a memory it was not shown", async () => {
+    const empty = await setup("我今天又不想出去玩了。", '{"memories":[]}');
+    await empty.capture.start(empty.request);
+    await empty.capture.stop();
+    expect(empty.failures).toEqual([]);
+    expect(empty.audits.map(({ outcome }) => outcome)).toEqual(["nothing_to_remember"]);
+    const unknown = await setup(
+      "我今天又不想出去玩了，真的。",
+      '{"memories":[{"kind":"durable_fact","decision":"unchanged","existingMemoryId":"memory-not-shown","text":"主人最近不想出去玩","classification":"private","confidence":900,"quote":"我今天又不想出去玩了"}]}',
+    );
+    await unknown.capture.start(unknown.request);
+    await unknown.capture.stop();
+    expect(unknown.failures).toEqual([]);
+    expect(unknown.audits.map(({ outcome }) => outcome)).toEqual(["candidate_invalid"]);
   });
 
   it("reports an invalid model response without writing Memory", async () => {
@@ -762,7 +974,7 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-manual", category: "preference", subCategory: "运动" },
+      { contentRef: "payload-manual", category: "preference", subCategory: "运动", pinned: false },
       "manual-1",
     );
     const added = (await overview(context.control)).memories.find(({ text }) =>
@@ -782,10 +994,100 @@ describe("production memory capture", () => {
       command(
         context.control,
         "memory.create",
-        { contentRef: "payload-card", category: "finance", subCategory: null },
+        { contentRef: "payload-card", category: "finance", subCategory: null, pinned: false },
         "manual-2",
       ),
     ).rejects.toThrow("MEMORY_TEXT_REFUSED");
+  });
+
+  it("[MEM-PIN] lets the Owner decide which memories every conversation brings", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"category":"preference","importance":650,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-coffee", "我每天必须喝咖啡");
+    await context.protect("payload-run", "主人喜欢早上跑步");
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-coffee", category: "preference", subCategory: null, pinned: true },
+      "manual-pinned",
+    );
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-run", category: "preference", subCategory: null, pinned: false },
+      "manual-plain",
+    );
+    let view = await overview(context.control);
+    const byText = (needle: string) => {
+      const found = view.memories.find(({ text }) => text.includes(needle));
+      if (!found) throw new Error(`missing ${needle}`);
+      return found;
+    };
+    const profiled = () => view.profile.flatMap(({ lines }) => lines.map(({ text }) => text));
+    expect(byText("跑步")).toMatchObject({ importance: 500, profilePin: null });
+    expect(byText("咖啡")).toMatchObject({ importance: 500, profilePin: "on" });
+    expect(byText("蓝色")).toMatchObject({ importance: 650, profilePin: null });
+    expect(profiled()).toEqual(["我每天必须喝咖啡", "主人最喜欢的颜色是蓝色"]);
+    expect(view.profileUsage).toEqual({
+      used: "我每天必须喝咖啡".length + 3 + "主人最喜欢的颜色是蓝色".length + 3,
+      limit: 2000,
+      queued: [],
+    });
+    const blue = byText("蓝色");
+    await command(
+      context.control,
+      "memory.mutate",
+      {
+        memoryId: blue.memoryId,
+        action: "unpin",
+        expectedRevision: blue.revision,
+        contentRef: null,
+      },
+      "unpin-blue",
+    );
+    view = await overview(context.control);
+    expect(byText("蓝色").profilePin).toBe("off");
+    expect(profiled()).toEqual(["我每天必须喝咖啡"]);
+    expect(view.lastViewedAt).toBeNull();
+    await command(context.control, "memory.page.viewed", {}, "viewed-1");
+    expect((await overview(context.control)).lastViewedAt).toBe(context.clock.value);
+  });
+
+  it("[MEM-PIN] refuses to bring a sensitive memory into every conversation", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-mood", "主人最近有点抑郁", "sensitive");
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      "manual-mood",
+    );
+    const mood = (await overview(context.control)).memories.find(({ text }) =>
+      text.includes("抑郁"),
+    );
+    if (!mood) throw new Error("missing mood");
+    await expect(
+      command(
+        context.control,
+        "memory.mutate",
+        {
+          memoryId: mood.memoryId,
+          action: "pin",
+          expectedRevision: mood.revision,
+          contentRef: null,
+        },
+        "pin-mood",
+      ),
+    ).rejects.toThrow("MEMORY_NOT_PINNABLE");
   });
 
   it("[MP-4] stops learning from conversations while memory is paused", async () => {

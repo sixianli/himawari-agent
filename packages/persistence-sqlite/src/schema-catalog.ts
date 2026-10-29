@@ -566,6 +566,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "removed with its memory_search_index row by trigger",
   ),
   entry(
+    "memory_history_events",
+    "ProductMemoryStatePort",
+    "one row per change of a Memory: kind, the text Payload at that point, short stance, owner quote Payload, source Thread",
+    "metadata_only",
+    "cascade with its Memory; the quote Payload stays when its source Thread is deleted and goes with its Memory",
+  ),
+  entry(
     "memory_episodes",
     "MemoryEpisodeStorePort",
     "one encrypted summary per closed conversation day or Pi compaction",
@@ -641,6 +648,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "one row per Agent; the Owner pauses or resumes new memories",
     "metadata_only",
     "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "memory_profile_pins",
+    "MemoryBookStorePort",
+    "one row per Memory the Owner switched on or off for every conversation; the Owner's choice overrides the automatic pick",
+    "metadata_only",
+    "cascade with its Memory record",
   ),
   entry(
     "memory_import_batches",

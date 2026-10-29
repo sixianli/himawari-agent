@@ -66,6 +66,7 @@ date: "2026-10-25"
 
 - `memory_entities(memory_id, name)`：记忆里提到的人、地点、项目、物品。只存 `public` 和 `private` 记忆的实体，`sensitive` 以上不存，避免明文关键词落盘。
 - `memory_search_index`：每条记忆一行，记录已索引的修订号、嵌入模型、维度和向量（小端 float32 BLOB，已归一化）。删除行时触发器同步删除全文索引行。
+- `memory_history_events`：每条记忆的每次变化一行（迁移 `0065_memory_history.sql`，见 [ADR 0113](../../adr/0113-memory-history-events-and-stance.md)）。只追加；删对话时保留原话摘录和文字，只清空来源对话并标记“来源对话已删除”；删记忆时整条历史连同摘录一起删。
 - `memory_search_terms`：FTS5 contentless 表（`content=''`、`contentless_delete=1`），只存分词后的倒排索引，不存原文。`sensitive` 以上的记忆不进全文索引。
 
 向量用普通 BLOB 列而不用 `vec0` 虚拟表，原因见 [ADR 0075 的比较](../../adr/0075-self-built-memory-engine.md#options)：没加载扩展的工具也能正常打开和计数主库。
@@ -77,9 +78,10 @@ date: "2026-10-25"
 在现有提炼调用上改动，不增加调用次数：
 
 1. 同一次调用多要五个字段：`category`、`importance`、`entities`、`validFrom`（按消息发送时间换算的日期，没有就是 null）、`quote`（主人原话里支撑这条记忆的一段，原样摘抄）。
-2. 原话核对：`create`、`update`、`merge` 的候选必须带 `quote`，宿主把引文和主人消息都做空白与全半角归一后检查包含关系，且引文至少 8 个字（消息本身不足 8 个字时取整条消息）。核对不过的候选不保存，审计结果记为 `evidence_unverified`。`unchanged` 不需要引文。
+2. 原话核对：`create`、`update`、`merge` 的候选必须带 `quote`，宿主把引文和主人消息都做空白与全半角归一后检查包含关系，且引文至少 8 个字（消息本身不足 8 个字时取整条消息）。核对不过的候选不保存，审计结果记为 `evidence_unverified`。`unchanged` 也要求模型给引文（用于变化历史），但核对不过时不丢弃这条判断，只是不保存引文。
 3. 嵌入和全文索引在同一个后台投影任务里写，沿用现有的投影任务、租约和重试。
 4. 阶段二起，更正不再覆盖旧文本：旧条写上 `valid_to` 和 `superseded_by`，新增一条。
+5. 每次变化（新记住、补充细节、又说了一次、主人手动改、换回）在 `memory_history_events` 追加一行，存当时的文字、立场标签 `stance`、原话摘录和来源对话；“补充细节”不再丢掉旧文字。立场标签由同一次提炼调用给出。决定见 [ADR 0113](../../adr/0113-memory-history-events-and-stance.md)。
 
 <a id="recall"></a>
 
@@ -107,6 +109,7 @@ date: "2026-10-25"
 - 档案文本加密存为 Payload，按内容哈希命名，内容不变就复用同一份。
 - 已经常驻的记忆不再重复出现在检索结果里。
 - 阶段二在记忆页显示和编辑档案；阶段三夜间重建档案，每句链回来源事实。
+- 2026-10-29 起（[ADR 0112](../../adr/0112-memory-page-carried-memories-and-topic-browsing.md)）：主人可以在任意一条记忆上打开或关掉“每次对话都带上”，选择存在 `memory_profile_pins` 表。打开的条目不看重要度，排在自动挑选前面（敏感记忆和事件、健康、财务、其他类不能打开）；关掉的条目不再进档案。2000 字放不下的条目和已用字数会返回给记忆页。手动添加的记忆重要度改为 500（要求类 800），不再自动进档案。提取时，家人朋友是谁（名字、关系、职业、所在城市）和主人定的做事要求标为 `private`，别人的健康、钱、感情、行踪等私事仍标为 `sensitive`。
 
 <a id="embedding"></a>
 

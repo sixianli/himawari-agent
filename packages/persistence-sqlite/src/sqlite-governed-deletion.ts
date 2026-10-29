@@ -767,6 +767,12 @@ export class SqliteGovernedDeletionAdapter {
         database
           .prepare("UPDATE memory_records SET source_thread_id = NULL WHERE source_thread_id = ?")
           .run(objectId);
+        database
+          .prepare(
+            `UPDATE memory_history_events SET source_thread_id = NULL, source_deleted = 1
+            WHERE source_thread_id = ?`,
+          )
+          .run(objectId);
         payloadRefs.push(
           ...this.#values(database, "SELECT content_ref FROM memory_episodes WHERE thread_id = ?", [
             objectId,
@@ -862,7 +868,20 @@ export class SqliteGovernedDeletionAdapter {
             { objectId },
           );
         }
-        payloadRefs.push(memory.contentRef);
+        payloadRefs.push(
+          memory.contentRef,
+          ...this.#values(
+            database,
+            "SELECT content_ref FROM memory_history_events WHERE memory_id = ?",
+            [objectId],
+          ),
+          ...this.#values(
+            database,
+            `SELECT quote_ref FROM memory_history_events
+            WHERE memory_id = ? AND quote_ref IS NOT NULL`,
+            [objectId],
+          ),
+        );
         database.prepare("DELETE FROM memory_records WHERE id = ?").run(objectId);
       }
     } else {

@@ -44,6 +44,8 @@ const turnMessage = (sequence: number, role: "owner" | "agent", contentRef: stri
 const memoryOverview = {
   memories: [],
   profile: [],
+  profileUsage: { used: 0, limit: 2000, queued: [] },
+  lastViewedAt: null,
   pending: [],
   tidyUps: [],
   reminders: [],
@@ -105,6 +107,8 @@ vi.mock("../src/gateway-client.js", async (original) => {
         throw Object.assign(new Error("WALKTHROUGH_FIXTURE_UNAVAILABLE"), { status: 503 });
       }
       async mutate(request: { type: string; payload: { enabled: boolean } }) {
+        if (request.type === "memory.page.viewed")
+          return { resultRef: "result-walkthrough", replayed: false, status: "accepted" };
         if (request.type !== "search.authorization.set") {
           fake.unexpected.push(`mutate ${request.type}`);
           throw Object.assign(new Error("WALKTHROUGH_FIXTURE_UNAVAILABLE"), { status: 503 });
@@ -384,6 +388,7 @@ describe("release walkthrough locators against the real control center", () => {
       return page;
     });
     expect(queryAllByRole(memory, UI.pageError)).toHaveLength(0);
+    expect(byRole(memory, UI.memoryCarry)).toBeDefined();
     expect(
       queryAllByRole(byRole(memory, UI.memoryTabs), UI.memoryTab).length,
     ).toBeGreaterThanOrEqual(2);
@@ -396,5 +401,6 @@ describe("release walkthrough locators against the real control center", () => {
   it("names the process steps the walkthrough waits for exactly as the interface shows them", () => {
     expect(messages["step.search"]).toBe(UI.searchStep);
     expect(messages["step.command"]).toBe(UI.commandStep);
+    expect(messages["step.memoryFound"]).toMatch(UI.memoryFoundStep);
   });
 });

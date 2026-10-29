@@ -957,6 +957,7 @@ export async function createProductionHttpComposition(
         memory: options.memory.service,
         profile: new OwnerProfileService({
           state: repository.productMemoryState(),
+          pins: repository.memoryBook(),
           readText: async (record) => {
             const payload = await memoryPayloads.get(record.contentRef);
             if (!payload || payload.contentType !== "text/plain") return undefined;

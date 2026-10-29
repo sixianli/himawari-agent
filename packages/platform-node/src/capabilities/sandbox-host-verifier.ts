@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { release } from "node:os";
+import { performance } from "node:perf_hooks";
 import { Worker } from "node:worker_threads";
 import path from "node:path";
 import type { SandboxWorkspaceClaim } from "@himawari-agent/application";
@@ -72,7 +73,7 @@ async function checkedMetadata(filename: string, directory: boolean) {
   return info;
 }
 
-export async function verifySandboxHost(input: {
+export interface SandboxHostVerificationInput {
   readonly binding: SandboxHostBinding;
   readonly qualification: SandboxRuntimeQualification;
   readonly hostId: string;
@@ -81,7 +82,13 @@ export async function verifySandboxHost(input: {
     | SandboxExecutionPlan
     | SandboxExecutionPlanCandidateV2
     | SandboxExecutionPlanV2;
-}): Promise<void> {
+}
+
+export async function verifySandboxHost(input: SandboxHostVerificationInput): Promise<void> {
+  await verifySandboxHostFiles(assertSandboxHostPlan(input));
+}
+
+function assertSandboxHostPlan(input: SandboxHostVerificationInput): SandboxHostBinding {
   const binding = sandboxHostBindingSchema.parse(input.binding);
   const qualification = sandboxRuntimeQualificationSchema.parse(input.qualification);
   const plan =
@@ -136,6 +143,10 @@ export async function verifySandboxHost(input: {
       ))
   )
     throw new Error("SANDBOX_HOST_PLAN_CHANGED");
+  return binding;
+}
+
+async function verifySandboxHostFiles(binding: SandboxHostBinding): Promise<void> {
   await checkedPath(binding.privateRoot, true);
   for (const root of binding.roots) {
     const current = await checkedPath(root.canonicalPath, true);
@@ -153,6 +164,72 @@ export async function verifySandboxHost(input: {
     binding.executable,
     binding.runner,
   ]);
+}
+
+export function createReusingSandboxHostVerifier(options: {
+  readonly reuseMs: number;
+  readonly settleMs?: number;
+  readonly now?: () => number;
+  readonly wallClockMs?: () => number;
+}): (input: SandboxHostVerificationInput) => Promise<void> {
+  const now = options.now ?? (() => performance.now());
+  const wallClockMs = options.wallClockMs ?? (() => Date.now());
+  const settleMs = options.settleMs ?? 2_000;
+  const verified = new Map<string, number>();
+  return async (input) => {
+    const binding = assertSandboxHostPlan(input);
+    const before = await sandboxHostFileState(binding);
+    const checkedAt = now();
+    for (const [key, at] of verified)
+      if (!(checkedAt >= at && checkedAt - at < options.reuseMs)) verified.delete(key);
+    if (verified.has(before.key)) return;
+    const startedAtWallMs = wallClockMs();
+    await verifySandboxHostFiles(binding);
+    const after = await sandboxHostFileState(binding);
+    if (after.key === before.key && startedAtWallMs - after.newestFileChangeMs >= settleMs)
+      verified.set(before.key, checkedAt);
+  };
+}
+
+async function sandboxHostFileState(
+  binding: SandboxHostBinding,
+): Promise<{ readonly key: string; readonly newestFileChangeMs: number }> {
+  const protection = process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
+  const paths = [
+    binding.privateRoot,
+    ...binding.roots.map((root) => root.canonicalPath),
+    ...binding.readOnlyToolchainPaths,
+    binding.runtimeRoot,
+    binding.executable.path,
+    binding.runner.path,
+    ...(protection === undefined ? [] : [protection]),
+  ];
+  const states = await Promise.all(
+    paths.map(async (filename) => {
+      const info = await lstat(filename, { bigint: true });
+      const file = info.isFile();
+      return {
+        line: [
+          filename,
+          info.dev,
+          info.ino,
+          info.mode,
+          info.uid,
+          ...(file ? [info.size, info.mtimeNs, info.ctimeNs] : []),
+        ].join(":"),
+        changedMs: file
+          ? Number(info.ctimeNs > info.mtimeNs ? info.ctimeNs : info.mtimeNs) / 1e6
+          : 0,
+      };
+    }),
+  );
+  return {
+    key: createHash("sha256")
+      .update(JSON.stringify([binding, protection ?? null]))
+      .update(states.map((state) => state.line).join("\n"))
+      .digest("hex"),
+    newestFileChangeMs: Math.max(0, ...states.map((state) => state.changedMs)),
+  };
 }
 
 export async function sandboxHostIdentity(input: SandboxHostBinding): Promise<string> {
