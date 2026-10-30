@@ -66,8 +66,12 @@ export class ProductionOwnerPreferencesControl {
       name: command.payload.name,
       locale: command.payload.locale,
       accent: command.payload.accent,
+      theme: command.payload.theme,
+      modelRef: command.payload.modelRef,
+      thinkingLevel: command.payload.thinkingLevel,
+      expectedRevision: command.payload.expectedRevision,
       now: this.#options.clock.now(),
     });
-    return { resultRef: `owner-preferences:${saved.updatedAt}`, replayed: false };
+    return { resultRef: `owner-preferences:${saved.revision}`, replayed: false };
   }
 }

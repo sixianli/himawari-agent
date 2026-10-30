@@ -402,11 +402,19 @@ describe("control center application bootstrap and interaction", () => {
       "Andy",
     );
   });
-  it("[I-16] shows on a second device the name, language and color set on the first", async () => {
-    let saved = { name: null, locale: null, accent: null, updatedAt: null } as Record<
-      string,
-      string | null
-    >;
+  function preferenceServer(initial: Record<string, unknown> = {}) {
+    let state: Record<string, unknown> = {
+      name: null,
+      locale: null,
+      accent: null,
+      theme: null,
+      modelRef: null,
+      thinkingLevel: null,
+      revision: 0,
+      updatedAt: null,
+      ...initial,
+    };
+    const sent: Record<string, unknown>[] = [];
     boundary.load.mockResolvedValue({
       ...configuration,
       installedGatewayV2Operations: [
@@ -417,15 +425,50 @@ describe("control center application bootstrap and interaction", () => {
     });
     boundary.query.mockImplementation(async (request: { type: string }) => {
       if (request.type !== "owner.preferences.read") throw new Error("QUERY_NOT_EXPECTED");
-      return { type: "owner.preferences.snapshot", payload: saved };
+      return { type: "owner.preferences.snapshot", payload: { ...state } };
     });
     boundary.mutate.mockImplementation(
-      async (request: { type: string; payload: Record<string, string | null> }) => {
+      async (request: { type: string; payload: Record<string, unknown> }) => {
         if (request.type !== "owner.preferences.set") throw new Error("MUTATION_NOT_EXPECTED");
-        saved = { ...request.payload, updatedAt: "2026-10-29T05:00:00.000Z" };
-        return { resultRef: "owner-preferences", replayed: false };
+        sent.push(request.payload);
+        const { expectedRevision, ...values } = request.payload;
+        if (expectedRevision !== state["revision"])
+          throw Object.assign(new Error("PORT_CONFLICT"), { status: 409 });
+        const revision = (state["revision"] as number) + 1;
+        state = { ...values, revision, updatedAt: "2026-10-30T01:00:00.000Z" };
+        return { resultRef: `owner-preferences:${revision}`, replayed: false };
       },
     );
+    return {
+      sent,
+      state: () => state,
+      changeElsewhere: (values: Record<string, unknown>) => {
+        state = { ...state, ...values, revision: (state["revision"] as number) + 1 };
+      },
+    };
+  }
+  const waitForSave = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    });
+  const threadOptions = () =>
+    boundary.threads.mock.lastCall?.[0] as {
+      ownerName?: string;
+      modelChoice?: { modelRef: string; thinkingLevel: string };
+      onModelChoiceChange: (choice: { modelRef: string; thinkingLevel: string }) => void;
+    };
+  async function reopenOnAnotherDevice() {
+    await act(async () => root.unmount());
+    window.localStorage.clear();
+    document.documentElement.removeAttribute("data-accent");
+    document.documentElement.removeAttribute("data-theme");
+    root = createRoot(container);
+    await render();
+    await settle();
+  }
+
+  it("[I-16] shows on a second device every setting chosen on the first", async () => {
+    const server = preferenceServer();
     await render();
     await settle();
     await click(messages["settings.title"]);
@@ -437,63 +480,128 @@ describe("control center application bootstrap and interaction", () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Andy");
       name.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const teal = document.querySelector<HTMLInputElement>(
+    for (const selector of [
       'input[name="setting-accent"][value="teal"]',
+      'input[name="setting-theme"][value="light"]',
+    ]) {
+      const input = document.querySelector<HTMLInputElement>(selector);
+      if (!input) throw new Error(`Missing ${selector}`);
+      await act(async () => input.click());
+    }
+    await act(async () =>
+      threadOptions().onModelChoiceChange({ modelRef: "model-second", thinkingLevel: "high" }),
     );
-    if (!teal) throw new Error("Missing accent setting");
-    await act(async () => teal.click());
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 700));
-    });
-    expect(saved).toEqual({
+    await waitForSave();
+    expect(server.state()).toMatchObject({
       name: "Andy",
       locale: "zh-CN",
       accent: "teal",
-      updatedAt: "2026-10-29T05:00:00.000Z",
+      theme: "light",
+      modelRef: "model-second",
+      thinkingLevel: "high",
     });
-    saved = { ...saved, locale: "ja" };
-    await act(async () => root.unmount());
-    window.localStorage.clear();
-    document.documentElement.removeAttribute("data-accent");
-    root = createRoot(container);
-    await render();
-    await settle();
-    expect(boundary.threads.mock.lastCall?.[0]).toMatchObject({ ownerName: "Andy" });
+    server.changeElsewhere({ locale: "ja" });
+    await reopenOnAnotherDevice();
+    expect(threadOptions()).toMatchObject({
+      ownerName: "Andy",
+      modelChoice: { modelRef: "model-second", thinkingLevel: "high" },
+    });
     expect(document.documentElement.getAttribute("data-accent")).toBe("teal");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(new ControlCenterBrowserStorage(window.localStorage).readLocale([])).toBe("ja");
-    expect(boundary.mutate).toHaveBeenCalledTimes(1);
   });
-  it("[I-16] keeps a change that could not reach the server and sends it on the next visit", async () => {
-    boundary.load.mockResolvedValue({
-      ...configuration,
-      installedGatewayV2Operations: [
-        ...(configuration.installedGatewayV2Operations ?? []),
-        "owner.preferences.read",
-        "owner.preferences.set",
-      ],
-    });
-    boundary.query.mockResolvedValue({
-      type: "owner.preferences.snapshot",
-      payload: {
-        name: "Old",
-        locale: "zh-CN",
-        accent: "violet",
-        updatedAt: "2026-10-28T00:00:00.000Z",
-      },
+
+  it("[I-16] does not let a stale change from an offline device overwrite a newer one", async () => {
+    const server = preferenceServer({
+      name: "Andy",
+      locale: "zh-CN",
+      accent: "violet",
+      theme: "dark",
+      revision: 2,
+      updatedAt: "2026-10-30T00:00:00.000Z",
     });
     const storage = new ControlCenterBrowserStorage(window.localStorage);
-    storage.savePreferences({ ...storage.readPreferences(), name: "Andy", accent: "rose" });
+    storage.savePreferences({ theme: "light", accent: "rose", name: "Old" });
+    storage.savePreferencesRevision(1);
     storage.markPreferencesUnsynced(true);
-    boundary.mutate.mockResolvedValue({ resultRef: "owner-preferences", replayed: false });
     await render();
     await settle();
-    expect(boundary.mutate.mock.lastCall?.[0]).toMatchObject({
-      type: "owner.preferences.set",
-      payload: { name: "Andy", locale: "zh-CN", accent: "rose" },
-    });
-    expect(boundary.threads.mock.lastCall?.[0]).toMatchObject({ ownerName: "Andy" });
+    expect(server.sent).toEqual([]);
+    expect(server.state()).toMatchObject({ name: "Andy", theme: "dark", revision: 2 });
+    expect(threadOptions()).toMatchObject({ ownerName: "Andy" });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(storage.readPreferencesUnsynced()).toBe(false);
   });
+
+  it("[I-16] sends a change that could not reach the server when nothing newer was saved", async () => {
+    const server = preferenceServer({
+      name: "Old",
+      locale: "zh-CN",
+      accent: "violet",
+      theme: "dark",
+      revision: 1,
+      updatedAt: "2026-10-28T00:00:00.000Z",
+    });
+    const storage = new ControlCenterBrowserStorage(window.localStorage);
+    storage.savePreferences({ theme: "light", accent: "rose", name: "Andy" });
+    storage.savePreferencesRevision(1);
+    storage.markPreferencesUnsynced(true);
+    await render();
+    await settle();
+    expect(server.state()).toMatchObject({
+      name: "Andy",
+      accent: "rose",
+      theme: "light",
+      revision: 2,
+    });
+    expect(threadOptions()).toMatchObject({ ownerName: "Andy" });
+    expect(storage.readPreferencesUnsynced()).toBe(false);
+  });
+
+  it("[I-16] keeps both changes when two devices change different settings at once", async () => {
+    const server = preferenceServer({
+      locale: "zh-CN",
+      accent: "violet",
+      theme: "dark",
+      revision: 1,
+      updatedAt: "2026-10-30T00:00:00.000Z",
+    });
+    await render();
+    await settle();
+    server.changeElsewhere({ name: "Phone" });
+    await click(messages["settings.title"]);
+    const light = document.querySelector<HTMLInputElement>(
+      'input[name="setting-theme"][value="light"]',
+    );
+    if (!light) throw new Error("Missing theme setting");
+    await act(async () => light.click());
+    await waitForSave();
+    await settle();
+    expect(server.state()).toMatchObject({ name: "Phone", theme: "light", revision: 3 });
+    expect(threadOptions()).toMatchObject({ ownerName: "Phone" });
+  });
+
+  it("[I-16] picks up a change made on another device when the page comes back to the front", async () => {
+    const server = preferenceServer({
+      locale: "zh-CN",
+      accent: "violet",
+      theme: "dark",
+      revision: 1,
+      updatedAt: "2026-10-30T00:00:00.000Z",
+    });
+    await render();
+    await settle();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    server.changeElsewhere({ theme: "light", modelRef: "model-second", thinkingLevel: "low" });
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await settle();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(threadOptions()).toMatchObject({
+      modelChoice: { modelRef: "model-second", thinkingLevel: "low" },
+    });
+    expect(server.sent).toEqual([]);
+  });
+
   it("routes installed /approvals to the governance model", async () => {
     window.history.replaceState(null, "", "/approvals");
     await render();

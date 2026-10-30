@@ -238,7 +238,7 @@
   overflow: auto;
 }
 .details-pane {
-  width: max(280px, var(--detail-pane-percent));
+  width: max(280px, 24%);
   max-width: 420px;
   border: 0;
   border-left: 1px solid var(--border);

@@ -539,6 +539,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0066_memory_profile_pins.sql",
   },
+  {
+    sequence: 67,
+    name: "owner_preferences_everywhere",
+    changeSet: "owner-preferences-everywhere",
+    phase: "expand" as const,
+    file: "0067_owner_preferences_everywhere.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

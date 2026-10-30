@@ -95,35 +95,56 @@ describe("[I-16] owner preferences live on the server", () => {
       message("command", "owner.preferences.set", payload, actorType) as GatewayV2Command,
     );
 
+  const EMPTY = {
+    name: null,
+    locale: null,
+    accent: null,
+    theme: null,
+    modelRef: null,
+    thinkingLevel: null,
+  };
+
   it("starts empty, so a device keeps its own choice until the owner saves one", async () => {
     const { device } = await setup();
-    expect(await read(device())).toEqual({
-      name: null,
-      locale: null,
-      accent: null,
-      updatedAt: null,
-    });
+    expect(await read(device())).toEqual({ ...EMPTY, revision: 0, updatedAt: null });
   });
 
-  it("returns on the phone the name, language and color saved on the computer", async () => {
+  it("returns on the phone every setting saved on the computer", async () => {
     const { device, advance } = await setup();
     const computer = device();
     const phone = device();
-    await set(computer, { name: "  Andy ", locale: "ja", accent: "teal" });
-    expect(await read(phone)).toEqual({
-      name: "Andy",
+    const chosen = {
+      name: "  Andy ",
       locale: "ja",
       accent: "teal",
-      updatedAt: T0,
-    });
+      theme: "light",
+      modelRef: "magpie-main",
+      thinkingLevel: "high",
+    };
+    await set(computer, { ...chosen, expectedRevision: 0 });
+    expect(await read(phone)).toEqual({ ...chosen, name: "Andy", revision: 1, updatedAt: T0 });
     advance();
-    await set(phone, { name: null, locale: "zh-CN", accent: "teal" });
+    await set(phone, { ...EMPTY, locale: "zh-CN", theme: "system", expectedRevision: 1 });
     expect(await read(computer)).toEqual({
-      name: null,
+      ...EMPTY,
       locale: "zh-CN",
-      accent: "teal",
+      theme: "system",
+      revision: 2,
       updatedAt: T1,
     });
+  });
+
+  it("[I-16] refuses a save from a device that has not seen the newer settings", async () => {
+    const { device, advance } = await setup();
+    const computer = device();
+    const phone = device();
+    await set(computer, { ...EMPTY, name: "Andy", theme: "light", expectedRevision: 0 });
+    advance();
+    await set(computer, { ...EMPTY, name: "Andy", theme: "dark", expectedRevision: 1 });
+    await expect(
+      set(phone, { ...EMPTY, name: "Old", theme: "light", expectedRevision: 1 }),
+    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    expect(await read(phone)).toMatchObject({ name: "Andy", theme: "dark", revision: 2 });
   });
 
   it("refuses a name longer than the page allows and a command not from the owner", async () => {
@@ -131,14 +152,14 @@ describe("[I-16] owner preferences live on the server", () => {
     const control = device();
     expect(() =>
       message("command", "owner.preferences.set", {
+        ...EMPTY,
         name: "a".repeat(41),
-        locale: null,
-        accent: null,
+        expectedRevision: 0,
       }),
     ).toThrow();
-    await expect(set(control, { name: "   ", locale: null, accent: null })).rejects.toThrow();
+    await expect(set(control, { ...EMPTY, name: "   ", expectedRevision: 0 })).rejects.toThrow();
     await expect(
-      set(control, { name: "Andy", locale: null, accent: null }, "system"),
+      set(control, { ...EMPTY, name: "Andy", expectedRevision: 0 }, "system"),
     ).rejects.toThrow("OWNER_PREFERENCES_OWNER_REQUIRED");
     expect((await read(control)).updatedAt).toBeNull();
   });

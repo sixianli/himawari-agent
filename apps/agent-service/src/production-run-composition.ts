@@ -54,7 +54,11 @@ import {
 } from "./production-memory-consolidation.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { ProductionUploadedFiles } from "./production-uploaded-files.js";
-import { ProductionRunTimings, type RunTimingDiagnostic } from "./production-run-timing.js";
+import {
+  currentRunId,
+  ProductionRunTimings,
+  type RunTimingDiagnostic,
+} from "./production-run-timing.js";
 import { createProductionTitledRuntime } from "./production-titled-runtime.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
@@ -161,10 +165,10 @@ export function createProductionRunComposition(options: ProductionRunComposition
   };
   const trace = timings.methods(
     new SessionTraceRecorder({
-      trace: repository.traceStore(),
+      trace: timings.methods(repository.traceStore(), { appendNext: "trace.append" }),
       artifacts,
-      protector,
-      audit: repository.auditLedger(),
+      protector: timings.methods(protector, { protect: "trace.protect" }, currentRunId),
+      audit: timings.methods(repository.auditLedger(), { append: "trace.audit" }, currentRunId),
       clock,
       ids,
     }),

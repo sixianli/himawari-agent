@@ -14,18 +14,22 @@ describe("chat preferences", () => {
       },
     } as Storage;
   };
-  it("preserves the approved system theme and normalizes invalid accents without losing pane preferences", () => {
+  it("preserves the approved system theme and normalizes invalid accents and choices", () => {
     const raw = storage();
     raw.setItem(
       "himawari.control-center.v1.preferences",
-      JSON.stringify({ theme: "system", accent: "red", density: "compact", detailPanePercent: 31 }),
+      JSON.stringify({
+        theme: "system",
+        accent: "red",
+        density: "compact",
+        detailPanePercent: 31,
+        modelRef: "../model",
+        thinkingLevel: "loud",
+      }),
     );
     expect(new ControlCenterBrowserStorage(raw).readPreferences()).toEqual({
       theme: "system",
       accent: "violet",
-      density: "compact",
-      detailPanePercent: 31,
-      listPanePercent: 26,
     });
   });
   it("persists each independent theme and accent combination", () => {

@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
 import { HimawariBrand } from "../components/brand.js";
@@ -107,12 +107,10 @@ export function ControlCenterShell({
     <div
       className="app-shell"
       data-connection={connection ?? "connecting"}
-      data-density={preferences.density}
       data-sidebar-collapsed={sidebarCollapsed}
       data-mobile-view={route.view}
       data-details-open={route.surfaceId !== "threads" && route.view === "details"}
       data-surface={route.surfaceId}
-      style={{ "--detail-pane-percent": `${preferences.detailPanePercent}%` } as CSSProperties}
     >
       <AppLink className="skip-link" href="#main-content">
         {message("app.skipToMain")}

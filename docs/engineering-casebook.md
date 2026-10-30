@@ -90,6 +90,7 @@ date: "2026-10-26"
   63. [问个简单问题也要 10 秒：13 轮真实对话拆出三处空等，模型真正思考只占 1.5 秒](#case-conversation-speed)
   64. [第二十次上线被自己的检查脚本拦下：检查跑得太快，结果里少了一栏，读结果的脚本直接报错](#case-s6-report-contract)
   65. [生产机磁盘每次上线前都不够：上线流程只装不拆，清理步骤写了却没接上](#case-release-cleanup)
+  66. [电脑上开着的设置，手机上没有：只搬了三项设置上服务器，断线的旧设备还会把旧值推回去](#case-settings-everywhere)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -121,7 +122,7 @@ date: "2026-10-26"
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
-| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail) |
+| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
 | 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 
@@ -3427,6 +3428,10 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 “用户一次报了 19 条界面问题，一半是对不齐、英文日期、原生下拉框这种低级错误，他说‘不要我一个一个去找’。根因是交付前只靠人看 120 张截图，没有可判定的规则。我写了一个每次提交都跑的真浏览器检查，在三语、两种宽度、两种主题下打开 10 个页面，按规则判横向溢出、被遮挡、文字截断、意外焦点框和残留英文，每次先在故意做坏的页面上自检。它对旧版本会报错，对新版本 120 种组合全过，约 76 秒。同一批里还查出测试用假服务器和真实服务器行为不同，导致‘分出的对话是空的’从没被测到。”
 
+**后续（2026-10-30）**
+
+这次只把称呼、语言、强调色搬上服务器，主题仍只存本地，断线的旧设备还会把旧值推回去；Andy 第二天又遇到“电脑上的设置手机上没有”。扩到全部账户级设置、加版本号和扫源码的门槛，见[案例 66](#case-settings-everywhere)。
+
 [返回目录](#contents)
 
 <a id="case-no-expensive-models"></a>
@@ -4245,6 +4250,65 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “生产机磁盘每次上线前都不够，之前每次都是手动删一把。我读了上线脚本，发现流程只装不拆：清理步骤写在模板里却从没接进上线脚本，失败重试只改名不删，旧版本全留，空间检查是写死的数。我让上线脚本在开始前和结束后都自动清理，只留正在服务的版本和回退要用的上一版，删前存下报告和日志，凡是有进程或配置在用的一律不删；空间检查改成按上次实际安装占用算‘装完还剩多少’，不够就在动生产机前停下。”
+<a id="case-settings-everywhere"></a>
+
+## 案例 66：电脑上开着的设置，手机上没有：只搬了三项设置上服务器，断线的旧设备还会把旧值推回去
+
+**背景与现象**
+
+2026-10-30 09:35（日本时间），Andy 说：“我一直都是在设置里开启网络搜索的，为什么到了手机写个设置就没有了，我要求所有的用户设置，必须能在各端同步。”前一天（[案例 52](#case-ui-batch-1029)，事故 I-16）已经因为“手机设的称呼电脑上是空的”把称呼、界面语言、强调色搬到了服务器。这是同一类问题第二次出现。
+
+**根因**
+
+逐项读了网页代码（main `309db34`），13 项主人能改的设置里：
+
+- 主题（浅色/深色/跟随系统）只存在浏览器本地存储（localStorage，浏览器给每个网站单独留的一小块存储），新设备默认深色。上次只搬了称呼、语言、强调色，没人问“还有哪些设置只存本地”。
+- 对话用的模型和思考深度只存在页面内存里，刷新就回到默认。
+- 已上服务器的三项有两个缺口：断线时改了设置的设备，重新连上后会把整套旧值推上去，盖掉别的设备在这期间改的值（代码里“本地标了没同步就推”）；另一台设备改了，这边只有重新打开页面才会读。
+- 网页搜索开关的原因不同：它存在服务器上，但绑定了模型配置的摘要，第十九版换主模型后开关悄悄作废。这一项由审批线程修，本案例不展开。
+
+**我们的方案**
+
+见 [ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md)。
+
+1. 设置表 `owner_preferences` 加主题、模型、思考深度和版本号四列（迁移 0067）。保存时必须带上“我看到的版本号”，和服务器不一致就拒绝；一致才写入并把版本号加一。浏览器本地只当缓存。
+2. 断线设备重连：服务器版本号没变才补发，变了以服务器为准。在线时撞上别的设备刚改过：重读服务器，把自己这次改的几项叠在最新值上再存，两边改的不同项都保留。
+3. 页面从后台回到前台（`visibilitychange` 事件）时重读一次服务器设置，拿起手机就是电脑上刚改的值。
+4. 推送通知、未发送草稿、侧栏收起这些本来就该按设备不同的，留在设备上。删掉了网页上改不了的三个废字段（界面密度和两个栏宽）。
+5. 门槛：一个测试扫网页源码，只允许存储类碰浏览器存储，且每个存储键都必须在“设备状态 / 服务器设置缓存”白名单里，网页的每一项设置都必须在共享字段表里、服务器协议收发每一项；五条两设备测试；一条经真实 HTTP 入口换一套主模型配置重启后读回六项不变的测试。
+
+**方案讨论与备选**
+
+- **范围**：Andy 在选择卡上从三个方案里选了 A（账户级设置全上服务器）。B 只补主题，换模型后刷新仍回默认；C 连通知种类、侧栏也全账户统一，做不到“手机收提醒、电脑不收”，而浏览器的通知授权本来就得每台设备单独点。
+- **冲突怎么判**：考虑过每项设置各带修改时间、新的赢。放弃的原因是手机和电脑的时钟不一定准，断线一小时后的改动算不算“新”也说不清。版本号只看“你改的时候看到的是不是最新的”，不依赖时钟。代价是断线期间的改动在服务器已经变了时会被丢掉。
+- **实时性**：可以走现有的服务器事件流把改动立刻推到另一端，但要改事件协议和发布点；“切回前台重读”已经覆盖“拿起手机就对”的场景，先不做。
+
+**业界主流做法**
+
+- ✅ MDN 的 If-Match 说明（[原文](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/If-Match)）：“`If-Match` can be used to prevent the lost update problem. It can check if the modification of a resource that the user wants to upload will not override another change that has been done since the original resource was fetched.” 条件不满足时返回 412。
+- ✅ Chrome 扩展的 storage API（[原文](https://developer.chrome.com/docs/extensions/reference/api/storage)）：“We recommend using `storage.sync` to preserve user settings across synced browsers.” 大块数据才放 `storage.local`。
+- ✅ MDN 的 Page Visibility API（[原文](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API)）：“When the user minimizes the window, switches to another tab, or the document is entirely obscured by another window, the API sends a `visibilitychange` event.”
+
+**对比与取舍**
+
+- 和 If-Match 是同一个思路（乐观并发控制：先不加锁，保存时核对版本，被别人改过就拒绝），只是版本号放在命令内容里，因为网页走的是统一的命令接口，不是按资源的 PUT。
+- 和 Chrome 的做法一样把“用户设置”与“设备上的大块数据”分开，用户设置跟账户走；不同的是我们把通知种类明确留在设备上，因为通知授权本身就是按设备的。
+- 实时同步只做到“切回前台重读”，没有像同步服务那样后台推送，换来改动小。
+
+**结果数据**
+
+- 盘点：13 项设置，改前 8 项在服务器，主题 1 项只在本地，模型选择不存；改后账户级 6 项都在服务器。
+- 故意改坏验证（本线程云端容器）：改回“本地没送到就推”时“断线旧改动不盖新值”失败；不把主题和模型发给服务器时三条两设备测试失败；从共享字段表删掉主题、或在本地存储加一个 `sidebarCollapsed` 键时存储白名单测试失败；改回后全部通过。
+- 相关测试 45 个文件 1225 条通过（含迁移 0067 的全部迁移测试）。
+- 真设备上手机和电脑同时开着的效果：未测量，等上线后 Andy 实际试。
+
+**相关 ADR/PR**
+
+[ADR 0122](adr/0122-every-owner-setting-on-the-server-with-revision.md)（修改 [ADR 0110](adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md) 第 3 条）；[事故 I-16](incidents-and-gates.md#incidents) 第二次；本案例的 PR 在分支 `claude/project-thread-bcspuc`。
+
+**面试 30 秒版**
+
+“用户说电脑上开着的设置手机上没有。我把 13 项设置逐一盘点，发现上次只把 3 项搬上服务器，主题还在浏览器里，而且断线的旧设备重连时会把整套旧值推上去。我把账户级设置全放服务器，保存时带版本号，版本对不上就拒绝，断线的旧改动不再覆盖新值；页面回到前台就重读。最后加了一个扫源码的测试：谁再加一个只存本地的设置，测试就失败。”
 
 [返回目录](#contents)
 
