@@ -6,6 +6,7 @@ import {
   isApprovalResolutionReplay,
 } from "@himawari-agent/application/action-intent-snapshot";
 import type {
+  ApprovalChangeMarker,
   ApprovalRequest,
   AuthorizationReservation,
   ReserveAuthorizationInput,
@@ -303,15 +304,36 @@ export class InMemoryAuthorizationStore implements AuthorizationStorePort {
     return approval ? frozenCopy(approval) : undefined;
   }
 
-  async listApprovals(ownerId: OwnerId, agentId: AgentId): Promise<readonly ApprovalRequest[]> {
+  async listApprovals(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    filter?: { readonly status: ApprovalRequest["status"] },
+  ): Promise<readonly ApprovalRequest[]> {
     this.failures.checkpoint("authorization.listApprovals");
     return [...this.approvals.values()]
-      .filter((approval) => approval.ownerId === ownerId && approval.agentId === agentId)
+      .filter(
+        (approval) =>
+          approval.ownerId === ownerId &&
+          approval.agentId === agentId &&
+          (filter === undefined || approval.status === filter.status),
+      )
       .sort(
         (left, right) =>
           left.requestedAt.localeCompare(right.requestedAt) || left.id.localeCompare(right.id),
       )
       .map(frozenCopy);
+  }
+
+  async approvalChangeMarker(ownerId: OwnerId, agentId: AgentId): Promise<ApprovalChangeMarker> {
+    const approvals = await this.listApprovals(ownerId, agentId);
+    return {
+      count: approvals.length,
+      revisionTotal: approvals.reduce((total, approval) => total + approval.revision, 0),
+      pending: approvals
+        .filter((approval) => approval.status === "pending")
+        .map(({ id, expiresAt }) => ({ id, expiresAt }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+    };
   }
 
   async resolveApproval(input: ResolveApprovalInput): Promise<ApprovalRequest> {

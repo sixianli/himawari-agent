@@ -6,6 +6,7 @@ import {
   isApprovalResolutionReplay,
 } from "@himawari-agent/application/action-intent-snapshot";
 import type {
+  ApprovalChangeMarker,
   ApprovalRequest,
   AutomaticReviewStart,
   AutomaticReviewRecord,
@@ -624,7 +625,11 @@ export class SqliteDurableOperations {
       case "authorization.getApproval":
         return this.getApproval((payload as { approvalRequestId: string }).approvalRequestId);
       case "authorization.listApprovals":
-        return this.listApprovals(payload as { ownerId: string; agentId: string });
+        return this.listApprovals(
+          payload as { ownerId: string; agentId: string; status: string | null },
+        );
+      case "authorization.approvalChangeMarker":
+        return this.approvalChangeMarker(payload as { ownerId: string; agentId: string });
       case "authorization.resolveApproval":
         return this.resolveApproval((payload as { input: ResolveApprovalInput }).input);
       case "authorization.listGrants":
@@ -1865,15 +1870,36 @@ export class SqliteDurableOperations {
     return this.approvalRow(approvalRequestId);
   }
 
-  private listApprovals(input: { ownerId: string; agentId: string }): readonly ApprovalRequest[] {
+  private listApprovals(input: {
+    ownerId: string;
+    agentId: string;
+    status: string | null;
+  }): readonly ApprovalRequest[] {
     return parseRecords<ApprovalRequest>(
       this.database
         .prepare(
           `SELECT record_json AS recordJson FROM approval_requests
-          WHERE owner_id = ? AND agent_id = ? ORDER BY requested_at, id`,
+          WHERE owner_id = ? AND agent_id = ? AND (? IS NULL OR status = ?)
+          ORDER BY requested_at, id`,
         )
-        .all(input.ownerId, input.agentId) as JsonRow[],
+        .all(input.ownerId, input.agentId, input.status, input.status) as JsonRow[],
     );
+  }
+
+  private approvalChangeMarker(input: { ownerId: string; agentId: string }): ApprovalChangeMarker {
+    const totals = this.database
+      .prepare(
+        `SELECT count(*) AS count, total(revision) AS revisionTotal FROM approval_requests
+        WHERE owner_id = ? AND agent_id = ?`,
+      )
+      .get(input.ownerId, input.agentId) as { count: number; revisionTotal: number };
+    const pending = this.database
+      .prepare(
+        `SELECT id, json_extract(record_json, '$.expiresAt') AS expiresAt FROM approval_requests
+        WHERE owner_id = ? AND agent_id = ? AND status = 'pending' ORDER BY id`,
+      )
+      .all(input.ownerId, input.agentId) as { id: string; expiresAt: string }[];
+    return { count: totals.count, revisionTotal: totals.revisionTotal, pending };
   }
 
   private insertGrant(grant: GrantRecord): void {

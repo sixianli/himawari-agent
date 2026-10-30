@@ -346,6 +346,10 @@ async function waitForWorkerBootBinding(input: {
   }
 }
 
+function readsProductState(requestPath: string): boolean {
+  return requestPath.startsWith("/api/") || requestPath.startsWith("/preview/");
+}
+
 function writeStartupStep(output: NodeJS.WritableStream, step: string): void {
   writeServiceDiagnostic(output, {
     component: "agent-service",
@@ -1440,7 +1444,7 @@ export async function runAgentService(
           listApprovals: () =>
             pushRepository
               .authorizationStore()
-              .listApprovals(configuration.ownerId, configuration.agentId),
+              .listApprovals(configuration.ownerId, configuration.agentId, { status: "pending" }),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -1716,7 +1720,8 @@ export async function runAgentService(
         health,
       });
       http.app.addHook("onRequest", async (request, reply) => {
-        if (request.url.split("?", 1)[0] === "/health/ready") {
+        const requestPath = request.url.split("?", 1)[0] ?? "";
+        if (requestPath === "/health/ready") {
           try {
             await activeAuthority.assertActive();
             if (!(await worker?.checkReadiness())) throw new Error("WORKER_NOT_READY");
@@ -1744,6 +1749,7 @@ export async function runAgentService(
           runs?.loop.state !== "running"
         )
           return reply.code(503).send({ error: "SERVICE_NOT_READY" });
+        if (!readsProductState(requestPath)) return;
         try {
           await activeAuthority.assertActive();
         } catch {

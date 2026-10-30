@@ -610,8 +610,20 @@ describe("Owner bootstrap and product sessions", () => {
     });
     expect(authenticated).toMatchObject({ ownerId: OWNER_ID, deviceId: created.device.id });
     expect(authenticated.recentAuthenticationEvidence).toBeUndefined();
+    expect((await sessions.readSession(created.session.id))?.lastActiveAt).toBe(NOW.toISOString());
 
-    current = new Date(NOW.valueOf() + 20_000);
+    current = new Date(NOW.valueOf() + 60_000);
+    await service.authenticate({
+      accessAssertion: signed,
+      sessionToken: created.token,
+      method: "GET",
+      path: "/api/gateway/v1/events",
+    });
+    expect((await sessions.readSession(created.session.id))?.lastActiveAt).toBe(
+      current.toISOString(),
+    );
+
+    current = new Date(NOW.valueOf() + 120_000);
     const active = await sessions.readSession(created.session.id);
     vi.spyOn(sessions, "saveSession").mockImplementationOnce(async () => {
       await sessions.revokeSession(

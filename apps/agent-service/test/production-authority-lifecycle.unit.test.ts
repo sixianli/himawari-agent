@@ -10,7 +10,7 @@ import type {
   ProductAuthorityFence,
 } from "@himawari-agent/application";
 import { createBeefRestaurantFixture, createV02Fixture } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PRODUCTION_AUTHORITY_LIFECYCLE_ERROR_CODES,
   ProductionAuthorityLifecycle,
@@ -190,6 +190,26 @@ describe("ProductionAuthorityLifecycle", () => {
     expect(service.isAccepting()).toBe(true);
     expect(losses).toEqual([]);
     await service.stop();
+  });
+
+  it("shares one database check between concurrent requests and checks again afterwards", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    const service = lifecycle(deploymentStore, leases);
+    await service.start();
+    const current = vi.spyOn(leases, "current");
+    await Promise.all(Array.from({ length: 30 }, () => service.assertActive()));
+    expect(current).toHaveBeenCalledOnce();
+    await service.assertActive();
+    expect(current).toHaveBeenCalledTimes(2);
+    leases.currentRecord = undefined;
+    const checks = Array.from({ length: 3 }, () => service.assertActive());
+    for (const check of checks)
+      await expect(check).rejects.toMatchObject({
+        code: PRODUCTION_AUTHORITY_LIFECYCLE_ERROR_CODES.LOST,
+      });
+    expect(current).toHaveBeenCalledTimes(3);
+    expect(service.isAccepting()).toBe(false);
   });
 
   it("publishes the post-claim database fence and repairs a stale mirror", async () => {

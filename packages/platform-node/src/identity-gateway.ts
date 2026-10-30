@@ -81,7 +81,6 @@ export interface CloudflareAccessIdentityFetcher {
 
 export interface CloudflareAccessIdentityClientOptions {
   readonly issuer: string;
-  /** The binding is deliberately explicit until the provider contract is verified. */
   readonly subjectBinding: "user_uuid_equals_sub";
   readonly fetcher?: CloudflareAccessIdentityFetcher;
   readonly now?: () => Date;
@@ -163,10 +162,6 @@ export class CloudflareAccessJwtVerifier {
     return Object.freeze(assertion);
   }
 
-  /**
-   * Verifies the assertion and exposes the provider subject only to the
-   * transient get-identity adapter. The subject is never persisted.
-   */
   async verifyForIdentityLookup(
     token: string,
     observedAt = (this.options.now ?? (() => new Date()))(),
@@ -237,6 +232,7 @@ export class CloudflareAccessJwtVerifier {
 }
 
 const DEFAULT_IDENTITY_TIMEOUT_MILLISECONDS = 2_000;
+const SESSION_ACTIVITY_WRITE_INTERVAL_MILLISECONDS = 60_000;
 const DEFAULT_IDENTITY_BODY_BYTES = 64 * 1024;
 
 function identityUnavailable(): never {
@@ -301,9 +297,7 @@ async function readBoundedResponseBody(
   } finally {
     try {
       reader.releaseLock();
-    } catch {
-      // An aborted stream may still have a pending read; the fetch owns it.
-    }
+    } catch {}
   }
   const result = new Uint8Array(total);
   let offset = 0;
@@ -547,9 +541,7 @@ export interface ProductSessionAuthenticationServiceOptions {
   readonly sessionState: SessionDeviceStatePort;
   readonly recentAuthenticationProvider?: RecentAuthenticationEvidenceProvider;
   readonly now?: () => Date;
-  /** Injectable only for deterministic tests; production defaults stay platform-owned. */
   readonly createSessionId?: () => SessionId;
-  /** Injectable only for deterministic tests; production defaults stay platform-owned. */
   readonly createDeviceId?: () => DeviceId;
   readonly createToken?: () => string;
 }
@@ -639,37 +631,41 @@ export class ProductSessionAuthenticationService implements HttpGatewayAuthentic
     ) {
       throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID);
     }
-    try {
-      await this.options.sessionState.saveSession(
-        {
-          ...session,
-          lastActiveAt:
-            now.toISOString() > session.lastActiveAt ? now.toISOString() : session.lastActiveAt,
-        },
-        session.revision,
-      );
-    } catch (error) {
-      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.CONFLICT)
-        throw error;
-      // Parallel browser requests may have already updated activity. Re-read
-      // identity and revocation instead of overwriting that concurrent update.
-      const current = await this.options.sessionState.findSessionByAuthenticationRef(
-        session.authenticationRef,
-      );
-      const device = (await this.options.sessionState.listDevices(session.ownerId, false)).find(
-        (candidate) => candidate.id === session.deviceId,
-      );
-      if (
-        !current ||
-        current.status !== "active" ||
-        current.id !== session.id ||
-        current.ownerId !== session.ownerId ||
-        current.deviceId !== session.deviceId ||
-        current.authenticationRef !== session.authenticationRef ||
-        !device ||
-        device.status !== "active"
-      ) {
-        throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID);
+    if (
+      Date.parse(session.lastActiveAt) > now.getTime() ||
+      now.getTime() - Date.parse(session.lastActiveAt) >=
+        SESSION_ACTIVITY_WRITE_INTERVAL_MILLISECONDS
+    ) {
+      try {
+        await this.options.sessionState.saveSession(
+          {
+            ...session,
+            lastActiveAt:
+              now.toISOString() > session.lastActiveAt ? now.toISOString() : session.lastActiveAt,
+          },
+          session.revision,
+        );
+      } catch (error) {
+        if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.CONFLICT)
+          throw error;
+        const current = await this.options.sessionState.findSessionByAuthenticationRef(
+          session.authenticationRef,
+        );
+        const device = (await this.options.sessionState.listDevices(session.ownerId, false)).find(
+          (candidate) => candidate.id === session.deviceId,
+        );
+        if (
+          !current ||
+          current.status !== "active" ||
+          current.id !== session.id ||
+          current.ownerId !== session.ownerId ||
+          current.deviceId !== session.deviceId ||
+          current.authenticationRef !== session.authenticationRef ||
+          !device ||
+          device.status !== "active"
+        ) {
+          throw new IdentityGatewayError(IDENTITY_GATEWAY_ERROR_CODES.SESSION_INVALID);
+        }
       }
     }
     let recentAuthenticationEvidence: GatewayAuthenticationContext["recentAuthenticationEvidence"];
@@ -697,10 +693,7 @@ export class ProductSessionAuthenticationService implements HttpGatewayAuthentic
             authenticatedAt: providerEvidence.authenticatedAt,
           });
         }
-      } catch {
-        // Provider freshness is an optional elevation. Normal JWT/session auth
-        // remains available when the bounded identity lookup is unavailable.
-      }
+      } catch {}
     }
     const context = {
       subjectId: binding.ownerId,
