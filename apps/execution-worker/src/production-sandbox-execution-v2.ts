@@ -769,6 +769,19 @@ export class ProductionSandboxExecutionV2 {
         result.taskProcessExited &&
         result.stdioClosed === true &&
         result.exitCode !== null;
+      if (plan.mode === "foreground" && !knownExit)
+        console.error(
+          JSON.stringify({
+            event: "sandbox.exit.unknown",
+            runId: plan.identity.runId,
+            taskStarted: result.taskStarted === true,
+            taskProcessExited: result.taskProcessExited === true,
+            stdioClosed: result.stdioClosed === true,
+            exitCodeKnown: result.exitCode !== null,
+            reason: typeof result.reason === "string" ? result.reason.slice(0, 64) : null,
+            at: new Date().toISOString(),
+          }),
+        );
       const reportedCompletion = await host.completed;
       const completionContradicted =
         plan.mode === "foreground" &&

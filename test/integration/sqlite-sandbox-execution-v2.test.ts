@@ -1027,6 +1027,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "released",
     "standalone",
     "before-deadline",
+    "unreleased-before-deadline",
     "unreleased",
     "missing-receipt",
     "occupancy",
@@ -1052,12 +1053,13 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "rollback-thread",
     "rollback-gateway",
     "budget-unknown",
+    "absent-before-deadline",
   ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
     const f = await openSandboxJournal();
     let repository: SqliteProductStateRepository | undefined;
     try {
       let record = start(f);
-      if (scenario !== "unreleased") {
+      if (scenario !== "unreleased" && scenario !== "unreleased-before-deadline") {
         record = append(f, record, resource(record, "stopping"));
         record = append(f, record, resource(record, "released"));
       }
@@ -1153,7 +1155,16 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       f.database
         .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
         .run(T1, runId);
-      now = scenario === "before-deadline" ? T1 : T2;
+      now = ["before-deadline", "unreleased-before-deadline", "absent-before-deadline"].includes(
+        scenario,
+      )
+        ? T1
+        : T2;
+      if (scenario === "absent-before-deadline") {
+        f.database.pragma("foreign_keys = OFF");
+        f.database.prepare("DELETE FROM sandbox_execution_records").run();
+        f.database.prepare("DELETE FROM sandbox_admission_queue").run();
+      }
       if (scenario === "bash-own-deadline")
         f.database
           .prepare(
@@ -1274,7 +1285,16 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         at: now,
         leaseExpiresAt,
       };
-      if (["released", "standalone", "budget-unknown", "bash-own-deadline"].includes(scenario)) {
+      if (
+        [
+          "released",
+          "standalone",
+          "budget-unknown",
+          "bash-own-deadline",
+          "absent-before-deadline",
+          "before-deadline",
+        ].includes(scenario)
+      ) {
         const dispatch = opened.runDispatch(
           OWNER_ID,
           AGENT_ID,
@@ -1293,7 +1313,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           phase: "failed",
           terminal_status: "failed",
           revision: 2,
-          diagnostic_code: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+          diagnostic_code:
+            scenario === "absent-before-deadline" || scenario === "before-deadline"
+              ? "RUNTIME_TOOL_RESULT_UNKNOWN"
+              : "RUN_EXECUTION_DEADLINE_EXCEEDED",
           context_ref: "payload-capability-invocation-trigger",
         });
         expect(after.lease).toMatchObject({

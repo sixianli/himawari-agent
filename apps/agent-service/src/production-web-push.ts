@@ -33,6 +33,7 @@ export const WEB_PUSH_TEXT = {
     risk: { low: "低风险", medium: "中风险", high: "高风险", critical: "极高风险" },
     completed: "已完成",
     failed: "没有完成",
+    unconfirmed: "命令结果没确认，本轮已结束",
     untitled: "新对话",
     test: "通知已开启",
     testBody: "Himawari 会在这里提醒你。",
@@ -47,6 +48,7 @@ export const WEB_PUSH_TEXT = {
     risk: { low: "Low risk", medium: "Medium risk", high: "High risk", critical: "Critical risk" },
     completed: "Done",
     failed: "Didn't finish",
+    unconfirmed: "A command's result is unconfirmed; the Run ended",
     untitled: "New chat",
     test: "Notifications are on",
     testBody: "Himawari will remind you here.",
@@ -61,6 +63,7 @@ export const WEB_PUSH_TEXT = {
     risk: { low: "低リスク", medium: "中リスク", high: "高リスク", critical: "最高リスク" },
     completed: "完了しました",
     failed: "完了できませんでした",
+    unconfirmed: "コマンドの結果を確認できず、ターンを終了しました",
     untitled: "新しいチャット",
     test: "通知がオンになりました",
     testBody: "Himawari からのお知らせがここに届きます。",
@@ -328,7 +331,7 @@ export class ProductionWebPush {
       if (Date.parse(now) - Date.parse(run.finishedAt) < RUN_WINDOW_MS)
         items.push({
           ...scope,
-          sourceKey: `run:${run.runId}:${run.status}`,
+          sourceKey: `run:${run.runId}:${run.status}${run.resultUnconfirmed ? ":unconfirmed" : ""}`,
           kind: "run",
           sourceRef: run.runId,
           threadId: run.threadId,
@@ -475,11 +478,16 @@ export class ProductionWebPush {
     }
     const title = await this.#title(item.threadId);
     if (title === undefined) return { expired: true };
-    const failed = item.sourceKey.endsWith(":failed");
+    const unconfirmed = item.sourceKey.endsWith(":failed:unconfirmed");
+    const failed = unconfirmed || item.sourceKey.endsWith(":failed");
     return {
       expired: false,
       build: (locale) => ({
-        title: failed ? WEB_PUSH_TEXT[locale].failed : WEB_PUSH_TEXT[locale].completed,
+        title: unconfirmed
+          ? WEB_PUSH_TEXT[locale].unconfirmed
+          : failed
+            ? WEB_PUSH_TEXT[locale].failed
+            : WEB_PUSH_TEXT[locale].completed,
         body: title ?? WEB_PUSH_TEXT[locale].untitled,
         navigate: threadUrl(item.threadId),
         lang: locale,

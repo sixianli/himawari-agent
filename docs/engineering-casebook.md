@@ -93,7 +93,9 @@ date: "2026-10-26"
   66. [电脑上开着的设置，手机上没有：只搬了三项设置上服务器，断线的旧设备还会把旧值推回去](#case-settings-everywhere)
   67. [写小游戏时“思考 44 秒”一动不动：每个流式片段都存一整条消息](#case-silent-file-writing)
   68. [通知设置点了没反应：页面在等一个永远不会返回的浏览器接口](#case-push-ready-hang)
-  69. [想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”](#case-cache-usage-ruler)
+  69. [标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器](#case-sunflower-growth-mark)
+  70. [14:13 就出结果的一轮，30 分钟后才推送“没有完成”](#case-unknown-result-late-settle)
+  71. [想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”](#case-cache-usage-ruler)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -122,7 +124,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing) |
+| Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
@@ -4453,9 +4455,116 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 [返回目录](#contents)
 
+<a id="case-sunflower-growth-mark"></a>
+
+## 案例 69：标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器
+
+**背景与现象**
+
+2026-10-30，Andy 说线上标志（96 颗向日葵种子，CSS 动画：忙碌时整体旋转加放缩）“还不够好看”，要重新设计几版并带动效。线程在项目共享文件夹里做了十几版可交互原型，Andy 逐版批注：先要求整个标志只用圆点、位置不动，只靠大小和颜色变化；后来放开限制，他选了“生长”（种子按黄金角从花心一颗颗长出，把老种子推向外圈）；最后在 4 种让螺旋更明显的做法里选“加密到 233 点”。
+
+**根因**
+
+这次不是 bug，是一个设计要求和实现方式的矛盾：Andy 选的“生长”里，种子的位置每帧都在变（每颗种子的距离是 `√年龄`），CSS 关键帧只能做固定路径的位移，做不出这种“新种子长出、全体被推开”的效果。而标志在页面里出现很多次（每条回答前一个），逐个开动画会让页面越来越慢。另外线上 96 颗种子已经按黄金角排列，“看不出螺旋”是因为点稀、大小差太大，不是排法不对。
+
+**我们的方案**
+
+1. 种子数学抽成纯函数 `seedsAt(detail, growth)`（`brand-seeds.ts`）：第 n 颗种子在 `spacing × √age` 处、角度 `n × 137.508°`，颜色和大小按年龄变化。大图 233 颗，小图 89 颗（都是斐波那契数，小图点放大 25%）。
+2. 全页只有一个 `requestAnimationFrame` 计时器（`joinGrowth`），只有两类标志加入：正在回答的标志（每秒长 7 颗种子）和首页大图（每秒 0.35 颗）；已完成回答、侧栏、登录页都是静止的一张画。没有标志在动时，计时器一帧都不跑。
+3. 系统开启“减少动态效果”时，任何标志都不加入计时器。
+4. 同一份种子数学还生成 `assets/brand/himawari/v3/logo-sunflower-disc.svg` 和 4 张 PWA 图标，`npm run check:brand` 检查 SVG 和代码一致。
+
+**方案讨论与备选**
+
+- 继续用 CSS 动画、只改点数和颜色：做不出“被推向外圈”，放弃。
+- 每个标志各开一个逐帧循环：一屏回答越多越慢，放弃，改为全页一个计时器。
+- 让侧栏和已完成回答的标志也慢慢长：同时动的东西太多，也不符合“动效只表达状态”，放弃。
+- 1005 点精细版：Andy 看过仍不满意，且每帧要改 1005 个圆，放弃；105 点版则花瓣散成零星的点，放弃。
+
+**业界主流做法**
+
+- ✅ MDN `prefers-reduced-motion`（[原文](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion)）：设置用来让界面 “removes, reduces, or replaces motion-based animations”，缩放和平移大物体 “can be vestibular motion triggers”。
+- ✅ W3C WCAG 2.2 成功标准 2.3.3（[原文](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html)）：“Motion animation triggered by interaction can be disabled, unless the animation is essential to the functionality or the information being conveyed.”
+- ✅ MDN `requestAnimationFrame`（[原文](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)）：回调在 “before the next repaint” 执行，在后台页签里 “paused in most browsers … to improve performance and battery life”。
+
+**对比与取舍**
+
+业界做法是：运动动画必须能被系统设置关掉，逐帧动画交给浏览器的重绘节奏。我们照做，并多加一条自己的约束：动的东西要少。代价是标志的“动”要靠 JS 逐帧改 DOM 属性，不能像旧版那样纯 CSS；好处是静止时零开销，且“生长”这个核心动作可以如实做出来。
+
+**结果数据**
+
+真实网页验收（Chromium，假后端，1280 和 390 宽，`reducedMotion` 两种设置）：首页大图 233 个可见点，3.5 秒内位置变化；侧栏标志 89 个可见点，1.5 秒内位置不变；已完成回答的标志不动且没有忙碌标记；减少动态效果下首页大图也不动。单元测试覆盖逐帧位置变化和计时器数量；把“减少动态效果”判断拿掉、或让所有标志都加入计时器，对应测试失败。真机（iPhone）帧率和耗电：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0126](adr/0126-sunflower-mark-grows-233-seeds.md)；[想法 IDEA-20261030-001](ideas/IDEA-20261030-001-himawari-logo-candidates-grow-and-hi.md)；PR #134；v13 基准 `docs/assets/control-center/2026-10-30-v13/`。
+
+**面试 30 秒版**
+
+“产品负责人要一个‘从花心长出种子’的向日葵标志。这种位置每帧在变的动画 CSS 做不了，我把种子的黄金角数学抽成纯函数，用全页唯一一个 requestAnimationFrame 计时器驱动，只给‘正在回答’和首页大图开动画，其余静止，系统设置‘减少动态效果’时全部关掉。静止时零开销，也有测试保证不会有多余的计时器在跑。”
+
+[返回目录](#contents)
+
+<a id="case-unknown-result-late-settle"></a>
+
+## 案例 70：14:13 就出结果的一轮，30 分钟后才推送“没有完成”
+
+**背景与现象**
+
+2026-10-30 14:44（日本时间），Andy 的手机收到“没有完成”的推送，点开是 14:13 就已经显示出结果的“写一个简易小游戏”那一轮。Andy 原话：“这一个不是很早就结束了吗？这个绘画为什么还会推送到我这里？”
+
+**根因**
+
+用生产数据库和日志核对（`/mnt/project-files/run-2e5744db-*.txt`），先后推翻了两个猜测：
+
+- 先猜“Gmail 主动检查判了失败所以推送”：日志里那条检查推送数为 0，无关。
+- 再猜“沙箱里没有记录时才能提前收尾，这一轮记录都在，所以要等”：数据库显示 3 条沙箱记录在 14:13:15–14:13:42 全部已有释放凭证、占用已释放，真正的原因是收尾规则要等“所有记录自己的期限都过了”，而 bash 记录的期限是开始后 30 分钟（ADR 0098 为后台命令定的），不看记录是否已释放。
+- 最后一条 bash 命令被记成“退出未知”，这一轮因此停在“核对外部结果”，之后没有任何东西去核对。这个“未知”为什么出现还没查清：判定要求任务已启动、进程已退出、输出管道已关闭、拿到退出码四项同时成立，四个值没有保存，日志里也没有。我先猜过“命令留下了后台进程”，Andy 发来命令内容（普通 Python 脚本加 `node --check`）后排除。
+
+**我们的方案**
+
+见 [ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)。
+
+1. 命令结果未知且全部沙箱记录都已释放时立刻收尾；仍有未释放资源时照旧等期限。
+2. 页面和推送写明“命令结果没确认，本轮已结束”，失败照常推送。
+3. 命令被记成“退出未知”时输出四个值的日志，下次出现就能定位。
+4. 门槛：真实数据形状的测试，记录已释放、期限未到必须收尾（旧代码失败），有记录未释放必须继续等。
+
+**方案讨论与备选**
+
+- **期限清理补出的失败不再推送**：这是我第一版方案，Andy 追问业界怎么做后我去读了原文，没有任何一手资料支持隐藏失败通知（GitHub 默认通知失败），收回。
+- **只缩短 30 分钟**：它是后台命令的设计，缩短会破坏它。放弃。
+- **只在“没有沙箱记录”时提前收尾**：已写好测过，但救不了这一次（有 3 条记录），没采用。
+
+**业界主流做法**
+
+- ✅ Apple Human Interface Guidelines 的 Notifications：“Avoid sending multiple notifications for the same thing”，通知要 “timely, high-value”（[原文](https://developer.apple.com/design/human-interface-guidelines/notifications)）。
+- ✅ GitHub 工作流通知：任务结束（成功、失败、取消）都通知，可选“只通知失败”（[原文](https://docs.github.com/en/actions/monitoring-and-troubleshooting-workflows/notifications-for-workflow-runs)）。
+- ✅ Temporal 活动超时：卡住的任务不设超时会让用户 “an indefinite delay ... with no feedback”（[原文](https://temporal.io/blog/activity-timeouts)）。
+- 没有一手资料回答“结果未知但资源已清理完毕的任务能否提前判失败”，这一点是本项目自己的判断。
+
+**对比与取舍**
+
+- 和业界一致：失败照常通知，要及时，不对同一件事重复提醒。
+- 本项目自己的判断：资源已确认释放时，不等记录的期限就收尾。放弃的是“给重启后找回结果留的窗口”，但这个状态下没有别的流程会去找回。
+
+**结果数据**
+
+- 事故这一轮：14:13:42 资源释放完毕，14:43:36 才收尾，等了约 30 分钟（来源：数据库导出）。
+- 测试：改前 4 例失败，改后通过。
+- 上线后的真实效果：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)；[事故 I-41](incidents-and-gates.md#incidents)；[案例 67](#case-silent-file-writing)。
+
+**面试 30 秒版**
+
+“用户收到一条推送，点开发现那一轮半小时前就结束了。我先猜是别的功能触发，日志否定了；再猜是沙箱里没有记录才能提前收尾，数据库又否定了。真正的原因是收尾规则不看记录有没有释放，只看每条记录自己的期限，而 bash 记录的期限是 30 分钟。我去查了 Apple、GitHub 的通知规范，确认失败要通知、要及时、不重复，所以没有隐藏失败，而是让它在资源释放后立刻收尾并写明原因。‘命令为什么被记成未知’我没猜，先加日志，等下次数据。”
+
 <a id="case-cache-usage-ruler"></a>
 
-## 案例 69：想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”
+## 案例 71：想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”
 
 **背景与现象**
 
@@ -4496,7 +4605,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0126](adr/0126-record-cache-usage-of-every-model-request.md)；[ADR 0104](adr/0104-turn-material-in-last-user-message.md)；分支 `claude/project-thread-r8uswg`。后续 PR：各用途前缀稳定性的自动检查和三处提示词修改、历史固定块（3 + 1 + 2）。
+[ADR 0128](adr/0128-record-cache-usage-of-every-model-request.md)；[ADR 0104](adr/0104-turn-material-in-last-user-message.md)；分支 `claude/project-thread-r8uswg`。后续 PR：各用途前缀稳定性的自动检查和三处提示词修改、历史固定块（3 + 1 + 2）。
 
 **面试 30 秒版**
 

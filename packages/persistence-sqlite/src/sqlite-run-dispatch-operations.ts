@@ -421,7 +421,8 @@ export class SqliteRunDispatchOperations {
           .prepare(`SELECT 1 FROM runs r
         JOIN run_coordination_checkpoints c ON c.run_id=r.id AND c.owner_id=r.owner_id AND c.agent_id=r.agent_id
         WHERE r.id=@runId AND r.owner_id=@ownerId AND r.agent_id=@agentId
-          AND c.revision=@checkpointRevision AND @deadlineAt<=@resourceNow
+          AND c.revision=@checkpointRevision
+          AND (c.diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN' OR @deadlineAt<=@resourceNow)
           AND (${RUN_EXPIRED_RECONCILIATION_SQL})
           AND NOT EXISTS (SELECT 1 FROM sandbox_execution_records plan
             WHERE plan.owner_id=r.owner_id AND plan.agent_id=r.agent_id AND plan.run_id=r.id
@@ -488,9 +489,18 @@ export class SqliteRunDispatchOperations {
           .run(at, runId, this.scope.ownerId, this.scope.agentId, runRevision);
         this.database
           .prepare(`UPDATE run_coordination_checkpoints SET phase='failed',terminal_status='failed',
-        diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED',revision=revision+1,updated_at=?
+        diagnostic_code=CASE WHEN ?<? THEN diagnostic_code ELSE 'RUN_EXECUTION_DEADLINE_EXCEEDED' END,
+        revision=revision+1,updated_at=?
         WHERE run_id=? AND owner_id=? AND agent_id=? AND revision=?`)
-          .run(at, runId, this.scope.ownerId, this.scope.agentId, checkpointRevision);
+          .run(
+            at,
+            deadlineAt,
+            at,
+            runId,
+            this.scope.ownerId,
+            this.scope.agentId,
+            checkpointRevision,
+          );
         this.database
           .prepare(`UPDATE run_execution_leases SET released_at=?,revision=revision+1
         WHERE run_id=? AND owner_id=? AND agent_id=? AND revision=? AND execution_lease_id=?`)

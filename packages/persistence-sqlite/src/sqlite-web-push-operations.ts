@@ -470,7 +470,11 @@ export class SqliteWebPushOperations {
     return (
       this.database
         .prepare(
-          `SELECT id AS runId, thread_id AS threadId, status, updated_at AS finishedAt
+          `SELECT id AS runId, thread_id AS threadId, status, updated_at AS finishedAt,
+             EXISTS (SELECT 1 FROM run_coordination_checkpoints checkpoint
+               WHERE checkpoint.owner_id = runs.owner_id AND checkpoint.agent_id = runs.agent_id
+                 AND checkpoint.run_id = runs.id
+                 AND checkpoint.diagnostic_code = 'RUNTIME_TOOL_RESULT_UNKNOWN') AS resultUnconfirmed
            FROM runs
            WHERE owner_id = ? AND agent_id = ? AND thread_id IS NOT NULL
              AND status IN ('completed', 'failed')
@@ -481,9 +485,13 @@ export class SqliteWebPushOperations {
            ORDER BY updated_at, id LIMIT ?`,
         )
         .all(input.ownerId, input.agentId, after, after, afterId, input.limit) as Array<
-        Omit<WebPushFinishedRun, "cursor">
+        Omit<WebPushFinishedRun, "cursor" | "resultUnconfirmed"> & { resultUnconfirmed: number }
       >
-    ).map((run) => ({ ...run, cursor: `${run.finishedAt}|${run.runId}` }));
+    ).map((run) => ({
+      ...run,
+      resultUnconfirmed: Boolean(run.resultUnconfirmed),
+      cursor: `${run.finishedAt}|${run.runId}`,
+    }));
   }
 
   private prune(input: Input<"prune">): number {

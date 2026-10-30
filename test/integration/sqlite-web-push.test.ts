@@ -392,12 +392,20 @@ describe("[WP-2] web push storage", () => {
       run("run-d", "thread-1", "running", T1);
       run("run-e", null, "completed", T1);
       run("run-f", "thread-1", "completed", T2);
+      database
+        .prepare(
+          `INSERT INTO run_coordination_checkpoints
+            (run_id,owner_id,agent_id,revision,phase,runtime_event_count,terminal_status,diagnostic_code,updated_at)
+           VALUES ('run-a',?,?,1,'failed',1,'failed','RUNTIME_TOOL_RESULT_UNKNOWN',?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, T1);
       const first = await store.listFinishedRuns({ ...scope, afterCursor: T0, limit: 2 });
       expect(first).toEqual([
         {
           runId: "run-a",
           threadId: "thread-1",
           status: "failed",
+          resultUnconfirmed: true,
           finishedAt: T1,
           cursor: `${T1}|run-a`,
         },
@@ -405,6 +413,7 @@ describe("[WP-2] web push storage", () => {
           runId: "run-b",
           threadId: "thread-1",
           status: "completed",
+          resultUnconfirmed: false,
           finishedAt: T1,
           cursor: `${T1}|run-b`,
         },

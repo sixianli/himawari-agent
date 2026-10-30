@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-10-30"
 ---
 
-# ADR 0126：每次模型请求都记下缓存命中，先有尺子再改上下文
+# ADR 0128：每次模型请求都记下缓存命中，先有尺子再改上下文
 
 <a id="contents"></a>
 
@@ -93,7 +93,7 @@ date: "2026-10-30"
 
 ## 关联文档
 
-- [工程案例库：案例 69](../engineering-casebook.md#case-cache-usage-ruler)
+- [工程案例库：案例 71](../engineering-casebook.md#case-cache-usage-ruler)
 - [ADR 0104：本轮材料放在最后一条用户消息](0104-turn-material-in-last-user-message.md)
 - [ADR 0117：Magpie 经自有订阅路由模型](0117-magpie-routes-models-through-owned-subscriptions.md)
 - [架构文档：模型调用与预算](../architecture-v0.1.md)
