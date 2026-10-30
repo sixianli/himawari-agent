@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: docs/adr/0073-fast-delivery-mode.md
-superseded_by: docs/adr/0132-docs-check-removed-from-npm-run-check.md
+superseded_by: docs/adr/0133-docs-check-removed-from-npm-run-check.md
 date: "2026-10-26"
 ---
 

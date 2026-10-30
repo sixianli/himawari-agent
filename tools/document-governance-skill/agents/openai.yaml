@@ -1,6 +1,0 @@
-interface:
-  display_name: "Document Governance"
-  short_description: "Govern docs and fail-closed Runbook lifecycles"
-  default_prompt: "Use $document-governance to reconcile adopted project documentation, capture user-authored Ideas, manage PRD, Architecture, ADR, Spec, Plan, Runbook, and Backlog lifecycles, and enforce static-contract, live-preflight, and authorization gates whenever a Runbook guides an operation."
-policy:
-  allow_implicit_invocation: true

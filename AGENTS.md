@@ -14,15 +14,15 @@ Read `DELIVERY_MODE` at the repository root before deciding which tests, documen
 
 ## Owner's Global Instructions and Skills
 
-The owner's global instructions are copied into [.claude/rules/owner-global-instructions.md](.claude/rules/owner-global-instructions.md). Claude Code loads that file on its own; any other agent whose session did not load the owner's global instructions from the owner's machine, such as a cloud session, reads it before starting work. The repository keeps no copies of the owner's skills; [.claude/rules/owner-skills.md](.claude/rules/owner-skills.md) lists them and says where each kind of session gets them ([ADR 0131](docs/adr/0131-owner-skills-from-the-claude-ai-account.md)).
+The owner's global instructions are copied into [.claude/rules/owner-global-instructions.md](.claude/rules/owner-global-instructions.md). Claude Code loads that file on its own; any other agent whose session did not load the owner's global instructions from the owner's machine, such as a cloud session, reads it before starting work. The repository keeps no copies of the owner's skills; [.claude/rules/owner-skills.md](.claude/rules/owner-skills.md) lists them and says where each kind of session gets them ([ADR 0132](docs/adr/0132-owner-skills-from-the-claude-ai-account.md)).
 
 ## Documentation Governance
 
-This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`. Every session, including cloud threads, follows [.claude/rules/document-governance.md](.claude/rules/document-governance.md): where the skill is, when to use it, and the `npm run check:docs` command, which is no longer part of `npm run check` ([ADR 0132](docs/adr/0132-docs-check-removed-from-npm-run-check.md)).
+This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`. Every session, including cloud threads, follows [.claude/rules/document-governance.md](.claude/rules/document-governance.md): where the skill is, when to use it, and how its strict validation is run now that the repository has no automatic documentation check ([ADR 0133](docs/adr/0133-docs-check-removed-from-npm-run-check.md)).
 
 ## Code and Documentation Consistency
 
-In fast mode this section is replaced by the lighter rules in [.claude/rules/document-governance.md](.claude/rules/document-governance.md) and [Delivery Mode](#delivery-mode): since 2026-10-31 strict validation no longer runs as part of `npm run check` ([ADR 0132](docs/adr/0132-docs-check-removed-from-npm-run-check.md)); `npm run check:docs` can still be run by hand, and Runbook reseals are deferred.
+In fast mode this section is replaced by the lighter rules in [.claude/rules/document-governance.md](.claude/rules/document-governance.md) and [Delivery Mode](#delivery-mode): since 2026-10-31 strict validation no longer runs automatically ([ADR 0133](docs/adr/0133-docs-check-removed-from-npm-run-check.md)); it can be run by hand with the `document-governance` skill, and Runbook reseals are deferred.
 
 The user asked on 2026-09-29 that code and documentation never drift apart. Documentation drift already happened once: commit `51fe7f6` changed `apps/control-center/src` without resealing `docs/runbooks/hermes-control-center-upgrade-runbook.md`, and strict validation failed from then on.
 

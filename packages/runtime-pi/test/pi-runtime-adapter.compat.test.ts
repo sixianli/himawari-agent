@@ -432,9 +432,11 @@ function createAdapter(
   model: Partial<Model<Api>> = {},
   now: () => string = () => NOW,
   onToolCallStarted?: PiAgentRuntimeAdapterDependencies["onToolCallStarted"],
+  onModelStreamFailed?: PiAgentRuntimeAdapterDependencies["onModelStreamFailed"],
 ) {
   return new PiAgentRuntimeAdapter({
     ...(onToolCallStarted ? { onToolCallStarted } : {}),
+    ...(onModelStreamFailed ? { onModelStreamFailed } : {}),
     projection,
     tools,
     models: {
@@ -1924,6 +1926,36 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(events.some(({ type }) => type === "runtime.completed")).toBe(false);
     expect(JSON.stringify(events)).not.toContain("unsafe raw failure");
   });
+
+  it.each([
+    ["Model invocation admission was blocked", "Model invocation admission was blocked"],
+    ["400: PRIVATE_PROVIDER_DATA", "provider_status_400"],
+    ["provider included an unsafe raw failure", "provider_message_withheld"],
+  ])(
+    "reports why the model stream failed without provider text: %s",
+    async (errorMessage, logged) => {
+      const failures: { code: string; message: string }[] = [];
+      const adapter = createAdapter(
+        new RecordingProjection(),
+        new RecordingRuntimeTools(),
+        fakeSessionFactory((emit) => {
+          emit({ type: "agent_start" });
+          emit({
+            type: "message_end",
+            message: { role: "assistant", content: [], stopReason: "error", errorMessage },
+          });
+          emit({ type: "agent_end", messages: [] });
+          emit({ type: "agent_settled" });
+        }),
+        {},
+        () => NOW,
+        undefined,
+        (_request, failure) => failures.push(failure),
+      );
+      await collect(adapter.run(request));
+      expect(failures).toEqual([{ code: "PI_MODEL_ERROR", message: logged }]);
+    },
+  );
 
   it.each([
     ["429: provider overloaded PRIVATE_PROVIDER_DATA", "PI_MODEL_RATE_LIMITED"],

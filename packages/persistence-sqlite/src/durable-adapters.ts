@@ -1043,7 +1043,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<MemoryProjectionJobStatePort>({
       propose: ({ job, requeueCompleted = false }) =>
         this.context.write("memoryJob.propose", { job, requeueCompleted }),
-      listPending: (now, limit) => this.context.read("memoryJob.listPending", { now, limit }),
+      listPending: (now, limit) => this.context.write("memoryJob.listPending", { now, limit }),
       claim: (input) => this.context.write("memoryJob.claim", input),
       complete: (input) => this.context.write("memoryJob.complete", input),
       retry: (input) => this.context.write("memoryJob.retry", input),

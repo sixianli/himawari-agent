@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-10-31"
 ---
 
-# ADR 0131：仓库不再保存 Andy 的技能副本，云端线程的技能改由 claude.ai 账号提供
+# ADR 0132：仓库不再保存 Andy 的技能副本，云端线程的技能改由 claude.ai 账号提供
 
 <a id="contents"></a>
 
@@ -51,8 +51,9 @@ date: "2026-10-31"
 ## 决定
 
 1. 删除 `.claude/skills/`。
-2. `document-governance` 整个目录移到 `tools/document-governance-skill/`，因为 `npm run check:docs`（[scripts/check-docs-governance.mjs](../../scripts/check-docs-governance.mjs)）运行它的 `validate_docs.py`，规则也让线程用它的模板和脚本。`tools/document-governance/` 那份被 `ci/toolchain-lock.json` 按指纹锁住的旧副本不动（同步它仍是 [BL-20261026-002](../backlog/BL-20261026-002-sync-ci-document-governance-validator.md)）。
+2. `document-governance` 也不留副本（Andy 2026-10-31 00:50 JST：“这个技能删掉啊”）。线程通过技能工具使用账号里的这份（Andy 2026-10-26 已上传）。`tools/document-governance/` 那份只给已停用的 CI 用、被 `ci/toolchain-lock.json` 按指纹锁住的旧副本不动。
 3. `.claude/rules/owner-skills.md` 改为说明各类会话从哪里拿技能：云端线程用 claude.ai 账号里启用的技能，Mac 会话用 `~/.claude/skills/`；技能工具里没有某个技能时，在计划或回复里说出来，不凭印象猜它的内容。
+4. 同时删除 `.agents/tasks/`（`long-task-planning` 技能完整模式留下的 12 个任务记录，最早 2026-10-28 进仓库；Andy 2026-10-31 00:55 JST：“全部删掉”），连同 `scripts/machine-secret-scan-baseline.json` 里指向它的 2 条豁免和 `biome.json` 里的排除项。
 
 [↑ 返回阅读导航](#contents)
 
@@ -62,7 +63,7 @@ date: "2026-10-31"
 
 - 云端线程能不能用某个技能，取决于 Andy 有没有把它上传到账号；仓库里读不到副本了。Andy 上传过哪些，以 claude.ai 设置页为准。
 - `readable-output` 原件以插件方式带着检查中文回复的钩子；claude.ai 的技能包不接受插件清单文件（2026-10-30 上传报错“A skill cannot contain a plugin manifest”），所以上传的版本只有写作规则，钩子不在云端生效。
-- `npm run check:docs` 的行为不变，只是校验程序换了位置；`test/tooling/docs-governance-check.test.mjs` 跟着指向新位置。
+- 仓库里不再有能跑的文档校验程序，`npm run check:docs`、`scripts/check-docs-governance.mjs` 和它的测试一起删除（[ADR 0133](0133-docs-check-removed-from-npm-run-check.md)）。要校验文档只能通过技能工具加载 `document-governance` 后手动跑。
 - 历史文档（[ADR 0080](0080-document-governance-in-fast-mode.md)、案例库、lessons）里出现的 `.claude/skills/` 是当时的事实，不改。
 
 [↑ 返回阅读导航](#contents)
@@ -74,6 +75,6 @@ date: "2026-10-31"
 - [ADR 0080：快速模式下的文档治理](0080-document-governance-in-fast-mode.md)
 - [.claude/rules/owner-skills.md](../../.claude/rules/owner-skills.md)
 - [.claude/rules/document-governance.md](../../.claude/rules/document-governance.md)
-- [案例 73：仓库里的规则和技能，云端线程到底读到了哪些](../engineering-casebook.md#case-cloud-thread-loading)
+- [案例 74：仓库里的规则和技能，云端线程到底读到了哪些](../engineering-casebook.md#case-cloud-thread-loading)
 
 [↑ 返回阅读导航](#contents)

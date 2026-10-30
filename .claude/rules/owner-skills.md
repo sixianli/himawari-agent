@@ -1,10 +1,10 @@
 # Owner's Skills
 
-The repository no longer keeps copies of the owner's skills (user decision, 2026-10-31, [ADR 0131](../../docs/adr/0131-owner-skills-from-the-claude-ai-account.md)). A skill is a folder of working instructions with `SKILL.md` as its entry point. Sessions get skills from these places only:
+The repository no longer keeps copies of the owner's skills (user decision, 2026-10-31, [ADR 0132](../../docs/adr/0132-owner-skills-from-the-claude-ai-account.md)). A skill is a folder of working instructions with `SKILL.md` as its entry point. Sessions get skills from these places only:
 
 - Cloud threads in a claude.ai project load the skills the owner enabled for the claude.ai account. They never load a repository's `.claude/skills/` ([Claude Code docs](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)).
 - Sessions on the owner's Mac load `~/.claude/skills/`, the originals.
-- The `document-governance` skill is also kept in [tools/document-governance-skill/](../../tools/document-governance-skill/SKILL.md), because `npm run check:docs` runs its validator; [document-governance.md](document-governance.md) says how to use it.
+- [document-governance.md](document-governance.md) says how to use the `document-governance` skill in this repository.
 
 When an instruction names a skill that the Skill tool does not list, say so in the plan or the reply, and follow the instruction's own words as far as they go. Do not guess the skill's content. Skills worth uploading for cloud threads are `verification-discipline`, `long-task-planning`, and `readable-output`; only the owner can upload them.
 

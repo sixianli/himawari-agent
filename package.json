@@ -26,7 +26,6 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries && npm run check:v0.2-coverage && npm run check:v0.2-invariants && npm run check:secrets && npm run check:ci-policy && npm run check:release-walkthrough && npm run check:answer-weight && npm run check:layer0-hooks && npm run check:incident-gates && npm run check:phone-layout && npm run check:layout && npm run check:brand && npm run check:locale && npm run check:expensive-models && npm run check:memory-relevance && npm run check:real-admission",
     "check:answer-weight": "vitest run --config vitest.workspace.ts --project tooling test/tooling/answer-font-weight.test.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "check:docs": "node scripts/check-docs-governance.mjs",
     "check:incident-gates": "node scripts/check-incident-gates.mjs",
     "check:real-admission": "node scripts/check-real-admission-tests.mjs",
     "check:memory-relevance": "node scripts/check-memory-relevance.mjs",

@@ -210,3 +210,20 @@ it("credits a step to the Run whose attempt is running even when the caller cann
     "db.queue.ms": 5,
   });
 });
+
+it("reports why a returned attempt settled as failed", async () => {
+  const timings = new ProductionRunTimings(clock().now);
+  const reports: Record<string, string | number>[] = [];
+  await timings.attempt(
+    "run:failed",
+    "execute",
+    async () => ({ code: "MODEL_STREAM_ERROR" }),
+    (diagnostic) => reports.push({ ...diagnostic }),
+    (result) => ({ terminalStatus: "failed", diagnosticCode: result.code }),
+  );
+  expect(reports[0]).toMatchObject({
+    outcome: "returned",
+    terminalStatus: "failed",
+    diagnosticCode: "MODEL_STREAM_ERROR",
+  });
+});
