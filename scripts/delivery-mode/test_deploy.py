@@ -173,6 +173,7 @@ class DeployHarness(unittest.TestCase):
         for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py'):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
+        (self.scripts / 'release-cleanup.py').write_text('import sys\nopen(' + repr(str(root / 'calls')) + ', "a").write("cleanup-" + sys.argv[2] + "\\n")\n')
         (self.scripts / 'rollback.sh').write_text('echo rollback >> ' + str(self.calls) + '\nexit "${FAKE_ROLLBACK_EXIT:-0}"\n')
         (root / 'disk-hygiene').mkdir()
         shutil.copy(HERE.parent / 'disk-hygiene' / 'prune-rebuildable.py', root / 'disk-hygiene' / 'prune-rebuildable.py')
@@ -206,6 +207,10 @@ class DeployHarness(unittest.TestCase):
         self.directory.cleanup()
 
     def deploy(self, **environment):
+        code, result, calls = self.deploy_with_cleanup(**environment)
+        return code, result, [call for call in calls if not call.startswith('cleanup-')]
+
+    def deploy_with_cleanup(self, **environment):
         child = subprocess.run(['bash', str(self.scripts / 'deploy.sh'), str(self.packet)], capture_output=True, text=True, env={**self.environment, **environment}, check=False)
         line = next(line for line in child.stdout.splitlines() if line.startswith('DEPLOY_RESULT '))
         calls = self.calls.read_text().split() if self.calls.exists() else []
@@ -283,6 +288,77 @@ class DeployFlowTest(DeployHarness):
         code, result, calls = self.deploy(FAKE_FAIL_AT='S2_STOP', FAKE_ROLLBACK_EXIT='1')
         self.assertEqual(result['result'], 'recovery-failed')
         self.assertNotEqual(code, 0)
+
+
+class ProductionCleanupFlowTest(DeployHarness):
+    def test_successful_deploy_cleans_the_server_before_the_preflight_and_after_the_switch(self):
+        code, result, calls = self.deploy_with_cleanup()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertEqual((calls[0], calls[1], calls[-1]), ('cleanup-apply', 'S1_TRANSPORT', 'cleanup-apply'))
+
+    def test_failure_before_the_service_stop_cleans_the_failed_attempt(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S1_INSTALL')
+        self.assertEqual(result['result'], 'stopped-before-service-stop')
+        self.assertEqual(calls[-1], 'cleanup-apply')
+
+    def test_recovered_deploy_cleans_after_the_old_release_runs_again(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S7_SWITCH_START')
+        self.assertEqual(result['result'], 'recovered')
+        self.assertEqual(calls[-2:], ['rollback', 'cleanup-apply'])
+
+    def test_failed_recovery_keeps_everything_on_the_server(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S2_STOP', FAKE_ROLLBACK_EXIT='1')
+        self.assertEqual(result['result'], 'recovery-failed')
+        self.assertEqual(calls[-1], 'rollback')
+        self.assertEqual(calls.count('cleanup-apply'), 1)
+
+    def test_refused_packet_touches_nothing_on_the_server(self):
+        self.walkthrough.unlink()
+        code, result, calls = self.deploy_with_cleanup()
+        self.assertEqual(result['result'], 'no-browser-acceptance')
+        self.assertEqual(calls, [])
+
+
+class RootSpacePreflightTest(unittest.TestCase):
+    GIB = 1024 ** 3
+
+    def failed(self, size, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update({'optFree': str(100 * self.GIB), 'stateFree': str(100 * self.GIB), **changes})
+        return [name for name, passed in preflight.checks(BINDING, facts, size) if not passed]
+
+    def test_measured_install_of_the_last_release_decides_the_room_needed(self):
+        size = 1 * self.GIB
+        self.assertEqual(self.failed(size, rootFree=str(17 * self.GIB), lastInstallUsed=str(4 * self.GIB)), [])
+        self.assertEqual(self.failed(size, rootFree=str(16 * self.GIB), lastInstallUsed=str(4 * self.GIB)), ['ROOT_FREE_FOR_ACCEPTANCE'])
+
+    def test_without_a_measurement_three_packet_sizes_are_assumed(self):
+        size = 1 * self.GIB
+        self.assertEqual(self.failed(size, rootFree=str(14 * self.GIB)), [])
+        self.assertEqual(self.failed(size, rootFree=str(int(13.9 * self.GIB))), ['ROOT_FREE_FOR_ACCEPTANCE'])
+
+    def test_space_line_reports_what_is_left_after_the_install(self):
+        facts = {'rootFree': str(20 * self.GIB), 'lastInstallUsed': str(5 * self.GIB)}
+        room = preflight.space(facts, self.GIB)
+        self.assertEqual(room['predictedInstall'], self.GIB + 6 * self.GIB)
+        self.assertEqual(room['predictedFreeAfterInstall'], 13 * self.GIB)
+        self.assertTrue(room['measuredFromLastInstall'])
+
+    def test_remote_script_reads_the_last_install_from_the_serving_release_evidence(self):
+        script = preflight.remote_script({**BINDING, 'paths': {**BINDING['paths'], 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence'}})
+        self.assertIn('lastInstallUsed=', script)
+        self.assertIn('s1-result.json', script)
+        self.assertIn('/var/lib/himawari ', script)
+
+    def test_last_install_reader_returns_the_bytes_used_by_s1(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            unit = root / 'unit.service'
+            unit.write_text('ExecStart=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/nineteenth-20261029/pair-supervisor.mjs --prefix /opt/himawari/releases/2026-10-29-nineteenth --config x\n')
+            (root / 'nineteenth-20261029-evidence').mkdir()
+            (root / 'nineteenth-20261029-evidence' / 's1-result.json').write_text(json.dumps({'passed': True, 'rootFreeBeforeBytes': 9000, 'rootFreeAfterBytes': 4000}))
+            output = subprocess.run(['python3', '-I', '-c', preflight.LAST_INSTALL_USED, str(unit), str(root)], capture_output=True, text=True, check=True).stdout
+            self.assertEqual(output.strip(), '5000')
 
 
 class GeneratedPacketGateTest(DeployHarness):

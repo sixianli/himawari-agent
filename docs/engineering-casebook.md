@@ -89,6 +89,7 @@ date: "2026-10-26"
   62. [问一次天气弹两次审批，批准后页面一直“正在加载”：并行搜索各要一次审批，网页读请求没有时限](#case-approval-stall)
   63. [问个简单问题也要 10 秒：13 轮真实对话拆出三处空等，模型真正思考只占 1.5 秒](#case-conversation-speed)
   64. [第二十次上线被自己的检查脚本拦下：检查跑得太快，结果里少了一栏，读结果的脚本直接报错](#case-s6-report-contract)
+  65. [生产机磁盘每次上线前都不够：上线流程只装不拆，清理步骤写了却没接上](#case-release-cleanup)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -116,7 +117,7 @@ date: "2026-10-26"
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
@@ -4069,7 +4070,7 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 - **业界做法（只读官方文档，图例见[业界资料的核对情况](#source-status)）：** ✅ [Gemini API 文档](https://ai.google.dev/gemini-api/docs/generate-content/google-search)：模型“automatically generates one or multiple search queries and executes them”；✅ [Claude Code 权限文档](https://code.claude.com/docs/en/permissions)：默认要批准，“以后不再问”在项目里永久生效；⚠ [Claude 帮助中心](https://support.claude.com/en/articles/10684626-enable-and-use-web-search)：“Claude searches the web when it helps”（引文出自搜索摘录）；⚠ [ChatGPT 帮助中心](https://help.openai.com/en/articles/9237897-searching-the-web-with-chatgpt)：需要最新信息时自动搜索（原页面打不开，引文出自搜索摘录）。
 - **对比与取舍：** Himawari 和聊天产品一致（默认搜、不逐次问），比它们多一条：数据要发往的地址一变就停下等主人看过，这是“用户主权”优先于“主动效率”的地方。
 - **实测结果：** 门槛测试在未修代码上失败（先打开开关、再换主模型，读回为关），修后通过；体验改善未测量，等上线后 Andy 在 iPhone 问天气验收。
-- **相关 ADR 和 PR：** [ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)、[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)；[事故 I-33](incidents-and-gates.md#incidents)。
+- **相关 ADR 和 PR：** [ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)、[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)；[事故 I-34](incidents-and-gates.md#incidents)。
 - **30 秒面试版：** 用户说“我明明开了搜索，怎么又问我”。查下来开关绑了模型配置的哈希，换模型就悄悄失效。我们参考 ChatGPT、Claude、Gemini 的做法改成默认开、只跟搜索服务地址绑定，地址变了才停下并说明原因，再用一条“换模型后开关还在”的测试把它钉住。
 
 [返回目录](#contents)
@@ -4185,6 +4186,64 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “一次上线在切换前被我们自己的检查脚本拦下。原因是一个验收步骤只在‘读到进程组路径’时才写某个字段，而这次检查跑得太快，读属性时已经结束，路径是空的，下一个脚本读这个字段就报错。我把写法改成总是写，并加了一项出包检查：读三个脚本的代码，确认后面读的每个字段前面在所有路径上都会写，没对上就不出包。”
+
+[返回目录](#contents)
+
+<a id="case-release-cleanup"></a>
+
+## 案例 65：生产机磁盘每次上线前都不够：上线流程只装不拆，清理步骤写了却没接上
+
+**背景与现象**
+
+生产机（Contabo 云服务器，根分区一块盘）三次在上线前空间不够，每次都靠人手删目录：2026-10-27 第十三版装完新版本只剩 8.19 GB，验收要 10 GiB，停在停服前，删掉第一到第九版的 8 个临时目录（17.6 GB）才上去；10-29 第十九版上线前人手清出 4.8 GB；10-30 第二十版上线前只剩 14.0 GB，人手删第十四、十八版失败上线留下的临时副本和上传包约 7.7 GB。Andy 问的是“为什么总是不够”，要根因，不要每次清一把。
+
+**根因**
+
+读 `scripts/delivery-mode/` 的上线脚本后确认，上线流程只装不拆，有五个缺口：
+
+1. 每次上线在 `/var/tmp` 留下上传的整个操作包、S1 安装时复制的第二份操作包、一份安装材料和一整套验证用源码检出（含完整依赖目录）。操作包模板里有专门删它们的 S9 步骤，但 `deploy.sh` 的步骤列表里从来没有它，安装脚本自己的输出写着 `validationMaterialsRemoved: false`。
+2. 失败重试时，上线前检查遇到上次留下的目录，提示“改名为 .attemptN-failed-日期”。改名不释放空间。
+3. 每天 04:00 的自动清理只装在 Mac 和 Hermes，生产机上没有。
+4. `/opt/himawari/releases/` 从第一版起全部保留；每版的数据库恢复点也都留着。
+5. 空间检查写死为“10 GiB + 2 倍包大小”，S1 安装实际占用（第十三版约 3 GB）估不准，于是检查通过、装完才发现不够。
+
+为什么第十三版之后又发生两次：那次的改进只写成两条 Backlog（BL-20261027-001、BL-20261027-002），没有落成会自动运行的检查，也没人去做。
+
+**方案讨论与备选**
+
+- 把现有 S9 步骤加进 `deploy.sh`：脚本最严，但只能在全部成功后跑，失败路径用不上；只管本次 `/var/tmp` 里的一个目录，不管上传包、旧版本和以前失败的改名目录；设计上要人先审计划再在 30 分钟内执行，不适合自动跑。放弃。
+- 生产机装每天定时清理：上线临时产物只在上线时产生，上线前后各清一次已经覆盖；定时任务还要处理与上线同时运行。暂不做，上线前那次清理就是兜底。
+- 新旧版本共用依赖目录（硬链接）：安装脚本逐个检查文件只有一个硬链接、归 root 且不可写，共享会破坏这些安全检查，还让回退版本受新版本影响。放弃。
+- 只调高门槛：不解决累积。放弃。
+
+**我们的方案**
+
+- `deploy.sh` 在上线前检查之前、上线成功之后、失败但旧版本仍在服务之后，各调用一次 `release-cleanup.py`。自动回退也失败时不清，现场留给诊断。
+- 远端脚本 `release-cleanup-remote.py` 只看生产机当时的状态：从 systemd 单元读出正在服务的版本，从它的绑定文件读出回退目标版本。版本目录只留这两版；`/var/tmp` 里的上线临时目录全删，只留正在服务那一版的操作包（回退要用）；旧证据目录里超过 10 MiB 的文件（数据库恢复点）删掉，正在服务那一版的证据整个保留。删之前把 1 MiB 以下的报告和日志复制到 `/var/lib/himawari/release-cleanup/<时间>/`，并写清单。
+- 宁可少删：单元或配置提到的、进程正在用的、数据库里出现的版本目录都保留并写明原因；读不出正在服务的版本、发现上线步骤在跑、服务不是 active 时一个都不删。
+- 上线前检查从正在服务那一版的 `s1-result.json` 读出上次安装实际占用，预计本次占用 = 包大小 + 上次占用 × 1.2，要求装完还剩 10 GiB + 1 GiB，否则在任何步骤之前停下，并打印预计装完还剩多少。
+
+**业界主流/最佳实践**
+
+- ✅ Capistrano（Ruby 社区常用的部署工具）配置项 `:keep_releases` 默认 5：“The last `n` releases are kept for possible rollbacks.”（[Capistrano 配置文档](https://capistranorb.com/documentation/getting-started/configuration/)）
+- ✅ Kubernetes 的 kubelet 按磁盘占用自动删镜像：“Disk usage above the configured `HighThresholdPercent` value triggers garbage collection”，“The kubelet deletes images until disk usage reaches the `LowThresholdPercent` value.”（[Kubernetes 垃圾回收文档](https://kubernetes.io/docs/concepts/architecture/garbage-collection/)）
+
+**对比与取舍**
+
+两者都由工具自己删、只留回退要用的版本，不靠人记得删，这与我们的做法一致。我们只留 2 版而不是 Capistrano 的 5 版：Andy 定的是“只留用于回退的最近一版”，回退流程也只回到上一版；单盘服务器上每多留一版就多占约 4 GB。我们没有照搬 kubelet 的“超过阈值才删”，因为上线临时产物在上线结束时就已确定不再需要，结束即删比等磁盘涨满再删更简单，也不会在上线中途触发。代价是不能回退到两版以前。
+
+**结果数据**
+
+- 清理规则测试 `scripts/delivery-mode/test_release_cleanup.py` 11 条通过；`test_deploy.py` 新增的 10 条（三种结束路径都清、自动回退失败不清、按实测预估空间）在去掉本次 `deploy.sh` 和 `deploy-preflight.py` 修改时 7 条失败、2 条报错。
+- 生产机上的实际释放量和每版 4 GB 的构成：未测量，只读分账脚本已备好（`/mnt/project-files/disk-accounting/run-on-production.sh`），等第二十版上线后运行；清理在生产机的第一次实际运行等下一次上线。
+
+**相关 ADR/PR**
+
+[ADR 0120](adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md)；[事故 I-33](incidents-and-gates.md#incidents)；本案例的 PR 在分支 `claude/project-thread-0ah1su`。
+
+**面试 30 秒版**
+
+“生产机磁盘每次上线前都不够，之前每次都是手动删一把。我读了上线脚本，发现流程只装不拆：清理步骤写在模板里却从没接进上线脚本，失败重试只改名不删，旧版本全留，空间检查是写死的数。我让上线脚本在开始前和结束后都自动清理，只留正在服务的版本和回退要用的上一版，删前存下报告和日志，凡是有进程或配置在用的一律不删；空间检查改成按上次实际安装占用算‘装完还剩多少’，不够就在动生产机前停下。”
 
 [返回目录](#contents)
 

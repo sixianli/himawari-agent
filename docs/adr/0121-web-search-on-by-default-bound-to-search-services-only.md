@@ -78,7 +78,7 @@ Andy 当天在审批线程的选择卡上选了"默认打开，从不问"。
 - [ADR 0071：联网搜索和读网页改为可替换的供应商链](0071-replaceable-web-search-and-fetch-providers.md)（"供应商列表一变必须重新同意"在本 ADR 中保留）
 - [ADR 0079：并行只读工具和宿主侧网页工具](0079-parallel-read-only-tools-and-host-web-tools.md)
 - [ADR 0117：Magpie 经自有订阅路由模型](0117-magpie-routes-models-through-owned-subscriptions.md)
-- [事故与门槛清单：I-29、I-33](../incidents-and-gates.md#incidents)
+- [事故与门槛清单：I-29、I-34](../incidents-and-gates.md#incidents)
 - [工程案例库：案例 62](../engineering-casebook.md#case-approval-stall)
 - [架构文档：已授权公开搜索与聊天执行反馈](../architecture-v0.1.md)（产品需求 v0.2 里“开启后不逐次询问搜索”的说法仍然成立，未改）
 
