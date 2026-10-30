@@ -350,6 +350,15 @@ const toneOf = (decision: ProactiveDecision): LogTone =>
           ? "held"
           : "quiet";
 
+function failureLine(reasonCode: string): MessageId {
+  if (reasonCode === "MODEL_OUTPUT_INVALID") return "proactive.line.modelFailed";
+  if (reasonCode === "MODEL_OUTPUT_TRUNCATED") return "proactive.line.modelCutOff";
+  if (reasonCode === "MODEL_NOT_COMPLETED") return "proactive.line.modelUnfinished";
+  if (reasonCode === "MODEL_CALL_ERROR" || reasonCode.startsWith("MODEL_FAILED_"))
+    return "proactive.line.modelNoAnswer";
+  return "proactive.line.readFailed";
+}
+
 function decisionLine(decision: ProactiveDecision, message: Message): string {
   const { counts, reasonCode } = decision;
   if (decision.verdict === "needs_owner") return message("proactive.line.needsOwner");
@@ -358,12 +367,7 @@ function decisionLine(decision: ProactiveDecision, message: Message): string {
   if (decision.verdict === "deferred") return message("proactive.line.deferred");
   if (decision.verdict === "capped") return message("proactive.line.capped");
   if (decision.verdict === "capped_daily") return message("proactive.line.cappedDaily");
-  if (decision.verdict === "failed")
-    return message(
-      reasonCode === "MODEL_OUTPUT_INVALID"
-        ? "proactive.line.modelFailed"
-        : "proactive.line.readFailed",
-    );
+  if (decision.verdict === "failed") return message(failureLine(reasonCode));
   if (counts.fetched === 0) return message("proactive.line.noMail");
   if (counts.skipped === counts.fetched)
     return message("proactive.line.allSkipped", { count: counts.fetched });

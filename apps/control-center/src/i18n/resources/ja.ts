@@ -1016,6 +1016,12 @@ export const messages = {
     "今日の累計が 1 日の費用上限に達しました。モデルは 0:00 まで停止し、ルールは継続、チャットへの影響はありません",
   "proactive.line.modelFailed":
     "モデルの回答の形式が正しくありませんでした。通知はせず、次回同じメールを確認し直します",
+  "proactive.line.modelNoAnswer":
+    "モデルから回答がありませんでした。通知はせず、次回同じメールを確認し直します",
+  "proactive.line.modelUnfinished":
+    "モデルが最後まで回答しませんでした（タイムアウトまたは中断）。通知はせず、次回同じメールを確認し直します",
+  "proactive.line.modelCutOff":
+    "モデルが考え込みすぎて、回答が途中で切れました。通知はせず、次回はメールを小分けにして確認し直します",
   "proactive.line.readFailed":
     "Gmail の読み取りに失敗しました。今回は通知せず、15 分後に再確認します",
   "proactive.line.noMail": "新着メールなし",

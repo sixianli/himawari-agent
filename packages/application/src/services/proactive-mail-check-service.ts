@@ -69,6 +69,7 @@ export interface ProactiveMailCheckOptions {
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
   readonly batchSize?: number;
+  readonly outputTokenLimit?: number;
 }
 
 interface Judgement {
@@ -81,6 +82,18 @@ interface Judgement {
 }
 
 type Stop = "capped" | "capped_daily" | "failed" | null;
+
+const DEFAULT_BATCH_SIZE = 8;
+
+interface JudgeOutcome {
+  readonly judgements: ReadonlyMap<string, Judgement> | undefined;
+  readonly costMicros: number;
+  readonly failure: string | null;
+}
+
+function failureCode(prefix: string, detail: string): string {
+  return `${prefix}_${detail.toUpperCase().replace(/[^A-Z0-9]+/gu, "_")}`.slice(0, 64);
+}
 
 const EMPTY_COUNTS: ProactiveCounts = Object.freeze({
   fetched: 0,
@@ -126,6 +139,7 @@ export function proactivePrompt(
     '- "check"：只看标题和摘要判断不了，但可能重要，需要主人看原信；',
     '- "ignore"：不用管。',
     '同时给 "confidence"："sure" 或 "unsure"。',
+    '"ignore" 只写 id、result、confidence 三项，其余都不要写。',
     'act 要写 "todo"（一句话待办）、"priority"（"high"、"medium"、"low"），有截止时间就写 "dueAt"（带时区的 ISO 8601），没有写 null。',
     'know 的 "todo" 写一句关键信息；check 的 "reason" 写为什么可能重要。每封都写一句给主人看的 "reason"。',
     "todo 和 reason 用简体中文，每句不超过 60 个字。",
@@ -143,24 +157,67 @@ export function proactivePrompt(
   ].join("\n");
 }
 
+function completeEntries(output: string): readonly Record<string, unknown>[] | undefined {
+  const start = output.indexOf("{");
+  const end = output.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+  try {
+    const list = (JSON.parse(output.slice(start, end + 1)) as { items?: unknown }).items;
+    if (Array.isArray(list))
+      return list.filter(
+        (entry): entry is Record<string, unknown> =>
+          typeof entry === "object" && entry !== null && !Array.isArray(entry),
+      );
+  } catch {
+    return salvagedEntries(output);
+  }
+  return undefined;
+}
+
+function salvagedEntries(output: string): readonly Record<string, unknown>[] | undefined {
+  const marker = output.search(/"items"\s*:\s*\[/u);
+  if (marker < 0) return undefined;
+  const entries: Record<string, unknown>[] = [];
+  let depth = 0;
+  let objectStart = -1;
+  let inString = false;
+  let escaped = false;
+  for (let index = output.indexOf("[", marker) + 1; index < output.length; index += 1) {
+    const char = output[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === "{") {
+      if (depth === 0) objectStart = index;
+      depth += 1;
+    } else if (char === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && objectStart >= 0) {
+        try {
+          const entry = JSON.parse(output.slice(objectStart, index + 1)) as unknown;
+          if (typeof entry === "object" && entry !== null && !Array.isArray(entry))
+            entries.push(entry as Record<string, unknown>);
+        } catch {
+          return entries;
+        }
+        objectStart = -1;
+      }
+    }
+  }
+  return entries;
+}
+
 export function parseJudgements(
   output: string,
   items: readonly ProactiveSourceItem[],
 ): ReadonlyMap<string, Judgement> | undefined {
-  const start = output.indexOf("{");
-  const end = output.lastIndexOf("}");
-  if (start < 0 || end <= start) return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(output.slice(start, end + 1));
-  } catch {
-    return undefined;
-  }
-  const list = (parsed as { items?: unknown }).items;
-  if (!Array.isArray(list)) return undefined;
+  const entries = completeEntries(output);
+  if (entries === undefined) return undefined;
   const wanted = new Set(items.map(({ messageId }) => messageId));
   const judgements = new Map<string, Judgement>();
-  for (const entry of list as Record<string, unknown>[]) {
+  for (const entry of entries) {
     const id = entry["id"];
     const result = entry["result"];
     const confidence = entry["confidence"];
@@ -171,7 +228,7 @@ export function parseJudgements(
       !["act", "know", "check", "ignore"].includes(result as string) ||
       !["sure", "unsure"].includes(confidence as string)
     )
-      return undefined;
+      continue;
     const priority = entry["priority"];
     judgements.set(id, {
       result: result as ProactiveResult,
@@ -184,7 +241,7 @@ export function parseJudgements(
         : null,
     });
   }
-  return judgements.size === wanted.size ? judgements : undefined;
+  return judgements.size > 0 ? judgements : undefined;
 }
 
 export class ProactiveMailCheckService {
@@ -282,7 +339,8 @@ export class ProactiveMailCheckService {
     let costMicros = 0;
     let stop: Stop = null;
     const queue = [...candidates];
-    const batchSize = this.#options.batchSize ?? 20;
+    let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
+    let failure: string | null = null;
     while (queue.length > 0 && stop === null) {
       const batch = queue.slice(0, batchSize);
       const prompt = proactivePrompt(batch, startedAt, this.#options.timeZone);
@@ -298,12 +356,32 @@ export class ProactiveMailCheckService {
         stop = "capped";
         break;
       }
-      const outcome = await this.#judge(batch, prompt, deadlineAt, controller.signal).catch(
-        () => undefined,
-      );
-      costMicros += outcome?.costMicros ?? 0;
-      if (!outcome?.judgements) {
-        stop = controller.signal.aborted ? "capped" : "failed";
+      const outcome: JudgeOutcome = await this.#judge(
+        batch,
+        prompt,
+        deadlineAt,
+        controller.signal,
+      ).catch(() => ({
+        judgements: undefined,
+        costMicros: 0,
+        failure: "MODEL_CALL_ERROR",
+      }));
+      costMicros += outcome.costMicros;
+      if (!outcome.judgements) {
+        if (controller.signal.aborted) {
+          stop = "capped";
+          break;
+        }
+        const shrinkable =
+          batch.length > 1 &&
+          (outcome.failure === "MODEL_OUTPUT_TRUNCATED" ||
+            outcome.failure === "MODEL_OUTPUT_INVALID");
+        if (shrinkable) {
+          batchSize = Math.ceil(batch.length / 2);
+          continue;
+        }
+        stop = "failed";
+        failure = outcome.failure ?? "MODEL_OUTPUT_INVALID";
         break;
       }
       for (const [id, judgement] of outcome.judgements) judged.set(id, judgement);
@@ -393,7 +471,7 @@ export class ProactiveMailCheckService {
     return this.#finish({
       startedAt,
       verdict,
-      reasonCode: this.#reason(verdict, stop, items.length, counts),
+      reasonCode: this.#reason(verdict, stop, failure, items.length, counts),
       counts,
       processed,
       insights,
@@ -411,10 +489,16 @@ export class ProactiveMailCheckService {
     });
   }
 
-  #reason(verdict: ProactiveVerdict, stop: Stop, fetched: number, counts: ProactiveCounts) {
+  #reason(
+    verdict: ProactiveVerdict,
+    stop: Stop,
+    failure: string | null,
+    fetched: number,
+    counts: ProactiveCounts,
+  ) {
     if (stop === "capped_daily") return "DAILY_LIMIT";
     if (stop === "capped") return "CHECK_LIMIT";
-    if (stop === "failed") return "MODEL_OUTPUT_INVALID";
+    if (stop === "failed") return failure ?? "MODEL_OUTPUT_INVALID";
     if (verdict === "deferred") return "QUIET_HOURS";
     if (verdict === "pushed") return "URGENT";
     if (fetched === 0) return "NO_NEW_MAIL";
@@ -448,12 +532,14 @@ export class ProactiveMailCheckService {
     prompt: string,
     deadlineAt: string,
     signal: AbortSignal,
-  ): Promise<{ judgements: ReadonlyMap<string, Judgement> | undefined; costMicros: number }> {
+  ): Promise<JudgeOutcome> {
     const { model } = this.#options;
     const invocationId = this.#options.ids.next("proactive-model");
     const authority = await model.prepare({ invocationId, prompt, deadlineAt });
     let output = "";
     let completed = false;
+    let truncated = false;
+    let failure: string | null = null;
     let costMicros = 0;
     try {
       const request: ModelInvocationRequest = {
@@ -469,13 +555,18 @@ export class ProactiveMailCheckService {
       };
       for await (const event of model.model.invoke(request)) {
         if (event.invocationId !== invocationId) break;
-        if (event.type === "model.failed") break;
+        if (event.type === "model.failed") {
+          failure = failureCode("MODEL_FAILED", event.errorCode);
+          break;
+        }
         if (event.type === "model.output") {
           output += await model.readOutput(event.payloadRef);
           if (new TextEncoder().encode(output).byteLength > MAX_OUTPUT_BYTES) break;
         }
         if (event.type === "model.completed") {
           costMicros = Number.isSafeInteger(event.costMicros) ? Math.max(0, event.costMicros) : 0;
+          const limit = this.#options.outputTokenLimit;
+          truncated = limit !== undefined && event.outputTokens >= limit;
           completed = true;
           break;
         }
@@ -483,9 +574,15 @@ export class ProactiveMailCheckService {
     } finally {
       await authority.release();
     }
-    return completed
-      ? { judgements: parseJudgements(output, batch), costMicros }
-      : { judgements: undefined, costMicros };
+    if (failure) return { judgements: undefined, costMicros, failure };
+    if (!completed) return { judgements: undefined, costMicros, failure: "MODEL_NOT_COMPLETED" };
+    const judgements = parseJudgements(output, batch);
+    if (judgements) return { judgements, costMicros, failure: null };
+    return {
+      judgements: undefined,
+      costMicros,
+      failure: truncated ? "MODEL_OUTPUT_TRUNCATED" : "MODEL_OUTPUT_INVALID",
+    };
   }
 
   async #needsOwner(startedAt: string, reasonCode: string): Promise<ProactiveDecision> {

@@ -1012,6 +1012,12 @@ export const messages = {
     "Today’s spending reached the daily limit. The model is paused until 0:00, rules keep running, and chat is unaffected",
   "proactive.line.modelFailed":
     "The model’s answer was malformed. Nothing was pushed, and these emails are read again next time",
+  "proactive.line.modelNoAnswer":
+    "The model gave no answer this time. Nothing was pushed, and these emails are read again next time",
+  "proactive.line.modelUnfinished":
+    "The model did not finish (timed out or was interrupted). Nothing was pushed, and these emails are read again next time",
+  "proactive.line.modelCutOff":
+    "The model thought for too long and its answer was cut off. Nothing was pushed, and these emails are read again in smaller groups next time",
   "proactive.line.readFailed":
     "Could not read Gmail. Nothing was pushed; the next check runs in 15 minutes",
   "proactive.line.noMail": "No new mail",
