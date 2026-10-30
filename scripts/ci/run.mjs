@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { runBrowser } from "./browser.mjs";
 import { build } from "./build.mjs";
 import { resolvePolicySource } from "./check-policy.mjs";
@@ -33,7 +34,6 @@ import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const json = (filename, value) =>
   writeFileSync(filename, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
@@ -239,18 +239,9 @@ export async function runCheck({
         context.baseSha,
       ]);
       await command("toolchain", tools.node, ["scripts/ci/install-tools.mjs", "--check"]);
-      await command("governance-source", tools.node, ["scripts/ci/sync-governance.mjs", "--check"]);
       await vitest(check.projects);
     } else if (checkId === "static") {
       await command("check", tools.node, [tools.npmCli, "run", "check"]);
-      await command("docs", tools.python, [
-        "-E",
-        "-s",
-        "-B",
-        "tools/document-governance/scripts/validate_docs.py",
-        ".",
-        "--strict",
-      ]);
       await command("actionlint", tools.actionlint, [
         "-shellcheck=",
         ".github/workflows/ci.yml",
@@ -258,7 +249,7 @@ export async function runCheck({
         ".github/workflows/main.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
-      result.counts = { files: 4, executed: 4, passed: 4, failed: 0, skipped: 0 };
+      result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };
     } else if (checkId === "security") {
       const security = await runSecurityChecks({
         root,

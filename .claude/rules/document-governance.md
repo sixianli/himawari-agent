@@ -7,7 +7,6 @@ The user asked on 2026-10-26 that every later cloud thread actually apply the `d
 - Load `document-governance` through the Skill tool before governed documentation work, then read only the reference under `references/` that matches the work, as the skill's "Load Only What Is Needed" list says.
 - Run its scripts from the repository root as `python3 -B <skill directory>/scripts/<script>.py ...`, with the directory the Skill tool reports. Do not add `-I`: the scripts import each other from their own folder.
 - When the Skill tool does not list `document-governance`, say so in the plan, and copy the frontmatter and structure of the newest existing document of the same type instead of inventing a format.
-- `tools/document-governance/` is an older pinned copy used only by the CI `static` job, which does not run while GitHub Actions is off ([ADR 0092](../../docs/adr/0092-pause-github-actions.md)). Do not use it for agent work.
 
 ## When to Use It
 
