@@ -19,7 +19,7 @@ def cleanup_plan(binding):
         'hostname': binding['host']['hostname'],
         'unit': binding['service']['unit'],
         'unitPath': binding['service']['unitFragmentPath'],
-        'configDirectory': str(Path(paths['config']).parent),
+        'config': paths['config'],
         'database': paths['database'],
         'releasesRoot': str(Path(paths['newPrefix']).parent),
         'operationsRoot': str(Path(paths['newOperations']).parent),

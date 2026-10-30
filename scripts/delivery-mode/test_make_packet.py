@@ -1,3 +1,4 @@
+import argparse
 import ast
 import copy
 import hashlib
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / 'fixtures'
@@ -616,6 +618,55 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         self.assertLess(body.index('hermes.preflight()'), body.index("step('discover'"))
         self.assertLess(body.index('hermes.preflight()'), body.index('hermes.build('))
 
+
+
+class HermesCleanupTest(unittest.TestCase):
+    TAG = '[PG-4]'
+
+    def test_cleanup_removes_the_rebuildable_copies_and_keeps_logs_and_reports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory) / 'twentieth-e9d30b22-20261030t010000'
+            files = {
+                'materials/node-modules.tar.gz': True, 'materials/candidate.tar.gz': True,
+                '-checks/packet/inputs/bindings.json': True, '-inputs/packet.tgz': True, '-inputs/source-e9d30b2.bundle': True,
+                'summary': False, 'build.log': False, 'report/local-summary.json': False, 'walkthrough/browser-acceptance.json': False,
+                '-inputs/build.log': False, '-inputs/build.exit': False, '-checks/record.json': False, '-checks/logs/check.log': False,
+            }
+            for name in files:
+                path = Path(str(work) + name) if name.startswith('-') else work / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('x')
+            subprocess.run(['bash', '-c', packet_maker.hermes_cleanup_command(str(work))], check=True)
+            for name, removed in files.items():
+                path = Path(str(work) + name) if name.startswith('-') else work / name
+                self.assertEqual(path.exists(), not removed, name)
+
+    def test_prepare_cleans_hermes_and_the_local_work_directory_even_when_it_fails(self):
+        source = (HERE / 'make-packet.py').read_text()
+        body = source[source.index('def prepare(arguments):'):source.index('def build_packet(')]
+        self.assertIn('try:\n        build_packet(', body)
+        self.assertLess(body.index('finally:'), body.index('hermes.cleanup()'))
+        self.assertLess(body.index('finally:'), body.index('shutil.rmtree(work'))
+
+    def test_a_failed_build_still_sends_the_cleanup_to_hermes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / 'calls'
+            wrapper = root / 'hermes-ssh.sh'
+            wrapper.write_text('#!/bin/bash\necho "$1" >> ' + shlex.quote(str(calls)) + '\n')
+            wrapper.chmod(0o755)
+            with unittest.mock.patch.dict(os.environ, {'HIMAWARI_HERMES_SSH': str(wrapper)}):
+                hermes = packet_maker.Hermes('twentieth-e9d30b22-20261030t010000')
+                with unittest.mock.patch.object(packet_maker, 'build_packet', side_effect=SystemExit('PACKET_HERMES_STEP_FAILED')), \
+                        unittest.mock.patch.object(packet_maker, 'Hermes', return_value=hermes), \
+                        unittest.mock.patch.object(packet_maker, 'load_instance', return_value={}), \
+                        unittest.mock.patch.object(packet_maker, 'resolve_commit', return_value='e' * 40), \
+                        unittest.mock.patch.object(packet_maker, 'discover', return_value={}), \
+                        unittest.mock.patch.object(packet_maker, 'interpret_discovery', return_value={'LABEL': 'twentieth'}), \
+                        unittest.mock.patch.object(packet_maker, 'base_parameters', return_value={'LABEL': 'twentieth', 'COMMIT8': 'e' * 8}):
+                    with self.assertRaises(SystemExit):
+                        packet_maker.prepare(argparse.Namespace(instance='andy-production', commit='HEAD', date='2026-10-30', label='twentieth'))
+            self.assertIn(packet_maker.hermes_cleanup_command(hermes.work), calls.read_text())
 
 
 class DependencyReinstallTest(unittest.TestCase):
