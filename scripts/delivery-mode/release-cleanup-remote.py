@@ -2,12 +2,12 @@ import base64
 import datetime
 import fcntl
 import json
-import mmap
 import os
 from pathlib import Path
 import re
 import shutil
 import socket
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -82,24 +82,32 @@ def serving(plan):
 
 
 def configuration_text(plan):
-    texts = [Path(plan['unitPath']).read_text()]
-    for parent, directories, files in os.walk(plan['configDirectory']):
-        for name in files:
-            try:
-                texts.append(Path(parent, name).read_text(errors='replace'))
-            except OSError:
-                pass
-    return '\n'.join(texts)
+    return Path(plan['unitPath']).read_text() + '\n' + Path(plan['config']).read_text(errors='replace')
 
 
 def database_releases(plan):
-    pattern = re.compile(re.escape(plan['releasesRoot'].encode()) + rb'/([A-Za-z0-9._-]+)')
-    found = set()
-    for name in (plan['database'], plan['database'] + '-wal'):
-        if not os.path.isfile(name) or os.path.getsize(name) == 0:
-            continue
-        with open(name, 'rb') as handle, mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as data:
-            found.update(plan['releasesRoot'] + '/' + match.group(1).decode() for match in pattern.finditer(data))
+    pattern = re.compile(re.escape(plan['releasesRoot']) + r'/([A-Za-z0-9._-]+)')
+    found = {}
+    database = sqlite3.connect('file:' + plan['database'] + '?mode=ro', uri=True)
+    try:
+        tables = [row[0] for row in database.execute("select name from sqlite_master where type = 'table'")]
+        for table in tables:
+            columns = [row[0] for row in database.execute('select name from pragma_table_info(?)', (table,))]
+            if not columns:
+                continue
+            values = ['cast("' + column.replace('"', '""') + '" as text)' for column in columns]
+            query = 'select ' + ', '.join(values) + ' from "' + table.replace('"', '""') + '" where ' + ' or '.join('instr(' + value + ', ?) > 0' for value in values)
+            try:
+                rows = database.execute(query, [plan['releasesRoot'] + '/'] * len(values)).fetchall()
+            except sqlite3.OperationalError:
+                found.setdefault('unreadableTables', []).append(table)
+                continue
+            for row in rows:
+                for column, value in zip(columns, row):
+                    for match in pattern.finditer(value or ''):
+                        found.setdefault(plan['releasesRoot'] + '/' + match.group(1), table + '.' + column)
+    finally:
+        database.close()
     return found
 
 
@@ -159,13 +167,16 @@ def cleanup(plan, apply, references, stamp):
         result['kept'].append({'path': path, 'reason': reason})
 
     named_by_database = database_releases(plan)
+    result['unreadableTables'] = named_by_database.pop('unreadableTables', [])
     for path in children(plan['releasesRoot']):
         if path in (current['prefix'], current['rollbackPrefix']):
             keep(path, 'serving' if path == current['prefix'] else 'rollback-target')
         elif os.path.islink(path):
             keep(path, 'symbolic-link')
-        elif in_use(path) or path in named_by_database:
-            keep(path, in_use(path) or 'named-by-database')
+        elif in_use(path):
+            keep(path, in_use(path))
+        elif path in named_by_database:
+            keep(path, 'named-by-database:' + named_by_database[path])
         else:
             remove(path, 'old-release')
 
