@@ -363,8 +363,14 @@ export class SqliteDurableAdapters {
         this.context.read("authorization.findApprovalByIntent", { intentId }),
       getApproval: (approvalRequestId) =>
         this.context.read("authorization.getApproval", { approvalRequestId }),
-      listApprovals: (ownerId, agentId) =>
-        this.context.read("authorization.listApprovals", { ownerId, agentId }),
+      listApprovals: (ownerId, agentId, filter) =>
+        this.context.read("authorization.listApprovals", {
+          ownerId,
+          agentId,
+          status: filter?.status ?? null,
+        }),
+      approvalChangeMarker: (ownerId, agentId) =>
+        this.context.read("authorization.approvalChangeMarker", { ownerId, agentId }),
       resolveApproval: (input) => this.context.write("authorization.resolveApproval", { input }),
       listGrants: (ownerId, agentId) =>
         this.context.read("authorization.listGrants", { ownerId, agentId }),

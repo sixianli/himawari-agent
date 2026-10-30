@@ -866,17 +866,19 @@ it("gives a slow memory-search embedding three seconds, then asks once more unde
   let boundary: EmbeddingBoundary | undefined;
   const now = "2026-09-06T00:00:00.000Z";
   const permits: ModelInvocationPermit[] = [];
-  const begin = vi.fn(async (_input: { readonly ordinal: number }) => {
-    const permit: ModelInvocationPermit = {
-      assertActive: vi.fn(async () => {}),
-      markStarted: vi.fn(async () => {}),
-      releaseReserved: vi.fn(async () => {}),
-      settle: vi.fn(async () => {}),
-      markUnknown: vi.fn(async () => {}),
-    };
-    permits.push(permit);
-    return { disposition: "fresh", permit };
-  });
+  const begin = vi.fn(
+    async (_input: { readonly ordinal: number; readonly logicalSlot: string }) => {
+      const permit: ModelInvocationPermit = {
+        assertActive: vi.fn(async () => {}),
+        markStarted: vi.fn(async () => {}),
+        releaseReserved: vi.fn(async () => {}),
+        settle: vi.fn(async () => {}),
+        markUnknown: vi.fn(async () => {}),
+      };
+      permits.push(permit);
+      return { disposition: "fresh", permit };
+    },
+  );
   const diagnostics: Readonly<Record<string, string>>[] = [];
   const send = vi
     .fn()
@@ -943,8 +945,14 @@ it("gives a slow memory-search embedding three seconds, then asks once more unde
   expect(performance.now() - started).toBeGreaterThanOrEqual(2900);
   expect(send).toHaveBeenCalledTimes(2);
   expect(begin.mock.calls.map(([input]) => input.ordinal)).toEqual([1, 2]);
-  expect(permits[0]?.markUnknown).toHaveBeenCalledWith("transport_unresolved");
-  expect(permits[0]?.settle).not.toHaveBeenCalled();
+  expect(begin.mock.calls.map(([input]) => input.logicalSlot)).toEqual([
+    "context-memory-search:v1",
+    "context-memory-search:v1:attempt:2",
+  ]);
+  expect(permits[0]?.markUnknown).not.toHaveBeenCalled();
+  expect(permits[0]?.settle).toHaveBeenCalledWith(
+    expect.objectContaining({ reportedCostMicros: 164, outputTokens: 0 }),
+  );
   expect(permits[1]?.settle).toHaveBeenCalledTimes(1);
   expect(diagnostics).toEqual([
     { component: "agent-service", event: "memory.embedding_retried", afterMs: "3000" },
@@ -1047,9 +1055,13 @@ it("accepts the production embedding descriptor in the real invocation registry"
   ).not.toThrow();
 });
 
-it.each([false, true])(
-  "generates a title through the selected Pi transport (required reasoning: %s)",
-  async (reasoningRequired) => {
+it.each([
+  { reasoning: false, reasoningRequired: false, maxTokens: 128 },
+  { reasoning: true, reasoningRequired: false, maxTokens: 1024 },
+  { reasoning: true, reasoningRequired: true, maxTokens: 1024 },
+])(
+  "generates a title through the selected Pi transport with room for thinking when the model can think (%o)",
+  async ({ reasoning, reasoningRequired, maxTokens }) => {
     const adapters = createReferenceAdapterSet();
     const streamOptions: Record<string, unknown>[] = [];
     class TitleRuntime extends RecordingRuntime {
@@ -1071,8 +1083,7 @@ it.each([false, true])(
               api: "openai-completions",
               provider: "vercel-ai-gateway",
               model: primaryModel.model,
-              stopReason:
-                reasoningRequired && Number(options["maxTokens"]) < 512 ? "length" : "stop",
+              stopReason: reasoning && Number(options["maxTokens"]) < 512 ? "length" : "stop",
               timestamp: Date.now(),
               usage: {
                 input: 30,
@@ -1110,9 +1121,7 @@ it.each([false, true])(
       ...prepared.options,
       descriptors: prepared.options.descriptors.map((descriptor) => ({
         ...descriptor,
-        ...(descriptor.api === "openai-completions"
-          ? { reasoning: reasoningRequired || descriptor.reasoning, reasoningRequired }
-          : {}),
+        ...(descriptor.api === "openai-completions" ? { reasoning, reasoningRequired } : {}),
       })),
     });
     try {
@@ -1150,7 +1159,7 @@ it.each([false, true])(
       );
       expect(permit.markUnknown).not.toHaveBeenCalled();
       expect(streamOptions[0]).toMatchObject({
-        maxTokens: reasoningRequired ? 1024 : 128,
+        maxTokens,
         maxRetries: 0,
         timeoutMs: 20000,
       });

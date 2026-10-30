@@ -26,6 +26,7 @@ import {
 
 const FIRST_EMBEDDING_ATTEMPT_MS = 3_000;
 const EMBEDDING_ATTEMPT_TIMED_OUT = "EMBEDDING_ATTEMPT_TIMED_OUT";
+const EMBEDDING_INPUT_LIMIT = 16384;
 
 export function embeddingAdmissionDescriptor(
   configuration: ProductConfiguration,
@@ -47,7 +48,7 @@ export function embeddingAdmissionDescriptor(
       ? { secretRef: secret.ref, secretVersion: secret.version, purpose: secret.purpose }
       : null,
     pricing: model.cost,
-    estimatedCostMicros: Math.ceil(16384 * model.cost.input),
+    estimatedCostMicros: Math.ceil(EMBEDDING_INPUT_LIMIT * model.cost.input),
   };
 }
 
@@ -116,7 +117,7 @@ export function createProductionRunMemory(options: {
       !descriptor.allowedDataClassifications.includes(classification) ||
       request.model !== descriptor.model ||
       typeof request.input !== "string" ||
-      Buffer.byteLength(request.input, "utf8") > 16384 ||
+      Buffer.byteLength(request.input, "utf8") > EMBEDDING_INPUT_LIMIT ||
       request.dimensions !== options.configuration.memory.dimensions
     )
       throw new ApplicationPortError(
@@ -192,7 +193,10 @@ export function createProductionRunMemory(options: {
         model: descriptor.model,
         modelVersion: descriptor.version,
         dataClassification: classification,
-        logicalSlot: context.embeddingSlot ?? "context-memory-search:v1",
+        logicalSlot:
+          ordinal === 1
+            ? (context.embeddingSlot ?? "context-memory-search:v1")
+            : `${context.embeddingSlot ?? "context-memory-search:v1"}:attempt:${ordinal}`,
         source: "embedding",
         ordinal,
         estimatedCostMicros: descriptor.estimatedCostMicros,
@@ -246,7 +250,20 @@ export function createProductionRunMemory(options: {
       await permit.assertActive();
       return response;
     } catch (error) {
-      if (started && !settled) await permit.markUnknown("transport_unresolved");
+      if (
+        started &&
+        !settled &&
+        error instanceof Error &&
+        error.message === EMBEDDING_ATTEMPT_TIMED_OUT
+      )
+        await permit.settle({
+          inputTokens: EMBEDDING_INPUT_LIMIT,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          reportedCostMicros: descriptor.estimatedCostMicros,
+        });
+      else if (started && !settled) await permit.markUnknown("transport_unresolved");
       else if (!started) await permit.releaseReserved();
       throw error;
     }

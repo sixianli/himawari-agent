@@ -268,6 +268,24 @@ describe("model stream admission and uncertain accounting", () => {
       expect(f.original).not.toHaveBeenCalled();
     },
   );
+  it("reports why admission threw instead of only failing the run", async () => {
+    const f = fixture();
+    const failures: { readonly code: string; readonly reason: string | null }[] = [];
+    Object.assign(f.dependencies, {
+      onModelAdmissionFailed: (_request: RuntimeRequest, value: (typeof failures)[number]) =>
+        failures.push(value),
+    });
+    f.begin.mockRejectedValue(
+      Object.assign(new Error("Budget account is not available for a new allocation"), {
+        code: "PORT_CONFLICT",
+      }),
+    );
+    failure(await f.run());
+    expect(f.original).not.toHaveBeenCalled();
+    expect(failures).toEqual([
+      { code: "PORT_CONFLICT", reason: "Budget account is not available for a new allocation" },
+    ]);
+  });
   it.each(["replay", "blocked"] as const)(
     "does not reissue an invocation with disposition %s",
     async (disposition) => {

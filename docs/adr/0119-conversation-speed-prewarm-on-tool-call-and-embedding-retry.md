@@ -19,6 +19,7 @@ date: "2026-10-30"
 - [与 ADR 0085 的关系](#amendments)
 - [比较过的方案](#options)
 - [后果](#consequences)
+- [后续](#follow-up)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -82,6 +83,14 @@ date: "2026-10-30"
 - 更多私人对话经 CodeBuddy 新加坡（数据留存 14 天，经社区登录插件），额度上限未核实；额度用完时 Magpie 按顺序退回 Go。
 - <a id="measure"></a>前后对比的测法：上线前（第十九版）和上线后（第二十版）在同一时段（日本时间晚上）各发 5 次同样的三句话：“你是谁”“东京现在几点”（简单问题）和一个让它写一个小文件的任务。每次新开对话，跑 `conversation-speed/speed-profile.mjs` 读这些轮次的时间（不读内容），比较两组的首字时间中位数和整轮时长中位数；反向检查：不用工具的轮次日志里不能出现 `sandbox.srt_prewarm`。
 - 后续：工具准入一次调用跑 6 遍完整核对（`sandbox.admission.timing`），派发段 2.4–6.7 秒，仍是[事故 I-25](../incidents-and-gates.md#incidents) 的主要剩余；按对话常驻沙箱见上表。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="follow-up"></a>
+
+## 后续
+
+- 2026-10-30：[ADR 0123](0123-cut-off-embedding-attempt-charged-at-its-ceiling.md) 修改本 ADR 第 2 条：被 3 秒掐断的那次向量请求改为按费用上限结清，不再记“结果不确定”；重发改用新的调用位置 `<原位置>:attempt:2`。原做法会让这一轮的预算账户进入“待对账”，重发和主对话都被拒（事故 I-37）。其余决定不变。
 
 [↑ 返回阅读导航](#contents)
 

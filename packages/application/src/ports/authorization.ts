@@ -54,7 +54,6 @@ export interface ActionIntent {
   readonly requestedAt: string;
 }
 
-/** Strict v0.2 action contract. Foundation ActionIntent remains execution.v1 compatible. */
 export interface GovernedActionIntent extends ActionIntent {
   readonly contractVersion: "authorization.v2";
   readonly threadId: string;
@@ -173,7 +172,6 @@ export interface ApprovalRequest {
     readonly modelRef: string;
     readonly outputRef: string;
   };
-  /** A durable Owner policy decision, never a claim of a per-action human click. */
   readonly policyAuthorization?: { readonly key: string; readonly revision: number };
   readonly id: string;
   readonly revision: number;
@@ -189,6 +187,12 @@ export interface ApprovalRequest {
   readonly expiresAt: string;
   readonly decidedAt: string | null;
   readonly grantId: string | null;
+}
+
+export interface ApprovalChangeMarker {
+  readonly count: number;
+  readonly revisionTotal: number;
+  readonly pending: readonly { readonly id: string; readonly expiresAt: string }[];
 }
 
 export interface GovernedApprovalRequest extends ApprovalRequest {
@@ -213,9 +217,7 @@ export interface ConsumeGrantInput {
   readonly expectedRevision: number;
   readonly costMicros: number;
   readonly consumedAt: string;
-  /** Stable per-intent usage identity. Stores use it to make retries idempotent. */
   readonly usageId?: string;
-  /** Frozen ActionIntent identity used as the durable Trace causation. */
   readonly intentId?: string;
   readonly runId?: RunId;
   readonly operation?: string;
@@ -271,7 +273,12 @@ export interface AuthorizationStorePort {
   createApproval(request: ApprovalRequest): Promise<ApprovalRequest>;
   findApprovalByIntent(intentId: string): Promise<ApprovalRequest | undefined>;
   getApproval(approvalRequestId: string): Promise<ApprovalRequest | undefined>;
-  listApprovals(ownerId: OwnerId, agentId: AgentId): Promise<readonly ApprovalRequest[]>;
+  listApprovals(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    filter?: { readonly status: ApprovalRequest["status"] },
+  ): Promise<readonly ApprovalRequest[]>;
+  approvalChangeMarker(ownerId: OwnerId, agentId: AgentId): Promise<ApprovalChangeMarker>;
   resolveApproval(input: ResolveApprovalInput): Promise<ApprovalRequest>;
   listGrants(ownerId: OwnerId, agentId: AgentId): Promise<readonly GrantRecord[]>;
   consumeGrant(input: ConsumeGrantInput): Promise<GrantRecord>;
@@ -284,7 +291,6 @@ export interface AuthorizationStorePort {
 }
 
 export interface PermissionAllowDecision {
-  /** Local durable reservation; it is never a Worker-authority wire credential. */
   readonly authorizationReservation?: {
     readonly id: string;
     readonly createdAt: string;

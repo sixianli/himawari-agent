@@ -980,6 +980,38 @@ describe("service request readiness and runtime callbacks", () => {
       });
     }
   });
+  it.each(["/assets/index-abc.js", "/icons/icon-192.png", "/sw.js", "/manifest.webmanifest", "/"])(
+    "serves static file %s without a database authority check",
+    async (url) => {
+      const f = web();
+      start();
+      await settle();
+      const hook = f.http.app.addHook.mock.calls.find(([event]) => event === "onRequest")?.[1];
+      lease.assertActive.mockClear();
+      const reply = { code: vi.fn(), send: vi.fn() };
+      reply.code.mockReturnValue(reply);
+      await hook({ url }, reply);
+      expect(lease.assertActive).not.toHaveBeenCalled();
+      expect(reply.send).not.toHaveBeenCalled();
+      lease.isAccepting.mockReturnValue(false);
+      await hook({ url }, reply);
+      expect(reply.code).toHaveBeenCalledWith(503);
+    },
+  );
+  it.each(["/api/gateway/v2/queries", "/preview/ticket-1", "/c/thread-1", "/files/new-route"])(
+    "checks database authority before %s",
+    async (url) => {
+      const f = web();
+      start();
+      await settle();
+      const hook = f.http.app.addHook.mock.calls.find(([event]) => event === "onRequest")?.[1];
+      lease.assertActive.mockClear();
+      const reply = { code: vi.fn(), send: vi.fn() };
+      reply.code.mockReturnValue(reply);
+      await hook({ url }, reply);
+      expect(lease.assertActive).toHaveBeenCalledOnce();
+    },
+  );
   it.each(["healthy", "false", "throws", "authority"])(
     "checks the live worker for readiness probes (%s)",
     async (state) => {

@@ -426,7 +426,7 @@ export function createProductionModelComposition(
         clock: options.clock,
         maxOutputTokens: Math.min(
           descriptor.maxTokens,
-          descriptor.reasoningRequired ? text.reasoningOutputTokens : text.maxOutputTokens,
+          descriptor.reasoning ? text.reasoningOutputTokens : text.maxOutputTokens,
         ),
         requestTimeoutMs: Math.min(
           options.requestTimeoutMs ?? text.requestTimeoutMs,

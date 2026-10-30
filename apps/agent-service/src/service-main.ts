@@ -346,6 +346,21 @@ async function waitForWorkerBootBinding(input: {
   }
 }
 
+const STATIC_FILE_PATHS = new Set([
+  "/",
+  "/sw.js",
+  "/manifest.webmanifest",
+  "/apple-touch-icon.png",
+]);
+
+function servesStaticFile(requestPath: string): boolean {
+  return (
+    STATIC_FILE_PATHS.has(requestPath) ||
+    requestPath.startsWith("/assets/") ||
+    requestPath.startsWith("/icons/")
+  );
+}
+
 function writeStartupStep(output: NodeJS.WritableStream, step: string): void {
   writeServiceDiagnostic(output, {
     component: "agent-service",
@@ -1440,7 +1455,7 @@ export async function runAgentService(
           listApprovals: () =>
             pushRepository
               .authorizationStore()
-              .listApprovals(configuration.ownerId, configuration.agentId),
+              .listApprovals(configuration.ownerId, configuration.agentId, { status: "pending" }),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -1496,6 +1511,14 @@ export async function runAgentService(
       proactive?.start();
       runs = createProductionRunComposition({
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
+        onModelAdmissionFailed: (request, failure) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "model.admission_failed",
+            runId: request.runId,
+            code: failure.code,
+            ...(failure.reason === null ? {} : { reason: failure.reason }),
+          }),
         onBackgroundFailure: (runId, error) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
@@ -1716,7 +1739,8 @@ export async function runAgentService(
         health,
       });
       http.app.addHook("onRequest", async (request, reply) => {
-        if (request.url.split("?", 1)[0] === "/health/ready") {
+        const requestPath = request.url.split("?", 1)[0] ?? "";
+        if (requestPath === "/health/ready") {
           try {
             await activeAuthority.assertActive();
             if (!(await worker?.checkReadiness())) throw new Error("WORKER_NOT_READY");
@@ -1744,6 +1768,7 @@ export async function runAgentService(
           runs?.loop.state !== "running"
         )
           return reply.code(503).send({ error: "SERVICE_NOT_READY" });
+        if (servesStaticFile(requestPath)) return;
         try {
           await activeAuthority.assertActive();
         } catch {

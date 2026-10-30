@@ -436,6 +436,14 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         ]);
         expect(results[0]).toEqual(results[1]);
         expect(await store.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(1);
+        expect(await store.listApprovals(OWNER_ID, AGENT_ID, { status: "pending" })).toHaveLength(
+          1,
+        );
+        expect(await store.approvalChangeMarker(OWNER_ID, AGENT_ID)).toEqual({
+          count: 1,
+          revisionTotal: 1,
+          pending: [{ id: results[0].id, expiresAt: T2 }],
+        });
         await expect(
           store.createApproval({
             ...request,
@@ -461,6 +469,12 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           store.resolveApproval({ ...decision, resolution: "expired" }),
         ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
         await expect(store.getApproval(results[0].id)).resolves.toEqual(replies[0]);
+        expect(await store.listApprovals(OWNER_ID, AGENT_ID, { status: "pending" })).toEqual([]);
+        expect(await store.approvalChangeMarker(OWNER_ID, AGENT_ID)).toEqual({
+          count: 1,
+          revisionTotal: 2,
+          pending: [],
+        });
       } finally {
         await resource.repository.close();
       }

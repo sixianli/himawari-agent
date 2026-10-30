@@ -149,6 +149,10 @@ export interface PiAgentRuntimeAdapterDependencies {
   ) => Promise<CreateAgentSessionResult>;
   readonly measure?: <T>(runId: string, name: string, work: () => Promise<T>) => Promise<T>;
   readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void;
+  readonly onModelAdmissionFailed?: (
+    request: RuntimeRequest,
+    failure: { readonly code: string; readonly reason: string | null },
+  ) => void;
 }
 
 const KNOWN_IGNORED_EVENTS = new Set([
@@ -585,6 +589,25 @@ function piErrorEvent(
   return { type: "error", reason: "error", error };
 }
 
+function admissionFailure(error: unknown): {
+  readonly code: string;
+  readonly reason: string | null;
+} {
+  const code =
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[A-Z][A-Z0-9_]{0,127}$/.test(error.code)
+      ? error.code
+      : error instanceof Error && /^[A-Z][A-Z0-9_]{0,127}$/.test(error.message)
+        ? error.message
+        : "MODEL_ADMISSION_UNEXPECTED";
+  const reason =
+    code.startsWith("PORT_") && error instanceof Error ? error.message.slice(0, 160) : null;
+  return { code, reason };
+}
+
 function failedPiStream(model: Model<Api>, errorMessage: string): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
   stream.push(piErrorEvent(model, errorMessage));
@@ -714,6 +737,7 @@ async function admitPiStream(
   ordinal: number,
   original: PiStreamFunction,
   logicalSlotFor: (request: RuntimeRequest, ordinal: number) => string,
+  onAdmissionFailed?: PiAgentRuntimeAdapterDependencies["onModelAdmissionFailed"],
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
@@ -840,7 +864,8 @@ async function admitPiStream(
       maxRetries: 0,
     });
     return relayAdmittedPiStream(stream, permit, model, options?.signal, gateway);
-  } catch {
+  } catch (error) {
+    onAdmissionFailed?.(request, admissionFailure(error));
     if (started && permit !== undefined) {
       await permit.markUnknown("transport_unresolved").catch(() => undefined);
     } else {
@@ -1279,6 +1304,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           ++streamOrdinal,
           originalStreamFunction,
           this.#dependencies.logicalSlot,
+          this.#dependencies.onModelAdmissionFailed,
         );
       };
       this.#activeSessions.set(request.runId, session);

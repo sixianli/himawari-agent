@@ -34,6 +34,10 @@ import {
   type SqliteRecoveryAuthorityScope,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  createProductionRunMemory,
+  embeddingAdmissionDescriptor,
+} from "../../apps/agent-service/src/production-run-memory.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-model-budget");
@@ -1282,6 +1286,172 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
         await resource.repository.close();
       }
     });
+
+    it("charges an embedding attempt cut off at three seconds and still admits the retry and the main model call", async () => {
+      const resource = await fixture();
+      try {
+        const authorityLease = { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 };
+        const dispatch = resource.repository.runDispatch(
+          OWNER_ID,
+          AGENT_ID,
+          AUTHORITY,
+          authorityLease,
+          "embedding-retry-integration",
+        );
+        const claimed = await dispatch.claim({
+          runId: RUN_ID,
+          expectedRunRevision: 1,
+          expectedLeaseRevision: 0,
+          executionLeaseId: EXECUTION_LEASE_ID,
+          claimedAt: NOW,
+          expiresAt: FAR_FUTURE,
+        });
+        const budget = resource.repository.modelBudgetPort(
+          OWNER_ID,
+          AGENT_ID,
+          AUTHORITY,
+          authorityLease,
+        );
+        const invocations = resource.repository.modelInvocationIdentityPort(
+          OWNER_ID,
+          AGENT_ID,
+          AUTHORITY,
+          authorityLease,
+        );
+        const configuration = {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          deadlines: { providerRequestMs: 30_000 },
+          memory: { dimensions: 4 },
+          secretReferences: [],
+          modelDescriptors: [
+            {
+              ref: "model-embedding",
+              role: "embedding",
+              provider: "vercel-ai-gateway",
+              model: "alibaba/qwen3-embedding-8b",
+              version: "catalog-2026-10-06",
+              capabilities: ["embedding"],
+              cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
+              allowedDataClassifications: ["private"],
+              disclosure: "trusted_remote",
+              secretRef: "vercel-ai-gateway-api-key",
+            },
+          ],
+        } as never;
+        const embedding = embeddingAdmissionDescriptor(configuration);
+        const primary: ModelInvocationAdmissionDescriptor = {
+          ref: "approved-model-v1",
+          provider: "fixture-provider",
+          model: "fixture-model",
+          version: "2026-09-05",
+          routingClass: "primary",
+          priority: 1,
+          disclosure: "trusted_remote",
+          capabilities: ["chat"],
+          allowedDataClassifications: ["private"],
+          secretRequirement: null,
+          pricing: { input: 1, output: 2, cacheRead: 0.5, cacheWrite: 0.25 },
+          estimatedCostMicros: 100,
+        };
+        const admission = new ModelInvocationAdmissionService({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          executionLease: claimFromRunExecutionLease(claimed),
+          dispatch,
+          invocations,
+          clock: { now: () => NOW },
+          registry: [embedding, primary],
+        });
+        let boundary:
+          | Parameters<
+              Parameters<typeof createProductionRunMemory>[0]["projection"]["bindEmbeddingBoundary"]
+            >[0]
+          | undefined;
+        const send = async (options?: { timeoutMs?: number; signal?: AbortSignal }) => {
+          if (options?.timeoutMs === 3000)
+            return new Promise<never>((_resolve, reject) =>
+              options.signal?.addEventListener("abort", () => reject(options.signal?.reason)),
+            );
+          return {
+            data: [{ index: 0, embedding: [0.1, 0.2, 0.3, 0.4] }],
+            model: "alibaba/qwen3-embedding-8b",
+            providerMetadata: {
+              gateway: {
+                cost: "0.00000019",
+                generationId: "retry-generation",
+                routing: { finalProvider: "deepinfra" },
+              },
+            },
+            usage: { prompt_tokens: 8, total_tokens: 8 },
+          };
+        };
+        const memory = createProductionRunMemory({
+          configuration,
+          projection: {
+            bindEmbeddingBoundary: (value) => {
+              boundary = value;
+            },
+          },
+          payloads: { get: async () => ({ dataClassification: "private" }) as never },
+          memory: {
+            search: async () => {
+              if (!boundary) throw new Error("BOUNDARY_MISSING");
+              await boundary(
+                { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4 },
+                send as never,
+              );
+              return [];
+            },
+          },
+          admission: async () => admission,
+          budget,
+          assertActive: async () => {},
+          now: () => NOW,
+        });
+        await expect(
+          memory.search({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            runId: RUN_ID,
+            executionLease: claimFromRunExecutionLease(claimed),
+            dataClassification: "private",
+            queryRef: "query" as never,
+            queryTerms: [],
+            limit: 3,
+            deadlineAt: FAR_FUTURE,
+          }),
+        ).resolves.toEqual([]);
+
+        const main = await admission.begin({
+          modelRef: primary.ref,
+          provider: primary.provider,
+          model: primary.model,
+          modelVersion: primary.version,
+          dataClassification: "private",
+          logicalSlot: "main-turn-1",
+          source: "agent-stream",
+          ordinal: 1,
+          estimatedCostMicros: primary.estimatedCostMicros,
+          pricing: primary.pricing,
+        });
+        expect(main.disposition).toBe("fresh");
+        const snapshot = await budget.read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 });
+        expect(snapshot?.account.status).toBe("active");
+        expect(
+          snapshot?.allocations.map(({ status, actualCostMicros }) => [status, actualCostMicros]),
+        ).toEqual(
+          expect.arrayContaining([
+            ["settled", embedding.estimatedCostMicros],
+            ["settled", 1],
+            ["reserved", null],
+          ]),
+        );
+      } finally {
+        await resource.repository.close();
+      }
+    }, 15_000);
 
     it("composes model admission with the real authority, execution lease, and budget writer", async () => {
       const resource = await fixture();

@@ -48,9 +48,7 @@ export type ProductionAuthorityLifecycleState =
   | "lost";
 
 export interface ProductionAuthorityMirror {
-  /** Read the deployment mirror before claiming. A lower fence is recoverable. */
   read(): Promise<DeploymentAuthorityState>;
-  /** Persist the post-claim deployment state atomically after SQLite claim. */
   write(deployment: DeploymentAuthorityState): Promise<void>;
 }
 
@@ -218,6 +216,7 @@ export class ProductionAuthorityLifecycle {
   #renewalTimer: ReturnType<typeof setInterval> | undefined;
   #generation = 0;
   #renewalInFlight: Promise<ProductionAuthorityLifecycleSnapshot> | undefined;
+  #activeCheckInFlight: { readonly generation: number; readonly check: Promise<void> } | undefined;
 
   constructor(options: ProductionAuthorityLifecycleOptions) {
     this.#options = Object.freeze({
@@ -266,7 +265,17 @@ export class ProductionAuthorityLifecycle {
     });
   }
 
-  async assertActive(): Promise<void> {
+  assertActive(): Promise<void> {
+    const inFlight = this.#activeCheckInFlight;
+    if (inFlight && inFlight.generation === this.#generation) return inFlight.check;
+    const check = this.checkActive().finally(() => {
+      if (this.#activeCheckInFlight?.check === check) this.#activeCheckInFlight = undefined;
+    });
+    this.#activeCheckInFlight = { generation: this.#generation, check };
+    return check;
+  }
+
+  private async checkActive(): Promise<void> {
     if (this.#state !== "active" || !this.#record || !this.#authority) {
       throw new ProductionAuthorityLifecycleError(
         PRODUCTION_AUTHORITY_LIFECYCLE_ERROR_CODES.NOT_ACTIVE,
@@ -362,10 +371,7 @@ export class ProductionAuthorityLifecycle {
       if (claimedRecord) {
         try {
           await this.#options.leases.release(claimedRecord.lease.id);
-        } catch {
-          // Preserve the original startup failure. A later startup can observe
-          // the retained lease and fail closed until it expires or is released.
-        }
+        } catch {}
       }
       if (generation === this.#generation) {
         this.#state = "stopped";
@@ -509,8 +515,6 @@ export class ProductionAuthorityLifecycle {
   }
 
   private assertActiveGeneration(generation: number, record: AuthorityLeaseRecord): void {
-    // Renewal replaces the record while preserving the authority identity. An
-    // overlapping validation must survive that replacement, but never a new lease.
     const current = this.#record;
     if (
       this.#state !== "active" ||

@@ -123,19 +123,15 @@ export function createProductionApprovalGateway(options: {
               "Approval subscription is no longer authorized",
             );
           }
-          const approvals = await authorization.listApprovals(ownerId, agentId);
+          const approvals = await authorization.approvalChangeMarker(ownerId, agentId);
           const now = clock.now();
           const version = JSON.stringify([
             authority,
             await searchAuthorization.revision(),
             await options.memoryControl?.revision(),
-            approvals.map((approval) => [
-              approval.id,
-              approval.revision,
-              approval.status === "pending" && now >= approval.expiresAt
-                ? "expired"
-                : approval.status,
-            ]),
+            approvals.count,
+            approvals.revisionTotal,
+            approvals.pending.map((approval) => [approval.id, now >= approval.expiresAt]),
           ]);
           if (signal?.aborted) return;
           if (version !== previous) {
