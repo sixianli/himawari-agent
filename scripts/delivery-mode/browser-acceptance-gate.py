@@ -15,8 +15,8 @@ REQUIRED_SCENARIOS = (
     'accept-after-restart',
 )
 ANSWER_MS_LIMITS = {
-    'accept-unrelated-no-memory': 20000,
-    'accept-run-command': 60000,
+    'accept-unrelated-no-memory': 4000,
+    'accept-run-command': 12000,
 }
 WALKTHROUGH = Path('browser-acceptance') / 'walkthrough.json'
 

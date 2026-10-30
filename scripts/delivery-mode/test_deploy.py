@@ -16,7 +16,7 @@ BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service'
 SCENARIOS = ['accept-homepage', 'accept-search-approval', 'accept-search-toggle', 'accept-news-search', 'accept-long-answer', 'accept-run-command', 'accept-unrelated-no-memory', 'accept-memory-page', 'accept-phone-layout', 'accept-after-restart']
 
 
-TIMED = {'accept-run-command': 9000, 'accept-unrelated-no-memory': 4000}
+TIMED = {'accept-run-command': 5721, 'accept-unrelated-no-memory': 1223}
 
 
 def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
@@ -266,7 +266,7 @@ class DeployFlowTest(DeployHarness):
             self.assertEqual(calls, [])
 
     def test_walkthrough_that_answered_too_slowly_or_without_timing_is_refused(self):
-        for slow in ({'accept-unrelated-no-memory': 20001}, {'accept-run-command': 60001}, {'accept-unrelated-no-memory': None}):
+        for slow in ({'accept-unrelated-no-memory': 4001}, {'accept-run-command': 12001}, {'accept-unrelated-no-memory': None}):
             self.walkthrough.write_text(json.dumps(walkthrough(answer_ms=slow)))
             code, result, calls = self.deploy()
             self.assertEqual((code, result['result']), (5, 'no-browser-acceptance'))
