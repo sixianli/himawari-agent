@@ -4078,6 +4078,10 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 - **相关 ADR 和 PR：** [ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)、[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)；[事故 I-34](incidents-and-gates.md#incidents)。
 - **30 秒面试版：** 用户说“我明明开了搜索，怎么又问我”。查下来开关绑了模型配置的哈希，换模型就悄悄失效。我们参考 ChatGPT、Claude、Gemini 的做法改成默认开、只跟搜索服务地址绑定，地址变了才停下并说明原因，再用一条“换模型后开关还在”的测试把它钉住。
 
+**后续（2026-10-30，第三次）：第一次没查清的“批准后服务器不回”有了线索**
+
+第一次排查时只知道批准后数据库在排队，查不到是谁占着。第二十一版有了按请求计时（`http.slow_request`、`sqlite.slow_operation`，本案例第一次修复时加的）以后，提速线程在重启日志里查到排队的来源：数据库只有一个工作线程，每个网页请求（连图标、脚本这类静态文件也算）都读 3 次数据库确认生产权限，每个接口请求还写一次最后活跃时间，审批订阅每秒、推送定时把全部历史审批读一遍。开一次页面就有几百个小读挤在同一条队里，单个只要 0–1 毫秒，却要排 0.5–1.3 秒（[事故 I-36](incidents-and-gates.md#incidents)、[案例 63](#case-conversation-speed) 的后续，修复在 #128）。10-29 那次没有按请求的日志，所以“正在加载…”是不是同一个原因只是推断。这也说明第一次修复时补日志是值得的：没有它，这次还是查不到。
+
 [返回目录](#contents)
 
 <a id="case-conversation-speed"></a>
