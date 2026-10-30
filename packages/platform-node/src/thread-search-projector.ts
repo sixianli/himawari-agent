@@ -1,18 +1,30 @@
-import type {
-  GatewayAuthenticationContext,
-  ThreadRepositoryPort,
-  ThreadSearchProjectionSourcePort,
+import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  type GatewayAuthenticationContext,
+  type ThreadRepositoryPort,
+  type ThreadSearchProjectionSource,
+  type ThreadSearchProjectionSourcePort,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import type { HttpGatewayPayloadReadPort } from "./http-gateway-server.js";
 import type { ScopedThreadSearchTokenizer } from "./browser-thread-search.js";
 
-/** Bring the rebuildable index up to date before a scoped search; never scan indexed bodies again. */
 interface ProjectorOptions {
   sources: ThreadSearchProjectionSourcePort;
   threads: Pick<ThreadRepositoryPort, "projectSearch" | "projectTitleSearch">;
   reader: HttpGatewayPayloadReadPort;
   tokenizer: ScopedThreadSearchTokenizer;
+  onSourceSkipped?: (source: ThreadSearchProjectionSource, error: unknown) => void;
+}
+
+function isUnreadableSource(error: unknown): boolean {
+  return (
+    (error instanceof ApplicationPortError &&
+      (error.code === PORT_ERROR_CODES.INVALID_OPERATION ||
+        error.code === PORT_ERROR_CODES.NOT_FOUND)) ||
+    (error instanceof Error && error.message === "THREAD_SEARCH_SOURCE_CLASSIFICATION_INVALID")
+  );
 }
 
 export class ThreadSearchProjector {
@@ -43,8 +55,6 @@ export class ThreadSearchProjector {
       agentId: createAgentId(input.agentId),
     };
     const projectionVersion = this.#options.tokenizer.projectionVersion;
-    // Bound initial backfill. A later search continues from durable completed rows;
-    // do not return a misleading empty/partial result while work remains.
     for (let batch = 0; batch < 64; batch++) {
       const sources = await this.#options.sources.pending({
         ...scope,
@@ -55,15 +65,22 @@ export class ThreadSearchProjector {
       for (const source of sources) {
         if (source.ownerId !== scope.ownerId || source.agentId !== scope.agentId)
           throw new Error("THREAD_SEARCH_SOURCE_SCOPE_INVALID");
-        const payload = await this.#options.reader.read({
-          ...input,
-          payloadRef: source.payloadRef,
-        });
-        if (payload.dataClassification !== source.dataClassification)
-          throw new Error("THREAD_SEARCH_SOURCE_CLASSIFICATION_INVALID");
+        let text = "";
+        try {
+          const payload = await this.#options.reader.read({
+            ...input,
+            payloadRef: source.payloadRef,
+          });
+          if (payload.dataClassification !== source.dataClassification)
+            throw new Error("THREAD_SEARCH_SOURCE_CLASSIFICATION_INVALID");
+          text = payload.content;
+        } catch (error) {
+          if (!isUnreadableSource(error)) throw error;
+          this.#options.onSourceSkipped?.(source, error);
+        }
         const tokenRefs = await this.#options.tokenizer.tokenizeDocument({
           ...scope,
-          text: payload.content,
+          text,
         });
         const common = {
           ...scope,
@@ -86,5 +103,38 @@ export class ThreadSearchProjector {
       }
     }
     throw new Error("THREAD_SEARCH_INDEX_CATCHING_UP");
+  }
+}
+
+export class ThreadSearchBackgroundIndexer {
+  readonly #synchronize: () => Promise<void>;
+  readonly #onError: (error: unknown) => void;
+  readonly #intervalMs: number;
+  #timer: ReturnType<typeof setInterval> | undefined;
+
+  constructor(options: {
+    readonly synchronize: () => Promise<void>;
+    readonly onError: (error: unknown) => void;
+    readonly intervalMs: number;
+  }) {
+    this.#synchronize = options.synchronize;
+    this.#onError = options.onError;
+    this.#intervalMs = options.intervalMs;
+  }
+
+  start(): void {
+    if (this.#timer) return;
+    this.#timer = setInterval(() => this.kick(), this.#intervalMs);
+    this.#timer.unref();
+    this.kick();
+  }
+
+  kick(): void {
+    this.#synchronize().catch(this.#onError);
+  }
+
+  stop(): void {
+    if (this.#timer) clearInterval(this.#timer);
+    this.#timer = undefined;
   }
 }
