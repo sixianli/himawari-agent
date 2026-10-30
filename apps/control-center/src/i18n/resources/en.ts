@@ -168,6 +168,8 @@ export const messages = {
     "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
   "chat.search.remember": "Remember my choice and allow future web searches",
   "chat.search.afterRevoke": "It’s off now, so Himawari asks in the chat before it searches.",
+  "chat.search.providersChanged":
+    "The search service moved to an address you haven’t approved, so it’s off for now. Check the addresses below and turn it back on.",
   "chat.search.other": "Actions that ask you first",
   "review.archiveDescription": "Archiving tidies the list and keeps the conversation.",
   "review.manageArchives": "Manage",

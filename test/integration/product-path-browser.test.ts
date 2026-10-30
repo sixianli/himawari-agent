@@ -5609,6 +5609,7 @@ async function expectNewsSearchResults(text: string) {
   await uiExpect(answer).toHaveCount(1, { timeout: 120_000 });
   await uiExpect(answer).toContainText("https://");
   await uiExpect(target(turn, UI.approveOnce)).toHaveCount(0);
+  await uiExpect(target(turn, UI.approveSearch)).toHaveCount(0);
   await uiExpect(page.getByText(UI.stillLoading)).toHaveCount(0);
   await expectFinishedTurnShowsStep(turn, UI.searchStep);
 }
@@ -5684,6 +5685,18 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       expect(response?.status()).toBe(200);
       await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
     });
+    await scenario("accept-news-search", async () => {
+      await expectNewsSearchResults("请联网搜索今天的新闻");
+    });
+    await scenario("accept-search-toggle", async () => {
+      const toggle = await searchToggleUsable(UI.searchRevoke);
+      await uiExpect(toggle).toBeChecked();
+      await toggle.click();
+      const revoked = target(target(page, UI.settingsDialog), UI.searchEnable);
+      await uiExpect(revoked).not.toBeChecked({ timeout: 30_000 });
+      await uiExpect(revoked).toBeEnabled();
+      await closeSettings();
+    });
     await scenario("accept-search-approval", async () => {
       await newThread();
       const turn = await send(SEARCH_BATCH_REQUEST);
@@ -5700,18 +5713,6 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(turn.getByText(UI.approvalContinuing)).toHaveCount(0);
       await uiExpect(page.getByText(UI.stillLoading)).toHaveCount(0);
       await expectFinishedTurnShowsStep(turn, UI.searchStep);
-    });
-    await scenario("accept-search-toggle", async () => {
-      const toggle = await searchToggleUsable(UI.searchEnable);
-      await uiExpect(toggle).not.toBeChecked();
-      await toggle.click();
-      const enabled = target(target(page, UI.settingsDialog), UI.searchRevoke);
-      await uiExpect(enabled).toBeChecked({ timeout: 30_000 });
-      await uiExpect(enabled).toBeEnabled();
-      await closeSettings();
-    });
-    await scenario("accept-news-search", async () => {
-      await expectNewsSearchResults("请联网搜索今天的新闻");
     });
     await scenario("accept-long-answer", async () => {
       await newThread();
@@ -5803,8 +5804,12 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     await scenario("accept-after-restart", async () => {
       await installation.stop();
       await installation.start();
-      const toggle = await searchToggleUsable(UI.searchRevoke);
-      await uiExpect(toggle).toBeChecked();
+      const toggle = await searchToggleUsable(UI.searchEnable);
+      await uiExpect(toggle).not.toBeChecked();
+      await toggle.click();
+      await uiExpect(target(target(page, UI.settingsDialog), UI.searchRevoke)).toBeChecked({
+        timeout: 30_000,
+      });
       await closeSettings();
       await expectNewsSearchResults("重启后请联网搜索今天的新闻");
     });

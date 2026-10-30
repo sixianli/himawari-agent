@@ -222,6 +222,7 @@ const searchAuthorizationSnapshotSchema = object({
   payload: object({
     revision: integer(0),
     enabled: booleanValue,
+    providersChanged: booleanValue,
     available: booleanValue,
     recipients: searchRecipientsSchema,
     generatedAt: timestamp,

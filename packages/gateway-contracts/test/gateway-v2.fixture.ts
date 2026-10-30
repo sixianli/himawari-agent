@@ -37,6 +37,7 @@ export const governanceMessages = [
   fixture("snapshot", "search.authorization.snapshot", {
     revision: 1,
     enabled: true,
+    providersChanged: false,
     available: true,
     recipients: ["https://mcp.exa.ai"],
     generatedAt: "2026-09-11T00:00:00.000Z",

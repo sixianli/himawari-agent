@@ -74,6 +74,7 @@ export function createProductionFileReadServices(options: {
     repository,
     clock,
     ids,
+    authority: () => options.authority().lease,
   });
   const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
   const hostPort = options.hostReadOnlyPort;

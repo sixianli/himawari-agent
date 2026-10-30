@@ -32,7 +32,10 @@ const message = (id: MessageId, values?: Record<string, string>) =>
     (text, [key, value]) => text.replace(`{${key}}`, value),
     messages[id],
   );
-let enabled: boolean, revision: number, approvalSnapshot: ReturnType<typeof approval>;
+let enabled: boolean,
+  providersChanged: boolean,
+  revision: number,
+  approvalSnapshot: ReturnType<typeof approval>;
 function searchProps(connected = true) {
   return { client, configuration, storage, connected, refreshSignal: 0, message };
 }
@@ -59,6 +62,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   enabled = false;
+  providersChanged = false;
   revision = 2;
   approvalSnapshot = approval("approval-target", "run-target", "pending");
   query.mockImplementation(async (request) => {
@@ -68,6 +72,7 @@ beforeEach(() => {
         type: "search.authorization.snapshot",
         payload: {
           enabled,
+          providersChanged,
           revision,
           available: true,
           recipients: ["https://mcp.exa.ai"],
@@ -85,6 +90,7 @@ beforeEach(() => {
   mutate.mockImplementation(async (request) => {
     if (request.type === "search.authorization.set") {
       enabled = request.payload.enabled;
+      providersChanged = false;
       revision++;
     }
     if (request.type === "approval.respond")
@@ -140,6 +146,17 @@ describe("search authorization menu", () => {
       expectedRevision: 3,
     });
   });
+  it("says why search turned off when the search service moved, and only then", async () => {
+    providersChanged = true;
+    await render(SearchAuthorizationControl, searchProps());
+    const description = () => container.querySelector(".setting-description")?.textContent;
+    expect(description()).toContain(message("chat.search.providersChanged"));
+    expect(description()).not.toContain(message("chat.search.afterRevoke"));
+    await click("chat.search.enable");
+    await click("chat.search.revoke");
+    expect(description()).toContain(message("chat.search.afterRevoke"));
+    expect(description()).not.toContain(message("chat.search.providersChanged"));
+  });
   it("renders authorization inside settings with the disclosure folded away", async () => {
     await render(SearchAuthorizationControl, searchProps());
     const details = container.querySelectorAll("details");
@@ -165,6 +182,7 @@ describe("search authorization menu", () => {
         type: "search.authorization.snapshot",
         payload: {
           enabled: false,
+          providersChanged: false,
           available: false,
           revision: 2,
           recipients: ["https://mcp.exa.ai"],

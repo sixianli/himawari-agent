@@ -155,6 +155,7 @@ export const MESSAGE_IDS = [
   "chat.search.disclosure",
   "chat.search.remember",
   "chat.search.afterRevoke",
+  "chat.search.providersChanged",
   "chat.search.other",
   "review.archiveDescription",
   "review.manageArchives",
