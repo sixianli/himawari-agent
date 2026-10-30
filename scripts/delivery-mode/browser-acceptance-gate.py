@@ -11,6 +11,8 @@ REQUIRED_SCENARIOS = (
     'accept-run-command',
     'accept-unrelated-no-memory',
     'accept-slow-memory-search',
+    'accept-file-writing-progress',
+    'accept-progress-without-state',
     'accept-memory-page',
     'accept-phone-layout',
     'accept-after-restart',

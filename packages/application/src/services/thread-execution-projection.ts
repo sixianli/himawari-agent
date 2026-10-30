@@ -282,6 +282,36 @@ export class ThreadExecutionProjection {
                 input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
               });
             }
+          } else {
+            for (const [index, part] of content.entries()) {
+              const call = object(part);
+              const streaming = object(call["streaming"]);
+              if (
+                call["type"] !== "toolCall" ||
+                typeof call["id"] !== "string" ||
+                !Number.isSafeInteger(streaming["lines"])
+              )
+                continue;
+              const itemId = identifier(call["id"], event.id);
+              records.push({
+                ...base,
+                id: `${event.id}:call:${index}`,
+                itemId,
+                kind: "tool",
+                phase: "updated",
+                name: text(call["name"]),
+                input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
+              });
+              records.push({
+                ...base,
+                id: `${event.id}:writing:${index}`,
+                itemId,
+                kind: "status",
+                phase: "updated",
+                name: "runtime.tool_call.writing",
+                text: String(streaming["lines"]),
+              });
+            }
           }
           const boundary = object(message["thinkingBoundary"]);
           if (

@@ -113,9 +113,15 @@ export function ExecutionProcess({
     : activity.stale;
   const stateLabel = state
     ? executionStateLabel(state.displayPhase, state.reasonCode)
-    : stateAvailable
+    : stateAvailable && isTerminalRun(run)
       ? "chat.recordUnavailable"
       : undefined;
+  const writing =
+    activity.writing && (!state || state.displayPhase.startsWith("model_"))
+      ? activity.writing
+      : undefined;
+  const writingItem = writing && items.find((item) => item.itemId === writing.itemId);
+  const writingSummary = writingItem && toolStepSummary(writingItem.name, writingItem.input);
   const nextAction = state ? executionNextAction(state) : undefined;
   const activeTool = items.findLast((item) => item.kind === "tool" && item.phase === "started");
   const activeSummary =
@@ -136,9 +142,14 @@ export function ExecutionProcess({
           ) : null}
           <output>
             <strong>
-              {activeSummary
-                ? message("step.active", { step: message(activeSummary.id) })
-                : message(stateLabel ?? activity.label, { tool: activity.tool })}
+              {writing && writingSummary
+                ? message("chat.activity.writing", {
+                    step: message(writingSummary.id),
+                    lines: writing.lines,
+                  })
+                : activeSummary
+                  ? message("step.active", { step: message(activeSummary.id) })
+                  : message(stateLabel ?? activity.label, { tool: activity.tool })}
             </strong>
           </output>
           {waitReason ? (
@@ -285,24 +296,26 @@ export function ExecutionProcess({
               ? "chat.phase.expiredAwaitingApproval"
               : run.status === "awaiting_approval" && incomplete
                 ? "runs.status.awaitingApproval"
-                : !isTerminalRun(run) &&
-                    item.kind === "tool" &&
-                    item.phase === "updated" &&
-                    operation?.reasonCode === "TOOL_START_UNCONFIRMED"
-                  ? "chat.phase.queued"
-                  : ((operation
-                      ? executionStateLabel(operation.displayPhase, operation.reasonCode)
-                      : stateAvailable
-                        ? "chat.recordUnavailable"
-                        : undefined) ??
-                    executionToolPhase(item, records, run) ??
-                    (isTerminalRun(run) && incomplete
-                      ? run.status === "cancelled" && item.kind === "message"
-                        ? "chat.phase.stopped"
-                        : "chat.recordUnavailable"
-                      : item.kind === "tool" && item.phase === "updated"
-                        ? "chat.callRequested"
-                        : (`chat.phase.${item.phase}` as MessageId)));
+                : writing?.itemId === item.itemId
+                  ? "chat.phase.writing"
+                  : !isTerminalRun(run) &&
+                      item.kind === "tool" &&
+                      item.phase === "updated" &&
+                      operation?.reasonCode === "TOOL_START_UNCONFIRMED"
+                    ? "chat.phase.queued"
+                    : ((operation
+                        ? executionStateLabel(operation.displayPhase, operation.reasonCode)
+                        : stateAvailable && (state || isTerminalRun(run))
+                          ? "chat.recordUnavailable"
+                          : undefined) ??
+                      executionToolPhase(item, records, run) ??
+                      (isTerminalRun(run) && incomplete
+                        ? run.status === "cancelled" && item.kind === "message"
+                          ? "chat.phase.stopped"
+                          : "chat.recordUnavailable"
+                        : item.kind === "tool" && item.phase === "updated"
+                          ? "chat.callRequested"
+                          : (`chat.phase.${item.phase}` as MessageId)));
             const summary = toolStepSummary(item.name, item.input);
             const effect = state?.effectSummary.find((effect) => effect.itemId === item.itemId);
             const retainedEffect: MessageId | undefined = operation?.reasonCode.startsWith(
@@ -331,7 +344,7 @@ export function ExecutionProcess({
             const status = (
               <span className="step-status" title={message("review.workerTiming")}>
                 {retainedEffect ? `${message(retainedEffect)} · ` : ""}
-                {message(phase)}
+                {message(phase, { lines: writing?.lines ?? 0 })}
                 {elapsed !== null ? ` · ${duration(elapsed)}` : ""}
               </span>
             );

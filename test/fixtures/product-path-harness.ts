@@ -66,6 +66,7 @@ export type ModelReply =
       readonly kind: "tool";
       readonly name: string;
       readonly arguments: Record<string, unknown>;
+      readonly streamMs?: number;
     }
   | {
       readonly kind: "tools";
@@ -309,6 +310,7 @@ export interface ProductPathInstallation {
   setModelScript(script: ModelScript): void;
   setEmbeddingAvailable(available: boolean): void;
   delayNextEmbedding(milliseconds: number): void;
+  readonly toolStreamStartedAt: number | null;
   setRunDeadline(milliseconds: number): Promise<void>;
   setCodingApproval(approval: "workspace_auto" | "ask"): Promise<void>;
   start(): Promise<void>;
@@ -579,6 +581,7 @@ export async function installProductPath(options: {
   let modelScript: ModelScript = () => ({ kind: "text", text: "默认回答" });
   let embeddingAvailable = true;
   let nextEmbeddingDelayMs = 0;
+  let toolStreamStartedAt: number | null = null;
   const modelRequests: ModelRequest[] = [];
   let providerPort = 0;
   let appPort = 0;
@@ -688,6 +691,42 @@ export async function installProductPath(options: {
           response.end(
             JSON.stringify({ error: { message: "scripted failure", code: reply.status } }),
           );
+          return;
+        }
+        if (reply.kind === "tool" && reply.streamMs) {
+          const id = `call-${modelRequests.length}-0`;
+          const argumentsText = JSON.stringify(reply.arguments);
+          const pieces = 40;
+          const size = Math.ceil(argumentsText.length / pieces);
+          const chunk = (delta: object, finish: string | null, extra: object = {}) =>
+            `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`;
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.write(
+            chunk(
+              {
+                role: "assistant",
+                tool_calls: [
+                  { index: 0, id, type: "function", function: { name: reply.name, arguments: "" } },
+                ],
+              },
+              null,
+            ),
+          );
+          toolStreamStartedAt = Date.now();
+          let sent = 0;
+          const timer = setInterval(() => {
+            if (response.destroyed) return clearInterval(timer);
+            const piece = argumentsText.slice(sent * size, (sent + 1) * size);
+            sent += 1;
+            if (piece)
+              response.write(
+                chunk({ tool_calls: [{ index: 0, function: { arguments: piece } }] }, null),
+              );
+            if (sent < pieces) return;
+            clearInterval(timer);
+            response.write(chunk({ provider_metadata }, "tool_calls", { usage }));
+            response.end("data: [DONE]\n\n");
+          }, reply.streamMs / pieces);
           return;
         }
         if (reply.kind === "tool" || reply.kind === "tools") {
@@ -1291,6 +1330,9 @@ export async function installProductPath(options: {
     },
     delayNextEmbedding: (milliseconds) => {
       nextEmbeddingDelayMs = milliseconds;
+    },
+    get toolStreamStartedAt() {
+      return toolStreamStartedAt;
     },
     setRunDeadline: async (milliseconds) => {
       if (processes || !Number.isSafeInteger(milliseconds) || milliseconds < 1000)

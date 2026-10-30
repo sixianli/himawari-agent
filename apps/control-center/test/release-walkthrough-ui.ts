@@ -59,6 +59,8 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   memoryCarry: { role: "region", name: "每次对话都会带上的记忆", exact: true },
   pageError: { role: "alert" },
   unreadableRecords: "部分执行记录暂不可读取",
+  failedConversation: "暂时无法加载这段对话，请重试。",
+  writingProgress: /已写 (\d+) 行/,
   noProcessRecords: "没有可展示的过程记录",
 } as const satisfies Record<
   string,
