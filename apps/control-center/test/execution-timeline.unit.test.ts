@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { executionTimeline, timelineDuration } from "../src/execution-timeline.js";
-import { at, completedRun, newsRun, runStart } from "./news-run-fixture.js";
+import { at, completedRun, gameRun, newsRun, runStart } from "./news-run-fixture.js";
 
 describe("execution timeline", () => {
   it("[UI-3] gives every second of a turn to exactly one of model, tool, waiting for you and preparation", () => {
@@ -68,6 +68,37 @@ describe("execution timeline", () => {
       ["think", 18893, 22400],
       ["write", 22400, 25473],
     ]);
+  });
+
+  it("counts the time the model spends writing a file as the file step, not as thinking", () => {
+    const run = { ...completedRun, updatedAt: at(52000) };
+    const steps = executionTimeline(gameRun(), run, runStart + 99999)?.steps ?? [];
+    const think = steps.find((step) => step.kind === "think");
+    const write = steps.find((step) => step.kind === "tool");
+    expect([think?.start, think?.end]).toEqual([1500, 20500]);
+    expect(think?.segments.some((segment) => segment.kind === "output")).toBe(false);
+    expect(write).toMatchObject({ itemId: "tool:write", start: 20600, end: 50400 });
+    expect(write?.segments).toEqual([
+      { kind: "output", start: 20600, end: 45900 },
+      { kind: "queue", start: 45900, end: 46000 },
+      { kind: "run", start: 46000, end: 50000 },
+    ]);
+  });
+
+  it("shows a running file step while the model is still writing the file", () => {
+    const run = { ...completedRun, status: "running" as const, updatedAt: at(30000) };
+    const steps = executionTimeline(gameRun(30000), run, runStart + 31000)?.steps ?? [];
+    expect(steps.find((step) => step.kind === "think")).toMatchObject({
+      end: 20500,
+      running: false,
+    });
+    expect(steps.at(-1)).toMatchObject({
+      kind: "tool",
+      itemId: "tool:write",
+      start: 20600,
+      end: 31000,
+      running: true,
+    });
   });
 
   it("[UI-3] returns nothing for a run without timing events", () => {

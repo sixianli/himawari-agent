@@ -91,6 +91,7 @@ date: "2026-10-26"
   64. [第二十次上线被自己的检查脚本拦下：检查跑得太快，结果里少了一栏，读结果的脚本直接报错](#case-s6-report-contract)
   65. [生产机磁盘每次上线前都不够：上线流程只装不拆，清理步骤写了却没接上](#case-release-cleanup)
   66. [电脑上开着的设置，手机上没有：只搬了三项设置上服务器，断线的旧设备还会把旧值推回去](#case-settings-everywhere)
+  67. [写小游戏时“思考 44 秒”一动不动：每个流式片段都存一整条消息](#case-silent-file-writing)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -119,7 +120,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere) |
@@ -4335,6 +4336,66 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户说电脑上开着的设置手机上没有。我把 13 项设置逐一盘点，发现上次只把 3 项搬上服务器，主题还在浏览器里，而且断线的旧设备重连时会把整套旧值推上去。我把账户级设置全放服务器，保存时带版本号，版本对不上就拒绝，断线的旧改动不再覆盖新值；页面回到前台就重读。最后加了一个扫源码的测试：谁再加一个只存本地的设置，测试就失败。”
+
+[返回目录](#contents)
+
+<a id="case-silent-file-writing"></a>
+
+## 案例 67：写小游戏时“思考 44 秒”一动不动：每个流式片段都存一整条消息
+
+**背景与现象**
+
+2026-10-30 14:12（日本时间），Andy 在生产网页（第二十一版）发“写一个简易小游戏”。过程区显示“思考 44.5 秒”，这段时间里页面只有计时在走；中途还弹出“暂时无法加载这段对话，请重试”，状态行写“部分执行记录暂不可读取”。整轮 1 分 45 秒才出结果。Andy 原话：“他长时间没有回应，然后卡住了很久，最后才出来，然后会让用户觉得哎是不是卡住了？”
+
+**根因**
+
+先从代码猜，再用 Mac 线程只读导出的生产日志核对（`/mnt/project-files/game-run-20261030T0512Z-20261030T053350-c0f0.txt`）：
+
+- “思考 44.5 秒”是一次模型调用：第 3.8 秒出思考，第 19.0 秒出正文，第 44.4 秒结束，输出 10358 个 token（模型计数的最小文字单位），结束原因是要调用工具。也就是说，后面约 25 秒模型在写“写入文件”这个工具调用的参数，也就是整个游戏的代码。
+- Pi 运行适配器（把 Pi 的事件转成 Himawari 执行记录的那一层）对每个流式片段，都把到当时为止的整条消息连同工具参数原文存一份。这一轮存了 686 条执行记录，快照捕获 665 次共 33.7 秒。参数越写越长，后面每份都有几十 KB；网页每次读进度都要把这些快照全部解出来，一次读要 10–13 秒。网页一次读取最多等 15 秒，刷新又要连着读好几样，所以超时；连续 3 次失败就弹“暂时无法加载”。同一时段数据库排队最长只有 1.1 秒，我一开始猜的“数据库排队”被日志否定了。
+- 页面这边：工具步骤要等模型消息结束才生成，时间线又把以工具调用结束的整次模型调用都算成“思考”；执行状态一读不到，状态行就换成“部分执行记录暂不可读取”，把本来能显示的进度盖住了。
+
+**我们的方案**
+
+见 [ADR 0125](adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md)。
+
+1. 写参数的过程中，只存工具名、文件路径和“已写几行”，完整参数只在消息结束时存一次。
+2. 执行记录在写的过程中就生成“写入文件”这一步，并带上已写行数。
+3. 页面状态行显示“正在写入文件 · 已写 N 行”，步骤行显示“写入文件 game.html · 已写 N 行”；“思考”只算到模型开始写参数为止。
+4. 一轮还没结束时，执行状态没读到就照常显示进度；结束后还读不到才显示“部分执行记录暂不可读取”。
+5. 门槛：适配器、投影和页面各有测试，改前 6 例失败、改后通过；出包走查加两个必过场景，假模型分 40 段在 12 秒内送参数，写文件开始后 3 秒内必须看到“已写 N 行”而且行数在涨，执行状态故意晚 4 秒才回时也不能出现“部分执行记录暂不可读取”。
+
+**方案讨论与备选**
+
+- **只改文字**：把“思考”改叫“思考和写入”。数据量问题还在，“暂时无法加载”照样会出现。放弃。
+- **限制快照频率**：每秒最多存一份整条消息，份数能降到几十，但每份仍是整条，总量还是随输出长度的平方增长。放弃。
+- **改存新增片段**：最省，但执行记录和页面现在按“每条记录是完整状态”读，要重写读取和拼接。工具参数页面本来不显示原文，只要路径和行数，所以先只对工具参数这样做；回答正文的同类问题留给 BL-20261030-001。
+- **放宽 15 秒读取时限**：只是让人多等。放弃。
+
+**业界主流做法**
+
+- ✅ OpenAI 函数调用文档（[原文](https://developers.openai.com/api/docs/guides/function-calling)）：“Streaming can be used to surface progress by showing which function is called as the model fills its arguments”；参数以 `response.function_call_arguments.delta` 逐段送来。
+- ✅ Anthropic 细粒度工具流式（[原文](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming)）：目的是缩短“the time to the first fragment of a large parameter, such as a document or a block of code”；流里是 `input_json_delta` 片段，结束时才解析完整参数。
+
+**对比与取舍**
+
+- 和两家一样，模型写大段参数时就告诉用户“在写哪个文件、写到哪了”。
+- 两家的流传的是新增片段；我们存的是“进度摘要”（路径和行数），不存片段原文。因为页面只需要进度，原文在结束时完整存一次就够，审批和执行用的也是那一份。代价是写的过程中看不到代码本身。
+- 回答正文仍是每段存整条，长回答还有同类开销，没在这次一起改。
+
+**结果数据**
+
+- 生产这一轮（改前）：模型调用 44.4 秒，其中写参数约 25.4 秒；执行记录 686 条；读执行记录最长 13.0 秒，读执行状态最长 12.3 秒；数据库排队最长 1.1 秒（来源：上面的日志文件）。
+- 测试（本线程云端容器）：400 行文件的流式过程，改前每份快照都带着已写的全部内容，改后每份工具调用快照不到 150 字节，加起来小于文件本身。
+- 上线后的真实效果：未测量。要等下一版上线后让 Himawari 再写一次小游戏，看行数是否一两秒一变、读执行记录是否降到 1 秒以内。
+
+**相关 ADR/PR**
+
+[ADR 0125](adr/0125-streamed-tool-call-recorded-as-progress-not-snapshots.md)；[事故 I-38](incidents-and-gates.md#incidents)；[案例 63：简单问题也要 10 秒](#case-conversation-speed)；PR 在分支 `claude/project-thread-jimoqj`。
+
+**面试 30 秒版**
+
+“用户让 Agent 写个小游戏，界面‘思考’了 44 秒一动不动，还弹了加载失败。我先猜是数据库排队，拿生产日志一对，排队最长才 1 秒，猜错了。真正的原因是：模型在写文件参数的那 25 秒里，我们每收到一小段就把整条消息存一份，越存越大，网页读一次进度要 13 秒。我改成写的过程中只记‘哪个文件、写了几行’，写完才存完整参数；页面显示‘已写 N 行’，思考只算真正思考的时间。最后在出包走查里加了必过用例：写文件开始 3 秒内必须看到行数在涨。”
 
 [返回目录](#contents)
 

@@ -178,6 +178,41 @@ const contentBoundaries = {
   toolcall_start: { field: "outputBoundary", value: { kind: "toolCall" } },
 } as const;
 
+function argumentLines(value: unknown): number {
+  if (typeof value === "string") return value.length ? value.split("\n").length : 0;
+  if (value === null || typeof value !== "object") return 0;
+  return Object.entries(value).reduce(
+    (total, [key, entry]) => total + (key === "path" ? 0 : argumentLines(entry)),
+    0,
+  );
+}
+
+function withToolCallProgress<T extends { readonly role: string }>(message: T): T {
+  if (message.role !== "assistant") return message;
+  const assistant = message as unknown as AssistantMessage;
+  return {
+    ...message,
+    content: assistant.content.map((block) => {
+      if (block.type !== "toolCall") return block;
+      const partial = (block as { readonly partialArgs?: unknown }).partialArgs;
+      const path = block.arguments?.["path"];
+      return {
+        type: "toolCall",
+        id: block.id,
+        name: block.name,
+        arguments: typeof path === "string" ? { path } : {},
+        streaming: {
+          characters:
+            typeof partial === "string"
+              ? partial.length
+              : JSON.stringify(block.arguments ?? {}).length,
+          lines: argumentLines(block.arguments),
+        },
+      };
+    }),
+  };
+}
+
 function contentBoundary(
   event: { readonly type: string; readonly contentIndex?: number } | undefined,
 ): Record<string, unknown> {
@@ -1797,7 +1832,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       case "message_start":
       case "message_update":
       case "message_end": {
-        const observation = redactObservation(event.message);
+        const observation = redactObservation(
+          event.type === "message_update" ? withToolCallProgress(event.message) : event.message,
+        );
         const payloadRef = await this.#dependencies.projection.capture({
           runId: request.runId,
           kind: "message",
