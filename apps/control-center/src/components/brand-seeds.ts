@@ -22,6 +22,7 @@ const blend = (from: Rgb, to: Rgb, share: number) =>
   `rgb(${from.map((channel, index) => Math.round(channel + ((to[index] as number) - channel) * clamp(share))).join(",")})`;
 
 export interface Seed {
+  readonly slot: number;
   readonly cx: number;
   readonly cy: number;
   readonly r: number;
@@ -43,12 +44,13 @@ export function seedsAt(detail: SunflowerDetail, growth: number): Seed[] {
     const order = newest - slot;
     const age = growth - order;
     if (age < 0 || age > count)
-      return { cx: CENTER, cy: CENTER, r: 0, fill: "none", opacity: 0, fresh: false };
+      return { slot, cx: CENTER, cy: CENTER, r: 0, fill: "none", opacity: 0, fresh: false };
     const share = age / count;
     const distance = spacing * Math.sqrt(age);
     const angle = order * GOLDEN_ANGLE;
     const born = clamp(age / BIRTH_SECONDS);
     return {
+      slot,
       cx: round(CENTER + distance * Math.cos(angle)),
       cy: round(CENTER + distance * Math.sin(angle)),
       r: round((0.43 + 0.72 * Math.sqrt(share)) * sizeScale * born),

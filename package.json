@@ -44,7 +44,7 @@
     "check:v0.2-invariants": "node scripts/check-v0.2-invariants.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "lint": "biome lint --error-on-warnings .",
+    "lint": "biome lint --error-on-warnings --diagnostic-level=warn .",
     "link:local-pi": "node scripts/link-local-pi.mjs",
     "test": "node scripts/ci/local.mjs --check test",
     "test:browser": "vitest run --config vitest.workspace.ts --project browser",

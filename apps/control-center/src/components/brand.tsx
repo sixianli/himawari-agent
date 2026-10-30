@@ -102,9 +102,9 @@ export function SunflowerMark({
       focusable="false"
     >
       <g className="seeds" ref={seedsRef}>
-        {resting.map((seed, index) => (
+        {resting.map((seed) => (
           <circle
-            key={index}
+            key={seed.slot}
             cx={seed.cx}
             cy={seed.cy}
             r={seed.r}
