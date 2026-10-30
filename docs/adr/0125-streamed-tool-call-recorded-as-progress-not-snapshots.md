@@ -100,6 +100,8 @@ date: "2026-10-30"
 
 第二十二版出包走查里，`accept-file-writing-progress` 第一次真实运行失败：页面 30 秒内没出现“已写 N 行”。原因是后端状态计算（`packages/application/src/services/thread-execution-state.ts`）把写到一半的 write 工具记录算成“准备中”的工具，页面只在模型阶段显示行数。修正：工具的最新记录比它的 `runtime.tool_call.writing` 记录旧时，参数还在写，不进入工具列表和效果汇总；消息结束后再写的工具记录才使它成为待执行的工具。本 ADR 的决定不变。
 
+第一次修正（严格“晚于”）在 2cbceb9 的出包走查中仍然失败：同一条模型消息记录产出的工具记录和 `runtime.tool_call.writing` 记录序号相同。判断改为“不晚于”（`>=`），测试改用真实记录生成代码的输出。
+
 [↑ 返回阅读导航](#contents)
 
 <a id="references"></a>
