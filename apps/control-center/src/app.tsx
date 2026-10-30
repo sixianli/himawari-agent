@@ -413,6 +413,10 @@ function LocalizedControlCenterApp({
       : {}),
     active: route.surfaceId === "threads",
     ownerName: preferences.name,
+    modelChoice: preferences.modelRef
+      ? { modelRef: preferences.modelRef, thinkingLevel: preferences.thinkingLevel ?? "" }
+      : undefined,
+    onModelChoiceChange: ownerPreferences.changeModelChoice,
     client,
     configuration,
     connection: threadConnection,

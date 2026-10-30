@@ -2,13 +2,24 @@ export const ACCENT_COLORS = ["violet", "blue", "teal", "amber", "rose", "graphi
 export type AccentColor = (typeof ACCENT_COLORS)[number];
 export const OWNER_NAME_LIMIT = 40;
 
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+export const SHARED_OWNER_PREFERENCE_FIELDS = [
+  "name",
+  "locale",
+  "accent",
+  "theme",
+  "modelRef",
+  "thinkingLevel",
+] as const;
+
 export interface ControlCenterPreferences {
-  readonly density: "comfortable" | "compact";
-  readonly detailPanePercent: number;
-  readonly listPanePercent: number;
   readonly theme: "light" | "dark" | "system";
   readonly accent?: AccentColor;
   readonly name?: string;
+  readonly modelRef?: string;
+  readonly thinkingLevel?: ThinkingLevel;
 }
 
 export const CONTROL_CENTER_UI_LOCALES = ["zh-CN", "en", "ja"] as const;
@@ -221,27 +232,24 @@ export class ControlCenterBrowserStorage {
   }
 
   readPreferences(): ControlCenterPreferences {
-    const fallback: ControlCenterPreferences = {
-      density: "comfortable",
-      detailPanePercent: 24,
-      listPanePercent: 26,
-      theme: "dark",
-      accent: "violet",
-    };
+    const fallback: ControlCenterPreferences = { theme: "dark", accent: "violet" };
     const raw = this.storage.getItem(`${KEY_PREFIX}.preferences`);
     if (!raw) return fallback;
     try {
       const parsed = JSON.parse(raw) as Partial<ControlCenterPreferences>;
       return {
-        density: parsed.density === "compact" ? "compact" : "comfortable",
-        detailPanePercent: boundedPanePercent(parsed.detailPanePercent, 24),
-        listPanePercent: boundedPanePercent(parsed.listPanePercent, 26),
         theme: parsed.theme === "light" || parsed.theme === "system" ? parsed.theme : "dark",
         accent: ACCENT_COLORS.includes(parsed.accent as AccentColor)
           ? (parsed.accent as AccentColor)
           : "violet",
         ...(typeof parsed.name === "string" && parsed.name.trim()
           ? { name: parsed.name.trim().slice(0, OWNER_NAME_LIMIT) }
+          : {}),
+        ...(typeof parsed.modelRef === "string" && CURSOR_PATTERN.test(parsed.modelRef)
+          ? { modelRef: parsed.modelRef }
+          : {}),
+        ...(THINKING_LEVELS.includes(parsed.thinkingLevel as ThinkingLevel)
+          ? { thinkingLevel: parsed.thinkingLevel as ThinkingLevel }
           : {}),
       };
     } catch {
@@ -250,14 +258,18 @@ export class ControlCenterBrowserStorage {
   }
 
   savePreferences(preferences: ControlCenterPreferences): void {
-    this.storage.setItem(
-      `${KEY_PREFIX}.preferences`,
-      JSON.stringify({
-        ...preferences,
-        detailPanePercent: boundedPanePercent(preferences.detailPanePercent, 24),
-        listPanePercent: boundedPanePercent(preferences.listPanePercent, 26),
-      }),
-    );
+    this.storage.setItem(`${KEY_PREFIX}.preferences`, JSON.stringify(preferences));
+  }
+
+  readPreferencesRevision(): number {
+    const value = Number(this.storage.getItem(`${KEY_PREFIX}.preferencesRevision`));
+    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  }
+
+  savePreferencesRevision(revision: number): void {
+    if (!Number.isSafeInteger(revision) || revision < 0)
+      throw new Error("CONTROL_CENTER_PREFERENCES_REVISION_INVALID");
+    this.storage.setItem(`${KEY_PREFIX}.preferencesRevision`, String(revision));
   }
 
   readPreferencesUnsynced(): boolean {
@@ -283,12 +295,6 @@ export class ControlCenterBrowserStorage {
     if (!isUiLocale(locale)) throw new Error("CONTROL_CENTER_LOCALE_INVALID");
     this.storage.setItem(`${KEY_PREFIX}.locale`, locale);
   }
-}
-
-function boundedPanePercent(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.min(40, Math.max(18, Math.round(value)))
-    : fallback;
 }
 
 function isUiLocale(value: unknown): value is ControlCenterUiLocale {

@@ -727,12 +727,7 @@ describe("browser storage and SSE recovery", () => {
       objectRef: "approval-01",
       expectedRevision: 3,
     });
-    storage.savePreferences({
-      density: "compact",
-      detailPanePercent: 22,
-      listPanePercent: 28,
-      theme: "dark",
-    });
+    storage.savePreferences({ theme: "dark" });
 
     expect([...Array(raw.length)].map((_, index) => raw.key(index))).toEqual(
       expect.arrayContaining([
