@@ -2803,6 +2803,39 @@ describe("pushed conversation updates", () => {
     expect(first?.closed).toBe(true);
     expect(sources.at(-1)?.url).not.toBe(first?.url);
   });
+
+  it("[I-38] reads new execution records while an earlier state read is still waiting", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    source.open();
+    await settle();
+    const answering = query.getMockImplementation();
+    let releaseState: () => void = () => {};
+    const stateGate = new Promise<void>((resolve) => {
+      releaseState = resolve;
+    });
+    query.mockImplementation(async (request, abort) => {
+      if (request.type === "thread.execution_state") await stateGate;
+      return answering?.(request, abort);
+    });
+    const from = query.mock.calls.length;
+    await act(async () => {
+      source.emit("thread.execution_changed", executionChanged("run-1", 4, 20));
+    });
+    await settle();
+    await act(async () => {
+      source.emit("thread.execution_changed", executionChanged("run-1", 4, 21));
+    });
+    await settle();
+    const types = requested(from).map(({ type }) => type);
+    expect(types.filter((type) => type === "thread.execution").length).toBe(2);
+    expect(types.filter((type) => type === "thread.execution_state").length).toBe(1);
+    releaseState();
+    await settle();
+  });
 });
 
 describe("more panel", () => {

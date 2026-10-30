@@ -739,6 +739,8 @@ export function useThreadControlCenter(
   const executionRuns = useRef(new Set<string>());
   const executionTimer = useRef<number | undefined>(undefined);
   const executionReading = useRef(false);
+  const executionStateReading = useRef(false);
+  const executionStateRuns = useRef(new Map<string, { runId: string; revision: number }>());
   const refreshExecutionLatest = useRef(async () => {});
   const scheduleExecution = useCallback((runIds: readonly string[]) => {
     for (const runId of runIds) executionRuns.current.add(runId);
@@ -769,7 +771,7 @@ export function useThreadControlCenter(
       READ_DEADLINE_MILLISECONDS,
     );
     try {
-      await readRunExecution(
+      await readRunRecords(
         client,
         configuration,
         selectedThreadId,
@@ -777,17 +779,51 @@ export function useThreadControlCenter(
         executionCache.current,
         () => epoch === refreshSequence.current,
         setExecution,
-        setExecutionStates,
         controller.signal,
       );
-      if (epoch !== refreshSequence.current) scheduleExecution(runs.map((run) => run.runId));
+      if (epoch !== refreshSequence.current) return scheduleExecution(runs.map((run) => run.runId));
     } catch {
       if (epoch !== refreshSequence.current) return scheduleExecution(runs.map((run) => run.runId));
       fullRefreshRequested.current = true;
       scheduleRefresh();
+      return;
     } finally {
       window.clearTimeout(deadline);
       executionReading.current = false;
+    }
+    for (const run of runs) executionStateRuns.current.set(run.runId, run);
+    if (executionStateReading.current) return;
+    executionStateReading.current = true;
+    try {
+      while (executionStateRuns.current.size) {
+        const stateRuns = [...executionStateRuns.current.values()];
+        executionStateRuns.current.clear();
+        const stateController = new AbortController();
+        const stateDeadline = window.setTimeout(
+          () => stateController.abort(READ_DEADLINE_EXCEEDED),
+          READ_DEADLINE_MILLISECONDS,
+        );
+        try {
+          await readRunStates(
+            client,
+            configuration,
+            selectedThreadId,
+            stateRuns,
+            () => epoch === refreshSequence.current,
+            setExecutionStates,
+            stateController.signal,
+          );
+        } finally {
+          window.clearTimeout(stateDeadline);
+        }
+      }
+    } catch {
+      executionStateRuns.current.clear();
+      if (epoch !== refreshSequence.current) return;
+      fullRefreshRequested.current = true;
+      scheduleRefresh();
+    } finally {
+      executionStateReading.current = false;
     }
   };
   useEffect(
@@ -1976,6 +2012,21 @@ async function readRunExecution(
   ) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  await readRunRecords(client, configuration, threadId, runs, cache, current, setExecution, signal);
+  if (!current()) return;
+  await readRunStates(client, configuration, threadId, runs, current, setStates, signal);
+}
+
+async function readRunRecords(
+  client: GatewayClient,
+  configuration: ControlCenterRuntimeConfiguration,
+  threadId: string,
+  runs: readonly { readonly runId: string; readonly revision: number }[],
+  cache: Record<string, ThreadExecutionRecord[]>,
+  current: () => boolean,
+  setExecution: (value: Record<string, ThreadExecutionRecord[]>) => void,
+  signal?: AbortSignal,
+): Promise<void> {
   const records = configuration.executionPresentationAvailable
     ? await Promise.all(
         runs.map(async (run) => {
@@ -2013,6 +2064,19 @@ async function readRunExecution(
     Object.assign(cache, Object.fromEntries(records));
     setExecution({ ...cache });
   }
+}
+
+async function readRunStates(
+  client: GatewayClient,
+  configuration: ControlCenterRuntimeConfiguration,
+  threadId: string,
+  runs: readonly { readonly runId: string; readonly revision: number }[],
+  current: () => boolean,
+  setStates: (
+    update: (prior: Record<string, ThreadExecutionState>) => Record<string, ThreadExecutionState>,
+  ) => void,
+  signal?: AbortSignal,
+): Promise<void> {
   if (!configuration.executionStateAvailable) return;
   const states = await Promise.all(
     runs.map(async (run) => {

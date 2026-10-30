@@ -102,6 +102,8 @@ date: "2026-10-30"
 
 第一次修正（严格“晚于”）在 2cbceb9 的出包走查中仍然失败：同一条模型消息记录产出的工具记录和 `runtime.tool_call.writing` 记录序号相同。判断改为“不晚于”（`>=`），测试改用真实记录生成代码的输出。
 
+第三次（6cba685 出包）：`accept-file-writing-progress` 通过，`accept-progress-without-state` 失败，执行状态慢 4 秒时“已写 N 行”晚了 4293 毫秒。网页把读执行记录和读执行状态放在同一个“正在读”标志下，状态慢会拖住下一次读记录。现在记录读完即释放标志，状态单独排队读。
+
 [↑ 返回阅读导航](#contents)
 
 <a id="references"></a>
