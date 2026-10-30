@@ -2777,6 +2777,85 @@ it("restores already disclosed batch results across consecutive approvals withou
   expect(sent).not.toContain("PORT_HANDLE_REVOKED");
 });
 
+it.each([
+  ["the later search asks second", 0, 60],
+  ["the later search asks first", 60, 0],
+])(
+  "waits for every parallel search of the step to reach its approval before suspending, when %s",
+  async (_label, tokyoDelay, osakaDelay) => {
+    const model = await createFauxModelFixture("完成", [
+      { name: "web_search", id: "search-tokyo", arguments: { query: "Tokyo weather" } },
+      { name: "web_search", id: "search-osaka", arguments: { query: "Osaka weather" } },
+    ]);
+    const settled: string[] = [];
+    const delays: Record<string, number> = {
+      "search-tokyo": tokyoDelay,
+      "search-osaka": osakaDelay,
+    };
+    const tools: RuntimeToolPort = {
+      listAuthorized: async () => [
+        {
+          name: "web_search",
+          description: "Search",
+          capabilityRef: "search.web_search",
+          capabilityHandleRef: null,
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
+          executionMode: "parallel",
+        },
+      ],
+      preflight: async (call) => {
+        await new Promise((resolve) => setTimeout(resolve, delays[call.toolCallId] ?? 0));
+        return { allowed: true, permissionDecisionRef: "test", reasonCode: "evaluate" };
+      },
+      execute: async (call) => {
+        settled.push(call.toolCallId);
+        return {
+          outcome: "awaiting_approval",
+          approval: {
+            approvalRequestId: `approval:${call.toolCallId}`,
+            semanticSnapshotHash: `frozen:${call.toolCallId}`,
+            expiresAt: "2999-01-01T00:00:00Z",
+          },
+          resultRef: null,
+          errorCode: null,
+          externalActionId: null,
+          modelContent: "",
+        };
+      },
+    };
+    const snapshots = new Map<string, string>();
+    const adapter = new PiAgentRuntimeAdapter({
+      projection: new RecordingProjection(),
+      tools,
+      models: model.models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `parallel-approval:${ordinal}`,
+      continuations: {
+        save: async (_request, value) => {
+          const ref = `continuation:${snapshots.size}`;
+          snapshots.set(ref, JSON.stringify(value));
+          return ref;
+        },
+        load: async (_request, ref) => JSON.parse(snapshots.get(ref) ?? "null"),
+      },
+    });
+    const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+    const suspended = events.at(-1);
+    expect(suspended?.type).toBe("runtime.suspended");
+    expect([...settled].sort()).toEqual(["search-osaka", "search-tokyo"]);
+    expect(suspended).toMatchObject({
+      approval: { approvalRequestId: `approval:${settled.at(-1)}` },
+    });
+    expect(model.observed).toHaveLength(1);
+  },
+);
+
 it("summarizes confirmed results once after a loop without declaring task success", async () => {
   const calls = Array.from({ length: 4 }, (_, index) => ({
     name: "restaurant_search",

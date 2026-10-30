@@ -91,7 +91,11 @@ export function SearchAuthorizationControl({
             <small className="setting-description">
               {message("chat.search.purpose")}
               {snapshot && !snapshot.payload.enabled
-                ? ` ${message("chat.search.afterRevoke")}`
+                ? ` ${message(
+                    snapshot.payload.providersChanged
+                      ? "chat.search.providersChanged"
+                      : "chat.search.afterRevoke",
+                  )}`
                 : ""}
             </small>
             <details className="settings-details">

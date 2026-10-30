@@ -63,6 +63,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
             payload: {
               revision: 1,
               enabled: true,
+              providersChanged: false,
               available: true,
               recipients: ["https://mcp.exa.ai"],
               generatedAt: "2026-09-14T00:00:00.000Z",

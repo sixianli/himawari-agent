@@ -824,6 +824,7 @@ function handleOperationsQuery(message) {
             ...envelope("snapshot", "search.authorization.snapshot"),
             payload: {
               enabled: true,
+              providersChanged: false,
               revision: 1,
               available: true,
               recipients: ["https://mcp.exa.ai"],
