@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -32,6 +33,7 @@ import {
   SQLITE_PERSISTENCE_ERROR_CODES,
   SqliteProductStateRepository,
   type SqliteSlowOperation,
+  type SqliteTimedOperation,
 } from "@himawari-agent/persistence-sqlite";
 import {
   authorityLeasePortConformance,
@@ -376,6 +378,28 @@ describe("SQLite product-state transaction boundary", () => {
     const read = slow.find(({ operation }) => operation === "readAuthorityRevision");
     expect(read).toMatchObject({ queuedBehind: 1 });
     expect(read?.queueWaitMs).toBeGreaterThanOrEqual(500);
+    expect(read?.runMs).toBeLessThan(read?.queueWaitMs ?? 0);
+  });
+
+  it("reports every operation's queue wait and run time in the async context that asked for it", async () => {
+    const caller = new AsyncLocalStorage<string>();
+    const timed: Array<SqliteTimedOperation & { readonly caller: string | undefined }> = [];
+    const { repository } = await integrationRepository("timed-report", {
+      stateRoot: "unused",
+      qualification: { holdBeforeCommitMs: 200 },
+      onOperation: (operation) => timed.push({ ...operation, caller: caller.getStore() }),
+    });
+    await Promise.all([
+      caller.run("writer", () => repository.commitStateAndEvents(commitInput("timed-report"))),
+      caller.run("reader", () => repository.readAuthorityRevision()),
+    ]);
+    await repository.close();
+    const commit = timed.find(({ operation }) => operation === "commit");
+    const read = timed.find(({ operation }) => operation === "readAuthorityRevision");
+    expect(commit).toMatchObject({ caller: "writer" });
+    expect(commit?.runMs).toBeGreaterThanOrEqual(150);
+    expect(read).toMatchObject({ caller: "reader" });
+    expect(read?.queueWaitMs).toBeGreaterThanOrEqual(150);
     expect(read?.runMs).toBeLessThan(read?.queueWaitMs ?? 0);
   });
 

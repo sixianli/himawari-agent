@@ -87,6 +87,7 @@ import {
 import {
   SqliteExecutionContext,
   type SqliteSlowOperation,
+  type SqliteTimedOperation,
   type SqliteWorkerConfiguration,
 } from "./sqlite-execution-context.js";
 import { SqliteGitHubMonitorHistoryPolicyAdapter } from "./sqlite-github-history-policy.js";
@@ -107,6 +108,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly now?: () => string;
   readonly qualification?: SqliteWorkerConfiguration["qualification"];
   readonly onSlowOperation?: (operation: SqliteSlowOperation) => void;
+  readonly onOperation?: (operation: SqliteTimedOperation) => void;
 }
 
 export interface SqliteCheckpointResult {
@@ -219,7 +221,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           warningFreeBytes,
           ...(options.qualification ? { qualification: options.qualification } : {}),
         },
-        options.onSlowOperation,
+        {
+          ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
+          ...(options.onOperation ? { onOperation: options.onOperation } : {}),
+        },
       );
       return new SqliteProductStateRepository({
         stateRoot,

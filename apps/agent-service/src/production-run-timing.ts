@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { performance } from "node:perf_hooks";
 import type { AgentRuntimePort, RuntimeEvent, RuntimeRequest } from "@himawari-agent/application";
 
@@ -17,6 +18,21 @@ interface AttemptTimings {
 export type RunTimingDiagnostic = Readonly<Record<string, string | number>>;
 
 const MAXIMUM_TRACKED_RUNS = 64;
+
+const runningAttempt = new AsyncLocalStorage<{
+  readonly timings: ProductionRunTimings;
+  readonly runId: string;
+}>();
+
+export function currentRunId(): string | undefined {
+  return runningAttempt.getStore()?.runId;
+}
+
+export function recordInCurrentRun(name: string, durationMs: number): void {
+  const attempt = runningAttempt.getStore();
+  if (!attempt) return;
+  attempt.timings.recordEndingNow(attempt.runId, name, durationMs);
+}
 
 export class ProductionRunTimings {
   readonly #attempts = new Map<string, AttemptTimings>();
@@ -41,7 +57,7 @@ export class ProductionRunTimings {
     }
     let outcome = "failed";
     try {
-      const result = await work();
+      const result = await runningAttempt.run({ timings: this, runId }, work);
       outcome = "returned";
       return result;
     } finally {
@@ -72,6 +88,11 @@ export class ProductionRunTimings {
     } finally {
       this.record(runId, name, startedAt, this.#now());
     }
+  }
+
+  recordEndingNow(runId: string, name: string, durationMs: number): void {
+    const endedAt = this.#now();
+    this.record(runId, name, endedAt - durationMs, endedAt);
   }
 
   record(runId: string | undefined, name: string, startedAt: number, endedAt: number): void {
