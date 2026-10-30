@@ -7,6 +7,7 @@ import {
   type ModelInvocationEvent,
   ProactiveMailCheckService,
   type ProactiveSourceItem,
+  proactivePrompt,
   readProactiveOverview,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
@@ -744,5 +745,15 @@ describe("proactive Gmail check acceptance", () => {
       verdict: "failed",
       reasonCode: "MODEL_OUTPUT_TRUNCATED",
     });
+  });
+
+  it("[PG-16] keeps everything that never changes in front of the time and the mail so the model's KV cache can be reused", () => {
+    const first = proactivePrompt([mail("a")], "2026-10-30T01:00:00.000Z", "Asia/Tokyo");
+    const later = proactivePrompt([mail("b")], "2026-10-30T01:15:00.000Z", "Asia/Tokyo");
+    const stable = first.slice(0, first.indexOf("现在是"));
+    expect(stable.length).toBeGreaterThan(200);
+    expect(later.startsWith(stable)).toBe(true);
+    expect(first.indexOf("现在是")).toBeGreaterThan(first.indexOf("只输出 JSON"));
+    expect(first.indexOf("现在是")).toBeLessThan(first.indexOf("邮件："));
   });
 });
