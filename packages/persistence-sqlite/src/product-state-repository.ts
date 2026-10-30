@@ -154,6 +154,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   readonly stateRoot: string;
   readonly databasePath: string;
   private readonly context: SqliteExecutionContext;
+  private readonly readContext: SqliteExecutionContext;
   private readonly lock: StateRootLock;
   private readonly now: () => string;
   private readonly durable: SqliteDurableAdapters;
@@ -166,22 +167,24 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     stateRoot: string;
     databasePath: string;
     context: SqliteExecutionContext;
+    readContext: SqliteExecutionContext;
     lock: StateRootLock;
     now: () => string;
   }) {
     this.stateRoot = input.stateRoot;
     this.databasePath = input.databasePath;
     this.context = input.context;
+    this.readContext = input.readContext;
     this.lock = input.lock;
     this.now = input.now;
     this.durable = new SqliteDurableAdapters({
-      read: (operation, payload) => this.context.request(operation, payload),
+      read: (operation, payload) => this.readRequest(operation, payload),
       write: (operation, payload) => this.writeRequest(operation, payload),
     });
     this.githubHistory = new SqliteGitHubMonitorHistoryPolicyAdapter({
       stateRoot: this.stateRoot,
       context: {
-        read: (operation, payload) => this.context.request(operation, payload),
+        read: (operation, payload) => this.readRequest(operation, payload),
         write: (operation, payload) => this.writeRequest(operation, payload),
       },
     });
@@ -227,10 +230,28 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           ...(options.onOperation ? { onOperation: options.onOperation } : {}),
         },
       );
+      const readContext = await SqliteExecutionContext.start(
+        {
+          databasePath,
+          writerSequence: migrations.length,
+          busyTimeoutMs,
+          minimumFreeBytes,
+          warningFreeBytes,
+          readOnly: true,
+        },
+        {
+          ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
+          ...(options.onOperation ? { onOperation: options.onOperation } : {}),
+        },
+      ).catch(async (error) => {
+        await context.close();
+        throw error;
+      });
       return new SqliteProductStateRepository({
         stateRoot,
         databasePath,
         context,
+        readContext,
         lock,
         now: options.now ?? (() => new Date().toISOString()),
       });
@@ -242,12 +263,12 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   read(key: string): Promise<StateRecord | undefined> {
     this.assertOpen();
-    return this.context.request("read", { key });
+    return this.readRequest("read", { key });
   }
 
   readAuthorityRevision(): Promise<number> {
     this.assertOpen();
-    return this.context.request("readAuthorityRevision", {});
+    return this.readRequest("readAuthorityRevision", {});
   }
 
   readScopedState(
@@ -256,12 +277,12 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     key: string,
   ): Promise<StateRecord | undefined> {
     this.assertOpen();
-    return this.context.request("readScopedState", { ownerId, agentId, key });
+    return this.readRequest("readScopedState", { ownerId, agentId, key });
   }
 
   listPending(limit: number): Promise<readonly ReliableEventRecord[]> {
     this.assertOpen();
-    return this.context.request("listPending", { limit });
+    return this.readRequest("listPending", { limit });
   }
 
   markPublished(eventId: string, publishedAt: string): Promise<ReliableEventRecord> {
@@ -270,12 +291,12 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   findCommandResult(lookup: CommandResultLookup): Promise<CommandResultRecord | undefined> {
     this.assertOpen();
-    return this.context.request("findCommandResult", lookup);
+    return this.readRequest("findCommandResult", lookup);
   }
 
   findCommandCommit(lookup: CommandResultLookup): Promise<CommitStateAndEventsResult | undefined> {
     this.assertOpen();
-    return this.context.request("findCommandCommit", lookup);
+    return this.readRequest("findCommandCommit", lookup);
   }
 
   commitStateAndEvents(input: CommitStateAndEventsInput): Promise<CommitStateAndEventsResult> {
@@ -291,7 +312,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           now: clock.now(),
         }),
       current: (agentId: AgentId) =>
-        this.context.request<AuthorityLeaseRecord | undefined>("authority.current", {
+        this.readRequest<AuthorityLeaseRecord | undefined>("authority.current", {
           agentId,
           now: clock.now(),
         }),
@@ -309,7 +330,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   deploymentAuthorityPort(): DeploymentAuthorityStatePort {
     return Object.freeze({
       read: (deploymentId: DeploymentId) =>
-        this.context.request<DeploymentAuthorityState | undefined>("deployment.read", {
+        this.readRequest<DeploymentAuthorityState | undefined>("deployment.read", {
           deploymentId,
         }),
       save: (deployment: DeploymentAuthorityState, expectedRevision: number) =>
@@ -318,7 +339,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           expectedRevision,
         }),
       assertCurrent: (fence: ProductAuthorityFence) =>
-        this.context.request<DeploymentAuthorityState>("deployment.assertCurrent", { fence }),
+        this.readRequest<DeploymentAuthorityState>("deployment.assertCurrent", { fence }),
     });
   }
 
@@ -541,13 +562,13 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   }
 
   threadSearchProjectionSource(): ThreadSearchProjectionSourcePort {
-    return { pending: (input) => this.context.request("thread.pendingSearchProjection", input) };
+    return { pending: (input) => this.readRequest("thread.pendingSearchProjection", input) };
   }
 
   runExecutionSource(ownerId: OwnerId, agentId: AgentId): RunExecutionSourcePort {
     return Object.freeze<RunExecutionSourcePort>({
       read: (runId) =>
-        this.context.request("thread.readRunExecutionSource", { ownerId, agentId, runId }),
+        this.readRequest("thread.readRunExecutionSource", { ownerId, agentId, runId }),
     });
   }
 
@@ -601,10 +622,15 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     if (this.closed) return;
     this.closed = true;
     try {
+      await this.readContext.close();
       await this.context.close();
     } finally {
       await this.lock.release();
     }
+  }
+
+  private readRequest<TResult>(operation: string, payload: unknown): Promise<TResult> {
+    return this.readContext.request<TResult>(operation, payload);
   }
 
   private async writeRequest<TResult>(operation: string, payload: unknown): Promise<TResult> {
