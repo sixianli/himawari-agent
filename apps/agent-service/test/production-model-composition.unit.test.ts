@@ -1047,9 +1047,13 @@ it("accepts the production embedding descriptor in the real invocation registry"
   ).not.toThrow();
 });
 
-it.each([false, true])(
-  "generates a title through the selected Pi transport (required reasoning: %s)",
-  async (reasoningRequired) => {
+it.each([
+  { reasoning: false, reasoningRequired: false, maxTokens: 128 },
+  { reasoning: true, reasoningRequired: false, maxTokens: 1024 },
+  { reasoning: true, reasoningRequired: true, maxTokens: 1024 },
+])(
+  "generates a title through the selected Pi transport with room for thinking when the model can think (%o)",
+  async ({ reasoning, reasoningRequired, maxTokens }) => {
     const adapters = createReferenceAdapterSet();
     const streamOptions: Record<string, unknown>[] = [];
     class TitleRuntime extends RecordingRuntime {
@@ -1071,8 +1075,7 @@ it.each([false, true])(
               api: "openai-completions",
               provider: "vercel-ai-gateway",
               model: primaryModel.model,
-              stopReason:
-                reasoningRequired && Number(options["maxTokens"]) < 512 ? "length" : "stop",
+              stopReason: reasoning && Number(options["maxTokens"]) < 512 ? "length" : "stop",
               timestamp: Date.now(),
               usage: {
                 input: 30,
@@ -1110,9 +1113,7 @@ it.each([false, true])(
       ...prepared.options,
       descriptors: prepared.options.descriptors.map((descriptor) => ({
         ...descriptor,
-        ...(descriptor.api === "openai-completions"
-          ? { reasoning: reasoningRequired || descriptor.reasoning, reasoningRequired }
-          : {}),
+        ...(descriptor.api === "openai-completions" ? { reasoning, reasoningRequired } : {}),
       })),
     });
     try {
@@ -1150,7 +1151,7 @@ it.each([false, true])(
       );
       expect(permit.markUnknown).not.toHaveBeenCalled();
       expect(streamOptions[0]).toMatchObject({
-        maxTokens: reasoningRequired ? 1024 : 128,
+        maxTokens,
         maxRetries: 0,
         timeoutMs: 20000,
       });
