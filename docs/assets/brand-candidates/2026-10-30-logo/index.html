@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Himawari 标志自由设计</title>
+<style>
+:root{--bg:#1c1c1e;--panel:#242426;--line:#333336;--tx:#f2f2f2;--mut:#8e8e93;--gold:#f5b335}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.65 -apple-system,"SF Pro Text","PingFang SC",system-ui,sans-serif;padding:32px 20px 64px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px;font-weight:600}p.sub{color:var(--mut);margin:0 0 20px;max-width:760px}
+.bar{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;align-items:center}
+.bar button{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font:inherit;cursor:pointer}
+.bar button.on{border-color:var(--gold);color:var(--gold)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px;margin-bottom:16px;display:grid;grid-template-columns:260px 1fr;gap:26px}
+.stage{display:flex;align-items:center;justify-content:center;min-height:240px;border-radius:14px;background:radial-gradient(circle at 50% 45%,#2a2a2d,#1e1e20)}
+.card h2{font-size:17px;margin:0 0 4px;font-weight:600}.card h2 span{color:var(--gold);margin-right:8px}
+.idea{color:var(--tx);margin:0 0 10px}.motion{color:var(--mut);margin:0 0 14px;font-size:13px}
+.uses{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px}
+.uses figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--mut);font-size:11px}
+.tile{width:88px;height:88px;border-radius:20px;background:linear-gradient(160deg,#2e2e31,#151517);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px #ffffff12}
+.side{display:flex;align-items:center;gap:9px;padding:8px 12px;background:#171718;border-radius:10px}.side b{font-size:15px}.side small{display:block;color:var(--mut);font-size:9px;letter-spacing:3px;margin-top:-3px}
+svg{display:block;overflow:visible}
+@media (max-width:720px){.card{grid-template-columns:1fr}}
+</style></head><body><div class="wrap">
+<h1>Himawari 标志 · 自由设计 5 版</h1>
+<p class="sub">出发点有两个：名字"向日葵"的本义是始终朝向太阳；愿景第一句是"始终朝向你"，还有"时间站在 Himawari 这边"。所以每一版都在回答：一个只属于你、越用越懂你的 Agent，长什么样。大图可以把鼠标移上去试试。</p>
+<div class="bar"><span style="color:var(--mut)">状态：</span>
+<button data-s="idle" class="on">空闲</button><button data-s="think">思考中</button><button data-s="load">等待加载</button>
+<button id="rm" style="margin-left:auto">模拟"减少动态效果"：关</button></div>
+<div id="list"></div>
+</div>
+<script>
+const NS='http://www.w3.org/2000/svg',G=Math.PI*(3-Math.sqrt(5)),TAU=Math.PI*2;
+let state='idle',forceRM=false;const mq=matchMedia('(prefers-reduced-motion: reduce)');
+const reduced=()=>forceRM||mq.matches;
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x)),lerp=(a,b,t)=>a+(b-a)*t;
+const el=(n,a={},p)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e};
+let uid=0;
+function defs(svg){const d=el('defs',{},svg);const id='g'+(uid++);
+ const pg=el('linearGradient',{id:id+'p',x1:0,y1:1,x2:0,y2:0},d);el('stop',{offset:0,'stop-color':'#e08a12'},pg);el('stop',{offset:1,'stop-color':'#ffd25a'},pg);
+ const dg=el('radialGradient',{id:id+'d',cx:.5,cy:.45,r:.6},d);el('stop',{offset:0,'stop-color':'#2a170a'},dg);el('stop',{offset:1,'stop-color':'#5a3510'},dg);
+ const sg=el('radialGradient',{id:id+'s',cx:.4,cy:.35,r:.75},d);el('stop',{offset:0,'stop-color':'#fff1c2'},sg);el('stop',{offset:.45,'stop-color':'#ffc23d'},sg);el('stop',{offset:1,'stop-color':'#d9780d'},sg);
+ return id}
+
+const CONCEPTS=[
+{key:'face',title:'朝向',idea:'把"始终朝向你"直接画出来：一朵几何化的向日葵，花盘会转过来看着你。静止时花盘微微偏向右上方，像在望着太阳，又像在看着屏幕前的你。13 片花瓣、一个深色花盘，没有多余元素，16px 下也是一眼认得的向日葵。',
+ motion:'空闲：花盘随鼠标转向你，没有鼠标时缓慢环顾。思考中：低头再抬头，像在想。等待：花瓣依次轻轻亮起一圈。',
+ build(svg,px){const id=defs(svg);const root=el('g',{},svg);const petals=el('g',{},root);const P=[];
+  for(let i=0;i<13;i++){const g=el('g',{},petals);P.push({g,a:i/13*360,e:el('ellipse',{cx:0,cy:-30,rx:6.2,ry:13,fill:`url(#${id}p)`},g)})}
+  const disc=el('g',{},root);el('circle',{r:19,fill:`url(#${id}d)`},disc);
+  const seeds=el('g',{},disc);if(px>=40)for(let i=0;i<55;i++){const r=1.95*Math.sqrt(i+.5),a=i*G;el('circle',{cx:r*Math.cos(a),cy:r*Math.sin(a),r:.55+.5*r/15,fill:'#8a5a1c',opacity:.75},seeds)}
+  el('circle',{r:19,fill:'none',stroke:'#7a4a14','stroke-width':1.2},disc);
+  return {root,disc,petals,P,look:{x:5,y:-4}}},
+ frame(o,t,s,m){let tx,ty;if(m){tx=clamp(m.x*.18,-8,8);ty=clamp(m.y*.18,-8,8)}else if(s==='think'){tx=4;ty=-3+6*Math.sin(t*2.2)}else if(s==='idle'&&!reduced()){tx=5*Math.cos(t*.45);ty=-3+2.5*Math.sin(t*.7)}else{tx=5;ty=-4}
+  o.look.x=lerp(o.look.x,tx,.08);o.look.y=lerp(o.look.y,ty,.08);const {x,y}=o.look;
+  o.disc.setAttribute('transform',`translate(${x} ${y}) scale(${1-Math.abs(x)/60} ${1-Math.abs(y)/60})`);
+  o.petals.setAttribute('transform',`translate(${x*.35} ${y*.35})`);
+  o.P.forEach((p,i)=>{let sc=1,op=1;if(s==='load'){const ph=((t*1.3-i/13)%1+1)%1;op=.45+.55*Math.pow(1-ph,3);sc=.92+.1*Math.pow(1-ph,3)}
+   p.g.setAttribute('transform',`rotate(${p.a}) scale(1 ${sc})`);p.e.setAttribute('opacity',op)})}},
+
+{key:'grow',title:'生长',idea:'向日葵的种子是从花心一颗颗长出来、再被后来的种子推向外圈的，这正是它形成螺旋的原因。用这个真实的生长过程表达"时间站在 Himawari 这边"：每一次对话都是一颗新种子，记忆越积越多，花盘越来越满。',
+ motion:'空闲：每几秒从中心长出一颗新种子，整圈缓缓向外推。思考中：种子快速涌出，像在把理解转化成结果。等待：生长放慢，中心那颗新种子在发光。动的只是真实的生长，不是装饰性转圈。',
+ build(svg,px){const id=defs(svg);const n=px>=40?120:60;const C=[];for(let i=0;i<n+2;i++)C.push(el('circle',{},svg));return {C,n,T:40,last:null}},
+ frame(o,t,s){const rate=reduced()?0:s==='think'?7:s==='load'?1.2:.35;const dt=o.last==null?0:Math.min(.05,t-o.last);o.last=t;o.T+=dt*rate;
+  const T=o.T,base=Math.floor(T),c=40/Math.sqrt(o.n);
+  o.C.forEach((e,k)=>{const i=base-k,age=T-i;if(age<0||age>o.n){e.setAttribute('r',0);return}
+   const r=c*Math.sqrt(age),a=i*G,u=age/o.n;
+   const born=clamp(age/1.2),fade=clamp((o.n-age)/6);
+   e.setAttribute('cx',r*Math.cos(a));e.setAttribute('cy',r*Math.sin(a));
+   e.setAttribute('r',(.6+2.6*Math.sqrt(u))*born);
+   const glow=s==='load'&&age<3?1:0;
+   const col=u<.08||glow?'#ffe7a3':u<.55?`rgb(${Math.round(lerp(120,214,u/.55))},${Math.round(lerp(72,140,u/.55))},${Math.round(lerp(18,22,u/.55))})`:`rgb(${Math.round(lerp(214,250,(u-.55)/.45))},${Math.round(lerp(140,190,(u-.55)/.45))},${Math.round(lerp(22,60,(u-.55)/.45))})`;
+   e.setAttribute('fill',col);e.setAttribute('opacity',fade*(u<.08?1:.95))})}},
+
+{key:'hi',title:'ひ',idea:'名字的第一个字"ひ"，写法恰好像一个托起东西的碗，也像地平线和微笑。在碗里放一颗金色的小太阳："ひ"就成了"日"（ひ也是"日"的读音）。一笔线加一个圆，最克制，最像苹果和 Claude 那种品牌标志，能直接当 App 图标。',
+ motion:'首次出现：一笔写出"ひ"，太阳随后升起。空闲：太阳在碗里极慢地浮动。思考中：太阳沿碗底来回滑动，像在掂量。等待：太阳轻轻呼吸发光。',
+ build(svg,px){const id=defs(svg);const sw=px>=40?5.2:7;
+  const path=el('path',{d:'M-34 -14 C-24 -20 -20 -10 -22 2 C-24 18 -12 30 0 30 C14 30 26 18 26 -2 C26 -10 28 -16 36 -20',fill:'none',stroke:'#f2f2f2','stroke-width':sw,'stroke-linecap':'round','stroke-linejoin':'round'},svg);
+  const halo=el('circle',{r:16,fill:'#ffc23d',opacity:.12},svg);const sun=el('circle',{r:9.5,fill:`url(#${id}s)`},svg);
+  const L=path.getTotalLength?220:220;path.setAttribute('stroke-dasharray',L);return {path,sun,halo,L,t0:null}},
+ frame(o,t,s){if(o.t0==null)o.t0=t;const k=reduced()?1:clamp((t-o.t0)/1.1);o.path.setAttribute('stroke-dashoffset',o.L*(1-k*k*(3-2*k)));
+  const rise=reduced()?1:clamp((t-o.t0-.7)/.8);let x=2,y=lerp(28,6,rise*rise*(3-2*rise)),g=.12,r=9.5;
+  if(rise>=1&&!reduced()){if(s==='think'){x=13*Math.sin(t*2.2);y=8-4*Math.cos(t*4.4)*.5}else if(s==='load'){const p=.5+.5*Math.sin(t*3);g=.08+.22*p;r=9.5+1.2*p}else{y=6+1.5*Math.sin(t*1.1)}}
+  if(reduced()&&s!=='idle')g=s==='think'?.3:.2;
+  o.sun.setAttribute('cx',x);o.sun.setAttribute('cy',y);o.sun.setAttribute('r',r);o.halo.setAttribute('cx',x);o.halo.setAttribute('cy',y);o.halo.setAttribute('opacity',g)}},
+
+{key:'rosette',title:'花冠',idea:'21 片半透明的金色花瓣层层叠在一起，叠得越多的地方越亮，中心自然汇聚成一圈光。像阳光穿过花瓣。它不画花盘，向日葵的样子由花瓣的排列本身呈现，质感接近苹果"照片"图标和新一代 AI 产品的光感标志。',
+ motion:'空闲：整朵花冠极慢地旋转并轻轻呼吸。思考中：花瓣依次错开一点角度又收回，像花在舒展。等待：花瓣缓缓开合。',
+ build(svg,px){const id=defs(svg);const g=el('g',{style:'mix-blend-mode:screen'},svg);const P=[];const n=px>=40?21:13;
+  for(let i=0;i<n;i++){const w=el('g',{},g);P.push({w,e:el('ellipse',{cx:0,cy:-22,rx:px>=40?6.5:8,ry:20,fill:`url(#${id}p)`,opacity:px>=40?.42:.55},w),i})}
+  el('circle',{r:px>=40?7:9,fill:'#2b1808'},svg);return {g,P,n}},
+ frame(o,t,s){const rm=reduced();const spin=rm?0:t*(s==='think'?14:3);
+  o.P.forEach(p=>{let a=p.i/o.n*360+spin,sc=1;if(!rm){if(s==='think')a+=7*Math.sin(t*3-p.i*.6);if(s==='load')sc=.86+.14*(.5+.5*Math.sin(t*2));if(s==='idle')sc=.97+.03*Math.sin(t*1.2)}
+   p.w.setAttribute('transform',`rotate(${a}) scale(${sc})`)})}},
+
+{key:'halo',title:'日轮',idea:'把向日葵简化成一个发光的圆和一圈柔和起伏的花边：既是太阳，也是花。边缘的起伏数是 21（斐波那契数），中心是深色花盘留出的"眼睛"，像一位安静看着你的伙伴。这一版最接近 ChatGPT、Claude 那种"会呼吸的形状"，作为思考指示器最自然。',
+ motion:'空闲：花边像水波一样缓缓起伏。思考中：一道光沿花边绕圈，起伏加深。等待：整体轻轻呼吸。',
+ build(svg,px){const id=defs(svg);const shape=el('path',{fill:`url(#${id}s)`},svg);const sheen=el('path',{fill:'#fff',opacity:0},svg);
+  const eye=el('circle',{r:px>=40?11:13,fill:'#2b1808'},svg);return {shape,sheen,eye,n:px>=40?21:13}},
+ frame(o,t,s){const rm=reduced();const amp=rm?1.8:s==='think'?3.2:s==='load'?1.8:1.8+.6*Math.sin(t*.8);const ph=rm?0:t*(s==='think'?1.6:.35);
+  const pulse=!rm&&s==='load'?1+.04*Math.sin(t*3):1;let d='';const M=180;
+  for(let k=0;k<=M;k++){const a=k/M*TAU,r=(33+amp*Math.cos(o.n*a+ph*2))*pulse;d+=(k?'L':'M')+(r*Math.cos(a)).toFixed(2)+' '+(r*Math.sin(a)).toFixed(2)}
+  o.shape.setAttribute('d',d+'Z');
+  if(s==='think'&&!rm){const c=t*2.4;let d2='';for(let k=0;k<=40;k++){const a=c+k/40*1.1,r=(33+amp*Math.cos(o.n*a+ph*2))*pulse+.3;d2+=(k?'L':'M')+(r*Math.cos(a)).toFixed(2)+' '+(r*Math.sin(a)).toFixed(2)}
+   for(let k=40;k>=0;k--){const a=c+k/40*1.1,r=22;d2+='L'+(r*Math.cos(a)).toFixed(2)+' '+(r*Math.sin(a)).toFixed(2)}o.sheen.setAttribute('d',d2+'Z');o.sheen.setAttribute('opacity',.28)}else o.sheen.setAttribute('opacity',0)}}
+];
+
+const insts=[];
+function mount(host,px,c,interactive){const s=el('svg',{viewBox:'-50 -50 100 100',width:px,height:px});host.prepend(s);const o=c.build(s,px);const inst={c,o,mouse:null};insts.push(inst);
+ if(interactive){s.addEventListener('pointermove',e=>{const r=s.getBoundingClientRect();inst.mouse={x:(e.clientX-r.left)/r.width*100-50,y:(e.clientY-r.top)/r.height*100-50}});s.addEventListener('pointerleave',()=>inst.mouse=null)}}
+const list=document.getElementById('list');
+CONCEPTS.forEach((c,i)=>{const card=document.createElement('div');card.className='card';
+ card.innerHTML=`<div class="stage"></div><div><h2><span>${i+1}</span>${c.title}</h2><p class="idea">${c.idea}</p><p class="motion">${c.motion}</p>
+ <div class="uses"><figure><div class="tile"></div>App 图标</figure><figure><div class="side"><span class="s28"></span><div><b>Himawari</b><small>ひまわり</small></div></div>侧栏 28px</figure><figure><span class="s20"></span>20px</figure><figure><span class="s16"></span>16px</figure></div></div>`;
+ list.appendChild(card);
+ mount(card.querySelector('.stage'),200,c,true);mount(card.querySelector('.tile'),56,c);mount(card.querySelector('.s28'),28,c);mount(card.querySelector('.s20'),20,c);mount(card.querySelector('.s16'),16,c)});
+function draw(now){const t=now/1000;const st=reduced()?'idle':state;insts.forEach(({c,o,mouse})=>c.frame(o,t,reduced()?state:st,reduced()?null:mouse));requestAnimationFrame(draw)}
+requestAnimationFrame(draw);
+document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{state=b.dataset.s;document.querySelectorAll('[data-s]').forEach(x=>x.classList.toggle('on',x===b))});
+const rmb=document.getElementById('rm');rmb.onclick=()=>{forceRM=!forceRM;rmb.textContent='模拟"减少动态效果"：'+(forceRM?'开':'关');rmb.classList.toggle('on',forceRM)};
+</script></body></html>
