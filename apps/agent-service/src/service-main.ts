@@ -1727,6 +1727,8 @@ export async function runAgentService(
             event: "http.slow_request",
             ...request,
           }),
+        onSearchIndexDiagnostic: (diagnostic) =>
+          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...diagnostic }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
           if (await runs.background?.cancel(input.runId)) return;

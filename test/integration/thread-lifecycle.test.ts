@@ -20,7 +20,12 @@ import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
-import { ScopedThreadSearchTokenizer, ThreadSearchProjector } from "@himawari-agent/platform-node";
+import {
+  BrowserThreadSearchPreparer,
+  ScopedThreadSearchTokenizer,
+  ThreadSearchProjector,
+} from "@himawari-agent/platform-node";
+import { ApplicationPortError, PORT_ERROR_CODES } from "@himawari-agent/application";
 import { ManualClock } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
@@ -836,6 +841,151 @@ describe.each(["worker", "direct"] as const)("thread-lifecycle through %s", (exe
           .pending({ ownerId, agentId, projectionVersion: tokenizer.projectionVersion, limit: 64 }),
       ).toEqual([]);
       expect(admitted.message.status).toBe("committed");
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[I-43] keeps search answering while the index is catching up, and indexes around an unreadable message", async () => {
+    const paths = await seedState();
+    const db = openQualifiedDatabase(paths.databasePath);
+    db.prepare("UPDATE payloads SET content_type='text/plain'").run();
+    db.close();
+    const clock = new ManualClock("2026-08-28T00:00:00.000Z");
+    const repository = await SqliteProductStateRepository.open({
+      ...paths,
+      minimumFreeBytes: 0,
+      now: () => clock.now(),
+    });
+    try {
+      const command = new ThreadCommandService({
+        repository: repository.threadRepository(),
+        clock,
+        authority: () => authority,
+      });
+      const created = await command.create({
+        ownerId,
+        agentId,
+        idempotencyKey: "i38-create",
+        resultRef: "payload-result-create",
+      });
+      await command.admitOwnerMessage({
+        ownerId,
+        agentId,
+        threadId: created.thread.id,
+        expectedThreadRevision: 1,
+        sessionId,
+        idempotencyKey: "i38-admit",
+        contentRef: "payload-owner-message",
+        sourceProofRef: "test",
+        dataClassification: "private",
+        resultRef: "payload-result-admit",
+      });
+      await command.rename({
+        ownerId,
+        agentId,
+        threadId: created.thread.id,
+        expectedRevision: 2,
+        titleRef: "payload-owner-title",
+        source: "owner",
+        idempotencyKey: "i38-title",
+        resultRef: "payload-result-rename",
+      });
+      const tokenizer = new ScopedThreadSearchTokenizer({
+        keys: { resolve: async () => new Uint8Array(32).fill(17) },
+        projectionVersion: "search-i38-v2",
+      });
+      const input = {
+        authentication: {
+          subjectId: ownerId,
+          ownerId,
+          deviceId: "test",
+          authenticatedAt: clock.now(),
+          authenticationRef: "test",
+        },
+        agentId,
+      };
+      const sourcesPending = () =>
+        repository
+          .threadSearchProjectionSource()
+          .pending({ ownerId, agentId, projectionVersion: tokenizer.projectionVersion, limit: 64 });
+
+      const slowRead = async ({ payloadRef }: { payloadRef: string }) => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return {
+          content: payloadRef === "payload-owner-title" ? "海风计划" : "项目是海风花园",
+          dataClassification: "private" as const,
+          contentType: "text/plain" as const,
+        };
+      };
+      const slowProjector = new ThreadSearchProjector({
+        sources: repository.threadSearchProjectionSource(),
+        threads: repository.threadRepository(),
+        tokenizer,
+        reader: { read: slowRead },
+      });
+      const preparer = new BrowserThreadSearchPreparer({
+        tokenizer,
+        payloadAdmission: { protect: async () => ({ payloadRef: "payload-query" }) },
+        synchronize: (request) => slowProjector.synchronize(request),
+        synchronizeWaitMs: 150,
+      });
+      const started = Date.now();
+      const prepared = await preparer.prepare({ ...input, query: "海风计划" });
+      expect(Date.now() - started).toBeLessThan(380);
+      expect(prepared.tokenRefs.length).toBeGreaterThan(0);
+      await slowProjector.synchronize(input);
+      expect(await sourcesPending()).toEqual([]);
+
+      const skipped: string[] = [];
+      const unreadable = new ThreadSearchProjector({
+        sources: repository.threadSearchProjectionSource(),
+        threads: repository.threadRepository(),
+        tokenizer: new ScopedThreadSearchTokenizer({
+          keys: { resolve: async () => new Uint8Array(32).fill(17) },
+          projectionVersion: "search-i38-v3",
+        }),
+        reader: {
+          read: async ({ payloadRef }) => {
+            if (payloadRef === "payload-owner-message")
+              throw new ApplicationPortError(
+                PORT_ERROR_CODES.INVALID_OPERATION,
+                "Text Payload exceeds browser disclosure limit",
+              );
+            return {
+              content: "海风计划",
+              dataClassification: "private" as const,
+              contentType: "text/plain" as const,
+            };
+          },
+        },
+        onSourceSkipped: (source) => skipped.push(source.kind),
+      });
+      await unreadable.synchronize(input);
+      expect(skipped).toEqual(["message"]);
+      expect(
+        await repository.threadSearchProjectionSource().pending({
+          ownerId,
+          agentId,
+          projectionVersion: "search-i38-v3",
+          limit: 64,
+        }),
+      ).toEqual([]);
+
+      const transient = new ThreadSearchProjector({
+        sources: repository.threadSearchProjectionSource(),
+        threads: repository.threadRepository(),
+        tokenizer: new ScopedThreadSearchTokenizer({
+          keys: { resolve: async () => new Uint8Array(32).fill(17) },
+          projectionVersion: "search-i38-v4",
+        }),
+        reader: {
+          read: async () => {
+            throw new Error("SQLITE_BUSY");
+          },
+        },
+      });
+      await expect(transient.synchronize(input)).rejects.toThrow("SQLITE_BUSY");
     } finally {
       await repository.close();
     }
