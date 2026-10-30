@@ -695,6 +695,7 @@ function web() {
     "runPayloadArtifactPort",
     "capabilityStore",
     "modelBudgetPort",
+    "modelUsage",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

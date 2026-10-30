@@ -1,7 +1,7 @@
 import type {
   ClockPort,
-  ConfiguredEmbeddingModelDescriptor,
   ConfiguredCompletionsGenerationModelDescriptor,
+  ConfiguredEmbeddingModelDescriptor,
   ConfiguredTypeSafeGenerationModelDescriptor,
   IdGeneratorPort,
   ModelCostDescriptor,
@@ -10,6 +10,8 @@ import type {
   ModelInvocationAdmissionResolver,
   ModelPort,
   ModelSecretRequirement,
+  ModelUsagePurpose,
+  ModelUsageStorePort,
   PayloadProtectionRequest,
   PayloadProtectorPort,
   PayloadStorePort,
@@ -96,6 +98,12 @@ export interface ProductionModelCompositionOptions {
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
   readonly admission?: ModelInvocationAdmissionResolver;
+  readonly usage?: ModelUsageRecording;
+}
+
+export interface ModelUsageRecording {
+  readonly store: ModelUsageStorePort;
+  readonly onFailure: (error: unknown) => void;
 }
 
 export interface ProductionModelComposition {
@@ -122,6 +130,7 @@ export interface ProductionModelComposition {
 }
 
 export interface AuxiliaryTextOptions {
+  readonly purpose: ModelUsagePurpose;
   readonly invocationId: string;
   readonly maxOutputTokens: number;
   readonly reasoningOutputTokens: number;
@@ -391,6 +400,9 @@ export function createProductionModelComposition(
     transport: transport.trusted,
     clock: options.clock,
     ...(options.admission === undefined ? {} : { admission: options.admission }),
+    ...(options.usage === undefined
+      ? {}
+      : { usage: { purpose: "action-review" as const, ...options.usage } }),
     admissionCost: (descriptor: ModelDescriptor) => {
       const configured = configuredByRef.get(descriptor.ref);
       if (
@@ -410,7 +422,7 @@ export function createProductionModelComposition(
     descriptor: ConfiguredPiModelDescriptor,
     text: Pick<
       AuxiliaryTextOptions,
-      "maxOutputTokens" | "reasoningOutputTokens" | "requestTimeoutMs"
+      "purpose" | "maxOutputTokens" | "reasoningOutputTokens" | "requestTimeoutMs"
     >,
     admission: TrustedModelAdmissionResolver,
   ): TrustedModelProviderAdapter =>
@@ -436,6 +448,9 @@ export function createProductionModelComposition(
       }),
       clock: options.clock,
       admission,
+      ...(options.usage === undefined
+        ? {}
+        : { usage: { purpose: text.purpose, ...options.usage } }),
       admissionCost: () => admissionCostForConfiguredPiModel(descriptor),
     });
   const proactiveModel = (
@@ -451,6 +466,7 @@ export function createProductionModelComposition(
     const model = auxiliaryModelFor(
       descriptor,
       {
+        purpose: "mail-judgment",
         maxOutputTokens: limits.maxOutputTokens,
         reasoningOutputTokens: limits.maxOutputTokens * 2,
         requestTimeoutMs: limits.requestTimeoutMs,
@@ -560,6 +576,7 @@ export function createProductionModelComposition(
     payloadBoundary,
     generateTitle: (request: RuntimeRequest, prompt: string, gate: ModelInvocationAdmissionPort) =>
       generateText(request, prompt, gate, {
+        purpose: "thread-title",
         invocationId: `thread-title:${request.runId}`,
         maxOutputTokens: 128,
         reasoningOutputTokens: 1024,

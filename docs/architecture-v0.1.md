@@ -525,6 +525,8 @@ Runtime 成功事件与输出引用在同一次 checkpoint CAS 中保存；重�
 
 migration `0023_model_invocation_identities` 为每个逻辑调用槽分配持久 sequence 和物理 invocation identity，并把 identity 插入与预算预留放在同一个 SQLite 即时事务中。相同 logical slot 的 `reserved`、`started`、`unknown` 或 `settled` 身份在进程重启、租约重领或重复请求后只返回 `reconciliation_required`，不会再次进入 Pi Provider；只有已确认 Provider 未开始并持久变为 `released` 的身份才能分配下一 sequence。数据库同时冻结模型版本、cache-aware 价格、预算 operation key、authority lease 和 Run execution lease，约束未知/结算状态必须来自已启动调用。该层复用 Pi 的 Provider stream 和 usage 事件，Himawari 只增加产品权威、预算与重放所有权，没有复制 Pi 协议。当前尚无把“Provider 结果已经写入 Run 产品 checkpoint”与 identity 做同事务 `product-consumed` 的写入；因此任何非 `released` replay 都保持显式对账，而不是自动恢复。生产 `service-main` 已组合 Run admission resolver、持久 dispatcher、Pi runtime、已授权 Worker 工具、Mem0 检索和 HTTP。版本化 `runPolicy` 来自受保护的主机配置，系统指令按内容摘要绑定受保护的 Run artifact；接纳来源只从持久 Run 读取。安装后的总链路仍须由同一候选的进程验证确认，不能从组件构造成功推导上线资格。
 
+模型调用的缓存统计走另一条不进预算事务的路：每次正常模型请求结束后，由 `ModelUsageStorePort` 把输入 token、缓存命中 token、缓存写入 token、用途（`chat`、`mail-judgment` 等）、来源路径（`model-port` 或 `agent-stream`）、提供方和模型写入迁移 `0068_model_usage_observations` 建的 `model_usage_observations` 表；响应里没带缓存字段时 `cache_reported` 记 0，报告里算“未上报”，不当作 0 命中。写入失败只记诊断，不影响模型结果。统计用 `scripts/operations/cache-hit-report.mjs` 读出（见 [ADR 0126](adr/0126-record-cache-usage-of-every-model-request.md)）。
+
 `evaluateDurableSchedule()` 支持固定 interval、one-shot 和 IANA timezone daily schedule。周期 misfire 直接合并并跳过旧 occurrence，one-shot 超过 grace 后成为 `MISSED`；IANA 日历通过运行时 timezone database 解析，不存在的 DST wall time没有候选，重复 wall time按本地日期只采用第一次。当前生产服务已执行持久恢复并持有这些 adapters；HTTP Trigger Control Plane 边界已经实现，但自动 timer loop 与真实 command handler 要等最终 Agent Service 组合，不能把测试用 admission sink 当作公共 Gateway。
 
 ### Central attention and delivery

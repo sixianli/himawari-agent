@@ -536,6 +536,58 @@ describe("PiModelTransport", () => {
     expect(payloads.writes.join("")).toBe("answer");
   });
 
+  it.each([
+    { name: "reports", usage: { prompt_tokens: 10, prompt_cache_hit_tokens: 0 }, expected: true },
+    { name: "does not report", usage: { prompt_tokens: 10 }, expected: false },
+  ])(
+    "$name cache fields on the completed event from the provider usage frame",
+    async ({ usage, expected }) => {
+      const payloads = payloadBoundary();
+      const magpieModel = {
+        ...model,
+        id: "group/himawari-main",
+        provider: "magpie",
+        baseUrl: "http://127.0.0.1:3425/v1",
+      };
+      const { providerRouting: _routing, ...gatewayFields } = descriptor;
+      const magpieDescriptor: ModelDescriptor = {
+        ...gatewayFields,
+        ref: "magpie-primary",
+        provider: "magpie",
+        model: magpieModel.id,
+      };
+      const transport = new PiModelTransport({
+        models: {
+          resolve: async () =>
+            ({
+              model: magpieModel,
+              modelRuntime: runtimeWithTerminal(assistant("answer")),
+              admissionCost: {
+                pricing: { input: 0.5, output: 2, cacheRead: 0.1, cacheWrite: 0.5 },
+                estimatedCostMicros: 1,
+              },
+            }) as unknown as PiModelBinding,
+        },
+        payloads: payloads.boundary,
+        clock: { now: () => NOW },
+        fetch: async () =>
+          new Response(`data: ${JSON.stringify({ usage })}\n\ndata: [DONE]\n\n`, {
+            headers: { "content-type": "text/event-stream" },
+          }),
+      });
+
+      const events = await collect(
+        transport.invoke({
+          descriptor: magpieDescriptor,
+          request: { ...request, modelRef: magpieDescriptor.ref },
+          secretValues: [PROVIDER_SECRET],
+        }),
+      );
+
+      expect(events.at(-1)).toMatchObject({ type: "model.completed", cacheReported: expected });
+    },
+  );
+
   it("fails closed when a Magpie binding has no pricing", async () => {
     const payloads = payloadBoundary();
     const magpieModel = { ...model, id: "group/himawari-main", provider: "magpie" };

@@ -131,6 +131,7 @@ export type ModelInvocationEvent =
       readonly outputTokens: number;
       readonly cacheReadTokens?: number;
       readonly cacheWriteTokens?: number;
+      readonly cacheReported?: boolean;
       readonly costMicros: number;
       readonly latencyMs: number;
       readonly providerObservation?: ModelProviderObservation;

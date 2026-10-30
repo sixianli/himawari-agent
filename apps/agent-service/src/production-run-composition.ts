@@ -52,6 +52,7 @@ import {
   ProductionMemoryConsolidation,
   type ProductionMemoryConsolidationOptions,
 } from "./production-memory-consolidation.js";
+import type { ModelUsageRecording } from "./production-model-composition.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 import {
@@ -115,6 +116,7 @@ export interface ProductionRunCompositionOptions {
   readonly backgroundCommands?: ProductionBackgroundCommands;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
   readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void;
+  readonly modelUsage?: ModelUsageRecording;
   readonly onModelAdmissionFailed?: (
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
@@ -360,6 +362,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ...(options.onModelAdmissionFailed
       ? { onModelAdmissionFailed: options.onModelAdmissionFailed }
       : {}),
+    ...(options.modelUsage ? { usage: options.modelUsage } : {}),
   });
   const titles = options.generateTitle
     ? new ProductionThreadTitles({

@@ -29,6 +29,7 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  ModelUsageStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
   MemoryIndexStorePort,
@@ -497,6 +498,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   memoryReminders(): MemoryReminderStorePort {
     return this.durable.memoryReminders();
+  }
+
+  modelUsage(): ModelUsageStorePort {
+    return this.durable.modelUsage();
   }
 
   webPush(): WebPushStorePort {

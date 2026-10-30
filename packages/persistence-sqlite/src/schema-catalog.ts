@@ -748,6 +748,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion",
   ),
   entry(
+    "model_usage_observations",
+    "ModelUsageStorePort",
+    "one row per finished model request: purpose, model, input and output tokens, tokens served from the provider cache and whether the provider reported cache fields at all",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "owner_preferences",
     "OwnerPreferencesStorePort",
     "one row per Agent: the name Himawari calls the owner, the page language, accent color, theme and last chosen model and thinking depth, with a revision, shared by every signed-in device",

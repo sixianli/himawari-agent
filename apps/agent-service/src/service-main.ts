@@ -10,6 +10,7 @@ import {
   createProactiveSeal,
   DurableMemoryService,
   type IdGeneratorPort,
+  modelUsagePurpose,
   type ProductConfiguration,
   RemoteExecutionBackend,
   type RuntimeRequest,
@@ -99,20 +100,20 @@ import {
   proactiveRedirectUri,
 } from "./production-proactive.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
-import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
+import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
-import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -269,6 +270,15 @@ async function createDefaultModelComposition(
       clock,
       requestTimeoutMs: configuration.deadlines.providerRequestMs,
       ...(context.admission === undefined ? {} : { admission: context.admission }),
+      usage: {
+        store: repository.modelUsage(),
+        onFailure: (error) =>
+          writeServiceDiagnostic(process.stderr, {
+            component: "agent-service",
+            event: "model-usage.record_failed",
+            code: stableErrorCode(error),
+          }),
+      },
     });
     return Object.freeze({
       descriptors: created.descriptors,
@@ -1511,6 +1521,15 @@ export async function runAgentService(
       proactive?.start();
       runs = createProductionRunComposition({
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
+        modelUsage: {
+          store: activeRepository.modelUsage(),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "model-usage.record_failed",
+              code: stableErrorCode(error),
+            }),
+        },
         onModelAdmissionFailed: (request, failure) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
@@ -1597,6 +1616,7 @@ export async function runAgentService(
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
                   return generateText(request, prompt, gate, {
+                    purpose: modelUsagePurpose(purpose),
                     invocationId: `${purpose}:${request.runId}`,
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,

@@ -19,6 +19,7 @@ import {
   type PayloadStorePort,
   redactMachineSecrets,
 } from "@himawari-agent/application/runtime-port";
+import { observeCacheFields } from "./cache-usage-observation.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import type { PiModelBindingPort } from "./pi-runtime-adapter.js";
 
@@ -355,7 +356,10 @@ export class PiModelTransport {
       responseStatus = response.status;
       return response;
     };
-    const observed = gatewayed ? observeGatewayFetch(statusFetch, descriptor.model) : undefined;
+    const cacheFields = observeCacheFields(statusFetch);
+    const observed = gatewayed
+      ? observeGatewayFetch(cacheFields.fetch, descriptor.model)
+      : undefined;
 
     const redactor = new StreamingMachineSecretRedactor();
     let sequence = 0;
@@ -384,7 +388,7 @@ export class PiModelTransport {
       request.signal?.throwIfAborted();
       const stream = binding.modelRuntime.stream(binding.model, context, {
         apiKey: secret,
-        fetch: observed?.fetch ?? statusFetch,
+        fetch: observed?.fetch ?? cacheFields.fetch,
         ...(gatewayed
           ? { onPayload: (payload: unknown) => gatewayPayload(payload, descriptor.providerRouting) }
           : { sessionId: request.runId }),
@@ -544,6 +548,7 @@ export class PiModelTransport {
       outputTokens: usage.output,
       cacheReadTokens: usage.cacheRead,
       cacheWriteTokens: usage.cacheWrite,
+      cacheReported: await cacheFields.reported(),
       costMicros: observation.costMicros,
       latencyMs: Date.now() - startedAt,
       providerObservation,
