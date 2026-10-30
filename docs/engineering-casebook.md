@@ -4146,10 +4146,12 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 - 重启后第一条消息排队 13.8 秒（2026-10-30 后续，第二十一版 12:27 日本时间上线）：Mac 线程从生产日志取了 03:25–03:40 UTC 的数据库慢操作记录（`startup-db-v21.txt`，651 条单次总耗时 ≥ 500 毫秒的 `sqlite.slow_operation`）。开页面那 4 秒里有 263 条，排队最深 98 个，几乎都是本身只跑 0–1 毫秒、却排了 0.5–1.3 秒队的小读。重启后第一条消息的分段计时（`run.timing`，#123 加的 `db.queue`、`db.run`）显示：202 次数据库操作排队合计 13.8 秒，真正执行只有 3.6 秒；之后两条消息分别排队 0.9 秒和 2.4 秒。
   根因（代码证据）：数据库只有一个工作线程，所有读写排一条队。①每个网页请求，包括 JS、图标、`sw.js` 这类静态文件，都要先跑一次“我还持有生产权限吗”的检查（`assertActive`），每次 3 个数据库读；新版上线后浏览器缓存失效，开一次页面就是上百次读同时进队。②每个接口请求都写一次会话的“最后活跃时间”，这是要等磁盘确认的写，慢的时候单次 142–801 毫秒。③审批订阅每秒、推送定时把全部历史审批记录读出来再筛，单次 70–430 毫秒，自动批准搜索后记录越积越多。
   修法：静态文件只看内存里的服务状态，不查数据库；同一时刻的权限检查共用一次（写入本身仍带权限令牌，数据库层照样拒绝过期的写）；最后活跃时间 60 秒内不重复写；推送只读待审批，订阅改读“条数 + 修订号之和 + 待审批列表”这个一行的小结果。放弃的做法：给数据库加第二个读线程，改动面大，而且问题是请求太多，不是单次慢。效果待第二十一版之后的下一版上线后用同一条日志命令复测，现在未测量。
+- 3 秒重发反而让整轮失败（2026-10-30 后续，事故 I-37，[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)）：第二十版、第二十一版验收共 3 次“本轮执行失败”，都在找记忆第一次超时重发之后。用真实 SQLite 准入写测试复现：被掐断的那次记成“结果不确定”，这一轮的预算账户随之变成“待对账”；重发用同一个调用位置，被要求先对账；主对话再申请调用，被预算账户拒绝。原来的单元测试用总是放行的假准入，所以 #116 上线前没发现，重发在生产上从未成功过。
+  业界做法（实际打开的一手资料）：开源网关 LiteLLM 对“到达服务后超时”的请求按预估输入 token 计费、从预算里扣，每次重试单独一条记录（`attempt-<n>`）；OpenAI Agents SDK 每次重试是新的一次尝试、单独计时，只有重放不安全时才停下。我们照此修：被自己掐断的向量请求按费用上限（16384 个 token × 输入单价）结清，重发用新的调用位置；准入失败的原因写进日志 `model.admission_failed`。放弃的做法：超时按 0 元记（服务方照样收费，会少算）、一直等对账（这一轮必然失败）、准入不计向量请求（重发仍会被挡住）。代价是每次重发最多多记一次向量请求的上限费用。效果待下一版上线复测，现在未测量。
 
 **相关 ADR/PR**
 
-[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
+[ADR 0119](adr/0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)、[ADR 0123](adr/0123-cut-off-embedding-attempt-charged-at-its-ceiling.md)、[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[事故清单 I-25、I-30、I-36、I-37](incidents-and-gates.md#incidents)、[案例 59：工具前后空等](#case-tool-gap-host-check)、[案例 24：每轮系统空档](#case-run-gaps)；PR 在分支 `claude/project-thread-jimoqj`。
 
 **面试 30 秒版**
 

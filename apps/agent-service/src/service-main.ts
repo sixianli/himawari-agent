@@ -1511,6 +1511,14 @@ export async function runAgentService(
       proactive?.start();
       runs = createProductionRunComposition({
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
+        onModelAdmissionFailed: (request, failure) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "model.admission_failed",
+            runId: request.runId,
+            code: failure.code,
+            ...(failure.reason === null ? {} : { reason: failure.reason }),
+          }),
         onBackgroundFailure: (runId, error) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
