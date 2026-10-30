@@ -976,15 +976,19 @@ describe("streamed tool call progress", () => {
     expect(tool).toMatchObject({ name: "write", phase: "updated" });
     expect(JSON.parse(tool?.input ?? "{}")).toEqual({ path: "game.html" });
     expect(writing).toMatchObject({ itemId: tool?.itemId, kind: "status", text: "312" });
+    expect(tool?.sequence).toBe(writing?.sequence);
+    const state = projectThreadExecutionState(run, records, true);
+    expect(state.displayPhase.startsWith("model_")).toBe(true);
+    expect(state.operations).toEqual([]);
   });
 
   it("keeps the model phase while the file arguments are still streaming and turns to preparing once the message ends", () => {
     const streaming = [
       record(1, "m", "updated", "runtime.activity.toolCall"),
       record(2, "call", "updated", "write"),
+      record(2, "call", "updated", "runtime.tool_call.writing"),
+      record(3, "call", "updated", "write"),
       record(3, "call", "updated", "runtime.tool_call.writing"),
-      record(4, "call", "updated", "write"),
-      record(5, "call", "updated", "runtime.tool_call.writing"),
     ];
     const during = projectThreadExecutionState(run, streaming, true);
     expect(during.displayPhase.startsWith("model_")).toBe(true);
@@ -992,7 +996,7 @@ describe("streamed tool call progress", () => {
     expect(during.effectSummary).toEqual([]);
     const ended = projectThreadExecutionState(
       run,
-      [...streaming, record(6, "call", "updated", "write")],
+      [...streaming, record(4, "call", "updated", "write")],
       true,
     );
     expect(ended.displayPhase).toBe("preparing");

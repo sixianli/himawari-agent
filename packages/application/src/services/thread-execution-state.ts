@@ -105,7 +105,7 @@ export function projectThreadExecutionState(
     );
     if (!tool) continue;
     const streamingWrite = group.findLast((record) => record.name === "runtime.tool_call.writing");
-    if (streamingWrite && streamingWrite.sequence > tool.sequence) continue;
+    if (streamingWrite && streamingWrite.sequence >= tool.sequence) continue;
     const marker = group.findLast((record) => record.name.startsWith("runtime.tool_outcome."));
     const reason = group.findLast((record) => record.name.startsWith("runtime.tool_reason."));
     const toolReasonCode =
