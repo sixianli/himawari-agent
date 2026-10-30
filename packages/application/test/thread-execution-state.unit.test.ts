@@ -1036,3 +1036,25 @@ it.each([true, false])(
     });
   },
 );
+
+it("offers no cleanup for a failed Run that never touched a sandbox resource", () => {
+  const state = projectThreadExecutionState(
+    { ...run, status: "failed" },
+    [],
+    true,
+    {
+      revision: "no-resources",
+      allReleased: false,
+      pendingResources: false,
+      unresolvedResultItemIds: [],
+      phase: null,
+      reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+      lastObservedAt: null,
+      operations: [],
+    },
+    { phase: "failed", terminalStatus: "failed", diagnosticCode: "MODEL_REQUEST_FAILED" },
+    true,
+  );
+  expect(state.displayPhase).toBe("failed");
+  expect(state.availableActions).toEqual([]);
+});

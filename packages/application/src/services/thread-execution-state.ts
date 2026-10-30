@@ -271,6 +271,11 @@ export function projectThreadExecutionState(
     checkpoint.diagnosticCode === "RUN_EXECUTION_DEADLINE_EXCEEDED" &&
     !resources?.pendingResources;
   const expired = expiredAndReleased || expiredWithoutSandboxResources;
+  const failedWithoutSandboxResources =
+    sandboxResourcesAbsent &&
+    run.status === "failed" &&
+    !resources?.pendingResources &&
+    !operations.some((operation) => operation.displayPhase === "unresolved");
   const settledUnknownResult =
     run.status === "failed" &&
     checkpoint?.phase === "failed" &&
@@ -289,6 +294,7 @@ export function projectThreadExecutionState(
     ["failed", "cancelled"].includes(run.status) &&
     !resources?.allReleased &&
     !expiredWithoutSandboxResources &&
+    !failedWithoutSandboxResources &&
     displayPhase !== "not_dispatched" &&
     !["stopping", "verifying"].includes(resources?.phase ?? "")
   )
