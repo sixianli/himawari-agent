@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillValidator = path.join(
   repositoryRoot,
-  ".claude/skills/document-governance/scripts/validate_docs.py",
+  "tools/document-governance-skill/scripts/validate_docs.py",
 );
 const fastModeDeferredRunbookFindings = [
   /^docs\/runbooks\/[^/]+\.md: contract_sha256 does not match the current Runbook and contract sources$/,

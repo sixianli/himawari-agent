@@ -1,6 +1,0 @@
-interface:
-  display_name: "SiBlog Blog Workflow"
-  short_description: "Run SiBlog blog commands safely"
-  default_prompt: "Use $siblog-blog-workflow to run a SiBlog blog: command."
-policy:
-  allow_implicit_invocation: true

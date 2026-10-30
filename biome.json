@@ -5,7 +5,7 @@
       "**",
       "!!**/dist",
       "!!.ci-output",
-      "!!.claude/skills",
+      "!!tools/document-governance-skill",
       "!!.agents/tasks",
       "!!scripts/delivery-mode/packet-template",
       "!!scripts/delivery-mode/hermes/capture-build-source-inputs.template.mjs"

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkDocsGovernance } from "../../scripts/check-docs-governance.mjs";
 
-const skillScripts = resolve(".claude/skills/document-governance/scripts");
+const skillScripts = resolve("tools/document-governance-skill/scripts");
 const roots = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
