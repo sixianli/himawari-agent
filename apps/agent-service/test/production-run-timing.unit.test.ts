@@ -1,6 +1,10 @@
 import type { RuntimeEvent, RuntimeRequest } from "@himawari-agent/application";
 import { expect, it } from "vitest";
-import { ProductionRunTimings } from "../src/production-run-timing.js";
+import {
+  currentRunId,
+  ProductionRunTimings,
+  recordInCurrentRun,
+} from "../src/production-run-timing.js";
 
 const runId = "run:timing" as RuntimeRequest["runId"];
 
@@ -175,4 +179,34 @@ it("measures frozen ports and class instances with private state without changin
   );
 
   expect(reports[0]).toMatchObject({ "store.read.ms": 7, "port.lookup.ms": 3 });
+});
+
+it("credits a step to the Run whose attempt is running even when the caller cannot name the Run", async () => {
+  const time = clock();
+  const timings = new ProductionRunTimings(time.now);
+  const reports: Record<string, string | number>[] = [];
+  recordInCurrentRun("db.run", 40);
+
+  await timings.attempt(
+    runId,
+    "execute",
+    async () => {
+      time.advance(100);
+      expect(currentRunId()).toBe(runId);
+      await new Promise((resolve) => setImmediate(resolve));
+      recordInCurrentRun("db.run", 30);
+      recordInCurrentRun("db.queue", 5);
+      recordInCurrentRun("db.run", 20);
+    },
+    (diagnostic) => reports.push({ ...diagnostic }),
+  );
+
+  expect(currentRunId()).toBeUndefined();
+  expect(reports[0]).toMatchObject({
+    "db.run.n": 2,
+    "db.run.ms": 50,
+    "db.run.max": 30,
+    "db.queue.n": 1,
+    "db.queue.ms": 5,
+  });
 });

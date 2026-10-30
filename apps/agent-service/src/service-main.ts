@@ -99,6 +99,7 @@ import {
   proactiveRedirectUri,
 } from "./production-proactive.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
+import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
   createProductionRunMemory,
@@ -602,6 +603,10 @@ export async function runAgentService(
           event: "sqlite.slow_operation",
           ...operation,
         }),
+      onOperation: ({ queueWaitMs, runMs }) => {
+        recordInCurrentRun("db.queue", queueWaitMs);
+        recordInCurrentRun("db.run", runMs);
+      },
     });
     writeStartupStep(output, "state-opened");
     const activeRepository = repository;
