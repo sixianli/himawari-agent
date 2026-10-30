@@ -8,6 +8,7 @@ HERE = Path(__file__).resolve().parent
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']
 SMALL_FILE_BYTES = 1024 ** 2
 LARGE_FILE_BYTES = 10 * 1024 ** 2
+KEEP_DATABASE_COPIES = 3
 LOCK_PATH = '/run/lock/himawari-release-cleanup.lock'
 
 
@@ -29,6 +30,7 @@ def cleanup_plan(binding):
         'currentEvidence': paths['evidenceRoot'],
         'smallFileBytes': SMALL_FILE_BYTES,
         'largeFileBytes': LARGE_FILE_BYTES,
+        'keepDatabaseCopies': KEEP_DATABASE_COPIES,
         'lockPath': LOCK_PATH,
     }
 

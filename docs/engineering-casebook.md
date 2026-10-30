@@ -4236,6 +4236,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 - 清理规则测试 `scripts/delivery-mode/test_release_cleanup.py` 11 条通过；`test_deploy.py` 新增的 10 条（三种结束路径都清、自动回退失败不清、按实测预估空间）在去掉本次 `deploy.sh` 和 `deploy-preflight.py` 修改时 7 条失败、2 条报错。
 - 生产机上的实际释放量和每版 4 GB 的构成：未测量，只读分账脚本已备好（`/mnt/project-files/disk-accounting/run-on-production.sh`），等第二十版上线后运行；清理在生产机的第一次实际运行等下一次上线。
+- 2026-10-30 后续：第二十版上线前在生产机只读跑了清理计划（`plan`，不删）。根分区当时空闲 21.2 GB，计划可腾出 38.99 GB：删 44 项（旧版本、`/var/tmp` 副本、失败操作目录）共 24.4 GiB，修剪旧证据里 221 个大文件共 11.9 GiB。修剪项中 32 份是各版升级前的数据库副本（3.81 GiB），约 8 GiB 是可重建的依赖包、源码包、Python 包副本。有 6 个旧版本被数据库或 `/etc/himawari` 提到，按规则留下，正在查这些引用是否已经过时。Andy 选择保留最近 3 份数据库副本，因为正式备份还没做（[ADR 0120 补充决定](adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md#database-copies)）。
 
 **相关 ADR/PR**
 
