@@ -184,10 +184,6 @@ h2 {
   padding: 1.25rem 0 2rem;
 }
 
-.app-shell[data-density="compact"] {
-  --pane-padding: 0.8rem;
-}
-
 .skip-link {
   position: fixed;
   z-index: 100;

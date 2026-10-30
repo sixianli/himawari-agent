@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ProductConfiguration, ThreadCreateInput } from "@himawari-agent/application";
+import type {
+  AuthorityFence,
+  ProductConfiguration,
+  ThreadCreateInput,
+} from "@himawari-agent/application";
 import {
   actionIntentFingerprint,
   type GovernedActionIntent,
@@ -830,6 +834,164 @@ describe("production HTTP composition", () => {
     } finally {
       await composition.close();
       await repository.close();
+    }
+  });
+
+  it("[I-16] keeps every owner setting when the model configuration changes", async () => {
+    const paths = await fixture();
+    const keyPair = {
+      privateKey: await importJWK(productionHttpRs256TestKeys.privateKey, "RS256"),
+      publicKey: await importJWK(productionHttpRs256TestKeys.publicKey, "RS256"),
+    };
+    const jwks: JSONWebKeySet = {
+      keys: [{ ...(await exportJWK(keyPair.publicKey)), kid: "key-production-http", alg: "RS256" }],
+    };
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: "key-production-http" })
+      .setIssuer(ISSUER)
+      .setAudience(AUDIENCE)
+      .setSubject("subject-production-http")
+      .setIssuedAt(Math.floor(NOW.valueOf() / 1000))
+      .setExpirationTime(Math.floor(NOW.valueOf() / 1000) + 300)
+      .sign(keyPair.privateKey);
+    const fetchers = {
+      jwksFetcher: { fetch: async () => jwks },
+      identityFetcher: {
+        fetch: async () => ({
+          user_uuid: "subject-production-http",
+          iat: Math.floor(NOW.valueOf() / 1000),
+        }),
+      },
+    };
+    const before = configuration(paths);
+    const changedRaw = rawConfiguration(paths);
+    const changed = parseProductConfiguration(
+      {
+        ...changedRaw,
+        modelDescriptors: (changedRaw["modelDescriptors"] as Record<string, unknown>[]).map(
+          (model) =>
+            model["role"] === "primary"
+              ? { ...model, model: "deterministic-primary-next", maxTokens: 2048 }
+              : model,
+        ),
+      },
+      NOW.toISOString(),
+    );
+    const start = async (config: ProductConfiguration, sessionToken: string) => {
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: paths.stateRoot,
+        databasePath: paths.databasePath,
+        minimumFreeBytes: 0,
+        now: () => NOW.toISOString(),
+      });
+      const composition = await createProductionHttpComposition({
+        configuration: config,
+        repository,
+        authority: () => authority(config),
+        secretSources: secretSources(),
+        ...fetchers,
+        now: () => new Date(NOW),
+        createSessionToken: () => sessionToken,
+        executionAuthority: () => ({
+          leaseId: "lease-settings" as AuthorityFence["leaseId"],
+          fencingToken: AUTHORITY.fencingToken,
+        }),
+      });
+      return { repository, composition };
+    };
+    const ownerEnvelope = (authenticationRef: string, type: string) => ({
+      schemaVersion: "gateway.v2",
+      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      authority: authority(before),
+      actor: { actorType: "owner", actorId: OWNER_ID },
+      dataClassification: "private",
+      risk: "medium",
+      authorizationRef: authenticationRef,
+      correlationId: `correlation-${type}`,
+      causationId: null,
+      messageId: `message-${type}-${Math.random()}`,
+      type,
+    });
+    const saved = {
+      name: "Andy",
+      locale: "ja",
+      accent: "teal",
+      theme: "light",
+      modelRef: "model-primary",
+      thinkingLevel: "high",
+    };
+    let running = await start(before, "session-token-settings-01");
+    try {
+      const bootstrap = await running.composition.app.inject({
+        method: "POST",
+        url: "/bootstrap",
+        headers: { host: "agent.example.test" },
+        payload: {
+          token: "bootstrap-token-production-fixture",
+          ownerId: OWNER_ID,
+          assertionToken: token,
+        },
+      });
+      expect(bootstrap.statusCode).toBe(201);
+      const signIn = async (cookieToken: string) => {
+        const session = await running.composition.app.inject({
+          method: "POST",
+          url: "/api/identity/v1/sessions",
+          headers: requestHeaders(token, "", undefined),
+          payload: { deviceLabel: "settings fixture" },
+        });
+        expect(session.statusCode).toBe(201);
+        const cookie = `himawari_session=${cookieToken}`;
+        const config = await running.composition.app.inject({
+          method: "GET",
+          url: "/api/control-center/v1/config",
+          headers: requestHeaders(token, cookie),
+        });
+        return {
+          cookie,
+          csrf: (config.json() as { csrfToken: string }).csrfToken,
+          authenticationRef: (session.json() as { session: { authenticationRef: string } }).session
+            .authenticationRef,
+        };
+      };
+      const first = await signIn("session-token-settings-01");
+      const set = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, first.cookie, first.csrf),
+          "idempotency-key": "owner-preferences-settings-01",
+        },
+        payload: {
+          ...ownerEnvelope(first.authenticationRef, "owner.preferences.set"),
+          kind: "command",
+          idempotencyKey: "owner-preferences-settings-01",
+          payload: { ...saved, expectedRevision: 0 },
+        },
+      });
+      expect(set.statusCode, set.body).toBe(200);
+      await running.composition.close();
+      await running.repository.close();
+      running = await start(changed, "session-token-settings-02");
+      const second = await signIn("session-token-settings-02");
+      const read = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "owner.preferences.read"),
+          kind: "query",
+          payload: {},
+        },
+      });
+      expect(read.statusCode).toBe(200);
+      expect(read.json()).toMatchObject({
+        type: "owner.preferences.snapshot",
+        payload: { ...saved, revision: 1 },
+      });
+    } finally {
+      await running.composition.close();
+      await running.repository.close();
     }
   });
 });

@@ -378,13 +378,7 @@ async function auditApp(browser, base, only) {
             localStorage.setItem("himawari.control-center.v1.locale", locale);
             localStorage.setItem(
               "himawari.control-center.v1.preferences",
-              JSON.stringify({
-                density: "comfortable",
-                detailPanePercent: 24,
-                listPanePercent: 26,
-                theme,
-                accent: "violet",
-              }),
+              JSON.stringify({ theme, accent: "violet" }),
             );
           },
           [job.locale, job.theme],

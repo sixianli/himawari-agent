@@ -20,6 +20,7 @@ date: "2026-10-29"
 - [业界做法](#industry)
 - [后果](#consequences)
 - [关联文档](#references)
+- [后续](#follow-up)
 
 <a id="context"></a>
 
@@ -99,5 +100,13 @@ Claude 做了可切换的原型（<https://claude.ai/artifact/95YzWPGTgew76Yg7NM
 - 面试案例：[案例 52](../engineering-casebook.md#case-ui-batch-1029)
 - PR #99
 - [ADR 0100](0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0107](0107-every-incident-gets-an-automatic-gate.md)
+
+[↑ 返回阅读导航](#contents)
+
+<a id="follow-up"></a>
+
+## 后续
+
+- 2026-10-30：[ADR 0120](0120-every-owner-setting-on-the-server-with-revision.md) 修改本 ADR 第 3 条：存服务器的设置从称呼、界面语言、主题色三项扩到加上主题、模型、思考深度共六项；“没送到的本地改动下次打开先补发”改为“服务器版本号没变才补发，变了以服务器为准”。其余决定不变。
 
 [↑ 返回阅读导航](#contents)

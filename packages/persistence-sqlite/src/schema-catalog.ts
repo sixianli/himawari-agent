@@ -750,7 +750,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "owner_preferences",
     "OwnerPreferencesStorePort",
-    "one row per Agent: the name Himawari calls the owner, the page language and the accent color, shared by every signed-in device",
+    "one row per Agent: the name Himawari calls the owner, the page language, accent color, theme and last chosen model and thinking depth, with a revision, shared by every signed-in device",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),

@@ -180,9 +180,21 @@ export const governanceMessages = [
     name: "Andy",
     locale: "zh-CN",
     accent: "teal",
+    theme: "system",
+    modelRef: "magpie-main",
+    thinkingLevel: "high",
+    revision: 3,
     updatedAt: "2026-10-29T05:00:00.000Z",
   }),
-  fixture("command", "owner.preferences.set", { name: null, locale: "ja", accent: null }),
+  fixture("command", "owner.preferences.set", {
+    name: null,
+    locale: "ja",
+    accent: null,
+    theme: "light",
+    modelRef: null,
+    thinkingLevel: null,
+    expectedRevision: 3,
+  }),
   fixture("query", "memory.overview.read", {}),
   fixture("snapshot", "memory.overview.snapshot", {
     memories: [

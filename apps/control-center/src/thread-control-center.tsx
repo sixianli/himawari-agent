@@ -40,8 +40,8 @@ import { OPEN_MEMORY_PAGE } from "./components/memory-panel.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
 import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
-import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { SidebarIcon } from "./components/sidebar-icon.js";
+import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { type DeliveredFile, deliveredFileGroups } from "./delivered-files.js";
 import { isAnsweredRun, isTerminalRun, type RunSummary } from "./execution-view.js";
@@ -115,6 +115,13 @@ export interface ThreadControlCenterOptions {
   readonly renderPage?: (page: SidePage, onBack: () => void) => ReactNode;
   readonly remindersDue?: number;
   readonly ownerName?: string | undefined;
+  readonly modelChoice?: ModelChoice | undefined;
+  readonly onModelChoiceChange?: (choice: ModelChoice) => void;
+}
+
+export interface ModelChoice {
+  readonly modelRef: string;
+  readonly thinkingLevel: string;
 }
 
 export type SidePage = "memory" | "reminders";
@@ -281,8 +288,8 @@ export function useThreadControlCenter(
   const [executionStates, setExecutionStates] = useState<
     Readonly<Record<string, ThreadExecutionState>>
   >({});
-  const [modelRef, setModelRef] = useState("");
-  const [thinkingLevel, setThinkingLevel] = useState("");
+  const modelRef = options.modelChoice?.modelRef ?? "";
+  const thinkingLevel = options.modelChoice?.thinkingLevel ?? "";
   const availableModels = configuration?.availableModels ?? [];
   const selectedModel =
     availableModels.find((item) => item.ref === modelRef) ??
@@ -1797,15 +1804,20 @@ export function useThreadControlCenter(
             models={availableModels}
             modelRef={selectedModel?.ref ?? ""}
             thinkingLevel={selectedThinking}
-            onModelChange={(ref) => {
-              setModelRef(ref);
-              setThinkingLevel(
-                defaultThinkingLevel(
+            onModelChange={(ref) =>
+              options.onModelChoiceChange?.({
+                modelRef: ref,
+                thinkingLevel: defaultThinkingLevel(
                   availableModels.find((item) => item.ref === ref)?.thinkingLevels ?? [],
                 ),
-              );
-            }}
-            onThinkingChange={setThinkingLevel}
+              })
+            }
+            onThinkingChange={(level) =>
+              options.onModelChoiceChange?.({
+                modelRef: selectedModel?.ref ?? modelRef,
+                thinkingLevel: level,
+              })
+            }
             onStop={
               configuration?.canCancelRun &&
               (detail?.payload.runs ?? []).some((run) => canStop(run))

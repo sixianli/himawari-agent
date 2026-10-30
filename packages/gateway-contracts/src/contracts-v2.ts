@@ -458,6 +458,9 @@ const ownerPreferencesSchema = {
   name: nullable(boundedString(40)),
   locale: nullable(enumeration(["zh-CN", "en", "ja"])),
   accent: nullable(enumeration(["violet", "blue", "teal", "amber", "rose", "graphite"])),
+  theme: nullable(enumeration(["light", "dark", "system"])),
+  modelRef: nullable(machineString),
+  thinkingLevel: nullable(enumeration(["off", "minimal", "low", "medium", "high", "xhigh", "max"])),
 };
 const ownerPreferencesQuerySchema = object({
   ...envelope("query", "owner.preferences.read"),
@@ -465,11 +468,15 @@ const ownerPreferencesQuerySchema = object({
 });
 const ownerPreferencesSnapshotSchema = object({
   ...envelope("snapshot", "owner.preferences.snapshot"),
-  payload: object({ ...ownerPreferencesSchema, updatedAt: nullable(timestamp) }),
+  payload: object({
+    ...ownerPreferencesSchema,
+    revision: integer(0),
+    updatedAt: nullable(timestamp),
+  }),
 });
 const ownerPreferencesSetCommandSchema = object({
   ...commandEnvelope("owner.preferences.set"),
-  payload: object(ownerPreferencesSchema),
+  payload: object({ ...ownerPreferencesSchema, expectedRevision: integer(0) }),
 });
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
