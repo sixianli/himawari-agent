@@ -18,6 +18,7 @@ date: "2026-10-30"
 - [决定](#decision)
 - [比较过的方案](#options)
 - [后果](#consequences)
+- [后续：写到一半的工具不算待执行的工具](#follow-up-2026-10-31)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -92,6 +93,12 @@ date: "2026-10-30"
   - `packages/application/test/thread-execution-state.unit.test.ts`：“turns a streamed file write into a write step with the lines written so far”；
   - `apps/control-center/test/execution-timeline.unit.test.ts`、`execution-view.unit.test.ts`、`execution-process.unit.test.ts` 的写入进度用例；
   - 出包走查必过场景 `accept-file-writing-progress` 和 `accept-progress-without-state`（`test/integration/product-path-browser.test.ts`，`scripts/delivery-mode/browser-acceptance-gate.py` 缺一项就不能上线）。
+
+<a id="follow-up-2026-10-31"></a>
+
+## 后续（2026-10-31）：写到一半的工具不算待执行的工具
+
+第二十二版出包走查里，`accept-file-writing-progress` 第一次真实运行失败：页面 30 秒内没出现“已写 N 行”。原因是后端状态计算（`packages/application/src/services/thread-execution-state.ts`）把写到一半的 write 工具记录算成“准备中”的工具，页面只在模型阶段显示行数。修正：工具的最新记录比它的 `runtime.tool_call.writing` 记录旧时，参数还在写，不进入工具列表和效果汇总；消息结束后再写的工具记录才使它成为待执行的工具。本 ADR 的决定不变。
 
 [↑ 返回阅读导航](#contents)
 
