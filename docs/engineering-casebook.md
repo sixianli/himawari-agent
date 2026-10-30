@@ -4129,8 +4129,20 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 - 首字探测（生产机，每组 5 次短请求，`model-latency-20261029T1537Z.txt`）：路由组 3.0 秒、直指 Go 2.5 秒、CodeBuddy 1.1 秒。
 - 门槛自证：去掉适配层的回调后，`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 的新测试失败（`expected +0 to be 1`），恢复后通过；去掉向量请求的 3 秒上限后，`apps/agent-service/test/production-model-composition.unit.test.ts` 的新测试失败，恢复后通过。
 - 路由改顺序后（10-30 01:04 日本时间，生产机每组 5 次短请求，项目共享目录 `model-latency-after-codebuddy-first-20261029T1605Z.txt`）：5 次全由 CodeBuddy 回答，首字节 3.26 秒（冷）、0.97、1.13、1.07、0.93 秒，中位数 1.07 秒（改前路由组 3.0 秒）。真实大小的请求未测量。
-- 防退化门槛（事故 I-30）：上线前网页走查记下“简单问题”和“执行命令”两个场景的 `answerMs`，`scripts/delivery-mode/browser-acceptance-gate.py` 超过 20 秒 / 60 秒或没有计时就拒绝出包和上线；`scripts/delivery-mode/test_deploy.py` 的新测试在没有这段检查时失败（`AssertionError: Tuples differ: (0, 'passed') != (5, 'no-browser-acceptance')`），加上后 32 条全过。上限是第一版宽松值，未测量走查的实际耗时。
-- 上线后的节省：未测量。测法：第十九版和第二十版在同一时段各发 5 次同样的三句话（“你是谁”“东京现在几点”、一个写小文件的任务），每次新开对话，用 `speed-profile.mjs` 比首字时间和整轮时长的中位数；反向检查不用工具的轮次没有 `sandbox.srt_prewarm`。结果追加到本案例。
+- 防退化门槛（事故 I-30）：上线前网页走查记下“简单问题”和“执行命令”两个场景的 `answerMs`，`scripts/delivery-mode/browser-acceptance-gate.py` 超过 4 秒 / 12 秒或没有计时就拒绝出包和上线；`scripts/delivery-mode/test_deploy.py` 的新测试在没有这段检查时失败（`AssertionError: Tuples differ: (0, 'passed') != (5, 'no-browser-acceptance')`），加上后 32 条全过。第一版上限是 20 秒 / 60 秒，10-30 按第二十版走查实测（简单问题 1,223 毫秒、执行命令 5,721 毫秒，项目协调转述 Mac 线程读到的 walkthrough.json）收紧为 4 秒 / 12 秒。
+- 上线后的节省（2026-10-30 后续，第二十版 10:55 日本时间上线）：11:06–11:16 由 Mac 线程用 Andy 的浏览器在真实网页发了 15 条，三句话各 5 次，每次新开对话；第十九版的基线是 10-29 23:46 起 Andy 自己发的 13 轮，问题不完全相同，所以只按"只调一次模型的简单问题"和"用沙箱工具的轮次"两类比较。原始数据在项目共享目录：`result-20261029T1530Z.json`、`result-v20-20261030T0205Z.json`、`journal-v20-20261030T0205Z.txt`、`browser-v20-20261030T0205Z.jsonl`。服务端数字取自 `speed-profile.mjs`：
+
+  | 指标（中位数） | 第十九版 | 第二十版 |
+  | --- | --- | --- |
+  | 简单问题：按发送到出现第一个回答字（服务端） | 9.7 秒（5 轮，6.5–16.3） | 6.3 秒（10 轮，5.0–8.0） |
+  | 简单问题：整轮（服务端，不含审批） | 10.6 秒 | 7.4 秒 |
+  | 每次模型请求等响应头 | 5.1 秒（28 次，全由 OpenCode Go 回答） | 3.5 秒（20 次，全由 CodeBuddy 新加坡回答） |
+  | 模型开工前（整理上下文、找记忆） | 3.2 秒 | 2.0 秒 |
+  | 沙箱工具开工前空等 | 3.8 秒（8 次） | 2.8 秒（5 次） |
+  | 沙箱会话启动（`sandbox.srt_call.timing` 的 `session` 段） | 3,284 / 5,050 毫秒 | 3 / 6 毫秒（已预热） |
+
+  反向检查：`sandbox.srt_prewarm.requested` 只出现 5 次，全在写文件的轮次，10 轮简单问题一次也没有；`memory.embedding_retried` 0 次。写文件轮里的审批记录是自动放行（等待 31–232 毫秒），网页不弹确认是预期行为。
+  仍然慢的地方：真实大小（约 1.2 万字符）的请求经 CodeBuddy 也要约 3.5 秒才有响应头（极短请求是 1.07 秒）；沙箱工具开工前的派发（`dispatch` 1.9–4.0 秒）和绑定（`bind` 0.9–1.4 秒）还在；浏览器看到第一个字比服务端记录的可见时刻晚约 2.4 秒（15 轮中位数），看到"答完"晚约 4.2 秒。最后这两项是首次测到，原因未确认，可能是网页取进度的方式或过程记录写盘滞后，交给 BL-20261030-001 的分段计时一起查。
 
 **相关 ADR/PR**
 
