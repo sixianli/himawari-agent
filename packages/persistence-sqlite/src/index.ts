@@ -7,7 +7,10 @@ export * from "./migration-engine.js";
 export * from "./initialize-product-identity.js";
 export * from "./durable-adapters.js";
 export * from "./product-state-repository.js";
-export type { SqliteSlowOperation } from "./sqlite-execution-context.js";
+export type {
+  SqliteSlowOperation,
+  SqliteTimedOperation,
+} from "./sqlite-execution-context.js";
 export * from "./schema-catalog.js";
 export * from "./sqlite-authority-transfer.js";
 export * from "./sqlite-capability-invocation-operations.js";

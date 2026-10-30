@@ -161,6 +161,8 @@ export const messages = {
     "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询仍会拦截。撤销后，后续搜索重新确认。",
   "chat.search.remember": "记住我的选择，之后允许联网搜索",
   "chat.search.afterRevoke": "现在关着，需要联网搜索时会先在对话里问你。",
+  "chat.search.providersChanged":
+    "搜索服务换了地址，你还没同意过，所以先关上了；看过下面的地址后打开就行。",
   "chat.search.other": "先问你再做的操作",
   "review.archiveDescription": "归档只整理列表，会话内容仍保留。",
   "review.manageArchives": "管理",

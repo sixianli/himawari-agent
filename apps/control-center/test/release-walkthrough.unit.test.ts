@@ -95,6 +95,7 @@ vi.mock("../src/gateway-client.js", async (original) => {
         if (request.type === "search.authorization.read")
           return snapshot(request, "search.authorization.snapshot", {
             enabled: fake.searchEnabled,
+            providersChanged: false,
             available: true,
             revision: fake.searchRevision,
             recipients: ["https://mcp.exa.ai"],

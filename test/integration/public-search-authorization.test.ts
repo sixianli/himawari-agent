@@ -63,6 +63,7 @@ it.each(["directory", "private"] as const)(
       repository: resource.repository,
       clock: { now: () => T1 },
       ids: { next: (prefix) => `${prefix}:${++sequence}` },
+      authority: () => SERVICE_AUTHORITY.lease,
     });
     const query = () => service.query(queryMessage(ui, "search.authorization.read", {}));
     const change = (enabled: boolean, revision: number, key: string) =>
@@ -115,7 +116,13 @@ it.each(["directory", "private"] as const)(
       finalRisk: "HIGH",
     };
     try {
-      expect(await query()).toMatchObject({ payload: { enabled: false, revision: 0 } });
+      expect(await query()).toMatchObject({
+        payload: { enabled: true, providersChanged: false, revision: 0 },
+      });
+      await change(false, 0, "revoke-default");
+      expect(await query()).toMatchObject({
+        payload: { enabled: false, providersChanged: false, revision: 1 },
+      });
       await service.authorize(intent);
       expect(
         await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
@@ -148,8 +155,8 @@ it.each(["directory", "private"] as const)(
         semanticSnapshotHash: denied.semanticSnapshotHash,
         response: { decision: "denied" },
       });
-      await change(true, 0, "enable-search");
-      expect(await change(true, 0, "enable-search")).toMatchObject({ replayed: true });
+      await change(true, 1, "enable-search");
+      expect(await change(true, 1, "enable-search")).toMatchObject({ replayed: true });
       await service.authorize({ ...intent, operation: "write" });
       await service.authorize({ ...intent, targets: [] });
       await service.authorize({ ...intent, targets: [...intent.targets, ...intent.targets] });
@@ -172,7 +179,7 @@ it.each(["directory", "private"] as const)(
       expect(source).toMatchObject({
         status: "approved",
         deliveryState: "queued_no_ui",
-        policyAuthorization: { revision: 1 },
+        policyAuthorization: { revision: 2 },
       });
       const plan = {
         authorizationRef: grant.id,
@@ -209,7 +216,7 @@ it.each(["directory", "private"] as const)(
       expect(nextApproval).toMatchObject({
         status: "approved",
         intentSnapshot: next,
-        policyAuthorization: { revision: 1 },
+        policyAuthorization: { revision: 2 },
       });
       expect(nextApproval?.grantId).not.toBe(grant.id);
       const all = await store.listGrants(OWNER_ID, AGENT_ID);
@@ -226,7 +233,7 @@ it.each(["directory", "private"] as const)(
         grantId: null,
       });
       expect(await store.listGrants(OWNER_ID, AGENT_ID)).toHaveLength(2);
-      await change(false, 1, "revoke-search");
+      await change(false, 2, "revoke-search");
       await expect(
         resolveSandboxActionGrant({
           plan,
@@ -242,7 +249,7 @@ it.each(["directory", "private"] as const)(
           consumedAt: T1,
         }),
       ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
-      expect(await query()).toMatchObject({ payload: { enabled: false, revision: 2 } });
+      expect(await query()).toMatchObject({ payload: { enabled: false, revision: 3 } });
     } finally {
       await resource.repository.close();
       await rm(resource.stateRoot, { recursive: true, force: true });
@@ -383,7 +390,11 @@ it("covers page reading under the same owner switch, keeps it through limit chan
     ).toHaveLength(2);
     const widened = service(["exa-public", "deepseek"]);
     expect(await widened.query(queryMessage(ui, "search.authorization.read", {}))).toMatchObject({
-      payload: { enabled: false, recipients: ["https://mcp.exa.ai", "https://api.deepseek.com"] },
+      payload: {
+        enabled: false,
+        providersChanged: true,
+        recipients: ["https://mcp.exa.ai", "https://api.deepseek.com"],
+      },
     });
     await widened.authorize({
       ...intent,
@@ -395,6 +406,157 @@ it("covers page reading under the same owner switch, keeps it through limit chan
     expect(
       await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
     ).toHaveLength(2);
+  } finally {
+    await resource.repository.close();
+    await rm(resource.stateRoot, { recursive: true, force: true });
+  }
+});
+
+it("keeps web search on by default and through model changes, and turns it off with a notice only when the search service changes", async () => {
+  const resource = await openRepository();
+  const config = parseProductConfiguration(
+    JSON.parse(
+      await readFile(
+        new URL("./fixtures/file-summary/configuration.json", import.meta.url),
+        "utf8",
+      ),
+    ),
+    T1,
+  );
+  if (!config.runPolicy) throw new Error("fixture policy required");
+  const policy = config.runPolicy;
+  const route = {
+    hostId: "host",
+    workerInstanceId: "worker",
+    scopeSource: "private_temp" as const,
+    capabilityRef: "search",
+    capabilityVersion: "1",
+    maximumBytes: 4096,
+  };
+  const ui = {
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ...SERVICE_AUTHORITY.product,
+    actorId: OWNER_ID,
+    csrfToken: "test",
+    authorizationRef: "owner-authorization",
+  };
+  const primary = config.modelDescriptors.find((item) => item.role === "primary");
+  if (!primary) throw new Error("fixture model required");
+  const switchedModel = { ...primary, model: "zai/glm-5.3-flash", version: "catalog-2026-10-30" };
+  let sequence = 0;
+  const service = (
+    models: typeof config.modelDescriptors,
+    providers?: readonly ("exa-public" | "deepseek")[],
+  ) =>
+    new PublicSearchAuthorization({
+      configuration: {
+        ...config,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        modelDescriptors: models,
+        runPolicy: { ...policy, publicSearch: { ...route, ...(providers ? { providers } : {}) } },
+      },
+      repository: resource.repository,
+      clock: { now: () => T1 },
+      ids: { next: (prefix) => `${prefix}:${++sequence}` },
+      authority: () => SERVICE_AUTHORITY.lease,
+    });
+  const intent = (id: string, model: typeof primary): GovernedActionIntent => ({
+    contractVersion: "authorization.v2",
+    id,
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    runId: RUN_ID,
+    threadId: "thread-capability-invocation",
+    capabilityRef: "search",
+    capabilityVersion: "1",
+    operation: "web_search",
+    resourceRef: `coding:${id}`,
+    resourceRefs: [`coding:${id}`],
+    targets: [
+      { type: "network-domain", ref: "mcp.exa.ai:443" },
+      { type: "host", ref: route.hostId },
+    ],
+    dataClassification: "private",
+    sideEffect: "none",
+    estimatedCostMicros: 0,
+    frequency: { count: 1, intervalMs: null },
+    idempotencyKey: createIdempotencyKey(id),
+    reversible: true,
+    requestedAt: T1,
+    expiresAt: T2,
+    actionKind: "READ",
+    disclosure: "named_recipients",
+    recipients: [configuredModelDisclosureIdentity(model), "https://mcp.exa.ai"],
+    credentialOrAccessChange: false,
+    modelClassification: {
+      actionKind: "READ",
+      suggestedRisk: "HIGH",
+      reasonCode: "governed-search",
+    },
+    deterministicFacts: [],
+    finalRisk: "HIGH",
+  });
+  const read = (target: PublicSearchAuthorization) =>
+    target.query(queryMessage(ui, "search.authorization.read", {}));
+  const store = resource.repository.authorizationStore();
+  try {
+    const before = service(config.modelDescriptors);
+    expect(await read(before)).toMatchObject({
+      payload: { enabled: true, providersChanged: false, revision: 0 },
+    });
+    await Promise.all([
+      before.authorize(intent("tokyo", primary)),
+      before.authorize(intent("osaka", primary)),
+    ]);
+    expect(await store.findApprovalByIntent("tokyo")).toMatchObject({
+      status: "approved",
+      policyAuthorization: { revision: 1 },
+    });
+    expect(await store.findApprovalByIntent("osaka")).toMatchObject({
+      status: "approved",
+      policyAuthorization: { revision: 1 },
+    });
+    expect(await read(before)).toMatchObject({ payload: { enabled: true, revision: 1 } });
+
+    const afterModelSwitch = service([
+      switchedModel,
+      ...config.modelDescriptors.filter((item) => item.role !== "primary"),
+    ]);
+    expect(await read(afterModelSwitch)).toMatchObject({
+      payload: { enabled: true, providersChanged: false, revision: 1 },
+    });
+    await afterModelSwitch.authorize(intent("after-model-switch", switchedModel));
+    expect(await store.findApprovalByIntent("after-model-switch")).toMatchObject({
+      status: "approved",
+    });
+
+    const widened = service(config.modelDescriptors, ["exa-public", "deepseek"]);
+    expect(await read(widened)).toMatchObject({
+      payload: { enabled: false, providersChanged: true, revision: 1 },
+    });
+    await widened.set(
+      commandMessage(
+        ui,
+        "search.authorization.set",
+        {
+          enabled: false,
+          expectedRevision: 1,
+          recipients: ["https://mcp.exa.ai", "https://api.deepseek.com"],
+        },
+        { authorizationRef: ui.authorizationRef, idempotencyKey: "owner-off", risk: "high" },
+      ),
+      SERVICE_AUTHORITY.lease,
+    );
+    expect(await read(widened)).toMatchObject({
+      payload: { enabled: false, providersChanged: false, revision: 2 },
+    });
+    expect(await read(before)).toMatchObject({
+      payload: { enabled: false, providersChanged: false, revision: 2 },
+    });
+    await before.authorize(intent("after-owner-off", primary));
+    expect(await store.findApprovalByIntent("after-owner-off")).toBeUndefined();
   } finally {
     await resource.repository.close();
     await rm(resource.stateRoot, { recursive: true, force: true });

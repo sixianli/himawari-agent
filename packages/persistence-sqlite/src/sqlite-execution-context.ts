@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Worker } from "node:worker_threads";
 import { ApplicationPortError, type PortErrorCode } from "@himawari-agent/application";
 import { SQLITE_PERSISTENCE_ERROR_CODES, SqlitePersistenceError } from "./state-root-lock.js";
@@ -40,6 +41,7 @@ interface PendingOperation {
   readonly operation: string;
   readonly queuedAt: number;
   readonly queuedBehind: number;
+  readonly inCaller: (<T>(report: () => T) => T) | undefined;
   readonly resolve: (value: unknown) => void;
   readonly reject: (reason: unknown) => void;
 }
@@ -52,6 +54,17 @@ export interface SqliteSlowOperation {
   readonly queuedBehind: number;
 }
 
+export interface SqliteTimedOperation {
+  readonly operation: string;
+  readonly queueWaitMs: number;
+  readonly runMs: number;
+}
+
+export interface SqliteOperationObservers {
+  readonly onSlowOperation?: (operation: SqliteSlowOperation) => void;
+  readonly onOperation?: (operation: SqliteTimedOperation) => void;
+}
+
 const SLOW_OPERATION_MILLISECONDS = 500;
 
 export class SqliteExecutionContext {
@@ -59,11 +72,11 @@ export class SqliteExecutionContext {
   private readonly pending = new Map<number, PendingOperation>();
   private nextId = 1;
   private exited = false;
-  private readonly onSlowOperation: ((operation: SqliteSlowOperation) => void) | undefined;
+  private readonly observers: SqliteOperationObservers;
 
-  private constructor(worker: Worker, onSlowOperation?: (operation: SqliteSlowOperation) => void) {
+  private constructor(worker: Worker, observers: SqliteOperationObservers) {
     this.worker = worker;
-    this.onSlowOperation = onSlowOperation;
+    this.observers = observers;
     worker.on("message", (message: WorkerResponse) => this.receive(message));
     worker.on("error", (error) => this.failAll(error));
     worker.on("exit", (code) => {
@@ -82,13 +95,13 @@ export class SqliteExecutionContext {
 
   static async start(
     configuration: SqliteWorkerConfiguration,
-    onSlowOperation?: (operation: SqliteSlowOperation) => void,
+    observers: SqliteOperationObservers = {},
   ): Promise<SqliteExecutionContext> {
     const workerExtension = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
     const worker = new Worker(new URL(`./sqlite-worker${workerExtension}`, import.meta.url), {
       workerData: configuration,
     });
-    const context = new SqliteExecutionContext(worker, onSlowOperation);
+    const context = new SqliteExecutionContext(worker, observers);
     await context.request<{ readonly writerSequence: number }>("ready", {});
     return context;
   }
@@ -109,6 +122,7 @@ export class SqliteExecutionContext {
         operation,
         queuedAt: performance.now(),
         queuedBehind: this.pending.size,
+        inCaller: this.observers.onOperation ? AsyncLocalStorage.snapshot() : undefined,
         resolve: resolve as (value: unknown) => void,
         reject,
       });
@@ -125,7 +139,7 @@ export class SqliteExecutionContext {
     const operation = this.pending.get(message.id);
     if (!operation) return;
     this.pending.delete(message.id);
-    this.reportSlow(operation, message.runMs);
+    this.report(operation, message.runMs);
     if (message.ok) {
       operation.resolve(message.value);
       return;
@@ -146,16 +160,22 @@ export class SqliteExecutionContext {
     );
   }
 
-  private reportSlow(operation: PendingOperation, reportedRunMs: number | undefined): void {
-    if (!this.onSlowOperation) return;
-    const totalMs = Math.round(performance.now() - operation.queuedAt);
-    if (totalMs < SLOW_OPERATION_MILLISECONDS) return;
+  private report(operation: PendingOperation, reportedRunMs: number | undefined): void {
+    const totalMs = performance.now() - operation.queuedAt;
     const runMs = Math.min(totalMs, reportedRunMs ?? totalMs);
-    this.onSlowOperation({
+    const { onOperation, onSlowOperation } = this.observers;
+    if (onOperation && operation.inCaller)
+      operation.inCaller(() =>
+        onOperation({ operation: operation.operation, queueWaitMs: totalMs - runMs, runMs }),
+      );
+    const roundedTotalMs = Math.round(totalMs);
+    if (!onSlowOperation || roundedTotalMs < SLOW_OPERATION_MILLISECONDS) return;
+    const roundedRunMs = Math.min(roundedTotalMs, reportedRunMs ?? roundedTotalMs);
+    onSlowOperation({
       operation: operation.operation,
-      totalMs,
-      queueWaitMs: totalMs - runMs,
-      runMs,
+      totalMs: roundedTotalMs,
+      queueWaitMs: roundedTotalMs - roundedRunMs,
+      runMs: roundedRunMs,
       queuedBehind: operation.queuedBehind,
     });
   }
