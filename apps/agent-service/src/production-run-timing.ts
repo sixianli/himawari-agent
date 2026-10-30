@@ -47,6 +47,7 @@ export class ProductionRunTimings {
     kind: string,
     work: () => Promise<T>,
     report: (diagnostic: RunTimingDiagnostic) => void,
+    describe?: (result: T) => RunTimingDiagnostic,
   ): Promise<T> {
     const timings: AttemptTimings = { startedAt: this.#now(), spans: new Map() };
     this.#attempts.delete(runId);
@@ -56,9 +57,11 @@ export class ProductionRunTimings {
       if (oldest !== undefined) this.#attempts.delete(oldest);
     }
     let outcome = "failed";
+    let described: RunTimingDiagnostic = {};
     try {
       const result = await runningAttempt.run({ timings: this, runId }, work);
       outcome = "returned";
+      described = describe?.(result) ?? {};
       return result;
     } finally {
       if (this.#attempts.get(runId) === timings) this.#attempts.delete(runId);
@@ -67,6 +70,7 @@ export class ProductionRunTimings {
         attempt: kind,
         outcome,
         totalMs: Math.round(this.#now() - timings.startedAt),
+        ...described,
       };
       for (const [name, span] of [...timings.spans].sort(
         ([, left], [, right]) => left.firstStartMs - right.firstStartMs,

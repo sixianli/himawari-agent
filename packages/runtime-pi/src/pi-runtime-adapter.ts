@@ -155,6 +155,10 @@ export interface PiAgentRuntimeAdapterDependencies {
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
   ) => void;
+  readonly onModelStreamFailed?: (
+    request: RuntimeRequest,
+    failure: { readonly code: string; readonly message: string },
+  ) => void;
   readonly usage?: {
     readonly store: ModelUsageStorePort;
     readonly onFailure: (error: unknown) => void;
@@ -339,6 +343,17 @@ function modelFailureCode(errorMessage: string | undefined): string {
   if (status !== undefined && Number(status) >= 500 && Number(status) <= 599)
     return "PI_MODEL_UNAVAILABLE";
   return "PI_MODEL_ERROR";
+}
+
+function loggableModelFailure(errorMessage: string | undefined): string {
+  const message = errorMessage ?? "";
+  if (
+    message.startsWith("Model invocation ") ||
+    message === "Model budget accounting is unavailable"
+  )
+    return message;
+  const status = /^(\d{3})(?:\s|:)/.exec(message)?.[1];
+  return status === undefined ? "provider_message_withheld" : `provider_status_${status}`;
 }
 
 function epoch(occurredAt: string): number {
@@ -1917,7 +1932,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             occurredAt: now,
           });
           if (event.message.stopReason === "error") {
-            mapped.push(runtimeFailure(request, now, modelFailureCode(event.message.errorMessage)));
+            const code = modelFailureCode(event.message.errorMessage);
+            this.#dependencies.onModelStreamFailed?.(request, {
+              code,
+              message: loggableModelFailure(event.message.errorMessage),
+            });
+            mapped.push(runtimeFailure(request, now, code));
           }
         }
         return {

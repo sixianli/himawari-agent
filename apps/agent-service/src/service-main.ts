@@ -1538,6 +1538,14 @@ export async function runAgentService(
             code: failure.code,
             ...(failure.reason === null ? {} : { reason: failure.reason }),
           }),
+        onModelStreamFailed: (request, failure) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "model.stream_failed",
+            runId: request.runId,
+            code: failure.code,
+            message: failure.message,
+          }),
         onBackgroundFailure: (runId, error) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",

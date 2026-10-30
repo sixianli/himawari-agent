@@ -121,6 +121,10 @@ export interface ProductionRunCompositionOptions {
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
   ) => void;
+  readonly onModelStreamFailed?: (
+    request: RuntimeRequest,
+    failure: { readonly code: string; readonly message: string },
+  ) => void;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
   readonly clock: ClockPort;
@@ -359,6 +363,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     now: () => clock.now(),
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
     ...(options.onToolCallStarted ? { onToolCallStarted: options.onToolCallStarted } : {}),
+    ...(options.onModelStreamFailed ? { onModelStreamFailed: options.onModelStreamFailed } : {}),
     ...(options.onModelAdmissionFailed
       ? { onModelAdmissionFailed: options.onModelAdmissionFailed }
       : {}),
@@ -574,13 +579,32 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatch,
     policy: options.policy,
   });
+  const describeSettledRun = (result: {
+    readonly checkpoint: {
+      readonly terminalStatus: string | null;
+      readonly diagnosticCode: string | null;
+    };
+  }): RunTimingDiagnostic => ({
+    ...(result.checkpoint.terminalStatus
+      ? { terminalStatus: result.checkpoint.terminalStatus }
+      : {}),
+    ...(result.checkpoint.diagnosticCode
+      ? { diagnosticCode: result.checkpoint.diagnosticCode }
+      : {}),
+  });
   const reportTiming = (diagnostic: RunTimingDiagnostic) => options.onRunTiming?.(diagnostic);
   const dispatcher = new ProductionRunDispatcher({
     authority,
     dispatch,
     coordinator: {
       execute: (input) =>
-        timings.attempt(input.runId, "execute", () => coordinator.execute(input), reportTiming),
+        timings.attempt(
+          input.runId,
+          "execute",
+          () => coordinator.execute(input),
+          reportTiming,
+          describeSettledRun,
+        ),
       resumeToolResult: (input) =>
         timings.attempt(
           input.runId,
