@@ -107,6 +107,6 @@ Claude 做了可切换的原型（<https://claude.ai/artifact/95YzWPGTgew76Yg7NM
 
 ## 后续
 
-- 2026-10-30：[ADR 0120](0120-every-owner-setting-on-the-server-with-revision.md) 修改本 ADR 第 3 条：存服务器的设置从称呼、界面语言、主题色三项扩到加上主题、模型、思考深度共六项；“没送到的本地改动下次打开先补发”改为“服务器版本号没变才补发，变了以服务器为准”。其余决定不变。
+- 2026-10-30：[ADR 0122](0122-every-owner-setting-on-the-server-with-revision.md) 修改本 ADR 第 3 条：存服务器的设置从称呼、界面语言、主题色三项扩到加上主题、模型、思考深度共六项；“没送到的本地改动下次打开先补发”改为“服务器版本号没变才补发，变了以服务器为准”。其余决定不变。
 
 [↑ 返回阅读导航](#contents)

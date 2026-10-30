@@ -8,7 +8,7 @@ amends: "docs/adr/0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md"
 date: "2026-10-30"
 ---
 
-# ADR 0120：主人的每一项账户设置都存在服务器上，带版本号，旧设备不能覆盖新值
+# ADR 0122：主人的每一项账户设置都存在服务器上，带版本号，旧设备不能覆盖新值
 
 <a id="contents"></a>
 
@@ -110,7 +110,7 @@ Andy 在 2026-10-30 09:49（日本时间）的选择卡上选了方案 A。
 ## 关联文档
 
 - 事故：[I-16](../incidents-and-gates.md)
-- 面试案例：[案例 65](../engineering-casebook.md#case-settings-everywhere)
+- 面试案例：[案例 66](../engineering-casebook.md#case-settings-everywhere)
 - 设计规范：[docs/ui-ux-design-guide.md](../ui-ux-design-guide.md)
 - [ADR 0105](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0110](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、[ADR 0107](0107-every-incident-gets-an-automatic-gate.md)
 - 业界做法：[MDN If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/If-Match)、[Chrome storage API](https://developer.chrome.com/docs/extensions/reference/api/storage)、[MDN Page Visibility API](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API)
