@@ -157,6 +157,7 @@ export class ProductionProactive {
       timeZone: options.timeZone,
       clock: options.clock,
       ids: options.ids,
+      outputTokenLimit: PROACTIVE_MAX_OUTPUT_TOKENS,
     });
   }
 

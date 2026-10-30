@@ -180,6 +180,19 @@ function overviewFixture(): ProactiveOverview {
         opened: false,
         rating: null,
       },
+      ...[
+        ["d-cut", "09:30", "MODEL_OUTPUT_TRUNCATED"],
+        ["d-nothing", "09:20", "MODEL_FAILED_ROUTE_UNAVAILABLE"],
+        ["d-unfinished", "09:10", "MODEL_NOT_COMPLETED"],
+      ].map(([id, at, reasonCode]) => ({
+        id,
+        checkedAt: `2026-11-03T${at}:00.000Z`,
+        verdict: "failed" as const,
+        reasonCode,
+        counts: counts({ fetched: 26 }),
+        opened: false,
+        rating: null,
+      })),
     ],
     metrics: { spoke: 5, hits: 3, misfires: 1, missed: 1, reviewed: 23 },
     generatedAt: NOW.toISOString(),
@@ -423,12 +436,23 @@ describe("[PG-15] proactive reminders page", () => {
     for (const part of ["开口5", "命中3", "误扰1", "已审样本内漏报1", "已审 23 封", "已记录 2 天"])
       expect(summary.replace(/\s/gu, "")).toContain(part.replace(/\s/gu, ""));
     const rows = [...document.querySelectorAll<HTMLElement>("#page .proactive-log-row")];
-    expect(rows.map((row) => row.dataset["tone"])).toEqual(["spoke", "quiet", "warn", "warn"]);
+    expect(rows.map((row) => row.dataset["tone"])).toEqual([
+      "spoke",
+      "quiet",
+      "warn",
+      "warn",
+      "warn",
+      "warn",
+      "warn",
+    ]);
     expect(rows[0]?.textContent).toContain("推送了 1 件要你处理的事");
     expect(rows[0]?.textContent).toContain("你点开了");
     expect(rows[1]?.textContent).toContain("2 封新邮件，都是推广这类，按规则跳过，没交给模型");
     expect(rows[2]?.textContent).toContain("15 分钟后照常再看");
     expect(rows[3]?.textContent).toContain("每日费用上限");
+    expect(rows[4]?.textContent).toContain("想得太久，答案没写完就被截断了");
+    expect(rows[5]?.textContent).toContain("模型这次没有回答");
+    expect(rows[6]?.textContent).toContain("模型没有答完");
     expect(text("#page")).toContain("昨天");
     await click("#page .proactive-log-row:nth-of-type(1)", "没必要");
     expect(lastCommand()).toMatchObject({
