@@ -1287,6 +1287,101 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       }
     });
 
+    it("keeps an uncertain model call from being sent again while other calls in the same run go on", async () => {
+      const resource = await fixture();
+      try {
+        const authorityLease = { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 };
+        const dispatch = resource.repository.runDispatch(
+          OWNER_ID,
+          AGENT_ID,
+          AUTHORITY,
+          authorityLease,
+          "uncertain-call-integration",
+        );
+        const claimed = await dispatch.claim({
+          runId: RUN_ID,
+          expectedRunRevision: 1,
+          expectedLeaseRevision: 0,
+          executionLeaseId: EXECUTION_LEASE_ID,
+          claimedAt: NOW,
+          expiresAt: FAR_FUTURE,
+        });
+        const budget = resource.repository.modelBudgetPort(
+          OWNER_ID,
+          AGENT_ID,
+          AUTHORITY,
+          authorityLease,
+        );
+        const descriptor: ModelInvocationAdmissionDescriptor = {
+          ref: "approved-model-v1",
+          provider: "fixture-provider",
+          model: "fixture-model",
+          version: "2026-09-05",
+          routingClass: "primary",
+          priority: 1,
+          disclosure: "trusted_remote",
+          capabilities: ["chat"],
+          allowedDataClassifications: ["private"],
+          secretRequirement: null,
+          pricing: { input: 1, output: 2, cacheRead: 0.5, cacheWrite: 0.25 },
+          estimatedCostMicros: 100,
+        };
+        const admission = new ModelInvocationAdmissionService({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          executionLease: claimFromRunExecutionLease(claimed),
+          dispatch,
+          invocations: resource.repository.modelInvocationIdentityPort(
+            OWNER_ID,
+            AGENT_ID,
+            AUTHORITY,
+            authorityLease,
+          ),
+          clock: { now: () => NOW },
+          registry: [descriptor],
+        });
+        const call = (logicalSlot: string) =>
+          admission.begin({
+            modelRef: descriptor.ref,
+            provider: descriptor.provider,
+            model: descriptor.model,
+            modelVersion: descriptor.version,
+            dataClassification: "private",
+            logicalSlot,
+            source: "agent-stream",
+            ordinal: 1,
+            estimatedCostMicros: descriptor.estimatedCostMicros,
+            pricing: descriptor.pricing,
+          });
+        const uncertain = await call("memory-search");
+        if (uncertain.disposition !== "fresh") throw new Error("Expected a fresh first call");
+        await uncertain.permit.markStarted();
+        await uncertain.permit.markUnknown("transport_unresolved");
+
+        expect((await call("memory-search")).disposition).toBe("replay");
+        const other = await call("main-turn-1");
+        expect(other.disposition).toBe("fresh");
+        if (other.disposition !== "fresh") throw new Error("Expected the other call to go on");
+        await other.permit.markStarted();
+        await other.permit.settle({
+          inputTokens: 12,
+          outputTokens: 4,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        });
+        expect((await call("memory-search")).disposition).toBe("replay");
+        const snapshot = await budget.read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 });
+        expect(snapshot?.account.status).toBe("reconcile_required");
+        expect(snapshot?.allocations.map(({ status }) => status).sort()).toEqual([
+          "settled",
+          "unknown",
+        ]);
+      } finally {
+        await resource.repository.close();
+      }
+    });
+
     it("charges an embedding attempt cut off at three seconds and still admits the retry and the main model call", async () => {
       const resource = await fixture();
       try {

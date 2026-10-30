@@ -472,7 +472,7 @@ describe.each(["worker", "direct"] as const)(
     });
 
     describe("Memory projection unified model budget", () => {
-      it("requires the current projection claim and preserves unknown spend across retries", async () => {
+      it("requires the current projection claim, keeps an unknown call from being sent again, and lets other calls go on", async () => {
         const { stateRoot, repository } = await createRepository();
         try {
           const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -559,9 +559,14 @@ describe.each(["worker", "direct"] as const)(
             reasonCode: "transport_unresolved",
           });
           expect((await budget.reserve(input)).allocation.status).toBe("unknown");
-          await expect(
-            budget.reserve({ ...input, operationKey: "embedding:retry" }),
-          ).rejects.toThrow("not available");
+          const other = await budget.reserve({ ...input, operationKey: "embedding:other" });
+          expect(other.allocation.status).toBe("reserved");
+          await budget.releaseReserved({
+            parent,
+            operationKey: other.allocation.operationKey,
+            releasedAt: T0,
+          });
+          expect((await budget.reserve(input)).allocation.status).toBe("unknown");
           const snapshot = await budget.read({ parent, limit: 10 });
           expect(snapshot?.account).toMatchObject({
             reservedCostMicros: 60,

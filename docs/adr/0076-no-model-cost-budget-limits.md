@@ -18,6 +18,7 @@ date: "2026-10-25"
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [生产配置怎么改](#production-config)
+- [后续](#follow-up)
 
 <a id="context"></a>
 
@@ -80,5 +81,13 @@ install -m "$(stat -c %a /etc/himawari/config.json)" -o "$(stat -c %u /etc/himaw
 回滚到旧版本时必须同时恢复带 `budgets` 的备份配置，因为旧版本要求这一段存在；一键回滚脚本恢复的就是上线前的配置备份。
 
 如果某次上线还是旧代码、但要先放开限制（例如第九次上线赶不上本次改动），把 `globalCostMicros`、`perRunCostMicros` 和 `perClassificationCostMicros` 下的 `public`、`private`、`sensitive`、`restricted` 都设成 `1000000000000000`；只改 `public` 和 `private` 的话，`sensitive`、`restricted` 两类仍会被拦。之后本次改动上线时再按上面的命令删掉整段。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="follow-up"></a>
+
+## 后续
+
+- 2026-10-30：[ADR 0124](0124-unknown-model-call-blocks-only-its-own-resend.md) 修改本 ADR 第 3 条：调用结果不确定时账户照样置为 `reconcile_required`，但不再拒绝同一轮里其他调用的预留和开始；阻止同一调用重发改由调用记录按调用位置完成。整轮的重新派发和后台任务恢复仍被挡。原做法让找记忆的向量请求出一次不确定，同一轮主对话也失败（事故 I-37）。
 
 [↑ 返回阅读导航](#contents)

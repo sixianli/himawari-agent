@@ -10,6 +10,7 @@ REQUIRED_SCENARIOS = (
     'accept-long-answer',
     'accept-run-command',
     'accept-unrelated-no-memory',
+    'accept-slow-memory-search',
     'accept-memory-page',
     'accept-phone-layout',
     'accept-after-restart',
