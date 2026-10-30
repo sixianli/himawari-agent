@@ -955,6 +955,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     let finalAssistant: AssistantMessage | undefined;
     let suspended: Extract<RuntimeEvent, { type: "runtime.suspended" }> | undefined;
     let unknownTool: Extract<RuntimeEvent, { type: "runtime.result_unknown" }> | undefined;
+    const parallelToolsInFlight = new Set<string>();
+    let abortWhenToolsSettle = false;
     let pendingUpdate: { event: AgentSessionEvent; occurredAt: string } | undefined;
     const enqueue = (operation: () => Promise<void> | void): Promise<void> => {
       pendingUpdate = undefined;
@@ -1194,8 +1196,17 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               if (result) replayedResults.add(toolCallId);
               return result;
             },
-            assertKnown: () => {
-              if (suspended || unknownTool) throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
+            begin: (toolCallId, parallel) => {
+              if (parallel && !suspended && !unknownTool) parallelToolsInFlight.add(toolCallId);
+            },
+            settle: (toolCallId) => {
+              parallelToolsInFlight.delete(toolCallId);
+              if (abortWhenToolsSettle && parallelToolsInFlight.size === 0)
+                this.#activeSessions.get(request.runId)?.agent.abort();
+            },
+            assertKnown: (toolCallId) => {
+              if (unknownTool || (suspended && !parallelToolsInFlight.has(toolCallId)))
+                throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
             },
             checkpoint: (invocation) =>
               this.#dependencies.continuations
@@ -1212,7 +1223,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                 approval,
                 occurredAt: this.now(),
               };
-              active.agent.abort();
+              if (parallelToolsInFlight.size === 0) active.agent.abort();
+              else abortWhenToolsSettle = true;
             },
             unknown: (invocation, result) => {
               unknownTool ??= {
@@ -1551,7 +1563,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       completedResult(
         toolCallId: string,
       ): PiToolBatchContinuation["completedResults"][number] | undefined;
-      assertKnown(): void;
+      begin(toolCallId: string, parallel: boolean): void;
+      settle(toolCallId: string): void;
+      assertKnown(toolCallId: string): void;
       checkpoint(invocation: RuntimeToolInvocation): Promise<string | undefined>;
       suspend(invocation: RuntimeToolInvocation, approval: RuntimeApprovalWait): Promise<void>;
       unknown(
@@ -1568,139 +1582,145 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       !["read", "ls", "find", "grep"].includes(descriptor.name)
     )
       throw new TypeError("RUNTIME_TOOL_EXECUTION_MODE_INVALID");
+    const executeTool: ToolDefinition["execute"] = async (toolCallId, parameters, signal) => {
+      await this.#measure(
+        request.runId,
+        "tool.history_wait",
+        async () => await this.#historyWrites.get(request.runId),
+      );
+      signal?.throwIfAborted();
+      reconciliation.assertKnown(toolCallId);
+      const completed = reconciliation.completedResult(toolCallId);
+      if (completed)
+        return {
+          content: completed.content,
+          details: completed.details,
+          isError: completed.isError,
+        };
+      const conflictOf =
+        descriptor.definition === "builtin-coding" && ["write", "edit"].includes(descriptor.name)
+          ? previousFileConflict(
+              this.#activeSessions.get(request.runId)?.agent.state.messages ?? [],
+              request.runId,
+              (parameters as Record<string, unknown>)["path"],
+            )
+          : undefined;
+      let invocation: RuntimeToolInvocation = {
+        ...(conflictOf ? { fileConflictOf: conflictOf } : {}),
+        runId: request.runId,
+        context: {
+          threadId: request.threadId,
+          modelRef: request.modelRef,
+          executionLease: request.executionLease,
+          ...(request.continuationRef ? { continuationRef: request.continuationRef } : {}),
+        },
+        toolCallId,
+        ...(request.executionDeadlineAt === undefined
+          ? {}
+          : { executionDeadlineAt: request.executionDeadlineAt }),
+        capabilityRef: descriptor.capabilityRef,
+        capabilityHandleRef: descriptor.capabilityHandleRef,
+        arguments: safeArguments(parameters),
+        dataClassification: request.dataClassification,
+      };
+      let result: Awaited<ReturnType<RuntimeToolPort["execute"]>>;
+      const recovery = request.knownToolResult;
+      if (recovery?.toolCallId === toolCallId) {
+        try {
+          if (!this.#dependencies.tools.recoverResult)
+            throw new Error("RUNTIME_KNOWN_RESULT_READER_UNAVAILABLE");
+          result = await this.#dependencies.tools.recoverResult(invocation, recovery);
+        } catch {
+          result = {
+            outcome: "result_unknown",
+            dispatchState: "possibly_sent",
+            resultRef: null,
+            errorCode: "RUNTIME_KNOWN_RESULT_UNAVAILABLE",
+            externalActionId: recovery.jobId,
+            modelContent: "原工具结果仍需核验，未重新执行。",
+          };
+        }
+      } else {
+        const decision = await this.#dependencies.tools.preflight(invocation);
+        signal?.throwIfAborted();
+        if (!decision.allowed) {
+          return {
+            content: [{ type: "text", text: `Blocked by product policy: ${decision.reasonCode}` }],
+            details: {
+              permissionDecisionRef: decision.permissionDecisionRef,
+              reasonCode: decision.reasonCode,
+              productOutcome: "failed",
+              dispatchState: "not_sent",
+            },
+            isError: true,
+          };
+        }
+        reconciliation.assertKnown(toolCallId);
+        try {
+          const continuationRef = await reconciliation.checkpoint(invocation);
+          if (continuationRef && invocation.context)
+            invocation = { ...invocation, context: { ...invocation.context, continuationRef } };
+        } catch {
+          return {
+            content: [{ type: "text", text: "工具未执行：无法保存恢复记录。" }],
+            details: {
+              productOutcome: "failed",
+              dispatchState: "not_sent",
+              errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED",
+            },
+            isError: true,
+          };
+        }
+        signal?.throwIfAborted();
+        try {
+          result = await this.#dependencies.tools.execute(
+            invocation,
+            ...(signal ? [{ signal }] : []),
+          );
+        } catch {
+          result = {
+            outcome: "result_unknown",
+            dispatchState: "possibly_sent",
+            resultRef: null,
+            errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
+            externalActionId: null,
+            modelContent: "Tool execution needs reconciliation before continuing.",
+          };
+        }
+      }
+      if (result.outcome === "awaiting_approval") {
+        try {
+          await reconciliation.suspend(invocation, result.approval);
+        } catch {
+          reconciliation.unknown(invocation, result);
+        }
+        throw new Error("RUNTIME_TOOL_SUSPENDED");
+      }
+      if (result.outcome === "result_unknown") reconciliation.unknown(invocation, result);
+      return {
+        content: [{ type: "text", text: result.modelContent }],
+        details: {
+          ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
+          productOutcome: result.outcome,
+          ...(result.dispatchState ? { dispatchState: result.dispatchState } : {}),
+          productRunId: request.runId,
+          resultRef: result.resultRef,
+          errorCode: result.errorCode,
+          externalActionId: result.externalActionId,
+        },
+        isError: result.outcome !== "succeeded",
+      };
+    };
     return {
       ...definition,
       executionMode: parallel ? "parallel" : "sequential",
-      execute: async (toolCallId, parameters, signal) => {
-        await this.#measure(
-          request.runId,
-          "tool.history_wait",
-          async () => await this.#historyWrites.get(request.runId),
-        );
-        signal?.throwIfAborted();
-        reconciliation.assertKnown();
-        const completed = reconciliation.completedResult(toolCallId);
-        if (completed)
-          return {
-            content: completed.content,
-            details: completed.details,
-            isError: completed.isError,
-          };
-        const conflictOf =
-          descriptor.definition === "builtin-coding" && ["write", "edit"].includes(descriptor.name)
-            ? previousFileConflict(
-                this.#activeSessions.get(request.runId)?.agent.state.messages ?? [],
-                request.runId,
-                (parameters as Record<string, unknown>)["path"],
-              )
-            : undefined;
-        let invocation: RuntimeToolInvocation = {
-          ...(conflictOf ? { fileConflictOf: conflictOf } : {}),
-          runId: request.runId,
-          context: {
-            threadId: request.threadId,
-            modelRef: request.modelRef,
-            executionLease: request.executionLease,
-            ...(request.continuationRef ? { continuationRef: request.continuationRef } : {}),
-          },
-          toolCallId,
-          ...(request.executionDeadlineAt === undefined
-            ? {}
-            : { executionDeadlineAt: request.executionDeadlineAt }),
-          capabilityRef: descriptor.capabilityRef,
-          capabilityHandleRef: descriptor.capabilityHandleRef,
-          arguments: safeArguments(parameters),
-          dataClassification: request.dataClassification,
-        };
-        let result: Awaited<ReturnType<RuntimeToolPort["execute"]>>;
-        const recovery = request.knownToolResult;
-        if (recovery?.toolCallId === toolCallId) {
-          try {
-            if (!this.#dependencies.tools.recoverResult)
-              throw new Error("RUNTIME_KNOWN_RESULT_READER_UNAVAILABLE");
-            result = await this.#dependencies.tools.recoverResult(invocation, recovery);
-          } catch {
-            result = {
-              outcome: "result_unknown",
-              dispatchState: "possibly_sent",
-              resultRef: null,
-              errorCode: "RUNTIME_KNOWN_RESULT_UNAVAILABLE",
-              externalActionId: recovery.jobId,
-              modelContent: "原工具结果仍需核验，未重新执行。",
-            };
-          }
-        } else {
-          const decision = await this.#dependencies.tools.preflight(invocation);
-          signal?.throwIfAborted();
-          if (!decision.allowed) {
-            return {
-              content: [
-                { type: "text", text: `Blocked by product policy: ${decision.reasonCode}` },
-              ],
-              details: {
-                permissionDecisionRef: decision.permissionDecisionRef,
-                reasonCode: decision.reasonCode,
-                productOutcome: "failed",
-                dispatchState: "not_sent",
-              },
-              isError: true,
-            };
-          }
-          reconciliation.assertKnown();
-          try {
-            const continuationRef = await reconciliation.checkpoint(invocation);
-            if (continuationRef && invocation.context)
-              invocation = { ...invocation, context: { ...invocation.context, continuationRef } };
-          } catch {
-            return {
-              content: [{ type: "text", text: "工具未执行：无法保存恢复记录。" }],
-              details: {
-                productOutcome: "failed",
-                dispatchState: "not_sent",
-                errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED",
-              },
-              isError: true,
-            };
-          }
-          signal?.throwIfAborted();
-          try {
-            result = await this.#dependencies.tools.execute(
-              invocation,
-              ...(signal ? [{ signal }] : []),
-            );
-          } catch {
-            result = {
-              outcome: "result_unknown",
-              dispatchState: "possibly_sent",
-              resultRef: null,
-              errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
-              externalActionId: null,
-              modelContent: "Tool execution needs reconciliation before continuing.",
-            };
-          }
+      execute: async (toolCallId, parameters, signal, onUpdate, context) => {
+        reconciliation.begin(toolCallId, parallel);
+        try {
+          return await executeTool(toolCallId, parameters, signal, onUpdate, context);
+        } finally {
+          reconciliation.settle(toolCallId);
         }
-        if (result.outcome === "awaiting_approval") {
-          try {
-            await reconciliation.suspend(invocation, result.approval);
-          } catch {
-            reconciliation.unknown(invocation, result);
-          }
-          throw new Error("RUNTIME_TOOL_SUSPENDED");
-        }
-        if (result.outcome === "result_unknown") reconciliation.unknown(invocation, result);
-        return {
-          content: [{ type: "text", text: result.modelContent }],
-          details: {
-            ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
-            productOutcome: result.outcome,
-            ...(result.dispatchState ? { dispatchState: result.dispatchState } : {}),
-            productRunId: request.runId,
-            resultRef: result.resultRef,
-            errorCode: result.errorCode,
-            externalActionId: result.externalActionId,
-          },
-          isError: result.outcome !== "succeeded",
-        };
       },
     };
   }
