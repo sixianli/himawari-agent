@@ -898,3 +898,83 @@ it.each([true, false])(
     expect(state.availableActions).toEqual(released ? [] : ["retry_cleanup"]);
   },
 );
+
+describe("streamed tool call progress", () => {
+  it("turns a streamed file write into a write step with the lines written so far", async () => {
+    const payloadValues = new Map<string, unknown>([
+      ["outer", { role: "assistant", phase: "updated", payloadRef: "snapshot" }],
+      [
+        "snapshot",
+        {
+          role: "assistant",
+          timestamp: 1,
+          content: [
+            { type: "thinking", thinking: "plan" },
+            {
+              type: "toolCall",
+              id: "call-write",
+              name: "write",
+              arguments: { path: "game.html" },
+              streaming: { characters: 18000, lines: 312 },
+            },
+          ],
+        },
+      ],
+    ]);
+    const projection = new ThreadExecutionProjection({
+      threads: {
+        read: async () => ({ status: "active" }),
+        listRuns: async () => [run],
+      },
+      trace: {
+        readRun: async () => [
+          {
+            id: "message-event",
+            schemaVersion: "trace.v1",
+            ownerId: "owner-state",
+            agentId: "agent-state",
+            sessionId: "session-state",
+            threadId: "thread-state",
+            runId: run.runId,
+            turnId: null,
+            parentEventId: null,
+            causationId: null,
+            correlationId: "run-state",
+            sequence: 1,
+            occurredAt: at(2),
+            recordedAt: at(2),
+            actorId: "runtime",
+            dataClassification: "private",
+            eventType: "runtime.message",
+            payloadRef: "outer",
+          },
+        ],
+      },
+      payloads: () => ({
+        get: async (ref: string) => ({
+          ref,
+          dataClassification: "private",
+          contentType: "application/json",
+          ciphertext: new TextEncoder().encode(JSON.stringify(payloadValues.get(ref))),
+        }),
+      }),
+      protector: {
+        unprotect: async ({ payload }: { payload: { ciphertext: Uint8Array } }) =>
+          payload.ciphertext,
+      },
+    } as unknown as ConstructorParameters<typeof ThreadExecutionProjection>[0]);
+    const { records } = await projection.read({
+      ownerId: "owner-state",
+      agentId: "agent-state",
+      threadId: "thread-state",
+      runId: run.runId,
+      afterSequence: 0,
+      limit: 100,
+    });
+    const tool = records.find((record) => record.kind === "tool");
+    const writing = records.find((record) => record.name === "runtime.tool_call.writing");
+    expect(tool).toMatchObject({ name: "write", phase: "updated" });
+    expect(JSON.parse(tool?.input ?? "{}")).toEqual({ path: "game.html" });
+    expect(writing).toMatchObject({ itemId: tool?.itemId, kind: "status", text: "312" });
+  });
+});

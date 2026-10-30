@@ -203,3 +203,33 @@ it("[UI-30] opens a command step to whether it worked, with the command itself u
   expect(outside).not.toContain('<span class="step-name">');
   expect(outside).not.toContain("chat.requestArguments");
 });
+
+it("shows the lines written so far instead of a record error while a file is being written", async () => {
+  const { gameRun } = await import("./news-run-fixture.js");
+  const run = { ...completedRun, status: "running" as const, updatedAt: at(30000) };
+  const html = renderToStaticMarkup(
+    createElement(ExecutionProcess, {
+      run,
+      records: gameRun(30000),
+      message,
+      connection: "connected",
+      stateAvailable: true,
+    }),
+  );
+  expect(html).toContain("chat.activity.writing(step=step.write,lines=200)");
+  expect(html).toContain("chat.phase.writing(lines=200)");
+  expect(html).not.toContain("chat.recordUnavailable");
+});
+
+it("still says the record is unavailable once a finished turn's state cannot be read", () => {
+  const html = renderToStaticMarkup(
+    createElement(ExecutionProcess, {
+      run: completedRun,
+      records: newsRun(),
+      message,
+      connection: "connected",
+      stateAvailable: true,
+    }),
+  );
+  expect(html).toContain("chat.recordUnavailable");
+});

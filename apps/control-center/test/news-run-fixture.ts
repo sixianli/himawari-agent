@@ -100,3 +100,59 @@ export const completedRun: RunSummary = {
   background: null,
   backgroundCommands: [],
 };
+
+export function gameRun(until = Number.POSITIVE_INFINITY) {
+  sequence = 0;
+  const writing = (milliseconds: number, lines: number) => {
+    const streamed = record(milliseconds, {
+      kind: "tool",
+      itemId: "tool:write",
+      phase: "updated",
+      name: "write",
+      input: '{"path":"game.html"}',
+    });
+    return [
+      streamed,
+      {
+        ...streamed,
+        id: `${streamed.id}:writing`,
+        kind: "status" as const,
+        name: "runtime.tool_call.writing",
+        input: "",
+        text: String(lines),
+      },
+    ];
+  };
+  const records: ThreadExecutionRecord[] = [
+    status(100, "memory.query", "updated"),
+    status(1500, "deepseek-v4-flash", "started"),
+    status(1501, "runtime.turn_started", "updated"),
+    message(1600, "message:game", "updated", ""),
+    record(5300, { itemId: "thinking:game", name: "runtime.thinking.started" }),
+    record(20400, { itemId: "thinking:game", name: "runtime.thinking.ended" }),
+    record(20500, { itemId: "output:game", name: "runtime.tool_call.started" }),
+    ...writing(20600, 10),
+    ...writing(30000, 200),
+    ...writing(45000, 400),
+  ];
+  const finished = message(45800, "message:game", "completed", "");
+  records.push(
+    finished,
+    {
+      ...finished,
+      id: `${finished.id}:call:1`,
+      itemId: "tool:write",
+      kind: "tool",
+      phase: "updated",
+      name: "write",
+      text: "",
+      input: '{"path":"game.html","content":"<html>"}',
+    },
+    record(45900, { kind: "tool", itemId: "tool:write", phase: "started", name: "write" }),
+    toolExecution(46000, "tool:write", "started"),
+    toolExecution(50000, "tool:write", "ended"),
+    record(50400, { kind: "tool", itemId: "tool:write", phase: "completed", name: "write" }),
+    status(52000, "runtime.completed", "completed"),
+  );
+  return records.filter((item) => Date.parse(item.occurredAt) - runStart <= until);
+}

@@ -529,3 +529,14 @@ it.each(["RUN_EXECUTION_DEADLINE_EXCEEDED", "SANDBOX_TOOL_DEADLINE_EXCEEDED"])(
     );
   },
 );
+
+it("reports how many lines of a file the model has written while it is still writing", async () => {
+  const { gameRun, completedRun, at } = await import("./news-run-fixture.js");
+  const run = { ...completedRun, status: "running" as const, updatedAt: at(30000) };
+  const activity = executionActivity(gameRun(30000), run, "connected", Date.parse(at(30500)));
+  expect(activity.label).toBe("chat.activity.writing");
+  expect(activity.writing).toMatchObject({ itemId: "tool:write", lines: 200 });
+  const afterWriting = executionActivity(gameRun(45850), run, "connected", Date.parse(at(45900)));
+  expect(afterWriting.label).not.toBe("chat.activity.writing");
+  expect(afterWriting.writing).toBeUndefined();
+});

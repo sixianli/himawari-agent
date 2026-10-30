@@ -56,6 +56,7 @@ interface ModelCall {
   firstText?: number;
   textStart?: number;
   toolCallStart?: number;
+  writesTool?: boolean;
   firstActivity?: number;
   readonly reasoning: { start: number; end?: number }[];
 }
@@ -99,6 +100,7 @@ export function executionTimeline(
   let waitingSince: { id: string; sequence: number; start: number } | undefined;
   const toolStarts = new Map<string, { at: number; sequence: number }>();
   const toolExecutions = new Map<string, { start?: number; end?: number }>();
+  const toolWriting = new Map<string, { at: number; sequence: number }>();
 
   const closeWait = (end: number) => {
     if (!waitingSince) return;
@@ -174,6 +176,9 @@ export function executionTimeline(
       } else if (record.name === "runtime.tool_call.started") {
         call.toolCallStart ??= at;
         call.firstActivity ??= at;
+      } else if (record.name === "runtime.tool_call.writing") {
+        call.writesTool = true;
+        call.toolCallStart ??= at;
       } else if (record.kind === "message") {
         call.messageId = record.itemId;
         if (record.text.trim()) {
@@ -188,6 +193,8 @@ export function executionTimeline(
         }
       }
     }
+    if (record.name === "runtime.tool_call.writing" && !toolWriting.has(record.itemId))
+      toolWriting.set(record.itemId, { at, sequence: record.sequence });
     if (record.kind === "tool" && record.phase === "started")
       toolStarts.set(record.itemId, { at, sequence: record.sequence });
     else if (record.name === "runtime.tool_execution.started")
@@ -222,6 +229,13 @@ export function executionTimeline(
       !steps.some((item) => item.kind === "you" && item.start >= started.at)
     )
       steps.push(toolStep(itemId, `${itemId}:running`, started.sequence, started.at, total, true));
+  for (const [itemId, writing] of toolWriting)
+    if (
+      !terminal &&
+      !toolStarts.has(itemId) &&
+      !steps.some((item) => item.kind === "tool" && item.itemId === itemId)
+    )
+      steps.push(toolStep(itemId, `${itemId}:writing`, writing.sequence, writing.at, total, true));
   for (const item of calls) steps.push(...modelSteps(item));
 
   const sorted = steps
@@ -273,9 +287,16 @@ export function executionTimeline(
     running = false,
   ): TimelineStep {
     const execution = toolExecutions.get(itemId);
+    const writing = toolWriting.get(itemId);
+    const requested = start;
     const segments: TimelineSegment[] = [];
-    if (execution?.start !== undefined && execution.start >= start) {
-      segments.push({ kind: "queue", start, end: execution.start });
+    if (writing && writing.at < start) {
+      segments.push({ kind: "output", start: writing.at, end: start });
+      start = writing.at;
+    } else if (writing && running && !toolStarts.has(itemId))
+      segments.push({ kind: "output", start, end });
+    if (execution?.start !== undefined && execution.start >= requested) {
+      segments.push({ kind: "queue", start: requested, end: execution.start });
       segments.push({ kind: "run", start: execution.start, end: execution.end ?? end });
     }
     return { ...step("tool", id, sequence, start, end, running, segments), itemId };
@@ -288,7 +309,7 @@ export function executionTimeline(
     const outputStart = answer
       ? (item.textStart ?? item.firstText)
       : (item.toolCallStart ?? item.textStart ?? item.firstText);
-    const thinkEnd = answer && outputStart !== undefined ? outputStart : end;
+    const thinkEnd = (answer || item.writesTool) && outputStart !== undefined ? outputStart : end;
     const segments: TimelineSegment[] = [];
     let cursor = item.start;
     for (const reasoning of item.reasoning) {
@@ -298,7 +319,7 @@ export function executionTimeline(
       segments.push({ kind: "reason", start: reasoning.start, end: reasonEnd });
       cursor = reasonEnd;
     }
-    if (!answer && outputStart !== undefined && outputStart >= cursor) {
+    if (!answer && !item.writesTool && outputStart !== undefined && outputStart >= cursor) {
       if (outputStart > cursor) segments.push({ kind: "wait", start: cursor, end: outputStart });
       segments.push({ kind: "output", start: outputStart, end });
     } else if (thinkEnd > cursor) segments.push({ kind: "wait", start: cursor, end: thinkEnd });

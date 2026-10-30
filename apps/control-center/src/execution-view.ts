@@ -88,9 +88,9 @@ export function executionActivity(
   const ordered = [...records].sort((a, b) => a.sequence - b.sequence);
   const last = ordered.at(-1);
   const activity = ordered.findLast((record) => record.name.startsWith("runtime.activity."));
-  const tool = executionItems(records).findLast(
-    (record) => record.kind === "tool" && record.phase === "started",
-  );
+  const items = executionItems(records);
+  const tool = items.findLast((record) => record.kind === "tool" && record.phase === "started");
+  const writing = toolCallWriting(records, items);
   const age = Math.max(0, now - Date.parse(last?.occurredAt ?? run.updatedAt));
   const review = authorizationReviewSteps(records).at(-1);
   const reviewing =
@@ -119,20 +119,48 @@ export function executionActivity(
             ? "review.authorizationChecking"
             : tool
               ? "chat.activity.tool"
-              : activity?.name === "runtime.activity.thinking"
-                ? "chat.activity.thinking"
-                : activity?.name === "runtime.activity.text"
-                  ? "chat.activity.output"
-                  : activity?.name === "runtime.activity.toolCall"
-                    ? "chat.activity.preparingTool"
-                    : "chat.activity.waitingModel";
+              : writing && writing.sequence >= (activity?.sequence ?? 0)
+                ? "chat.activity.writing"
+                : activity?.name === "runtime.activity.thinking"
+                  ? "chat.activity.thinking"
+                  : activity?.name === "runtime.activity.text"
+                    ? "chat.activity.output"
+                    : activity?.name === "runtime.activity.toolCall"
+                      ? "chat.activity.preparingTool"
+                      : "chat.activity.waitingModel";
   return {
     label,
     tool: tool?.name ?? "",
+    writing: label === "chat.activity.writing" ? writing : undefined,
     age,
     stale: !isTerminalRun(run) && run.status !== "awaiting_approval" && age >= 15000,
   };
 }
+export function toolCallWriting(
+  records: readonly ThreadExecutionRecord[],
+  items: ReturnType<typeof executionItems> = executionItems(records),
+) {
+  const latest = new Map<string, ThreadExecutionRecord>();
+  for (const record of records)
+    if (
+      record.name === "runtime.tool_call.writing" &&
+      (latest.get(record.itemId)?.sequence ?? 0) < record.sequence
+    )
+      latest.set(record.itemId, record);
+  const open = [...latest.values()]
+    .filter((record) => {
+      const item = items.find((other) => other.itemId === record.itemId);
+      return !item || (item.phase === "updated" && item.sequence <= record.sequence);
+    })
+    .sort((a, b) => a.sequence - b.sequence)
+    .at(-1);
+  if (!open) return undefined;
+  const lines = Number(open.text);
+  return Number.isSafeInteger(lines) && lines > 0
+    ? { itemId: open.itemId, sequence: open.sequence, lines }
+    : undefined;
+}
+
 export function executionToolPhase(
   item: ThreadExecutionRecord,
   records: readonly ThreadExecutionRecord[],

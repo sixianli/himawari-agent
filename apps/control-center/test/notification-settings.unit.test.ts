@@ -196,7 +196,7 @@ describe("[WP-8] notification settings", () => {
     expect(pushSupport({ ...fake.browser, standalone: true })).toBe("supported");
   });
 
-  it("[I-38] keeps the switches and the enable button usable when permission is granted but no worker was ever registered", async () => {
+  it("[I-39] keeps the switches and the enable button usable when permission is granted but no worker was ever registered", async () => {
     const fake = fakeBrowser({
       userAgent: MAC,
       standalone: false,

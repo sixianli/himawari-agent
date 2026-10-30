@@ -5487,6 +5487,8 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-run-command",
   "accept-unrelated-no-memory",
   "accept-slow-memory-search",
+  "accept-file-writing-progress",
+  "accept-progress-without-state",
   "accept-memory-page",
   "accept-phone-layout",
   "accept-after-restart",
@@ -5498,6 +5500,17 @@ const RUN_COMMAND_OUTPUT = "lines=37";
 const UNRELATED_REQUEST = "写到一个pdf文件";
 const PLAIN_ANSWER = "普通回答已完成";
 const SLOW_MEMORY_SEARCH_DELAY_MS = 3_500;
+const WRITE_GAME_REQUEST = "写一个简易小游戏";
+const WRITE_GAME_STREAM_MS = 12_000;
+const WRITING_PROGRESS_FIRST_SHOWN_MS = 2_000;
+const SLOW_EXECUTION_STATE_MS = 4_000;
+const GAME_FILE = {
+  path: "game.html",
+  content: Array.from(
+    { length: 400 },
+    (_, index) => `<p data-row="${index + 1}">${"接咖啡".repeat(8)}</p>`,
+  ).join("\n"),
+};
 const LONG_ANSWER_END = "长回答验收到此结束";
 const LONG_ANSWER = [
   ...Array.from(
@@ -5507,6 +5520,8 @@ const LONG_ANSWER = [
   LONG_ANSWER_END,
 ].join("\n\n");
 const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => {
+  if (lastUserText.includes(WRITE_GAME_REQUEST) && toolResults.length === 0)
+    return { kind: "tool", name: "write", arguments: GAME_FILE, streamMs: WRITE_GAME_STREAM_MS };
   if (lastUserText.includes(SEARCH_BATCH_REQUEST) && toolResults.length === 0)
     return {
       kind: "tools",
@@ -5602,6 +5617,36 @@ async function searchToggleUsable(toggle: WalkthroughTarget) {
     )
     .toBe(true);
   return target(target(page, UI.settingsDialog), toggle);
+}
+
+async function expectFileWritingProgress() {
+  await newThread();
+  const streamsBefore = installation.toolStreamStartedAt;
+  const turn = await send(WRITE_GAME_REQUEST);
+  await uiExpect
+    .poll(() => installation.toolStreamStartedAt !== streamsBefore, { timeout: 120_000 })
+    .toBe(true);
+  const streamStartedAt = installation.toolStreamStartedAt ?? Date.now();
+  const progress = turn.getByText(UI.writingProgress).first();
+  await uiExpect(progress).toBeVisible({ timeout: 30_000 });
+  const shownAfter = Date.now() - streamStartedAt;
+  expect(shownAfter).toBeLessThanOrEqual(WRITING_PROGRESS_FIRST_SHOWN_MS + 1_000);
+  const linesNow = async () =>
+    Number(UI.writingProgress.exec((await progress.textContent()) ?? "")?.[1] ?? 0);
+  const first = await linesNow();
+  await uiExpect.poll(linesNow, { timeout: WRITE_GAME_STREAM_MS }).toBeGreaterThan(first);
+  await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
+  const allow = target(turn, UI.approveOnce);
+  const answer = turn.getByText(/工具返回：/);
+  await uiExpect
+    .poll(async () => (await allow.count()) > 0 || (await answer.count()) > 0, {
+      timeout: 120_000,
+    })
+    .toBe(true);
+  if ((await allow.count()) > 0) await allow.first().click();
+  await uiExpect(answer).toHaveCount(1, { timeout: 120_000 });
+  await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+  await uiExpect(page.getByText(UI.failedConversation)).toHaveCount(0);
 }
 
 async function expectNewsSearchResults(text: string) {
@@ -5768,6 +5813,22 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         installation.modelRequests.filter((request) => request.path === "/v1/embeddings").length -
           embeddingsBefore,
       ).toBeGreaterThanOrEqual(2);
+    });
+    await scenario("accept-file-writing-progress", async () => {
+      await expectFileWritingProgress();
+    });
+    await scenario("accept-progress-without-state", async () => {
+      const slowState = async (route: Route) => {
+        if (route.request().postDataJSON()?.type === "thread.execution_state")
+          await new Promise((resolve) => setTimeout(resolve, SLOW_EXECUTION_STATE_MS));
+        await route.continue().catch(() => undefined);
+      };
+      await page.route("**/api/gateway/thread/v3/queries", slowState);
+      try {
+        await expectFileWritingProgress();
+      } finally {
+        await page.unroute("**/api/gateway/thread/v3/queries", slowState);
+      }
     });
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();

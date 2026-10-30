@@ -1192,6 +1192,84 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     ]);
   });
 
+  it("records a streamed file write as its path and line count until the call is complete", async () => {
+    const projection = new RecordingProjection();
+    const lines = Array.from(
+      { length: 400 },
+      (_, index) => `const row${index} = "${"x".repeat(60)}";`,
+    );
+    const finalArguments = { path: "game.html", content: lines.join("\n") };
+    const snapshot = (written: number) => {
+      const content = lines.slice(0, written).join("\n");
+      return {
+        role: "assistant",
+        timestamp: 456,
+        content: [
+          { type: "thinking", thinking: "plan" },
+          {
+            type: "toolCall",
+            id: "call-1",
+            name: "write",
+            arguments: { path: "game.html", content },
+            partialArgs: JSON.stringify({ path: "game.html", content }),
+          },
+        ],
+      };
+    };
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory(async (emit) => {
+        emit({ type: "agent_start" });
+        emit({ type: "message_start", message: snapshot(0) });
+        emit({
+          type: "message_update",
+          message: snapshot(0),
+          assistantMessageEvent: { type: "toolcall_start", contentIndex: 1 },
+        });
+        for (let written = 1; written <= lines.length; written += 1) {
+          emit({
+            type: "message_update",
+            message: snapshot(written),
+            assistantMessageEvent: { type: "toolcall_delta", contentIndex: 1 },
+          });
+          await Promise.resolve();
+        }
+        emit({
+          type: "message_end",
+          message: {
+            ...snapshot(lines.length),
+            content: [
+              { type: "thinking", thinking: "plan" },
+              { type: "toolCall", id: "call-1", name: "write", arguments: finalArguments },
+            ],
+            stopReason: "toolUse",
+          },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    await collect(adapter.run(request));
+    const captures = projection.captures as { value: { content?: Record<string, unknown>[] } }[];
+    const calls = captures.flatMap((entry) =>
+      (entry.value.content ?? []).filter((block) => block["type"] === "toolCall"),
+    );
+    const streamed = calls.filter((block) => block["streaming"] !== undefined);
+    const completed = calls.filter((block) => block["streaming"] === undefined);
+    expect(streamed.length).toBeGreaterThan(10);
+    for (const block of streamed) {
+      expect(block["arguments"]).toEqual({ path: "game.html" });
+      expect(block).not.toHaveProperty("partialArgs");
+    }
+    expect(streamed.at(-1)?.["streaming"]).toMatchObject({ lines: lines.length });
+    expect(completed.at(-1)?.["arguments"]).toEqual(finalArguments);
+    const streamedBytes = streamed.reduce(
+      (total, block) => total + JSON.stringify(block).length,
+      0,
+    );
+    expect(streamedBytes).toBeLessThan(finalArguments.content.length);
+  });
+
   it("exposes only authorized custom tools and maps Pi lifecycle events after settlement", async () => {
     const projection = new RecordingProjection();
     const tools = new RecordingRuntimeTools();
