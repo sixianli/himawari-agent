@@ -1,8 +1,8 @@
-import type { RunCheckpoint } from "../ports/run-checkpoints.js";
 import type {
   ThreadExecutionRecord,
   ThreadExecutionState,
 } from "@himawari-agent/gateway-contracts";
+import type { RunCheckpoint } from "../ports/run-checkpoints.js";
 import type { ThreadRunSummaryRecord } from "../ports/threads.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
 import type {
@@ -104,6 +104,8 @@ export function projectThreadExecutionState(
           ["runtime.tool_intent", "runtime.tool_result"].includes(record.name)),
     );
     if (!tool) continue;
+    const streamingWrite = group.findLast((record) => record.name === "runtime.tool_call.writing");
+    if (streamingWrite && streamingWrite.sequence > tool.sequence) continue;
     const marker = group.findLast((record) => record.name.startsWith("runtime.tool_outcome."));
     const reason = group.findLast((record) => record.name.startsWith("runtime.tool_reason."));
     const toolReasonCode =
@@ -269,6 +271,11 @@ export function projectThreadExecutionState(
     checkpoint.diagnosticCode === "RUN_EXECUTION_DEADLINE_EXCEEDED" &&
     !resources?.pendingResources;
   const expired = expiredAndReleased || expiredWithoutSandboxResources;
+  const failedWithoutSandboxResources =
+    sandboxResourcesAbsent &&
+    run.status === "failed" &&
+    !resources?.pendingResources &&
+    !operations.some((operation) => operation.displayPhase === "unresolved");
   const settledUnknownResult =
     run.status === "failed" &&
     checkpoint?.phase === "failed" &&
@@ -287,6 +294,7 @@ export function projectThreadExecutionState(
     ["failed", "cancelled"].includes(run.status) &&
     !resources?.allReleased &&
     !expiredWithoutSandboxResources &&
+    !failedWithoutSandboxResources &&
     displayPhase !== "not_dispatched" &&
     !["stopping", "verifying"].includes(resources?.phase ?? "")
   )

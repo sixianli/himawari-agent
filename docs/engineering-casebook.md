@@ -96,6 +96,7 @@ date: "2026-10-26"
   69. [标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器](#case-sunflower-growth-mark)
   70. [14:13 就出结果的一轮，30 分钟后才推送“没有完成”](#case-unknown-result-late-settle)
   71. [想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”](#case-cache-usage-ruler)
+  72. [搜索对话时好时坏：搜索前才临时建索引，被数据库队列拖到 20 秒](#case-search-index-background)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -121,7 +122,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
@@ -4409,6 +4410,10 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户让 Agent 写个小游戏，界面‘思考’了 44 秒一动不动，还弹了加载失败。我先猜是数据库排队，拿生产日志一对，排队最长才 1 秒，猜错了。真正的原因是：模型在写文件参数的那 25 秒里，我们每收到一小段就把整条消息存一份，越存越大，网页读一次进度要 13 秒。我改成写的过程中只记‘哪个文件、写了几行’，写完才存完整参数；页面显示‘已写 N 行’，思考只算真正思考的时间。最后在出包走查里加了必过用例：写文件开始 3 秒内必须看到行数在涨。”
+
+**后续（2026-10-31，日本时间 00:41）：第二十二版出包走查第一次真实跑到这条用例，失败了**
+
+`accept-file-writing-progress` 在 Hermes 上 30 秒内没等到“已写 N 行”。录像对应的那一轮里，12.5 秒内每约 0.3 秒就有一条模型消息记录写入，所以记录没有丢。根因是后端算“现在处于什么阶段”的代码（`packages/application/src/services/thread-execution-state.ts`）看到写到一半的 write 工具记录，就把它当成已经要执行的工具，阶段算成“准备中”；页面只在“模型思考、输出、等待”阶段显示行数，所以不显示。第一次修复的单元测试都没有带后端阶段，没拦住。现在的做法：工具的最新记录比它的“已写 N 行”记录还旧，就说明参数还在写，不算工具。来源：Anthropic 流式文档写明工具参数是 partial JSON strings，要等 `content_block_stop` 才是完整的 input（platform.claude.com/docs/en/build-with-claude/streaming，已打开）。新增测试用同样的记录序列算阶段，改前失败、改后通过。上线后的真实效果：未测量。
 <a id="case-push-ready-hang"></a>
 
 ## 案例 68：通知设置点了没反应：页面在等一个永远不会返回的浏览器接口
@@ -4610,6 +4615,51 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “主人要求所有模型调用都让 KV 缓存命中最大化，但我们连当前命中率都不知道。我先建了一把尺子：每次请求按用途记下输入、命中、是否上报。关键细节是 Pi 把缺失字段当 0，所以我在抓取层扫响应，把‘提供方没报’和‘命中 0’分开，不然会把没上报的算成 0% 误导优化。口径写死，样本不足就不出数。生产数据还没有，上线后才能得到基线。”
+
+[返回目录](#contents)
+
+<a id="case-search-index-background"></a>
+
+## 案例 72：搜索对话时好时坏：搜索前才临时建索引，被数据库队列拖到 20 秒
+
+**背景与现象**
+
+2026-10-30 22:15（日本时间），Andy 在生产网页（第二十一版）搜“hello”，只看到“搜索用时较长，请稍候或重试”，重试也一样；一分钟后再搜出了 6 条。日志（14:00–14:30 UTC）里 14:14:50 三个 `/api/thread-search/v1/prepare` 同时返回，耗时 20,730、18,828、15,638 毫秒。
+
+**根因**
+
+每次搜索前要先同步索引：把上次搜索之后新增的消息和标题逐条读出、解密、算词元、写进索引（`ThreadSearchProjector.synchronize`），每一步都排进那条唯一的数据库工作线程队列（日志里 `queuedBehind` 6–9，和 I-36 同一类排队）。三个请求共用同一次补建，所以一起返回。上次搜索之后聊得越多越慢，没有新内容就很快，所以时好时坏。每步各花多少毫秒当时没有日志，是推断。排除：查“哪些还没建索引”的语句本身，合成 5000 条×200 词元只要 11 毫秒。
+
+**我们的方案**
+
+后台每 5 秒和每次命令提交后补建；搜索最多等 1.5 秒，然后用现有索引查；读不出的单条（如超过 64KB）跳过并写日志，不再让整个搜索报错。复用已有的 `ThreadSearchProjector`，没有换索引技术。
+
+**方案讨论与备选**
+
+- 写入时当场建索引（SQLite FTS5 官方推荐触发器）：没有盲区，但我们的内容是加密的，SQL 触发器读不到明文；助手回答在“一轮结束”的大事务里写，那里拿不到明文和搜索密钥，要改事务边界，风险大于这个 bug；放弃，留作以后。
+- 换成 FTS5 虚拟表：同上，明文问题；还会破坏“索引只存加盐哈希”的隐私设计；放弃。
+- 只等 #128（第二十二版）修队列：队列变快会缓解，但搜索仍把索引补建放在请求里，新增内容多时仍会慢；不够。
+
+**业界主流做法**
+
+- ✅ Elasticsearch 近实时搜索文档：“A refresh makes all operations performed on an index since the last refresh available for search”，默认每秒后台刷新，搜索不等建索引。
+- ✅ SQLite FTS5 文档：“One way to do this is with triggers”；触发器不补旧数据，要 `rebuild`。
+
+**对比与取舍**
+
+和 Elasticsearch 一样把“建索引”和“搜索”分开，代价是刚发的消息最多晚几秒才能搜到。和 FTS5 触发器不同，因为我们的内容加密、索引只存哈希。
+
+**结果数据**
+
+测试：真实 SQLite 用例 `[I-43]`，补建每步慢 400 毫秒时准备请求必须在 380 毫秒内返回；改前 814 毫秒失败，改后通过（本地运行）。生产上搜索耗时和真实网页验收：未测量，上线后补。
+
+**相关 ADR/PR**
+
+[ADR 0130](adr/0130-search-index-built-in-background.md)；[事故 I-43](incidents-and-gates.md)；相关：I-29、I-36（同一条数据库队列）。
+
+**面试 30 秒版**
+
+“搜索偶尔 20 秒才返回。日志里三个请求同时返回，说明它们共用了一次‘搜之前才补建索引’。每步都在单线程数据库队列里排队，新内容越多越慢。我把建索引挪到后台，搜索最多等 1.5 秒，并让读不出的单条不再拖垮整个搜索，用真实 SQLite 的测试锁住：改前 814 毫秒，改后低于 380。”
 
 [返回目录](#contents)
 

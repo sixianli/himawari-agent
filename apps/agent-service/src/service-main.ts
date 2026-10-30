@@ -1538,6 +1538,14 @@ export async function runAgentService(
             code: failure.code,
             ...(failure.reason === null ? {} : { reason: failure.reason }),
           }),
+        onModelStreamFailed: (request, failure) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "model.stream_failed",
+            runId: request.runId,
+            code: failure.code,
+            message: failure.message,
+          }),
         onBackgroundFailure: (runId, error) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
@@ -1727,6 +1735,8 @@ export async function runAgentService(
             event: "http.slow_request",
             ...request,
           }),
+        onSearchIndexDiagnostic: (diagnostic) =>
+          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...diagnostic }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
           if (await runs.background?.cancel(input.runId)) return;
