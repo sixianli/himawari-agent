@@ -61,6 +61,7 @@ class ProductionTree:
         self.file(upload / (date + '-' + label + '-change-packet-01/inputs/bindings.json'))
         self.file(upload / 'transport-1-result.json')
         self.file(evidence / 's1-result.json')
+        self.file(evidence / 'build-cache.tar.gz', 11 * MEBIBYTE)
         self.file(evidence / (label + '-raw-schema66/data/product.sqlite'), 11 * MEBIBYTE)
         return {'prefix': prefix, 'operations': operations, 'stage': stage, 'evidence': evidence, 'upload': upload, 'binding': binding}
 
@@ -81,6 +82,9 @@ class ReleaseCleanupTest(unittest.TestCase):
         self.serving = tree.release('2026-10-29', 'nineteenth', self.previous['prefix'])
         self.failed = tree.release('2026-10-30', 'twentieth', self.serving['prefix'])
         tree.serve(self.serving)
+        for stamp, release in enumerate((self.first, self.previous, self.serving, self.failed), start=1):
+            copy = self.database_copy(release)
+            os.utime(copy, (stamp * 1000, stamp * 1000))
         self.leftover_release = tree.releases / '2026-10-27-eighteenth.attempt1-failed-20261027'
         tree.file(self.leftover_release / 'lib/x.js', MEBIBYTE)
         self.leftover_stage = tree.tmp / 'himawari-eighteenth-20261027.attempt1-failed-20261027'
@@ -91,8 +95,12 @@ class ReleaseCleanupTest(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
-    def run_cleanup(self, apply=True, references=(), current=None):
-        return remote.cleanup(self.tree.plan(current or self.failed), apply, list(references), '20261030T010000Z')
+    def database_copy(self, release):
+        label = release['evidence'].name.split('-')[0]
+        return release['evidence'] / (label + '-raw-schema66/data/product.sqlite')
+
+    def run_cleanup(self, apply=True, references=(), current=None, **changes):
+        return remote.cleanup({**self.tree.plan(current or self.failed), **changes}, apply, list(references), '20261030T010000Z')
 
     def test_after_a_failed_attempt_only_the_serving_and_rollback_releases_and_the_rollback_packet_remain(self):
         result = self.run_cleanup()
@@ -110,9 +118,24 @@ class ReleaseCleanupTest(unittest.TestCase):
         self.assertFalse(self.failed['evidence'].exists())
         moved = Path(str(self.failed['evidence']) + '.attempt-failed-20261030T010000Z')
         self.assertTrue((moved / 's1-result.json').exists())
-        self.assertFalse((moved / 'twentieth-raw-schema66/data/product.sqlite').exists())
-        self.assertTrue((self.serving['evidence'] / 'nineteenth-raw-schema66/data/product.sqlite').exists())
-        self.assertFalse((self.previous['evidence'] / 'eighteenth-raw-schema66/data/product.sqlite').exists())
+        self.assertFalse((self.first['evidence'] / 'build-cache.tar.gz').exists())
+
+    def test_the_three_newest_database_copies_stay_and_older_ones_go(self):
+        result = self.run_cleanup()
+        moved = Path(str(self.failed['evidence']) + '.attempt-failed-20261030T010000Z')
+        self.assertTrue((moved / 'twentieth-raw-schema66/data/product.sqlite').exists())
+        self.assertTrue(self.database_copy(self.serving).exists())
+        self.assertTrue(self.database_copy(self.previous).exists())
+        self.assertFalse(self.database_copy(self.first).exists())
+        self.assertEqual(sorted(item['path'] for item in result['kept'] if item['reason'] == 'recent-database-copy'), sorted(str(path) for path in (self.database_copy(self.failed), self.database_copy(self.serving), self.database_copy(self.previous))))
+
+    def test_the_number_of_database_copies_kept_follows_the_plan(self):
+        self.run_cleanup(keepDatabaseCopies=1)
+        self.assertFalse(self.database_copy(self.previous).exists())
+        self.assertTrue(self.database_copy(self.serving).exists())
+
+    def test_plan_keeps_three_database_copies(self):
+        self.assertEqual(self.tree.plan(self.failed)['keepDatabaseCopies'], 3)
 
     def test_reports_logs_and_results_are_archived_before_their_copies_are_deleted(self):
         result = self.run_cleanup()

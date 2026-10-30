@@ -15,6 +15,7 @@ import sys
 STAGE_NAME = re.compile(r'himawari-[a-z]+-[0-9]{8}(\..+)?')
 UPLOAD_NAME = re.compile(r'[a-z]+-packet-upload(\..+)?')
 PACKET_COPY_NAME = re.compile(r'.+-change-packet-[0-9]+')
+DATABASE_COPY = re.compile(r'/[^/]*-raw-schema[0-9]+[^/]*/data/')
 EVIDENCE_NAME = re.compile(r'[a-z]+-[0-9]{8}-evidence(\..+)?')
 SERVING_UNIT = re.compile(r'ExecStart=\S+ --no-global-search-paths (/\S+)/pair-supervisor\.mjs --prefix (/\S+) ')
 REBUILDABLE_SUBTREES = {'packet', 'validation', 'input', 'materials', 'runtime-tools', 'question-12-downloads', 'node_modules'}
@@ -192,7 +193,20 @@ def cleanup(plan, apply, references, stamp):
         if '.attempt' in Path(path).name and not in_use(path):
             remove(path, 'failed-attempt-operations')
 
-    for path in children(plan['evidenceParent'], EVIDENCE_NAME):
+    evidence_roots = children(plan['evidenceParent'], EVIDENCE_NAME)
+    database_copies = []
+    for root in evidence_roots:
+        for parent, directories, files in os.walk(root):
+            for name in files:
+                filename = os.path.join(parent, name)
+                info = os.lstat(filename)
+                if stat.S_ISREG(info.st_mode) and info.st_size > plan['largeFileBytes'] and DATABASE_COPY.search(filename):
+                    database_copies.append((info.st_mtime, filename))
+    recent_copies = {filename for mtime, filename in sorted(database_copies, reverse=True)[:plan['keepDatabaseCopies']]}
+    for filename in sorted(recent_copies):
+        keep(filename, 'recent-database-copy')
+
+    for path in evidence_roots:
         if path == current['evidence']:
             keep(path, 'serving-evidence')
             continue
@@ -200,7 +214,7 @@ def cleanup(plan, apply, references, stamp):
             for name in files:
                 filename = os.path.join(parent, name)
                 info = os.lstat(filename)
-                if stat.S_ISREG(info.st_mode) and info.st_size > plan['largeFileBytes'] and not in_use(filename):
+                if stat.S_ISREG(info.st_mode) and info.st_size > plan['largeFileBytes'] and filename not in recent_copies and not in_use(filename):
                     result['trimmed'].append({'path': filename, 'bytes': info.st_blocks * 512})
                     if apply:
                         os.unlink(filename)

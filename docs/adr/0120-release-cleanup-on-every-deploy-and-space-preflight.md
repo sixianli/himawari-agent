@@ -19,6 +19,7 @@ date: "2026-10-30"
 - [与 ADR 0074 的关系](#amendments)
 - [比较过的方案](#options)
 - [后果](#consequences)
+- [补充决定：保留最近 3 份数据库副本](#database-copies)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -84,6 +85,14 @@ date: "2026-10-30"
 - 代价：只能回退到上一版；更早的版本要重新出包。旧证据目录里的数据库恢复点被删，只剩小文件。
 - 自动检查：`scripts/delivery-mode/test_release_cleanup.py`（清理规则 11 条）和 `scripts/delivery-mode/test_deploy.py` 的 `ProductionCleanupFlowTest`、`RootSpacePreflightTest`。去掉本次对 `deploy.sh` 和 `deploy-preflight.py` 的修改时，新增的 10 条中 7 条失败、2 条报错。事故记录 I-33（[事故与门槛清单](../incidents-and-gates.md)）。
 - 待做：第一次在生产机实际运行要等下一次上线，届时核对 `cleanup-report.json` 删除的路径和释放的空间。Hermes 上出包用的工作目录和 Mac 上的测试产物按同一条指令另行处理。
+
+<a id="database-copies"></a>
+
+## 补充决定：保留最近 3 份数据库副本
+
+2026-10-30 10:30（日本时间），Andy 在选择卡上选了“留最近 3 份”。第二十版上线前的清理计划显示，各版证据目录里有 32 份升级前的数据库原样副本，共 3.81 GiB。正式备份还没做，这些副本就是现有的全部数据库备份。
+
+因此[决定](#decision)第 2 条“各版证据目录里超过 10 MiB 的文件删除”加一个例外：所有证据目录中，路径含 `*-raw-schema<编号>*/data/` 的数据库副本，按修改时间保留最新的 3 份（`release-cleanup.py` 的 `KEEP_DATABASE_COPIES`），清单里标为 `recent-database-copy`，其余照删。正在服务那一版的证据目录仍整个保留，它的副本也计入这 3 份。测试：`test_release_cleanup.py` 的 `test_the_three_newest_database_copies_stay_and_older_ones_go`。
 
 <a id="references"></a>
 
