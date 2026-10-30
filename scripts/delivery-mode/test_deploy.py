@@ -13,7 +13,7 @@ CONFIG_SHA256 = 'c' * 64
 UNIT_SHA256 = 'd' * 64
 COMMIT = 'b' * 40
 BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'oldConfigSha256': CONFIG_SHA256, 'oldUnitSha256': UNIT_SHA256}, 'paths': {'stateRoot': '/var/lib/himawari/state', 'config': '/etc/himawari/config.json'}, 'authority': {'authorityEpoch': 1, 'fencingToken': 31}, 'candidate': {'archiveSha256': ARTIFACT_SHA256, 'testedCommit': COMMIT}}
-SCENARIOS = ['accept-homepage', 'accept-search-approval', 'accept-search-toggle', 'accept-news-search', 'accept-long-answer', 'accept-run-command', 'accept-unrelated-no-memory', 'accept-memory-page', 'accept-phone-layout', 'accept-after-restart']
+SCENARIOS = ['accept-homepage', 'accept-search-approval', 'accept-search-toggle', 'accept-news-search', 'accept-long-answer', 'accept-run-command', 'accept-unrelated-no-memory', 'accept-slow-memory-search', 'accept-memory-page', 'accept-phone-layout', 'accept-after-restart']
 
 
 TIMED = {'accept-run-command': 5721, 'accept-unrelated-no-memory': 1223}

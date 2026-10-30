@@ -492,9 +492,6 @@ export class SqliteModelBudgetOperations {
       existingAccount ??
       this.insertAccount(scope.ownerId, scope.agentId, input.parent, input.dataClassification);
     this.assertAccountClassification(account, input.dataClassification);
-    if (account.status === "reconcile_required") {
-      return this.fail("PORT_CONFLICT", "Budget account is not available for a new allocation");
-    }
     let nextReserved: number;
     if (input.parent.kind === "occurrence") {
       const outstanding = this.outstandingChildReservation(
@@ -532,7 +529,12 @@ export class SqliteModelBudgetOperations {
         input.estimatedCostMicros,
         input.reservedAt,
       );
-    const updated = this.updateAccount(account, nextReserved, account.spentCostMicros, "active");
+    const updated = this.updateAccount(
+      account,
+      nextReserved,
+      account.spentCostMicros,
+      account.status === "reconcile_required" ? "reconcile_required" : "active",
+    );
     const allocation = this.readAllocation(
       scope.ownerId,
       scope.agentId,
@@ -571,8 +573,6 @@ export class SqliteModelBudgetOperations {
       return this.fail("PORT_CONFLICT", "Model budget allocation cannot be started");
     }
     this.assertParent(scope, parent, input.startedAt, true);
-    if (account.status === "reconcile_required")
-      return this.fail("PORT_CONFLICT", "Budget account is not active");
     this.database
       .prepare(
         `UPDATE model_budget_allocations SET status = 'started', started_at = ?

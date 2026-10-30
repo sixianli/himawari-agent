@@ -308,6 +308,7 @@ export interface ProductPathInstallation {
   readonly modelRequests: ModelRequest[];
   setModelScript(script: ModelScript): void;
   setEmbeddingAvailable(available: boolean): void;
+  delayNextEmbedding(milliseconds: number): void;
   setRunDeadline(milliseconds: number): Promise<void>;
   setCodingApproval(approval: "workspace_auto" | "ask"): Promise<void>;
   start(): Promise<void>;
@@ -577,6 +578,7 @@ export async function installProductPath(options: {
 
   let modelScript: ModelScript = () => ({ kind: "text", text: "默认回答" });
   let embeddingAvailable = true;
+  let nextEmbeddingDelayMs = 0;
   const modelRequests: ModelRequest[] = [];
   let providerPort = 0;
   let appPort = 0;
@@ -614,28 +616,35 @@ export async function installProductPath(options: {
             request.socket.destroy();
             return;
           }
-          response.writeHead(200, { "content-type": "application/json" });
-          response.end(
-            JSON.stringify({
-              object: "list",
-              model: body["model"],
-              data: [
-                {
-                  object: "embedding",
-                  index: 0,
-                  embedding: Array(Number(body["dimensions"])).fill(0.1),
+          const delayMs = nextEmbeddingDelayMs;
+          nextEmbeddingDelayMs = 0;
+          const answer = () => {
+            if (response.destroyed) return;
+            response.writeHead(200, { "content-type": "application/json" });
+            response.end(
+              JSON.stringify({
+                object: "list",
+                model: body["model"],
+                data: [
+                  {
+                    object: "embedding",
+                    index: 0,
+                    embedding: Array(Number(body["dimensions"])).fill(0.1),
+                  },
+                ],
+                usage: { prompt_tokens: 8, total_tokens: 8 },
+                providerMetadata: {
+                  gateway: {
+                    generationId: `embedding-${modelRequests.length}`,
+                    routing: { finalProvider: "deepinfra" },
+                    cost: "0",
+                  },
                 },
-              ],
-              usage: { prompt_tokens: 8, total_tokens: 8 },
-              providerMetadata: {
-                gateway: {
-                  generationId: `embedding-${modelRequests.length}`,
-                  routing: { finalProvider: "deepinfra" },
-                  cost: "0",
-                },
-              },
-            }),
-          );
+              }),
+            );
+          };
+          if (delayMs > 0) setTimeout(answer, delayMs);
+          else answer();
           return;
         }
         if (requestPath !== "/v1/chat/completions") {
@@ -1279,6 +1288,9 @@ export async function installProductPath(options: {
     },
     setEmbeddingAvailable: (available) => {
       embeddingAvailable = available;
+    },
+    delayNextEmbedding: (milliseconds) => {
+      nextEmbeddingDelayMs = milliseconds;
     },
     setRunDeadline: async (milliseconds) => {
       if (processes || !Number.isSafeInteger(milliseconds) || milliseconds < 1000)

@@ -5486,6 +5486,7 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-long-answer",
   "accept-run-command",
   "accept-unrelated-no-memory",
+  "accept-slow-memory-search",
   "accept-memory-page",
   "accept-phone-layout",
   "accept-after-restart",
@@ -5496,6 +5497,7 @@ const APPROVAL_FOLLOW_UP_LIMIT_MS = 10_000;
 const RUN_COMMAND_OUTPUT = "lines=37";
 const UNRELATED_REQUEST = "写到一个pdf文件";
 const PLAIN_ANSWER = "普通回答已完成";
+const SLOW_MEMORY_SEARCH_DELAY_MS = 3_500;
 const LONG_ANSWER_END = "长回答验收到此结束";
 const LONG_ANSWER = [
   ...Array.from(
@@ -5751,6 +5753,21 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await process.locator(UI.turnProcessToggle).click();
       await uiExpect(turn.getByText(UI.memoryFoundStep)).toHaveCount(0);
       await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
+    });
+    await scenario("accept-slow-memory-search", async () => {
+      await newThread();
+      const embeddingsBefore = installation.modelRequests.filter(
+        (request) => request.path === "/v1/embeddings",
+      ).length;
+      installation.delayNextEmbedding(SLOW_MEMORY_SEARCH_DELAY_MS);
+      const turn = await send(UNRELATED_REQUEST);
+      await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
+      await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+      await uiExpect(turn.getByText(/本轮执行失败/)).toHaveCount(0);
+      expect(
+        installation.modelRequests.filter((request) => request.path === "/v1/embeddings").length -
+          embeddingsBefore,
+      ).toBeGreaterThanOrEqual(2);
     });
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
