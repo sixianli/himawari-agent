@@ -69,7 +69,8 @@ export function createProductionRunExpiry(options: {
     )
       throw new Error("RUN_EXPIRY_INPUT_INVALID");
     const at = options.clock.now();
-    if (at < frozen.deadlineAt) return false;
+    if (at < frozen.deadlineAt && saved.checkpoint.diagnosticCode !== "RUNTIME_TOOL_RESULT_UNKNOWN")
+      return false;
     const result = await recovery.settleExpired({
       runId: candidate.runId,
       expectedRunRevision: candidate.runRevision,

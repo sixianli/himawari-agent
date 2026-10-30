@@ -92,6 +92,7 @@ date: "2026-10-26"
   65. [生产机磁盘每次上线前都不够：上线流程只装不拆，清理步骤写了却没接上](#case-release-cleanup)
   66. [电脑上开着的设置，手机上没有：只搬了三项设置上服务器，断线的旧设备还会把旧值推回去](#case-settings-everywhere)
   67. [写小游戏时“思考 44 秒”一动不动：每个流式片段都存一整条消息](#case-silent-file-writing)
+  68. [14:13 就出结果的一轮，30 分钟后才推送“没有完成”](#case-unknown-result-late-settle)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -120,7 +121,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing) |
+| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere) |
@@ -4396,6 +4397,65 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户让 Agent 写个小游戏，界面‘思考’了 44 秒一动不动，还弹了加载失败。我先猜是数据库排队，拿生产日志一对，排队最长才 1 秒，猜错了。真正的原因是：模型在写文件参数的那 25 秒里，我们每收到一小段就把整条消息存一份，越存越大，网页读一次进度要 13 秒。我改成写的过程中只记‘哪个文件、写了几行’，写完才存完整参数；页面显示‘已写 N 行’，思考只算真正思考的时间。最后在出包走查里加了必过用例：写文件开始 3 秒内必须看到行数在涨。”
+
+[返回目录](#contents)
+
+<a id="case-unknown-result-late-settle"></a>
+
+## 案例 68：14:13 就出结果的一轮，30 分钟后才推送“没有完成”
+
+**背景与现象**
+
+2026-10-30 14:44（日本时间），Andy 的手机收到“没有完成”的推送，点开是 14:13 就已经显示出结果的“写一个简易小游戏”那一轮。Andy 原话：“这一个不是很早就结束了吗？这个绘画为什么还会推送到我这里？”
+
+**根因**
+
+用生产数据库和日志核对（`/mnt/project-files/run-2e5744db-*.txt`），先后推翻了两个猜测：
+
+- 先猜“Gmail 主动检查判了失败所以推送”：日志里那条检查推送数为 0，无关。
+- 再猜“沙箱里没有记录时才能提前收尾，这一轮记录都在，所以要等”：数据库显示 3 条沙箱记录在 14:13:15–14:13:42 全部已有释放凭证、占用已释放，真正的原因是收尾规则要等“所有记录自己的期限都过了”，而 bash 记录的期限是开始后 30 分钟（ADR 0098 为后台命令定的），不看记录是否已释放。
+- 最后一条 bash 命令被记成“退出未知”，这一轮因此停在“核对外部结果”，之后没有任何东西去核对。这个“未知”为什么出现还没查清：判定要求任务已启动、进程已退出、输出管道已关闭、拿到退出码四项同时成立，四个值没有保存，日志里也没有。我先猜过“命令留下了后台进程”，Andy 发来命令内容（普通 Python 脚本加 `node --check`）后排除。
+
+**我们的方案**
+
+见 [ADR 0126](adr/0126-settle-unknown-result-run-once-resources-released.md)。
+
+1. 命令结果未知且全部沙箱记录都已释放时立刻收尾；仍有未释放资源时照旧等期限。
+2. 页面和推送写明“命令结果没确认，本轮已结束”，失败照常推送。
+3. 命令被记成“退出未知”时输出四个值的日志，下次出现就能定位。
+4. 门槛：真实数据形状的测试，记录已释放、期限未到必须收尾（旧代码失败），有记录未释放必须继续等。
+
+**方案讨论与备选**
+
+- **期限清理补出的失败不再推送**：这是我第一版方案，Andy 追问业界怎么做后我去读了原文，没有任何一手资料支持隐藏失败通知（GitHub 默认通知失败），收回。
+- **只缩短 30 分钟**：它是后台命令的设计，缩短会破坏它。放弃。
+- **只在“没有沙箱记录”时提前收尾**：已写好测过，但救不了这一次（有 3 条记录），没采用。
+
+**业界主流做法**
+
+- ✅ Apple Human Interface Guidelines 的 Notifications：“Avoid sending multiple notifications for the same thing”，通知要 “timely, high-value”（[原文](https://developer.apple.com/design/human-interface-guidelines/notifications)）。
+- ✅ GitHub 工作流通知：任务结束（成功、失败、取消）都通知，可选“只通知失败”（[原文](https://docs.github.com/en/actions/monitoring-and-troubleshooting-workflows/notifications-for-workflow-runs)）。
+- ✅ Temporal 活动超时：卡住的任务不设超时会让用户 “an indefinite delay ... with no feedback”（[原文](https://temporal.io/blog/activity-timeouts)）。
+- 没有一手资料回答“结果未知但资源已清理完毕的任务能否提前判失败”，这一点是本项目自己的判断。
+
+**对比与取舍**
+
+- 和业界一致：失败照常通知，要及时，不对同一件事重复提醒。
+- 本项目自己的判断：资源已确认释放时，不等记录的期限就收尾。放弃的是“给重启后找回结果留的窗口”，但这个状态下没有别的流程会去找回。
+
+**结果数据**
+
+- 事故这一轮：14:13:42 资源释放完毕，14:43:36 才收尾，等了约 30 分钟（来源：数据库导出）。
+- 测试：改前 4 例失败，改后通过。
+- 上线后的真实效果：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0126](adr/0126-settle-unknown-result-run-once-resources-released.md)；[事故 I-39](incidents-and-gates.md#incidents)；[案例 67](#case-silent-file-writing)。
+
+**面试 30 秒版**
+
+“用户收到一条推送，点开发现那一轮半小时前就结束了。我先猜是别的功能触发，日志否定了；再猜是沙箱里没有记录才能提前收尾，数据库又否定了。真正的原因是收尾规则不看记录有没有释放，只看每条记录自己的期限，而 bash 记录的期限是 30 分钟。我去查了 Apple、GitHub 的通知规范，确认失败要通知、要及时、不重复，所以没有隐藏失败，而是让它在资源释放后立刻收尾并写明原因。‘命令为什么被记成未知’我没猜，先加日志，等下次数据。”
 
 [返回目录](#contents)
 

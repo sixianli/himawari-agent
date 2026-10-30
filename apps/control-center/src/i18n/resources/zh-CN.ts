@@ -202,6 +202,8 @@ export const messages = {
   "chat.reason.operationUnavailable": "当前执行方式不可用",
   "chat.reason.admissionUnavailable": "执行准入服务暂不可用",
   "chat.reason.runDeadlineExceeded": "本轮执行期限已到，清理已完成，本轮已结束",
+  "chat.reason.toolResultUnknown":
+    "有一条命令的结果没能确认，本轮已结束，没有生成回答。继续前请先核实命令做了什么",
   "chat.reason.toolDeadlineExceeded": "工具执行超时，已终止并完成清理",
   "chat.reason.toolNotStarted": "工具未启动：准备阶段失败，已确认清理完成",
   "chat.reason.deadlineExceeded": "执行期限已到，操作未派发",

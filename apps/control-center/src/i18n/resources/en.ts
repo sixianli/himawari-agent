@@ -209,6 +209,8 @@ export const messages = {
   "chat.reason.admissionAlreadyRecorded": "Request already recorded; check its original status",
   "chat.reason.operationUnavailable": "This execution method is unavailable",
   "chat.reason.admissionUnavailable": "Execution admission service is unavailable",
+  "chat.reason.toolResultUnknown":
+    "A command's result could not be confirmed, so this Run ended without an answer. Check what the command did before continuing",
   "chat.reason.runDeadlineExceeded":
     "The Run deadline expired; cleanup is complete and this Run has ended",
   "chat.reason.toolDeadlineExceeded":

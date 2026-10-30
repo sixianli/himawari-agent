@@ -89,7 +89,7 @@ export const RUN_EXPIRED_RECONCILIATION_SQL = `
   AND c.phase='reconciling_external_result'
   AND c.terminal_status IS NULL AND c.output_kind IS NULL
   AND (
-    (c.diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN' AND (${RUN_SANDBOX_RESOURCES_ABSENT_SQL}))
+    c.diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN'
     OR (EXISTS (SELECT 1 FROM sandbox_execution_records expired
     WHERE expired.owner_id=r.owner_id AND expired.agent_id=r.agent_id AND expired.run_id=r.id
       AND json_extract(expired.plan_json,'$.originalDeadlineAt')<=@resourceNow)
