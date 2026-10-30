@@ -21,6 +21,11 @@ import { appendAuditRecord, applyOwnerPolicyAuthorization } from "./owner-policy
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const sameRecipients = (stored: readonly unknown[], current: readonly string[]) =>
+  [...stored].sort().join("\n") === [...current].sort().join("\n");
+type SearchAuthorizationState = Awaited<
+  ReturnType<SqliteProductStateRepository["readScopedState"]>
+>;
 
 export class PublicSearchAuthorization {
   private readonly key: string;
@@ -33,6 +38,7 @@ export class PublicSearchAuthorization {
     >;
     clock: ClockPort;
     ids: IdGeneratorPort;
+    authority?: () => AuthorityFence;
   };
   constructor(options: PublicSearchAuthorization["options"]) {
     this.options = options;
@@ -51,17 +57,23 @@ export class PublicSearchAuthorization {
     const runPolicy = this.options.configuration.runPolicy;
     return { search: runPolicy?.publicSearch ?? null, fetch: runPolicy?.publicFetch ?? null };
   }
-  private consent() {
-    return {
-      models: (this.options.configuration.modelDescriptors ?? [])
-        .filter(
-          (model) =>
-            model.role !== "embedding" && model.allowedDataClassifications.includes("private"),
-        )
-        .map(configuredModelDisclosureIdentity)
-        .sort(),
-      recipients: [...this.recipients()].sort(),
-    };
+  private models() {
+    return (this.options.configuration.modelDescriptors ?? [])
+      .filter(
+        (model) =>
+          model.role !== "embedding" && model.allowedDataClassifications.includes("private"),
+      )
+      .map(configuredModelDisclosureIdentity);
+  }
+  private agreedRecipients(state: SearchAuthorizationState) {
+    const stored = state?.value["recipients"];
+    return Array.isArray(stored) && sameRecipients(stored, this.recipients());
+  }
+  private enabled(state: SearchAuthorizationState) {
+    return !state || (state.value["enabled"] === true && this.agreedRecipients(state));
+  }
+  private providersChanged(state: SearchAuthorizationState) {
+    return state?.value["enabled"] === true && !this.agreedRecipients(state);
   }
   async revision(): Promise<number> {
     return (await this.read())?.revision ?? 0;
@@ -75,16 +87,16 @@ export class PublicSearchAuthorization {
       throw new Error("SEARCH_OPERATION_NOT_INSTALLED");
     const state = await this.read();
     const routes = this.routes();
+    const available = routes.search !== null || routes.fetch !== null;
     return {
       ...query,
       kind: "snapshot",
       type: "search.authorization.snapshot",
       payload: {
         revision: state?.revision ?? 0,
-        enabled:
-          state?.value["enabled"] === true &&
-          state.value["bindingDigest"] === digest(this.consent()),
-        available: routes.search !== null || routes.fetch !== null,
+        enabled: available && this.enabled(state),
+        providersChanged: available && this.providersChanged(state),
+        available,
         recipients: this.recipients(),
         generatedAt: this.options.clock.now(),
       },
@@ -121,7 +133,7 @@ export class PublicSearchAuthorization {
         commandFingerprint: digest({
           payload: command.payload,
           actor: command.actor,
-          consent: this.consent(),
+          recipients: [...this.recipients()].sort(),
         }),
         authority,
       },
@@ -130,8 +142,7 @@ export class PublicSearchAuthorization {
         expectedRevision: command.payload.expectedRevision || null,
         value: {
           enabled: command.payload.enabled,
-          bindingDigest: digest(this.consent()),
-          recipients: this.recipients(),
+          recipients: [...this.recipients()].sort(),
           actorId: command.actor.actorId,
         },
       },
@@ -152,13 +163,48 @@ export class PublicSearchAuthorization {
     });
     return { resultRef: result.commandResult.resultRef, replayed: result.replayed };
   }
+  private async recordDefault(): Promise<SearchAuthorizationState> {
+    const { configuration, repository, clock } = this.options;
+    if (!this.options.authority) return undefined;
+    const idempotencyKey = `${this.key}:default`;
+    const recipients = [...this.recipients()].sort();
+    const result = await repository.commitStateAndEvents({
+      command: {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        commandType: "search.authorization.default",
+        idempotencyKey: idempotencyKey as IdempotentAgentCommand["idempotencyKey"],
+        commandFingerprint: digest({ enabled: true, recipients }),
+        authority: this.options.authority(),
+      },
+      state: {
+        key: this.key,
+        expectedRevision: null,
+        value: { enabled: true, recipients, actorId: "default" },
+      },
+      events: [],
+      resultRef: this.key,
+      committedAt: clock.now(),
+    });
+    if (!result.replayed)
+      await this.appendAudit({
+        id: `search-policy:${digest(idempotencyKey)}`,
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        action: "search.authorization.enabled",
+        targetRef: this.key,
+        outcome: "completed",
+        occurredAt: result.commandResult.committedAt,
+      });
+    return this.read();
+  }
   private async appendAudit(record: import("@himawari-agent/application").AuditRecord) {
     await appendAuditRecord(this.options.repository.auditLedger(), record);
   }
   async authorize(intent: GovernedActionIntent): Promise<void> {
     const { configuration, repository, clock, ids } = this.options;
     const routes = this.routes();
-    const consent = this.consent();
+    const models = this.models();
     const route =
       intent.operation === "web_search"
         ? routes.search
@@ -185,7 +231,7 @@ export class PublicSearchAuthorization {
       intent.estimatedCostMicros !== 0 ||
       intent.recipients.length !== recipients.length + 1 ||
       !recipients.every((value) => intent.recipients.includes(value)) ||
-      !intent.recipients.some((value) => consent.models.includes(value)) ||
+      !intent.recipients.some((value) => models.includes(value)) ||
       !intent.targets.some((target) => target.type === "host" && target.ref === route.hostId) ||
       ("scopeSource" in route
         ? intent.targets.some((target) =>
@@ -197,13 +243,8 @@ export class PublicSearchAuthorization {
       domains.join(",") !== egress.join(",")
     )
       return;
-    const state = await this.read();
-    if (
-      !state ||
-      state.value["enabled"] !== true ||
-      state.value["bindingDigest"] !== digest(consent)
-    )
-      return;
+    const state = (await this.read()) ?? (await this.recordDefault());
+    if (!state || !this.enabled(state)) return;
     const store = repository.authorizationStore();
     await applyOwnerPolicyAuthorization({
       store,

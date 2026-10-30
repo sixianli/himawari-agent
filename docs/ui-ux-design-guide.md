@@ -59,6 +59,7 @@ date: "2026-10-29"
 17. **能点开的才给箭头。** 没有内容可看的步骤不能点，也不显示箭头（[ADR 0105](adr/0105-ui-batch-2026-10-28-show-what-the-owner-needs.md) 第 2 条）。
 18. **按钮的悬停底色和按钮一样大。** 全站按钮默认有 44px 最小高度；图标按钮要显式取消这个最小高度，否则 28px 的图标外面会出现一个又高又窄的悬停底色（第 28 条自查）。
 31. **主人批准后马上有回应，同一步的同类请求只问一次。** 点“允许”后卡片立刻变成“已收到，正在继续…”，之后的进度和回答自己出现，不用主人退出再进来；页面读数据的请求要有时限，一次没回答就重试，不能让整页停在“正在加载…”。模型同一步发起几次同类操作（例如一次搜两个地方）时，合成一张卡片，写明“这一步要搜索 2 次”，一次允许全部放行；不同类的操作仍然分开问（I-29，和 OpenAI Agents SDK 一次返回全部待批项、Claude Code 按工具记住选择的做法一致）。
+32. **主人的设置不能被系统悄悄改掉；只读操作不逐次问。** 设置存在服务端，手机和电脑看到同一份；只有主人同意过的前提真的变了（例如联网搜索要发往的地址换了）才可以改，而且要在设置旁边写明原因和现在的情况，不能只把开关变灰或变关。联网搜索、读网页这类只读、没有副作用的工具默认打开、不逐次弹卡，付款、发邮件、改文件这类不好撤回的事才逐次确认（I-34，[ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)；和 ChatGPT、Claude、Gemini 默认自动搜索的做法一致）。
 
 ### 文字、颜色和语言
 
@@ -146,6 +147,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 2026-10-29 | 模型写的 Word、Excel 在预览栏里只显示“这种文件不能在这里预览” | 预览栏只认文本、图片、网页和浏览器自带的 PDF 查看器 | PDF 用 pdf.js、Word 用 docx-preview、Excel 用 ExcelJS 读后自己画表，都在浏览器里显示（[ADR 0114](adr/0114-file-preview-pdf-word-excel-in-browser.md)） | 27 |
 | 2026-10-29 | Word 里的项目符号在没有 Symbol 字体的设备上显示成方框 | Word 用 Symbol 字体的私用区字符（例如 U+F0B7）画圆点 | 渲染前换成普通圆点、方块字符；浏览器测试检查不出现私用区字符 | 27 |
 | 2026-10-29 | 问天气时“搜索网页”连弹两次审批；第二次批准后页面一直“正在加载…”，退出再进才看到早已写完的回答 | 模型同一步并行发起两次搜索，每次各建一个审批，卡片一次只显示一个；网页的刷新单线排队、读请求没有时限，一个请求服务器没回答整页就停住（I-29） | 同一步的同类审批合成一张卡片一次放行；批准后显示“已收到，正在继续…”；读请求 15 秒没回答就放弃重试 | 31 |
+| 2026-10-30 | 主人一直开着“允许联网搜索”，换了模型后它在所有设备上悄悄变成关，问天气又弹卡 | 开关和每个模型配置的摘要绑在一起，模型一变就失效，页面不说原因（I-34） | 开关默认开、只跟搜索服务地址绑定；地址变了才关，并在设置里写明原因 | 32 |
 
 [↑ 返回目录](#contents)
 
@@ -163,6 +165,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 文件预览 | `node scripts/test-file-preview-browser.mjs chromium`（和 `webkit`），不在 `npm run check` 里 | 在生产安全策略下，PDF、Word、Excel 在三语、1280 和 390 宽下都能显示：PDF 有文字层，Word 有样式、图片和项目符号，Excel 填充色和数字格式对，页面不横向滚动 |
 | 界面走查脚本 | `npm run check:release-walkthrough` | 上线前走查脚本里的选择器和页面一致，包括审批卡片的按钮和“已收到，正在继续…”文字 |
 | 批准后继续 | 上线走查 `accept-search-approval`（`test/integration/product-path-browser.test.ts`，`scripts/delivery-mode/browser-acceptance-gate.py` 要求它通过才能上线） | 一步里两次搜索只弹一张卡片；点一次允许后 10 秒内回答出现，页面不停在“正在加载…”（I-29） |
+| 搜索默认打开 | 上线走查 `accept-news-search`、`accept-search-toggle`、`accept-after-restart`；`test/integration/public-search-authorization.test.ts`“keeps web search on by default and through model changes” | 全新安装下搜索不弹卡、开关默认开；换模型后开关仍开；主人关掉后重启仍是关；搜索服务地址变了才关并说明原因 |
 | 审批卡片本地浏览器验收 | `HIMAWARI_CHROMIUM_PATH=<Chromium 路径，可省> node scripts/test-run-approval-browser.mjs chromium`，不在 `npm run check` 里 | 用假后台在真浏览器里走四遍：两个搜索一张卡片、一个搜索一张卡片、拒绝后不放行、一次读请求永远不回时 25 秒内自己恢复并显示回答 |
 | 回答字重 | `npm run check:answer-weight` | 回答正文字重（I-12） |
 
