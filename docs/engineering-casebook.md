@@ -96,7 +96,6 @@ date: "2026-10-26"
   69. [标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器](#case-sunflower-growth-mark)
   70. [14:13 就出结果的一轮，30 分钟后才推送“没有完成”](#case-unknown-result-late-settle)
   71. [想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”](#case-cache-usage-ruler)
-  72. [很简单的问题用了 28 秒：读和写挤在同一条数据库队里](#case-read-write-lanes)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -122,7 +121,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[读和写挤在同一条数据库队里](#case-read-write-lanes) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
@@ -4611,61 +4610,6 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “主人要求所有模型调用都让 KV 缓存命中最大化，但我们连当前命中率都不知道。我先建了一把尺子：每次请求按用途记下输入、命中、是否上报。关键细节是 Pi 把缺失字段当 0，所以我在抓取层扫响应，把‘提供方没报’和‘命中 0’分开，不然会把没上报的算成 0% 误导优化。口径写死，样本不足就不出数。生产数据还没有，上线后才能得到基线。”
-
-[返回目录](#contents)
-
-<a id="case-read-write-lanes"></a>
-
-## 案例 72：很简单的问题用了 28 秒：读和写挤在同一条数据库队里
-
-**背景与现象**
-
-2026-10-30 23:21（日本时间），Andy 问“询问助手身份”，页面显示“用时 28.2s”，过程区上面的总时间和每一步的时间加起来也对不上（约 6.9 秒对 28 秒）。Andy 原话是“这是个很简单的问题而已”，并否决了只在页面上补“准备”“收尾”两步让数字对上的办法（“不做”）：他要的是慢的根因。
-
-**根因**
-
-用生产日志和数据库核对，我先后给出过两个结论，第二个纠正了第一个：
-
-- 这一轮共 209 次数据库操作，排队合计 21.3 秒，执行只有 3.2 秒（来源：日志里的 `run.timing`）。所有读和写走同一个工作线程、同一条连接，同时网页发来 35 到 49 个请求，审批全量读最长 751 毫秒、保存会话 506 毫秒，很多 0 毫秒的小读被排在后面，并在同一毫秒一起完成。
-- 我第一版把“模型 4.4–16.5 秒、答案 16.5 秒生成”当成事实。拿到数据库里每条事件的发生时间和写入时间后发现起点算错：模型在 14:21:53 就输出完了（轮次创建后 10.5 秒），之后的 17.7 秒空窗里，约 5.7 秒是事件逐条写入的积压，另有约 10 秒是最后一条 `runtime.completed` 发生后才写入，而单条写入最长只有 1.4 秒，所以这 10 秒不是排队。这一段至今没有查清。
-
-**我们的方案**
-
-见 [ADR 0130](adr/0130-read-lane-separate-readonly-connection.md)。
-
-1. 新开 1 个只读工作线程，读请求走它，写继续走唯一的写连接。
-2. 只读连接发出写语句会报错，用它找出标错的操作：`memoryJob.listPending` 标成读，其实会改过期认领，改成写。
-3. 日志新增 `lane`，上线后分开看读队和写队。
-4. 门槛：写线程被占住时读必须在 300 毫秒内返回（旧代码 608 毫秒失败）。
-
-**方案讨论与备选**
-
-- **页面补“准备”“收尾”两步让数字对上**：Andy 否决，只是把没有对应步骤的时间显示出来，不让它变快。放弃。
-- **换成 Postgres**：问题出在用法，换库同样存在；代价是搬迁加密存储和多维护一个服务。先做读写分开和批量写，仍慢再评估（Andy 同意）。
-- **放宽 `synchronous=FULL`**：能少落盘，但断电可能丢已提交事务，是数据可靠性的取舍，留给 Andy。
-
-**业界主流做法**
-
-- ✅ SQLite 官方 WAL 文档：“readers do not block writers and a writer does not block readers”，但 “there can only be one writer at a time”（[原文](https://www.sqlite.org/wal.html)）。
-- ✅ 同一文档记录了多连接下的 WAL-reset bug，3.51.3 及以后已修；我们的 better-sqlite3 12.11.1 自带 3.53.2（云端容器实测，生产机待确认）。
-- better-sqlite3 线程文档只说慢查询可以放 worker 线程，没有讲只读连接（[原文](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/threads.md)）；“读另开只读连接”是按 SQLite 官方并发说明推出的，不是它的明文建议。
-
-**对比与取舍**
-
-和业界一致：写只留一条连接，读不再排在写后面。我们的取舍：第一版只开 1 个读线程不开线程池，先看数据；放弃了把读失败时自动改走写线程，因为那会掩盖标错的操作。
-
-**结果数据**
-
-- 测试：旧代码读在被占住的写线程后等 608 毫秒（失败），新代码在 300 毫秒内返回；标错一个操作令 15 个记忆类集成测试失败（本次分支运行记录）。
-- 上线后效果：未测量。
-
-**相关 ADR/PR**
-
-[ADR 0130](adr/0130-read-lane-separate-readonly-connection.md)；[事故 I-43](incidents-and-gates.md#incidents)；[案例 63](#case-conversation-speed)。
-
-**面试 30 秒版**
-
-“一个很简单的问题用了 28 秒。我先猜过两次：先把起点算错了，拿到数据库里每条事件的发生和写入时间才发现；根因是读和写挤在同一个工作线程的同一条队里，读也要等写。SQLite 官方的 WAL 模式本来就允许读写同时进行，所以不换库，给读单开一条只读连接。只读连接写会报错，正好拿它揪出了一个标成读、其实在写的操作。最后那 10 秒卡顿我没有硬解释，记下来继续查。”
 
 [返回目录](#contents)
 
