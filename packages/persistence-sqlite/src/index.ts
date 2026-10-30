@@ -8,6 +8,7 @@ export * from "./initialize-product-identity.js";
 export * from "./durable-adapters.js";
 export * from "./product-state-repository.js";
 export type {
+  SqliteLane,
   SqliteSlowOperation,
   SqliteTimedOperation,
 } from "./sqlite-execution-context.js";

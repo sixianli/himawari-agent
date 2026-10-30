@@ -9,6 +9,7 @@ export interface SqliteWorkerConfiguration {
   readonly busyTimeoutMs: number;
   readonly minimumFreeBytes: number;
   readonly warningFreeBytes: number;
+  readonly readOnly?: boolean;
   readonly qualification?: {
     readonly crashAt?: "after_state" | "after_result" | "after_event" | "after_commit";
     readonly holdBeforeCommitMs?: number;
@@ -46,7 +47,10 @@ interface PendingOperation {
   readonly reject: (reason: unknown) => void;
 }
 
+export type SqliteLane = "read" | "write";
+
 export interface SqliteSlowOperation {
+  readonly lane: SqliteLane;
   readonly operation: string;
   readonly totalMs: number;
   readonly queueWaitMs: number;
@@ -55,6 +59,7 @@ export interface SqliteSlowOperation {
 }
 
 export interface SqliteTimedOperation {
+  readonly lane: SqliteLane;
   readonly operation: string;
   readonly queueWaitMs: number;
   readonly runMs: number;
@@ -73,10 +78,12 @@ export class SqliteExecutionContext {
   private nextId = 1;
   private exited = false;
   private readonly observers: SqliteOperationObservers;
+  private readonly lane: SqliteLane;
 
-  private constructor(worker: Worker, observers: SqliteOperationObservers) {
+  private constructor(worker: Worker, observers: SqliteOperationObservers, lane: SqliteLane) {
     this.worker = worker;
     this.observers = observers;
+    this.lane = lane;
     worker.on("message", (message: WorkerResponse) => this.receive(message));
     worker.on("error", (error) => this.failAll(error));
     worker.on("exit", (code) => {
@@ -101,7 +108,11 @@ export class SqliteExecutionContext {
     const worker = new Worker(new URL(`./sqlite-worker${workerExtension}`, import.meta.url), {
       workerData: configuration,
     });
-    const context = new SqliteExecutionContext(worker, observers);
+    const context = new SqliteExecutionContext(
+      worker,
+      observers,
+      configuration.readOnly ? "read" : "write",
+    );
     await context.request<{ readonly writerSequence: number }>("ready", {});
     return context;
   }
@@ -155,7 +166,7 @@ export class SqliteExecutionContext {
       new SqlitePersistenceError(
         SQLITE_PERSISTENCE_ERROR_CODES.WORKER_OPERATION_FAILED,
         error.message,
-        { workerCode: error.code, ...error.details },
+        { workerCode: error.code, operation: operation.operation, ...error.details },
       ),
     );
   }
@@ -166,12 +177,18 @@ export class SqliteExecutionContext {
     const { onOperation, onSlowOperation } = this.observers;
     if (onOperation && operation.inCaller)
       operation.inCaller(() =>
-        onOperation({ operation: operation.operation, queueWaitMs: totalMs - runMs, runMs }),
+        onOperation({
+          lane: this.lane,
+          operation: operation.operation,
+          queueWaitMs: totalMs - runMs,
+          runMs,
+        }),
       );
     const roundedTotalMs = Math.round(totalMs);
     if (!onSlowOperation || roundedTotalMs < SLOW_OPERATION_MILLISECONDS) return;
     const roundedRunMs = Math.min(roundedTotalMs, reportedRunMs ?? roundedTotalMs);
     onSlowOperation({
+      lane: this.lane,
       operation: operation.operation,
       totalMs: roundedTotalMs,
       queueWaitMs: roundedTotalMs - roundedRunMs,
