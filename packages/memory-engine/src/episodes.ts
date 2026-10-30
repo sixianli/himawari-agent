@@ -200,33 +200,6 @@ export class MemoryEpisodeService {
     });
   }
 
-  async recordCompaction(input: {
-    readonly ownerId: OwnerId;
-    readonly agentId: AgentId;
-    readonly threadId: ThreadId;
-    readonly sequence: number;
-    readonly summary: string;
-    readonly dataClassification: DataClassification;
-  }): Promise<MemoryEpisode | null> {
-    if (!SUMMARIZABLE.has(input.dataClassification) || input.summary.trim().length === 0)
-      return null;
-    const now = this.#options.now();
-    return this.#record({
-      ownerId: input.ownerId,
-      agentId: input.agentId,
-      threadId: input.threadId,
-      day: localDay(now, this.#options.timeZone),
-      source: "compaction",
-      firstSequence: Math.max(1, input.sequence),
-      lastSequence: Math.max(1, input.sequence),
-      startedAt: now,
-      endedAt: now,
-      text: input.summary.trim().slice(0, 8000),
-      dataClassification: input.dataClassification,
-      indexed: true,
-    });
-  }
-
   async search(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;

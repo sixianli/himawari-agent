@@ -20,6 +20,7 @@ import type {
   ModelInvocationExecutionContext,
   ModelInvocationIdentity,
   ModelInvocationPermit,
+  ModelUsageObservation,
   RuntimeBackgroundCommandNotice,
   RuntimeEvent,
   RuntimeProjection,
@@ -457,6 +458,7 @@ function createAdmissionAdapter(
   streamOptions: unknown = {},
   resolveSecret?: () => Promise<string>,
   admissionExecutionLease?: ModelInvocationExecutionContext["executionLease"],
+  usage?: PiAgentRuntimeAdapterDependencies["usage"],
 ) {
   const createSession = streamingSessionFactory(
     original,
@@ -492,6 +494,7 @@ function createAdmissionAdapter(
     cwd: process.cwd(),
     now: () => NOW,
     admission: async (scope) => allowAdmission(scope, admissionExecutionLease, permit),
+    ...(usage === undefined ? {} : { usage }),
     logicalSlot: (runtimeRequest, ordinal) =>
       `${runtimeRequest.runId}:admission-fixture:${ordinal}`,
     createSession: createSession as unknown as NonNullable<
@@ -579,6 +582,84 @@ describe("Pi stream admission accounting", () => {
     expect(providerCalls).toBe(0);
     expect(observedTerminals).toEqual(["error"]);
     expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+
+  it("records one chat usage observation after durable settlement", async () => {
+    const order: string[] = [];
+    const observations: ModelUsageObservation[] = [];
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => {
+        order.push("settle");
+      },
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      successfulOriginal,
+      [],
+      ADMISSION_MODEL,
+      {},
+      undefined,
+      undefined,
+      {
+        store: {
+          record: async (observation) => {
+            order.push("record");
+            observations.push(observation);
+          },
+        },
+        onFailure: () => undefined,
+      },
+    );
+
+    const events = await collect(adapter.run(request));
+
+    expect(events.at(-1)?.type).toBe("runtime.completed");
+    expect(order).toEqual(["settle", "record"]);
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toMatchObject({
+      purpose: "chat",
+      source: "agent-stream",
+      cacheReported: false,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("completes the run when recording the usage observation fails", async () => {
+    const failures: unknown[] = [];
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => undefined,
+      markStarted: async () => undefined,
+      releaseReserved: async () => undefined,
+      settle: async () => undefined,
+      markUnknown: async () => undefined,
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      successfulOriginal,
+      [],
+      ADMISSION_MODEL,
+      {},
+      undefined,
+      undefined,
+      {
+        store: {
+          record: async () => {
+            throw new Error("disk full");
+          },
+        },
+        onFailure: (error) => failures.push(error),
+      },
+    );
+
+    const events = await collect(adapter.run(request));
+
+    expect(events.at(-1)?.type).toBe("runtime.completed");
+    expect(failures).toHaveLength(1);
   });
 
   it("does not expose done until durable settlement resolves", async () => {

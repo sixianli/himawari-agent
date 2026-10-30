@@ -36,6 +36,7 @@ import type {
   ModelInvocationPermit,
   ModelInvocationPricing,
   ModelInvocationUsage,
+  ModelUsageStorePort,
   RuntimeApprovalWait,
   RuntimeBackgroundCommandNotice,
   RuntimeContinuationPort,
@@ -50,6 +51,7 @@ import type {
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import { observeCacheFields } from "./cache-usage-observation.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
@@ -153,6 +155,10 @@ export interface PiAgentRuntimeAdapterDependencies {
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
   ) => void;
+  readonly usage?: {
+    readonly store: ModelUsageStorePort;
+    readonly onFailure: (error: unknown) => void;
+  };
 }
 
 const KNOWN_IGNORED_EVENTS = new Set([
@@ -655,6 +661,8 @@ function relayAdmittedPiStream(
   model: Model<Api>,
   signal: AbortSignal | undefined,
   gateway: ReturnType<typeof observeGatewayFetch> | undefined,
+  recordUsage: (usage: ModelInvocationUsage, cacheReported: boolean) => Promise<void>,
+  cacheReported: () => Promise<boolean>,
 ): AssistantMessageEventStream {
   const output = createAssistantMessageEventStream();
   let accounted = false;
@@ -707,6 +715,7 @@ function relayAdmittedPiStream(
             try {
               await permit.settle(usage);
               accounted = true;
+              await recordUsage(usage, await cacheReported());
               output.push(event);
             } catch {
               const accountedUnknown = await markUnknown("transport_unresolved");
@@ -773,6 +782,7 @@ async function admitPiStream(
   original: PiStreamFunction,
   logicalSlotFor: (request: RuntimeRequest, ordinal: number) => string,
   onAdmissionFailed?: PiAgentRuntimeAdapterDependencies["onModelAdmissionFailed"],
+  usageRecording?: PiAgentRuntimeAdapterDependencies["usage"],
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
@@ -865,9 +875,9 @@ async function admitPiStream(
     }
     const withoutAmbientApiKey: SimpleStreamOptions = { ...options };
     delete withoutAmbientApiKey.apiKey;
-    const gateway = isGateway
-      ? observeGatewayFetch(options?.fetch ?? globalThis.fetch, model.id)
-      : undefined;
+    const cacheFields = observeCacheFields(options?.fetch ?? globalThis.fetch);
+    withoutAmbientApiKey.fetch = cacheFields.fetch;
+    const gateway = isGateway ? observeGatewayFetch(cacheFields.fetch, model.id) : undefined;
     if (gateway !== undefined) {
       withoutAmbientApiKey.fetch = gateway.fetch;
       withoutAmbientApiKey.onPayload = async (payload, chosenModel) => {
@@ -898,7 +908,42 @@ async function admitPiStream(
       ...(secret === undefined ? {} : { apiKey: secret }),
       maxRetries: 0,
     });
-    return relayAdmittedPiStream(stream, permit, model, options?.signal, gateway);
+    const invocationId = admission.identity.invocationId;
+    const recordUsage = async (
+      usage: ModelInvocationUsage,
+      cacheReported: boolean,
+    ): Promise<void> => {
+      if (usageRecording === undefined) return;
+      try {
+        await usageRecording.store.record({
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          runId: request.runId,
+          invocationId,
+          purpose: "chat",
+          source: "agent-stream",
+          provider: model.provider,
+          model: model.id,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheReadTokens: cacheReported ? usage.cacheReadTokens : 0,
+          cacheWriteTokens: cacheReported ? usage.cacheWriteTokens : 0,
+          cacheReported,
+          occurredAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        usageRecording.onFailure(error);
+      }
+    };
+    return relayAdmittedPiStream(
+      stream,
+      permit,
+      model,
+      options?.signal,
+      gateway,
+      recordUsage,
+      cacheFields.reported,
+    );
   } catch (error) {
     onAdmissionFailed?.(request, admissionFailure(error));
     if (started && permit !== undefined) {
@@ -1340,6 +1385,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           originalStreamFunction,
           this.#dependencies.logicalSlot,
           this.#dependencies.onModelAdmissionFailed,
+          this.#dependencies.usage,
         );
       };
       this.#activeSessions.set(request.runId, session);

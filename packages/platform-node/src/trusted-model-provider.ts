@@ -12,6 +12,8 @@ import {
   type ModelInvocationRequest,
   type ModelInvocationUsage,
   type ModelPort,
+  type ModelUsagePurpose,
+  type ModelUsageStorePort,
   PORT_ERROR_CODES,
   type SecretPort,
 } from "@himawari-agent/application";
@@ -54,6 +56,11 @@ export interface TrustedModelProviderAdapterDependencies {
   readonly transport: TrustedModelTransport;
   readonly clock: ClockPort;
   readonly admission?: TrustedModelAdmissionResolver;
+  readonly usage?: {
+    readonly purpose: ModelUsagePurpose;
+    readonly store: ModelUsageStorePort;
+    readonly onFailure: (error: unknown) => void;
+  };
   readonly admissionCost: (descriptor: ModelDescriptor) => {
     readonly pricing: ModelInvocationPricing;
     readonly estimatedCostMicros: number;
@@ -261,6 +268,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
               );
             }
             settled = true;
+            await this.recordUsage(request, descriptor, gate.context, event);
           }
         } else if (event.type === "model.failed") {
           await markUnknown(request.signal?.aborted ? "cancel_unresolved" : "provider_unresolved");
@@ -282,6 +290,37 @@ export class TrustedModelProviderAdapter implements ModelPort {
       await markUnknown(
         request.signal?.aborted ? "cancel_unresolved" : "transport_unresolved",
       ).catch(() => undefined);
+    }
+  }
+
+  private async recordUsage(
+    request: ModelInvocationRequest,
+    descriptor: ModelDescriptor,
+    context: Pick<ModelInvocationExecutionContext, "ownerId" | "agentId" | "runId">,
+    event: Extract<ModelInvocationEvent, { readonly type: "model.completed" }>,
+  ): Promise<void> {
+    const usage = this.dependencies.usage;
+    if (usage === undefined) return;
+    const cacheReported = event.cacheReported === true;
+    try {
+      await usage.store.record({
+        ownerId: context.ownerId,
+        agentId: context.agentId,
+        runId: context.runId,
+        invocationId: request.invocationId,
+        purpose: usage.purpose,
+        source: "model-port",
+        provider: descriptor.provider,
+        model: descriptor.model,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheReadTokens: cacheReported ? (event.cacheReadTokens ?? 0) : 0,
+        cacheWriteTokens: cacheReported ? (event.cacheWriteTokens ?? 0) : 0,
+        cacheReported,
+        occurredAt: event.occurredAt,
+      });
+    } catch (error) {
+      usage.onFailure(error);
     }
   }
 

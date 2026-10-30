@@ -95,6 +95,7 @@ date: "2026-10-26"
   68. [通知设置点了没反应：页面在等一个永远不会返回的浏览器接口](#case-push-ready-hang)
   69. [标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器](#case-sunflower-growth-mark)
   70. [14:13 就出结果的一轮，30 分钟后才推送“没有完成”](#case-unknown-result-late-settle)
+  71. [想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”](#case-cache-usage-ruler)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -120,7 +121,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
@@ -4560,6 +4561,55 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户收到一条推送，点开发现那一轮半小时前就结束了。我先猜是别的功能触发，日志否定了；再猜是沙箱里没有记录才能提前收尾，数据库又否定了。真正的原因是收尾规则不看记录有没有释放，只看每条记录自己的期限，而 bash 记录的期限是 30 分钟。我去查了 Apple、GitHub 的通知规范，确认失败要通知、要及时、不重复，所以没有隐藏失败，而是让它在资源释放后立刻收尾并写明原因。‘命令为什么被记成未知’我没猜，先加日志，等下次数据。”
+
+<a id="case-cache-usage-ruler"></a>
+
+## 案例 71：想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”
+
+**背景与现象**
+
+2026-10-30 下午（日本时间），Andy 要求所有模型的上下文组装都以 KV 缓存命中最大化为原则，并要求能按请求、按时间、按用途、按模型看到总输入 token、命中、未命中和命中率，作为改上下文前后对比的尺子。当时只有一个孤立的实测：邮件判断提示词第 3 行带时间戳，命中为 0（#133 已修）；Magpie 经 CodeBuddy 转发 DeepSeek 时缓存字段能透传（3759 个前缀 token 命中 3584，按 128 对齐）。其余用途的命中率都不知道。
+
+**根因**
+
+缺的是数据，不是某个 bug。代码证据：两条调用路径都拿得到 token 用量，但只进预算结算（`ModelInvocationAdmissionService.settle`），没有按用途保存；Pi 的 `parseChunkUsage` 把缺失的缓存字段当 0，从它的用量里分不出“提供方说命中 0”和“提供方没报”，直接统计会把“没报”算成 0% 命中，误导优化方向。
+
+**我们的方案**
+
+- 复用 Pi 的流和用量事件，不复制协议。只在抓取层克隆 SSE 响应，扫描 OpenAI、DeepSeek、Anthropic 三种缓存字段是否出现（值为 0 也算），得到 `cacheReported`。
+- Himawari 自己负责：独立的 `model_usage_observations` 表（迁移 0068，数据库约束保证“没上报时读写为 0”）、`ModelUsageStorePort`、两条路径在预算结算成功之后各记一行、统计脚本 `scripts/operations/cache-hit-report.mjs`。
+- 口径写死：只统计已上报且输入不少于 1024 token 的请求；样本少于 5 条显示“样本不足”；同一次运行的后续调用单独一列。
+
+**方案讨论与备选**
+
+- 从 Pi 用量直接取：最省事，但分不出“没上报”；放弃。
+- 把列加进 `model_invocation_identities`：带结算语义、要改回放约束，且主动提醒的免计量通道没有这一行；放弃，用独立的表，并且不放进预算事务。
+- 直接用 Langfuse 之类平台：自托管要 Postgres、ClickHouse、Redis 和对象存储，对一个人的部署太重，Hermes 上那套数据里也没有缓存 token 字段；先自己采集，字段对齐 OpenTelemetry GenAI，以后接平台不用改采集。
+- 先做网页：没有数据不知道该画什么；先采集加脚本，是否做页面由 Andy 在方案 A、B、C 里选。
+
+**业界主流做法**
+
+- ✅ OpenAI 提示词缓存文档：按前缀命中，用量里给 `cached_tokens`；“Append new messages rather than rewriting earlier turns”。
+- ✅ DeepSeek 上下文硬盘缓存文档：`prompt_cache_hit_tokens` 和 `prompt_cache_miss_tokens`。
+- ✅ Anthropic 提示词缓存文档：`cache_read_input_tokens`、`cache_creation_input_tokens`。
+- ✅ Manus 工程博客：“Make your context append-only”，并把 KV 缓存命中率当作最重要的指标。
+- 🟡 OpenTelemetry GenAI 语义约定：缓存属性如 `gen_ai.usage.cache_read.input_tokens` 目前是 Development 状态，可能还会改名。
+
+**对比与取舍**
+
+业界按请求记录、按用途汇总，我们相同。不同点：各家字段名不统一，所以我们在抓取层统一成“读取/写入/是否上报”三项；更特别的是把“没上报”当成一等状态，而不是 0。代价是多一次响应克隆和扫描（只扫用量帧，未测量耗时）和一次小的 SQLite 写入。
+
+**结果数据**
+
+测试：真实 SQLite 的集成测试 4 条、响应扫描单元测试 9 条、迁移契约测试 36 条通过（本次 PR 内运行记录）。生产上各用途的命中率：未测量，上线后用脚本读出。
+
+**相关 ADR/PR**
+
+[ADR 0128](adr/0128-record-cache-usage-of-every-model-request.md)；[ADR 0104](adr/0104-turn-material-in-last-user-message.md)；分支 `claude/project-thread-r8uswg`。后续 PR：各用途前缀稳定性的自动检查和三处提示词修改、历史固定块（3 + 1 + 2）。
+
+**面试 30 秒版**
+
+“主人要求所有模型调用都让 KV 缓存命中最大化，但我们连当前命中率都不知道。我先建了一把尺子：每次请求按用途记下输入、命中、是否上报。关键细节是 Pi 把缺失字段当 0，所以我在抓取层扫响应，把‘提供方没报’和‘命中 0’分开，不然会把没上报的算成 0% 误导优化。口径写死，样本不足就不出数。生产数据还没有，上线后才能得到基线。”
 
 [返回目录](#contents)
 

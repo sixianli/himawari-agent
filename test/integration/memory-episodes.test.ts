@@ -251,14 +251,6 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
           limit: 5,
         }),
       ).toBe(0);
-      await resource.service.recordCompaction({
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        threadId: THREAD_ID,
-        sequence: 3,
-        summary: "主人让 Himawari 查明天东京的天气。",
-        dataClassification: "private",
-      });
       const found = await resource.service.search({
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
@@ -267,7 +259,7 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
         allowedClassifications: ["private"],
         limit: 3,
       });
-      expect(found.map(({ episode }) => episode.source)).toContain("compaction");
+      expect(found.map(({ episode }) => episode.source)).not.toContain("compaction");
     } finally {
       await resource.repository.close();
     }

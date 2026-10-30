@@ -6,6 +6,7 @@ import type {
   ModelInvocationPermit,
   ModelInvocationUnknownReason,
   ModelInvocationUsage,
+  ModelUsageObservation,
   SecretHandle,
   SecretPort,
 } from "@himawari-agent/application";
@@ -188,6 +189,7 @@ function provider(options: {
   readonly admission?: TrustedModelProviderAdapterDependencies["admission"];
   readonly events?: string[];
   readonly resolveSecret?: () => Promise<string>;
+  readonly usage?: TrustedModelProviderAdapterDependencies["usage"];
 }) {
   const events = options.events ?? [];
   return new TrustedModelProviderAdapter({
@@ -210,6 +212,7 @@ function provider(options: {
     clock: { now: () => NOW },
     ...(options.admission === undefined ? {} : { admission: options.admission }),
     admissionCost: () => admissionCost,
+    ...(options.usage === undefined ? {} : { usage: options.usage }),
   });
 }
 
@@ -372,6 +375,106 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
     });
     expect(transport.calls[0]?.secretValues).toEqual(["scoped-secret-value"]);
     expect(events.at(-1)).toMatchObject({ type: "model.completed", costMicros: 999_999 });
+  });
+
+  it.each([
+    { cacheReported: true, expectedRead: 20, expectedWrite: 5 },
+    { cacheReported: false, expectedRead: 0, expectedWrite: 0 },
+  ])(
+    "records one usage observation after settlement (cacheReported=$cacheReported)",
+    async ({ cacheReported, expectedRead, expectedWrite }) => {
+      const order: string[] = [];
+      const observations: ModelUsageObservation[] = [];
+      const gate = {
+        context: executionContext(),
+        begin: async () =>
+          freshAdmission({
+            assertActive: async () => undefined,
+            markStarted: async () => undefined,
+            releaseReserved: async () => undefined,
+            settle: async () => {
+              order.push("settle");
+            },
+            markUnknown: async () => undefined,
+          }),
+      };
+      const completed = providerEvents({
+        inputTokens: 100,
+        outputTokens: 10,
+        cacheReadTokens: 20,
+        cacheWriteTokens: 5,
+      }).map((event) => (event.type === "model.completed" ? { ...event, cacheReported } : event));
+      const model = provider({
+        transport: new RecordingTransport(completed),
+        admission: async () => gate,
+        usage: {
+          purpose: "mail-judgment",
+          store: {
+            record: async (observation) => {
+              order.push("record");
+              observations.push(observation);
+            },
+          },
+          onFailure: () => undefined,
+        },
+      });
+
+      for await (const _event of model.invoke(invocation())) {
+      }
+
+      expect(order).toEqual(["settle", "record"]);
+      expect(observations).toHaveLength(1);
+      expect(observations[0]).toMatchObject({
+        purpose: "mail-judgment",
+        source: "model-port",
+        inputTokens: 100,
+        outputTokens: 10,
+        cacheReadTokens: expectedRead,
+        cacheWriteTokens: expectedWrite,
+        cacheReported,
+      });
+    },
+  );
+
+  it("keeps the model result when recording the usage observation fails", async () => {
+    const failures: unknown[] = [];
+    const gate = {
+      context: executionContext(),
+      begin: async () =>
+        freshAdmission({
+          assertActive: async () => undefined,
+          markStarted: async () => undefined,
+          releaseReserved: async () => undefined,
+          settle: async () => undefined,
+          markUnknown: async () => undefined,
+        }),
+    };
+    const model = provider({
+      transport: new RecordingTransport(
+        providerEvents({
+          inputTokens: 10,
+          outputTokens: 2,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        }),
+      ),
+      admission: async () => gate,
+      usage: {
+        purpose: "other",
+        store: {
+          record: async () => {
+            throw new Error("disk full");
+          },
+        },
+        onFailure: (error) => failures.push(error),
+      },
+    });
+
+    const events: ModelInvocationEvent[] = [];
+    for await (const event of model.invoke(invocation())) events.push(event);
+
+    expect(events.at(-1)).toMatchObject({ type: "model.completed" });
+    expect(failures).toHaveLength(1);
   });
 
   it("fails closed before secret or transport when no gate is supplied", async () => {
