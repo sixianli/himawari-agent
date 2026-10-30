@@ -4064,12 +4064,12 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 
 - **背景与现象：** 修完两张卡片后，Andy 问“多个网页搜索这里，大厂的最佳实践是？”，接着又发现自己一直开着的“允许联网搜索”在手机上是关的。
 - **根因：** 开关存在服务端，手机和电脑本来就读同一份；但存下时记了一个摘要，里面有每个能读私人数据的模型的完整配置。第十九版换了主模型（推断，生产记录没读），摘要对不上，开关在所有设备上一起变成“关”，页面不说原因，于是问天气又弹卡。
-- **我们的方案：** Andy 在选择卡上选了“默认打开，从不问”（[ADR 0120](adr/0120-web-search-on-by-default-bound-to-search-services-only.md)）。开关默认开，只跟搜索服务的地址列表绑定；第一次用到时把“默认打开”写进开关记录，这样每次搜索派生的一次性授权仍有来源版本，主人关掉后一起作废。地址列表变了才关，并在设置里写明“搜索服务换了地址，你还没同意过”。
+- **我们的方案：** Andy 在选择卡上选了“默认打开，从不问”（[ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)）。开关默认开，只跟搜索服务的地址列表绑定；第一次用到时把“默认打开”写进开关记录，这样每次搜索派生的一次性授权仍有来源版本，主人关掉后一起作废。地址列表变了才关，并在设置里写明“搜索服务换了地址，你还没同意过”。
 - **讨论过的方案和放弃的东西：** 继续绑模型但换模型时提示（模型配置会随路由和版本号频繁变，每次都要重开）；换搜索服务也自动沿用（查询词会悄悄发到主人没见过的地址）；每轮问一次（最打断）。放弃的是“新安装第一次搜索前主人一定看过发往哪里”，换成设置里写明地址、随时可关。
 - **业界做法（只读官方文档，图例见[业界资料的核对情况](#source-status)）：** ✅ [Gemini API 文档](https://ai.google.dev/gemini-api/docs/generate-content/google-search)：模型“automatically generates one or multiple search queries and executes them”；✅ [Claude Code 权限文档](https://code.claude.com/docs/en/permissions)：默认要批准，“以后不再问”在项目里永久生效；⚠ [Claude 帮助中心](https://support.claude.com/en/articles/10684626-enable-and-use-web-search)：“Claude searches the web when it helps”（引文出自搜索摘录）；⚠ [ChatGPT 帮助中心](https://help.openai.com/en/articles/9237897-searching-the-web-with-chatgpt)：需要最新信息时自动搜索（原页面打不开，引文出自搜索摘录）。
 - **对比与取舍：** Himawari 和聊天产品一致（默认搜、不逐次问），比它们多一条：数据要发往的地址一变就停下等主人看过，这是“用户主权”优先于“主动效率”的地方。
 - **实测结果：** 门槛测试在未修代码上失败（先打开开关、再换主模型，读回为关），修后通过；体验改善未测量，等上线后 Andy 在 iPhone 问天气验收。
-- **相关 ADR 和 PR：** [ADR 0120](adr/0120-web-search-on-by-default-bound-to-search-services-only.md)、[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)；[事故 I-33](incidents-and-gates.md#incidents)。
+- **相关 ADR 和 PR：** [ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)、[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)；[事故 I-33](incidents-and-gates.md#incidents)。
 - **30 秒面试版：** 用户说“我明明开了搜索，怎么又问我”。查下来开关绑了模型配置的哈希，换模型就悄悄失效。我们参考 ChatGPT、Claude、Gemini 的做法改成默认开、只跟搜索服务地址绑定，地址变了才停下并说明原因，再用一条“换模型后开关还在”的测试把它钉住。
 
 [返回目录](#contents)
