@@ -952,6 +952,10 @@ export const messages = {
   "proactive.line.capped": "这次检查到了单次费用上限，没看完的下次接着看",
   "proactive.line.cappedDaily": "今天累计到了每日费用上限：模型停到 0:00，规则照常，对话不受影响",
   "proactive.line.modelFailed": "模型返回的格式不对，这批邮件下次重看，没有推送",
+  "proactive.line.modelNoAnswer": "模型这次没有回答，这批邮件下次重看，没有推送",
+  "proactive.line.modelUnfinished": "模型没有答完（超时或中断），这批邮件下次重看，没有推送",
+  "proactive.line.modelCutOff":
+    "模型想得太久，答案没写完就被截断了，这批邮件下次拆小再看，没有推送",
   "proactive.line.readFailed": "读 Gmail 失败，这次不推送，15 分钟后照常再看",
   "proactive.line.noMail": "没有新邮件",
   "proactive.line.floorRaised":

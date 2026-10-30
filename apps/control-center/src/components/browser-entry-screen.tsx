@@ -31,7 +31,7 @@ export function BrowserEntryScreen({
   if (entry?.kind === "access-expired")
     return (
       <main className="browser-entry" aria-labelledby="browser-entry-title">
-        <SunflowerMark />
+        <SunflowerMark detail="full" />
         <div className="browser-entry-text">
           <h1 id="browser-entry-title">{message("entry.expired.title")}</h1>
           <p>{message("entry.expired.body")}</p>
@@ -44,7 +44,7 @@ export function BrowserEntryScreen({
   if (entry?.kind === "unreachable")
     return (
       <main className="browser-entry is-unreachable" aria-labelledby="browser-entry-title">
-        <SunflowerMark />
+        <SunflowerMark detail="full" />
         <div className="browser-entry-text">
           <h1 id="browser-entry-title">{message("entry.unreachable.title")}</h1>
           <p>{message("entry.unreachable.body")}</p>
@@ -63,7 +63,7 @@ export function BrowserEntryScreen({
     );
   return (
     <main className="browser-entry is-opening">
-      <SunflowerMark busy />
+      <SunflowerMark detail="full" busy />
       <output>{message("entry.opening")}</output>
     </main>
   );

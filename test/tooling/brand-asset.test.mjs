@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { build } from "vite";
 import { expect, it } from "vitest";
-import { sunflowerSeeds } from "../../apps/control-center/src/components/brand.tsx";
+import { restingGrowth, seedsAt } from "../../apps/control-center/src/components/brand-seeds.ts";
 import { repositoryRoot } from "../../scripts/ci/contracts.mjs";
 
 it(
@@ -28,10 +28,11 @@ it(
       );
       const app = path.join(root, "apps/control-center");
       await mkdir(path.join(app, "src/components"), { recursive: true });
-      await copyFile(
-        path.join(repositoryRoot, "apps/control-center/src/components/brand.tsx"),
-        path.join(app, "src/components/brand.tsx"),
-      );
+      for (const file of ["brand.tsx", "brand-seeds.ts"])
+        await copyFile(
+          path.join(repositoryRoot, "apps/control-center/src/components", file),
+          path.join(app, "src/components", file),
+        );
       await writeFile(
         path.join(app, "index.html"),
         '<script type="module" src="/src/main.ts"></script>',
@@ -55,13 +56,16 @@ it(
   },
 );
 
-it("[UI-2] keeps the v2 brand asset at the same seed positions as the interface mark", async () => {
+it("[UI-2] keeps the v3 brand asset at the same seed positions as the interface mark", async () => {
   const asset = await readFile(
-    path.join(repositoryRoot, "assets/brand/himawari/v2/logo-sunflower-disc.svg"),
+    path.join(repositoryRoot, "assets/brand/himawari/v3/logo-sunflower-disc.svg"),
     "utf8",
   );
   const circles = [...asset.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)].map(
     ([, cx, cy, r]) => ({ cx: Number(cx), cy: Number(cy), r: Number(r) }),
   );
-  expect(circles).toEqual(sunflowerSeeds.map(({ cx, cy, r }) => ({ cx, cy, r })));
+  const seeds = seedsAt("full", restingGrowth("full"))
+    .filter((seed) => seed.r > 0)
+    .map(({ cx, cy, r }) => ({ cx, cy, r }));
+  expect(circles).toEqual(seeds);
 });

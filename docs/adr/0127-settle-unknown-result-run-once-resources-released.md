@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-10-30"
 ---
 
-# ADR 0126：命令结果未知且沙箱资源都已释放时，本轮立刻收尾；失败推送写明原因
+# ADR 0127：命令结果未知且沙箱资源都已释放时，本轮立刻收尾；失败推送写明原因
 
 <a id="contents"></a>
 
@@ -24,7 +24,7 @@ date: "2026-10-30"
 
 ## 背景
 
-2026-10-30 14:44（日本时间），Andy 的手机收到“没有完成”的推送，点开是 14:13 就已经显示出结果的那一轮“写一个简易小游戏”（[事故 I-39](../incidents-and-gates.md#incidents)）。
+2026-10-30 14:44（日本时间），Andy 的手机收到“没有完成”的推送，点开是 14:13 就已经显示出结果的那一轮“写一个简易小游戏”（[事故 I-41](../incidents-and-gates.md#incidents)）。
 
 生产数据库和日志（Mac 线程只读导出，`run-2e5744db-*.txt`）里的事实：
 
@@ -90,8 +90,8 @@ date: "2026-10-30"
 
 ## 关联文档
 
-- [事故与门槛清单 I-39](../incidents-and-gates.md#incidents)
-- [工程案例库：案例 68](../engineering-casebook.md#case-unknown-result-late-settle)
+- [事故与门槛清单 I-41](../incidents-and-gates.md#incidents)
+- [工程案例库：案例 70](../engineering-casebook.md#case-unknown-result-late-settle)
 - [ADR 0098：长命令转后台](0098-move-long-bash-commands-to-background.md)
 - [ADR 0125：模型写工具参数时只记进度](0125-streamed-tool-call-recorded-as-progress-not-snapshots.md)
 

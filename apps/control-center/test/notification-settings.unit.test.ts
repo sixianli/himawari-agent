@@ -48,7 +48,9 @@ function fakeBrowser(input: {
   permission: NotificationPermission;
   answer?: NotificationPermission;
   subscribed?: boolean;
+  registered?: boolean;
 }) {
+  let registered = input.registered ?? input.subscribed ?? false;
   let current: PushSubscription | null = null;
   const unsubscribe = vi.fn(async () => {
     current = null;
@@ -72,7 +74,20 @@ function fakeBrowser(input: {
       return notification.permission;
     }),
   };
-  const register = vi.fn(async () => ({}));
+  const pushManager = {
+    getSubscription: async () => current,
+    subscribe,
+  } as unknown as PushManager;
+  let activate: (value: { readonly pushManager: PushManager }) => void = () => undefined;
+  const ready = new Promise<{ readonly pushManager: PushManager }>((resolve) => {
+    activate = resolve;
+  });
+  if (registered) activate({ pushManager });
+  const register = vi.fn(async () => {
+    registered = true;
+    activate({ pushManager });
+    return {};
+  });
   const browser: PushBrowser = {
     userAgent: input.userAgent,
     maxTouchPoints: input.userAgent.includes("iPhone") ? 5 : 0,
@@ -80,12 +95,8 @@ function fakeBrowser(input: {
     notification,
     serviceWorker: {
       register,
-      ready: Promise.resolve({
-        pushManager: {
-          getSubscription: async () => current,
-          subscribe,
-        } as unknown as PushManager,
-      }),
+      getRegistration: async () => (registered ? { pushManager } : undefined),
+      ready,
     },
   };
   return { browser, notification, register, subscribe, unsubscribe };
@@ -183,6 +194,24 @@ describe("[WP-8] notification settings", () => {
     expect(container.textContent).toContain("选“添加到主屏幕”，再点“添加”");
     expect(button("在这台设备开启通知")).toBeUndefined();
     expect(pushSupport({ ...fake.browser, standalone: true })).toBe("supported");
+  });
+
+  it("[I-39] keeps the switches and the enable button usable when permission is granted but no worker was ever registered", async () => {
+    const fake = fakeBrowser({
+      userAgent: MAC,
+      standalone: false,
+      permission: "granted",
+      registered: false,
+    });
+    await render(fake.browser);
+    const switches = [...container.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
+    expect(switches).toHaveLength(3);
+    expect(switches.every((item) => !item.disabled)).toBe(true);
+    expect(button("在这台设备开启通知")?.disabled).toBe(false);
+    await act(async () => button("在这台设备开启通知")?.click());
+    await settle();
+    expect(fake.register).toHaveBeenCalledWith("/sw.js", { scope: "/" });
+    expect(container.textContent).toContain("这台设备 · 已开启");
   });
 
   it("[WP-8] turns on push: permission, worker, subscription with chosen kinds, then a test", async () => {

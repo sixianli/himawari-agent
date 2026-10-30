@@ -18,6 +18,7 @@ export interface PushBrowser {
   } | null;
   readonly serviceWorker: {
     register(url: string, options: RegistrationOptions): Promise<unknown>;
+    getRegistration(scope: string): Promise<{ readonly pushManager: PushManager } | undefined>;
     readonly ready: Promise<{ readonly pushManager: PushManager }>;
   } | null;
 }
@@ -113,8 +114,8 @@ export class PushController {
 
   async currentSubscription(): Promise<PushSubscription | null> {
     if (!this.#browser.serviceWorker || this.permission !== "granted") return null;
-    const registration = await this.#browser.serviceWorker.ready;
-    return registration.pushManager.getSubscription();
+    const registration = await this.#browser.serviceWorker.getRegistration("/");
+    return registration ? registration.pushManager.getSubscription() : null;
   }
 
   async currentSubscriptionId(): Promise<string | null> {

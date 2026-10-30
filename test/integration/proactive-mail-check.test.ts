@@ -7,6 +7,7 @@ import {
   type ModelInvocationEvent,
   ProactiveMailCheckService,
   type ProactiveSourceItem,
+  proactivePrompt,
   readProactiveOverview,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
@@ -92,6 +93,8 @@ describe("proactive Gmail check acceptance", () => {
       cost?: number;
       importantSenders?: string[];
       enabled?: boolean;
+      batchSize?: number;
+      outputTokenLimit?: number;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-"));
@@ -150,6 +153,7 @@ describe("proactive Gmail check acceptance", () => {
     const prompts: string[] = [];
     const models: ScriptedModelPort[] = [];
     let scripted = new ScriptedModelPort([descriptor], []);
+    const queued: ScriptedModelPort[] = [];
     const script = (entries: readonly Scripted[], cost = options.cost ?? 300) => {
       const ref = `output-${outputs.size + 1}`;
       outputs.set(
@@ -186,6 +190,52 @@ describe("proactive Gmail check acceptance", () => {
       ];
       scripted = new ScriptedModelPort([descriptor], events);
       models.push(scripted);
+      queued.push(scripted);
+    };
+    const scriptRaw = (
+      ending: "completed" | "unfinished" | { failedWith: string },
+      text?: string,
+      outputTokens = 50,
+    ) => {
+      const ref = `output-${outputs.size + 1}`;
+      if (text !== undefined) outputs.set(ref, text);
+      const events: ModelInvocationEvent[] = [
+        { type: "model.started", invocationId: "scripted", occurredAt: clock.now() },
+        ...(text === undefined
+          ? []
+          : [
+              {
+                type: "model.output" as const,
+                invocationId: "scripted",
+                sequence: 1,
+                payloadRef: ref,
+                occurredAt: clock.now(),
+              },
+            ]),
+        ending === "completed"
+          ? {
+              type: "model.completed",
+              invocationId: "scripted",
+              inputTokens: 100,
+              outputTokens,
+              costMicros: options.cost ?? 300,
+              latencyMs: 10,
+              occurredAt: clock.now(),
+            }
+          : typeof ending === "object"
+            ? {
+                type: "model.failed",
+                invocationId: "scripted",
+                errorCode: ending.failedWith,
+                retryable: true,
+                latencyMs: 10,
+                occurredAt: clock.now(),
+              }
+            : { type: "model.started", invocationId: "scripted", occurredAt: clock.now() },
+      ];
+      scripted = new ScriptedModelPort([descriptor], events);
+      models.push(scripted);
+      queued.push(scripted);
     };
     const limits = {
       perCheckCostMicros: options.perCheckCostMicros ?? 100_000,
@@ -201,7 +251,7 @@ describe("proactive Gmail check acceptance", () => {
       reader,
       model: {
         get model() {
-          return scripted;
+          return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
         async prepare({ invocationId, prompt }) {
@@ -220,6 +270,10 @@ describe("proactive Gmail check acceptance", () => {
       timeZone: TIME_ZONE,
       clock,
       ids,
+      ...(options.batchSize === undefined ? {} : { batchSize: options.batchSize }),
+      ...(options.outputTokenLimit === undefined
+        ? {}
+        : { outputTokenLimit: options.outputTokenLimit }),
     });
     const overview = () =>
       readProactiveOverview({
@@ -234,7 +288,19 @@ describe("proactive Gmail check acceptance", () => {
       });
     const invocations = () =>
       models.reduce((total, model) => total + model.observedRequests().length, 0);
-    return { clock, store, seal, reader, script, service, overview, prompts, invocations, limits };
+    return {
+      clock,
+      store,
+      seal,
+      reader,
+      script,
+      scriptRaw,
+      service,
+      overview,
+      prompts,
+      invocations,
+      limits,
+    };
   }
 
   it("[PG-2] pushes one notification for an invoice due tomorrow with high priority", async () => {
@@ -583,5 +649,111 @@ describe("proactive Gmail check acceptance", () => {
     const after = await h.overview();
     expect(after.metrics.reviewed).toBe(1);
     expect(after.audit.pending).toBe(0);
+  });
+
+  it("[PG-16] tells a failed model call, an unfinished answer and an unreadable answer apart and retries them next time", async () => {
+    const h = await harness();
+    h.reader.items = [mail("a", { subject: "ご確認ください" })];
+    h.scriptRaw({ failedWith: "MODEL_ROUTE_UNAVAILABLE" });
+    expect(await h.service.run()).toMatchObject({
+      verdict: "failed",
+      reasonCode: "MODEL_FAILED_MODEL_ROUTE_UNAVAILABLE",
+      costMicros: 0,
+    });
+    h.clock.advance(15 * 60_000);
+    h.scriptRaw("unfinished", '{"items":[');
+    expect(await h.service.run()).toMatchObject({
+      verdict: "failed",
+      reasonCode: "MODEL_NOT_COMPLETED",
+    });
+    h.clock.advance(15 * 60_000);
+    h.scriptRaw("completed", "すみません、判断できません");
+    expect(await h.service.run()).toMatchObject({
+      verdict: "failed",
+      reasonCode: "MODEL_OUTPUT_INVALID",
+      costMicros: 300,
+    });
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-1");
+    h.clock.advance(15 * 60_000);
+    h.script([{ id: "a", result: "know", todo: "確認依頼" }]);
+    expect(await h.service.run()).toMatchObject({ verdict: "silent" });
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-2");
+  });
+
+  it("[PG-16] keeps the judgements of a batch the model only half answered and asks again only for the missing mail", async () => {
+    const h = await harness();
+    h.reader.items = [
+      mail("invoice", {
+        fromAddress: "billing@tepco.co.jp",
+        subject: "電気料金",
+        snippet: "11/5 までにお支払いください",
+      }),
+      mail("lunch", { subject: "ランチ", snippet: "来週どう？" }),
+    ];
+    h.script([
+      {
+        id: "invoice",
+        result: "act",
+        todo: "付电费",
+        priority: "high",
+        dueAt: "2026-11-05T14:59:00Z",
+      },
+    ]);
+    const first = await h.service.run();
+    expect(first).toMatchObject({ verdict: "pushed" });
+    expect(first?.counts).toMatchObject({ fetched: 2, judged: 1, pushed: 1 });
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-1");
+    h.clock.advance(15 * 60_000);
+    h.script([{ id: "lunch", result: "ignore" }]);
+    const second = await h.service.run();
+    expect(second).toMatchObject({ verdict: "silent" });
+    expect(h.prompts.at(-1)).toContain("lunch");
+    expect(h.prompts.at(-1)).not.toContain("invoice");
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-2");
+  });
+
+  it("[PG-16] halves the batch when the model spends its whole output budget thinking and keeps what it did finish", async () => {
+    const h = await harness({ batchSize: 4, outputTokenLimit: 4096 });
+    h.reader.items = ["a", "b", "c", "d"].map((id) => mail(id, { subject: `件名 ${id}` }));
+    h.scriptRaw("completed", "考え中… まだ考え中…", 4096);
+    h.scriptRaw(
+      "completed",
+      '{"items":[{"id":"a","result":"ignore","confidence":"sure"},{"id":"b","result":"ignore","confidence":"sure"}',
+      4096,
+    );
+    h.scriptRaw("completed", '{"items":[{"id":"c","result":"ignore","confidence":"sure"}]}');
+    h.scriptRaw("completed", '{"items":[{"id":"d","result":"ignore","confidence":"sure"}]}');
+    const first = await h.service.run();
+    expect(first).toMatchObject({ verdict: "silent" });
+    expect(first?.counts).toMatchObject({ fetched: 4, judged: 3 });
+    expect(h.invocations()).toBe(3);
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-1");
+    h.clock.advance(15 * 60_000);
+    const second = await h.service.run();
+    expect(second).toMatchObject({ verdict: "silent" });
+    expect(h.invocations()).toBe(4);
+    expect(h.prompts.at(-1)).toContain('"id":"d"');
+    expect(h.prompts.at(-1)).not.toContain('"id":"a"');
+    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-2");
+  });
+
+  it("[PG-16] names a truncated answer when even one mail cannot be judged", async () => {
+    const h = await harness({ outputTokenLimit: 4096 });
+    h.reader.items = [mail("a")];
+    h.scriptRaw("completed", "考え中…", 4096);
+    expect(await h.service.run()).toMatchObject({
+      verdict: "failed",
+      reasonCode: "MODEL_OUTPUT_TRUNCATED",
+    });
+  });
+
+  it("[PG-16] keeps everything that never changes in front of the time and the mail so the model's KV cache can be reused", () => {
+    const first = proactivePrompt([mail("a")], "2026-10-30T01:00:00.000Z", "Asia/Tokyo");
+    const later = proactivePrompt([mail("b")], "2026-10-30T01:15:00.000Z", "Asia/Tokyo");
+    const stable = first.slice(0, first.indexOf("现在是"));
+    expect(stable.length).toBeGreaterThan(200);
+    expect(later.startsWith(stable)).toBe(true);
+    expect(first.indexOf("现在是")).toBeGreaterThan(first.indexOf("只输出 JSON"));
+    expect(first.indexOf("现在是")).toBeLessThan(first.indexOf("邮件："));
   });
 });
