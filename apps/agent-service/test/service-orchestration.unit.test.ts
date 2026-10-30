@@ -980,7 +980,7 @@ describe("service request readiness and runtime callbacks", () => {
       });
     }
   });
-  it.each(["/assets/index-abc.js", "/icons/icon-192.png", "/sw.js", "/", "/c/thread-1"])(
+  it.each(["/assets/index-abc.js", "/icons/icon-192.png", "/sw.js", "/manifest.webmanifest", "/"])(
     "serves static file %s without a database authority check",
     async (url) => {
       const f = web();
@@ -998,7 +998,7 @@ describe("service request readiness and runtime callbacks", () => {
       expect(reply.code).toHaveBeenCalledWith(503);
     },
   );
-  it.each(["/api/gateway/v2/queries", "/preview/ticket-1"])(
+  it.each(["/api/gateway/v2/queries", "/preview/ticket-1", "/c/thread-1", "/files/new-route"])(
     "checks database authority before %s",
     async (url) => {
       const f = web();

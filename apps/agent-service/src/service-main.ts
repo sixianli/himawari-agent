@@ -346,8 +346,19 @@ async function waitForWorkerBootBinding(input: {
   }
 }
 
-function readsProductState(requestPath: string): boolean {
-  return requestPath.startsWith("/api/") || requestPath.startsWith("/preview/");
+const STATIC_FILE_PATHS = new Set([
+  "/",
+  "/sw.js",
+  "/manifest.webmanifest",
+  "/apple-touch-icon.png",
+]);
+
+function servesStaticFile(requestPath: string): boolean {
+  return (
+    STATIC_FILE_PATHS.has(requestPath) ||
+    requestPath.startsWith("/assets/") ||
+    requestPath.startsWith("/icons/")
+  );
 }
 
 function writeStartupStep(output: NodeJS.WritableStream, step: string): void {
@@ -1749,7 +1760,7 @@ export async function runAgentService(
           runs?.loop.state !== "running"
         )
           return reply.code(503).send({ error: "SERVICE_NOT_READY" });
-        if (!readsProductState(requestPath)) return;
+        if (servesStaticFile(requestPath)) return;
         try {
           await activeAuthority.assertActive();
         } catch {
