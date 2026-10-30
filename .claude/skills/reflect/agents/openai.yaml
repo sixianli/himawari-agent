@@ -1,6 +1,0 @@
-interface:
-  display_name: "Shoshin \u00b7 reflect"
-  short_description: "Review a task through three native agent lenses"
-  default_prompt: "Use $reflect for this request, preserving its scope and explaining the evidence and limitations."
-policy:
-  allow_implicit_invocation: true

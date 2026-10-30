@@ -1,14 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +17,6 @@ import {
   validateToolchainLock,
   verifyDownload,
 } from "../../scripts/ci/install-tools.mjs";
-import { verifyGovernance } from "../../scripts/ci/sync-governance.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const temporaryDirectories = [];
@@ -277,68 +268,5 @@ describe("npm 发布包身份与 lifecycle", () => {
     expect(() => auditInstalledDependencies(fixture.directory, fixture.toolchain)).toThrow(
       "锁文件依赖没有安装",
     );
-  });
-});
-
-describe("治理原始来源闭包", () => {
-  function fixture() {
-    const directory = temporary();
-    cpSync(join(root, "tools/document-governance"), join(directory, "tools/document-governance"), {
-      recursive: true,
-    });
-    return directory;
-  }
-
-  it("仓库原始快照及 Owner 授权的摘要可独立验证", () => {
-    expect(verifyGovernance(fixture()).files).toBe(5);
-  });
-
-  it("忽略访达在快照各层写入的 .DS_Store", () => {
-    const directory = fixture();
-    for (const folder of ["", "scripts", "references"])
-      writeFileSync(join(directory, "tools/document-governance", folder, ".DS_Store"), "Finder");
-    expect(verifyGovernance(directory).files).toBe(5);
-  });
-
-  it.each([
-    ["名字相近的文件", "scripts/DS_Store"],
-    ["名为 .DS_Store 的目录里的文件", "scripts/.DS_Store/extra.py"],
-    ["其他未登记文件", "scripts/extra.py"],
-  ])("%s仍算未登记文件", (_kind, name) => {
-    const directory = fixture();
-    const path = join(directory, "tools/document-governance", name);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, "unregistered");
-    expect(() => verifyGovernance(directory)).toThrow("治理快照包含未登记文件");
-  });
-
-  it("名为 .DS_Store 的符号链接仍被拒绝", () => {
-    const directory = fixture();
-    symlinkSync("/etc/hosts", join(directory, "tools/document-governance/scripts/.DS_Store"));
-    expect(() => verifyGovernance(directory)).toThrow("治理目录不接受符号链接");
-  });
-
-  it("缺少任一导入模块则失败", () => {
-    const directory = fixture();
-    rmSync(join(directory, "tools/document-governance/scripts/runbook.py"));
-    expect(() => verifyGovernance(directory)).toThrow("治理文件缺失");
-  });
-
-  it("修改原始 validator 则失败", () => {
-    const directory = fixture();
-    writeFileSync(
-      join(directory, "tools/document-governance/scripts/validate_docs.py"),
-      "print('passed')\n",
-    );
-    expect(() => verifyGovernance(directory)).toThrow("治理文件摘要不匹配");
-  });
-
-  it("许可状态或授权文本被替换则失败", () => {
-    const directory = fixture();
-    const path = join(directory, "tools/document-governance/provenance.json");
-    const provenance = JSON.parse(readFileSync(path));
-    provenance.authorization.status = "unconfirmed";
-    writeJson(path, provenance);
-    expect(() => verifyGovernance(directory)).toThrow("缺少治理复制与公开分发授权");
   });
 });

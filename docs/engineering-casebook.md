@@ -98,6 +98,7 @@ date: "2026-10-26"
   71. [想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”](#case-cache-usage-ruler)
   72. [搜索对话时好时坏：搜索前才临时建索引，被数据库队列拖到 20 秒](#case-search-index-background)
   73. [很简单的问题用了 28 秒：读和写挤在同一条数据库队里](#case-read-write-lanes)
+  74. [仓库里的规则和技能，云端线程到底读到了哪些](#case-cloud-thread-loading)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -127,7 +128,7 @@ date: "2026-10-26"
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
-| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
+| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci)、[云端线程读到哪些规则和技能](#case-cloud-thread-loading) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
@@ -4722,6 +4723,58 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 “一个很简单的问题用了 28 秒。我先猜过两次：先把起点算错了，拿到数据库里每条事件的发生和写入时间才发现；根因是读和写挤在同一个工作线程的同一条队里，读也要等写。SQLite 官方的 WAL 模式本来就允许读写同时进行，所以不换库，给读单开一条只读连接。只读连接写会报错，正好拿它揪出了一个标成读、其实在写的操作。最后那 10 秒卡顿我没有硬解释，记下来继续查。”
 
 [返回目录](#contents)
+
+<a id="case-cloud-thread-loading"></a>
+
+## 案例 74：仓库里的规则和技能，云端线程到底读到了哪些
+
+**背景与现象**
+
+2026-10-30，Andy 问：产品愿景、设计规范、事故清单、案例库、ADR（架构决定记录）这些文件，线程会不会自动读到。协调者答“只有 CLAUDE.md/AGENTS.md 和 `.claude/rules/` 自动加载”，但没实地验证过；仓库里还放着 16 个技能（skill，给 Claude 的一套做事说明）的副本，规则让云端线程“任务对得上就去读副本”。
+
+**根因**
+
+不是 bug，是对“云端项目线程加载什么”没有核对过。核对方法两条：一是让一个云端线程报告开工时上下文里实际有什么（第一手：CLAUDE.md 经 `@AGENTS.md` 引入了 AGENTS.md 全文，`.claude/rules/` 下 4 个文件全文，约 54 KB；产品愿景、设计规范、事故清单、案例库、ADR 一份都不在）；二是读官方文档，发现云端线程既不加载仓库技能，也不加载带 `paths:`（按路径触发）的规则。线程最初提议的“按路径自动带上设计规范要点”在云端根本不会生效。
+
+**我们的方案**
+
+- 删除 `.claude/skills/`（[ADR 0132](adr/0132-owner-skills-from-the-claude-ai-account.md)）：云端线程要用的技能由 Andy 上传到 claude.ai 账号，`document-governance` 也不留副本。
+- 上传时发现 `readable-output` 原件按插件打包，claude.ai 技能包拒收插件清单文件，只能去掉钩子后上传，所以“回复必须是中文”的自动检查在云端不生效。
+- Andy 同时决定删除仓库里的文档自动校验（[ADR 0133](adr/0133-docs-check-removed-from-npm-run-check.md)），事故 I-06 改回“缺门槛”。
+
+**方案讨论与备选**
+
+- A. 用 `.claude/rules/` 的 `paths:` 按路径加载要点：官方文档写明云端线程不加载，只对 Mac 会话有用，放弃作为云端方案。
+- B. 在 AGENTS.md 写“什么情况读哪个文件”的表：仍是“指到才读”，效果有限。
+- C. 用检查脚本强制“改界面必须改设计规范”“修 bug 必须在案例库或事故清单留痕”：这是唯一真能拦住的办法，还在等 Andy 定范围。
+- 保留技能副本：Mac 会话优先用 `~/.claude/skills/` 原件，云端线程又不加载，副本只会和原件分叉，放弃。
+
+**业界主流做法**
+
+- ✅ Claude Code《Let Claude coordinate ongoing work with Projects》（https://code.claude.com/docs/en/claude-projects ，2026-10-30 打开）：“Cloud threads load each repository's `CLAUDE.md` instructions but not its skills”；“path-specific rules aren't loaded”。
+- ✅ Claude Code《How Claude remembers your project》（https://code.claude.com/docs/en/memory ，2026-10-30 打开）：“Claude treats them as context, not enforced configuration. To block an action regardless of what Claude decides, use a PreToolUse hook instead.”
+- ✅ Claude Code《Skills》（https://code.claude.com/docs/en/skills ，2026-10-30 打开）：项目技能“not cloud threads in a project”，账号技能覆盖“cloud sessions”。
+
+**对比与取舍**
+
+官方把“规则文件”定位为上下文、不是强制，要强制就用钩子或检查。我们得出的分层是：每个会话都要知道的写进根目录规则文件（全文加载、每个线程都付上下文费用）；要拦住的写成检查脚本；技能走账号。代价是技能的可用性取决于 Andy 上传了哪些，仓库本身不再能保证。
+
+**结果数据**
+
+- 开工时自动加载的规则约 54 KB（AGENTS.md 22.5 KB、owner-global-instructions 16.7 KB、owner-skills 7.4 KB、document-governance 4.6 KB、incident-gates 2.4 KB，按文件字节数）。
+- 删除的技能副本约 2.0 MB（`du -sh .claude/skills`）。
+- 对线程遵守率的影响：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0132](adr/0132-owner-skills-from-the-claude-ai-account.md)、[ADR 0133](adr/0133-docs-check-removed-from-npm-run-check.md)、[ADR 0080](adr/0080-document-governance-in-fast-mode.md)（被取代）、事故清单 I-06。
+
+**面试 30 秒版**
+
+“我们的 Agent 开发靠一堆规则文件和技能来约束编码代理。我先让云端线程报告开工时上下文里实际有什么，再对照官方文档，发现云端线程不加载仓库技能，也不加载按路径触发的规则，原来的设计在云端是空转的。于是改成三层：必须知道的进根目录规则文件，必须做到的写成检查脚本，技能放到账号里。教训是先验证加载机制，再设计规则。”
+
+[返回目录](#contents)
+
 
 <a id="small-cases"></a>
 

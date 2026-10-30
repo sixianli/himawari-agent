@@ -6,7 +6,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -52,7 +51,6 @@ import {
   loadToolchainLock,
   verifyInstalledTools,
 } from "../../scripts/ci/install-tools.mjs";
-import { syncGovernance, verifyGovernance } from "../../scripts/ci/sync-governance.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -424,66 +422,5 @@ describe("合成npm/native/SQLite子进程边界", () => {
         cacheDirectory,
       }),
     ).rejects.toThrow(/npm cache/);
-  });
-});
-
-describe("治理同步过程的来源边界", () => {
-  function governanceFixture(mode) {
-    const directory = temporary(),
-      source = join(directory, "source"),
-      project = join(directory, "project");
-    const provenance = JSON.parse(
-      readFileSync(join(root, "tools/document-governance/provenance.json")),
-    );
-    const upstream = join(source, "document-governance");
-    mkdirSync(upstream, { recursive: true });
-    for (const file of provenance.files)
-      write(
-        join(upstream, file.path),
-        readFileSync(join(root, "tools/document-governance", file.path)),
-      );
-    write(
-      join(project, "tools/document-governance/PERMISSION.md"),
-      mode === "permission"
-        ? "unconfirmed"
-        : readFileSync(join(root, "tools/document-governance/PERMISSION.md")),
-    );
-    boundary.run = (command, args, options) => {
-      if (command === "git") {
-        expect(args.slice(0, 2)).toEqual(["-C", realpathSync(source)]);
-        if (args[2] === "rev-parse") return `${provenance.revision}\n`;
-        if (args[2] === "remote") return "https://github.com/sixianli/agent-skills.git\n";
-        if (args[2] === "status")
-          return mode === "dirty" ? " M document-governance/scripts/validate_docs.py\n" : "";
-      }
-      if (command === "/synthetic/python") {
-        expect(args.slice(0, 3)).toEqual(["-I", "-B", "-c"]);
-        expect(args[3]).toContain("ast.parse");
-        const imports = structuredClone(provenance.localImports);
-        if (mode === "imports") imports["scripts/validate_docs.py"].push("unknown_third_party");
-        return JSON.stringify(imports);
-      }
-      if (command.endsWith("node_modules/.bin/biome")) {
-        expect(args.slice(0, 2)).toEqual(["format", "--stdin-file-path"]);
-        return options.input;
-      }
-      throw new Error("UNEXPECTED_SYNTHETIC_COMMAND");
-    };
-    return { source, root: project, python: "/synthetic/python", provenance };
-  }
-  it("来源与导入闭包核对后按原字节复制并独立校验", () => {
-    const f = governanceFixture();
-    const result = syncGovernance(f);
-    expect(result.files).toBe(5);
-    expect(verifyGovernance(f.root)).toEqual(result);
-    for (const file of f.provenance.files)
-      expect(readFileSync(join(f.root, "tools/document-governance", file.path))).toEqual(
-        readFileSync(join(f.source, "document-governance", file.path)),
-      );
-  });
-  it.each(["dirty", "permission", "imports"])("拒绝%s来源，不能静默重新封存", (mode) => {
-    const f = governanceFixture(mode);
-    expect(() => syncGovernance(f)).toThrow();
-    expect(existsSync(join(f.root, "tools/document-governance/provenance.json"))).toBe(false);
   });
 });

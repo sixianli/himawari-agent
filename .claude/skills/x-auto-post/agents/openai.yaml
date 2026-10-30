@@ -1,4 +1,0 @@
-interface:
-  display_name: "X 自动发布"
-  short_description: "按你的主题和频率自动选材、写作，通过 Buffer Free 发布 X 帖子，并记录历史避免重复。"
-  default_prompt: "使用 $x-auto-post，按我已配置的主题、账号和频率，完成本轮选材、去重和自动发布。"

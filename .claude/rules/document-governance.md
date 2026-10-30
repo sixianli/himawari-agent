@@ -1,12 +1,12 @@
 # Document Governance in Every Session
 
-The user asked on 2026-10-26 that every later cloud thread actually apply the `document-governance` skill to this project ([ADR 0080](../../docs/adr/0080-document-governance-in-fast-mode.md)). Cloud threads in a claude.ai project do not load `.claude/skills/`, but they load this file, so this file is how they reach the skill. Sessions that already list `document-governance` in the Skill tool use that skill and still follow the project rules below.
+The user asked on 2026-10-26 that every later cloud thread actually apply the `document-governance` skill to this project ([ADR 0080](../../docs/adr/0080-document-governance-in-fast-mode.md)). The repository keeps no copy of the skill ([ADR 0132](../../docs/adr/0132-owner-skills-from-the-claude-ai-account.md)). Cloud threads get it from the owner's claude.ai account and Mac sessions from `~/.claude/skills/`; either way it comes through the Skill tool, and the project rules below still apply.
 
 ## Where the Skill Is
 
-- The skill is the snapshot in [.claude/skills/document-governance/](../skills/document-governance/SKILL.md). Before governed documentation work, read its `SKILL.md`, then only the reference under `references/` that matches the work, as the skill's "Load Only What Is Needed" list says.
-- Run its scripts from the repository root as `python3 -B .claude/skills/document-governance/scripts/<script>.py ...`. Do not add `-I`: the scripts import each other from their own folder.
-- `tools/document-governance/` is an older pinned copy used only by the CI `static` job, which does not run while GitHub Actions is off ([ADR 0092](../../docs/adr/0092-pause-github-actions.md)). Do not use it for agent work.
+- Load `document-governance` through the Skill tool before governed documentation work, then read only the reference under `references/` that matches the work, as the skill's "Load Only What Is Needed" list says.
+- Run its scripts from the repository root as `python3 -B <skill directory>/scripts/<script>.py ...`, with the directory the Skill tool reports. Do not add `-I`: the scripts import each other from their own folder.
+- When the Skill tool does not list `document-governance`, say so in the plan, and copy the frontmatter and structure of the newest existing document of the same type instead of inventing a format.
 
 ## When to Use It
 
@@ -19,10 +19,10 @@ These triggers apply in fast mode and in full mode:
 - A closed Spec or Plan is archived only with `archive_doc.py`. ADRs are never archived.
 - An incident and its gate go to `docs/incidents-and-gates.md`, and a mistake that coding agents repeat goes to `docs/lessons.md`, both under [ADR 0107](../../docs/adr/0107-every-incident-gets-an-automatic-gate.md) ([incident-gates.md](incident-gates.md)); project status never does.
 
-## The Check Before Every Commit
+## The Documentation Check
 
-- `npm run check` runs `npm run check:docs` ([scripts/check-docs-governance.mjs](../../scripts/check-docs-governance.mjs)), which runs the skill's strict validation (about one second). A commit that changes only documentation runs `npm run check:docs` on its own; it is read-only and may run anywhere, including the MacBook.
-- In full mode every finding blocks. In fast mode only two kinds of finding on an active Runbook are deferred: `contract_sha256 does not match` and `contract path does not exist`. Every other finding blocks in both modes, so fix it before committing.
+- Since 2026-10-31 the repository has no documentation check: `npm run check:docs` and its script were removed, and no commit is blocked by documentation findings (user decision, [ADR 0133](../../docs/adr/0133-docs-check-removed-from-npm-run-check.md)).
+- When the skill is loaded, its strict validation (`python3 -B <skill directory>/scripts/validate_docs.py . --strict`, about one second, read-only) can be run by hand after changing governed documents. In fast mode, findings that only say an active Runbook's `contract_sha256 does not match` or `contract path does not exist` may be left for full mode.
 - In fast mode, when a commit changes a Runbook's contract sources and leaves its seal stale, write `Docs: deferred (fast mode)` in the commit message and name the Runbook. Reconcile and reseal deferred Runbooks when the user switches back to full mode, or when a thread is about to follow that Runbook.
 - Never reseal a Runbook only to make the check pass. `runbook.py seal ... --confirm-reconciled --apply` comes after the Runbook was reviewed against the current code.
 
@@ -36,4 +36,4 @@ Before following an active Runbook for a real operation, apply the three gates i
 
 ## Delivery Reports
 
-Each delivery report names the documents updated, the documents intentionally left unchanged and why, the result of `npm run check:docs` with the number of deferred Runbook findings, and any Backlog items or ADRs created. Defects found in the skill go under a "Skill feedback" heading, as [the owner's global instructions](owner-global-instructions.md) say.
+Each delivery report names the documents updated, the documents intentionally left unchanged and why, the result of the skill's strict validation when it ran, with the number of deferred Runbook findings, and any Backlog items or ADRs created. Defects found in the skill go under a "Skill feedback" heading, as [the owner's global instructions](owner-global-instructions.md) say.
