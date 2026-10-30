@@ -9,10 +9,7 @@ import type { MemoryEpisodeService } from "@himawari-agent/memory-engine";
 const MAXIMUM_EPISODES_PER_RUN = 1;
 
 export interface ProductionMemoryEpisodesOptions {
-  readonly service: Pick<
-    MemoryEpisodeService,
-    "dueSegments" | "summarize" | "recordCompaction" | "backfillEmbeddings"
-  >;
+  readonly service: Pick<MemoryEpisodeService, "dueSegments" | "summarize" | "backfillEmbeddings">;
   readonly threads: Pick<ThreadRepositoryPort, "read">;
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
@@ -63,31 +60,6 @@ export class ProductionMemoryEpisodes {
       });
     this.#pending.set(request.runId, work);
     return admitted;
-  }
-
-  async recordCompaction(request: RuntimeRequest, proposalRef: string): Promise<void> {
-    if (this.#stopping || !request.threadId) return;
-    try {
-      const { ownerId, agentId, threadId } = request;
-      const payload = await this.#options.payloads.get(proposalRef);
-      if (!payload || payload.contentType !== "text/plain") return;
-      const thread = await this.#options.threads.read(ownerId, agentId, threadId);
-      if (!thread) return;
-      const summary = new TextDecoder("utf-8", { fatal: true }).decode(
-        await this.#options.protector.unprotect({ ownerId, agentId, payload }),
-      );
-      await this.#options.assertActive();
-      await this.#options.service.recordCompaction({
-        ownerId,
-        agentId,
-        threadId,
-        sequence: thread.messageWatermark,
-        summary,
-        dataClassification: payload.dataClassification,
-      });
-    } catch (error) {
-      this.#options.onFailure(error);
-    }
   }
 
   async stop(): Promise<void> {

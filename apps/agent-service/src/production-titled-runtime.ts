@@ -10,9 +10,7 @@ export interface ProductionTitledRuntimeOptions {
   readonly titles?: BackgroundStart;
   readonly uploads?: BackgroundStart;
   readonly memoryCapture?: BackgroundStart;
-  readonly memoryEpisodes?: BackgroundStart & {
-    recordCompaction(request: RuntimeRequest, proposalRef: string): Promise<void>;
-  };
+  readonly memoryEpisodes?: BackgroundStart;
   readonly memoryConsolidation?: BackgroundStart;
   readonly memoryPaused: () => Promise<boolean>;
 }
@@ -50,10 +48,6 @@ export function createProductionTitledRuntime(
                 await memoryConsolidation?.start(request);
               });
         }
-        if (event.type === "runtime.compaction_proposed" && memoryEpisodes)
-          void memoryPaused().then((paused) =>
-            paused ? undefined : memoryEpisodes.recordCompaction(request, event.proposalRef),
-          );
         if (ADMISSION_BARRIER_EVENTS.has(event.type)) {
           await uploadsRecorded;
           await titleAdmission;

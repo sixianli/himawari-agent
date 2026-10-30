@@ -75,7 +75,6 @@ it("still holds the Run until every background model call is admitted under its 
     memoryCapture: { start: () => memoryAdmitted.promise.then(() => void order.push("memory")) },
     memoryEpisodes: {
       start: async () => void order.push("episodes"),
-      recordCompaction: async () => undefined,
     },
     memoryConsolidation: {
       start: () => consolidationAdmitted.promise.then(() => void order.push("consolidation")),
