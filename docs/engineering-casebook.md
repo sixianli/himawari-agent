@@ -91,6 +91,7 @@ date: "2026-10-26"
   64. [第二十次上线被自己的检查脚本拦下：检查跑得太快，结果里少了一栏，读结果的脚本直接报错](#case-s6-report-contract)
   65. [生产机磁盘每次上线前都不够：上线流程只装不拆，清理步骤写了却没接上](#case-release-cleanup)
   66. [电脑上开着的设置，手机上没有：只搬了三项设置上服务器，断线的旧设备还会把旧值推回去](#case-settings-everywhere)
+  67. [通知设置点了没反应：页面在等一个永远不会返回的浏览器接口](#case-push-ready-hang)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -122,7 +123,7 @@ date: "2026-10-26"
 | Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
-| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere) |
+| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
 | 产品判断：定位、差异化和用评测证明产品价值 | [产品愿景定为顶层文档](#case-product-vision)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[推送反馈记录](#case-push-feedback)、[多用户隔离](#case-multi-user)、[要不要做 iOS App](#case-mobile-client)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 
@@ -4335,6 +4336,52 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户说电脑上开着的设置手机上没有。我把 13 项设置逐一盘点，发现上次只把 3 项搬上服务器，主题还在浏览器里，而且断线的旧设备重连时会把整套旧值推上去。我把账户级设置全放服务器，保存时带版本号，版本对不上就拒绝，断线的旧改动不再覆盖新值；页面回到前台就重读。最后加了一个扫源码的测试：谁再加一个只存本地的设置，测试就失败。”
+
+[返回目录](#contents)
+
+<a id="case-push-ready-hang"></a>
+
+## 案例 67：通知设置点了没反应：页面在等一个永远不会返回的浏览器接口
+
+**背景与现象**
+
+2026-10-30 14:36（日本时间），Andy 在电脑浏览器打开设置→通知，三个开关（记忆提醒、等你审批、任务结束）和“在这台设备开启通知”按钮点了没有任何反应，也没有提示。他明确说这是 bug，不是 UI 问题。
+
+**根因**
+
+在 Andy 的 Chrome 里打开 himawari.siyi.win 实测（生产第二十一版）：通知权限已是“允许”，`/sw.js` 返回 200，但该站点下没有任何后台程序（service worker，浏览器里负责在页面关闭时接收推送的后台脚本）注册记录。后台程序只在点“开启通知”时才注册，这台电脑从没走到这一步，而权限已被授予。
+
+页面读本机订阅用的是 `navigator.serviceWorker.ready`。MDN 写明它“will never reject, and which waits indefinitely until the ServiceWorkerRegistration associated with the current page has an active worker”；实测 5 秒仍在等。于是状态读取永远不结束，开关和按钮因“状态还没读到”一直禁用，也不报错。手机端装过后台程序，所以正常。单元测试的假浏览器让 `ready` 立刻成功，从没覆盖“权限已允许、从没注册”。
+
+**我们的方案**
+
+读订阅改用 `getRegistration("/")`：没注册时立刻返回“没有”，页面马上显示可点的“开启通知”。点击后先 `register`，再等 `ready`（此时一定会完成）。测试把假浏览器的 `ready` 改成注册前一直挂起，新增 `[I-38]` 用例；改前该例失败，改后通过。见事故 [I-38](incidents-and-gates.md#incidents) 与 UI 规范第 33 条。
+
+**方案讨论与备选**
+
+- 给 `ready` 加超时再提示：MDN 的示例就是这么做的，但超时只是把“等不到”变成“等 10 秒再报错”，没有回答“有没有后台程序”这个问题；放弃。
+- 页面启动时就注册后台程序：也能避免这种状态，但会让没打算开通知的设备也装上后台脚本，改动更大；放弃，保持“用户点了才注册”。
+
+**业界主流做法**
+
+- ✅ MDN `ServiceWorkerContainer.ready`（[原文](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerContainer/ready)）：promise “will never reject” 且无限等待，需要自己处理“没有”的情况。
+- ✅ MDN `getRegistration`（[原文](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerContainer/getRegistration)）：没有匹配的注册时 “resolves to … undefined”，用 `if (registration)` 判断。
+
+**对比与取舍**
+
+用 `getRegistration` 把“不存在”变成一个正常结果，比给不会失败的接口加超时更直接；代价是需要保证订阅前有注册，所以 `enable` 里保留注册后再等 `ready`（订阅要求后台程序已激活）。
+
+**结果数据**
+
+`notification-settings.unit.test.ts` 9 条通过；撤掉修复后只有 `[I-38]` 一条失败。真设备上的效果：未测量，等上线后 Andy 在电脑上点一次。
+
+**相关 ADR/PR**
+
+[ADR 0089](adr/0089-web-push-only-owner-entry.md)；[事故 I-38](incidents-and-gates.md#incidents)；分支 `claude/project-thread-u2afee`。
+
+**面试 30 秒版**
+
+“用户说通知设置点了没反应。我在他的浏览器里实测，发现权限已授予但后台程序从没注册，而页面用的 `serviceWorker.ready` 在这种情况下永远不返回，所有控件就一直灰着。改成先查有没有注册，没有就立刻可用，再补了一条‘权限已允许但从没注册’的回归测试，并让测试里的假浏览器和真实行为一致。”
 
 [返回目录](#contents)
 
