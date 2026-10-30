@@ -93,6 +93,7 @@ date: "2026-10-26"
   66. [电脑上开着的设置，手机上没有：只搬了三项设置上服务器，断线的旧设备还会把旧值推回去](#case-settings-everywhere)
   67. [写小游戏时“思考 44 秒”一动不动：每个流式片段都存一整条消息](#case-silent-file-writing)
   68. [通知设置点了没反应：页面在等一个永远不会返回的浏览器接口](#case-push-ready-hang)
+  69. [标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器](#case-sunflower-growth-mark)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -121,7 +122,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
-| Agent 交互体验：把执行过程如实展示给用户 | [发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing) |
+| Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
@@ -4449,6 +4450,56 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户说通知设置点了没反应。我在他的浏览器里实测，发现权限已授予但后台程序从没注册，而页面用的 `serviceWorker.ready` 在这种情况下永远不返回，所有控件就一直灰着。改成先查有没有注册，没有就立刻可用，再补了一条‘权限已允许但从没注册’的回归测试，并让测试里的假浏览器和真实行为一致。”
+
+[返回目录](#contents)
+
+<a id="case-sunflower-growth-mark"></a>
+
+## 案例 69：标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器
+
+**背景与现象**
+
+2026-10-30，Andy 说线上标志（96 颗向日葵种子，CSS 动画：忙碌时整体旋转加放缩）“还不够好看”，要重新设计几版并带动效。线程在项目共享文件夹里做了十几版可交互原型，Andy 逐版批注：先要求整个标志只用圆点、位置不动，只靠大小和颜色变化；后来放开限制，他选了“生长”（种子按黄金角从花心一颗颗长出，把老种子推向外圈）；最后在 4 种让螺旋更明显的做法里选“加密到 233 点”。
+
+**根因**
+
+这次不是 bug，是一个设计要求和实现方式的矛盾：Andy 选的“生长”里，种子的位置每帧都在变（每颗种子的距离是 `√年龄`），CSS 关键帧只能做固定路径的位移，做不出这种“新种子长出、全体被推开”的效果。而标志在页面里出现很多次（每条回答前一个），逐个开动画会让页面越来越慢。另外线上 96 颗种子已经按黄金角排列，“看不出螺旋”是因为点稀、大小差太大，不是排法不对。
+
+**我们的方案**
+
+1. 种子数学抽成纯函数 `seedsAt(detail, growth)`（`brand-seeds.ts`）：第 n 颗种子在 `spacing × √age` 处、角度 `n × 137.508°`，颜色和大小按年龄变化。大图 233 颗，小图 89 颗（都是斐波那契数，小图点放大 25%）。
+2. 全页只有一个 `requestAnimationFrame` 计时器（`joinGrowth`），只有两类标志加入：正在回答的标志（每秒长 7 颗种子）和首页大图（每秒 0.35 颗）；已完成回答、侧栏、登录页都是静止的一张画。没有标志在动时，计时器一帧都不跑。
+3. 系统开启“减少动态效果”时，任何标志都不加入计时器。
+4. 同一份种子数学还生成 `assets/brand/himawari/v3/logo-sunflower-disc.svg` 和 4 张 PWA 图标，`npm run check:brand` 检查 SVG 和代码一致。
+
+**方案讨论与备选**
+
+- 继续用 CSS 动画、只改点数和颜色：做不出“被推向外圈”，放弃。
+- 每个标志各开一个逐帧循环：一屏回答越多越慢，放弃，改为全页一个计时器。
+- 让侧栏和已完成回答的标志也慢慢长：同时动的东西太多，也不符合“动效只表达状态”，放弃。
+- 1005 点精细版：Andy 看过仍不满意，且每帧要改 1005 个圆，放弃；105 点版则花瓣散成零星的点，放弃。
+
+**业界主流做法**
+
+- ✅ MDN `prefers-reduced-motion`（[原文](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion)）：设置用来让界面 “removes, reduces, or replaces motion-based animations”，缩放和平移大物体 “can be vestibular motion triggers”。
+- ✅ W3C WCAG 2.2 成功标准 2.3.3（[原文](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html)）：“Motion animation triggered by interaction can be disabled, unless the animation is essential to the functionality or the information being conveyed.”
+- ✅ MDN `requestAnimationFrame`（[原文](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)）：回调在 “before the next repaint” 执行，在后台页签里 “paused in most browsers … to improve performance and battery life”。
+
+**对比与取舍**
+
+业界做法是：运动动画必须能被系统设置关掉，逐帧动画交给浏览器的重绘节奏。我们照做，并多加一条自己的约束：动的东西要少。代价是标志的“动”要靠 JS 逐帧改 DOM 属性，不能像旧版那样纯 CSS；好处是静止时零开销，且“生长”这个核心动作可以如实做出来。
+
+**结果数据**
+
+真实网页验收（Chromium，假后端，1280 和 390 宽，`reducedMotion` 两种设置）：首页大图 233 个可见点，3.5 秒内位置变化；侧栏标志 89 个可见点，1.5 秒内位置不变；已完成回答的标志不动且没有忙碌标记；减少动态效果下首页大图也不动。单元测试覆盖逐帧位置变化和计时器数量；把“减少动态效果”判断拿掉、或让所有标志都加入计时器，对应测试失败。真机（iPhone）帧率和耗电：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0126](adr/0126-sunflower-mark-grows-233-seeds.md)；[想法 IDEA-20261030-001](ideas/IDEA-20261030-001-himawari-logo-candidates-grow-and-hi.md)；PR #134；v13 基准 `docs/assets/control-center/2026-10-30-v13/`。
+
+**面试 30 秒版**
+
+“产品负责人要一个‘从花心长出种子’的向日葵标志。这种位置每帧在变的动画 CSS 做不了，我把种子的黄金角数学抽成纯函数，用全页唯一一个 requestAnimationFrame 计时器驱动，只给‘正在回答’和首页大图开动画，其余静止，系统设置‘减少动态效果’时全部关掉。静止时零开销，也有测试保证不会有多余的计时器在跑。”
 
 [返回目录](#contents)
 

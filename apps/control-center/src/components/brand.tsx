@@ -1,22 +1,99 @@
-const SEED_COUNT = 96;
-const SEEDS_PER_RING = 8;
-const GOLDEN_ANGLE_DEGREES = 137.508;
+import { useEffect, useRef, useState } from "react";
+import {
+  GROWTH_RATES,
+  restingGrowth,
+  SEED_COUNTS,
+  type SunflowerDetail,
+  seedsAt,
+} from "./brand-seeds.js";
 
-const round = (value: number) => Math.round(value * 100) / 100;
+export { GROWTH_RATES, restingGrowth, SEED_COUNTS, type SunflowerDetail, seedsAt };
+export type { Seed } from "./brand-seeds.js";
 
-export const sunflowerSeeds = Array.from({ length: SEED_COUNT }, (_, index) => {
-  const order = index + 1;
-  const radius = 2.16 * Math.sqrt(order);
-  const angle = (order * GOLDEN_ANGLE_DEGREES * Math.PI) / 180;
-  return {
-    cx: round(24 + radius * Math.cos(angle)),
-    cy: round(24 + radius * Math.sin(angle)),
-    r: round(0.82 + (0.78 * order) / SEED_COUNT),
-    ring: Math.floor(index / SEEDS_PER_RING),
+const MAX_FRAME_SECONDS = 0.05;
+
+type Grower = (seconds: number) => void;
+const growers = new Set<Grower>();
+let frame = 0;
+let lastFrameAt: number | undefined;
+
+function advance(now: number) {
+  const seconds =
+    lastFrameAt === undefined ? 0 : Math.min(MAX_FRAME_SECONDS, (now - lastFrameAt) / 1000);
+  lastFrameAt = now;
+  for (const grow of growers) grow(seconds);
+  frame = growers.size ? requestAnimationFrame(advance) : 0;
+  if (!frame) lastFrameAt = undefined;
+}
+
+export function joinGrowth(grow: Grower) {
+  growers.add(grow);
+  if (!frame) frame = requestAnimationFrame(advance);
+  return () => {
+    growers.delete(grow);
+    if (growers.size || !frame) return;
+    cancelAnimationFrame(frame);
+    frame = 0;
+    lastFrameAt = undefined;
   };
-});
+}
 
-export function SunflowerMark({ busy = false }: { readonly busy?: boolean }) {
+export function activeGrowers() {
+  return growers.size;
+}
+
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.(REDUCED_MOTION).matches === true,
+  );
+  useEffect(() => {
+    const query = window.matchMedia?.(REDUCED_MOTION);
+    if (!query) return;
+    const update = () => setReduced(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return reduced;
+}
+
+export function SunflowerMark({
+  busy = false,
+  growing = false,
+  detail = "compact",
+}: {
+  readonly busy?: boolean;
+  readonly growing?: boolean;
+  readonly detail?: SunflowerDetail;
+}) {
+  const seedsRef = useRef<SVGGElement>(null);
+  const reducedMotion = usePrefersReducedMotion();
+  const rate = busy ? GROWTH_RATES.busy : growing ? GROWTH_RATES.idle : 0;
+  const animated = rate > 0 && !reducedMotion;
+  const growthRef = useRef(restingGrowth(detail));
+
+  useEffect(() => {
+    if (!animated) return;
+    const circles = seedsRef.current?.children;
+    if (!circles) return;
+    return joinGrowth((seconds) => {
+      growthRef.current += seconds * rate;
+      seedsAt(detail, growthRef.current).forEach((seed, index) => {
+        const circle = circles[index];
+        if (!circle) return;
+        circle.setAttribute("cx", String(seed.cx));
+        circle.setAttribute("cy", String(seed.cy));
+        circle.setAttribute("r", String(seed.r));
+        circle.setAttribute("fill", seed.fill);
+        circle.setAttribute("opacity", String(seed.opacity));
+        circle.setAttribute("class", seed.fresh ? "seed-new" : "");
+      });
+    });
+  }, [animated, rate, detail]);
+
+  const resting = seedsAt(detail, restingGrowth(detail));
   return (
     <svg
       className={busy ? "himawari-mark is-busy" : "himawari-mark"}
@@ -24,14 +101,16 @@ export function SunflowerMark({ busy = false }: { readonly busy?: boolean }) {
       aria-hidden="true"
       focusable="false"
     >
-      <g className="seeds">
-        {sunflowerSeeds.map((seed) => (
+      <g className="seeds" ref={seedsRef}>
+        {resting.map((seed, index) => (
           <circle
-            key={`${seed.cx},${seed.cy}`}
-            className={`seed-ring-${seed.ring}`}
+            key={index}
             cx={seed.cx}
             cy={seed.cy}
             r={seed.r}
+            fill={seed.fill}
+            opacity={seed.opacity}
+            className={seed.fresh ? "seed-new" : undefined}
           />
         ))}
       </g>

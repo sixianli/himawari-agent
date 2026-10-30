@@ -1630,14 +1630,6 @@ body {
   height: 72px;
   margin-bottom: 6px;
 }
-.welcome-mark .seeds {
-  animation: welcome-turn 90s linear infinite;
-}
-@keyframes welcome-turn {
-  to {
-    transform: rotate(360deg);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .welcome-mark .seeds {
     animation: none;
