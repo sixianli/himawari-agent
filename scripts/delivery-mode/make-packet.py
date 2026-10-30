@@ -97,6 +97,12 @@ def resolve_commit(reference):
     return commit
 
 
+def require_current_scripts(commit):
+    head = git('rev-parse', 'HEAD')
+    if subprocess.run(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', commit, head], capture_output=True, check=False).returncode != 0:
+        refuse('PACKET_SCRIPTS_OLDER_THAN_COMMIT', 'these scripts are at ' + head + ', which does not contain ' + commit + '; run make-packet.py from a checkout of that commit')
+
+
 def target_schema(commit):
     names = [Path(name).name for name in git('ls-tree', '--name-only', commit, MIGRATIONS + '/').splitlines()]
     numbers = sorted(int(match.group(1)) for match in (re.fullmatch(r'([0-9]{4})_[a-z0-9_]+\.sql', name) for name in names) if match)
@@ -744,6 +750,7 @@ def prepare(arguments):
     started = time.monotonic()
     instance = load_instance(arguments.instance)
     commit = resolve_commit(arguments.commit)
+    require_current_scripts(commit)
     date = arguments.date or datetime.now(timezone.utc).strftime('%Y-%m-%d')
     discovered = interpret_discovery(discover(instance, arguments.label, date), instance, arguments.label)
     if arguments.label is None:

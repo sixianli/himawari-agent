@@ -170,7 +170,7 @@ class DeployHarness(unittest.TestCase):
         root = Path(self.directory.name)
         self.scripts = root / 'scripts'
         self.scripts.mkdir()
-        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py'):
+        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py'):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
         (self.scripts / 'release-cleanup.py').write_text('import sys\nopen(' + repr(str(root / 'calls')) + ', "a").write("cleanup-" + sys.argv[2] + "\\n")\n')
@@ -197,6 +197,7 @@ class DeployHarness(unittest.TestCase):
         self.walkthrough.parent.mkdir()
         self.walkthrough.write_text(json.dumps(walkthrough()))
         (self.packet / 'steps' / 'run-user-step.sh').write_text('echo "$1" >> ' + str(self.calls) + '\n[[ "$1" != "${FAKE_FAIL_AT:-none}" ]]\n')
+        self.commit = self.commit_checkout(root)
         bin_directory = root / 'bin'
         bin_directory.mkdir()
         (bin_directory / 'ssh').write_text('#!/bin/bash\nprintf "%b" "$FAKE_FACTS"\n')
@@ -205,6 +206,21 @@ class DeployHarness(unittest.TestCase):
 
     def tearDown(self):
         self.directory.cleanup()
+
+    def commit_checkout(self, root):
+        git = ['git', '-C', str(root), '-c', 'user.name=t', '-c', 'user.email=t@t']
+        subprocess.run(['git', 'init', '-q', str(root)], check=True)
+        subprocess.run([*git, 'add', 'scripts'], check=True)
+        subprocess.run([*git, 'commit', '-q', '-m', 'scripts'], check=True)
+        commit = subprocess.run([*git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+        binding = json.loads((self.packet / 'inputs' / 'bindings.json').read_text())
+        binding['candidate']['testedCommit'] = commit
+        (self.packet / 'inputs' / 'bindings.json').write_text(json.dumps(binding))
+        for name, key in (('packet-parameters.json', 'COMMIT'), ('packet-checks.json', 'commit')):
+            record = json.loads((self.packet / name).read_text())
+            record[key] = commit
+            (self.packet / name).write_text(json.dumps(record))
+        return commit
 
     def deploy(self, **environment):
         code, result, calls = self.deploy_with_cleanup(**environment)
@@ -359,6 +375,36 @@ class RootSpacePreflightTest(unittest.TestCase):
             (root / 'nineteenth-20261029-evidence' / 's1-result.json').write_text(json.dumps({'passed': True, 'rootFreeBeforeBytes': 9000, 'rootFreeAfterBytes': 4000}))
             output = subprocess.run(['python3', '-I', '-c', preflight.LAST_INSTALL_USED, str(unit), str(root)], capture_output=True, text=True, check=True).stdout
             self.assertEqual(output.strip(), '5000')
+
+
+class ScriptCheckoutGateTest(DeployHarness):
+    def newer_commit_elsewhere(self):
+        root = Path(self.directory.name)
+        git = ['git', '-C', str(root), '-c', 'user.name=t', '-c', 'user.email=t@t']
+        subprocess.run([*git, 'checkout', '-q', '-b', 'newer'], check=True)
+        subprocess.run([*git, 'commit', '-q', '--allow-empty', '-m', 'newer'], check=True)
+        newer = subprocess.run([*git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run([*git, 'checkout', '-q', '-'], check=True)
+        return newer
+
+    def point_packet_at(self, commit):
+        binding = json.loads((self.packet / 'inputs' / 'bindings.json').read_text())
+        binding['candidate']['testedCommit'] = commit
+        (self.packet / 'inputs' / 'bindings.json').write_text(json.dumps(binding))
+        for name, key in (('packet-parameters.json', 'COMMIT'), ('packet-checks.json', 'commit')):
+            record = json.loads((self.packet / name).read_text())
+            record[key] = commit
+            (self.packet / name).write_text(json.dumps(record))
+
+    def test_scripts_older_than_the_packet_change_nothing_on_the_server(self):
+        self.point_packet_at(self.newer_commit_elsewhere())
+        code, result, calls = self.deploy_with_cleanup()
+        self.assertEqual((code, result['result'], result['stoppedAt']), (7, 'old-scripts', 'SCRIPTS'))
+        self.assertEqual(calls, [])
+
+    def test_scripts_that_contain_the_packet_commit_go_on(self):
+        code, result, calls = self.deploy_with_cleanup()
+        self.assertEqual((code, result['result']), (0, 'passed'))
 
 
 class GeneratedPacketGateTest(DeployHarness):

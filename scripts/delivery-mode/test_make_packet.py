@@ -661,12 +661,39 @@ class HermesCleanupTest(unittest.TestCase):
                         unittest.mock.patch.object(packet_maker, 'Hermes', return_value=hermes), \
                         unittest.mock.patch.object(packet_maker, 'load_instance', return_value={}), \
                         unittest.mock.patch.object(packet_maker, 'resolve_commit', return_value='e' * 40), \
+                        unittest.mock.patch.object(packet_maker, 'require_current_scripts'), \
                         unittest.mock.patch.object(packet_maker, 'discover', return_value={}), \
                         unittest.mock.patch.object(packet_maker, 'interpret_discovery', return_value={'LABEL': 'twentieth'}), \
                         unittest.mock.patch.object(packet_maker, 'base_parameters', return_value={'LABEL': 'twentieth', 'COMMIT8': 'e' * 8}):
                     with self.assertRaises(SystemExit):
                         packet_maker.prepare(argparse.Namespace(instance='andy-production', commit='HEAD', date='2026-10-30', label='twentieth'))
             self.assertIn(packet_maker.hermes_cleanup_command(hermes.work), calls.read_text())
+
+
+class ScriptCheckoutTest(unittest.TestCase):
+    TAG = '[PG-4]'
+
+    def test_a_packet_for_a_commit_the_scripts_do_not_contain_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            git = ['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@t']
+            subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+            subprocess.run([*git, 'commit', '-q', '--allow-empty', '-m', 'old'], check=True)
+            old = subprocess.run([*git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+            subprocess.run([*git, 'checkout', '-q', '-b', 'main-newer'], check=True)
+            subprocess.run([*git, 'commit', '-q', '--allow-empty', '-m', 'new'], check=True)
+            newer = subprocess.run([*git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+            with unittest.mock.patch.object(packet_maker, 'REPO', repo):
+                packet_maker.require_current_scripts(old)
+                packet_maker.require_current_scripts(newer)
+                subprocess.run([*git, 'checkout', '-q', old], check=True)
+                with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SCRIPTS_OLDER_THAN_COMMIT'):
+                    packet_maker.require_current_scripts(newer)
+
+    def test_prepare_checks_the_scripts_before_anything_else(self):
+        source = (HERE / 'make-packet.py').read_text()
+        body = source[source.index('def prepare(arguments):'):source.index('def build_packet(')]
+        self.assertLess(body.index('require_current_scripts(commit)'), body.index('discover('))
 
 
 class DependencyReinstallTest(unittest.TestCase):

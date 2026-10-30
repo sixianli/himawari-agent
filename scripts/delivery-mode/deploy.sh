@@ -36,6 +36,11 @@ if ! /usr/bin/python3 -I "$here/generated-packet-gate.py" "$packet"; then
   result not-generated PACKET 6
 fi
 
+if ! /usr/bin/python3 -I "$here/script-checkout-gate.py" "$packet"; then
+  echo "DEPLOY_SCRIPTS_OLDER_THAN_PACKET: these deploy scripts come from a checkout that does not contain the packet's commit; run deploy.sh from a checkout of that commit (for example a temporary checkout of origin/main)" >&2
+  result old-scripts SCRIPTS 7
+fi
+
 if ! /usr/bin/python3 -I "$here/browser-acceptance-gate.py" "$packet"; then
   echo "DEPLOY_BROWSER_ACCEPTANCE_MISSING: walk the release checks in a real browser on this exact artifact first (product-path test 'release acceptance'), then copy its browser-acceptance.json to $packet/browser-acceptance/walkthrough.json" >&2
   result no-browser-acceptance ACCEPTANCE 5

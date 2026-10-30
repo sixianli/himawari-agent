@@ -21,6 +21,7 @@ date: "2026-10-30"
 - [后果](#consequences)
 - [补充决定：保留最近 3 份数据库副本](#database-copies)
 - [补充决定：只认现行配置和数据库里的有效记录，出包结束清 Hermes](#references-and-hermes)
+- [补充决定：出包和上线脚本必须包含要上线的提交](#current-scripts)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -111,6 +112,19 @@ date: "2026-10-30"
 3. `make-packet.py prepare` 不论成功还是失败，结束时都删掉 Hermes 上这次出包的可重建副本：`<工作目录>/materials`、`<工作目录>-checks/packet`、`<工作目录>-inputs/packet.tgz` 和上传的源码包，日志和报告保留；同时删掉 Mac 上的临时工作目录 `packet-work-*`。原来出包失败时这个目录（含约 1 GB 的安装材料）会一直留在 Mac 的临时目录里。
 
 测试：`test_release_cleanup.py` 的 `test_a_deleted_database_row_that_still_sits_in_free_pages_does_not_keep_a_release`、`test_an_old_configuration_backup_does_not_keep_a_release`，以及 `test_make_packet.py` 的 `HermesCleanupTest`（3 条）。在原代码上，前两条失败，后 3 条报错。
+
+<a id="current-scripts"></a>
+
+## 补充决定：出包和上线脚本必须包含要上线的提交
+
+本 ADR 的清理逻辑写在 `deploy.sh`、`release-cleanup.py` 和 `make-packet.py` 里，只有从包含这些改动的检出里运行才会生效。2026-10-30 Mac 线程确认：第十九、二十版都是从 `origin/main` 的临时检出出包和上线的，但 Mac 上的主工作区停在旧分支 `claude/isolated-tool-execution`，那里的脚本没有这些清理。有人在主工作区直接运行，就会用旧代码，而且什么提示都没有。
+
+改为：
+
+- `make-packet.py prepare` 先检查自己所在检出的 `HEAD` 是否包含要出包的提交，不包含就停下（`PACKET_SCRIPTS_OLDER_THAN_COMMIT`）。
+- `deploy.sh` 检查自己所在检出是否包含操作包的提交（`script-checkout-gate.py`），不包含就退出码 7、结果 `old-scripts`，生产机一点不碰。
+
+测试：`test_deploy.py` 的 `ScriptCheckoutGateTest`，`test_make_packet.py` 的 `ScriptCheckoutTest`。在原脚本上，前者 1 条失败，后者 2 条报错。主工作区要不要切回 `main`，由 Andy 决定。
 
 <a id="references"></a>
 
