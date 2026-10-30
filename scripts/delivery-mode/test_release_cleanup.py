@@ -1,7 +1,9 @@
+from contextlib import closing
 import importlib.util
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 
@@ -31,7 +33,10 @@ class ProductionTree:
         for directory in (self.releases, self.operations, self.tmp, self.lib / 'state/data', self.etc, root / 'etc/systemd/system'):
             directory.mkdir(parents=True)
         (self.etc / 'config.json').write_text('{"stateRoot": "' + str(self.lib / 'state') + '"}\n')
-        (self.lib / 'state/data/product.sqlite').write_bytes(b'SQLite format 3\0' + b'\0' * 64)
+        self.database = self.lib / 'state/data/product.sqlite'
+        with closing(sqlite3.connect(self.database)) as database, database:
+            database.execute('create table runs (id integer primary key, detail text, payload blob)')
+            database.execute("insert into runs (detail, payload) values ('no release here', x'00')")
         self.unit = root / 'etc/systemd/system/himawari-prod.service'
 
     def file(self, path, size=10, data=None):
@@ -67,6 +72,10 @@ class ProductionTree:
 
     def serve(self, release):
         self.unit.write_text('[Service]\nExecStart=/opt/himawari/node/bin/node --no-global-search-paths ' + str(release['operations']) + '/pair-supervisor.mjs --prefix ' + str(release['prefix']) + ' --config ' + str(self.etc / 'config.json') + ' \n')
+
+    def record(self, detail):
+        with closing(sqlite3.connect(self.database)) as database, database:
+            return database.execute('insert into runs (detail) values (?)', (detail,)).lastrowid
 
     def plan(self, release):
         return {**local.cleanup_plan(release['binding']), 'lockPath': str(self.root / 'run/lock/cleanup.lock')}
@@ -150,18 +159,33 @@ class ReleaseCleanupTest(unittest.TestCase):
         self.assertTrue(self.failed['stage'].exists() and self.failed['prefix'].exists() and self.leftover_release.exists())
 
     def test_release_named_by_the_database_unit_config_or_a_process_is_kept(self):
-        database = self.tree.lib / 'state/data/product.sqlite'
-        database.write_bytes(database.read_bytes() + str(self.first['prefix']).encode() + b'/lib/himawari-agent\0')
-        (self.tree.etc / 'extra.json').write_text('{"runtime": "' + str(self.failed['prefix']) + '"}')
+        self.tree.record('{"runtimeRoot": "' + str(self.first['prefix']) + '/lib/himawari-agent"}')
+        config = self.tree.etc / 'config.json'
+        config.write_text('{"runtime": "' + str(self.failed['prefix']) + '"}')
         result = self.run_cleanup(references=[str(self.leftover_release) + '/lib/x.js'])
         kept = {item['path']: item['reason'] for item in result['kept']}
-        self.assertEqual(kept[str(self.first['prefix'])], 'named-by-database')
+        self.assertEqual(kept[str(self.first['prefix'])], 'named-by-database:runs.detail')
         self.assertEqual(kept[str(self.failed['prefix'])], 'named-by-unit-or-config')
         self.assertEqual(kept[str(self.leftover_release)], 'used-by-a-process')
         self.assertTrue(self.first['prefix'].exists() and self.failed['prefix'].exists() and self.leftover_release.exists())
 
+    def test_a_deleted_database_row_that_still_sits_in_free_pages_does_not_keep_a_release(self):
+        row = self.tree.record('{"runtimeRoot": "' + str(self.first['prefix']) + '/lib/himawari-agent"}')
+        with closing(sqlite3.connect(self.tree.database)) as database, database:
+            database.execute('pragma secure_delete = off')
+            database.execute('delete from runs where id = ?', (row,))
+        self.assertIn(str(self.first['prefix']).encode(), self.tree.database.read_bytes())
+        self.run_cleanup()
+        self.assertFalse(self.first['prefix'].exists())
+
+    def test_an_old_configuration_backup_does_not_keep_a_release(self):
+        (self.tree.etc / 'config.json.before-static-root-fix-20261025T120544Z').write_text('{"staticRoot": "' + str(self.first['prefix']) + '/share/ui"}')
+        result = self.run_cleanup()
+        self.assertFalse(self.first['prefix'].exists())
+        self.assertEqual(result['unreadableTables'], [])
+
     def test_a_similar_name_is_not_taken_for_a_reference(self):
-        (self.tree.etc / 'extra.json').write_text('{"runtime": "' + str(self.leftover_release) + '-other/lib"}')
+        (self.tree.etc / 'config.json').write_text('{"runtime": "' + str(self.leftover_release) + '-other/lib"}')
         self.run_cleanup()
         self.assertFalse(self.leftover_release.exists())
 
@@ -194,7 +218,7 @@ class CleanupPlanTest(unittest.TestCase):
     def test_plan_comes_from_the_packet_bindings(self):
         binding = {'host': {'hostname': 'vmi1'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service'}, 'paths': {'newPrefix': '/opt/himawari/releases/2026-10-30-twentieth', 'newOperations': '/opt/himawari/operations/twentieth-20261030', 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence', 'transportRoot': '/var/tmp/himawari-twentieth-20261030/input', 'config': '/etc/himawari/config.json', 'database': '/var/lib/himawari/state/data/product.sqlite'}}
         plan = local.cleanup_plan(binding)
-        self.assertEqual((plan['releasesRoot'], plan['operationsRoot'], plan['tmpRoot'], plan['evidenceParent'], plan['configDirectory']), ('/opt/himawari/releases', '/opt/himawari/operations', '/var/tmp', '/var/lib/himawari', '/etc/himawari'))
+        self.assertEqual((plan['releasesRoot'], plan['operationsRoot'], plan['tmpRoot'], plan['evidenceParent'], plan['config']), ('/opt/himawari/releases', '/opt/himawari/operations', '/var/tmp', '/var/lib/himawari', '/etc/himawari/config.json'))
 
 
 if __name__ == '__main__':

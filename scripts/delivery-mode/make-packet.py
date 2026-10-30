@@ -97,6 +97,12 @@ def resolve_commit(reference):
     return commit
 
 
+def require_current_scripts(commit):
+    head = git('rev-parse', 'HEAD')
+    if subprocess.run(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', commit, head], capture_output=True, check=False).returncode != 0:
+        refuse('PACKET_SCRIPTS_OLDER_THAN_COMMIT', 'these scripts are at ' + head + ', which does not contain ' + commit + '; run make-packet.py from a checkout of that commit')
+
+
 def target_schema(commit):
     names = [Path(name).name for name in git('ls-tree', '--name-only', commit, MIGRATIONS + '/').splitlines()]
     numbers = sorted(int(match.group(1)) for match in (re.fullmatch(r'([0-9]{4})_[a-z0-9_]+\.sql', name) for name in names) if match)
@@ -620,12 +626,21 @@ class Hermes:
             'HIMAWARI_CI_PYTHON=' + shlex.quote(self.settings['tools'] + '/python/python/bin/python3') + ' /usr/bin/python3 -I ' + shlex.quote(self.scripts + '/run-packet-checks.py') + ' ' + shlex.quote(checks + '/packet') + ' --node ' + shlex.quote(self.settings['tools'] + '/bin/node') + ' --source ' + shlex.quote(self.settings['source']) + ' --logs ' + shlex.quote(checks + '/logs') + ' --record ' + shlex.quote(checks + '/record.json'),
         ]))
 
+    def cleanup(self):
+        child = subprocess.run([self.ssh_wrapper, hermes_cleanup_command(self.work)], capture_output=True, timeout=320, check=False)
+        print(('PACKET_HERMES_CLEANED ' if child.returncode == 0 else 'PACKET_HERMES_CLEANUP_FAILED ') + self.work, flush=True)
+
     def fetch_checks(self, packet, commit):
         record = json.loads(self.ssh('cat ' + shlex.quote(self.work + '-checks/record.json')))
         if record.get('passed') is not True:
             refuse('PACKET_CHECKS_FAILED', record)
         record.update(commit=commit, host=self.settings['hostname'], checkedAt=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
         (packet / CHECKS_RECORD).write_text(json.dumps(record, indent=2) + '\n')
+
+def hermes_cleanup_command(work):
+    targets = [work + '/materials', work + '-checks/packet', work + '-inputs/packet.tgz']
+    return 'rm -rf ' + ' '.join(shlex.quote(target) for target in targets) + ' && rm -f ' + shlex.quote(work + '-inputs') + '/*.bundle'
+
 
 def step(name, started):
     print('PACKET_STEP ' + name + ' ' + str(round(time.monotonic() - started, 1)) + 's', flush=True)
@@ -735,18 +750,27 @@ def prepare(arguments):
     started = time.monotonic()
     instance = load_instance(arguments.instance)
     commit = resolve_commit(arguments.commit)
+    require_current_scripts(commit)
     date = arguments.date or datetime.now(timezone.utc).strftime('%Y-%m-%d')
     discovered = interpret_discovery(discover(instance, arguments.label, date), instance, arguments.label)
     if arguments.label is None:
         discovered = interpret_discovery(discover(instance, discovered['LABEL'], date), instance, discovered['LABEL'])
     parameters = base_parameters(instance, commit, date, discovered)
     hermes = Hermes(run_id(parameters))
+    work = Path(tempfile.mkdtemp(prefix='packet-work-'))
+    try:
+        build_packet(arguments, instance, commit, date, parameters, hermes, work, started)
+    finally:
+        hermes.cleanup()
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def build_packet(arguments, instance, commit, date, parameters, hermes, work, started):
     hermes.probe_uploads()
     hermes.install_scripts()
     hermes.preflight()
     step('discover', started)
     packet = packet_directory(Path(arguments.output_root).resolve(), date, parameters['LABEL'])
-    work = Path(tempfile.mkdtemp(prefix='packet-work-'))
     render(work / 's0-scripts', parameters, only=set(S0_SCRIPTS))
     parameters.update(schema_parameters(parameters, read_s0(instance, work / 's0-scripts', work / 's0')))
     step('s0-schema', started)
@@ -790,7 +814,6 @@ def prepare(arguments):
         (packet / 'browser-acceptance' / 'walkthrough.json').write_bytes(walkthrough)
     configuration = freeze(packet, instance)
     step('freeze', started)
-    shutil.rmtree(work, ignore_errors=True)
     print('PACKET_READY ' + json.dumps({'packet': str(packet), 'commit': commit, 'label': parameters['LABEL'], 'schema': parameters['CURRENT_SCHEMA'], 'oldConfigSha256': configuration, 'seconds': round(time.monotonic() - started, 1)}))
 
 

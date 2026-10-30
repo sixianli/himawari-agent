@@ -20,6 +20,8 @@ date: "2026-10-30"
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [补充决定：保留最近 3 份数据库副本](#database-copies)
+- [补充决定：只认现行配置和数据库里的有效记录，出包结束清 Hermes](#references-and-hermes)
+- [补充决定：出包和上线脚本必须包含要上线的提交](#current-scripts)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -93,6 +95,36 @@ date: "2026-10-30"
 2026-10-30 10:30（日本时间），Andy 在选择卡上选了“留最近 3 份”。第二十版上线前的清理计划显示，各版证据目录里有 32 份升级前的数据库原样副本，共 3.81 GiB。正式备份还没做，这些副本就是现有的全部数据库备份。
 
 因此[决定](#decision)第 2 条“各版证据目录里超过 10 MiB 的文件删除”加一个例外：所有证据目录中，路径含 `*-raw-schema<编号>*/data/` 的数据库副本，按修改时间保留最新的 3 份（`release-cleanup.py` 的 `KEEP_DATABASE_COPIES`），清单里标为 `recent-database-copy`，其余照删。正在服务那一版的证据目录仍整个保留，它的副本也计入这 3 份。测试：`test_release_cleanup.py` 的 `test_the_three_newest_database_copies_stay_and_older_ones_go`。
+
+<a id="references-and-hermes"></a>
+
+## 补充决定：只认现行配置和数据库里的有效记录，出包结束清 Hermes
+
+第二十版上线时，第一次实跑的清理按“被提到就不删”留下了 7 个旧版本。2026-10-30 在生产机上只读核查（`/mnt/project-files/release-references-production-20261030T0220Z.txt`）的结果：
+
+- 第一、八、十版只在 `/etc/himawari/config.json.before-*` 这 4 份旧配置备份里出现，现行的 `config.json` 和单元文件都没有提到它们。
+- 用 SQL 查数据库现有的行，没有一行提到第五、七、十一、十八版。原规则是把数据库文件按字节整个扫一遍，会扫到已删除的行留在空闲页里的旧内容，所以误判成“数据库还在用”。
+
+改为：
+
+1. 配置只看单元文件和现行的 `config.json`（`release-cleanup.py` 计划里的 `config`），不看同目录下的备份文件。
+2. 数据库改为用只读连接、SQL 逐表查现有行的每一列。查到才保留，原因写成 `named-by-database:<表>.<列>`，下次能直接看出是哪张表；查不了的表列在 `unreadableTables` 里。
+3. `make-packet.py prepare` 不论成功还是失败，结束时都删掉 Hermes 上这次出包的可重建副本：`<工作目录>/materials`、`<工作目录>-checks/packet`、`<工作目录>-inputs/packet.tgz` 和上传的源码包，日志和报告保留；同时删掉 Mac 上的临时工作目录 `packet-work-*`。原来出包失败时这个目录（含约 1 GB 的安装材料）会一直留在 Mac 的临时目录里。
+
+测试：`test_release_cleanup.py` 的 `test_a_deleted_database_row_that_still_sits_in_free_pages_does_not_keep_a_release`、`test_an_old_configuration_backup_does_not_keep_a_release`，以及 `test_make_packet.py` 的 `HermesCleanupTest`（3 条）。在原代码上，前两条失败，后 3 条报错。
+
+<a id="current-scripts"></a>
+
+## 补充决定：出包和上线脚本必须包含要上线的提交
+
+本 ADR 的清理逻辑写在 `deploy.sh`、`release-cleanup.py` 和 `make-packet.py` 里，只有从包含这些改动的检出里运行才会生效。2026-10-30 Mac 线程确认：第十九、二十版都是从 `origin/main` 的临时检出出包和上线的，但 Mac 上的主工作区停在旧分支 `claude/isolated-tool-execution`，那里的脚本没有这些清理。有人在主工作区直接运行，就会用旧代码，而且什么提示都没有。
+
+改为：
+
+- `make-packet.py prepare` 先检查自己所在检出的 `HEAD` 是否包含要出包的提交，不包含就停下（`PACKET_SCRIPTS_OLDER_THAN_COMMIT`）。
+- `deploy.sh` 检查自己所在检出是否包含操作包的提交（`script-checkout-gate.py`），不包含就退出码 7、结果 `old-scripts`，生产机一点不碰。
+
+测试：`test_deploy.py` 的 `ScriptCheckoutGateTest`，`test_make_packet.py` 的 `ScriptCheckoutTest`。在原脚本上，前者 1 条失败，后者 2 条报错。主工作区要不要切回 `main`，由 Andy 决定。
 
 <a id="references"></a>
 
