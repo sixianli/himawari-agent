@@ -978,3 +978,40 @@ describe("streamed tool call progress", () => {
     expect(writing).toMatchObject({ itemId: tool?.itemId, kind: "status", text: "312" });
   });
 });
+
+it.each([true, false])(
+  "shows an unconfirmed command result as the reason a settled Run ended only after release: %s",
+  (released) => {
+    const state = projectThreadExecutionState(
+      { ...run, status: "failed" },
+      [record(1, "unknown-tool", "updated")],
+      true,
+      {
+        revision: "unknown-result-resource",
+        allReleased: released,
+        pendingResources: !released,
+        unresolvedResultItemIds: ["unknown-tool"],
+        phase: released ? null : "unresolved",
+        reasonCode: released ? "RESOURCE_RELEASE_CONFIRMED" : "RESOURCE_STATE_UNCONFIRMED",
+        lastObservedAt: at(4),
+        operations: [
+          {
+            itemId: "unknown-tool",
+            phase: released ? "released" : "unresolved",
+            reasonCode: released ? "RESOURCE_RELEASE_CONFIRMED" : "RESOURCE_STATE_UNCONFIRMED",
+            lastObservedAt: at(4),
+          },
+        ],
+      },
+      {
+        phase: "failed",
+        terminalStatus: "failed",
+        diagnosticCode: "RUNTIME_TOOL_RESULT_UNKNOWN",
+      },
+    );
+    expect(state).toMatchObject({
+      displayPhase: released ? "failed" : "unresolved",
+      reasonCode: released ? "RUNTIME_TOOL_RESULT_UNKNOWN" : "RESOURCE_STATE_UNCONFIRMED",
+    });
+  },
+);
