@@ -48,10 +48,15 @@ def remote_script(binding, units=(), paths=()):
         'echo "authority=$(/usr/bin/python3 -I -c \'import json, sys; mirror = json.load(open(sys.argv[1])); print(mirror["authorityEpoch"], mirror["fencingToken"])\' ' + shlex.quote(mirror) + ')"',
         'echo "rootFree=$(/usr/bin/df --output=avail -B1 / | /usr/bin/tail -n 1 | /usr/bin/tr -d \' \')"',
         'echo "lastInstallUsed=$(/usr/bin/python3 -I -c ' + shlex.quote(LAST_INSTALL_USED) + ' ' + shlex.quote(binding['service']['unitFragmentPath']) + ' ' + shlex.quote(str(Path(binding['paths']['evidenceRoot']).parent) if 'evidenceRoot' in binding['paths'] else '/var/lib/himawari') + ' 2>/dev/null)"',
+        'echo "scratchScenes=$(' + SCRATCH_SCENE_COUNT + ')"',
         DOCUMENT_TOOLS_CHECK,
         *['echo ' + shlex.quote('probeUnit.' + unit) + '="$(/usr/bin/systemctl show -p LoadState --value ' + shlex.quote(unit) + ')"' for unit in units],
         *['if [ -e ' + shlex.quote(path) + ' ] || [ -L ' + shlex.quote(path) + ' ]; then echo ' + shlex.quote('targetPath.' + path + '=present') + '; else echo ' + shlex.quote('targetPath.' + path + '=absent') + '; fi' for path in paths],
     ])
+
+
+MAX_FAILURE_SCENES = 1
+SCRATCH_SCENE_COUNT = "/usr/bin/find /tmp -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '/tmp/h[A-Za-z0-9]{4}' | /usr/bin/wc -l"
 
 
 FROZEN_STATE_CHECKS = ('CONFIG_UNCHANGED_SINCE_FREEZE', 'UNIT_UNCHANGED_SINCE_FREEZE', 'AUTHORITY_UNCHANGED_SINCE_FREEZE')
@@ -82,6 +87,7 @@ def checks(binding, facts, size, units=(), paths=()):
         ('UNIT_UNCHANGED_SINCE_FREEZE', facts.get('unitSha256') == binding['service']['oldUnitSha256']),
         ('AUTHORITY_UNCHANGED_SINCE_FREEZE', facts.get('authority') == authority),
         ('ROOT_FREE_FOR_ACCEPTANCE', room['predictedFreeAfterInstall'] >= room['needAfterInstall']),
+        ('TMP_SCRATCH_WITHIN_LIMIT', int(facts.get('scratchScenes') or 0) <= MAX_FAILURE_SCENES),
         ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
         *[('PROBE_UNIT_UNUSED ' + unit, facts.get('probeUnit.' + unit) == 'not-found') for unit in units],
         *[('TARGET_PATH_ABSENT ' + path, facts.get('targetPath.' + path) == 'absent') for path in paths],
@@ -109,6 +115,8 @@ def main():
             print('PREFLIGHT_LEFTOVER_UNIT a failed earlier attempt left this transient unit loaded; after saving its status and journal run: systemctl reset-failed ' + name.split(' ', 1)[1])
         if not passed and name.startswith('TARGET_PATH_ABSENT '):
             print('PREFLIGHT_LEFTOVER_PATH an earlier attempt left this path and the cleanup before the preflight could not remove it; see what is left with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan: ' + name.split(' ', 1)[1])
+    if any(name == 'TMP_SCRATCH_WITHIN_LIMIT' and not passed for name, passed in results):
+        print('PREFLIGHT_TMP_SCRATCH /tmp holds ' + facts.get('scratchScenes', '?') + ' acceptance scratch directories (h plus 4 characters) after the cleanup, more than the ' + str(MAX_FAILURE_SCENES) + ' failure scene allowed; see them with: ls -ld /tmp/h????, and see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
     if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
         print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai python3-venv, then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
     if any(name == 'ROOT_FREE_FOR_ACCEPTANCE' and not passed for name, passed in results):
