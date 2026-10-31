@@ -128,12 +128,27 @@ export function findLayoutProblems(locale) {
   }
   for (const icon of document.querySelectorAll('svg[viewBox="0 0 24 24"]')) {
     if (!shown(icon)) continue;
+    if (!icon.hasAttribute("data-line-icon"))
+      problems.push(`ICON_OUTSIDE_LINE_SET ${describe(icon.parentElement ?? icon)}`);
     for (const shape of icon.querySelectorAll("path, circle, rect, ellipse, line, polyline")) {
       const stroke = getComputedStyle(shape);
       if (stroke.stroke === "none" || Number.parseFloat(stroke.strokeWidth) === 2) continue;
       problems.push(`ICON_STROKE_NOT_2 ${describe(icon)} ${stroke.strokeWidth}`);
       break;
     }
+  }
+  for (const control of document.querySelectorAll("button, summary, a[href], [role='button']")) {
+    if (!shown(control)) continue;
+    const own = [...control.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? "")
+      .join("");
+    const glyphs = [...control.querySelectorAll("[aria-hidden='true']")].map(
+      (node) => node.textContent ?? "",
+    );
+    const glyphIcon = /(^|\s)[×✕✓›‹▶▸▾⋯⌄＋→←↑↓]$/;
+    if ([own, ...glyphs].some((text) => glyphIcon.test(text.trim())))
+      problems.push(`TEXT_GLYPH_ICON ${describe(control)}`);
   }
   const outlineOnly = [
     ".action-button-secondary",
@@ -291,12 +306,13 @@ body{margin:0;font:14px/1.4 sans-serif} .wide{width:520px;height:20px;background
 <p>日期 Thu, October 29 11:55 AM</p><button id="focused">关闭</button>
 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="1.5"><path d="M4 12h16"/></svg>
 <button class="action-button-secondary" style="background:#eee">填了底色的描边按钮</button>
+<button aria-label="关闭提示">×</button>
 <script>document.getElementById("focused").focus()</script></body></html>`;
 
 const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"></head>
 <body style="margin:0;font:14px/1.4 sans-serif"><p>10月29日 星期四 11:55</p><button>好的</button>
-<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="2"><path d="M4 12h16"/></svg>
+<svg data-line-icon="close" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="2"><path d="M4 12h16"/></svg>
 <button class="action-button-secondary" style="background:transparent">描边按钮</button></body></html>`;
 
 export const REQUIRED_KINDS = [
@@ -310,6 +326,8 @@ export const REQUIRED_KINDS = [
   "ENGLISH_IN_zh-CN",
   "ICON_STROKE_NOT_2",
   "FILLED_CONTROL",
+  "ICON_OUTSIDE_LINE_SET",
+  "TEXT_GLYPH_ICON",
 ];
 
 async function selfTest(browser) {

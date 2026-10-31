@@ -3,6 +3,7 @@ import type { BackgroundCommandState, BackgroundCommandView } from "../backgroun
 import type { DeliveredFile, DeliveredFileGroup } from "../delivered-files.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { DeliveredFileRow } from "./delivered-file.js";
+import { LineGlyph, type LinePath } from "./line-icons.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 
@@ -51,49 +52,21 @@ const startedIn = (command: BackgroundCommandView, message: Message) =>
     ? message("more.job.turn", { turn: command.turn, title: command.turnTitle })
     : message("more.job.turnPlain", { turn: command.turn });
 
-function Glyph({ path, size = 18 }: { readonly path: string; readonly size?: number }) {
-  return (
-    <svg
-      className="more-glyph"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      aria-hidden="true"
-    >
-      <path d={path} />
-    </svg>
-  );
+function Glyph({ path, size = 18 }: { readonly path: LinePath; readonly size?: number }) {
+  return <LineGlyph className="more-glyph" name={path} size={size} />;
 }
 
-const CLOSE_PATH = "M6 6l12 12M18 6L6 18";
-const BACK_PATH = "M15 6l-6 6 6 6";
+const CLOSE_PATH: LinePath = "close";
+const BACK_PATH: LinePath = "back";
 
 function StateMark({ state }: { readonly state: BackgroundCommandState }) {
   if (state === "running") return <span className="more-spin" aria-hidden="true" />;
   return (
     <span className={`more-mark is-${state}`}>
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        aria-hidden="true"
-      >
-        {state === "completed" ? (
-          <path d="M5 12l5 5 9-10" strokeWidth="2.2" />
-        ) : state === "stopped" ? (
-          <rect x="6" y="6" width="12" height="12" rx="1.5" strokeWidth="2" />
-        ) : (
-          <>
-            <circle cx="12" cy="12" r="9" strokeWidth="2" />
-            <path d="M12 7v6M12 16.5v.5" strokeWidth="2" />
-          </>
-        )}
-      </svg>
+      <LineGlyph
+        size={14}
+        name={state === "completed" ? "check" : state === "stopped" ? "stop" : "alert"}
+      />
     </span>
   );
 }
@@ -120,17 +93,7 @@ export function MoreButton({
       aria-expanded={open}
       onClick={onClick}
     >
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        aria-hidden="true"
-      >
-        <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-      </svg>
+      <LineGlyph name="files" size={20} />
       {running ? (
         <span className="more-count" aria-hidden="true">
           {running}
@@ -275,7 +238,7 @@ export function MorePanel({
         {message("more.report")}
       </button>
     ) : null;
-  const iconButton = (label: MessageId, path: string, onClick: () => void) => (
+  const iconButton = (label: MessageId, path: LinePath, onClick: () => void) => (
     <button type="button" className="more-icon" aria-label={message(label)} onClick={onClick}>
       <Glyph path={path} />
     </button>

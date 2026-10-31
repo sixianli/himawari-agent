@@ -8,6 +8,7 @@ import {
   proactiveSettings,
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
+import { LineGlyph } from "./line-icons.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -320,7 +321,10 @@ export function ProactiveAppsSettings({
         </div>
       ) : null}
       <details className="proactive-what">
-        <summary>{message("proactive.apps.what")}</summary>
+        <summary>
+          <LineGlyph className="summary-chevron" name="chevron" size={14} />
+          {message("proactive.apps.what")}
+        </summary>
         <ul>
           <li>{message("proactive.apps.what1")}</li>
           <li>{message("proactive.apps.what2")}</li>

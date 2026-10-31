@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryModel, MemoryReminder, PendingMemory } from "../memory.js";
+import { LineGlyph } from "./line-icons.js";
 import { ActionButton, EditActions, editorKeys } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -173,9 +174,7 @@ export function MemoryTurnNote({
           className="memory-saved"
           onClick={() => openMemoryPage(saved.map((item) => item.memoryId))}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M7 4.5h10v15.5l-5-3.5-5 3.5z" />
-          </svg>
+          <LineGlyph name="memory" />
           <span>{message("memory.saved", { count: saved.length })}</span>
           <span className="memory-saved-link">{message("memory.view")}</span>
         </button>

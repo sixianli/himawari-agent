@@ -7,22 +7,13 @@ import {
 } from "../browser-storage.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
 import { ActionButton, Dropdown, ModalDialog } from "./index.js";
+import { LineGlyph, type LinePath } from "./line-icons.js";
 
 const THEMES = ["light", "dark", "system"] as const;
-const themeIcons: Readonly<Record<(typeof THEMES)[number], ReactNode>> = {
-  light: (
-    <>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" />
-    </>
-  ),
-  dark: <path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z" />,
-  system: (
-    <>
-      <rect x="3.5" y="5" width="17" height="11.5" rx="2" />
-      <path d="M9 20h6M12 16.5V20" />
-    </>
-  ),
+const themeIcons: Readonly<Record<(typeof THEMES)[number], LinePath>> = {
+  light: "sun",
+  dark: "moon",
+  system: "monitor",
 };
 
 export function SettingsDialog({
@@ -132,9 +123,7 @@ export function SettingsDialog({
                         checked={preferences.theme === theme}
                         onChange={() => onPreferencesChange({ ...preferences, theme })}
                       />
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        {themeIcons[theme]}
-                      </svg>
+                      <LineGlyph name={themeIcons[theme]} />
                       {message(`review.${theme}`)}
                     </label>
                   ))}

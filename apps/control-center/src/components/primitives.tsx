@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { LineGlyph } from "./line-icons.js";
 
 export type ActionButtonVariant = "primary" | "secondary" | "danger" | "quiet";
 
@@ -234,9 +235,7 @@ export function Dropdown<TValue extends string>({
         }}
       >
         <span>{current?.label}</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        <LineGlyph name="down" />
       </button>
       {open ? (
         <div
@@ -259,11 +258,7 @@ export function Dropdown<TValue extends string>({
               }}
             >
               <span>{option.label}</span>
-              {option.value === value ? (
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m5 12.5 4.5 4.5L19 7.5" />
-                </svg>
-              ) : null}
+              {option.value === value ? <LineGlyph name="check" /> : null}
             </button>
           ))}
         </div>
@@ -380,7 +375,7 @@ export function ToastRegion({ dismissLabel, label, messages, onDismiss }: ToastR
             onClick={() => onDismiss(message.id)}
             variant="quiet"
           >
-            ×
+            <LineGlyph name="close" size={16} />
           </ActionButton>
         </output>
       ))}

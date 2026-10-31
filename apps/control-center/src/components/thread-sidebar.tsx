@@ -4,6 +4,7 @@ import { type ControlCenterRouteState, controlCenterHref } from "../app/router.j
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { LineIcon } from "./answer-footer.js";
 import { ActionButton, ActionMenu, AppLink } from "./index.js";
+import { LineGlyph } from "./line-icons.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
 
@@ -163,7 +164,7 @@ export function ThreadSidebar({
       <ActionMenu
         label={
           <>
-            <span aria-hidden="true">⋯</span>
+            <LineGlyph name="more" size={18} />
             <span className="sr-only">{message("review.conversationActions")}</span>
           </>
         }

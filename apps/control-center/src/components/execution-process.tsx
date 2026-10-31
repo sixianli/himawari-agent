@@ -34,6 +34,7 @@ import { exitCodeOf, toolCommand, toolStepSummary } from "../step-summary.js";
 import { formatTokens, type TurnUsage, turnUsage } from "../turn-summary.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import type { ContentPreviewValue } from "./content-preview.js";
+import { LineGlyph } from "./line-icons.js";
 import { type ToolGlyph, ToolIcon } from "./tool-icon.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
@@ -370,9 +371,10 @@ export function ExecutionProcess({
                         <div className="step-result">
                           {outcome === "pending" ? null : (
                             <p className={`step-outcome is-${outcome}`}>
+                              <LineGlyph name={outcome === "ok" ? "check" : "close"} size={14} />
                               {outcome === "ok"
-                                ? `✓ ${message("step.outcome.ok")}`
-                                : `✕ ${message("step.outcome.failed")}${
+                                ? message("step.outcome.ok")
+                                : `${message("step.outcome.failed")}${
                                     exitCode !== null
                                       ? ` · ${message("step.outcome.exitCode", { code: exitCode })}`
                                       : ""
@@ -573,11 +575,7 @@ function processHeadline(
 }
 
 function RowChevron() {
-  return (
-    <svg className="row-chevron" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m9.5 6 6 6-6 6" />
-    </svg>
-  );
+  return <LineGlyph className="row-chevron" name="chevron" />;
 }
 
 function TimelineBar({ step, total }: { step: TimelineStep; total: number }) {
