@@ -12,6 +12,7 @@ import { LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { fileFacts, fileSourceText } from "./delivered-file.js";
 import { type DocumentKind, DocumentPreview } from "./document-preview.js";
+import { Glyph } from "./glyphs.js";
 
 export const FILE_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
 export const FILE_DOCUMENT_PREVIEW_BYTES = 25 * 1024 * 1024;
@@ -558,14 +559,13 @@ export function ContentPreview({
           ) : null}
           {delivered.source ? (
             <button type="button" className="preview-source-link" onClick={delivered.source.onOpen}>
-              {delivered.source.label} →
+              {delivered.source.label}
+              <Glyph name="chevron" size={14} />
             </button>
           ) : null}
           {body?.kind === "web" ? (
             <p className="preview-isolated-note">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 11h14v9H5zM8 11V8a4 4 0 0 1 8 0v3" />
-              </svg>
+              <Glyph name="lock" />
               {message("preview.isolated")}
             </p>
           ) : null}

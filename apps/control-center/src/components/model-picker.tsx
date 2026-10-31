@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { LineIcon } from "./answer-footer.js";
+import { Glyph } from "./glyphs.js";
 import { ActionButton } from "./primitives.js";
 
 const PRIMARY_MODEL_COUNT = 3;
@@ -100,7 +101,7 @@ export function ModelPicker({
                   }}
                 >
                   <span>{item.name}</span>
-                  {item.ref === modelRef ? "✓" : null}
+                  {item.ref === modelRef ? <Glyph name="check" size={14} /> : null}
                 </ActionButton>
               ))}
               {!showAll &&
@@ -124,7 +125,8 @@ export function ModelPicker({
                 variant="quiet"
                 onClick={() => setChoosing(true)}
               >
-                {model?.name} ⌄
+                {model?.name}
+                <Glyph name="down" size={14} />
               </ActionButton>
             ) : (
               <div className="picker-model-name">{model?.name}</div>

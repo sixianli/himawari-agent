@@ -23,6 +23,12 @@
   },
   "overrides": [
     {
+      "includes": ["docs/assets/control-center/**/*.html"],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": [
         "test/qualification/evidence/**",
         "test/fixtures/memory-evaluation/embeddings-*.json"

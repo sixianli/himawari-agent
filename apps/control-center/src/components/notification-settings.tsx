@@ -134,7 +134,6 @@ export function NotificationSettings({
         <p className="settings-note">{message("push.unavailable")}</p>
       ) : (
         <>
-          <p className="settings-note">{message("push.intro")}</p>
           {WEB_PUSH_KINDS.map((kind) => (
             <label className="setting-row" key={kind}>
               <span>
@@ -202,7 +201,6 @@ export function NotificationSettings({
                 </div>
               ) : null}
               {testSent ? <p className="settings-note">{message("push.testSent")}</p> : null}
-              {phone ? <p className="settings-note">{message("push.iphoneTip")}</p> : null}
             </div>
           ) : (
             <div className="setting-row">
@@ -244,7 +242,6 @@ export function NotificationSettings({
               </ul>
             </>
           ) : null}
-          <p className="settings-note">{message("push.privacyNote")}</p>
         </>
       )}
       {error ? (

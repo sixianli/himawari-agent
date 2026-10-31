@@ -18,6 +18,7 @@ import { HimawariBrand } from "./brand.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { DeliveredFileCards } from "./delivered-file.js";
 import { ExecutionProcess } from "./execution-process.js";
+import { Glyph } from "./glyphs.js";
 import { BackgroundCommandLine, BackgroundReportLine } from "./more-panel.js";
 import { ActionButton } from "./primitives.js";
 
@@ -454,10 +455,7 @@ function OutgoingMessageMeta({
   ) : (
     <div className="owner-meta">
       <output className="owner-status" aria-label={message("message.status.sending")}>
-        <svg className="owner-tick is-sending" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="8" />
-          <path d="M12 8v4l2.5 2" />
-        </svg>
+        <Glyph className="owner-tick is-sending" name="clock" />
         <span>{message("message.status.sending")}</span>
       </output>
     </div>
@@ -490,15 +488,10 @@ function OwnerMessageMeta({
       </button>
       <span>{message("answer.at", { at: new Date(committedAt) })}</span>
       <span className="owner-status" role="img" aria-label={status} title={status}>
-        <svg
+        <Glyph
           className={`owner-tick ${received ? "is-received" : "is-sent"}`}
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path
-            d={received ? "M1.5 12.5l4.5 4.5L15.5 7.5M10 16l1 1 9.5-9.5" : "M5 12.5l4.5 4.5L19 7.5"}
-          />
-        </svg>
+          name={received ? "checkTwice" : "check"}
+        />
       </span>
     </div>
   );

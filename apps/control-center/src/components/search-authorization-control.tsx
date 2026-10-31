@@ -88,16 +88,15 @@ export function SearchAuthorizationControl({
         <div className="setting-row">
           <span>
             <label htmlFor={switchId}>{message("chat.search.enable")}</label>
-            <small className="setting-description">
-              {message("chat.search.purpose")}
-              {snapshot && !snapshot.payload.enabled
-                ? ` ${message(
-                    snapshot.payload.providersChanged
-                      ? "chat.search.providersChanged"
-                      : "chat.search.afterRevoke",
-                  )}`
-                : ""}
-            </small>
+            {snapshot && !snapshot.payload.enabled ? (
+              <small className="setting-description">
+                {message(
+                  snapshot.payload.providersChanged
+                    ? "chat.search.providersChanged"
+                    : "chat.search.afterRevoke",
+                )}
+              </small>
+            ) : null}
             <details className="settings-details">
               <summary>
                 {message("chat.search.whatIsSent")}
@@ -138,10 +137,7 @@ export function SearchAuthorizationControl({
           />
         </div>
         <div className="setting-row">
-          <span>
-            {message("chat.search.other")}
-            <small className="setting-description">{message("chat.search.otherScope")}</small>
-          </span>
+          <span>{message("chat.search.other")}</span>
           <span className="setting-fixed">{message("chat.search.alwaysOn")}</span>
         </div>
         {error || loadError ? (

@@ -66,7 +66,6 @@ export function AppearancePicker({
             ))}
           </div>
         </fieldset>
-        <p>{message("appearance.hint")}</p>
       </div>
     </details>
   );

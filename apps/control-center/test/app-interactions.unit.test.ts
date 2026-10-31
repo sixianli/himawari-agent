@@ -624,6 +624,19 @@ describe("control center application bootstrap and interaction", () => {
     expect(text()).toContain(messages["surface.notInstalled.title"]);
     expect(boundary.governance.mock.lastCall?.[0].active).toBe(false);
   });
+  it("[UI-46] closes the phone sidebar when the owner taps outside it", async () => {
+    await render();
+    await settle();
+    const shell = container.querySelector<HTMLElement>(".app-shell");
+    const toggle = container.querySelector<HTMLButtonElement>(".mobile-sidebar-toggle");
+    expect(toggle?.getAttribute("aria-label")).toBe(messages["layout.showList"]);
+    await act(async () => toggle?.click());
+    expect(shell?.getAttribute("data-mobile-view")).toBe("list");
+    const scrim = container.querySelector<HTMLButtonElement>(".sidebar-scrim");
+    expect(scrim?.getAttribute("aria-hidden")).toBe("true");
+    await act(async () => scrim?.click());
+    expect(shell?.getAttribute("data-mobile-view")).toBe("content");
+  });
   it("ignores late bootstrap resolution after the app is unmounted", async () => {
     let resolve!: (value: ControlCenterRuntimeConfiguration) => void;
     boundary.load.mockImplementation(
