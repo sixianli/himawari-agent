@@ -16,6 +16,7 @@ STAGE_NAME = re.compile(r'himawari-[a-z]+-[0-9]{8}(\..+)?')
 UPLOAD_NAME = re.compile(r'[a-z]+-packet-upload(\..+)?')
 PACKET_COPY_NAME = re.compile(r'.+-change-packet-[0-9]+')
 DATABASE_COPY = re.compile(r'/[^/]*-raw-schema[0-9]+[^/]*/data/')
+STATE_COPY_NAMES = (('data', re.compile(r'pre-migration-[A-Za-z0-9]+')), ('.', re.compile(r'\.raw-restore-.+-original')))
 EVIDENCE_NAME = re.compile(r'[a-z]+-[0-9]{8}-evidence(\..+)?')
 SERVING_UNIT = re.compile(r'ExecStart=\S+ --no-global-search-paths (/\S+)/pair-supervisor\.mjs --prefix (/\S+) ')
 REBUILDABLE_SUBTREES = {'packet', 'validation', 'input', 'materials', 'runtime-tools', 'question-12-downloads', 'node_modules'}
@@ -234,6 +235,23 @@ def cleanup(plan, apply, references, stamp):
             result['renamed'].append({'from': path, 'to': target})
             if apply:
                 os.rename(path, target)
+
+    for subdirectory, pattern in STATE_COPY_NAMES:
+        folder = Path(plan['stateRoot']) / subdirectory
+        dated = []
+        for path in children(folder, pattern):
+            database = Path(path) / 'product.sqlite'
+            dated.append((os.lstat(database if database.exists() else path).st_mtime, path))
+        for position, (mtime, path) in enumerate(sorted(dated, reverse=True)):
+            reason = in_use(path)
+            if os.path.islink(path) or not os.path.isdir(path):
+                keep(path, 'not-a-directory')
+            elif position < plan['keepStateCopies']:
+                keep(path, 'recent-state-copy')
+            elif reason:
+                keep(path, reason)
+            else:
+                remove(path, 'old-state-copy')
 
     result['freedBytes'] = sum(item['bytes'] for item in result['deleted'] + result['trimmed'])
     return result

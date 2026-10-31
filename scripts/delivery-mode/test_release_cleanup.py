@@ -208,6 +208,37 @@ class ReleaseCleanupTest(unittest.TestCase):
         self.assertTrue((self.failed['evidence'] / 'twentieth-raw-schema66/data/product.sqlite').exists())
         self.assertTrue(self.failed['operations'].exists())
 
+    def state_copies(self, count):
+        copies = []
+        for index in range(count):
+            for directory in (self.tree.lib / 'state/data' / ('pre-migration-ab' + str(index)), self.tree.lib / 'state' / ('.raw-restore-r' + str(index) + '-original')):
+                database = self.tree.file(directory / 'product.sqlite', 11 * MEBIBYTE)
+                os.utime(database, (5000 + index, 5000 + index))
+                copies.append(directory)
+        return copies
+
+    def test_the_three_newest_upgrade_and_restore_copies_stay_and_older_ones_go(self):
+        copies = self.state_copies(5)
+        result = self.run_cleanup()
+        self.assertEqual([path.exists() for path in copies], [False, False, False, False, True, True, True, True, True, True])
+        self.assertEqual(sorted(item['reason'] for item in result['deleted'] if item['reason'] == 'old-state-copy'), ['old-state-copy'] * 4)
+        self.assertTrue(self.tree.database.exists())
+
+    def test_plan_mode_keeps_upgrade_and_restore_copies(self):
+        copies = self.state_copies(5)
+        self.run_cleanup(apply=False)
+        self.assertTrue(all(path.exists() for path in copies))
+
+    def test_an_old_upgrade_copy_named_by_a_process_is_kept(self):
+        copies = self.state_copies(5)
+        result = self.run_cleanup(references=[str(copies[0] / 'product.sqlite')])
+        self.assertTrue(copies[0].exists())
+        self.assertIn('used-by-a-process', [item['reason'] for item in result['kept'] if item['path'] == str(copies[0])])
+
+    def test_plan_keeps_three_upgrade_and_restore_copies_under_the_state_root(self):
+        plan = self.tree.plan(self.failed)
+        self.assertEqual((plan['keepStateCopies'], plan['stateRoot']), (3, str(self.tree.lib / 'state')))
+
     def test_a_second_run_finds_nothing_more(self):
         self.run_cleanup()
         again = self.run_cleanup()
