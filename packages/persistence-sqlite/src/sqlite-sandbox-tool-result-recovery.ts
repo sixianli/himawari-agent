@@ -39,3 +39,23 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
       AND model.status IN ('reserved','started','unknown')
   )
   AND (${RUN_RESOURCES_RELEASED_SQL})`;
+
+export const RUN_EXPIRED_RECONCILIATION_SQL = `
+  r.status='reconciling_external_result'
+  AND c.phase='reconciling_external_result'
+  AND c.terminal_status IS NULL AND c.output_kind IS NULL
+  AND (
+    (c.diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN' AND NOT (${SANDBOX_TOOL_RESULT_RECOVERY_SQL})
+      AND NOT EXISTS (
+        SELECT 1 FROM model_invocation_identities model
+        WHERE model.owner_id=r.owner_id AND model.agent_id=r.agent_id AND model.run_id=r.id
+          AND model.status IN ('reserved','started','unknown')))
+    OR (EXISTS (SELECT 1 FROM sandbox_execution_records expired
+    WHERE expired.owner_id=r.owner_id AND expired.agent_id=r.agent_id AND expired.run_id=r.id
+      AND json_extract(expired.plan_json,'$.originalDeadlineAt')<=@resourceNow)
+  AND NOT EXISTS (SELECT 1 FROM sandbox_execution_records pending
+    WHERE pending.owner_id=r.owner_id AND pending.agent_id=r.agent_id AND pending.run_id=r.id
+      AND (json_extract(pending.plan_json,'$.originalDeadlineAt') IS NULL
+        OR json_extract(pending.plan_json,'$.originalDeadlineAt')>@resourceNow)))
+  )
+  AND (${RUN_RESOURCES_RELEASED_SQL})`;

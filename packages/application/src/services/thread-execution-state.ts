@@ -292,6 +292,7 @@ export function projectThreadExecutionState(
   if (
     canCancelRun &&
     ["failed", "cancelled"].includes(run.status) &&
+    !settledUnknownResult &&
     !resources?.allReleased &&
     !expiredWithoutSandboxResources &&
     !failedWithoutSandboxResources &&
