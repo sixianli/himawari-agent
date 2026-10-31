@@ -60,6 +60,7 @@ import {
   readJobHostFinalEvidence,
   type SandboxJobHost,
 } from "@himawari-agent/runtime-sandbox";
+import { BrokerPollTolerance } from "./broker-poll-tolerance.js";
 import { sandboxInvocationFromRequest } from "./broker-sandbox-execution.js";
 import type { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
 import {
@@ -711,6 +712,7 @@ export class ProductionSandboxExecutionV2 {
         completionObserved = true;
         taskCompleted = value;
       });
+      const tolerance = new BrokerPollTolerance();
       while (!finished) {
         await Promise.race([
           completion,
@@ -743,7 +745,9 @@ export class ProductionSandboxExecutionV2 {
               : undefined;
           if (supervision !== "controlled" && supervision !== "initializing") host.cancel();
           else if (supervision === "controlled") await acknowledge();
-        } catch {
+          tolerance.succeeded();
+        } catch (error) {
+          if (tolerance.failed(error) !== "cancel") continue;
           host.cancel();
           break;
         }
@@ -1676,6 +1680,7 @@ export class ProductionSandboxExecutionV2 {
       const completion = active.result.finally(() => {
         finished = true;
       });
+      const tolerance = new BrokerPollTolerance();
       while (!finished) {
         await Promise.race([completion, delay(250)]);
         if (finished) break;
@@ -1687,7 +1692,20 @@ export class ProductionSandboxExecutionV2 {
           await this.resolveRecord(entry);
           if (finished) break;
           await flush(false);
+          tolerance.succeeded();
         } catch (error) {
+          const decision = tolerance.failed(error);
+          if (decision !== "cancel") {
+            if (decision === "retry_first")
+              console.error(
+                JSON.stringify({
+                  event: "sandbox.command.poll_retry",
+                  runId: plan.identity.runId,
+                  at: new Date().toISOString(),
+                }),
+              );
+            continue;
+          }
           console.error(
             JSON.stringify({
               event: "sandbox.command.cancelled_by_poll_error",

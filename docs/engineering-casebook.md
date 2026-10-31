@@ -100,6 +100,7 @@ date: "2026-10-26"
   73. [很简单的问题用了 28 秒：读和写挤在同一条数据库队里](#case-read-write-lanes)
   74. [仓库里的规则和技能，云端线程到底读到了哪些](#case-cloud-thread-loading)
   75. [回答写完才整块出现：文字从不直推，拉回来的结果又被当成过期丢掉](#case-streaming-answers)
+  76. [命令和主服务断联：为什么选“最多执行一次”，以及一个一次出错就杀命令的漏洞](#case-command-disconnect)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -122,11 +123,11 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci)、[云端线程读到哪些规则和技能](#case-cloud-thread-loading) |
@@ -4849,6 +4850,68 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户说回答整块出现。我先读代码，以为是轮询太慢；去生产页面注入脚本实测，发现写回答的 7 秒里一个字都没显示：查询要 3 秒，详情每秒刷新一次，查询结果每次都被判成过期丢掉。修法是对齐大厂 API 的做法，文字增量经 SSE 直推，推之前按同样规则脱敏，并扣住可能是密钥开头的尾巴；落库仍是权威记录，用来断线补齐。教训是先在真实页面上测，再下结论。”
+
+[返回目录](#contents)
+
+<a id="case-command-disconnect"></a>
+
+## 案例 76：命令和主服务断联：为什么选“最多执行一次”，以及一个一次出错就杀命令的漏洞
+
+**背景与现象**
+
+命令在单独的沙箱里跑，主服务通过一条本机连接盯着它。2026-10-31，Andy 连续遇到“命令结果没能确认”（事故 I-41、I-50），并问：命令和主服务断联时，现在的设计有没有真正兜住？我做了只读评估（读代码，没有改动），把可能的断联分成五种：
+
+1. 服务重启或上线：停服等 35 秒后强杀整个进程组（`KillMode=mixed`，来自上线包的服务单元模板，生产实际值未核对），沙箱里的命令一起被杀。启动时把所有未完成的记录标成“上次启动遗留，状态未知”，不重跑。
+2. 沙箱进程退出或被杀：命令结束时检查“进程已退出、输出管道已关闭、拿到退出码”，缺一项就记 `SANDBOX_EXIT_UNKNOWN`。
+3. 通信超时或出错：轮询循环里任何一次出错都直接取消命令。
+4. 命令根本没启动：[案例 70](#case-unknown-result-late-settle) 和 ADR 0139 的事故，预热环境寿命比命令短，命令被拒绝启动。
+5. 执行进程卡死但没退出：没有心跳，只能等命令自己的期限（bash 是 30 分钟）。
+
+**根因**
+
+评估发现“不乱来”这一半做得扎实：每个调用有唯一身份，恢复路径没有启动命令的能力，所以任何一种断联都不会让命令重复执行；资源会释放，本轮会收尾。缺口在“尽早发现”和“尽量拿回结果”：
+
+- 第 3 种是明确的漏洞（读代码确认）：查询一次失败就杀命令，没有重试，也不区分错误种类。
+- 第 5 种没有心跳。
+- 第 2 种在生产出现过（I-39），当时没存“进程退出、管道关闭、退出码”三项事实，原因没查到；现在有日志，之后能查。
+- 各类断联在生产上的占比：未测量。
+
+**我们的方案**（[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)）
+
+- 保持“最多执行一次”：断联后不自动重跑命令。
+- 修第 3 种：只对明确的传输层错误（连接不可用、请求超时）重试，连续出错超过 10 秒才取消；其他错误（主服务明确拒绝、权限撤销、停止请求）仍立刻取消，不让停止被拖延。重试的只是读记录和写输出，命令本身一直在跑，不会被重新启动。
+- 心跳：评估后列为下一步，是核心特性，先出方案、讨论同意再动工。
+- 这条改动与“结果未知且资源已释放就提前收尾”的规则（ADR 0127，另一线程正在改成只对没有可恢复结果的轮次提前收尾）互不冲突：本改动减少“被误杀而变成未知”的命令，那条规则决定变成未知后什么时候收尾。
+
+**方案讨论与备选**
+
+- 像 Temporal、Kubernetes 那样自动重试：对可以重复执行的任务合适，bash 命令可能已经改文件或发请求，重跑会重复副作用，放弃。
+- 所有错误都重试：主服务的“拒绝”与“传输失败”在执行进程这边都是异常，全部重试会拖延用户按下的停止，放弃。
+- 把宽限期做成可配置项：没有数据支持具体数值，10 秒是按“比一次短暂卡顿长、比 30 分钟命令期限短得多”选的，未测量。
+
+**业界主流做法**
+
+- ✅ Temporal 的活动失败检测（https://docs.temporal.io/encyclopedia/detecting-activity-failures ，2026-10-31 打开）：“The Temporal Server doesn’t detect failures when a Worker loses communication with the Server or crashes.” 恢复靠 Start-To-Close 与 Heartbeat 超时，到期后按重试策略重跑；心跳超时到达时 “the Activity Task fails and a retry occurs if a Retry Policy dictates it.”
+- ✅ Anthropic 工具调用（https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls ，2026-10-31 打开）：工具出错时用 `is_error: true` 的 `tool_result` 回给模型；提示 “Write instructive error messages.”，写清出了什么错、下一步该怎么办。
+- ⚠ Kubernetes Job（https://kubernetes.io/docs/concepts/workloads/controllers/job/ ）：页面太长，抓取被截断，没有读到失败重试、`backoffLimit` 和幂等的原文，面试不要引用。
+
+**对比与取舍**
+
+Temporal 与我们的差别在于：它的服务端检测不到 worker 崩溃，要靠超时和心跳发现，然后重跑，前提是活动可以重复执行；我们是最多执行一次，换来不重复副作用，代价是断联后命令要么拿回结果、要么标成“未知”，不会自动完成。两者共同点是都依赖心跳或超时去发现失联，所以我们缺心跳是真实的差距，不是设计取舍。
+
+**结果数据**
+
+- 修前：一次瞬时的通信出错就取消命令（读代码，行为确定，发生频率未测量）。
+- 修后：单元测试 [POLL-1]、[POLL-2]：瞬时错误在 10 秒内重试、超过才取消、成功一次后重新计时；明确拒绝仍立刻取消。循环里的接线没有自动测试，需要真实沙箱。
+- 各类断联占比、心跳的收益：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0139](adr/0139-prewarmed-environment-outlives-background-commands.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)、事故 I-39、I-41、I-50。
+
+**面试 30 秒版**
+
+“命令在沙箱里跑，主服务靠一条连接盯着。有人问断联有没有兜住，我没有直接说‘有’，而是把断联分成五种去读代码：重启、进程被杀、通信出错、没启动、卡死。结论是‘不重复执行’这一半很扎实，因为每个调用只有一个身份，恢复路径根本没有启动命令的入口；业界 Temporal 和 Kubernetes 是自动重试，那要求任务能重复执行，bash 不行，所以我们选最多执行一次。但我发现一个漏洞：轮询里一次瞬时出错就把命令杀了。修法是只对传输层错误重试 10 秒，明确的拒绝仍立刻取消。还缺心跳，这是下一步。”
 
 [返回目录](#contents)
 
