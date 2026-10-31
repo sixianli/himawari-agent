@@ -90,7 +90,7 @@ v2.1 由 [ADR 0101](0101-adopt-product-vision-v2-1.md) 采纳，并定下规矩�
 | --- | --- | --- | --- |
 | 自建记忆引擎 Spec | [`2026-10-25-self-built-memory-engine-design.md`](../execution/specs/2026-10-25-self-built-memory-engine-design.md) 第 42 行、第 58 行 | 「规矩」层「提炼为 `rule` 类别时」写入，「每轮常驻，排在档案前」；`rule` 是记忆 `category` 的一个取值 | v2.2 原则 3：规则不是记忆，记忆只保存规则的出处和修改历史。「每轮常驻」在代码里也不成立：`rule` 类和档案共用 2000 字预算，超出排队 |
 | 记忆页 ADR | [ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 第 79 行 | 手动添加的要求类（`rule`）记忆重要度 800 | 同上：规则仍按记忆条目存储和挑选 |
-| 主人档案代码 | `packages/application/src/services/owner-profile-service.ts` 第 12、16、183 行 | `rule` 类记忆先于档案选取，不受 600 门槛限制，但受 2000 字预算限制 | 愿景附录第 10 条写「2000 字预算与重要度 600 门槛」；按代码，600 门槛只管档案条目，预算管两者。实现仍是概率性的 |
+| 主人档案代码 | `packages/application/src/services/owner-profile-service.ts` 第 12、16、183 行 | `rule` 类记忆先于档案选取，不受 600 门槛限制，但受 2000 字预算限制 | 愿景附录第 10 条已按代码写法修正 |
 | PRD v0.2 | [`prd-v0.2.md`](../prd-v0.2.md) 第 227–242 行「注意力与 Web 投递」、第 375 行「注意力与提醒」 | 注意力只有 `SILENT / INBOX / DIGEST / NOTIFY / INTERRUPT` 五档；所有者可以降低等级 | 没有每日介入次数与时间上限，没有「规则手册预先授权、不逐次确认」（v2.2 原则 2） |
 | 架构文档 | [`architecture-v0.1.md`](../architecture-v0.1.md) 第 534–536 行 | Run 完成后产生 `AttentionCandidate`，Attention decision 按 Owner/Agent policy revision 决定投递等级 | 同上，缺注意力预算 |
 | 主动闭环 v1 第一刀 | [ADR 0106](0106-proactive-loop-v1-gmail-read-only.md) 决定第 3 条；Spec [`2026-10-29-proactive-loop-v1-gmail-design.md`](../execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md) 第 87 行；代码 `packages/platform-node/src/gmail-source.ts` 第 311 行（`format=metadata&metadataHeaders=From&metadataHeaders=Subject`）与第 194 行（`snippet` 前 500 字） | 模型只看发件人、标题和 Gmail 一行摘要，不看正文和附件；这是 Andy 2026-10-28 23:18 的批注 | 愿景 3.6「邮件状态判断」：对退款、预订、付款是否办结，「必须读完线程全文并搜后续确认/收据才下结论，绝不只看标题」。两者都是 Andy 的决定，分别管「要不要提醒」和「判断办结状态」，但第一刀的实现做不到 3.6 的要求；v2.2 的追平线又以 Muse「把这件事以前的邮件串起来看完整个历史」为对照。要不要让主动检查读正文，由 Andy 决定 |
@@ -108,6 +108,6 @@ v2.1 由 [ADR 0101](0101-adopt-product-vision-v2-1.md) 采纳，并定下规矩�
 - [SOURCE: docs/execution/specs/2026-10-25-self-built-memory-engine-design.md]
 - [SOURCE: docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md]
 - [SOURCE: docs/prd-v0.2.md]
-- 工程案例库：[案例 37 的 2026-10-31 补记](../engineering-casebook.md#case-product-vision)
+- 工程案例库：[案例 37](../engineering-casebook.md#case-product-vision)（v2.1 的采纳；v2.2 不另开案例，Andy 2026-10-31 定）
 
 [返回目录](#contents)
