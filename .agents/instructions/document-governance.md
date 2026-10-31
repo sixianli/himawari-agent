@@ -15,7 +15,7 @@
 
 以下触发条件在快速模式和完整模式下都适用：
 
-- 一项长期有效的技术、产品或流程决定，要用 `assets/templates/adr-template.md` 在 `docs/adr/` 中新建一份 ADR（架构决策记录），编号接在现有最大编号之后。决定改变时，就地取代先前那份 ADR（见技能的 `references/workflows.md` 中 "ADR Supersession"（ADR 取代）一节）；绝不改写先前 ADR 的决定内容。
+- 一项长期有效的技术、产品或流程决定，要用技能包里的 `assets/templates/adr-template.md`（仓库不保存副本）在 `docs/adr/` 中新建一份 ADR（架构决策记录），编号接在现有最大编号之后。决定改变时，就地取代先前那份 ADR（见技能的 `references/workflows.md` 中 "ADR Supersession"（ADR 取代）一节）；绝不改写先前 ADR 的决定内容。
 - 用户或某个线程决定保留的后续工作，通过 `idea_backlog.py backlog capture` 记成 Backlog 条目（待办工作条目）。绝不新建 `docs/TODO.md` 或手工维护的索引。
 - 当用户要求保留一个想法（例如“记下这个想法”）时，用 `idea_backlog.py idea capture` 记录。
 - 当一项改动让一份反映当前事实的文档明显出错（PRD（产品需求文档）、架构文档、仍有效的规格或计划、某份 Runbook（操作手册）的步骤）时，在同一个提交里改正它。
