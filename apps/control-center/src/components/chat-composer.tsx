@@ -15,6 +15,7 @@ import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { LineIcon } from "./answer-footer.js";
 import { AttachmentThumb } from "./attachment-thumb.js";
+import { Glyph } from "./glyphs.js";
 import { ModelPicker } from "./model-picker.js";
 import { ActionButton, Field } from "./primitives.js";
 
@@ -212,7 +213,7 @@ export function ChatComposer({
                     )
                   }
                 >
-                  ×
+                  <Glyph name="close" size={14} />
                 </button>
               </li>
             ))}
@@ -280,8 +281,9 @@ export function ChatComposer({
             disabled={!onUpload}
             onClick={() => fileRef.current?.click()}
             variant="quiet"
+            className="attach-button"
           >
-            ＋
+            <Glyph className="send-icon" name="plus" />
           </ActionButton>
           {models.length ? (
             <div className="model-selection">
@@ -305,9 +307,7 @@ export function ChatComposer({
               onClick={onStop}
               variant="secondary"
             >
-              <svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="7" y="7" width="10" height="10" rx="2" />
-              </svg>
+              <Glyph className="send-icon" name="stop" />
             </ActionButton>
           ) : (
             <ActionButton
@@ -318,9 +318,7 @@ export function ChatComposer({
               pending={pending}
               type="submit"
             >
-              <svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 19V5M6 11l6-6 6 6" />
-              </svg>
+              <Glyph className="send-icon" name="send" />
             </ActionButton>
           )}
         </div>

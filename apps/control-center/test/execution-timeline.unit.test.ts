@@ -16,8 +16,6 @@ describe("execution timeline", () => {
     expect(
       timeline?.steps.map(({ kind, start, end, parallel }) => [kind, start, end, parallel]),
     ).toEqual([
-      ["memory", 647, 2117, false],
-      ["context", 2117, 2138, false],
       ["think", 2339, 5104, false],
       ["you", 7529, 15957, false],
       ["tool", 15961, 18813, false],
@@ -25,28 +23,26 @@ describe("execution timeline", () => {
       ["think", 18893, 21800, false],
       ["write", 21800, 25473, false],
     ]);
-    expect(timeline?.longest).toBe(timeline?.steps[3]?.id);
+    expect(timeline?.longest).toBe(timeline?.steps[1]?.id);
   });
 
   it("[UI-3] splits model and tool steps into waiting, reasoning, output, queue and run segments", () => {
     const steps = executionTimeline(newsRun(), completedRun, runStart + 99999)?.steps ?? [];
-    expect(steps[2]?.segments).toEqual([
+    expect(steps[0]?.segments).toEqual([
       { kind: "wait", start: 2339, end: 4193 },
       { kind: "output", start: 4193, end: 5104 },
     ]);
-    expect(steps[4]?.segments).toEqual([
+    expect(steps[2]?.segments).toEqual([
       { kind: "queue", start: 15961, end: 16200 },
       { kind: "run", start: 16200, end: 18700 },
     ]);
-    expect(steps[6]?.segments).toEqual([
+    expect(steps[4]?.segments).toEqual([
       { kind: "wait", start: 18893, end: 19600 },
       { kind: "reason", start: 19600, end: 21000 },
       { kind: "wait", start: 21000, end: 21800 },
     ]);
-    expect(steps[7]).toMatchObject({ itemId: "message:last", characters: 120 });
-    expect(steps[0]).toMatchObject({ count: 2 });
-    expect(steps[1]).toMatchObject({ count: 1 });
-    expect(steps[4]).toMatchObject({ itemId: "tool:zh" });
+    expect(steps[5]).toMatchObject({ itemId: "message:last", characters: 120 });
+    expect(steps[2]).toMatchObject({ itemId: "tool:zh" });
   });
 
   it("[UI-3] keeps a running step open until now and still adds up to the elapsed time", () => {

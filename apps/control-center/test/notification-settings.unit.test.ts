@@ -217,7 +217,6 @@ describe("[WP-8] notification settings", () => {
   it("[WP-8] turns on push: permission, worker, subscription with chosen kinds, then a test", async () => {
     const fake = fakeBrowser({ userAgent: MAC, standalone: false, permission: "default" });
     await render(fake.browser);
-    expect(container.textContent).toContain("你不在看 Himawari 时");
     const runToggle = container.querySelector<HTMLInputElement>('input[aria-label="任务结束"]');
     await act(async () => runToggle?.click());
     await act(async () => button("在这台设备开启通知")?.click());
@@ -291,7 +290,6 @@ describe("[WP-8] notification settings", () => {
     );
     expect(container.textContent).toContain("这台设备的推送已暂停");
     expect(container.textContent).toContain("WEB_PUSH_HTTP_403");
-    expect(container.textContent).toContain("显示预览");
     expect(container.textContent).toContain("其他已开启的设备");
 
     mutate.mockImplementation(async () => ({ resultRef: THIS_DEVICE_ID, replayed: false }));

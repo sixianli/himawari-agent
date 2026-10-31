@@ -818,6 +818,25 @@ function handleOperationsQuery(message) {
       return memoryFixture
         ? { ...envelope("snapshot", "memory.overview.snapshot"), payload: memoryOverview() }
         : undefined;
+    case "proactive.overview.read":
+      return memoryFixture
+        ? {
+            ...envelope("snapshot", "proactive.overview.snapshot"),
+            payload: {
+              source: "gmail",
+              connection: { status: "disconnected", account: null, connectedAt: null },
+              enabled: true,
+              quietHours: [],
+              importantSenders: [],
+              dailyLimitReached: false,
+              insights: [],
+              audit: { active: false, since: now, items: [], pending: 0 },
+              decisions: [],
+              metrics: { spoke: 0, hits: 0, misfires: 0, missed: 0, reviewed: 0 },
+              generatedAt: now,
+            },
+          }
+        : undefined;
     case "search.authorization.read":
       return memoryFixture
         ? {
@@ -1507,7 +1526,12 @@ async function handleRequest(request, response) {
         "session.revoke",
         "health.status",
         ...(memoryFixture
-          ? ["memory.overview.read", "search.authorization.read", "search.authorization.set"]
+          ? [
+              "memory.overview.read",
+              "search.authorization.read",
+              "search.authorization.set",
+              "proactive.overview.read",
+            ]
           : []),
       ],
       authorizationRef: governanceAuthorizationRef,

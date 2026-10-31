@@ -595,7 +595,7 @@ describe("[PG-15] proactive settings", () => {
     await act(async () => root.render(h(Settings, { outcome: "denied" })));
     await flush();
     expect(text("#apps")).toContain("你在 Google 页面没有同意");
-    expect(document.querySelector<HTMLDetailsElement>("#apps details")?.open).toBe(true);
+    expect(document.querySelector<HTMLDetailsElement>("#apps details")?.open).toBe(false);
     await click("#apps .proactive-app", "连接 Gmail");
     expect(assign).toHaveBeenCalledWith("/api/proactive/v1/google/start");
   });

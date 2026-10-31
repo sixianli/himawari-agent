@@ -4800,7 +4800,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 最初我只看代码，推测“短回答只来得及拉两三次所以像整块”，实测证明更严重：不是慢，是一个字都不显示。
 
-**我们的方案**（[ADR 0137](adr/0137-push-answer-text-as-it-is-written.md)）
+**我们的方案**（[ADR 0138](adr/0138-push-answer-text-as-it-is-written.md)）
 
 - 进程内实时消息源：运行时每收到一段文字，把到此为止的全文交给它；它算出新增的字和起始位置，经已有的 SSE（Server-Sent Events，服务器单向推送的长连接）推给网页。
 - 推出去之前用和落库相同的规则脱敏，并把末尾“像密钥开头”的几个字符先扣住，被拆成两段到达的密钥也推不出去。
@@ -4835,7 +4835,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0137](adr/0137-push-answer-text-as-it-is-written.md)、事故清单 I-49。
+[ADR 0138](adr/0138-push-answer-text-as-it-is-written.md)、事故清单 I-49。
 
 **面试 30 秒版**
 

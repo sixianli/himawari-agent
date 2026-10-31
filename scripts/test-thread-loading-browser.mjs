@@ -150,10 +150,9 @@ try {
       );
 
       await showSidebar();
-      await page.locator(".thread-search-disclosure > summary").click();
       await page.getByRole("searchbox").fill("计划");
       const search = await hold("thread.search");
-      await page.locator(".thread-search button").click();
+      await page.getByRole("searchbox").press("Enter");
       await expect.poll(search.seen).toBe(true);
       await expect(page.locator(".thread-load-feedback")).toBeVisible({ timeout: 6000 });
       await page.locator(".thread-load-feedback button").click();

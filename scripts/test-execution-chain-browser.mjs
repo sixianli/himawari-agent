@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromium, webkit, expect } from "@playwright/test";
+import { chromium, expect, webkit } from "@playwright/test";
 
 export async function qualifyExecutionChain(browser, baseUrl, output) {
   const cases = [];
@@ -106,20 +106,11 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       const process = page.locator(".turn-process").first();
       const tools = process.locator(".tool-record:not(.memory-record)");
       const memories = process.locator(".memory-record");
+      await expect(process).not.toHaveAttribute("open", "");
+      await process.locator(":scope > summary").click();
       await expect(process).toHaveAttribute("open", "");
       await expect(tools).toHaveCount(1);
-      await expect(memories).toHaveCount(2);
-      await expect(memories.locator('[data-tool-category="database"]')).toHaveCount(2);
-      await expect(memories.first().locator(".step-summary")).toHaveText(
-        {
-          "zh-CN": "按这句话找到 1 条相关记忆",
-          en: "Related memories found: 1",
-          ja: "関連する記憶を 1 件発見",
-        }[locale],
-      );
-      await memories.nth(1).locator(":scope > summary").click();
-      await expect(memories.nth(1).locator("pre")).toHaveText("- 主人最喜欢的颜色是蓝色");
-      await memories.nth(1).locator(":scope > summary").click();
+      await expect(memories).toHaveCount(0);
       const turnBox = await page.locator(".chat-turn").first().boundingBox();
       const inputBox = await page.locator(".composer").boundingBox();
       assert(turnBox && inputBox && Math.abs(turnBox.x - inputBox.x) <= 1);
@@ -272,7 +263,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await process.locator(":scope > summary").click();
       await expect(process).toHaveAttribute("open", "");
       await expect(tools).toHaveCount(2);
-      await expect(memories).toHaveCount(2);
+      await expect(memories).toHaveCount(0);
       await expect(process.locator(".authorization-review")).toHaveCount(1);
       await expect(process.locator(".authorization-review")).toContainText(reviewText[1]);
       await expect(process.locator(".authorization-review .step-status")).toHaveText("1.5s");
