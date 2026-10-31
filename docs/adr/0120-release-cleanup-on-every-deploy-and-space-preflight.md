@@ -22,6 +22,7 @@ date: "2026-10-30"
 - [补充决定：保留最近 3 份数据库副本](#database-copies)
 - [补充决定：只认现行配置和数据库里的有效记录，出包结束清 Hermes](#references-and-hermes)
 - [补充决定：出包和上线脚本必须包含要上线的提交](#current-scripts)
+- [补充决定：升级前副本和恢复留下的原库也各留最近 3 份](#state-copies)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -125,6 +126,16 @@ date: "2026-10-30"
 - `deploy.sh` 检查自己所在检出是否包含操作包的提交（`script-checkout-gate.py`），不包含就退出码 7、结果 `old-scripts`，生产机一点不碰。
 
 测试：`test_deploy.py` 的 `ScriptCheckoutGateTest`，`test_make_packet.py` 的 `ScriptCheckoutTest`。在原脚本上，前者 1 条失败，后者 2 条报错。主工作区要不要切回 `main`，由 Andy 决定。
+
+<a id="state-copies"></a>
+
+## 补充决定：升级前副本和恢复留下的原库也各留最近 3 份
+
+2026-10-31 核对第二十二版上线后的生产机（`/mnt/project-files/r22-db-copies.txt`），清理没有碰 `state/data/pre-migration-*`（11 份，约 2.0 GB）和 `state/.raw-restore-*-original`（5 份，约 1.0 GB）。前者由 `apps/admin-cli/src/index.ts` 在数据库升级时创建，后者由 `raw-copy-recovery.mjs` 在恢复时创建；仓库里没有任何代码在创建之后读取或删除它们，回退用的是证据目录里的恢复点。Andy 在选择卡上选了“纳入，各留最近 3 份”。
+
+改为：`release-cleanup-remote.py` 在 `state/data` 下按修改时间保留最新 3 个 `pre-migration-*`，在 `state` 下保留最新 3 个 `.raw-restore-*-original`，其余整个目录删除（`old-state-copy`）；保留的标为 `recent-state-copy`；被单元文件、现行配置或运行中进程提到的照旧保留。数据库文件本身 `state/data/product.sqlite` 不在匹配范围内。数量由计划里的 `keepStateCopies` 决定（`release-cleanup.py` 的 `KEEP_STATE_COPIES`）。按清单估算可再释放约 1.25 GB，未实测。
+
+测试：`test_release_cleanup.py` 的 `test_the_three_newest_upgrade_and_restore_copies_stay_and_older_ones_go`、`test_plan_mode_keeps_upgrade_and_restore_copies`、`test_an_old_upgrade_copy_named_by_a_process_is_kept`、`test_plan_keeps_three_upgrade_and_restore_copies_under_the_state_root`。
 
 <a id="references"></a>
 
