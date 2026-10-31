@@ -696,6 +696,7 @@ function web() {
     "capabilityStore",
     "modelBudgetPort",
     "modelUsage",
+    "decisionLedger",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

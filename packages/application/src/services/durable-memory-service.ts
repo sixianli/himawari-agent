@@ -3,6 +3,7 @@ import {
   DEFAULT_MEMORY_ATTRIBUTES,
   PORT_ERROR_CODES,
   type DataClassification,
+  type DecisionLedgerWrite,
   type MemoryContentPort,
   type MemoryHistoryNote,
   type MemoryProjectionJob,
@@ -94,6 +95,7 @@ export class DurableMemoryService {
   async applyProposal(
     proposal: ProductMemoryProposal,
     generationId: MemoryGenerationId,
+    ledger?: DecisionLedgerWrite,
   ): Promise<ProductMemoryRecord> {
     if (proposal.decision === "unchanged") {
       const current = requireRecord(
@@ -149,6 +151,7 @@ export class DurableMemoryService {
         "upsert",
         generationId,
         historyNote("created", proposal),
+        ledger,
       );
       if (proposal.supersedes) await this.supersede(proposal.supersedes, saved, generationId);
       return saved;
@@ -189,6 +192,7 @@ export class DurableMemoryService {
       "upsert",
       generationId,
       historyNote("updated", proposal),
+      ledger,
     );
     return saved;
   }
@@ -536,12 +540,14 @@ export class DurableMemoryService {
     operation: "upsert" | "delete",
     generationId: MemoryGenerationId,
     history?: MemoryHistoryNote,
+    ledger?: DecisionLedgerWrite,
   ) {
     return this.options.state.saveWithProjection({
       memory,
       expectedRevision,
       job: this.projectionJob(memory, operation, generationId),
       ...(history ? { history } : {}),
+      ...(ledger ? { ledger } : {}),
     });
   }
 
