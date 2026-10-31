@@ -20,7 +20,7 @@
 - 当用户要求保留一个想法（例如“记下这个想法”）时，用 `idea_backlog.py idea capture` 记录。
 - 当一项改动让一份反映当前事实的文档明显出错（PRD（产品需求文档）、架构文档、仍有效的规格或计划、某份 Runbook（操作手册）的步骤）时，在同一个提交里改正它。
 - 已关闭的规格或计划只能用 `archive_doc.py` 归档。ADR 永不归档。
-- 事故及其门槛记入 `docs/incidents-and-gates.md`，编码代理反复犯的错误记入 `docs/lessons.md`，两者都遵循 [incident-gates.md](incident-gates.md)；项目进度状态绝不记入这两处。
+- 事故及其门槛记入 `docs/incidents-and-gates.md`，编码代理反复犯的错误记入 `docs/lessons.md`，两者都遵循 [incident-gates.md](../../.claude/rules/incident-gates.md)；项目进度状态绝不记入这两处。
 
 <a id="the-documentation-check"></a>
 ## 文档检查
@@ -33,7 +33,7 @@
 <a id="runbooks-that-guide-an-operation"></a>
 ## 用来指导操作的 Runbook
 
-在按一份仍有效的 Runbook 做真实操作之前，先过技能 `references/runbook-workflow.md` 里的三道门槛。在快速模式下，生产上线和回滚按 [delivery-mode.md](../../.agents/instructions/delivery-mode.md)（`scripts/delivery-mode/deploy.sh` 和 `rollback.sh`）执行，不按 Runbook。
+在按一份仍有效的 Runbook 做真实操作之前，先过技能 `references/runbook-workflow.md` 里的三道门槛。在快速模式下，生产上线和回滚按 [delivery-mode.md](delivery-mode.md)（`scripts/delivery-mode/deploy.sh` 和 `rollback.sh`）执行，不按 Runbook。
 
 <a id="the-engineering-casebook"></a>
 ## 工程案例库
@@ -43,4 +43,17 @@
 <a id="delivery-reports"></a>
 ## 交付报告
 
-每份交付报告写明：更新了哪些文档，哪些文档有意保持不变及原因，技能严格校验运行时的结果以及推迟处理的 Runbook 问题数量，以及新建的任何 Backlog 条目或 ADR。在技能里发现的缺陷，按 [Andy 的全局指令](owner-global-instructions.md) 的要求，写在 "Skill feedback"（技能反馈）标题下。
+每份交付报告写明：更新了哪些文档，哪些文档有意保持不变及原因，技能严格校验运行时的结果以及推迟处理的 Runbook 问题数量，以及新建的任何 Backlog 条目或 ADR。在技能里发现的缺陷，按 [Andy 的全局指令](../../.claude/rules/owner-global-instructions.md) 的要求，写在 "Skill feedback"（技能反馈）标题下。
+
+<a id="code-and-documentation-consistency"></a>
+## 代码与文档一致
+
+在快速模式下，本节由本文件前面几节和[交付模式](delivery-mode.md#fast-mode)中较轻的规则替代：严格校验不再自动运行；改动了 `docs/` 的提交，提交前必须用 `document-governance` 技能手动运行它，且不得新增校验错误；Runbook（操作手册）的重新封存推迟进行。
+
+代码和文档绝不能脱节。
+
+- 每个改变行为、接口、配置、测试所需环境或操作步骤的提交，都要在同一个提交里更新受影响的文档：规格、计划、架构文档、Runbook、Backlog 条目，以及 ADR（架构决策记录）的后续处理（用新 ADR 取代旧 ADR，而不是改写旧 ADR）。如果没有文档受影响，要在交付说明里写明并给出理由。
+- 每次提交前，运行文档严格校验，例如 `python3 <document-governance skill>/scripts/validate_docs.py . --strict`。一个提交不得引入新的校验错误。当改动涉及某个 Runbook 的契约源文件（Runbook 里 `runbook-contract` 清单列出的仓库文件，封存时它们的内容会算进 `contract_sha256`）时，要对照新代码审查这个 Runbook，然后在同一个提交里用 `runbook.py seal ... --confirm-reconciled --apply` 重新封存它。
+- 文档校验和 Runbook 检查是几秒内跑完的只读脚本；可以在 MacBook 上运行。这一点不适用于构建或测试。
+- 修复缺陷时，同时更正描述旧行为的文档。当一份文档记录了某个决定时，要保持它的状态字段和链接是最新的。
+- 提交说明和交付报告要列出更新了哪些文档，以及严格校验的结果。

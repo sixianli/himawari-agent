@@ -16,3 +16,10 @@
 - Mac 仍然是受支持的产品平台，但用户已无限期推迟了所有 Mac 验证：在用户恢复之前，不要安排或提议在 Mac 上运行，并把 Mac 上的行为报告为未验证。恢复之后，Mac 专属的验证（macOS 沙箱、Mac 安装程序、Mac 自带的 Bash，以及其他只在 Mac 上出现的运行时行为）只有在改动影响 Mac 专属行为时或在发布之前，才在 MacBook 上运行，并且只有在用户批准了这一次具体运行、它的范围、预计时长和时间安排之后才运行。
 - 生产运行在云服务器 `84.247.157.41` 上；那里的每一次生产上线，以及每一次启动或变更生产服务，都需要用户对该次上线的明确授权。
 - 一个平台的结果绝不能代替另一个平台：Mac 和 Linux 不能互相验证；Hermes（Ubuntu 22.04，bwrap 0.6.1）在时序、并发或沙箱方面的结论不能代表生产服务器（Ubuntu 24.04，带有 AppArmor 对用户命名空间的限制）；`himawari-ci` 的结果只说明测试账号自己在 Ubuntu 24.04 上的安装，而不是经过验证的生产安装；2026-10-14 之前的云服务器测试结果只作为历史记录。
+
+<a id="hermes-test-server-connectivity"></a>
+## 连接 Hermes 测试服务器
+
+- 每条 Hermes 命令都通过 `.ci-output/handoff/scripts/hermes-ssh.sh '<command>'` 运行，每次上传都通过 `.ci-output/handoff/scripts/hermes-upload.sh <local file> <remote path>` 进行；绝不直接对 Hermes 调用 `ssh`、`scp`、`sftp` 或 `rsync`。这两个包装脚本经 Tailscale（一种组建私有网络的工具）连接（`ProxyCommand=none`，`HostName=100.64.53.104`），检查远端主机名是 `hermes-home`，把单次调用限制在 300 秒内，并且在受保护的第 3 层或第 4 层运行进行期间只允许只读命令，因为 Hermes 上的任何其他进程都会使那次运行作废。`hermes_direct_ssh_guard.py` 这个 PreToolUse 钩子（在工具调用前运行的检查）会拒绝直接调用（[教训](../../docs/lessons.md#measurement-not-isolated)）。Tailscale 不可用时，向用户报告，而不是手动改走 `hermes-ssh` 技能的 Cloudflare 线路。工具链的 `PATH`、环境变量、`umask 022` 以及用 `git bundle` 同步代码的方法，见[测试主机操作 Runbook](../../docs/runbooks/test-host-operations-runbook.md#live-state-preflight)。
+- 新的下载，包括更新版本的工具链或 bubblewrap（一种沙箱工具），都需要先得到用户批准。不得在服务器上编辑代码。
+- 不得为绕过故障而修改 SSH 配置、凭据、Cloudflare 设置、防火墙或主机密钥校验；要向用户报告。
