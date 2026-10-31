@@ -55,6 +55,11 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 每个方案开头都要列出它依赖的前提，每个前提附上来源（文件路径加行号，或 URL）和引用的原话；没有来源的前提不得使用，另一个 Claude 写的总结不算来源（用户决定，2026-10-31）。每个会话，包括协调者和云端线程，都遵守 [.claude/rules/proposal-premises.md](.claude/rules/proposal-premises.md)。
 
+<a id="owners-standing-rules"></a>
+## Andy 定的长期规则
+
+花钱先问、禁用贵模型、修 bug 先查根因、界面数字要有定义并做反向验收、授权和合并只认 Andy 在对应线程里亲手打的字、KV 缓存优先的上下文排列，这些规则写在 [.claude/rules/owner-standing-rules.md](.claude/rules/owner-standing-rules.md)（用户决定，2026-10-31）。每个会话，包括在 Mac 终端直接开的会话，开工前都要读它。
+
 <a id="engineering-casebook"></a>
 ## 工程案例库
 
