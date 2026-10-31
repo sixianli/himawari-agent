@@ -9,6 +9,7 @@ SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAl
 SMALL_FILE_BYTES = 1024 ** 2
 LARGE_FILE_BYTES = 10 * 1024 ** 2
 KEEP_DATABASE_COPIES = 3
+KEEP_STATE_COPIES = 3
 LOCK_PATH = '/run/lock/himawari-release-cleanup.lock'
 SCRATCH_ROOT = '/tmp'
 KEEP_FAILURE_SCENES = 1
@@ -33,6 +34,8 @@ def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
         'smallFileBytes': SMALL_FILE_BYTES,
         'largeFileBytes': LARGE_FILE_BYTES,
         'keepDatabaseCopies': KEEP_DATABASE_COPIES,
+        'stateRoot': str(Path(paths['database']).parent.parent),
+        'keepStateCopies': KEEP_STATE_COPIES,
         'lockPath': LOCK_PATH,
         'scratchRoot': SCRATCH_ROOT,
         'keepFailureScenes': keep_failure_scenes,
