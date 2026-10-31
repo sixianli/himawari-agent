@@ -1,13 +1,15 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: docs/adr/0134-adopt-product-vision-v2-2.md
 date: "2026-10-28"
 ---
 
 # ADR 0101：采纳产品愿景 v2.1，作为贯穿开发周期的顶层产品文档
+
+> 2026-10-31 被 [ADR 0134](0134-adopt-product-vision-v2-2.md) 取代：愿景换为 v2.2，地位决定在 0134 里重述。下文是采纳 v2.1 时的记录，不再改写。
 
 <a id="contents"></a>
 

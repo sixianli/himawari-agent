@@ -12,7 +12,7 @@ The user asked on 2026-10-26 that every later cloud thread actually apply the `d
 
 These triggers apply in fast mode and in full mode:
 
-- A durable technical, product, or process decision gets a new ADR from `assets/templates/adr-template.md` in `docs/adr/`, numbered after the highest existing ADR. A changed decision supersedes the earlier ADR in place (the skill's `references/workflows.md`, "ADR Supersession"); never rewrite the earlier ADR's decision.
+- A durable technical, product, or process decision gets a new ADR from the skill's `assets/templates/adr-template.md` (the repository keeps no copy) in `docs/adr/`, numbered after the highest existing ADR. A changed decision supersedes the earlier ADR in place (the skill's `references/workflows.md`, "ADR Supersession"); never rewrite the earlier ADR's decision.
 - Future work that the user or a thread decides to keep becomes a Backlog item through `idea_backlog.py backlog capture`. Never create `docs/TODO.md` or a hand-maintained index.
 - When the user asks to keep an idea (for example "记下这个想法"), capture it with `idea_backlog.py idea capture`.
 - When a change makes a current-truth document plainly wrong (the PRD, the architecture document, an active Spec or Plan, a Runbook's steps), correct it in the same commit.

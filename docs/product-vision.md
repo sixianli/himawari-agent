@@ -9,7 +9,7 @@ date: "2026-10-31"
 
 <a id="contents"></a>
 
-> 仓库注：本文是 Himawari 的顶层产品文档，Andy 2026-10-28 交来 v2.1 定稿，2026-10-31 以 v2.2 整篇替换，正文照原文保存。各版本 PRD 决定先做哪些、暂不做哪些，架构文档、ADR 和设计规格写怎么做，它们都不得违背这里的愿景、原则及其冲突优先级；v2.1 的采纳记录见 [ADR 0101](adr/0101-adopt-product-vision-v2-1.md)，v2.2 的采纳记录待新 ADR。改正文只由 Andy 决定，新版本整篇替换并在附录记改动。
+> 仓库注：本文是 Himawari 的顶层产品文档，Andy 2026-10-28 交来 v2.1 定稿，2026-10-31 以 v2.2 整篇替换，正文照原文保存。各版本 PRD 决定先做哪些、暂不做哪些，架构文档、ADR 和设计规格写怎么做，它们都不得违背这里的愿景、原则及其冲突优先级；v2.2 的采纳记录见 [ADR 0134](adr/0134-adopt-product-vision-v2-2.md)，它取代了 v2.1 的 [ADR 0101](adr/0101-adopt-product-vision-v2-1.md)。改正文只由 Andy 决定，新版本整篇替换并在附录记改动。
 
 目录：[0. 一句话定位](#positioning) · [1. 愿景](#vision) · [2. 核心原则](#principles) · [3. 差异化与护城河](#differentiation) · [3.7 Jarvis Test](#jarvis-test) · [4. 反愿景](#anti-vision) · [附录](#changelog)
 

@@ -6,11 +6,12 @@ Read `DELIVERY_MODE` at the repository root before deciding which tests, documen
 
 ## Product Vision
 
-[docs/product-vision.md](docs/product-vision.md) is the top-level product document for the whole development cycle (user decision, 2026-10-28, [ADR 0101](docs/adr/0101-adopt-product-vision-v2-1.md)). Every session, including cloud threads, reads it before designing or changing a user-facing feature, memory, proactive behavior, tools, permissions, or self-improvement.
+[docs/product-vision.md](docs/product-vision.md) is the top-level product document for the whole development cycle (user decision, 2026-10-28, [ADR 0101](docs/adr/0101-adopt-product-vision-v2-1.md); v2.2 adopted 2026-10-31, [ADR 0134](docs/adr/0134-adopt-product-vision-v2-2.md), which supersedes ADR 0101). Every session, including cloud threads, reads it before designing or changing a user-facing feature, memory, proactive behavior, tools, permissions, or self-improvement.
 
 - Its principles decide conflicts in this order: owner sovereignty, then boundaries and reversibility, then memory reliability, then proactivity and efficiency. Name the principle a design relies on when it trades one against another.
 - "Owned first, data held by the owner" (自有优先、数据自持) replaces the earlier "local-first" wording: the owner controls where Himawari runs and where its data lives, which may be a server the owner rents. Do not describe Himawari as local-first.
-- A PRD sets the scope of one version and may postpone parts of the vision, but must not contradict it. Only the user changes the vision text; a new version replaces the whole document and records its changes in the appendix.
+- A PRD sets the scope of one version and may postpone parts of the vision, but must not contradict it. Only the user changes the vision text; a new version replaces the whole document, records its changes in the appendix, and gets a new adoption ADR that supersedes the previous one.
+- Since v2.2 the owner's rules are hard settings, not memories: a rule is written into the program, always runs, and has a regression test; memory keeps only its provenance and change history. The moat is four assets: the memory graph, the agent rulebook, the long-tail tool library, and the decision ledger. Designs that store or inject rules as memory entries are known gaps listed in ADR 0134, not the target.
 
 ## Owner's Global Instructions and Skills
 
