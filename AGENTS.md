@@ -58,7 +58,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="owners-standing-rules"></a>
 ## Andy 定的长期规则
 
-花钱先问、禁用贵模型、修 bug 先查根因、界面数字要有定义并做反向验收、上线、动生产机和合并 PR 时 Andy 在哪里说才算授权、KV 缓存优先的上下文排列，这些规则写在 [.claude/rules/owner-standing-rules.md](.claude/rules/owner-standing-rules.md)（用户决定，2026-10-31）。每个会话，包括在 Mac 终端直接开的会话，开工前都要读它。
+花钱先问、禁用贵模型、修 bug 先查根因、界面数字要有定义并做反向验收、Andy 在项目聊天说的话转给线程即算授权（删 Mac 上的文件除外）、KV 缓存优先的上下文排列，这些规则写在 [.claude/rules/owner-standing-rules.md](.claude/rules/owner-standing-rules.md)（用户决定，2026-10-31）。每个会话，包括在 Mac 终端直接开的会话，开工前都要读它。
 
 <a id="engineering-casebook"></a>
 ## 工程案例库
