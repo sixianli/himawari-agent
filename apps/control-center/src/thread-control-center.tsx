@@ -18,7 +18,11 @@ import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./brows
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import { SunflowerMark } from "./components/brand.js";
 import { ChatComposer } from "./components/chat-composer.js";
-import { ChatHistory, type InheritedConversation } from "./components/chat-history.js";
+import {
+  ChatHistory,
+  type InheritedConversation,
+  type LiveAnswerText,
+} from "./components/chat-history.js";
 import {
   ContentPreview,
   type ContentPreviewValue,
@@ -291,6 +295,10 @@ export function useThreadControlCenter(
   const [executionStates, setExecutionStates] = useState<
     Readonly<Record<string, ThreadExecutionState>>
   >({});
+  const [liveTexts, setLiveTexts] = useState<Readonly<Record<string, LiveAnswerText>>>({});
+  const liveBuffer = useRef<Record<string, LiveAnswerText>>({});
+  const liveFrame = useRef<number | undefined>(undefined);
+  const executionEpoch = useRef(0);
   const modelRef = options.modelChoice?.modelRef ?? "";
   const thinkingLevel = options.modelChoice?.thinkingLevel ?? "";
   const availableModels = configuration?.availableModels ?? [];
@@ -347,6 +355,9 @@ export function useThreadControlCenter(
   detailRef.current = detail;
   useEffect(() => {
     refreshSequence.current++;
+    executionEpoch.current++;
+    liveBuffer.current = {};
+    setLiveTexts({});
     setDetail(undefined);
     setPreview(null);
     setPage(null);
@@ -364,6 +375,7 @@ export function useThreadControlCenter(
     setExecutionStates({});
     return () => {
       refreshSequence.current++;
+      executionEpoch.current++;
       payloadEpoch.current++;
       payloadCache.current = {};
       executionCache.current = {};
@@ -385,6 +397,7 @@ export function useThreadControlCenter(
       refreshing.current = false;
       refreshAgain.current = false;
       refreshSequence.current++;
+      executionEpoch.current++;
     };
   }, [client, selectedThreadId, route.status, route.afterCursor, active]);
 
@@ -779,7 +792,7 @@ export function useThreadControlCenter(
     const runs = shown.payload.runs.filter((run) => executionRuns.current.has(run.runId));
     executionRuns.current.clear();
     if (!runs.length) return;
-    const epoch = refreshSequence.current;
+    const epoch = executionEpoch.current;
     executionReading.current = true;
     const controller = new AbortController();
     const deadline = window.setTimeout(
@@ -793,13 +806,13 @@ export function useThreadControlCenter(
         selectedThreadId,
         runs,
         executionCache.current,
-        () => epoch === refreshSequence.current,
+        () => epoch === executionEpoch.current,
         setExecution,
         controller.signal,
       );
-      if (epoch !== refreshSequence.current) return scheduleExecution(runs.map((run) => run.runId));
+      if (epoch !== executionEpoch.current) return scheduleExecution(runs.map((run) => run.runId));
     } catch {
-      if (epoch !== refreshSequence.current) return scheduleExecution(runs.map((run) => run.runId));
+      if (epoch !== executionEpoch.current) return scheduleExecution(runs.map((run) => run.runId));
       fullRefreshRequested.current = true;
       scheduleRefresh();
       return;
@@ -825,7 +838,7 @@ export function useThreadControlCenter(
             configuration,
             selectedThreadId,
             stateRuns,
-            () => epoch === refreshSequence.current,
+            () => epoch === executionEpoch.current,
             setExecutionStates,
             stateController.signal,
           );
@@ -835,7 +848,7 @@ export function useThreadControlCenter(
       }
     } catch {
       executionStateRuns.current.clear();
-      if (epoch !== refreshSequence.current) return;
+      if (epoch !== executionEpoch.current) return;
       fullRefreshRequested.current = true;
       scheduleRefresh();
     } finally {
@@ -874,10 +887,30 @@ export function useThreadControlCenter(
         if (!run || run.revision < event.runRevision) scheduleRefresh(selectedThreadId);
         if (run) scheduleExecution([run.runId]);
       },
+      onText: (event) => {
+        const prior = liveBuffer.current[event.runId];
+        const base = prior?.itemId === event.itemId ? prior.text : "";
+        if (event.offset > base.length) {
+          scheduleExecution([event.runId]);
+          return;
+        }
+        liveBuffer.current[event.runId] = {
+          itemId: event.itemId,
+          text: base.slice(0, event.offset) + event.text,
+        };
+        liveFrame.current ??= window.requestAnimationFrame(() => {
+          liveFrame.current = undefined;
+          setLiveTexts({ ...liveBuffer.current });
+        });
+      },
       onUnauthorized,
     });
     synchronizer.start();
-    return () => synchronizer.stop();
+    return () => {
+      synchronizer.stop();
+      if (liveFrame.current !== undefined) window.cancelAnimationFrame(liveFrame.current);
+      liveFrame.current = undefined;
+    };
   }, [
     active,
     configuration,
@@ -1113,6 +1146,7 @@ export function useThreadControlCenter(
 
   const createThread = () => {
     refreshSequence.current++;
+    executionEpoch.current++;
     readController.current?.abort();
     navigate({ ...route, objectId: null, status: null, afterCursor: null, view: "content" });
     setDetail(undefined);
@@ -1774,6 +1808,7 @@ export function useThreadControlCenter(
                 onRetry={() => void submitDraft()}
                 contentByRef={contentByRef}
                 execution={execution}
+                liveTexts={liveTexts}
                 executionStates={currentExecutionStates}
                 executionStateAvailable={configuration?.executionStateAvailable}
                 onPreview={(value) => {

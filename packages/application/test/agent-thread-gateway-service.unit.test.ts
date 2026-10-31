@@ -287,7 +287,7 @@ describe("AgentThreadGatewayService execution watch", () => {
     };
     const streamed = [];
     for await (const item of gateway.watchExecution(authentication, executionSubscription()))
-      streamed.push(item.payload.traceSequence);
+      if (item.type === "thread.execution_changed") streamed.push(item.payload.traceSequence);
     expect(streamed).toEqual([3]);
     expect(authorized.at(0)).toBe("thread.execution_events");
   });

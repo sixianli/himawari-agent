@@ -151,6 +151,10 @@ export interface PiAgentRuntimeAdapterDependencies {
   ) => Promise<CreateAgentSessionResult>;
   readonly measure?: <T>(runId: string, name: string, work: () => Promise<T>) => Promise<T>;
   readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void;
+  readonly onAssistantText?: (
+    request: RuntimeRequest,
+    message: { readonly timestamp: unknown; readonly text: string },
+  ) => void;
   readonly onModelAdmissionFailed?: (
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
@@ -1446,6 +1450,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           const block = content[event.assistantMessageEvent.contentIndex];
           if (block?.type === "toolCall" && block.name.length > 0)
             this.#dependencies.onToolCallStarted?.(request, block.name);
+        }
+
+        if (
+          this.#dependencies.onAssistantText &&
+          event.type === "message_update" &&
+          event.message.role === "assistant" &&
+          ["text_start", "text_delta", "text_end"].includes(event.assistantMessageEvent?.type ?? "")
+        ) {
+          try {
+            this.#dependencies.onAssistantText(request, {
+              timestamp: event.message.timestamp,
+              text: event.message.content
+                .flatMap((block) => (block.type === "text" ? [block.text] : []))
+                .join("\n"),
+            });
+          } catch {}
         }
 
         const observed = {

@@ -18,7 +18,7 @@ import type {
   ThreadGatewayQuery,
   ThreadGatewayRequestResult,
   ThreadGatewaySubscription,
-  ThreadExecutionChangedEvent,
+  ThreadExecutionStreamEvent,
   ThreadExecutionEventsSubscription,
 } from "@himawari-agent/gateway-contracts";
 import type { RecentAuthenticationEvidence } from "./recent-authentication.js";
@@ -163,7 +163,7 @@ export interface ThreadGatewayReadModelPort {
     readonly authentication: GatewayAuthenticationContext;
     readonly subscription: ThreadExecutionEventsSubscription;
     readonly signal?: AbortSignal;
-  }): AsyncIterable<ThreadExecutionChangedEvent>;
+  }): AsyncIterable<ThreadExecutionStreamEvent>;
 }
 
 export interface AgentThreadGatewayPort {
@@ -180,5 +180,5 @@ export interface AgentThreadGatewayPort {
     authentication: GatewayAuthenticationContext,
     subscription: ThreadExecutionEventsSubscription,
     signal?: AbortSignal,
-  ): AsyncIterable<ThreadExecutionChangedEvent>;
+  ): AsyncIterable<ThreadExecutionStreamEvent>;
 }

@@ -22,7 +22,7 @@ import {
   gatewayMessageSchema,
   gatewayV2MessageSchema,
   type StreamEvent,
-  type ThreadExecutionChangedEvent,
+  type ThreadExecutionStreamEvent,
   type ThreadExecutionEventsSubscription,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
@@ -667,7 +667,7 @@ async function* streamThreadExecutionEvents(input: {
     while (true) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       let result:
-        | { readonly kind: "item"; readonly value: IteratorResult<ThreadExecutionChangedEvent> }
+        | { readonly kind: "item"; readonly value: IteratorResult<ThreadExecutionStreamEvent> }
         | { readonly kind: "heartbeat" };
       try {
         result = await Promise.race([
@@ -704,7 +704,7 @@ async function* streamThreadExecutionEvents(input: {
         continue;
       }
       if (result.value.done) return;
-      yield serializeSse({ event: "thread.execution_changed", data: result.value.value });
+      yield serializeSse({ event: result.value.value.type, data: result.value.value });
       pending = iterator.next();
     }
   } finally {

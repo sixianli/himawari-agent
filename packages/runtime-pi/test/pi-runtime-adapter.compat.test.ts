@@ -433,9 +433,11 @@ function createAdapter(
   now: () => string = () => NOW,
   onToolCallStarted?: PiAgentRuntimeAdapterDependencies["onToolCallStarted"],
   onModelStreamFailed?: PiAgentRuntimeAdapterDependencies["onModelStreamFailed"],
+  onAssistantText?: PiAgentRuntimeAdapterDependencies["onAssistantText"],
 ) {
   return new PiAgentRuntimeAdapter({
     ...(onToolCallStarted ? { onToolCallStarted } : {}),
+    ...(onAssistantText ? { onAssistantText } : {}),
     ...(onModelStreamFailed ? { onModelStreamFailed } : {}),
     projection,
     tools,
@@ -1272,6 +1274,54 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(started).toEqual([
       [request.runId, "write"],
       [request.runId, "bash"],
+    ]);
+  });
+
+  it("hands every growing answer text to the live feed as the model writes it", async () => {
+    const projection = new RecordingProjection();
+    const seen: Array<[string, unknown, string]> = [];
+    const snapshot = (text: string) => ({
+      role: "assistant",
+      timestamp: 789,
+      content: [
+        { type: "thinking", thinking: "plan" },
+        { type: "text", text },
+      ],
+    });
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({ type: "agent_start" });
+        emit({ type: "message_start", message: snapshot("") });
+        emit({
+          type: "message_update",
+          message: snapshot(""),
+          assistantMessageEvent: { type: "thinking_delta", contentIndex: 0 },
+        });
+        for (const text of ["向", "向日葵", "向日葵的一生"])
+          emit({
+            type: "message_update",
+            message: snapshot(text),
+            assistantMessageEvent: { type: "text_delta", contentIndex: 1 },
+          });
+        emit({
+          type: "message_end",
+          message: { ...snapshot("向日葵的一生"), stopReason: "stop" },
+        });
+        emit({ type: "agent_settled" });
+      }),
+      {},
+      () => NOW,
+      undefined,
+      undefined,
+      (runRequest, message) => seen.push([runRequest.runId, message.timestamp, message.text]),
+    );
+    await collect(adapter.run(request));
+    expect(seen).toEqual([
+      [request.runId, 789, "向"],
+      [request.runId, 789, "向日葵"],
+      [request.runId, 789, "向日葵的一生"],
     ]);
   });
 
