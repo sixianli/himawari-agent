@@ -52,6 +52,21 @@ def planned_schemas(packet):
     return int(found['currentSchema'][0]), int(found['targetSchema'][0])
 
 
+AUDIT_COPY = 'acceptance/cloud/probe-source/scripts/operations/workspace-lifecycle-audit.mjs'
+
+
+def audit_script_problem(packet, target):
+    path = packet / AUDIT_COPY
+    if not path.is_file():
+        return 'PACKET_CHECKS_AUDIT_SCRIPT_MISSING ' + AUDIT_COPY
+    found = re.findall(r'^export const SUPPORTED_SCHEMA_MAX = ([0-9]+);$', path.read_text(), re.M)
+    if len(found) != 1:
+        return 'PACKET_CHECKS_AUDIT_SCRIPT_LIMIT_MISSING ' + AUDIT_COPY
+    if int(found[0]) < target:
+        return 'PACKET_CHECKS_AUDIT_SCRIPT_BEHIND supported=' + found[0] + ' targetSchema=' + str(target)
+    return None
+
+
 def plan(packet, node, python, include_hermes_only, migrating):
     checks = [(name, [str(node), str(packet / name)], 'source') for name in NODE_FIXTURES]
     checks.append(('systemd/fixtures/verify-doctor-fixtures.mjs', [str(node), '--test', str(packet / 'systemd/fixtures/verify-doctor-fixtures.mjs')], 'source'))
@@ -118,6 +133,10 @@ def main():
         if not os.path.isabs(os.environ.get('HIMAWARI_CI_PYTHON', '')):
             print('PACKET_CHECKS_CI_PYTHON_REQUIRED')
             return 2
+    problem = audit_script_problem(packet, target)
+    if problem:
+        print(problem)
+        return 2
     python = '/usr/bin/python3' if Path('/usr/bin/python3').exists() else sys.executable
     logs = Path(arguments.logs).resolve() if arguments.logs else Path(tempfile.mkdtemp(prefix='packet-checks-'))
     logs.mkdir(parents=True, exist_ok=True)

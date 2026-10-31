@@ -535,6 +535,37 @@ class PacketChecksRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, 'PACKET_CHECKS_CANDIDATE_ARCHIVE_COUNT 0'):
             self.run_check((checks_runner.MIGRATE_FIXTURE, [str(self.node), 'fixture.mjs'], 'migrate'))
 
+    def write_audit_copy(self, text):
+        path = self.packet / checks_runner.AUDIT_COPY
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def test_a_packet_whose_audit_script_stops_short_of_the_target_schema_is_refused(self):
+        self.write_audit_copy('export const SUPPORTED_SCHEMA_MAX = 67;\n')
+        self.assertEqual(checks_runner.audit_script_problem(self.packet, 68), 'PACKET_CHECKS_AUDIT_SCRIPT_BEHIND supported=67 targetSchema=68')
+
+    def test_a_packet_whose_audit_script_covers_the_target_schema_passes(self):
+        self.write_audit_copy('export const SUPPORTED_SCHEMA_MAX = 68;\n')
+        self.assertIsNone(checks_runner.audit_script_problem(self.packet, 68))
+        self.assertIsNone(checks_runner.audit_script_problem(self.packet, 57))
+
+    def test_a_packet_with_an_audit_script_without_a_declared_limit_or_without_the_script_is_refused(self):
+        self.assertEqual(checks_runner.audit_script_problem(self.packet, 68), 'PACKET_CHECKS_AUDIT_SCRIPT_MISSING ' + checks_runner.AUDIT_COPY)
+        self.write_audit_copy('if (version > 67) throw 1;\n')
+        self.assertEqual(checks_runner.audit_script_problem(self.packet, 68), 'PACKET_CHECKS_AUDIT_SCRIPT_LIMIT_MISSING ' + checks_runner.AUDIT_COPY)
+
+    def test_the_runner_stops_before_any_check_when_the_audit_script_is_behind(self):
+        for holder in checks_runner.OLD_CONFIG_HOLDERS:
+            (self.packet / holder).parent.mkdir(parents=True, exist_ok=True)
+            (self.packet / holder).write_text(checks_runner.OLD_CONFIG_PENDING)
+        (self.packet / 'maintenance').mkdir(exist_ok=True)
+        (self.packet / 'maintenance/maintenance-common.mjs').write_text('export const currentSchema = 68;\nexport const targetSchema = 68;\n')
+        self.write_audit_copy('export const SUPPORTED_SCHEMA_MAX = 67;\n')
+        run = subprocess.run([sys.executable, '-I', str(HERE / 'run-packet-checks.py'), str(self.packet), '--node', str(self.node), '--source', str(self.source), '--logs', str(self.logs)], capture_output=True, text=True, check=False)
+        self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+        self.assertIn('PACKET_CHECKS_AUDIT_SCRIPT_BEHIND supported=67 targetSchema=68', run.stdout)
+        self.assertEqual([path.name for path in self.logs.iterdir()], [])
+
     def test_an_upgrade_without_the_locked_python_stops_before_any_check(self):
         for holder in checks_runner.OLD_CONFIG_HOLDERS:
             (self.packet / holder).parent.mkdir(parents=True, exist_ok=True)
