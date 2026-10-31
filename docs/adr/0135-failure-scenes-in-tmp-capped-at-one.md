@@ -8,7 +8,7 @@ amends: "docs/adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md"
 date: "2026-10-31"
 ---
 
-# ADR 0134：生产机 /tmp 里的验收失败现场最多留一份，上线成功后一份不留
+# ADR 0135：生产机 /tmp 里的验收失败现场最多留一份，上线成功后一份不留
 
 <a id="contents"></a>
 
