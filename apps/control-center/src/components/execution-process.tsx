@@ -86,15 +86,13 @@ export function ExecutionProcess({
   const items = executionItems(records);
   const timeline = executionTimeline(records, run, now);
   const rows = processRows(records, items, timeline);
-  const expanded = expandedChoice ?? !activityEnded;
+  const expanded = expandedChoice ?? false;
   const stepLabel = (step: TimelineStep) => {
     if (step.kind === "tool") {
       const tool = items.find((item) => item.itemId === step.itemId);
       return message(tool ? toolStepSummary(tool.name, tool.input).id : "step.other");
     }
-    return step.count === undefined
-      ? message(stepLabels[step.kind])
-      : message(stepLabels[step.kind], { count: step.count });
+    return message(stepLabels[step.kind]);
   };
   const time = executionTime(records, run, now);
   const activity = executionActivity(records, run, connection, now);
@@ -230,8 +228,6 @@ export function ExecutionProcess({
             const step = row.step;
             const item = row.item;
             if (step && !item) {
-              const memory = step.kind === "memory" || step.kind === "context";
-              const detailRecord = memory ? records.find((record) => record.id === step.id) : null;
               const quote =
                 step.kind === "think" && step.itemId
                   ? items.find(
@@ -263,22 +259,10 @@ export function ExecutionProcess({
                   key={step.id}
                   className={`execution-step timeline-row${step.running ? " is-running" : ""}`}
                 >
-                  {detailRecord?.output ? (
-                    <details className="timeline-record memory-record">
-                      <summary>
-                        {head}
-                        <RowChevron />
-                      </summary>
-                      <div className="step-detail">
-                        <pre>{detailRecord.output}</pre>
-                      </div>
-                    </details>
-                  ) : (
-                    <div className="timeline-record is-static">
-                      {head}
-                      <span className="row-chevron" />
-                    </div>
-                  )}
+                  <div className="timeline-record is-static">
+                    {head}
+                    <span className="row-chevron" />
+                  </div>
                   {quote?.trim() ? (
                     <p className="row-quote">
                       <q>{quote.trim()}</q>
@@ -493,16 +477,12 @@ type ProcessRow =
   | { type: "thinking"; sequence: number; stage: ReturnType<typeof thinkingSteps>[number] };
 
 const stepGlyphs: Readonly<Record<TimelineStep["kind"], ToolGlyph>> = {
-  memory: "memory",
-  context: "memory",
   think: "thinking",
   write: "answer",
   you: "you",
   tool: "unknown",
 };
 const stepLabels: Readonly<Record<Exclude<TimelineStep["kind"], "tool">, MessageId>> = {
-  memory: "step.memoryFound",
-  context: "step.memoryProfile",
   think: "step.thinking",
   write: "process.step.write",
   you: "process.step.you",

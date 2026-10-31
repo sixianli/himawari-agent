@@ -146,6 +146,9 @@ export function greetingOf(now: Date): MessageId {
       ? "chat.greetAfternoon"
       : "chat.greetEvening";
 }
+const payloadConcurrency = 6;
+const payloadFlushMilliseconds = 40;
+
 const welcomeLines: readonly MessageId[] = [
   "chat.welcome.here",
   "chat.welcome.hand",
@@ -388,20 +391,33 @@ export function useThreadControlCenter(
   const loadPayloads = useCallback(
     async (refs: readonly string[]) => {
       if (!client) return;
-      const unique = [...new Set(refs)].filter((ref) => payloadCache.current[ref] === undefined);
+      const pending = [...new Set(refs)].filter((ref) => payloadCache.current[ref] === undefined);
       const epoch = payloadEpoch.current;
-      const entries = await Promise.all(
-        unique.map(async (ref) => {
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      const flush = () => {
+        flushTimer = undefined;
+        if (epoch === payloadEpoch.current) setContentByRef({ ...payloadCache.current });
+      };
+      const worker = async () => {
+        for (let ref = pending.shift(); ref !== undefined; ref = pending.shift()) {
+          let content: string;
           try {
-            return [ref, (await client.readText(ref)).content] as const;
+            content = (await client.readText(ref)).content;
           } catch {
-            return [ref, message("common.unknown")] as const;
+            content = message("common.unknown");
           }
-        }),
+          if (epoch !== payloadEpoch.current) return;
+          payloadCache.current[ref] = content;
+          flushTimer ??= setTimeout(flush, payloadFlushMilliseconds);
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(payloadConcurrency, pending.length) }, worker),
       );
-      if (epoch !== payloadEpoch.current) return;
-      Object.assign(payloadCache.current, Object.fromEntries(entries));
-      setContentByRef({ ...payloadCache.current });
+      if (flushTimer !== undefined) {
+        clearTimeout(flushTimer);
+        flush();
+      }
     },
     [client, message],
   );
@@ -652,7 +668,7 @@ export function useThreadControlCenter(
         setReadInBackground(true);
         void loadPayloads([
           ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
-          ...current.payload.messages.map(({ contentRef }) => contentRef),
+          ...current.payload.messages.map(({ contentRef }) => contentRef).reverse(),
           ...backgroundPayloadRefs(current.payload.runs),
         ]);
         const changedRuns = current.payload.runs.filter(

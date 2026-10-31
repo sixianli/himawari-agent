@@ -71,6 +71,21 @@ export function checkPhoneLayout({ root = repositoryRoot } = {}) {
   const overlays = readFileSync(path.join(app, "src/components/overlays.tsx"), "utf8");
   if (!overlays.includes('<div className="dialog-body">{children}</div>'))
     errors.push("PHONE_DIALOG_BODY_WRAPPER_MISSING overlays.tsx");
+  const main = readFileSync(path.join(app, "src/main.tsx"), "utf8");
+  if (!/installViewportSync\(window\)/.test(main))
+    errors.push("PHONE_KEYBOARD_VIEWPORT_SYNC_MISSING main.tsx");
+  const keyboardShell = rules(
+    css[`${APP}/src/chat-layout.css`] ?? "",
+    'html[data-keyboard="open"] .app-shell',
+  ).join(";");
+  if (!/height:\s*var\(--app-height\)/.test(keyboardShell))
+    errors.push("PHONE_KEYBOARD_SHELL_IGNORES_VISUAL_VIEWPORT chat-layout.css");
+  const keyboardContent = rules(
+    css[`${APP}/src/chat-layout.css`] ?? "",
+    'html[data-keyboard="open"] .thread-workarea > .thread-content',
+  ).join(";");
+  if (!/padding-bottom:\s*0/.test(keyboardContent))
+    errors.push("PHONE_KEYBOARD_KEEPS_HOME_INDICATOR_GAP chat-layout.css");
   return errors;
 }
 

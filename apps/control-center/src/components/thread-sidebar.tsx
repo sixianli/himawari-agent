@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 import { type ControlCenterRouteState, controlCenterHref } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { LineIcon } from "./answer-footer.js";
-import { ActionButton, ActionMenu, AppLink, ModalDialog } from "./index.js";
+import { ActionButton, ActionMenu, AppLink } from "./index.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
 
@@ -92,7 +92,7 @@ export function ThreadSidebar({
   runningThreadIds = [],
 }: ThreadSidebarProps) {
   const { message } = useControlCenterIntl();
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searched, setSearched] = useState(false);
   const filesOpen = openPage !== null;
   const title = (thread: Thread) =>
     (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
@@ -123,7 +123,6 @@ export function ThreadSidebar({
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
           return;
         event.preventDefault();
-        setSearchOpen(false);
         onNavigate({ ...route, objectId: thread.threadId, status: null, view: "content" });
       }}
     >
@@ -211,10 +210,30 @@ export function ThreadSidebar({
           <SidebarIcon name="compose" />
           {message("threads.new")}
         </ActionButton>
-        <ActionButton onClick={() => setSearchOpen(true)} variant="quiet">
+        <form
+          className="thread-search"
+          role="search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!searchText.trim()) return;
+            setSearched(true);
+            onSearch();
+          }}
+        >
           <SidebarIcon name="search" />
-          {message("threads.search")}
-        </ActionButton>
+          <input
+            type="search"
+            autoComplete="off"
+            enterKeyHint="search"
+            aria-label={message("threads.search")}
+            placeholder={message("threads.search")}
+            value={searchText}
+            onChange={(event) => {
+              onSearchTextChange(event.target.value);
+              if (!event.target.value.trim()) setSearched(false);
+            }}
+          />
+        </form>
         {onOpenMemory ? (
           <ActionButton onClick={onOpenMemory} variant="quiet" aria-pressed={openPage === "memory"}>
             <SidebarIcon name="memory" />
@@ -250,69 +269,47 @@ export function ThreadSidebar({
         aria-busy={loading}
         onScroll={(event) => {
           const el = event.currentTarget;
-          if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) onLoadMore?.();
+          if (!searched && el.scrollHeight - el.scrollTop - el.clientHeight < 80) onLoadMore?.();
         }}
       >
-        {feedback}
-        {!hasLoaded ? <ThreadLoadingSkeleton scope="list" /> : null}
-        {pinned.length ? (
-          <section className="thread-group">
-            <h2>{message("chat.pinned")}</h2>
-            <ul>{pinned.map(row)}</ul>
-          </section>
-        ) : null}
-        {recentGroups(recent).map(([id, items]) => (
-          <section className="thread-group" key={id}>
-            <h2>{message(id)}</h2>
-            <ul>{items.map(row)}</ul>
-          </section>
-        ))}
-        {onLoadMore ? (
+        {searched ? (
+          <>
+            {searchFeedback}
+            <ul className="semantic-list thread-search-results">
+              {searchResults.map((thread) => (
+                <li key={thread.threadId}>
+                  {link(thread)}
+                  {thread.status === "archived" ? (
+                    <small>{message("threads.status.archived")}</small>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <>
+            {feedback}
+            {!hasLoaded ? <ThreadLoadingSkeleton scope="list" /> : null}
+            {pinned.length ? (
+              <section className="thread-group">
+                <h2>{message("chat.pinned")}</h2>
+                <ul>{pinned.map(row)}</ul>
+              </section>
+            ) : null}
+            {recentGroups(recent).map(([id, items]) => (
+              <section className="thread-group" key={id}>
+                <h2>{message(id)}</h2>
+                <ul>{items.map(row)}</ul>
+              </section>
+            ))}
+          </>
+        )}
+        {onLoadMore && !searched ? (
           <ActionButton variant="quiet" disabled={loading} onClick={onLoadMore}>
             {message("review.loadMore")}
           </ActionButton>
         ) : null}
       </div>
-      {searchOpen ? (
-        <ModalDialog
-          open={searchOpen}
-          title={message("threads.search")}
-          closeLabel={message("common.close")}
-          onClose={() => setSearchOpen(false)}
-        >
-          <form
-            className="thread-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onSearch();
-            }}
-          >
-            <input
-              data-autofocus
-              type="search"
-              autoComplete="off"
-              aria-label={message("threads.search")}
-              placeholder={message("threads.searchPlaceholder")}
-              value={searchText}
-              onChange={(event) => onSearchTextChange(event.target.value)}
-            />
-            <ActionButton type="submit" disabled={!searchText.trim()}>
-              {message("threads.search")}
-            </ActionButton>
-          </form>
-          {searchFeedback}
-          <ul className="thread-search-results">
-            {searchResults.map((thread) => (
-              <li key={thread.threadId}>
-                {link(thread)}
-                {thread.status === "archived" ? (
-                  <small>{message("threads.status.archived")}</small>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </ModalDialog>
-      ) : null}
     </div>
   );
 }

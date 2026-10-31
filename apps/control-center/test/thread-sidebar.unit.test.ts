@@ -84,7 +84,7 @@ describe("thread sidebar navigation", () => {
     const labels = [...quiet.matchAll(/<button[^>]*>(?:<svg.*?<\/svg>)?([^<]+)/g)].map(
       (match) => match[1],
     );
-    expect(labels.slice(0, 5)).toEqual(["新建对话", "搜索对话", "记忆", "提醒", "文件"]);
+    expect(labels.slice(0, 4)).toEqual(["新建对话", "记忆", "提醒", "文件"]);
     expect(quiet).toMatch(/aria-pressed="true"[^>]*><svg[^>]*>.*?<\/svg>记忆/);
     expect(quiet).not.toContain("nav-dot");
     const due = render([], false, true, { onOpenReminders: vi.fn(), remindersDue: 2 });
@@ -116,7 +116,9 @@ describe("thread sidebar navigation", () => {
 
   it("keeps search accessible and removes global filters from the empty sidebar", () => {
     const markup = render([]);
-    expect(markup).toContain("搜索对话");
+    expect(markup).toContain('role="search"');
+    expect(markup).toContain('placeholder="搜索对话"');
+    expect(markup).not.toContain("<dialog");
     expect(markup).not.toContain('aria-label="对话筛选"');
     expect(markup).not.toContain('value="archived"');
     expect(markup).not.toContain('value="all"');

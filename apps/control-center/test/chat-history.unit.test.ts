@@ -208,43 +208,7 @@ it("labels the final answer as streaming until the Run itself ends", () => {
   );
 });
 
-it("lists the memories brought to the model as steps instead of reporting no process", () => {
-  const memory = (
-    sequence: number,
-    name: string,
-    phase: ThreadExecutionRecord["phase"],
-    count: string,
-    output: string,
-  ): ThreadExecutionRecord => ({
-    id: `trace:${sequence}`,
-    itemId: `trace:${sequence}`,
-    sequence,
-    kind: "status",
-    phase,
-    name,
-    text: count,
-    input: "",
-    output,
-    occurredAt: `2026-09-11T00:00:0${sequence}Z`,
-  });
-  const html = renderRun("completed", [
-    memory(1, "memory.query", "updated", "", ""),
-    memory(2, "memory.selection", "completed", "1", "- 主人喜欢喝乌龙茶"),
-    memory(3, "context.formed", "completed", "2", "- 主人最喜欢的颜色是蓝色"),
-    record(4, "message:answer", "message", "completed", "蓝色。"),
-  ]);
-  expect(html).not.toContain("chat.noProcess");
-  expect(html.match(/data-tool-category="memory"/g)).toHaveLength(2);
-  expect(html.indexOf("step.memoryFound")).toBeLessThan(html.indexOf("step.memoryProfile"));
-  expect(html).toContain("主人喜欢喝乌龙茶");
-  expect(html).toContain("主人最喜欢的颜色是蓝色");
-  expect(html).toContain("process.took");
-  expect(renderRun("completed", [memory(1, "memory.query", "updated", "", "")])).toContain(
-    "chat.noProcess",
-  );
-});
-
-it("[I-23] shows no memory step when no memory passed the relevance threshold", () => {
+it("[UI-47] never shows the memories brought to the model as process steps", () => {
   const memory = (
     sequence: number,
     name: string,
@@ -264,11 +228,10 @@ it("[I-23] shows no memory step when no memory passed the relevance threshold", 
   });
   const html = renderRun("completed", [
     memory(1, "memory.query", "updated", ""),
-    memory(2, "memory.selection", "completed", "0"),
-    memory(3, "context.formed", "completed", "0"),
+    memory(2, "memory.selection", "completed", "2"),
+    memory(3, "context.formed", "completed", "9"),
     record(4, "message:answer", "message", "completed", "已写好 PDF。"),
   ]);
-  expect(html).not.toContain("step.memoryFound");
-  expect(html).not.toContain("step.memoryProfile");
   expect(html).not.toContain('data-tool-category="memory"');
+  expect(html).not.toContain("memory-record");
 });

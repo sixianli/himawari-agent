@@ -85,10 +85,8 @@ it("[UI-5] lets a step open only when it has something to show, and marks the on
 it("[UI-5] lists every step with a time bar and its duration, and marks the parallel search", () => {
   const html = render();
   const rows = html.split('<li class="execution-step timeline-row').slice(1);
-  expect(rows).toHaveLength(8);
+  expect(rows).toHaveLength(6);
   expect(rows.map((row) => row.match(/class="row-duration">([^<]+)</)?.[1])).toEqual([
-    "1.5s",
-    "0.0s",
     "2.8s",
     "8.4s",
     "2.9s",
@@ -97,17 +95,17 @@ it("[UI-5] lists every step with a time bar and its duration, and marks the para
     "3.7s",
   ]);
   expect(rows.every((row) => row.includes('class="timeline-track"'))).toBe(true);
-  expect(rows[5]).toContain("process.parallel");
-  expect(rows[4]).not.toContain("process.parallel");
-  expect(rows[3]).toContain("process.step.you");
-  expect(rows[7]).toContain("process.characters(count=120)");
+  expect(rows[3]).toContain("process.parallel");
+  expect(rows[2]).not.toContain("process.parallel");
+  expect(rows[1]).toContain("process.step.you");
+  expect(rows[5]).toContain("process.characters(count=120)");
   expect(html).not.toContain("最久");
 });
 
 it("[UI-5] keeps the narration as a quote under the thinking step instead of a separate row", () => {
   const html = render();
   const rows = html.split('<li class="execution-step timeline-row').slice(1);
-  expect(rows[2]).toContain('<p class="row-quote"><q>我来搜索最新的美国新闻。</q></p>');
+  expect(rows[0]).toContain('<p class="row-quote"><q>我来搜索最新的美国新闻。</q></p>');
   expect(html).not.toContain("execution-note");
 });
 
@@ -141,7 +139,7 @@ it("[UI-13] shows only the token total and the KV cache hit rate after the turn 
     { ...completedRun, status: "running", updatedAt: at(5000) },
     newsRun().filter((record) => record.sequence <= 7),
   );
-  expect(running).toMatch(/<details class="turn-process" open/);
+  expect(running).not.toMatch(/<details class="turn-process"[^>]* open/);
   expect(running).not.toContain("process-tokens");
   expect(running).toContain("execution-step timeline-row is-running");
 });

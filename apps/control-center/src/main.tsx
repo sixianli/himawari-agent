@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { ControlCenterApp } from "./app.js";
 import { installQuietScrollbars } from "./quiet-scrollbars.js";
+import { installViewportSync } from "./viewport-sync.js";
 import "./styles.css";
 import "./chat-layout.css";
 import "./review-v4.css";
@@ -15,6 +16,7 @@ if (!root) {
 }
 
 installQuietScrollbars(document);
+installViewportSync(window);
 
 createRoot(root).render(
   <StrictMode>

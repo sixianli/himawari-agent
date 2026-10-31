@@ -1814,7 +1814,6 @@ describe("thread control center interactions", () => {
       options = { ...options, route: routeForSurface("threads") };
       await render();
       await refresh();
-      await click(messages["threads.search"]);
       await input(document.querySelector('input[type="search"]'), "天气记录");
       if (result === "unauthorized") query.mockRejectedValueOnce({ status: 401 });
       if (result === "unavailable")
@@ -2346,6 +2345,36 @@ describe("thread control center interactions", () => {
   });
 });
 
+it("[UI-50] shows each message as soon as its own text arrives, newest first, without waiting for the slowest payload", async () => {
+  vi.useFakeTimers();
+  const row = (sequence: number, role: "owner" | "agent") => ({
+    messageId: `message-${sequence}`,
+    sequence,
+    role,
+    contentRef: `content-${sequence}`,
+    dataClassification: "private" as const,
+    status: "committed" as const,
+    turnId: `turn-${Math.ceil(sequence / 2)}`,
+    runId: null,
+    committedAt: NOW,
+  });
+  threadMessages = [row(1, "owner"), row(2, "agent"), row(3, "owner"), row(4, "agent")];
+  const asked: string[] = [];
+  readText.mockImplementation(async (ref: string) => {
+    asked.push(ref);
+    if (ref === "content-2") return new Promise<{ content: string }>(() => undefined);
+    return { content: ref === "title-ui" ? "组件交互测试" : `正文 ${ref}` };
+  });
+  await render();
+  await refresh();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(120);
+  });
+  expect(asked.indexOf("content-4")).toBeLessThan(asked.indexOf("content-1"));
+  expect(container.textContent).toContain("正文 content-4");
+  expect(container.textContent).toContain("正文 content-1");
+});
+
 it("keeps an explicit search from being superseded by an already scheduled list refresh", async () => {
   vi.useFakeTimers();
   options = { ...options, route: routeForSurface("threads") };
@@ -2363,7 +2392,6 @@ it("keeps an explicit search from being superseded by an already scheduled list 
         resolveSearch = resolve;
       }),
   );
-  await click(messages["threads.search"]);
   await input(document.querySelector('input[type="search"]'), "天气记录");
   await act(async () => {
     document
@@ -2382,6 +2410,9 @@ it("keeps an explicit search from being superseded by an already scheduled list 
   });
   expect(query.mock.calls.filter(([request]) => request.type === "thread.search")).toHaveLength(1);
   expect(document.querySelectorAll(".thread-search-results li")).toHaveLength(1);
+  expect(container.querySelectorAll(".thread-row")).toHaveLength(0);
+  await input(document.querySelector('input[type="search"]'), "");
+  expect(document.querySelectorAll(".thread-search-results li")).toHaveLength(0);
   expect(container.querySelectorAll(".thread-row")).toHaveLength(2);
 });
 

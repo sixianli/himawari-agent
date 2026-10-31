@@ -13,7 +13,6 @@ export const messages = {
   "review.archivePending":
     "この会話には確認待ちの操作があります。対応してからアーカイブしてください。",
   "review.system": "システムに合わせる",
-  "review.localeNote": "表示言語を変更しても、過去のメッセージは変わりません。",
   "review.loadMore": "さらに表示",
   "review.retrySend": "前の送信を再試行",
   "review.pendingSend":
@@ -29,8 +28,6 @@ export const messages = {
   "review.settings.data": "データ",
   "review.light": "ライト",
   "review.dark": "ダーク",
-  "review.localData":
-    "このブラウザーに保存するのは表示言語、外観、呼び名、未送信の下書きだけです。会話と記憶はあなたのサーバーにあります。",
   "review.archives": "アーカイブ済みの会話",
   "review.loading": "読み込み中…",
   "review.preparing": "サービスを準備中です。先に入力できます。",
@@ -118,8 +115,6 @@ export const messages = {
   "step.other": "ツール使用",
   "step.active": "{step}中",
   "step.thinking": "推論",
-  "step.memoryFound": "関連する記憶を {count} 件発見",
-  "step.memoryProfile": "毎回の会話に持っていく記憶 {count} 件を参照",
   "step.thinkingFor": "{time} 推論",
   "process.took": "所要 {time}",
   "chat.moreModels": "その他のモデル（{count}）",
@@ -177,7 +172,6 @@ export const messages = {
   "chat.search.providersChanged":
     "検索サービスの送信先が、まだ許可していないアドレスに変わったため、いったんオフにしました。下のアドレスを確認してからオンにしてください。",
   "chat.search.other": "先に確認する操作",
-  "review.archiveDescription": "アーカイブは一覧を整理し、会話の内容を保持します。",
   "review.manageArchives": "管理",
   "chat.search.enable": "ウェブ検索を許可",
   "chat.search.revoke": "ウェブ検索の許可を取り消す",
@@ -298,7 +292,6 @@ export const messages = {
   "appearance.amber": "アンバー",
   "appearance.rose": "ローズ",
   "appearance.graphite": "グラファイト",
-  "appearance.hint": "リンク、フォーカス、選択表示に適用されます。",
   "chat.untitled": "新しい会話",
   "chat.latest": "最新に戻る",
   "chat.placeholder": "続けてどうぞ。ここまでの話はちゃんと覚えてるよ 🌻",
@@ -553,7 +546,6 @@ export const messages = {
   "threads.send": "送信",
   "threads.new": "新しいスレッド",
   "threads.search": "スレッドを検索",
-  "threads.searchPlaceholder": "アクセス可能なタイトルまたはメッセージ内容を検索",
   "threads.messages": "確定済みメッセージ",
   "threads.rename": "名前を変更",
   "threads.pin": "ピン留め",
@@ -824,8 +816,6 @@ export const messages = {
   "error.currentUnavailable": "現在利用できません",
   "objects.count": "合計 {count, plural, other {# 件}}",
   "review.settings.notifications": "通知",
-  "push.intro":
-    "Himawari を見ていないとき、リマインダー・承認・タスク結果をこのデバイスに通知します。",
   "push.kind.reminder": "記憶のリマインダー",
   "push.kind.reminderHint": "覚えておいたことの時間になったとき",
   "push.kind.approval": "承認待ち",
@@ -843,10 +833,6 @@ export const messages = {
   "push.turnOff": "このデバイスでオフにする",
   "push.lastDelivered": "最終配信 {time}",
   "push.neverDelivered": "まだ配信なし",
-  "push.privacyNote":
-    "どのデバイスでも Himawari を開いている間は通知しません。ロック画面には会話のタイトルだけを表示し、回答は表示しません。機密の記憶は「非公開のリマインダーがあります」と表示します。",
-  "push.iphoneTip":
-    "すべてロック解除後に表示したい場合は、iPhone の 設定 › 通知 › プレビューを表示 を「ロックされていないときのみ」にします。",
   "push.deniedTitle": "このデバイスでは通知が拒否されています",
   "push.denied1": "アドレスバー左のサイトアイコンをクリックし、「通知」を「許可」にします。",
   "push.denied2": "ページを再読み込みして、ここに戻ります。",
@@ -938,17 +924,13 @@ export const messages = {
   "process.cacheHit": "キャッシュヒット {percent}%",
   "process.cacheHitHint":
     "このターンの入力のうち、モデル提供元が以前に処理した文脈（LLM の KV キャッシュ）をそのまま再利用した割合です。この部分は速く、安くなります。",
-  "chat.search.purpose": "最新の情報が必要な質問では、自動でウェブを検索します",
   "chat.search.whatIsSent": "検索で送られるもの",
   "chat.search.sentQuery":
     "質問は検索語に書き換えられて下のアドレスに送られます。Web ページを開くときは、その URL も送られます：",
   "chat.search.sentLimits":
     "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
-  "chat.search.otherScope":
-    "ファイルの削除、ネットワークを使うコマンドの実行、作業フォルダー外のファイルの読み書き",
   "chat.search.alwaysOn": "常にオン",
   "settings.name": "お呼びする名前",
-  "settings.nameHint": "ようこそ画面のあいさつで使います。空欄ならあいさつだけです。",
   "chat.greetNamed": "{greeting}、{name}さん",
   "chat.welcome.here": "ここにいますよ。調べもの、書きもの、それともおしゃべり？",
   "chat.welcome.hand": "今日も何か任せてください 🌻",
@@ -1034,11 +1016,7 @@ export const messages = {
   "proactive.line.judged": "モデルが {judged} 通を確認：対応 {act} · 要確認 {check} · 参考 {know}",
   "proactive.line.opened": "開きました",
   "proactive.settings.enabled": "自発的なリマインダー",
-  "proactive.settings.enabledHint":
-    "オフにするとメールの確認・記録・通知を止めます。時刻指定のリマインダーは届きます",
   "proactive.settings.quiet": "通知しない時間帯",
-  "proactive.settings.quietHint":
-    "時間帯中に判断した内容は消えず、終わったときに 1 件にまとめて通知します",
   "proactive.settings.period": "時間帯 {n}",
   "proactive.settings.periodStart": "時間帯 {n} の開始",
   "proactive.settings.periodEnd": "時間帯 {n} の終了",
@@ -1049,8 +1027,6 @@ export const messages = {
     "開始と終了を同じ時刻にはできません。この時間帯はまだ保存されていません",
   "proactive.settings.noDays": "少なくとも 1 日選んでください。この時間帯はまだ保存されていません",
   "proactive.apps.title": "接続したアプリ",
-  "proactive.apps.intro":
-    "Himawari は接続したアプリを読むだけです。アプリごとに接続・切断でき、何を読み誰に送るかも個別に示します。",
   "proactive.apps.gmail": "Gmail（読み取りのみ）",
   "proactive.apps.connectedAs": "接続済み · {account}",
   "proactive.apps.needsReconnect": "許可が切れました。再接続してください",
@@ -1069,16 +1045,12 @@ export const messages = {
   "proactive.apps.what4": "メール本文は保存せず、抜き出した対応事項と要点だけを保存します",
   "proactive.apps.what5": "切断すると Google 側の許可を取り消し、抜き出した結果をすべて削除します",
   "proactive.apps.senders": "重要な差出人",
-  "proactive.apps.sendersHint":
-    "銀行・学校・入管・区役所・応募先企業・回線・携帯会社など。ここにある差出人のメールは「対応不要」にも、プロモーションとしてのスキップにもなりません",
   "proactive.apps.sendersCount": "{count} 件",
   "proactive.apps.manage": "管理",
   "proactive.apps.sendersPlaceholder":
     "1 行に 1 件：info@bank.co.jp のようなアドレス、または @city.shinjuku.lg.jp のようなドメイン",
   "proactive.apps.sendersInvalid": "「{value}」はメールアドレスでもドメインでもありません",
   "proactive.apps.save": "保存",
-  "proactive.apps.more":
-    "今後 Notion・Slack・Outlook などを追加した場合も、ここに 1 行ずつ並びます。",
   "proactive.data.title": "自発的なリマインダーの記録",
   "proactive.data.hint": "判断の記録とメールから抜き出した結果",
   "proactive.data.delete": "すべて削除",

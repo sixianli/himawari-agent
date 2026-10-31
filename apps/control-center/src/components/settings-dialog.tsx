@@ -86,10 +86,7 @@ export function SettingsDialog({
             <>
               <h3>{message("review.settings.general")}</h3>
               <label className="setting-row">
-                <span>
-                  {message("settings.name")}
-                  <small className="setting-description">{message("settings.nameHint")}</small>
-                </span>
+                <span>{message("settings.name")}</span>
                 <input
                   className="setting-input"
                   type="text"
@@ -106,10 +103,7 @@ export function SettingsDialog({
                 />
               </label>
               <div className="setting-row">
-                <span>
-                  {message("locale.label")}
-                  <small className="setting-description">{message("review.localeNote")}</small>
-                </span>
+                <span>{message("locale.label")}</span>
                 <Dropdown
                   label={message("locale.label")}
                   value={locale}
@@ -147,10 +141,7 @@ export function SettingsDialog({
                 </fieldset>
               </div>
               <div className="setting-row setting-row-top">
-                <span id="setting-accent">
-                  {message("appearance.accent")}
-                  <small className="setting-description">{message("appearance.hint")}</small>
-                </span>
+                <span id="setting-accent">{message("appearance.accent")}</span>
                 <fieldset className="accent-swatches" aria-labelledby="setting-accent">
                   {ACCENT_COLORS.map((color) => (
                     <label key={color} data-accent={color} data-checked={accent === color}>
@@ -173,10 +164,7 @@ export function SettingsDialog({
           ) : tab === "notifications" ? (
             notifications
           ) : (
-            <>
-              {data}
-              <p className="settings-note">{message("review.localData")}</p>
-            </>
+            data
           )}
         </section>
       </div>
