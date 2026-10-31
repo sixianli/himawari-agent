@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { SandboxHostFailureDetail } from "@himawari-agent/execution-contracts";
+import { JOB_HOST_MAXIMUM_SESSION_MS } from "./job-host-limits.ts";
 import type { SandboxPolicyInput } from "./policy.ts";
 import type { ResourceLimits, ResourceObservation } from "./resource-observer.ts";
 
@@ -143,7 +144,7 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
     !Number.isFinite(Date.parse(deadline)) ||
     new Date(deadline).toISOString() !== deadline ||
     Date.parse(deadline) <= Date.now() ||
-    Date.parse(deadline) > Date.now() + 3600000
+    Date.parse(deadline) > Date.now() + JOB_HOST_MAXIMUM_SESSION_MS
   )
     throw new Error("JOB_HOST_DEADLINE_INVALID");
   for (const [key, max] of [

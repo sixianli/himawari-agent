@@ -9,6 +9,7 @@ vi.mock("@himawari-agent/platform-node", async (importOriginal) => ({
   verifySandboxHost: fixture.verify,
 }));
 
+import { JOB_HOST_MAXIMUM_SESSION_MS } from "@himawari-agent/runtime-sandbox/job-host-limits";
 import {
   createProductionSandboxServices,
   sandboxEnvironmentDeadline,
@@ -148,27 +149,23 @@ it("[BG-8] keeps a Run's sandbox environment alive for a bash command started at
   );
 });
 
-it("[BG-10] a prewarmed environment never needs replacing for a bash command started later in the same Run", () => {
+it("[BG-10] a prewarmed environment is accepted by the job host and covers a bash command started within 30 minutes", () => {
   const backgroundMs = 1_800_000;
-  const runDeadline = "2026-10-31T15:52:22.000Z";
+  const prewarmAt = Date.parse("2026-10-31T15:52:22.000Z");
   const grantExpires = "2026-11-30T00:00:00.000Z";
-  const prewarm = sandboxPrewarmEnvironmentDeadline(runDeadline, grantExpires, backgroundMs);
-  for (const offsetMs of [0, 5_000, 300_000, 899_000]) {
-    const commandStart = Date.parse(runDeadline) - 900_000 + offsetMs;
-    const bashCallDeadline = new Date(commandStart + backgroundMs).toISOString();
-    expect(Date.parse(bashCallDeadline)).toBeLessThanOrEqual(
-      Date.parse(runDeadline) + backgroundMs,
-    );
-    const bashEnvironment = sandboxEnvironmentDeadline(
-      bashCallDeadline,
-      grantExpires,
-      backgroundMs,
-    );
+  const prewarm = sandboxPrewarmEnvironmentDeadline(
+    new Date(prewarmAt).toISOString(),
+    grantExpires,
+  );
+  expect(Date.parse(prewarm) - prewarmAt).toBeLessThanOrEqual(JOB_HOST_MAXIMUM_SESSION_MS);
+  for (const gapMs of [0, 5_000, 300_000, 1_799_000]) {
+    const commandStart = prewarmAt + gapMs;
+    const commandDeadline = new Date(commandStart + backgroundMs).toISOString();
     expect(
       srtEnvironmentRotationReason({
         existingDeadlineAt: prewarm,
         existingPolicyDigest: "digest-1",
-        requestedDeadlineAt: bashEnvironment,
+        requestedDeadlineAt: commandDeadline,
         policyDigest: "digest-1",
         now: new Date(commandStart).toISOString(),
       }),
@@ -176,12 +173,26 @@ it("[BG-10] a prewarmed environment never needs replacing for a bash command sta
   }
 });
 
+it("[BG-10] a bash command that starts more than 30 minutes after the prewarm still gets a new environment", () => {
+  const prewarmAt = Date.parse("2026-10-31T15:52:22.000Z");
+  const prewarm = sandboxPrewarmEnvironmentDeadline(
+    new Date(prewarmAt).toISOString(),
+    "2026-11-30T00:00:00.000Z",
+  );
+  const commandStart = prewarmAt + 1_860_000;
+  expect(
+    srtEnvironmentRotationReason({
+      existingDeadlineAt: prewarm,
+      existingPolicyDigest: "digest-1",
+      requestedDeadlineAt: new Date(commandStart + 1_800_000).toISOString(),
+      policyDigest: "digest-1",
+      now: new Date(commandStart).toISOString(),
+    }),
+  ).toBe("expansion");
+});
+
 it("[BG-10] the prewarmed environment is still capped by the directory grant", () => {
   expect(
-    sandboxPrewarmEnvironmentDeadline(
-      "2026-10-31T15:52:22.000Z",
-      "2026-10-31T16:00:00.000Z",
-      1_800_000,
-    ),
+    sandboxPrewarmEnvironmentDeadline("2026-10-31T15:52:22.000Z", "2026-10-31T16:00:00.000Z"),
   ).toBe("2026-10-31T16:00:00.000Z");
 });

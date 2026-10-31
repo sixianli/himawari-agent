@@ -59,6 +59,7 @@ export interface ProductionSrtTaskEnvironmentAcquireInput {
     readonly binding: Pick<SandboxExecutionPlanCandidateV2["binding"], "qualificationRef">;
   };
   readonly deadlineAt: string;
+  readonly commandDeadlineAt?: string;
 }
 
 const ENVIRONMENT_RESOURCES = {
@@ -296,7 +297,7 @@ export function createProductionTaskEnvironments(options: {
       const rotation = srtEnvironmentRotationReason({
         existingDeadlineAt: existing.deadlineAt,
         existingPolicyDigest: existing.locator?.effectivePolicyDigest,
-        requestedDeadlineAt: input.deadlineAt,
+        requestedDeadlineAt: input.commandDeadlineAt ?? input.deadlineAt,
         policyDigest,
         now: clock.now(),
       });
