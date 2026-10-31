@@ -116,6 +116,20 @@ export function srtEnvironmentPolicyDigest(
   });
 }
 
+export function srtEnvironmentRotationReason(input: {
+  readonly existingDeadlineAt: string;
+  readonly existingPolicyDigest: string | undefined;
+  readonly requestedDeadlineAt: string;
+  readonly policyDigest: string;
+  readonly now: string;
+}): "expiry" | "expansion" | "revocation" | null {
+  if (Date.parse(input.existingDeadlineAt) <= Date.parse(input.now)) return "expiry";
+  if (input.existingPolicyDigest !== input.policyDigest) return "revocation";
+  if (Date.parse(input.existingDeadlineAt) < Date.parse(input.requestedDeadlineAt))
+    return "expansion";
+  return null;
+}
+
 export function createProductionTaskEnvironments(options: {
   readonly configuration: ProductionTaskEnvironments;
   readonly store: ExecutionEnvironmentStorePort;
@@ -279,11 +293,17 @@ export function createProductionTaskEnvironments(options: {
     };
     const existing = await primaryForRun(input.runId);
     if (existing && (existing.state === "ready" || existing.state === "running")) {
-      const expired = Date.parse(existing.deadlineAt) <= Date.parse(clock.now());
-      if (expired || existing.locator?.effectivePolicyDigest !== policyDigest)
+      const rotation = srtEnvironmentRotationReason({
+        existingDeadlineAt: existing.deadlineAt,
+        existingPolicyDigest: existing.locator?.effectivePolicyDigest,
+        requestedDeadlineAt: input.deadlineAt,
+        policyDigest,
+        now: clock.now(),
+      });
+      if (rotation)
         return coordinator.rotate({
           environmentId: existing.identity.environmentId,
-          reason: expired ? "expiry" : "revocation",
+          reason: rotation,
           stoppedResourceRefs: [],
           ...next,
         });

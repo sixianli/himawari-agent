@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { srtEnvironmentPolicyDigest } from "../src/production-task-environments.ts";
+import {
+  srtEnvironmentPolicyDigest,
+  srtEnvironmentRotationReason,
+} from "../src/production-task-environments.ts";
 
 type DigestInput = Parameters<typeof srtEnvironmentPolicyDigest>[0];
 
@@ -61,5 +64,61 @@ describe("SRT task environment reuse key", () => {
     ["a new grant expiry", input({}, { expiresAt: "2026-10-27T00:00:00.000Z" })],
   ])("replaces the environment after %s", (_name, changed) => {
     expect(srtEnvironmentPolicyDigest(changed)).not.toBe(srtEnvironmentPolicyDigest(input()));
+  });
+});
+
+describe("SRT task environment reuse deadline", () => {
+  const now = "2026-10-31T08:04:30.000Z";
+  const runDeadline = "2026-10-31T08:09:17.000Z";
+  const bashDeadline = "2026-10-31T08:34:27.000Z";
+  const base = {
+    existingPolicyDigest: "digest-1",
+    policyDigest: "digest-1",
+    now,
+  };
+
+  it("[BG-9] replaces a prewarmed environment that expires before the bash command it must host", () => {
+    expect(
+      srtEnvironmentRotationReason({
+        ...base,
+        existingDeadlineAt: runDeadline,
+        requestedDeadlineAt: bashDeadline,
+      }),
+    ).toBe("expansion");
+  });
+
+  it("[BG-9] keeps an environment that outlives the command", () => {
+    expect(
+      srtEnvironmentRotationReason({
+        ...base,
+        existingDeadlineAt: "2026-10-31T08:39:17.000Z",
+        requestedDeadlineAt: bashDeadline,
+      }),
+    ).toBeNull();
+    expect(
+      srtEnvironmentRotationReason({
+        ...base,
+        existingDeadlineAt: bashDeadline,
+        requestedDeadlineAt: bashDeadline,
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps the earlier reasons: expiry first, then a changed policy", () => {
+    expect(
+      srtEnvironmentRotationReason({
+        ...base,
+        existingDeadlineAt: now,
+        requestedDeadlineAt: bashDeadline,
+      }),
+    ).toBe("expiry");
+    expect(
+      srtEnvironmentRotationReason({
+        ...base,
+        existingPolicyDigest: "digest-2",
+        existingDeadlineAt: runDeadline,
+        requestedDeadlineAt: bashDeadline,
+      }),
+    ).toBe("revocation");
   });
 });

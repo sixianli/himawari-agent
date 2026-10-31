@@ -1543,31 +1543,127 @@ export class ProductionSandboxExecutionV2 {
         }),
       });
     };
+    const settle = async (operation: object, namespaceSwept: boolean) => {
+      const latest = (await this.rpc(entry, { kind: "read" })).record;
+      if (latest.phase !== "bound" || latest.facts.resource.supervision !== "initializing")
+        throw new Error("SANDBOX_BINDING_LOST");
+      const stoppingFacts = sandboxExecutionFactsSchema.parse({
+        ...latest.facts,
+        ...operation,
+        resource: {
+          ...latest.facts.resource,
+          sequence: latest.facts.resource.sequence + 1,
+          occurredAt: this.options.clock.now(),
+          supervision: "stopping",
+          cleanup: "pending",
+          reasonCode: "SRT_COMMAND_SETTLED",
+        },
+      });
+      const stopping = await this.rpc(entry, {
+        kind: "append",
+        expectedSequence: latest.facts.resource.sequence,
+        expectedOperationRevision: latest.operationRevision,
+        facts: stoppingFacts,
+      });
+      const { reasonCode: _reason, ...resourceFields } =
+        stoppingFacts.resource as typeof stoppingFacts.resource & { reasonCode?: string };
+      await this.rpc(entry, {
+        kind: "append",
+        expectedSequence: stoppingFacts.resource.sequence,
+        expectedOperationRevision: stopping.record.operationRevision,
+        facts: sandboxExecutionFactsSchema.parse({
+          ...stoppingFacts,
+          resource: {
+            ...resourceFields,
+            sequence: stoppingFacts.resource.sequence + 1,
+            occurredAt: this.options.clock.now(),
+            supervision: "released",
+            cleanup: "process_group_gone",
+            ...(namespaceSwept ? { cleanupScope: "pid_namespace" } : {}),
+            evidence: {
+              ...taskEnvironmentCallEvidence({
+                environmentId: environment.identity.environmentId,
+                invocationId: plan.identity.invocationId,
+                createIntentId: environment.createIntentId,
+                runtimeInstanceId: environment.locator.runtimeInstanceId,
+                runtimeEnvironmentId: environment.locator.runtimeEnvironmentId,
+              }),
+              qualificationRef: plan.binding.qualificationRef,
+              profileRef: plan.binding.profileRef,
+              validUntil: plan.effectiveDeadlineAt,
+              subject: {
+                kind: "task_environment",
+                environmentId: environment.identity.environmentId,
+              },
+            },
+          },
+        }),
+      });
+    };
     let run: ReturnType<SrtTaskEnvironmentSession["run"]> | undefined;
     try {
-      run = session.run(
-        {
-          attemptId: plan.identity.attemptId,
-          policyDigest: compiled.policyDigest,
-          deadlineAt: plan.effectiveDeadlineAt,
-          maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
-          inputBase64: runnerInput.toString("base64"),
-          resourceLimits: {
-            maxCpuTimeMs: plan.resourceCeiling.maxCpuTimeMs,
-            maxMemoryBytes: plan.resourceCeiling.maxMemoryBytes,
+      try {
+        run = session.run(
+          {
+            attemptId: plan.identity.attemptId,
+            policyDigest: compiled.policyDigest,
+            deadlineAt: plan.effectiveDeadlineAt,
+            maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+            inputBase64: runnerInput.toString("base64"),
+            resourceLimits: {
+              maxCpuTimeMs: plan.resourceCeiling.maxCpuTimeMs,
+              maxMemoryBytes: plan.resourceCeiling.maxMemoryBytes,
+            },
           },
-        },
-        async () => {
-          if (entry.cancelled || this.closed) throw new Error("SANDBOX_STOPPED");
-          const latest = (await this.freshResolve(entry)).resolvedScope;
-          if (
-            entry.cancelled ||
-            this.closed ||
-            JSON.stringify(latest) !== JSON.stringify(resolvedScope)
-          )
-            throw new Error("SANDBOX_SCOPE_CHANGED");
-        },
-      );
+          async () => {
+            if (entry.cancelled || this.closed) throw new Error("SANDBOX_STOPPED");
+            const latest = (await this.freshResolve(entry)).resolvedScope;
+            if (
+              entry.cancelled ||
+              this.closed ||
+              JSON.stringify(latest) !== JSON.stringify(resolvedScope)
+            )
+              throw new Error("SANDBOX_SCOPE_CHANGED");
+          },
+        );
+      } catch (error) {
+        const reason =
+          error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
+            ? error.message
+            : "SRT_COMMAND_NOT_LAUNCHED";
+        console.error(
+          JSON.stringify({
+            event: "sandbox.command.not_launched",
+            runId: plan.identity.runId,
+            reason,
+            at: new Date().toISOString(),
+          }),
+        );
+        const empty = new Uint8Array();
+        const ref = await this.options.payloads.writeOutput(
+          entry.invocation,
+          empty,
+          "application/octet-stream",
+        );
+        await settle(
+          {
+            result: {
+              ...resultFields(),
+              kind: "error",
+              output: {
+                ref,
+                digest: createHash("sha256").update(empty).digest("hex"),
+                byteLength: 0,
+              },
+              reasonCode: SANDBOX_TOOL_NOT_STARTED,
+              termination: { type: "failure" },
+            },
+            effect: { kind: "unknown", reasonCode: "SANDBOX_NOT_STARTED" },
+          },
+          false,
+        );
+        return this.unknown(entry);
+      }
       const active = run;
       void active.started.then(
         () => timing.finish("command_started"),
@@ -1591,7 +1687,18 @@ export class ProductionSandboxExecutionV2 {
           await this.resolveRecord(entry);
           if (finished) break;
           await flush(false);
-        } catch {
+        } catch (error) {
+          console.error(
+            JSON.stringify({
+              event: "sandbox.command.cancelled_by_poll_error",
+              runId: plan.identity.runId,
+              reason:
+                error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
+                  ? error.message
+                  : "SRT_POLL_FAILED",
+              at: new Date().toISOString(),
+            }),
+          );
           active.cancel("cancelled");
         }
       }
@@ -1620,6 +1727,19 @@ export class ProductionSandboxExecutionV2 {
         outcome.taskProcessExited &&
         outcome.stdioClosed &&
         outcome.exitCode !== null;
+      if (!knownExit)
+        console.error(
+          JSON.stringify({
+            event: "sandbox.exit.unknown",
+            runId: plan.identity.runId,
+            taskStarted: outcome.taskStarted === true,
+            taskProcessExited: outcome.taskProcessExited === true,
+            stdioClosed: outcome.stdioClosed === true,
+            exitCodeKnown: outcome.exitCode !== null,
+            reason: typeof outcome.reason === "string" ? outcome.reason.slice(0, 64) : null,
+            at: new Date().toISOString(),
+          }),
+        );
       const command = plan.operationContract.kind === "command";
       const evidence = () => ({
         bytes: outcome.stdout,
@@ -1687,71 +1807,25 @@ export class ProductionSandboxExecutionV2 {
                   result: { ...fields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
                   effect: { kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
                 };
-      const latest = (await this.rpc(entry, { kind: "read" })).record;
-      if (latest.phase !== "bound" || latest.facts.resource.supervision !== "initializing")
-        throw new Error("SANDBOX_BINDING_LOST");
-      const stoppingFacts = sandboxExecutionFactsSchema.parse({
-        ...latest.facts,
-        ...operation,
-        resource: {
-          ...latest.facts.resource,
-          sequence: latest.facts.resource.sequence + 1,
-          occurredAt: this.options.clock.now(),
-          supervision: "stopping",
-          cleanup: "pending",
-          reasonCode: "SRT_COMMAND_SETTLED",
-        },
-      });
-      const stopping = await this.rpc(entry, {
-        kind: "append",
-        expectedSequence: latest.facts.resource.sequence,
-        expectedOperationRevision: latest.operationRevision,
-        facts: stoppingFacts,
-      });
-      const { reasonCode: _reason, ...resourceFields } =
-        stoppingFacts.resource as typeof stoppingFacts.resource & { reasonCode?: string };
-      await this.rpc(entry, {
-        kind: "append",
-        expectedSequence: stoppingFacts.resource.sequence,
-        expectedOperationRevision: stopping.record.operationRevision,
-        facts: sandboxExecutionFactsSchema.parse({
-          ...stoppingFacts,
-          resource: {
-            ...resourceFields,
-            sequence: stoppingFacts.resource.sequence + 1,
-            occurredAt: this.options.clock.now(),
-            supervision: "released",
-            cleanup: "process_group_gone",
-            ...(outcome.namespaceSwept ? { cleanupScope: "pid_namespace" } : {}),
-            evidence: {
-              ...taskEnvironmentCallEvidence({
-                environmentId: environment.identity.environmentId,
-                invocationId: plan.identity.invocationId,
-                createIntentId: environment.createIntentId,
-                runtimeInstanceId: environment.locator.runtimeInstanceId,
-                runtimeEnvironmentId: environment.locator.runtimeEnvironmentId,
-              }),
-              qualificationRef: plan.binding.qualificationRef,
-              profileRef: plan.binding.profileRef,
-              validUntil: plan.effectiveDeadlineAt,
-              subject: {
-                kind: "task_environment",
-                environmentId: environment.identity.environmentId,
-              },
-            },
-          },
-        }),
-      });
+      await settle(operation, outcome.namespaceSwept === true);
       return this.unknown(entry);
     } catch (error) {
       run?.cancel("cancelled");
       if (run) await run.result.catch(() => undefined);
+      const reason =
+        error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
+          ? error.message
+          : "SRT_EXECUTION_FAILED";
+      console.error(
+        JSON.stringify({
+          event: "sandbox.execution.lost",
+          runId: plan.identity.runId,
+          reason,
+          at: new Date().toISOString(),
+        }),
+      );
       try {
-        await lost(
-          error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
-            ? error.message
-            : "SRT_EXECUTION_FAILED",
-        );
+        await lost(reason);
       } catch {}
       return this.unknown(entry);
     }
