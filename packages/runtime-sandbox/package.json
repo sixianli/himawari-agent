@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./control": "./src/job-host-control-client.ts",
     "./job-host-limits": "./src/job-host-limits.ts",
+    "./job-host-protocol": "./src/job-host-protocol.ts",
     "./public-address": "./src/public-egress-address.ts"
   },
   "dependencies": {
