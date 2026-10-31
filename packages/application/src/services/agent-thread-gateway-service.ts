@@ -1,5 +1,5 @@
 import type {
-  ThreadExecutionChangedEvent,
+  ThreadExecutionStreamEvent,
   ThreadExecutionEventsSubscription,
   ThreadGatewayEvent,
   ThreadGatewayRequestResult,
@@ -109,7 +109,7 @@ export class AgentThreadGatewayService implements AgentThreadGatewayPort {
     authentication: GatewayAuthenticationContext,
     subscription: ThreadExecutionEventsSubscription,
     signal?: AbortSignal,
-  ): AsyncIterable<ThreadExecutionChangedEvent> {
+  ): AsyncIterable<ThreadExecutionStreamEvent> {
     const watch = this.#dependencies.reads.watchExecution?.bind(this.#dependencies.reads);
     if (!watch)
       throw new ApplicationPortError(
@@ -131,7 +131,7 @@ export class AgentThreadGatewayService implements AgentThreadGatewayPort {
         const tick = new Promise<null>((resolve) => {
           timer = setTimeout(() => resolve(null), 1000);
         });
-        let item: IteratorResult<ThreadExecutionChangedEvent> | null;
+        let item: IteratorResult<ThreadExecutionStreamEvent> | null;
         try {
           item = await Promise.race([pending, tick]);
         } finally {

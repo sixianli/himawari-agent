@@ -673,6 +673,103 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it("shows pushed answer text while the model writes and keeps records read during a detail refresh", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    const sources: FakeEventSource[] = [];
+    stubEventSource(sources);
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionEventsAvailable: true,
+      },
+    };
+    const answerRecord = (sequence: number, text: string) => ({
+      id: `message-${sequence}`,
+      sequence,
+      itemId: "message:live",
+      kind: "message",
+      phase: "updated",
+      name: "model",
+      text,
+      input: "",
+      output: "",
+      occurredAt: NOW,
+    });
+    let records: ReturnType<typeof answerRecord>[] = [];
+    let slowRecords = false;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution") {
+        if (slowRecords) await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records: records.filter((record) => record.sequence > request.payload.afterSequence),
+          },
+        };
+      }
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    await act(async () => {
+      source.open();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const pushed = (offset: number, text: string) => ({
+      ...executionChanged("run-ui", 3, 1),
+      type: "thread.execution_text",
+      messageId: `execution-text:${offset}`,
+      payload: {
+        threadId: "thread-ui",
+        runId: "run-ui",
+        itemId: "message:live",
+        offset,
+        text,
+        observedAt: "2026-09-14T00:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      source.emit("thread.execution_text", pushed(0, "向日葵"));
+      source.emit("thread.execution_text", pushed(3, "的一生"));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(container.querySelector(".thread-message-agent")?.textContent).toContain("向日葵的一生");
+
+    records = [answerRecord(1, "向日葵的一生，从种子开始")];
+    slowRecords = true;
+    for (let revision = 4; revision < 14; revision++) {
+      await act(async () => {
+        source.emit("thread.execution_changed", executionChanged("run-ui", revision, revision));
+        await vi.advanceTimersByTimeAsync(400);
+      });
+    }
+    expect(container.querySelector(".thread-message-agent")?.textContent).toContain(
+      "向日葵的一生，从种子开始",
+    );
+  });
+
   it("[R2-D3] shows a deadline-ended Run with an unknown tool and no active or cleanup action", async () => {
     runs = [
       {

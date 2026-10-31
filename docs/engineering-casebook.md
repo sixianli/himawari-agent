@@ -99,6 +99,7 @@ date: "2026-10-26"
   72. [搜索对话时好时坏：搜索前才临时建索引，被数据库队列拖到 20 秒](#case-search-index-background)
   73. [很简单的问题用了 28 秒：读和写挤在同一条数据库队里](#case-read-write-lanes)
   74. [仓库里的规则和技能，云端线程到底读到了哪些](#case-cloud-thread-loading)
+  75. [回答写完才整块出现：文字从不直推，拉回来的结果又被当成过期丢掉](#case-streaming-answers)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -123,11 +124,11 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
-| Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
+| Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci)、[云端线程读到哪些规则和技能](#case-cloud-thread-loading) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
@@ -4581,7 +4582,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **后续（2026-10-31，日本时间）：“未查清”的原因查清了**
 
-案例里“命令为什么被记成退出未知”当时没有数据。第二十二版上线后同样的错误必现，我们才查到原因（[事故 I-49](incidents-and-gates.md#incidents)，[ADR 0139](adr/0139-prewarmed-environment-outlives-background-commands.md)）：命令根本没启动。预热提前建好的沙箱环境只给 5 分钟寿命，而 bash 命令的期限是 30 分钟，沙箱规定命令期限不能晚于环境期限，于是 bash 一到就被拒绝，被记成“结果不明”，整轮终止。
+案例里“命令为什么被记成退出未知”当时没有数据。第二十二版上线后同样的错误必现，我们才查到原因（[事故 I-50](incidents-and-gates.md#incidents)，[ADR 0139](adr/0139-prewarmed-environment-outlives-background-commands.md)）：命令根本没启动。预热提前建好的沙箱环境只给 5 分钟寿命，而 bash 命令的期限是 30 分钟，沙箱规定命令期限不能晚于环境期限，于是 bash 一到就被拒绝，被记成“结果不明”，整轮终止。
 
 - 怎么查的：让 Mac 线程分多步只读查询生产库——先看记录里的结果种类（SANDBOX_EXIT_UNKNOWN），再看每个序号的原因码（`SRT_ENVIRONMENT_DEADLINE_EXCEEDED`），最后对比所有环境记录的“创建后多少分钟到期”（预热上线后全是约 4.9 分钟，此前 34.7 或 60 分钟）。中间我读错过一次：以为记录里存的环境截止时间就是被比较的那个，实际它是绑定时从命令计划抄过来的，永远相等；真正比较的是环境自己的期限。数据来源：`prewarm-vs-bash-result.txt`、`observation-reasons-result.txt`。
 - 为什么上一次没查出：I-41 的修复把重心放在“收尾别等 30 分钟”，提交说明里写了“未查清”，但没有把它登记成要继续追的事；而且这个错误路径上所有日志都被吞掉了。这次补了四处日志。
@@ -4790,6 +4791,66 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 [返回目录](#contents)
 
+
+<a id="case-streaming-answers"></a>
+
+## 案例 75：回答写完才整块出现：文字从不直推，拉回来的结果又被当成过期丢掉
+
+**背景与现象**
+
+2026-10-31，Andy 在生产第二十二版上说，回答“是一整块的丢出来，很唐突”，不像 ChatGPT 或 Claude 逐字出现。在他的 Chrome 里打开生产网页，注入一段只读脚本，记录回答区字数（MutationObserver，浏览器监听页面变化的接口）、推送通知和每个接口请求的时间，问了两个长回答。第二轮页面自报“写回答 1261 字 7.4 秒”：这 7.4 秒里收到 19 次“有变化”的推送通知，回答区却一直是 0 字，最后一次跳出 1229 字。
+
+**根因**
+
+两层，都已对照代码确认。
+
+1. 文字从来不是推给网页的。模型那一头是真流式（第二十二版另一个样本 1.8 秒落库 20 条消息记录），但网页拿到它要经过“服务端每 500 毫秒查一次库，有新记录只通知‘有变化’，网页等 80 毫秒再发请求拉记录”。
+2. 拉回来的结果被丢了。过程记录查询要 2.7–3.8 秒，返回时拿“对话详情刷新编号”判断是否过期；详情约每秒刷新一次，编号每次加一，于是写作期间每次查询都被当成过期丢弃，缓存不更新，下一次从头读，响应从 5.1 KB 涨到 11.1 KB、15.3 KB。写完、详情不再刷新后，最后一次查询才被采用。
+
+最初我只看代码，推测“短回答只来得及拉两三次所以像整块”，实测证明更严重：不是慢，是一个字都不显示。
+
+**我们的方案**（[ADR 0138](adr/0138-push-answer-text-as-it-is-written.md)）
+
+- 进程内实时消息源：运行时每收到一段文字，把到此为止的全文交给它；它算出新增的字和起始位置，经已有的 SSE（Server-Sent Events，服务器单向推送的长连接）推给网页。
+- 推出去之前用和落库相同的规则脱敏，并把末尾“像密钥开头”的几个字符先扣住，被拆成两段到达的密钥也推不出去。
+- 过程记录写入后立刻叫醒推送循环，500 毫秒轮询只做后备。
+- 网页把增量接上，用 `requestAnimationFrame`（浏览器每帧回调一次的接口）每帧最多刷新一次；位置对不上就退回拉取；这一轮结束后只认落库的最终回答。
+- 查询结果改用独立编号，只在切换对话时作废。
+
+**方案讨论与备选**
+
+- 只修丢弃：最小改动，但字仍每 0.5 秒以上跳一次。Andy 要“和大厂一样”，放弃。
+- 轮询缩到 50 毫秒：每个页面每秒 20 次读库，生产出过数据库排队事故，放弃。
+- 每次推全文：实现简单，流量随长度平方增长，改推增量加位置。
+- 过程区每条记录也推内容：要复制一份投影逻辑，先用“写入即通知 + 增量拉取”。
+
+**业界主流做法**
+
+- ✅ Anthropic 流式文档（https://platform.claude.com/docs/en/build-with-claude/streaming ，2026-10-31 打开）：“you can set `"stream": true` to incrementally stream the response using server-sent events (SSE)”。
+- ✅ OpenAI 流式文档（https://developers.openai.com/api/docs/guides/streaming-responses ，2026-10-31 打开）：“HTTP streaming (`stream=true`) over server-sent events (SSE)”，增量事件 `response.output_text.delta`。
+- ✅ Vercel AI SDK 排错页（https://ai-sdk.dev/docs/troubleshooting/react-maximum-update-depth-exceeded ，2026-10-31 打开）：“Throttle the messages and data updates to 50ms”。
+- ✅ MDN requestAnimationFrame（https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame ，2026-10-31 打开）：频率 “will generally match the display refresh rate”。
+- ChatGPT、claude.ai 网页内部怎么推：没找到一手出处，不引用。
+
+**对比与取舍**
+
+大厂 API 把文字增量直接放在流里。我们多了一层“落库是权威记录”的要求（审计、断线补齐、重启恢复），所以做成两条路：直推只负责“更快显示”，落库仍是最终依据，两者对不上时以落库为准。代价是推送连接上小事件变多，推送循环在网页读得慢时自动合并同一条消息的增量。
+
+**结果数据**
+
+- 修前（生产实测，2026-10-31 18:43 JST）：写回答 7.4 秒期间网页 0 字，结束时一次 1229 字；过程记录查询每次 2.7–3.8 秒。
+- 修后：未测量（上线后用同一脚本复测）。
+- 测试：把查询编号改回详情刷新编号时，`thread-interactions.unit.test.ts` 的新用例失败，改后通过。
+
+**相关 ADR/PR**
+
+[ADR 0138](adr/0138-push-answer-text-as-it-is-written.md)、事故清单 I-49。
+
+**面试 30 秒版**
+
+“用户说回答整块出现。我先读代码，以为是轮询太慢；去生产页面注入脚本实测，发现写回答的 7 秒里一个字都没显示：查询要 3 秒，详情每秒刷新一次，查询结果每次都被判成过期丢掉。修法是对齐大厂 API 的做法，文字增量经 SSE 直推，推之前按同样规则脱敏，并扣住可能是密钥开头的尾巴；落库仍是权威记录，用来断线补齐。教训是先在真实页面上测，再下结论。”
+
+[返回目录](#contents)
 
 <a id="small-cases"></a>
 

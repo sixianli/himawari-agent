@@ -29,10 +29,29 @@ export interface OutgoingMessage {
   readonly failed: boolean;
 }
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
+export interface LiveAnswerText {
+  readonly itemId: string;
+  readonly text: string;
+}
+
+function livePartial(
+  run: RunSummary,
+  items: ReturnType<typeof executionItems>,
+  partialItem: ReturnType<typeof executionItems>[number] | undefined,
+  live: LiveAnswerText | undefined,
+): string | undefined {
+  const recorded = partialItem?.text;
+  if (!live || isTerminalRun(run)) return recorded;
+  const known = items.find((item) => item.itemId === live.itemId);
+  if (known && (known !== partialItem || isNarration(known, items))) return recorded;
+  return live.text.length > (recorded?.length ?? 0) ? live.text : recorded;
+}
+
 export function ChatHistory({
   detail,
   contentByRef,
   execution,
+  liveTexts = {},
   executionStates,
   executionStateAvailable,
   connection,
@@ -60,6 +79,7 @@ export function ChatHistory({
   readonly onRetry?: (() => void) | undefined;
   readonly contentByRef: Readonly<Record<string, string>>;
   readonly execution: Readonly<Record<string, readonly ThreadExecutionRecord[]>>;
+  readonly liveTexts?: Readonly<Record<string, LiveAnswerText>> | undefined;
   readonly executionStates?: Readonly<Record<string, ThreadExecutionState>> | undefined;
   readonly executionStateAvailable?: boolean | undefined;
   readonly connection: string;
@@ -84,9 +104,10 @@ export function ChatHistory({
   useEffect(() => {
     void contentByRef;
     void execution;
+    void liveTexts;
     if (following.current && scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [contentByRef, execution]);
+  }, [contentByRef, execution, liveTexts]);
   const outgoingKey = outgoing?.key;
   useEffect(() => {
     if (!outgoingKey || !scrollRef.current) return;
@@ -142,7 +163,9 @@ export function ChatHistory({
           const partialItem = items
             .filter((item) => item.kind === "message" && !isNarration(item, items))
             .at(-1);
-          const partial = partialItem?.text;
+          const partial = group.run
+            ? livePartial(group.run, items, partialItem, liveTexts[group.run.runId])
+            : partialItem?.text;
           return (
             <div className="chat-turn" key={key} data-run-id={group.run?.runId}>
               {group.messages

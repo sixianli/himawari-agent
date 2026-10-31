@@ -23,7 +23,7 @@ date: "2026-10-31"
 
 ## 背景
 
-2026-10-31（日本时间），Andy 在第二十二版让 Himawari 读文档技能，命令是 `cat` 技能文件。整轮以“有一条命令的结果没能确认，本轮已结束”收场，换个对话再试结果一样。查生产数据库和日志后确认命令根本没有启动（事故 [I-49](../incidents-and-gates.md#incidents)）：
+2026-10-31（日本时间），Andy 在第二十二版让 Himawari 读文档技能，命令是 `cat` 技能文件。整轮以“有一条命令的结果没能确认，本轮已结束”收场，换个对话再试结果一样。查生产数据库和日志后确认命令根本没有启动（事故 [I-50](../incidents-and-gates.md#incidents)）：
 
 - 每次失败的沙箱记录相同：环境建好后 0.6 到 1.1 秒状态变成“丢失”，原因码 `SRT_ENVIRONMENT_DEADLINE_EXCEEDED`，没有输出。
 - 这个原因码只在 `apps/execution-worker/src/production-srt-task-environment-backend.ts` 的 `run` 里产生：命令的期限晚于环境的期限就拒绝启动。
@@ -70,7 +70,7 @@ date: "2026-10-31"
 
 ## 关联文档
 
-- 事故：[I-49](../incidents-and-gates.md#incidents)、[I-41](../incidents-and-gates.md#incidents)
+- 事故：[I-50](../incidents-and-gates.md#incidents)、[I-41](../incidents-and-gates.md#incidents)
 - [ADR 0098：后台 bash 命令](0098-move-long-bash-commands-to-background.md)
 - [ADR 0118：预装文档库和文档技能](0118-preinstalled-document-tools-and-document-skill.md)
 - [ADR 0127：结果未知且资源已释放时立即收尾](0127-settle-unknown-result-run-once-resources-released.md)
