@@ -33,9 +33,10 @@
 <a id="authorization-deploys-and-merges"></a>
 ## 授权、上线和合并
 
-- 动生产机或 Andy 的 Mac 的操作，只认 Andy 在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字；协调者只告诉 Andy“去 Mac 线程打什么”和为什么（Andy 2026-10-29 23:15 JST 定）。上线的授权见[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)。云端线程的授权，Andy 在项目聊天说一次即可，由协调者把他那条原话附上转给线程。
+- 上线和回滚：Andy 在 Mac 线程里说，或者在项目聊天里对协调者说，都算授权；协调者转给 Mac 线程时要附上他那条原话（Andy 2026-10-31 定，详见[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)）。
+- 上线和回滚以外、会动生产机或 Andy 的 Mac 的操作（例如停服、改配置、删 Mac 上的文件），只认 Andy 在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字；协调者只告诉 Andy“去 Mac 线程打什么”和为什么（Andy 2026-10-29 23:15 JST 定）。云端线程的授权，Andy 在项目聊天说一次即可，由协调者把他那条原话附上转给线程。
 - 会删东西的上线，所有要 Andy 选的选项先选完，再上线（2026-10-30 10:30 JST 的教训）。
-- 合并 PR 一律由做这个 PR 的线程执行，必须等 Andy 在那个线程里说“合并”；不让 Andy 自己去 GitHub 操作。
+- 合并 PR 一律由做这个 PR 的线程执行，要等 Andy 说“合并”。他在那个线程里说，或者在项目聊天里对协调者说、由协调者附上他那条原话转给线程，都算（Andy 2026-10-31 定）。不让 Andy 自己去 GitHub 操作。
 
 <a id="prompt-layout-for-the-kv-cache"></a>
 ## 模型上下文的排列
