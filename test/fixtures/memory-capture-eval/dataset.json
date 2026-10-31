@@ -1,0 +1,3243 @@
+{
+ "version": 1,
+ "sentAtTimeZone": "Asia/Tokyo",
+ "note": "手写合成数据，不含任何真实对话；密钥类均为虚构。",
+ "items": [
+  {
+   "id": "p01",
+   "lang": "zh",
+   "group": "identity",
+   "message": "我是做游戏客户端的，现在在一家小公司当主程。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "游戏"
+       ],
+       [
+        "主程",
+        "客户端"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p02",
+   "lang": "zh",
+   "group": "identity",
+   "message": "我在大阪读研，研究方向是计算机视觉。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "大阪"
+       ],
+       [
+        "计算机视觉"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p03",
+   "lang": "zh",
+   "group": "identity",
+   "message": "我今年 34 岁，属虎，家里有一只叫团子的猫。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "团子"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p04",
+   "lang": "en",
+   "group": "identity",
+   "message": "I'm a freelance illustrator based in Osaka, mostly doing book covers.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "illustrator",
+        "插画"
+       ],
+       [
+        "Osaka",
+        "大阪"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p05",
+   "lang": "ja",
+   "group": "identity",
+   "message": "私は横浜の病院で働いている看護師です。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "看護師",
+        "护士"
+       ],
+       [
+        "横浜",
+        "横滨"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p06",
+   "lang": "zh",
+   "group": "preference",
+   "message": "我不吃香菜，一点都不行。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "香菜"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p07",
+   "lang": "zh",
+   "group": "preference",
+   "message": "我每天早上六点起床跑五公里，已经坚持两年了。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "跑",
+        "五公里",
+        "5公里"
+       ],
+       [
+        "早上六点",
+        "六点"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p08",
+   "lang": "zh",
+   "group": "preference",
+   "message": "看电影的话我只看原声版，不喜欢配音。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "原声"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p09",
+   "lang": "en",
+   "group": "preference",
+   "message": "I prefer dark roast coffee, no sugar, never with milk.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "dark roast",
+        "深烘",
+        "黑咖啡"
+       ],
+       [
+        "milk",
+        "牛奶",
+        "sugar",
+        "糖"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p10",
+   "lang": "zh",
+   "group": "preference",
+   "message": "写代码的时候我习惯用 Neovim，别给我推荐 VS Code。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "Neovim"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p11",
+   "lang": "ja",
+   "group": "preference",
+   "message": "音楽はジャズが好きで、作業中はいつもピアノトリオを流しています。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "ジャズ",
+        "爵士"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p12",
+   "lang": "zh",
+   "group": "relationship",
+   "message": "我老婆叫管冬融，她是小学老师。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "管冬融"
+       ],
+       [
+        "老师",
+        "小学"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p13",
+   "lang": "zh",
+   "group": "relationship",
+   "message": "我的导师是张伟教授，组里的学长王磊是他带过的博士。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "张伟"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p14",
+   "lang": "zh",
+   "group": "relationship",
+   "message": "我弟弟在上海做设计，他叫陈浩。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "陈浩"
+       ],
+       [
+        "弟弟"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p15",
+   "lang": "en",
+   "group": "relationship",
+   "message": "My best friend Kenji lives in Sapporo and runs a ramen shop there.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "Kenji"
+       ],
+       [
+        "Sapporo",
+        "札幌"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p16",
+   "lang": "zh",
+   "group": "relationship",
+   "message": "我同事小林是我们组的测试负责人，有测试上的事可以找她。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "小林"
+       ],
+       [
+        "测试"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p17",
+   "lang": "zh",
+   "group": "relationship",
+   "message": "我妈妈叫李秀兰，住在青岛，身体一直不错。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "李秀兰"
+       ],
+       [
+        "青岛"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p18",
+   "lang": "zh",
+   "group": "goal",
+   "message": "我打算今年内把日语考到 N1，每天晚上学一小时。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "N1"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "goal",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p19",
+   "lang": "zh",
+   "group": "goal",
+   "message": "我在做一个个人记账 App，用 Swift 写，打算年底上架。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "记账"
+       ],
+       [
+        "Swift"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "project",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p20",
+   "lang": "en",
+   "group": "goal",
+   "message": "My long-term goal is to run a full marathon under four hours.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "marathon",
+        "马拉松"
+       ],
+       [
+        "four hours",
+        "4小时",
+        "四小时"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "goal",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p21",
+   "lang": "zh",
+   "group": "goal",
+   "message": "三年内我想攒够首付，在横滨买一套小房子。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "首付",
+        "买房",
+        "房子"
+       ],
+       [
+        "横滨"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "goal",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p22",
+   "lang": "zh",
+   "group": "rule",
+   "message": "以后回答我的问题先给结论，再说理由，别铺垫。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "结论"
+       ],
+       [
+        "理由",
+        "先"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p23",
+   "lang": "zh",
+   "group": "rule",
+   "message": "你以后称呼我小秋就行，不要叫我先生。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "小秋"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p24",
+   "lang": "zh",
+   "group": "rule",
+   "message": "每次涉及花钱的操作，一定要先问我，我同意了才能做。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "先问",
+        "问我",
+        "确认"
+       ],
+       [
+        "花钱",
+        "钱"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p25",
+   "lang": "zh",
+   "group": "rule",
+   "message": "发给我的英文邮件草稿都要同时附一份中文翻译。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "英文邮件",
+        "邮件"
+       ],
+       [
+        "中文翻译",
+        "翻译"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p26",
+   "lang": "en",
+   "group": "rule",
+   "message": "From now on, answer me in Japanese when I write in Japanese, and keep it short.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "Japanese",
+        "日语",
+        "日本語"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p27",
+   "lang": "zh",
+   "group": "rule",
+   "message": "别再用表格回答我了，我在手机上看不方便。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "表格"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p28",
+   "lang": "zh",
+   "group": "event",
+   "message": "我妈的生日是 5 月 12 日，每年都提醒我提前订花。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "生日"
+       ],
+       [
+        "5月12",
+        "5 月 12",
+        "五月十二"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2027-05-12",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p29",
+   "lang": "zh",
+   "group": "event",
+   "message": "下周五下午三点我要交季度报告，帮我记着。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "季度报告",
+        "报告"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2026-11-06T15:00",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p30",
+   "lang": "zh",
+   "group": "event",
+   "message": "下个月 3 号我要去医院做年度体检。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "体检"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2026-11-03",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p31",
+   "lang": "zh",
+   "group": "event",
+   "message": "11 月 20 号晚上七点和朋友在新宿吃饭，别让我忘了。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "新宿"
+       ],
+       [
+        "朋友",
+        "吃饭"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2026-11-20T19:00",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p32",
+   "lang": "en",
+   "group": "event",
+   "message": "My passport expires on March 3, 2027, remind me to renew it before then.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "passport",
+        "护照"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2027-03-03",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p33",
+   "lang": "zh",
+   "group": "event",
+   "message": "我们结婚纪念日是 10 月 8 日。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "结婚纪念日",
+        "纪念日"
+       ],
+       [
+        "10月8",
+        "10 月 8",
+        "十月八"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2027-10-08",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p34",
+   "lang": "zh",
+   "group": "explicit",
+   "message": "记住：我的工位在 14 楼东侧，靠窗第三个。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "14楼",
+        "14 楼"
+       ],
+       [
+        "靠窗"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p35",
+   "lang": "zh",
+   "group": "explicit",
+   "message": "别忘了我对花生过敏。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "花生"
+       ],
+       [
+        "过敏"
+       ]
+      ],
+      "decision": "create",
+      "classification": "sensitive",
+      "category": "health",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p36",
+   "lang": "zh",
+   "group": "explicit",
+   "message": "帮我记一下，我的健身房会员卡到下个月底到期。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "健身房"
+       ],
+       [
+        "到期"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2026-11-30",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p37",
+   "lang": "en",
+   "group": "explicit",
+   "message": "Remember that I always take the 8:10 Odakyu line to work.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "8:10",
+        "Odakyu",
+        "小田急"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p38",
+   "lang": "zh",
+   "group": "embedded",
+   "message": "帮我订束花送给我妈妈，她生日是 5 月 12 日，她喜欢白色百合。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "白色百合",
+        "百合"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     },
+     {
+      "keyFacts": [
+       [
+        "生日"
+       ],
+       [
+        "5月12",
+        "5 月 12"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2027-05-12",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p39",
+   "lang": "zh",
+   "group": "embedded",
+   "message": "帮我查一下去札幌的机票，我老婆管冬融怕坐早班飞机，要下午以后的。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "管冬融"
+       ],
+       [
+        "早班",
+        "下午"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p40",
+   "lang": "zh",
+   "group": "embedded",
+   "message": "把这份周报翻成英文，我们组长是田中，翻译的时候称呼他 Tanaka-san。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "田中",
+        "Tanaka"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p41",
+   "lang": "zh",
+   "group": "embedded",
+   "message": "写一个 Python 脚本批量改文件名。对了，我所有项目都用 4 空格缩进，别用 tab。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "4空格",
+        "4 空格",
+        "四空格"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p42",
+   "lang": "en",
+   "group": "embedded",
+   "message": "Draft a reply to my landlord. FYI I'm moving out of the Shibuya apartment on December 20.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "Shibuya",
+        "涩谷"
+       ],
+       [
+        "December 20",
+        "12月20",
+        "12 月 20"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "event",
+      "dueAtPrefix": "2026-12-20",
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p43",
+   "lang": "zh",
+   "group": "embedded",
+   "message": "帮我做个旅行计划。我预算每天最多一万日元，带着两岁的女儿，不能走太多路。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "一万日元",
+        "1万日元"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     },
+     {
+      "keyFacts": [
+       [
+        "女儿"
+       ],
+       [
+        "两岁",
+        "2岁"
+       ]
+      ],
+      "decision": "create",
+      "classification": "private",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p44",
+   "lang": "zh",
+   "group": "sensitive",
+   "message": "我最近确诊了高血压，医生让我少盐。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "高血压"
+       ]
+      ],
+      "decision": "create",
+      "classification": "sensitive",
+      "category": "health",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p45",
+   "lang": "zh",
+   "group": "sensitive",
+   "message": "我每个月工资税后 42 万日元，房贷每月还 12 万。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "42万",
+        "42 万"
+       ],
+       [
+        "房贷"
+       ]
+      ],
+      "decision": "create",
+      "classification": "sensitive",
+      "category": "finance",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p46",
+   "lang": "zh",
+   "group": "sensitive",
+   "message": "我同事小林最近离婚了，情绪不太好，你跟她聊天的时候注意点。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "小林"
+       ],
+       [
+        "离婚"
+       ]
+      ],
+      "decision": "create",
+      "classification": "sensitive",
+      "category": "relationship",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p47",
+   "lang": "zh",
+   "group": "sensitive",
+   "message": "我现在住在世田谷区砧三丁目 12-5，门口有棵樟树。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "砧三丁目",
+        "12-5"
+       ]
+      ],
+      "decision": "create",
+      "classification": "sensitive",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p48",
+   "lang": "zh",
+   "group": "sensitive",
+   "message": "我在跟前公司打劳动仲裁，律师说证据比较充分。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "仲裁"
+       ]
+      ],
+      "decision": "create",
+      "classification": "sensitive",
+      "category": "other",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p49",
+   "lang": "en",
+   "group": "sensitive",
+   "message": "I'm seeing a therapist every Thursday for anxiety.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "therapist",
+        "心理"
+       ],
+       [
+        "anxiety",
+        "焦虑"
+       ]
+      ],
+      "decision": "create",
+      "classification": "sensitive",
+      "category": "health",
+      "dueAtPrefix": null,
+      "existingMemoryId": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "p50",
+   "lang": "zh",
+   "group": "supersede",
+   "message": "我搬家了，现在住在横滨港北区。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "横滨"
+       ],
+       [
+        "港北"
+       ]
+      ],
+      "decision": "supersede",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-home"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p51",
+   "lang": "zh",
+   "group": "supersede",
+   "message": "我换工作了，现在是前端工程师，不再写后端了。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "前端"
+       ]
+      ],
+      "decision": "supersede",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-job"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p52",
+   "lang": "zh",
+   "group": "supersede",
+   "message": "我最近不太爱吃鱼了，改吃鸡肉。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "鱼",
+        "鸡肉"
+       ]
+      ],
+      "decision": "supersede",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-fish"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p53",
+   "lang": "zh",
+   "group": "supersede",
+   "message": "我现在更喜欢绿色，蓝色已经看腻了。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "绿色"
+       ]
+      ],
+      "decision": "supersede",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-color"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p54",
+   "lang": "zh",
+   "group": "supersede",
+   "message": "之前说错了，我是做服务端的，不是做游戏客户端的。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "服务端"
+       ]
+      ],
+      "decision": "supersede",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-job"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p55",
+   "lang": "zh",
+   "group": "supersede",
+   "message": "回答可以用英文了，我最近在练英语，中文太舒服了反而没效果。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "英文",
+        "英语"
+       ]
+      ],
+      "decision": "supersede",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-lang"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p56",
+   "lang": "zh",
+   "group": "update",
+   "message": "我家在世田谷区，离驹泽公园很近，周末常去跑步。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "驹泽"
+       ]
+      ],
+      "decision": "update",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-home"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p57",
+   "lang": "zh",
+   "group": "update",
+   "message": "我喜欢吃鱼，尤其是烤秋刀鱼。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "秋刀鱼"
+       ]
+      ],
+      "decision": "update",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-fish"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p58",
+   "lang": "zh",
+   "group": "unchanged",
+   "message": "对了我再说一遍，我最喜欢的颜色就是蓝色。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "蓝色"
+       ]
+      ],
+      "decision": "unchanged",
+      "classification": "private",
+      "category": "preference",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-color"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p59",
+   "lang": "zh",
+   "group": "unchanged",
+   "message": "我一直是后端工程师，没变过。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "后端"
+       ]
+      ],
+      "decision": "unchanged",
+      "classification": "private",
+      "category": "identity",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-job"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p60",
+   "lang": "zh",
+   "group": "unchanged",
+   "message": "就是那个，我用中文回答最舒服，你继续默认中文就好。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": true,
+    "memories": [
+     {
+      "keyFacts": [
+       [
+        "中文"
+       ]
+      ],
+      "decision": "unchanged",
+      "classification": "private",
+      "category": "rule",
+      "dueAtPrefix": null,
+      "existingMemoryId": "m-lang"
+     }
+    ]
+   }
+  },
+  {
+   "id": "n01",
+   "lang": "zh",
+   "group": "task",
+   "message": "帮我把这段话翻译成英文：今天天气很好，我们去公园散步吧。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n02",
+   "lang": "zh",
+   "group": "task",
+   "message": "写一个 Python 函数，判断一个字符串是不是回文。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n03",
+   "lang": "zh",
+   "group": "task",
+   "message": "帮我总结一下这篇文章的要点，我贴在下面：人工智能正在改变软件开发的方式……",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n04",
+   "lang": "zh",
+   "group": "task",
+   "message": "把这个 CSV 里重复的行去掉，按第一列排序。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n05",
+   "lang": "zh",
+   "group": "task",
+   "message": "帮我润色这封邮件，语气客气一点：您好，我想问一下上周的报价单有没有更新。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n06",
+   "lang": "zh",
+   "group": "task",
+   "message": "这段 SQL 为什么慢？SELECT * FROM orders WHERE status = 'paid' ORDER BY created_at",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n07",
+   "lang": "zh",
+   "group": "task",
+   "message": "帮我列一个去京都三天两夜的行程大纲。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n08",
+   "lang": "zh",
+   "group": "task",
+   "message": "把下面的 JSON 格式化一下：{\"a\":1,\"b\":[1,2,3]}",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n09",
+   "lang": "zh",
+   "group": "task",
+   "message": "帮我起三个适合科技博客的标题。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n10",
+   "lang": "zh",
+   "group": "task",
+   "message": "用正则提取这段文本里所有的邮箱地址。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n11",
+   "lang": "en",
+   "group": "task",
+   "message": "Convert this paragraph to bullet points for my slides.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n12",
+   "lang": "ja",
+   "group": "task",
+   "message": "この文章を英語に訳してください：明日は会議があります。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n13",
+   "lang": "zh",
+   "group": "chitchat",
+   "message": "早上好！",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n14",
+   "lang": "zh",
+   "group": "chitchat",
+   "message": "哈哈哈，今天好累啊。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n15",
+   "lang": "zh",
+   "group": "chitchat",
+   "message": "谢谢你，辛苦了。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n16",
+   "lang": "zh",
+   "group": "chitchat",
+   "message": "晚安～",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n17",
+   "lang": "zh",
+   "group": "chitchat",
+   "message": "你好呀，在吗？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n18",
+   "lang": "zh",
+   "group": "chitchat",
+   "message": "哇，这也太厉害了吧。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n19",
+   "lang": "en",
+   "group": "chitchat",
+   "message": "Thanks, that's all for now.",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n20",
+   "lang": "ja",
+   "group": "chitchat",
+   "message": "ありがとう、助かりました。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n21",
+   "lang": "zh",
+   "group": "question",
+   "message": "东京明天会下雨吗？",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n22",
+   "lang": "zh",
+   "group": "question",
+   "message": "现在日元兑人民币的汇率是多少？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n23",
+   "lang": "zh",
+   "group": "question",
+   "message": "Python 里 list 和 tuple 有什么区别？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n24",
+   "lang": "zh",
+   "group": "question",
+   "message": "新干线从东京到大阪要多久？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n25",
+   "lang": "zh",
+   "group": "question",
+   "message": "2026 年的世界杯在哪举办？",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n26",
+   "lang": "zh",
+   "group": "question",
+   "message": "怎么给 Git 仓库撤销上一次提交？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n27",
+   "lang": "zh",
+   "group": "question",
+   "message": "咖啡因的半衰期大概是多久？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n28",
+   "lang": "en",
+   "group": "question",
+   "message": "What is the capital of Australia?",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n29",
+   "lang": "zh",
+   "group": "question",
+   "message": "光合作用的反应式是什么？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n30",
+   "lang": "zh",
+   "group": "question",
+   "message": "地铁银座线首班车几点？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n31",
+   "lang": "zh",
+   "group": "hypothetical",
+   "message": "假如我中了一个亿，你觉得我应该怎么花？",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n32",
+   "lang": "zh",
+   "group": "hypothetical",
+   "message": "开个玩笑，我才不会真的辞职去卖煎饼呢。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n33",
+   "lang": "zh",
+   "group": "hypothetical",
+   "message": "如果我是一只猫，大概会天天睡觉吧，哈哈。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n34",
+   "lang": "zh",
+   "group": "hypothetical",
+   "message": "假设我明天要搬去冰岛，你觉得需要准备什么？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n35",
+   "lang": "zh",
+   "group": "hypothetical",
+   "message": "我今天心情特别差，不想工作，想躺一天。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n36",
+   "lang": "zh",
+   "group": "hypothetical",
+   "message": "随便聊聊，你觉得 AI 会取代程序员吗？",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n37",
+   "lang": "zh",
+   "group": "public-fact",
+   "message": "东京塔高 333 米，是 1958 年建成的。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n38",
+   "lang": "zh",
+   "group": "public-fact",
+   "message": "富士山是日本最高的山，海拔 3776 米。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n39",
+   "lang": "zh",
+   "group": "public-fact",
+   "message": "苹果公司是 1976 年由乔布斯等人创立的。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n40",
+   "lang": "zh",
+   "group": "public-fact",
+   "message": "爱因斯坦提出了相对论。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n41",
+   "lang": "zh",
+   "group": "public-fact",
+   "message": "日本的首都是东京，人口约 1400 万。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n42",
+   "lang": "zh",
+   "group": "public-fact",
+   "message": "地球绕太阳公转一圈大约是 365 天。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n43",
+   "lang": "zh",
+   "group": "others",
+   "message": "我朋友说他下周要去冲绳玩，不知道天气怎么样，你帮我查查冲绳下周的天气。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n44",
+   "lang": "zh",
+   "group": "others",
+   "message": "新闻上说某公司下个月要裁员，你帮我看看这个消息靠不靠谱。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n45",
+   "lang": "zh",
+   "group": "others",
+   "message": "我听说隔壁办公室的同事在谈恋爱，真的假的？哈哈，你别当真。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n46",
+   "lang": "zh",
+   "group": "others",
+   "message": "这是客户发来的原话：“我们预算有限，希望下个月之前交付”，帮我写个回复。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n47",
+   "lang": "zh",
+   "group": "secret",
+   "message": "我的 GitHub token 是 ghp_Zk3Qw8Lm2VxN9sTdR4bYf7HcJ1pUa6EoXe5G，帮我写个脚本调用 API。",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": [
+     "ghp_Zk3Qw8"
+    ]
+   }
+  },
+  {
+   "id": "n48",
+   "lang": "zh",
+   "group": "secret",
+   "message": "验证码是 482916，你帮我填一下登录页。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": [
+     "482916"
+    ]
+   }
+  },
+  {
+   "id": "n49",
+   "lang": "zh",
+   "group": "secret",
+   "message": "我的银行卡号是 4539 1488 0343 6467，帮我算一下分期手续费。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": [
+     "45391488"
+    ]
+   }
+  },
+  {
+   "id": "n50",
+   "lang": "zh",
+   "group": "secret",
+   "message": "wifi 密码是 sunflower-2026-Home，你帮我写个二维码文案。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": [
+     "sunflower-"
+    ]
+   }
+  },
+  {
+   "id": "n51",
+   "lang": "en",
+   "group": "secret",
+   "message": "My AWS secret key is wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, can you check this config?",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": [
+     "wJalrXUtnF"
+    ]
+   }
+  },
+  {
+   "id": "n52",
+   "lang": "zh",
+   "group": "secret",
+   "message": "护照号码 TK1234567，帮我填一下入境卡。",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": [
+     "TK1234567"
+    ]
+   }
+  },
+  {
+   "id": "n53",
+   "lang": "zh",
+   "group": "minimal",
+   "message": "好",
+   "previousAssistantMessage": null,
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n54",
+   "lang": "zh",
+   "group": "minimal",
+   "message": "继续",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n55",
+   "lang": "zh",
+   "group": "minimal",
+   "message": "嗯嗯",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n56",
+   "lang": "zh",
+   "group": "minimal",
+   "message": "可以",
+   "previousAssistantMessage": null,
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n57",
+   "lang": "zh",
+   "group": "assistant-only",
+   "message": "对",
+   "previousAssistantMessage": "你是想问我东京今天的最高气温是 18 度吗？我可以再帮你查一下具体时段。",
+   "existingMemories": [
+    {
+     "id": "m-color",
+     "text": "主人最喜欢的颜色是蓝色",
+     "stance": "喜欢蓝色"
+    },
+    {
+     "id": "m-home",
+     "text": "主人住在东京世田谷区",
+     "stance": null
+    },
+    {
+     "id": "m-job",
+     "text": "主人是一名后端工程师",
+     "stance": null
+    },
+    {
+     "id": "m-fish",
+     "text": "主人喜欢吃鱼",
+     "stance": "喜欢吃鱼"
+    },
+    {
+     "id": "m-lang",
+     "text": "主人希望 Himawari 默认用中文回答",
+     "stance": null
+    }
+   ],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n58",
+   "lang": "zh",
+   "group": "assistant-only",
+   "message": "就是那个",
+   "previousAssistantMessage": "我找到两个同名文件：notes.md 和 notes-old.md，你要打开哪一个？",
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n59",
+   "lang": "zh",
+   "group": "assistant-only",
+   "message": "好的，开始吧",
+   "previousAssistantMessage": "我可以帮你把下周的会议改到周三下午，需要我现在发邀请吗？",
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  },
+  {
+   "id": "n60",
+   "lang": "zh",
+   "group": "assistant-only",
+   "message": "不用了",
+   "previousAssistantMessage": "你的妈妈叫李秀兰，住在青岛，要我给她订生日花吗？",
+   "existingMemories": [],
+   "sentAt": "2026-10-30T10:00:00+09:00",
+   "expect": {
+    "remember": false,
+    "memories": [],
+    "forbiddenText": []
+   }
+  }
+ ]
+}

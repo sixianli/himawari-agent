@@ -118,6 +118,18 @@ export function sandboxEnvironmentDeadline(
   ).toISOString();
 }
 
+export function sandboxPrewarmEnvironmentDeadline(
+  runDeadlineAt: string,
+  grantExpiresAt: string,
+  backgroundCommandMs: number,
+): string {
+  return sandboxEnvironmentDeadline(
+    new Date(Date.parse(runDeadlineAt) + backgroundCommandMs).toISOString(),
+    grantExpiresAt,
+    backgroundCommandMs,
+  );
+}
+
 export async function createProductionSandboxServices(options: {
   readonly configuration: Pick<
     ProductConfiguration,
@@ -2588,7 +2600,11 @@ export async function createProductionSandboxServices(options: {
             modelRef: request.modelRef,
             binding: { qualificationRef: qualification.qualificationRef },
           },
-          deadlineAt: environmentDeadline(request.executionDeadlineAt, grant.expiresAt),
+          deadlineAt: sandboxPrewarmEnvironmentDeadline(
+            request.executionDeadlineAt,
+            grant.expiresAt,
+            backgroundCommandMs,
+          ),
           capabilityRef: route.capabilityRef,
           capabilityVersion: route.capabilityVersion,
         });
