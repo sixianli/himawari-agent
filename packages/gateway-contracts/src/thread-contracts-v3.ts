@@ -55,6 +55,7 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.conflict",
   "thread.event",
   "thread.execution_changed",
+  "thread.execution_text",
 ] as const;
 export type ThreadGatewayMessageType = (typeof THREAD_GATEWAY_MESSAGE_TYPES)[number];
 
@@ -550,6 +551,14 @@ export const threadEventV3Schema = object({
   }),
 });
 
+const displayText: Schema<string> = {
+  parse(value, path = "$") {
+    if (typeof value !== "string" || value.length > 65536)
+      throw new ContractValidationError(path, "expected bounded display text");
+    return value;
+  },
+};
+
 export const threadExecutionChangedSchema = object({
   ...envelope("event", "thread.execution_changed"),
   payload: object({
@@ -562,13 +571,18 @@ export const threadExecutionChangedSchema = object({
   }),
 });
 
-const displayText: Schema<string> = {
-  parse(value, path = "$") {
-    if (typeof value !== "string" || value.length > 65536)
-      throw new ContractValidationError(path, "expected bounded display text");
-    return value;
-  },
-};
+export const threadExecutionTextSchema = object({
+  ...envelope("event", "thread.execution_text"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    itemId: machineString,
+    offset: integer(0),
+    text: displayText,
+    observedAt: timestamp,
+  }),
+});
+
 export const threadExecutionRecordSchema = object({
   id: machineString,
   sequence: integer(1),
@@ -736,6 +750,7 @@ const schemasByType = {
   "thread.conflict": threadConflictV3Schema,
   "thread.event": threadEventV3Schema,
   "thread.execution_changed": threadExecutionChangedSchema,
+  "thread.execution_text": threadExecutionTextSchema,
 } as const satisfies Record<ThreadGatewayMessageType, Schema<unknown>>;
 
 type SchemaByType = typeof schemasByType;
@@ -753,6 +768,11 @@ export type ThreadExecutionChangedEvent = Extract<
   ThreadGatewayMessage,
   { type: "thread.execution_changed" }
 >;
+export type ThreadExecutionTextEvent = Extract<
+  ThreadGatewayMessage,
+  { type: "thread.execution_text" }
+>;
+export type ThreadExecutionStreamEvent = ThreadExecutionChangedEvent | ThreadExecutionTextEvent;
 export type ThreadGatewayRequestResult = Extract<
   ThreadGatewayMessage,
   { kind: "snapshot" | "result" | "conflict" }

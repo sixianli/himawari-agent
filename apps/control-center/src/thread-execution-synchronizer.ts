@@ -1,5 +1,6 @@
 import {
   type ThreadExecutionChangedEvent,
+  type ThreadExecutionTextEvent,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { ControlCenterRuntimeConfiguration } from "./gateway-client.js";
@@ -16,6 +17,7 @@ export interface ThreadExecutionSynchronizerOptions extends EventStreamOptions {
   readonly threadId: string;
   readonly onConnected: () => void;
   readonly onChanged: (event: ThreadExecutionChangedEvent["payload"]) => void;
+  readonly onText?: (event: ThreadExecutionTextEvent["payload"]) => void;
 }
 
 export class ThreadExecutionSynchronizer extends ReconnectingEventStream<ThreadExecutionSynchronizerOptions> {
@@ -42,6 +44,18 @@ export class ThreadExecutionSynchronizer extends ReconnectingEventStream<ThreadE
           parsed.payload.threadId === this.options.threadId
         )
           return this.options.onChanged(parsed.payload);
+      } catch {}
+      this.log("CONTROL_CENTER_THREAD_EVENT_REJECTED");
+    });
+    source.addEventListener?.("thread.execution_text", (message) => {
+      if (!live()) return;
+      try {
+        const parsed = threadGatewayMessageSchema.parseJson(message.data);
+        if (
+          parsed.type === "thread.execution_text" &&
+          parsed.payload.threadId === this.options.threadId
+        )
+          return this.options.onText?.(parsed.payload);
       } catch {}
       this.log("CONTROL_CENTER_THREAD_EVENT_REJECTED");
     });

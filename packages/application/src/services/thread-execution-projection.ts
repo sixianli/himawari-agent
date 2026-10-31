@@ -92,6 +92,12 @@ function visibleText(value: unknown): string {
   );
 }
 
+export function executionMessageItemId(runId: string, timestamp: unknown): string {
+  return `message:${threadCommandFingerprint({ runId, timestamp: timestamp ?? "current" })
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-64)}`;
+}
+
 function isExecutionChangedDuringRead(error: unknown): boolean {
   return (
     error instanceof ApplicationPortError &&
@@ -249,12 +255,7 @@ export class ThreadExecutionProjection {
           const message = object(await this.readPayload(event, envelope["payloadRef"]));
           records.push({
             ...base,
-            itemId: `message:${threadCommandFingerprint({
-              runId,
-              timestamp: message["timestamp"] ?? "current",
-            })
-              .replace(/[^a-zA-Z0-9]/g, "")
-              .slice(-64)}`,
+            itemId: executionMessageItemId(runId, message["timestamp"]),
             kind: "message",
             phase:
               envelope["phase"] !== "ended"

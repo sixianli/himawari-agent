@@ -10,8 +10,8 @@ import {
   type ProductThread,
 } from "@himawari-agent/domain";
 import {
-  type ThreadExecutionChangedEvent,
   type ThreadExecutionEventsSubscription,
+  type ThreadExecutionStreamEvent,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
@@ -30,6 +30,7 @@ import {
   type ThreadRepositoryPort,
 } from "../ports/index.js";
 import type { ClockPort } from "../ports/system.js";
+import type { ExecutionLiveFeed } from "./execution-live-feed.js";
 import type { ThreadExecutionObservation } from "./thread-execution-projection.js";
 import { type ThreadCommandService, threadCommandFingerprint } from "./thread-command-service.js";
 import type { CancelCoordinatedRunInput } from "./run-coordinator.js";
@@ -92,6 +93,7 @@ export interface ProductThreadGatewayAdapterDependencies {
   readonly waitForEvents?: (milliseconds: number) => Promise<void>;
   readonly eventPollMilliseconds?: number;
   readonly executionPollMilliseconds?: number;
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
 }
 
 interface WatchedExecutionRun {
@@ -554,7 +556,7 @@ export class ProductThreadGatewayAdapter
     readonly authentication: GatewayAuthenticationContext;
     readonly subscription: ThreadExecutionEventsSubscription;
     readonly signal?: AbortSignal;
-  }): AsyncIterable<ThreadExecutionChangedEvent> {
+  }): AsyncIterable<ThreadExecutionStreamEvent> {
     const observeRun = this.#dependencies.execution?.observeRun?.bind(this.#dependencies.execution);
     if (!observeRun)
       throw new ApplicationPortError(
@@ -564,93 +566,169 @@ export class ProductThreadGatewayAdapter
     const ownerId = createOwnerId(input.authentication.ownerId);
     const agentId = createAgentId(input.subscription.scope.agentId);
     const threadId = createThreadId(input.subscription.payload.threadId);
-    const wait =
-      this.#dependencies.waitForEvents ??
-      ((milliseconds: number) =>
-        new Promise<void>((resolve) => {
-          setTimeout(resolve, milliseconds);
-        }));
+    const live = this.#dependencies.live;
+    const pendingTexts: { runId: string; itemId: string; offset: number; text: string }[] = [];
+    let changedRuns = false;
+    let wake: (() => void) | undefined;
+    const signalled = () => {
+      const resolve = wake;
+      wake = undefined;
+      resolve?.();
+    };
+    const queueText = (text: { runId: string; itemId: string; offset: number; text: string }) => {
+      const last = pendingTexts.at(-1);
+      if (last && last.runId === text.runId && last.itemId === text.itemId) {
+        if (text.offset === 0) pendingTexts[pendingTexts.length - 1] = { ...text };
+        else if (text.offset === last.offset + last.text.length) last.text += text.text;
+        else pendingTexts.push({ ...text });
+      } else pendingTexts.push({ ...text });
+    };
+    for (const current of live?.current(threadId) ?? [])
+      queueText({ runId: current.runId, itemId: current.itemId, offset: 0, text: current.text });
+    const unsubscribe = live?.subscribe((event) => {
+      if (event.kind === "text") {
+        if (event.threadId !== threadId) return;
+        queueText(event);
+      } else changedRuns = true;
+      signalled();
+    });
+    const pause = (milliseconds: number) =>
+      this.#dependencies.waitForEvents && !live
+        ? this.#dependencies.waitForEvents(milliseconds)
+        : new Promise<void>((resolve) => {
+            if (pendingTexts.length || changedRuns || input.signal?.aborted) return resolve();
+            const timer = setTimeout(() => {
+              wake = undefined;
+              resolve();
+            }, milliseconds);
+            wake = () => {
+              clearTimeout(timer);
+              resolve();
+            };
+          });
+    const onAbort = () => signalled();
+    input.signal?.addEventListener("abort", onAbort, { once: true });
+    const pollMilliseconds = this.#dependencies.executionPollMilliseconds ?? 500;
     const watched = new Map<string, WatchedExecutionRun>();
     let sequence = 0;
-    while (!input.signal?.aborted) {
-      const thread = await this.#dependencies.repository.read(ownerId, agentId, threadId);
-      if (!thread || !["active", "archived"].includes(thread.status))
-        throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "THREAD_EXECUTION_NOT_FOUND");
-      const runs = await this.#dependencies.repository.listRuns(ownerId, agentId, threadId);
-      for (const run of runs) {
-        if (input.signal?.aborted) return;
-        const prior = watched.get(run.runId);
-        const revised = !prior || prior.runRevision !== run.revision;
-        const now = Date.parse(this.#dependencies.clock.now());
-        const due =
-          prior?.observation.nextChangeAt !== null &&
-          prior?.observation.nextChangeAt !== undefined &&
-          Date.parse(prior.observation.nextChangeAt) <= now;
-        if (prior && !revised && !due) {
-          if (prior.settled) continue;
-          if (TERMINAL_RUN_STATUSES.has(run.status) && now - prior.checkedAt < 5000) continue;
+    let nextPollAt = 0;
+    const message = (payload: unknown, type: ThreadExecutionStreamEvent["type"]) => {
+      const parsed = threadGatewayMessageSchema.parse({
+        schemaVersion: "gateway.thread.v3",
+        kind: "event",
+        type,
+        messageId: responseId(`execution:${++sequence}`, input.subscription.messageId),
+        correlationId: input.subscription.correlationId,
+        causationId: input.subscription.messageId,
+        scope: input.subscription.scope,
+        authority: input.subscription.authority,
+        actor: { actorType: "system", actorId: "thread-gateway" },
+        payload,
+      });
+      if (parsed.type !== "thread.execution_changed" && parsed.type !== "thread.execution_text")
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Thread execution watcher produced an invalid message",
+        );
+      return parsed;
+    };
+    try {
+      while (!input.signal?.aborted) {
+        while (pendingTexts.length) {
+          const text = pendingTexts.shift();
+          if (!text) break;
+          for (let start = 0; start === 0 || start < text.text.length; start += 60000)
+            yield message(
+              {
+                threadId,
+                runId: text.runId,
+                itemId: text.itemId,
+                offset: text.offset + start,
+                text: text.text.slice(start, start + 60000),
+                observedAt: this.#dependencies.clock.now(),
+              },
+              "thread.execution_text",
+            );
+          if (input.signal?.aborted) return;
         }
-        const observation = await observeRun({
-          ownerId,
-          agentId,
-          threadId,
-          runId: run.runId,
-          afterSequence: prior?.observation.traceSequence ?? 0,
-          known:
-            prior && !due
-              ? {
-                  resourceRevision: prior.observation.resourceRevision,
-                  resourcesPending: prior.observation.resourcesPending,
-                }
-              : null,
-        });
-        const settled =
-          TERMINAL_RUN_STATUSES.has(run.status) &&
-          !observation.resourcesPending &&
-          observation.nextChangeAt === null;
-        const token = threadCommandFingerprint({
-          revision: run.revision,
-          status: run.status,
-          traceSequence: observation.traceSequence,
-          resourceRevision: observation.resourceRevision,
-          checkpointRevision: observation.checkpointRevision,
-        });
-        watched.set(run.runId, {
-          runRevision: run.revision,
-          token,
-          observation,
-          settled,
-          checkedAt: now,
-        });
-        if (prior ? prior.token === token && !due : settled) continue;
-        const observedAt = this.#dependencies.clock.now();
-        const parsed = threadGatewayMessageSchema.parse({
-          schemaVersion: "gateway.thread.v3",
-          kind: "event",
-          type: "thread.execution_changed",
-          messageId: responseId(`execution:${++sequence}`, input.subscription.messageId),
-          correlationId: input.subscription.correlationId,
-          causationId: input.subscription.messageId,
-          scope: input.subscription.scope,
-          authority: input.subscription.authority,
-          actor: { actorType: "system", actorId: "thread-gateway" },
-          payload: {
-            threadId,
-            runId: run.runId,
-            runRevision: run.revision,
-            traceSequence: observation.traceSequence,
-            resourceRevision: observation.resourceRevision,
-            observedAt,
-          },
-        });
-        if (parsed.type !== "thread.execution_changed")
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.INVALID_OPERATION,
-            "Thread execution watcher produced an invalid message",
-          );
-        yield parsed;
+        if (changedRuns || Date.now() >= nextPollAt) {
+          changedRuns = false;
+          nextPollAt = Date.now() + pollMilliseconds;
+          const thread = await this.#dependencies.repository.read(ownerId, agentId, threadId);
+          if (!thread || !["active", "archived"].includes(thread.status))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.NOT_FOUND,
+              "THREAD_EXECUTION_NOT_FOUND",
+            );
+          const runs = await this.#dependencies.repository.listRuns(ownerId, agentId, threadId);
+          for (const run of runs) {
+            if (input.signal?.aborted) return;
+            const prior = watched.get(run.runId);
+            const revised = !prior || prior.runRevision !== run.revision;
+            const now = Date.parse(this.#dependencies.clock.now());
+            const due =
+              prior?.observation.nextChangeAt !== null &&
+              prior?.observation.nextChangeAt !== undefined &&
+              Date.parse(prior.observation.nextChangeAt) <= now;
+            if (prior && !revised && !due) {
+              if (prior.settled) continue;
+              if (TERMINAL_RUN_STATUSES.has(run.status) && now - prior.checkedAt < 5000) continue;
+            }
+            const observation = await observeRun({
+              ownerId,
+              agentId,
+              threadId,
+              runId: run.runId,
+              afterSequence: prior?.observation.traceSequence ?? 0,
+              known:
+                prior && !due
+                  ? {
+                      resourceRevision: prior.observation.resourceRevision,
+                      resourcesPending: prior.observation.resourcesPending,
+                    }
+                  : null,
+            });
+            const settled =
+              TERMINAL_RUN_STATUSES.has(run.status) &&
+              !observation.resourcesPending &&
+              observation.nextChangeAt === null;
+            const token = threadCommandFingerprint({
+              revision: run.revision,
+              status: run.status,
+              traceSequence: observation.traceSequence,
+              resourceRevision: observation.resourceRevision,
+              checkpointRevision: observation.checkpointRevision,
+            });
+            watched.set(run.runId, {
+              runRevision: run.revision,
+              token,
+              observation,
+              settled,
+              checkedAt: now,
+            });
+            if (prior ? prior.token === token && !due : settled) continue;
+            yield message(
+              {
+                threadId,
+                runId: run.runId,
+                runRevision: run.revision,
+                traceSequence: observation.traceSequence,
+                resourceRevision: observation.resourceRevision,
+                observedAt: this.#dependencies.clock.now(),
+              },
+              "thread.execution_changed",
+            );
+          }
+          continue;
+        }
+        if (!live) {
+          await pause(pollMilliseconds);
+          nextPollAt = 0;
+        } else await pause(Math.max(0, nextPollAt - Date.now()));
       }
-      await wait(this.#dependencies.executionPollMilliseconds ?? 500);
+    } finally {
+      unsubscribe?.();
+      input.signal?.removeEventListener("abort", onAbort);
     }
   }
 

@@ -2,6 +2,7 @@ import { createRunId } from "@himawari-agent/domain";
 import { describe, expect, it, vi } from "vitest";
 import type { SandboxExecutionRunInventory } from "../src/ports/sandbox-execution-journal.js";
 import type { TraceEvent } from "../src/ports/observability.js";
+import { ExecutionLiveFeed } from "../src/services/execution-live-feed.js";
 import { ProductThreadGatewayAdapter } from "../src/services/product-thread-gateway-adapter.js";
 import type { ThreadExecutionObservation } from "../src/services/thread-execution-projection.js";
 import { ThreadExecutionProjection } from "../src/services/thread-execution-projection.js";
@@ -206,7 +207,7 @@ describe("product thread execution watch", () => {
       subscription: subscription as never,
       signal: target.controller.signal,
     }))
-      events.push(event.payload);
+      if (event.type === "thread.execution_changed") events.push(event.payload);
     return events;
   }
 
@@ -287,5 +288,71 @@ describe("product thread execution watch", () => {
       threadStatus: "trashed",
     });
     await expect(collect(trashed)).rejects.toThrow("THREAD_EXECUTION_NOT_FOUND");
+  });
+
+  it("pushes answer text and wakes on new records without waiting for the poll", async () => {
+    const live = new ExecutionLiveFeed();
+    const controller = new AbortController();
+    let traceSequence = 1;
+    const observeRun = vi.fn(async () => observation({ traceSequence }));
+    const adapter = new ProductThreadGatewayAdapter({
+      repository: {
+        read: async () => ({ id: "thread-watch", status: "active" }),
+        listRuns: async () => [
+          {
+            runId: createRunId("run-live"),
+            revision: 1,
+            status: "running",
+            createdAt: at(0),
+            updatedAt: at(0),
+          },
+        ],
+      },
+      execution: { read: vi.fn(), observeRun },
+      clock: { now: () => at(0) },
+      executionPollMilliseconds: 60_000,
+      live,
+    } as unknown as ConstructorParameters<typeof ProductThreadGatewayAdapter>[0]);
+    live.assistantText({ threadId: "thread-watch", runId: "run-live", timestamp: 1, text: "向日" });
+    live.assistantText({ threadId: "thread-other", runId: "run-x", timestamp: 1, text: "别处" });
+    const started = Date.now();
+    const seen: unknown[] = [];
+    for await (const event of adapter.watchExecution({
+      authentication,
+      subscription: subscription as never,
+      signal: controller.signal,
+    })) {
+      seen.push(
+        event.type === "thread.execution_text"
+          ? ["text", event.payload.offset, event.payload.text]
+          : ["changed", event.payload.traceSequence],
+      );
+      if (seen.length === 2) {
+        live.assistantText({
+          threadId: "thread-watch",
+          runId: "run-live",
+          timestamp: 1,
+          text: "向日葵的",
+        });
+        live.assistantText({
+          threadId: "thread-watch",
+          runId: "run-live",
+          timestamp: 1,
+          text: "向日葵的一生",
+        });
+      }
+      if (seen.length === 3) {
+        traceSequence = 2;
+        live.changed("run-live");
+      }
+      if (seen.length === 4) controller.abort();
+    }
+    expect(seen).toEqual([
+      ["text", 0, "向日"],
+      ["changed", 1],
+      ["text", 2, "葵的一生"],
+      ["changed", 2],
+    ]);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

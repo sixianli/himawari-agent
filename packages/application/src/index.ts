@@ -2,6 +2,11 @@ export * from "./ports/index.js";
 export * from "./services/index.js";
 
 export * from "./services/sandbox-startup-recovery.js";
+export {
+  type ExecutionLiveEvent,
+  ExecutionLiveFeed,
+  type ExecutionLiveText,
+} from "./services/execution-live-feed.js";
 export { readThreadExecutionEnvironment } from "./services/thread-execution-environment.js";
 export {
   executionToolItemId,

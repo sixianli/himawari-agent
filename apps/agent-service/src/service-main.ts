@@ -9,6 +9,7 @@ import {
   claimFromRunExecutionLease,
   createProactiveSeal,
   DurableMemoryService,
+  ExecutionLiveFeed,
   type IdGeneratorPort,
   modelUsagePurpose,
   type ProductConfiguration,
@@ -1519,7 +1520,9 @@ export async function runAgentService(
         webPush.start();
       }
       proactive?.start();
+      const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        live,
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         modelUsage: {
           store: activeRepository.modelUsage(),
@@ -1702,6 +1705,7 @@ export async function runAgentService(
       const configuredPiModels = modelComposition.composition.piModels;
       const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
+        live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
         memory: {

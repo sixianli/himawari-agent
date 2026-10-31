@@ -12,6 +12,7 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
@@ -143,6 +144,7 @@ export interface ProductionHttpCompositionOptions {
     thinkingLevels: readonly string[];
     images: boolean;
   }[];
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
@@ -848,6 +850,7 @@ export async function createProductionHttpComposition(
         );
     },
     ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+    ...(options.live ? { live: options.live } : {}),
     execution: new ThreadExecutionProjection({
       threads,
       checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
