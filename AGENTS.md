@@ -18,7 +18,7 @@
 <a id="owners-global-instructions-and-skills"></a>
 ## Andy 的全局指令和技能
 
-Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.claude/rules/owner-global-instructions.md)。Claude Code 会自行加载这个文件；其他任何代理，只要它的会话没有从 Andy 的机器上加载 Andy 的全局指令（例如云端会话），就要在开始工作前读这个文件。仓库不保存 Andy 的技能的副本；[.claude/rules/owner-skills.md](.claude/rules/owner-skills.md) 列出这些技能，并说明每种会话从哪里获得它们（[ADR 0132](docs/adr/0132-owner-skills-from-the-claude-ai-account.md)）。
+Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.claude/rules/owner-global-instructions.md)。Claude Code 会自行加载这个文件；其他任何代理，只要它的会话没有从 Andy 的机器上加载 Andy 的全局指令（例如云端会话），就要在开始工作前读这个文件。仓库不保存 Andy 的技能的副本（[ADR 0132](docs/adr/0132-owner-skills-from-the-claude-ai-account.md)）：云端线程用 Andy 上传到 claude.ai 账号的技能，Andy 的 Mac 上的会话用 `~/.claude/skills/`。
 
 <a id="documentation-governance"></a>
 ## 文档治理
