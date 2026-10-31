@@ -1,39 +1,46 @@
-# Document Governance in Every Session
+<a id="document-governance-in-every-session"></a>
+# 每个会话都做文档治理
 
-The user asked on 2026-10-26 that every later cloud thread actually apply the `document-governance` skill to this project ([ADR 0080](../../docs/adr/0080-document-governance-in-fast-mode.md)). The repository keeps no copy of the skill ([ADR 0132](../../docs/adr/0132-owner-skills-from-the-claude-ai-account.md)). Cloud threads get it from the owner's claude.ai account and Mac sessions from `~/.claude/skills/`; either way it comes through the Skill tool, and the project rules below still apply.
+用户在 2026-10-26 要求，此后每个云端线程（在 claude.ai 云端运行的工作线程）都要在本项目里真正使用 `document-governance` 技能（管理 `docs/` 下项目文档的技能）（[ADR 0080](../../docs/adr/0080-document-governance-in-fast-mode.md)）。仓库不保存这个技能的副本（[ADR 0132](../../docs/adr/0132-owner-skills-from-the-claude-ai-account.md)）。云端线程从 Andy 的 claude.ai 账号获得它，Mac 上的会话从 `~/.claude/skills/` 获得它；无论哪种，都通过 Skill 工具（加载技能的工具）取得，下面的项目规则仍然适用。
 
-## Where the Skill Is
+<a id="where-the-skill-is"></a>
+## 技能在哪里
 
-- Load `document-governance` through the Skill tool before governed documentation work, then read only the reference under `references/` that matches the work, as the skill's "Load Only What Is Needed" list says.
-- Run its scripts from the repository root as `python3 -B <skill directory>/scripts/<script>.py ...`, with the directory the Skill tool reports. Do not add `-I`: the scripts import each other from their own folder.
-- When the Skill tool does not list `document-governance`, say so in the plan, and copy the frontmatter and structure of the newest existing document of the same type instead of inventing a format.
+- 做受治理的文档工作之前，先通过 Skill 工具加载 `document-governance`，然后按技能里 "Load Only What Is Needed"（只加载需要的部分）这份清单的说法，只读 `references/` 下与当前工作对应的那份参考文件。
+- 在仓库根目录以 `python3 -B <skill directory>/scripts/<script>.py ...` 的形式运行它的脚本，目录用 Skill 工具报告的那个。不得加 `-I`：这些脚本要从自己所在的文件夹互相导入。
+- 当 Skill 工具没有列出 `document-governance` 时，在计划里说明这一点，并照抄同类型中最新一份现有文档的 frontmatter（文件开头的元数据块）和结构，不得自己发明格式。
 
-## When to Use It
+<a id="when-to-use-it"></a>
+## 什么时候用它
 
-These triggers apply in fast mode and in full mode:
+以下触发条件在快速模式和完整模式下都适用：
 
-- A durable technical, product, or process decision gets a new ADR from `assets/templates/adr-template.md` in `docs/adr/`, numbered after the highest existing ADR. A changed decision supersedes the earlier ADR in place (the skill's `references/workflows.md`, "ADR Supersession"); never rewrite the earlier ADR's decision.
-- Future work that the user or a thread decides to keep becomes a Backlog item through `idea_backlog.py backlog capture`. Never create `docs/TODO.md` or a hand-maintained index.
-- When the user asks to keep an idea (for example "记下这个想法"), capture it with `idea_backlog.py idea capture`.
-- When a change makes a current-truth document plainly wrong (the PRD, the architecture document, an active Spec or Plan, a Runbook's steps), correct it in the same commit.
-- A closed Spec or Plan is archived only with `archive_doc.py`. ADRs are never archived.
-- An incident and its gate go to `docs/incidents-and-gates.md`, and a mistake that coding agents repeat goes to `docs/lessons.md`, both under [ADR 0107](../../docs/adr/0107-every-incident-gets-an-automatic-gate.md) ([incident-gates.md](incident-gates.md)); project status never does.
+- 一项长期有效的技术、产品或流程决定，要用 `assets/templates/adr-template.md` 在 `docs/adr/` 中新建一份 ADR（架构决策记录），编号接在现有最大编号之后。决定改变时，就地取代先前那份 ADR（见技能的 `references/workflows.md` 中 "ADR Supersession"（ADR 取代）一节）；绝不改写先前 ADR 的决定内容。
+- 用户或某个线程决定保留的后续工作，通过 `idea_backlog.py backlog capture` 记成 Backlog 条目（待办工作条目）。绝不新建 `docs/TODO.md` 或手工维护的索引。
+- 当用户要求保留一个想法（例如“记下这个想法”）时，用 `idea_backlog.py idea capture` 记录。
+- 当一项改动让一份反映当前事实的文档明显出错（PRD（产品需求文档）、架构文档、仍有效的规格或计划、某份 Runbook（操作手册）的步骤）时，在同一个提交里改正它。
+- 已关闭的规格或计划只能用 `archive_doc.py` 归档。ADR 永不归档。
+- 事故及其门槛记入 `docs/incidents-and-gates.md`，编码代理反复犯的错误记入 `docs/lessons.md`，两者都遵循 [ADR 0107](../../docs/adr/0107-every-incident-gets-an-automatic-gate.md)（[incident-gates.md](incident-gates.md)）；项目进度状态绝不记入这两处。
 
-## The Documentation Check
+<a id="the-documentation-check"></a>
+## 文档检查
 
-- Since 2026-10-31 the repository has no documentation check: `npm run check:docs` and its script were removed, and no commit is blocked by documentation findings (user decision, [ADR 0133](../../docs/adr/0133-docs-check-removed-from-npm-run-check.md)).
-- When the skill is loaded, its strict validation (`python3 -B <skill directory>/scripts/validate_docs.py . --strict`, about one second, read-only) can be run by hand after changing governed documents. In fast mode, findings that only say an active Runbook's `contract_sha256 does not match` or `contract path does not exist` may be left for full mode.
-- In fast mode, when a commit changes a Runbook's contract sources and leaves its seal stale, write `Docs: deferred (fast mode)` in the commit message and name the Runbook. Reconcile and reseal deferred Runbooks when the user switches back to full mode, or when a thread is about to follow that Runbook.
-- Never reseal a Runbook only to make the check pass. `runbook.py seal ... --confirm-reconciled --apply` comes after the Runbook was reviewed against the current code.
+- 自 2026-10-31 起，仓库没有文档检查：`npm run check:docs` 及其脚本已删除，任何提交都不会因文档问题被拦下（用户决定，[ADR 0133](../../docs/adr/0133-docs-check-removed-from-npm-run-check.md)）。
+- 加载了这个技能时，可以在修改受治理的文档后手动运行它的严格校验（`python3 -B <skill directory>/scripts/validate_docs.py . --strict`，约一秒，只读）。在快速模式下，只是说某份仍有效的 Runbook `contract_sha256 does not match` 或 `contract path does not exist` 的问题，可以留到完整模式再处理。
+- 在快速模式下，当一个提交改动了某份 Runbook 的契约源文件（Runbook 里 `runbook-contract` 清单列出的仓库文件，封存时它们的内容会算进 `contract_sha256`）而让它的封存过期时，在提交说明里写 `Docs: deferred (fast mode)` 并写出该 Runbook 的名字。当用户切回完整模式，或某个线程即将按那份 Runbook 操作时，核对并重新封存这些推迟的 Runbook。
+- 绝不只为让检查通过而重新封存 Runbook。`runbook.py seal ... --confirm-reconciled --apply` 必须在对照当前代码复核过 Runbook 之后才运行。
 
-## Runbooks That Guide an Operation
+<a id="runbooks-that-guide-an-operation"></a>
+## 用来指导操作的 Runbook
 
-Before following an active Runbook for a real operation, apply the three gates in the skill's `references/runbook-workflow.md`. In fast mode, production deployment and rollback follow [delivery-mode.md](../../.agents/instructions/delivery-mode.md) (`scripts/delivery-mode/deploy.sh` and `rollback.sh`), not a Runbook.
+在按一份仍有效的 Runbook 做真实操作之前，先过技能 `references/runbook-workflow.md` 里的三道门槛。在快速模式下，生产上线和回滚按 [delivery-mode.md](../../.agents/instructions/delivery-mode.md)（`scripts/delivery-mode/deploy.sh` 和 `rollback.sh`）执行，不按 Runbook。
 
-## The Engineering Casebook
+<a id="the-engineering-casebook"></a>
+## 工程案例库
 
-[docs/engineering-casebook.md](../../docs/engineering-casebook.md) is not one of the skill's document types; the `Engineering Casebook` section of [AGENTS.md](../../AGENTS.md) governs it. The ADR records the decision and its rationale; the case tells the interview story and links to the ADR, and the ADR's references link back to the case.
+[docs/engineering-casebook.md](../../docs/engineering-casebook.md) 不属于这个技能管理的文档类型；它由 [AGENTS.md](../../AGENTS.md) 中的 `Engineering Casebook` 一节管理。ADR 记录决定及其理由；案例讲述用于面试的故事并链接到 ADR，ADR 的参考资料再链接回该案例。
 
-## Delivery Reports
+<a id="delivery-reports"></a>
+## 交付报告
 
-Each delivery report names the documents updated, the documents intentionally left unchanged and why, the result of the skill's strict validation when it ran, with the number of deferred Runbook findings, and any Backlog items or ADRs created. Defects found in the skill go under a "Skill feedback" heading, as [the owner's global instructions](owner-global-instructions.md) say.
+每份交付报告写明：更新了哪些文档，哪些文档有意保持不变及原因，技能严格校验运行时的结果以及推迟处理的 Runbook 问题数量，以及新建的任何 Backlog 条目或 ADR。在技能里发现的缺陷，按 [Andy 的全局指令](owner-global-instructions.md) 的要求，写在 "Skill feedback"（技能反馈）标题下。
