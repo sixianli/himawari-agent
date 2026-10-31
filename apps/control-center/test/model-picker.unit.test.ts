@@ -96,8 +96,7 @@ it("[UI-12] shows the three highest-priority models first and the rest behind on
   await act(async () => container.querySelector<HTMLButtonElement>(".picker-model-name")?.click());
   const names = () =>
     [...container.querySelectorAll(".model-options button")].map(
-      (button) =>
-        `${button.textContent}${button.querySelector('[data-line-icon="check"]') ? "✓" : ""}`,
+      (button) => `${button.textContent}${button.querySelector('[data-glyph="check"]') ? "✓" : ""}`,
     );
   expect(names()).toEqual(["Model 0✓", "Model 1", "Model 2", "chat.moreModels"]);
   await act(async () => container.querySelector<HTMLButtonElement>(".model-more")?.click());

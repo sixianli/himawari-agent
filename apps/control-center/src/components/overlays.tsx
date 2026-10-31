@@ -9,7 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { nextRovingIndex } from "./collections.js";
-import { LineGlyph } from "./line-icons.js";
+import { Glyph } from "./glyphs.js";
 import { ActionButton } from "./primitives.js";
 
 export interface ModalDialogProps {
@@ -62,7 +62,7 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
       <div className="dialog-heading">
         <h2 id={titleId}>{title}</h2>
         <ActionButton aria-label={closeLabel} onClick={onClose} variant="quiet">
-          <LineGlyph name="close" size={18} />
+          <Glyph name="close" size={18} />
         </ActionButton>
       </div>
       <div className="dialog-body">{children}</div>

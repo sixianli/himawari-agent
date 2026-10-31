@@ -190,9 +190,9 @@ it("[UI-30] opens a command step to whether it worked, with the command itself u
   );
   const html = render(completedRun, records);
   expect(html).toContain("step.outcome.failed · step.outcome.exitCode(code=1)");
-  expect(html).toContain('data-line-icon="close"');
+  expect(html).toContain('data-glyph="close"');
   expect(html).toContain("step.outcome.ok");
-  expect(html).toContain('data-line-icon="check"');
+  expect(html).toContain('data-glyph="check"');
   const technical = html.match(/<details class="step-technical">[\s\S]*?<\/details>/g) ?? [];
   expect(technical.length).toBeGreaterThan(0);
   expect(technical.join("")).toContain("step.commandDetails");

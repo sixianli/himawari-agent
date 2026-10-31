@@ -8,7 +8,7 @@ import "./styles.css";
 import "./chat-layout.css";
 import "./review-v4.css";
 import "./proactive.css";
-import "./soft-line.css";
+import "./rounded.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 

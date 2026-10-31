@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { LineGlyph } from "./line-icons.js";
+import { Glyph } from "./glyphs.js";
 
 export type ActionButtonVariant = "primary" | "secondary" | "danger" | "quiet";
 
@@ -235,7 +235,7 @@ export function Dropdown<TValue extends string>({
         }}
       >
         <span>{current?.label}</span>
-        <LineGlyph name="down" />
+        <Glyph name="down" />
       </button>
       {open ? (
         <div
@@ -258,7 +258,7 @@ export function Dropdown<TValue extends string>({
               }}
             >
               <span>{option.label}</span>
-              {option.value === value ? <LineGlyph name="check" /> : null}
+              {option.value === value ? <Glyph name="check" /> : null}
             </button>
           ))}
         </div>
@@ -375,7 +375,7 @@ export function ToastRegion({ dismissLabel, label, messages, onDismiss }: ToastR
             onClick={() => onDismiss(message.id)}
             variant="quiet"
           >
-            <LineGlyph name="close" size={16} />
+            <Glyph name="close" size={16} />
           </ActionButton>
         </output>
       ))}

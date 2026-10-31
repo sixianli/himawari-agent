@@ -4,7 +4,7 @@ import { type ControlCenterRouteState, controlCenterHref } from "../app/router.j
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { LineIcon } from "./answer-footer.js";
 import { ActionButton, ActionMenu, AppLink } from "./index.js";
-import { LineGlyph } from "./line-icons.js";
+import { Glyph } from "./glyphs.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
 
@@ -164,7 +164,7 @@ export function ThreadSidebar({
       <ActionMenu
         label={
           <>
-            <LineGlyph name="more" size={18} />
+            <Glyph name="more" size={18} />
             <span className="sr-only">{message("review.conversationActions")}</span>
           </>
         }
@@ -211,30 +211,31 @@ export function ThreadSidebar({
           <SidebarIcon name="compose" />
           {message("threads.new")}
         </ActionButton>
-        <form
-          className="thread-search"
-          role="search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!searchText.trim()) return;
-            setSearched(true);
-            onSearch();
-          }}
-        >
-          <SidebarIcon name="search" />
-          <input
-            type="search"
-            autoComplete="off"
-            enterKeyHint="search"
-            aria-label={message("threads.search")}
-            placeholder={message("threads.search")}
-            value={searchText}
-            onChange={(event) => {
-              onSearchTextChange(event.target.value);
-              if (!event.target.value.trim()) setSearched(false);
+        <search className="thread-search-landmark">
+          <form
+            className="thread-search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!searchText.trim()) return;
+              setSearched(true);
+              onSearch();
             }}
-          />
-        </form>
+          >
+            <SidebarIcon name="search" />
+            <input
+              type="search"
+              autoComplete="off"
+              enterKeyHint="search"
+              aria-label={message("threads.search")}
+              placeholder={message("threads.search")}
+              value={searchText}
+              onChange={(event) => {
+                onSearchTextChange(event.target.value);
+                if (!event.target.value.trim()) setSearched(false);
+              }}
+            />
+          </form>
+        </search>
         {onOpenMemory ? (
           <ActionButton onClick={onOpenMemory} variant="quiet" aria-pressed={openPage === "memory"}>
             <SidebarIcon name="memory" />

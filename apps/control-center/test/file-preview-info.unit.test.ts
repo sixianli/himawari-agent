@@ -70,7 +70,7 @@ it("shows only the content until the owner opens file info, which holds facts, v
   expect(info?.getAttribute("aria-expanded")).toBe("true");
   const meta = container.querySelector(".preview-meta");
   expect(meta?.textContent).toContain("来自「贪吃蛇」第 1 轮");
-  expect(meta?.querySelector('.preview-source-link [data-line-icon="chevron"]')).not.toBeNull();
+  expect(meta?.querySelector('.preview-source-link [data-glyph="chevron"]')).not.toBeNull();
   expect(meta?.querySelector(".preview-versions")).not.toBeNull();
   expect(meta?.textContent).toContain(zh["preview.isolated"]);
   await act(async () => info?.click());

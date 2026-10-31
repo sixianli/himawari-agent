@@ -18,7 +18,7 @@ import { HimawariBrand } from "./brand.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { DeliveredFileCards } from "./delivered-file.js";
 import { ExecutionProcess } from "./execution-process.js";
-import { LineGlyph } from "./line-icons.js";
+import { Glyph } from "./glyphs.js";
 import { BackgroundCommandLine, BackgroundReportLine } from "./more-panel.js";
 import { ActionButton } from "./primitives.js";
 
@@ -455,7 +455,7 @@ function OutgoingMessageMeta({
   ) : (
     <div className="owner-meta">
       <output className="owner-status" aria-label={message("message.status.sending")}>
-        <LineGlyph className="owner-tick is-sending" name="clock" />
+        <Glyph className="owner-tick is-sending" name="clock" />
         <span>{message("message.status.sending")}</span>
       </output>
     </div>
@@ -488,7 +488,7 @@ function OwnerMessageMeta({
       </button>
       <span>{message("answer.at", { at: new Date(committedAt) })}</span>
       <span className="owner-status" role="img" aria-label={status} title={status}>
-        <LineGlyph
+        <Glyph
           className={`owner-tick ${received ? "is-received" : "is-sent"}`}
           name={received ? "checkTwice" : "check"}
         />

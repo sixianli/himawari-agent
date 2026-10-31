@@ -4,7 +4,7 @@ import type { MessageId } from "../i18n/message-ids.js";
 import type { RegisteredFile, RegisteredFileKind } from "../registered-files.js";
 import { LineIcon } from "./answer-footer.js";
 import { DeliveredFileRow } from "./delivered-file.js";
-import { LineGlyph, type LinePath } from "./line-icons.js";
+import { Glyph, type GlyphName } from "./glyphs.js";
 import { ActionButton, EmptyState } from "./primitives.js";
 import { recentGroups } from "./thread-sidebar.js";
 
@@ -25,7 +25,7 @@ export const LIBRARY_CATEGORIES: readonly (readonly [
   ["code", "library.code", ["code"]],
 ];
 
-const categoryIcons: Readonly<Record<LibraryCategory, LinePath>> = {
+const categoryIcons: Readonly<Record<LibraryCategory, GlyphName>> = {
   all: "grid",
   documents: "document",
   tables: "table",
@@ -190,7 +190,7 @@ export function FilesLibrary({
       </header>
       <div className="files-library-body">
         <label className="files-library-search">
-          <LineGlyph name="search" />
+          <Glyph name="search" />
           <input
             type="search"
             value={search}
@@ -208,7 +208,7 @@ export function FilesLibrary({
               aria-pressed={category === id}
               onClick={() => setCategory(id)}
             >
-              <LineGlyph name={categoryIcons[id]} />
+              <Glyph name={categoryIcons[id]} />
               {message(label)}
             </button>
           ))}
@@ -217,7 +217,7 @@ export function FilesLibrary({
             aria-pressed={uploadedOnly}
             onClick={() => setUploadedOnly(!uploadedOnly)}
           >
-            <LineGlyph name="upload" />
+            <Glyph name="upload" />
             {message("library.uploaded")}
           </button>
         </fieldset>

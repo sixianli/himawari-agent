@@ -1,4 +1,4 @@
-import { type LinePath, linePaths } from "./line-icons.js";
+import { Glyph, type GlyphName } from "./glyphs.js";
 
 const symbols = {
   review: "shield",
@@ -18,7 +18,7 @@ const symbols = {
   thinking: "think",
   note: "note",
   unknown: "wrench",
-} satisfies Record<string, LinePath>;
+} satisfies Record<string, GlyphName>;
 export function toolCategory(name: string): keyof typeof symbols {
   const value = name.toLowerCase().split(/[.:/]/).at(-1) ?? name;
   if (/^(read|read_file|readfile)$/.test(value)) return "read";
@@ -37,20 +37,5 @@ export function toolCategory(name: string): keyof typeof symbols {
 export type ToolGlyph = keyof typeof symbols;
 export function ToolIcon({ name, glyph }: { name: string; glyph?: ToolGlyph | undefined }) {
   const category = glyph ?? toolCategory(name);
-  return (
-    <svg
-      className="tool-icon"
-      data-tool-category={category}
-      data-line-icon={symbols[category]}
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d={linePaths[symbols[category]]} />
-    </svg>
-  );
+  return <Glyph className="tool-icon" data-tool-category={category} name={symbols[category]} />;
 }

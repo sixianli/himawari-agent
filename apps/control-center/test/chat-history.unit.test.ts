@@ -235,3 +235,31 @@ it("[UI-47] never shows the memories brought to the model as process steps", () 
   expect(html).not.toContain('data-tool-category="memory"');
   expect(html).not.toContain("memory-record");
 });
+it("[I-23] shows no memory step when no memory passed the relevance threshold", () => {
+  const memory = (
+    sequence: number,
+    name: string,
+    phase: ThreadExecutionRecord["phase"],
+    count: string,
+  ): ThreadExecutionRecord => ({
+    id: `trace:${sequence}`,
+    itemId: `trace:${sequence}`,
+    sequence,
+    kind: "status",
+    phase,
+    name,
+    text: count,
+    input: "",
+    output: "",
+    occurredAt: `2026-09-11T00:00:0${sequence}Z`,
+  });
+  const html = renderRun("completed", [
+    memory(1, "memory.query", "updated", ""),
+    memory(2, "memory.selection", "completed", "0"),
+    memory(3, "context.formed", "completed", "0"),
+    record(4, "message:answer", "message", "completed", "已写好 PDF。"),
+  ]);
+  expect(html).not.toContain("step.memoryFound");
+  expect(html).not.toContain("step.memoryProfile");
+  expect(html).not.toContain('data-tool-category="memory"');
+});

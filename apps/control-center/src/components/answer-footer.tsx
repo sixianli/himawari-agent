@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { TurnSource } from "../turn-summary.js";
-import { LineGlyph, type LinePath } from "./line-icons.js";
+import { Glyph, type GlyphName } from "./glyphs.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 
@@ -28,10 +28,10 @@ const icons = {
   bell: "bell",
   mail: "mail",
   globe: "globe",
-} satisfies Record<string, LinePath>;
+} satisfies Record<string, GlyphName>;
 
 export function LineIcon({ name }: { readonly name: keyof typeof icons }) {
-  return <LineGlyph className="line-icon" name={icons[name]} />;
+  return <Glyph className="line-icon" name={icons[name]} />;
 }
 
 export function useCopied(): [boolean, (text: string) => void] {

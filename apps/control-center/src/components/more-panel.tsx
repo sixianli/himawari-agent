@@ -3,7 +3,7 @@ import type { BackgroundCommandState, BackgroundCommandView } from "../backgroun
 import type { DeliveredFile, DeliveredFileGroup } from "../delivered-files.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { DeliveredFileRow } from "./delivered-file.js";
-import { LineGlyph, type LinePath } from "./line-icons.js";
+import { Glyph, type GlyphName } from "./glyphs.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
 
@@ -52,18 +52,18 @@ const startedIn = (command: BackgroundCommandView, message: Message) =>
     ? message("more.job.turn", { turn: command.turn, title: command.turnTitle })
     : message("more.job.turnPlain", { turn: command.turn });
 
-function Glyph({ path, size = 18 }: { readonly path: LinePath; readonly size?: number }) {
-  return <LineGlyph className="more-glyph" name={path} size={size} />;
+function MoreGlyph({ path, size = 18 }: { readonly path: GlyphName; readonly size?: number }) {
+  return <Glyph className="more-glyph" name={path} size={size} />;
 }
 
-const CLOSE_PATH: LinePath = "close";
-const BACK_PATH: LinePath = "back";
+const CLOSE_PATH: GlyphName = "close";
+const BACK_PATH: GlyphName = "back";
 
 function StateMark({ state }: { readonly state: BackgroundCommandState }) {
   if (state === "running") return <span className="more-spin" aria-hidden="true" />;
   return (
     <span className={`more-mark is-${state}`}>
-      <LineGlyph
+      <Glyph
         size={14}
         name={state === "completed" ? "check" : state === "stopped" ? "stop" : "alert"}
       />
@@ -93,7 +93,7 @@ export function MoreButton({
       aria-expanded={open}
       onClick={onClick}
     >
-      <LineGlyph name="files" size={20} />
+      <Glyph name="files" size={20} />
       {running ? (
         <span className="more-count" aria-hidden="true">
           {running}
@@ -238,9 +238,9 @@ export function MorePanel({
         {message("more.report")}
       </button>
     ) : null;
-  const iconButton = (label: MessageId, path: LinePath, onClick: () => void) => (
+  const iconButton = (label: MessageId, path: GlyphName, onClick: () => void) => (
     <button type="button" className="more-icon" aria-label={message(label)} onClick={onClick}>
-      <Glyph path={path} />
+      <MoreGlyph path={path} />
     </button>
   );
   const facts = (command: BackgroundCommandView) => {

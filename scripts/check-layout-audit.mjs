@@ -128,12 +128,11 @@ export function findLayoutProblems(locale) {
   }
   for (const icon of document.querySelectorAll('svg[viewBox="0 0 24 24"]')) {
     if (!shown(icon)) continue;
-    if (!icon.hasAttribute("data-line-icon"))
-      problems.push(`ICON_OUTSIDE_LINE_SET ${describe(icon.parentElement ?? icon)}`);
-    for (const shape of icon.querySelectorAll("path, circle, rect, ellipse, line, polyline")) {
-      const stroke = getComputedStyle(shape);
-      if (stroke.stroke === "none" || Number.parseFloat(stroke.strokeWidth) === 2) continue;
-      problems.push(`ICON_STROKE_NOT_2 ${describe(icon)} ${stroke.strokeWidth}`);
+    if (!icon.hasAttribute("data-glyph"))
+      problems.push(`ICON_OUTSIDE_GLYPH_SET ${describe(icon.parentElement ?? icon)}`);
+    for (const shape of icon.querySelectorAll("path[data-tone]")) {
+      if (getComputedStyle(shape).fill !== "none") continue;
+      problems.push(`GLYPH_FILL_LOST ${describe(icon)}`);
       break;
     }
   }
@@ -150,24 +149,36 @@ export function findLayoutProblems(locale) {
     if ([own, ...glyphs].some((text) => glyphIcon.test(text.trim())))
       problems.push(`TEXT_GLYPH_ICON ${describe(control)}`);
   }
-  const outlineOnly = [
+  const borderless = [
+    ".action-button-primary",
     ".action-button-secondary",
     ".action-button-danger",
     '[role="tab"][aria-selected="true"]:not(.preview-sheet-tabs *)',
     '.settings-nav [aria-pressed="true"]',
-    '.theme-switch label[data-checked="true"]',
+    ".theme-switch",
     'input[role="switch"]',
     ".thread-message-owner",
-    '.files-library-chips [aria-pressed="true"]',
-    '.memory-chips [aria-pressed="true"]',
-    '.thread-sidebar-actions [aria-pressed="true"]',
+    ".files-library-chips button",
+    ".memory-chips button",
+    ".thread-search input",
+    ".files-library-search",
+    ".file-card",
+    ".composer",
+    ".modal-dialog",
+    ".topbar .action-button",
+    ".topbar .more-button",
+    ".dropdown-trigger",
+    'input:is([type="text"], [type="search"], :not([type]))',
   ].join(", ");
-  const page = getComputedStyle(document.body).backgroundColor;
-  for (const element of document.querySelectorAll(outlineOnly)) {
+  for (const element of document.querySelectorAll(borderless)) {
     if (!shown(element)) continue;
-    const fill = getComputedStyle(element).backgroundColor;
-    if (fill !== "transparent" && fill !== page && !/(,\s*0\)|\/\s*0\))$/.test(fill))
-      problems.push(`FILLED_CONTROL ${describe(element)} ${fill}`);
+    const style = getComputedStyle(element);
+    if (
+      Number.parseFloat(style.borderTopWidth) > 0 &&
+      style.borderTopStyle !== "none" &&
+      !/(,\s*0\)|\/\s*0\)|transparent)$/.test(style.borderTopColor)
+    )
+      problems.push(`OUTLINED_CONTROL ${describe(element)} ${style.borderTopWidth}`);
   }
   const active = document.activeElement;
   if (
@@ -305,15 +316,16 @@ body{margin:0;font:14px/1.4 sans-serif} .wide{width:520px;height:20px;background
 <div class="cover"><button>被挡住的按钮</button><span></span></div>
 <p>日期 Thu, October 29 11:55 AM</p><button id="focused">关闭</button>
 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="1.5"><path d="M4 12h16"/></svg>
-<button class="action-button-secondary" style="background:#eee">填了底色的描边按钮</button>
+<svg data-glyph="memory" viewBox="0 0 24 24" width="20" height="20" style="fill:none"><path data-tone="base" d="M4 4h16v16H4Z"/></svg>
+<button class="action-button-secondary" style="border:1.5px solid #999">描了边的胶囊按钮</button>
 <button aria-label="关闭提示">×</button>
 <script>document.getElementById("focused").focus()</script></body></html>`;
 
 const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"></head>
 <body style="margin:0;font:14px/1.4 sans-serif"><p>10月29日 星期四 11:55</p><button>好的</button>
-<svg data-line-icon="close" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="2"><path d="M4 12h16"/></svg>
-<button class="action-button-secondary" style="background:transparent">描边按钮</button></body></html>`;
+<svg data-glyph="memory" viewBox="0 0 24 24" width="20" height="20"><path data-tone="base" d="M4 4h16v16H4Z" style="fill:currentColor;fill-opacity:.24"/></svg>
+<button class="action-button-secondary" style="border:0;background:#eee">胶囊按钮</button></body></html>`;
 
 export const REQUIRED_KINDS = [
   "PAGE_SCROLLS_SIDEWAYS",
@@ -324,9 +336,9 @@ export const REQUIRED_KINDS = [
   "CONTROL_COVERED",
   "UNASKED_FOCUS_RING",
   "ENGLISH_IN_zh-CN",
-  "ICON_STROKE_NOT_2",
-  "FILLED_CONTROL",
-  "ICON_OUTSIDE_LINE_SET",
+  "GLYPH_FILL_LOST",
+  "OUTLINED_CONTROL",
+  "ICON_OUTSIDE_GLYPH_SET",
   "TEXT_GLYPH_ICON",
 ];
 

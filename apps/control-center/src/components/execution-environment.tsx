@@ -2,7 +2,7 @@ import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contrac
 import { useEffect, useRef, useState } from "react";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import { LineGlyph } from "./line-icons.js";
+import { Glyph } from "./glyphs.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 
@@ -61,7 +61,7 @@ export function ExecutionEnvironmentLine({
         }}
       >
         {strict ? `${mode} · ${count}` : count}
-        <LineGlyph name="down" size={14} />
+        <Glyph name="down" size={14} />
       </button>
       {open ? (
         <div
@@ -98,7 +98,7 @@ export function ExecutionEnvironmentLine({
                           }}
                         >
                           {title}
-                          <LineGlyph name="chevron" size={14} />
+                          <Glyph name="chevron" size={14} />
                         </button>
                       ) : (
                         <small>{message("chat.environment.otherThread")}</small>

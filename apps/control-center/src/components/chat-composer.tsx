@@ -15,7 +15,7 @@ import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { LineIcon } from "./answer-footer.js";
 import { AttachmentThumb } from "./attachment-thumb.js";
-import { LineGlyph } from "./line-icons.js";
+import { Glyph } from "./glyphs.js";
 import { ModelPicker } from "./model-picker.js";
 import { ActionButton, Field } from "./primitives.js";
 
@@ -213,7 +213,7 @@ export function ChatComposer({
                     )
                   }
                 >
-                  <LineGlyph name="close" size={14} />
+                  <Glyph name="close" size={14} />
                 </button>
               </li>
             ))}
@@ -283,7 +283,7 @@ export function ChatComposer({
             variant="quiet"
             className="attach-button"
           >
-            <LineGlyph className="send-icon" name="plus" />
+            <Glyph className="send-icon" name="plus" />
           </ActionButton>
           {models.length ? (
             <div className="model-selection">
@@ -307,7 +307,7 @@ export function ChatComposer({
               onClick={onStop}
               variant="secondary"
             >
-              <LineGlyph className="send-icon" name="stop" />
+              <Glyph className="send-icon" name="stop" />
             </ActionButton>
           ) : (
             <ActionButton
@@ -318,7 +318,7 @@ export function ChatComposer({
               pending={pending}
               type="submit"
             >
-              <LineGlyph className="send-icon" name="send" />
+              <Glyph className="send-icon" name="send" />
             </ActionButton>
           )}
         </div>

@@ -614,12 +614,6 @@
   align-items: center;
   margin: 0 0 6px;
 }
-.thread-search .sidebar-icon {
-  position: absolute;
-  left: 12px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
 .thread-search input {
   width: 100%;
   min-height: 40px;
@@ -5011,4 +5005,10 @@ details.settings-details > summary::-webkit-details-marker {
 .thread-search input:focus-visible {
   outline: 0;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.thread-search .sidebar-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
 }

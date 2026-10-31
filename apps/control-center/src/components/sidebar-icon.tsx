@@ -1,4 +1,4 @@
-import { LineGlyph, type LinePath } from "./line-icons.js";
+import { Glyph, type GlyphName } from "./glyphs.js";
 
 const glyphs = {
   panel: "panel",
@@ -16,8 +16,8 @@ const glyphs = {
   reminders: "reminders",
   files: "files",
   more: "more",
-} satisfies Record<string, LinePath>;
+} satisfies Record<string, GlyphName>;
 
 export function SidebarIcon({ name }: { readonly name: keyof typeof glyphs }) {
-  return <LineGlyph className="sidebar-icon" name={glyphs[name]} size={20} />;
+  return <Glyph className="sidebar-icon" name={glyphs[name]} size={20} />;
 }

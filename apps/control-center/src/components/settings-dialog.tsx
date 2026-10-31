@@ -7,10 +7,10 @@ import {
 } from "../browser-storage.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
 import { ActionButton, Dropdown, ModalDialog } from "./index.js";
-import { LineGlyph, type LinePath } from "./line-icons.js";
+import { Glyph, type GlyphName } from "./glyphs.js";
 
 const THEMES = ["light", "dark", "system"] as const;
-const themeIcons: Readonly<Record<(typeof THEMES)[number], LinePath>> = {
+const themeIcons: Readonly<Record<(typeof THEMES)[number], GlyphName>> = {
   light: "sun",
   dark: "moon",
   system: "monitor",
@@ -123,7 +123,7 @@ export function SettingsDialog({
                         checked={preferences.theme === theme}
                         onChange={() => onPreferencesChange({ ...preferences, theme })}
                       />
-                      <LineGlyph name={themeIcons[theme]} />
+                      <Glyph name={themeIcons[theme]} />
                       {message(`review.${theme}`)}
                     </label>
                   ))}

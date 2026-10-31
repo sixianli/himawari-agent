@@ -116,7 +116,7 @@ describe("thread sidebar navigation", () => {
 
   it("keeps search accessible and removes global filters from the empty sidebar", () => {
     const markup = render([]);
-    expect(markup).toContain('role="search"');
+    expect(markup).toContain('<search class="thread-search-landmark"><form class="thread-search"');
     expect(markup).toContain('placeholder="搜索对话"');
     expect(markup).not.toContain("<dialog");
     expect(markup).not.toContain('aria-label="对话筛选"');
