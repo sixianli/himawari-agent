@@ -13,12 +13,12 @@ exec > >(tee -a "$log") 2>&1
 
 cleanup() {
   echo "DEPLOY_CLEANUP_START $1 $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  /usr/bin/python3 -I "$here/release-cleanup.py" "$packet" apply || echo "DEPLOY_CLEANUP_FAILED $1: the deployment result is unchanged; run python3 $here/release-cleanup.py $packet plan to see what is left" >&2
+  /usr/bin/python3 -I "$here/release-cleanup.py" "$packet" apply "$2" || echo "DEPLOY_CLEANUP_FAILED $1: the deployment result is unchanged; run python3 $here/release-cleanup.py $packet plan to see what is left" >&2
 }
 
 result() {
   if [[ "$1" == passed || "$1" == recovered || "$1" == stopped-before-service-stop ]]; then
-    cleanup after
+    if [[ "$1" == passed ]]; then cleanup after 0; else cleanup after 1; fi
   elif [[ "$1" == recovery-failed ]]; then
     echo "DEPLOY_CLEANUP_SKIPPED: production may be down, every copy on the server is kept for diagnosis" >&2
   fi
@@ -46,7 +46,7 @@ if ! /usr/bin/python3 -I "$here/browser-acceptance-gate.py" "$packet"; then
   result no-browser-acceptance ACCEPTANCE 5
 fi
 
-cleanup before
+cleanup before 1
 echo "DEPLOY_PREFLIGHT_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if ! /usr/bin/python3 -I "$here/deploy-preflight.py" "$packet"; then
   echo "DEPLOY_PREFLIGHT_FAILED: the running release was not changed" >&2
