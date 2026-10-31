@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-10-31"
 ---
 
-# ADR 0142：把只记 Gmail 检查的决策记录扩成全系统决策账本
+# ADR 0143：把只记 Gmail 检查的决策记录扩成全系统决策账本
 
 <a id="contents"></a>
 
