@@ -46,8 +46,8 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 - 每个事故（生产故障、失败或已回滚的发布、直到生成上线包的后期才被拦下的问题，或者用户发现的、本可以被某项检查抓到的缺陷）只有在存在一项能在它身上失败的自动检查时才算关闭：上线前置检查、上线包检查、测试、`npm run check` 中的一步、钩子（hook，在提交或推送等时机自动运行的脚本），或每次使用时都自我检查的脚本。仅有文档、案例库条目和提醒，不能关闭事故。
 - 当同一个错误第三次发生时，无论是 Claude 犯的、它指挥的任何代理犯的，还是作为重复事故出现，都必须有一道硬门槛（任何测试或可执行逻辑）挡住第四次。停下当前工作，查明之前的预防为什么失败，加上门槛，并证明它有效：在复现场景下它失败，去掉错误后它通过；如果需要只有用户才能做的改动，就准备好改动、提出请求，并让那部分工作保持暂停。
 - [docs/incidents-and-gates.md](docs/incidents-and-gates.md) 列出每个事故的日期、症状、根本原因、发生次数、门槛和状态。线程开始时读它；在线程的交付报告之前更新它。`npm run check` 会对它运行 `scripts/check-incident-gates.mjs`。
-- 统计发生次数时要跨会话、跨代理，以 `docs/incidents-and-gates.md`、`docs/lessons.md`、交接文件、停止文件和提交说明作为历史记录。会话交接时要点名任何已经发生过两次的错误。
-- 把结果记录在它该在的地方：事故及其门槛记在 `docs/incidents-and-gates.md`；编码代理反复犯的错误连同其约束记在 `docs/lessons.md`（已有条目涵盖时就扩展该条目；达到三次的条目要写明它的约束以及约束在哪里运行）；给 opencode 和 Grok 写简报、审查或驱动它们的方法记在 `opencode-orchestration` 技能里；产品缺陷在任务中修复，或登记为 Backlog 条目；测试、上线或操作的运行方式的改变，记在对应的 Runbook、计划或规格里；用户对 Claude 工作方式的偏好记在 Claude 的记忆里。
+- 统计发生次数时要跨会话、跨代理，以 `docs/incidents-and-gates.md`、`docs/lessons.md`、交接文件和提交说明作为历史记录。会话交接时要点名任何已经发生过两次的错误。
+- 把结果记录在它该在的地方：事故及其门槛记在 `docs/incidents-and-gates.md`；编码代理反复犯的错误连同其约束记在 `docs/lessons.md`（已有条目涵盖时就扩展该条目；达到三次的条目要写明它的约束以及约束在哪里运行）；产品缺陷在任务中修复，或登记为 Backlog 条目；测试、上线或操作的运行方式的改变，记在对应的 Runbook、计划或规格里；用户对 Claude 工作方式的偏好记在 Claude 的记忆里。
 - 交付报告要写明找到的根本原因、为每个事故添加的门槛（文件或命令）或不需要门槛的理由，以及记录在了哪里。
 
 <a id="proposal-premises"></a>
@@ -60,7 +60,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 用户在 2026-10-26 要求把本项目的每个难题和重要决定都保存为案例，用于用户的 AI 应用工程师（AI Application Engineer）和 AI 代理工程师（AI Agent Engineer）面试。[docs/engineering-casebook.md](docs/engineering-casebook.md) 就是这份记录。这条规则在快速模式和完整模式下都适用。
 
-- 线程或受托代理解决了一个值得记录的难题或缺陷，或做出了一个重要的架构或设计决定（任何产生 ADR、改变了某个实测延迟或可靠性数字、或修复了生产事故的事情）之后，要在同一次交付中向案例库添加一个案例，或扩展已有的案例。
+- 线程解决了一个值得记录的难题或缺陷，或做出了一个重要的架构或设计决定（任何产生 ADR、改变了某个实测延迟或可靠性数字、或修复了生产事故的事情）之后，要在同一次交付中向案例库添加一个案例，或扩展已有的案例。
 - 使用案例库的案例模板，并保留每一节：背景与症状、根本原因、我们的解决方案、讨论过的备选方案及放弃了什么、业界做法、对比与取舍、实测结果、相关 ADR 和 PR，以及 30 秒面试版本。用简体中文写；可以使用英文术语，第一次出现时要解释。
 - 只引用实际打开过的第一方来源，附一段简短引文，并用案例库的来源图例标注每一个来源。每个数字都要取自提交说明、ADR、测试记录或日志，写明出处；没有测量时写“未测量”。
 - 把案例加入案例库的目录和能力地图。当后来的改动改变了某个案例的结果时，在该案例后追加一条注明日期的后续记录，而不是改写它的结论。
@@ -98,7 +98,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="code-comments"></a>
 ## 代码注释
 
-用户禁止代码注释的全局规则（用户决定 G149，2026-10-21）在这里适用：一条都不写，并删除你编辑的每个文件里已有的注释。项目补充：它约束 Claude、opencode、Grok 和其他所有代理；把理由和验证证据写进提交说明和交付说明；`biome-ignore` 算作要保留的工具指令；见[关于新增代码注释的教训](docs/lessons.md#new-code-comments)。
+用户禁止代码注释的全局规则（用户决定 G149，2026-10-21）在这里适用：一条都不写，并删除你编辑的每个文件里已有的注释。项目补充：它约束所有代理；把理由和验证证据写进提交说明和交付说明；`biome-ignore` 算作要保留的工具指令；见[关于新增代码注释的教训](docs/lessons.md#new-code-comments)。
 
 <a id="engineering-diagrams"></a>
 ## 工程图
@@ -135,13 +135,8 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 用户的全局推送规则（每个提交立即推送到 `origin` 上同名的分支，用户决定 2026-09-30）由 [ADR 0057](docs/adr/0057-batch-layers-one-two-for-small-defects.md#unchanged) 保留。项目补充：
 
-- 它同样适用于 Claude、Codex 和 opencode，包括在受托任务中做的提交。
+- 它适用于所有代理做的提交。
 - 已推送的提交不等于已充分测试的提交。提交说明仍必须写明实际运行了哪些测试层；第 3 层在 PR 或合并之前运行，而不是在每次推送之前。
-
-<a id="delegated-coding-agents"></a>
-## 受托编码代理
-
-在给 opencode、Grok 或其他任何编码代理写简报、派发任务、审查或回复之前，以及在选择 opencode 模型之前，先读 [.agents/instructions/delegated-coding-agents.md](.agents/instructions/delegated-coding-agents.md)。
 
 <a id="test-and-production-hosts"></a>
 ## 测试主机和生产主机
