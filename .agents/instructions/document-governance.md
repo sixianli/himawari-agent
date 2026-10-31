@@ -1,0 +1,59 @@
+<a id="document-governance-in-every-session"></a>
+# 每个会话都做文档治理
+
+每个云端线程（在 claude.ai 云端运行的工作线程）都要在本项目里真正使用 `document-governance` 技能（管理 `docs/` 下项目文档的技能）。仓库不保存这个技能的副本。云端线程从 Andy 的 claude.ai 账号获得它，Mac 上的会话从 `~/.claude/skills/` 获得它；无论哪种，都通过 Skill 工具（加载技能的工具）取得，下面的项目规则仍然适用。
+
+<a id="where-the-skill-is"></a>
+## 技能在哪里
+
+- 做受治理的文档工作之前，先通过 Skill 工具加载 `document-governance`，然后按技能里 "Load Only What Is Needed"（只加载需要的部分）这份清单的说法，只读 `references/` 下与当前工作对应的那份参考文件。
+- 在仓库根目录以 `python3 -B <skill directory>/scripts/<script>.py ...` 的形式运行它的脚本，目录用 Skill 工具报告的那个。不得加 `-I`：这些脚本要从自己所在的文件夹互相导入。
+- 当 Skill 工具没有列出 `document-governance` 时，在计划里说明这一点，并照抄同类型中最新一份现有文档的 frontmatter（文件开头的元数据块）和结构，不得自己发明格式。
+
+<a id="when-to-use-it"></a>
+## 什么时候用它
+
+以下触发条件在快速模式和完整模式下都适用：
+
+- 一项长期有效的技术、产品或流程决定，要用 `assets/templates/adr-template.md` 在 `docs/adr/` 中新建一份 ADR（架构决策记录），编号接在现有最大编号之后。决定改变时，就地取代先前那份 ADR（见技能的 `references/workflows.md` 中 "ADR Supersession"（ADR 取代）一节）；绝不改写先前 ADR 的决定内容。
+- 用户或某个线程决定保留的后续工作，通过 `idea_backlog.py backlog capture` 记成 Backlog 条目（待办工作条目）。绝不新建 `docs/TODO.md` 或手工维护的索引。
+- 当用户要求保留一个想法（例如“记下这个想法”）时，用 `idea_backlog.py idea capture` 记录。
+- 当一项改动让一份反映当前事实的文档明显出错（PRD（产品需求文档）、架构文档、仍有效的规格或计划、某份 Runbook（操作手册）的步骤）时，在同一个提交里改正它。
+- 已关闭的规格或计划只能用 `archive_doc.py` 归档。ADR 永不归档。
+- 事故及其门槛记入 `docs/incidents-and-gates.md`，编码代理反复犯的错误记入 `docs/lessons.md`，两者都遵循 [incident-gates.md](../../.claude/rules/incident-gates.md)；项目进度状态绝不记入这两处。
+
+<a id="the-documentation-check"></a>
+## 文档检查
+
+- 仓库没有自动的文档检查：`npm run check:docs` 及其脚本已删除，任何提交都不会因文档问题被拦下。
+- 改动了 `docs/` 下任何文件的提交，提交前必须手动运行这个技能的严格校验（`python3 -B <skill directory>/scripts/validate_docs.py . --strict`，约一秒，只读），并且不得新增校验错误。技能没有加载时，在提交说明和交付报告里写明没能运行校验。在快速模式下，只是说某份仍有效的 Runbook `contract_sha256 does not match` 或 `contract path does not exist` 的问题，可以留到完整模式再处理。
+- 在快速模式下，当一个提交改动了某份 Runbook 的契约源文件（Runbook 里 `runbook-contract` 清单列出的仓库文件，封存时它们的内容会算进 `contract_sha256`）而让它的封存过期时，在提交说明里写 `Docs: deferred (fast mode)` 并写出该 Runbook 的名字。当用户切回完整模式，或某个线程即将按那份 Runbook 操作时，核对并重新封存这些推迟的 Runbook。
+- 绝不只为让检查通过而重新封存 Runbook。`runbook.py seal ... --confirm-reconciled --apply` 必须在对照当前代码复核过 Runbook 之后才运行。
+
+<a id="runbooks-that-guide-an-operation"></a>
+## 用来指导操作的 Runbook
+
+在按一份仍有效的 Runbook 做真实操作之前，先过技能 `references/runbook-workflow.md` 里的三道门槛。在快速模式下，生产上线和回滚按 [delivery-mode.md](delivery-mode.md)（`scripts/delivery-mode/deploy.sh` 和 `rollback.sh`）执行，不按 Runbook。
+
+<a id="the-engineering-casebook"></a>
+## 工程案例库
+
+[docs/engineering-casebook.md](../../docs/engineering-casebook.md) 不属于这个技能管理的文档类型；它由 [AGENTS.md](../../AGENTS.md) 中的 `Engineering Casebook` 一节管理。ADR 记录决定及其理由；案例讲述用于面试的故事并链接到 ADR，ADR 的参考资料再链接回该案例。
+
+<a id="delivery-reports"></a>
+## 交付报告
+
+每份交付报告写明：更新了哪些文档，哪些文档有意保持不变及原因，技能严格校验运行时的结果以及推迟处理的 Runbook 问题数量，以及新建的任何 Backlog 条目或 ADR。在技能里发现的缺陷，按 [Andy 的全局指令](../../.claude/rules/owner-global-instructions.md) 的要求，写在 "Skill feedback"（技能反馈）标题下。
+
+<a id="code-and-documentation-consistency"></a>
+## 代码与文档一致
+
+在快速模式下，本节由本文件前面几节和[交付模式](delivery-mode.md#fast-mode)中较轻的规则替代：严格校验不再自动运行；改动了 `docs/` 的提交，提交前必须用 `document-governance` 技能手动运行它，且不得新增校验错误；Runbook（操作手册）的重新封存推迟进行。
+
+代码和文档绝不能脱节。
+
+- 每个改变行为、接口、配置、测试所需环境或操作步骤的提交，都要在同一个提交里更新受影响的文档：规格、计划、架构文档、Runbook、Backlog 条目，以及 ADR（架构决策记录）的后续处理（用新 ADR 取代旧 ADR，而不是改写旧 ADR）。如果没有文档受影响，要在交付说明里写明并给出理由。
+- 每次提交前，运行文档严格校验，例如 `python3 <document-governance skill>/scripts/validate_docs.py . --strict`。一个提交不得引入新的校验错误。当改动涉及某个 Runbook 的契约源文件（Runbook 里 `runbook-contract` 清单列出的仓库文件，封存时它们的内容会算进 `contract_sha256`）时，要对照新代码审查这个 Runbook，然后在同一个提交里用 `runbook.py seal ... --confirm-reconciled --apply` 重新封存它。
+- 文档校验和 Runbook 检查是几秒内跑完的只读脚本；可以在 MacBook 上运行。这一点不适用于构建或测试。
+- 修复缺陷时，同时更正描述旧行为的文档。当一份文档记录了某个决定时，要保持它的状态字段和链接是最新的。
+- 提交说明和交付报告要列出更新了哪些文档，以及严格校验的结果。
