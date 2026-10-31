@@ -1,7 +1,7 @@
 <a id="test-and-production-hosts"></a>
 # 测试主机与生产主机
 
-当 `DELIVERY_MODE` 写着 `fast` 时，[交付模式](delivery-mode.md#fast-mode) 替换下文中关于运维上线包、验收例外和每次上线授权的规则，它的生产访问规则（[ADR 0074](../../docs/adr/0074-claude-runs-production-deployments.md)（ADR，架构决策记录））解除对 root 和生产账号、`/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 以及生产服务的禁令，但仅限于上线、回滚和诊断；测试运行仍然绝不使用它们，其他主机边界不变。
+当 `DELIVERY_MODE` 写着 `fast` 时，[交付模式](delivery-mode.md#fast-mode) 替换下文中关于运维上线包、验收例外和每次上线授权的规则，它的生产访问规则（[ADR 0074](../../docs/adr/0074-claude-runs-production-deployments.md)（ADR，架构决策记录））解除对 root 和生产账号、`/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 以及生产服务的禁令，但仅限于上线、回滚和诊断，而每次上线的授权只认用户在 Mac 线程里亲手打出的“上线”；测试运行仍然绝不使用它们，其他主机边界不变。
 
 规则写在 [ADR 0057](../../docs/adr/0057-batch-layers-one-two-for-small-defects.md) 中，它保留了 [ADR 0056](../../docs/adr/0056-cloud-server-also-test-host.md) 的每一条主机规则；逐步操作流程（连接、目录布局、临时目录根、运行方式、监控、清理）见 [测试主机运维 Runbook（操作手册）](../../docs/runbooks/test-host-operations-runbook.md)。早先在主机之间的迁移，以及前三次生产上线的一次性验收例外（G51、G65、G75），记录在已被取代的 ADR 0041-0047 和 0049-0052 中，属于历史，不是长期有效的许可。硬边界如下：
 

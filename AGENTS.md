@@ -28,7 +28,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="code-and-documentation-consistency"></a>
 ## 代码与文档一致
 
-在快速模式下，本节由 [.claude/rules/document-governance.md](.claude/rules/document-governance.md) 和[交付模式](#delivery-mode)中较轻的规则替代：自 2026-10-31 起，严格校验不再自动运行（[ADR 0133](docs/adr/0133-docs-check-removed-from-npm-run-check.md)）；可以用 `document-governance` 技能手动运行，Runbook（操作手册）的重新封存推迟进行。
+在快速模式下，本节由 [.claude/rules/document-governance.md](.claude/rules/document-governance.md) 和[交付模式](#delivery-mode)中较轻的规则替代：自 2026-10-31 起，严格校验不再自动运行（[ADR 0133](docs/adr/0133-docs-check-removed-from-npm-run-check.md)）；改动了 `docs/` 的提交，提交前必须用 `document-governance` 技能手动运行它，且不得新增校验错误（用户决定，2026-10-31）；Runbook（操作手册）的重新封存推迟进行。
 
 用户在 2026-09-29 要求代码和文档绝不脱节。文档脱节已经发生过一次：提交 `51fe7f6` 修改了 `apps/control-center/src`，却没有重新封存 `docs/runbooks/hermes-control-center-upgrade-runbook.md`，从那以后严格校验一直失败。
 
@@ -60,7 +60,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 用户在 2026-10-26 要求把本项目的每个难题和重要决定都保存为案例，用于用户的 AI 应用工程师（AI Application Engineer）和 AI 代理工程师（AI Agent Engineer）面试。[docs/engineering-casebook.md](docs/engineering-casebook.md) 就是这份记录。这条规则在快速模式和完整模式下都适用。
 
-- 线程解决了一个值得记录的难题或缺陷，或做出了一个重要的架构或设计决定（任何产生 ADR、改变了某个实测延迟或可靠性数字、或修复了生产事故的事情）之后，要在同一次交付中向案例库添加一个案例，或扩展已有的案例。
+- 只收录对面试或求职有帮助的案例：能在面试里讲约 2 分钟的大问题或重要决定（例如产生了 ADR 的架构决定、改变了某个实测延迟或可靠性数字的改动、修复了生产事故的工作）。修一个普通 bug 这类琐碎的事不收录（用户决定，2026-10-31）。线程做出了够格的工作，要在同一次交付中向案例库添加一个案例，或扩展已有的案例。
 - 使用案例库的案例模板，并保留每一节：背景与症状、根本原因、我们的解决方案、讨论过的备选方案及放弃了什么、业界做法、对比与取舍、实测结果、相关 ADR 和 PR，以及 30 秒面试版本。用简体中文写；可以使用英文术语，第一次出现时要解释。
 - 只引用实际打开过的第一方来源，附一段简短引文，并用案例库的来源图例标注每一个来源。每个数字都要取自提交说明、ADR、测试记录或日志，写明出处；没有测量时写“未测量”。
 - 把案例加入案例库的目录和能力地图。当后来的改动改变了某个案例的结果时，在该案例后追加一条注明日期的后续记录，而不是改写它的结论。

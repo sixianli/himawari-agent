@@ -26,7 +26,7 @@
 ## 文档检查
 
 - 自 2026-10-31 起，仓库没有文档检查：`npm run check:docs` 及其脚本已删除，任何提交都不会因文档问题被拦下（用户决定，[ADR 0133](../../docs/adr/0133-docs-check-removed-from-npm-run-check.md)）。
-- 加载了这个技能时，可以在修改受治理的文档后手动运行它的严格校验（`python3 -B <skill directory>/scripts/validate_docs.py . --strict`，约一秒，只读）。在快速模式下，只是说某份仍有效的 Runbook `contract_sha256 does not match` 或 `contract path does not exist` 的问题，可以留到完整模式再处理。
+- 改动了 `docs/` 下任何文件的提交，提交前必须手动运行这个技能的严格校验（`python3 -B <skill directory>/scripts/validate_docs.py . --strict`，约一秒，只读），并且不得新增校验错误（用户决定，2026-10-31）。技能没有加载时，在提交说明和交付报告里写明没能运行校验。在快速模式下，只是说某份仍有效的 Runbook `contract_sha256 does not match` 或 `contract path does not exist` 的问题，可以留到完整模式再处理。
 - 在快速模式下，当一个提交改动了某份 Runbook 的契约源文件（Runbook 里 `runbook-contract` 清单列出的仓库文件，封存时它们的内容会算进 `contract_sha256`）而让它的封存过期时，在提交说明里写 `Docs: deferred (fast mode)` 并写出该 Runbook 的名字。当用户切回完整模式，或某个线程即将按那份 Runbook 操作时，核对并重新封存这些推迟的 Runbook。
 - 绝不只为让检查通过而重新封存 Runbook。`runbook.py seal ... --confirm-reconciled --apply` 必须在对照当前代码复核过 Runbook 之后才运行。
 
