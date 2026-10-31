@@ -143,7 +143,11 @@ export interface BrowserThreadSearchPreparerOptions {
     authentication: GatewayAuthenticationContext;
     agentId: string;
   }) => Promise<void>;
+  readonly synchronizeWaitMs?: number;
+  readonly onSynchronizeError?: (error: unknown) => void;
 }
+
+const DEFAULT_SYNCHRONIZE_WAIT_MS = 1_500;
 
 export class BrowserThreadSearchPreparer implements HttpGatewayThreadSearchPort {
   readonly #options: BrowserThreadSearchPreparerOptions;
@@ -170,7 +174,7 @@ export class BrowserThreadSearchPreparer implements HttpGatewayThreadSearchPort 
       this.#options.tokenizer.tokenize(scope),
       this.#options.tokenizer.queryIdempotencyKey(scope),
     ]);
-    await this.#options.synchronize?.(input);
+    await this.#awaitSynchronization(input);
     const protectedQuery = await this.#options.payloadAdmission.protect({
       authentication: input.authentication,
       idempotencyKey,
@@ -183,5 +187,25 @@ export class BrowserThreadSearchPreparer implements HttpGatewayThreadSearchPort 
       tokenRefs,
       projectionVersion: this.#options.tokenizer.projectionVersion,
     });
+  }
+
+  async #awaitSynchronization(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly agentId: string;
+  }): Promise<void> {
+    if (!this.#options.synchronize) return;
+    const waitMs = this.#options.synchronizeWaitMs ?? DEFAULT_SYNCHRONIZE_WAIT_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const synchronization = this.#options
+      .synchronize(input)
+      .catch((error) => this.#options.onSynchronizeError?.(error));
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, waitMs);
+    });
+    try {
+      await Promise.race([synchronization, deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

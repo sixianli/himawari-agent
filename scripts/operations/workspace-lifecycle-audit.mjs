@@ -2,6 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
 
+export const SUPPORTED_SCHEMA_MAX = 68;
 const sections = ["executions", "legacy", "queue", "environments"];
 function assertArgument(condition) {
   if (!condition) throw new Error("WORKSPACE_AUDIT_ARGUMENT_INVALID");
@@ -31,7 +32,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 67 ||
+        version > SUPPORTED_SCHEMA_MAX ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");

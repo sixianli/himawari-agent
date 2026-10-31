@@ -381,6 +381,11 @@ def check_commit(commit, message=None):
     return check(base, Snapshot('revision', commit, base=base), message)
 
 
+def new_commits(local, remote):
+    exclude = ['^' + remote, '--not', '--remotes'] if remote != ZERO else ['--not', '--remotes']
+    return git('rev-list', local, *exclude).split()
+
+
 def pre_push(stdin):
     failed = False
     for line in stdin.read().splitlines():
@@ -390,8 +395,7 @@ def pre_push(stdin):
         if fields[1] == ZERO:
             continue
         local, remote = fields[1], fields[3]
-        exclude = ['^' + remote] if remote != ZERO else ['--not', '--remotes']
-        for commit in git('rev-list', local, *exclude).split():
+        for commit in new_commits(local, remote):
             problems = check_commit(commit)
             report(problems, commit[:12])
             failed = failed or bool(problems)

@@ -2,7 +2,7 @@ import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { isTerminalRun, type RunSummary } from "./execution-view.js";
 
 export type TimelineCategory = "you" | "tool" | "model" | "prep";
-export type TimelineStepKind = "memory" | "context" | "think" | "write" | "you" | "tool";
+export type TimelineStepKind = "think" | "write" | "you" | "tool";
 export type TimelineSegmentKind = "wait" | "reason" | "output" | "queue" | "run";
 
 export interface TimelineSegment {
@@ -22,7 +22,6 @@ export interface TimelineStep {
   readonly parallel: boolean;
   readonly segments: readonly TimelineSegment[];
   readonly itemId?: string;
-  readonly count?: number;
   readonly characters?: number;
 }
 
@@ -35,8 +34,6 @@ export interface ExecutionTimeline {
 
 const categoryOrder: readonly TimelineCategory[] = ["you", "tool", "model", "prep"];
 const categoryOf: Readonly<Record<TimelineStepKind, TimelineCategory>> = {
-  memory: "prep",
-  context: "prep",
   think: "model",
   write: "model",
   you: "you",
@@ -95,8 +92,6 @@ export function executionTimeline(
   const steps: TimelineStep[] = [];
   const calls: ModelCall[] = [];
   let call: ModelCall | undefined;
-  let memoryStart: number | undefined;
-  let selectionEnd: number | undefined;
   let waitingSince: { id: string; sequence: number; start: number } | undefined;
   const toolStarts = new Map<string, { at: number; sequence: number }>();
   const toolExecutions = new Map<string, { start?: number; end?: number }>();
@@ -123,33 +118,7 @@ export function executionTimeline(
 
   for (const record of ordered) {
     const at = time(record);
-    if (record.name === "memory.query") memoryStart ??= at;
-    else if (record.name === "memory.selection" && record.phase === "completed") {
-      const count = Number(record.text) || 0;
-      if (count > 0)
-        steps.push({
-          ...step("memory", record.id, record.sequence, memoryStart ?? at, at, false, []),
-          count,
-        });
-      selectionEnd = at;
-    } else if (
-      record.name === "context.formed" &&
-      record.phase === "completed" &&
-      (Number(record.text) || 0) > 0
-    ) {
-      steps.push({
-        ...step(
-          "context",
-          record.id,
-          record.sequence,
-          selectionEnd ?? memoryStart ?? at,
-          at,
-          false,
-          [],
-        ),
-        count: Number(record.text) || 0,
-      });
-    } else if (record.kind === "status" && record.phase === "waiting") {
+    if (record.kind === "status" && record.phase === "waiting") {
       closeWait(at);
       waitingSince = { id: record.id, sequence: record.sequence, start: at };
     } else if (record.kind === "status" && record.phase === "started") {

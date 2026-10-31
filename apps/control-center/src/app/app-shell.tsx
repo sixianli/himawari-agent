@@ -149,6 +149,13 @@ export function ControlCenterShell({
           </ActionButton>
         </div>
       </aside>
+      <button
+        type="button"
+        className="sidebar-scrim"
+        aria-hidden="true"
+        tabIndex={-1}
+        onClick={() => updateView("content")}
+      />
       <div className="workspace">
         <header className="topbar">
           <div className="topbar-start">

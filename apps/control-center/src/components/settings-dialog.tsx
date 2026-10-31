@@ -7,22 +7,13 @@ import {
 } from "../browser-storage.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
 import { ActionButton, Dropdown, ModalDialog } from "./index.js";
+import { Glyph, type GlyphName } from "./glyphs.js";
 
 const THEMES = ["light", "dark", "system"] as const;
-const themeIcons: Readonly<Record<(typeof THEMES)[number], ReactNode>> = {
-  light: (
-    <>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" />
-    </>
-  ),
-  dark: <path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z" />,
-  system: (
-    <>
-      <rect x="3.5" y="5" width="17" height="11.5" rx="2" />
-      <path d="M9 20h6M12 16.5V20" />
-    </>
-  ),
+const themeIcons: Readonly<Record<(typeof THEMES)[number], GlyphName>> = {
+  light: "sun",
+  dark: "moon",
+  system: "monitor",
 };
 
 export function SettingsDialog({
@@ -86,10 +77,7 @@ export function SettingsDialog({
             <>
               <h3>{message("review.settings.general")}</h3>
               <label className="setting-row">
-                <span>
-                  {message("settings.name")}
-                  <small className="setting-description">{message("settings.nameHint")}</small>
-                </span>
+                <span>{message("settings.name")}</span>
                 <input
                   className="setting-input"
                   type="text"
@@ -106,10 +94,7 @@ export function SettingsDialog({
                 />
               </label>
               <div className="setting-row">
-                <span>
-                  {message("locale.label")}
-                  <small className="setting-description">{message("review.localeNote")}</small>
-                </span>
+                <span>{message("locale.label")}</span>
                 <Dropdown
                   label={message("locale.label")}
                   value={locale}
@@ -138,19 +123,14 @@ export function SettingsDialog({
                         checked={preferences.theme === theme}
                         onChange={() => onPreferencesChange({ ...preferences, theme })}
                       />
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        {themeIcons[theme]}
-                      </svg>
+                      <Glyph name={themeIcons[theme]} />
                       {message(`review.${theme}`)}
                     </label>
                   ))}
                 </fieldset>
               </div>
               <div className="setting-row setting-row-top">
-                <span id="setting-accent">
-                  {message("appearance.accent")}
-                  <small className="setting-description">{message("appearance.hint")}</small>
-                </span>
+                <span id="setting-accent">{message("appearance.accent")}</span>
                 <fieldset className="accent-swatches" aria-labelledby="setting-accent">
                   {ACCENT_COLORS.map((color) => (
                     <label key={color} data-accent={color} data-checked={accent === color}>
@@ -173,10 +153,7 @@ export function SettingsDialog({
           ) : tab === "notifications" ? (
             notifications
           ) : (
-            <>
-              {data}
-              <p className="settings-note">{message("review.localData")}</p>
-            </>
+            data
           )}
         </section>
       </div>

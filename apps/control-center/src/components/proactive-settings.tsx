@@ -8,6 +8,7 @@ import {
   proactiveSettings,
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
+import { Glyph } from "./glyphs.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -64,10 +65,7 @@ export function ProactiveNotificationSettings({
   return (
     <section className="proactive-settings">
       <label className="setting-row">
-        <span>
-          {message("proactive.settings.enabled")}
-          <small className="setting-description">{message("proactive.settings.enabledHint")}</small>
-        </span>
+        <span>{message("proactive.settings.enabled")}</span>
         <input
           type="checkbox"
           role="switch"
@@ -79,10 +77,7 @@ export function ProactiveNotificationSettings({
         />
       </label>
       <div className="setting-row proactive-quiet-head">
-        <span>
-          {message("proactive.settings.quiet")}
-          <small className="setting-description">{message("proactive.settings.quietHint")}</small>
-        </span>
+        <span>{message("proactive.settings.quiet")}</span>
       </div>
       {periods.map((period, index) => {
         const label = message("proactive.settings.period", { n: index + 1 });
@@ -182,10 +177,7 @@ function ImportantSenders({ proactive, message }: { proactive: ProactiveModel; m
   return (
     <div className="proactive-senders">
       <div className="setting-row">
-        <span>
-          {message("proactive.apps.senders")}
-          <small className="setting-description">{message("proactive.apps.sendersHint")}</small>
-        </span>
+        <span>{message("proactive.apps.senders")}</span>
         <span className="actions">
           <span className="setting-description">
             {message("proactive.apps.sendersCount", { count: overview.importantSenders.length })}
@@ -259,7 +251,6 @@ export function ProactiveAppsSettings({
   return (
     <section className="proactive-apps">
       <h4>{message("proactive.apps.title")}</h4>
-      <p className="settings-note">{message("proactive.apps.intro")}</p>
       {outcome ? (
         <output
           className="proactive-outcome"
@@ -329,8 +320,11 @@ export function ProactiveAppsSettings({
           </span>
         </div>
       ) : null}
-      <details className="proactive-what" open={status === "disconnected"}>
-        <summary>{message("proactive.apps.what")}</summary>
+      <details className="proactive-what">
+        <summary>
+          <Glyph className="summary-chevron" name="chevron" size={14} />
+          {message("proactive.apps.what")}
+        </summary>
         <ul>
           <li>{message("proactive.apps.what1")}</li>
           <li>{message("proactive.apps.what2")}</li>
@@ -340,7 +334,6 @@ export function ProactiveAppsSettings({
         </ul>
       </details>
       <ImportantSenders proactive={proactive} message={message} />
-      <p className="settings-note">{message("proactive.apps.more")}</p>
     </section>
   );
 }

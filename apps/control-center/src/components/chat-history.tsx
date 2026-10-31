@@ -18,6 +18,7 @@ import { HimawariBrand } from "./brand.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { DeliveredFileCards } from "./delivered-file.js";
 import { ExecutionProcess } from "./execution-process.js";
+import { Glyph } from "./glyphs.js";
 import { BackgroundCommandLine, BackgroundReportLine } from "./more-panel.js";
 import { ActionButton } from "./primitives.js";
 
@@ -28,10 +29,29 @@ export interface OutgoingMessage {
   readonly failed: boolean;
 }
 type Message = (id: MessageId, values?: Record<string, string | number | boolean | Date>) => string;
+export interface LiveAnswerText {
+  readonly itemId: string;
+  readonly text: string;
+}
+
+function livePartial(
+  run: RunSummary,
+  items: ReturnType<typeof executionItems>,
+  partialItem: ReturnType<typeof executionItems>[number] | undefined,
+  live: LiveAnswerText | undefined,
+): string | undefined {
+  const recorded = partialItem?.text;
+  if (!live || isTerminalRun(run)) return recorded;
+  const known = items.find((item) => item.itemId === live.itemId);
+  if (known && (known !== partialItem || isNarration(known, items))) return recorded;
+  return live.text.length > (recorded?.length ?? 0) ? live.text : recorded;
+}
+
 export function ChatHistory({
   detail,
   contentByRef,
   execution,
+  liveTexts = {},
   executionStates,
   executionStateAvailable,
   connection,
@@ -59,6 +79,7 @@ export function ChatHistory({
   readonly onRetry?: (() => void) | undefined;
   readonly contentByRef: Readonly<Record<string, string>>;
   readonly execution: Readonly<Record<string, readonly ThreadExecutionRecord[]>>;
+  readonly liveTexts?: Readonly<Record<string, LiveAnswerText>> | undefined;
   readonly executionStates?: Readonly<Record<string, ThreadExecutionState>> | undefined;
   readonly executionStateAvailable?: boolean | undefined;
   readonly connection: string;
@@ -83,9 +104,10 @@ export function ChatHistory({
   useEffect(() => {
     void contentByRef;
     void execution;
+    void liveTexts;
     if (following.current && scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [contentByRef, execution]);
+  }, [contentByRef, execution, liveTexts]);
   const outgoingKey = outgoing?.key;
   useEffect(() => {
     if (!outgoingKey || !scrollRef.current) return;
@@ -141,7 +163,9 @@ export function ChatHistory({
           const partialItem = items
             .filter((item) => item.kind === "message" && !isNarration(item, items))
             .at(-1);
-          const partial = partialItem?.text;
+          const partial = group.run
+            ? livePartial(group.run, items, partialItem, liveTexts[group.run.runId])
+            : partialItem?.text;
           return (
             <div className="chat-turn" key={key} data-run-id={group.run?.runId}>
               {group.messages
@@ -454,10 +478,7 @@ function OutgoingMessageMeta({
   ) : (
     <div className="owner-meta">
       <output className="owner-status" aria-label={message("message.status.sending")}>
-        <svg className="owner-tick is-sending" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="8" />
-          <path d="M12 8v4l2.5 2" />
-        </svg>
+        <Glyph className="owner-tick is-sending" name="clock" />
         <span>{message("message.status.sending")}</span>
       </output>
     </div>
@@ -490,15 +511,10 @@ function OwnerMessageMeta({
       </button>
       <span>{message("answer.at", { at: new Date(committedAt) })}</span>
       <span className="owner-status" role="img" aria-label={status} title={status}>
-        <svg
+        <Glyph
           className={`owner-tick ${received ? "is-received" : "is-sent"}`}
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path
-            d={received ? "M1.5 12.5l4.5 4.5L15.5 7.5M10 16l1 1 9.5-9.5" : "M5 12.5l4.5 4.5L19 7.5"}
-          />
-        </svg>
+          name={received ? "checkTwice" : "check"}
+        />
       </span>
     </div>
   );

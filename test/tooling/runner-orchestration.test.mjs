@@ -391,7 +391,6 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls.map((entry) => entry.name)).toEqual([
       "policy",
       "toolchain",
-      "governance-source",
       "vitest-tooling",
     ]);
     expect(state.calls[0].args).toContain(context.baseSha);
@@ -455,18 +454,10 @@ describe("共享runner的调度、来源和失败传播", () => {
         ).toBe(true);
     },
   );
-  it("static调用原有检查、原始治理脚本和actionlint，不执行报告中的shell", async () => {
+  it("static调用原有检查和actionlint，不执行报告中的shell", async () => {
     const result = await run("static");
     expect(result.status).toBe("passed");
-    expect(result.counts.executed).toBe(4);
-    expect(state.calls.find((entry) => entry.name === "docs").args).toEqual([
-      "-E",
-      "-s",
-      "-B",
-      "tools/document-governance/scripts/validate_docs.py",
-      ".",
-      "--strict",
-    ]);
+    expect(result.counts.executed).toBe(3);
     expect(state.calls.find((entry) => entry.name === "actionlint").args).toContain(
       ".github/workflows/quality.yml",
     );

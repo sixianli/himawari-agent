@@ -1211,11 +1211,6 @@
       "reason": "postinstall 仅检查 versionScheme 并输出警告；发布包运行不依赖它。"
     }
   ],
-  "governance": {
-    "manifest": "tools/document-governance/provenance.json",
-    "entrypoint": "tools/document-governance/scripts/validate_docs.py",
-    "permission": "tools/document-governance/PERMISSION.md"
-  },
   "rules": {
     "version": "1",
     "license": {

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
 import type { ThreadGatewaySnapshot } from "@himawari-agent/gateway-contracts";
+import { useEffect, useRef, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
-import { threadQueryMessage } from "../messages.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
+import { threadQueryMessage } from "../messages.js";
 import { ActionButton } from "./primitives.js";
+
 type Thread = Extract<
   ThreadGatewaySnapshot,
   { type: "thread.detail_snapshot" }
@@ -86,10 +87,7 @@ export function ArchivedConversations({
         </ActionButton>
       ) : (
         <div className="setting-row">
-          <span>
-            {message("review.archives")}
-            <small className="setting-description">{message("review.archiveDescription")}</small>
-          </span>
+          <span>{message("review.archives")}</span>
           <ActionButton
             variant="secondary"
             aria-label={message("review.archives")}

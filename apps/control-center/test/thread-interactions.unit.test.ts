@@ -673,6 +673,103 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it("shows pushed answer text while the model writes and keeps records read during a detail refresh", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 3,
+        status: "running",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    const sources: FakeEventSource[] = [];
+    stubEventSource(sources);
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionEventsAvailable: true,
+      },
+    };
+    const answerRecord = (sequence: number, text: string) => ({
+      id: `message-${sequence}`,
+      sequence,
+      itemId: "message:live",
+      kind: "message",
+      phase: "updated",
+      name: "model",
+      text,
+      input: "",
+      output: "",
+      occurredAt: NOW,
+    });
+    let records: ReturnType<typeof answerRecord>[] = [];
+    let slowRecords = false;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution") {
+        if (slowRecords) await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records: records.filter((record) => record.sequence > request.payload.afterSequence),
+          },
+        };
+      }
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    await act(async () => {
+      source.open();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const pushed = (offset: number, text: string) => ({
+      ...executionChanged("run-ui", 3, 1),
+      type: "thread.execution_text",
+      messageId: `execution-text:${offset}`,
+      payload: {
+        threadId: "thread-ui",
+        runId: "run-ui",
+        itemId: "message:live",
+        offset,
+        text,
+        observedAt: "2026-09-14T00:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      source.emit("thread.execution_text", pushed(0, "向日葵"));
+      source.emit("thread.execution_text", pushed(3, "的一生"));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(container.querySelector(".thread-message-agent")?.textContent).toContain("向日葵的一生");
+
+    records = [answerRecord(1, "向日葵的一生，从种子开始")];
+    slowRecords = true;
+    for (let revision = 4; revision < 14; revision++) {
+      await act(async () => {
+        source.emit("thread.execution_changed", executionChanged("run-ui", revision, revision));
+        await vi.advanceTimersByTimeAsync(400);
+      });
+    }
+    expect(container.querySelector(".thread-message-agent")?.textContent).toContain(
+      "向日葵的一生，从种子开始",
+    );
+  });
+
   it("[R2-D3] shows a deadline-ended Run with an unknown tool and no active or cleanup action", async () => {
     runs = [
       {
@@ -1814,7 +1911,6 @@ describe("thread control center interactions", () => {
       options = { ...options, route: routeForSurface("threads") };
       await render();
       await refresh();
-      await click(messages["threads.search"]);
       await input(document.querySelector('input[type="search"]'), "天气记录");
       if (result === "unauthorized") query.mockRejectedValueOnce({ status: 401 });
       if (result === "unavailable")
@@ -2346,6 +2442,36 @@ describe("thread control center interactions", () => {
   });
 });
 
+it("[UI-50] shows each message as soon as its own text arrives, newest first, without waiting for the slowest payload", async () => {
+  vi.useFakeTimers();
+  const row = (sequence: number, role: "owner" | "agent") => ({
+    messageId: `message-${sequence}`,
+    sequence,
+    role,
+    contentRef: `content-${sequence}`,
+    dataClassification: "private" as const,
+    status: "committed" as const,
+    turnId: `turn-${Math.ceil(sequence / 2)}`,
+    runId: null,
+    committedAt: NOW,
+  });
+  threadMessages = [row(1, "owner"), row(2, "agent"), row(3, "owner"), row(4, "agent")];
+  const asked: string[] = [];
+  readText.mockImplementation(async (ref: string) => {
+    asked.push(ref);
+    if (ref === "content-2") return new Promise<{ content: string }>(() => undefined);
+    return { content: ref === "title-ui" ? "组件交互测试" : `正文 ${ref}` };
+  });
+  await render();
+  await refresh();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(120);
+  });
+  expect(asked.indexOf("content-4")).toBeLessThan(asked.indexOf("content-1"));
+  expect(container.textContent).toContain("正文 content-4");
+  expect(container.textContent).toContain("正文 content-1");
+});
+
 it("keeps an explicit search from being superseded by an already scheduled list refresh", async () => {
   vi.useFakeTimers();
   options = { ...options, route: routeForSurface("threads") };
@@ -2363,7 +2489,6 @@ it("keeps an explicit search from being superseded by an already scheduled list 
         resolveSearch = resolve;
       }),
   );
-  await click(messages["threads.search"]);
   await input(document.querySelector('input[type="search"]'), "天气记录");
   await act(async () => {
     document
@@ -2382,6 +2507,9 @@ it("keeps an explicit search from being superseded by an already scheduled list 
   });
   expect(query.mock.calls.filter(([request]) => request.type === "thread.search")).toHaveLength(1);
   expect(document.querySelectorAll(".thread-search-results li")).toHaveLength(1);
+  expect(container.querySelectorAll(".thread-row")).toHaveLength(0);
+  await input(document.querySelector('input[type="search"]'), "");
+  expect(document.querySelectorAll(".thread-search-results li")).toHaveLength(0);
   expect(container.querySelectorAll(".thread-row")).toHaveLength(2);
 });
 
@@ -2802,6 +2930,39 @@ describe("pushed conversation updates", () => {
     await settle();
     expect(first?.closed).toBe(true);
     expect(sources.at(-1)?.url).not.toBe(first?.url);
+  });
+
+  it("[I-38] reads new execution records while an earlier state read is still waiting", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    source.open();
+    await settle();
+    const answering = query.getMockImplementation();
+    let releaseState: () => void = () => {};
+    const stateGate = new Promise<void>((resolve) => {
+      releaseState = resolve;
+    });
+    query.mockImplementation(async (request, abort) => {
+      if (request.type === "thread.execution_state") await stateGate;
+      return answering?.(request, abort);
+    });
+    const from = query.mock.calls.length;
+    await act(async () => {
+      source.emit("thread.execution_changed", executionChanged("run-1", 4, 20));
+    });
+    await settle();
+    await act(async () => {
+      source.emit("thread.execution_changed", executionChanged("run-1", 4, 21));
+    });
+    await settle();
+    const types = requested(from).map(({ type }) => type);
+    expect(types.filter((type) => type === "thread.execution").length).toBe(2);
+    expect(types.filter((type) => type === "thread.execution_state").length).toBe(1);
+    releaseState();
+    await settle();
   });
 });
 

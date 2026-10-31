@@ -12,6 +12,7 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
@@ -68,6 +69,7 @@ import {
   registerIdentityAuthenticationRoutes,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -142,11 +144,13 @@ export interface ProductionHttpCompositionOptions {
     thinkingLevels: readonly string[];
     images: boolean;
   }[];
+  readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
   readonly onCommandAccepted?: (path: string) => void;
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
+  readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -846,6 +850,7 @@ export async function createProductionHttpComposition(
         );
     },
     ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+    ...(options.live ? { live: options.live } : {}),
     execution: new ThreadExecutionProjection({
       threads,
       checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
@@ -936,16 +941,43 @@ export async function createProductionHttpComposition(
     keys: { resolve: async () => searchKey },
     projectionVersion: `thread-search-v2:${createHash("sha256").update(searchKey).digest("hex").slice(0, 24)}`,
   });
+  const reportSearchIndex = (event: string, error: unknown, extra: Record<string, string> = {}) =>
+    options.onSearchIndexDiagnostic?.({
+      event,
+      ...extra,
+      error: error instanceof Error ? error.message : String(error),
+    });
   const searchProjector = new ThreadSearchProjector({
     sources: repository.threadSearchProjectionSource(),
     threads,
     reader: payloadRead,
     tokenizer: searchTokenizer,
+    onSourceSkipped: (source, error) =>
+      reportSearchIndex("thread_search.source_skipped", error, {
+        threadId: source.threadId,
+        kind: source.kind,
+      }),
   });
   const threadSearch = new BrowserThreadSearchPreparer({
     tokenizer: searchTokenizer,
     payloadAdmission,
     synchronize: (input) => searchProjector.synchronize(input),
+    onSynchronizeError: (error) => reportSearchIndex("thread_search.synchronize_failed", error),
+  });
+  const searchIndexer = new ThreadSearchBackgroundIndexer({
+    synchronize: () =>
+      searchProjector.synchronize({
+        authentication: {
+          subjectId: "thread-search-indexer",
+          ownerId,
+          deviceId: "thread-search-indexer",
+          authenticatedAt: clock(),
+          authenticationRef: "thread-search-indexer",
+        },
+        agentId,
+      }),
+    onError: (error) => reportSearchIndex("thread_search.background_failed", error),
+    intervalMs: 5_000,
   });
   const health = options.health ?? new RuntimeHealthModel({ publicMode: true, now: clock });
   const metrics = new RuntimeMetricsRegistry({ now: clock });
@@ -1074,6 +1106,11 @@ export async function createProductionHttpComposition(
       if (request.method === "POST" && reply.statusCode < 300 && GATEWAY_COMMAND_PATH.test(path))
         onCommandAccepted(path);
     });
+  app.addHook("onResponse", async (request, reply) => {
+    const path = request.url.split("?", 1)[0] ?? "";
+    if (request.method === "POST" && reply.statusCode < 300 && GATEWAY_COMMAND_PATH.test(path))
+      searchIndexer.kick();
+  });
   return Object.freeze({
     app,
     authentication,
@@ -1086,8 +1123,17 @@ export async function createProductionHttpComposition(
     payloadAdmission,
     health,
     metrics,
-    listen: () =>
-      app.listen({ host: httpConfiguration.listenHost, port: httpConfiguration.listenPort }),
-    close: () => app.close(),
+    listen: async () => {
+      const address = await app.listen({
+        host: httpConfiguration.listenHost,
+        port: httpConfiguration.listenPort,
+      });
+      searchIndexer.start();
+      return address;
+    },
+    close: () => {
+      searchIndexer.stop();
+      return app.close();
+    },
   });
 }

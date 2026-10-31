@@ -96,6 +96,12 @@ date: "2026-10-26"
   69. [标志要“长出来”：位置在变的动画，只给真正在动的标志开一个共用计时器](#case-sunflower-growth-mark)
   70. [14:13 就出结果的一轮，30 分钟后才推送“没有完成”](#case-unknown-result-late-settle)
   71. [想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”](#case-cache-usage-ruler)
+  72. [搜索对话时好时坏：搜索前才临时建索引，被数据库队列拖到 20 秒](#case-search-index-background)
+  73. [很简单的问题用了 28 秒：读和写挤在同一条数据库队里](#case-read-write-lanes)
+  74. [仓库里的规则和技能，云端线程到底读到了哪些](#case-cloud-thread-loading)
+  75. [回答写完才整块出现：文字从不直推，拉回来的结果又被当成过期丢掉](#case-streaming-answers)
+  76. [63 个集成测试变红：“提前收尾”抢掉了“迟到结果恢复”](#case-unknown-settle-vs-late-recovery)
+  77. [命令和主服务断联：为什么选“最多执行一次”，以及一个一次出错就杀命令的漏洞](#case-command-disconnect)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -118,14 +124,14 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
-| Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle) |
-| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci) |
+| Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
+| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci)、[云端线程读到哪些规则和技能](#case-cloud-thread-loading) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[推送反馈记录](#case-push-feedback)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar)、[主动看邮件不乱打扰](#case-proactive-gmail)、[设置各端同步：版本号防旧设备覆盖](#case-settings-everywhere)、[通知设置点了没反应](#case-push-ready-hang) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt)、[产品愿景定为顶层文档](#case-product-vision) |
@@ -4282,6 +4288,8 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 - 2026-10-30 后续，第一次在生产机实跑（第二十版上线，10:30–10:56 JST，main `e9d30b2`）：上线前那次清理删掉 44 项（旧版本、`/var/tmp` 副本、失败的操作目录），并修剪了旧证据里的 221 个大文件，根分区空闲从 21.2 GB 升到 60.2 GB，释放 38.99 GB。修剪掉的大文件中，32 份是各版升级前的数据库副本（3.81 GiB），约 8 GiB 是可重建的依赖包、源码包和 Python 包副本。上线后那次清理又释放 3.14 GB，结束时空闲 59.6 GB。`/var/tmp` 最后只剩 `himawari-twentieth-20261030/packet`。上线后清理一行行列出的删除项，拆开了“每版约 4 GB”的构成：验证源码检出 1.60 GB、安装材料 0.41 GB、上传包 0.42 GB、操作包副本 0.42 GB、验收临时文件 0.02 GB，新版本目录约 0.5 GB，升级前数据库副本 0.27 GB。也就是说，大头是上线时留下的临时副本，不是装好的版本本身。有 7 个旧版本因为被数据库或 `/etc/himawari` 提到而按规则留下，正在只读核查这些引用是不是已经过时。Andy 选择保留最近 3 份数据库副本，因为正式备份还没做（[ADR 0120 补充决定](adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md#database-copies)）。不过他选择时这次清理已经执行完，当时生产机上的 33 份副本已全部删除，新规则从下一次上线开始生效。
 - 2026-10-30 后续，核查“被提到就不删”留下的 7 个旧版本：第一、八、十版只出现在 `/etc/himawari` 里 4 份旧配置备份中；用 SQL 查数据库现有的行，没有一行提到第五、七、十一、十八版。原来按字节扫整个数据库文件，扫到了已删除的行留在空闲页里的旧内容，属于误判。现在改成只看现行配置，数据库按 SQL 查现有的行，并把查到的表和列写进保留原因。同一个 PR 里，出包结束时（不论成功失败）会删掉 Hermes 上这次出包的可重建副本，以及 Mac 临时目录里的 `packet-work-*`。教训：只按字节扫描来判断“还在用”，会把已删除的旧内容也算进去；判断是否在用，要用数据本身的读取方式（SQL）去查。
 - 2026-10-30 后续：清理写在上线脚本里，只有运行的脚本是新的才会生效。Mac 上的主工作区停在旧分支，从那里运行就会用没有清理的旧脚本，而且什么提示都没有。现在 `make-packet.py` 和 `deploy.sh` 启动时都会检查：自己所在的检出是否包含要上线的提交，不包含就停下，生产机一点不碰（[ADR 0120](adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md#current-scripts)）。建议 Andy 把 Mac 主工作区切回 `main`，或者以后只从 `origin/main` 的临时检出运行；选哪种由他定。教训：修复要生效，前提是运行的就是修好的代码；这一点要交给脚本自己检查，不能靠人记得。
+- 2026-10-31 后续，第二十二版上线后核对（数据来自 `/mnt/project-files/r22-cleanup-report-before.json`、`r22-cleanup-report-after.json`、`r22-db-copies.txt`）：上线前清理可回收 0 字节，说明 7 个误留旧版在第二十一版上线时已清掉；上线后清理删 6 项、修剪 1 项，释放 3,409,551,360 字节，根盘空闲从 57.0 GB 回到 60.4 GB；证据目录里的数据库副本正好 3 份。同时发现清理没碰 `state/data/pre-migration-*`（11 份，约 2.0 GB，由 `apps/admin-cli/src/index.ts` 升级时创建）和 `state/.raw-restore-*-original`（5 份，约 1.0 GB，由 `raw-copy-recovery.mjs` 恢复时创建），仓库里没有任何代码在创建之后读它们。Andy 选“各留最近 3 份”，ADR 0120 加了补充决定；按当时清单可再释放约 1.25 GB（该数字由清单估算，未实测）。
+- 2026-10-31 后续：清理没看 `/tmp`。S6 验收的草稿目录 `/tmp/h` 加 4 个字符，通过时删、失败时按设计保留，I-33 的清理只看 `/opt/himawari/releases` 和 `/var/tmp`，失败现场没有上限，生产机 `/tmp` 里累积了 23 个、约 5.4 GB（数字来自 Mac 线程导出的 `/tmp` 列表和协调者转述，未逐个相加）。改为上线脚本清理 `/tmp` 下这类目录只留最新 N 份（成功后 0，其余 1），预检超过 1 个就在停服前停下，见 [ADR 0135](adr/0135-failure-scenes-in-tmp-capped-at-one.md) 和 [事故 I-47](incidents-and-gates.md#incidents)。
 
 **相关 ADR/PR**
 
@@ -4409,6 +4417,18 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户让 Agent 写个小游戏，界面‘思考’了 44 秒一动不动，还弹了加载失败。我先猜是数据库排队，拿生产日志一对，排队最长才 1 秒，猜错了。真正的原因是：模型在写文件参数的那 25 秒里，我们每收到一小段就把整条消息存一份，越存越大，网页读一次进度要 13 秒。我改成写的过程中只记‘哪个文件、写了几行’，写完才存完整参数；页面显示‘已写 N 行’，思考只算真正思考的时间。最后在出包走查里加了必过用例：写文件开始 3 秒内必须看到行数在涨。”
+
+**后续（2026-10-31，日本时间 00:41）：第二十二版出包走查第一次真实跑到这条用例，失败了**
+
+`accept-file-writing-progress` 在 Hermes 上 30 秒内没等到“已写 N 行”。录像对应的那一轮里，12.5 秒内每约 0.3 秒就有一条模型消息记录写入，所以记录没有丢。根因是后端算“现在处于什么阶段”的代码（`packages/application/src/services/thread-execution-state.ts`）看到写到一半的 write 工具记录，就把它当成已经要执行的工具，阶段算成“准备中”；页面只在“模型思考、输出、等待”阶段显示行数，所以不显示。第一次修复的单元测试都没有带后端阶段，没拦住。现在的做法：工具的最新记录比它的“已写 N 行”记录还旧，就说明参数还在写，不算工具。来源：Anthropic 流式文档写明工具参数是 partial JSON strings，要等 `content_block_stop` 才是完整的 input（platform.claude.com/docs/en/build-with-claude/streaming，已打开）。新增测试用同样的记录序列算阶段，改前失败、改后通过。上线后的真实效果：未测量。
+
+**再次后续（2026-10-31，日本时间 01:26）：第一次修法也没生效，同一项走查再次失败**
+
+按 2cbceb9（含上面的修法）出包，`accept-file-writing-progress` 仍然失败，Hermes 记录形态与上一次完全相同。原因是我的判断写成了严格“晚于”，但真实流程里同一条模型消息记录会同时产出工具记录和“已写 N 行”记录，两条的序号是同一个数；我的测试手写了不同的序号，没有用真实记录生成代码的输出，所以没发现。改为“不晚于”，测试改为直接用真实记录生成代码的输出去算阶段，并检查两条序号相同；两个用例在 main 上失败、改后通过。教训：测试里要用生产代码自己产出的记录，不能手写一个看起来合理的输入。上线后的真实效果：未测量。
+
+**第三次后续（2026-10-31，日本时间 01:50）：6cba685 出包，写文件进度通过，但“执行状态慢 4 秒”的场景失败**
+
+按 6cba685 出包后，`accept-file-writing-progress` 通过，`accept-progress-without-state` 失败：把执行状态查询故意拖慢 4 秒（`SLOW_EXECUTION_STATE_MS`），“已写 N 行”在流开始后 4293 毫秒才出现，上限 3000 毫秒（Mac 线程只读走查结果）。根因：网页读“执行记录”和读“执行状态”共用同一个“正在读”标志（`apps/control-center/src/thread-control-center.tsx` 的 `refreshExecutionLatest`），状态查询慢 4 秒，期间新到的推送只能排队，下一次读记录也被拖 4 秒。改法：记录读完就释放标志，状态单独排队读（同一时间最多一个状态读，期间来的新请求合并到下一轮）。新增测试 `[I-38] reads new execution records while an earlier state read is still waiting`：状态读挂起时再来一次推送，必须再读一次记录且不重复读状态；在 main 上失败，改后通过。业界：这与 ChatGPT/Claude 类产品“先显示已到的内容，慢的附加信息后补”的做法一致，但未取得一手来源，不作为依据。上线后的真实效果：未测量。
 <a id="case-push-ready-hang"></a>
 
 ## 案例 68：通知设置点了没反应：页面在等一个永远不会返回的浏览器接口
@@ -4562,6 +4582,15 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 “用户收到一条推送，点开发现那一轮半小时前就结束了。我先猜是别的功能触发，日志否定了；再猜是沙箱里没有记录才能提前收尾，数据库又否定了。真正的原因是收尾规则不看记录有没有释放，只看每条记录自己的期限，而 bash 记录的期限是 30 分钟。我去查了 Apple、GitHub 的通知规范，确认失败要通知、要及时、不重复，所以没有隐藏失败，而是让它在资源释放后立刻收尾并写明原因。‘命令为什么被记成未知’我没猜，先加日志，等下次数据。”
 
+**后续（2026-10-31，日本时间）：“未查清”的原因查清了**
+
+案例里“命令为什么被记成退出未知”当时没有数据。第二十二版上线后同样的错误必现，我们才查到原因（[事故 I-50](incidents-and-gates.md#incidents)，[ADR 0139](adr/0139-prewarmed-environment-outlives-background-commands.md)）：命令根本没启动。预热提前建好的沙箱环境只给 5 分钟寿命，而 bash 命令的期限是 30 分钟，沙箱规定命令期限不能晚于环境期限，于是 bash 一到就被拒绝，被记成“结果不明”，整轮终止。
+
+- 怎么查的：让 Mac 线程分多步只读查询生产库——先看记录里的结果种类（SANDBOX_EXIT_UNKNOWN），再看每个序号的原因码（`SRT_ENVIRONMENT_DEADLINE_EXCEEDED`），最后对比所有环境记录的“创建后多少分钟到期”（预热上线后全是约 4.9 分钟，此前 34.7 或 60 分钟）。中间我读错过一次：以为记录里存的环境截止时间就是被比较的那个，实际它是绑定时从命令计划抄过来的，永远相等；真正比较的是环境自己的期限。数据来源：`prewarm-vs-bash-result.txt`、`observation-reasons-result.txt`。
+- 为什么上一次没查出：I-41 的修复把重心放在“收尾别等 30 分钟”，提交说明里写了“未查清”，但没有把它登记成要继续追的事；而且这个错误路径上所有日志都被吞掉了。这次补了四处日志。
+- 取舍：不回滚（第二十一版同样有预热，I-41 就在上面）；不关预热（上一轮提速的一部分）；命令确定没启动时告诉模型并继续本轮，不自动重试（Andy 决定，原因不是临时故障，重试也不会成功）。
+- 未测量：修复后的真实效果；上线前验收在 Hermes 上通过而生产失败的差别。
+
 <a id="case-cache-usage-ruler"></a>
 
 ## 案例 71：想优化上下文缓存，先要有一把尺子：每次模型请求记下命中，区分“没上报”和“命中 0”
@@ -4610,6 +4639,327 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “主人要求所有模型调用都让 KV 缓存命中最大化，但我们连当前命中率都不知道。我先建了一把尺子：每次请求按用途记下输入、命中、是否上报。关键细节是 Pi 把缺失字段当 0，所以我在抓取层扫响应，把‘提供方没报’和‘命中 0’分开，不然会把没上报的算成 0% 误导优化。口径写死，样本不足就不出数。生产数据还没有，上线后才能得到基线。”
+
+[返回目录](#contents)
+
+<a id="case-search-index-background"></a>
+
+## 案例 72：搜索对话时好时坏：搜索前才临时建索引，被数据库队列拖到 20 秒
+
+**背景与现象**
+
+2026-10-30 22:15（日本时间），Andy 在生产网页（第二十一版）搜“hello”，只看到“搜索用时较长，请稍候或重试”，重试也一样；一分钟后再搜出了 6 条。日志（14:00–14:30 UTC）里 14:14:50 三个 `/api/thread-search/v1/prepare` 同时返回，耗时 20,730、18,828、15,638 毫秒。
+
+**根因**
+
+每次搜索前要先同步索引：把上次搜索之后新增的消息和标题逐条读出、解密、算词元、写进索引（`ThreadSearchProjector.synchronize`），每一步都排进那条唯一的数据库工作线程队列（日志里 `queuedBehind` 6–9，和 I-36 同一类排队）。三个请求共用同一次补建，所以一起返回。上次搜索之后聊得越多越慢，没有新内容就很快，所以时好时坏。每步各花多少毫秒当时没有日志，是推断。排除：查“哪些还没建索引”的语句本身，合成 5000 条×200 词元只要 11 毫秒。
+
+**我们的方案**
+
+后台每 5 秒和每次命令提交后补建；搜索最多等 1.5 秒，然后用现有索引查；读不出的单条（如超过 64KB）跳过并写日志，不再让整个搜索报错。复用已有的 `ThreadSearchProjector`，没有换索引技术。
+
+**方案讨论与备选**
+
+- 写入时当场建索引（SQLite FTS5 官方推荐触发器）：没有盲区，但我们的内容是加密的，SQL 触发器读不到明文；助手回答在“一轮结束”的大事务里写，那里拿不到明文和搜索密钥，要改事务边界，风险大于这个 bug；放弃，留作以后。
+- 换成 FTS5 虚拟表：同上，明文问题；还会破坏“索引只存加盐哈希”的隐私设计；放弃。
+- 只等 #128（第二十二版）修队列：队列变快会缓解，但搜索仍把索引补建放在请求里，新增内容多时仍会慢；不够。
+
+**业界主流做法**
+
+- ✅ Elasticsearch 近实时搜索文档：“A refresh makes all operations performed on an index since the last refresh available for search”，默认每秒后台刷新，搜索不等建索引。
+- ✅ SQLite FTS5 文档：“One way to do this is with triggers”；触发器不补旧数据，要 `rebuild`。
+
+**对比与取舍**
+
+和 Elasticsearch 一样把“建索引”和“搜索”分开，代价是刚发的消息最多晚几秒才能搜到。和 FTS5 触发器不同，因为我们的内容加密、索引只存哈希。
+
+**结果数据**
+
+测试：真实 SQLite 用例 `[I-43]`，补建每步慢 400 毫秒时准备请求必须在 380 毫秒内返回；改前 814 毫秒失败，改后通过（本地运行）。生产上搜索耗时和真实网页验收：未测量，上线后补。
+
+**相关 ADR/PR**
+
+[ADR 0130](adr/0130-search-index-built-in-background.md)；[事故 I-43](incidents-and-gates.md)；相关：I-29、I-36（同一条数据库队列）。
+
+**面试 30 秒版**
+
+“搜索偶尔 20 秒才返回。日志里三个请求同时返回，说明它们共用了一次‘搜之前才补建索引’。每步都在单线程数据库队列里排队，新内容越多越慢。我把建索引挪到后台，搜索最多等 1.5 秒，并让读不出的单条不再拖垮整个搜索，用真实 SQLite 的测试锁住：改前 814 毫秒，改后低于 380。”
+
+[返回目录](#contents)
+
+<a id="case-read-write-lanes"></a>
+
+## 案例 73：很简单的问题用了 28 秒：读和写挤在同一条数据库队里
+
+**背景与现象**
+
+2026-10-30 23:21（日本时间），Andy 问“询问助手身份”，页面显示“用时 28.2s”，过程区上面的总时间和每一步的时间加起来也对不上（约 6.9 秒对 28 秒）。Andy 原话是“这是个很简单的问题而已”，并否决了只在页面上补“准备”“收尾”两步让数字对上的办法（“不做”）：他要的是慢的根因。
+
+**根因**
+
+用生产日志和数据库核对，我先后给出过两个结论，第二个纠正了第一个：
+
+- 这一轮共 209 次数据库操作，排队合计 21.3 秒，执行只有 3.2 秒（来源：日志里的 `run.timing`）。所有读和写走同一个工作线程、同一条连接，同时网页发来 35 到 49 个请求，审批全量读最长 751 毫秒、保存会话 506 毫秒，很多 0 毫秒的小读被排在后面，并在同一毫秒一起完成。
+- 我第一版把“模型 4.4–16.5 秒、答案 16.5 秒生成”当成事实。拿到数据库里每条事件的发生时间和写入时间后发现起点算错：模型在 14:21:53 就输出完了（轮次创建后 10.5 秒），之后的 17.7 秒空窗里，约 5.7 秒是事件逐条写入的积压，另有约 10 秒是最后一条 `runtime.completed` 发生后才写入，而单条写入最长只有 1.4 秒，所以这 10 秒不是排队。这一段至今没有查清。
+
+**我们的方案**
+
+见 [ADR 0131](adr/0131-read-lane-separate-readonly-connection.md)。
+
+1. 新开 1 个只读工作线程，读请求走它，写继续走唯一的写连接。
+2. 只读连接发出写语句会报错，用它找出标错的操作：`memoryJob.listPending` 标成读，其实会改过期认领，改成写。
+3. 日志新增 `lane`，上线后分开看读队和写队。
+4. 门槛：写线程被占住时读必须在 300 毫秒内返回（旧代码 608 毫秒失败）。
+
+**方案讨论与备选**
+
+- **页面补“准备”“收尾”两步让数字对上**：Andy 否决，只是把没有对应步骤的时间显示出来，不让它变快。放弃。
+- **换成 Postgres**：问题出在用法，换库同样存在；代价是搬迁加密存储和多维护一个服务。先做读写分开和批量写，仍慢再评估（Andy 同意）。
+- **放宽 `synchronous=FULL`**：能少落盘，但断电可能丢已提交事务，是数据可靠性的取舍，留给 Andy。
+
+**业界主流做法**
+
+- ✅ SQLite 官方 WAL 文档：“readers do not block writers and a writer does not block readers”，但 “there can only be one writer at a time”（[原文](https://www.sqlite.org/wal.html)）。
+- ✅ 同一文档记录了多连接下的 WAL-reset bug，3.51.3 及以后已修；我们的 better-sqlite3 12.11.1 自带 3.53.2（云端容器实测，生产机待确认）。
+- better-sqlite3 线程文档只说慢查询可以放 worker 线程，没有讲只读连接（[原文](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/threads.md)）；“读另开只读连接”是按 SQLite 官方并发说明推出的，不是它的明文建议。
+
+**对比与取舍**
+
+和业界一致：写只留一条连接，读不再排在写后面。我们的取舍：第一版只开 1 个读线程不开线程池，先看数据；放弃了把读失败时自动改走写线程，因为那会掩盖标错的操作。
+
+**结果数据**
+
+- 测试：旧代码读在被占住的写线程后等 608 毫秒（失败），新代码在 300 毫秒内返回；标错一个操作令 15 个记忆类集成测试失败（本次分支运行记录）。
+- 上线后效果：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0131](adr/0131-read-lane-separate-readonly-connection.md)；[事故 I-45](incidents-and-gates.md#incidents)；[案例 63](#case-conversation-speed)。
+
+**面试 30 秒版**
+
+“一个很简单的问题用了 28 秒。我先猜过两次：先把起点算错了，拿到数据库里每条事件的发生和写入时间才发现；根因是读和写挤在同一个工作线程的同一条队里，读也要等写。SQLite 官方的 WAL 模式本来就允许读写同时进行，所以不换库，给读单开一条只读连接。只读连接写会报错，正好拿它揪出了一个标成读、其实在写的操作。最后那 10 秒卡顿我没有硬解释，记下来继续查。”
+
+[返回目录](#contents)
+
+<a id="case-cloud-thread-loading"></a>
+
+## 案例 74：仓库里的规则和技能，云端线程到底读到了哪些
+
+**背景与现象**
+
+2026-10-30，Andy 问：产品愿景、设计规范、事故清单、案例库、ADR（架构决定记录）这些文件，线程会不会自动读到。协调者答“只有 CLAUDE.md/AGENTS.md 和 `.claude/rules/` 自动加载”，但没实地验证过；仓库里还放着 16 个技能（skill，给 Claude 的一套做事说明）的副本，规则让云端线程“任务对得上就去读副本”。
+
+**根因**
+
+不是 bug，是对“云端项目线程加载什么”没有核对过。核对方法两条：一是让一个云端线程报告开工时上下文里实际有什么（第一手：CLAUDE.md 经 `@AGENTS.md` 引入了 AGENTS.md 全文，`.claude/rules/` 下 4 个文件全文，约 54 KB；产品愿景、设计规范、事故清单、案例库、ADR 一份都不在）；二是读官方文档，发现云端线程既不加载仓库技能，也不加载带 `paths:`（按路径触发）的规则。线程最初提议的“按路径自动带上设计规范要点”在云端根本不会生效。
+
+**我们的方案**
+
+- 删除 `.claude/skills/`（[ADR 0132](adr/0132-owner-skills-from-the-claude-ai-account.md)）：云端线程要用的技能由 Andy 上传到 claude.ai 账号，`document-governance` 也不留副本。
+- 上传时发现 `readable-output` 原件按插件打包，claude.ai 技能包拒收插件清单文件，只能去掉钩子后上传，所以“回复必须是中文”的自动检查在云端不生效。
+- Andy 同时决定删除仓库里的文档自动校验（[ADR 0133](adr/0133-docs-check-removed-from-npm-run-check.md)），事故 I-06 改回“缺门槛”。
+
+**方案讨论与备选**
+
+- A. 用 `.claude/rules/` 的 `paths:` 按路径加载要点：官方文档写明云端线程不加载，只对 Mac 会话有用，放弃作为云端方案。
+- B. 在 AGENTS.md 写“什么情况读哪个文件”的表：仍是“指到才读”，效果有限。
+- C. 用检查脚本强制“改界面必须改设计规范”“修 bug 必须在案例库或事故清单留痕”：这是唯一真能拦住的办法，还在等 Andy 定范围。
+- 保留技能副本：Mac 会话优先用 `~/.claude/skills/` 原件，云端线程又不加载，副本只会和原件分叉，放弃。
+
+**业界主流做法**
+
+- ✅ Claude Code《Let Claude coordinate ongoing work with Projects》（https://code.claude.com/docs/en/claude-projects ，2026-10-30 打开）：“Cloud threads load each repository's `CLAUDE.md` instructions but not its skills”；“path-specific rules aren't loaded”。
+- ✅ Claude Code《How Claude remembers your project》（https://code.claude.com/docs/en/memory ，2026-10-30 打开）：“Claude treats them as context, not enforced configuration. To block an action regardless of what Claude decides, use a PreToolUse hook instead.”
+- ✅ Claude Code《Skills》（https://code.claude.com/docs/en/skills ，2026-10-30 打开）：项目技能“not cloud threads in a project”，账号技能覆盖“cloud sessions”。
+
+**对比与取舍**
+
+官方把“规则文件”定位为上下文、不是强制，要强制就用钩子或检查。我们得出的分层是：每个会话都要知道的写进根目录规则文件（全文加载、每个线程都付上下文费用）；要拦住的写成检查脚本；技能走账号。代价是技能的可用性取决于 Andy 上传了哪些，仓库本身不再能保证。
+
+**结果数据**
+
+- 开工时自动加载的规则约 54 KB（AGENTS.md 22.5 KB、owner-global-instructions 16.7 KB、owner-skills 7.4 KB、document-governance 4.6 KB、incident-gates 2.4 KB，按文件字节数）。
+- 删除的技能副本约 2.0 MB（`du -sh .claude/skills`）。
+- 对线程遵守率的影响：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0132](adr/0132-owner-skills-from-the-claude-ai-account.md)、[ADR 0133](adr/0133-docs-check-removed-from-npm-run-check.md)、[ADR 0080](adr/0080-document-governance-in-fast-mode.md)（被取代）、事故清单 I-06。
+
+**面试 30 秒版**
+
+“我们的 Agent 开发靠一堆规则文件和技能来约束编码代理。我先让云端线程报告开工时上下文里实际有什么，再对照官方文档，发现云端线程不加载仓库技能，也不加载按路径触发的规则，原来的设计在云端是空转的。于是改成三层：必须知道的进根目录规则文件，必须做到的写成检查脚本，技能放到账号里。教训是先验证加载机制，再设计规则。”
+
+[返回目录](#contents)
+
+
+<a id="case-streaming-answers"></a>
+
+## 案例 75：回答写完才整块出现：文字从不直推，拉回来的结果又被当成过期丢掉
+
+**背景与现象**
+
+2026-10-31，Andy 在生产第二十二版上说，回答“是一整块的丢出来，很唐突”，不像 ChatGPT 或 Claude 逐字出现。在他的 Chrome 里打开生产网页，注入一段只读脚本，记录回答区字数（MutationObserver，浏览器监听页面变化的接口）、推送通知和每个接口请求的时间，问了两个长回答。第二轮页面自报“写回答 1261 字 7.4 秒”：这 7.4 秒里收到 19 次“有变化”的推送通知，回答区却一直是 0 字，最后一次跳出 1229 字。
+
+**根因**
+
+两层，都已对照代码确认。
+
+1. 文字从来不是推给网页的。模型那一头是真流式（第二十二版另一个样本 1.8 秒落库 20 条消息记录），但网页拿到它要经过“服务端每 500 毫秒查一次库，有新记录只通知‘有变化’，网页等 80 毫秒再发请求拉记录”。
+2. 拉回来的结果被丢了。过程记录查询要 2.7–3.8 秒，返回时拿“对话详情刷新编号”判断是否过期；详情约每秒刷新一次，编号每次加一，于是写作期间每次查询都被当成过期丢弃，缓存不更新，下一次从头读，响应从 5.1 KB 涨到 11.1 KB、15.3 KB。写完、详情不再刷新后，最后一次查询才被采用。
+
+最初我只看代码，推测“短回答只来得及拉两三次所以像整块”，实测证明更严重：不是慢，是一个字都不显示。
+
+**我们的方案**（[ADR 0138](adr/0138-push-answer-text-as-it-is-written.md)）
+
+- 进程内实时消息源：运行时每收到一段文字，把到此为止的全文交给它；它算出新增的字和起始位置，经已有的 SSE（Server-Sent Events，服务器单向推送的长连接）推给网页。
+- 推出去之前用和落库相同的规则脱敏，并把末尾“像密钥开头”的几个字符先扣住，被拆成两段到达的密钥也推不出去。
+- 过程记录写入后立刻叫醒推送循环，500 毫秒轮询只做后备。
+- 网页把增量接上，用 `requestAnimationFrame`（浏览器每帧回调一次的接口）每帧最多刷新一次；位置对不上就退回拉取；这一轮结束后只认落库的最终回答。
+- 查询结果改用独立编号，只在切换对话时作废。
+
+**方案讨论与备选**
+
+- 只修丢弃：最小改动，但字仍每 0.5 秒以上跳一次。Andy 要“和大厂一样”，放弃。
+- 轮询缩到 50 毫秒：每个页面每秒 20 次读库，生产出过数据库排队事故，放弃。
+- 每次推全文：实现简单，流量随长度平方增长，改推增量加位置。
+- 过程区每条记录也推内容：要复制一份投影逻辑，先用“写入即通知 + 增量拉取”。
+
+**业界主流做法**
+
+- ✅ Anthropic 流式文档（https://platform.claude.com/docs/en/build-with-claude/streaming ，2026-10-31 打开）：“you can set `"stream": true` to incrementally stream the response using server-sent events (SSE)”。
+- ✅ OpenAI 流式文档（https://developers.openai.com/api/docs/guides/streaming-responses ，2026-10-31 打开）：“HTTP streaming (`stream=true`) over server-sent events (SSE)”，增量事件 `response.output_text.delta`。
+- ✅ Vercel AI SDK 排错页（https://ai-sdk.dev/docs/troubleshooting/react-maximum-update-depth-exceeded ，2026-10-31 打开）：“Throttle the messages and data updates to 50ms”。
+- ✅ MDN requestAnimationFrame（https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame ，2026-10-31 打开）：频率 “will generally match the display refresh rate”。
+- ChatGPT、claude.ai 网页内部怎么推：没找到一手出处，不引用。
+
+**对比与取舍**
+
+大厂 API 把文字增量直接放在流里。我们多了一层“落库是权威记录”的要求（审计、断线补齐、重启恢复），所以做成两条路：直推只负责“更快显示”，落库仍是最终依据，两者对不上时以落库为准。代价是推送连接上小事件变多，推送循环在网页读得慢时自动合并同一条消息的增量。
+
+**结果数据**
+
+- 修前（生产实测，2026-10-31 18:43 JST）：写回答 7.4 秒期间网页 0 字，结束时一次 1229 字；过程记录查询每次 2.7–3.8 秒。
+- 修后：未测量（上线后用同一脚本复测）。
+- 测试：把查询编号改回详情刷新编号时，`thread-interactions.unit.test.ts` 的新用例失败，改后通过。
+
+**相关 ADR/PR**
+
+[ADR 0138](adr/0138-push-answer-text-as-it-is-written.md)、事故清单 I-49。
+
+**面试 30 秒版**
+
+“用户说回答整块出现。我先读代码，以为是轮询太慢；去生产页面注入脚本实测，发现写回答的 7 秒里一个字都没显示：查询要 3 秒，详情每秒刷新一次，查询结果每次都被判成过期丢掉。修法是对齐大厂 API 的做法，文字增量经 SSE 直推，推之前按同样规则脱敏，并扣住可能是密钥开头的尾巴；落库仍是权威记录，用来断线补齐。教训是先在真实页面上测，再下结论。”
+
+[返回目录](#contents)
+
+<a id="case-unknown-settle-vs-late-recovery"></a>
+
+## 案例 76：63 个集成测试变红：一个“提前收尾”的修复，抢掉了“迟到结果恢复”
+
+**背景与现象**
+
+2026-10-31，流式显示线程发现 `main` 上 63 个集成测试失败，交给本线程查根因。分布：沙箱执行测试 58 条（“迟到的结果恢复这一轮”），轮次生命周期测试 4 条（R2-D3），主动提醒测试 1 条（PG-12）。共同报错 `Expired Run is not ready for authenticated settlement`（过期的轮次还没准备好收尾）。交接里写“退到 `1704efc` 前后都失败”。
+
+**根因**
+
+用二分法确认，不是猜：对 `1704efc^` 和 `1704efc` 各跑 `late` 用例，前者通过，后者失败；交接里“前后都失败”是错的。机制：`1704efc` 让“结果未知”的轮次一旦沙箱释放就立刻收尾，而恢复循环先收尾、后认领“迟到结果恢复”，所以有结果可以恢复的轮次被抢先判了失败。收尾的候选查询只看“是否可收尾”，收尾时的检查又多要求“命令记录的截止时间与轮次一致”，两边不一致，于是抛错。R2-D3 的 4 条是旧断言“截止前保持等待”，`1704efc` 有意改掉了。PG-12 在云端容器里缺浏览器路径，设置环境变量后通过，不是代码问题。
+
+**我们的方案**（[ADR 0140](adr/0140-settle-early-only-without-recoverable-result.md)）
+
+提前收尾只用于“没有可恢复结果”的轮次：直接复用恢复自己的判断，另外要求没有未决的模型调用；提前收尾后页面不再显示“重试清理”。R2-D3 的 4 条断言改成新行为。
+
+**方案讨论与备选**
+
+- 撤销 `1704efc`：Andy 要求这次必须带上，放弃。
+- 只改夹具让截止时间一致：测试变绿，但恢复仍被抢先，掩盖真问题，放弃。
+- 候选查询里加截止时间一致：截止时间在加密的冻结输入里，查询读不到，放弃。
+
+**业界主流做法**
+
+未查：这是 Himawari 自己恢复流程内部的优先级问题，没有对应的一手资料。
+
+**对比与取舍**
+
+提前收尾让用户少等 30 分钟，恢复让已有的结果不丢。两者靠同一套“能不能恢复”的判断分流，不再各写一套条件。
+
+**结果数据**
+
+- 修前：`main` 上 62 条失败（本地复现，云端容器）。
+- 修后：沙箱执行、推送、运行租约三个文件共 791 条通过；状态单测 49 条通过；R2-D3 的 26 条通过。
+- 未验证：生产上“命令退出信息没记下来”的轮次是否仍立刻收尾，上线后看。
+
+**独立判断的教训**
+
+`1704efc` 是 Andy 提的方案、线程照做，实施前没人问“会不会抢掉迟到结果恢复”，也没跑相关测试。Andy 要求所有线程：他的决定有问题时必须明确指出，不盲从。该条已写进 `.claude/rules/owner-standing-rules.md`。
+
+**相关 ADR/PR**
+
+[ADR 0140](adr/0140-settle-early-only-without-recoverable-result.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、事故清单 I-51、[案例 70](#case-unknown-result-late-settle)。
+
+**面试 30 秒版**
+
+“`main` 上 63 个测试变红。我没有猜，用上一个提交和这个提交各跑一遍，二分出是‘提前收尾’抢掉了‘迟到结果恢复’，还纠正了交接里‘前后都失败’的错误说法。修法是让两条路径共用同一个‘能不能恢复’的判断。更重要的教训：这个方案是老板定的，线程照做，没人事先问会不会冲突；之后规定每个线程都要独立判断，发现决定有问题必须指出。”
+<a id="case-command-disconnect"></a>
+
+## 案例 77：命令和主服务断联：为什么选“最多执行一次”，以及一个一次出错就杀命令的漏洞
+
+**背景与现象**
+
+命令在单独的沙箱里跑，主服务通过一条本机连接盯着它。2026-10-31，Andy 连续遇到“命令结果没能确认”（事故 I-41、I-50），并问：命令和主服务断联时，现在的设计有没有真正兜住？我做了只读评估（读代码，没有改动），把可能的断联分成五种：
+
+1. 服务重启或上线：停服等 35 秒后强杀整个进程组（`KillMode=mixed`，来自上线包的服务单元模板，生产实际值未核对），沙箱里的命令一起被杀。启动时把所有未完成的记录标成“上次启动遗留，状态未知”，不重跑。
+2. 沙箱进程退出或被杀：命令结束时检查“进程已退出、输出管道已关闭、拿到退出码”，缺一项就记 `SANDBOX_EXIT_UNKNOWN`。
+3. 通信超时或出错：轮询循环里任何一次出错都直接取消命令。
+4. 命令根本没启动：[案例 70](#case-unknown-result-late-settle) 和 ADR 0139 的事故，预热环境寿命比命令短，命令被拒绝启动。
+5. 执行进程卡死但没退出：没有心跳，只能等命令自己的期限（bash 是 30 分钟）。
+
+**根因**
+
+评估发现“不乱来”这一半做得扎实：每个调用有唯一身份，恢复路径没有启动命令的能力，所以任何一种断联都不会让命令重复执行；资源会释放，本轮会收尾。缺口在“尽早发现”和“尽量拿回结果”：
+
+- 第 3 种是明确的漏洞（读代码确认）：查询一次失败就杀命令，没有重试，也不区分错误种类。
+- 第 5 种没有心跳。
+- 第 2 种在生产出现过（I-39），当时没存“进程退出、管道关闭、退出码”三项事实，原因没查到；现在有日志，之后能查。
+- 各类断联在生产上的占比：未测量。
+
+**我们的方案**（[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)）
+
+- 保持“最多执行一次”：断联后不自动重跑命令。
+- 修第 3 种：只对明确的传输层错误（连接不可用、请求超时）重试，连续出错超过 10 秒才取消；其他错误（主服务明确拒绝、权限撤销、停止请求）仍立刻取消，不让停止被拖延。重试的只是读记录和写输出，命令本身一直在跑，不会被重新启动。
+- 心跳：评估后列为下一步，是核心特性，先出方案、讨论同意再动工。
+- 这条改动与“结果未知且资源已释放就提前收尾”的规则（ADR 0127，另一线程正在改成只对没有可恢复结果的轮次提前收尾）互不冲突：本改动减少“被误杀而变成未知”的命令，那条规则决定变成未知后什么时候收尾。
+
+**方案讨论与备选**
+
+- 像 Temporal、Kubernetes 那样自动重试：对可以重复执行的任务合适，bash 命令可能已经改文件或发请求，重跑会重复副作用，放弃。
+- 所有错误都重试：主服务的“拒绝”与“传输失败”在执行进程这边都是异常，全部重试会拖延用户按下的停止，放弃。
+- 把宽限期做成可配置项：没有数据支持具体数值，10 秒是按“比一次短暂卡顿长、比 30 分钟命令期限短得多”选的，未测量。
+
+**业界主流做法**
+
+- ✅ Temporal 的活动失败检测（https://docs.temporal.io/encyclopedia/detecting-activity-failures ，2026-10-31 打开）：“The Temporal Server doesn’t detect failures when a Worker loses communication with the Server or crashes.” 恢复靠 Start-To-Close 与 Heartbeat 超时，到期后按重试策略重跑；心跳超时到达时 “the Activity Task fails and a retry occurs if a Retry Policy dictates it.”
+- ✅ Anthropic 工具调用（https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls ，2026-10-31 打开）：工具出错时用 `is_error: true` 的 `tool_result` 回给模型；提示 “Write instructive error messages.”，写清出了什么错、下一步该怎么办。
+- ⚠ Kubernetes Job（https://kubernetes.io/docs/concepts/workloads/controllers/job/ ）：页面太长，抓取被截断，没有读到失败重试、`backoffLimit` 和幂等的原文，面试不要引用。
+
+**对比与取舍**
+
+Temporal 与我们的差别在于：它的服务端检测不到 worker 崩溃，要靠超时和心跳发现，然后重跑，前提是活动可以重复执行；我们是最多执行一次，换来不重复副作用，代价是断联后命令要么拿回结果、要么标成“未知”，不会自动完成。两者共同点是都依赖心跳或超时去发现失联，所以我们缺心跳是真实的差距，不是设计取舍。
+
+**结果数据**
+
+- 修前：一次瞬时的通信出错就取消命令（读代码，行为确定，发生频率未测量）。
+- 修后：单元测试 [POLL-1]、[POLL-2]：瞬时错误在 10 秒内重试、超过才取消、成功一次后重新计时；明确拒绝仍立刻取消。循环里的接线没有自动测试，需要真实沙箱。
+- 各类断联占比、心跳的收益：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0139](adr/0139-prewarmed-environment-outlives-background-commands.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)、事故 I-39、I-41、I-50。
+
+**面试 30 秒版**
+
+“命令在沙箱里跑，主服务靠一条连接盯着。有人问断联有没有兜住，我没有直接说‘有’，而是把断联分成五种去读代码：重启、进程被杀、通信出错、没启动、卡死。结论是‘不重复执行’这一半很扎实，因为每个调用只有一个身份，恢复路径根本没有启动命令的入口；业界 Temporal 和 Kubernetes 是自动重试，那要求任务能重复执行，bash 不行，所以我们选最多执行一次。但我发现一个漏洞：轮询里一次瞬时出错就把命令杀了。修法是只对传输层错误重试 10 秒，明确的拒绝仍立刻取消。还缺心跳，这是下一步。”
 
 [返回目录](#contents)
 

@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -28,6 +29,8 @@ class ProductionTree:
         self.releases = root / 'opt/himawari/releases'
         self.operations = root / 'opt/himawari/operations'
         self.tmp = root / 'var/tmp'
+        self.scratch = root / 'tmp'
+        self.scratch.mkdir()
         self.lib = root / 'var/lib/himawari'
         self.etc = root / 'etc/himawari'
         for directory in (self.releases, self.operations, self.tmp, self.lib / 'state/data', self.etc, root / 'etc/systemd/system'):
@@ -78,10 +81,18 @@ class ProductionTree:
             return database.execute('insert into runs (detail) values (?)', (detail,)).lastrowid
 
     def plan(self, release):
-        return {**local.cleanup_plan(release['binding']), 'lockPath': str(self.root / 'run/lock/cleanup.lock')}
+        return {**local.cleanup_plan(release['binding']), 'lockPath': str(self.root / 'run/lock/cleanup.lock'), 'scratchRoot': str(self.scratch), 'scratchOwnerUids': [os.getuid()]}
+
+    def scene(self, name, mtime, mode=0o700, size=10):
+        directory = self.scratch / name
+        directory.mkdir(mode=mode)
+        os.chmod(directory, mode)
+        self.file(directory / 's/product.sqlite', size)
+        os.utime(directory, (mtime, mtime))
+        return directory
 
 
-class ReleaseCleanupTest(unittest.TestCase):
+class CleanupCase(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.tree = ProductionTree(Path(self.directory.name))
@@ -111,6 +122,9 @@ class ReleaseCleanupTest(unittest.TestCase):
     def run_cleanup(self, apply=True, references=(), current=None, **changes):
         return remote.cleanup({**self.tree.plan(current or self.failed), **changes}, apply, list(references), '20261030T010000Z')
 
+
+
+class ReleaseCleanupTest(CleanupCase):
     def test_after_a_failed_attempt_only_the_serving_and_rollback_releases_and_the_rollback_packet_remain(self):
         result = self.run_cleanup()
         self.assertEqual(sorted(os.listdir(self.tree.releases)), ['2026-10-27-eighteenth', '2026-10-29-nineteenth'])
@@ -208,13 +222,111 @@ class ReleaseCleanupTest(unittest.TestCase):
         self.assertTrue((self.failed['evidence'] / 'twentieth-raw-schema66/data/product.sqlite').exists())
         self.assertTrue(self.failed['operations'].exists())
 
+    def state_copies(self, count):
+        copies = []
+        for index in range(count):
+            for directory in (self.tree.lib / 'state/data' / ('pre-migration-ab' + str(index)), self.tree.lib / 'state' / ('.raw-restore-r' + str(index) + '-original')):
+                database = self.tree.file(directory / 'product.sqlite', 11 * MEBIBYTE)
+                os.utime(database, (5000 + index, 5000 + index))
+                copies.append(directory)
+        return copies
+
+    def test_the_three_newest_upgrade_and_restore_copies_stay_and_older_ones_go(self):
+        copies = self.state_copies(5)
+        result = self.run_cleanup()
+        self.assertEqual([path.exists() for path in copies], [False, False, False, False, True, True, True, True, True, True])
+        self.assertEqual(sorted(item['reason'] for item in result['deleted'] if item['reason'] == 'old-state-copy'), ['old-state-copy'] * 4)
+        self.assertTrue(self.tree.database.exists())
+
+    def test_plan_mode_keeps_upgrade_and_restore_copies(self):
+        copies = self.state_copies(5)
+        self.run_cleanup(apply=False)
+        self.assertTrue(all(path.exists() for path in copies))
+
+    def test_an_old_upgrade_copy_named_by_a_process_is_kept(self):
+        copies = self.state_copies(5)
+        result = self.run_cleanup(references=[str(copies[0] / 'product.sqlite')])
+        self.assertTrue(copies[0].exists())
+        self.assertIn('used-by-a-process', [item['reason'] for item in result['kept'] if item['path'] == str(copies[0])])
+
+    def test_plan_keeps_three_upgrade_and_restore_copies_under_the_state_root(self):
+        plan = self.tree.plan(self.failed)
+        self.assertEqual((plan['keepStateCopies'], plan['stateRoot']), (3, str(self.tree.lib / 'state')))
+
     def test_a_second_run_finds_nothing_more(self):
         self.run_cleanup()
         again = self.run_cleanup()
         self.assertEqual((again['deleted'], again['trimmed']), ([], []))
 
 
+class FailureSceneCleanupTest(CleanupCase):
+    def deleted_scenes(self, result):
+        return sorted(Path(item['path']).name for item in result['deleted'] if item['reason'] == 'failure-scene')
+
+    def test_only_the_newest_failure_scene_stays(self):
+        old, middle, newest = (self.tree.scene(name, stamp) for name, stamp in (('hh3uq', 1000), ('hQLLK', 2000), ('hga59', 3000)))
+        result = self.run_cleanup()
+        self.assertEqual(self.deleted_scenes(result), ['hQLLK', 'hh3uq'])
+        self.assertEqual((old.exists(), middle.exists(), newest.exists()), (False, False, True))
+        self.assertIn({'path': str(newest), 'reason': 'newest-failure-scene'}, result['kept'])
+
+    def test_after_a_passed_deploy_no_failure_scene_stays(self):
+        scenes = [self.tree.scene('hh3uq', 1000), self.tree.scene('hga59', 3000)]
+        self.run_cleanup(keepFailureScenes=0)
+        self.assertEqual([scene.exists() for scene in scenes], [False, False])
+
+    def test_plan_mode_deletes_no_scene(self):
+        scene = self.tree.scene('hh3uq', 1000)
+        self.tree.scene('hga59', 3000)
+        result = self.run_cleanup(apply=False)
+        self.assertEqual(self.deleted_scenes(result), ['hh3uq'])
+        self.assertTrue(scene.exists())
+
+    def test_a_scene_a_process_uses_stays_and_does_not_count_as_the_newest(self):
+        busy = self.tree.scene('hh3uq', 1000)
+        older = self.tree.scene('hBkQ5', 500)
+        newest = self.tree.scene('hga59', 3000)
+        self.run_cleanup(references=[str(busy / 's')])
+        self.assertEqual((busy.exists(), older.exists(), newest.exists()), (True, False, True))
+
+    def test_directories_that_only_look_like_scenes_are_not_touched(self):
+        wrong_mode = self.tree.scene('hVqoS', 1000, mode=0o755)
+        wrong_owner = self.tree.scene('hR7tM', 1000)
+        link = self.tree.scratch / 'hlink'
+        link.symlink_to(wrong_mode)
+        too_long = self.tree.scene('hhh3uq1', 1000)
+        plain_file = self.tree.file(self.tree.scratch / 'hfile')
+        systemd = self.tree.file(self.tree.scratch / 'systemd-private-x/keep.txt')
+        self.run_cleanup(scratchOwnerUids=[os.getuid() + 1])
+        for survivor in (wrong_mode, wrong_owner, too_long, plain_file, systemd):
+            self.assertTrue(survivor.exists(), survivor)
+        self.assertTrue(link.is_symlink())
+
+    def test_a_second_run_finds_no_scene(self):
+        self.tree.scene('hh3uq', 1000)
+        self.tree.scene('hga59', 3000)
+        self.run_cleanup()
+        self.assertEqual(self.deleted_scenes(self.run_cleanup()), [])
+
+
 class CleanupPlanTest(unittest.TestCase):
+    def test_plan_keeps_one_failure_scene_in_tmp_unless_told_otherwise(self):
+        plan = local.cleanup_plan(self.binding())
+        self.assertEqual((plan['scratchRoot'], plan['keepFailureScenes']), ('/tmp', 1))
+        self.assertEqual(local.cleanup_plan(self.binding(), 0)['keepFailureScenes'], 0)
+
+    def test_scratch_name_rule_matches_what_the_acceptance_creates(self):
+        creator = (HERE / 'packet-template/acceptance/helpers/check-p5-scratch-cleanup.py').read_text()
+        checker = (HERE / 'packet-template/acceptance/cloud/run-stage-03.py').read_text()
+        self.assertIn('pathlib.Path("/tmp/h" + "".join(secrets.choice(', creator)
+        self.assertIn("re.fullmatch('/tmp/" + remote.SCRATCH_NAME.pattern + "'", checker)
+        alphabet = re.search(r'secrets\.choice\("([a-z0-9]+)"\) for index in range\((\d+)\)', creator)
+        self.assertEqual(int(alphabet.group(2)), 4)
+        self.assertTrue(remote.SCRATCH_NAME.fullmatch('h' + alphabet.group(1)[:2] + alphabet.group(1)[-2:]))
+
+    def binding(self):
+        return {'host': {'hostname': 'vmi1'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service'}, 'paths': {'newPrefix': '/opt/himawari/releases/2026-10-30-twentieth', 'oldPrefix': '/opt/himawari/releases/2026-10-29-nineteenth', 'newOperations': '/opt/himawari/operations/twentieth-20261030', 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence', 'transportRoot': '/var/tmp/himawari-twentieth-20261030/input', 'config': '/etc/himawari/config.json', 'database': '/var/lib/himawari/state/data/product.sqlite'}}
+
     def test_plan_comes_from_the_packet_bindings(self):
         binding = {'host': {'hostname': 'vmi1'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service'}, 'paths': {'newPrefix': '/opt/himawari/releases/2026-10-30-twentieth', 'newOperations': '/opt/himawari/operations/twentieth-20261030', 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence', 'transportRoot': '/var/tmp/himawari-twentieth-20261030/input', 'config': '/etc/himawari/config.json', 'database': '/var/lib/himawari/state/data/product.sqlite'}}
         plan = local.cleanup_plan(binding)

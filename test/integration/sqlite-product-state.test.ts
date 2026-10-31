@@ -359,26 +359,47 @@ describe("SQLite product-state transaction boundary", () => {
     await repository.close();
   });
 
-  it("reports how long a read waited behind a slow write in the single database worker", async () => {
+  it("answers a read while a slow write holds the writer, and reports each lane separately", async () => {
     const slow: SqliteSlowOperation[] = [];
+    const timed: SqliteTimedOperation[] = [];
     const { repository } = await integrationRepository("slow-report", {
       stateRoot: "unused",
       qualification: { holdBeforeCommitMs: 600 },
       onSlowOperation: (operation) => slow.push(operation),
+      onOperation: (operation) => timed.push(operation),
     });
+    const startedAt = performance.now();
+    let readFinishedAfterMs = Number.POSITIVE_INFINITY;
     await Promise.all([
       repository.commitStateAndEvents(commitInput("slow-report")),
-      repository.readAuthorityRevision(),
+      repository.readAuthorityRevision().then(() => {
+        readFinishedAfterMs = performance.now() - startedAt;
+      }),
     ]);
     await repository.close();
-    expect(slow.find(({ operation }) => operation === "commit")).toMatchObject({
-      queuedBehind: 0,
+    expect(readFinishedAfterMs).toBeLessThan(300);
+    const commit = slow.find(({ operation }) => operation === "commit");
+    expect(commit).toMatchObject({ queuedBehind: 0, lane: "write" });
+    expect(commit?.runMs).toBeGreaterThanOrEqual(500);
+    expect(slow.some(({ operation }) => operation === "readAuthorityRevision")).toBe(false);
+    expect(timed.find(({ operation }) => operation === "readAuthorityRevision")).toMatchObject({
+      lane: "read",
     });
-    expect(slow.find(({ operation }) => operation === "commit")?.runMs).toBeGreaterThanOrEqual(500);
-    const read = slow.find(({ operation }) => operation === "readAuthorityRevision");
-    expect(read).toMatchObject({ queuedBehind: 1 });
-    expect(read?.queueWaitMs).toBeGreaterThanOrEqual(500);
-    expect(read?.runMs).toBeLessThan(read?.queueWaitMs ?? 0);
+  });
+
+  it("refuses a write that was sent down the read lane", async () => {
+    const { repository } = await integrationRepository("read-lane-write", {
+      stateRoot: "unused",
+    });
+    await expect(
+      (
+        repository as unknown as { readRequest(o: string, p: unknown): Promise<unknown> }
+      ).readRequest("commit", {
+        input: commitInput("read-lane-write"),
+        now: new Date().toISOString(),
+      }),
+    ).rejects.toThrow(/readonly/i);
+    await repository.close();
   });
 
   it("reports every operation's queue wait and run time in the async context that asked for it", async () => {
@@ -399,8 +420,7 @@ describe("SQLite product-state transaction boundary", () => {
     expect(commit).toMatchObject({ caller: "writer" });
     expect(commit?.runMs).toBeGreaterThanOrEqual(150);
     expect(read).toMatchObject({ caller: "reader" });
-    expect(read?.queueWaitMs).toBeGreaterThanOrEqual(150);
-    expect(read?.runMs).toBeLessThan(read?.queueWaitMs ?? 0);
+    expect(read?.queueWaitMs).toBeLessThan(100);
   });
 
   it("holds one recoverable state-root lock", async () => {

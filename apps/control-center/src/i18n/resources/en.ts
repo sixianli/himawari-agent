@@ -13,7 +13,6 @@ export const messages = {
   "review.archivePending":
     "This conversation has an action waiting for your confirmation. Resolve it before archiving.",
   "review.system": "System",
-  "review.localeNote": "The interface language does not change previous messages.",
   "review.loadMore": "Load more",
   "review.retrySend": "Retry previous send",
   "review.pendingSend":
@@ -29,8 +28,6 @@ export const messages = {
   "review.settings.data": "Data",
   "review.light": "Light",
   "review.dark": "Dark",
-  "review.localData":
-    "This browser only keeps your interface language, appearance, name and unsent drafts. Conversations and memories stay on your server.",
   "review.archives": "Archived conversations",
   "review.loading": "Loading…",
   "review.preparing": "Preparing the service. You can start typing.",
@@ -114,8 +111,6 @@ export const messages = {
   "step.other": "Using a tool",
   "step.active": "{step}",
   "step.thinking": "Thought",
-  "step.memoryFound": "Related memories found: {count}",
-  "step.memoryProfile": "Memories brought into every conversation: {count}",
   "step.thinkingFor": "Thought for {time}",
   "process.took": "Took {time}",
   "chat.moreModels": "More models ({count})",
@@ -172,7 +167,6 @@ export const messages = {
   "chat.search.providersChanged":
     "The search service moved to an address you haven’t approved, so it’s off for now. Check the addresses below and turn it back on.",
   "chat.search.other": "Actions that ask you first",
-  "review.archiveDescription": "Archiving tidies the list and keeps the conversation.",
   "review.manageArchives": "Manage",
   "chat.search.enable": "Allow web search",
   "chat.search.revoke": "Revoke web search permission",
@@ -293,7 +287,6 @@ export const messages = {
   "appearance.amber": "Amber",
   "appearance.rose": "Rose",
   "appearance.graphite": "Graphite",
-  "appearance.hint": "Links, focus and selection use the accent color.",
   "chat.untitled": "New conversation",
   "chat.latest": "Back to latest",
   "chat.placeholder": "Go on, I remember everything we've talked about 🌻",
@@ -544,7 +537,6 @@ export const messages = {
   "threads.send": "Send",
   "threads.new": "New thread",
   "threads.search": "Search threads",
-  "threads.searchPlaceholder": "Search titles or message content you can access",
   "threads.messages": "Committed messages",
   "threads.rename": "Rename",
   "threads.pin": "Pin",
@@ -813,8 +805,6 @@ export const messages = {
   "error.currentUnavailable": "Currently unavailable",
   "objects.count": "{count, plural, one {# item} other {# items}} total",
   "review.settings.notifications": "Notifications",
-  "push.intro":
-    "When you are not looking at Himawari, send reminders, approvals and task results to this device.",
   "push.kind.reminder": "Memory reminders",
   "push.kind.reminderHint": "When something you asked to remember is due",
   "push.kind.approval": "Waiting for approval",
@@ -832,10 +822,6 @@ export const messages = {
   "push.turnOff": "Turn off on this device",
   "push.lastDelivered": "Last delivered {time}",
   "push.neverDelivered": "Nothing delivered yet",
-  "push.privacyNote":
-    "Nothing is pushed while Himawari is open on any device. The lock screen shows chat titles only, never answers; sensitive memories show as “You have a private reminder”.",
-  "push.iphoneTip":
-    "To hide every preview until you unlock, set iPhone Settings › Notifications › Show Previews to “When Unlocked”.",
   "push.deniedTitle": "Notifications are blocked on this device",
   "push.denied1": "Click the site icon left of the address bar and set Notifications to Allow.",
   "push.denied2": "Reload the page and come back here.",
@@ -931,17 +917,13 @@ export const messages = {
   "process.cacheHit": "Cache hit {percent}%",
   "process.cacheHitHint":
     "The share of this turn's input that the model provider reused from context it had already processed (the LLM's KV cache). That part is faster and cheaper.",
-  "chat.search.purpose": "Search the web automatically when a question needs current information",
   "chat.search.whatIsSent": "What a search sends",
   "chat.search.sentQuery":
     "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
   "chat.search.sentLimits":
     "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
-  "chat.search.otherScope":
-    "Deleting files, running commands that use the network, and reading or writing files outside the workspace",
   "chat.search.alwaysOn": "Always on",
   "settings.name": "What should I call you?",
-  "settings.nameHint": "Used in the welcome greeting. Leave it empty for a plain greeting.",
   "chat.greetNamed": "{greeting}, {name}",
   "chat.welcome.here": "I'm here. Something to look up, something to write, or just a chat?",
   "chat.welcome.hand": "Hand me something to do today 🌻",
@@ -1031,11 +1013,7 @@ export const messages = {
     "The model read {judged}: {act} to do · {check} to check · {know} good to know",
   "proactive.line.opened": "You opened it",
   "proactive.settings.enabled": "Proactive reminders",
-  "proactive.settings.enabledHint":
-    "When off, no mail is read, logged or pushed; timed reminders still arrive",
   "proactive.settings.quiet": "Quiet hours",
-  "proactive.settings.quietHint":
-    "Anything decided during quiet hours is kept and sent as one push when they end",
   "proactive.settings.period": "Period {n}",
   "proactive.settings.periodStart": "Period {n} start",
   "proactive.settings.periodEnd": "Period {n} end",
@@ -1046,8 +1024,6 @@ export const messages = {
     "Start and end can’t be the same time; this period isn’t saved yet",
   "proactive.settings.noDays": "Pick at least one day; this period isn’t saved yet",
   "proactive.apps.title": "Connected apps",
-  "proactive.apps.intro":
-    "Himawari only reads the apps you connect. Each one connects and disconnects on its own, with its own note on what is read and who receives it.",
   "proactive.apps.gmail": "Gmail (read-only)",
   "proactive.apps.connectedAs": "Connected · {account}",
   "proactive.apps.needsReconnect": "Access expired; reconnect to continue",
@@ -1067,16 +1043,12 @@ export const messages = {
   "proactive.apps.what5":
     "Disconnecting revokes access at Google and deletes every extracted result",
   "proactive.apps.senders": "Important senders",
-  "proactive.apps.sendersHint":
-    "Banks, schools, immigration, ward office, employers, broadband, mobile carrier and so on. Their mail is never marked “ignore” or skipped as a promotion",
   "proactive.apps.sendersCount": "{count, plural, one {# sender} other {# senders}}",
   "proactive.apps.manage": "Manage",
   "proactive.apps.sendersPlaceholder":
     "One per line: a full address such as info@bank.co.jp, or a whole domain such as @city.shinjuku.lg.jp",
   "proactive.apps.sendersInvalid": "“{value}” is not an email address or domain",
   "proactive.apps.save": "Save",
-  "proactive.apps.more":
-    "Apps added later, such as Notion, Slack or Outlook, will each get a row here.",
   "proactive.data.title": "Proactive reminder records",
   "proactive.data.hint": "Decision log and extracted email results",
   "proactive.data.delete": "Delete all",

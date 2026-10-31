@@ -55,7 +55,7 @@ it("stays hidden in default mode while no background program runs", async () => 
 
 it("shows running background programs in default mode without static mode filler", async () => {
   const button = await render({ mode: "srt", programs: [program], unavailableTools: [] });
-  expect(button?.textContent).toBe("1 个后台程序在运行⌄");
+  expect(button?.textContent).toBe("1 个后台程序在运行");
   await act(async () => button?.click());
   const panel = container.querySelector(".environment-panel");
   expect(panel?.querySelector("h3")?.textContent).toBe("仍在运行的程序");
@@ -71,7 +71,7 @@ it("keeps strict mode visible with its unavailable tools", async () => {
     programs: [],
     unavailableTools: [{ toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" }],
   });
-  expect(button?.textContent).toBe("严格模式 · 没有后台程序在运行⌄");
+  expect(button?.textContent).toBe("严格模式 · 没有后台程序在运行");
   await act(async () => button?.click());
   const panel = container.querySelector(".environment-panel");
   expect(panel?.textContent).toContain("没有正在运行的程序。");

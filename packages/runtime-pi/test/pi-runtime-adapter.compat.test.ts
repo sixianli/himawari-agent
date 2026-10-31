@@ -432,9 +432,13 @@ function createAdapter(
   model: Partial<Model<Api>> = {},
   now: () => string = () => NOW,
   onToolCallStarted?: PiAgentRuntimeAdapterDependencies["onToolCallStarted"],
+  onModelStreamFailed?: PiAgentRuntimeAdapterDependencies["onModelStreamFailed"],
+  onAssistantText?: PiAgentRuntimeAdapterDependencies["onAssistantText"],
 ) {
   return new PiAgentRuntimeAdapter({
     ...(onToolCallStarted ? { onToolCallStarted } : {}),
+    ...(onAssistantText ? { onAssistantText } : {}),
+    ...(onModelStreamFailed ? { onModelStreamFailed } : {}),
     projection,
     tools,
     models: {
@@ -1273,6 +1277,54 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     ]);
   });
 
+  it("hands every growing answer text to the live feed as the model writes it", async () => {
+    const projection = new RecordingProjection();
+    const seen: Array<[string, unknown, string]> = [];
+    const snapshot = (text: string) => ({
+      role: "assistant",
+      timestamp: 789,
+      content: [
+        { type: "thinking", thinking: "plan" },
+        { type: "text", text },
+      ],
+    });
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({ type: "agent_start" });
+        emit({ type: "message_start", message: snapshot("") });
+        emit({
+          type: "message_update",
+          message: snapshot(""),
+          assistantMessageEvent: { type: "thinking_delta", contentIndex: 0 },
+        });
+        for (const text of ["向", "向日葵", "向日葵的一生"])
+          emit({
+            type: "message_update",
+            message: snapshot(text),
+            assistantMessageEvent: { type: "text_delta", contentIndex: 1 },
+          });
+        emit({
+          type: "message_end",
+          message: { ...snapshot("向日葵的一生"), stopReason: "stop" },
+        });
+        emit({ type: "agent_settled" });
+      }),
+      {},
+      () => NOW,
+      undefined,
+      undefined,
+      (runRequest, message) => seen.push([runRequest.runId, message.timestamp, message.text]),
+    );
+    await collect(adapter.run(request));
+    expect(seen).toEqual([
+      [request.runId, 789, "向"],
+      [request.runId, 789, "向日葵"],
+      [request.runId, 789, "向日葵的一生"],
+    ]);
+  });
+
   it("records a streamed file write as its path and line count until the call is complete", async () => {
     const projection = new RecordingProjection();
     const lines = Array.from(
@@ -1924,6 +1976,36 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     expect(events.some(({ type }) => type === "runtime.completed")).toBe(false);
     expect(JSON.stringify(events)).not.toContain("unsafe raw failure");
   });
+
+  it.each([
+    ["Model invocation admission was blocked", "Model invocation admission was blocked"],
+    ["400: PRIVATE_PROVIDER_DATA", "provider_status_400"],
+    ["provider included an unsafe raw failure", "provider_message_withheld"],
+  ])(
+    "reports why the model stream failed without provider text: %s",
+    async (errorMessage, logged) => {
+      const failures: { code: string; message: string }[] = [];
+      const adapter = createAdapter(
+        new RecordingProjection(),
+        new RecordingRuntimeTools(),
+        fakeSessionFactory((emit) => {
+          emit({ type: "agent_start" });
+          emit({
+            type: "message_end",
+            message: { role: "assistant", content: [], stopReason: "error", errorMessage },
+          });
+          emit({ type: "agent_end", messages: [] });
+          emit({ type: "agent_settled" });
+        }),
+        {},
+        () => NOW,
+        undefined,
+        (_request, failure) => failures.push(failure),
+      );
+      await collect(adapter.run(request));
+      expect(failures).toEqual([{ code: "PI_MODEL_ERROR", message: logged }]);
+    },
+  );
 
   it.each([
     ["429: provider overloaded PRIVATE_PROVIDER_DATA", "PI_MODEL_RATE_LIMITED"],

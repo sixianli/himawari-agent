@@ -23,7 +23,7 @@ def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
     statuses = statuses or {}
     timings = {**TIMED, **(answer_ms or {})}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed'), **({'answerMs': timings[name]} if timings.get(name) is not None else {})} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nscratchScenes=0\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -61,6 +61,22 @@ class PreflightChecksTest(unittest.TestCase):
         self.assertEqual(self.failed(self.facts(active='failed')), ['SERVICE_ACTIVE'])
         self.assertEqual(self.failed(self.facts(optFree='1500')), ['OPT_FREE'])
         self.assertEqual(self.failed(self.facts(uid='1001')), ['ROOT_LOGIN'])
+
+    def test_one_failure_scene_is_allowed_two_are_refused_before_anything_changes(self):
+        self.assertEqual(self.failed(self.facts(scratchScenes='1')), [])
+        self.assertEqual(self.failed(self.facts(scratchScenes='2')), ['TMP_SCRATCH_WITHIN_LIMIT'])
+        self.assertEqual(self.failed(self.facts(scratchScenes=' 23')), ['TMP_SCRATCH_WITHIN_LIMIT'])
+
+    def test_remote_script_counts_acceptance_scratch_directories_in_tmp(self):
+        script = preflight.remote_script(BINDING)
+        self.assertIn('scratchScenes=', script)
+        with tempfile.TemporaryDirectory() as root:
+            for name in ('hh3uq', 'hQLLK', 'hlong12', 'systemd-private-x'):
+                (Path(root) / name).mkdir()
+            (Path(root) / 'hfile').write_text('x')
+            command = preflight.SCRATCH_SCENE_COUNT.replace('/tmp', root)
+            counted = subprocess.run(['bash', '-c', command], capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(counted, '2')
 
 
 class LeftoverPreflightTest(unittest.TestCase):
@@ -173,7 +189,7 @@ class DeployHarness(unittest.TestCase):
         for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py'):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
-        (self.scripts / 'release-cleanup.py').write_text('import sys\nopen(' + repr(str(root / 'calls')) + ', "a").write("cleanup-" + sys.argv[2] + "\\n")\n')
+        (self.scripts / 'release-cleanup.py').write_text('import sys\nopen(' + repr(str(root / 'calls')) + ', "a").write("cleanup-" + sys.argv[2] + "\\n")\nopen(' + repr(str(root / 'keeps')) + ', "a").write(" ".join(sys.argv[3:]) + "\\n")\n')
         (self.scripts / 'rollback.sh').write_text('echo rollback >> ' + str(self.calls) + '\nexit "${FAKE_ROLLBACK_EXIT:-0}"\n')
         (root / 'disk-hygiene').mkdir()
         shutil.copy(HERE.parent / 'disk-hygiene' / 'prune-rebuildable.py', root / 'disk-hygiene' / 'prune-rebuildable.py')
@@ -311,6 +327,18 @@ class ProductionCleanupFlowTest(DeployHarness):
         code, result, calls = self.deploy_with_cleanup()
         self.assertEqual((code, result['result']), (0, 'passed'))
         self.assertEqual((calls[0], calls[1], calls[-1]), ('cleanup-apply', 'S1_TRANSPORT', 'cleanup-apply'))
+
+    def test_cleanup_keeps_no_failure_scene_after_a_pass_and_one_otherwise(self):
+        self.deploy_with_cleanup()
+        self.assertEqual((self.calls.parent / 'keeps').read_text().split('\n')[:-1], ['1', '0'])
+        (self.calls.parent / 'keeps').unlink()
+        self.calls.unlink()
+        self.deploy_with_cleanup(FAKE_FAIL_AT='S1_INSTALL')
+        self.assertEqual((self.calls.parent / 'keeps').read_text().split('\n')[:-1], ['1', '1'])
+        (self.calls.parent / 'keeps').unlink()
+        self.calls.unlink()
+        self.deploy_with_cleanup(FAKE_FAIL_AT='S7_SWITCH_START')
+        self.assertEqual((self.calls.parent / 'keeps').read_text().split('\n')[:-1], ['1', '1'])
 
     def test_failure_before_the_service_stop_cleans_the_failed_attempt(self):
         code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S1_INSTALL')

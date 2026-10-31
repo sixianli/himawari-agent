@@ -9,10 +9,13 @@ SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAl
 SMALL_FILE_BYTES = 1024 ** 2
 LARGE_FILE_BYTES = 10 * 1024 ** 2
 KEEP_DATABASE_COPIES = 3
+KEEP_STATE_COPIES = 3
 LOCK_PATH = '/run/lock/himawari-release-cleanup.lock'
+SCRATCH_ROOT = '/tmp'
+KEEP_FAILURE_SCENES = 1
 
 
-def cleanup_plan(binding):
+def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
     paths = binding['paths']
     evidence_parent = str(Path(paths['evidenceRoot']).parent)
     return {
@@ -31,17 +34,22 @@ def cleanup_plan(binding):
         'smallFileBytes': SMALL_FILE_BYTES,
         'largeFileBytes': LARGE_FILE_BYTES,
         'keepDatabaseCopies': KEEP_DATABASE_COPIES,
+        'stateRoot': str(Path(paths['database']).parent.parent),
+        'keepStateCopies': KEEP_STATE_COPIES,
         'lockPath': LOCK_PATH,
+        'scratchRoot': SCRATCH_ROOT,
+        'keepFailureScenes': keep_failure_scenes,
     }
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[2] not in ('plan', 'apply'):
-        print('usage: python3 release-cleanup.py <operation packet directory> plan|apply', file=sys.stderr)
+    if len(sys.argv) not in (3, 4) or sys.argv[2] not in ('plan', 'apply') or (len(sys.argv) == 4 and not sys.argv[3].isdigit()):
+        print('usage: python3 release-cleanup.py <operation packet directory> plan|apply [failure scenes to keep, default ' + str(KEEP_FAILURE_SCENES) + ']', file=sys.stderr)
         return 64
     packet = Path(sys.argv[1]).resolve()
     binding = json.loads((packet / 'inputs' / 'bindings.json').read_text())
-    encoded = base64.b64encode(json.dumps(cleanup_plan(binding)).encode()).decode()
+    keep = int(sys.argv[3]) if len(sys.argv) == 4 else KEEP_FAILURE_SCENES
+    encoded = base64.b64encode(json.dumps(cleanup_plan(binding, keep)).encode()).decode()
     command = ['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], '/usr/bin/python3 -I - ' + sys.argv[2] + ' ' + encoded]
     child = subprocess.run(command, input=(HERE / 'release-cleanup-remote.py').read_bytes(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=900, check=False)
     output = child.stdout.decode(errors='replace')

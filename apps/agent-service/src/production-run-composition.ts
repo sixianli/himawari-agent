@@ -3,6 +3,7 @@ import {
   type ClockPort,
   ContextFormationService,
   ContextProjectionService,
+  type ExecutionLiveFeed,
   type IdGeneratorPort,
   type MemoryPort,
   type ModelInvocationAdmissionDescriptor,
@@ -21,6 +22,7 @@ import {
   type RuntimeToolPort,
   type SandboxExecutionRecord,
   SessionTraceRecorder,
+  type TraceStorePort,
   type WorkerRunPort,
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
@@ -116,10 +118,15 @@ export interface ProductionRunCompositionOptions {
   readonly backgroundCommands?: ProductionBackgroundCommands;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
   readonly onToolCallStarted?: (request: RuntimeRequest, toolName: string) => void;
+  readonly live?: Pick<ExecutionLiveFeed, "assistantText" | "changed">;
   readonly modelUsage?: ModelUsageRecording;
   readonly onModelAdmissionFailed?: (
     request: RuntimeRequest,
     failure: { readonly code: string; readonly reason: string | null },
+  ) => void;
+  readonly onModelStreamFailed?: (
+    request: RuntimeRequest,
+    failure: { readonly code: string; readonly message: string },
   ) => void;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
@@ -132,6 +139,24 @@ export interface ProductionRunCompositionOptions {
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
   readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
   readonly onBackgroundFailure?: (runId: string, error: unknown) => void;
+}
+
+function liveTrace(
+  trace: TraceStorePort,
+  live: Pick<ExecutionLiveFeed, "changed"> | undefined,
+): TraceStorePort {
+  if (!live) return trace;
+  return {
+    appendNext: async (event) => {
+      const appended = await trace.appendNext(event);
+      live.changed(appended.runId);
+      return appended;
+    },
+    append: (event) => trace.append(event),
+    readRun: (runId, afterSequence, limit) => trace.readRun(runId, afterSequence, limit),
+    readSession: (sessionId, afterRecordedAt, limit) =>
+      trace.readSession(sessionId, afterRecordedAt, limit),
+  };
 }
 
 export function createProductionRunComposition(options: ProductionRunCompositionOptions) {
@@ -171,7 +196,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
   };
   const trace = timings.methods(
     new SessionTraceRecorder({
-      trace: timings.methods(repository.traceStore(), { appendNext: "trace.append" }),
+      trace: timings.methods(liveTrace(repository.traceStore(), options.live), {
+        appendNext: "trace.append",
+      }),
       artifacts,
       protector: timings.methods(protector, { protect: "trace.protect" }, currentRunId),
       audit: timings.methods(repository.auditLedger(), { append: "trace.audit" }, currentRunId),
@@ -359,6 +386,20 @@ export function createProductionRunComposition(options: ProductionRunComposition
     now: () => clock.now(),
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
     ...(options.onToolCallStarted ? { onToolCallStarted: options.onToolCallStarted } : {}),
+    ...(options.live
+      ? {
+          onAssistantText: (
+            request: RuntimeRequest,
+            message: { readonly timestamp: unknown; readonly text: string },
+          ) =>
+            options.live?.assistantText({
+              threadId: request.threadId,
+              runId: request.runId,
+              ...message,
+            }),
+        }
+      : {}),
+    ...(options.onModelStreamFailed ? { onModelStreamFailed: options.onModelStreamFailed } : {}),
     ...(options.onModelAdmissionFailed
       ? { onModelAdmissionFailed: options.onModelAdmissionFailed }
       : {}),
@@ -574,13 +615,32 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatch,
     policy: options.policy,
   });
+  const describeSettledRun = (result: {
+    readonly checkpoint: {
+      readonly terminalStatus: string | null;
+      readonly diagnosticCode: string | null;
+    };
+  }): RunTimingDiagnostic => ({
+    ...(result.checkpoint.terminalStatus
+      ? { terminalStatus: result.checkpoint.terminalStatus }
+      : {}),
+    ...(result.checkpoint.diagnosticCode
+      ? { diagnosticCode: result.checkpoint.diagnosticCode }
+      : {}),
+  });
   const reportTiming = (diagnostic: RunTimingDiagnostic) => options.onRunTiming?.(diagnostic);
   const dispatcher = new ProductionRunDispatcher({
     authority,
     dispatch,
     coordinator: {
       execute: (input) =>
-        timings.attempt(input.runId, "execute", () => coordinator.execute(input), reportTiming),
+        timings.attempt(
+          input.runId,
+          "execute",
+          () => coordinator.execute(input),
+          reportTiming,
+          describeSettledRun,
+        ),
       resumeToolResult: (input) =>
         timings.attempt(
           input.runId,

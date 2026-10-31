@@ -301,22 +301,6 @@
 .thread-sidebar-actions > .app-link:hover {
   background: var(--surface-muted);
 }
-.thread-search {
-  display: flex;
-  gap: 4px;
-  margin: 6px 4px 10px;
-}
-.thread-search input {
-  min-width: 0;
-  flex: 1;
-  min-height: 40px;
-  padding: 8px;
-  font-size: 13px;
-}
-.thread-search .action-button {
-  padding: 8px;
-  min-height: 40px;
-}
 .thread-group {
   margin-bottom: 20px;
 }
@@ -1385,4 +1369,15 @@
   border-color: var(--text);
   background: var(--text);
   color: var(--background);
+}
+html[data-keyboard="open"] .app-shell {
+  height: var(--app-height);
+  min-height: 0;
+  transform: translateY(var(--app-shift, 0px));
+}
+html[data-keyboard="open"] .thread-workarea > .thread-content {
+  padding-bottom: 0;
+}
+html[data-keyboard="open"] .memory-drawer {
+  padding-bottom: 16px;
 }

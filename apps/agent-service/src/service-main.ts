@@ -9,6 +9,7 @@ import {
   claimFromRunExecutionLease,
   createProactiveSeal,
   DurableMemoryService,
+  ExecutionLiveFeed,
   type IdGeneratorPort,
   modelUsagePurpose,
   type ProductConfiguration,
@@ -1519,7 +1520,9 @@ export async function runAgentService(
         webPush.start();
       }
       proactive?.start();
+      const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        live,
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         modelUsage: {
           store: activeRepository.modelUsage(),
@@ -1537,6 +1540,14 @@ export async function runAgentService(
             runId: request.runId,
             code: failure.code,
             ...(failure.reason === null ? {} : { reason: failure.reason }),
+          }),
+        onModelStreamFailed: (request, failure) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "model.stream_failed",
+            runId: request.runId,
+            code: failure.code,
+            message: failure.message,
           }),
         onBackgroundFailure: (runId, error) =>
           writeServiceDiagnostic(errorOutput, {
@@ -1694,6 +1705,7 @@ export async function runAgentService(
       const configuredPiModels = modelComposition.composition.piModels;
       const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
+        live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
         memory: {
@@ -1727,6 +1739,8 @@ export async function runAgentService(
             event: "http.slow_request",
             ...request,
           }),
+        onSearchIndexDiagnostic: (diagnostic) =>
+          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...diagnostic }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
           if (await runs.background?.cancel(input.runId)) return;

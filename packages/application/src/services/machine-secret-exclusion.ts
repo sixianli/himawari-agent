@@ -80,3 +80,90 @@ export function assertMachineSecretFree(input: string): void {
   const findings = scanMachineSecrets(input);
   if (findings.length > 0) throw new MachineSecretExclusionError(findings);
 }
+
+const POTENTIAL_SECRET_MARKERS = Object.freeze([
+  "Bearer ",
+  "password",
+  "api_key",
+  "api-key",
+  "access_token",
+  "access-token",
+  "refresh_token",
+  "refresh-token",
+  "client_secret",
+  "client-secret",
+  "webhook_secret",
+  "webhook-secret",
+  "sk-",
+  "gho_",
+  "ghp_",
+  "ghs_",
+  "ghu_",
+  "ghr_",
+  "github_pat_",
+  "AKIA",
+  "ASIA",
+  "eyJ",
+  "-----BEGIN",
+] as const);
+
+const ACTIVE_SECRET_SUFFIXES = Object.freeze([
+  /\bBearer\s+[A-Za-z0-9._~+/=-]*$/i,
+  /\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|webhook[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]*$/i,
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]*$/,
+  /\b(?:gh[opsu]_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*)$/,
+  /\b(?:AKIA|ASIA)[A-Z0-9]*$/,
+  /\beyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*){0,2}$/,
+] as const);
+
+export function machineSecretHoldStart(value: string): number | null {
+  let holdStart: number | null = null;
+  const hold = (index: number) => {
+    holdStart = holdStart === null ? index : Math.min(holdStart, index);
+  };
+  const privateKeyStart = value.search(/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/);
+  if (
+    privateKeyStart >= 0 &&
+    !/-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value.slice(privateKeyStart))
+  ) {
+    hold(privateKeyStart);
+  }
+  for (const pattern of ACTIVE_SECRET_SUFFIXES) {
+    const match = pattern.exec(value);
+    if (match?.index !== undefined) hold(match.index);
+  }
+  for (const marker of POTENTIAL_SECRET_MARKERS) {
+    const maximum = Math.min(marker.length - 1, value.length);
+    for (let length = maximum; length > 0; length -= 1) {
+      if (value.endsWith(marker.slice(0, length))) {
+        hold(value.length - length);
+        break;
+      }
+    }
+  }
+  return holdStart;
+}
+
+export class StreamingMachineSecretRedactor {
+  #pending = "";
+
+  append(value: string): string {
+    this.#pending += value;
+    const holdStart = machineSecretHoldStart(this.#pending);
+    if (holdStart === null) {
+      const safe = this.#pending;
+      this.#pending = "";
+      return redactMachineSecrets(safe);
+    }
+    if (holdStart === 0) return "";
+    const safe = this.#pending.slice(0, holdStart);
+    this.#pending = this.#pending.slice(holdStart);
+    return redactMachineSecrets(safe);
+  }
+
+  flush(): string {
+    const safe = redactMachineSecrets(this.#pending);
+    this.#pending = "";
+    return safe;
+  }
+}

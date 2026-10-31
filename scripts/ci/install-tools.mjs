@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
-  mkdirSync,
   lstatSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -78,17 +78,7 @@ function platformArtifacts(value) {
 export function validateToolchainLock(lock) {
   fields(
     lock,
-    [
-      "schemaVersion",
-      "node",
-      "npm",
-      "python",
-      "actions",
-      "tools",
-      "nativeDependencies",
-      "governance",
-      "rules",
-    ],
+    ["schemaVersion", "node", "npm", "python", "actions", "tools", "nativeDependencies", "rules"],
     "ToolchainLock",
   );
   assert(lock.schemaVersion === 1, "不支持的 ToolchainLock schema");
@@ -225,13 +215,6 @@ export function validateToolchainLock(lock) {
       .filter((entry) => entry.decision === "build")
       .every((entry) => entry.name === "better-sqlite3"),
     "存在未实现的原生构建入口",
-  );
-  fields(lock.governance, ["manifest", "entrypoint", "permission"], "governance");
-  assert(
-    lock.governance.manifest === "tools/document-governance/provenance.json" &&
-      lock.governance.entrypoint === "tools/document-governance/scripts/validate_docs.py" &&
-      lock.governance.permission === "tools/document-governance/PERMISSION.md",
-    "治理来源路径不匹配",
   );
   fields(lock.rules, ["version", "license", "files"], "规则闭包");
   assert(/^\d+$/.test(lock.rules.version), "规则版本不精确");

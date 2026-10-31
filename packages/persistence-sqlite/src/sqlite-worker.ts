@@ -114,12 +114,16 @@ const configuration = workerData as SqliteWorkerConfiguration;
 const channel = parentPort;
 if (!channel) throw new Error("SQLite execution worker requires a parent port");
 
-const database = new BetterSqlite3(configuration.databasePath);
+const database = new BetterSqlite3(configuration.databasePath, {
+  readonly: configuration.readOnly === true,
+});
 database.pragma("foreign_keys = ON");
-database.pragma("journal_mode = WAL");
-database.pragma("synchronous = FULL");
 database.pragma(`busy_timeout = ${configuration.busyTimeoutMs}`);
-database.pragma("wal_autocheckpoint = 1000");
+if (!configuration.readOnly) {
+  database.pragma("journal_mode = WAL");
+  database.pragma("synchronous = FULL");
+  database.pragma("wal_autocheckpoint = 1000");
+}
 if (configuration.qualification?.maximumPageCount !== undefined) {
   database.pragma(`max_page_count = ${configuration.qualification.maximumPageCount}`);
 }

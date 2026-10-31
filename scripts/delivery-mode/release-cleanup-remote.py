@@ -3,6 +3,7 @@ import datetime
 import fcntl
 import json
 import os
+import pwd
 from pathlib import Path
 import re
 import shutil
@@ -14,8 +15,11 @@ import sys
 
 STAGE_NAME = re.compile(r'himawari-[a-z]+-[0-9]{8}(\..+)?')
 UPLOAD_NAME = re.compile(r'[a-z]+-packet-upload(\..+)?')
+SCRATCH_NAME = re.compile(r'h[A-Za-z0-9]{4}')
+SCRATCH_OWNER = 'himawari-prod'
 PACKET_COPY_NAME = re.compile(r'.+-change-packet-[0-9]+')
 DATABASE_COPY = re.compile(r'/[^/]*-raw-schema[0-9]+[^/]*/data/')
+STATE_COPY_NAMES = (('data', re.compile(r'pre-migration-[A-Za-z0-9]+')), ('.', re.compile(r'\.raw-restore-.+-original')))
 EVIDENCE_NAME = re.compile(r'[a-z]+-[0-9]{8}-evidence(\..+)?')
 SERVING_UNIT = re.compile(r'ExecStart=\S+ --no-global-search-paths (/\S+)/pair-supervisor\.mjs --prefix (/\S+) ')
 REBUILDABLE_SUBTREES = {'packet', 'validation', 'input', 'materials', 'runtime-tools', 'question-12-downloads', 'node_modules'}
@@ -198,6 +202,22 @@ def cleanup(plan, apply, references, stamp):
         result['archived'] += archive_small_files(path, archive, plan['smallFileBytes'], apply)
         remove(path, 'release-transport-copy')
 
+    owners = plan.get('scratchOwnerUids', [])
+    scenes = []
+    for path in children(plan['scratchRoot'], SCRATCH_NAME):
+        info = os.lstat(path)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in owners or stat.S_IMODE(info.st_mode) != 0o700:
+            keep(path, 'not-a-failure-scene')
+        elif in_use(path):
+            keep(path, in_use(path))
+        else:
+            scenes.append((info.st_mtime, path))
+    for index, (mtime, path) in enumerate(sorted(scenes, reverse=True)):
+        if index < plan['keepFailureScenes']:
+            keep(path, 'newest-failure-scene')
+        else:
+            remove(path, 'failure-scene')
+
     if os.path.isdir(plan['currentOperations']) and plan['currentOperations'] != current['operations'] and not in_use(plan['currentOperations']):
         remove(plan['currentOperations'], 'failed-attempt-operations')
     for path in children(plan['operationsRoot']):
@@ -235,6 +255,23 @@ def cleanup(plan, apply, references, stamp):
             if apply:
                 os.rename(path, target)
 
+    for subdirectory, pattern in STATE_COPY_NAMES:
+        folder = Path(plan['stateRoot']) / subdirectory
+        dated = []
+        for path in children(folder, pattern):
+            database = Path(path) / 'product.sqlite'
+            dated.append((os.lstat(database if database.exists() else path).st_mtime, path))
+        for position, (mtime, path) in enumerate(sorted(dated, reverse=True)):
+            reason = in_use(path)
+            if os.path.islink(path) or not os.path.isdir(path):
+                keep(path, 'not-a-directory')
+            elif position < plan['keepStateCopies']:
+                keep(path, 'recent-state-copy')
+            elif reason:
+                keep(path, reason)
+            else:
+                remove(path, 'old-state-copy')
+
     result['freedBytes'] = sum(item['bytes'] for item in result['deleted'] + result['trimmed'])
     return result
 
@@ -256,6 +293,7 @@ def main():
             fail('CLEANUP_ALREADY_RUNNING')
         before = shutil.disk_usage('/').free
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        plan['scratchOwnerUids'] = [0, pwd.getpwnam(SCRATCH_OWNER).pw_uid]
         result = cleanup(plan, sys.argv[1] == 'apply', process_references(os.getpid()), stamp)
         result.update({'mode': sys.argv[1], 'rootFreeBeforeBytes': before, 'rootFreeAfterBytes': shutil.disk_usage('/').free})
         if sys.argv[1] == 'apply':

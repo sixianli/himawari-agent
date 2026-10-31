@@ -2588,9 +2588,7 @@ export async function createProductionSandboxServices(options: {
             modelRef: request.modelRef,
             binding: { qualificationRef: qualification.qualificationRef },
           },
-          deadlineAt: new Date(
-            Math.min(Date.parse(request.executionDeadlineAt), Date.parse(grant.expiresAt)),
-          ).toISOString(),
+          deadlineAt: environmentDeadline(request.executionDeadlineAt, grant.expiresAt),
           capabilityRef: route.capabilityRef,
           capabilityVersion: route.capabilityVersion,
         });

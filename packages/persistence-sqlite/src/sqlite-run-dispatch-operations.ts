@@ -20,10 +20,12 @@ import { QUEUED_TOOL_BATCH_SQL, readQueuedToolBatch } from "./sqlite-queued-tool
 import { writeRunReceiptInTransaction } from "./sqlite-run-lifecycle-operations.ts";
 import {
   RUN_COMPLETION_RECOVERY_SQL,
-  RUN_EXPIRED_RECONCILIATION_SQL,
 } from "./sqlite-run-resource-guard.ts";
 import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "./sqlite-sandbox-reservation-never-started.ts";
-import { SANDBOX_TOOL_RESULT_RECOVERY_SQL } from "./sqlite-sandbox-tool-result-recovery.ts";
+import {
+  RUN_EXPIRED_RECONCILIATION_SQL,
+  SANDBOX_TOOL_RESULT_RECOVERY_SQL,
+} from "./sqlite-sandbox-tool-result-recovery.ts";
 
 type Failure = (code: string, message: string, details?: Readonly<Record<string, string>>) => never;
 

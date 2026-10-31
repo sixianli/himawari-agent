@@ -126,6 +126,60 @@ export function findLayoutProblems(locale) {
       }
     }
   }
+  for (const icon of document.querySelectorAll('svg[viewBox="0 0 24 24"]')) {
+    if (!shown(icon)) continue;
+    if (!icon.hasAttribute("data-glyph"))
+      problems.push(`ICON_OUTSIDE_GLYPH_SET ${describe(icon.parentElement ?? icon)}`);
+    for (const shape of icon.querySelectorAll("path[data-tone]")) {
+      if (getComputedStyle(shape).fill !== "none") continue;
+      problems.push(`GLYPH_FILL_LOST ${describe(icon)}`);
+      break;
+    }
+  }
+  for (const control of document.querySelectorAll("button, summary, a[href], [role='button']")) {
+    if (!shown(control)) continue;
+    const own = [...control.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? "")
+      .join("");
+    const glyphs = [...control.querySelectorAll("[aria-hidden='true']")].map(
+      (node) => node.textContent ?? "",
+    );
+    const glyphIcon = /(^|\s)[×✕✓›‹▶▸▾⋯⌄＋→←↑↓]$/;
+    if ([own, ...glyphs].some((text) => glyphIcon.test(text.trim())))
+      problems.push(`TEXT_GLYPH_ICON ${describe(control)}`);
+  }
+  const borderless = [
+    ".action-button-primary",
+    ".action-button-secondary",
+    ".action-button-danger",
+    '[role="tab"][aria-selected="true"]:not(.preview-sheet-tabs *)',
+    '.settings-nav [aria-pressed="true"]',
+    ".theme-switch",
+    'input[role="switch"]',
+    ".thread-message-owner",
+    ".files-library-chips button",
+    ".memory-chips button",
+    ".thread-search input",
+    ".files-library-search",
+    ".file-card",
+    ".composer",
+    ".modal-dialog",
+    ".topbar .action-button",
+    ".topbar .more-button",
+    ".dropdown-trigger",
+    'input:is([type="text"], [type="search"], :not([type]))',
+  ].join(", ");
+  for (const element of document.querySelectorAll(borderless)) {
+    if (!shown(element)) continue;
+    const style = getComputedStyle(element);
+    if (
+      Number.parseFloat(style.borderTopWidth) > 0 &&
+      style.borderTopStyle !== "none" &&
+      !/(,\s*0\)|\/\s*0\)|transparent)$/.test(style.borderTopColor)
+    )
+      problems.push(`OUTLINED_CONTROL ${describe(element)} ${style.borderTopWidth}`);
+  }
   const active = document.activeElement;
   if (
     active &&
@@ -261,11 +315,17 @@ body{margin:0;font:14px/1.4 sans-serif} .wide{width:520px;height:20px;background
 <p class="narrow">被挤成竖排的一段文字</p><p class="cut">没有省略号的长标题文字</p>
 <div class="cover"><button>被挡住的按钮</button><span></span></div>
 <p>日期 Thu, October 29 11:55 AM</p><button id="focused">关闭</button>
+<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="1.5"><path d="M4 12h16"/></svg>
+<svg data-glyph="memory" viewBox="0 0 24 24" width="20" height="20" style="fill:none"><path data-tone="base" d="M4 4h16v16H4Z"/></svg>
+<button class="action-button-secondary" style="border:1.5px solid #999">描了边的胶囊按钮</button>
+<button aria-label="关闭提示">×</button>
 <script>document.getElementById("focused").focus()</script></body></html>`;
 
 const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="margin:0;font:14px/1.4 sans-serif"><p>10月29日 星期四 11:55</p><button>好的</button></body></html>`;
+<body style="margin:0;font:14px/1.4 sans-serif"><p>10月29日 星期四 11:55</p><button>好的</button>
+<svg data-glyph="memory" viewBox="0 0 24 24" width="20" height="20"><path data-tone="base" d="M4 4h16v16H4Z" style="fill:currentColor;fill-opacity:.24"/></svg>
+<button class="action-button-secondary" style="border:0;background:#eee">胶囊按钮</button></body></html>`;
 
 export const REQUIRED_KINDS = [
   "PAGE_SCROLLS_SIDEWAYS",
@@ -276,6 +336,10 @@ export const REQUIRED_KINDS = [
   "CONTROL_COVERED",
   "UNASKED_FOCUS_RING",
   "ENGLISH_IN_zh-CN",
+  "GLYPH_FILL_LOST",
+  "OUTLINED_CONTROL",
+  "ICON_OUTSIDE_GLYPH_SET",
+  "TEXT_GLYPH_ICON",
 ];
 
 async function selfTest(browser) {

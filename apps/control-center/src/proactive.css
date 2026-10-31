@@ -392,9 +392,15 @@
 .proactive-settings > .action-button {
   margin-top: 10px;
 }
-.proactive-app {
+.proactive-app,
+.settings-content .proactive-app {
+  flex-wrap: nowrap;
   justify-content: flex-start;
   border-bottom: 0;
+}
+.proactive-app > .action-button,
+.proactive-app > .actions {
+  flex: none;
 }
 .proactive-app-icon {
   display: grid;
@@ -503,4 +509,10 @@
   .proactive-row {
     transition: none;
   }
+}
+.settings-content .proactive-app > .proactive-app-icon {
+  flex: 0 0 32px;
+}
+.settings-content .proactive-app > .proactive-app-name {
+  flex: 1 1 0;
 }

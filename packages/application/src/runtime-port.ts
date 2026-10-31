@@ -100,4 +100,5 @@ export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
   assertMachineSecretFree,
   redactMachineSecrets,
+  StreamingMachineSecretRedactor,
 } from "./services/machine-secret-exclusion.js";
