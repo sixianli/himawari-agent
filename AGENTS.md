@@ -43,6 +43,10 @@ The rules are in [ADR 0107](docs/adr/0107-every-incident-gets-an-automatic-gate.
 - Record the result where it belongs: an incident and its gate in `docs/incidents-and-gates.md`; a mistake coding agents repeat, with its constraint, in `docs/lessons.md` (extend an existing entry when one covers it; an entry that reached three occurrences names its constraint and where it runs); a way of briefing, reviewing, or driving opencode and Grok in the `opencode-orchestration` skill; a product defect fixed in the task or filed as a Backlog item; a change to how a test, deployment, or operation runs in its Runbook, plan, or spec; a user preference about how Claude works in Claude's memory.
 - Delivery reports name the root cause found, the gate added for each incident (file or command) or why none was needed, and where it was recorded.
 
+## Proposal Premises
+
+Every proposal opens with the premises it depends on, each with its source (a file path and line numbers, or a URL) and the quoted words; a premise without a source is not used, and a summary by another Claude is not a source (user decision, 2026-10-31). Every session, including the coordinator and cloud threads, follows [.claude/rules/proposal-premises.md](.claude/rules/proposal-premises.md).
+
 ## Engineering Casebook
 
 The user asked on 2026-10-26 that every hard problem and important decision of this project be kept as a case for the user's AI Application Engineer and AI Agent Engineer interviews. [docs/engineering-casebook.md](docs/engineering-casebook.md) is that record. This rule applies in fast mode and in full mode.
