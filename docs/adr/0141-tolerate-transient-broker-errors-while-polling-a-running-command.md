@@ -25,7 +25,7 @@ date: "2026-10-31"
 
 命令在沙箱里跑的时候，执行进程（execution-worker）每 250 毫秒向主服务查一次记录、把新输出写回去（`apps/execution-worker/src/production-sandbox-execution-v2.ts` 的命令轮询循环）。2026-10-31，Andy 问命令与主服务断联时现在的设计有没有兜住，评估（只读，读代码）发现一处漏洞：这个循环里任何一次出错，不管原因，都直接取消正在跑的命令（日志 `sandbox.command.cancelled_by_poll_error`）。主服务与执行进程之间只隔一条本机连接，一次瞬时的连接失败或超时就能杀掉一条本来好好的命令，用户看到“命令结果没能确认”，命令可能只执行了一半。
 
-其余几种断联的现状见 [案例 76](../engineering-casebook.md#case-command-disconnect)：重启或上线后记为状态未知且不重跑；退出信息不全记为“退出未知”；命令没启动由 [ADR 0139](0139-prewarmed-environment-outlives-background-commands.md) 处理。
+其余几种断联的现状见 [案例 77](../engineering-casebook.md#case-command-disconnect)：重启或上线后记为状态未知且不重跑；退出信息不全记为“退出未知”；命令没启动由 [ADR 0139](0139-prewarmed-environment-outlives-background-commands.md) 处理。
 
 [返回目录](#contents)
 
@@ -66,7 +66,7 @@ date: "2026-10-31"
 
 ## 关联文档
 
-- [案例 76](../engineering-casebook.md#case-command-disconnect)
+- [案例 77](../engineering-casebook.md#case-command-disconnect)
 - [ADR 0098：后台 bash 命令](0098-move-long-bash-commands-to-background.md)
 - [ADR 0127：结果未知且资源已释放时立即收尾](0127-settle-unknown-result-run-once-resources-released.md)
 - [ADR 0139：预热环境与命令没启动](0139-prewarmed-environment-outlives-background-commands.md)
