@@ -4109,46 +4109,38 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     };
   }
 
-  it("[R2-D3] expires a protected Pi UNKNOWN at its frozen deadline through public recovery and real projection", async () => {
+  it("[R2-D3] settles a protected Pi UNKNOWN with nothing to recover before its frozen deadline through public recovery and real projection", async () => {
     const f = await unknownToolFixture();
     try {
       const target = await f.addUnknown();
       expect(f.readback(target).sandboxRecords).toEqual({ count: 0 });
       clock.set(new Date(Date.parse(target.deadlineAt) - 1).toISOString());
-      await f.compose().dispatcher.recover();
-      expect(await f.runs.readRun(target.runId)).toMatchObject({
-        run: { status: "reconciling_external_result" },
-      });
-      expect(await f.readState(target)).toMatchObject({
-        displayPhase: "unresolved",
-        effectSummary: [{ outcome: "unknown" }],
-      });
-      await f.capture("before-deadline", target);
-      clock.set(target.deadlineAt);
       const dispatcher = f.compose().dispatcher;
       const recovery = dispatcher.recover();
       expect(dispatcher.recover()).toBe(recovery);
       await recovery;
-      await f.capture("at-deadline", target);
+      await f.capture("before-deadline", target);
       expect.soft(await f.runs.readRun(target.runId)).toMatchObject({ run: { status: "failed" } });
       expect.soft(await f.checkpoints.read(target.runId)).toMatchObject({
         checkpoint: {
           phase: "failed",
           terminalStatus: "failed",
           output: null,
-          diagnosticCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+          diagnosticCode: "RUNTIME_TOOL_RESULT_UNKNOWN",
         },
       });
       expect.soft(await f.readState(target)).toMatchObject({
         displayPhase: "failed",
-        reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+        reasonCode: "RUNTIME_TOOL_RESULT_UNKNOWN",
         availableActions: [],
         operations: [{ displayPhase: "unresolved", reasonCode: "TOOL_RESULT_UNCONFIRMED" }],
         effectSummary: [{ outcome: "unknown" }],
       });
       const settled = f.readback(target);
+      clock.set(target.deadlineAt);
       await f.compose().dispatcher.recover();
       await f.compose().dispatcher.recover();
+      await f.capture("at-deadline", target);
       expect.soft(f.readback(target)).toEqual(settled);
       expect.soft(settled.failedEvents).toHaveLength(1);
       expect
@@ -4180,32 +4172,25 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     }
   });
 
-  it("[R2-D3] scans past future UNKNOWNs and wraps a bounded round despite new candidates", async () => {
+  it("[R2-D3] settles every UNKNOWN with nothing to recover across bounded rounds while scanning", async () => {
     const f = await unknownToolFixture();
     try {
       const first = await f.addUnknown();
       clock.advance(1000);
       const second = await f.addUnknown();
       clock.advance(1000);
-      const expired = await f.addUnknown(20_000);
+      const third = await f.addUnknown(20_000);
       clock.advance(28_000);
       const recovery = f.compose().dispatcher;
       await recovery.recover(2);
-      expect(await f.runs.readRun(first.runId)).toMatchObject({
-        run: { status: "reconciling_external_result" },
-      });
+      expect(await f.runs.readRun(first.runId)).toMatchObject({ run: { status: "failed" } });
+      expect(await f.runs.readRun(second.runId)).toMatchObject({ run: { status: "failed" } });
       const added = await f.addUnknown();
       await recovery.recover(2);
-      await f.capture("expired-tail", expired);
-      expect.soft(await f.runs.readRun(expired.runId)).toMatchObject({ run: { status: "failed" } });
-      clock.set(second.deadlineAt);
+      await f.capture("third-settled", third);
+      expect.soft(await f.runs.readRun(third.runId)).toMatchObject({ run: { status: "failed" } });
       await recovery.recover(2);
-      await f.capture("wrapped-first", first);
-      expect.soft(await f.runs.readRun(first.runId)).toMatchObject({ run: { status: "failed" } });
-      expect.soft(await f.runs.readRun(second.runId)).toMatchObject({ run: { status: "failed" } });
-      expect(await f.runs.readRun(added.runId)).toMatchObject({
-        run: { status: "reconciling_external_result" },
-      });
+      expect(await f.runs.readRun(added.runId)).toMatchObject({ run: { status: "failed" } });
       expect(f.counts()).toEqual({ toolCalls: 4, modelCalls: 4 });
     } finally {
       await f.dispose();

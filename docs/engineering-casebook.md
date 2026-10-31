@@ -100,6 +100,7 @@ date: "2026-10-26"
   73. [很简单的问题用了 28 秒：读和写挤在同一条数据库队里](#case-read-write-lanes)
   74. [仓库里的规则和技能，云端线程到底读到了哪些](#case-cloud-thread-loading)
   75. [回答写完才整块出现：文字从不直推，拉回来的结果又被当成过期丢掉](#case-streaming-answers)
+  76. [63 个集成测试变红：“提前收尾”抢掉了“迟到结果恢复”](#case-unknown-settle-vs-late-recovery)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -124,7 +125,7 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
@@ -4849,6 +4850,56 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 **面试 30 秒版**
 
 “用户说回答整块出现。我先读代码，以为是轮询太慢；去生产页面注入脚本实测，发现写回答的 7 秒里一个字都没显示：查询要 3 秒，详情每秒刷新一次，查询结果每次都被判成过期丢掉。修法是对齐大厂 API 的做法，文字增量经 SSE 直推，推之前按同样规则脱敏，并扣住可能是密钥开头的尾巴；落库仍是权威记录，用来断线补齐。教训是先在真实页面上测，再下结论。”
+
+[返回目录](#contents)
+
+<a id="case-unknown-settle-vs-late-recovery"></a>
+
+## 案例 76：63 个集成测试变红：一个“提前收尾”的修复，抢掉了“迟到结果恢复”
+
+**背景与现象**
+
+2026-10-31，流式显示线程发现 `main` 上 63 个集成测试失败，交给本线程查根因。分布：沙箱执行测试 58 条（“迟到的结果恢复这一轮”），轮次生命周期测试 4 条（R2-D3），主动提醒测试 1 条（PG-12）。共同报错 `Expired Run is not ready for authenticated settlement`（过期的轮次还没准备好收尾）。交接里写“退到 `1704efc` 前后都失败”。
+
+**根因**
+
+用二分法确认，不是猜：对 `1704efc^` 和 `1704efc` 各跑 `late` 用例，前者通过，后者失败；交接里“前后都失败”是错的。机制：`1704efc` 让“结果未知”的轮次一旦沙箱释放就立刻收尾，而恢复循环先收尾、后认领“迟到结果恢复”，所以有结果可以恢复的轮次被抢先判了失败。收尾的候选查询只看“是否可收尾”，收尾时的检查又多要求“命令记录的截止时间与轮次一致”，两边不一致，于是抛错。R2-D3 的 4 条是旧断言“截止前保持等待”，`1704efc` 有意改掉了。PG-12 在云端容器里缺浏览器路径，设置环境变量后通过，不是代码问题。
+
+**我们的方案**（[ADR 0140](adr/0140-settle-early-only-without-recoverable-result.md)）
+
+提前收尾只用于“没有可恢复结果”的轮次：直接复用恢复自己的判断，另外要求没有未决的模型调用；提前收尾后页面不再显示“重试清理”。R2-D3 的 4 条断言改成新行为。
+
+**方案讨论与备选**
+
+- 撤销 `1704efc`：Andy 要求这次必须带上，放弃。
+- 只改夹具让截止时间一致：测试变绿，但恢复仍被抢先，掩盖真问题，放弃。
+- 候选查询里加截止时间一致：截止时间在加密的冻结输入里，查询读不到，放弃。
+
+**业界主流做法**
+
+未查：这是 Himawari 自己恢复流程内部的优先级问题，没有对应的一手资料。
+
+**对比与取舍**
+
+提前收尾让用户少等 30 分钟，恢复让已有的结果不丢。两者靠同一套“能不能恢复”的判断分流，不再各写一套条件。
+
+**结果数据**
+
+- 修前：`main` 上 62 条失败（本地复现，云端容器）。
+- 修后：沙箱执行、推送、运行租约三个文件共 791 条通过；状态单测 49 条通过；R2-D3 的 26 条通过。
+- 未验证：生产上“命令退出信息没记下来”的轮次是否仍立刻收尾，上线后看。
+
+**独立判断的教训**
+
+`1704efc` 是 Andy 提的方案、线程照做，实施前没人问“会不会抢掉迟到结果恢复”，也没跑相关测试。Andy 要求所有线程：他的决定有问题时必须明确指出，不盲从。该条已写进 `.claude/rules/owner-standing-rules.md`。
+
+**相关 ADR/PR**
+
+[ADR 0140](adr/0140-settle-early-only-without-recoverable-result.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、事故清单 I-51、[案例 70](#case-unknown-result-late-settle)。
+
+**面试 30 秒版**
+
+“`main` 上 63 个测试变红。我没有猜，用上一个提交和这个提交各跑一遍，二分出是‘提前收尾’抢掉了‘迟到结果恢复’，还纠正了交接里‘前后都失败’的错误说法。修法是让两条路径共用同一个‘能不能恢复’的判断。更重要的教训：这个方案是老板定的，线程照做，没人事先问会不会冲突；之后规定每个线程都要独立判断，发现决定有问题必须指出。”
 
 [返回目录](#contents)
 
