@@ -9,7 +9,8 @@ import {
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { scoreStable } from "./memory-capture-score.mjs";
 
-const GATEWAY = "https://ai-gateway.vercel.sh/v1";
+const GATEWAY = process.env.EVAL_BASE_URL ?? "https://ai-gateway.vercel.sh/v1";
+const FLAT_RATE = process.env.EVAL_BASE_URL !== undefined;
 const MODEL = process.env["EVAL_MODEL"] ?? "deepseek/deepseek-v4.1-flash";
 const ARMS = (process.env["EVAL_ARMS"] ?? "A,B").split(",");
 const RUNS = Number(process.env["EVAL_RUNS"] ?? "3");
@@ -222,6 +223,7 @@ async function mapLimit<T, R>(
 }
 
 async function loadPrices(): Promise<void> {
+  if (FLAT_RATE) return;
   const models = (await (await fetch(`${GATEWAY}/models`)).json()) as {
     data: { id: string; pricing?: Record<string, string> }[];
   };
