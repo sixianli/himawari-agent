@@ -280,8 +280,11 @@ export function ChatComposer({
             disabled={!onUpload}
             onClick={() => fileRef.current?.click()}
             variant="quiet"
+            className="attach-button"
           >
-            ＋
+            <svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
           </ActionButton>
           {models.length ? (
             <div className="model-selection">

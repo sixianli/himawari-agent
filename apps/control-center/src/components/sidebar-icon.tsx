@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 const paths = {
   panel: (
     <>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M9 3v18m7-12-3 3 3 3" />
+      <rect x="3.5" y="4.5" width="17" height="15" rx="3" />
+      <path d="M9.5 4.5v15" />
     </>
   ),
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
@@ -16,9 +16,9 @@ const paths = {
   ),
   archive: (
     <>
-      <rect x="3.5" y="4" width="17" height="4.5" rx="1.2" />
-      <path d="M5.5 8.5v10A1.5 1.5 0 0 0 7 20h10a1.5 1.5 0 0 0 1.5-1.5v-10" />
-      <path d="M12 11.5v5M9.8 14.3 12 16.5l2.2-2.2" />
+      <rect x="3.5" y="4" width="17" height="4.5" rx="1.5" />
+      <path d="M5.5 8.5v9.5a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8.5" />
+      <path d="M10 12.5h4" />
     </>
   ),
   rename: (
@@ -29,23 +29,20 @@ const paths = {
   ),
   settings: (
     <>
-      <path
-        d="m9.2 3-.5 2.1-1.8 1.1-2.1-.6-2.8 4.8 1.6 1.5v2.1L2 15.5l2.8 4.8 2.1-.6 1.8 1.1.5 2.2h5.6l.5-2.2 1.8-1.1 2.1.6 2.8-4.8-1.6-1.5v-2.1l1.6-1.5-2.8-4.8-2.1.6-1.8-1.1-.5-2.1Z"
-        transform="translate(1 0) scale(.92)"
-      />
       <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.1V4a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.1a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
     </>
   ),
   compose: (
     <>
-      <path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7" />
-      <path d="m16 3 5 5M10 14l-1 4 4-1L22 8l-4-4Z" />
+      <path d="M12 20h8" />
+      <path d="M15.5 4.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
     </>
   ),
   search: (
     <>
-      <circle cx="10.5" cy="10.5" r="7.5" />
-      <path d="m16 16 5 5" />
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4 4" />
     </>
   ),
   refresh: (
@@ -67,19 +64,16 @@ const paths = {
       <path d="m8 12 3 3 5-6" />
     </>
   ),
-  memory: (
-    <>
-      <path d="M6.5 3.5h11v17l-5.5-4-5.5 4Z" />
-      <path d="M12 7.2l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z" />
-    </>
-  ),
+  memory: <path d="M7 3.5h10A1.5 1.5 0 0 1 18.5 5v15L12 16l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z" />,
   reminders: (
     <>
-      <path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2H5Z" />
-      <path d="M10 20.5a2 2 0 0 0 4 0" />
+      <path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15Z" />
+      <path d="M10 21h4" />
     </>
   ),
-  files: <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />,
+  files: (
+    <path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" />
+  ),
   more: (
     <>
       <circle cx="6" cy="12" r="1.4" fill="currentColor" stroke="none" />
@@ -99,7 +93,7 @@ export function SidebarIcon({ name }: { readonly name: keyof typeof paths }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >

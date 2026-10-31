@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+
 const symbols = {
   review: (
     <>
@@ -8,26 +9,26 @@ const symbols = {
   ),
   read: (
     <>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
-      <path d="M14 2v6h6m-6 8 3 3" />
-      <circle cx="11" cy="13" r="3" />
+      <path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3.5V8h4.5M9 13h6M9 16.5h4" />
     </>
   ),
   write: (
     <>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
-      <path d="M14 2v6h6M8 15h8m-4-4v8" />
+      <path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3.5V8h4.5M12 11v6M9 14h6" />
     </>
   ),
   edit: (
     <>
-      <path d="M12 3H5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5m-11 7-1 4 4-1L22 9l-4-4Z" />
+      <path d="M12 20h8" />
+      <path d="M15.5 4.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
     </>
   ),
   search: (
     <>
       <circle cx="11" cy="11" r="6.5" />
-      <path d="m16 16 4.5 4.5" />
+      <path d="m16 16 4 4" />
     </>
   ),
   page: (
@@ -38,8 +39,8 @@ const symbols = {
   ),
   web: (
     <>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5s1.1-6.1 3.5-8.5Z" />
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
     </>
   ),
   browser: (
@@ -50,14 +51,13 @@ const symbols = {
   ),
   bash: (
     <>
-      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-      <path d="m7.5 10 2.5 2-2.5 2M12.5 15h4" />
+      <rect x="3" y="4.5" width="18" height="15" rx="3" />
+      <path d="m7.5 9.5 3 2.5-3 2.5M13 15h4" />
     </>
   ),
   memory: (
     <>
-      <path d="M6.5 3.5h11v17l-5.5-4-5.5 4Z" />
-      <path d="M12 7.2l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z" />
+      <path d="M7 3.5h10A1.5 1.5 0 0 1 18.5 5v15L12 16l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z" />
     </>
   ),
   answer: (
@@ -87,8 +87,8 @@ const symbols = {
   ),
   thinking: (
     <>
-      <path d="M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7L12 16.5l-1.7-4.8L5.5 10l4.8-1.7Z" />
-      <path d="M18 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z" />
+      <path d="M9 18h6M10 21h4" />
+      <path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z" />
     </>
   ),
   note: (
@@ -128,7 +128,7 @@ export function ToolIcon({ name, glyph }: { name: string; glyph?: ToolGlyph | un
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.6"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >

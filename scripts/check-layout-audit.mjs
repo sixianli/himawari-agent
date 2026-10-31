@@ -126,6 +126,34 @@ export function findLayoutProblems(locale) {
       }
     }
   }
+  for (const icon of document.querySelectorAll('svg[viewBox="0 0 24 24"]')) {
+    if (!shown(icon)) continue;
+    for (const shape of icon.querySelectorAll("path, circle, rect, ellipse, line, polyline")) {
+      const stroke = getComputedStyle(shape);
+      if (stroke.stroke === "none" || Number.parseFloat(stroke.strokeWidth) === 2) continue;
+      problems.push(`ICON_STROKE_NOT_2 ${describe(icon)} ${stroke.strokeWidth}`);
+      break;
+    }
+  }
+  const outlineOnly = [
+    ".action-button-secondary",
+    ".action-button-danger",
+    '[role="tab"][aria-selected="true"]:not(.preview-sheet-tabs *)',
+    '.settings-nav [aria-pressed="true"]',
+    '.theme-switch label[data-checked="true"]',
+    'input[role="switch"]',
+    ".thread-message-owner",
+    '.files-library-chips [aria-pressed="true"]',
+    '.memory-chips [aria-pressed="true"]',
+    '.thread-sidebar-actions [aria-pressed="true"]',
+  ].join(", ");
+  const page = getComputedStyle(document.body).backgroundColor;
+  for (const element of document.querySelectorAll(outlineOnly)) {
+    if (!shown(element)) continue;
+    const fill = getComputedStyle(element).backgroundColor;
+    if (fill !== "transparent" && fill !== page && !/(,\s*0\)|\/\s*0\))$/.test(fill))
+      problems.push(`FILLED_CONTROL ${describe(element)} ${fill}`);
+  }
   const active = document.activeElement;
   if (
     active &&
@@ -261,11 +289,15 @@ body{margin:0;font:14px/1.4 sans-serif} .wide{width:520px;height:20px;background
 <p class="narrow">被挤成竖排的一段文字</p><p class="cut">没有省略号的长标题文字</p>
 <div class="cover"><button>被挡住的按钮</button><span></span></div>
 <p>日期 Thu, October 29 11:55 AM</p><button id="focused">关闭</button>
+<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="1.5"><path d="M4 12h16"/></svg>
+<button class="action-button-secondary" style="background:#eee">填了底色的描边按钮</button>
 <script>document.getElementById("focused").focus()</script></body></html>`;
 
 const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="margin:0;font:14px/1.4 sans-serif"><p>10月29日 星期四 11:55</p><button>好的</button></body></html>`;
+<body style="margin:0;font:14px/1.4 sans-serif"><p>10月29日 星期四 11:55</p><button>好的</button>
+<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000" stroke-width="2"><path d="M4 12h16"/></svg>
+<button class="action-button-secondary" style="background:transparent">描边按钮</button></body></html>`;
 
 export const REQUIRED_KINDS = [
   "PAGE_SCROLLS_SIDEWAYS",
@@ -276,6 +308,8 @@ export const REQUIRED_KINDS = [
   "CONTROL_COVERED",
   "UNASKED_FOCUS_RING",
   "ENGLISH_IN_zh-CN",
+  "ICON_STROKE_NOT_2",
+  "FILLED_CONTROL",
 ];
 
 async function selfTest(browser) {
