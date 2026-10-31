@@ -12,7 +12,9 @@ vi.mock("@himawari-agent/platform-node", async (importOriginal) => ({
 import {
   createProductionSandboxServices,
   sandboxEnvironmentDeadline,
+  sandboxPrewarmEnvironmentDeadline,
 } from "../src/production-sandbox-services.js";
+import { srtEnvironmentRotationReason } from "../src/production-task-environments.js";
 
 const binding = { hostId: "host:test" };
 const qualification = { qualificationRef: "qualification:test" };
@@ -144,4 +146,42 @@ it("[BG-8] keeps a Run's sandbox environment alive for a bash command started at
   expect(sandboxEnvironmentDeadline(answerDeadline, "2026-09-07T00:00:00.000Z", 0)).toBe(
     answerDeadline,
   );
+});
+
+it("[BG-10] a prewarmed environment never needs replacing for a bash command started later in the same Run", () => {
+  const backgroundMs = 1_800_000;
+  const runDeadline = "2026-10-31T15:52:22.000Z";
+  const grantExpires = "2026-11-30T00:00:00.000Z";
+  const prewarm = sandboxPrewarmEnvironmentDeadline(runDeadline, grantExpires, backgroundMs);
+  for (const offsetMs of [0, 5_000, 300_000, 899_000]) {
+    const commandStart = Date.parse(runDeadline) - 900_000 + offsetMs;
+    const bashCallDeadline = new Date(commandStart + backgroundMs).toISOString();
+    expect(Date.parse(bashCallDeadline)).toBeLessThanOrEqual(
+      Date.parse(runDeadline) + backgroundMs,
+    );
+    const bashEnvironment = sandboxEnvironmentDeadline(
+      bashCallDeadline,
+      grantExpires,
+      backgroundMs,
+    );
+    expect(
+      srtEnvironmentRotationReason({
+        existingDeadlineAt: prewarm,
+        existingPolicyDigest: "digest-1",
+        requestedDeadlineAt: bashEnvironment,
+        policyDigest: "digest-1",
+        now: new Date(commandStart).toISOString(),
+      }),
+    ).toBeNull();
+  }
+});
+
+it("[BG-10] the prewarmed environment is still capped by the directory grant", () => {
+  expect(
+    sandboxPrewarmEnvironmentDeadline(
+      "2026-10-31T15:52:22.000Z",
+      "2026-10-31T16:00:00.000Z",
+      1_800_000,
+    ),
+  ).toBe("2026-10-31T16:00:00.000Z");
 });
