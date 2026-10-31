@@ -120,6 +120,30 @@ class PruneTest(unittest.TestCase):
             sleeper.kill()
             sleeper.wait()
 
+    def run_busy_round_with_cgroup(self, cgroup):
+        marker = 'prune-container-test-' + str(os.getpid())
+        sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', marker])
+        proc_root = Path(self.directory.name) / 'proc'
+        write(proc_root / str(sleeper.pid) / 'cgroup', 0).write_text(cgroup)
+        try:
+            result, _ = self.run_prune('--apply', '--skip-if-busy', '--busy-pattern', marker, '--proc-root', str(proc_root))
+            return result
+        finally:
+            sleeper.kill()
+            sleeper.wait()
+
+    def test_matching_process_inside_a_container_does_not_block_the_round(self):
+        before = self.remaining()
+        result = self.run_busy_round_with_cgroup('0::/system.slice/docker-d08fb19eba5d.scope\n')
+        self.assertEqual(result['mode'], 'apply')
+        self.assertNotEqual(self.remaining(), before)
+
+    def test_matching_process_outside_a_container_still_blocks_the_round(self):
+        before = self.remaining()
+        result = self.run_busy_round_with_cgroup('0::/user.slice/user-1000.slice/session-1.scope\n')
+        self.assertEqual(result['mode'], 'skipped-busy')
+        self.assertEqual(self.remaining(), before)
+
 
 if __name__ == '__main__':
     unittest.main()

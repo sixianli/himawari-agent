@@ -67,10 +67,21 @@ def candidates(root, protected, cutoff):
                 yield path, status.st_size, False
 
 
-def host_is_busy(pattern):
+CONTAINER_CGROUP_MARKERS = ('docker', 'containerd', 'libpod', 'kubepods')
+
+
+def runs_in_container(pid, proc_root):
+    try:
+        text = (Path(proc_root) / pid / 'cgroup').read_text()
+    except OSError:
+        return False
+    return any(marker in text for marker in CONTAINER_CGROUP_MARKERS)
+
+
+def host_is_busy(pattern, proc_root='/proc'):
     child = subprocess.run(['pgrep', '-f', pattern], capture_output=True, text=True, check=False)
     own = {str(os.getpid()), str(os.getppid())}
-    return any(pid not in own for pid in child.stdout.split())
+    return any(pid not in own and not runs_in_container(pid, proc_root) for pid in child.stdout.split())
 
 
 def main(argv=None):
@@ -83,11 +94,12 @@ def main(argv=None):
     parser.add_argument('--low-free-gb', type=float, default=10)
     parser.add_argument('--skip-if-busy', action='store_true')
     parser.add_argument('--busy-pattern', default=BUSY_PATTERN)
+    parser.add_argument('--proc-root', default='/proc')
     options = parser.parse_args(argv)
 
     roots = [Path(root).expanduser().resolve() for root in options.roots]
     roots = [root for root in roots if root.is_dir()]
-    if options.skip_if_busy and host_is_busy(options.busy_pattern):
+    if options.skip_if_busy and host_is_busy(options.busy_pattern, options.proc_root):
         print('PRUNE_SKIPPED_BUSY: a build or test is running')
         print('PRUNE_RESULT ' + json.dumps({'mode': 'skipped-busy', 'files': 0, 'directories': 0, 'bytes': 0, 'roots': [str(root) for root in roots]}))
         return 0
