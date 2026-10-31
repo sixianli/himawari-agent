@@ -1,0 +1,5897 @@
+{
+ "model": "deepseek/deepseek-v4.1-flash",
+ "runs": 2,
+ "itemCount": 120,
+ "spentUsd": 0.27903582599999976,
+ "usage": {
+  "A": {
+   "prompt": 388946,
+   "cached": 349884,
+   "completion": 131548,
+   "calls": 238
+  },
+  "B": {
+   "prompt": 160135,
+   "cached": 115734,
+   "completion": 77400,
+   "calls": 240
+  }
+ },
+ "summary": {
+  "A": {
+   "passAll": 0.8166666666666667,
+   "runs": [
+    {
+     "positives": 60,
+     "negatives": 60,
+     "recall": 0.7166666666666667,
+     "memoryRecall": 0.6935483870967742,
+     "embeddedRecall": 0.3333333333333333,
+     "falseMemoryRate": 0,
+     "secretLeaks": 0,
+     "sensitiveDowngrades": 0,
+     "decisionAccuracy": 1,
+     "classificationAccuracy": 0.9069767441860465,
+     "dueAtAccuracy": 0.8,
+     "extraCandidates": 6
+    },
+    {
+     "positives": 60,
+     "negatives": 60,
+     "recall": 0.6833333333333333,
+     "memoryRecall": 0.6612903225806451,
+     "embeddedRecall": 0,
+     "falseMemoryRate": 0,
+     "secretLeaks": 0,
+     "sensitiveDowngrades": 0,
+     "decisionAccuracy": 0.975609756097561,
+     "classificationAccuracy": 0.9512195121951219,
+     "dueAtAccuracy": 0.6,
+     "extraCandidates": 9
+    }
+   ]
+  },
+  "B": {
+   "passAll": 0.9083333333333333,
+   "runs": [
+    {
+     "positives": 60,
+     "negatives": 60,
+     "recall": 0.9333333333333333,
+     "memoryRecall": 0.9354838709677419,
+     "embeddedRecall": 0.8333333333333334,
+     "falseMemoryRate": 0.06666666666666667,
+     "secretLeaks": 2,
+     "sensitiveDowngrades": 0,
+     "decisionAccuracy": 0.9827586206896551,
+     "classificationAccuracy": 0.896551724137931,
+     "dueAtAccuracy": 0.875,
+     "extraCandidates": 15
+    },
+    {
+     "positives": 60,
+     "negatives": 60,
+     "recall": 0.9166666666666666,
+     "memoryRecall": 0.8870967741935484,
+     "embeddedRecall": 0.6666666666666666,
+     "falseMemoryRate": 0.05,
+     "secretLeaks": 1,
+     "sensitiveDowngrades": 0,
+     "decisionAccuracy": 0.9818181818181818,
+     "classificationAccuracy": 0.8909090909090909,
+     "dueAtAccuracy": 1,
+     "extraCandidates": 12
+    }
+   ]
+  },
+  "C": {
+   "passAll": 0.7583333333333333,
+   "runs": [
+    {
+     "positives": 60,
+     "negatives": 60,
+     "recall": 0.5666666666666667,
+     "memoryRecall": 0.5483870967741935,
+     "embeddedRecall": 0.16666666666666666,
+     "falseMemoryRate": 0,
+     "secretLeaks": 0,
+     "sensitiveDowngrades": 0,
+     "decisionAccuracy": 1,
+     "classificationAccuracy": 0.9117647058823529,
+     "dueAtAccuracy": 1,
+     "extraCandidates": 4
+    },
+    {
+     "positives": 60,
+     "negatives": 60,
+     "recall": 0.5666666666666667,
+     "memoryRecall": 0.5483870967741935,
+     "embeddedRecall": 0,
+     "falseMemoryRate": 0,
+     "secretLeaks": 0,
+     "sensitiveDowngrades": 0,
+     "decisionAccuracy": 0.9705882352941176,
+     "classificationAccuracy": 0.9411764705882353,
+     "dueAtAccuracy": 0.75,
+     "extraCandidates": 6
+    }
+   ],
+   "prefilterSkipped": 68
+  }
+ },
+ "raw": {
+  "A": [
+   [
+    {
+     "id": "p01",
+     "candidates": [
+      {
+       "text": "主人是做游戏客户端的，目前在一家小公司担任主程。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p02",
+     "candidates": [
+      {
+       "text": "主人在大阪读研，研究方向是计算机视觉。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p03",
+     "candidates": []
+    },
+    {
+     "id": "p04",
+     "candidates": [
+      {
+       "text": "The owner is a freelance illustrator based in Osaka, mostly doing book covers.",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p05",
+     "candidates": [
+      {
+       "text": "主人は横浜の病院で働いている看護師です。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p06",
+     "candidates": [
+      {
+       "text": "主人不吃香菜，一点都不行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p07",
+     "candidates": [
+      {
+       "text": "主人每天早上六点起床跑五公里，已经坚持两年了。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p08",
+     "candidates": [
+      {
+       "text": "主人看电影只看原声版，不喜欢配音。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p09",
+     "candidates": [
+      {
+       "text": "主人喜欢深烘咖啡，不加糖，也从不加牛奶。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p10",
+     "candidates": []
+    },
+    {
+     "id": "p11",
+     "candidates": [
+      {
+       "text": "主人はジャズが好きで、作業中はいつもピアノトリオを流している。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p12",
+     "candidates": [
+      {
+       "text": "主人的老婆叫管冬融，是一名小学老师。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p13",
+     "candidates": []
+    },
+    {
+     "id": "p14",
+     "candidates": [
+      {
+       "text": "主人的弟弟叫陈浩，在上海做设计。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p15",
+     "candidates": [
+      {
+       "text": "The owner's best friend Kenji lives in Sapporo and runs a ramen shop there.",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p16",
+     "candidates": []
+    },
+    {
+     "id": "p17",
+     "candidates": [
+      {
+       "text": "主人的妈妈叫李秀兰，住在青岛。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妈妈李秀兰身体一直不错。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p18",
+     "candidates": []
+    },
+    {
+     "id": "p19",
+     "candidates": [
+      {
+       "text": "主人正在开发一个个人记账 App，使用 Swift 编写，并计划在年底上架。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": "2026-12-31T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p20",
+     "candidates": [
+      {
+       "text": "The owner's long-term goal is to run a full marathon in under four hours.",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p21",
+     "candidates": [
+      {
+       "text": "主人计划在三年内攒够首付，在横滨买一套小房子。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p22",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后回答问题时先给结论，再说理由，不要铺垫。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p23",
+     "candidates": []
+    },
+    {
+     "id": "p24",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 每次涉及花钱的操作都必须先询问主人，得到主人同意后才能执行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p25",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 在发送英文邮件草稿给他时，必须同时附上一份中文翻译。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p26",
+     "candidates": [
+      {
+       "text": "When the owner writes in Japanese, Himawari should answer in Japanese.",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "Himawari should keep answers short.",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p27",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后不要再用表格回答，因为主人在手机上看不方便。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p28",
+     "candidates": []
+    },
+    {
+     "id": "p29",
+     "candidates": []
+    },
+    {
+     "id": "p30",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年 11 月 3 日去医院做年度体检。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": "2026-11-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p31",
+     "candidates": [
+      {
+       "text": "主人计划在2026年11月20日晚上七点和朋友在新宿吃饭，并让Himawari提醒他别忘了。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "event",
+       "dueAt": "2026-11-20T10:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p32",
+     "candidates": [
+      {
+       "text": "主人的护照将于 2027 年 3 月 3 日到期，主人要求 Himawari 在此之前提醒他续办。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": "2027-03-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p33",
+     "candidates": [
+      {
+       "text": "主人的结婚纪念日是 10 月 8 日。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2027-10-08T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p34",
+     "candidates": [
+      {
+       "text": "主人的工位在 14 楼东侧，靠窗第三个。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p35",
+     "candidates": [
+      {
+       "text": "主人对花生过敏。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p36",
+     "candidates": [
+      {
+       "text": "主人的健身房会员卡将在2026年11月30日到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-30T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p37",
+     "candidates": [
+      {
+       "text": "The owner always takes the 8:10 Odakyu line to work.",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p38",
+     "candidates": []
+    },
+    {
+     "id": "p39",
+     "candidates": [
+      {
+       "text": "主人的妻子叫管冬融，她怕坐早班飞机，倾向选择下午以后的航班。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p40",
+     "candidates": []
+    },
+    {
+     "id": "p41",
+     "candidates": [
+      {
+       "text": "主人所有项目都使用 4 空格缩进，不要用 tab。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p42",
+     "candidates": []
+    },
+    {
+     "id": "p43",
+     "candidates": []
+    },
+    {
+     "id": "p44",
+     "candidates": []
+    },
+    {
+     "id": "p45",
+     "candidates": [
+      {
+       "text": "主人每月税后工资为42万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人每月需偿还房贷12万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p46",
+     "candidates": [
+      {
+       "text": "主人的同事小林最近离婚了，情绪不太好，主人要求 Himawari 在和小林聊天时注意分寸。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p47",
+     "candidates": [
+      {
+       "text": "主人现在住在世田谷区砧三丁目12-5，门口有一棵樟树。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p48",
+     "candidates": [
+      {
+       "text": "主人正在跟前公司打劳动仲裁，律师认为证据比较充分。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "project",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p49",
+     "candidates": [
+      {
+       "text": "The owner sees a therapist every Thursday for anxiety.",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p50",
+     "candidates": [
+      {
+       "text": "主人现在住在横滨港北区。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      }
+     ]
+    },
+    {
+     "id": "p51",
+     "candidates": [
+      {
+       "text": "主人现在是一名前端工程师，不再做后端工作。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p52",
+     "candidates": [
+      {
+       "text": "主人最近不太爱吃鱼了，改吃鸡肉。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p53",
+     "candidates": [
+      {
+       "text": "主人现在更喜欢绿色，已经不喜欢蓝色了。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p54",
+     "candidates": [
+      {
+       "text": "主人是做服务端的，不是做游戏客户端的。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p55",
+     "candidates": []
+    },
+    {
+     "id": "p56",
+     "candidates": [
+      {
+       "text": "主人家住在东京世田谷区，离驹泽公园很近。",
+       "decision": "update",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      },
+      {
+       "text": "主人周末常去跑步。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p57",
+     "candidates": [
+      {
+       "text": "主人喜欢吃鱼，尤其是烤秋刀鱼。",
+       "decision": "update",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p58",
+     "candidates": [
+      {
+       "text": "主人最喜欢的颜色是蓝色",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p59",
+     "candidates": [
+      {
+       "text": "主人是一名后端工程师",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p60",
+     "candidates": []
+    },
+    {
+     "id": "n01",
+     "candidates": []
+    },
+    {
+     "id": "n02",
+     "candidates": []
+    },
+    {
+     "id": "n03",
+     "candidates": []
+    },
+    {
+     "id": "n04",
+     "candidates": []
+    },
+    {
+     "id": "n05",
+     "candidates": []
+    },
+    {
+     "id": "n06",
+     "candidates": []
+    },
+    {
+     "id": "n07",
+     "candidates": []
+    },
+    {
+     "id": "n08",
+     "candidates": []
+    },
+    {
+     "id": "n09",
+     "candidates": []
+    },
+    {
+     "id": "n10",
+     "candidates": []
+    },
+    {
+     "id": "n11",
+     "candidates": []
+    },
+    {
+     "id": "n12",
+     "candidates": []
+    },
+    {
+     "id": "n13",
+     "candidates": []
+    },
+    {
+     "id": "n14",
+     "candidates": []
+    },
+    {
+     "id": "n15",
+     "candidates": []
+    },
+    {
+     "id": "n16",
+     "candidates": []
+    },
+    {
+     "id": "n17",
+     "candidates": []
+    },
+    {
+     "id": "n18",
+     "candidates": []
+    },
+    {
+     "id": "n19",
+     "candidates": []
+    },
+    {
+     "id": "n20",
+     "candidates": []
+    },
+    {
+     "id": "n21",
+     "candidates": []
+    },
+    {
+     "id": "n22",
+     "candidates": []
+    },
+    {
+     "id": "n23",
+     "candidates": []
+    },
+    {
+     "id": "n24",
+     "candidates": []
+    },
+    {
+     "id": "n25",
+     "candidates": []
+    },
+    {
+     "id": "n26",
+     "candidates": []
+    },
+    {
+     "id": "n27",
+     "candidates": []
+    },
+    {
+     "id": "n28",
+     "candidates": []
+    },
+    {
+     "id": "n29",
+     "candidates": []
+    },
+    {
+     "id": "n30",
+     "candidates": []
+    },
+    {
+     "id": "n31",
+     "candidates": []
+    },
+    {
+     "id": "n32",
+     "candidates": []
+    },
+    {
+     "id": "n33",
+     "candidates": []
+    },
+    {
+     "id": "n34",
+     "candidates": []
+    },
+    {
+     "id": "n35",
+     "candidates": []
+    },
+    {
+     "id": "n36",
+     "candidates": []
+    },
+    {
+     "id": "n37",
+     "candidates": []
+    },
+    {
+     "id": "n38",
+     "candidates": []
+    },
+    {
+     "id": "n39",
+     "candidates": []
+    },
+    {
+     "id": "n40",
+     "candidates": []
+    },
+    {
+     "id": "n41",
+     "candidates": []
+    },
+    {
+     "id": "n42",
+     "candidates": []
+    },
+    {
+     "id": "n43",
+     "candidates": []
+    },
+    {
+     "id": "n44",
+     "candidates": []
+    },
+    {
+     "id": "n45",
+     "candidates": []
+    },
+    {
+     "id": "n46",
+     "candidates": []
+    },
+    {
+     "id": "n47",
+     "candidates": []
+    },
+    {
+     "id": "n48",
+     "candidates": []
+    },
+    {
+     "id": "n49",
+     "candidates": []
+    },
+    {
+     "id": "n50",
+     "candidates": []
+    },
+    {
+     "id": "n51",
+     "candidates": []
+    },
+    {
+     "id": "n52",
+     "candidates": []
+    },
+    {
+     "id": "n53",
+     "candidates": []
+    },
+    {
+     "id": "n54",
+     "candidates": []
+    },
+    {
+     "id": "n55",
+     "candidates": []
+    },
+    {
+     "id": "n56",
+     "candidates": []
+    },
+    {
+     "id": "n57",
+     "candidates": []
+    },
+    {
+     "id": "n58",
+     "candidates": []
+    },
+    {
+     "id": "n59",
+     "candidates": []
+    },
+    {
+     "id": "n60",
+     "candidates": []
+    }
+   ],
+   [
+    {
+     "id": "p01",
+     "candidates": [
+      {
+       "text": "主人从事游戏客户端开发，目前在一家小公司担任主程。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p02",
+     "candidates": [
+      {
+       "text": "主人在大阪读研，研究方向是计算机视觉。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p03",
+     "candidates": []
+    },
+    {
+     "id": "p04",
+     "candidates": []
+    },
+    {
+     "id": "p05",
+     "candidates": [
+      {
+       "text": "主人は横浜の病院で働いている看護師です。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p06",
+     "candidates": [
+      {
+       "text": "主人不吃香菜，一点都不行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p07",
+     "candidates": [
+      {
+       "text": "主人每天早上六点起床跑五公里，已经坚持两年了。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p08",
+     "candidates": [
+      {
+       "text": "主人看电影只看原声版，不喜欢配音。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p09",
+     "candidates": [
+      {
+       "text": "主人喜欢深烘焙咖啡，不加糖，也从不加牛奶。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p10",
+     "candidates": []
+    },
+    {
+     "id": "p11",
+     "candidates": [
+      {
+       "text": "主人は音楽の中でもジャズが好きである。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人は作業中にいつもピアノトリオを流している。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p12",
+     "candidates": [
+      {
+       "text": "主人的妻子叫管冬融，是一名小学老师。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p13",
+     "candidates": [
+      {
+       "text": "主人的导师是张伟教授，组里的学长王磊是张伟带过的博士。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p14",
+     "candidates": [
+      {
+       "text": "主人的弟弟叫陈浩，在上海做设计。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p15",
+     "candidates": [
+      {
+       "text": "Kenji is the owner's best friend and lives in Sapporo, where he runs a ramen shop.",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p16",
+     "candidates": []
+    },
+    {
+     "id": "p17",
+     "candidates": [
+      {
+       "text": "主人的妈妈叫李秀兰，住在青岛。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妈妈李秀兰身体一直不错。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p18",
+     "candidates": []
+    },
+    {
+     "id": "p19",
+     "candidates": [
+      {
+       "text": "主人正在用 Swift 开发一个个人记账 App，计划在 2026 年底上架。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": "2026-12-31T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p20",
+     "candidates": [
+      {
+       "text": "The owner's long-term goal is to run a full marathon in under four hours.",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p21",
+     "candidates": []
+    },
+    {
+     "id": "p22",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后回答问题时先给结论，再说理由，不要铺垫。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p23",
+     "candidates": []
+    },
+    {
+     "id": "p24",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 每次涉及花钱的操作都必须先询问主人，得到主人同意后才能执行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p25",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 在发送英文邮件草稿给他时，必须同时附上一份中文翻译。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p26",
+     "candidates": [
+      {
+       "text": "From now on, when the owner writes in Japanese, Himawari should answer in Japanese and keep the answer short.",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p27",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后不要再用表格回答问题，因为主人在手机上看不方便。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p28",
+     "candidates": []
+    },
+    {
+     "id": "p29",
+     "candidates": [
+      {
+       "text": "主人需要在 2026-11-06（下周五）下午三点提交季度报告，并要求 Himawari 记着提醒。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-06T06:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p30",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年 11 月 3 日去医院做年度体检。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": "2026-11-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p31",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年 11 月 20 日晚上七点和朋友在新宿吃饭，并希望 Himawari 提醒他不要忘记。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-20T10:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p32",
+     "candidates": [
+      {
+       "text": "主人的护照将于 2027 年 3 月 3 日到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": "2027-03-03T00:00:00.000Z",
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人要求 Himawari 在护照到期前提醒他续签。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": "2027-03-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p33",
+     "candidates": []
+    },
+    {
+     "id": "p34",
+     "candidates": [
+      {
+       "text": "主人的工位在14楼东侧靠窗第三个。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p35",
+     "candidates": [
+      {
+       "text": "主人对花生过敏。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p36",
+     "candidates": [
+      {
+       "text": "主人的健身房会员卡将在2026年11月30日到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-30T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p37",
+     "candidates": [
+      {
+       "text": "The owner always takes the 8:10 Odakyu line to work.",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p38",
+     "candidates": []
+    },
+    {
+     "id": "p39",
+     "candidates": []
+    },
+    {
+     "id": "p40",
+     "candidates": []
+    },
+    {
+     "id": "p41",
+     "candidates": [
+      {
+       "text": "主人要求所有项目都使用 4 个空格缩进，不要使用 tab。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p42",
+     "candidates": []
+    },
+    {
+     "id": "p43",
+     "candidates": []
+    },
+    {
+     "id": "p44",
+     "candidates": [
+      {
+       "text": "主人最近确诊了高血压，医生建议主人少盐。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p45",
+     "candidates": [
+      {
+       "text": "主人每月的税后工资是42万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人每月需要还房贷12万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p46",
+     "candidates": [
+      {
+       "text": "主人的同事小林最近离婚了，情绪不太好。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人要求 Himawari 跟小林聊天时注意点。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p47",
+     "candidates": [
+      {
+       "text": "主人现在住在世田谷区砧三丁目12-5，门口有一棵樟树。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p48",
+     "candidates": [
+      {
+       "text": "主人正在跟前公司进行劳动仲裁，律师认为证据比较充分。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "event",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p49",
+     "candidates": [
+      {
+       "text": "The owner is seeing a therapist every Thursday for anxiety.",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p50",
+     "candidates": [
+      {
+       "text": "主人现在住在横滨市港北区。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      }
+     ]
+    },
+    {
+     "id": "p51",
+     "candidates": [
+      {
+       "text": "主人换工作了，现在是前端工程师，不再写后端了。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p52",
+     "candidates": [
+      {
+       "text": "主人最近不太爱吃鱼了，改吃鸡肉。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p53",
+     "candidates": [
+      {
+       "text": "主人现在更喜欢绿色，已经不喜欢蓝色了。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p54",
+     "candidates": [
+      {
+       "text": "主人是做服务端的后端工程师，不是做游戏客户端的。",
+       "decision": "update",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p55",
+     "candidates": []
+    },
+    {
+     "id": "p56",
+     "candidates": [
+      {
+       "text": "主人住在东京世田谷区，家离驹泽公园很近。",
+       "decision": "update",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      },
+      {
+       "text": "主人周末常去驹泽公园附近跑步。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p57",
+     "candidates": [
+      {
+       "text": "主人喜欢吃鱼，尤其是烤秋刀鱼。",
+       "decision": "update",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p58",
+     "candidates": [
+      {
+       "text": "主人最喜欢的颜色是蓝色",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p59",
+     "candidates": [
+      {
+       "text": "主人是一名后端工程师",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p60",
+     "candidates": []
+    },
+    {
+     "id": "n01",
+     "candidates": []
+    },
+    {
+     "id": "n02",
+     "candidates": []
+    },
+    {
+     "id": "n03",
+     "candidates": []
+    },
+    {
+     "id": "n04",
+     "candidates": []
+    },
+    {
+     "id": "n05",
+     "candidates": []
+    },
+    {
+     "id": "n06",
+     "candidates": []
+    },
+    {
+     "id": "n07",
+     "candidates": []
+    },
+    {
+     "id": "n08",
+     "candidates": []
+    },
+    {
+     "id": "n09",
+     "candidates": []
+    },
+    {
+     "id": "n10",
+     "candidates": []
+    },
+    {
+     "id": "n11",
+     "candidates": []
+    },
+    {
+     "id": "n12",
+     "candidates": []
+    },
+    {
+     "id": "n13",
+     "candidates": []
+    },
+    {
+     "id": "n14",
+     "candidates": []
+    },
+    {
+     "id": "n15",
+     "candidates": []
+    },
+    {
+     "id": "n16",
+     "candidates": []
+    },
+    {
+     "id": "n17",
+     "candidates": []
+    },
+    {
+     "id": "n18",
+     "candidates": []
+    },
+    {
+     "id": "n19",
+     "candidates": []
+    },
+    {
+     "id": "n20",
+     "candidates": []
+    },
+    {
+     "id": "n21",
+     "candidates": []
+    },
+    {
+     "id": "n22",
+     "candidates": []
+    },
+    {
+     "id": "n23",
+     "candidates": []
+    },
+    {
+     "id": "n24",
+     "candidates": []
+    },
+    {
+     "id": "n25",
+     "candidates": []
+    },
+    {
+     "id": "n26",
+     "candidates": []
+    },
+    {
+     "id": "n27",
+     "candidates": []
+    },
+    {
+     "id": "n28",
+     "candidates": []
+    },
+    {
+     "id": "n29",
+     "candidates": []
+    },
+    {
+     "id": "n30",
+     "candidates": []
+    },
+    {
+     "id": "n31",
+     "candidates": []
+    },
+    {
+     "id": "n32",
+     "candidates": []
+    },
+    {
+     "id": "n33",
+     "candidates": []
+    },
+    {
+     "id": "n34",
+     "candidates": []
+    },
+    {
+     "id": "n35",
+     "candidates": []
+    },
+    {
+     "id": "n36",
+     "candidates": []
+    },
+    {
+     "id": "n37",
+     "candidates": []
+    },
+    {
+     "id": "n38",
+     "candidates": []
+    },
+    {
+     "id": "n39",
+     "candidates": []
+    },
+    {
+     "id": "n40",
+     "candidates": []
+    },
+    {
+     "id": "n41",
+     "candidates": []
+    },
+    {
+     "id": "n42",
+     "candidates": []
+    },
+    {
+     "id": "n43",
+     "candidates": []
+    },
+    {
+     "id": "n44",
+     "candidates": []
+    },
+    {
+     "id": "n45",
+     "candidates": []
+    },
+    {
+     "id": "n46",
+     "candidates": []
+    },
+    {
+     "id": "n47",
+     "candidates": []
+    },
+    {
+     "id": "n48",
+     "candidates": []
+    },
+    {
+     "id": "n49",
+     "candidates": []
+    },
+    {
+     "id": "n50",
+     "candidates": []
+    },
+    {
+     "id": "n51",
+     "candidates": []
+    },
+    {
+     "id": "n52",
+     "candidates": []
+    },
+    {
+     "id": "n53",
+     "candidates": []
+    },
+    {
+     "id": "n54",
+     "candidates": []
+    },
+    {
+     "id": "n55",
+     "candidates": []
+    },
+    {
+     "id": "n56",
+     "candidates": []
+    },
+    {
+     "id": "n57",
+     "candidates": []
+    },
+    {
+     "id": "n58",
+     "candidates": []
+    },
+    {
+     "id": "n59",
+     "candidates": []
+    },
+    {
+     "id": "n60",
+     "candidates": []
+    }
+   ]
+  ],
+  "B": [
+   [
+    {
+     "id": "p01",
+     "candidates": [
+      {
+       "text": "主人是做游戏客户端的，目前在一家小公司担任主程。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p02",
+     "candidates": [
+      {
+       "text": "主人在大阪读研究生。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的研究方向是计算机视觉。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p03",
+     "candidates": [
+      {
+       "text": "主人今年 34 岁（2026 年时）。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人属虎。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人家里养了一只叫团子的猫。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p04",
+     "candidates": [
+      {
+       "text": "主人是自由插画师，常驻大阪，主要接书籍封面的插画工作。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p05",
+     "candidates": [
+      {
+       "text": "主人は横浜の病院で働く看護師である。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p06",
+     "candidates": [
+      {
+       "text": "主人不吃香菜，完全不能接受。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p07",
+     "candidates": [
+      {
+       "text": "主人每天早上六点起床跑五公里，已坚持两年。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p08",
+     "candidates": [
+      {
+       "text": "主人看电影时只看原声版，不喜欢配音版。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p09",
+     "candidates": [
+      {
+       "text": "主人喜欢深烘焙咖啡，不加糖，从不加牛奶。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p10",
+     "candidates": [
+      {
+       "text": "主人写代码时习惯使用 Neovim，不希望被推荐 VS Code。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p11",
+     "candidates": [
+      {
+       "text": "主人はジャズが好きで、作業中はいつもピアノトリオを流している。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p12",
+     "candidates": [
+      {
+       "text": "主人的妻子叫管冬融，是一名小学老师。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p13",
+     "candidates": [
+      {
+       "text": "主人的导师是张伟教授。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人组里的学长王磊，是张伟教授带过的博士。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p14",
+     "candidates": [
+      {
+       "text": "主人的弟弟叫陈浩，在上海做设计工作。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p15",
+     "candidates": [
+      {
+       "text": "主人的好朋友 Kenji 住在札幌，在当地经营一家拉面店。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p16",
+     "candidates": [
+      {
+       "text": "主人的同事小林是主人所在组的测试负责人，有测试相关的事可以找她。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p17",
+     "candidates": [
+      {
+       "text": "主人的妈妈叫李秀兰，住在青岛。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妈妈李秀兰身体一直不错。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p18",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年内把日语考到 N1 水平。",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": "2026-12-31",
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人习惯每天晚上学一小时日语。",
+       "decision": "create",
+       "classification": "private",
+       "category": "other",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p19",
+     "candidates": [
+      {
+       "text": "主人在用 Swift 开发一个个人记账 App，计划 2026 年底上架。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": "2026-12-31",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p20",
+     "candidates": [
+      {
+       "text": "主人有一个长期目标：跑完一场全程马拉松并跑进 4 小时以内。",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p21",
+     "candidates": [
+      {
+       "text": "主人计划在三年内（约2029年10月前）攒够首付，在横滨购买一套小房子。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "goal",
+       "dueAt": "2029-10-30",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p22",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 回答问题时先给结论，再说理由，不要铺垫。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p23",
+     "candidates": [
+      {
+       "text": "主人希望被称呼为「小秋」。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人要求 Himawari 不要用「先生」这类称呼来称呼自己。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p24",
+     "candidates": [
+      {
+       "text": "主人要求：任何涉及花钱的操作，Himawari 必须先征求主人同意，得到同意后才能执行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p25",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 每次提供英文邮件草稿时，都要同时附上一份中文翻译。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p26",
+     "candidates": [
+      {
+       "text": "主人希望 Himawari 在主人用日语说话时也用日语回答。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人希望 Himawari 的回答保持简短。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p27",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 不要用表格形式回答，因为主人在手机上看表格不方便。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p28",
+     "candidates": [
+      {
+       "text": "主人的妈妈生日是每年 5 月 12 日，主人希望 Himawari 每年提前提醒他订花。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": "2027-05-12",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p29",
+     "candidates": [
+      {
+       "text": "主人要在 2026-11-06（下周五）下午三点提交季度报告。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-06T15:00",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p30",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年 11 月 3 日去医院做年度体检。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": "2026-11-03",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p31",
+     "candidates": [
+      {
+       "text": "主人 11 月 20 日晚上七点要和朋友在新宿吃饭，需要提前提醒。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-20T19:00",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p32",
+     "candidates": [
+      {
+       "text": "主人的护照将于 2027 年 3 月 3 日到期，需要在到期前办理续期，Himawari 需提前提醒主人。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": "2027-03-03",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p33",
+     "candidates": [
+      {
+       "text": "主人的结婚纪念日是 10 月 8 日。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": "2026-10-08",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p34",
+     "candidates": [
+      {
+       "text": "主人的工位在 14 楼东侧，靠窗第三个。",
+       "decision": "create",
+       "classification": "private",
+       "category": "other",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p35",
+     "candidates": [
+      {
+       "text": "主人对花生过敏。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p36",
+     "candidates": [
+      {
+       "text": "主人的健身房会员卡在2026年11月底到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-30",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p37",
+     "candidates": [
+      {
+       "text": "主人上班时总是乘坐 8:10 的小田急线。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p38",
+     "candidates": [
+      {
+       "text": "主人的妈妈生日是 5 月 12 日，主人会在她生日时送花表达心意。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": "2027-05-12",
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妈妈喜欢白色百合花。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p39",
+     "candidates": [
+      {
+       "text": "主人的妻子叫管冬融。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妻子管冬融怕坐早班飞机，两人出行订机票时倾向选下午以后的航班。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p40",
+     "candidates": [
+      {
+       "text": "主人的组长是田中，主人要求把周报翻译成英文时，对田中的称呼用 Tanaka-san。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p41",
+     "candidates": [
+      {
+       "text": "主人要求所有项目代码统一使用 4 空格缩进，不要使用 tab。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p42",
+     "candidates": []
+    },
+    {
+     "id": "p43",
+     "candidates": [
+      {
+       "text": "主人有一个两岁的女儿，出行时会带她一起。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人做旅行计划时预算上限为每天一万日元。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人出行时不能走太多路，需要安排节奏轻松、步行量少的行程。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p44",
+     "candidates": [
+      {
+       "text": "主人于2026年10月前后确诊高血压，医生要求控制盐分摄入（少盐）。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p45",
+     "candidates": [
+      {
+       "text": "主人每月税后工资为 42 万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人每月需偿还房贷 12 万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p46",
+     "candidates": [
+      {
+       "text": "主人的同事小林最近离婚了，情绪不太好，主人要求 Himawari 与小林聊天时注意分寸。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p47",
+     "candidates": [
+      {
+       "text": "主人住在东京都世田谷区砧三丁目12-5，门口有一棵樟树。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p48",
+     "candidates": [
+      {
+       "text": "主人正在与前公司进行劳动仲裁，律师评估其证据比较充分。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "other",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p49",
+     "candidates": [
+      {
+       "text": "主人每周四接受心理咨询/治疗，用于处理焦虑问题。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": "2026-11-05",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p50",
+     "candidates": [
+      {
+       "text": "主人搬家了，现在住在横滨市港北区（原住东京世田谷区）。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      }
+     ]
+    },
+    {
+     "id": "p51",
+     "candidates": [
+      {
+       "text": "主人换工作了，现在是前端工程师，不再做后端开发。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p52",
+     "candidates": [
+      {
+       "text": "主人现在不太爱吃鱼了，改为更喜欢吃鸡肉。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p53",
+     "candidates": [
+      {
+       "text": "主人最喜欢的颜色从蓝色改为绿色（蓝色已经看腻了）。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p54",
+     "candidates": [
+      {
+       "text": "主人是一名后端（服务端）工程师。",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p55",
+     "candidates": [
+      {
+       "text": "主人希望 Himawari 默认用英文回答，因为主人最近在练英语，觉得中文太舒服反而没效果。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-lang"
+      }
+     ]
+    },
+    {
+     "id": "p56",
+     "candidates": [
+      {
+       "text": "主人家在东京世田谷区，离驹泽公园很近。",
+       "decision": "update",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      },
+      {
+       "text": "主人周末常去驹泽公园跑步。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p57",
+     "candidates": [
+      {
+       "text": "主人喜欢吃鱼，尤其是烤秋刀鱼。",
+       "decision": "update",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p58",
+     "candidates": [
+      {
+       "text": "主人最喜欢的颜色是蓝色",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p59",
+     "candidates": [
+      {
+       "text": "主人是一名后端工程师。",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p60",
+     "candidates": [
+      {
+       "text": "主人希望 Himawari 默认用中文回答（主人用中文表达最舒服）。",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-lang"
+      }
+     ]
+    },
+    {
+     "id": "n01",
+     "candidates": []
+    },
+    {
+     "id": "n02",
+     "candidates": []
+    },
+    {
+     "id": "n03",
+     "candidates": []
+    },
+    {
+     "id": "n04",
+     "candidates": []
+    },
+    {
+     "id": "n05",
+     "candidates": []
+    },
+    {
+     "id": "n06",
+     "candidates": []
+    },
+    {
+     "id": "n07",
+     "candidates": []
+    },
+    {
+     "id": "n08",
+     "candidates": []
+    },
+    {
+     "id": "n09",
+     "candidates": []
+    },
+    {
+     "id": "n10",
+     "candidates": []
+    },
+    {
+     "id": "n11",
+     "candidates": []
+    },
+    {
+     "id": "n12",
+     "candidates": []
+    },
+    {
+     "id": "n13",
+     "candidates": []
+    },
+    {
+     "id": "n14",
+     "candidates": []
+    },
+    {
+     "id": "n15",
+     "candidates": []
+    },
+    {
+     "id": "n16",
+     "candidates": []
+    },
+    {
+     "id": "n17",
+     "candidates": []
+    },
+    {
+     "id": "n18",
+     "candidates": []
+    },
+    {
+     "id": "n19",
+     "candidates": []
+    },
+    {
+     "id": "n20",
+     "candidates": []
+    },
+    {
+     "id": "n21",
+     "candidates": []
+    },
+    {
+     "id": "n22",
+     "candidates": []
+    },
+    {
+     "id": "n23",
+     "candidates": []
+    },
+    {
+     "id": "n24",
+     "candidates": []
+    },
+    {
+     "id": "n25",
+     "candidates": []
+    },
+    {
+     "id": "n26",
+     "candidates": []
+    },
+    {
+     "id": "n27",
+     "candidates": []
+    },
+    {
+     "id": "n28",
+     "candidates": []
+    },
+    {
+     "id": "n29",
+     "candidates": []
+    },
+    {
+     "id": "n30",
+     "candidates": []
+    },
+    {
+     "id": "n31",
+     "candidates": []
+    },
+    {
+     "id": "n32",
+     "candidates": []
+    },
+    {
+     "id": "n33",
+     "candidates": []
+    },
+    {
+     "id": "n34",
+     "candidates": []
+    },
+    {
+     "id": "n35",
+     "candidates": []
+    },
+    {
+     "id": "n36",
+     "candidates": []
+    },
+    {
+     "id": "n37",
+     "candidates": []
+    },
+    {
+     "id": "n38",
+     "candidates": []
+    },
+    {
+     "id": "n39",
+     "candidates": []
+    },
+    {
+     "id": "n40",
+     "candidates": []
+    },
+    {
+     "id": "n41",
+     "candidates": []
+    },
+    {
+     "id": "n42",
+     "candidates": []
+    },
+    {
+     "id": "n43",
+     "candidates": []
+    },
+    {
+     "id": "n44",
+     "candidates": []
+    },
+    {
+     "id": "n45",
+     "candidates": []
+    },
+    {
+     "id": "n46",
+     "candidates": []
+    },
+    {
+     "id": "n47",
+     "candidates": []
+    },
+    {
+     "id": "n48",
+     "candidates": []
+    },
+    {
+     "id": "n49",
+     "candidates": [
+      {
+       "text": "主人的银行卡号是 4539 1488 0343 6467。",
+       "decision": "create",
+       "classification": "restricted",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "n50",
+     "candidates": []
+    },
+    {
+     "id": "n51",
+     "candidates": []
+    },
+    {
+     "id": "n52",
+     "candidates": [
+      {
+       "text": "主人的护照号码是 TK1234567。",
+       "decision": "create",
+       "classification": "restricted",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "n53",
+     "candidates": []
+    },
+    {
+     "id": "n54",
+     "candidates": []
+    },
+    {
+     "id": "n55",
+     "candidates": []
+    },
+    {
+     "id": "n56",
+     "candidates": []
+    },
+    {
+     "id": "n57",
+     "candidates": [
+      {
+       "text": "主人确认想了解东京今天（2026-10-30）的最高气温是否为 18 度，并希望 Himawari 查询具体时段的气温。",
+       "decision": "create",
+       "classification": "private",
+       "category": "other",
+       "dueAt": "2026-10-30",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "n58",
+     "candidates": []
+    },
+    {
+     "id": "n59",
+     "candidates": []
+    },
+    {
+     "id": "n60",
+     "candidates": [
+      {
+       "text": "主人的妈妈叫李秀兰，住在青岛。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    }
+   ],
+   [
+    {
+     "id": "p01",
+     "candidates": [
+      {
+       "text": "主人从事游戏客户端开发，目前在一家小公司担任主程（客户端主程序）。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p02",
+     "candidates": [
+      {
+       "text": "主人在大阪读研究生。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的研究方向是计算机视觉。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p03",
+     "candidates": [
+      {
+       "text": "主人今年34岁，属虎。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人家养了一只猫，名字叫团子。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p04",
+     "candidates": [
+      {
+       "text": "主人是自由插画师，常驻大阪，主要接书籍封面的插画工作。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p05",
+     "candidates": [
+      {
+       "text": "主人は横浜の病院で働く看護師である。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p06",
+     "candidates": [
+      {
+       "text": "主人不吃香菜，一点都不行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p07",
+     "candidates": [
+      {
+       "text": "主人每天早上六点起床跑五公里，已坚持两年。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p08",
+     "candidates": [
+      {
+       "text": "主人看电影只看原声版，不喜欢配音版。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p09",
+     "candidates": [
+      {
+       "text": "主人喜欢深烘焙咖啡，不加糖，从不加牛奶。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p10",
+     "candidates": [
+      {
+       "text": "主人写代码时习惯使用 Neovim，不希望被推荐 VS Code。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p11",
+     "candidates": [
+      {
+       "text": "主人はジャズが好きで、作業中はいつもピアノトリオを流している。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p12",
+     "candidates": [
+      {
+       "text": "主人的妻子（老婆）叫管冬融，是一名小学老师。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p13",
+     "candidates": [
+      {
+       "text": "主人的导师是张伟教授。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "王磊是主人组里的学长，是张伟教授带过的博士。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p14",
+     "candidates": [
+      {
+       "text": "主人的弟弟叫陈浩，在上海做设计工作。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p15",
+     "candidates": [
+      {
+       "text": "主人的挚友 Kenji 住在札幌，并在当地经营一家拉面店。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p16",
+     "candidates": [
+      {
+       "text": "主人的同事小林是主人所在组的测试负责人，有测试相关的事可以找她。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p17",
+     "candidates": [
+      {
+       "text": "主人的妈妈叫李秀兰，住在青岛。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妈妈李秀兰身体一直不错。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p18",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年内把日语考到 N1 水平。",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": "2026-12-31",
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人习惯每天晚上学一小时日语。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p19",
+     "candidates": [
+      {
+       "text": "主人正在用 Swift 开发一个个人记账 App，计划 2026 年底上架。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": "2026-12-31",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p20",
+     "candidates": [
+      {
+       "text": "主人有一个长期目标：跑完一场全程马拉松并跑进 4 小时以内。",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p21",
+     "candidates": [
+      {
+       "text": "主人计划在三年内攒够首付，在横滨购买一套小房子。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": "2029-10-30",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p22",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 回答问题时先给结论，再说理由，不要铺垫。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p23",
+     "candidates": [
+      {
+       "text": "主人希望 Himawari 称呼自己为\"小秋\"，不要用\"先生\"等敬称。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p24",
+     "candidates": [
+      {
+       "text": "主人要求：任何涉及花钱的操作，Himawari 必须先征求主人同意，得到同意后才能执行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p25",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 每次提供英文邮件草稿时，都要同时附上一份中文翻译。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p26",
+     "candidates": [
+      {
+       "text": "主人希望 Himawari 在主人用日语提问时用日语回答，并且回答要简短。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p27",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 不要用表格形式回答，因为主人在手机上看表格不方便，应改用适合手机阅读的排版。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p28",
+     "candidates": [
+      {
+       "text": "主人的妈妈生日是 5 月 12 日。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": "2027-05-12",
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人要求每年妈妈生日（5 月 12 日）提前提醒他订花。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p29",
+     "candidates": [
+      {
+       "text": "主人需要在 2026-11-06（下周五）下午三点提交季度报告。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-06T15:00",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p30",
+     "candidates": [
+      {
+       "text": "主人计划在 2026-11-03 去医院做年度体检。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": "2026-11-03",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p31",
+     "candidates": [
+      {
+       "text": "主人 11 月 20 日晚上七点在新宿和朋友吃饭。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-20T19:00",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p32",
+     "candidates": [
+      {
+       "text": "主人的护照将于 2027-03-03 到期，需要在到期前完成续期，主人要求提前提醒。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2027-03-03",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p33",
+     "candidates": [
+      {
+       "text": "主人的结婚纪念日是 10 月 8 日。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": "2027-10-08",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p34",
+     "candidates": [
+      {
+       "text": "主人的工位在 14 楼东侧，靠窗第三个。",
+       "decision": "create",
+       "classification": "private",
+       "category": "other",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p35",
+     "candidates": [
+      {
+       "text": "主人对花生过敏。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p36",
+     "candidates": [
+      {
+       "text": "主人的健身房会员卡在2026年11月30日到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-30",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p37",
+     "candidates": [
+      {
+       "text": "主人每天上班固定乘坐 8:10 的小田急线。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p38",
+     "candidates": []
+    },
+    {
+     "id": "p39",
+     "candidates": [
+      {
+       "text": "主人的妻子叫管冬融。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妻子管冬融怕坐早班飞机，出行时倾向选择下午以后的航班。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p40",
+     "candidates": [
+      {
+       "text": "主人的组长是田中，主人在翻译或对外沟通时要求称呼他为 Tanaka-san。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p41",
+     "candidates": [
+      {
+       "text": "主人要求自己所有项目的代码统一使用 4 空格缩进，不要使用 tab。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p42",
+     "candidates": [
+      {
+       "text": "主人计划于 2026 年 12 月 20 日搬离涩谷的公寓（需向房东提交退去通知）。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-12-20",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p43",
+     "candidates": []
+    },
+    {
+     "id": "p44",
+     "candidates": [
+      {
+       "text": "主人于2026年10月前后确诊高血压，医生要求其控制盐分摄入、饮食少盐。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p45",
+     "candidates": [
+      {
+       "text": "主人每月的税后工资是 42 万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人每月需要还房贷 12 万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p46",
+     "candidates": [
+      {
+       "text": "主人的同事小林最近离婚了，情绪不太好，主人要求 Himawari 跟小林聊天时注意分寸、多加体谅。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p47",
+     "candidates": [
+      {
+       "text": "主人住在东京都世田谷区砧三丁目12-5，门口有一棵樟树。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p48",
+     "candidates": [
+      {
+       "text": "主人正在与前公司进行劳动仲裁，律师认为现有证据比较充分。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "other",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p49",
+     "candidates": [
+      {
+       "text": "主人每周四接受心理治疗，用于处理焦虑问题。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p50",
+     "candidates": [
+      {
+       "text": "主人搬家了，现在住在横滨市港北区（原住东京世田谷区）。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      }
+     ]
+    },
+    {
+     "id": "p51",
+     "candidates": [
+      {
+       "text": "主人换工作了，现在是前端工程师，不再做后端开发。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p52",
+     "candidates": [
+      {
+       "text": "主人现在不太爱吃鱼了，改吃鸡肉。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p53",
+     "candidates": [
+      {
+       "text": "主人最喜欢的颜色从蓝色改为绿色（蓝色已经看腻了）。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p54",
+     "candidates": [
+      {
+       "text": "主人是一名服务端（后端）工程师，不做游戏客户端开发。",
+       "decision": "update",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p55",
+     "candidates": [
+      {
+       "text": "主人希望 Himawari 默认用英文回答，因为主人最近在练英语，觉得用中文太舒服反而没效果。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-lang"
+      }
+     ]
+    },
+    {
+     "id": "p56",
+     "candidates": [
+      {
+       "text": "主人家在东京世田谷区，离驹泽公园很近。",
+       "decision": "update",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      },
+      {
+       "text": "主人周末常去驹泽公园跑步。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p57",
+     "candidates": [
+      {
+       "text": "主人喜欢吃鱼，尤其是烤秋刀鱼。",
+       "decision": "update",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p58",
+     "candidates": [
+      {
+       "text": "主人最喜欢的颜色是蓝色",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-color"
+      }
+     ]
+    },
+    {
+     "id": "p59",
+     "candidates": [
+      {
+       "text": "主人是一名后端工程师。",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p60",
+     "candidates": [
+      {
+       "text": "主人希望 Himawari 默认用中文回答（主人用中文交流最舒服）。",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-lang"
+      }
+     ]
+    },
+    {
+     "id": "n01",
+     "candidates": []
+    },
+    {
+     "id": "n02",
+     "candidates": []
+    },
+    {
+     "id": "n03",
+     "candidates": []
+    },
+    {
+     "id": "n04",
+     "candidates": []
+    },
+    {
+     "id": "n05",
+     "candidates": []
+    },
+    {
+     "id": "n06",
+     "candidates": []
+    },
+    {
+     "id": "n07",
+     "candidates": []
+    },
+    {
+     "id": "n08",
+     "candidates": []
+    },
+    {
+     "id": "n09",
+     "candidates": []
+    },
+    {
+     "id": "n10",
+     "candidates": []
+    },
+    {
+     "id": "n11",
+     "candidates": []
+    },
+    {
+     "id": "n12",
+     "candidates": []
+    },
+    {
+     "id": "n13",
+     "candidates": []
+    },
+    {
+     "id": "n14",
+     "candidates": []
+    },
+    {
+     "id": "n15",
+     "candidates": []
+    },
+    {
+     "id": "n16",
+     "candidates": []
+    },
+    {
+     "id": "n17",
+     "candidates": []
+    },
+    {
+     "id": "n18",
+     "candidates": []
+    },
+    {
+     "id": "n19",
+     "candidates": []
+    },
+    {
+     "id": "n20",
+     "candidates": []
+    },
+    {
+     "id": "n21",
+     "candidates": []
+    },
+    {
+     "id": "n22",
+     "candidates": []
+    },
+    {
+     "id": "n23",
+     "candidates": []
+    },
+    {
+     "id": "n24",
+     "candidates": []
+    },
+    {
+     "id": "n25",
+     "candidates": []
+    },
+    {
+     "id": "n26",
+     "candidates": []
+    },
+    {
+     "id": "n27",
+     "candidates": []
+    },
+    {
+     "id": "n28",
+     "candidates": []
+    },
+    {
+     "id": "n29",
+     "candidates": []
+    },
+    {
+     "id": "n30",
+     "candidates": []
+    },
+    {
+     "id": "n31",
+     "candidates": []
+    },
+    {
+     "id": "n32",
+     "candidates": []
+    },
+    {
+     "id": "n33",
+     "candidates": []
+    },
+    {
+     "id": "n34",
+     "candidates": []
+    },
+    {
+     "id": "n35",
+     "candidates": []
+    },
+    {
+     "id": "n36",
+     "candidates": []
+    },
+    {
+     "id": "n37",
+     "candidates": []
+    },
+    {
+     "id": "n38",
+     "candidates": []
+    },
+    {
+     "id": "n39",
+     "candidates": []
+    },
+    {
+     "id": "n40",
+     "candidates": []
+    },
+    {
+     "id": "n41",
+     "candidates": []
+    },
+    {
+     "id": "n42",
+     "candidates": []
+    },
+    {
+     "id": "n43",
+     "candidates": []
+    },
+    {
+     "id": "n44",
+     "candidates": []
+    },
+    {
+     "id": "n45",
+     "candidates": []
+    },
+    {
+     "id": "n46",
+     "candidates": []
+    },
+    {
+     "id": "n47",
+     "candidates": []
+    },
+    {
+     "id": "n48",
+     "candidates": []
+    },
+    {
+     "id": "n49",
+     "candidates": [
+      {
+       "text": "主人的银行卡号是 4539 1488 0343 6467。",
+       "decision": "create",
+       "classification": "restricted",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "n50",
+     "candidates": []
+    },
+    {
+     "id": "n51",
+     "candidates": [
+      {
+       "text": "主人使用 AWS 云服务，会需要 Himawari 帮忙检查 AWS 相关配置。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "n52",
+     "candidates": []
+    },
+    {
+     "id": "n53",
+     "candidates": []
+    },
+    {
+     "id": "n54",
+     "candidates": []
+    },
+    {
+     "id": "n55",
+     "candidates": []
+    },
+    {
+     "id": "n56",
+     "candidates": []
+    },
+    {
+     "id": "n57",
+     "candidates": [
+      {
+       "text": "主人确认了东京今天最高气温是 18 度这一信息。",
+       "decision": "create",
+       "classification": "private",
+       "category": "other",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "n58",
+     "candidates": []
+    },
+    {
+     "id": "n59",
+     "candidates": []
+    },
+    {
+     "id": "n60",
+     "candidates": []
+    }
+   ]
+  ],
+  "C": [
+   [
+    {
+     "id": "p01",
+     "candidates": [
+      {
+       "text": "主人是做游戏客户端的，目前在一家小公司担任主程。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p02",
+     "candidates": [
+      {
+       "text": "主人在大阪读研，研究方向是计算机视觉。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p03",
+     "candidates": []
+    },
+    {
+     "id": "p04",
+     "candidates": [
+      {
+       "text": "The owner is a freelance illustrator based in Osaka, mostly doing book covers.",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p05",
+     "candidates": [
+      {
+       "text": "主人は横浜の病院で働いている看護師です。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p06",
+     "candidates": [
+      {
+       "text": "主人不吃香菜，一点都不行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p07",
+     "candidates": [
+      {
+       "text": "主人每天早上六点起床跑五公里，已经坚持两年了。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p08",
+     "candidates": []
+    },
+    {
+     "id": "p09",
+     "candidates": [
+      {
+       "text": "主人喜欢深烘咖啡，不加糖，也从不加牛奶。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p10",
+     "candidates": []
+    },
+    {
+     "id": "p11",
+     "candidates": [
+      {
+       "text": "主人はジャズが好きで、作業中はいつもピアノトリオを流している。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p12",
+     "candidates": [
+      {
+       "text": "主人的老婆叫管冬融，是一名小学老师。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p13",
+     "candidates": []
+    },
+    {
+     "id": "p14",
+     "candidates": []
+    },
+    {
+     "id": "p15",
+     "candidates": [
+      {
+       "text": "The owner's best friend Kenji lives in Sapporo and runs a ramen shop there.",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p16",
+     "candidates": []
+    },
+    {
+     "id": "p17",
+     "candidates": [
+      {
+       "text": "主人的妈妈叫李秀兰，住在青岛。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妈妈李秀兰身体一直不错。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p18",
+     "candidates": []
+    },
+    {
+     "id": "p19",
+     "candidates": [
+      {
+       "text": "主人正在开发一个个人记账 App，使用 Swift 编写，并计划在年底上架。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": "2026-12-31T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p20",
+     "candidates": [
+      {
+       "text": "The owner's long-term goal is to run a full marathon in under four hours.",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p21",
+     "candidates": [
+      {
+       "text": "主人计划在三年内攒够首付，在横滨买一套小房子。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p22",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后回答问题时先给结论，再说理由，不要铺垫。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p23",
+     "candidates": []
+    },
+    {
+     "id": "p24",
+     "candidates": []
+    },
+    {
+     "id": "p25",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 在发送英文邮件草稿给他时，必须同时附上一份中文翻译。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p26",
+     "candidates": [
+      {
+       "text": "When the owner writes in Japanese, Himawari should answer in Japanese.",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "Himawari should keep answers short.",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p27",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后不要再用表格回答，因为主人在手机上看不方便。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p28",
+     "candidates": []
+    },
+    {
+     "id": "p29",
+     "candidates": []
+    },
+    {
+     "id": "p30",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年 11 月 3 日去医院做年度体检。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": "2026-11-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p31",
+     "candidates": []
+    },
+    {
+     "id": "p32",
+     "candidates": [
+      {
+       "text": "主人的护照将于 2027 年 3 月 3 日到期，主人要求 Himawari 在此之前提醒他续办。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": "2027-03-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p33",
+     "candidates": []
+    },
+    {
+     "id": "p34",
+     "candidates": [
+      {
+       "text": "主人的工位在 14 楼东侧，靠窗第三个。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p35",
+     "candidates": [
+      {
+       "text": "主人对花生过敏。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p36",
+     "candidates": [
+      {
+       "text": "主人的健身房会员卡将在2026年11月30日到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-30T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p37",
+     "candidates": [
+      {
+       "text": "The owner always takes the 8:10 Odakyu line to work.",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p38",
+     "candidates": []
+    },
+    {
+     "id": "p39",
+     "candidates": [
+      {
+       "text": "主人的妻子叫管冬融，她怕坐早班飞机，倾向选择下午以后的航班。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p40",
+     "candidates": []
+    },
+    {
+     "id": "p41",
+     "candidates": []
+    },
+    {
+     "id": "p42",
+     "candidates": []
+    },
+    {
+     "id": "p43",
+     "candidates": []
+    },
+    {
+     "id": "p44",
+     "candidates": []
+    },
+    {
+     "id": "p45",
+     "candidates": [
+      {
+       "text": "主人每月税后工资为42万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人每月需偿还房贷12万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p46",
+     "candidates": [
+      {
+       "text": "主人的同事小林最近离婚了，情绪不太好，主人要求 Himawari 在和小林聊天时注意分寸。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p47",
+     "candidates": []
+    },
+    {
+     "id": "p48",
+     "candidates": [
+      {
+       "text": "主人正在跟前公司打劳动仲裁，律师认为证据比较充分。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "project",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p49",
+     "candidates": [
+      {
+       "text": "The owner sees a therapist every Thursday for anxiety.",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p50",
+     "candidates": [
+      {
+       "text": "主人现在住在横滨港北区。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      }
+     ]
+    },
+    {
+     "id": "p51",
+     "candidates": [
+      {
+       "text": "主人现在是一名前端工程师，不再做后端工作。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p52",
+     "candidates": [
+      {
+       "text": "主人最近不太爱吃鱼了，改吃鸡肉。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p53",
+     "candidates": []
+    },
+    {
+     "id": "p54",
+     "candidates": [
+      {
+       "text": "主人是做服务端的，不是做游戏客户端的。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p55",
+     "candidates": []
+    },
+    {
+     "id": "p56",
+     "candidates": []
+    },
+    {
+     "id": "p57",
+     "candidates": [
+      {
+       "text": "主人喜欢吃鱼，尤其是烤秋刀鱼。",
+       "decision": "update",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p58",
+     "candidates": []
+    },
+    {
+     "id": "p59",
+     "candidates": [
+      {
+       "text": "主人是一名后端工程师",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p60",
+     "candidates": []
+    },
+    {
+     "id": "n01",
+     "candidates": []
+    },
+    {
+     "id": "n02",
+     "candidates": []
+    },
+    {
+     "id": "n03",
+     "candidates": []
+    },
+    {
+     "id": "n04",
+     "candidates": []
+    },
+    {
+     "id": "n05",
+     "candidates": []
+    },
+    {
+     "id": "n06",
+     "candidates": []
+    },
+    {
+     "id": "n07",
+     "candidates": []
+    },
+    {
+     "id": "n08",
+     "candidates": []
+    },
+    {
+     "id": "n09",
+     "candidates": []
+    },
+    {
+     "id": "n10",
+     "candidates": []
+    },
+    {
+     "id": "n11",
+     "candidates": []
+    },
+    {
+     "id": "n12",
+     "candidates": []
+    },
+    {
+     "id": "n13",
+     "candidates": []
+    },
+    {
+     "id": "n14",
+     "candidates": []
+    },
+    {
+     "id": "n15",
+     "candidates": []
+    },
+    {
+     "id": "n16",
+     "candidates": []
+    },
+    {
+     "id": "n17",
+     "candidates": []
+    },
+    {
+     "id": "n18",
+     "candidates": []
+    },
+    {
+     "id": "n19",
+     "candidates": []
+    },
+    {
+     "id": "n20",
+     "candidates": []
+    },
+    {
+     "id": "n21",
+     "candidates": []
+    },
+    {
+     "id": "n22",
+     "candidates": []
+    },
+    {
+     "id": "n23",
+     "candidates": []
+    },
+    {
+     "id": "n24",
+     "candidates": []
+    },
+    {
+     "id": "n25",
+     "candidates": []
+    },
+    {
+     "id": "n26",
+     "candidates": []
+    },
+    {
+     "id": "n27",
+     "candidates": []
+    },
+    {
+     "id": "n28",
+     "candidates": []
+    },
+    {
+     "id": "n29",
+     "candidates": []
+    },
+    {
+     "id": "n30",
+     "candidates": []
+    },
+    {
+     "id": "n31",
+     "candidates": []
+    },
+    {
+     "id": "n32",
+     "candidates": []
+    },
+    {
+     "id": "n33",
+     "candidates": []
+    },
+    {
+     "id": "n34",
+     "candidates": []
+    },
+    {
+     "id": "n35",
+     "candidates": []
+    },
+    {
+     "id": "n36",
+     "candidates": []
+    },
+    {
+     "id": "n37",
+     "candidates": []
+    },
+    {
+     "id": "n38",
+     "candidates": []
+    },
+    {
+     "id": "n39",
+     "candidates": []
+    },
+    {
+     "id": "n40",
+     "candidates": []
+    },
+    {
+     "id": "n41",
+     "candidates": []
+    },
+    {
+     "id": "n42",
+     "candidates": []
+    },
+    {
+     "id": "n43",
+     "candidates": []
+    },
+    {
+     "id": "n44",
+     "candidates": []
+    },
+    {
+     "id": "n45",
+     "candidates": []
+    },
+    {
+     "id": "n46",
+     "candidates": []
+    },
+    {
+     "id": "n47",
+     "candidates": []
+    },
+    {
+     "id": "n48",
+     "candidates": []
+    },
+    {
+     "id": "n49",
+     "candidates": []
+    },
+    {
+     "id": "n50",
+     "candidates": []
+    },
+    {
+     "id": "n51",
+     "candidates": []
+    },
+    {
+     "id": "n52",
+     "candidates": []
+    },
+    {
+     "id": "n53",
+     "candidates": []
+    },
+    {
+     "id": "n54",
+     "candidates": []
+    },
+    {
+     "id": "n55",
+     "candidates": []
+    },
+    {
+     "id": "n56",
+     "candidates": []
+    },
+    {
+     "id": "n57",
+     "candidates": []
+    },
+    {
+     "id": "n58",
+     "candidates": []
+    },
+    {
+     "id": "n59",
+     "candidates": []
+    },
+    {
+     "id": "n60",
+     "candidates": []
+    }
+   ],
+   [
+    {
+     "id": "p01",
+     "candidates": [
+      {
+       "text": "主人从事游戏客户端开发，目前在一家小公司担任主程。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p02",
+     "candidates": [
+      {
+       "text": "主人在大阪读研，研究方向是计算机视觉。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p03",
+     "candidates": []
+    },
+    {
+     "id": "p04",
+     "candidates": []
+    },
+    {
+     "id": "p05",
+     "candidates": [
+      {
+       "text": "主人は横浜の病院で働いている看護師です。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p06",
+     "candidates": [
+      {
+       "text": "主人不吃香菜，一点都不行。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p07",
+     "candidates": [
+      {
+       "text": "主人每天早上六点起床跑五公里，已经坚持两年了。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p08",
+     "candidates": []
+    },
+    {
+     "id": "p09",
+     "candidates": [
+      {
+       "text": "主人喜欢深烘焙咖啡，不加糖，也从不加牛奶。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p10",
+     "candidates": []
+    },
+    {
+     "id": "p11",
+     "candidates": [
+      {
+       "text": "主人は音楽の中でもジャズが好きである。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人は作業中にいつもピアノトリオを流している。",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p12",
+     "candidates": [
+      {
+       "text": "主人的妻子叫管冬融，是一名小学老师。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p13",
+     "candidates": [
+      {
+       "text": "主人的导师是张伟教授，组里的学长王磊是张伟带过的博士。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p14",
+     "candidates": []
+    },
+    {
+     "id": "p15",
+     "candidates": [
+      {
+       "text": "Kenji is the owner's best friend and lives in Sapporo, where he runs a ramen shop.",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p16",
+     "candidates": []
+    },
+    {
+     "id": "p17",
+     "candidates": [
+      {
+       "text": "主人的妈妈叫李秀兰，住在青岛。",
+       "decision": "create",
+       "classification": "private",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人的妈妈李秀兰身体一直不错。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p18",
+     "candidates": []
+    },
+    {
+     "id": "p19",
+     "candidates": [
+      {
+       "text": "主人正在用 Swift 开发一个个人记账 App，计划在 2026 年底上架。",
+       "decision": "create",
+       "classification": "private",
+       "category": "project",
+       "dueAt": "2026-12-31T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p20",
+     "candidates": [
+      {
+       "text": "The owner's long-term goal is to run a full marathon in under four hours.",
+       "decision": "create",
+       "classification": "private",
+       "category": "goal",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p21",
+     "candidates": []
+    },
+    {
+     "id": "p22",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后回答问题时先给结论，再说理由，不要铺垫。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p23",
+     "candidates": []
+    },
+    {
+     "id": "p24",
+     "candidates": []
+    },
+    {
+     "id": "p25",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 在发送英文邮件草稿给他时，必须同时附上一份中文翻译。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p26",
+     "candidates": [
+      {
+       "text": "From now on, when the owner writes in Japanese, Himawari should answer in Japanese and keep the answer short.",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p27",
+     "candidates": [
+      {
+       "text": "主人要求 Himawari 以后不要再用表格回答问题，因为主人在手机上看不方便。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p28",
+     "candidates": []
+    },
+    {
+     "id": "p29",
+     "candidates": [
+      {
+       "text": "主人需要在 2026-11-06（下周五）下午三点提交季度报告，并要求 Himawari 记着提醒。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-06T06:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p30",
+     "candidates": [
+      {
+       "text": "主人计划在 2026 年 11 月 3 日去医院做年度体检。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": "2026-11-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p31",
+     "candidates": []
+    },
+    {
+     "id": "p32",
+     "candidates": [
+      {
+       "text": "主人的护照将于 2027 年 3 月 3 日到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": "2027-03-03T00:00:00.000Z",
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人要求 Himawari 在护照到期前提醒他续签。",
+       "decision": "create",
+       "classification": "private",
+       "category": "rule",
+       "dueAt": "2027-03-03T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p33",
+     "candidates": []
+    },
+    {
+     "id": "p34",
+     "candidates": [
+      {
+       "text": "主人的工位在14楼东侧靠窗第三个。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p35",
+     "candidates": [
+      {
+       "text": "主人对花生过敏。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p36",
+     "candidates": [
+      {
+       "text": "主人的健身房会员卡将在2026年11月30日到期。",
+       "decision": "create",
+       "classification": "private",
+       "category": "event",
+       "dueAt": "2026-11-30T00:00:00.000Z",
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p37",
+     "candidates": [
+      {
+       "text": "The owner always takes the 8:10 Odakyu line to work.",
+       "decision": "create",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p38",
+     "candidates": []
+    },
+    {
+     "id": "p39",
+     "candidates": []
+    },
+    {
+     "id": "p40",
+     "candidates": []
+    },
+    {
+     "id": "p41",
+     "candidates": []
+    },
+    {
+     "id": "p42",
+     "candidates": []
+    },
+    {
+     "id": "p43",
+     "candidates": []
+    },
+    {
+     "id": "p44",
+     "candidates": [
+      {
+       "text": "主人最近确诊了高血压，医生建议主人少盐。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p45",
+     "candidates": [
+      {
+       "text": "主人每月的税后工资是42万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人每月需要还房贷12万日元。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "finance",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p46",
+     "candidates": [
+      {
+       "text": "主人的同事小林最近离婚了，情绪不太好。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "relationship",
+       "dueAt": null,
+       "existingMemoryId": null
+      },
+      {
+       "text": "主人要求 Himawari 跟小林聊天时注意点。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "rule",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p47",
+     "candidates": []
+    },
+    {
+     "id": "p48",
+     "candidates": [
+      {
+       "text": "主人正在跟前公司进行劳动仲裁，律师认为证据比较充分。",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "event",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p49",
+     "candidates": [
+      {
+       "text": "The owner is seeing a therapist every Thursday for anxiety.",
+       "decision": "create",
+       "classification": "sensitive",
+       "category": "health",
+       "dueAt": null,
+       "existingMemoryId": null
+      }
+     ]
+    },
+    {
+     "id": "p50",
+     "candidates": [
+      {
+       "text": "主人现在住在横滨市港北区。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-home"
+      }
+     ]
+    },
+    {
+     "id": "p51",
+     "candidates": [
+      {
+       "text": "主人换工作了，现在是前端工程师，不再写后端了。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p52",
+     "candidates": [
+      {
+       "text": "主人最近不太爱吃鱼了，改吃鸡肉。",
+       "decision": "supersede",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p53",
+     "candidates": []
+    },
+    {
+     "id": "p54",
+     "candidates": [
+      {
+       "text": "主人是做服务端的后端工程师，不是做游戏客户端的。",
+       "decision": "update",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p55",
+     "candidates": []
+    },
+    {
+     "id": "p56",
+     "candidates": []
+    },
+    {
+     "id": "p57",
+     "candidates": [
+      {
+       "text": "主人喜欢吃鱼，尤其是烤秋刀鱼。",
+       "decision": "update",
+       "classification": "private",
+       "category": "preference",
+       "dueAt": null,
+       "existingMemoryId": "m-fish"
+      }
+     ]
+    },
+    {
+     "id": "p58",
+     "candidates": []
+    },
+    {
+     "id": "p59",
+     "candidates": [
+      {
+       "text": "主人是一名后端工程师",
+       "decision": "unchanged",
+       "classification": "private",
+       "category": "identity",
+       "dueAt": null,
+       "existingMemoryId": "m-job"
+      }
+     ]
+    },
+    {
+     "id": "p60",
+     "candidates": []
+    },
+    {
+     "id": "n01",
+     "candidates": []
+    },
+    {
+     "id": "n02",
+     "candidates": []
+    },
+    {
+     "id": "n03",
+     "candidates": []
+    },
+    {
+     "id": "n04",
+     "candidates": []
+    },
+    {
+     "id": "n05",
+     "candidates": []
+    },
+    {
+     "id": "n06",
+     "candidates": []
+    },
+    {
+     "id": "n07",
+     "candidates": []
+    },
+    {
+     "id": "n08",
+     "candidates": []
+    },
+    {
+     "id": "n09",
+     "candidates": []
+    },
+    {
+     "id": "n10",
+     "candidates": []
+    },
+    {
+     "id": "n11",
+     "candidates": []
+    },
+    {
+     "id": "n12",
+     "candidates": []
+    },
+    {
+     "id": "n13",
+     "candidates": []
+    },
+    {
+     "id": "n14",
+     "candidates": []
+    },
+    {
+     "id": "n15",
+     "candidates": []
+    },
+    {
+     "id": "n16",
+     "candidates": []
+    },
+    {
+     "id": "n17",
+     "candidates": []
+    },
+    {
+     "id": "n18",
+     "candidates": []
+    },
+    {
+     "id": "n19",
+     "candidates": []
+    },
+    {
+     "id": "n20",
+     "candidates": []
+    },
+    {
+     "id": "n21",
+     "candidates": []
+    },
+    {
+     "id": "n22",
+     "candidates": []
+    },
+    {
+     "id": "n23",
+     "candidates": []
+    },
+    {
+     "id": "n24",
+     "candidates": []
+    },
+    {
+     "id": "n25",
+     "candidates": []
+    },
+    {
+     "id": "n26",
+     "candidates": []
+    },
+    {
+     "id": "n27",
+     "candidates": []
+    },
+    {
+     "id": "n28",
+     "candidates": []
+    },
+    {
+     "id": "n29",
+     "candidates": []
+    },
+    {
+     "id": "n30",
+     "candidates": []
+    },
+    {
+     "id": "n31",
+     "candidates": []
+    },
+    {
+     "id": "n32",
+     "candidates": []
+    },
+    {
+     "id": "n33",
+     "candidates": []
+    },
+    {
+     "id": "n34",
+     "candidates": []
+    },
+    {
+     "id": "n35",
+     "candidates": []
+    },
+    {
+     "id": "n36",
+     "candidates": []
+    },
+    {
+     "id": "n37",
+     "candidates": []
+    },
+    {
+     "id": "n38",
+     "candidates": []
+    },
+    {
+     "id": "n39",
+     "candidates": []
+    },
+    {
+     "id": "n40",
+     "candidates": []
+    },
+    {
+     "id": "n41",
+     "candidates": []
+    },
+    {
+     "id": "n42",
+     "candidates": []
+    },
+    {
+     "id": "n43",
+     "candidates": []
+    },
+    {
+     "id": "n44",
+     "candidates": []
+    },
+    {
+     "id": "n45",
+     "candidates": []
+    },
+    {
+     "id": "n46",
+     "candidates": []
+    },
+    {
+     "id": "n47",
+     "candidates": []
+    },
+    {
+     "id": "n48",
+     "candidates": []
+    },
+    {
+     "id": "n49",
+     "candidates": []
+    },
+    {
+     "id": "n50",
+     "candidates": []
+    },
+    {
+     "id": "n51",
+     "candidates": []
+    },
+    {
+     "id": "n52",
+     "candidates": []
+    },
+    {
+     "id": "n53",
+     "candidates": []
+    },
+    {
+     "id": "n54",
+     "candidates": []
+    },
+    {
+     "id": "n55",
+     "candidates": []
+    },
+    {
+     "id": "n56",
+     "candidates": []
+    },
+    {
+     "id": "n57",
+     "candidates": []
+    },
+    {
+     "id": "n58",
+     "candidates": []
+    },
+    {
+     "id": "n59",
+     "candidates": []
+    },
+    {
+     "id": "n60",
+     "candidates": []
+    }
+   ]
+  ]
+ }
+}
