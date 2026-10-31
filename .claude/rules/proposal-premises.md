@@ -1,16 +1,19 @@
-# Proposal Premises Cite the Source
+<a id="proposal-premises-cite-the-source"></a>
+# 方案的前提要写明来源
 
-The user decided on 2026-10-31 that every proposal states its premises with their sources. A thread once built a whole proposal on the coordinator's one-line summary of two project rules; the summary was wrong, and the proposal and an example given to the user were wrong with it ([the lesson](../../docs/lessons.md#trust-reported-checks)). Cloud threads load this file. It applies in fast mode and in full mode, to the coordinator and to every thread.
+每个方案都要写出它的前提及其来源。曾有一个线程把整个方案建立在协调者对两条项目规则的一句话概括上；那句概括是错的，方案和给用户的一个例子也跟着错了（[那条教训](../../docs/lessons.md#trust-reported-checks)）。云端线程（在 claude.ai 云端运行的工作线程）会加载本文件。它在快速模式和完整模式下都适用，对协调者和每个线程都适用。
 
-## Proposals
+<a id="proposals"></a>
+## 方案
 
-- Open every proposal with the premises it depends on. A premise includes what a project rule, document, or tool actually requires or does.
-- Give each premise its source, a file path with line numbers or a URL, and quote the words it rests on.
-- Do not reason from a premise that has no source. Mark it "not checked" and read the source before relying on it.
-- A summary written by another Claude, the coordinator's brief, project memory, or an earlier reply is not a source. Open the document it summarizes.
-- Before giving the user an example, confirm against the source that the example really fits.
+- 每个方案开头都要列出它依赖的前提。前提包括某条项目规则、某份文档或某个工具实际要求什么或实际做什么。
+- 给每个前提注明来源（带行号的文件路径，或 URL），并引用它所依据的原话。
+- 不得从没有来源的前提出发推理。把它标为“未核实”（not checked），在依赖它之前先去读来源。
+- 另一个 Claude 写的概括、协调者的简报、项目记忆或之前的回复，都不是来源。要打开它所概括的那份文档。
+- 在给用户举例之前，先对照来源确认这个例子确实符合。
 
-## Briefs and Hand-offs
+<a id="briefs-and-hand-offs"></a>
+## 简报与交接
 
-- When the coordinator's brief to a thread says what a rule requires, it gives the file path and the original words, or marks the claim "not checked; read the source before starting".
-- Before passing a thread's proposal to the user, the coordinator checks that it opens with a list of premises and that each premise has a source. A proposal that fails this goes back to the thread instead of to the user.
+- 当协调者给线程的简报里说某条规则要求什么时，必须给出文件路径和原话，或者把这条说法标为“未核实；开始前先读来源”（not checked; read the source before starting）。
+- 在把某个线程的方案转给用户之前，协调者要检查它开头是否有前提清单、每个前提是否都有来源。不合格的方案退回给线程，不交给用户。

@@ -1,25 +1,30 @@
-# Incidents Get Automatic Gates
+<a id="incidents-get-automatic-gates"></a>
+# 每个事故都要有自动门槛
 
-The user decided on 2026-10-29 ([ADR 0107](../../docs/adr/0107-every-incident-gets-an-automatic-gate.md), superseding ADR 0060) that every incident must end in an automatic check, and that a mistake seen three times must be blocked by a hard gate. Cloud threads load this file, so this is how every session reaches the rule. It applies in fast mode and in full mode.
+每个事故都必须以一项自动检查结束，同一个错误出现三次就必须用硬门槛（会自动拦下的测试或可执行逻辑）挡住。云端线程（在 claude.ai 云端运行的工作线程）会加载本文件，所以每个会话都是通过这里知道这条规则的。它在快速模式和完整模式下都适用。
 
-## When a Thread Starts
+<a id="when-a-thread-starts"></a>
+## 线程开始时
 
-Read [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md). If the work touches an area with an open entry (state `缺门槛` or `等 Andy`), say so in the plan.
+读 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md)。如果这次工作涉及某个有未结条目（状态为 `缺门槛` 或 `等 Andy`）的领域，在计划里说明。
 
-## What Counts
+<a id="what-counts"></a>
+## 什么算数
 
-- An incident is a production failure, a failed or rolled-back release, a problem blocked only late in packet generation, or a defect the user found that a check could have caught.
-- A gate is a check that runs on its own and blocks when it fails: a `deploy.sh` preflight, a packet check (`run-packet-checks.py`, `make-packet.py` refusals), a test, a step of `npm run check`, a commit or push hook, or a script that checks itself on every use. A document, casebook case, memory note, or reminder is not a gate.
-- An incident is closed only when its gate exists and is shown to fail on a reproduction of the incident and pass once the cause is removed. Record that evidence in the commit message.
-- The third occurrence of the same mistake, whether an incident or an agent's own error, needs a hard gate before work on that mistake resumes. When only the user can make the change, prepare it, ask once with the concrete proposal, and mark the entry `等 Andy`.
+- 事故是指：生产故障、失败或被回滚的发布、直到上线包生成后期才被拦下的问题，或者用户发现的、本可以由检查发现的缺陷。
+- 门槛是指自己会运行、失败时会拦下的检查：`deploy.sh` 的上线前检查、上线包检查（`run-packet-checks.py`、`make-packet.py` 的拒绝）、测试、`npm run check` 的一个步骤、提交或推送钩子（hook，在提交或推送时自动运行的脚本），或者每次使用时都会自检的脚本。文档、案例库案例、记忆笔记或提醒都不是门槛。
+- 一个事故只有在它的门槛已经存在、并且已证明它在事故的复现上会失败、在原因去除后会通过时，才算关闭。把这份证据写进提交说明。
+- 同一个错误第三次出现时，无论是事故还是代理自己的失误，在继续处理这个错误的工作之前都需要一道硬门槛。当只有用户能做这项改动时，把它准备好，带着具体方案问一次，并把该条目标为 `等 Andy`。
 
-## Keeping the List
+<a id="keeping-the-list"></a>
+## 维护清单
 
-- Each row: id, date (JST), symptom, root cause, occurrence count, gate (files in backticks, or the command), state. States: `已落门槛`, `缺门槛`, `等 Andy`, `仓库外` (the cause is outside this repository, with the substitute practice written down).
-- Add a row for a new incident; for a repeat, raise the count and extend the row instead of adding one.
-- `npm run check:incident-gates` (part of `npm run check`) refuses a closed row whose gate file does not exist, a row with a count of 3 or more that has no hard gate, and malformed rows.
-- Agent mistakes keep their detailed history in `docs/lessons.md`; add a row here only when such a mistake caused an incident.
+- 每一行：编号、日期（JST，日本标准时间）、症状、根本原因、出现次数、门槛（文件用反引号括起，或写命令）、状态。状态：`已落门槛`、`缺门槛`、`等 Andy`、`仓库外`（原因在本仓库之外，并写下替代做法）。
+- 新事故加一行；重复发生时，提高次数并扩充原有那一行，不另加新行。
+- `npm run check:incident-gates`（属于 `npm run check` 的一部分）会拒绝：门槛文件不存在的已关闭行、次数达到 3 或以上却没有硬门槛的行，以及格式不对的行。
+- 代理犯错的详细历史保存在 `docs/lessons.md`；只有当这类错误造成了事故时，才在这里加一行。
 
-## Delivery Reports
+<a id="delivery-reports"></a>
+## 交付报告
 
-Name each incident the thread handled, the gate added (file or command) or why no gate was needed, and the list row updated.
+写明线程处理的每个事故、加上的门槛（文件或命令）或为什么不需要门槛，以及更新了清单中的哪一行。
