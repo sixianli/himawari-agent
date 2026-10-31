@@ -1,18 +1,18 @@
 <a id="test-trigger-timing"></a>
 # 测试触发时机
 
-当 `DELIVERY_MODE` 写着 `fast` 时，[交付模式](delivery-mode.md#fast-mode) 用它的基本检查替换第 0-4 层；下文的 `Layer-0-tests:` 行在两种模式下都必须写（[ADR 0108](../../docs/adr/0108-layer0-check-in-repository-and-fast-mode.md)（ADR，架构决策记录））。
+当 `DELIVERY_MODE` 写着 `fast` 时，[交付模式](delivery-mode.md#fast-mode) 用它的基本检查替换第 0-4 层；下文的 `Layer-0-tests:` 行在两种模式下都必须写。
 
-现行规则写在 [ADR 0057](../../docs/adr/0057-batch-layers-one-two-for-small-defects.md#batch-layers) 中。每一层都在 [测试主机与生产主机](test-and-production-hosts.md) 指定的主机上运行。这些规则优先于 2026-09-29 之前写的任务简报中任何“每个缺陷都跑完整测试”的要求。
+每一层都在 [测试主机与生产主机](test-and-production-hosts.md) 指定的主机上运行。这些规则优先于旧任务简报中任何“每个缺陷都跑完整测试”的要求。
 
-- 第 0 层，定向测试（复现问题的测试和直接相关的测试文件）：在修改生产代码之前运行以显示失败，然后在每次修改之后运行。直接相关的文件至少包括 `python3 scripts/layer0-tests/check-layer0-tests.py derive` 为这次改动列出的每个文件（只能增加文件，绝不能去掉任何一个）；改动 `apps/*/src/` 或 `packages/*/src/` 下产品源码的提交，要把每个第 0 层文件各写成一行 `Layer-0-tests: <path>`，没有列出任何文件时写 `Layer-0-tests: none`，否则仓库钩子 `scripts/git-hooks/commit-msg` 和 `pre-push` 会拒绝它；`npm run check:layer0-hooks` 是 `npm run check` 的一部分，它把 `core.hooksPath` 指向 `scripts/git-hooks`。钩子会跳过合并提交（打印 `L0_RELATED_TESTS_SKIPPED_MERGE`）；如果一次合并的冲突解决改动了产品源码，它仍要带上这些声明行，在审查中检查（[ADR 0066](../../docs/adr/0066-layer0-related-tests-declared.md)）。
+- 第 0 层，定向测试（复现问题的测试和直接相关的测试文件）：在修改生产代码之前运行以显示失败，然后在每次修改之后运行。直接相关的文件至少包括 `python3 scripts/layer0-tests/check-layer0-tests.py derive` 为这次改动列出的每个文件（只能增加文件，绝不能去掉任何一个）；改动 `apps/*/src/` 或 `packages/*/src/` 下产品源码的提交，要把每个第 0 层文件各写成一行 `Layer-0-tests: <path>`，没有列出任何文件时写 `Layer-0-tests: none`，否则仓库钩子 `scripts/git-hooks/commit-msg` 和 `pre-push` 会拒绝它；`npm run check:layer0-hooks` 是 `npm run check` 的一部分，它把 `core.hooksPath` 指向 `scripts/git-hooks`。钩子会跳过合并提交（打印 `L0_RELATED_TESTS_SKIPPED_MERGE`）；如果一次合并的冲突解决改动了产品源码，它仍要带上这些声明行，在审查中检查。
 - 第 1 层，`npm run check`：每次提交之前运行；对于一批包含多个独立缺陷的交付，在叠好的这批改动的最顶上运行一次（见第 2 层）。
 - 第 2 层，受影响模块的测试（包含改动的整个 Vitest 项目，例如 `unit`，加上覆盖被改模块的集成测试文件）：当一个缺陷修复或功能已经稳定、即将提交时运行。每个独立缺陷在自己的第 0 层运行后仍然单独提交。当一批交付包含不止一个独立缺陷时，第 1-2 层在完全叠好的这批改动的最顶上运行一次，然后按顺序提交各个缺陷；如果第 1-2 层失败，回到失败缺陷的第 0 层，修复它，并在新的顶端重新运行第 1-2 层。每条提交说明都要写明第 1-2 层是在哪个版本上运行的，并说明该提交本身没有单独跑过它们。只有一个缺陷或功能的一批，在提交之前运行第 1-2 层。
-- 第 3 层，构建加完整的 `npm test`：每批交付（一组一起交去审查或验收的改动，通常不超过三个独立缺陷）运行一次，在开 PR 或合并之前，以及在一轮工作结束时运行。当改动涉及 SQLite 数据库结构或迁移、Agent-Worker 协议、身份认证或握手、构建或打包配置、依赖清单或锁文件，或测试运行器本身（Vitest 配置、`ci/policy.json`，以及 `scripts/ci/` 中决定测试如何收集、启动、并行运行或判定的文件；清单见 [ADR 0064](../../docs/adr/0064-layer3-individual-trigger-scope.md)）时，改为针对这一个改动单独运行。只在某个检查步骤中运行的 `scripts/ci/` 脚本（例如 `check-policy.mjs`），改为运行 `local.mjs --check <that check>` 加上整个 `tooling` 项目，完整的第 3 层等到这批交付时再跑（ADR 0064，G151）。
+- 第 3 层，构建加完整的 `npm test`：每批交付（一组一起交去审查或验收的改动，通常不超过三个独立缺陷）运行一次，在开 PR 或合并之前，以及在一轮工作结束时运行。当改动涉及 SQLite 数据库结构或迁移、Agent-Worker 协议、身份认证或握手、构建或打包配置、依赖清单或锁文件，或测试运行器本身（Vitest 配置、`ci/policy.json`，以及 `scripts/ci/` 中决定测试如何收集、启动、并行运行或判定的文件；清单见 [ADR 0064](../../docs/adr/0064-layer3-individual-trigger-scope.md)）时，改为针对这一个改动单独运行。只在某个检查步骤中运行的 `scripts/ci/` 脚本（例如 `check-policy.mjs`），改为运行 `local.mjs --check <that check>` 加上整个 `tooling` 项目，完整的第 3 层等到这批交付时再跑。
 - 在开始第 3 层之前，先完成第 0-2 层和一次自我审查。如果第 3 层失败，回到第 0 层，修复，通过第 0-2 层，然后在这批交付的最终版本上重新运行一次第 3 层。
 - 第 4 层，真实产品路径（在 Hermes 上的 Linux，安装在测试账号自己的目录下；Mac 只按 [测试主机与生产主机](test-and-production-hosts.md) 中的批准规则运行）：当改动影响安装、升级、进程管理或沙箱运行时行为时，只运行受影响的场景；不加筛选的完整资格验证只在一轮工作结束时或发布之前运行。
 - 第 5 层，生产上线到 `84.247.157.41`：只有在用户对每一次上线明确授权后才进行；快速模式下，用户在 Mac 线程或项目聊天里说“上线”即为授权（见[交付模式](delivery-mode.md#fast-mode)）。
 - 只改文档的改动，只运行文档校验和 Runbook（操作手册）检查。
 - 只要代码、依赖、测试配置和相关环境没有变化，就复用已通过的结果。提交说明和交付报告必须说明实际运行了哪些层，以及完整测试覆盖的是哪个版本；中间提交没有经过完整测试时，绝不能说它经过了完整测试。
-- 这些规则只管开发测试。`ci/policy.json` 中要求的 GitHub CI（持续集成）检查不变，不过在 [ADR 0092](../../docs/adr/0092-pause-github-actions.md) 有效期间 GitHub Actions 是关闭的。
+- 这些规则只管开发测试。`ci/policy.json` 中要求的 GitHub CI（持续集成）检查不变，不过 GitHub Actions 目前是关闭的。
 - 添加测试之前，先回答六个测试价值问题；让测试保持在速度和隔离预算之内；涉及存储、恢复和面向模型的改动，要带上 [ADR 0063](../../docs/adr/0063-test-value-gate-speed-budget-hygiene.md) 点名的测试；这些规则本身属于 `verification-discipline` 技能，整洁门槛是 Backlog 条目 BL-20261021-001。

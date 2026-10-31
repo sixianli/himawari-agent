@@ -1,7 +1,7 @@
 <a id="document-governance-in-every-session"></a>
 # 每个会话都做文档治理
 
-用户在 2026-10-26 要求，此后每个云端线程（在 claude.ai 云端运行的工作线程）都要在本项目里真正使用 `document-governance` 技能（管理 `docs/` 下项目文档的技能）（[ADR 0080](../../docs/adr/0080-document-governance-in-fast-mode.md)）。仓库不保存这个技能的副本（[ADR 0132](../../docs/adr/0132-owner-skills-from-the-claude-ai-account.md)）。云端线程从 Andy 的 claude.ai 账号获得它，Mac 上的会话从 `~/.claude/skills/` 获得它；无论哪种，都通过 Skill 工具（加载技能的工具）取得，下面的项目规则仍然适用。
+每个云端线程（在 claude.ai 云端运行的工作线程）都要在本项目里真正使用 `document-governance` 技能（管理 `docs/` 下项目文档的技能）。仓库不保存这个技能的副本。云端线程从 Andy 的 claude.ai 账号获得它，Mac 上的会话从 `~/.claude/skills/` 获得它；无论哪种，都通过 Skill 工具（加载技能的工具）取得，下面的项目规则仍然适用。
 
 <a id="where-the-skill-is"></a>
 ## 技能在哪里
@@ -20,13 +20,13 @@
 - 当用户要求保留一个想法（例如“记下这个想法”）时，用 `idea_backlog.py idea capture` 记录。
 - 当一项改动让一份反映当前事实的文档明显出错（PRD（产品需求文档）、架构文档、仍有效的规格或计划、某份 Runbook（操作手册）的步骤）时，在同一个提交里改正它。
 - 已关闭的规格或计划只能用 `archive_doc.py` 归档。ADR 永不归档。
-- 事故及其门槛记入 `docs/incidents-and-gates.md`，编码代理反复犯的错误记入 `docs/lessons.md`，两者都遵循 [ADR 0107](../../docs/adr/0107-every-incident-gets-an-automatic-gate.md)（[incident-gates.md](incident-gates.md)）；项目进度状态绝不记入这两处。
+- 事故及其门槛记入 `docs/incidents-and-gates.md`，编码代理反复犯的错误记入 `docs/lessons.md`，两者都遵循 [incident-gates.md](incident-gates.md)；项目进度状态绝不记入这两处。
 
 <a id="the-documentation-check"></a>
 ## 文档检查
 
-- 自 2026-10-31 起，仓库没有文档检查：`npm run check:docs` 及其脚本已删除，任何提交都不会因文档问题被拦下（用户决定，[ADR 0133](../../docs/adr/0133-docs-check-removed-from-npm-run-check.md)）。
-- 改动了 `docs/` 下任何文件的提交，提交前必须手动运行这个技能的严格校验（`python3 -B <skill directory>/scripts/validate_docs.py . --strict`，约一秒，只读），并且不得新增校验错误（用户决定，2026-10-31）。技能没有加载时，在提交说明和交付报告里写明没能运行校验。在快速模式下，只是说某份仍有效的 Runbook `contract_sha256 does not match` 或 `contract path does not exist` 的问题，可以留到完整模式再处理。
+- 仓库没有自动的文档检查：`npm run check:docs` 及其脚本已删除，任何提交都不会因文档问题被拦下。
+- 改动了 `docs/` 下任何文件的提交，提交前必须手动运行这个技能的严格校验（`python3 -B <skill directory>/scripts/validate_docs.py . --strict`，约一秒，只读），并且不得新增校验错误。技能没有加载时，在提交说明和交付报告里写明没能运行校验。在快速模式下，只是说某份仍有效的 Runbook `contract_sha256 does not match` 或 `contract path does not exist` 的问题，可以留到完整模式再处理。
 - 在快速模式下，当一个提交改动了某份 Runbook 的契约源文件（Runbook 里 `runbook-contract` 清单列出的仓库文件，封存时它们的内容会算进 `contract_sha256`）而让它的封存过期时，在提交说明里写 `Docs: deferred (fast mode)` 并写出该 Runbook 的名字。当用户切回完整模式，或某个线程即将按那份 Runbook 操作时，核对并重新封存这些推迟的 Runbook。
 - 绝不只为让检查通过而重新封存 Runbook。`runbook.py seal ... --confirm-reconciled --apply` 必须在对照当前代码复核过 Runbook 之后才运行。
 

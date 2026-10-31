@@ -1,9 +1,9 @@
 <a id="test-and-production-hosts"></a>
 # 测试主机与生产主机
 
-当 `DELIVERY_MODE` 写着 `fast` 时，[交付模式](delivery-mode.md#fast-mode) 替换下文中关于运维上线包、验收例外和每次上线授权的规则，它的生产访问规则（[ADR 0074](../../docs/adr/0074-claude-runs-production-deployments.md)（ADR，架构决策记录））解除对 root 和生产账号、`/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 以及生产服务的禁令，但仅限于上线、回滚和诊断，每次上线或回滚的授权方式见交付模式；测试运行仍然绝不使用它们，其他主机边界不变。
+当 `DELIVERY_MODE` 写着 `fast` 时，[交付模式](delivery-mode.md#fast-mode) 替换下文中关于运维上线包、验收例外和每次上线授权的规则，它的生产访问规则解除对 root 和生产账号、`/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 以及生产服务的禁令，但仅限于上线、回滚和诊断，每次上线或回滚的授权方式见交付模式；测试运行仍然绝不使用它们，其他主机边界不变。
 
-规则写在 [ADR 0057](../../docs/adr/0057-batch-layers-one-two-for-small-defects.md) 中，它保留了 [ADR 0056](../../docs/adr/0056-cloud-server-also-test-host.md) 的每一条主机规则；逐步操作流程（连接、目录布局、临时目录根、运行方式、监控、清理）见 [测试主机运维 Runbook（操作手册）](../../docs/runbooks/test-host-operations-runbook.md)。早先在主机之间的迁移，以及前三次生产上线的一次性验收例外（G51、G65、G75），记录在已被取代的 ADR 0041-0047 和 0049-0052 中，属于历史，不是长期有效的许可。硬边界如下：
+逐步操作流程（连接、目录布局、临时目录根、运行方式、监控、清理）见 [测试主机运维 Runbook（操作手册）](../../docs/runbooks/test-host-operations-runbook.md)。硬边界如下：
 
 - 绝不在用户的 MacBook 上运行 Himawari 测试：不做构建，不跑 `npm run check`、`npm test`、任何 Vitest 项目或产品路径资格验证。MacBook 只用于编辑、审查和提交；发现那里有这类进程在运行时要停止它。
 - 第 0-4 层在 Hermes 上运行，或在云服务器 `84.247.157.41` 上以普通账号 `himawari-ci`（uid 1001，无 sudo）在 `/srv/himawari-ci/` 下运行；在那里做例行测试工作不需要再请示。绝不使用 root 或生产账号，绝不读取生产机密，绝不触碰 `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 或生产服务（不停止、不重启、不发请求）。任何需要 sudo、或会改变 Hermes 系统设置或服务的事，都以可执行脚本的形式交给用户，并解释每一步。
@@ -13,6 +13,6 @@
 - 每次对比测量都以 `.ci-output/handoff/scripts/require-quiet-host.sh hermes|cloud` 开始，只有在出现 `QUIET_HOST_OK` 之后才运行；证据中缺少这一行的对比结果，Claude 一律拒收。
 - 不要放宽测试时限，也不要设置 `HIMAWARI_TEST_TIMEOUT_MS`；测试主机上的超时是一个需要诊断和修复的缺陷。
 - Hermes 上还运行着无关的服务，包括 `/data/hermes/himawari/releases/` 下现有的 Himawari 服务；测试不得读写它们的目录或数据，也不得停止或重启它们。
-- Mac 仍然是受支持的产品平台，但用户于 2026-09-30 无限期推迟了所有 Mac 验证：在用户恢复之前，不要安排或提议在 Mac 上运行，并把 Mac 上的行为报告为未验证。恢复之后，Mac 专属的验证（macOS 沙箱、Mac 安装程序、Mac 自带的 Bash，以及其他只在 Mac 上出现的运行时行为）只有在改动影响 Mac 专属行为时或在发布之前，才在 MacBook 上运行，并且只有在用户批准了这一次具体运行、它的范围、预计时长和时间安排之后才运行。
+- Mac 仍然是受支持的产品平台，但用户已无限期推迟了所有 Mac 验证：在用户恢复之前，不要安排或提议在 Mac 上运行，并把 Mac 上的行为报告为未验证。恢复之后，Mac 专属的验证（macOS 沙箱、Mac 安装程序、Mac 自带的 Bash，以及其他只在 Mac 上出现的运行时行为）只有在改动影响 Mac 专属行为时或在发布之前，才在 MacBook 上运行，并且只有在用户批准了这一次具体运行、它的范围、预计时长和时间安排之后才运行。
 - 生产运行在云服务器 `84.247.157.41` 上；那里的每一次生产上线，以及每一次启动或变更生产服务，都需要用户对该次上线的明确授权。
 - 一个平台的结果绝不能代替另一个平台：Mac 和 Linux 不能互相验证；Hermes（Ubuntu 22.04，bwrap 0.6.1）在时序、并发或沙箱方面的结论不能代表生产服务器（Ubuntu 24.04，带有 AppArmor 对用户命名空间的限制）；`himawari-ci` 的结果只说明测试账号自己在 Ubuntu 24.04 上的安装，而不是经过验证的生产安装；2026-10-14 之前的云服务器测试结果只作为历史记录。
