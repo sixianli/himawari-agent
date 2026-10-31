@@ -39,6 +39,7 @@ interface Candidate {
 }
 
 interface Usage {
+  truncated: number;
   prompt: number;
   cached: number;
   completion: number;
@@ -59,7 +60,7 @@ let prices = { input: 0, output: 0, cacheRead: 0 };
 let spentUsd = 0;
 
 function addUsage(arm: string, body: any): void {
-  const entry = usage[arm] ?? { prompt: 0, cached: 0, completion: 0, calls: 0 };
+  const entry = usage[arm] ?? { truncated: 0, prompt: 0, cached: 0, completion: 0, calls: 0 };
   usage[arm] = entry;
   const prompt = body.usage?.prompt_tokens ?? 0;
   const cached = body.usage?.prompt_tokens_details?.cached_tokens ?? 0;
@@ -68,6 +69,7 @@ function addUsage(arm: string, body: any): void {
   entry.cached += cached;
   entry.completion += completion;
   entry.calls += 1;
+  if (body.choices?.[0]?.finish_reason === "length") entry.truncated += 1;
   spentUsd +=
     (prompt - cached) * prices.input + cached * prices.cacheRead + completion * prices.output;
 }
@@ -75,19 +77,30 @@ function addUsage(arm: string, body: any): void {
 async function chat(arm: string, payload: Record<string, unknown>): Promise<any> {
   if (spentUsd >= CAP_USD)
     throw new Error(`EVAL_BUDGET_REACHED：已花 ${spentUsd.toFixed(4)} 美元，上限 ${CAP_USD}`);
-  const response = await fetch(`${GATEWAY}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${process.env["AI_GATEWAY_API_KEY"] ?? "proxy-injected"}`,
-    },
-    body: JSON.stringify({ model: MODEL, temperature: 0, ...payload }),
-  });
-  const body = await response.json();
-  if (!response.ok)
-    throw new Error(`EVAL_GATEWAY_${response.status}: ${JSON.stringify(body).slice(0, 300)}`);
-  addUsage(arm, body);
-  return body;
+  let lastError = "";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    const response = await fetch(`${GATEWAY}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env["AI_GATEWAY_API_KEY"] ?? "proxy-injected"}`,
+      },
+      body: JSON.stringify({ model: MODEL, temperature: 0, ...payload }),
+    }).catch((error: Error) => error);
+    if (response instanceof Error) {
+      lastError = `EVAL_NETWORK: ${response.message}`;
+      continue;
+    }
+    const body = await response.json().catch(() => ({}));
+    if (response.ok) {
+      addUsage(arm, body);
+      return body;
+    }
+    lastError = `EVAL_GATEWAY_${response.status}: ${JSON.stringify(body).slice(0, 300)}`;
+    if (response.status !== 429 && response.status < 500) break;
+  }
+  throw new Error(lastError);
 }
 
 async function runArmA(item: Item): Promise<Candidate[]> {
@@ -99,7 +112,7 @@ async function runArmA(item: Item): Promise<Candidate[]> {
     item.sentAt,
     TIME_ZONE,
   );
-  const body = await chat("A", { messages: [{ role: "user", content: prompt }], max_tokens: 1500 });
+  const body = await chat("A", { messages: [{ role: "user", content: prompt }], max_tokens: 4096 });
   const output = String(body.choices?.[0]?.message?.content ?? "");
   try {
     const parsed = parseMemoryCandidates({
@@ -172,7 +185,7 @@ async function runArmB(item: Item): Promise<Candidate[]> {
   if (item.previousAssistantMessage)
     messages.push({ role: "assistant", content: item.previousAssistantMessage });
   messages.push({ role: "user", content: item.message });
-  const body = await chat("B", { messages, tools: [REMEMBER_TOOL], max_tokens: 800 });
+  const body = await chat("B", { messages, tools: [REMEMBER_TOOL], max_tokens: 2048 });
   const calls = body.choices?.[0]?.message?.tool_calls ?? [];
   const candidates: Candidate[] = [];
   for (const call of calls) {
@@ -254,6 +267,11 @@ describe.skipIf(!(CAP_USD > 0))("记忆抽取评测（真实模型，会花钱�
           candidates: await runners[arm]!(item),
         }));
         raw[arm]!.push(results);
+        mkdirSync(OUTPUT_DIRECTORY, { recursive: true });
+        writeFileSync(
+          path.join(OUTPUT_DIRECTORY, `partial-${arm}-${run}.json`),
+          JSON.stringify({ spentUsd, usage, results }),
+        );
       }
     }
     if (raw["A"]) {
