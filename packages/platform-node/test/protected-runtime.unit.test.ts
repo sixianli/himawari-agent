@@ -138,24 +138,57 @@ it("keeps refusing after a deferred audit failed, even if a later audit would su
   expect(later).not.toHaveBeenCalled();
 });
 
-it("also keeps refusing after a transient error in the deferred audit", async () => {
+it.each([
+  new Error("SANDBOX_HOST_DIGEST_WORKER_EXIT:1"),
+  Object.assign(new Error("read failed"), { code: "EIO" }),
+])(
+  "does not lock the sandbox after a transient error in the deferred audit (%s)",
+  async (error) => {
+    const verifier = verifierFor();
+    const settled = vi.fn();
+    await verifier.begin(
+      root,
+      digest,
+      async () => {
+        throw error;
+      },
+      [],
+      settled,
+    );
+    await vi.waitFor(() =>
+      expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false })),
+    );
+    const later = vi.fn(async () => digest);
+    await verifier.verify(root, digest, later);
+    expect(later).toHaveBeenCalledOnce();
+  },
+);
+
+it("keeps refusing after a deferred audit hit a non-transient error such as a file changed during reading", async () => {
   const verifier = verifierFor();
   const settled = vi.fn();
   await verifier.begin(
     root,
     digest,
     async () => {
-      throw new Error("SANDBOX_HOST_DIGEST_WORKER_EXIT:1");
+      throw new Error("SANDBOX_HOST_CHANGED");
     },
     [],
     settled,
   );
   await vi.waitFor(() => expect(settled).toHaveBeenCalled());
   const later = vi.fn(async () => digest);
-  await expect(verifier.verify(root, digest, later)).rejects.toThrow(
-    "SANDBOX_HOST_DIGEST_WORKER_EXIT:1",
-  );
+  await expect(verifier.verify(root, digest, later)).rejects.toThrow("SANDBOX_HOST_CHANGED");
   expect(later).not.toHaveBeenCalled();
+});
+
+const readBytesOk = () => async () => digest;
+it("survives a settle callback that throws", async () => {
+  const verifier = verifierFor();
+  await verifier.begin(root, digest, readBytesOk(), [], () => {
+    throw new Error("logger broke");
+  });
+  await verifier.verify(root, digest, readBytesOk());
 });
 
 it("does not let a content audit that never finishes block sandbox calls forever", async () => {
@@ -168,6 +201,7 @@ it("does not let a content audit that never finishes block sandbox calls forever
   await vi.waitFor(() =>
     expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false })),
   );
+  await verifier.verify(root, digest, async () => digest);
 });
 
 it("does not keep refusing after a failed audit that was not started in the background", async () => {

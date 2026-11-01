@@ -66,6 +66,37 @@ set -C
 chmod 0640 "$qualification/__PKT_LABEL__-prepare.json"
 chown root:himawari-prod "$qualification/__PKT_LABEL__-prepare.json"
 [[ $(stat -c %u "$qualification/__PKT_LABEL__-prepare.json") == 0 && $(stat -c %g "$qualification/__PKT_LABEL__-prepare.json") == 988 && $(stat -c %a "$qualification/__PKT_LABEL__-prepare.json") == 640 ]]
+runtime=/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__/lib/himawari-agent
+python3 -I - "$state" "$operations" "$runtime" <<'PYTHON'
+import hashlib, json, os, stat, sys
+state, operations, runtime = sys.argv[1:4]
+source = state + '/cache/runtime-fingerprints-' + hashlib.sha256(runtime.encode()).hexdigest()[:16] + '.json'
+target = operations + '/runtime-fingerprints.json'
+try:
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+except FileNotFoundError:
+    print('RUNTIME_FINGERPRINT_CACHE_NOT_WRITTEN')
+    raise SystemExit(0)
+with os.fdopen(descriptor, 'rb') as stream:
+    info = os.fstat(stream.fileno())
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 999 or info.st_mode & 0o022 or info.st_size > 64 * 1024 * 1024:
+        raise RuntimeError('RUNTIME_FINGERPRINT_CACHE_SOURCE_UNSAFE')
+    data = stream.read()
+parsed = json.loads(data)
+if parsed.get('version') != 1 or parsed.get('root') != runtime or not isinstance(parsed.get('files'), dict):
+    raise RuntimeError('RUNTIME_FINGERPRINT_CACHE_SOURCE_INVALID')
+temporary = target + '.' + str(os.getpid()) + '.tmp'
+output = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(output, 'wb') as stream:
+    stream.write(data)
+    stream.flush()
+    os.fsync(stream.fileno())
+os.chown(temporary, 0, 0)
+os.chmod(temporary, 0o644)
+os.rename(temporary, target)
+print('RUNTIME_FINGERPRINT_CACHE_PUBLISHED files=' + str(len(parsed['files'])))
+PYTHON
+[[ ! -e $operations/runtime-fingerprints.json || ( $(stat -c %u "$operations/runtime-fingerprints.json") == 0 && $(stat -c %a "$operations/runtime-fingerprints.json") == 644 ) ]]
 [[ $(stat -c %u "$config") == 999 && $(stat -c %a "$config") == 600 ]]
 [[ $(stat -c %u "$deployment/capability-deployment.json") == 999 && $(stat -c %a "$deployment/capability-deployment.json") == 600 ]]
 [[ ! -e $config.next && ! -L $config.next && ! -e $deployment/capability-deployment.json.next && ! -L $deployment/capability-deployment.json.next ]]

@@ -25,6 +25,7 @@ import { sandboxScopeSchema } from "@himawari-agent/execution-contracts";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   digestSandboxRuntime,
+  runtimeFingerprintLocation,
   resolveSandboxFileWorkspaceClaim,
   resolveSandboxWorkspaceClaim,
   sandboxHostIdentity,
@@ -635,3 +636,30 @@ it("reuses the persisted fingerprint cache and falls back to a full hash when th
     await rm(cacheFile, { force: true });
   }
 }, 20_000);
+
+it("keeps the trusted fingerprint file beside the root-owned protection record and stages writes under HOME", () => {
+  vi.stubEnv(
+    "HIMAWARI_RUNTIME_PROTECTION_FILE",
+    "/opt/himawari/operations/x/runtime-protection.json",
+  );
+  vi.stubEnv("HOME", "/var/lib/himawari/state");
+  try {
+    const root = "/opt/himawari/releases/r1/lib/himawari-agent";
+    const location = runtimeFingerprintLocation(root);
+    expect(location).toMatchObject({
+      fingerprintFile: "/opt/himawari/operations/x/runtime-fingerprints.json",
+      trustedUid: 0,
+    });
+    expect(location.fingerprintWriteFile).toMatch(
+      /^\/var\/lib\/himawari\/state\/cache\/runtime-fingerprints-[a-f0-9]{16}\.json$/,
+    );
+    expect(runtimeFingerprintLocation(root)).toEqual(location);
+    expect(runtimeFingerprintLocation(`${root}2`).fingerprintWriteFile).not.toBe(
+      location.fingerprintWriteFile,
+    );
+    vi.stubEnv("HIMAWARI_RUNTIME_PROTECTION_FILE", "");
+    expect(runtimeFingerprintLocation(root)).toEqual({});
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

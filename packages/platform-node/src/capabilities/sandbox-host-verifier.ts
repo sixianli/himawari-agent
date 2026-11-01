@@ -34,13 +34,27 @@ export interface SandboxRuntimeDigestResult {
   readonly hashed: number;
 }
 
-export function runtimeFingerprintFile(): string | undefined {
+export interface RuntimeFingerprintLocation {
+  readonly fingerprintFile?: string;
+  readonly fingerprintWriteFile?: string;
+  readonly trustedUid?: number;
+}
+
+export function runtimeFingerprintLocation(root: string): RuntimeFingerprintLocation {
   const configured = process.env["HIMAWARI_RUNTIME_FINGERPRINT_FILE"];
-  if (configured && path.isAbsolute(configured)) return configured;
+  if (configured && path.isAbsolute(configured))
+    return { fingerprintFile: configured, trustedUid: process.getuid?.() ?? 0 };
+  const protection = process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
+  if (!protection || !path.isAbsolute(protection)) return {};
   const home = process.env["HOME"];
-  return home && path.isAbsolute(home)
-    ? path.join(home, "cache", "sandbox-runtime-fingerprints.json")
-    : undefined;
+  const token = createHash("sha256").update(root).digest("hex").slice(0, 16);
+  return {
+    fingerprintFile: path.join(path.dirname(protection), "runtime-fingerprints.json"),
+    ...(home && path.isAbsolute(home)
+      ? { fingerprintWriteFile: path.join(home, "cache", `runtime-fingerprints-${token}.json`) }
+      : {}),
+    trustedUid: 0,
+  };
 }
 
 function runDigestWorker(
@@ -74,18 +88,18 @@ function runDigestWorker(
 }
 
 export async function digestSandboxRuntime(root: string, expectedDigest?: string): Promise<string> {
-  const fingerprintFile = runtimeFingerprintFile();
+  const location = runtimeFingerprintLocation(root);
   const startedAt = performance.now();
-  let result = await runDigestWorker({ root, ...(fingerprintFile ? { fingerprintFile } : {}) });
+  let result = await runDigestWorker({ root, ...location });
   let retried = false;
   if (
-    fingerprintFile &&
+    location.fingerprintFile &&
     expectedDigest !== undefined &&
     result.digest !== expectedDigest &&
     result.reused > 0
   ) {
     retried = true;
-    result = await runDigestWorker({ root });
+    result = await runDigestWorker({ root, ...location, rebuild: true });
   }
   console.error(
     JSON.stringify({

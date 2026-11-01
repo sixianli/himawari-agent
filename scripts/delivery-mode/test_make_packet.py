@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -28,7 +29,7 @@ INTENDED_CHANGES = {
     'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 's0-db/read-s0-db.mjs',
-    'signing/cloud-seal.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
+    'signing/cloud-seal.mjs', 'signing/prepare-twelfth-snapshot.sh', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
 INSTANCE = json.loads((HERE / 'instances' / 'andy-production.json').read_text())
@@ -154,6 +155,55 @@ class StartupPhaseTest(RenderedPacket):
         self.assertIn('Environment=HOME=/var/lib/himawari/state', unit)
         self.assertIn('cloud-protected-prepare.mjs --prepare', unit)
         self.assertNotIn('HIMAWARI_RUNTIME_FINGERPRINT_FILE', snapshot + unit)
+        self.assertIn("operations + '/runtime-fingerprints.json'", snapshot)
+        self.assertIn("os.O_NOFOLLOW", snapshot)
+        self.assertIn('RUNTIME_FINGERPRINT_CACHE_SOURCE_UNSAFE', snapshot)
+        self.assertIn('os.chown(temporary, 0, 0)', snapshot)
+        self.assertIn('/lib/himawari-agent', snapshot.split('runtime=', 1)[1].splitlines()[0])
+
+    def publish_fingerprints(self, snapshot, state, operations, runtime):
+        marker = "python3 -I - \"$state\" \"$operations\" \"$runtime\" <<'PYTHON'\n"
+        script = snapshot.split(marker, 1)[1].split('\nPYTHON\n', 1)[0]
+        return subprocess.run(['python3', '-I', '-', str(state), str(operations), runtime], input=script, capture_output=True, text=True)
+
+    def test_the_root_step_publishes_the_exact_cache_the_service_will_look_for(self):
+        if os.getuid() != 0:
+            self.skipTest('needs root to create files owned by the service account')
+        packet = self.render()
+        snapshot = next(packet.rglob('prepare-*-snapshot.sh')).read_text()
+        prepare = next(packet.rglob('cloud-protected-prepare.mjs')).read_text()
+        runtime = snapshot.split('runtime=', 1)[1].splitlines()[0]
+        prefix = re.search(r'prefix = "([^"]+)"', prepare).group(1)
+        self.assertEqual(runtime, prefix + '/lib/himawari-agent')
+        token = subprocess.run(['node', '-e', 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,16))', runtime], capture_output=True, text=True, check=True).stdout
+        state, operations = self.root / 'state', self.root / 'operations'
+        (state / 'cache').mkdir(parents=True)
+        operations.mkdir()
+        source = state / 'cache' / ('runtime-fingerprints-' + token + '.json')
+        payload = json.dumps({'version': 1, 'root': runtime, 'files': {'a': {}}})
+        source.write_text(payload)
+        os.chown(source, 999, 988)
+        os.chmod(source, 0o600)
+        result = self.publish_fingerprints(snapshot, state, operations, runtime)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        published = operations / 'runtime-fingerprints.json'
+        self.assertEqual(published.read_text(), payload)
+        self.assertEqual((published.stat().st_uid, oct(published.stat().st_mode & 0o777)), (0, '0o644'))
+        self.assertEqual(list(operations.glob('*.tmp')), [])
+        published.unlink()
+        os.chown(source, 1234, 988)
+        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        os.chown(source, 999, 988)
+        source.write_text(json.dumps({'version': 1, 'root': runtime + '2', 'files': {}}))
+        os.chown(source, 999, 988)
+        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        source.unlink()
+        (state / 'secret').write_text(payload)
+        source.symlink_to(state / 'secret')
+        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        self.assertFalse(published.exists())
+        source.unlink()
+        self.assertIn('NOT_WRITTEN', self.publish_fingerprints(snapshot, state, operations, runtime).stdout)
 
     def test_a_missing_or_malformed_phase_baseline_is_refused(self):
         self.assertEqual(json.loads(packet_maker.startup_phase_baseline(INSTANCE))['sandbox-services-created'], 6000)

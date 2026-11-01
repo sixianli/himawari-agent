@@ -4,6 +4,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -18,17 +19,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const boundary = vi.hoisted(() => ({
   root: "",
   fingerprintFile: undefined as string | undefined,
+  fingerprintWriteFile: undefined as string | undefined,
+  trustedUid: undefined as number | undefined,
+  rebuild: false,
   port: { postMessage: vi.fn() } as { postMessage: ReturnType<typeof vi.fn> } | null,
   opened: vi.fn(),
   read: vi.fn(),
   resolved: vi.fn(),
 }));
 vi.mock("node:worker_threads", () => ({
+  threadId: 1,
   get parentPort() {
     return boundary.port;
   },
   get workerData() {
-    return { root: boundary.root, fingerprintFile: boundary.fingerprintFile };
+    return {
+      root: boundary.root,
+      fingerprintFile: boundary.fingerprintFile,
+      fingerprintWriteFile: boundary.fingerprintWriteFile,
+      trustedUid: boundary.trustedUid,
+      rebuild: boundary.rebuild,
+    };
   },
 }));
 vi.mock("node:fs", async (original) => {
@@ -61,6 +72,9 @@ beforeEach(() => {
   boundary.root = root;
   boundary.port = { postMessage: vi.fn() };
   boundary.fingerprintFile = undefined;
+  boundary.fingerprintWriteFile = undefined;
+  boundary.trustedUid = process.getuid?.();
+  boundary.rebuild = false;
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
@@ -247,6 +261,54 @@ describe("installed runtime byte verification worker", () => {
         expect(second).toMatchObject({ reused: 0, hashed: 1 });
       },
     );
+    it("trusts only files and a cache owned by the configured trusted account", async () => {
+      put("a.txt", "alpha");
+      settle();
+      await run();
+      boundary.trustedUid = (process.getuid?.() ?? 0) + 1;
+      const foreign = await run();
+      expect(foreign).toMatchObject({ reused: 0, hashed: 1 });
+      boundary.trustedUid = process.getuid?.();
+      const again = await run();
+      expect(again).toMatchObject({ reused: 1, hashed: 0 });
+    });
+    it("reads from the trusted cache file and stages new fingerprints in a separate file", async () => {
+      put("a.txt", "alpha");
+      settle();
+      const staged = path.join(cacheDirectory, "stage", "staged.json");
+      boundary.fingerprintWriteFile = staged;
+      const first = await run();
+      expect(first).toMatchObject({ reused: 0, hashed: 1 });
+      expect(() => readFileSync(cacheFile)).toThrow();
+      expect(readFileSync(staged, "utf8")).toContain("a.txt");
+      boundary.fingerprintFile = staged;
+      expect(await run()).toMatchObject({ reused: 1, hashed: 0 });
+    });
+    it("rebuilds a damaged cache instead of leaving it for the next start", async () => {
+      put("a.txt", "alpha");
+      settle();
+      await run();
+      writeFileSync(cacheFile, "{broken");
+      chmodSync(cacheFile, 0o600);
+      boundary.rebuild = true;
+      expect(await run()).toMatchObject({ reused: 0, hashed: 1 });
+      boundary.rebuild = false;
+      expect(await run()).toMatchObject({ reused: 1, hashed: 0 });
+    });
+    it("leaves no temporary file behind after saving", async () => {
+      put("a.txt", "alpha");
+      settle();
+      await run();
+      expect(readdirSync(path.dirname(cacheFile))).toEqual(["fingerprints.json"]);
+    });
+    it("rehashes a file whose permissions changed", async () => {
+      put("a.txt", "alpha");
+      settle();
+      await run();
+      chmodSync(path.join(root, "a.txt"), 0o640);
+      settle();
+      expect(await run()).toMatchObject({ reused: 0, hashed: 1 });
+    });
     it("does not follow a symlinked cache file", async () => {
       put("a.txt", "alpha");
       settle();

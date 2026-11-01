@@ -71,6 +71,26 @@ export function auditProtectedRuntime(root: string, ownerUid: number): Promise<v
 }
 
 const CONTENT_AUDIT_TIMEOUT_MS = 600_000;
+const TRANSIENT_CODES = new Set([
+  "EIO",
+  "EMFILE",
+  "ENFILE",
+  "ENOMEM",
+  "EAGAIN",
+  "EBUSY",
+  "ETIMEDOUT",
+]);
+
+function isTransientAuditError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return (
+    (typeof code === "string" && TRANSIENT_CODES.has(code)) ||
+    /^(SANDBOX_RUNTIME_AUDIT_TIMEOUT|SANDBOX_HOST_DIGEST_WORKER_EXIT|SANDBOX_RUNTIME_AUDIT_WORKER_EXIT)/.test(
+      error.message,
+    )
+  );
+}
 
 export class ProtectedRuntimeVerifier {
   readonly #manifestPath: string;
@@ -165,11 +185,16 @@ export class ProtectedRuntimeVerifier {
   ): Promise<void> {
     const startedAt = Date.now();
     const { key, complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
+    const settle = (ok: boolean) => {
+      try {
+        onSettled?.({ ok, durationMs: Date.now() - startedAt });
+      } catch {}
+    };
     complete().then(
-      () => onSettled?.({ ok: true, durationMs: Date.now() - startedAt }),
+      () => settle(true),
       (error: unknown) => {
-        this.#refused.set(key, error);
-        onSettled?.({ ok: false, durationMs: Date.now() - startedAt });
+        if (!isTransientAuditError(error)) this.#refused.set(key, error);
+        settle(false);
       },
     );
   }
