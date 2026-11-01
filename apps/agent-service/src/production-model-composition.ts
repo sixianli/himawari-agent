@@ -511,7 +511,7 @@ export function createProductionModelComposition(
       readOutput: (payloadRef) => payloadBoundary.readText(payloadRef),
     });
   };
-  const generateText = async (
+  const generateTextOnce = async (
     request: RuntimeRequest,
     prompt: string,
     gate: ModelInvocationAdmissionPort,
@@ -566,6 +566,24 @@ export function createProductionModelComposition(
       return output;
     } finally {
       if (handle) await options.handles.revokeHandle(handle.ref, options.clock.now());
+    }
+  };
+
+  const generateText = async (
+    request: RuntimeRequest,
+    prompt: string,
+    gate: ModelInvocationAdmissionPort,
+    text: AuxiliaryTextOptions,
+  ): Promise<string> => {
+    try {
+      return await generateTextOnce(request, prompt, gate, text);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "AI_GATEWAY_TOOL_CALL_UNSUPPORTED")
+        throw error;
+      return generateTextOnce(request, prompt, gate, {
+        ...text,
+        invocationId: `${text.invocationId}:retry`,
+      });
     }
   };
 
