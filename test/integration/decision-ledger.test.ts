@@ -199,7 +199,12 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           outcome,
           reasonCode: `${kind}_reason`,
           subjectRef: `subject-${index}`,
-          inputs: { memoryIds: [`m-${index}`, `n-${index}`], ruleIds: [`rule-${index}`] },
+          inputs: {
+            memoryIds: [`m-${index}`, `n-${index}`],
+            ruleIds: [`rule-${index}`],
+            batchId: null,
+            resultMemoryIds: [],
+          },
           reasonRef: "payload-2",
           contentRef: null,
           costMicros: 1500 + index,

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type {
   MemoryConsolidationChange,
+  MemoryConsolidationLedgerMemories,
   MemoryConsolidationRun,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
@@ -9,6 +10,10 @@ import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/u;
+function consolidationLedgerId(changeId: string): string {
+  return `ledger:${createHash("sha256").update(changeId).digest("hex").slice(0, 40)}`;
+}
+
 const ACTIONS = new Set(["merge", "supersede", "archive", "reflect"]);
 
 const runSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, day,
@@ -59,7 +64,10 @@ export class SqliteMemoryConsolidationOperations {
           },
         );
       case "memoryConsolidation.recordChange":
-        return this.recordChange((payload as { change: MemoryConsolidationChange }).change);
+        return this.recordChange(
+          (payload as { change: MemoryConsolidationChange }).change,
+          (payload as { ledgerMemories?: MemoryConsolidationLedgerMemories }).ledgerMemories,
+        );
       case "memoryConsolidation.listChanges":
         return this.listChanges(payload as { ownerId: OwnerId; agentId: AgentId; limit: number });
       case "memoryConsolidation.readChange":
@@ -141,7 +149,10 @@ export class SqliteMemoryConsolidationOperations {
       );
   }
 
-  private recordChange(change: MemoryConsolidationChange): void {
+  private recordChange(
+    change: MemoryConsolidationChange,
+    ledgerMemories?: MemoryConsolidationLedgerMemories,
+  ): void {
     this.assertDiskHeadroom();
     if (!ACTIONS.has(change.action) || change.undoneAt !== null)
       this.fail("PORT_INVALID_OPERATION", "Memory consolidation change is invalid");
@@ -184,7 +195,7 @@ export class SqliteMemoryConsolidationOperations {
         )
         .run(change.consolidationId);
       insertLedgerRow(this.database, {
-        id: `ledger:${createHash("sha256").update(change.id).digest("hex").slice(0, 40)}`,
+        id: consolidationLedgerId(change.id),
         ownerId: change.ownerId,
         agentId: change.agentId,
         kind: "consolidation",
@@ -194,12 +205,16 @@ export class SqliteMemoryConsolidationOperations {
         subjectRef: change.memoryId,
         inputs: {
           memoryIds: [
-            ...new Set([
-              change.memoryId,
-              ...(change.relatedMemoryId ? [change.relatedMemoryId] : []),
-            ]),
+            ...new Set(
+              ledgerMemories?.memoryIds ?? [
+                change.memoryId,
+                ...(change.relatedMemoryId ? [change.relatedMemoryId] : []),
+              ],
+            ),
           ],
           ruleIds: [],
+          batchId: change.consolidationId,
+          resultMemoryIds: [...new Set(ledgerMemories?.resultMemoryIds ?? [])],
         },
         reasonRef: null,
         contentRef: null,
@@ -236,12 +251,21 @@ export class SqliteMemoryConsolidationOperations {
   }
 
   private markUndone(input: { id: string; undoneAt: string }): boolean {
-    return (
-      this.database
-        .prepare(
-          "UPDATE memory_consolidation_changes SET undone_at = ? WHERE id = ? AND undone_at IS NULL",
-        )
-        .run(input.undoneAt, input.id).changes === 1
-    );
+    return this.database.transaction(() => {
+      const changed =
+        this.database
+          .prepare(
+            "UPDATE memory_consolidation_changes SET undone_at = ? WHERE id = ? AND undone_at IS NULL",
+          )
+          .run(input.undoneAt, input.id).changes === 1;
+      if (changed)
+        this.database
+          .prepare(
+            `UPDATE decision_ledger SET owner_rating = 'unneeded', rated_at = ?
+             WHERE id = ? AND kind = 'consolidation'`,
+          )
+          .run(input.undoneAt, consolidationLedgerId(input.id));
+      return changed;
+    })();
   }
 }

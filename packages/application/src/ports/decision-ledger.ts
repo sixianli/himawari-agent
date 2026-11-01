@@ -45,6 +45,8 @@ export type DecisionCategory = (typeof DECISION_CATEGORIES)[number];
 export interface DecisionInputs {
   readonly memoryIds: readonly string[];
   readonly ruleIds: readonly string[];
+  readonly batchId?: string | null;
+  readonly resultMemoryIds?: readonly string[];
 }
 
 export interface DecisionLedgerWrite {
@@ -73,7 +75,7 @@ export interface DecisionLedgerEntry {
   readonly outcome: string;
   readonly reasonCode: string;
   readonly subjectRef: string | null;
-  readonly inputs: DecisionInputs;
+  readonly inputs: Required<DecisionInputs>;
   readonly reasonRef: string | null;
   readonly contentRef: string | null;
   readonly costMicros: number;
