@@ -141,6 +141,20 @@ class StartupPhaseTest(RenderedPacket):
         self.assertEqual(phases(self.journal(12000), 'start', baseline)['warnings'], [])
         self.assertEqual(phases(self.journal(18824), 'missing', baseline), {'invocationId': 'missing', 'phases': [], 'warnings': []})
 
+    def test_the_install_time_prepare_and_the_service_prepare_share_one_fingerprint_cache(self):
+        packet = self.render()
+        snapshot = next(packet.rglob('prepare-*-snapshot.sh')).read_text()
+        unit = next(packet.rglob('himawari-prod.service.draft')).read_text()
+        prepare = [line for line in snapshot.splitlines() if 'cloud-protected-prepare.mjs" --prepare' in line]
+        self.assertEqual(len(prepare), 1)
+        self.assertIn('state=/var/lib/himawari/state', snapshot)
+        self.assertIn('--reuid=999', prepare[0])
+        self.assertIn('HOME="$state"', prepare[0])
+        self.assertIn('User=himawari-prod', unit)
+        self.assertIn('Environment=HOME=/var/lib/himawari/state', unit)
+        self.assertIn('cloud-protected-prepare.mjs --prepare', unit)
+        self.assertNotIn('HIMAWARI_RUNTIME_FINGERPRINT_FILE', snapshot + unit)
+
     def test_a_missing_or_malformed_phase_baseline_is_refused(self):
         self.assertEqual(json.loads(packet_maker.startup_phase_baseline(INSTANCE))['sandbox-services-created'], 6000)
         for invalid in (None, {}, {'State Opened': 1}, {'state-opened': 0}, {'state-opened': 1.5}, ['state-opened']):
