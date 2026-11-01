@@ -631,6 +631,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
       : {}),
   });
   const reportTiming = (diagnostic: RunTimingDiagnostic) => options.onRunTiming?.(diagnostic);
+  let loopRef: ProductionRunDispatchLoop | undefined;
   const dispatcher = new ProductionRunDispatcher({
     authority,
     dispatch,
@@ -679,11 +680,18 @@ export function createProductionRunComposition(options: ProductionRunComposition
     clock,
     executionLeaseDurationMs: 30_000,
     maximumRunsPerPump: configuration.concurrency.totalRuns,
+    onCapacityFreed: () => {
+      loopRef?.wakeup();
+    },
     instanceId: options.instanceId,
     ...(background ? { background } : {}),
   });
   const loop = new ProductionRunDispatchLoop({
-    dispatcher,
+    dispatcher: {
+      pump: () => dispatcher.fill(),
+      drain: (timeoutMs) => dispatcher.drain(timeoutMs),
+      recover: (limit) => dispatcher.recover(limit),
+    },
     fallbackScanIntervalMs: 1000,
     onFailure: options.onFailure,
     ...(options.resources?.recoverPending
@@ -695,6 +703,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         }
       : {}),
   });
+  loopRef = loop;
   return Object.freeze({
     input,
     admission,

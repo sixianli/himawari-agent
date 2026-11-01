@@ -98,6 +98,7 @@ export interface ProductionRunDispatcherOptions {
   readonly executionLeaseDurationMs: number;
   readonly executionLeaseRenewalIntervalMs?: number;
   readonly maximumRunsPerPump: number;
+  readonly onCapacityFreed?: () => void;
   readonly instanceId?: string;
   readonly identity?: ApplicationServiceIdentityFactory;
   readonly nextExecutionLeaseId?: (input: {
@@ -117,6 +118,20 @@ export interface ProductionRunDispatchPumpResult {
   readonly settled: number;
   readonly unknown: number;
   readonly conflicts: number;
+}
+
+interface ExecutionOutcome {
+  readonly settled: number;
+  readonly unknown: number;
+  readonly conflicts: number;
+}
+
+interface ClaimedBatch {
+  readonly checkedAt: string;
+  readonly reconciled: number;
+  readonly claimed: number;
+  readonly conflicts: number;
+  readonly launched: readonly Promise<ExecutionOutcome>[];
 }
 
 export interface ProductionRunDispatchDrainResult {
@@ -192,6 +207,10 @@ export class ProductionRunDispatcher {
   #accepting = true;
   #inFlight = new Set<Promise<unknown>>();
   #pumpInFlight: Promise<ProductionRunDispatchPumpResult> | undefined;
+  #fillInFlight: Promise<ProductionRunDispatchPumpResult> | undefined;
+  #executing = new Set<Promise<ExecutionOutcome>>();
+  #executionFailure: unknown;
+  #claimChain: Promise<void> = Promise.resolve();
   #recoverInFlight: Promise<number> | undefined;
   #reconciliationAfterRunId: RunReconciliationCandidate["runId"] | undefined;
   #reconciliationThroughRunId: RunReconciliationCandidate["runId"] | undefined;
@@ -342,41 +361,116 @@ export class ProductionRunDispatcher {
   }
 
   private async pumpInternal(limit: number): Promise<ProductionRunDispatchPumpResult> {
+    const filled = await this.claimAndLaunch(limit, false);
+    const outcomes = await Promise.all(filled.launched);
+    let settled = 0;
+    let unknown = 0;
+    let conflicts = filled.conflicts;
+    for (const outcome of outcomes) {
+      settled += outcome.settled;
+      unknown += outcome.unknown;
+      conflicts += outcome.conflicts;
+    }
+    return Object.freeze({
+      checkedAt: filled.checkedAt,
+      reconciled: filled.reconciled,
+      claimed: filled.claimed,
+      settled,
+      unknown,
+      conflicts,
+    });
+  }
+
+  fill(limit = this.#options.maximumRunsPerPump): Promise<ProductionRunDispatchPumpResult> {
+    if (this.#fillInFlight) return this.#fillInFlight;
+    const operation = this.fillInternal(limit);
+    this.#fillInFlight = operation;
+    this.#inFlight.add(operation);
+    const clear = () => {
+      if (this.#fillInFlight === operation) this.#fillInFlight = undefined;
+      this.#inFlight.delete(operation);
+    };
+    void operation.then(clear, clear);
+    return operation;
+  }
+
+  private async fillInternal(limit: number): Promise<ProductionRunDispatchPumpResult> {
+    if (this.#executionFailure !== undefined) {
+      const failure = this.#executionFailure;
+      this.#executionFailure = undefined;
+      throw failure;
+    }
+    const filled = await this.claimAndLaunch(limit, true);
+    return Object.freeze({
+      checkedAt: filled.checkedAt,
+      reconciled: filled.reconciled,
+      claimed: filled.claimed,
+      settled: 0,
+      unknown: 0,
+      conflicts: filled.conflicts,
+    });
+  }
+
+  private claimAndLaunch(limit: number, detached: boolean): Promise<ClaimedBatch> {
+    const batch = this.#claimChain.then(() => this.claimAndLaunchInternal(limit, detached));
+    this.#claimChain = batch.then(
+      () => undefined,
+      () => undefined,
+    );
+    return batch;
+  }
+
+  private launchExecution(
+    candidate: RunDispatchCandidate,
+    recovery: PreparedToolResultRecovery | undefined,
+    lease: RunExecutionLease,
+    detached: boolean,
+  ): Promise<ExecutionOutcome> {
+    const task = this.executeClaimed(candidate, recovery, lease);
+    this.#executing.add(task);
+    this.#inFlight.add(task);
+    const finish = () => {
+      this.#executing.delete(task);
+      this.#inFlight.delete(task);
+      this.#options.onCapacityFreed?.();
+    };
+    if (detached) {
+      task.then(finish, (error: unknown) => {
+        this.#executionFailure ??= error;
+        finish();
+      });
+    } else {
+      task.then(finish, finish);
+    }
+    return task;
+  }
+
+  private async claimAndLaunchInternal(limit: number, detached: boolean): Promise<ClaimedBatch> {
     const checkedAt = this.#options.clock.now();
     positiveInteger(limit, "limit");
-    if (!this.isAccepting()) {
-      return Object.freeze({
-        checkedAt,
-        reconciled: 0,
-        claimed: 0,
-        settled: 0,
-        unknown: 0,
-        conflicts: 0,
-      });
-    }
+    const empty = (reconciled: number): ClaimedBatch => ({
+      checkedAt,
+      reconciled,
+      claimed: 0,
+      conflicts: 0,
+      launched: [],
+    });
+    if (!this.isAccepting()) return empty(0);
     await this.#options.authority.assertActive();
 
     const reconciled = await this.recover(limit);
     await this.#options.background?.recover();
 
-    if (!this.isAccepting()) {
-      return Object.freeze({
-        checkedAt,
-        reconciled,
-        claimed: 0,
-        settled: 0,
-        unknown: 0,
-        conflicts: 0,
-      });
-    }
+    if (!this.isAccepting()) return empty(reconciled);
+    const freeSlots = limit - this.#executing.size;
+    if (freeSlots <= 0) return empty(reconciled);
     const candidates = await this.#options.dispatch.listClaimable({
       now: this.#options.clock.now(),
-      limit,
+      limit: freeSlots,
     });
     let claimed = 0;
-    let settled = 0;
-    let unknown = 0;
     let conflicts = 0;
+    const launched: Promise<ExecutionOutcome>[] = [];
     for (const candidate of candidates) {
       if (!this.isAccepting()) break;
       let recovery: PreparedToolResultRecovery | undefined;
@@ -424,147 +518,157 @@ export class ProductionRunDispatcher {
         throw error;
       }
       claimed += 1;
-      const claim = claimFromRunExecutionLease(lease);
-      const renewal = this.startLeaseRenewal(lease, () =>
-        this.#options.coordinator.interruptExecution({
-          runId: lease.runId,
-          executionLeaseId: lease.executionLeaseId,
-          reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
-        }),
+      launched.push(this.launchExecution(candidate, recovery, lease, detached));
+    }
+    return { checkedAt, reconciled, claimed, conflicts, launched };
+  }
+
+  private async executeClaimed(
+    candidate: RunDispatchCandidate,
+    recovery: PreparedToolResultRecovery | undefined,
+    lease: RunExecutionLease,
+  ): Promise<ExecutionOutcome> {
+    const outcome = { settled: 0, unknown: 0, conflicts: 0 };
+    const claim = claimFromRunExecutionLease(lease);
+    const renewal = this.startLeaseRenewal(lease, () =>
+      this.#options.coordinator.interruptExecution({
+        runId: lease.runId,
+        executionLeaseId: lease.executionLeaseId,
+        reasonCode: "EXECUTION_LEASE_RENEWAL_FAILED",
+      }),
+    );
+    let reconciliationAttempted = false;
+    const reconcileLeaseFailure = async (reasonCode = "EXECUTION_LEASE_RENEWAL_FAILED") => {
+      await renewal.stop();
+      reconciliationAttempted = true;
+      await this.reconcileUnknown(
+        candidate,
+        reasonCode,
+        renewal.interruptionResult(),
+        renewal.currentLease(),
       );
-      let reconciliationAttempted = false;
-      const reconcileLeaseFailure = async (reasonCode = "EXECUTION_LEASE_RENEWAL_FAILED") => {
-        await renewal.stop();
-        reconciliationAttempted = true;
-        await this.reconcileUnknown(
-          candidate,
-          reasonCode,
-          renewal.interruptionResult(),
-          renewal.currentLease(),
-        );
-        await this.releaseBestEffort(renewal.currentLease());
-        unknown += 1;
-      };
+      await this.releaseBestEffort(renewal.currentLease());
+      outcome.unknown += 1;
+    };
+    try {
+      const input = await this.#options.input({ candidate, lease });
+      if (!this.isAccepting()) {
+        await reconcileLeaseFailure("SERVICE_STOPPING");
+        return outcome;
+      }
+      if (renewal.failure()) {
+        await reconcileLeaseFailure();
+        return outcome;
+      }
+      const canonicalInput = this.bindInput(
+        recovery
+          ? {
+              ...input,
+              runtime: {
+                ...input.runtime,
+                continuationRef: recovery.binding.continuationRef,
+                knownToolResult: recovery.binding,
+              },
+            }
+          : input,
+        candidate,
+        claim,
+      );
+      if (renewal.failure()) {
+        await reconcileLeaseFailure();
+        return outcome;
+      }
+      let result: CoordinatedRunResult;
       try {
-        const input = await this.#options.input({ candidate, lease });
-        if (!this.isAccepting()) {
-          await reconcileLeaseFailure("SERVICE_STOPPING");
-          continue;
-        }
-        if (renewal.failure()) {
-          await reconcileLeaseFailure();
-          continue;
-        }
-        const canonicalInput = this.bindInput(
-          recovery
-            ? {
-                ...input,
-                runtime: {
-                  ...input.runtime,
-                  continuationRef: recovery.binding.continuationRef,
-                  knownToolResult: recovery.binding,
-                },
-              }
-            : input,
-          candidate,
-          claim,
-        );
-        if (renewal.failure()) {
-          await reconcileLeaseFailure();
-          continue;
-        }
-        let result: CoordinatedRunResult;
-        try {
-          result =
-            recovery && this.#options.coordinator.resumeToolResult
-              ? await this.#options.coordinator.resumeToolResult(canonicalInput)
-              : candidate.action === "deliver_completed"
-                ? await this.#options.coordinator.recoverCompleted(canonicalInput)
-                : await this.#options.coordinator.execute(canonicalInput);
-        } catch (error) {
-          await renewal.stop();
-          if (renewal.failure()) {
-            await reconcileLeaseFailure();
-            continue;
-          }
-          if (error instanceof RunExecutionInterruptedError) {
-            await reconcileLeaseFailure(error.reasonCode);
-            continue;
-          }
-          if (error instanceof ProductionRunUnknownResultError) {
-            reconciliationAttempted = true;
-            await this.reconcileUnknown(
-              candidate,
-              error.reasonCode,
-              undefined,
-              renewal.currentLease(),
-            );
-            await this.releaseBestEffort(renewal.currentLease());
-            unknown += 1;
-            continue;
-          }
-          throw error;
-        }
+        result =
+          recovery && this.#options.coordinator.resumeToolResult
+            ? await this.#options.coordinator.resumeToolResult(canonicalInput)
+            : candidate.action === "deliver_completed"
+              ? await this.#options.coordinator.recoverCompleted(canonicalInput)
+              : await this.#options.coordinator.execute(canonicalInput);
+      } catch (error) {
         await renewal.stop();
         if (renewal.failure()) {
           await reconcileLeaseFailure();
-          continue;
+          return outcome;
         }
-        if (result.parked && this.#options.background) {
-          this.#options.background.adopt(renewal.currentLease());
-          settled += 1;
-          continue;
+        if (error instanceof RunExecutionInterruptedError) {
+          await reconcileLeaseFailure(error.reasonCode);
+          return outcome;
         }
-        if (result.run.run.status === "reconciling_external_result") {
+        if (error instanceof ProductionRunUnknownResultError) {
           reconciliationAttempted = true;
           await this.reconcileUnknown(
             candidate,
-            "COORDINATOR_RECONCILIATION_REQUIRED",
+            error.reasonCode,
             undefined,
             renewal.currentLease(),
           );
           await this.releaseBestEffort(renewal.currentLease());
-          unknown += 1;
-          continue;
+          outcome.unknown += 1;
+          return outcome;
         }
-        if (!terminal(result.run.run.status) && result.run.run.status !== "awaiting_approval") {
-          throw new ProductionRunDispatchError(
-            PRODUCTION_RUN_DISPATCH_ERROR_CODES.NON_TERMINAL_RESULT,
-            "Run Coordinator returned before reaching a terminal or reconciliation state",
-            { runId: candidate.runId, status: result.run.run.status },
-          );
-        }
-        await this.releaseBestEffort(renewal.currentLease());
-        settled += 1;
-      } catch (error) {
-        await renewal.stop();
-        if (reconciliationAttempted) throw error;
-        if (renewal.failure()) {
-          await reconcileLeaseFailure();
-          continue;
-        }
-        if (
-          candidate.action === "deliver_completed" &&
-          isPortError(error, PORT_ERROR_CODES.CONFLICT)
-        ) {
-          await this.releaseBestEffort(renewal.currentLease());
-          conflicts += 1;
-          continue;
-        }
+        throw error;
+      }
+      await renewal.stop();
+      if (renewal.failure()) {
+        await reconcileLeaseFailure();
+        return outcome;
+      }
+      if (result.parked && this.#options.background) {
+        this.#options.background.adopt(renewal.currentLease());
+        outcome.settled += 1;
+        return outcome;
+      }
+      if (result.run.run.status === "reconciling_external_result") {
+        reconciliationAttempted = true;
         await this.reconcileUnknown(
           candidate,
-          candidate.action === "deliver_completed"
-            ? "RUN_COMPLETION_DELIVERY_REJECTED"
-            : "RUN_EXECUTION_FAILED_WITHOUT_RESULT",
+          "COORDINATOR_RECONCILIATION_REQUIRED",
           undefined,
           renewal.currentLease(),
         );
         await this.releaseBestEffort(renewal.currentLease());
-        if (isGlobalServiceFailure(error)) throw error;
-        unknown += 1;
+        outcome.unknown += 1;
+        return outcome;
       }
+      if (!terminal(result.run.run.status) && result.run.run.status !== "awaiting_approval") {
+        throw new ProductionRunDispatchError(
+          PRODUCTION_RUN_DISPATCH_ERROR_CODES.NON_TERMINAL_RESULT,
+          "Run Coordinator returned before reaching a terminal or reconciliation state",
+          { runId: candidate.runId, status: result.run.run.status },
+        );
+      }
+      await this.releaseBestEffort(renewal.currentLease());
+      outcome.settled += 1;
+    } catch (error) {
+      await renewal.stop();
+      if (reconciliationAttempted) throw error;
+      if (renewal.failure()) {
+        await reconcileLeaseFailure();
+        return outcome;
+      }
+      if (
+        candidate.action === "deliver_completed" &&
+        isPortError(error, PORT_ERROR_CODES.CONFLICT)
+      ) {
+        await this.releaseBestEffort(renewal.currentLease());
+        outcome.conflicts += 1;
+        return outcome;
+      }
+      await this.reconcileUnknown(
+        candidate,
+        candidate.action === "deliver_completed"
+          ? "RUN_COMPLETION_DELIVERY_REJECTED"
+          : "RUN_EXECUTION_FAILED_WITHOUT_RESULT",
+        undefined,
+        renewal.currentLease(),
+      );
+      await this.releaseBestEffort(renewal.currentLease());
+      if (isGlobalServiceFailure(error)) throw error;
+      outcome.unknown += 1;
     }
-    return Object.freeze({ checkedAt, reconciled, claimed, settled, unknown, conflicts });
+    return outcome;
   }
 
   private startLeaseRenewal(
