@@ -53,6 +53,7 @@ export interface CommittedRunMemoryInput {
   readonly modelDescriptorRef: string;
   readonly interactive: boolean;
   readonly explicitRememberCandidateOrdinal: number | null;
+  readonly rejectedCandidates?: readonly ExtractedMemoryCandidate[];
 }
 
 export interface AutomaticMemoryResult {
@@ -149,6 +150,7 @@ export class AutomaticMemoryService {
             subjectRef: request.id,
             contentRef: null,
             memoryIds: candidate.existingMemoryId ? [candidate.existingMemoryId] : [],
+            candidate,
           }),
         );
         await this.audit(
@@ -180,6 +182,17 @@ export class AutomaticMemoryService {
         candidateOrdinal,
         explicitlyApproved ? "explicitly_approved" : "auto_committed",
         [],
+      );
+    }
+    for (const [index, candidate] of (input.rejectedCandidates ?? []).entries()) {
+      const candidateOrdinal = candidates.length + index;
+      await this.discard(
+        input,
+        candidate,
+        candidateOrdinal,
+        "evidence_unverified",
+        scanMachineSecrets(candidate.text).length === 0 &&
+          candidate.dataClassification !== "restricted",
       );
     }
     return {
@@ -216,6 +229,9 @@ export class AutomaticMemoryService {
         secretFindings: [],
         occurredAt: this.options.now(),
       });
+      const pendingCandidate = this.options.ledger
+        ? await this.options.candidates?.read(request)
+        : undefined;
       await this.options.ledger?.append(
         this.candidateLedger(
           {
@@ -226,7 +242,7 @@ export class AutomaticMemoryService {
           request.candidateOrdinal,
           "discarded",
           resolved.status === "rejected" ? "approval_rejected" : "approval_expired",
-          { subjectRef: request.id, contentRef: null, memoryIds: [] },
+          { subjectRef: request.id, contentRef: null, memoryIds: [], candidate: pendingCandidate },
         ),
       );
       return null;
@@ -399,6 +415,7 @@ export class AutomaticMemoryService {
           subjectRef: record.id,
           contentRef: null,
           memoryIds: [record.id],
+          candidate,
         }),
       );
       return record.id;
@@ -460,6 +477,7 @@ export class AutomaticMemoryService {
           subjectRef: targetId,
           contentRef,
           memoryIds: [targetId, ...(supersedes ? [supersedes] : [])],
+          candidate,
         })
       : undefined;
     const memoryId = (
@@ -483,6 +501,7 @@ export class AutomaticMemoryService {
       readonly subjectRef: string;
       readonly contentRef: string | null;
       readonly memoryIds: readonly string[];
+      readonly candidate?: ExtractedMemoryCandidate | undefined;
     },
   ): DecisionLedgerWrite {
     return {
@@ -499,6 +518,9 @@ export class AutomaticMemoryService {
       contentRef: detail.contentRef,
       costMicros: 0,
       durationMs: 0,
+      category: detail.candidate?.attributes?.category ?? null,
+      confidencePermille: detail.candidate?.confidencePermille ?? null,
+      inferred: detail.candidate?.inference ?? null,
     };
   }
 
@@ -525,6 +547,7 @@ export class AutomaticMemoryService {
       subjectRef: `${input.generationId}:${candidateOrdinal}`,
       contentRef,
       memoryIds: candidate.existingMemoryId ? [candidate.existingMemoryId] : [],
+      candidate,
     });
     await this.options.ledger.append({
       ...write,
