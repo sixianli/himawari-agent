@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: docs/adr/0148-send-every-model-request-through-one-in-process-egress.md
 date: "2026-11-01"
 ---
 

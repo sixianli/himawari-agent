@@ -7,6 +7,7 @@ import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import { describe, expect, it, vi } from "vitest";
 import { type Embedder, GatewayEmbedder, normalizedVector } from "../src/embedding.ts";
 import { HybridMemoryProvider, memoryIndexRecordId } from "../src/hybrid-memory-provider.ts";
+import { testModelEgress } from "./helpers/model-egress.js";
 
 const ownerId = "owner-01" as OwnerId;
 const agentId = "agent-01" as AgentId;
@@ -189,6 +190,7 @@ describe("Gateway embedder", () => {
         ),
     );
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -200,14 +202,15 @@ describe("Gateway embedder", () => {
     const sent = JSON.parse(
       String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
     );
-    expect(sent.input).toBe(
-      "验证码 [验证码]，卡号 [银行卡 尾号1111]，订单 20261101123456，山田太郎",
+    expect(sent.input).toMatch(
+      /^验证码 \[验证码#[a-z]{8}\]，卡号 \[银行卡 尾号1111#[a-z]{8}\]，订单 20261101123456，山田太郎$/u,
     );
   });
 
   it("refuses to call the provider before a governed boundary is bound", async () => {
     const fetch = vi.fn();
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -230,6 +233,7 @@ describe("Gateway embedder", () => {
         ),
     );
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1/",
       model: "fixture-embedding",
       dimensions: 3,
@@ -258,6 +262,7 @@ describe("Gateway embedder", () => {
     const encoded = Buffer.from(values.buffer).toString("base64");
     const bodies: unknown[] = [];
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -292,6 +297,7 @@ describe("Gateway embedder", () => {
 
   it("rejects a base64 vector whose length does not match the dimensions", async () => {
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -316,6 +322,7 @@ describe("Gateway embedder", () => {
 
   it("reports a provider HTTP failure", async () => {
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -328,6 +335,7 @@ describe("Gateway embedder", () => {
 
   it("keeps the gateway's refusal reason when a budget rejects the request", async () => {
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,

@@ -50,9 +50,9 @@ import type {
   RuntimeToolInvocation,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
-import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 import { observeCacheFields } from "./cache-usage-observation.js";
-import { redactModelContext } from "./egress-context.js";
+import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
@@ -135,6 +135,7 @@ export interface PiRuntimeResourcePort {
 }
 
 export interface PiAgentRuntimeAdapterDependencies {
+  readonly egress: ModelEgress;
   readonly projection: RuntimeProjectionPort;
   readonly continuations?: RuntimeContinuationPort;
   readonly tools: RuntimeToolPort;
@@ -801,6 +802,7 @@ async function admitPiStream(
   ordinal: number,
   original: PiStreamFunction,
   logicalSlotFor: (request: RuntimeRequest, ordinal: number) => string,
+  egress: ModelEgress,
   onAdmissionFailed?: PiAgentRuntimeAdapterDependencies["onModelAdmissionFailed"],
   usageRecording?: PiAgentRuntimeAdapterDependencies["usage"],
 ): Promise<AssistantMessageEventStream> {
@@ -895,7 +897,8 @@ async function admitPiStream(
     }
     const withoutAmbientApiKey: SimpleStreamOptions = { ...options };
     delete withoutAmbientApiKey.apiKey;
-    const cacheFields = observeCacheFields(options?.fetch ?? globalThis.fetch);
+    const exchange = egress.exchange();
+    const cacheFields = observeCacheFields(exchange.wrapFetch(options?.fetch ?? globalThis.fetch));
     withoutAmbientApiKey.fetch = cacheFields.fetch;
     const gateway = isGateway ? observeGatewayFetch(cacheFields.fetch, model.id) : undefined;
     if (gateway !== undefined) {
@@ -923,11 +926,14 @@ async function admitPiStream(
       await permit.markUnknown("cancel_unresolved");
       return failedPiStream(model, "Model invocation was cancelled");
     }
-    const stream = await original(model, redactModelContext(context), {
-      ...withoutAmbientApiKey,
-      ...(secret === undefined ? {} : { apiKey: secret }),
-      maxRetries: 0,
-    });
+    const stream = restoreModelStream(
+      await original(model, withPlaceholderLegend(context), {
+        ...withoutAmbientApiKey,
+        ...(secret === undefined ? {} : { apiKey: secret }),
+        maxRetries: 0,
+      }),
+      exchange,
+    );
     const invocationId = admission.identity.invocationId;
     const recordUsage = async (
       usage: ModelInvocationUsage,
@@ -1404,6 +1410,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           ++streamOrdinal,
           originalStreamFunction,
           this.#dependencies.logicalSlot,
+          this.#dependencies.egress,
           this.#dependencies.onModelAdmissionFailed,
           this.#dependencies.usage,
         );

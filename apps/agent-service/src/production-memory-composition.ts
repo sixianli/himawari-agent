@@ -1,6 +1,7 @@
 import type {
   ConfiguredEmbeddingModelDescriptor,
   MemoryIndexStorePort,
+  ModelEgress,
   ProductConfiguration,
 } from "@himawari-agent/application";
 import {
@@ -24,6 +25,7 @@ import {
 } from "./production-model-composition.js";
 
 export interface ProductionMemoryCompositionOptions {
+  readonly egress: ModelEgress;
   readonly configuration: ProductConfiguration;
   readonly secretSource: HostProviderSecretSource;
   readonly index: MemoryIndexStorePort;
@@ -65,6 +67,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     throw new TypeError("MEMORY_UNSAFE_PROVIDER_SECRET_SOURCE");
   let apiKey: Promise<string> | undefined;
   const embedder = new GatewayEmbedder({
+    egress: options.egress,
     baseUrl: AI_GATEWAY_BASE_URL,
     model: embedding.model,
     dimensions: embedding.dimensions,

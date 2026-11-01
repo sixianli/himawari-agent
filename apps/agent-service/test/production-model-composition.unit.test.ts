@@ -39,6 +39,7 @@ import {
   HIMAWARI_IDENTITY,
   runCapabilityNotice,
 } from "../src/production-run-policy.js";
+import { testModelEgress } from "@himawari-agent/testing";
 
 let temporaryDirectory: string;
 
@@ -111,6 +112,7 @@ function compositionOptions(
 ) {
   const resolve = vi.fn(async () => "fixture-provider-value");
   const options = {
+    egress: testModelEgress(),
     ownerId: "owner-production-model" as never,
     agentId: "agent-production-model" as never,
     descriptors,
@@ -484,6 +486,7 @@ describe("production model composition", () => {
     const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
     const resolvedSecrets: string[] = [];
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      egress: testModelEgress(),
       configuration,
       secretSource: {
         kind: "macos-keychain",
@@ -533,6 +536,7 @@ describe("production model composition", () => {
     };
     const memoryIndex = inMemoryMemoryIndex();
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      egress: testModelEgress(),
       configuration,
       secretSource: {
         kind: "macos-keychain",
@@ -609,9 +613,14 @@ describe("production model composition", () => {
       index: inMemoryMemoryIndex(),
     };
     await expect(
-      createProductionMemoryCompositionFromConfiguration({ ...options, configuration }),
+      createProductionMemoryCompositionFromConfiguration({
+        egress: testModelEgress(),
+        ...options,
+        configuration,
+      }),
     ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
     const configured = await createProductionMemoryCompositionFromConfiguration({
+      egress: testModelEgress(),
       ...options,
       configuration: {
         ...configuration,

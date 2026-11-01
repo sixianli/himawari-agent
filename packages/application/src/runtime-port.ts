@@ -99,8 +99,15 @@ export type { ModelUsageObservation, ModelUsageStorePort } from "./ports/model-u
 export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
   EGRESS_PLACEHOLDER_LEGEND,
-  redactForEgress,
+  EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
 } from "./services/egress-redaction.js";
+export {
+  ModelEgress,
+  ModelEgressRefusedError,
+  type ModelEgressExchange,
+  type ModelEgressOptions,
+  type StreamingPlaceholderRestorer,
+} from "./services/model-egress.js";
 export {
   assertMachineSecretFree,
   redactMachineSecrets,

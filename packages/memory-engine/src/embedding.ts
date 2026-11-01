@@ -1,8 +1,8 @@
 import {
   ApplicationPortError,
+  type ModelEgress,
   type ModelInvocationUsage,
   PORT_ERROR_CODES,
-  redactForEgress,
   usdCostsEqual,
   usdCostToMicros,
 } from "@himawari-agent/application";
@@ -132,6 +132,7 @@ function decodedEmbedding(value: unknown, dimensions: number): readonly number[]
 }
 
 export interface GatewayEmbedderOptions {
+  readonly egress: ModelEgress;
   readonly baseUrl: string;
   readonly model: string;
   readonly dimensions: number;
@@ -171,7 +172,7 @@ export class GatewayEmbedder implements Embedder {
       );
     const request: EmbeddingRequest = Object.freeze({
       model: this.model,
-      input: redactForEgress(text).text,
+      input: text,
       dimensions: this.dimensions,
     });
     const response = await boundary(request, (options) => this.#send(request, options));
@@ -187,7 +188,8 @@ export class GatewayEmbedder implements Embedder {
   ): Promise<EmbeddingResponse> {
     const timeout = AbortSignal.timeout(options.timeoutMs ?? this.#timeoutMs);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
-    const response = await (this.#options.fetch ?? fetch)(
+    const exchange = this.#options.egress.exchange();
+    const response = await exchange.wrapFetch(this.#options.fetch ?? fetch)(
       `${this.#options.baseUrl.replace(/\/+$/u, "")}/embeddings`,
       {
         method: "POST",

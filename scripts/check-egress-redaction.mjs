@@ -8,13 +8,16 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 export const REQUIRED_REDACTION_CALLS = Object.freeze([
   {
     file: "packages/runtime-pi/src/pi-runtime-adapter.ts",
-    required: "await original(model, redactModelContext(context)",
+    required: "exchange.wrapFetch(options?.fetch ?? globalThis.fetch)",
   },
-  {
-    file: "packages/runtime-pi/src/pi-model-transport.ts",
-    required: "redactForEgress(",
-  },
-  { file: "packages/memory-engine/src/embedding.ts", required: "redactForEgress(text)" },
+  { file: "packages/runtime-pi/src/pi-runtime-adapter.ts", required: "restoreModelStream(" },
+  { file: "packages/runtime-pi/src/pi-model-transport.ts", required: "exchange.wrapFetch(" },
+  { file: "packages/memory-engine/src/embedding.ts", required: "exchange.wrapFetch(" },
+]);
+
+export const REDACTOR_ONLY_FILES = Object.freeze([
+  "packages/application/src/services/egress-redaction.ts",
+  "packages/application/src/services/model-egress.ts",
 ]);
 
 export const EGRESS_PATTERNS = Object.freeze([
@@ -27,6 +30,10 @@ export const ALLOWED_EGRESS_FILES = Object.freeze(
   new Map([
     ["packages/runtime-pi/src/pi-model-transport.ts", ["model stream call"]],
     ["packages/memory-engine/src/embedding.ts", ["embeddings request"]],
+    [
+      "packages/application/src/services/model-egress.ts",
+      ["embeddings request", "chat completions request"],
+    ],
   ]),
 );
 
@@ -53,6 +60,10 @@ export function findEgressViolations(root = repositoryRoot) {
       const relative = path.relative(root, full).split(path.sep).join("/");
       if (!relative.includes("/src/")) continue;
       const text = readFileSync(full, "utf8");
+      if (/\bredactForEgress\(/u.test(text) && !REDACTOR_ONLY_FILES.includes(relative))
+        violations.push(
+          `${relative}: 只有出口模块能直接调用 redactForEgress，请改走 ModelEgress（packages/application/src/services/model-egress.ts）`,
+        );
       for (const { name, pattern } of EGRESS_PATTERNS) {
         if (!pattern.test(text)) continue;
         if (ALLOWED_EGRESS_FILES.get(relative)?.includes(name)) continue;

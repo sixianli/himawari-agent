@@ -21,6 +21,7 @@ import {
   AI_GATEWAY_LIVE_BUDGET_USD,
   createAiGatewayLiveConfiguration,
 } from "./fixtures/openrouter-live-configuration.js";
+import { testModelEgress } from "@himawari-agent/testing";
 
 interface LiveEnvironment {
   readonly HIMAWARI_LIVE_EMBEDDING_PRINT_EVIDENCE?: string;
@@ -111,6 +112,7 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () =>
       | undefined;
     try {
       composition = await createProductionMemoryCompositionFromConfiguration({
+        egress: testModelEgress(),
         configuration: createAiGatewayLiveConfiguration(stateRoot),
         secretSource: new MacOsKeychainProviderSecretSource({
           servicePrefix: "himawari-provider",

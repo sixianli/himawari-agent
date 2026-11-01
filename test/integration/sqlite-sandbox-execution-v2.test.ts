@@ -74,6 +74,7 @@ import {
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+import { testModelEgress } from "@himawari-agent/testing";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
 const execFile = promisify(execFileCallback);
@@ -5660,6 +5661,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           return execute(executing, options);
         };
         return createProductionRunComposition({
+          egress: testModelEgress(),
           ...(lost
             ? {
                 recoverMissingToolResult: async (current: SandboxExecutionRecord) => {
