@@ -587,6 +587,36 @@ describe("ProductionRuntimeTools", () => {
       ).toHaveLength(mode === "revoke" ? 1 : 0);
     },
   );
+  it("writes the reason into the service log when a result cannot be settled", async () => {
+    const f = fixture(25);
+    f.setMode("hang");
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line));
+    });
+    try {
+      const result = await (await exposed(f)).execute(invocation);
+      expect(result).toMatchObject({ outcome: "result_unknown" });
+    } finally {
+      spy.mockRestore();
+    }
+    const logged = lines
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })
+      .filter((entry) => entry["event"] === "tool.settlement_failed");
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      runId: invocation.runId,
+      stage: "possibly_sent",
+      errorName: expect.any(String),
+    });
+    expect(typeof logged[0]?.["errorMessage"]).toBe("string");
+  });
   it.each(["requested", "unconfirmed"])(
     "requests stop when authority is withdrawn during a hung event stream: %s",
     async (stopState) => {
