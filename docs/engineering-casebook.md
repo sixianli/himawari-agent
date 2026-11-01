@@ -5177,7 +5177,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 **相关 ADR/PR**
 
-[ADR 0146](adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（第一版，已被取代）、[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、PR #185、#187，以及分支 `claude/project-thread-cwgxez` 的后续 PR。
+[ADR 0146](adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（第一版，已被取代）、[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、PR #185、#187、#190。
 
 **面试 30 秒版**
 
