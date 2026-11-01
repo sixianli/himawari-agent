@@ -1105,7 +1105,10 @@ function artifactFixture(files: Record<string, string>) {
   });
   const threadArtifacts = new ProductionThreadArtifacts({
     store,
-    files: { readFile },
+    files: {
+      readFile,
+      inspectEntry: async ({ relativePath }) => (files[relativePath] === undefined ? null : "file"),
+    },
     ids: { next: (scope) => `${scope}:${++counter}` },
     now: () => now,
     warn: () => {},

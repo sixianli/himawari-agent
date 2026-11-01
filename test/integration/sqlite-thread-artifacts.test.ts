@@ -217,6 +217,8 @@ describe("[FD-1] thread artifact storage", () => {
             if (content === undefined) throw new Error("MISSING");
             return new TextEncoder().encode(content);
           },
+          inspectEntry: async ({ relativePath }) =>
+            files[relativePath] === undefined ? null : "file",
         },
         ids: { next: (kind) => `${kind}:${++counter}` },
         now: () => T0,
@@ -252,6 +254,50 @@ describe("[FD-1] thread artifact storage", () => {
         ["a.docx", true],
         ["b.docx", false],
       ]);
+      files["old.docx"] = "gone soon";
+      files["c.docx"] = "stays";
+      await artifacts.record({
+        ...base,
+        toolCallId: "call-4",
+        candidates: [{ path: "old.docx" }, { path: "c.docx" }],
+      });
+      delete files["old.docx"];
+      delete files["b.docx"];
+      expect(
+        await artifacts.reconcileDeleted({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          grant: {} as never,
+        }),
+      ).toBe(2);
+      expect(
+        await artifacts.reconcileDeleted({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          grant: {} as never,
+        }),
+      ).toBe(0);
+      const failing = new ProductionThreadArtifacts({
+        store,
+        files: {
+          readFile: async () => new Uint8Array(),
+          inspectEntry: async () => {
+            throw new Error("HOST_READ_ROOT_IDENTITY_CHANGED");
+          },
+        },
+        ids: { next: (kind) => `${kind}:x` },
+        now: () => T0,
+        warn: () => {},
+      });
+      await expect(
+        failing.reconcileDeleted({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          grant: {} as never,
+        }),
+      ).rejects.toThrow("HOST_READ_ROOT_IDENTITY_CHANGED");
+      const remaining = await store.latest({ ...scope, threadId: "thread-1", path: "c.docx" });
+      expect(remaining?.deletedAt).toBeNull();
       const kept = await store.versions({ ...scope, threadId: "thread-1", path: "a.docx" });
       expect(kept).toMatchObject([{ version: 1, copyRef: expect.any(String) }]);
     } finally {

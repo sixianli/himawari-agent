@@ -112,8 +112,9 @@ export function deliveredFileGroups(input: {
   const removed = new Set(
     [...latestVersion.values()].filter((file) => file.deleted).map((file) => file.path),
   );
+  const removedPaths = [...removed];
   for (const file of input.registered ?? []) {
-    if (file.deleted) {
+    if (file.deleted || removed.has(file.path)) {
       const trace = traces
         .get(file.runId)
         ?.find((candidate) => tracePathMatches(candidate, file.path));
@@ -152,7 +153,7 @@ export function deliveredFileGroups(input: {
   for (const [runId, files] of traces)
     for (const trace of files) {
       if (used.has(trace)) continue;
-      if ([...removed].some((path) => tracePathMatches(trace, path))) continue;
+      if (removedPaths.some((path) => tracePathMatches(trace, path))) continue;
       if (
         [...(groups.get(runId)?.values() ?? [])].some((file) => tracePathMatches(trace, file.path))
       )
