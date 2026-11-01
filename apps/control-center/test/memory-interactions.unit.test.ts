@@ -275,6 +275,17 @@ describe("memory approval and management", () => {
     expect(text("#turn")).toBe("");
   });
 
+  it("[MP-DROP] stops counting a memory under the reply once the owner dropped it", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        memoryItem("m-guess", "主人让写一个就只写一个", { status: "trashed", tentative: true }),
+      ],
+    };
+    await render();
+    expect(text("#turn")).not.toContain("记下了");
+  });
+
   it("approves, edits and rejects a sensitive proposal", async () => {
     await render();
     await click("#turn", "记住");
@@ -822,23 +833,40 @@ describe("memory approval and management", () => {
     });
   });
 
-  it("[MP-DROP] marks a memory the owner pressed 不记 on as dropped in the change log and lets them undo it", async () => {
+  it("[MP-DROP] logs 不记 and 删除 as their own change-log rows, keeps the earlier 新记住 row, and undoes via recover", async () => {
     overview = {
       ...overview,
       memories: [
-        memoryItem("m-kept", "主人喜欢喝美式"),
-        memoryItem("m-dropped", "主人让写一个就只写一个", { status: "trashed", revision: 4 }),
+        memoryItem("m-kept", "主人喜欢喝美式", { recordedAt: "2026-10-30T01:00:00.000Z" }),
+        memoryItem("m-guess", "主人让写一个就只写一个", {
+          status: "trashed",
+          tentative: true,
+          revision: 4,
+          recordedAt: "2026-11-01T01:00:00.000Z",
+          updatedAt: "2026-11-01T02:00:00.000Z",
+        }),
+        memoryItem("m-deleted", "主人住在北京", {
+          status: "trashed",
+          revision: 7,
+          recordedAt: "2026-10-29T01:00:00.000Z",
+          updatedAt: "2026-10-31T02:00:00.000Z",
+        }),
       ],
     };
     await render();
     await tab("变化记录");
-    const lines = [...document.querySelectorAll("#settings .memory-day p")];
-    const kept = lines.find((line) => line.textContent?.includes("主人喜欢喝美式"));
-    const dropped = lines.find((line) => line.textContent?.includes("主人让写一个就只写一个"));
-    expect(kept?.textContent).not.toContain("已不记");
-    expect(kept?.querySelector(".memory-undone")).toBeNull();
-    expect(dropped?.textContent).toContain("已不记，不会再用");
-    expect(dropped?.querySelector(".memory-undone")).not.toBeNull();
+    const rows = () => [...document.querySelectorAll("#settings .memory-day p")];
+    const row = (kind: string, content: string) =>
+      rows().find(
+        (line) => line.textContent?.startsWith(kind) && line.textContent.includes(content),
+      );
+    expect(row("新记住", "主人让写一个就只写一个")).toBeDefined();
+    const dropped = row("已不记", "主人让写一个就只写一个");
+    expect(dropped).toBeDefined();
+    expect(row("已删除", "主人住在北京")).toBeDefined();
+    expect(row("已不记", "主人住在北京")).toBeUndefined();
+    expect(rows().filter((line) => line.textContent?.includes("主人喜欢喝美式"))).toHaveLength(1);
+    expect(row("已不记", "主人喜欢喝美式")).toBeUndefined();
     await act(async () =>
       [...(dropped?.querySelectorAll("button") ?? [])]
         .find((item) => item.textContent === "撤销")
@@ -846,7 +874,7 @@ describe("memory approval and management", () => {
     );
     expect(lastCommand()).toMatchObject({
       type: "memory.mutate",
-      payload: { memoryId: "m-dropped", action: "recover", expectedRevision: 4 },
+      payload: { memoryId: "m-guess", action: "recover", expectedRevision: 4 },
     });
   });
 

@@ -1488,13 +1488,12 @@ function TimelineTab({
   type Event = {
     key: string;
     at: string;
-    type: "new" | "tidy" | "correct" | "import";
+    type: "new" | "tidy" | "correct" | "import" | "drop";
     kind: string;
     text: string;
     note?: string;
     undone?: boolean;
-    dropped?: boolean;
-    undo?: (() => void) | undefined;
+    undo?: () => void;
     confirm?: boolean;
     change?: number;
     show?: () => void;
@@ -1505,17 +1504,7 @@ function TimelineTab({
         node.kind === "reaffirmed" || (node.change === 0 && node.record.importBatchId)
           ? []
           : node.change === 0
-            ? [
-                {
-                  key: node.key,
-                  at: node.at,
-                  type: "new",
-                  kind: "new",
-                  text: node.text,
-                  dropped: head.status === "trashed",
-                  undo: head.status === "trashed" ? () => void memory.recover(head) : undefined,
-                },
-              ]
+            ? [{ key: node.key, at: node.at, type: "new", kind: "new", text: node.text }]
             : [
                 {
                   key: node.key,
@@ -1525,12 +1514,22 @@ function TimelineTab({
                   text: message("memory.page.nowIs", { text: node.text }),
                   change: node.change,
                   show: () => onShowMemory(head.memoryId),
-                  dropped: head.status === "trashed",
-                  undo: head.status === "trashed" ? () => void memory.recover(head) : undefined,
                 },
               ],
       ),
     ),
+    ...memoryHeads(overview.memories)
+      .filter((head) => head.status === "trashed")
+      .map(
+        (head): Event => ({
+          key: `${head.memoryId}:dropped`,
+          at: head.updatedAt,
+          type: "drop",
+          kind: head.tentative ? "dropped" : "deleted",
+          text: head.text,
+          undo: () => void memory.recover(head),
+        }),
+      ),
     ...overview.tidyUps.map(
       (item): Event => ({
         key: item.changeId,
@@ -1570,7 +1569,7 @@ function TimelineTab({
   return (
     <>
       <Chips
-        items={(["all", "new", "tidy", "correct", "import"] as const).map((key) => ({
+        items={(["all", "new", "drop", "tidy", "correct", "import"] as const).map((key) => ({
           key,
           label: message("memory.page.filter", { f: key }),
           count:
@@ -1591,7 +1590,7 @@ function TimelineTab({
               <span className="memory-tag" data-kind={event.type}>
                 {message("memory.page.event", { e: event.kind })}
               </span>
-              <span className={event.undone || event.dropped ? "memory-undone" : undefined}>
+              <span className={event.undone ? "memory-undone" : undefined}>
                 {event.text}
                 <small>{event.note}</small>
                 {event.change ? (
@@ -1604,7 +1603,6 @@ function TimelineTab({
                   </small>
                 ) : null}
               </span>
-              {event.dropped ? <small>{message("memory.page.droppedTag")}</small> : null}
               {event.undone ? (
                 <small>{message("memory.undone")}</small>
               ) : event.undo ? (

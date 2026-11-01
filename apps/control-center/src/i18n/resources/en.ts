@@ -677,7 +677,6 @@ export const messages = {
   "memory.profile.project": "In progress",
   "memory.tidyKept": "(kept: {text})",
   "memory.undo": "Undo",
-  "memory.page.droppedTag": "Dropped, no longer used",
   "memory.undone": "Undone",
   "memory.reminderTitle": "Reminder",
   "memory.reminderDue": "Due {time}",
@@ -752,11 +751,11 @@ export const messages = {
   "memory.page.recover": "Recover",
   "memory.page.deleted": "Deleted. Recover it from Recently deleted within 7 days.",
   "memory.page.filter":
-    "{f, select, all {All changes} new {New} tidy {Tidy-ups} correct {Corrections} other {Imports}}",
+    "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.timelineNote":
-    "Daily changes: new memories, corrections, imports, and the merges, replacements, archives and guesses made by the daily tidy-up. Tidy-ups and imports can be undone; your own edits are never overwritten.",
+    "Daily changes: new memories, corrections, imports, and the merges, replacements, archives and guesses made by the daily tidy-up. Drops, deletions, tidy-ups and imports can be undone; your own edits are never overwritten.",
   "memory.page.event":
-    "{e, select, new {New} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
+    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
   "memory.page.imported":
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",

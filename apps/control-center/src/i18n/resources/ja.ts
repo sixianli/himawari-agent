@@ -684,7 +684,6 @@ export const messages = {
   "memory.profile.project": "進行中のこと",
   "memory.tidyKept": "（残した方：{text}）",
   "memory.undo": "元に戻す",
-  "memory.page.droppedTag": "覚えないことにしました。今後は使いません",
   "memory.undone": "元に戻しました",
   "memory.reminderTitle": "リマインダー",
   "memory.reminderDue": "予定：{time}",
@@ -759,11 +758,11 @@ export const messages = {
   "memory.page.recover": "元に戻す",
   "memory.page.deleted": "削除しました。7 日以内なら「最近削除」から戻せます。",
   "memory.page.filter":
-    "{f, select, all {すべて} new {新規} tidy {整理} correct {訂正} other {インポート}}",
+    "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {整理} correct {訂正} other {インポート}}",
   "memory.page.timelineNote":
-    "日ごとの変化です。新規・訂正・インポートと、毎日の整理による統合・置き換え・アーカイブ・推測。整理とインポートは取り消せます。あなたの編集は整理で上書きされません。",
+    "日ごとの変化です。新規・訂正・インポートと、毎日の整理による統合・置き換え・アーカイブ・推測。覚えない・削除・整理・インポートは取り消せます。あなたの編集は整理で上書きされません。",
   "memory.page.event":
-    "{e, select, new {新規} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
