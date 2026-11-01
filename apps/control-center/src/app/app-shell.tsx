@@ -23,6 +23,7 @@ export interface ControlCenterShellProps {
   readonly settingsData?: ReactNode;
   readonly settingsNotifications?: ReactNode;
   readonly settingsPersonalization?: ReactNode;
+  readonly settingsAccount?: ReactNode;
   readonly list: ReactNode;
   readonly locale: ControlCenterUiLocale;
   readonly onLocaleChange: (locale: ControlCenterUiLocale) => void;
@@ -47,6 +48,7 @@ export function ControlCenterShell({
   settingsData,
   settingsNotifications,
   settingsPersonalization,
+  settingsAccount,
   list,
   locale,
   onLocaleChange,
@@ -220,6 +222,7 @@ export function ControlCenterShell({
         data={settingsData}
         notifications={settingsNotifications}
         personalization={settingsPersonalization}
+        account={settingsAccount}
         initialTab={settingsTab}
       />
     </div>

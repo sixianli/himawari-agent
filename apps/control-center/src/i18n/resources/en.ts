@@ -905,6 +905,7 @@ export const messages = {
     "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
   "chat.search.alwaysOn": "Always on",
   "settings.name": "What should I call you?",
+  "settings.version": "Version {revision} · {date}",
   "chat.greetNamed": "{greeting}, {name}",
   "chat.welcome.here": "I'm here. Something to look up, something to write, or just a chat?",
   "chat.welcome.hand": "Hand me something to do today 🌻",
@@ -917,7 +918,8 @@ export const messages = {
     "{g, select, check {Might matter, read the email} none {No deadline} other {Good to know}}",
   "proactive.when.due": "Due {time}",
   "proactive.when.received": "Received {date}",
-  "proactive.priority": "{p, select, high {High} medium {Medium} other {Low}}",
+  "proactive.priority":
+    "{p, select, high {High priority} medium {Medium priority} other {Low priority}}",
   "proactive.openMail": "Open email",
   "proactive.replied": "You replied",
   "proactive.pushed":

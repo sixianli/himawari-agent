@@ -13,6 +13,7 @@ import {
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
+import { SignOutSetting } from "./components/sign-out-setting.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
 import { ActionButton, Banner } from "./components/index.js";
@@ -529,6 +530,11 @@ function LocalizedControlCenterApp({
     <ControlCenterShell
       settingsPersonalization={
         memory ? <AutoMemorySetting memory={memory} message={message} /> : undefined
+      }
+      settingsAccount={
+        configuration && identityMethod === "built-in" ? (
+          <SignOutSetting csrfToken={configuration.csrfToken} onSignedOut={clearPrivateViewState} />
+        ) : undefined
       }
       settingsData={
         <>
