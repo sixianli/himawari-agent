@@ -2341,6 +2341,12 @@ describe("thread control center interactions", () => {
     const confirm = container.querySelector(".thread-row-confirming");
     expect(confirm?.textContent).toContain(messages["threads.deleteTitle"]);
     expect(document.querySelector("dialog[open]")).toBeNull();
+    expect(document.activeElement?.className).toContain("action-button-secondary");
+    await act(async () =>
+      confirm?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(container.querySelector(".thread-row-confirming")).toBeNull();
+    await chooseAction("delete");
     expect(mutate).not.toHaveBeenCalled();
     await click("governed.cancel");
     expect(container.querySelector(".thread-row-confirming")).toBeNull();
@@ -2393,6 +2399,10 @@ describe("thread control center interactions", () => {
     );
     expect(mutate.mock.calls[0]?.[0]).toMatchObject({ type: "thread.rename" });
     expect(protect.mock.calls.some(([text]) => text === "新标题")).toBe(true);
+    await act(async () => editor()?.blur());
+    expect(mutate.mock.calls.filter(([command]) => command.type === "thread.rename")).toHaveLength(
+      1,
+    );
   });
   it("[UI-B1] reverse: an unchanged title or Escape sends nothing and closes the editor", async () => {
     await render();

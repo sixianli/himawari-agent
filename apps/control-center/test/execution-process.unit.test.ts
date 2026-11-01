@@ -284,7 +284,9 @@ const acceptedRunWaiting = (waitedMilliseconds: number) => ({
 it("[QUEUE-1] says the turn is waiting in line, with the real wait, once an accepted turn has had no slot for 3 seconds", () => {
   const html = render(acceptedRunWaiting(30_000), []);
   expect(html).toContain('<span class="process-live-step">chat.queued(tool=)</span>');
-  expect(html).toContain("chat.queuedWait(time=30s)");
+  expect(html).toContain("chat.queuedWait");
+  expect(html).toContain('<output class="sr-only">chat.queued(tool=)</output>');
+  expect(html.match(/30s|seconds=30/g) ?? []).toHaveLength(1);
   expect(html).not.toContain("chat.lastActivity");
   expect(html).not.toContain("chat.progressDelayed");
 });

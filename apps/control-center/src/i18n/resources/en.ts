@@ -136,7 +136,6 @@ export const messages = {
   "message.status.sending": "Sending",
   "message.status.failed": "Not sent",
   "message.retry": "Retry",
-  "process.parallel": "Parallel",
   "process.step.write": "Writing the answer",
   "process.step.you": "Waiting for your approval",
   "process.characters": "{count, plural, one {# character} other {# characters}}",
@@ -185,8 +184,7 @@ export const messages = {
   "chat.activity.buildingContext": "Looking up related memory",
   "chat.queued": "Waiting in line",
   "chat.queuedWait":
-    "Queued for {time}. Other conversations are still running; this one starts automatically when a slot is free.",
-  "chat.lastActivity": "Last progress {time} ago",
+    "Other conversations are still running; this one starts automatically when a slot is free.",
   "chat.progressDelayed":
     "No recent progress. A connected page does not confirm that execution is advancing. You can wait or stop this turn.",
   "chat.waitingToolResult": "Waiting for tool result",
@@ -282,7 +280,6 @@ export const messages = {
     "Review the failed operation and workspace state before submitting a new request; a failed result does not prove its effects were rolled back.",
   "chat.nextAction.failedBeforeAnyOperation":
     "No tool operation ran in this turn. You can send it again.",
-  "appearance.title": "Appearance and accent",
   "appearance.theme": "Theme",
   "chat.untitled": "New conversation",
   "chat.latest": "Back to latest",
@@ -538,9 +535,6 @@ export const messages = {
   "threads.archive": "Archive",
   "threads.delete": "Delete",
   "threads.deleteTitle": "Delete this conversation?",
-  "threads.deleteBody":
-    "“{title}” will disappear from your conversation list and search. This cannot be undone from the web page.",
-  "threads.deleteConfirm": "Delete conversation",
   "threads.restore": "Restore",
   "threads.conflictTitle": "This thread was just changed elsewhere",
   "threads.conflictDescription":

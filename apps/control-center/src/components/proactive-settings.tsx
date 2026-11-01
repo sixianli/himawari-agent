@@ -249,6 +249,7 @@ export function ProactiveAppsSettings({
   const overview = proactive.overview;
   const [confirming, setConfirming] = useState(false);
   const [disconnected, setDisconnected] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   if (!overview) return null;
   const status = overview.connection.status;
   return (
@@ -338,12 +339,17 @@ export function ProactiveAppsSettings({
       </details>
       <ImportantSenders proactive={proactive} message={message} />
       {status === "disconnected" ? null : (
-        <details className="proactive-what proactive-log-entry">
+        <details
+          className="proactive-what proactive-log-entry"
+          onToggle={(event) => setLogOpen(event.currentTarget.open)}
+        >
           <summary>
             <Glyph className="summary-chevron" name="chevron" size={14} />
             {message("proactive.log")}
           </summary>
-          <ProactiveDecisionLog proactive={proactive} message={message} locale={locale} />
+          {logOpen ? (
+            <ProactiveDecisionLog proactive={proactive} message={message} locale={locale} />
+          ) : null}
         </details>
       )}
     </section>

@@ -157,7 +157,7 @@ export function ExecutionProcess({
       {!activityEnded &&
       (queued || (waitReason && !queued) || (state && connection !== "connected") || stale) ? (
         <div className="turn-activity">
-          {queued ? <p>{message("chat.queuedWait", { time: duration(queuedFor) })}</p> : null}
+          {queued ? <p>{message("chat.queuedWait")}</p> : null}
           {waitReason && !queued ? (
             <p className="turn-wait-reason">{message(waitReason.id, { tool: waitReason.tool })}</p>
           ) : null}
@@ -171,6 +171,7 @@ export function ExecutionProcess({
         <p role="alert">{message(executionFailureMessage(records))}</p>
       ) : null}
       {nextAction ? <output className="execution-next-action">{message(nextAction)}</output> : null}
+      {!activityEnded ? <output className="sr-only">{liveStep}</output> : null}
       <details
         className="turn-process"
         open={expanded}

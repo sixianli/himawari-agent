@@ -115,6 +115,7 @@ export function ProactiveInsightRow({
   const tone =
     group === "due" || group === "today" ? "urgent" : group === "check" ? "check" : undefined;
   const settle = (action: "done" | "mute") =>
+    !proactive.busy &&
     void proactive.respondInsight(insight, action).then(
       (ok) =>
         ok &&

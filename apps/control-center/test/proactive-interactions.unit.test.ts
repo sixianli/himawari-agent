@@ -456,9 +456,12 @@ describe("[PG-15] proactive reminders page", () => {
     await flush();
     const entry = document.querySelector<HTMLDetailsElement>("#apps .proactive-log-entry");
     expect(entry?.querySelector("summary")?.textContent).toContain("决策记录");
+    expect(entry?.querySelector(".proactive-log")).toBeNull();
     await act(async () => {
-      if (entry) entry.open = true;
+      entry?.querySelector("summary")?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    await flush();
     const summary = text("#apps .proactive-summary");
     for (const part of ["开口5", "命中3", "误扰1", "已审样本内漏报1", "已审 23 封", "已记录 2 天"])
       expect(summary.replace(/\s/gu, "")).toContain(part.replace(/\s/gu, ""));

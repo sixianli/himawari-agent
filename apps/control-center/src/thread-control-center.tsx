@@ -1380,7 +1380,8 @@ export function useThreadControlCenter(
     renameSaving.current = true;
     try {
       const result = await performIntent({ kind: "rename", title: renameTitle }, undefined, target);
-      if (result) setRenameTarget(null);
+      if (result)
+        setRenameTarget((current) => (current?.threadId === target.threadId ? null : current));
     } finally {
       renameSaving.current = false;
     }
@@ -1968,7 +1969,6 @@ export function useThreadControlCenter(
     </div>
   );
 
-  const details = null;
   return Object.freeze({
     content,
     settingsData: (
@@ -1984,7 +1984,7 @@ export function useThreadControlCenter(
         }
       />
     ),
-    details,
+    details: null,
     actions,
     start,
     list,

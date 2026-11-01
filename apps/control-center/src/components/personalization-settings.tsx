@@ -11,7 +11,8 @@ export function AutoMemorySetting({
   readonly message: Message;
 }) {
   const overview = memory.overview;
-  const paused = overview?.capturePaused ?? false;
+  if (!overview) return null;
+  const paused = overview.capturePaused;
   return (
     <label className="setting-row">
       <span>{message("memory.page.auto")}</span>
@@ -21,7 +22,7 @@ export function AutoMemorySetting({
         aria-label={message("memory.page.auto")}
         aria-checked={!paused}
         checked={!paused}
-        disabled={memory.busy || !overview}
+        disabled={memory.busy}
         onChange={() => void memory.setPaused(!paused)}
       />
     </label>

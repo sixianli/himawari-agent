@@ -1,5 +1,5 @@
 import type { ThreadGatewaySnapshot } from "@himawari-agent/gateway-contracts";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useCallback, useRef, useState } from "react";
 import { type ControlCenterRouteState, controlCenterHref } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { LineIcon } from "./answer-footer.js";
@@ -75,10 +75,6 @@ export interface ThreadSidebarProps {
   readonly pendingThreadIds?: readonly string[];
   readonly runningThreadIds?: readonly string[];
 }
-function focusOnMount(node: HTMLInputElement | null) {
-  node?.focus();
-}
-
 export function ThreadSidebar({
   threads,
   searchResults = [],
@@ -118,6 +114,18 @@ export function ThreadSidebar({
 }: ThreadSidebarProps) {
   const { message } = useControlCenterIntl();
   const [searched, setSearched] = useState(false);
+  const renameEnded = useRef(false);
+  const endRename = (commit: boolean) => {
+    if (renameEnded.current) return;
+    renameEnded.current = true;
+    if (commit && renameChanged) onRenameCommit?.();
+    else onRenameCancel?.();
+  };
+  const startRename = useCallback((node: HTMLInputElement | null) => {
+    if (!node) return;
+    renameEnded.current = false;
+    node.focus();
+  }, []);
   const filesOpen = openPage !== null;
   const title = (thread: Thread) =>
     (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
@@ -179,7 +187,7 @@ export function ThreadSidebar({
       <li className="thread-row thread-row-editing" key={thread.threadId}>
         <input
           className="thread-rename-input"
-          ref={focusOnMount}
+          ref={startRename}
           aria-label={message("review.conversationName")}
           value={renameValue}
           onFocus={(event) => event.currentTarget.select()}
@@ -187,36 +195,38 @@ export function ThreadSidebar({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              if (renameChanged) onRenameCommit?.();
-              else onRenameCancel?.();
+              endRename(true);
             } else if (event.key === "Escape") {
               event.preventDefault();
-              onRenameCancel?.();
+              event.stopPropagation();
+              endRename(false);
             }
           }}
-          onBlur={() => {
-            if (renameChanged) onRenameCommit?.();
-            else onRenameCancel?.();
-          }}
+          onBlur={() => endRename(true)}
         />
       </li>
     ) : deletingThreadId === thread.threadId ? (
-      <li className="thread-row thread-row-confirming" key={thread.threadId}>
+      <li
+        className="thread-row thread-row-confirming"
+        key={thread.threadId}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onDeleteCancel?.();
+          }
+        }}
+      >
         <span className="thread-confirm-text">{message("threads.deleteTitle")}</span>
         <ActionButton
           variant="secondary"
           className="thread-confirm-button"
+          data-autofocus
+          autoFocus
           onClick={onDeleteCancel}
         >
           {message("governed.cancel")}
         </ActionButton>
-        <ActionButton
-          variant="danger"
-          className="thread-confirm-button"
-          data-autofocus
-          autoFocus
-          onClick={onDeleteConfirm}
-        >
+        <ActionButton variant="danger" className="thread-confirm-button" onClick={onDeleteConfirm}>
           {message("threads.delete")}
         </ActionButton>
       </li>

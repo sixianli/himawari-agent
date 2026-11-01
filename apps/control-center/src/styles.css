@@ -45,7 +45,7 @@
   --info: #285f91;
 }
 :root {
-  --accent: light-dark(#a8690a, #e8b04a);
+  --accent: light-dark(#9a6200, #e8b04a);
 }
 
 * {
