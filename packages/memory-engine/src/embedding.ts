@@ -2,6 +2,7 @@ import {
   ApplicationPortError,
   type ModelInvocationUsage,
   PORT_ERROR_CODES,
+  redactForEgress,
   usdCostsEqual,
   usdCostToMicros,
 } from "@himawari-agent/application";
@@ -170,7 +171,7 @@ export class GatewayEmbedder implements Embedder {
       );
     const request: EmbeddingRequest = Object.freeze({
       model: this.model,
-      input: text,
+      input: redactForEgress(text).text,
       dimensions: this.dimensions,
     });
     const response = await boundary(request, (options) => this.#send(request, options));

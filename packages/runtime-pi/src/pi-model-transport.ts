@@ -10,6 +10,7 @@ import {
   assertMachineSecretFree,
   type ClockPort,
   type DataClassification,
+  EGRESS_PLACEHOLDER_LEGEND,
   type ModelDescriptor,
   type ModelInvocationEvent,
   type ModelInvocationPricing,
@@ -17,6 +18,7 @@ import {
   type PayloadProtectionRequest,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  redactForEgress,
   StreamingMachineSecretRedactor,
 } from "@himawari-agent/application/runtime-port";
 import { observeCacheFields } from "./cache-usage-observation.js";
@@ -243,7 +245,12 @@ export class PiModelTransport {
 
     let prompt: string;
     try {
-      prompt = await this.#payloads.readText(request.inputRef);
+      const original = await this.#payloads.readText(request.inputRef);
+      const redaction = redactForEgress(original);
+      prompt =
+        redaction.findings.length > 0
+          ? `${redaction.text}\n\n${EGRESS_PLACEHOLDER_LEGEND}`
+          : redaction.text;
       assertMachineSecretFree(prompt);
     } catch {
       yield failed(request, "AI_GATEWAY_INPUT_REJECTED", false, Date.now() - startedAt, now());

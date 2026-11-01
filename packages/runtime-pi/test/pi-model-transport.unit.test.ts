@@ -427,11 +427,28 @@ describe("PiModelTransport", () => {
     });
   });
 
-  it("rejects machine-secret input before resolving a Pi model", async () => {
-    const payloads = payloadBoundary(["password", "x".repeat(12)].join("="));
-    const resolve = vi.fn();
+  it("redacts sensitive input before it reaches the model instead of rejecting the call", async () => {
+    const sensitive = [
+      ["password", "x".repeat(12)].join("="),
+      "验证码 482910",
+      "卡号 4111 1111 1111 1111",
+    ].join("\n");
+    const payloads = payloadBoundary(sensitive);
+    let observedContext: Context | undefined;
+    const runtime = {
+      stream(_model: Model<Api>, context: Context, streamOptions?: Record<string, unknown>) {
+        observedContext = context;
+        return (async function* (): AsyncIterable<AssistantMessageEvent> {
+          const piFetch = streamOptions?.["fetch"] as typeof globalThis.fetch;
+          await piFetch("https://ai-gateway.vercel.sh/v1/chat/completions");
+          yield { type: "done", reason: "stop", message: assistant("ok") };
+        })();
+      },
+    };
     const transport = new PiModelTransport({
-      models: { resolve },
+      models: {
+        resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
+      },
       payloads: payloads.boundary,
       clock: { now: () => NOW },
       fetch: async () => observationResponse(),
@@ -441,12 +458,41 @@ describe("PiModelTransport", () => {
       transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
     );
 
-    expect(events.at(-1)).toMatchObject({
-      type: "model.failed",
-      errorCode: "AI_GATEWAY_INPUT_REJECTED",
-      retryable: false,
+    const sent = JSON.stringify(observedContext?.messages);
+    expect(events.filter((event) => event.type === "model.failed")).toEqual([]);
+    expect(sent).not.toContain("xxxxxxxxxxxx");
+    expect(sent).not.toContain("482910");
+    expect(sent).not.toContain("4111 1111");
+    expect(sent).toContain("[验证码]");
+    expect(sent).toContain("[银行卡 尾号1111]");
+    expect(sent).toContain("[密钥]");
+  });
+
+  it("leaves the prompt byte-identical when nothing is sensitive", async () => {
+    const payloads = payloadBoundary("Say hello");
+    let observedContext: Context | undefined;
+    const runtime = {
+      stream(_model: Model<Api>, context: Context, streamOptions?: Record<string, unknown>) {
+        observedContext = context;
+        return (async function* (): AsyncIterable<AssistantMessageEvent> {
+          const piFetch = streamOptions?.["fetch"] as typeof globalThis.fetch;
+          await piFetch("https://ai-gateway.vercel.sh/v1/chat/completions");
+          yield { type: "done", reason: "stop", message: assistant("ok") };
+        })();
+      },
+    };
+    const transport = new PiModelTransport({
+      models: {
+        resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () => observationResponse(),
     });
-    expect(resolve).not.toHaveBeenCalled();
+
+    await collect(transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }));
+
+    expect(observedContext?.messages[0]).toMatchObject({ role: "user", content: "Say hello" });
   });
 
   it("fails closed when the bound Pi model drifts from the canonical descriptor", async () => {
