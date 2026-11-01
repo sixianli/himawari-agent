@@ -52,7 +52,10 @@ it("waits for installation verification before initializing sandbox services", a
   const startup = createProductionSandboxServices(options);
   const result = expect(startup).rejects.toThrow("REPOSITORY_INITIALIZATION_REACHED");
   await vi.waitFor(() =>
-    expect(fixture.verify).toHaveBeenCalledWith({ binding, qualification, hostId: binding.hostId }),
+    expect(fixture.verify).toHaveBeenCalledWith(
+      { binding, qualification, hostId: binding.hostId },
+      { deferContentAudit: true },
+    ),
   );
   expect(repositoryAccess).not.toHaveBeenCalled();
   finish?.();
@@ -127,11 +130,11 @@ it("verifies every sandbox capability and ignores non-sandbox inventory", async 
     "REPOSITORY_INITIALIZATION_REACHED",
   );
   expect(fixture.verify).toHaveBeenCalledTimes(2);
-  expect(fixture.verify).toHaveBeenNthCalledWith(2, {
-    binding: secondBinding,
-    qualification,
-    hostId: binding.hostId,
-  });
+  expect(fixture.verify).toHaveBeenNthCalledWith(
+    2,
+    { binding: secondBinding, qualification, hostId: binding.hostId },
+    { deferContentAudit: true },
+  );
   expect(repositoryAccess).toHaveBeenCalledOnce();
 });
 
