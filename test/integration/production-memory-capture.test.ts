@@ -37,6 +37,7 @@ const OWNER_ID = createOwnerId("owner-memory-capture");
 const AGENT_ID = createAgentId("agent-memory-capture");
 const THREAD_ID = createThreadId("thread-memory-capture");
 const T0 = "2026-10-25T12:00:00.000Z";
+const FAKE_OPENAI_KEY = `sk-${"proj"}-abcdefghijklmnopqrstuvwxyz0123456789`;
 
 class RecordingProvider implements MemoryProviderProjectionPort {
   readonly upserts: { memory: ProductMemoryRecord; content: string }[] = [];
@@ -192,6 +193,7 @@ describe("production memory capture", () => {
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
       book: repository.memoryBook(),
+      ledger: repository.decisionLedger(),
       timeZone: "Asia/Shanghai",
       payloads,
       protector: adapters.payloadProtector,
@@ -259,11 +261,27 @@ describe("production memory capture", () => {
           createdAt: T0,
         }),
       );
+    const ledgerEntries = () =>
+      repository.decisionLedger().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        kind: "memory_candidate",
+        since: "1970-01-01T00:00:00.000Z",
+        limit: 100,
+      });
+    const plaintext = async (ref: string | null) => {
+      const payload = ref === null ? undefined : await payloads.get(ref);
+      return payload
+        ? new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }))
+        : undefined;
+    };
     return {
       clock,
       repository,
       memory,
       provider,
+      ledgerEntries,
+      plaintext,
       capture,
       control,
       protect,
@@ -637,6 +655,25 @@ describe("production memory capture", () => {
     expect(context.provider.upserts.map(({ content }) => content)).toEqual([
       "主人最喜欢的颜色是蓝色",
     ]);
+    const ledger = await context.ledgerEntries();
+    expect(ledger).toHaveLength(2);
+    const kept = ledger.find(({ outcome }) => outcome === "kept");
+    const suppressed = ledger.find(({ outcome }) => outcome === "discarded");
+    expect(kept).toMatchObject({
+      reasonCode: "explicitly_approved",
+      category: "preference",
+      confidencePermille: 950,
+      inferred: false,
+    });
+    expect(suppressed).toMatchObject({
+      reasonCode: "confidence_below_threshold",
+      category: "other",
+      confidencePermille: 700,
+      inferred: true,
+    });
+    expect(await context.plaintext(suppressed?.contentRef ?? null)).toBe("主人好像喜欢海");
+    const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(stored.map(({ id }) => id)).not.toContain(suppressed?.subjectRef);
   });
 
   it("captures each Run once and offers existing memories for updates", async () => {
@@ -668,6 +705,55 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(0);
+    const ledger = await context.ledgerEntries();
+    expect(ledger).toHaveLength(2);
+    expect(ledger.map(({ outcome, reasonCode }) => [outcome, reasonCode])).toEqual([
+      ["discarded", "evidence_unverified"],
+      ["discarded", "evidence_unverified"],
+    ]);
+    expect(
+      ledger.map(({ category, confidencePermille, inferred }) => [
+        category,
+        confidencePermille,
+        inferred,
+      ]),
+    ).toEqual([
+      ["other", 950, false],
+      ["other", 950, false],
+    ]);
+    expect(
+      (await Promise.all(ledger.map(({ contentRef }) => context.plaintext(contentRef)))).sort(),
+    ).toEqual(["主人住在杭州", "主人有一只猫"].sort());
+  });
+
+  it("keeps a candidate that is a machine secret out of the ledger text when its quote fails", async () => {
+    const context = await setup(
+      "我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的密钥是 ' +
+        FAKE_OPENAI_KEY +
+        '","classification":"private","confidence":950,"quote":"我的密钥是这个"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const ledger = await context.ledgerEntries();
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]).toMatchObject({
+      outcome: "discarded",
+      reasonCode: "evidence_unverified",
+      contentRef: null,
+    });
+    expect(JSON.stringify(ledger)).not.toContain(FAKE_OPENAI_KEY);
+  });
+
+  it("writes no ledger row for a candidate whose quote is in the message and is simply dropped as invalid", async () => {
+    const context = await setup(
+      "我今天又不想出去玩了，真的。",
+      '{"memories":[{"kind":"durable_fact","decision":"unchanged","existingMemoryId":"memory-not-shown","text":"主人最近不想出去玩","classification":"private","confidence":900,"quote":"我今天又不想出去玩了"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(await context.ledgerEntries()).toEqual([]);
   });
 
   it("[MH-1] logs a round where the model kept nothing or named a memory it was not shown", async () => {
