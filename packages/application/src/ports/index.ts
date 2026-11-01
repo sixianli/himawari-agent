@@ -29,6 +29,7 @@ export * from "./memory-book.js";
 export * from "./memory-consolidation.js";
 export * from "./memory-episodes.js";
 export * from "./memory-reminders.js";
+export * from "./decision-ledger.js";
 export * from "./model-usage.js";
 export * from "./web-push.js";
 export * from "./memory-projection.js";

@@ -154,3 +154,20 @@ it("[NL-2] lets the Agent share only the sandbox's public address rule", async (
   const publicAddress = await import("@himawari-agent/runtime-sandbox/public-address");
   expect(Object.keys(publicAddress)).toEqual(["isPublicEgressAddress"]);
 });
+
+it("[BG-10] lets the Agent share only the job host's session length limit", async () => {
+  expect(
+    isSandboxImportAllowed(
+      "@himawari-agent/agent-service",
+      "@himawari-agent/runtime-sandbox/job-host-limits",
+    ),
+  ).toBe(true);
+  expect(
+    isSandboxImportAllowed(
+      "@himawari-agent/agent-service",
+      "@himawari-agent/runtime-sandbox/job-host-protocol",
+    ),
+  ).toBe(false);
+  const limits = await import("@himawari-agent/runtime-sandbox/job-host-limits");
+  expect(Object.keys(limits)).toEqual(["JOB_HOST_MAXIMUM_SESSION_MS"]);
+});

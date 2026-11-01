@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type {
   MemoryConsolidationChange,
   MemoryConsolidationRun,
@@ -152,32 +154,59 @@ export class SqliteMemoryConsolidationOperations {
       | undefined;
     if (run?.status !== "running")
       this.fail("PORT_CONFLICT", "Memory consolidation run is not running");
-    this.database
-      .prepare(
-        `INSERT INTO memory_consolidation_changes (
+    this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT INTO memory_consolidation_changes (
           id, consolidation_id, owner_id, agent_id, memory_id, related_memory_id, action,
           before_revision, after_revision, before_status, before_superseded_by,
           before_valid_to, created_at, undone_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-      )
-      .run(
-        change.id,
-        change.consolidationId,
-        change.ownerId,
-        change.agentId,
-        change.memoryId,
-        change.relatedMemoryId,
-        change.action,
-        change.beforeRevision,
-        change.afterRevision,
-        change.beforeStatus,
-        change.beforeSupersededBy,
-        change.beforeValidTo,
-        change.createdAt,
-      );
-    this.database
-      .prepare("UPDATE memory_consolidation_runs SET change_count = change_count + 1 WHERE id = ?")
-      .run(change.consolidationId);
+        )
+        .run(
+          change.id,
+          change.consolidationId,
+          change.ownerId,
+          change.agentId,
+          change.memoryId,
+          change.relatedMemoryId,
+          change.action,
+          change.beforeRevision,
+          change.afterRevision,
+          change.beforeStatus,
+          change.beforeSupersededBy,
+          change.beforeValidTo,
+          change.createdAt,
+        );
+      this.database
+        .prepare(
+          "UPDATE memory_consolidation_runs SET change_count = change_count + 1 WHERE id = ?",
+        )
+        .run(change.consolidationId);
+      insertLedgerRow(this.database, {
+        id: `ledger:${createHash("sha256").update(change.id).digest("hex").slice(0, 40)}`,
+        ownerId: change.ownerId,
+        agentId: change.agentId,
+        kind: "consolidation",
+        decidedAt: change.createdAt,
+        outcome: change.action,
+        reasonCode: `consolidation_${change.action}`,
+        subjectRef: change.memoryId,
+        inputs: {
+          memoryIds: [
+            ...new Set([
+              change.memoryId,
+              ...(change.relatedMemoryId ? [change.relatedMemoryId] : []),
+            ]),
+          ],
+          ruleIds: [],
+        },
+        reasonRef: null,
+        contentRef: null,
+        costMicros: 0,
+        durationMs: 0,
+      });
+    })();
   }
 
   private listChanges(input: {

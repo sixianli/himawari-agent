@@ -142,6 +142,26 @@ def archive_small_files(source, destination, limit, apply):
     return kept
 
 
+def preserve_failed_acceptance(stage, destination, apply):
+    source = Path(stage) / 'acceptance'
+    kept = []
+    if not source.is_dir() or source.is_symlink():
+        return kept
+    for parent, directories, files in os.walk(source):
+        directories[:] = [name for name in directories if name not in REBUILDABLE_SUBTREES]
+        for name in files:
+            path = Path(parent) / name
+            if not stat.S_ISREG(os.lstat(path).st_mode):
+                continue
+            target = Path(destination) / path.relative_to(source)
+            kept.append(str(target))
+            if apply:
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                shutil.copy2(path, target)
+                os.chmod(target, 0o600)
+    return kept
+
+
 def cleanup(plan, apply, references, stamp):
     current = serving(plan)
     for reference in references:
@@ -200,6 +220,9 @@ def cleanup(plan, apply, references, stamp):
                     remove(member, 'release-transport-copy')
             continue
         result['archived'] += archive_small_files(path, archive, plan['smallFileBytes'], apply)
+        preserved = [] if path != plan.get('currentStage') else preserve_failed_acceptance(path, plan['archiveRoot'] + '/failed-acceptance/' + stamp + '-' + Path(path).name, apply)
+        for item in preserved:
+            result['kept'].append({'path': item, 'reason': 'failed-acceptance-evidence'})
         remove(path, 'release-transport-copy')
 
     owners = plan.get('scratchOwnerUids', [])
@@ -230,6 +253,9 @@ def cleanup(plan, apply, references, stamp):
             keep(target, 'qualification-not-empty')
         else:
             remove(target, 'empty-qualification-leftover')
+    preserved_root = Path(plan['archiveRoot']) / 'failed-acceptance'
+    for path in children(preserved_root)[:-plan.get('keepFailedAcceptance', 2)]:
+        remove(path, 'old-failed-acceptance')
 
     if os.path.isdir(plan['currentOperations']) and plan['currentOperations'] != current['operations'] and not in_use(plan['currentOperations']):
         remove(plan['currentOperations'], 'failed-attempt-operations')

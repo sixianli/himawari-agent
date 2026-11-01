@@ -20,6 +20,7 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  DecisionLedgerPort,
   ModelUsageStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
@@ -993,6 +994,16 @@ export class SqliteDurableAdapters {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
       write: (input) => this.context.write("ownerPreferences.write", input),
+    });
+  }
+
+  decisionLedger(): DecisionLedgerPort {
+    return Object.freeze<DecisionLedgerPort>({
+      append: (input) => this.context.write("decisionLedger.append", input),
+      list: (input) => this.context.read("decisionLedger.list", input),
+      rate: (input) => this.context.write("decisionLedger.rate", input),
+      recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
+      listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
     });
   }
 

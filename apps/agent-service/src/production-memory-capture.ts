@@ -12,6 +12,7 @@ import {
   type MemoryReminderSchedule,
   type MemoryReminderStorePort,
   type MemoryCategory,
+  type DecisionLedgerPort,
   type MemoryExtractionAuditRecord,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -508,7 +509,7 @@ export function protectedMemoryCandidates(
 export function createProductionAutomaticMemory(
   options: Pick<
     ProductionMemoryCaptureOptions,
-    "product" | "approvals" | "payloads" | "protector" | "clock" | "reminders" | "book"
+    "product" | "approvals" | "payloads" | "protector" | "clock" | "reminders" | "book" | "ledger"
   > & {
     readonly extract: () => Promise<readonly ExtractedMemoryCandidate[]>;
     readonly readSourceText: (sourceRef: string) => Promise<string>;
@@ -538,6 +539,7 @@ export function createProductionAutomaticMemory(
     approvals: options.approvals,
     candidates: protectedMemoryCandidates(options),
     audit: { record: async (record) => options.onAudit(record) },
+    ...(options.ledger ? { ledger: options.ledger } : {}),
     readSourceText: options.readSourceText,
     now: () => options.clock.now(),
     memoryIdFor: (generation, ordinal) => createMemoryId(`memory:${generation}:${ordinal}`),
@@ -596,6 +598,7 @@ export interface ProductionMemoryCaptureOptions {
     prompt: string,
     onAdmitted: () => void,
   ) => Promise<string>;
+  readonly ledger?: DecisionLedgerPort;
   readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   readonly onFailure: (error: unknown) => void;
 }

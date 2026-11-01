@@ -4,6 +4,7 @@ import {
   scanMachineSecrets,
   type ClockPort,
   type DurableMemoryService,
+  type DecisionLedgerPort,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryConsolidationStorePort,
@@ -102,6 +103,7 @@ export class ProductionMemoryControl {
       "applyProposal" | "correct" | "delete" | "restore" | "confirm" | "trash" | "recover"
     >;
     readonly book: MemoryBookStorePort;
+    readonly ledger?: DecisionLedgerPort;
     readonly profile?: Pick<OwnerProfileService, "outline">;
     readonly consolidation?: {
       readonly store: Pick<MemoryConsolidationStorePort, "listChanges">;
@@ -695,6 +697,7 @@ export class ProductionMemoryControl {
         clock: this.options.clock,
         ...(this.options.reminders ? { reminders: this.options.reminders } : {}),
         book: this.options.book,
+        ...(this.options.ledger ? { ledger: this.options.ledger } : {}),
         extract: async () => [],
         readSourceText: (ref) => this.readText(ref),
         onAudit: this.options.onAudit,

@@ -26,6 +26,8 @@ import {
   parseJobHostRequest,
 } from "./job-host-protocol.ts";
 
+const JOB_HOST_STDERR_TAIL_BYTES = 4096;
+
 export interface SandboxJobHost {
   readonly controlBinding?: JobHostControlBinding;
   readonly ready: Promise<void>;
@@ -235,7 +237,12 @@ export function prepareSandboxJobHost(
     },
     Math.min(JOB_HOST_STARTUP_WINDOW_MS, Math.max(1, deadlineRemainingMs)),
   );
-  child.stderr?.on("data", () => {});
+  let hostStderrTail: Buffer = Buffer.alloc(0);
+  child.stderr?.on("data", (chunk: Buffer | string) => {
+    hostStderrTail = Buffer.concat([hostStderrTail, Buffer.from(chunk)]).subarray(
+      -JOB_HOST_STDERR_TAIL_BYTES,
+    );
+  });
   child.on("message", (value: unknown) => {
     if (!value || typeof value !== "object" || !("type" in value)) {
       cancel("host_failure");
@@ -386,7 +393,16 @@ export function prepareSandboxJobHost(
     rejectReady(new Error("JOB_HOST_START_FAILED"));
     force();
   });
-  child.once("close", () => {
+  child.once("close", (exitCode: number | null, signal: NodeJS.Signals | null) => {
+    if (starting)
+      process.stderr.write(
+        `${JSON.stringify({
+          event: "job_host.start_failed",
+          exitCode: exitCode ?? null,
+          signal: signal ?? null,
+          stderrTail: hostStderrTail.toString("utf8"),
+        })}\n`,
+      );
     ended = true;
     resolveCompleted(null);
     clearInterval(supervisionTimer);

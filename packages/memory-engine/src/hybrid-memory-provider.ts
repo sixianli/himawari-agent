@@ -25,7 +25,10 @@ export interface HybridMemoryProviderOptions {
   readonly now: () => string;
   readonly minimumSimilarity?: number;
   readonly weights?: FusionWeights;
-  readonly onVectorFailure?: (error: unknown) => void;
+  readonly onVectorFailure?: (
+    error: unknown,
+    scope: { readonly ownerId: OwnerId; readonly agentId: AgentId },
+  ) => void;
   readonly queryInstruction?: string;
   readonly timeZone?: string;
 }
@@ -142,7 +145,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
           ),
         };
       } catch (error) {
-        this.#options.onVectorFailure?.(error);
+        this.#options.onVectorFailure?.(error, { ownerId: input.ownerId, agentId: input.agentId });
       }
     }
     const now = this.#options.now();

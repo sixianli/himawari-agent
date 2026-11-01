@@ -1,3 +1,4 @@
+import type { CommandSilenceWatch } from "./command-silence-watch.js";
 import type {
   CapabilityInvocationAuthority,
   CapabilityInvocationReceiptPort,
@@ -152,6 +153,7 @@ export interface ProductionPayloadBrokerHandlerOptions {
   readonly agentServiceBootId: string;
   readonly maximumPayloadBytes: number;
   readonly allowedContentTypes: readonly string[];
+  readonly silenceWatch?: CommandSilenceWatch;
 }
 
 export const RESOLVED_AUTHORITY_REUSE_MS = 60_000;
@@ -402,6 +404,12 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         record.plan.identity.invocationId !== receipt.invocationId
       )
         throw new Error("execution binding mismatch");
+      this.#options.silenceWatch?.observe(
+        `${record.plan.identity.runId}:${record.plan.identity.invocationId}`,
+        record.plan.identity.runId,
+        record.phase === "bound" && record.facts.resource.supervision === "controlled",
+        Date.parse(this.#options.clock.now()),
+      );
       const current = async (live: boolean) => {
         const next = this.authorityFor(request);
         if (!sameAuthority(next, authority)) throw new Error("authority changed");
