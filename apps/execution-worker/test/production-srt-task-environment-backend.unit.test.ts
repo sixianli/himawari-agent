@@ -746,7 +746,9 @@ const turns = async (count = 20) => {
 };
 
 async function sessionsStarted(f: BackendFixture, count: number) {
-  for (let attempt = 0; attempt < 500 && f.sessions.length < count; attempt++) await turns(1);
+  const giveUpAt = Date.now() + 15_000;
+  while (f.sessions.length < count && Date.now() < giveUpAt)
+    await new Promise((resolve) => setTimeout(resolve, 5));
   await turns();
   expect(f.sessions).toHaveLength(count);
 }

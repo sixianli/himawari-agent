@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chown,
   link,
   lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -517,6 +519,16 @@ function backend(
     ...overrides,
   });
 }
+const ORDINARY_OWNER = 1000;
+async function chownTree(target: string, uid: number, gid: number): Promise<void> {
+  await chown(target, uid, gid);
+  const entries = await readdir(target, { withFileTypes: true });
+  for (const entry of entries) {
+    const child = path.join(target, entry.name);
+    if (entry.isDirectory()) await chownTree(child, uid, gid);
+    else await chown(child, uid, gid);
+  }
+}
 async function hostDirectory(name: string, files: Record<string, string> = {}) {
   const root = path.join(hostRoot, name);
   await mkdir(root, { recursive: true });
@@ -524,6 +536,7 @@ async function hostDirectory(name: string, files: Record<string, string> = {}) {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await writeFile(path.join(root, file), content);
   }
+  if (process.getuid?.() === 0) await chownTree(root, ORDINARY_OWNER, ORDINARY_OWNER);
   const info = await lstat(root);
   roots.set(name, { canonicalPath: root, device: String(info.dev), inode: String(info.ino) });
   return root;
