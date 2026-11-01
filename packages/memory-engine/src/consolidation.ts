@@ -6,6 +6,7 @@ import {
   type MemoryCategory,
   type MemoryConsolidationAction,
   type MemoryConsolidationChange,
+  type MemoryConsolidationLedgerMemories,
   type MemoryConsolidationStorePort,
   PORT_ERROR_CODES,
   type ProductMemoryRecord,
@@ -429,22 +430,28 @@ export class MemoryConsolidationService {
       if (error instanceof ApplicationPortError) return undefined;
       throw error;
     }
-    return this.#record({
-      id: "",
-      consolidationId: id,
-      ownerId: memory.ownerId,
-      agentId: memory.agentId,
-      memoryId: memory.id,
-      relatedMemoryId,
-      action,
-      beforeRevision: memory.revision,
-      afterRevision: saved.revision,
-      beforeStatus: memory.status,
-      beforeSupersededBy: memory.attributes?.supersededBy ?? null,
-      beforeValidTo: memory.attributes?.validTo ?? null,
-      createdAt: this.#options.now(),
-      undoneAt: null,
-    });
+    return this.#record(
+      {
+        id: "",
+        consolidationId: id,
+        ownerId: memory.ownerId,
+        agentId: memory.agentId,
+        memoryId: memory.id,
+        relatedMemoryId,
+        action,
+        beforeRevision: memory.revision,
+        afterRevision: saved.revision,
+        beforeStatus: memory.status,
+        beforeSupersededBy: memory.attributes?.supersededBy ?? null,
+        beforeValidTo: memory.attributes?.validTo ?? null,
+        createdAt: this.#options.now(),
+        undoneAt: null,
+      },
+      {
+        memoryIds: relatedMemoryId ? [memory.id, relatedMemoryId] : [memory.id],
+        resultMemoryIds: relatedMemoryId ? [relatedMemoryId] : [],
+      },
+    );
   }
 
   async #reflect(
@@ -500,28 +507,34 @@ export class MemoryConsolidationService {
       },
       generationId,
     );
-    return this.#record({
-      id: "",
-      consolidationId: id,
-      ownerId: first.ownerId,
-      agentId: first.agentId,
-      memoryId: saved.id,
-      relatedMemoryId: first.id,
-      action: "reflect",
-      beforeRevision: null,
-      afterRevision: saved.revision,
-      beforeStatus: null,
-      beforeSupersededBy: null,
-      beforeValidTo: null,
-      createdAt,
-      undoneAt: null,
-    });
+    return this.#record(
+      {
+        id: "",
+        consolidationId: id,
+        ownerId: first.ownerId,
+        agentId: first.agentId,
+        memoryId: saved.id,
+        relatedMemoryId: first.id,
+        action: "reflect",
+        beforeRevision: null,
+        afterRevision: saved.revision,
+        beforeStatus: null,
+        beforeSupersededBy: null,
+        beforeValidTo: null,
+        createdAt,
+        undoneAt: null,
+      },
+      { memoryIds: basis.map(({ id: memoryId }) => memoryId), resultMemoryIds: [saved.id] },
+    );
   }
 
-  async #record(change: MemoryConsolidationChange): Promise<MemoryConsolidationChange> {
+  async #record(
+    change: MemoryConsolidationChange,
+    ledgerMemories: MemoryConsolidationLedgerMemories,
+  ): Promise<MemoryConsolidationChange> {
     this.#sequence += 1;
     const frozen = Object.freeze({ ...change, id: `${change.consolidationId}:c${this.#sequence}` });
-    await this.#options.store.recordChange(frozen);
+    await this.#options.store.recordChange(frozen, ledgerMemories);
     return frozen;
   }
 }
