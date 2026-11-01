@@ -10,7 +10,6 @@ import {
   claimFromRunExecutionLease,
   createApplicationServiceIdentityFactory,
 } from "@himawari-agent/application";
-import { createRunId } from "@himawari-agent/domain";
 import { createBeefRestaurantFixture, createV02Fixture } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
 import { ProductionRunDispatcher } from "../src/production-run-dispatcher.js";
@@ -30,7 +29,7 @@ function candidateFor(name: string, runRevision = 1): RunDispatchCandidate {
   return Object.freeze({
     ownerId: FIXTURE.owner.id,
     agentId: FIXTURE.agent.id,
-    runId: createRunId(`run:${name}`),
+    runId: `run:${name}` as RunDispatchCandidate["runId"],
     sessionId: FIXTURE.session.id,
     triggerId: FIXTURE.runs.recommendation.triggerId,
     threadId: FIXTURE.thread.id,
