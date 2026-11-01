@@ -54,9 +54,25 @@ export class SqliteModelUsageOperations {
     switch (operation) {
       case "modelUsage.record":
         return this.record(payload as RecordInput);
+      case "modelUsage.isFollowUpTurn":
+        return this.isFollowUpTurn(payload as { ownerId: string; agentId: string; runId: string });
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown model usage operation ${operation}`);
     }
+  }
+
+  private isFollowUpTurn(input: { ownerId: string; agentId: string; runId: string }): boolean {
+    return (
+      this.database
+        .prepare(
+          `SELECT 1 FROM runs r JOIN runs earlier
+             ON earlier.owner_id = r.owner_id AND earlier.agent_id = r.agent_id
+            AND earlier.thread_id = r.thread_id AND earlier.id <> r.id
+            AND earlier.created_at < r.created_at
+           WHERE r.owner_id = ? AND r.agent_id = ? AND r.id = ? LIMIT 1`,
+        )
+        .get(input.ownerId, input.agentId, input.runId) !== undefined
+    );
   }
 
   private record(input: RecordInput): void {

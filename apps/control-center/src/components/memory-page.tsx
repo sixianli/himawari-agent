@@ -57,7 +57,8 @@ const MAXIMUM_IMPORT_ITEMS = 500;
 const GRAPH = { x: 190, y: 150, r: 112 };
 
 const reveal = (element: HTMLElement | null) => element?.scrollIntoView?.({ block: "nearest" });
-const live = (item: MemoryItem) => !item.supersededBy && !item.tentative;
+const live = (item: MemoryItem) =>
+  !item.supersededBy && (!item.tentative || item.status !== "active");
 const PINNABLE: ReadonlySet<string> = new Set([
   "identity",
   "preference",
@@ -1488,7 +1489,7 @@ function TimelineTab({
   type Event = {
     key: string;
     at: string;
-    type: "new" | "tidy" | "correct" | "import";
+    type: "new" | "tidy" | "correct" | "import" | "drop";
     kind: string;
     text: string;
     note?: string;
@@ -1518,6 +1519,18 @@ function TimelineTab({
               ],
       ),
     ),
+    ...memoryHeads(overview.memories)
+      .filter((head) => head.status === "trashed")
+      .map(
+        (head): Event => ({
+          key: `${head.memoryId}:dropped`,
+          at: head.updatedAt,
+          type: "drop",
+          kind: head.tentative ? "dropped" : "deleted",
+          text: head.text,
+          undo: () => void memory.recover(head),
+        }),
+      ),
     ...overview.tidyUps.map(
       (item): Event => ({
         key: item.changeId,
@@ -1557,7 +1570,7 @@ function TimelineTab({
   return (
     <>
       <Chips
-        items={(["all", "new", "tidy", "correct", "import"] as const).map((key) => ({
+        items={(["all", "new", "drop", "tidy", "correct", "import"] as const).map((key) => ({
           key,
           label: message("memory.page.filter", { f: key }),
           count:
