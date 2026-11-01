@@ -7,4 +7,5 @@ export const pdfDocumentFontOptions = {
   cMapUrl: `/${directory}/cmaps/`,
   cMapPacked: true,
   standardFontDataUrl: `/${directory}/standard_fonts/`,
+  wasmUrl: `/${directory}/wasm/`,
 } as const;

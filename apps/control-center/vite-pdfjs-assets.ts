@@ -3,9 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { Plugin } from "vite";
 
-const require = createRequire(
-  path.resolve(import.meta.dirname, "../apps/control-center/package.json"),
-);
+const require = createRequire(import.meta.url);
 const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
 const { version } = JSON.parse(readFileSync(path.join(pdfjsRoot, "package.json"), "utf8")) as {
   readonly version: string;
@@ -17,8 +15,12 @@ export function pdfjsAssets(): Plugin {
   return {
     name: "himawari-pdfjs-assets",
     generateBundle() {
-      for (const folder of ["cmaps", "standard_fonts"]) {
-        for (const name of readdirSync(path.join(pdfjsRoot, folder))) {
+      for (const folder of ["cmaps", "standard_fonts", "wasm"]) {
+        for (const entry of readdirSync(path.join(pdfjsRoot, folder), { withFileTypes: true }).sort(
+          (left, right) => left.name.localeCompare(right.name),
+        )) {
+          if (!entry.isFile()) continue;
+          const name = entry.name;
           this.emitFile({
             type: "asset",
             fileName: `${PDFJS_ASSET_DIRECTORY}/${folder}/${name}`,
