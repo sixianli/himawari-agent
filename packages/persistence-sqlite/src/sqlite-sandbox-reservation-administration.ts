@@ -18,11 +18,12 @@ import {
   sandboxExecutionPlanV2Schema,
 } from "@himawari-agent/execution-contracts";
 import BetterSqlite3 from "better-sqlite3";
-import { readMigrationLedger } from "./migration-engine.ts";
+import { LATEST_MIGRATION_SEQUENCE, readMigrationLedger } from "./migration-engine.ts";
 import { RUN_RESOURCES_RELEASED_SQL } from "./sqlite-run-resource-guard.ts";
 import { appendThreadGatewayEventInTransaction } from "./sqlite-thread-operations.ts";
 import { acquireStateRootLock } from "./state-root-lock.ts";
 
+const SANDBOX_RESERVATION_ADMIN_FIRST_SCHEMA = 49;
 export const SANDBOX_RESERVATION_ADMIN_CONFIRMATION =
   "HOST_GROUP_ABSENT_FINAL_ABSENT_RELATED_PROCESSES_ABSENT" as const;
 export const SANDBOX_RESERVATION_ADMIN_ERROR_CODES = Object.freeze({
@@ -300,14 +301,13 @@ export class SqliteSandboxReservationAdministration {
     const declared = Number(metadata.find((row) => row.key === "current_sequence")?.value);
     const minimum = Number(metadata.find((row) => row.key === "minimum_writer_sequence")?.value);
     if (
-      ![49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67].includes(
-        current,
-      ) ||
+      current < SANDBOX_RESERVATION_ADMIN_FIRST_SCHEMA ||
+      current > LATEST_MIGRATION_SEQUENCE ||
       ledger.length !== current ||
       ledger.some((row, index) => row.sequence !== index + 1) ||
       declared !== current ||
       minimum !== current ||
-      (writing && current !== 67)
+      (writing && current !== LATEST_MIGRATION_SEQUENCE)
     )
       fail(SANDBOX_RESERVATION_ADMIN_ERROR_CODES.SCHEMA_UNSUPPORTED);
     return current;

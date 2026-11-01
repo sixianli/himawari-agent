@@ -562,6 +562,9 @@ const bundledMigrationFiles = [
   },
 ] as const;
 
+export const LATEST_MIGRATION_SEQUENCE: number =
+  bundledMigrationFiles[bundledMigrationFiles.length - 1]?.sequence ?? 0;
+
 function sha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
