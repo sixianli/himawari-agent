@@ -59,6 +59,7 @@ const usage: Record<string, Usage> = {};
 let prices = { input: 0, output: 0, cacheRead: 0 };
 let spentUsd = 0;
 
+// biome-ignore lint/suspicious/noExplicitAny: the model gateway response is parsed JSON of unchecked shape
 function addUsage(arm: string, body: any): void {
   const entry = usage[arm] ?? { truncated: 0, prompt: 0, cached: 0, completion: 0, calls: 0 };
   usage[arm] = entry;
@@ -74,6 +75,7 @@ function addUsage(arm: string, body: any): void {
     (prompt - cached) * prices.input + cached * prices.cacheRead + completion * prices.output;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: the model gateway response is parsed JSON of unchecked shape
 async function chat(arm: string, payload: Record<string, unknown>): Promise<any> {
   if (spentUsd >= CAP_USD)
     throw new Error(`EVAL_BUDGET_REACHED：已花 ${spentUsd.toFixed(4)} 美元，上限 ${CAP_USD}`);
@@ -260,13 +262,16 @@ describe.skipIf(!(CAP_USD > 0))("记忆抽取评测（真实模型，会花钱�
     };
     const raw: Record<string, { id: string; candidates: Candidate[] }[][]> = {};
     for (const arm of ARMS) {
-      raw[arm] = [];
+      const armRuns: { id: string; candidates: Candidate[] }[][] = [];
+      raw[arm] = armRuns;
+      const runner = runners[arm];
+      if (!runner) throw new Error(`EVAL_ARM_UNKNOWN：${arm}`);
       for (let run = 0; run < RUNS; run += 1) {
         const results = await mapLimit(items, 6, async (item) => ({
           id: item.id,
-          candidates: await runners[arm]!(item),
+          candidates: await runner(item),
         }));
-        raw[arm]!.push(results);
+        armRuns.push(results);
         mkdirSync(OUTPUT_DIRECTORY, { recursive: true });
         writeFileSync(
           path.join(OUTPUT_DIRECTORY, `partial-${arm}-${run}.json`),
@@ -277,7 +282,8 @@ describe.skipIf(!(CAP_USD > 0))("记忆抽取评测（真实模型，会花钱�
     if (raw["A"]) {
       raw["C"] = raw["A"].map((results) =>
         results.map((result) => {
-          const item = items.find(({ id }) => id === result.id)!;
+          const item = items.find(({ id }) => id === result.id);
+          if (!item) throw new Error(`EVAL_ITEM_MISSING：${result.id}`);
           return rulePrefilterPasses(item.message) ? result : { id: result.id, candidates: [] };
         }),
       );

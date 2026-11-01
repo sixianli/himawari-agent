@@ -543,10 +543,10 @@ export const messages = {
   "threads.unpin": "Unpin",
   "threads.archive": "Archive",
   "threads.restore": "Restore",
-  "threads.conflictTitle": "Another client updated this thread",
+  "threads.conflictTitle": "This thread was just changed elsewhere",
   "threads.conflictDescription":
-    "The latest revision is loaded. Review it before explicitly reapplying the operation.",
-  "threads.reapply": "Reapply to latest revision",
+    "Refreshed to the latest content. Your last action has not taken effect.",
+  "threads.reapply": "Do it again on the latest content",
   "threads.status.archived": "Archived",
   "runs.status.accepted": "Accepted",
   "runs.status.buildingContext": "Building context",

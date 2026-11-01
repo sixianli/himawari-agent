@@ -62,6 +62,13 @@ describe("memory evidence from the Owner's own words", () => {
     });
     expect(parsed.unverifiedEvidence).toBe(1);
     expect(
+      parsed.rejectedCandidates.map(({ text, confidencePermille, inference }) => [
+        text,
+        confidencePermille,
+        inference,
+      ]),
+    ).toEqual([["主人住在杭州", 950, false]]);
+    expect(
       parsed.candidates.map(({ text, dataClassification }) => [text, dataClassification]),
     ).toEqual([
       ["主人的女儿叫小葵", "private"],
