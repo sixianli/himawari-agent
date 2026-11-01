@@ -105,6 +105,47 @@ describe("[WP-2] web push storage", () => {
     }
   });
 
+  it("[WP-2] one notification switch covers every device: saving kinds applies to all, and a device left off by older data keeps the kind off", async () => {
+    const { stateRoot, repository, store } = await open();
+    await store.saveSubscription(subscription("s1", "https://push.example/a"));
+    await store.saveSubscription(subscription("s2", "https://push.example/b"));
+    const noRun = ["reminder", "approval"] as const;
+    await store.saveSubscription({ ...subscription("s1", "https://push.example/a"), kinds: noRun });
+    expect((await store.listSubscriptions(scope)).map((entry) => entry.kinds)).toEqual([
+      noRun,
+      noRun,
+    ]);
+    await repository.close();
+    const raw = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    raw.prepare("UPDATE web_push_subscriptions SET notify_run = 1 WHERE id = 's2'").run();
+    raw.close();
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T0,
+    });
+    try {
+      const reopenedStore = reopened.webPush();
+      await reopenedStore.enqueue({
+        ...scope,
+        items: [{ ...item("run:r1:completed"), kind: "run" }],
+        cursor: null,
+        now: T0,
+      });
+      const due = await reopenedStore.listDue({ ...scope, now: T1, limit: 50 });
+      expect(due.map((entry) => entry.subscription.kinds)).toEqual([noRun, noRun]);
+      await reopenedStore.saveSubscription({
+        ...subscription("s2", "https://push.example/b"),
+        kinds: ["reminder", "approval", "run"],
+      });
+      expect(
+        (await reopenedStore.listSubscriptions(scope)).map((entry) => entry.kinds.includes("run")),
+      ).toEqual([true, true]);
+    } finally {
+      await reopened.close();
+    }
+  });
+
   it("[WP-2] enqueues each source once, advances the cursor with it and lists due pairs per device", async () => {
     const { repository, store } = await open();
     try {

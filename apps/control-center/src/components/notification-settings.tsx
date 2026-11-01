@@ -56,7 +56,8 @@ export function NotificationSettings({
         setStatus(next);
         const mine = next.subscriptions.find((item) => item.subscriptionId === id);
         setCurrentId(mine ? mine.subscriptionId : null);
-        if (mine) setKinds(mine.kinds);
+        const shared = mine ?? next.subscriptions[0];
+        if (shared) setKinds(shared.kinds);
       })
       .catch(() => {
         if (!disposed) setError(true);

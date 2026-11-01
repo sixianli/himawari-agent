@@ -253,6 +253,18 @@ describe("[WP-8] notification settings", () => {
     expect(container.textContent).toContain("已发出，几秒内会弹出。");
   });
 
+  it("[WP-8] shows the switches the account already has when this device is not subscribed yet", async () => {
+    const fake = fakeBrowser({ userAgent: MAC, standalone: false, permission: "default" });
+    snapshot = status([
+      device("web-push-phone", "iPhone 主屏应用", { kinds: ["reminder", "approval"] }),
+    ]);
+    await render(fake.browser);
+    const switchFor = (label: string) =>
+      container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+    expect(switchFor("任务结束")?.checked).toBe(false);
+    expect(switchFor("等你审批")?.checked).toBe(true);
+  });
+
   it("[WP-8] explains how to unblock when notifications were refused", async () => {
     const fake = fakeBrowser({
       userAgent: IPHONE,

@@ -37,6 +37,8 @@ function subscriptionFromRow(row: SubscriptionRow): WebPushSubscription {
   return { ...rest, kinds: WEB_PUSH_KINDS.filter((_, index) => enabled[index] === 1) };
 }
 
+type OwnerKindRow = { reminder: number | null; approval: number | null; run: number | null };
+
 const ATTEMPT_STATUSES: readonly WebPushAttemptStatus[] = [
   "pending",
   "sent",
@@ -106,6 +108,27 @@ export class SqliteWebPushOperations {
       this.fail("PORT_INVALID_OPERATION", "Web push limit is invalid");
   }
 
+  private ownerKinds(scope: WebPushScope): readonly WebPushKind[] | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT min(notify_reminder) AS reminder, min(notify_approval) AS approval,
+           min(notify_run) AS run
+         FROM web_push_subscriptions WHERE owner_id = ? AND agent_id = ?`,
+      )
+      .get(scope.ownerId, scope.agentId) as OwnerKindRow;
+    if (row.reminder === null || row.approval === null || row.run === null) return undefined;
+    const enabled = [row.reminder, row.approval, row.run];
+    return WEB_PUSH_KINDS.filter((_, index) => enabled[index] === 1);
+  }
+
+  private withOwnerKinds(
+    scope: WebPushScope,
+    subscription: WebPushSubscription,
+  ): WebPushSubscription {
+    const kinds = this.ownerKinds(scope);
+    return kinds ? { ...subscription, kinds } : subscription;
+  }
+
   private readSubscription(scope: WebPushScope, id: string): WebPushSubscription | undefined {
     const row = this.database
       .prepare(
@@ -128,39 +151,49 @@ export class SqliteWebPushOperations {
       input.kinds.some((kind) => !WEB_PUSH_KINDS.includes(kind))
     )
       this.fail("PORT_INVALID_OPERATION", "Web push subscription is invalid");
-    this.database
-      .prepare(
-        `INSERT INTO web_push_subscriptions (
-          id, owner_id, agent_id, endpoint, p256dh, auth, locale, device_label,
-          notify_reminder, notify_approval, notify_run, state, failure_code, created_at,
-          updated_at, last_delivered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, NULL)
-        ON CONFLICT (owner_id, agent_id, endpoint) DO UPDATE SET p256dh = excluded.p256dh,
-          auth = excluded.auth, locale = excluded.locale, device_label = excluded.device_label,
-          notify_reminder = excluded.notify_reminder, notify_approval = excluded.notify_approval,
-          notify_run = excluded.notify_run, state = 'active', failure_code = NULL,
-          updated_at = excluded.updated_at`,
-      )
-      .run(
-        input.id,
-        input.ownerId,
-        input.agentId,
-        input.endpoint,
-        input.p256dh,
-        input.auth,
-        input.locale,
-        input.deviceLabel,
-        ...WEB_PUSH_KINDS.map((kind) => (input.kinds.includes(kind) ? 1 : 0)),
-        input.now,
-        input.now,
-      );
-    return subscriptionFromRow(
+    const kindFlags = WEB_PUSH_KINDS.map((kind) => (input.kinds.includes(kind) ? 1 : 0));
+    this.database.transaction(() => {
       this.database
         .prepare(
-          `SELECT ${subscriptionColumns} FROM web_push_subscriptions s
-           WHERE s.owner_id = ? AND s.agent_id = ? AND s.endpoint = ?`,
+          `INSERT INTO web_push_subscriptions (
+            id, owner_id, agent_id, endpoint, p256dh, auth, locale, device_label,
+            notify_reminder, notify_approval, notify_run, state, failure_code, created_at,
+            updated_at, last_delivered_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, NULL)
+          ON CONFLICT (owner_id, agent_id, endpoint) DO UPDATE SET p256dh = excluded.p256dh,
+            auth = excluded.auth, locale = excluded.locale, device_label = excluded.device_label,
+            state = 'active', failure_code = NULL, updated_at = excluded.updated_at`,
         )
-        .get(input.ownerId, input.agentId, input.endpoint) as SubscriptionRow,
+        .run(
+          input.id,
+          input.ownerId,
+          input.agentId,
+          input.endpoint,
+          input.p256dh,
+          input.auth,
+          input.locale,
+          input.deviceLabel,
+          ...kindFlags,
+          input.now,
+          input.now,
+        );
+      this.database
+        .prepare(
+          `UPDATE web_push_subscriptions SET notify_reminder = ?, notify_approval = ?,
+             notify_run = ? WHERE owner_id = ? AND agent_id = ?`,
+        )
+        .run(...kindFlags, input.ownerId, input.agentId);
+    })();
+    return this.withOwnerKinds(
+      input,
+      subscriptionFromRow(
+        this.database
+          .prepare(
+            `SELECT ${subscriptionColumns} FROM web_push_subscriptions s
+             WHERE s.owner_id = ? AND s.agent_id = ? AND s.endpoint = ?`,
+          )
+          .get(input.ownerId, input.agentId, input.endpoint) as SubscriptionRow,
+      ),
     );
   }
 
@@ -175,13 +208,17 @@ export class SqliteWebPushOperations {
   }
 
   private listSubscriptions(scope: WebPushScope): readonly WebPushSubscription[] {
+    const kinds = this.ownerKinds(scope);
     return this.database
       .prepare(
         `SELECT ${subscriptionColumns} FROM web_push_subscriptions s
          WHERE s.owner_id = ? AND s.agent_id = ? ORDER BY s.created_at, s.id`,
       )
       .all(scope.ownerId, scope.agentId)
-      .map((row) => subscriptionFromRow(row as SubscriptionRow));
+      .map((row) => {
+        const subscription = subscriptionFromRow(row as SubscriptionRow);
+        return kinds ? { ...subscription, kinds } : subscription;
+      });
   }
 
   private markSubscription(input: Input<"markSubscription">): void {
@@ -304,6 +341,7 @@ export class SqliteWebPushOperations {
         attemptUpdatedAt: string | null;
       }
     >;
+    const kinds = this.ownerKinds(input);
     return rows.map((row) => ({
       item: {
         ownerId: row.ownerId,
@@ -315,24 +353,27 @@ export class SqliteWebPushOperations {
         createdAt: row.itemCreatedAt,
         expiresAt: row.expiresAt,
       },
-      subscription: subscriptionFromRow({
-        id: row.id,
-        ownerId: row.ownerId,
-        agentId: row.agentId,
-        endpoint: row.endpoint,
-        p256dh: row.p256dh,
-        auth: row.auth,
-        locale: row.locale,
-        deviceLabel: row.deviceLabel,
-        notifyReminder: row.notifyReminder,
-        notifyApproval: row.notifyApproval,
-        notifyRun: row.notifyRun,
-        state: row.state,
-        failureCode: row.failureCode,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        lastDeliveredAt: row.lastDeliveredAt,
-      }),
+      subscription: {
+        ...subscriptionFromRow({
+          id: row.id,
+          ownerId: row.ownerId,
+          agentId: row.agentId,
+          endpoint: row.endpoint,
+          p256dh: row.p256dh,
+          auth: row.auth,
+          locale: row.locale,
+          deviceLabel: row.deviceLabel,
+          notifyReminder: row.notifyReminder,
+          notifyApproval: row.notifyApproval,
+          notifyRun: row.notifyRun,
+          state: row.state,
+          failureCode: row.failureCode,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          lastDeliveredAt: row.lastDeliveredAt,
+        }),
+        ...(kinds ? { kinds } : {}),
+      },
       attempt:
         row.attemptStatus === null
           ? null
