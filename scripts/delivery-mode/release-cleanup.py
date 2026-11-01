@@ -39,6 +39,7 @@ def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
         'lockPath': LOCK_PATH,
         'scratchRoot': SCRATCH_ROOT,
         'keepFailureScenes': keep_failure_scenes,
+        'qualificationTarget': binding['service']['newQualificationEvidenceRoot'],
     }
 
 

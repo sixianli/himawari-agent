@@ -55,7 +55,7 @@ class ProductionTree:
         evidence = self.lib / (label + '-' + compact + '-evidence')
         upload = self.tmp / (label + '-packet-upload')
         self.file(prefix / 'lib/himawari-agent/node_modules/a/index.js', MEBIBYTE)
-        binding = {'paths': {'newPrefix': str(prefix), 'oldPrefix': str(old_prefix), 'newOperations': str(operations), 'evidenceRoot': str(evidence), 'transportRoot': str(stage / 'input'), 'config': str(self.etc / 'config.json'), 'database': str(self.lib / 'state/data/product.sqlite')}, 'host': {'hostname': 'prod-host', 'address': '192.0.2.10'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': str(self.unit)}}
+        binding = {'paths': {'newPrefix': str(prefix), 'oldPrefix': str(old_prefix), 'newOperations': str(operations), 'evidenceRoot': str(evidence), 'transportRoot': str(stage / 'input'), 'config': str(self.etc / 'config.json'), 'database': str(self.lib / 'state/data/product.sqlite')}, 'host': {'hostname': 'prod-host', 'address': '192.0.2.10'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': str(self.unit), 'newQualificationEvidenceRoot': str(self.lib / 'qualification' / (label + '-' + compact))}}
         self.file(operations / 'inputs/bindings.json', data=json.dumps(binding).encode())
         self.file(operations / 'pair-supervisor.mjs')
         self.file(stage / 'packet/freeze-manifest.json')
@@ -309,6 +309,68 @@ class FailureSceneCleanupTest(CleanupCase):
         self.assertEqual(self.deleted_scenes(self.run_cleanup()), [])
 
 
+class QualificationLeftoverCleanupTest(CleanupCase):
+    def target(self):
+        return Path(self.tree.plan(self.failed)['qualificationTarget'])
+
+    def deleted(self, result):
+        return [item['path'] for item in result['deleted'] if item['reason'] == 'empty-qualification-leftover']
+
+    def test_plan_names_the_qualification_directory_of_this_release(self):
+        self.assertEqual(self.target(), self.tree.lib / 'qualification' / 'twentieth-20261030')
+
+    def test_empty_directory_left_by_a_failed_acceptance_is_removed(self):
+        self.target().mkdir()
+        result = self.run_cleanup()
+        self.assertEqual(self.deleted(result), [str(self.target())])
+        self.assertFalse(self.target().exists())
+
+    def test_plan_mode_reports_but_keeps_it(self):
+        self.target().mkdir()
+        result = self.run_cleanup(apply=False)
+        self.assertEqual(self.deleted(result), [str(self.target())])
+        self.assertTrue(self.target().exists())
+
+    def test_directory_with_content_stays_for_the_preflight_to_report(self):
+        self.target().mkdir()
+        evidence = self.tree.file(self.target() / 'host-qualification-public-key.pem')
+        result = self.run_cleanup()
+        self.assertEqual(self.deleted(result), [])
+        self.assertTrue(evidence.exists())
+        self.assertIn({'path': str(self.target()), 'reason': 'qualification-not-empty'}, result['kept'])
+
+    def test_a_process_using_it_keeps_it(self):
+        self.target().mkdir()
+        self.run_cleanup(references=[str(self.target())])
+        self.assertTrue(self.target().exists())
+
+    def test_other_releases_and_files_under_the_qualification_root_are_untouched(self):
+        (self.tree.lib / 'qualification' / 'nineteenth-20261029').mkdir()
+        self.target().mkdir()
+        self.run_cleanup()
+        self.assertTrue((self.tree.lib / 'qualification' / 'nineteenth-20261029').exists())
+        self.assertTrue(self.unrelated_lib.exists())
+
+    def test_a_symbolic_link_is_not_followed_or_removed(self):
+        elsewhere = self.tree.root / 'elsewhere'
+        elsewhere.mkdir()
+        self.target().symlink_to(elsewhere)
+        self.run_cleanup()
+        self.assertTrue(self.target().is_symlink())
+        self.assertTrue(elsewhere.exists())
+
+    def test_a_target_outside_the_qualification_root_is_refused(self):
+        outside = self.tree.root / 'var/lib/himawari/state'
+        with self.assertRaisesRegex(RuntimeError, 'CLEANUP_QUALIFICATION_PATH_INVALID'):
+            self.run_cleanup(qualificationTarget=str(outside))
+        self.assertTrue(outside.exists())
+
+    def test_a_second_run_finds_nothing(self):
+        self.target().mkdir()
+        self.run_cleanup()
+        self.assertEqual(self.deleted(self.run_cleanup()), [])
+
+
 class CleanupPlanTest(unittest.TestCase):
     def test_plan_keeps_one_failure_scene_in_tmp_unless_told_otherwise(self):
         plan = local.cleanup_plan(self.binding())
@@ -325,10 +387,10 @@ class CleanupPlanTest(unittest.TestCase):
         self.assertTrue(remote.SCRATCH_NAME.fullmatch('h' + alphabet.group(1)[:2] + alphabet.group(1)[-2:]))
 
     def binding(self):
-        return {'host': {'hostname': 'vmi1'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service'}, 'paths': {'newPrefix': '/opt/himawari/releases/2026-10-30-twentieth', 'oldPrefix': '/opt/himawari/releases/2026-10-29-nineteenth', 'newOperations': '/opt/himawari/operations/twentieth-20261030', 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence', 'transportRoot': '/var/tmp/himawari-twentieth-20261030/input', 'config': '/etc/himawari/config.json', 'database': '/var/lib/himawari/state/data/product.sqlite'}}
+        return {'host': {'hostname': 'vmi1'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'newQualificationEvidenceRoot': '/var/lib/himawari/qualification/twentieth-20261030'}, 'paths': {'newPrefix': '/opt/himawari/releases/2026-10-30-twentieth', 'oldPrefix': '/opt/himawari/releases/2026-10-29-nineteenth', 'newOperations': '/opt/himawari/operations/twentieth-20261030', 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence', 'transportRoot': '/var/tmp/himawari-twentieth-20261030/input', 'config': '/etc/himawari/config.json', 'database': '/var/lib/himawari/state/data/product.sqlite'}}
 
     def test_plan_comes_from_the_packet_bindings(self):
-        binding = {'host': {'hostname': 'vmi1'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service'}, 'paths': {'newPrefix': '/opt/himawari/releases/2026-10-30-twentieth', 'newOperations': '/opt/himawari/operations/twentieth-20261030', 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence', 'transportRoot': '/var/tmp/himawari-twentieth-20261030/input', 'config': '/etc/himawari/config.json', 'database': '/var/lib/himawari/state/data/product.sqlite'}}
+        binding = {'host': {'hostname': 'vmi1'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'newQualificationEvidenceRoot': '/var/lib/himawari/qualification/twentieth-20261030'}, 'paths': {'newPrefix': '/opt/himawari/releases/2026-10-30-twentieth', 'newOperations': '/opt/himawari/operations/twentieth-20261030', 'evidenceRoot': '/var/lib/himawari/twentieth-20261030-evidence', 'transportRoot': '/var/tmp/himawari-twentieth-20261030/input', 'config': '/etc/himawari/config.json', 'database': '/var/lib/himawari/state/data/product.sqlite'}}
         plan = local.cleanup_plan(binding)
         self.assertEqual((plan['releasesRoot'], plan['operationsRoot'], plan['tmpRoot'], plan['evidenceParent'], plan['config']), ('/opt/himawari/releases', '/opt/himawari/operations', '/var/tmp', '/var/lib/himawari', '/etc/himawari/config.json'))
 
