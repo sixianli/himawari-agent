@@ -3,6 +3,7 @@ from collections import Counter
 import concurrent.futures
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -48,6 +49,16 @@ MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.
 EXECUTION_NOTE = 'G180'
 DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES')
 FAST_MODE_NOTE = 'skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180)'
+
+
+def load_untested_claims():
+    spec = importlib.util.spec_from_file_location('untested_claims', HERE / 'untested-claims.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+UNTESTED_CLAIMS = load_untested_claims()
 
 
 class PacketError(Exception):
@@ -746,11 +757,33 @@ def run_id(parameters):
     return parameters['LABEL'] + '-' + parameters['COMMIT8'] + '-' + datetime.now(timezone.utc).strftime('%Y%m%dt%H%M%S')
 
 
+def previous_release_commit(root):
+    found = []
+    for path in sorted(root.glob('*-change-packet-*/' + PARAMETERS)) if root.is_dir() else []:
+        try:
+            found.append(json.loads(path.read_text())['COMMIT'])
+        except (OSError, ValueError, KeyError):
+            continue
+    return found[-1] if found else None
+
+
+def require_claims_proven(commit, since, root):
+    since = resolve_commit(since) if since else previous_release_commit(root)
+    if since is None:
+        refuse('PACKET_SINCE_UNKNOWN', 'no earlier packet under ' + str(root) + '; pass --since <commit of the release now in production>')
+    if subprocess.run(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', since, commit], capture_output=True, check=False).returncode != 0:
+        refuse('PACKET_SINCE_NOT_ANCESTOR', since + ' is not an ancestor of ' + commit)
+    problem = UNTESTED_CLAIMS.check_range(since, commit, repo=str(REPO))
+    if problem:
+        refuse('PACKET_UNTESTED_CLAIM_WITHOUT_PROOF', problem)
+
+
 def prepare(arguments):
     started = time.monotonic()
     instance = load_instance(arguments.instance)
     commit = resolve_commit(arguments.commit)
     require_current_scripts(commit)
+    require_claims_proven(commit, arguments.since, Path(arguments.output_root).resolve())
     date = arguments.date or datetime.now(timezone.utc).strftime('%Y-%m-%d')
     discovered = interpret_discovery(discover(instance, arguments.label, date), instance, arguments.label)
     if arguments.label is None:
@@ -827,6 +860,7 @@ def main(argv=None):
     prepare_parser.add_argument('--date')
     prepare_parser.add_argument('--output-root', default=str(REPO / '.ci-output' / 'production'))
     prepare_parser.add_argument('--reuse-materials')
+    prepare_parser.add_argument('--since')
     freeze_parser = commands.add_parser('freeze')
     freeze_parser.add_argument('packet')
     freeze_parser.add_argument('--instance', default='andy-production')
