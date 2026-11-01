@@ -1,4 +1,5 @@
 import {
+  DECISION_CATEGORIES,
   DECISION_KINDS,
   DECISION_OUTCOMES,
   DECISION_RATINGS,
@@ -56,6 +57,23 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
     write.durationMs > 86_400_000
   )
     return "Decision ledger cost is invalid";
+  const category = write.category ?? null;
+  const confidence = write.confidencePermille ?? null;
+  const inferred = write.inferred ?? null;
+  if (write.kind !== "memory_candidate") {
+    if (category !== null || confidence !== null || inferred !== null)
+      return "Decision ledger candidate fields belong to memory candidates only";
+  } else {
+    if (category !== null && !(DECISION_CATEGORIES as readonly string[]).includes(category))
+      return "Decision ledger category is invalid";
+    if (
+      confidence !== null &&
+      (!Number.isSafeInteger(confidence) || confidence < 0 || confidence > 1000)
+    )
+      return "Decision ledger confidence is invalid";
+    if (inferred !== null && typeof inferred !== "boolean")
+      return "Decision ledger inferred flag is invalid";
+  }
   return null;
 }
 
@@ -65,8 +83,8 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
       `INSERT INTO decision_ledger (
         id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code,
         subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros, duration_ms,
-        owner_rating, rated_at
-      ) VALUES (?, ?, ?, ?, NULL, ?, '{}', NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL)
+        owner_rating, rated_at, category, confidence_permille, inferred
+      ) VALUES (?, ?, ?, ?, NULL, ?, '{}', NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL, ?, ?, ?)
       ON CONFLICT (id) DO NOTHING`,
     )
     .run(
@@ -83,13 +101,17 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
       write.contentRef,
       write.costMicros,
       write.durationMs,
+      write.category ?? null,
+      write.confidencePermille ?? null,
+      write.inferred === undefined || write.inferred === null ? null : write.inferred ? 1 : 0,
     );
 }
 
 const entryColumns = `id, kind, checked_at AS decidedAt, COALESCE(outcome, verdict) AS outcome,
   reason_code AS reasonCode, subject_ref AS subjectRef, inputs, reason_ref AS reasonRef,
   content_ref AS contentRef, cost_micros AS costMicros, duration_ms AS durationMs,
-  owner_rating AS ownerRating, rated_at AS ratedAt`;
+  owner_rating AS ownerRating, rated_at AS ratedAt, category,
+  confidence_permille AS confidencePermille, inferred`;
 
 function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
   const inputs = JSON.parse(row["inputs"] as string) as {
@@ -98,6 +120,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
+    inferred: row["inferred"] === null ? null : row["inferred"] === 1,
     inputs: Object.freeze({
       memoryIds: Object.freeze([...(inputs.memoryIds ?? [])]),
       ruleIds: Object.freeze([...(inputs.ruleIds ?? [])]),
@@ -192,32 +215,46 @@ export class SqliteDecisionLedgerOperations {
 
   private recordMuse(write: MuseReferenceWrite): void {
     this.assertDiskHeadroom();
-    if (
-      !text(write.id, 1, 128) ||
-      !validTime(write.museAt) ||
-      !validTime(write.recordedAt) ||
-      typeof write.timingOk !== "boolean" ||
-      typeof write.contentOk !== "boolean" ||
-      !text(write.contentRef, 1, 256)
-    )
-      this.fail("PORT_INVALID_OPERATION", "Muse reference entry is invalid");
+    const intakeItemKey = write.intakeItemKey ?? null;
+    const common =
+      text(write.id, 1, 128) &&
+      validTime(write.museAt) &&
+      validTime(write.recordedAt) &&
+      (write.noteRef === null || text(write.noteRef, 1, 256)) &&
+      (intakeItemKey === null || text(intakeItemKey, 3, 200));
+    const shape =
+      write.museReminded === true
+        ? typeof write.timingOk === "boolean" &&
+          typeof write.contentOk === "boolean" &&
+          (write.contentRef === null || text(write.contentRef, 1, 256)) &&
+          (write.contentRef !== null || intakeItemKey !== null) &&
+          (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128))
+        : write.museReminded === false &&
+          text(write.pairedDecisionId, 1, 128) &&
+          !("timingOk" in write) &&
+          !("contentOk" in write) &&
+          !("contentRef" in write);
+    if (!common || !shape) this.fail("PORT_INVALID_OPERATION", "Muse reference entry is invalid");
+    const reminded = write.museReminded === true;
     this.database
       .prepare(
         `INSERT INTO muse_reference_entries (
-          id, owner_id, agent_id, muse_at, timing_ok, content_ok, content_ref, note_ref,
-          paired_decision_id, recorded_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
+          note_ref, paired_decision_id, intake_item_key, recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         write.id,
         write.ownerId,
         write.agentId,
         write.museAt,
-        write.timingOk ? 1 : 0,
-        write.contentOk ? 1 : 0,
-        write.contentRef,
+        reminded ? 1 : 0,
+        reminded ? (write.timingOk ? 1 : 0) : null,
+        reminded ? (write.contentOk ? 1 : 0) : null,
+        reminded ? write.contentRef : null,
         write.noteRef,
         write.pairedDecisionId,
+        intakeItemKey,
         write.recordedAt,
       );
   }
@@ -228,9 +265,10 @@ export class SqliteDecisionLedgerOperations {
       this.fail("PORT_INVALID_OPERATION", "Ledger limit is invalid");
     return this.database
       .prepare(
-        `SELECT id, muse_at AS museAt, timing_ok AS timingOk, content_ok AS contentOk,
-           content_ref AS contentRef, note_ref AS noteRef,
-           paired_decision_id AS pairedDecisionId, recorded_at AS recordedAt
+        `SELECT id, muse_at AS museAt, muse_reminded AS museReminded, timing_ok AS timingOk,
+           content_ok AS contentOk, content_ref AS contentRef, note_ref AS noteRef,
+           paired_decision_id AS pairedDecisionId, intake_item_key AS intakeItemKey,
+           recorded_at AS recordedAt
          FROM muse_reference_entries
          WHERE owner_id = ? AND agent_id = ? AND muse_at >= ?
          ORDER BY muse_at DESC, id DESC LIMIT ?`,
@@ -240,8 +278,9 @@ export class SqliteDecisionLedgerOperations {
         const entry = row as Record<string, unknown>;
         return Object.freeze({
           ...(entry as unknown as MuseReferenceEntry),
-          timingOk: entry["timingOk"] === 1,
-          contentOk: entry["contentOk"] === 1,
+          museReminded: entry["museReminded"] === 1,
+          timingOk: entry["timingOk"] === null ? null : entry["timingOk"] === 1,
+          contentOk: entry["contentOk"] === null ? null : entry["contentOk"] === 1,
         });
       });
   }

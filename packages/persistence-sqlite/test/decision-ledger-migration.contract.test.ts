@@ -161,4 +161,147 @@ describe("decision ledger migration 0069", () => {
       database.close();
     }
   });
+
+  it("limits candidate columns to memory candidates and to valid values", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-decision-ledger-"));
+    directories.push(directory);
+    const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
+    try {
+      applyMigrations(database, await loadBundledMigrations());
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0)").run();
+      database.prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0)").run();
+      let counter = 0;
+      const insert = (
+        kind: string,
+        outcome: string,
+        category: string | null,
+        confidence: number | null,
+        inferred: number | null,
+      ) =>
+        database
+          .prepare(
+            `INSERT INTO decision_ledger (
+              id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code, inputs,
+              cost_micros, duration_ms, category, confidence_permille, inferred
+            ) VALUES (?, 'o', 'a', ?, ?, '{}', ?, 'r', '{}', 0, 0, ?, ?, ?)`,
+          )
+          .run(`row-${(counter += 1)}`, kind, T0, outcome, category, confidence, inferred);
+      expect(() => insert("memory_candidate", "kept", "preference", 700, 1)).not.toThrow();
+      expect(() => insert("memory_candidate", "discarded", null, null, null)).not.toThrow();
+      expect(() => insert("memory_candidate", "kept", "other", 0, 0)).not.toThrow();
+      expect(() => insert("memory_candidate", "kept", "other", 1000, 0)).not.toThrow();
+      expect(() => insert("memory_candidate", "kept", "hobby", null, null)).toThrow();
+      expect(() => insert("memory_candidate", "kept", null, 1001, null)).toThrow();
+      expect(() => insert("memory_candidate", "kept", null, -1, null)).toThrow();
+      expect(() => insert("memory_candidate", "kept", null, null, 2)).toThrow();
+      expect(() => insert("consolidation", "merge", "preference", null, null)).toThrow();
+      expect(() => insert("consolidation", "merge", null, 500, null)).toThrow();
+      expect(() => insert("consolidation", "merge", null, null, 1)).toThrow();
+      expect(() => insert("consolidation", "merge", null, null, null)).not.toThrow();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps Muse entries in the two allowed shapes and makes intake keys unique", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-decision-ledger-"));
+    directories.push(directory);
+    const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
+    try {
+      applyMigrations(database, await loadBundledMigrations());
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0), ('o2', 0)").run();
+      database
+        .prepare(
+          "INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0), ('a2', 'o2', 0)",
+        )
+        .run();
+      database
+        .prepare(
+          `INSERT INTO payloads (
+            ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+            encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+          ) VALUES ('p1', 'o', 'a', 'private', 'sqlite_blob', X'00', 'sha256:p1', 'fixture',
+            'fixture-key', 'active', ?, 'text/plain')`,
+        )
+        .run(T0);
+      database
+        .prepare(
+          `INSERT INTO decision_ledger (
+            id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code, inputs,
+            cost_micros, duration_ms
+          ) VALUES ('d1', 'o', 'a', 'consolidation', ?, '{}', 'merge', 'r', '{}', 0, 0)`,
+        )
+        .run(T0);
+      let counter = 0;
+      const insert = (input: {
+        owner?: string;
+        agent?: string;
+        reminded: number;
+        timing?: number | null;
+        content?: number | null;
+        contentRef?: string | null;
+        paired?: string | null;
+        key?: string | null;
+      }) =>
+        database
+          .prepare(
+            `INSERT INTO muse_reference_entries (
+              id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
+              paired_decision_id, intake_item_key, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            `muse-${(counter += 1)}`,
+            input.owner ?? "o",
+            input.agent ?? "a",
+            T0,
+            input.reminded,
+            input.timing ?? null,
+            input.content ?? null,
+            input.contentRef ?? null,
+            input.paired ?? null,
+            input.key ?? null,
+            T0,
+          );
+      expect(() =>
+        insert({ reminded: 1, timing: 1, content: 0, contentRef: "p1", paired: "d1" }),
+      ).not.toThrow();
+      expect(() => insert({ reminded: 0, paired: "d1" })).not.toThrow();
+      expect(() => insert({ reminded: 1, timing: 1, content: 1 })).toThrow();
+      expect(() => insert({ reminded: 1, timing: null, content: 1, contentRef: "p1" })).toThrow();
+      expect(() => insert({ reminded: 1, timing: 1, content: null, contentRef: "p1" })).toThrow();
+      expect(() => insert({ reminded: 0, paired: "d1", timing: 1 })).toThrow();
+      expect(() => insert({ reminded: 0, paired: "d1", content: 1 })).toThrow();
+      expect(() => insert({ reminded: 0, paired: "d1", contentRef: "p1" })).toThrow();
+      expect(() =>
+        insert({ reminded: 1, timing: 1, content: 1, contentRef: "p-missing" }),
+      ).toThrow();
+
+      expect(() =>
+        insert({ reminded: 1, timing: 1, content: 1, key: "proactive:s1" }),
+      ).not.toThrow();
+      expect(() => insert({ reminded: 1, timing: 0, content: 1, key: "proactive:s1" })).toThrow();
+      expect(() =>
+        insert({
+          owner: "o2",
+          agent: "a2",
+          reminded: 1,
+          timing: 1,
+          content: 1,
+          key: "proactive:s1",
+        }),
+      ).not.toThrow();
+      expect(() => insert({ reminded: 1, timing: 1, content: 1, key: "ab" })).toThrow();
+      expect(() => insert({ reminded: 1, timing: 1, content: 1, contentRef: "p1" })).not.toThrow();
+      expect(() => insert({ reminded: 1, timing: 1, content: 1, contentRef: "p1" })).not.toThrow();
+
+      database.prepare("DELETE FROM decision_ledger WHERE id = 'd1'").run();
+      const orphan = database
+        .prepare("SELECT count(*) AS n FROM muse_reference_entries WHERE muse_reminded = 0")
+        .get() as { n: number };
+      expect(orphan.n).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
 });

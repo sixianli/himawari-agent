@@ -26,7 +26,22 @@ CREATE TABLE decision_ledger (
   duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0 AND duration_ms <= 86400000),
   owner_rating TEXT CHECK (owner_rating IS NULL OR owner_rating IN ('useful', 'unneeded', 'missed')),
   rated_at TEXT,
+  category TEXT CHECK (
+    category IS NULL OR
+    category IN (
+      'identity', 'preference', 'relationship', 'goal', 'project', 'rule', 'health',
+      'finance', 'event', 'other'
+    )
+  ),
+  confidence_permille INTEGER CHECK (
+    confidence_permille IS NULL OR (confidence_permille >= 0 AND confidence_permille <= 1000)
+  ),
+  inferred INTEGER CHECK (inferred IS NULL OR inferred IN (0, 1)),
   CHECK ((owner_rating IS NULL) = (rated_at IS NULL)),
+  CHECK (
+    kind = 'memory_candidate' OR
+    (category IS NULL AND confidence_permille IS NULL AND inferred IS NULL)
+  ),
   CHECK ((kind = 'proactive') = (scenario IS NOT NULL)),
   CHECK ((kind = 'proactive') = (verdict IS NOT NULL)),
   CHECK ((kind = 'proactive') = (outcome IS NULL)),
@@ -112,12 +127,27 @@ CREATE TABLE muse_reference_entries (
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   muse_at TEXT NOT NULL,
-  timing_ok INTEGER NOT NULL CHECK (timing_ok IN (0, 1)),
-  content_ok INTEGER NOT NULL CHECK (content_ok IN (0, 1)),
-  content_ref TEXT NOT NULL REFERENCES payloads(ref) ON DELETE RESTRICT,
+  muse_reminded INTEGER NOT NULL CHECK (muse_reminded IN (0, 1)),
+  timing_ok INTEGER CHECK (timing_ok IS NULL OR timing_ok IN (0, 1)),
+  content_ok INTEGER CHECK (content_ok IS NULL OR content_ok IN (0, 1)),
+  content_ref TEXT REFERENCES payloads(ref) ON DELETE RESTRICT,
   note_ref TEXT REFERENCES payloads(ref) ON DELETE RESTRICT,
   paired_decision_id TEXT REFERENCES decision_ledger(id) ON DELETE SET NULL,
-  recorded_at TEXT NOT NULL
+  intake_item_key TEXT CHECK (intake_item_key IS NULL OR length(intake_item_key) BETWEEN 3 AND 200),
+  recorded_at TEXT NOT NULL,
+  CHECK (
+    muse_reminded = 0 OR
+    (timing_ok IS NOT NULL AND content_ok IS NOT NULL AND
+      (content_ref IS NOT NULL OR intake_item_key IS NOT NULL))
+  ),
+  CHECK (
+    muse_reminded = 1 OR
+    (timing_ok IS NULL AND content_ok IS NULL AND content_ref IS NULL)
+  )
 ) STRICT;
 
 CREATE INDEX muse_reference_entries_time_index ON muse_reference_entries(owner_id, agent_id, muse_at);
+
+CREATE UNIQUE INDEX muse_reference_entries_intake_key_index
+  ON muse_reference_entries(owner_id, agent_id, intake_item_key)
+  WHERE intake_item_key IS NOT NULL;

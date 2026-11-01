@@ -27,6 +27,21 @@ export const DECISION_RATINGS = ["useful", "unneeded", "missed"] as const;
 
 export type DecisionRating = (typeof DECISION_RATINGS)[number];
 
+export const DECISION_CATEGORIES = [
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+  "health",
+  "finance",
+  "event",
+  "other",
+] as const;
+
+export type DecisionCategory = (typeof DECISION_CATEGORIES)[number];
+
 export interface DecisionInputs {
   readonly memoryIds: readonly string[];
   readonly ruleIds: readonly string[];
@@ -46,6 +61,9 @@ export interface DecisionLedgerWrite {
   readonly contentRef: string | null;
   readonly costMicros: number;
   readonly durationMs: number;
+  readonly category?: DecisionCategory | null;
+  readonly confidencePermille?: number | null;
+  readonly inferred?: boolean | null;
 }
 
 export interface DecisionLedgerEntry {
@@ -62,29 +80,46 @@ export interface DecisionLedgerEntry {
   readonly durationMs: number;
   readonly ownerRating: DecisionRating | null;
   readonly ratedAt: string | null;
+  readonly category: DecisionCategory | null;
+  readonly confidencePermille: number | null;
+  readonly inferred: boolean | null;
 }
 
-export interface MuseReferenceWrite {
+interface MuseReferenceBase {
   readonly id: string;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly museAt: string;
-  readonly timingOk: boolean;
-  readonly contentOk: boolean;
-  readonly contentRef: string;
   readonly noteRef: string | null;
-  readonly pairedDecisionId: string | null;
+  readonly intakeItemKey?: string | null;
   readonly recordedAt: string;
 }
+
+export interface MuseRemindedWrite extends MuseReferenceBase {
+  readonly museReminded: true;
+  readonly timingOk: boolean;
+  readonly contentOk: boolean;
+  readonly contentRef: string | null;
+  readonly pairedDecisionId: string | null;
+}
+
+export interface MuseSilentWrite extends MuseReferenceBase {
+  readonly museReminded: false;
+  readonly pairedDecisionId: string;
+}
+
+export type MuseReferenceWrite = MuseRemindedWrite | MuseSilentWrite;
 
 export interface MuseReferenceEntry {
   readonly id: string;
   readonly museAt: string;
-  readonly timingOk: boolean;
-  readonly contentOk: boolean;
-  readonly contentRef: string;
+  readonly museReminded: boolean;
+  readonly timingOk: boolean | null;
+  readonly contentOk: boolean | null;
+  readonly contentRef: string | null;
   readonly noteRef: string | null;
   readonly pairedDecisionId: string | null;
+  readonly intakeItemKey: string | null;
   readonly recordedAt: string;
 }
 

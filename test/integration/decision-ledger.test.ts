@@ -16,6 +16,7 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
+import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -23,7 +24,6 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engine";
 import { retrievalDegradeRecorder } from "../../apps/agent-service/src/production-decision-ledger.js";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -206,6 +206,9 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           durationMs: 20 + index,
           ownerRating: null,
           ratedAt: null,
+          category: null,
+          confidencePermille: null,
+          inferred: null,
         });
       }
       expect(await ledger.list({ ...scope, since: "2026-11-01T00:00:00.000Z", limit: 10 })).toEqual(
@@ -276,6 +279,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         id: "muse-1",
         ...scope,
         museAt: "2026-10-31T00:30:00.000Z",
+        museReminded: true,
         timingOk: true,
         contentOk: false,
         contentRef: "payload-muse",
@@ -287,6 +291,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         id: "muse-2",
         ...scope,
         museAt: "2026-10-30T00:30:00.000Z",
+        museReminded: true,
         timingOk: false,
         contentOk: true,
         contentRef: "payload-muse",
@@ -298,21 +303,25 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         {
           id: "muse-1",
           museAt: "2026-10-31T00:30:00.000Z",
+          museReminded: true,
           timingOk: true,
           contentOk: false,
           contentRef: "payload-muse",
           noteRef: "payload-note",
           pairedDecisionId: "paired",
+          intakeItemKey: null,
           recordedAt: T0,
         },
         {
           id: "muse-2",
           museAt: "2026-10-30T00:30:00.000Z",
+          museReminded: true,
           timingOk: false,
           contentOk: true,
           contentRef: "payload-muse",
           noteRef: null,
           pairedDecisionId: null,
+          intakeItemKey: null,
           recordedAt: T0,
         },
       ]);
@@ -322,6 +331,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           id: "muse-3",
           ...scope,
           museAt: "2026-10-30T00:30:00.000Z",
+          museReminded: true,
           timingOk: true,
           contentOk: true,
           contentRef: "payload-missing",
@@ -330,6 +340,153 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           recordedAt: T0,
         }),
       ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("records Muse silence, automatic intake entries and refuses wrong shapes", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      await ledger.append(ledgerWrite("pushed-1", { kind: "consolidation", outcome: "merge" }));
+      const base = {
+        ...scope,
+        museAt: "2026-10-31T00:30:00.000Z",
+        noteRef: null,
+        recordedAt: T0,
+      };
+      await ledger.recordMuse({
+        ...base,
+        id: "silent-1",
+        museReminded: false,
+        pairedDecisionId: "pushed-1",
+      });
+      await ledger.recordMuse({
+        ...base,
+        id: "auto-1",
+        museReminded: true,
+        timingOk: true,
+        contentOk: true,
+        contentRef: null,
+        pairedDecisionId: null,
+        intakeItemKey: "proactive:s1",
+      });
+      const entries = await ledger.listMuse({ ...scope, since: SINCE, limit: 10 });
+      expect(entries.find((entry) => entry.id === "silent-1")).toEqual({
+        id: "silent-1",
+        museAt: base.museAt,
+        museReminded: false,
+        timingOk: null,
+        contentOk: null,
+        contentRef: null,
+        noteRef: null,
+        pairedDecisionId: "pushed-1",
+        intakeItemKey: null,
+        recordedAt: T0,
+      });
+      expect(entries.find((entry) => entry.id === "auto-1")?.contentRef).toBeNull();
+      const refused = (write: unknown) =>
+        expect(
+          ledger.recordMuse(write as Parameters<typeof ledger.recordMuse>[0]),
+        ).rejects.toThrow();
+      await refused({ ...base, id: "x1", museReminded: false, pairedDecisionId: null });
+      await refused({
+        ...base,
+        id: "x2",
+        museReminded: false,
+        pairedDecisionId: "pushed-1",
+        timingOk: true,
+      });
+      await refused({
+        ...base,
+        id: "x3",
+        museReminded: false,
+        pairedDecisionId: "pushed-1",
+        contentRef: "payload-muse",
+      });
+      await refused({
+        ...base,
+        id: "x4",
+        museReminded: true,
+        timingOk: true,
+        contentOk: true,
+        contentRef: null,
+        pairedDecisionId: null,
+      });
+      await refused({
+        ...base,
+        id: "x5",
+        museReminded: true,
+        timingOk: true,
+        contentOk: true,
+        contentRef: null,
+        pairedDecisionId: null,
+        intakeItemKey: "proactive:s1",
+      });
+      await refused({
+        ...base,
+        id: "x6",
+        museReminded: true,
+        timingOk: true,
+        contentOk: true,
+        contentRef: "payload-muse",
+        pairedDecisionId: null,
+        intakeItemKey: "ab",
+      });
+      expect(await ledger.listMuse({ ...scope, since: SINCE, limit: 10 })).toHaveLength(2);
+      expect(await list()).toHaveLength(1);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("stores candidate category, confidence and inferred flag only on memory candidates", async () => {
+    const { repository, list } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      await ledger.append(
+        ledgerWrite("cand-1", {
+          kind: "memory_candidate",
+          outcome: "discarded",
+          category: "preference",
+          confidencePermille: 700,
+          inferred: true,
+        }),
+      );
+      await ledger.append(
+        ledgerWrite("cand-2", { kind: "memory_candidate", outcome: "kept", inferred: false }),
+      );
+      await ledger.append(ledgerWrite("cons-1", { kind: "consolidation", outcome: "merge" }));
+      const rows = await list();
+      const byId = (id: string) => rows.find((row) => row.id === id);
+      expect(byId("cand-1")).toMatchObject({
+        category: "preference",
+        confidencePermille: 700,
+        inferred: true,
+      });
+      expect(byId("cand-2")).toMatchObject({
+        category: null,
+        confidencePermille: null,
+        inferred: false,
+      });
+      expect(byId("cons-1")).toMatchObject({
+        category: null,
+        confidencePermille: null,
+        inferred: null,
+      });
+      for (const [id, extra] of [
+        ["bad-a", { kind: "consolidation", outcome: "merge", category: "other" }],
+        ["bad-b", { kind: "consolidation", outcome: "merge", confidencePermille: 10 }],
+        ["bad-c", { kind: "retrieval_degrade", outcome: "degraded", inferred: true }],
+        ["bad-d", { kind: "memory_candidate", outcome: "kept", category: "hobby" }],
+        ["bad-e", { kind: "memory_candidate", outcome: "kept", confidencePermille: 1001 }],
+        ["bad-f", { kind: "memory_candidate", outcome: "kept", confidencePermille: 0.5 }],
+      ] as const)
+        await expect(
+          ledger.append(ledgerWrite(id, extra as Parameters<typeof ledgerWrite>[1])),
+        ).rejects.toThrow();
+      expect(await list()).toHaveLength(3);
     } finally {
       await repository.close();
     }
