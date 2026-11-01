@@ -92,6 +92,7 @@ import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
+import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -175,6 +176,7 @@ export interface ProductionHttpCompositionOptions {
     readonly push: ProductionWebPush | undefined;
   };
   readonly proactive?: ProductionProactive;
+  readonly museIntake?: ProductionMuseIntake;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly authority: () => ProductAuthorityFence;
@@ -1099,6 +1101,7 @@ export async function createProductionHttpComposition(
       sessionCookieName: httpConfiguration.sessionCookieName,
       ownerId,
     });
+  if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)

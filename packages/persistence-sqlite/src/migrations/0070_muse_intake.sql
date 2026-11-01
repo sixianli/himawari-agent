@@ -30,6 +30,7 @@ CREATE TABLE muse_intake_items (
   started_at TEXT,
   prepared_at TEXT,
   handoff_accepted_at TEXT,
+  event_at TEXT,
   title_ref TEXT REFERENCES payloads(ref) ON DELETE RESTRICT,
   text_ref TEXT REFERENCES payloads(ref) ON DELETE RESTRICT,
   text_withheld INTEGER NOT NULL CHECK (text_withheld IN (0, 1)),

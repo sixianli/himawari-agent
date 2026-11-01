@@ -12,8 +12,20 @@ export type MuseIntakeState = (typeof MUSE_INTAKE_STATES)[MuseIntakeKind][number
 
 export const MUSE_INTAKE_DECISIONS = ["send", "skip", "defer"] as const;
 export const MUSE_INTAKE_PRIORITIES = ["regular", "high"] as const;
-export const MUSE_INTAKE_SOURCES = ["system_record", "chat_record", "derived"] as const;
+export const MUSE_INTAKE_COUNTED_SOURCES = ["system_record", "chat_record", "derived"] as const;
+export const MUSE_INTAKE_SOURCES = [
+  ...MUSE_INTAKE_COUNTED_SOURCES,
+  "worker_report",
+  "run_log_record",
+  "memory_record",
+  "written_after",
+  "unknown",
+] as const;
 export type MuseIntakeSource = (typeof MUSE_INTAKE_SOURCES)[number];
+
+export function museSourceCounts(source: string | undefined): boolean {
+  return (MUSE_INTAKE_COUNTED_SOURCES as readonly string[]).includes(source ?? "");
+}
 
 export const MUSE_INTAKE_SENDER = "muse";
 export const MUSE_CHANNEL_STALE_MS = 9_000_000;
@@ -37,6 +49,7 @@ export interface MuseIntakeItemWrite {
   readonly startedAt: string | null;
   readonly preparedAt: string | null;
   readonly handoffAcceptedAt: string | null;
+  readonly eventAt: string | null;
   readonly titleRef: string | null;
   readonly textRef: string | null;
   readonly textWithheld: boolean;
@@ -88,6 +101,7 @@ export interface MuseIntakeItem {
   readonly priority: string | null;
   readonly occurredAt: string;
   readonly scheduledFor: string | null;
+  readonly eventAt: string | null;
   readonly titleRef: string | null;
   readonly textRef: string | null;
   readonly textWithheld: boolean;

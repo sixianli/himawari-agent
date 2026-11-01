@@ -220,8 +220,14 @@ export interface ProactiveConfiguration {
   readonly dailyCostMicros: number;
 }
 
+export interface MuseIntakeConfiguration {
+  readonly enabled: boolean;
+  readonly secretRef: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly museIntake?: MuseIntakeConfiguration;
   readonly webPush?: WebPushConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;

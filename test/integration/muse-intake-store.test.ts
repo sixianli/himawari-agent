@@ -42,6 +42,7 @@ function item(
     startedAt: null,
     preparedAt: at(30_000),
     handoffAcceptedAt: at(45_000),
+    eventAt: at(-3_600_000),
     titleRef: `title-${naturalKey}`,
     textRef: `text-${naturalKey}`,
     textWithheld: false,
@@ -178,7 +179,7 @@ describe.each(["worker", "direct"] as const)("Muse intake store through %s", (ex
       ).rejects.toThrow();
       await expect(
         intake.ingestBatch(
-          batch(1, [item("a", { sources: { text: "written_after" as "derived" } })]),
+          batch(1, [item("a", { sources: { text: "made_up" as "derived" } })]),
         ),
       ).rejects.toThrow();
       await expect(intake.ingestBatch(batch(0, []))).rejects.toThrow();

@@ -66,7 +66,8 @@ function itemProblem(item: MuseIntakeItemWrite): string | null {
     !nullableTime(item.scheduledFor) ||
     !nullableTime(item.startedAt) ||
     !nullableTime(item.preparedAt) ||
-    !nullableTime(item.handoffAcceptedAt)
+    !nullableTime(item.handoffAcceptedAt) ||
+    !nullableTime(item.eventAt)
   )
     return "time";
   if (!nullableText(item.titleRef, 256) || !nullableText(item.textRef, 256)) return "text ref";
@@ -206,9 +207,9 @@ export class SqliteMuseIntakeOperations {
       const insertItem = this.database.prepare(
         `INSERT INTO muse_intake_items (
           owner_id, agent_id, kind, natural_key, state, reason_code, decision, reason_enum,
-          priority, occurred_at, scheduled_for, started_at, prepared_at, handoff_accepted_at,
+          priority, occurred_at, scheduled_for, started_at, prepared_at, handoff_accepted_at, event_at,
           title_ref, text_ref, text_withheld, options, sources, content_digest, batch_id, received_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (owner_id, agent_id, kind, natural_key) DO NOTHING`,
       );
       const existingDigest = this.database.prepare(
@@ -238,6 +239,7 @@ export class SqliteMuseIntakeOperations {
           item.startedAt,
           item.preparedAt,
           item.handoffAcceptedAt,
+          item.eventAt,
           item.titleRef,
           item.textRef,
           item.textWithheld ? 1 : 0,
@@ -314,7 +316,7 @@ export class SqliteMuseIntakeOperations {
       .prepare(
         `SELECT i.kind, i.natural_key AS naturalKey, i.state, i.reason_code AS reasonCode,
            i.decision, i.reason_enum AS reasonEnum, i.priority, i.occurred_at AS occurredAt,
-           i.scheduled_for AS scheduledFor, i.title_ref AS titleRef, i.text_ref AS textRef,
+           i.scheduled_for AS scheduledFor, i.event_at AS eventAt, i.title_ref AS titleRef, i.text_ref AS textRef,
            i.text_withheld AS textWithheld, i.options, i.sources, i.received_at AS receivedAt,
            e.timing_ok AS timingOk, e.content_ok AS contentOk, e.recorded_at AS ratedAt
          FROM muse_intake_items i

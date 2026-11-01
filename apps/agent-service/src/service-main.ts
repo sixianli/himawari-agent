@@ -44,6 +44,7 @@ import {
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+  MUSE_INTAKE_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
@@ -102,6 +103,7 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { ProductionMuseIntake } from "./production-muse-intake.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -478,6 +480,7 @@ export async function runAgentService(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
+  let museIntake: ProductionMuseIntake | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -1456,6 +1459,30 @@ export async function runAgentService(
             }),
         });
       }
+      const museIntakeConfiguration = configuration.runPolicy?.museIntake;
+      const museIntakeSecret =
+        museIntakeConfiguration?.enabled === true
+          ? configuration.secretReferences.find(
+              ({ ref, purpose }) =>
+                ref === museIntakeConfiguration.secretRef && purpose === MUSE_INTAKE_SECRET_PURPOSE,
+            )
+          : undefined;
+      if (museIntakeSecret && protector)
+        museIntake = new ProductionMuseIntake({
+          scope: proactiveScope,
+          store: repository.museIntake(),
+          seal: createProactiveSeal({
+            payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+            protector,
+            ids,
+          }),
+          ids,
+          clock,
+          secret: await hostModelSources(configuration).provider.resolve(
+            museIntakeSecret.ref,
+            museIntakeSecret.version,
+          ),
+        });
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
         ? configuration.secretReferences.find(
@@ -1733,6 +1760,7 @@ export async function runAgentService(
         live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
+        ...(museIntake ? { museIntake } : {}),
         memory: {
           service: activeDurableMemory,
           onAudit: (record) =>
