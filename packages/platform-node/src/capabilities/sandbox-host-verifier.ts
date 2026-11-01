@@ -28,9 +28,25 @@ import {
 import { verifyProtectedRuntime } from "./protected-runtime.js";
 import type { SandboxRuntimeDigestRequest } from "./sandbox-runtime-digest-worker.js";
 
-export function digestSandboxRuntime(root: string): Promise<string> {
+export interface SandboxRuntimeDigestResult {
+  readonly digest: string;
+  readonly reused: number;
+  readonly hashed: number;
+}
+
+export function runtimeFingerprintFile(): string | undefined {
+  const configured = process.env["HIMAWARI_RUNTIME_FINGERPRINT_FILE"];
+  if (configured && path.isAbsolute(configured)) return configured;
+  const home = process.env["HOME"];
+  return home && path.isAbsolute(home)
+    ? path.join(home, "cache", "sandbox-runtime-fingerprints.json")
+    : undefined;
+}
+
+function runDigestWorker(
+  request: SandboxRuntimeDigestRequest,
+): Promise<SandboxRuntimeDigestResult> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const request: SandboxRuntimeDigestRequest = { root };
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL(`./sandbox-runtime-digest-worker.${extension}`, import.meta.url),
@@ -38,19 +54,50 @@ export function digestSandboxRuntime(root: string): Promise<string> {
     );
     let received = false;
     worker.once("message", (value: unknown) => {
-      const digest = (value as { digest?: unknown } | null)?.digest;
-      if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) {
+      const result = value as Partial<SandboxRuntimeDigestResult> | null;
+      if (typeof result?.digest !== "string" || !/^[a-f0-9]{64}$/.test(result.digest)) {
         reject(new Error("SANDBOX_HOST_DIGEST_INVALID"));
         return;
       }
       received = true;
-      resolve(digest);
+      resolve({
+        digest: result.digest,
+        reused: Number(result.reused ?? 0),
+        hashed: Number(result.hashed ?? 0),
+      });
     });
     worker.once("error", reject);
     worker.once("exit", (code) => {
       if (!received) reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
     });
   });
+}
+
+export async function digestSandboxRuntime(root: string, expectedDigest?: string): Promise<string> {
+  const fingerprintFile = runtimeFingerprintFile();
+  const startedAt = performance.now();
+  let result = await runDigestWorker({ root, ...(fingerprintFile ? { fingerprintFile } : {}) });
+  let retried = false;
+  if (
+    fingerprintFile &&
+    expectedDigest !== undefined &&
+    result.digest !== expectedDigest &&
+    result.reused > 0
+  ) {
+    retried = true;
+    result = await runDigestWorker({ root });
+  }
+  console.error(
+    JSON.stringify({
+      component: "platform-node",
+      event: "sandbox_runtime.digest_completed",
+      reused: result.reused,
+      hashed: result.hashed,
+      retriedWithoutCache: retried,
+      durationMs: Math.round(performance.now() - startedAt),
+    }),
+  );
+  return result.digest;
 }
 
 async function checkedPath(filename: string, directory: boolean) {
@@ -169,7 +216,7 @@ async function verifySandboxHostFiles(
   await verifyProtectedRuntime(
     binding.runtimeRoot,
     binding.runtimeDigest,
-    digestSandboxRuntime,
+    (root) => digestSandboxRuntime(root, binding.runtimeDigest),
     [binding.executable, binding.runner],
     options,
   );

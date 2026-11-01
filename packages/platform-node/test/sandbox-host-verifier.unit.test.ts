@@ -600,3 +600,38 @@ it("claims only the authenticated private copy and rejects arbitrary or replaced
     "COPY_ROOT_CHANGED",
   );
 });
+
+it("reuses the persisted fingerprint cache and falls back to a full hash when the cache lies", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "runtime-cache-fallback-"));
+  const runtime = await realpath(root);
+  await chmod(runtime, 0o700);
+  const cacheFile = path.join(runtime, "..", `${path.basename(runtime)}.fingerprints.json`);
+  await writeFile(path.join(runtime, "a"), "alpha", { mode: 0o600 });
+  await writeFile(path.join(runtime, "b"), "bravo", { mode: 0o600 });
+  vi.stubEnv("HIMAWARI_RUNTIME_FINGERPRINT_FILE", cacheFile);
+  const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    const expected = await digestSandboxRuntime(runtime);
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(await digestSandboxRuntime(runtime, expected)).toBe(expected);
+    expect(await digestSandboxRuntime(runtime, expected)).toBe(expected);
+    const events = log.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(events.at(-1)).toMatchObject({ reused: 2, hashed: 0, retriedWithoutCache: false });
+    const stored = JSON.parse(await readFile(cacheFile, "utf8"));
+    stored.files.a.sha256 = "0".repeat(64);
+    await writeFile(cacheFile, JSON.stringify(stored), { mode: 0o600 });
+    expect(await digestSandboxRuntime(runtime, expected)).toBe(expected);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+      retriedWithoutCache: true,
+      reused: 0,
+      hashed: 2,
+    });
+    await writeFile(path.join(runtime, "a"), "ALPHA", { mode: 0o600 });
+    expect(await digestSandboxRuntime(runtime, expected)).not.toBe(expected);
+  } finally {
+    log.mockRestore();
+    vi.unstubAllEnvs();
+    await rm(runtime, { recursive: true, force: true });
+    await rm(cacheFile, { force: true });
+  }
+}, 20_000);
