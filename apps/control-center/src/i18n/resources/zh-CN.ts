@@ -710,11 +710,11 @@ export const messages = {
   "memory.page.recover": "恢复",
   "memory.page.deleted": "已删除，7 天内可在“最近删除”里恢复",
   "memory.page.filter":
-    "{f, select, all {全部变化} new {新记住} tidy {整理} correct {更正} other {导入}}",
+    "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理} correct {更正} other {导入}}",
   "memory.page.timelineNote":
-    "按天记录记忆的变化：新记住的、更正的、导入的，以及 Himawari 每天自动整理时做的合并、取代、归档和新推测。整理和导入都能撤销；你自己改过的记忆不会被整理覆盖。",
+    "按天记录记忆的变化：新记住的、更正的、导入的，以及 Himawari 每天自动整理时做的合并、取代、归档和新推测。不记、删除、整理和导入都能撤销；你自己改过的记忆不会被整理覆盖。",
   "memory.page.event":
-    "{e, select, new {新记住} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} other {新推测}}",
+    "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} other {新推测}}",
   "memory.page.imported":
     "从 {source, select, codex {Codex} assistant {其他 AI} other {Himawari 导出文件}} 导入 {count} 条",
   "memory.page.goConfirm": "去确认",
