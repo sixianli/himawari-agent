@@ -14,6 +14,7 @@ import {
 } from "@himawari-agent/application";
 import type { FastifyInstance } from "fastify";
 import { containsRestrictedIdentifier } from "./production-memory-capture.js";
+import type { MuseChannelPushSource } from "./production-web-push.js";
 
 export const MUSE_INTAKE_PATH = "/api/muse-intake/v1/batch";
 export const MUSE_INTAKE_BODY_LIMIT = 262_144;
@@ -499,6 +500,29 @@ export class ProductionMuseIntake {
       throw error;
     }
   }
+}
+
+const MUSE_OUTAGE_PUSH_WINDOW_MS = 12 * 3_600_000;
+
+export function createMuseChannelPushSource(options: {
+  readonly scope: ProactiveScope;
+  readonly store: MuseIntakePort;
+}): MuseChannelPushSource {
+  const { scope, store } = options;
+  return Object.freeze<MuseChannelPushSource>({
+    async listActive(now) {
+      await store.checkChannel({ ...scope, now });
+      const status = await store.channelStatus({ ...scope, now });
+      if (
+        status.state !== "down" ||
+        status.outageStartedAt === null ||
+        status.outageNotifiedAt === null ||
+        Date.parse(now) - Date.parse(status.outageNotifiedAt) >= MUSE_OUTAGE_PUSH_WINDOW_MS
+      )
+        return [];
+      return [{ outageStartedAt: status.outageStartedAt }];
+    },
+  });
 }
 
 export function registerMuseIntakeRoute(app: FastifyInstance, intake: ProductionMuseIntake): void {

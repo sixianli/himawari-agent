@@ -103,7 +103,7 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
-import { ProductionMuseIntake } from "./production-muse-intake.js";
+import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -1519,6 +1519,14 @@ export async function runAgentService(
             pushRepository
               .authorizationStore()
               .listApprovals(configuration.ownerId, configuration.agentId, { status: "pending" }),
+          ...(museIntake
+            ? {
+                museChannel: createMuseChannelPushSource({
+                  scope: proactiveScope,
+                  store: repository.museIntake(),
+                }),
+              }
+            : {}),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
