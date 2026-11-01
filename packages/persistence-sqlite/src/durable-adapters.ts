@@ -1012,6 +1012,7 @@ export class SqliteDurableAdapters {
   modelUsage(): ModelUsageStorePort {
     return Object.freeze<ModelUsageStorePort>({
       record: (input) => this.context.write("modelUsage.record", input),
+      isFollowUpTurn: (input) => this.context.read("modelUsage.isFollowUpTurn", input),
     });
   }
 
