@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({
@@ -122,6 +123,59 @@ it("rejects every later check when the deferred content audit finds a different 
     "SANDBOX_RUNTIME_PROTECTION_INVALID",
   );
   expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+});
+
+it("keeps refusing after a deferred audit failed, even if a later audit would succeed", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  await verifier.begin(root, digest, async () => "c".repeat(64), [], settled);
+  await vi.waitFor(() => expect(settled).toHaveBeenCalled());
+  const later = vi.fn(async () => digest);
+  for (let attempt = 0; attempt < 3; attempt++)
+    await expect(verifier.verify(root, digest, later)).rejects.toThrow(
+      "SANDBOX_RUNTIME_PROTECTION_INVALID",
+    );
+  expect(later).not.toHaveBeenCalled();
+});
+
+it("also keeps refusing after a transient error in the deferred audit", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  await verifier.begin(
+    root,
+    digest,
+    async () => {
+      throw new Error("SANDBOX_HOST_DIGEST_WORKER_EXIT:1");
+    },
+    [],
+    settled,
+  );
+  await vi.waitFor(() => expect(settled).toHaveBeenCalled());
+  const later = vi.fn(async () => digest);
+  await expect(verifier.verify(root, digest, later)).rejects.toThrow(
+    "SANDBOX_HOST_DIGEST_WORKER_EXIT:1",
+  );
+  expect(later).not.toHaveBeenCalled();
+});
+
+it("does not let a content audit that never finishes block sandbox calls forever", async () => {
+  const verifier = new ProtectedRuntimeVerifier(manifestPath, fixture.audit, 20);
+  const settled = vi.fn();
+  await verifier.begin(root, digest, () => new Promise<string>(() => {}), [], settled);
+  await expect(verifier.verify(root, digest, async () => digest)).rejects.toThrow(
+    "SANDBOX_RUNTIME_AUDIT_TIMEOUT",
+  );
+  await vi.waitFor(() =>
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false })),
+  );
+});
+
+it("does not keep refusing after a failed audit that was not started in the background", async () => {
+  const verifier = verifierFor();
+  await expect(verifier.verify(root, digest, async () => "c".repeat(64))).rejects.toThrow(
+    "SANDBOX_RUNTIME_PROTECTION_INVALID",
+  );
+  await verifier.verify(root, digest, async () => digest);
 });
 
 it("still rejects at once, without deferring, when the protection record does not match", async () => {
@@ -319,11 +373,18 @@ it("keeps the original audit path only when protection was not configured", asyn
   expect(readBytes).not.toHaveBeenCalled();
 });
 
-it("does nothing extra when protection is not configured, even if the content audit is deferred", async () => {
-  const readBytes = vi.fn(async () => digest);
-  delete process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
-  expect(
-    await verifyProtectedRuntime(root, digest, readBytes, [], { deferContentAudit: true }),
-  ).toBe(false);
-  expect(readBytes).not.toHaveBeenCalled();
+it("logs a failed deferred audit under an event name that the deploy start-up readback treats as a failure", () => {
+  const readback = readFileSync(
+    new URL(
+      "../../../scripts/delivery-mode/packet-template/systemd/S7-startup-readback.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const pattern =
+    /assert\(!records\.some\(\(item\) => (\/.+\/i)\.test\(String\(item\.event\)\)\)/.exec(readback);
+  expect(pattern).not.toBeNull();
+  const failureEvents = new RegExp(String(pattern?.[1]).slice(1, -2), "i");
+  expect(failureEvents.test("sandbox_runtime.content_audit_failed")).toBe(true);
+  expect(failureEvents.test("sandbox_runtime.content_audit_completed")).toBe(false);
 });

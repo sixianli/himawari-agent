@@ -70,18 +70,24 @@ export function auditProtectedRuntime(root: string, ownerUid: number): Promise<v
   });
 }
 
+const CONTENT_AUDIT_TIMEOUT_MS = 600_000;
+
 export class ProtectedRuntimeVerifier {
   readonly #manifestPath: string;
   readonly #auditInstallation: (root: string) => Promise<void>;
   readonly #audits = new Map<string, Promise<void>>();
   readonly #artifactAudits = new Map<string, Promise<void>>();
+  readonly #refused = new Map<string, unknown>();
+  readonly #contentAuditTimeoutMs: number;
   constructor(
     manifestPath: string,
     auditInstallation: (root: string) => Promise<void> = (root) => auditProtectedRuntime(root, 0),
+    contentAuditTimeoutMs = CONTENT_AUDIT_TIMEOUT_MS,
   ) {
     if (!canonical(manifestPath)) throw failure();
     this.#manifestPath = manifestPath;
     this.#auditInstallation = auditInstallation;
+    this.#contentAuditTimeoutMs = contentAuditTimeoutMs;
   }
 
   async #process(uid: number): Promise<void> {
@@ -146,7 +152,8 @@ export class ProtectedRuntimeVerifier {
     digest: (root: string) => Promise<string>,
     artifacts: readonly RuntimeArtifact[] = [],
   ): Promise<void> {
-    await (await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts))();
+    const { complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
+    await complete();
   }
 
   async begin(
@@ -156,11 +163,14 @@ export class ProtectedRuntimeVerifier {
     artifacts: readonly RuntimeArtifact[] = [],
     onSettled?: (outcome: { readonly ok: boolean; readonly durationMs: number }) => void,
   ): Promise<void> {
-    const complete = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
     const startedAt = Date.now();
+    const { key, complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
     complete().then(
       () => onSettled?.({ ok: true, durationMs: Date.now() - startedAt }),
-      () => onSettled?.({ ok: false, durationMs: Date.now() - startedAt }),
+      (error: unknown) => {
+        this.#refused.set(key, error);
+        onSettled?.({ ok: false, durationMs: Date.now() - startedAt });
+      },
     );
   }
 
@@ -169,7 +179,7 @@ export class ProtectedRuntimeVerifier {
     runtimeDigest: string,
     digest: (root: string) => Promise<string>,
     artifacts: readonly RuntimeArtifact[],
-  ): Promise<() => Promise<void>> {
+  ): Promise<{ readonly key: string; readonly complete: () => Promise<void> }> {
     const { protection, identity } = await this.#manifest();
     if (runtimeRoot !== protection.runtimeRoot || runtimeDigest !== protection.runtimeDigest)
       throw failure();
@@ -205,7 +215,7 @@ export class ProtectedRuntimeVerifier {
     };
     const artifactKey = await artifactIdentity();
     const key = `${identity}\n${parents}`;
-    return () =>
+    const complete = () =>
       this.#complete({
         key,
         artifactKey,
@@ -219,6 +229,26 @@ export class ProtectedRuntimeVerifier {
         parents,
         artifactIdentity,
       });
+    return { key, complete };
+  }
+
+  #bounded(work: Promise<void>): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("SANDBOX_RUNTIME_AUDIT_TIMEOUT")),
+        this.#contentAuditTimeoutMs,
+      );
+      work.then(
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
   }
 
   async #complete(input: {
@@ -247,20 +277,23 @@ export class ProtectedRuntimeVerifier {
       parents,
       artifactIdentity,
     } = input;
+    if (this.#refused.has(key)) throw this.#refused.get(key);
     let audit = this.#audits.get(key);
     if (!audit) {
       this.#audits.clear();
       this.#artifactAudits.clear();
-      audit = (async () => {
-        await this.#auditInstallation(runtimeRoot);
-        if ((await digest(runtimeRoot)) !== runtimeDigest) throw failure();
-        const latest = await this.#manifest();
-        if (
-          latest.identity !== identity ||
-          (await this.#parents(runtimeRoot, [0, protection.deploymentUid])) !== parents
-        )
-          throw failure();
-      })();
+      audit = this.#bounded(
+        (async () => {
+          await this.#auditInstallation(runtimeRoot);
+          if ((await digest(runtimeRoot)) !== runtimeDigest) throw failure();
+          const latest = await this.#manifest();
+          if (
+            latest.identity !== identity ||
+            (await this.#parents(runtimeRoot, [0, protection.deploymentUid])) !== parents
+          )
+            throw failure();
+        })(),
+      );
       this.#audits.set(key, audit);
     }
     try {

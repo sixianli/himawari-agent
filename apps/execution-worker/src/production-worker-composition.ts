@@ -350,6 +350,16 @@ function isolationBackend(
   });
 }
 
+export function verifyWorkerSandboxHostAtStartup(
+  binding: Parameters<typeof verifySandboxHost>[0]["binding"],
+  qualification: Parameters<typeof verifySandboxHost>[0]["qualification"],
+): Promise<void> {
+  return verifySandboxHost(
+    { binding, qualification, hostId: binding.hostId },
+    { deferContentAudit: true },
+  );
+}
+
 async function qualifyDeployment(
   deployment: LoadedCapabilityDeployment,
   clock: ClockPort,
@@ -365,14 +375,7 @@ async function qualifyDeployment(
   for (const entry of deployment.snapshot.capabilities) {
     if (entry.binding.kind === "sandbox") {
       if (!entry.qualification.sandbox) throw new Error("SANDBOX_QUALIFICATION_UNAVAILABLE");
-      await verifySandboxHost(
-        {
-          binding: entry.binding.value,
-          qualification: entry.qualification.sandbox,
-          hostId: entry.binding.value.hostId,
-        },
-        { deferContentAudit: true },
-      );
+      await verifyWorkerSandboxHostAtStartup(entry.binding.value, entry.qualification.sandbox);
       continue;
     }
     const actual = await qualifier.qualify(entry.manifest);
