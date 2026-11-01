@@ -783,6 +783,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion; proactive rows are removed when the owner deletes proactive records",
   ),
   entry(
+    "decision_ledger_payloads",
+    "ProactiveStorePort",
+    "which protected prompt and answer payloads each proactive check's model calls left behind, in call order; the payload text is never stored here",
+    "payload_reference",
+    "cascade with the ledger row; the payloads are removed when the owner deletes proactive records or disconnects the source",
+  ),
+  entry(
     "muse_reference_entries",
     "DecisionLedgerPort",
     "owner-recorded Muse reminders with timing and content judgments; reminder text and note only as protected payload references",

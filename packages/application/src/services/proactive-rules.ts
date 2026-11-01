@@ -25,15 +25,33 @@ export function isImportantSender(address: string, senders: readonly string[]): 
   });
 }
 
-export function hitsFloor(item: ProactiveSourceItem, senders: readonly string[]): boolean {
+export const FLOOR_RULE_IDS = Object.freeze({
+  importantSender: "floor_important_sender",
+  publicDomain: "floor_public_domain",
+  moneyWords: "floor_money_words",
+} as const);
+
+export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
+
+export function floorHitIds(
+  item: ProactiveSourceItem,
+  senders: readonly string[],
+): readonly FloorRuleId[] {
   const domain = senderDomain(item.fromAddress);
-  return (
-    isImportantSender(item.fromAddress, senders) ||
+  const hits: FloorRuleId[] = [];
+  if (isImportantSender(item.fromAddress, senders)) hits.push(FLOOR_RULE_IDS.importantSender);
+  if (
     PROACTIVE_PUBLIC_DOMAIN_SUFFIXES.some(
       (suffix) => domain === suffix || domain.endsWith(`.${suffix}`),
-    ) ||
-    MONEY_WORDS.test(`${item.subject}\n${item.snippet}`)
-  );
+    )
+  )
+    hits.push(FLOOR_RULE_IDS.publicDomain);
+  if (MONEY_WORDS.test(`${item.subject}\n${item.snippet}`)) hits.push(FLOOR_RULE_IDS.moneyWords);
+  return hits;
+}
+
+export function hitsFloor(item: ProactiveSourceItem, senders: readonly string[]): boolean {
+  return floorHitIds(item, senders).length > 0;
 }
 
 export function applyFloor(

@@ -521,6 +521,7 @@ export function createProductionModelComposition(
         });
       },
       readOutput: (payloadRef) => payloadBoundary.readText(payloadRef),
+      release: (payloadRefs) => payloadBoundary.release(payloadRefs),
     });
   };
   const generateTextOnce = async (
@@ -543,22 +544,24 @@ export function createProductionModelComposition(
       content: prompt,
       occurredAt: options.clock.now(),
     });
-    const auxiliaryModel = auxiliaryModelFor(descriptor, text, async () => gate);
-    const handle = descriptor.secretRequirement
-      ? await options.handles.issueHandle({
-          ownerId: options.ownerId,
-          agentId: options.agentId,
-          runId: request.runId,
-          ...descriptor.secretRequirement,
-          scopeRef: invocationId,
-          expiresAt: new Date(
-            Date.parse(options.clock.now()) + text.requestTimeoutMs + 10000,
-          ).toISOString(),
-        })
-      : undefined;
+    const leftBehind = [inputRef];
+    let handle: Awaited<ReturnType<typeof options.handles.issueHandle>> | undefined;
     let output = "";
     let completed = false;
     try {
+      const auxiliaryModel = auxiliaryModelFor(descriptor, text, async () => gate);
+      handle = descriptor.secretRequirement
+        ? await options.handles.issueHandle({
+            ownerId: options.ownerId,
+            agentId: options.agentId,
+            runId: request.runId,
+            ...descriptor.secretRequirement,
+            scopeRef: invocationId,
+            expiresAt: new Date(
+              Date.parse(options.clock.now()) + text.requestTimeoutMs + 10000,
+            ).toISOString(),
+          })
+        : undefined;
       for await (const event of auxiliaryModel.invoke({
         invocationId,
         runId: request.runId,
@@ -569,8 +572,10 @@ export function createProductionModelComposition(
         secretHandleRefs: handle ? [handle.ref] : [],
         correlationId: request.correlationId,
       })) {
-        if (event.type === "model.output")
+        if (event.type === "model.output") {
+          leftBehind.push(event.payloadRef);
           output += await payloadBoundary.readText(event.payloadRef);
+        }
         if (event.type === "model.completed") completed = true;
         if (event.type === "model.failed") throw new Error(event.errorCode);
       }
@@ -578,6 +583,7 @@ export function createProductionModelComposition(
       return output;
     } finally {
       if (handle) await options.handles.revokeHandle(handle.ref, options.clock.now());
+      await payloadBoundary.release(leftBehind).catch(() => undefined);
     }
   };
 

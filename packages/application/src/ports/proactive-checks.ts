@@ -144,8 +144,24 @@ export interface ProactiveInsightWrite {
   readonly push: boolean;
 }
 
+export type ProactiveModelPayloadRole = "model_input" | "model_output";
+
+export interface ProactiveModelPayload {
+  readonly ref: string;
+  readonly role: ProactiveModelPayloadRole;
+}
+
+export interface ProactiveCheckInputs {
+  readonly ruleIds: readonly string[];
+  readonly sourceIds: readonly string[];
+  readonly floorHits: Readonly<Record<string, readonly string[]>>;
+  readonly memoryInjected: boolean;
+}
+
 export interface ProactiveCheckRecord extends ProactiveScope {
   readonly decision: ProactiveDecision;
+  readonly inputs: ProactiveCheckInputs;
+  readonly modelPayloads: readonly ProactiveModelPayload[];
   readonly processed: readonly Omit<
     ProactiveProcessedMessage,
     "reviewedAt" | "ownerRating" | "decisionId" | "processedAt"
@@ -189,6 +205,9 @@ export interface ProactiveStorePort {
     input: ProactiveScope & { readonly source: ProactiveSource },
   ): Promise<readonly string[]>;
   clearRecords(input: ProactiveScope): Promise<readonly string[]>;
+  readDecisionPayloads(
+    input: ProactiveScope & { readonly decisionId: string },
+  ): Promise<readonly ProactiveModelPayload[]>;
   unprocessed(
     input: ProactiveScope & {
       readonly source: ProactiveSource;

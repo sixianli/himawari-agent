@@ -187,6 +187,19 @@ export class ProductionProactive {
     return this.#running;
   }
 
+  async readDecisionModelIo(
+    decisionId: string,
+  ): Promise<readonly { readonly role: "model_input" | "model_output"; readonly text: string }[]> {
+    const payloads = await this.#options.store.readDecisionPayloads({
+      ...this.#options.scope,
+      decisionId,
+    });
+    const entries: { role: "model_input" | "model_output"; text: string }[] = [];
+    for (const { ref, role } of payloads)
+      entries.push({ role, text: await this.#options.model.readOutput(ref) });
+    return entries;
+  }
+
   beginAuthorization(owner: string): string {
     const now = Date.parse(this.#options.clock.now());
     for (const [state, entry] of this.#states)
