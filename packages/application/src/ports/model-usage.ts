@@ -34,6 +34,25 @@ export interface ModelUsageObservation {
 
 export interface ModelUsageStorePort {
   record(observation: ModelUsageObservation): Promise<void>;
+  isFollowUpTurn?(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+  }): Promise<boolean>;
+}
+
+export const MINIMUM_CACHEABLE_INPUT_TOKENS = 1024;
+export const FOLLOW_UP_CACHE_HIT_FLOOR = 0.5;
+
+export function lowCacheHitRate(observation: ModelUsageObservation): number | null {
+  if (
+    observation.purpose !== "chat" ||
+    !observation.cacheReported ||
+    observation.inputTokens < MINIMUM_CACHEABLE_INPUT_TOKENS
+  )
+    return null;
+  const rate = observation.cacheReadTokens / observation.inputTokens;
+  return rate < FOLLOW_UP_CACHE_HIT_FLOOR ? rate : null;
 }
 
 export function modelUsagePurpose(value: string): ModelUsagePurpose {
