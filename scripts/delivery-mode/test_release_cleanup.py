@@ -143,6 +143,24 @@ class ReleaseCleanupTest(CleanupCase):
         self.assertTrue((moved / 's1-result.json').exists())
         self.assertFalse((self.first['evidence'] / 'build-cache.tar.gz').exists())
 
+    def test_a_failed_attempts_acceptance_files_survive_whatever_their_size_and_a_passed_deploy_keeps_none(self):
+        diagnostics = self.tree.file(self.failed['stage'] / 'acceptance/run-01/original-start-diagnostics.json', 5 * MEBIBYTE)
+        database = self.tree.file(self.failed['stage'] / 'acceptance/run-01/original-start-product.sqlite', 20 * MEBIBYTE)
+        result = self.run_cleanup()
+        saved = Path(self.failed['binding']['paths']['evidenceRoot']).parent / 'release-cleanup/failed-acceptance/20261030T010000Z-himawari-twentieth-20261030/run-01'
+        self.assertEqual((saved / diagnostics.name).stat().st_size, 5 * MEBIBYTE)
+        self.assertEqual((saved / database.name).stat().st_size, 20 * MEBIBYTE)
+        self.assertFalse(diagnostics.exists())
+        self.assertIn('failed-acceptance-evidence', {item['reason'] for item in result['kept']})
+        self.assertFalse(any('runtime-tools' in item['path'] for item in result['kept']))
+
+    def test_only_the_newest_two_failed_acceptance_copies_stay(self):
+        root = Path(self.failed['binding']['paths']['evidenceRoot']).parent / 'release-cleanup/failed-acceptance'
+        for name in ('20261001T000000Z-a', '20261002T000000Z-b', '20261003T000000Z-c'):
+            self.tree.file(root / name / 'run-01/x.json')
+        self.run_cleanup()
+        self.assertEqual(sorted(os.listdir(root)), ['20261003T000000Z-c', '20261030T010000Z-himawari-twentieth-20261030'])
+
     def test_the_three_newest_database_copies_stay_and_older_ones_go(self):
         result = self.run_cleanup()
         moved = Path(str(self.failed['evidence']) + '.attempt-failed-20261030T010000Z')
