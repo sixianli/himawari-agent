@@ -37,6 +37,18 @@ const files = [
     kind: "data",
     mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   },
+  {
+    name: "系统字体中文.pdf",
+    source: "cjk-system-font.pdf",
+    kind: "pdf",
+    mediaType: "application/pdf",
+  },
+  {
+    name: "损坏的文件.pdf",
+    source: "broken.pdf",
+    kind: "pdf",
+    mediaType: "application/pdf",
+  },
 ];
 const bytes = new Map(
   await Promise.all(
@@ -224,6 +236,39 @@ try {
         .evaluate((cell) => getComputedStyle(cell).backgroundColor);
       expect(titleFill).toBe("rgb(31, 78, 121)");
       await shot("sheet");
+      await page.locator(".content-preview header button").last().click();
+
+      step = "pdf-without-embedded-font";
+      await page.getByText(files[3].name).first().click();
+      const cjkPage = page.locator(".content-preview .preview-page").first();
+      await expect(cjkPage.locator(".textLayer span").first()).toBeAttached({ timeout: 15000 });
+      await expect(cjkPage.locator(".textLayer")).toContainText("向日葵");
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const canvas = document.querySelector(".content-preview .preview-page canvas");
+              const pixels = canvas
+                .getContext("2d")
+                .getImageData(0, 0, canvas.width, canvas.height).data;
+              let ink = 0;
+              for (let index = 0; index < pixels.length; index += 4)
+                if (pixels[index] < 200) ink += 1;
+              return ink;
+            }),
+          { timeout: 15000 },
+        )
+        .toBeGreaterThan(300);
+      await page.locator(".content-preview header button").last().click();
+
+      step = "pdf-broken";
+      await page.getByText(files[4].name).first().click();
+      await expect(page.locator(".content-preview .preview-notice")).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.locator(".content-preview .preview-page")).toHaveCount(0);
+      await expect(page.locator(".content-preview a[download]")).toBeVisible();
+      await shot("pdf-broken");
 
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,

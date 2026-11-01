@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { pdfjsAssets } from "./vite-pdfjs-assets.js";
 
 export default defineConfig({
   build: {
@@ -7,5 +8,5 @@ export default defineConfig({
     modulePreload: { polyfill: false },
     sourcemap: false,
   },
-  plugins: [react()],
+  plugins: [react(), pdfjsAssets()],
 });

@@ -108,6 +108,7 @@ function detectCycles(graph) {
   return errors;
 }
 
+const approvedBuildTimeFile = path.join("apps/control-center", "vite-pdfjs-assets.ts");
 const workspacePackages = await readWorkspacePackages();
 const workspaceNames = new Set(workspacePackages.map(({ manifest }) => manifest.name));
 const graph = new Map();
@@ -152,6 +153,9 @@ for (const { directory, manifest, manifestPath } of workspacePackages) {
   for (const file of files) {
     const source = await readFile(file, "utf8");
     const fileLabel = path.relative(repositoryRoot, file);
+    // This Vite build plugin runs in Node while building the browser bundle and
+    // is never shipped to the browser. Keep this exception to the exact file.
+    if (fileLabel === approvedBuildTimeFile) continue;
     for (const match of source.matchAll(importPattern)) {
       const specifier = match[1] ?? match[2];
       if (!specifier) continue;

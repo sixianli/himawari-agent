@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { type CSSProperties, type RefObject, useEffect, useRef, useState } from "react";
 import { useControlCenterIntl } from "../i18n/runtime.js";
+import { pdfDocumentFontOptions } from "../pdf-document-options.js";
 import { type SheetCellStyle, type SheetView, workbookViews } from "../spreadsheet-model.js";
 import { withoutDrawings } from "../xlsx-drawings.js";
 
@@ -59,12 +60,14 @@ function PdfPage({
   size,
   width,
   label,
+  onFailed,
 }: {
   readonly document: PDFDocumentProxy;
   readonly number: number;
   readonly size: PageSize;
   readonly width: number;
   readonly label: string;
+  readonly onFailed: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -110,13 +113,18 @@ function PdfPage({
         textContentSource: (page as PDFPageProxy).streamTextContent(),
         container: layer,
         viewport,
-      }).render();
-    })().catch(() => {});
+      })
+        .render()
+        .catch(() => {});
+    })().catch((error: unknown) => {
+      if (current && (error as { name?: string } | null)?.name !== "RenderingCancelledException")
+        onFailed();
+    });
     return () => {
       current = false;
       task?.cancel();
     };
-  }, [visible, document, number, scale, width]);
+  }, [visible, document, number, scale, width, onFailed]);
   return (
     <div
       className="preview-page"
@@ -151,7 +159,10 @@ function PdfDocument({
     let destroy: (() => Promise<void>) | undefined;
     void (async () => {
       const pdf = await loadPdf();
-      const task = pdf.getDocument({ data: new Uint8Array(data.slice(0)) });
+      const task = pdf.getDocument({
+        data: new Uint8Array(data.slice(0)),
+        ...pdfDocumentFontOptions,
+      });
       destroy = () => task.destroy();
       const document = await task.promise;
       const sizes: PageSize[] = [];
@@ -178,6 +189,7 @@ function PdfDocument({
               size={size}
               width={pageWidth}
               label={message("preview.page", { page: index + 1, count: loaded.sizes.length })}
+              onFailed={onFailed}
             />
           ))
         : null}
