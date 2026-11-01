@@ -109,3 +109,4 @@ date: "2026-10-29"
 编码代理（Claude、Codex、opencode 等替 Andy 写代码、跑测试的程序）自己反复犯的错误，按 [ADR 0060](adr/0060-hard-constraint-on-third-repeat.md) 记在 [docs/lessons.md](lessons.md)，每条都写了第三次之后加的硬约束和它在哪里运行。那里的约束很多在本机的 `.ci-output/` 或 `agent-skills` 仓库里，不在本仓库，所以不进上面的表；它们出现新的一次时，在 lessons 对应条目下追加，如果那一次造成了事故，再在上表加一行。
 
 [↑ 回到开头](#contents)
+| I-65 | 2026-11-01 | 第二十四版上线（`deploy.sh`）连续两次在第一步 `S1_TRANSPORT` 失败，报 `TWENTYFOURTH_PACKET_FROZEN_MEMBER_SET_CHANGED`，服务没停、旧版本照常运行 | 已确认（复现）：`deploy.sh` 把防重复运行的锁目录 `.deploy.lock` 建在冻结包里面，而冻结校验（`steps/packet-common.py` 的 `verify_frozen`）要求包内文件和冻结清单完全一致，所以锁自己让校验失败；上线脚本自己的测试把锁放在包里，没有在持锁状态下校验过冻结包。修法：锁改放在包的同级目录（`.<包名>.deploy.lock`） | 1 | `scripts/delivery-mode/test_deploy.py` 的 `test_the_lock_adds_no_file_to_the_frozen_packet_while_a_step_runs`（持锁时列出冻结包文件，必须与启动前一致）。修之前在 Hermes 上该用例失败（包内多出 `.deploy.lock/pid`），修之后通过 | 已落门槛 |

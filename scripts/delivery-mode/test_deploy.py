@@ -302,7 +302,7 @@ class DeployHarness(unittest.TestCase):
 
 class DeployLockTest(DeployHarness):
     def lock(self):
-        return self.packet / '.deploy.lock'
+        return self.packet.parent / ('.' + self.packet.name + '.deploy.lock')
 
     def holder(self):
         process = subprocess.Popen(['sleep', '60'])
@@ -336,6 +336,16 @@ class DeployLockTest(DeployHarness):
         self.assertFalse(self.lock().exists())
         self.deploy(FAKE_FAIL_AT='S1_INSTALL')
         self.assertFalse(self.lock().exists())
+
+    def test_the_lock_adds_no_file_to_the_frozen_packet_while_a_step_runs(self):
+        snapshot = self.packet.parent / 'files-during-step'
+        listing = 'find "$(dirname "$0")/.." -type f -not -path "*/run-logs/*" | sort'
+        (self.packet / 'steps' / 'run-user-step.sh').write_text(listing + ' > ' + str(snapshot) + '\n')
+        before = sorted(str(path) for path in self.packet.rglob('*') if path.is_file() and 'run-logs' not in path.parts)
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        during = [str(Path(line).resolve()) for line in snapshot.read_text().splitlines()]
+        self.assertEqual(during, [str(Path(path).resolve()) for path in before])
 
     def test_a_lock_without_a_readable_pid_is_not_treated_as_free(self):
         self.lock().mkdir()
