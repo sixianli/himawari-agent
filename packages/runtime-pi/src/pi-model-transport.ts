@@ -91,6 +91,10 @@ export class ProtectedPiModelPayloadBoundary implements PiModelPayloadBoundary {
     await this.#payloads.put(payload);
     return ref;
   }
+
+  async release(payloadRefs: readonly string[]): Promise<void> {
+    for (const ref of payloadRefs) await this.#payloads.delete(ref);
+  }
 }
 
 export interface PiModelTransportInput {

@@ -115,11 +115,37 @@ describe("proactive Gmail check acceptance", () => {
     repositories.push(repository);
     const store = repository.proactive();
     const ids = new DeterministicIdGenerator();
-    const seal = createProactiveSeal({
-      payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
-      protector: new DeterministicPayloadProtector(),
-      ids,
-    });
+    const protector = new DeterministicPayloadProtector();
+    const payloadStore = repository.payloadStore(OWNER_ID, AGENT_ID);
+    const seal = createProactiveSeal({ payloads: payloadStore, protector, ids });
+    const written = new Set<string>();
+    const writePayload = async (ref: string, content: string) => {
+      await payloadStore.put(
+        await protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(content),
+          createdAt: clock.now(),
+        }),
+      );
+      written.add(ref);
+    };
+    const readPayload = async (ref: string) => {
+      const payload = await payloadStore.get(ref);
+      if (!payload) return undefined;
+      return new TextDecoder().decode(await protector.unprotect({ payload }));
+    };
+    const countPayloads = () => {
+      const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      try {
+        return Number(database.prepare("SELECT COUNT(*) FROM payloads").pluck().get());
+      } finally {
+        database.close();
+      }
+    };
     await store.writeSettings({
       ...scope,
       enabled: options.enabled ?? true,
@@ -244,9 +270,16 @@ describe("proactive Gmail check acceptance", () => {
       estimate: options.estimate ?? 100,
       estimateCostMicros: () => limits.estimate,
     };
+    const recording = { failing: false };
     const service = new ProactiveMailCheckService({
       scope,
-      store,
+      store: {
+        ...store,
+        record: async (input: Parameters<typeof store.record>[0]) => {
+          if (recording.failing) throw new Error("RECORD_FAILED");
+          return store.record(input);
+        },
+      },
       seal,
       reader,
       model: {
@@ -256,15 +289,22 @@ describe("proactive Gmail check acceptance", () => {
         modelRef: MODEL_REF,
         async prepare({ invocationId, prompt }) {
           prompts.push(prompt);
+          const inputRef = `input-${invocationId}`;
+          await writePayload(inputRef, prompt);
+          for (const [ref, content] of outputs)
+            if (!written.has(ref)) await writePayload(ref, content);
           return {
             runId: `proactive:${invocationId}` as never,
-            inputRef: `input-${invocationId}`,
+            inputRef,
             allowedDisclosureRef: "proactive-gmail",
             secretHandleRefs: [],
             release: async () => undefined,
           };
         },
-        readOutput: async (ref) => outputs.get(ref) ?? "",
+        readOutput: async (ref) => (await readPayload(ref)) ?? "",
+        release: async (refs) => {
+          for (const ref of refs) await payloadStore.delete(ref);
+        },
       },
       limits,
       timeZone: TIME_ZONE,
@@ -300,6 +340,25 @@ describe("proactive Gmail check acceptance", () => {
       prompts,
       invocations,
       limits,
+      readPayload,
+      countPayloads,
+      stateRoot,
+      ledger: repository.decisionLedger(),
+      payloadStore,
+      query: (sql: string, ...parameters: unknown[]) => {
+        const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+        try {
+          return database.prepare(sql).all(...parameters) as Record<string, unknown>[];
+        } finally {
+          database.close();
+        }
+      },
+      failRecords: () => {
+        recording.failing = true;
+        return () => {
+          recording.failing = false;
+        };
+      },
     };
   }
 
@@ -755,5 +814,169 @@ describe("proactive Gmail check acceptance", () => {
     expect(later.startsWith(stable)).toBe(true);
     expect(first.indexOf("现在是")).toBeGreaterThan(first.indexOf("只输出 JSON"));
     expect(first.indexOf("现在是")).toBeLessThan(first.indexOf("邮件："));
+  });
+  describe("[P0-5] ledger records what each check really sent to the model", () => {
+    const moneyMail = (id: string) =>
+      mail(id, { subject: "お支払い料金のお知らせ", snippet: "11/5 までに" });
+    const ledgerRows = (h: Awaited<ReturnType<typeof harness>>) =>
+      h.ledger.list({ ...scope, kind: "proactive", since: "2026-11-01T00:00:00.000Z", limit: 50 });
+
+    it("keeps the exact prompt, the answer, the mail ids and the rules that fired", async () => {
+      const h = await harness();
+      h.reader.items = [moneyMail("bill"), mail("friend")];
+      h.script([
+        { id: "bill", result: "know", todo: "电费", reason: "账单" },
+        { id: "friend", result: "ignore" },
+      ]);
+      const decision = await h.service.run();
+      const payloads = await h.store.readDecisionPayloads({
+        ...scope,
+        decisionId: decision?.id ?? "",
+      });
+      expect(payloads.map(({ role }) => role)).toEqual(["model_input", "model_output"]);
+      expect(await h.readPayload(payloads[0]?.ref ?? "")).toBe(h.prompts[0]);
+      expect(await h.readPayload(payloads[1]?.ref ?? "")).toContain('"id":"bill"');
+      const [entry] = await ledgerRows(h);
+      expect(entry?.id).toBe(decision?.id);
+      expect(entry?.inputs.sourceIds).toEqual(["bill", "friend"]);
+      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words"]);
+      expect(entry?.inputs.floorHits).toEqual({ bill: ["floor_money_words"] });
+      expect(entry?.inputs.memoryIds).toEqual([]);
+      expect(entry?.inputs.memoryInjected).toBe(false);
+      expect(h.prompts[0]).toContain('"id":"bill"');
+      expect(h.prompts[0]).toContain('"id":"friend"');
+    });
+
+    it("keeps every call of a multi-batch check and of a shrink-and-retry in order", async () => {
+      const h = await harness({ batchSize: 2 });
+      h.reader.items = [mail("a"), mail("b"), mail("c")];
+      h.scriptRaw("completed", "すみません、判断できません");
+      h.script([{ id: "a", result: "ignore" }]);
+      h.script([{ id: "b", result: "ignore" }]);
+      h.script([{ id: "c", result: "ignore" }]);
+      const decision = await h.service.run();
+      expect(decision?.counts.judged).toBe(3);
+      const payloads = await h.store.readDecisionPayloads({
+        ...scope,
+        decisionId: decision?.id ?? "",
+      });
+      expect(h.prompts).toHaveLength(4);
+      expect(payloads.map(({ role }) => role)).toEqual(
+        Array.from({ length: 4 }, () => ["model_input", "model_output"]).flat(),
+      );
+      expect(payloads.filter(({ role }) => role === "model_input")).toHaveLength(h.prompts.length);
+      for (const [index, prompt] of h.prompts.entries()) {
+        const input = payloads.filter(({ role }) => role === "model_input")[index];
+        expect(await h.readPayload(input?.ref ?? "")).toBe(prompt);
+      }
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.sourceIds).toEqual(["a", "b", "c"]);
+    });
+
+    it("keeps the prompt even when the model call fails", async () => {
+      const h = await harness();
+      h.reader.items = [mail("a")];
+      h.scriptRaw({ failedWith: "MODEL_ROUTE_UNAVAILABLE" });
+      const decision = await h.service.run();
+      expect(decision?.verdict).toBe("failed");
+      const payloads = await h.store.readDecisionPayloads({
+        ...scope,
+        decisionId: decision?.id ?? "",
+      });
+      expect(payloads.map(({ role }) => role)).toEqual(["model_input"]);
+      expect(await h.readPayload(payloads[0]?.ref ?? "")).toBe(h.prompts[0]);
+    });
+
+    it("records 300 mails in one check without being rejected", async () => {
+      const h = await harness({ batchSize: 300 });
+      h.reader.items = Array.from({ length: 300 }, (_, index) => mail(`m${index}`));
+      h.script(
+        Array.from({ length: 300 }, (_, index) => ({ id: `m${index}`, result: "ignore" as const })),
+      );
+      const decision = await h.service.run();
+      expect(decision?.counts.judged).toBe(300);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.sourceIds).toHaveLength(300);
+    });
+
+    it("leaves skipped mails out of sourceIds and records nothing when no mail reaches the model", async () => {
+      const h = await harness();
+      h.reader.items = [
+        mail("promo", { categories: ["promotions"] }),
+        mail("mine", { sentByOwner: true }),
+        mail("code", { subject: "認証コード", snippet: "認証コード 482913" }),
+      ];
+      const decision = await h.service.run();
+      expect(h.invocations()).toBe(0);
+      expect(
+        await h.store.readDecisionPayloads({ ...scope, decisionId: decision?.id ?? "" }),
+      ).toEqual([]);
+      expect(h.query("SELECT COUNT(*) AS n FROM decision_ledger_payloads")[0]?.["n"]).toBe(0);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.sourceIds).toEqual([]);
+      expect(entry?.inputs.ruleIds).toEqual([]);
+      expect(entry?.inputs.memoryInjected).toBe(false);
+    });
+
+    it("keeps skipped mails out of sourceIds while the others are recorded", async () => {
+      const h = await harness();
+      h.reader.items = [mail("promo", { categories: ["promotions"] }), mail("real")];
+      h.script([{ id: "real", result: "ignore" }]);
+      await h.service.run();
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.sourceIds).toEqual(["real"]);
+      expect(h.prompts[0]).not.toContain('"id":"promo"');
+    });
+
+    it("deletes the stored prompt, answer and sealed texts when the ledger write fails", async () => {
+      const h = await harness();
+      h.reader.items = [mail("a")];
+      h.script([{ id: "a", result: "ignore" }]);
+      const before = h.countPayloads();
+      const restore = h.failRecords();
+      await expect(h.service.run()).rejects.toThrow("RECORD_FAILED");
+      restore();
+      expect(h.countPayloads()).toBe(before);
+    });
+
+    it("deletes the prompt and answers together with the ledger rows when the owner clears records", async () => {
+      const h = await harness();
+      h.reader.items = [mail("a")];
+      h.script([{ id: "a", result: "ignore" }]);
+      const decision = await h.service.run();
+      const [first] = await h.store.readDecisionPayloads({
+        ...scope,
+        decisionId: decision?.id ?? "",
+      });
+      const released = await h.store.clearRecords(scope);
+      expect(released).toContain(first?.ref);
+      await h.seal.release({ ...scope, refs: released });
+      expect(await h.readPayload(first?.ref ?? "")).toBeUndefined();
+      expect(h.query("SELECT COUNT(*) AS n FROM decision_ledger_payloads")[0]?.["n"]).toBe(0);
+      expect(await ledgerRows(h)).toEqual([]);
+    });
+
+    it("keeps the ledger row and its inputs but not the prompt and answers when Gmail is disconnected", async () => {
+      const h = await harness();
+      h.reader.items = [moneyMail("bill")];
+      h.script([{ id: "bill", result: "know", todo: "x", reason: "y" }]);
+      const decision = await h.service.run();
+      const [first] = await h.store.readDecisionPayloads({
+        ...scope,
+        decisionId: decision?.id ?? "",
+      });
+      await expect(h.payloadStore.delete(first?.ref ?? "")).rejects.toThrow();
+      expect(await h.readPayload(first?.ref ?? "")).toBeDefined();
+      const released = await h.store.removeSource({ ...scope, source: "gmail" });
+      expect(released).toContain(first?.ref);
+      await h.seal.release({ ...scope, refs: released });
+      expect(await h.readPayload(first?.ref ?? "")).toBeUndefined();
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.sourceIds).toEqual(["bill"]);
+      expect(entry?.inputs.floorHits).toEqual({ bill: ["floor_money_words"] });
+      expect(
+        await h.store.readDecisionPayloads({ ...scope, decisionId: decision?.id ?? "" }),
+      ).toEqual([]);
+    });
   });
 });

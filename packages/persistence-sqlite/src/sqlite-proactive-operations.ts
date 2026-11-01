@@ -3,6 +3,7 @@ import type {
   ProactiveCounts,
   ProactiveDecision,
   ProactiveInsight,
+  ProactiveModelPayload,
   ProactiveProcessedMessage,
   ProactivePush,
   ProactiveQuietPeriod,
@@ -29,6 +30,8 @@ const VERDICTS = [
   "capped_daily",
   "needs_owner",
 ] as const;
+const MAX_INPUT_IDS = 500;
+const MAX_MODEL_PAYLOADS = 5000;
 const SKIP_REASONS = ["category", "sensitive", "own_mail"] as const;
 const PRIORITIES = ["high", "medium", "low"] as const;
 const COUNT_KEYS: readonly (keyof ProactiveCounts)[] = [
@@ -121,6 +124,8 @@ export class SqliteProactiveOperations {
         return this.removeSource(payload as Input<"removeSource">);
       case "proactive.clearRecords":
         return this.clearRecords(payload as ProactiveScope);
+      case "proactive.readDecisionPayloads":
+        return this.readDecisionPayloads(payload as Input<"readDecisionPayloads">);
       case "proactive.unprocessed":
         return this.unprocessed(payload as Input<"unprocessed">);
       case "proactive.readInsight":
@@ -337,7 +342,45 @@ export class SqliteProactiveOperations {
          WHERE owner_id = ? AND agent_id = ? AND header_ref IS NOT NULL${where}`,
       )
       .all(...parameters) as { ref: string }[];
-    return [...insightRefs, ...headerRefs].map(({ ref }) => ref);
+    const modelRefs = this.database
+      .prepare(
+        `SELECT link.payload_ref AS ref FROM decision_ledger_payloads link
+         JOIN decision_ledger ledger ON ledger.id = link.decision_id
+         WHERE ledger.owner_id = ? AND ledger.agent_id = ? AND ledger.kind = 'proactive'${
+           sourceFilter === null ? "" : " AND ledger.scenario = ?"
+         }`,
+      )
+      .all(...parameters) as { ref: string }[];
+    return [...insightRefs, ...headerRefs, ...modelRefs].map(({ ref }) => ref);
+  }
+
+  private deleteModelLinks(scope: ProactiveScope, sourceFilter: string | null): void {
+    this.database
+      .prepare(
+        `DELETE FROM decision_ledger_payloads WHERE decision_id IN (
+           SELECT id FROM decision_ledger
+           WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive'${
+             sourceFilter === null ? "" : " AND scenario = ?"
+           })`,
+      )
+      .run(scope.ownerId, scope.agentId, ...(sourceFilter ? [sourceFilter] : []));
+  }
+
+  private readDecisionPayloads(
+    input: Input<"readDecisionPayloads">,
+  ): readonly ProactiveModelPayload[] {
+    return (
+      this.database
+        .prepare(
+          `SELECT link.payload_ref AS ref, link.role AS role
+           FROM decision_ledger_payloads link
+           JOIN decision_ledger ledger ON ledger.id = link.decision_id
+           WHERE link.decision_id = ? AND ledger.owner_id = ? AND ledger.agent_id = ?
+             AND ledger.kind = 'proactive'
+           ORDER BY link.sequence`,
+        )
+        .all(input.decisionId, input.ownerId, input.agentId) as ProactiveModelPayload[]
+    ).map((row) => Object.freeze({ ref: row.ref, role: row.role }));
   }
 
   private removeSource(input: Input<"removeSource">): readonly string[] {
@@ -346,6 +389,7 @@ export class SqliteProactiveOperations {
       const refs = this.collectRefs(input, input.source);
       const connection = this.readConnection(input);
       const scope = [input.ownerId, input.agentId, input.source] as const;
+      this.deleteModelLinks(input, input.source);
       this.database
         .prepare("DELETE FROM source_insights WHERE owner_id = ? AND agent_id = ? AND source = ?")
         .run(...scope);
@@ -371,6 +415,7 @@ export class SqliteProactiveOperations {
   private clearRecords(scope: ProactiveScope): readonly string[] {
     return this.database.transaction(() => {
       const refs = this.collectRefs(scope, null);
+      this.deleteModelLinks(scope, null);
       for (const table of ["source_insights", "proactive_processed_messages", "proactive_pushes"])
         this.database
           .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ?`)
@@ -431,11 +476,42 @@ export class SqliteProactiveOperations {
       this.invalid("Proactive decision is invalid");
   }
 
+  private validateInputs(input: Input<"record">) {
+    const { inputs, modelPayloads } = input;
+    const ids = (value: unknown, max: number) =>
+      Array.isArray(value) &&
+      value.length <= max &&
+      value.every((item) => typeof item === "string" && item.length >= 1 && item.length <= 256) &&
+      new Set(value).size === value.length;
+    const floorHits = inputs?.floorHits;
+    if (
+      !ids(inputs?.ruleIds, MAX_INPUT_IDS) ||
+      !ids(inputs?.sourceIds, MAX_INPUT_IDS) ||
+      typeof inputs.memoryInjected !== "boolean" ||
+      typeof floorHits !== "object" ||
+      floorHits === null ||
+      Object.keys(floorHits).length > MAX_INPUT_IDS ||
+      Object.entries(floorHits).some(
+        ([messageId, rules]) => messageId.length < 1 || messageId.length > 256 || !ids(rules, 16),
+      ) ||
+      !Array.isArray(modelPayloads) ||
+      modelPayloads.length > MAX_MODEL_PAYLOADS ||
+      modelPayloads.some(
+        (payload) =>
+          !["model_input", "model_output"].includes(payload.role) ||
+          typeof payload.ref !== "string" ||
+          payload.ref.length < 1,
+      )
+    )
+      this.invalid("Proactive check inputs are invalid");
+  }
+
   private record(input: Input<"record">): ProactiveRecordResult {
     this.assertDiskHeadroom();
     const { decision } = input;
     this.validateDecision(decision);
     if (input.push) this.time(input.push.readyAt);
+    this.validateInputs(input);
     for (const message of input.processed)
       if (
         !includes(SOURCES, message.source) ||
@@ -459,7 +535,7 @@ export class SqliteProactiveOperations {
             id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code,
             subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros, duration_ms,
             owner_rating, rated_at
-          ) VALUES (?, ?, ?, 'proactive', ?, ?, ?, ?, NULL, ?, NULL, '{}', NULL, NULL, ?, ?, ?, NULL, NULL)`,
+          ) VALUES (?, ?, ?, 'proactive', ?, ?, ?, ?, NULL, ?, NULL, ?, NULL, NULL, ?, ?, ?, NULL, NULL)`,
         )
         .run(
           decision.id,
@@ -469,10 +545,24 @@ export class SqliteProactiveOperations {
           JSON.stringify(Object.fromEntries(COUNT_KEYS.map((key) => [key, decision.counts[key]]))),
           decision.verdict,
           decision.reasonCode,
+          JSON.stringify({
+            memoryIds: [],
+            ruleIds: input.inputs.ruleIds,
+            sourceIds: input.inputs.sourceIds,
+            floorHits: input.inputs.floorHits,
+            memoryInjected: input.inputs.memoryInjected,
+          }),
           decision.pushSourceKey,
           decision.costMicros,
           decision.durationMs,
         );
+      const insertModelPayload = this.database.prepare(
+        `INSERT INTO decision_ledger_payloads (decision_id, sequence, role, payload_ref)
+         VALUES (?, ?, ?, ?)`,
+      );
+      input.modelPayloads.forEach((payload, sequence) => {
+        insertModelPayload.run(decision.id, sequence, payload.role, payload.ref);
+      });
       const insertProcessed = this.database.prepare(
         `INSERT INTO proactive_processed_messages (
           owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, skip_reason,

@@ -560,6 +560,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0069_decision_ledger.sql",
   },
+  {
+    sequence: 70,
+    name: "decision_ledger_payloads",
+    changeSet: "decision-ledger-payloads",
+    phase: "expand" as const,
+    file: "0070_decision_ledger_payloads.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

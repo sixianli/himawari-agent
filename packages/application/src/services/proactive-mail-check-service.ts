@@ -1,10 +1,12 @@
 import type { RunId } from "@himawari-agent/domain";
 import type { ModelInvocationRequest, ModelPort } from "../ports/intelligence.js";
 import type {
+  ProactiveCheckInputs,
   ProactiveConfidence,
   ProactiveCounts,
   ProactiveDecision,
   ProactiveInsightWrite,
+  ProactiveModelPayload,
   ProactivePriority,
   ProactiveProcessedMessage,
   ProactiveResult,
@@ -20,7 +22,7 @@ import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import {
   applyFloor,
   containsSensitiveText,
-  hitsFloor,
+  floorHitIds,
   isImportantSender,
   quietUntil,
   startOfZonedDay,
@@ -49,6 +51,7 @@ export interface ProactiveModelInvoker {
     readonly deadlineAt: string;
   }): Promise<ProactiveModelAuthority>;
   readOutput(payloadRef: string): Promise<string>;
+  release(payloadRefs: readonly string[]): Promise<void>;
 }
 
 export interface ProactiveLimits {
@@ -84,6 +87,13 @@ interface Judgement {
 type Stop = "capped" | "capped_daily" | "failed" | null;
 
 const DEFAULT_BATCH_SIZE = 8;
+
+interface CheckTrace {
+  readonly payloads: ProactiveModelPayload[];
+  readonly sealed: string[];
+  readonly sourceIds: Set<string>;
+  recorded: boolean;
+}
 
 interface JudgeOutcome {
   readonly judgements: ReadonlyMap<string, Judgement> | undefined;
@@ -277,9 +287,35 @@ export class ProactiveMailCheckService {
     deadlineAt: string,
     controller: AbortController,
   ): Promise<ProactiveDecision> {
+    const trace: CheckTrace = { payloads: [], sealed: [], sourceIds: new Set(), recorded: false };
+    try {
+      return await this.#checkTraced(settings, tokenRef, startedAt, deadlineAt, controller, trace);
+    } catch (error) {
+      if (!trace.recorded) {
+        if (trace.payloads.length > 0)
+          await this.#options.model
+            .release(trace.payloads.map(({ ref }) => ref))
+            .catch(() => undefined);
+        if (trace.sealed.length > 0)
+          await this.#options.seal
+            .release({ ...this.#options.scope, refs: trace.sealed })
+            .catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  async #checkTraced(
+    settings: ProactiveSettings,
+    tokenRef: string,
+    startedAt: string,
+    deadlineAt: string,
+    controller: AbortController,
+    trace: CheckTrace,
+  ): Promise<ProactiveDecision> {
     const { store, scope, reader, seal } = this.#options;
     const token = await seal.open({ ...scope, ref: tokenRef });
-    if (!token) return this.#needsOwner(startedAt, "SOURCE_TOKEN_MISSING");
+    if (!token) return this.#needsOwner(trace, startedAt, "SOURCE_TOKEN_MISSING");
     const fetched = await reader
       .fetch({
         token,
@@ -292,9 +328,10 @@ export class ProactiveMailCheckService {
         kind: "failed" as const,
         step: controller.signal.aborted ? "timeout" : "read",
       }));
-    if (fetched.kind === "unauthorized") return this.#needsOwner(startedAt, "SOURCE_UNAUTHORIZED");
+    if (fetched.kind === "unauthorized")
+      return this.#needsOwner(trace, startedAt, "SOURCE_UNAUTHORIZED");
     if (fetched.kind === "failed")
-      return this.#finish({
+      return this.#finish(trace, {
         startedAt,
         verdict: "failed",
         reasonCode: `READ_${fetched.step.toUpperCase().replace(/[^A-Z0-9]+/gu, "_")}`.slice(0, 64),
@@ -305,6 +342,7 @@ export class ProactiveMailCheckService {
         costMicros: 0,
         cursor: null,
         quietHours: [],
+        floorHits: {},
       });
     const fresh = new Set(
       await store.unprocessed({
@@ -361,6 +399,7 @@ export class ProactiveMailCheckService {
         prompt,
         deadlineAt,
         controller.signal,
+        trace,
       ).catch(() => ({
         judgements: undefined,
         costMicros: 0,
@@ -393,8 +432,11 @@ export class ProactiveMailCheckService {
       fetched: items.length,
       skipped: processed.length,
     };
+    const floorHits: Record<string, readonly string[]> = {};
     for (const item of candidates) {
-      const floor = hitsFloor(item, settings.importantSenders);
+      const floorIds = floorHitIds(item, settings.importantSenders);
+      const floor = floorIds.length > 0;
+      if (floor) floorHits[item.messageId] = floorIds;
       const judgement = judged.get(item.messageId);
       if (!judgement) {
         if (stop === "capped_daily" && floor) {
@@ -428,7 +470,11 @@ export class ProactiveMailCheckService {
           ...this.#base(item),
           outcome: "ignore",
           skipReason: null,
-          headerRef: await this.#seal({ from: item.from, subject: item.subject, link: item.link }),
+          headerRef: await this.#seal(trace, {
+            from: item.from,
+            subject: item.subject,
+            link: item.link,
+          }),
         });
         continue;
       }
@@ -468,7 +514,7 @@ export class ProactiveMailCheckService {
           ? "deferred"
           : "pushed"
         : (stop ?? "silent");
-    return this.#finish({
+    return this.#finish(trace, {
       startedAt,
       verdict,
       reasonCode: this.#reason(verdict, stop, failure, items.length, counts),
@@ -486,6 +532,7 @@ export class ProactiveMailCheckService {
       costMicros,
       cursor: leftover ? null : fetched.cursor,
       quietHours: settings.quietHours,
+      floorHits,
     });
   }
 
@@ -519,12 +566,14 @@ export class ProactiveMailCheckService {
     };
   }
 
-  async #seal(value: Record<string, string>): Promise<string> {
-    return this.#options.seal.seal({
+  async #seal(trace: CheckTrace, value: Record<string, string>): Promise<string> {
+    const ref = await this.#options.seal.seal({
       ...this.#options.scope,
       text: JSON.stringify(value),
       at: this.#options.clock.now(),
     });
+    trace.sealed.push(ref);
+    return ref;
   }
 
   async #judge(
@@ -532,10 +581,13 @@ export class ProactiveMailCheckService {
     prompt: string,
     deadlineAt: string,
     signal: AbortSignal,
+    trace: CheckTrace,
   ): Promise<JudgeOutcome> {
     const { model } = this.#options;
     const invocationId = this.#options.ids.next("proactive-model");
     const authority = await model.prepare({ invocationId, prompt, deadlineAt });
+    trace.payloads.push({ ref: authority.inputRef, role: "model_input" });
+    for (const { messageId } of batch) trace.sourceIds.add(messageId);
     let output = "";
     let completed = false;
     let truncated = false;
@@ -560,6 +612,7 @@ export class ProactiveMailCheckService {
           break;
         }
         if (event.type === "model.output") {
+          trace.payloads.push({ ref: event.payloadRef, role: "model_output" });
           output += await model.readOutput(event.payloadRef);
           if (new TextEncoder().encode(output).byteLength > MAX_OUTPUT_BYTES) break;
         }
@@ -585,7 +638,11 @@ export class ProactiveMailCheckService {
     };
   }
 
-  async #needsOwner(startedAt: string, reasonCode: string): Promise<ProactiveDecision> {
+  async #needsOwner(
+    trace: CheckTrace,
+    startedAt: string,
+    reasonCode: string,
+  ): Promise<ProactiveDecision> {
     await this.#options.store.markConnection({
       ...this.#options.scope,
       source: this.#options.reader.source,
@@ -593,7 +650,7 @@ export class ProactiveMailCheckService {
       cursor: null,
       now: startedAt,
     });
-    return this.#finish({
+    return this.#finish(trace, {
       startedAt,
       verdict: "needs_owner",
       reasonCode,
@@ -604,21 +661,26 @@ export class ProactiveMailCheckService {
       costMicros: 0,
       cursor: null,
       quietHours: [],
+      floorHits: {},
     });
   }
 
-  async #finish(input: {
-    readonly startedAt: string;
-    readonly verdict: ProactiveVerdict;
-    readonly reasonCode: string;
-    readonly counts: ProactiveCounts;
-    readonly processed: readonly ProactiveCheckProcessed[];
-    readonly insights: readonly ProactiveCheckInsight[];
-    readonly replied: readonly string[];
-    readonly costMicros: number;
-    readonly cursor: string | null;
-    readonly quietHours: ProactiveSettings["quietHours"];
-  }): Promise<ProactiveDecision> {
+  async #finish(
+    trace: CheckTrace,
+    input: {
+      readonly startedAt: string;
+      readonly verdict: ProactiveVerdict;
+      readonly reasonCode: string;
+      readonly counts: ProactiveCounts;
+      readonly processed: readonly ProactiveCheckProcessed[];
+      readonly insights: readonly ProactiveCheckInsight[];
+      readonly replied: readonly string[];
+      readonly costMicros: number;
+      readonly cursor: string | null;
+      readonly quietHours: ProactiveSettings["quietHours"];
+      readonly floorHits: Readonly<Record<string, readonly string[]>>;
+    },
+  ): Promise<ProactiveDecision> {
     const { store, scope, ids, clock } = this.#options;
     const pushing = input.insights.some(({ push }) => push);
     let push: { id: string; readyAt: string } | null = null;
@@ -636,7 +698,7 @@ export class ProactiveMailCheckService {
         lastMessageId: insight.item.messageId,
         result: insight.result as ProactiveInsightWrite["result"],
         floorRaised: insight.floorRaised,
-        contentRef: await this.#seal({
+        contentRef: await this.#seal(trace, {
           summary: insight.summary,
           reason: insight.reason,
           basis: insight.basis,
@@ -662,15 +724,24 @@ export class ProactiveMailCheckService {
       ownerRating: null,
       ratedAt: null,
     });
+    const inputs: ProactiveCheckInputs = Object.freeze({
+      ruleIds: [...new Set(Object.values(input.floorHits).flat())].sort(),
+      sourceIds: [...trace.sourceIds],
+      floorHits: input.floorHits,
+      memoryInjected: false,
+    });
     const result = await store.record({
       ...scope,
       decision,
+      inputs,
+      modelPayloads: trace.payloads,
       processed: input.processed,
       insights: writes,
       repliedThreadIds: input.replied,
       push,
       cursor: input.cursor,
     });
+    trace.recorded = true;
     if (result.releasedRefs.length > 0)
       await this.#options.seal.release({ ...scope, refs: result.releasedRefs });
     return decision;

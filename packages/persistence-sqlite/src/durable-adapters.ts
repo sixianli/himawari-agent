@@ -972,6 +972,7 @@ export class SqliteDurableAdapters {
       markConnection: (input) => this.context.write("proactive.markConnection", input),
       removeSource: (input) => this.context.write("proactive.removeSource", input),
       clearRecords: (input) => this.context.write("proactive.clearRecords", input),
+      readDecisionPayloads: (input) => this.context.read("proactive.readDecisionPayloads", input),
       unprocessed: (input) => this.context.read("proactive.unprocessed", input),
       readInsight: (input) => this.context.read("proactive.readInsight", input),
       record: (input) => this.context.write("proactive.record", input),
