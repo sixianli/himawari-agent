@@ -637,6 +637,80 @@ function ConfirmSection({ memory, message }: { memory: MemoryModel; message: Mes
   );
 }
 
+function pad(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function localInput(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function ReminderAddCard({
+  memory,
+  message,
+  notify,
+  onDone,
+}: {
+  memory: MemoryModel;
+  message: Message;
+  notify: (notice: Notice) => void;
+  onDone: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [due, setDue] = useState("");
+  const [yearly, setYearly] = useState(false);
+  const past = due !== "" && !(Date.parse(due) > Date.now());
+  const save = () =>
+    void memory.createReminder(text.trim(), due, yearly ? "yearly" : "none").then((ok) => {
+      if (!ok) return;
+      notify({ text: message("reminders.added", { text: text.trim() }) });
+      onDone();
+    });
+  return (
+    <section className="memory-card" data-kind="add">
+      <div className="memory-editor">
+        <textarea
+          aria-label={message("reminders.add")}
+          maxLength={500}
+          placeholder={message("reminders.addPlaceholder")}
+          value={text}
+          onChange={(event) => setText(event.currentTarget.value)}
+        />
+        <div className="memory-add-options">
+          <label>
+            {message("reminders.addWhen")}
+            <input
+              type="datetime-local"
+              value={due}
+              min={localInput(new Date())}
+              onChange={(event) => setDue(event.currentTarget.value)}
+            />
+          </label>
+          <label className="memory-switch">
+            {message("reminders.addYearly")}
+            <input
+              type="checkbox"
+              role="switch"
+              aria-checked={yearly}
+              checked={yearly}
+              onChange={() => setYearly(!yearly)}
+            />
+          </label>
+        </div>
+        {past ? <small className="settings-note">{message("reminders.addPast")}</small> : null}
+        <div className="actions">
+          <ActionButton disabled={memory.busy || !text.trim() || due === "" || past} onClick={save}>
+            {message("memory.save")}
+          </ActionButton>
+          <ActionButton variant="quiet" disabled={memory.busy} onClick={onDone}>
+            {message("governed.cancel")}
+          </ActionButton>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function RemindersPage({
   memory,
   proactive = null,
@@ -656,6 +730,7 @@ export function RemindersPage({
 }) {
   const [notice, setNotice] = useState<Notice>(null);
   const [view, setView] = useState<"list" | "log">("list");
+  const [adding, setAdding] = useState(false);
   const highlight = useHighlight(focus);
   useEffect(() => {
     if (focus) setView("list");
@@ -794,8 +869,21 @@ export function RemindersPage({
               {message("proactive.log")}
             </button>
           ) : null}
+          {memory?.overview?.manualAddReady && !adding ? (
+            <ActionButton variant="secondary" onClick={() => setAdding(true)}>
+              {message("reminders.add")}
+            </ActionButton>
+          ) : null}
         </div>
       </header>
+      {memory && adding ? (
+        <ReminderAddCard
+          memory={memory}
+          message={message}
+          notify={setNotice}
+          onDone={() => setAdding(false)}
+        />
+      ) : null}
       {!memory ? (
         <p className="settings-note">{message("common.notConfigured")}</p>
       ) : !overview ? (

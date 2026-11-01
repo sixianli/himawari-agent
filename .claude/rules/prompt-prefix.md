@@ -25,7 +25,7 @@
 <a id="gate"></a>
 ## 自动检查
 
-`npm run check:prompt-prefix`（`npm run check` 的一步）用真实的 Pi 适配器、真实的出口遮盖，对本机回环服务跑多轮对话，包括工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间，逐字节检查后一次请求是以前一次请求为开头的。它还带反向用例：把历史里的用户消息改写、让系统提示里带每轮变化的值，检查必须报告失败。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`，名字带 `[I-66]`，少于 7 条通过就失败。
+`npm run check:prompt-prefix`（`npm run check` 的一步）用真实的 Pi 适配器、真实的出口遮盖，对本机回环服务跑多轮对话，包括工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间，逐字节检查后一次请求是以前一次请求为开头的。它还带反向用例：把历史里的用户消息改写、让系统提示里带每轮变化的值，检查必须报告失败。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`，名字带 `[I-66]`，少于 8 条通过就失败。
 
 生产上，一次后续轮次的请求命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`；`node scripts/operations/cache-hit-report.mjs <product.sqlite> --by turn` 按「第 1 轮 / 第 2 轮及以后」和「首次请求 / 同轮后续」分别给出命中率。
 

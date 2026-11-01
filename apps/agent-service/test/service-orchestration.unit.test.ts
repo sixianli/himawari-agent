@@ -691,6 +691,8 @@ function web() {
   for (const key of [
     "payloadStore",
     "productMemoryState",
+    "memoryBook",
+    "memoryReminders",
     "memoryProjectionJobs",
     "runPayloadArtifactPort",
     "capabilityStore",

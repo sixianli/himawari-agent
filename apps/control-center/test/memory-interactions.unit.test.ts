@@ -929,6 +929,41 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-drawer")).toContain("每年");
   });
 
+  it("[REM-1] creates a reminder from the reminders page, refuses a past time and hides the button until a memory exists", async () => {
+    await render();
+    const add = "#reminders-page .memory-card[data-kind=add]";
+    await click("#reminders-page .memory-header", "新建提醒");
+    await type(`${add} textarea`, "周五交周报");
+    await type(`${add} input[type=datetime-local]`, "2020-01-01T09:00");
+    expect(text(add)).toContain("提醒时间要晚于现在");
+    expect(button(add, "保存").disabled).toBe(true);
+    mutate.mockClear();
+    await click(add, "保存");
+    expect(mutate).not.toHaveBeenCalled();
+    await type(`${add} input[type=datetime-local]`, "2099-01-02T09:30");
+    await act(async () =>
+      document.querySelector<HTMLInputElement>(`${add} [role=switch]`)?.click(),
+    );
+    await click(add, "保存");
+    expect(protectText).toHaveBeenLastCalledWith("周五交周报", "private");
+    expect(lastCommand()).toMatchObject({
+      type: "memory.reminder.create",
+      payload: { contentRef: "payload-edit", due: "2099-01-02T09:30", repeat: "yearly" },
+    });
+    expect(text("#reminders-page .memory-notice")).toContain("已设好提醒：周五交周报");
+    expect(document.querySelector(add)).toBeNull();
+  });
+
+  it("[REM-1] does not offer a new reminder before the first memory is learned", async () => {
+    overview = { ...overview, manualAddReady: false };
+    await render();
+    expect(
+      [
+        ...document.querySelectorAll<HTMLButtonElement>("#reminders-page .memory-header button"),
+      ].some((item) => item.textContent === "新建提醒"),
+    ).toBe(false);
+  });
+
   it("[MP-8] pauses learning, adds a memory by hand, imports pasted memories and exports", async () => {
     await render();
     const toggle = document.querySelector<HTMLInputElement>("#settings [role=switch]");

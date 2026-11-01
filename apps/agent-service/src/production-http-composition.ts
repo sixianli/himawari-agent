@@ -1036,6 +1036,9 @@ export async function createProductionHttpComposition(
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
         onAudit: options.memory.onAudit,
       })
     : undefined;
