@@ -30,7 +30,7 @@ const configuration: ControlCenterRuntimeConfiguration = {
   installedGatewayV2Operations: [
     "push.status.read",
     "push.subscription.set",
-    "push.kinds.set",
+    "push.kind.set",
     "push.test",
   ],
 };
@@ -129,6 +129,7 @@ const device = (
   deviceLabel,
   endpointHost: "push.example",
   locale: "zh-CN",
+  kinds: ["reminder", "approval", "run"],
   state: "active",
   failureCode: null,
   createdAt: "2026-10-26T10:00:00.000Z",
@@ -158,10 +159,17 @@ describe("[WP-8] notification settings", () => {
         snapshot = status([device(THIS_DEVICE_ID, "Mac 浏览器")], snapshot.kinds);
         return { resultRef: THIS_DEVICE_ID, replayed: false };
       }
-      if (command.type === "push.kinds.set") {
+      if (command.type === "push.kind.set") {
+        const change = command.payload as unknown as {
+          kind: PushStatus["kinds"][number];
+          enabled: boolean;
+        };
         snapshot = {
           ...snapshot,
-          kinds: (command.payload as unknown as { kinds: PushStatus["kinds"] }).kinds,
+          kinds: [
+            ...snapshot.kinds.filter((value) => value !== change.kind),
+            ...(change.enabled ? [change.kind] : []),
+          ],
         };
         return { resultRef: "kinds", replayed: false };
       }
@@ -249,8 +257,8 @@ describe("[WP-8] notification settings", () => {
     ).toBe(PUBLIC_KEY);
     const [kindsSet, subscribe, test] = mutate.mock.calls.map(([command]) => command);
     expect(kindsSet).toMatchObject({
-      type: "push.kinds.set",
-      payload: { kinds: ["reminder", "approval"] },
+      type: "push.kind.set",
+      payload: { kind: "run", enabled: false },
     });
     expect(subscribe).toMatchObject({
       type: "push.subscription.set",
@@ -271,7 +279,7 @@ describe("[WP-8] notification settings", () => {
     expect(container.textContent).toContain("已发出，几秒内会弹出。");
   });
 
-  it("[WP-8] shows the account switches on a device that is not subscribed, and a change from another device after reload", async () => {
+  it("[WP-8] shows the account switches on a device that is not subscribed, and picks up a change made on another device when the page becomes visible again", async () => {
     const fake = fakeBrowser({ userAgent: MAC, standalone: false, permission: "default" });
     snapshot = status([device("web-push-phone", "iPhone 主屏应用")], ["reminder", "approval"]);
     await render(fake.browser);
@@ -282,8 +290,15 @@ describe("[WP-8] notification settings", () => {
     mutate.mockClear();
     await act(async () => switchFor("任务结束")?.click());
     await settle();
-    expect(mutate.mock.calls.map(([command]) => command.type)).toEqual(["push.kinds.set"]);
+    expect(mutate.mock.calls.map(([command]) => command.type)).toEqual(["push.kind.set"]);
     expect(switchFor("任务结束")?.checked).toBe(true);
+    snapshot = status([device("web-push-phone", "iPhone 主屏应用")], ["approval"]);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+    expect(switchFor("任务结束")?.checked).toBe(false);
+    expect(switchFor("记忆提醒")?.checked).toBe(false);
   });
 
   it("[WP-8] explains how to unblock when notifications were refused", async () => {
@@ -332,8 +347,8 @@ describe("[WP-8] notification settings", () => {
       container.querySelector<HTMLInputElement>('input[aria-label="等你审批"]')?.click(),
     );
     await settle();
-    expect(mutate.mock.calls.map(([command]) => command.type)).toEqual(["push.kinds.set"]);
-    expect(mutate.mock.calls[0]?.[0].payload.kinds).toEqual(["reminder", "approval", "run"]);
+    expect(mutate.mock.calls.map(([command]) => command.type)).toEqual(["push.kind.set"]);
+    expect(mutate.mock.calls[0]?.[0].payload).toEqual({ kind: "approval", enabled: true });
 
     await act(async () => button("移除")?.click());
     await settle();
@@ -344,6 +359,7 @@ describe("[WP-8] notification settings", () => {
       keys: null,
       locale: null,
       deviceLabel: null,
+      kinds: null,
     });
     expect(fake.unsubscribe).not.toHaveBeenCalled();
 

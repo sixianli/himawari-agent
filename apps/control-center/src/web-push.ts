@@ -152,6 +152,7 @@ export class PushController {
           ...subscriptionKeys(subscription),
           locale: input.locale,
           deviceLabel: input.deviceLabel,
+          kinds: null,
         },
         this.#options(),
       ),
@@ -183,15 +184,16 @@ export class PushController {
           keys: null,
           locale: null,
           deviceLabel: null,
+          kinds: null,
         },
         this.#options(),
       ),
     );
   }
 
-  async setKinds(kinds: readonly WebPushKind[]): Promise<void> {
+  async setKind(kind: WebPushKind, enabled: boolean): Promise<void> {
     await this.#client.mutate(
-      commandMessage(this.#configuration, "push.kinds.set", { kinds: [...kinds] }, this.#options()),
+      commandMessage(this.#configuration, "push.kind.set", { kind, enabled }, this.#options()),
     );
   }
 

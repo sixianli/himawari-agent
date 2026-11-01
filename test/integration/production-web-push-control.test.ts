@@ -54,6 +54,7 @@ const subscribe = (endpoint: string, overrides: Record<string, unknown> = {}) =>
     keys: { p256dh: P256DH, auth: "BTBZMqHH6r4Tts7J_aSIgg" },
     locale: "zh-CN",
     deviceLabel: "iPhone 主屏应用",
+    kinds: null,
     ...overrides,
   }) as GatewayV2Command;
 
@@ -232,6 +233,7 @@ describe("[WP-5] web push gateway control", () => {
         keys: null,
         locale: null,
         deviceLabel: null,
+        kinds: null,
       }) as GatewayV2Command,
     );
     expect((await status(control)).subscriptions).toEqual([]);
@@ -243,16 +245,35 @@ describe("[WP-5] web push gateway control", () => {
     await control.execute(subscribe("https://push.example/laptop", { deviceLabel: "laptop" }));
     expect((await status(control)).kinds).toEqual(["reminder", "approval", "run"]);
     await control.execute(
-      message("command", "push.kinds.set", {
-        kinds: ["approval", "approval", "reminder"],
-      }) as GatewayV2Command,
+      message("command", "push.kind.set", { kind: "run", enabled: false }) as GatewayV2Command,
     );
     expect((await status(control)).kinds).toEqual(["reminder", "approval"]);
+    await control.execute(
+      message("command", "push.kind.set", { kind: "reminder", enabled: false }) as GatewayV2Command,
+    );
+    expect((await status(control)).kinds).toEqual(["approval"]);
+    const afterBoth = await status(control);
+    expect(afterBoth.subscriptions.map((device) => device.kinds)).toEqual([
+      ["approval"],
+      ["approval"],
+    ]);
     await control.execute(subscribe("https://push.example/tablet", { deviceLabel: "tablet" }));
+    expect((await status(control)).kinds).toEqual(["approval"]);
+    await control.execute(
+      subscribe("https://push.example/old-page", {
+        deviceLabel: "old page",
+        kinds: ["reminder", "approval"],
+      }),
+    );
     expect((await status(control)).kinds).toEqual(["reminder", "approval"]);
     await expect(
       control.execute(
-        message("command", "push.kinds.set", { kinds: ["run"] }, "client") as GatewayV2Command,
+        message(
+          "command",
+          "push.kind.set",
+          { kind: "run", enabled: true },
+          "client",
+        ) as GatewayV2Command,
       ),
     ).rejects.toThrow("WEB_PUSH_OWNER_REQUIRED");
   });
@@ -273,6 +294,7 @@ describe("[WP-5] web push gateway control", () => {
         keys: { p256dh: P256DH, auth: "BTBZMqHH6r4Tts7J_aSIgg" },
         locale: "en",
         deviceLabel: "laptop",
+        kinds: null,
       },
       "client",
     ) as GatewayV2Command;

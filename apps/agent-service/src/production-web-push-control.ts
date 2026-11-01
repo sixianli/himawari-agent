@@ -16,7 +16,7 @@ import type { ProductionWebPush, WebPushPresence } from "./production-web-push.j
 export const PRODUCTION_WEB_PUSH_OPERATIONS = Object.freeze([
   "push.status.read",
   "push.subscription.set",
-  "push.kinds.set",
+  "push.kind.set",
   "push.test",
   "presence.heartbeat",
   "push.feedback.record",
@@ -65,6 +65,7 @@ export class ProductionWebPushControl {
           deviceLabel: subscription.deviceLabel,
           endpointHost: new URL(subscription.endpoint).host,
           locale: subscription.locale,
+          kinds: [...kinds],
           state: subscription.state,
           failureCode: subscription.failureCode,
           createdAt: subscription.createdAt,
@@ -101,14 +102,15 @@ export class ProductionWebPushControl {
       });
       return { resultRef: `web-push-feedback:${recorded}`, replayed: false };
     }
-    if (command.type === "push.kinds.set") {
-      const saved = await this.#options.store.writeKinds({
+    if (command.type === "push.kind.set") {
+      const saved = await this.#options.store.setKind({
         ownerId,
         agentId,
-        kinds: [...new Set(command.payload.kinds)],
+        kind: command.payload.kind,
+        enabled: command.payload.enabled,
         now,
       });
-      return { resultRef: `web-push-kinds:${saved.join(",")}`, replayed: false };
+      return { resultRef: `web-push-kinds:${saved.length}`, replayed: false };
     }
     const push = this.#options.push;
     if (!push)
@@ -121,7 +123,7 @@ export class ProductionWebPushControl {
     }
     if (command.type !== "push.subscription.set")
       throw new Error("WEB_PUSH_OPERATION_NOT_INSTALLED");
-    const { action, subscriptionId, endpoint, keys, locale, deviceLabel } = command.payload;
+    const { action, subscriptionId, endpoint, keys, locale, deviceLabel, kinds } = command.payload;
     if (action === "unsubscribe") {
       if (!subscriptionId)
         throw new ApplicationPortError(
@@ -154,6 +156,8 @@ export class ProductionWebPushControl {
       deviceLabel: deviceLabel.trim(),
       now,
     });
+    if (kinds)
+      await this.#options.store.writeKinds({ ownerId, agentId, kinds: [...new Set(kinds)], now });
     return { resultRef: saved.id, replayed: false };
   }
 }

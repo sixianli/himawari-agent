@@ -118,6 +118,15 @@ describe("[WP-2] web push storage", () => {
       await expect(
         store.writeKinds({ ...scope, kinds: ["nope" as "run"], now: T1 }),
       ).rejects.toThrow();
+      expect(await store.setKind({ ...scope, kind: "run", enabled: true, now: T2 })).toEqual([
+        "reminder",
+        "approval",
+        "run",
+      ]);
+      expect(await store.setKind({ ...scope, kind: "approval", enabled: false, now: T2 })).toEqual([
+        "reminder",
+        "run",
+      ]);
       expect(await store.writeKinds({ ...scope, kinds: [], now: T2 })).toEqual([]);
     } finally {
       await repository.close();

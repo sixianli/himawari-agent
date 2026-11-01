@@ -65,6 +65,13 @@ export function NotificationSettings({
       disposed = true;
     };
   }, [controller, connected, reload]);
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") setReload((value) => value + 1);
+    };
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, []);
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
     setError(false);
@@ -93,14 +100,12 @@ export function NotificationSettings({
       if (result === "enabled" && sendTest) setTestSent(true);
     });
   const toggle = (kind: WebPushKind) => {
-    const next = kinds.includes(kind)
-      ? kinds.filter((value) => value !== kind)
-      : WEB_PUSH_KINDS.filter((value) => value === kind || kinds.includes(value));
+    const enabled = !kinds.includes(kind);
     const previous = kinds;
-    setKinds(next);
+    setKinds(WEB_PUSH_KINDS.filter((value) => (value === kind ? enabled : kinds.includes(value))));
     void run(async () => {
       try {
-        await controller.setKinds(next);
+        await controller.setKind(kind, enabled);
       } catch (failure) {
         setKinds(previous);
         throw failure;

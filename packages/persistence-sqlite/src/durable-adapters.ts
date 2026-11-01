@@ -1021,6 +1021,7 @@ export class SqliteDurableAdapters {
       removeSubscription: (input) => this.context.write("webPush.removeSubscription", input),
       listSubscriptions: (input) => this.context.read("webPush.listSubscriptions", input),
       readKinds: (input) => this.context.read("webPush.readKinds", input),
+      setKind: (input) => this.context.write("webPush.setKind", input),
       writeKinds: (input) => this.context.write("webPush.writeKinds", input),
       markSubscription: (input) => this.context.write("webPush.markSubscription", input),
       readCursor: (input) => this.context.read("webPush.readCursor", input),

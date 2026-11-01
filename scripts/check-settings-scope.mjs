@@ -20,11 +20,11 @@ export const ALLOWED_DEVICE_SETTING_COLUMNS = Object.freeze({
   "web_push_subscriptions.locale":
     "语言只作这台设备推送订阅创建时的备用值；发送时以账号的语言偏好为准",
   "web_push_subscriptions.notify_reminder":
-    "迁移 0071 之后不再读取；保留是为了回滚到旧版本时表结构还能用",
+    "迁移 0071 之后不再读取，开关以 web_push_account_kinds 为准；这一列等后续迁移删除",
   "web_push_subscriptions.notify_approval":
-    "迁移 0071 之后不再读取；保留是为了回滚到旧版本时表结构还能用",
+    "迁移 0071 之后不再读取，开关以 web_push_account_kinds 为准；这一列等后续迁移删除",
   "web_push_subscriptions.notify_run":
-    "迁移 0071 之后不再读取；保留是为了回滚到旧版本时表结构还能用",
+    "迁移 0071 之后不再读取，开关以 web_push_account_kinds 为准；这一列等后续迁移删除",
 });
 
 export const BROWSER_STORAGE_KEYS = Object.freeze({
@@ -71,6 +71,11 @@ function sourceFiles(directory) {
   return files;
 }
 
+export function browserStorageKeys({ root = repositoryRoot } = {}) {
+  const source = readFileSync(path.join(root, BROWSER_STORAGE), "utf8");
+  return [...new Set([...source.matchAll(/KEY_PREFIX\}\.(\w+)/g)].map((match) => match[1]))];
+}
+
 export function checkSettingsScope({ root = repositoryRoot } = {}) {
   const problems = [];
   for (const [table, columns] of tableColumns(path.join(root, MIGRATIONS))) {
@@ -83,11 +88,7 @@ export function checkSettingsScope({ root = repositoryRoot } = {}) {
       );
     }
   }
-  const storageSource = readFileSync(path.join(root, BROWSER_STORAGE), "utf8");
-  const keys = new Set(
-    [...storageSource.matchAll(/KEY_PREFIX\}\.(\w+)/g)].map((match) => match[1]),
-  );
-  for (const key of keys)
+  for (const key of browserStorageKeys({ root }))
     if (!(key in BROWSER_STORAGE_KEYS))
       problems.push(
         `BROWSER_KEY_UNDECLARED ${key}：浏览器本地存储里新增了键。只属于这台设备的（草稿、读到哪）在 scripts/check-settings-scope.mjs 的 BROWSER_STORAGE_KEYS 里登记为 device；用户设置必须存服务器，浏览器里只能是它的副本`,

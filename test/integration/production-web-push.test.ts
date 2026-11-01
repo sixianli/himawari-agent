@@ -350,6 +350,26 @@ describe("[WP-3] web push dispatch", () => {
     );
   });
 
+  it("[WP-3] sends nothing while every kind is off, and falls back to the device language when the account has none", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "ja", []);
+    const push = context.create({ readLocale: async () => null });
+    await push.tick();
+    context.setClock(T0);
+    context.reminder("r-off", "private");
+    context.approval("a-off", "low");
+    context.finishRun("run-off", "completed", at(T0, -5));
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    await context.subscribe("phone", "ja", ["approval"]);
+    context.approval("a-on", "low");
+    context.setClock(at(T0, 30));
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["title"])).toEqual(
+      ["承認待ち · 低リスク"],
+    );
+  });
+
   it("[WP-3] expires work that was handled before it could be sent", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN");

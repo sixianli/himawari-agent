@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkSettingsScope } from "../../scripts/check-settings-scope.mjs";
+import {
+  BROWSER_STORAGE_KEYS,
+  browserStorageKeys,
+  checkSettingsScope,
+} from "../../scripts/check-settings-scope.mjs";
 
 const roots = [];
 afterEach(() => {
@@ -68,7 +72,8 @@ ALTER TABLE web_push_subscriptions ADD COLUMN notify_digest INTEGER;
     ]);
   });
 
-  it("passes on the real repository", () => {
+  it("passes on the real repository, and the scan really finds every declared browser key", () => {
     expect(checkSettingsScope().problems).toEqual([]);
+    expect([...browserStorageKeys()].sort()).toEqual(Object.keys(BROWSER_STORAGE_KEYS).sort());
   });
 });

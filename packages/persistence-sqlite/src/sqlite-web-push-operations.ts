@@ -65,6 +65,8 @@ export class SqliteWebPushOperations {
         return this.listSubscriptions(payload as WebPushScope);
       case "webPush.readKinds":
         return this.readKinds(payload as WebPushScope);
+      case "webPush.setKind":
+        return this.setKind(payload as Input<"setKind">);
       case "webPush.writeKinds":
         return this.writeKinds(payload as Input<"writeKinds">);
       case "webPush.markSubscription":
@@ -161,6 +163,27 @@ export class SqliteWebPushOperations {
     if (!row) return WEB_PUSH_KINDS;
     const enabled = [row.reminder, row.approval, row.run];
     return WEB_PUSH_KINDS.filter((_, index) => enabled[index] === 1);
+  }
+
+  private setKind(input: Input<"setKind">): readonly WebPushKind[] {
+    this.assertDiskHeadroom();
+    this.time(input.now);
+    const index = WEB_PUSH_KINDS.indexOf(input.kind);
+    if (index < 0 || typeof input.enabled !== "boolean")
+      this.fail("PORT_INVALID_OPERATION", "Web push kind is invalid");
+    const column = ["notify_reminder", "notify_approval", "notify_run"][index] as string;
+    const flags = [1, 1, 1];
+    flags[index] = input.enabled ? 1 : 0;
+    this.database
+      .prepare(
+        `INSERT INTO web_push_account_kinds (
+          owner_id, agent_id, notify_reminder, notify_approval, notify_run, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (owner_id, agent_id) DO UPDATE SET ${column} = excluded.${column},
+          updated_at = excluded.updated_at`,
+      )
+      .run(input.ownerId, input.agentId, ...flags, input.now);
+    return this.readKinds(input);
   }
 
   private writeKinds(input: Input<"writeKinds">): readonly WebPushKind[] {

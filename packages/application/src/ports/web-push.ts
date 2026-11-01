@@ -99,6 +99,13 @@ export interface WebPushStorePort {
     },
   ): Promise<WebPushSubscription>;
   readKinds(input: WebPushScope): Promise<readonly WebPushKind[]>;
+  setKind(
+    input: WebPushScope & {
+      readonly kind: WebPushKind;
+      readonly enabled: boolean;
+      readonly now: string;
+    },
+  ): Promise<readonly WebPushKind[]>;
   writeKinds(
     input: WebPushScope & { readonly kinds: readonly WebPushKind[]; readonly now: string },
   ): Promise<readonly WebPushKind[]>;
