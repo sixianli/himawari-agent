@@ -1526,6 +1526,13 @@ export async function runAgentService(
             subject: webPushConfiguration.subject,
           }),
           presence: webPushPresence,
+          readLocale: async () =>
+            (
+              await pushRepository.ownerPreferences().read({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+              })
+            ).locale,
           reminders: pushRepository.memoryReminders(),
           memories: pushRepository.productMemoryState(),
           readMemoryText: (record) => readPlain(record.contentRef),

@@ -54,7 +54,6 @@ const subscribe = (endpoint: string, overrides: Record<string, unknown> = {}) =>
     keys: { p256dh: P256DH, auth: "BTBZMqHH6r4Tts7J_aSIgg" },
     locale: "zh-CN",
     deviceLabel: "iPhone 主屏应用",
-    kinds: ["reminder", "approval", "run"],
     ...overrides,
   }) as GatewayV2Command;
 
@@ -127,9 +126,9 @@ describe("[WP-5] web push gateway control", () => {
       auth: "BTBZMqHH6r4Tts7J_aSIgg",
       locale: "zh-CN",
       deviceLabel: "iPhone",
-      kinds: ["run"],
       now: T0,
     });
+    await store.writeKinds({ ...scope, kinds: ["run"], now: T0 });
     await store.enqueue({
       ...scope,
       items: [
@@ -194,9 +193,7 @@ describe("[WP-5] web push gateway control", () => {
     const { control, tests } = await setup(true);
     const endpoint = "https://web.push.apple.com/QGuQyavXutnMH8Ta";
     const first = await control.execute(subscribe(endpoint));
-    const again = await control.execute(
-      subscribe(endpoint, { locale: "ja", kinds: ["approval", "approval", "run"] }),
-    );
+    const again = await control.execute(subscribe(endpoint, { locale: "ja" }));
     expect(again.resultRef).toBe(first.resultRef);
     expect(first.resultRef).toBe(webPushSubscriptionId(endpoint));
     expect(webPushSubscriptionId("https://push.example/this-device")).toBe(
@@ -211,7 +208,6 @@ describe("[WP-5] web push gateway control", () => {
           subscriptionId: first.resultRef,
           endpointHost: "web.push.apple.com",
           locale: "ja",
-          kinds: ["approval", "run"],
           state: "active",
           deviceLabel: "iPhone 主屏应用",
         },
@@ -236,10 +232,29 @@ describe("[WP-5] web push gateway control", () => {
         keys: null,
         locale: null,
         deviceLabel: null,
-        kinds: null,
       }) as GatewayV2Command,
     );
     expect((await status(control)).subscriptions).toEqual([]);
+  });
+
+  it("[WP-5] keeps one set of notification kinds for the account, whichever device changes it", async () => {
+    const { control } = await setup(true);
+    await control.execute(subscribe("https://push.example/phone"));
+    await control.execute(subscribe("https://push.example/laptop", { deviceLabel: "laptop" }));
+    expect((await status(control)).kinds).toEqual(["reminder", "approval", "run"]);
+    await control.execute(
+      message("command", "push.kinds.set", {
+        kinds: ["approval", "approval", "reminder"],
+      }) as GatewayV2Command,
+    );
+    expect((await status(control)).kinds).toEqual(["reminder", "approval"]);
+    await control.execute(subscribe("https://push.example/tablet", { deviceLabel: "tablet" }));
+    expect((await status(control)).kinds).toEqual(["reminder", "approval"]);
+    await expect(
+      control.execute(
+        message("command", "push.kinds.set", { kinds: ["run"] }, "client") as GatewayV2Command,
+      ),
+    ).rejects.toThrow("WEB_PUSH_OWNER_REQUIRED");
   });
 
   it("[WP-5] rejects plain http endpoints, incomplete subscriptions and non-owner actors", async () => {
@@ -258,7 +273,6 @@ describe("[WP-5] web push gateway control", () => {
         keys: { p256dh: P256DH, auth: "BTBZMqHH6r4Tts7J_aSIgg" },
         locale: "en",
         deviceLabel: "laptop",
-        kinds: ["run"],
       },
       "client",
     ) as GatewayV2Command;

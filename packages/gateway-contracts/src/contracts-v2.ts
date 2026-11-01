@@ -24,6 +24,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "search.authorization.read",
   "search.authorization.snapshot",
   "push.subscription.set",
+  "push.kinds.set",
   "push.test",
   "presence.heartbeat",
   "push.feedback.record",
@@ -262,8 +263,11 @@ const pushSubscriptionCommandSchema = object({
     keys: nullable(object({ p256dh: pushKeySchema, auth: pushKeySchema })),
     locale: nullable(pushLocaleSchema),
     deviceLabel: nullable(boundedString(64)),
-    kinds: nullable(array(pushKindSchema)),
   }),
+});
+const pushKindsCommandSchema = object({
+  ...commandEnvelope("push.kinds.set"),
+  payload: object({ kinds: array(pushKindSchema) }),
 });
 const pushTestCommandSchema = object({
   ...commandEnvelope("push.test"),
@@ -299,13 +303,13 @@ const pushStatusSnapshotSchema = object({
   payload: object({
     available: booleanValue,
     publicKey: nullable(pushKeySchema),
+    kinds: array(pushKindSchema),
     subscriptions: array(
       object({
         subscriptionId: machineString,
         deviceLabel: boundedString(64),
         endpointHost: boundedString(256),
         locale: pushLocaleSchema,
-        kinds: array(pushKindSchema),
         state: enumeration(["active", "paused"]),
         failureCode: nullable(machineString),
         createdAt: timestamp,
@@ -1887,6 +1891,7 @@ const schemasByType = {
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,
   "push.subscription.set": pushSubscriptionCommandSchema,
+  "push.kinds.set": pushKindsCommandSchema,
   "push.test": pushTestCommandSchema,
   "presence.heartbeat": presenceHeartbeatCommandSchema,
   "push.feedback.record": pushFeedbackCommandSchema,

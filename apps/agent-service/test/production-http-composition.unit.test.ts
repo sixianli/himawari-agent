@@ -339,6 +339,7 @@ describe("production HTTP composition", () => {
           "search.authorization.set",
           "push.status.read",
           "push.subscription.set",
+          "push.kinds.set",
           "push.test",
           "presence.heartbeat",
           "push.feedback.record",

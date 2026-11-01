@@ -127,7 +127,7 @@ describe("[WP-3] web push dispatch", () => {
     const sender = new FakeSender();
     const presence = new WebPushPresence();
     const failures: unknown[] = [];
-    const create = () =>
+    const create = (extra: Partial<ConstructorParameters<typeof ProductionWebPush>[0]> = {}) =>
       new ProductionWebPush({
         ...scope,
         store,
@@ -152,23 +152,28 @@ describe("[WP-3] web push dispatch", () => {
         timeZone: "Asia/Shanghai",
         now: () => clock,
         onFailure: (error) => failures.push(error),
+        ...extra,
       });
     const subscribe = (
       id: string,
       locale: "zh-CN" | "en" | "ja",
       kinds: readonly ("reminder" | "approval" | "run")[] = ["reminder", "approval", "run"],
     ) =>
-      store.saveSubscription({
-        ...scope,
-        id,
-        endpoint: `https://push.example/${id}`,
-        p256dh: `key-${id}`,
-        auth: `auth-${id}`,
-        locale,
-        deviceLabel: id,
-        kinds,
-        now: clock,
-      });
+      store
+        .saveSubscription({
+          ...scope,
+          id,
+          endpoint: `https://push.example/${id}`,
+          p256dh: `key-${id}`,
+          auth: `auth-${id}`,
+          locale,
+          deviceLabel: id,
+          now: clock,
+        })
+        .then(async (saved) => {
+          await store.writeKinds({ ...scope, kinds, now: clock });
+          return saved;
+        });
     const reminder = (id: string, classification: ProductMemoryRecord["dataClassification"]) => {
       memories.push({
         id: `memory-${id}`,
@@ -313,7 +318,7 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.sender.requests).toHaveLength(1);
   });
 
-  it("[WP-3] sends each device only the kinds it turned on, and never later", async () => {
+  it("[WP-3] sends every device only the kinds the account turned on, and never later", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN", ["approval"]);
     const push = context.create();
@@ -330,6 +335,19 @@ describe("[WP-3] web push dispatch", () => {
     context.setClock(at(T0, 30));
     await push.tick();
     expect(context.sender.requests).toHaveLength(1);
+  });
+
+  it("[WP-3] writes every device's notification in the language the account chose, not the one saved when the device subscribed", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create({ readLocale: async () => "ja" });
+    await push.tick();
+    context.setClock(T0);
+    context.approval("a1", "high");
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["title"])).toEqual(
+      ["承認待ち · 高リスク"],
+    );
   });
 
   it("[WP-3] expires work that was handled before it could be sent", async () => {

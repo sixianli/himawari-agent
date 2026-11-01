@@ -56,8 +56,7 @@ export function NotificationSettings({
         setStatus(next);
         const mine = next.subscriptions.find((item) => item.subscriptionId === id);
         setCurrentId(mine ? mine.subscriptionId : null);
-        const shared = mine ?? next.subscriptions[0];
-        if (shared) setKinds(shared.kinds);
+        setKinds(next.kinds);
       })
       .catch(() => {
         if (!disposed) setError(true);
@@ -81,14 +80,13 @@ export function NotificationSettings({
   const deviceLabel = message(browser.standalone ? "push.deviceApp" : "push.deviceBrowser", {
     platform,
   });
-  const enable = (nextKinds: readonly WebPushKind[], sendTest: boolean) =>
+  const enable = (sendTest: boolean) =>
     run(async () => {
       if (!status?.publicKey) return;
       const result = await controller.enable({
         publicKey: status.publicKey,
         locale,
         deviceLabel,
-        kinds: nextKinds,
         sendTest,
       });
       setPermission(controller.permission);
@@ -98,8 +96,16 @@ export function NotificationSettings({
     const next = kinds.includes(kind)
       ? kinds.filter((value) => value !== kind)
       : WEB_PUSH_KINDS.filter((value) => value === kind || kinds.includes(value));
+    const previous = kinds;
     setKinds(next);
-    if (currentId) void enable(next, false);
+    void run(async () => {
+      try {
+        await controller.setKinds(next);
+      } catch (failure) {
+        setKinds(previous);
+        throw failure;
+      }
+    });
   };
   const mine = status?.subscriptions.find((item) => item.subscriptionId === currentId);
   const others = status?.subscriptions.filter((item) => item.subscriptionId !== currentId) ?? [];
@@ -208,8 +214,8 @@ export function NotificationSettings({
               <span>
                 <ActionButton
                   variant="primary"
-                  disabled={busy || !connected || !status?.publicKey || kinds.length === 0}
-                  onClick={() => void enable(kinds, true)}
+                  disabled={busy || !connected || !status?.publicKey}
+                  onClick={() => void enable(true)}
                 >
                   {message("push.enable")}
                 </ActionButton>
