@@ -28,6 +28,13 @@ const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["全角冒号密码", "密码：abc123", "密码：[密码]"],
   ["密码是", "我的密码是 Zx9!qq", "我的密码是 [密码]"],
   ["日文密码", "パスワード：secret99", "パスワード：[密码]"],
+  ["口令", "口令：Tr0ub4dor", "口令：[密码]"],
+  ["PIN 码", "PIN码是 482915", "PIN码是 [密码]"],
+  ["PIN 码带空格", "PIN 码：4829", "PIN 码：[密码]"],
+  ["安全码", "安全码为 77aa88bb", "安全码为 [密码]"],
+  ["授权码", "授权码：abcd1234efgh", "授权码：[密码]"],
+  ["日文暗証番号", "暗証番号：4829", "暗証番号：[密码]"],
+  ["韩文密码", "비밀번호: hunter22", "비밀번호: [密码]"],
   [
     "OpenAI key",
     `key ${["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-")}`,
@@ -58,6 +65,8 @@ const negatives: readonly string[] = [
   "会议 14:30 开始，房间 2048",
   "邮箱 andy@example.com 姓名 山田太郎 地址 东京都港区 1-2-3",
   "密码规则：至少 8 位",
+  "口令规则说明见下文",
+  "授权码的有效期是多久",
   "12 位数字 123456789012 不是个人番号",
 ];
 
@@ -115,5 +124,9 @@ describe("outbound redaction", () => {
 
   it("states what the placeholders mean in one fixed sentence", () => {
     expect(EGRESS_PLACEHOLDER_LEGEND).toContain("[验证码]");
+    expect(EGRESS_PLACEHOLDER_LEGEND).toContain("不要要求用户核实");
+    expect(EGRESS_PLACEHOLDER_LEGEND).toContain("不要换成示例");
+    expect(EGRESS_PLACEHOLDER_LEGEND).not.toContain("不要猜测");
+    expect(EGRESS_PLACEHOLDER_LEGEND).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
   });
 });
