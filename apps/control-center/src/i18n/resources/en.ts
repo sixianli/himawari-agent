@@ -129,6 +129,7 @@ export const messages = {
   "answer.at": "{at, time, short}",
   "answer.sources": "{count, plural, one {# source} other {# sources}}",
   "process.tokens": "Tokens",
+  "process.answeredBy": "Answered by",
   "message.copy": "Copy this message",
   "message.status.sent": "Delivered: the server saved this message",
   "message.status.received": "Being handled: the model has received this message",

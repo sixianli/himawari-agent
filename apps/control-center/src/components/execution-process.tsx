@@ -606,6 +606,13 @@ function TokenLine({ usage, message }: { usage: TurnUsage | undefined; message: 
   const hit = usage.input > 0 ? Math.round((usage.cacheRead / usage.input) * 100) : 0;
   return (
     <p className="process-tokens">
+      {usage.models.length ? (
+        <>
+          <span>{message("process.answeredBy")}</span>
+          <b>{usage.models.join(" / ")}</b>
+          <span aria-hidden="true">·</span>
+        </>
+      ) : null}
       <span>{message("process.tokens")}</span>
       <b>{formatTokens(usage.total)}</b>
       <span aria-hidden="true">·</span>

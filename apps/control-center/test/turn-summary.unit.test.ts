@@ -1,6 +1,6 @@
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { expect, it } from "vitest";
-import { formatTokens, turnSources, turnUsage } from "../src/turn-summary.js";
+import { formatTokens, servedModelName, turnSources, turnUsage } from "../src/turn-summary.js";
 
 let sequence = 0;
 const record = (overrides: Partial<ThreadExecutionRecord>): ThreadExecutionRecord => ({
@@ -45,6 +45,7 @@ it("[UI-9] adds up every model call of the turn and counts cached input as input
     output: 1000,
     reasoning: 50,
     total: 9600,
+    models: [],
   });
 });
 
@@ -117,4 +118,22 @@ it("[UI-10] names a source by its registrable domain, not the full host", () => 
     "192.168.1.20",
     "localhost",
   ]);
+});
+
+it("names the model that actually answered each call, once per distinct model", () => {
+  const call = (servedModel?: string) =>
+    record({
+      name: "runtime.usage",
+      text: JSON.stringify({ input: 1, output: 1, ...(servedModel ? { servedModel } : {}) }),
+    });
+  expect(
+    turnUsage([
+      call("workbuddy-ai/deepseek-v4.1-flash-sg"),
+      call("opencode-go/deepseek-v4.1-flash"),
+      call("opencode-go/glm-5.3-flash"),
+      call(),
+    ])?.models,
+  ).toEqual(["DeepSeek V4.1 Flash", "GLM 5.3 Flash"]);
+  expect(turnUsage([call()])?.models).toEqual([]);
+  expect(servedModelName("opencode-zen/glm-5.3-flash-free")).toBe("GLM 5.3 Flash");
 });

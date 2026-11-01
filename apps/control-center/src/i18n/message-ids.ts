@@ -113,6 +113,7 @@ export const MESSAGE_IDS = [
   "answer.at",
   "answer.sources",
   "process.tokens",
+  "process.answeredBy",
   "message.copy",
   "message.status.sent",
   "message.status.received",

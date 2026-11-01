@@ -369,6 +369,9 @@ export class ThreadExecutionProjection {
                 cacheRead: count(usage["cacheRead"]),
                 cacheWrite: count(usage["cacheWrite"]),
                 reasoning: count(usage["reasoning"]),
+                ...(typeof message["servedModel"] === "string" && message["servedModel"].length <= 160
+                  ? { servedModel: message["servedModel"] }
+                  : {}),
                 costUsd: Number.isFinite(cost) && cost >= 0 ? cost : 0,
               }),
             });

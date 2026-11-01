@@ -122,6 +122,7 @@ export const messages = {
   "answer.at": "{at, time, short}",
   "answer.sources": "{count} 个来源",
   "process.tokens": "Token",
+  "process.answeredBy": "回答模型",
   "message.copy": "复制这条消息",
   "message.status.sent": "已送达：服务端已保存这条消息",
   "message.status.received": "已开始处理：模型已收到这条消息",
