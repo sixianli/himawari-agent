@@ -104,6 +104,7 @@ date: "2026-10-26"
   77. [命令和主服务断联：为什么选“最多执行一次”，以及一个一次出错就杀命令的漏洞](#case-command-disconnect)
   78. [记忆要不要改成“主模型自己存”：先建 120 题的评测，结果发现脚本把输出截断了](#case-memory-capture-eval)
   79. [执行进程“活着却卡住”没人发现：先查崩溃是不是已有兜底，再决定要不要做心跳](#case-command-hang-heartbeat)
+  80. [一个“今日天气”等了 86 秒：全服务同一时刻只跑一个对话，改大数字还不够](#case-concurrent-dispatch)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -126,11 +127,11 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci)、[云端线程读到哪些规则和技能](#case-cloud-thread-loading) |
@@ -5060,6 +5061,56 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 **面试 30 秒版**
 
 “上一个案例我发现执行进程卡住没人发现，业界的解法是心跳，老板也选了心跳。动手前我先核对方案里一个没验证的前提：进程崩溃时有没有人发现。读代码发现有一个看守脚本，任何一个进程退出就整体重启，所以心跳只补‘活着但卡住’，而且我们不能重跑命令，发现后也只能标未知。我没有直接改核心循环，而是告诉老板收益比方案写的小，先查生产数据：174 条命令没有一条卡满 30 分钟。最后只加了‘超过 30 秒没消息就写日志、不停命令’，并专门测了‘健康但慢’和‘主服务自己卡顿’不会误报，等日志证明需要再决定要不要真停。”
+
+[返回目录](#contents)
+
+<a id="case-concurrent-dispatch"></a>
+
+## 案例 80：一个“今日天气”等了 86 秒：全服务同一时刻只跑一个对话，改大数字还不够
+
+**背景与现象**
+
+2026-11-01，Andy 在 iPhone 上问“今日天气”，用了 2 分 03 秒，页面在“正在准备”停了 1 分 26 秒，过程记录是空的。
+
+**根因**
+
+- 生产库的执行租约记录显示，这一轮等了 86.6 秒才拿到执行位置；前面 7 个运行首尾相接，没有任何两个时间重叠，每次申领都在上一个释放后 0.05–0.46 秒内。
+- 直接原因一：生产配置 `concurrency.totalRuns` 是 1。
+- 直接原因二（读代码发现）：调度器一次只取一批、逐个 `await` 等它们跑完才取下一批，所以把数字改大也不会并发。
+- 其余 36.4 秒：记忆向量化 12 秒、模型约 4.2 和 5.9 秒、搜索 8.1 秒。
+
+**方案讨论与备选**
+
+- 只改配置数字：没有效果，放弃。
+- 滑动窗口：有空位就立刻启动下一个，对话结束立刻唤醒再填。选这个。
+- 每个对话一个进程：多出进程管理，进程内异步已够。
+- 并发数选 3：生产机 4 个 CPU，对话大部分时间在等模型和搜索；一个对话约 209 次数据库操作、执行约 3.2 秒，3 个并发约占单个写线程三成。
+
+**业界主流做法**
+
+- ✅ BullMQ（https://docs.bullmq.io/guide/workers/concurrency ，2026-11-01 打开）：“This means that the same worker is able to process several jobs at the same time.”，并说明 “the concurrency is only possible when workers perform asynchronous operations.”
+- ✅ SQLite WAL（https://www.sqlite.org/wal.html ，2026-11-01 打开）：“readers do not block writers and a writer does not block readers”，同时 “there can only be one writer at a time.” 所以并发提高后写入仍排在一个写线程上，过程记录批量写是下一步。
+
+**我们的方案**（[ADR 0145](adr/0145-run-conversations-concurrently-with-a-sliding-window.md)）
+
+调度器新增 `fill()`，按空位数取出并申领、启动后不等；同一对话的后续轮次仍由数据库查询排除。模板默认改为 3，加测试要求不低于 2。页面对“已接受但无记录超过 3 秒”的轮次显示“排队等待执行”和已排队时间。
+
+**对比与取舍**
+
+和 BullMQ 一样用进程内异步并发；没有做“前面有 N 个”，因为页面不会随队列实时刷新，数字会过期。
+
+**结果数据**
+
+- 单元和真实 SQLite 测试：3 个对话同时持租约，上限 2 时第 3 个等位置；旧代码上快任务不启动。
+- 生产上线后的天气类问题耗时：未测量。真实网页正反验收：未做。
+
+**相关 ADR/PR**
+
+[ADR 0145](adr/0145-run-conversations-concurrently-with-a-sliding-window.md)、[ADR 0131](adr/0131-read-lane-separate-readonly-connection.md)、PR #172。
+
+**面试 30 秒版**
+
+“老板问天气用了两分钟。我没有猜，先从生产库的执行租约记录看出这一轮排队 86 秒、前面的运行首尾相接。再读代码发现，就算把并发数从 1 改大，调度器也是逐个等，所以真正的修复是把它改成有空位就启动的滑动窗口。我还专门选了 3 而不是随便拍，依据是机器核数和单个对话的数据库写入量，并写了真实 SQLite 的并发测试。”
 
 [返回目录](#contents)
 

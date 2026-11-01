@@ -154,7 +154,9 @@ with tempfile.TemporaryDirectory(prefix='steps-', dir=scratch) as temporary:
     def transport_wrapper():
         run = wrapper('S1_TRANSPORT')
         assert run.returncode == 17, run.stderr
-        remote = json.loads(record.read_text())[-1]
+        argv = json.loads(record.read_text())
+        assert 'ServerAliveCountMax=40' in argv, argv
+        remote = argv[-1]
         assert remote.endswith('--approved-r2l13-__PKT_LABEL__-transport ' + freeze)
         with tarfile.open(captured, mode='r:') as archive:
             names = archive.getnames()

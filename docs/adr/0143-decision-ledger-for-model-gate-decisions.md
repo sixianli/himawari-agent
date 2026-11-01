@@ -50,6 +50,7 @@ Gmail 主动检查的记录在表 `proactive_decisions`（迁移 0062）。它�
 9. **清除 Gmail 记录只清 `kind = 'proactive'` 的行**，不能误删别的决策。
 10. 新增读写接口 `DecisionLedgerPort`（写入、按类型和时间读取、评价、记录和读取 Muse 条目）。
 11. **账本行加三个只属于记忆候选的可空列（Andy 2026-11-01 批准）：** `category`（候选的记忆分类，限定在 `MEMORY_CATEGORIES` 的 10 个值）、`confidence_permille`（抽取置信度，整数 0 到 1000）、`inferred`（是否推测，0 或 1）。表约束要求非 `memory_candidate` 的行这三列必须为空。这样“该留”这类后续动作可以按原分类存成记忆，也能按置信度和推测与否统计被丢弃的候选。
+12. **记忆候选的记录点（P0-3，Andy 2026-11-01 批准）：** 保留、待审批、丢弃三种结果都写账本，并填上述三列。丢弃共有六种原因：含机密（`candidate_secret_excluded`）、受限（`restricted_excluded`）、临时内容（`transient_ignored`）、置信度低于门槛（`confidence_below_threshold`）、审批被拒或过期（`approval_rejected`、`approval_expired`），以及原话校验不过（`evidence_unverified`）。“推测被压”不另设原因：推测类置信度上限为 700，低于自动保存的 850，落在 `confidence_below_threshold`，用 `inferred = 1` 区分。原话校验不过的候选在抽取阶段就被丢掉，不会进入记忆服务的候选列表；抽取阶段把它们连同候选内容一并交给记忆服务，由记忆服务写账本，正文同样加密存引用，含机密或受限的不存正文。门槛数值（850、700）不变，也没有任何丢弃的候选写进记忆库。
 
 [返回目录](#contents)
 

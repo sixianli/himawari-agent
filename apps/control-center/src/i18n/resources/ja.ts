@@ -191,6 +191,8 @@ export const messages = {
   "chat.activity.preparingTool": "ツール呼び出しを準備中",
   "chat.activity.waitingModel": "モデルの応答を待機中",
   "chat.activity.buildingContext": "関連する記憶を検索中",
+  "chat.queued": "実行待ち",
+  "chat.queuedWait": "{time} 待機中。ほかの会話が実行中で、空きができ次第自動で始まります。",
   "chat.lastActivity": "最後の進捗は {time} 前",
   "chat.progressDelayed":
     "新しい進捗が届いていません。接続中でも処理が進んでいるとは限りません。結果を待つか、この実行を停止できます。",

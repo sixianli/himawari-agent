@@ -184,6 +184,9 @@ export const messages = {
   "chat.activity.preparingTool": "Preparing tool call",
   "chat.activity.waitingModel": "Waiting for model",
   "chat.activity.buildingContext": "Looking up related memory",
+  "chat.queued": "Waiting in line",
+  "chat.queuedWait":
+    "Queued for {time}. Other conversations are still running; this one starts automatically when a slot is free.",
   "chat.lastActivity": "Last progress {time} ago",
   "chat.progressDelayed":
     "No recent progress. A connected page does not confirm that execution is advancing. You can wait or stop this turn.",
