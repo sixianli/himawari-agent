@@ -1236,7 +1236,7 @@ it.each([
       ...prepared.options,
       descriptors: prepared.options.descriptors.map((descriptor) => {
         if (descriptor.api !== "openai-completions") return descriptor;
-        const { providerRouting, ...withoutRouting } = descriptor;
+        const { providerRouting: _routing, ...withoutRouting } = descriptor;
         return provider === "magpie"
           ? {
               ...withoutRouting,
