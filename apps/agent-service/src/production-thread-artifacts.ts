@@ -171,6 +171,35 @@ export class ProductionThreadArtifacts {
     };
   }
 
+  async recordDeleted(input: {
+    readonly ownerId: ThreadArtifactScope["ownerId"];
+    readonly agentId: ThreadArtifactScope["agentId"];
+    readonly threadId: string;
+    readonly runId: string;
+    readonly toolCallId: string;
+    readonly paths: readonly string[];
+  }): Promise<void> {
+    const paths = input.paths.filter((path) => !skipsThreadArtifact(path));
+    if (paths.length === 0) return;
+    try {
+      await this.#store.markDeleted({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        threadId: input.threadId,
+        paths,
+        deletedAt: this.#now(),
+      });
+    } catch (error) {
+      this.#warn({
+        event: "thread.artifact.mark_deleted_failed",
+        runId: input.runId,
+        toolCallId: input.toolCallId,
+        code: error instanceof Error ? error.message : "THREAD_ARTIFACT_MARK_DELETED_FAILED",
+        at: this.#now(),
+      });
+    }
+  }
+
   async record(input: ThreadArtifactRecording): Promise<number> {
     let created = 0;
     const seen = new Set<string>();
@@ -226,7 +255,8 @@ export class ProductionThreadArtifacts {
       threadId: input.threadId,
       path: candidate.path,
     });
-    if (latest && sha256 !== null && latest.sha256 === sha256) return false;
+    if (latest && latest.deletedAt === null && sha256 !== null && latest.sha256 === sha256)
+      return false;
     const key = createHash("sha256")
       .update(JSON.stringify([input.toolCallId, candidate.path]))
       .digest("hex")

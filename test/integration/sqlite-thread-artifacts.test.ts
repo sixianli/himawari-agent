@@ -157,6 +157,52 @@ describe("[FD-1] thread artifact storage", () => {
     }
   });
 
+  it("[FD-1] hides a file after it is deleted and registers it again when it comes back", async () => {
+    const { repository, store } = await open();
+    try {
+      await store.register({ ...scope, artifact: artifact("d1", { path: "a.docx" }) });
+      await store.register({ ...scope, artifact: artifact("d2", { path: "b.docx" }) });
+      expect(
+        await store.markDeleted({
+          ...scope,
+          threadId: "thread-1",
+          paths: ["a.docx", "missing.docx"],
+          deletedAt: "2026-10-28T05:05:00.000Z",
+        }),
+      ).toBe(1);
+      const page = await store.list({
+        ...scope,
+        threadId: "thread-1",
+        kind: null,
+        search: null,
+        before: null,
+        limit: 50,
+      });
+      expect(page.items.map(({ path, deletedAt }) => [path, deletedAt !== null]).sort()).toEqual([
+        ["a.docx", true],
+        ["b.docx", false],
+      ]);
+      const back = await store.register({
+        ...scope,
+        artifact: artifact("d3", { path: "a.docx", runId: "run-2", toolCallId: "call-d3" }),
+      });
+      expect(back).toMatchObject({
+        created: true,
+        artifact: { version: 2, deletedAt: null },
+      });
+      expect(
+        await store.markDeleted({
+          ...scope,
+          threadId: "thread-2",
+          paths: ["a.docx"],
+          deletedAt: "2026-10-28T05:06:00.000Z",
+        }),
+      ).toBe(0);
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("[FD-1] lists newest first across conversations with kind, name and page filters", async () => {
     const { repository, store } = await open();
     try {

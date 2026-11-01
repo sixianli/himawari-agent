@@ -50,7 +50,7 @@ export function latestFiles(items: readonly RegisteredFile[]): readonly Register
     const key = `${item.threadId}\u0000${item.path}`;
     if (seen.has(key)) return false;
     seen.add(key);
-    return true;
+    return !item.deleted;
   });
 }
 

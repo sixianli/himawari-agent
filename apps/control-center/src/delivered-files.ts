@@ -104,7 +104,22 @@ export function deliveredFileGroups(input: {
     input.runs.map((run) => [run.runId, turnFiles(run.runId, input.execution[run.runId] ?? [])]),
   );
   const used = new Set<TurnFile>();
+  const latestVersion = new Map<string, RegisteredFile>();
   for (const file of input.registered ?? []) {
+    const current = latestVersion.get(file.path);
+    if (!current || file.version > current.version) latestVersion.set(file.path, file);
+  }
+  const removed = new Set(
+    [...latestVersion.values()].filter((file) => file.deleted).map((file) => file.path),
+  );
+  for (const file of input.registered ?? []) {
+    if (file.deleted) {
+      const trace = traces
+        .get(file.runId)
+        ?.find((candidate) => tracePathMatches(candidate, file.path));
+      if (trace) used.add(trace);
+      continue;
+    }
     const background = file.commandKey ? commandOf.get(file.commandKey) : undefined;
     const runId = background?.noticeRunId ?? file.runId;
     if (!turnOf.has(runId)) continue;
@@ -137,6 +152,7 @@ export function deliveredFileGroups(input: {
   for (const [runId, files] of traces)
     for (const trace of files) {
       if (used.has(trace)) continue;
+      if ([...removed].some((path) => tracePathMatches(trace, path))) continue;
       if (
         [...(groups.get(runId)?.values() ?? [])].some((file) => tracePathMatches(trace, file.path))
       )

@@ -567,6 +567,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0070_decision_ledger_payloads.sql",
   },
+  {
+    sequence: 71,
+    name: "thread_artifact_deleted_at",
+    changeSet: "thread-artifact-deleted-at",
+    phase: "expand" as const,
+    file: "0071_thread_artifact_deleted_at.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

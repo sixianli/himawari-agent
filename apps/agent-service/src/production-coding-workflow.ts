@@ -589,6 +589,14 @@ export async function executeProductionCodingRequest(
         overlapped,
         [...ledgerCandidates(recorded)],
       );
+      await services.threadArtifacts?.recordDeleted({
+        ownerId: ctx.ownerId,
+        agentId: ctx.agentId,
+        threadId: binding.threadId,
+        runId: call.runId,
+        toolCallId: call.toolCallId,
+        paths: ledgerDeletedPaths(recorded),
+      });
     }
     timing.finish("ledger_after");
     return {
@@ -620,6 +628,14 @@ export async function executeProductionCodingRequest(
   }
   timing.finish("artifacts");
   return result;
+}
+
+function ledgerDeletedPaths(recorded: Record<string, unknown>): string[] {
+  const changes = recorded["changes"];
+  if (!Array.isArray(changes)) return [];
+  return changes.flatMap((change: WorkspaceLedgerChange) =>
+    change.kind === "file" && change.change === "deleted" ? [change.path] : [],
+  );
 }
 
 function ledgerCandidates(recorded: Record<string, unknown>): ThreadArtifactCandidate[] {
