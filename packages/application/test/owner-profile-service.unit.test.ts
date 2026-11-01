@@ -76,6 +76,58 @@ function service(
   return { profile, stored };
 }
 
+describe("owner name from settings", () => {
+  const named = (name: string | null, records: readonly ProductMemoryRecord[] = []) => {
+    const stored: { text: string; dataClassification: string }[] = [];
+    const profile = new OwnerProfileService({
+      state: { listActive: async () => records },
+      readText: async (record) => TEXT[record.id],
+      storeText: async ({ text, dataClassification }) => {
+        stored.push({ text, dataClassification });
+      },
+      digest: (text) => `digest-${text.length}`,
+      ownerName: async () => name,
+    });
+    return { profile, stored };
+  };
+  const request = (maxClassification: "public" | "private") => ({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    maxClassification,
+    now: NOW,
+  });
+
+  it("[NAME-1] tells the model how to address the owner, first among the owner's rules, as private data", async () => {
+    const { profile, stored } = named(" 小 安 ", [memory("memory-language", "rule", 300)]);
+    const result = await profile.compose(request("private"));
+    expect(stored[0]?.text).toBe(
+      "主人对 Himawari 的要求（主人亲口说过或在设置里填写的，回答时遵守）：\n- 主人在设置里填写的称呼是「小 安」，称呼主人时用它；对话里出现过不同的称呼时，以最后出现的为准。\n- 回答一律用简体中文",
+    );
+    expect(result.blocks[0]).toMatchObject({ kind: "owner-rules", dataClassification: "private" });
+    expect(result.memoryIds).toEqual(["memory-language"]);
+  });
+
+  it("[NAME-1] sends the name even when the owner has no rules yet", async () => {
+    const { profile, stored } = named("Andy");
+    const result = await profile.compose(request("private"));
+    expect(result.blocks.map(({ kind }) => kind)).toEqual(["owner-rules"]);
+    expect(stored[0]?.text).toContain("- 主人在设置里填写的称呼是「Andy」，称呼主人时用它");
+    expect(result.memoryIds).toEqual([]);
+  });
+
+  it("[NAME-1] reverse: no name, a blank name or a public-only request adds nothing", async () => {
+    for (const [name, level] of [
+      [null, "private"],
+      ["   ", "private"],
+      ["Andy", "public"],
+    ] as const) {
+      const { profile, stored } = named(name);
+      expect((await profile.compose(request(level))).blocks).toEqual([]);
+      expect(stored).toEqual([]);
+    }
+  });
+});
+
 describe("owner profile composition", () => {
   const records = [
     memory("memory-language", "rule", 300),

@@ -128,7 +128,6 @@ export function NotificationSettings({
   const phone = platform === "iPhone" || platform === "iPad";
   return (
     <section className="notification-settings">
-      <h3>{message("review.settings.notifications")}</h3>
       {support === "install-first" ? (
         <div className="push-install">
           <h4>{message("push.installTitle")}</h4>

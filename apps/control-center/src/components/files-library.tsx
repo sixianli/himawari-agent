@@ -84,7 +84,6 @@ export function FilesLibrary({
   threadTitle,
   openKey,
   onOpen,
-  onBack,
   message,
 }: {
   readonly list: (query: LibraryQuery) => Promise<{
@@ -94,7 +93,6 @@ export function FilesLibrary({
   readonly threadTitle: (threadId: string) => string | undefined;
   readonly openKey: string | undefined;
   readonly onOpen: (file: DeliveredFile) => void;
-  readonly onBack: (() => void) | undefined;
   readonly message: Message;
 }) {
   const [category, setCategory] = useState<LibraryCategory>("all");
@@ -103,7 +101,6 @@ export function FilesLibrary({
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<readonly RegisteredFile[]>();
   const [cursor, setCursor] = useState<string | null>(null);
-  const [partial, setPartial] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -141,7 +138,6 @@ export function FilesLibrary({
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
         );
         setCursor(selected.length === 1 ? (pages[0]?.nextCursor ?? null) : null);
-        setPartial(pages.some((page) => page.nextCursor !== null));
       },
       () => {
         if (current !== sequence.current) return;
@@ -165,7 +161,6 @@ export function FilesLibrary({
         if (current !== sequence.current) return;
         setItems((prior) => [...(prior ?? []), ...page.items]);
         setCursor(page.nextCursor);
-        setPartial(page.nextCursor !== null);
       })
       .catch(() => current === sequence.current && setFailed(true));
   };
@@ -177,19 +172,6 @@ export function FilesLibrary({
   );
   return (
     <section className="files-library" aria-label={message("library.title")} aria-busy={loading}>
-      <header className="files-library-head">
-        {onBack ? (
-          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
-            <LineIcon name="back" />
-          </ActionButton>
-        ) : null}
-        <h1>{message("library.title")}</h1>
-        {items ? (
-          <span className="files-library-count">
-            {message("library.count", { count: files.length, more: partial ? "yes" : "no" })}
-          </span>
-        ) : null}
-      </header>
       <div className="files-library-body">
         <label className="files-library-search">
           <Glyph name="search" />

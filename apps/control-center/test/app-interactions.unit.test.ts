@@ -86,7 +86,7 @@ async function settle() {
     });
 }
 async function click(label: string) {
-  const button = [...container.querySelectorAll("button")].find(
+  const button = [...document.querySelectorAll("button")].find(
     (item) => item.textContent === label || item.getAttribute("aria-label") === label,
   );
   if (!button) throw new Error(`Missing accessible button ${label}`);
@@ -390,6 +390,9 @@ describe("control center application bootstrap and interaction", () => {
     expect(new ControlCenterBrowserStorage(window.localStorage).readPreferences().theme).toBe(
       "light",
     );
+    expect(document.querySelector('input[name="setting-accent"]')).toBeNull();
+    expect(document.querySelector(".accent-swatches")).toBeNull();
+    await click("Personalization");
     const name = document.querySelector<HTMLInputElement>(
       'input[aria-label="What should I call you?"]',
     );
@@ -472,6 +475,12 @@ describe("control center application bootstrap and interaction", () => {
     await render();
     await settle();
     await click(messages["settings.title"]);
+    const theme = document.querySelector<HTMLInputElement>(
+      'input[name="setting-theme"][value="light"]',
+    );
+    if (!theme) throw new Error("Missing theme setting");
+    await act(async () => theme.click());
+    await click(messages["review.settings.personalization"]);
     const name = document.querySelector<HTMLInputElement>(
       `input[aria-label="${messages["settings.name"]}"]`,
     );
@@ -480,14 +489,6 @@ describe("control center application bootstrap and interaction", () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Andy");
       name.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    for (const selector of [
-      'input[name="setting-accent"][value="teal"]',
-      'input[name="setting-theme"][value="light"]',
-    ]) {
-      const input = document.querySelector<HTMLInputElement>(selector);
-      if (!input) throw new Error(`Missing ${selector}`);
-      await act(async () => input.click());
-    }
     await act(async () =>
       threadOptions().onModelChoiceChange({ modelRef: "model-second", thinkingLevel: "high" }),
     );
@@ -495,7 +496,6 @@ describe("control center application bootstrap and interaction", () => {
     expect(server.state()).toMatchObject({
       name: "Andy",
       locale: "zh-CN",
-      accent: "teal",
       theme: "light",
       modelRef: "model-second",
       thinkingLevel: "high",
@@ -506,7 +506,7 @@ describe("control center application bootstrap and interaction", () => {
       ownerName: "Andy",
       modelChoice: { modelRef: "model-second", thinkingLevel: "high" },
     });
-    expect(document.documentElement.getAttribute("data-accent")).toBe("teal");
+    expect(document.documentElement.hasAttribute("data-accent")).toBe(false);
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(new ControlCenterBrowserStorage(window.localStorage).readLocale([])).toBe("ja");
   });
