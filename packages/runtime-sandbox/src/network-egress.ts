@@ -2,7 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
 import { connect, type Socket } from "node:net";
-import { isPublicEgressAddress } from "./public-egress-address.js";
+import { isPublicEgressAddress } from "./public-egress-address.ts";
 
 const PROXY_CHALLENGE = 'Basic realm="himawari-egress"';
 
