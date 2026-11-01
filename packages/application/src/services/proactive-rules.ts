@@ -71,9 +71,11 @@ export function demoteLowPriorityAct(
   result: ProactiveResult,
   priority: ProactivePriority | null,
   floor: boolean,
+  confidence: ProactiveConfidence,
 ): { readonly result: ProactiveResult; readonly demoted: boolean } {
-  if (result !== "act" || priority !== "low") return { result, demoted: false };
-  return { result: floor ? "know" : "ignore", demoted: true };
+  if (isReminderWorthy(result, priority)) return { result, demoted: false };
+  if (!floor) return { result: "ignore", demoted: true };
+  return { result: confidence === "unsure" ? "check" : "know", demoted: true };
 }
 
 export function isReminderWorthy(result: ProactiveResult, priority: ProactivePriority | null) {

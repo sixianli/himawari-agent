@@ -126,20 +126,22 @@ export async function readProactiveOverview(options: {
     const sent = sourceKey ? feedback.get(sourceKey) : undefined;
     return sent?.openedAt ? "opened" : sent?.dismissedAt ? "dismissed" : null;
   };
+  const auditSince = new Date(Date.parse(now) - AUDIT_DAYS * DAY_MS).toISOString();
   const insights: ProactiveOverviewInsight[] = [];
   const filteredInsights: ProactiveOverviewAuditItem[] = [];
   for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
     if (!isReminderWorthy(insight.result, insight.priority)) {
-      filteredInsights.push(
-        Object.freeze({
-          messageId: insight.lastMessageId,
-          from: content.from ?? "",
-          subject: content.subject ?? "",
-          link: content.link ?? "",
-          rating: insight.ownerRating,
-        }),
-      );
+      if (insight.updatedAt >= auditSince)
+        filteredInsights.push(
+          Object.freeze({
+            messageId: insight.lastMessageId,
+            from: content.from ?? "",
+            subject: content.subject ?? "",
+            link: content.link ?? "",
+            rating: null,
+          }),
+        );
       continue;
     }
     insights.push(
@@ -163,12 +165,23 @@ export async function readProactiveOverview(options: {
       }),
     );
   }
-  const auditSince = new Date(Date.parse(now) - AUDIT_DAYS * DAY_MS).toISOString();
   const auditActive = connection !== undefined;
   const ignored = auditActive
     ? await store.listProcessed({ ...scope, since: auditSince, outcome: "ignore", limit: 500 })
     : [];
-  const auditItems: ProactiveOverviewAuditItem[] = [...filteredInsights];
+  const storedFiltered =
+    auditActive && filteredInsights.length > 0
+      ? new Map(
+          (
+            await store.listProcessed({ ...scope, since: auditSince, outcome: "act", limit: 500 })
+          ).map((row) => [row.messageId, row]),
+        )
+      : new Map<string, { ownerRating: ProactiveRating | null; reviewedAt: string | null }>();
+  const auditItems: ProactiveOverviewAuditItem[] = auditActive
+    ? filteredInsights.map((item) =>
+        Object.freeze({ ...item, rating: storedFiltered.get(item.messageId)?.ownerRating ?? null }),
+      )
+    : [];
   for (const message of ignored) {
     const header = parse<{ from: string; subject: string; link: string }>(
       message.headerRef ? await open(message.headerRef) : undefined,
@@ -233,8 +246,13 @@ export async function readProactiveOverview(options: {
     audit: Object.freeze({
       active: auditActive,
       since: auditSince,
-      items: Object.freeze(auditItems),
-      pending: ignored.filter(({ reviewedAt }) => reviewedAt === null).length,
+      items: Object.freeze(auditItems.slice(0, 500)),
+      pending:
+        ignored.filter(({ reviewedAt }) => reviewedAt === null).length +
+        auditItems.filter(
+          ({ messageId }) =>
+            storedFiltered.has(messageId) && storedFiltered.get(messageId)?.reviewedAt === null,
+        ).length,
     }),
     decisions: Object.freeze(decisions),
     metrics: Object.freeze({

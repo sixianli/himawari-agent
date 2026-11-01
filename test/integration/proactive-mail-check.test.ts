@@ -796,6 +796,64 @@ describe("proactive Gmail check acceptance", () => {
     const overview = await h.overview();
     expect(overview.insights).toEqual([]);
     expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["stored"]);
+    await h.store.rateProcessed({
+      ...scope,
+      source: "gmail",
+      messageId: "stored",
+      rating: "missed",
+      now: h.clock.now(),
+    });
+    expect((await h.overview()).audit.items[0]).toMatchObject({ rating: "missed" });
+    h.clock.advance(8 * 24 * 3_600_000);
+    expect((await h.overview()).audit.items).toEqual([]);
+  });
+
+  it('[PG-17] reads a messy priority like " LOW " as low, and sends an unsure low-priority official mail to please-check instead of dropping it', async () => {
+    const h = await harness();
+    h.reader.items = [
+      mail("loud", { subject: "キャンペーン", snippet: "今すぐ応募" }),
+      mail("ward", {
+        from: "区役所 <info@city.shinjuku.lg.jp>",
+        fromAddress: "info@city.shinjuku.lg.jp",
+        subject: "ご案内",
+        snippet: "手続きのお知らせ",
+      }),
+    ];
+    h.scriptRaw(
+      "completed",
+      JSON.stringify({
+        items: [
+          { id: "loud", result: "act", confidence: "sure", todo: "应募", priority: " LOW " },
+          { id: "ward", result: "act", confidence: "unsure", todo: "办手续", priority: "low" },
+        ],
+      }),
+    );
+    const decision = await h.service.run();
+    expect(decision?.counts).toMatchObject({ ignore: 1, check: 1, act: 0 });
+    const overview = await h.overview();
+    expect(overview.insights.map(({ result }) => result)).toEqual(["check"]);
+    expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["loud"]);
+  });
+
+  it("[PG-17] counts a stored low-priority todo as waiting for review until the owner taps done", async () => {
+    const h = await harness();
+    h.reader.items = [mail("stored")];
+    h.script([{ id: "stored", result: "act", todo: "清理存储", priority: "medium" }]);
+    await h.service.run();
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+    try {
+      database.prepare("UPDATE source_insights SET priority = 'low'").run();
+    } finally {
+      database.close();
+    }
+    expect((await h.overview()).audit.pending).toBe(1);
+    await h.store.markReviewed({
+      ...scope,
+      source: "gmail",
+      messageIds: ["stored"],
+      now: h.clock.now(),
+    });
+    expect((await h.overview()).audit.pending).toBe(0);
   });
 
   it("[PG-17] tells the model that promotions, points, surveys, invitations, newsletters and automatic usage notices are ignore", () => {
