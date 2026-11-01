@@ -107,6 +107,7 @@ export interface PiModelTransportOptions {
   readonly maxOutputTokens?: number;
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
+  readonly disableThinking?: boolean;
 }
 
 export interface PiModelTransportObservation {
@@ -184,6 +185,7 @@ export class PiModelTransport {
   readonly #maxOutputTokens: number;
   readonly #requestTimeoutMs: number;
   readonly #temperature: number | undefined;
+  readonly #disableThinking: boolean;
   readonly #observations: PiModelTransportObservation[] = [];
 
   constructor(options: PiModelTransportOptions) {
@@ -214,6 +216,7 @@ export class PiModelTransport {
     this.#maxOutputTokens = maxOutputTokens;
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#temperature = options.temperature;
+    this.#disableThinking = options.disableThinking === true;
   }
 
   observations(): readonly PiModelTransportObservation[] {
@@ -309,7 +312,17 @@ export class PiModelTransport {
         fetch: observed?.fetch ?? cacheFields.fetch,
         ...(gatewayed
           ? { onPayload: (payload: unknown) => gatewayPayload(payload, descriptor.providerRouting) }
-          : { sessionId: request.runId }),
+          : {
+              sessionId: request.runId,
+              ...(this.#disableThinking
+                ? {
+                    onPayload: (payload: unknown) => ({
+                      ...(payload as Record<string, unknown>),
+                      thinking: { type: "disabled" },
+                    }),
+                  }
+                : {}),
+            }),
         maxTokens: Math.min(this.#maxOutputTokens, binding.model.maxTokens),
         maxRetries: 0,
         timeoutMs: this.#requestTimeoutMs,

@@ -136,6 +136,7 @@ export interface AuxiliaryTextOptions {
   readonly reasoningOutputTokens: number;
   readonly requestTimeoutMs: number;
   readonly errorPrefix: string;
+  readonly disableThinking?: boolean;
 }
 
 export interface ProductionModelCompositionFromConfigurationOptions
@@ -418,11 +419,19 @@ export function createProductionModelComposition(
         : admissionCostForConfiguredPiModel(configured);
     },
   });
+  const thinkingDisabledFor = (
+    descriptor: ConfiguredPiModelDescriptor,
+    text: Pick<AuxiliaryTextOptions, "disableThinking">,
+  ): boolean => text.disableThinking === true && descriptor.provider === "magpie";
   const auxiliaryModelFor = (
     descriptor: ConfiguredPiModelDescriptor,
     text: Pick<
       AuxiliaryTextOptions,
-      "purpose" | "maxOutputTokens" | "reasoningOutputTokens" | "requestTimeoutMs"
+      | "purpose"
+      | "maxOutputTokens"
+      | "reasoningOutputTokens"
+      | "requestTimeoutMs"
+      | "disableThinking"
     >,
     admission: TrustedModelAdmissionResolver,
   ): TrustedModelProviderAdapter =>
@@ -438,8 +447,11 @@ export function createProductionModelComposition(
         clock: options.clock,
         maxOutputTokens: Math.min(
           descriptor.maxTokens,
-          descriptor.reasoning ? text.reasoningOutputTokens : text.maxOutputTokens,
+          descriptor.reasoning && !thinkingDisabledFor(descriptor, text)
+            ? text.reasoningOutputTokens
+            : text.maxOutputTokens,
         ),
+        ...(thinkingDisabledFor(descriptor, text) ? { disableThinking: true } : {}),
         requestTimeoutMs: Math.min(
           options.requestTimeoutMs ?? text.requestTimeoutMs,
           text.requestTimeoutMs,
@@ -597,6 +609,7 @@ export function createProductionModelComposition(
         purpose: "thread-title",
         invocationId: `thread-title:${request.runId}`,
         maxOutputTokens: 128,
+        disableThinking: true,
         reasoningOutputTokens: 1024,
         requestTimeoutMs: 20000,
         errorPrefix: "THREAD_TITLE",

@@ -130,25 +130,64 @@ it("keeps an Owner rename made while the model request is in flight", async () =
   expect(f.update).not.toHaveBeenCalled();
 });
 
+async function storedTitle(f: Awaited<ReturnType<typeof fixture>>): Promise<string> {
+  const payload = await f.adapters.payload.get(f.thread().titleRef as string);
+  if (!payload) throw new Error("Expected a stored title");
+  const content = await f.adapters.payloadProtector.unprotect({ payload });
+  return new TextDecoder().decode(content);
+}
+
 it.each(["", "line one\nline two", "x".repeat(121)])(
-  "rejects malformed model titles without changing the conversation",
+  "falls back to the opening words when the model title is malformed",
   async (title) => {
     const f = await fixture();
     f.generate.mockResolvedValue(title);
     f.service.start(f.request);
     await f.service.stop();
     expect(f.onFailure).toHaveBeenCalledTimes(1);
-    expect(f.update).not.toHaveBeenCalled();
+    expect(f.thread().titleSource).toBe("automatic");
+    expect(await storedTitle(f)).toBe("查询今天的日本头条");
   },
 );
 
-it("contains provider failures instead of rejecting the answer stream", async () => {
+it("falls back to the opening words when the model request fails, and still reports the failure", async () => {
   const f = await fixture();
   f.generate.mockRejectedValue(new Error("provider unavailable"));
   expect(() => f.service.start(f.request)).not.toThrow();
   await f.service.stop();
   expect(f.onFailure).toHaveBeenCalledTimes(1);
-  expect(f.thread().titleRef).toBeNull();
+  expect(f.thread().titleSource).toBe("automatic");
+  expect(await storedTitle(f)).toBe("查询今天的日本头条");
+});
+
+it("cuts a long first message to 24 characters with an ellipsis in the fallback title", async () => {
+  const f = await fixture();
+  const long = `${"一二三四五六七八九十".repeat(3)}\n后面还有很多内容`;
+  const payload = await f.adapters.payloadProtector.protect({
+    ownerId: f.request.ownerId,
+    agentId: f.request.agentId,
+    ref: "first-message-long",
+    dataClassification: "private",
+    contentType: "text/plain",
+    plaintext: new TextEncoder().encode(long),
+    createdAt: f.adapters.clock.now(),
+  });
+  await f.adapters.payload.put(payload);
+  const listMessages = vi.fn(async () => [
+    {
+      role: "owner",
+      status: "committed",
+      contentRef: payload.ref,
+      dataClassification: "private",
+    },
+  ]);
+  (
+    f.service as unknown as { options: { threads: { listMessages: unknown } } }
+  ).options.threads.listMessages = listMessages;
+  f.generate.mockRejectedValue(new Error("provider unavailable"));
+  f.service.start(f.request);
+  await f.service.stop();
+  expect(await storedTitle(f)).toBe(`${"一二三四五六七八九十一二三四五六七八九十一二三四"}…`);
 });
 
 it("does not invent a title for an empty conversation", async () => {

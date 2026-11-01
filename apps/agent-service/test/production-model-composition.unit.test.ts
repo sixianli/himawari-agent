@@ -1169,6 +1169,120 @@ it.each([
   },
 );
 
+it.each([
+  { provider: "magpie", thinkingOff: true, maxTokens: 128 },
+  { provider: "vercel-ai-gateway", thinkingOff: false, maxTokens: 1024 },
+])(
+  "turns thinking off for a title only on Magpie and keeps room for thinking elsewhere (%o)",
+  async ({ provider, thinkingOff, maxTokens }) => {
+    const adapters = createReferenceAdapterSet();
+    const payloads: unknown[] = [];
+    const streamOptions: Record<string, unknown>[] = [];
+    class TitleRuntime extends RecordingRuntime {
+      override getModel(providerId: string, modelId: string): unknown {
+        const value = super.getModel(providerId, modelId);
+        return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+      }
+      stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
+        streamOptions.push(options);
+        const onPayload = options["onPayload"] as ((payload: unknown) => unknown) | undefined;
+        payloads.push(onPayload?.({ model: "m" }));
+        return (async function* () {
+          await (options["fetch"] as typeof fetch)(
+            "https://ai-gateway.vercel.sh/v1/chat/completions",
+          );
+          yield {
+            type: "done",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "日本今日头条" }],
+              api: "openai-completions",
+              provider,
+              model: primaryModel.model,
+              stopReason: "stop",
+              timestamp: Date.now(),
+              usage: {
+                input: 30,
+                output: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 40,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000001 },
+              },
+            },
+          };
+        })();
+      }
+    }
+    const permit: ModelInvocationPermit = {
+      assertActive: vi.fn(async () => {}),
+      markStarted: vi.fn(async () => {}),
+      releaseReserved: vi.fn(async () => {}),
+      settle: vi.fn(async () => {}),
+      markUnknown: vi.fn(async () => {}),
+    };
+    const begin = vi.fn(async () => ({ disposition: "fresh", permit }));
+    const prepared = compositionOptions(adapters, {
+      runtimeFactory: { create: async () => new TitleRuntime() as unknown as PiModelRuntime },
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            `data: ${JSON.stringify({ id: "generation:title", model: primaryModel.model, usage: { cost: 0.000001 }, choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "generation:title", routing: { finalProvider: "deepinfra" }, cost: 0.000001 } } } }] })}\n\ndata: [DONE]\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      ),
+    });
+    const composition = createProductionModelComposition({
+      ...prepared.options,
+      descriptors: prepared.options.descriptors.map((descriptor) => {
+        if (descriptor.api !== "openai-completions") return descriptor;
+        const { providerRouting, ...withoutRouting } = descriptor;
+        return provider === "magpie"
+          ? {
+              ...withoutRouting,
+              reasoning: true,
+              reasoningRequired: false,
+              provider,
+              baseUrl: "http://127.0.0.1:3425/v1",
+            }
+          : { ...descriptor, reasoning: true, reasoningRequired: false };
+      }),
+    });
+    try {
+      const request = {
+        ownerId: prepared.options.ownerId,
+        agentId: prepared.options.agentId,
+        runId: "run:title-thinking",
+        threadId: "thread:title-thinking",
+        modelRef: primaryModel.ref,
+        dataClassification: "private",
+        systemInstructionRef: "disclosure:title",
+        correlationId: "title:thinking",
+      };
+      const gate = {
+        context: { ownerId: request.ownerId, agentId: request.agentId, runId: request.runId },
+        begin,
+      };
+      expect(
+        await composition.generateTitle?.(
+          request as never,
+          "Generate a short title",
+          gate as never,
+        ),
+      ).toBe("日本今日头条");
+      expect(streamOptions[0]).toMatchObject({ maxTokens });
+      const rewritten = payloads[0] as Record<string, unknown> | undefined;
+      if (thinkingOff) {
+        expect(rewritten).toMatchObject({ thinking: { type: "disabled" } });
+      } else {
+        expect(rewritten?.["thinking"]).toBeUndefined();
+      }
+    } finally {
+      await composition.close();
+    }
+  },
+);
+
 it("retries an auxiliary text call once when the model answers with a tool call instead of text", async () => {
   const adapters = createReferenceAdapterSet();
   let calls = 0;

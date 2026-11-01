@@ -723,6 +723,60 @@ describe("PiModelTransport", () => {
     expect(payloads.writes).toEqual([]);
   });
 
+  it("asks Magpie to turn thinking off only when the caller requests it", async () => {
+    const payloads = payloadBoundary();
+    const magpieModel = {
+      ...model,
+      id: "group/himawari-main",
+      provider: "magpie",
+      baseUrl: "http://127.0.0.1:3425/v1",
+    };
+    const { providerRouting: _routing, ...gatewayFields } = descriptor;
+    const magpieDescriptor: ModelDescriptor = {
+      ...gatewayFields,
+      ref: "magpie-primary",
+      provider: "magpie",
+      model: magpieModel.id,
+    };
+    const run = async (disableThinking: boolean) => {
+      let rewritten: unknown;
+      const runtime = {
+        stream(_model: Model<Api>, _context: Context, streamOptions?: Record<string, unknown>) {
+          const onPayload = streamOptions?.["onPayload"] as
+            | ((payload: unknown) => unknown)
+            | undefined;
+          rewritten = onPayload?.({ model: "group/himawari-main", max_tokens: 128 });
+          return runtimeWithTerminal(assistant("answer")).stream(_model, _context, streamOptions);
+        },
+      };
+      const transport = new PiModelTransport({
+        models: {
+          resolve: async () =>
+            ({ model: magpieModel, modelRuntime: runtime }) as unknown as PiModelBinding,
+        },
+        payloads: payloads.boundary,
+        clock: { now: () => NOW },
+        fetch: async () => observationResponse(),
+        ...(disableThinking ? { disableThinking: true } : {}),
+      });
+      await collect(
+        transport.invoke({
+          descriptor: magpieDescriptor,
+          request: { ...request, modelRef: magpieDescriptor.ref },
+          secretValues: [PROVIDER_SECRET],
+        }),
+      );
+      return rewritten;
+    };
+
+    expect(await run(true)).toEqual({
+      model: "group/himawari-main",
+      max_tokens: 128,
+      thinking: { type: "disabled" },
+    });
+    expect(await run(false)).toBeUndefined();
+  });
+
   it("logs why a response was rejected without logging its content", async () => {
     const payloads = payloadBoundary();
     const terminal = {
