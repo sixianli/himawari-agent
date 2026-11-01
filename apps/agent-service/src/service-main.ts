@@ -5,6 +5,7 @@ import type {
   PayloadProtectorPort,
 } from "@himawari-agent/application";
 import {
+  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   type ClockPort,
   claimFromRunExecutionLease,
   createProactiveSeal,
@@ -108,6 +109,7 @@ import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
+import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
@@ -1426,6 +1428,32 @@ export async function runAgentService(
           oauth,
           reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
+          ...(memory && durableMemory && protector && repository
+            ? ((recallProtector, recallPayloads) => ({
+                memory: createProactiveMemoryRecall({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  memory: durableMemory,
+                  content: {
+                    readText: async (ref) => {
+                      const payload = await recallPayloads.get(ref);
+                      if (!payload) throw new Error("MEMORY_PAYLOAD_MISSING");
+                      return new TextDecoder("utf-8", { fatal: true }).decode(
+                        await recallProtector.unprotect({
+                          ownerId: configuration.ownerId,
+                          agentId: configuration.agentId,
+                          payload,
+                        }),
+                      );
+                    },
+                  },
+                  embedForMailCheck: memory.embedForMailCheck,
+                  minimumSimilarity: proactiveConfiguration.memoryMinimumSimilarity,
+                  hitsPerMail: DEFAULT_PROACTIVE_MEMORY_LIMITS.perMail,
+                  concurrency: 4,
+                }),
+              }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
+            : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
             requestTimeoutMs: proactiveConfiguration.perCheckMs,

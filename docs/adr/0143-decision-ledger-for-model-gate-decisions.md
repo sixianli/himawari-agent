@@ -35,7 +35,7 @@ Gmail 主动检查的记录在表 `proactive_decisions`（迁移 0062）。它�
 
 1. **扩展现有记录，不建第二套。** 迁移 0069 把 `proactive_decisions` 重建成 `decision_ledger`：旧列全部保留、取值不变，Gmail 旧行原样拷入并标成 `kind = 'proactive'`。引用它的两张表（`source_insights`、`proactive_processed_messages`）先暂存、重建后重新装回，外键改指向 `decision_ledger`，数据不丢。直接删旧表会触发级联删除，所以没有这样做。
 2. **每行一个决策类型 `kind`：** `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`。表上的约束保证每个类型只能写自己的结果值，例如记忆候选只能是 `kept`、`discarded`、`pending_approval`，Gmail 行必须有 `verdict` 且不能有 `outcome`。
-3. **每行带：** 结果 `outcome`、短代码 `reason_code`、对象 `subject_ref`、输入 `inputs`（JSON，只放记忆编号 `memoryIds` 和规则编号 `ruleIds`，不放正文）、理由正文的加密引用 `reason_ref`、候选正文的加密引用 `content_ref`、成本 `cost_micros`、耗时 `duration_ms`、评价 `owner_rating` 和评价时间。评价沿用 `useful`（有用）、`unneeded`（不需要）、`missed`（漏了）三个值，可清除。
+3. **每行带：** 结果 `outcome`、短代码 `reason_code`、对象 `subject_ref`、输入 `inputs`（JSON，只放记忆编号 `memoryIds` 和规则编号 `ruleIds`，不放正文；Gmail 检查的 `memoryIds` 只含实际放进提示词的记忆，见 [ADR 0148](0148-bring-related-memories-into-gmail-checks.md)）、理由正文的加密引用 `reason_ref`、候选正文的加密引用 `content_ref`、成本 `cost_micros`、耗时 `duration_ms`、评价 `owner_rating` 和评价时间。评价沿用 `useful`（有用）、`unneeded`（不需要）、`missed`（漏了）三个值，可清除。
 4. **`inputs` 的含义：** 这条决策涉及的记忆。记忆候选和整理写被决策的记忆；上下文截断写被截掉的记忆；检索降级和外部读取没有对应记忆时为空。规则编号目前只用于被规则丢弃的候选（写丢弃原因），规则手册落地后再接。
 5. **写入和记忆变更在同一个数据库事务里：**
    - 候选被保留时，账本行随 `saveWithProjection`（记忆记录、投影任务、历史三者的同一个事务）一起写入；账本行写失败，记忆也不会保存。

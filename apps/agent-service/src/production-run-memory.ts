@@ -63,6 +63,12 @@ export interface RunEmbeddingContext {
   readonly slot: string;
 }
 
+export interface MailEmbeddingContext {
+  readonly deadlineAt: string;
+  readonly signal: AbortSignal;
+  costMicros: number;
+}
+
 export function createProductionRunMemory(options: {
   readonly configuration: ProductConfiguration;
   readonly memory: Pick<DurableMemoryService, "search">;
@@ -78,12 +84,14 @@ export function createProductionRunMemory(options: {
 }): Pick<MemoryPort, "search"> & {
   project: NonNullable<DurableMemoryServiceOptions["project"]>;
   embedWithin: <T>(context: RunEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
+  embedForMailCheck: <T>(context: MailEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
 } {
   const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
   const providerFailedSearches = new WeakMap<
     MemorySearchRequest,
     typeof CONTEXT_MEMORY_UNAVAILABLE | typeof CONTEXT_MEMORY_QUOTA_EXCEEDED
   >();
+  const mailScope = new AsyncLocalStorage<MailEmbeddingContext>();
   const projectionScope = new AsyncLocalStorage<{
     job: MemoryProjectionJob;
     memory: ProductMemoryRecord;
@@ -97,8 +105,10 @@ export function createProductionRunMemory(options: {
   ) => {
     const context = scope.getStore();
     const projection = projectionScope.getStore();
+    const mail = mailScope.getStore();
     context?.signal?.throwIfAborted();
-    const deadline = context?.deadlineAt ?? projection?.job.claimExpiresAt;
+    mail?.signal.throwIfAborted();
+    const deadline = context?.deadlineAt ?? projection?.job.claimExpiresAt ?? mail?.deadlineAt;
     if (!deadline || !Number.isFinite(Date.parse(deadline)))
       throw new Error("EMBEDDING_DEADLINE_REQUIRED");
     const remaining = () =>
@@ -107,8 +117,11 @@ export function createProductionRunMemory(options: {
         Date.parse(deadline) - Date.parse(options.now()),
       );
     if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
-    const classification = context?.dataClassification ?? projection?.memory.dataClassification;
-    if (!classification || (!projection && (!context?.runId || !context.executionLease)))
+    const classification =
+      context?.dataClassification ??
+      projection?.memory.dataClassification ??
+      (mail ? ("private" as const) : undefined);
+    if (!classification || (!projection && !mail && (!context?.runId || !context.executionLease)))
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "EMBEDDING_EXECUTION_CONTEXT_REQUIRED",
@@ -177,6 +190,25 @@ export function createProductionRunMemory(options: {
         },
         markUnknown: async (reasonCode) => {
           await options.budget.markUnknown({ ...identity, reasonCode, observedAt: options.now() });
+        },
+      };
+    } else if (mail) {
+      permit = {
+        assertActive: options.assertActive,
+        markStarted: async () => {},
+        releaseReserved: async () => {},
+        settle: async (usage) => {
+          const actualCostMicros = usage.reportedCostMicros;
+          if (
+            typeof actualCostMicros !== "number" ||
+            !Number.isSafeInteger(actualCostMicros) ||
+            actualCostMicros < 0
+          )
+            throw new Error("EMBEDDING_GATEWAY_COST_MISSING");
+          mail.costMicros += actualCostMicros;
+        },
+        markUnknown: async () => {
+          mail.costMicros += descriptor.estimatedCostMicros;
         },
       };
     } else {
@@ -284,6 +316,7 @@ export function createProductionRunMemory(options: {
   }, options.configuration.deadlines.providerRequestMs);
   return {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),
+    embedForMailCheck: (context, operation) => mailScope.run(context, operation),
     embedWithin: (context, operation) =>
       scope.run(
         {

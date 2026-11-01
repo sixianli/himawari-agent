@@ -151,11 +151,42 @@ export interface ProactiveModelPayload {
   readonly role: ProactiveModelPayloadRole;
 }
 
+export interface ProactiveMemoryHit {
+  readonly id: string;
+  readonly text: string;
+  readonly score: number;
+}
+
+export interface ProactiveMemoryQuery {
+  readonly messageId: string;
+  readonly query: string;
+}
+
+export interface ProactiveMemoryRecallResult {
+  readonly hits: ReadonlyMap<string, readonly ProactiveMemoryHit[]>;
+  readonly costMicros: number;
+  readonly failedQueries: number;
+}
+
+export interface ProactiveMemoryRecall {
+  recall(input: {
+    readonly queries: readonly ProactiveMemoryQuery[];
+    readonly deadlineAt: string;
+    readonly signal: AbortSignal;
+  }): Promise<ProactiveMemoryRecallResult>;
+}
+
+export type ProactiveMemoryRecallStatus = "off" | "ok" | "partial" | "failed";
+
 export interface ProactiveCheckInputs {
   readonly ruleIds: readonly string[];
   readonly sourceIds: readonly string[];
   readonly floorHits: Readonly<Record<string, readonly string[]>>;
   readonly memoryInjected: boolean;
+  readonly memoryIds: readonly string[];
+  readonly usedMemoryIds: readonly string[];
+  readonly memoryByMail: Readonly<Record<string, readonly string[]>>;
+  readonly memoryRecall: ProactiveMemoryRecallStatus;
 }
 
 export interface ProactiveCheckRecord extends ProactiveScope {

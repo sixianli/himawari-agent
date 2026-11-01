@@ -215,9 +215,9 @@ export interface ProactiveConfiguration {
   readonly modelRef: string;
   readonly gmail: ProactiveGmailConfiguration;
   readonly intervalMs: number;
-  readonly perCheckCostMicros: number;
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
+  readonly memoryMinimumSimilarity: number;
 }
 
 export interface RunPolicyConfiguration {
