@@ -139,14 +139,15 @@ export async function readProactiveOverview(options: {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
     const floor =
       insight.floorRaised ||
-      floorHitIds(
-        {
-          fromAddress: fromAddressOf(content.from ?? ""),
-          subject: content.subject ?? "",
-          snippet: content.summary ?? "",
-        } as ProactiveSourceItem,
-        settings.importantSenders,
-      ).length > 0;
+      (content.floorHit ??
+        floorHitIds(
+          {
+            fromAddress: fromAddressOf(content.from ?? ""),
+            subject: content.subject ?? "",
+            snippet: content.summary ?? "",
+          } as ProactiveSourceItem,
+          settings.importantSenders,
+        ).length > 0);
     if (!isReminderWorthy(insight.result, insight.priority, floor)) {
       if (insight.updatedAt >= auditSince)
         filteredInsights.push(
@@ -185,14 +186,19 @@ export async function readProactiveOverview(options: {
   const ignored = auditActive
     ? await store.listProcessed({ ...scope, since: auditSince, outcome: "ignore", limit: 500 })
     : [];
-  const storedFiltered =
-    auditActive && filteredInsights.length > 0
-      ? new Map(
-          (
-            await store.listProcessed({ ...scope, since: auditSince, outcome: "act", limit: 500 })
-          ).map((row) => [row.messageId, row]),
-        )
-      : new Map<string, { ownerRating: ProactiveRating | null; reviewedAt: string | null }>();
+  const storedFiltered = new Map<
+    string,
+    { readonly ownerRating: ProactiveRating | null; readonly reviewedAt: string | null }
+  >();
+  if (auditActive && filteredInsights.length > 0)
+    for (const outcome of ["act", "know", "check"] as const)
+      for (const row of await store.listProcessed({
+        ...scope,
+        since: auditSince,
+        outcome,
+        limit: 500,
+      }))
+        storedFiltered.set(row.messageId, row);
   const auditItems: ProactiveOverviewAuditItem[] = auditActive
     ? filteredInsights.map((item) =>
         Object.freeze({ ...item, rating: storedFiltered.get(item.messageId)?.ownerRating ?? null }),

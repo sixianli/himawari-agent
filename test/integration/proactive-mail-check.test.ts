@@ -897,17 +897,44 @@ describe("proactive Gmail check acceptance", () => {
     const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
     try {
       database.prepare("UPDATE source_insights SET result = 'know', priority = NULL").run();
+      database.prepare("UPDATE proactive_processed_messages SET outcome = 'know'").run();
     } finally {
       database.close();
     }
     const overview = await h.overview();
     expect(overview.insights.map(({ summary }) => summary)).toEqual(["电费账单已出"]);
     expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["friend"]);
+    expect(overview.audit.pending).toBe(1);
+    await h.store.rateProcessed({
+      ...scope,
+      source: "gmail",
+      messageId: "friend",
+      rating: "missed",
+      now: h.clock.now(),
+    });
+    expect((await h.overview()).audit.items[0]).toMatchObject({ rating: "missed" });
+  });
+
+  it("[PG-18] keeps a worth-knowing mail whose money word is only in the mail snippet, even though the one-line summary has none", async () => {
+    const h = await harness();
+    h.reader.items = [
+      mail("snippet-bill", {
+        from: "管理会社 <info@kanri.example.com>",
+        fromAddress: "info@kanri.example.com",
+        subject: "大切なお知らせ",
+        snippet: "お支払い期限は 11/20 です",
+      }),
+    ];
+    h.script([{ id: "snippet-bill", result: "know", todo: "11/20 前要处理" }]);
+    await h.service.run();
+    const overview = await h.overview();
+    expect(overview.insights.map(({ summary }) => summary)).toEqual(["11/20 前要处理"]);
+    expect(overview.audit.items).toEqual([]);
   });
 
   it("[PG-17] tells the model that promotions, points, surveys, invitations, newsletters and automatic usage notices are ignore", () => {
     const prompt = proactivePrompt([mail("a")], "2026-10-30T01:00:00.000Z", "Asia/Tokyo");
-    for (const word of ["促销", "积分", "问卷", "聚会", "新闻简报", "用量或存储提醒"])
+    for (const word of ["促销", "积分", "问卷", "聚会", "新闻简报", "用量或存储提醒", "官方机构"])
       expect(prompt).toContain(word);
     expect(prompt).toContain("宁可少报");
   });

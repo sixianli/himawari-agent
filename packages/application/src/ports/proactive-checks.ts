@@ -78,6 +78,7 @@ export interface ProactiveInsightContent {
   readonly summary: string;
   readonly reason: string;
   readonly basis: "model" | "daily_limit";
+  readonly floorHit?: boolean;
   readonly from: string;
   readonly subject: string;
   readonly link: string;
