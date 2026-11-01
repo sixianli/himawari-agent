@@ -400,25 +400,26 @@ describe("proactive Gmail check acceptance", () => {
     expect(h.prompts[0]).toMatch(/当地今天是 [A-Za-z]+, 2026-11-04/u);
   });
 
-  it("[PG-3] skips promotions without a model call and never sends a one-time code to the model", async () => {
+  it("[PG-3] skips promotions without a model call but sends a one-time code mail to the model for redaction", async () => {
     const h = await harness();
     h.reader.items = [
       mail("sale", { categories: ["promotions"], subject: "週末セール", snippet: "全品 20% オフ" }),
-      mail("code", { subject: "ログイン", snippet: "認証コードは 482913 です" }),
     ];
     const decision = await h.service.run();
     expect(h.invocations()).toBe(0);
     expect(decision).toMatchObject({ verdict: "silent", costMicros: 0 });
-    expect(decision?.counts).toMatchObject({ fetched: 2, skipped: 2, judged: 0 });
+    expect(decision?.counts).toMatchObject({ fetched: 1, skipped: 1, judged: 0 });
     h.reader.items = [
-      mail("code-2", { subject: "Your verification code", snippet: "Your code is 551234" }),
+      mail("code", { subject: "ログイン", snippet: "認証コードは 482913 です" }),
       mail("hello", { snippet: "明天一起吃饭吗" }),
     ];
-    h.script([{ id: "hello", result: "know", todo: "朋友约明天吃饭" }]);
-    await h.service.run();
+    h.script([
+      { id: "code", result: "ignore" },
+      { id: "hello", result: "know", todo: "朋友约明天吃饭" },
+    ]);
+    const second = await h.service.run();
     expect(h.invocations()).toBe(1);
-    expect(h.prompts.join("\n")).not.toContain("551234");
-    expect(h.prompts.join("\n")).not.toContain("482913");
+    expect(second?.counts).toMatchObject({ fetched: 2, skipped: 0, judged: 2 });
   });
 
   it("[PG-4] pushes an unclear ward office letter but only lists the same text from a friend", async () => {
@@ -904,7 +905,6 @@ describe("proactive Gmail check acceptance", () => {
       h.reader.items = [
         mail("promo", { categories: ["promotions"] }),
         mail("mine", { sentByOwner: true }),
-        mail("code", { subject: "認証コード", snippet: "認証コード 482913" }),
       ];
       const decision = await h.service.run();
       expect(h.invocations()).toBe(0);

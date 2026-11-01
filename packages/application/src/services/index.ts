@@ -32,6 +32,7 @@ export * from "./host-file-read-service.js";
 export * from "./workspace-changes.js";
 export * from "./host-workspace-gateway-adapter.js";
 export * from "./improvement-candidate-service.js";
+export * from "./egress-redaction.js";
 export * from "./machine-secret-exclusion.js";
 export { usdCostsEqual, usdCostToMicros } from "./model-cost.js";
 export * from "./model-action-reviewer.js";

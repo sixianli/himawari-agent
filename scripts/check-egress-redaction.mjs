@@ -1,0 +1,75 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+export const REQUIRED_REDACTION_CALLS = Object.freeze([
+  {
+    file: "packages/runtime-pi/src/pi-runtime-adapter.ts",
+    required: "await original(model, redactModelContext(context)",
+  },
+  {
+    file: "packages/runtime-pi/src/pi-model-transport.ts",
+    required: "redactForEgress(",
+  },
+  { file: "packages/memory-engine/src/embedding.ts", required: "redactForEgress(text)" },
+]);
+
+export const EGRESS_PATTERNS = Object.freeze([
+  { name: "model stream call", pattern: /\bmodelRuntime\.stream\(/u },
+  { name: "embeddings request", pattern: /\/embeddings`|\/embeddings["']/u },
+  { name: "chat completions request", pattern: /\/chat\/completions["'`]/u },
+]);
+
+export const ALLOWED_EGRESS_FILES = Object.freeze(
+  new Map([
+    ["packages/runtime-pi/src/pi-model-transport.ts", ["model stream call"]],
+    ["packages/memory-engine/src/embedding.ts", ["embeddings request"]],
+  ]),
+);
+
+function sourceFiles(directory) {
+  const found = [];
+  for (const entry of readdirSync(directory)) {
+    if (entry === "node_modules" || entry === "dist") continue;
+    const full = path.join(directory, entry);
+    if (statSync(full).isDirectory()) found.push(...sourceFiles(full));
+    else if (/\.(?:ts|mts)$/u.test(entry) && !/\.d\.ts$/u.test(entry)) found.push(full);
+  }
+  return found;
+}
+
+export function findEgressViolations(root = repositoryRoot) {
+  const violations = [];
+  for (const { file, required } of REQUIRED_REDACTION_CALLS) {
+    const text = readFileSync(path.join(root, file), "utf8");
+    if (!text.includes(required))
+      violations.push(`${file}: 送模型前必须经过脱敏，缺少 ${required}`);
+  }
+  for (const base of ["packages", "apps"]) {
+    for (const full of sourceFiles(path.join(root, base))) {
+      const relative = path.relative(root, full).split(path.sep).join("/");
+      if (!relative.includes("/src/")) continue;
+      const text = readFileSync(full, "utf8");
+      for (const { name, pattern } of EGRESS_PATTERNS) {
+        if (!pattern.test(text)) continue;
+        if (ALLOWED_EGRESS_FILES.get(relative)?.includes(name)) continue;
+        violations.push(
+          `${relative}: 出现了没有登记的送模型出口（${name}），请接入脱敏器并登记到 scripts/check-egress-redaction.mjs`,
+        );
+      }
+    }
+  }
+  return violations;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const violations = findEgressViolations();
+  if (violations.length > 0) {
+    for (const violation of violations) console.error(violation);
+    process.exit(1);
+  }
+  console.log("egress redaction check passed");
+}
