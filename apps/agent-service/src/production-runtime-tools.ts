@@ -1642,6 +1642,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     });
     let outcome = unknownResult();
     let possiblySent = false;
+    let settlementError: unknown;
     let forwardingClosed = false;
     let authorityWithdrawn = false;
     const assertCurrent = async () => {
@@ -1829,6 +1830,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         );
       }
     } catch (error) {
+      settlementError = error;
       forwardingClosed = true;
       const fileConflict =
         error instanceof Error &&
@@ -1922,6 +1924,22 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     await this.#options.assertRunActive(invocation.runId);
     await this.#writeJson(invocation, `runtime-tool-result:${key}`, outcome);
     timing.finish("unsettled_result_write");
+    console.error(
+      JSON.stringify({
+        event: "tool.settlement_failed",
+        runId: invocation.runId,
+        invocationId: request.messageId,
+        stage: possiblySent ? "possibly_sent" : "not_dispatched",
+        errorName: settlementError instanceof Error ? settlementError.name : "UnknownError",
+        errorCode:
+          settlementError instanceof Error && "code" in settlementError
+            ? String(settlementError.code).slice(0, 64)
+            : null,
+        errorMessage:
+          settlementError instanceof Error ? settlementError.message.slice(0, 200) : null,
+        at: new Date().toISOString(),
+      }),
+    );
     return outcome;
   }
 

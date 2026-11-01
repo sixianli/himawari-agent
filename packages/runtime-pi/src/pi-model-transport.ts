@@ -111,6 +111,7 @@ export interface PiModelTransportOptions {
   readonly maxOutputTokens?: number;
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
+  readonly disableThinking?: boolean;
 }
 
 export interface PiModelTransportObservation {
@@ -188,6 +189,7 @@ export class PiModelTransport {
   readonly #maxOutputTokens: number;
   readonly #requestTimeoutMs: number;
   readonly #temperature: number | undefined;
+  readonly #disableThinking: boolean;
   readonly #observations: PiModelTransportObservation[] = [];
 
   constructor(options: PiModelTransportOptions) {
@@ -218,6 +220,7 @@ export class PiModelTransport {
     this.#maxOutputTokens = maxOutputTokens;
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#temperature = options.temperature;
+    this.#disableThinking = options.disableThinking === true;
   }
 
   observations(): readonly PiModelTransportObservation[] {
@@ -268,9 +271,14 @@ export class PiModelTransport {
     const message: UserMessage = { role: "user", content: prompt, timestamp: Date.now() };
     const context: Context = { messages: [message] };
     let responseStatus = 0;
+    const upstreamHeaders: Record<string, string> = {};
     const statusFetch: FetchFunction = async (fetchInput, init) => {
       const response = await this.#fetch(fetchInput, init);
       responseStatus = response.status;
+      for (const name of ["x-magpie-model", "x-magpie-provider"]) {
+        const value = response.headers.get(name);
+        if (value) upstreamHeaders[name] = value.slice(0, 128);
+      }
       return response;
     };
     const cacheFields = observeCacheFields(statusFetch);
@@ -308,7 +316,17 @@ export class PiModelTransport {
         fetch: observed?.fetch ?? cacheFields.fetch,
         ...(gatewayed
           ? { onPayload: (payload: unknown) => gatewayPayload(payload, descriptor.providerRouting) }
-          : { sessionId: request.runId }),
+          : {
+              sessionId: request.runId,
+              ...(this.#disableThinking
+                ? {
+                    onPayload: (payload: unknown) => ({
+                      ...(payload as Record<string, unknown>),
+                      thinking: { type: "disabled" },
+                    }),
+                  }
+                : {}),
+            }),
         maxTokens: Math.min(this.#maxOutputTokens, binding.model.maxTokens),
         maxRetries: 0,
         timeoutMs: this.#requestTimeoutMs,
@@ -359,10 +377,29 @@ export class PiModelTransport {
       yield failed(request, failure.code, failure.retryable, Date.now() - startedAt, now());
       return;
     }
+    const rejected = (code: string) =>
+      console.error(
+        JSON.stringify({
+          event: "model.response_rejected",
+          code,
+          invocationId: request.invocationId,
+          modelRef: request.modelRef,
+          responseModel: String(terminalMessage?.model ?? "").slice(0, 128),
+          stopReason: terminalMessage?.stopReason,
+          outputTokens: terminalMessage?.usage?.output ?? null,
+          partTypes: (terminalMessage?.content ?? []).map((item) => item.type),
+          toolCallNames: (terminalMessage?.content ?? [])
+            .flatMap((item) => (item.type === "toolCall" ? [String(item.name).slice(0, 64)] : []))
+            .slice(0, 5),
+          upstream: upstreamHeaders,
+          at: new Date().toISOString(),
+        }),
+      );
     if (
       terminalMessage.stopReason === "toolUse" ||
       terminalMessage.content.some((item) => item.type === "toolCall")
     ) {
+      rejected("AI_GATEWAY_TOOL_CALL_UNSUPPORTED");
       yield failed(
         request,
         "AI_GATEWAY_TOOL_CALL_UNSUPPORTED",
@@ -373,6 +410,7 @@ export class PiModelTransport {
       return;
     }
     if (terminalMessage.stopReason === "length") {
+      rejected("AI_GATEWAY_OUTPUT_TRUNCATED");
       yield failed(request, "AI_GATEWAY_OUTPUT_TRUNCATED", false, Date.now() - startedAt, now());
       return;
     }

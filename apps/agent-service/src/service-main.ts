@@ -1656,6 +1656,7 @@ export async function runAgentService(
                     invocationId: `${purpose}:${request.runId}`,
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
+                    disableThinking: true,
                     requestTimeoutMs: 45000,
                     errorPrefix: "MEMORY_CAPTURE",
                   });

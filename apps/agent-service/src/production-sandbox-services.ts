@@ -87,6 +87,7 @@ import { prepareProductionFile } from "./production-file-preparation.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import { createProductionManagedTasks } from "./production-managed-tasks.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { proofValidUntil } from "./production-proof-validity.js";
 import { isGlobalServiceFailure } from "./production-record-failure.js";
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
@@ -1782,7 +1783,7 @@ export async function createProductionSandboxServices(options: {
       policyDigest: facts.environment.policyDigest,
       resourceSequence: facts.resource.sequence,
       checkedAt: now,
-      validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+      validUntil: proofValidUntil(now, retainedRelease && record.releaseReceipt != null),
       outputs,
       evidence: [...observed.evidence, ...effectEvidence],
     };
