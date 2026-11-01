@@ -596,6 +596,8 @@ export async function executeProductionCodingRequest(
         runId: call.runId,
         toolCallId: call.toolCallId,
         paths: ledgerDeletedPaths(recorded),
+        grant,
+        overlapped,
       });
     }
     timing.finish("ledger_after");

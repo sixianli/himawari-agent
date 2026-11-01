@@ -45,13 +45,15 @@ export interface LibraryQuery {
 }
 
 export function latestFiles(items: readonly RegisteredFile[]): readonly RegisteredFile[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
+  const newest = new Map<string, RegisteredFile>();
+  for (const item of items) {
     const key = `${item.threadId}\u0000${item.path}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return !item.deleted;
-  });
+    const current = newest.get(key);
+    if (!current || item.version > current.version) newest.set(key, item);
+  }
+  return items.filter(
+    (item) => newest.get(`${item.threadId}\u0000${item.path}`) === item && !item.deleted,
+  );
 }
 
 export function libraryFile(file: RegisteredFile): DeliveredFile {

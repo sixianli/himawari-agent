@@ -178,8 +178,16 @@ export class ProductionThreadArtifacts {
     readonly runId: string;
     readonly toolCallId: string;
     readonly paths: readonly string[];
+    readonly grant: HostDirectoryGrant;
+    readonly overlapped: boolean;
   }): Promise<void> {
-    const paths = input.paths.filter((path) => !skipsThreadArtifact(path));
+    let paths = input.paths.filter((path) => !skipsThreadArtifact(path));
+    if (input.overlapped)
+      paths = (
+        await Promise.all(
+          paths.map(async (path) => ((await this.#exists(input.grant, path)) ? null : path)),
+        )
+      ).filter((path): path is string => path !== null);
     if (paths.length === 0) return;
     try {
       await this.#store.markDeleted({
@@ -197,6 +205,22 @@ export class ProductionThreadArtifacts {
         code: error instanceof Error ? error.message : "THREAD_ARTIFACT_MARK_DELETED_FAILED",
         at: this.#now(),
       });
+    }
+  }
+
+  async #exists(grant: HostDirectoryGrant, relativePath: string): Promise<boolean> {
+    try {
+      await this.#files.readFile({
+        grant,
+        relativePath,
+        maximumBytes: THREAD_ARTIFACT_COPY_LIMIT_BYTES,
+      });
+      return true;
+    } catch (error) {
+      return (
+        error instanceof HostReadOnlyError &&
+        error.code === HOST_READ_ONLY_ERROR_CODES.LENGTH_EXCEEDED
+      );
     }
   }
 

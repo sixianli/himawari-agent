@@ -17,6 +17,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { BrowserThreadFiles } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionThreadArtifacts } from "../../apps/agent-service/src/production-thread-artifacts.ts";
 import { ProductionUploadedFiles } from "../../apps/agent-service/src/production-uploaded-files.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -198,6 +199,61 @@ describe("[FD-1] thread artifact storage", () => {
           deletedAt: "2026-10-28T05:06:00.000Z",
         }),
       ).toBe(0);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[FD-1] a command that deletes a registered file hides it through the real store, and keeps the old version", async () => {
+    const { repository, store } = await open();
+    try {
+      const files: Record<string, string> = { "a.docx": "one", "b.docx": "two" };
+      let counter = 0;
+      const artifacts = new ProductionThreadArtifacts({
+        store,
+        files: {
+          readFile: async ({ relativePath }) => {
+            const content = files[relativePath];
+            if (content === undefined) throw new Error("MISSING");
+            return new TextEncoder().encode(content);
+          },
+        },
+        ids: { next: (kind) => `${kind}:${++counter}` },
+        now: () => T0,
+        warn: () => {},
+      });
+      const base = {
+        ...scope,
+        threadId: "thread-1",
+        runId: "run-1",
+        toolCallId: "call-1",
+        source: "bash" as const,
+        grant: {} as never,
+        overlapped: false,
+        saveCopy: async (key: string) => ({ ref: key }),
+      };
+      await artifacts.record({
+        ...base,
+        candidates: [{ path: "a.docx" }, { path: "b.docx" }],
+      });
+      delete files["a.docx"];
+      await artifacts.recordDeleted({ ...base, toolCallId: "call-2", paths: ["a.docx"] });
+      const list = (
+        await store.list({
+          ...scope,
+          threadId: "thread-1",
+          kind: null,
+          search: null,
+          before: null,
+          limit: 50,
+        })
+      ).items;
+      expect(list.map(({ path, deletedAt }) => [path, deletedAt !== null]).sort()).toEqual([
+        ["a.docx", true],
+        ["b.docx", false],
+      ]);
+      const kept = await store.versions({ ...scope, threadId: "thread-1", path: "a.docx" });
+      expect(kept).toMatchObject([{ version: 1, copyRef: expect.any(String) }]);
     } finally {
       await repository.close();
     }

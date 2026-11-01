@@ -1197,6 +1197,44 @@ it("[FD-1] marks an earlier registered file as deleted when a later command dele
   ]);
 });
 
+it("[FD-1] a command that only deletes a file still marks its earlier record as deleted", async () => {
+  const files: Record<string, string> = { "draft.docx": "v1" };
+  const { f, ledger, services, call, rows } = artifactFixture(files);
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("draft.docx")]) as never);
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  delete files["draft.docx"];
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("draft.docx", "deleted")]) as never);
+  f.values.clear();
+  await executeProductionCodingRequest({ ...call, toolCallId: "tool:rm" }, "bash", services, f.ctx);
+  expect(rows.map(({ path, deletedAt }) => [path, deletedAt !== null])).toEqual([
+    ["draft.docx", true],
+  ]);
+});
+
+it("[FD-1] when commands overlapped, a file that still exists is not marked deleted", async () => {
+  const files: Record<string, string> = { "keep.docx": "v1", "gone.docx": "v1" };
+  const { f, ledger, services, call, rows, threadArtifacts } = artifactFixture(files);
+  ledger.record.mockResolvedValue(
+    ledgerRecord([fileChange("keep.docx"), fileChange("gone.docx")]) as never,
+  );
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  delete files["gone.docx"];
+  await threadArtifacts.recordDeleted({
+    ownerId: f.ctx.ownerId,
+    agentId: f.ctx.agentId,
+    threadId: f.binding.threadId,
+    runId: call.runId,
+    toolCallId: "tool:overlap",
+    paths: ["keep.docx", "gone.docx"],
+    grant: {} as never,
+    overlapped: true,
+  });
+  expect(rows.map(({ path, deletedAt }) => [path, deletedAt !== null]).sort()).toEqual([
+    ["gone.docx", true],
+    ["keep.docx", false],
+  ]);
+});
+
 it("[FD-1] records one version per command end and none when the content did not change", async () => {
   const files: Record<string, string> = { "notes.md": "one" };
   const { f, ledger, services, call, rows, copies } = artifactFixture(files);
