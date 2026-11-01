@@ -822,6 +822,34 @@ describe("memory approval and management", () => {
     });
   });
 
+  it("[MP-DROP] marks a memory the owner pressed 不记 on as dropped in the change log and lets them undo it", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        memoryItem("m-kept", "主人喜欢喝美式"),
+        memoryItem("m-dropped", "主人让写一个就只写一个", { status: "trashed", revision: 4 }),
+      ],
+    };
+    await render();
+    await tab("变化记录");
+    const lines = [...document.querySelectorAll("#settings .memory-day p")];
+    const kept = lines.find((line) => line.textContent?.includes("主人喜欢喝美式"));
+    const dropped = lines.find((line) => line.textContent?.includes("主人让写一个就只写一个"));
+    expect(kept?.textContent).not.toContain("已不记");
+    expect(kept?.querySelector(".memory-undone")).toBeNull();
+    expect(dropped?.textContent).toContain("已不记，不会再用");
+    expect(dropped?.querySelector(".memory-undone")).not.toBeNull();
+    await act(async () =>
+      [...(dropped?.querySelectorAll("button") ?? [])]
+        .find((item) => item.textContent === "撤销")
+        ?.click(),
+    );
+    expect(lastCommand()).toMatchObject({
+      type: "memory.mutate",
+      payload: { memoryId: "m-dropped", action: "recover", expectedRevision: 4 },
+    });
+  });
+
   it("[MP-8] answers due reminders and cancels an upcoming one", async () => {
     overview = {
       ...overview,

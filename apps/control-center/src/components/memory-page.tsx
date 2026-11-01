@@ -1493,7 +1493,8 @@ function TimelineTab({
     text: string;
     note?: string;
     undone?: boolean;
-    undo?: () => void;
+    dropped?: boolean;
+    undo?: (() => void) | undefined;
     confirm?: boolean;
     change?: number;
     show?: () => void;
@@ -1504,7 +1505,17 @@ function TimelineTab({
         node.kind === "reaffirmed" || (node.change === 0 && node.record.importBatchId)
           ? []
           : node.change === 0
-            ? [{ key: node.key, at: node.at, type: "new", kind: "new", text: node.text }]
+            ? [
+                {
+                  key: node.key,
+                  at: node.at,
+                  type: "new",
+                  kind: "new",
+                  text: node.text,
+                  dropped: head.status === "trashed",
+                  undo: head.status === "trashed" ? () => void memory.recover(head) : undefined,
+                },
+              ]
             : [
                 {
                   key: node.key,
@@ -1514,6 +1525,8 @@ function TimelineTab({
                   text: message("memory.page.nowIs", { text: node.text }),
                   change: node.change,
                   show: () => onShowMemory(head.memoryId),
+                  dropped: head.status === "trashed",
+                  undo: head.status === "trashed" ? () => void memory.recover(head) : undefined,
                 },
               ],
       ),
@@ -1578,7 +1591,7 @@ function TimelineTab({
               <span className="memory-tag" data-kind={event.type}>
                 {message("memory.page.event", { e: event.kind })}
               </span>
-              <span className={event.undone ? "memory-undone" : undefined}>
+              <span className={event.undone || event.dropped ? "memory-undone" : undefined}>
                 {event.text}
                 <small>{event.note}</small>
                 {event.change ? (
@@ -1591,6 +1604,7 @@ function TimelineTab({
                   </small>
                 ) : null}
               </span>
+              {event.dropped ? <small>{message("memory.page.droppedTag")}</small> : null}
               {event.undone ? (
                 <small>{message("memory.undone")}</small>
               ) : event.undo ? (

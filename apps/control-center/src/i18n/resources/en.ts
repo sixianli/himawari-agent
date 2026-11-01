@@ -677,6 +677,7 @@ export const messages = {
   "memory.profile.project": "In progress",
   "memory.tidyKept": "(kept: {text})",
   "memory.undo": "Undo",
+  "memory.page.droppedTag": "Dropped, no longer used",
   "memory.undone": "Undone",
   "memory.reminderTitle": "Reminder",
   "memory.reminderDue": "Due {time}",

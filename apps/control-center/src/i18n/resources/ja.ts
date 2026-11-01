@@ -684,6 +684,7 @@ export const messages = {
   "memory.profile.project": "進行中のこと",
   "memory.tidyKept": "（残した方：{text}）",
   "memory.undo": "元に戻す",
+  "memory.page.droppedTag": "覚えないことにしました。今後は使いません",
   "memory.undone": "元に戻しました",
   "memory.reminderTitle": "リマインダー",
   "memory.reminderDue": "予定：{time}",

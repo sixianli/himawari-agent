@@ -613,6 +613,7 @@ export const MESSAGE_IDS = [
   "memory.profile.project",
   "memory.tidyKept",
   "memory.undo",
+  "memory.page.droppedTag",
   "memory.undone",
   "memory.reminderTitle",
   "memory.reminderDue",
