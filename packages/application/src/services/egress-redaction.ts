@@ -20,14 +20,30 @@ export interface EgressRedaction {
   readonly findings: readonly EgressRedactionFinding[];
 }
 
+export type EgressPlaceholderKind =
+  | "password"
+  | "verification-code"
+  | "bank-card"
+  | "identity-number";
+
+export interface EgressRedactionOptions {
+  readonly tag?: (kind: EgressPlaceholderKind, value: string) => string;
+  readonly known?: Map<string, string>;
+  readonly table?: Map<string, string>;
+}
+
 export const EGRESS_PLACEHOLDER_LEGEND =
-  "文中形如 [密钥]、[密码]、[验证码]、[银行卡 尾号NNNN]、[证件号] 的方括号内容，是系统在发送前遮掉的真实敏感信息。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。";
+  "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。";
+
+export const EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE =
+  "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；回答里需要提到它们时请照原样写出，系统在显示给用户时会换回原值。如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。";
+
+export const EGRESS_PLACEHOLDER_PATTERN = /\[(密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]/gu;
+
+const KNOWN_VALUE_MINIMUM_LENGTH = 6;
 
 const MACHINE_SECRET_MARKER = "[MACHINE_SECRET_REDACTED]";
 const MACHINE_SECRET_PLACEHOLDER = "[密钥]";
-const PASSWORD_PLACEHOLDER = "[密码]";
-const CODE_PLACEHOLDER = "[验证码]";
-const IDENTITY_PLACEHOLDER = "[证件号]";
 
 const PASSWORD_ASSIGNMENT =
   /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；]+)/giu;
@@ -134,9 +150,38 @@ function looksLikeCalendarYear(text: string, start: number, end: number): boolea
   );
 }
 
-export function redactForEgress(input: string): EgressRedaction {
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+export function redactForEgress(
+  input: string,
+  options: EgressRedactionOptions = {},
+): EgressRedaction {
   const counts = new Map<EgressRedactionKind, number>();
+  const { tag, known, table } = options;
   let text = input;
+
+  const mask = (
+    kind: EgressPlaceholderKind,
+    label: string,
+    original: string,
+    identity: string,
+    rememberValue: boolean,
+  ): string => {
+    const placeholder = tag === undefined ? `[${label}]` : `[${label}#${tag(kind, identity)}]`;
+    if (tag !== undefined) {
+      if (table !== undefined && !table.has(placeholder)) table.set(placeholder, original);
+      if (
+        rememberValue &&
+        known !== undefined &&
+        original.length >= KNOWN_VALUE_MINIMUM_LENGTH &&
+        !known.has(original)
+      )
+        known.set(original, placeholder);
+    }
+    return placeholder;
+  };
 
   const machineMarkers = text.split(MACHINE_SECRET_MARKER).length - 1;
   text = redactMachineSecrets(text);
@@ -146,23 +191,21 @@ export function redactForEgress(input: string): EgressRedaction {
   text = text.split(MACHINE_SECRET_MARKER).join(MACHINE_SECRET_PLACEHOLDER);
 
   text = text.replace(PASSWORD_ASSIGNMENT, (_match, lead: string, value: string) => {
-    if (value === MACHINE_SECRET_PLACEHOLDER || value === PASSWORD_PLACEHOLDER) {
-      return `${lead}${value}`;
-    }
+    if (value === MACHINE_SECRET_PLACEHOLDER || value.startsWith("[")) return `${lead}${value}`;
     tally(counts, "password");
-    return `${lead}${PASSWORD_PLACEHOLDER}`;
+    return `${lead}${mask("password", "密码", value, value, true)}`;
   });
 
   text = text.replace(CN_ID_NUMBER, (match) => {
     if (!cnIdChecksumValid(match)) return match;
     tally(counts, "identity-number");
-    return IDENTITY_PLACEHOLDER;
+    return mask("identity-number", "证件号", match, match.toUpperCase(), false);
   });
 
   text = text.replace(IBAN_CANDIDATE, (match) => {
     if (!ibanValid(match)) return match;
     tally(counts, "identity-number");
-    return IDENTITY_PLACEHOLDER;
+    return mask("identity-number", "证件号", match, match.replace(/ /gu, ""), false);
   });
 
   text = text.replace(CARD_CANDIDATE, (match) => {
@@ -170,7 +213,7 @@ export function redactForEgress(input: string): EgressRedaction {
     if (digits.length < 13 || digits.length > 19) return match;
     if (!plausibleCardNetwork(digits) || !luhnValid(digits)) return match;
     tally(counts, "bank-card");
-    return `[银行卡 尾号${digits.slice(-4)}]`;
+    return mask("bank-card", `银行卡 尾号${digits.slice(-4)}`, match, digits, false);
   });
 
   text = text.replace(JP_MY_NUMBER, (match, offset: number, whole: string) => {
@@ -180,7 +223,7 @@ export function redactForEgress(input: string): EgressRedaction {
     );
     if (!JP_MY_NUMBER_KEYWORD.test(window) || !myNumberChecksumValid(match)) return match;
     tally(counts, "identity-number");
-    return IDENTITY_PLACEHOLDER;
+    return mask("identity-number", "证件号", match, match, false);
   });
 
   text = text.replace(DIGIT_RUN, (match, offset: number, whole: string) => {
@@ -191,8 +234,22 @@ export function redactForEgress(input: string): EgressRedaction {
     if (isFormattedNumberNeighbour(whole, offset, end)) return match;
     if (looksLikeCalendarYear(whole, offset, end)) return match;
     tally(counts, "verification-code");
-    return CODE_PLACEHOLDER;
+    return mask("verification-code", "验证码", match, match, true);
   });
+
+  if (known !== undefined && known.size > 0) {
+    for (const [value, placeholder] of known) {
+      if (!text.includes(value)) continue;
+      const pattern = new RegExp(
+        `(?<![\\p{L}\\p{N}_])${escapeRegExp(value)}(?![\\p{L}\\p{N}_])`,
+        "gu",
+      );
+      text = text.replace(pattern, () => {
+        tally(counts, placeholder.startsWith("[验证码") ? "verification-code" : "password");
+        return placeholder;
+      });
+    }
+  }
 
   const findings = EGRESS_REDACTION_KINDS.flatMap((kind) => {
     const count = counts.get(kind);

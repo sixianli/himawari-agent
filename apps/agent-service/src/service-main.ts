@@ -102,6 +102,7 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { createProductionModelEgress } from "./production-model-egress.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -262,6 +263,7 @@ async function createDefaultModelComposition(
   const protector = configuredPayloadProtector(configuration, sources);
   try {
     const created = await createProductionModelCompositionFromConfiguration({
+      egress: createProductionModelEgress(configuration, sources),
       configuration,
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
@@ -309,6 +311,7 @@ async function createDefaultMemoryComposition(
 ): Promise<ProductionMemoryComposition> {
   const sources = context.sources ?? hostModelSources(context.configuration);
   return createProductionMemoryCompositionFromConfiguration({
+    egress: createProductionModelEgress(context.configuration, sources),
     configuration: context.configuration,
     secretSource: sources.provider,
     index: context.repository.memoryIndex(),
@@ -1547,6 +1550,7 @@ export async function runAgentService(
       proactive?.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        egress: createProductionModelEgress(configuration, sources),
         live,
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         modelUsage: {

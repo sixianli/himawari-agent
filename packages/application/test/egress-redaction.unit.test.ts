@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { EGRESS_PLACEHOLDER_LEGEND, redactForEgress } from "../src/index.js";
+import {
+  EGRESS_PLACEHOLDER_LEGEND,
+  EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
+  redactForEgress,
+} from "../src/index.js";
 
 const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["验证码中文", "您的验证码是 482910，5 分钟内有效", "您的验证码是 [验证码]，5 分钟内有效"],
@@ -123,10 +127,82 @@ describe("outbound redaction", () => {
   });
 
   it("states what the placeholders mean in one fixed sentence", () => {
-    expect(EGRESS_PLACEHOLDER_LEGEND).toContain("[验证码]");
-    expect(EGRESS_PLACEHOLDER_LEGEND).toContain("不要要求用户核实");
-    expect(EGRESS_PLACEHOLDER_LEGEND).toContain("不要换成示例");
-    expect(EGRESS_PLACEHOLDER_LEGEND).not.toContain("不要猜测");
-    expect(EGRESS_PLACEHOLDER_LEGEND).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+    for (const legend of [EGRESS_PLACEHOLDER_LEGEND, EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE]) {
+      expect(legend).toContain("[验证码#abcdefgh]");
+      expect(legend).toContain("不要要求用户核实");
+      expect(legend).toContain("不要换成示例");
+      expect(legend).not.toContain("不要猜测");
+      expect(legend).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+    }
+    expect(EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE).toContain("显示给用户时会换回原值");
+    expect(EGRESS_PLACEHOLDER_LEGEND).not.toContain("换回原值");
+  });
+});
+
+const tag = (kind: string, value: string): string => {
+  let hash = 7;
+  for (const char of `${kind}\u0000${value}`) hash = (hash * 31 + char.charCodeAt(0)) % 2147483647;
+  return Array.from({ length: 8 }, (_, index) =>
+    String.fromCharCode(97 + (((hash >> index) + index * 3) % 26)),
+  ).join("");
+};
+
+describe("stable placeholders", () => {
+  it("gives the same value the same placeholder and different values different ones", () => {
+    const first = redactForEgress("验证码 482910", { tag }).text;
+    const again = redactForEgress("请用验证码 482910 登录", { tag }).text;
+    const other = redactForEgress("验证码 573621", { tag }).text;
+    const placeholder = first.slice(first.indexOf("["));
+    expect(again).toContain(placeholder);
+    expect(other).not.toContain(placeholder);
+    expect(placeholder).toMatch(/^\[验证码#[a-z]{8}\]$/u);
+  });
+
+  it("never puts digits in the identifier so it cannot be mistaken for a code", () => {
+    for (let index = 0; index < 200; index += 1) {
+      const text = redactForEgress(`验证码 ${100000 + index * 37}`, { tag }).text;
+      expect(text).toMatch(/^验证码 \[验证码#[a-z]{8}\]$/u);
+    }
+  });
+
+  it("records the original value so it can be put back for display", () => {
+    const table = new Map<string, string>();
+    const result = redactForEgress("密码：hunter22abc，卡号 4111 1111 1111 1111", { tag, table });
+    expect(result.text).not.toContain("hunter22abc");
+    expect([...table.values()].sort()).toEqual(["4111 1111 1111 1111", "hunter22abc"]);
+  });
+
+  it("masks a value everywhere once it has been masked earlier, without looking ahead", () => {
+    const known = new Map<string, string>();
+    const first = redactForEgress("密码：hunter22abc", { tag, known }).text;
+    const later = redactForEgress("好的，hunter22abc 已经记下", { tag, known }).text;
+    expect(later).toBe(`好的，${first.slice(first.indexOf("["))} 已经记下`);
+    const unrelated = redactForEgress("hunter22abcdef 是另一个词", { tag, known }).text;
+    expect(unrelated).toBe("hunter22abcdef 是另一个词");
+  });
+
+  it("does not remember short values", () => {
+    const known = new Map<string, string>();
+    redactForEgress("验证码 4829", { tag, known });
+    expect(redactForEgress("房间 4829", { tag, known }).text).toBe("房间 4829");
+  });
+
+  it("keeps machine secrets as one fixed marker that is never restorable", () => {
+    const table = new Map<string, string>();
+    const key = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-");
+    const result = redactForEgress(`key ${key}`, { tag, table });
+    expect(result.text).toBe("key [密钥]");
+    expect(table.size).toBe(0);
+  });
+
+  it("is a function of its own text and the earlier values only", () => {
+    const known = new Map<string, string>();
+    const history = ["密码：hunter22abc", "你好"];
+    const turnOne = history.map((text) => redactForEgress(text, { tag, known }).text);
+    const knownTwo = new Map<string, string>();
+    const turnTwo = [...history, "新消息 hunter22abc"].map(
+      (text) => redactForEgress(text, { tag, known: knownTwo }).text,
+    );
+    expect(turnTwo.slice(0, 2)).toEqual(turnOne);
   });
 });

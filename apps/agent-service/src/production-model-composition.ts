@@ -1,4 +1,5 @@
 import type {
+  ModelEgress,
   ClockPort,
   ConfiguredCompletionsGenerationModelDescriptor,
   ConfiguredEmbeddingModelDescriptor,
@@ -83,6 +84,7 @@ export interface ProductionTypeSafeDescriptor extends ModelDescriptor {
 }
 
 export interface ProductionModelCompositionOptions {
+  readonly egress: ModelEgress;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly descriptors: readonly ProductionGenerationDescriptor[];
@@ -317,6 +319,7 @@ function modelTransportFor(
       descriptor.api === "openai-completions",
   );
   const piTransport = new PiModelTransport({
+    egress: options.egress,
     models: new ConfiguredPiModelBindingPort({
       descriptors: piOnly,
       secretSource: options.secretSource,
@@ -442,6 +445,7 @@ export function createProductionModelComposition(
       handles: options.handles,
       secretSource: options.secretSource,
       transport: new PiModelTransport({
+        egress: options.egress,
         models: piModels,
         payloads: payloadBoundary,
         clock: options.clock,

@@ -1,5 +1,6 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 
+import { testModelEgress } from "@himawari-agent/testing";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,6 +98,7 @@ function setup() {
   const counting = countingStore(adapters.payload);
   const runtime = new CleanupRuntime();
   const composition = createProductionModelComposition({
+    egress: testModelEgress(),
     ownerId: "owner-cleanup" as never,
     agentId: "agent-cleanup" as never,
     descriptors: [MODEL],
