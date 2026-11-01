@@ -399,6 +399,26 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       expect(ledger.every((entry) => entry.ownerRating === null && entry.costMicros === 0)).toBe(
         true,
       );
+      const byOutcome = new Map(ledger.map((entry) => [entry.outcome, entry]));
+      const batchId = resource.consolidation.consolidationId(AGENT_ID);
+      expect(ledger.every((entry) => entry.inputs.batchId === batchId)).toBe(true);
+      expect(byOutcome.get("merge")?.inputs).toMatchObject({
+        memoryIds: ["daughter-old", "daughter-new"],
+        resultMemoryIds: ["daughter-new"],
+      });
+      expect(byOutcome.get("supersede")?.inputs).toMatchObject({
+        memoryIds: ["coffee-old", "coffee-new"],
+        resultMemoryIds: ["coffee-new"],
+      });
+      expect(byOutcome.get("archive")?.inputs).toMatchObject({
+        memoryIds: ["onigiri"],
+        resultMemoryIds: [],
+      });
+      expect([...(byOutcome.get("reflect")?.inputs.memoryIds ?? [])].sort()).toEqual([
+        "run-a",
+        "run-b",
+      ]);
+      expect(byOutcome.get("reflect")?.inputs.resultMemoryIds).toEqual([`${result?.id}:insight:0`]);
       expect(resource.prompts[0]).not.toContain("青霉素");
       expect((await resource.read("onigiri"))?.status).toBe("archived");
       expect((await resource.read("daughter-old"))?.status).toBe("archived");
@@ -489,15 +509,25 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       );
       const undone = changes.find(({ action }) => action === "archive");
       await expect(resource.consolidation.undo(undone?.id ?? "")).rejects.toThrow("undone");
+      const ledger = await resource.repository.decisionLedger().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        kind: "consolidation",
+        since: "1970-01-01T00:00:00.000Z",
+        limit: 50,
+      });
+      expect(ledger).toHaveLength(4);
+      expect(ledger.map(({ outcome, ownerRating }) => [outcome, ownerRating]).sort()).toEqual(
+        [
+          ["archive", "unneeded"],
+          ["merge", "unneeded"],
+          ["reflect", null],
+          ["supersede", "unneeded"],
+        ].sort(),
+      );
       expect(
-        await resource.repository.decisionLedger().list({
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          kind: "consolidation",
-          since: "1970-01-01T00:00:00.000Z",
-          limit: 50,
-        }),
-      ).toHaveLength(4);
+        ledger.filter(({ ownerRating }) => ownerRating !== null).every(({ ratedAt }) => ratedAt),
+      ).toBe(true);
     } finally {
       await resource.repository.close();
     }

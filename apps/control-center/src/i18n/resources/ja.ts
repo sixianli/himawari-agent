@@ -12,6 +12,8 @@ export const messages = {
 
   "review.archivePending":
     "この会話には確認待ちの操作があります。対応してからアーカイブしてください。",
+  "review.deletePending":
+    "この会話には確認待ちの操作があります。先に処理してから削除してください。",
   "review.system": "システムに合わせる",
   "review.loadMore": "さらに表示",
   "review.retrySend": "前の送信を再試行",
@@ -189,6 +191,8 @@ export const messages = {
   "chat.activity.preparingTool": "ツール呼び出しを準備中",
   "chat.activity.waitingModel": "モデルの応答を待機中",
   "chat.activity.buildingContext": "関連する記憶を検索中",
+  "chat.queued": "実行待ち",
+  "chat.queuedWait": "{time} 待機中。ほかの会話が実行中で、空きができ次第自動で始まります。",
   "chat.lastActivity": "最後の進捗は {time} 前",
   "chat.progressDelayed":
     "新しい進捗が届いていません。接続中でも処理が進んでいるとは限りません。結果を待つか、この実行を停止できます。",
@@ -527,9 +531,9 @@ export const messages = {
   "state.loading": "読み込み中…",
   "state.error": "読み込みに失敗しました",
   "state.offline": "オフラインでは未送信の下書きだけを保持します",
-  "surface.notInstalled.title": "現在の環境ではこの機能は有効になっていません",
-  "surface.notInstalled.description":
-    "この機能は現在のサーバーに接続されていません。利用には接続と検証が必要です。再ログインやページの更新では有効になりません。",
+  "surface.notFound.title": "このページは見つかりません",
+  "surface.notFound.description": "このアドレスにはページがありません。会話に戻ってください。",
+  "surface.notFound.action": "会話に戻る",
   "layout.showList": "リストを表示",
   "locale.label": "表示言語",
   "locale.zhCN": "简体中文",
@@ -551,6 +555,10 @@ export const messages = {
   "threads.pin": "ピン留め",
   "threads.unpin": "ピン留めを解除",
   "threads.archive": "アーカイブ",
+  "threads.delete": "削除",
+  "threads.deleteTitle": "この会話を削除しますか？",
+  "threads.deleteBody": "「{title}」は会話リストと検索から消えます。ウェブ上では元に戻せません。",
+  "threads.deleteConfirm": "会話を削除",
   "threads.restore": "復元",
   "threads.conflictTitle": "このスレッドは別の場所で更新されました",
   "threads.conflictDescription": "最新の内容に更新しました。直前の操作はまだ反映されていません。",
@@ -750,11 +758,11 @@ export const messages = {
   "memory.page.recover": "元に戻す",
   "memory.page.deleted": "削除しました。7 日以内なら「最近削除」から戻せます。",
   "memory.page.filter":
-    "{f, select, all {すべて} new {新規} tidy {整理} correct {訂正} other {インポート}}",
+    "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {整理} correct {訂正} other {インポート}}",
   "memory.page.timelineNote":
-    "日ごとの変化です。新規・訂正・インポートと、毎日の整理による統合・置き換え・アーカイブ・推測。整理とインポートは取り消せます。あなたの編集は整理で上書きされません。",
+    "日ごとの変化です。新規・訂正・インポートと、毎日の整理による統合・置き換え・アーカイブ・推測。覚えない・削除・整理・インポートは取り消せます。あなたの編集は整理で上書きされません。",
   "memory.page.event":
-    "{e, select, new {新規} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
+    "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
   "memory.page.imported":
     "{source, select, codex {Codex} assistant {他の AI} other {Himawari のエクスポート}}から {count} 件インポート",
   "memory.page.goConfirm": "確認する",
@@ -969,11 +977,11 @@ export const messages = {
     "本日のメール確認が 1 日の費用上限に達しました。モデルは止めていますが、銀行・学校などのメールはルールで引き続き表示します。0:00 に自動再開し、チャットへの影響はありません。",
   "proactive.paused": "自発的なリマインダーはオフです。メールの確認・記録・通知をしていません。",
   "proactive.foot": "期限が来たリマインダーと急ぎのメールは、通知をオンにした端末に届きます。",
-  "proactive.audit.title": "今日「対応不要」と判断した {count} 通",
+  "proactive.audit.title": "直近 7 日間にリマインドから外した {count} 通",
   "proactive.audit.open": "確認する",
   "proactive.audit.hide": "閉じる",
   "proactive.audit.note":
-    "公開後 14 日間、毎日 1 回。差出人と件名だけを表示します。「確認済み」を押すと確認件数に入ります。",
+    "リマインドに入れなかったメールです。差出人と件名だけを表示します。「確認済み」を押すと確認件数に入ります。",
   "proactive.audit.done": "確認済み",
   "proactive.audit.doneOk": "確認件数に追加しました",
   "proactive.log.range": "直近 30 日 · {days} 日分を記録",

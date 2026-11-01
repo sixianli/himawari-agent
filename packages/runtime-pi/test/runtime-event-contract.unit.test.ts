@@ -10,6 +10,7 @@ import {
   PiAgentRuntimeAdapter,
   type PiAgentRuntimeAdapterDependencies,
 } from "../src/pi-runtime-adapter.ts";
+import { testModelEgress } from "./helpers/model-egress.js";
 
 const now = "2026-09-14T00:00:00.000Z";
 const model: Model<Api> = {
@@ -91,6 +92,7 @@ function fixture(
   const dispose = vi.fn();
   const abort = vi.fn();
   const dependencies: PiAgentRuntimeAdapterDependencies = {
+    egress: testModelEgress(),
     cwd: process.cwd(),
     now: () => now,
     logicalSlot: (_run, ordinal) => `slot-${ordinal}`,

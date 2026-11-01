@@ -5,6 +5,7 @@ import type {
   PayloadProtectorPort,
 } from "@himawari-agent/application";
 import {
+  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   type ClockPort,
   claimFromRunExecutionLease,
   createProactiveSeal,
@@ -102,14 +103,21 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { createProductionModelEgress } from "./production-model-egress.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
+import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
+import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
+import {
+  inspectSandboxCommands,
+  type SandboxCommandInventory,
+} from "./sandbox-command-inventory.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -167,6 +175,12 @@ export interface AgentServiceDependencies {
   readonly httpOptions?: Pick<ProductionHttpCompositionOptions, "jwksFetcher" | "identityFetcher">;
   readonly modelCompositionFactory?: AgentServiceModelCompositionFactory;
   readonly memoryCompositionFactory?: AgentServiceMemoryCompositionFactory;
+}
+
+let sandboxCommandInventoryOnce: Promise<SandboxCommandInventory> | undefined;
+function sandboxCommandInventory(): Promise<SandboxCommandInventory> {
+  sandboxCommandInventoryOnce ??= inspectSandboxCommands();
+  return sandboxCommandInventoryOnce;
 }
 
 function productionClock(): ClockPort {
@@ -262,6 +276,7 @@ async function createDefaultModelComposition(
   const protector = configuredPayloadProtector(configuration, sources);
   try {
     const created = await createProductionModelCompositionFromConfiguration({
+      egress: createProductionModelEgress(configuration, sources),
       configuration,
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
@@ -309,6 +324,7 @@ async function createDefaultMemoryComposition(
 ): Promise<ProductionMemoryComposition> {
   const sources = context.sources ?? hostModelSources(context.configuration);
   return createProductionMemoryCompositionFromConfiguration({
+    egress: createProductionModelEgress(context.configuration, sources),
     configuration: context.configuration,
     secretSource: sources.provider,
     index: context.repository.memoryIndex(),
@@ -1426,6 +1442,32 @@ export async function runAgentService(
           oauth,
           reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
+          ...(memory && durableMemory && protector && repository
+            ? ((recallProtector, recallPayloads) => ({
+                memory: createProactiveMemoryRecall({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  memory: durableMemory,
+                  content: {
+                    readText: async (ref) => {
+                      const payload = await recallPayloads.get(ref);
+                      if (!payload) throw new Error("MEMORY_PAYLOAD_MISSING");
+                      return new TextDecoder("utf-8", { fatal: true }).decode(
+                        await recallProtector.unprotect({
+                          ownerId: configuration.ownerId,
+                          agentId: configuration.agentId,
+                          payload,
+                        }),
+                      );
+                    },
+                  },
+                  embedForMailCheck: memory.embedForMailCheck,
+                  minimumSimilarity: proactiveConfiguration.memoryMinimumSimilarity,
+                  hitsPerMail: DEFAULT_PROACTIVE_MEMORY_LIMITS.perMail,
+                  concurrency: 4,
+                }),
+              }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
+            : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
             requestTimeoutMs: proactiveConfiguration.perCheckMs,
@@ -1485,6 +1527,13 @@ export async function runAgentService(
             subject: webPushConfiguration.subject,
           }),
           presence: webPushPresence,
+          readLocale: async () =>
+            (
+              await pushRepository.ownerPreferences().read({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+              })
+            ).locale,
           reminders: pushRepository.memoryReminders(),
           memories: pushRepository.productMemoryState(),
           readMemoryText: (record) => readPlain(record.contentRef),
@@ -1547,10 +1596,17 @@ export async function runAgentService(
       proactive?.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        egress: createProductionModelEgress(configuration, sources),
         live,
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         modelUsage: {
-          store: activeRepository.modelUsage(),
+          store: monitorFollowUpCacheHits(activeRepository.modelUsage(), (hit) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "cache.follow_up_low_hit",
+              ...hit,
+            }),
+          ),
           onFailure: (error) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
@@ -1656,6 +1712,7 @@ export async function runAgentService(
                     invocationId: `${purpose}:${request.runId}`,
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
+                    disableThinking: true,
                     requestTimeoutMs: 45000,
                     errorPrefix: "MEMORY_CAPTURE",
                   });
@@ -1716,6 +1773,7 @@ export async function runAgentService(
           clock,
           ids,
           workspaceRoot: configuredWorkspaceRoot(configuration, repository, clock),
+          sandboxCommands: sandboxCommandInventory,
         }),
         clock,
         ids,

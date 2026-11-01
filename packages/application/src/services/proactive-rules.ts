@@ -1,20 +1,15 @@
 import type {
   ProactiveConfidence,
+  ProactivePriority,
   ProactiveQuietPeriod,
   ProactiveResult,
   ProactiveSourceItem,
 } from "../ports/proactive-checks.js";
-import { scanMachineSecrets } from "./machine-secret-exclusion.js";
 
 export const PROACTIVE_PUBLIC_DOMAIN_SUFFIXES = Object.freeze(["go.jp", "lg.jp", "ac.jp", "ed.jp"]);
 
 const MONEY_WORDS =
   /收费|扣款|入账|付款|退款|账单|缴费|汇款|转账|还款|发票|請求|引落|引き落とし|振込|振り込み|入金|返金|支払|料金|決済|ご利用代金|\b(?:invoice|payment|refund|billing|bill|charged?|receipt|statement)\b/iu;
-
-const ONE_TIME_CODE =
-  /(?:验证码|驗證碼|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|one[- ]time (?:pass)?code|passcode|\bOTP\b)/iu;
-const CARD_NUMBER = /(?<!\d)(?:\d[ -]?){13,19}(?!\d)/u;
-const PASSWORD_LINE = /(?:密码|密碼|パスワード|password)\s*[:：]/iu;
 
 export function senderDomain(address: string): string {
   return address.slice(address.lastIndexOf("@") + 1).toLowerCase();
@@ -31,24 +26,33 @@ export function isImportantSender(address: string, senders: readonly string[]): 
   });
 }
 
-export function hitsFloor(item: ProactiveSourceItem, senders: readonly string[]): boolean {
+export const FLOOR_RULE_IDS = Object.freeze({
+  importantSender: "floor_important_sender",
+  publicDomain: "floor_public_domain",
+  moneyWords: "floor_money_words",
+} as const);
+
+export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
+
+export function floorHitIds(
+  item: ProactiveSourceItem,
+  senders: readonly string[],
+): readonly FloorRuleId[] {
   const domain = senderDomain(item.fromAddress);
-  return (
-    isImportantSender(item.fromAddress, senders) ||
+  const hits: FloorRuleId[] = [];
+  if (isImportantSender(item.fromAddress, senders)) hits.push(FLOOR_RULE_IDS.importantSender);
+  if (
     PROACTIVE_PUBLIC_DOMAIN_SUFFIXES.some(
       (suffix) => domain === suffix || domain.endsWith(`.${suffix}`),
-    ) ||
-    MONEY_WORDS.test(`${item.subject}\n${item.snippet}`)
-  );
+    )
+  )
+    hits.push(FLOOR_RULE_IDS.publicDomain);
+  if (MONEY_WORDS.test(`${item.subject}\n${item.snippet}`)) hits.push(FLOOR_RULE_IDS.moneyWords);
+  return hits;
 }
 
-export function containsSensitiveText(text: string): boolean {
-  return (
-    scanMachineSecrets(text).length > 0 ||
-    (ONE_TIME_CODE.test(text) && /\d{4,8}/u.test(text)) ||
-    CARD_NUMBER.test(text) ||
-    PASSWORD_LINE.test(text)
-  );
+export function hitsFloor(item: ProactiveSourceItem, senders: readonly string[]): boolean {
+  return floorHitIds(item, senders).length > 0;
 }
 
 export function applyFloor(
@@ -61,6 +65,35 @@ export function applyFloor(
     return { result: "check", raised: result !== "check" };
   if (result === "ignore") return { result: "know", raised: true };
   return { result, raised: false };
+}
+
+export function isReminderWorthy(
+  result: ProactiveResult,
+  priority: ProactivePriority | null,
+  floor: boolean,
+): boolean {
+  if (result === "act") return priority !== "low" || floor;
+  if (result === "check") return true;
+  if (result === "know") return floor;
+  return false;
+}
+
+export function keepOffReminderPage(
+  result: ProactiveResult,
+  priority: ProactivePriority | null,
+  floor: boolean,
+  confidence: ProactiveConfidence,
+): { readonly result: ProactiveResult; readonly demoted: boolean } {
+  const lowAct = result === "act" && priority === "low";
+  if (!lowAct && isReminderWorthy(result, priority, floor)) return { result, demoted: false };
+  if (result === "ignore") return { result, demoted: false };
+  if (!floor) return { result: "ignore", demoted: true };
+  return { result: confidence === "unsure" ? "check" : "know", demoted: true };
+}
+
+export function fromAddressOf(from: string): string {
+  const match = /<([^<>]+)>/u.exec(from);
+  return (match?.[1] ?? from).trim();
 }
 
 interface ZonedParts {

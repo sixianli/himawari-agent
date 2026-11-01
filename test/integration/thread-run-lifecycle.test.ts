@@ -68,6 +68,7 @@ import { ProductionRunDispatcher } from "../../apps/agent-service/src/production
 import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+import { testModelEgress } from "@himawari-agent/testing";
 
 describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", (execution) => {
   useSqliteContractExecution(execution);
@@ -2599,6 +2600,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         queuePrepared = true;
       });
       const compositionOptions: Parameters<typeof createProductionRunComposition>[0] = {
+        egress: testModelEgress(),
         prepareQueuedSandboxExecutions,
         configuration: {
           ownerId,
@@ -2827,7 +2829,17 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         expect(
           lastContent[0]?.text.endsWith(`<owner-message>\n${nextPrompt}\n</owner-message>`),
         ).toBe(true);
-        expect(JSON.stringify(submitted.messages.slice(0, -1))).not.toContain("<himawari-context>");
+        const sentBefore = model.observed.at(-1) as {
+          systemPrompt: string;
+          messages: unknown[];
+        };
+        expect(JSON.stringify(sentBefore.messages.at(0))).toContain("<himawari-context>");
+        expect((nextModel.observed[0] as { systemPrompt: string }).systemPrompt).toBe(
+          sentBefore.systemPrompt,
+        );
+        expect(JSON.stringify(submitted.messages.slice(0, sentBefore.messages.length))).toBe(
+          JSON.stringify(sentBefore.messages),
+        );
         await restarted.loop.stop(1000);
         await restarted.titles?.stop();
 
@@ -3846,6 +3858,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     let toolCalls = 0;
     const failure = vi.fn();
     const options: Parameters<typeof createProductionRunComposition>[0] = {
+      egress: testModelEgress(),
       configuration: {
         ownerId,
         agentId,
@@ -4654,6 +4667,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     const failure = vi.fn();
     const backgroundFailure = vi.fn();
     const composed = createProductionRunComposition({
+      egress: testModelEgress(),
       configuration: {
         ownerId,
         agentId,

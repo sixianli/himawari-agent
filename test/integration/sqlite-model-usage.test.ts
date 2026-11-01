@@ -109,6 +109,89 @@ describe("[MU-1] model usage observations", () => {
     }
   });
 
+  it("[MU-2] tells a follow-up turn from the first turn of a thread by the thread's earlier runs", async () => {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-model-usage-turns-"));
+    directories.push(stateRoot);
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    applyMigrations(database, await loadBundledMigrations());
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    database.pragma("foreign_keys = OFF");
+    const insertRun = database.prepare(
+      `INSERT INTO runs (id, owner_id, agent_id, thread_id, session_id, trigger_id, revision, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'session', ?, 0, 'completed', ?, ?)`,
+    );
+    insertRun.run("run-a1", OWNER_ID, AGENT_ID, "thread-a", "trigger-a1", T0, T0);
+    insertRun.run(
+      "run-a2",
+      OWNER_ID,
+      AGENT_ID,
+      "thread-a",
+      "trigger-a2",
+      "2026-10-30T01:05:00.000Z",
+      T0,
+    );
+    insertRun.run(
+      "run-b1",
+      OWNER_ID,
+      AGENT_ID,
+      "thread-b",
+      "trigger-b1",
+      "2026-10-30T01:06:00.000Z",
+      T0,
+    );
+    database.pragma("foreign_keys = ON");
+    database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T0,
+    });
+    try {
+      const store = repository.modelUsage();
+      const ask = (runId: string) =>
+        store.isFollowUpTurn?.({ ...scope, runId: createRunId(runId) });
+      await expect(ask("run-a1")).resolves.toBe(false);
+      await expect(ask("run-a2")).resolves.toBe(true);
+      await expect(ask("run-b1")).resolves.toBe(false);
+      await expect(ask("run-missing")).resolves.toBe(false);
+      await store.record(
+        observation("a1-first", { runId: createRunId("run-a1"), cacheReadTokens: 0 }),
+      );
+      await store.record(
+        observation("a2-first", {
+          runId: createRunId("run-a2"),
+          occurredAt: "2026-10-30T01:05:01.000Z",
+        }),
+      );
+      await store.record(
+        observation("a2-second", {
+          runId: createRunId("run-a2"),
+          occurredAt: "2026-10-30T01:05:02.000Z",
+        }),
+      );
+      await repository.close();
+      const reader = new Database(path.join(stateRoot, "product.sqlite"), { readonly: true });
+      try {
+        const groups = summarize(reader, { grouping: "turn" }).map((row) => [
+          row.group,
+          row.measured,
+        ]);
+        expect(groups).toEqual([
+          ["第1轮·首次请求", 1],
+          ["第2轮及以后·同轮后续", 1],
+          ["第2轮及以后·首次请求", 1],
+        ]);
+      } finally {
+        reader.close();
+      }
+    } finally {
+      await repository.close().catch(() => undefined);
+    }
+  });
+
   it("[MU-1] shows no percentage below the sample threshold and counts too-short requests separately", async () => {
     const { databasePath, repository, store } = await open();
     try {

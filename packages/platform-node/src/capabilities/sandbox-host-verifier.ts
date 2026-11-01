@@ -28,29 +28,119 @@ import {
 import { verifyProtectedRuntime } from "./protected-runtime.js";
 import type { SandboxRuntimeDigestRequest } from "./sandbox-runtime-digest-worker.js";
 
-export function digestSandboxRuntime(root: string): Promise<string> {
+export interface SandboxRuntimeDigestResult {
+  readonly digest: string;
+  readonly reused: number;
+  readonly hashed: number;
+}
+
+export interface RuntimeFingerprintLocation {
+  readonly fingerprintFile?: string;
+  readonly fingerprintWriteFile?: string;
+  readonly trustedUid?: number;
+}
+
+export function runtimeFingerprintLocation(root: string): RuntimeFingerprintLocation {
+  const configured = process.env["HIMAWARI_RUNTIME_FINGERPRINT_FILE"];
+  if (configured && path.isAbsolute(configured))
+    return { fingerprintFile: configured, trustedUid: process.getuid?.() ?? 0 };
+  const protection = process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
+  if (!protection || !path.isAbsolute(protection)) return {};
+  const home = process.env["HOME"];
+  const token = createHash("sha256").update(root).digest("hex").slice(0, 16);
+  return {
+    fingerprintFile: path.join(path.dirname(protection), "runtime-fingerprints.json"),
+    ...(home && path.isAbsolute(home)
+      ? { fingerprintWriteFile: path.join(home, "cache", `runtime-fingerprints-${token}.json`) }
+      : {}),
+    trustedUid: 0,
+  };
+}
+
+function runDigestWorker(
+  request: SandboxRuntimeDigestRequest,
+  signal?: AbortSignal,
+): Promise<SandboxRuntimeDigestResult> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const request: SandboxRuntimeDigestRequest = { root };
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL(`./sandbox-runtime-digest-worker.${extension}`, import.meta.url),
       { workerData: request },
     );
     let received = false;
+    const stop = () => {
+      void worker.terminate();
+    };
+    if (signal?.aborted) stop();
+    else signal?.addEventListener("abort", stop, { once: true });
     worker.once("message", (value: unknown) => {
-      const digest = (value as { digest?: unknown } | null)?.digest;
-      if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) {
+      const result = value as Partial<SandboxRuntimeDigestResult> | null;
+      if (typeof result?.digest !== "string" || !/^[a-f0-9]{64}$/.test(result.digest)) {
         reject(new Error("SANDBOX_HOST_DIGEST_INVALID"));
         return;
       }
       received = true;
-      resolve(digest);
+      resolve({
+        digest: result.digest,
+        reused: Number(result.reused ?? 0),
+        hashed: Number(result.hashed ?? 0),
+      });
     });
     worker.once("error", reject);
     worker.once("exit", (code) => {
-      if (!received) reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
+      signal?.removeEventListener("abort", stop);
+      if (!received)
+        reject(
+          new Error(
+            signal?.aborted
+              ? "SANDBOX_HOST_DIGEST_ABORTED"
+              : `SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`,
+          ),
+        );
     });
   });
+}
+
+export async function digestSandboxRuntime(
+  root: string,
+  expectedDigest?: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const location = runtimeFingerprintLocation(root);
+  const startedAt = performance.now();
+  let result = await runDigestWorker({ root, ...location }, signal);
+  let retried = false;
+  if (
+    location.fingerprintFile &&
+    expectedDigest !== undefined &&
+    result.digest !== expectedDigest &&
+    result.reused > 0
+  ) {
+    retried = true;
+    result = await runDigestWorker({ root, ...location, rebuild: true }, signal);
+  }
+  if (location.trustedUid === 0 && result.hashed > 0)
+    console.error(
+      JSON.stringify({
+        component: "platform-node",
+        event: "sandbox_runtime.fingerprint_cache_missed",
+        pid: process.pid,
+        reused: result.reused,
+        hashed: result.hashed,
+      }),
+    );
+  console.error(
+    JSON.stringify({
+      component: "platform-node",
+      pid: process.pid,
+      event: "sandbox_runtime.digest_completed",
+      reused: result.reused,
+      hashed: result.hashed,
+      retriedWithoutCache: retried,
+      durationMs: Math.round(performance.now() - startedAt),
+    }),
+  );
+  return result.digest;
 }
 
 async function checkedPath(filename: string, directory: boolean) {
@@ -84,8 +174,11 @@ export interface SandboxHostVerificationInput {
     | SandboxExecutionPlanV2;
 }
 
-export async function verifySandboxHost(input: SandboxHostVerificationInput): Promise<void> {
-  await verifySandboxHostFiles(assertSandboxHostPlan(input));
+export async function verifySandboxHost(
+  input: SandboxHostVerificationInput,
+  options: { readonly deferContentAudit?: boolean } = {},
+): Promise<void> {
+  await verifySandboxHostFiles(assertSandboxHostPlan(input), options);
 }
 
 function assertSandboxHostPlan(input: SandboxHostVerificationInput): SandboxHostBinding {
@@ -146,7 +239,10 @@ function assertSandboxHostPlan(input: SandboxHostVerificationInput): SandboxHost
   return binding;
 }
 
-async function verifySandboxHostFiles(binding: SandboxHostBinding): Promise<void> {
+async function verifySandboxHostFiles(
+  binding: SandboxHostBinding,
+  options: { readonly deferContentAudit?: boolean } = {},
+): Promise<void> {
   await checkedPath(binding.privateRoot, true);
   for (const root of binding.roots) {
     const current = await checkedPath(root.canonicalPath, true);
@@ -160,10 +256,13 @@ async function verifySandboxHostFiles(binding: SandboxHostBinding): Promise<void
   await checkedPath(binding.runtimeRoot, true);
   await checkedPath(binding.executable.path, false);
   await checkedPath(binding.runner.path, false);
-  await verifyProtectedRuntime(binding.runtimeRoot, binding.runtimeDigest, digestSandboxRuntime, [
-    binding.executable,
-    binding.runner,
-  ]);
+  await verifyProtectedRuntime(
+    binding.runtimeRoot,
+    binding.runtimeDigest,
+    (root, signal) => digestSandboxRuntime(root, binding.runtimeDigest, signal),
+    [binding.executable, binding.runner],
+    options,
+  );
 }
 
 export function createReusingSandboxHostVerifier(options: {

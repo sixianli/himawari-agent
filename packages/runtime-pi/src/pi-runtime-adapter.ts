@@ -50,8 +50,9 @@ import type {
   RuntimeToolInvocation,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
-import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 import { observeCacheFields } from "./cache-usage-observation.js";
+import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
@@ -134,6 +135,7 @@ export interface PiRuntimeResourcePort {
 }
 
 export interface PiAgentRuntimeAdapterDependencies {
+  readonly egress: ModelEgress;
   readonly projection: RuntimeProjectionPort;
   readonly continuations?: RuntimeContinuationPort;
   readonly tools: RuntimeToolPort;
@@ -478,7 +480,7 @@ function localTime(occurredAt: string, timeZone: string): string {
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
   return [
     "<himawari-context>",
-    "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。",
+    "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准。",
     `本轮请求时间（UTC）：${projection.prompt.occurredAt}。配置时区 ${timeZone} 的当地时间：${localTime(projection.prompt.occurredAt, timeZone)}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。`,
     ...projection.contextBlocks.map(contextBlockContent),
     "</himawari-context>",
@@ -487,21 +489,6 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
     projection.prompt.content,
     "</owner-message>",
   ].join("\n");
-}
-
-function withOwnerWords(messages: readonly unknown[], turn: string, ownerWords: string): unknown[] {
-  return messages.map((message) => {
-    const value = message as { role?: unknown; content?: unknown };
-    if (value.role !== "user") return message;
-    if (value.content === turn) return { ...value, content: ownerWords };
-    if (!Array.isArray(value.content)) return message;
-    return {
-      ...value,
-      content: value.content.map((part: { type?: unknown; text?: unknown }) =>
-        part.type === "text" && part.text === turn ? { ...part, text: ownerWords } : part,
-      ),
-    };
-  });
 }
 
 function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
@@ -800,6 +787,7 @@ async function admitPiStream(
   ordinal: number,
   original: PiStreamFunction,
   logicalSlotFor: (request: RuntimeRequest, ordinal: number) => string,
+  egress: ModelEgress,
   onAdmissionFailed?: PiAgentRuntimeAdapterDependencies["onModelAdmissionFailed"],
   usageRecording?: PiAgentRuntimeAdapterDependencies["usage"],
 ): Promise<AssistantMessageEventStream> {
@@ -894,7 +882,8 @@ async function admitPiStream(
     }
     const withoutAmbientApiKey: SimpleStreamOptions = { ...options };
     delete withoutAmbientApiKey.apiKey;
-    const cacheFields = observeCacheFields(options?.fetch ?? globalThis.fetch);
+    const exchange = egress.exchange();
+    const cacheFields = observeCacheFields(exchange.wrapFetch(options?.fetch ?? globalThis.fetch));
     withoutAmbientApiKey.fetch = cacheFields.fetch;
     const gateway = isGateway ? observeGatewayFetch(cacheFields.fetch, model.id) : undefined;
     if (gateway !== undefined) {
@@ -922,11 +911,14 @@ async function admitPiStream(
       await permit.markUnknown("cancel_unresolved");
       return failedPiStream(model, "Model invocation was cancelled");
     }
-    const stream = await original(model, context, {
-      ...withoutAmbientApiKey,
-      ...(secret === undefined ? {} : { apiKey: secret }),
-      maxRetries: 0,
-    });
+    const stream = restoreModelStream(
+      await original(model, withPlaceholderLegend(context), {
+        ...withoutAmbientApiKey,
+        ...(secret === undefined ? {} : { apiKey: secret }),
+        maxRetries: 0,
+      }),
+      exchange,
+    );
     const invocationId = admission.identity.invocationId;
     const recordUsage = async (
       usage: ModelInvocationUsage,
@@ -1403,6 +1395,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           ++streamOrdinal,
           originalStreamFunction,
           this.#dependencies.logicalSlot,
+          this.#dependencies.egress,
           this.#dependencies.onModelAdmissionFailed,
           this.#dependencies.usage,
         );
@@ -1425,11 +1418,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           this.#dependencies.projection.captureHistory &&
           (event.type === "message_end" || event.type === "compaction_end")
         ) {
-          const messages = withOwnerWords(
-            structuredClone(session.agent.state.messages),
-            turn,
-            projection.prompt.content,
-          );
+          const messages = structuredClone(session.agent.state.messages);
           const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
             this.#dependencies.projection.captureHistory?.({
               runId: request.runId,

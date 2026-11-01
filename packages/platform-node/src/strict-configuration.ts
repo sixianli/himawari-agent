@@ -980,7 +980,15 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
   const input = record(value, field);
   rejectUnknown(
     input,
-    ["modelRef", "gmail", "intervalMs", "perCheckCostMicros", "perCheckMs", "dailyCostMicros"],
+    [
+      "modelRef",
+      "gmail",
+      "intervalMs",
+      "perCheckCostMicros",
+      "perCheckMs",
+      "dailyCostMicros",
+      "memoryMinimumSimilarity",
+    ],
     field,
   );
   const gmail = record(input["gmail"], `${field}.gmail`);
@@ -990,10 +998,9 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     throw invalid(`${field}.gmail.clientId`, "must be a Google OAuth client id");
   const optional = (key: string, fallback: number, minimum: number, maximum: number) =>
     input[key] === undefined ? fallback : integer(input[key], `${field}.${key}`, minimum, maximum);
-  const perCheckCostMicros = optional("perCheckCostMicros", 100_000, 1, 10_000_000);
+  if (input["perCheckCostMicros"] !== undefined)
+    integer(input["perCheckCostMicros"], `${field}.perCheckCostMicros`, 1, 10_000_000);
   const dailyCostMicros = optional("dailyCostMicros", 1_000_000, 1, 100_000_000);
-  if (perCheckCostMicros > dailyCostMicros)
-    throw invalid(`${field}.perCheckCostMicros`, "must not exceed dailyCostMicros");
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1001,9 +1008,12 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       clientSecretRef: safeReference(gmail["clientSecretRef"], `${field}.gmail.clientSecretRef`),
     }),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
-    perCheckCostMicros,
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
     dailyCostMicros,
+    memoryMinimumSimilarity:
+      input["memoryMinimumSimilarity"] === undefined
+        ? 0.45
+        : unitInterval(input["memoryMinimumSimilarity"], `${field}.memoryMinimumSimilarity`),
   });
 }
 

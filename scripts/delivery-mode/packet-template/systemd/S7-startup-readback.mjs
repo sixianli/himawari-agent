@@ -207,7 +207,7 @@ async function inspect(mode, invocationId) {
   assert(journal.every((item) => item._SYSTEMD_INVOCATION_ID === invocationId), "__PKT_LABEL_UPPER___STARTUP_JOURNAL_INVOCATION_CHANGED");
   const readiness = startupReadiness(journal, startupReadyBudgetMs);
   const records = journal.map((item) => { try { return JSON.parse(item.MESSAGE); } catch { return null; } }).filter((item) => item && typeof item === "object");
-  assert(!records.some((item) => /(?:failed|failure|error|timeout|lost|quarantined|child_exit|child_error)/i.test(String(item.event))), "__PKT_LABEL_UPPER___STARTUP_FAILURE_EVENT_OBSERVED");
+  assert(!records.some((item) => /(?:failed|failure|error|timeout|lost|quarantined|child_exit|child_error|retryable)/i.test(String(item.event))), "__PKT_LABEL_UPPER___STARTUP_FAILURE_EVENT_OBSERVED");
   const prepared = records.filter((item) => item.event === "installation-verified");
   assert.equal(prepared.length, 1, "__PKT_LABEL_UPPER___STARTUP_PREPARE_EVENT_MISSING_OR_REPEATED");
   const loaded = await new platform.CapabilityDeploymentSnapshotLoader(currentDeployment).load();

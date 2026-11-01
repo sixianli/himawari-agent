@@ -387,6 +387,34 @@ describe("SQLite product-state transaction boundary", () => {
     });
   });
 
+  it("keeps answering reads while one slow read occupies a read worker", async () => {
+    const { repository } = await integrationRepository("slow-read", {
+      stateRoot: "unused",
+      qualification: { holdBeforeReadMs: 600 },
+    });
+    const warmUp = Promise.all(Array.from({ length: 6 }, () => repository.readAuthorityRevision()));
+    await warmUp;
+    const deadline = performance.now() + 20_000;
+    while (repository.readWorkerCount < 3 && performance.now() < deadline)
+      await Promise.all(Array.from({ length: 6 }, () => repository.readAuthorityRevision()));
+    expect(repository.readWorkerCount).toBe(3);
+    const startedAt = performance.now();
+    const finishedAfterMs: number[] = [];
+    const slow = repository.read("slow-read-key");
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    await Promise.all(
+      [0, 1].map(() =>
+        repository.readAuthorityRevision().then(() => {
+          finishedAfterMs.push(performance.now() - startedAt);
+        }),
+      ),
+    );
+    await slow;
+    await repository.close();
+    expect(finishedAfterMs).toHaveLength(2);
+    for (const finished of finishedAfterMs) expect(finished).toBeLessThan(400);
+  });
+
   it("refuses a write that was sent down the read lane", async () => {
     const { repository } = await integrationRepository("read-lane-write", {
       stateRoot: "unused",

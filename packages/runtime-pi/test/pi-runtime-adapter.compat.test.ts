@@ -38,6 +38,7 @@ import {
   type PiModelBindingPort,
 } from "../src/index.js";
 import { createFauxModelFixture } from "./faux-model-fixture.js";
+import { testModelEgress } from "./helpers/model-egress.js";
 
 const NOW = "2026-08-25T10:00:00.000Z";
 type ProjectionContext = RuntimeProjection;
@@ -436,6 +437,7 @@ function createAdapter(
   onAssistantText?: PiAgentRuntimeAdapterDependencies["onAssistantText"],
 ) {
   return new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     ...(onToolCallStarted ? { onToolCallStarted } : {}),
     ...(onAssistantText ? { onAssistantText } : {}),
     ...(onModelStreamFailed ? { onModelStreamFailed } : {}),
@@ -471,6 +473,7 @@ function createAdmissionAdapter(
     streamOptions,
   );
   return new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     tools: new RecordingRuntimeTools(),
     models: {
@@ -2143,6 +2146,7 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     });
     const tools = new RecordingRuntimeTools();
     const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection,
       tools,
       models: {
@@ -2188,6 +2192,7 @@ it("runs the actual pinned AgentSession with an opaque HTTP product session iden
   const model = await createFauxModelFixture("真实 Pi Session 回答");
   const projection = new RecordingProjection();
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools: new RecordingRuntimeTools(),
     models: model.models,
@@ -2218,6 +2223,7 @@ it("[UI-17] sends the images of the current message to Pi as image content", asy
     },
   });
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools: new RecordingRuntimeTools(),
     models: model.models,
@@ -2249,6 +2255,7 @@ it("replaces Pi's coding identity with the product policy and keeps Pi's tool gu
     },
   ]);
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     tools,
     models: model.models,
@@ -2285,6 +2292,7 @@ it("does not load ambient prompt files or interpret product policy as a file pat
     await fsPromises.writeFile(policy, marker);
     const model = await createFauxModelFixture("只使用显式授权的文本");
     const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection: new RecordingProjection({ ...DEFAULT_CONTEXT, systemInstruction: policy }),
       tools: new RecordingRuntimeTools(),
       models: model.models,
@@ -2379,6 +2387,7 @@ it.each(["approved", "denied", "effect_without_receipt"] as const)(
     };
     const create = () =>
       new PiAgentRuntimeAdapter({
+        egress: testModelEgress(),
         projection,
         tools,
         models: model.models,
@@ -2508,6 +2517,7 @@ it("[R2-L5] runs configured Gateway sessions without storing credentials in the 
     const projection = new RecordingProjection();
     let admitted = false;
     const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection,
       tools: new RecordingRuntimeTools(),
       models,
@@ -2577,6 +2587,7 @@ it("preserves a denied tool call across native session restart and delivers only
   });
   const make = (projection: RecordingProjection, models: typeof firstModel.models) =>
     new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection,
       tools,
       models,
@@ -2622,7 +2633,7 @@ it("preserves a denied tool call across native session restart and delivers only
   expect(tools.execute).toHaveBeenCalledTimes(1);
 });
 
-it("puts the turn time and owner material in the last user turn and saves only the owner's words", async () => {
+it("puts the turn time and owner material in the last user turn and saves that turn exactly as sent", async () => {
   class HistoryProjection extends RecordingProjection {
     saved: readonly unknown[] = [];
     async captureHistory(input: { messages: readonly unknown[] }) {
@@ -2672,6 +2683,7 @@ it("puts the turn time and owner material in the last user turn and saves only t
     prompt: { id: "wife-name", content: "我老婆叫管冬融", occurredAt: "2026-10-28T10:09:55.000Z" },
   });
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools: new RecordingRuntimeTools(),
     models: model.models,
@@ -2704,8 +2716,9 @@ it("puts the turn time and owner material in the last user turn and saves only t
     (message) => (message as { role?: string }).role === "user",
   );
   expect(JSON.stringify(savedUsers)).toContain("我老婆叫管冬融");
-  expect(JSON.stringify(projection.saved)).not.toContain("himawari-context");
-  expect(JSON.stringify(projection.saved)).not.toContain("主人住在东京都北区");
+  expect(JSON.stringify(savedUsers.at(-1))).toBe(JSON.stringify(context.messages.at(-1)));
+  expect(JSON.stringify(projection.saved)).toContain("himawari-context");
+  expect(JSON.stringify(projection.saved)).toContain("主人住在东京都北区");
 });
 
 it("waits for cancelled native history persistence before acknowledging cancel", async () => {
@@ -2749,6 +2762,7 @@ it("waits for cancelled native history persistence before acknowledging cancel",
     },
   });
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: historyProjection,
     tools,
     models: model.models,
@@ -2776,6 +2790,7 @@ it("waits for cancelled native history persistence before acknowledging cancel",
     prompt: { id: "after-cancel", content: "只读取验收文件，不执行旧工具。", occurredAt: NOW },
   });
   const next = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: nextProjection,
     tools,
     models: nextModel.models,
@@ -2806,6 +2821,7 @@ it("does not call the model when native history cannot be persisted", async () =
     },
   });
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools: new RecordingRuntimeTools(),
     models: model.models,
@@ -2847,6 +2863,7 @@ it("does not execute a tool when saving its assistant request fails", async () =
     },
   });
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools,
     models: model.models,
@@ -2870,6 +2887,7 @@ it("[TG-1] times the waits before a tool runs: history write, event backlog and 
   const tools = new RecordingRuntimeTools();
   const measured: string[] = [];
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection({ ...DEFAULT_CONTEXT, history: [] }),
     tools,
     models: model.models,
@@ -2959,6 +2977,7 @@ it("restores already disclosed batch results across consecutive approvals withou
   };
   const create = () =>
     new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection,
       tools,
       models: model.models,
@@ -3070,6 +3089,7 @@ it.each([
     };
     const snapshots = new Map<string, string>();
     const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection: new RecordingProjection(),
       tools,
       models: model.models,
@@ -3111,6 +3131,7 @@ it("summarizes confirmed results once after a loop without declaring task succes
   const projection = new RecordingProjection();
   const tools = new RecordingRuntimeTools();
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools,
     models: model.models,
@@ -3207,6 +3228,7 @@ it.each([
       }),
     }));
     const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection: new RecordingProjection(),
       tools,
       models: model.models,
@@ -3264,6 +3286,7 @@ it("preserves loop detection across approval without counting local result repla
   let saved: unknown;
   const create = () =>
     new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection,
       tools,
       models: model.models,
@@ -3329,6 +3352,7 @@ it("preserves native cancellation provenance across repeated session restoration
     );
     const tools = new RecordingRuntimeTools();
     const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection,
       tools,
       models: model.models,
@@ -3361,6 +3385,7 @@ it("allows ordinary multi-step work and repeated reads below the loop threshold"
   );
   const tools = new RecordingRuntimeTools();
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     tools,
     models: model.models,
@@ -3390,6 +3415,7 @@ it("does not execute tools or pay for a second summary if the finalizer requests
   const tools = new RecordingRuntimeTools();
   const projection = new RecordingProjection();
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools,
     models: model.models,
@@ -3423,6 +3449,7 @@ it("keeps summary generation behind the model admission gate", async () => {
   const tools = new RecordingRuntimeTools();
   let admissions = 0;
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     tools,
     models: model.models,
@@ -3460,6 +3487,7 @@ it("preserves owner cancellation during admission of the loop summary", async ()
   let admissions = 0;
   let cancellation: Promise<void> | undefined;
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     tools,
     models: model.models,
@@ -3509,6 +3537,7 @@ it.each(["saved", "storage-failed"] as const)(
       };
     });
     const adapter = new PiAgentRuntimeAdapter({
+      egress: testModelEgress(),
       projection,
       models: model.models,
       cwd: process.cwd(),
@@ -3615,6 +3644,7 @@ it.each(["known", "rejected", "missing-reader", "wrong-call"] as const)(
     };
     const create = () =>
       new PiAgentRuntimeAdapter({
+        egress: testModelEgress(),
         projection,
         tools,
         models: model.models,
@@ -3702,6 +3732,7 @@ it("forwards Pi cancellation to a product tool without persisting the signal in 
     },
   );
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     models: model.models,
     cwd: process.cwd(),
@@ -3765,6 +3796,7 @@ it("links regenerated file calls through native Pi history and stops changing-co
       call.capabilityRef === "coding.write" ? "重新读取最新内容后生成新请求" : "其他人的修改",
   }));
   const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     tools,
     models: model.models,
@@ -3898,6 +3930,7 @@ class BackgroundRuntimeTools extends RecordingRuntimeTools {
 
 function backgroundAdapter(tools: BackgroundRuntimeTools, model: { models: PiModelBindingPort }) {
   return new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection: new RecordingProjection(),
     tools,
     models: model.models,

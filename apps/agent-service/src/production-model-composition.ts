@@ -1,4 +1,5 @@
 import type {
+  ModelEgress,
   ClockPort,
   ConfiguredCompletionsGenerationModelDescriptor,
   ConfiguredEmbeddingModelDescriptor,
@@ -83,6 +84,7 @@ export interface ProductionTypeSafeDescriptor extends ModelDescriptor {
 }
 
 export interface ProductionModelCompositionOptions {
+  readonly egress: ModelEgress;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly descriptors: readonly ProductionGenerationDescriptor[];
@@ -136,6 +138,7 @@ export interface AuxiliaryTextOptions {
   readonly reasoningOutputTokens: number;
   readonly requestTimeoutMs: number;
   readonly errorPrefix: string;
+  readonly disableThinking?: boolean;
 }
 
 export interface ProductionModelCompositionFromConfigurationOptions
@@ -316,6 +319,7 @@ function modelTransportFor(
       descriptor.api === "openai-completions",
   );
   const piTransport = new PiModelTransport({
+    egress: options.egress,
     models: new ConfiguredPiModelBindingPort({
       descriptors: piOnly,
       secretSource: options.secretSource,
@@ -418,11 +422,19 @@ export function createProductionModelComposition(
         : admissionCostForConfiguredPiModel(configured);
     },
   });
+  const thinkingDisabledFor = (
+    descriptor: ConfiguredPiModelDescriptor,
+    text: Pick<AuxiliaryTextOptions, "disableThinking">,
+  ): boolean => text.disableThinking === true && descriptor.provider === "magpie";
   const auxiliaryModelFor = (
     descriptor: ConfiguredPiModelDescriptor,
     text: Pick<
       AuxiliaryTextOptions,
-      "purpose" | "maxOutputTokens" | "reasoningOutputTokens" | "requestTimeoutMs"
+      | "purpose"
+      | "maxOutputTokens"
+      | "reasoningOutputTokens"
+      | "requestTimeoutMs"
+      | "disableThinking"
     >,
     admission: TrustedModelAdmissionResolver,
   ): TrustedModelProviderAdapter =>
@@ -433,13 +445,17 @@ export function createProductionModelComposition(
       handles: options.handles,
       secretSource: options.secretSource,
       transport: new PiModelTransport({
+        egress: options.egress,
         models: piModels,
         payloads: payloadBoundary,
         clock: options.clock,
         maxOutputTokens: Math.min(
           descriptor.maxTokens,
-          descriptor.reasoning ? text.reasoningOutputTokens : text.maxOutputTokens,
+          descriptor.reasoning && !thinkingDisabledFor(descriptor, text)
+            ? text.reasoningOutputTokens
+            : text.maxOutputTokens,
         ),
+        ...(thinkingDisabledFor(descriptor, text) ? { disableThinking: true } : {}),
         requestTimeoutMs: Math.min(
           options.requestTimeoutMs ?? text.requestTimeoutMs,
           text.requestTimeoutMs,
@@ -509,9 +525,10 @@ export function createProductionModelComposition(
         });
       },
       readOutput: (payloadRef) => payloadBoundary.readText(payloadRef),
+      release: (payloadRefs) => payloadBoundary.release(payloadRefs),
     });
   };
-  const generateText = async (
+  const generateTextOnce = async (
     request: RuntimeRequest,
     prompt: string,
     gate: ModelInvocationAdmissionPort,
@@ -531,22 +548,24 @@ export function createProductionModelComposition(
       content: prompt,
       occurredAt: options.clock.now(),
     });
-    const auxiliaryModel = auxiliaryModelFor(descriptor, text, async () => gate);
-    const handle = descriptor.secretRequirement
-      ? await options.handles.issueHandle({
-          ownerId: options.ownerId,
-          agentId: options.agentId,
-          runId: request.runId,
-          ...descriptor.secretRequirement,
-          scopeRef: invocationId,
-          expiresAt: new Date(
-            Date.parse(options.clock.now()) + text.requestTimeoutMs + 10000,
-          ).toISOString(),
-        })
-      : undefined;
+    const leftBehind = [inputRef];
+    let handle: Awaited<ReturnType<typeof options.handles.issueHandle>> | undefined;
     let output = "";
     let completed = false;
     try {
+      const auxiliaryModel = auxiliaryModelFor(descriptor, text, async () => gate);
+      handle = descriptor.secretRequirement
+        ? await options.handles.issueHandle({
+            ownerId: options.ownerId,
+            agentId: options.agentId,
+            runId: request.runId,
+            ...descriptor.secretRequirement,
+            scopeRef: invocationId,
+            expiresAt: new Date(
+              Date.parse(options.clock.now()) + text.requestTimeoutMs + 10000,
+            ).toISOString(),
+          })
+        : undefined;
       for await (const event of auxiliaryModel.invoke({
         invocationId,
         runId: request.runId,
@@ -557,8 +576,10 @@ export function createProductionModelComposition(
         secretHandleRefs: handle ? [handle.ref] : [],
         correlationId: request.correlationId,
       })) {
-        if (event.type === "model.output")
+        if (event.type === "model.output") {
+          leftBehind.push(event.payloadRef);
           output += await payloadBoundary.readText(event.payloadRef);
+        }
         if (event.type === "model.completed") completed = true;
         if (event.type === "model.failed") throw new Error(event.errorCode);
       }
@@ -566,6 +587,25 @@ export function createProductionModelComposition(
       return output;
     } finally {
       if (handle) await options.handles.revokeHandle(handle.ref, options.clock.now());
+      await payloadBoundary.release(leftBehind).catch(() => undefined);
+    }
+  };
+
+  const generateText = async (
+    request: RuntimeRequest,
+    prompt: string,
+    gate: ModelInvocationAdmissionPort,
+    text: AuxiliaryTextOptions,
+  ): Promise<string> => {
+    try {
+      return await generateTextOnce(request, prompt, gate, text);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "AI_GATEWAY_TOOL_CALL_UNSUPPORTED")
+        throw error;
+      return generateTextOnce(request, prompt, gate, {
+        ...text,
+        invocationId: `${text.invocationId}:retry`,
+      });
     }
   };
 
@@ -579,6 +619,7 @@ export function createProductionModelComposition(
         purpose: "thread-title",
         invocationId: `thread-title:${request.runId}`,
         maxOutputTokens: 128,
+        disableThinking: true,
         reasoningOutputTokens: 1024,
         requestTimeoutMs: 20000,
         errorPrefix: "THREAD_TITLE",

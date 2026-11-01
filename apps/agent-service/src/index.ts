@@ -4,6 +4,7 @@ export * from "./production-authority-lifecycle.js";
 export * from "./production-execution-client.js";
 export * from "./production-http-composition.js";
 export * from "./production-memory-composition.js";
+export * from "./production-model-egress.js";
 export * from "./production-model-composition.js";
 export * from "./production-run-composition.js";
 export * from "./production-run-dispatch-loop.js";

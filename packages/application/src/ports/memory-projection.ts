@@ -197,6 +197,7 @@ export interface MemoryProviderProjectionPort {
     readonly query: string;
     readonly limit: number;
     readonly scope?: MemoryTimeScope;
+    readonly minimumSimilarity?: number;
   }): Promise<readonly MemoryProviderHit[]>;
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
 }

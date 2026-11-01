@@ -128,6 +128,12 @@ export function ExecutionProcess({
       ? toolStepSummary(activeTool.name, activeTool.input)
       : undefined;
   const waitReason = state ? executionWaitReason(state, run, items) : undefined;
+  const queuedFor = Math.max(0, now - Date.parse(run.createdAt));
+  const queued =
+    run.status === "accepted" &&
+    records.length === 0 &&
+    Number.isFinite(queuedFor) &&
+    queuedFor >= QUEUED_DISPLAY_AFTER_MILLISECONDS;
   return (
     <>
       {!activityEnded ? (
@@ -148,20 +154,25 @@ export function ExecutionProcess({
                   })
                 : activeSummary
                   ? message("step.active", { step: message(activeSummary.id) })
-                  : message(stateLabel ?? activity.label, { tool: activity.tool })}
+                  : message(queued ? "chat.queued" : (stateLabel ?? activity.label), {
+                      tool: activity.tool,
+                    })}
             </strong>
           </output>
-          {waitReason ? (
+          {queued ? <p>{message("chat.queuedWait", { time: duration(queuedFor) })}</p> : null}
+          {waitReason && !queued ? (
             <p className="turn-wait-reason">{message(waitReason.id, { tool: waitReason.tool })}</p>
           ) : null}
           {state && connection !== "connected" ? (
             <small>{message("chat.disconnected")}</small>
           ) : null}
-          {measuredTime !== null ? (
+          {measuredTime !== null && !queued ? (
             <span>{message(measuredTimeLabel, { time: duration(measuredTime) })}</span>
           ) : null}
-          <small>{message("chat.lastActivity", { time: duration(observationAge) })}</small>
-          {stale ? <p>{message("chat.progressDelayed")}</p> : null}
+          {queued ? null : (
+            <small>{message("chat.lastActivity", { time: duration(observationAge) })}</small>
+          )}
+          {stale && !queued ? <p>{message("chat.progressDelayed")}</p> : null}
         </div>
       ) : null}
       {run.status === "failed" ? (
@@ -477,6 +488,8 @@ type ProcessRow =
     }
   | { type: "note"; sequence: number; note: ExecutionItem }
   | { type: "thinking"; sequence: number; stage: ReturnType<typeof thinkingSteps>[number] };
+
+const QUEUED_DISPLAY_AFTER_MILLISECONDS = 3000;
 
 const stepGlyphs: Readonly<Record<TimelineStep["kind"], ToolGlyph>> = {
   think: "thinking",

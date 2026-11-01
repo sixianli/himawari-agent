@@ -409,7 +409,7 @@ describe("[PG-15] proactive reminders page", () => {
   it("[PG-15] lists ignored mail for review and counts it only after Done reviewing", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
-    expect(text("#page .proactive-audit")).toContain("今天判为不用管的 2 封");
+    expect(text("#page .proactive-audit")).toContain("最近 7 天筛掉的 2 封");
     expect(text("#page .proactive-audit")).not.toContain("Amazon.co.jp");
     await click("#page .proactive-audit", "抽查");
     expect(text("#page .proactive-audit")).toContain("Amazon.co.jp");

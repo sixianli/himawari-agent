@@ -32,6 +32,16 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 每个会话都遵守 [.claude/rules/incident-gates.md](.claude/rules/incident-gates.md)：每个事故都要有一道自动检查，同一个错误出现三次必须上硬门槛。
 
+<a id="prompt-prefix-append-only"></a>
+## 发给模型的内容只追加
+
+设计或修改任何发给模型的上下文（系统提示、工具定义、历史、资料块、遮盖、压缩）之前，先读 [.claude/rules/prompt-prefix.md](.claude/rules/prompt-prefix.md)：已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里。`npm run check:prompt-prefix` 是阻断检查。
+
+<a id="model-review-before-merge"></a>
+## 合并前的双模型复核
+
+合并任何 PR 之前，按 [.agents/instructions/model-review.md](.agents/instructions/model-review.md) 做双模型复核，复核提示里必须有那份文件列出的问题，包括「这个改动会不会改变模型已经见过的请求开头」。
+
 <a id="proposal-premises"></a>
 ## 方案的前提
 

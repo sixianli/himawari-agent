@@ -923,7 +923,8 @@ export class SqliteDurableAdapters {
       lastCompleted: (ownerId, agentId) =>
         this.context.read("memoryConsolidation.lastCompleted", { ownerId, agentId }),
       finish: (input) => this.context.write("memoryConsolidation.finish", input),
-      recordChange: (change) => this.context.write("memoryConsolidation.recordChange", { change }),
+      recordChange: (change, ledgerMemories) =>
+        this.context.write("memoryConsolidation.recordChange", { change, ledgerMemories }),
       listChanges: (input) => this.context.read("memoryConsolidation.listChanges", input),
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       markUndone: (input) => this.context.write("memoryConsolidation.markUndone", input),
@@ -971,6 +972,7 @@ export class SqliteDurableAdapters {
       markConnection: (input) => this.context.write("proactive.markConnection", input),
       removeSource: (input) => this.context.write("proactive.removeSource", input),
       clearRecords: (input) => this.context.write("proactive.clearRecords", input),
+      readDecisionPayloads: (input) => this.context.read("proactive.readDecisionPayloads", input),
       unprocessed: (input) => this.context.read("proactive.unprocessed", input),
       readInsight: (input) => this.context.read("proactive.readInsight", input),
       record: (input) => this.context.write("proactive.record", input),
@@ -1010,6 +1012,7 @@ export class SqliteDurableAdapters {
   modelUsage(): ModelUsageStorePort {
     return Object.freeze<ModelUsageStorePort>({
       record: (input) => this.context.write("modelUsage.record", input),
+      isFollowUpTurn: (input) => this.context.read("modelUsage.isFollowUpTurn", input),
     });
   }
 
@@ -1018,6 +1021,9 @@ export class SqliteDurableAdapters {
       saveSubscription: (input) => this.context.write("webPush.saveSubscription", input),
       removeSubscription: (input) => this.context.write("webPush.removeSubscription", input),
       listSubscriptions: (input) => this.context.read("webPush.listSubscriptions", input),
+      readKinds: (input) => this.context.read("webPush.readKinds", input),
+      setKind: (input) => this.context.write("webPush.setKind", input),
+      writeKinds: (input) => this.context.write("webPush.writeKinds", input),
       markSubscription: (input) => this.context.write("webPush.markSubscription", input),
       readCursor: (input) => this.context.read("webPush.readCursor", input),
       enqueue: (input) => this.context.write("webPush.enqueue", input),

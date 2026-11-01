@@ -18,6 +18,8 @@ import {
   type PiModelPayloadBoundary,
   PiModelTransport,
 } from "../src/index.js";
+import { withPlaceholderLegendInPrompt } from "../src/egress-context.js";
+import { testModelEgress } from "./helpers/model-egress.js";
 
 const NOW = "2026-08-27T16:00:00.000Z";
 const MODEL_ID = "deepseek/deepseek-v4.1-flash";
@@ -204,6 +206,7 @@ describe("PiModelTransport", () => {
         ],
       };
       const transport = new PiModelTransport({
+        egress: testModelEgress(),
         models: {
           resolve: async () =>
             ({
@@ -245,6 +248,7 @@ describe("PiModelTransport", () => {
     expect(
       () =>
         new PiModelTransport({
+          egress: testModelEgress(),
           models: {
             resolve: async () => {
               throw new Error("No binding access");
@@ -281,6 +285,7 @@ describe("PiModelTransport", () => {
         },
       };
       const transport = new PiModelTransport({
+        egress: testModelEgress(),
         models: {
           resolve: async () =>
             ({
@@ -307,7 +312,10 @@ describe("PiModelTransport", () => {
       ]);
       expect(payloads.writes).toEqual(["hello", " world"]);
       expect(observedContext?.messages).toEqual([
-        expect.objectContaining({ role: "user", content: "Say hello" }),
+        expect.objectContaining({
+          role: "user",
+          content: withPlaceholderLegendInPrompt("Say hello"),
+        }),
       ]);
       expect(observedOptions).toMatchObject({
         ["apiKey"]: PROVIDER_SECRET,
@@ -360,6 +368,7 @@ describe("PiModelTransport", () => {
       },
     };
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
       },
@@ -377,6 +386,7 @@ describe("PiModelTransport", () => {
     const payloads = payloadBoundary();
     const fetch = vi.fn(async () => new Response("unsafe response", { status: 429 }));
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -404,6 +414,7 @@ describe("PiModelTransport", () => {
   it("maps a provider stream error returned with HTTP 200 as a response failure", async () => {
     const payloads = payloadBoundary();
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -427,32 +438,75 @@ describe("PiModelTransport", () => {
     });
   });
 
-  it("rejects machine-secret input before resolving a Pi model", async () => {
-    const payloads = payloadBoundary(["password", "x".repeat(12)].join("="));
-    const resolve = vi.fn();
+  async function sentBody(prompt: string): Promise<{
+    readonly events: ModelInvocationEvent[];
+    readonly body: string | undefined;
+  }> {
+    const payloads = payloadBoundary(prompt);
+    let body: string | undefined;
+    const runtime = {
+      stream(_model: Model<Api>, context: Context, streamOptions?: Record<string, unknown>) {
+        return (async function* (): AsyncIterable<AssistantMessageEvent> {
+          const piFetch = streamOptions?.["fetch"] as typeof globalThis.fetch;
+          await piFetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+            method: "POST",
+            body: JSON.stringify({
+              model: "m",
+              messages: context.messages.map(({ role, content }) => ({ role, content })),
+            }),
+          });
+          yield { type: "done", reason: "stop", message: assistant("ok") };
+        })();
+      },
+    };
     const transport = new PiModelTransport({
-      models: { resolve },
+      egress: testModelEgress(),
+      models: {
+        resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
+      },
       payloads: payloads.boundary,
       clock: { now: () => NOW },
-      fetch: async () => observationResponse(),
+      fetch: async (_input, init) => {
+        body = typeof init?.body === "string" ? init.body : undefined;
+        return observationResponse();
+      },
     });
-
     const events = await collect(
       transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
     );
+    return { events, body };
+  }
 
-    expect(events.at(-1)).toMatchObject({
-      type: "model.failed",
-      errorCode: "AI_GATEWAY_INPUT_REJECTED",
-      retryable: false,
-    });
-    expect(resolve).not.toHaveBeenCalled();
+  it("redacts sensitive input before it reaches the model instead of rejecting the call", async () => {
+    const sensitive = [
+      ["password", "x".repeat(12)].join("="),
+      "验证码 482910",
+      "卡号 4111 1111 1111 1111",
+    ].join("\n");
+    const { events, body } = await sentBody(sensitive);
+    expect(events.filter((event) => event.type === "model.failed")).toEqual([]);
+    expect(body).toBeDefined();
+    expect(body).not.toContain("xxxxxxxxxxxx");
+    expect(body).not.toContain("482910");
+    expect(body).not.toContain("4111 1111");
+    expect(body).toMatch(/\[验证码#[a-z]{8}\]/u);
+    expect(body).toMatch(/\[银行卡 尾号1111#[a-z]{8}\]/u);
+    expect(body).toMatch(/\[密码#[a-z]{8}\]/u);
+  });
+
+  it("sends a prompt without sensitive values as the original text plus the fixed legend", async () => {
+    const { events, body } = await sentBody("Say hello");
+    expect(events.filter((event) => event.type === "model.failed")).toEqual([]);
+    expect(JSON.parse(body ?? "{}").messages[0].content).toBe(
+      withPlaceholderLegendInPrompt("Say hello"),
+    );
   });
 
   it("fails closed when the bound Pi model drifts from the canonical descriptor", async () => {
     const payloads = payloadBoundary();
     const stream = vi.fn();
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -499,6 +553,7 @@ describe("PiModelTransport", () => {
       },
     };
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -557,6 +612,7 @@ describe("PiModelTransport", () => {
         model: magpieModel.id,
       };
       const transport = new PiModelTransport({
+        egress: testModelEgress(),
         models: {
           resolve: async () =>
             ({
@@ -599,6 +655,7 @@ describe("PiModelTransport", () => {
       model: magpieModel.id,
     };
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -632,6 +689,7 @@ describe("PiModelTransport", () => {
       { status: 200, headers: { "content-type": "text/event-stream" } },
     );
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -658,6 +716,7 @@ describe("PiModelTransport", () => {
 
   it("does not fall through after protected output persistence fails", async () => {
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -702,6 +761,7 @@ describe("PiModelTransport", () => {
       stopReason: "toolUse" as const,
     } satisfies AssistantMessage;
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({ model, modelRuntime: runtimeWithTerminal(terminal) }) as unknown as PiModelBinding,
@@ -723,10 +783,112 @@ describe("PiModelTransport", () => {
     expect(payloads.writes).toEqual([]);
   });
 
+  it("asks Magpie to turn thinking off only when the caller requests it", async () => {
+    const payloads = payloadBoundary();
+    const magpieModel = {
+      ...model,
+      id: "group/himawari-main",
+      provider: "magpie",
+      baseUrl: "http://127.0.0.1:3425/v1",
+    };
+    const { providerRouting: _routing, ...gatewayFields } = descriptor;
+    const magpieDescriptor: ModelDescriptor = {
+      ...gatewayFields,
+      ref: "magpie-primary",
+      provider: "magpie",
+      model: magpieModel.id,
+    };
+    const run = async (disableThinking: boolean) => {
+      let rewritten: unknown;
+      const runtime = {
+        stream(_model: Model<Api>, _context: Context, streamOptions?: Record<string, unknown>) {
+          const onPayload = streamOptions?.["onPayload"] as
+            | ((payload: unknown) => unknown)
+            | undefined;
+          rewritten = onPayload?.({ model: "group/himawari-main", max_tokens: 128 });
+          return runtimeWithTerminal(assistant("answer")).stream(_model, _context, streamOptions);
+        },
+      };
+      const transport = new PiModelTransport({
+        egress: testModelEgress(),
+        models: {
+          resolve: async () =>
+            ({ model: magpieModel, modelRuntime: runtime }) as unknown as PiModelBinding,
+        },
+        payloads: payloads.boundary,
+        clock: { now: () => NOW },
+        fetch: async () => observationResponse(),
+        ...(disableThinking ? { disableThinking: true } : {}),
+      });
+      await collect(
+        transport.invoke({
+          descriptor: magpieDescriptor,
+          request: { ...request, modelRef: magpieDescriptor.ref },
+          secretValues: [PROVIDER_SECRET],
+        }),
+      );
+      return rewritten;
+    };
+
+    expect(await run(true)).toEqual({
+      model: "group/himawari-main",
+      max_tokens: 128,
+      thinking: { type: "disabled" },
+    });
+    expect(await run(false)).toBeUndefined();
+  });
+
+  it("logs why a response was rejected without logging its content", async () => {
+    const payloads = payloadBoundary();
+    const terminal = {
+      ...assistant(""),
+      content: [
+        {
+          type: "toolCall" as const,
+          id: "tool-call-logged",
+          name: "read",
+          arguments: { path: "secret-path.md" },
+        },
+      ],
+      stopReason: "toolUse" as const,
+    } satisfies AssistantMessage;
+    const transport = new PiModelTransport({
+      egress: testModelEgress(),
+      models: {
+        resolve: async () =>
+          ({ model, modelRuntime: runtimeWithTerminal(terminal) }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () => observationResponse(),
+    });
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line));
+    });
+    try {
+      await collect(transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }));
+    } finally {
+      spy.mockRestore();
+    }
+    const logged = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      event: "model.response_rejected",
+      code: "AI_GATEWAY_TOOL_CALL_UNSUPPORTED",
+      invocationId: request.invocationId,
+      stopReason: "toolUse",
+      partTypes: ["toolCall"],
+      toolCallNames: ["read"],
+    });
+    expect(lines.join("\n")).not.toContain("secret-path.md");
+  });
+
   it("does not report a max-token truncation as a completed result", async () => {
     const payloads = payloadBoundary();
     const terminal = { ...assistant("partial"), stopReason: "length" as const };
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -754,6 +916,7 @@ describe("PiModelTransport", () => {
   it("treats a successful provider response without output as retryable", async () => {
     const payloads = payloadBoundary();
     const transport = new PiModelTransport({
+      egress: testModelEgress(),
       models: {
         resolve: async () =>
           ({
@@ -785,6 +948,7 @@ it("passes cancellation to the pinned Pi provider API without adding tools", asy
   let context: Context | undefined;
   const runtime = runtimeWithTerminal(assistant("{}"), { fetchProvider: false });
   const transport = new PiModelTransport({
+    egress: testModelEgress(),
     models: {
       resolve: async () =>
         ({
@@ -824,6 +988,7 @@ it("does not read model input or resolve a binding after request cancellation", 
       }) as unknown as PiModelBinding,
   );
   const transport = new PiModelTransport({
+    egress: testModelEgress(),
     models: { resolve },
     payloads: { ...payloadBoundary().boundary, readText },
     clock: { now: () => NOW },
@@ -844,6 +1009,7 @@ it("does not read model input or resolve a binding after request cancellation", 
 it("does not offer a retry after the caller cancels an active Pi stream", async () => {
   const controller = new AbortController();
   const transport = new PiModelTransport({
+    egress: testModelEgress(),
     models: {
       resolve: async () =>
         ({

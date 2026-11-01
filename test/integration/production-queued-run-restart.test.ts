@@ -32,6 +32,7 @@ import {
   T1,
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { testModelEgress } from "@himawari-agent/testing";
 
 it.each([
   { coding: false, scenario: "resume" },
@@ -466,6 +467,7 @@ it.each([
         }
       };
       return createProductionRunComposition({
+        egress: testModelEgress(),
         repository: f.repository,
         configuration: {
           ownerId: OWNER_ID,

@@ -12,6 +12,8 @@ export const messages = {
 
   "review.archivePending":
     "This conversation has an action waiting for your confirmation. Resolve it before archiving.",
+  "review.deletePending":
+    "This conversation still has an action waiting for you. Resolve it before deleting.",
   "review.system": "System",
   "review.loadMore": "Load more",
   "review.retrySend": "Retry previous send",
@@ -182,6 +184,9 @@ export const messages = {
   "chat.activity.preparingTool": "Preparing tool call",
   "chat.activity.waitingModel": "Waiting for model",
   "chat.activity.buildingContext": "Looking up related memory",
+  "chat.queued": "Waiting in line",
+  "chat.queuedWait":
+    "Queued for {time}. Other conversations are still running; this one starts automatically when a slot is free.",
   "chat.lastActivity": "Last progress {time} ago",
   "chat.progressDelayed":
     "No recent progress. A connected page does not confirm that execution is advancing. You can wait or stop this turn.",
@@ -518,9 +523,9 @@ export const messages = {
   "state.loading": "Loading…",
   "state.error": "Load failed",
   "state.offline": "Only unsent drafts remain available offline",
-  "surface.notInstalled.title": "This feature is not enabled in this deployment",
-  "surface.notInstalled.description":
-    "This feature has not been connected to the current server. It requires integration and verification before use; signing in again or refreshing will not enable it.",
+  "surface.notFound.title": "This page doesn't exist",
+  "surface.notFound.description": "Nothing lives at this address. Go back to your conversations.",
+  "surface.notFound.action": "Back to chat",
   "layout.showList": "Show list",
   "locale.label": "Interface language",
   "locale.zhCN": "简体中文",
@@ -542,6 +547,11 @@ export const messages = {
   "threads.pin": "Pin",
   "threads.unpin": "Unpin",
   "threads.archive": "Archive",
+  "threads.delete": "Delete",
+  "threads.deleteTitle": "Delete this conversation?",
+  "threads.deleteBody":
+    "“{title}” will disappear from your conversation list and search. This cannot be undone from the web page.",
+  "threads.deleteConfirm": "Delete conversation",
   "threads.restore": "Restore",
   "threads.conflictTitle": "This thread was just changed elsewhere",
   "threads.conflictDescription":
@@ -741,11 +751,11 @@ export const messages = {
   "memory.page.recover": "Recover",
   "memory.page.deleted": "Deleted. Recover it from Recently deleted within 7 days.",
   "memory.page.filter":
-    "{f, select, all {All changes} new {New} tidy {Tidy-ups} correct {Corrections} other {Imports}}",
+    "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.timelineNote":
-    "Daily changes: new memories, corrections, imports, and the merges, replacements, archives and guesses made by the daily tidy-up. Tidy-ups and imports can be undone; your own edits are never overwritten.",
+    "Daily changes: new memories, corrections, imports, and the merges, replacements, archives and guesses made by the daily tidy-up. Drops, deletions, tidy-ups and imports can be undone; your own edits are never overwritten.",
   "memory.page.event":
-    "{e, select, new {New} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
+    "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
   "memory.page.imported":
     "Imported {count} from {source, select, codex {Codex} assistant {another AI} other {a Himawari export}}",
   "memory.page.goConfirm": "Review",
@@ -964,11 +974,12 @@ export const messages = {
   "proactive.paused": "Proactive reminders are off: no mail is read, logged or pushed.",
   "proactive.foot":
     "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
-  "proactive.audit.title": "{count, plural, one {# email} other {# emails}} marked “ignore” today",
+  "proactive.audit.title":
+    "{count, plural, one {# email} other {# emails}} filtered out in the last 7 days",
   "proactive.audit.open": "Review",
   "proactive.audit.hide": "Hide",
   "proactive.audit.note":
-    "One list a day for the first 14 days, showing sender and subject only. They count as reviewed only after you tap “Done reviewing”.",
+    "These emails were kept out of reminders. Only sender and subject are shown. They count as reviewed only after you tap “Done reviewing”.",
   "proactive.audit.done": "Done reviewing",
   "proactive.audit.doneOk": "Counted as reviewed",
   "proactive.log.range": "Last 30 days · {days, plural, one {# day} other {# days}} recorded",

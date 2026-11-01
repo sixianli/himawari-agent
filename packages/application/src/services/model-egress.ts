@@ -1,0 +1,380 @@
+import {
+  EGRESS_PLACEHOLDER_PATTERN,
+  type EgressPlaceholderKind,
+  type EgressRedactionFinding,
+  redactForEgress,
+} from "./egress-redaction.js";
+import { assertMachineSecretFree } from "./machine-secret-exclusion.js";
+
+export class ModelEgressRefusedError extends Error {
+  readonly code = "MODEL_EGRESS_REFUSED" as const;
+  readonly reason: string;
+  constructor(reason: string) {
+    super(`Model request was not sent: ${reason}`);
+    this.name = "ModelEgressRefusedError";
+    this.reason = reason;
+  }
+}
+
+export interface ModelEgressOptions {
+  readonly key: () => Promise<Uint8Array>;
+  readonly sign: (key: Uint8Array, message: string) => Uint8Array;
+}
+
+type Record_ = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Record_ {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function refuse(reason: string): never {
+  throw new ModelEgressRefusedError(reason);
+}
+
+export interface ModelEgressExchange {
+  wrapFetch<F extends (input: never, init?: never) => Promise<unknown>>(base: F): F;
+  restore(text: string): string;
+  streamingRestorer(): StreamingPlaceholderRestorer;
+  readonly table: ReadonlyMap<string, string>;
+  readonly findings: () => readonly EgressRedactionFinding[];
+}
+
+export class StreamingPlaceholderRestorer {
+  #pending = "";
+  readonly #restore: (text: string) => string;
+  constructor(restore: (text: string) => string) {
+    this.#restore = restore;
+  }
+
+  append(chunk: string): string {
+    this.#pending += chunk;
+    const open = this.#pending.lastIndexOf("[");
+    const close = this.#pending.lastIndexOf("]");
+    if (open === -1 || close > open || this.#pending.length - open > 48) {
+      const safe = this.#pending;
+      this.#pending = "";
+      return this.#restore(safe);
+    }
+    const safe = this.#pending.slice(0, open);
+    this.#pending = this.#pending.slice(open);
+    return this.#restore(safe);
+  }
+
+  flush(): string {
+    const safe = this.#pending;
+    this.#pending = "";
+    return this.#restore(safe);
+  }
+}
+
+const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+
+function letters(bytes: Uint8Array): string {
+  let out = "";
+  for (let index = 0; index < 8; index += 1) out += LETTERS[(bytes[index] ?? 0) % 26];
+  return out;
+}
+
+class Exchange implements ModelEgressExchange {
+  readonly table = new Map<string, string>();
+  readonly #known = new Map<string, string>();
+  readonly #counts = new Map<string, number>();
+  readonly #options: ModelEgressOptions;
+
+  constructor(options: ModelEgressOptions) {
+    this.#options = options;
+  }
+
+  findings(): readonly EgressRedactionFinding[] {
+    return [...this.#counts].map(([kind, count]) =>
+      Object.freeze({ kind: kind as EgressRedactionFinding["kind"], count }),
+    );
+  }
+
+  restore(text: string): string {
+    if (this.table.size === 0 || !text.includes("#")) return text;
+    return text.replace(EGRESS_PLACEHOLDER_PATTERN, (match) => this.table.get(match) ?? match);
+  }
+
+  streamingRestorer(): StreamingPlaceholderRestorer {
+    return new StreamingPlaceholderRestorer((text) => this.restore(text));
+  }
+
+  wrapFetch<F extends (input: never, init?: never) => Promise<unknown>>(base: F): F {
+    const wrapped = async (input: unknown, init?: unknown): Promise<unknown> => {
+      const prepared = await this.#prepare(input, init);
+      return (base as unknown as (input: unknown, init?: unknown) => Promise<unknown>)(
+        prepared.input,
+        prepared.init,
+      );
+    };
+    return wrapped as unknown as F;
+  }
+
+  async #prepare(
+    input: unknown,
+    init: unknown,
+  ): Promise<{ readonly input: unknown; readonly init: unknown }> {
+    const href = typeof input === "string" ? input : urlOf(input);
+    if (href === undefined) refuse("request target is not a URL");
+    if (hasBodyInRequest(input)) refuse("request object carries its own body");
+    const options = isRecord(init) ? init : {};
+    const method = String(options["method"] ?? methodOf(input) ?? "GET").toUpperCase();
+    const body = options["body"];
+    if (body === undefined || body === null) {
+      if (method === "GET" || method === "HEAD") return { input, init };
+      refuse("request has no readable body");
+    }
+    if (typeof body !== "string") refuse("request body is not text");
+    const path = pathOf(href);
+    const redactor = this.#redactorFor(path);
+    if (redactor === undefined) refuse(`unsupported request path ${path}`);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      refuse("request body is not JSON");
+    }
+    const key = await this.#options.key();
+    const text = (value: string): string => {
+      const result = redactForEgress(value, {
+        tag: (kind: EgressPlaceholderKind, secret: string) =>
+          letters(this.#options.sign(key, `${kind}\u0000${secret}`)),
+        known: this.#known,
+        table: this.table,
+      });
+      for (const finding of result.findings)
+        this.#counts.set(finding.kind, (this.#counts.get(finding.kind) ?? 0) + finding.count);
+      try {
+        assertMachineSecretFree(result.text);
+      } catch {
+        refuse("sensitive material remained after redaction");
+      }
+      return result.text;
+    };
+    const next = redactor(parsed, text);
+    if (next === parsed) return { input, init };
+    return {
+      input,
+      init: {
+        ...options,
+        body: JSON.stringify(next),
+        headers: withoutLength(options["headers"]),
+      },
+    };
+  }
+
+  #redactorFor(path: string): ((body: unknown, text: TextRedactor) => unknown) | undefined {
+    if (path.endsWith("/chat/completions")) return redactChatCompletions;
+    if (path.endsWith("/responses")) return redactResponses;
+    if (path.endsWith("/messages")) return redactAnthropicMessages;
+    if (path.endsWith("/embeddings")) return redactEmbeddings;
+    return undefined;
+  }
+}
+
+function urlOf(input: unknown): string | undefined {
+  if (isRecord(input) && typeof input["href"] === "string") return input["href"];
+  if (isRecord(input) && typeof input["url"] === "string") return input["url"];
+  return undefined;
+}
+
+function methodOf(input: unknown): string | undefined {
+  return isRecord(input) && typeof input["method"] === "string" ? input["method"] : undefined;
+}
+
+function hasBodyInRequest(input: unknown): boolean {
+  return (
+    isRecord(input) && "body" in input && input["body"] !== null && input["body"] !== undefined
+  );
+}
+
+function pathOf(href: string): string {
+  const withoutQuery = href.split("?")[0] ?? href;
+  const afterScheme = withoutQuery.replace(/^[a-z]+:\/\/[^/]*/iu, "");
+  return afterScheme.replace(/\/+$/u, "");
+}
+
+function withoutLength(headers: unknown): unknown {
+  if (headers === undefined || headers === null) return headers;
+  if (Array.isArray(headers))
+    return headers.filter(
+      (entry) => !(Array.isArray(entry) && String(entry[0]).toLowerCase() === "content-length"),
+    );
+  if (isRecord(headers) && typeof headers["delete"] === "function") {
+    const clone = new (headers.constructor as new (init: unknown) => Record_)(headers);
+    (clone["delete"] as (name: string) => void).call(clone, "content-length");
+    return clone;
+  }
+  if (isRecord(headers)) {
+    const next: Record_ = {};
+    for (const [name, value] of Object.entries(headers))
+      if (name.toLowerCase() !== "content-length") next[name] = value;
+    return next;
+  }
+  return headers;
+}
+
+type TextRedactor = (value: string) => string;
+
+function mapArray(
+  items: readonly unknown[],
+  visit: (item: unknown) => unknown,
+): readonly unknown[] {
+  let changed = false;
+  const next = items.map((item) => {
+    const result = visit(item);
+    if (result !== item) changed = true;
+    return result;
+  });
+  return changed ? next : items;
+}
+
+function withField(record: Record_, field: string, value: unknown): Record_ {
+  return value === record[field] ? record : { ...record, [field]: value };
+}
+
+const SKIPPED_KEYS = new Set([
+  "id",
+  "type",
+  "role",
+  "name",
+  "model",
+  "tool_call_id",
+  "call_id",
+  "tool_use_id",
+  "item_id",
+  "previous_response_id",
+  "prompt_cache_key",
+  "status",
+  "object",
+  "finish_reason",
+  "stop_reason",
+  "reasoning_effort",
+  "effort",
+  "service_tier",
+]);
+
+const OPAQUE_TYPES = new Set([
+  "thinking",
+  "redacted_thinking",
+  "reasoning",
+  "image_url",
+  "image",
+  "input_image",
+  "input_audio",
+  "audio",
+  "file",
+  "input_file",
+  "document",
+  "item_reference",
+]);
+
+const OPAQUE_MESSAGE_KEYS = new Set([
+  "reasoning_content",
+  "reasoning",
+  "reasoning_details",
+  "reasoning_text",
+]);
+
+const DEFINITION_KEYS = new Set(["tools", "functions", "tool_choice", "response_format"]);
+
+function isIdentifierKey(key: string): boolean {
+  return key.endsWith("_id") || key.endsWith("_ids") || key.endsWith("Id") || key.endsWith("Ids");
+}
+
+function maskArguments(value: unknown, text: TextRedactor): unknown {
+  if (typeof value !== "string") return maskTree(value, text, true);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return text(value);
+  }
+  const next = maskTree(parsed, text, true);
+  return next === parsed ? value : JSON.stringify(next);
+}
+
+function maskTree(value: unknown, text: TextRedactor, data: boolean): unknown {
+  if (typeof value === "string") {
+    if (value.startsWith("data:")) return value;
+    const result = text(value);
+    return result === value ? value : result;
+  }
+  if (Array.isArray(value)) return mapArray(value, (item) => maskTree(item, text, data));
+  if (!isRecord(value)) return value;
+  if (!data && typeof value["type"] === "string" && OPAQUE_TYPES.has(value["type"])) return value;
+  let changed = false;
+  const next: Record_ = {};
+  for (const [key, item] of Object.entries(value)) {
+    let result: unknown;
+    if (data) {
+      result = maskTree(item, text, true);
+    } else if (typeof item === "string" && (SKIPPED_KEYS.has(key) || isIdentifierKey(key))) {
+      result = item;
+    } else if (OPAQUE_MESSAGE_KEYS.has(key)) {
+      result = item;
+    } else if (key === "arguments") {
+      result = maskArguments(item, text);
+    } else if (
+      key === "input" &&
+      typeof value["type"] === "string" &&
+      value["type"].endsWith("tool_use")
+    ) {
+      result = maskTree(item, text, true);
+    } else {
+      result = maskTree(item, text, false);
+    }
+    if (result !== item) changed = true;
+    next[key] = result;
+  }
+  return changed ? next : value;
+}
+
+function maskRequest(body: unknown, text: TextRedactor, conversation: string): unknown {
+  if (!isRecord(body)) refuse("request has an unknown shape");
+  const conversational = body[conversation];
+  if (typeof conversational !== "string" && !Array.isArray(conversational))
+    refuse(`request has no ${conversation}`);
+  let changed = false;
+  const next: Record_ = {};
+  for (const [key, item] of Object.entries(body)) {
+    const result =
+      DEFINITION_KEYS.has(key) || SKIPPED_KEYS.has(key) ? item : maskTree(item, text, false);
+    if (result !== item) changed = true;
+    next[key] = result;
+  }
+  return changed ? next : body;
+}
+
+const redactChatCompletions = (body: unknown, text: TextRedactor): unknown =>
+  maskRequest(body, text, "messages");
+const redactResponses = (body: unknown, text: TextRedactor): unknown =>
+  maskRequest(body, text, "input");
+const redactAnthropicMessages = (body: unknown, text: TextRedactor): unknown =>
+  maskRequest(body, text, "messages");
+
+function redactEmbeddings(body: unknown, text: TextRedactor): unknown {
+  if (!isRecord(body)) refuse("embeddings request has an unknown shape");
+  const input = body["input"];
+  if (typeof input === "string") return withField(body, "input", text(input));
+  if (Array.isArray(input) && input.every((item) => typeof item === "string"))
+    return withField(
+      body,
+      "input",
+      mapArray(input, (item) => text(item as string)),
+    );
+  return refuse("embeddings input is not text");
+}
+
+export class ModelEgress {
+  readonly #options: ModelEgressOptions;
+
+  constructor(options: ModelEgressOptions) {
+    this.#options = options;
+  }
+
+  exchange(): ModelEgressExchange {
+    return new Exchange(this.#options);
+  }
+}

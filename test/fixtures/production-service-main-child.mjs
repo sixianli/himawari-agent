@@ -156,6 +156,7 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
     startupStage("memory_composition_started");
     const gatewayUrl = "https://ai-gateway.vercel.sh/v1";
     const composition = await agent.createProductionMemoryCompositionFromConfiguration({
+      egress: agent.createProductionModelEgress(configuration, sources),
       configuration,
       secretSource: sources.provider,
       index: repository.memoryIndex(),
