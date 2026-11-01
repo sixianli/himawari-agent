@@ -854,6 +854,9 @@ describe("memory approval and management", () => {
       ],
     };
     await render();
+    expect(text("#settings .memory-status-links")).toContain("最近删除 2 条");
+    await click("#settings .memory-status-links", "最近删除 2 条");
+    expect(text("#settings")).toContain("主人让写一个就只写一个");
     await tab("变化记录");
     const rows = () => [...document.querySelectorAll("#settings .memory-day p")];
     const row = (kind: string, content: string) =>

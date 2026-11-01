@@ -57,7 +57,8 @@ const MAXIMUM_IMPORT_ITEMS = 500;
 const GRAPH = { x: 190, y: 150, r: 112 };
 
 const reveal = (element: HTMLElement | null) => element?.scrollIntoView?.({ block: "nearest" });
-const live = (item: MemoryItem) => !item.supersededBy && !item.tentative;
+const live = (item: MemoryItem) =>
+  !item.supersededBy && (!item.tentative || item.status === "trashed");
 const PINNABLE: ReadonlySet<string> = new Set([
   "identity",
   "preference",
