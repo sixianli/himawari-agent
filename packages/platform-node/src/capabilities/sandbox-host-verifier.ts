@@ -84,8 +84,11 @@ export interface SandboxHostVerificationInput {
     | SandboxExecutionPlanV2;
 }
 
-export async function verifySandboxHost(input: SandboxHostVerificationInput): Promise<void> {
-  await verifySandboxHostFiles(assertSandboxHostPlan(input));
+export async function verifySandboxHost(
+  input: SandboxHostVerificationInput,
+  options: { readonly deferContentAudit?: boolean } = {},
+): Promise<void> {
+  await verifySandboxHostFiles(assertSandboxHostPlan(input), options);
 }
 
 function assertSandboxHostPlan(input: SandboxHostVerificationInput): SandboxHostBinding {
@@ -146,7 +149,10 @@ function assertSandboxHostPlan(input: SandboxHostVerificationInput): SandboxHost
   return binding;
 }
 
-async function verifySandboxHostFiles(binding: SandboxHostBinding): Promise<void> {
+async function verifySandboxHostFiles(
+  binding: SandboxHostBinding,
+  options: { readonly deferContentAudit?: boolean } = {},
+): Promise<void> {
   await checkedPath(binding.privateRoot, true);
   for (const root of binding.roots) {
     const current = await checkedPath(root.canonicalPath, true);
@@ -160,10 +166,13 @@ async function verifySandboxHostFiles(binding: SandboxHostBinding): Promise<void
   await checkedPath(binding.runtimeRoot, true);
   await checkedPath(binding.executable.path, false);
   await checkedPath(binding.runner.path, false);
-  await verifyProtectedRuntime(binding.runtimeRoot, binding.runtimeDigest, digestSandboxRuntime, [
-    binding.executable,
-    binding.runner,
-  ]);
+  await verifyProtectedRuntime(
+    binding.runtimeRoot,
+    binding.runtimeDigest,
+    digestSandboxRuntime,
+    [binding.executable, binding.runner],
+    options,
+  );
 }
 
 export function createReusingSandboxHostVerifier(options: {

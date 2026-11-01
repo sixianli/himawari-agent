@@ -146,6 +146,30 @@ export class ProtectedRuntimeVerifier {
     digest: (root: string) => Promise<string>,
     artifacts: readonly RuntimeArtifact[] = [],
   ): Promise<void> {
+    await (await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts))();
+  }
+
+  async begin(
+    runtimeRoot: string,
+    runtimeDigest: string,
+    digest: (root: string) => Promise<string>,
+    artifacts: readonly RuntimeArtifact[] = [],
+    onSettled?: (outcome: { readonly ok: boolean; readonly durationMs: number }) => void,
+  ): Promise<void> {
+    const complete = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
+    const startedAt = Date.now();
+    complete().then(
+      () => onSettled?.({ ok: true, durationMs: Date.now() - startedAt }),
+      () => onSettled?.({ ok: false, durationMs: Date.now() - startedAt }),
+    );
+  }
+
+  async #prepare(
+    runtimeRoot: string,
+    runtimeDigest: string,
+    digest: (root: string) => Promise<string>,
+    artifacts: readonly RuntimeArtifact[],
+  ): Promise<() => Promise<void>> {
     const { protection, identity } = await this.#manifest();
     if (runtimeRoot !== protection.runtimeRoot || runtimeDigest !== protection.runtimeDigest)
       throw failure();
@@ -181,6 +205,48 @@ export class ProtectedRuntimeVerifier {
     };
     const artifactKey = await artifactIdentity();
     const key = `${identity}\n${parents}`;
+    return () =>
+      this.#complete({
+        key,
+        artifactKey,
+        runtimeRoot,
+        runtimeDigest,
+        digest,
+        artifacts,
+        protectedArtifacts,
+        protection,
+        identity,
+        parents,
+        artifactIdentity,
+      });
+  }
+
+  async #complete(input: {
+    readonly key: string;
+    readonly artifactKey: string;
+    readonly runtimeRoot: string;
+    readonly runtimeDigest: string;
+    readonly digest: (root: string) => Promise<string>;
+    readonly artifacts: readonly RuntimeArtifact[];
+    readonly protectedArtifacts: readonly RuntimeArtifact[];
+    readonly protection: Protection;
+    readonly identity: string;
+    readonly parents: string;
+    readonly artifactIdentity: () => Promise<string>;
+  }): Promise<void> {
+    const {
+      key,
+      artifactKey,
+      runtimeRoot,
+      runtimeDigest,
+      digest,
+      artifacts,
+      protectedArtifacts,
+      protection,
+      identity,
+      parents,
+      artifactIdentity,
+    } = input;
     let audit = this.#audits.get(key);
     if (!audit) {
       this.#audits.clear();
@@ -225,11 +291,16 @@ export class ProtectedRuntimeVerifier {
 }
 
 const verifiers = new Map<string, ProtectedRuntimeVerifier>();
+export interface ProtectedRuntimeVerifyOptions {
+  readonly deferContentAudit?: boolean;
+}
+
 export async function verifyProtectedRuntime(
   runtimeRoot: string,
   runtimeDigest: string,
   digest: (root: string) => Promise<string>,
   artifacts: readonly RuntimeArtifact[] = [],
+  options: ProtectedRuntimeVerifyOptions = {},
 ): Promise<boolean> {
   const filename = process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
   if (filename === undefined) return false;
@@ -237,6 +308,20 @@ export async function verifyProtectedRuntime(
   if (!verifier) {
     verifier = new ProtectedRuntimeVerifier(filename);
     verifiers.set(filename, verifier);
+  }
+  if (options.deferContentAudit === true) {
+    await verifier.begin(runtimeRoot, runtimeDigest, digest, artifacts, (outcome) => {
+      console.error(
+        JSON.stringify({
+          component: "platform-node",
+          event: outcome.ok
+            ? "sandbox_runtime.content_audit_completed"
+            : "sandbox_runtime.content_audit_failed",
+          durationMs: outcome.durationMs,
+        }),
+      );
+    });
+    return true;
   }
   await verifier.verify(runtimeRoot, runtimeDigest, digest, artifacts);
   return true;

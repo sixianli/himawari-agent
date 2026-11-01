@@ -89,6 +89,57 @@ beforeEach(() => {
   });
 });
 
+it("returns before the content audit finishes, and later checks wait for the same audit", async () => {
+  const verifier = verifierFor();
+  let finish: ((value: string) => void) | undefined;
+  const readBytes = vi.fn(
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const settled = vi.fn();
+  await verifier.begin(root, digest, readBytes, [], settled);
+  expect(settled).not.toHaveBeenCalled();
+  let later = false;
+  const waiting = verifier.verify(root, digest, readBytes).then(() => {
+    later = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(later).toBe(false);
+  finish?.(digest);
+  await waiting;
+  expect(readBytes).toHaveBeenCalledOnce();
+  expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+});
+
+it("rejects every later check when the deferred content audit finds a different digest", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  const wrong = async () => "c".repeat(64);
+  await verifier.begin(root, digest, wrong, [], settled);
+  await expect(verifier.verify(root, digest, wrong)).rejects.toThrow(
+    "SANDBOX_RUNTIME_PROTECTION_INVALID",
+  );
+  expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+});
+
+it("still rejects at once, without deferring, when the protection record does not match", async () => {
+  const verifier = verifierFor();
+  const readBytes = vi.fn(async () => digest);
+  await expect(verifier.begin(root, "d".repeat(64), readBytes)).rejects.toThrow(
+    "SANDBOX_RUNTIME_PROTECTION_INVALID",
+  );
+  await expect(verifier.begin("/data/himawari/other", digest, readBytes)).rejects.toThrow(
+    "SANDBOX_RUNTIME_PROTECTION_INVALID",
+  );
+  fixture.status = fixture.status.replace("NoNewPrivs:\t1", "NoNewPrivs:\t0");
+  await expect(verifier.begin(root, digest, readBytes)).rejects.toThrow(
+    "SANDBOX_RUNTIME_PROTECTION_INVALID",
+  );
+  expect(readBytes).not.toHaveBeenCalled();
+});
+
 it("reuses protected artifact bytes only for unchanged installation and file identities", async () => {
   const verifier = verifierFor();
   const readBytes = vi.fn(async () => digest);
@@ -265,5 +316,14 @@ it("keeps the original audit path only when protection was not configured", asyn
   await expect(verifyProtectedRuntime(root, digest, readBytes)).rejects.toThrow(
     "PROTECTION_INVALID",
   );
+  expect(readBytes).not.toHaveBeenCalled();
+});
+
+it("does nothing extra when protection is not configured, even if the content audit is deferred", async () => {
+  const readBytes = vi.fn(async () => digest);
+  delete process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
+  expect(
+    await verifyProtectedRuntime(root, digest, readBytes, [], { deferContentAudit: true }),
+  ).toBe(false);
   expect(readBytes).not.toHaveBeenCalled();
 });

@@ -189,11 +189,14 @@ export async function createProductionSandboxServices(options: {
   for (const entry of sandboxEntries) {
     if (entry.binding.kind !== "sandbox" || !entry.qualification.sandbox)
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
-    await verifySandboxHost({
-      binding: entry.binding.value,
-      qualification: entry.qualification.sandbox,
-      hostId,
-    });
+    await verifySandboxHost(
+      {
+        binding: entry.binding.value,
+        qualification: entry.qualification.sandbox,
+        hostId,
+      },
+      { deferContentAudit: true },
+    );
   }
   const journal = repository.sandboxJobJournal(configuration.ownerId, configuration.agentId);
   const environments = options.taskEnvironments

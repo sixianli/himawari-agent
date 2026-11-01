@@ -365,11 +365,14 @@ async function qualifyDeployment(
   for (const entry of deployment.snapshot.capabilities) {
     if (entry.binding.kind === "sandbox") {
       if (!entry.qualification.sandbox) throw new Error("SANDBOX_QUALIFICATION_UNAVAILABLE");
-      await verifySandboxHost({
-        binding: entry.binding.value,
-        qualification: entry.qualification.sandbox,
-        hostId: entry.binding.value.hostId,
-      });
+      await verifySandboxHost(
+        {
+          binding: entry.binding.value,
+          qualification: entry.qualification.sandbox,
+          hostId: entry.binding.value.hostId,
+        },
+        { deferContentAudit: true },
+      );
       continue;
     }
     const actual = await qualifier.qualify(entry.manifest);
