@@ -486,7 +486,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     });
   });
 
-  it("inspects one scoped reservation without changing rows, taking the service lock or claiming host proof", async () => {
+  it("[ADMIN-SCHEMA-RANGE] inspects one scoped reservation without changing rows, taking the service lock or claiming host proof", async () => {
     const f = await fixture();
     const before = snapshot(f);
     const files = await readdir(f.stateRoot);
@@ -688,7 +688,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     });
   });
 
-  it("migrates a stopped Schema49 reservation through the public CLI before administrator disposition without replay", async () => {
+  it("[ADMIN-SCHEMA-RANGE] migrates a stopped Schema49 reservation through the public CLI before administrator disposition without replay", async () => {
     const f = await fixture({ schemaSequence: 49 });
     const before = snapshot(f);
     expect(before["runs"]?.[0]).toMatchObject({ status: "reconciling_external_result" });
@@ -841,7 +841,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     expect(snapshot(f)).toEqual(after);
   });
 
-  it("refuses unknown future schema metadata without migrating or writing", async () => {
+  it("[ADMIN-SCHEMA-RANGE] refuses unknown future schema metadata without migrating or writing", async () => {
     const f = await fixture();
     const listed = await inspect(f);
     withDatabase(f, (database) =>
@@ -1283,7 +1283,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     expect(snapshot(f)).toEqual(before);
   });
 
-  it("atomically records administrator cleanup, fails the Run and preserves unknown execution history", async () => {
+  it("[ADMIN-SCHEMA-RANGE] atomically records administrator cleanup, fails the Run and preserves unknown execution history", async () => {
     const f = await fixture();
     const listed = await inspect(f);
     const before = snapshot(f);
