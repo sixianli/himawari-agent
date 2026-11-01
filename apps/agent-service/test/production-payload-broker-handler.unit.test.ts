@@ -21,6 +21,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { createV02Fixture } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
+import { CommandSilenceWatch } from "../src/command-silence-watch.js";
 import {
   PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES,
   ProductionPayloadBrokerHandler,
@@ -318,7 +319,13 @@ function resolveRequest(): PayloadBrokerSandboxExecutionRequest {
   return parsed;
 }
 
-function resolveFixture(options: { readonly phase?: "bound" | "reserved" } = {}) {
+function resolveFixture(
+  options: {
+    readonly phase?: "bound" | "reserved";
+    readonly supervision?: string;
+    readonly silenceWatch?: CommandSilenceWatch;
+  } = {},
+) {
   const startedAt = Date.parse(REQUESTED_AT);
   const plan = {
     identity: executionIdentity,
@@ -328,7 +335,10 @@ function resolveFixture(options: { readonly phase?: "bound" | "reserved" } = {})
   };
   const bound = {
     plan,
-    facts: { resource: { sequence: 2 }, environment: { resourceRef: "resource:payload-handler" } },
+    facts: {
+      resource: { sequence: 2, supervision: options.supervision ?? "controlled" },
+      environment: { resourceRef: "resource:payload-handler" },
+    },
     startedAt: REQUESTED_AT,
     operationRevision: 1,
   } as unknown as SandboxExecutionRecord;
@@ -346,6 +356,7 @@ function resolveFixture(options: { readonly phase?: "bound" | "reserved" } = {})
     onResolve: undefined as (() => void) | undefined,
   };
   const handler = new ProductionPayloadBrokerHandler({
+    ...(options.silenceWatch ? { silenceWatch: options.silenceWatch } : {}),
     sandboxExecutions: {
       hostId: SANDBOX_HOST_ID,
       journal: { read: async () => bound } as unknown as SandboxExecutionJournalPort,
@@ -395,6 +406,53 @@ function resolveFixture(options: { readonly phase?: "bound" | "reserved" } = {})
   });
   return { handler, state, resolve: () => handler.sandboxExecution(resolveRequest()) };
 }
+
+describe("[SILENCE-4] the handler feeds the silence watch from real worker polls", () => {
+  function watched() {
+    const silent: string[] = [];
+    const watch = new CommandSilenceWatch({
+      onSilent: (detail) => silent.push(detail.runId),
+      onResumed: () => {},
+    });
+    return { watch, silent };
+  }
+  const tick = (watch: CommandSilenceWatch, from: number, to: number) => {
+    for (let at = from; at <= to; at += 5_000) watch.check(at);
+  };
+
+  it("a running command whose worker stops polling is reported with its run id", async () => {
+    const { watch, silent } = watched();
+    const fixture = resolveFixture({ silenceWatch: watch });
+    await fixture.resolve();
+    const start = fixture.state.now;
+    tick(watch, start + 5_000, start + 29_999);
+    expect(silent).toEqual([]);
+    tick(watch, start + 30_000, start + 35_000);
+    expect(silent).toEqual([RUN_ID]);
+  });
+
+  it("negative: a worker that keeps polling is never reported", async () => {
+    const { watch, silent } = watched();
+    const fixture = resolveFixture({ silenceWatch: watch });
+    const start = fixture.state.now;
+    for (let at = 0; at <= 120_000; at += 250) {
+      fixture.state.now = start + at;
+      await fixture.resolve();
+      if (at % 5_000 === 0) watch.check(start + at);
+    }
+    expect(silent).toEqual([]);
+  });
+
+  it("negative: a command that is no longer controlled is never reported", async () => {
+    const { watch, silent } = watched();
+    const fixture = resolveFixture({ silenceWatch: watch, supervision: "released" });
+    await fixture.resolve();
+    const start = fixture.state.now;
+    tick(watch, start + 5_000, start + 120_000);
+    expect(silent).toEqual([]);
+    expect(watch.size()).toBe(0);
+  });
+});
 
 describe("[NL-4] sandbox authority resolve reuse", () => {
   it("[NL-4] runs the full check once and then reuses it while the authority version is unchanged", async () => {
