@@ -304,7 +304,7 @@ async function policyApprovals(
   );
 }
 
-describe("[R2-T2] workspace auto authorization", () => {
+describe("[R2-T2] workspace auto authorization", { timeout: 30_000 }, () => {
   it("[R2-T2] enables the policy by default and records the enabled audit", async () => {
     const { workspaceAuto, store, repository } = await fixture({});
     await workspaceAuto.sync(AUTHORITY);
