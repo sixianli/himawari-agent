@@ -31,7 +31,7 @@
     "check:real-admission": "node scripts/check-real-admission-tests.mjs",
     "check:audit-schema-range": "node scripts/check-audit-schema-range.mjs",
     "check:source-mode-imports": "node scripts/check-source-mode-imports.mjs",
-    "check:admin-schema-range": "vitest run --config vitest.workspace.ts --project integration test/integration/sandbox-reservation-administration.test.ts",
+    "check:admin-schema-range": "vitest run --config vitest.workspace.ts --project integration test/integration/sandbox-reservation-administration.test.ts -t ADMIN-SCHEMA-RANGE",
     "check:memory-relevance": "node scripts/check-memory-relevance.mjs",
     "check:expensive-models": "node scripts/check-expensive-models.mjs",
     "check:locale": "node scripts/check-control-center-locale.mjs",
