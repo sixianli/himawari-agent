@@ -178,9 +178,7 @@ describe.each(["worker", "direct"] as const)("Muse intake store through %s", (ex
         intake.ingestBatch(batch(1, [item("a", { state: "succeeded" })])),
       ).rejects.toThrow();
       await expect(
-        intake.ingestBatch(
-          batch(1, [item("a", { sources: { text: "made_up" as "derived" } })]),
-        ),
+        intake.ingestBatch(batch(1, [item("a", { sources: { text: "made_up" as "derived" } })])),
       ).rejects.toThrow();
       await expect(intake.ingestBatch(batch(0, []))).rejects.toThrow();
       expect(await intake.listItems({ ...scope, since: SINCE, limit: 10 })).toEqual([]);
