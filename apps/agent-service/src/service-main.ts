@@ -110,6 +110,10 @@ import {
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
+import {
+  inspectSandboxCommands,
+  type SandboxCommandInventory,
+} from "./sandbox-command-inventory.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -167,6 +171,12 @@ export interface AgentServiceDependencies {
   readonly httpOptions?: Pick<ProductionHttpCompositionOptions, "jwksFetcher" | "identityFetcher">;
   readonly modelCompositionFactory?: AgentServiceModelCompositionFactory;
   readonly memoryCompositionFactory?: AgentServiceMemoryCompositionFactory;
+}
+
+let sandboxCommandInventoryOnce: Promise<SandboxCommandInventory> | undefined;
+function sandboxCommandInventory(): Promise<SandboxCommandInventory> {
+  sandboxCommandInventoryOnce ??= inspectSandboxCommands();
+  return sandboxCommandInventoryOnce;
 }
 
 function productionClock(): ClockPort {
@@ -1717,6 +1727,7 @@ export async function runAgentService(
           clock,
           ids,
           workspaceRoot: configuredWorkspaceRoot(configuration, repository, clock),
+          sandboxCommands: sandboxCommandInventory,
         }),
         clock,
         ids,

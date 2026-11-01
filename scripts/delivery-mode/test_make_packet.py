@@ -339,6 +339,14 @@ class SandboxReadPathsTest(RenderedPacket):
         for path in ('"/usr/share"', '"/etc/fonts"', '"/var/cache/fontconfig"'):
             self.assertIn(path, listed)
 
+    def test_model_sandbox_can_follow_command_links_and_read_system_data_files(self):
+        seal = (self.render() / 'signing' / 'cloud-seal.mjs').read_text()
+        listed = seal.split('readOnlyToolchainPaths: [', 1)[1].split('protectedPaths: [', 1)[0]
+        for path in ('"/etc/alternatives"', '"/usr/sbin"', '"/etc/mime.types"', '"/etc/magic"', '"/etc/locale.alias"', '"/etc/ld.so.cache"'):
+            self.assertIn(path, listed)
+        for secret in ('/etc/passwd', '/etc/shadow', '/etc/group', '/etc/himawari', '/etc/localtime'):
+            self.assertNotIn('"' + secret + '"', listed)
+
 
 class DerivedExpectationsTest(RenderedPacket):
     TAG = '[PG-2]'
