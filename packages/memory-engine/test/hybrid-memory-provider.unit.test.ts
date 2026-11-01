@@ -177,6 +177,34 @@ describe("hybrid Memory provider", () => {
 });
 
 describe("Gateway embedder", () => {
+  it("redacts sensitive values before the text leaves for the embedding provider", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "fixture-embedding",
+            data: [{ index: 0, embedding: [3, 0, 4] }],
+            usage: { prompt_tokens: 1, total_tokens: 1 },
+          }),
+        ),
+    );
+    const client = new GatewayEmbedder({
+      baseUrl: "https://gateway.invalid/v1",
+      model: "fixture-embedding",
+      dimensions: 3,
+      apiKey: async () => "fixture-value",
+      fetch,
+    });
+    client.bindBoundary((_request, send) => send({ timeoutMs: 50 }), 1000);
+    await client.embed("验证码 482910，卡号 4111 1111 1111 1111，订单 20261101123456，山田太郎");
+    const sent = JSON.parse(
+      String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+    );
+    expect(sent.input).toBe(
+      "验证码 [验证码]，卡号 [银行卡 尾号1111]，订单 20261101123456，山田太郎",
+    );
+  });
+
   it("refuses to call the provider before a governed boundary is bound", async () => {
     const fetch = vi.fn();
     const client = new GatewayEmbedder({

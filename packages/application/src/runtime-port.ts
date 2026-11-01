@@ -98,6 +98,10 @@ export type { ClockPort } from "./ports/system.js";
 export type { ModelUsageObservation, ModelUsageStorePort } from "./ports/model-usage.js";
 export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
+  EGRESS_PLACEHOLDER_LEGEND,
+  redactForEgress,
+} from "./services/egress-redaction.js";
+export {
   assertMachineSecretFree,
   redactMachineSecrets,
   StreamingMachineSecretRedactor,

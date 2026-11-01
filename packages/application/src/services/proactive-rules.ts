@@ -4,17 +4,11 @@ import type {
   ProactiveResult,
   ProactiveSourceItem,
 } from "../ports/proactive-checks.js";
-import { scanMachineSecrets } from "./machine-secret-exclusion.js";
 
 export const PROACTIVE_PUBLIC_DOMAIN_SUFFIXES = Object.freeze(["go.jp", "lg.jp", "ac.jp", "ed.jp"]);
 
 const MONEY_WORDS =
   /收费|扣款|入账|付款|退款|账单|缴费|汇款|转账|还款|发票|請求|引落|引き落とし|振込|振り込み|入金|返金|支払|料金|決済|ご利用代金|\b(?:invoice|payment|refund|billing|bill|charged?|receipt|statement)\b/iu;
-
-const ONE_TIME_CODE =
-  /(?:验证码|驗證碼|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|one[- ]time (?:pass)?code|passcode|\bOTP\b)/iu;
-const CARD_NUMBER = /(?<!\d)(?:\d[ -]?){13,19}(?!\d)/u;
-const PASSWORD_LINE = /(?:密码|密碼|パスワード|password)\s*[:：]/iu;
 
 export function senderDomain(address: string): string {
   return address.slice(address.lastIndexOf("@") + 1).toLowerCase();
@@ -39,15 +33,6 @@ export function hitsFloor(item: ProactiveSourceItem, senders: readonly string[])
       (suffix) => domain === suffix || domain.endsWith(`.${suffix}`),
     ) ||
     MONEY_WORDS.test(`${item.subject}\n${item.snippet}`)
-  );
-}
-
-export function containsSensitiveText(text: string): boolean {
-  return (
-    scanMachineSecrets(text).length > 0 ||
-    (ONE_TIME_CODE.test(text) && /\d{4,8}/u.test(text)) ||
-    CARD_NUMBER.test(text) ||
-    PASSWORD_LINE.test(text)
   );
 }
 

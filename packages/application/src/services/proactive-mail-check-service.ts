@@ -19,7 +19,6 @@ import type {
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import {
   applyFloor,
-  containsSensitiveText,
   hitsFloor,
   isImportantSender,
   quietUntil,
@@ -327,8 +326,6 @@ export class ProactiveMailCheckService {
           !isImportantSender(item.fromAddress, settings.importantSenders))
       )
         processed.push(this.#skip(item, "category"));
-      else if (containsSensitiveText(`${item.subject}\n${item.snippet}`))
-        processed.push(this.#skip(item, "sensitive"));
       else candidates.push(item);
     }
     const spentToday = await store.costSince({

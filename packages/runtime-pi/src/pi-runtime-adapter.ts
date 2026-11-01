@@ -52,6 +52,7 @@ import type {
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 import { observeCacheFields } from "./cache-usage-observation.js";
+import { redactModelContext } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
@@ -922,7 +923,7 @@ async function admitPiStream(
       await permit.markUnknown("cancel_unresolved");
       return failedPiStream(model, "Model invocation was cancelled");
     }
-    const stream = await original(model, context, {
+    const stream = await original(model, redactModelContext(context), {
       ...withoutAmbientApiKey,
       ...(secret === undefined ? {} : { apiKey: secret }),
       maxRetries: 0,
