@@ -1573,17 +1573,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           (finalAssistant.stopReason !== "stop" ||
             finalAssistant.content.some((part) => part.type === "toolCall"))
         ) {
-          emit(
-            runtimeFailure(
-              request,
-              this.now(),
-              finalAssistant.stopReason === "length" &&
-                (finalAssistant.usage?.output ?? MIN_CONTEXT_ANSWER_TOKENS) <
-                  MIN_CONTEXT_ANSWER_TOKENS
-                ? PI_CONTEXT_WINDOW_EXHAUSTED
-                : "PI_FINAL_ANSWER_INCOMPLETE",
-            ),
-          );
+          const incompleteCode =
+            finalAssistant.stopReason === "length" &&
+            (finalAssistant.usage?.output ?? MIN_CONTEXT_ANSWER_TOKENS) < MIN_CONTEXT_ANSWER_TOKENS
+              ? PI_CONTEXT_WINDOW_EXHAUSTED
+              : "PI_FINAL_ANSWER_INCOMPLETE";
+          this.#dependencies.onModelStreamFailed?.(request, {
+            code: incompleteCode,
+            message: [
+              `stop_reason=${finalAssistant.stopReason}`,
+              `tool_calls=${finalAssistant.content.filter((part) => part.type === "toolCall").length}`,
+              `output_tokens=${finalAssistant.usage?.output ?? "unknown"}`,
+            ].join(" "),
+          });
+          emit(runtimeFailure(request, this.now(), incompleteCode));
           return;
         }
         const text =

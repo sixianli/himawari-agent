@@ -1056,6 +1056,37 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     },
   );
 
+  it("logs why a final answer was judged incomplete without logging any answer text", async () => {
+    const failures: { code: string; message: string }[] = [];
+    const adapter = createAdapter(
+      new RecordingProjection(),
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            stopReason: "length",
+            usage: { output: 2048 },
+            content: [{ type: "text", text: "private answer" }],
+          },
+        });
+        emit({ type: "agent_settled" });
+      }),
+      {},
+      undefined,
+      undefined,
+      (_request, failure) => failures.push(failure),
+    );
+    await collect(adapter.run(request));
+    expect(failures).toEqual([
+      {
+        code: "PI_FINAL_ANSWER_INCOMPLETE",
+        message: "stop_reason=length tool_calls=0 output_tokens=2048",
+      },
+    ]);
+  });
+
   it("captures final plain text separately and excludes machine secrets across text parts", async () => {
     const projection = new RecordingProjection();
     const secret = ["sk-", "a".repeat(40)];
