@@ -567,6 +567,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0070_decision_ledger_payloads.sql",
   },
+  {
+    sequence: 71,
+    name: "web_push_account_kinds",
+    changeSet: "web-push-account-kinds",
+    phase: "expand" as const,
+    file: "0071_web_push_account_kinds.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

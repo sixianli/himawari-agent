@@ -69,10 +69,10 @@ date: "2026-10-26"
 
 ## 数据库
 
-迁移 `0058_web_push.sql`，变更集 `web-push`，阶段 `expand`，数据库版本 57 → 58。四张表都按 `owner_id`、`agent_id` 隔离。
+迁移 `0058_web_push.sql`，变更集 `web-push`，阶段 `expand`，数据库版本 57 → 58。四张表都按 `owner_id`、`agent_id` 隔离。账号级的通知类别开关另存 `web_push_account_kinds`（迁移 0071）。
 
 - `web_push_subscriptions`：一行一台设备。
-  - 列：`subscription_id`、`endpoint`（https，最长 2048）、`p256dh`、`auth`、`locale`（`zh-CN`、`en`、`ja`）、`device_label`（最长 64，页面按浏览器信息生成，例如“iPhone 主屏应用”）、`notify_reminder`、`notify_approval`、`notify_run`（这台设备要不要收这一类，0 或 1）、`state`（`active` 或 `paused`）、`failure_code`、`created_at`、`updated_at`、`last_delivered_at`。
+  - 列：`subscription_id`、`endpoint`（https，最长 2048）、`p256dh`、`auth`、`locale`（`zh-CN`、`en`、`ja`）、`device_label`（最长 64，页面按浏览器信息生成，例如“iPhone 主屏应用”）、`notify_reminder`、`notify_approval`、`notify_run`（旧版按设备存的开关，迁移 0071 之后不再读取，开关以 `web_push_account_kinds` 为准，这三列等后续迁移删除）、`state`（`active` 或 `paused`）、`failure_code`、`created_at`、`updated_at`、`last_delivered_at`。
   - 同一推送地址只有一行（唯一索引 `owner_id, agent_id, endpoint`）；重复开通时更新密钥和语言。
   - `p256dh` 和 `auth` 是公开密钥，推送地址只能用来给这台设备发加密消息，所以明文存放，与其他状态表一样受数据库文件权限保护。
 - `web_push_outbox`：待推送的事，一件事一行。
@@ -156,12 +156,12 @@ date: "2026-10-26"
 ```
 
 - `navigate` 用配置的 `publicOrigin` 拼成完整网址：任务和审批打开对应对话（`/threads/<对话 id>`），提醒打开记忆页（`/memory`）。
-- 固定文字按订阅记下的语言取；提醒原文和对话标题保持写入时的语言。
+- 固定文字按账号的语言偏好取，没设置才用订阅记下的语言；提醒原文和对话标题保持写入时的语言。
 - 主屏图标角标（`app_badge`）= 待审批数 + 6 小时内到期且还没处理的提醒数，每条通知都带最新值；为 0 时不带这个字段。
 
 | 类型 | 标题 | 正文 |
 | --- | --- | --- |
-| 普通提醒 | Himawari 提醒 / Himawari reminder / Himawari リマインダー | 提醒原文，换行后接时间（按 `runPolicy.timeZone` 和订阅语言格式化） |
+| 普通提醒 | Himawari 提醒 / Himawari reminder / Himawari リマインダー | 提醒原文，换行后接时间（按 `runPolicy.timeZone` 和上面取到的语言格式化） |
 | 敏感或受限提醒 | 同上 | 你有一条私密提醒 / You have a private reminder / 非公開のリマインダーがあります |
 | 审批 | 等你审批 · 高风险 / Waiting for your approval · High risk / 承認待ち · 高リスク（风险级别按审批的最终风险，低、中、高、极高） | 对话标题 |
 | 任务完成 | 已完成 / Done / 完了しました | 对话标题 |
@@ -176,9 +176,10 @@ date: "2026-10-26"
 
 网关协议 v2 新增 4 种消息，都只允许主人（`actorType: "owner"`）在本人范围内使用：
 
-- `push.subscription.set`（命令）：`action` 为 `subscribe` 时带 `endpoint`、`keys.p256dh`、`keys.auth`、`locale`、`deviceLabel`、`kinds`（要收的类别：`reminder`、`approval`、`run`），`subscriptionId` 为空；为 `unsubscribe` 时只带 `subscriptionId`，其余为空，这样在一台设备上也能移除另一台。设备 id 是 `web-push-` 加推送地址 SHA-256 十六进制的前 24 位，页面用同样的算法认出“这台设备”。某台设备关掉的类别，调度器记为 `suppressed`（`WEB_PUSH_KIND_OFF`），之后再打开也不补发。推送地址必须是 https 网址、最长 2048 个字符。重复提交同一幂等键返回同一结果。
+- `push.subscription.set`（命令）：`action` 为 `subscribe` 时带 `endpoint`、`keys.p256dh`、`keys.auth`、`locale`、`deviceLabel`，`subscriptionId` 为空；为 `unsubscribe` 时只带 `subscriptionId`，其余为空，这样在一台设备上也能移除另一台。设备 id 是 `web-push-` 加推送地址 SHA-256 十六进制的前 24 位，页面用同样的算法认出“这台设备”。要收哪几类（`reminder`、`approval`、`run`）不属于某台设备，是整个账号一份，存在 `web_push_account_kinds`（迁移 0071，默认三类全开；迁移时某一类在任何一台设备上是关的就记为关），由 `push.kind.set` 修改，任何一台设备改了所有设备立即一致。账号关掉的类别，调度器记为 `suppressed`（`WEB_PUSH_KIND_OFF`），之后再打开也不补发。通知文字的语言取账号的语言偏好（`owner_preferences.locale`），没设置时才用订阅时存的 `locale`。推送地址必须是 https 网址、最长 2048 个字符。重复提交同一幂等键返回同一结果。
+- `push.kind.set`（命令）：`kinds`，账号要收的类别，整组替换。
 - `push.test`（命令）：`subscriptionId`。立即给这台设备发一条“通知已开启 / Notifications are on / 通知がオンになりました”，不经过“在看就不推”，结果同步返回（成功或失败原因）。
-- `push.status.read`（查询）→ `push.status.snapshot`：`available`（服务器是否配置了推送）、`publicKey`（base64url，页面订阅时要用）、`subscriptions`（每台设备的 id、名称、语言、要收的类别、状态、失败原因、开通时间、最近送达时间；不返回密钥和推送地址全文，推送地址只返回主机名）、`generatedAt`。
+- `push.status.read`（查询）→ `push.status.snapshot`：`available`（服务器是否配置了推送）、`publicKey`（base64url，页面订阅时要用）、`kinds`（账号要收的类别）、`subscriptions`（每台设备的 id、名称、语言、状态、失败原因、开通时间、最近送达时间；不返回密钥和推送地址全文，推送地址只返回主机名）、`generatedAt`。
 - `presence.heartbeat`（命令）：`clientId`、`visible`。只更新内存，不写数据库、不进审计。
 
 [↑ 返回阅读导航](#阅读导航)
@@ -204,7 +205,7 @@ date: "2026-10-26"
 按[原型](https://claude.ai/artifact/E1BP6KR7gqYrXkgEcxqghv)做在 `apps/control-center/src/components/notification-settings.tsx`，浏览器一侧的订阅和在看信号在 `apps/control-center/src/web-push.ts`：
 
 - 设置里新增“通知”一节。iPhone Safari 标签页里打开时，只显示“先加到主屏幕”三步说明，不显示开关。
-- 三个类别各一个开关，默认全开；已开通的设备改开关时重新提交一次订阅，不发测试通知。
+- 三个类别各一个开关，默认全开；开关是账号级的，任何一台设备改了用 `push.kind.set` 只改那一类，所有设备一致，不发测试通知；设置页重新可见时重新读取。
 - 点“在这台设备开启通知”：请求通知权限 → 注册 `sw.js` → 用 `publicKey` 订阅 → 发 `push.subscription.set` → 发一条测试通知。权限被拒时说明去哪里重新打开。
 - 列出已开通的设备，能单台关闭或移除；`paused` 的设备显示原因。
 - `index.html` 加 manifest、`apple-touch-icon` 和主屏应用的 meta。
