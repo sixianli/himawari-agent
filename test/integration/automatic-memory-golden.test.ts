@@ -525,6 +525,10 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       expect(
         ledger.some((entry) => entry.subjectRef?.startsWith("generation-machine-secret")),
       ).toBe(false);
+      for (const entry of ledger.filter((item) => !item.reasonCode.startsWith("approval_r"))) {
+        expect(entry.confidencePermille).toBeGreaterThanOrEqual(0);
+        expect(typeof entry.inferred).toBe("boolean");
+      }
       expect(JSON.stringify(ledger)).not.toContain("090-1234-5678");
       expect(JSON.stringify(ledger)).not.toContain("owner@example.test");
 
