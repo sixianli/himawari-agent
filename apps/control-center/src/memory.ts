@@ -1,7 +1,7 @@
 import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
-import type { ImportCandidate, MemoryCategory } from "./memory-import.js";
+import { type ImportCandidate, type MemoryCategory, toOwnerThirdPerson } from "./memory-import.js";
 import { commandMessage, queryMessage } from "./messages.js";
 
 export type MemoryOverview = Extract<
@@ -131,7 +131,7 @@ export function useMemory(input: {
         memoryId: item.memoryId,
         action: "correct",
         expectedRevision: item.revision,
-        contentRef: await client.protectText(text, item.dataClassification),
+        contentRef: await client.protectText(toOwnerThirdPerson(text), item.dataClassification),
       })),
     remove: (item) => mutate(item, "delete"),
     restore: (item) => mutate(item, "restore"),
@@ -144,7 +144,10 @@ export function useMemory(input: {
       send("memory.reminder.respond", () => ({ reminderId: item.reminderId, action })),
     create: (text, category, sensitive, pinned) =>
       send("memory.create", async () => ({
-        contentRef: await client.protectText(text, sensitive ? "sensitive" : "private"),
+        contentRef: await client.protectText(
+          toOwnerThirdPerson(text),
+          sensitive ? "sensitive" : "private",
+        ),
         category,
         subCategory: null,
         pinned: pinned && !sensitive,
@@ -159,7 +162,7 @@ export function useMemory(input: {
         items: await Promise.all(
           items.map(async (item) => ({
             contentRef: await client.protectText(
-              item.text,
+              toOwnerThirdPerson(item.text),
               item.sensitive ? "sensitive" : "private",
             ),
             category: item.category,

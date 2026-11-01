@@ -289,6 +289,26 @@ export class MemoryConsolidationService {
           neighbours.push(value);
           if (neighbours.length >= MAXIMUM_NEIGHBOURS) break;
         }
+        const subCategory = memory.attributes?.subCategory ?? null;
+        const category = memory.attributes?.category ?? null;
+        if (subCategory && category && neighbours.length < MAXIMUM_NEIGHBOURS) {
+          const sameTopic = reviewable
+            .filter(
+              (other) =>
+                other.id !== memory.id &&
+                other.attributes?.category === category &&
+                other.attributes?.subCategory === subCategory &&
+                !paired.has([memory.id, other.id].sort().join("\n")),
+            )
+            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+          for (const other of sameTopic) {
+            if (neighbours.length >= MAXIMUM_NEIGHBOURS) break;
+            const value = await reviewed(other);
+            if (!value) continue;
+            paired.add([memory.id, other.id].sort().join("\n"));
+            neighbours.push(value);
+          }
+        }
         if (neighbours.length > 0) {
           const label = `g${groups.size + 1}`;
           groups.set(label, { label, fresh: current, neighbours });

@@ -636,7 +636,7 @@ export const messages = {
   "memory.reminderDismiss": "不再提醒",
   "memory.reminderSnooze": "一小时后再提醒",
   "memory.cat":
-    "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
+    "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际关系} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
   "memory.page.summary": "记住了 {live} 条关于你的事 · 本周新增 {week} 条 · 已归档 {archived} 条",
   "memory.page.auto": "从对话中自动记忆",
   "memory.page.autoState": "{paused, select, true {已暂停} other {开}}",
