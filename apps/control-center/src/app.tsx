@@ -22,6 +22,7 @@ import {
   MemoryTurnNote,
   OPEN_MEMORY_PAGE,
 } from "./components/memory-panel.js";
+import { MuseDataSettings } from "./components/muse-reference.js";
 import { NotificationSettings } from "./components/notification-settings.js";
 import {
   ProactiveAppsSettings,
@@ -43,6 +44,7 @@ import {
   useControlCenterIntl,
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
+import { useMuse } from "./muse.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
 import {
   OPEN_REMINDERS_PAGE,
@@ -357,6 +359,12 @@ function LocalizedControlCenterApp({
     connected: connection !== "offline",
     refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
   });
+  const muse = useMuse({
+    client,
+    configuration,
+    connected: connection !== "offline",
+    refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
+  });
   const ownerPreferences = useOwnerPreferenceSync({
     client,
     configuration,
@@ -398,6 +406,7 @@ function LocalizedControlCenterApp({
                 <RemindersPage
                   memory={memory}
                   proactive={proactive}
+                  muse={muse}
                   focus={reminderFocus}
                   locale={locale}
                   message={message}
@@ -498,6 +507,7 @@ function LocalizedControlCenterApp({
         <>
           {threadModel.settingsData}
           {proactive ? <ProactiveDataSettings proactive={proactive} message={message} /> : null}
+          {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
         </>
       }
       settingsNotifications={

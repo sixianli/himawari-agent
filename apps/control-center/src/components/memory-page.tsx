@@ -19,9 +19,11 @@ import {
   memoryHeads,
   stanceChart,
 } from "../memory-history.js";
+import type { MuseModel } from "../muse.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
+import { MuseReference } from "./muse-reference.js";
 import { ActionButton, EmptyState } from "./primitives.js";
 import {
   clock,
@@ -639,6 +641,7 @@ function ConfirmSection({ memory, message }: { memory: MemoryModel; message: Mes
 export function RemindersPage({
   memory,
   proactive = null,
+  muse = null,
   focus = null,
   locale,
   message,
@@ -647,6 +650,7 @@ export function RemindersPage({
 }: {
   memory: MemoryModel | null;
   proactive?: ProactiveModel | null;
+  muse?: MuseModel | null;
   focus?: string | null;
   locale?: string | undefined;
   message: Message;
@@ -855,6 +859,7 @@ export function RemindersPage({
             </EmptyState>
           ) : null}
           {proactive ? <ProactiveAudit proactive={proactive} message={message} /> : null}
+          {muse ? <MuseReference muse={muse} message={message} locale={locale} /> : null}
           {overview.reminders.length || overview.upcoming.length || mailCount ? (
             <p className="settings-note reminders-notify">{notifyNote}</p>
           ) : null}

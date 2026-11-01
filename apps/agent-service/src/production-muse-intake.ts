@@ -59,7 +59,7 @@ const SCHEDULED_KEYS = [
   "delivered_text",
 ];
 const FIELD_KEYS = ["value", "source", "provenance", "note"];
-const KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,149}$/u;
+const KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const CODE_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/u;
 const TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/u;
 
@@ -212,7 +212,7 @@ function anyInvalid(values: readonly unknown[]): boolean {
 }
 
 function parseProactive(raw: Json, reader: ItemReader): MuseItemDraft | null {
-  const submissionId = text(reader, "submission_id", "natural_key", KEY_PATTERN, 150);
+  const submissionId = text(reader, "submission_id", "natural_key", KEY_PATTERN, 128);
   const title = text(reader, "item_title", "title", null, MUSE_INTAKE_MAX_TITLE);
   const state = choice(reader, "queue_state", "queue_state", ["delivered", "suppressed"] as const);
   const reasonCode = text(reader, "reason_code", "reason_code", CODE_PATTERN, 64);
@@ -288,7 +288,7 @@ function parseProactive(raw: Json, reader: ItemReader): MuseItemDraft | null {
 }
 
 function parseScheduled(reader: ItemReader): MuseItemDraft | null {
-  const runId = text(reader, "run_id", "natural_key", KEY_PATTERN, 150);
+  const runId = text(reader, "run_id", "natural_key", KEY_PATTERN, 128);
   const jobId = text(reader, "job_id", "title", null, MUSE_INTAKE_MAX_TITLE);
   const title = text(reader, "item_title", "title", null, MUSE_INTAKE_MAX_TITLE);
   const trigger = text(reader, "trigger_reason", "reason_code", CODE_PATTERN, 64);

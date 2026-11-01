@@ -516,3 +516,105 @@
 .settings-content .proactive-app > .proactive-app-name {
   flex: 1 1 0;
 }
+
+.muse-reference {
+  margin-top: 22px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.muse-status {
+  margin: 2px 0 6px;
+  color: var(--text-muted);
+}
+.muse-status[data-state="ok"] {
+  color: var(--text);
+}
+.muse-status[data-state="stale"] {
+  color: var(--warning);
+}
+.muse-status[data-state="down"] {
+  color: var(--danger);
+  font-weight: 600;
+}
+.muse-summary {
+  margin-bottom: 6px;
+}
+.muse-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 2px 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.muse-when {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.muse-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.muse-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.muse-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.muse-text {
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.muse-text[data-muted] {
+  color: var(--text-muted);
+}
+.muse-judges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 2px;
+}
+.muse-judge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.muse-judge-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.muse-judge button {
+  min-height: 28px;
+  padding: 2px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.muse-judge button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+.muse-judge button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+@media (max-width: 560px) {
+  .muse-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

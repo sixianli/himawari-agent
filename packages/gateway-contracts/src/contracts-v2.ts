@@ -36,6 +36,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.decision.rate",
   "proactive.audit.respond",
   "proactive.source.manage",
+  "muse.overview.read",
+  "muse.overview.snapshot",
+  "muse.item.rate",
+  "muse.intake.set",
+  "muse.data.clear",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -521,6 +526,55 @@ const proactiveSourceManageCommandSchema = object({
     source: enumeration(["gmail"]),
     action: enumeration(["disconnect", "clear_records"]),
   }),
+});
+const museOverviewQuerySchema = object({
+  ...envelope("query", "muse.overview.read"),
+  payload: object({}),
+});
+const museItemKindSchema = enumeration(["proactive", "scheduled"]);
+const museOverviewSnapshotSchema = object({
+  ...envelope("snapshot", "muse.overview.snapshot"),
+  payload: object({
+    channel: object({
+      state: enumeration(["never", "ok", "stale", "down", "paused"]),
+      lastBatchAt: nullable(timestamp),
+      gapCount: integer(0),
+    }),
+    receivedWeek: integer(0),
+    suppressedWeek: integer(0),
+    pending: integer(0),
+    delay: nullable(object({ medianMinutes: integer(0), samples: integer(10) })),
+    items: array(
+      object({
+        kind: museItemKindSchema,
+        naturalKey: machineString,
+        occurredAt: timestamp,
+        title: nullable(proactiveTextSchema(300)),
+        text: nullable(proactiveTextSchema(500)),
+        withheld: booleanValue,
+        timingOk: nullable(booleanValue),
+        contentOk: nullable(booleanValue),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const museItemRateCommandSchema = object({
+  ...commandEnvelope("muse.item.rate"),
+  payload: object({
+    kind: museItemKindSchema,
+    naturalKey: machineString,
+    timingOk: nullable(booleanValue),
+    contentOk: nullable(booleanValue),
+  }),
+});
+const museIntakeSetCommandSchema = object({
+  ...commandEnvelope("muse.intake.set"),
+  payload: object({ paused: booleanValue }),
+});
+const museDataClearCommandSchema = object({
+  ...commandEnvelope("muse.data.clear"),
+  payload: object({}),
 });
 
 export const MEMORY_SENSITIVE_TOPICS = [
@@ -1899,6 +1953,11 @@ const schemasByType = {
   "proactive.decision.rate": proactiveDecisionRateCommandSchema,
   "proactive.audit.respond": proactiveAuditRespondCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
+  "muse.overview.read": museOverviewQuerySchema,
+  "muse.overview.snapshot": museOverviewSnapshotSchema,
+  "muse.item.rate": museItemRateCommandSchema,
+  "muse.intake.set": museIntakeSetCommandSchema,
+  "muse.data.clear": museDataClearCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
