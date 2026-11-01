@@ -569,10 +569,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 71,
+    name: "web_push_account_kinds",
+    changeSet: "web-push-account-kinds",
+    phase: "expand" as const,
+    file: "0071_web_push_account_kinds.sql",
+  },
+  {
+    sequence: 72,
     name: "thread_artifact_deleted_at",
     changeSet: "thread-artifact-deleted-at",
     phase: "expand" as const,
-    file: "0071_thread_artifact_deleted_at.sql",
+    file: "0072_thread_artifact_deleted_at.sql",
   },
 ] as const;
 
