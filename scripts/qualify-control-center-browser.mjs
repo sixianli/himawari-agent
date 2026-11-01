@@ -521,8 +521,8 @@ export async function qualifyBrowser({
       }),
     );
     await page.getByRole("button", { name: "保存", exact: true }).click();
-    await page.getByText("其他客户端已更新此对话", { exact: true }).waitFor();
-    await page.getByRole("button", { name: "在最新修订上重新应用", exact: true }).click();
+    await page.getByText("这个对话刚在别处改过", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "按最新内容再操作一次", exact: true }).click();
     await waitForAccepted(page);
     await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
 

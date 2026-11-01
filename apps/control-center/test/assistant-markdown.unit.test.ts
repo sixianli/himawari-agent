@@ -57,3 +57,16 @@ describe("disclosed assistant Markdown", () => {
     expect(render('```sh\necho "早上好"\n```')).toContain("</code></pre>");
   });
 });
+
+describe("Chinese punctuation beside bold markers", () => {
+  it("bolds text whose markers touch Chinese punctuation", () => {
+    const result = render("特朗普告的是**《华尔街日报》和默多克本人**——因为属新闻集团");
+    expect(result).toContain("<strong>《华尔街日报》和默多克本人</strong>");
+    expect(result).not.toContain("**");
+  });
+  it("leaves unpaired and spaced asterisks alone", () => {
+    const result = render("2 ** 3 ** 4，以及**未闭合《书名》");
+    expect(result).not.toContain("<strong>");
+    expect(result).toContain("2 ** 3 ** 4");
+  });
+});
