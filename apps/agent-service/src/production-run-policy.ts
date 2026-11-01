@@ -15,6 +15,7 @@ import {
   type RunPayloadArtifactPort,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import type { SandboxCommandInventory } from "./sandbox-command-inventory.js";
 
 export function createProductionRunPolicy(options: {
   readonly configuration: ProductConfiguration;
@@ -24,6 +25,7 @@ export function createProductionRunPolicy(options: {
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
   readonly workspaceRoot?: () => Promise<string | null>;
+  readonly sandboxCommands?: () => Promise<SandboxCommandInventory>;
 }): (source: RunExecutionSource) => Promise<RunExecutionPolicy> {
   const { configuration } = options;
   const policy = configuration.runPolicy;
@@ -55,6 +57,9 @@ export function createProductionRunPolicy(options: {
       coding: policy.coding !== undefined,
       workspaceRoot: policy.coding && options.workspaceRoot ? await options.workspaceRoot() : null,
       documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
+      ...(policy.coding && options.sandboxCommands
+        ? { sandboxCommands: await options.sandboxCommands() }
+        : {}),
     });
     const identity = {
       runId: source.runId,
@@ -138,12 +143,17 @@ export function runCapabilityNotice(input: {
   readonly coding: boolean;
   readonly workspaceRoot: string | null;
   readonly documentSkillDirectory?: string;
+  readonly sandboxCommands?: SandboxCommandInventory;
 }): string {
   const lines = ["本轮能力边界："];
   if (input.coding) {
     lines.push(
       "- 文件和命令工具在隔离沙箱里执行。沙箱没有外网，curl、wget、pip、npm install、git clone 等联网操作一定失败，不要尝试。",
     );
+    if (input.sandboxCommands)
+      lines.push(
+        `- 沙箱里能直接用的常用命令：${input.sandboxCommands.available.join("、")}。沙箱里没有：${input.sandboxCommands.unavailable.join("、")}。用到没有的命令会得到“command not found”（退出码 127），不要重试，直接换别的办法；上面没列到的命令，用之前在一条命令里用 command -v 一次问清，不要一个个试。`,
+      );
     if (input.workspaceRoot)
       lines.push(
         `- 工作目录是 ${input.workspaceRoot}。读写文件用相对路径或这个目录下的路径，目录之外的路径会被拒绝。`,

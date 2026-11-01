@@ -332,8 +332,8 @@ const base = {
     },
   ],
   readOnlyToolchainPaths: [
-    ...new Set(
-      await Promise.all(
+    ...new Set([
+      ...(await Promise.all(
         [
           runtime,
           "/usr/bin",
@@ -347,9 +347,21 @@ const base = {
           "/etc/hosts",
           "/etc/fonts",
           "/var/cache/fontconfig",
+          "/etc/alternatives",
+          "/usr/sbin",
         ].map((p) => realpath(p)),
-      ),
-    ),
+      )),
+      ...(
+        await Promise.all(
+          ["/etc/mime.types", "/etc/magic", "/etc/locale.alias", "/etc/ld.so.cache"].map((p) =>
+            realpath(p).catch((error) => {
+              if (error?.code === "ENOENT") return null;
+              throw error;
+            }),
+          ),
+        )
+      ).filter(Boolean),
+    ]),
   ],
   protectedPaths: [
     root + "/state",
