@@ -92,6 +92,7 @@ import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
+import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -918,7 +919,25 @@ export async function runAgentService(
       parentBindings: parentBindings.reader,
       trustedPeerBinding: () => peerBinding,
     });
+    const silenceWatch = new CommandSilenceWatch({
+      onSilent: (detail) =>
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "sandbox.command.silent",
+          runId: detail.runId,
+          silentMs: detail.silentMs,
+        }),
+      onResumed: (detail) =>
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "sandbox.command.silence_ended",
+          runId: detail.runId,
+          silentMs: detail.silentMs,
+        }),
+    });
+    setInterval(() => silenceWatch.check(Date.now()), COMMAND_SILENCE_CHECK_INTERVAL_MS).unref();
     const payloadHandler = new ProductionPayloadBrokerHandler({
+      silenceWatch,
       onSandboxExecutionRejected: (detail) =>
         writeServiceDiagnostic(errorOutput, {
           component: "agent-service",

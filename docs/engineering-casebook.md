@@ -5039,23 +5039,27 @@ B 与 Anthropic 的做法同类，省约一半调用费，但这次数据里把�
 - ✅ Temporal（https://docs.temporal.io/encyclopedia/detecting-activity-failures ，2026-10-31 打开）：“The Temporal Server doesn't detect failures when a Worker loses communication with the Server or crashes.”；“For long-running Activities, we recommend using a relatively short Heartbeat Timeout and a frequent Heartbeat.”
 - ✅ Kubernetes 存活探针（https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/ ，2026-10-31 打开）：探针失败时 “the kubelet kills the container and restarts it.”
 
+**我们的方案**（[ADR 0143](adr/0143-log-commands-silent-for-30-seconds-without-stopping-them.md)）
+
+Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记录不杀”：主服务记下每条运行中命令最后一次收到执行进程消息的时间，超过 30 秒只写日志 `sandbox.command.silent`，恢复时写 `sandbox.command.silence_ended`，不停止命令。检查前先确认主服务自己的循环没有滞后（两次检查间隔超过 7 秒就重新计时）。测试：每 250 毫秒轮询、每 20 秒慢轮询、已结束的命令、主服务滞后都不报；停止轮询的运行中命令只报一次。
+
 **对比与取舍**
 
-业界的心跳是“发现后重启或重跑”；我们不能重跑，发现后只能“停止并释放，结果记为未知”。这降低了心跳的价值：用户少等的是 30 分钟里的等待，拿不回结果。再加上崩溃已被看守脚本盖住，卡住的发生频率没有证据，所以在改 Agent 循环核心之前，先查数据。
+业界的心跳是“发现后重启或重跑”；我们不能重跑，发现后只能“停止并释放，结果记为未知”。这降低了心跳的价值：用户少等的是 30 分钟里的等待，拿不回结果。再加上崩溃已被看守脚本盖住，卡住的发生频率没有证据，所以在改 Agent 循环核心之前，先查数据；数据没有显示需要，最终只加了“只记录不停止”的日志。
 
 **结果数据**
 
 - 崩溃的兜底：读代码确认（`pair-supervisor.mjs`），未在生产实测。
 - 生产只读取证（2026-11-01，`prod-hang-evidence.md`）：生产库 174 条沙箱命令里，没有一条耗时 ≥29 分钟；日志全部可用历史（最早 10-08）里，`poll_retry`、`cancelled_by_poll_error`、`exit.unknown`、`execution.lost` 都是 0 条；9 条“结果未确认”记录最长约 1 分钟。这不能证明从没卡住过：卡住后被重启打断的命令耗时会被截短（推断）。
-- 心跳的代码和测试：未实现。现有数据既不能证明需要，也不能证明不需要。
+- 失联日志：已实现并有测试（ADR 0143）；上线后的 `sandbox.command.silent` 次数：未测量。真正停止命令的检测：未做，等日志证明需要。
 
 **相关 ADR/PR**
 
-[案例 77](#case-command-disconnect)、[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)。
+[案例 77](#case-command-disconnect)、[ADR 0143](adr/0143-log-commands-silent-for-30-seconds-without-stopping-them.md)、[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)。
 
 **面试 30 秒版**
 
-“上一个案例我发现执行进程卡住没人发现，业界的解法是心跳，老板也选了心跳。动手前我先核对方案里一个没验证的前提：进程崩溃时有没有人发现。读代码发现有一个看守脚本，任何一个进程退出就整体重启，所以心跳只补‘活着但卡住’，而且我们不能重跑命令，发现后也只能标未知。我没有直接改核心循环，而是停下来告诉老板收益比方案写的小，先去查生产数据再决定。”
+“上一个案例我发现执行进程卡住没人发现，业界的解法是心跳，老板也选了心跳。动手前我先核对方案里一个没验证的前提：进程崩溃时有没有人发现。读代码发现有一个看守脚本，任何一个进程退出就整体重启，所以心跳只补‘活着但卡住’，而且我们不能重跑命令，发现后也只能标未知。我没有直接改核心循环，而是告诉老板收益比方案写的小，先查生产数据：174 条命令没有一条卡满 30 分钟。最后只加了‘超过 30 秒没消息就写日志、不停命令’，并专门测了‘健康但慢’和‘主服务自己卡顿’不会误报，等日志证明需要再决定要不要真停。”
 
 [返回目录](#contents)
 
