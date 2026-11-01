@@ -196,8 +196,16 @@ export class ProtectedRuntimeVerifier {
     digest: RuntimeDigest,
     artifacts: readonly RuntimeArtifact[] = [],
   ): Promise<void> {
-    const { complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
-    await complete();
+    const run = async () => {
+      const { complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
+      await complete();
+    };
+    try {
+      await run();
+    } catch (error) {
+      if (!isSupersededAuditError(error)) throw error;
+      await run();
+    }
   }
 
   async begin(
@@ -208,19 +216,24 @@ export class ProtectedRuntimeVerifier {
     onSettled?: (outcome: {
       readonly ok: boolean;
       readonly transient: boolean;
+      readonly superseded?: boolean;
       readonly durationMs: number;
     }) => void,
     onRetry?: () => void,
+    onStarted?: () => void,
   ): Promise<void> {
     const startedAt = Date.now();
     const { key, complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
-    const settle = (ok: boolean, transient: boolean) => {
+    try {
+      onStarted?.();
+    } catch {}
+    const settle = (ok: boolean, transient: boolean, superseded = false) => {
       try {
-        onSettled?.({ ok, transient, durationMs: Date.now() - startedAt });
+        onSettled?.({ ok, transient, superseded, durationMs: Date.now() - startedAt });
       } catch {}
     };
     const failed = (error: unknown) => {
-      if (isSupersededAuditError(error)) return;
+      if (isSupersededAuditError(error)) return settle(false, false, true);
       const transient = isTransientAuditError(error);
       if (!transient) this.#refused.set(key, error);
       settle(false, transient);
@@ -423,13 +436,6 @@ export async function verifyProtectedRuntime(
           pid: process.pid,
         }),
       );
-    console.error(
-      JSON.stringify({
-        component: "platform-node",
-        event: "sandbox_runtime.content_audit_started",
-        pid: process.pid,
-      }),
-    );
     await verifier.begin(
       runtimeRoot,
       runtimeDigest,
@@ -442,14 +448,24 @@ export async function verifyProtectedRuntime(
             pid: process.pid,
             event: outcome.ok
               ? "sandbox_runtime.content_audit_completed"
-              : outcome.transient
-                ? "sandbox_runtime.content_audit_retryable"
-                : "sandbox_runtime.content_audit_failed",
+              : outcome.superseded
+                ? "sandbox_runtime.content_audit_superseded"
+                : outcome.transient
+                  ? "sandbox_runtime.content_audit_retryable"
+                  : "sandbox_runtime.content_audit_failed",
             durationMs: outcome.durationMs,
           }),
         );
       },
       onRetry,
+      () =>
+        console.error(
+          JSON.stringify({
+            component: "platform-node",
+            event: "sandbox_runtime.content_audit_started",
+            pid: process.pid,
+          }),
+        ),
     );
     return true;
   }

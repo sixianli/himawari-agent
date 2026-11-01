@@ -44,12 +44,12 @@ def directory(filename, uid, mode=None):
 startup_phase_baseline_ms = __PKT_STARTUP_PHASE_BASELINE_MS__
 
 def content_audits_completed(messages):
-    counts = {'sandbox_runtime.content_audit_started': {}, 'sandbox_runtime.content_audit_completed': {}}
+    counts = {'sandbox_runtime.content_audit_started': {}, 'sandbox_runtime.content_audit_completed': {}, 'sandbox_runtime.content_audit_superseded': {}}
     for value in messages:
         if isinstance(value, dict) and value.get('event') in counts and isinstance(value.get('pid'), int) and not isinstance(value.get('pid'), bool):
             counts[value['event']][value['pid']] = counts[value['event']].get(value['pid'], 0) + 1
-    started, completed = counts['sandbox_runtime.content_audit_started'], counts['sandbox_runtime.content_audit_completed']
-    return len(started) >= 2 and all(completed.get(pid, 0) >= number for pid, number in started.items())
+    started, completed, superseded = counts['sandbox_runtime.content_audit_started'], counts['sandbox_runtime.content_audit_completed'], counts['sandbox_runtime.content_audit_superseded']
+    return len(started) >= 2 and all(completed.get(pid, 0) + superseded.get(pid, 0) >= number for pid, number in started.items())
 
 def startup_phases(journal, invocation, baseline):
     timed = []
@@ -300,7 +300,7 @@ try:
         if audits_completed and all(any(value.get('component') == component and value.get('event') == 'service.ready' for value in messages if isinstance(value, dict)) for component in ['agent-service', 'execution-worker']):
             break
         if time.monotonic() >= deadline:
-            raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_BOTH_READY_DEADLINE_EXCEEDED' if audits_completed >= 2 else '__PKT_LABEL_UPPER___SWITCH_CONTENT_AUDITS_NOT_COMPLETED')
+            raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_CONTENT_AUDITS_NOT_COMPLETED' if not audits_completed else '__PKT_LABEL_UPPER___SWITCH_BOTH_READY_DEADLINE_EXCEEDED')
         time.sleep(0.2)
     orchestration['invocationId'] = invocation
     orchestration['journal'] = retain(evidence / 's7-invocation-journal.jsonl', journal)

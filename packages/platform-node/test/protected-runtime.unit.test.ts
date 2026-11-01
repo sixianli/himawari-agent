@@ -435,8 +435,35 @@ it("aborts a superseded background audit without counting it as a failure or ret
   expect(received?.aborted).toBe(true);
   expect(hung).toHaveBeenCalledOnce();
   expect(retrying).not.toHaveBeenCalled();
-  expect(settled).not.toHaveBeenCalled();
+  expect(settled).toHaveBeenCalledOnce();
+  expect(settled).toHaveBeenCalledWith(
+    expect.objectContaining({ ok: false, transient: false, superseded: true }),
+  );
   await verifier.verify(root, digest, async () => digest);
+});
+
+it("re-audits once for a foreground call whose audit was superseded instead of failing it", async () => {
+  const verifier = verifierFor();
+  const hung = (_root: string, signal?: AbortSignal) =>
+    new Promise<string>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new Error("SANDBOX_HOST_DIGEST_ABORTED")));
+    });
+  const waiting = verifier.verify(root, digest, hung);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  node(manifestPath).ino++;
+  await verifier.verify(root, digest, async () => digest);
+  await expect(waiting).resolves.toBeUndefined();
+});
+
+it("reports the start of a background audit only after the cheap checks passed", async () => {
+  const verifier = verifierFor();
+  const started = vi.fn();
+  await expect(
+    verifier.begin(root, "d".repeat(64), async () => digest, [], undefined, undefined, started),
+  ).rejects.toThrow("SANDBOX_RUNTIME_PROTECTION_INVALID");
+  expect(started).not.toHaveBeenCalled();
+  await verifier.begin(root, digest, async () => digest, [], undefined, undefined, started);
+  expect(started).toHaveBeenCalledOnce();
 });
 
 it("does not retain a failed content audit as trusted", async () => {

@@ -119,6 +119,19 @@ function loadFingerprintCache(
   }
 }
 
+function sweepStaleTemporaryFiles(filename: string): void {
+  const directoryName = path.dirname(filename);
+  const prefix = `${path.basename(filename)}.`;
+  try {
+    for (const entry of readdirSync(directoryName)) {
+      if (!entry.startsWith(prefix) || !entry.endsWith(".tmp")) continue;
+      const candidate = path.join(directoryName, entry);
+      const info = lstatSync(candidate);
+      if (info.isFile() && Date.now() - info.mtimeMs > 60_000) unlinkSync(candidate);
+    }
+  } catch {}
+}
+
 function saveFingerprintCache(
   filename: string,
   root: string,
@@ -127,6 +140,7 @@ function saveFingerprintCache(
   const temporary = `${filename}.${process.pid}.${threadId}.${randomBytes(6).toString("hex")}.tmp`;
   let descriptor: number | undefined;
   try {
+    sweepStaleTemporaryFiles(filename);
     const body = Buffer.from(
       JSON.stringify({ version: 1, root, files: Object.fromEntries(files) }),
     );

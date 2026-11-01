@@ -301,6 +301,26 @@ describe("installed runtime byte verification worker", () => {
       await run();
       expect(readdirSync(path.dirname(cacheFile))).toEqual(["fingerprints.json"]);
     });
+    it("removes temporary files left behind by an interrupted save, but not fresh ones", async () => {
+      put("a.txt", "alpha");
+      settle();
+      await run();
+      const directory = path.dirname(cacheFile);
+      const stale = path.join(directory, "fingerprints.json.1.1.dead.tmp");
+      const fresh = path.join(directory, "fingerprints.json.2.1.live.tmp");
+      writeFileSync(stale, "x");
+      writeFileSync(fresh, "x");
+      const old = new Date(Date.now() - 600_000);
+      utimesSync(stale, old, old);
+      put("b.txt", "bravo");
+      settle();
+      utimesSync(fresh, new Date(Date.now()), new Date(Date.now()));
+      await run();
+      expect(readdirSync(directory).sort()).toEqual([
+        "fingerprints.json",
+        "fingerprints.json.2.1.live.tmp",
+      ]);
+    });
     it("rehashes a file whose permissions changed", async () => {
       put("a.txt", "alpha");
       settle();

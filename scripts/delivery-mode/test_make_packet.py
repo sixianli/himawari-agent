@@ -279,6 +279,8 @@ class StartupPhaseTest(RenderedPacket):
         self.assertFalse(gate([event('started', 11), event('started', 11), event('completed', 11), event('started', 12), event('completed', 12)]))
         self.assertTrue(gate([event('started', 11), event('started', 11), event('completed', 11), event('completed', 11), event('started', 12), event('completed', 12)]))
         self.assertFalse(gate([event('started', True), event('started', 12), event('completed', 12), event('completed', True)]))
+        self.assertTrue(gate([event('started', 11), event('superseded', 11), event('started', 12), event('completed', 12)]))
+        self.assertIn("'__PKT_LABEL_UPPER___SWITCH_CONTENT_AUDITS_NOT_COMPLETED' if not audits_completed".replace('__PKT_LABEL_UPPER__', 'TWELFTH'), (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text())
 
     def test_the_snapshot_script_never_uses_a_variable_before_it_is_set(self):
         snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
