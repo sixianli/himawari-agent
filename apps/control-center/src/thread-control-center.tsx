@@ -80,6 +80,7 @@ type ThreadIntent =
   | { readonly kind: "pin"; readonly pinOrder: number | null }
   | { readonly kind: "archive" }
   | { readonly kind: "restore" }
+  | { readonly kind: "trash" }
   | {
       readonly kind: "fork";
       readonly sourceTurnId: string;
@@ -108,7 +109,7 @@ export interface ThreadControlCenterOptions {
     id: MessageId,
     values?: Record<string, string | number | boolean | Date>,
   ) => string;
-  readonly navigate: (route: ControlCenterRouteState) => void;
+  readonly navigate: (route: ControlCenterRouteState, replace?: boolean) => void;
   readonly refreshSignal: number;
   readonly threadEventSignal?: number;
   readonly threadEvents?: { readonly current: (string | null)[] };
@@ -238,7 +239,7 @@ export function useThreadControlCenter(
     configuration,
     connection,
     message,
-    navigate,
+    navigate: navigateRoute,
     onUnauthorized,
     refreshSignal,
     threadEventSignal = 0,
@@ -258,7 +259,18 @@ export function useThreadControlCenter(
     return () => window.clearTimeout(timer);
   }, [connection]);
   const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
-  const [page, setPage] = useState<WorkPage>(null);
+  const navigate = useCallback(
+    (state: ControlCenterRouteState) => navigateRoute({ ...state, page: null, pageTab: null }),
+    [navigateRoute],
+  );
+  const page: WorkPage = route.page === "settings" ? null : route.page;
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const setPage = useCallback(
+    (next: WorkPage) =>
+      navigateRoute({ ...routeRef.current, page: next, pageTab: null, view: "content" }),
+    [navigateRoute],
+  );
   const library = page === "files";
   useEffect(() => {
     const open = () => setPage("memory");
@@ -269,7 +281,7 @@ export function useThreadControlCenter(
       window.removeEventListener(OPEN_MEMORY_PAGE, open);
       window.removeEventListener(OPEN_REMINDERS_PAGE, openReminders);
     };
-  }, []);
+  }, [setPage]);
   const [registered, setRegistered] = useState<readonly RegisteredFile[]>();
   const pendingTurn = useRef<string | null>(null);
   const [more, setMore] = useState<{
@@ -360,7 +372,6 @@ export function useThreadControlCenter(
     setLiveTexts({});
     setDetail(undefined);
     setPreview(null);
-    setPage(null);
     setRegistered(undefined);
     setMore((current) => ({ ...current, open: false, command: null }));
     setStoppingRunIds([]);
@@ -1036,6 +1047,7 @@ export function useThreadControlCenter(
           | "thread.pin"
           | "thread.archive"
           | "thread.restore"
+          | "thread.trash"
           | "thread.fork";
         switch (intent.kind) {
           case "submit": {
@@ -1099,6 +1111,7 @@ export function useThreadControlCenter(
             break;
           case "archive":
           case "restore":
+          case "trash":
             type = `thread.${intent.kind}`;
             payload = {
               threadId: thread.threadId,
@@ -1342,7 +1355,6 @@ export function useThreadControlCenter(
 
   const threadItems = collection?.payload.threads ?? [];
   const startNewThread = () => {
-    setPage(null);
     void createThread();
   };
   const renameThread = (thread: ThreadSummary) => {
@@ -1367,6 +1379,22 @@ export function useThreadControlCenter(
       undefined,
       thread,
     );
+  };
+  const [deleteTarget, setDeleteTarget] = useState<ThreadSummary | null>(null);
+  const requestDelete = (thread: ThreadSummary) => {
+    if (projectedPendingThreadIds.includes(thread.threadId)) {
+      setError(message("review.deletePending"));
+      return;
+    }
+    setDeleteTarget(thread);
+  };
+  const confirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleteTarget(null);
+    const result = await performIntent({ kind: "trash" }, undefined, target);
+    if (result?.kind === "result" && selectedIdRef.current === target.threadId)
+      navigate({ ...route, objectId: null, status: null, afterCursor: null, view: "content" });
   };
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
@@ -1430,10 +1458,8 @@ export function useThreadControlCenter(
       onRename={renameThread}
       onPin={pinThread}
       onArchive={archiveThread}
-      onNavigate={(state) => {
-        setPage(null);
-        navigate(state);
-      }}
+      onDelete={requestDelete}
+      onNavigate={navigate}
     />
   );
 
@@ -1604,7 +1630,7 @@ export function useThreadControlCenter(
       (item) => item.threadId === threadId,
     );
     if (!thread) return undefined;
-    return (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
+    return (thread.titleRef && contentByRef[thread.titleRef]) || undefined;
   };
   const openFile = (file: DeliveredFile) => {
     const title = detail ? threadTitle(detail.payload.thread.threadId) : undefined;
@@ -1635,7 +1661,6 @@ export function useThreadControlCenter(
             onOpen: () => {
               if (!threadId) return;
               pendingTurn.current = file.runId;
-              setPage(null);
               setPreview(null);
               if (threadId === selectedThreadId) {
                 if (flashTurn(file.runId)) pendingTurn.current = null;
@@ -1648,13 +1673,11 @@ export function useThreadControlCenter(
     setPreview(null);
     closeMore();
     setPage(next);
-    navigate({ ...route, view: "content" });
   };
   const openLibrary = () => {
     setPreview(null);
     closeMore();
     setPage("files");
-    navigate({ ...route, view: "content" });
   };
   useEffect(() => {
     setStoppingRunIds((current) => {
@@ -1741,6 +1764,17 @@ export function useThreadControlCenter(
               </>
             ),
             onSelect: () => archiveThread(openThread),
+          },
+          {
+            id: "delete",
+            danger: true,
+            label: (
+              <>
+                <SidebarIcon name="trash" />
+                {message("threads.delete")}
+              </>
+            ),
+            onSelect: () => requestDelete(openThread),
           },
         ]}
       />
@@ -1987,33 +2021,57 @@ export function useThreadControlCenter(
     if (result) setRenameTarget(null);
   };
   const details = (
-    <ModalDialog
-      open={renameTarget !== null}
-      title={message("threads.rename")}
-      closeLabel={message("common.close")}
-      onClose={() => setRenameTarget(null)}
-    >
-      <Field label={message("review.conversationName")}>
-        <input
-          data-autofocus
-          value={renameTitle}
-          onChange={(event) => setRenameTitle(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (renameChanged) void saveRename();
-            }
-          }}
+    <>
+      <ModalDialog
+        open={deleteTarget !== null}
+        title={message("threads.deleteTitle")}
+        closeLabel={message("common.close")}
+        onClose={() => setDeleteTarget(null)}
+      >
+        <p>
+          {message("threads.deleteBody", {
+            title: deleteTarget?.titleRef
+              ? (contentByRef[deleteTarget.titleRef] ?? message("chat.untitled"))
+              : message("chat.untitled"),
+          })}
+        </p>
+        <div className="edit-actions">
+          <ActionButton variant="secondary" onClick={() => setDeleteTarget(null)}>
+            {message("governed.cancel")}
+          </ActionButton>
+          <ActionButton variant="danger" data-autofocus onClick={() => void confirmDelete()}>
+            {message("threads.deleteConfirm")}
+          </ActionButton>
+        </div>
+      </ModalDialog>
+      <ModalDialog
+        open={renameTarget !== null}
+        title={message("threads.rename")}
+        closeLabel={message("common.close")}
+        onClose={() => setRenameTarget(null)}
+      >
+        <Field label={message("review.conversationName")}>
+          <input
+            data-autofocus
+            value={renameTitle}
+            onChange={(event) => setRenameTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                if (renameChanged) void saveRename();
+              }
+            }}
+          />
+        </Field>
+        <EditActions
+          changed={renameChanged}
+          saveLabel={message("review.save")}
+          cancelLabel={message("governed.cancel")}
+          onSave={() => void saveRename()}
+          onCancel={() => setRenameTarget(null)}
         />
-      </Field>
-      <EditActions
-        changed={renameChanged}
-        saveLabel={message("review.save")}
-        cancelLabel={message("governed.cancel")}
-        onSave={() => void saveRename()}
-        onCancel={() => setRenameTarget(null)}
-      />
-    </ModalDialog>
+      </ModalDialog>
+    </>
   );
 
   return Object.freeze({

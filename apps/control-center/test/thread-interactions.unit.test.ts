@@ -2332,6 +2332,25 @@ describe("thread control center interactions", () => {
       });
     },
   );
+  it("[UI-9] asks before deleting and sends nothing when the owner cancels", async () => {
+    await render();
+    await refresh();
+    await chooseAction("delete");
+    expect(document.body.textContent).toContain("threads.deleteTitle");
+    expect(mutate).not.toHaveBeenCalled();
+    await click("governed.cancel");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+  it("[UI-9] moves the conversation to the trash only after the owner confirms", async () => {
+    await render();
+    await refresh();
+    await chooseAction("delete");
+    await click("threads.deleteConfirm");
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      type: "thread.trash",
+      payload: { threadId: "thread-ui", expectedRevision: 2, reasonCode: "owner_requested" },
+    });
+  });
   it("preserves a conflict and reapplies an owner rename only against the displayed latest revision", async () => {
     await render();
     await refresh();
@@ -2406,7 +2425,7 @@ describe("thread control center interactions", () => {
       });
     },
   );
-  it("offers archive only and never queries deletion or checkpoint controls", async () => {
+  it("offers delete after archive and never queries deletion impact or checkpoint controls", async () => {
     await render();
     await refresh();
     const menu = container.querySelector<HTMLButtonElement>(".thread-row .action-menu > button");
@@ -2418,8 +2437,9 @@ describe("thread control center interactions", () => {
       messages["threads.rename"],
       messages["threads.pin"],
       messages["threads.archive"],
+      messages["threads.delete"],
     ]);
-    expect(labels).toHaveLength(3);
+    expect(labels).toHaveLength(4);
     expect(
       query.mock.calls.some(([request]) =>
         ["thread.checkpoint", "thread.deletion_impact"].includes(request.type),

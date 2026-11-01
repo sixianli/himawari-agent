@@ -15,7 +15,7 @@ import {
 } from "./browser-storage.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
-import { Banner } from "./components/index.js";
+import { ActionButton, Banner } from "./components/index.js";
 import {
   focusedMemoryIds,
   MemoryReminders,
@@ -88,6 +88,21 @@ const titleIds: Readonly<Record<SurfaceId, MessageId>> = {
   workers: "workers.title",
 };
 
+function PageNotFound({
+  message,
+  onHome,
+}: {
+  readonly message: (id: MessageId) => string;
+  readonly onHome: () => void;
+}) {
+  return (
+    <Banner title={message("surface.notFound.title")} tone="warning">
+      <p>{message("surface.notFound.description")}</p>
+      <ActionButton onClick={onHome}>{message("surface.notFound.action")}</ActionButton>
+    </Banner>
+  );
+}
+
 function surfaceInventory(surfaceId: SurfaceId): ControlCenterSurfaceInventoryEntry {
   const surface = CONTROL_CENTER_SURFACE_INVENTORY.find((candidate) => candidate.id === surfaceId);
   if (!surface) throw new Error("CONTROL_CENTER_SURFACE_INVALID");
@@ -153,6 +168,10 @@ function LocalizedControlCenterApp({
   const { message } = useControlCenterIntl();
   const [launch] = useState(() => readLaunchIntent(window.location, window.history));
   const { match, navigate } = useControlCenterRouter();
+  const goHome = useCallback(
+    () => navigate(routeForSurface("threads", { view: "content" })),
+    [navigate],
+  );
   const route =
     match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
   const surface = surfaceInventory(route.surfaceId);
@@ -426,7 +445,7 @@ function LocalizedControlCenterApp({
           ),
         }
       : {}),
-    active: route.surfaceId === "threads",
+    active: route.surfaceId === "threads" && match.kind === "matched",
     ownerName: preferences.name,
     modelChoice: preferences.modelRef
       ? { modelRef: preferences.modelRef, thinkingLevel: preferences.thinkingLevel ?? "" }
@@ -504,6 +523,7 @@ function LocalizedControlCenterApp({
     onUnauthorized: clearPrivateViewState,
   });
 
+  const threadsShown = route.surfaceId === "threads" && match.kind === "matched";
   if (!configuration && entry?.kind !== "built-in-login")
     return <BrowserEntryScreen entry={entry} onRetry={retryEntry} onVerifyEmail={verifyEmail} />;
 
@@ -569,9 +589,7 @@ function LocalizedControlCenterApp({
       builtInIdentity={identityMethod === "built-in" && Boolean(configuration)}
       healthDependenciesAvailable={configuration?.healthDependenciesAvailable ?? false}
       installedGatewayV2Operations={configuration?.installedGatewayV2Operations ?? []}
-      connection={
-        configuration ? (route.surfaceId === "threads" ? threadConnection : connection) : null
-      }
+      connection={configuration ? (threadsShown ? threadConnection : connection) : null}
       content={
         !configuration && entry?.kind === "built-in-login" ? (
           <AccountLogin onComplete={retryEntry} />
@@ -581,13 +599,13 @@ function LocalizedControlCenterApp({
             onSignedOut={clearPrivateViewState}
             onReauthenticated={() => setBootstrapRevision((value) => value + 1)}
           />
+        ) : configuration && match.kind === "not_found" ? (
+          <PageNotFound message={message} onHome={goHome} />
         ) : configuration && !surfaceInstalled ? (
-          <Banner title={message("surface.notInstalled.title")} tone="warning">
-            <p>{message("surface.notInstalled.description")}</p>
-          </Banner>
+          <PageNotFound message={message} onHome={goHome} />
         ) : route.surfaceId === "health-deployment" && client ? (
           <HealthControlCenter client={client} onUnauthorized={clearPrivateViewState} />
-        ) : route.surfaceId === "threads" ? (
+        ) : threadsShown ? (
           <>
             {memory ? <MemoryReminders memory={memory} message={message} /> : null}
             {threadModel.content}
@@ -595,30 +613,26 @@ function LocalizedControlCenterApp({
         ) : governanceSurface ? (
           governanceModel.content
         ) : (
-          <Banner title={message("surface.notInstalled.title")} tone="warning">
-            <p>{message("surface.notInstalled.description")}</p>
-          </Banner>
+          <PageNotFound message={message} onHome={goHome} />
         )
       }
       details={
         !configuration || !surfaceInstalled || route.surfaceId === "health-deployment"
           ? null
-          : route.surfaceId === "threads"
+          : threadsShown
             ? threadModel.details
             : governanceSurface
               ? governanceModel.details
               : null
       }
-      topbarStart={route.surfaceId === "threads" ? threadModel.start : null}
-      topbarActions={route.surfaceId === "threads" ? threadModel.actions : null}
+      topbarStart={threadsShown ? threadModel.start : null}
+      topbarActions={threadsShown ? threadModel.actions : null}
       list={governanceSurface ? governanceModel.list : threadModel.list}
       locale={locale}
       onLocaleChange={ownerPreferences.changeLocale}
       onNavigate={navigate}
       onPreferencesChange={ownerPreferences.changePreferences}
-      pageTitle={
-        route.surfaceId === "threads" ? threadModel.title : message(titleIds[route.surfaceId])
-      }
+      pageTitle={threadsShown ? threadModel.title : message(titleIds[route.surfaceId])}
       preferences={preferences}
       route={route}
     />

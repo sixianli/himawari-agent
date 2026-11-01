@@ -1,6 +1,6 @@
 import type { MarkedToken, Token } from "marked";
 import { Fragment, createElement as h, type ReactNode } from "react";
-import { markdown } from "./cjk-markdown.js";
+import { markdown, repairInlineTables } from "./cjk-markdown.js";
 
 function safeLink(value: string): string | undefined {
   try {
@@ -123,6 +123,6 @@ export function AssistantMarkdown({ text }: { readonly text: string }) {
   return h(
     "div",
     { className: "thread-message-content assistant-markdown" },
-    children(markdown.lexer(text)),
+    children(markdown.lexer(repairInlineTables(text))),
   );
 }
