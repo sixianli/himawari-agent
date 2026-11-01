@@ -4,7 +4,7 @@ export const MINIMUM_CACHEABLE_INPUT_TOKENS: number;
 export const MINIMUM_REPORTED_REQUESTS: number;
 export const GROUPINGS: readonly string[];
 
-export type CacheHitGrouping = "purpose" | "model" | "day" | "purpose-model";
+export type CacheHitGrouping = "purpose" | "model" | "day" | "purpose-model" | "turn";
 
 export interface CacheHitRow {
   readonly group: string;
