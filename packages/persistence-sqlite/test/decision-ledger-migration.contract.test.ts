@@ -173,6 +173,10 @@ describe("decision ledger migration 0069", () => {
       database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0)").run();
       database.prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0)").run();
       let counter = 0;
+      const nextCounter = () => {
+        counter += 1;
+        return counter;
+      };
       const insert = (
         kind: string,
         outcome: string,
@@ -187,7 +191,7 @@ describe("decision ledger migration 0069", () => {
               cost_micros, duration_ms, category, confidence_permille, inferred
             ) VALUES (?, 'o', 'a', ?, ?, '{}', ?, 'r', '{}', 0, 0, ?, ?, ?)`,
           )
-          .run(`row-${(counter += 1)}`, kind, T0, outcome, category, confidence, inferred);
+          .run(`row-${nextCounter()}`, kind, T0, outcome, category, confidence, inferred);
       expect(() => insert("memory_candidate", "kept", "preference", 700, 1)).not.toThrow();
       expect(() => insert("memory_candidate", "discarded", null, null, null)).not.toThrow();
       expect(() => insert("memory_candidate", "kept", "other", 0, 0)).not.toThrow();
@@ -235,6 +239,10 @@ describe("decision ledger migration 0069", () => {
         )
         .run(T0);
       let counter = 0;
+      const nextCounter = () => {
+        counter += 1;
+        return counter;
+      };
       const insert = (input: {
         owner?: string;
         agent?: string;
@@ -253,7 +261,7 @@ describe("decision ledger migration 0069", () => {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
-            `muse-${(counter += 1)}`,
+            `muse-${nextCounter()}`,
             input.owner ?? "o",
             input.agent ?? "a",
             T0,

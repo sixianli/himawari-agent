@@ -7,11 +7,13 @@ import pwd
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import sqlite3
 import stat
 import subprocess
 import sys
+import time
 
 STAGE_NAME = re.compile(r'himawari-[a-z]+-[0-9]{8}(\..+)?')
 UPLOAD_NAME = re.compile(r'[a-z]+-packet-upload(\..+)?')
@@ -25,6 +27,8 @@ SERVING_UNIT = re.compile(r'ExecStart=\S+ --no-global-search-paths (/\S+)/pair-s
 REBUILDABLE_SUBTREES = {'packet', 'validation', 'input', 'materials', 'runtime-tools', 'question-12-downloads', 'node_modules'}
 KEPT_SUFFIXES = {'.json', '.log', '.txt', '.stdout', '.stderr', '.md', '.diff', '.csv'}
 BUSY_MARKERS = ('/steps/run-step.py', 'transport-packet', 'S1-publish-and-install', 'run-maintenance.mjs', 'S6-limited-host-acceptance')
+TRANSPORT_ARGUMENT = re.compile(r'--approved-r2l13-[a-z]+-transport')
+TERMINATE_WAIT_SECONDS = 10
 SYSTEM_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
 
 
@@ -241,6 +245,18 @@ def cleanup(plan, apply, references, stamp):
         else:
             remove(path, 'failure-scene')
 
+    target = plan['qualificationTarget']
+    if Path(target).parent != Path(plan['evidenceParent']) / 'qualification' or Path(target).name in ('', '.', '..'):
+        fail('CLEANUP_QUALIFICATION_PATH_INVALID')
+    if os.path.lexists(target):
+        if os.path.islink(target) or not os.path.isdir(target):
+            keep(target, 'not-a-directory')
+        elif in_use(target):
+            keep(target, in_use(target))
+        elif os.listdir(target):
+            keep(target, 'qualification-not-empty')
+        else:
+            remove(target, 'empty-qualification-leftover')
     preserved_root = Path(plan['archiveRoot']) / 'failed-acceptance'
     for path in children(preserved_root)[:-plan.get('keepFailedAcceptance', 2)]:
         remove(path, 'old-failed-acceptance')
@@ -303,6 +319,51 @@ def cleanup(plan, apply, references, stamp):
     return result
 
 
+def stale_transports(freeze_sha, own_pid, proc_root='/proc'):
+    found = []
+    for pid in os.listdir(proc_root):
+        if not pid.isdigit() or int(pid) == own_pid:
+            continue
+        try:
+            arguments = (Path(proc_root) / pid / 'cmdline').read_bytes().split(b'\0')
+        except OSError:
+            continue
+        tokens = [token.decode(errors='replace') for token in arguments]
+        for index, token in enumerate(tokens[:-1]):
+            if TRANSPORT_ARGUMENT.fullmatch(token) and tokens[index + 1] == freeze_sha:
+                found.append(int(pid))
+                break
+    return sorted(found)
+
+
+def terminate(pids, apply, wait=TERMINATE_WAIT_SECONDS, proc_root='/proc'):
+    reports = []
+    for pid in pids:
+        report = {'pid': pid, 'terminated': False}
+        reports.append(report)
+        if not apply:
+            continue
+        for sent, limit in ((signal.SIGTERM, wait), (signal.SIGKILL, wait)):
+            try:
+                os.kill(pid, sent)
+            except ProcessLookupError:
+                break
+            deadline = time.monotonic() + limit
+            while time.monotonic() < deadline and os.path.exists(Path(proc_root) / str(pid)) and not is_zombie(pid, proc_root):
+                time.sleep(0.1)
+        report['terminated'] = not os.path.exists(Path(proc_root) / str(pid)) or is_zombie(pid, proc_root)
+        if not report['terminated']:
+            fail('CLEANUP_TRANSPORT_PROCESS_NOT_STOPPED')
+    return reports
+
+
+def is_zombie(pid, proc_root='/proc'):
+    try:
+        return (Path(proc_root) / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()[0] == 'Z'
+    except (OSError, IndexError):
+        return True
+
+
 def main():
     if len(sys.argv) != 3 or sys.argv[1] not in ('plan', 'apply'):
         fail('CLEANUP_USAGE')
@@ -321,7 +382,9 @@ def main():
         before = shutil.disk_usage('/').free
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         plan['scratchOwnerUids'] = [0, pwd.getpwnam(SCRATCH_OWNER).pw_uid]
+        stale = terminate(stale_transports(plan['freezeSha256'], os.getpid()), sys.argv[1] == 'apply') if plan.get('freezeSha256') else []
         result = cleanup(plan, sys.argv[1] == 'apply', process_references(os.getpid()), stamp)
+        result['staleTransports'] = stale
         result.update({'mode': sys.argv[1], 'rootFreeBeforeBytes': before, 'rootFreeAfterBytes': shutil.disk_usage('/').free})
         if sys.argv[1] == 'apply':
             report = Path(plan['archiveRoot']) / stamp / 'cleanup-report.json'

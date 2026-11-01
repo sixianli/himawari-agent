@@ -2,6 +2,7 @@ import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { type CSSProperties, type RefObject, useEffect, useRef, useState } from "react";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { type SheetCellStyle, type SheetView, workbookViews } from "../spreadsheet-model.js";
+import { withoutDrawings } from "../xlsx-drawings.js";
 
 export type DocumentKind = "pdf" | "word" | "sheet";
 
@@ -389,8 +390,13 @@ function SheetDocument({
     let current = true;
     void (async () => {
       const { default: ExcelJS } = await import("exceljs");
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(data.slice(0));
+      let workbook = new ExcelJS.Workbook();
+      try {
+        await workbook.xlsx.load(data.slice(0));
+      } catch {
+        workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(withoutDrawings(data));
+      }
       const next = workbookViews(
         workbook.worksheets as unknown as Parameters<typeof workbookViews>[0],
       );
@@ -400,7 +406,7 @@ function SheetDocument({
       current = false;
     };
   }, [data, onFailed]);
-  if (!views) return null;
+  if (!views) return <p className="preview-loading">{message("preview.loading")}</p>;
   const view = views[selected] ?? views[0];
   if (!view) return <p className="preview-notice">{message("preview.sheetEmpty")}</p>;
   return (

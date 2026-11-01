@@ -12,6 +12,8 @@ export const messages = {
 
   "review.archivePending":
     "この会話には確認待ちの操作があります。対応してからアーカイブしてください。",
+  "review.deletePending":
+    "この会話には確認待ちの操作があります。先に処理してから削除してください。",
   "review.system": "システムに合わせる",
   "review.loadMore": "さらに表示",
   "review.retrySend": "前の送信を再試行",
@@ -189,6 +191,8 @@ export const messages = {
   "chat.activity.preparingTool": "ツール呼び出しを準備中",
   "chat.activity.waitingModel": "モデルの応答を待機中",
   "chat.activity.buildingContext": "関連する記憶を検索中",
+  "chat.queued": "実行待ち",
+  "chat.queuedWait": "{time} 待機中。ほかの会話が実行中で、空きができ次第自動で始まります。",
   "chat.lastActivity": "最後の進捗は {time} 前",
   "chat.progressDelayed":
     "新しい進捗が届いていません。接続中でも処理が進んでいるとは限りません。結果を待つか、この実行を停止できます。",
@@ -527,9 +531,9 @@ export const messages = {
   "state.loading": "読み込み中…",
   "state.error": "読み込みに失敗しました",
   "state.offline": "オフラインでは未送信の下書きだけを保持します",
-  "surface.notInstalled.title": "現在の環境ではこの機能は有効になっていません",
-  "surface.notInstalled.description":
-    "この機能は現在のサーバーに接続されていません。利用には接続と検証が必要です。再ログインやページの更新では有効になりません。",
+  "surface.notFound.title": "このページは見つかりません",
+  "surface.notFound.description": "このアドレスにはページがありません。会話に戻ってください。",
+  "surface.notFound.action": "会話に戻る",
   "layout.showList": "リストを表示",
   "locale.label": "表示言語",
   "locale.zhCN": "简体中文",
@@ -551,11 +555,14 @@ export const messages = {
   "threads.pin": "ピン留め",
   "threads.unpin": "ピン留めを解除",
   "threads.archive": "アーカイブ",
+  "threads.delete": "削除",
+  "threads.deleteTitle": "この会話を削除しますか？",
+  "threads.deleteBody": "「{title}」は会話リストと検索から消えます。ウェブ上では元に戻せません。",
+  "threads.deleteConfirm": "会話を削除",
   "threads.restore": "復元",
-  "threads.conflictTitle": "別のクライアントがこのスレッドを更新しました",
-  "threads.conflictDescription":
-    "最新リビジョンを読み込みました。内容を確認してから操作を明示的に再適用してください。",
-  "threads.reapply": "最新リビジョンに再適用",
+  "threads.conflictTitle": "このスレッドは別の場所で更新されました",
+  "threads.conflictDescription": "最新の内容に更新しました。直前の操作はまだ反映されていません。",
+  "threads.reapply": "最新の内容でもう一度実行",
   "threads.status.archived": "アーカイブ済み",
   "runs.status.accepted": "受付済み",
   "runs.status.buildingContext": "コンテキスト構築中",

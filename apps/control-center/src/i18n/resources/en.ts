@@ -12,6 +12,8 @@ export const messages = {
 
   "review.archivePending":
     "This conversation has an action waiting for your confirmation. Resolve it before archiving.",
+  "review.deletePending":
+    "This conversation still has an action waiting for you. Resolve it before deleting.",
   "review.system": "System",
   "review.loadMore": "Load more",
   "review.retrySend": "Retry previous send",
@@ -182,6 +184,9 @@ export const messages = {
   "chat.activity.preparingTool": "Preparing tool call",
   "chat.activity.waitingModel": "Waiting for model",
   "chat.activity.buildingContext": "Looking up related memory",
+  "chat.queued": "Waiting in line",
+  "chat.queuedWait":
+    "Queued for {time}. Other conversations are still running; this one starts automatically when a slot is free.",
   "chat.lastActivity": "Last progress {time} ago",
   "chat.progressDelayed":
     "No recent progress. A connected page does not confirm that execution is advancing. You can wait or stop this turn.",
@@ -518,9 +523,9 @@ export const messages = {
   "state.loading": "Loading…",
   "state.error": "Load failed",
   "state.offline": "Only unsent drafts remain available offline",
-  "surface.notInstalled.title": "This feature is not enabled in this deployment",
-  "surface.notInstalled.description":
-    "This feature has not been connected to the current server. It requires integration and verification before use; signing in again or refreshing will not enable it.",
+  "surface.notFound.title": "This page doesn't exist",
+  "surface.notFound.description": "Nothing lives at this address. Go back to your conversations.",
+  "surface.notFound.action": "Back to chat",
   "layout.showList": "Show list",
   "locale.label": "Interface language",
   "locale.zhCN": "简体中文",
@@ -542,11 +547,16 @@ export const messages = {
   "threads.pin": "Pin",
   "threads.unpin": "Unpin",
   "threads.archive": "Archive",
+  "threads.delete": "Delete",
+  "threads.deleteTitle": "Delete this conversation?",
+  "threads.deleteBody":
+    "“{title}” will disappear from your conversation list and search. This cannot be undone from the web page.",
+  "threads.deleteConfirm": "Delete conversation",
   "threads.restore": "Restore",
-  "threads.conflictTitle": "Another client updated this thread",
+  "threads.conflictTitle": "This thread was just changed elsewhere",
   "threads.conflictDescription":
-    "The latest revision is loaded. Review it before explicitly reapplying the operation.",
-  "threads.reapply": "Reapply to latest revision",
+    "Refreshed to the latest content. Your last action has not taken effect.",
+  "threads.reapply": "Do it again on the latest content",
   "threads.status.archived": "Archived",
   "runs.status.accepted": "Accepted",
   "runs.status.buildingContext": "Building context",

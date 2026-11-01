@@ -57,3 +57,28 @@ describe("disclosed assistant Markdown", () => {
     expect(render('```sh\necho "早上好"\n```')).toContain("</code></pre>");
   });
 });
+
+describe("Chinese punctuation beside bold markers", () => {
+  it("bolds text whose markers touch Chinese punctuation", () => {
+    const result = render("特朗普告的是**《华尔街日报》和默多克本人**——因为属新闻集团");
+    expect(result).toContain("<strong>《华尔街日报》和默多克本人</strong>");
+    expect(result).not.toContain("**");
+  });
+  it("leaves unpaired and spaced asterisks alone", () => {
+    const result = render("2 ** 3 ** 4，以及**未闭合《书名》");
+    expect(result).not.toContain("<strong>");
+    expect(result).toContain("2 ** 3 ** 4");
+  });
+
+  it("[UI-12] renders a table the model wrote on one line, and leaves a negative sample as text", () => {
+    const collapsed = render("各月明细：| 月份 | 销售额 | |---|---| | 1月 | 100 | | 2月 | 200 |");
+    expect(collapsed).toContain("<table>");
+    expect(collapsed).toContain("<td>200</td>");
+    expect(collapsed.match(/<tr>/g)).toHaveLength(3);
+    expect(collapsed).toContain("各月明细：");
+    const plain = render("管道符 a | b | c 和 --- 分隔线，不是表格");
+    expect(plain).not.toContain("<table>");
+    const fenced = render("```\n| a | b | |---|---| | 1 | 2 |\n```");
+    expect(fenced).not.toContain("<table>");
+  });
+});

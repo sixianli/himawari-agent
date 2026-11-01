@@ -147,7 +147,7 @@
     }
   ],
   "concurrency": {
-    "totalRuns": 1,
+    "totalRuns": 3,
     "foregroundReserved": 1,
     "perCategory": {}
   },

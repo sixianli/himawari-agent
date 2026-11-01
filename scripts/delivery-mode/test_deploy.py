@@ -12,7 +12,7 @@ ARTIFACT_SHA256 = 'a' * 64
 CONFIG_SHA256 = 'c' * 64
 UNIT_SHA256 = 'd' * 64
 COMMIT = 'b' * 40
-BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'oldConfigSha256': CONFIG_SHA256, 'oldUnitSha256': UNIT_SHA256}, 'paths': {'stateRoot': '/var/lib/himawari/state', 'config': '/etc/himawari/config.json'}, 'authority': {'authorityEpoch': 1, 'fencingToken': 31}, 'candidate': {'archiveSha256': ARTIFACT_SHA256, 'testedCommit': COMMIT}}
+BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'oldConfigSha256': CONFIG_SHA256, 'oldUnitSha256': UNIT_SHA256, 'newQualificationEvidenceRoot': '/var/lib/himawari/qualification/fourteenth-20261027'}, 'paths': {'stateRoot': '/var/lib/himawari/state', 'config': '/etc/himawari/config.json'}, 'authority': {'authorityEpoch': 1, 'fencingToken': 31}, 'candidate': {'archiveSha256': ARTIFACT_SHA256, 'testedCommit': COMMIT}}
 SCENARIOS = ['accept-homepage', 'accept-search-approval', 'accept-search-toggle', 'accept-news-search', 'accept-long-answer', 'accept-run-command', 'accept-unrelated-no-memory', 'accept-slow-memory-search', 'accept-file-writing-progress', 'accept-progress-without-state', 'accept-memory-page', 'accept-phone-layout', 'accept-after-restart']
 
 
@@ -23,7 +23,7 @@ def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
     statuses = statuses or {}
     timings = {**TIMED, **(answer_ms or {})}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed'), **({'answerMs': timings[name]} if timings.get(name) is not None else {})} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nscratchScenes=0\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nscratchScenes=0\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -112,7 +112,7 @@ class LeftoverPreflightTest(unittest.TestCase):
 
     def test_target_paths_come_from_the_bindings(self):
         binding = {**BINDING, 'paths': {**BINDING['paths'], 'newPrefix': self.PATHS[0], 'newOperations': '/opt/himawari/operations/fourteenth-20261027', 'evidenceRoot': '/var/lib/himawari/fourteenth-20261027-evidence', 'transportRoot': self.PATHS[1] + '/input'}}
-        self.assertEqual(preflight.target_paths(binding), sorted([self.PATHS[0], self.PATHS[1], '/opt/himawari/operations/fourteenth-20261027', '/var/lib/himawari/fourteenth-20261027-evidence']))
+        self.assertEqual(preflight.target_paths(binding), sorted([self.PATHS[0], self.PATHS[1], '/opt/himawari/operations/fourteenth-20261027', '/var/lib/himawari/fourteenth-20261027-evidence', '/var/lib/himawari/qualification/fourteenth-20261027']))
 
     def test_remote_script_reads_unit_state_and_paths(self):
         script = preflight.remote_script(BINDING, [self.UNIT], self.PATHS)
@@ -247,6 +247,49 @@ class DeployHarness(unittest.TestCase):
         line = next(line for line in child.stdout.splitlines() if line.startswith('DEPLOY_RESULT '))
         calls = self.calls.read_text().split() if self.calls.exists() else []
         return child.returncode, json.loads(line.split(' ', 1)[1]), calls
+
+
+class DeployLockTest(DeployHarness):
+    def lock(self):
+        return self.packet / '.deploy.lock'
+
+    def holder(self):
+        process = subprocess.Popen(['sleep', '60'])
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        self.lock().mkdir()
+        (self.lock() / 'pid').write_text(str(process.pid) + '\n')
+        (self.lock() / 'started').write_text('2026-11-01T07:00:00Z\n')
+        return process
+
+    def test_a_second_deploy_of_the_same_packet_stops_and_names_the_holder(self):
+        process = self.holder()
+        code, result, calls = self.deploy_with_cleanup()
+        self.assertEqual((code, result['result'], result['stoppedAt']), (8, 'already-running', 'LOCK'))
+        self.assertEqual(calls, [])
+        log = Path(result['log']).read_text()
+        self.assertIn('DEPLOY_ALREADY_RUNNING pid=' + str(process.pid), log)
+        self.assertIn('2026-11-01T07:00:00Z', log)
+        self.assertIsNone(process.poll())
+        self.assertTrue(self.lock().exists())
+
+    def test_a_lock_left_by_a_dead_process_is_taken_over(self):
+        dead = subprocess.Popen(['true'])
+        dead.wait()
+        self.lock().mkdir()
+        (self.lock() / 'pid').write_text(str(dead.pid) + '\n')
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+
+    def test_the_lock_is_released_after_a_pass_and_after_a_failure(self):
+        self.deploy()
+        self.assertFalse(self.lock().exists())
+        self.deploy(FAKE_FAIL_AT='S1_INSTALL')
+        self.assertFalse(self.lock().exists())
+
+    def test_a_lock_without_a_readable_pid_is_not_treated_as_free(self):
+        self.lock().mkdir()
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (8, 'already-running'))
 
 
 class DeployFlowTest(DeployHarness):

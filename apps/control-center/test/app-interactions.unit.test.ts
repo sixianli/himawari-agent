@@ -608,20 +608,44 @@ describe("control center application bootstrap and interaction", () => {
     expect(text()).toContain("governance content");
     expect(boundary.threads.mock.lastCall?.[0].active).toBe(false);
   });
-  it.each(["tasks", "settings", "memory", "sessions"])(
-    "explains that /%s has no installed page",
+  it.each(["tasks", "inbox", "trace", "sessions"])(
+    "says plainly that /%s is not a page",
     async (surface) => {
       window.history.replaceState(null, "", `/${surface}`);
       await render();
-      expect(text()).toContain(messages["surface.notInstalled.title"]);
+      expect(text()).toContain(messages["surface.notFound.title"]);
       expect(boundary.threads.mock.lastCall?.[0].active).toBe(false);
     },
   );
+  it("[UI-13] opens /memory as the memory page of the conversations surface, not a missing feature", async () => {
+    window.history.replaceState(null, "", "/memory?selected=thread-1");
+    await render();
+    const options = boundary.threads.mock.lastCall?.[0];
+    expect(options.active).toBe(true);
+    expect(options.route).toMatchObject({
+      surfaceId: "threads",
+      page: "memory",
+      objectId: "thread-1",
+    });
+    expect(text()).not.toContain(messages["surface.notFound.title"]);
+  });
+  it("[UI-13] says a made-up address is not a page and offers the way back", async () => {
+    window.history.replaceState(null, "", "/no-such-page");
+    await render();
+    expect(text()).toContain(messages["surface.notFound.title"]);
+    expect(boundary.threads.mock.lastCall?.[0].active).toBe(false);
+    const home = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === messages["surface.notFound.action"],
+    );
+    await act(async () => home?.click());
+    expect(window.location.pathname).toBe("/threads");
+    expect(text()).not.toContain(messages["surface.notFound.title"]);
+  });
   it("explains a missing installed feature instead of exposing its inactive controls", async () => {
-    window.history.replaceState(null, "", "/memory");
+    window.history.replaceState(null, "", "/capabilities");
     boundary.load.mockResolvedValue({ ...configuration, installedGatewayV2Operations: [] });
     await render();
-    expect(text()).toContain(messages["surface.notInstalled.title"]);
+    expect(text()).toContain(messages["surface.notFound.title"]);
     expect(boundary.governance.mock.lastCall?.[0].active).toBe(false);
   });
   it("[UI-46] closes the phone sidebar when the owner taps outside it", async () => {

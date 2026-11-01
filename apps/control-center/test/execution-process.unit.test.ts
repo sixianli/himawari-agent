@@ -233,3 +233,32 @@ it("still says the record is unavailable once a finished turn's state cannot be 
   );
   expect(html).toContain("chat.recordUnavailable");
 });
+
+const acceptedRunWaiting = (waitedMilliseconds: number) => ({
+  ...completedRun,
+  status: "accepted" as const,
+  background: null,
+  backgroundCommands: [],
+  createdAt: new Date(Date.now() - waitedMilliseconds).toISOString(),
+  updatedAt: new Date(Date.now() - waitedMilliseconds).toISOString(),
+});
+
+it("[QUEUE-1] says the turn is waiting in line, with the real wait, once an accepted turn has had no slot for 3 seconds", () => {
+  const html = render(acceptedRunWaiting(30_000), []);
+  expect(html).toContain("<strong>chat.queued(tool=)</strong>");
+  expect(html).toContain("chat.queuedWait(time=30s)");
+  expect(html).not.toContain("chat.lastActivity");
+  expect(html).not.toContain("chat.progressDelayed");
+});
+
+it("[QUEUE-1] reverse: does not claim a queue for a turn that was accepted a moment ago", () => {
+  const html = render(acceptedRunWaiting(1_000), []);
+  expect(html).not.toContain("chat.queued");
+});
+
+it("[QUEUE-1] reverse: does not claim a queue once the turn has started producing records", () => {
+  const html = render({ ...acceptedRunWaiting(30_000), status: "running" }, newsRun());
+  expect(html).not.toContain("chat.queued");
+  const acceptedWithRecords = render(acceptedRunWaiting(30_000), newsRun());
+  expect(acceptedWithRecords).not.toContain("chat.queued");
+});
