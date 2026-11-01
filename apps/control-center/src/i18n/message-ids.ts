@@ -167,6 +167,8 @@ export const MESSAGE_IDS = [
   "chat.activity.buildingContext",
   "chat.lastActivity",
   "chat.progressDelayed",
+  "chat.queued",
+  "chat.queuedWait",
   "chat.waitingToolResult",
 
   "chat.disconnected",
@@ -940,6 +942,7 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "files.lines": { count: 14 },
   "chat.executionTime": { time: "00:42" },
   "chat.lastActivity": { time: "3s" },
+  "chat.queuedWait": { time: "30s" },
   "more.buttonRunning": { count: 1 },
   "more.runningHint": { count: 1 },
   "more.turn": { turn: 2 },

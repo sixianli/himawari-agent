@@ -175,6 +175,8 @@ export const messages = {
   "chat.activity.preparingTool": "正在准备工具调用",
   "chat.activity.waitingModel": "等待模型响应",
   "chat.activity.buildingContext": "正在查找相关记忆",
+  "chat.queued": "排队等待执行",
+  "chat.queuedWait": "已排队 {time}，前面的对话还在执行，有空位后会自动开始。",
   "chat.lastActivity": "{time} 前收到进展",
   "chat.progressDelayed": "暂未收到新的进展。连接正常不代表任务仍在推进；可等待结果或停止本轮。",
   "chat.waitingToolResult": "等待工具返回结果",
