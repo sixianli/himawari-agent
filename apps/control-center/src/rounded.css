@@ -657,3 +657,10 @@ input:not(
 .thread-search-landmark {
   display: contents;
 }
+
+.menu-popover button.is-danger {
+  color: var(--danger);
+}
+.menu-popover button.is-danger .sidebar-icon {
+  color: inherit;
+}

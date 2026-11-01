@@ -27,6 +27,7 @@ export function SettingsDialog({
   data,
   notifications,
   initialTab = "general",
+  onTabChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -38,6 +39,7 @@ export function SettingsDialog({
   data?: ReactNode;
   notifications?: ReactNode;
   initialTab?: string;
+  onTabChange?: (tab: string) => void;
 }) {
   const { message } = useControlCenterIntl();
   const [tab, setTab] = useState(initialTab);
@@ -66,7 +68,10 @@ export function SettingsDialog({
               key={id}
               variant="quiet"
               aria-pressed={tab === id}
-              onClick={() => setTab(id)}
+              onClick={() => {
+                setTab(id);
+                onTabChange?.(id);
+              }}
             >
               {message(`review.settings.${id}`)}
             </ActionButton>

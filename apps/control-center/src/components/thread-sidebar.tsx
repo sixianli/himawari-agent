@@ -57,6 +57,7 @@ export interface ThreadSidebarProps {
   readonly onRename?: (thread: Thread) => void;
   readonly onPin?: (thread: Thread) => void;
   readonly onArchive?: (thread: Thread) => void;
+  readonly onDelete?: (thread: Thread) => void;
   readonly onOpenFiles?: (() => void) | undefined;
   readonly onOpenMemory?: (() => void) | undefined;
   readonly onOpenReminders?: (() => void) | undefined;
@@ -84,6 +85,7 @@ export function ThreadSidebar({
   onRename,
   onPin,
   onArchive,
+  onDelete,
   onOpenFiles,
   onOpenMemory,
   onOpenReminders,
@@ -199,6 +201,17 @@ export function ThreadSidebar({
               </>
             ),
             onSelect: () => onArchive?.(thread),
+          },
+          {
+            id: "delete",
+            danger: true,
+            label: (
+              <>
+                <SidebarIcon name="trash" />
+                {message("threads.delete")}
+              </>
+            ),
+            onSelect: () => onDelete?.(thread),
           },
         ]}
       />

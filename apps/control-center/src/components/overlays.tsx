@@ -72,6 +72,7 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
 }
 
 export interface ActionMenuItem {
+  readonly danger?: boolean;
   readonly disabled?: boolean;
   readonly id: string;
   readonly label: ReactNode;
@@ -212,6 +213,7 @@ export function ActionMenu({ items, label }: ActionMenuProps) {
                   <hr key={`${item.id}:separator`} className="menu-separator" />
                 ) : null,
                 <button
+                  className={item.danger ? "is-danger" : undefined}
                   disabled={item.disabled}
                   key={item.id}
                   onClick={() => {
@@ -238,6 +240,7 @@ export function ActionMenu({ items, label }: ActionMenuProps) {
 }
 
 export interface TabDefinition {
+  readonly danger?: boolean;
   readonly disabled?: boolean;
   readonly id: string;
   readonly label: ReactNode;
