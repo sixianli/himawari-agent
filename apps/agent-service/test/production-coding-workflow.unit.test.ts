@@ -1064,9 +1064,14 @@ function memoryArtifactStore() {
       );
       if (replayed) return { artifact: replayed, created: false };
       const previous = latest(artifact.threadId, artifact.path);
-      if (previous && artifact.sha256 !== null && previous.sha256 === artifact.sha256)
+      if (
+        previous &&
+        previous.deletedAt === null &&
+        artifact.sha256 !== null &&
+        previous.sha256 === artifact.sha256
+      )
         return { artifact: previous, created: false };
-      const row = { ...artifact, version: (previous?.version ?? 0) + 1, turn: 1 };
+      const row = { ...artifact, version: (previous?.version ?? 0) + 1, turn: 1, deletedAt: null };
       rows.push(row);
       return { artifact: row, created: true };
     },
@@ -1075,6 +1080,16 @@ function memoryArtifactStore() {
     versions: async ({ threadId, path }) =>
       rows.filter((row) => row.threadId === threadId && row.path === path),
     list: async () => ({ items: rows, nextCursor: null }),
+    markDeleted: async ({ threadId, paths, deletedAt }) => {
+      let changed = 0;
+      rows.forEach((row, index) => {
+        if (row.threadId === threadId && paths.includes(row.path) && row.deletedAt === null) {
+          rows[index] = { ...row, deletedAt };
+          changed++;
+        }
+      });
+      return changed;
+    },
   };
   return { rows, store };
 }
@@ -1090,7 +1105,10 @@ function artifactFixture(files: Record<string, string>) {
   });
   const threadArtifacts = new ProductionThreadArtifacts({
     store,
-    files: { readFile },
+    files: {
+      readFile,
+      inspectEntry: async ({ relativePath }) => (files[relativePath] === undefined ? null : "file"),
+    },
     ids: { next: (scope) => `${scope}:${++counter}` },
     now: () => now,
     warn: () => {},
@@ -1152,6 +1170,72 @@ it("[FD-1] registers files a command created or changed and keeps an encrypted c
   expect(rows[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
   expect([...copies.values()]).toMatchObject([{ contentType: "text/html" }]);
   expect(rows[0]?.copyRef).toBe(`copy:${[...copies.keys()][0]}`);
+});
+
+it("[FD-1] marks an earlier registered file as deleted when a later command deletes it", async () => {
+  const files: Record<string, string> = { "海里的一封信.docx": "v1" };
+  const { f, ledger, services, call, rows } = artifactFixture(files);
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("海里的一封信.docx")]) as never);
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  expect(rows).toMatchObject([{ path: "海里的一封信.docx", deletedAt: null }]);
+
+  delete files["海里的一封信.docx"];
+  files["海的记事.docx"] = "v2";
+  ledger.record.mockResolvedValue(
+    ledgerRecord([
+      fileChange("海的记事.docx"),
+      fileChange("海里的一封信.docx", "deleted"),
+    ]) as never,
+  );
+  f.values.clear();
+  await executeProductionCodingRequest(
+    { ...call, toolCallId: "tool:second" },
+    "bash",
+    services,
+    f.ctx,
+  );
+  expect(rows.map(({ path, deletedAt }) => [path, deletedAt !== null])).toEqual([
+    ["海里的一封信.docx", true],
+    ["海的记事.docx", false],
+  ]);
+});
+
+it("[FD-1] a command that only deletes a file still marks its earlier record as deleted", async () => {
+  const files: Record<string, string> = { "draft.docx": "v1" };
+  const { f, ledger, services, call, rows } = artifactFixture(files);
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("draft.docx")]) as never);
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  delete files["draft.docx"];
+  ledger.record.mockResolvedValue(ledgerRecord([fileChange("draft.docx", "deleted")]) as never);
+  f.values.clear();
+  await executeProductionCodingRequest({ ...call, toolCallId: "tool:rm" }, "bash", services, f.ctx);
+  expect(rows.map(({ path, deletedAt }) => [path, deletedAt !== null])).toEqual([
+    ["draft.docx", true],
+  ]);
+});
+
+it("[FD-1] when commands overlapped, a file that still exists is not marked deleted", async () => {
+  const files: Record<string, string> = { "keep.docx": "v1", "gone.docx": "v1" };
+  const { f, ledger, services, call, rows, threadArtifacts } = artifactFixture(files);
+  ledger.record.mockResolvedValue(
+    ledgerRecord([fileChange("keep.docx"), fileChange("gone.docx")]) as never,
+  );
+  await executeProductionCodingRequest(call, "bash", services, f.ctx);
+  delete files["gone.docx"];
+  await threadArtifacts.recordDeleted({
+    ownerId: f.ctx.ownerId,
+    agentId: f.ctx.agentId,
+    threadId: f.binding.threadId,
+    runId: call.runId,
+    toolCallId: "tool:overlap",
+    paths: ["keep.docx", "gone.docx"],
+    grant: {} as never,
+    overlapped: true,
+  });
+  expect(rows.map(({ path, deletedAt }) => [path, deletedAt !== null]).sort()).toEqual([
+    ["gone.docx", true],
+    ["keep.docx", false],
+  ]);
 });
 
 it("[FD-1] records one version per command end and none when the content did not change", async () => {

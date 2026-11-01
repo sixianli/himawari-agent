@@ -61,6 +61,7 @@ export interface ProductionFileReadServices {
   readonly hostReadOnly?: ProductionHostReadOnly;
   readonly workspaceLedger?: ProductionWorkspaceLedger;
   readonly threadArtifacts?: ProductionThreadArtifacts;
+  reconcileDeletedArtifacts?(): Promise<number>;
   readonly hostWeb?: ProductionHostWeb;
   readonly webMemory?: WebToolMemory;
 }
