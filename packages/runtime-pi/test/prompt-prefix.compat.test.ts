@@ -284,6 +284,41 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(bodies[2]).toContain("2026-11-02 09:50:00");
   });
 
+  it("[NAME-1] keeps the conversation append-only when the owner changes how to be addressed mid-conversation", async () => {
+    const named = (name: string): RuntimeProjectionContextBlock => ({
+      authority: "non-authoritative",
+      kind: "owner-rules",
+      ref: "owner-rules:agent",
+      content: `主人对 Himawari 的要求（主人亲口说过或在设置里填写的，回答时遵守）：\n- 主人在设置里填写的称呼是「${name}」，称呼主人时用它；对话里出现过不同的称呼时，以最后出现的为准。`,
+      dataClassification: "private",
+    });
+    const { bodies } = await conversation(
+      [
+        { prompt: "早上好", blocks: [named("Andy"), ownerProfile] },
+        { prompt: "以后叫我小安", blocks: [named("Andy"), ownerProfile] },
+        { prompt: "今天做什么好", blocks: [named("小安"), ownerProfile] },
+      ],
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    const last = (body: string) => JSON.stringify((JSON.parse(body).messages as unknown[]).at(-1));
+    expect(last(bodies[0] ?? "")).toContain("称呼是「Andy」");
+    expect(last(bodies[2] ?? "")).toContain("称呼是「小安」");
+    const third = bodies[2] ?? "";
+    expect(third.indexOf("称呼是「Andy」")).toBeGreaterThan(-1);
+    expect(third.lastIndexOf("称呼是「小安」")).toBeGreaterThan(
+      third.lastIndexOf("称呼是「Andy」"),
+    );
+    const system = (body: string) =>
+      JSON.stringify(
+        (JSON.parse(body).messages as { role: string }[]).filter(
+          ({ role }) => role === "system" || role === "developer",
+        ),
+      );
+    expect(system(bodies[2] ?? "")).not.toContain("小安");
+    expect(system(bodies[0] ?? "")).toBe(system(bodies[2] ?? ""));
+  });
+
   it("keeps turns that call tools append-only, inside a turn and across turns", async () => {
     const { bodies, requestsPerTurn } = await conversation(THREE_TURNS, (index, body) => {
       const lastRole = (JSON.parse(body).messages as { role: string }[]).at(-1)?.role;
