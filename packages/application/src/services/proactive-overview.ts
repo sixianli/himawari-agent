@@ -5,13 +5,19 @@ import type {
   ProactiveQuietPeriod,
   ProactiveRating,
   ProactiveScope,
+  ProactiveSourceItem,
   ProactiveSealPort,
   ProactiveSource,
   ProactiveStorePort,
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { WebPushFeedback } from "../ports/web-push.js";
-import { isReminderWorthy, startOfZonedDay } from "./proactive-rules.js";
+import {
+  floorHitIds,
+  fromAddressOf,
+  isReminderWorthy,
+  startOfZonedDay,
+} from "./proactive-rules.js";
 
 const AUDIT_DAYS = 7;
 const METRIC_DAYS = 30;
@@ -131,7 +137,17 @@ export async function readProactiveOverview(options: {
   const filteredInsights: ProactiveOverviewAuditItem[] = [];
   for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
-    if (!isReminderWorthy(insight.result, insight.priority)) {
+    const floor =
+      insight.floorRaised ||
+      floorHitIds(
+        {
+          fromAddress: fromAddressOf(content.from ?? ""),
+          subject: content.subject ?? "",
+          snippet: content.summary ?? "",
+        } as ProactiveSourceItem,
+        settings.importantSenders,
+      ).length > 0;
+    if (!isReminderWorthy(insight.result, insight.priority, floor)) {
       if (insight.updatedAt >= auditSince)
         filteredInsights.push(
           Object.freeze({

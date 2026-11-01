@@ -668,7 +668,7 @@ describe("proactive Gmail check acceptance", () => {
     h.script([{ id: "chat", result: "know", todo: "朋友约午饭" }], 100);
     const nextDay = await h.service.run();
     expect(h.invocations()).toBe(2);
-    expect(nextDay?.counts).toMatchObject({ judged: 1, know: 1 });
+    expect(nextDay?.counts).toMatchObject({ judged: 1, ignore: 1, know: 0 });
     expect((await h.overview()).dailyLimitReached).toBe(false);
   });
 
@@ -854,6 +854,55 @@ describe("proactive Gmail check acceptance", () => {
       now: h.clock.now(),
     });
     expect((await h.overview()).audit.pending).toBe(0);
+  });
+
+  it("[PG-18] keeps a plain worth-knowing mail off the reminder page but lists it as filtered; a bill or official mail judged worth-knowing stays", async () => {
+    const h = await harness();
+    h.reader.items = [
+      mail("friend", { subject: "週末の予定", snippet: "土曜に会える？" }),
+      mail("bill", {
+        from: "電力 <info@power.example.com>",
+        fromAddress: "info@power.example.com",
+        subject: "11月分ご請求のお知らせ",
+        snippet: "お支払い期限は 11/20 です",
+      }),
+    ];
+    h.script([
+      { id: "friend", result: "know", todo: "朋友约周六" },
+      { id: "bill", result: "know", todo: "电费账单已出" },
+    ]);
+    const decision = await h.service.run();
+    expect(decision?.counts).toMatchObject({ know: 1, ignore: 1 });
+    const overview = await h.overview();
+    expect(overview.insights.map(({ summary }) => summary)).toEqual(["电费账单已出"]);
+    expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["friend"]);
+  });
+
+  it("[PG-18] re-judges already stored worth-knowing rows by the same rule when the page is read", async () => {
+    const h = await harness();
+    h.reader.items = [
+      mail("friend", { subject: "週末の予定", snippet: "土曜に会える？" }),
+      mail("bill", {
+        from: "電力 <info@power.example.com>",
+        fromAddress: "info@power.example.com",
+        subject: "11月分ご請求のお知らせ",
+        snippet: "お支払い期限は 11/20 です",
+      }),
+    ];
+    h.script([
+      { id: "friend", result: "act", todo: "回复朋友", priority: "medium" },
+      { id: "bill", result: "act", todo: "电费账单已出", priority: "medium" },
+    ]);
+    await h.service.run();
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+    try {
+      database.prepare("UPDATE source_insights SET result = 'know', priority = NULL").run();
+    } finally {
+      database.close();
+    }
+    const overview = await h.overview();
+    expect(overview.insights.map(({ summary }) => summary)).toEqual(["电费账单已出"]);
+    expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["friend"]);
   });
 
   it("[PG-17] tells the model that promotions, points, surveys, invitations, newsletters and automatic usage notices are ignore", () => {
