@@ -47,16 +47,6 @@ export function guessCategory(text: string): { category: MemoryCategory; sensiti
   return { category, sensitive: false };
 }
 
-export function toOwnerThirdPerson(text: string): string {
-  const trimmed = text.trim();
-  if (/^(?:我的|用户的)/.test(trimmed))
-    return `主人的${trimmed.slice(trimmed.startsWith("我") ? 2 : 3)}`;
-  if (/^我[妈爸儿女孩朋导室哥姐弟妹]/.test(trimmed)) return `主人的${trimmed.slice(1)}`;
-  if (trimmed.startsWith("我")) return `主人${trimmed.slice(1)}`;
-  if (trimmed.startsWith("用户")) return `主人${trimmed.slice(2)}`;
-  return trimmed;
-}
-
 export const normalizeMemoryText = (text: string) =>
   text
     .normalize("NFKC")

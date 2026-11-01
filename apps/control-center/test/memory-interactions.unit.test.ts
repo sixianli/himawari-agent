@@ -14,12 +14,7 @@ import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/ga
 import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
 import { type MemoryItem, type MemoryOverview, useMemory } from "../src/memory.ts";
-import {
-  guessCategory,
-  parseMemoryExport,
-  parseMemoryText,
-  toOwnerThirdPerson,
-} from "../src/memory-import.ts";
+import { guessCategory, parseMemoryExport, parseMemoryText } from "../src/memory-import.ts";
 
 const configuration: ControlCenterRuntimeConfiguration = {
   ownerId: "owner",
@@ -1115,20 +1110,6 @@ describe("memory import parsing", () => {
 });
 
 describe("memory wording", () => {
-  it("[MEM-WORD] rewrites a leading first-person or user wording to the owner wording", () => {
-    expect(toOwnerThirdPerson("我每天必须喝咖啡")).toBe("主人每天必须喝咖啡");
-    expect(toOwnerThirdPerson("我的猫叫小橘")).toBe("主人的猫叫小橘");
-    expect(toOwnerThirdPerson("我妈妈住在杭州")).toBe("主人的妈妈住在杭州");
-    expect(toOwnerThirdPerson("用户喜欢蓝色")).toBe("主人喜欢蓝色");
-    expect(toOwnerThirdPerson("用户的生日是 5 月 12 日")).toBe("主人的生日是 5 月 12 日");
-  });
-
-  it("[MEM-WORD] leaves text that is already in the owner wording or does not start with a pronoun", () => {
-    expect(toOwnerThirdPerson("主人不太喜欢吃鱼")).toBe("主人不太喜欢吃鱼");
-    expect(toOwnerThirdPerson("回答一律用简体中文")).toBe("回答一律用简体中文");
-    expect(toOwnerThirdPerson("我同意这个方案")).toBe("主人同意这个方案");
-  });
-
   it("[MEM-WORD] uses one category name on the profile and on the cards", () => {
     expect(messages["memory.profile.relationship"]).toBe("人际关系");
     expect(messages["memory.cat"]).toContain("relationship {人际关系}");
