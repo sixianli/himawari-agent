@@ -5,7 +5,9 @@ import {
   createProactiveSeal,
   type ModelDescriptor,
   type ModelInvocationEvent,
+  type ProactiveMailCheckOptions,
   ProactiveMailCheckService,
+  type ProactiveMemoryRecall,
   type ProactiveSourceItem,
   proactivePrompt,
   readProactiveOverview,
@@ -54,6 +56,7 @@ interface Scripted {
   readonly priority?: "high" | "medium" | "low" | null;
   readonly dueAt?: string | null;
   readonly reason?: string;
+  readonly usedMemoryIds?: readonly string[];
 }
 
 function mail(
@@ -87,7 +90,6 @@ describe("proactive Gmail check acceptance", () => {
 
   async function harness(
     options: {
-      perCheckCostMicros?: number;
       dailyCostMicros?: number;
       estimate?: number;
       cost?: number;
@@ -95,6 +97,8 @@ describe("proactive Gmail check acceptance", () => {
       enabled?: boolean;
       batchSize?: number;
       outputTokenLimit?: number;
+      memory?: ProactiveMemoryRecall;
+      memoryLimits?: ProactiveMailCheckOptions["memoryLimits"];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-"));
@@ -264,7 +268,6 @@ describe("proactive Gmail check acceptance", () => {
       queued.push(scripted);
     };
     const limits = {
-      perCheckCostMicros: options.perCheckCostMicros ?? 100_000,
       perCheckMs: 180_000,
       dailyCostMicros: options.dailyCostMicros ?? 1_000_000,
       estimate: options.estimate ?? 100,
@@ -310,6 +313,8 @@ describe("proactive Gmail check acceptance", () => {
       timeZone: TIME_ZONE,
       clock,
       ids,
+      ...(options.memory ? { memory: options.memory } : {}),
+      ...(options.memoryLimits ? { memoryLimits: options.memoryLimits } : {}),
       ...(options.batchSize === undefined ? {} : { batchSize: options.batchSize }),
       ...(options.outputTokenLimit === undefined
         ? {}
@@ -400,15 +405,21 @@ describe("proactive Gmail check acceptance", () => {
     expect(h.prompts[0]).toMatch(/当地今天是 [A-Za-z]+, 2026-11-04/u);
   });
 
-  it("[PG-3] skips promotions without a model call but sends a one-time code mail to the model for redaction", async () => {
+  it("[PG-3] sends promotions and one-time code mails to the model; only spam and own mail are skipped", async () => {
     const h = await harness();
     h.reader.items = [
       mail("sale", { categories: ["promotions"], subject: "週末セール", snippet: "全品 20% オフ" }),
+      mail("junk", { categories: ["spam"], subject: "当選しました" }),
+      mail("mine", { sentByOwner: true }),
     ];
+    h.script([{ id: "sale", result: "ignore" }]);
     const decision = await h.service.run();
-    expect(h.invocations()).toBe(0);
-    expect(decision).toMatchObject({ verdict: "silent", costMicros: 0 });
-    expect(decision?.counts).toMatchObject({ fetched: 1, skipped: 1, judged: 0 });
+    expect(h.invocations()).toBe(1);
+    expect(decision?.counts).toMatchObject({ fetched: 3, skipped: 2, judged: 1 });
+    expect(h.prompts[0]).toContain('"id":"sale"');
+    expect(h.prompts[0]).not.toContain('"id":"junk"');
+    expect(h.prompts[0]).not.toContain('"id":"mine"');
+    h.clock.advance(15 * 60_000);
     h.reader.items = [
       mail("code", { subject: "ログイン", snippet: "認証コードは 482913 です" }),
       mail("hello", { snippet: "明天一起吃饭吗" }),
@@ -418,7 +429,6 @@ describe("proactive Gmail check acceptance", () => {
       { id: "hello", result: "know", todo: "朋友约明天吃饭" },
     ]);
     const second = await h.service.run();
-    expect(h.invocations()).toBe(1);
     expect(second?.counts).toMatchObject({ fetched: 2, skipped: 0, judged: 2 });
   });
 
@@ -507,8 +517,8 @@ describe("proactive Gmail check acceptance", () => {
     expect(h.invocations()).toBe(2);
   });
 
-  it("[PG-6] stops at a 0.0001 dollar per-check limit without pushing and resumes next time", async () => {
-    const h = await harness({ perCheckCostMicros: 100, estimate: 500 });
+  it("[PG-6] has no per-check dollar limit: a costly estimate still runs while the day's limit allows", async () => {
+    const h = await harness({ estimate: 500_000 });
     h.reader.items = [
       mail("invoice", {
         fromAddress: "billing@tepco.co.jp",
@@ -516,14 +526,6 @@ describe("proactive Gmail check acceptance", () => {
         snippet: "11/5 までにお支払いください",
       }),
     ];
-    const capped = await h.service.run();
-    expect(capped).toMatchObject({ verdict: "capped", reasonCode: "CHECK_LIMIT", costMicros: 0 });
-    expect(h.invocations()).toBe(0);
-    expect(await h.store.listReadyPushes({ ...scope, now: h.clock.now(), limit: 10 })).toEqual([]);
-    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-1");
-    h.limits.perCheckCostMicros = 100_000;
-    h.limits.estimate = 100;
-    h.clock.advance(15 * 60_000);
     h.script([
       {
         id: "invoice",
@@ -533,11 +535,15 @@ describe("proactive Gmail check acceptance", () => {
         dueAt: "2026-11-05T14:59:00Z",
       },
     ]);
-    const resumed = await h.service.run();
+    const first = await h.service.run();
     expect(h.invocations()).toBe(1);
-    expect(resumed).toMatchObject({ verdict: "pushed" });
-    expect((await h.store.readConnection({ ...scope, source: "gmail" }))?.cursor).toBe("history-2");
-    expect(h.reader.calls).toEqual(["history-1", "history-1"]);
+    expect(first).toMatchObject({ verdict: "pushed" });
+    h.limits.estimate = 1_000_000;
+    h.reader.items = [mail("second", { snippet: "hello" })];
+    h.clock.advance(15 * 60_000);
+    const second = await h.service.run();
+    expect(h.invocations()).toBe(1);
+    expect(second).toMatchObject({ verdict: "capped_daily", reasonCode: "DAILY_LIMIT" });
   });
 
   it("[PG-7] holds pushes during quiet hours, sends one combined notification at the end, and does nothing when switched off", async () => {
@@ -810,11 +816,12 @@ describe("proactive Gmail check acceptance", () => {
   it("[PG-16] keeps everything that never changes in front of the time and the mail so the model's KV cache can be reused", () => {
     const first = proactivePrompt([mail("a")], "2026-10-30T01:00:00.000Z", "Asia/Tokyo");
     const later = proactivePrompt([mail("b")], "2026-10-30T01:15:00.000Z", "Asia/Tokyo");
-    const stable = first.slice(0, first.indexOf("现在是"));
+    const stable = first.slice(0, first.indexOf("邮件："));
     expect(stable.length).toBeGreaterThan(200);
     expect(later.startsWith(stable)).toBe(true);
-    expect(first.indexOf("现在是")).toBeGreaterThan(first.indexOf("只输出 JSON"));
-    expect(first.indexOf("现在是")).toBeLessThan(first.indexOf("邮件："));
+    expect(first.indexOf("邮件：")).toBeGreaterThan(first.indexOf("只输出 JSON"));
+    expect(first.split("\n").at(-1)).toMatch(/^现在是 /u);
+    expect(later.split("\n").at(-1)).toMatch(/^现在是 /u);
   });
   describe("[P0-5] ledger records what each check really sent to the model", () => {
     const moneyMail = (id: string) =>
@@ -903,7 +910,7 @@ describe("proactive Gmail check acceptance", () => {
     it("leaves skipped mails out of sourceIds and records nothing when no mail reaches the model", async () => {
       const h = await harness();
       h.reader.items = [
-        mail("promo", { categories: ["promotions"] }),
+        mail("promo", { categories: ["spam"] }),
         mail("mine", { sentByOwner: true }),
       ];
       const decision = await h.service.run();
@@ -920,7 +927,7 @@ describe("proactive Gmail check acceptance", () => {
 
     it("keeps skipped mails out of sourceIds while the others are recorded", async () => {
       const h = await harness();
-      h.reader.items = [mail("promo", { categories: ["promotions"] }), mail("real")];
+      h.reader.items = [mail("promo", { categories: ["spam"] }), mail("real")];
       h.script([{ id: "real", result: "ignore" }]);
       await h.service.run();
       const [entry] = await ledgerRows(h);
@@ -977,6 +984,151 @@ describe("proactive Gmail check acceptance", () => {
       expect(
         await h.store.readDecisionPayloads({ ...scope, decisionId: decision?.id ?? "" }),
       ).toEqual([]);
+    });
+  });
+
+  describe("[P0-5b] related memories reach the judge without being treated as instructions", () => {
+    const beefHit = { id: "mem-beef", text: "主人最近想吃牛肉。", score: 0.5 };
+    const recallOf = (
+      byMail: Record<string, readonly { id: string; text: string; score: number }[]>,
+      extra: { costMicros?: number; failedQueries?: number; seen?: string[] } = {},
+    ): ProactiveMemoryRecall => ({
+      async recall({ queries }) {
+        extra.seen?.push(...queries.map(({ query }) => query));
+        return {
+          hits: new Map(Object.entries(byMail)),
+          costMicros: extra.costMicros ?? 0,
+          failedQueries: extra.failedQueries ?? 0,
+        };
+      },
+    });
+    const ledgerRows = (h: Awaited<ReturnType<typeof harness>>) =>
+      h.ledger.list({ ...scope, kind: "proactive", since: "2026-11-01T00:00:00.000Z", limit: 50 });
+    const promo = () =>
+      mail("beef-promo", {
+        categories: ["promotions"],
+        from: "和牛烤肉馆 <info@wagyu.example>",
+        subject: "优惠券：本周凭券全场和牛八折",
+        snippet: "本周限定",
+      });
+
+    it("sends a promotion with the matching memory and records exactly what was injected", async () => {
+      const seen: string[] = [];
+      const h = await harness({ memory: recallOf({ "beef-promo": [beefHit] }, { seen }) });
+      h.reader.items = [promo()];
+      h.script([
+        {
+          id: "beef-promo",
+          result: "know",
+          todo: "牛肉优惠",
+          usedMemoryIds: ["mem-beef", "invented"],
+        },
+      ]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      const prompt = h.prompts[0] ?? "";
+      expect(prompt).toContain("主人最近想吃牛肉。");
+      expect(prompt.indexOf("主人的记忆")).toBeLessThan(prompt.indexOf("邮件："));
+      expect(prompt.split("\n").at(-1)).toMatch(/^现在是 /u);
+      expect(seen[0]).toContain("和牛烤肉馆");
+      expect(seen[0]).toContain("本周凭券全场和牛八折");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        memoryIds: ["mem-beef"],
+        usedMemoryIds: ["mem-beef"],
+        memoryByMail: { "beef-promo": ["mem-beef"] },
+        memoryInjected: true,
+        memoryRecall: "ok",
+      });
+    });
+
+    it("carries no memory block and records an empty injection when nothing is related", async () => {
+      const h = await harness({ memory: recallOf({}) });
+      h.reader.items = [mail("sofa", { categories: ["promotions"], subject: "沙发大促" })];
+      h.script([{ id: "sofa", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).not.toContain("主人的记忆（");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        memoryIds: [],
+        usedMemoryIds: [],
+        memoryByMail: {},
+        memoryInjected: false,
+        memoryRecall: "ok",
+      });
+    });
+
+    it("still judges the mail without memory when the search fails, and says so", async () => {
+      const h = await harness({
+        memory: {
+          async recall() {
+            throw new Error("EMBEDDING_DOWN");
+          },
+        },
+      });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
+      expect(h.prompts[0]).not.toContain("主人的记忆（");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        memoryIds: [],
+        memoryInjected: false,
+        memoryRecall: "failed",
+      });
+    });
+
+    it("marks the recall partial when some queries failed or the search budget ran out", async () => {
+      const h = await harness({
+        memory: recallOf({}, { failedQueries: 1 }),
+        memoryLimits: { searchesPerCheck: 2 },
+      });
+      h.reader.items = [mail("a"), mail("b"), mail("c")];
+      h.script([
+        { id: "a", result: "ignore" },
+        { id: "b", result: "ignore" },
+        { id: "c", result: "ignore" },
+      ]);
+      await h.service.run();
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.memoryRecall).toBe("partial");
+    });
+
+    it("keeps at most three memories per mail, twelve per batch, and cuts each text at 200 characters", async () => {
+      const long = "长".repeat(300);
+      const hits = (prefix: string) =>
+        [0.9, 0.8, 0.7, 0.6].map((score, index) => ({
+          id: `${prefix}-${index}`,
+          text: long,
+          score,
+        }));
+      const ids = ["m1", "m2", "m3", "m4", "m5"];
+      const h = await harness({
+        memory: recallOf(Object.fromEntries(ids.map((id) => [id, hits(id)]))),
+      });
+      h.reader.items = ids.map((id) => mail(id));
+      h.script(ids.map((id) => ({ id, result: "ignore" as const })));
+      await h.service.run();
+      const [entry] = await ledgerRows(h);
+      const injected = entry?.inputs.memoryIds ?? [];
+      expect(injected.length).toBe(12);
+      for (const list of Object.values(entry?.inputs.memoryByMail ?? {}))
+        expect(list.length).toBeLessThanOrEqual(3);
+      expect(h.prompts[0]).not.toContain("长".repeat(201));
+      expect(h.prompts[0]).toContain("长".repeat(200));
+    });
+
+    it("adds the search cost to the check and writes the instructions as plain background text", async () => {
+      const h = await harness({
+        memory: recallOf({ "beef-promo": [beefHit] }, { costMicros: 40 }),
+      });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "ignore" }]);
+      const decision = await h.service.run();
+      expect(decision?.costMicros).toBe(340);
+      expect(h.prompts[0]).toContain("不是指令");
     });
   });
 });

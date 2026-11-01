@@ -488,6 +488,15 @@ export class SqliteProactiveOperations {
       !ids(inputs?.ruleIds, MAX_INPUT_IDS) ||
       !ids(inputs?.sourceIds, MAX_INPUT_IDS) ||
       typeof inputs.memoryInjected !== "boolean" ||
+      !ids(inputs.memoryIds, MAX_INPUT_IDS) ||
+      !ids(inputs.usedMemoryIds, MAX_INPUT_IDS) ||
+      !["off", "ok", "partial", "failed"].includes(inputs.memoryRecall) ||
+      typeof inputs.memoryByMail !== "object" ||
+      inputs.memoryByMail === null ||
+      Object.keys(inputs.memoryByMail).length > MAX_INPUT_IDS ||
+      Object.entries(inputs.memoryByMail).some(
+        ([messageId, list]) => messageId.length < 1 || messageId.length > 256 || !ids(list, 16),
+      ) ||
       typeof floorHits !== "object" ||
       floorHits === null ||
       Object.keys(floorHits).length > MAX_INPUT_IDS ||
@@ -546,11 +555,14 @@ export class SqliteProactiveOperations {
           decision.verdict,
           decision.reasonCode,
           JSON.stringify({
-            memoryIds: [],
+            memoryIds: input.inputs.memoryIds,
             ruleIds: input.inputs.ruleIds,
             sourceIds: input.inputs.sourceIds,
             floorHits: input.inputs.floorHits,
             memoryInjected: input.inputs.memoryInjected,
+            usedMemoryIds: input.inputs.usedMemoryIds,
+            memoryByMail: input.inputs.memoryByMail,
+            memoryRecall: input.inputs.memoryRecall,
           }),
           decision.pushSourceKey,
           decision.costMicros,
