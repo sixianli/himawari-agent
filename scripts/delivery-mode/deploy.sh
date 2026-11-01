@@ -26,6 +26,26 @@ result() {
   exit "$3"
 }
 
+lock="$packet/.deploy.lock"
+acquire_lock() {
+  if mkdir "$lock" 2>/dev/null; then return 0; fi
+  holder="$(cat "$lock/pid" 2>/dev/null || true)"
+  if [[ "$holder" =~ ^[0-9]+$ ]] && ! kill -0 "$holder" 2>/dev/null; then
+    echo "DEPLOY_LOCK_STALE: the process $holder that held $lock is gone; taking the lock over"
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null && return 0
+    holder="$(cat "$lock/pid" 2>/dev/null || true)"
+  fi
+  echo "DEPLOY_ALREADY_RUNNING pid=${holder:-unknown} started=$(cat "$lock/started" 2>/dev/null || echo unknown) lock=$lock: another deploy of this packet holds the lock; wait for it to finish, or if that process is really gone remove $lock and run again" >&2
+  return 1
+}
+if ! acquire_lock; then
+  result already-running LOCK 8
+fi
+echo "$$" > "$lock/pid"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$lock/started"
+trap 'rm -rf "$lock"' EXIT
+
 if [[ -f "$packet/inputs/check-packet-consistency.py" ]] && ! /usr/bin/python3 -I "$packet/inputs/check-packet-consistency.py" "$packet" > /dev/null; then
   echo "DEPLOY_PACKET_INCONSISTENT: /usr/bin/python3 -I $packet/inputs/check-packet-consistency.py $packet" >&2
   result inconsistent PACKET 3

@@ -249,6 +249,49 @@ class DeployHarness(unittest.TestCase):
         return child.returncode, json.loads(line.split(' ', 1)[1]), calls
 
 
+class DeployLockTest(DeployHarness):
+    def lock(self):
+        return self.packet / '.deploy.lock'
+
+    def holder(self):
+        process = subprocess.Popen(['sleep', '60'])
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        self.lock().mkdir()
+        (self.lock() / 'pid').write_text(str(process.pid) + '\n')
+        (self.lock() / 'started').write_text('2026-11-01T07:00:00Z\n')
+        return process
+
+    def test_a_second_deploy_of_the_same_packet_stops_and_names_the_holder(self):
+        process = self.holder()
+        code, result, calls = self.deploy_with_cleanup()
+        self.assertEqual((code, result['result'], result['stoppedAt']), (8, 'already-running', 'LOCK'))
+        self.assertEqual(calls, [])
+        log = Path(result['log']).read_text()
+        self.assertIn('DEPLOY_ALREADY_RUNNING pid=' + str(process.pid), log)
+        self.assertIn('2026-11-01T07:00:00Z', log)
+        self.assertIsNone(process.poll())
+        self.assertTrue(self.lock().exists())
+
+    def test_a_lock_left_by_a_dead_process_is_taken_over(self):
+        dead = subprocess.Popen(['true'])
+        dead.wait()
+        self.lock().mkdir()
+        (self.lock() / 'pid').write_text(str(dead.pid) + '\n')
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+
+    def test_the_lock_is_released_after_a_pass_and_after_a_failure(self):
+        self.deploy()
+        self.assertFalse(self.lock().exists())
+        self.deploy(FAKE_FAIL_AT='S1_INSTALL')
+        self.assertFalse(self.lock().exists())
+
+    def test_a_lock_without_a_readable_pid_is_not_treated_as_free(self):
+        self.lock().mkdir()
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (8, 'already-running'))
+
+
 class DeployFlowTest(DeployHarness):
     def test_full_run_passes_and_keeps_a_log(self):
         code, result, calls = self.deploy()
