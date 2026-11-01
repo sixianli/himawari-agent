@@ -241,6 +241,18 @@ def cleanup(plan, apply, references, stamp):
         else:
             remove(path, 'failure-scene')
 
+    target = plan['qualificationTarget']
+    if Path(target).parent != Path(plan['evidenceParent']) / 'qualification' or Path(target).name in ('', '.', '..'):
+        fail('CLEANUP_QUALIFICATION_PATH_INVALID')
+    if os.path.lexists(target):
+        if os.path.islink(target) or not os.path.isdir(target):
+            keep(target, 'not-a-directory')
+        elif in_use(target):
+            keep(target, in_use(target))
+        elif os.listdir(target):
+            keep(target, 'qualification-not-empty')
+        else:
+            remove(target, 'empty-qualification-leftover')
     preserved_root = Path(plan['archiveRoot']) / 'failed-acceptance'
     for path in children(preserved_root)[:-plan.get('keepFailedAcceptance', 2)]:
         remove(path, 'old-failed-acceptance')

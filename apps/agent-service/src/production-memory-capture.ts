@@ -100,6 +100,7 @@ export interface ParsedMemoryCandidates {
   readonly candidates: readonly ExtractedMemoryCandidate[];
   readonly explicitOrdinal: number | null;
   readonly unverifiedEvidence: number;
+  readonly rejectedCandidates: readonly ExtractedMemoryCandidate[];
   readonly invalidCandidates: number;
   readonly returnedNone: boolean;
 }
@@ -266,6 +267,7 @@ export function parseMemoryCandidates(input: {
   const items = (parsed as { memories: unknown }).memories;
   if (!Array.isArray(items)) throw new Error("MEMORY_CAPTURE_RESPONSE_INVALID");
   const candidates: ExtractedMemoryCandidate[] = [];
+  const rejectedCandidates: ExtractedMemoryCandidate[] = [];
   let explicitOrdinal: number | null = null;
   let unverifiedEvidence = 0;
   let invalidCandidates = 0;
@@ -311,15 +313,11 @@ export function parseMemoryCandidates(input: {
     const quote = typeof value["quote"] === "string" ? value["quote"] : "";
     const evidenceVerified =
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
-    if (
+    const evidenceRejected =
       input.ownerMessage !== undefined &&
       decision !== "unchanged" &&
       dataClassification !== "restricted" &&
-      !evidenceVerified
-    ) {
-      unverifiedEvidence += 1;
-      continue;
-    }
+      !evidenceVerified;
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -395,13 +393,11 @@ export function parseMemoryCandidates(input: {
         ? Math.round(value["confidence"])
         : 0;
     const confidencePermille = Math.max(0, Math.min(inference ? 700 : 1000, rawConfidence));
-    if (value["explicit"] === true && explicitOrdinal === null && !inference)
-      explicitOrdinal = candidates.length;
     const reminder =
       dataClassification === "restricted"
         ? undefined
         : reminderSchedule(value["dueAt"], value["repeat"], input.sentAt, input.timeZone);
-    candidates.push({
+    const built: ExtractedMemoryCandidate = {
       kind,
       decision,
       existingMemoryId: decision === "create" ? null : existing,
@@ -436,12 +432,21 @@ export function parseMemoryCandidates(input: {
               : "other") as SensitiveMemoryTopic,
           }
         : {}),
-    });
+    };
+    if (evidenceRejected) {
+      unverifiedEvidence += 1;
+      rejectedCandidates.push(built);
+      continue;
+    }
+    if (value["explicit"] === true && explicitOrdinal === null && !inference)
+      explicitOrdinal = candidates.length;
+    candidates.push(built);
   }
   return {
     candidates,
     explicitOrdinal,
     unverifiedEvidence,
+    rejectedCandidates,
     invalidCandidates,
     returnedNone: items.length === 0,
   };
@@ -760,6 +765,7 @@ export class ProductionMemoryCapture {
       candidates: [],
       explicitOrdinal: null,
       unverifiedEvidence: 0,
+      rejectedCandidates: [],
       invalidCandidates: 0,
       returnedNone: false,
     };
@@ -797,37 +803,38 @@ export class ProductionMemoryCapture {
         audit("evidence_unverified");
       for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
       if (parsed.returnedNone) audit("nothing_to_remember");
-      if (parsed.candidates.length === 0) return;
+      if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
       await this.options.assertActive();
-      await this.options.generations.request({
-        jobId: createCheckpointJobId(`checkpoint:memory-capture:${runId}`),
-        generationId,
-        ownerId,
-        agentId,
-        threadId,
-        sourceWatermark: owner.sequence,
-        policyVersion: MEMORY_CAPTURE_POLICY_VERSION,
-        modelDescriptorRef: request.modelRef,
-        trigger: "controlled_idle",
-        summaryRef: null,
-        summaryClassification: null,
-        status: "pending",
-        revision: 1,
-        attemptCount: 0,
-        nextRetryAt: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-        sources: [
-          {
-            ref: owner.id,
-            sequence: owner.sequence,
-            kind: "message",
-            dataClassification: owner.dataClassification,
-          },
-        ],
-        requestedAt: this.options.clock.now(),
-        errorCode: null,
-      });
+      if (parsed.candidates.length > 0)
+        await this.options.generations.request({
+          jobId: createCheckpointJobId(`checkpoint:memory-capture:${runId}`),
+          generationId,
+          ownerId,
+          agentId,
+          threadId,
+          sourceWatermark: owner.sequence,
+          policyVersion: MEMORY_CAPTURE_POLICY_VERSION,
+          modelDescriptorRef: request.modelRef,
+          trigger: "controlled_idle",
+          summaryRef: null,
+          summaryClassification: null,
+          status: "pending",
+          revision: 1,
+          attemptCount: 0,
+          nextRetryAt: null,
+          claimedBy: null,
+          claimExpiresAt: null,
+          sources: [
+            {
+              ref: owner.id,
+              sequence: owner.sequence,
+              kind: "message",
+              dataClassification: owner.dataClassification,
+            },
+          ],
+          requestedAt: this.options.clock.now(),
+          errorCode: null,
+        });
     }
     const service = createProductionAutomaticMemory({
       ...this.options,
@@ -838,6 +845,7 @@ export class ProductionMemoryCapture {
     await service.processCommittedRun({
       ...input,
       explicitRememberCandidateOrdinal: parsed.explicitOrdinal,
+      rejectedCandidates: parsed.rejectedCandidates,
     });
   }
 }

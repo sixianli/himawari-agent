@@ -30,7 +30,7 @@ def probe_units(packet, binding):
 
 def target_paths(binding):
     paths = binding['paths']
-    return sorted({paths[key] for key in ('newPrefix', 'newOperations', 'evidenceRoot') if key in paths} | ({str(Path(paths['transportRoot']).parent)} if 'transportRoot' in paths else set()))
+    return sorted({paths[key] for key in ('newPrefix', 'newOperations', 'evidenceRoot') if key in paths} | ({str(Path(paths['transportRoot']).parent)} if 'transportRoot' in paths else set()) | {binding['service']['newQualificationEvidenceRoot']})
 
 
 def source_cache(binding):

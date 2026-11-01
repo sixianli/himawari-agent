@@ -13,7 +13,7 @@ ARTIFACT_SHA256 = 'a' * 64
 CONFIG_SHA256 = 'c' * 64
 UNIT_SHA256 = 'd' * 64
 COMMIT = 'b' * 40
-BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'oldConfigSha256': CONFIG_SHA256, 'oldUnitSha256': UNIT_SHA256}, 'paths': {'stateRoot': '/var/lib/himawari/state', 'config': '/etc/himawari/config.json'}, 'authority': {'authorityEpoch': 1, 'fencingToken': 31}, 'candidate': {'archiveSha256': ARTIFACT_SHA256, 'testedCommit': COMMIT}}
+BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'oldConfigSha256': CONFIG_SHA256, 'oldUnitSha256': UNIT_SHA256, 'newQualificationEvidenceRoot': '/var/lib/himawari/qualification/fourteenth-20261027'}, 'paths': {'stateRoot': '/var/lib/himawari/state', 'config': '/etc/himawari/config.json'}, 'authority': {'authorityEpoch': 1, 'fencingToken': 31}, 'candidate': {'archiveSha256': ARTIFACT_SHA256, 'testedCommit': COMMIT}}
 SCENARIOS = ['accept-homepage', 'accept-search-approval', 'accept-search-toggle', 'accept-news-search', 'accept-long-answer', 'accept-run-command', 'accept-unrelated-no-memory', 'accept-slow-memory-search', 'accept-file-writing-progress', 'accept-progress-without-state', 'accept-memory-page', 'accept-phone-layout', 'accept-after-restart']
 
 
@@ -24,7 +24,7 @@ def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
     statuses = statuses or {}
     timings = {**TIMED, **(answer_ms or {})}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed'), **({'answerMs': timings[name]} if timings.get(name) is not None else {})} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nscratchScenes=0\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nscratchScenes=0\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -113,7 +113,7 @@ class LeftoverPreflightTest(unittest.TestCase):
 
     def test_target_paths_come_from_the_bindings(self):
         binding = {**BINDING, 'paths': {**BINDING['paths'], 'newPrefix': self.PATHS[0], 'newOperations': '/opt/himawari/operations/fourteenth-20261027', 'evidenceRoot': '/var/lib/himawari/fourteenth-20261027-evidence', 'transportRoot': self.PATHS[1] + '/input'}}
-        self.assertEqual(preflight.target_paths(binding), sorted([self.PATHS[0], self.PATHS[1], '/opt/himawari/operations/fourteenth-20261027', '/var/lib/himawari/fourteenth-20261027-evidence']))
+        self.assertEqual(preflight.target_paths(binding), sorted([self.PATHS[0], self.PATHS[1], '/opt/himawari/operations/fourteenth-20261027', '/var/lib/himawari/fourteenth-20261027-evidence', '/var/lib/himawari/qualification/fourteenth-20261027']))
 
     def test_remote_script_reads_unit_state_and_paths(self):
         script = preflight.remote_script(BINDING, [self.UNIT], self.PATHS)
