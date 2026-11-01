@@ -67,8 +67,12 @@ export abstract class ReconnectingEventStream<Options extends EventStreamOptions
     this.connectionState("offline");
   }
 
-  reconnectNow(): void {
-    if (this.#stopped || this.#networkOffline || this.#source) return;
+  reconnectNow(force = false): void {
+    if (this.#stopped || this.#networkOffline) return;
+    if (this.#source) {
+      if (!force) return;
+      this.#close();
+    }
     this.#clearReconnect();
     this.#connect();
   }

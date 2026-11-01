@@ -44,6 +44,7 @@ import {
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
+import { resumedAfterLongAbsence } from "./page-resume.js";
 import {
   OPEN_REMINDERS_PAGE,
   openRemindersPage,
@@ -288,7 +289,8 @@ function LocalizedControlCenterApp({
     const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
-      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+      if (document.visibilityState === "visible")
+        synchronizer.reconnectNow(resumedAfterLongAbsence());
     };
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
@@ -319,7 +321,7 @@ function LocalizedControlCenterApp({
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
       if (document.visibilityState !== "visible") return;
-      synchronizer.reconnectNow();
+      synchronizer.reconnectNow(resumedAfterLongAbsence());
       threadEventQueue.current.push(null);
       setThreadEventSignal((current) => current + 1);
     };

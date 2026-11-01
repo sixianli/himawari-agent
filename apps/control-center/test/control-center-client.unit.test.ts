@@ -134,6 +134,19 @@ describe.each(["gateway", "thread"] as const)("%s connection lifecycle", (kind) 
     }
   });
 
+  it("replaces a connection that may have died silently while the page was away", () => {
+    const { synchronizer, sources } = setup();
+    try {
+      synchronizer.start();
+      sources[0]?.onopen?.(new Event("open"));
+      synchronizer.reconnectNow(true);
+      expect(sources[0]?.close).toHaveBeenCalledOnce();
+      expect(sources).toHaveLength(2);
+    } finally {
+      synchronizer.stop();
+    }
+  });
+
   it("retries a stalled handshake and ignores callbacks from the expired source", () => {
     vi.useFakeTimers();
     const { synchronizer, sources, retries, onConnectionState } = setup();
