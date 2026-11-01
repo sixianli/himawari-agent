@@ -106,6 +106,7 @@ date: "2026-10-26"
   79. [执行进程“活着却卡住”没人发现：先查崩溃是不是已有兜底，再决定要不要做心跳](#case-command-hang-heartbeat)
   80. [一个“今日天气”等了 86 秒：全服务同一时刻只跑一个对话，改大数字还不够](#case-concurrent-dispatch)
   81. [发给模型的敏感信息怎么遮：从三处各遮一遍，改成所有请求只走一个出口，开源网关的做法对照后取长补短](#case-model-egress-redaction)
+  82. [多轮对话缓存命中为 0：每轮改写了上一轮的消息，改成只追加并加上逐字节的阻断检查](#case-append-only-prefix)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -131,7 +132,7 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
@@ -5182,6 +5183,53 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 **面试 30 秒版**
 
 “Andy 要求发给模型的内容统一遮掉验证码、卡号、密码。第一版我在三个调用点各遮一遍，他追问为什么不是一个出口。我读了 LiteLLM、Portkey、Bifrost 和 Magpie 的源码：前三个只看固定位置，遇到不认识的格式放行；Magpie 按键名排除，自己的事故记录里写着模型起的工具参数名可以冒充受保护的名字。所以我做了进程内一个出口：默认全遮、按位置排除、不认识就拒绝发送，占位符用带密钥的哈希保持稳定，这样缓存前缀不变，回复里的占位符还能还原给用户看。”
+
+[返回目录](#contents)
+
+<a id="case-append-only-prefix"></a>
+
+## 案例 82：多轮对话缓存命中为 0：每轮改写了上一轮的消息，改成只追加并加上逐字节的阻断检查
+
+**背景与现象**
+
+2026-11-02 00:44（日本时间），Andy 在生产网页追问「晚上呢?」，这一轮显示「缓存命中 0%」。缓存命中是指模型服务方对请求开头与上一次完全相同的那段不再重新计算。Andy 的话：「这是原则性问题，会多花很多钱。」
+
+**根因**
+
+先排除界面算错：分母是未命中输入加命中加写入，0% 是真的没命中。再在生产上只读取数：这个对话三次请求全是 0，数据库里缓存字段是「上游报告了，值是 0」。逐字符对比相邻两轮的请求体：前 10954 字符相同（系统提示加工具定义，约 4.2k token），从第 2 条消息起不同——第 1 轮发出的用户消息带 705 字符资料块，第 2 轮这条被换成只有 62 字符的提问。代码是 `pi-runtime-adapter.ts` 里每轮存历史前把用户消息换回原话（ADR 0104 的一条决定，理由「前面的消息每轮相同」是错的：模型上一轮见到的和这一轮见到的不一样）。
+
+数据：92 次 chat 请求里，每个对话第 2 轮及以后的第一次请求 18 次，输入约 46.2 万 token，命中约 4.1 万（9%），占全部输入约 31%；同一轮内前缀严格追加的请求 47 次里 36 次命中。
+
+**我们的方案**
+
+历史存实际发出去的那条消息，删掉换回原话的函数；每轮变化的时间和资料仍只放最后一条消息，并在资料块开头加一句「更早的消息里附的资料只反映当时」。再加四道防线，让别的线程不再犯：①`npm run check:prompt-prefix` 阻断检查：真实 Pi 适配器加真实出口遮盖对回环服务跑多轮对话（工具调用、搜索、银行卡号遮盖、附件长文本、每轮变化的记忆和时间），逐字节检查后一次请求以前一次为开头，三条反向用例（改写历史、系统提示带每轮变化的值、检查器自己对删除重排的判断）必须失败；②`AGENTS.md` 加硬规则，规则全文在 `.claude/rules/prompt-prefix.md`；③生产监控：后续轮次命中率低于 50% 写日志 `cache.follow_up_low_hit`，命中率报告脚本加 `--by turn`；④双模型复核问题清单加「是否改变已发前缀」。复用 Pi：保存历史仍走 Pi 会话的 `message_end` 快照，没有自建消息转换。
+
+**方案讨论与备选**
+
+保持换回原话（每轮必断，放弃）；历史超长时批量清理旧资料块（Pi 已有超窗口压缩，没有数据证明需要，放弃，等数据）；把不变资料拆成固定块（收益更大但是另一个大改动，另出方案）；关掉 Magpie 的内容遮盖（数据不支持它造成零命中，放弃）。
+
+**业界主流做法**
+
+- ✅ OpenAI 提示缓存指南：“Append new messages rather than rewriting earlier turns.”（<https://developers.openai.com/api/docs/guides/prompt-caching>，沿用 10-30 的引文，本次未重新打开）。
+- ✅ Manus 官方博客：“Make your context append-only. Avoid modifying previous actions or observations.”（同上）。
+- ✅ DeepSeek 上下文硬盘缓存文档（2026-11-02 打开）：“A subsequent request can only hit the cache if it fully matches a cache prefix unit.”“The cache system works on a "best-effort" basis and does not guarantee a 100% cache hit rate.”（<https://api-docs.deepseek.com/guides/kv_cache>）
+- ✅ OpenCode Go 文档（2026-11-02 打开）：“Send a stable session ID in `x-opencode-session` for each conversation so we can optimize routing and prompt caching.”（<https://opencode.ai/docs/go/>）
+
+**对比与取舍**
+
+业界一致是只追加；我们的做法是在存历史时改写，与它相反。取舍：只追加会让每轮多存资料块、旧资料块里有旧事实，用说明句和反向用例控制，换来整段历史可缓存。
+
+**结果数据**
+
+改前 4 条多轮正向用例失败（`message-changed`），改后全过；真实数据库组合里的跨轮前缀检查通过。上线后的命中率变化：未测量。仍未查清：前缀严格追加时上游仍有 11 次零命中（47 次里）；已排除前缀不稳、Magpie 重启、重试换供应商、响应头差异；Magpie 内容遮盖的遮盖记录在 6 组相邻请求里相同，不支持它是原因，但没拿到最终请求体。
+
+**相关 ADR/PR**
+
+[ADR 0149](adr/0149-append-only-model-requests.md)（取代 [ADR 0104](adr/0104-turn-material-in-last-user-message.md)）、[ADR 0128](adr/0128-record-cache-usage-of-every-model-request.md)、事故 [I-66](incidents-and-gates.md#incidents)。
+
+**面试 30 秒版**
+
+“用户截图显示多轮对话缓存命中 0%。我先排除界面算错，再在生产上逐字符对比相邻两轮的请求，发现第二轮把上一轮的用户消息从‘资料加提问’改回了‘只剩提问’，前缀从这一条起全变，上一轮的回答和搜索结果全部重算——18 次这样的请求命中只有 9%。修法是历史存实际发出去的内容，只追加；然后加了逐字节的阻断检查、带反向用例，保证以后任何人改上下文拼装都会被拦下。”
 
 [返回目录](#contents)
 

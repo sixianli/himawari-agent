@@ -2633,7 +2633,7 @@ it("preserves a denied tool call across native session restart and delivers only
   expect(tools.execute).toHaveBeenCalledTimes(1);
 });
 
-it("puts the turn time and owner material in the last user turn and saves only the owner's words", async () => {
+it("puts the turn time and owner material in the last user turn and saves that turn exactly as sent", async () => {
   class HistoryProjection extends RecordingProjection {
     saved: readonly unknown[] = [];
     async captureHistory(input: { messages: readonly unknown[] }) {
@@ -2716,8 +2716,9 @@ it("puts the turn time and owner material in the last user turn and saves only t
     (message) => (message as { role?: string }).role === "user",
   );
   expect(JSON.stringify(savedUsers)).toContain("我老婆叫管冬融");
-  expect(JSON.stringify(projection.saved)).not.toContain("himawari-context");
-  expect(JSON.stringify(projection.saved)).not.toContain("主人住在东京都北区");
+  expect(JSON.stringify(savedUsers.at(-1))).toBe(JSON.stringify(context.messages.at(-1)));
+  expect(JSON.stringify(projection.saved)).toContain("himawari-context");
+  expect(JSON.stringify(projection.saved)).toContain("主人住在东京都北区");
 });
 
 it("waits for cancelled native history persistence before acknowledging cancel", async () => {

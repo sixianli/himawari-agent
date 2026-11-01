@@ -112,6 +112,7 @@ import {
 } from "./production-run-memory.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
+import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import {
   inspectSandboxCommands,
@@ -1592,7 +1593,13 @@ export async function runAgentService(
         live,
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         modelUsage: {
-          store: activeRepository.modelUsage(),
+          store: monitorFollowUpCacheHits(activeRepository.modelUsage(), (hit) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "cache.follow_up_low_hit",
+              ...hit,
+            }),
+          ),
           onFailure: (error) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
