@@ -5,4 +5,5 @@ export interface BuildInfo {
 
 export function resolveBuildInfo(
   environment: Readonly<Record<string, string | undefined>>,
+  cwd?: string,
 ): BuildInfo | null;

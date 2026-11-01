@@ -149,7 +149,12 @@ export function SettingsDialog({
                 <p className="settings-version">
                   {message("settings.version", {
                     revision: build.revision,
-                    date: format.day(build.date),
+                    date: new Intl.DateTimeFormat(format.locale, {
+                      year: "numeric",
+                      month: "numeric",
+                      day: "numeric",
+                      timeZone: "UTC",
+                    }).format(new Date(build.date)),
                   })}
                 </p>
               ) : null}
