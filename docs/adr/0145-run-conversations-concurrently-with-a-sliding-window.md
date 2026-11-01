@@ -61,4 +61,4 @@ date: "2026-11-01"
 
 ## 关联文档
 
-[ADR 0131](0131-read-lane-separate-readonly-connection.md)、[案例 80](../engineering-casebook.md#case-concurrent-dispatch)、[事故清单 I-57](../incidents-and-gates.md)。
+[ADR 0131](0131-read-lane-separate-readonly-connection.md)、[案例 80](../engineering-casebook.md#case-concurrent-dispatch)、[事故清单 I-58](../incidents-and-gates.md)。
