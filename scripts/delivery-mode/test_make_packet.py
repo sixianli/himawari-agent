@@ -693,11 +693,12 @@ class HermesCleanupTest(unittest.TestCase):
                         unittest.mock.patch.object(packet_maker, 'load_instance', return_value={}), \
                         unittest.mock.patch.object(packet_maker, 'resolve_commit', return_value='e' * 40), \
                         unittest.mock.patch.object(packet_maker, 'require_current_scripts'), \
+                        unittest.mock.patch.object(packet_maker, 'require_claims_proven'), \
                         unittest.mock.patch.object(packet_maker, 'discover', return_value={}), \
                         unittest.mock.patch.object(packet_maker, 'interpret_discovery', return_value={'LABEL': 'twentieth'}), \
                         unittest.mock.patch.object(packet_maker, 'base_parameters', return_value={'LABEL': 'twentieth', 'COMMIT8': 'e' * 8}):
                     with self.assertRaises(SystemExit):
-                        packet_maker.prepare(argparse.Namespace(instance='andy-production', commit='HEAD', date='2026-10-30', label='twentieth'))
+                        packet_maker.prepare(argparse.Namespace(instance='andy-production', commit='HEAD', date='2026-10-30', label='twentieth', since=None, output_root='out'))
             self.assertIn(packet_maker.hermes_cleanup_command(hermes.work), calls.read_text())
 
 
@@ -725,6 +726,53 @@ class ScriptCheckoutTest(unittest.TestCase):
         source = (HERE / 'make-packet.py').read_text()
         body = source[source.index('def prepare(arguments):'):source.index('def build_packet(')]
         self.assertLess(body.index('require_current_scripts(commit)'), body.index('discover('))
+
+
+class UntestedClaimGateTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.repo = Path(self.directory.name)
+        self.git = ['git', '-C', str(self.repo), '-c', 'user.name=t', '-c', 'user.email=t@t']
+        subprocess.run(['git', 'init', '-q', str(self.repo)], check=True)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def commit(self, message):
+        subprocess.run([*self.git, 'commit', '-q', '--allow-empty', '-m', message], check=True)
+        return subprocess.run([*self.git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+
+    def test_a_claim_without_proof_since_the_last_release_is_refused(self):
+        base = self.commit('base')
+        head = self.commit('fix: x\n\nUntested-critical-path: real sandbox prewarm')
+        with unittest.mock.patch.object(packet_maker, 'REPO', self.repo):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_UNTESTED_CLAIM_WITHOUT_PROOF'):
+                packet_maker.require_claims_proven(head, base, self.repo / 'out')
+
+    def test_a_proven_claim_passes(self):
+        base = self.commit('base')
+        head = self.commit('fix: x\n\nUntested-critical-path: real sandbox prewarm\nReal-env-proof: ran r2l6 on Hermes')
+        with unittest.mock.patch.object(packet_maker, 'REPO', self.repo):
+            packet_maker.require_claims_proven(head, base, self.repo / 'out')
+
+    def test_the_previous_packet_commit_is_the_default_start(self):
+        root = self.repo / 'out'
+        for name, commit in (('2026-10-01-a-change-packet-01', 'a' * 40), ('2026-10-20-b-change-packet-01', 'b' * 40)):
+            (root / name).mkdir(parents=True)
+            (root / name / packet_maker.PARAMETERS).write_text(json.dumps({'COMMIT': commit}))
+        self.assertEqual(packet_maker.previous_release_commit(root), 'b' * 40)
+        self.assertIsNone(packet_maker.previous_release_commit(self.repo / 'none'))
+
+    def test_unknown_start_is_refused_not_skipped(self):
+        head = self.commit('base')
+        with unittest.mock.patch.object(packet_maker, 'REPO', self.repo):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SINCE_UNKNOWN'):
+                packet_maker.require_claims_proven(head, None, self.repo / 'out')
+
+    def test_prepare_checks_claims_before_touching_production(self):
+        source = (HERE / 'make-packet.py').read_text()
+        body = source[source.index('def prepare(arguments):'):source.index('def build_packet(')]
+        self.assertLess(body.index('require_claims_proven('), body.index('discover('))
 
 
 class DependencyReinstallTest(unittest.TestCase):
