@@ -723,6 +723,51 @@ describe("PiModelTransport", () => {
     expect(payloads.writes).toEqual([]);
   });
 
+  it("logs why a response was rejected without logging its content", async () => {
+    const payloads = payloadBoundary();
+    const terminal = {
+      ...assistant(""),
+      content: [
+        {
+          type: "toolCall" as const,
+          id: "tool-call-logged",
+          name: "read",
+          arguments: { path: "secret-path.md" },
+        },
+      ],
+      stopReason: "toolUse" as const,
+    } satisfies AssistantMessage;
+    const transport = new PiModelTransport({
+      models: {
+        resolve: async () =>
+          ({ model, modelRuntime: runtimeWithTerminal(terminal) }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () => observationResponse(),
+    });
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line));
+    });
+    try {
+      await collect(transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }));
+    } finally {
+      spy.mockRestore();
+    }
+    const logged = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      event: "model.response_rejected",
+      code: "AI_GATEWAY_TOOL_CALL_UNSUPPORTED",
+      invocationId: request.invocationId,
+      stopReason: "toolUse",
+      partTypes: ["toolCall"],
+      toolCallNames: ["read"],
+    });
+    expect(lines.join("\n")).not.toContain("secret-path.md");
+  });
+
   it("does not report a max-token truncation as a completed result", async () => {
     const payloads = payloadBoundary();
     const terminal = { ...assistant("partial"), stopReason: "length" as const };

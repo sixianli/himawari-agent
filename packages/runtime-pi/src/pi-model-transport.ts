@@ -264,9 +264,14 @@ export class PiModelTransport {
     const message: UserMessage = { role: "user", content: prompt, timestamp: Date.now() };
     const context: Context = { messages: [message] };
     let responseStatus = 0;
+    const upstreamHeaders: Record<string, string> = {};
     const statusFetch: FetchFunction = async (fetchInput, init) => {
       const response = await this.#fetch(fetchInput, init);
       responseStatus = response.status;
+      for (const name of ["x-magpie-model", "x-magpie-provider"]) {
+        const value = response.headers.get(name);
+        if (value) upstreamHeaders[name] = value.slice(0, 128);
+      }
       return response;
     };
     const cacheFields = observeCacheFields(statusFetch);
@@ -355,10 +360,29 @@ export class PiModelTransport {
       yield failed(request, failure.code, failure.retryable, Date.now() - startedAt, now());
       return;
     }
+    const rejected = (code: string) =>
+      console.error(
+        JSON.stringify({
+          event: "model.response_rejected",
+          code,
+          invocationId: request.invocationId,
+          modelRef: request.modelRef,
+          responseModel: String(terminalMessage?.model ?? "").slice(0, 128),
+          stopReason: terminalMessage?.stopReason,
+          outputTokens: terminalMessage?.usage?.output ?? null,
+          partTypes: (terminalMessage?.content ?? []).map((item) => item.type),
+          toolCallNames: (terminalMessage?.content ?? [])
+            .flatMap((item) => (item.type === "toolCall" ? [String(item.name).slice(0, 64)] : []))
+            .slice(0, 5),
+          upstream: upstreamHeaders,
+          at: new Date().toISOString(),
+        }),
+      );
     if (
       terminalMessage.stopReason === "toolUse" ||
       terminalMessage.content.some((item) => item.type === "toolCall")
     ) {
+      rejected("AI_GATEWAY_TOOL_CALL_UNSUPPORTED");
       yield failed(
         request,
         "AI_GATEWAY_TOOL_CALL_UNSUPPORTED",
@@ -369,6 +393,7 @@ export class PiModelTransport {
       return;
     }
     if (terminalMessage.stopReason === "length") {
+      rejected("AI_GATEWAY_OUTPUT_TRUNCATED");
       yield failed(request, "AI_GATEWAY_OUTPUT_TRUNCATED", false, Date.now() - startedAt, now());
       return;
     }
