@@ -8,6 +8,7 @@ import {
   type EmbeddingBoundary,
   GatewayEmbedder,
   HybridMemoryProvider,
+  type HybridMemoryProviderOptions,
   QWEN3_EMBEDDING_8B_MODEL,
   QWEN3_MEMORY_MINIMUM_SIMILARITY,
   QWEN3_MEMORY_QUERY_INSTRUCTION,
@@ -27,7 +28,7 @@ export interface ProductionMemoryCompositionOptions {
   readonly secretSource: HostProviderSecretSource;
   readonly index: MemoryIndexStorePort;
   readonly fetch?: typeof fetch;
-  readonly onVectorFailure?: (error: unknown) => void;
+  readonly onVectorFailure?: HybridMemoryProviderOptions["onVectorFailure"];
 }
 
 export interface ProductionMemoryComposition {

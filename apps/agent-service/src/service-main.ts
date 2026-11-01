@@ -86,6 +86,7 @@ import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
+import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -310,6 +311,11 @@ async function createDefaultMemoryComposition(
     configuration: context.configuration,
     secretSource: sources.provider,
     index: context.repository.memoryIndex(),
+    onVectorFailure: retrievalDegradeRecorder({
+      ledger: context.repository.decisionLedger(),
+      now: () => new Date().toISOString(),
+      onFailure: () => {},
+    }),
   });
 }
 

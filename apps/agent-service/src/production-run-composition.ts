@@ -273,6 +273,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
       ids,
       threads: repository.threadRepository(),
       threadSummaries: repository.threadDistillationState(),
+      ledger: repository.decisionLedger(),
     }),
     { form: "context.form" },
   );
@@ -454,6 +455,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         approvals: memoryCaptureOptions.approvals,
         reminders: repository.memoryReminders(),
         book: repository.memoryBook(),
+        ledger: repository.decisionLedger(),
         ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),
         payloads,
         protector,

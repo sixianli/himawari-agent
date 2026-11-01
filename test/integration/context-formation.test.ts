@@ -1,4 +1,4 @@
-import type { ThreadDistillationStatePort } from "@himawari-agent/application";
+import type { DecisionLedgerWrite, ThreadDistillationStatePort } from "@himawari-agent/application";
 import { ContextFormationService, SessionTraceRecorder } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -42,7 +42,10 @@ async function seedMemory(
   await memory.commitWrite(`proposal-${input.id}`, input.id, T1);
 }
 
-function createService(threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">) {
+function createService(
+  threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">,
+  ledger?: { append(write: DecisionLedgerWrite): Promise<void> },
+) {
   const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
   const trace = new SessionTraceRecorder({
     trace: adapters.trace,
@@ -63,6 +66,7 @@ function createService(threadSummaries?: Pick<ThreadDistillationStatePort, "late
       clock: adapters.clock,
       ids: adapters.ids,
       ...(threadSummaries ? { threadSummaries } : {}),
+      ...(ledger ? { ledger } : {}),
     }),
   };
 }
@@ -413,6 +417,63 @@ describe("Task 9 Memory and context formation", () => {
       trigger: { sourceType: "user_message" },
       injectedContentRefs: formed.injectedContentRefs,
     });
+  });
+
+  it("writes one ledger row naming the memories cut by the selection limit", async () => {
+    const written: DecisionLedgerWrite[] = [];
+    const { adapters, service } = createService(undefined, {
+      append: async (write) => {
+        written.push(write);
+      },
+    });
+    for (const id of ["memory-a", "memory-b", "memory-c"])
+      await seedMemory(adapters.memory, {
+        id,
+        contentRef: `payload-${id}`,
+        sourceRef: `trace-${id}`,
+        searchTerms: ["beef"],
+        dataClassification: "private",
+      });
+    const formed = await service.form(request("user_message"));
+    const cut = formed.candidates
+      .map(({ id }) => id)
+      .filter((id) => !formed.selected.some((memory) => memory.id === id));
+    expect(cut).toHaveLength(1);
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({
+      kind: "context_truncation",
+      outcome: "truncated",
+      reasonCode: "selection_limit_reached",
+      subjectRef: RUN_ID,
+      inputs: { memoryIds: cut, ruleIds: [] },
+      contentRef: null,
+    });
+  });
+
+  it("writes no ledger row when nothing was cut or only classification excluded a memory", async () => {
+    const written: DecisionLedgerWrite[] = [];
+    const { adapters, service } = createService(undefined, {
+      append: async (write) => {
+        written.push(write);
+      },
+    });
+    await seedMemory(adapters.memory, {
+      id: "memory-beef",
+      contentRef: "payload-memory-beef",
+      sourceRef: "trace-beef",
+      searchTerms: ["beef"],
+      dataClassification: "private",
+    });
+    await seedMemory(adapters.memory, {
+      id: "memory-restricted",
+      contentRef: "payload-memory-restricted",
+      sourceRef: "trace-restricted",
+      searchTerms: ["beef"],
+      dataClassification: "restricted",
+    });
+    const formed = await service.form(request("user_message"));
+    expect(formed.selected.map(({ id }) => id)).toEqual(["memory-beef"]);
+    expect(written).toEqual([]);
   });
 
   it.each(["user_message", "schedule", "external_event"] as const)(
