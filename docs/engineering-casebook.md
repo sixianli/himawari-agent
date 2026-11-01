@@ -5039,7 +5039,7 @@ B 与 Anthropic 的做法同类，省约一半调用费，但这次数据里把�
 - ✅ Temporal（https://docs.temporal.io/encyclopedia/detecting-activity-failures ，2026-10-31 打开）：“The Temporal Server doesn't detect failures when a Worker loses communication with the Server or crashes.”；“For long-running Activities, we recommend using a relatively short Heartbeat Timeout and a frequent Heartbeat.”
 - ✅ Kubernetes 存活探针（https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/ ，2026-10-31 打开）：探针失败时 “the kubelet kills the container and restarts it.”
 
-**我们的方案**（[ADR 0143](adr/0143-log-commands-silent-for-30-seconds-without-stopping-them.md)）
+**我们的方案**（[ADR 0144](adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)）
 
 Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记录不杀”：主服务记下每条运行中命令最后一次收到执行进程消息的时间，超过 30 秒只写日志 `sandbox.command.silent`，恢复时写 `sandbox.command.silence_ended`，不停止命令。检查前先确认主服务自己的循环没有滞后（两次检查间隔超过 7 秒就重新计时）。测试：每 250 毫秒轮询、每 20 秒慢轮询、已结束的命令、主服务滞后都不报；停止轮询的运行中命令只报一次。
 
@@ -5051,11 +5051,11 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 - 崩溃的兜底：读代码确认（`pair-supervisor.mjs`），未在生产实测。
 - 生产只读取证（2026-11-01，`prod-hang-evidence.md`）：生产库 174 条沙箱命令里，没有一条耗时 ≥29 分钟；日志全部可用历史（最早 10-08）里，`poll_retry`、`cancelled_by_poll_error`、`exit.unknown`、`execution.lost` 都是 0 条；9 条“结果未确认”记录最长约 1 分钟。这不能证明从没卡住过：卡住后被重启打断的命令耗时会被截短（推断）。
-- 失联日志：已实现并有测试（ADR 0143）；上线后的 `sandbox.command.silent` 次数：未测量。真正停止命令的检测：未做，等日志证明需要。
+- 失联日志：已实现并有测试（ADR 0144）；上线后的 `sandbox.command.silent` 次数：未测量。真正停止命令的检测：未做，等日志证明需要。
 
 **相关 ADR/PR**
 
-[案例 77](#case-command-disconnect)、[ADR 0143](adr/0143-log-commands-silent-for-30-seconds-without-stopping-them.md)、[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)。
+[案例 77](#case-command-disconnect)、[ADR 0144](adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)、[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)。
 
 **面试 30 秒版**
 
