@@ -417,6 +417,28 @@ it("requires a new audit after the deployment record or directory is replaced", 
   expect(readBytes).toHaveBeenCalledTimes(3);
 });
 
+it("aborts a superseded background audit without counting it as a failure or retrying it", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  const retrying = vi.fn();
+  let received: AbortSignal | undefined;
+  const hung = vi.fn((_root: string, signal?: AbortSignal) => {
+    received = signal;
+    return new Promise<string>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new Error("SANDBOX_HOST_DIGEST_ABORTED")));
+    });
+  });
+  await verifier.begin(root, digest, hung, [], settled, retrying);
+  node(manifestPath).ino++;
+  await verifier.verify(root, digest, async () => digest);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(received?.aborted).toBe(true);
+  expect(hung).toHaveBeenCalledOnce();
+  expect(retrying).not.toHaveBeenCalled();
+  expect(settled).not.toHaveBeenCalled();
+  await verifier.verify(root, digest, async () => digest);
+});
+
 it("does not retain a failed content audit as trusted", async () => {
   const verifier = verifierFor();
   const readBytes = vi.fn().mockResolvedValueOnce("b".repeat(64)).mockResolvedValue(digest);

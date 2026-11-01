@@ -70,7 +70,6 @@ function runDigestWorker(
     let received = false;
     const stop = () => {
       void worker.terminate();
-      reject(new Error("SANDBOX_HOST_DIGEST_ABORTED"));
     };
     if (signal?.aborted) stop();
     else signal?.addEventListener("abort", stop, { once: true });
@@ -90,7 +89,14 @@ function runDigestWorker(
     worker.once("error", reject);
     worker.once("exit", (code) => {
       signal?.removeEventListener("abort", stop);
-      if (!received) reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
+      if (!received)
+        reject(
+          new Error(
+            signal?.aborted
+              ? "SANDBOX_HOST_DIGEST_ABORTED"
+              : `SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`,
+          ),
+        );
     });
   });
 }

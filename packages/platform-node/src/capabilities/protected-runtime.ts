@@ -64,7 +64,6 @@ export function auditProtectedRuntime(
     let received = false;
     const stop = () => {
       void worker.terminate();
-      reject(new Error("SANDBOX_RUNTIME_AUDIT_ABORTED"));
     };
     if (signal?.aborted) stop();
     else signal?.addEventListener("abort", stop, { once: true });
@@ -76,7 +75,14 @@ export function auditProtectedRuntime(
     worker.once("error", reject);
     worker.once("exit", (code) => {
       signal?.removeEventListener("abort", stop);
-      if (!received) reject(new Error(`SANDBOX_RUNTIME_AUDIT_WORKER_EXIT:${code}`));
+      if (!received)
+        reject(
+          new Error(
+            signal?.aborted
+              ? "SANDBOX_RUNTIME_AUDIT_ABORTED"
+              : `SANDBOX_RUNTIME_AUDIT_WORKER_EXIT:${code}`,
+          ),
+        );
     });
   });
 }
@@ -93,12 +99,16 @@ const TRANSIENT_CODES = new Set([
   "ETIMEDOUT",
 ]);
 
+function isSupersededAuditError(error: unknown): boolean {
+  return error instanceof Error && error.message === "SANDBOX_RUNTIME_AUDIT_SUPERSEDED";
+}
+
 function isTransientAuditError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = (error as NodeJS.ErrnoException).code;
   return (
     (typeof code === "string" && TRANSIENT_CODES.has(code)) ||
-    /^(SANDBOX_RUNTIME_AUDIT_TIMEOUT|SANDBOX_RUNTIME_AUDIT_ABORTED|SANDBOX_HOST_DIGEST_ABORTED|SANDBOX_HOST_DIGEST_WORKER_EXIT|SANDBOX_RUNTIME_AUDIT_WORKER_EXIT)/.test(
+    /^(SANDBOX_RUNTIME_AUDIT_TIMEOUT|SANDBOX_HOST_DIGEST_WORKER_EXIT|SANDBOX_RUNTIME_AUDIT_WORKER_EXIT)/.test(
       error.message,
     )
   );
@@ -107,7 +117,7 @@ function isTransientAuditError(error: unknown): boolean {
 export class ProtectedRuntimeVerifier {
   readonly #manifestPath: string;
   readonly #auditInstallation: (root: string, signal?: AbortSignal) => Promise<void>;
-  readonly #active = new Set<AbortController>();
+  readonly #active = new Map<AbortController, boolean>();
   readonly #audits = new Map<string, Promise<void>>();
   readonly #artifactAudits = new Map<string, Promise<void>>();
   readonly #refused = new Map<string, unknown>();
@@ -210,6 +220,7 @@ export class ProtectedRuntimeVerifier {
       } catch {}
     };
     const failed = (error: unknown) => {
+      if (isSupersededAuditError(error)) return;
       const transient = isTransientAuditError(error);
       if (!transient) this.#refused.set(key, error);
       settle(false, transient);
@@ -287,7 +298,7 @@ export class ProtectedRuntimeVerifier {
   #bounded(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const controller = new AbortController();
-      this.#active.add(controller);
+      this.#active.set(controller, false);
       const timer = setTimeout(() => {
         controller.abort();
         reject(new Error("SANDBOX_RUNTIME_AUDIT_TIMEOUT"));
@@ -300,8 +311,9 @@ export class ProtectedRuntimeVerifier {
         },
         (error: unknown) => {
           clearTimeout(timer);
+          const superseded = this.#active.get(controller) === true;
           this.#active.delete(controller);
-          reject(error);
+          reject(superseded ? new Error("SANDBOX_RUNTIME_AUDIT_SUPERSEDED") : error);
         },
       );
     });
@@ -336,7 +348,10 @@ export class ProtectedRuntimeVerifier {
     if (this.#refused.has(key)) throw this.#refused.get(key);
     let audit = this.#audits.get(key);
     if (!audit) {
-      for (const controller of this.#active) controller.abort();
+      for (const controller of this.#active.keys()) {
+        this.#active.set(controller, true);
+        controller.abort();
+      }
       this.#audits.clear();
       this.#artifactAudits.clear();
       audit = this.#bounded((signal) =>
@@ -408,6 +423,13 @@ export async function verifyProtectedRuntime(
           pid: process.pid,
         }),
       );
+    console.error(
+      JSON.stringify({
+        component: "platform-node",
+        event: "sandbox_runtime.content_audit_started",
+        pid: process.pid,
+      }),
+    );
     await verifier.begin(
       runtimeRoot,
       runtimeDigest,

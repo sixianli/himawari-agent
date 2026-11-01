@@ -44,7 +44,12 @@ def directory(filename, uid, mode=None):
 startup_phase_baseline_ms = __PKT_STARTUP_PHASE_BASELINE_MS__
 
 def content_audits_completed(messages):
-    return len({value.get('pid') for value in messages if isinstance(value, dict) and value.get('event') == 'sandbox_runtime.content_audit_completed' and isinstance(value.get('pid'), int) and not isinstance(value.get('pid'), bool)})
+    counts = {'sandbox_runtime.content_audit_started': {}, 'sandbox_runtime.content_audit_completed': {}}
+    for value in messages:
+        if isinstance(value, dict) and value.get('event') in counts and isinstance(value.get('pid'), int) and not isinstance(value.get('pid'), bool):
+            counts[value['event']][value['pid']] = counts[value['event']].get(value['pid'], 0) + 1
+    started, completed = counts['sandbox_runtime.content_audit_started'], counts['sandbox_runtime.content_audit_completed']
+    return len(started) >= 2 and all(completed.get(pid, 0) >= number for pid, number in started.items())
 
 def startup_phases(journal, invocation, baseline):
     timed = []
@@ -292,7 +297,7 @@ try:
         if failure_events:
             raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_STARTUP_FAILURE_EVENT')
         audits_completed = content_audits_completed(messages)
-        if audits_completed >= 2 and all(any(value.get('component') == component and value.get('event') == 'service.ready' for value in messages if isinstance(value, dict)) for component in ['agent-service', 'execution-worker']):
+        if audits_completed and all(any(value.get('component') == component and value.get('event') == 'service.ready' for value in messages if isinstance(value, dict)) for component in ['agent-service', 'execution-worker']):
             break
         if time.monotonic() >= deadline:
             raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_BOTH_READY_DEADLINE_EXCEEDED' if audits_completed >= 2 else '__PKT_LABEL_UPPER___SWITCH_CONTENT_AUDITS_NOT_COMPLETED')

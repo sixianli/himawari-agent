@@ -269,13 +269,75 @@ class StartupPhaseTest(RenderedPacket):
     def test_the_switch_waits_for_both_background_content_audits_before_declaring_the_start_healthy(self):
         source = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
         self.assertIn("sandbox_runtime.content_audit_completed", source)
-        self.assertIn("audits_completed >= 2 and all(", source)
-        audits = startup_phases(self.render())
-        done = lambda pid: {'event': 'sandbox_runtime.content_audit_completed', 'pid': pid}
-        self.assertEqual(startup_phases.audits([done(11), done(11)]), 1)
-        self.assertEqual(startup_phases.audits([done(11), done(12), {'event': 'x', 'pid': 13}, done(True)]), 2)
-        self.assertEqual(startup_phases.audits([{'event': 'sandbox_runtime.content_audit_completed'}]), 0)
-        self.assertIn("'retryable'", source)
+        self.assertIn("if audits_completed and all(", source)
+        startup_phases(self.render())
+        event = lambda name, pid: {'event': 'sandbox_runtime.content_audit_' + name, 'pid': pid}
+        gate = startup_phases.audits
+        self.assertFalse(gate([]))
+        self.assertFalse(gate([event('started', 11), event('completed', 11)]))
+        self.assertFalse(gate([event('started', 11), event('completed', 11), event('completed', 11)]))
+        self.assertFalse(gate([event('started', 11), event('started', 11), event('completed', 11), event('started', 12), event('completed', 12)]))
+        self.assertTrue(gate([event('started', 11), event('started', 11), event('completed', 11), event('completed', 11), event('started', 12), event('completed', 12)]))
+        self.assertFalse(gate([event('started', True), event('started', 12), event('completed', 12), event('completed', True)]))
+
+    def test_the_snapshot_script_never_uses_a_variable_before_it_is_set(self):
+        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
+        self.assertEqual(subprocess.run(['bash', '-n'], input=snapshot, text=True, capture_output=True).returncode, 0)
+        assigned = {'0', '1', '#', '?', '@', '*', '$', '!'}
+        heredoc_end = None
+        for number, line in enumerate(snapshot.splitlines(), 1):
+            if heredoc_end:
+                if line == heredoc_end:
+                    heredoc_end = None
+                continue
+            opener = re.search(r"<<-?\s*'?([A-Z_]+)'?\s*$", line)
+            code = line
+            used = set(re.findall(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)', code))
+            for name in used - assigned - {'PATH'}:
+                self.assertIn(name, assigned, 'line ' + str(number) + ' uses $' + name + ' before it is set')
+            for name in re.findall(r'(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=', code):
+                assigned.add(name)
+            if opener:
+                heredoc_end = opener.group(1)
+
+    def test_the_fingerprint_publish_runs_after_prepare_has_produced_its_source(self):
+        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
+        prepare = snapshot.index('cloud-protected-prepare.mjs" --prepare')
+        publish = snapshot.index('runtime-fingerprints.json')
+        self.assertLess(prepare, publish)
+        self.assertEqual(snapshot.count("target_name = 'runtime-fingerprints.json'"), 1)
+
+    def test_the_tail_of_the_snapshot_script_publishes_for_real_under_strict_shell_options(self):
+        if os.getuid() != 0:
+            self.skipTest('needs root to create files owned by the service account')
+        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
+        lines = snapshot.splitlines()
+        start = next(index for index, line in enumerate(lines) if line.startswith('runtime='))
+        stop = next(index for index, line in enumerate(lines) if index > start and line.startswith('[[ $(stat -c %u "$operations/runtime-fingerprints.json")'))
+        runtime = lines[start].split('=', 1)[1]
+        token = subprocess.run(['node', '-e', 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,16))', runtime], capture_output=True, text=True, check=True).stdout
+        state, operations = self.root / 'state', self.root / 'operations'
+        (state / 'cache').mkdir(parents=True)
+        operations.mkdir()
+        os.chmod(operations, 0o755)
+        os.chown(state / 'cache', 999, 988)
+        entry = {key: '1' for key in ['dev', 'ino', 'size', 'mode', 'uid', 'mtimeNs', 'ctimeNs']} | {'sha256': 'a' * 64}
+        source = state / 'cache' / ('runtime-fingerprints-' + token + '.json')
+        source.write_text(json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry}}))
+        os.chown(source, 999, 988)
+        os.chmod(source, 0o600)
+        script = 'set -euo pipefail\numask 022\nstate=' + str(state) + '\noperations=' + str(operations) + '\n' + '\n'.join(lines[start:stop + 1]) + '\n'
+        result = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('RUNTIME_FINGERPRINT_CACHE_PUBLISHED', result.stdout)
+        source.unlink()
+        again = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn('ALREADY_PUBLISHED', again.stdout)
+        (operations / 'runtime-fingerprints.json').unlink()
+        missing = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn('NOT_WRITTEN', missing.stderr)
 
     def test_a_missing_or_malformed_phase_baseline_is_refused(self):
         self.assertEqual(json.loads(packet_maker.startup_phase_baseline(INSTANCE))['sandbox-services-created'], 6000)
