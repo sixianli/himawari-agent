@@ -1,6 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
 import {
-  ACCENT_COLORS,
   type ControlCenterPreferences,
   type ControlCenterUiLocale,
   OWNER_NAME_LIMIT,
@@ -26,6 +25,7 @@ export function SettingsDialog({
   tools,
   data,
   notifications,
+  personalization,
   initialTab = "general",
   onTabChange,
 }: {
@@ -38,6 +38,7 @@ export function SettingsDialog({
   tools?: ReactNode;
   data?: ReactNode;
   notifications?: ReactNode;
+  personalization?: ReactNode;
   initialTab?: string;
   onTabChange?: (tab: string) => void;
 }) {
@@ -46,7 +47,6 @@ export function SettingsDialog({
   useEffect(() => {
     if (open) setTab(initialTab);
   }, [open, initialTab]);
-  const accent = preferences.accent ?? "violet";
   return (
     <ModalDialog
       open={open}
@@ -58,6 +58,7 @@ export function SettingsDialog({
         <nav className="settings-nav" aria-label={message("settings.tabsLabel")}>
           {(
             [
+              "personalization",
               "general",
               ...(notifications ? (["notifications"] as const) : []),
               "tools",
@@ -78,9 +79,8 @@ export function SettingsDialog({
           ))}
         </nav>
         <section className="settings-content">
-          {tab === "general" ? (
+          {tab === "personalization" ? (
             <>
-              <h3>{message("review.settings.general")}</h3>
               <label className="setting-row">
                 <span>{message("settings.name")}</span>
                 <input
@@ -98,6 +98,10 @@ export function SettingsDialog({
                   }}
                 />
               </label>
+              {personalization}
+            </>
+          ) : tab === "general" ? (
+            <>
               <div className="setting-row">
                 <span>{message("locale.label")}</span>
                 <Dropdown
@@ -130,24 +134,6 @@ export function SettingsDialog({
                       />
                       <Glyph name={themeIcons[theme]} />
                       {message(`review.${theme}`)}
-                    </label>
-                  ))}
-                </fieldset>
-              </div>
-              <div className="setting-row setting-row-top">
-                <span id="setting-accent">{message("appearance.accent")}</span>
-                <fieldset className="accent-swatches" aria-labelledby="setting-accent">
-                  {ACCENT_COLORS.map((color) => (
-                    <label key={color} data-accent={color} data-checked={accent === color}>
-                      <input
-                        type="radio"
-                        name="setting-accent"
-                        value={color}
-                        checked={accent === color}
-                        onChange={() => onPreferencesChange({ ...preferences, accent: color })}
-                      />
-                      <i aria-hidden="true" />
-                      {message(`appearance.${color}`)}
                     </label>
                   ))}
                 </fieldset>

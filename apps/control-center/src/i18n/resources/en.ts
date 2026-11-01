@@ -25,6 +25,7 @@ export const messages = {
   "review.impact.none": "No data changes",
   "review.impact.reversible": "Changes content; reversible",
   "review.impact.irreversible": "The operation may not be reversible",
+  "review.settings.personalization": "Personalization",
   "review.settings.general": "General",
   "review.settings.tools": "Tools & permissions",
   "review.settings.data": "Data",
@@ -37,7 +38,6 @@ export const messages = {
   "review.conversationActions": "Conversation actions",
   "review.conversationName": "Conversation name",
   "review.save": "Save",
-  "review.effortUnavailable": "This model does not offer adjustable reasoning.",
   "review.disconnected": "Connection interrupted. Reconnecting; your draft is saved.",
   "review.progressUnknown": "Latest progress is unavailable. It will sync after reconnecting.",
   "review.effort.off": "Off",
@@ -47,14 +47,13 @@ export const messages = {
   "review.effort.high": "High",
   "review.effort.xhigh": "Very high",
   "review.effort.max": "Maximum",
-  "review.effortDescription.off": "Answers directly without reasoning; fastest.",
-  "review.effortDescription.minimal": "For clear, straightforward tasks.",
-  "review.effortDescription.low": "For clear, straightforward tasks.",
-  "review.effortDescription.medium": "Balances response speed and reasoning depth.",
-  "review.effortDescription.high": "More reasoning for complex tasks; may take longer.",
-  "review.effortDescription.xhigh": "More reasoning for complex tasks; may take longer.",
-  "review.effortDescription.max":
-    "Most reasoning for the hardest tasks; slowest and most expensive.",
+  "review.effortDescription.off": "Fastest",
+  "review.effortDescription.minimal": "Simple tasks",
+  "review.effortDescription.low": "Simple tasks",
+  "review.effortDescription.medium": "Everyday tasks",
+  "review.effortDescription.high": "Complex tasks",
+  "review.effortDescription.xhigh": "Complex tasks",
+  "review.effortDescription.max": "Hardest tasks, slowest",
 
   "layout.hideList": "Hide sidebar",
   "account.signIn": "Sign in to Himawari",
@@ -138,7 +137,6 @@ export const messages = {
   "message.status.sending": "Sending",
   "message.status.failed": "Not sent",
   "message.retry": "Retry",
-  "process.parallel": "Parallel",
   "process.step.write": "Writing the answer",
   "process.step.you": "Waiting for your approval",
   "process.characters": "{count, plural, one {# character} other {# characters}}",
@@ -187,8 +185,7 @@ export const messages = {
   "chat.activity.buildingContext": "Looking up related memory",
   "chat.queued": "Waiting in line",
   "chat.queuedWait":
-    "Queued for {time}. Other conversations are still running; this one starts automatically when a slot is free.",
-  "chat.lastActivity": "Last progress {time} ago",
+    "Other conversations are still running; this one starts automatically when a slot is free.",
   "chat.progressDelayed":
     "No recent progress. A connected page does not confirm that execution is advancing. You can wait or stop this turn.",
   "chat.waitingToolResult": "Waiting for tool result",
@@ -284,15 +281,7 @@ export const messages = {
     "Review the failed operation and workspace state before submitting a new request; a failed result does not prove its effects were rolled back.",
   "chat.nextAction.failedBeforeAnyOperation":
     "No tool operation ran in this turn. You can send it again.",
-  "appearance.title": "Appearance and accent",
   "appearance.theme": "Theme",
-  "appearance.accent": "Accent color",
-  "appearance.violet": "Violet",
-  "appearance.blue": "Blue",
-  "appearance.teal": "Teal",
-  "appearance.amber": "Amber",
-  "appearance.rose": "Rose",
-  "appearance.graphite": "Graphite",
   "chat.untitled": "New conversation",
   "chat.latest": "Back to latest",
   "chat.placeholder": "Go on, I remember everything we've talked about 🌻",
@@ -372,7 +361,6 @@ export const messages = {
   "more.duration.seconds": "{seconds} s",
   "more.sheet.expand": "Expand",
   "more.sheet.collapse": "Collapse",
-  "chat.pendingModel": "For the next message",
   "chat.attachHint":
     "Click, paste with Ctrl+V or drag files here. Sees PNG, JPG, WebP and GIF images, and reads PDF, Word, Excel, PowerPoint and text files such as notes, code and CSV, up to 20 MB each",
   "chat.attachmentTooLarge":
@@ -437,8 +425,6 @@ export const messages = {
   "preview.sheetEmpty": "This workbook has no sheet to show.",
   "library.title": "Files",
   "library.search": "Search file names",
-  "library.count":
-    "{more, select, yes {{count}+ files} other {{count, plural, one {# file} other {# files}}}}",
   "library.all": "All",
   "library.documents": "Documents",
   "library.tables": "Tables",
@@ -550,9 +536,6 @@ export const messages = {
   "threads.archive": "Archive",
   "threads.delete": "Delete",
   "threads.deleteTitle": "Delete this conversation?",
-  "threads.deleteBody":
-    "“{title}” will disappear from your conversation list and search. This cannot be undone from the web page.",
-  "threads.deleteConfirm": "Delete conversation",
   "threads.restore": "Restore",
   "threads.conflictTitle": "This thread was just changed elsewhere",
   "threads.conflictDescription":
@@ -668,8 +651,6 @@ export const messages = {
   "memory.source": "Source conversation",
   "memory.editAction": "Edit",
   "memory.deleteAction": "Delete",
-  "memory.note":
-    "Everyday details are remembered automatically; sensitive ones such as health or money only after you confirm; ID numbers, card numbers and passwords are never stored.",
   "memory.profile.rules": "Your rules for Himawari",
   "memory.profile.identity": "Identity",
   "memory.profile.preference": "Preferences",
@@ -685,19 +666,13 @@ export const messages = {
   "memory.reminderSnooze": "Remind me in an hour",
   "memory.cat":
     "{c, select, rule {Rules} identity {Identity} preference {Preferences} relationship {People} goal {Goals} project {In progress} health {Health} finance {Money} event {Events} other {Other}}",
-  "memory.page.summary": "{live} things remembered · {week} new this week · {archived} archived",
   "memory.page.auto": "Learn from conversations",
-  "memory.page.autoState": "{paused, select, true {Paused} other {On}}",
-  "memory.page.pauseDone":
-    "{paused, select, true {Paused: nothing new is learned; existing memories are still used} other {Resumed: preferences and plans you mention are remembered again}}",
   "memory.page.pausedNote":
     "Learning is paused: Himawari still uses what it knows, but learns nothing new from conversations and skips the daily tidy-up. Memories you add by hand are still saved.",
   "memory.page.notReady":
     'Adding and importing by hand become available once Himawari learns its first memory from a conversation. Turn learning on and tell Himawari one thing about yourself (for example, "my favorite color is blue").',
-  "memory.page.add": "Add a memory",
+  "memory.page.add": "Add",
   "memory.page.addTitle": "Tell Himawari something to remember",
-  "memory.page.addNote":
-    "Write it in one sentence. A topic is guessed from your words, and you can change it below. Health or money details are stored as sensitive without asking again, since you wrote them yourself.",
   "memory.page.addPlaceholder": "For example: no reminders before 9 am on weekends",
   "memory.page.added":
     "Saved under “{cat}”{pinned, select, true {, and brought into every conversation} other {}}. Open it to change anything that is wrong.",
@@ -753,8 +728,6 @@ export const messages = {
   "memory.page.deleted": "Deleted. Recover it from Recently deleted within 7 days.",
   "memory.page.filter":
     "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Tidy-ups} correct {Corrections} other {Imports}}",
-  "memory.page.timelineNote":
-    "Daily changes: new memories, corrections, imports, and the merges, replacements, archives and guesses made by the daily tidy-up. Drops, deletions, tidy-ups and imports can be undone; your own edits are never overwritten.",
   "memory.page.event":
     "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
   "memory.page.imported":
@@ -762,8 +735,6 @@ export const messages = {
   "memory.page.goConfirm": "Review",
   "memory.page.import": "Import memories",
   "memory.page.export": "Export all memories",
-  "memory.page.importNote":
-    "Bring over what another AI knows about you. You review every item before anything is saved, and a whole import can be undone from the timeline. Lines are split as written, without rewording.",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT, Claude or another AI} other {A Himawari export}}",
   "memory.page.sourceHelp":
@@ -962,6 +933,9 @@ export const messages = {
     "{r, select, useful {Useful} unneeded {Not needed} other {Should have told me}}",
   "proactive.done": "Done",
   "proactive.mute": "Don’t remind",
+  "proactive.whyHide": "Hide reason",
+  "proactive.why": "Why am I seeing this?",
+  "proactive.moreActions": "More actions",
   "proactive.doneNotice": "Marked done: {text}",
   "proactive.mutedNotice": "Won’t remind you again: {text}",
   "proactive.dailyBasis":
@@ -990,8 +964,6 @@ export const messages = {
   "proactive.audit.done": "Done reviewing",
   "proactive.audit.doneOk": "Counted as reviewed",
   "proactive.log.range": "Last 30 days · {days, plural, one {# day} other {# days}} recorded",
-  "proactive.log.note":
-    "Every check adds one line, including the ones where Himawari stayed quiet.",
   "proactive.log.empty":
     "No checks yet. After Gmail is connected, a line is added every 15 minutes.",
   "proactive.log.today": "Today",

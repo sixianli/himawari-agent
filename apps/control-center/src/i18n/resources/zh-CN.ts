@@ -22,6 +22,7 @@ export const messages = {
   "review.impact.none": "不修改数据",
   "review.impact.reversible": "会修改内容，可恢复",
   "review.impact.irreversible": "操作可能无法撤回",
+  "review.settings.personalization": "个性化",
   "review.settings.general": "通用",
   "review.settings.tools": "工具与权限",
   "review.settings.data": "数据",
@@ -34,7 +35,6 @@ export const messages = {
   "review.conversationActions": "会话操作",
   "review.conversationName": "会话名称",
   "review.save": "保存",
-  "review.effortUnavailable": "此模型不提供推理强度调节。",
   "review.disconnected": "连接中断，正在重新连接；输入内容已保留。",
   "review.progressUnknown": "暂时无法获取最新进度，恢复后会自动同步。",
   "review.effort.off": "关闭",
@@ -44,13 +44,13 @@ export const messages = {
   "review.effort.high": "高",
   "review.effort.xhigh": "很高",
   "review.effort.max": "最高",
-  "review.effortDescription.off": "不思考，直接回答，最快。",
-  "review.effortDescription.minimal": "适合明确、直接的任务。",
-  "review.effortDescription.low": "适合明确、直接的任务。",
-  "review.effortDescription.medium": "兼顾响应速度与推理深度。",
-  "review.effortDescription.high": "为复杂任务投入更多推理，可能需要更久。",
-  "review.effortDescription.xhigh": "为复杂任务投入更多推理，可能需要更久。",
-  "review.effortDescription.max": "投入最多推理，适合最难的任务，耗时和费用最高。",
+  "review.effortDescription.off": "最快",
+  "review.effortDescription.minimal": "简单任务",
+  "review.effortDescription.low": "简单任务",
+  "review.effortDescription.medium": "日常任务",
+  "review.effortDescription.high": "复杂任务",
+  "review.effortDescription.xhigh": "复杂任务",
+  "review.effortDescription.max": "最难的任务，最慢",
 
   "layout.hideList": "收起侧栏",
   "account.signIn": "登录 Himawari",
@@ -130,7 +130,6 @@ export const messages = {
   "message.status.sending": "发送中",
   "message.status.failed": "没发出去",
   "message.retry": "重试",
-  "process.parallel": "同时",
   "process.step.write": "写回答",
   "process.step.you": "等你确认",
   "process.characters": "{count} 字",
@@ -178,8 +177,7 @@ export const messages = {
   "chat.activity.waitingModel": "等待模型响应",
   "chat.activity.buildingContext": "正在查找相关记忆",
   "chat.queued": "排队等待执行",
-  "chat.queuedWait": "已排队 {time}，前面的对话还在执行，有空位后会自动开始。",
-  "chat.lastActivity": "{time} 前收到进展",
+  "chat.queuedWait": "前面的对话还在执行，有空位后会自动开始。",
   "chat.progressDelayed": "暂未收到新的进展。连接正常不代表任务仍在推进；可等待结果或停止本轮。",
   "chat.waitingToolResult": "等待工具返回结果",
   "chat.disconnected": "连接中断，等待同步",
@@ -262,15 +260,7 @@ export const messages = {
   "chat.nextAction.failed":
     "请查看失败操作的记录并核对工作区，再决定是否发起新请求；失败结果不证明副作用已撤销。",
   "chat.nextAction.failedBeforeAnyOperation": "本轮没有执行任何工具操作，可以直接重新发送。",
-  "appearance.title": "外观与主题色",
   "appearance.theme": "外观",
-  "appearance.accent": "主题色",
-  "appearance.violet": "紫罗兰",
-  "appearance.blue": "海蓝",
-  "appearance.teal": "青绿",
-  "appearance.amber": "琥珀",
-  "appearance.rose": "玫瑰",
-  "appearance.graphite": "石墨",
   "chat.untitled": "新对话",
   "chat.latest": "回到最新消息",
   "chat.placeholder": "接着说吧，前面聊的我都记着呢 🌻",
@@ -348,7 +338,6 @@ export const messages = {
   "more.duration.seconds": "{seconds} 秒",
   "more.sheet.expand": "展开",
   "more.sheet.collapse": "收起",
-  "chat.pendingModel": "用于下一次发送",
   "chat.attachmentTooLarge": "放不下了：每个文件最大 20 MB，一条消息最多 10 个文件。",
   "chat.attachHint":
     "点这里、Ctrl+V 粘贴或拖进来都行。能看 PNG、JPG、WebP、GIF 图片，能读 PDF、Word、Excel、PowerPoint 和文字、代码、CSV 这类文本文件，每个最大 20 MB",
@@ -406,7 +395,6 @@ export const messages = {
   "preview.sheetEmpty": "这个表格里没有可以显示的工作表。",
   "library.title": "文件",
   "library.search": "搜索文件名",
-  "library.count": "{count}{more, select, yes {+} other {}} 个文件",
   "library.all": "全部",
   "library.documents": "文档",
   "library.tables": "表格",
@@ -515,8 +503,6 @@ export const messages = {
   "threads.archive": "归档",
   "threads.delete": "删除",
   "threads.deleteTitle": "删除这个对话？",
-  "threads.deleteBody": "「{title}」会从对话列表和搜索里消失。这个操作在网页上无法撤销。",
-  "threads.deleteConfirm": "删除对话",
   "threads.restore": "恢复",
   "threads.conflictTitle": "这个对话刚在别处改过",
   "threads.conflictDescription": "已刷新为最新内容，你刚才的操作还没有生效。",
@@ -628,8 +614,6 @@ export const messages = {
   "memory.source": "来源对话",
   "memory.editAction": "编辑",
   "memory.deleteAction": "删除",
-  "memory.note":
-    "普通信息会自动记住；健康、财务等敏感信息问过你才记；证件号、银行卡号和密码不会记。",
   "memory.profile.rules": "你对 Himawari 的要求",
   "memory.profile.identity": "身份",
   "memory.profile.preference": "偏好",
@@ -645,19 +629,13 @@ export const messages = {
   "memory.reminderSnooze": "一小时后再提醒",
   "memory.cat":
     "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
-  "memory.page.summary": "记住了 {live} 条关于你的事 · 本周新增 {week} 条 · 已归档 {archived} 条",
   "memory.page.auto": "从对话中自动记忆",
-  "memory.page.autoState": "{paused, select, true {已暂停} other {开}}",
-  "memory.page.pauseDone":
-    "{paused, select, true {已暂停：不再从对话里记新的，已有记忆照常用} other {已恢复：聊天中提到的偏好、计划会自动记下}}",
   "memory.page.pausedNote":
     "自动记忆已暂停：Himawari 仍会用已有的记忆回答，但不会再从对话里记新的事，也不做每日整理。你手动添加的照样会记。",
   "memory.page.notReady":
     "要先从对话里记下第一条记忆，才能手动添加和导入。打开自动记忆后，和 Himawari 说一件关于你的事（比如“我最喜欢蓝色”）就可以了。",
-  "memory.page.add": "手动添加一条",
+  "memory.page.add": "添加",
   "memory.page.addTitle": "让 Himawari 记住一件事",
-  "memory.page.addNote":
-    "用一句话写清楚。主题会先按关键词猜一个，猜错了可以在下面改；健康、财务按敏感信息保存，因为是你亲手写的，不用再确认。",
   "memory.page.addPlaceholder": "例如：周末早上 9 点前不要提醒我",
   "memory.page.added":
     "已记住，归到“{cat}”{pinned, select, true {，以后每次对话都会带上} other {}}；分错了可以点开这条修改",
@@ -712,8 +690,6 @@ export const messages = {
   "memory.page.deleted": "已删除，7 天内可在“最近删除”里恢复",
   "memory.page.filter":
     "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理} correct {更正} other {导入}}",
-  "memory.page.timelineNote":
-    "按天记录记忆的变化：新记住的、更正的、导入的，以及 Himawari 每天自动整理时做的合并、取代、归档和新推测。不记、删除、整理和导入都能撤销；你自己改过的记忆不会被整理覆盖。",
   "memory.page.event":
     "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} other {新推测}}",
   "memory.page.imported":
@@ -721,8 +697,6 @@ export const messages = {
   "memory.page.goConfirm": "去确认",
   "memory.page.import": "导入记忆",
   "memory.page.export": "导出全部记忆",
-  "memory.page.importNote":
-    "把别的 AI 记住的关于你的事搬过来。先整理成一条条给你过目，你勾选后才写入；整批导入在时间线里可以一键撤销。目前按行拆分，不会改写原文。",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT、Claude 等其他 AI} other {Himawari 导出的文件}}",
   "memory.page.sourceHelp":
@@ -911,6 +885,9 @@ export const messages = {
   "proactive.rate": "{r, select, useful {有用} unneeded {没必要} other {该说没说}}",
   "proactive.done": "完成",
   "proactive.mute": "不再提醒",
+  "proactive.whyHide": "收起原因",
+  "proactive.why": "为什么提醒我",
+  "proactive.moreActions": "更多操作",
   "proactive.doneNotice": "已完成：{text}",
   "proactive.mutedNotice": "以后不再提醒：{text}",
   "proactive.dailyBasis": "今天到了每日费用上限，这封没交给模型，按规则先放在这里",
@@ -933,7 +910,6 @@ export const messages = {
   "proactive.audit.done": "看完了",
   "proactive.audit.doneOk": "已计入已审",
   "proactive.log.range": "最近 30 天 · 已记录 {days} 天",
-  "proactive.log.note": "每次检查都记一行，没开口的也记。",
   "proactive.log.empty": "还没有检查记录。连上 Gmail 后，每 15 分钟会记一行。",
   "proactive.log.today": "今天",
   "proactive.log.yesterday": "昨天",

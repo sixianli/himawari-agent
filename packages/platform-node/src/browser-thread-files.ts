@@ -47,6 +47,7 @@ export interface BrowserThreadFile {
   readonly stored: boolean;
   readonly overlapped: boolean;
   readonly createdAt: string;
+  readonly deleted: boolean;
 }
 
 export interface BrowserThreadFileContent {
@@ -127,6 +128,7 @@ function browserFile(
     stored: artifact.copyRef !== null,
     overlapped: artifact.overlapped,
     createdAt: artifact.createdAt,
+    deleted: artifact.deletedAt !== null,
   });
 }
 

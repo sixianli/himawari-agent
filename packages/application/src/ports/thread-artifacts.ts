@@ -40,9 +40,10 @@ export interface ThreadArtifact {
   readonly copyRef: string | null;
   readonly overlapped: boolean;
   readonly createdAt: string;
+  readonly deletedAt: string | null;
 }
 
-export type ThreadArtifactRegistration = Omit<ThreadArtifact, "version" | "turn">;
+export type ThreadArtifactRegistration = Omit<ThreadArtifact, "version" | "turn" | "deletedAt">;
 
 export interface ThreadArtifactListQuery extends ThreadArtifactScope {
   readonly threadId: string | null;
@@ -70,4 +71,11 @@ export interface ThreadArtifactStorePort {
     input: ThreadArtifactScope & { readonly threadId: string; readonly path: string },
   ): Promise<readonly ThreadArtifact[]>;
   list(input: ThreadArtifactListQuery): Promise<ThreadArtifactPage>;
+  markDeleted(
+    input: ThreadArtifactScope & {
+      readonly threadId: string;
+      readonly paths: readonly string[];
+      readonly deletedAt: string;
+    },
+  ): Promise<number>;
 }

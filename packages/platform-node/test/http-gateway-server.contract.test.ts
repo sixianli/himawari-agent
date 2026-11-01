@@ -1481,6 +1481,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       copyRef: `copy-${id}`,
       overlapped: false,
       createdAt: NOW,
+      deletedAt: null,
     }));
     const store: ThreadArtifactStorePort = {
       register: async () => {
@@ -1490,6 +1491,9 @@ describe("HTTP Gateway contract and security boundary", () => {
       get: async ({ id }) => artifacts.find((artifact) => artifact.id === id) ?? null,
       versions: async ({ path }) => artifacts.filter((artifact) => artifact.path === path),
       list: async () => ({ items: artifacts, nextCursor: null }),
+      markDeleted: async () => {
+        throw new Error("unused");
+      },
     };
     const payloads = {
       get: async (ref: string) => ({ ref }) as unknown as PayloadRecord,

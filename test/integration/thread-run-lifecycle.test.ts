@@ -2671,6 +2671,18 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         generateTitle,
         onTitleFailure: titleFailure,
       };
+      await setup.repository.ownerPreferences().write({
+        ownerId,
+        agentId,
+        name: "小安",
+        locale: null,
+        accent: null,
+        theme: null,
+        modelRef: null,
+        thinkingLevel: null,
+        expectedRevision: 0,
+        now: clock.now(),
+      });
       const composed = createProductionRunComposition(compositionOptions);
       let settledBeforeTitleAdmission = false;
       const pumping = composed.dispatcher.pump().then((result) => {
@@ -2740,6 +2752,15 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       } else {
         expect(model.observed).toHaveLength(denied ? 2 : 1);
         expect(JSON.stringify(model.observed)).toContain("请回答本次请求。");
+        const [first] = model.observed as { messages: readonly unknown[] }[];
+        expect(JSON.stringify(first?.messages.at(-1))).toContain("称呼是「小安」");
+        for (const observed of model.observed as {
+          systemPrompt?: string;
+          messages: readonly unknown[];
+        }[]) {
+          expect(JSON.stringify(observed.messages)).toContain("称呼是「小安」");
+          expect(observed.systemPrompt ?? "").not.toContain("小安");
+        }
         expect(answer?.runId).toBe(admitted.message.runId);
         const payload = await payloads.get(answer?.contentRef ?? "missing");
         if (!payload) throw new Error("Missing durable Pi answer");

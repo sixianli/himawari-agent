@@ -171,10 +171,7 @@ export function ModelPicker({
                   {message(`review.effortDescription.${thinkingLevel}` as MessageId)}
                 </p>
               </>
-            ) : (
-              <p className="effort-description">{message("review.effortUnavailable")}</p>
-            )}
-            <p className="picker-footer">↳ {message("chat.pendingModel")}</p>
+            ) : null}
           </>
         )}
       </div>
