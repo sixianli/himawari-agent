@@ -49,6 +49,12 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
   if (!validTime(write.decidedAt)) return "Decision ledger time is invalid";
   if (!idList(write.inputs?.memoryIds) || !idList(write.inputs?.ruleIds))
     return "Decision ledger inputs are invalid";
+  const batchId = write.inputs.batchId ?? null;
+  if (
+    (batchId !== null && !text(batchId, 1, 256)) ||
+    (write.inputs.resultMemoryIds !== undefined && !idList(write.inputs.resultMemoryIds))
+  )
+    return "Decision ledger inputs are invalid";
   if (
     !Number.isSafeInteger(write.costMicros) ||
     write.costMicros < 0 ||
@@ -96,7 +102,12 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
       write.outcome,
       write.reasonCode,
       write.subjectRef,
-      JSON.stringify({ memoryIds: write.inputs.memoryIds, ruleIds: write.inputs.ruleIds }),
+      JSON.stringify({
+        memoryIds: write.inputs.memoryIds,
+        ruleIds: write.inputs.ruleIds,
+        batchId: write.inputs.batchId ?? null,
+        resultMemoryIds: write.inputs.resultMemoryIds ?? [],
+      }),
       write.reasonRef,
       write.contentRef,
       write.costMicros,
@@ -117,6 +128,8 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
   const inputs = JSON.parse(row["inputs"] as string) as {
     memoryIds?: readonly string[];
     ruleIds?: readonly string[];
+    batchId?: string | null;
+    resultMemoryIds?: readonly string[];
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -124,6 +137,8 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     inputs: Object.freeze({
       memoryIds: Object.freeze([...(inputs.memoryIds ?? [])]),
       ruleIds: Object.freeze([...(inputs.ruleIds ?? [])]),
+      batchId: inputs.batchId ?? null,
+      resultMemoryIds: Object.freeze([...(inputs.resultMemoryIds ?? [])]),
     }),
   });
 }
