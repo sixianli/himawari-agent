@@ -73,12 +73,20 @@ it.each(["gateway", "thread"] as const)(
 describe.each(["gateway", "thread"] as const)("%s connection lifecycle", (kind) => {
   function setup() {
     const sources: EventSourceLike[] = [];
+    const listeners = new Map<string, (event: MessageEvent<string>) => void>();
     const retries: Array<() => void> = [];
     const onConnectionState = vi.fn();
     const options = {
       storage: new ControlCenterBrowserStorage(new MemoryStorage()),
       createEventSource: () => {
-        const source: EventSourceLike = { onmessage: null, onerror: null, close: vi.fn() };
+        const source: EventSourceLike = {
+          onmessage: null,
+          onerror: null,
+          close: vi.fn(),
+          addEventListener: (type, listener) => {
+            listeners.set(`${sources.length - 1}:${type}`, listener);
+          },
+        };
         sources.push(source);
         return source;
       },
@@ -96,7 +104,7 @@ describe.each(["gateway", "thread"] as const)("%s connection lifecycle", (kind) 
             onCommittedEvent: vi.fn(),
             onSnapshotRequired: vi.fn(),
           });
-    return { synchronizer, sources, retries, onConnectionState };
+    return { synchronizer, sources, retries, onConnectionState, listeners };
   }
 
   it("closes the stream immediately while offline and reconnects only after recovery", () => {
@@ -131,6 +139,58 @@ describe.each(["gateway", "thread"] as const)("%s connection lifecycle", (kind) 
       expect(onConnectionState).toHaveBeenLastCalledWith("connected");
     } finally {
       synchronizer.stop();
+    }
+  });
+
+  it("replaces a connection that may have died silently while the page was away", () => {
+    const { synchronizer, sources } = setup();
+    try {
+      synchronizer.start();
+      sources[0]?.onopen?.(new Event("open"));
+      synchronizer.reconnectNow(true);
+      expect(sources[0]?.close).toHaveBeenCalledOnce();
+      expect(sources).toHaveLength(2);
+    } finally {
+      synchronizer.stop();
+    }
+  });
+
+  it("treats a stream that stops sending heartbeats as dead and reconnects", () => {
+    vi.useFakeTimers();
+    const { synchronizer, sources, retries, listeners } = setup();
+    try {
+      synchronizer.start();
+      sources[0]?.onopen?.(new Event("open"));
+      listeners.get("0:gateway.heartbeat")?.({
+        data: JSON.stringify({ intervalMilliseconds: 1000 }),
+      } as MessageEvent<string>);
+      vi.advanceTimersByTime(2400);
+      expect(sources[0]?.close).not.toHaveBeenCalled();
+      listeners.get("0:gateway.heartbeat")?.({
+        data: JSON.stringify({ intervalMilliseconds: 1000 }),
+      } as MessageEvent<string>);
+      vi.advanceTimersByTime(2400);
+      expect(sources[0]?.close).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(200);
+      expect(sources[0]?.close).toHaveBeenCalledOnce();
+      expect(retries).toHaveLength(1);
+    } finally {
+      synchronizer.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not drop a quiet stream before the server has announced its heartbeat", () => {
+    vi.useFakeTimers();
+    const { synchronizer, sources } = setup();
+    try {
+      synchronizer.start();
+      sources[0]?.onopen?.(new Event("open"));
+      vi.advanceTimersByTime(120_000);
+      expect(sources[0]?.close).not.toHaveBeenCalled();
+    } finally {
+      synchronizer.stop();
+      vi.useRealTimers();
     }
   });
 
