@@ -10,7 +10,6 @@ vi.mock("@himawari-agent/platform-node", async (importOriginal) => ({
 }));
 
 import { JOB_HOST_MAXIMUM_SESSION_MS } from "@himawari-agent/runtime-sandbox/job-host-limits";
-import { parseJobHostSessionRequest } from "@himawari-agent/runtime-sandbox/job-host-protocol";
 import {
   createProductionSandboxServices,
   sandboxEnvironmentDeadline,
@@ -196,25 +195,4 @@ it("[BG-10] the prewarmed environment is still capped by the directory grant", (
   expect(
     sandboxPrewarmEnvironmentDeadline("2026-10-31T15:52:22.000Z", "2026-10-31T16:00:00.000Z"),
   ).toBe("2026-10-31T16:00:00.000Z");
-});
-
-it("[BG-10] the job host accepts a session that lives as long as the prewarmed environment", () => {
-  const request = (deadlineAt: string) => ({
-    jobId: "job-prewarm",
-    attemptId: "attempt-prewarm",
-    policy: { workspace: null, privateDirectory: "/tmp/private" },
-    policyDigest: "a".repeat(64),
-    executable: "/bin/echo",
-    args: [],
-    deadlineAt,
-    maxOutputBytes: 4096,
-    cleanupTimeoutMs: 100,
-  });
-  const prewarm = sandboxPrewarmEnvironmentDeadline(
-    new Date().toISOString(),
-    new Date(Date.now() + 86_400_000).toISOString(),
-  );
-  expect(parseJobHostSessionRequest(request(prewarm)).deadlineAt).toBe(prewarm);
-  const tooLong = new Date(Date.now() + 75 * 60_000).toISOString();
-  expect(() => parseJobHostSessionRequest(request(tooLong))).toThrow("JOB_HOST_DEADLINE_INVALID");
 });

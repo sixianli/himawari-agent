@@ -554,10 +554,9 @@ export const messages = {
   "threads.unpin": "ピン留めを解除",
   "threads.archive": "アーカイブ",
   "threads.restore": "復元",
-  "threads.conflictTitle": "別のクライアントがこのスレッドを更新しました",
-  "threads.conflictDescription":
-    "最新リビジョンを読み込みました。内容を確認してから操作を明示的に再適用してください。",
-  "threads.reapply": "最新リビジョンに再適用",
+  "threads.conflictTitle": "このスレッドは別の場所で更新されました",
+  "threads.conflictDescription": "最新の内容に更新しました。直前の操作はまだ反映されていません。",
+  "threads.reapply": "最新の内容でもう一度実行",
   "threads.status.archived": "アーカイブ済み",
   "runs.status.accepted": "受付済み",
   "runs.status.buildingContext": "コンテキスト構築中",
