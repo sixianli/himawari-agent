@@ -318,7 +318,10 @@ function LocalizedControlCenterApp({
     const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
-      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+      if (document.visibilityState !== "visible") return;
+      synchronizer.reconnectNow();
+      threadEventQueue.current.push(null);
+      setThreadEventSignal((current) => current + 1);
     };
     const synchronizeTab = (event: StorageEvent) => {
       if (event.key === THREAD_CURSOR_STORAGE_KEY) {

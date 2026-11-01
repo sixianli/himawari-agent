@@ -1469,7 +1469,6 @@ export function useThreadControlCenter(
       {conflict ? (
         <Banner title={message("threads.conflictTitle")} tone="warning">
           <p>{message("threads.conflictDescription")}</p>
-          <p>{message("threads.conflictDescription")}</p>
           <ActionButton
             disabled={!conflict.latest || connection === "offline"}
             onClick={() =>
