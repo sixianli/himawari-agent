@@ -1,0 +1,1 @@
+export const JOB_HOST_MAXIMUM_SESSION_MS = 3_600_000;

@@ -1,9 +1,13 @@
 import type { MemoryGenerationId, MemoryId } from "@himawari-agent/domain";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import {
   ApplicationPortError,
   DEFAULT_MEMORY_ATTRIBUTES,
   PORT_ERROR_CODES,
   type ApprovedMemoryContentPort,
+  type DecisionLedgerPort,
+  type DecisionLedgerWrite,
   type ExtractedMemoryCandidate,
   type IncrementalMemoryExtractionPort,
   type IncrementalMemoryProductPort,
@@ -23,6 +27,7 @@ export interface AutomaticMemoryServiceOptions {
   readonly approvals: SensitiveMemoryApprovalStatePort;
   readonly candidates?: SensitiveMemoryCandidatePort;
   readonly audit: MemoryExtractionAuditPort;
+  readonly ledger?: DecisionLedgerPort;
   readonly readSourceText: (sourceRef: string) => Promise<string>;
   readonly now: () => string;
   readonly memoryIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => MemoryId;
@@ -60,6 +65,12 @@ export interface AutomaticMemoryResult {
 export type SensitiveMemoryResolution =
   | { readonly requestId: string; readonly resolution: "approved" | "rejected" | "expired" }
   | { readonly requestId: string; readonly resolution: "edited"; readonly editedText: string };
+
+type KeptReason = "auto_committed" | "explicitly_approved" | "approval_committed";
+
+function ledgerId(key: string): string {
+  return `ledger:${bytesToHex(sha256(utf8ToBytes(key))).slice(0, 40)}`;
+}
 
 function isSensitive(candidate: ExtractedMemoryCandidate): candidate is ExtractedMemoryCandidate & {
   readonly dataClassification: "sensitive" | "restricted";
@@ -115,21 +126,31 @@ export class AutomaticMemoryService {
       if (candidateFindings.length > 0) {
         excludedCandidateOrdinals.push(candidateOrdinal);
         await this.audit(input, candidateOrdinal, "candidate_secret_excluded", candidateFindings);
+        await this.discard(input, candidate, candidateOrdinal, "candidate_secret_excluded", false);
         continue;
       }
       if (candidate.dataClassification === "restricted") {
         excludedCandidateOrdinals.push(candidateOrdinal);
         await this.audit(input, candidateOrdinal, "restricted_excluded", []);
+        await this.discard(input, candidate, candidateOrdinal, "restricted_excluded", false);
         continue;
       }
       if (candidate.kind === "transient") {
         await this.audit(input, candidateOrdinal, "transient_ignored", []);
+        await this.discard(input, candidate, candidateOrdinal, "transient_ignored", true);
         continue;
       }
       const explicitlyApproved = input.explicitRememberCandidateOrdinal === candidateOrdinal;
       if (isSensitive(candidate) && !explicitlyApproved) {
         const request = await this.requestApproval(input, candidate, candidateOrdinal);
         approvalRequestIds.push(request.id);
+        await this.options.ledger?.append(
+          this.candidateLedger(input, candidateOrdinal, "pending_approval", "approval_requested", {
+            subjectRef: request.id,
+            contentRef: null,
+            memoryIds: candidate.existingMemoryId ? [candidate.existingMemoryId] : [],
+          }),
+        );
         await this.audit(
           input,
           candidateOrdinal,
@@ -143,9 +164,16 @@ export class AutomaticMemoryService {
         candidate.confidencePermille < (this.options.automaticConfidencePermille ?? 850)
       ) {
         await this.audit(input, candidateOrdinal, "confidence_below_threshold", []);
+        await this.discard(input, candidate, candidateOrdinal, "confidence_below_threshold", true);
         continue;
       }
-      const committed = await this.commitCandidate(input, candidate, candidateOrdinal);
+      const committed = await this.commitCandidate(
+        input,
+        candidate,
+        candidateOrdinal,
+        undefined,
+        explicitlyApproved ? "explicitly_approved" : "auto_committed",
+      );
       committedMemoryIds.push(committed);
       await this.audit(
         input,
@@ -188,6 +216,19 @@ export class AutomaticMemoryService {
         secretFindings: [],
         occurredAt: this.options.now(),
       });
+      await this.options.ledger?.append(
+        this.candidateLedger(
+          {
+            ownerId: request.ownerId,
+            agentId: request.agentId,
+            generationId: request.generationId,
+          },
+          request.candidateOrdinal,
+          "discarded",
+          resolved.status === "rejected" ? "approval_rejected" : "approval_expired",
+          { subjectRef: request.id, contentRef: null, memoryIds: [] },
+        ),
+      );
       return null;
     }
     let resolved = request;
@@ -264,6 +305,7 @@ export class AutomaticMemoryService {
       },
       request.candidateOrdinal,
       request.productMemoryId,
+      "approval_committed",
     );
     await this.options.approvals.markCommitted({
       requestId: request.id,
@@ -322,7 +364,8 @@ export class AutomaticMemoryService {
     input: CommittedRunMemoryInput,
     candidate: ExtractedMemoryCandidate,
     candidateOrdinal: number,
-    forcedMemoryId?: MemoryId,
+    forcedMemoryId: MemoryId | undefined,
+    keptReason: KeptReason,
   ): Promise<MemoryId> {
     const quoteRef = candidate.quote
       ? await this.options.content.store({
@@ -350,6 +393,13 @@ export class AutomaticMemoryService {
           sourceThreadId: input.threadId,
         },
         input.generationId,
+      );
+      await this.options.ledger?.append(
+        this.candidateLedger(input, candidateOrdinal, "kept", keptReason, {
+          subjectRef: record.id,
+          contentRef: null,
+          memoryIds: [record.id],
+        }),
       );
       return record.id;
     }
@@ -403,7 +453,18 @@ export class AutomaticMemoryService {
         sourceThreadId: input.threadId,
       };
     }
-    const memoryId = (await this.options.product.applyProposal(proposal, input.generationId)).id;
+    const targetId = proposal.decision === "create" ? proposal.memory.id : proposal.memoryId;
+    const supersedes = proposal.decision === "create" ? proposal.supersedes : undefined;
+    const ledger = this.options.ledger
+      ? this.candidateLedger(input, candidateOrdinal, "kept", keptReason, {
+          subjectRef: targetId,
+          contentRef,
+          memoryIds: [targetId, ...(supersedes ? [supersedes] : [])],
+        })
+      : undefined;
+    const memoryId = (
+      await this.options.product.applyProposal(proposal, input.generationId, ledger)
+    ).id;
     await this.options.onCommitted?.({
       candidate,
       memoryId,
@@ -411,6 +472,64 @@ export class AutomaticMemoryService {
       agentId: input.agentId,
     });
     return memoryId;
+  }
+
+  private candidateLedger(
+    input: Pick<CommittedRunMemoryInput, "ownerId" | "agentId" | "generationId">,
+    candidateOrdinal: number,
+    outcome: "kept" | "discarded" | "pending_approval",
+    reasonCode: string,
+    detail: {
+      readonly subjectRef: string;
+      readonly contentRef: string | null;
+      readonly memoryIds: readonly string[];
+    },
+  ): DecisionLedgerWrite {
+    return {
+      id: ledgerId(`${input.generationId}:${candidateOrdinal}:${outcome}:${reasonCode}`),
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      kind: "memory_candidate",
+      decidedAt: this.options.now(),
+      outcome,
+      reasonCode,
+      subjectRef: detail.subjectRef,
+      inputs: { memoryIds: [...new Set(detail.memoryIds)], ruleIds: [] },
+      reasonRef: null,
+      contentRef: detail.contentRef,
+      costMicros: 0,
+      durationMs: 0,
+    };
+  }
+
+  private async discard(
+    input: CommittedRunMemoryInput,
+    candidate: ExtractedMemoryCandidate,
+    candidateOrdinal: number,
+    reasonCode: MemoryExtractionAuditRecord["outcome"],
+    keepText: boolean,
+  ): Promise<void> {
+    if (!this.options.ledger) return;
+    const contentRef = keepText
+      ? await this.options.content.store({
+          contentKey: `${input.generationId}:${candidateOrdinal}:discarded`,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          text: candidate.text,
+          dataClassification: candidate.dataClassification,
+          sourceRef: input.sourceRef,
+          createdAt: this.options.now(),
+        })
+      : null;
+    const write = this.candidateLedger(input, candidateOrdinal, "discarded", reasonCode, {
+      subjectRef: `${input.generationId}:${candidateOrdinal}`,
+      contentRef,
+      memoryIds: candidate.existingMemoryId ? [candidate.existingMemoryId] : [],
+    });
+    await this.options.ledger.append({
+      ...write,
+      inputs: { memoryIds: write.inputs.memoryIds, ruleIds: [reasonCode] },
+    });
   }
 
   private audit(

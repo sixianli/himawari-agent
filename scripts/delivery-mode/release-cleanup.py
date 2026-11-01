@@ -13,6 +13,7 @@ KEEP_STATE_COPIES = 3
 LOCK_PATH = '/run/lock/himawari-release-cleanup.lock'
 SCRATCH_ROOT = '/tmp'
 KEEP_FAILURE_SCENES = 1
+KEEP_FAILED_ACCEPTANCE = 2
 
 
 def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
@@ -26,6 +27,7 @@ def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
         'database': paths['database'],
         'releasesRoot': str(Path(paths['newPrefix']).parent),
         'operationsRoot': str(Path(paths['newOperations']).parent),
+        'currentStage': str(Path(paths['transportRoot']).parent),
         'tmpRoot': str(Path(paths['transportRoot']).parent.parent),
         'evidenceParent': evidence_parent,
         'archiveRoot': evidence_parent + '/release-cleanup',
@@ -39,6 +41,7 @@ def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
         'lockPath': LOCK_PATH,
         'scratchRoot': SCRATCH_ROOT,
         'keepFailureScenes': keep_failure_scenes,
+        'keepFailedAcceptance': KEEP_FAILED_ACCEPTANCE,
     }
 
 

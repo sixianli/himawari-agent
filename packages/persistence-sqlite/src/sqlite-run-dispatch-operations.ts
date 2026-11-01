@@ -18,9 +18,7 @@ import {
 import type Database from "better-sqlite3";
 import { QUEUED_TOOL_BATCH_SQL, readQueuedToolBatch } from "./sqlite-queued-tool-batch.ts";
 import { writeRunReceiptInTransaction } from "./sqlite-run-lifecycle-operations.ts";
-import {
-  RUN_COMPLETION_RECOVERY_SQL,
-} from "./sqlite-run-resource-guard.ts";
+import { RUN_COMPLETION_RECOVERY_SQL } from "./sqlite-run-resource-guard.ts";
 import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "./sqlite-sandbox-reservation-never-started.ts";
 import {
   RUN_EXPIRED_RECONCILIATION_SQL,

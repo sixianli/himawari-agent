@@ -367,6 +367,24 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           ["supersede", "coffee-old"],
         ].sort(),
       );
+      const ledger = await resource.repository.decisionLedger().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        kind: "consolidation",
+        since: "1970-01-01T00:00:00.000Z",
+        limit: 50,
+      });
+      expect(ledger.map(({ outcome, subjectRef }) => [outcome, subjectRef]).sort()).toEqual(
+        [
+          ["archive", "onigiri"],
+          ["merge", "daughter-old"],
+          ["reflect", `${result?.id}:insight:0`],
+          ["supersede", "coffee-old"],
+        ].sort(),
+      );
+      expect(ledger.every((entry) => entry.ownerRating === null && entry.costMicros === 0)).toBe(
+        true,
+      );
       expect(resource.prompts[0]).not.toContain("青霉素");
       expect((await resource.read("onigiri"))?.status).toBe("archived");
       expect((await resource.read("daughter-old"))?.status).toBe("archived");
@@ -385,6 +403,15 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         throw new Error("no model call expected");
       });
       expect(quiet).toMatchObject({ modelCalled: false, changes: [] });
+      expect(
+        await resource.repository.decisionLedger().list({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          kind: "consolidation",
+          since: "1970-01-01T00:00:00.000Z",
+          limit: 50,
+        }),
+      ).toHaveLength(4);
     } finally {
       await resource.repository.close();
     }
@@ -416,6 +443,15 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       );
       const undone = changes.find(({ action }) => action === "archive");
       await expect(resource.consolidation.undo(undone?.id ?? "")).rejects.toThrow("undone");
+      expect(
+        await resource.repository.decisionLedger().list({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          kind: "consolidation",
+          since: "1970-01-01T00:00:00.000Z",
+          limit: 50,
+        }),
+      ).toHaveLength(4);
     } finally {
       await resource.repository.close();
     }

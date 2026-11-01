@@ -553,6 +553,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0068_model_usage_observations.sql",
   },
+  {
+    sequence: 69,
+    name: "decision_ledger",
+    changeSet: "decision-ledger",
+    phase: "expand" as const,
+    file: "0069_decision_ledger.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

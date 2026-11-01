@@ -1032,6 +1032,7 @@ export async function createProductionHttpComposition(
         },
         reminders: repository.memoryReminders(),
         book: repository.memoryBook(),
+        ledger: repository.decisionLedger(),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },

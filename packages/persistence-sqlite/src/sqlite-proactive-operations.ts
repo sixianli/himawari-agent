@@ -371,15 +371,15 @@ export class SqliteProactiveOperations {
   private clearRecords(scope: ProactiveScope): readonly string[] {
     return this.database.transaction(() => {
       const refs = this.collectRefs(scope, null);
-      for (const table of [
-        "source_insights",
-        "proactive_processed_messages",
-        "proactive_pushes",
-        "proactive_decisions",
-      ])
+      for (const table of ["source_insights", "proactive_processed_messages", "proactive_pushes"])
         this.database
           .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ?`)
           .run(scope.ownerId, scope.agentId);
+      this.database
+        .prepare(
+          "DELETE FROM decision_ledger WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive'",
+        )
+        .run(scope.ownerId, scope.agentId);
       return refs;
     })();
   }
@@ -455,10 +455,11 @@ export class SqliteProactiveOperations {
       const scope = [input.ownerId, input.agentId] as const;
       this.database
         .prepare(
-          `INSERT INTO proactive_decisions (
-            id, owner_id, agent_id, scenario, checked_at, counts, verdict, reason_code,
-            push_source_key, cost_micros, duration_ms, owner_rating, rated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+          `INSERT INTO decision_ledger (
+            id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code,
+            subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros, duration_ms,
+            owner_rating, rated_at
+          ) VALUES (?, ?, ?, 'proactive', ?, ?, ?, ?, NULL, ?, NULL, '{}', NULL, NULL, ?, ?, ?, NULL, NULL)`,
         )
         .run(
           decision.id,
@@ -606,8 +607,8 @@ export class SqliteProactiveOperations {
     this.time(input.since);
     const row = this.database
       .prepare(
-        `SELECT COALESCE(SUM(cost_micros), 0) AS total FROM proactive_decisions
-         WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?`,
+        `SELECT COALESCE(SUM(cost_micros), 0) AS total FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND checked_at >= ?`,
       )
       .get(input.ownerId, input.agentId, input.since) as { total: number };
     return row.total;
@@ -632,8 +633,8 @@ export class SqliteProactiveOperations {
     this.limit(input.limit);
     return this.database
       .prepare(
-        `SELECT ${decisionColumns} FROM proactive_decisions
-         WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
+        `SELECT ${decisionColumns} FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND checked_at >= ?
          ORDER BY checked_at DESC, id DESC LIMIT ?`,
       )
       .all(input.ownerId, input.agentId, input.since, input.limit)
@@ -664,8 +665,8 @@ export class SqliteProactiveOperations {
       .get(scope.ownerId, scope.agentId) as { total: number };
     const rated = this.database
       .prepare(
-        `SELECT COUNT(*) AS total FROM proactive_decisions
-         WHERE owner_id = ? AND agent_id = ? AND owner_rating IS NOT NULL`,
+        `SELECT COUNT(*) AS total FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND owner_rating IS NOT NULL`,
       )
       .get(scope.ownerId, scope.agentId) as { total: number };
     return reviewed.total + rated.total;
@@ -701,7 +702,7 @@ export class SqliteProactiveOperations {
     return (
       this.database
         .prepare(
-          `UPDATE proactive_decisions SET owner_rating = ?, rated_at = ?
+          `UPDATE decision_ledger SET owner_rating = ?, rated_at = ?
            WHERE owner_id = ? AND agent_id = ? AND id = ?`,
         )
         .run(

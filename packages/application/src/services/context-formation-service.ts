@@ -23,6 +23,7 @@ import {
   type ProductContextMessageRole,
   type ProductContextRunState,
 } from "../ports/context-projection.js";
+import type { DecisionLedgerPort } from "../ports/decision-ledger.js";
 import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
 import type { MemoryCandidate, MemoryPort } from "../ports/intelligence.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
@@ -122,6 +123,7 @@ export interface ContextFormationServiceDependencies {
   readonly threads?: Pick<ThreadRepositoryPort, "readContextSnapshot">;
   readonly threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">;
   readonly profile?: OwnerProfilePort;
+  readonly ledger?: Pick<DecisionLedgerPort, "append">;
 }
 
 export interface ContextFormationPort {
@@ -315,6 +317,37 @@ export class ContextFormationService implements ContextFormationPort {
           })),
       },
     });
+
+    const truncated = candidates
+      .filter(
+        (candidate) =>
+          !selectedIds.has(candidate.id) &&
+          CLASSIFICATION_RANK[candidate.dataClassification] <=
+            Math.min(
+              CLASSIFICATION_RANK[request.maxMemoryClassification],
+              CLASSIFICATION_RANK[request.dataClassification],
+            ),
+      )
+      .map(({ id }) => id);
+    if (this.dependencies.ledger && truncated.length > 0) {
+      await this.dependencies.ledger
+        .append({
+          id: this.dependencies.ids.next("ledger"),
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          kind: "context_truncation",
+          decidedAt: this.dependencies.clock.now(),
+          outcome: "truncated",
+          reasonCode: "selection_limit_reached",
+          subjectRef: request.runId,
+          inputs: { memoryIds: truncated.slice(0, 200), ruleIds: [] },
+          reasonRef: null,
+          contentRef: null,
+          costMicros: 0,
+          durationMs: 0,
+        })
+        .catch(() => undefined);
+    }
 
     const injectedContentRefs = Object.freeze([
       ...(snapshot?.runtimeHistory ? [snapshot.runtimeHistory.reference.payloadRef] : []),

@@ -149,6 +149,7 @@ describe("hybrid Memory provider", () => {
     });
     const hits = await provider.search({ ownerId, agentId, query: "我住在哪里", limit: 3 });
     expect(onVectorFailure).toHaveBeenCalledOnce();
+    expect(onVectorFailure).toHaveBeenCalledWith(expect.anything(), { ownerId, agentId });
     expect(port.search).toHaveBeenCalledWith(
       expect.objectContaining({ embedding: null, terms: ["住在"], queryText: "我住在哪里" }),
     );
