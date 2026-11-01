@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chown,
+  lchown,
   link,
   lstat,
   mkdir,
@@ -526,7 +527,7 @@ async function chownTree(target: string, uid: number, gid: number): Promise<void
   for (const entry of entries) {
     const child = path.join(target, entry.name);
     if (entry.isDirectory()) await chownTree(child, uid, gid);
-    else await chown(child, uid, gid);
+    else await lchown(child, uid, gid);
   }
 }
 async function hostDirectory(name: string, files: Record<string, string> = {}) {
