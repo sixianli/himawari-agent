@@ -5025,7 +5025,7 @@ B 与 Anthropic 的做法同类，省约一半调用费，但这次数据里把�
 
 **根因（先核对前提，而不是直接动手）**
 
-方案第 10 条是“未核实”的前提：执行进程崩溃时，主服务现在能不能发现。读 `scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs` 的结论是：能。看守脚本同时启动执行进程和主服务，任何一个 `exit` 或 `error`，立刻把两个都停掉（`stop(1, "worker_exit")`），由 systemd 重启整个服务，重启后未结束的命令被标成“上次启动遗留，状态未知”，不重跑。所以崩溃已有兜底，心跳只补“活着但卡住”这一种。我没有找到这种卡住在生产上真的发生过的证据，已请生产线程只读查日志和数据库，结果见 `/mnt/project-files/disconnect-fallback-review/prod-hang-evidence.md`。
+方案第 10 条是“未核实”的前提：执行进程崩溃时，主服务现在能不能发现。读 `scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs` 的结论是：能。看守脚本同时启动执行进程和主服务，任何一个 `exit` 或 `error`，立刻把两个都停掉（`stop(1, "worker_exit")`），由 systemd 重启整个服务，重启后未结束的命令被标成“上次启动遗留，状态未知”，不重跑。所以崩溃已有兜底，心跳只补“活着但卡住”这一种。我没有找到这种卡住在生产上真的发生过的证据，已请生产线程只读查日志和数据库，结果见“结果数据”。
 
 **方案讨论与备选**
 
@@ -5046,8 +5046,8 @@ B 与 Anthropic 的做法同类，省约一半调用费，但这次数据里把�
 **结果数据**
 
 - 崩溃的兜底：读代码确认（`pair-supervisor.mjs`），未在生产实测。
-- “卡住”在生产上的发生次数、各类断联占比：未测量，等 `prod-hang-evidence.md`。
-- 心跳的代码和测试：尚未实现，等 Andy 看完数据再定。
+- 生产只读取证（2026-11-01，`prod-hang-evidence.md`）：生产库 174 条沙箱命令里，没有一条耗时 ≥29 分钟；日志全部可用历史（最早 10-08）里，`poll_retry`、`cancelled_by_poll_error`、`exit.unknown`、`execution.lost` 都是 0 条；9 条“结果未确认”记录最长约 1 分钟。这不能证明从没卡住过：卡住后被重启打断的命令耗时会被截短（推断）。
+- 心跳的代码和测试：未实现。现有数据既不能证明需要，也不能证明不需要。
 
 **相关 ADR/PR**
 
