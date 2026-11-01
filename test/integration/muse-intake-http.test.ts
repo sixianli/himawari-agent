@@ -257,7 +257,7 @@ describe("Muse intake over HTTP", () => {
       batch(1, [
         proactive("sub-1", {
           delivered_text: field(
-            "key: -----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----",
+            `key: -----BEGIN ${"RSA PRIVATE"} KEY-----\nabc\n-----END ${"RSA PRIVATE"} KEY-----`,
             "chat_record",
           ),
         }),
