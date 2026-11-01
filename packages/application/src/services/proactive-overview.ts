@@ -11,9 +11,9 @@ import type {
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { WebPushFeedback } from "../ports/web-push.js";
-import { startOfZonedDay } from "./proactive-rules.js";
+import { isReminderWorthy, startOfZonedDay } from "./proactive-rules.js";
 
-const AUDIT_DAYS = 14;
+const AUDIT_DAYS = 7;
 const METRIC_DAYS = 30;
 const REACTION_WINDOW_MS = 24 * 3_600_000;
 const DAY_MS = 24 * 3_600_000;
@@ -35,6 +35,14 @@ export interface ProactiveOverviewInsight {
   readonly pushReaction: "opened" | "dismissed" | null;
   readonly rating: ProactiveRating | null;
   readonly updatedAt: string;
+}
+
+export interface ProactiveOverviewAuditItem {
+  readonly messageId: string;
+  readonly from: string;
+  readonly subject: string;
+  readonly link: string;
+  readonly rating: ProactiveRating | null;
 }
 
 export interface ProactiveOverviewDecision {
@@ -119,8 +127,21 @@ export async function readProactiveOverview(options: {
     return sent?.openedAt ? "opened" : sent?.dismissedAt ? "dismissed" : null;
   };
   const insights: ProactiveOverviewInsight[] = [];
+  const filteredInsights: ProactiveOverviewAuditItem[] = [];
   for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
+    if (!isReminderWorthy(insight.result, insight.priority)) {
+      filteredInsights.push(
+        Object.freeze({
+          messageId: insight.lastMessageId,
+          from: content.from ?? "",
+          subject: content.subject ?? "",
+          link: content.link ?? "",
+          rating: insight.ownerRating,
+        }),
+      );
+      continue;
+    }
     insights.push(
       Object.freeze({
         id: insight.id,
@@ -142,13 +163,12 @@ export async function readProactiveOverview(options: {
       }),
     );
   }
-  const auditActive =
-    connection !== undefined &&
-    Date.parse(now) - Date.parse(connection.connectedAt) < AUDIT_DAYS * DAY_MS;
+  const auditSince = new Date(Date.parse(now) - AUDIT_DAYS * DAY_MS).toISOString();
+  const auditActive = connection !== undefined;
   const ignored = auditActive
-    ? await store.listProcessed({ ...scope, since: today, outcome: "ignore", limit: 500 })
+    ? await store.listProcessed({ ...scope, since: auditSince, outcome: "ignore", limit: 500 })
     : [];
-  const auditItems = [];
+  const auditItems: ProactiveOverviewAuditItem[] = [...filteredInsights];
   for (const message of ignored) {
     const header = parse<{ from: string; subject: string; link: string }>(
       message.headerRef ? await open(message.headerRef) : undefined,
@@ -212,7 +232,7 @@ export async function readProactiveOverview(options: {
     insights: Object.freeze(insights),
     audit: Object.freeze({
       active: auditActive,
-      since: today,
+      since: auditSince,
       items: Object.freeze(auditItems),
       pending: ignored.filter(({ reviewedAt }) => reviewedAt === null).length,
     }),

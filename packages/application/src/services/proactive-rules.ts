@@ -1,5 +1,6 @@
 import type {
   ProactiveConfidence,
+  ProactivePriority,
   ProactiveQuietPeriod,
   ProactiveResult,
   ProactiveSourceItem,
@@ -64,6 +65,19 @@ export function applyFloor(
     return { result: "check", raised: result !== "check" };
   if (result === "ignore") return { result: "know", raised: true };
   return { result, raised: false };
+}
+
+export function demoteLowPriorityAct(
+  result: ProactiveResult,
+  priority: ProactivePriority | null,
+  floor: boolean,
+): { readonly result: ProactiveResult; readonly demoted: boolean } {
+  if (result !== "act" || priority !== "low") return { result, demoted: false };
+  return { result: floor ? "know" : "ignore", demoted: true };
+}
+
+export function isReminderWorthy(result: ProactiveResult, priority: ProactivePriority | null) {
+  return result !== "ignore" && !(result === "act" && priority === "low");
 }
 
 interface ZonedParts {

@@ -717,6 +717,94 @@ describe("proactive Gmail check acceptance", () => {
     expect(after.audit.pending).toBe(0);
   });
 
+  it("[PG-17] keeps a low-priority todo off the reminder page, keeps it in the 7-day filtered list, and never drops money or official mail", async () => {
+    const h = await harness();
+    h.reader.items = [
+      mail("points", {
+        from: "東京ガス <mailtg@email.tokyo-gas.co.jp>",
+        fromAddress: "mailtg@email.tokyo-gas.co.jp",
+        subject: "500ポイントをPayPayに交換できます",
+        snippet: "ポイント交換のご案内",
+      }),
+      mail("bill", {
+        from: "電力 <info@power.example.com>",
+        fromAddress: "info@power.example.com",
+        subject: "11月分ご請求のお知らせ",
+        snippet: "お支払い期限は 11/20 です",
+      }),
+      mail("ward", {
+        from: "区役所 <info@city.shinjuku.lg.jp>",
+        fromAddress: "info@city.shinjuku.lg.jp",
+        subject: "ご案内",
+        snippet: "手続きのお知らせ",
+      }),
+      mail("tax", {
+        from: "税務署 <info@nta.example.com>",
+        fromAddress: "info@nta.example.com",
+        subject: "納付のご案内",
+        snippet: "お支払いください",
+      }),
+    ];
+    h.script([
+      { id: "points", result: "act", todo: "兑换积分", priority: "low" },
+      { id: "bill", result: "act", todo: "11/20 前付电费", priority: "low" },
+      { id: "ward", result: "act", todo: "办手续", priority: "low" },
+      { id: "tax", result: "act", todo: "缴税", priority: "medium" },
+    ]);
+    const decision = await h.service.run();
+    expect(decision?.counts).toMatchObject({ judged: 4, ignore: 1, know: 2, act: 1 });
+    const overview = await h.overview();
+    expect(overview.insights.map(({ result, priority }) => [result, priority])).toEqual(
+      expect.arrayContaining([
+        ["know", null],
+        ["act", "medium"],
+      ]),
+    );
+    expect(overview.insights).toHaveLength(3);
+    expect(overview.insights.some(({ summary }) => summary === "兑换积分")).toBe(false);
+    expect(overview.audit.active).toBe(true);
+    expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["points"]);
+    expect(overview.audit.items[0]).toMatchObject({
+      from: "東京ガス <mailtg@email.tokyo-gas.co.jp>",
+      subject: "500ポイントをPayPayに交換できます",
+    });
+    h.clock.advance(6 * 24 * 3_600_000);
+    expect((await h.overview()).audit.items.map(({ messageId }) => messageId)).toEqual(["points"]);
+    h.clock.advance(2 * 24 * 3_600_000);
+    expect((await h.overview()).audit.items).toEqual([]);
+  });
+
+  it("[PG-17] moves an already stored low-priority todo from the reminder page to the filtered list", async () => {
+    const h = await harness();
+    h.reader.items = [
+      mail("stored", {
+        from: "GitHub <noreply@github.com>",
+        fromAddress: "noreply@github.com",
+        subject: "Actions 存储已用 90%",
+        snippet: "storage quota",
+      }),
+    ];
+    h.script([{ id: "stored", result: "act", todo: "清理存储", priority: "medium" }]);
+    await h.service.run();
+    expect((await h.overview()).insights).toHaveLength(1);
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+    try {
+      database.prepare("UPDATE source_insights SET priority = 'low'").run();
+    } finally {
+      database.close();
+    }
+    const overview = await h.overview();
+    expect(overview.insights).toEqual([]);
+    expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["stored"]);
+  });
+
+  it("[PG-17] tells the model that promotions, points, surveys, invitations, newsletters and automatic usage notices are ignore", () => {
+    const prompt = proactivePrompt([mail("a")], "2026-10-30T01:00:00.000Z", "Asia/Tokyo");
+    for (const word of ["促销", "积分", "问卷", "聚会", "新闻简报", "用量或存储提醒"])
+      expect(prompt).toContain(word);
+    expect(prompt).toContain("宁可少报");
+  });
+
   it("[PG-16] tells a failed model call, an unfinished answer and an unreadable answer apart and retries them next time", async () => {
     const h = await harness();
     h.reader.items = [mail("a", { subject: "ご確認ください" })];
