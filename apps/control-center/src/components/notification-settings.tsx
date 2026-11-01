@@ -56,7 +56,7 @@ export function NotificationSettings({
         setStatus(next);
         const mine = next.subscriptions.find((item) => item.subscriptionId === id);
         setCurrentId(mine ? mine.subscriptionId : null);
-        if (mine) setKinds(mine.kinds);
+        setKinds(next.kinds);
       })
       .catch(() => {
         if (!disposed) setError(true);
@@ -65,6 +65,13 @@ export function NotificationSettings({
       disposed = true;
     };
   }, [controller, connected, reload]);
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") setReload((value) => value + 1);
+    };
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, []);
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
     setError(false);
@@ -80,25 +87,30 @@ export function NotificationSettings({
   const deviceLabel = message(browser.standalone ? "push.deviceApp" : "push.deviceBrowser", {
     platform,
   });
-  const enable = (nextKinds: readonly WebPushKind[], sendTest: boolean) =>
+  const enable = (sendTest: boolean) =>
     run(async () => {
       if (!status?.publicKey) return;
       const result = await controller.enable({
         publicKey: status.publicKey,
         locale,
         deviceLabel,
-        kinds: nextKinds,
         sendTest,
       });
       setPermission(controller.permission);
       if (result === "enabled" && sendTest) setTestSent(true);
     });
   const toggle = (kind: WebPushKind) => {
-    const next = kinds.includes(kind)
-      ? kinds.filter((value) => value !== kind)
-      : WEB_PUSH_KINDS.filter((value) => value === kind || kinds.includes(value));
-    setKinds(next);
-    if (currentId) void enable(next, false);
+    const enabled = !kinds.includes(kind);
+    const previous = kinds;
+    setKinds(WEB_PUSH_KINDS.filter((value) => (value === kind ? enabled : kinds.includes(value))));
+    void run(async () => {
+      try {
+        await controller.setKind(kind, enabled);
+      } catch (failure) {
+        setKinds(previous);
+        throw failure;
+      }
+    });
   };
   const mine = status?.subscriptions.find((item) => item.subscriptionId === currentId);
   const others = status?.subscriptions.filter((item) => item.subscriptionId !== currentId) ?? [];
@@ -206,8 +218,8 @@ export function NotificationSettings({
               <span>
                 <ActionButton
                   variant="primary"
-                  disabled={busy || !connected || !status?.publicKey || kinds.length === 0}
-                  onClick={() => void enable(kinds, true)}
+                  disabled={busy || !connected || !status?.publicKey}
+                  onClick={() => void enable(true)}
                 >
                   {message("push.enable")}
                 </ActionButton>

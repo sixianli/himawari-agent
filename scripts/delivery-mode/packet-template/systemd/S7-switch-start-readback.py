@@ -43,6 +43,14 @@ def directory(filename, uid, mode=None):
 
 startup_phase_baseline_ms = __PKT_STARTUP_PHASE_BASELINE_MS__
 
+def content_audits_completed(messages):
+    counts = {'sandbox_runtime.content_audit_started': {}, 'sandbox_runtime.content_audit_completed': {}, 'sandbox_runtime.content_audit_superseded': {}}
+    for value in messages:
+        if isinstance(value, dict) and value.get('event') in counts and isinstance(value.get('pid'), int) and not isinstance(value.get('pid'), bool):
+            counts[value['event']][value['pid']] = counts[value['event']].get(value['pid'], 0) + 1
+    started, completed, superseded = counts['sandbox_runtime.content_audit_started'], counts['sandbox_runtime.content_audit_completed'], counts['sandbox_runtime.content_audit_superseded']
+    return len(started) >= 2 and all(completed.get(pid, 0) + superseded.get(pid, 0) >= number for pid, number in started.items())
+
 def startup_phases(journal, invocation, baseline):
     timed = []
     for line in journal.decode().splitlines():
@@ -58,7 +66,7 @@ def startup_phases(journal, invocation, baseline):
             timed.append((at, message))
     spawned = [at for at, message in timed if message.get('event') == 'pair.child_spawned']
     if not spawned:
-        return {'invocationId': invocation, 'phases': [], 'warnings': []}
+        return {'invocationId': invocation, 'phases': [], 'warnings': [], 'runtimeDigests': []}
     started = min(spawned)
     marks = [(message['step'], at) for at, message in timed if message.get('component') == 'agent-service' and message.get('event') == 'startup.step' and isinstance(message.get('step'), str)]
     marks += [(message['component'] + '-ready', at) for at, message in timed if message.get('event') == 'service.ready' and message.get('component') in ['agent-service', 'execution-worker']]
@@ -67,7 +75,11 @@ def startup_phases(journal, invocation, baseline):
         phases.append({'step': step, 'durationMs': round(at - previous), 'sinceSpawnMs': round(at - started)})
         previous = at
     warnings = [{**phase, 'baselineMs': baseline[phase['step']]} for phase in phases if phase['step'] in baseline and phase['durationMs'] > 2 * baseline[phase['step']]]
-    return {'invocationId': invocation, 'phases': phases, 'warnings': warnings}
+    digests = [{'reused': message.get('reused'), 'hashed': message.get('hashed'), 'durationMs': message.get('durationMs'), 'retriedWithoutCache': message.get('retriedWithoutCache')} for at, message in timed if message.get('event') == 'sandbox_runtime.digest_completed']
+    warnings += [{'step': 'runtime-fingerprint-cache', **digest} for digest in digests if digest['hashed'] != 0 or digest['retriedWithoutCache'] is not False]
+    warnings += [{'step': 'runtime-fingerprint-cache-missed', 'reused': message.get('reused'), 'hashed': message.get('hashed')} for at, message in timed if message.get('event') == 'sandbox_runtime.fingerprint_cache_missed']
+    warnings += [{'step': 'content-audit-retrying'} for at, message in timed if message.get('event') == 'sandbox_runtime.content_audit_retrying']
+    return {'invocationId': invocation, 'phases': phases, 'warnings': warnings, 'runtimeDigests': digests}
 
 def json_file(filename, uid=0, mode=None):
     return json.loads(regular(filename, uid, mode))
@@ -266,7 +278,7 @@ try:
     orchestration['newUnitSha256'] = sha(new_fragment)
     orchestration['startRequested'] = True
     run(['/usr/bin/systemctl', 'start', unit], 's7-systemctl-start', timeout=60)
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + 120
     while True:
         current = show()
         invocation = current['InvocationID']
@@ -281,13 +293,14 @@ try:
                 messages.append(json.loads(entry['MESSAGE']))
             except (json.JSONDecodeError, KeyError):
                 pass
-        failure_events = [value.get('event', '') for value in messages if isinstance(value, dict) and any(term in str(value.get('event', '')).lower() for term in ['failed', 'failure', 'error', 'timeout', 'lost', 'quarantined', 'child_exit', 'child_error'])]
+        failure_events = [value.get('event', '') for value in messages if isinstance(value, dict) and any(term in str(value.get('event', '')).lower() for term in ['failed', 'failure', 'error', 'timeout', 'lost', 'quarantined', 'child_exit', 'child_error', 'retryable'])]
         if failure_events:
             raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_STARTUP_FAILURE_EVENT')
-        if all(any(value.get('component') == component and value.get('event') == 'service.ready' for value in messages if isinstance(value, dict)) for component in ['agent-service', 'execution-worker']):
+        audits_completed = content_audits_completed(messages)
+        if audits_completed and all(any(value.get('component') == component and value.get('event') == 'service.ready' for value in messages if isinstance(value, dict)) for component in ['agent-service', 'execution-worker']):
             break
         if time.monotonic() >= deadline:
-            raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_BOTH_READY_DEADLINE_EXCEEDED')
+            raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_CONTENT_AUDITS_NOT_COMPLETED' if not audits_completed else '__PKT_LABEL_UPPER___SWITCH_BOTH_READY_DEADLINE_EXCEEDED')
         time.sleep(0.2)
     orchestration['invocationId'] = invocation
     orchestration['journal'] = retain(evidence / 's7-invocation-journal.jsonl', journal)

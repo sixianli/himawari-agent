@@ -952,11 +952,11 @@ export const messages = {
     "本日のメール確認が 1 日の費用上限に達しました。モデルは止めていますが、銀行・学校などのメールはルールで引き続き表示します。0:00 に自動再開し、チャットへの影響はありません。",
   "proactive.paused": "自発的なリマインダーはオフです。メールの確認・記録・通知をしていません。",
   "proactive.foot": "期限が来たリマインダーと急ぎのメールは、通知をオンにした端末に届きます。",
-  "proactive.audit.title": "今日「対応不要」と判断した {count} 通",
+  "proactive.audit.title": "直近 7 日間にリマインドから外した {count} 通",
   "proactive.audit.open": "確認する",
   "proactive.audit.hide": "閉じる",
   "proactive.audit.note":
-    "公開後 14 日間、毎日 1 回。差出人と件名だけを表示します。「確認済み」を押すと確認件数に入ります。",
+    "リマインドに入れなかったメールです。差出人と件名だけを表示します。「確認済み」を押すと確認件数に入ります。",
   "proactive.audit.done": "確認済み",
   "proactive.audit.doneOk": "確認件数に追加しました",
   "proactive.log.range": "直近 30 日 · {days} 日分を記録",

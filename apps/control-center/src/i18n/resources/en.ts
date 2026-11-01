@@ -950,11 +950,12 @@ export const messages = {
   "proactive.paused": "Proactive reminders are off: no mail is read, logged or pushed.",
   "proactive.foot":
     "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
-  "proactive.audit.title": "{count, plural, one {# email} other {# emails}} marked “ignore” today",
+  "proactive.audit.title":
+    "{count, plural, one {# email} other {# emails}} filtered out in the last 7 days",
   "proactive.audit.open": "Review",
   "proactive.audit.hide": "Hide",
   "proactive.audit.note":
-    "One list a day for the first 14 days, showing sender and subject only. They count as reviewed only after you tap “Done reviewing”.",
+    "These emails were kept out of reminders. Only sender and subject are shown. They count as reviewed only after you tap “Done reviewing”.",
   "proactive.audit.done": "Done reviewing",
   "proactive.audit.doneOk": "Counted as reviewed",
   "proactive.log.range": "Last 30 days · {days, plural, one {# day} other {# days}} recorded",

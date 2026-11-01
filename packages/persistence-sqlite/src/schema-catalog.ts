@@ -720,6 +720,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion",
   ),
   entry(
+    "web_push_account_kinds",
+    "WebPushStorePort",
+    "one row per owner and agent holding which kinds of push (reminder, approval, run) are on; shared by every device",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "web_push_outbox",
     "WebPushStorePort",
     "one row per event to push, naming only its source; pruned seven days after it expires",

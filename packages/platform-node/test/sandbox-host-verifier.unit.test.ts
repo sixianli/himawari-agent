@@ -25,6 +25,7 @@ import { sandboxScopeSchema } from "@himawari-agent/execution-contracts";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   digestSandboxRuntime,
+  runtimeFingerprintLocation,
   resolveSandboxFileWorkspaceClaim,
   resolveSandboxWorkspaceClaim,
   sandboxHostIdentity,
@@ -599,4 +600,82 @@ it("claims only the authenticated private copy and rejects arbitrary or replaced
   await expect(resolveSandboxWorkspaceClaim({ ...input, scope })).rejects.toThrow(
     "COPY_ROOT_CHANGED",
   );
+});
+
+it("reuses the persisted fingerprint cache and falls back to a full hash when the cache lies", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "runtime-cache-fallback-"));
+  const runtime = await realpath(root);
+  await chmod(runtime, 0o700);
+  const cacheFile = path.join(runtime, "..", `${path.basename(runtime)}.fingerprints.json`);
+  await writeFile(path.join(runtime, "a"), "alpha", { mode: 0o600 });
+  await writeFile(path.join(runtime, "b"), "bravo", { mode: 0o600 });
+  vi.stubEnv("HIMAWARI_RUNTIME_FINGERPRINT_FILE", cacheFile);
+  const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    const expected = await digestSandboxRuntime(runtime);
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(await digestSandboxRuntime(runtime, expected)).toBe(expected);
+    expect(await digestSandboxRuntime(runtime, expected)).toBe(expected);
+    const events = log.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(events.at(-1)).toMatchObject({ reused: 2, hashed: 0, retriedWithoutCache: false });
+    const stored = JSON.parse(await readFile(cacheFile, "utf8"));
+    stored.files.a.sha256 = "0".repeat(64);
+    await writeFile(cacheFile, JSON.stringify(stored), { mode: 0o600 });
+    expect(await digestSandboxRuntime(runtime, expected)).toBe(expected);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+      retriedWithoutCache: true,
+      reused: 0,
+      hashed: 2,
+    });
+    await writeFile(path.join(runtime, "a"), "ALPHA", { mode: 0o600 });
+    expect(await digestSandboxRuntime(runtime, expected)).not.toBe(expected);
+  } finally {
+    log.mockRestore();
+    vi.unstubAllEnvs();
+    await rm(runtime, { recursive: true, force: true });
+    await rm(cacheFile, { force: true });
+  }
+}, 20_000);
+
+it("keeps the trusted fingerprint file beside the root-owned protection record and stages writes under HOME", () => {
+  vi.stubEnv(
+    "HIMAWARI_RUNTIME_PROTECTION_FILE",
+    "/opt/himawari/operations/x/runtime-protection.json",
+  );
+  vi.stubEnv("HOME", "/var/lib/himawari/state");
+  try {
+    const root = "/opt/himawari/releases/r1/lib/himawari-agent";
+    const location = runtimeFingerprintLocation(root);
+    expect(location).toMatchObject({
+      fingerprintFile: "/opt/himawari/operations/x/runtime-fingerprints.json",
+      trustedUid: 0,
+    });
+    expect(location.fingerprintWriteFile).toMatch(
+      /^\/var\/lib\/himawari\/state\/cache\/runtime-fingerprints-[a-f0-9]{16}\.json$/,
+    );
+    expect(runtimeFingerprintLocation(root)).toEqual(location);
+    expect(runtimeFingerprintLocation(`${root}2`).fingerprintWriteFile).not.toBe(
+      location.fingerprintWriteFile,
+    );
+    vi.stubEnv("HIMAWARI_RUNTIME_PROTECTION_FILE", "");
+    expect(runtimeFingerprintLocation(root)).toEqual({});
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it("stops the digest worker when the caller aborts", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "runtime-digest-abort-"));
+  const runtime = await realpath(root);
+  await chmod(runtime, 0o700);
+  await writeFile(path.join(runtime, "a"), "alpha", { mode: 0o600 });
+  const controller = new AbortController();
+  controller.abort();
+  try {
+    await expect(digestSandboxRuntime(runtime, undefined, controller.signal)).rejects.toThrow(
+      "SANDBOX_HOST_DIGEST_ABORTED",
+    );
+  } finally {
+    await rm(runtime, { recursive: true, force: true });
+  }
 });

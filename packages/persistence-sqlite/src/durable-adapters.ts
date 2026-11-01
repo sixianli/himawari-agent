@@ -1012,6 +1012,7 @@ export class SqliteDurableAdapters {
   modelUsage(): ModelUsageStorePort {
     return Object.freeze<ModelUsageStorePort>({
       record: (input) => this.context.write("modelUsage.record", input),
+      isFollowUpTurn: (input) => this.context.read("modelUsage.isFollowUpTurn", input),
     });
   }
 
@@ -1020,6 +1021,9 @@ export class SqliteDurableAdapters {
       saveSubscription: (input) => this.context.write("webPush.saveSubscription", input),
       removeSubscription: (input) => this.context.write("webPush.removeSubscription", input),
       listSubscriptions: (input) => this.context.read("webPush.listSubscriptions", input),
+      readKinds: (input) => this.context.read("webPush.readKinds", input),
+      setKind: (input) => this.context.write("webPush.setKind", input),
+      writeKinds: (input) => this.context.write("webPush.writeKinds", input),
       markSubscription: (input) => this.context.write("webPush.markSubscription", input),
       readCursor: (input) => this.context.read("webPush.readCursor", input),
       enqueue: (input) => this.context.write("webPush.enqueue", input),
@@ -1039,6 +1043,7 @@ export class SqliteDurableAdapters {
       get: (input) => this.context.read("threadArtifact.get", input),
       versions: (input) => this.context.read("threadArtifact.versions", input),
       list: (input) => this.context.read("threadArtifact.list", input),
+      markDeleted: (input) => this.context.write("threadArtifact.markDeleted", input),
     });
   }
 
