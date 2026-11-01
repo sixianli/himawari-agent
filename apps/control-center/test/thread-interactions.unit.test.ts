@@ -2406,6 +2406,25 @@ describe("thread control center interactions", () => {
       });
     },
   );
+  it("shows that the cleanup recheck ran and that resources are still unconfirmed", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "failed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    await render();
+    await refresh();
+    expect(container.textContent).not.toContain("chat.retryCleanupStillUnconfirmed");
+    await click("chat.retryCleanup");
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("chat.retryCleanupStillUnconfirmed");
+  });
   it("offers archive only and never queries deletion or checkpoint controls", async () => {
     await render();
     await refresh();

@@ -277,6 +277,8 @@ export const messages = {
   "chat.modelUnavailable": "模型信息未提供",
   "chat.attach": "添加图片或文件",
   "chat.retryCleanup": "再次停止并检查清理",
+  "chat.retryCleanupChecking": "正在检查清理…",
+  "chat.retryCleanupStillUnconfirmed": "已重新检查，资源仍未确认释放。稍后可以再试一次。",
   "chat.stop": "停止",
   "more.button": "更多",
   "more.buttonRunning": "更多：产物和后台命令（{count} 个后台命令运行中）",
