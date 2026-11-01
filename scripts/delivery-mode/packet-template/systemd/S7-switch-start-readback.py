@@ -43,6 +43,9 @@ def directory(filename, uid, mode=None):
 
 startup_phase_baseline_ms = __PKT_STARTUP_PHASE_BASELINE_MS__
 
+def content_audits_completed(messages):
+    return len({value.get('pid') for value in messages if isinstance(value, dict) and value.get('event') == 'sandbox_runtime.content_audit_completed' and isinstance(value.get('pid'), int) and not isinstance(value.get('pid'), bool)})
+
 def startup_phases(journal, invocation, baseline):
     timed = []
     for line in journal.decode().splitlines():
@@ -69,6 +72,8 @@ def startup_phases(journal, invocation, baseline):
     warnings = [{**phase, 'baselineMs': baseline[phase['step']]} for phase in phases if phase['step'] in baseline and phase['durationMs'] > 2 * baseline[phase['step']]]
     digests = [{'reused': message.get('reused'), 'hashed': message.get('hashed'), 'durationMs': message.get('durationMs'), 'retriedWithoutCache': message.get('retriedWithoutCache')} for at, message in timed if message.get('event') == 'sandbox_runtime.digest_completed']
     warnings += [{'step': 'runtime-fingerprint-cache', **digest} for digest in digests if digest['hashed'] != 0 or digest['retriedWithoutCache'] is not False]
+    warnings += [{'step': 'runtime-fingerprint-cache-missed', 'reused': message.get('reused'), 'hashed': message.get('hashed')} for at, message in timed if message.get('event') == 'sandbox_runtime.fingerprint_cache_missed']
+    warnings += [{'step': 'content-audit-retrying'} for at, message in timed if message.get('event') == 'sandbox_runtime.content_audit_retrying']
     return {'invocationId': invocation, 'phases': phases, 'warnings': warnings, 'runtimeDigests': digests}
 
 def json_file(filename, uid=0, mode=None):
@@ -268,7 +273,7 @@ try:
     orchestration['newUnitSha256'] = sha(new_fragment)
     orchestration['startRequested'] = True
     run(['/usr/bin/systemctl', 'start', unit], 's7-systemctl-start', timeout=60)
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + 120
     while True:
         current = show()
         invocation = current['InvocationID']
@@ -286,7 +291,7 @@ try:
         failure_events = [value.get('event', '') for value in messages if isinstance(value, dict) and any(term in str(value.get('event', '')).lower() for term in ['failed', 'failure', 'error', 'timeout', 'lost', 'quarantined', 'child_exit', 'child_error', 'retryable'])]
         if failure_events:
             raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_STARTUP_FAILURE_EVENT')
-        audits_completed = sum(1 for value in messages if isinstance(value, dict) and value.get('event') == 'sandbox_runtime.content_audit_completed')
+        audits_completed = content_audits_completed(messages)
         if audits_completed >= 2 and all(any(value.get('component') == component and value.get('event') == 'service.ready' for value in messages if isinstance(value, dict)) for component in ['agent-service', 'execution-worker']):
             break
         if time.monotonic() >= deadline:

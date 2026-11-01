@@ -49,7 +49,11 @@ function parse(value: unknown): Protection {
   return input as unknown as Protection;
 }
 
-export function auditProtectedRuntime(root: string, ownerUid: number): Promise<void> {
+export function auditProtectedRuntime(
+  root: string,
+  ownerUid: number,
+  signal?: AbortSignal,
+): Promise<void> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const request: ProtectedRuntimeAuditRequest = { root, ownerUid };
   return new Promise((resolve, reject) => {
@@ -58,6 +62,12 @@ export function auditProtectedRuntime(root: string, ownerUid: number): Promise<v
       { workerData: request },
     );
     let received = false;
+    const stop = () => {
+      void worker.terminate();
+      reject(new Error("SANDBOX_RUNTIME_AUDIT_ABORTED"));
+    };
+    if (signal?.aborted) stop();
+    else signal?.addEventListener("abort", stop, { once: true });
     worker.once("message", (value: unknown) => {
       received = true;
       if ((value as { protected?: unknown } | null)?.protected === true) resolve();
@@ -65,6 +75,7 @@ export function auditProtectedRuntime(root: string, ownerUid: number): Promise<v
     });
     worker.once("error", reject);
     worker.once("exit", (code) => {
+      signal?.removeEventListener("abort", stop);
       if (!received) reject(new Error(`SANDBOX_RUNTIME_AUDIT_WORKER_EXIT:${code}`));
     });
   });
@@ -87,7 +98,7 @@ function isTransientAuditError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return (
     (typeof code === "string" && TRANSIENT_CODES.has(code)) ||
-    /^(SANDBOX_RUNTIME_AUDIT_TIMEOUT|SANDBOX_HOST_DIGEST_WORKER_EXIT|SANDBOX_RUNTIME_AUDIT_WORKER_EXIT)/.test(
+    /^(SANDBOX_RUNTIME_AUDIT_TIMEOUT|SANDBOX_RUNTIME_AUDIT_ABORTED|SANDBOX_HOST_DIGEST_ABORTED|SANDBOX_HOST_DIGEST_WORKER_EXIT|SANDBOX_RUNTIME_AUDIT_WORKER_EXIT)/.test(
       error.message,
     )
   );
@@ -95,14 +106,16 @@ function isTransientAuditError(error: unknown): boolean {
 
 export class ProtectedRuntimeVerifier {
   readonly #manifestPath: string;
-  readonly #auditInstallation: (root: string) => Promise<void>;
+  readonly #auditInstallation: (root: string, signal?: AbortSignal) => Promise<void>;
+  readonly #active = new Set<AbortController>();
   readonly #audits = new Map<string, Promise<void>>();
   readonly #artifactAudits = new Map<string, Promise<void>>();
   readonly #refused = new Map<string, unknown>();
   readonly #contentAuditTimeoutMs: number;
   constructor(
     manifestPath: string,
-    auditInstallation: (root: string) => Promise<void> = (root) => auditProtectedRuntime(root, 0),
+    auditInstallation: (root: string, signal?: AbortSignal) => Promise<void> = (root, signal) =>
+      auditProtectedRuntime(root, 0, signal),
     contentAuditTimeoutMs = CONTENT_AUDIT_TIMEOUT_MS,
   ) {
     if (!canonical(manifestPath)) throw failure();
@@ -187,6 +200,7 @@ export class ProtectedRuntimeVerifier {
       readonly transient: boolean;
       readonly durationMs: number;
     }) => void,
+    onRetry?: () => void,
   ): Promise<void> {
     const startedAt = Date.now();
     const { key, complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
@@ -195,12 +209,19 @@ export class ProtectedRuntimeVerifier {
         onSettled?.({ ok, transient, durationMs: Date.now() - startedAt });
       } catch {}
     };
+    const failed = (error: unknown) => {
+      const transient = isTransientAuditError(error);
+      if (!transient) this.#refused.set(key, error);
+      settle(false, transient);
+    };
     complete().then(
       () => settle(true, false),
       (error: unknown) => {
-        const transient = isTransientAuditError(error);
-        if (!transient) this.#refused.set(key, error);
-        settle(false, transient);
+        if (!isTransientAuditError(error)) return failed(error);
+        try {
+          onRetry?.();
+        } catch {}
+        complete().then(() => settle(true, false), failed);
       },
     );
   }
@@ -266,6 +287,7 @@ export class ProtectedRuntimeVerifier {
   #bounded(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const controller = new AbortController();
+      this.#active.add(controller);
       const timer = setTimeout(() => {
         controller.abort();
         reject(new Error("SANDBOX_RUNTIME_AUDIT_TIMEOUT"));
@@ -273,10 +295,12 @@ export class ProtectedRuntimeVerifier {
       work(controller.signal).then(
         () => {
           clearTimeout(timer);
+          this.#active.delete(controller);
           resolve();
         },
         (error: unknown) => {
           clearTimeout(timer);
+          this.#active.delete(controller);
           reject(error);
         },
       );
@@ -312,11 +336,12 @@ export class ProtectedRuntimeVerifier {
     if (this.#refused.has(key)) throw this.#refused.get(key);
     let audit = this.#audits.get(key);
     if (!audit) {
+      for (const controller of this.#active) controller.abort();
       this.#audits.clear();
       this.#artifactAudits.clear();
       audit = this.#bounded((signal) =>
         (async () => {
-          await this.#auditInstallation(runtimeRoot);
+          await this.#auditInstallation(runtimeRoot, signal);
           if ((await digest(runtimeRoot, signal)) !== runtimeDigest) throw failure();
           const latest = await this.#manifest();
           if (
@@ -375,19 +400,35 @@ export async function verifyProtectedRuntime(
     verifiers.set(filename, verifier);
   }
   if (options.deferContentAudit === true) {
-    await verifier.begin(runtimeRoot, runtimeDigest, digest, artifacts, (outcome) => {
+    const onRetry = () =>
       console.error(
         JSON.stringify({
           component: "platform-node",
-          event: outcome.ok
-            ? "sandbox_runtime.content_audit_completed"
-            : outcome.transient
-              ? "sandbox_runtime.content_audit_retryable"
-              : "sandbox_runtime.content_audit_failed",
-          durationMs: outcome.durationMs,
+          event: "sandbox_runtime.content_audit_retrying",
+          pid: process.pid,
         }),
       );
-    });
+    await verifier.begin(
+      runtimeRoot,
+      runtimeDigest,
+      digest,
+      artifacts,
+      (outcome) => {
+        console.error(
+          JSON.stringify({
+            component: "platform-node",
+            pid: process.pid,
+            event: outcome.ok
+              ? "sandbox_runtime.content_audit_completed"
+              : outcome.transient
+                ? "sandbox_runtime.content_audit_retryable"
+                : "sandbox_runtime.content_audit_failed",
+            durationMs: outcome.durationMs,
+          }),
+        );
+      },
+      onRetry,
+    );
     return true;
   }
   await verifier.verify(runtimeRoot, runtimeDigest, digest, artifacts);

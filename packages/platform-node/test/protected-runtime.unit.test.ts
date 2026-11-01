@@ -224,6 +224,66 @@ it("aborts the running digest when the content audit times out, and marks the ou
   expect(received?.aborted).toBe(true);
 });
 
+it("retries a transient deferred failure once before reporting it", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  const retrying = vi.fn();
+  let calls = 0;
+  await verifier.begin(
+    root,
+    digest,
+    async () => {
+      calls++;
+      if (calls === 1) throw new Error("SANDBOX_HOST_DIGEST_WORKER_EXIT:1");
+      return digest;
+    },
+    [],
+    settled,
+    retrying,
+  );
+  await vi.waitFor(() => expect(settled).toHaveBeenCalled());
+  expect(retrying).toHaveBeenCalledOnce();
+  expect(calls).toBe(2);
+  expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+});
+
+it("reports a transient failure only after the retry also failed", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  const retrying = vi.fn();
+  const failing = vi.fn(async () => {
+    throw new Error("SANDBOX_HOST_DIGEST_WORKER_EXIT:1");
+  });
+  await verifier.begin(root, digest, failing, [], settled, retrying);
+  await vi.waitFor(() => expect(settled).toHaveBeenCalled());
+  expect(failing).toHaveBeenCalledTimes(2);
+  expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false, transient: true }));
+});
+
+it("does not retry a real inconsistency", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  const retrying = vi.fn();
+  const wrong = vi.fn(async () => "c".repeat(64));
+  await verifier.begin(root, digest, wrong, [], settled, retrying);
+  await vi.waitFor(() => expect(settled).toHaveBeenCalled());
+  expect(wrong).toHaveBeenCalledOnce();
+  expect(retrying).not.toHaveBeenCalled();
+});
+
+it("aborts the installation audit worker when the audit times out", async () => {
+  let received: AbortSignal | undefined;
+  const audit = (_root: string, signal?: AbortSignal) => {
+    received = signal;
+    return new Promise<void>(() => {});
+  };
+  const verifier = new ProtectedRuntimeVerifier(manifestPath, audit, 20);
+  const settled = vi.fn();
+  await verifier.begin(root, digest, async () => digest, [], settled);
+  await vi.waitFor(() => expect(settled).toHaveBeenCalled());
+  expect(received?.aborted).toBe(true);
+});
+
 it("marks a real inconsistency as not transient", async () => {
   const verifier = verifierFor();
   const settled = vi.fn();
@@ -387,7 +447,7 @@ it("audits the whole installation before reading its bytes and keeps no failed a
   const readBytes = vi.fn(async () => digest);
   fixture.audit.mockRejectedValueOnce(new Error("SANDBOX_RUNTIME_PROTECTION_INVALID"));
   await expect(verifier.verify(root, digest, readBytes)).rejects.toThrow("PROTECTION_INVALID");
-  expect(fixture.audit).toHaveBeenCalledExactlyOnceWith(root);
+  expect(fixture.audit).toHaveBeenCalledExactlyOnceWith(root, expect.any(AbortSignal));
   expect(readBytes).not.toHaveBeenCalled();
   await verifier.verify(root, digest, readBytes);
   await verifier.verify(root, digest, readBytes);

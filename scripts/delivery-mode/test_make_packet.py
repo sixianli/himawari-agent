@@ -75,11 +75,13 @@ def static_root_configuration(packet):
 
 
 def startup_phases(packet):
+    startup_phases.audits = None
     source = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
     tree = ast.parse(source)
-    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'startup_phases' or isinstance(node, ast.Assign) and [target.id for target in node.targets if isinstance(target, ast.Name)] == ['startup_phase_baseline_ms']]
+    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in ('startup_phases', 'content_audits_completed') or isinstance(node, ast.Assign) and [target.id for target in node.targets if isinstance(target, ast.Name)] == ['startup_phase_baseline_ms']]
     namespace = {'json': json}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'S7-switch-start-readback.py', 'exec'), namespace)
+    startup_phases.audits = namespace['content_audits_completed']
     return namespace['startup_phases'], namespace['startup_phase_baseline_ms']
 
 
@@ -185,7 +187,8 @@ class StartupPhaseTest(RenderedPacket):
         os.chmod(operations, 0o755)
         source = cache / ('runtime-fingerprints-' + token + '.json')
         published = operations / 'runtime-fingerprints.json'
-        payload = json.dumps({'version': 1, 'root': runtime, 'files': {'a': {}}})
+        entry = {key: '1' for key in ['dev', 'ino', 'size', 'mode', 'uid', 'mtimeNs', 'ctimeNs']} | {'sha256': 'a' * 64}
+        payload = json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry}})
 
         def stage(text=payload, owner=999, links=0):
             source.unlink(missing_ok=True)
@@ -212,7 +215,11 @@ class StartupPhaseTest(RenderedPacket):
         self.assertEqual(list(operations.glob('*.tmp')), [])
         stage(owner=1234)
         refused('SOURCE_UNSAFE')
-        stage(json.dumps({'version': 1, 'root': runtime + '2', 'files': {'a': {}}}))
+        stage(json.dumps({'version': 1, 'root': runtime + '2', 'files': {'a': entry}}))
+        refused('INVALID')
+        stage(json.dumps({'version': 1, 'root': runtime, 'files': {'a': {}}}))
+        refused('INVALID')
+        stage(json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry | {'sha256': 'zz'}}}))
         refused('INVALID')
         stage('not json')
         with self.subTest('garbage'):
@@ -252,6 +259,8 @@ class StartupPhaseTest(RenderedPacket):
         spawn = (0, {'component': 'pair-supervisor', 'event': 'pair.child_spawned', 'name': 'worker'})
         good = phases(startup_journal('start', [spawn, digest(30879, 0, False)]), 'start', baseline)
         self.assertEqual(good['warnings'], [])
+        missed = phases(startup_journal('start', [spawn, (9000, {'component': 'platform-node', 'event': 'sandbox_runtime.fingerprint_cache_missed', 'reused': 0, 'hashed': 5}), (9100, {'component': 'platform-node', 'event': 'sandbox_runtime.content_audit_retrying'})]), 'start', baseline)
+        self.assertEqual([warning['step'] for warning in missed['warnings']], ['runtime-fingerprint-cache-missed', 'content-audit-retrying'])
         self.assertEqual(good['runtimeDigests'][0]['reused'], 30879)
         for reused, hashed, retried in [(0, 30879, False), (10, 1, False), (30879, 0, True)]:
             bad = phases(startup_journal('start', [spawn, digest(reused, hashed, retried)]), 'start', baseline)
@@ -261,6 +270,11 @@ class StartupPhaseTest(RenderedPacket):
         source = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
         self.assertIn("sandbox_runtime.content_audit_completed", source)
         self.assertIn("audits_completed >= 2 and all(", source)
+        audits = startup_phases(self.render())
+        done = lambda pid: {'event': 'sandbox_runtime.content_audit_completed', 'pid': pid}
+        self.assertEqual(startup_phases.audits([done(11), done(11)]), 1)
+        self.assertEqual(startup_phases.audits([done(11), done(12), {'event': 'x', 'pid': 13}, done(True)]), 2)
+        self.assertEqual(startup_phases.audits([{'event': 'sandbox_runtime.content_audit_completed'}]), 0)
         self.assertIn("'retryable'", source)
 
     def test_a_missing_or_malformed_phase_baseline_is_refused(self):

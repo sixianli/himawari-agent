@@ -113,9 +113,20 @@ export async function digestSandboxRuntime(
     retried = true;
     result = await runDigestWorker({ root, ...location, rebuild: true }, signal);
   }
+  if (location.trustedUid === 0 && result.hashed > 0)
+    console.error(
+      JSON.stringify({
+        component: "platform-node",
+        event: "sandbox_runtime.fingerprint_cache_missed",
+        pid: process.pid,
+        reused: result.reused,
+        hashed: result.hashed,
+      }),
+    );
   console.error(
     JSON.stringify({
       component: "platform-node",
+      pid: process.pid,
       event: "sandbox_runtime.digest_completed",
       reused: result.reused,
       hashed: result.hashed,
