@@ -4,6 +4,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, read
 import path from "node:path";
 import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
+import { checkoutFromCache, fetchBundleIntoCache, sourceCachePath } from "./source-cache.mjs";
 
 const head = "__PKT_COMMIT__";
 const expected = { "__PKT_BUNDLE_NAME__": "__PKT_BUNDLE_SHA256__", "candidate.tar.gz": "__PKT_ARTIFACT_SHA256__", "context.json": "__PKT_CONTEXT_SHA256__" };
@@ -43,8 +44,9 @@ const run = (command, args, name, timeout = 300_000) => {
 };
 const bundle = path.join(input, "__PKT_BUNDLE_NAME__"), checkout = path.join(work, "source");
 fail(run("git", ["bundle", "list-heads", bundle], "bundle-heads") === `${head} HEAD`, "P5_BUNDLE_HEADS_INVALID");
-run("git", ["-c", "core.hooksPath=/dev/null", "clone", "--no-checkout", bundle, checkout], "clone");
-run("git", ["-C", checkout, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", head], "checkout");
+const cache = sourceCachePath(prefix);
+fetchBundleIntoCache(cache, bundle, head, run, existsSync(cache));
+checkoutFromCache(cache, checkout, head, run);
 fail(run("git", ["-C", checkout, "rev-parse", "HEAD"]) === head && run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=all"]) === "", "P5_SOURCE_IDENTITY_INVALID");
 const pythonRoot = path.join(work, "python");
 mkdirSync(pythonRoot, { mode: 0o700 });
