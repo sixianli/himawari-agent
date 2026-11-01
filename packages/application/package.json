@@ -12,7 +12,8 @@
     "./workspace-claims": "./src/services/workspace-claims.ts",
     "./thread-artifacts": "./src/ports/thread-artifacts.ts",
     "./model-usage": "./src/ports/model-usage.ts",
-    "./decision-ledger": "./src/ports/decision-ledger.ts"
+    "./decision-ledger": "./src/ports/decision-ledger.ts",
+    "./muse-intake": "./src/ports/muse-intake.ts"
   },
   "dependencies": {
     "@himawari-agent/domain": "0.0.0",

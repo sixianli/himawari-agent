@@ -30,6 +30,7 @@ import type {
   ProactiveStorePort,
   ThreadArtifactStorePort,
   DecisionLedgerPort,
+  MuseIntakePort,
   ModelUsageStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
@@ -528,6 +529,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   decisionLedger(): DecisionLedgerPort {
     return this.durable.decisionLedger();
+  }
+
+  museIntake(): MuseIntakePort {
+    return this.durable.museIntake();
   }
 
   webPush(): WebPushStorePort {

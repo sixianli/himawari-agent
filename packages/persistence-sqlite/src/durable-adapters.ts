@@ -21,6 +21,7 @@ import type {
   ProactiveStorePort,
   ThreadArtifactStorePort,
   DecisionLedgerPort,
+  MuseIntakePort,
   ModelUsageStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
@@ -1004,6 +1005,18 @@ export class SqliteDurableAdapters {
       rate: (input) => this.context.write("decisionLedger.rate", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
+    });
+  }
+
+  museIntake(): MuseIntakePort {
+    return Object.freeze<MuseIntakePort>({
+      ingestBatch: (input) => this.context.write("museIntake.ingestBatch", input),
+      listItems: (input) => this.context.read("museIntake.listItems", input),
+      channelStatus: (input) => this.context.read("museIntake.channelStatus", input),
+      checkChannel: (input) => this.context.write("museIntake.checkChannel", input),
+      setPaused: (input) => this.context.write("museIntake.setPaused", input),
+      rate: (input) => this.context.write("museIntake.rate", input),
+      clearAll: (input) => this.context.write("museIntake.clearAll", input),
     });
   }
 
