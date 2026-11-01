@@ -21,7 +21,7 @@ export interface EgressRedaction {
 }
 
 export const EGRESS_PLACEHOLDER_LEGEND =
-  "文中形如 [密钥]、[密码]、[验证码]、[银行卡 尾号NNNN]、[证件号] 的方括号内容，是系统在发送前遮掉的敏感信息。原值不可得，不要猜测或补全它们。";
+  "文中形如 [密钥]、[密码]、[验证码]、[银行卡 尾号NNNN]、[证件号] 的方括号内容，是系统在发送前遮掉的真实敏感信息。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。";
 
 const MACHINE_SECRET_MARKER = "[MACHINE_SECRET_REDACTED]";
 const MACHINE_SECRET_PLACEHOLDER = "[密钥]";
@@ -30,7 +30,7 @@ const CODE_PLACEHOLDER = "[验证码]";
 const IDENTITY_PLACEHOLDER = "[证件号]";
 
 const PASSWORD_ASSIGNMENT =
-  /((?:密码|密碼|パスワード|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；]+)/giu;
+  /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；]+)/giu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
