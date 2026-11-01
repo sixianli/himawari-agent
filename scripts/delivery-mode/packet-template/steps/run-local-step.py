@@ -26,6 +26,8 @@ common = load('packet_common', 'packet-common.py')
 steps = load('packet_steps', 'run-step.py')
 HOST = 'root@__PKT_ADDRESS__'
 LOCAL_ACTIONS = {'S1_TRANSPORT', 'S1_INSTALL'}
+TRANSPORT_ALIVE_COUNT_MAX = '40'
+DEFAULT_ALIVE_COUNT_MAX = '4'
 
 
 def remote_command(action, frozen):
@@ -74,8 +76,8 @@ def main():
     logs = packet.parent / '__PKT_DATE__-__PKT_LABEL__-change-execution-01'
     logs.mkdir(mode=0o700, exist_ok=True)
     name = action + '.' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
-    command = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', HOST, remote]
     transport = action == 'S1_TRANSPORT'
+    command = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=' + (TRANSPORT_ALIVE_COUNT_MAX if transport else DEFAULT_ALIVE_COUNT_MAX), HOST, remote]
     archive_error = None
     with (logs / (name + '.console.txt')).open('xb') as output:
         child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE if transport else subprocess.DEVNULL)
