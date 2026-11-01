@@ -295,10 +295,15 @@ function LocalizedControlCenterApp({
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", reconnect);
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) synchronizer.reconnectNow(true);
+    };
+    window.addEventListener("pageshow", restored);
     return () => {
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);
       document.removeEventListener("visibilitychange", reconnect);
+      window.removeEventListener("pageshow", restored);
       synchronizer.stop();
     };
   }, [configuration, storage, clearPrivateViewState]);
@@ -335,11 +340,16 @@ function LocalizedControlCenterApp({
     window.addEventListener("offline", offline);
     window.addEventListener("storage", synchronizeTab);
     document.addEventListener("visibilitychange", reconnect);
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) synchronizer.reconnectNow(true);
+    };
+    window.addEventListener("pageshow", restored);
     return () => {
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);
       window.removeEventListener("storage", synchronizeTab);
       document.removeEventListener("visibilitychange", reconnect);
+      window.removeEventListener("pageshow", restored);
       synchronizer.stop();
     };
   }, [configuration, storage, clearPrivateViewState]);

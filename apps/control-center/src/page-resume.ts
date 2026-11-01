@@ -1,4 +1,4 @@
-const LONG_ABSENCE_MILLISECONDS = 15_000;
+const LONG_ABSENCE_MILLISECONDS = 5_000;
 
 let hiddenAt: number | undefined;
 

@@ -33,6 +33,8 @@ export abstract class ReconnectingEventStream<Options extends EventStreamOptions
   protected readonly options: Options;
   #source: EventSourceLike | undefined;
   #handshakeTimer: ReturnType<typeof setTimeout> | undefined;
+  #silenceTimer: ReturnType<typeof setTimeout> | undefined;
+  #heartbeatMilliseconds: number | undefined;
   #reconnectHandle: number | undefined;
   #attempt = 0;
   #stopped = true;
@@ -96,6 +98,8 @@ export abstract class ReconnectingEventStream<Options extends EventStreamOptions
   #close(): void {
     clearTimeout(this.#handshakeTimer);
     this.#handshakeTimer = undefined;
+    clearTimeout(this.#silenceTimer);
+    this.#silenceTimer = undefined;
     this.#source?.close();
     this.#source = undefined;
   }
@@ -116,8 +120,31 @@ export abstract class ReconnectingEventStream<Options extends EventStreamOptions
       this.opened();
       this.connectionState("connected");
     };
+    const disconnect = () => {
+      if (!live()) return;
+      this.#close();
+      this.connectionState("offline");
+      this.#scheduleReconnect();
+    };
     source.onmessage = null;
     this.bind(source, live);
+    const bound = source.onmessage as EventSourceLike["onmessage"];
+    source.onmessage = (message: MessageEvent<string>) => {
+      if (live()) this.#armSilenceWatchdog(disconnect);
+      bound?.(message);
+    };
+    source.addEventListener?.("gateway.heartbeat", (event) => {
+      if (!live()) return;
+      try {
+        const value: unknown = JSON.parse(event.data);
+        const interval =
+          value && typeof value === "object" && "intervalMilliseconds" in value
+            ? Number(value.intervalMilliseconds)
+            : Number.NaN;
+        if (Number.isFinite(interval) && interval > 0) this.#heartbeatMilliseconds = interval;
+      } catch {}
+      this.#armSilenceWatchdog(disconnect);
+    });
     source.addEventListener?.("gateway.stream_error", (event) => {
       if (!live()) return;
       try {
@@ -135,14 +162,14 @@ export abstract class ReconnectingEventStream<Options extends EventStreamOptions
         this.log("CONTROL_CENTER_EVENT_REJECTED");
       }
     });
-    const disconnect = () => {
-      if (!live()) return;
-      this.#close();
-      this.connectionState("offline");
-      this.#scheduleReconnect();
-    };
     source.onerror = disconnect;
     this.#handshakeTimer = setTimeout(disconnect, 10_000);
+  }
+
+  #armSilenceWatchdog(onSilence: () => void): void {
+    clearTimeout(this.#silenceTimer);
+    if (this.#heartbeatMilliseconds === undefined) return;
+    this.#silenceTimer = setTimeout(onSilence, this.#heartbeatMilliseconds * 2.5);
   }
 
   #scheduleReconnect(): void {
