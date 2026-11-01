@@ -11,6 +11,7 @@ type Message = ReturnType<typeof useControlCenterIntl>["message"];
 
 const PAGE_GAP = 12;
 const PAGE_PADDING = 12;
+const MAX_CANVAS_PIXELS = 16_000_000;
 const RENDER_MARGIN = "800px 0px";
 const HEADER_ROW_HEIGHT = 22;
 const DEFAULT_ROW_HEIGHT = 21;
@@ -60,19 +61,20 @@ function PdfPage({
   size,
   width,
   label,
-  onFailed,
+  failedLabel,
 }: {
   readonly document: PDFDocumentProxy;
   readonly number: number;
   readonly size: PageSize;
   readonly width: number;
   readonly label: string;
-  readonly onFailed: () => void;
+  readonly failedLabel: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const text = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
+  const [failed, setFailed] = useState(false);
   const scale = width / size.width;
   useEffect(() => {
     const element = box.current;
@@ -90,15 +92,23 @@ function PdfPage({
     if (!visible || !target || !layer || width <= 0) return;
     let current = true;
     let task: RenderTask | undefined;
+    setFailed(false);
     void (async () => {
       const [pdf, page] = await Promise.all([loadPdf(), document.getPage(number)]);
       if (!current) return;
       const viewport = page.getViewport({ scale });
-      const ratio = Math.min(window.devicePixelRatio || 1, 3);
+      const ratio = Math.min(
+        window.devicePixelRatio || 1,
+        3,
+        Math.sqrt(MAX_CANVAS_PIXELS / (viewport.width * viewport.height)),
+      );
       target.width = Math.floor(viewport.width * ratio);
       target.height = Math.floor(viewport.height * ratio);
       const context = target.getContext("2d");
-      if (!context) return;
+      if (!context) {
+        setFailed(true);
+        return;
+      }
       task = page.render({
         canvas: target,
         canvasContext: context,
@@ -118,13 +128,13 @@ function PdfPage({
         .catch(() => {});
     })().catch((error: unknown) => {
       if (current && (error as { name?: string } | null)?.name !== "RenderingCancelledException")
-        onFailed();
+        setFailed(true);
     });
     return () => {
       current = false;
       task?.cancel();
     };
-  }, [visible, document, number, scale, width, onFailed]);
+  }, [visible, document, number, scale, width]);
   return (
     <div
       className="preview-page"
@@ -133,8 +143,9 @@ function PdfPage({
       aria-label={label}
       style={{ width, height: Math.round(size.height * scale) }}
     >
-      <canvas ref={canvas} />
-      <div className="textLayer" ref={text} />
+      <canvas ref={canvas} hidden={failed} />
+      <div className="textLayer" ref={text} hidden={failed} />
+      {failed ? <p className="preview-page-failed">{failedLabel}</p> : null}
     </div>
   );
 }
@@ -189,7 +200,7 @@ function PdfDocument({
               size={size}
               width={pageWidth}
               label={message("preview.page", { page: index + 1, count: loaded.sizes.length })}
-              onFailed={onFailed}
+              failedLabel={message("preview.pageFailed", { page: index + 1 })}
             />
           ))
         : null}

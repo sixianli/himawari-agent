@@ -49,6 +49,12 @@ const files = [
     kind: "pdf",
     mediaType: "application/pdf",
   },
+  {
+    name: "第二页损坏.pdf",
+    source: "second-page-broken.pdf",
+    kind: "pdf",
+    mediaType: "application/pdf",
+  },
 ];
 const bytes = new Map(
   await Promise.all(
@@ -122,6 +128,13 @@ try {
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
         capturing = false;
       };
+      await page.addInitScript(() => {
+        const original = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (...args) {
+          if (this.height > 20000) return null;
+          return original.apply(this, args);
+        };
+      });
       page.on("pageerror", (error) => problems.push(`${step} pageerror: ${error.message}`));
       page.on("console", (message) => {
         if (!capturing && /Content Security Policy|Refused to/i.test(message.text()))
@@ -269,6 +282,24 @@ try {
       await expect(page.locator(".content-preview .preview-page")).toHaveCount(0);
       await expect(page.locator(".content-preview a[download]")).toBeVisible();
       await shot("pdf-broken");
+      await page.locator(".content-preview header button").last().click();
+
+      step = "pdf-one-page-broken";
+      await page.getByText(files[5].name).first().click();
+      const pages = page.locator(".content-preview .preview-page");
+      await expect(pages).toHaveCount(2, { timeout: 15000 });
+      await expect(pages.nth(0).locator(".textLayer")).toContainText("Page one ok", {
+        timeout: 15000,
+      });
+      await expect(pages.nth(1).locator(".preview-page-failed")).toBeVisible({ timeout: 15000 });
+      await expect(pages.nth(0).locator(".preview-page-failed")).toHaveCount(0);
+      await expect(
+        page.locator(
+          ".content-preview > .preview-notice, .content-preview .preview-body > .preview-notice",
+        ),
+      ).toHaveCount(0);
+      await shot("pdf-one-page-broken");
+      await page.locator(".content-preview header button").last().click();
 
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
