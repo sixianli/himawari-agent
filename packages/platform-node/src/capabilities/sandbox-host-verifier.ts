@@ -59,6 +59,7 @@ export function runtimeFingerprintLocation(root: string): RuntimeFingerprintLoca
 
 function runDigestWorker(
   request: SandboxRuntimeDigestRequest,
+  signal?: AbortSignal,
 ): Promise<SandboxRuntimeDigestResult> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   return new Promise((resolve, reject) => {
@@ -67,6 +68,12 @@ function runDigestWorker(
       { workerData: request },
     );
     let received = false;
+    const stop = () => {
+      void worker.terminate();
+      reject(new Error("SANDBOX_HOST_DIGEST_ABORTED"));
+    };
+    if (signal?.aborted) stop();
+    else signal?.addEventListener("abort", stop, { once: true });
     worker.once("message", (value: unknown) => {
       const result = value as Partial<SandboxRuntimeDigestResult> | null;
       if (typeof result?.digest !== "string" || !/^[a-f0-9]{64}$/.test(result.digest)) {
@@ -82,15 +89,20 @@ function runDigestWorker(
     });
     worker.once("error", reject);
     worker.once("exit", (code) => {
+      signal?.removeEventListener("abort", stop);
       if (!received) reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
     });
   });
 }
 
-export async function digestSandboxRuntime(root: string, expectedDigest?: string): Promise<string> {
+export async function digestSandboxRuntime(
+  root: string,
+  expectedDigest?: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const location = runtimeFingerprintLocation(root);
   const startedAt = performance.now();
-  let result = await runDigestWorker({ root, ...location });
+  let result = await runDigestWorker({ root, ...location }, signal);
   let retried = false;
   if (
     location.fingerprintFile &&
@@ -99,7 +111,7 @@ export async function digestSandboxRuntime(root: string, expectedDigest?: string
     result.reused > 0
   ) {
     retried = true;
-    result = await runDigestWorker({ root, ...location, rebuild: true });
+    result = await runDigestWorker({ root, ...location, rebuild: true }, signal);
   }
   console.error(
     JSON.stringify({
@@ -230,7 +242,7 @@ async function verifySandboxHostFiles(
   await verifyProtectedRuntime(
     binding.runtimeRoot,
     binding.runtimeDigest,
-    (root) => digestSandboxRuntime(root, binding.runtimeDigest),
+    (root, signal) => digestSandboxRuntime(root, binding.runtimeDigest, signal),
     [binding.executable, binding.runner],
     options,
   );

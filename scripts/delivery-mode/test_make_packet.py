@@ -140,7 +140,7 @@ class StartupPhaseTest(RenderedPacket):
         self.assertEqual(slow['phases'][-1]['sinceSpawnMs'], 37643)
         self.assertEqual(slow['warnings'], [{'step': 'sandbox-services-created', 'durationMs': 18824, 'sinceSpawnMs': 27843, 'baselineMs': 6000}])
         self.assertEqual(phases(self.journal(12000), 'start', baseline)['warnings'], [])
-        self.assertEqual(phases(self.journal(18824), 'missing', baseline), {'invocationId': 'missing', 'phases': [], 'warnings': []})
+        self.assertEqual(phases(self.journal(18824), 'missing', baseline), {'invocationId': 'missing', 'phases': [], 'warnings': [], 'runtimeDigests': []})
 
     def test_the_install_time_prepare_and_the_service_prepare_share_one_fingerprint_cache(self):
         packet = self.render()
@@ -155,16 +155,14 @@ class StartupPhaseTest(RenderedPacket):
         self.assertIn('Environment=HOME=/var/lib/himawari/state', unit)
         self.assertIn('cloud-protected-prepare.mjs --prepare', unit)
         self.assertNotIn('HIMAWARI_RUNTIME_FINGERPRINT_FILE', snapshot + unit)
-        self.assertIn("operations + '/runtime-fingerprints.json'", snapshot)
-        self.assertIn("os.O_NOFOLLOW", snapshot)
-        self.assertIn('RUNTIME_FINGERPRINT_CACHE_SOURCE_UNSAFE', snapshot)
-        self.assertIn('os.chown(temporary, 0, 0)', snapshot)
+        self.assertIn("target_name = 'runtime-fingerprints.json'", snapshot)
+        self.assertIn('/usr/bin/python3', snapshot)
         self.assertIn('/lib/himawari-agent', snapshot.split('runtime=', 1)[1].splitlines()[0])
 
     def publish_fingerprints(self, snapshot, state, operations, runtime):
-        marker = "python3 -I - \"$state\" \"$operations\" \"$runtime\" <<'PYTHON'\n"
+        marker = "/usr/bin/python3 -I - \"$state\" \"$operations\" \"$runtime\" <<'PYTHON'\n"
         script = snapshot.split(marker, 1)[1].split('\nPYTHON\n', 1)[0]
-        return subprocess.run(['python3', '-I', '-', str(state), str(operations), runtime], input=script, capture_output=True, text=True)
+        return subprocess.run(['python3', '-I', '-', str(state), str(operations), runtime], input=script, capture_output=True, text=True, timeout=30)
 
     def test_the_root_step_publishes_the_exact_cache_the_service_will_look_for(self):
         if os.getuid() != 0:
@@ -175,35 +173,95 @@ class StartupPhaseTest(RenderedPacket):
         runtime = snapshot.split('runtime=', 1)[1].splitlines()[0]
         prefix = re.search(r'prefix = "([^"]+)"', prepare).group(1)
         self.assertEqual(runtime, prefix + '/lib/himawari-agent')
+        switch = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
+        self.assertIn("'newPrefix': '" + prefix + "'", switch)
         token = subprocess.run(['node', '-e', 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,16))', runtime], capture_output=True, text=True, check=True).stdout
         state, operations = self.root / 'state', self.root / 'operations'
-        (state / 'cache').mkdir(parents=True)
+        cache = state / 'cache'
+        cache.mkdir(parents=True)
+        os.chown(cache, 999, 988)
+        os.chmod(cache, 0o700)
         operations.mkdir()
-        source = state / 'cache' / ('runtime-fingerprints-' + token + '.json')
+        os.chmod(operations, 0o755)
+        source = cache / ('runtime-fingerprints-' + token + '.json')
+        published = operations / 'runtime-fingerprints.json'
         payload = json.dumps({'version': 1, 'root': runtime, 'files': {'a': {}}})
-        source.write_text(payload)
-        os.chown(source, 999, 988)
-        os.chmod(source, 0o600)
+
+        def stage(text=payload, owner=999, links=0):
+            source.unlink(missing_ok=True)
+            source.write_text(text)
+            os.chown(source, owner, 988)
+            os.chmod(source, 0o600)
+            for index in range(links):
+                os.link(source, cache / ('extra' + str(index)))
+
+        def refused(code):
+            published.unlink(missing_ok=True)
+            result = self.publish_fingerprints(snapshot, state, operations, runtime)
+            self.assertNotEqual(result.returncode, 0, code)
+            self.assertIn(code, result.stderr)
+            self.assertFalse(published.exists(), code)
+            self.assertEqual(list(operations.glob('*.tmp')), [], code)
+
+        stage()
         result = self.publish_fingerprints(snapshot, state, operations, runtime)
         self.assertEqual(result.returncode, 0, result.stderr)
-        published = operations / 'runtime-fingerprints.json'
+        self.assertIn('RUNTIME_FINGERPRINT_CACHE_PUBLISHED files=1', result.stdout)
         self.assertEqual(published.read_text(), payload)
         self.assertEqual((published.stat().st_uid, oct(published.stat().st_mode & 0o777)), (0, '0o644'))
         self.assertEqual(list(operations.glob('*.tmp')), [])
-        published.unlink()
-        os.chown(source, 1234, 988)
-        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
-        os.chown(source, 999, 988)
-        source.write_text(json.dumps({'version': 1, 'root': runtime + '2', 'files': {}}))
-        os.chown(source, 999, 988)
-        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        stage(owner=1234)
+        refused('SOURCE_UNSAFE')
+        stage(json.dumps({'version': 1, 'root': runtime + '2', 'files': {'a': {}}}))
+        refused('INVALID')
+        stage('not json')
+        with self.subTest('garbage'):
+            published.unlink(missing_ok=True)
+            self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        stage(links=1)
+        refused('SOURCE_UNSAFE')
+        (cache / 'extra0').unlink()
         source.unlink()
-        (state / 'secret').write_text(payload)
-        source.symlink_to(state / 'secret')
+        os.mkfifo(source)
+        os.chown(source, 999, 988)
+        refused('SOURCE_UNSAFE')
+        source.unlink()
+        (cache / 'secret').write_text(payload)
+        source.symlink_to(cache / 'secret')
+        published.unlink(missing_ok=True)
         self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
         self.assertFalse(published.exists())
         source.unlink()
-        self.assertIn('NOT_WRITTEN', self.publish_fingerprints(snapshot, state, operations, runtime).stdout)
+        refused('NOT_WRITTEN')
+        stage()
+        self.assertEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        source.unlink()
+        again = self.publish_fingerprints(snapshot, state, operations, runtime)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn('ALREADY_PUBLISHED', again.stdout)
+        shutil.rmtree(cache)
+        (self.root / 'elsewhere').mkdir()
+        cache.symlink_to(self.root / 'elsewhere')
+        published.unlink()
+        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        self.assertFalse(published.exists())
+
+    def test_the_switch_report_warns_when_the_runtime_check_had_to_hash_files_again(self):
+        phases, baseline = startup_phases(self.render())
+        digest = lambda reused, hashed, retried: (9100, {'component': 'platform-node', 'event': 'sandbox_runtime.digest_completed', 'reused': reused, 'hashed': hashed, 'durationMs': 1100, 'retriedWithoutCache': retried})
+        spawn = (0, {'component': 'pair-supervisor', 'event': 'pair.child_spawned', 'name': 'worker'})
+        good = phases(startup_journal('start', [spawn, digest(30879, 0, False)]), 'start', baseline)
+        self.assertEqual(good['warnings'], [])
+        self.assertEqual(good['runtimeDigests'][0]['reused'], 30879)
+        for reused, hashed, retried in [(0, 30879, False), (10, 1, False), (30879, 0, True)]:
+            bad = phases(startup_journal('start', [spawn, digest(reused, hashed, retried)]), 'start', baseline)
+            self.assertEqual([warning['step'] for warning in bad['warnings']], ['runtime-fingerprint-cache'], (reused, hashed, retried))
+
+    def test_the_switch_waits_for_both_background_content_audits_before_declaring_the_start_healthy(self):
+        source = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
+        self.assertIn("sandbox_runtime.content_audit_completed", source)
+        self.assertIn("audits_completed >= 2 and all(", source)
+        self.assertIn("'retryable'", source)
 
     def test_a_missing_or_malformed_phase_baseline_is_refused(self):
         self.assertEqual(json.loads(packet_maker.startup_phase_baseline(INSTANCE))['sandbox-services-created'], 6000)

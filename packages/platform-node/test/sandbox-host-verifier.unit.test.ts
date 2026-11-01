@@ -663,3 +663,19 @@ it("keeps the trusted fingerprint file beside the root-owned protection record a
     vi.unstubAllEnvs();
   }
 });
+
+it("stops the digest worker when the caller aborts", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "runtime-digest-abort-"));
+  const runtime = await realpath(root);
+  await chmod(runtime, 0o700);
+  await writeFile(path.join(runtime, "a"), "alpha", { mode: 0o600 });
+  const controller = new AbortController();
+  controller.abort();
+  try {
+    await expect(digestSandboxRuntime(runtime, undefined, controller.signal)).rejects.toThrow(
+      "SANDBOX_HOST_DIGEST_ABORTED",
+    );
+  } finally {
+    await rm(runtime, { recursive: true, force: true });
+  }
+});

@@ -70,6 +70,7 @@ export function auditProtectedRuntime(root: string, ownerUid: number): Promise<v
   });
 }
 
+export type RuntimeDigest = (root: string, signal?: AbortSignal) => Promise<string>;
 const CONTENT_AUDIT_TIMEOUT_MS = 600_000;
 const TRANSIENT_CODES = new Set([
   "EIO",
@@ -169,7 +170,7 @@ export class ProtectedRuntimeVerifier {
   async verify(
     runtimeRoot: string,
     runtimeDigest: string,
-    digest: (root: string) => Promise<string>,
+    digest: RuntimeDigest,
     artifacts: readonly RuntimeArtifact[] = [],
   ): Promise<void> {
     const { complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
@@ -179,22 +180,27 @@ export class ProtectedRuntimeVerifier {
   async begin(
     runtimeRoot: string,
     runtimeDigest: string,
-    digest: (root: string) => Promise<string>,
+    digest: RuntimeDigest,
     artifacts: readonly RuntimeArtifact[] = [],
-    onSettled?: (outcome: { readonly ok: boolean; readonly durationMs: number }) => void,
+    onSettled?: (outcome: {
+      readonly ok: boolean;
+      readonly transient: boolean;
+      readonly durationMs: number;
+    }) => void,
   ): Promise<void> {
     const startedAt = Date.now();
     const { key, complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
-    const settle = (ok: boolean) => {
+    const settle = (ok: boolean, transient: boolean) => {
       try {
-        onSettled?.({ ok, durationMs: Date.now() - startedAt });
+        onSettled?.({ ok, transient, durationMs: Date.now() - startedAt });
       } catch {}
     };
     complete().then(
-      () => settle(true),
+      () => settle(true, false),
       (error: unknown) => {
-        if (!isTransientAuditError(error)) this.#refused.set(key, error);
-        settle(false);
+        const transient = isTransientAuditError(error);
+        if (!transient) this.#refused.set(key, error);
+        settle(false, transient);
       },
     );
   }
@@ -202,7 +208,7 @@ export class ProtectedRuntimeVerifier {
   async #prepare(
     runtimeRoot: string,
     runtimeDigest: string,
-    digest: (root: string) => Promise<string>,
+    digest: RuntimeDigest,
     artifacts: readonly RuntimeArtifact[],
   ): Promise<{ readonly key: string; readonly complete: () => Promise<void> }> {
     const { protection, identity } = await this.#manifest();
@@ -257,13 +263,14 @@ export class ProtectedRuntimeVerifier {
     return { key, complete };
   }
 
-  #bounded(work: Promise<void>): Promise<void> {
+  #bounded(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("SANDBOX_RUNTIME_AUDIT_TIMEOUT")),
-        this.#contentAuditTimeoutMs,
-      );
-      work.then(
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error("SANDBOX_RUNTIME_AUDIT_TIMEOUT"));
+      }, this.#contentAuditTimeoutMs);
+      work(controller.signal).then(
         () => {
           clearTimeout(timer);
           resolve();
@@ -281,7 +288,7 @@ export class ProtectedRuntimeVerifier {
     readonly artifactKey: string;
     readonly runtimeRoot: string;
     readonly runtimeDigest: string;
-    readonly digest: (root: string) => Promise<string>;
+    readonly digest: RuntimeDigest;
     readonly artifacts: readonly RuntimeArtifact[];
     readonly protectedArtifacts: readonly RuntimeArtifact[];
     readonly protection: Protection;
@@ -307,10 +314,10 @@ export class ProtectedRuntimeVerifier {
     if (!audit) {
       this.#audits.clear();
       this.#artifactAudits.clear();
-      audit = this.#bounded(
+      audit = this.#bounded((signal) =>
         (async () => {
           await this.#auditInstallation(runtimeRoot);
-          if ((await digest(runtimeRoot)) !== runtimeDigest) throw failure();
+          if ((await digest(runtimeRoot, signal)) !== runtimeDigest) throw failure();
           const latest = await this.#manifest();
           if (
             latest.identity !== identity ||
@@ -356,7 +363,7 @@ export interface ProtectedRuntimeVerifyOptions {
 export async function verifyProtectedRuntime(
   runtimeRoot: string,
   runtimeDigest: string,
-  digest: (root: string) => Promise<string>,
+  digest: RuntimeDigest,
   artifacts: readonly RuntimeArtifact[] = [],
   options: ProtectedRuntimeVerifyOptions = {},
 ): Promise<boolean> {
@@ -374,7 +381,9 @@ export async function verifyProtectedRuntime(
           component: "platform-node",
           event: outcome.ok
             ? "sandbox_runtime.content_audit_completed"
-            : "sandbox_runtime.content_audit_failed",
+            : outcome.transient
+              ? "sandbox_runtime.content_audit_retryable"
+              : "sandbox_runtime.content_audit_failed",
           durationMs: outcome.durationMs,
         }),
       );

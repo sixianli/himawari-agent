@@ -204,6 +204,35 @@ it("does not let a content audit that never finishes block sandbox calls forever
   await verifier.verify(root, digest, async () => digest);
 });
 
+it("aborts the running digest when the content audit times out, and marks the outcome transient", async () => {
+  const verifier = new ProtectedRuntimeVerifier(manifestPath, fixture.audit, 20);
+  const settled = vi.fn();
+  let received: AbortSignal | undefined;
+  await verifier.begin(
+    root,
+    digest,
+    (_root, signal) => {
+      received = signal;
+      return new Promise<string>(() => {});
+    },
+    [],
+    settled,
+  );
+  await vi.waitFor(() =>
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false, transient: true })),
+  );
+  expect(received?.aborted).toBe(true);
+});
+
+it("marks a real inconsistency as not transient", async () => {
+  const verifier = verifierFor();
+  const settled = vi.fn();
+  await verifier.begin(root, digest, async () => "c".repeat(64), [], settled);
+  await vi.waitFor(() =>
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false, transient: false })),
+  );
+});
+
 it("does not keep refusing after a failed audit that was not started in the background", async () => {
   const verifier = verifierFor();
   await expect(verifier.verify(root, digest, async () => "c".repeat(64))).rejects.toThrow(
@@ -420,5 +449,6 @@ it("logs a failed deferred audit under an event name that the deploy start-up re
   expect(pattern).not.toBeNull();
   const failureEvents = new RegExp(String(pattern?.[1]).slice(1, -2), "i");
   expect(failureEvents.test("sandbox_runtime.content_audit_failed")).toBe(true);
+  expect(failureEvents.test("sandbox_runtime.content_audit_retryable")).toBe(true);
   expect(failureEvents.test("sandbox_runtime.content_audit_completed")).toBe(false);
 });
