@@ -165,6 +165,7 @@ export const srtDependencyOwner = "@himawari-agent/runtime-sandbox";
 
 const agentSandboxSubpaths = new Set([
   "@himawari-agent/runtime-sandbox/control",
+  "@himawari-agent/runtime-sandbox/job-host-limits",
   "@himawari-agent/runtime-sandbox/public-address",
 ]);
 
