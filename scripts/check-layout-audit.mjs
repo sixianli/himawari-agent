@@ -226,6 +226,7 @@ export function labels(locale) {
     reminders: value("nav.reminders"),
     files: value("library.title"),
     fork: value("answer.fork"),
+    personalization: value("review.settings.personalization"),
     general: value("review.settings.general"),
     tools: value("review.settings.tools"),
     data: value("review.settings.data"),
@@ -268,6 +269,10 @@ export const SCENES = {
       await page.waitForTimeout(700);
       await page.mouse.move(1, 1);
     },
+  },
+  settingsPersonalization: {
+    path: "/threads",
+    act: (page, text) => openSettings(page, text, "personalization"),
   },
   settingsGeneral: { path: "/threads", act: (page, text) => openSettings(page, text, "general") },
   settingsTools: { path: "/threads", act: (page, text) => openSettings(page, text, "tools") },

@@ -88,6 +88,10 @@ export interface OwnerProfileServiceOptions {
   readonly reminders?: Pick<MemoryReminderStorePort, "listUpcoming">;
   readonly pins?: Pick<MemoryBookStorePort, "listProfilePins">;
   readonly timeZone?: string;
+  readonly ownerName?: (input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+  }) => Promise<string | null>;
 }
 
 function currentlyValid(memory: ProductMemoryRecord, now: string): boolean {
@@ -257,16 +261,28 @@ export class OwnerProfileService implements OwnerProfilePort {
     const { rules, sections, eligible } = await this.#select(input);
     const agenda = await this.#agenda(input, eligible);
     const blocks: OwnerProfileBlock[] = [];
-    if (rules.length > 0)
+    const name =
+      CLASSIFICATION_RANK[input.maxClassification] >= CLASSIFICATION_RANK.private
+        ? (await this.#options.ownerName?.(input))?.replace(/\s+/gu, " ").trim()
+        : undefined;
+    if (rules.length > 0 || name)
       blocks.push(
         await this.#block(
           input,
           "owner-rules",
           [
-            "主人对 Himawari 的要求（主人亲口说过的，回答时遵守）：",
+            name
+              ? "主人对 Himawari 的要求（主人亲口说过或在设置里填写的，回答时遵守）："
+              : "主人对 Himawari 的要求（主人亲口说过的，回答时遵守）：",
+            ...(name
+              ? [
+                  `- 主人在设置里填写的称呼是「${name}」，称呼主人时用它；对话里出现过不同的称呼时，以最后出现的为准。`,
+                ]
+              : []),
             ...rules.map(({ text }) => `- ${text}`),
           ].join("\n"),
           rules.map(({ memory }) => memory),
+          name ? "private" : undefined,
         ),
       );
     if (sections.length > 0)
@@ -307,12 +323,13 @@ export class OwnerProfileService implements OwnerProfilePort {
     kind: OwnerProfileBlock["kind"],
     text: string,
     memories: readonly ProductMemoryRecord[],
+    floor?: DataClassification,
   ): Promise<OwnerProfileBlock> {
-    const dataClassification = memories.some(
-      ({ dataClassification }) => dataClassification === "private",
-    )
-      ? "private"
-      : "public";
+    const dataClassification =
+      floor === "private" ||
+      memories.some(({ dataClassification }) => dataClassification === "private")
+        ? "private"
+        : "public";
     const digest = this.#options.digest(
       JSON.stringify([kind, input.ownerId, input.agentId, dataClassification, text]),
     );

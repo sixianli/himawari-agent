@@ -5833,11 +5833,11 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
       const memory = target(page, UI.memoryPage);
-      await uiExpect(memory.getByText(UI.memorySummary)).toBeVisible({
+      await uiExpect(memory.getByText(UI.memoryCount)).toBeVisible({
         timeout: 30_000,
       });
       await uiExpect(target(memory, UI.pageError)).toHaveCount(0);
-      await target(memory, UI.memoryBack).click();
+      await newThread();
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-phone-layout", async () => {
@@ -5868,7 +5868,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await uiExpect(dialog).toHaveCount(0, { timeout: 20_000 });
         await target(target(phone, UI.sidebarNavigation), UI.openMemory).click();
         const memory = target(phone, UI.memoryPage);
-        await uiExpect(memory.getByText(UI.memorySummary)).toBeVisible({ timeout: 30_000 });
+        await uiExpect(memory.getByText(UI.memoryCount)).toBeVisible({ timeout: 30_000 });
         await uiExpect(target(memory, UI.memoryCarry)).toBeVisible();
         const memoryTabs = target(target(memory, UI.memoryTabs), UI.memoryTab);
         for (let index = 0; index < (await memoryTabs.count()); index += 1) {

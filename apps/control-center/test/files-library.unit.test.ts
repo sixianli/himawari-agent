@@ -50,7 +50,6 @@ const render = (
         threadTitle: () => "Weather",
         openKey: undefined,
         onOpen: () => undefined,
-        onBack: undefined,
         message,
       }),
     ),
@@ -102,20 +101,12 @@ it("words the shared loading text plainly in every language", () => {
   expect(ja["state.loading"]).toBe("読み込み中…");
 });
 
-it("says the file count is a lower bound while more pages are still on the server", async () => {
+it("leaves the page name to the top bar and shows no second heading or back button", async () => {
   await render(async () => ({ items: [file("f1", "report.md")], nextCursor: "cursor-2" }));
   await act(async () => {});
-  expect(container.querySelector(".files-library-count")?.textContent).toBe(
-    'library.count{"count":1,"more":"yes"}',
-  );
-});
-
-it("gives the exact file count once the server has no more pages", async () => {
-  await render(async () => ({ items: [file("f1", "report.md")], nextCursor: null }));
-  await act(async () => {});
-  expect(container.querySelector(".files-library-count")?.textContent).toBe(
-    'library.count{"count":1,"more":"no"}',
-  );
+  expect(container.querySelector(".files-library h1")).toBeNull();
+  expect(container.querySelector('.files-library [aria-label="common.back"]')).toBeNull();
+  expect(container.textContent).not.toContain("library.count");
 });
 
 it("shows an empty library as one centered panel with a title and a hint", async () => {

@@ -77,3 +77,32 @@ export function turnSources(records: readonly ThreadExecutionRecord[]): readonly
   }
   return [...sources.values()];
 }
+
+function siteOf(href: string): string | undefined {
+  try {
+    const url = new URL(href);
+    if (!["http:", "https:"].includes(url.protocol)) return undefined;
+    return getDomain(url.hostname, { allowPrivateDomains: true }) ?? url.hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+export function webStepSites(name: string, input: string, output: string): readonly string[] {
+  if (name === "web_fetch") {
+    const url = parse(input)?.["url"];
+    const site = typeof url === "string" ? siteOf(url) : undefined;
+    return site ? [site] : [];
+  }
+  if (name !== "web_search") return [];
+  const results = parse(output)?.["results"];
+  if (!Array.isArray(results)) return [];
+  const sites: string[] = [];
+  for (const result of results) {
+    const url =
+      result && typeof result === "object" ? (result as Record<string, unknown>)["url"] : undefined;
+    const site = typeof url === "string" ? siteOf(url) : undefined;
+    if (site && !sites.includes(site)) sites.push(site);
+  }
+  return sites;
+}
