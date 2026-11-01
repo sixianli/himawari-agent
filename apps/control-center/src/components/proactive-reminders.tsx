@@ -13,6 +13,8 @@ import {
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { openNotificationSettings } from "./memory-panel.js";
+import { Glyph } from "./glyphs.js";
+import { ActionMenu } from "./overlays.js";
 import { ActionButton, EmptyState } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -107,6 +109,9 @@ export function ProactiveInsightRow({
     if (highlighted) ref.current?.scrollIntoView?.({ block: "center" });
   }, [highlighted]);
   const title = insight.summary || insight.subject;
+  const [why, setWhy] = useState(false);
+  const hasReason =
+    insight.basis === "daily_limit" || Boolean(insight.reason) || Boolean(insight.floorRaised);
   const tone =
     group === "due" || group === "today" ? "urgent" : group === "check" ? "check" : undefined;
   const settle = (action: "done" | "mute") =>
@@ -133,13 +138,17 @@ export function ProactiveInsightRow({
       </span>
       <span className="reminder-text">
         <span className="proactive-title">{title}</span>
-        {insight.basis === "daily_limit" ? (
-          <span className="proactive-key">{message("proactive.dailyBasis")}</span>
-        ) : insight.reason ? (
-          <span className="proactive-key">{insight.reason}</span>
-        ) : null}
-        {insight.floorRaised ? (
-          <span className="proactive-key">{message("proactive.floorRaised")}</span>
+        {why ? (
+          <span className="proactive-why">
+            {insight.basis === "daily_limit" ? (
+              <span className="proactive-key">{message("proactive.dailyBasis")}</span>
+            ) : insight.reason ? (
+              <span className="proactive-key">{insight.reason}</span>
+            ) : null}
+            {insight.floorRaised ? (
+              <span className="proactive-key">{message("proactive.floorRaised")}</span>
+            ) : null}
+          </span>
         ) : null}
         <span className="proactive-meta">
           <span className="proactive-source">
@@ -174,12 +183,33 @@ export function ProactiveInsightRow({
         </span>
       </span>
       <span className="actions">
-        <ActionButton variant="quiet" disabled={proactive.busy} onClick={() => settle("done")}>
+        <ActionButton variant="primary" disabled={proactive.busy} onClick={() => settle("done")}>
           {message("proactive.done")}
         </ActionButton>
-        <ActionButton variant="quiet" disabled={proactive.busy} onClick={() => settle("mute")}>
-          {message("proactive.mute")}
-        </ActionButton>
+        <ActionMenu
+          label={
+            <>
+              <Glyph name="more" size={18} />
+              <span className="sr-only">{message("proactive.moreActions")}</span>
+            </>
+          }
+          items={[
+            ...(hasReason
+              ? [
+                  {
+                    id: "why",
+                    label: message(why ? "proactive.whyHide" : "proactive.why"),
+                    onSelect: () => setWhy(!why),
+                  },
+                ]
+              : []),
+            {
+              id: "mute",
+              label: message("proactive.mute"),
+              onSelect: () => settle("mute"),
+            },
+          ]}
+        />
       </span>
     </div>
   );
@@ -387,13 +417,11 @@ const localDay = (value: string) => {
 export function ProactiveDecisionLog({
   proactive,
   message,
-  onBack,
   locale,
 }: {
   locale?: string | undefined;
   proactive: ProactiveModel;
   message: Message;
-  onBack: () => void;
 }) {
   const overview = proactive.overview;
   const now = new Date();
@@ -410,18 +438,7 @@ export function ProactiveDecisionLog({
   const days = new Set(decisions.map(({ checkedAt }) => localDay(checkedAt))).size;
   let last = "";
   return (
-    <section
-      className="reminders-page proactive-log side-page-body"
-      aria-label={message("proactive.log")}
-    >
-      <header className="memory-header">
-        <div className="side-page-title">
-          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
-            <LineIcon name="back" />
-          </ActionButton>
-          <h1>{message("proactive.log")}</h1>
-        </div>
-      </header>
+    <section className="proactive-log" aria-label={message("proactive.log")}>
       {!overview ? (
         <div className="files-library-skeleton" aria-hidden="true">
           <i />
@@ -447,7 +464,6 @@ export function ProactiveDecisionLog({
               {message("proactive.metric.reviewed", { count: overview.metrics.reviewed })}
             </span>
           </p>
-          <p className="settings-note proactive-log-note">{message("proactive.log.note")}</p>
           {decisions.length === 0 ? <EmptyState title={message("proactive.log.empty")} /> : null}
           {decisions.map((decision) => {
             const label = dayLabel(decision.checkedAt);

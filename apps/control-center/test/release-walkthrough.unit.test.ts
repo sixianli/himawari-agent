@@ -385,7 +385,7 @@ describe("release walkthrough locators against the real control center", () => {
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.openMemory));
     const memory = await eventually(() => {
       const page = byRole(body, UI.memoryPage);
-      present(visibleText(page, UI.memorySummary), String(UI.memorySummary));
+      present(visibleText(page, UI.memoryCount), String(UI.memoryCount));
       return page;
     });
     expect(queryAllByRole(memory, UI.pageError)).toHaveLength(0);
@@ -393,7 +393,7 @@ describe("release walkthrough locators against the real control center", () => {
     expect(
       queryAllByRole(byRole(memory, UI.memoryTabs), UI.memoryTab).length,
     ).toBeGreaterThanOrEqual(2);
-    await click(byRole(memory, UI.memoryBack));
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
     expect(queryAllByRole(body, UI.memoryPage)).toHaveLength(0);
 
     expect(fake.unexpected).toEqual([]);

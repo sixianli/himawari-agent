@@ -566,7 +566,7 @@ describe("thread control center interactions", () => {
     });
     await render();
     await refresh();
-    expect(container.querySelector(".process-result")?.textContent).toContain(
+    expect(container.querySelector(".process-result, .process-live-step")?.textContent).toContain(
       messages["chat.phase.unresolved"],
     );
     expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
@@ -583,7 +583,7 @@ describe("thread control center interactions", () => {
     );
     options = { ...options, connection: "offline" };
     await render();
-    expect(container.querySelector(".turn-activity strong")?.textContent).toContain(
+    expect(container.querySelector(".process-live-step")?.textContent).toContain(
       messages["chat.phase.unresolved"],
     );
     expect(container.querySelector(".turn-activity")?.textContent).toContain(
@@ -598,7 +598,7 @@ describe("thread control center interactions", () => {
     };
     await render();
     await refresh();
-    expect(container.querySelector(".process-result")?.textContent).toContain(
+    expect(container.querySelector(".process-result, .process-live-step")?.textContent).toContain(
       messages["chat.phase.preparing"],
     );
     expect(
@@ -663,7 +663,7 @@ describe("thread control center interactions", () => {
       source.emit("thread.execution_changed", executionChanged("run-ui", 3, 1));
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(container.querySelector(".process-result")?.textContent).toContain(
+    expect(container.querySelector(".process-result, .process-live-step")?.textContent).toContain(
       messages["chat.resource.executing"],
     );
     expect(query.mock.calls.slice(idle).map(([request]) => request.type)).toEqual([
@@ -853,7 +853,7 @@ describe("thread control center interactions", () => {
     });
     await render();
     await refresh();
-    expect(container.querySelector(".process-result")?.textContent).toContain(
+    expect(container.querySelector(".process-result, .process-live-step")?.textContent).toContain(
       messages["chat.reason.runDeadlineExceeded"],
     );
     expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
@@ -947,7 +947,9 @@ describe("thread control center interactions", () => {
       });
       await render();
       await refresh();
-      expect(container.querySelector(".process-result")?.textContent).toBe(messages[label]);
+      expect(container.querySelector(".process-result, .process-live-step")?.textContent).toBe(
+        messages[label],
+      );
       expect(container.querySelector(".turn-activity")).toBeNull();
       expect(
         [...container.querySelectorAll("*")].filter(
@@ -1209,7 +1211,7 @@ describe("thread control center interactions", () => {
       .toBe("已经显示的工具回复");
     expect.soft(readText).toHaveBeenCalledWith("formal-answer");
     expect
-      .soft(container.querySelector(".process-result")?.textContent)
+      .soft(container.querySelector(".process-result, .process-live-step")?.textContent)
       .toContain(messages["chat.phase.completed"]);
     runs = runs.map((run) => ({ ...run, revision: 6, status: "completed" }));
     await act(async () => {
@@ -1220,7 +1222,7 @@ describe("thread control center interactions", () => {
       .toHaveLength(2);
     expect.soft(container.textContent).not.toContain(messages["loading.failedConversation"]);
     expect
-      .soft(container.querySelector(".process-result")?.textContent)
+      .soft(container.querySelector(".process-result, .process-live-step")?.textContent)
       .toContain(messages["chat.phase.completed"]);
     expect
       .soft(container.querySelector(".assistant-markdown")?.textContent)
@@ -1710,7 +1712,7 @@ describe("thread control center interactions", () => {
     });
     await render();
     await refresh();
-    expect(container.querySelector(".process-result")?.textContent).toContain(
+    expect(container.querySelector(".process-result, .process-live-step")?.textContent).toContain(
       messages["chat.phase.preparing"],
     );
     current = finished;
@@ -1720,7 +1722,7 @@ describe("thread control center interactions", () => {
     expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
     await refresh();
     expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
-    expect(container.querySelector(".process-result")?.textContent).toContain(
+    expect(container.querySelector(".process-result, .process-live-step")?.textContent).toContain(
       messages["chat.phase.completed"],
     );
     expect(mutate).not.toHaveBeenCalled();
@@ -2336,16 +2338,22 @@ describe("thread control center interactions", () => {
     await render();
     await refresh();
     await chooseAction("delete");
-    expect(document.body.textContent).toContain("threads.deleteTitle");
+    const confirm = container.querySelector(".thread-row-confirming");
+    expect(confirm?.textContent).toContain(messages["threads.deleteTitle"]);
+    expect(document.querySelector("dialog[open]")).toBeNull();
     expect(mutate).not.toHaveBeenCalled();
     await click("governed.cancel");
+    expect(container.querySelector(".thread-row-confirming")).toBeNull();
     expect(mutate).not.toHaveBeenCalled();
   });
   it("[UI-9] moves the conversation to the trash only after the owner confirms", async () => {
     await render();
     await refresh();
     await chooseAction("delete");
-    await click("threads.deleteConfirm");
+    const confirm = container.querySelector<HTMLButtonElement>(
+      ".thread-row-confirming .action-button-danger",
+    );
+    await act(async () => confirm?.click());
     expect(mutate.mock.calls[0]?.[0]).toMatchObject({
       type: "thread.trash",
       payload: { threadId: "thread-ui", expectedRevision: 2, reasonCode: "owner_requested" },
@@ -2355,12 +2363,15 @@ describe("thread control center interactions", () => {
     await render();
     await refresh();
     await chooseAction("rename");
-    await input(field("review.conversationName"), "自定义标题");
+    const editor = container.querySelector<HTMLInputElement>(".thread-rename-input");
+    await input(editor, "自定义标题");
     mutate.mockResolvedValueOnce({
       kind: "conflict",
       payload: { latest: { ...thread, revision: 4 }, reasonCode: "STALE_REVISION" },
     });
-    await click("review.save");
+    await act(async () =>
+      editor?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
     expect(container.textContent).toContain("threads.conflictTitle");
     expect(mutate.mock.calls[0]?.[0].payload.expectedRevision).toBe(2);
     await click("threads.reapply");
@@ -2368,19 +2379,45 @@ describe("thread control center interactions", () => {
     expect(protect.mock.calls.filter(([text]) => text === "自定义标题")).toHaveLength(2);
     expect(container.textContent).not.toContain("threads.conflictTitle");
   });
-  it("lights the rename save button only after the title changes", async () => {
+  it("[UI-B1] renames a conversation in place in the sidebar without opening a dialog", async () => {
     await render();
     await refresh();
     await chooseAction("rename");
-    const save = () =>
-      [...document.querySelectorAll<HTMLButtonElement>(".edit-save")].find(
-        (button) => button.textContent?.trim() === "review.save",
-      );
-    expect(save()?.disabled).toBe(true);
-    await input(field("review.conversationName"), "组件交互测试");
-    expect(save()?.disabled).toBe(true);
-    await input(field("review.conversationName"), "新标题");
-    expect(save()?.disabled).toBe(false);
+    const editor = () => container.querySelector<HTMLInputElement>(".thread-rename-input");
+    expect(editor()?.closest(".thread-row")).not.toBeNull();
+    expect(document.querySelector("dialog[open]")).toBeNull();
+    expect(editor()?.value).toBe("组件交互测试");
+    await input(editor(), "新标题");
+    await act(async () =>
+      editor()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({ type: "thread.rename" });
+    expect(protect.mock.calls.some(([text]) => text === "新标题")).toBe(true);
+  });
+  it("[UI-B1] reverse: an unchanged title or Escape sends nothing and closes the editor", async () => {
+    await render();
+    await refresh();
+    await chooseAction("rename");
+    const editor = () => container.querySelector<HTMLInputElement>(".thread-rename-input");
+    await act(async () =>
+      editor()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(editor()).toBeNull();
+    await chooseAction("rename");
+    await input(editor(), "改了但不要");
+    await act(async () =>
+      editor()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(editor()).toBeNull();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+  it("[UI-B6] keeps no conversation menu in the top bar, and no more button when there is nothing in it", async () => {
+    await render();
+    await refresh();
+    const menus = [...container.querySelectorAll(".action-menu")];
+    expect(menus.length).toBeGreaterThan(0);
+    expect(menus.every((menu) => menu.closest(".thread-row"))).toBe(true);
+    expect(container.querySelector(".more-button")).toBeNull();
   });
   it("greets the owner in a conversation that has no messages yet instead of a system notice", async () => {
     await render();

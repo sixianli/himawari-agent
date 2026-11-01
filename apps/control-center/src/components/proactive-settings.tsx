@@ -9,6 +9,7 @@ import {
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { Glyph } from "./glyphs.js";
+import { ProactiveDecisionLog } from "./proactive-reminders.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -238,10 +239,12 @@ export function ProactiveAppsSettings({
   proactive,
   message,
   outcome,
+  locale,
 }: {
   proactive: ProactiveModel;
   message: Message;
   outcome: GmailOutcome | null;
+  locale?: string | undefined;
 }) {
   const overview = proactive.overview;
   const [confirming, setConfirming] = useState(false);
@@ -334,6 +337,15 @@ export function ProactiveAppsSettings({
         </ul>
       </details>
       <ImportantSenders proactive={proactive} message={message} />
+      {status === "disconnected" ? null : (
+        <details className="proactive-what proactive-log-entry">
+          <summary>
+            <Glyph className="summary-chevron" name="chevron" size={14} />
+            {message("proactive.log")}
+          </summary>
+          <ProactiveDecisionLog proactive={proactive} message={message} locale={locale} />
+        </details>
+      )}
     </section>
   );
 }

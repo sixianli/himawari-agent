@@ -235,7 +235,6 @@ function Page({ focus }: { focus: string | null }) {
       proactive: model,
       focus,
       message,
-      onBack: () => undefined,
       onOpenThread: () => undefined,
     }),
   );
@@ -279,6 +278,18 @@ async function click(scope: string, label: string) {
 }
 
 const commands = () => mutate.mock.calls.map(([command]) => command);
+
+async function choose(row: string, label: string) {
+  const trigger = document.querySelector<HTMLButtonElement>(`${row} .action-menu > button`);
+  if (!trigger) throw new Error(`missing menu in ${row}`);
+  await act(async () => trigger.click());
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!item) throw new Error(`missing ${label} in the menu of ${row}`);
+  await act(async () => item.click());
+  await flush();
+}
 const lastCommand = () => mutate.mock.lastCall?.[0];
 
 beforeEach(() => {
@@ -325,11 +336,18 @@ describe("[PG-15] proactive reminders page", () => {
     expect(today?.getAttribute("data-tone")).toBe("urgent");
     expect(today?.parentElement?.textContent).toContain("给妈妈打电话");
     expect(document.querySelector("#reminder-pension")?.getAttribute("data-tone")).toBe("check");
+    expect(text("#reminder-pension")).not.toContain("重要来信不放过");
+    expect(button("#reminder-pension", "完成").className).toContain("action-button-primary");
+    expect(() => button("#reminder-pension", "不再提醒")).toThrow();
+    await choose("#reminder-pension", "为什么提醒我");
     expect(text("#reminder-pension")).toContain("重要来信不放过");
+    await choose("#reminder-airbnb", "为什么提醒我");
     expect(text("#reminder-airbnb")).toContain("没交给模型");
     expect(text("#reminder-github")).toContain("你已回复");
     const row = "#reminder-rakuten";
     expect(text(row)).toContain("11 月账单 ¥38,420");
+    expect(text(row)).not.toContain("比上月多 ¥12,000");
+    await choose(row, "为什么提醒我");
     expect(text(row)).toContain("比上月多 ¥12,000");
     expect(text(row)).toContain("楽天カード");
     expect(document.querySelector(`${row} [data-priority="high"]`)?.textContent).toBe("高");
@@ -350,7 +368,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(text("#page .memory-notice")).toContain("已完成");
     await click("#page .memory-notice", "撤销");
     expect(lastCommand()).toMatchObject({ payload: { insightId: "rakuten", action: "reopen" } });
-    await click("#reminder-ward", "不再提醒");
+    await choose("#reminder-ward", "不再提醒");
     expect(lastCommand()).toMatchObject({ payload: { insightId: "ward", action: "mute" } });
     expect(text("#page .reminders-notify")).toContain("要紧的邮件");
   });
@@ -430,12 +448,21 @@ describe("[PG-15] proactive reminders page", () => {
   it("[PG-15] shows one line per check in the decision log and takes ratings", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
-    await click("#page .side-page-title", "决策记录");
-    expect(text("#page h1")).toBe("决策记录");
-    const summary = text("#page .proactive-summary");
+    expect(text("#page")).not.toContain("决策记录");
+    expect(document.querySelector("#page h1")).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(h(Settings, { outcome: null })));
+    await flush();
+    const entry = document.querySelector<HTMLDetailsElement>("#apps .proactive-log-entry");
+    expect(entry?.querySelector("summary")?.textContent).toContain("决策记录");
+    await act(async () => {
+      if (entry) entry.open = true;
+    });
+    const summary = text("#apps .proactive-summary");
     for (const part of ["开口5", "命中3", "误扰1", "已审样本内漏报1", "已审 23 封", "已记录 2 天"])
       expect(summary.replace(/\s/gu, "")).toContain(part.replace(/\s/gu, ""));
-    const rows = [...document.querySelectorAll<HTMLElement>("#page .proactive-log-row")];
+    const rows = [...document.querySelectorAll<HTMLElement>("#apps .proactive-log-row")];
     expect(rows.map((row) => row.dataset["tone"])).toEqual([
       "spoke",
       "quiet",
@@ -453,8 +480,8 @@ describe("[PG-15] proactive reminders page", () => {
     expect(rows[4]?.textContent).toContain("想得太久，答案没写完就被截断了");
     expect(rows[5]?.textContent).toContain("模型这次没有回答");
     expect(rows[6]?.textContent).toContain("模型没有答完");
-    expect(text("#page")).toContain("昨天");
-    await click("#page .proactive-log-row:nth-of-type(1)", "没必要");
+    expect(text("#apps")).toContain("昨天");
+    await click("#apps .proactive-log-row:nth-of-type(1)", "没必要");
     expect(lastCommand()).toMatchObject({
       type: "proactive.decision.rate",
       payload: { decisionId: "d-push", rating: "unneeded" },
@@ -467,20 +494,8 @@ describe("[PG-15] proactive reminders page", () => {
 
   it("[PG-15] reads the same page in English and Japanese", async () => {
     for (const [next, expected] of [
-      [
-        "en",
-        [
-          "Might matter, read the email",
-          "Due today",
-          "Pushed · you opened it",
-          "Open email",
-          "Decision log",
-        ],
-      ],
-      [
-        "ja",
-        ["重要かも、元のメールを確認", "本日", "通知済み · 開きました", "元のメール", "判断の記録"],
-      ],
+      ["en", ["Might matter, read the email", "Due today", "Pushed · you opened it", "Open email"]],
+      ["ja", ["重要かも、元のメールを確認", "本日", "通知済み · 開きました", "元のメール"]],
     ] as const) {
       locale = next;
       await act(async () => root.render(h(Page, { focus: null })));

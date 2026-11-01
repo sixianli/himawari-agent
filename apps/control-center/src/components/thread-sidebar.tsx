@@ -58,6 +58,15 @@ export interface ThreadSidebarProps {
   readonly onPin?: (thread: Thread) => void;
   readonly onArchive?: (thread: Thread) => void;
   readonly onDelete?: (thread: Thread) => void;
+  readonly renamingThreadId?: string | null;
+  readonly renameValue?: string;
+  readonly renameChanged?: boolean;
+  readonly onRenameValueChange?: (value: string) => void;
+  readonly onRenameCommit?: () => void;
+  readonly onRenameCancel?: () => void;
+  readonly deletingThreadId?: string | null;
+  readonly onDeleteConfirm?: () => void;
+  readonly onDeleteCancel?: () => void;
   readonly onOpenFiles?: (() => void) | undefined;
   readonly onOpenMemory?: (() => void) | undefined;
   readonly onOpenReminders?: (() => void) | undefined;
@@ -66,6 +75,10 @@ export interface ThreadSidebarProps {
   readonly pendingThreadIds?: readonly string[];
   readonly runningThreadIds?: readonly string[];
 }
+function focusOnMount(node: HTMLInputElement | null) {
+  node?.focus();
+}
+
 export function ThreadSidebar({
   threads,
   searchResults = [],
@@ -86,6 +99,15 @@ export function ThreadSidebar({
   onPin,
   onArchive,
   onDelete,
+  renamingThreadId = null,
+  renameValue = "",
+  renameChanged = false,
+  onRenameValueChange,
+  onRenameCommit,
+  onRenameCancel,
+  deletingThreadId = null,
+  onDeleteConfirm,
+  onDeleteCancel,
   onOpenFiles,
   onOpenMemory,
   onOpenReminders,
@@ -152,71 +174,117 @@ export function ThreadSidebar({
       <span>{title(thread)}</span>
     </AppLink>
   );
-  const row = (thread: Thread) => (
-    <li
-      className="thread-row"
-      data-pinned={thread.pinOrder !== null}
-      key={thread.threadId}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.currentTarget.querySelector<HTMLButtonElement>(".action-menu > button")?.click();
-      }}
-    >
-      {link(thread)}
-      <ActionMenu
-        label={
-          <>
-            <Glyph name="more" size={18} />
-            <span className="sr-only">{message("review.conversationActions")}</span>
-          </>
-        }
-        items={[
-          {
-            id: "rename",
-            label: (
-              <>
-                <SidebarIcon name="rename" />
-                {message("threads.rename")}
-              </>
-            ),
-            onSelect: () => onRename?.(thread),
-          },
-          {
-            id: "pin",
-            label: (
-              <>
-                <SidebarIcon name="pin" />
-                {message(thread.pinOrder === null ? "threads.pin" : "threads.unpin")}
-              </>
-            ),
-            onSelect: () => onPin?.(thread),
-          },
-          {
-            id: "archive",
-            separated: true,
-            label: (
-              <>
-                <SidebarIcon name="archive" />
-                {message("threads.archive")}
-              </>
-            ),
-            onSelect: () => onArchive?.(thread),
-          },
-          {
-            id: "delete",
-            danger: true,
-            label: (
-              <>
-                <SidebarIcon name="trash" />
-                {message("threads.delete")}
-              </>
-            ),
-            onSelect: () => onDelete?.(thread),
-          },
-        ]}
-      />
-    </li>
-  );
+  const row = (thread: Thread) =>
+    renamingThreadId === thread.threadId ? (
+      <li className="thread-row thread-row-editing" key={thread.threadId}>
+        <input
+          className="thread-rename-input"
+          ref={focusOnMount}
+          aria-label={message("review.conversationName")}
+          value={renameValue}
+          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => onRenameValueChange?.(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (renameChanged) onRenameCommit?.();
+              else onRenameCancel?.();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onRenameCancel?.();
+            }
+          }}
+          onBlur={() => {
+            if (renameChanged) onRenameCommit?.();
+            else onRenameCancel?.();
+          }}
+        />
+      </li>
+    ) : deletingThreadId === thread.threadId ? (
+      <li className="thread-row thread-row-confirming" key={thread.threadId}>
+        <span className="thread-confirm-text">{message("threads.deleteTitle")}</span>
+        <ActionButton
+          variant="secondary"
+          className="thread-confirm-button"
+          onClick={onDeleteCancel}
+        >
+          {message("governed.cancel")}
+        </ActionButton>
+        <ActionButton
+          variant="danger"
+          className="thread-confirm-button"
+          data-autofocus
+          autoFocus
+          onClick={onDeleteConfirm}
+        >
+          {message("threads.delete")}
+        </ActionButton>
+      </li>
+    ) : (
+      <li
+        className="thread-row"
+        data-pinned={thread.pinOrder !== null}
+        key={thread.threadId}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.currentTarget.querySelector<HTMLButtonElement>(".action-menu > button")?.click();
+        }}
+      >
+        {link(thread)}
+        <ActionMenu
+          label={
+            <>
+              <Glyph name="more" size={18} />
+              <span className="sr-only">{message("review.conversationActions")}</span>
+            </>
+          }
+          items={[
+            {
+              id: "rename",
+              label: (
+                <>
+                  <SidebarIcon name="rename" />
+                  {message("threads.rename")}
+                </>
+              ),
+              onSelect: () => onRename?.(thread),
+            },
+            {
+              id: "pin",
+              label: (
+                <>
+                  <SidebarIcon name="pin" />
+                  {message(thread.pinOrder === null ? "threads.pin" : "threads.unpin")}
+                </>
+              ),
+              onSelect: () => onPin?.(thread),
+            },
+            {
+              id: "archive",
+              separated: true,
+              label: (
+                <>
+                  <SidebarIcon name="archive" />
+                  {message("threads.archive")}
+                </>
+              ),
+              onSelect: () => onArchive?.(thread),
+            },
+            {
+              id: "delete",
+              danger: true,
+              label: (
+                <>
+                  <SidebarIcon name="trash" />
+                  {message("threads.delete")}
+                </>
+              ),
+              onSelect: () => onDelete?.(thread),
+            },
+          ]}
+        />
+      </li>
+    );
   return (
     <div className="thread-list-controls">
       <nav className="thread-sidebar-actions" aria-label={message("nav.threads")}>

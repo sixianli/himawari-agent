@@ -25,6 +25,7 @@ export const messages = {
   "review.impact.none": "データの変更なし",
   "review.impact.reversible": "内容を変更します。復元可能です",
   "review.impact.irreversible": "取り消せない可能性があります",
+  "review.settings.personalization": "パーソナライズ",
   "review.settings.general": "一般",
   "review.settings.tools": "ツールと権限",
   "review.settings.data": "データ",
@@ -37,7 +38,6 @@ export const messages = {
   "review.conversationActions": "会話の操作",
   "review.conversationName": "会話名",
   "review.save": "保存",
-  "review.effortUnavailable": "このモデルの推論強度は調整できません。",
   "review.disconnected": "接続が切れました。再接続中です。下書きは保持されています。",
   "review.progressUnknown": "最新の進捗を取得できません。再接続後に同期します。",
   "review.effort.off": "オフ",
@@ -47,16 +47,13 @@ export const messages = {
   "review.effort.high": "高",
   "review.effort.xhigh": "非常に高",
   "review.effort.max": "最大",
-  "review.effortDescription.off": "推論せずに直接回答します。最速です。",
-  "review.effortDescription.minimal": "明確で直接的なタスク向け。",
-  "review.effortDescription.low": "明確で直接的なタスク向け。",
-  "review.effortDescription.medium": "応答速度と推論の深さのバランス。",
-  "review.effortDescription.high":
-    "複雑なタスクにより多くの推論を使い、時間がかかる場合があります。",
-  "review.effortDescription.xhigh":
-    "複雑なタスクにより多くの推論を使い、時間がかかる場合があります。",
-  "review.effortDescription.max":
-    "最も難しいタスク向けに最大限推論します。時間と費用が最もかかります。",
+  "review.effortDescription.off": "最速",
+  "review.effortDescription.minimal": "簡単なタスク",
+  "review.effortDescription.low": "簡単なタスク",
+  "review.effortDescription.medium": "日常のタスク",
+  "review.effortDescription.high": "複雑なタスク",
+  "review.effortDescription.xhigh": "複雑なタスク",
+  "review.effortDescription.max": "最も難しいタスク、最も遅い",
 
   "layout.hideList": "サイドバーを閉じる",
   "account.signIn": "Himawari にログイン",
@@ -289,13 +286,6 @@ export const messages = {
     "このターンではツール操作を実行していません。そのまま再送信できます。",
   "appearance.title": "外観とアクセント",
   "appearance.theme": "テーマ",
-  "appearance.accent": "アクセント色",
-  "appearance.violet": "バイオレット",
-  "appearance.blue": "ブルー",
-  "appearance.teal": "ティール",
-  "appearance.amber": "アンバー",
-  "appearance.rose": "ローズ",
-  "appearance.graphite": "グラファイト",
   "chat.untitled": "新しい会話",
   "chat.latest": "最新に戻る",
   "chat.placeholder": "続けてどうぞ。ここまでの話はちゃんと覚えてるよ 🌻",
@@ -376,7 +366,6 @@ export const messages = {
   "more.duration.seconds": "{seconds}秒",
   "more.sheet.expand": "広げる",
   "more.sheet.collapse": "縮める",
-  "chat.pendingModel": "次のメッセージに適用",
   "chat.attachHint":
     "クリック、Ctrl+V で貼り付け、ドラッグのどれでも追加できます。PNG、JPG、WebP、GIF の画像を見られ、PDF、Word、Excel、PowerPoint と、メモ、コード、CSV などのテキストファイルを読めます。1 個 20 MB まで",
   "chat.attachmentTooLarge":
@@ -442,7 +431,6 @@ export const messages = {
   "preview.sheetEmpty": "このブックには表示できるシートがありません。",
   "library.title": "ファイル",
   "library.search": "ファイル名で検索",
-  "library.count": "{count}{more, select, yes {+} other {}} 件のファイル",
   "library.all": "すべて",
   "library.documents": "ドキュメント",
   "library.tables": "表",
@@ -674,8 +662,6 @@ export const messages = {
   "memory.source": "元の会話",
   "memory.editAction": "編集",
   "memory.deleteAction": "削除",
-  "memory.note":
-    "日常的な情報は自動で記憶し、健康やお金などの機微な情報は確認後にだけ記憶します。身分証番号・カード番号・パスワードは保存しません。",
   "memory.profile.rules": "Himawari への指示",
   "memory.profile.identity": "基本情報",
   "memory.profile.preference": "好み",
@@ -691,19 +677,13 @@ export const messages = {
   "memory.reminderSnooze": "1 時間後に再通知",
   "memory.cat":
     "{c, select, rule {ルール} identity {プロフィール} preference {好み} relationship {人間関係} goal {目標} project {進行中} health {健康} finance {お金} event {予定} other {その他}}",
-  "memory.page.summary": "{live} 件を記憶 · 今週 {week} 件追加 · アーカイブ {archived} 件",
   "memory.page.auto": "会話から自動で記憶",
-  "memory.page.autoState": "{paused, select, true {一時停止中} other {オン}}",
-  "memory.page.pauseDone":
-    "{paused, select, true {一時停止しました。新しくは記憶せず、既存の記憶は使います} other {再開しました。会話の好みや予定を記憶します}}",
   "memory.page.pausedNote":
     "自動記憶を一時停止中です。既存の記憶は使いますが、会話から新しく記憶せず、毎日の整理もしません。手動で追加したものは記憶します。",
   "memory.page.notReady":
     "手動追加とインポートは、会話から最初の記憶ができてから使えます。自動記憶をオンにして、自分のことを一つ話してください（例：「好きな色は青」）。",
-  "memory.page.add": "手動で追加",
+  "memory.page.add": "追加",
   "memory.page.addTitle": "Himawari に覚えてほしいこと",
-  "memory.page.addNote":
-    "1 文で書いてください。トピックは言葉から推測し、下で変更できます。健康やお金の内容は機微な情報として保存し、ご自身で書いたので確認は不要です。",
   "memory.page.addPlaceholder": "例：週末の朝 9 時前は通知しないで",
   "memory.page.added":
     "「{cat}」に記憶しました{pinned, select, true {。今後は毎回の会話に持っていきます} other {}}。違う場合は開いて直せます。",
@@ -759,8 +739,6 @@ export const messages = {
   "memory.page.deleted": "削除しました。7 日以内なら「最近削除」から戻せます。",
   "memory.page.filter":
     "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {整理} correct {訂正} other {インポート}}",
-  "memory.page.timelineNote":
-    "日ごとの変化です。新規・訂正・インポートと、毎日の整理による統合・置き換え・アーカイブ・推測。覚えない・削除・整理・インポートは取り消せます。あなたの編集は整理で上書きされません。",
   "memory.page.event":
     "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
   "memory.page.imported":
@@ -768,8 +746,6 @@ export const messages = {
   "memory.page.goConfirm": "確認する",
   "memory.page.import": "記憶をインポート",
   "memory.page.export": "すべての記憶をエクスポート",
-  "memory.page.importNote":
-    "他の AI が覚えていることを移せます。1 件ずつ確認してから保存し、タイムラインからまとめて取り消せます。行ごとに分け、文面は書き換えません。",
   "memory.page.sourceTitle":
     "{s, select, codex {Codex} assistant {ChatGPT・Claude など} other {Himawari のエクスポート}}",
   "memory.page.sourceHelp":
@@ -959,6 +935,9 @@ export const messages = {
     "{r, select, useful {役立った} unneeded {不要だった} other {知らせてほしかった}}",
   "proactive.done": "完了",
   "proactive.mute": "通知しない",
+  "proactive.whyHide": "理由を閉じる",
+  "proactive.why": "通知された理由",
+  "proactive.moreActions": "その他の操作",
   "proactive.doneNotice": "完了にしました：{text}",
   "proactive.mutedNotice": "今後は通知しません：{text}",
   "proactive.dailyBasis":
@@ -985,7 +964,6 @@ export const messages = {
   "proactive.audit.done": "確認済み",
   "proactive.audit.doneOk": "確認件数に追加しました",
   "proactive.log.range": "直近 30 日 · {days} 日分を記録",
-  "proactive.log.note": "確認のたびに 1 行残します。通知しなかった回も残します。",
   "proactive.log.empty":
     "まだ確認の記録はありません。Gmail をつなぐと 15 分ごとに 1 行記録します。",
   "proactive.log.today": "今日",
