@@ -12,6 +12,7 @@ import {
   parseJson,
   type Schema,
   timestamp,
+  modelRefString,
 } from "./validation.js";
 
 export const THREAD_GATEWAY_SCHEMA_VERSION = "gateway.thread.v3" as const;
@@ -155,7 +156,7 @@ export const submitThreadMessageV3CommandSchema = object({
 export const submitConfiguredThreadMessageSchema = object({
   ...commandEnvelope("thread.message.submit_configured"),
   payload: object({
-    modelRef: machineString,
+    modelRef: modelRefString,
     thinkingLevel: enumeration(["off", "minimal", "low", "medium", "high", "xhigh", "max"]),
     threadId: machineString,
     expectedRevision: integer(1),

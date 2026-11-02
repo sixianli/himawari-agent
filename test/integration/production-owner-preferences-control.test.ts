@@ -134,6 +134,21 @@ describe("[I-16] owner preferences live on the server", () => {
     });
   });
 
+  it("keeps a model reference with a slash, as the model list now produces", async () => {
+    const { device } = await setup();
+    const control = device();
+    const modelRef = "magpie:opencode-go/deepseek-v4.1-flash";
+    await set(control, { ...EMPTY, modelRef, thinkingLevel: "high", expectedRevision: 0 });
+    expect(await read(device())).toMatchObject({ modelRef, thinkingLevel: "high" });
+  });
+
+  it("refuses a model reference with a space, a middle dot or more than 128 characters", async () => {
+    const { device } = await setup();
+    for (const modelRef of ["DeepSeek V4.1 Flash", "DeepSeek·OpenCode", `a/${"b".repeat(128)}`]) {
+      expect(() => set(device(), { ...EMPTY, modelRef, expectedRevision: 0 })).toThrow("modelRef");
+    }
+  });
+
   it("[I-16] refuses a save from a device that has not seen the newer settings", async () => {
     const { device, advance } = await setup();
     const computer = device();

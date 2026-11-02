@@ -7,6 +7,7 @@ import {
   integer,
   literal,
   machineString,
+  modelRefString,
   nullable,
   object,
   type Schema,
@@ -28,7 +29,7 @@ const scopeIdentity = {
   inputRef: machineString,
   operation: machineString,
   authorizationRef: machineString,
-  modelRef: machineString,
+  modelRef: modelRefString,
   profileRef: machineString,
 };
 const sandboxScopeShape = object({

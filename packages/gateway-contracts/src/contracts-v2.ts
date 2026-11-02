@@ -13,6 +13,7 @@ import {
   parseJson,
   type Schema,
   timestamp,
+  modelRefString,
 } from "./validation.js";
 
 export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
@@ -468,7 +469,7 @@ const ownerPreferencesSchema = {
   locale: nullable(enumeration(["zh-CN", "en", "ja"])),
   accent: nullable(enumeration(["violet", "blue", "teal", "amber", "rose", "graphite"])),
   theme: nullable(enumeration(["light", "dark", "system"])),
-  modelRef: nullable(machineString),
+  modelRef: nullable(modelRefString),
   thinkingLevel: nullable(enumeration(["off", "minimal", "low", "medium", "high", "xhigh", "max"])),
 };
 const ownerPreferencesQuerySchema = object({
@@ -830,7 +831,7 @@ const githubRepositoryRefSchema: Schema<string> = {
 
 const githubDisclosureSchema = object({
   confirmationRef: machineString,
-  primaryModelRef: machineString,
+  primaryModelRef: modelRefString,
   repositoryRef: githubRepositoryRefSchema,
   disclosedDataClassifications: array(classificationSchema),
   machineSecretsExcluded: literal(true),
@@ -1649,7 +1650,7 @@ export const delegationSnapshotSchema = object({
     outputSchemaRef: machineString,
     contextRefs: array(machineString),
     capabilityHandleRefs: array(machineString),
-    allowedModelRefs: array(machineString),
+    allowedModelRefs: array(modelRefString),
     dataClassification: classificationSchema,
     maximumDurationMs: integer(1),
     maximumCostMicros: integer(0),
@@ -1804,7 +1805,7 @@ export const traceSnapshotSchema = object({
     causationRef: nullable(machineString),
     threadRef: nullable(machineString),
     runRef: machineString,
-    modelRef: nullable(machineString),
+    modelRef: nullable(modelRefString),
     providerRef: nullable(machineString),
     authorizationRef: nullable(machineString),
     capabilityRef: nullable(machineString),
@@ -1828,8 +1829,8 @@ export const settingsSnapshotSchema = object({
   ...envelope("snapshot", "settings.snapshot"),
   payload: object({
     revision: integer(1),
-    primaryModelRef: nullable(machineString),
-    fallbackModelRef: nullable(machineString),
+    primaryModelRef: nullable(modelRefString),
+    fallbackModelRef: nullable(modelRefString),
     globalBudgetMicros: integer(0),
     spentBudgetMicros: integer(0),
     defaultAttention: attentionLevelSchema,
