@@ -10,10 +10,10 @@ date: "2026-11-01"
 
 # Muse 自动接收运行手册
 
-本手册说明怎样把 Muse 的提醒数据自动推给 Himawari：Andy 在 Cloudflare 上要点哪些按钮、上线时要改什么配置、日常怎么查通道是否正常、怎么暂停和关闭、密钥怎么更换。决定的理由见 [ADR 0151](../adr/0151-receive-muse-data-through-a-service-token-and-an-app-secret.md)。时间一律日本时间（JST）。
+本手册说明怎样把 Muse 的提醒数据自动推给 Himawari：Andy 在 Cloudflare 上要点哪些按钮、上线时要改什么配置、日常怎么查通道是否正常、怎么暂停和关闭、密钥怎么更换。决定的理由见 [ADR 0152](../adr/0152-receive-muse-data-through-a-service-token-and-an-app-secret.md)。时间一律日本时间（JST）。
 
 <!-- runbook-contract:
-- docs/adr/0151-receive-muse-data-through-a-service-token-and-an-app-secret.md
+- docs/adr/0152-receive-muse-data-through-a-service-token-and-an-app-secret.md
 - apps/agent-service/src/production-muse-intake.ts
 - packages/platform-node/src/strict-configuration.ts
 -->
@@ -43,7 +43,7 @@ date: "2026-11-01"
 
 ## Authoritative Sources
 
-- [SOURCE: docs/adr/0151-receive-muse-data-through-a-service-token-and-an-app-secret.md]
+- [SOURCE: docs/adr/0152-receive-muse-data-through-a-service-token-and-an-app-secret.md]
 - 代码：`apps/agent-service/src/production-muse-intake.ts`（路径、认证、状态码、限流）、`packages/platform-node/src/strict-configuration.ts`（`runPolicy.museIntake` 的字段与密钥引用检查）。
 - Cloudflare 服务令牌文档：<https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/>
 
