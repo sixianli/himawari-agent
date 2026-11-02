@@ -92,7 +92,7 @@ export function ChatHistory({
   readonly filesByRun?: Readonly<Record<string, readonly DeliveredFile[]>> | undefined;
   readonly previewKey?: string | undefined;
   readonly readImage?: ((ref: string) => Promise<string>) | undefined;
-  readonly onCleanup?: ((run: RunSummary) => Promise<unknown> | void) | undefined;
+  readonly onCleanup?: ((run: RunSummary) => Promise<unknown>) | undefined;
   readonly backgroundCommands?: readonly BackgroundCommandView[] | undefined;
   readonly stoppingRunIds?: readonly string[] | undefined;
   readonly onOpenCommand?: ((key: string | null) => void) | undefined;
@@ -523,7 +523,7 @@ function CleanupButton({
   message,
 }: {
   readonly run: RunSummary;
-  readonly onCleanup: (run: RunSummary) => Promise<unknown> | void;
+  readonly onCleanup: (run: RunSummary) => Promise<unknown>;
   readonly message: (id: MessageId) => string;
 }) {
   const [phase, setPhase] = useState<"idle" | "checking" | "checked">("idle");
