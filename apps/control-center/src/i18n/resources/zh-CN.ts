@@ -390,6 +390,7 @@ export const messages = {
   "preview.diffNote": "只显示这一轮的改动",
   "preview.page": "第 {page} 页，共 {count} 页",
   "preview.renderFailed": "这个文件没能在这里显示，可以下载后打开。",
+  "preview.pageFailed": "第 {page} 页没能显示，其他页不受影响。",
   "preview.sheets": "工作表",
   "preview.sheetTruncated": "表格较大，这里只显示前 2000 行、100 列，完整内容请下载后查看。",
   "preview.sheetEmpty": "这个表格里没有可以显示的工作表。",
