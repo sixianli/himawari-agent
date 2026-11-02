@@ -909,6 +909,7 @@ export const messages = {
     "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
   "chat.search.alwaysOn": "常にオン",
   "settings.name": "お呼びする名前",
+  "settings.version": "バージョン {revision} · {date}",
   "chat.greetNamed": "{greeting}、{name}さん",
   "chat.welcome.here": "ここにいますよ。調べもの、書きもの、それともおしゃべり？",
   "chat.welcome.hand": "今日も何か任せてください 🌻",
@@ -921,7 +922,7 @@ export const messages = {
     "{g, select, check {重要かも、元のメールを確認} none {期限なし} other {知っておくべきこと}}",
   "proactive.when.due": "{time} 締切",
   "proactive.when.received": "{date} 受信",
-  "proactive.priority": "{p, select, high {高} medium {中} other {低}}",
+  "proactive.priority": "{p, select, high {優先度：高} medium {優先度：中} other {優先度：低}}",
   "proactive.openMail": "元のメール",
   "proactive.replied": "返信済み",
   "proactive.pushed":

@@ -5003,3 +5003,12 @@ details.settings-details > summary::-webkit-details-marker {
   color: var(--text-muted);
   pointer-events: none;
 }
+.settings-version {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.setting-row:has(+ .settings-version) {
+  border-bottom: 0;
+  padding-bottom: 0;
+}

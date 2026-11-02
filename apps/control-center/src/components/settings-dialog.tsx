@@ -4,6 +4,8 @@ import {
   type ControlCenterUiLocale,
   OWNER_NAME_LIMIT,
 } from "../browser-storage.js";
+import { readBuildInfo } from "../build-info.js";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
 import { ActionButton, Dropdown, ModalDialog } from "./index.js";
 import { Glyph, type GlyphName } from "./glyphs.js";
@@ -26,6 +28,7 @@ export function SettingsDialog({
   data,
   notifications,
   personalization,
+  account,
   initialTab = "general",
   onTabChange,
 }: {
@@ -39,10 +42,13 @@ export function SettingsDialog({
   data?: ReactNode;
   notifications?: ReactNode;
   personalization?: ReactNode;
+  account?: ReactNode;
   initialTab?: string;
   onTabChange?: (tab: string) => void;
 }) {
   const { message } = useControlCenterIntl();
+  const format = useLocaleFormat();
+  const build = readBuildInfo();
   const [tab, setTab] = useState(initialTab);
   useEffect(() => {
     if (open) setTab(initialTab);
@@ -138,6 +144,20 @@ export function SettingsDialog({
                   ))}
                 </fieldset>
               </div>
+              {account}
+              {build ? (
+                <p className="settings-version">
+                  {message("settings.version", {
+                    revision: build.revision,
+                    date: new Intl.DateTimeFormat(format.locale, {
+                      year: "numeric",
+                      month: "numeric",
+                      day: "numeric",
+                      timeZone: "UTC",
+                    }).format(new Date(build.date)),
+                  })}
+                </p>
+              ) : null}
             </>
           ) : tab === "tools" ? (
             tools

@@ -358,6 +358,61 @@ describe("control center application bootstrap and interaction", () => {
     expect(document.activeElement).toBe(dialog);
     expect(document.activeElement?.getAttribute("aria-label")).not.toBe(messages["common.close"]);
   });
+  it("[UI-S1] signs out from settings with a built-in account and shows the build version", async () => {
+    vi.stubGlobal("__HIMAWARI_BUILD__", { revision: "0268662", date: "2026-11-01" });
+    fetcher.mockImplementation(
+      async (url: string) =>
+        new Response(JSON.stringify(url.endsWith("/method") ? { method: "built-in" } : {})),
+    );
+    await render();
+    await click(messages["settings.title"]);
+    expect(document.querySelector("dialog")?.textContent).toContain("版本 0268662 · 2026/11/1");
+    boundary.load.mockImplementation(() => new Promise(() => undefined));
+    await click(messages["account.signOut"]);
+    const logout = fetcher.mock.calls.find(([url]) => String(url).endsWith("/logout"));
+    expect(logout?.[1]?.method).toBe("POST");
+    expect(logout?.[1]?.headers["x-csrf-token"]).toBe(configuration.csrfToken);
+    expect(text()).toBe(messages["entry.opening"]);
+  });
+  it("[UI-S1] shows the build date as written, not shifted by the viewer's time zone", async () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    try {
+      vi.stubGlobal("__HIMAWARI_BUILD__", { revision: "0268662", date: "2026-11-01" });
+      await render();
+      await click(messages["settings.title"]);
+      expect(document.querySelector(".settings-version")?.textContent).toBe(
+        "版本 0268662 · 2026/11/1",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("[UI-S1] keeps the account when sign-out fails and lets the owner try again", async () => {
+    fetcher.mockImplementation(async (url: string) =>
+      url.endsWith("/method")
+        ? new Response(JSON.stringify({ method: "built-in" }))
+        : new Response("{}", { status: 503 }),
+    );
+    await render();
+    await click(messages["settings.title"]);
+    await click(messages["account.signOut"]);
+    expect(document.querySelector('dialog [role="alert"]')?.textContent).toBe(
+      messages["account.deviceActionFailed"],
+    );
+    expect(text()).toContain("threads content");
+    expect(
+      document.querySelector<HTMLButtonElement>("dialog .setting-row button:not([aria-haspopup])")
+        ?.disabled,
+    ).toBe(false);
+  });
+  it("[UI-S2] offers no sign-out without a built-in account and hides an unknown build version", async () => {
+    await render();
+    await click(messages["settings.title"]);
+    expect(document.querySelector("dialog")?.textContent).not.toContain(
+      messages["account.signOut"],
+    );
+    expect(document.querySelector(".settings-version")).toBeNull();
+  });
   it("persists interface language and appearance through the actual shell controls", async () => {
     await render();
     await click(messages["settings.title"]);

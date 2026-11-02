@@ -350,7 +350,7 @@ describe("[PG-15] proactive reminders page", () => {
     await choose(row, "为什么提醒我");
     expect(text(row)).toContain("比上月多 ¥12,000");
     expect(text(row)).toContain("楽天カード");
-    expect(document.querySelector(`${row} [data-priority="high"]`)?.textContent).toBe("高");
+    expect(document.querySelector(`${row} [data-priority="high"]`)?.textContent).toBe("高优先级");
     expect(text(row)).toContain("推送过 · 你点开了");
     expect(text("#reminder-ward")).toContain("今天");
     expect(document.querySelector(`${row} a`)?.getAttribute("href")).toBe(
