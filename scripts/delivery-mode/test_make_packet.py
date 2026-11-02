@@ -21,12 +21,12 @@ TWELFTH = json.loads((FIXTURES / 'twelfth-parameters.json').read_text())
 TWELFTH_FROZEN = json.loads((FIXTURES / 'twelfth-frozen-sha256.json').read_text())
 TWELFTH_COMMIT = TWELFTH['COMMIT']
 MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
-ADDED_FILES = {'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
+ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures.mjs', 'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
-    'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 's0-db/read-s0-db.mjs',
     'signing/cloud-seal.mjs', 'signing/prepare-twelfth-snapshot.sh', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
@@ -1054,6 +1054,138 @@ class DependencyReinstallTest(unittest.TestCase):
         generator = (HERE / 'make-packet.py').read_text()
         uploads = generator[generator.index('def install_scripts(self):'):generator.index('def start(self, name, command):')]
         self.assertIn("'install-dependencies-if-changed.sh'", uploads)
+
+
+class SourceBundleTest(unittest.TestCase):
+    TAG = '[PG-1]'
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.repo = self.root / 'repo'
+        self.git_environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+        self.run_git('init', '-q', str(self.repo), cwd=self.root)
+        self.commits = []
+        for index in range(4):
+            (self.repo / ('file-' + str(index) + '.txt')).write_text(os.urandom(2000).hex() + '\n')
+            self.run_git('add', '-A')
+            self.run_git('commit', '-q', '-m', 'commit ' + str(index))
+            self.commits.append(self.run_git('rev-parse', 'HEAD'))
+        patcher = unittest.mock.patch.object(packet_maker, 'REPO', self.repo)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def run_git(self, *arguments, cwd=None):
+        child = subprocess.run(['git', *arguments], cwd=cwd or self.repo, env=self.git_environment, capture_output=True, text=True, check=True)
+        return child.stdout.strip()
+
+    def test_the_nearest_ancestor_the_server_already_holds_is_the_base(self):
+        first, second, third, fourth = self.commits
+        self.assertEqual(packet_maker.choose_source_base(fourth, [first, second]), second)
+        self.assertEqual(packet_maker.choose_source_base(fourth, [second, first]), second)
+        self.assertEqual(packet_maker.choose_source_base(third, [first, second, fourth]), second)
+
+    def test_a_server_without_a_usable_cache_gets_the_whole_history(self):
+        first, second, third, fourth = self.commits
+        self.assertIsNone(packet_maker.choose_source_base(fourth, []))
+        self.assertIsNone(packet_maker.choose_source_base(second, [third, fourth]))
+        self.assertIsNone(packet_maker.choose_source_base(fourth, ['f' * 40]))
+
+    def test_a_commit_the_server_already_holds_is_sent_against_its_parent(self):
+        first, second, third, fourth = self.commits
+        self.assertEqual(packet_maker.choose_source_base(fourth, [first, fourth]), third)
+        self.assertIsNone(packet_maker.choose_source_base(first, [first]))
+
+    def test_an_incremental_bundle_needs_only_its_base_and_is_smaller(self):
+        first, second, third, fourth = self.commits
+        full, incremental = self.root / 'full.bundle', self.root / 'incremental.bundle'
+        packet_maker.create_bundle(fourth, full)
+        packet_maker.create_bundle(fourth, incremental, third)
+        self.assertEqual(packet_maker.bundle_prerequisites(full), [])
+        self.assertEqual(packet_maker.bundle_prerequisites(incremental), [third])
+        self.assertLess(incremental.stat().st_size, full.stat().st_size)
+        cache = self.root / 'cache.git'
+        subprocess.run(['git', 'init', '--bare', '-q', str(cache)], check=True)
+        refused = subprocess.run(['git', '-C', str(cache), 'bundle', 'verify', str(incremental)], capture_output=True, text=True, check=False)
+        self.assertNotEqual(refused.returncode, 0)
+        seeded = self.root / 'seeded.bundle'
+        packet_maker.create_bundle(third, seeded)
+        for bundle, head in ((seeded, third), (incremental, fourth)):
+            subprocess.run(['git', '-C', str(cache), 'fetch', '-q', '--no-tags', str(bundle), 'HEAD:refs/release/' + head], check=True)
+        self.assertEqual(subprocess.run(['git', '-C', str(cache), 'rev-parse', 'refs/release/' + fourth], capture_output=True, text=True, check=True).stdout.strip(), fourth)
+
+    def test_a_cached_commit_on_another_line_of_history_is_not_chosen_as_the_base(self):
+        first, second, third, fourth = self.commits
+        self.run_git('checkout', '-q', '-b', 'side', first)
+        (self.repo / 'side.txt').write_text('side\n')
+        self.run_git('add', '-A')
+        self.run_git('commit', '-q', '-m', 'side')
+        side = self.run_git('rev-parse', 'HEAD')
+        self.assertIsNone(packet_maker.choose_source_base(fourth, [side]))
+        self.assertEqual(packet_maker.choose_source_base(fourth, [side, first]), first)
+
+    def test_hermes_gets_its_own_whole_bundle_when_it_lacks_the_base(self):
+        first, second, third, fourth = self.commits
+        wrapper = self.root / 'hermes-ssh.sh'
+        wrapper.write_text('#!/bin/bash\nexec bash -c "$1"\n')
+        wrapper.chmod(0o755)
+        builder_repo = self.root / 'builder-repo'
+        subprocess.run(['git', 'clone', '-q', '--no-checkout', str(self.repo), str(builder_repo)], check=True)
+        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_HERMES_SSH': str(wrapper)}):
+            hermes = packet_maker.Hermes('twentyfourth-1234abcd-20261101t010203')
+            hermes.settings = {**hermes.settings, 'source': str(builder_repo)}
+            self.assertTrue(hermes.has_commit(third))
+            self.assertFalse(hermes.has_commit('e' * 40))
+            materials, work = self.root / 'materials', self.root / 'work'
+            materials.mkdir()
+            work.mkdir()
+            parameters = {'BUNDLE_NAME': 'source-' + fourth[:7] + '.bundle', 'SOURCE_CACHE_COMMITS': [third]}
+            shared = packet_maker.make_source_bundles(argparse.Namespace(full_source=False), fourth, parameters, materials, work, hermes)
+            self.assertEqual((parameters['SOURCE_BASE_COMMIT'], shared), (third, materials / parameters['BUNDLE_NAME']))
+            self.assertEqual(packet_maker.bundle_prerequisites(shared), [third])
+            hermes.has_commit = lambda commit: False
+            parameters = {'BUNDLE_NAME': 'source-' + fourth[:7] + '.bundle', 'SOURCE_CACHE_COMMITS': [third]}
+            separate = packet_maker.make_source_bundles(argparse.Namespace(full_source=False), fourth, parameters, materials, work, hermes)
+            self.assertEqual((parameters['SOURCE_BASE_COMMIT'], separate), (third, work / 'builder.bundle'))
+            self.assertEqual(packet_maker.bundle_prerequisites(separate), [])
+            self.assertEqual(packet_maker.bundle_prerequisites(materials / parameters['BUNDLE_NAME']), [third])
+
+    def test_the_full_source_flag_ships_the_whole_history(self):
+        first, second, third, fourth = self.commits
+        materials, work = self.root / 'materials', self.root / 'work'
+        materials.mkdir()
+        work.mkdir()
+
+        class Builder:
+            def has_commit(self, commit):
+                raise AssertionError('the builder is not asked when the whole history is shipped')
+        parameters = {'BUNDLE_NAME': 'source-' + fourth[:7] + '.bundle', 'SOURCE_CACHE_COMMITS': [third]}
+        bundle = packet_maker.make_source_bundles(argparse.Namespace(full_source=True), fourth, parameters, materials, work, Builder())
+        self.assertEqual((parameters['SOURCE_BASE_COMMIT'], packet_maker.bundle_prerequisites(bundle)), ('', []))
+
+    def test_full_source_together_with_reused_materials_is_refused_before_anything_runs(self):
+        arguments = argparse.Namespace(full_source=True, reuse_materials='/earlier/packet')
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_FULL_SOURCE_WITH_REUSE'):
+            packet_maker.prepare(arguments)
+
+    def test_discovery_reports_the_releases_the_server_cache_holds(self):
+        facts = production_facts(sourceCacheCommits=['b' * 40, 'a' * 40, 'not-a-commit'])
+        self.assertEqual(packet_maker.interpret_discovery(facts, INSTANCE)['SOURCE_CACHE_COMMITS'], ['a' * 40, 'b' * 40])
+        self.assertEqual(packet_maker.interpret_discovery(production_facts(), INSTANCE)['SOURCE_CACHE_COMMITS'], [])
+        self.assertIn('refs/release', packet_maker.discovery_script())
+        self.assertEqual(packet_maker.source_cache(INSTANCE), '/opt/himawari/source-cache.git')
+
+    def test_the_cache_fixtures_run_with_the_other_packet_checks(self):
+        names = [name for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', False, False)]
+        self.assertIn('install/verify-source-cache-fixtures.mjs', names)
+
+    def test_the_cache_fixtures_pass_against_real_git(self):
+        child = subprocess.run(['node', str(HERE / 'packet-template/install/verify-source-cache-fixtures.mjs')], capture_output=True, text=True, check=False, env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(self.root)})
+        self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+        self.assertTrue(json.loads(child.stdout)['passed'])
 
 
 if __name__ == '__main__':

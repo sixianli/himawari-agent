@@ -1,6 +1,14 @@
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { type CSSProperties, type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useControlCenterIntl } from "../i18n/runtime.js";
+import { pdfDocumentFontOptions } from "../pdf-document-options.js";
 import { type SheetCellStyle, type SheetView, workbookViews } from "../spreadsheet-model.js";
 import { withoutDrawings } from "../xlsx-drawings.js";
 
@@ -10,6 +18,8 @@ type Message = ReturnType<typeof useControlCenterIntl>["message"];
 
 const PAGE_GAP = 12;
 const PAGE_PADDING = 12;
+const MAX_CANVAS_PIXELS = 16_000_000;
+const MAX_CANVAS_EDGE = 16_384;
 const RENDER_MARGIN = "800px 0px";
 const HEADER_ROW_HEIGHT = 22;
 const DEFAULT_ROW_HEIGHT = 21;
@@ -59,17 +69,22 @@ function PdfPage({
   size,
   width,
   label,
+  failedLabel,
+  onPageFailed,
 }: {
   readonly document: PDFDocumentProxy;
   readonly number: number;
   readonly size: PageSize;
   readonly width: number;
   readonly label: string;
+  readonly failedLabel: string;
+  readonly onPageFailed: (number: number) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const text = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
+  const [failed, setFailed] = useState(false);
   const scale = width / size.width;
   useEffect(() => {
     const element = box.current;
@@ -87,15 +102,27 @@ function PdfPage({
     if (!visible || !target || !layer || width <= 0) return;
     let current = true;
     let task: RenderTask | undefined;
+    setFailed(false);
     void (async () => {
       const [pdf, page] = await Promise.all([loadPdf(), document.getPage(number)]);
       if (!current) return;
       const viewport = page.getViewport({ scale });
-      const ratio = Math.min(window.devicePixelRatio || 1, 3);
-      target.width = Math.floor(viewport.width * ratio);
-      target.height = Math.floor(viewport.height * ratio);
+      const ratio = Math.min(
+        window.devicePixelRatio || 1,
+        3,
+        Math.sqrt(MAX_CANVAS_PIXELS / (viewport.width * viewport.height)),
+        MAX_CANVAS_EDGE / Math.max(viewport.width, viewport.height),
+      );
+      target.width = Math.max(1, Math.floor(viewport.width * ratio));
+      target.height = Math.max(1, Math.floor(viewport.height * ratio));
       const context = target.getContext("2d");
-      if (!context) return;
+      if (!context) {
+        target.width = 0;
+        target.height = 0;
+        onPageFailed(number);
+        setFailed(true);
+        return;
+      }
       task = page.render({
         canvas: target,
         canvasContext: context,
@@ -110,13 +137,22 @@ function PdfPage({
         textContentSource: (page as PDFPageProxy).streamTextContent(),
         container: layer,
         viewport,
-      }).render();
-    })().catch(() => {});
+      })
+        .render()
+        .catch(() => {});
+    })().catch((error: unknown) => {
+      if (current && (error as { name?: string } | null)?.name !== "RenderingCancelledException") {
+        target.width = 0;
+        target.height = 0;
+        onPageFailed(number);
+        setFailed(true);
+      }
+    });
     return () => {
       current = false;
       task?.cancel();
     };
-  }, [visible, document, number, scale, width]);
+  }, [visible, document, number, scale, width, onPageFailed]);
   return (
     <div
       className="preview-page"
@@ -125,8 +161,9 @@ function PdfPage({
       aria-label={label}
       style={{ width, height: Math.round(size.height * scale) }}
     >
-      <canvas ref={canvas} />
-      <div className="textLayer" ref={text} />
+      <canvas ref={canvas} hidden={failed} />
+      <div className="textLayer" ref={text} hidden={failed} />
+      {failed ? <output className="preview-page-failed">{failedLabel}</output> : null}
     </div>
   );
 }
@@ -142,6 +179,11 @@ function PdfDocument({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const width = useWidth(host);
+  const [failedPages, setFailedPages] = useState<ReadonlySet<number>>(() => new Set());
+  const onPageFailed = useCallback(
+    (number: number) => setFailedPages((current) => new Set(current).add(number)),
+    [],
+  );
   const [loaded, setLoaded] = useState<{
     readonly document: PDFDocumentProxy;
     readonly sizes: readonly PageSize[];
@@ -151,7 +193,10 @@ function PdfDocument({
     let destroy: (() => Promise<void>) | undefined;
     void (async () => {
       const pdf = await loadPdf();
-      const task = pdf.getDocument({ data: new Uint8Array(data.slice(0)) });
+      const task = pdf.getDocument({
+        data: new Uint8Array(data.slice(0)),
+        ...pdfDocumentFontOptions,
+      });
       destroy = () => task.destroy();
       const document = await task.promise;
       const sizes: PageSize[] = [];
@@ -166,6 +211,9 @@ function PdfDocument({
       void destroy?.();
     };
   }, [data, onFailed]);
+  useEffect(() => {
+    if (loaded && failedPages.size >= loaded.sizes.length) onFailed();
+  }, [loaded, failedPages, onFailed]);
   const pageWidth = Math.max(0, width - PAGE_PADDING * 2);
   return (
     <div className="preview-pages" ref={host} style={{ gap: PAGE_GAP, padding: PAGE_PADDING }}>
@@ -178,6 +226,8 @@ function PdfDocument({
               size={size}
               width={pageWidth}
               label={message("preview.page", { page: index + 1, count: loaded.sizes.length })}
+              failedLabel={message("preview.pageFailed", { page: index + 1 })}
+              onPageFailed={onPageFailed}
             />
           ))
         : null}

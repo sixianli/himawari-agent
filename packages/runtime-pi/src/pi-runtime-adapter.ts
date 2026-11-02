@@ -266,6 +266,18 @@ function sameExecutionLeaseClaim(
   );
 }
 
+const SERVED_MODEL_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._:-]{0,94}$/i;
+
+export function servedModelFromHeaders(
+  headers: Readonly<Record<string, string>>,
+): string | undefined {
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === "x-magpie-model" && SERVED_MODEL_PATTERN.test(value.trim()))
+      return value.trim();
+  }
+  return undefined;
+}
+
 function redactObservation(value: unknown, seen = new WeakSet<object>()): unknown {
   if (typeof value === "string") {
     try {
@@ -1068,6 +1080,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     let aborted = false;
     let turnIndex = 0;
     let messageSequence = 0;
+    let servedModel: string | undefined;
     let finalAssistant: AssistantMessage | undefined;
     let suspended: Extract<RuntimeEvent, { type: "runtime.suspended" }> | undefined;
     let unknownTool: Extract<RuntimeEvent, { type: "runtime.result_unknown" }> | undefined;
@@ -1243,6 +1256,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                 return event.payload;
               });
               pi.on("after_provider_response", async (event) => {
+                servedModel = servedModelFromHeaders(event.headers);
                 const payloadRef = await this.#dependencies.projection.capture({
                   runId: request.runId,
                   kind: "provider_response",
@@ -1487,6 +1501,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             () => ++turnIndex,
             () => turnIndex,
             () => ++messageSequence,
+            () => {
+              const answered = servedModel;
+              servedModel = undefined;
+              return answered;
+            },
             observed.occurredAt,
           );
           for (const mappedEvent of mapped.events) {
@@ -1863,6 +1882,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     nextTurnIndex: () => number,
     currentTurnIndex: () => number,
     nextMessageSequence: () => number,
+    takeServedModel: () => string | undefined,
     now: string,
   ): Promise<{
     readonly events: readonly RuntimeEvent[];
@@ -1905,6 +1925,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         const observation = redactObservation(
           event.type === "message_update" ? withToolCallProgress(event.message) : event.message,
         );
+        const servedModel =
+          event.type === "message_end" && event.message.role === "assistant"
+            ? takeServedModel()
+            : undefined;
+        const answeredBy = servedModel === undefined ? {} : { servedModel };
         const payloadRef = await this.#dependencies.projection.capture({
           runId: request.runId,
           kind: "message",
@@ -1913,6 +1938,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             ...(event.type === "message_update"
               ? contentBoundary(event.assistantMessageEvent)
               : {}),
+            ...answeredBy,
           },
           dataClassification: request.dataClassification,
         });

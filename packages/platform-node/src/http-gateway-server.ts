@@ -772,6 +772,12 @@ function staticContentType(target: string): string {
       return "image/png";
     case ".woff2":
       return "font/woff2";
+    case ".bcmap":
+    case ".pfb":
+    case ".ttf":
+      return "application/octet-stream";
+    case ".wasm":
+      return "application/wasm";
     case ".webmanifest":
       return "application/manifest+json";
     default:

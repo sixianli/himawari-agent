@@ -12,6 +12,7 @@ import tempfile
 import time
 
 NODE_FIXTURES = (
+    'install/verify-source-cache-fixtures.mjs',
     'maintenance/verify-fixtures.mjs',
     'maintenance/verify-raw-copy-fixtures.mjs',
     'maintenance/verify-sidecar-tidy-fixtures.mjs',

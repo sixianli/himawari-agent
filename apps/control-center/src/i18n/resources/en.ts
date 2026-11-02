@@ -131,6 +131,7 @@ export const messages = {
   "answer.at": "{at, time, short}",
   "answer.sources": "{count, plural, one {# source} other {# sources}}",
   "process.tokens": "Tokens",
+  "process.answeredBy": "Answered by",
   "message.copy": "Copy this message",
   "message.status.sent": "Delivered: the server saved this message",
   "message.status.received": "Being handled: the model has received this message",
@@ -422,6 +423,7 @@ export const messages = {
   "preview.diffNote": "Showing this turn’s changes only",
   "preview.page": "Page {page} of {count}",
   "preview.renderFailed": "This file couldn’t be shown here. Download it to open it.",
+  "preview.pageFailed": "Page {page} couldn’t be shown. The other pages are unaffected.",
   "preview.sheets": "Sheets",
   "preview.sheetTruncated":
     "This sheet is large, so only the first 2,000 rows and 100 columns are shown. Download it to see everything.",
