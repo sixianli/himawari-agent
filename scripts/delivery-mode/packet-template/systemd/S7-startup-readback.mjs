@@ -298,7 +298,7 @@ try {
   const named = /^(?:__PKT_LABEL_UPPER___|RECEIPT_|RUNNER_|SANDBOX_|SRT_)[A-Z0-9_]+(?::[A-Za-z0-9._-]+)?$/.test(first);
   const code = named ? first : "__PKT_LABEL_UPPER___STARTUP_INSPECTION_FAILED";
   const frames = typeof error?.stack === "string" ? error.stack.split("\n").filter((line) => line.trimStart().startsWith("at ")).slice(0, 3).map((line) => line.trim().slice(0, 200)) : [];
-  const detail = named ? {} : { errorName: String(error?.name ?? typeof error).slice(0, 80), errorCode: typeof error?.code === "string" ? error.code.slice(0, 80) : undefined, errorMessage: first.slice(0, 300), frames };
+  const detail = named ? {} : { errorName: String(error?.name ?? typeof error).slice(0, 80), errorCode: typeof error?.code === "string" ? error.code.slice(0, 80) : undefined, errorMessage: first.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "<url>").replace(/[A-Za-z0-9_+\/=-]{24,}/g, (token) => (token.startsWith("/") ? token : "<redacted>")).slice(0, 300), frames };
   process.stderr.write(JSON.stringify({ passed: false, code, ...detail }) + "\n");
   process.exitCode = 1;
 }

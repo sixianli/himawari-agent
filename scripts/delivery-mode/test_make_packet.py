@@ -193,6 +193,11 @@ class StartupPhaseTest(RenderedPacket):
         broken = flat.replace(call, 'throw new Error("ENOENT: no such file or directory, open \'/x/y\'");')
         named = flat.replace(call, 'throw new Error("TWELFTH_STARTUP_PID_INVALID");')
         path = packet / 'systemd' / 'readback-under-test.mjs'
+        secret = flat.replace(call, 'throw new Error("fetch https://u:p@h.example/x?token=abc failed key sk_live_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123 at /opt/himawari/state");')
+        path.write_text(secret)
+        leaked = subprocess.run([shutil.which('node'), str(path), '--preflight'], capture_output=True, text=True, cwd=packet)
+        message = json.loads(leaked.stderr.strip().splitlines()[-1])['errorMessage']
+        self.assertEqual(message, 'fetch <url> failed key <redacted> at /opt/himawari/state')
         for text, expected in [(broken, None), (named, 'TWELFTH_STARTUP_PID_INVALID')]:
             path.write_text(text)
             result = subprocess.run([shutil.which('node'), str(path), '--preflight'], capture_output=True, text=True, cwd=packet)
