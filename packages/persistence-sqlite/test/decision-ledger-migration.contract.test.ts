@@ -68,9 +68,9 @@ describe("decision ledger migration 0069", () => {
         database,
         path.join(directory, "pre-migration.sqlite"),
       );
-      expect(applyMigrations(database, migrations, { snapshot }).appliedSequences).toEqual([
-        69, 70,
-      ]);
+      expect(
+        applyMigrations(database, migrations.slice(0, 69), { snapshot }).appliedSequences,
+      ).toEqual([69]);
 
       expect(database.pragma("foreign_key_check")).toEqual([]);
       expect(

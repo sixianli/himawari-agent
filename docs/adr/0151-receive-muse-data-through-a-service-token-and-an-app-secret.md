@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-01"
 ---
 
-# ADR 0146：Muse 的数据用服务令牌加应用密钥推过来，只存系统记录来源的原件
+# ADR 0151：Muse 的数据用服务令牌加应用密钥推过来，只存系统记录来源的原件
 
 <a id="contents"></a>
 
@@ -59,7 +59,7 @@ Muse 是 Andy 的另一个 Agent。Andy 要对照“Muse 该提醒的有没有�
 
 - **未验证的风险**：Muse 的定时任务是否能同时发 `CF-Access-Client-Id`、`CF-Access-Client-Secret` 和 `Authorization` 三个自定义请求头，还没有在真实 Muse 上验证。上线前必须在 Hermes 用真实服务令牌和虚构数据演练一遍；若 Muse 只能发一个头，需要另开 ADR 重新取舍，不得悄悄放宽认证。
 - 服务令牌有有效期（创建时选），到期 Muse 的推送会被边缘拒绝；运行手册写了到期提醒和更换步骤。
-- 迁移 0070 新增 4 张表；回滚程序版本不会删表，关闭功能即停收（见[运行手册](../runbooks/muse-intake-runbook.md)）。
+- 迁移 0073 新增 4 张表；回滚程序版本不会删表，关闭功能即停收（见[运行手册](../runbooks/muse-intake-runbook.md)）。
 - 门槛（测试）：`test/integration/muse-intake-http.test.ts`（认证、限流、体积、类型、暂停、重放）、`test/integration/muse-intake-store.test.ts`、`test/integration/muse-intake-control.test.ts`、`test/integration/muse-channel-push.test.ts`、`test/integration/muse-reference-browser.test.ts`（真实网页正反向）。
 
 <a id="references"></a>

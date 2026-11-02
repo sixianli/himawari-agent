@@ -6,6 +6,7 @@ import {
   type ExecutionLiveFeed,
   type IdGeneratorPort,
   type MemoryPort,
+  type ModelEgress,
   type ModelInvocationAdmissionDescriptor,
   type ModelInvocationAdmissionPort,
   type ModelInvocationAdmissionResolver,
@@ -66,6 +67,7 @@ import { createProductionTitledRuntime } from "./production-titled-runtime.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
 export interface ProductionRunCompositionOptions {
+  readonly egress: ModelEgress;
   readonly generateTitle?: (
     request: RuntimeRequest,
     prompt: string,
@@ -228,9 +230,11 @@ export function createProductionRunComposition(options: ProductionRunComposition
     },
   };
   const profileText = new Map<string, string>();
+  const preferences = repository.ownerPreferences();
   const profile = new OwnerProfileService({
     state: repository.productMemoryState(),
     pins: repository.memoryBook(),
+    ownerName: async (scope) => (await preferences.read(scope)).name,
     readText: async (record) => {
       const cached = profileText.get(record.contentRef);
       if (cached !== undefined) return cached;
@@ -362,6 +366,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     },
   });
   const runtime = new PiAgentRuntimeAdapter({
+    egress: options.egress,
     continuations,
     projection,
     tools: timings.methods(

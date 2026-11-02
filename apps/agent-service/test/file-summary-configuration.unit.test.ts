@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 import { embeddingAdmissionDescriptor } from "../src/production-run-memory.js";
+import { testModelEgress } from "@himawari-agent/testing";
 
 const fixture = new URL("../../../test/integration/fixtures/file-summary/", import.meta.url);
 
@@ -113,6 +114,7 @@ describe("file summary qualification configuration", () => {
     const requests: { url: string; authorized: boolean; body: unknown }[] = [];
     try {
       const memory = await createProductionMemoryCompositionFromConfiguration({
+        egress: testModelEgress(),
         configuration: {
           ...config,
           stateRoot,

@@ -112,6 +112,32 @@ export function createProductionFileReadServices(options: {
     ...(hostReadOnly ? { hostReadOnly } : {}),
     ...(workspaceLedger ? { workspaceLedger } : {}),
     ...(threadArtifacts ? { threadArtifacts } : {}),
+    ...(threadArtifacts
+      ? {
+          reconcileDeletedArtifacts: async () => {
+            const route = configuration.runPolicy?.coding;
+            if (!route) return 0;
+            const stored = await repository.readScopedState(
+              configuration.ownerId,
+              configuration.agentId,
+              hostDirectoryGrantStateKey(route.grantId),
+            );
+            const grant = stored?.value as unknown as HostDirectoryGrant | undefined;
+            if (
+              !grant ||
+              grant.id !== route.grantId ||
+              grant.hostId !== route.hostId ||
+              grant.revokedAt
+            )
+              return 0;
+            return threadArtifacts.reconcileDeleted({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              grant,
+            });
+          },
+        }
+      : {}),
     ...(webMemory && options.hostWeb ? { hostWeb: options.hostWeb } : {}),
     ...(webMemory ? { webMemory } : {}),
     binding: async (call) => {

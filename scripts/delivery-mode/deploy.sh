@@ -26,7 +26,7 @@ result() {
   exit "$3"
 }
 
-lock="$packet/.deploy.lock"
+lock="$(dirname "$packet")/.$(basename "$packet").deploy.lock"
 acquire_lock() {
   if mkdir "$lock" 2>/dev/null; then return 0; fi
   holder="$(cat "$lock/pid" 2>/dev/null || true)"

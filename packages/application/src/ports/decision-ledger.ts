@@ -47,6 +47,12 @@ export interface DecisionInputs {
   readonly ruleIds: readonly string[];
   readonly batchId?: string | null;
   readonly resultMemoryIds?: readonly string[];
+  readonly sourceIds?: readonly string[];
+  readonly floorHits?: Readonly<Record<string, readonly string[]>>;
+  readonly memoryInjected?: boolean;
+  readonly usedMemoryIds?: readonly string[];
+  readonly memoryByMail?: Readonly<Record<string, readonly string[]>>;
+  readonly memoryRecall?: "off" | "ok" | "partial" | "failed";
 }
 
 export interface DecisionLedgerWrite {

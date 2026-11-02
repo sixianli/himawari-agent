@@ -22,6 +22,7 @@ import {
 import type { MuseModel } from "../muse.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
+import { Glyph } from "./glyphs.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
 import { ActionButton, EmptyState } from "./primitives.js";
@@ -31,7 +32,6 @@ import {
   groupInsights,
   ProactiveAudit,
   ProactiveBanners,
-  ProactiveDecisionLog,
   ProactiveInsightRow,
   useHighlight,
 } from "./proactive-reminders.js";
@@ -59,7 +59,8 @@ const MAXIMUM_IMPORT_ITEMS = 500;
 const GRAPH = { x: 190, y: 150, r: 112 };
 
 const reveal = (element: HTMLElement | null) => element?.scrollIntoView?.({ block: "nearest" });
-const live = (item: MemoryItem) => !item.supersededBy && !item.tentative;
+const live = (item: MemoryItem) =>
+  !item.supersededBy && (!item.tentative || item.status !== "active");
 const PINNABLE: ReadonlySet<string> = new Set([
   "identity",
   "preference",
@@ -638,6 +639,80 @@ function ConfirmSection({ memory, message }: { memory: MemoryModel; message: Mes
   );
 }
 
+function pad(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function localInput(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function ReminderAddCard({
+  memory,
+  message,
+  notify,
+  onDone,
+}: {
+  memory: MemoryModel;
+  message: Message;
+  notify: (notice: Notice) => void;
+  onDone: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [due, setDue] = useState("");
+  const [yearly, setYearly] = useState(false);
+  const past = due !== "" && !(Date.parse(due) > Date.now());
+  const save = () =>
+    void memory.createReminder(text.trim(), due, yearly ? "yearly" : "none").then((ok) => {
+      if (!ok) return;
+      notify({ text: message("reminders.added", { text: text.trim() }) });
+      onDone();
+    });
+  return (
+    <section className="memory-card" data-kind="add">
+      <div className="memory-editor">
+        <textarea
+          aria-label={message("reminders.add")}
+          maxLength={500}
+          placeholder={message("reminders.addPlaceholder")}
+          value={text}
+          onChange={(event) => setText(event.currentTarget.value)}
+        />
+        <div className="memory-add-options">
+          <label>
+            {message("reminders.addWhen")}
+            <input
+              type="datetime-local"
+              value={due}
+              min={localInput(new Date())}
+              onChange={(event) => setDue(event.currentTarget.value)}
+            />
+          </label>
+          <label className="memory-switch">
+            {message("reminders.addYearly")}
+            <input
+              type="checkbox"
+              role="switch"
+              aria-checked={yearly}
+              checked={yearly}
+              onChange={() => setYearly(!yearly)}
+            />
+          </label>
+        </div>
+        {past ? <small className="settings-note">{message("reminders.addPast")}</small> : null}
+        <div className="actions">
+          <ActionButton disabled={memory.busy || !text.trim() || due === "" || past} onClick={save}>
+            {message("memory.save")}
+          </ActionButton>
+          <ActionButton variant="quiet" disabled={memory.busy} onClick={onDone}>
+            {message("governed.cancel")}
+          </ActionButton>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function RemindersPage({
   memory,
   proactive = null,
@@ -645,7 +720,6 @@ export function RemindersPage({
   focus = null,
   locale,
   message,
-  onBack,
   onOpenThread,
 }: {
   memory: MemoryModel | null;
@@ -654,15 +728,11 @@ export function RemindersPage({
   focus?: string | null;
   locale?: string | undefined;
   message: Message;
-  onBack: () => void;
   onOpenThread: (threadId: string) => void;
 }) {
   const [notice, setNotice] = useState<Notice>(null);
-  const [view, setView] = useState<"list" | "log">("list");
+  const [adding, setAdding] = useState(false);
   const highlight = useHighlight(focus);
-  useEffect(() => {
-    if (focus) setView("list");
-  }, [focus]);
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
@@ -761,15 +831,6 @@ export function RemindersPage({
       </section>
     );
   });
-  if (view === "log" && proactive)
-    return (
-      <ProactiveDecisionLog
-        proactive={proactive}
-        message={message}
-        locale={locale}
-        onBack={() => setView("list")}
-      />
-    );
   const mailCount = [...mail.values()].reduce((total, rows) => total + rows.length, 0);
   const watching = proactive?.overview && proactive.overview.connection.status !== "disconnected";
   const notifyNote = (
@@ -782,23 +843,6 @@ export function RemindersPage({
   );
   return (
     <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
-      <header className="memory-header">
-        <div className="side-page-title">
-          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
-            <LineIcon name="back" />
-          </ActionButton>
-          <h1>{message("nav.reminders")}</h1>
-          {watching ? (
-            <button
-              type="button"
-              className="reminders-link reminders-log-link"
-              onClick={() => setView("log")}
-            >
-              {message("proactive.log")}
-            </button>
-          ) : null}
-        </div>
-      </header>
       {!memory ? (
         <p className="settings-note">{message("common.notConfigured")}</p>
       ) : !overview ? (
@@ -808,6 +852,21 @@ export function RemindersPage({
         </div>
       ) : (
         <>
+          {overview.manualAddReady && !adding ? (
+            <div className="actions">
+              <ActionButton variant="secondary" onClick={() => setAdding(true)}>
+                {message("reminders.add")}
+              </ActionButton>
+            </div>
+          ) : null}
+          {adding ? (
+            <ReminderAddCard
+              memory={memory}
+              message={message}
+              notify={setNotice}
+              onDone={() => setAdding(false)}
+            />
+          ) : null}
           {proactive ? (
             <ProactiveBanners proactive={proactive} message={message} locale={locale} />
           ) : null}
@@ -1182,10 +1241,16 @@ function MemoryBrowser({
   focus,
   since,
   initialOpen,
+  addReady,
+  adding,
+  onAdd,
   onOpenThread,
 }: {
   memory: MemoryModel;
   overview: MemoryOverview;
+  addReady: boolean;
+  adding: boolean;
+  onAdd: () => void;
   message: Message;
   notify: (notice: Notice) => void;
   focus: readonly string[];
@@ -1291,17 +1356,29 @@ function MemoryBrowser({
           </button>
         </p>
       ) : null}
-      <input
-        type="search"
-        className="memory-search"
-        aria-label={message("memory.search")}
-        placeholder={message("memory.search")}
-        value={search}
-        onChange={(event) => {
-          setSearch(event.currentTarget.value);
-          setLimit(PAGE_SIZE);
-        }}
-      />
+      <div className="memory-search-row">
+        <input
+          type="search"
+          className="memory-search"
+          aria-label={message("memory.search")}
+          placeholder={message("memory.search")}
+          value={search}
+          onChange={(event) => {
+            setSearch(event.currentTarget.value);
+            setLimit(PAGE_SIZE);
+          }}
+        />
+        <ActionButton
+          variant="secondary"
+          className="memory-add-button"
+          disabled={!addReady}
+          aria-expanded={adding}
+          onClick={onAdd}
+        >
+          <Glyph name="plus" size={18} />
+          {message("memory.page.add")}
+        </ActionButton>
+      </div>
       {scope.status === "active" ? null : (
         <p className="memory-banner" data-kind={scope.status}>
           {message("memory.page.group", { g: scope.status, count: pool.length })}{" "}
@@ -1493,7 +1570,7 @@ function TimelineTab({
   type Event = {
     key: string;
     at: string;
-    type: "new" | "tidy" | "correct" | "import";
+    type: "new" | "tidy" | "correct" | "import" | "drop";
     kind: string;
     text: string;
     note?: string;
@@ -1523,6 +1600,18 @@ function TimelineTab({
               ],
       ),
     ),
+    ...memoryHeads(overview.memories)
+      .filter((head) => head.status === "trashed")
+      .map(
+        (head): Event => ({
+          key: `${head.memoryId}:dropped`,
+          at: head.updatedAt,
+          type: "drop",
+          kind: head.tentative ? "dropped" : "deleted",
+          text: head.text,
+          undo: () => void memory.recover(head),
+        }),
+      ),
     ...overview.tidyUps.map(
       (item): Event => ({
         key: item.changeId,
@@ -1562,7 +1651,7 @@ function TimelineTab({
   return (
     <>
       <Chips
-        items={(["all", "new", "tidy", "correct", "import"] as const).map((key) => ({
+        items={(["all", "new", "drop", "tidy", "correct", "import"] as const).map((key) => ({
           key,
           label: message("memory.page.filter", { f: key }),
           count:
@@ -1574,7 +1663,6 @@ function TimelineTab({
         message={message}
         onPick={setFilter}
       />
-      <p className="settings-note">{message("memory.page.timelineNote")}</p>
       {[...days].map(([day, list]) => (
         <section className="memory-day" key={day}>
           <strong>{day}</strong>
@@ -1668,7 +1756,6 @@ function ImportPanel({
           {message("memory.page.less")}
         </ActionButton>
       </h4>
-      <p className="settings-note">{message("memory.page.importNote")}</p>
       {items.length ? (
         <>
           <strong>
@@ -1912,7 +1999,6 @@ function AddForm({
   return (
     <section className="memory-card" data-kind="add">
       <strong>{message("memory.page.addTitle")}</strong>
-      <p className="settings-note">{message("memory.page.addNote")}</p>
       <div className="memory-editor">
         <textarea
           aria-label={message("memory.page.addTitle")}
@@ -1969,13 +2055,11 @@ export function MemoryPage({
   memory,
   message,
   focus = [],
-  onBack,
   onOpenThread,
 }: {
   memory: MemoryModel | null;
   message: Message;
   focus?: readonly string[];
-  onBack: () => void;
   onOpenThread: (threadId: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("memories");
@@ -2007,55 +2091,8 @@ export function MemoryPage({
     { key: "memories", ...(overview ? { count: String(active.length) } : {}) },
     { key: "changes" },
   ];
-  const week = Date.now() - 7 * DAY_MS;
   return (
     <section className="memory-page side-page-body" aria-label={message("nav.memory")}>
-      <header className="memory-header">
-        <div className="side-page-title">
-          <ActionButton variant="quiet" aria-label={message("common.back")} onClick={onBack}>
-            <LineIcon name="back" />
-          </ActionButton>
-          <h1>{message("nav.memory")}</h1>
-          {overview ? (
-            <small>
-              {message("memory.page.summary", {
-                live: active.length,
-                week: active.filter((item) => Date.parse(item.recordedAt) > week).length,
-                archived: memories.filter((item) => item.status === "archived").length,
-              })}
-            </small>
-          ) : null}
-        </div>
-        <div className="actions">
-          <label className="memory-switch">
-            {message("memory.page.auto")}
-            <input
-              type="checkbox"
-              role="switch"
-              aria-checked={!paused}
-              checked={!paused}
-              disabled={memory.busy || !overview}
-              onChange={() =>
-                void memory.setPaused(!paused).then(
-                  (ok) =>
-                    ok &&
-                    notify({
-                      text: message("memory.page.pauseDone", { paused: String(!paused) }),
-                    }),
-                )
-              }
-            />
-            <small>{message("memory.page.autoState", { paused: String(paused) })}</small>
-          </label>
-          <ActionButton
-            variant="secondary"
-            disabled={!ready}
-            onClick={() => setPanel(panel === "add" ? null : "add")}
-          >
-            {message("memory.page.add")}
-          </ActionButton>
-        </div>
-      </header>
       {memory.failed ? <p role="alert">{message("error.currentUnavailable")}</p> : null}
       {paused ? (
         <p className="memory-banner" data-kind="paused">
@@ -2095,6 +2132,9 @@ export function MemoryPage({
           focus={focus}
           since={since ?? null}
           initialOpen={showId}
+          addReady={ready}
+          adding={panel === "add"}
+          onAdd={() => setPanel(panel === "add" ? null : "add")}
           onOpenThread={onOpenThread}
         />
       ) : (
@@ -2109,7 +2149,6 @@ export function MemoryPage({
         />
       )}
       <footer className="memory-footer">
-        <small>{message("memory.note")}</small>
         <span>
           {(["import", "export"] as const).map((key) => (
             <ActionButton

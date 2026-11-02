@@ -15,6 +15,7 @@ import {
   type RunPayloadArtifactPort,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import type { SandboxCommandInventory } from "./sandbox-command-inventory.js";
 
 export function createProductionRunPolicy(options: {
   readonly configuration: ProductConfiguration;
@@ -24,6 +25,7 @@ export function createProductionRunPolicy(options: {
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
   readonly workspaceRoot?: () => Promise<string | null>;
+  readonly sandboxCommands?: () => Promise<SandboxCommandInventory>;
 }): (source: RunExecutionSource) => Promise<RunExecutionPolicy> {
   const { configuration } = options;
   const policy = configuration.runPolicy;
@@ -55,6 +57,9 @@ export function createProductionRunPolicy(options: {
       coding: policy.coding !== undefined,
       workspaceRoot: policy.coding && options.workspaceRoot ? await options.workspaceRoot() : null,
       documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
+      ...(policy.coding && options.sandboxCommands
+        ? { sandboxCommands: await options.sandboxCommands() }
+        : {}),
     });
     const identity = {
       runId: source.runId,
@@ -102,7 +107,8 @@ export const HIMAWARI_IDENTITY = [
   "# 记忆",
   "- 记忆是你最重要的能力。每轮开始前，系统会把主人档案、主人定下的要求、近期安排和与本轮相关的长期记忆作为资料交给你。先看这些资料，让回答贴合主人，而不是给谁都一样的答案。",
   "- 资料里没有、又需要以前的信息时，用 recall 工具查（本轮提供了才能用）。查不到就直说不记得，不要编造主人的经历、偏好或说过的话。",
-  "- 主人告诉你的事，系统会在每轮回答后自动记进长期记忆，你不用找工具或文件去保存，直接回应就行。",
+  "- 主人告诉你的事，系统会在本轮回答后尝试整理进长期记忆，但整理可能失败，你看不到结果。所以不要说“已经记住了”“已记入记忆”，可以说“我会尽量记住”。也不要为了保存记忆去写文件冒充。",
+  "- 你没有设置提醒或定时任务的工具；提醒由系统在回答后整理时才会建立，同样可能失败，你看不到结果。主人要你定时提醒时，不要说“已设好提醒”，要说“我已交给系统整理，请到提醒页确认；没有出现的话告诉我”，并把事项和时间写在回答里。把事项写进文件不算设了提醒。",
   "- 记忆可能已经过时。主人本轮说的和记忆冲突时，以本轮为准。",
   "- 自然地用上记忆，不要逐条复述档案，也不要每句都说“根据记忆”。主人问你记得什么时，如实回答。",
   "",
@@ -137,12 +143,17 @@ export function runCapabilityNotice(input: {
   readonly coding: boolean;
   readonly workspaceRoot: string | null;
   readonly documentSkillDirectory?: string;
+  readonly sandboxCommands?: SandboxCommandInventory;
 }): string {
   const lines = ["本轮能力边界："];
   if (input.coding) {
     lines.push(
       "- 文件和命令工具在隔离沙箱里执行。沙箱没有外网，curl、wget、pip、npm install、git clone 等联网操作一定失败，不要尝试。",
     );
+    if (input.sandboxCommands)
+      lines.push(
+        `- 沙箱里能直接用的常用命令：${input.sandboxCommands.available.join("、")}。沙箱里没有：${input.sandboxCommands.unavailable.join("、")}。用到没有的命令会得到“command not found”（退出码 127），不要重试，直接换别的办法；上面没列到的命令，用之前在一条命令里用 command -v 一次问清，不要一个个试。`,
+      );
     if (input.workspaceRoot)
       lines.push(
         `- 工作目录是 ${input.workspaceRoot}。读写文件用相对路径或这个目录下的路径，目录之外的路径会被拒绝。`,

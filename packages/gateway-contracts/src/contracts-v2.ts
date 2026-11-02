@@ -24,6 +24,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "search.authorization.read",
   "search.authorization.snapshot",
   "push.subscription.set",
+  "push.kind.set",
   "push.test",
   "presence.heartbeat",
   "push.feedback.record",
@@ -49,6 +50,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.reminder.respond",
+  "memory.reminder.create",
   "memory.create",
   "memory.settings.set",
   "memory.page.viewed",
@@ -270,6 +272,10 @@ const pushSubscriptionCommandSchema = object({
     kinds: nullable(array(pushKindSchema)),
   }),
 });
+const pushKindCommandSchema = object({
+  ...commandEnvelope("push.kind.set"),
+  payload: object({ kind: pushKindSchema, enabled: booleanValue }),
+});
 const pushTestCommandSchema = object({
   ...commandEnvelope("push.test"),
   payload: object({ subscriptionId: machineString }),
@@ -304,6 +310,7 @@ const pushStatusSnapshotSchema = object({
   payload: object({
     available: booleanValue,
     publicKey: nullable(pushKeySchema),
+    kinds: array(pushKindSchema),
     subscriptions: array(
       object({
         subscriptionId: machineString,
@@ -759,6 +766,14 @@ const memoryReminderRespondCommandSchema = object({
   payload: object({
     reminderId: machineString,
     action: enumeration(["dismiss", "snooze", "cancel"]),
+  }),
+});
+const memoryReminderCreateCommandSchema = object({
+  ...commandEnvelope("memory.reminder.create"),
+  payload: object({
+    contentRef: machineString,
+    due: boundedString(16),
+    repeat: enumeration(["none", "yearly"]),
   }),
 });
 const memoryCreateCommandSchema = object({
@@ -1941,6 +1956,7 @@ const schemasByType = {
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,
   "push.subscription.set": pushSubscriptionCommandSchema,
+  "push.kind.set": pushKindCommandSchema,
   "push.test": pushTestCommandSchema,
   "presence.heartbeat": presenceHeartbeatCommandSchema,
   "push.feedback.record": pushFeedbackCommandSchema,
@@ -1966,6 +1982,7 @@ const schemasByType = {
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
+  "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,
   "memory.page.viewed": memoryPageViewedCommandSchema,

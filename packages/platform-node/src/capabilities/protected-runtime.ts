@@ -49,7 +49,11 @@ function parse(value: unknown): Protection {
   return input as unknown as Protection;
 }
 
-export function auditProtectedRuntime(root: string, ownerUid: number): Promise<void> {
+export function auditProtectedRuntime(
+  root: string,
+  ownerUid: number,
+  signal?: AbortSignal,
+): Promise<void> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const request: ProtectedRuntimeAuditRequest = { root, ownerUid };
   return new Promise((resolve, reject) => {
@@ -58,6 +62,11 @@ export function auditProtectedRuntime(root: string, ownerUid: number): Promise<v
       { workerData: request },
     );
     let received = false;
+    const stop = () => {
+      void worker.terminate();
+    };
+    if (signal?.aborted) stop();
+    else signal?.addEventListener("abort", stop, { once: true });
     worker.once("message", (value: unknown) => {
       received = true;
       if ((value as { protected?: unknown } | null)?.protected === true) resolve();
@@ -65,23 +74,64 @@ export function auditProtectedRuntime(root: string, ownerUid: number): Promise<v
     });
     worker.once("error", reject);
     worker.once("exit", (code) => {
-      if (!received) reject(new Error(`SANDBOX_RUNTIME_AUDIT_WORKER_EXIT:${code}`));
+      signal?.removeEventListener("abort", stop);
+      if (!received)
+        reject(
+          new Error(
+            signal?.aborted
+              ? "SANDBOX_RUNTIME_AUDIT_ABORTED"
+              : `SANDBOX_RUNTIME_AUDIT_WORKER_EXIT:${code}`,
+          ),
+        );
     });
   });
 }
 
+export type RuntimeDigest = (root: string, signal?: AbortSignal) => Promise<string>;
+const CONTENT_AUDIT_TIMEOUT_MS = 600_000;
+const TRANSIENT_CODES = new Set([
+  "EIO",
+  "EMFILE",
+  "ENFILE",
+  "ENOMEM",
+  "EAGAIN",
+  "EBUSY",
+  "ETIMEDOUT",
+]);
+
+function isSupersededAuditError(error: unknown): boolean {
+  return error instanceof Error && error.message === "SANDBOX_RUNTIME_AUDIT_SUPERSEDED";
+}
+
+function isTransientAuditError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return (
+    (typeof code === "string" && TRANSIENT_CODES.has(code)) ||
+    /^(SANDBOX_RUNTIME_AUDIT_TIMEOUT|SANDBOX_HOST_DIGEST_WORKER_EXIT|SANDBOX_RUNTIME_AUDIT_WORKER_EXIT)/.test(
+      error.message,
+    )
+  );
+}
+
 export class ProtectedRuntimeVerifier {
   readonly #manifestPath: string;
-  readonly #auditInstallation: (root: string) => Promise<void>;
+  readonly #auditInstallation: (root: string, signal?: AbortSignal) => Promise<void>;
+  readonly #active = new Map<AbortController, boolean>();
   readonly #audits = new Map<string, Promise<void>>();
   readonly #artifactAudits = new Map<string, Promise<void>>();
+  readonly #refused = new Map<string, unknown>();
+  readonly #contentAuditTimeoutMs: number;
   constructor(
     manifestPath: string,
-    auditInstallation: (root: string) => Promise<void> = (root) => auditProtectedRuntime(root, 0),
+    auditInstallation: (root: string, signal?: AbortSignal) => Promise<void> = (root, signal) =>
+      auditProtectedRuntime(root, 0, signal),
+    contentAuditTimeoutMs = CONTENT_AUDIT_TIMEOUT_MS,
   ) {
     if (!canonical(manifestPath)) throw failure();
     this.#manifestPath = manifestPath;
     this.#auditInstallation = auditInstallation;
+    this.#contentAuditTimeoutMs = contentAuditTimeoutMs;
   }
 
   async #process(uid: number): Promise<void> {
@@ -143,9 +193,69 @@ export class ProtectedRuntimeVerifier {
   async verify(
     runtimeRoot: string,
     runtimeDigest: string,
-    digest: (root: string) => Promise<string>,
+    digest: RuntimeDigest,
     artifacts: readonly RuntimeArtifact[] = [],
   ): Promise<void> {
+    const run = async () => {
+      const { complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
+      await complete();
+    };
+    try {
+      await run();
+    } catch (error) {
+      if (!isSupersededAuditError(error)) throw error;
+      await run();
+    }
+  }
+
+  async begin(
+    runtimeRoot: string,
+    runtimeDigest: string,
+    digest: RuntimeDigest,
+    artifacts: readonly RuntimeArtifact[] = [],
+    onSettled?: (outcome: {
+      readonly ok: boolean;
+      readonly transient: boolean;
+      readonly superseded?: boolean;
+      readonly durationMs: number;
+    }) => void,
+    onRetry?: () => void,
+    onStarted?: () => void,
+  ): Promise<void> {
+    const startedAt = Date.now();
+    const { key, complete } = await this.#prepare(runtimeRoot, runtimeDigest, digest, artifacts);
+    try {
+      onStarted?.();
+    } catch {}
+    const settle = (ok: boolean, transient: boolean, superseded = false) => {
+      try {
+        onSettled?.({ ok, transient, superseded, durationMs: Date.now() - startedAt });
+      } catch {}
+    };
+    const failed = (error: unknown) => {
+      if (isSupersededAuditError(error)) return settle(false, false, true);
+      const transient = isTransientAuditError(error);
+      if (!transient) this.#refused.set(key, error);
+      settle(false, transient);
+    };
+    complete().then(
+      () => settle(true, false),
+      (error: unknown) => {
+        if (!isTransientAuditError(error)) return failed(error);
+        try {
+          onRetry?.();
+        } catch {}
+        complete().then(() => settle(true, false), failed);
+      },
+    );
+  }
+
+  async #prepare(
+    runtimeRoot: string,
+    runtimeDigest: string,
+    digest: RuntimeDigest,
+    artifacts: readonly RuntimeArtifact[],
+  ): Promise<{ readonly key: string; readonly complete: () => Promise<void> }> {
     const { protection, identity } = await this.#manifest();
     if (runtimeRoot !== protection.runtimeRoot || runtimeDigest !== protection.runtimeDigest)
       throw failure();
@@ -181,20 +291,94 @@ export class ProtectedRuntimeVerifier {
     };
     const artifactKey = await artifactIdentity();
     const key = `${identity}\n${parents}`;
+    const complete = () =>
+      this.#complete({
+        key,
+        artifactKey,
+        runtimeRoot,
+        runtimeDigest,
+        digest,
+        artifacts,
+        protectedArtifacts,
+        protection,
+        identity,
+        parents,
+        artifactIdentity,
+      });
+    return { key, complete };
+  }
+
+  #bounded(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const controller = new AbortController();
+      this.#active.set(controller, false);
+      const timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error("SANDBOX_RUNTIME_AUDIT_TIMEOUT"));
+      }, this.#contentAuditTimeoutMs);
+      work(controller.signal).then(
+        () => {
+          clearTimeout(timer);
+          this.#active.delete(controller);
+          resolve();
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          const superseded = this.#active.get(controller) === true;
+          this.#active.delete(controller);
+          reject(superseded ? new Error("SANDBOX_RUNTIME_AUDIT_SUPERSEDED") : error);
+        },
+      );
+    });
+  }
+
+  async #complete(input: {
+    readonly key: string;
+    readonly artifactKey: string;
+    readonly runtimeRoot: string;
+    readonly runtimeDigest: string;
+    readonly digest: RuntimeDigest;
+    readonly artifacts: readonly RuntimeArtifact[];
+    readonly protectedArtifacts: readonly RuntimeArtifact[];
+    readonly protection: Protection;
+    readonly identity: string;
+    readonly parents: string;
+    readonly artifactIdentity: () => Promise<string>;
+  }): Promise<void> {
+    const {
+      key,
+      artifactKey,
+      runtimeRoot,
+      runtimeDigest,
+      digest,
+      artifacts,
+      protectedArtifacts,
+      protection,
+      identity,
+      parents,
+      artifactIdentity,
+    } = input;
+    if (this.#refused.has(key)) throw this.#refused.get(key);
     let audit = this.#audits.get(key);
     if (!audit) {
+      for (const controller of this.#active.keys()) {
+        this.#active.set(controller, true);
+        controller.abort();
+      }
       this.#audits.clear();
       this.#artifactAudits.clear();
-      audit = (async () => {
-        await this.#auditInstallation(runtimeRoot);
-        if ((await digest(runtimeRoot)) !== runtimeDigest) throw failure();
-        const latest = await this.#manifest();
-        if (
-          latest.identity !== identity ||
-          (await this.#parents(runtimeRoot, [0, protection.deploymentUid])) !== parents
-        )
-          throw failure();
-      })();
+      audit = this.#bounded((signal) =>
+        (async () => {
+          await this.#auditInstallation(runtimeRoot, signal);
+          if ((await digest(runtimeRoot, signal)) !== runtimeDigest) throw failure();
+          const latest = await this.#manifest();
+          if (
+            latest.identity !== identity ||
+            (await this.#parents(runtimeRoot, [0, protection.deploymentUid])) !== parents
+          )
+            throw failure();
+        })(),
+      );
       this.#audits.set(key, audit);
     }
     try {
@@ -225,11 +409,16 @@ export class ProtectedRuntimeVerifier {
 }
 
 const verifiers = new Map<string, ProtectedRuntimeVerifier>();
+export interface ProtectedRuntimeVerifyOptions {
+  readonly deferContentAudit?: boolean;
+}
+
 export async function verifyProtectedRuntime(
   runtimeRoot: string,
   runtimeDigest: string,
-  digest: (root: string) => Promise<string>,
+  digest: RuntimeDigest,
   artifacts: readonly RuntimeArtifact[] = [],
+  options: ProtectedRuntimeVerifyOptions = {},
 ): Promise<boolean> {
   const filename = process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
   if (filename === undefined) return false;
@@ -237,6 +426,48 @@ export async function verifyProtectedRuntime(
   if (!verifier) {
     verifier = new ProtectedRuntimeVerifier(filename);
     verifiers.set(filename, verifier);
+  }
+  if (options.deferContentAudit === true) {
+    const onRetry = () =>
+      console.error(
+        JSON.stringify({
+          component: "platform-node",
+          event: "sandbox_runtime.content_audit_retrying",
+          pid: process.pid,
+        }),
+      );
+    await verifier.begin(
+      runtimeRoot,
+      runtimeDigest,
+      digest,
+      artifacts,
+      (outcome) => {
+        console.error(
+          JSON.stringify({
+            component: "platform-node",
+            pid: process.pid,
+            event: outcome.ok
+              ? "sandbox_runtime.content_audit_completed"
+              : outcome.superseded
+                ? "sandbox_runtime.content_audit_superseded"
+                : outcome.transient
+                  ? "sandbox_runtime.content_audit_retryable"
+                  : "sandbox_runtime.content_audit_failed",
+            durationMs: outcome.durationMs,
+          }),
+        );
+      },
+      onRetry,
+      () =>
+        console.error(
+          JSON.stringify({
+            component: "platform-node",
+            event: "sandbox_runtime.content_audit_started",
+            pid: process.pid,
+          }),
+        ),
+    );
+    return true;
   }
   await verifier.verify(runtimeRoot, runtimeDigest, digest, artifacts);
   return true;

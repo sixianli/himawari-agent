@@ -5,13 +5,14 @@ import Database from "better-sqlite3";
 
 export const MINIMUM_CACHEABLE_INPUT_TOKENS = 1024;
 export const MINIMUM_REPORTED_REQUESTS = 5;
-export const GROUPINGS = Object.freeze(["purpose", "model", "day", "purpose-model"]);
+export const GROUPINGS = Object.freeze(["purpose", "model", "day", "purpose-model", "turn"]);
 
 const GROUP_EXPRESSIONS = Object.freeze({
   purpose: "purpose",
   model: "model",
   day: "date(occurred_at, '+9 hours')",
   "purpose-model": "purpose || ' / ' || model",
+  turn: "(CASE turn_number WHEN 0 THEN '未知轮次' WHEN 1 THEN '第1轮' ELSE '第2轮及以后' END) || (CASE position WHEN 1 THEN '·首次请求' ELSE '·同轮后续' END)",
 });
 
 export function summarize(database, { grouping = "purpose", since = null, until = null } = {}) {
@@ -20,7 +21,10 @@ export function summarize(database, { grouping = "purpose", since = null, until 
   return database
     .prepare(
       `WITH numbered AS (
-         SELECT *, ROW_NUMBER() OVER (PARTITION BY run_id ORDER BY occurred_at, invocation_id) AS position
+         SELECT *, ROW_NUMBER() OVER (PARTITION BY run_id ORDER BY occurred_at, invocation_id) AS position,
+           (SELECT COUNT(*) FROM runs earlier
+             WHERE earlier.thread_id = (SELECT thread_id FROM runs WHERE id = model_usage_observations.run_id)
+               AND earlier.created_at <= (SELECT created_at FROM runs WHERE id = model_usage_observations.run_id)) AS turn_number
          FROM model_usage_observations
          WHERE (:since IS NULL OR occurred_at >= :since) AND (:until IS NULL OR occurred_at < :until)
        )
@@ -104,7 +108,7 @@ function parseArguments(argv) {
   }
   if (options.file === null)
     throw new TypeError(
-      "Usage: cache-hit-report.mjs <product.sqlite> [--by purpose|model|day|purpose-model] [--since ISO] [--until ISO] [--json]",
+      "Usage: cache-hit-report.mjs <product.sqlite> [--by purpose|model|day|purpose-model|turn] [--since ISO] [--until ISO] [--json]",
     );
   return options;
 }

@@ -88,9 +88,9 @@ describe("Muse channel outage push", () => {
       auth: "auth-iphone",
       locale: "zh-CN",
       deviceLabel: "iPhone",
-      kinds: options.kinds ?? ["reminder"],
       now: T0,
     });
+    await webPushStore.writeKinds({ ...scope, kinds: options.kinds ?? ["reminder"], now: T0 });
     const heartbeat = (seq: number) =>
       store.ingestBatch({
         ...scope,

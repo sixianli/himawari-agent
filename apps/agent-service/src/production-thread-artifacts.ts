@@ -5,7 +5,9 @@ import {
   HostReadOnlyError,
   type HostReadOnlyPort,
   type IdGeneratorPort,
+  THREAD_ARTIFACT_LIST_LIMIT,
   type ThreadArtifactKind,
+  type ThreadArtifactPage,
   type ThreadArtifactScope,
   type ThreadArtifactSource,
   type ThreadArtifactStorePort,
@@ -137,7 +139,7 @@ export interface ThreadArtifactRecording {
 
 export class ProductionThreadArtifacts {
   readonly #store: ThreadArtifactStorePort;
-  readonly #files: Pick<HostReadOnlyPort, "readFile">;
+  readonly #files: Pick<HostReadOnlyPort, "readFile" | "inspectEntry">;
   readonly #ids: IdGeneratorPort;
   readonly #now: () => string;
   readonly #warn: (event: Record<string, unknown>) => void;
@@ -145,7 +147,7 @@ export class ProductionThreadArtifacts {
 
   constructor(options: {
     readonly store: ThreadArtifactStorePort;
-    readonly files: Pick<HostReadOnlyPort, "readFile">;
+    readonly files: Pick<HostReadOnlyPort, "readFile" | "inspectEntry">;
     readonly ids: IdGeneratorPort;
     readonly now: () => string;
     readonly warn?: (event: Record<string, unknown>) => void;
@@ -169,6 +171,99 @@ export class ProductionThreadArtifacts {
       if (running.size === 0) this.#running.delete(grantId);
       return entry.overlapped;
     };
+  }
+
+  async recordDeleted(input: {
+    readonly ownerId: ThreadArtifactScope["ownerId"];
+    readonly agentId: ThreadArtifactScope["agentId"];
+    readonly threadId: string;
+    readonly runId: string;
+    readonly toolCallId: string;
+    readonly paths: readonly string[];
+    readonly grant: HostDirectoryGrant;
+    readonly overlapped: boolean;
+  }): Promise<void> {
+    let paths = input.paths.filter((path) => !skipsThreadArtifact(path));
+    if (input.overlapped)
+      paths = (
+        await Promise.all(
+          paths.map(async (path) =>
+            (await this.#isMissing(input.grant, path).catch(() => false)) ? path : null,
+          ),
+        )
+      ).filter((path): path is string => path !== null);
+    if (paths.length === 0) return;
+    try {
+      await this.#store.markDeleted({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        threadId: input.threadId,
+        paths,
+        deletedAt: this.#now(),
+      });
+    } catch (error) {
+      this.#warn({
+        event: "thread.artifact.mark_deleted_failed",
+        runId: input.runId,
+        toolCallId: input.toolCallId,
+        code: error instanceof Error ? error.message : "THREAD_ARTIFACT_MARK_DELETED_FAILED",
+        at: this.#now(),
+      });
+    }
+  }
+
+  async #isMissing(grant: HostDirectoryGrant, relativePath: string): Promise<boolean> {
+    try {
+      const kind = await this.#files.inspectEntry({ grant, relativePath });
+      return kind === null || kind === "directory";
+    } catch (error) {
+      if (
+        error instanceof HostReadOnlyError &&
+        error.code === HOST_READ_ONLY_ERROR_CODES.TARGET_MISSING
+      )
+        return true;
+      throw error;
+    }
+  }
+
+  async reconcileDeleted(input: {
+    readonly ownerId: ThreadArtifactScope["ownerId"];
+    readonly agentId: ThreadArtifactScope["agentId"];
+    readonly grant: HostDirectoryGrant;
+  }): Promise<number> {
+    const scope = { ownerId: input.ownerId, agentId: input.agentId };
+    const seen = new Set<string>();
+    const missing = new Map<string, string[]>();
+    let before: string | null = null;
+    do {
+      const page: ThreadArtifactPage = await this.#store.list({
+        ...scope,
+        threadId: null,
+        kind: null,
+        origin: "generated",
+        search: null,
+        before,
+        limit: THREAD_ARTIFACT_LIST_LIMIT,
+      });
+      for (const artifact of page.items) {
+        const key = `${artifact.threadId}\u0000${artifact.path}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (artifact.deletedAt !== null || skipsThreadArtifact(artifact.path)) continue;
+        if (!(await this.#isMissing(input.grant, artifact.path))) continue;
+        missing.set(artifact.threadId, [...(missing.get(artifact.threadId) ?? []), artifact.path]);
+      }
+      before = page.nextCursor;
+    } while (before !== null);
+    let marked = 0;
+    for (const [threadId, paths] of missing)
+      marked += await this.#store.markDeleted({
+        ...scope,
+        threadId,
+        paths,
+        deletedAt: this.#now(),
+      });
+    return marked;
   }
 
   async record(input: ThreadArtifactRecording): Promise<number> {
@@ -226,7 +321,8 @@ export class ProductionThreadArtifacts {
       threadId: input.threadId,
       path: candidate.path,
     });
-    if (latest && sha256 !== null && latest.sha256 === sha256) return false;
+    if (latest && latest.deletedAt === null && sha256 !== null && latest.sha256 === sha256)
+      return false;
     const key = createHash("sha256")
       .update(JSON.stringify([input.toolCallId, candidate.path]))
       .digest("hex")

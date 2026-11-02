@@ -2,7 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
 
-export const SUPPORTED_SCHEMA_MAX = 70;
+export const SUPPORTED_SCHEMA_MAX = 73;
 const sections = ["executions", "legacy", "queue", "environments"];
 function assertArgument(condition) {
   if (!condition) throw new Error("WORKSPACE_AUDIT_ARGUMENT_INVALID");
