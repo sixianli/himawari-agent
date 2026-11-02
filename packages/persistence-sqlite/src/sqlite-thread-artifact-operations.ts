@@ -14,7 +14,7 @@ import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 const columns = `a.id, a.thread_id AS threadId, a.run_id AS runId, a.tool_call_id AS toolCallId,
   a.source, a.path, a.kind, a.media_type AS mediaType, a.size_bytes AS sizeBytes, a.sha256,
-  a.version, a.copy_ref AS copyRef, a.overlapped, a.created_at AS createdAt,
+  a.version, a.copy_ref AS copyRef, a.overlapped, a.created_at AS createdAt, a.deleted_at AS deletedAt,
   (SELECT count(*) FROM runs run JOIN runs earlier ON earlier.owner_id = run.owner_id
      AND earlier.agent_id = run.agent_id AND earlier.thread_id = run.thread_id
      AND (earlier.created_at < run.created_at OR (earlier.created_at = run.created_at AND earlier.id <= run.id))
@@ -82,6 +82,14 @@ export class SqliteThreadArtifactOperations {
         );
       case "threadArtifact.list":
         return this.list(payload as ThreadArtifactListQuery);
+      case "threadArtifact.markDeleted":
+        return this.markDeleted(
+          payload as ThreadArtifactScope & {
+            readonly threadId: string;
+            readonly paths: readonly string[];
+            readonly deletedAt: string;
+          },
+        );
       default:
         return this.fail("PORT_INVALID_OPERATION", "Unknown thread artifact operation");
     }
@@ -119,7 +127,12 @@ export class SqliteThreadArtifactOperations {
           threadId: artifact.threadId,
           path: artifact.path,
         });
-        if (latest && artifact.sha256 !== null && latest.sha256 === artifact.sha256)
+        if (
+          latest &&
+          latest.deletedAt === null &&
+          artifact.sha256 !== null &&
+          latest.sha256 === artifact.sha256
+        )
           return { artifact: latest, created: false };
         const version = (latest?.version ?? 0) + 1;
         this.database
@@ -154,6 +167,35 @@ export class SqliteThreadArtifactOperations {
         });
         if (!created) return this.fail("PORT_INVALID_OPERATION", "Thread artifact was not stored");
         return { artifact: created, created: true };
+      })
+      .immediate();
+  }
+
+  private markDeleted(
+    input: ThreadArtifactScope & {
+      readonly threadId: string;
+      readonly paths: readonly string[];
+      readonly deletedAt: string;
+    },
+  ): number {
+    if (input.paths.length === 0) return 0;
+    this.assertDiskHeadroom();
+    return this.database
+      .transaction(() => {
+        const update = this.database.prepare(
+          `UPDATE thread_artifacts SET deleted_at = ?
+           WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND path = ? AND deleted_at IS NULL`,
+        );
+        let changed = 0;
+        for (const path of input.paths)
+          changed += update.run(
+            input.deletedAt,
+            input.ownerId,
+            input.agentId,
+            input.threadId,
+            path,
+          ).changes;
+        return changed;
       })
       .immediate();
   }

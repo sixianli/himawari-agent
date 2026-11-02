@@ -6,7 +6,7 @@ import process from "node:process";
 
 const TAG = "[I-66]";
 const FILES = ["packages/runtime-pi/test/prompt-prefix.compat.test.ts"];
-const REQUIRED = 7;
+const REQUIRED = 8;
 
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-prompt-prefix-"));
 const report = path.join(directory, "report.json");

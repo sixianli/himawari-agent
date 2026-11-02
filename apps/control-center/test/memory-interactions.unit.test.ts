@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryPage, RemindersPage } from "../src/components/memory-page.tsx";
+import { AutoMemorySetting } from "../src/components/personalization-settings.tsx";
 import {
   focusedMemoryIds,
   MemoryReminders,
@@ -130,17 +131,10 @@ function Harness({ ownerRefs }: { ownerRefs: readonly string[] }) {
     "div",
     null,
     h("div", { id: "turn" }, h(MemoryTurnNote, { ownerRefs, memory, message })),
-    h(
-      "div",
-      { id: "settings" },
-      h(MemoryPage, { memory, message, onBack: () => undefined, onOpenThread: opened }),
-    ),
+    h("div", { id: "settings" }, h(MemoryPage, { memory, message, onOpenThread: opened })),
     h("div", { id: "reminders" }, h(MemoryReminders, { memory, message })),
-    h(
-      "div",
-      { id: "reminders-page" },
-      h(RemindersPage, { memory, message, onBack: () => undefined, onOpenThread: opened }),
-    ),
+    h("div", { id: "personalization" }, h(AutoMemorySetting, { memory, message })),
+    h("div", { id: "reminders-page" }, h(RemindersPage, { memory, message, onOpenThread: opened })),
   );
 }
 
@@ -154,7 +148,6 @@ function MemoryPageWithFocus({ focus }: { focus: readonly string[] }) {
       memory,
       message,
       focus,
-      onBack: () => undefined,
       onOpenThread: opened,
     }),
   );
@@ -307,7 +300,11 @@ describe("memory approval and management", () => {
     await render();
     expect(text("#settings .memory-confirm")).toContain("需要你确认 · 1 条");
     expect(text("#settings [role=tab][aria-selected=true]")).toContain("记忆");
-    expect(text("#settings")).toContain("记住了 2 条关于你的事");
+    expect(text("#settings")).not.toContain("记住了 2 条关于你的事");
+    expect(document.querySelector("#settings h1")).toBeNull();
+    expect(document.querySelector("#settings .memory-header")).toBeNull();
+    expect(text("#settings")).not.toContain("从对话中自动记忆");
+    expect(text("#settings")).not.toContain("普通信息会自动记住");
     await type("#settings input[type=search]", "上海");
     expect(text("#settings .memory-results")).toContain("主人住在上海");
     expect(text("#settings .memory-results")).not.toContain("蓝色");
@@ -929,15 +926,50 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-drawer")).toContain("每年");
   });
 
+  it("[REM-1] creates a reminder from the reminders page, refuses a past time and hides the button until a memory exists", async () => {
+    await render();
+    const add = "#reminders-page .memory-card[data-kind=add]";
+    await click("#reminders-page", "新建提醒");
+    await type(`${add} textarea`, "周五交周报");
+    await type(`${add} input[type=datetime-local]`, "2020-01-01T09:00");
+    expect(text(add)).toContain("提醒时间要晚于现在");
+    expect(button(add, "保存").disabled).toBe(true);
+    mutate.mockClear();
+    await click(add, "保存");
+    expect(mutate).not.toHaveBeenCalled();
+    await type(`${add} input[type=datetime-local]`, "2099-01-02T09:30");
+    await act(async () =>
+      document.querySelector<HTMLInputElement>(`${add} [role=switch]`)?.click(),
+    );
+    await click(add, "保存");
+    expect(protectText).toHaveBeenLastCalledWith("周五交周报", "private");
+    expect(lastCommand()).toMatchObject({
+      type: "memory.reminder.create",
+      payload: { contentRef: "payload-edit", due: "2099-01-02T09:30", repeat: "yearly" },
+    });
+    expect(text("#reminders-page .memory-notice")).toContain("已设好提醒：周五交周报");
+    expect(document.querySelector(add)).toBeNull();
+  });
+
+  it("[REM-1] does not offer a new reminder before the first memory is learned", async () => {
+    overview = { ...overview, manualAddReady: false };
+    await render();
+    expect(
+      [...document.querySelectorAll<HTMLButtonElement>("#reminders-page button")].some(
+        (item) => item.textContent === "新建提醒",
+      ),
+    ).toBe(false);
+  });
+
   it("[MP-8] pauses learning, adds a memory by hand, imports pasted memories and exports", async () => {
     await render();
-    const toggle = document.querySelector<HTMLInputElement>("#settings [role=switch]");
+    const toggle = document.querySelector<HTMLInputElement>("#personalization [role=switch]");
     await act(async () => toggle?.click());
     expect(lastCommand()).toMatchObject({
       type: "memory.settings.set",
       payload: { capturePaused: true },
     });
-    await click("#settings .memory-header", "手动添加一条");
+    await click("#settings .memory-search-row", "添加");
     const add = "#settings .memory-card[data-kind=add]";
     await type(`${add} textarea`, "每天早上吃一片降压药");
     expect(document.querySelector<HTMLSelectElement>(`${add} select`)?.value).toBe("health");
@@ -954,7 +986,7 @@ describe("memory approval and management", () => {
       },
     });
     expect(text("#settings .memory-notice")).toContain("归到“健康”");
-    await click("#settings .memory-header", "手动添加一条");
+    await click("#settings .memory-search-row", "添加");
     await type(`${add} textarea`, "今年想跑完一次半马");
     await act(async () => {
       const select = document.querySelector<HTMLSelectElement>(`${add} select`);
@@ -1020,12 +1052,12 @@ describe("memory approval and management", () => {
     overview = { ...overview, manualAddReady: false };
     await render();
     const header = [
-      ...document.querySelectorAll<HTMLButtonElement>("#settings .memory-header button"),
+      ...document.querySelectorAll<HTMLButtonElement>("#settings .memory-search-row button"),
     ];
     const footer = [
       ...document.querySelectorAll<HTMLButtonElement>("#settings .memory-footer button"),
     ];
-    expect(header.find((item) => item.textContent === "手动添加一条")?.disabled).toBe(true);
+    expect(header.find((item) => item.textContent === "添加")?.disabled).toBe(true);
     expect(footer.find((item) => item.textContent === "导入记忆")?.disabled).toBe(true);
     expect(footer.find((item) => item.textContent === "导出全部记忆")?.disabled).toBe(false);
     expect(text("#settings")).toContain("要先从对话里记下第一条记忆，才能手动添加和导入");

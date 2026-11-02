@@ -89,6 +89,7 @@ import {
 } from "./production-memory-composition.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
+import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
   createProductionModelCompositionFromConfiguration,
@@ -145,6 +146,7 @@ export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
 const AUTHORITY_LEASE_DURATION_MS = 30_000;
 const AUTHORITY_RENEWAL_INTERVAL_MS = 10_000;
 const STARTUP_RETRY_DELAY_MS = 50;
+const ARTIFACT_RECONCILE_DELAY_MS = 60_000;
 const MAXIMUM_BODY_BYTES = 65_536;
 const MAXIMUM_PAYLOAD_BYTES = 48 * 1024;
 const PI_FILE_PREPARATION_MEMORY_BYTES = 256 * 1024 * 1024;
@@ -839,6 +841,15 @@ export async function runAgentService(
       ...(automaticReview ? { automaticReview } : {}),
       ...(workspaceAuto ? { workspaceAuto } : {}),
     });
+    setTimeout(() => {
+      void fileReadServices.reconcileDeletedArtifacts?.().catch((error: unknown) => {
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "thread.artifact.reconcile_failed",
+          code: stableErrorCode(error),
+        });
+      });
+    }, ARTIFACT_RECONCILE_DELAY_MS).unref();
     let workerSandboxSupport: SandboxExecutionSupport | undefined;
     const taskEnvironmentConfiguration = configuration.taskEnvironments;
     const sandboxServices = await createProductionSandboxServices({
@@ -1208,8 +1219,24 @@ export async function runAgentService(
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
       });
+      const reminderTimeZone = configuration.runPolicy?.timeZone;
+      const reminderTools = new ProductionReminderTools({
+        writer: new ProductionReminderWriter({
+          configuration,
+          memory: durableMemory,
+          state: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          reminders: repository.memoryReminders(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+          ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+        }),
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+      });
       const tools = new ProductionRuntimeTools({
         memoryRecall,
+        reminders: reminderTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }

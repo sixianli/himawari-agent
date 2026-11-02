@@ -86,7 +86,7 @@ async function settle() {
     });
 }
 async function click(label: string) {
-  const button = [...container.querySelectorAll("button")].find(
+  const button = [...document.querySelectorAll("button")].find(
     (item) => item.textContent === label || item.getAttribute("aria-label") === label,
   );
   if (!button) throw new Error(`Missing accessible button ${label}`);
@@ -358,6 +358,61 @@ describe("control center application bootstrap and interaction", () => {
     expect(document.activeElement).toBe(dialog);
     expect(document.activeElement?.getAttribute("aria-label")).not.toBe(messages["common.close"]);
   });
+  it("[UI-S1] signs out from settings with a built-in account and shows the build version", async () => {
+    vi.stubGlobal("__HIMAWARI_BUILD__", { revision: "0268662", date: "2026-11-01" });
+    fetcher.mockImplementation(
+      async (url: string) =>
+        new Response(JSON.stringify(url.endsWith("/method") ? { method: "built-in" } : {})),
+    );
+    await render();
+    await click(messages["settings.title"]);
+    expect(document.querySelector("dialog")?.textContent).toContain("版本 0268662 · 2026/11/1");
+    boundary.load.mockImplementation(() => new Promise(() => undefined));
+    await click(messages["account.signOut"]);
+    const logout = fetcher.mock.calls.find(([url]) => String(url).endsWith("/logout"));
+    expect(logout?.[1]?.method).toBe("POST");
+    expect(logout?.[1]?.headers["x-csrf-token"]).toBe(configuration.csrfToken);
+    expect(text()).toBe(messages["entry.opening"]);
+  });
+  it("[UI-S1] shows the build date as written, not shifted by the viewer's time zone", async () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    try {
+      vi.stubGlobal("__HIMAWARI_BUILD__", { revision: "0268662", date: "2026-11-01" });
+      await render();
+      await click(messages["settings.title"]);
+      expect(document.querySelector(".settings-version")?.textContent).toBe(
+        "版本 0268662 · 2026/11/1",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("[UI-S1] keeps the account when sign-out fails and lets the owner try again", async () => {
+    fetcher.mockImplementation(async (url: string) =>
+      url.endsWith("/method")
+        ? new Response(JSON.stringify({ method: "built-in" }))
+        : new Response("{}", { status: 503 }),
+    );
+    await render();
+    await click(messages["settings.title"]);
+    await click(messages["account.signOut"]);
+    expect(document.querySelector('dialog [role="alert"]')?.textContent).toBe(
+      messages["account.deviceActionFailed"],
+    );
+    expect(text()).toContain("threads content");
+    expect(
+      document.querySelector<HTMLButtonElement>("dialog .setting-row button:not([aria-haspopup])")
+        ?.disabled,
+    ).toBe(false);
+  });
+  it("[UI-S2] offers no sign-out without a built-in account and hides an unknown build version", async () => {
+    await render();
+    await click(messages["settings.title"]);
+    expect(document.querySelector("dialog")?.textContent).not.toContain(
+      messages["account.signOut"],
+    );
+    expect(document.querySelector(".settings-version")).toBeNull();
+  });
   it("persists interface language and appearance through the actual shell controls", async () => {
     await render();
     await click(messages["settings.title"]);
@@ -390,6 +445,9 @@ describe("control center application bootstrap and interaction", () => {
     expect(new ControlCenterBrowserStorage(window.localStorage).readPreferences().theme).toBe(
       "light",
     );
+    expect(document.querySelector('input[name="setting-accent"]')).toBeNull();
+    expect(document.querySelector(".accent-swatches")).toBeNull();
+    await click("Personalization");
     const name = document.querySelector<HTMLInputElement>(
       'input[aria-label="What should I call you?"]',
     );
@@ -472,6 +530,12 @@ describe("control center application bootstrap and interaction", () => {
     await render();
     await settle();
     await click(messages["settings.title"]);
+    const theme = document.querySelector<HTMLInputElement>(
+      'input[name="setting-theme"][value="light"]',
+    );
+    if (!theme) throw new Error("Missing theme setting");
+    await act(async () => theme.click());
+    await click(messages["review.settings.personalization"]);
     const name = document.querySelector<HTMLInputElement>(
       `input[aria-label="${messages["settings.name"]}"]`,
     );
@@ -480,14 +544,6 @@ describe("control center application bootstrap and interaction", () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Andy");
       name.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    for (const selector of [
-      'input[name="setting-accent"][value="teal"]',
-      'input[name="setting-theme"][value="light"]',
-    ]) {
-      const input = document.querySelector<HTMLInputElement>(selector);
-      if (!input) throw new Error(`Missing ${selector}`);
-      await act(async () => input.click());
-    }
     await act(async () =>
       threadOptions().onModelChoiceChange({ modelRef: "model-second", thinkingLevel: "high" }),
     );
@@ -495,7 +551,6 @@ describe("control center application bootstrap and interaction", () => {
     expect(server.state()).toMatchObject({
       name: "Andy",
       locale: "zh-CN",
-      accent: "teal",
       theme: "light",
       modelRef: "model-second",
       thinkingLevel: "high",
@@ -506,7 +561,7 @@ describe("control center application bootstrap and interaction", () => {
       ownerName: "Andy",
       modelChoice: { modelRef: "model-second", thinkingLevel: "high" },
     });
-    expect(document.documentElement.getAttribute("data-accent")).toBe("teal");
+    expect(document.documentElement.hasAttribute("data-accent")).toBe(false);
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(new ControlCenterBrowserStorage(window.localStorage).readLocale([])).toBe("ja");
   });

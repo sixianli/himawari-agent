@@ -1043,6 +1043,7 @@ export class SqliteDurableAdapters {
       get: (input) => this.context.read("threadArtifact.get", input),
       versions: (input) => this.context.read("threadArtifact.versions", input),
       list: (input) => this.context.read("threadArtifact.list", input),
+      markDeleted: (input) => this.context.write("threadArtifact.markDeleted", input),
     });
   }
 

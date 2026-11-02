@@ -1,10 +1,11 @@
 import { type ReactNode, useEffect, useState } from "react";
 import {
-  ACCENT_COLORS,
   type ControlCenterPreferences,
   type ControlCenterUiLocale,
   OWNER_NAME_LIMIT,
 } from "../browser-storage.js";
+import { readBuildInfo } from "../build-info.js";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
 import { ActionButton, Dropdown, ModalDialog } from "./index.js";
 import { Glyph, type GlyphName } from "./glyphs.js";
@@ -26,6 +27,8 @@ export function SettingsDialog({
   tools,
   data,
   notifications,
+  personalization,
+  account,
   initialTab = "general",
   onTabChange,
 }: {
@@ -38,15 +41,18 @@ export function SettingsDialog({
   tools?: ReactNode;
   data?: ReactNode;
   notifications?: ReactNode;
+  personalization?: ReactNode;
+  account?: ReactNode;
   initialTab?: string;
   onTabChange?: (tab: string) => void;
 }) {
   const { message } = useControlCenterIntl();
+  const format = useLocaleFormat();
+  const build = readBuildInfo();
   const [tab, setTab] = useState(initialTab);
   useEffect(() => {
     if (open) setTab(initialTab);
   }, [open, initialTab]);
-  const accent = preferences.accent ?? "violet";
   return (
     <ModalDialog
       open={open}
@@ -58,6 +64,7 @@ export function SettingsDialog({
         <nav className="settings-nav" aria-label={message("settings.tabsLabel")}>
           {(
             [
+              "personalization",
               "general",
               ...(notifications ? (["notifications"] as const) : []),
               "tools",
@@ -78,9 +85,8 @@ export function SettingsDialog({
           ))}
         </nav>
         <section className="settings-content">
-          {tab === "general" ? (
+          {tab === "personalization" ? (
             <>
-              <h3>{message("review.settings.general")}</h3>
               <label className="setting-row">
                 <span>{message("settings.name")}</span>
                 <input
@@ -98,6 +104,10 @@ export function SettingsDialog({
                   }}
                 />
               </label>
+              {personalization}
+            </>
+          ) : tab === "general" ? (
+            <>
               <div className="setting-row">
                 <span>{message("locale.label")}</span>
                 <Dropdown
@@ -134,24 +144,20 @@ export function SettingsDialog({
                   ))}
                 </fieldset>
               </div>
-              <div className="setting-row setting-row-top">
-                <span id="setting-accent">{message("appearance.accent")}</span>
-                <fieldset className="accent-swatches" aria-labelledby="setting-accent">
-                  {ACCENT_COLORS.map((color) => (
-                    <label key={color} data-accent={color} data-checked={accent === color}>
-                      <input
-                        type="radio"
-                        name="setting-accent"
-                        value={color}
-                        checked={accent === color}
-                        onChange={() => onPreferencesChange({ ...preferences, accent: color })}
-                      />
-                      <i aria-hidden="true" />
-                      {message(`appearance.${color}`)}
-                    </label>
-                  ))}
-                </fieldset>
-              </div>
+              {account}
+              {build ? (
+                <p className="settings-version">
+                  {message("settings.version", {
+                    revision: build.revision,
+                    date: new Intl.DateTimeFormat(format.locale, {
+                      year: "numeric",
+                      month: "numeric",
+                      day: "numeric",
+                      timeZone: "UTC",
+                    }).format(new Date(build.date)),
+                  })}
+                </p>
+              ) : null}
             </>
           ) : tab === "tools" ? (
             tools

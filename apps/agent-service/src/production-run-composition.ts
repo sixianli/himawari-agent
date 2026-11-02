@@ -230,9 +230,11 @@ export function createProductionRunComposition(options: ProductionRunComposition
     },
   };
   const profileText = new Map<string, string>();
+  const preferences = repository.ownerPreferences();
   const profile = new OwnerProfileService({
     state: repository.productMemoryState(),
     pins: repository.memoryBook(),
+    ownerName: async (scope) => (await preferences.read(scope)).name,
     readText: async (record) => {
       const cached = profileText.get(record.contentRef);
       if (cached !== undefined) return cached;

@@ -36,6 +36,11 @@ export interface MemoryModel {
     item: { readonly reminderId: string },
     action: "dismiss" | "snooze" | "cancel",
   ) => Promise<boolean>;
+  readonly createReminder: (
+    text: string,
+    due: string,
+    repeat: "none" | "yearly",
+  ) => Promise<boolean>;
   readonly create: (
     text: string,
     category: MemoryCategory,
@@ -142,6 +147,12 @@ export function useMemory(input: {
     undoTidy: (item) => send("memory.tidy.undo", () => ({ changeId: item.changeId })),
     respondReminder: (item, action) =>
       send("memory.reminder.respond", () => ({ reminderId: item.reminderId, action })),
+    createReminder: (text, due, repeat) =>
+      send("memory.reminder.create", async () => ({
+        contentRef: await client.protectText(text, "private"),
+        due,
+        repeat,
+      })),
     create: (text, category, sensitive, pinned) =>
       send("memory.create", async () => ({
         contentRef: await client.protectText(text, sensitive ? "sensitive" : "private"),

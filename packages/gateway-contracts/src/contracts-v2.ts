@@ -45,6 +45,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.reminder.respond",
+  "memory.reminder.create",
   "memory.create",
   "memory.settings.set",
   "memory.page.viewed",
@@ -711,6 +712,14 @@ const memoryReminderRespondCommandSchema = object({
   payload: object({
     reminderId: machineString,
     action: enumeration(["dismiss", "snooze", "cancel"]),
+  }),
+});
+const memoryReminderCreateCommandSchema = object({
+  ...commandEnvelope("memory.reminder.create"),
+  payload: object({
+    contentRef: machineString,
+    due: boundedString(16),
+    repeat: enumeration(["none", "yearly"]),
   }),
 });
 const memoryCreateCommandSchema = object({
@@ -1914,6 +1923,7 @@ const schemasByType = {
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
+  "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,
   "memory.page.viewed": memoryPageViewedCommandSchema,

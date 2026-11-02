@@ -7,7 +7,6 @@ import {
   type ExecutionTimeline,
   executionTimeline,
   type TimelineStep,
-  timelineDuration,
 } from "../execution-timeline.js";
 import {
   authorizationReviewSteps,
@@ -18,7 +17,6 @@ import {
   executionItems,
   executionNextAction,
   executionStateLabel,
-  executionTime,
   executionToolPhase,
   executionWaitReason,
   isAnsweredRun,
@@ -31,7 +29,7 @@ import {
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { exitCodeOf, toolCommand, toolStepSummary } from "../step-summary.js";
-import { formatTokens, type TurnUsage, turnUsage } from "../turn-summary.js";
+import { formatTokens, type TurnUsage, turnUsage, webStepSites } from "../turn-summary.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { Glyph } from "./glyphs.js";
@@ -81,12 +79,12 @@ export function ExecutionProcess({
   const activityEnded = (isAnsweredRun(run) || stateEnded) && state?.displayPhase !== "unresolved";
   useEffect(() => {
     if (activityEnded || connection !== "connected") return;
-    const timer = window.setInterval(() => setNow(Date.now()), 100);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [activityEnded, connection]);
   const items = executionItems(records);
   const timeline = executionTimeline(records, run, now);
-  const rows = processRows(records, items, timeline);
+  const rows = groupWebRows(processRows(records, items, timeline));
   const expanded = expandedChoice ?? false;
   const stepLabel = (step: TimelineStep) => {
     if (step.kind === "tool") {
@@ -95,14 +93,7 @@ export function ExecutionProcess({
     }
     return message(stepLabels[step.kind]);
   };
-  const time = executionTime(records, run, now);
   const activity = executionActivity(records, run, connection, now);
-  const measuredTime = stateAvailable
-    ? (state?.timing.executionMilliseconds ?? null)
-    : time.known
-      ? time.work
-      : null;
-  const measuredTimeLabel = stateAvailable ? "chat.executionTime" : "chat.workTime";
   const observationAge = state ? Math.max(0, now - Date.parse(state.lastObservedAt)) : activity.age;
   const stale = stateAvailable
     ? !!state &&
@@ -134,44 +125,45 @@ export function ExecutionProcess({
     records.length === 0 &&
     Number.isFinite(queuedFor) &&
     queuedFor >= QUEUED_DISPLAY_AFTER_MILLISECONDS;
+  const runningStep = timeline?.steps.findLast((step) => step.running);
+  const runningTool =
+    runningStep?.kind === "tool"
+      ? items.find((item) => item.itemId === runningStep.itemId)
+      : undefined;
+  const liveStep =
+    run.status === "awaiting_approval"
+      ? message("runs.status.awaitingApproval")
+      : writing && writingSummary
+        ? message("chat.activity.writing", {
+            step: message(writingSummary.id),
+            lines: writing.lines,
+          })
+        : runningStep
+          ? message("step.active", {
+              step: runningTool
+                ? message(liveToolLabel(toolStepSummary(runningTool.name, runningTool.input).id))
+                : runningStep.kind === "tool"
+                  ? message("step.other")
+                  : message(stepLabels[runningStep.kind]),
+            })
+          : activeSummary
+            ? message("step.active", { step: message(liveToolLabel(activeSummary.id)) })
+            : message(queued ? "chat.queued" : (stateLabel ?? activity.label), {
+                tool: activity.tool,
+              });
+  const liveElapsed = timeline ? timeline.total : queuedFor;
   return (
     <>
-      {!activityEnded ? (
+      {!activityEnded &&
+      (queued || (waitReason && !queued) || (state && connection !== "connected") || stale) ? (
         <div className="turn-activity">
-          {(
-            state
-              ? state.displayPhase !== "unresolved"
-              : !stateAvailable && run.status !== "reconciling_external_result"
-          ) ? (
-            <span className={`run-indicator run-${run.status}`} />
-          ) : null}
-          <output>
-            <strong>
-              {writing && writingSummary
-                ? message("chat.activity.writing", {
-                    step: message(writingSummary.id),
-                    lines: writing.lines,
-                  })
-                : activeSummary
-                  ? message("step.active", { step: message(activeSummary.id) })
-                  : message(queued ? "chat.queued" : (stateLabel ?? activity.label), {
-                      tool: activity.tool,
-                    })}
-            </strong>
-          </output>
-          {queued ? <p>{message("chat.queuedWait", { time: duration(queuedFor) })}</p> : null}
+          {queued ? <p>{message("chat.queuedWait")}</p> : null}
           {waitReason && !queued ? (
             <p className="turn-wait-reason">{message(waitReason.id, { tool: waitReason.tool })}</p>
           ) : null}
           {state && connection !== "connected" ? (
             <small>{message("chat.disconnected")}</small>
           ) : null}
-          {measuredTime !== null && !queued ? (
-            <span>{message(measuredTimeLabel, { time: duration(measuredTime) })}</span>
-          ) : null}
-          {queued ? null : (
-            <small>{message("chat.lastActivity", { time: duration(observationAge) })}</small>
-          )}
           {stale && !queued ? <p>{message("chat.progressDelayed")}</p> : null}
         </div>
       ) : null}
@@ -179,6 +171,7 @@ export function ExecutionProcess({
         <p role="alert">{message(executionFailureMessage(records))}</p>
       ) : null}
       {nextAction ? <output className="execution-next-action">{message(nextAction)}</output> : null}
+      {!activityEnded ? <output className="sr-only">{liveStep}</output> : null}
       <details
         className="turn-process"
         open={expanded}
@@ -187,20 +180,63 @@ export function ExecutionProcess({
         }}
       >
         <summary>
-          {timeline ? (
-            <span className="process-took">{processHeadline(timeline, items, message)}</span>
-          ) : null}
-          <span
-            className={`process-result run-text-${state?.displayPhase ?? run.status}${
-              timeline && (state?.displayPhase ?? run.status) === "completed" ? " is-quiet" : ""
-            }`}
-          >
-            {message(stateLabel ?? statusId(run))}
-          </span>
+          {!activityEnded ? (
+            <span className="process-live">
+              <span className="process-live-step">{liveStep}</span>
+              <span className="process-live-time">{elapsedText(liveElapsed, message)}</span>
+            </span>
+          ) : (
+            <>
+              {timeline ? (
+                <span className="process-took">{processHeadline(timeline, items, message)}</span>
+              ) : null}
+              <span
+                className={`process-result run-text-${state?.displayPhase ?? run.status}${
+                  timeline && (state?.displayPhase ?? run.status) === "completed" ? " is-quiet" : ""
+                }`}
+              >
+                {message(stateLabel ?? statusId(run))}
+              </span>
+            </>
+          )}
           <RowChevron />
         </summary>
         <ol className="execution-chain" aria-label={message("chat.process")}>
           {rows.map((row) => {
+            if (row.type === "web") {
+              const sites = [
+                ...new Set(
+                  row.items.flatMap((item) => webStepSites(item.name, item.input, item.output)),
+                ),
+              ];
+              const start = Math.min(...row.steps.map((step) => step.start));
+              const end = Math.max(...row.steps.map((step) => step.end));
+              return (
+                <li
+                  key={row.steps[0]?.id ?? row.sequence}
+                  className={`execution-step timeline-row web-row${
+                    row.steps.some((step) => step.running) ? " is-running" : ""
+                  }`}
+                >
+                  <div className="timeline-record is-static">
+                    <span className="row-icon">
+                      <ToolIcon name="web_search" glyph="search" />
+                    </span>
+                    <span className="row-main">
+                      <span className="step-summary">{message("step.search")}</span>
+                      {sites.length ? (
+                        <span className="step-preview">
+                          {sites.slice(0, 2).join(" · ")}
+                          {sites.length > 2 ? ` +${sites.length - 2}` : ""}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="row-duration">{elapsedText(end - start, message)}</span>
+                    <span className="row-chevron" />
+                  </div>
+                </li>
+              );
+            }
             if (row.type === "review")
               return (
                 <li className="execution-stage authorization-review" key={row.review.id}>
@@ -262,8 +298,9 @@ export function ExecutionProcess({
                       </span>
                     ) : null}
                   </span>
-                  <TimelineBar step={step} total={timeline?.total ?? 0} />
-                  <span className="row-duration">{timelineDuration(step.end - step.start)}</span>
+                  <span className="row-duration">
+                    {elapsedText(step.end - step.start, message)}
+                  </span>
                 </>
               );
               return (
@@ -363,15 +400,11 @@ export function ExecutionProcess({
                       {item.kind === "tool" && summary.target ? (
                         <span className="step-preview">{summary.target}</span>
                       ) : null}
-                      {step?.parallel ? (
-                        <span className="row-tag">{message("process.parallel")}</span>
-                      ) : null}
                       {step && phase === "chat.phase.completed" && !retainedEffect ? null : status}
                     </span>
-                    {step ? <TimelineBar step={step} total={timeline?.total ?? 0} /> : null}
                     {step ? (
                       <span className="row-duration">
-                        {timelineDuration(step.end - step.start)}
+                        {elapsedText(step.end - step.start, message)}
                       </span>
                     ) : null}
                     <RowChevron />
@@ -487,6 +520,12 @@ type ProcessRow =
       review: ReturnType<typeof authorizationReviewSteps>[number];
     }
   | { type: "note"; sequence: number; note: ExecutionItem }
+  | {
+      type: "web";
+      sequence: number;
+      steps: readonly TimelineStep[];
+      items: readonly ExecutionItem[];
+    }
   | { type: "thinking"; sequence: number; stage: ReturnType<typeof thinkingSteps>[number] };
 
 const QUEUED_DISPLAY_AFTER_MILLISECONDS = 3000;
@@ -522,8 +561,19 @@ const didKinds: Readonly<Partial<Record<MessageId, DidKind>>> = {
   "step.edit": "change",
   "step.recall": "recall",
 };
-const percent = (part: number, whole: number) =>
-  `${whole > 0 ? Math.min(100, Math.max(0, (part / whole) * 100)) : 0}%`;
+const liveLabels: Readonly<Partial<Record<MessageId, MessageId>>> = {
+  "step.fetch": "step.search",
+};
+function liveToolLabel(id: MessageId): MessageId {
+  return liveLabels[id] ?? id;
+}
+
+export function elapsedText(milliseconds: number, message: Message): string {
+  const total = milliseconds > 0 ? Math.max(1, Math.round(milliseconds / 1000)) : 0;
+  return total < 60
+    ? message("more.duration.seconds", { seconds: total })
+    : message("more.duration.minutes", { minutes: Math.floor(total / 60), seconds: total % 60 });
+}
 
 function processRows(
   records: readonly ThreadExecutionRecord[],
@@ -566,6 +616,30 @@ function processRows(
   ].sort((a, b) => a.sequence - b.sequence);
 }
 
+const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
+
+function groupWebRows(rows: readonly ProcessRow[]): ProcessRow[] {
+  const grouped: ProcessRow[] = [];
+  for (const row of rows) {
+    const web = row.type === "step" && row.step && row.item && WEB_TOOLS.has(row.item.name);
+    const last = grouped.at(-1);
+    if (web && row.type === "step" && row.step && row.item) {
+      if (last?.type === "web") {
+        grouped[grouped.length - 1] = {
+          ...last,
+          steps: [...last.steps, row.step],
+          items: [...last.items, row.item],
+        };
+      } else {
+        grouped.push({ type: "web", sequence: row.sequence, steps: [row.step], items: [row.item] });
+      }
+      continue;
+    }
+    grouped.push(row);
+  }
+  return grouped;
+}
+
 function processHeadline(
   timeline: ExecutionTimeline,
   items: readonly ExecutionItem[],
@@ -578,7 +652,7 @@ function processHeadline(
     const kind = (tool && didKinds[toolStepSummary(tool.name, tool.input).id]) ?? "other";
     counts.set(kind, (counts.get(kind) ?? 0) + 1);
   }
-  const time = timelineDuration(timeline.total);
+  const time = elapsedText(timeline.total, message);
   const [first, second] = [...counts]
     .sort((a, b) => b[1] - a[1] || didOrder.indexOf(a[0]) - didOrder.indexOf(b[0]))
     .map(([kind, count]) => message(didLabels[kind], { count }));
@@ -589,29 +663,6 @@ function processHeadline(
 
 function RowChevron() {
   return <Glyph className="row-chevron" name="chevron" />;
-}
-
-function TimelineBar({ step, total }: { step: TimelineStep; total: number }) {
-  const length = step.end - step.start;
-  const segments = step.segments.length
-    ? step.segments
-    : [{ kind: "run" as const, start: step.start, end: step.end }];
-  return (
-    <span className="timeline-track" aria-hidden="true">
-      <span
-        className={`timeline-bar category-${step.category}`}
-        style={{ left: percent(step.start, total), width: percent(length, total) }}
-      >
-        {segments.map((segment) => (
-          <i
-            key={`${segment.kind}-${segment.start}`}
-            className={`segment-${segment.kind}`}
-            style={{ width: percent(segment.end - segment.start, length) }}
-          />
-        ))}
-      </span>
-    </span>
-  );
 }
 
 function TokenLine({ usage, message }: { usage: TurnUsage | undefined; message: Message }) {
