@@ -1335,6 +1335,86 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_NOT_PINNABLE");
   });
 
+  it("[MEM-CAT] moves a memory to another topic and keeps everything else", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-coffee", "我每天必须喝咖啡");
+    await context.protect("payload-mood", "主人最近有点抑郁", "sensitive");
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-coffee", category: "identity", subCategory: "饮食", pinned: true },
+      "manual-coffee",
+    );
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      "manual-mood",
+    );
+    const find = async (needle: string) => {
+      const found = (await overview(context.control)).memories.find(({ text }) =>
+        text.includes(needle),
+      );
+      if (!found) throw new Error(`missing ${needle}`);
+      return found;
+    };
+    const before = await find("咖啡");
+    expect(before.category).toBe("identity");
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: before.memoryId, expectedRevision: before.revision, category: "preference" },
+      "recategorize-coffee",
+    );
+    const after = await find("咖啡");
+    expect(after).toMatchObject({
+      category: "preference",
+      subCategory: "饮食",
+      text: before.text,
+      sourceThreadId: before.sourceThreadId,
+      sourceRefs: before.sourceRefs,
+      inference: before.inference,
+      importance: before.importance,
+      dataClassification: before.dataClassification,
+      profilePin: "on",
+      status: "active",
+      recordedAt: before.recordedAt,
+      revision: before.revision + 1,
+    });
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: before.memoryId, expectedRevision: before.revision, category: "goal" },
+        "recategorize-stale",
+      ),
+    ).rejects.toThrow("MEMORY_REVISION_CHANGED");
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: after.memoryId, expectedRevision: after.revision, category: "finance" },
+        "recategorize-finance",
+      ),
+    ).rejects.toThrow("MEMORY_CATEGORY_LOCKED");
+    const mood = await find("抑郁");
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: mood.memoryId, expectedRevision: mood.revision, category: "other" },
+        "recategorize-mood",
+      ),
+    ).rejects.toThrow("MEMORY_CATEGORY_LOCKED");
+    expect((await find("抑郁")).category).toBe("health");
+    await context.memory.runProjectionBatch(10);
+  });
+
   it("[MP-4] stops learning from conversations while memory is paused", async () => {
     const context = await setup(
       "我最喜欢的颜色是蓝色。",

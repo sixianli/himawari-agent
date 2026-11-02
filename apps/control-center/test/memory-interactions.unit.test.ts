@@ -486,6 +486,51 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-drawer")).toContain("敏感记忆不会每次都带上");
   });
 
+  it("[MEM-CAT] lets the owner move a memory to another topic and offers none for sensitive ones", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        ...overview.memories,
+        memoryItem("memory-pill", "每天吃降压药", {
+          category: "health",
+          dataClassification: "sensitive",
+          topic: "health",
+        }),
+      ],
+    };
+    await render();
+    await click("#settings .memory-list", "主人住在上海");
+    const trigger = () =>
+      document.querySelector<HTMLButtonElement>(
+        "#settings .memory-drawer .memory-detail [aria-label=改分类]",
+      );
+    expect(trigger()?.textContent).toContain("身份");
+    await act(async () => trigger()?.click());
+    const options = [
+      ...document.querySelectorAll<HTMLButtonElement>("#settings .memory-detail [role=option]"),
+    ].map((option) => option.textContent);
+    expect(options).toEqual(["身份", "偏好", "人际关系", "目标", "进行中", "要求", "事件", "其他"]);
+    const choose = [
+      ...document.querySelectorAll<HTMLButtonElement>("#settings .memory-detail [role=option]"),
+    ].find((option) => option.textContent === "偏好");
+    await act(async () => choose?.click());
+    await act(async () => {});
+    expect(lastCommand()).toMatchObject({
+      type: "memory.category.set",
+      payload: { memoryId: "memory-city", expectedRevision: 1, category: "preference" },
+    });
+    expect(text("#settings .memory-notice")).toContain("已改为「偏好」");
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>("#settings .memory-drawer [aria-label=关闭]")
+        ?.click(),
+    );
+    await click("#settings .memory-topics", "健康");
+    await click("#settings .memory-list", "每天吃降压药");
+    expect(trigger()).toBeNull();
+    expect(text("#settings .memory-drawer .memory-detail")).toContain("健康");
+  });
+
   it("[MEM-PIN] keeps a topic with many memories short until the owner opens it, then pages it", async () => {
     const likes = Array.from({ length: 45 }, (_, index) =>
       memoryItem(`memory-like-${index}`, `喜欢第 ${index + 1} 样东西`, {

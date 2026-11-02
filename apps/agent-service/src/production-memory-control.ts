@@ -46,6 +46,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.create",
+  "memory.category.set",
   "memory.settings.set",
   "memory.page.viewed",
   "memory.person.respond",
@@ -102,7 +103,14 @@ export class ProductionMemoryControl {
     readonly approvals: SensitiveMemoryApprovalStatePort;
     readonly memory: Pick<
       DurableMemoryService,
-      "applyProposal" | "correct" | "delete" | "restore" | "confirm" | "trash" | "recover"
+      | "applyProposal"
+      | "correct"
+      | "delete"
+      | "restore"
+      | "confirm"
+      | "trash"
+      | "recover"
+      | "revise"
     >;
     readonly book: MemoryBookStorePort;
     readonly ledger?: DecisionLedgerPort;
@@ -599,6 +607,31 @@ export class ProductionMemoryControl {
     return { resultRef: saved.id, replayed: false };
   }
 
+  async #setCategory(command: Command<"memory.category.set">) {
+    const { memoryId, expectedRevision, category } = command.payload;
+    const { ownerId, agentId } = this.options.configuration;
+    const current = await this.options.state.read(memoryId as MemoryId);
+    if (!current || current.ownerId !== ownerId || current.agentId !== agentId)
+      throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_NOT_FOUND");
+    if (current.revision !== expectedRevision)
+      throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MEMORY_REVISION_CHANGED");
+    if ((current.attributes?.category ?? "other") === category)
+      return { resultRef: current.id, replayed: false };
+    if (
+      current.dataClassification === "sensitive" ||
+      current.attributes?.sensitiveTopic ||
+      sensitiveTopicFor(category) !== "other"
+    )
+      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_CATEGORY_LOCKED");
+    const saved = await this.options.memory.revise({
+      memoryId: current.id,
+      expectedRevision,
+      attributes: { category },
+      generationId: await this.#generationFor(current.id),
+    });
+    return { resultRef: saved.id, replayed: false };
+  }
+
   async #importCommit(command: Command<"memory.import.commit">) {
     const { batchId, source, items } = command.payload;
     const scope = this.#scope();
@@ -657,6 +690,7 @@ export class ProductionMemoryControl {
   async execute(command: GatewayV2Command): Promise<{ resultRef: string; replayed: boolean }> {
     this.assertOwner(command);
     if (command.type === "memory.create") return this.#create(command);
+    if (command.type === "memory.category.set") return this.#setCategory(command);
     if (command.type === "memory.import.commit") return this.#importCommit(command);
     if (command.type === "memory.import.undo") return this.#importUndo(command);
     if (command.type === "memory.settings.set") {

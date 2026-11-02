@@ -23,7 +23,7 @@ import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { Glyph } from "./glyphs.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
-import { ActionButton, EmptyState } from "./primitives.js";
+import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
 import {
   clock,
   dayAndClock,
@@ -285,7 +285,8 @@ function PinSwitch({
   notify: (notice: Notice) => void;
   label?: string;
 }) {
-  const on = item.profilePin ? item.profilePin === "on" : carried;
+  const on =
+    pinBlock(item) === "category" ? false : item.profilePin ? item.profilePin === "on" : carried;
   return (
     <label className="memory-switch memory-pin">
       {label ? null : message("memory.page.pin")}
@@ -405,6 +406,13 @@ function MemoryDetail({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const block = pinBlock(item);
+  const recategorizable =
+    (item.status === "active" || item.status === "archived") &&
+    item.dataClassification !== "sensitive" &&
+    !item.topic;
+  const categoryChoices = MEMORY_CATEGORY_NAMES.filter(
+    (key) => key === item.category || (key !== "health" && key !== "finance"),
+  );
   const origin = item.importBatchId
     ? "import"
     : item.memoryId.startsWith("memory:owner:")
@@ -470,7 +478,29 @@ function MemoryDetail({
         <dl className="memory-detail">
           <dt>{message("memory.page.topic")}</dt>
           <dd>
-            {message("memory.cat", { c: item.category })}
+            {recategorizable ? (
+              <Dropdown
+                label={message("memory.page.topicChange")}
+                value={item.category as MemoryCategory}
+                options={categoryChoices.map((key) => ({
+                  value: key,
+                  label: message("memory.cat", { c: key }),
+                }))}
+                onChange={(key) =>
+                  void memory.setCategory(item, key).then(
+                    (ok) =>
+                      ok &&
+                      notify({
+                        text: message("memory.page.topicDone", {
+                          c: message("memory.cat", { c: key }),
+                        }),
+                      }),
+                  )
+                }
+              />
+            ) : (
+              message("memory.cat", { c: item.category })
+            )}
             {item.subCategory ? ` · ${item.subCategory}` : ""}
           </dd>
           <dt>{message("memory.page.importance")}</dt>

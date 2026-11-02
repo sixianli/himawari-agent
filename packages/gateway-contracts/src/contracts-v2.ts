@@ -47,6 +47,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.create",
+  "memory.category.set",
   "memory.settings.set",
   "memory.page.viewed",
   "memory.person.respond",
@@ -729,6 +730,14 @@ const memoryCreateCommandSchema = object({
     category: enumeration(MEMORY_CATEGORY_NAMES),
     subCategory: nullable(memoryLabelSchema),
     pinned: booleanValue,
+  }),
+});
+const memoryCategorySetCommandSchema = object({
+  ...commandEnvelope("memory.category.set"),
+  payload: object({
+    memoryId: machineString,
+    expectedRevision: integer(0),
+    category: enumeration(MEMORY_CATEGORY_NAMES),
   }),
 });
 const memorySettingsSetCommandSchema = object({
@@ -1925,6 +1934,7 @@ const schemasByType = {
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.create": memoryCreateCommandSchema,
+  "memory.category.set": memoryCategorySetCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,
   "memory.page.viewed": memoryPageViewedCommandSchema,
   "memory.person.respond": memoryPersonRespondCommandSchema,

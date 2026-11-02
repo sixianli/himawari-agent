@@ -339,6 +339,11 @@ export const governanceMessages = [
     subCategory: "饮食",
     pinned: false,
   }),
+  fixture("command", "memory.category.set", {
+    memoryId: "memory-01",
+    expectedRevision: 2,
+    category: "preference",
+  }),
   fixture("command", "memory.settings.set", { capturePaused: true }),
   fixture("command", "memory.page.viewed", {}),
   fixture("command", "memory.person.respond", {

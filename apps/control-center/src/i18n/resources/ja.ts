@@ -887,6 +887,8 @@ export const messages = {
     "{r, select, sensitive {機微な記憶は毎回は持っていかず、関係があるときだけ使います} category {予定、健康、お金、その他の記憶は関係があるときだけ使います} on {あなたがオンにしたので、自動の選択より優先されます} off {あなたがオフにしたので、関係があるときだけ使います} add {オンにすると毎回の会話に持っていきます。オフなら重要度で決まります} other {今は重要度で決まります。変更すると、あなたの選択が優先されます}}",
   "memory.page.detail": "記憶の詳細",
   "memory.page.topic": "トピック",
+  "memory.page.topicChange": "トピックを変更",
+  "memory.page.topicDone": "「{c}」に変更しました",
   "memory.page.importance": "重要度",
   "memory.page.importanceValue":
     "{value} / 1000 · {by, select, owner {手動で追加したときの既定値} other {保存時にモデルが採点}}",
