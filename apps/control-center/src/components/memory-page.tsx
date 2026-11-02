@@ -873,7 +873,7 @@ export function RemindersPage({
     </>
   );
   return (
-    <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
+    <section className="reminders-page side-page-body">
       {!memory ? (
         <p className="settings-note">{message("common.notConfigured")}</p>
       ) : !overview ? (
@@ -2124,7 +2124,7 @@ export function MemoryPage({
     { key: "changes" },
   ];
   return (
-    <section className="memory-page side-page-body" aria-label={message("nav.memory")}>
+    <section className="memory-page side-page-body">
       {memory.failed ? <p role="alert">{message("error.currentUnavailable")}</p> : null}
       {paused ? (
         <p className="memory-banner" data-kind="paused">
