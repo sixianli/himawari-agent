@@ -5488,11 +5488,15 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-run-command",
   "accept-unrelated-no-memory",
   "accept-model-switch",
+  "accept-conversation-search",
+  "accept-reminders-page",
+  "accept-files-page",
   "accept-slow-memory-search",
   "accept-file-writing-progress",
   "accept-progress-without-state",
   "accept-memory-page",
   "accept-phone-layout",
+  "accept-phone-send",
   "accept-after-restart",
 ] as const;
 const RUN_COMMAND_REQUEST = "请统计行数";
@@ -5829,6 +5833,35 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
           if (other.model !== chosen.model) expect(used).not.toContain(other.model);
       }
     });
+    await scenario("accept-conversation-search", async () => {
+      const navigation = target(page, UI.sidebarNavigation);
+      const box = target(navigation, UI.threadSearch);
+      await box.fill("新闻");
+      await box.press("Enter");
+      await uiExpect(page.locator(UI.threadSearchResult).first()).toBeVisible({ timeout: 30_000 });
+      await box.fill("没有这个词zzqx");
+      await box.press("Enter");
+      await uiExpect(page.locator(UI.threadSearchResult)).toHaveCount(0, { timeout: 30_000 });
+      await box.fill("");
+      await uiExpect(page.locator(UI.threadSearchResult)).toHaveCount(0);
+    });
+    await scenario("accept-reminders-page", async () => {
+      await target(target(page, UI.sidebarNavigation), UI.openReminders).click();
+      const reminders = target(page, UI.remindersPage);
+      await uiExpect(reminders).toBeVisible({ timeout: 30_000 });
+      await uiExpect(target(reminders, UI.pageError)).toHaveCount(0);
+      await newThread();
+      await uiExpect(reminders).toHaveCount(0, { timeout: 20_000 });
+    });
+    await scenario("accept-files-page", async () => {
+      await target(target(page, UI.sidebarNavigation), UI.openFiles).click();
+      const files = target(page, UI.filesPage);
+      await uiExpect(files).toBeVisible({ timeout: 30_000 });
+      await uiExpect(files).not.toHaveAttribute("aria-busy", "true", { timeout: 30_000 });
+      await uiExpect(target(files, UI.pageError)).toHaveCount(0);
+      await newThread();
+      await uiExpect(files).toHaveCount(0, { timeout: 20_000 });
+    });
     await scenario("accept-slow-memory-search", async () => {
       await newThread();
       const embeddingsBefore = installation.modelRequests.filter(
@@ -5905,6 +5938,31 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
           await memoryTabs.nth(index).click();
           await expectPhoneLayout(phone, `memory tab ${index + 1}`);
         }
+      } finally {
+        await phoneContext.close();
+      }
+    });
+    await scenario("accept-phone-send", async () => {
+      const phoneContext = await browser.newContext({
+        ignoreHTTPSErrors: true,
+        locale: "zh-CN",
+        viewport: PHONE_VIEWPORT,
+        isMobile: true,
+        hasTouch: true,
+        storageState: await context.storageState(),
+      });
+      try {
+        const phone = await phoneContext.newPage();
+        await phone.goto(`${installation.origin}/`);
+        const draft = target(phone, UI.composer);
+        await uiExpect(draft).toBeVisible({ timeout: 30_000 });
+        const text = "手机上发一条消息";
+        await draft.fill(text);
+        await uiExpect(target(phone, UI.send)).toBeEnabled({ timeout: 20_000 });
+        await target(phone, UI.send).click();
+        await uiExpect(phone.getByText(PLAIN_ANSWER).last()).toBeVisible({ timeout: 120_000 });
+        await uiExpect(target(phone, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+        await expectPhoneLayout(phone, "after sending");
       } finally {
         await phoneContext.close();
       }

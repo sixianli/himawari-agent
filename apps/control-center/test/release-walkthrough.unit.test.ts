@@ -81,6 +81,7 @@ vi.mock("../src/gateway-client.js", async (original) => {
       authorizationRef: "authorization-walkthrough",
       canCancelRun: true,
       executionPresentationAvailable: true,
+      filesAvailable: true,
       availableModels: [
         {
           ref: "model-primary",
@@ -176,7 +177,7 @@ vi.mock("../src/gateway-client.js", async (original) => {
         };
       }
       async listFiles() {
-        return { files: [], nextCursor: null };
+        return { items: [], nextCursor: null };
       }
     },
   };
@@ -198,7 +199,13 @@ function roleOf(element: Element) {
   if (element.tagName === "A" && !element.hasAttribute("href")) return null;
   if (element.tagName === "SECTION" && !accessibleName(element)) return null;
   if (element instanceof HTMLInputElement)
-    return element.type === "checkbox" ? "checkbox" : element.type === "text" ? "textbox" : null;
+    return element.type === "checkbox"
+      ? "checkbox"
+      : element.type === "text"
+        ? "textbox"
+        : element.type === "search"
+          ? "searchbox"
+          : null;
   return IMPLICIT_ROLES[element.tagName] ?? null;
 }
 
@@ -422,6 +429,20 @@ describe("release walkthrough locators against the real control center", () => {
     ).toBeGreaterThanOrEqual(2);
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
     expect(queryAllByRole(body, UI.memoryPage)).toHaveLength(0);
+
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.openReminders));
+    const reminders = await eventually(() => byRole(body, UI.remindersPage));
+    expect(queryAllByRole(reminders, UI.pageError)).toHaveLength(0);
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.openFiles));
+    const files = await eventually(() => byRole(body, UI.filesPage));
+    expect(queryAllByRole(files, UI.pageError)).toHaveLength(0);
+    expect(queryAllByRole(body, UI.remindersPage)).toHaveLength(0);
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
+    expect(queryAllByRole(body, UI.filesPage)).toHaveLength(0);
+
+    const search = byRole(byRole(body, UI.sidebarNavigation), UI.threadSearch);
+    expect(search).toBeInstanceOf(HTMLInputElement);
+    expect(UI.threadSearchResult).toBe(".thread-search-results li");
 
     expect(fake.unexpected).toEqual([]);
   });

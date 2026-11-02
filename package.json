@@ -43,7 +43,7 @@
     "check:layout": "node scripts/check-layout-audit.mjs",
     "check:brand": "node scripts/check-brand-assets.mjs",
     "check:layer0-hooks": "node scripts/check-layer0-hooks.mjs",
-    "check:release-walkthrough": "vitest run --config vitest.workspace.ts --project browser --project tooling apps/control-center/test/release-walkthrough.unit.test.ts test/tooling/release-walkthrough-locators.test.mjs",
+    "check:release-walkthrough": "vitest run --config vitest.workspace.ts --project browser --project tooling apps/control-center/test/release-walkthrough.unit.test.ts test/tooling/release-walkthrough-locators.test.mjs test/tooling/release-walkthrough-coverage.test.mjs",
     "check:local-pi": "node scripts/check-local-pi.mjs",
     "check:pi-compat": "vitest run --config vitest.workspace.ts --project pi-compat",
     "check:secrets": "node scripts/scan-machine-secrets.mjs",

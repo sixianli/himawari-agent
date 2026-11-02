@@ -7,6 +7,7 @@ export type WalkthroughRole =
   | "link"
   | "navigation"
   | "region"
+  | "searchbox"
   | "switch"
   | "tab"
   | "tablist"
@@ -57,6 +58,12 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   memoryTab: { role: "tab" },
   memoryCarry: { role: "region", name: "每次对话都会带上的记忆", exact: true },
   pageError: { role: "alert" },
+  openReminders: { role: "button", name: "提醒" },
+  remindersPage: { role: "region", name: "提醒", exact: true },
+  openFiles: { role: "button", name: "文件", exact: true },
+  filesPage: { role: "region", name: "文件", exact: true },
+  threadSearch: { role: "searchbox", name: "搜索对话", exact: true },
+  threadSearchResult: ".thread-search-results li",
   modelPickerRoot: ".model-picker",
   modelPicker: ".model-picker > summary",
   modelChooser: ".model-panel .picker-model-name",
