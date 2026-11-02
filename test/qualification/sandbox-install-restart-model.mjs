@@ -318,6 +318,7 @@ export async function runInstalledAgent({
     memoryCompositionFactory: async ({ configuration, repository }) => {
       const gatewayUrl = "https://ai-gateway.vercel.sh/v1";
       return agent.createProductionMemoryCompositionFromConfiguration({
+        egress: agent.createProductionModelEgress(configuration, sources),
         configuration,
         secretSource: sources.provider,
         index: repository.memoryIndex(),

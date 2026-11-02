@@ -14,6 +14,7 @@ const APP = path.join(repositoryRoot, "apps/control-center");
 const LOCALES = ["zh-CN", "en", "ja"];
 const VIEWPORTS = [
   { width: 1280, height: 820 },
+  { width: 654, height: 844 },
   { width: 390, height: 844 },
 ];
 const THEMES = ["light", "dark"];
@@ -70,6 +71,10 @@ export function findLayoutProblems(locale) {
   };
   if (document.documentElement.scrollWidth > width + 1)
     problems.push(`PAGE_SCROLLS_SIDEWAYS scrollWidth=${document.documentElement.scrollWidth}`);
+  if (width > 640)
+    for (const pane of document.querySelectorAll(".sidebar .list-pane"))
+      if (shown(pane.closest(".sidebar")) && !pane.getClientRects().length)
+        problems.push(`SIDEBAR_CONTENT_HIDDEN ${describe(pane)}`);
   const modal = document.querySelector("dialog[open]");
   for (const element of document.body.querySelectorAll("*")) {
     if (!shown(element)) continue;
@@ -221,6 +226,7 @@ export function labels(locale) {
     reminders: value("nav.reminders"),
     files: value("library.title"),
     fork: value("answer.fork"),
+    personalization: value("review.settings.personalization"),
     general: value("review.settings.general"),
     tools: value("review.settings.tools"),
     data: value("review.settings.data"),
@@ -263,6 +269,10 @@ export const SCENES = {
       await page.waitForTimeout(700);
       await page.mouse.move(1, 1);
     },
+  },
+  settingsPersonalization: {
+    path: "/threads",
+    act: (page, text) => openSettings(page, text, "personalization"),
   },
   settingsGeneral: { path: "/threads", act: (page, text) => openSettings(page, text, "general") },
   settingsTools: { path: "/threads", act: (page, text) => openSettings(page, text, "tools") },
@@ -340,13 +350,22 @@ export const REQUIRED_KINDS = [
   "OUTLINED_CONTROL",
   "ICON_OUTSIDE_GLYPH_SET",
   "TEXT_GLYPH_ICON",
+  "SIDEBAR_CONTENT_HIDDEN",
 ];
+
+const SIDEBAR_REPRODUCTION = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<aside class="sidebar"><p>侧栏</p><section class="list-pane" style="display:none"><p>会话列表</p></section></aside></body></html>`;
 
 async function selfTest(browser) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   try {
     await page.setContent(REPRODUCTION);
     const found = await page.evaluate(findLayoutProblems, "zh-CN");
+    await page.setViewportSize({ width: 654, height: 844 });
+    await page.setContent(SIDEBAR_REPRODUCTION);
+    found.push(...(await page.evaluate(findLayoutProblems, "zh-CN")));
+    await page.setViewportSize({ width: 390, height: 844 });
     const missing = REQUIRED_KINDS.filter((kind) => !found.some((item) => item.startsWith(kind)));
     await page.setContent(CLEAN);
     const clean = await page.evaluate(findLayoutProblems, "zh-CN");
@@ -504,7 +523,7 @@ async function main() {
       process.exitCode = 1;
     } else
       console.log(
-        `LAYOUT_AUDIT passed scenes=${Object.keys(SCENES).length * 12} seconds=${seconds}`,
+        `LAYOUT_AUDIT passed scenes=${Object.keys(SCENES).length * LOCALES.length * VIEWPORTS.length * THEMES.length} seconds=${seconds}`,
       );
   } finally {
     fixture?.child.kill();

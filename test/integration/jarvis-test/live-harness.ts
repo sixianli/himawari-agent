@@ -34,6 +34,7 @@ import {
 } from "./context.ts";
 import type { TrialContext } from "./grade.ts";
 import { fileBytes, type Transcript, type TranscriptStep } from "./graders.ts";
+import { testModelEgress } from "@himawari-agent/testing";
 
 export const SUBJECT_MODEL = {
   id: AI_GATEWAY_PRIMARY_MODEL,
@@ -523,6 +524,7 @@ export async function runTrial(options: TrialOptions): Promise<TrialResult> {
     workspaceRoot: async () => workspaceRoot,
   })(source);
   const models = createProductionModelCompositionFromConfiguration({
+    egress: testModelEgress(),
     configuration,
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
@@ -561,6 +563,7 @@ export async function runTrial(options: TrialOptions): Promise<TrialResult> {
     steps,
   );
   const runtime = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
     projection,
     tools,
     models: models.composition.piModels,

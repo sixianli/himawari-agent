@@ -159,8 +159,8 @@ export function MemoryTurnNote({
   const overview = memory.overview;
   if (!overview || ownerRefs.length === 0) return null;
   const pending = overview.pending.filter((item) => ownerRefs.includes(item.sourceRef));
-  const saved = overview.memories.filter((item) =>
-    item.sourceRefs.some((ref) => ownerRefs.includes(ref)),
+  const saved = overview.memories.filter(
+    (item) => item.status !== "trashed" && item.sourceRefs.some((ref) => ownerRefs.includes(ref)),
   );
   if (!pending.length && !saved.length) return null;
   return (

@@ -32,6 +32,7 @@ import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { beforeAll, describe, expect, it } from "vitest";
 import { useSqliteContractExecution } from "../sqlite-contract-execution.fixture.ts";
 import { type RetrievalOutcome, type RetrievalQuery, retrievalMetrics } from "./metrics.ts";
+import { testModelEgress } from "@himawari-agent/testing";
 
 interface LiveEnvironment {
   readonly HIMAWARI_MEMORY_EVAL_LIVE?: string;
@@ -155,6 +156,7 @@ describe.skipIf(!LIVE)("memory retrieval live evaluation", () => {
       const key = environment.AI_GATEWAY_API_KEY?.trim();
       const usage = { requests: 0, inputTokens: 0, costMicros: 0 };
       const gateway = new GatewayEmbedder({
+        egress: testModelEgress(),
         baseUrl: AI_GATEWAY_BASE_URL,
         model: QWEN3_EMBEDDING_8B_MODEL,
         dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,

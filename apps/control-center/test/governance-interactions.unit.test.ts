@@ -84,6 +84,8 @@ beforeEach(() => {
       objectId: null,
       status: null,
       afterCursor: null,
+      page: null,
+      pageTab: null,
       view: "content",
     },
     storage,

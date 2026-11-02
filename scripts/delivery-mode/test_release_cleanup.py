@@ -5,7 +5,10 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 HERE = Path(__file__).resolve().parent
@@ -387,6 +390,52 @@ class QualificationLeftoverCleanupTest(CleanupCase):
         self.target().mkdir()
         self.run_cleanup()
         self.assertEqual(self.deleted(self.run_cleanup()), [])
+
+
+class StaleTransportTest(unittest.TestCase):
+    SHA = 'a' * 64
+    OTHER = 'b' * 64
+
+    def spawn(self, flag, sha):
+        process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)', flag, sha])
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and flag.encode() not in Path('/proc/%d/cmdline' % process.pid).read_bytes():
+            time.sleep(0.01)
+        return process
+
+    def test_finds_only_a_transport_of_this_packets_freeze_sha(self):
+        mine = self.spawn('--approved-r2l13-twentythird-transport', self.SHA)
+        self.spawn('--approved-r2l13-twentythird-transport', self.OTHER)
+        self.spawn('--approved-r2l13-twentythird-step', self.SHA)
+        self.assertEqual(remote.stale_transports(self.SHA, os.getpid()), [mine.pid])
+
+    def test_a_sha_that_only_appears_inside_a_longer_argument_does_not_match(self):
+        self.spawn('--approved-r2l13-twentythird-transport', self.SHA + 'ff')
+        self.assertEqual(remote.stale_transports(self.SHA, os.getpid()), [])
+
+    def test_apply_stops_the_leftover_process_and_plan_does_not(self):
+        process = self.spawn('--approved-r2l13-twentythird-transport', self.SHA)
+        planned = remote.terminate([process.pid], False)
+        self.assertEqual(planned, [{'pid': process.pid, 'terminated': False}])
+        self.assertIsNone(process.poll())
+        applied = remote.terminate([process.pid], True, wait=3)
+        process.wait(timeout=5)
+        self.assertEqual(applied, [{'pid': process.pid, 'terminated': True}])
+
+    def test_a_process_that_ignores_sigterm_is_killed(self):
+        script = 'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(120)'
+        process = subprocess.Popen([sys.executable, '-c', script, '--approved-r2l13-twentythird-transport', self.SHA])
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        time.sleep(0.3)
+        result = remote.terminate([process.pid], True, wait=1)
+        process.wait(timeout=5)
+        self.assertEqual(result, [{'pid': process.pid, 'terminated': True}])
+
+    def test_plan_carries_the_freeze_sha_of_the_packet(self):
+        binding = CleanupPlanTest().binding()
+        self.assertEqual(local.cleanup_plan(binding, 1, self.SHA)['freezeSha256'], self.SHA)
+        self.assertIsNone(local.cleanup_plan(binding)['freezeSha256'])
 
 
 class CleanupPlanTest(unittest.TestCase):

@@ -1,0 +1,428 @@
+import { describe, expect, it } from "vitest";
+import { ModelEgress, ModelEgressRefusedError } from "../src/index.js";
+
+const key = new Uint8Array([1, 2, 3, 4]);
+
+function sign(secret: Uint8Array, message: string): Uint8Array {
+  let hash = secret[0] ?? 0;
+  const out = new Uint8Array(8);
+  for (const char of message) {
+    hash = (hash * 131 + char.charCodeAt(0)) % 2147483647;
+    out[hash % 8] = (out[hash % 8] ?? 0) ^ (hash & 255);
+  }
+  return out;
+}
+
+function egress(): ModelEgress {
+  return new ModelEgress({ key: async () => key, sign });
+}
+
+type Call = readonly [string, { body?: unknown; headers?: unknown; method?: string } | undefined];
+
+function recorder() {
+  const calls: Call[] = [];
+  const base = async (
+    input: string,
+    init?: { method?: string; body?: unknown; headers?: unknown },
+  ) => {
+    calls.push([input, init]);
+    return { ok: true };
+  };
+  return { calls, base };
+}
+
+async function send(
+  path: string,
+  body: unknown,
+  options: { readonly exchange?: ReturnType<ModelEgress["exchange"]> } = {},
+) {
+  const exchange = options.exchange ?? egress().exchange();
+  const { calls, base } = recorder();
+  const fetch = exchange.wrapFetch(base);
+  await fetch(`https://gateway.invalid/v1${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "content-length": "999" },
+    body: JSON.stringify(body),
+  });
+  const init = calls[0]?.[1];
+  return {
+    exchange,
+    init,
+    sent: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    raw: String(init?.body),
+  };
+}
+
+const CARD = "4111 1111 1111 1111";
+const PLACEHOLDER = /\[[^\]]+#[a-z]{8}\]/u;
+
+describe("chat completions", () => {
+  const body = (extra: Record<string, unknown> = {}) => ({
+    model: "m",
+    stream: true,
+    tools: [{ type: "function", function: { name: "bash", description: "password: tool-doc" } }],
+    messages: [
+      { role: "system", content: "你是 Himawari" },
+      { role: "user", content: `我的卡号 ${CARD}` },
+      {
+        role: "assistant",
+        content: null,
+        reasoning_content: "密码：reasoning-secret-1",
+        tool_calls: [
+          {
+            id: "call_1234567890123456789",
+            type: "function",
+            function: {
+              name: "bash",
+              arguments: JSON.stringify({
+                command: "login",
+                signature: "密码：hunter22abc",
+                nested: { list: ["验证码 482910"] },
+              }),
+            },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1234567890123456789", content: "验证码 482910" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "再看一下" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAA4111111111111111" } },
+        ],
+      },
+    ],
+    ...extra,
+  });
+
+  it("masks message text, tool results and every string inside tool-call arguments", async () => {
+    const { sent, raw } = await send("/chat/completions", body());
+    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain("482910");
+    expect(raw).not.toContain("hunter22abc");
+    const messages = sent["messages"] as Record<string, unknown>[];
+    const calls = messages[2]?.["tool_calls"] as { function: { arguments: string } }[];
+    const parsed = JSON.parse(calls[0]?.function.arguments ?? "{}");
+    expect(parsed.signature).toMatch(PLACEHOLDER);
+    expect(parsed.nested.list[0]).toMatch(PLACEHOLDER);
+    expect(parsed.command).toBe("login");
+  });
+
+  it("leaves reasoning, ids, tool names, tool definitions and images byte-identical", async () => {
+    const original = body();
+    const { sent } = await send("/chat/completions", original);
+    const messages = sent["messages"] as Record<string, unknown>[];
+    expect(messages[2]?.["reasoning_content"]).toBe("密码：reasoning-secret-1");
+    const call = (messages[2]?.["tool_calls"] as Record<string, unknown>[])[0];
+    expect(call?.["id"]).toBe("call_1234567890123456789");
+    expect((call?.["function"] as Record<string, unknown>)["name"]).toBe("bash");
+    expect(messages[3]?.["tool_call_id"]).toBe("call_1234567890123456789");
+    expect(sent["tools"]).toEqual(original.tools);
+    expect(JSON.stringify(messages[4])).toContain("data:image/png;base64,AAAA4111111111111111");
+  });
+
+  it("masks a secret that sits in the very first history message", async () => {
+    const { raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [
+        { role: "user", content: `卡号 ${CARD}` },
+        { role: "assistant", content: "好的" },
+        { role: "user", content: "继续" },
+      ],
+    });
+    expect(raw).not.toContain(CARD);
+  });
+
+  it("sends the original bytes and keeps content-length when nothing needs masking", async () => {
+    const clean = { model: "m", messages: [{ role: "user", content: "你好" }] };
+    const { init } = await send("/chat/completions", clean);
+    expect(init?.body).toBe(JSON.stringify(clean));
+    expect(init?.headers).toEqual({
+      "content-type": "application/json",
+      "content-length": "999",
+    });
+  });
+
+  it("drops content-length when the body changed", async () => {
+    const { init } = await send("/chat/completions", body());
+    expect(init?.headers).toEqual({ "content-type": "application/json" });
+  });
+
+  it("keeps earlier messages byte-identical when a later message is appended", async () => {
+    const history = body().messages;
+    const turnOne = await send("/chat/completions", { model: "m", messages: history });
+    const turnTwo = await send("/chat/completions", {
+      model: "m",
+      messages: [...history, { role: "user", content: "谢谢，密码：abc123xyz" }],
+    });
+    const one = turnOne.sent["messages"] as unknown[];
+    const two = turnTwo.sent["messages"] as unknown[];
+    expect(JSON.stringify(two.slice(0, one.length))).toBe(JSON.stringify(one));
+  });
+
+  it("gives the same placeholder to the same value across calls and keys", async () => {
+    const a = await send("/chat/completions", body());
+    const b = await send("/chat/completions", body());
+    expect(a.raw).toBe(b.raw);
+    const other = new ModelEgress({ key: async () => new Uint8Array([9, 9]), sign });
+    const c = await send("/chat/completions", body(), { exchange: other.exchange() });
+    expect(c.raw).not.toBe(a.raw);
+  });
+
+  it("masks a later plain mention of a value that was masked earlier in the same request", async () => {
+    const { raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [
+        { role: "user", content: "我的密码：hunter22abc" },
+        { role: "assistant", content: "收到，hunter22abc 已经记下" },
+      ],
+    });
+    expect(raw).not.toContain("hunter22abc");
+  });
+
+  it("masks sensitive values in positions nobody listed, such as new fields and unknown part types", async () => {
+    const { raw } = await send("/chat/completions", {
+      model: "m",
+      metadata: { note: `卡 ${CARD}` },
+      messages: [
+        { role: "oracle", content: "验证码 482910", extra: { deep: [`密码：hunter22abc`] } },
+        { role: "user", content: [{ type: "hologram", text: `卡 ${CARD}` }] },
+      ],
+    });
+    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain("482910");
+    expect(raw).not.toContain("hunter22abc");
+  });
+
+  it("leaves identifiers alone even when they look like card numbers", async () => {
+    const lookalike = "call_4111111111111111";
+    const { sent } = await send("/chat/completions", {
+      model: "m",
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: lookalike, type: "function", function: { name: "n", arguments: "{}" } },
+          ],
+        },
+        { role: "tool", tool_call_id: lookalike, content: "ok" },
+      ],
+    });
+    const messages = sent["messages"] as Record<string, unknown>[];
+    expect((messages[0]?.["tool_calls"] as { id: string }[])[0]?.id).toBe(lookalike);
+    expect(messages[1]?.["tool_call_id"]).toBe(lookalike);
+  });
+
+  it("masks a value inside tool arguments even when its key is named like a protected one", async () => {
+    const { raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "c1",
+              type: "function",
+              function: {
+                name: "n",
+                arguments: JSON.stringify({
+                  id: `卡 ${CARD}`,
+                  name: "密码：hunter22abc",
+                  type: "验证码 482910",
+                }),
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain("hunter22abc");
+    expect(raw).not.toContain("482910");
+  });
+
+  it("refuses a request that has no conversation", async () => {
+    await expect(send("/chat/completions", { model: "m" })).rejects.toBeInstanceOf(
+      ModelEgressRefusedError,
+    );
+  });
+
+  it("counts findings by kind without keeping values", async () => {
+    const { exchange } = await send("/chat/completions", body());
+    expect(exchange.findings().map(({ kind }) => kind)).toContain("bank-card");
+    expect(JSON.stringify(exchange.findings())).not.toContain("4111");
+  });
+});
+
+describe("responses", () => {
+  it("masks instructions, messages, function calls and outputs; keeps reasoning", async () => {
+    const { sent, raw } = await send("/responses", {
+      model: "m",
+      instructions: "密码：sys-secret-1",
+      input: [
+        { type: "message", role: "user", content: [{ type: "input_text", text: `卡 ${CARD}` }] },
+        { type: "reasoning", id: "rs_1", encrypted_content: `密码：keep-this-1` },
+        { type: "function_call", call_id: "c1", name: "x", arguments: '{"a":"验证码 482910"}' },
+        { type: "function_call_output", call_id: "c1", output: "验证码 482910" },
+      ],
+    });
+    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain("sys-secret-1");
+    expect(raw).not.toContain("482910");
+    const input = sent["input"] as Record<string, unknown>[];
+    expect(input[1]?.["encrypted_content"]).toBe("密码：keep-this-1");
+  });
+
+  it("refuses a responses request without input", async () => {
+    await expect(send("/responses", { model: "m" })).rejects.toBeInstanceOf(
+      ModelEgressRefusedError,
+    );
+  });
+});
+
+describe("anthropic messages", () => {
+  it("masks system, text, tool_use input and tool_result; keeps thinking and its signature", async () => {
+    const { sent, raw } = await send("/messages", {
+      model: "m",
+      system: [{ type: "text", text: "密码：sys-secret-1" }],
+      messages: [
+        { role: "user", content: `卡 ${CARD}` },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "密码：think-keep-1", signature: "Ev8x9kQ2" },
+            { type: "tool_use", id: "tu1", name: "bash", input: { c: "验证码 482910" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tu1",
+              content: [{ type: "text", text: "验证码 482910" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(raw).not.toContain(CARD);
+    expect(raw).not.toContain("sys-secret-1");
+    expect(raw).not.toContain("482910");
+    const messages = sent["messages"] as { content: Record<string, unknown>[] }[];
+    expect(messages[1]?.content[0]).toEqual({
+      type: "thinking",
+      thinking: "密码：think-keep-1",
+      signature: "Ev8x9kQ2",
+    });
+    expect(messages[1]?.content[1]?.["id"]).toBe("tu1");
+  });
+});
+
+describe("embeddings", () => {
+  it("masks a string input and a list of strings", async () => {
+    const one = await send("/embeddings", { model: "m", input: `卡 ${CARD}` });
+    expect(one.raw).not.toContain(CARD);
+    const many = await send("/embeddings", { model: "m", input: [`卡 ${CARD}`, "你好"] });
+    expect(many.raw).not.toContain(CARD);
+    expect((many.sent["input"] as string[])[1]).toBe("你好");
+  });
+
+  it("refuses token-id arrays because they cannot be inspected", async () => {
+    await expect(send("/embeddings", { model: "m", input: [1, 2, 3] })).rejects.toBeInstanceOf(
+      ModelEgressRefusedError,
+    );
+    await expect(send("/embeddings", { model: "m", input: [[1, 2]] })).rejects.toBeInstanceOf(
+      ModelEgressRefusedError,
+    );
+  });
+});
+
+describe("what is not sent", () => {
+  it("refuses a body sent to an unknown path", async () => {
+    await expect(send("/audio/speech", { input: `卡 ${CARD}` })).rejects.toBeInstanceOf(
+      ModelEgressRefusedError,
+    );
+  });
+
+  it("refuses a body that is not text or not JSON, and a request object with its own body", async () => {
+    const exchange = egress().exchange();
+    const { base, calls } = recorder();
+    const fetch = exchange.wrapFetch(base);
+    await expect(
+      fetch("https://gateway.invalid/v1/chat/completions", {
+        method: "POST",
+        body: new Uint8Array(3),
+      }),
+    ).rejects.toBeInstanceOf(ModelEgressRefusedError);
+    await expect(
+      fetch("https://gateway.invalid/v1/chat/completions", { method: "POST", body: "not json" }),
+    ).rejects.toBeInstanceOf(ModelEgressRefusedError);
+    await expect(
+      (fetch as unknown as (input: unknown, init?: unknown) => Promise<unknown>)({
+        url: "https://gateway.invalid/v1/chat/completions",
+        body: "x",
+      }),
+    ).rejects.toBeInstanceOf(ModelEgressRefusedError);
+    expect(calls).toEqual([]);
+  });
+
+  it("passes requests without a body through untouched", async () => {
+    const exchange = egress().exchange();
+    const { base, calls } = recorder();
+    await exchange.wrapFetch(base)("https://gateway.invalid/v1/generation?id=1", { method: "GET" });
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe("putting values back", () => {
+  it("restores placeholders from this request and leaves unknown ones alone", async () => {
+    const { exchange, raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [{ role: "user", content: `卡 ${CARD}，密码：hunter22abc` }],
+    });
+    const placeholders = [
+      ...raw.matchAll(/\[(?:密码|验证码|证件号|银行卡 尾号\d{4})#[a-z]{8}\]/gu),
+    ].map((match) => match[0]);
+    expect(placeholders).toHaveLength(2);
+    const reply = `你的卡是 ${placeholders[0]}，另一个 [密码#zzzzzzzz] 不认识`;
+    const restored = exchange.restore(reply);
+    expect(restored).toContain(CARD);
+    expect(restored).toContain("[密码#zzzzzzzz]");
+  });
+
+  it("never restores a machine secret", async () => {
+    const secret = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-");
+    const { exchange, raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [{ role: "user", content: `key ${secret}` }],
+    });
+    expect(raw).toContain("[密钥]");
+    expect(exchange.restore("[密钥]")).toBe("[密钥]");
+    expect(exchange.table.size).toBe(0);
+  });
+
+  it("restores a placeholder that arrives split across chunks and holds nothing back at the end", async () => {
+    const { exchange, raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [{ role: "user", content: "密码：hunter22abc" }],
+    });
+    const placeholder =
+      [...raw.matchAll(/\[(?:密码|验证码|证件号|银行卡 尾号\d{4})#[a-z]{8}\]/gu)][0]?.[0] ?? "";
+    const text = `好的，${placeholder}，已经记下 [不是占位符] 结束`;
+    for (let cut = 1; cut < text.length; cut += 1) {
+      const restorer = exchange.streamingRestorer();
+      const out =
+        restorer.append(text.slice(0, cut)) + restorer.append(text.slice(cut)) + restorer.flush();
+      expect(out).toBe("好的，hunter22abc，已经记下 [不是占位符] 结束");
+    }
+  });
+
+  it("flushes an unfinished bracket as-is when the stream ends", () => {
+    const restorer = egress().exchange().streamingRestorer();
+    expect(restorer.append("看这里 [密码#abc")).toBe("看这里 ");
+    expect(restorer.flush()).toBe("[密码#abc");
+  });
+});

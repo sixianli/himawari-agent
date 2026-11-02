@@ -87,6 +87,7 @@ import { prepareProductionFile } from "./production-file-preparation.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import { createProductionManagedTasks } from "./production-managed-tasks.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { proofValidUntil } from "./production-proof-validity.js";
 import { isGlobalServiceFailure } from "./production-record-failure.js";
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
@@ -188,11 +189,14 @@ export async function createProductionSandboxServices(options: {
   for (const entry of sandboxEntries) {
     if (entry.binding.kind !== "sandbox" || !entry.qualification.sandbox)
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
-    await verifySandboxHost({
-      binding: entry.binding.value,
-      qualification: entry.qualification.sandbox,
-      hostId,
-    });
+    await verifySandboxHost(
+      {
+        binding: entry.binding.value,
+        qualification: entry.qualification.sandbox,
+        hostId,
+      },
+      { deferContentAudit: true },
+    );
   }
   const journal = repository.sandboxJobJournal(configuration.ownerId, configuration.agentId);
   const environments = options.taskEnvironments
@@ -1782,7 +1786,7 @@ export async function createProductionSandboxServices(options: {
       policyDigest: facts.environment.policyDigest,
       resourceSequence: facts.resource.sequence,
       checkedAt: now,
-      validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+      validUntil: proofValidUntil(now, retainedRelease && record.releaseReceipt != null),
       outputs,
       evidence: [...observed.evidence, ...effectEvidence],
     };

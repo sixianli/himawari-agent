@@ -21,6 +21,7 @@ import {
   AI_GATEWAY_LIVE_BUDGET_MICROS,
   AI_GATEWAY_PRIMARY_MODEL,
 } from "./fixtures/openrouter-live-configuration.js";
+import { testModelEgress } from "@himawari-agent/testing";
 
 interface LiveEnvironment {
   readonly HIMAWARI_FILE_SUMMARY_LIVE?: string;
@@ -122,6 +123,7 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway generation live qualification", () =>
       return response;
     };
     const composition = createProductionModelCompositionFromConfiguration({
+      egress: testModelEgress(),
       configuration: createAiGatewayLiveConfiguration(
         "/private/tmp/himawari-ai-gateway-live-qualification",
       ),

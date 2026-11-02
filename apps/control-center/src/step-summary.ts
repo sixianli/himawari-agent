@@ -3,6 +3,7 @@ import type { MessageId } from "./i18n/message-ids.js";
 type StepKind =
   | "search"
   | "recall"
+  | "reminder"
   | "fetch"
   | "read"
   | "write"
@@ -22,6 +23,9 @@ const kinds: Readonly<Record<string, StepKind>> = {
   web_search: "search",
   web_fetch: "fetch",
   recall: "recall",
+  reminder_set: "reminder",
+  reminder_list: "reminder",
+  reminder_cancel: "reminder",
   read: "read",
   write: "write",
   edit: "edit",
@@ -68,15 +72,17 @@ export function toolStepSummary(name: string, input: string): { id: MessageId; t
   const target =
     kind === "search" || kind === "recall"
       ? field(args, "query")
-      : kind === "fetch"
-        ? hostName(field(args, "url"))
-        : kind === "find" || kind === "grep"
-          ? field(args, "pattern")
-          : ["read", "write", "edit", "list", "move"].includes(kind)
-            ? baseName(field(args, "path"))
-            : kind === "other"
-              ? name
-              : "";
+      : kind === "reminder"
+        ? field(args, "text")
+        : kind === "fetch"
+          ? hostName(field(args, "url"))
+          : kind === "find" || kind === "grep"
+            ? field(args, "pattern")
+            : ["read", "write", "edit", "list", "move"].includes(kind)
+              ? baseName(field(args, "path"))
+              : kind === "other"
+                ? name
+                : "";
   return { id: `step.${kind}` as MessageId, target };
 }
 

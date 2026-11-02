@@ -26,6 +26,7 @@ import {
   observeGatewayFetch,
 } from "../../../packages/runtime-pi/src/gateway-observation.js";
 import { boundedAiGatewayFetch, record } from "./file-summary-network.js";
+import { testModelEgress } from "@himawari-agent/testing";
 
 const fixture = new URL("./file-summary/", import.meta.url);
 export async function qualifyFileSummary() {
@@ -202,6 +203,7 @@ export async function qualifyFileSummary() {
       if (!content) content = await readFile(new URL("project-brief.txt", fixture), "utf8");
       embeddingFetch = globalThis.fetch;
       memory = await createProductionMemoryCompositionFromConfiguration({
+        egress: testModelEgress(),
         configuration: {
           ...configuration,
           stateRoot,

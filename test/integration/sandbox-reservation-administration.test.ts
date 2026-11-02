@@ -22,6 +22,7 @@ import { CONFIGURATION_SCHEMA_VERSION } from "@himawari-agent/platform-node";
 import BetterSqlite3 from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { runAdminCli } from "../../apps/admin-cli/src/index.ts";
+import { LATEST_MIGRATION_SEQUENCE } from "../../packages/persistence-sqlite/src/migration-engine.ts";
 import { RUN_RESOURCES_RELEASED_SQL } from "../../packages/persistence-sqlite/src/sqlite-run-resource-guard.ts";
 import { SqliteRunDispatchOperations } from "../../packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts";
 import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "../../packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts";
@@ -358,6 +359,11 @@ function sink() {
   };
 }
 
+const SUPPORTED_ADMIN_SCHEMAS: readonly number[] = [
+  49,
+  ...Array.from({ length: LATEST_MIGRATION_SEQUENCE - 50 }, (_, index) => 51 + index),
+];
+
 async function cli(args: string[]) {
   const output = sink();
   const error = sink();
@@ -480,7 +486,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     });
   });
 
-  it("inspects one scoped reservation without changing rows, taking the service lock or claiming host proof", async () => {
+  it("[ADMIN-SCHEMA-RANGE] inspects one scoped reservation without changing rows, taking the service lock or claiming host proof", async () => {
     const f = await fixture();
     const before = snapshot(f);
     const files = await readdir(f.stateRoot);
@@ -682,7 +688,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     });
   });
 
-  it("migrates a stopped Schema49 reservation through the public CLI before administrator disposition without replay", async () => {
+  it("[ADMIN-SCHEMA-RANGE] migrates a stopped Schema49 reservation through the public CLI before administrator disposition without replay", async () => {
     const f = await fixture({ schemaSequence: 49 });
     const before = snapshot(f);
     expect(before["runs"]?.[0]).toMatchObject({ status: "reconciling_external_result" });
@@ -714,8 +720,11 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       error: "",
       result: {
         command: "db.migrate",
-        currentSequence: 67,
-        appliedSequences: [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67],
+        currentSequence: LATEST_MIGRATION_SEQUENCE,
+        appliedSequences: Array.from(
+          { length: LATEST_MIGRATION_SEQUENCE - 49 },
+          (_, index) => 50 + index,
+        ),
         snapshotPath: expect.any(String),
       },
     });
@@ -747,10 +756,10 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     withDatabase(f, (database) => {
       expect(
         database.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get(),
-      ).toBe(67);
+      ).toBe(LATEST_MIGRATION_SEQUENCE);
       expect(database.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
-        { key: "current_sequence", value: "67" },
-        { key: "minimum_writer_sequence", value: "67" },
+        { key: "current_sequence", value: String(LATEST_MIGRATION_SEQUENCE) },
+        { key: "minimum_writer_sequence", value: String(LATEST_MIGRATION_SEQUENCE) },
       ]);
     });
     const listed = await inspect(f);
@@ -832,7 +841,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     expect(snapshot(f)).toEqual(after);
   });
 
-  it("refuses unknown future schema metadata without migrating or writing", async () => {
+  it("[ADMIN-SCHEMA-RANGE] refuses unknown future schema metadata without migrating or writing", async () => {
     const f = await fixture();
     const listed = await inspect(f);
     withDatabase(f, (database) =>
@@ -1274,7 +1283,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     expect(snapshot(f)).toEqual(before);
   });
 
-  it("atomically records administrator cleanup, fails the Run and preserves unknown execution history", async () => {
+  it("[ADMIN-SCHEMA-RANGE] atomically records administrator cleanup, fails the Run and preserves unknown execution history", async () => {
     const f = await fixture();
     const listed = await inspect(f);
     const before = snapshot(f);
@@ -1390,7 +1399,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
             .pluck()
             .get(),
         ),
-      ).toBe(67);
+      ).toBe(LATEST_MIGRATION_SEQUENCE);
       expect(
         database
           .prepare(`SELECT 1 FROM runs r WHERE id=@runId AND (${RUN_RESOURCES_RELEASED_SQL})`)
@@ -1401,7 +1410,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const audit = auditWorkspaceLifecycle(f);
     expect(audit).toMatchObject({
       mode: "read_only",
-      schemaSequence: 67,
+      schemaSequence: LATEST_MIGRATION_SEQUENCE,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -1600,7 +1609,7 @@ describe.each([
     expect(snapshot(f)).toEqual(disposed);
   });
 
-  it.each([49, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67] as const)(
+  it.each(SUPPORTED_ADMIN_SCHEMAS)(
     "allows a permanently accepted automatic release in Schema %s without changing history",
     async (schemaSequence) => {
       const f = await fixture(schemaSequence === 49 ? { schemaSequence } : {});
@@ -1617,7 +1626,7 @@ describe.each([
     },
   );
 
-  it.each([49, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67] as const)(
+  it.each(SUPPORTED_ADMIN_SCHEMAS)(
     "still blocks a mixed released and unresolved reservation set in Schema %s",
     async (schemaSequence) => {
       const f = await fixture({

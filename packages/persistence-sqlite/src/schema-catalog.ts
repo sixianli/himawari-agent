@@ -720,6 +720,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion",
   ),
   entry(
+    "web_push_account_kinds",
+    "WebPushStorePort",
+    "one row per owner and agent holding which kinds of push (reminder, approval, run) are on; shared by every device",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "web_push_outbox",
     "WebPushStorePort",
     "one row per event to push, naming only its source; pruned seven days after it expires",
@@ -781,6 +788,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "one row per model gate decision (proactive check, memory candidate, consolidation change, context truncation, retrieval degrade, external read): inputs as ids, cost and the owner's rating; text only as protected payload references",
     "metadata_only",
     "cascade with Owner or Agent deletion; proactive rows are removed when the owner deletes proactive records",
+  ),
+  entry(
+    "decision_ledger_payloads",
+    "ProactiveStorePort",
+    "which protected prompt and answer payloads each proactive check's model calls left behind, in call order; the payload text is never stored here",
+    "payload_reference",
+    "cascade with the ledger row; the payloads are removed when the owner deletes proactive records or disconnects the source",
   ),
   entry(
     "muse_reference_entries",

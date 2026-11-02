@@ -31,15 +31,7 @@ import {
 } from "./components/content-preview.js";
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { FilesLibrary } from "./components/files-library.js";
-import {
-  ActionButton,
-  ActionMenu,
-  Banner,
-  EditActions,
-  Field,
-  ModalDialog,
-  StatusRegion,
-} from "./components/index.js";
+import { ActionButton, Banner, StatusRegion } from "./components/index.js";
 import { OPEN_MEMORY_PAGE } from "./components/memory-panel.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
 import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
@@ -80,6 +72,7 @@ type ThreadIntent =
   | { readonly kind: "pin"; readonly pinOrder: number | null }
   | { readonly kind: "archive" }
   | { readonly kind: "restore" }
+  | { readonly kind: "trash" }
   | {
       readonly kind: "fork";
       readonly sourceTurnId: string;
@@ -108,7 +101,7 @@ export interface ThreadControlCenterOptions {
     id: MessageId,
     values?: Record<string, string | number | boolean | Date>,
   ) => string;
-  readonly navigate: (route: ControlCenterRouteState) => void;
+  readonly navigate: (route: ControlCenterRouteState, replace?: boolean) => void;
   readonly refreshSignal: number;
   readonly threadEventSignal?: number;
   readonly threadEvents?: { readonly current: (string | null)[] };
@@ -116,7 +109,7 @@ export interface ThreadControlCenterOptions {
   readonly storage: ControlCenterBrowserStorage;
   readonly onUnauthorized: () => void;
   readonly renderMemory?: (ownerRefs: readonly string[]) => ReactNode;
-  readonly renderPage?: (page: SidePage, onBack: () => void) => ReactNode;
+  readonly renderPage?: (page: SidePage) => ReactNode;
   readonly remindersDue?: number;
   readonly ownerName?: string | undefined;
   readonly modelChoice?: ModelChoice | undefined;
@@ -238,7 +231,7 @@ export function useThreadControlCenter(
     configuration,
     connection,
     message,
-    navigate,
+    navigate: navigateRoute,
     onUnauthorized,
     refreshSignal,
     threadEventSignal = 0,
@@ -258,7 +251,18 @@ export function useThreadControlCenter(
     return () => window.clearTimeout(timer);
   }, [connection]);
   const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
-  const [page, setPage] = useState<WorkPage>(null);
+  const navigate = useCallback(
+    (state: ControlCenterRouteState) => navigateRoute({ ...state, page: null, pageTab: null }),
+    [navigateRoute],
+  );
+  const page: WorkPage = route.page === "settings" ? null : route.page;
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const setPage = useCallback(
+    (next: WorkPage) =>
+      navigateRoute({ ...routeRef.current, page: next, pageTab: null, view: "content" }),
+    [navigateRoute],
+  );
   const library = page === "files";
   useEffect(() => {
     const open = () => setPage("memory");
@@ -269,7 +273,7 @@ export function useThreadControlCenter(
       window.removeEventListener(OPEN_MEMORY_PAGE, open);
       window.removeEventListener(OPEN_REMINDERS_PAGE, openReminders);
     };
-  }, []);
+  }, [setPage]);
   const [registered, setRegistered] = useState<readonly RegisteredFile[]>();
   const pendingTurn = useRef<string | null>(null);
   const [more, setMore] = useState<{
@@ -360,7 +364,6 @@ export function useThreadControlCenter(
     setLiveTexts({});
     setDetail(undefined);
     setPreview(null);
-    setPage(null);
     setRegistered(undefined);
     setMore((current) => ({ ...current, open: false, command: null }));
     setStoppingRunIds([]);
@@ -1036,6 +1039,7 @@ export function useThreadControlCenter(
           | "thread.pin"
           | "thread.archive"
           | "thread.restore"
+          | "thread.trash"
           | "thread.fork";
         switch (intent.kind) {
           case "submit": {
@@ -1099,6 +1103,7 @@ export function useThreadControlCenter(
             break;
           case "archive":
           case "restore":
+          case "trash":
             type = `thread.${intent.kind}`;
             payload = {
               threadId: thread.threadId,
@@ -1342,7 +1347,6 @@ export function useThreadControlCenter(
 
   const threadItems = collection?.payload.threads ?? [];
   const startNewThread = () => {
-    setPage(null);
     void createThread();
   };
   const renameThread = (thread: ThreadSummary) => {
@@ -1367,6 +1371,36 @@ export function useThreadControlCenter(
       undefined,
       thread,
     );
+  };
+  const renameChanged = Boolean(renameTitle.trim()) && renameTitle.trim() !== renameInitial.trim();
+  const renameSaving = useRef(false);
+  const saveRename = async () => {
+    const target = renameTarget;
+    if (!target || !renameChanged || renameSaving.current) return;
+    renameSaving.current = true;
+    try {
+      const result = await performIntent({ kind: "rename", title: renameTitle }, undefined, target);
+      if (result)
+        setRenameTarget((current) => (current?.threadId === target.threadId ? null : current));
+    } finally {
+      renameSaving.current = false;
+    }
+  };
+  const [deleteTarget, setDeleteTarget] = useState<ThreadSummary | null>(null);
+  const requestDelete = (thread: ThreadSummary) => {
+    if (projectedPendingThreadIds.includes(thread.threadId)) {
+      setError(message("review.deletePending"));
+      return;
+    }
+    setDeleteTarget(thread);
+  };
+  const confirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleteTarget(null);
+    const result = await performIntent({ kind: "trash" }, undefined, target);
+    if (result?.kind === "result" && selectedIdRef.current === target.threadId)
+      navigate({ ...route, objectId: null, status: null, afterCursor: null, view: "content" });
   };
   const selectedSummary =
     detail?.payload.thread ?? threadItems.find(({ threadId }) => threadId === selectedThreadId);
@@ -1430,10 +1464,17 @@ export function useThreadControlCenter(
       onRename={renameThread}
       onPin={pinThread}
       onArchive={archiveThread}
-      onNavigate={(state) => {
-        setPage(null);
-        navigate(state);
-      }}
+      onDelete={requestDelete}
+      renamingThreadId={renameTarget?.threadId ?? null}
+      renameValue={renameTitle}
+      renameChanged={renameChanged}
+      onRenameValueChange={setRenameTitle}
+      onRenameCommit={() => void saveRename()}
+      onRenameCancel={() => setRenameTarget(null)}
+      deletingThreadId={deleteTarget?.threadId ?? null}
+      onDeleteConfirm={() => void confirmDelete()}
+      onDeleteCancel={() => setDeleteTarget(null)}
+      onNavigate={navigate}
     />
   );
 
@@ -1604,7 +1645,7 @@ export function useThreadControlCenter(
       (item) => item.threadId === threadId,
     );
     if (!thread) return undefined;
-    return (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
+    return (thread.titleRef && contentByRef[thread.titleRef]) || undefined;
   };
   const openFile = (file: DeliveredFile) => {
     const title = detail ? threadTitle(detail.payload.thread.threadId) : undefined;
@@ -1635,7 +1676,6 @@ export function useThreadControlCenter(
             onOpen: () => {
               if (!threadId) return;
               pendingTurn.current = file.runId;
-              setPage(null);
               setPreview(null);
               if (threadId === selectedThreadId) {
                 if (flashTurn(file.runId)) pendingTurn.current = null;
@@ -1648,13 +1688,11 @@ export function useThreadControlCenter(
     setPreview(null);
     closeMore();
     setPage(next);
-    navigate({ ...route, view: "content" });
   };
   const openLibrary = () => {
     setPreview(null);
     closeMore();
     setPage("files");
-    navigate({ ...route, view: "content" });
   };
   useEffect(() => {
     setStoppingRunIds((current) => {
@@ -1703,47 +1741,6 @@ export function useThreadControlCenter(
           message={message}
         />
       ) : null}
-      <ActionMenu
-        label={
-          <>
-            <SidebarIcon name="more" />
-            <span className="sr-only">{message("review.conversationActions")}</span>
-          </>
-        }
-        items={[
-          {
-            id: "rename",
-            label: (
-              <>
-                <SidebarIcon name="rename" />
-                {message("threads.rename")}
-              </>
-            ),
-            onSelect: () => renameThread(openThread),
-          },
-          {
-            id: "pin",
-            label: (
-              <>
-                <SidebarIcon name="pin" />
-                {message(openThread.pinOrder === null ? "threads.pin" : "threads.unpin")}
-              </>
-            ),
-            onSelect: () => pinThread(openThread),
-          },
-          {
-            id: "archive",
-            separated: true,
-            label: (
-              <>
-                <SidebarIcon name="archive" />
-                {message("threads.archive")}
-              </>
-            ),
-            onSelect: () => archiveThread(openThread),
-          },
-        ]}
-      />
     </>
   ) : null;
   const start = (
@@ -1775,17 +1772,13 @@ export function useThreadControlCenter(
   const content = (
     <div className="thread-workarea">
       {(page === "memory" || page === "reminders") && renderPage ? (
-        <div className="side-page">{renderPage(page, () => setPage(null))}</div>
+        <div className="side-page">{renderPage(page)}</div>
       ) : library && client && configuration?.filesAvailable ? (
         <FilesLibrary
           list={(query) => client.listFiles(query)}
           threadTitle={threadTitle}
           openKey={preview?.key}
           onOpen={openLibraryFile}
-          onBack={() => {
-            setPreview(null);
-            setPage(null);
-          }}
           message={message}
         />
       ) : (
@@ -1976,46 +1969,6 @@ export function useThreadControlCenter(
     </div>
   );
 
-  const renameChanged = Boolean(renameTitle.trim()) && renameTitle.trim() !== renameInitial.trim();
-  const saveRename = async () => {
-    if (!renameTarget || !renameChanged) return;
-    const result = await performIntent(
-      { kind: "rename", title: renameTitle },
-      undefined,
-      renameTarget,
-    );
-    if (result) setRenameTarget(null);
-  };
-  const details = (
-    <ModalDialog
-      open={renameTarget !== null}
-      title={message("threads.rename")}
-      closeLabel={message("common.close")}
-      onClose={() => setRenameTarget(null)}
-    >
-      <Field label={message("review.conversationName")}>
-        <input
-          data-autofocus
-          value={renameTitle}
-          onChange={(event) => setRenameTitle(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (renameChanged) void saveRename();
-            }
-          }}
-        />
-      </Field>
-      <EditActions
-        changed={renameChanged}
-        saveLabel={message("review.save")}
-        cancelLabel={message("governed.cancel")}
-        onSave={() => void saveRename()}
-        onCancel={() => setRenameTarget(null)}
-      />
-    </ModalDialog>
-  );
-
   return Object.freeze({
     content,
     settingsData: (
@@ -2031,7 +1984,7 @@ export function useThreadControlCenter(
         }
       />
     ),
-    details,
+    details: null,
     actions,
     start,
     list,

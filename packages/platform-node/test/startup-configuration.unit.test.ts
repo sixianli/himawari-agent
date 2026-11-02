@@ -1350,18 +1350,24 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
   expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive).toEqual({
     ...proactive,
     intervalMs: 900_000,
-    perCheckCostMicros: 100_000,
     perCheckMs: 180_000,
     dailyCostMicros: 1_000_000,
+    memoryMinimumSimilarity: 0.45,
   });
+  raw["runPolicy"] = { ...policy, proactive: { ...proactive, perCheckCostMicros: 100_000 } };
+  const legacy = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
+  expect(legacy).toBeDefined();
+  expect(legacy).not.toHaveProperty("perCheckCostMicros");
+  expect(legacy?.dailyCostMicros).toBe(1_000_000);
   for (const invalid of [
     { ...proactive, modelRef: "model-embedding" },
     { ...proactive, modelRef: "model-missing" },
     { ...proactive, gmail: { ...proactive.gmail, clientSecretRef: "missing-secret" } },
     { ...proactive, gmail: { ...proactive.gmail, clientId: "bad id" } },
     { ...proactive, gmail: { ...proactive.gmail, clientSecret: "inline" } },
-    { ...proactive, perCheckCostMicros: 2_000_000 },
+    { ...proactive, perCheckCostMicros: 0 },
     { ...proactive, intervalMs: 1_000 },
+    { ...proactive, memoryMinimumSimilarity: 1.5 },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
