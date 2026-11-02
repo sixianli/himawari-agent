@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, lstatSync, readdirSync, readlinkSync, realpathSync, writeFileSync, statfsSync } from "node:fs";
+import { existsSync, readFileSync, lstatSync, readdirSync, readlinkSync, realpathSync, renameSync, writeFileSync, statfsSync } from "node:fs";
 import path from "node:path";
 import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -564,6 +564,12 @@ export function readRestoredCatalog(binding, prefix = oldPrefix) {
 export function retainedJson(name, value) {
   assert(/^[a-z0-9][a-z0-9._-]*\.json$/.test(name), "__PKT_LABEL_UPPER___MAINTENANCE_REPORT_NAME_INVALID");
   const filename = path.join(evidenceRoot, name);
+  if (existsSync(filename)) {
+    safeFile(filename, [fixed.uid]);
+    let sequence = 1;
+    while (existsSync(`${filename}.superseded-${sequence}`)) sequence += 1;
+    renameSync(filename, `${filename}.superseded-${sequence}`);
+  }
   writeFileSync(filename, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   safeFile(filename, [fixed.uid]);
   return { path: filename, sha256: sha(readFileSync(filename)), bytes: lstatSync(filename).size };

@@ -210,6 +210,36 @@ class StartupPhaseTest(RenderedPacket):
                 self.assertEqual((line['errorName'], line['errorMessage']), ('Error', "ENOENT: no such file or directory, open '/x/y'"))
                 self.assertTrue(line['frames'] and all(frame.startswith('at ') for frame in line['frames']))
 
+    def test_a_rerun_moves_aside_the_evidence_files_an_earlier_run_left_instead_of_failing(self):
+        import tempfile
+        source = (self.render() / 'maintenance' / 'maintenance-common.mjs').read_text()
+        start = source.index('export function retainedJson')
+        function = source[start:source.index('\n}\n', start) + 3]
+        safe_start = source.index('function safeFile')
+        safe = source[safe_start:source.index('\n}\n', safe_start) + 3]
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory).resolve()
+            module = evidence / 'retained-under-test.mjs'
+            module.write_text('\n'.join([
+                'import assert from "node:assert/strict";',
+                'import { createHash } from "node:crypto";',
+                'import path from "node:path";',
+                'import { existsSync, readFileSync, lstatSync, realpathSync, renameSync, writeFileSync } from "node:fs";',
+                f'const evidenceRoot = {json.dumps(str(evidence))};',
+                'const fixed = { uid: process.getuid() };',
+                'const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");',
+                safe, function,
+                'retainedJson("s9_raw_restore51-started.json", { run: 1 });',
+                'retainedJson("s9_raw_restore51-started.json", { run: 2 });',
+                'retainedJson("s9_raw_restore51-started.json", { run: 3 });',
+            ]).replace('__PKT_LABEL_UPPER__', 'TWENTYFIFTH'))
+            result = subprocess.run([shutil.which('node'), str(module)], capture_output=True, text=True, cwd=evidence)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            read = lambda name: json.loads((evidence / name).read_text())['run']
+            self.assertEqual(read('s9_raw_restore51-started.json'), 3)
+            self.assertEqual(read('s9_raw_restore51-started.json.superseded-1'), 1)
+            self.assertEqual(read('s9_raw_restore51-started.json.superseded-2'), 2)
+
     def test_the_switch_waits_for_both_background_content_audits_before_declaring_the_start_healthy(self):
         source = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
         self.assertIn("sandbox_runtime.content_audit_completed", source)
