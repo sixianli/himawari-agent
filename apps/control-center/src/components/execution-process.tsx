@@ -104,6 +104,11 @@ export function ExecutionProcess({
     : undefined;
   const runningReviewId =
     lastStartedReview?.type === "review" ? lastStartedReview.review.id : undefined;
+  const lastOpenThinking = activityEnded
+    ? undefined
+    : rows.findLast((row) => row.type === "thinking" && row.stage.elapsed === null);
+  const runningThinkingId =
+    lastOpenThinking?.type === "thinking" ? lastOpenThinking.stage.id : undefined;
   const observationAge = state ? Math.max(0, now - Date.parse(state.lastObservedAt)) : activity.age;
   const stale = stateAvailable
     ? !!state &&
@@ -279,7 +284,7 @@ export function ExecutionProcess({
               return (
                 <li
                   className={`execution-stage${
-                    !activityEnded && row.stage.elapsed === null ? " is-running" : ""
+                    runningThinkingId === row.stage.id ? " is-running" : ""
                   }`}
                   key={row.stage.id}
                 >

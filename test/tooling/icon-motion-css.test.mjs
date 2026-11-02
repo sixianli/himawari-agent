@@ -11,11 +11,16 @@ const motion = rounded.slice(
   rounded.indexOf("@media (prefers-reduced-motion: no-preference)"),
   rounded.indexOf("@keyframes icon-twist"),
 );
-const rules = [
-  ...motion.matchAll(
-    /\.is-running \.tool-icon\[data-glyph="(\w+)"\][^{]*path:nth-of-type\(([^)]+)\)/g,
-  ),
-];
+const rules = [];
+for (const [, selector] of motion.matchAll(/([^{}]*\.is-running \.tool-icon[^{}]*)\{/g)) {
+  for (const part of selector.split(",")) {
+    const found = part.match(/\[data-glyph="(\w+)"\][^,]*path:nth-of-type\(([^)]+)\)/);
+    if (found) rules.push([found[0], found[1], found[2]]);
+  }
+}
+const animationNames = [...motion.matchAll(/animation(?:-name)?:\s*(icon-[\w-]+)/g)].map(
+  (match) => match[1],
+);
 
 it("[ICON-MOTION-1] every running-icon rule points at a glyph and a path layer that exist", () => {
   expect(rules.length).toBeGreaterThanOrEqual(30);
@@ -40,4 +45,11 @@ it("[ICON-MOTION-3] icon motion only runs when the system allows motion, and a s
   expect(reduced).toMatch(/\.is-running \.row-icon \{[^}]*background: color-mix/);
   const unguarded = rounded.replace(motion, "");
   expect(unguarded).not.toMatch(/\.is-running \.tool-icon\[data-glyph/);
+});
+
+it("[ICON-MOTION-7] every animation name used by the icon rules has a keyframes block", () => {
+  expect(animationNames.length).toBeGreaterThanOrEqual(20);
+  for (const name of new Set(animationNames)) {
+    expect(rounded, name).toContain(`@keyframes ${name}`);
+  }
 });
