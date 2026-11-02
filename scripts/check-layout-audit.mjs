@@ -224,6 +224,7 @@ export function labels(locale) {
     settings: value("settings.title"),
     memory: value("nav.memory"),
     reminders: value("nav.reminders"),
+    reviewExpand: value("dailyReview.expand"),
     files: value("library.title"),
     fork: value("answer.fork"),
     personalization: value("review.settings.personalization"),
@@ -293,6 +294,28 @@ export const SCENES = {
       await page.waitForTimeout(400);
     },
   },
+  remindersReview: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
+      await page.waitForSelector(".proactive-review");
+    },
+    verify: (page) => page.evaluate(findReviewProblems),
+  },
+  remindersReviewFolded: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
+      await page.waitForSelector(".proactive-review");
+      await page
+        .locator(".proactive-review-fold")
+        .getByRole("button", { name: text.reviewExpand, exact: true })
+        .click();
+    },
+    verify: (page) => page.evaluate(findReviewProblems),
+  },
   files: {
     path: "/threads",
     act: async (page, text) => {
@@ -337,6 +360,26 @@ const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <svg data-glyph="memory" viewBox="0 0 24 24" width="20" height="20"><path data-tone="base" d="M4 4h16v16H4Z" style="fill:currentColor;fill-opacity:.24"/></svg>
 <button class="action-button-secondary" style="border:0;background:#eee">胶囊按钮</button></body></html>`;
 
+export function findReviewProblems() {
+  const problems = [];
+  const section = document.querySelector(".proactive-review");
+  if (!section) return ["REVIEW_SECTION_MISSING"];
+  const rect = section.getBoundingClientRect();
+  if (rect.height > window.innerHeight)
+    problems.push(`REVIEW_EXCEEDS_SCREEN ${Math.round(rect.height)}>${window.innerHeight}`);
+  const rows = section.querySelectorAll(".proactive-review-list > li").length;
+  if (rows > 6) problems.push(`REVIEW_TOO_MANY_ROWS ${rows}`);
+  if (section.scrollHeight > section.clientHeight + 1) problems.push("REVIEW_SCROLLS_INSIDE");
+  return problems;
+}
+
+const REVIEW_TALL = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<section class="proactive-review"><ul class="proactive-review-list">${"<li style='height:200px'>行</li>".repeat(8)}</ul></section></body></html>`;
+const REVIEW_FITS = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<section class="proactive-review"><ul class="proactive-review-list">${"<li style='height:52px'>行</li>".repeat(6)}</ul></section></body></html>`;
+
 export const REQUIRED_KINDS = [
   "PAGE_SCROLLS_SIDEWAYS",
   "OUTSIDE_SCREEN",
@@ -367,8 +410,14 @@ async function selfTest(browser) {
     found.push(...(await page.evaluate(findLayoutProblems, "zh-CN")));
     await page.setViewportSize({ width: 390, height: 844 });
     const missing = REQUIRED_KINDS.filter((kind) => !found.some((item) => item.startsWith(kind)));
+    await page.setContent(REVIEW_TALL);
+    const tall = await page.evaluate(findReviewProblems);
+    for (const kind of ["REVIEW_EXCEEDS_SCREEN", "REVIEW_TOO_MANY_ROWS"])
+      if (!tall.some((item) => item.startsWith(kind))) missing.push(`REVIEW_${kind}`);
+    await page.setContent(REVIEW_FITS);
+    const fits = await page.evaluate(findReviewProblems);
     await page.setContent(CLEAN);
-    const clean = await page.evaluate(findLayoutProblems, "zh-CN");
+    const clean = [...(await page.evaluate(findLayoutProblems, "zh-CN")), ...fits];
     const errors = [
       ...missing.map((kind) => `LAYOUT_AUDIT_SELF_TEST_MISSED ${kind}`),
       ...clean.map((item) => `LAYOUT_AUDIT_SELF_TEST_FALSE_ALARM ${item}`),
@@ -484,6 +533,8 @@ async function auditApp(browser, base, only) {
         await page.waitForTimeout(150);
         for (const item of await page.evaluate(findLayoutProblems, job.locale))
           problems.push(`${where}: ${item}`);
+        if (job.scene.verify)
+          for (const item of await job.scene.verify(page)) problems.push(`${where}: ${item}`);
       } catch (error) {
         problems.push(
           `${where}: SCENE_FAILED ${error instanceof Error ? error.message.split("\n")[0] : error}`,

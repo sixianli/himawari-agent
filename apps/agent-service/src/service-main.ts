@@ -1489,6 +1489,10 @@ export async function runAgentService(
           redirectUri: proactiveRedirectUri(configuration.publicOrigin),
         });
         const feedbackStore = repository.webPush();
+        const reviewPayloads = repository.payloadStore(
+          configuration.ownerId,
+          configuration.agentId,
+        );
         proactive = new ProductionProactive({
           scope: proactiveScope,
           configuration: proactiveConfiguration,
@@ -1498,6 +1502,18 @@ export async function runAgentService(
           oauth,
           reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
+          ledger: repository.decisionLedger(),
+          readMemoryText: async (ref) => {
+            const payload = await reviewPayloads.get(ref);
+            if (!payload || payload.contentType !== "text/plain" || !protector) return undefined;
+            return new TextDecoder("utf-8", { fatal: true }).decode(
+              await protector.unprotect({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                payload,
+              }),
+            );
+          },
           ...(memory && durableMemory && protector && repository
             ? ((recallProtector, recallPayloads) => ({
                 memory: createProactiveMemoryRecall({

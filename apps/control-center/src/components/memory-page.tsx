@@ -31,9 +31,9 @@ import {
   clock,
   dayAndClock,
   groupInsights,
-  ProactiveAudit,
   ProactiveBanners,
   ProactiveInsightRow,
+  ProactiveReviewSection,
   useHighlight,
 } from "./proactive-reminders.js";
 
@@ -948,7 +948,9 @@ export function RemindersPage({
               {message("reminders.empty")}
             </EmptyState>
           ) : null}
-          {proactive ? <ProactiveAudit proactive={proactive} message={message} /> : null}
+          {proactive ? (
+            <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
+          ) : null}
           {overview.reminders.length || overview.upcoming.length || mailCount ? (
             <p className="settings-note reminders-notify">{notifyNote}</p>
           ) : null}

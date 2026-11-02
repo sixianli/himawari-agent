@@ -240,6 +240,8 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         perCheckMs: 180_000,
         dailyCostMicros: 1_000_000,
         memoryMinimumSimilarity: 0.45,
+        reviewBudgetSeconds: 120,
+        reviewSecondsPerItem: 5,
       },
       timeZone: "Asia/Tokyo",
       store,
@@ -247,6 +249,8 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       oauth,
       reader: createGmailReader({ oauth, fetch: google.fetch }),
       readAccount: (accessToken) => readGmailAccount({ accessToken, fetch: google.fetch }),
+      ledger: repository.decisionLedger(),
+      readMemoryText: readPayload,
       model: {
         get model() {
           return scripted;
@@ -341,8 +345,19 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     };
     const command = (type: string, payload: unknown) =>
       proactive.execute(message("command", type, payload) as GatewayV2Command);
+    const review = async () => {
+      const snapshot = await proactive.query(
+        message("query", "proactive.review.read", {}) as GatewayV2Query,
+      );
+      gatewayV2MessageSchema.parse(snapshot);
+      if (snapshot.type !== "proactive.review.snapshot") throw new Error("unexpected snapshot");
+      return snapshot.payload;
+    };
     return {
       app,
+      ledger: repository.decisionLedger(),
+      review,
+      writePayload,
       clock,
       command,
       failures,
@@ -579,6 +594,186 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(after.insights).toEqual([]);
     await h.command("proactive.source.manage", { source: "gmail", action: "clear_records" });
     expect((await h.overview()).decisions).toEqual([]);
+    expect(h.failures).toEqual([]);
+  });
+
+  async function connectAndCheck(h: Awaited<ReturnType<typeof setup>>) {
+    const state = await connect(h);
+    h.script([
+      { id: "invoice", result: "ignore", confidence: "sure" },
+      { id: "sale", result: "ignore", confidence: "sure" },
+    ]);
+    await h.app.inject({
+      method: "GET",
+      url: `${PROACTIVE_GOOGLE_CALLBACK_PATH}?state=${state}&code=code-1`,
+      headers: cookie,
+    });
+    await h.proactive.stop();
+  }
+
+  const candidate = (
+    id: string,
+    outcome: "discarded" | "kept" | "pending_approval",
+    reasonCode: string,
+    contentRef: string | null,
+    decidedAt: string,
+  ) => ({
+    id,
+    ...scope,
+    kind: "memory_candidate" as const,
+    decidedAt,
+    outcome,
+    reasonCode,
+    subjectRef: `subject-${id}`,
+    inputs: { memoryIds: [], ruleIds: [] },
+    reasonRef: null,
+    contentRef,
+    costMicros: 0,
+    durationMs: 0,
+    category: "preference" as const,
+    confidencePermille: 500,
+    inferred: false,
+  });
+
+  it("[P0-6] puts skipped memories and a sample of Gmail decisions on the daily review, folds the rest, and keeps ratings after a reload", async () => {
+    const h = await setup();
+    await connectAndCheck(h);
+    await h.writePayload("memory-text-1", "我最近想吃牛肉");
+    const at = h.clock.now();
+    await h.ledger.append(
+      candidate("skipped-1", "discarded", "transient_ignored", "memory-text-1", at),
+    );
+    await h.ledger.append(
+      candidate("secret-1", "discarded", "candidate_secret_excluded", null, at),
+    );
+    await h.ledger.append(candidate("rejected-1", "discarded", "approval_rejected", null, at));
+    await h.ledger.append(candidate("kept-1", "kept", "auto_committed", null, at));
+    await h.ledger.append({
+      ...candidate("merge-1", "kept", "merge", null, at),
+      kind: "consolidation",
+      outcome: "merge",
+      category: null,
+      confidencePermille: null,
+      inferred: null,
+    });
+
+    const first = await h.review();
+    const keys = first.items.map(({ key }) => key);
+    expect(keys).toContain("ledger:skipped-1");
+    expect(keys).toContain("ledger:secret-1");
+    expect(keys).not.toContain("ledger:rejected-1");
+    expect(keys).not.toContain("ledger:kept-1");
+    expect(first.folded.total).toBe(2);
+    expect(first.folded.items.map(({ key }) => key).sort()).toEqual([
+      "ledger:kept-1",
+      "ledger:merge-1",
+    ]);
+    expect(first.items.find(({ key }) => key === "ledger:skipped-1")).toMatchObject({
+      text: "我最近想吃牛肉",
+      textHidden: false,
+      acted: false,
+      rating: null,
+    });
+    expect(first.items.find(({ key }) => key === "ledger:secret-1")).toMatchObject({
+      text: "",
+      textHidden: true,
+      category: "preference",
+    });
+    const check = first.items.find(({ kind }) => kind === "proactive");
+    expect(check).toMatchObject({ outcome: "silent", acted: false, fetched: 2, rating: null });
+    expect(first.capacity).toBe(24);
+    expect(first.sampled).toBe(first.items.length);
+    expect(first.notSampled).toBe(0);
+
+    await h.command("proactive.review.rate", {
+      ratings: [
+        { key: "ledger:skipped-1", rating: "useful" },
+        { key: "ledger:secret-1", rating: "missed" },
+        { key: check?.key ?? "", rating: "missed" },
+      ],
+    });
+    const second = await h.review();
+    expect(second.items.map(({ key }) => key)).toEqual(keys);
+    expect(second.items.find(({ key }) => key === "ledger:skipped-1")?.rating).toBe("useful");
+    expect(second.items.find(({ key }) => key === "ledger:secret-1")?.rating).toBe("missed");
+    expect(second.items.find(({ key }) => key === check?.key)?.rating).toBe("missed");
+    expect((await h.overview()).metrics.missed).toBe(1);
+
+    await h.command("proactive.review.rate", {
+      ratings: [{ key: "ledger:skipped-1", rating: null }],
+    });
+    expect(
+      (await h.review()).items.find(({ key }) => key === "ledger:skipped-1")?.rating,
+    ).toBeNull();
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P0-6] rejects a rating batch that names an unknown record without changing any of the others", async () => {
+    const h = await setup();
+    await connectAndCheck(h);
+    await h.ledger.append(
+      candidate("skipped-2", "discarded", "transient_ignored", null, h.clock.now()),
+    );
+    await expect(
+      h.command("proactive.review.rate", {
+        ratings: [
+          { key: "ledger:skipped-2", rating: "useful" },
+          { key: "ledger:no-such-row", rating: "useful" },
+        ],
+      }),
+    ).rejects.toThrow("PROACTIVE_RECORD_NOT_FOUND");
+    expect(
+      (await h.review()).items.find(({ key }) => key === "ledger:skipped-2")?.rating,
+    ).toBeNull();
+    await expect(
+      h.command("proactive.review.rate", { ratings: [{ key: "other:1", rating: "useful" }] }),
+    ).rejects.toThrow("PROACTIVE_REVIEW_KEY_INVALID");
+    await expect(
+      h.command("proactive.review.rate", { ratings: [{ key: "mail:abc", rating: "unneeded" }] }),
+    ).rejects.toThrow("PROACTIVE_REVIEW_KEY_INVALID");
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[P0-6] shows at most the daily capacity, keeps the same sample on reload, and leaves out old and already-rated rows", async () => {
+    const h = await setup();
+    await connectAndCheck(h);
+    const now = Date.parse(h.clock.now());
+    for (let index = 0; index < 30; index += 1)
+      await h.ledger.append(
+        candidate(
+          `bulk-${index}`,
+          "discarded",
+          "transient_ignored",
+          null,
+          new Date(now - index * 60_000).toISOString(),
+        ),
+      );
+    await h.ledger.append(
+      candidate(
+        "old-1",
+        "discarded",
+        "transient_ignored",
+        null,
+        new Date(now - 8 * 86_400_000).toISOString(),
+      ),
+    );
+    const first = await h.review();
+    expect(first.items.length).toBe(24);
+    expect(first.sampled).toBe(24);
+    expect(first.notSampled).toBeGreaterThanOrEqual(6);
+    expect(first.items.every(({ key }) => key !== "ledger:old-1")).toBe(true);
+    expect((await h.review()).items.map(({ key }) => key)).toEqual(
+      first.items.map(({ key }) => key),
+    );
+    const target = first.items[0]?.key ?? "";
+    await h.command("proactive.review.rate", { ratings: [{ key: target, rating: "useful" }] });
+    const after = await h.review();
+    expect(after.items.map(({ key }) => key)).toEqual(first.items.map(({ key }) => key));
+    expect(after.notSampled).toBe(first.notSampled);
+    h.clock.advance(86_400_000);
+    const nextDay = await h.review();
+    expect(nextDay.items.length).toBeLessThanOrEqual(24);
+    expect(nextDay.items.find(({ key }) => key === target)).toBeUndefined();
     expect(h.failures).toEqual([]);
   });
 });

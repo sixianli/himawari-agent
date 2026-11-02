@@ -152,6 +152,22 @@ export interface DecisionLedgerPort {
       readonly now: string;
     },
   ): Promise<boolean>;
+  listReviewPool(
+    input: DecisionLedgerScope & {
+      readonly since: string;
+      readonly ratedSince: string;
+      readonly limit: number;
+    },
+  ): Promise<readonly DecisionLedgerEntry[]>;
+  rateMany(
+    input: DecisionLedgerScope & {
+      readonly ratings: readonly {
+        readonly decisionId: string;
+        readonly rating: DecisionRating | null;
+      }[];
+      readonly now: string;
+    },
+  ): Promise<number>;
   recordMuse(write: MuseReferenceWrite): Promise<void>;
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },

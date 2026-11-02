@@ -192,6 +192,10 @@ export class SqliteDecisionLedgerOperations {
         return this.list(payload as Input<"list">);
       case "decisionLedger.rate":
         return this.rate(payload as Input<"rate">);
+      case "decisionLedger.listReviewPool":
+        return this.listReviewPool(payload as Input<"listReviewPool">);
+      case "decisionLedger.rateMany":
+        return this.rateMany(payload as Input<"rateMany">);
       case "decisionLedger.recordMuse":
         return this.recordMuse(payload as Input<"recordMuse">);
       case "decisionLedger.listMuse":
@@ -252,6 +256,56 @@ export class SqliteDecisionLedgerOperations {
           input.decisionId,
         ).changes > 0
     );
+  }
+
+  private listReviewPool(input: Input<"listReviewPool">): readonly DecisionLedgerEntry[] {
+    if (!validTime(input.since) || !validTime(input.ratedSince))
+      this.fail("PORT_INVALID_OPERATION", "Ledger time is invalid");
+    if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 500)
+      this.fail("PORT_INVALID_OPERATION", "Ledger limit is invalid");
+    return this.database
+      .prepare(
+        `SELECT ${entryColumns} FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
+           AND (owner_rating IS NULL OR rated_at >= ?)
+           AND (kind <> 'proactive' OR verdict IN ('pushed', 'deferred', 'silent'))
+         ORDER BY checked_at DESC, id DESC LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.since, input.ratedSince, input.limit)
+      .map((row) => entryFromRow(row as Record<string, unknown>));
+  }
+
+  private rateMany(input: Input<"rateMany">): number {
+    if (!validTime(input.now)) this.fail("PORT_INVALID_OPERATION", "Ledger time is invalid");
+    if (
+      !Array.isArray(input.ratings) ||
+      input.ratings.length < 1 ||
+      input.ratings.length > 50 ||
+      new Set(input.ratings.map(({ decisionId }) => decisionId)).size !== input.ratings.length
+    )
+      this.fail("PORT_INVALID_OPERATION", "Ledger ratings are invalid");
+    for (const { rating } of input.ratings)
+      if (rating !== null && !(DECISION_RATINGS as readonly string[]).includes(rating))
+        this.fail("PORT_INVALID_OPERATION", "Ledger rating is invalid");
+    const update = this.database.prepare(
+      `UPDATE decision_ledger SET owner_rating = ?, rated_at = ?
+       WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+    );
+    return this.database.transaction(() => {
+      let changed = 0;
+      for (const { decisionId, rating } of input.ratings) {
+        const result = update.run(
+          rating,
+          rating === null ? null : input.now,
+          input.ownerId,
+          input.agentId,
+          decisionId,
+        );
+        if (result.changes === 0) this.fail("PORT_NOT_FOUND", "Ledger decision was not found");
+        changed += result.changes;
+      }
+      return changed;
+    })();
   }
 
   private recordMuse(write: MuseReferenceWrite): void {
