@@ -6008,3 +6008,137 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     });
   });
 });
+
+const realMagpieUrl = process.env["HIMAWARI_REAL_MAGPIE_URL"];
+const realMagpieKeyFile = process.env["HIMAWARI_REAL_MAGPIE_KEY_FILE"];
+const realMagpieDescribe = enabled && realMagpieUrl && realMagpieKeyFile ? describe : describe.skip;
+const REAL_MAGPIE_PROMPT = "只回复 ok";
+const REAL_MAGPIE_PRIMARY_NAME = "Product path primary";
+
+async function openFullModelList() {
+  const picker = page.locator(UI.modelPickerRoot);
+  if (!(await picker.evaluate((element) => element.hasAttribute("open"))))
+    await page.locator(UI.modelPicker).click();
+  await page.locator(UI.modelChooser).click();
+  const more = page.locator(UI.modelMore);
+  if ((await more.count()) > 0) await more.click();
+  return page.locator(UI.modelOption);
+}
+
+realMagpieDescribe(
+  "product path: every Magpie model through the real page",
+  { timeout: 3_600_000 },
+  () => {
+    const sweep: Array<{
+      name: string;
+      status: "answered" | "failed";
+      answerMs: number;
+      detail?: string;
+    }> = [];
+    let listedIds: string[] = [];
+
+    beforeAll(async () => {
+      const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+      const contextFile = process.env["HIMAWARI_TEST_CONTEXT"];
+      if (!artifact || !contextFile)
+        throw new Error(
+          "PRODUCT_PATH_REQUIRES_ARTIFACT: set HIMAWARI_TEST_ARTIFACT and HIMAWARI_TEST_CONTEXT",
+        );
+      if (!realMagpieUrl?.startsWith("http://127.0.0.1:") || !realMagpieKeyFile)
+        throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+      const key = (await readFile(realMagpieKeyFile, "utf8")).trim();
+      const listing = await fetch(`${realMagpieUrl}/models`, {
+        headers: { authorization: `Bearer ${key}` },
+      });
+      if (!listing.ok) throw new Error(`REAL_MAGPIE_LIST_FAILED ${listing.status}`);
+      const body = (await listing.json()) as { data?: Array<{ id?: unknown }> };
+      listedIds = (body.data ?? []).flatMap((entry) =>
+        typeof entry.id === "string" ? [entry.id] : [],
+      );
+      await mkdir(outputDirectory, { recursive: true });
+      installation = await installProductPath({
+        artifact,
+        context: contextFile,
+        logDirectory: path.join(outputDirectory, "real-magpie-service-logs"),
+        approval: "ask",
+        realMagpie: { url: realMagpieUrl, keyFile: realMagpieKeyFile },
+      });
+      await installation.start();
+      browser = await chromium.launch({
+        channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+        args: [`--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${installation.frontPort}`],
+      });
+      context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
+      page = await context.newPage();
+    }, 400_000);
+
+    afterAll(async () => {
+      await cleanupWithEvidence("real-magpie-teardown", [
+        [
+          "sweep-record",
+          async () =>
+            writeFile(
+              path.join(outputDirectory, "real-magpie-sweep.json"),
+              `${JSON.stringify(
+                { schema: "himawari-real-magpie-sweep.v1", listedIds, sweep },
+                null,
+                2,
+              )}\n`,
+            ),
+        ],
+        ["installation", async () => installation?.close()],
+        ["browser", async () => browser?.close()],
+      ]);
+    }, 120_000);
+
+    it("sends one message with every selectable model and gets a reply from each", async () => {
+      const response = await page.goto(`${installation.origin}/`);
+      expect(response?.status()).toBe(200);
+      await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+      await newThread();
+      const options = await openFullModelList();
+      const names = (await options.allInnerTexts()).map(
+        (text) => text.split("\n")[0]?.trim() ?? "",
+      );
+      const expected =
+        listedIds.length + (listedIds.includes("deepseek/deepseek-v4.1-flash") ? 0 : 1);
+      expect(names.length).toBe(expected);
+      expect(names).toContain(REAL_MAGPIE_PRIMARY_NAME);
+      await page.keyboard.press("Escape");
+      for (let index = 0; index < names.length; index += 1) {
+        const name = names[index] ?? "";
+        const started = Date.now();
+        try {
+          await newThread();
+          const list = await openFullModelList();
+          await list.nth(index).click();
+          const turn = await send(REAL_MAGPIE_PROMPT);
+          await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 180_000 });
+          const failed = (await turn.getByText(/本轮执行失败/).count()) > 0;
+          const articles = target(turn, UI.message);
+          const count = await articles.count();
+          const last = count >= 2 ? ((await articles.last().innerText()) ?? "") : "";
+          const answered = !failed && /\bok\b/i.test(last);
+          sweep.push({
+            name,
+            status: answered ? "answered" : "failed",
+            answerMs: Date.now() - started,
+            ...(answered ? {} : { detail: failed ? "turn-failed" : `reply=${last.slice(0, 80)}` }),
+          });
+        } catch (error) {
+          sweep.push({
+            name,
+            status: "failed",
+            answerMs: Date.now() - started,
+            detail: String(error).slice(0, 200),
+          });
+        }
+      }
+      const unexpected = sweep.filter(
+        (entry) => entry.status === "failed" && entry.name !== REAL_MAGPIE_PRIMARY_NAME,
+      );
+      expect(unexpected, JSON.stringify(unexpected)).toEqual([]);
+      expect(sweep.find((entry) => entry.name === REAL_MAGPIE_PRIMARY_NAME)?.status).toBe("failed");
+    });
+  },
+);
