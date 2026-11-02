@@ -1199,3 +1199,10 @@ describe("memory import parsing", () => {
     expect(() => parseMemoryExport("x.json", "{}", [])).toThrow("MEMORY_EXPORT_INVALID");
   });
 });
+
+describe("memory wording", () => {
+  it("[MEM-WORD] uses one category name on the profile and on the cards", () => {
+    expect(messages["memory.profile.relationship"]).toBe("人际关系");
+    expect(messages["memory.cat"]).toContain("relationship {人际关系}");
+  });
+});

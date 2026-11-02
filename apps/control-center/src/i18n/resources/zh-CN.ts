@@ -632,7 +632,7 @@ export const messages = {
   "memory.reminderDismiss": "不再提醒",
   "memory.reminderSnooze": "一小时后再提醒",
   "memory.cat":
-    "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
+    "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际关系} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
   "memory.page.auto": "从对话中自动记忆",
   "memory.page.pausedNote":
     "自动记忆已暂停：Himawari 仍会用已有的记忆回答，但不会再从对话里记新的事，也不做每日整理。你手动添加的照样会记。",

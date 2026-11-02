@@ -277,7 +277,32 @@ export class MemoryConsolidationService {
         if (!current) continue;
         freshReviewed.push(current);
         const neighbours: Reviewed[] = [];
-        for (const hit of await input.search(current.text, MAXIMUM_NEIGHBOURS + 2)) {
+        const subCategory = memory.attributes?.subCategory ?? null;
+        const category = memory.attributes?.category ?? null;
+        if (subCategory && category) {
+          const sameTopic = reviewable
+            .filter(
+              (other) =>
+                other.id !== memory.id &&
+                other.attributes?.category === category &&
+                other.attributes?.subCategory === subCategory &&
+                !paired.has([memory.id, other.id].sort().join("\n")),
+            )
+            .sort(
+              (left, right) =>
+                right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id),
+            );
+          for (const other of sameTopic) {
+            if (neighbours.length >= MAXIMUM_NEIGHBOURS) break;
+            const value = await reviewed(other);
+            if (!value) continue;
+            paired.add([memory.id, other.id].sort().join("\n"));
+            neighbours.push(value);
+          }
+        }
+        for (const hit of neighbours.length >= MAXIMUM_NEIGHBOURS
+          ? []
+          : await input.search(current.text, MAXIMUM_NEIGHBOURS + 2)) {
           const neighbour = byId.get(hit.productMemoryId);
           if (!neighbour || neighbour.id === memory.id) continue;
           const pair = [memory.id, neighbour.id].sort().join("\n");

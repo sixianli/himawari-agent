@@ -110,6 +110,20 @@ const MEMORIES: ReadonlyArray<{
     attributes: { category: "relationship", importancePermille: 900, entities: ["小葵"] },
   },
   {
+    id: "fish-old",
+    text: "主人不太喜欢吃鱼",
+    at: "2026-05-03T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "preference", subCategory: "饮食", importancePermille: 600 },
+  },
+  {
+    id: "fish-new",
+    text: "主人最近迷上了刺身拼盘",
+    at: "2026-10-24T00:00:00.000Z",
+    classification: "private",
+    attributes: { category: "preference", subCategory: "饮食", importancePermille: 600 },
+  },
+  {
     id: "run-a",
     text: "主人周六早上在公园跑步",
     at: "2026-10-22T00:00:00.000Z",
@@ -432,6 +446,38 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           limit: 50,
         }),
       ).toHaveLength(4);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("puts memories of the same category and sub-category in one group even when they share no words", async () => {
+    const resource = await fixture();
+    try {
+      await resource.run((prompt) => {
+        const labels = labelsOf(prompt);
+        const label = (id: string) =>
+          labels.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "";
+        expect(groupOf(prompt, label("fish-new"))).toBeDefined();
+        expect(groupOf(prompt, label("fish-old"))).toBe(groupOf(prompt, label("fish-new")));
+        return JSON.stringify({ groups: [], insights: [] });
+      });
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("does not group memories of different sub-categories that share no words", async () => {
+    const resource = await fixture();
+    try {
+      await resource.run((prompt) => {
+        const labels = labelsOf(prompt);
+        const label = (id: string) =>
+          labels.get(MEMORIES.find((item) => item.id === id)?.text ?? "") ?? "";
+        expect(groupOf(prompt, label("fish-new"))).toBeDefined();
+        expect(groupOf(prompt, label("run-a"))).not.toBe(groupOf(prompt, label("fish-new")));
+        return JSON.stringify({ groups: [], insights: [] });
+      });
     } finally {
       await resource.repository.close();
     }
