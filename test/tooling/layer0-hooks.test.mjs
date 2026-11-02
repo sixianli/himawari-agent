@@ -39,6 +39,11 @@ function fixture() {
     path.join(root, "scripts/delivery-mode"),
     { recursive: true },
   );
+  write(
+    root,
+    "scripts/check-boundaries.mjs",
+    "console.error('BOUNDARY_STUB_RAN');\nprocess.exit(0);\n",
+  );
   write(root, "DELIVERY_MODE", "fast\n");
   write(
     root,
@@ -65,7 +70,7 @@ function publishBase(root) {
   roots.push(remote);
   git(remote, "init", "-q", "--bare");
   git(root, "remote", "add", "origin", remote);
-  git(root, "push", "-q", "--no-verify", "origin", "HEAD~2:refs/heads/main");
+  git(root, "push", "-q", "--no-verify", "origin", "HEAD~1:refs/heads/main");
 }
 
 const head = (root) => git(root, "rev-parse", "HEAD").trim();
@@ -109,8 +114,7 @@ describe("Layer 0 hooks from the repository", () => {
     expect(pushed.stderr).toContain("L0_RELATED_TESTS_UNDECLARED");
   });
 
-  it("refuses at push when the workspace boundary check fails", () => {
-    const root = fixture();
+  const commitChange = (root) =>
     git(
       root,
       "commit",
@@ -119,48 +123,39 @@ describe("Layer 0 hooks from the repository", () => {
       "-m",
       "change value\n\nLayer-0-tests: packages/a/test/value.unit.test.ts",
     );
+
+  it("refuses at push when the workspace boundary check fails", () => {
+    const root = fixture();
     write(
       root,
       "scripts/check-boundaries.mjs",
       "console.error('escapes workspace');\nprocess.exit(1);\n",
     );
     git(root, "add", "-A");
-    git(
-      root,
-      "commit",
-      "-q",
-      "--no-verify",
-      "-m",
-      "add boundary check\n\nLayer-0-tests: packages/a/test/value.unit.test.ts",
-    );
+    commitChange(root);
     publishBase(root);
     const pushed = tryGit(root, "push", "-q", "origin", "main");
     expect(pushed.status).not.toBe(0);
     expect(pushed.stderr).toContain("PUSH_BOUNDARY_CHECK_FAILED");
   });
 
-  it("pushes when the workspace boundary check passes", () => {
+  it("pushes when the workspace boundary check passes, and runs it", () => {
     const root = fixture();
-    git(
-      root,
-      "commit",
-      "-q",
-      "--no-verify",
-      "-m",
-      "change value\n\nLayer-0-tests: packages/a/test/value.unit.test.ts",
-    );
-    write(root, "scripts/check-boundaries.mjs", "process.exit(0);\n");
-    git(root, "add", "-A");
-    git(
-      root,
-      "commit",
-      "-q",
-      "--no-verify",
-      "-m",
-      "add boundary check\n\nLayer-0-tests: packages/a/test/value.unit.test.ts",
-    );
+    commitChange(root);
     publishBase(root);
-    expect(tryGit(root, "push", "-q", "origin", "main").status).toBe(0);
+    const pushed = tryGit(root, "push", "-q", "origin", "main");
+    expect(pushed.status).toBe(0);
+    expect(pushed.stderr).toContain("BOUNDARY_STUB_RAN");
+  });
+
+  it("refuses at push when the boundary check script is missing", () => {
+    const root = fixture();
+    git(root, "rm", "-q", "-f", "scripts/check-boundaries.mjs");
+    commitChange(root);
+    publishBase(root);
+    const pushed = tryGit(root, "push", "-q", "origin", "main");
+    expect(pushed.status).not.toBe(0);
+    expect(pushed.stderr).toContain("PUSH_BOUNDARY_CHECK_FAILED");
   });
 
   it("keeps an existing hooks path instead of overwriting it", () => {
