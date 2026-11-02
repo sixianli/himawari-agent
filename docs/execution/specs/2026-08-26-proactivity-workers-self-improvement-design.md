@@ -71,7 +71,7 @@ date: "2026-08-26"
 
 - Agent 可以在隔离、可销毁的候选 workspace 中生成对自身代码、配置或能力的建议改动，但输入版本、目标、权限、数据、工具、模型、预算和测试必须冻结。
 - 每个候选保存 base revision/artifact digest、完整 diff、原因、风险、验证命令与结果、失败项、性能/质量比较、受影响信任边界和可复现 artifact。
-- 候选运行不得访问生产 secret、生产写端点、Owner 未授予目录或真实外部副作用；需要真实数据时使用脱敏 fixture 或明确授权的只读 snapshot。
+- 候选运行不得访问生产 secret、生产写端点、Owner 未授予目录或真实外部副作用；需要真实数据时使用遮盖 fixture 或明确授权的只读 snapshot。
 - 候选成功验证仍保持 `review_required`，不能自动 commit、push、merge、deploy、restart、安装或切换 active version。
 - 涉及身份、授权、秘密、审计、模型披露、升级信任根或能力范围的候选必须被标记为 protected-root change，不能由产生候选的 Agent/Worker批准。
 
