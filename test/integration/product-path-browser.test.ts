@@ -28,12 +28,14 @@ import {
   expect as uiExpect,
 } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parseMagpieModelList } from "../../apps/agent-service/src/production-magpie-models.ts";
 import { ACCEPTANCE_SELECTABLE_MODELS } from "../../apps/control-center/test/release-walkthrough-models.ts";
 import {
   RELEASE_WALKTHROUGH_UI as UI,
   type WalkthroughTarget,
 } from "../../apps/control-center/test/release-walkthrough-ui.ts";
 import {
+  assertLoopbackMagpieUrl,
   installProductPath,
   type ModelScript,
   type ProductPathInstallation,
@@ -6008,3 +6010,203 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     });
   });
 });
+
+const realMagpieUrl = process.env["HIMAWARI_REAL_MAGPIE_URL"];
+const realMagpieKeyFile = process.env["HIMAWARI_REAL_MAGPIE_KEY_FILE"];
+const realMagpieDescribe = enabled && realMagpieUrl && realMagpieKeyFile ? describe : describe.skip;
+const REAL_MAGPIE_PROMPT = "只回复 ok";
+const REAL_MAGPIE_PRIMARY_NAME = "Product path primary";
+const REAL_MAGPIE_OK_LINE = /(?:^|\n)[\s"'“”`*]*ok[\s.。!！"'“”`*]*(?:\n|$)/i;
+const REAL_MAGPIE_PRIMARY_MODEL = "deepseek/deepseek-v4.1-flash";
+
+async function openFullModelList() {
+  const picker = page.locator(UI.modelPickerRoot);
+  if (!(await picker.evaluate((element) => element.hasAttribute("open"))))
+    await page.locator(UI.modelPicker).click();
+  await page.locator(UI.modelChooser).click();
+  const more = page.locator(UI.modelMore);
+  if ((await more.count()) > 0) await more.click();
+  return page.locator(UI.modelOption);
+}
+
+realMagpieDescribe(
+  "product path: every Magpie model through the real page",
+  { timeout: 3_600_000 },
+  () => {
+    const sweep: Array<{
+      name: string;
+      status: "answered" | "failed";
+      answerMs: number;
+      detail?: string;
+      exception?: true;
+    }> = [];
+    let listedIds: string[] = [];
+    let selectable: ReturnType<typeof parseMagpieModelList> = [];
+    let optionNames: string[] = [];
+    let realKey = "";
+    const redact = (text: string) =>
+      (realKey ? text.split(realKey).join("<key>") : text)
+        .replace(/Bearer\s+\S+/gi, "Bearer <key>")
+        .replace(/sk-[A-Za-z0-9_-]+/g, "<key>");
+
+    beforeAll(async () => {
+      const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+      const contextFile = process.env["HIMAWARI_TEST_CONTEXT"];
+      if (!artifact || !contextFile)
+        throw new Error(
+          "PRODUCT_PATH_REQUIRES_ARTIFACT: set HIMAWARI_TEST_ARTIFACT and HIMAWARI_TEST_CONTEXT",
+        );
+      if (!realMagpieUrl || !realMagpieKeyFile) throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+      assertLoopbackMagpieUrl(realMagpieUrl);
+      const key = (await readFile(realMagpieKeyFile, "utf8")).trim();
+      realKey = key;
+      const listing = await fetch(`${realMagpieUrl}/models`, {
+        headers: { authorization: `Bearer ${key}` },
+        redirect: "error",
+      });
+      if (!listing.ok) throw new Error(`REAL_MAGPIE_LIST_FAILED ${listing.status}`);
+      const entries = parseMagpieModelList(await listing.json());
+      listedIds = entries.map((entry) => entry.id);
+      selectable = entries.filter(
+        (entry) =>
+          !entry.id.startsWith("group/") &&
+          !entry.id.startsWith("auto/") &&
+          entry.id !== REAL_MAGPIE_PRIMARY_MODEL &&
+          entry.toolCall &&
+          entry.acceptsText,
+      );
+      await mkdir(outputDirectory, { recursive: true });
+      installation = await installProductPath({
+        artifact,
+        context: contextFile,
+        logDirectory: path.join(outputDirectory, "real-magpie-service-logs"),
+        approval: "ask",
+        realMagpie: { url: realMagpieUrl, keyFile: realMagpieKeyFile },
+      });
+      await installation.start();
+      browser = await chromium.launch({
+        channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+        args: [`--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${installation.frontPort}`],
+      });
+      context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
+      page = await context.newPage();
+    }, 400_000);
+
+    afterAll(async () => {
+      await cleanupWithEvidence("real-magpie-teardown", [
+        [
+          "sweep-record",
+          async () =>
+            writeFile(
+              path.join(outputDirectory, "real-magpie-sweep.json"),
+              `${JSON.stringify(
+                { schema: "himawari-real-magpie-sweep.v1", listedIds, optionNames, sweep },
+                null,
+                2,
+              )}\n`,
+            ),
+        ],
+        ["installation", async () => installation?.close()],
+        ["browser", async () => browser?.close()],
+      ]);
+    }, 120_000);
+
+    it("sends one message with every selectable model and gets a reply from each", async () => {
+      const response = await page.goto(`${installation.origin}/`);
+      expect(response?.status()).toBe(200);
+      await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+      await newThread();
+      const options = await openFullModelList();
+      const names = (await options.allInnerTexts()).map(
+        (text) => text.split("\n")[0]?.trim() ?? "",
+      );
+      optionNames = names;
+      expect(names.length, JSON.stringify({ names, listedIds })).toBe(selectable.length + 1);
+      expect(names).toContain(REAL_MAGPIE_PRIMARY_NAME);
+      for (const entry of selectable) expect(names).toContain(entry.label);
+      await page.keyboard.press("Escape");
+      const order = names
+        .map((name, index) => ({ name, index }))
+        .sort(
+          (left, right) =>
+            Number(left.name === REAL_MAGPIE_PRIMARY_NAME) -
+            Number(right.name === REAL_MAGPIE_PRIMARY_NAME),
+        );
+      for (const { name, index } of order) {
+        const started = Date.now();
+        try {
+          await newThread();
+          const list = await openFullModelList();
+          await list.nth(index).click();
+          await uiExpect(page.locator(`${UI.modelPicker} .model-name`)).toHaveText(name, {
+            timeout: 20_000,
+          });
+          const turn = await send(REAL_MAGPIE_PROMPT);
+          const agent = turn.locator(".thread-message-agent");
+          let outcome: "answered" | "failed" | "timeout" = "timeout";
+          let last = "";
+          const deadline = Date.now() + 180_000;
+          while (Date.now() < deadline) {
+            last =
+              (await agent
+                .last()
+                .innerText()
+                .catch(() => "")) ?? "";
+            if (REAL_MAGPIE_OK_LINE.test(last)) {
+              outcome = "answered";
+              break;
+            }
+            if ((await turn.getByText(/本轮执行失败/).count()) > 0) {
+              outcome = "failed";
+              break;
+            }
+            await page.waitForTimeout(500);
+          }
+          await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 180_000 });
+          sweep.push({
+            name,
+            status: outcome === "answered" ? "answered" : "failed",
+            answerMs: Date.now() - started,
+            ...(outcome === "answered"
+              ? {}
+              : {
+                  detail: redact(
+                    outcome === "failed" ? "turn-failed" : `no-reply reply=${last.slice(0, 120)}`,
+                  ),
+                  ...(outcome === "timeout" ? { exception: true as const } : {}),
+                }),
+          });
+        } catch (error) {
+          const send = target(page, UI.send);
+          const state = await Promise.all([
+            send.isEnabled().catch(() => "unknown"),
+            composer()
+              .inputValue()
+              .catch(() => "unknown"),
+            page
+              .locator("body")
+              .innerText()
+              .catch(() => ""),
+          ]);
+          await capture(`real-magpie-failed-${index}`).catch(() => undefined);
+          sweep.push({
+            name,
+            status: "failed",
+            answerMs: Date.now() - started,
+            detail: redact(
+              `${String(error).slice(0, 200)} | send=${state[0]} draft=${String(state[1]).slice(0, 40)} page=${String(state[2]).replace(/\s+/g, " ").slice(0, 300)}`,
+            ),
+            exception: true,
+          });
+        }
+      }
+      const unexpected = sweep.filter(
+        (entry) => entry.status === "failed" && entry.name !== REAL_MAGPIE_PRIMARY_NAME,
+      );
+      expect(unexpected, JSON.stringify(unexpected)).toEqual([]);
+      const negative = sweep.find((entry) => entry.name === REAL_MAGPIE_PRIMARY_NAME);
+      expect(negative?.status).toBe("failed");
+      expect(negative?.exception, JSON.stringify(negative)).toBeUndefined();
+    });
+  },
+);
