@@ -27,6 +27,7 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
+import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
@@ -1383,16 +1384,35 @@ export async function runAgentService(
         configuration.agentId,
       );
       const consolidationJobs = repository.memoryProjectionJobs();
+      const consolidationState = repository.productMemoryState();
       const memoryConsolidation =
         memoryComposition && episodeProtector && durableMemory
           ? new MemoryConsolidationService({
               store: repository.memoryConsolidation(),
-              state: repository.productMemoryState(),
+              state: consolidationState,
               memory: durableMemory,
               generationFor: async (memoryId) =>
                 (await consolidationJobs.listByMemory(memoryId)).at(-1)?.generationId,
               readText: async (record) => {
                 const payload = await consolidationPayloads.get(record.contentRef);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await episodeProtector.unprotect({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    payload,
+                  }),
+                );
+              },
+              readQuote: async (record) => {
+                const events = await consolidationState.listHistory({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  memoryIds: [record.id],
+                });
+                const quoteRef = quoteRefOfMemory(events, record.contentRef);
+                if (!quoteRef) return undefined;
+                const payload = await consolidationPayloads.get(quoteRef);
                 if (!payload || payload.contentType !== "text/plain") return undefined;
                 return new TextDecoder("utf-8", { fatal: true }).decode(
                   await episodeProtector.unprotect({

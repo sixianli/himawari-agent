@@ -263,6 +263,8 @@ export const MESSAGE_IDS = [
   "chat.attach",
   "chat.stop",
   "chat.retryCleanup",
+  "chat.retryCleanupChecking",
+  "chat.retryCleanupStillUnconfirmed",
   "more.button",
   "more.buttonRunning",
   "more.label",

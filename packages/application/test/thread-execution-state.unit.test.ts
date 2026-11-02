@@ -1062,3 +1062,93 @@ it("offers no cleanup for a failed Run that never touched a sandbox resource", (
   expect(state.displayPhase).toBe("failed");
   expect(state.availableActions).toEqual([]);
 });
+
+describe("stopping a run that only used read-only tools", () => {
+  const noSandbox = {
+    revision: "no-resources",
+    allReleased: false,
+    pendingResources: false,
+    unresolvedResultItemIds: [],
+    phase: null,
+    reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+    lastObservedAt: null,
+    operations: [],
+  };
+  const cancelledWith = (
+    records: readonly ThreadExecutionRecord[],
+    sandboxResourcesAbsent = true,
+  ) =>
+    projectThreadExecutionState(
+      { ...run, status: "cancelled" },
+      records,
+      true,
+      noSandbox,
+      { phase: "cancelled", terminalStatus: "cancelled", diagnosticCode: null },
+      sandboxResourcesAbsent,
+    );
+  it.each(["web_search", "web_fetch", "read", "recall", "reminder_list"])(
+    "shows a stopped %s as stopped with nothing to clean up",
+    (tool) => {
+      const state = cancelledWith([record(1, "call", "started", tool)]);
+      expect(state.displayPhase).toBe("stopped");
+      expect(state.availableActions).toEqual([]);
+      expect(state.operations).toEqual([
+        expect.objectContaining({
+          itemId: "call",
+          displayPhase: "stopped",
+          reasonCode: "TOOL_STOPPED_READ_ONLY",
+        }),
+      ]);
+      expect(state.effectSummary).toEqual([]);
+      expect(threadExecutionStateSchema.parse(state)).toEqual(state);
+    },
+  );
+  it("keeps a stopped command unresolved because it may have changed something", () => {
+    const state = cancelledWith([record(1, "call", "started", "bash")]);
+    expect(state.displayPhase).toBe("unresolved");
+    expect(state.availableActions).toEqual(["retry_cleanup"]);
+  });
+  it("keeps a read-only tool unresolved when its result is reported as unknown", () => {
+    const state = cancelledWith([
+      record(1, "call", "started", "web_search"),
+      record(2, "call", "updated", "runtime.tool_outcome.unresolved"),
+    ]);
+    expect(state.displayPhase).toBe("unresolved");
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        displayPhase: "unresolved",
+        reasonCode: "TOOL_RESULT_UNCONFIRMED",
+      }),
+    ]);
+  });
+  it("keeps a stopped search unresolved when sandbox resources may exist", () => {
+    const state = cancelledWith([record(1, "call", "started", "web_search")], false);
+    expect(state.displayPhase).toBe("unresolved");
+  });
+  it("is stopped with no tool at all", () => {
+    expect(cancelledWith([]).displayPhase).toBe("stopped");
+  });
+});
+
+it("shows a read-only tool cut off by a failed run as failed, not as an unconfirmed write", () => {
+  const state = projectThreadExecutionState(
+    { ...run, status: "failed" },
+    [record(1, "call", "started", "web_search")],
+    true,
+    {
+      revision: "no-resources",
+      allReleased: false,
+      pendingResources: false,
+      unresolvedResultItemIds: [],
+      phase: null,
+      reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+      lastObservedAt: null,
+      operations: [],
+    },
+    { phase: "failed", terminalStatus: "failed", diagnosticCode: "MODEL_REQUEST_FAILED" },
+    true,
+  );
+  expect(state.displayPhase).toBe("failed");
+  expect(state.availableActions).toEqual([]);
+  expect(state.operations).toEqual([expect.objectContaining({ displayPhase: "failed" })]);
+});

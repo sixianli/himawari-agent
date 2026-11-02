@@ -92,7 +92,7 @@ export function ChatHistory({
   readonly filesByRun?: Readonly<Record<string, readonly DeliveredFile[]>> | undefined;
   readonly previewKey?: string | undefined;
   readonly readImage?: ((ref: string) => Promise<string>) | undefined;
-  readonly onCleanup?: ((run: RunSummary) => void) | undefined;
+  readonly onCleanup?: ((run: RunSummary) => Promise<unknown>) | undefined;
   readonly backgroundCommands?: readonly BackgroundCommandView[] | undefined;
   readonly stoppingRunIds?: readonly string[] | undefined;
   readonly onOpenCommand?: ((key: string | null) => void) | undefined;
@@ -313,12 +313,7 @@ export function ChatHistory({
                           "retry_cleanup",
                         )
                       : ["failed", "cancelled"].includes(group.run.status)) ? (
-                      <ActionButton
-                        variant="quiet"
-                        onClick={() => group.run && onCleanup(group.run)}
-                      >
-                        {message("chat.retryCleanup")}
-                      </ActionButton>
+                      <CleanupButton run={group.run} onCleanup={onCleanup} message={message} />
                     ) : null}
                   </div>
                 </article>
@@ -519,5 +514,40 @@ function OwnerMessageMeta({
         />
       </span>
     </div>
+  );
+}
+
+function CleanupButton({
+  run,
+  onCleanup,
+  message,
+}: {
+  readonly run: RunSummary;
+  readonly onCleanup: (run: RunSummary) => Promise<unknown>;
+  readonly message: (id: MessageId) => string;
+}) {
+  const [phase, setPhase] = useState<"idle" | "checking" | "checked">("idle");
+  return (
+    <>
+      <ActionButton
+        variant="quiet"
+        disabled={phase === "checking"}
+        onClick={async () => {
+          setPhase("checking");
+          try {
+            setPhase((await onCleanup(run)) === undefined ? "idle" : "checked");
+          } catch {
+            setPhase("idle");
+          }
+        }}
+      >
+        {message(phase === "checking" ? "chat.retryCleanupChecking" : "chat.retryCleanup")}
+      </ActionButton>
+      {phase === "checked" ? (
+        <output className="execution-next-action">
+          {message("chat.retryCleanupStillUnconfirmed")}
+        </output>
+      ) : null}
+    </>
   );
 }

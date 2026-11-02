@@ -282,6 +282,8 @@ export const messages = {
   "chat.modelUnavailable": "模型信息未提供",
   "chat.attach": "添加图片或文件",
   "chat.retryCleanup": "再次停止并检查清理",
+  "chat.retryCleanupChecking": "正在检查清理…",
+  "chat.retryCleanupStillUnconfirmed": "已重新检查，资源仍未确认释放。稍后可以再试一次。",
   "chat.stop": "停止",
   "more.button": "更多",
   "more.buttonRunning": "更多：产物和后台命令（{count} 个后台命令运行中）",
@@ -640,7 +642,7 @@ export const messages = {
   "memory.reminderDismiss": "不再提醒",
   "memory.reminderSnooze": "一小时后再提醒",
   "memory.cat":
-    "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
+    "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际关系} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
   "memory.page.auto": "从对话中自动记忆",
   "memory.page.pausedNote":
     "自动记忆已暂停：Himawari 仍会用已有的记忆回答，但不会再从对话里记新的事，也不做每日整理。你手动添加的照样会记。",

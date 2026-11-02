@@ -1838,7 +1838,7 @@ export function useThreadControlCenter(
                 onCleanup={
                   configuration?.canCancelRun
                     ? (run) =>
-                        void performIntent({
+                        performIntent({
                           kind: "stop",
                           runId: run.runId,
                           revision: run.revision,
