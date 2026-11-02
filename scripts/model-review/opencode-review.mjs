@@ -210,6 +210,15 @@ export function opencodeBinary() {
 
 const activeChildren = new Set();
 
+export function killProcessGroup(child, signal) {
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 export function checkGitArgs(args) {
   if (!GIT_SUBCOMMANDS.includes(args[0])) return `subcommand ${args[0] ?? "(none)"}`;
   for (const arg of args.slice(1)) {
@@ -280,19 +289,21 @@ function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeout
           PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
         },
         stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
       },
     );
     activeChildren.add(child);
     const stop = (reason) => {
       if (stopReason) return;
       stopReason = reason;
-      child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 10000).unref();
+      killProcessGroup(child, "SIGTERM");
+      setTimeout(() => killProcessGroup(child, "SIGKILL"), 10000).unref();
     };
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      killProcessGroup(child, "SIGKILL");
       activeChildren.delete(child);
       resolvePromise({ stdout, stderr, stopReason, ...result });
     };
@@ -641,7 +652,7 @@ async function main() {
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
   const cleanup = () => {
-    for (const child of activeChildren) child.kill("SIGKILL");
+    for (const child of activeChildren) killProcessGroup(child, "SIGKILL");
     rmSync(workRoot, { recursive: true, force: true });
   };
   const onSignal = (signal) => {

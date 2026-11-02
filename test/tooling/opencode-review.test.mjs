@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -20,6 +20,7 @@ import {
   expectedTools,
   GIT_READ_COMMANDS,
   GIT_REFUSED,
+  killProcessGroup,
   MIN_OUTPUT_TOKENS,
   parseArgs,
   prepareCopy,
@@ -347,6 +348,29 @@ describe("opencode review self-check", () => {
     const missing = plan.probes[plan.probes.length - 1];
     expect(check({ toolCalls: calls.slice(0, -1) })).toEqual([`PROBE_NOT_RUN ${label(missing)}`]);
     expect(check({ requests: [] })).toEqual(["PROBE_NO_TOOL_REQUEST"]);
+  });
+});
+
+describe("opencode review process cleanup", () => {
+  it("kills the commands opencode started, not only opencode itself", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-kill-"));
+    const pidFile = join(dir, "grandchild.pid");
+    const child = spawn("sh", ["-c", `sleep 60 & echo $! > ${pidFile}; wait`], {
+      detached: true,
+      stdio: "ignore",
+    });
+    const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
+    while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    const grandchild = Number(readFileSync(pidFile, "utf8").trim());
+    expect(killProcessGroup(child, "SIGKILL")).toBe(true);
+    await exited;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    const state = existsSync(`/proc/${grandchild}/stat`)
+      ? readFileSync(`/proc/${grandchild}/stat`, "utf8").split(") ")[1]?.[0]
+      : "gone";
+    expect(["Z", "X", "gone"]).toContain(state);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
