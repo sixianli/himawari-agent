@@ -741,28 +741,422 @@ input:not(
   height: 16px;
   color: var(--sun-strong);
 }
-.timeline-row.is-running .row-icon {
-  color: var(--sun-strong);
-}
-.timeline-row.is-running .tool-icon {
-  animation: none;
-}
-.timeline-row.is-running .row-icon::after {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  border: 2px solid color-mix(in srgb, var(--sun) 25%, transparent);
-  border-top-color: var(--sun-strong);
-  border-radius: 12px;
-  animation: process-ring-spin 0.9s linear infinite;
+@media (prefers-reduced-motion: no-preference) {
+  .is-running .tool-icon {
+    --e: cubic-bezier(0.45, 0.05, 0.25, 1);
+    overflow: visible;
+  }
+  .is-running .tool-icon path {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .is-running .tool-icon[data-glyph="think"] path:nth-of-type(1) {
+    animation: icon-hemi-a 2.4s ease-in-out infinite;
+  }
+  .is-running .tool-icon[data-glyph="think"] path:nth-of-type(2) {
+    animation: icon-hemi-b 2.4s ease-in-out infinite;
+  }
+  .is-running .tool-icon[data-glyph="think"] path:nth-of-type(n + 3) {
+    stroke-dasharray: 3.2 2.4;
+    animation: icon-signal 1.5s linear infinite;
+  }
+  .is-running .tool-icon[data-glyph="think"] path:nth-of-type(4) {
+    animation-direction: reverse;
+  }
+  @keyframes icon-hemi-a {
+    0%,
+    100% {
+      fill-opacity: 0.7;
+    }
+    50% {
+      fill-opacity: 0.3;
+    }
+  }
+  @keyframes icon-hemi-b {
+    0%,
+    100% {
+      fill-opacity: 0.3;
+    }
+    50% {
+      fill-opacity: 0.7;
+    }
+  }
+  @keyframes icon-signal {
+    to {
+      stroke-dashoffset: -11.2;
+    }
+  }
+  .is-running .tool-icon[data-glyph="memory"] path:nth-of-type(2) {
+    stroke-dasharray: 3 2.2;
+    animation: icon-flow 1.6s linear infinite;
+  }
+  .is-running .tool-icon[data-glyph="memory"] path:nth-of-type(3) {
+    animation: icon-node 2.4s ease-in-out infinite;
+  }
+  .is-running .tool-icon[data-glyph="memory"] path:nth-of-type(4) {
+    animation: icon-node 2.4s ease-in-out 0.6s infinite;
+  }
+  .is-running .tool-icon[data-glyph="memory"] path:nth-of-type(5) {
+    animation: icon-node 2.4s ease-in-out 1.2s infinite;
+  }
+  .is-running .tool-icon[data-glyph="memory"] path:nth-of-type(6) {
+    animation: icon-node 2.4s ease-in-out 1.8s infinite;
+  }
+  @keyframes icon-flow {
+    to {
+      stroke-dashoffset: -10.4;
+    }
+  }
+  @keyframes icon-node {
+    0%,
+    100% {
+      transform: scale(0.85);
+      opacity: 0.7;
+    }
+    30% {
+      transform: scale(1.25);
+      opacity: 1;
+    }
+  }
+  .is-running .tool-icon[data-glyph="radar"] path:nth-of-type(3),
+  .is-running .tool-icon[data-glyph="radar"] path:nth-of-type(4) {
+    transform-box: view-box;
+    transform-origin: 12px 12px;
+    animation: icon-sweep 2.6s linear infinite;
+  }
+  .is-running .tool-icon[data-glyph="radar"] path:nth-of-type(5) {
+    animation: icon-blip-a 2.6s linear infinite;
+  }
+  .is-running .tool-icon[data-glyph="radar"] path:nth-of-type(6) {
+    animation: icon-blip-b 2.6s linear infinite;
+  }
+  @keyframes icon-sweep {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes icon-blip-a {
+    0%,
+    13% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    17% {
+      opacity: 1;
+      transform: scale(1.3);
+    }
+    24% {
+      transform: scale(1);
+    }
+    60%,
+    100% {
+      opacity: 0;
+      transform: scale(1);
+    }
+  }
+  @keyframes icon-blip-b {
+    0%,
+    61% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    65% {
+      opacity: 1;
+      transform: scale(1.3);
+    }
+    72% {
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0.1;
+    }
+  }
+  .is-running .tool-icon[data-glyph="checklist"] path:nth-of-type(3),
+  .is-running .tool-icon[data-glyph="checklist"] path:nth-of-type(4) {
+    stroke-dasharray: 5;
+    animation: icon-tick 2.4s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="checklist"] path:nth-of-type(4) {
+    animation-delay: 0.5s;
+  }
+  .is-running .tool-icon[data-glyph="checklist"] path:nth-of-type(n + 5) {
+    animation: icon-row-fade 2.4s ease-in-out infinite;
+  }
+  .is-running .tool-icon[data-glyph="checklist"] path:nth-of-type(6) {
+    animation-delay: 0.5s;
+  }
+  @keyframes icon-tick {
+    0%,
+    8% {
+      stroke-dashoffset: 5;
+    }
+    30%,
+    80% {
+      stroke-dashoffset: 0;
+    }
+    92%,
+    100% {
+      stroke-dashoffset: 5;
+    }
+  }
+  @keyframes icon-row-fade {
+    0%,
+    100% {
+      stroke-opacity: 0.35;
+    }
+    40% {
+      stroke-opacity: 0.9;
+    }
+  }
+  .is-running .tool-icon[data-glyph="book"] path:nth-of-type(3) {
+    transform-origin: left center;
+    animation: icon-page-turn 2s cubic-bezier(0.5, 0.05, 0.3, 1) infinite;
+  }
+  @keyframes icon-page-turn {
+    0% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+    40% {
+      transform: scaleX(-1);
+      opacity: 1;
+    }
+    52% {
+      transform: scaleX(-1);
+      opacity: 0;
+    }
+    53% {
+      transform: scaleX(1);
+      opacity: 0;
+    }
+    68%,
+    100% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+  }
+  .is-running .tool-icon[data-glyph="penBook"] path:nth-of-type(5) {
+    stroke-dasharray: 5;
+    animation: icon-ink 2.4s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="penBook"] path:nth-of-type(6) {
+    animation: icon-pen 2.4s var(--e) infinite;
+  }
+  @keyframes icon-ink {
+    0%,
+    6% {
+      stroke-dashoffset: 5;
+      opacity: 1;
+    }
+    68%,
+    84% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    98%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+  @keyframes icon-pen {
+    0%,
+    6% {
+      transform: translate(0, 0);
+    }
+    17% {
+      transform: translate(0.5px, -0.5px);
+    }
+    29% {
+      transform: translate(1px, 0);
+    }
+    41% {
+      transform: translate(1.4px, -0.5px);
+    }
+    53% {
+      transform: translate(1.9px, 0);
+    }
+    68%,
+    84% {
+      transform: translate(2.4px, -0.2px);
+    }
+    100% {
+      transform: translate(0, 0);
+    }
+  }
+  .is-running .tool-icon[data-glyph="search"] {
+    transform-origin: 80% 80%;
+    animation: icon-scan 2.4s var(--e) infinite;
+  }
+  @keyframes icon-scan {
+    0%,
+    100% {
+      transform: rotate(-9deg);
+    }
+    50% {
+      transform: rotate(9deg);
+    }
+  }
+  .is-running .tool-icon[data-glyph="terminal"] path:nth-of-type(2) {
+    animation: icon-prompt 1.6s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="terminal"] path:nth-of-type(3) {
+    animation: icon-cursor 1.2s ease-in-out infinite;
+  }
+  @keyframes icon-prompt {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    50% {
+      transform: translateX(0.9px);
+    }
+  }
+  @keyframes icon-cursor {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    55%,
+    75% {
+      opacity: 0.08;
+    }
+  }
+  .is-running .tool-icon[data-glyph="note"] path:nth-of-type(2),
+  .is-running .tool-icon[data-glyph="note"] path:nth-of-type(3) {
+    transform-origin: left center;
+    animation: icon-read-line 2s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="note"] path:nth-of-type(3) {
+    animation-delay: 0.35s;
+  }
+  @keyframes icon-read-line {
+    0%,
+    100% {
+      transform: scaleX(0.35);
+      opacity: 0.45;
+    }
+    45%,
+    60% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+  }
+  .is-running .tool-icon[data-glyph="answer"] path:nth-of-type(n + 2) {
+    animation: icon-dot-wave 1.3s cubic-bezier(0.35, 0, 0.3, 1) infinite;
+  }
+  .is-running .tool-icon[data-glyph="answer"] path:nth-of-type(3) {
+    animation-delay: 0.14s;
+  }
+  .is-running .tool-icon[data-glyph="answer"] path:nth-of-type(4) {
+    animation-delay: 0.28s;
+  }
+  @keyframes icon-dot-wave {
+    0%,
+    55%,
+    100% {
+      transform: translateY(0) scale(1);
+    }
+    25% {
+      transform: translateY(-14%) scale(1.2);
+    }
+  }
+  .is-running .tool-icon[data-glyph="database"] path:nth-of-type(2) {
+    animation: icon-db-lid 2s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="database"] path:nth-of-type(3) {
+    animation: icon-db-ring 2s var(--e) infinite;
+  }
+  @keyframes icon-db-lid {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-1.2px);
+    }
+  }
+  @keyframes icon-db-ring {
+    0%,
+    100% {
+      stroke-opacity: 0.35;
+    }
+    40% {
+      stroke-opacity: 1;
+    }
+  }
+  .is-running .tool-icon[data-glyph="browser"] path:nth-of-type(2) {
+    transform-origin: left center;
+    animation: icon-load-bar 2s var(--e) infinite;
+  }
+  @keyframes icon-load-bar {
+    0% {
+      transform: scaleX(0.3);
+      opacity: 0.5;
+    }
+    60%,
+    80% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+    100% {
+      transform: scaleX(1);
+      opacity: 0.5;
+    }
+  }
+  .is-running .tool-icon[data-glyph="delegate"] path:nth-of-type(1) {
+    animation: icon-swap-a 2s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="delegate"] path:nth-of-type(2) {
+    animation: icon-swap-b 2s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="delegate"] path:nth-of-type(3) {
+    stroke-dasharray: 3 3;
+    animation: icon-flow-link 1s linear infinite;
+  }
+  @keyframes icon-swap-a {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(0.8);
+    }
+  }
+  @keyframes icon-swap-b {
+    0%,
+    100% {
+      fill-opacity: 0.4;
+      transform: scale(0.85);
+    }
+    50% {
+      fill-opacity: 0.8;
+      transform: scale(1);
+    }
+  }
+  @keyframes icon-flow-link {
+    to {
+      stroke-dashoffset: -6;
+    }
+  }
+  .is-running .tool-icon[data-glyph="wrench"] path:nth-of-type(2) {
+    animation: icon-twist 1.6s var(--e) infinite;
+  }
+  .is-running .tool-icon[data-glyph="compose"] path:nth-of-type(2) {
+    animation: icon-twist 1.6s var(--e) infinite;
+  }
+  @keyframes icon-twist {
+    0%,
+    100% {
+      transform: rotate(-14deg);
+    }
+    50% {
+      transform: rotate(14deg);
+    }
+  }
 }
 .timeline-row.is-running .row-duration {
   color: var(--text);
-}
-@keyframes process-ring-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .process-live {
   display: inline-flex;
@@ -788,9 +1182,12 @@ input:not(
   font-variant-numeric: tabular-nums;
 }
 @media (prefers-reduced-motion: reduce) {
-  .timeline-row.is-running .row-icon::after,
   .process-live-step {
     animation: none;
+  }
+  .is-running .row-icon {
+    background: color-mix(in srgb, var(--sun) 26%, transparent);
+    --glyph-base-opacity: 0.7;
   }
   .process-live-step {
     color: var(--text);

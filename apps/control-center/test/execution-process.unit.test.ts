@@ -1,3 +1,4 @@
+import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createIntl, createIntlCache } from "react-intl";
@@ -301,4 +302,35 @@ it("[QUEUE-1] reverse: does not claim a queue once the turn has started producin
   expect(html).not.toContain("chat.queued");
   const acceptedWithRecords = render(acceptedRunWaiting(30_000), newsRun());
   expect(acceptedWithRecords).not.toContain("chat.queued");
+});
+
+const reviewRecord = (
+  sequence: number,
+  milliseconds: number,
+  outcome: "started" | "approved",
+): ThreadExecutionRecord => ({
+  id: `review:${sequence}`,
+  itemId: "review:one",
+  sequence,
+  kind: "status",
+  phase: "updated",
+  name: `runtime.authorization_review.${outcome}`,
+  text: "",
+  input: "",
+  output: "",
+  occurredAt: at(milliseconds),
+});
+
+it("[ICON-MOTION-5] the automatic-review row animates only while the review is still running", () => {
+  const running = { ...completedRun, status: "running" as const, updatedAt: at(5000) };
+  const live = render(running, [reviewRecord(1, 1000, "started")]);
+  expect(live).toContain("execution-stage authorization-review is-running");
+  const done = render(running, [
+    reviewRecord(1, 1000, "started"),
+    reviewRecord(2, 3000, "approved"),
+  ]);
+  expect(done).toContain("execution-stage authorization-review");
+  expect(done).not.toContain("authorization-review is-running");
+  const finished = render(completedRun, [reviewRecord(1, 1000, "started")]);
+  expect(finished).not.toContain("authorization-review is-running");
 });
