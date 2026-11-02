@@ -866,6 +866,7 @@ export const messages = {
   "chat.search.sentLimits": "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会被拦下。",
   "chat.search.alwaysOn": "固定开启",
   "settings.name": "怎么称呼你",
+  "settings.version": "版本 {revision} · {date}",
   "chat.greetNamed": "{greeting}，{name}",
   "chat.welcome.here": "我在呢。想查点什么、写点什么，还是就聊聊？",
   "chat.welcome.hand": "今天也交给我一点事吧 🌻",
@@ -877,7 +878,7 @@ export const messages = {
   "proactive.group": "{g, select, check {可能重要，请看原信} none {没有截止日期} other {值得知道}}",
   "proactive.when.due": "{time} 截止",
   "proactive.when.received": "{date} 收到",
-  "proactive.priority": "{p, select, high {高} medium {中} other {低}}",
+  "proactive.priority": "{p, select, high {高优先级} medium {中优先级} other {低优先级}}",
   "proactive.openMail": "打开原信",
   "proactive.replied": "你已回复",
   "proactive.pushed":
