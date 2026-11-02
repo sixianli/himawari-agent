@@ -58,6 +58,7 @@ export interface MemoryConsolidationServiceOptions {
   readonly memory: Pick<DurableMemoryService, "revise" | "applyProposal">;
   readonly generationFor: (memoryId: MemoryId) => Promise<MemoryGenerationId | undefined>;
   readonly readText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
+  readonly readQuote?: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly storeText: (input: {
     readonly key: string;
     readonly ownerId: OwnerId;
@@ -80,6 +81,7 @@ interface Reviewed {
   readonly label: string;
   readonly memory: ProductMemoryRecord;
   readonly text: string;
+  readonly quote?: string;
 }
 
 interface Group {
@@ -106,7 +108,8 @@ function day(memory: ProductMemoryRecord): string {
 }
 
 export function consolidationPrompt(groups: readonly Group[], fresh: readonly Reviewed[]): string {
-  const line = ({ label, memory, text }: Reviewed) => `${label}（${day(memory)}）${text}`;
+  const line = ({ label, memory, text, quote }: Reviewed) =>
+    `${label}（${day(memory)}）${text}${quote ? `\n    主人当时的原话：“${quote}”` : ""}`;
   return [
     "你在帮 Himawari 整理关于主人的长期记忆。只根据下面列出的记忆判断，不要编造。",
     "一、每组第一条是最近新增或修改的记忆，后面是和它相近的旧记忆。判断这一组：",
@@ -264,7 +267,13 @@ export class MemoryConsolidationService {
         if (known) return known;
         const text = await this.#options.readText(memory).catch(() => undefined);
         if (!text) return undefined;
-        const value = { label: `M${labels.size + 1}`, memory, text };
+        const quote = (await this.#options.readQuote?.(memory).catch(() => undefined))?.trim();
+        const value = {
+          label: `M${labels.size + 1}`,
+          memory,
+          text,
+          ...(quote ? { quote } : {}),
+        };
         labels.set(value.label, value);
         labelOf.set(memory.id, value);
         return value;
