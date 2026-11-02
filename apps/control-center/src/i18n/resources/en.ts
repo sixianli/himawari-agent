@@ -293,6 +293,9 @@ export const messages = {
   "chat.modelUnavailable": "Model information unavailable",
   "chat.attach": "Add images or files",
   "chat.retryCleanup": "Retry stop and cleanup check",
+  "chat.retryCleanupChecking": "Checking cleanup…",
+  "chat.retryCleanupStillUnconfirmed":
+    "Checked again: resources are still not confirmed released. You can try once more later.",
   "chat.stop": "Stop",
   "more.button": "More",
   "more.buttonRunning": "More: files and background commands ({count} running)",

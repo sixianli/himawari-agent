@@ -295,6 +295,9 @@ export const messages = {
   "chat.modelUnavailable": "モデル情報がありません",
   "chat.attach": "画像やファイルを追加",
   "chat.retryCleanup": "停止と終了処理の確認を再試行",
+  "chat.retryCleanupChecking": "終了処理を確認しています…",
+  "chat.retryCleanupStillUnconfirmed":
+    "再確認しましたが、リソースの解放はまだ確認できていません。しばらくしてからもう一度お試しください。",
   "chat.stop": "停止",
   "more.button": "その他",
   "more.buttonRunning": "その他：成果物とバックグラウンドコマンド（{count}件実行中）",
