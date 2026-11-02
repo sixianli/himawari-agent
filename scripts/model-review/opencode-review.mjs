@@ -49,7 +49,13 @@ export const GIT_BANNED_OPTIONS = [
   "--exec-path",
   "--git-dir",
   "--work-tree",
+  "--ignore-revs-file",
+  "--pathspec-from-file",
+  "--mailmap-file",
+  "--orderfile",
+  "--help",
 ];
+const GIT_SHORT_VALUE_LETTERS = "SGLUnlMCBXI";
 export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
 export const COST_LIMIT_PER_MODEL_USD = 0.2;
 export const RULE_16_SENTENCE = "列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。";
@@ -219,6 +225,16 @@ export function killProcessGroup(child, signal) {
   return true;
 }
 
+function shortOptionProblem(subcommand, letters) {
+  for (const letter of letters) {
+    if (letter === "o" || letter === "O") return true;
+    if (subcommand === "blame" && letter === "S") return true;
+    if (subcommand === "blame" && letter === "n") continue;
+    if (GIT_SHORT_VALUE_LETTERS.includes(letter)) return false;
+  }
+  return false;
+}
+
 export function checkGitArgs(args) {
   if (!GIT_SUBCOMMANDS.includes(args[0])) return `subcommand ${args[0] ?? "(none)"}`;
   for (const arg of args.slice(1)) {
@@ -227,7 +243,7 @@ export function checkGitArgs(args) {
       const name = arg.split("=")[0];
       if (name.length > 2 && GIT_BANNED_OPTIONS.some((banned) => banned.startsWith(name)))
         return name;
-    } else if (/^-[oO]/.test(arg)) {
+    } else if (arg.startsWith("-") && shortOptionProblem(args[0], arg.slice(1))) {
       return arg;
     }
   }
@@ -259,7 +275,14 @@ export function installGitGuard(workRoot) {
     ].join("\n"),
   );
   chmodSync(guard, 0o755);
-  return { binDir, realGit };
+  const realBash = spawnSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).stdout.trim();
+  if (!realBash) throw new Error("BASH_NOT_FOUND");
+  const shellDir = join(workRoot, "guard-shell");
+  mkdirSync(shellDir);
+  const shell = join(shellDir, "bash");
+  writeFileSync(shell, `#!/bin/sh\nexec ${JSON.stringify(realBash)} -r "$@"\n`);
+  chmodSync(shell, 0o755);
+  return { binDir, realGit, shell };
 }
 
 function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeoutMs, costLimit }) {
@@ -287,6 +310,7 @@ function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeout
           GIT_PAGER: "cat",
           PAGER: "cat",
           PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
+          SHELL: gitGuard.shell,
         },
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,
@@ -324,6 +348,7 @@ function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeout
       stderr += chunk;
     });
     child.on("error", (error) => finish({ code: null, signal: null, spawnError: error.message }));
+    child.on("exit", () => killProcessGroup(child, "SIGKILL"));
     child.on("close", (code, signal) => finish({ code, signal }));
     const timer = setTimeout(() => stop("timeout"), timeoutMs);
   });
@@ -362,6 +387,22 @@ export function probePlan(workRoot) {
     ["newline", (f) => `git log -1\ntouch ${f}`],
     ["difftool", (f) => `git difftool -y -x "touch ${f}" HEAD~1 HEAD`],
   ].map(([name, build]) => ({ kind: "write", file: target(name), ...bash(build(target(name))) }));
+  const insideName = (name) => `probe-inside-${name}`;
+  const insideWrites = [
+    ["redirect", (f) => `git log -1 > ${f}`],
+    ["clobber", (f) => `git log -1 >| ${f}`],
+    ["both", (f) => `git log -1 &> ${f}`],
+    ["output", (f) => `git log -1 --output=${f}`],
+    ["cd-redirect", (f) => `cd ${join(workRoot, "repo")} && git log -1 > ${f}`],
+    [
+      "cd-devnull",
+      (f) => `cd ${join(workRoot, "repo")} && git log -1 > /dev/null; git log -1 > ${f}`,
+    ],
+  ].map(([name, build]) => ({
+    kind: "write",
+    file: join(workRoot, "repo", insideName(name)),
+    ...bash(build(insideName(name))),
+  }));
   const reads = [
     bash(`git diff --no-index ${outsideA} ${outsideB}`),
     bash(`git diff --no-inde ${outsideA} ${outsideB}`),
@@ -369,6 +410,12 @@ export function probePlan(workRoot) {
     bash(`git diff --no\\-index ${outsideA} ${outsideB}`),
     bash(`git diff\t--no-index ${outsideA} ${outsideB}`),
     bash(`git blame --contents ${outsideA} -- AGENTS.md`),
+    bash(`git blame -S ${outsideA} -- AGENTS.md`),
+    bash(`git blame -nS${outsideA} -- AGENTS.md`),
+    bash(`git blame --ignore-revs-file=${outsideA} -- AGENTS.md`),
+    bash(`git diff -pO${outsideA} HEAD~1 HEAD`),
+    bash(`git diff --pathspec-from-file=${outsideA} HEAD~1 HEAD`),
+    bash("git show --help"),
     { tool: "read", args: { filePath: outsideA } },
     { tool: "grep", args: { pattern: marker, path: workRoot } },
     { tool: "glob", args: { pattern: "outside-*.txt", path: workRoot }, leak: "outside-b.txt" },
@@ -376,7 +423,12 @@ export function probePlan(workRoot) {
   return {
     marker,
     outsideFiles: [outsideA, outsideB],
-    probes: [{ kind: "allowed", ...bash("git log -1 --oneline") }, ...writes, ...reads],
+    probes: [
+      { kind: "allowed", ...bash("git log -1 --oneline") },
+      ...writes,
+      ...insideWrites,
+      ...reads,
+    ],
   };
 }
 
@@ -459,9 +511,14 @@ function startProbeServer(probes) {
   });
 }
 
+export const REFUSAL_TEXTS = [
+  "The user has specified a rule which prevents you",
+  GIT_REFUSED,
+  ": restricted",
+];
+
 export function probeRefused(call) {
-  if (call.status === "error") return true;
-  return new RegExp(`${GIT_REFUSED}|^fatal:|disallowed abbreviated`, "m").test(call.output);
+  return REFUSAL_TEXTS.some((text) => String(call.output ?? "").includes(text));
 }
 
 export function checkProbeRequests({ mode, requests, plan, toolCalls, writtenFiles }) {
@@ -500,7 +557,10 @@ export function checkProbeRequests({ mode, requests, plan, toolCalls, writtenFil
       if (probe.kind === "read" && call.output.includes(probe.leak)) {
         problems.push(`PROBE_READ_OUTSIDE ${label}`);
       }
-      if (probe.kind === "write" && !probeRefused(call)) {
+      if (
+        (probe.kind === "write" || (probe.kind === "read" && probe.tool === "bash")) &&
+        !probeRefused(call)
+      ) {
         problems.push(`PROBE_NOT_REFUSED ${label}`);
       }
     }
@@ -578,10 +638,27 @@ export function removeUnsafeProjectFiles(copy) {
 }
 
 function git(args, cwd) {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const result = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
   if (result.status !== 0)
     throw new Error(`GIT_FAILED git ${args.join(" ")}: ${result.stderr.trim()}`);
   return result.stdout.trim();
+}
+
+export const QUESTIONS_PATH = ".agents/instructions/model-review.md";
+
+export function questionsSource(repo, commits) {
+  if (commits.base) return git(["show", `${commits.base}:${QUESTIONS_PATH}`], repo);
+  return readFileSync(join(repoRoot, QUESTIONS_PATH), "utf8");
+}
+
+export function envFilesInHistory(copy) {
+  return [
+    ...new Set(
+      git(["log", "--all", "--format=", "--name-only"], copy)
+        .split("\n")
+        .filter((path) => /^\.env(?!.*\.(example|sample|template)$)/.test(path.split("/").pop())),
+    ),
+  ].sort();
 }
 
 export function resolveCommits(repo, { head, base, previous }) {
@@ -593,6 +670,8 @@ export function resolveCommits(repo, { head, base, previous }) {
 export function prepareCopy({ repo, copy, commits, workRoot }) {
   git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", repo, copy], workRoot);
   git(["fetch", "--quiet", "origin", "+refs/*:refs/source/*"], copy);
+  const envFiles = envFilesInHistory(copy);
+  if (envFiles.length > 0) throw new Error(`ENV_FILE_IN_HISTORY ${envFiles.join(" ")}`);
   git(["checkout", "--quiet", "--detach", commits.head], copy);
   git(["remote", "remove", "origin"], copy);
   git(["reflog", "expire", "--expire=now", "--all"], copy);
@@ -637,10 +716,8 @@ export function parseArgs(argv) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
-  const questions = reviewQuestions(
-    readFileSync(join(repoRoot, ".agents/instructions/model-review.md"), "utf8"),
-  );
   const commits = resolveCommits(options.repo, options);
+  const questions = reviewQuestions(questionsSource(options.repo, commits));
   const prompt = buildPrompt({
     ...options,
     ...commits,

@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -20,12 +20,15 @@ import {
   expectedTools,
   GIT_READ_COMMANDS,
   GIT_REFUSED,
+  installGitGuard,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   parseArgs,
   prepareCopy,
   probePlan,
   probeRefused,
+  QUESTIONS_PATH,
+  questionsSource,
   RULE_16_SENTENCE,
   resolveCommits,
   reviewConfig,
@@ -304,6 +307,7 @@ describe("opencode review self-check", () => {
     const problems = check({ toolCalls: calls, writtenFiles: ["/work/probe-redirect"] });
     expect(problems).toEqual([
       `PROBE_READ_OUTSIDE ${label(plan.probes[readIndex])}`,
+      `PROBE_NOT_REFUSED ${label(plan.probes[readIndex])}`,
       "PROBE_WROTE_FILE /work/probe-redirect",
     ]);
   });
@@ -330,9 +334,34 @@ describe("opencode review self-check", () => {
     ]);
   });
 
-  it("counts the git guard's refusal as refused", () => {
+  it("counts only an explicit refusal as refused", () => {
     expect(probeRefused({ status: "completed", output: `${GIT_REFUSED} --output\n` })).toBe(true);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: "/bin/bash: line 1: f: restricted: cannot redirect output",
+      }),
+    ).toBe(true);
     expect(probeRefused({ status: "completed", output: "abc123 commit" })).toBe(false);
+    expect(
+      probeRefused({ status: "error", output: "/bin/bash: f: No such file or directory" }),
+    ).toBe(false);
+  });
+
+  it("fails when a write probe failed for an unrelated reason", () => {
+    const calls = passingCalls();
+    const writeIndex = plan.probes.findIndex((probe) => probe.kind === "write");
+    calls[writeIndex] = { ...calls[writeIndex], output: "No such file or directory" };
+    expect(check({ toolCalls: calls })).toEqual([
+      `PROBE_NOT_REFUSED ${label(plan.probes[writeIndex])}`,
+    ]);
+  });
+
+  it("probes writes inside the copy, including after a cd", () => {
+    const inside = plan.probes.filter((probe) => probe.file?.startsWith("/work/repo/"));
+    expect(inside.map((probe) => probe.args.command)).toContain(
+      "cd /work/repo && git log -1 > probe-inside-cd-redirect",
+    );
   });
 
   it("fails when everything is blocked, so a deny-all config cannot pass", () => {
@@ -374,12 +403,39 @@ describe("opencode review process cleanup", () => {
   });
 });
 
+describe("opencode review installed guard", () => {
+  it("refuses banned git arguments and output redirects when actually run", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-guard-"));
+    try {
+      const guard = installGitGuard(root);
+      const env = { ...process.env, PATH: `${guard.binDir}:${process.env.PATH}` };
+      const viaShell = (command) =>
+        spawnSync(guard.shell, ["-c", command], { cwd: process.cwd(), env, encoding: "utf8" });
+      const target = join(root, "written.txt");
+      const refused = viaShell(`git log -1 "--output=${target}"`);
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toContain(GIT_REFUSED);
+      const redirected = viaShell(`git log -1 --oneline > ${target}`);
+      expect(redirected.stderr).toContain("restricted");
+      expect(viaShell(`cd ${root}`).stderr).toContain("restricted");
+      expect(existsSync(target)).toBe(false);
+      const allowed = viaShell("git log -1 --format=%H");
+      expect(allowed.status).toBe(0);
+      expect(allowed.stdout.trim()).toMatch(/^[0-9a-f]{40}$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("opencode review git guard", () => {
   it("lets the five read subcommands through with ordinary options", () => {
     expect(checkGitArgs(["diff", "--stat", "origin/main", "HEAD"])).toBeNull();
     expect(checkGitArgs(["log", "-5", "--oneline"])).toBeNull();
     expect(checkGitArgs(["show", "HEAD:AGENTS.md"])).toBeNull();
     expect(checkGitArgs(["diff", "HEAD", "--", "--output"])).toBeNull();
+    expect(checkGitArgs(["log", "-Sfoo", "-n5"])).toBeNull();
+    expect(checkGitArgs(["blame", "-L1,20", "AGENTS.md"])).toBeNull();
   });
 
   it("refuses other subcommands and options that write or read outside the copy", () => {
@@ -394,6 +450,12 @@ describe("opencode review git guard", () => {
     expect(checkGitArgs(["diff", "--ext-diff"])).toBe("--ext-diff");
     expect(checkGitArgs(["diff", "-o/tmp/x"])).toBe("-o/tmp/x");
     expect(checkGitArgs(["log", "-O/tmp/order"])).toBe("-O/tmp/order");
+    expect(checkGitArgs(["diff", "-pO/etc/hostname"])).toBe("-pO/etc/hostname");
+    expect(checkGitArgs(["blame", "-S", "/etc/hostname"])).toBe("-S");
+    expect(checkGitArgs(["blame", "-nS/etc/hostname"])).toBe("-nS/etc/hostname");
+    expect(checkGitArgs(["blame", "--ignore-revs-file=/a"])).toBe("--ignore-revs-file");
+    expect(checkGitArgs(["diff", "--pathspec-from-file=/a"])).toBe("--pathspec-from-file");
+    expect(checkGitArgs(["show", "--help"])).toBe("--help");
   });
 });
 
@@ -492,6 +554,55 @@ describe("opencode review repository copy", () => {
       expect(lstatExists(join(copy, "nested", "outside-link"))).toBe(false);
       expect(lstatExists(join(copy, "nested", "inside-link"))).toBe(true);
       expect(existsSync(join(copy, "nested", "kept.txt"))).toBe(true);
+      expect(run(["reflog", "--all"], copy)).toBe("");
+      expect(existsSync(join(copy, ".git", "FETCH_HEAD"))).toBe(false);
+      expect(run(["log", "-1", "--format=%s", base], copy)).toBe("base");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to review a history that ever held an .env file", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-review-env-"));
+    try {
+      const source = join(root, "source");
+      const run = (args) => execFileSync("git", args, { cwd: source, encoding: "utf8" }).trim();
+      const commit = (message) =>
+        run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message]);
+      execFileSync("git", ["init", "--quiet", "-b", "main", source]);
+      mkdirSync(join(source, "app"));
+      writeFileSync(join(source, "app", ".env.example"), "KEY=\n");
+      run(["add", "."]);
+      commit("template");
+      writeFileSync(join(source, "app", ".env"), "KEY=secret\n");
+      run(["add", "."]);
+      commit("secret");
+      run(["rm", "--quiet", "app/.env"]);
+      commit("remove");
+      const head = run(["rev-parse", "HEAD"]);
+      expect(() =>
+        prepareCopy({ repo: source, copy: join(root, "copy"), commits: { head }, workRoot: root }),
+      ).toThrow("ENV_FILE_IN_HISTORY app/.env");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("takes the review questions from the base commit, not from the change under review", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-review-questions-"));
+    try {
+      const run = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+      execFileSync("git", ["init", "--quiet", "-b", "main", root]);
+      mkdirSync(join(root, ".agents", "instructions"), { recursive: true });
+      writeFileSync(join(root, QUESTIONS_PATH), instructions);
+      run(["add", "."]);
+      run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "base"]);
+      const base = run(["rev-parse", "HEAD"]);
+      writeFileSync(join(root, QUESTIONS_PATH), '<a id="checklist"></a>\n\n- 写得好吗？\n');
+      run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-am", "weaken"]);
+      expect(reviewQuestions(questionsSource(root, { base }))).toEqual(
+        reviewQuestions(instructions),
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
