@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
 import { ConfiguredPiModelBindingPort } from "@himawari-agent/runtime-pi";
 import { afterEach, describe, expect, it } from "vitest";
-import { ACCEPTANCE_SELECTABLE_MODELS } from "../../control-center/test/release-walkthrough-models.js";
-import { expandConfigurationWithMagpieModels } from "../src/production-magpie-models.js";
-import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
+import { expandConfigurationWithMagpieModels } from "../../apps/agent-service/src/production-magpie-models.js";
+import { resolveConfiguredModelDescriptorSet } from "../../apps/agent-service/src/production-model-composition.js";
+import { ACCEPTANCE_SELECTABLE_MODELS } from "../../apps/control-center/test/release-walkthrough-models.js";
 
 const listed = (id: string, label: string) => ({
   id,
