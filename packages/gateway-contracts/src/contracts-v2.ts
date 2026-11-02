@@ -47,6 +47,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.create",
+  "memory.category.set",
   "memory.settings.set",
   "memory.page.viewed",
   "memory.person.respond",
@@ -552,6 +553,7 @@ export const MEMORY_CATEGORY_NAMES = [
   "event",
   "other",
 ] as const;
+export const MEMORY_SENSITIVE_CATEGORY_NAMES = ["health", "finance"] as const;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",
@@ -729,6 +731,14 @@ const memoryCreateCommandSchema = object({
     category: enumeration(MEMORY_CATEGORY_NAMES),
     subCategory: nullable(memoryLabelSchema),
     pinned: booleanValue,
+  }),
+});
+const memoryCategorySetCommandSchema = object({
+  ...commandEnvelope("memory.category.set"),
+  payload: object({
+    memoryId: machineString,
+    expectedRevision: integer(0),
+    category: enumeration(MEMORY_CATEGORY_NAMES),
   }),
 });
 const memorySettingsSetCommandSchema = object({
@@ -1925,6 +1935,7 @@ const schemasByType = {
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.create": memoryCreateCommandSchema,
+  "memory.category.set": memoryCategorySetCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,
   "memory.page.viewed": memoryPageViewedCommandSchema,
   "memory.person.respond": memoryPersonRespondCommandSchema,

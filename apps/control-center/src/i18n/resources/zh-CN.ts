@@ -838,6 +838,8 @@ export const messages = {
     "{r, select, sensitive {敏感记忆不会每次都带上，只在相关时才调出} category {事件、健康、财务和其他类的记忆只在相关时调出} on {这是你选的，会优先于自动挑选} off {你关掉了，只在相关时调出} add {打开后每次对话都会带上；不打开就由系统按重要度决定} other {现在由系统按重要度决定；你一改，就以你的选择为准}}",
   "memory.page.detail": "记忆详情",
   "memory.page.topic": "主题",
+  "memory.page.topicChange": "改分类",
+  "memory.page.topicDone": "已改为「{c}」",
   "memory.page.importance": "重要度",
   "memory.page.importanceValue":
     "{value} / 1000 · {by, select, owner {手动添加时的默认值} other {记下时由模型打分}}",

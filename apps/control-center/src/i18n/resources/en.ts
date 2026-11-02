@@ -882,6 +882,8 @@ export const messages = {
     "{r, select, sensitive {Sensitive memories are never brought into every conversation; they come up only when relevant} category {Events, health, money and other memories come up only when relevant} on {You turned this on, so it goes before the automatic picks} off {You turned this off, so it comes up only when relevant} add {Turn on to bring it into every conversation; otherwise its importance decides} other {Its importance decides for now; once you change it, your choice wins}}",
   "memory.page.detail": "Memory details",
   "memory.page.topic": "Topic",
+  "memory.page.topicChange": "Change topic",
+  "memory.page.topicDone": "Moved to {c}",
   "memory.page.importance": "Importance",
   "memory.page.importanceValue":
     "{value} / 1000 · {by, select, owner {default for memories you add} other {scored by the model when saved}}",

@@ -29,6 +29,7 @@ export interface MemoryModel {
   readonly restore: (item: MemoryItem) => Promise<boolean>;
   readonly recover: (item: MemoryItem) => Promise<boolean>;
   readonly confirm: (item: MemoryItem) => Promise<boolean>;
+  readonly setCategory: (item: MemoryItem, category: MemoryCategory) => Promise<boolean>;
   readonly setPinned: (item: MemoryItem, pinned: boolean) => Promise<boolean>;
   readonly markViewed: () => Promise<boolean>;
   readonly undoTidy: (item: MemoryTidyUp) => Promise<boolean>;
@@ -142,6 +143,12 @@ export function useMemory(input: {
     restore: (item) => mutate(item, "restore"),
     recover: (item) => mutate(item, "recover"),
     confirm: (item) => mutate(item, "confirm"),
+    setCategory: (item, category) =>
+      send("memory.category.set", () => ({
+        memoryId: item.memoryId,
+        expectedRevision: item.revision,
+        category,
+      })),
     setPinned: (item, pinned) => mutate(item, pinned ? "pin" : "unpin"),
     markViewed: () => send("memory.page.viewed", () => ({})),
     undoTidy: (item) => send("memory.tidy.undo", () => ({ changeId: item.changeId })),
