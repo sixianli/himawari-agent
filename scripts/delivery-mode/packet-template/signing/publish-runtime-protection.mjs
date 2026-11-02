@@ -9,6 +9,7 @@ import { validateR2l6Installed } from "./validate-r2l6-installed.mjs";
 const runtime = "/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__/lib/himawari-agent";
 const qualification = "/var/lib/himawari/qualification/__PKT_LABEL__-__PKT_DATE_COMPACT__";
 const destination = "/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/runtime-protection.json";
+const fingerprintDestination = "/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/runtime-fingerprints.json";
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 assert.equal(hostname(), "__PKT_HOSTNAME__");
 assert.equal(process.platform, "linux");
@@ -54,9 +55,18 @@ for (let directory = path.dirname(destination); ; directory = path.dirname(direc
 const platform = await import(
   pathToFileURL(path.join(runtime, "node_modules/@himawari-agent/platform-node/dist/index.js")).href
 );
+await assert.rejects(lstat(fingerprintDestination), { code: "ENOENT" });
+process.env.HIMAWARI_RUNTIME_FINGERPRINT_FILE = fingerprintDestination;
 assert.equal(await platform.digestSandboxRuntime(runtime), receipt.runtimeDigest);
+await chmod(fingerprintDestination, 0o644);
+const fingerprintInfo = await lstat(fingerprintDestination);
+assert(fingerprintInfo.isFile() && !fingerprintInfo.isSymbolicLink() && fingerprintInfo.uid === 0 && fingerprintInfo.nlink === 1 && (fingerprintInfo.mode & 0o7777) === 0o644 && fingerprintInfo.size > 0);
+const fingerprintBytes = await readFile(fingerprintDestination);
+const fingerprintCache = JSON.parse(fingerprintBytes);
+assert(fingerprintCache.version === 1 && fingerprintCache.root === runtime && Object.keys(fingerprintCache.files).length > 0);
 const r2l6 = await validateR2l6Installed({ runtime, reportPath: qualification + "/r2l6-installed.json" });
 assert.equal(r2l6.runtimeDigest, receipt.runtimeDigest);
+delete process.env.HIMAWARI_RUNTIME_FINGERPRINT_FILE;
 const bytes = Buffer.from(`${JSON.stringify({
   schemaVersion: "protected-runtime.v1",
   runtimeRoot: runtime,
@@ -66,4 +76,4 @@ const bytes = Buffer.from(`${JSON.stringify({
 })}\n`);
 await writeFile(destination, bytes, { mode: 0o644, flag: "wx" });
 await chmod(destination, 0o644);
-process.stdout.write(`${JSON.stringify({ passed: true, path: destination, sha256: hash(bytes), runtimeDigest: receipt.runtimeDigest })}\n`);
+process.stdout.write(`${JSON.stringify({ passed: true, path: destination, sha256: hash(bytes), runtimeDigest: receipt.runtimeDigest, fingerprintCache: { path: fingerprintDestination, sha256: hash(fingerprintBytes), files: Object.keys(fingerprintCache.files).length } })}\n`);

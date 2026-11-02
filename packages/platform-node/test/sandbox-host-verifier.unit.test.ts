@@ -664,6 +664,34 @@ it("keeps the trusted fingerprint file beside the root-owned protection record a
   }
 });
 
+it("reuses the cache file a publish step wrote once it is made readable", async () => {
+  const operations = await realpath(await mkdtemp(path.join(tmpdir(), "runtime-published-ops-")));
+  const runtime = await realpath(await mkdtemp(path.join(tmpdir(), "runtime-published-root-")));
+  await chmod(runtime, 0o755);
+  await writeFile(path.join(runtime, "a"), "alpha", { mode: 0o644 });
+  await writeFile(path.join(runtime, "b"), "bravo", { mode: 0o644 });
+  const published = path.join(operations, "runtime-fingerprints.json");
+  const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    vi.stubEnv("HIMAWARI_RUNTIME_FINGERPRINT_FILE", published);
+    const expected = await digestSandboxRuntime(runtime);
+    await chmod(published, 0o644);
+    expect(await digestSandboxRuntime(runtime, expected)).toBe(expected);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+      reused: 2,
+      hashed: 0,
+      retriedWithoutCache: false,
+    });
+  } finally {
+    log.mockRestore();
+    vi.unstubAllEnvs();
+    await Promise.all(
+      [operations, runtime].map((dir) => rm(dir, { recursive: true, force: true })),
+    );
+  }
+}, 20_000);
+
 it("stops the digest worker when the caller aborts", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "runtime-digest-abort-"));
   const runtime = await realpath(root);
