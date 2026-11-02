@@ -7,6 +7,7 @@ import {
   readDailyReview,
   reviewCapacity,
   reviewKey,
+  reviewMemoryVisible,
   selectDailyReview,
 } from "../src/services/daily-review.js";
 import type { ProactiveOverview } from "../src/services/proactive-overview.js";
@@ -54,6 +55,56 @@ describe("[P0-6] daily review sampling", () => {
     });
     expect(tooMany.shown.every((key) => key.startsWith("m"))).toBe(true);
     expect(tooMany).toMatchObject({ sampled: 24, notSampled: 16 });
+  });
+
+  it("[all decisions] shares the budget between the four default groups and hands unused slots to the others", () => {
+    const many = (prefix: string, group: DailyReviewPoolItem["group"], count: number) =>
+      Array.from({ length: count }, (_, index) => item(`${prefix}${index}`, group));
+    const pool = [
+      ...many("m", "memory_skipped", 40),
+      ...many("p", "proactive", 40),
+      ...many("k", "memory_kept", 40),
+      ...many("c", "consolidation", 40),
+    ];
+    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    const share = (prefix: string) =>
+      selection.shown.filter((key) => key.startsWith(prefix)).length;
+    expect([share("m"), share("p"), share("k"), share("c")]).toEqual([6, 6, 6, 6]);
+    expect(selection).toMatchObject({ sampled: 24, notSampled: 136 });
+    const lopsided = selectDailyReview({
+      pool: [...many("m", "memory_skipped", 2), ...many("k", "memory_kept", 40)],
+      dayStart: DAY,
+      seed: "s",
+      capacity: 24,
+    });
+    expect(lopsided.shown.filter((key) => key.startsWith("m"))).toHaveLength(2);
+    expect(lopsided.shown.filter((key) => key.startsWith("k"))).toHaveLength(22);
+  });
+
+  it("[all decisions] fills a budget that is not a multiple of four without repeats or items outside the pool", () => {
+    const groups = ["memory_skipped", "proactive", "memory_kept", "consolidation"] as const;
+    const pool = groups.flatMap((group) =>
+      Array.from({ length: 10 }, (_, index) => item(`${group}:${index}`, group)),
+    );
+    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 10 });
+    const keys = new Set(pool.map(({ key }) => key));
+    expect(selection.shown).toHaveLength(10);
+    expect(new Set(selection.shown).size).toBe(10);
+    expect(selection.shown.every((key) => keys.has(key))).toBe(true);
+    const per = groups.map(
+      (group) => selection.shown.filter((key) => key.startsWith(`${group}:`)).length,
+    );
+    expect(per).toEqual([3, 3, 2, 2]);
+  });
+
+  it("[all decisions] never puts truncation, retrieval degrade or external read in the default sample", () => {
+    const pool = [
+      item("t", "other"),
+      ...Array.from({ length: 30 }, (_, index) => item(`k${index}`, "memory_kept")),
+    ];
+    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 24 });
+    expect(selection.shown).not.toContain("t");
+    expect(selection.foldedShown).toEqual(["t"]);
   });
 
   it("gives the same sample for the same day and a different one for another day or owner", () => {
@@ -138,6 +189,57 @@ function overview(
     decisions,
   } as unknown as ProactiveOverview;
 }
+
+describe("[all decisions] which memories the review page may show", () => {
+  it("shows only public and private memories and hides sensitive, restricted and unknown ones", () => {
+    expect(reviewMemoryVisible("public")).toBe(true);
+    expect(reviewMemoryVisible("private")).toBe(true);
+    for (const other of ["sensitive", "restricted", "secret", "", "PRIVATE"])
+      expect(reviewMemoryVisible(other)).toBe(false);
+  });
+
+  it("strips text-direction override characters from the shown text", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "kept", outcome: "kept", subjectRef: "m" })],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛肉\u202E123", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]?.text).toBe("牛肉123");
+  });
+
+  it("hides the whole consolidation when any memory in it may not be shown", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [
+          entry({
+            id: "merge",
+            kind: "consolidation",
+            outcome: "merge",
+            inputs: { ...entry({}).inputs, memoryIds: ["old"], resultMemoryIds: ["new"] },
+          }),
+        ],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async (id) =>
+        id === "old" ? { text: "", hidden: true } : { text: "新记忆原文", hidden: false },
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]).toMatchObject({ text: "", textHidden: true });
+  });
+});
 
 describe("[P0-6] reading the daily review", () => {
   const read = (entries: DecisionLedgerEntry[], view: ProactiveOverview) =>
@@ -232,26 +334,71 @@ describe("[P0-6] reading the daily review", () => {
     expect(review.items[0]).toMatchObject({ source: "mail", acted: false });
   });
 
-  it("puts everything that is neither a Gmail decision nor a skipped memory in the folded group", async () => {
-    const review = await read(
-      [
-        entry({ id: "kept", outcome: "kept" }),
-        entry({ id: "merge", kind: "consolidation", outcome: "merge" }),
-        entry({
-          id: "rated",
-          kind: "retrieval_degrade",
-          outcome: "degraded",
-          ownerRating: "useful",
-          ratedAt: DAY,
-        }),
-      ],
-      overview([]),
-    );
-    expect(review.items).toEqual([]);
-    expect(review.folded.total).toBe(2);
-    expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
+  it("[all decisions] puts kept memories and consolidation in the sample and folds the rest", async () => {
+    const memories: Record<string, { text: string; hidden: boolean }> = {
+      "memory:new": { text: "我最近想吃牛肉", hidden: false },
+      "memory:old": { text: "我想吃肉", hidden: false },
+      "memory:secret": { text: "不该显示", hidden: true },
+    };
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [
+          entry({ id: "kept", outcome: "kept", subjectRef: "memory:new" }),
+          entry({ id: "pending", outcome: "pending_approval", subjectRef: "request:1" }),
+          entry({
+            id: "hiddenkept",
+            outcome: "kept",
+            subjectRef: "memory:secret",
+            contentRef: "payload:secret",
+          }),
+          entry({
+            id: "merge",
+            kind: "consolidation",
+            outcome: "merge",
+            inputs: {
+              ...entry({}).inputs,
+              memoryIds: ["memory:old"],
+              resultMemoryIds: ["memory:new"],
+            },
+          }),
+          entry({
+            id: "rated",
+            kind: "retrieval_degrade",
+            outcome: "degraded",
+            ownerRating: "useful",
+            ratedAt: DAY,
+          }),
+        ],
+      },
+      overview: overview([]),
+      readMemoryText: async () => "不该显示的原文",
+      readMemory: async (id) => memories[id],
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items.map(({ key }) => key).sort()).toEqual([
+      "ledger:hiddenkept",
       "ledger:kept",
       "ledger:merge",
+    ]);
+    const byKey = (key: string) => review.items.find((candidate) => candidate.key === key);
+    expect(byKey("ledger:kept")).toMatchObject({
+      text: "我最近想吃牛肉",
+      textHidden: false,
+      acted: true,
+    });
+    expect(byKey("ledger:merge")).toMatchObject({
+      text: "我想吃肉 → 我最近想吃牛肉",
+      acted: true,
+    });
+    expect(byKey("ledger:hiddenkept")).toMatchObject({ text: "", textHidden: true });
+    expect(JSON.stringify(review)).not.toContain("不该显示");
+    expect(review.folded.total).toBe(1);
+    expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
+      "ledger:pending",
       "ledger:rated",
     ]);
   });

@@ -11,7 +11,19 @@ export const DAILY_REVIEW_WINDOW_DAYS = 7;
 export const DAILY_REVIEW_POOL_LIMIT = 500;
 export const DAILY_REVIEW_MAX_RATINGS = 50;
 
-export type DailyReviewGroup = "proactive" | "memory_skipped" | "other";
+export type DailyReviewGroup =
+  | "proactive"
+  | "memory_skipped"
+  | "memory_kept"
+  | "consolidation"
+  | "other";
+
+const DEFAULT_GROUPS: readonly DailyReviewGroup[] = [
+  "memory_skipped",
+  "proactive",
+  "memory_kept",
+  "consolidation",
+];
 export type DailyReviewSource = "ledger" | "mail";
 export type DailyReviewKind = DecisionKind | "mail";
 
@@ -57,12 +69,23 @@ export function selectDailyReview(input: {
     [...items].sort(
       (left, right) =>
         hash(`${seed}|${dayStart}|${left.key}`) - hash(`${seed}|${dayStart}|${right.key}`) ||
-        left.key.localeCompare(right.key),
+        (left.key < right.key ? -1 : left.key > right.key ? 1 : 0),
     );
   const defaults = eligible.filter(({ group }) => group !== "other");
-  const skipped = order(defaults.filter(({ group }) => group === "memory_skipped"));
-  const proactive = order(defaults.filter(({ group }) => group === "proactive"));
-  const taken = [...skipped, ...proactive].slice(0, capacity);
+  const queues = DEFAULT_GROUPS.map((name) =>
+    order(defaults.filter(({ group }) => group === name)),
+  );
+  const taken: DailyReviewPoolItem[] = [];
+  for (let round = 0; taken.length < capacity; round += 1) {
+    let added = false;
+    for (const queue of queues) {
+      const next = queue[round];
+      if (next === undefined || taken.length >= capacity) continue;
+      taken.push(next);
+      added = true;
+    }
+    if (!added) break;
+  }
   const takenKeys = new Set(taken.map(({ key }) => key));
   const other = eligible.filter(({ group }) => group === "other");
   return Object.freeze({
@@ -79,6 +102,15 @@ export function selectDailyReview(input: {
 }
 
 export type DailyReviewRating = ProactiveRating;
+
+export function reviewMemoryVisible(classification: string): boolean {
+  return classification === "public" || classification === "private";
+}
+
+export interface DailyReviewMemoryText {
+  readonly text: string;
+  readonly hidden: boolean;
+}
 
 export interface DailyReviewItem {
   readonly key: string;
@@ -121,13 +153,28 @@ export function parseReviewKey(
 
 const TEXT_LIMIT = 200;
 
+function clipTo(text: string, limit: number): string {
+  return [
+    ...text
+      .replace(/\p{Cc}+/gu, " ")
+      .replace(/[\u202A-\u202E\u2066-\u2069]/gu, "")
+      .trim(),
+  ]
+    .slice(0, limit)
+    .join("");
+}
+
 function clip(text: string): string {
-  return [...text.replace(/\p{Cc}+/gu, " ").trim()].slice(0, TEXT_LIMIT).join("");
+  return clipTo(text, TEXT_LIMIT);
 }
 
 function ledgerGroup(entry: DecisionLedgerEntry): DailyReviewGroup {
   if (entry.kind === "proactive") return "proactive";
-  if (entry.kind === "memory_candidate" && entry.outcome === "discarded") return "memory_skipped";
+  if (entry.kind === "memory_candidate") {
+    if (entry.outcome === "discarded") return "memory_skipped";
+    return entry.outcome === "kept" ? "memory_kept" : "other";
+  }
+  if (entry.kind === "consolidation") return "consolidation";
   return "other";
 }
 
@@ -137,6 +184,26 @@ function ledgerActed(entry: DecisionLedgerEntry): boolean {
   return true;
 }
 
+const PART_LIMIT = 80;
+
+function reviewedMemoryIds(entry: DecisionLedgerEntry): {
+  readonly before: readonly string[];
+  readonly after: string | undefined;
+} {
+  if (entry.kind === "memory_candidate" && entry.outcome !== "discarded") {
+    const id = entry.subjectRef ?? entry.inputs.memoryIds[0];
+    return { before: [], after: id };
+  }
+  if (entry.kind === "consolidation") {
+    const after = entry.inputs.resultMemoryIds[0];
+    const before = entry.inputs.memoryIds.filter((id) => id !== after).slice(0, 2);
+    if (after === undefined && before.length === 0 && entry.subjectRef !== null)
+      return { before: [entry.subjectRef], after: undefined };
+    return { before, after };
+  }
+  return { before: [], after: undefined };
+}
+
 const OWNER_DECIDED_DISCARD = "approval_rejected";
 
 export async function readDailyReview(options: {
@@ -144,6 +211,7 @@ export async function readDailyReview(options: {
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool">;
   readonly overview: ProactiveOverview;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
+  readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
   readonly timeZone: string;
   readonly now: string;
   readonly budgetSeconds: number;
@@ -179,10 +247,37 @@ export async function readDailyReview(options: {
       },
       build: async () => {
         let text = "";
-        if (entry.contentRef !== null && entry.kind === "memory_candidate")
-          text = clip(
-            (await options.readMemoryText(entry.contentRef).catch(() => undefined)) ?? "",
+        if (entry.kind === "memory_candidate" && entry.outcome === "discarded") {
+          if (entry.contentRef !== null)
+            text = clip(
+              (await options.readMemoryText(entry.contentRef).catch(() => undefined)) ?? "",
+            );
+        } else if (options.readMemory) {
+          const { before, after } = reviewedMemoryIds(entry);
+          const read = async (id: string) =>
+            options.readMemory?.(id).catch(() => undefined) ?? undefined;
+          const olds = await Promise.all(before.map(read));
+          const next = after === undefined ? undefined : await read(after);
+          const parts = [...olds, ...(after === undefined ? [] : [next])];
+          const shown = parts.filter(
+            (memory): memory is DailyReviewMemoryText => memory !== undefined,
           );
+          if (
+            shown.length === parts.length &&
+            shown.length > 0 &&
+            shown.every((memory) => !memory.hidden)
+          ) {
+            const clipped = (memory: DailyReviewMemoryText) =>
+              clipTo(memory.text, shown.length > 1 ? PART_LIMIT : TEXT_LIMIT);
+            const oldText = olds.flatMap((memory) => (memory ? [clipped(memory)] : [])).join(" + ");
+            text =
+              next === undefined
+                ? oldText
+                : oldText === ""
+                  ? clipped(next)
+                  : `${oldText} → ${clipped(next)}`;
+          }
+        }
         return {
           key,
           source: "ledger" as const,
@@ -192,7 +287,8 @@ export async function readDailyReview(options: {
           acted: ledgerActed(entry),
           rating: entry.ownerRating,
           text,
-          textHidden: entry.kind === "memory_candidate" && text === "",
+          textHidden:
+            (entry.kind === "memory_candidate" || entry.kind === "consolidation") && text === "",
           category: entry.category,
           fetched: check ? check.counts.fetched : null,
         };

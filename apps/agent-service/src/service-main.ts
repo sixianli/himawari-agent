@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   ModelInvocationAdmissionResolver,
   PayloadProtectorPort,
+  ProductMemoryRecord,
 } from "@himawari-agent/application";
 import {
   type ClockPort,
@@ -18,6 +19,7 @@ import {
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
+  reviewMemoryVisible,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -1498,6 +1500,18 @@ export async function runAgentService(
           configuration.ownerId,
           configuration.agentId,
         );
+        const proactiveMemoryState = repository.productMemoryState();
+        const readReviewText = async (ref: string) => {
+          const payload = await reviewPayloads.get(ref);
+          if (!payload || payload.contentType !== "text/plain" || !protector) return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await protector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          );
+        };
         proactive = new ProductionProactive({
           scope: proactiveScope,
           configuration: proactiveConfiguration,
@@ -1508,16 +1522,20 @@ export async function runAgentService(
           reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
-          readMemoryText: async (ref) => {
-            const payload = await reviewPayloads.get(ref);
-            if (!payload || payload.contentType !== "text/plain" || !protector) return undefined;
-            return new TextDecoder("utf-8", { fatal: true }).decode(
-              await protector.unprotect({
-                ownerId: configuration.ownerId,
-                agentId: configuration.agentId,
-                payload,
-              }),
-            );
+          readMemoryText: readReviewText,
+          readMemory: async (memoryId) => {
+            const record = await proactiveMemoryState.read(memoryId as ProductMemoryRecord["id"]);
+            if (
+              !record ||
+              record.ownerId !== configuration.ownerId ||
+              record.agentId !== configuration.agentId ||
+              record.status === "deleted_verified" ||
+              record.status === "deletion_pending"
+            )
+              return undefined;
+            if (!reviewMemoryVisible(record.dataClassification)) return { text: "", hidden: true };
+            const text = await readReviewText(record.contentRef);
+            return text === undefined ? undefined : { text, hidden: false };
           },
           ...(memory && durableMemory && protector && repository
             ? ((recallProtector, recallPayloads) => ({
