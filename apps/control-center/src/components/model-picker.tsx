@@ -6,6 +6,22 @@ import { Glyph } from "./glyphs.js";
 import { ActionButton } from "./primitives.js";
 
 const PRIMARY_MODEL_COUNT = 3;
+const SEARCH_THRESHOLD = 8;
+
+const TIER_MESSAGES = {
+  low: "chat.priceTier.low",
+  mid: "chat.priceTier.mid",
+  high: "chat.priceTier.high",
+} as const satisfies Record<string, MessageId>;
+
+const dollars = (value: number) =>
+  value === 0
+    ? "0"
+    : value >= 10
+      ? value.toFixed(0)
+      : value >= 1
+        ? value.toFixed(2)
+        : value.toPrecision(2);
 
 export function defaultThinkingLevel(levels: readonly string[]): string {
   return (
@@ -33,10 +49,20 @@ export function ModelPicker({
 }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const [choosing, setChoosing] = useState(false);
+  const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
   const model = models.find((item) => item.ref === modelRef);
   const levels = model?.thinkingLevels ?? [];
   const label = (level: string) => message(`review.effort.${level}` as MessageId);
+  const modelName = (item: AvailableModel | undefined) =>
+    item?.automatic ? message("chat.autoModel") : item?.name;
+  const expanded =
+    showAll || models.findIndex((item) => item.ref === modelRef) >= PRIMARY_MODEL_COUNT;
+  const needle = query.trim().toLowerCase();
+  const matching = needle
+    ? models.filter((item) => `${modelName(item)} ${item.model}`.toLowerCase().includes(needle))
+    : models;
+  const visible = expanded ? matching : models.slice(0, PRIMARY_MODEL_COUNT);
   const index = Math.max(0, levels.indexOf(thinkingLevel));
   useEffect(() => {
     const dismiss = (event: Event) => {
@@ -69,7 +95,7 @@ export function ModelPicker({
       }}
     >
       <summary aria-label={message("chat.model")}>
-        <span className="model-name">{model?.name}</span>
+        <span className="model-name">{modelName(model)}</span>
         {levels.length > 1 ? (
           <>
             <span aria-hidden="true">·</span>
@@ -86,11 +112,18 @@ export function ModelPicker({
             <ActionButton variant="quiet" onClick={() => setChoosing(false)}>
               {message("chat.model")}
             </ActionButton>
+            {expanded && models.length > SEARCH_THRESHOLD ? (
+              <input
+                className="model-search"
+                type="search"
+                value={query}
+                placeholder={message("chat.searchModels")}
+                aria-label={message("chat.searchModels")}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            ) : null}
             <div className="model-options">
-              {(showAll || models.findIndex((item) => item.ref === modelRef) >= PRIMARY_MODEL_COUNT
-                ? models
-                : models.slice(0, PRIMARY_MODEL_COUNT)
-              ).map((item) => (
+              {visible.map((item) => (
                 <ActionButton
                   key={item.ref}
                   variant="quiet"
@@ -100,13 +133,31 @@ export function ModelPicker({
                     setChoosing(false);
                   }}
                 >
-                  <span>{item.name}</span>
+                  <span className="model-option-text">
+                    <span className="model-option-name">{modelName(item)}</span>
+                    {item.automatic ? (
+                      <span className="model-option-price">{message("chat.autoModelHint")}</span>
+                    ) : item.price ? (
+                      <span className="model-option-price">
+                        {message("chat.priceLine", {
+                          input: `$${dollars(item.price.input)}`,
+                          output: `$${dollars(item.price.output)}`,
+                        })}
+                      </span>
+                    ) : null}
+                  </span>
+                  {item.priceTier ? (
+                    <span className="model-tag" data-tier={item.priceTier}>
+                      {message(TIER_MESSAGES[item.priceTier])}
+                    </span>
+                  ) : null}
                   {item.ref === modelRef ? <Glyph name="check" size={14} /> : null}
                 </ActionButton>
               ))}
-              {!showAll &&
-              models.length > PRIMARY_MODEL_COUNT &&
-              models.findIndex((item) => item.ref === modelRef) < PRIMARY_MODEL_COUNT ? (
+              {visible.length === 0 ? (
+                <p className="effort-description">{message("chat.noModelMatch")}</p>
+              ) : null}
+              {!expanded && models.length > PRIMARY_MODEL_COUNT ? (
                 <ActionButton
                   className="model-more"
                   variant="quiet"
@@ -116,6 +167,9 @@ export function ModelPicker({
                 </ActionButton>
               ) : null}
             </div>
+            {models.some((item) => item.priceTier) ? (
+              <p className="picker-footer">{message("chat.priceNote")}</p>
+            ) : null}
           </>
         ) : (
           <>
@@ -123,13 +177,16 @@ export function ModelPicker({
               <ActionButton
                 className="picker-model-name"
                 variant="quiet"
-                onClick={() => setChoosing(true)}
+                onClick={() => {
+                  setQuery("");
+                  setChoosing(true);
+                }}
               >
-                {model?.name}
+                {modelName(model)}
                 <Glyph name="down" size={14} />
               </ActionButton>
             ) : (
-              <div className="picker-model-name">{model?.name}</div>
+              <div className="picker-model-name">{modelName(model)}</div>
             )}
             {levels.length > 1 ? (
               <>

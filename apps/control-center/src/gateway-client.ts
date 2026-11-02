@@ -54,6 +54,9 @@ export interface AvailableModel {
   readonly provider: string;
   readonly thinkingLevels: readonly string[];
   readonly images?: boolean;
+  readonly automatic?: boolean;
+  readonly price?: { readonly input: number; readonly output: number };
+  readonly priceTier?: "low" | "mid" | "high";
 }
 
 export interface ControlCenterRuntimeConfiguration {

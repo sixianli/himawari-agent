@@ -111,3 +111,46 @@ it("[UI-12] picks a balanced default effort: medium, otherwise low, otherwise th
   expect(defaultThinkingLevel(["off"])).toBe("off");
   expect(defaultThinkingLevel([])).toBe("off");
 });
+
+it("lists every model with its price tag and searches by name once the full list is open", async () => {
+  const catalog: AvailableModel[] = [
+    { ...many(1)[0], name: "Routing group", automatic: true } as AvailableModel,
+    ...Array.from({ length: 9 }, (_, index) => ({
+      ref: `m-${index}`,
+      provider: "fixture",
+      model: `vendor/model-${index}`,
+      name: `Priced ${index}`,
+      thinkingLevels: ["off", "high"],
+      price: { input: 0.15 * (index + 1), output: 0.6 * (index + 1) },
+      priceTier: (index < 3 ? "low" : index < 6 ? "mid" : "high") as "low" | "mid" | "high",
+    })),
+  ];
+  await render(catalog);
+  await act(async () => container.querySelector<HTMLButtonElement>(".picker-model-name")?.click());
+  expect(container.querySelector(".model-search")).toBeNull();
+  await act(async () => container.querySelector<HTMLButtonElement>(".model-more")?.click());
+  const rows = () => [...container.querySelectorAll(".model-options button")];
+  expect(rows()).toHaveLength(10);
+  expect(rows()[0]?.textContent).toContain("chat.autoModel");
+  expect(rows()[0]?.querySelector(".model-tag")).toBeNull();
+  expect(rows()[1]?.querySelector(".model-tag")?.getAttribute("data-tier")).toBe("low");
+  expect(rows()[9]?.querySelector(".model-tag")?.getAttribute("data-tier")).toBe("high");
+  expect(rows()[1]?.querySelector(".model-option-price")?.textContent).toBe("chat.priceLine");
+  expect(container.querySelector(".picker-footer")?.textContent).toBe("chat.priceNote");
+  const search = container.querySelector<HTMLInputElement>(".model-search");
+  if (!search) throw new Error("missing search");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      search,
+      "model-7",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(rows()).toHaveLength(1);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "zzz");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(rows()).toHaveLength(0);
+  expect(container.textContent).toContain("chat.noModelMatch");
+});

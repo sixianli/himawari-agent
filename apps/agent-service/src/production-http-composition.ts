@@ -143,6 +143,9 @@ export interface ProductionHttpCompositionOptions {
     provider: string;
     thinkingLevels: readonly string[];
     images: boolean;
+    automatic?: boolean;
+    price?: { input: number; output: number };
+    priceTier?: "low" | "mid" | "high";
   }[];
   readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
   readonly cancelRun?: (

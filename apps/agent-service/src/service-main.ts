@@ -105,6 +105,7 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { createProductionModelEgress } from "./production-model-egress.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -607,7 +608,15 @@ export async function runAgentService(
   });
   try {
     const args = parseServiceArguments(arguments_);
-    const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
+    const loadedConfiguration = await new JsonFileConfigurationPort(args.configurationPath).load();
+    const sources = dependencies.secretSources ?? hostModelSources(loadedConfiguration);
+    const magpieModels = await expandConfigurationWithMagpieModels(loadedConfiguration, {
+      resolveSecret: (secretRef, secretVersion) =>
+        sources.provider.resolve(secretRef, secretVersion),
+      onDiagnostic: (event) =>
+        writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+    });
+    const configuration = magpieModels.configuration;
     const webEnabled =
       configuration.publicMode ||
       (configuration.identity?.kind === "built-in" && Boolean(configuration.http));
@@ -620,7 +629,6 @@ export async function runAgentService(
     )
       throw new Error(SERVICE_RUNTIME_ERROR_CODES.PUBLIC_MODE_INCOMPLETE);
     runStopTimeoutMs = configuration.deadlines.providerRequestMs + 30_000;
-    const sources = dependencies.secretSources ?? hostModelSources(configuration);
     protector = configuredPayloadProtector(configuration, sources);
     const layout = await initializeStateRoot(configuration.stateRoot);
     const authorityFile = await readAuthorityFile(layout);
@@ -1833,6 +1841,15 @@ export async function runAgentService(
         onFailure: ({ phase, error }) => failRuntime(error, phase),
       });
       const configuredPiModels = modelComposition.composition.piModels;
+      const tiers = priceTiers(magpieModels.prices);
+      const modelCatalogTags = (ref: string) => {
+        const price = magpieModels.prices.get(ref);
+        const tier = tiers.get(ref);
+        return {
+          ...(magpieModels.automaticRefs.has(ref) ? { automatic: true } : {}),
+          ...(price && tier ? { price, priceTier: tier } : {}),
+        };
+      };
       const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
         live,
@@ -1856,9 +1873,10 @@ export async function runAgentService(
                 descriptor.api === "openai-completions" &&
                 descriptor.allowedDataClassifications.includes("private"),
             )
-            .map(async (descriptor) =>
-              getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
-            ),
+            .map(async (descriptor) => ({
+              ...getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
+              ...modelCatalogTags(descriptor.ref),
+            })),
         ),
         onCommandAccepted: () => {
           runs?.loop.wakeup();

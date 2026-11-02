@@ -229,6 +229,9 @@ function piGenerationDescriptor(
     ...(descriptor.reasoningRequired === undefined
       ? {}
       : { reasoningRequired: descriptor.reasoningRequired }),
+    ...(descriptor.thinkingLevels === undefined
+      ? {}
+      : { thinkingLevels: Object.freeze([...descriptor.thinkingLevels]) }),
     input: Object.freeze([...descriptor.input]),
     cost: Object.freeze({ ...descriptor.cost }),
     contextWindow: descriptor.contextWindow,
@@ -263,10 +266,11 @@ function typeSafeGenerationDescriptor(
 export function resolveConfiguredModelDescriptorSet(
   configuration: ProductConfiguration,
 ): ProductionModelDescriptorSet {
-  const primary = configuration.modelDescriptors.find(
+  const primaries = configuration.modelDescriptors.filter(
     (descriptor): descriptor is ConfiguredCompletionsGenerationModelDescriptor =>
       descriptor.role === "primary",
   );
+  const primary = primaries[0];
   const embedding = configuration.modelDescriptors.find(
     (descriptor): descriptor is ConfiguredEmbeddingModelDescriptor =>
       descriptor.role === "embedding",
@@ -286,6 +290,7 @@ export function resolveConfiguredModelDescriptorSet(
   return Object.freeze({
     generation: Object.freeze([
       piGenerationDescriptor(configuration, primary),
+      ...primaries.slice(1).map((descriptor) => piGenerationDescriptor(configuration, descriptor)),
       ...(specialist ? [typeSafeGenerationDescriptor(configuration, specialist)] : []),
     ]),
     embedding: embeddingDescriptor(configuration, embedding),
