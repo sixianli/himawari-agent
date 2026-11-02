@@ -33,10 +33,10 @@ import {
   RestrictedSecretFileSource,
   writeAuthorityFile,
 } from "@himawari-agent/platform-node";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import Database from "better-sqlite3";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
-
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { ACCEPTANCE_SELECTABLE_MODELS } from "../../apps/control-center/test/release-walkthrough-models.ts";
 import { prepareProductPathTiming } from "./product-path-timing.ts";
 
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -537,6 +537,7 @@ export async function installProductPath(options: {
   readonly sourceRoot?: string;
   readonly approval?: "workspace_auto" | "ask";
   readonly webSearch?: boolean;
+  readonly selectableModels?: boolean;
 }): Promise<ProductPathInstallation> {
   const testRoot = await realpath(await mkdtemp(productPathTemporaryPrefix()));
   const stateRoot = path.join(testRoot, "state");
@@ -990,6 +991,13 @@ export async function installProductPath(options: {
     },
     modelDescriptors: [
       model("primary", "model-primary", 1),
+      ...(options.selectableModels
+        ? ACCEPTANCE_SELECTABLE_MODELS.map((entry, index) => ({
+            ...model("primary", entry.ref, index + 2),
+            model: entry.model,
+            name: entry.name,
+          }))
+        : []),
       {
         ref: "model-embedding",
         role: "embedding",

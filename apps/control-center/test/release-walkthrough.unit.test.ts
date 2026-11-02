@@ -7,6 +7,7 @@ import { ControlCenterApp } from "../src/app.js";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
 import { messages } from "../src/i18n/resources/zh-CN.js";
 import { completedRun, newsRun, runStart } from "./news-run-fixture.js";
+import { ACCEPTANCE_SELECTABLE_MODELS } from "./release-walkthrough-models.js";
 import { RELEASE_WALKTHROUGH_UI as UI, type WalkthroughTarget } from "./release-walkthrough-ui.js";
 
 const fake = vi.hoisted(() => ({
@@ -80,6 +81,20 @@ vi.mock("../src/gateway-client.js", async (original) => {
       authorizationRef: "authorization-walkthrough",
       canCancelRun: true,
       executionPresentationAvailable: true,
+      availableModels: [
+        {
+          ref: "model-primary",
+          model: "deepseek/deepseek-v4.1-flash",
+          name: "Product path primary",
+          provider: "vercel-ai-gateway",
+          thinkingLevels: [],
+        },
+        ...ACCEPTANCE_SELECTABLE_MODELS.map((entry) => ({
+          ...entry,
+          provider: "vercel-ai-gateway",
+          thinkingLevels: [],
+        })),
+      ],
       installedGatewayV2Operations: [
         ...CONTROL_CENTER_SURFACE_INVENTORY.flatMap((item) => [...item.queries, ...item.mutations]),
         "search.authorization.read",
@@ -343,6 +358,18 @@ describe("release walkthrough locators against the real control center", () => {
     expect(byRole(body, UI.composer)).toBeInstanceOf(HTMLTextAreaElement);
     expect(byRole(body, UI.send)).toBeDefined();
     expect(byRole(body, UI.newThread)).toBeDefined();
+
+    const picker = body.querySelector<HTMLDetailsElement>(UI.modelPickerRoot);
+    expect(picker).not.toBeNull();
+    expect(body.querySelector(UI.modelPicker)).not.toBeNull();
+    (picker as HTMLDetailsElement).open = true;
+    await click(body.querySelector<HTMLElement>(UI.modelChooser) as HTMLElement);
+    const options = [...body.querySelectorAll<HTMLElement>(UI.modelOption)];
+    expect(options).toHaveLength(ACCEPTANCE_SELECTABLE_MODELS.length + 1);
+    for (const entry of ACCEPTANCE_SELECTABLE_MODELS)
+      expect(options.some((option) => option.textContent?.includes(entry.name))).toBe(true);
+    await click(options[1] as HTMLElement);
+    (picker as HTMLDetailsElement).open = false;
 
     await click(byRole(body, UI.openSettings));
     const dialog = byRole(body, UI.settingsDialog);

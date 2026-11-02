@@ -10,6 +10,7 @@ REQUIRED_SCENARIOS = (
     'accept-long-answer',
     'accept-run-command',
     'accept-unrelated-no-memory',
+    'accept-model-switch',
     'accept-slow-memory-search',
     'accept-file-writing-progress',
     'accept-progress-without-state',

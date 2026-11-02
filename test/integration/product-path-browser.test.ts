@@ -28,6 +28,11 @@ import {
   expect as uiExpect,
 } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ACCEPTANCE_SELECTABLE_MODELS } from "../../apps/control-center/test/release-walkthrough-models.ts";
+import {
+  RELEASE_WALKTHROUGH_UI as UI,
+  type WalkthroughTarget,
+} from "../../apps/control-center/test/release-walkthrough-ui.ts";
 import {
   installProductPath,
   type ModelScript,
@@ -37,16 +42,12 @@ import {
 } from "../fixtures/product-path-harness.ts";
 import {
   linuxProcessIdentityPresent,
-  readLinuxHostProcessGroup,
   type ProductPathJobHostStart,
+  readLinuxHostProcessGroup,
   readLinuxJobProcesses,
   readResidentJobHostStart,
   readResidentTaskEnvironments,
 } from "../fixtures/product-path-processes.ts";
-import {
-  RELEASE_WALKTHROUGH_UI as UI,
-  type WalkthroughTarget,
-} from "../../apps/control-center/test/release-walkthrough-ui.ts";
 
 const enabled = process.env["HIMAWARI_PRODUCT_PATH_E2E"] === "1";
 const productDescribe = enabled ? describe : describe.skip;
@@ -5486,6 +5487,7 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-long-answer",
   "accept-run-command",
   "accept-unrelated-no-memory",
+  "accept-model-switch",
   "accept-slow-memory-search",
   "accept-file-writing-progress",
   "accept-progress-without-state",
@@ -5675,6 +5677,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       logDirectory: path.join(outputDirectory, "acceptance-service-logs"),
       approval: "ask",
       webSearch: true,
+      selectableModels: true,
     });
     installation.setModelScript(releaseAcceptanceScript);
     await installation.start();
@@ -5798,6 +5801,33 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await process.locator(UI.turnProcessToggle).click();
       await uiExpect(turn.getByText(UI.memoryFoundStep)).toHaveCount(0);
       await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
+    });
+    await scenario("accept-model-switch", async () => {
+      await newThread();
+      for (const chosen of ACCEPTANCE_SELECTABLE_MODELS) {
+        const picker = page.locator(UI.modelPickerRoot);
+        if (!(await picker.evaluate((element) => element.hasAttribute("open"))))
+          await page.locator(UI.modelPicker).click();
+        await page.locator(UI.modelChooser).click();
+        const options = page.locator(UI.modelOption);
+        await uiExpect(options).toHaveCount(ACCEPTANCE_SELECTABLE_MODELS.length + 1, {
+          timeout: 20_000,
+        });
+        await options.filter({ hasText: chosen.name }).click();
+        const before = installation.modelRequests.length;
+        const turn = await send(`请用${chosen.name}回答`);
+        await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
+        await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+        await uiExpect(turn.getByText(/本轮执行失败/)).toHaveCount(0);
+        await uiExpect(target(page, UI.pageError)).toHaveCount(0);
+        const used = installation.modelRequests
+          .slice(before)
+          .filter((request) => request.path !== "/v1/embeddings")
+          .map((request) => request.model);
+        expect(used).toContain(chosen.model);
+        for (const other of ACCEPTANCE_SELECTABLE_MODELS)
+          if (other.model !== chosen.model) expect(used).not.toContain(other.model);
+      }
     });
     await scenario("accept-slow-memory-search", async () => {
       await newThread();
