@@ -5,15 +5,21 @@ import type {
   ProactiveQuietPeriod,
   ProactiveRating,
   ProactiveScope,
+  ProactiveSourceItem,
   ProactiveSealPort,
   ProactiveSource,
   ProactiveStorePort,
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { WebPushFeedback } from "../ports/web-push.js";
-import { startOfZonedDay } from "./proactive-rules.js";
+import {
+  floorHitIds,
+  fromAddressOf,
+  isReminderWorthy,
+  startOfZonedDay,
+} from "./proactive-rules.js";
 
-const AUDIT_DAYS = 14;
+const AUDIT_DAYS = 7;
 const METRIC_DAYS = 30;
 const REACTION_WINDOW_MS = 24 * 3_600_000;
 const DAY_MS = 24 * 3_600_000;
@@ -35,6 +41,14 @@ export interface ProactiveOverviewInsight {
   readonly pushReaction: "opened" | "dismissed" | null;
   readonly rating: ProactiveRating | null;
   readonly updatedAt: string;
+}
+
+export interface ProactiveOverviewAuditItem {
+  readonly messageId: string;
+  readonly from: string;
+  readonly subject: string;
+  readonly link: string;
+  readonly rating: ProactiveRating | null;
 }
 
 export interface ProactiveOverviewDecision {
@@ -118,9 +132,35 @@ export async function readProactiveOverview(options: {
     const sent = sourceKey ? feedback.get(sourceKey) : undefined;
     return sent?.openedAt ? "opened" : sent?.dismissedAt ? "dismissed" : null;
   };
+  const auditSince = new Date(Date.parse(now) - AUDIT_DAYS * DAY_MS).toISOString();
   const insights: ProactiveOverviewInsight[] = [];
+  const filteredInsights: ProactiveOverviewAuditItem[] = [];
   for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
+    const floor =
+      insight.floorRaised ||
+      (content.floorHit ??
+        floorHitIds(
+          {
+            fromAddress: fromAddressOf(content.from ?? ""),
+            subject: content.subject ?? "",
+            snippet: content.summary ?? "",
+          } as ProactiveSourceItem,
+          settings.importantSenders,
+        ).length > 0);
+    if (!isReminderWorthy(insight.result, insight.priority, floor)) {
+      if (insight.updatedAt >= auditSince)
+        filteredInsights.push(
+          Object.freeze({
+            messageId: insight.lastMessageId,
+            from: content.from ?? "",
+            subject: content.subject ?? "",
+            link: content.link ?? "",
+            rating: null,
+          }),
+        );
+      continue;
+    }
     insights.push(
       Object.freeze({
         id: insight.id,
@@ -142,13 +182,28 @@ export async function readProactiveOverview(options: {
       }),
     );
   }
-  const auditActive =
-    connection !== undefined &&
-    Date.parse(now) - Date.parse(connection.connectedAt) < AUDIT_DAYS * DAY_MS;
+  const auditActive = connection !== undefined;
   const ignored = auditActive
-    ? await store.listProcessed({ ...scope, since: today, outcome: "ignore", limit: 500 })
+    ? await store.listProcessed({ ...scope, since: auditSince, outcome: "ignore", limit: 500 })
     : [];
-  const auditItems = [];
+  const storedFiltered = new Map<
+    string,
+    { readonly ownerRating: ProactiveRating | null; readonly reviewedAt: string | null }
+  >();
+  if (auditActive && filteredInsights.length > 0)
+    for (const outcome of ["act", "know", "check"] as const)
+      for (const row of await store.listProcessed({
+        ...scope,
+        since: auditSince,
+        outcome,
+        limit: 500,
+      }))
+        storedFiltered.set(row.messageId, row);
+  const auditItems: ProactiveOverviewAuditItem[] = auditActive
+    ? filteredInsights.map((item) =>
+        Object.freeze({ ...item, rating: storedFiltered.get(item.messageId)?.ownerRating ?? null }),
+      )
+    : [];
   for (const message of ignored) {
     const header = parse<{ from: string; subject: string; link: string }>(
       message.headerRef ? await open(message.headerRef) : undefined,
@@ -212,9 +267,14 @@ export async function readProactiveOverview(options: {
     insights: Object.freeze(insights),
     audit: Object.freeze({
       active: auditActive,
-      since: today,
-      items: Object.freeze(auditItems),
-      pending: ignored.filter(({ reviewedAt }) => reviewedAt === null).length,
+      since: auditSince,
+      items: Object.freeze(auditItems.slice(0, 500)),
+      pending:
+        ignored.filter(({ reviewedAt }) => reviewedAt === null).length +
+        auditItems.filter(
+          ({ messageId }) =>
+            storedFiltered.has(messageId) && storedFiltered.get(messageId)?.reviewedAt === null,
+        ).length,
     }),
     decisions: Object.freeze(decisions),
     metrics: Object.freeze({

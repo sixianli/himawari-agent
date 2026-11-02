@@ -134,7 +134,7 @@ function fakeGoogle() {
       return json({
         id,
         threadId: "thread-sale",
-        labelIds: ["INBOX", "CATEGORY_PROMOTIONS"],
+        labelIds: ["INBOX", "SPAM"],
         snippet: "今だけ 50% オフ",
         internalDate: String(Date.parse("2026-11-04T00:10:00.000Z")),
         payload: { headers: headers("Shop <news@shop.example>", "セール") },
@@ -172,11 +172,29 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     closers.push(() => repository.close());
     const ids = new DeterministicIdGenerator();
     const store = repository.proactive();
-    const seal = createProactiveSeal({
-      payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
-      protector: new DeterministicPayloadProtector(),
-      ids,
-    });
+    const protector = new DeterministicPayloadProtector();
+    const payloadStore = repository.payloadStore(OWNER_ID, AGENT_ID);
+    const seal = createProactiveSeal({ payloads: payloadStore, protector, ids });
+    const written = new Set<string>();
+    const writePayload = async (ref: string, content: string) => {
+      await payloadStore.put(
+        await protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(content),
+          createdAt: clock.now(),
+        }),
+      );
+      written.add(ref);
+    };
+    const readPayload = async (ref: string) => {
+      const payload = await payloadStore.get(ref);
+      if (!payload) return undefined;
+      return new TextDecoder().decode(await protector.unprotect({ payload }));
+    };
     const google = fakeGoogle();
     const oauth = createGoogleOAuth({
       clientId: "client-1",
@@ -219,9 +237,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         modelRef: MODEL_REF,
         gmail: { clientId: "client-1", clientSecretRef: "google-oauth" },
         intervalMs: 900_000,
-        perCheckCostMicros: 100_000,
         perCheckMs: 180_000,
         dailyCostMicros: 1_000_000,
+        memoryMinimumSimilarity: 0.45,
       },
       timeZone: "Asia/Tokyo",
       store,
@@ -236,15 +254,22 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         modelRef: MODEL_REF,
         async prepare({ invocationId, prompt }) {
           prompts.push(prompt);
+          const inputRef = `input-${invocationId}`;
+          await writePayload(inputRef, prompt);
+          for (const [ref, content] of outputs)
+            if (!written.has(ref)) await writePayload(ref, content);
           return {
             runId: `proactive:${invocationId}` as never,
-            inputRef: `input-${invocationId}`,
-            allowedDisclosureRef: `input-${invocationId}`,
+            inputRef,
+            allowedDisclosureRef: inputRef,
             secretHandleRefs: [],
             release: async () => undefined,
           };
         },
-        readOutput: async (ref) => outputs.get(ref) ?? "",
+        readOutput: async (ref) => (await readPayload(ref)) ?? "",
+        release: async (refs) => {
+          for (const ref of refs) await payloadStore.delete(ref);
+        },
       },
       estimateCostMicros: () => 1_000,
       feedback: (sentFrom) => webPushStore.listFeedback({ ...scope, sentFrom, limit: 500 }),
@@ -285,9 +310,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       auth: "auth-iphone",
       locale: "zh-CN",
       deviceLabel: "iPhone",
-      kinds: ["reminder"],
       now: clock.now(),
     });
+    await webPushStore.writeKinds({ ...scope, kinds: ["reminder"], now: clock.now() });
     const app = Fastify();
     closers.push(() => app.close());
     registerProactiveRoutes(app, proactive, {

@@ -7,7 +7,7 @@ import type {
   MemoryProviderProjectionPort,
   ProductMemoryRecord,
 } from "@himawari-agent/application";
-import { DurableMemoryService } from "@himawari-agent/application";
+import { DEFAULT_MEMORY_ATTRIBUTES, DurableMemoryService } from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -130,6 +130,7 @@ describe.each(["worker", "direct"] as const)(
         "payload-memory-v1",
         "payload-memory-v2",
         "payload-memory-v3",
+        "payload-rule",
         "payload-query",
       ]) {
         insertPayload.run(ref, OWNER_ID, AGENT_ID, `sha256:${ref}`, T0);
@@ -388,6 +389,67 @@ describe.each(["worker", "direct"] as const)(
           T0,
         );
 
+        await resource.repository.close();
+      });
+
+      it("searches read-only by direct query text: no use recorded, rules excluded, similarity override passed on", async () => {
+        const resource = await createRepository();
+        const provider = new DeterministicProjectionProvider();
+        let seenMinimum: number | undefined;
+        let seenQuery = "";
+        const originalSearch = provider.search.bind(provider);
+        provider.search = (async (input: { query: string; minimumSimilarity?: number }) => {
+          seenMinimum = input.minimumSimilarity;
+          seenQuery = input.query;
+          return originalSearch();
+        }) as typeof provider.search;
+        const content = new MapMemoryContent();
+        content.set("payload-memory-v1", "主人最近想吃牛肉");
+        content.set("payload-rule", "回答要简短");
+        const memory = service({
+          repository: resource.repository,
+          provider,
+          content,
+          now: () => T0,
+        });
+        const beef = await memory.applyProposal(createProposal(), GENERATION_ID);
+        const rule = await memory.applyProposal(
+          {
+            ...createProposal(createMemoryId("memory-integration-rule")),
+            memory: {
+              ...createProposal(createMemoryId("memory-integration-rule")).memory,
+              contentRef: "payload-rule",
+              attributes: { ...DEFAULT_MEMORY_ATTRIBUTES, category: "rule" as const },
+            },
+          } as never,
+          GENERATION_ID,
+        );
+        await memory.runProjectionBatch(10);
+        const searched = await memory.search({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          queryRef: "",
+          queryText: "和牛烤肉馆 优惠券",
+          minimumSimilarity: 0.45,
+          recordUse: false,
+          excludeCategories: ["rule"],
+          policy: { allowedClassifications: ["private"], limit: 5 },
+        });
+        expect(searched.map(({ memory: found }) => found.id)).toEqual([beef.id]);
+        expect(searched.map(({ memory: found }) => found.id)).not.toContain(rule.id);
+        expect(seenMinimum).toBe(0.45);
+        expect(seenQuery).toBe("和牛烤肉馆 优惠券");
+        const after = await resource.repository.productMemoryState().read(beef.id);
+        expect(after?.lastUsedAt ?? null).toBeNull();
+        expect(after?.useCount ?? 0).toBe(0);
+        await memory.search({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          queryRef: "",
+          queryText: "和牛",
+          policy: { allowedClassifications: ["private"], limit: 5 },
+        });
+        expect((await resource.repository.productMemoryState().read(beef.id))?.lastUsedAt).toBe(T0);
         await resource.repository.close();
       });
 

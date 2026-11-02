@@ -23,7 +23,7 @@ def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
     statuses = statuses or {}
     timings = {**TIMED, **(answer_ms or {})}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed'), **({'answerMs': timings[name]} if timings.get(name) is not None else {})} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nscratchScenes=0\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nsandboxLinks=ok\nscratchScenes=0\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -121,6 +121,55 @@ class LeftoverPreflightTest(unittest.TestCase):
         self.assertIn('df --output=avail -B1 /', script)
 
 
+sandbox_links = load('sandbox_command_links', 'sandbox-command-links.py')
+
+
+class SandboxCommandLinksPreflightTest(unittest.TestCase):
+    def failed(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update(changes)
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000) if not passed]
+
+    def test_host_with_commands_the_sandbox_cannot_follow_is_refused(self):
+        self.assertEqual(self.failed(sandboxLinks='broken:awk,which'), ['SANDBOX_COMMAND_LINKS_REACHABLE'])
+        self.assertEqual(self.failed(sandboxLinks='check-failed'), ['SANDBOX_COMMAND_LINKS_REACHABLE'])
+        self.assertEqual(self.failed(sandboxLinks=''), ['SANDBOX_COMMAND_LINKS_REACHABLE'])
+
+    def test_roots_come_from_the_packet_seal_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory)
+            (packet / 'signing').mkdir()
+            (packet / 'signing' / 'cloud-seal.mjs').write_text('x = { readOnlyToolchainPaths: [ runtime, "/usr/bin", "/etc/alternatives", ["/etc/magic"] ], protectedPaths: [ "/etc/himawari" ] }')
+            self.assertEqual(preflight.sandbox_read_roots(packet), ['/usr/bin', '/etc/alternatives', '/etc/magic'])
+
+    def test_real_seal_template_roots_let_every_command_link_resolve_on_this_host(self):
+        roots = preflight.sandbox_read_roots(HERE / 'packet-template')
+        self.assertIn('/etc/alternatives', roots)
+        self.assertEqual(sandbox_links.unreachable_commands(roots), [])
+
+    def test_link_to_a_directory_outside_the_roots_is_reported_and_inside_is_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / 'bin').mkdir()
+            (base / 'alt').mkdir()
+            (base / 'closed').mkdir()
+            (base / 'real').write_text('x')
+            (base / 'alt' / 'awk').symlink_to(base / 'real')
+            (base / 'closed' / 'vi').symlink_to(base / 'real')
+            (base / 'bin' / 'awk').symlink_to(base / 'alt' / 'awk')
+            (base / 'bin' / 'vi').symlink_to(base / 'closed' / 'vi')
+            (base / 'bin' / 'plain').write_text('x')
+            roots = [str(base / 'bin'), str(base / 'alt'), str(base / 'real')]
+            self.assertEqual(sandbox_links.unreachable_commands(roots, str(base / 'bin')), ['vi'])
+            self.assertEqual(sandbox_links.unreachable_commands(roots + [str(base / 'closed')], str(base / 'bin')), [])
+
+    def test_remote_script_runs_the_scan_with_the_roots_and_fails_closed(self):
+        script = preflight.remote_script(BINDING, roots=['/usr/bin', '/etc/alternatives'])
+        self.assertIn('unreachable_commands', script)
+        self.assertIn('/usr/bin /etc/alternatives', script)
+        self.assertIn('|| echo sandboxLinks=check-failed', script)
+
+
 class DocumentToolsPreflightTest(unittest.TestCase):
     def failed(self, **changes):
         facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
@@ -186,7 +235,7 @@ class DeployHarness(unittest.TestCase):
         root = Path(self.directory.name)
         self.scripts = root / 'scripts'
         self.scripts.mkdir()
-        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py'):
+        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py', 'sandbox-command-links.py'):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
         (self.scripts / 'release-cleanup.py').write_text('import sys\nopen(' + repr(str(root / 'calls')) + ', "a").write("cleanup-" + sys.argv[2] + "\\n")\nopen(' + repr(str(root / 'keeps')) + ', "a").write(" ".join(sys.argv[3:]) + "\\n")\n')
@@ -206,6 +255,8 @@ class DeployHarness(unittest.TestCase):
         (self.packet / 'inputs').mkdir(parents=True)
         (self.packet / 'steps').mkdir()
         (self.packet / 'inputs' / 'bindings.json').write_text(json.dumps(BINDING))
+        (self.packet / 'signing').mkdir()
+        shutil.copy(HERE / 'packet-template' / 'signing' / 'cloud-seal.mjs', self.packet / 'signing' / 'cloud-seal.mjs')
         parameters, record = generated_records()
         (self.packet / 'packet-parameters.json').write_text(json.dumps(parameters))
         (self.packet / 'packet-checks.json').write_text(json.dumps(record))
@@ -247,6 +298,59 @@ class DeployHarness(unittest.TestCase):
         line = next(line for line in child.stdout.splitlines() if line.startswith('DEPLOY_RESULT '))
         calls = self.calls.read_text().split() if self.calls.exists() else []
         return child.returncode, json.loads(line.split(' ', 1)[1]), calls
+
+
+class DeployLockTest(DeployHarness):
+    def lock(self):
+        return self.packet.parent / ('.' + self.packet.name + '.deploy.lock')
+
+    def holder(self):
+        process = subprocess.Popen(['sleep', '60'])
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        self.lock().mkdir()
+        (self.lock() / 'pid').write_text(str(process.pid) + '\n')
+        (self.lock() / 'started').write_text('2026-11-01T07:00:00Z\n')
+        return process
+
+    def test_a_second_deploy_of_the_same_packet_stops_and_names_the_holder(self):
+        process = self.holder()
+        code, result, calls = self.deploy_with_cleanup()
+        self.assertEqual((code, result['result'], result['stoppedAt']), (8, 'already-running', 'LOCK'))
+        self.assertEqual(calls, [])
+        log = Path(result['log']).read_text()
+        self.assertIn('DEPLOY_ALREADY_RUNNING pid=' + str(process.pid), log)
+        self.assertIn('2026-11-01T07:00:00Z', log)
+        self.assertIsNone(process.poll())
+        self.assertTrue(self.lock().exists())
+
+    def test_a_lock_left_by_a_dead_process_is_taken_over(self):
+        dead = subprocess.Popen(['true'])
+        dead.wait()
+        self.lock().mkdir()
+        (self.lock() / 'pid').write_text(str(dead.pid) + '\n')
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+
+    def test_the_lock_is_released_after_a_pass_and_after_a_failure(self):
+        self.deploy()
+        self.assertFalse(self.lock().exists())
+        self.deploy(FAKE_FAIL_AT='S1_INSTALL')
+        self.assertFalse(self.lock().exists())
+
+    def test_the_lock_adds_no_file_to_the_frozen_packet_while_a_step_runs(self):
+        snapshot = self.packet.parent / 'files-during-step'
+        listing = 'find "$(dirname "$0")/.." -type f -not -path "*/run-logs/*" | sort'
+        (self.packet / 'steps' / 'run-user-step.sh').write_text(listing + ' > ' + str(snapshot) + '\n')
+        before = sorted(str(path) for path in self.packet.rglob('*') if path.is_file() and 'run-logs' not in path.parts)
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        during = [str(Path(line).resolve()) for line in snapshot.read_text().splitlines()]
+        self.assertEqual(during, [str(Path(path).resolve()) for path in before])
+
+    def test_a_lock_without_a_readable_pid_is_not_treated_as_free(self):
+        self.lock().mkdir()
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (8, 'already-running'))
 
 
 class DeployFlowTest(DeployHarness):

@@ -40,6 +40,7 @@ const snake: RegisteredFile = {
   commandKey: null,
   stored: true,
   overlapped: false,
+  deleted: false,
   createdAt: "2026-10-28T06:12:00.000Z",
 };
 

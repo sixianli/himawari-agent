@@ -7,6 +7,7 @@ import {
   type ProactiveConfiguration,
   type ProactiveDecision,
   ProactiveMailCheckService,
+  type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveScope,
@@ -123,6 +124,7 @@ export interface ProductionProactiveOptions {
   readonly reader: ProactiveSourceReader;
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
+  readonly memory?: ProactiveMemoryRecall;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
   readonly clock: ClockPort;
@@ -148,8 +150,8 @@ export class ProductionProactive {
       seal: options.seal,
       reader: options.reader,
       model: options.model,
+      ...(options.memory ? { memory: options.memory } : {}),
       limits: {
-        perCheckCostMicros: options.configuration.perCheckCostMicros,
         perCheckMs: options.configuration.perCheckMs,
         dailyCostMicros: options.configuration.dailyCostMicros,
         estimateCostMicros: options.estimateCostMicros,
@@ -185,6 +187,19 @@ export class ProductionProactive {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async readDecisionModelIo(
+    decisionId: string,
+  ): Promise<readonly { readonly role: "model_input" | "model_output"; readonly text: string }[]> {
+    const payloads = await this.#options.store.readDecisionPayloads({
+      ...this.#options.scope,
+      decisionId,
+    });
+    const entries: { role: "model_input" | "model_output"; text: string }[] = [];
+    for (const { ref, role } of payloads)
+      entries.push({ role, text: await this.#options.model.readOutput(ref) });
+    return entries;
   }
 
   beginAuthorization(owner: string): string {

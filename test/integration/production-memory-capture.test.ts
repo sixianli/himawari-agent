@@ -31,12 +31,17 @@ import {
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
+import {
+  ProductionReminderTools,
+  ProductionReminderWriter,
+} from "../../apps/agent-service/src/production-reminder-writer.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-memory-capture");
 const AGENT_ID = createAgentId("agent-memory-capture");
 const THREAD_ID = createThreadId("thread-memory-capture");
 const T0 = "2026-10-25T12:00:00.000Z";
+const FAKE_OPENAI_KEY = `sk-${"proj"}-abcdefghijklmnopqrstuvwxyz0123456789`;
 
 class RecordingProvider implements MemoryProviderProjectionPort {
   readonly upserts: { memory: ProductMemoryRecord; content: string }[] = [];
@@ -192,6 +197,7 @@ describe("production memory capture", () => {
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
       book: repository.memoryBook(),
+      ledger: repository.decisionLedger(),
       timeZone: "Asia/Shanghai",
       payloads,
       protector: adapters.payloadProtector,
@@ -241,7 +247,22 @@ describe("production memory capture", () => {
       payloads,
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
+      timeZone: "Asia/Shanghai",
       onAudit: (record) => audits.push(record),
+    });
+    const reminderTools = new ProductionReminderTools({
+      writer: new ProductionReminderWriter({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        memory,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        reminders: repository.memoryReminders(),
+        payloads,
+        protector: adapters.payloadProtector,
+        clock: { now: () => clock.value },
+        timeZone: "Asia/Shanghai",
+      }),
+      timeZone: "Asia/Shanghai",
     });
     const protect = async (
       ref: string,
@@ -259,13 +280,30 @@ describe("production memory capture", () => {
           createdAt: T0,
         }),
       );
+    const ledgerEntries = () =>
+      repository.decisionLedger().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        kind: "memory_candidate",
+        since: "1970-01-01T00:00:00.000Z",
+        limit: 100,
+      });
+    const plaintext = async (ref: string | null) => {
+      const payload = ref === null ? undefined : await payloads.get(ref);
+      return payload
+        ? new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }))
+        : undefined;
+    };
     return {
       clock,
       repository,
       memory,
       provider,
+      ledgerEntries,
+      plaintext,
       capture,
       control,
+      reminderTools,
       protect,
       request: requestFor("run-memory-capture"),
       requestFor,
@@ -637,6 +675,25 @@ describe("production memory capture", () => {
     expect(context.provider.upserts.map(({ content }) => content)).toEqual([
       "主人最喜欢的颜色是蓝色",
     ]);
+    const ledger = await context.ledgerEntries();
+    expect(ledger).toHaveLength(2);
+    const kept = ledger.find(({ outcome }) => outcome === "kept");
+    const suppressed = ledger.find(({ outcome }) => outcome === "discarded");
+    expect(kept).toMatchObject({
+      reasonCode: "explicitly_approved",
+      category: "preference",
+      confidencePermille: 950,
+      inferred: false,
+    });
+    expect(suppressed).toMatchObject({
+      reasonCode: "confidence_below_threshold",
+      category: "other",
+      confidencePermille: 700,
+      inferred: true,
+    });
+    expect(await context.plaintext(suppressed?.contentRef ?? null)).toBe("主人好像喜欢海");
+    const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(stored.map(({ id }) => id)).not.toContain(suppressed?.subjectRef);
   });
 
   it("captures each Run once and offers existing memories for updates", async () => {
@@ -668,6 +725,55 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(0);
+    const ledger = await context.ledgerEntries();
+    expect(ledger).toHaveLength(2);
+    expect(ledger.map(({ outcome, reasonCode }) => [outcome, reasonCode])).toEqual([
+      ["discarded", "evidence_unverified"],
+      ["discarded", "evidence_unverified"],
+    ]);
+    expect(
+      ledger.map(({ category, confidencePermille, inferred }) => [
+        category,
+        confidencePermille,
+        inferred,
+      ]),
+    ).toEqual([
+      ["other", 950, false],
+      ["other", 950, false],
+    ]);
+    expect(
+      (await Promise.all(ledger.map(({ contentRef }) => context.plaintext(contentRef)))).sort(),
+    ).toEqual(["主人住在杭州", "主人有一只猫"].sort());
+  });
+
+  it("keeps a candidate that is a machine secret out of the ledger text when its quote fails", async () => {
+    const context = await setup(
+      "我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的密钥是 ' +
+        FAKE_OPENAI_KEY +
+        '","classification":"private","confidence":950,"quote":"我的密钥是这个"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const ledger = await context.ledgerEntries();
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]).toMatchObject({
+      outcome: "discarded",
+      reasonCode: "evidence_unverified",
+      contentRef: null,
+    });
+    expect(JSON.stringify(ledger)).not.toContain(FAKE_OPENAI_KEY);
+  });
+
+  it("writes no ledger row for a candidate whose quote is in the message and is simply dropped as invalid", async () => {
+    const context = await setup(
+      "我今天又不想出去玩了，真的。",
+      '{"memories":[{"kind":"durable_fact","decision":"unchanged","existingMemoryId":"memory-not-shown","text":"主人最近不想出去玩","classification":"private","confidence":900,"quote":"我今天又不想出去玩了"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(await context.ledgerEntries()).toEqual([]);
   });
 
   it("[MH-1] logs a round where the model kept nothing or named a memory it was not shown", async () => {
@@ -797,6 +903,145 @@ describe("production memory capture", () => {
         payload: { reminderId: "reminder:missing", action: "dismiss" },
       } as never),
     ).rejects.toThrow("MEMORY_REMINDER_NOT_FOUND");
+  });
+
+  it("sets, lists and cancels reminders from the conversation tool and the reminders page through one writer", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    const tool = (name: string, args: Record<string, unknown>, id: string) =>
+      context.reminderTools.run({
+        runId: createRunId("run-reminder-tool"),
+        toolCallId: id,
+        capabilityRef: `reminder.${name}`,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    await context.protect("payload-page", "给妈妈打电话");
+    await expect(
+      command(
+        context.control,
+        "memory.reminder.create",
+        { contentRef: "payload-page", due: "2026-10-26", repeat: "none" },
+        "page-early",
+      ),
+    ).rejects.toThrow("REMINDER_MEMORY_NOT_READY");
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const reminders = context.repository.memoryReminders();
+    const upcoming = async () =>
+      (await overview(context.control)).upcoming.map(({ text, dueAt }) => ({ text, dueAt }));
+    expect(await upcoming()).toEqual([]);
+
+    const created = await tool(
+      "set",
+      { text: "周五下午三点交周报", due: "2026-10-30T15:00", repeat: "none" },
+      "call-1",
+    );
+    expect(created).toMatchObject({ created: true, due: "2026-10-30 15:00（Asia/Shanghai）" });
+    expect(await upcoming()).toEqual([
+      { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    expect(await reminders.read(created["reminderId"] as string)).toMatchObject({
+      remindAt: "2026-10-30T06:00:00.000Z",
+      status: "scheduled",
+    });
+
+    await expect(
+      tool("set", { text: "昨天的会", due: "2026-10-20T09:00" }, "call-past"),
+    ).rejects.toMatchObject({ code: "REMINDER_TIME_INVALID" });
+    await expect(
+      tool("set", { text: "太远的事", due: "2031-01-01T09:00" }, "call-far"),
+    ).rejects.toMatchObject({ code: "REMINDER_TIME_INVALID" });
+    await expect(
+      tool("set", { text: "我的卡号是 6222020200112233445", due: "2026-10-30T09:00" }, "call-card"),
+    ).rejects.toMatchObject({ code: "REMINDER_TEXT_REFUSED" });
+    await expect(
+      tool("set", { text: "多余字段", due: "2026-10-30T09:00", extra: 1 }, "call-extra"),
+    ).rejects.toMatchObject({ code: "REMINDER_INPUT_INVALID" });
+    expect(await upcoming()).toHaveLength(1);
+
+    await command(
+      context.control,
+      "memory.reminder.create",
+      { contentRef: "payload-page", due: "2026-10-26", repeat: "none" },
+      "page-1",
+    );
+    const replay = await command(
+      context.control,
+      "memory.reminder.create",
+      { contentRef: "payload-page", due: "2026-10-26", repeat: "none" },
+      "page-1",
+    );
+    expect(replay).toMatchObject({ replayed: true });
+    expect(await upcoming()).toEqual([
+      { text: "给妈妈打电话", dueAt: "2026-10-26T01:00:00.000Z" },
+      { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    await expect(
+      command(
+        context.control,
+        "memory.reminder.create",
+        { contentRef: "payload-page", due: "2026-10-01", repeat: "none" },
+        "page-past",
+      ),
+    ).rejects.toThrow("REMINDER_TIME_INVALID");
+
+    const listed = (await tool("list", {}, "call-list")) as {
+      reminders: { reminderId: string; text: string }[];
+    };
+    expect(listed).not.toHaveProperty("more");
+    expect(listed.reminders.map(({ text }) => text)).toEqual([
+      "给妈妈打电话",
+      "周五下午三点交周报",
+    ]);
+    const target = listed.reminders[0]?.reminderId ?? "";
+    expect(await tool("cancel", { reminderId: target }, "call-cancel")).toMatchObject({
+      cancelled: true,
+    });
+    expect(await upcoming()).toEqual([
+      { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    expect(await tool("cancel", { reminderId: target }, "call-again")).toMatchObject({
+      cancelled: true,
+    });
+    await expect(
+      tool("cancel", { reminderId: "reminder:missing" }, "call-missing"),
+    ).rejects.toMatchObject({ code: "REMINDER_NOT_FOUND" });
+  });
+
+  it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    const call = (name: string, args: Record<string, unknown>, id: string) =>
+      context.reminderTools.run({
+        runId: createRunId("run-reminder-more"),
+        toolCallId: id,
+        capabilityRef: `reminder.${name}`,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<{ reminders?: unknown[]; more?: boolean }>;
+    await expect(
+      call("set", { text: "还没有记忆", due: "2026-10-30T09:00" }, "early"),
+    ).rejects.toMatchObject({ code: "REMINDER_MEMORY_NOT_READY" });
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    for (let index = 0; index < 21; index += 1)
+      await call(
+        "set",
+        { text: `事项${index}`, due: `2026-11-${10 + (index % 9)}T09:${10 + index}` },
+        `many-${index}`,
+      );
+    const listed = await call("list", {}, "list-many");
+    expect(listed.reminders).toHaveLength(20);
+    expect(listed.more).toBe(true);
   });
 
   it("[MP-1] rolls a yearly reminder forward when it is dismissed and stops it when cancelled", async () => {

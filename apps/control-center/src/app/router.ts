@@ -4,8 +4,13 @@ import { CONTROL_CENTER_SURFACE_INVENTORY } from "./control-center-inventory.js"
 export type ControlCenterSurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
 export type ControlCenterMobileView = "list" | "content" | "details";
 
+export const CONTROL_CENTER_PAGES = ["memory", "reminders", "files", "settings"] as const;
+export type ControlCenterPage = (typeof CONTROL_CENTER_PAGES)[number];
+
 export interface ControlCenterRouteState {
   readonly afterCursor: string | null;
+  readonly page: ControlCenterPage | null;
+  readonly pageTab: string | null;
   readonly objectId: string | null;
   readonly status: string | null;
   readonly surfaceId: ControlCenterSurfaceId;
@@ -16,6 +21,9 @@ export type ControlCenterRouteMatch =
   | { readonly kind: "matched"; readonly state: ControlCenterRouteState }
   | { readonly kind: "not_found"; readonly pathname: string };
 
+const PAGE_ROUTES: ReadonlyMap<string, ControlCenterPage> = new Map(
+  CONTROL_CENTER_PAGES.map((page) => [`/${page}`, page]),
+);
 const MACHINE_VALUE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const STATUS_VALUE = /^[a-z][a-z0-9_-]{0,63}$/;
 const routeBySurface = new Map(
@@ -37,6 +45,24 @@ export function parseControlCenterUrl(input: string | URL): ControlCenterRouteMa
       state: {
         afterCursor: valueOrNull(url.searchParams.get("cursor"), MACHINE_VALUE),
         objectId: valueOrNull(url.searchParams.get("selected"), MACHINE_VALUE),
+        page: null,
+        pageTab: null,
+        status: valueOrNull(url.searchParams.get("status"), STATUS_VALUE),
+        surfaceId: "threads",
+        view: readView(url.searchParams.get("view")),
+      },
+    };
+  }
+  const pageMatch = /^(\/[a-z]+)(?:\/([A-Za-z0-9_-]{1,32}))?$/.exec(url.pathname);
+  const pageId = pageMatch?.[1] ? PAGE_ROUTES.get(pageMatch[1]) : undefined;
+  if (pageId && (pageId === "settings" || !pageMatch?.[2])) {
+    return {
+      kind: "matched",
+      state: {
+        afterCursor: valueOrNull(url.searchParams.get("cursor"), MACHINE_VALUE),
+        objectId: valueOrNull(url.searchParams.get("selected"), MACHINE_VALUE),
+        page: pageId,
+        pageTab: pageMatch?.[2] ?? null,
         status: valueOrNull(url.searchParams.get("status"), STATUS_VALUE),
         surfaceId: "threads",
         view: readView(url.searchParams.get("view")),
@@ -60,6 +86,8 @@ export function parseControlCenterUrl(input: string | URL): ControlCenterRouteMa
       state: {
         afterCursor: valueOrNull(url.searchParams.get("cursor"), MACHINE_VALUE),
         objectId: objectId ?? valueOrNull(url.searchParams.get("selected"), MACHINE_VALUE),
+        page: null,
+        pageTab: null,
         status: valueOrNull(url.searchParams.get("status"), STATUS_VALUE),
         surfaceId,
         view: readView(url.searchParams.get("view")),
@@ -76,8 +104,14 @@ function readView(value: string | null): ControlCenterMobileView {
 export function controlCenterHref(state: ControlCenterRouteState): string {
   const route = routeBySurface.get(state.surfaceId);
   if (!route) throw new Error("CONTROL_CENTER_ROUTE_INVALID");
-  const pathname = state.objectId ? `${route}/${encodeURIComponent(state.objectId)}` : route;
   const search = new URLSearchParams();
+  let pathname: string;
+  if (state.page) {
+    pathname = state.pageTab ? `/${state.page}/${state.pageTab}` : `/${state.page}`;
+    if (state.objectId) search.set("selected", state.objectId);
+  } else {
+    pathname = state.objectId ? `${route}/${encodeURIComponent(state.objectId)}` : route;
+  }
   if (state.afterCursor) search.set("cursor", state.afterCursor);
   if (state.status) search.set("status", state.status);
   if (state.view !== "content") search.set("view", state.view);
@@ -92,6 +126,8 @@ export function routeForSurface(
   return {
     afterCursor: current?.afterCursor ?? null,
     objectId: current?.objectId ?? null,
+    page: current?.page ?? null,
+    pageTab: current?.pageTab ?? null,
     status: current?.status ?? null,
     surfaceId,
     view: current?.view ?? "content",

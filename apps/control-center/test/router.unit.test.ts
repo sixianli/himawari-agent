@@ -5,6 +5,8 @@ describe("native control-center router", () => {
   it("round-trips all recoverable list, object and mobile-view state", () => {
     const state = {
       afterCursor: "cursor-42",
+      page: null,
+      pageTab: null,
       objectId: "thread:primary",
       status: "archived",
       surfaceId: "threads" as const,
@@ -62,6 +64,34 @@ describe("native control-center router", () => {
     expect(parseControlCenterUrl("/improvements/candidate%3A1")).toEqual({
       kind: "matched",
       state: { ...routeForSurface("improvements"), objectId: "candidate:1" },
+    });
+  });
+
+  it.each(["memory", "reminders", "files"] as const)(
+    "gives the %s page its own address and keeps the open conversation",
+    (page) => {
+      const state = { ...routeForSurface("threads"), page, objectId: "thread:primary" };
+      const href = controlCenterHref(state);
+      expect(href).toBe(`/${page}?selected=thread%3Aprimary`);
+      expect(parseControlCenterUrl(href)).toEqual({ kind: "matched", state });
+      expect(parseControlCenterUrl(`/${page}`)).toEqual({
+        kind: "matched",
+        state: { ...routeForSurface("threads"), page },
+      });
+    },
+  );
+
+  it("gives each settings tab its own address and rejects tabs on other pages", () => {
+    const state = { ...routeForSurface("threads"), page: "settings" as const, pageTab: "tools" };
+    expect(controlCenterHref(state)).toBe("/settings/tools");
+    expect(parseControlCenterUrl("/settings/tools")).toEqual({ kind: "matched", state });
+    expect(parseControlCenterUrl("/settings")).toEqual({
+      kind: "matched",
+      state: { ...routeForSurface("threads"), page: "settings" },
+    });
+    expect(parseControlCenterUrl("/files/extra")).toEqual({
+      kind: "not_found",
+      pathname: "/files/extra",
     });
   });
 });

@@ -18,6 +18,7 @@ import {
   type PiAgentRuntimeAdapterDependencies,
   type PiModelBinding,
 } from "../src/pi-runtime-adapter.ts";
+import { testModelEgress } from "./helpers/model-egress.js";
 
 const model: Model<Api> = {
   id: "accounting",
@@ -138,6 +139,7 @@ function fixture(chosenModel = model) {
   const terminals: string[] = [];
   let logicalSlot = "accounting:1";
   const dependencies: PiAgentRuntimeAdapterDependencies = {
+    egress: testModelEgress(),
     cwd: process.cwd(),
     now: () => now,
     logicalSlot: () => logicalSlot,

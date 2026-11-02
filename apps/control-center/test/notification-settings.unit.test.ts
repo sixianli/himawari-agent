@@ -27,7 +27,12 @@ const configuration: ControlCenterRuntimeConfiguration = {
   actorId: "owner",
   csrfToken: "csrf-fixture",
   authorizationRef: "authorization-01",
-  installedGatewayV2Operations: ["push.status.read", "push.subscription.set", "push.test"],
+  installedGatewayV2Operations: [
+    "push.status.read",
+    "push.subscription.set",
+    "push.kind.set",
+    "push.test",
+  ],
 };
 const intl = createIntl({ locale: "zh-CN", messages });
 const message = (id: MessageId, values?: Record<string, string | number>) =>
@@ -102,10 +107,14 @@ function fakeBrowser(input: {
   return { browser, notification, register, subscribe, unsubscribe };
 }
 
-function status(subscriptions: PushStatus["subscriptions"] = []): PushStatus {
+function status(
+  subscriptions: PushStatus["subscriptions"] = [],
+  kinds: PushStatus["kinds"] = ["reminder", "approval", "run"],
+): PushStatus {
   return {
     available: true,
     publicKey: PUBLIC_KEY,
+    kinds,
     subscriptions,
     generatedAt: "2026-10-26T12:00:00.000Z",
   };
@@ -147,8 +156,22 @@ describe("[WP-8] notification settings", () => {
     query.mockImplementation(async () => ({ type: "push.status.snapshot", payload: snapshot }));
     mutate.mockImplementation(async (command: { type: string; payload: { endpoint?: string } }) => {
       if (command.type === "push.subscription.set" && command.payload.endpoint) {
-        snapshot = status([device(THIS_DEVICE_ID, "Mac 浏览器")]);
+        snapshot = status([device(THIS_DEVICE_ID, "Mac 浏览器")], snapshot.kinds);
         return { resultRef: THIS_DEVICE_ID, replayed: false };
+      }
+      if (command.type === "push.kind.set") {
+        const change = command.payload as unknown as {
+          kind: PushStatus["kinds"][number];
+          enabled: boolean;
+        };
+        snapshot = {
+          ...snapshot,
+          kinds: [
+            ...snapshot.kinds.filter((value) => value !== change.kind),
+            ...(change.enabled ? [change.kind] : []),
+          ],
+        };
+        return { resultRef: "kinds", replayed: false };
       }
       return { resultRef: "ok", replayed: false };
     });
@@ -214,7 +237,7 @@ describe("[WP-8] notification settings", () => {
     expect(container.textContent).toContain("这台设备 · 已开启");
   });
 
-  it("[WP-8] turns on push: permission, worker, subscription with chosen kinds, then a test", async () => {
+  it("[WP-8] turns on push: switches save for the account, then permission, worker, subscription and a test", async () => {
     const fake = fakeBrowser({ userAgent: MAC, standalone: false, permission: "default" });
     await render(fake.browser);
     const runToggle = container.querySelector<HTMLInputElement>('input[aria-label="任务结束"]');
@@ -232,7 +255,11 @@ describe("[WP-8] notification settings", () => {
         .replace(/\//g, "_")
         .replace(/=+$/, ""),
     ).toBe(PUBLIC_KEY);
-    const [subscribe, test] = mutate.mock.calls.map(([command]) => command);
+    const [kindsSet, subscribe, test] = mutate.mock.calls.map(([command]) => command);
+    expect(kindsSet).toMatchObject({
+      type: "push.kind.set",
+      payload: { kind: "run", enabled: false },
+    });
     expect(subscribe).toMatchObject({
       type: "push.subscription.set",
       authorizationRef: "authorization-01",
@@ -242,7 +269,6 @@ describe("[WP-8] notification settings", () => {
         keys: { p256dh: "device-key", auth: "device-auth" },
         locale: "zh-CN",
         deviceLabel: "Mac 浏览器",
-        kinds: ["reminder", "approval"],
       },
     });
     expect(test).toMatchObject({
@@ -251,6 +277,28 @@ describe("[WP-8] notification settings", () => {
     });
     expect(container.textContent).toContain("这台设备 · 已开启");
     expect(container.textContent).toContain("已发出，几秒内会弹出。");
+  });
+
+  it("[WP-8] shows the account switches on a device that is not subscribed, and picks up a change made on another device when the page becomes visible again", async () => {
+    const fake = fakeBrowser({ userAgent: MAC, standalone: false, permission: "default" });
+    snapshot = status([device("web-push-phone", "iPhone 主屏应用")], ["reminder", "approval"]);
+    await render(fake.browser);
+    const switchFor = (label: string) =>
+      container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+    expect(switchFor("任务结束")?.checked).toBe(false);
+    expect(switchFor("等你审批")?.checked).toBe(true);
+    mutate.mockClear();
+    await act(async () => switchFor("任务结束")?.click());
+    await settle();
+    expect(mutate.mock.calls.map(([command]) => command.type)).toEqual(["push.kind.set"]);
+    expect(switchFor("任务结束")?.checked).toBe(true);
+    snapshot = status([device("web-push-phone", "iPhone 主屏应用")], ["approval"]);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+    expect(switchFor("任务结束")?.checked).toBe(false);
+    expect(switchFor("记忆提醒")?.checked).toBe(false);
   });
 
   it("[WP-8] explains how to unblock when notifications were refused", async () => {
@@ -276,14 +324,16 @@ describe("[WP-8] notification settings", () => {
       permission: "granted",
       subscribed: true,
     });
-    snapshot = status([
-      device(THIS_DEVICE_ID, "iPhone 主屏应用", {
-        state: "paused",
-        failureCode: "WEB_PUSH_HTTP_403",
-        kinds: ["reminder", "run"],
-      }),
-      device("web-push-other", "Mac 浏览器", { lastDeliveredAt: "2026-10-26T06:32:00.000Z" }),
-    ]);
+    snapshot = status(
+      [
+        device(THIS_DEVICE_ID, "iPhone 主屏应用", {
+          state: "paused",
+          failureCode: "WEB_PUSH_HTTP_403",
+        }),
+        device("web-push-other", "Mac 浏览器", { lastDeliveredAt: "2026-10-26T06:32:00.000Z" }),
+      ],
+      ["reminder", "run"],
+    );
     await render(fake.browser);
     expect(container.querySelector<HTMLInputElement>('input[aria-label="等你审批"]')?.checked).toBe(
       false,
@@ -297,8 +347,8 @@ describe("[WP-8] notification settings", () => {
       container.querySelector<HTMLInputElement>('input[aria-label="等你审批"]')?.click(),
     );
     await settle();
-    expect(mutate.mock.calls.map(([command]) => command.type)).toEqual(["push.subscription.set"]);
-    expect(mutate.mock.calls[0]?.[0].payload.kinds).toEqual(["reminder", "approval", "run"]);
+    expect(mutate.mock.calls.map(([command]) => command.type)).toEqual(["push.kind.set"]);
+    expect(mutate.mock.calls[0]?.[0].payload).toEqual({ kind: "approval", enabled: true });
 
     await act(async () => button("移除")?.click());
     await settle();
