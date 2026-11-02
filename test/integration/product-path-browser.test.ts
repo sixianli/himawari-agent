@@ -28,6 +28,7 @@ import {
   expect as uiExpect,
 } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parseMagpieModelList } from "../../apps/agent-service/src/production-magpie-models.ts";
 import { ACCEPTANCE_SELECTABLE_MODELS } from "../../apps/control-center/test/release-walkthrough-models.ts";
 import {
   RELEASE_WALKTHROUGH_UI as UI,
@@ -6015,6 +6016,7 @@ const realMagpieKeyFile = process.env["HIMAWARI_REAL_MAGPIE_KEY_FILE"];
 const realMagpieDescribe = enabled && realMagpieUrl && realMagpieKeyFile ? describe : describe.skip;
 const REAL_MAGPIE_PROMPT = "只回复 ok";
 const REAL_MAGPIE_PRIMARY_NAME = "Product path primary";
+const REAL_MAGPIE_PRIMARY_MODEL = "deepseek/deepseek-v4.1-flash";
 
 async function openFullModelList() {
   const picker = page.locator(UI.modelPickerRoot);
@@ -6038,6 +6040,8 @@ realMagpieDescribe(
       exception?: true;
     }> = [];
     let listedIds: string[] = [];
+    let selectable: ReturnType<typeof parseMagpieModelList> = [];
+    let optionNames: string[] = [];
     let realKey = "";
     const redact = (text: string) =>
       (realKey ? text.split(realKey).join("<key>") : text)
@@ -6060,9 +6064,15 @@ realMagpieDescribe(
         redirect: "error",
       });
       if (!listing.ok) throw new Error(`REAL_MAGPIE_LIST_FAILED ${listing.status}`);
-      const body = (await listing.json()) as { data?: Array<{ id?: unknown }> };
-      listedIds = (body.data ?? []).flatMap((entry) =>
-        typeof entry.id === "string" ? [entry.id] : [],
+      const entries = parseMagpieModelList(await listing.json());
+      listedIds = entries.map((entry) => entry.id);
+      selectable = entries.filter(
+        (entry) =>
+          !entry.id.startsWith("group/") &&
+          !entry.id.startsWith("auto/") &&
+          entry.id !== REAL_MAGPIE_PRIMARY_MODEL &&
+          entry.toolCall &&
+          entry.acceptsText,
       );
       await mkdir(outputDirectory, { recursive: true });
       installation = await installProductPath({
@@ -6089,7 +6099,7 @@ realMagpieDescribe(
             writeFile(
               path.join(outputDirectory, "real-magpie-sweep.json"),
               `${JSON.stringify(
-                { schema: "himawari-real-magpie-sweep.v1", listedIds, sweep },
+                { schema: "himawari-real-magpie-sweep.v1", listedIds, optionNames, sweep },
                 null,
                 2,
               )}\n`,
@@ -6109,10 +6119,10 @@ realMagpieDescribe(
       const names = (await options.allInnerTexts()).map(
         (text) => text.split("\n")[0]?.trim() ?? "",
       );
-      const expected =
-        listedIds.length + (listedIds.includes("deepseek/deepseek-v4.1-flash") ? 0 : 1);
-      expect(names.length).toBe(expected);
+      optionNames = names;
+      expect(names.length, JSON.stringify({ names, listedIds })).toBe(selectable.length + 1);
       expect(names).toContain(REAL_MAGPIE_PRIMARY_NAME);
+      for (const entry of selectable) expect(names).toContain(entry.label);
       await page.keyboard.press("Escape");
       for (let index = 0; index < names.length; index += 1) {
         const name = names[index] ?? "";
