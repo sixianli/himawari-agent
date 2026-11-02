@@ -136,5 +136,6 @@ it("names the model that actually answered each call as the router reported it, 
     ])?.models,
   ).toEqual(["deepseek-v4.1-flash-sg", "deepseek-v4.1-flash", "glm-5.3-flash"]);
   expect(turnUsage([call()])?.models).toEqual([]);
+  expect(turnUsage([call("/"), call("a/")])?.models).toEqual([]);
   expect(servedModelName("opencode-zen/glm-5.3-flash-free")).toBe("glm-5.3-flash-free");
 });

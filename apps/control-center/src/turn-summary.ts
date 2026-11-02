@@ -46,7 +46,9 @@ export function turnUsage(records: readonly ThreadExecutionRecord[]): TurnUsage 
   const models = [
     ...new Set(
       calls.flatMap((call) =>
-        typeof call["servedModel"] === "string" ? [servedModelName(call["servedModel"])] : [],
+        typeof call["servedModel"] === "string" && servedModelName(call["servedModel"])
+          ? [servedModelName(call["servedModel"])]
+          : [],
       ),
     ),
   ];
