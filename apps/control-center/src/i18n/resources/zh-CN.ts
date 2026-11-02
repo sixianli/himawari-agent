@@ -216,7 +216,7 @@ export const messages = {
   "chat.reason.deadlineExceeded": "执行期限已到，操作未派发",
   "chat.reason.resourceCeilingChanged": "允许的资源上限已变化，操作未派发",
   "chat.reason.directoryTargetChanged": "目录位置或目标已变化",
-  "chat.reason.fileVersionConflict": "文件版本已变化，候选未发布",
+  "chat.reason.fileVersionConflict": "文件版本已变化，草稿未发布",
   "chat.reason.fileWriteNotStarted": "文件操作没有成功，文件没有被修改",
   "chat.reason.commandEffectUnverified": "命令执行失败，未核验对工作区的影响",
   "chat.reason.writeEffectUnverified": "文件操作失败；文件可能已被修改，具体效果尚未核验",
@@ -505,7 +505,7 @@ export const messages = {
   "reflection.title": "反思配置与检查点",
   "reflection.configure": "保存反思配置",
   "workers.title": "Worker 委派",
-  "improvements.title": "自我改进候选",
+  "improvements.title": "待采纳的改进",
   "threads.draft": "消息草稿",
   "threads.send": "发送",
   "threads.new": "新建对话",
@@ -645,7 +645,7 @@ export const messages = {
     "{c, select, rule {要求} identity {身份} preference {偏好} relationship {人际关系} goal {目标} project {进行中} health {健康} finance {财务} event {事件} other {其他}}",
   "memory.page.auto": "从对话中自动记忆",
   "memory.page.pausedNote":
-    "自动记忆已暂停：Himawari 仍会用已有的记忆回答，但不会再从对话里记新的事，也不做每日整理。你手动添加的照样会记。",
+    "自动记忆已暂停：Himawari 仍会用已有的记忆回答，但不会再从对话里记新的事，也不做整理记忆。你手动添加的照样会记。",
   "memory.page.notReady":
     "要先从对话里记下第一条记忆，才能手动添加和导入。打开自动记忆后，和 Himawari 说一件关于你的事（比如“我最喜欢蓝色”）就可以了。",
   "memory.page.add": "添加",
@@ -690,7 +690,7 @@ export const messages = {
   "memory.page.changed": "改过 {count} 次",
   "memory.page.source": "来源",
   "memory.page.origin":
-    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} other {每日整理}}",
+    "{o, select, owner {你手动添加} import {导入} deleted {来源对话已删除} other {整理记忆}}",
   "memory.page.used": "上次用到",
   "memory.page.notUsed": "还没用到",
   "memory.page.history": "怎么变过来的",
@@ -703,7 +703,7 @@ export const messages = {
   "memory.page.recover": "恢复",
   "memory.page.deleted": "已删除，7 天内可在“最近删除”里恢复",
   "memory.page.filter":
-    "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理} correct {更正} other {导入}}",
+    "{f, select, all {全部变化} new {新记住} drop {不记和删除} tidy {整理记忆} correct {更正} other {导入}}",
   "memory.page.event":
     "{e, select, new {新记住} dropped {已不记} deleted {已删除} correct {更正} import {导入} merge {合并重复} supersede {取代旧说法} archive {归档} other {新推测}}",
   "memory.page.imported":
@@ -724,7 +724,7 @@ export const messages = {
   "memory.page.copied": "已复制，去发给那个 AI 吧",
   "memory.page.copyFailed": "浏览器不让复制，请手动选中上面的文字复制",
   "memory.page.aiStep2": "第 2 步：把它的回答整段贴到这里。",
-  "memory.page.parse": "整理成一条条",
+  "memory.page.parse": "拆成一条条",
   "memory.page.importAgain": "换个来源",
   "memory.page.importSummary": "找到 {all} 条，已勾 {on} 条",
   "memory.page.importFlag":
@@ -918,7 +918,7 @@ export const messages = {
   "proactive.reconnect.button": "重新连接",
   "proactive.dailyLimit":
     "今天的邮件检查到了每日费用上限：模型先停，规则照常把银行、学校等来信放进来；0:00 自动恢复，对话不受影响。",
-  "proactive.paused": "主动提醒已关：不看邮件、不记录、不推送。",
+  "proactive.paused": "系统主动提醒已关：不看邮件、不记录、不推送。",
   "proactive.foot": "到点的提醒和要紧的邮件会推送到你开过通知的设备。",
   "dailyReview.title": "每天打分",
   "dailyReview.count": "今天 {count} 条",
@@ -955,7 +955,7 @@ export const messages = {
   "proactive.metric.missed": "漏提醒（你查过的邮件里）",
   "proactive.metric.reviewed": "已审 {count} 封",
   "proactive.verdict":
-    "{v, select, pushed {推送} silent {没开口} deferred {顺延} failed {失败} capped {到上限} capped_daily {到上限（日）} other {要你处理}}",
+    "{v, select, pushed {推送} silent {没提醒} deferred {顺延} failed {失败} capped {到上限} capped_daily {到上限（日）} other {要你处理}}",
   "proactive.line.needsOwner": "Google 授权失效，Gmail 读不了；暂停检查，等你重新连接",
   "proactive.line.pushed": "推送了 {count} 件要你处理的事",
   "proactive.line.deferred": "判断要说，但在不推送时段里，时段结束时合成一条推送",
@@ -975,7 +975,7 @@ export const messages = {
   "proactive.line.judged":
     "模型看了 {judged} 封：要处理 {act} · 请看原信 {check} · 值得知道 {know}",
   "proactive.line.opened": "你点开了",
-  "proactive.settings.enabled": "主动提醒",
+  "proactive.settings.enabled": "系统主动提醒",
   "proactive.settings.quiet": "不推送时段",
   "proactive.settings.period": "时段 {n}",
   "proactive.settings.periodStart": "时段 {n} 开始时间",
@@ -1010,11 +1010,11 @@ export const messages = {
     "每行一个：完整地址如 info@bank.co.jp，或整个域名如 @city.shinjuku.lg.jp",
   "proactive.apps.sendersInvalid": "“{value}”不是邮件地址或域名",
   "proactive.apps.save": "保存",
-  "proactive.data.title": "主动提醒记录",
+  "proactive.data.title": "系统主动提醒记录",
   "proactive.data.hint": "提醒检查记录和邮件提炼结果",
   "proactive.data.delete": "全部删除",
   "proactive.data.confirm":
-    "会删掉所有决策记录、邮件提炼结果和抽查记录，Gmail 仍保持连接。确定删除？",
+    "会删掉所有提醒检查记录、邮件提炼结果和你对没提醒的邮件做过的评价，Gmail 仍保持连接。确定删除？",
   "proactive.data.cleared": "已全部删除。",
   "proactive.when.dueToday": "今天 {time} 截止",
   "proactive.line.allSkipped": "{count} 封新邮件，都是推广这类，按规则跳过，没交给模型",

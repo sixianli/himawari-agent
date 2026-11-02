@@ -676,7 +676,7 @@ Liveness 只证明 process/event loop 响应。Readiness 还要求：
 - outbox 与 scheduler recovery 完成；
 - public mode 下 identity、MFA、Owner mapping、bootstrap closure 与 break-glass 配置完整。
 
-详细 dependency status 需要认证并脱敏。structured logs 包含 correlation、Run、event IDs、adapter/version、latency 和 stable error code，不含 Payload 或 secret values。metrics 至少覆盖 DB latency/queue、WAL/disk、outbox lag、job backlog、Worker、Memory retry/delete lag、model failure/fallback/cost 和 SSE reconnect/cursor errors。
+详细 dependency status 需要认证并遮盖。structured logs 包含 correlation、Run、event IDs、adapter/version、latency 和 stable error code，不含 Payload 或 secret values。metrics 至少覆盖 DB latency/queue、WAL/disk、outbox lag、job backlog、Worker、Memory retry/delete lag、model failure/fallback/cost 和 SSE reconnect/cursor errors。
 
 实施后需要的 CLI：
 
@@ -713,7 +713,7 @@ himawari identity sessions|devices|break-glass
 | secret detector 不确定 | 保守排除 automatic Memory，只记录 rule/outcome |
 | Memory provider delete failure | 产品记录立即不可检索；provider cleanup 保持 retrying 直到验证 |
 | GitHub 签名、重放或 scope 失败 | 按 retry semantics 拒绝或安全确认，不创建 Trigger |
-| GitHub credential 失效或 rate limit | monitor degraded，provider-aware bounded retry，并脱敏通知 |
+| GitHub credential 失效或 rate limit | monitor degraded，provider-aware bounded retry，并遮盖通知 |
 | GitHub offline gap | 不补拉；记录 gap 起止和可能遗漏 |
 | export 中断 | source 保持 stopped/pending；incomplete package 不可用 |
 | import 中断 | 只修改临时目录；不存在 active partial target |

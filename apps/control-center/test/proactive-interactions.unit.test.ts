@@ -600,7 +600,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(text("#page")).not.toContain("每天打分");
   });
 
-  it("[PG-15] shows one line per check in the decision log and takes ratings", async () => {
+  it("[PG-15] shows one line per check in the reminder check record and takes ratings", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
     expect(text("#page")).not.toContain("提醒检查记录");
