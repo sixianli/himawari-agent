@@ -924,7 +924,7 @@ export const messages = {
   "dailyReview.count": "今天 {count} 条",
   "dailyReview.countLeft": "今天 {count} 条，另有 {left} 条没抽到",
   "dailyReview.note": "没抽到的明天可能再出现，7 天后不再出现。",
-  "dailyReview.tag.pushed": "主动提醒",
+  "dailyReview.tag.pushed": "系统主动提醒",
   "dailyReview.tag.silent": "这次检查没提醒",
   "dailyReview.tag.mail": "没提醒的邮件",
   "dailyReview.tag.skippedMemory": "系统没存下的记忆",
