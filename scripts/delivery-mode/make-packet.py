@@ -839,6 +839,8 @@ def require_claims_proven(commit, since, root):
 
 def prepare(arguments):
     started = time.monotonic()
+    if getattr(arguments, 'full_source', False) and arguments.reuse_materials:
+        refuse('PACKET_FULL_SOURCE_WITH_REUSE', '--reuse-materials copies the earlier packet\'s source bundle, so --full-source cannot take effect; drop --reuse-materials')
     instance = load_instance(arguments.instance)
     commit = resolve_commit(arguments.commit)
     require_current_scripts(commit)

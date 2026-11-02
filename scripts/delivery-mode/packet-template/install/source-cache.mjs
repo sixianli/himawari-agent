@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { chmodSync, lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 const fail = (condition, message) => { if (!condition) throw new Error(message); };
@@ -16,7 +16,10 @@ export function checkExistingCache(cache) {
 
 export function fetchBundleIntoCache(cache, bundle, head, run, exists) {
   if (exists) checkExistingCache(cache);
-  else run("git", [...quietGit, "init", "--bare", "-q", "--template=", cache], "cache-init");
+  else {
+    run("git", [...quietGit, "init", "--bare", "-q", "--template=", cache], "cache-init");
+    chmodSync(cache, 0o755);
+  }
   run("git", [...quietGit, "-C", cache, "bundle", "verify", bundle], "cache-bundle-verify");
   run("git", [...quietGit, "-C", cache, "fetch", "-q", "--no-tags", "--no-write-fetch-head", bundle, `HEAD:refs/release/${head}`], "cache-fetch");
   fail(run("git", [...quietGit, "-C", cache, "rev-parse", "--verify", `refs/release/${head}^{commit}`]) === head, "P5_SOURCE_CACHE_HEAD_MISMATCH");

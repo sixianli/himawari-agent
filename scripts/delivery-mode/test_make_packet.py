@@ -1166,6 +1166,11 @@ class SourceBundleTest(unittest.TestCase):
         bundle = packet_maker.make_source_bundles(argparse.Namespace(full_source=True), fourth, parameters, materials, work, Builder())
         self.assertEqual((parameters['SOURCE_BASE_COMMIT'], packet_maker.bundle_prerequisites(bundle)), ('', []))
 
+    def test_full_source_together_with_reused_materials_is_refused_before_anything_runs(self):
+        arguments = argparse.Namespace(full_source=True, reuse_materials='/earlier/packet')
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_FULL_SOURCE_WITH_REUSE'):
+            packet_maker.prepare(arguments)
+
     def test_discovery_reports_the_releases_the_server_cache_holds(self):
         facts = production_facts(sourceCacheCommits=['b' * 40, 'a' * 40, 'not-a-commit'])
         self.assertEqual(packet_maker.interpret_discovery(facts, INSTANCE)['SOURCE_CACHE_COMMITS'], ['a' * 40, 'b' * 40])

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { checkoutFromCache, fetchBundleIntoCache, sourceCachePath } from "./source-cache.mjs";
@@ -56,6 +56,17 @@ try {
   fetchBundleIntoCache(unsafe, fullBundle, first, run, false);
   chmodSync(unsafe, 0o777);
   check("a group- or world-writable cache is refused", throws(() => fetchBundleIntoCache(unsafe, fullBundle, first, run, existsSync(unsafe))) === "P5_SOURCE_CACHE_OWNER_OR_MODE_UNSAFE");
+
+  const loose = cacheFor("loose-umask");
+  mkdirSync(path.dirname(loose), { recursive: true });
+  const previousMask = process.umask(0o002);
+  try {
+    fetchBundleIntoCache(loose, fullBundle, first, run, false);
+  } finally {
+    process.umask(previousMask);
+  }
+  check("a cache created under umask 002 is not group-writable", (statSync(loose).mode & 0o022) === 0);
+  check("the next fetch accepts that cache", throws(() => fetchBundleIntoCache(loose, secondBundle, second, run, existsSync(loose))) === "");
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
