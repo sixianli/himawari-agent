@@ -219,6 +219,8 @@ export interface ProactiveConfiguration {
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
   readonly memoryMinimumSimilarity: number;
+  readonly reviewBudgetSeconds: number;
+  readonly reviewSecondsPerItem: number;
 }
 
 export interface RunPolicyConfiguration {

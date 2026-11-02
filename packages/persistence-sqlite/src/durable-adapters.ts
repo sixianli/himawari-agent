@@ -1004,6 +1004,8 @@ export class SqliteDurableAdapters {
       append: (input) => this.context.write("decisionLedger.append", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       rate: (input) => this.context.write("decisionLedger.rate", input),
+      listReviewPool: (input) => this.context.read("decisionLedger.listReviewPool", input),
+      rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
     });

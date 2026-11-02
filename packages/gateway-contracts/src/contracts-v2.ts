@@ -37,6 +37,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
+  "proactive.review.read",
+  "proactive.review.snapshot",
+  "proactive.review.rate",
   "proactive.source.manage",
   "owner.preferences.read",
   "owner.preferences.snapshot",
@@ -523,6 +526,65 @@ const proactiveAuditRespondCommandSchema = object({
     messageIds: proactiveMessageIdsSchema,
     rating: nullable(proactiveRatingSchema),
   }),
+});
+const proactiveReviewKinds = [
+  "proactive",
+  "memory_candidate",
+  "consolidation",
+  "context_truncation",
+  "retrieval_degrade",
+  "external_read",
+  "mail",
+] as const;
+const proactiveReviewItemSchema = object({
+  key: machineString,
+  source: enumeration(["ledger", "mail"]),
+  kind: enumeration(proactiveReviewKinds),
+  outcome: machineString,
+  decidedAt: timestamp,
+  acted: booleanValue,
+  rating: nullable(proactiveRatingSchema),
+  text: proactiveTextSchema(200),
+  textHidden: booleanValue,
+  category: nullable(machineString),
+  fetched: nullable(integer(0)),
+});
+const proactiveReviewQuerySchema = object({
+  ...envelope("query", "proactive.review.read"),
+  payload: object({}),
+});
+const proactiveReviewSnapshotSchema = object({
+  ...envelope("snapshot", "proactive.review.snapshot"),
+  payload: object({
+    day: timestamp,
+    capacity: integer(1),
+    sampled: integer(0),
+    notSampled: integer(0),
+    items: array(proactiveReviewItemSchema),
+    folded: object({ total: integer(0), items: array(proactiveReviewItemSchema) }),
+    generatedAt: timestamp,
+  }),
+});
+const proactiveReviewRatingsSchema: Schema<
+  readonly {
+    readonly key: string;
+    readonly rating: InferSchema<typeof proactiveRatingSchema> | null;
+  }[]
+> = {
+  parse(input, path = "$") {
+    const ratings = array(
+      object({ key: machineString, rating: nullable(proactiveRatingSchema) }),
+    ).parse(input, path);
+    if (ratings.length < 1 || ratings.length > 50)
+      throw new ContractValidationError(path, "expected 1 to 50 ratings");
+    if (new Set(ratings.map(({ key }) => key)).size !== ratings.length)
+      throw new ContractValidationError(path, "expected distinct review keys");
+    return ratings;
+  },
+};
+const proactiveReviewRateCommandSchema = object({
+  ...commandEnvelope("proactive.review.rate"),
+  payload: object({ ratings: proactiveReviewRatingsSchema }),
 });
 const proactiveSourceManageCommandSchema = object({
   ...commandEnvelope("proactive.source.manage"),
@@ -1925,6 +1987,9 @@ const schemasByType = {
   "proactive.insight.respond": proactiveInsightRespondCommandSchema,
   "proactive.decision.rate": proactiveDecisionRateCommandSchema,
   "proactive.audit.respond": proactiveAuditRespondCommandSchema,
+  "proactive.review.read": proactiveReviewQuerySchema,
+  "proactive.review.snapshot": proactiveReviewSnapshotSchema,
+  "proactive.review.rate": proactiveReviewRateCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
