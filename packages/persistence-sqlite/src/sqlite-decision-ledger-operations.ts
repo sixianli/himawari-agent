@@ -327,7 +327,8 @@ export class SqliteDecisionLedgerOperations {
           (write.contentRef !== null || intakeItemKey !== null) &&
           (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128))
         : write.museReminded === false &&
-          (text(write.pairedDecisionId, 1, 128) || pairedMessageId !== null) &&
+          (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128)) &&
+          (write.pairedDecisionId !== null || pairedMessageId !== null) &&
           !("timingOk" in write) &&
           !("contentOk" in write) &&
           !("contentRef" in write);

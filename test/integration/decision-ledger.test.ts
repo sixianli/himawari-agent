@@ -465,6 +465,15 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       await expect(
         ledger.recordMuse({
           ...base,
+          id: "bad-decision",
+          museReminded: false,
+          pairedDecisionId: "",
+          pairedMessageId: "gmail-message-3",
+        }),
+      ).rejects.toThrow();
+      await expect(
+        ledger.recordMuse({
+          ...base,
           id: "empty-mail",
           museReminded: false,
           pairedDecisionId: null,

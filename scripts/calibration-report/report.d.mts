@@ -17,7 +17,13 @@ export interface CalibrationRun {
     silent: number;
     unpaired: number;
     pairedMails: number;
-    buckets: { both: number; museOnly: number; himawariOnly: number; noHimawariRecord: number };
+    buckets: {
+      both: number;
+      museOnly: number;
+      himawariOnly: number;
+      bothSilent: number;
+      noHimawariRecord: number;
+    };
     himawariRatingsOnPairedMails: {
       useful: number;
       unneeded: number;

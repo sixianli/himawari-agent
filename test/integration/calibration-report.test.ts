@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -278,10 +278,91 @@ describe("[P0-7] calibration report", () => {
     );
   });
 
+  it("includes a decision at the window start, excludes one at the end, and counts a silent entry on an ignored mail as both silent", async () => {
+    const { root, databasePath, database } = await fixture();
+    addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-10-25T15:00:00.000Z");
+    addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-11-01T14:59:59.999Z");
+    addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-10-25T14:59:59.999Z");
+    addMemoryDecision(database, "memory_candidate", "kept", "useful", "2026-11-01T15:00:00.000Z");
+    addGmailCheck(database, "gmail-check", null);
+    addMail(database, "quiet", "ignore", null);
+    addMuse(database, "quiet-entry", false, null, null, "quiet");
+    database.close();
+    const result = run([`--db=${databasePath}`, `--end=${END}`, "--no-record"], {
+      now: NOW,
+      output: capture(),
+      root,
+    });
+    expect(result.decisions.find((row) => row.kind === "memory_candidate")).toMatchObject({
+      total: 2,
+      rated: 2,
+    });
+    expect(result.muse.buckets).toEqual({
+      both: 0,
+      museOnly: 0,
+      himawariOnly: 0,
+      bothSilent: 1,
+      noHimawariRecord: 0,
+    });
+    const { buckets, pairedMails } = result.muse;
+    expect(Object.values(buckets).reduce((sum, count) => sum + count, 0)).toBe(pairedMails);
+  });
+
+  it("skips a damaged history line without touching the file, and refuses a half given scope or a timestamp it cannot window", async () => {
+    const { root, databasePath, database } = await fixture();
+    addMemoryDecision(database, "memory_candidate", "kept", "useful");
+    database.close();
+    const history = path.join(root, "history.jsonl");
+    await writeFile(history, '{"schema":"himawari-calibration-week.v1","oops\n');
+    const output = capture();
+    run(
+      [
+        `--db=${databasePath}`,
+        `--history=${history}`,
+        `--out-dir=${path.join(root, "reports")}`,
+        `--end=${END}`,
+      ],
+      {
+        now: NOW,
+        output,
+        root,
+      },
+    );
+    expect(output.text()).toContain("历史记录第 1 行不是有效的 JSON，已跳过");
+    const lines = (await readFile(history, "utf8")).split("\n").filter(Boolean);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe('{"schema":"himawari-calibration-week.v1","oops');
+    expect(() =>
+      run([`--db=${databasePath}`, "--owner=o", "--no-record"], {
+        now: NOW,
+        output: capture(),
+        root,
+      }),
+    ).toThrow(/CALIBRATION_SCOPE/u);
+
+    const odd = await fixture();
+    addMemoryDecision(
+      odd.database,
+      "memory_candidate",
+      "kept",
+      "useful",
+      "2026-10-30T12:00:00+09:00",
+    );
+    odd.database.close();
+    expect(() =>
+      run([`--db=${odd.databasePath}`, `--end=${END}`, "--no-record"], {
+        now: NOW,
+        output: capture(),
+        root: odd.root,
+      }),
+    ).toThrow(/CALIBRATION_TIMESTAMP_FORMAT/u);
+  });
+
   it("refuses unknown options, an unreadable window and an ambiguous owner", async () => {
     expect(() => parseArguments(["--db=x", "--oops"])).toThrow(/CALIBRATION_UNKNOWN_OPTION/u);
     expect(() => parseArguments([])).toThrow(/CALIBRATION_DB_REQUIRED/u);
     expect(() => resolveWindow({ end: "11/02" })).toThrow(/CALIBRATION_WINDOW_END/u);
+    expect(() => resolveWindow({ end: "2026-02-30" })).toThrow(/CALIBRATION_WINDOW_END/u);
     expect(() => resolveWindow({ days: 0 })).toThrow(/CALIBRATION_WINDOW_DAYS/u);
     expect(wilsonInterval(0, 0)).toBeNull();
     expect(proportion(0, 4, 5).value).toBeNull();

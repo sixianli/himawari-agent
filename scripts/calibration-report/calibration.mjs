@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import process from "node:process";
 
 export const HISTORY_SCHEMA = "himawari-calibration-week.v1";
 export const DEFAULT_MINIMUM_SAMPLES = 5;
@@ -51,8 +52,10 @@ export function resolveWindow({ end, days = 7, now = new Date() } = {}) {
       throw new RangeError(
         "CALIBRATION_WINDOW_END：结束日期要写成 YYYY-MM-DD（日本时间当天 0 点，不含）",
       );
-    endMs = Date.parse(`${end}T00:00:00.000Z`) - JST_OFFSET_MS;
-    if (!Number.isFinite(endMs)) throw new RangeError("CALIBRATION_WINDOW_END：结束日期无效");
+    const parsed = Date.parse(`${end}T00:00:00.000Z`);
+    if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== end)
+      throw new RangeError("CALIBRATION_WINDOW_END：结束日期无效");
+    endMs = parsed - JST_OFFSET_MS;
   }
   const startMs = endMs - days * DAY_MS;
   const jstDate = (ms) => new Date(ms + JST_OFFSET_MS).toISOString().slice(0, 10);
@@ -97,7 +100,7 @@ export function summarizeMuse(entries, mailJudgments, minimumSamples = DEFAULT_M
     if (previous === undefined || (entry.museReminded && !previous.museReminded))
       byMail.set(entry.pairedMessageId, entry);
   }
-  const buckets = { both: 0, museOnly: 0, himawariOnly: 0, noHimawariRecord: 0 };
+  const buckets = { both: 0, museOnly: 0, himawariOnly: 0, bothSilent: 0, noHimawariRecord: 0 };
   const ratings = { useful: 0, unneeded: 0, missed: 0, unrated: 0 };
   for (const [messageId, entry] of byMail) {
     const judgment = mailJudgments.get(messageId);
@@ -107,7 +110,7 @@ export function summarizeMuse(entries, mailJudgments, minimumSamples = DEFAULT_M
     }
     const attention = HIMAWARI_ATTENTION_OUTCOMES.includes(judgment.outcome);
     if (entry.museReminded) buckets[attention ? "both" : "museOnly"] += 1;
-    else if (attention) buckets.himawariOnly += 1;
+    else buckets[attention ? "himawariOnly" : "bothSilent"] += 1;
     if (judgment.ownerRating === null) ratings.unrated += 1;
     else ratings[judgment.ownerRating] += 1;
   }
@@ -133,7 +136,28 @@ export function summarizeMuse(entries, mailJudgments, minimumSamples = DEFAULT_M
   };
 }
 
+const ISO_PATTERN = "????-??-??T??:??:??.???Z";
+
+export function assertTimestampFormat(database) {
+  const bad =
+    database
+      .prepare(
+        `SELECT count(*) AS n FROM decision_ledger WHERE checked_at NOT GLOB '${ISO_PATTERN}'`,
+      )
+      .get().n +
+    database
+      .prepare(
+        `SELECT count(*) AS n FROM muse_reference_entries WHERE muse_at NOT GLOB '${ISO_PATTERN}'`,
+      )
+      .get().n;
+  if (bad > 0)
+    throw new Error(
+      `CALIBRATION_TIMESTAMP_FORMAT：有 ${bad} 条记录的时间不是 UTC 毫秒加 Z 的格式，按时间窗口统计会错，不出报告。`,
+    );
+}
+
 export function readWindow(database, { ownerId, agentId, start, end }) {
+  assertTimestampFormat(database);
   const decisions = database
     .prepare(
       `SELECT kind, owner_rating AS ownerRating FROM decision_ledger
@@ -198,13 +222,13 @@ export function buildReport({ window, scope, decisions, muse, minimumSamples, pr
   if (muse.entries === 0) lines.push("样本不足：这一周没有 Muse 对照条目。", "");
   else {
     lines.push(
-      `- Muse 对照条目共 ${muse.entries} 条：Muse 提醒了 ${muse.reminded} 条，没提醒（Himawari 提醒了）${muse.silent} 条。`,
+      `- Muse 对照条目共 ${muse.entries} 条：Muse 提醒了 ${muse.reminded} 条，没提醒 ${muse.silent} 条。`,
       `- Muse 提醒的时机对的占比：${formatProportion(muse.timing)}`,
       `- Muse 提醒的内容对的占比：${formatProportion(muse.content)}`,
       `- 配对率（条目里写明了对应邮件的占比）：${formatProportion(muse.pairing)}；没写明对应邮件的 ${muse.unpaired} 条不进下面的逐封比较。`,
-      `- 逐封比较（同一封邮件，共 ${muse.pairedMails} 封）：两边都提醒 ${muse.buckets.both} 封；只有 Muse 提醒 ${muse.buckets.museOnly} 封；只有 Himawari 提醒 ${muse.buckets.himawariOnly} 封；Himawari 没有这封邮件的记录 ${muse.buckets.noHimawariRecord} 封。`,
+      `- 逐封比较（同一封邮件，共 ${muse.pairedMails} 封）：两边都提醒 ${muse.buckets.both} 封；只有 Muse 提醒 ${muse.buckets.museOnly} 封；只有 Himawari 提醒 ${muse.buckets.himawariOnly} 封；两边都没提醒 ${muse.buckets.bothSilent} 封；Himawari 没有这封邮件的记录（含邮件编号写错）${muse.buckets.noHimawariRecord} 封。`,
       `- 你对这些邮件里 Himawari 判断的评价：做对了 ${muse.himawariRatingsOnPairedMails.useful}，不该做 ${muse.himawariRatingsOnPairedMails.unneeded}，该做没做 ${muse.himawariRatingsOnPairedMails.missed}，未评 ${muse.himawariRatingsOnPairedMails.unrated}。`,
-      "- 局限：两边都没提醒的邮件没有记录，所以算不出「两边都沉默」；只记被提醒的邮件，样本偏向有提醒的一侧。",
+      "- 局限：只有你记过 Muse 条目的邮件才进逐封比较；Himawari 提醒过、你没记 Muse 条目的邮件不在里面，两边都没提醒又没人记的邮件也没有记录，所以样本偏向有提醒的一侧。时机对和内容对的占比按条目计，不按邮件去重。",
       "",
     );
   }
@@ -215,7 +239,9 @@ export function buildReport({ window, scope, decisions, muse, minimumSamples, pr
     for (const row of decisions) {
       const before = previous.kinds.find((entry) => entry.kind === row.kind);
       const show = (rate) => (rate.enough ? `${(rate.value * 100).toFixed(1)}%` : "样本不足");
-      const beforeRate = before ? proportion(before.useful, before.rated, minimumSamples) : null;
+      const beforeRate = before
+        ? proportion(before.useful, before.rated, previous.minimumSamples ?? minimumSamples)
+        : null;
       lines.push(
         `- ${row.kind} 命中率：${beforeRate ? show(beforeRate) : "无记录"} → ${show(row.hit)}`,
       );
@@ -268,14 +294,19 @@ export function sameMeasurement(left, right) {
     left.agentId === right.agentId &&
     left.window.start === right.window.start &&
     left.window.end === right.window.end &&
+    left.minimumSamples === right.minimumSamples &&
     JSON.stringify(left.kinds) === JSON.stringify(right.kinds) &&
     JSON.stringify(left.muse) === JSON.stringify(right.muse)
   );
 }
 
-export function currentCommit() {
+export function currentCommit(cwd = process.cwd()) {
   try {
-    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      encoding: "utf8",
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   } catch {
     return "unknown";
   }

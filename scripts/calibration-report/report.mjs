@@ -43,12 +43,20 @@ export function parseArguments(argv) {
   return options;
 }
 
-function readHistory(file) {
+function readHistory(file, output) {
   if (!existsSync(file)) return [];
-  return readFileSync(file, "utf8")
+  const records = [];
+  readFileSync(file, "utf8")
     .split("\n")
-    .filter((line) => line.trim())
-    .map((line) => JSON.parse(line));
+    .forEach((line, index) => {
+      if (!line.trim()) return;
+      try {
+        records.push(JSON.parse(line));
+      } catch {
+        output.write(`历史记录第 ${index + 1} 行不是有效的 JSON，已跳过（文件没有被改动）。\n`);
+      }
+    });
+  return records;
 }
 
 export function run(
@@ -70,6 +78,8 @@ export function run(
   });
   try {
     let scope;
+    if (options.has("owner") !== options.has("agent"))
+      throw new TypeError("CALIBRATION_SCOPE：--owner 和 --agent 要一起给，或者都不给。");
     if (options.has("owner") && options.has("agent"))
       scope = { ownerId: options.get("owner"), agentId: options.get("agent") };
     else {
@@ -87,7 +97,7 @@ export function run(
       root,
       options.get("history") ?? "evals/calibration/history.jsonl",
     );
-    const history = readHistory(historyFile).filter(
+    const history = readHistory(historyFile, output).filter(
       (entry) =>
         entry.schema === HISTORY_SCHEMA &&
         entry.ownerId === scope.ownerId &&
@@ -106,7 +116,7 @@ export function run(
         decisions,
         muse,
         minimumSamples,
-        commit: currentCommit(),
+        commit: currentCommit(root),
         recordedAt: now.toISOString(),
       });
       const outDirectory = path.resolve(
@@ -114,7 +124,10 @@ export function run(
         options.get("out-dir") ?? "evals/calibration/reports",
       );
       mkdirSync(outDirectory, { recursive: true });
-      writeFileSync(path.join(outDirectory, `${window.endDate}.md`), `${markdown}\n`);
+      const suffix = options.has("agent")
+        ? `-${scope.ownerId}-${scope.agentId}`.replace(/[^A-Za-z0-9._-]/gu, "_")
+        : "";
+      writeFileSync(path.join(outDirectory, `${window.endDate}${suffix}.md`), `${markdown}\n`);
       const latestForWindow = history.filter((entry) => entry.window.end === window.end).at(-1);
       if (latestForWindow && sameMeasurement(latestForWindow, record))
         output.write("历史记录：这个窗口的数据和上一次记录相同，没有重复追加。\n");
