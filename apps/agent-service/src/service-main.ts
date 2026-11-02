@@ -1562,6 +1562,8 @@ export async function runAgentService(
             museIntakeSecret.version,
           ),
         });
+      } else if (museIntakeConfiguration?.enabled === true) {
+        throw new Error("MUSE_INTAKE_RUNTIME_UNAVAILABLE");
       }
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
