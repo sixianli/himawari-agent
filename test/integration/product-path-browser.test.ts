@@ -6016,6 +6016,7 @@ const realMagpieKeyFile = process.env["HIMAWARI_REAL_MAGPIE_KEY_FILE"];
 const realMagpieDescribe = enabled && realMagpieUrl && realMagpieKeyFile ? describe : describe.skip;
 const REAL_MAGPIE_PROMPT = "只回复 ok";
 const REAL_MAGPIE_PRIMARY_NAME = "Product path primary";
+const REAL_MAGPIE_OK_LINE = /(?:^|\n)[\s"'“”`*]*ok[\s.。!！"'“”`*]*(?:\n|$)/i;
 const REAL_MAGPIE_PRIMARY_MODEL = "deepseek/deepseek-v4.1-flash";
 
 async function openFullModelList() {
@@ -6124,8 +6125,14 @@ realMagpieDescribe(
       expect(names).toContain(REAL_MAGPIE_PRIMARY_NAME);
       for (const entry of selectable) expect(names).toContain(entry.label);
       await page.keyboard.press("Escape");
-      for (let index = 0; index < names.length; index += 1) {
-        const name = names[index] ?? "";
+      const order = names
+        .map((name, index) => ({ name, index }))
+        .sort(
+          (left, right) =>
+            Number(left.name === REAL_MAGPIE_PRIMARY_NAME) -
+            Number(right.name === REAL_MAGPIE_PRIMARY_NAME),
+        );
+      for (const { name, index } of order) {
         const started = Date.now();
         try {
           await newThread();
@@ -6135,32 +6142,60 @@ realMagpieDescribe(
             timeout: 20_000,
           });
           const turn = await send(REAL_MAGPIE_PROMPT);
-          const articles = target(turn, UI.message);
-          const failedNow = async () => (await turn.getByText(/本轮执行失败/).count()) > 0;
-          await uiExpect
-            .poll(async () => (await articles.count()) >= 2 || (await failedNow()), {
-              timeout: 180_000,
-            })
-            .toBe(true);
+          const agent = turn.locator(".thread-message-agent");
+          let outcome: "answered" | "failed" | "timeout" = "timeout";
+          let last = "";
+          const deadline = Date.now() + 180_000;
+          while (Date.now() < deadline) {
+            last =
+              (await agent
+                .last()
+                .innerText()
+                .catch(() => "")) ?? "";
+            if (REAL_MAGPIE_OK_LINE.test(last)) {
+              outcome = "answered";
+              break;
+            }
+            if ((await turn.getByText(/本轮执行失败/).count()) > 0) {
+              outcome = "failed";
+              break;
+            }
+            await page.waitForTimeout(500);
+          }
           await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 180_000 });
-          const failed = await failedNow();
-          const count = await articles.count();
-          const last = count >= 2 ? ((await articles.last().innerText()) ?? "") : "";
-          const answered = !failed && /^[\s"'“”`*]*ok[\s.。!！"'“”`*]*$/i.test(last);
           sweep.push({
             name,
-            status: answered ? "answered" : "failed",
+            status: outcome === "answered" ? "answered" : "failed",
             answerMs: Date.now() - started,
-            ...(answered
+            ...(outcome === "answered"
               ? {}
-              : { detail: failed ? "turn-failed" : redact(`reply=${last.slice(0, 80)}`) }),
+              : {
+                  detail: redact(
+                    outcome === "failed" ? "turn-failed" : `no-reply reply=${last.slice(0, 120)}`,
+                  ),
+                  ...(outcome === "timeout" ? { exception: true as const } : {}),
+                }),
           });
         } catch (error) {
+          const send = target(page, UI.send);
+          const state = await Promise.all([
+            send.isEnabled().catch(() => "unknown"),
+            composer()
+              .inputValue()
+              .catch(() => "unknown"),
+            page
+              .locator("body")
+              .innerText()
+              .catch(() => ""),
+          ]);
+          await capture(`real-magpie-failed-${index}`).catch(() => undefined);
           sweep.push({
             name,
             status: "failed",
             answerMs: Date.now() - started,
-            detail: redact(String(error)).slice(0, 200),
+            detail: redact(
+              `${String(error).slice(0, 200)} | send=${state[0]} draft=${String(state[1]).slice(0, 40)} page=${String(state[2]).replace(/\s+/g, " ").slice(0, 300)}`,
+            ),
             exception: true,
           });
         }
