@@ -231,7 +231,7 @@ export const messages = {
   "chat.reason.resourceCeilingChanged":
     "許可されたリソース上限が変わり、操作は派遣されませんでした",
   "chat.reason.directoryTargetChanged": "ディレクトリの場所または対象が変わりました",
-  "chat.reason.fileVersionConflict": "ファイルの版が変わり、候補は公開されませんでした",
+  "chat.reason.fileVersionConflict": "ファイルの版が変わり、下書きは公開されませんでした",
   "chat.reason.fileWriteNotStarted": "ファイル操作は失敗しました。ファイルは変更されていません",
   "chat.reason.commandEffectUnverified":
     "コマンドは失敗しました。ワークスペースへの影響は確認していません",
@@ -546,7 +546,7 @@ export const messages = {
   "reflection.title": "リフレクション設定とチェックポイント",
   "reflection.configure": "リフレクション設定を保存",
   "workers.title": "ワーカー委任",
-  "improvements.title": "自己改善候補",
+  "improvements.title": "採用待ちの改善",
   "threads.draft": "メッセージ下書き",
   "threads.send": "送信",
   "threads.new": "新しいスレッド",
@@ -690,7 +690,7 @@ export const messages = {
     "{c, select, rule {ルール} identity {プロフィール} preference {好み} relationship {人間関係} goal {目標} project {進行中} health {健康} finance {お金} event {予定} other {その他}}",
   "memory.page.auto": "会話から自動で記憶",
   "memory.page.pausedNote":
-    "自動記憶を一時停止中です。既存の記憶は使いますが、会話から新しく記憶せず、毎日の整理もしません。手動で追加したものは記憶します。",
+    "自動記憶を一時停止中です。既存の記憶は使いますが、会話から新しく記憶せず、記憶の整理もしません。手動で追加したものは記憶します。",
   "memory.page.notReady":
     "手動追加とインポートは、会話から最初の記憶ができてから使えます。自動記憶をオンにして、自分のことを一つ話してください（例：「好きな色は青」）。",
   "memory.page.add": "追加",
@@ -736,7 +736,7 @@ export const messages = {
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
   "memory.page.origin":
-    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} other {毎日の整理}}",
+    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} other {記憶の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
@@ -749,7 +749,7 @@ export const messages = {
   "memory.page.recover": "元に戻す",
   "memory.page.deleted": "削除しました。7 日以内なら「最近削除」から戻せます。",
   "memory.page.filter":
-    "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {整理} correct {訂正} other {インポート}}",
+    "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
     "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
   "memory.page.imported":
@@ -941,7 +941,7 @@ export const messages = {
   "chat.welcome.stuck": "何か詰まっていますか？一緒に考えましょう。",
   "chat.welcome.late": "こんな時間までお疲れさま。仕上げ、手伝いましょうか？",
   "chat.welcome.morning": "おはようございます。今日は何から始めましょう？",
-  "proactive.log": "判断の記録",
+  "proactive.log": "リマインダー確認の記録",
   "proactive.group":
     "{g, select, check {重要かも、元のメールを確認} none {期限なし} other {知っておくべきこと}}",
   "proactive.when.due": "{time} 締切",
@@ -952,7 +952,7 @@ export const messages = {
   "proactive.pushed":
     "{reaction, select, opened {通知済み · 開きました} dismissed {通知済み · 閉じました} other {通知済み}}",
   "proactive.rate":
-    "{r, select, useful {役立った} unneeded {不要だった} other {知らせてほしかった}}",
+    "{r, select, useful {正しかった} unneeded {やるべきではなかった} other {やるべきだった}}",
   "proactive.done": "完了",
   "proactive.mute": "通知しない",
   "proactive.whyHide": "理由を閉じる",
@@ -976,7 +976,7 @@ export const messages = {
     "本日のメール確認が 1 日の費用上限に達しました。モデルは止めていますが、銀行・学校などのメールはルールで引き続き表示します。0:00 に自動再開し、チャットへの影響はありません。",
   "proactive.paused": "自発的なリマインダーはオフです。メールの確認・記録・通知をしていません。",
   "proactive.foot": "期限が来たリマインダーと急ぎのメールは、通知をオンにした端末に届きます。",
-  "proactive.audit.title": "直近 7 日間にリマインドから外した {count} 通",
+  "proactive.audit.title": "直近 7 日間に通知しなかった {count} 通",
   "proactive.audit.open": "確認する",
   "proactive.audit.hide": "閉じる",
   "proactive.audit.note":
@@ -988,10 +988,10 @@ export const messages = {
     "まだ確認の記録はありません。Gmail をつなぐと 15 分ごとに 1 行記録します。",
   "proactive.log.today": "今日",
   "proactive.log.yesterday": "昨日",
-  "proactive.metric.spoke": "通知",
-  "proactive.metric.hits": "役立った",
-  "proactive.metric.misfires": "不要",
-  "proactive.metric.missed": "確認済みの中の見逃し",
+  "proactive.metric.spoke": "自発的なリマインダーの総数",
+  "proactive.metric.hits": "適切なリマインダー",
+  "proactive.metric.misfires": "余計なリマインダー",
+  "proactive.metric.missed": "見逃し（確認したメールの中）",
   "proactive.metric.reviewed": "{count} 通確認",
   "proactive.verdict":
     "{v, select, pushed {通知} silent {通知せず} deferred {保留} failed {失敗} capped {上限到達} capped_daily {上限到達（1 日）} other {対応が必要}}",
@@ -1057,10 +1057,10 @@ export const messages = {
   "proactive.apps.sendersInvalid": "「{value}」はメールアドレスでもドメインでもありません",
   "proactive.apps.save": "保存",
   "proactive.data.title": "自発的なリマインダーの記録",
-  "proactive.data.hint": "判断の記録とメールから抜き出した結果",
+  "proactive.data.hint": "リマインダー確認の記録とメールから抜き出した結果",
   "proactive.data.delete": "すべて削除",
   "proactive.data.confirm":
-    "判断の記録・メールから抜き出した結果・確認の記録をすべて削除します。Gmail の接続は残ります。削除しますか？",
+    "リマインダー確認の記録・メールから抜き出した結果・確認の記録をすべて削除します。Gmail の接続は残ります。削除しますか？",
   "proactive.data.cleared": "すべて削除しました。",
   "proactive.when.dueToday": "本日 {time} 締切",
   "proactive.line.allSkipped":

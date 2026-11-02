@@ -690,7 +690,7 @@ describe("memory approval and management", () => {
     await render();
     await click("#settings .memory-results", "主人喜欢爬山");
     expect(text("#settings .memory-detail")).toContain("来源对话已删除");
-    expect(text("#settings .memory-detail")).not.toContain("每日整理");
+    expect(text("#settings .memory-detail")).not.toContain("整理记忆");
     expect(text("#settings .memory-detail")).toContain("你说：“我周末最喜欢去爬山了”");
   });
 
@@ -1063,7 +1063,7 @@ describe("memory approval and management", () => {
       );
       fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await click("#settings .memory-import", "整理成一条条");
+    await click("#settings .memory-import", "拆成一条条");
     const preview = text("#settings .memory-import");
     expect(preview).toContain("找到 3 条，已勾 1 条");
     expect(preview).toContain("已经记着，跳过");
