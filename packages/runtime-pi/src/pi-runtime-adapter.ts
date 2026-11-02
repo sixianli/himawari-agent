@@ -268,7 +268,9 @@ function sameExecutionLeaseClaim(
 
 const SERVED_MODEL_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._:-]{0,95}$/i;
 
-export function servedModelFromHeaders(headers: Readonly<Record<string, string>>): string | undefined {
+export function servedModelFromHeaders(
+  headers: Readonly<Record<string, string>>,
+): string | undefined {
   for (const [name, value] of Object.entries(headers)) {
     if (name.toLowerCase() === "x-magpie-model" && SERVED_MODEL_PATTERN.test(value.trim()))
       return value.trim();
