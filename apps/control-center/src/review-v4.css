@@ -518,6 +518,58 @@
 .model-options button[aria-pressed="true"] {
   background: var(--surface-muted);
 }
+.model-options {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.model-options button {
+  gap: 8px;
+  height: auto;
+  min-height: 44px;
+  padding-block: 6px;
+}
+.model-option-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+  text-align: left;
+}
+.model-option-name {
+  overflow-wrap: anywhere;
+}
+.model-option-price {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.model-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+.model-tag[data-tier="low"] {
+  color: var(--success);
+}
+.model-tag[data-tier="high"] {
+  color: var(--warning);
+}
+.model-search {
+  width: 100%;
+  min-height: 36px;
+  margin-bottom: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
 .modal-dialog {
   padding: 0;
   width: 680px;

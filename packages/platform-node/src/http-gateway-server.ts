@@ -126,6 +126,9 @@ export interface HttpGatewayServerOptions {
       provider: string;
       thinkingLevels: readonly string[];
       images: boolean;
+      automatic?: boolean;
+      price?: { input: number; output: number };
+      priceTier?: "low" | "mid" | "high";
     }[];
     readonly installedGatewayV2Operations?: readonly (GatewayV2Query | GatewayV2Command)["type"][];
     readonly agentId: string;

@@ -1,0 +1,232 @@
+import type {
+  ConfiguredCompletionsGenerationModelDescriptor,
+  ConfiguredModelDescriptor,
+  ProductConfiguration,
+} from "@himawari-agent/application";
+import { resolveConfiguredSecretRequirement } from "./production-model-composition.js";
+
+export type PriceTier = "low" | "mid" | "high";
+
+export interface ModelListPrice {
+  readonly input: number;
+  readonly output: number;
+}
+
+export interface MagpieModelEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly contextWindow: number;
+  readonly maxOutputTokens: number;
+  readonly reasoningLevels: readonly string[];
+  readonly acceptsImages: boolean;
+  readonly toolCall: boolean;
+  readonly acceptsText: boolean;
+  readonly price?: ModelListPrice & { readonly cacheRead: number; readonly cacheWrite: number };
+}
+
+export interface MagpieModelExpansion {
+  readonly configuration: ProductConfiguration;
+  readonly prices: ReadonlyMap<string, ModelListPrice>;
+  readonly automaticRefs: ReadonlySet<string>;
+}
+
+export interface MagpieModelDiscoveryOptions {
+  readonly resolveSecret: (secretRef: string, secretVersion: string) => Promise<string>;
+  readonly fetch?: typeof fetch;
+  readonly timeoutMs?: number;
+  readonly onDiagnostic?: (event: Record<string, string | number>) => void;
+}
+
+const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const DEFAULT_TIMEOUT_MS = 5000;
+
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+const positiveInteger = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+
+const perMillion = (value: unknown): number | undefined => {
+  const parsed = typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed * 1_000_000 : undefined;
+};
+
+export function parseMagpieModelList(body: unknown): readonly MagpieModelEntry[] {
+  const data = record(body)?.["data"];
+  if (!Array.isArray(data)) return [];
+  const entries: MagpieModelEntry[] = [];
+  for (const item of data) {
+    const entry = record(item);
+    const id = entry?.["id"];
+    const contextWindow = positiveInteger(entry?.["context_window"]);
+    const maxOutputTokens = positiveInteger(entry?.["max_output_tokens"]);
+    if (!entry || typeof id !== "string" || !contextWindow || !maxOutputTokens) continue;
+    const input = record(entry["modalities"])?.["input"];
+    const inputs = Array.isArray(input) ? input : [];
+    const levels = Array.isArray(entry["reasoning_levels"]) ? entry["reasoning_levels"] : [];
+    const pricing = record(entry["pricing"]);
+    const prompt = perMillion(pricing?.["prompt"]);
+    const completion = perMillion(pricing?.["completion"]);
+    const label = entry["magpie_label"] ?? entry["display_name"];
+    entries.push({
+      id,
+      label: typeof label === "string" && label.length > 0 ? label : id,
+      contextWindow,
+      maxOutputTokens,
+      reasoningLevels:
+        entry["reasoning"] === true
+          ? THINKING_LEVELS.filter((level) => levels.includes(level))
+          : [],
+      acceptsImages: inputs.includes("image"),
+      acceptsText: inputs.includes("text"),
+      toolCall: entry["tool_call"] === true,
+      ...(prompt === undefined || completion === undefined
+        ? {}
+        : {
+            price: {
+              input: prompt,
+              output: completion,
+              cacheRead: perMillion(pricing?.["input_cache_read"]) ?? 0,
+              cacheWrite: perMillion(pricing?.["input_cache_write"]) ?? 0,
+            },
+          }),
+    });
+  }
+  return entries;
+}
+
+function descriptorFor(
+  primary: ConfiguredCompletionsGenerationModelDescriptor,
+  entry: MagpieModelEntry,
+  index: number,
+): ConfiguredCompletionsGenerationModelDescriptor {
+  const reasoning = entry.reasoningLevels.length > 0;
+  return Object.freeze({
+    ...primary,
+    ref: `magpie:${entry.id}`,
+    model: entry.id,
+    name: entry.label,
+    priority: primary.priority + 1 + index,
+    reasoning,
+    ...(reasoning ? { thinkingLevels: Object.freeze([...entry.reasoningLevels]) } : {}),
+    input: Object.freeze(entry.acceptsImages ? ["text", "image"] : ["text"]) as readonly (
+      | "text"
+      | "image"
+    )[],
+    contextWindow: entry.contextWindow,
+    maxTokens: Math.min(entry.maxOutputTokens, primary.maxTokens),
+    cost: Object.freeze(
+      entry.price
+        ? {
+            input: entry.price.input,
+            output: entry.price.output,
+            cacheRead: entry.price.cacheRead,
+            cacheWrite: entry.price.cacheWrite,
+          }
+        : { ...primary.cost },
+    ),
+  });
+}
+
+export function priceTiers(
+  prices: ReadonlyMap<string, ModelListPrice>,
+): ReadonlyMap<string, PriceTier> {
+  const totals = [...prices.values()]
+    .map(({ input, output }) => input + output)
+    .sort((a, b) => a - b);
+  const lowCut = totals[Math.ceil(totals.length / 3) - 1] ?? 0;
+  const highCut = totals[Math.ceil((totals.length * 2) / 3) - 1] ?? 0;
+  return new Map(
+    [...prices].map(([ref, { input, output }]) => {
+      const total = input + output;
+      return [ref, total <= lowCut ? "low" : total > highCut ? "high" : "mid"] as const;
+    }),
+  );
+}
+
+export async function expandConfigurationWithMagpieModels(
+  configuration: ProductConfiguration,
+  options: MagpieModelDiscoveryOptions,
+): Promise<MagpieModelExpansion> {
+  const unchanged: MagpieModelExpansion = {
+    configuration,
+    prices: new Map(),
+    automaticRefs: new Set(),
+  };
+  const primary = configuration.modelDescriptors.find(
+    (descriptor): descriptor is ConfiguredCompletionsGenerationModelDescriptor =>
+      descriptor.role === "primary" && descriptor.api === "openai-completions",
+  );
+  if (!primary || primary.provider !== "magpie" || primary.baseUrl === undefined) return unchanged;
+  let entries: readonly MagpieModelEntry[];
+  try {
+    const secret = resolveConfiguredSecretRequirement(configuration, primary.secretRef);
+    if (secret === null) return unchanged;
+    const key = await options.resolveSecret(secret.secretRef, secret.secretVersion);
+    const response = await (options.fetch ?? fetch)(
+      `${primary.baseUrl.replace(/\/$/u, "")}/models`,
+      {
+        headers: { authorization: `Bearer ${key.trim()}` },
+        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      },
+    );
+    if (!response.ok) throw new Error(`MAGPIE_MODEL_LIST_HTTP_${response.status}`);
+    entries = parseMagpieModelList(await response.json());
+  } catch (error) {
+    options.onDiagnostic?.({
+      event: "magpie-models.discovery_failed",
+      code: error instanceof Error ? error.message.slice(0, 80) : "unknown",
+    });
+    return unchanged;
+  }
+  const own = entries.find(({ id }) => id === primary.model);
+  const known = new Set(
+    configuration.modelDescriptors.flatMap((descriptor) =>
+      descriptor.role === "primary" ? [descriptor.model] : [],
+    ),
+  );
+  const added = entries
+    .filter(
+      (entry) =>
+        !entry.id.startsWith("auto/") &&
+        !entry.id.startsWith("group/") &&
+        !known.has(entry.id) &&
+        entry.toolCall &&
+        entry.acceptsText,
+    )
+    .map((entry, index) => descriptorFor(primary, entry, index));
+  const adjusted: ConfiguredModelDescriptor[] = configuration.modelDescriptors.map((descriptor) =>
+    descriptor === primary && own && own.reasoningLevels.length > 0
+      ? Object.freeze({
+          ...primary,
+          reasoning: true,
+          thinkingLevels: Object.freeze([...own.reasoningLevels]),
+        })
+      : descriptor,
+  );
+  const prices = new Map<string, ModelListPrice>();
+  for (const entry of entries)
+    if (entry.price && added.some(({ model }) => model === entry.id))
+      prices.set(`magpie:${entry.id}`, { input: entry.price.input, output: entry.price.output });
+  options.onDiagnostic?.({
+    event: "magpie-models.discovered",
+    listed: entries.length,
+    added: added.length,
+  });
+  return {
+    configuration: Object.freeze({
+      ...configuration,
+      modelDescriptors: Object.freeze([...adjusted, ...added]),
+    }),
+    prices,
+    automaticRefs: new Set(
+      configuration.modelDescriptors.flatMap((descriptor) =>
+        descriptor.role === "primary" && descriptor.model.startsWith("group/")
+          ? [descriptor.ref]
+          : [],
+      ),
+    ),
+  };
+}
