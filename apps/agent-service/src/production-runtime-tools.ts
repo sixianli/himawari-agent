@@ -603,9 +603,11 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         return {
           errorCode,
           note:
-            errorCode === "REMINDER_UNAVAILABLE"
-              ? "提醒暂时设不了。不要说已设好，告诉主人现在设不了，可以稍后再试或到提醒页手动新建。"
-              : "这次没有成功，原因见 error。不要说已设好或已取消，如实告诉主人原因，需要时请他改个时间或说得更具体。",
+            errorCode === "REMINDER_MEMORY_NOT_READY"
+              ? "主人还没有任何记忆，现在设不了提醒。不要说已设好；告诉主人先在对话里说一件关于他自己的事，之后再设。"
+              : errorCode === "REMINDER_UNAVAILABLE"
+                ? "提醒暂时设不了。不要说已设好，告诉主人现在设不了，可以稍后再试或到提醒页手动新建。"
+                : "这次没有成功，原因见 error。不要说已设好或已取消，如实告诉主人原因，需要时请他改个时间或说得更具体。",
         };
       },
     );

@@ -1,11 +1,9 @@
 import {
-  ApplicationPortError,
   type ClockPort,
   type DurableMemoryService,
   type MemoryBookStorePort,
   type MemoryReminder,
   type MemoryReminderStorePort,
-  PORT_ERROR_CODES,
   type PayloadProtectorPort,
   type PayloadStorePort,
   type ProductConfiguration,
@@ -43,7 +41,7 @@ export type ReminderInputErrorCode =
   | "REMINDER_TIME_INVALID"
   | "REMINDER_TEXT_REFUSED"
   | "REMINDER_NOT_FOUND"
-  | "REMINDER_NOT_SCHEDULED"
+  | "REMINDER_MEMORY_NOT_READY"
   | "REMINDER_UNAVAILABLE";
 
 export class ReminderInputError extends Error {
@@ -160,6 +158,11 @@ export class ProductionReminderWriter {
     const memoryId = `memory:reminder:${input.key}` as MemoryId;
     const reminderId = `reminder:${memoryId}`;
     const existing = await this.#options.reminders.read(reminderId);
+    if (
+      existing &&
+      (existing.ownerId !== this.#scope().ownerId || existing.agentId !== this.#scope().agentId)
+    )
+      throw new ReminderInputError("REMINDER_NOT_FOUND");
     if (existing)
       return {
         reminderId,
@@ -170,8 +173,9 @@ export class ProductionReminderWriter {
         replayed: true,
       };
     const now = this.#options.clock.now();
-    if (!DUE_FORMAT.test(input.due.trim())) throw new ReminderInputError("REMINDER_TIME_INVALID");
-    const schedule = reminderSchedule(input.due, input.repeat, now, this.#options.timeZone);
+    const due = input.due.trim();
+    if (!DUE_FORMAT.test(due)) throw new ReminderInputError("REMINDER_TIME_INVALID");
+    const schedule = reminderSchedule(due, input.repeat, now, this.#options.timeZone);
     if (!schedule) throw new ReminderInputError("REMINDER_TIME_INVALID");
     let contentRef = input.contentRef;
     let text = contentRef ? await this.#readText(contentRef) : undefined;
@@ -191,6 +195,10 @@ export class ProductionReminderWriter {
           ? "REMINDER_INPUT_INVALID"
           : "REMINDER_TEXT_REFUSED",
       );
+    const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
+      this.#scope(),
+    );
+    if (!generation) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
     if (input.contentRef === undefined && !(await this.#options.payloads.get(contentRef)))
       await this.#options.payloads.put(
         await this.#options.protector.protect({
@@ -205,14 +213,6 @@ export class ProductionReminderWriter {
     const payload = await this.#options.payloads.get(contentRef);
     if (!payload || payload.dataClassification === "restricted")
       throw new ReminderInputError("REMINDER_TEXT_REFUSED");
-    const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
-      this.#scope(),
-    );
-    if (!generation)
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "MEMORY_GENERATION_MISSING",
-      );
     await this.#options.memory.applyProposal(
       {
         decision: "create",
@@ -259,16 +259,16 @@ export class ProductionReminderWriter {
     };
   }
 
-  async list(): Promise<readonly ListedReminder[]> {
+  async list(): Promise<{ readonly reminders: readonly ListedReminder[]; readonly more: boolean }> {
     const now = this.#options.clock.now();
     const upcoming = await this.#options.reminders.listUpcoming({
       ...this.#scope(),
       from: now,
       to: new Date(Date.parse(now) + LIST_WINDOW_MS).toISOString(),
-      limit: LISTED,
+      limit: LISTED + 1,
     });
     const listed: ListedReminder[] = [];
-    for (const reminder of upcoming) {
+    for (const reminder of upcoming.slice(0, LISTED)) {
       const text = await this.#textOf(reminder);
       if (text === undefined) continue;
       listed.push({
@@ -279,12 +279,14 @@ export class ProductionReminderWriter {
         repeat: reminder.repeat,
       });
     }
-    return listed;
+    return { reminders: listed, more: upcoming.length > LISTED };
   }
 
   async #textOf(reminder: MemoryReminder): Promise<string | undefined> {
     const memory = await this.#options.state.read(reminder.memoryId);
-    return memory && memory.status === "active" ? this.#readText(memory.contentRef) : undefined;
+    return memory && memory.status === "active" && memory.dataClassification !== "restricted"
+      ? this.#readText(memory.contentRef)
+      : undefined;
   }
 
   async cancel(reminderId: string): Promise<MemoryReminder> {
@@ -292,7 +294,7 @@ export class ProductionReminderWriter {
     const { ownerId, agentId } = this.#options.configuration;
     if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId)
       throw new ReminderInputError("REMINDER_NOT_FOUND");
-    if (reminder.status !== "scheduled") throw new ReminderInputError("REMINDER_NOT_SCHEDULED");
+    if (reminder.status !== "scheduled") return reminder;
     const now = this.#options.clock.now();
     const updated = await this.#options.reminders.update({
       id: reminder.id,
@@ -349,13 +351,15 @@ export class ProductionReminderTools {
     const names = Object.keys(args);
     if (invocation.capabilityRef === REMINDER_LIST_CAPABILITY_REF) {
       if (names.length > 0) throw new ReminderInputError("REMINDER_INPUT_INVALID");
+      const listed = await this.#writer.list();
       return {
-        reminders: (await this.#writer.list()).map((reminder) => ({
+        reminders: listed.reminders.map((reminder) => ({
           reminderId: reminder.reminderId,
           text: reminder.text,
           due: this.#local(reminder.dueAt),
           repeat: reminder.repeat,
         })),
+        ...(listed.more ? { more: true } : {}),
       };
     }
     if (invocation.capabilityRef === REMINDER_CANCEL_CAPABILITY_REF) {

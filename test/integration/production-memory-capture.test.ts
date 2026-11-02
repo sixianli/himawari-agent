@@ -928,7 +928,7 @@ describe("production memory capture", () => {
         { contentRef: "payload-page", due: "2026-10-26", repeat: "none" },
         "page-early",
       ),
-    ).rejects.toThrow("MEMORY_GENERATION_MISSING");
+    ).rejects.toThrow("REMINDER_MEMORY_NOT_READY");
     await context.capture.start(context.request);
     await context.capture.stop();
     const reminders = context.repository.memoryReminders();
@@ -993,6 +993,7 @@ describe("production memory capture", () => {
     const listed = (await tool("list", {}, "call-list")) as {
       reminders: { reminderId: string; text: string }[];
     };
+    expect(listed).not.toHaveProperty("more");
     expect(listed.reminders.map(({ text }) => text)).toEqual([
       "给妈妈打电话",
       "周五下午三点交周报",
@@ -1004,12 +1005,43 @@ describe("production memory capture", () => {
     expect(await upcoming()).toEqual([
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
-    await expect(tool("cancel", { reminderId: target }, "call-again")).rejects.toMatchObject({
-      code: "REMINDER_NOT_SCHEDULED",
+    expect(await tool("cancel", { reminderId: target }, "call-again")).toMatchObject({
+      cancelled: true,
     });
     await expect(
       tool("cancel", { reminderId: "reminder:missing" }, "call-missing"),
     ).rejects.toMatchObject({ code: "REMINDER_NOT_FOUND" });
+  });
+
+  it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    const call = (name: string, args: Record<string, unknown>, id: string) =>
+      context.reminderTools.run({
+        runId: createRunId("run-reminder-more"),
+        toolCallId: id,
+        capabilityRef: `reminder.${name}`,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<{ reminders?: unknown[]; more?: boolean }>;
+    await expect(
+      call("set", { text: "还没有记忆", due: "2026-10-30T09:00" }, "early"),
+    ).rejects.toMatchObject({ code: "REMINDER_MEMORY_NOT_READY" });
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    for (let index = 0; index < 21; index += 1)
+      await call(
+        "set",
+        { text: `事项${index}`, due: `2026-11-${10 + (index % 9)}T09:${10 + index}` },
+        `many-${index}`,
+      );
+    const listed = await call("list", {}, "list-many");
+    expect(listed.reminders).toHaveLength(20);
+    expect(listed.more).toBe(true);
   });
 
   it("[MP-1] rolls a yearly reminder forward when it is dismissed and stops it when cancelled", async () => {
