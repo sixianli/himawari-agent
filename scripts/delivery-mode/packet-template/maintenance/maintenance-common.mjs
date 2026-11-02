@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, lstatSync, readdirSync, readlinkSync, realpathSync, renameSync, writeFileSync, statfsSync } from "node:fs";
+import { existsSync, linkSync, readFileSync, lstatSync, readdirSync, readlinkSync, realpathSync, unlinkSync, writeFileSync, statfsSync } from "node:fs";
 import path from "node:path";
 import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -561,14 +561,20 @@ export function readRestoredCatalog(binding, prefix = oldPrefix) {
   }
 }
 
-export function retainedJson(name, value) {
+export function retainedJson(name, value, { supersede = false } = {}) {
   assert(/^[a-z0-9][a-z0-9._-]*\.json$/.test(name), "__PKT_LABEL_UPPER___MAINTENANCE_REPORT_NAME_INVALID");
   const filename = path.join(evidenceRoot, name);
-  if (existsSync(filename)) {
+  if (supersede && existsSync(filename)) {
     safeFile(filename, [fixed.uid]);
-    let sequence = 1;
-    while (existsSync(`${filename}.superseded-${sequence}`)) sequence += 1;
-    renameSync(filename, `${filename}.superseded-${sequence}`);
+    for (let sequence = 1; ; sequence += 1) {
+      try {
+        linkSync(filename, `${filename}.superseded-${sequence}`);
+        break;
+      } catch (error) {
+        if (error?.code !== "EEXIST") throw error;
+      }
+    }
+    unlinkSync(filename);
   }
   writeFileSync(filename, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   safeFile(filename, [fixed.uid]);
