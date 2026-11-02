@@ -1029,7 +1029,6 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       usage: { output: 1 },
       code: "PI_CONTEXT_WINDOW_EXHAUSTED",
     },
-    { stopReason: "toolUse", text: "pending tool", code: "PI_FINAL_ANSWER_INCOMPLETE" },
     { stopReason: "stop", text: "   ", code: "PI_FINAL_ANSWER_EMPTY" },
   ])(
     "fails incomplete final output: $stopReason $text",
@@ -1058,6 +1057,60 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       expect(projection.finalAnswers).toEqual([]);
     },
   );
+
+  it("fails a final message that still carries a tool call", async () => {
+    const projection = new RecordingProjection();
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            stopReason: "toolUse",
+            content: [
+              { type: "text", text: "pending tool" },
+              { type: "toolCall", id: "call-1", name: "web_search", arguments: {} },
+            ],
+          },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    expect((await collect(adapter.run(request))).at(-1)).toMatchObject({
+      type: "runtime.failed",
+      errorCode: "PI_FINAL_ANSWER_INCOMPLETE",
+    });
+    expect(projection.finalAnswers).toEqual([]);
+  });
+
+  it("[I-70] completes when the provider reports toolUse but sent only text and no tool call", async () => {
+    const projection = new RecordingProjection();
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            stopReason: "toolUse",
+            content: [
+              { type: "thinking", thinking: "想一下" },
+              { type: "text", text: "东京今天晴，21°C。" },
+            ],
+          },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    expect((await collect(adapter.run(request))).at(-1)).toMatchObject({
+      type: "runtime.completed",
+      output: { kind: "assistant-answer" },
+    });
+    expect(projection.finalAnswers[0]?.text).toBe("东京今天晴，21°C。");
+  });
 
   it("captures final plain text separately and excludes machine secrets across text parts", async () => {
     const projection = new RecordingProjection();
