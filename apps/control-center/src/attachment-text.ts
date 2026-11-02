@@ -1,5 +1,6 @@
 import { type Unzipped, unzipSync } from "fflate";
 import { isImageFile } from "./attachment-image.js";
+import { pdfDocumentFontOptions } from "./pdf-document-options.js";
 
 export type AttachmentKind = "text" | "pdf" | "word" | "excel" | "powerpoint" | "image";
 
@@ -90,7 +91,7 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
     pdf.GlobalWorkerOptions.workerSrc = (
       await import("pdfjs-dist/build/pdf.worker.min.mjs?url")
     ).default;
-  const task = pdf.getDocument({ data: bytes });
+  const task = pdf.getDocument({ data: bytes, ...pdfDocumentFontOptions });
   try {
     let document: Awaited<typeof task.promise>;
     try {
