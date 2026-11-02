@@ -6035,6 +6035,7 @@ realMagpieDescribe(
       status: "answered" | "failed";
       answerMs: number;
       detail?: string;
+      exception?: true;
     }> = [];
     let listedIds: string[] = [];
     let realKey = "";
@@ -6150,6 +6151,7 @@ realMagpieDescribe(
             status: "failed",
             answerMs: Date.now() - started,
             detail: redact(String(error)).slice(0, 200),
+            exception: true,
           });
         }
       }
@@ -6157,7 +6159,9 @@ realMagpieDescribe(
         (entry) => entry.status === "failed" && entry.name !== REAL_MAGPIE_PRIMARY_NAME,
       );
       expect(unexpected, JSON.stringify(unexpected)).toEqual([]);
-      expect(sweep.find((entry) => entry.name === REAL_MAGPIE_PRIMARY_NAME)?.status).toBe("failed");
+      const negative = sweep.find((entry) => entry.name === REAL_MAGPIE_PRIMARY_NAME);
+      expect(negative?.status).toBe("failed");
+      expect(negative?.exception, JSON.stringify(negative)).toBeUndefined();
     });
   },
 );
