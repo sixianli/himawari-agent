@@ -12,6 +12,15 @@ export type ProactiveDecision = ProactiveOverview["decisions"][number];
 export type ProactiveAuditItem = ProactiveOverview["audit"]["items"][number];
 export type ProactiveQuietPeriod = ProactiveOverview["quietHours"][number];
 export type ProactiveRating = NonNullable<ProactiveInsight["rating"]>;
+export type ProactiveReview = Extract<
+  GatewayV2Snapshot,
+  { type: "proactive.review.snapshot" }
+>["payload"];
+export type ProactiveReviewItem = ProactiveReview["items"][number];
+export interface ProactiveReviewRating {
+  readonly key: string;
+  readonly rating: ProactiveRating | null;
+}
 export interface ProactiveSettings {
   readonly enabled: boolean;
   readonly quietHours: readonly ProactiveQuietPeriod[];
@@ -23,6 +32,7 @@ const PROACTIVE_REFRESH_MS = 300_000;
 
 export interface ProactiveModel {
   readonly overview: ProactiveOverview | null;
+  readonly review: ProactiveReview | null;
   readonly failed: boolean;
   readonly busy: boolean;
   readonly respondInsight: (
@@ -34,8 +44,7 @@ export interface ProactiveModel {
     decision: Pick<ProactiveDecision, "id">,
     rating: ProactiveRating | null,
   ) => Promise<boolean>;
-  readonly rateAudit: (messageId: string, rating: ProactiveRating | null) => Promise<boolean>;
-  readonly reviewAudit: (messageIds: readonly string[]) => Promise<boolean>;
+  readonly rateReview: (ratings: readonly ProactiveReviewRating[]) => Promise<boolean>;
   readonly saveSettings: (settings: ProactiveSettings) => Promise<boolean>;
   readonly disconnect: () => Promise<boolean>;
   readonly clearRecords: () => Promise<boolean>;
@@ -53,7 +62,10 @@ export function useProactive(input: {
   const assign = input.assign ?? ((url: string) => window.location.assign(url));
   const available =
     configuration?.installedGatewayV2Operations?.includes("proactive.overview.read") ?? false;
+  const reviewAvailable =
+    configuration?.installedGatewayV2Operations?.includes("proactive.review.read") ?? false;
   const [overview, setOverview] = useState<ProactiveOverview | null>(null);
+  const [review, setReview] = useState<ProactiveReview | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -74,10 +86,19 @@ export function useProactive(input: {
       .catch(() => {
         if (!disposed) setFailed(true);
       });
+    if (reviewAvailable)
+      void client
+        .query(queryMessage(configuration, "proactive.review.read", {}))
+        .then((result) => {
+          if (result.type === "proactive.review.snapshot" && !disposed) setReview(result.payload);
+        })
+        .catch(() => {
+          if (!disposed) setReview(null);
+        });
     return () => {
       disposed = true;
     };
-  }, [available, client, configuration, connected, reload, refreshSignal]);
+  }, [available, reviewAvailable, client, configuration, connected, reload, refreshSignal]);
   useEffect(() => {
     if (!available || !connected) return;
     const timer = window.setInterval(() => setReload((value) => value + 1), PROACTIVE_REFRESH_MS);
@@ -102,16 +123,17 @@ export function useProactive(input: {
     run(() => client.mutate(commandMessage(configuration, type, payload, { risk: "medium" })));
   return {
     overview,
+    review,
     failed,
     busy,
     respondInsight: (insight, action, rating = null) =>
       send("proactive.insight.respond", { insightId: insight.id, action, rating }),
     rateDecision: (decision, rating) =>
       send("proactive.decision.rate", { decisionId: decision.id, rating }),
-    rateAudit: (messageId, rating) =>
-      send("proactive.audit.respond", { action: "rate", messageIds: [messageId], rating }),
-    reviewAudit: (messageIds) =>
-      send("proactive.audit.respond", { action: "review", messageIds, rating: null }),
+    rateReview: (ratings) =>
+      send("proactive.review.rate", {
+        ratings: ratings.map(({ key, rating }) => ({ key, rating })),
+      }),
     saveSettings: (settings) =>
       send("proactive.settings.set", {
         enabled: settings.enabled,

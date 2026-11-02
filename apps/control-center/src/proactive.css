@@ -61,13 +61,11 @@
   color: var(--text-muted);
   font-size: 12px;
 }
-.proactive-meta a,
-.proactive-audit a {
+.proactive-meta a {
   color: var(--accent);
   text-decoration: none;
 }
-.proactive-meta a:hover,
-.proactive-audit a:hover {
+.proactive-meta a:hover {
   text-decoration: underline;
 }
 .proactive-source {
@@ -177,44 +175,85 @@
 .proactive-row[data-highlight] {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
-.proactive-audit {
+.proactive-review {
   margin-top: 22px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
   font-size: 13px;
 }
-.proactive-audit-head {
+.proactive-review-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.proactive-review-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.proactive-review-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.proactive-review .settings-note {
+  margin: 2px 0 6px;
+}
+.proactive-review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.proactive-review-list li {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 52px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.proactive-review-tag {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.proactive-review-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proactive-review-text small {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.proactive-review-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.proactive-review-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.proactive-review-pager .reminders-link:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.proactive-review-fold {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-top: 12px;
   color: var(--text-muted);
-}
-.proactive-audit .settings-note {
-  margin: 2px 0 6px;
-}
-.proactive-audit-list {
-  margin: 0 0 10px;
-  padding: 0;
-  list-style: none;
-}
-.proactive-audit-list li {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 2px 12px;
-  padding: 7px 4px;
-  border-bottom: 1px solid var(--border);
-}
-.proactive-audit-from {
-  overflow: hidden;
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.proactive-audit-subject {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .proactive-summary {
   display: flex;
@@ -497,10 +536,10 @@
   .reminders-page .reminder-row .actions {
     margin-left: -8px;
   }
-  .proactive-audit-list li {
+  .proactive-review-list li {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .proactive-audit-subject {
+  .proactive-review-text {
     grid-column: 1 / -1;
     grid-row: 2;
   }

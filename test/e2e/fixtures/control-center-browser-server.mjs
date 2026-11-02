@@ -683,6 +683,8 @@ function memoryOverview() {
     importBatchId: null,
     importance: 700,
     profilePin: null,
+    stance: null,
+    history: [],
     ...change,
   });
   const memories = [
@@ -792,6 +794,48 @@ function operationsSnapshot(type, payload) {
   };
 }
 
+function reviewSnapshot() {
+  const texts = [
+    "我最近想吃牛肉，下周去大阪出差的时候想顺便找一家评价不错的烤肉店，最好是靠近车站的",
+    "明天下午三点去银行办理住民税的缴纳手续",
+    "来週の金曜日は娘の学校の面談があるので午後は予定を入れないでください",
+    "牙医把预约改到了周四下午四点，请在前一天提醒我，并且别忘了带上上次的检查报告和医保卡",
+  ];
+  const kinds = [
+    ["memory_candidate", "discarded", false],
+    ["proactive", "pushed", true],
+    ["mail", "skipped", false],
+    ["proactive", "silent", false],
+  ];
+  const item = (index, folded) => {
+    const [kind, outcome, acted] = folded
+      ? ["consolidation", "merge", true]
+      : kinds[index % kinds.length];
+    return {
+      key: `${kind === "mail" ? "mail" : "ledger"}:fixture-${folded ? "f" : "d"}-${index}`,
+      source: kind === "mail" ? "mail" : "ledger",
+      kind,
+      outcome,
+      decidedAt: "2026-08-26T23:30:00.000Z",
+      acted,
+      rating: null,
+      text: kind === "proactive" ? "" : texts[index % texts.length],
+      textHidden: false,
+      category: null,
+      fetched: kind === "proactive" ? 12 : null,
+    };
+  };
+  return {
+    day: now,
+    capacity: 24,
+    sampled: 24,
+    notSampled: 9,
+    items: Array.from({ length: 24 }, (_, index) => item(index, false)),
+    folded: { total: 7, items: Array.from({ length: 7 }, (_, index) => item(index, true)) },
+    generatedAt: now,
+  };
+}
+
 function handleOperationsQuery(message) {
   switch (message.type) {
     case "task.detail": {
@@ -817,6 +861,13 @@ function handleOperationsQuery(message) {
     case "memory.overview.read":
       return memoryFixture
         ? { ...envelope("snapshot", "memory.overview.snapshot"), payload: memoryOverview() }
+        : undefined;
+    case "proactive.review.read":
+      return memoryFixture
+        ? {
+            ...envelope("snapshot", "proactive.review.snapshot"),
+            payload: reviewSnapshot(),
+          }
         : undefined;
     case "proactive.overview.read":
       return memoryFixture
@@ -1531,6 +1582,8 @@ async function handleRequest(request, response) {
               "search.authorization.read",
               "search.authorization.set",
               "proactive.overview.read",
+              "proactive.review.read",
+              "proactive.review.rate",
             ]
           : []),
       ],

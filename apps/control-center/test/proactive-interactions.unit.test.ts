@@ -19,6 +19,7 @@ import {
   type GmailOutcome,
   OPEN_SETTINGS,
   type ProactiveOverview,
+  type ProactiveReview,
   readLaunchIntent,
   settingsTabOf,
   useProactive,
@@ -40,6 +41,8 @@ const configuration: ControlCenterRuntimeConfiguration = {
     "proactive.insight.respond",
     "proactive.decision.rate",
     "proactive.audit.respond",
+    "proactive.review.read",
+    "proactive.review.rate",
     "proactive.source.manage",
   ],
 };
@@ -51,7 +54,11 @@ const query = vi.fn(),
   mutate = vi.fn(),
   assign = vi.fn();
 const client = { query, mutate } as unknown as GatewayClient;
-let container: HTMLDivElement, root: Root, proactive: ProactiveOverview, memory: MemoryOverview;
+let container: HTMLDivElement,
+  root: Root,
+  proactive: ProactiveOverview,
+  review: ProactiveReview,
+  memory: MemoryOverview;
 
 const counts = (change: Partial<ProactiveOverview["decisions"][number]["counts"]> = {}) => ({
   fetched: 0,
@@ -199,6 +206,66 @@ function overviewFixture(): ProactiveOverview {
   } as ProactiveOverview;
 }
 
+const reviewItem = (
+  key: string,
+  change: Partial<ProactiveReview["items"][number]> = {},
+): ProactiveReview["items"][number] => ({
+  key,
+  source: "ledger",
+  kind: "memory_candidate",
+  outcome: "discarded",
+  decidedAt: "2026-11-04T00:12:00.000Z",
+  acted: false,
+  rating: null,
+  text: `候选 ${key}`,
+  textHidden: false,
+  category: null,
+  fetched: null,
+  ...change,
+});
+
+function reviewFixture(): ProactiveReview {
+  return {
+    day: "2026-11-03T15:00:00.000Z",
+    capacity: 24,
+    sampled: 8,
+    notSampled: 5,
+    items: [
+      reviewItem("ledger:a1", { text: "我最近想吃牛肉" }),
+      reviewItem("ledger:a2", { text: "", textHidden: true, category: "health" }),
+      reviewItem("ledger:a3", {
+        kind: "proactive",
+        outcome: "pushed",
+        acted: true,
+        text: "",
+        fetched: 12,
+      }),
+      reviewItem("mail:m1", {
+        source: "mail",
+        kind: "mail",
+        outcome: "skipped",
+        text: "Shop · セール",
+      }),
+      reviewItem("ledger:a5", { rating: "useful" }),
+      reviewItem("ledger:a6"),
+      reviewItem("ledger:a7"),
+      reviewItem("ledger:a8"),
+    ],
+    folded: {
+      total: 3,
+      items: [
+        reviewItem("ledger:f1", {
+          kind: "consolidation",
+          outcome: "merge",
+          acted: true,
+          text: "",
+        }),
+      ],
+    },
+    generatedAt: NOW.toISOString(),
+  };
+}
+
 function memoryFixture(): MemoryOverview {
   return {
     memories: [],
@@ -299,11 +366,14 @@ beforeEach(() => {
   vi.resetAllMocks();
   locale = "zh-CN";
   proactive = overviewFixture();
+  review = reviewFixture();
   memory = memoryFixture();
   query.mockImplementation(async (request: { type: string }) =>
     request.type === "proactive.overview.read"
       ? { type: "proactive.overview.snapshot", payload: proactive }
-      : { type: "memory.overview.snapshot", payload: memory },
+      : request.type === "proactive.review.read"
+        ? { type: "proactive.review.snapshot", payload: review }
+        : { type: "memory.overview.snapshot", payload: memory },
   );
   mutate.mockResolvedValue({ status: "accepted" });
   container = document.createElement("div");
@@ -356,7 +426,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(document.querySelector(`${row} a`)?.getAttribute("href")).toBe(
       "https://mail.google.com/mail/u/0/#all/rakuten",
     );
-    await click(row, "有用");
+    await click(row, "做对了");
     expect(lastCommand()).toMatchObject({
       type: "proactive.insight.respond",
       payload: { insightId: "rakuten", action: "rate", rating: "useful" },
@@ -424,38 +494,123 @@ describe("[PG-15] proactive reminders page", () => {
     window.removeEventListener(OPEN_SETTINGS, opened);
   });
 
-  it("[PG-15] lists ignored mail for review and counts it only after Done reviewing", async () => {
+  it("[P0-6] shows one page of the daily rating with the right buttons and no hidden text", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
-    expect(text("#page .proactive-audit")).toContain("最近 7 天筛掉的 2 封");
-    expect(text("#page .proactive-audit")).not.toContain("Amazon.co.jp");
-    await click("#page .proactive-audit", "抽查");
-    expect(text("#page .proactive-audit")).toContain("Amazon.co.jp");
-    expect(text("#page .proactive-audit")).toContain("ご注文の商品を発送しました");
-    const before = commands().length;
-    await click("#page .proactive-audit li:first-child", "该说没说");
+    const section = "#page .proactive-review";
+    expect(text(`${section} h2`)).toBe("每天打分");
+    expect(text(`${section} .proactive-review-count`)).toBe("今天 8 条，另有 5 条没抽到");
+    expect(text(section)).toContain("没抽到的明天可能再出现，7 天后不再出现。");
+    const rows = [...document.querySelectorAll<HTMLElement>(`${section} li`)];
+    expect(rows).toHaveLength(6);
+    expect(text(`${section} li:nth-child(1)`)).toContain("系统没存下的记忆");
+    expect(text(`${section} li:nth-child(1)`)).toContain("我最近想吃牛肉");
+    expect(text(`${section} li:nth-child(2)`)).toContain("含敏感内容，不显示原文");
+    expect(text(`${section} li:nth-child(3)`)).toContain("检查了 12 封邮件");
+    expect(text(`${section} li:nth-child(4)`)).toContain("没提醒的邮件");
+    const labels = (row: HTMLElement | undefined) =>
+      [...(row?.querySelectorAll("button") ?? [])].map((item) => item.textContent);
+    expect(labels(rows[0])).toEqual(["做对了", "该做没做"]);
+    expect(labels(rows[2])).toEqual(["做对了", "不该做"]);
+    expect(rows[4]?.querySelector('button[aria-pressed="true"]')?.textContent).toBe("做对了");
+    expect(text(section)).toContain("其他判断 · 3 条");
+    expect(text(section)).not.toContain("整理记忆");
+    expect(text(section)).toContain("第 1 / 2 页");
+  });
+
+  it("[P0-6] sends one rating, clears it on a second tap and leaves a reviewed mail alone", async () => {
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    await click(`${section} li:nth-child(1)`, "该做没做");
     expect(lastCommand()).toMatchObject({
-      type: "proactive.audit.respond",
-      payload: { action: "rate", messageIds: ["a1"], rating: "missed" },
+      type: "proactive.review.rate",
+      payload: { ratings: [{ key: "ledger:a1", rating: "missed" }] },
     });
-    await click("#page .proactive-audit", "看完了");
-    expect(commands().length).toBe(before + 2);
+    const calls = mutate.mock.calls.length;
+    await click(`${section} li:nth-child(5)`, "做对了");
     expect(lastCommand()).toMatchObject({
-      payload: { action: "review", messageIds: ["a1", "a2"], rating: null },
+      payload: { ratings: [{ key: "ledger:a5", rating: null }] },
     });
+    review = {
+      ...review,
+      items: review.items.map((item) =>
+        item.key === "mail:m1" ? { ...item, rating: "useful" as const } : item,
+      ),
+    };
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const before = mutate.mock.calls.length;
+    expect(before).toBe(calls + 1);
+    await click(`${section} li:nth-child(4)`, "做对了");
+    expect(mutate.mock.calls.length).toBe(before);
+  });
+
+  it('[P0-6] rates only the unrated rows on the page for "this page is all fine", then moves on', async () => {
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    await click(section, "这一页都没问题");
+    expect(lastCommand()).toMatchObject({
+      type: "proactive.review.rate",
+      payload: {
+        ratings: [
+          { key: "ledger:a1", rating: "useful" },
+          { key: "ledger:a2", rating: "useful" },
+          { key: "ledger:a3", rating: "useful" },
+          { key: "mail:m1", rating: "useful" },
+          { key: "ledger:a6", rating: "useful" },
+        ],
+      },
+    });
+    review = {
+      ...review,
+      items: review.items.map((item, index) =>
+        index < 6 ? { ...item, rating: "useful" as const } : item,
+      ),
+    };
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    await click(section, "下一页");
+    expect(text(`${section} .proactive-review-pager`)).toContain("第 2 / 2 页");
+    expect(document.querySelectorAll(`${section} li`)).toHaveLength(2);
+  });
+
+  it("[P0-6] keeps the other decisions folded until asked, and shows nothing when there is nothing to rate", async () => {
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const section = "#page .proactive-review";
+    expect(text(section)).not.toContain("整理记忆");
+    await click(section, "展开");
+    expect(text(section)).toContain("整理记忆");
+    expect(document.querySelectorAll(`${section} li`)).toHaveLength(1);
+    expect(text(`${section} .proactive-review-head`)).not.toContain("今天");
+    await click(section, "返回");
+    expect(text(section)).toContain("我最近想吃牛肉");
+    act(() => root.unmount());
+    root = createRoot(container);
+    review = { ...review, sampled: 0, notSampled: 0, items: [], folded: { total: 0, items: [] } };
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    expect(document.querySelector("#page .proactive-review")).toBeNull();
+    expect(text("#page")).not.toContain("每天打分");
   });
 
   it("[PG-15] shows one line per check in the decision log and takes ratings", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
-    expect(text("#page")).not.toContain("决策记录");
+    expect(text("#page")).not.toContain("提醒检查记录");
     expect(document.querySelector("#page h1")).toBeNull();
     act(() => root.unmount());
     root = createRoot(container);
     await act(async () => root.render(h(Settings, { outcome: null })));
     await flush();
     const entry = document.querySelector<HTMLDetailsElement>("#apps .proactive-log-entry");
-    expect(entry?.querySelector("summary")?.textContent).toContain("决策记录");
+    expect(entry?.querySelector("summary")?.textContent).toContain("提醒检查记录");
     expect(entry?.querySelector(".proactive-log")).toBeNull();
     await act(async () => {
       entry?.querySelector("summary")?.click();
@@ -463,7 +618,14 @@ describe("[PG-15] proactive reminders page", () => {
     });
     await flush();
     const summary = text("#apps .proactive-summary");
-    for (const part of ["开口5", "命中3", "误扰1", "已审样本内漏报1", "已审 23 封", "已记录 2 天"])
+    for (const part of [
+      "主动提醒总次数5",
+      "恰当的提醒3",
+      "多余的提醒1",
+      "漏提醒（你查过的邮件里）1",
+      "已审 23 封",
+      "已记录 2 天",
+    ])
       expect(summary.replace(/\s/gu, "")).toContain(part.replace(/\s/gu, ""));
     const rows = [...document.querySelectorAll<HTMLElement>("#apps .proactive-log-row")];
     expect(rows.map((row) => row.dataset["tone"])).toEqual([
@@ -484,7 +646,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(rows[5]?.textContent).toContain("模型这次没有回答");
     expect(rows[6]?.textContent).toContain("模型没有答完");
     expect(text("#apps")).toContain("昨天");
-    await click("#apps .proactive-log-row:nth-of-type(1)", "没必要");
+    await click("#apps .proactive-log-row:nth-of-type(1)", "不该做");
     expect(lastCommand()).toMatchObject({
       type: "proactive.decision.rate",
       payload: { decisionId: "d-push", rating: "unneeded" },
@@ -497,8 +659,28 @@ describe("[PG-15] proactive reminders page", () => {
 
   it("[PG-15] reads the same page in English and Japanese", async () => {
     for (const [next, expected] of [
-      ["en", ["Might matter, read the email", "Due today", "Pushed · you opened it", "Open email"]],
-      ["ja", ["重要かも、元のメールを確認", "本日", "通知済み · 開きました", "元のメール"]],
+      [
+        "en",
+        [
+          "Might matter, read the email",
+          "Due today",
+          "Pushed · you opened it",
+          "Open email",
+          "Daily rating",
+          "Right call",
+        ],
+      ],
+      [
+        "ja",
+        [
+          "重要かも、元のメールを確認",
+          "本日",
+          "通知済み · 開きました",
+          "元のメール",
+          "毎日の採点",
+          "正しかった",
+        ],
+      ],
     ] as const) {
       locale = next;
       await act(async () => root.render(h(Page, { focus: null })));

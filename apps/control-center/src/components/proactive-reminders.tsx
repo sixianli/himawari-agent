@@ -9,11 +9,13 @@ import {
   type ProactiveModel,
   type ProactiveOverview,
   type ProactiveRating,
+  type ProactiveReviewItem,
+  type ProactiveReviewRating,
   proactiveGroup,
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
-import { openNotificationSettings } from "./memory-panel.js";
 import { Glyph } from "./glyphs.js";
+import { openNotificationSettings } from "./memory-panel.js";
 import { ActionMenu } from "./overlays.js";
 import { ActionButton, EmptyState } from "./primitives.js";
 
@@ -298,69 +300,170 @@ export function ProactiveBanners({
   );
 }
 
-export function ProactiveAudit({
+const REVIEW_PAGE_SIZE = 6;
+
+function reviewTag(item: ProactiveReviewItem): MessageId {
+  return item.kind === "mail"
+    ? "dailyReview.tag.mail"
+    : item.kind === "proactive"
+      ? item.outcome === "silent"
+        ? "dailyReview.tag.silent"
+        : "dailyReview.tag.pushed"
+      : item.kind === "memory_candidate"
+        ? item.outcome === "discarded"
+          ? "dailyReview.tag.skippedMemory"
+          : item.outcome === "kept"
+            ? "dailyReview.tag.keptMemory"
+            : "dailyReview.tag.pendingMemory"
+        : item.kind === "consolidation"
+          ? "dailyReview.tag.consolidation"
+          : item.kind === "context_truncation"
+            ? "dailyReview.tag.truncation"
+            : item.kind === "retrieval_degrade"
+              ? "dailyReview.tag.degrade"
+              : "dailyReview.tag.externalRead";
+}
+
+function reviewText(item: ProactiveReviewItem, message: Message): string {
+  if (item.text) return item.text;
+  if (item.textHidden) return message("dailyReview.hidden");
+  if (item.kind === "proactive" && item.fetched !== null)
+    return message("dailyReview.fetched", { count: item.fetched });
+  return "";
+}
+
+function ReviewRow({
+  item,
+  busy,
+  message,
+  locale,
+  onRate,
+}: {
+  item: ProactiveReviewItem;
+  busy: boolean;
+  message: Message;
+  locale: string | undefined;
+  onRate: (rating: ProactiveRating | null) => void;
+}) {
+  const text = reviewText(item, message);
+  return (
+    <li>
+      <span className="proactive-review-tag">{message(reviewTag(item))}</span>
+      <span className="proactive-review-text">
+        {text}
+        <small>{dayAndClock(item.decidedAt, locale)}</small>
+      </span>
+      <RatingChoices
+        choices={item.acted ? ["useful", "unneeded"] : ["useful", "missed"]}
+        current={item.rating}
+        disabled={busy}
+        message={message}
+        onRate={(rating) => {
+          if (item.source === "mail" && rating === null && item.rating === "useful") return;
+          onRate(rating);
+        }}
+      />
+    </li>
+  );
+}
+
+export function ProactiveReviewSection({
   proactive,
   message,
+  locale,
 }: {
   proactive: ProactiveModel;
   message: Message;
+  locale?: string | undefined;
 }) {
-  const [open, setOpen] = useState(false);
-  const audit = proactive.overview?.audit;
-  if (!audit?.active || audit.items.length === 0) return null;
+  const review = proactive.review;
+  const [folded, setFolded] = useState(false);
+  const [page, setPage] = useState(0);
+  const list = review ? (folded ? review.folded.items : review.items) : [];
+  const pages = Math.max(1, Math.ceil(list.length / REVIEW_PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const rows = list.slice(current * REVIEW_PAGE_SIZE, (current + 1) * REVIEW_PAGE_SIZE);
+  const rowsDone = rows.length > 0 && rows.every(({ rating }) => rating !== null);
+  useEffect(() => {
+    if (rowsDone && current < pages - 1) setPage(current + 1);
+  }, [rowsDone, current, pages]);
+  if (!review || (review.items.length === 0 && review.folded.total === 0)) return null;
+  const unrated = rows.filter(({ rating }) => rating === null);
+  const rate = (ratings: readonly ProactiveReviewRating[]) =>
+    !proactive.busy && void proactive.rateReview(ratings);
   return (
-    <section className="proactive-audit">
-      <div className="proactive-audit-head">
-        <span>{message("proactive.audit.title", { count: audit.items.length })}</span>
-        <button
-          type="button"
-          className="reminders-link"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          {message(open ? "proactive.audit.hide" : "proactive.audit.open")}
-        </button>
+    <section className="proactive-review" aria-label={message("dailyReview.title")}>
+      <div className="proactive-review-head">
+        <h2>{message("dailyReview.title")}</h2>
+        {folded ? null : (
+          <span className="proactive-review-count">
+            {message(review.notSampled > 0 ? "dailyReview.countLeft" : "dailyReview.count", {
+              count: review.sampled,
+              left: review.notSampled,
+            })}
+          </span>
+        )}
       </div>
-      {open ? (
-        <>
-          <p className="settings-note">{message("proactive.audit.note")}</p>
-          <ul className="proactive-audit-list">
-            {audit.items.map((item) => (
-              <li key={item.messageId}>
-                <span className="proactive-audit-from">{item.from}</span>
-                <span className="proactive-audit-subject">
-                  {item.link ? (
-                    <a href={item.link} target="_blank" rel="noopener noreferrer">
-                      {item.subject}
-                    </a>
-                  ) : (
-                    item.subject
-                  )}
-                </span>
-                <RatingChoices
-                  choices={["missed"]}
-                  current={item.rating}
-                  disabled={proactive.busy}
-                  message={message}
-                  onRate={(rating) => void proactive.rateAudit(item.messageId, rating)}
-                />
-              </li>
-            ))}
-          </ul>
-          {audit.pending === 0 ? (
-            <p className="settings-note">{message("proactive.audit.doneOk")}</p>
-          ) : (
-            <ActionButton
-              variant="secondary"
-              disabled={proactive.busy}
-              onClick={() =>
-                void proactive.reviewAudit(audit.items.map(({ messageId }) => messageId))
-              }
+      {!folded && review.notSampled > 0 ? (
+        <p className="settings-note">{message("dailyReview.note")}</p>
+      ) : null}
+      <ul className="proactive-review-list">
+        {rows.map((item) => (
+          <ReviewRow
+            key={item.key}
+            item={item}
+            busy={proactive.busy}
+            message={message}
+            locale={locale}
+            onRate={(rating) => rate([{ key: item.key, rating }])}
+          />
+        ))}
+      </ul>
+      <div className="proactive-review-foot">
+        <ActionButton
+          variant="secondary"
+          disabled={proactive.busy || unrated.length === 0}
+          onClick={() => rate(unrated.map(({ key }) => ({ key, rating: "useful" as const })))}
+        >
+          {message("dailyReview.allFine")}
+        </ActionButton>
+        {pages > 1 ? (
+          <span className="proactive-review-pager">
+            <button
+              type="button"
+              className="reminders-link"
+              disabled={current === 0}
+              onClick={() => setPage(current - 1)}
             >
-              {message("proactive.audit.done")}
-            </ActionButton>
-          )}
-        </>
+              {message("dailyReview.prev")}
+            </button>
+            {message("dailyReview.page", { page: current + 1, pages })}
+            <button
+              type="button"
+              className="reminders-link"
+              disabled={current >= pages - 1}
+              onClick={() => setPage(current + 1)}
+            >
+              {message("dailyReview.next")}
+            </button>
+          </span>
+        ) : null}
+      </div>
+      {review.folded.total > 0 ? (
+        <div className="proactive-review-fold">
+          <span>{message("dailyReview.folded", { count: review.folded.total })}</span>
+          <button
+            type="button"
+            className="reminders-link"
+            aria-expanded={folded}
+            onClick={() => {
+              setFolded(!folded);
+              setPage(0);
+            }}
+          >
+            {message(folded ? "dailyReview.back" : "dailyReview.expand")}
+          </button>
+        </div>
       ) : null}
     </section>
   );
@@ -465,6 +568,7 @@ export function ProactiveDecisionLog({
               {message("proactive.metric.reviewed", { count: overview.metrics.reviewed })}
             </span>
           </p>
+          <p className="settings-note">{message("proactive.metric.note")}</p>
           {decisions.length === 0 ? <EmptyState title={message("proactive.log.empty")} /> : null}
           {decisions.map((decision) => {
             const label = dayLabel(decision.checkedAt);
