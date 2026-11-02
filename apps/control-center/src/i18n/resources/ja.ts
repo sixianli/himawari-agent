@@ -952,7 +952,7 @@ export const messages = {
   "proactive.pushed":
     "{reaction, select, opened {通知済み · 開きました} dismissed {通知済み · 閉じました} other {通知済み}}",
   "proactive.rate":
-    "{r, select, useful {正しかった} unneeded {やるべきでなかった} other {やるべきだった}}",
+    "{r, select, useful {正しかった} unneeded {やるべきではなかった} other {やるべきだった}}",
   "proactive.done": "完了",
   "proactive.mute": "通知しない",
   "proactive.whyHide": "理由を閉じる",

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -67,6 +68,16 @@ describe("glossary check", () => {
     expect(findOldTerms("Should have", entries)).toHaveLength(0);
   });
 
+  it("[reverse case] checks interface-only terms in the Japanese and English files too", () => {
+    const root = fixture({
+      "apps/control-center/src/i18n/resources/ja.ts": '"x": "候选未发布"\n',
+      "apps/control-center/src/i18n/resources/en.ts": '"x": "草稿未发布"\n',
+    });
+    expect(checkGlossary({ root }).errors).toEqual([
+      "GLOSSARY_OLD_TERM apps/control-center/src/i18n/resources/ja.ts:1 旧叫法“候选未发布”应改为“草稿未发布”（词表第 3 条）",
+    ]);
+  });
+
   it("only checks interface-only terms in the interface files", () => {
     const root = fixture({ "docs/spec.md": "候选未发布是工程上的候选改动\n" });
     expect(checkGlossary({ root })).toMatchObject({ errors: [] });
@@ -82,6 +93,40 @@ describe("glossary check", () => {
       "docs/product-vision.md": "主动提醒\n",
     });
     expect(checkGlossary({ root })).toMatchObject({ errors: [] });
+  });
+
+  it("reports one hit for overlapping old names and suggests the new name in the file's language", () => {
+    const table = `| 编号 | 新名 | 旧叫法 | 含义 | 检查范围 |
+| --- | --- | --- | --- | --- |
+| 1 | \`漏提醒\` \`Missed\` \`見逃し\` | \`已审样本内漏报\` \`漏报\` | 含义 | 全部 |
+`;
+    const { entries } = readGlossary(table);
+    const text = "已审样本内漏报";
+    expect(findOldTerms(text, entries)).toHaveLength(1);
+    expect(
+      findOldTerms(text, entries, { file: "apps/control-center/src/i18n/resources/ja.ts" })[0]
+        .replacement,
+    ).toBe("見逃し");
+    expect(
+      findOldTerms(text, entries, { file: "apps/control-center/src/i18n/resources/en.ts" })[0]
+        .replacement,
+    ).toBe("Missed");
+  });
+
+  it("rejects a glossary row with an unknown scope or a repeated number", () => {
+    const { errors } = readGlossary(`| 1 | \`甲\` | \`乙\` | 含义 | 仅 UI |
+| 1 | \`丙\` | \`丁\` | 含义 | 全部 |
+`);
+    expect(errors).toEqual([
+      "GLOSSARY_SCOPE_INVALID 1 检查范围只能写“全部”或“仅界面”",
+      "GLOSSARY_ROW_REPEATED 1",
+    ]);
+  });
+
+  it("exits non-zero from the command line when the repository glossary has a violation", () => {
+    const run = spawnSync(process.execPath, ["scripts/check-glossary.mjs"], { encoding: "utf8" });
+    expect(run.stdout).toContain("GLOSSARY passed");
+    expect(run.status).toBe(0);
   });
 
   it("refuses a missing glossary and an empty table", () => {

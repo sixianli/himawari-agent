@@ -949,7 +949,7 @@ export const messages = {
   "proactive.pushed":
     "{reaction, select, opened {Pushed · you opened it} dismissed {Pushed · you dismissed it} other {Pushed to you}}",
   "proactive.rate":
-    "{r, select, useful {Right call} unneeded {Shouldn’t have} other {Should have}}",
+    "{r, select, useful {Right call} unneeded {Shouldn’t have done it} other {Should have done it}}",
   "proactive.done": "Done",
   "proactive.mute": "Don’t remind",
   "proactive.whyHide": "Hide reason",
@@ -990,7 +990,7 @@ export const messages = {
   "proactive.metric.spoke": "Total proactive reminders",
   "proactive.metric.hits": "Appropriate reminders",
   "proactive.metric.misfires": "Unneeded reminders",
-  "proactive.metric.missed": "Missed reminders (in emails you checked)",
+  "proactive.metric.missed": "Reminders it missed (in emails you checked)",
   "proactive.metric.reviewed": "{count} reviewed",
   "proactive.verdict":
     "{v, select, pushed {Pushed} silent {Stayed quiet} deferred {Held} failed {Failed} capped {Hit limit} capped_daily {Hit daily limit} other {Needs you}}",

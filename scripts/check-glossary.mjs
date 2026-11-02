@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const GLOSSARY_FILE = "docs/glossary.md";
 
+const SCOPES = ["全部", "仅界面"];
 const SCANNED_FILES = ["AGENTS.md", "README.md", "CLAUDE.md"];
 const SCANNED_DIRECTORIES = [
   { directory: ".claude/rules", extensions: [".md"] },
@@ -45,6 +46,9 @@ export function readGlossary(text) {
     const newNames = backticked(newCell ?? "");
     const oldNames = backticked(oldCell ?? "");
     if (newNames.length === 0) errors.push(`GLOSSARY_ROW_WITHOUT_NEW_NAME ${id}`);
+    if (entries.some((entry) => entry.id === id)) errors.push(`GLOSSARY_ROW_REPEATED ${id}`);
+    if (!SCOPES.includes((scope ?? "").trim()))
+      errors.push(`GLOSSARY_SCOPE_INVALID ${id} 检查范围只能写“全部”或“仅界面”`);
     entries.push({ id, newNames, oldNames, interfaceOnly: (scope ?? "").includes("仅界面") });
   }
   if (entries.length === 0) errors.push("GLOSSARY_TABLE_EMPTY");
@@ -54,7 +58,7 @@ export function readGlossary(text) {
 function walk(root, relativeDirectory, extensions, found) {
   const absolute = path.join(root, relativeDirectory);
   if (!existsSync(absolute)) return;
-  for (const name of readdirSync(absolute)) {
+  for (const name of readdirSync(absolute).sort()) {
     const relative = `${relativeDirectory}/${name}`;
     const stats = statSync(path.join(root, relative));
     if (stats.isDirectory()) {
@@ -85,6 +89,15 @@ function occurrences(text, needle) {
 
 const INTERFACE_DIRECTORY = "apps/control-center/src/i18n/resources/";
 
+function replacementFor(entry, file) {
+  const preferred = file.endsWith("/en.ts")
+    ? entry.newNames.find((name) => /^[A-Za-z]/.test(name))
+    : file.endsWith("/ja.ts")
+      ? entry.newNames.find((name) => /[\u3040-\u30ff]/.test(name))
+      : undefined;
+  return preferred ?? entry.newNames[0];
+}
+
 export function findOldTerms(text, entries, { file = "" } = {}) {
   const inInterface = file.startsWith(INTERFACE_DIRECTORY);
   const newSpans = entries.flatMap((entry) =>
@@ -97,11 +110,29 @@ export function findOldTerms(text, entries, { file = "" } = {}) {
       for (const [start, end] of occurrences(text, term)) {
         if (newSpans.some(([newStart, newEnd]) => newStart <= start && end <= newEnd)) continue;
         const line = text.slice(0, start).split("\n").length;
-        hits.push({ id: entry.id, term, line, replacement: entry.newNames[0] });
+        hits.push({
+          id: entry.id,
+          term,
+          line,
+          start,
+          end,
+          replacement: replacementFor(entry, file),
+        });
       }
     }
   }
-  return hits.sort((left, right) => left.line - right.line);
+  return hits
+    .filter(
+      (hit) =>
+        !hits.some(
+          (other) =>
+            other !== hit &&
+            other.start <= hit.start &&
+            hit.end <= other.end &&
+            other.end - other.start > hit.end - hit.start,
+        ),
+    )
+    .sort((left, right) => left.line - right.line || left.start - right.start);
 }
 
 export function checkGlossary({ root = repositoryRoot } = {}) {

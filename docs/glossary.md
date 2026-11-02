@@ -32,19 +32,19 @@ date: "2026-11-02"
 
 | 编号 | 新名 | 旧叫法 | 含义 | 检查范围 |
 | --- | --- | --- | --- | --- |
-| 1 | `系统没存下的记忆` `Memories the system didn’t save` `システムが保存しなかった記憶` | `捕获候选` `记忆候选` `候选记忆` `被放弃的记忆` `想存但没存的记忆` | 系统自己判断后不存的记忆。你亲手点了拒绝的不算在内，因为那是你自己的决定 | 全部 |
+| 1 | `系统没存下的记忆` `Memories the system chose not to save` `システムが保存しないと判断した記憶` | `捕获候选` `记忆候选` `候选记忆` `被放弃的记忆` `想存但没存的记忆` | 系统自己判断后不存的记忆。你亲手点了拒绝的不算在内，因为那是你自己的决定 | 全部 |
 | 2 | `待你确认的记忆` `Memories awaiting your confirmation` `確認待ちの記憶` | `等你确认的记忆` `待审批候选` | 系统想存、等你点头的记忆 | 全部 |
 | 3 | `决策记录` `Decision record` `判断の記録` `提醒检查记录` `Reminder check record` `リマインダー確認の記録` | `决策账本` `决策日志` `Decision log` | 决策记录是 Himawari 每次拿主意（提醒还是沉默、记还是不记、合并还是作废）留下的一行。提醒页里原来只列 Gmail 检查的那一栏，叫提醒检查记录 | 全部 |
 | 4 | `每天打分` `Daily rating` `毎日の採点` | `待评价区` `每日审阅清单` | 你每天花约 2 分钟给 Himawari 的决定打分的区域 | 全部 |
-| 5 | `做对了` `不该做` `该做没做` `Right call` `Shouldn’t have` `Should have` `正しかった` `やるべきでなかった` `やるべきだった` | `没必要` `该说没说` `Not needed` `Should have told me` `useful {Useful}` `役立った` `不要だった` `知らせてほしかった` | 打分的三个选项。数据库里存的值 `useful`、`unneeded`、`missed` 不变 | 全部 |
-| 6 | `没提醒的邮件` `Emails with no reminder` `通知しなかったメール` | `筛掉的邮件` `最近 7 天筛掉` `抽查清单` `抽查记录` `"抽查"` `邮件审计` `リマインドから外した` | Himawari 判断不用提醒、没放进提醒页的邮件 | 全部 |
+| 5 | `做对了` `不该做` `该做没做` `Right call` `Shouldn’t have done it` `Should have done it` `正しかった` `やるべきではなかった` `やるべきだった` | `没必要` `该说没说` `Not needed` `Should have told me` `useful {Useful}` `役立った` `不要だった` `知らせてほしかった` | 打分的三个选项。数据库里存的值 `useful`、`unneeded`、`missed` 不变 | 全部 |
+| 6 | `没提醒的邮件` `Emails with no reminder` `通知しなかったメール` | `筛掉的邮件` `最近 7 天筛掉` `抽查清单` `抽查记录` `"抽查"` `“抽查”` `邮件审计` `リマインドから外した` | Himawari 判断不用提醒、没放进提醒页的邮件 | 全部 |
 | 7 | `整理记忆` `Memory tidy-up` `記憶の整理` | `每日整理` `Daily tidy-up` `毎日の整理` | Himawari 每天合并、作废、归档记忆的那件事，也是记忆页里对应的筛选名 | 全部 |
-| 8 | `主动提醒总次数` `恰当的提醒` `多余的提醒` `漏提醒（你查过的邮件里）` `Total proactive reminders` `Appropriate reminders` `Unneeded reminders` `Missed reminders (in emails you checked)` `自発的なリマインダーの総数` `適切なリマインダー` `余計なリマインダー` `見逃し（確認したメールの中）` | `已审样本内漏报` `漏报` `误扰` `没开口` `"开口"` `Spoke up` `Unwanted` `Missed (in reviewed sample)` `確認済みの中の見逃し` | 提醒页的四个统计。恰当 = 你打了“做对了”，或 24 小时内点开；多余 = 你打了“不该做”，或划掉、24 小时没点开；漏提醒只算你查过的邮件 | 全部 |
+| 8 | `主动提醒总次数` `恰当的提醒` `多余的提醒` `漏提醒（你查过的邮件里）` `Total proactive reminders` `Appropriate reminders` `Unneeded reminders` `Reminders it missed (in emails you checked)` `自発的なリマインダーの総数` `適切なリマインダー` `余計なリマインダー` `見逃し（確認したメールの中）` | `已审样本内漏报` `漏报` `误扰` `没开口` `"开口"` `“开口”` `Spoke up` `Unwanted` `Missed (in reviewed sample)` `確認済みの中の見逃し` | 提醒页的四个统计。恰当 = 你打了“做对了”，或 24 小时内点开；多余 = 你打了“不该做”，或划掉、24 小时没点开；漏提醒只算你查过的邮件 | 全部 |
 | 9 | `系统主动提醒` `Proactive reminders` `自発的なリマインダー` | `主动提醒` `主动检查` `主动闭环` | Himawari 读邮件后自己发现并发出的提醒，与你让它设的定时提醒（叫“提醒”）区分。新名里带“主动提醒”的写法（系统主动提醒、主动提醒总次数）不算旧叫法，单独写的“主动提醒”才算 | 全部 |
-| 10 | `遮盖` | `脱敏` | 把敏感信息换成固定占位的动作 | 全部 |
+| 10 | `遮盖` `Redaction` `マスキング` | `脱敏` | 把敏感信息换成固定占位的动作 | 全部 |
 | 11 | `待采纳的改进` `Improvements awaiting adoption` `採用待ちの改善` | `自我改进候选` `Self-improvement candidates` `自己改善候補` | 自我改进里等你决定采不采纳的那一项 | 仅界面 |
 | 12 | `草稿未发布` `the draft was not published` `下書きは公開されませんでした` | `候选未发布` `the candidate was not published` `候補は公開されませんでした` | 文件版本冲突时，已写好但没有发布的修改 | 仅界面 |
-| 13 | `拆成一条条` | `整理成一条条` | 记忆页里把一段话拆成多条记忆的按钮 | 全部 |
+| 13 | `拆成一条条` `Split into items` `項目に分ける` | `整理成一条条` | 记忆页里把一段话拆成多条记忆的按钮 | 全部 |
 | 14 | `Muse 对照` | | 与 Muse 的对照条目，没有旧叫法，只登记在这里 | 全部 |
 
 [↑ 回到阅读导航](#contents)
