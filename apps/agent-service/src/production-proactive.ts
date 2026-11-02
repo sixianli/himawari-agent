@@ -18,6 +18,7 @@ import {
   type ProactiveSourceReader,
   type ProactiveStorePort,
   parseReviewKey,
+  type DailyReviewMemoryText,
   readDailyReview,
   readProactiveOverview,
   type WebPushFeedback,
@@ -134,6 +135,7 @@ export interface ProductionProactiveOptions {
   readonly memory?: ProactiveMemoryRecall;
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
+  readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
   readonly clock: ClockPort;
@@ -294,6 +296,7 @@ export class ProductionProactive {
       ledger: this.#options.ledger,
       overview: await this.overview(),
       readMemoryText: this.#options.readMemoryText,
+      ...(this.#options.readMemory ? { readMemory: this.#options.readMemory } : {}),
       timeZone: this.#options.timeZone,
       now: this.#options.clock.now(),
       budgetSeconds: this.#options.configuration.reviewBudgetSeconds,

@@ -11,7 +11,19 @@ export const DAILY_REVIEW_WINDOW_DAYS = 7;
 export const DAILY_REVIEW_POOL_LIMIT = 500;
 export const DAILY_REVIEW_MAX_RATINGS = 50;
 
-export type DailyReviewGroup = "proactive" | "memory_skipped" | "other";
+export type DailyReviewGroup =
+  | "proactive"
+  | "memory_skipped"
+  | "memory_kept"
+  | "consolidation"
+  | "other";
+
+const DEFAULT_GROUPS: readonly DailyReviewGroup[] = [
+  "memory_skipped",
+  "proactive",
+  "memory_kept",
+  "consolidation",
+];
 export type DailyReviewSource = "ledger" | "mail";
 export type DailyReviewKind = DecisionKind | "mail";
 
@@ -60,9 +72,20 @@ export function selectDailyReview(input: {
         left.key.localeCompare(right.key),
     );
   const defaults = eligible.filter(({ group }) => group !== "other");
-  const skipped = order(defaults.filter(({ group }) => group === "memory_skipped"));
-  const proactive = order(defaults.filter(({ group }) => group === "proactive"));
-  const taken = [...skipped, ...proactive].slice(0, capacity);
+  const queues = DEFAULT_GROUPS.map((name) =>
+    order(defaults.filter(({ group }) => group === name)),
+  );
+  const taken: DailyReviewPoolItem[] = [];
+  for (let round = 0; taken.length < capacity; round += 1) {
+    let added = false;
+    for (const queue of queues) {
+      const next = queue[round];
+      if (next === undefined || taken.length >= capacity) continue;
+      taken.push(next);
+      added = true;
+    }
+    if (!added) break;
+  }
   const takenKeys = new Set(taken.map(({ key }) => key));
   const other = eligible.filter(({ group }) => group === "other");
   return Object.freeze({
@@ -79,6 +102,11 @@ export function selectDailyReview(input: {
 }
 
 export type DailyReviewRating = ProactiveRating;
+
+export interface DailyReviewMemoryText {
+  readonly text: string;
+  readonly hidden: boolean;
+}
 
 export interface DailyReviewItem {
   readonly key: string;
@@ -127,7 +155,9 @@ function clip(text: string): string {
 
 function ledgerGroup(entry: DecisionLedgerEntry): DailyReviewGroup {
   if (entry.kind === "proactive") return "proactive";
-  if (entry.kind === "memory_candidate" && entry.outcome === "discarded") return "memory_skipped";
+  if (entry.kind === "memory_candidate")
+    return entry.outcome === "discarded" ? "memory_skipped" : "memory_kept";
+  if (entry.kind === "consolidation") return "consolidation";
   return "other";
 }
 
@@ -137,6 +167,16 @@ function ledgerActed(entry: DecisionLedgerEntry): boolean {
   return true;
 }
 
+function reviewedMemoryId(entry: DecisionLedgerEntry): string | undefined {
+  if (entry.kind === "memory_candidate" && entry.outcome !== "discarded")
+    return entry.subjectRef ?? entry.inputs.memoryIds[0];
+  if (entry.kind === "consolidation")
+    return (
+      entry.inputs.resultMemoryIds[0] ?? entry.inputs.memoryIds[0] ?? entry.subjectRef ?? undefined
+    );
+  return undefined;
+}
+
 const OWNER_DECIDED_DISCARD = "approval_rejected";
 
 export async function readDailyReview(options: {
@@ -144,6 +184,7 @@ export async function readDailyReview(options: {
   readonly ledger: Pick<DecisionLedgerPort, "listReviewPool">;
   readonly overview: ProactiveOverview;
   readonly readMemoryText: (ref: string) => Promise<string | undefined>;
+  readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
   readonly timeZone: string;
   readonly now: string;
   readonly budgetSeconds: number;
@@ -179,10 +220,19 @@ export async function readDailyReview(options: {
       },
       build: async () => {
         let text = "";
+        let hidden = false;
         if (entry.contentRef !== null && entry.kind === "memory_candidate")
           text = clip(
             (await options.readMemoryText(entry.contentRef).catch(() => undefined)) ?? "",
           );
+        const memoryId = reviewedMemoryId(entry);
+        if (text === "" && memoryId !== undefined && options.readMemory) {
+          const memory = await options.readMemory(memoryId).catch(() => undefined);
+          if (memory) {
+            hidden = memory.hidden;
+            text = hidden ? "" : clip(memory.text);
+          }
+        }
         return {
           key,
           source: "ledger" as const,
@@ -192,7 +242,8 @@ export async function readDailyReview(options: {
           acted: ledgerActed(entry),
           rating: entry.ownerRating,
           text,
-          textHidden: entry.kind === "memory_candidate" && text === "",
+          textHidden:
+            (entry.kind === "memory_candidate" || entry.kind === "consolidation") && text === "",
           category: entry.category,
           fetched: check ? check.counts.fetched : null,
         };

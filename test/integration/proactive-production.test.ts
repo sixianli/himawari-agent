@@ -656,18 +656,25 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       confidencePermille: null,
       inferred: null,
     });
+    await h.ledger.append({
+      ...candidate("degrade-1", "kept", "degraded", null, at),
+      kind: "retrieval_degrade",
+      outcome: "degraded",
+      category: null,
+      confidencePermille: null,
+      inferred: null,
+    });
 
     const first = await h.review();
     const keys = first.items.map(({ key }) => key);
     expect(keys).toContain("ledger:skipped-1");
     expect(keys).toContain("ledger:secret-1");
     expect(keys).not.toContain("ledger:rejected-1");
-    expect(keys).not.toContain("ledger:kept-1");
-    expect(first.folded.total).toBe(2);
-    expect(first.folded.items.map(({ key }) => key).sort()).toEqual([
-      "ledger:kept-1",
-      "ledger:merge-1",
-    ]);
+    expect(keys).toContain("ledger:kept-1");
+    expect(keys).toContain("ledger:merge-1");
+    expect(keys).not.toContain("ledger:degrade-1");
+    expect(first.folded.total).toBe(1);
+    expect(first.folded.items.map(({ key }) => key)).toEqual(["ledger:degrade-1"]);
     expect(first.items.find(({ key }) => key === "ledger:skipped-1")).toMatchObject({
       text: "我最近想吃牛肉",
       textHidden: false,
