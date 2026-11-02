@@ -11,19 +11,7 @@ export interface TurnUsage {
 }
 
 export function servedModelName(servedModel: string): string {
-  const id = servedModel.slice(servedModel.indexOf("/") + 1).replace(/-(sg|free)$/i, "");
-  return id
-    .split("-")
-    .map((part) =>
-      part === "deepseek"
-        ? "DeepSeek"
-        : part === "glm"
-          ? "GLM"
-          : /^v?\d/.test(part)
-            ? part.toUpperCase()
-            : part.charAt(0).toUpperCase() + part.slice(1),
-    )
-    .join(" ");
+  return servedModel.slice(servedModel.indexOf("/") + 1);
 }
 
 export interface TurnSource {

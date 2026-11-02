@@ -120,7 +120,7 @@ it("[UI-10] names a source by its registrable domain, not the full host", () => 
   ]);
 });
 
-it("names the model that actually answered each call, once per distinct model", () => {
+it("names the model that actually answered each call as the router reported it, once per distinct model", () => {
   const call = (servedModel?: string) =>
     record({
       name: "runtime.usage",
@@ -129,11 +129,12 @@ it("names the model that actually answered each call, once per distinct model", 
   expect(
     turnUsage([
       call("workbuddy-ai/deepseek-v4.1-flash-sg"),
+      call("workbuddy-ai/deepseek-v4.1-flash-sg"),
       call("opencode-go/deepseek-v4.1-flash"),
       call("opencode-go/glm-5.3-flash"),
       call(),
     ])?.models,
-  ).toEqual(["DeepSeek V4.1 Flash", "GLM 5.3 Flash"]);
+  ).toEqual(["deepseek-v4.1-flash-sg", "deepseek-v4.1-flash", "glm-5.3-flash"]);
   expect(turnUsage([call()])?.models).toEqual([]);
-  expect(servedModelName("opencode-zen/glm-5.3-flash-free")).toBe("GLM 5.3 Flash");
+  expect(servedModelName("opencode-zen/glm-5.3-flash-free")).toBe("glm-5.3-flash-free");
 });

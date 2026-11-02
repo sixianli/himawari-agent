@@ -266,7 +266,7 @@ function sameExecutionLeaseClaim(
   );
 }
 
-const SERVED_MODEL_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._:-]{0,95}$/i;
+const SERVED_MODEL_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._:-]{0,94}$/i;
 
 export function servedModelFromHeaders(
   headers: Readonly<Record<string, string>>,
@@ -1501,7 +1501,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             () => ++turnIndex,
             () => turnIndex,
             () => ++messageSequence,
-            () => servedModel,
+            () => {
+              const answered = servedModel;
+              servedModel = undefined;
+              return answered;
+            },
             observed.occurredAt,
           );
           for (const mappedEvent of mapped.events) {
@@ -1878,7 +1882,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     nextTurnIndex: () => number,
     currentTurnIndex: () => number,
     nextMessageSequence: () => number,
-    currentServedModel: () => string | undefined,
+    takeServedModel: () => string | undefined,
     now: string,
   ): Promise<{
     readonly events: readonly RuntimeEvent[];
@@ -1921,6 +1925,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         const observation = redactObservation(
           event.type === "message_update" ? withToolCallProgress(event.message) : event.message,
         );
+        const servedModel =
+          event.type === "message_end" && event.message.role === "assistant"
+            ? takeServedModel()
+            : undefined;
+        const answeredBy = servedModel === undefined ? {} : { servedModel };
         const payloadRef = await this.#dependencies.projection.capture({
           runId: request.runId,
           kind: "message",
@@ -1929,11 +1938,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             ...(event.type === "message_update"
               ? contentBoundary(event.assistantMessageEvent)
               : {}),
-            ...(event.type === "message_end" &&
-            event.message.role === "assistant" &&
-            currentServedModel() !== undefined
-              ? { servedModel: currentServedModel() }
-              : {}),
+            ...answeredBy,
           },
           dataClassification: request.dataClassification,
         });
