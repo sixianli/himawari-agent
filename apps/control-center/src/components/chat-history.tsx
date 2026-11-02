@@ -532,9 +532,13 @@ function CleanupButton({
       <ActionButton
         variant="quiet"
         disabled={phase === "checking"}
-        onClick={() => {
+        onClick={async () => {
           setPhase("checking");
-          void Promise.resolve(onCleanup(run)).finally(() => setPhase("checked"));
+          try {
+            setPhase((await onCleanup(run)) === undefined ? "idle" : "checked");
+          } catch {
+            setPhase("idle");
+          }
         }}
       >
         {message(phase === "checking" ? "chat.retryCleanupChecking" : "chat.retryCleanup")}

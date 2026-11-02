@@ -2489,7 +2489,32 @@ describe("thread control center interactions", () => {
     expect(container.textContent).not.toContain("chat.retryCleanupStillUnconfirmed");
     await click("chat.retryCleanup");
     expect(mutate).toHaveBeenCalledOnce();
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      type: "thread.run.cancel",
+      payload: { runId: "run-ui", expectedRunRevision: 7 },
+    });
     expect(container.textContent).toContain("chat.retryCleanupStillUnconfirmed");
+  });
+  it("REVERSE: does not claim a recheck happened when the stop request itself was rejected", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "failed",
+        createdAt: NOW,
+        updatedAt: NOW,
+        background: null,
+        backgroundCommands: [],
+      },
+    ];
+    await render();
+    await refresh();
+    mutate.mockRejectedValueOnce(new Error("controlled stop failure"));
+    await click("chat.retryCleanup");
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("chat.retryCleanupStillUnconfirmed");
+    expect(container.textContent).not.toContain("chat.retryCleanupChecking");
+    expect(container.textContent).toContain("chat.retryCleanup");
   });
   it("offers delete after archive and never queries deletion impact or checkpoint controls", async () => {
     await render();

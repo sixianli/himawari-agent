@@ -16,7 +16,13 @@ function resourceDisplayPhase(phase: ThreadResourcePhase): ThreadExecutionState[
   return ["queued", "preparing", "executing"].includes(phase) ? "preparing" : "unresolved";
 }
 
-const READ_ONLY_TOOL_NAMES = new Set(["web_search", "web_fetch", "read"]);
+const READ_ONLY_TOOL_NAMES = new Set([
+  "web_search",
+  "web_fetch",
+  "read",
+  "recall",
+  "reminder_list",
+]);
 
 type Interval = readonly [number, number];
 const SAFE_TOOL_REASON_CODES = new Set([

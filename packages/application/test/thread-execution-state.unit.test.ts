@@ -1086,14 +1086,18 @@ describe("stopping a run that only used read-only tools", () => {
       { phase: "cancelled", terminalStatus: "cancelled", diagnosticCode: null },
       sandboxResourcesAbsent,
     );
-  it.each(["web_search", "web_fetch", "read"])(
+  it.each(["web_search", "web_fetch", "read", "recall", "reminder_list"])(
     "shows a stopped %s as stopped with nothing to clean up",
     (tool) => {
       const state = cancelledWith([record(1, "call", "started", tool)]);
       expect(state.displayPhase).toBe("stopped");
       expect(state.availableActions).toEqual([]);
       expect(state.operations).toEqual([
-        expect.objectContaining({ itemId: "call", displayPhase: "stopped" }),
+        expect.objectContaining({
+          itemId: "call",
+          displayPhase: "stopped",
+          reasonCode: "TOOL_STOPPED_READ_ONLY",
+        }),
       ]);
       expect(state.effectSummary).toEqual([]);
       expect(threadExecutionStateSchema.parse(state)).toEqual(state);
@@ -1110,6 +1114,12 @@ describe("stopping a run that only used read-only tools", () => {
       record(2, "call", "updated", "runtime.tool_outcome.unresolved"),
     ]);
     expect(state.displayPhase).toBe("unresolved");
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        displayPhase: "unresolved",
+        reasonCode: "TOOL_RESULT_UNCONFIRMED",
+      }),
+    ]);
   });
   it("keeps a stopped search unresolved when sandbox resources may exist", () => {
     const state = cancelledWith([record(1, "call", "started", "web_search")], false);
