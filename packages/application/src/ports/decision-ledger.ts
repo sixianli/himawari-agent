@@ -100,6 +100,7 @@ interface MuseReferenceBase {
   readonly museAt: string;
   readonly noteRef: string | null;
   readonly intakeItemKey?: string | null;
+  readonly pairedMessageId?: string | null;
   readonly recordedAt: string;
 }
 
@@ -113,7 +114,7 @@ export interface MuseRemindedWrite extends MuseReferenceBase {
 
 export interface MuseSilentWrite extends MuseReferenceBase {
   readonly museReminded: false;
-  readonly pairedDecisionId: string;
+  readonly pairedDecisionId: string | null;
 }
 
 export type MuseReferenceWrite = MuseRemindedWrite | MuseSilentWrite;
@@ -128,6 +129,7 @@ export interface MuseReferenceEntry {
   readonly noteRef: string | null;
   readonly pairedDecisionId: string | null;
   readonly intakeItemKey: string | null;
+  readonly pairedMessageId: string | null;
   readonly recordedAt: string;
 }
 
