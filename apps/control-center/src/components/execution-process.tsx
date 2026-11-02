@@ -94,6 +94,21 @@ export function ExecutionProcess({
     return message(stepLabels[step.kind]);
   };
   const activity = executionActivity(records, run, connection, now);
+  const reviewing =
+    !activityEnded &&
+    (state
+      ? state.displayPhase === "reviewing"
+      : activity.label === "review.authorizationChecking");
+  const lastStartedReview = reviewing
+    ? rows.findLast((row) => row.type === "review" && row.review.outcome === "started")
+    : undefined;
+  const runningReviewId =
+    lastStartedReview?.type === "review" ? lastStartedReview.review.id : undefined;
+  const lastOpenThinking = activityEnded
+    ? undefined
+    : rows.findLast((row) => row.type === "thinking" && row.stage.elapsed === null);
+  const runningThinkingId =
+    lastOpenThinking?.type === "thinking" ? lastOpenThinking.stage.id : undefined;
   const observationAge = state ? Math.max(0, now - Date.parse(state.lastObservedAt)) : activity.age;
   const stale = stateAvailable
     ? !!state &&
@@ -220,7 +235,7 @@ export function ExecutionProcess({
                 >
                   <div className="timeline-record is-static">
                     <span className="row-icon">
-                      <ToolIcon name="web_search" glyph="search" />
+                      <ToolIcon name="web_search" glyph="web" />
                     </span>
                     <span className="row-main">
                       <span className="step-summary">{message("step.search")}</span>
@@ -239,7 +254,12 @@ export function ExecutionProcess({
             }
             if (row.type === "review")
               return (
-                <li className="execution-stage authorization-review" key={row.review.id}>
+                <li
+                  className={`execution-stage authorization-review${
+                    runningReviewId === row.review.id ? " is-running" : ""
+                  }`}
+                  key={row.review.id}
+                >
                   <span className="row-icon">
                     <ToolIcon name="" glyph="review" />
                   </span>
@@ -262,7 +282,12 @@ export function ExecutionProcess({
               );
             if (row.type === "thinking")
               return (
-                <li className="execution-stage" key={row.stage.id}>
+                <li
+                  className={`execution-stage${
+                    runningThinkingId === row.stage.id ? " is-running" : ""
+                  }`}
+                  key={row.stage.id}
+                >
                   <span className="row-icon">
                     <ToolIcon name="" glyph="thinking" />
                   </span>
