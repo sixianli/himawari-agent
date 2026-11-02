@@ -1,6 +1,6 @@
+import { modelRefString as executionModelRef } from "@himawari-agent/execution-contracts";
 import { modelRefString as gatewayModelRef } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
-import { modelRefString as executionModelRef } from "../../../packages/execution-contracts/src/validation.ts";
 import { expandConfigurationWithMagpieModels } from "../src/production-magpie-models.js";
 
 const entry = (id: string) => ({

@@ -13,7 +13,7 @@ export * from "./sandbox-operation-binding.ts";
 export * from "./sandbox-preparation-v2.ts";
 export * from "./sandbox-qualification-v1.ts";
 export * from "./sandbox-scope-v1.ts";
-export { CONTRACT_ERROR_CODE, ContractValidationError } from "./validation.ts";
+export { CONTRACT_ERROR_CODE, ContractValidationError, modelRefString } from "./validation.ts";
 
 export * from "./sandbox-readiness.ts";
 export * from "./environment-operation-v2.ts";
