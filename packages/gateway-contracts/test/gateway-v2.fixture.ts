@@ -328,6 +328,11 @@ export const governanceMessages = [
     reminderId: "reminder:memory-01",
     action: "dismiss",
   }),
+  fixture("command", "memory.reminder.create", {
+    contentRef: "payload-03",
+    due: "2026-11-06T15:00",
+    repeat: "none",
+  }),
   fixture("command", "memory.create", {
     contentRef: "payload-03",
     category: "preference",

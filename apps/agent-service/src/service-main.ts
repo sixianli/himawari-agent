@@ -89,6 +89,7 @@ import {
 } from "./production-memory-composition.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
+import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
   createProductionModelCompositionFromConfiguration,
@@ -1218,8 +1219,24 @@ export async function runAgentService(
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
       });
+      const reminderTimeZone = configuration.runPolicy?.timeZone;
+      const reminderTools = new ProductionReminderTools({
+        writer: new ProductionReminderWriter({
+          configuration,
+          memory: durableMemory,
+          state: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          reminders: repository.memoryReminders(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+          ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+        }),
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+      });
       const tools = new ProductionRuntimeTools({
         memoryRecall,
+        reminders: reminderTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
