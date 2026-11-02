@@ -540,6 +540,21 @@ async function saveStartupFailureLogs(input: {
   );
 }
 
+export function assertLoopbackMagpieUrl(value: string): void {
+  const url = new URL(value);
+  if (
+    url.protocol !== "http:" ||
+    url.hostname !== "127.0.0.1" ||
+    url.port === "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    url.pathname !== "/v1"
+  )
+    throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+}
+
 export async function installProductPath(options: {
   readonly artifact: string;
   readonly context: string;
@@ -549,7 +564,9 @@ export async function installProductPath(options: {
   readonly approval?: "workspace_auto" | "ask";
   readonly webSearch?: boolean;
   readonly selectableModels?: boolean;
+  readonly realMagpie?: { readonly url: string; readonly keyFile: string };
 }): Promise<ProductPathInstallation> {
+  if (options.realMagpie) assertLoopbackMagpieUrl(options.realMagpie.url);
   const testRoot = await realpath(await mkdtemp(productPathTemporaryPrefix()));
   const stateRoot = path.join(testRoot, "state");
   const runtimePrefix = path.join(testRoot, "prefix");
@@ -828,6 +845,11 @@ export async function installProductPath(options: {
       })
     : undefined;
   const catalogPort = catalog ? await listen(catalog) : 0;
+  const magpieUrl = options.realMagpie
+    ? options.realMagpie.url
+    : catalog
+      ? `http://127.0.0.1:${catalogPort}/v1`
+      : undefined;
 
   const signAssertion = () => {
     const now = Math.floor(Date.now() / 1000);
@@ -952,7 +974,12 @@ export async function installProductPath(options: {
     ["payload-kek.v1", "22".repeat(32)],
     ["identity-csrf.v1", "11".repeat(32)],
     ["identity-bootstrap.v1", bootstrapToken],
-    ["vercel-ai-gateway-api-key.v1", "local-provider-fixture"],
+    [
+      "vercel-ai-gateway-api-key.v1",
+      options.realMagpie
+        ? (await readFile(options.realMagpie.keyFile, "utf8")).trim()
+        : "local-provider-fixture",
+    ],
   ] as const)
     await writeFile(path.join(secretDirectory, name), value, { mode: 0o600 });
 
@@ -983,7 +1010,7 @@ export async function installProductPath(options: {
     capabilityDeployment,
     approval: options.approval,
     webSearch: options.webSearch,
-    modelCatalogUrl: catalog ? `http://127.0.0.1:${catalogPort}/v1` : undefined,
+    modelCatalogUrl: magpieUrl,
   });
   await writeFile(configurationPath, JSON.stringify(configuration), { mode: 0o600 });
 
@@ -1050,7 +1077,7 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_PREPARATION_ACK_LOSS: path.join(testRoot, "preparation-ack-loss"),
     HIMAWARI_TEST_HOST_FINISH_GATE: path.join(testRoot, "host-finish-gate"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
-    ...(catalog ? { HIMAWARI_TEST_MAGPIE_URL: `http://127.0.0.1:${catalogPort}/v1` } : {}),
+    ...(magpieUrl ? { HIMAWARI_TEST_MAGPIE_URL: magpieUrl } : {}),
     HIMAWARI_TEST_JOB_HOST_STDERR: path.join(options.logDirectory, "job-host-stderr-0.log"),
   };
   const serviceArgs = [
