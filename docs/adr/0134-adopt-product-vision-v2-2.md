@@ -1,13 +1,15 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: docs/adr/0101-adopt-product-vision-v2-1.md
-superseded_by: ""
+superseded_by: docs/adr/0153-adopt-product-vision-v2-3.md
 date: "2026-10-31"
 ---
 
 # ADR 0134：采纳产品愿景 v2.2，规则成为硬性设定，护城河从三样改为四样
+
+> 2026-11-02 被 [ADR 0153](0153-adopt-product-vision-v2-3.md) 取代：愿景换为 v2.3（只把「决策账本」改称「决策记录」），地位决定在 0153 里重述。下文是采纳 v2.2 时的记录，不再改写。
 
 <a id="contents"></a>
 
