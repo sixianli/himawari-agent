@@ -540,6 +540,21 @@ async function saveStartupFailureLogs(input: {
   );
 }
 
+export function assertLoopbackMagpieUrl(value: string): void {
+  const url = new URL(value);
+  if (
+    url.protocol !== "http:" ||
+    url.hostname !== "127.0.0.1" ||
+    url.port === "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    url.pathname !== "/v1"
+  )
+    throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+}
+
 export async function installProductPath(options: {
   readonly artifact: string;
   readonly context: string;
@@ -551,6 +566,7 @@ export async function installProductPath(options: {
   readonly selectableModels?: boolean;
   readonly realMagpie?: { readonly url: string; readonly keyFile: string };
 }): Promise<ProductPathInstallation> {
+  if (options.realMagpie) assertLoopbackMagpieUrl(options.realMagpie.url);
   const testRoot = await realpath(await mkdtemp(productPathTemporaryPrefix()));
   const stateRoot = path.join(testRoot, "state");
   const runtimePrefix = path.join(testRoot, "prefix");

@@ -34,6 +34,7 @@ import {
   type WalkthroughTarget,
 } from "../../apps/control-center/test/release-walkthrough-ui.ts";
 import {
+  assertLoopbackMagpieUrl,
   installProductPath,
   type ModelScript,
   type ProductPathInstallation,
@@ -6036,6 +6037,11 @@ realMagpieDescribe(
       detail?: string;
     }> = [];
     let listedIds: string[] = [];
+    let realKey = "";
+    const redact = (text: string) =>
+      (realKey ? text.split(realKey).join("<key>") : text)
+        .replace(/Bearer\s+\S+/gi, "Bearer <key>")
+        .replace(/sk-[A-Za-z0-9_-]+/g, "<key>");
 
     beforeAll(async () => {
       const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
@@ -6044,11 +6050,13 @@ realMagpieDescribe(
         throw new Error(
           "PRODUCT_PATH_REQUIRES_ARTIFACT: set HIMAWARI_TEST_ARTIFACT and HIMAWARI_TEST_CONTEXT",
         );
-      if (!realMagpieUrl?.startsWith("http://127.0.0.1:") || !realMagpieKeyFile)
-        throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+      if (!realMagpieUrl || !realMagpieKeyFile) throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+      assertLoopbackMagpieUrl(realMagpieUrl);
       const key = (await readFile(realMagpieKeyFile, "utf8")).trim();
+      realKey = key;
       const listing = await fetch(`${realMagpieUrl}/models`, {
         headers: { authorization: `Bearer ${key}` },
+        redirect: "error",
       });
       if (!listing.ok) throw new Error(`REAL_MAGPIE_LIST_FAILED ${listing.status}`);
       const body = (await listing.json()) as { data?: Array<{ id?: unknown }> };
@@ -6112,25 +6120,36 @@ realMagpieDescribe(
           await newThread();
           const list = await openFullModelList();
           await list.nth(index).click();
+          await uiExpect(page.locator(`${UI.modelPicker} .model-name`)).toHaveText(name, {
+            timeout: 20_000,
+          });
           const turn = await send(REAL_MAGPIE_PROMPT);
-          await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 180_000 });
-          const failed = (await turn.getByText(/本轮执行失败/).count()) > 0;
           const articles = target(turn, UI.message);
+          const failedNow = async () => (await turn.getByText(/本轮执行失败/).count()) > 0;
+          await uiExpect
+            .poll(async () => (await articles.count()) >= 2 || (await failedNow()), {
+              timeout: 180_000,
+            })
+            .toBe(true);
+          await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 180_000 });
+          const failed = await failedNow();
           const count = await articles.count();
           const last = count >= 2 ? ((await articles.last().innerText()) ?? "") : "";
-          const answered = !failed && /\bok\b/i.test(last);
+          const answered = !failed && /^[\s"'“”`*]*ok[\s.。!！"'“”`*]*$/i.test(last);
           sweep.push({
             name,
             status: answered ? "answered" : "failed",
             answerMs: Date.now() - started,
-            ...(answered ? {} : { detail: failed ? "turn-failed" : `reply=${last.slice(0, 80)}` }),
+            ...(answered
+              ? {}
+              : { detail: failed ? "turn-failed" : redact(`reply=${last.slice(0, 80)}`) }),
           });
         } catch (error) {
           sweep.push({
             name,
             status: "failed",
             answerMs: Date.now() - started,
-            detail: String(error).slice(0, 200),
+            detail: redact(String(error)).slice(0, 200),
           });
         }
       }
