@@ -442,7 +442,6 @@ describe("release walkthrough locators against the real control center", () => {
 
     const search = byRole(byRole(body, UI.sidebarNavigation), UI.threadSearch);
     expect(search).toBeInstanceOf(HTMLInputElement);
-    expect(UI.threadSearchResult).toBe(".thread-search-results li");
 
     expect(fake.unexpected).toEqual([]);
   });

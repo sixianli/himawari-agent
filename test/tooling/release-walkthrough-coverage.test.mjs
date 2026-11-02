@@ -41,6 +41,16 @@ function releaseScenarios() {
   return [...block.matchAll(/"(accept-[a-z-]+)"/gu)].map((match) => match[1]);
 }
 
+function gateScenarios() {
+  const source = readFileSync(
+    path.join(import.meta.dirname, "../../scripts/delivery-mode/browser-acceptance-gate.py"),
+    "utf8",
+  );
+  const block = /REQUIRED_SCENARIOS = \(([\s\S]*?)\)/u.exec(source)?.[1];
+  if (block === undefined) throw new Error("REQUIRED_SCENARIOS_MOVED");
+  return [...block.matchAll(/'(accept-[a-z-]+)'/gu)].map((match) => match[1]);
+}
+
 function coverageProblems(surfaceIds, coverage, scenarios) {
   const problems = [];
   for (const id of surfaceIds) {
@@ -63,6 +73,13 @@ describe("release walkthrough covers every control center entry or says why not"
 
   it("accounts for every entry in the inventory", () => {
     expect(coverageProblems(surfaceIds, WALKTHROUGH_COVERAGE, releaseScenarios())).toEqual([]);
+  });
+
+  it("runs exactly the scenarios the release gate demands", () => {
+    const gate = gateScenarios();
+    const walkthrough = releaseScenarios();
+    expect(new Set(gate).size).toBe(gate.length);
+    expect([...gate].sort()).toEqual([...walkthrough].sort());
   });
 
   it("fails on an entry nobody accounted for, an unknown scenario and a stale row", () => {

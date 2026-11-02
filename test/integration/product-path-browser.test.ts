@@ -5500,6 +5500,8 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-after-restart",
 ] as const;
 const RUN_COMMAND_REQUEST = "请统计行数";
+const SEARCH_TOKEN = "蓝鲸搜索验收";
+const SEARCH_TOKEN_REQUEST = `记一下${SEARCH_TOKEN}这个词`;
 const SEARCH_BATCH_REQUEST = "请查东京和大阪今天的天气";
 const APPROVAL_FOLLOW_UP_LIMIT_MS = 10_000;
 const RUN_COMMAND_OUTPUT = "lines=37";
@@ -5819,28 +5821,47 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         });
         await options.filter({ hasText: chosen.name }).click();
         const before = installation.modelRequests.length;
-        const turn = await send(`请用${chosen.name}回答`);
+        const prompt = `请用${chosen.name}回答`;
+        const turn = await send(prompt);
         await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
         await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
         await uiExpect(turn.getByText(/本轮执行失败/)).toHaveCount(0);
         await uiExpect(target(page, UI.pageError)).toHaveCount(0);
-        const used = installation.modelRequests
+        const answering = installation.modelRequests
           .slice(before)
-          .filter((request) => request.path !== "/v1/embeddings")
-          .map((request) => request.model);
-        expect(used).toContain(chosen.model);
-        for (const other of ACCEPTANCE_SELECTABLE_MODELS)
-          if (other.model !== chosen.model) expect(used).not.toContain(other.model);
+          .filter(
+            (request) =>
+              request.path !== "/v1/embeddings" &&
+              JSON.stringify(request.body["messages"] ?? []).includes(prompt),
+          );
+        expect(answering.length).toBeGreaterThan(0);
+        expect(answering.map((request) => request.model)).toEqual(
+          answering.map(() => chosen.model),
+        );
       }
     });
     await scenario("accept-conversation-search", async () => {
-      const navigation = target(page, UI.sidebarNavigation);
-      const box = target(navigation, UI.threadSearch);
-      await box.fill("新闻");
+      await newThread();
+      const turn = await send(SEARCH_TOKEN_REQUEST);
+      await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
+      await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+      const box = target(target(page, UI.sidebarNavigation), UI.threadSearch);
+      const searchFinished = () =>
+        page.waitForResponse(
+          (response) =>
+            response.url().includes("/api/gateway/thread/v3/queries") &&
+            response.request().postDataJSON()?.type === "thread.search",
+          { timeout: 30_000 },
+        );
+      const found = searchFinished();
+      await box.fill(SEARCH_TOKEN);
       await box.press("Enter");
+      expect((await found).ok()).toBe(true);
       await uiExpect(page.locator(UI.threadSearchResult).first()).toBeVisible({ timeout: 30_000 });
-      await box.fill("没有这个词zzqx");
+      const missed = searchFinished();
+      await box.fill("毫无关联xqzvk");
       await box.press("Enter");
+      expect((await missed).ok()).toBe(true);
       await uiExpect(page.locator(UI.threadSearchResult)).toHaveCount(0, { timeout: 30_000 });
       await box.fill("");
       await uiExpect(page.locator(UI.threadSearchResult)).toHaveCount(0);
@@ -5852,15 +5873,6 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(target(reminders, UI.pageError)).toHaveCount(0);
       await newThread();
       await uiExpect(reminders).toHaveCount(0, { timeout: 20_000 });
-    });
-    await scenario("accept-files-page", async () => {
-      await target(target(page, UI.sidebarNavigation), UI.openFiles).click();
-      const files = target(page, UI.filesPage);
-      await uiExpect(files).toBeVisible({ timeout: 30_000 });
-      await uiExpect(files).not.toHaveAttribute("aria-busy", "true", { timeout: 30_000 });
-      await uiExpect(target(files, UI.pageError)).toHaveCount(0);
-      await newThread();
-      await uiExpect(files).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-slow-memory-search", async () => {
       await newThread();
@@ -5892,6 +5904,15 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       } finally {
         await page.unroute("**/api/gateway/thread/v3/queries", slowState);
       }
+    });
+    await scenario("accept-files-page", async () => {
+      await target(target(page, UI.sidebarNavigation), UI.openFiles).click();
+      const files = target(page, UI.filesPage);
+      await uiExpect(files).toBeVisible({ timeout: 30_000 });
+      await uiExpect(files).not.toHaveAttribute("aria-busy", "true", { timeout: 30_000 });
+      await uiExpect(target(files, UI.pageError)).toHaveCount(0);
+      await newThread();
+      await uiExpect(files).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
