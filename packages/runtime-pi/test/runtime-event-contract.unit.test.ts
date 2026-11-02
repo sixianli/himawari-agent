@@ -230,17 +230,14 @@ describe("product runtime event and tool contracts", () => {
     ]);
     expect(f.final).not.toHaveBeenCalled();
   });
-  it.each(["length"])(
-    "does not report success for incomplete %s output",
-    async (stopReason) => {
-      const f = fixture((emit) => finish(emit, answer({ stopReason })));
-      expect((await f.run()).at(-1)).toMatchObject({
-        type: "runtime.failed",
-        errorCode: "PI_FINAL_ANSWER_INCOMPLETE",
-      });
-      expect(f.final).not.toHaveBeenCalled();
-    },
-  );
+  it.each(["length"])("does not report success for incomplete %s output", async (stopReason) => {
+    const f = fixture((emit) => finish(emit, answer({ stopReason })));
+    expect((await f.run()).at(-1)).toMatchObject({
+      type: "runtime.failed",
+      errorCode: "PI_FINAL_ANSWER_INCOMPLETE",
+    });
+    expect(f.final).not.toHaveBeenCalled();
+  });
   it("does not report success for toolUse output that still carries a tool call", async () => {
     const f = fixture((emit) =>
       finish(
