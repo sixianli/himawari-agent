@@ -259,7 +259,13 @@ function queryAllByRole(scope: Element, target: WalkthroughTarget) {
 
 function byRole(scope: Element, target: WalkthroughTarget | readonly WalkthroughTarget[]) {
   const targets = Array.isArray(target) ? target : [target as WalkthroughTarget];
-  const found = targets.flatMap((item) => queryAllByRole(scope, item));
+  const matches = targets.map((item) => ({ item, found: queryAllByRole(scope, item) }));
+  const ambiguous = matches.find(({ item, found }) => item.role === "region" && found.length > 1);
+  if (ambiguous)
+    throw new Error(
+      `RELEASE_WALKTHROUGH_TARGET_AMBIGUOUS ${ambiguous.found.length} ${ambiguous.item.role}:${ambiguous.item.name ?? ""}`,
+    );
+  const found = matches.flatMap(({ found: elements }) => elements);
   if (found.length === 0)
     throw new Error(
       `RELEASE_WALKTHROUGH_TARGET_MISSING ${targets.map((item) => `${item.role}:${item.name ?? ""}`).join(" | ")}`,
