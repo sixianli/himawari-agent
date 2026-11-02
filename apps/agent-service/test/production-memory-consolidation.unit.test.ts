@@ -1,6 +1,9 @@
 import type { RuntimeRequest } from "@himawari-agent/application";
-import { expect, it, vi } from "vitest";
-import { ProductionMemoryConsolidation } from "../src/production-memory-consolidation.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  ProductionMemoryConsolidation,
+  quoteRefOfMemory,
+} from "../src/production-memory-consolidation.js";
 
 const request = {
   ownerId: "owner",
@@ -83,4 +86,30 @@ it("does nothing when the day is already tidied or the run is a continuation", a
   } as RuntimeRequest);
   await f.consolidation.stop();
   expect(f.run).not.toHaveBeenCalled();
+});
+
+describe("[MEM-QUOTE] picking the quote that produced a memory's current text", () => {
+  const event = (contentRef: string, quoteRef: string | null, occurredAt: string) => ({
+    contentRef,
+    quoteRef,
+    occurredAt,
+  });
+
+  it("takes the earliest quote stored for the current text, not a later re-mention or another revision", () => {
+    const events = [
+      event("text-2", "quote-3", "2026-10-05T00:00:00.000Z"),
+      event("text-1", "quote-2", "2026-10-02T00:00:00.000Z"),
+      event("text-1", "quote-1", "2026-10-01T00:00:00.000Z"),
+      event("text-1", null, "2026-09-30T00:00:00.000Z"),
+    ];
+    expect(quoteRefOfMemory(events, "text-1")).toBe("quote-1");
+    expect(quoteRefOfMemory(events, "text-2")).toBe("quote-3");
+  });
+
+  it("returns nothing when no event carries a quote for the current text", () => {
+    expect(quoteRefOfMemory([event("text-1", null, "2026-10-01T00:00:00.000Z")], "text-1")).toBe(
+      undefined,
+    );
+    expect(quoteRefOfMemory([], "text-1")).toBe(undefined);
+  });
 });

@@ -496,7 +496,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       expect(prompt).toContain("主人当时的原话：“我今天不吃鱼，昨天吃撑了”");
       const lines = prompt.split("\n");
       const quoted = lines.flatMap((line, index) =>
-        line.includes("主人当时的原话") ? [lines[index - 1] ?? ""] : [],
+        line.startsWith("    主人当时的原话") ? [lines[index - 1] ?? ""] : [],
       );
       expect(quoted.length).toBeGreaterThan(0);
       expect(quoted.every((line) => line.includes("主人最近迷上了刺身拼盘"))).toBe(true);

@@ -7,6 +7,25 @@ import type {
 
 const RETRY_AFTER_MS = 3_600_000;
 
+export function quoteRefOfMemory(
+  events: readonly {
+    readonly contentRef: string;
+    readonly quoteRef: string | null;
+    readonly occurredAt: string;
+  }[],
+  contentRef: string,
+): string | undefined {
+  return (
+    events
+      .filter((event) => event.quoteRef && event.contentRef === contentRef)
+      .toSorted(
+        (left, right) =>
+          left.occurredAt.localeCompare(right.occurredAt) ||
+          (left.quoteRef ?? "").localeCompare(right.quoteRef ?? ""),
+      )[0]?.quoteRef ?? undefined
+  );
+}
+
 export interface ProductionMemoryConsolidationOptions {
   readonly service: Pick<MemoryConsolidationService, "due" | "run">;
   readonly search: (

@@ -27,6 +27,7 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
+import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
@@ -1401,9 +1402,7 @@ export async function runAgentService(
                   agentId: configuration.agentId,
                   memoryIds: [record.id],
                 });
-                const quoteRef = events.findLast(
-                  (event) => event.quoteRef && event.contentRef === record.contentRef,
-                )?.quoteRef;
+                const quoteRef = quoteRefOfMemory(events, record.contentRef);
                 if (!quoteRef) return undefined;
                 const payload = await consolidationPayloads.get(quoteRef);
                 if (!payload || payload.contentType !== "text/plain") return undefined;
