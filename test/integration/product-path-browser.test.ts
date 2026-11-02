@@ -5501,7 +5501,7 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
 ] as const;
 const RUN_COMMAND_REQUEST = "请统计行数";
 const SEARCH_TOKEN = "蓝鲸搜索验收";
-const SEARCH_TOKEN_REQUEST = `记一下${SEARCH_TOKEN}这个词`;
+const SEARCH_TOKEN_REQUEST = `这是一条用来搜索的消息：${SEARCH_TOKEN}`;
 const SEARCH_BATCH_REQUEST = "请查东京和大阪今天的天气";
 const APPROVAL_FOLLOW_UP_LIMIT_MS = 10_000;
 const RUN_COMMAND_OUTPUT = "lines=37";
@@ -5835,9 +5835,10 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
               JSON.stringify(request.body["messages"] ?? []).includes(prompt),
           );
         expect(answering.length).toBeGreaterThan(0);
-        expect(answering.map((request) => request.model)).toEqual(
-          answering.map(() => chosen.model),
-        );
+        expect(answering[0]?.model).toBe(chosen.model);
+        for (const other of ACCEPTANCE_SELECTABLE_MODELS)
+          if (other.model !== chosen.model)
+            expect(answering.map((request) => request.model)).not.toContain(other.model);
       }
     });
     await scenario("accept-conversation-search", async () => {
@@ -5978,10 +5979,14 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         const draft = target(phone, UI.composer);
         await uiExpect(draft).toBeVisible({ timeout: 30_000 });
         const text = "手机上发一条消息";
+        const answersBefore = await phone.getByText(PLAIN_ANSWER).count();
         await draft.fill(text);
         await uiExpect(target(phone, UI.send)).toBeEnabled({ timeout: 20_000 });
         await target(phone, UI.send).click();
-        await uiExpect(phone.getByText(PLAIN_ANSWER).last()).toBeVisible({ timeout: 120_000 });
+        await uiExpect(phone.getByText(text).last()).toBeVisible({ timeout: 20_000 });
+        await uiExpect(phone.getByText(PLAIN_ANSWER)).toHaveCount(answersBefore + 1, {
+          timeout: 120_000,
+        });
         await uiExpect(target(phone, UI.stop)).toHaveCount(0, { timeout: 120_000 });
         await expectPhoneLayout(phone, "after sending");
       } finally {

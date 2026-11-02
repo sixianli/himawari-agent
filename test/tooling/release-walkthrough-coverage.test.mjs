@@ -82,6 +82,17 @@ describe("release walkthrough covers every control center entry or says why not"
     expect([...gate].sort()).toEqual([...walkthrough].sort());
   });
 
+  it("has a scenario body for every listed scenario name", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "../integration/product-path-browser.test.ts"),
+      "utf8",
+    );
+    const missing = releaseScenarios().filter(
+      (name) => !source.includes(`await scenario("${name}"`),
+    );
+    expect(missing).toEqual([]);
+  });
+
   it("fails on an entry nobody accounted for, an unknown scenario and a stale row", () => {
     const scenarios = releaseScenarios();
     expect(
