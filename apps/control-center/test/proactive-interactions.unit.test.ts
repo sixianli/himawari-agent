@@ -356,7 +356,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(document.querySelector(`${row} a`)?.getAttribute("href")).toBe(
       "https://mail.google.com/mail/u/0/#all/rakuten",
     );
-    await click(row, "有用");
+    await click(row, "做对了");
     expect(lastCommand()).toMatchObject({
       type: "proactive.insight.respond",
       payload: { insightId: "rakuten", action: "rate", rating: "useful" },
@@ -427,13 +427,13 @@ describe("[PG-15] proactive reminders page", () => {
   it("[PG-15] lists ignored mail for review and counts it only after Done reviewing", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
-    expect(text("#page .proactive-audit")).toContain("最近 7 天筛掉的 2 封");
+    expect(text("#page .proactive-audit")).toContain("最近 7 天没提醒的 2 封");
     expect(text("#page .proactive-audit")).not.toContain("Amazon.co.jp");
-    await click("#page .proactive-audit", "抽查");
+    await click("#page .proactive-audit", "查看");
     expect(text("#page .proactive-audit")).toContain("Amazon.co.jp");
     expect(text("#page .proactive-audit")).toContain("ご注文の商品を発送しました");
     const before = commands().length;
-    await click("#page .proactive-audit li:first-child", "该说没说");
+    await click("#page .proactive-audit li:first-child", "该做没做");
     expect(lastCommand()).toMatchObject({
       type: "proactive.audit.respond",
       payload: { action: "rate", messageIds: ["a1"], rating: "missed" },
@@ -445,17 +445,17 @@ describe("[PG-15] proactive reminders page", () => {
     });
   });
 
-  it("[PG-15] shows one line per check in the decision log and takes ratings", async () => {
+  it("[PG-15] shows one line per check in the reminder check record and takes ratings", async () => {
     await act(async () => root.render(h(Page, { focus: null })));
     await flush();
-    expect(text("#page")).not.toContain("决策记录");
+    expect(text("#page")).not.toContain("提醒检查记录");
     expect(document.querySelector("#page h1")).toBeNull();
     act(() => root.unmount());
     root = createRoot(container);
     await act(async () => root.render(h(Settings, { outcome: null })));
     await flush();
     const entry = document.querySelector<HTMLDetailsElement>("#apps .proactive-log-entry");
-    expect(entry?.querySelector("summary")?.textContent).toContain("决策记录");
+    expect(entry?.querySelector("summary")?.textContent).toContain("提醒检查记录");
     expect(entry?.querySelector(".proactive-log")).toBeNull();
     await act(async () => {
       entry?.querySelector("summary")?.click();
@@ -463,7 +463,14 @@ describe("[PG-15] proactive reminders page", () => {
     });
     await flush();
     const summary = text("#apps .proactive-summary");
-    for (const part of ["开口5", "命中3", "误扰1", "已审样本内漏报1", "已审 23 封", "已记录 2 天"])
+    for (const part of [
+      "主动提醒总次数5",
+      "恰当的提醒3",
+      "多余的提醒1",
+      "漏提醒（你查过的邮件里）1",
+      "已审 23 封",
+      "已记录 2 天",
+    ])
       expect(summary.replace(/\s/gu, "")).toContain(part.replace(/\s/gu, ""));
     const rows = [...document.querySelectorAll<HTMLElement>("#apps .proactive-log-row")];
     expect(rows.map((row) => row.dataset["tone"])).toEqual([
@@ -484,7 +491,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(rows[5]?.textContent).toContain("模型这次没有回答");
     expect(rows[6]?.textContent).toContain("模型没有答完");
     expect(text("#apps")).toContain("昨天");
-    await click("#apps .proactive-log-row:nth-of-type(1)", "没必要");
+    await click("#apps .proactive-log-row:nth-of-type(1)", "不该做");
     expect(lastCommand()).toMatchObject({
       type: "proactive.decision.rate",
       payload: { decisionId: "d-push", rating: "unneeded" },

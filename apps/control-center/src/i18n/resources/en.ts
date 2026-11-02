@@ -229,7 +229,7 @@ export const messages = {
   "chat.reason.resourceCeilingChanged":
     "Allowed resource limits changed; the operation was not dispatched",
   "chat.reason.directoryTargetChanged": "The directory location or target changed",
-  "chat.reason.fileVersionConflict": "The file version changed; the candidate was not published",
+  "chat.reason.fileVersionConflict": "The file version changed; the draft was not published",
   "chat.reason.fileWriteNotStarted": "The file operation failed; the file was not changed",
   "chat.reason.commandEffectUnverified":
     "The command failed; its effect on the workspace was not verified",
@@ -539,7 +539,7 @@ export const messages = {
   "reflection.title": "Reflection configuration and checkpoints",
   "reflection.configure": "Save reflection configuration",
   "workers.title": "Worker delegations",
-  "improvements.title": "Self-improvement candidates",
+  "improvements.title": "Improvements awaiting adoption",
   "threads.draft": "Message draft",
   "threads.send": "Send",
   "threads.new": "New thread",
@@ -683,7 +683,7 @@ export const messages = {
     "{c, select, rule {Rules} identity {Identity} preference {Preferences} relationship {People} goal {Goals} project {In progress} health {Health} finance {Money} event {Events} other {Other}}",
   "memory.page.auto": "Learn from conversations",
   "memory.page.pausedNote":
-    "Learning is paused: Himawari still uses what it knows, but learns nothing new from conversations and skips the daily tidy-up. Memories you add by hand are still saved.",
+    "Learning is paused: Himawari still uses what it knows, but learns nothing new from conversations and skips the memory tidy-up. Memories you add by hand are still saved.",
   "memory.page.notReady":
     'Adding and importing by hand become available once Himawari learns its first memory from a conversation. Turn learning on and tell Himawari one thing about yourself (for example, "my favorite color is blue").',
   "memory.page.add": "Add",
@@ -729,7 +729,7 @@ export const messages = {
   "memory.page.changed": "Changed {count}×",
   "memory.page.source": "Source",
   "memory.page.origin":
-    "{o, select, owner {Added by you} import {Imported} deleted {Source conversation deleted} other {Daily tidy-up}}",
+    "{o, select, owner {Added by you} import {Imported} deleted {Source conversation deleted} other {Memory tidy-up}}",
   "memory.page.used": "Last used",
   "memory.page.notUsed": "Not used yet",
   "memory.page.history": "How it changed",
@@ -742,7 +742,7 @@ export const messages = {
   "memory.page.recover": "Recover",
   "memory.page.deleted": "Deleted. Recover it from Recently deleted within 7 days.",
   "memory.page.filter":
-    "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Tidy-ups} correct {Corrections} other {Imports}}",
+    "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Memory tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.event":
     "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
   "memory.page.imported":
@@ -937,7 +937,7 @@ export const messages = {
   "chat.welcome.stuck": "Stuck on something? Let's think it through together.",
   "chat.welcome.late": "Still at it this late? Want me to help you wrap up?",
   "chat.welcome.morning": "Morning! What shall we start with today?",
-  "proactive.log": "Decision log",
+  "proactive.log": "Reminder check record",
   "proactive.group":
     "{g, select, check {Might matter, read the email} none {No deadline} other {Good to know}}",
   "proactive.when.due": "Due {time}",
@@ -949,7 +949,7 @@ export const messages = {
   "proactive.pushed":
     "{reaction, select, opened {Pushed · you opened it} dismissed {Pushed · you dismissed it} other {Pushed to you}}",
   "proactive.rate":
-    "{r, select, useful {Useful} unneeded {Not needed} other {Should have told me}}",
+    "{r, select, useful {Right call} unneeded {Shouldn’t have} other {Should have}}",
   "proactive.done": "Done",
   "proactive.mute": "Don’t remind",
   "proactive.whyHide": "Hide reason",
@@ -975,7 +975,7 @@ export const messages = {
   "proactive.foot":
     "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
   "proactive.audit.title":
-    "{count, plural, one {# email} other {# emails}} filtered out in the last 7 days",
+    "{count, plural, one {# email} other {# emails}} with no reminder in the last 7 days",
   "proactive.audit.open": "Review",
   "proactive.audit.hide": "Hide",
   "proactive.audit.note":
@@ -987,10 +987,10 @@ export const messages = {
     "No checks yet. After Gmail is connected, a line is added every 15 minutes.",
   "proactive.log.today": "Today",
   "proactive.log.yesterday": "Yesterday",
-  "proactive.metric.spoke": "Spoke up",
-  "proactive.metric.hits": "Helpful",
-  "proactive.metric.misfires": "Unwanted",
-  "proactive.metric.missed": "Missed (in reviewed sample)",
+  "proactive.metric.spoke": "Total proactive reminders",
+  "proactive.metric.hits": "Appropriate reminders",
+  "proactive.metric.misfires": "Unneeded reminders",
+  "proactive.metric.missed": "Missed reminders (in emails you checked)",
   "proactive.metric.reviewed": "{count} reviewed",
   "proactive.verdict":
     "{v, select, pushed {Pushed} silent {Stayed quiet} deferred {Held} failed {Failed} capped {Hit limit} capped_daily {Hit daily limit} other {Needs you}}",
@@ -1059,10 +1059,10 @@ export const messages = {
   "proactive.apps.sendersInvalid": "“{value}” is not an email address or domain",
   "proactive.apps.save": "Save",
   "proactive.data.title": "Proactive reminder records",
-  "proactive.data.hint": "Decision log and extracted email results",
+  "proactive.data.hint": "Reminder check record and extracted email results",
   "proactive.data.delete": "Delete all",
   "proactive.data.confirm":
-    "This deletes every decision log line, extracted email result and review record. Gmail stays connected. Delete?",
+    "This deletes every reminder check record, extracted email result and review record. Gmail stays connected. Delete?",
   "proactive.data.cleared": "All deleted.",
   "proactive.when.dueToday": "Due today {time}",
   "proactive.line.allSkipped":
