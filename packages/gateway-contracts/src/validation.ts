@@ -64,7 +64,10 @@ export const modelRefString: Schema<string> = {
     if (
       typeof input !== "string" ||
       input.length > 128 ||
-      !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(input)
+      !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(input) ||
+      input.includes("//") ||
+      input.endsWith("/") ||
+      /(^|[/:])\.\.?([/:]|$)/.test(input)
     ) {
       fail(path, "expected a 1-128 character model reference");
     }

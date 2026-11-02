@@ -88,11 +88,41 @@ describe("[I-73] every model the list offers can be sent", () => {
     expect(diagnostics).toContainEqual({
       event: "magpie-models.ref_rejected_by_contract",
       count: 3,
+      sample: "bad?id?with?space",
     });
   });
 
+  it("refuses references that could rewrite a path or a web address", () => {
+    for (const value of ["a//b", "a/", "a/../b", "magpie:../x", "magpie://evil/x", "a/./b"]) {
+      expect(() => gatewayModelRef.parse(value), value).toThrow();
+      expect(() => executionModelRef.parse(value), value).toThrow();
+    }
+    for (const value of ["a".repeat(128), `a/${"b".repeat(126)}`, "a..b", "v1.2/model-x"]) {
+      expect(gatewayModelRef.parse(value)).toBe(value);
+    }
+    expect(() => gatewayModelRef.parse("a".repeat(129))).toThrow();
+  });
+
   it("keeps the two contract packages' model-reference rules identical", () => {
-    for (const value of ["a/b", "a b", "/a", "a·b", "a".repeat(129), "", "a:b/c-d.e_f"]) {
+    const values = [
+      "a/b",
+      "a b",
+      "/a",
+      "a·b",
+      "a".repeat(129),
+      "a".repeat(127) + "/",
+      `a/${"b".repeat(126)}`,
+      "",
+      "a:b/c-d.e_f",
+      "a//b",
+      "a/",
+      "a/../b",
+      "magpie:../x",
+      "a/./b",
+      "a..b",
+      "v1.2/model",
+    ];
+    for (const value of values) {
       const accepted = (schema: { parse(input: unknown): unknown }) => {
         try {
           schema.parse(value);

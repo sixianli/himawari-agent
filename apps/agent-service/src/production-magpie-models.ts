@@ -225,6 +225,7 @@ export async function expandConfigurationWithMagpieModels(
     options.onDiagnostic?.({
       event: "magpie-models.ref_rejected_by_contract",
       count: unsendable.length,
+      sample: (unsendable[0]?.id ?? "").replace(/[^\w./:-]/gu, "?").slice(0, 80),
     });
   const added = entries
     .filter(
