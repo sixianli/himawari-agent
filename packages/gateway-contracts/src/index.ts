@@ -2,4 +2,4 @@ export * from "./contracts.js";
 export * from "./contracts-v2.js";
 export type { ThreadExecutionRecord } from "./thread-contracts-v3.js";
 export * from "./thread-contracts-v3.js";
-export { CONTRACT_ERROR_CODE, ContractValidationError } from "./validation.js";
+export { CONTRACT_ERROR_CODE, ContractValidationError, modelRefString } from "./validation.js";

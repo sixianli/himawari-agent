@@ -6,6 +6,7 @@ import {
   integer,
   literal,
   machineString,
+  modelRefString,
   nullable,
   object,
   type Schema,
@@ -56,7 +57,7 @@ const planFields = {
     },
   },
   authorizationRef: machineString,
-  modelRef: machineString,
+  modelRef: modelRefString,
   executionLease: object({
     executionLeaseId: machineString,
     expectedLeaseRevision: integer(1),
