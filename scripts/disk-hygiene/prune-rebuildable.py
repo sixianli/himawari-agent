@@ -67,10 +67,28 @@ def candidates(root, protected, cutoff):
                 yield path, status.st_size, False
 
 
-def host_is_busy(pattern):
+CONTAINER_CGROUP_SEGMENT = re.compile(
+    r'(?:^|/)(?:docker[-/][0-9a-f]{12,}|libpod-[0-9a-f]{12,}|cri-containerd-[0-9a-f]{12,}|kubepods[^/]*)(?:\.scope)?(?:/|$)'
+)
+
+
+def runs_in_container(pid, proc_root):
+    try:
+        text = (Path(proc_root) / pid / 'cgroup').read_text()
+    except OSError:
+        return False
+    return any(CONTAINER_CGROUP_SEGMENT.search(line.split(':', 2)[-1]) for line in text.splitlines())
+
+
+def busy_processes(pattern, proc_root='/proc'):
     child = subprocess.run(['pgrep', '-f', pattern], capture_output=True, text=True, check=False)
     own = {str(os.getpid()), str(os.getppid())}
-    return any(pid not in own for pid in child.stdout.split())
+    host, container = [], []
+    for pid in child.stdout.split():
+        if pid in own:
+            continue
+        (container if runs_in_container(pid, proc_root) else host).append(pid)
+    return host, container
 
 
 def main(argv=None):
@@ -83,11 +101,15 @@ def main(argv=None):
     parser.add_argument('--low-free-gb', type=float, default=10)
     parser.add_argument('--skip-if-busy', action='store_true')
     parser.add_argument('--busy-pattern', default=BUSY_PATTERN)
+    parser.add_argument('--proc-root', default='/proc')
     options = parser.parse_args(argv)
 
     roots = [Path(root).expanduser().resolve() for root in options.roots]
     roots = [root for root in roots if root.is_dir()]
-    if options.skip_if_busy and host_is_busy(options.busy_pattern):
+    host_busy, container_ignored = busy_processes(options.busy_pattern, options.proc_root) if options.skip_if_busy else ([], [])
+    if container_ignored:
+        print('PRUNE_IGNORED_CONTAINER_PROCESSES ' + json.dumps({'count': len(container_ignored), 'pids': container_ignored[:20]}))
+    if host_busy:
         print('PRUNE_SKIPPED_BUSY: a build or test is running')
         print('PRUNE_RESULT ' + json.dumps({'mode': 'skipped-busy', 'files': 0, 'directories': 0, 'bytes': 0, 'roots': [str(root) for root in roots]}))
         return 0
