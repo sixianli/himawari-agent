@@ -989,7 +989,7 @@ export const messages = {
   "dailyReview.tag.truncation": "Older content left out of an answer",
   "dailyReview.tag.degrade": "Memory search did not work",
   "dailyReview.tag.externalRead": "Memory read by an outside program",
-  "dailyReview.hidden": "Sensitive, text not shown",
+  "dailyReview.hidden": "Text not shown here",
   "dailyReview.fetched": "Checked {count, plural, one {# email} other {# emails}}",
   "dailyReview.allFine": "This page is all fine",
   "dailyReview.prev": "Previous",

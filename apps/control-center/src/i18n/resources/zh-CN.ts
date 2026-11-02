@@ -934,7 +934,7 @@ export const messages = {
   "dailyReview.tag.truncation": "回答时没带上的旧内容",
   "dailyReview.tag.degrade": "记忆搜索没生效",
   "dailyReview.tag.externalRead": "外部程序读取记忆",
-  "dailyReview.hidden": "含敏感内容，不显示原文",
+  "dailyReview.hidden": "这里不显示原文",
   "dailyReview.fetched": "检查了 {count} 封邮件",
   "dailyReview.allFine": "这一页都没问题",
   "dailyReview.prev": "上一页",

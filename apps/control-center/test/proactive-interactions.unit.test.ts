@@ -505,7 +505,7 @@ describe("[PG-15] proactive reminders page", () => {
     expect(rows).toHaveLength(6);
     expect(text(`${section} li:nth-child(1)`)).toContain("系统没存下的记忆");
     expect(text(`${section} li:nth-child(1)`)).toContain("我最近想吃牛肉");
-    expect(text(`${section} li:nth-child(2)`)).toContain("含敏感内容，不显示原文");
+    expect(text(`${section} li:nth-child(2)`)).toContain("这里不显示原文");
     expect(text(`${section} li:nth-child(3)`)).toContain("检查了 12 封邮件");
     expect(text(`${section} li:nth-child(4)`)).toContain("没提醒的邮件");
     const labels = (row: HTMLElement | undefined) =>

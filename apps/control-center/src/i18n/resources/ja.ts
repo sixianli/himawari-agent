@@ -990,7 +990,7 @@ export const messages = {
   "dailyReview.tag.truncation": "回答に入れなかった古い内容",
   "dailyReview.tag.degrade": "記憶検索が働かなかった",
   "dailyReview.tag.externalRead": "外部プログラムによる記憶の読み取り",
-  "dailyReview.hidden": "機密を含むため本文は表示しません",
+  "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",
   "dailyReview.prev": "前へ",
