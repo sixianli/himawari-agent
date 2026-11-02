@@ -64,6 +64,7 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   filesPage: { role: "region", name: "文件", exact: true },
   threadSearch: { role: "searchbox", name: "搜索对话", exact: true },
   threadSearchResult: ".thread-sidebar-records .thread-search-results li",
+  filesLibrary: ".files-library",
   modelPickerRoot: ".model-picker",
   modelPicker: ".model-picker > summary",
   modelChooser: ".model-panel .picker-model-name",

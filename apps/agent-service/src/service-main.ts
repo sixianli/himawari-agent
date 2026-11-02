@@ -400,6 +400,11 @@ function servesStaticFile(requestPath: string): boolean {
   );
 }
 
+function failureReasonField(error: unknown): { reason?: string } {
+  const reason = failureReason(error);
+  return reason === undefined ? {} : { reason };
+}
+
 function writeStartupStep(output: NodeJS.WritableStream, step: string): void {
   writeServiceDiagnostic(output, {
     component: "agent-service",
@@ -2092,7 +2097,7 @@ export async function runAgentService(
       component: "agent-service",
       event: "service.failed",
       code: stableErrorCode(error),
-      ...(failureReason(error) === undefined ? {} : { reason: failureReason(error) as string }),
+      ...failureReasonField(error),
     });
     return 1;
   }

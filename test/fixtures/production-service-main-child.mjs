@@ -124,6 +124,8 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
     const ids = { next: (scope) => `${scope}:${randomUUID()}` };
     const handles = new platform.EphemeralSecretPort({ clock, ids });
     const descriptors = agent.resolveConfiguredModelDescriptorSet(configuration);
+    if (descriptors.generation.some((model) => model.provider === "magpie") && !magpieUrl)
+      throw new Error("LOCAL_MAGPIE_REQUIRED");
     const composition = agent.createProductionModelComposition({
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,

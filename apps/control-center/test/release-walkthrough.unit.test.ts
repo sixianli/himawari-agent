@@ -442,6 +442,12 @@ describe("release walkthrough locators against the real control center", () => {
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.openFiles));
     const files = await eventually(() => byRole(body, UI.filesPage));
     expect(queryAllByRole(files, UI.pageError)).toHaveLength(0);
+    const library = await eventually(() => {
+      const found = files.querySelector(UI.filesLibrary);
+      if (!found) throw new Error("RELEASE_WALKTHROUGH_TARGET_MISSING files-library");
+      return found;
+    });
+    expect(library.getAttribute("aria-busy")).toBe("false");
     expect(queryAllByRole(body, UI.remindersPage)).toHaveLength(0);
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
     expect(queryAllByRole(body, UI.filesPage)).toHaveLength(0);

@@ -5910,7 +5910,8 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await target(target(page, UI.sidebarNavigation), UI.openFiles).click();
       const files = target(page, UI.filesPage);
       await uiExpect(files).toBeVisible({ timeout: 30_000 });
-      await uiExpect(files).not.toHaveAttribute("aria-busy", "true", { timeout: 30_000 });
+      const library = files.locator(UI.filesLibrary);
+      await uiExpect(library).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
       await uiExpect(target(files, UI.pageError)).toHaveCount(0);
       await newThread();
       await uiExpect(files).toHaveCount(0, { timeout: 20_000 });
