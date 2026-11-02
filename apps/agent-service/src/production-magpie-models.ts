@@ -49,7 +49,7 @@ const positiveInteger = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 
 const perMillion = (value: unknown): number | undefined => {
-  const parsed = typeof value === "string" ? Number(value) : Number.NaN;
+  const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) && parsed >= 0 ? parsed * 1_000_000 : undefined;
 };
 
@@ -57,12 +57,15 @@ export function parseMagpieModelList(body: unknown): readonly MagpieModelEntry[]
   const data = record(body)?.["data"];
   if (!Array.isArray(data)) return [];
   const entries: MagpieModelEntry[] = [];
+  const seen = new Set<string>();
   for (const item of data) {
     const entry = record(item);
     const id = entry?.["id"];
     const contextWindow = positiveInteger(entry?.["context_window"]);
     const maxOutputTokens = positiveInteger(entry?.["max_output_tokens"]);
-    if (!entry || typeof id !== "string" || !contextWindow || !maxOutputTokens) continue;
+    if (!entry || typeof id !== "string" || !contextWindow || !maxOutputTokens || seen.has(id))
+      continue;
+    seen.add(id);
     const input = record(entry["modalities"])?.["input"];
     const inputs = Array.isArray(input) ? input : [];
     const levels = Array.isArray(entry["reasoning_levels"]) ? entry["reasoning_levels"] : [];
@@ -72,7 +75,7 @@ export function parseMagpieModelList(body: unknown): readonly MagpieModelEntry[]
     const label = entry["magpie_label"] ?? entry["display_name"];
     entries.push({
       id,
-      label: typeof label === "string" && label.length > 0 ? label : id,
+      label: typeof label === "string" && label.trim().length > 0 ? label.trim() : id,
       contextWindow,
       maxOutputTokens,
       reasoningLevels:
@@ -136,6 +139,7 @@ export function priceTiers(
   const totals = [...prices.values()]
     .map(({ input, output }) => input + output)
     .sort((a, b) => a - b);
+  if (new Set(totals).size < 3) return new Map();
   const lowCut = totals[Math.ceil(totals.length / 3) - 1] ?? 0;
   const highCut = totals[Math.ceil((totals.length * 2) / 3) - 1] ?? 0;
   return new Map(
@@ -160,28 +164,47 @@ export async function expandConfigurationWithMagpieModels(
       descriptor.role === "primary" && descriptor.api === "openai-completions",
   );
   if (!primary || primary.provider !== "magpie" || primary.baseUrl === undefined) return unchanged;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let entries: readonly MagpieModelEntry[];
   try {
     const secret = resolveConfiguredSecretRequirement(configuration, primary.secretRef);
     if (secret === null) return unchanged;
-    const key = await options.resolveSecret(secret.secretRef, secret.secretVersion);
-    const response = await (options.fetch ?? fetch)(
-      `${primary.baseUrl.replace(/\/$/u, "")}/models`,
-      {
-        headers: { authorization: `Bearer ${key.trim()}` },
-        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-      },
-    );
-    if (!response.ok) throw new Error(`MAGPIE_MODEL_LIST_HTTP_${response.status}`);
-    entries = parseMagpieModelList(await response.json());
+    const deadline = AbortSignal.timeout(timeoutMs);
+    const timedOut = new Promise<never>((_, reject) => {
+      deadline.addEventListener("abort", () => reject(new Error("MAGPIE_MODEL_LIST_TIMEOUT")), {
+        once: true,
+      });
+    });
+    entries = await Promise.race([
+      (async () => {
+        const key = (await options.resolveSecret(secret.secretRef, secret.secretVersion)).trim();
+        if (key === "") throw new Error("MAGPIE_MODEL_LIST_EMPTY_KEY");
+        const response = await (options.fetch ?? fetch)(
+          `${primary.baseUrl?.replace(/\/$/u, "")}/models`,
+          { headers: { authorization: `Bearer ${key}` }, signal: deadline, redirect: "error" },
+        );
+        if (!response.ok) throw new Error(`MAGPIE_MODEL_LIST_HTTP_${response.status}`);
+        const parsed = parseMagpieModelList(await response.json());
+        if (parsed.length === 0) throw new Error("MAGPIE_MODEL_LIST_EMPTY");
+        return parsed;
+      })(),
+      timedOut,
+    ]);
   } catch (error) {
+    const code = error instanceof Error ? error.message : "";
     options.onDiagnostic?.({
       event: "magpie-models.discovery_failed",
-      code: error instanceof Error ? error.message.slice(0, 80) : "unknown",
+      code: /^[A-Z0-9_]{1,80}$/u.test(code) ? code : "unknown",
     });
     return unchanged;
   }
   const own = entries.find(({ id }) => id === primary.model);
+  if (!own) {
+    options.onDiagnostic?.({
+      event: "magpie-models.primary_missing_from_list",
+      model: /^[\w./-]{1,80}$/u.test(primary.model) ? primary.model : "unknown",
+    });
+  }
   const known = new Set(
     configuration.modelDescriptors.flatMap((descriptor) =>
       descriptor.role === "primary" ? [descriptor.model] : [],

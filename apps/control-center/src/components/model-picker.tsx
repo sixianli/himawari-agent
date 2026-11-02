@@ -15,7 +15,13 @@ const TIER_MESSAGES = {
 } as const satisfies Record<string, MessageId>;
 
 const dollars = (value: number) =>
-  value >= 10 ? value.toFixed(0) : value >= 1 ? value.toFixed(2) : value.toPrecision(2);
+  value === 0
+    ? "0"
+    : value >= 10
+      ? value.toFixed(0)
+      : value >= 1
+        ? value.toFixed(2)
+        : value.toPrecision(2);
 
 export function defaultThinkingLevel(levels: readonly string[]): string {
   return (

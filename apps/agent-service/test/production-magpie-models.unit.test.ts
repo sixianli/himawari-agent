@@ -1,12 +1,11 @@
-import { ConfiguredPiModelBindingPort } from "@himawari-agent/runtime-pi";
-import { getPiModelPresentation } from "@himawari-agent/runtime-pi";
+import { ConfiguredPiModelBindingPort, getPiModelPresentation } from "@himawari-agent/runtime-pi";
 import { describe, expect, it } from "vitest";
-import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 import {
   expandConfigurationWithMagpieModels,
   parseMagpieModelList,
   priceTiers,
 } from "../src/production-magpie-models.js";
+import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 
 const entry = (id: string, extra: Record<string, unknown> = {}) => ({
   context_length: 1_000_000,
@@ -271,5 +270,150 @@ describe("Magpie model discovery", () => {
     ]);
     expect(await levels("magpie:opencode-go/plain")).toEqual(["off"]);
     await port.close();
+  });
+
+  it("[review] ignores a model listed twice instead of failing the whole startup", async () => {
+    const twice = { data: [...LIST.data, entry("opencode-go/kimi-k3")] };
+    expect(
+      parseMagpieModelList(twice).filter(({ id }) => id === "opencode-go/kimi-k3"),
+    ).toHaveLength(1);
+    const expansion = await expandConfigurationWithMagpieModels(configuration(), {
+      resolveSecret: async () => "k",
+      fetch: jsonFetch(twice),
+    });
+    const refs = expansion.configuration.modelDescriptors.map(({ ref }) => ref);
+    expect(new Set(refs).size).toBe(refs.length);
+  });
+
+  it("[review] gives no price tag when every listed price is the same", () => {
+    expect(
+      priceTiers(
+        new Map([
+          ["a", { input: 1, output: 2 }],
+          ["b", { input: 1, output: 2 }],
+        ]),
+      ).size,
+    ).toBe(0);
+  });
+
+  it("[review] caps the output limit at the configured one and keeps a smaller listed limit", async () => {
+    const small = {
+      data: [
+        entry("opencode-go/small-output", { max_output_tokens: 4096, reasoning_levels: ["high"] }),
+      ],
+    };
+    const expansion = await expandConfigurationWithMagpieModels(configuration(), {
+      resolveSecret: async () => "k",
+      fetch: jsonFetch(small),
+    });
+    expect(
+      expansion.configuration.modelDescriptors.find(
+        (descriptor) =>
+          descriptor.role === "primary" && descriptor.model === "opencode-go/small-output",
+      ),
+    ).toMatchObject({ maxTokens: 4096 });
+  });
+
+  it("[review] lets Magpie's reasoning levels override the built-in table for the same model name", async () => {
+    const expansion = await expandConfigurationWithMagpieModels(configuration(), {
+      resolveSecret: async () => "k",
+      fetch: jsonFetch(LIST),
+    });
+    const [first] = resolveConfiguredModelDescriptorSet(expansion.configuration).generation;
+    const port = new ConfiguredPiModelBindingPort({
+      descriptors: [
+        {
+          ...(first as never as Record<string, unknown>),
+          model: "deepseek/deepseek-v4.1-flash",
+          thinkingLevels: ["low", "medium", "high"],
+        } as never,
+      ],
+      secretSource: { productionSuitable: true, resolve: async () => "secret" },
+    });
+    expect(getPiModelPresentation(await port.resolve("model-primary")).thinkingLevels).toEqual([
+      "off",
+      "low",
+      "medium",
+      "high",
+    ]);
+    await port.close();
+  });
+
+  it("[review] treats an empty or malformed 200 reply, an empty key and a stalled secret lookup as failures", async () => {
+    const original = configuration();
+    const events: Record<string, string | number>[] = [];
+    const run = (options: Parameters<typeof expandConfigurationWithMagpieModels>[1]) =>
+      expandConfigurationWithMagpieModels(original, {
+        ...options,
+        onDiagnostic: (event) => events.push(event),
+      });
+    for (const body of [{}, { data: [] }]) {
+      const expansion = await run({ resolveSecret: async () => "k", fetch: jsonFetch(body) });
+      expect(expansion.configuration).toBe(original);
+    }
+    expect(
+      (await run({ resolveSecret: async () => "  ", fetch: jsonFetch(LIST) })).configuration,
+    ).toBe(original);
+    const stalled = await run({
+      resolveSecret: () => new Promise<string>(() => undefined),
+      fetch: jsonFetch(LIST),
+      timeoutMs: 20,
+    });
+    expect(stalled.configuration).toBe(original);
+    expect(events.map((event) => event["code"])).toEqual([
+      "MAGPIE_MODEL_LIST_EMPTY",
+      "MAGPIE_MODEL_LIST_EMPTY",
+      "MAGPIE_MODEL_LIST_EMPTY_KEY",
+      "MAGPIE_MODEL_LIST_TIMEOUT",
+    ]);
+  });
+
+  it("[review] logs only stable error codes, never free text from the network error", async () => {
+    const events: Record<string, string | number>[] = [];
+    await expandConfigurationWithMagpieModels(configuration(), {
+      resolveSecret: async () => "k",
+      fetch: (async () => {
+        throw new Error("connect failed for Bearer sk-secret");
+      }) as typeof fetch,
+      onDiagnostic: (event) => events.push(event),
+    });
+    expect(events).toEqual([{ event: "magpie-models.discovery_failed", code: "unknown" }]);
+  });
+
+  it("[review] reads an empty price string as no price, not as free", () => {
+    const [parsed] = parseMagpieModelList({
+      data: [entry("x/y", { pricing: { prompt: "", completion: "" } })],
+    });
+    expect(parsed?.price).toBeUndefined();
+  });
+
+  it("[review] gives no tags with fewer than three distinct prices", () => {
+    expect(
+      priceTiers(
+        new Map([
+          ["a", { input: 1, output: 1 }],
+          ["b", { input: 2, output: 2 }],
+        ]),
+      ).size,
+    ).toBe(0);
+    expect(
+      priceTiers(
+        new Map([
+          ["a", { input: 1, output: 1 }],
+          ["b", { input: 2, output: 2 }],
+          ["c", { input: 3, output: 3 }],
+        ]),
+      ).size,
+    ).toBe(3);
+  });
+
+  it("[review] reports when the configured model is missing from the list", async () => {
+    const events: Record<string, string | number>[] = [];
+    await expandConfigurationWithMagpieModels(configuration(), {
+      resolveSecret: async () => "k",
+      fetch: jsonFetch({ data: [entry("opencode-go/kimi-k3")] }),
+      onDiagnostic: (event) => events.push(event),
+    });
+    expect(events.map(({ event }) => event)).toContain("magpie-models.primary_missing_from_list");
   });
 });

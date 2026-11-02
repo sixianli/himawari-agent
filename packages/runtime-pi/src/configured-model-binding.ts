@@ -32,19 +32,18 @@ const MODEL_THINKING_LEVEL_MAPS: Readonly<Record<string, ThinkingLevelMap>> = Ob
 
 function advertisedThinkingLevelMap(levels: readonly string[]): ThinkingLevelMap {
   const map: ThinkingLevelMap = {};
-  for (const level of ["minimal", "low", "medium", "high"] as const)
+  for (const level of ["minimal", "low", "medium", "high", "xhigh", "max"] as const)
     map[level] = levels.includes(level) ? level : null;
-  for (const level of ["xhigh", "max"] as const) if (levels.includes(level)) map[level] = level;
   return map;
 }
 
 function thinkingLevelMap(descriptor: ConfiguredPiModelDescriptor): ThinkingLevelMap | undefined {
   if (!descriptor.reasoning) return undefined;
   const map: ThinkingLevelMap = {
+    ...MODEL_THINKING_LEVEL_MAPS[descriptor.model],
     ...(descriptor.thinkingLevels === undefined
       ? {}
       : advertisedThinkingLevelMap(descriptor.thinkingLevels)),
-    ...MODEL_THINKING_LEVEL_MAPS[descriptor.model],
     ...(descriptor.reasoningRequired ? { off: null } : {}),
   };
   return Object.keys(map).length === 0 ? undefined : map;
