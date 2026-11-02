@@ -50,8 +50,8 @@ const files = [
     mediaType: "application/pdf",
   },
   {
-    name: "第二页损坏.pdf",
-    source: "second-page-broken.pdf",
+    name: "第二页超高.pdf",
+    source: "tall-second-page.pdf",
     kind: "pdf",
     mediaType: "application/pdf",
   },
@@ -131,7 +131,7 @@ try {
       await page.addInitScript(() => {
         const original = HTMLCanvasElement.prototype.getContext;
         HTMLCanvasElement.prototype.getContext = function (...args) {
-          if (this.height > 20000) return null;
+          if (this.height > 10000) return null;
           return original.apply(this, args);
         };
       });
@@ -293,6 +293,19 @@ try {
       });
       await expect(pages.nth(1).locator(".preview-page-failed")).toBeVisible({ timeout: 15000 });
       await expect(pages.nth(0).locator(".preview-page-failed")).toHaveCount(0);
+      await expect(pages.nth(1).locator("canvas")).toBeHidden();
+      const firstPageInk = await pages
+        .nth(0)
+        .locator("canvas")
+        .evaluate((canvas) => {
+          const pixels = canvas
+            .getContext("2d")
+            .getImageData(0, 0, canvas.width, canvas.height).data;
+          let ink = 0;
+          for (let index = 0; index < pixels.length; index += 4) if (pixels[index] < 200) ink += 1;
+          return ink;
+        });
+      expect(firstPageInk).toBeGreaterThan(100);
       await expect(
         page.locator(
           ".content-preview > .preview-notice, .content-preview .preview-body > .preview-notice",

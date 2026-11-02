@@ -1,5 +1,12 @@
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { type CSSProperties, type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { pdfDocumentFontOptions } from "../pdf-document-options.js";
 import { type SheetCellStyle, type SheetView, workbookViews } from "../spreadsheet-model.js";
@@ -12,6 +19,7 @@ type Message = ReturnType<typeof useControlCenterIntl>["message"];
 const PAGE_GAP = 12;
 const PAGE_PADDING = 12;
 const MAX_CANVAS_PIXELS = 16_000_000;
+const MAX_CANVAS_EDGE = 16_384;
 const RENDER_MARGIN = "800px 0px";
 const HEADER_ROW_HEIGHT = 22;
 const DEFAULT_ROW_HEIGHT = 21;
@@ -62,6 +70,7 @@ function PdfPage({
   width,
   label,
   failedLabel,
+  onPageFailed,
 }: {
   readonly document: PDFDocumentProxy;
   readonly number: number;
@@ -69,6 +78,7 @@ function PdfPage({
   readonly width: number;
   readonly label: string;
   readonly failedLabel: string;
+  readonly onPageFailed: (number: number) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -101,11 +111,15 @@ function PdfPage({
         window.devicePixelRatio || 1,
         3,
         Math.sqrt(MAX_CANVAS_PIXELS / (viewport.width * viewport.height)),
+        MAX_CANVAS_EDGE / Math.max(viewport.width, viewport.height),
       );
-      target.width = Math.floor(viewport.width * ratio);
-      target.height = Math.floor(viewport.height * ratio);
+      target.width = Math.max(1, Math.floor(viewport.width * ratio));
+      target.height = Math.max(1, Math.floor(viewport.height * ratio));
       const context = target.getContext("2d");
       if (!context) {
+        target.width = 0;
+        target.height = 0;
+        onPageFailed(number);
         setFailed(true);
         return;
       }
@@ -127,14 +141,18 @@ function PdfPage({
         .render()
         .catch(() => {});
     })().catch((error: unknown) => {
-      if (current && (error as { name?: string } | null)?.name !== "RenderingCancelledException")
+      if (current && (error as { name?: string } | null)?.name !== "RenderingCancelledException") {
+        target.width = 0;
+        target.height = 0;
+        onPageFailed(number);
         setFailed(true);
+      }
     });
     return () => {
       current = false;
       task?.cancel();
     };
-  }, [visible, document, number, scale, width]);
+  }, [visible, document, number, scale, width, onPageFailed]);
   return (
     <div
       className="preview-page"
@@ -145,7 +163,7 @@ function PdfPage({
     >
       <canvas ref={canvas} hidden={failed} />
       <div className="textLayer" ref={text} hidden={failed} />
-      {failed ? <p className="preview-page-failed">{failedLabel}</p> : null}
+      {failed ? <output className="preview-page-failed">{failedLabel}</output> : null}
     </div>
   );
 }
@@ -161,6 +179,11 @@ function PdfDocument({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const width = useWidth(host);
+  const [failedPages, setFailedPages] = useState<ReadonlySet<number>>(() => new Set());
+  const onPageFailed = useCallback(
+    (number: number) => setFailedPages((current) => new Set(current).add(number)),
+    [],
+  );
   const [loaded, setLoaded] = useState<{
     readonly document: PDFDocumentProxy;
     readonly sizes: readonly PageSize[];
@@ -188,6 +211,9 @@ function PdfDocument({
       void destroy?.();
     };
   }, [data, onFailed]);
+  useEffect(() => {
+    if (loaded && failedPages.size >= loaded.sizes.length) onFailed();
+  }, [loaded, failedPages, onFailed]);
   const pageWidth = Math.max(0, width - PAGE_PADDING * 2);
   return (
     <div className="preview-pages" ref={host} style={{ gap: PAGE_GAP, padding: PAGE_PADDING }}>
@@ -201,6 +227,7 @@ function PdfDocument({
               width={pageWidth}
               label={message("preview.page", { page: index + 1, count: loaded.sizes.length })}
               failedLabel={message("preview.pageFailed", { page: index + 1 })}
+              onPageFailed={onPageFailed}
             />
           ))
         : null}

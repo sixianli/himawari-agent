@@ -1201,6 +1201,9 @@ body {
   font-size: 12.5px;
   line-height: 1.6;
 }
+.preview-page :is(canvas, .textLayer)[hidden] {
+  display: none;
+}
 .preview-page canvas {
   display: block;
   width: 100%;
