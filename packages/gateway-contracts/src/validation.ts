@@ -59,6 +59,19 @@ export const machineString: Schema<string> = {
   },
 };
 
+export const modelRefString: Schema<string> = {
+  parse(input, path = "$") {
+    if (
+      typeof input !== "string" ||
+      input.length > 128 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(input)
+    ) {
+      fail(path, "expected a 1-128 character model reference");
+    }
+    return input;
+  },
+};
+
 export function boundedString(maximum = 2048): Schema<string> {
   return {
     parse(input, path = "$") {

@@ -1,3 +1,4 @@
+import { modelRefString } from "@himawari-agent/gateway-contracts";
 import type {
   ConfiguredCompletionsGenerationModelDescriptor,
   ConfiguredModelDescriptor,
@@ -39,6 +40,15 @@ export interface MagpieModelDiscoveryOptions {
 
 const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const DEFAULT_TIMEOUT_MS = 5000;
+
+const sendableRef = (id: string): boolean => {
+  try {
+    modelRefString.parse(`magpie:${id}`);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value)
@@ -210,9 +220,16 @@ export async function expandConfigurationWithMagpieModels(
       descriptor.role === "primary" ? [descriptor.model] : [],
     ),
   );
+  const unsendable = entries.filter(({ id }) => !sendableRef(id));
+  if (unsendable.length > 0)
+    options.onDiagnostic?.({
+      event: "magpie-models.ref_rejected_by_contract",
+      count: unsendable.length,
+    });
   const added = entries
     .filter(
       (entry) =>
+        sendableRef(entry.id) &&
         !entry.id.startsWith("auto/") &&
         !entry.id.startsWith("group/") &&
         !known.has(entry.id) &&
