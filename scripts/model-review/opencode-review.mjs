@@ -2,6 +2,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
+  readdirSync,
+  readlinkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,7 +13,7 @@ import {
 } from "node:fs";
 import http from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -22,6 +24,17 @@ export const MIN_OUTPUT_TOKENS = 100000;
 export const STEP_LIMIT = 50;
 export const MODES = ["code-review", "discussion"];
 export const GIT_READ_COMMANDS = ["git diff", "git log", "git show", "git blame", "git status"];
+export const WRITE_OR_OUTSIDE_PATTERNS = [
+  "*>*",
+  "*<*",
+  "* --output*",
+  "* -o*",
+  "* --ext-diff*",
+  "* --textconv*",
+  "* --no-index*",
+  "* --contents*",
+];
+export const COST_LIMIT_PER_MODEL_USD = 0.25;
 export const RULE_16_SENTENCE = "列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -30,10 +43,7 @@ export function reviewConfig({ mode, baseURL } = {}) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   const bash = { "*": "deny" };
   for (const command of GIT_READ_COMMANDS) bash[`${command}*`] = "allow";
-  bash["* --output*"] = "deny";
-  bash["* -o*"] = "deny";
-  bash["* --ext-diff*"] = "deny";
-  bash["* --textconv*"] = "deny";
+  for (const pattern of WRITE_OR_OUTSIDE_PATTERNS) bash[pattern] = "deny";
   const providerOptions = { apiKey: "placeholder" };
   if (baseURL) providerOptions.baseURL = baseURL;
   return {
@@ -134,7 +144,12 @@ export function summarizeEvents(jsonl) {
     const part = event.part ?? {};
     if (event.type === "text" && typeof part.text === "string") texts.push(part.text);
     if (event.type === "tool_use") {
-      toolCalls.push({ tool: part.tool, input: part.state?.input, status: part.state?.status });
+      toolCalls.push({
+        tool: part.tool,
+        input: part.state?.input,
+        status: part.state?.status,
+        output: String(part.state?.output ?? part.state?.error ?? ""),
+      });
     }
     if (event.type === "step_finish") {
       const tokens = part.tokens ?? {};
@@ -173,8 +188,16 @@ export function opencodeBinary() {
   return binary;
 }
 
-function runOpencode({ binary, cwd, model, prompt, timeoutMs }) {
+const activeChildren = new Set();
+
+function runOpencode({ binary, cwd, configPath, model, prompt, timeoutMs, costLimit }) {
   return new Promise((resolvePromise) => {
+    let stdout = "";
+    let stderr = "";
+    let pending = "";
+    let cost = 0;
+    let stopReason = null;
+    let settled = false;
     const child = spawn(
       binary,
       ["run", "--format", "json", "-m", model, "--variant", REASONING_VARIANT, prompt],
@@ -183,30 +206,91 @@ function runOpencode({ binary, cwd, model, prompt, timeoutMs }) {
         env: {
           ...process.env,
           PWD: cwd,
+          OPENCODE_CONFIG: configPath,
+          OPENCODE_DISABLE_PROJECT_CONFIG: "1",
           OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
+          GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
-    let stdout = "";
-    let stderr = "";
+    activeChildren.add(child);
+    const stop = (reason) => {
+      if (stopReason) return;
+      stopReason = reason;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 10000).unref();
+    };
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      activeChildren.delete(child);
+      resolvePromise({ stdout, stderr, stopReason, ...result });
+    };
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
+      pending += chunk;
+      const lines = pending.split("\n");
+      pending = lines.pop();
+      for (const line of lines) {
+        if (!line.includes('"step_finish"')) continue;
+        try {
+          cost += JSON.parse(line).part?.cost ?? 0;
+        } catch {}
+      }
+      if (costLimit !== undefined && cost > costLimit) stop("cost-limit");
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
-    const timer = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      resolvePromise({ code, signal, stdout, stderr });
-    });
+    child.on("error", (error) => finish({ code: null, signal: null, spawnError: error.message }));
+    child.on("close", (code, signal) => finish({ code, signal }));
+    const timer = setTimeout(() => stop("timeout"), timeoutMs);
   });
 }
 
-function startProbeServer(probeCommand) {
+export function runOutcome(summary, run) {
+  if (run.spawnError) return "spawn-error";
+  if (run.stopReason) return run.stopReason;
+  if (summary.outcome !== "ok") return summary.outcome;
+  if (run.code !== 0) return `exit-${run.code}`;
+  return "ok";
+}
+
+export function probePlan(workRoot) {
+  const marker = "OUTSIDE_REPO_MARKER_7f3a";
+  const outsideA = join(workRoot, "outside-a.txt");
+  const outsideB = join(workRoot, "outside-b.txt");
+  const target = (name) => join(workRoot, `probe-${name}`);
+  const writes = [
+    ["output", (f) => `git log -1 --output=${f}`],
+    ["abbrev", (f) => `git diff --outp=${f} HEAD`],
+    ["redirect", (f) => `git log -1 > ${f}`],
+    ["append", (f) => `git log -1 >> ${f}`],
+    ["stderr", (f) => `git log -1 2>${f}`],
+    ["pipe", (f) => `git log -1 | tee ${f}`],
+    ["backtick", (f) => `git log -1 \`touch ${f}\``],
+    ["substitution", (f) => `git log -1 $(touch ${f})`],
+    ["semicolon", (f) => `git log -1; touch ${f}`],
+    ["and", (f) => `git log -1 && touch ${f}`],
+    ["newline", (f) => `git log -1\ntouch ${f}`],
+  ].map(([name, build]) => ({ kind: "write", file: target(name), command: build(target(name)) }));
+  const reads = [
+    `git diff --no-index ${outsideA} ${outsideB}`,
+    `git diff --no-inde ${outsideA} ${outsideB}`,
+    `git blame --contents ${outsideA} -- AGENTS.md`,
+  ].map((command) => ({ kind: "read", command }));
+  return {
+    marker,
+    outsideFiles: [outsideA, outsideB],
+    probes: [{ kind: "allowed", command: "git log -1 --oneline" }, ...writes, ...reads],
+  };
+}
+
+function startProbeServer(commands) {
   const requests = [];
-  const pendingToolCall = new Set();
+  const served = new Map();
   const server = http.createServer((request, response) => {
     let body = "";
     request.on("data", (chunk) => {
@@ -218,7 +302,14 @@ function startProbeServer(probeCommand) {
         response.end('{"data":[]}');
         return;
       }
-      const parsed = JSON.parse(body);
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        response.writeHead(400);
+        response.end();
+        return;
+      }
       requests.push(parsed);
       const send = (payload) =>
         response.write(
@@ -226,9 +317,9 @@ function startProbeServer(probeCommand) {
         );
       response.writeHead(200, { "content-type": "text/event-stream" });
       const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
-      const alreadyAsked = pendingToolCall.has(parsed.model);
-      if (hasTools && !alreadyAsked) {
-        pendingToolCall.add(parsed.model);
+      const next = served.get(parsed.model) ?? 0;
+      if (hasTools && next < commands.length) {
+        served.set(parsed.model, next + 1);
         send({
           choices: [
             {
@@ -238,11 +329,11 @@ function startProbeServer(probeCommand) {
                 tool_calls: [
                   {
                     index: 0,
-                    id: "probe-call",
+                    id: `probe-call-${next}`,
                     type: "function",
                     function: {
                       name: "bash",
-                      arguments: JSON.stringify({ command: probeCommand, description: "probe" }),
+                      arguments: JSON.stringify({ command: commands[next], description: "probe" }),
                     },
                   },
                 ],
@@ -274,7 +365,7 @@ function startProbeServer(probeCommand) {
   });
 }
 
-export function checkProbeRequests({ mode, requests, probeWritten, toolCalls }) {
+export function checkProbeRequests({ mode, requests, plan, toolCalls, writtenFiles }) {
   const problems = [];
   const main = requests.filter(
     (request) => Array.isArray(request.tools) && request.tools.length > 0,
@@ -291,38 +382,84 @@ export function checkProbeRequests({ mode, requests, probeWritten, toolCalls }) 
       problems.push(`PROBE_REASONING ${request.model} ${request.reasoning_effort}`);
     }
   }
-  if (probeWritten) problems.push("PROBE_GIT_OUTPUT_WROTE_FILE");
-  if (!toolCalls.some((call) => call.tool === "bash" && call.status === "error"))
-    problems.push("PROBE_GIT_OUTPUT_NOT_REFUSED");
+  const bashCalls = toolCalls.filter((call) => call.tool === "bash");
+  if (bashCalls.length < plan.probes.length) {
+    problems.push(`PROBE_INCOMPLETE ran=${bashCalls.length} expected=${plan.probes.length}`);
+  }
+  plan.probes.forEach((probe, index) => {
+    const call = bashCalls[index];
+    if (!call) return;
+    if (probe.kind === "allowed" && call.status !== "completed") {
+      problems.push(`PROBE_READ_COMMAND_BLOCKED ${probe.command}`);
+    }
+    if (probe.kind === "read" && call.output.includes(plan.marker)) {
+      problems.push(`PROBE_READ_OUTSIDE ${probe.command}`);
+    }
+  });
+  for (const file of writtenFiles) problems.push(`PROBE_WROTE_FILE ${file}`);
   return problems;
 }
 
-async function selfCheck({ binary, copy, mode, timeoutMs }) {
-  const probeFile = join(copy, "..", "probe-written");
-  const { server, requests, port } = await startProbeServer(`git log -1 --output=${probeFile}`);
+async function selfCheck({ binary, copy, workRoot, mode, timeoutMs }) {
+  const plan = probePlan(workRoot);
+  for (const file of plan.outsideFiles) writeFileSync(file, `${plan.marker}\n${file}\n`);
+  const { server, requests, port } = await startProbeServer(plan.probes.map((p) => p.command));
+  const configPath = join(workRoot, "probe-opencode.json");
   writeFileSync(
-    join(copy, "opencode.json"),
+    configPath,
     JSON.stringify(reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }), null, 2),
   );
   try {
     const problems = [];
     for (const model of REVIEW_MODELS) {
       const before = requests.length;
-      const run = await runOpencode({ binary, cwd: copy, model, prompt: "probe", timeoutMs });
+      const run = await runOpencode({
+        binary,
+        cwd: copy,
+        configPath,
+        model,
+        prompt: "probe",
+        timeoutMs,
+      });
       const summary = summarizeEvents(run.stdout);
+      const writtenFiles = plan.probes
+        .filter((probe) => probe.kind === "write" && existsSync(probe.file))
+        .map((probe) => probe.file);
       problems.push(
         ...checkProbeRequests({
           mode,
           requests: requests.slice(before),
-          probeWritten: existsSync(probeFile),
+          plan,
           toolCalls: summary.toolCalls,
-        }),
+          writtenFiles,
+        }).map((problem) => `${model}: ${problem}`),
       );
     }
     return problems;
   } finally {
-    server.close();
+    await new Promise((resolveClose) => server.close(resolveClose));
   }
+}
+
+export function removeUnsafeProjectFiles(copy) {
+  const removed = [];
+  const root = `${resolve(copy)}${sep}`;
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === ".git") continue;
+      const path = join(dir, entry.name);
+      const outsideLink =
+        entry.isSymbolicLink() && !resolve(dir, readlinkSync(path)).startsWith(root);
+      if (outsideLink || entry.name === ".opencode" || /^opencode\.jsonc?$/.test(entry.name)) {
+        rmSync(path, { recursive: true, force: true });
+        removed.push(path);
+      } else if (entry.isDirectory()) {
+        walk(path);
+      }
+    }
+  };
+  walk(copy);
+  return removed;
 }
 
 function git(args, cwd) {
@@ -345,6 +482,7 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
   git(["remote", "remove", "origin"], copy);
   for (const commit of [commits.base, commits.previous].filter(Boolean))
     git(["cat-file", "-e", `${commit}^{commit}`], copy);
+  return removeUnsafeProjectFiles(copy);
 }
 
 export function parseArgs(argv) {
@@ -373,6 +511,9 @@ export function parseArgs(argv) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
+  if (!Number.isFinite(options.timeoutMinutes) || options.timeoutMinutes <= 0) {
+    throw new Error("ARG_INVALID --timeout-minutes");
+  }
   return options;
 }
 
@@ -393,9 +534,26 @@ async function main() {
   const binary = opencodeBinary();
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
+  const cleanup = () => {
+    for (const child of activeChildren) child.kill("SIGKILL");
+    rmSync(workRoot, { recursive: true, force: true });
+  };
+  const onSignal = (signal) => {
+    cleanup();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
   try {
-    prepareCopy({ repo: options.repo, copy, commits, workRoot });
-    const problems = await selfCheck({ binary, copy, mode: options.mode, timeoutMs: 120000 });
+    const removed = prepareCopy({ repo: options.repo, copy, commits, workRoot });
+    if (removed.length > 0) console.log(`UNSAFE_PROJECT_FILES_REMOVED ${removed.length}`);
+    const problems = await selfCheck({
+      binary,
+      copy,
+      workRoot,
+      mode: options.mode,
+      timeoutMs: 180000,
+    });
     if (problems.length > 0) {
       console.error(`SELF_CHECK_FAILED ${problems.join(" | ")}`);
       process.exitCode = 3;
@@ -403,31 +561,40 @@ async function main() {
     }
     console.log("SELF_CHECK_OK");
     if (options.selfCheckOnly) return;
-    writeFileSync(
-      join(copy, "opencode.json"),
-      JSON.stringify(reviewConfig({ mode: options.mode }), null, 2),
-    );
+    const configPath = join(workRoot, "opencode.json");
+    writeFileSync(configPath, JSON.stringify(reviewConfig({ mode: options.mode }), null, 2));
     mkdirSync(options.out, { recursive: true });
     writeFileSync(join(options.out, "prompt.md"), prompt);
     const results = await Promise.all(
       REVIEW_MODELS.map(async (model) => {
-        const run = await runOpencode({ binary, cwd: copy, model, prompt, timeoutMs });
+        const run = await runOpencode({
+          binary,
+          cwd: copy,
+          configPath,
+          model,
+          prompt,
+          timeoutMs,
+          costLimit: COST_LIMIT_PER_MODEL_USD,
+        });
         const name = model.split("/").pop();
         writeFileSync(join(options.out, `${name}.jsonl`), run.stdout);
         const summary = summarizeEvents(run.stdout);
-        if (run.signal) summary.outcome = "timeout";
         writeFileSync(join(options.out, `${name}.md`), `${summary.text}\n`);
         const record = {
           at: new Date().toISOString(),
           mode: options.mode,
           model,
           head: commits.head,
-          outcome: summary.outcome,
+          outcome: runOutcome(summary, run),
           lastReason: summary.lastReason,
+          exitCode: run.code,
           ...summary.usage,
           toolCalls: summary.toolCalls.length,
         };
         appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
+        if (record.outcome !== "ok" && run.stderr.trim()) {
+          writeFileSync(join(options.out, `${name}.stderr.txt`), run.stderr);
+        }
         return record;
       }),
     );
@@ -438,7 +605,9 @@ async function main() {
     }
     if (results.some((record) => record.outcome !== "ok")) process.exitCode = 4;
   } finally {
-    rmSync(workRoot, { recursive: true, force: true });
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    cleanup();
   }
 }
 

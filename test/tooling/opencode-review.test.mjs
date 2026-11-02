@@ -1,5 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,13 +19,25 @@ import {
   buildPrompt,
   checkProbeRequests,
   expectedTools,
+  COST_LIMIT_PER_MODEL_USD,
   parseArgs,
   prepareCopy,
+  probePlan,
+  runOutcome,
   resolveCommits,
   reviewConfig,
   reviewQuestions,
   summarizeEvents,
 } from "../../scripts/model-review/opencode-review.mjs";
+
+function lstatExists(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const instructions = readFileSync(
   new URL("../../.agents/instructions/model-review.md", import.meta.url),
@@ -170,48 +191,74 @@ describe("opencode review output", () => {
 });
 
 describe("opencode review self-check", () => {
-  const refused = [{ tool: "bash", status: "error" }];
+  const plan = probePlan("/work");
+  const passingCalls = () =>
+    plan.probes.map((probe) =>
+      probe.kind === "allowed"
+        ? { tool: "bash", status: "completed", output: "abc123 commit" }
+        : {
+            tool: "bash",
+            status: "error",
+            output: "The user has specified a rule which prevents you",
+          },
+    );
+  const check = (overrides = {}) =>
+    checkProbeRequests({
+      mode: "code-review",
+      requests: [{ model: "x", messages: [] }, toolRequest(["bash", "glob", "grep", "read"])],
+      plan,
+      toolCalls: passingCalls(),
+      writtenFiles: [],
+      ...overrides,
+    });
 
-  it("passes a request with the read-only tools, a raised output limit and high reasoning", () => {
-    const requests = [{ model: "x", messages: [] }, toolRequest(["bash", "glob", "grep", "read"])];
-    expect(
-      checkProbeRequests({
-        mode: "code-review",
-        requests,
-        probeWritten: false,
-        toolCalls: refused,
-      }),
-    ).toEqual([]);
+  it("probes every write and outside-read shape the reviews found", () => {
+    const commands = plan.probes.map((probe) => probe.command);
+    for (const shape of [
+      "--output=",
+      "--outp=",
+      " > ",
+      " >> ",
+      " 2>",
+      " | tee ",
+      "`touch",
+      "$(touch",
+      "; touch",
+      "&& touch",
+      "\ntouch",
+      "--no-index",
+      "--no-inde ",
+      "--contents",
+    ]) {
+      expect(commands.some((command) => command.includes(shape))).toBe(true);
+    }
+    expect(plan.probes[0]).toEqual({ kind: "allowed", command: "git log -1 --oneline" });
+  });
+
+  it("passes when every probe is refused and the plain git read runs", () => {
+    expect(check()).toEqual([]);
   });
 
   it("fails the request opencode sent with the old configuration", () => {
-    const requests = [
-      toolRequest(["glob", "grep", "read", "skill", "task", "todowrite", "websearch"], {
-        max_tokens: 32000,
-      }),
-    ];
-    const problems = checkProbeRequests({
-      mode: "code-review",
-      requests,
-      probeWritten: false,
-      toolCalls: refused,
+    const problems = check({
+      requests: [
+        toolRequest(["glob", "grep", "read", "skill", "task", "todowrite", "websearch"], {
+          max_tokens: 32000,
+        }),
+      ],
     });
     expect(problems.some((problem) => problem.startsWith("PROBE_TOOLS_UNEXPECTED"))).toBe(true);
     expect(problems.some((problem) => problem.startsWith("PROBE_OUTPUT_CAP"))).toBe(true);
   });
 
   it("fails when reasoning is not high or the output limit is below the minimum", () => {
-    const requests = [
-      toolRequest(["bash", "glob", "grep", "read"], {
-        reasoning_effort: "low",
-        max_tokens: MIN_OUTPUT_TOKENS - 1,
-      }),
-    ];
-    const problems = checkProbeRequests({
-      mode: "code-review",
-      requests,
-      probeWritten: false,
-      toolCalls: refused,
+    const problems = check({
+      requests: [
+        toolRequest(["bash", "glob", "grep", "read"], {
+          reasoning_effort: "low",
+          max_tokens: MIN_OUTPUT_TOKENS - 1,
+        }),
+      ],
     });
     expect(problems).toEqual([
       "PROBE_OUTPUT_CAP deepseek-v4.1-flash 99999",
@@ -219,22 +266,78 @@ describe("opencode review self-check", () => {
     ]);
   });
 
-  it("fails when git wrote a file or the write was not refused", () => {
-    const requests = [toolRequest(["bash", "glob", "grep", "read"])];
-    expect(
-      checkProbeRequests({ mode: "code-review", requests, probeWritten: true, toolCalls: [] }),
-    ).toEqual(["PROBE_GIT_OUTPUT_WROTE_FILE", "PROBE_GIT_OUTPUT_NOT_REFUSED"]);
+  it("fails when a probe wrote a file or read a file outside the copy", () => {
+    const calls = passingCalls();
+    const readIndex = plan.probes.findIndex((probe) => probe.kind === "read");
+    calls[readIndex] = { tool: "bash", status: "completed", output: `diff\n${plan.marker}` };
+    const problems = check({ toolCalls: calls, writtenFiles: ["/work/probe-redirect"] });
+    expect(problems).toEqual([
+      `PROBE_READ_OUTSIDE ${plan.probes[readIndex].command}`,
+      "PROBE_WROTE_FILE /work/probe-redirect",
+    ]);
   });
 
-  it("fails when no request carried tools", () => {
-    expect(
-      checkProbeRequests({
-        mode: "code-review",
-        requests: [],
-        probeWritten: false,
-        toolCalls: refused,
-      }),
-    ).toEqual(["PROBE_NO_TOOL_REQUEST"]);
+  it("fails when everything is blocked, so a deny-all config cannot pass", () => {
+    const calls = passingCalls();
+    calls[0] = { tool: "bash", status: "error", output: "denied" };
+    expect(check({ toolCalls: calls })).toEqual([
+      "PROBE_READ_COMMAND_BLOCKED git log -1 --oneline",
+    ]);
+  });
+
+  it("fails when the probes did not all run or no request carried tools", () => {
+    expect(check({ toolCalls: passingCalls().slice(0, 3) })).toEqual([
+      `PROBE_INCOMPLETE ran=3 expected=${plan.probes.length}`,
+    ]);
+    expect(check({ requests: [] })).toEqual(["PROBE_NO_TOOL_REQUEST"]);
+  });
+});
+
+describe("opencode review run outcome", () => {
+  const ok = { outcome: "ok" };
+  it("reports a stop, a crash or a spawn failure instead of ok", () => {
+    expect(runOutcome(ok, { code: 0 })).toBe("ok");
+    expect(runOutcome(ok, { code: 0, stopReason: "cost-limit" })).toBe("cost-limit");
+    expect(runOutcome(ok, { code: null, stopReason: "timeout" })).toBe("timeout");
+    expect(runOutcome(ok, { code: 1 })).toBe("exit-1");
+    expect(runOutcome(ok, { code: null, spawnError: "EACCES" })).toBe("spawn-error");
+    expect(runOutcome({ outcome: "truncated" }, { code: 0 })).toBe("truncated");
+  });
+
+  it("caps each model's spend so both stay under Andy's 0.5 dollar line", () => {
+    expect(COST_LIMIT_PER_MODEL_USD * 2).toBeLessThanOrEqual(0.5);
+  });
+
+  it("reads usage from events recorded in a real review run", () => {
+    const events = readFileSync(
+      new URL("./fixtures/opencode-review/glm-events.jsonl", import.meta.url),
+      "utf8",
+    );
+    const summary = summarizeEvents(events);
+    expect(summary.outcome).toBe("ok");
+    expect(summary.usage.steps).toBe(3);
+    expect(summary.usage.cacheRead).toBe(58752);
+    expect(summary.toolCalls[0]).toMatchObject({ tool: "bash", status: "completed" });
+    expect(summary.text).toContain("复核报告");
+  });
+
+  it("rejects a timeout that is not a positive number", () => {
+    for (const value of ["abc", "0", "-3"]) {
+      expect(() =>
+        parseArgs([
+          "--head",
+          "a",
+          "--base",
+          "b",
+          "--brief",
+          "b.md",
+          "--out",
+          "o",
+          "--timeout-minutes",
+          value,
+        ]),
+      ).toThrow("ARG_INVALID --timeout-minutes");
+    }
   });
 });
 
@@ -258,17 +361,18 @@ describe("opencode review repository copy", () => {
         "base",
       ]);
       const base = run(["rev-parse", "HEAD"]);
-      run([
-        "-c",
-        "user.name=t",
-        "-c",
-        "user.email=t@t",
-        "commit",
-        "--quiet",
-        "--allow-empty",
-        "-m",
-        "head",
-      ]);
+      mkdirSync(join(source, ".opencode", "plugins"), { recursive: true });
+      writeFileSync(
+        join(source, ".opencode", "plugins", "run.ts"),
+        "export const P = async () => ({});\n",
+      );
+      mkdirSync(join(source, "nested"));
+      writeFileSync(join(source, "nested", "opencode.jsonc"), "{}\n");
+      symlinkSync("/etc/hostname", join(source, "nested", "outside-link"));
+      symlinkSync("opencode.jsonc", join(source, "nested", "inside-link"));
+      writeFileSync(join(source, "nested", "kept.txt"), "kept\n");
+      run(["add", "."]);
+      run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "head"]);
       const head = run(["rev-parse", "HEAD"]);
       run(["update-ref", "refs/remotes/origin/feature", head]);
       run(["reset", "--quiet", "--hard", base]);
@@ -278,6 +382,11 @@ describe("opencode review repository copy", () => {
       prepareCopy({ repo: source, copy, commits, workRoot: root });
       expect(run(["rev-parse", "HEAD"], copy)).toBe(head);
       expect(run(["remote"], copy)).toBe("");
+      expect(existsSync(join(copy, ".opencode"))).toBe(false);
+      expect(existsSync(join(copy, "nested", "opencode.jsonc"))).toBe(false);
+      expect(lstatExists(join(copy, "nested", "outside-link"))).toBe(false);
+      expect(lstatExists(join(copy, "nested", "inside-link"))).toBe(true);
+      expect(existsSync(join(copy, "nested", "kept.txt"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
