@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
 import {
+  appendFileSync,
+  chmodSync,
   existsSync,
-  readdirSync,
-  readlinkSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   writeFileSync,
-  appendFileSync,
 } from "node:fs";
 import http from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -27,14 +28,30 @@ export const GIT_READ_COMMANDS = ["git diff", "git log", "git show", "git blame"
 export const WRITE_OR_OUTSIDE_PATTERNS = [
   "*>*",
   "*<*",
-  "* --output*",
+  "*\t*",
+  "*--output*",
   "* -o*",
-  "* --ext-diff*",
-  "* --textconv*",
-  "* --no-index*",
-  "* --contents*",
+  "* -O*",
+  "*--ext-diff*",
+  "*--textconv*",
+  "*--no-index*",
+  "*--contents*",
+  "*difftool*",
 ];
-export const COST_LIMIT_PER_MODEL_USD = 0.25;
+export const GIT_SUBCOMMANDS = ["diff", "log", "show", "blame", "status"];
+export const GIT_BANNED_OPTIONS = [
+  "--output",
+  "--no-index",
+  "--contents",
+  "--ext-diff",
+  "--textconv",
+  "--open-files-in-pager",
+  "--exec-path",
+  "--git-dir",
+  "--work-tree",
+];
+export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
+export const COST_LIMIT_PER_MODEL_USD = 0.2;
 export const RULE_16_SENTENCE = "列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -42,7 +59,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export function reviewConfig({ mode, baseURL } = {}) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   const bash = { "*": "deny" };
-  for (const command of GIT_READ_COMMANDS) bash[`${command}*`] = "allow";
+  for (const command of GIT_READ_COMMANDS) {
+    bash[command] = "allow";
+    bash[`${command} *`] = "allow";
+  }
   for (const pattern of WRITE_OR_OUTSIDE_PATTERNS) bash[pattern] = "deny";
   const providerOptions = { apiKey: "placeholder" };
   if (baseURL) providerOptions.baseURL = baseURL;
@@ -190,7 +210,50 @@ export function opencodeBinary() {
 
 const activeChildren = new Set();
 
-function runOpencode({ binary, cwd, configPath, model, prompt, timeoutMs, costLimit }) {
+export function checkGitArgs(args) {
+  if (!GIT_SUBCOMMANDS.includes(args[0])) return `subcommand ${args[0] ?? "(none)"}`;
+  for (const arg of args.slice(1)) {
+    if (arg === "--") break;
+    if (arg.startsWith("--")) {
+      const name = arg.split("=")[0];
+      if (name.length > 2 && GIT_BANNED_OPTIONS.some((banned) => banned.startsWith(name)))
+        return name;
+    } else if (/^-[oO]/.test(arg)) {
+      return arg;
+    }
+  }
+  return null;
+}
+
+export function installGitGuard(workRoot) {
+  const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  if (!realGit) throw new Error("GIT_NOT_FOUND");
+  const binDir = join(workRoot, "guard-bin");
+  mkdirSync(binDir);
+  const modulePath = fileURLToPath(import.meta.url);
+  const guard = join(binDir, "git");
+  writeFileSync(
+    guard,
+    [
+      "#!/usr/bin/env node",
+      'import { spawnSync } from "node:child_process";',
+      `import { GIT_REFUSED, checkGitArgs } from ${JSON.stringify(modulePath)};`,
+      "const args = process.argv.slice(2);",
+      "const problem = checkGitArgs(args);",
+      "if (problem) {",
+      '  process.stderr.write([GIT_REFUSED, problem].join(" ") + "\\n");',
+      "  process.exit(1);",
+      "}",
+      `const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: "inherit" });`,
+      "process.exit(result.status ?? 1);",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(guard, 0o755);
+  return { binDir, realGit };
+}
+
+function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeoutMs, costLimit }) {
   return new Promise((resolvePromise) => {
     let stdout = "";
     let stderr = "";
@@ -210,6 +273,11 @@ function runOpencode({ binary, cwd, configPath, model, prompt, timeoutMs, costLi
           OPENCODE_DISABLE_PROJECT_CONFIG: "1",
           OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
           GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_PAGER: "cat",
+          PAGER: "cat",
+          PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -254,6 +322,7 @@ export function runOutcome(summary, run) {
   if (run.spawnError) return "spawn-error";
   if (run.stopReason) return run.stopReason;
   if (summary.outcome !== "ok") return summary.outcome;
+  if (run.signal) return `signal-${run.signal}`;
   if (run.code !== 0) return `exit-${run.code}`;
   return "ok";
 }
@@ -263,9 +332,14 @@ export function probePlan(workRoot) {
   const outsideA = join(workRoot, "outside-a.txt");
   const outsideB = join(workRoot, "outside-b.txt");
   const target = (name) => join(workRoot, `probe-${name}`);
+  const bash = (command) => ({ tool: "bash", args: { command, description: "probe" } });
   const writes = [
     ["output", (f) => `git log -1 --output=${f}`],
-    ["abbrev", (f) => `git diff --outp=${f} HEAD`],
+    ["abbrev-out", (f) => `git diff --out=${f} HEAD`],
+    ["abbrev-outp", (f) => `git diff --outp=${f} HEAD`],
+    ["quoted-output", (f) => `git log -1 "--output=${f}"`],
+    ["escaped-output", (f) => `git log -1 --out\\put=${f}`],
+    ["short-o", (f) => `git diff -o${f} HEAD`],
     ["redirect", (f) => `git log -1 > ${f}`],
     ["append", (f) => `git log -1 >> ${f}`],
     ["stderr", (f) => `git log -1 2>${f}`],
@@ -275,20 +349,31 @@ export function probePlan(workRoot) {
     ["semicolon", (f) => `git log -1; touch ${f}`],
     ["and", (f) => `git log -1 && touch ${f}`],
     ["newline", (f) => `git log -1\ntouch ${f}`],
-  ].map(([name, build]) => ({ kind: "write", file: target(name), command: build(target(name)) }));
+    ["difftool", (f) => `git difftool -y -x "touch ${f}" HEAD~1 HEAD`],
+  ].map(([name, build]) => ({ kind: "write", file: target(name), ...bash(build(target(name))) }));
   const reads = [
-    `git diff --no-index ${outsideA} ${outsideB}`,
-    `git diff --no-inde ${outsideA} ${outsideB}`,
-    `git blame --contents ${outsideA} -- AGENTS.md`,
-  ].map((command) => ({ kind: "read", command }));
+    bash(`git diff --no-index ${outsideA} ${outsideB}`),
+    bash(`git diff --no-inde ${outsideA} ${outsideB}`),
+    bash(`git diff "--no-index" ${outsideA} ${outsideB}`),
+    bash(`git diff --no\\-index ${outsideA} ${outsideB}`),
+    bash(`git diff\t--no-index ${outsideA} ${outsideB}`),
+    bash(`git blame --contents ${outsideA} -- AGENTS.md`),
+    { tool: "read", args: { filePath: outsideA } },
+    { tool: "grep", args: { pattern: marker, path: workRoot } },
+    { tool: "glob", args: { pattern: "outside-*.txt", path: workRoot }, leak: "outside-b.txt" },
+  ].map((probe) => ({ kind: "read", leak: marker, ...probe }));
   return {
     marker,
     outsideFiles: [outsideA, outsideB],
-    probes: [{ kind: "allowed", command: "git log -1 --oneline" }, ...writes, ...reads],
+    probes: [{ kind: "allowed", ...bash("git log -1 --oneline") }, ...writes, ...reads],
   };
 }
 
-function startProbeServer(commands) {
+function probeKey(tool, args) {
+  return `${tool} ${JSON.stringify(args?.command ?? args?.filePath ?? [args?.pattern, args?.path])}`;
+}
+
+function startProbeServer(probes) {
   const requests = [];
   const served = new Map();
   const server = http.createServer((request, response) => {
@@ -318,8 +403,9 @@ function startProbeServer(commands) {
       response.writeHead(200, { "content-type": "text/event-stream" });
       const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
       const next = served.get(parsed.model) ?? 0;
-      if (hasTools && next < commands.length) {
+      if (hasTools && next < probes.length) {
         served.set(parsed.model, next + 1);
+        const probe = probes[next];
         send({
           choices: [
             {
@@ -331,10 +417,7 @@ function startProbeServer(commands) {
                     index: 0,
                     id: `probe-call-${next}`,
                     type: "function",
-                    function: {
-                      name: "bash",
-                      arguments: JSON.stringify({ command: commands[next], description: "probe" }),
-                    },
+                    function: { name: probe.tool, arguments: JSON.stringify(probe.args) },
                   },
                 ],
               },
@@ -365,6 +448,11 @@ function startProbeServer(commands) {
   });
 }
 
+export function probeRefused(call) {
+  if (call.status === "error") return true;
+  return new RegExp(`${GIT_REFUSED}|^fatal:|disallowed abbreviated`, "m").test(call.output);
+}
+
 export function checkProbeRequests({ mode, requests, plan, toolCalls, writtenFiles }) {
   const problems = [];
   const main = requests.filter(
@@ -382,28 +470,38 @@ export function checkProbeRequests({ mode, requests, plan, toolCalls, writtenFil
       problems.push(`PROBE_REASONING ${request.model} ${request.reasoning_effort}`);
     }
   }
-  const bashCalls = toolCalls.filter((call) => call.tool === "bash");
-  if (bashCalls.length < plan.probes.length) {
-    problems.push(`PROBE_INCOMPLETE ran=${bashCalls.length} expected=${plan.probes.length}`);
+  const callsByKey = new Map();
+  for (const call of toolCalls) {
+    const key = probeKey(call.tool, call.input);
+    callsByKey.set(key, [...(callsByKey.get(key) ?? []), call]);
   }
-  plan.probes.forEach((probe, index) => {
-    const call = bashCalls[index];
-    if (!call) return;
-    if (probe.kind === "allowed" && call.status !== "completed") {
-      problems.push(`PROBE_READ_COMMAND_BLOCKED ${probe.command}`);
+  for (const probe of plan.probes) {
+    const calls = callsByKey.get(probeKey(probe.tool, probe.args)) ?? [];
+    const label = `${probe.tool} ${probe.args.command ?? probe.args.filePath ?? probe.args.pattern}`;
+    if (calls.length === 0) {
+      problems.push(`PROBE_NOT_RUN ${label}`);
+      continue;
     }
-    if (probe.kind === "read" && call.output.includes(plan.marker)) {
-      problems.push(`PROBE_READ_OUTSIDE ${probe.command}`);
+    for (const call of calls) {
+      if (probe.kind === "allowed" && (call.status !== "completed" || probeRefused(call))) {
+        problems.push(`PROBE_READ_COMMAND_BLOCKED ${label}`);
+      }
+      if (probe.kind === "read" && call.output.includes(probe.leak)) {
+        problems.push(`PROBE_READ_OUTSIDE ${label}`);
+      }
+      if (probe.kind === "write" && !probeRefused(call)) {
+        problems.push(`PROBE_NOT_REFUSED ${label}`);
+      }
     }
-  });
+  }
   for (const file of writtenFiles) problems.push(`PROBE_WROTE_FILE ${file}`);
   return problems;
 }
 
-async function selfCheck({ binary, copy, workRoot, mode, timeoutMs }) {
+async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) {
   const plan = probePlan(workRoot);
   for (const file of plan.outsideFiles) writeFileSync(file, `${plan.marker}\n${file}\n`);
-  const { server, requests, port } = await startProbeServer(plan.probes.map((p) => p.command));
+  const { server, requests, port } = await startProbeServer(plan.probes);
   const configPath = join(workRoot, "probe-opencode.json");
   writeFileSync(
     configPath,
@@ -417,6 +515,7 @@ async function selfCheck({ binary, copy, workRoot, mode, timeoutMs }) {
         binary,
         cwd: copy,
         configPath,
+        gitGuard,
         model,
         prompt: "probe",
         timeoutMs,
@@ -425,6 +524,7 @@ async function selfCheck({ binary, copy, workRoot, mode, timeoutMs }) {
       const writtenFiles = plan.probes
         .filter((probe) => probe.kind === "write" && existsSync(probe.file))
         .map((probe) => probe.file);
+      for (const file of writtenFiles) rmSync(file, { force: true });
       problems.push(
         ...checkProbeRequests({
           mode,
@@ -450,7 +550,11 @@ export function removeUnsafeProjectFiles(copy) {
       const path = join(dir, entry.name);
       const outsideLink =
         entry.isSymbolicLink() && !resolve(dir, readlinkSync(path)).startsWith(root);
-      if (outsideLink || entry.name === ".opencode" || /^opencode\.jsonc?$/.test(entry.name)) {
+      const unsafeName =
+        entry.name === ".opencode" ||
+        /^opencode\.jsonc?$/.test(entry.name) ||
+        /^\.env(\..*)?$/.test(entry.name);
+      if (outsideLink || unsafeName) {
         rmSync(path, { recursive: true, force: true });
         removed.push(path);
       } else if (entry.isDirectory()) {
@@ -480,6 +584,8 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
   git(["fetch", "--quiet", "origin", "+refs/*:refs/source/*"], copy);
   git(["checkout", "--quiet", "--detach", commits.head], copy);
   git(["remote", "remove", "origin"], copy);
+  git(["reflog", "expire", "--expire=now", "--all"], copy);
+  rmSync(join(copy, ".git", "FETCH_HEAD"), { force: true });
   for (const commit of [commits.base, commits.previous].filter(Boolean))
     git(["cat-file", "-e", `${commit}^{commit}`], copy);
   return removeUnsafeProjectFiles(copy);
@@ -547,10 +653,12 @@ async function main() {
   try {
     const removed = prepareCopy({ repo: options.repo, copy, commits, workRoot });
     if (removed.length > 0) console.log(`UNSAFE_PROJECT_FILES_REMOVED ${removed.length}`);
+    const gitGuard = installGitGuard(workRoot);
     const problems = await selfCheck({
       binary,
       copy,
       workRoot,
+      gitGuard,
       mode: options.mode,
       timeoutMs: 180000,
     });
@@ -571,6 +679,7 @@ async function main() {
           binary,
           cwd: copy,
           configPath,
+          gitGuard,
           model,
           prompt,
           timeoutMs,

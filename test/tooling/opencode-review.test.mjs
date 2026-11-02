@@ -13,20 +13,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  GIT_READ_COMMANDS,
-  MIN_OUTPUT_TOKENS,
-  RULE_16_SENTENCE,
   buildPrompt,
+  COST_LIMIT_PER_MODEL_USD,
+  checkGitArgs,
   checkProbeRequests,
   expectedTools,
-  COST_LIMIT_PER_MODEL_USD,
+  GIT_READ_COMMANDS,
+  GIT_REFUSED,
+  MIN_OUTPUT_TOKENS,
   parseArgs,
   prepareCopy,
   probePlan,
-  runOutcome,
+  probeRefused,
+  RULE_16_SENTENCE,
   resolveCommits,
   reviewConfig,
   reviewQuestions,
+  runOutcome,
   summarizeEvents,
 } from "../../scripts/model-review/opencode-review.mjs";
 
@@ -63,10 +66,15 @@ describe("opencode review configuration", () => {
     expect(config.permission.task).toBe("deny");
     expect(Object.keys(config.permission.bash)[0]).toBe("*");
     expect(config.permission.bash["*"]).toBe("deny");
-    for (const command of GIT_READ_COMMANDS)
-      expect(config.permission.bash[`${command}*`]).toBe("allow");
-    expect(config.permission.bash["* --output*"]).toBe("deny");
-    expect(config.permission.bash["* -o*"]).toBe("deny");
+    for (const command of GIT_READ_COMMANDS) {
+      expect(config.permission.bash[command]).toBe("allow");
+      expect(config.permission.bash[`${command} *`]).toBe("allow");
+    }
+    const keys = Object.keys(config.permission.bash);
+    for (const pattern of ["*--output*", "* -o*", "*difftool*", "*\t*", "*>*"]) {
+      expect(config.permission.bash[pattern]).toBe("deny");
+      expect(keys.indexOf(pattern)).toBeGreaterThan(keys.indexOf("git diff *"));
+    }
     expect(config.permission.read["*.env"]).toBe("deny");
     expect(config.provider["opencode-go"].options.baseURL).toBeUndefined();
   });
@@ -192,12 +200,15 @@ describe("opencode review output", () => {
 
 describe("opencode review self-check", () => {
   const plan = probePlan("/work");
+  const label = (probe) =>
+    `${probe.tool} ${probe.args.command ?? probe.args.filePath ?? probe.args.pattern}`;
   const passingCalls = () =>
     plan.probes.map((probe) =>
       probe.kind === "allowed"
-        ? { tool: "bash", status: "completed", output: "abc123 commit" }
+        ? { tool: "bash", input: probe.args, status: "completed", output: "abc123 commit" }
         : {
-            tool: "bash",
+            tool: probe.tool,
+            input: probe.args,
             status: "error",
             output: "The user has specified a rule which prevents you",
           },
@@ -213,10 +224,14 @@ describe("opencode review self-check", () => {
     });
 
   it("probes every write and outside-read shape the reviews found", () => {
-    const commands = plan.probes.map((probe) => probe.command);
+    const commands = plan.probes.map((probe) => probe.args.command ?? "");
     for (const shape of [
       "--output=",
+      "--out=",
       "--outp=",
+      '"--output=',
+      "--out\\put=",
+      " -o/",
       " > ",
       " >> ",
       " 2>",
@@ -226,17 +241,32 @@ describe("opencode review self-check", () => {
       "; touch",
       "&& touch",
       "\ntouch",
+      "difftool",
       "--no-index",
       "--no-inde ",
+      '"--no-index"',
+      "--no\\-index",
+      "diff\t--no-index",
       "--contents",
     ]) {
       expect(commands.some((command) => command.includes(shape))).toBe(true);
     }
-    expect(plan.probes[0]).toEqual({ kind: "allowed", command: "git log -1 --oneline" });
+    expect(plan.probes.filter((probe) => probe.tool !== "bash").map((probe) => probe.tool)).toEqual(
+      ["read", "grep", "glob"],
+    );
+    expect(plan.probes[0]).toMatchObject({
+      kind: "allowed",
+      tool: "bash",
+      args: { command: "git log -1 --oneline" },
+    });
   });
 
   it("passes when every probe is refused and the plain git read runs", () => {
     expect(check()).toEqual([]);
+  });
+
+  it("matches calls to probes by content, not by order", () => {
+    expect(check({ toolCalls: passingCalls().reverse() })).toEqual([]);
   });
 
   it("fails the request opencode sent with the old configuration", () => {
@@ -269,27 +299,77 @@ describe("opencode review self-check", () => {
   it("fails when a probe wrote a file or read a file outside the copy", () => {
     const calls = passingCalls();
     const readIndex = plan.probes.findIndex((probe) => probe.kind === "read");
-    calls[readIndex] = { tool: "bash", status: "completed", output: `diff\n${plan.marker}` };
+    calls[readIndex] = { ...calls[readIndex], status: "completed", output: `diff\n${plan.marker}` };
     const problems = check({ toolCalls: calls, writtenFiles: ["/work/probe-redirect"] });
     expect(problems).toEqual([
-      `PROBE_READ_OUTSIDE ${plan.probes[readIndex].command}`,
+      `PROBE_READ_OUTSIDE ${label(plan.probes[readIndex])}`,
       "PROBE_WROTE_FILE /work/probe-redirect",
     ]);
   });
 
-  it("fails when everything is blocked, so a deny-all config cannot pass", () => {
+  it("fails when glob lists files outside the copy", () => {
     const calls = passingCalls();
-    calls[0] = { tool: "bash", status: "error", output: "denied" };
+    const globIndex = plan.probes.findIndex((probe) => probe.tool === "glob");
+    calls[globIndex] = {
+      ...calls[globIndex],
+      status: "completed",
+      output: "/work/outside-a.txt\n/work/outside-b.txt",
+    };
     expect(check({ toolCalls: calls })).toEqual([
-      "PROBE_READ_COMMAND_BLOCKED git log -1 --oneline",
+      `PROBE_READ_OUTSIDE ${label(plan.probes[globIndex])}`,
     ]);
   });
 
-  it("fails when the probes did not all run or no request carried tools", () => {
-    expect(check({ toolCalls: passingCalls().slice(0, 3) })).toEqual([
-      `PROBE_INCOMPLETE ran=3 expected=${plan.probes.length}`,
+  it("fails when a write probe ran without being refused, even if no file appeared", () => {
+    const calls = passingCalls();
+    const writeIndex = plan.probes.findIndex((probe) => probe.kind === "write");
+    calls[writeIndex] = { ...calls[writeIndex], status: "completed", output: "" };
+    expect(check({ toolCalls: calls })).toEqual([
+      `PROBE_NOT_REFUSED ${label(plan.probes[writeIndex])}`,
     ]);
+  });
+
+  it("counts the git guard's refusal as refused", () => {
+    expect(probeRefused({ status: "completed", output: `${GIT_REFUSED} --output\n` })).toBe(true);
+    expect(probeRefused({ status: "completed", output: "abc123 commit" })).toBe(false);
+  });
+
+  it("fails when everything is blocked, so a deny-all config cannot pass", () => {
+    const calls = passingCalls();
+    calls[0] = { ...calls[0], status: "error", output: "denied" };
+    expect(check({ toolCalls: calls })).toEqual([
+      "PROBE_READ_COMMAND_BLOCKED bash git log -1 --oneline",
+    ]);
+  });
+
+  it("fails when a probe did not run or no request carried tools", () => {
+    const calls = passingCalls();
+    const missing = plan.probes[plan.probes.length - 1];
+    expect(check({ toolCalls: calls.slice(0, -1) })).toEqual([`PROBE_NOT_RUN ${label(missing)}`]);
     expect(check({ requests: [] })).toEqual(["PROBE_NO_TOOL_REQUEST"]);
+  });
+});
+
+describe("opencode review git guard", () => {
+  it("lets the five read subcommands through with ordinary options", () => {
+    expect(checkGitArgs(["diff", "--stat", "origin/main", "HEAD"])).toBeNull();
+    expect(checkGitArgs(["log", "-5", "--oneline"])).toBeNull();
+    expect(checkGitArgs(["show", "HEAD:AGENTS.md"])).toBeNull();
+    expect(checkGitArgs(["diff", "HEAD", "--", "--output"])).toBeNull();
+  });
+
+  it("refuses other subcommands and options that write or read outside the copy", () => {
+    expect(checkGitArgs(["difftool", "-y"])).toBe("subcommand difftool");
+    expect(checkGitArgs(["push"])).toBe("subcommand push");
+    expect(checkGitArgs([])).toBe("subcommand (none)");
+    expect(checkGitArgs(["-C", "/", "log"])).toBe("subcommand -C");
+    expect(checkGitArgs(["log", "--output=/tmp/x"])).toBe("--output");
+    expect(checkGitArgs(["diff", "--out=/tmp/x"])).toBe("--out");
+    expect(checkGitArgs(["diff", "--no-inde", "/a", "/b"])).toBe("--no-inde");
+    expect(checkGitArgs(["blame", "--contents", "/a"])).toBe("--contents");
+    expect(checkGitArgs(["diff", "--ext-diff"])).toBe("--ext-diff");
+    expect(checkGitArgs(["diff", "-o/tmp/x"])).toBe("-o/tmp/x");
+    expect(checkGitArgs(["log", "-O/tmp/order"])).toBe("-O/tmp/order");
   });
 });
 
@@ -300,6 +380,7 @@ describe("opencode review run outcome", () => {
     expect(runOutcome(ok, { code: 0, stopReason: "cost-limit" })).toBe("cost-limit");
     expect(runOutcome(ok, { code: null, stopReason: "timeout" })).toBe("timeout");
     expect(runOutcome(ok, { code: 1 })).toBe("exit-1");
+    expect(runOutcome(ok, { code: null, signal: "SIGKILL" })).toBe("signal-SIGKILL");
     expect(runOutcome(ok, { code: null, spawnError: "EACCES" })).toBe("spawn-error");
     expect(runOutcome({ outcome: "truncated" }, { code: 0 })).toBe("truncated");
   });
