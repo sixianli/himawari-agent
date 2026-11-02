@@ -241,6 +241,32 @@ describe("product runtime event and tool contracts", () => {
       expect(f.final).not.toHaveBeenCalled();
     },
   );
+  it("does not report success for toolUse output that still carries a tool call", async () => {
+    const f = fixture((emit) =>
+      finish(
+        emit,
+        answer({
+          stopReason: "toolUse",
+          content: [
+            { type: "text", text: "我先查一下" },
+            { type: "toolCall", id: "pending", name: "search", arguments: {} },
+          ],
+        }),
+      ),
+    );
+    expect((await f.run()).at(-1)).toMatchObject({ errorCode: "PI_FINAL_ANSWER_INCOMPLETE" });
+    expect(f.final).not.toHaveBeenCalled();
+  });
+  it("[I-70] reports an empty answer, not success, for toolUse with only thinking", async () => {
+    const f = fixture((emit) =>
+      finish(
+        emit,
+        answer({ stopReason: "toolUse", content: [{ type: "thinking", thinking: "想一想" }] }),
+      ),
+    );
+    expect((await f.run()).at(-1)).toMatchObject({ type: "runtime.failed" });
+    expect(f.final).not.toHaveBeenCalled();
+  });
   it("rejects an ostensibly stopped answer containing an unexecuted call", async () => {
     const f = fixture((emit) =>
       finish(
