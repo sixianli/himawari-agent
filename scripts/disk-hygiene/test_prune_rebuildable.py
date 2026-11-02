@@ -108,41 +108,74 @@ class PruneTest(unittest.TestCase):
         self.assertTrue(result['lowDisk'])
         self.assertIn('PRUNE_LOW_DISK', output)
 
-    def test_busy_host_skips_the_round(self):
-        marker = 'prune-busy-test-' + str(os.getpid())
+    def start_sleeper(self, marker):
         sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', marker])
-        try:
-            before = self.remaining()
-            result, output = self.run_prune('--apply', '--skip-if-busy', '--busy-pattern', marker)
-            self.assertEqual(result['mode'], 'skipped-busy')
-            self.assertEqual(self.remaining(), before)
-        finally:
-            sleeper.kill()
-            sleeper.wait()
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        deadline = time.time() + 5
+        while marker not in Path('/proc', str(sleeper.pid), 'cmdline').read_text() and time.time() < deadline:
+            time.sleep(0.02)
+        return sleeper
 
-    def run_busy_round_with_cgroup(self, cgroup):
-        marker = 'prune-container-test-' + str(os.getpid())
-        sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', marker])
+    def busy_round(self, marker, *sleepers):
         proc_root = Path(self.directory.name) / 'proc'
-        write(proc_root / str(sleeper.pid) / 'cgroup', 0).write_text(cgroup)
-        try:
-            result, _ = self.run_prune('--apply', '--skip-if-busy', '--busy-pattern', marker, '--proc-root', str(proc_root))
-            return result
-        finally:
-            sleeper.kill()
-            sleeper.wait()
+        for sleeper, cgroup in sleepers:
+            write(proc_root / str(sleeper.pid) / 'cgroup', 0).write_text(cgroup)
+        return self.run_prune('--apply', '--skip-if-busy', '--busy-pattern', marker, '--proc-root', str(proc_root))
 
-    def test_matching_process_inside_a_container_does_not_block_the_round(self):
-        before = self.remaining()
-        result = self.run_busy_round_with_cgroup('0::/system.slice/docker-d08fb19eba5d.scope\n')
-        self.assertEqual(result['mode'], 'apply')
-        self.assertNotEqual(self.remaining(), before)
+    HOST = '0::/user.slice/user-1000.slice/session-1.scope\n'
+    CONTAINERS = {
+        'docker v2': '0::/system.slice/docker-d08fb19eba5d0123456789abcdef0123456789abcdef0123456789abcdef0123.scope\n',
+        'docker v1': '12:cpu,cpuacct:/docker/d08fb19eba5d0123456789abcdef0123456789abcdef0123456789abcdef0123\n',
+        'libpod': '0::/machine.slice/libpod-d08fb19eba5d0123456789abcdef0123456789abcdef0123456789abcdef0123.scope\n',
+        'containerd': '0::/system.slice/cri-containerd-d08fb19eba5d0123456789abcdef0123456789abcdef0123456789abcdef0123.scope\n',
+        'kubepods': '0::/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod1.slice/cri-containerd-d08fb19eba5d.scope\n',
+    }
 
-    def test_matching_process_outside_a_container_still_blocks_the_round(self):
+    def test_matching_process_on_the_host_blocks_the_round(self):
+        marker = 'prune-busy-test-' + str(os.getpid())
+        sleeper = self.start_sleeper(marker)
         before = self.remaining()
-        result = self.run_busy_round_with_cgroup('0::/user.slice/user-1000.slice/session-1.scope\n')
+        result, _ = self.busy_round(marker, (sleeper, self.HOST))
         self.assertEqual(result['mode'], 'skipped-busy')
         self.assertEqual(self.remaining(), before)
+
+    def test_matching_process_inside_a_container_does_not_block_the_round_and_is_reported(self):
+        for name, cgroup in self.CONTAINERS.items():
+            with self.subTest(runtime=name):
+                marker = 'prune-container-test-%s-%d' % (name.replace(' ', ''), os.getpid())
+                sleeper = self.start_sleeper(marker)
+                result, output = self.busy_round(marker, (sleeper, cgroup))
+                self.assertEqual(result['mode'], 'apply')
+                self.assertIn('PRUNE_IGNORED_CONTAINER_PROCESSES', output)
+
+    def test_a_host_process_next_to_a_container_process_still_blocks_the_round(self):
+        marker = 'prune-mixed-test-' + str(os.getpid())
+        in_container = self.start_sleeper(marker)
+        on_host = self.start_sleeper(marker)
+        before = self.remaining()
+        result, _ = self.busy_round(marker, (in_container, self.CONTAINERS['docker v2']), (on_host, self.HOST))
+        self.assertEqual(result['mode'], 'skipped-busy')
+        self.assertEqual(self.remaining(), before)
+
+    def test_host_services_with_container_words_in_their_names_still_block_the_round(self):
+        for cgroup in (
+            '0::/system.slice/docker.service\n',
+            '0::/system.slice/containerd.service\n',
+            '0::/system.slice/docker-build-runner.service\n',
+            '0::/user.slice/libpod-workspace.slice/run.scope\n',
+        ):
+            with self.subTest(cgroup=cgroup):
+                marker = 'prune-hostword-test-%d' % time.monotonic_ns()
+                sleeper = self.start_sleeper(marker)
+                result, _ = self.busy_round(marker, (sleeper, cgroup))
+                self.assertEqual(result['mode'], 'skipped-busy')
+
+    def test_unreadable_cgroup_is_treated_as_a_host_process(self):
+        marker = 'prune-unreadable-test-' + str(os.getpid())
+        self.start_sleeper(marker)
+        result, _ = self.busy_round(marker)
+        self.assertEqual(result['mode'], 'skipped-busy')
 
 
 if __name__ == '__main__':
