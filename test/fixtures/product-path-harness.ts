@@ -14,7 +14,11 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { request as requestHttp } from "node:http";
+import {
+  createServer as createHttpServer,
+  request as requestHttp,
+  type Server as HttpServer,
+} from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { hostname, release } from "node:os";
 import path from "node:path";
@@ -160,7 +164,7 @@ async function createCertificates(root: string) {
   return { ca: ca.cert, provider, front };
 }
 
-async function listen(server: HttpsServer): Promise<number> {
+async function listen(server: HttpsServer | HttpServer): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen({ host: "127.0.0.1", port: 0 }, () => resolve());
@@ -170,7 +174,7 @@ async function listen(server: HttpsServer): Promise<number> {
   return address.port;
 }
 
-async function close(server: HttpsServer | undefined): Promise<void> {
+async function close(server: HttpsServer | HttpServer | undefined): Promise<void> {
   if (!server?.listening) return;
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -783,6 +787,39 @@ export async function installProductPath(options: {
     },
   );
   providerPort = await listen(provider);
+  const catalog = options.selectableModels
+    ? createHttpServer((request, response) => {
+        if (request.method !== "GET" || request.url !== "/v1/models") {
+          response.writeHead(404).end();
+          return;
+        }
+        const listed = (id: string, label: string) => ({
+          id,
+          object: "model",
+          type: "model",
+          display_name: label,
+          magpie_label: label,
+          context_window: 32768,
+          context_length: 32768,
+          max_input_tokens: 32768,
+          max_output_tokens: 2048,
+          modalities: { input: ["text"], output: ["text"] },
+          reasoning: false,
+          tool_call: true,
+        });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            object: "list",
+            data: [
+              listed("deepseek/deepseek-v4.1-flash", "Product path primary"),
+              ...ACCEPTANCE_SELECTABLE_MODELS.map((entry) => listed(entry.model, entry.name)),
+            ],
+          }),
+        );
+      })
+    : undefined;
+  const catalogPort = catalog ? await listen(catalog) : 0;
 
   const signAssertion = () => {
     const now = Math.floor(Date.now() / 1000);
@@ -990,14 +1027,13 @@ export async function installProductPath(options: {
       csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
     },
     modelDescriptors: [
-      model("primary", "model-primary", 1),
-      ...(options.selectableModels
-        ? ACCEPTANCE_SELECTABLE_MODELS.map((entry, index) => ({
-            ...model("primary", entry.ref, index + 2),
-            model: entry.model,
-            name: entry.name,
-          }))
-        : []),
+      options.selectableModels
+        ? (({ providerRouting: _routing, ...rest }) => ({
+            ...rest,
+            provider: "magpie",
+            baseUrl: `http://127.0.0.1:${catalogPort}/v1`,
+          }))(model("primary", "model-primary", 1))
+        : model("primary", "model-primary", 1),
       {
         ref: "model-embedding",
         role: "embedding",
@@ -1613,6 +1649,7 @@ export async function installProductPath(options: {
         ).catch(() => undefined);
       await close(front);
       await close(provider);
+      await close(catalog);
       if (process.env["HIMAWARI_PRODUCT_PATH_KEEP_ROOT"] === "1")
         await writeFile(path.join(options.logDirectory, "kept-root.txt"), `${testRoot}\n`);
       else await rm(testRoot, { recursive: true, force: true, maxRetries: 5 });
