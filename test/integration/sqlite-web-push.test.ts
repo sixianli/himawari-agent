@@ -5,6 +5,7 @@ import type { WebPushOutboxItem } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
   applyMigrations,
+  createVerifiedMigrationSnapshot,
   loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
@@ -63,7 +64,6 @@ describe("[WP-2] web push storage", () => {
     auth: `auth-${id}`,
     locale,
     deviceLabel: `device ${id}`,
-    kinds: ["reminder", "approval", "run"] as const,
     now: T0,
   });
 
@@ -81,13 +81,11 @@ describe("[WP-2] web push storage", () => {
       });
       const again = await store.saveSubscription({
         ...subscription("s9", "https://push.example/a", "ja"),
-        kinds: ["run"],
         now: T2,
       });
       expect(again).toMatchObject({
         id: "s1",
         locale: "ja",
-        kinds: ["run"],
         state: "active",
         failureCode: null,
         p256dh: "key-s9",
@@ -103,6 +101,69 @@ describe("[WP-2] web push storage", () => {
     } finally {
       await repository.close();
     }
+  });
+
+  it("[WP-2] keeps one set of kinds per account: all on by default, shared by every device, saved once", async () => {
+    const { repository, store } = await open();
+    try {
+      expect(await store.readKinds(scope)).toEqual(["reminder", "approval", "run"]);
+      await store.saveSubscription(subscription("s1", "https://push.example/a"));
+      await store.saveSubscription(subscription("s2", "https://push.example/b"));
+      expect(
+        await store.writeKinds({ ...scope, kinds: ["reminder", "approval"], now: T1 }),
+      ).toEqual(["reminder", "approval"]);
+      await store.saveSubscription(subscription("s3", "https://push.example/c"));
+      await store.saveSubscription(subscription("s1", "https://push.example/a"));
+      expect(await store.readKinds(scope)).toEqual(["reminder", "approval"]);
+      await expect(
+        store.writeKinds({ ...scope, kinds: ["nope" as "run"], now: T1 }),
+      ).rejects.toThrow();
+      expect(await store.setKind({ ...scope, kind: "run", enabled: true, now: T2 })).toEqual([
+        "reminder",
+        "approval",
+        "run",
+      ]);
+      expect(await store.setKind({ ...scope, kind: "approval", enabled: false, now: T2 })).toEqual([
+        "reminder",
+        "run",
+      ]);
+      expect(await store.writeKinds({ ...scope, kinds: [], now: T2 })).toEqual([]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WP-2] the migration that made kinds account-wide keeps a kind off when any device had it off", async () => {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-web-push-migrate-"));
+    directories.push(stateRoot);
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 70));
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    const insert = database.prepare(
+      `INSERT INTO web_push_subscriptions (id, owner_id, agent_id, endpoint, p256dh, auth, locale,
+         device_label, notify_reminder, notify_approval, notify_run, state, failure_code,
+         created_at, updated_at, last_delivered_at)
+       VALUES (?, ?, ?, ?, 'k', 'a', 'zh-CN', 'd', ?, 1, ?, 'active', NULL, ?, ?, NULL)`,
+    );
+    insert.run("mac", OWNER_ID, AGENT_ID, "https://push.example/mac", 1, 0, T0, T0);
+    insert.run("phone", OWNER_ID, AGENT_ID, "https://push.example/phone", 0, 1, T0, T1);
+    const snapshot = await createVerifiedMigrationSnapshot(
+      database,
+      path.join(stateRoot, "pre-migration.sqlite"),
+    );
+    applyMigrations(database, migrations, { snapshot });
+    expect(
+      database
+        .prepare(
+          "SELECT notify_reminder AS reminder, notify_approval AS approval, notify_run AS run FROM web_push_account_kinds",
+        )
+        .all(),
+    ).toEqual([{ reminder: 0, approval: 1, run: 0 }]);
+    database.close();
   });
 
   it("[WP-2] enqueues each source once, advances the cursor with it and lists due pairs per device", async () => {

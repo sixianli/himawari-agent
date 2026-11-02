@@ -68,6 +68,12 @@ import {
   type ProductionMemoryRecall,
 } from "./production-memory-recall.js";
 import {
+  REMINDER_CAPABILITY_REFS,
+  ReminderInputError,
+  type ProductionReminderTools,
+  reminderToolDescriptors,
+} from "./production-reminder-writer.js";
+import {
   SANDBOX_TOOL_RESULT_LOST,
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
 } from "./production-sandbox-lost-result-recovery.js";
@@ -288,6 +294,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly managedTasks?: ProductionManagedTasks;
   readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recall">;
+  readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -521,6 +528,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         });
     }
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
+    if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     return descriptors;
   }
@@ -554,6 +562,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
     );
   }
+  #isReminder(invocation: RuntimeToolInvocation) {
+    return (
+      invocation.capabilityHandleRef === null &&
+      REMINDER_CAPABILITY_REFS.includes(invocation.capabilityRef)
+    );
+  }
   #isMemoryRecall(invocation: RuntimeToolInvocation) {
     return (
       invocation.capabilityHandleRef === null &&
@@ -561,20 +575,61 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     );
   }
   async #recall(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
-    await this.#options.assertRunActive(invocation.runId);
     const recall = this.#options.memoryRecall;
-    if (!this.#exposed.has(invocation.runId) || !recall) reject();
+    return this.#ownerScoped(
+      invocation,
+      "recall",
+      recall ? (call) => recall.recall(call) : undefined,
+      (error) => {
+        const errorCode =
+          error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
+            ? "MEMORY_RECALL_INPUT_INVALID"
+            : "MEMORY_RECALL_UNAVAILABLE";
+        return {
+          errorCode,
+          note: "记忆暂时查不到。不要编造，告诉主人现在查不了记忆。",
+        };
+      },
+    );
+  }
+  async #reminder(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+    const reminders = this.#options.reminders;
+    return this.#ownerScoped(
+      invocation,
+      "reminder",
+      reminders ? (call) => reminders.run(call) : undefined,
+      (error) => {
+        const errorCode = error instanceof ReminderInputError ? error.code : "REMINDER_UNAVAILABLE";
+        return {
+          errorCode,
+          note:
+            errorCode === "REMINDER_MEMORY_NOT_READY"
+              ? "主人还没有任何记忆，现在设不了提醒。不要说已设好；告诉主人先在对话里说一件关于他自己的事，之后再设。"
+              : errorCode === "REMINDER_UNAVAILABLE"
+                ? "提醒暂时设不了。不要说已设好，告诉主人现在设不了，可以稍后再试或到提醒页手动新建。"
+                : "这次没有成功，原因见 error。不要说已设好或已取消，如实告诉主人原因，需要时请他改个时间或说得更具体。",
+        };
+      },
+    );
+  }
+  async #ownerScoped(
+    invocation: RuntimeToolInvocation,
+    marker: "recall" | "reminder",
+    run: ((call: RuntimeToolInvocation) => Promise<unknown>) | undefined,
+    failure: (error: unknown) => { readonly errorCode: string; readonly note: string },
+  ): Promise<RuntimeToolExecutionResult> {
+    await this.#options.assertRunActive(invocation.runId);
+    if (!this.#exposed.has(invocation.runId) || !run) reject();
     const key = digest([invocation.runId, invocation.toolCallId]);
     const fingerprint = digest(executionIdentity(invocation));
     const claimed = await this.#writeJson(invocation, `runtime-tool-intent:${key}`, {
       fingerprint,
-      recall: true,
+      [marker]: true,
     });
     const intent = (await this.#readJson(claimed.ref)) as {
       fingerprint?: string;
-      recall?: boolean;
-    };
-    if (intent.fingerprint !== fingerprint || intent.recall !== true)
+    } & Partial<Record<typeof marker, boolean>>;
+    if (intent.fingerprint !== fingerprint || intent[marker] !== true)
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
     const resultKey = `runtime-tool-result:${key}`;
     const previous = await this.#options.artifacts.lookup({
@@ -585,7 +640,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (previous) return (await this.#readJson(previous.payloadRef)) as RuntimeToolExecutionResult;
     let result: RuntimeToolExecutionResult;
     try {
-      const value = await recall.recall(invocation);
+      const value = await run(invocation);
       const saved = await this.#writeJson(invocation, `runtime-tool-output:${key}`, value);
       result = {
         dispatchState: "accepted",
@@ -597,20 +652,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       };
     } catch (error) {
       await this.#options.assertRunActive(invocation.runId);
-      const errorCode =
-        error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
-          ? "MEMORY_RECALL_INPUT_INVALID"
-          : "MEMORY_RECALL_UNAVAILABLE";
+      const { errorCode, note } = failure(error);
       result = {
         dispatchState: "accepted",
         outcome: "failed",
         resultRef: null,
         errorCode,
         externalActionId: null,
-        modelContent: JSON.stringify({
-          error: errorCode,
-          note: "记忆暂时查不到。不要编造，告诉主人现在查不了记忆。",
-        }),
+        modelContent: JSON.stringify({ error: errorCode, note }),
       };
     }
     const committed = await this.#writeJson(invocation, resultKey, result);
@@ -643,6 +692,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           (this.#background?.manages(invocation) ? true : this.#options.managedTasks !== undefined),
         permissionDecisionRef: `task-management:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",
+      };
+    }
+    if (this.#isReminder(invocation)) {
+      await this.#options.assertRunActive(invocation.runId);
+      return {
+        allowed: this.#exposed.has(invocation.runId) && this.#options.reminders !== undefined,
+        permissionDecisionRef: `reminder:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: "REMINDER_OWNER_SCOPE",
       };
     }
     if (this.#isMemoryRecall(invocation)) {
@@ -975,6 +1032,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return this.#options.managedTasks.execute(invocation);
     }
     if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
+    if (this.#isReminder(invocation)) return this.#reminder(invocation);
     if (this.#background && this.#codingTool(invocation) === "bash") {
       const key = digest([invocation.runId, invocation.toolCallId]);
       const command = await this.#commandDeadline(invocation, true);

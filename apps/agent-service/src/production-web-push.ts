@@ -151,6 +151,7 @@ export interface ProductionWebPushOptions {
   readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
   readonly proactive?: ProactivePushSource;
+  readonly readLocale?: () => Promise<WebPushLocale | null>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
   readonly publicOrigin: string;
@@ -230,7 +231,8 @@ export class ProductionWebPush {
       ({ id }) => id === subscriptionId,
     );
     if (!subscription) return { kind: "gone", code: "WEB_PUSH_SUBSCRIPTION_NOT_FOUND" };
-    const text = WEB_PUSH_TEXT[subscription.locale];
+    const locale = (await this.#options.readLocale?.()) ?? subscription.locale;
+    const text = WEB_PUSH_TEXT[locale];
     const sourceKey = `test:${subscription.id}:${this.#options.now()}`;
     const result = await this.#options.sender.send({
       endpoint: subscription.endpoint,
@@ -240,7 +242,7 @@ export class ProductionWebPush {
         title: text.test,
         body: text.testBody,
         navigate: `${this.#options.publicOrigin}/`,
-        lang: subscription.locale,
+        lang: locale,
         tag: webPushTopic(sourceKey),
         badge: 0,
       }),
@@ -370,6 +372,8 @@ export class ProductionWebPush {
     const { ownerId, agentId, store } = this.#options;
     const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
     if (due.length === 0) return;
+    const kinds = await store.readKinds({ ownerId, agentId });
+    const accountLocale = (await this.#options.readLocale?.()) ?? null;
     const visible = this.#options.presence.anyVisible(now);
     const contents = new Map<string, Content>();
     for (const entry of due) {
@@ -378,7 +382,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "expired", null);
         continue;
       }
-      if (!entry.subscription.kinds.includes(item.kind)) {
+      if (!kinds.includes(item.kind)) {
         await this.#record(entry, now, "suppressed", "WEB_PUSH_KIND_OFF");
         continue;
       }
@@ -393,7 +397,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "suppressed", null);
         continue;
       }
-      await this.#send(entry, now, content, badge);
+      await this.#send(entry, now, content, badge, accountLocale ?? entry.subscription.locale);
     }
   }
 
@@ -518,6 +522,7 @@ export class ProductionWebPush {
     now: string,
     content: Extract<Content, { expired: false }>,
     badge: number,
+    locale: WebPushLocale,
   ): Promise<void> {
     const { item, subscription, attempt } = entry;
     const topic = webPushTopic(item.sourceKey);
@@ -527,7 +532,7 @@ export class ProductionWebPush {
         endpoint: subscription.endpoint,
         p256dh: subscription.p256dh,
         auth: subscription.auth,
-        payload: webPushPayload({ ...content.build(subscription.locale), tag: topic, badge }),
+        payload: webPushPayload({ ...content.build(locale), tag: topic, badge }),
         ttlSeconds: Math.max(1, Math.floor((Date.parse(item.expiresAt) - Date.parse(now)) / 1_000)),
         urgency: item.kind === "run" ? "normal" : "high",
         topic,

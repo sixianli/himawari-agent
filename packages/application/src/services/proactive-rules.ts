@@ -1,5 +1,6 @@
 import type {
   ProactiveConfidence,
+  ProactivePriority,
   ProactiveQuietPeriod,
   ProactiveResult,
   ProactiveSourceItem,
@@ -64,6 +65,35 @@ export function applyFloor(
     return { result: "check", raised: result !== "check" };
   if (result === "ignore") return { result: "know", raised: true };
   return { result, raised: false };
+}
+
+export function isReminderWorthy(
+  result: ProactiveResult,
+  priority: ProactivePriority | null,
+  floor: boolean,
+): boolean {
+  if (result === "act") return priority !== "low" || floor;
+  if (result === "check") return true;
+  if (result === "know") return floor;
+  return false;
+}
+
+export function keepOffReminderPage(
+  result: ProactiveResult,
+  priority: ProactivePriority | null,
+  floor: boolean,
+  confidence: ProactiveConfidence,
+): { readonly result: ProactiveResult; readonly demoted: boolean } {
+  const lowAct = result === "act" && priority === "low";
+  if (!lowAct && isReminderWorthy(result, priority, floor)) return { result, demoted: false };
+  if (result === "ignore") return { result, demoted: false };
+  if (!floor) return { result: "ignore", demoted: true };
+  return { result: confidence === "unsure" ? "check" : "know", demoted: true };
+}
+
+export function fromAddressOf(from: string): string {
+  const match = /<([^<>]+)>/u.exec(from);
+  return (match?.[1] ?? from).trim();
 }
 
 interface ZonedParts {

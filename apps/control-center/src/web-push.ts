@@ -127,7 +127,6 @@ export class PushController {
     readonly publicKey: string;
     readonly locale: ControlCenterUiLocale;
     readonly deviceLabel: string;
-    readonly kinds: readonly WebPushKind[];
     readonly sendTest: boolean;
   }): Promise<"enabled" | "denied"> {
     const { notification, serviceWorker } = this.#browser;
@@ -153,7 +152,7 @@ export class PushController {
           ...subscriptionKeys(subscription),
           locale: input.locale,
           deviceLabel: input.deviceLabel,
-          kinds: [...input.kinds],
+          kinds: null,
         },
         this.#options(),
       ),
@@ -189,6 +188,12 @@ export class PushController {
         },
         this.#options(),
       ),
+    );
+  }
+
+  async setKind(kind: WebPushKind, enabled: boolean): Promise<void> {
+    await this.#client.mutate(
+      commandMessage(this.#configuration, "push.kind.set", { kind, enabled }, this.#options()),
     );
   }
 

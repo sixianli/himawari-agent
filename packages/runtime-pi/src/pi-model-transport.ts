@@ -416,10 +416,7 @@ export class PiModelTransport {
           at: new Date().toISOString(),
         }),
       );
-    if (
-      terminalMessage.stopReason === "toolUse" ||
-      terminalMessage.content.some((item) => item.type === "toolCall")
-    ) {
+    if (terminalMessage.content.some((item) => item.type === "toolCall")) {
       rejected("AI_GATEWAY_TOOL_CALL_UNSUPPORTED");
       yield failed(
         request,

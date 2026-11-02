@@ -13,6 +13,7 @@ import {
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
+import { SignOutSetting } from "./components/sign-out-setting.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
 import { ActionButton, Banner } from "./components/index.js";
@@ -28,6 +29,7 @@ import {
   ProactiveDataSettings,
   ProactiveNotificationSettings,
 } from "./components/proactive-settings.js";
+import { AutoMemorySetting } from "./components/personalization-settings.js";
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import {
   GatewayClient,
@@ -126,7 +128,6 @@ export function ControlCenterApp() {
       );
     applyTheme();
     media?.addEventListener("change", applyTheme);
-    document.documentElement.setAttribute("data-accent", preferences.accent ?? "violet");
     return () => media?.removeEventListener("change", applyTheme);
   }, [preferences]);
   const updateLocale = (next: ControlCenterUiLocale) => {
@@ -416,14 +417,13 @@ function LocalizedControlCenterApp({
           remindersDue:
             (memory.overview?.reminders.length ?? 0) +
             proactiveDueCount(proactive?.overview ?? null, new Date()),
-          renderPage: (page: SidePage, onBack: () => void) => (
+          renderPage: (page: SidePage) => (
             <Suspense fallback={null}>
               {page === "memory" ? (
                 <MemoryPage
                   memory={memory}
                   message={message}
                   focus={memoryFocus}
-                  onBack={onBack}
                   onOpenThread={(threadId) =>
                     navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
                   }
@@ -435,7 +435,6 @@ function LocalizedControlCenterApp({
                   focus={reminderFocus}
                   locale={locale}
                   message={message}
-                  onBack={onBack}
                   onOpenThread={(threadId) =>
                     navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
                   }
@@ -529,6 +528,14 @@ function LocalizedControlCenterApp({
 
   return (
     <ControlCenterShell
+      settingsPersonalization={
+        memory ? <AutoMemorySetting memory={memory} message={message} /> : undefined
+      }
+      settingsAccount={
+        configuration && identityMethod === "built-in" ? (
+          <SignOutSetting csrfToken={configuration.csrfToken} onSignedOut={clearPrivateViewState} />
+        ) : undefined
+      }
       settingsData={
         <>
           {threadModel.settingsData}
@@ -579,6 +586,7 @@ function LocalizedControlCenterApp({
                 proactive={proactive}
                 message={message}
                 outcome={launch.gmail}
+                locale={locale}
               />
             ) : null}
           </>

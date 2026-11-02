@@ -480,7 +480,7 @@ function localTime(occurredAt: string, timeZone: string): string {
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
   return [
     "<himawari-context>",
-    "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。",
+    "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准。",
     `本轮请求时间（UTC）：${projection.prompt.occurredAt}。配置时区 ${timeZone} 的当地时间：${localTime(projection.prompt.occurredAt, timeZone)}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。`,
     ...projection.contextBlocks.map(contextBlockContent),
     "</himawari-context>",
@@ -489,21 +489,6 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
     projection.prompt.content,
     "</owner-message>",
   ].join("\n");
-}
-
-function withOwnerWords(messages: readonly unknown[], turn: string, ownerWords: string): unknown[] {
-  return messages.map((message) => {
-    const value = message as { role?: unknown; content?: unknown };
-    if (value.role !== "user") return message;
-    if (value.content === turn) return { ...value, content: ownerWords };
-    if (!Array.isArray(value.content)) return message;
-    return {
-      ...value,
-      content: value.content.map((part: { type?: unknown; text?: unknown }) =>
-        part.type === "text" && part.text === turn ? { ...part, text: ownerWords } : part,
-      ),
-    };
-  });
 }
 
 function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
@@ -1433,11 +1418,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           this.#dependencies.projection.captureHistory &&
           (event.type === "message_end" || event.type === "compaction_end")
         ) {
-          const messages = withOwnerWords(
-            structuredClone(session.agent.state.messages),
-            turn,
-            projection.prompt.content,
-          );
+          const messages = structuredClone(session.agent.state.messages);
           const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
             this.#dependencies.projection.captureHistory?.({
               runId: request.runId,
@@ -1578,8 +1559,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       } else if (!failed && settled) {
         if (
           finalAssistant &&
-          (finalAssistant.stopReason !== "stop" ||
-            finalAssistant.content.some((part) => part.type === "toolCall"))
+          (finalAssistant.content.some((part) => part.type === "toolCall") ||
+            (finalAssistant.stopReason !== "stop" && finalAssistant.stopReason !== "toolUse"))
         ) {
           emit(
             runtimeFailure(

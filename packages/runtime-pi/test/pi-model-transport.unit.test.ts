@@ -783,6 +783,28 @@ describe("PiModelTransport", () => {
     expect(payloads.writes).toEqual([]);
   });
 
+  it("[I-70] accepts text when the provider reports toolUse but sent no tool call", async () => {
+    const payloads = payloadBoundary();
+    const terminal = {
+      ...assistant("记住了"),
+      stopReason: "toolUse" as const,
+    } satisfies AssistantMessage;
+    const transport = new PiModelTransport({
+      egress: testModelEgress(),
+      models: {
+        resolve: async () =>
+          ({ model, modelRuntime: runtimeWithTerminal(terminal) }) as unknown as PiModelBinding,
+      },
+      payloads: payloads.boundary,
+      clock: { now: () => NOW },
+      fetch: async () => observationResponse(),
+    });
+    const events = await collect(
+      transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
+    );
+    expect(events.at(-1)?.type).toBe("model.completed");
+  });
+
   it("asks Magpie to turn thinking off only when the caller requests it", async () => {
     const payloads = payloadBoundary();
     const magpieModel = {

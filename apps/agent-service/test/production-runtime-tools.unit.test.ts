@@ -14,6 +14,7 @@ import {
   ProductionRuntimeTools,
   type ProductionRuntimeToolsOptions,
 } from "../src/production-runtime-tools.js";
+import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -1354,6 +1355,67 @@ it("answers recall from owner memory, replays the saved result and reports failu
   const failed = await tools.execute({ ...call, toolCallId: "recall-failed" });
   expect(failed).toMatchObject({ outcome: "failed", errorCode: "MEMORY_RECALL_UNAVAILABLE" });
   expect(failed.modelContent).toContain("不要编造");
+});
+
+it("offers reminder tools last, runs them once per call and tells the model why a reminder failed", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    memoryRecall: { recall: async () => ({}) },
+    reminders: { run },
+  });
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names.slice(-4)).toEqual(["recall", "reminder_set", "reminder_list", "reminder_cancel"]);
+  const again = await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect(JSON.stringify(again.slice(-3))).toBe(
+    JSON.stringify(
+      (await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])).slice(-3),
+    ),
+  );
+  const call = {
+    ...invocation,
+    capabilityRef: "reminder.set",
+    capabilityHandleRef: null,
+    arguments: { text: "交周报", due: "2026-11-06T15:00" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(true);
+  const first = await tools.execute(call);
+  expect(first).toMatchObject({ outcome: "succeeded", errorCode: null });
+  expect(await tools.execute(call)).toEqual(first);
+  expect(run).toHaveBeenCalledTimes(1);
+  await expect(
+    tools.execute({ ...call, arguments: { text: "别的", due: "2026-11-06T15:00" } }),
+  ).rejects.toThrow("identity");
+  run.mockRejectedValueOnce(new ReminderInputError("REMINDER_TIME_INVALID"));
+  const refused = await tools.execute({ ...call, toolCallId: "reminder-past" });
+  expect(refused).toMatchObject({ outcome: "failed", errorCode: "REMINDER_TIME_INVALID" });
+  expect(refused.modelContent).toContain("不要说已设好");
+  run.mockRejectedValueOnce(new Error("SQLITE_BUSY"));
+  const broken = await tools.execute({ ...call, toolCallId: "reminder-broken" });
+  expect(broken).toMatchObject({ outcome: "failed", errorCode: "REMINDER_UNAVAILABLE" });
+});
+
+it("does not offer or allow reminder tools when reminders are not configured", async () => {
+  const f = fixture();
+  const tools = f.tool();
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names.some((name) => name.startsWith("reminder_"))).toBe(false);
+  for (const capabilityRef of ["reminder.set", "reminder.list", "reminder.cancel"])
+    expect(
+      (
+        await tools.preflight({
+          ...invocation,
+          capabilityRef,
+          capabilityHandleRef: null,
+          arguments: {},
+        })
+      ).allowed,
+    ).toBe(false);
 });
 
 it("does not offer recall when memory is not configured", async () => {

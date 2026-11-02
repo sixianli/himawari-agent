@@ -310,9 +310,9 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       auth: "auth-iphone",
       locale: "zh-CN",
       deviceLabel: "iPhone",
-      kinds: ["reminder"],
       now: clock.now(),
     });
+    await webPushStore.writeKinds({ ...scope, kinds: ["reminder"], now: clock.now() });
     const app = Fastify();
     closers.push(() => app.close());
     registerProactiveRoutes(app, proactive, {
