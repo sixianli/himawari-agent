@@ -19,6 +19,7 @@ import {
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
+  reviewMemoryVisible,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -1526,11 +1527,7 @@ export async function runAgentService(
               record.status === "deletion_pending"
             )
               return undefined;
-            if (
-              record.dataClassification === "sensitive" ||
-              record.dataClassification === "restricted"
-            )
-              return { text: "", hidden: true };
+            if (!reviewMemoryVisible(record.dataClassification)) return { text: "", hidden: true };
             const text = await readReviewText(record.contentRef);
             return text === undefined ? undefined : { text, hidden: false };
           },

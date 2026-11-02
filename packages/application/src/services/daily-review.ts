@@ -69,7 +69,7 @@ export function selectDailyReview(input: {
     [...items].sort(
       (left, right) =>
         hash(`${seed}|${dayStart}|${left.key}`) - hash(`${seed}|${dayStart}|${right.key}`) ||
-        left.key.localeCompare(right.key),
+        (left.key < right.key ? -1 : left.key > right.key ? 1 : 0),
     );
   const defaults = eligible.filter(({ group }) => group !== "other");
   const queues = DEFAULT_GROUPS.map((name) =>
@@ -102,6 +102,10 @@ export function selectDailyReview(input: {
 }
 
 export type DailyReviewRating = ProactiveRating;
+
+export function reviewMemoryVisible(classification: string): boolean {
+  return classification === "public" || classification === "private";
+}
 
 export interface DailyReviewMemoryText {
   readonly text: string;
@@ -150,7 +154,14 @@ export function parseReviewKey(
 const TEXT_LIMIT = 200;
 
 function clipTo(text: string, limit: number): string {
-  return [...text.replace(/\p{Cc}+/gu, " ").trim()].slice(0, limit).join("");
+  return [
+    ...text
+      .replace(/\p{Cc}+/gu, " ")
+      .replace(/[\u202A-\u202E\u2066-\u2069]/gu, "")
+      .trim(),
+  ]
+    .slice(0, limit)
+    .join("");
 }
 
 function clip(text: string): string {
@@ -159,8 +170,10 @@ function clip(text: string): string {
 
 function ledgerGroup(entry: DecisionLedgerEntry): DailyReviewGroup {
   if (entry.kind === "proactive") return "proactive";
-  if (entry.kind === "memory_candidate")
-    return entry.outcome === "discarded" ? "memory_skipped" : "memory_kept";
+  if (entry.kind === "memory_candidate") {
+    if (entry.outcome === "discarded") return "memory_skipped";
+    return entry.outcome === "kept" ? "memory_kept" : "other";
+  }
   if (entry.kind === "consolidation") return "consolidation";
   return "other";
 }

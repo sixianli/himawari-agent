@@ -7,6 +7,7 @@ import {
   readDailyReview,
   reviewCapacity,
   reviewKey,
+  reviewMemoryVisible,
   selectDailyReview,
 } from "../src/services/daily-review.js";
 import type { ProactiveOverview } from "../src/services/proactive-overview.js";
@@ -189,6 +190,57 @@ function overview(
   } as unknown as ProactiveOverview;
 }
 
+describe("[all decisions] which memories the review page may show", () => {
+  it("shows only public and private memories and hides sensitive, restricted and unknown ones", () => {
+    expect(reviewMemoryVisible("public")).toBe(true);
+    expect(reviewMemoryVisible("private")).toBe(true);
+    for (const other of ["sensitive", "restricted", "secret", "", "PRIVATE"])
+      expect(reviewMemoryVisible(other)).toBe(false);
+  });
+
+  it("strips text-direction override characters from the shown text", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [entry({ id: "kept", outcome: "kept", subjectRef: "m" })],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async () => ({ text: "牛肉\u202E123", hidden: false }),
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]?.text).toBe("牛肉123");
+  });
+
+  it("hides the whole consolidation when any memory in it may not be shown", async () => {
+    const review = await readDailyReview({
+      scope,
+      ledger: {
+        listReviewPool: async () => [
+          entry({
+            id: "merge",
+            kind: "consolidation",
+            outcome: "merge",
+            inputs: { ...entry({}).inputs, memoryIds: ["old"], resultMemoryIds: ["new"] },
+          }),
+        ],
+      },
+      overview: overview([]),
+      readMemoryText: async () => undefined,
+      readMemory: async (id) =>
+        id === "old" ? { text: "", hidden: true } : { text: "新记忆原文", hidden: false },
+      timeZone: "Asia/Tokyo",
+      now: NOW,
+      budgetSeconds: 120,
+      secondsPerItem: 5,
+    });
+    expect(review.items[0]).toMatchObject({ text: "", textHidden: true });
+  });
+});
+
 describe("[P0-6] reading the daily review", () => {
   const read = (entries: DecisionLedgerEntry[], view: ProactiveOverview) =>
     readDailyReview({
@@ -293,6 +345,7 @@ describe("[P0-6] reading the daily review", () => {
       ledger: {
         listReviewPool: async () => [
           entry({ id: "kept", outcome: "kept", subjectRef: "memory:new" }),
+          entry({ id: "pending", outcome: "pending_approval", subjectRef: "request:1" }),
           entry({
             id: "hiddenkept",
             outcome: "kept",
@@ -342,7 +395,11 @@ describe("[P0-6] reading the daily review", () => {
       acted: true,
     });
     expect(byKey("ledger:hiddenkept")).toMatchObject({ text: "", textHidden: true });
-    expect(review.folded.total).toBe(0);
-    expect(review.folded.items.map(({ key }) => key)).toEqual(["ledger:rated"]);
+    expect(JSON.stringify(review)).not.toContain("不该显示");
+    expect(review.folded.total).toBe(1);
+    expect(review.folded.items.map(({ key }) => key).sort()).toEqual([
+      "ledger:pending",
+      "ledger:rated",
+    ]);
   });
 });
