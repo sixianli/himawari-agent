@@ -80,6 +80,22 @@ describe("[P0-6] daily review sampling", () => {
     expect(lopsided.shown.filter((key) => key.startsWith("k"))).toHaveLength(22);
   });
 
+  it("[all decisions] fills a budget that is not a multiple of four without repeats or items outside the pool", () => {
+    const groups = ["memory_skipped", "proactive", "memory_kept", "consolidation"] as const;
+    const pool = groups.flatMap((group) =>
+      Array.from({ length: 10 }, (_, index) => item(`${group}:${index}`, group)),
+    );
+    const selection = selectDailyReview({ pool, dayStart: DAY, seed: "s", capacity: 10 });
+    const keys = new Set(pool.map(({ key }) => key));
+    expect(selection.shown).toHaveLength(10);
+    expect(new Set(selection.shown).size).toBe(10);
+    expect(selection.shown.every((key) => keys.has(key))).toBe(true);
+    const per = groups.map(
+      (group) => selection.shown.filter((key) => key.startsWith(`${group}:`)).length,
+    );
+    expect(per).toEqual([3, 3, 2, 2]);
+  });
+
   it("[all decisions] never puts truncation, retrieval degrade or external read in the default sample", () => {
     const pool = [
       item("t", "other"),
@@ -269,6 +285,7 @@ describe("[P0-6] reading the daily review", () => {
   it("[all decisions] puts kept memories and consolidation in the sample and folds the rest", async () => {
     const memories: Record<string, { text: string; hidden: boolean }> = {
       "memory:new": { text: "我最近想吃牛肉", hidden: false },
+      "memory:old": { text: "我想吃肉", hidden: false },
       "memory:secret": { text: "不该显示", hidden: true },
     };
     const review = await readDailyReview({
@@ -276,7 +293,12 @@ describe("[P0-6] reading the daily review", () => {
       ledger: {
         listReviewPool: async () => [
           entry({ id: "kept", outcome: "kept", subjectRef: "memory:new" }),
-          entry({ id: "hiddenkept", outcome: "kept", subjectRef: "memory:secret" }),
+          entry({
+            id: "hiddenkept",
+            outcome: "kept",
+            subjectRef: "memory:secret",
+            contentRef: "payload:secret",
+          }),
           entry({
             id: "merge",
             kind: "consolidation",
@@ -297,7 +319,7 @@ describe("[P0-6] reading the daily review", () => {
         ],
       },
       overview: overview([]),
-      readMemoryText: async () => undefined,
+      readMemoryText: async () => "不该显示的原文",
       readMemory: async (id) => memories[id],
       timeZone: "Asia/Tokyo",
       now: NOW,
@@ -315,7 +337,10 @@ describe("[P0-6] reading the daily review", () => {
       textHidden: false,
       acted: true,
     });
-    expect(byKey("ledger:merge")).toMatchObject({ text: "我最近想吃牛肉", acted: true });
+    expect(byKey("ledger:merge")).toMatchObject({
+      text: "我想吃肉 → 我最近想吃牛肉",
+      acted: true,
+    });
     expect(byKey("ledger:hiddenkept")).toMatchObject({ text: "", textHidden: true });
     expect(review.folded.total).toBe(0);
     expect(review.folded.items.map(({ key }) => key)).toEqual(["ledger:rated"]);

@@ -149,8 +149,12 @@ export function parseReviewKey(
 
 const TEXT_LIMIT = 200;
 
+function clipTo(text: string, limit: number): string {
+  return [...text.replace(/\p{Cc}+/gu, " ").trim()].slice(0, limit).join("");
+}
+
 function clip(text: string): string {
-  return [...text.replace(/\p{Cc}+/gu, " ").trim()].slice(0, TEXT_LIMIT).join("");
+  return clipTo(text, TEXT_LIMIT);
 }
 
 function ledgerGroup(entry: DecisionLedgerEntry): DailyReviewGroup {
@@ -167,14 +171,24 @@ function ledgerActed(entry: DecisionLedgerEntry): boolean {
   return true;
 }
 
-function reviewedMemoryId(entry: DecisionLedgerEntry): string | undefined {
-  if (entry.kind === "memory_candidate" && entry.outcome !== "discarded")
-    return entry.subjectRef ?? entry.inputs.memoryIds[0];
-  if (entry.kind === "consolidation")
-    return (
-      entry.inputs.resultMemoryIds[0] ?? entry.inputs.memoryIds[0] ?? entry.subjectRef ?? undefined
-    );
-  return undefined;
+const PART_LIMIT = 80;
+
+function reviewedMemoryIds(entry: DecisionLedgerEntry): {
+  readonly before: readonly string[];
+  readonly after: string | undefined;
+} {
+  if (entry.kind === "memory_candidate" && entry.outcome !== "discarded") {
+    const id = entry.subjectRef ?? entry.inputs.memoryIds[0];
+    return { before: [], after: id };
+  }
+  if (entry.kind === "consolidation") {
+    const after = entry.inputs.resultMemoryIds[0];
+    const before = entry.inputs.memoryIds.filter((id) => id !== after).slice(0, 2);
+    if (after === undefined && before.length === 0 && entry.subjectRef !== null)
+      return { before: [entry.subjectRef], after: undefined };
+    return { before, after };
+  }
+  return { before: [], after: undefined };
 }
 
 const OWNER_DECIDED_DISCARD = "approval_rejected";
@@ -220,17 +234,35 @@ export async function readDailyReview(options: {
       },
       build: async () => {
         let text = "";
-        let hidden = false;
-        if (entry.contentRef !== null && entry.kind === "memory_candidate")
-          text = clip(
-            (await options.readMemoryText(entry.contentRef).catch(() => undefined)) ?? "",
+        if (entry.kind === "memory_candidate" && entry.outcome === "discarded") {
+          if (entry.contentRef !== null)
+            text = clip(
+              (await options.readMemoryText(entry.contentRef).catch(() => undefined)) ?? "",
+            );
+        } else if (options.readMemory) {
+          const { before, after } = reviewedMemoryIds(entry);
+          const read = async (id: string) =>
+            options.readMemory?.(id).catch(() => undefined) ?? undefined;
+          const olds = await Promise.all(before.map(read));
+          const next = after === undefined ? undefined : await read(after);
+          const parts = [...olds, ...(after === undefined ? [] : [next])];
+          const shown = parts.filter(
+            (memory): memory is DailyReviewMemoryText => memory !== undefined,
           );
-        const memoryId = reviewedMemoryId(entry);
-        if (text === "" && memoryId !== undefined && options.readMemory) {
-          const memory = await options.readMemory(memoryId).catch(() => undefined);
-          if (memory) {
-            hidden = memory.hidden;
-            text = hidden ? "" : clip(memory.text);
+          if (
+            shown.length === parts.length &&
+            shown.length > 0 &&
+            shown.every((memory) => !memory.hidden)
+          ) {
+            const clipped = (memory: DailyReviewMemoryText) =>
+              clipTo(memory.text, shown.length > 1 ? PART_LIMIT : TEXT_LIMIT);
+            const oldText = olds.flatMap((memory) => (memory ? [clipped(memory)] : [])).join(" + ");
+            text =
+              next === undefined
+                ? oldText
+                : oldText === ""
+                  ? clipped(next)
+                  : `${oldText} → ${clipped(next)}`;
           }
         }
         return {
