@@ -16,8 +16,8 @@ import {
   resolveSandboxActionGrant,
   type SandboxExecutionEvidencePort,
   type SandboxExecutionPlan,
-  SandboxExecutionReconciliationService,
   type SandboxExecutionProjectionContext,
+  SandboxExecutionReconciliationService,
   type SandboxExecutionRecord,
   SandboxResourceRecoveryService,
   SandboxScopeService,
@@ -37,9 +37,6 @@ import {
   piFileRecoveryOperationKey,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_RESULT_LOST,
-  SRT_BACKEND_REF,
-  SRT_TASK_ENVIRONMENT_BACKEND_REF,
-  sandboxBackendKind,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
@@ -50,6 +47,9 @@ import {
   type SandboxOperationBinding,
   type SandboxScope,
   type SandboxWorkspaceCopy,
+  SRT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+  sandboxBackendKind,
   sandboxExecutionFactsSchema,
   sandboxExecutionPlanCandidateSchema,
   sandboxExecutionPlanCandidateV2Schema,
@@ -65,18 +65,19 @@ import {
   CapabilityDeploymentSnapshotLoader,
   createDirectoryMoveJournal,
   createPiFilePublicationJournal,
+  createReusingSandboxHostVerifier,
   resolveSandboxDirectoryMoveScope,
   resolveSandboxFileScope,
   resolveSandboxWorkspaceClaim,
   revalidateCapabilityDeploymentSnapshot,
+  sandboxHostIdentity,
   verifiedPiWriteFailure,
   verifyPiWriteEvidence,
-  createReusingSandboxHostVerifier,
-  sandboxHostIdentity,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
-import { readMachineBootId } from "@himawari-agent/runtime-sandbox/control";
 import type { preparePiFileMutation } from "@himawari-agent/runtime-pi";
+import { readMachineBootId } from "@himawari-agent/runtime-sandbox/control";
+import { JOB_HOST_MAXIMUM_SESSION_MS } from "@himawari-agent/runtime-sandbox/job-host-limits";
 import {
   importProductionCopySave,
   prepareProductionCopySave,
@@ -86,11 +87,12 @@ import { prepareProductionFile } from "./production-file-preparation.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import { createProductionManagedTasks } from "./production-managed-tasks.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { proofValidUntil } from "./production-proof-validity.js";
+import { isGlobalServiceFailure } from "./production-record-failure.js";
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
 import { createProductionSandboxFileRecovery } from "./production-sandbox-file-recovery.js";
 import { createProductionSandboxLostResultRecovery } from "./production-sandbox-lost-result-recovery.js";
-import { isGlobalServiceFailure } from "./production-record-failure.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
 import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 import { createProductionSandboxStreamResultRecovery } from "./production-sandbox-stream-result-recovery.js";
@@ -118,16 +120,10 @@ export function sandboxEnvironmentDeadline(
   ).toISOString();
 }
 
-export function sandboxPrewarmEnvironmentDeadline(
-  runDeadlineAt: string,
-  grantExpiresAt: string,
-  backgroundCommandMs: number,
-): string {
-  return sandboxEnvironmentDeadline(
-    new Date(Date.parse(runDeadlineAt) + backgroundCommandMs).toISOString(),
-    grantExpiresAt,
-    backgroundCommandMs,
-  );
+export function sandboxPrewarmEnvironmentDeadline(nowAt: string, grantExpiresAt: string): string {
+  return new Date(
+    Math.min(Date.parse(nowAt) + JOB_HOST_MAXIMUM_SESSION_MS, Date.parse(grantExpiresAt)),
+  ).toISOString();
 }
 
 export async function createProductionSandboxServices(options: {
@@ -193,11 +189,14 @@ export async function createProductionSandboxServices(options: {
   for (const entry of sandboxEntries) {
     if (entry.binding.kind !== "sandbox" || !entry.qualification.sandbox)
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
-    await verifySandboxHost({
-      binding: entry.binding.value,
-      qualification: entry.qualification.sandbox,
-      hostId,
-    });
+    await verifySandboxHost(
+      {
+        binding: entry.binding.value,
+        qualification: entry.qualification.sandbox,
+        hostId,
+      },
+      { deferContentAudit: true },
+    );
   }
   const journal = repository.sandboxJobJournal(configuration.ownerId, configuration.agentId);
   const environments = options.taskEnvironments
@@ -1214,6 +1213,7 @@ export async function createProductionSandboxServices(options: {
       allowedDomains: resolved.allowedDomains,
       plan,
       deadlineAt: prepared.environmentDeadlineAt ?? plan.effectiveDeadlineAt,
+      commandDeadlineAt: plan.effectiveDeadlineAt,
     });
   };
   const runtime: ProductionRuntimeSandbox = {
@@ -1786,7 +1786,7 @@ export async function createProductionSandboxServices(options: {
       policyDigest: facts.environment.policyDigest,
       resourceSequence: facts.resource.sequence,
       checkedAt: now,
-      validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+      validUntil: proofValidUntil(now, retainedRelease && record.releaseReceipt != null),
       outputs,
       evidence: [...observed.evidence, ...effectEvidence],
     };
@@ -2600,11 +2600,7 @@ export async function createProductionSandboxServices(options: {
             modelRef: request.modelRef,
             binding: { qualificationRef: qualification.qualificationRef },
           },
-          deadlineAt: sandboxPrewarmEnvironmentDeadline(
-            request.executionDeadlineAt,
-            grant.expiresAt,
-            backgroundCommandMs,
-          ),
+          deadlineAt: sandboxPrewarmEnvironmentDeadline(clock.now(), grant.expiresAt),
           capabilityRef: route.capabilityRef,
           capabilityVersion: route.capabilityVersion,
         });

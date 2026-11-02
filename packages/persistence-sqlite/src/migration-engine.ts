@@ -553,7 +553,38 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0068_model_usage_observations.sql",
   },
+  {
+    sequence: 69,
+    name: "decision_ledger",
+    changeSet: "decision-ledger",
+    phase: "expand" as const,
+    file: "0069_decision_ledger.sql",
+  },
+  {
+    sequence: 70,
+    name: "decision_ledger_payloads",
+    changeSet: "decision-ledger-payloads",
+    phase: "expand" as const,
+    file: "0070_decision_ledger_payloads.sql",
+  },
+  {
+    sequence: 71,
+    name: "web_push_account_kinds",
+    changeSet: "web-push-account-kinds",
+    phase: "expand" as const,
+    file: "0071_web_push_account_kinds.sql",
+  },
+  {
+    sequence: 72,
+    name: "thread_artifact_deleted_at",
+    changeSet: "thread-artifact-deleted-at",
+    phase: "expand" as const,
+    file: "0072_thread_artifact_deleted_at.sql",
+  },
 ] as const;
+
+export const LATEST_MIGRATION_SEQUENCE: number =
+  bundledMigrationFiles[bundledMigrationFiles.length - 1]?.sequence ?? 0;
 
 function sha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");

@@ -102,6 +102,11 @@ date: "2026-10-26"
   75. [回答写完才整块出现：文字从不直推，拉回来的结果又被当成过期丢掉](#case-streaming-answers)
   76. [63 个集成测试变红：“提前收尾”抢掉了“迟到结果恢复”](#case-unknown-settle-vs-late-recovery)
   77. [命令和主服务断联：为什么选“最多执行一次”，以及一个一次出错就杀命令的漏洞](#case-command-disconnect)
+  78. [记忆要不要改成“主模型自己存”：先建 120 题的评测，结果发现脚本把输出截断了](#case-memory-capture-eval)
+  79. [执行进程“活着却卡住”没人发现：先查崩溃是不是已有兜底，再决定要不要做心跳](#case-command-hang-heartbeat)
+  80. [一个“今日天气”等了 86 秒：全服务同一时刻只跑一个对话，改大数字还不够](#case-concurrent-dispatch)
+  81. [发给模型的敏感信息怎么遮：从三处各遮一遍，改成所有请求只走一个出口，开源网关的做法对照后取长补短](#case-model-egress-redaction)
+  82. [多轮对话缓存命中为 0：每轮改写了上一轮的消息，改成只追加并加上逐字节的阻断检查](#case-append-only-prefix)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -124,11 +129,11 @@ date: "2026-10-26"
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
-| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview) |
+| 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[第十八次上线启动超时](#case-startup-permission-audit)、[每个事故落一道自动检查](#case-incident-gates)、[手机输入框整页放大](#case-phone-input-zoom)、[评测花超拖垮生产](#case-eval-budget-outage)、[检查脚本读了没写的字段](#case-s6-report-contract)、[上线只装不拆磁盘不够](#case-release-cleanup) |
 | Agent 交互体验：把执行过程如实展示给用户 | [标志“长出来”](#case-sunflower-growth-mark)、[发送后先上屏](#case-optimistic-send)、[22 条界面意见：只给主人需要的信息](#case-ui-batch-1028)、[运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[文件和后台命令的“更多”栏](#case-more-panel)、[筛选按钮上的数字要真](#case-filter-counts)、[回答整段像粗体](#case-answer-weight)、[手机输入框整页放大](#case-phone-input-zoom)、[真浏览器检查先找低级错误](#case-ui-batch-1029)、[“相关记忆”其实不相关](#case-memory-relevance-threshold)、[记忆变化画成两条线](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[Word、Excel、PDF 直接预览](#case-file-preview)、[审批弹两次、批准后卡住](#case-approval-stall)、[写文件时思考 44 秒一动不动](#case-silent-file-writing)、[结果早就出了，30 分钟后才推送失败](#case-unknown-result-late-settle)、[回答写完才整块出现](#case-streaming-answers) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator)、[每个事故落一道自动检查](#case-incident-gates)、[CI 关掉后 main 红了 17 小时](#case-red-main-without-ci)、[云端线程读到哪些规则和技能](#case-cloud-thread-loading) |
@@ -5004,6 +5009,227 @@ B 与 Anthropic 的做法同类，省约一半调用费，但这次数据里把�
 **面试 30 秒版**
 
 “老板问能不能省掉每轮后台记忆抽取。我没有凭感觉改，先建了 120 题的评测，比三种做法，把费用上限写进脚本。第一次结果显示现在的做法只记下七成，我抽查才发现是我把输出上限设得太低，模型思考把额度吃光，回答被截断，不是模型的问题。改完重跑，现在的做法记下九成、不乱记、不泄露密钥；主模型自己存省一半钱，但会记下密钥。结论是不换。我也写明了局限：题目是我一人写的，可能偏向现在的做法。”
+
+[返回目录](#contents)
+
+<a id="case-command-hang-heartbeat"></a>
+
+## 案例 79：执行进程“活着却卡住”没人发现：先查崩溃是不是已有兜底，再决定要不要做心跳
+
+**背景与现象**
+
+案例 77 的评估留下一个缺口：执行进程（execution-worker，替主服务跑沙箱命令的那个进程）如果没死、但不再向主服务汇报，现在没有任何机制能发现，只能等命令自己的期限（bash 是 30 分钟）。用户这段时间只看到一直“运行中”。2026-10-31，Andy 在三个方案里选了方案 A，并要求把这个问题记成面试案例。
+
+**为什么难发现**
+
+- 主服务的租约（证明“这一轮还归我管”的 30 秒凭证）是主服务自己续的（`production-run-composition.ts` 的 `executionLeaseDurationMs: 30_000`），执行进程卡住，租约照续不误。
+- 命令输出长时间不变不能当作卡住的证据：合法的长命令也可以很久不出输出。
+- 误判的代价不对称：判成“失联”会杀掉一条健康的长命令，而且命令不能重跑。
+
+**根因（先核对前提，而不是直接动手）**
+
+方案第 10 条是“未核实”的前提：执行进程崩溃时，主服务现在能不能发现。读 `scripts/delivery-mode/packet-template/systemd/pair-supervisor.mjs` 的结论是：能。看守脚本同时启动执行进程和主服务，任何一个 `exit` 或 `error`，立刻把两个都停掉（`stop(1, "worker_exit")`），由 systemd 重启整个服务，重启后未结束的命令被标成“上次启动遗留，状态未知”，不重跑。所以崩溃已有兜底，心跳只补“活着但卡住”这一种。我没有找到这种卡住在生产上真的发生过的证据，已请生产线程只读查日志和数据库，结果见“结果数据”。
+
+**方案讨论与备选**
+
+- **A 把现有的 250 毫秒轮询当心跳**：执行进程本来每 250 毫秒就找主服务一次，主服务在内存里记“最后一次有动静的时间”，超过 30 秒没动静就走现成的“停止并释放”，结果记为未知。不加新协议。30 秒必须大于执行进程自己的容忍期 10 秒（ADR 0141），否则两边抢着判。
+- **B 显式心跳消息**（Temporal 的做法）：多一种消息和协议。Temporal 的心跳里带进度，是为了断点续跑；我们不重试，这个用不上，所以收益和 A 一样，代价更大。
+- **C 不做**：继续靠 30 分钟期限，零改动。
+- 误判的缓解：检查前先确认主服务自己的循环没有滞后；反向用例（健康但慢的轮询不得被判失联）。
+
+**业界主流做法**
+
+- ✅ Temporal（https://docs.temporal.io/encyclopedia/detecting-activity-failures ，2026-10-31 打开）：“The Temporal Server doesn't detect failures when a Worker loses communication with the Server or crashes.”；“For long-running Activities, we recommend using a relatively short Heartbeat Timeout and a frequent Heartbeat.”
+- ✅ Kubernetes 存活探针（https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/ ，2026-10-31 打开）：探针失败时 “the kubelet kills the container and restarts it.”
+
+**我们的方案**（[ADR 0144](adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)）
+
+Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记录不杀”：主服务记下每条运行中命令最后一次收到执行进程消息的时间，超过 30 秒只写日志 `sandbox.command.silent`，恢复时写 `sandbox.command.silence_ended`，不停止命令。检查前先确认主服务自己的循环没有滞后（两次检查间隔超过 7 秒就重新计时）。测试：每 250 毫秒轮询、每 20 秒慢轮询、已结束的命令、主服务滞后都不报；停止轮询的运行中命令只报一次。
+
+**对比与取舍**
+
+业界的心跳是“发现后重启或重跑”；我们不能重跑，发现后只能“停止并释放，结果记为未知”。这降低了心跳的价值：用户少等的是 30 分钟里的等待，拿不回结果。再加上崩溃已被看守脚本盖住，卡住的发生频率没有证据，所以在改 Agent 循环核心之前，先查数据；数据没有显示需要，最终只加了“只记录不停止”的日志。
+
+**结果数据**
+
+- 崩溃的兜底：读代码确认（`pair-supervisor.mjs`），未在生产实测。
+- 生产只读取证（2026-11-01，`prod-hang-evidence.md`）：生产库 174 条沙箱命令里，没有一条耗时 ≥29 分钟；日志全部可用历史（最早 10-08）里，`poll_retry`、`cancelled_by_poll_error`、`exit.unknown`、`execution.lost` 都是 0 条；9 条“结果未确认”记录最长约 1 分钟。这不能证明从没卡住过：卡住后被重启打断的命令耗时会被截短（推断）。
+- 失联日志：已实现并有测试（ADR 0144）；上线后的 `sandbox.command.silent` 次数：未测量。真正停止命令的检测：未做，等日志证明需要。
+
+**相关 ADR/PR**
+
+[案例 77](#case-command-disconnect)、[ADR 0144](adr/0144-log-commands-silent-for-30-seconds-without-stopping-them.md)、[ADR 0141](adr/0141-tolerate-transient-broker-errors-while-polling-a-running-command.md)、[ADR 0127](adr/0127-settle-unknown-result-run-once-resources-released.md)、[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)。
+
+**面试 30 秒版**
+
+“上一个案例我发现执行进程卡住没人发现，业界的解法是心跳，老板也选了心跳。动手前我先核对方案里一个没验证的前提：进程崩溃时有没有人发现。读代码发现有一个看守脚本，任何一个进程退出就整体重启，所以心跳只补‘活着但卡住’，而且我们不能重跑命令，发现后也只能标未知。我没有直接改核心循环，而是告诉老板收益比方案写的小，先查生产数据：174 条命令没有一条卡满 30 分钟。最后只加了‘超过 30 秒没消息就写日志、不停命令’，并专门测了‘健康但慢’和‘主服务自己卡顿’不会误报，等日志证明需要再决定要不要真停。”
+
+[返回目录](#contents)
+
+<a id="case-concurrent-dispatch"></a>
+
+## 案例 80：一个“今日天气”等了 86 秒：全服务同一时刻只跑一个对话，改大数字还不够
+
+**背景与现象**
+
+2026-11-01，Andy 在 iPhone 上问“今日天气”，用了 2 分 03 秒，页面在“正在准备”停了 1 分 26 秒，过程记录是空的。
+
+**根因**
+
+- 生产库的执行租约记录显示，这一轮等了 86.6 秒才拿到执行位置；前面 7 个运行首尾相接，没有任何两个时间重叠，每次申领都在上一个释放后 0.05–0.46 秒内。
+- 直接原因一：生产配置 `concurrency.totalRuns` 是 1。
+- 直接原因二（读代码发现）：调度器一次只取一批、逐个 `await` 等它们跑完才取下一批，所以把数字改大也不会并发。
+- 其余 36.4 秒：记忆向量化 12 秒、模型约 4.2 和 5.9 秒、搜索 8.1 秒。
+
+**方案讨论与备选**
+
+- 只改配置数字：没有效果，放弃。
+- 滑动窗口：有空位就立刻启动下一个，对话结束立刻唤醒再填。选这个。
+- 每个对话一个进程：多出进程管理，进程内异步已够。
+- 并发数选 3：生产机 4 个 CPU，对话大部分时间在等模型和搜索；一个对话约 209 次数据库操作、执行约 3.2 秒，3 个并发约占单个写线程三成。
+
+**业界主流做法**
+
+- ✅ BullMQ（https://docs.bullmq.io/guide/workers/concurrency ，2026-11-01 打开）：“This means that the same worker is able to process several jobs at the same time.”，并说明 “the concurrency is only possible when workers perform asynchronous operations.”
+- ✅ SQLite WAL（https://www.sqlite.org/wal.html ，2026-11-01 打开）：“readers do not block writers and a writer does not block readers”，同时 “there can only be one writer at a time.” 所以并发提高后写入仍排在一个写线程上，过程记录批量写是下一步。
+
+**我们的方案**（[ADR 0145](adr/0145-run-conversations-concurrently-with-a-sliding-window.md)）
+
+调度器新增 `fill()`，按空位数取出并申领、启动后不等；同一对话的后续轮次仍由数据库查询排除。模板默认改为 3，加测试要求不低于 2。页面对“已接受但无记录超过 3 秒”的轮次显示“排队等待执行”和已排队时间。
+
+**对比与取舍**
+
+和 BullMQ 一样用进程内异步并发；没有做“前面有 N 个”，因为页面不会随队列实时刷新，数字会过期。
+
+**结果数据**
+
+- 单元和真实 SQLite 测试：3 个对话同时持租约，上限 2 时第 3 个等位置；旧代码上快任务不启动。
+- 生产上线后的天气类问题耗时：未测量。真实网页正反验收：未做。
+
+**相关 ADR/PR**
+
+[ADR 0145](adr/0145-run-conversations-concurrently-with-a-sliding-window.md)、[ADR 0131](adr/0131-read-lane-separate-readonly-connection.md)、PR #172。
+
+**面试 30 秒版**
+
+“老板问天气用了两分钟。我没有猜，先从生产库的执行租约记录看出这一轮排队 86 秒、前面的运行首尾相接。再读代码发现，就算把并发数从 1 改大，调度器也是逐个等，所以真正的修复是把它改成有空位就启动的滑动窗口。我还专门选了 3 而不是随便拍，依据是机器核数和单个对话的数据库写入量，并写了真实 SQLite 的并发测试。”
+
+[返回目录](#contents)
+
+<a id="case-model-egress-redaction"></a>
+
+## 案例 81：发给模型的敏感信息怎么遮：从三处各遮一遍，改成所有请求只走一个出口，开源网关的做法对照后取长补短
+
+**背景与现象**
+
+2026-11-01，Andy 评审 Gmail 带记忆方案时问：能不能在送给模型之前统一把验证码、卡号、密码遮掉，而不是每个地方各自整封邮件跳过。当时的状况：对话辅助调用遇到机器密钥就整次拒绝；主对话和嵌入（把文字变成向量的请求）根本没有检查；Gmail 检查有一套自己的“整封跳过”规则，卡号规则还会把订单号当卡号。
+
+第一版（PR #185）在三个发送点各调用一次遮盖函数，并用一道自动检查登记这三个点。Andy 看完后追问三件事：所有模型请求是不是应该统一过一个自己的出口，不要每接一个厂商就重写一遍；要不要学主流开源网关；回复显示给用户时要还原成原文。
+
+**根因**
+
+1. 遮盖是“调用点的责任”：三处调用各写各的，新增一种出口要靠检查发现，且没有任何地方保证“所有请求都走过”。
+2. 占位符只有类型（`[验证码]`），模型分不清两处是不是同一个值，回复里的占位符也没法换回原文。
+3. 只遮盖列出的位置，没列到的新字段会漏。
+
+**方案讨论与备选**
+
+- **接外部网关（LiteLLM + Presidio）**：LiteLLM 的 PII 遮盖要另外部署 Presidio 的分析器和匿名器两个容器；2026-03 LiteLLM 的 PyPI 包被投毒。放弃。
+- **用 Magpie 的内置遮盖**：Magpie 是装在生产机上的模型路由程序；它的遮盖默认关、靠设置页面开关，而且管不到嵌入请求（Magpie 不提供向量接口，见 ADR 0117）。放弃。
+- **进程内一个出口（选用）**：所有模型和嵌入请求只用一个包过的 `fetch`，脱敏只在这里做；新增厂商只要用 OpenAI 或 Anthropic 的格式就不用写脱敏代码。
+- **按字段名排除不遮的字段（Magpie 的做法）**：见下文“业界主流做法”，放弃。
+- **只遮盖列出的位置（LiteLLM 的做法）**：没列到的位置会漏。第一版是这样做的，后来改成“默认全遮、按位置排除”。
+- **启动时接管全局 `fetch`**：网页搜索、邮件等工具也用它，改动面大，放弃。
+- **回复里的占位符在工具参数里也还原**：牵涉工具执行和权限，这次不做。
+
+**我们的方案**
+
+1. 出口：`ModelEgress`（`packages/application/src/services/model-egress.ts`）。每次模型调用建一个 `exchange`，`wrapFetch` 包住发出请求的 `fetch`；按请求路径（`/chat/completions`、`/responses`、`/messages`、`/embeddings`）确认是认识的格式，解析 JSON，遍历所有字符串逐段遮盖。
+2. 默认全遮，按位置排除：推理块、图片音频文件、工具定义、`id`、`type`、`name`、`model` 这类结构字段不碰；工具参数里面一律检查，字段叫什么都一样。
+3. 不认识的路径、不是 JSON 的请求体、嵌入输入是 token 编号数组、遮盖后仍检出机器密钥：拒绝发送，不放行。
+4. 稳定占位符：`[验证码#kqzmdwrp]`，编号是 HMAC（类型加值）算出的 8 个小写字母，密钥由已有的载荷加密密钥再派生，不新增要运维配置的密钥。编号不含数字，避免被验证码规则当成数字串。
+5. 前面遮过的值，后面在任何文字里再出现也一并遮；只依赖更靠前的内容，不依赖更靠后的内容。
+6. 还原：出口为每次调用记下占位符对原文的内存对照表，`restoreModelStream` 把主对话回复事件里的占位符换回原文，占位符被切在两段流式文字之间时先扣住前半段。机器密钥永远不还原。
+7. 占位符说明改成固定文字：照原样使用，不要求核实，不换成示例。
+8. 自动检查 `npm run check:egress-redaction`：三个发送点必须用 `exchange.wrapFetch(`，主对话必须用 `restoreModelStream(`，出口模块之外不得直接调用脱敏函数，也不得有未登记的模型或嵌入请求出口。
+
+复用与自有：出口、规则、占位符是自研；底层的 OpenAI 和 Anthropic 请求由 Pi 的客户端发出，我们只包它接受的 `fetch` 参数，没有改 Pi 的代码。
+
+**业界主流做法**
+
+- ✅ LiteLLM（提交 `60fc121`，2026-10-31）`litellm/llms/openai/chat/guardrail_translation/handler.py`：每种接口一个处理器，开头的说明是“Extract text content from messages/responses (both string and list formats)”，只取消息内容和工具调用交给守卫，没取到的位置不管；嵌入处理器遇到整数输入（token 编号）直接跳过。
+- ✅ Portkey 开源网关（提交 `669825c`）`plugins/portkey/pii.ts`：对嵌入请求返回“PII redaction is not supported for embed requests”但判定通过；脱敏要把文字发给 Portkey 自己的接口。
+- ✅ Bifrost（提交 `496693a`）：开源仓库没有脱敏插件，只有能改请求的插件钩子。
+- ✅ Magpie（提交 `9d08993`）`internal/redact/json.go`：遍历所有字符串，按键名表加位置排除；注释写着“In a tool call's arguments (args) the keys are the tool's, not the vendor's: a "signature", "name" or "user_id" there holds what the agent wrote”。`LESSONS.md` 第 177 行记录事故：“Scope a privacy or security exemption by where the value sits in the protocol, never by a key's name.”——早期按键名跳过 `signature` 和 `*_id`，模型写的工具参数里恰好有这些键，里面的密码没遮就发出去了。`internal/gateway/placeholder_note.go` 的注释记录：较弱的模型对占位符“refused to search with one, asked to verify it, or wrote it as "an example name"”，所以说明要写成“照原样使用，不要求核实，不换成示例”。
+- ✅ Microsoft Presidio 默认把值替换成类型名，只有加密类变换可逆（<https://presidio.dataprivacystack.org/anonymizer/>）；Google Sensitive Data Protection 的删除、换类型名、盖字符不可逆（<https://docs.cloud.google.com/sensitive-data-protection/docs/transformations-reference>）。
+
+**对比与取舍**
+
+- 主流网关（LiteLLM、Portkey）是“只看固定位置”，遇到不认识的格式放行，嵌入要么跳过要么不遮；我们相反：默认全遮，不认识的就拒绝发送，嵌入是必须支持的格式。
+- Magpie 是遍历加键名表，漏过密码、也遮过不该遮的结构字段；我们保留它“遍历所有字符串”的覆盖面，丢掉键名表，改成只在结构位置上按名字排除，进了工具参数就一律检查。
+- 取舍：默认全遮意味着没想到的字段也会被检查，代价是结构字段里偶尔有看起来像卡号的标识符。GLM 的调用编号是 `call_` 加 19 位数字，所以 `id` 一类字段必须按位置排除，并有测试覆盖。
+- 已知缺口：这次上线之前存下的老对话，推理块是在没有遮盖时生成的，可能带原值，推理块有签名不能改，所以会原样再发。
+
+**结果数据**
+
+- 测试：新增出口单元测试 `model-egress.unit.test.ts` 和用真实 Pi 运行时对回环服务的端到端测试 `egress-real-pipeline.unit.test.ts`（覆盖：请求体里没有卡号和验证码；回复里切开的占位符被还原且中间事件里没有占位符；追加新消息后前面所有消息逐字节相同；同一个对话每次发出的字节相同）。
+- 开销：98 KB、200 条消息的请求，包过 `fetch` 的处理时间中位数 2.4 毫秒，最大 7.2 毫秒（云端容器实测，没有命中任何敏感值，用的是空的签名函数）；命中时每个值多一次 HMAC，未单独测量。
+- 上线后的真实网页正反验收：未做（未上线）。上线后的缓存命中率变化：未测量。
+
+**相关 ADR/PR**
+
+[ADR 0146](adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（第一版，已被取代）、[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、PR #185、#187、#190。
+
+**面试 30 秒版**
+
+“Andy 要求发给模型的内容统一遮掉验证码、卡号、密码。第一版我在三个调用点各遮一遍，他追问为什么不是一个出口。我读了 LiteLLM、Portkey、Bifrost 和 Magpie 的源码：前三个只看固定位置，遇到不认识的格式放行；Magpie 按键名排除，自己的事故记录里写着模型起的工具参数名可以冒充受保护的名字。所以我做了进程内一个出口：默认全遮、按位置排除、不认识就拒绝发送，占位符用带密钥的哈希保持稳定，这样缓存前缀不变，回复里的占位符还能还原给用户看。”
+
+[返回目录](#contents)
+
+<a id="case-append-only-prefix"></a>
+
+## 案例 82：多轮对话缓存命中为 0：每轮改写了上一轮的消息，改成只追加并加上逐字节的阻断检查
+
+**背景与现象**
+
+2026-11-02 00:44（日本时间），Andy 在生产网页追问「晚上呢?」，这一轮显示「缓存命中 0%」。缓存命中是指模型服务方对请求开头与上一次完全相同的那段不再重新计算。Andy 的话：「这是原则性问题，会多花很多钱。」
+
+**根因**
+
+先排除界面算错：分母是未命中输入加命中加写入，0% 是真的没命中。再在生产上只读取数：这个对话三次请求全是 0，数据库里缓存字段是「上游报告了，值是 0」。逐字符对比相邻两轮的请求体：前 10954 字符相同（系统提示加工具定义，约 4.2k token），从第 2 条消息起不同——第 1 轮发出的用户消息带 705 字符资料块，第 2 轮这条被换成只有 62 字符的提问。代码是 `pi-runtime-adapter.ts` 里每轮存历史前把用户消息换回原话（ADR 0104 的一条决定，理由「前面的消息每轮相同」是错的：模型上一轮见到的和这一轮见到的不一样）。
+
+数据：92 次 chat 请求里，每个对话第 2 轮及以后的第一次请求 18 次，输入约 46.2 万 token，命中约 4.1 万（9%），占全部输入约 31%；同一轮内前缀严格追加的请求 47 次里 36 次命中。
+
+**我们的方案**
+
+历史存实际发出去的那条消息，删掉换回原话的函数；每轮变化的时间和资料仍只放最后一条消息，并在资料块开头加一句「更早的消息里附的资料只反映当时」。再加四道防线，让别的线程不再犯：①`npm run check:prompt-prefix` 阻断检查：真实 Pi 适配器加真实出口遮盖对回环服务跑多轮对话（工具调用、搜索、银行卡号遮盖、附件长文本、每轮变化的记忆和时间），逐字节检查后一次请求以前一次为开头，三条反向用例（改写历史、系统提示带每轮变化的值、检查器自己对删除重排的判断）必须失败；②`AGENTS.md` 加硬规则，规则全文在 `.claude/rules/prompt-prefix.md`；③生产监控：后续轮次命中率低于 50% 写日志 `cache.follow_up_low_hit`，命中率报告脚本加 `--by turn`；④双模型复核问题清单加「是否改变已发前缀」。复用 Pi：保存历史仍走 Pi 会话的 `message_end` 快照，没有自建消息转换。
+
+**方案讨论与备选**
+
+保持换回原话（每轮必断，放弃）；历史超长时批量清理旧资料块（Pi 已有超窗口压缩，没有数据证明需要，放弃，等数据）；把不变资料拆成固定块（收益更大但是另一个大改动，另出方案）；关掉 Magpie 的内容遮盖（数据不支持它造成零命中，放弃）。
+
+**业界主流做法**
+
+- ✅ OpenAI 提示缓存指南：“Append new messages rather than rewriting earlier turns.”（<https://developers.openai.com/api/docs/guides/prompt-caching>，沿用 10-30 的引文，本次未重新打开）。
+- ✅ Manus 官方博客：“Make your context append-only. Avoid modifying previous actions or observations.”（同上）。
+- ✅ DeepSeek 上下文硬盘缓存文档（2026-11-02 打开）：“A subsequent request can only hit the cache if it fully matches a cache prefix unit.”“The cache system works on a "best-effort" basis and does not guarantee a 100% cache hit rate.”（<https://api-docs.deepseek.com/guides/kv_cache>）
+- ✅ OpenCode Go 文档（2026-11-02 打开）：“Send a stable session ID in `x-opencode-session` for each conversation so we can optimize routing and prompt caching.”（<https://opencode.ai/docs/go/>）
+
+**对比与取舍**
+
+业界一致是只追加；我们的做法是在存历史时改写，与它相反。取舍：只追加会让每轮多存资料块、旧资料块里有旧事实，用说明句和反向用例控制，换来整段历史可缓存。
+
+**结果数据**
+
+改前 4 条多轮正向用例失败（`message-changed`），改后全过；真实数据库组合里的跨轮前缀检查通过。上线后的命中率变化：未测量。仍未查清：前缀严格追加时上游仍有 11 次零命中（47 次里）；已排除前缀不稳、Magpie 重启、重试换供应商、响应头差异；Magpie 内容遮盖的遮盖记录在 6 组相邻请求里相同，不支持它是原因，但没拿到最终请求体。
+
+**相关 ADR/PR**
+
+[ADR 0149](adr/0149-append-only-model-requests.md)（取代 [ADR 0104](adr/0104-turn-material-in-last-user-message.md)）、[ADR 0128](adr/0128-record-cache-usage-of-every-model-request.md)、事故 [I-66](incidents-and-gates.md#incidents)。
+
+**面试 30 秒版**
+
+“用户截图显示多轮对话缓存命中 0%。我先排除界面算错，再在生产上逐字符对比相邻两轮的请求，发现第二轮把上一轮的用户消息从‘资料加提问’改回了‘只剩提问’，前缀从这一条起全变，上一轮的回答和搜索结果全部重算——18 次这样的请求命中只有 9%。修法是历史存实际发出去的内容，只追加；然后加了逐字节的阻断检查、带反向用例，保证以后任何人改上下文拼装都会被拦下。”
 
 [返回目录](#contents)
 

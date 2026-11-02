@@ -7,6 +7,7 @@ import type {
 } from "@himawari-agent/domain";
 import type { SensitiveMemoryTopic } from "./automatic-memory.js";
 import type { DataClassification, PayloadRef } from "./common.js";
+import type { DecisionLedgerWrite } from "./decision-ledger.js";
 
 export const MEMORY_CATEGORIES = [
   "identity",
@@ -130,6 +131,7 @@ export interface ProductMemoryStatePort {
     readonly expectedRevision: number | null;
     readonly job: MemoryProjectionJob;
     readonly history?: MemoryHistoryNote;
+    readonly ledger?: DecisionLedgerWrite;
   }): Promise<ProductMemoryRecord>;
   listActive(ownerId: OwnerId, agentId: AgentId): Promise<readonly ProductMemoryRecord[]>;
   markUsed(memoryIds: readonly MemoryId[], usedAt: string): Promise<void>;
@@ -195,6 +197,7 @@ export interface MemoryProviderProjectionPort {
     readonly query: string;
     readonly limit: number;
     readonly scope?: MemoryTimeScope;
+    readonly minimumSimilarity?: number;
   }): Promise<readonly MemoryProviderHit[]>;
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
 }

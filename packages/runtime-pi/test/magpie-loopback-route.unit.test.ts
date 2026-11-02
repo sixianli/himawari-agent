@@ -7,6 +7,7 @@ import {
   type ConfiguredPiModelDescriptor,
   PiModelTransport,
 } from "../src/index.js";
+import { testModelEgress } from "./helpers/model-egress.js";
 
 const GATEWAY_KEY = ["magpie", "fixture", "key"].join("-");
 const servers: Server[] = [];
@@ -98,6 +99,7 @@ it("streams through a loopback Magpie route with the pinned Pi runtime and price
   };
   const writes: string[] = [];
   const transport = new PiModelTransport({
+    egress: testModelEgress(),
     models: new ConfiguredPiModelBindingPort({
       descriptors: [descriptor],
       secretSource: { productionSuitable: true, resolve: async () => GATEWAY_KEY },

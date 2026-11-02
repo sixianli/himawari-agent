@@ -13,6 +13,8 @@ UNMEASURED_INSTALL_FACTOR = 3
 MEASURED_INSTALL_HEADROOM = 1.2
 LAST_INSTALL_USED = "import json, pathlib, re, sys; m = re.search(r'--no-global-search-paths \\S+/([a-z]+-[0-9]{8})/pair-supervisor[.]mjs', pathlib.Path(sys.argv[1]).read_text()); r = json.loads((pathlib.Path(sys.argv[2]) / (m.group(1) + '-evidence') / 's1-result.json').read_text()) if m else {}; print(r['rootFreeBeforeBytes'] - r['rootFreeAfterBytes'] if r.get('passed') else '')"
 DOCUMENT_TOOLS_CHECK = 'if /usr/bin/python3 -I -c "import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown" >/dev/null 2>&1 && /usr/bin/pandoc --version >/dev/null 2>&1 && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "Noto Sans CJK" && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "LXGW WenKai" && /usr/lib/himawari-document-python/bin/python -I -c "import weasyprint, pypdf; from weasyprint.text.ffi import harfbuzz_subset; assert weasyprint.__version__.split(chr(46))[0] == str(70) and harfbuzz_subset" >/dev/null 2>&1; then echo documentTools=ok; else echo documentTools=missing; fi'
+SANDBOX_LINKS_SCRIPT = (Path(__file__).resolve().parent / 'sandbox-command-links.py').read_text()
+SANDBOX_READ_ROOTS = re.compile(r'readOnlyToolchainPaths: \[(.*?)protectedPaths: \[', re.DOTALL)
 PROBE_UNIT_LINE = re.compile(r"^unit = '([A-Za-z0-9@._-]+\.service)'$", re.MULTILINE)
 
 
@@ -30,10 +32,18 @@ def probe_units(packet, binding):
 
 def target_paths(binding):
     paths = binding['paths']
-    return sorted({paths[key] for key in ('newPrefix', 'newOperations', 'evidenceRoot') if key in paths} | ({str(Path(paths['transportRoot']).parent)} if 'transportRoot' in paths else set()))
+    return sorted({paths[key] for key in ('newPrefix', 'newOperations', 'evidenceRoot') if key in paths} | ({str(Path(paths['transportRoot']).parent)} if 'transportRoot' in paths else set()) | {binding['service']['newQualificationEvidenceRoot']})
 
 
-def remote_script(binding, units=(), paths=()):
+def sandbox_read_roots(packet):
+    seal = (packet / 'signing' / 'cloud-seal.mjs').read_text()
+    block = SANDBOX_READ_ROOTS.search(seal)
+    if not block:
+        raise SystemExit('PREFLIGHT_CHECK sandbox read paths not found in signing/cloud-seal.mjs')
+    return re.findall(r'"(/[^"]*)"', block.group(1))
+
+
+def remote_script(binding, units=(), paths=(), roots=()):
     state_parent = str(Path(binding['paths']['stateRoot']).parent)
     mirror = str(Path(binding['paths']['stateRoot']) / 'authority.json')
     return '; '.join([
@@ -50,6 +60,7 @@ def remote_script(binding, units=(), paths=()):
         'echo "lastInstallUsed=$(/usr/bin/python3 -I -c ' + shlex.quote(LAST_INSTALL_USED) + ' ' + shlex.quote(binding['service']['unitFragmentPath']) + ' ' + shlex.quote(str(Path(binding['paths']['evidenceRoot']).parent) if 'evidenceRoot' in binding['paths'] else '/var/lib/himawari') + ' 2>/dev/null)"',
         'echo "scratchScenes=$(' + SCRATCH_SCENE_COUNT + ')"',
         DOCUMENT_TOOLS_CHECK,
+        '/usr/bin/python3 -I -c ' + shlex.quote(SANDBOX_LINKS_SCRIPT) + ' ' + ' '.join(shlex.quote(root) for root in roots) + ' || echo sandboxLinks=check-failed',
         *['echo ' + shlex.quote('probeUnit.' + unit) + '="$(/usr/bin/systemctl show -p LoadState --value ' + shlex.quote(unit) + ')"' for unit in units],
         *['if [ -e ' + shlex.quote(path) + ' ] || [ -L ' + shlex.quote(path) + ' ]; then echo ' + shlex.quote('targetPath.' + path + '=present') + '; else echo ' + shlex.quote('targetPath.' + path + '=absent') + '; fi' for path in paths],
     ])
@@ -89,6 +100,7 @@ def checks(binding, facts, size, units=(), paths=()):
         ('ROOT_FREE_FOR_ACCEPTANCE', room['predictedFreeAfterInstall'] >= room['needAfterInstall']),
         ('TMP_SCRATCH_WITHIN_LIMIT', int(facts.get('scratchScenes') or 0) <= MAX_FAILURE_SCENES),
         ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
+        ('SANDBOX_COMMAND_LINKS_REACHABLE', facts.get('sandboxLinks') == 'ok'),
         *[('PROBE_UNIT_UNUSED ' + unit, facts.get('probeUnit.' + unit) == 'not-found') for unit in units],
         *[('TARGET_PATH_ABSENT ' + path, facts.get('targetPath.' + path) == 'absent') for path in paths],
     ]
@@ -98,7 +110,7 @@ def main():
     packet = Path(sys.argv[1]).resolve()
     binding = json.loads((packet / 'inputs' / 'bindings.json').read_text())
     units, paths = probe_units(packet, binding), target_paths(binding)
-    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding, units, paths)], capture_output=True, text=True, timeout=60, check=False)
+    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding, units, paths, sandbox_read_roots(packet))], capture_output=True, text=True, timeout=60, check=False)
     if child.returncode != 0:
         print('PREFLIGHT_CHECK SSH failed exit=' + str(child.returncode) + ' ' + child.stderr.strip())
         return 1
@@ -119,6 +131,8 @@ def main():
         print('PREFLIGHT_TMP_SCRATCH /tmp holds ' + facts.get('scratchScenes', '?') + ' acceptance scratch directories (h plus 4 characters) after the cleanup, more than the ' + str(MAX_FAILURE_SCENES) + ' failure scene allowed; see them with: ls -ld /tmp/h????, and see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
     if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
         print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai python3-venv, then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
+    if any(name == 'SANDBOX_COMMAND_LINKS_REACHABLE' and not passed for name, passed in results):
+        print('PREFLIGHT_SANDBOX_LINKS these commands in /usr/bin are links to a place the model sandbox is not allowed to read, so the model would get command not found for them (' + facts.get('sandboxLinks', 'no answer') + '); add the missing directory to readOnlyToolchainPaths in signing/cloud-seal.mjs, regenerate the packet and run this check again')
     if any(name == 'ROOT_FREE_FOR_ACCEPTANCE' and not passed for name, passed in results):
         print('PREFLIGHT_ROOT_SPACE after installing this release the root disk would have less than the 10 GiB production acceptance needs plus 1 GiB reserve; see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
     if any(name in FROZEN_STATE_CHECKS and not passed for name, passed in results):

@@ -29,6 +29,7 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  DecisionLedgerPort,
   ModelUsageStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
@@ -150,11 +151,15 @@ function validMinimumFreeBytes(value: number): number {
   return value;
 }
 
+const READ_WORKER_COUNT = 3;
+
 export class SqliteProductStateRepository implements ProductStateRepositoryPort {
   readonly stateRoot: string;
   readonly databasePath: string;
   private readonly context: SqliteExecutionContext;
-  private readonly readContext: SqliteExecutionContext;
+  private readonly readContexts: SqliteExecutionContext[];
+  private readonly startReadContext: () => Promise<SqliteExecutionContext>;
+  private readonly readStarts = new Set<Promise<void>>();
   private readonly lock: StateRootLock;
   private readonly now: () => string;
   private readonly durable: SqliteDurableAdapters;
@@ -168,13 +173,15 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     databasePath: string;
     context: SqliteExecutionContext;
     readContext: SqliteExecutionContext;
+    startReadContext: () => Promise<SqliteExecutionContext>;
     lock: StateRootLock;
     now: () => string;
   }) {
     this.stateRoot = input.stateRoot;
     this.databasePath = input.databasePath;
     this.context = input.context;
-    this.readContext = input.readContext;
+    this.readContexts = [input.readContext];
+    this.startReadContext = input.startReadContext;
     this.lock = input.lock;
     this.now = input.now;
     this.durable = new SqliteDurableAdapters({
@@ -230,20 +237,22 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           ...(options.onOperation ? { onOperation: options.onOperation } : {}),
         },
       );
-      const readContext = await SqliteExecutionContext.start(
-        {
-          databasePath,
-          writerSequence: migrations.length,
-          busyTimeoutMs,
-          minimumFreeBytes,
-          warningFreeBytes,
-          readOnly: true,
-        },
-        {
-          ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
-          ...(options.onOperation ? { onOperation: options.onOperation } : {}),
-        },
-      ).catch(async (error) => {
+      const startReadContext = () =>
+        SqliteExecutionContext.start(
+          {
+            databasePath,
+            writerSequence: migrations.length,
+            busyTimeoutMs,
+            minimumFreeBytes,
+            warningFreeBytes,
+            readOnly: true,
+          },
+          {
+            ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
+            ...(options.onOperation ? { onOperation: options.onOperation } : {}),
+          },
+        );
+      const readContext = await startReadContext().catch(async (error) => {
         await context.close();
         throw error;
       });
@@ -252,6 +261,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         databasePath,
         context,
         readContext,
+        startReadContext,
         lock,
         now: options.now ?? (() => new Date().toISOString()),
       });
@@ -525,6 +535,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.modelUsage();
   }
 
+  decisionLedger(): DecisionLedgerPort {
+    return this.durable.decisionLedger();
+  }
+
   webPush(): WebPushStorePort {
     return this.durable.webPush();
   }
@@ -622,15 +636,40 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     if (this.closed) return;
     this.closed = true;
     try {
-      await this.readContext.close();
+      await Promise.all(this.readStarts);
+      await Promise.all(this.readContexts.map((read) => read.close()));
       await this.context.close();
     } finally {
       await this.lock.release();
     }
   }
 
+  get readWorkerCount(): number {
+    return this.readContexts.length;
+  }
+
   private readRequest<TResult>(operation: string, payload: unknown): Promise<TResult> {
-    return this.readContext.request<TResult>(operation, payload);
+    let chosen = this.readContexts[0];
+    for (const candidate of this.readContexts)
+      if (chosen && candidate.pendingCount < chosen.pendingCount) chosen = candidate;
+    if (!chosen) throw new Error("SQLITE_READ_WORKER_MISSING");
+    if (
+      chosen.pendingCount > 0 &&
+      !this.closed &&
+      this.readContexts.length + this.readStarts.size < READ_WORKER_COUNT
+    ) {
+      const starting: Promise<void> = this.startReadContext()
+        .then((started) => {
+          if (this.closed) return started.close();
+          this.readContexts.push(started);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.readStarts.delete(starting);
+        });
+      this.readStarts.add(starting);
+    }
+    return chosen.request<TResult>(operation, payload);
   }
 
   private async writeRequest<TResult>(operation: string, payload: unknown): Promise<TResult> {

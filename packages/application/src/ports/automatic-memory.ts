@@ -9,6 +9,7 @@ import type {
   ThreadId,
 } from "@himawari-agent/domain";
 import type { DataClassification, PayloadRef } from "./common.js";
+import type { DecisionLedgerWrite } from "./decision-ledger.js";
 import type {
   ProductMemoryAttributes,
   ProductMemoryProposal,
@@ -66,6 +67,7 @@ export interface IncrementalMemoryProductPort {
   applyProposal(
     proposal: ProductMemoryProposal,
     generationId: MemoryGenerationId,
+    ledger?: DecisionLedgerWrite,
   ): Promise<ProductMemoryRecord>;
 }
 

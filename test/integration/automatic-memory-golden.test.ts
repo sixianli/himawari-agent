@@ -317,6 +317,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         content,
         approvals: repository.sensitiveMemoryApprovals(),
         audit,
+        ledger: repository.decisionLedger(),
         readSourceText: async (ref) => {
           const text = sourceTexts.get(ref);
           if (text === undefined) throw new Error(`Source ${ref} not found`);
@@ -464,6 +465,72 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       );
       expect(resultByCase.get("transient-chatter")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.committedMemoryIds).toEqual([]);
+
+      const ledger = await repository.decisionLedger().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        kind: "memory_candidate",
+        since: "1970-01-01T00:00:00.000Z",
+        limit: 500,
+      });
+      const ledgerCount = (outcome: string) =>
+        ledger.filter((entry) => entry.outcome === outcome).length;
+      const auditCount = (...outcomes: MemoryExtractionAuditRecord["outcome"][]) =>
+        audit.records.filter((record) => outcomes.includes(record.outcome)).length;
+      const replayedCommits = 1;
+      expect(ledgerCount("kept")).toBe(
+        auditCount("auto_committed", "explicitly_approved", "approval_committed") - replayedCommits,
+      );
+      expect(ledgerCount("discarded")).toBe(
+        auditCount(
+          "candidate_secret_excluded",
+          "restricted_excluded",
+          "transient_ignored",
+          "confidence_below_threshold",
+          "approval_rejected",
+          "approval_expired",
+        ),
+      );
+      expect(ledgerCount("pending_approval")).toBe(
+        auditCount("approval_requested", "background_reference_queued"),
+      );
+      expect(ledger.length).toBe(
+        ledgerCount("kept") + ledgerCount("discarded") + ledgerCount("pending_approval"),
+      );
+      const keptDurable = ledger.find(
+        (entry) =>
+          entry.outcome === "kept" && entry.subjectRef === "memory-generation-durable-fact-0",
+      );
+      expect(keptDurable).toMatchObject({
+        reasonCode: "auto_committed",
+        inputs: { memoryIds: ["memory-generation-durable-fact-0"] },
+      });
+      expect(content.plaintextByRef.get(keptDurable?.contentRef ?? "")).toBe(
+        "所有者长期偏好安静、禁烟的餐厅",
+      );
+      const lowConfidence = ledger.filter(
+        (entry) => entry.reasonCode === "confidence_below_threshold",
+      );
+      expect(lowConfidence.length).toBeGreaterThan(0);
+      for (const entry of lowConfidence) {
+        expect(entry.inputs.ruleIds).toEqual(["confidence_below_threshold"]);
+        expect(content.plaintextByRef.get(entry.contentRef ?? "")).toBeTruthy();
+      }
+      for (const entry of ledger.filter(
+        (item) =>
+          item.reasonCode === "restricted_excluded" ||
+          item.reasonCode === "candidate_secret_excluded",
+      ))
+        expect(entry.contentRef).toBeNull();
+      expect(
+        ledger.some((entry) => entry.subjectRef?.startsWith("generation-machine-secret")),
+      ).toBe(false);
+      for (const entry of ledger.filter((item) => !item.reasonCode.startsWith("approval_r"))) {
+        expect(entry.confidencePermille).toBeGreaterThanOrEqual(0);
+        expect(typeof entry.inferred).toBe("boolean");
+      }
+      expect(JSON.stringify(ledger)).not.toContain("090-1234-5678");
+      expect(JSON.stringify(ledger)).not.toContain("owner@example.test");
 
       await repository.close();
     });

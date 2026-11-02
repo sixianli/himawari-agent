@@ -84,7 +84,6 @@ export function SearchAuthorizationControl({
   return (
     <section className="search-authorization">
       <div className="search-authorization-panel">
-        <h3>{message("review.settings.tools")}</h3>
         <div className="setting-row">
           <span>
             <label htmlFor={switchId}>{message("chat.search.enable")}</label>

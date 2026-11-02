@@ -57,6 +57,11 @@ export const glyphLayers = {
     line("M12 14v7"),
   ],
   archive: [base(rr(4, 9, 16, 12, 3.5)), solid(rr(2.5, 3.5, 19, 5.5, 2.75)), line("M10 13.5h4")],
+  trash: [
+    base(rr(5, 7.5, 14, 13.5, 4)),
+    solid(rr(3, 3.5, 18, 4, 2)),
+    line("M10 11.5v6M14 11.5v6", 2.2),
+  ],
   refresh: [
     base(cc(12, 12, 9.5)),
     line("M6.6 12.6A5.5 5.5 0 1 1 8.4 16.2"),

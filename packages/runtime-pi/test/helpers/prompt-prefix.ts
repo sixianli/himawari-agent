@@ -1,0 +1,57 @@
+export interface PrefixBreak {
+  readonly where: string;
+  readonly index: number;
+}
+
+interface ParsedBody {
+  readonly raw: string;
+  readonly parsed: Record<string, unknown> & { messages: unknown[] };
+}
+
+function parse(raw: string): ParsedBody {
+  const parsed = JSON.parse(raw) as ParsedBody["parsed"];
+  if (!Array.isArray(parsed.messages)) throw new TypeError("PROMPT_PREFIX_BODY_HAS_NO_MESSAGES");
+  return { raw, parsed };
+}
+
+function messagesPrefixBytes(body: ParsedBody): string {
+  const marker = '"messages":';
+  const start = body.raw.indexOf(marker) + marker.length;
+  const end = start + JSON.stringify(body.parsed.messages).length;
+  return body.raw.slice(0, end - 1);
+}
+
+export function findPrefixBreak(previousRaw: string, nextRaw: string): PrefixBreak | null {
+  const previous = parse(previousRaw);
+  const next = parse(nextRaw);
+  for (const key of Object.keys(previous.parsed)) {
+    if (key === "messages" || key === "max_tokens") continue;
+    if (JSON.stringify(previous.parsed[key]) !== JSON.stringify(next.parsed[key]))
+      return { where: `field:${key}`, index: -1 };
+  }
+  if (next.parsed.messages.length < previous.parsed.messages.length)
+    return { where: "messages-shortened", index: next.parsed.messages.length };
+  for (let index = 0; index < previous.parsed.messages.length; index += 1) {
+    if (
+      JSON.stringify(previous.parsed.messages[index]) !==
+      JSON.stringify(next.parsed.messages[index])
+    )
+      return { where: "message-changed", index };
+  }
+  if (
+    !next.raw.startsWith(`${messagesPrefixBytes(previous)},`) &&
+    next.parsed.messages.length > previous.parsed.messages.length
+  )
+    return { where: "bytes-changed", index: previous.parsed.messages.length };
+  return null;
+}
+
+export function findConversationBreak(
+  bodies: readonly string[],
+): (PrefixBreak & { request: number }) | null {
+  for (let request = 1; request < bodies.length; request += 1) {
+    const found = findPrefixBreak(bodies[request - 1] ?? "", bodies[request] ?? "");
+    if (found) return { ...found, request };
+  }
+  return null;
+}

@@ -22,8 +22,8 @@ import {
   gatewayMessageSchema,
   gatewayV2MessageSchema,
   type StreamEvent,
-  type ThreadExecutionStreamEvent,
   type ThreadExecutionEventsSubscription,
+  type ThreadExecutionStreamEvent,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
@@ -422,6 +422,10 @@ function serializeSse(input: {
   return `${id}event: ${input.event}\ndata: ${JSON.stringify(input.data)}\n\n`;
 }
 
+function heartbeatFrame(intervalMilliseconds: number) {
+  return serializeSse({ event: "gateway.heartbeat", data: { intervalMilliseconds } });
+}
+
 function refreshQueries(subscription: EventSubscription): readonly GatewayQuery[] {
   const base = {
     schemaVersion: "gateway.v1" as const,
@@ -496,7 +500,7 @@ async function* streamGatewayEvents(input: {
       return;
     }
     if (result.kind === "heartbeat") {
-      yield ": heartbeat\n\n";
+      yield heartbeatFrame(input.heartbeatMilliseconds);
       continue;
     }
     if (result.value.done) return;
@@ -561,7 +565,7 @@ async function* streamGatewayV2Events(input: {
         return;
       }
       if (result.kind === "heartbeat") {
-        yield ": heartbeat\n\n";
+        yield heartbeatFrame(input.heartbeatMilliseconds);
         continue;
       }
       if (result.value.done) return;
@@ -635,7 +639,7 @@ async function* streamThreadGatewayEvents(input: {
         return;
       }
       if (result.kind === "heartbeat") {
-        yield ": heartbeat\n\n";
+        yield heartbeatFrame(input.heartbeatMilliseconds);
         continue;
       }
       if (result.value.done) return;
@@ -700,7 +704,7 @@ async function* streamThreadExecutionEvents(input: {
         return;
       }
       if (result.kind === "heartbeat") {
-        yield ": heartbeat\n\n";
+        yield heartbeatFrame(input.heartbeatMilliseconds);
         continue;
       }
       if (result.value.done) return;

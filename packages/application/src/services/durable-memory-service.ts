@@ -3,6 +3,8 @@ import {
   DEFAULT_MEMORY_ATTRIBUTES,
   PORT_ERROR_CODES,
   type DataClassification,
+  type DecisionLedgerWrite,
+  type MemoryCategory,
   type MemoryContentPort,
   type MemoryHistoryNote,
   type MemoryProjectionJob,
@@ -94,6 +96,7 @@ export class DurableMemoryService {
   async applyProposal(
     proposal: ProductMemoryProposal,
     generationId: MemoryGenerationId,
+    ledger?: DecisionLedgerWrite,
   ): Promise<ProductMemoryRecord> {
     if (proposal.decision === "unchanged") {
       const current = requireRecord(
@@ -149,6 +152,7 @@ export class DurableMemoryService {
         "upsert",
         generationId,
         historyNote("created", proposal),
+        ledger,
       );
       if (proposal.supersedes) await this.supersede(proposal.supersedes, saved, generationId);
       return saved;
@@ -189,6 +193,7 @@ export class DurableMemoryService {
       "upsert",
       generationId,
       historyNote("updated", proposal),
+      ledger,
     );
     return saved;
   }
@@ -355,14 +360,21 @@ export class DurableMemoryService {
     readonly queryRef: string;
     readonly policy: MemorySearchPolicy;
     readonly scope?: MemoryTimeScope;
+    readonly queryText?: string;
+    readonly minimumSimilarity?: number;
+    readonly recordUse?: boolean;
+    readonly excludeCategories?: readonly MemoryCategory[];
   }): Promise<readonly ProductMemorySearchResult[]> {
-    const query = await this.options.content.readText(input.queryRef);
+    const query = input.queryText ?? (await this.options.content.readText(input.queryRef));
     const providerHits = await this.options.provider.search({
       ownerId: input.ownerId,
       agentId: input.agentId,
       query,
       limit: Math.min(1000, Math.max(input.policy.limit * 4, input.policy.limit)),
       ...(input.scope ? { scope: input.scope } : {}),
+      ...(input.minimumSimilarity === undefined
+        ? {}
+        : { minimumSimilarity: input.minimumSimilarity }),
     });
     const productRecords = await this.options.state.readMany({
       ownerId: input.ownerId,
@@ -382,6 +394,9 @@ export class DurableMemoryService {
           memory.status !== "active" ||
           memory.providerRecordId !== hit.providerRecordId ||
           !allowedClassifications.has(memory.dataClassification) ||
+          (input.excludeCategories &&
+            memory.attributes &&
+            input.excludeCategories.includes(memory.attributes.category)) ||
           (allowedSources && !memory.sourceRefs.some((source) => allowedSources.has(source)))
         ) {
           return [];
@@ -392,10 +407,11 @@ export class DurableMemoryService {
         (left, right) => right.score - left.score || left.memory.id.localeCompare(right.memory.id),
       )
       .slice(0, input.policy.limit);
-    await this.options.state.markUsed(
-      selected.map(({ memory }) => memory.id),
-      this.options.now(),
-    );
+    if (input.recordUse !== false)
+      await this.options.state.markUsed(
+        selected.map(({ memory }) => memory.id),
+        this.options.now(),
+      );
     return selected;
   }
 
@@ -536,12 +552,14 @@ export class DurableMemoryService {
     operation: "upsert" | "delete",
     generationId: MemoryGenerationId,
     history?: MemoryHistoryNote,
+    ledger?: DecisionLedgerWrite,
   ) {
     return this.options.state.saveWithProjection({
       memory,
       expectedRevision,
       job: this.projectionJob(memory, operation, generationId),
       ...(history ? { history } : {}),
+      ...(ledger ? { ledger } : {}),
     });
   }
 

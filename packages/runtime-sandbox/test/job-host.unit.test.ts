@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { sandboxHostFailureDetailSchema } from "@himawari-agent/execution-contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import {
   type JobHostRequest,
   parseJobHostRequest,
@@ -60,6 +60,10 @@ function child() {
     },
   });
 }
+let hostLog: MockInstance<typeof globalThis.process.stderr.write>;
+beforeEach(() => {
+  hostLog = vi.spyOn(globalThis.process.stderr, "write").mockReturnValue(true);
+});
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -723,6 +727,35 @@ it("[R2-D23] keeps a caller cancellation during startup instead of a startup tim
   process.emit("close");
   await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
   expect((await host.result).diagnostic).toBeUndefined();
+});
+
+it("logs the exit code, signal and stderr tail of a host that dies before its first message", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  void host.ready.catch(() => {});
+  process.stderr.write(`${"x".repeat(5000)}Error: boom`);
+  process.emit("close", 1, null);
+  await host.result;
+  const lines = hostLog.mock.calls
+    .map(([line]) => String(line))
+    .filter((line) => line.includes("job_host.start_failed"));
+  expect(lines).toHaveLength(1);
+  const record = JSON.parse(lines[0] ?? "");
+  expect(record).toMatchObject({ event: "job_host.start_failed", exitCode: 1, signal: null });
+  expect(record.stderrTail).toHaveLength(4096);
+  expect(record.stderrTail.endsWith("Error: boom")).toBe(true);
+});
+
+it("logs nothing about a start failure once the host has sent its first message", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  void host.ready.catch(() => {});
+  process.emitMessage({ type: "heartbeat", steps: [] });
+  process.emit("close", 0, null);
+  await host.result;
+  expect(
+    hostLog.mock.calls.filter(([line]) => String(line).includes("job_host.start_failed")),
+  ).toHaveLength(0);
 });
 
 it("[R2-D23] keeps a first-message authentication failure instead of a startup timeout", async () => {

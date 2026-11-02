@@ -53,8 +53,9 @@ export const governanceMessages = [
     },
     locale: "zh-CN",
     deviceLabel: "iPhone 主屏应用",
-    kinds: ["reminder", "approval", "run"],
+    kinds: null,
   }),
+  fixture("command", "push.kind.set", { kind: "run", enabled: false }),
   fixture("command", "push.test", { subscriptionId: "web-push-01" }),
   fixture("command", "presence.heartbeat", { clientId: "tab-01", visible: true }),
   fixture("command", "push.feedback.record", {
@@ -71,6 +72,7 @@ export const governanceMessages = [
     available: true,
     publicKey:
       "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U",
+    kinds: ["reminder", "approval", "run"],
     subscriptions: [
       {
         subscriptionId: "web-push-01",
@@ -325,6 +327,11 @@ export const governanceMessages = [
   fixture("command", "memory.reminder.respond", {
     reminderId: "reminder:memory-01",
     action: "dismiss",
+  }),
+  fixture("command", "memory.reminder.create", {
+    contentRef: "payload-03",
+    due: "2026-11-06T15:00",
+    repeat: "none",
   }),
   fixture("command", "memory.create", {
     contentRef: "payload-03",

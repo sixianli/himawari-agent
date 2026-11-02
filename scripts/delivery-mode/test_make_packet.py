@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -28,7 +29,7 @@ INTENDED_CHANGES = {
     'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 's0-db/read-s0-db.mjs',
-    'signing/cloud-seal.mjs', 'steps/README.md', 'steps/run-step.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
+    'signing/cloud-seal.mjs', 'signing/prepare-twelfth-snapshot.sh', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
 INSTANCE = json.loads((HERE / 'instances' / 'andy-production.json').read_text())
@@ -74,11 +75,13 @@ def static_root_configuration(packet):
 
 
 def startup_phases(packet):
+    startup_phases.audits = None
     source = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
     tree = ast.parse(source)
-    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'startup_phases' or isinstance(node, ast.Assign) and [target.id for target in node.targets if isinstance(target, ast.Name)] == ['startup_phase_baseline_ms']]
+    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in ('startup_phases', 'content_audits_completed') or isinstance(node, ast.Assign) and [target.id for target in node.targets if isinstance(target, ast.Name)] == ['startup_phase_baseline_ms']]
     namespace = {'json': json}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'S7-switch-start-readback.py', 'exec'), namespace)
+    startup_phases.audits = namespace['content_audits_completed']
     return namespace['startup_phases'], namespace['startup_phase_baseline_ms']
 
 
@@ -139,7 +142,204 @@ class StartupPhaseTest(RenderedPacket):
         self.assertEqual(slow['phases'][-1]['sinceSpawnMs'], 37643)
         self.assertEqual(slow['warnings'], [{'step': 'sandbox-services-created', 'durationMs': 18824, 'sinceSpawnMs': 27843, 'baselineMs': 6000}])
         self.assertEqual(phases(self.journal(12000), 'start', baseline)['warnings'], [])
-        self.assertEqual(phases(self.journal(18824), 'missing', baseline), {'invocationId': 'missing', 'phases': [], 'warnings': []})
+        self.assertEqual(phases(self.journal(18824), 'missing', baseline), {'invocationId': 'missing', 'phases': [], 'warnings': [], 'runtimeDigests': []})
+
+    def test_the_install_time_prepare_and_the_service_prepare_share_one_fingerprint_cache(self):
+        packet = self.render()
+        snapshot = next(packet.rglob('prepare-*-snapshot.sh')).read_text()
+        unit = next(packet.rglob('himawari-prod.service.draft')).read_text()
+        prepare = [line for line in snapshot.splitlines() if 'cloud-protected-prepare.mjs" --prepare' in line]
+        self.assertEqual(len(prepare), 1)
+        self.assertIn('state=/var/lib/himawari/state', snapshot)
+        self.assertIn('--reuid=999', prepare[0])
+        self.assertIn('HOME="$state"', prepare[0])
+        self.assertIn('User=himawari-prod', unit)
+        self.assertIn('Environment=HOME=/var/lib/himawari/state', unit)
+        self.assertIn('cloud-protected-prepare.mjs --prepare', unit)
+        self.assertNotIn('HIMAWARI_RUNTIME_FINGERPRINT_FILE', snapshot + unit)
+        self.assertIn("target_name = 'runtime-fingerprints.json'", snapshot)
+        self.assertIn('/usr/bin/python3', snapshot)
+        self.assertIn('/lib/himawari-agent', snapshot.split('runtime=', 1)[1].splitlines()[0])
+
+    def publish_fingerprints(self, snapshot, state, operations, runtime):
+        marker = "/usr/bin/python3 -I - \"$state\" \"$operations\" \"$runtime\" <<'PYTHON'\n"
+        script = snapshot.split(marker, 1)[1].split('\nPYTHON\n', 1)[0]
+        return subprocess.run(['python3', '-I', '-', str(state), str(operations), runtime], input=script, capture_output=True, text=True, timeout=30)
+
+    def test_the_root_step_publishes_the_exact_cache_the_service_will_look_for(self):
+        if os.getuid() != 0:
+            self.skipTest('needs root to create files owned by the service account')
+        packet = self.render()
+        snapshot = next(packet.rglob('prepare-*-snapshot.sh')).read_text()
+        prepare = next(packet.rglob('cloud-protected-prepare.mjs')).read_text()
+        runtime = snapshot.split('runtime=', 1)[1].splitlines()[0]
+        prefix = re.search(r'prefix = "([^"]+)"', prepare).group(1)
+        self.assertEqual(runtime, prefix + '/lib/himawari-agent')
+        switch = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
+        self.assertIn("'newPrefix': '" + prefix + "'", switch)
+        token = subprocess.run(['node', '-e', 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,16))', runtime], capture_output=True, text=True, check=True).stdout
+        state, operations = self.root / 'state', self.root / 'operations'
+        cache = state / 'cache'
+        cache.mkdir(parents=True)
+        os.chown(cache, 999, 988)
+        os.chmod(cache, 0o700)
+        operations.mkdir()
+        os.chmod(operations, 0o755)
+        source = cache / ('runtime-fingerprints-' + token + '.json')
+        published = operations / 'runtime-fingerprints.json'
+        entry = {key: '1' for key in ['dev', 'ino', 'size', 'mode', 'uid', 'mtimeNs', 'ctimeNs']} | {'sha256': 'a' * 64}
+        payload = json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry}})
+
+        def stage(text=payload, owner=999, links=0):
+            source.unlink(missing_ok=True)
+            source.write_text(text)
+            os.chown(source, owner, 988)
+            os.chmod(source, 0o600)
+            for index in range(links):
+                os.link(source, cache / ('extra' + str(index)))
+
+        def refused(code):
+            published.unlink(missing_ok=True)
+            result = self.publish_fingerprints(snapshot, state, operations, runtime)
+            self.assertNotEqual(result.returncode, 0, code)
+            self.assertIn(code, result.stderr)
+            self.assertFalse(published.exists(), code)
+            self.assertEqual(list(operations.glob('*.tmp')), [], code)
+
+        stage()
+        result = self.publish_fingerprints(snapshot, state, operations, runtime)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('RUNTIME_FINGERPRINT_CACHE_PUBLISHED files=1', result.stdout)
+        self.assertEqual(published.read_text(), payload)
+        self.assertEqual((published.stat().st_uid, oct(published.stat().st_mode & 0o777)), (0, '0o644'))
+        self.assertEqual(list(operations.glob('*.tmp')), [])
+        stage(owner=1234)
+        refused('SOURCE_UNSAFE')
+        stage(json.dumps({'version': 1, 'root': runtime + '2', 'files': {'a': entry}}))
+        refused('INVALID')
+        stage(json.dumps({'version': 1, 'root': runtime, 'files': {'a': {}}}))
+        refused('INVALID')
+        stage(json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry | {'sha256': 'zz'}}}))
+        refused('INVALID')
+        stage('not json')
+        with self.subTest('garbage'):
+            published.unlink(missing_ok=True)
+            self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        stage(links=1)
+        refused('SOURCE_UNSAFE')
+        (cache / 'extra0').unlink()
+        source.unlink()
+        os.mkfifo(source)
+        os.chown(source, 999, 988)
+        refused('SOURCE_UNSAFE')
+        source.unlink()
+        (cache / 'secret').write_text(payload)
+        source.symlink_to(cache / 'secret')
+        published.unlink(missing_ok=True)
+        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        self.assertFalse(published.exists())
+        source.unlink()
+        refused('NOT_WRITTEN')
+        stage()
+        self.assertEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        source.unlink()
+        again = self.publish_fingerprints(snapshot, state, operations, runtime)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn('ALREADY_PUBLISHED', again.stdout)
+        shutil.rmtree(cache)
+        (self.root / 'elsewhere').mkdir()
+        cache.symlink_to(self.root / 'elsewhere')
+        published.unlink()
+        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
+        self.assertFalse(published.exists())
+
+    def test_the_switch_report_warns_when_the_runtime_check_had_to_hash_files_again(self):
+        phases, baseline = startup_phases(self.render())
+        digest = lambda reused, hashed, retried: (9100, {'component': 'platform-node', 'event': 'sandbox_runtime.digest_completed', 'reused': reused, 'hashed': hashed, 'durationMs': 1100, 'retriedWithoutCache': retried})
+        spawn = (0, {'component': 'pair-supervisor', 'event': 'pair.child_spawned', 'name': 'worker'})
+        good = phases(startup_journal('start', [spawn, digest(30879, 0, False)]), 'start', baseline)
+        self.assertEqual(good['warnings'], [])
+        missed = phases(startup_journal('start', [spawn, (9000, {'component': 'platform-node', 'event': 'sandbox_runtime.fingerprint_cache_missed', 'reused': 0, 'hashed': 5}), (9100, {'component': 'platform-node', 'event': 'sandbox_runtime.content_audit_retrying'})]), 'start', baseline)
+        self.assertEqual([warning['step'] for warning in missed['warnings']], ['runtime-fingerprint-cache-missed', 'content-audit-retrying'])
+        self.assertEqual(good['runtimeDigests'][0]['reused'], 30879)
+        for reused, hashed, retried in [(0, 30879, False), (10, 1, False), (30879, 0, True)]:
+            bad = phases(startup_journal('start', [spawn, digest(reused, hashed, retried)]), 'start', baseline)
+            self.assertEqual([warning['step'] for warning in bad['warnings']], ['runtime-fingerprint-cache'], (reused, hashed, retried))
+
+    def test_the_switch_waits_for_both_background_content_audits_before_declaring_the_start_healthy(self):
+        source = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
+        self.assertIn("sandbox_runtime.content_audit_completed", source)
+        self.assertIn("if audits_completed and all(", source)
+        startup_phases(self.render())
+        event = lambda name, pid: {'event': 'sandbox_runtime.content_audit_' + name, 'pid': pid}
+        gate = startup_phases.audits
+        self.assertFalse(gate([]))
+        self.assertFalse(gate([event('started', 11), event('completed', 11)]))
+        self.assertFalse(gate([event('started', 11), event('completed', 11), event('completed', 11)]))
+        self.assertFalse(gate([event('started', 11), event('started', 11), event('completed', 11), event('started', 12), event('completed', 12)]))
+        self.assertTrue(gate([event('started', 11), event('started', 11), event('completed', 11), event('completed', 11), event('started', 12), event('completed', 12)]))
+        self.assertFalse(gate([event('started', True), event('started', 12), event('completed', 12), event('completed', True)]))
+        self.assertTrue(gate([event('started', 11), event('superseded', 11), event('started', 12), event('completed', 12)]))
+        self.assertIn("'__PKT_LABEL_UPPER___SWITCH_CONTENT_AUDITS_NOT_COMPLETED' if not audits_completed".replace('__PKT_LABEL_UPPER__', 'TWELFTH'), (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text())
+
+    def test_the_snapshot_script_never_uses_a_variable_before_it_is_set(self):
+        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
+        self.assertEqual(subprocess.run(['bash', '-n'], input=snapshot, text=True, capture_output=True).returncode, 0)
+        assigned = {'0', '1', '#', '?', '@', '*', '$', '!'}
+        heredoc_end = None
+        for number, line in enumerate(snapshot.splitlines(), 1):
+            if heredoc_end:
+                if line == heredoc_end:
+                    heredoc_end = None
+                continue
+            opener = re.search(r"<<-?\s*'?([A-Z_]+)'?\s*$", line)
+            code = line
+            used = set(re.findall(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)', code))
+            for name in used - assigned - {'PATH'}:
+                self.assertIn(name, assigned, 'line ' + str(number) + ' uses $' + name + ' before it is set')
+            for name in re.findall(r'(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=', code):
+                assigned.add(name)
+            if opener:
+                heredoc_end = opener.group(1)
+
+    def test_the_fingerprint_publish_runs_after_prepare_has_produced_its_source(self):
+        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
+        prepare = snapshot.index('cloud-protected-prepare.mjs" --prepare')
+        publish = snapshot.index('runtime-fingerprints.json')
+        self.assertLess(prepare, publish)
+        self.assertEqual(snapshot.count("target_name = 'runtime-fingerprints.json'"), 1)
+
+    def test_the_tail_of_the_snapshot_script_publishes_for_real_under_strict_shell_options(self):
+        if os.getuid() != 0:
+            self.skipTest('needs root to create files owned by the service account')
+        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
+        lines = snapshot.splitlines()
+        start = next(index for index, line in enumerate(lines) if line.startswith('runtime='))
+        stop = next(index for index, line in enumerate(lines) if index > start and line.startswith('[[ $(stat -c %u "$operations/runtime-fingerprints.json")'))
+        runtime = lines[start].split('=', 1)[1]
+        token = subprocess.run(['node', '-e', 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,16))', runtime], capture_output=True, text=True, check=True).stdout
+        state, operations = self.root / 'state', self.root / 'operations'
+        (state / 'cache').mkdir(parents=True)
+        operations.mkdir()
+        os.chmod(operations, 0o755)
+        os.chown(state / 'cache', 999, 988)
+        entry = {key: '1' for key in ['dev', 'ino', 'size', 'mode', 'uid', 'mtimeNs', 'ctimeNs']} | {'sha256': 'a' * 64}
+        source = state / 'cache' / ('runtime-fingerprints-' + token + '.json')
+        source.write_text(json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry}}))
+        os.chown(source, 999, 988)
+        os.chmod(source, 0o600)
+        script = 'set -euo pipefail\numask 022\nstate=' + str(state) + '\noperations=' + str(operations) + '\n' + '\n'.join(lines[start:stop + 1]) + '\n'
+        result = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('RUNTIME_FINGERPRINT_CACHE_PUBLISHED', result.stdout)
+        source.unlink()
+        again = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn('ALREADY_PUBLISHED', again.stdout)
+        (operations / 'runtime-fingerprints.json').unlink()
+        missing = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn('NOT_WRITTEN', missing.stderr)
 
     def test_a_missing_or_malformed_phase_baseline_is_refused(self):
         self.assertEqual(json.loads(packet_maker.startup_phase_baseline(INSTANCE))['sandbox-services-created'], 6000)
@@ -338,6 +538,14 @@ class SandboxReadPathsTest(RenderedPacket):
         listed = seal.split('readOnlyToolchainPaths: [', 1)[1].split('].map(', 1)[0]
         for path in ('"/usr/share"', '"/etc/fonts"', '"/var/cache/fontconfig"'):
             self.assertIn(path, listed)
+
+    def test_model_sandbox_can_follow_command_links_and_read_system_data_files(self):
+        seal = (self.render() / 'signing' / 'cloud-seal.mjs').read_text()
+        listed = seal.split('readOnlyToolchainPaths: [', 1)[1].split('protectedPaths: [', 1)[0]
+        for path in ('"/etc/alternatives"', '"/usr/sbin"', '"/etc/mime.types"', '"/etc/magic"', '"/etc/locale.alias"', '"/etc/ld.so.cache"'):
+            self.assertIn(path, listed)
+        for secret in ('/etc/passwd', '/etc/shadow', '/etc/group', '/etc/himawari', '/etc/localtime'):
+            self.assertNotIn('"' + secret + '"', listed)
 
 
 class DerivedExpectationsTest(RenderedPacket):
@@ -693,11 +901,12 @@ class HermesCleanupTest(unittest.TestCase):
                         unittest.mock.patch.object(packet_maker, 'load_instance', return_value={}), \
                         unittest.mock.patch.object(packet_maker, 'resolve_commit', return_value='e' * 40), \
                         unittest.mock.patch.object(packet_maker, 'require_current_scripts'), \
+                        unittest.mock.patch.object(packet_maker, 'require_claims_proven'), \
                         unittest.mock.patch.object(packet_maker, 'discover', return_value={}), \
                         unittest.mock.patch.object(packet_maker, 'interpret_discovery', return_value={'LABEL': 'twentieth'}), \
                         unittest.mock.patch.object(packet_maker, 'base_parameters', return_value={'LABEL': 'twentieth', 'COMMIT8': 'e' * 8}):
                     with self.assertRaises(SystemExit):
-                        packet_maker.prepare(argparse.Namespace(instance='andy-production', commit='HEAD', date='2026-10-30', label='twentieth'))
+                        packet_maker.prepare(argparse.Namespace(instance='andy-production', commit='HEAD', date='2026-10-30', label='twentieth', since=None, output_root='out'))
             self.assertIn(packet_maker.hermes_cleanup_command(hermes.work), calls.read_text())
 
 
@@ -725,6 +934,53 @@ class ScriptCheckoutTest(unittest.TestCase):
         source = (HERE / 'make-packet.py').read_text()
         body = source[source.index('def prepare(arguments):'):source.index('def build_packet(')]
         self.assertLess(body.index('require_current_scripts(commit)'), body.index('discover('))
+
+
+class UntestedClaimGateTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.repo = Path(self.directory.name)
+        self.git = ['git', '-C', str(self.repo), '-c', 'user.name=t', '-c', 'user.email=t@t']
+        subprocess.run(['git', 'init', '-q', str(self.repo)], check=True)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def commit(self, message):
+        subprocess.run([*self.git, 'commit', '-q', '--allow-empty', '-m', message], check=True)
+        return subprocess.run([*self.git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+
+    def test_a_claim_without_proof_since_the_last_release_is_refused(self):
+        base = self.commit('base')
+        head = self.commit('fix: x\n\nUntested-critical-path: real sandbox prewarm')
+        with unittest.mock.patch.object(packet_maker, 'REPO', self.repo):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_UNTESTED_CLAIM_WITHOUT_PROOF'):
+                packet_maker.require_claims_proven(head, base, self.repo / 'out')
+
+    def test_a_proven_claim_passes(self):
+        base = self.commit('base')
+        head = self.commit('fix: x\n\nUntested-critical-path: real sandbox prewarm\nReal-env-proof: ran r2l6 on Hermes')
+        with unittest.mock.patch.object(packet_maker, 'REPO', self.repo):
+            packet_maker.require_claims_proven(head, base, self.repo / 'out')
+
+    def test_the_previous_packet_commit_is_the_default_start(self):
+        root = self.repo / 'out'
+        for name, commit in (('2026-10-01-a-change-packet-01', 'a' * 40), ('2026-10-20-b-change-packet-01', 'b' * 40)):
+            (root / name).mkdir(parents=True)
+            (root / name / packet_maker.PARAMETERS).write_text(json.dumps({'COMMIT': commit}))
+        self.assertEqual(packet_maker.previous_release_commit(root), 'b' * 40)
+        self.assertIsNone(packet_maker.previous_release_commit(self.repo / 'none'))
+
+    def test_unknown_start_is_refused_not_skipped(self):
+        head = self.commit('base')
+        with unittest.mock.patch.object(packet_maker, 'REPO', self.repo):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SINCE_UNKNOWN'):
+                packet_maker.require_claims_proven(head, None, self.repo / 'out')
+
+    def test_prepare_checks_claims_before_touching_production(self):
+        source = (HERE / 'make-packet.py').read_text()
+        body = source[source.index('def prepare(arguments):'):source.index('def build_packet(')]
+        self.assertLess(body.index('require_claims_proven('), body.index('discover('))
 
 
 class DependencyReinstallTest(unittest.TestCase):

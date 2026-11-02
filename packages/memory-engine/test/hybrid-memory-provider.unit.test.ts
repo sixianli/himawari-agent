@@ -7,6 +7,7 @@ import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import { describe, expect, it, vi } from "vitest";
 import { type Embedder, GatewayEmbedder, normalizedVector } from "../src/embedding.ts";
 import { HybridMemoryProvider, memoryIndexRecordId } from "../src/hybrid-memory-provider.ts";
+import { testModelEgress } from "./helpers/model-egress.js";
 
 const ownerId = "owner-01" as OwnerId;
 const agentId = "agent-01" as AgentId;
@@ -149,6 +150,7 @@ describe("hybrid Memory provider", () => {
     });
     const hits = await provider.search({ ownerId, agentId, query: "我住在哪里", limit: 3 });
     expect(onVectorFailure).toHaveBeenCalledOnce();
+    expect(onVectorFailure).toHaveBeenCalledWith(expect.anything(), { ownerId, agentId });
     expect(port.search).toHaveBeenCalledWith(
       expect.objectContaining({ embedding: null, terms: ["住在"], queryText: "我住在哪里" }),
     );
@@ -176,9 +178,39 @@ describe("hybrid Memory provider", () => {
 });
 
 describe("Gateway embedder", () => {
+  it("redacts sensitive values before the text leaves for the embedding provider", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "fixture-embedding",
+            data: [{ index: 0, embedding: [3, 0, 4] }],
+            usage: { prompt_tokens: 1, total_tokens: 1 },
+          }),
+        ),
+    );
+    const client = new GatewayEmbedder({
+      egress: testModelEgress(),
+      baseUrl: "https://gateway.invalid/v1",
+      model: "fixture-embedding",
+      dimensions: 3,
+      apiKey: async () => "fixture-value",
+      fetch,
+    });
+    client.bindBoundary((_request, send) => send({ timeoutMs: 50 }), 1000);
+    await client.embed("验证码 482910，卡号 4111 1111 1111 1111，订单 20261101123456，山田太郎");
+    const sent = JSON.parse(
+      String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+    );
+    expect(sent.input).toMatch(
+      /^验证码 \[验证码#[a-z]{8}\]，卡号 \[银行卡 尾号1111#[a-z]{8}\]，订单 20261101123456，山田太郎$/u,
+    );
+  });
+
   it("refuses to call the provider before a governed boundary is bound", async () => {
     const fetch = vi.fn();
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -201,6 +233,7 @@ describe("Gateway embedder", () => {
         ),
     );
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1/",
       model: "fixture-embedding",
       dimensions: 3,
@@ -229,6 +262,7 @@ describe("Gateway embedder", () => {
     const encoded = Buffer.from(values.buffer).toString("base64");
     const bodies: unknown[] = [];
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -263,6 +297,7 @@ describe("Gateway embedder", () => {
 
   it("rejects a base64 vector whose length does not match the dimensions", async () => {
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -287,6 +322,7 @@ describe("Gateway embedder", () => {
 
   it("reports a provider HTTP failure", async () => {
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,
@@ -299,6 +335,7 @@ describe("Gateway embedder", () => {
 
   it("keeps the gateway's refusal reason when a budget rejects the request", async () => {
     const client = new GatewayEmbedder({
+      egress: testModelEgress(),
       baseUrl: "https://gateway.invalid/v1",
       model: "fixture-embedding",
       dimensions: 3,

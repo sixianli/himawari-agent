@@ -163,6 +163,7 @@ const registered = (overrides: Partial<RegisteredFile>): RegisteredFile => ({
   stored: true,
   overlapped: false,
   createdAt: "2026-10-28T06:12:00.000Z",
+  deleted: false,
   ...overrides,
 });
 
@@ -347,6 +348,44 @@ describe("[FD-5] files delivered in a conversation", () => {
     const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
     expect(header).toContain('href="/api/files/v1/content/file%3Av3?download=1"');
     expect(html).not.toContain('class="preview-versions"');
+  });
+
+  it("[FD-1] shows no card for a file that was deleted, and the files page drops it", () => {
+    const runs = [{ runId: "run:1" } as RunSummary];
+    const groups = deliveredFileGroups({
+      runs,
+      execution: {
+        "run:1": [tool("w1", "write", { path: "/workspace/draft.md", content: "# 草稿" })],
+      },
+      registered: [
+        registered({ id: "kept", runId: "run:1", path: "final.docx", name: "final.docx" }),
+        registered({
+          id: "gone",
+          runId: "run:1",
+          toolItemId: "w1",
+          path: "draft.md",
+          name: "draft.md",
+          deleted: true,
+        }),
+        registered({
+          id: "gone-bash",
+          runId: "run:1",
+          path: "old.docx",
+          name: "old.docx",
+          deleted: true,
+        }),
+      ],
+      commands: [],
+      titles: {},
+    });
+    expect(groups.flatMap((group) => group.files.map((file) => file.path))).toEqual(["final.docx"]);
+    expect(
+      latestFiles([
+        registered({ id: "g2", path: "old.docx", version: 2, deleted: true }),
+        registered({ id: "g1", path: "old.docx", version: 1 }),
+        registered({ id: "k1", path: "final.docx" }),
+      ]).map((item) => item.id),
+    ).toEqual(["k1"]);
   });
 
   it("keeps the newest version of each file on the files page and dates older ones", () => {

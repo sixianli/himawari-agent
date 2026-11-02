@@ -1,4 +1,3 @@
-import { lexer } from "marked";
 import { useEffect, useRef, useState } from "react";
 import { parseDelimited } from "../delimited-text.js";
 import type { DeliveredFile } from "../delivered-files.js";
@@ -10,6 +9,7 @@ import type { RegisteredFile } from "../registered-files.js";
 import { type DiffLine, fileExtension, type PreviewKind, previewKind } from "../turn-files.js";
 import { LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
+import { markdown } from "./cjk-markdown.js";
 import { fileFacts, fileSourceText } from "./delivered-file.js";
 import { type DocumentKind, DocumentPreview } from "./document-preview.js";
 import { Glyph } from "./glyphs.js";
@@ -228,7 +228,8 @@ function CsvTable({
 
 function MarkdownReader({ text, label }: { readonly text: string; readonly label: string }) {
   const article = useRef<HTMLElement>(null);
-  const headings = lexer(text, { gfm: true })
+  const headings = markdown
+    .lexer(text)
     .filter((token) => token.type === "heading" && token.depth === 2)
     .map((token) => ("text" in token ? String(token.text) : ""));
   return (

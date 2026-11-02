@@ -691,11 +691,14 @@ function web() {
   for (const key of [
     "payloadStore",
     "productMemoryState",
+    "memoryBook",
+    "memoryReminders",
     "memoryProjectionJobs",
     "runPayloadArtifactPort",
     "capabilityStore",
     "modelBudgetPort",
     "modelUsage",
+    "decisionLedger",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

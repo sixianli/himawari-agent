@@ -25,7 +25,10 @@ export interface HybridMemoryProviderOptions {
   readonly now: () => string;
   readonly minimumSimilarity?: number;
   readonly weights?: FusionWeights;
-  readonly onVectorFailure?: (error: unknown) => void;
+  readonly onVectorFailure?: (
+    error: unknown,
+    scope: { readonly ownerId: OwnerId; readonly agentId: AgentId },
+  ) => void;
   readonly queryInstruction?: string;
   readonly timeZone?: string;
 }
@@ -122,6 +125,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     readonly query: string;
     readonly limit: number;
     readonly scope?: MemoryTimeScope;
+    readonly minimumSimilarity?: number;
   }): Promise<readonly MemoryProviderHit[]> {
     if (input.query.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_QUERY_EMPTY");
@@ -142,7 +146,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
           ),
         };
       } catch (error) {
-        this.#options.onVectorFailure?.(error);
+        this.#options.onVectorFailure?.(error, { ownerId: input.ownerId, agentId: input.agentId });
       }
     }
     const now = this.#options.now();
@@ -154,7 +158,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       terms: queryTerms(input.query),
       queryText: input.query,
       limit: Math.min(200, Math.max(CANDIDATES_PER_SIGNAL, input.limit)),
-      minimumSimilarity: this.#options.minimumSimilarity ?? 0,
+      minimumSimilarity: input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0,
       now,
       includeHistory: scope?.includeHistory === true,
     });

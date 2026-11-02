@@ -27,6 +27,7 @@ export interface RegisteredFile {
   readonly stored: boolean;
   readonly overlapped: boolean;
   readonly createdAt: string;
+  readonly deleted: boolean;
 }
 
 export interface RegisteredFilePage {
@@ -80,6 +81,7 @@ export function parseRegisteredFile(value: unknown): RegisteredFile {
     stored: item["stored"],
     overlapped: item["overlapped"],
     createdAt: text("createdAt"),
+    deleted: item["deleted"] === true,
   });
 }
 

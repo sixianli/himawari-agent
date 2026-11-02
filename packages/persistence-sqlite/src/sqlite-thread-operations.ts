@@ -1094,12 +1094,8 @@ export class SqliteThreadOperations {
         this.fail("PORT_CONFLICT", "Thread admission cannot duplicate a product-state Run");
       }
       const current = this.read(input.ownerId, input.agentId, input.threadId);
-      if (
-        !current ||
-        current.status !== "active" ||
-        current.revision !== input.expectedThreadRevision
-      ) {
-        this.fail("PORT_CONFLICT", "Thread is not active at the expected revision");
+      if (!current || current.status !== "active") {
+        this.fail("PORT_CONFLICT", "Thread is not active");
       }
       const sequence = current.messageWatermark + 1;
       this.database

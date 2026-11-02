@@ -14,6 +14,7 @@ import {
   ProductionRuntimeTools,
   type ProductionRuntimeToolsOptions,
 } from "../src/production-runtime-tools.js";
+import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -587,6 +588,36 @@ describe("ProductionRuntimeTools", () => {
       ).toHaveLength(mode === "revoke" ? 1 : 0);
     },
   );
+  it("writes the reason into the service log when a result cannot be settled", async () => {
+    const f = fixture(25);
+    f.setMode("hang");
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line));
+    });
+    try {
+      const result = await (await exposed(f)).execute(invocation);
+      expect(result).toMatchObject({ outcome: "result_unknown" });
+    } finally {
+      spy.mockRestore();
+    }
+    const logged = lines
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })
+      .filter((entry) => entry["event"] === "tool.settlement_failed");
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      runId: invocation.runId,
+      stage: "possibly_sent",
+      errorName: expect.any(String),
+    });
+    expect(typeof logged[0]?.["errorMessage"]).toBe("string");
+  });
   it.each(["requested", "unconfirmed"])(
     "requests stop when authority is withdrawn during a hung event stream: %s",
     async (stopState) => {
@@ -1324,6 +1355,67 @@ it("answers recall from owner memory, replays the saved result and reports failu
   const failed = await tools.execute({ ...call, toolCallId: "recall-failed" });
   expect(failed).toMatchObject({ outcome: "failed", errorCode: "MEMORY_RECALL_UNAVAILABLE" });
   expect(failed.modelContent).toContain("不要编造");
+});
+
+it("offers reminder tools last, runs them once per call and tells the model why a reminder failed", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    memoryRecall: { recall: async () => ({}) },
+    reminders: { run },
+  });
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names.slice(-4)).toEqual(["recall", "reminder_set", "reminder_list", "reminder_cancel"]);
+  const again = await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect(JSON.stringify(again.slice(-3))).toBe(
+    JSON.stringify(
+      (await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])).slice(-3),
+    ),
+  );
+  const call = {
+    ...invocation,
+    capabilityRef: "reminder.set",
+    capabilityHandleRef: null,
+    arguments: { text: "交周报", due: "2026-11-06T15:00" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(true);
+  const first = await tools.execute(call);
+  expect(first).toMatchObject({ outcome: "succeeded", errorCode: null });
+  expect(await tools.execute(call)).toEqual(first);
+  expect(run).toHaveBeenCalledTimes(1);
+  await expect(
+    tools.execute({ ...call, arguments: { text: "别的", due: "2026-11-06T15:00" } }),
+  ).rejects.toThrow("identity");
+  run.mockRejectedValueOnce(new ReminderInputError("REMINDER_TIME_INVALID"));
+  const refused = await tools.execute({ ...call, toolCallId: "reminder-past" });
+  expect(refused).toMatchObject({ outcome: "failed", errorCode: "REMINDER_TIME_INVALID" });
+  expect(refused.modelContent).toContain("不要说已设好");
+  run.mockRejectedValueOnce(new Error("SQLITE_BUSY"));
+  const broken = await tools.execute({ ...call, toolCallId: "reminder-broken" });
+  expect(broken).toMatchObject({ outcome: "failed", errorCode: "REMINDER_UNAVAILABLE" });
+});
+
+it("does not offer or allow reminder tools when reminders are not configured", async () => {
+  const f = fixture();
+  const tools = f.tool();
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names.some((name) => name.startsWith("reminder_"))).toBe(false);
+  for (const capabilityRef of ["reminder.set", "reminder.list", "reminder.cancel"])
+    expect(
+      (
+        await tools.preflight({
+          ...invocation,
+          capabilityRef,
+          capabilityHandleRef: null,
+          arguments: {},
+        })
+      ).allowed,
+    ).toBe(false);
 });
 
 it("does not offer recall when memory is not configured", async () => {

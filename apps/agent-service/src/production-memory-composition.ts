@@ -1,6 +1,7 @@
 import type {
   ConfiguredEmbeddingModelDescriptor,
   MemoryIndexStorePort,
+  ModelEgress,
   ProductConfiguration,
 } from "@himawari-agent/application";
 import {
@@ -8,6 +9,7 @@ import {
   type EmbeddingBoundary,
   GatewayEmbedder,
   HybridMemoryProvider,
+  type HybridMemoryProviderOptions,
   QWEN3_EMBEDDING_8B_MODEL,
   QWEN3_MEMORY_MINIMUM_SIMILARITY,
   QWEN3_MEMORY_QUERY_INSTRUCTION,
@@ -23,11 +25,12 @@ import {
 } from "./production-model-composition.js";
 
 export interface ProductionMemoryCompositionOptions {
+  readonly egress: ModelEgress;
   readonly configuration: ProductConfiguration;
   readonly secretSource: HostProviderSecretSource;
   readonly index: MemoryIndexStorePort;
   readonly fetch?: typeof fetch;
-  readonly onVectorFailure?: (error: unknown) => void;
+  readonly onVectorFailure?: HybridMemoryProviderOptions["onVectorFailure"];
 }
 
 export interface ProductionMemoryComposition {
@@ -64,6 +67,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     throw new TypeError("MEMORY_UNSAFE_PROVIDER_SECRET_SOURCE");
   let apiKey: Promise<string> | undefined;
   const embedder = new GatewayEmbedder({
+    egress: options.egress,
     baseUrl: AI_GATEWAY_BASE_URL,
     model: embedding.model,
     dimensions: embedding.dimensions,

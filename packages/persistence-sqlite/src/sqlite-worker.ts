@@ -711,6 +711,12 @@ function currentAuthority(input: CommitStateAndEventsInput, now: string): Author
   return row;
 }
 
+function holdBeforeRead(): void {
+  const duration = configuration.qualification?.holdBeforeReadMs ?? 0;
+  if (duration <= 0) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(duration, 2000));
+}
+
 function maybeHoldBeforeCommit(): void {
   const duration = configuration.qualification?.holdBeforeCommitMs ?? 0;
   if (duration <= 0) return;
@@ -1012,6 +1018,7 @@ channel.on("message", (request: WorkerRequest) => {
         );
         break;
       case "read":
+        holdBeforeRead();
         value = readState((request.payload as { key: string }).key);
         break;
       case "readAuthorityRevision":

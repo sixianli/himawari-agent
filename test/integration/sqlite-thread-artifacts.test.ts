@@ -17,6 +17,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { BrowserThreadFiles } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionThreadArtifacts } from "../../apps/agent-service/src/production-thread-artifacts.ts";
 import { ProductionUploadedFiles } from "../../apps/agent-service/src/production-uploaded-files.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -152,6 +153,153 @@ describe("[FD-1] thread artifact storage", () => {
         created: true,
         artifact: { version: 3, copyRef: null, sha256: null },
       });
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[FD-1] hides a file after it is deleted and registers it again when it comes back", async () => {
+    const { repository, store } = await open();
+    try {
+      await store.register({ ...scope, artifact: artifact("d1", { path: "a.docx" }) });
+      await store.register({ ...scope, artifact: artifact("d2", { path: "b.docx" }) });
+      expect(
+        await store.markDeleted({
+          ...scope,
+          threadId: "thread-1",
+          paths: ["a.docx", "missing.docx"],
+          deletedAt: "2026-10-28T05:05:00.000Z",
+        }),
+      ).toBe(1);
+      const page = await store.list({
+        ...scope,
+        threadId: "thread-1",
+        kind: null,
+        search: null,
+        before: null,
+        limit: 50,
+      });
+      expect(page.items.map(({ path, deletedAt }) => [path, deletedAt !== null]).sort()).toEqual([
+        ["a.docx", true],
+        ["b.docx", false],
+      ]);
+      const back = await store.register({
+        ...scope,
+        artifact: artifact("d3", { path: "a.docx", runId: "run-2", toolCallId: "call-d3" }),
+      });
+      expect(back).toMatchObject({
+        created: true,
+        artifact: { version: 2, deletedAt: null },
+      });
+      expect(
+        await store.markDeleted({
+          ...scope,
+          threadId: "thread-2",
+          paths: ["a.docx"],
+          deletedAt: "2026-10-28T05:06:00.000Z",
+        }),
+      ).toBe(0);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[FD-1] a command that deletes a registered file hides it through the real store, and keeps the old version", async () => {
+    const { repository, store } = await open();
+    try {
+      const files: Record<string, string> = { "a.docx": "one", "b.docx": "two" };
+      let counter = 0;
+      const artifacts = new ProductionThreadArtifacts({
+        store,
+        files: {
+          readFile: async ({ relativePath }) => {
+            const content = files[relativePath];
+            if (content === undefined) throw new Error("MISSING");
+            return new TextEncoder().encode(content);
+          },
+          inspectEntry: async ({ relativePath }) =>
+            files[relativePath] === undefined ? null : "file",
+        },
+        ids: { next: (kind) => `${kind}:${++counter}` },
+        now: () => T0,
+        warn: () => {},
+      });
+      const base = {
+        ...scope,
+        threadId: "thread-1",
+        runId: "run-1",
+        toolCallId: "call-1",
+        source: "bash" as const,
+        grant: {} as never,
+        overlapped: false,
+        saveCopy: async (key: string) => ({ ref: key }),
+      };
+      await artifacts.record({
+        ...base,
+        candidates: [{ path: "a.docx" }, { path: "b.docx" }],
+      });
+      delete files["a.docx"];
+      await artifacts.recordDeleted({ ...base, toolCallId: "call-2", paths: ["a.docx"] });
+      const list = (
+        await store.list({
+          ...scope,
+          threadId: "thread-1",
+          kind: null,
+          search: null,
+          before: null,
+          limit: 50,
+        })
+      ).items;
+      expect(list.map(({ path, deletedAt }) => [path, deletedAt !== null]).sort()).toEqual([
+        ["a.docx", true],
+        ["b.docx", false],
+      ]);
+      files["old.docx"] = "gone soon";
+      files["c.docx"] = "stays";
+      await artifacts.record({
+        ...base,
+        toolCallId: "call-4",
+        candidates: [{ path: "old.docx" }, { path: "c.docx" }],
+      });
+      delete files["old.docx"];
+      delete files["b.docx"];
+      expect(
+        await artifacts.reconcileDeleted({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          grant: {} as never,
+        }),
+      ).toBe(2);
+      expect(
+        await artifacts.reconcileDeleted({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          grant: {} as never,
+        }),
+      ).toBe(0);
+      const failing = new ProductionThreadArtifacts({
+        store,
+        files: {
+          readFile: async () => new Uint8Array(),
+          inspectEntry: async () => {
+            throw new Error("HOST_READ_ROOT_IDENTITY_CHANGED");
+          },
+        },
+        ids: { next: (kind) => `${kind}:x` },
+        now: () => T0,
+        warn: () => {},
+      });
+      await expect(
+        failing.reconcileDeleted({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          grant: {} as never,
+        }),
+      ).rejects.toThrow("HOST_READ_ROOT_IDENTITY_CHANGED");
+      const remaining = await store.latest({ ...scope, threadId: "thread-1", path: "c.docx" });
+      expect(remaining?.deletedAt).toBeNull();
+      const kept = await store.versions({ ...scope, threadId: "thread-1", path: "a.docx" });
+      expect(kept).toMatchObject([{ version: 1, copyRef: expect.any(String) }]);
     } finally {
       await repository.close();
     }

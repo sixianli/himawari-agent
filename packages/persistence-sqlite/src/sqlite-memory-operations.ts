@@ -1,4 +1,5 @@
 import type {
+  DecisionLedgerWrite,
   MemoryCategory,
   MemoryEpisode,
   MemoryEpisodeCandidate,
@@ -24,6 +25,7 @@ import type {
   ThreadId,
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
+import { insertLedgerRow, validateLedgerWrite } from "./sqlite-decision-ledger-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 interface MemoryRow {
@@ -307,6 +309,7 @@ export class SqliteMemoryOperations {
             expectedRevision: number | null;
             job: MemoryProjectionJob;
             history?: MemoryHistoryNote;
+            ledger?: DecisionLedgerWrite;
           },
         );
       case "memory.listActive":
@@ -638,7 +641,12 @@ export class SqliteMemoryOperations {
     expectedRevision: number | null;
     job: MemoryProjectionJob;
     history?: MemoryHistoryNote;
+    ledger?: DecisionLedgerWrite;
   }): ProductMemoryRecord {
+    if (input.ledger) {
+      const problem = validateLedgerWrite(input.ledger);
+      if (problem) this.fail("PORT_INVALID_OPERATION", problem);
+    }
     if (
       input.job.memoryId !== input.memory.id ||
       input.job.memoryRevision !== input.memory.revision ||
@@ -652,6 +660,7 @@ export class SqliteMemoryOperations {
       .transaction(() => {
         const saved = this.save(input);
         this.proposeJob({ job: input.job, requeueCompleted: false });
+        if (input.ledger) insertLedgerRow(this.database, input.ledger);
         return saved;
       })
       .immediate();

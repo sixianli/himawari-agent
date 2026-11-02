@@ -1,5 +1,6 @@
-import { Lexer, lexer, type MarkedToken, type Token } from "marked";
+import type { MarkedToken, Token } from "marked";
 import { Fragment, createElement as h, type ReactNode } from "react";
+import { markdown, repairInlineTables } from "./cjk-markdown.js";
 
 function safeLink(value: string): string | undefined {
   try {
@@ -73,7 +74,7 @@ function renderToken(token: MarkedToken): ReactNode {
             Fragment,
             null,
             link,
-            children(Lexer.lexInline(token.raw.slice(boundary), { gfm: true })),
+            children(markdown.Lexer.lexInline(token.raw.slice(boundary), markdown.defaults)),
           )
         : link;
     }
@@ -122,6 +123,6 @@ export function AssistantMarkdown({ text }: { readonly text: string }) {
   return h(
     "div",
     { className: "thread-message-content assistant-markdown" },
-    children(lexer(text, { gfm: true })),
+    children(markdown.lexer(repairInlineTables(text))),
   );
 }

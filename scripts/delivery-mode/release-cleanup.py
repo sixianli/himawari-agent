@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -13,9 +14,10 @@ KEEP_STATE_COPIES = 3
 LOCK_PATH = '/run/lock/himawari-release-cleanup.lock'
 SCRATCH_ROOT = '/tmp'
 KEEP_FAILURE_SCENES = 1
+KEEP_FAILED_ACCEPTANCE = 2
 
 
-def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
+def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES, freeze_sha256=None):
     paths = binding['paths']
     evidence_parent = str(Path(paths['evidenceRoot']).parent)
     return {
@@ -26,6 +28,7 @@ def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
         'database': paths['database'],
         'releasesRoot': str(Path(paths['newPrefix']).parent),
         'operationsRoot': str(Path(paths['newOperations']).parent),
+        'currentStage': str(Path(paths['transportRoot']).parent),
         'tmpRoot': str(Path(paths['transportRoot']).parent.parent),
         'evidenceParent': evidence_parent,
         'archiveRoot': evidence_parent + '/release-cleanup',
@@ -39,6 +42,9 @@ def cleanup_plan(binding, keep_failure_scenes=KEEP_FAILURE_SCENES):
         'lockPath': LOCK_PATH,
         'scratchRoot': SCRATCH_ROOT,
         'keepFailureScenes': keep_failure_scenes,
+        'freezeSha256': freeze_sha256,
+        'qualificationTarget': binding['service']['newQualificationEvidenceRoot'],
+        'keepFailedAcceptance': KEEP_FAILED_ACCEPTANCE,
     }
 
 
@@ -49,7 +55,7 @@ def main():
     packet = Path(sys.argv[1]).resolve()
     binding = json.loads((packet / 'inputs' / 'bindings.json').read_text())
     keep = int(sys.argv[3]) if len(sys.argv) == 4 else KEEP_FAILURE_SCENES
-    encoded = base64.b64encode(json.dumps(cleanup_plan(binding, keep)).encode()).decode()
+    encoded = base64.b64encode(json.dumps(cleanup_plan(binding, keep, hashlib.sha256((packet / 'freeze-manifest.json').read_bytes()).hexdigest())).encode()).decode()
     command = ['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], '/usr/bin/python3 -I - ' + sys.argv[2] + ' ' + encoded]
     child = subprocess.run(command, input=(HERE / 'release-cleanup-remote.py').read_bytes(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=900, check=False)
     output = child.stdout.decode(errors='replace')
@@ -64,6 +70,8 @@ def main():
         print('CLEANUP_TRIMMED ' + item['path'] + ' ' + str(item['bytes']))
     for item in result['renamed']:
         print('CLEANUP_RENAMED ' + item['from'] + ' -> ' + item['to'])
+    for item in result.get('staleTransports', []):
+        print('CLEANUP_STALE_TRANSPORT pid=' + str(item['pid']) + ' terminated=' + str(item['terminated']).lower())
     for item in result['kept']:
         print('CLEANUP_KEPT ' + item['reason'] + ' ' + item['path'])
     print('CLEANUP_RESULT ' + json.dumps({'mode': result['mode'], 'freedBytes': result['freedBytes'], 'archivedFiles': len(result['archived']), 'rootFreeBeforeBytes': result['rootFreeBeforeBytes'], 'rootFreeAfterBytes': result['rootFreeAfterBytes'], 'report': result.get('report')}))

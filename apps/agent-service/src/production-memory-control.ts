@@ -4,6 +4,7 @@ import {
   scanMachineSecrets,
   type ClockPort,
   type DurableMemoryService,
+  type DecisionLedgerPort,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryConsolidationStorePort,
@@ -25,6 +26,7 @@ import type {
   GatewayV2Query,
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
+import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 import {
   containsRestrictedIdentifier,
   createProductionAutomaticMemory,
@@ -42,6 +44,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.mutate",
   "memory.tidy.undo",
   "memory.reminder.respond",
+  "memory.reminder.create",
   "memory.create",
   "memory.settings.set",
   "memory.page.viewed",
@@ -102,6 +105,7 @@ export class ProductionMemoryControl {
       "applyProposal" | "correct" | "delete" | "restore" | "confirm" | "trash" | "recover"
     >;
     readonly book: MemoryBookStorePort;
+    readonly ledger?: DecisionLedgerPort;
     readonly profile?: Pick<OwnerProfileService, "outline">;
     readonly consolidation?: {
       readonly store: Pick<MemoryConsolidationStorePort, "listChanges">;
@@ -114,6 +118,7 @@ export class ProductionMemoryControl {
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
+    readonly timeZone?: string;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
 
@@ -695,6 +700,7 @@ export class ProductionMemoryControl {
         clock: this.options.clock,
         ...(this.options.reminders ? { reminders: this.options.reminders } : {}),
         book: this.options.book,
+        ...(this.options.ledger ? { ledger: this.options.ledger } : {}),
         extract: async () => [],
         readSourceText: (ref) => this.readText(ref),
         onAudit: this.options.onAudit,
@@ -705,6 +711,37 @@ export class ProductionMemoryControl {
           : { requestId, resolution },
       );
       return { resultRef: committed ?? requestId, replayed: false };
+    }
+    if (command.type === "memory.reminder.create") {
+      if (!this.options.reminders)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      const writer = new ProductionReminderWriter({
+        configuration: this.options.configuration,
+        memory: this.options.memory,
+        state: this.options.state,
+        book: this.options.book,
+        reminders: this.options.reminders,
+        payloads: this.options.payloads,
+        protector: this.options.protector,
+        clock: this.options.clock,
+        ...(this.options.timeZone ? { timeZone: this.options.timeZone } : {}),
+      });
+      try {
+        const created = await writer.create({
+          key: `owner:${command.idempotencyKey}`,
+          contentRef: command.payload.contentRef,
+          due: command.payload.due,
+          repeat: command.payload.repeat,
+        });
+        return { resultRef: created.reminderId, replayed: created.replayed };
+      } catch (error) {
+        if (error instanceof ReminderInputError)
+          throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
+        throw error;
+      }
     }
     if (command.type === "memory.reminder.respond") {
       if (!this.options.reminders)

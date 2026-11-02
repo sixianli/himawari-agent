@@ -35,6 +35,11 @@ export interface MemoryConsolidationChange {
   readonly undoneAt: string | null;
 }
 
+export interface MemoryConsolidationLedgerMemories {
+  readonly memoryIds: readonly MemoryId[];
+  readonly resultMemoryIds: readonly MemoryId[];
+}
+
 export interface MemoryConsolidationStorePort {
   begin(run: MemoryConsolidationRun): Promise<boolean>;
   lastCompleted(ownerId: OwnerId, agentId: AgentId): Promise<MemoryConsolidationRun | undefined>;
@@ -46,7 +51,10 @@ export interface MemoryConsolidationStorePort {
     readonly errorCode: string | null;
     readonly finishedAt: string;
   }): Promise<void>;
-  recordChange(change: MemoryConsolidationChange): Promise<void>;
+  recordChange(
+    change: MemoryConsolidationChange,
+    ledgerMemories?: MemoryConsolidationLedgerMemories,
+  ): Promise<void>;
   listChanges(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
