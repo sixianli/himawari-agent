@@ -540,7 +540,7 @@ function prehydrateSession(
   if (projection.interruptedRunId)
     sessionManager.appendCustomMessageEntry(
       "himawari.turn_aborted",
-      `<turn_aborted>The user interrupted the previous turn. Some tools may have partially executed; use recorded results and verify unknown effects. Recorded search and page results from the interrupted turn remain valid and can be used directly. When the user asks to use the material already found, answer from it without searching or fetching again; fetch more only if the user asks for newer information or the recorded material clearly lacks something the answer requires, and then say what is missing. Handle the new user request. Resume earlier work only when requested.</turn_aborted>`,
+      `<turn_aborted>The user interrupted the previous turn. Some tools may have partially executed; use recorded results and verify unknown effects. Search and page results already recorded from the interrupted turn are still in the conversation. If the user asks to use the material already found, answer from it without searching or fetching again. Search again only if the user asks for newer or live information, or the recorded material lacks something the answer needs. Handle the new user request. Resume earlier work only when requested.</turn_aborted>`,
       false,
     );
   const piEntryByProductMessage = new Map<string, string>();

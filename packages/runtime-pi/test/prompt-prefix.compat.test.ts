@@ -371,9 +371,11 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       },
     );
     expect(findConversationBreak(bodies)).toBeNull();
-    expect(bodies[2]).toContain("answer from it without searching or fetching again");
-    expect(bodies[0]).not.toContain("answer from it without searching or fetching again");
-    expect(bodies.at(-1)).toContain("answer from it without searching or fetching again");
+    const stopNote = "answer from it without searching or fetching again";
+    const first = bodies.findIndex((body) => body.includes(stopNote));
+    expect(first).toBeGreaterThan(0);
+    expect(bodies.slice(0, first).some((body) => body.includes("turn_aborted"))).toBe(false);
+    expect(bodies.slice(first).every((body) => body.includes(stopNote))).toBe(true);
   });
 
   it("keeps turns that set a reminder append-only, with the reminder tool listed in every request", async () => {
