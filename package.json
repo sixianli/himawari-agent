@@ -37,7 +37,7 @@
     "check:memory-relevance": "node scripts/check-memory-relevance.mjs",
     "check:egress-redaction": "node scripts/check-egress-redaction.mjs",
     "check:prompt-prefix": "node scripts/check-prompt-prefix.mjs",
-    "check:product-path-configuration": "vitest run --config vitest.workspace.ts --project unit apps/agent-service/test/product-path-configuration.unit.test.ts apps/agent-service/test/walkthrough-selectable-models.unit.test.ts packages/platform-node/test/service-failure-reason.unit.test.ts",
+    "check:product-path-configuration": "vitest run --config vitest.workspace.ts --project unit --project tooling test/tooling/product-path-configuration.test.ts test/tooling/walkthrough-selectable-models.test.ts packages/platform-node/test/service-failure-reason.unit.test.ts",
     "check:model-ref-contract": "vitest run --config vitest.workspace.ts --project unit apps/agent-service/test/model-ref-contract.unit.test.ts",
     "check:expensive-models": "node scripts/check-expensive-models.mjs",
     "check:locale": "node scripts/check-control-center-locale.mjs",

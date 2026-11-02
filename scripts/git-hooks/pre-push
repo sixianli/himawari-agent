@@ -1,3 +1,7 @@
 #!/bin/sh
 root=$(git rev-parse --show-toplevel) || exit 1
-exec python3 "$root/scripts/layer0-tests/check-layer0-tests.py" pre-push
+python3 "$root/scripts/layer0-tests/check-layer0-tests.py" pre-push || exit 1
+node "$root/scripts/check-boundaries.mjs" >&2 || {
+  echo "PUSH_BOUNDARY_CHECK_FAILED npm run check:boundaries 失败或脚本缺失，推送被拦下" >&2
+  exit 1
+}

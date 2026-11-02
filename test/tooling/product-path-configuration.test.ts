@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildProductPathConfiguration,
   type ProductPathConfigurationInput,
-} from "../../../test/fixtures/product-path-configuration.ts";
+} from "../fixtures/product-path-configuration.ts";
 
 const root = path.join("/tmp", "himawari-product-path-configuration");
 const input = (
