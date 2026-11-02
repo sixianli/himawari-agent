@@ -133,6 +133,7 @@ export const messages = {
   "answer.at": "{at, time, short}",
   "answer.sources": "出典 {count} 件",
   "process.tokens": "トークン",
+  "process.answeredBy": "回答したモデル",
   "message.copy": "このメッセージをコピー",
   "message.status.sent": "送信済み：サーバーがこのメッセージを保存しました",
   "message.status.received": "処理開始：モデルがこのメッセージを受け取りました",

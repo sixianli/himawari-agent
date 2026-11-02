@@ -7,6 +7,11 @@ export interface TurnUsage {
   readonly output: number;
   readonly reasoning: number;
   readonly total: number;
+  readonly models: readonly string[];
+}
+
+export function servedModelName(servedModel: string): string {
+  return servedModel.slice(servedModel.indexOf("/") + 1);
 }
 
 export interface TurnSource {
@@ -38,12 +43,22 @@ export function turnUsage(records: readonly ThreadExecutionRecord[]): TurnUsage 
   const cacheRead = sum("cacheRead");
   const input = sum("input") + cacheRead + sum("cacheWrite");
   const output = sum("output");
+  const models = [
+    ...new Set(
+      calls.flatMap((call) =>
+        typeof call["servedModel"] === "string" && servedModelName(call["servedModel"])
+          ? [servedModelName(call["servedModel"])]
+          : [],
+      ),
+    ),
+  ];
   return {
     input,
     cacheRead,
     output,
     reasoning: sum("reasoning"),
     total: input + output,
+    models,
   };
 }
 

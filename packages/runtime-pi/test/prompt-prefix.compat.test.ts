@@ -41,7 +41,10 @@ async function loopback(reply: (index: number, body: string) => Reply) {
     const raw = await readBody(incoming);
     const index = bodies.push(raw) - 1;
     const answer = reply(index, raw);
-    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.writeHead(200, {
+      "content-type": "text/event-stream",
+      "x-magpie-model": `opencode-go/model-${index % 2}`,
+    });
     const frame = (delta: Record<string, unknown>, finish?: string) =>
       `data: ${JSON.stringify({
         id: `chatcmpl-${index}`,
@@ -298,6 +301,9 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     }));
     expect(requestsPerTurn).toEqual([1, 1, 1]);
     expect(findConversationBreak(bodies)).toBeNull();
+    expect(
+      bodies.some((body) => body.includes("servedModel") || body.includes("opencode-go/model-")),
+    ).toBe(false);
     expect(bodies[1]).toContain("明天是否需要带伞");
     expect(bodies[1]).toContain("主人住在东京都北区");
     expect(bodies[2]).toContain("2026-11-02 09:50:00");
