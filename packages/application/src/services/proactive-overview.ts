@@ -45,6 +45,8 @@ export interface ProactiveOverviewInsight {
 
 export interface ProactiveOverviewAuditItem {
   readonly messageId: string;
+  readonly decidedAt: string;
+  readonly reviewedAt: string | null;
   readonly from: string;
   readonly subject: string;
   readonly link: string;
@@ -76,13 +78,7 @@ export interface ProactiveOverview {
   readonly audit: {
     readonly active: boolean;
     readonly since: string;
-    readonly items: readonly {
-      readonly messageId: string;
-      readonly from: string;
-      readonly subject: string;
-      readonly link: string;
-      readonly rating: ProactiveRating | null;
-    }[];
+    readonly items: readonly ProactiveOverviewAuditItem[];
     readonly pending: number;
   };
   readonly decisions: readonly ProactiveOverviewDecision[];
@@ -153,6 +149,8 @@ export async function readProactiveOverview(options: {
         filteredInsights.push(
           Object.freeze({
             messageId: insight.lastMessageId,
+            decidedAt: insight.updatedAt,
+            reviewedAt: null,
             from: content.from ?? "",
             subject: content.subject ?? "",
             link: content.link ?? "",
@@ -201,7 +199,11 @@ export async function readProactiveOverview(options: {
         storedFiltered.set(row.messageId, row);
   const auditItems: ProactiveOverviewAuditItem[] = auditActive
     ? filteredInsights.map((item) =>
-        Object.freeze({ ...item, rating: storedFiltered.get(item.messageId)?.ownerRating ?? null }),
+        Object.freeze({
+          ...item,
+          rating: storedFiltered.get(item.messageId)?.ownerRating ?? null,
+          reviewedAt: storedFiltered.get(item.messageId)?.reviewedAt ?? null,
+        }),
       )
     : [];
   for (const message of ignored) {
@@ -211,6 +213,8 @@ export async function readProactiveOverview(options: {
     auditItems.push(
       Object.freeze({
         messageId: message.messageId,
+        decidedAt: message.processedAt,
+        reviewedAt: message.reviewedAt,
         from: header.from ?? "",
         subject: header.subject ?? "",
         link: header.link ?? "",

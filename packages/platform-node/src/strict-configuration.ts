@@ -988,6 +988,8 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "perCheckMs",
       "dailyCostMicros",
       "memoryMinimumSimilarity",
+      "reviewBudgetSeconds",
+      "reviewSecondsPerItem",
     ],
     field,
   );
@@ -1007,6 +1009,8 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       clientId,
       clientSecretRef: safeReference(gmail["clientSecretRef"], `${field}.gmail.clientSecretRef`),
     }),
+    reviewBudgetSeconds: optional("reviewBudgetSeconds", 120, 10, 3_600),
+    reviewSecondsPerItem: optional("reviewSecondsPerItem", 5, 1, 60),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
     dailyCostMicros,
