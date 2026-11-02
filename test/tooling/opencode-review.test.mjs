@@ -1,4 +1,7 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   GIT_READ_COMMANDS,
@@ -8,6 +11,8 @@ import {
   checkProbeRequests,
   expectedTools,
   parseArgs,
+  prepareCopy,
+  resolveCommits,
   reviewConfig,
   reviewQuestions,
   summarizeEvents,
@@ -230,5 +235,57 @@ describe("opencode review self-check", () => {
         toolCalls: refused,
       }),
     ).toEqual(["PROBE_NO_TOOL_REQUEST"]);
+  });
+});
+
+describe("opencode review repository copy", () => {
+  it("checks out a commit that only a remote-tracking ref points to, and drops the remote", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-review-copy-"));
+    try {
+      const source = join(root, "source");
+      const run = (args, cwd = source) =>
+        execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+      execFileSync("git", ["init", "--quiet", "-b", "main", source]);
+      run([
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "base",
+      ]);
+      const base = run(["rev-parse", "HEAD"]);
+      run([
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "head",
+      ]);
+      const head = run(["rev-parse", "HEAD"]);
+      run(["update-ref", "refs/remotes/origin/feature", head]);
+      run(["reset", "--quiet", "--hard", base]);
+      const commits = resolveCommits(source, { head: "origin/feature", base: "main" });
+      expect(commits).toEqual({ head, base, previous: undefined });
+      const copy = join(root, "copy");
+      prepareCopy({ repo: source, copy, commits, workRoot: root });
+      expect(run(["rev-parse", "HEAD"], copy)).toBe(head);
+      expect(run(["remote"], copy)).toBe("");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a ref that does not exist", () => {
+    expect(() => resolveCommits(process.cwd(), { head: "no-such-ref-for-review" })).toThrow(
+      "GIT_FAILED",
+    );
   });
 });

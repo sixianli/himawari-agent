@@ -332,6 +332,21 @@ function git(args, cwd) {
   return result.stdout.trim();
 }
 
+export function resolveCommits(repo, { head, base, previous }) {
+  const resolveOne = (ref) =>
+    ref ? git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], repo) : undefined;
+  return { head: resolveOne(head), base: resolveOne(base), previous: resolveOne(previous) };
+}
+
+export function prepareCopy({ repo, copy, commits, workRoot }) {
+  git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", repo, copy], workRoot);
+  git(["fetch", "--quiet", "origin", "+refs/*:refs/source/*"], copy);
+  git(["checkout", "--quiet", "--detach", commits.head], copy);
+  git(["remote", "remove", "origin"], copy);
+  for (const commit of [commits.base, commits.previous].filter(Boolean))
+    git(["cat-file", "-e", `${commit}^{commit}`], copy);
+}
+
 export function parseArgs(argv) {
   const options = { mode: "code-review", repo: repoRoot, timeoutMinutes: 25 };
   for (let index = 0; index < argv.length; index += 1) {
@@ -367,17 +382,19 @@ async function main() {
   const questions = reviewQuestions(
     readFileSync(join(repoRoot, ".agents/instructions/model-review.md"), "utf8"),
   );
-  const prompt = buildPrompt({ ...options, questions, brief: readFileSync(options.brief, "utf8") });
+  const commits = resolveCommits(options.repo, options);
+  const prompt = buildPrompt({
+    ...options,
+    ...commits,
+    questions,
+    brief: readFileSync(options.brief, "utf8"),
+  });
   if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
   const binary = opencodeBinary();
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
   try {
-    git(["clone", "--quiet", "--no-hardlinks", options.repo, copy], workRoot);
-    git(["checkout", "--quiet", "--detach", options.head], copy);
-    git(["remote", "remove", "origin"], copy);
-    for (const commit of [options.base, options.previous].filter(Boolean))
-      git(["cat-file", "-e", `${commit}^{commit}`], copy);
+    prepareCopy({ repo: options.repo, copy, commits, workRoot });
     const problems = await selfCheck({ binary, copy, mode: options.mode, timeoutMs: 120000 });
     if (problems.length > 0) {
       console.error(`SELF_CHECK_FAILED ${problems.join(" | ")}`);
@@ -404,7 +421,7 @@ async function main() {
           at: new Date().toISOString(),
           mode: options.mode,
           model,
-          head: options.head,
+          head: commits.head,
           outcome: summary.outcome,
           lastReason: summary.lastReason,
           ...summary.usage,
