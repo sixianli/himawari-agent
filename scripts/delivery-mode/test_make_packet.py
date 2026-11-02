@@ -210,6 +210,55 @@ class StartupPhaseTest(RenderedPacket):
                 self.assertEqual((line['errorName'], line['errorMessage']), ('Error', "ENOENT: no such file or directory, open '/x/y'"))
                 self.assertTrue(line['frames'] and all(frame.startswith('at ') for frame in line['frames']))
 
+    def test_a_rerun_moves_aside_the_evidence_files_an_earlier_run_left_instead_of_failing(self):
+        import tempfile
+        packet = self.render()
+        source = (packet / 'maintenance' / 'maintenance-common.mjs').read_text()
+        start = source.index('export function retainedJson')
+        function = source[start:source.index('\n}\n', start) + 3]
+        safe_start = source.index('function safeFile')
+        safe = source[safe_start:source.index('\n}\n', safe_start) + 3]
+        runner = (packet / 'maintenance' / 'run-maintenance.mjs').read_text()
+        self.assertIn('supersede: action.startsWith("S9_")', runner)
+        self.assertEqual(runner[runner.index('async function main'):].count('retainedJson('), 1)
+
+        def run(body):
+            with tempfile.TemporaryDirectory() as directory:
+                evidence = Path(directory).resolve()
+                module = evidence / 'retained-under-test.mjs'
+                module.write_text('\n'.join([
+                    'import assert from "node:assert/strict";',
+                    'import { createHash } from "node:crypto";',
+                    'import path from "node:path";',
+                    'import { existsSync, linkSync, readFileSync, lstatSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";',
+                    f'const evidenceRoot = {json.dumps(str(evidence))};',
+                    'const fixed = { uid: process.getuid() };',
+                    'const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");',
+                    safe, function, body,
+                ]).replace('__PKT_LABEL_UPPER__', 'TWENTYFIFTH'))
+                result = subprocess.run([shutil.which('node'), str(module)], capture_output=True, text=True, cwd=evidence)
+                runs = {item.name: json.loads(item.read_text())['run'] for item in evidence.glob('s9_*') if item.is_file() and not item.is_symlink()}
+                return result, runs
+
+        started = 's9_raw_restore51-started.json'
+        result, runs = run('\n'.join(f'retainedJson("{started}", {{ run: {n} }}, {{ supersede: true }});' for n in (1, 2, 3)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(runs, {started: 3, started + '.superseded-1': 1, started + '.superseded-2': 2})
+
+        result, runs = run('\n'.join(f'retainedJson("{started}", {{ run: {n} }});' for n in (1, 2)))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('EEXIST', result.stderr)
+        self.assertEqual(runs, {started: 1})
+
+        result, runs = run('\n'.join([
+            f'writeFileSync(path.join(evidenceRoot, "other.json"), "{{}}");',
+            f'symlinkSync(path.join(evidenceRoot, "other.json"), path.join(evidenceRoot, "{started}"));',
+            f'retainedJson("{started}", {{ run: 2 }}, {{ supersede: true }});',
+        ]))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('MAINTENANCE_FILE_UNSAFE', result.stderr)
+        self.assertEqual(runs, {})
+
     def test_the_switch_waits_for_both_background_content_audits_before_declaring_the_start_healthy(self):
         source = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
         self.assertIn("sandbox_runtime.content_audit_completed", source)
