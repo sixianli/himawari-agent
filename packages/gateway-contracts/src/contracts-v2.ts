@@ -553,6 +553,7 @@ export const MEMORY_CATEGORY_NAMES = [
   "event",
   "other",
 ] as const;
+export const MEMORY_SENSITIVE_CATEGORY_NAMES = ["health", "finance"] as const;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",

@@ -1413,6 +1413,68 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_CATEGORY_LOCKED");
     expect((await find("抑郁")).category).toBe("health");
     await context.memory.runProjectionBatch(10);
+    expect(
+      context.provider.upserts.filter(({ memory }) => memory.id === after.memoryId).at(-1),
+    ).toMatchObject({
+      content: "我每天必须喝咖啡",
+      memory: { attributes: { category: "preference" } },
+    });
+    const profiled = async () =>
+      (await overview(context.control)).profile.flatMap(({ lines }) =>
+        lines.map(({ text }) => text),
+      );
+    expect(await profiled()).toContain("我每天必须喝咖啡");
+    const preference = await find("咖啡");
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: preference.memoryId, expectedRevision: preference.revision, category: "event" },
+      "recategorize-event",
+    );
+    expect(await profiled()).not.toContain("我每天必须喝咖啡");
+    const eventMemory = await find("咖啡");
+    expect(eventMemory).toMatchObject({ category: "event", profilePin: "on" });
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: eventMemory.memoryId, expectedRevision: eventMemory.revision, category: "rule" },
+      "recategorize-rule",
+    );
+    const sections = (await overview(context.control)).profile
+      .filter(({ lines }) => lines.some(({ text }) => text === "我每天必须喝咖啡"))
+      .map(({ kind }) => kind);
+    expect(sections).toEqual(["rules"]);
+    const ruleMemory = await find("咖啡");
+    expect(ruleMemory.category).toBe("rule");
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: ruleMemory.memoryId, expectedRevision: ruleMemory.revision, category: "event" },
+      "recategorize-event-again",
+    );
+    const eventAgain = await find("咖啡");
+    await command(
+      context.control,
+      "memory.mutate",
+      {
+        memoryId: eventAgain.memoryId,
+        action: "delete",
+        expectedRevision: eventAgain.revision,
+        contentRef: null,
+      },
+      "trash-coffee",
+    );
+    const trashed = await find("咖啡");
+    expect(trashed.status).toBe("trashed");
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: trashed.memoryId, expectedRevision: trashed.revision, category: "goal" },
+        "recategorize-trashed",
+      ),
+    ).rejects.toThrow("cannot be revised from trashed");
+    expect((await find("咖啡")).category).toBe("event");
   });
 
   it("[MP-4] stops learning from conversations while memory is paused", async () => {

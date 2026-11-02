@@ -1,4 +1,7 @@
-import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
+import {
+  MEMORY_CATEGORY_NAMES,
+  MEMORY_SENSITIVE_CATEGORY_NAMES,
+} from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
@@ -411,7 +414,9 @@ function MemoryDetail({
     item.dataClassification !== "sensitive" &&
     !item.topic;
   const categoryChoices = MEMORY_CATEGORY_NAMES.filter(
-    (key) => key === item.category || (key !== "health" && key !== "finance"),
+    (key) =>
+      key === item.category ||
+      !(MEMORY_SENSITIVE_CATEGORY_NAMES as readonly string[]).includes(key),
   );
   const origin = item.importBatchId
     ? "import"

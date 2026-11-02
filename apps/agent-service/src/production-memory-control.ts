@@ -21,10 +21,11 @@ import {
   type SensitiveMemoryApprovalStatePort,
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
-import type {
-  GatewayV2Command,
-  GatewayV2Query,
-  GatewayV2Snapshot,
+import {
+  MEMORY_SENSITIVE_CATEGORY_NAMES,
+  type GatewayV2Command,
+  type GatewayV2Query,
+  type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 import {
@@ -77,6 +78,10 @@ const IMPORT_POLICY_VERSION = "memory-import:v1";
 
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
   return category === "health" || category === "finance" ? category : "other";
+}
+
+function sensitiveCategory(category: MemoryCategory): boolean {
+  return (MEMORY_SENSITIVE_CATEGORY_NAMES as readonly string[]).includes(category);
 }
 
 function nextYear(instant: string): string {
@@ -620,7 +625,7 @@ export class ProductionMemoryControl {
     if (
       current.dataClassification === "sensitive" ||
       current.attributes?.sensitiveTopic ||
-      sensitiveTopicFor(category) !== "other"
+      sensitiveCategory(category)
     )
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_CATEGORY_LOCKED");
     const saved = await this.options.memory.revise({
