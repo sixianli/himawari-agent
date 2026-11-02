@@ -578,6 +578,8 @@ describe("[PG-15] proactive reminders page", () => {
     await click(section, "下一页");
     expect(text(`${section} .proactive-review-pager`)).toContain("第 2 / 2 页");
     expect(document.querySelectorAll(`${section} li`)).toHaveLength(2);
+    await click(section, "上一页");
+    expect(text(`${section} .proactive-review-pager`)).toContain("第 1 / 2 页");
   });
 
   it("[P0-6] keeps the other decisions folded until asked, and shows nothing when there is nothing to rate", async () => {

@@ -384,8 +384,11 @@ export function ProactiveReviewSection({
   const current = Math.min(page, pages - 1);
   const rows = list.slice(current * REVIEW_PAGE_SIZE, (current + 1) * REVIEW_PAGE_SIZE);
   const rowsDone = rows.length > 0 && rows.every(({ rating }) => rating !== null);
+  const wasDone = useRef({ page: -1, done: false });
   useEffect(() => {
-    if (rowsDone && current < pages - 1) setPage(current + 1);
+    const finishedHere = rowsDone && wasDone.current.page === current && !wasDone.current.done;
+    wasDone.current = { page: current, done: rowsDone };
+    if (finishedHere && current < pages - 1) setPage(current + 1);
   }, [rowsDone, current, pages]);
   if (!review || (review.items.length === 0 && review.folded.total === 0)) return null;
   const unrated = rows.filter(({ rating }) => rating === null);
