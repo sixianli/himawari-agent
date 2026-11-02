@@ -17,7 +17,9 @@ import {
 import {
   createServer as createHttpServer,
   type Server as HttpServer,
+  type IncomingMessage,
   request as requestHttp,
+  type ServerResponse,
 } from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { hostname, release } from "node:os";
@@ -596,206 +598,207 @@ export async function installProductPath(options: {
   let providerPort = 0;
   let appPort = 0;
   const issuer = () => `https://127.0.0.1:${providerPort}`;
+  const handleProvider = (request: IncomingMessage, response: ServerResponse) => {
+    const requestPath = request.url ?? "/";
+    if (requestPath === "/cdn-cgi/access/certs") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(jwks));
+      return;
+    }
+    if (requestPath === "/cdn-cgi/access/get-identity") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ user_uuid: subject, iat: Math.floor(Date.now() / 1000) }));
+      return;
+    }
+    let raw = "";
+    request.on("data", (chunk: Buffer | string) => {
+      raw += chunk;
+    });
+    request.on("end", () => {
+      const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      modelRequests.push({
+        path: requestPath,
+        model: typeof body["model"] === "string" ? body["model"] : undefined,
+        body,
+      });
+      if (requestPath === "/v1/embeddings") {
+        if (!embeddingAvailable) {
+          request.socket.destroy();
+          return;
+        }
+        const delayMs = nextEmbeddingDelayMs;
+        nextEmbeddingDelayMs = 0;
+        const answer = () => {
+          if (response.destroyed) return;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              object: "list",
+              model: body["model"],
+              data: [
+                {
+                  object: "embedding",
+                  index: 0,
+                  embedding: Array(Number(body["dimensions"])).fill(0.1),
+                },
+              ],
+              usage: { prompt_tokens: 8, total_tokens: 8 },
+              providerMetadata: {
+                gateway: {
+                  generationId: `embedding-${modelRequests.length}`,
+                  routing: { finalProvider: "deepinfra" },
+                  cost: "0",
+                },
+              },
+            }),
+          );
+        };
+        if (delayMs > 0) setTimeout(answer, delayMs);
+        else answer();
+        return;
+      }
+      if (requestPath !== "/v1/chat/completions") {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      const messages = Array.isArray(body["messages"])
+        ? (body["messages"] as Array<{ role?: string; content?: unknown }>)
+        : [];
+      const lastUser = [...messages].reverse().find((message) => message.role === "user");
+      const lastUserIndex = lastUser ? messages.lastIndexOf(lastUser) : -1;
+      const reply = modelScript({
+        lastUserText: textOf(lastUser?.content),
+        toolResults: messages
+          .slice(lastUserIndex + 1)
+          .filter((message) => message.role === "tool")
+          .map((message) => textOf(message.content)),
+        hasTools: Array.isArray(body["tools"]) && body["tools"].length > 0,
+      });
+      const base = {
+        id: `completion-${modelRequests.length}`,
+        object: "chat.completion.chunk",
+        created: Math.floor(Date.now() / 1000),
+        model: body["model"],
+      };
+      const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0 };
+      const provider_metadata = {
+        gateway: {
+          generationId: `generation-${modelRequests.length}`,
+          routing: { finalProvider: "morph" },
+          cost: "0",
+        },
+      };
+      if (reply.kind === "drop") {
+        request.socket.destroy();
+        return;
+      }
+      if (reply.kind === "http-error") {
+        response.writeHead(reply.status, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({ error: { message: "scripted failure", code: reply.status } }),
+        );
+        return;
+      }
+      if (reply.kind === "tool" && reply.streamMs) {
+        const id = `call-${modelRequests.length}-0`;
+        const argumentsText = JSON.stringify(reply.arguments);
+        const pieces = 40;
+        const size = Math.ceil(argumentsText.length / pieces);
+        const chunk = (delta: object, finish: string | null, extra: object = {}) =>
+          `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`;
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(
+          chunk(
+            {
+              role: "assistant",
+              tool_calls: [
+                { index: 0, id, type: "function", function: { name: reply.name, arguments: "" } },
+              ],
+            },
+            null,
+          ),
+        );
+        toolStreamStartedAt = Date.now();
+        let sent = 0;
+        const timer = setInterval(() => {
+          if (response.destroyed) return clearInterval(timer);
+          const piece = argumentsText.slice(sent * size, (sent + 1) * size);
+          sent += 1;
+          if (piece)
+            response.write(
+              chunk({ tool_calls: [{ index: 0, function: { arguments: piece } }] }, null),
+            );
+          if (sent < pieces) return;
+          clearInterval(timer);
+          response.write(chunk({ provider_metadata }, "tool_calls", { usage }));
+          response.end("data: [DONE]\n\n");
+        }, reply.streamMs / pieces);
+        return;
+      }
+      if (reply.kind === "tool" || reply.kind === "tools") {
+        const calls = reply.kind === "tool" ? [reply] : reply.calls;
+        sse(response, [
+          {
+            ...base,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  role: "assistant",
+                  tool_calls: calls.map((call, index) => ({
+                    index,
+                    id: `call-${modelRequests.length}-${index}`,
+                    type: "function",
+                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                  })),
+                },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            ...base,
+            choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "tool_calls" }],
+            usage,
+          },
+        ]);
+        return;
+      }
+      const finish = () =>
+        sse(response, [
+          {
+            ...base,
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: reply.text },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            ...base,
+            choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "stop" }],
+            usage,
+          },
+        ]);
+      if (reply.delayMs) setTimeout(finish, reply.delayMs);
+      else finish();
+    });
+  };
   const provider = createHttpsServer(
     {
       cert: await readFile(certificates.provider.cert),
       key: await readFile(certificates.provider.key),
     },
-    (request, response) => {
-      const requestPath = request.url ?? "/";
-      if (requestPath === "/cdn-cgi/access/certs") {
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify(jwks));
-        return;
-      }
-      if (requestPath === "/cdn-cgi/access/get-identity") {
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ user_uuid: subject, iat: Math.floor(Date.now() / 1000) }));
-        return;
-      }
-      let raw = "";
-      request.on("data", (chunk) => {
-        raw += chunk;
-      });
-      request.on("end", () => {
-        const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-        modelRequests.push({
-          path: requestPath,
-          model: typeof body["model"] === "string" ? body["model"] : undefined,
-          body,
-        });
-        if (requestPath === "/v1/embeddings") {
-          if (!embeddingAvailable) {
-            request.socket.destroy();
-            return;
-          }
-          const delayMs = nextEmbeddingDelayMs;
-          nextEmbeddingDelayMs = 0;
-          const answer = () => {
-            if (response.destroyed) return;
-            response.writeHead(200, { "content-type": "application/json" });
-            response.end(
-              JSON.stringify({
-                object: "list",
-                model: body["model"],
-                data: [
-                  {
-                    object: "embedding",
-                    index: 0,
-                    embedding: Array(Number(body["dimensions"])).fill(0.1),
-                  },
-                ],
-                usage: { prompt_tokens: 8, total_tokens: 8 },
-                providerMetadata: {
-                  gateway: {
-                    generationId: `embedding-${modelRequests.length}`,
-                    routing: { finalProvider: "deepinfra" },
-                    cost: "0",
-                  },
-                },
-              }),
-            );
-          };
-          if (delayMs > 0) setTimeout(answer, delayMs);
-          else answer();
-          return;
-        }
-        if (requestPath !== "/v1/chat/completions") {
-          response.writeHead(404);
-          response.end();
-          return;
-        }
-        const messages = Array.isArray(body["messages"])
-          ? (body["messages"] as Array<{ role?: string; content?: unknown }>)
-          : [];
-        const lastUser = [...messages].reverse().find((message) => message.role === "user");
-        const lastUserIndex = lastUser ? messages.lastIndexOf(lastUser) : -1;
-        const reply = modelScript({
-          lastUserText: textOf(lastUser?.content),
-          toolResults: messages
-            .slice(lastUserIndex + 1)
-            .filter((message) => message.role === "tool")
-            .map((message) => textOf(message.content)),
-          hasTools: Array.isArray(body["tools"]) && body["tools"].length > 0,
-        });
-        const base = {
-          id: `completion-${modelRequests.length}`,
-          object: "chat.completion.chunk",
-          created: Math.floor(Date.now() / 1000),
-          model: body["model"],
-        };
-        const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0 };
-        const provider_metadata = {
-          gateway: {
-            generationId: `generation-${modelRequests.length}`,
-            routing: { finalProvider: "morph" },
-            cost: "0",
-          },
-        };
-        if (reply.kind === "drop") {
-          request.socket.destroy();
-          return;
-        }
-        if (reply.kind === "http-error") {
-          response.writeHead(reply.status, { "content-type": "application/json" });
-          response.end(
-            JSON.stringify({ error: { message: "scripted failure", code: reply.status } }),
-          );
-          return;
-        }
-        if (reply.kind === "tool" && reply.streamMs) {
-          const id = `call-${modelRequests.length}-0`;
-          const argumentsText = JSON.stringify(reply.arguments);
-          const pieces = 40;
-          const size = Math.ceil(argumentsText.length / pieces);
-          const chunk = (delta: object, finish: string | null, extra: object = {}) =>
-            `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`;
-          response.writeHead(200, { "content-type": "text/event-stream" });
-          response.write(
-            chunk(
-              {
-                role: "assistant",
-                tool_calls: [
-                  { index: 0, id, type: "function", function: { name: reply.name, arguments: "" } },
-                ],
-              },
-              null,
-            ),
-          );
-          toolStreamStartedAt = Date.now();
-          let sent = 0;
-          const timer = setInterval(() => {
-            if (response.destroyed) return clearInterval(timer);
-            const piece = argumentsText.slice(sent * size, (sent + 1) * size);
-            sent += 1;
-            if (piece)
-              response.write(
-                chunk({ tool_calls: [{ index: 0, function: { arguments: piece } }] }, null),
-              );
-            if (sent < pieces) return;
-            clearInterval(timer);
-            response.write(chunk({ provider_metadata }, "tool_calls", { usage }));
-            response.end("data: [DONE]\n\n");
-          }, reply.streamMs / pieces);
-          return;
-        }
-        if (reply.kind === "tool" || reply.kind === "tools") {
-          const calls = reply.kind === "tool" ? [reply] : reply.calls;
-          sse(response, [
-            {
-              ...base,
-              choices: [
-                {
-                  index: 0,
-                  delta: {
-                    role: "assistant",
-                    tool_calls: calls.map((call, index) => ({
-                      index,
-                      id: `call-${modelRequests.length}-${index}`,
-                      type: "function",
-                      function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                    })),
-                  },
-                  finish_reason: null,
-                },
-              ],
-            },
-            {
-              ...base,
-              choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "tool_calls" }],
-              usage,
-            },
-          ]);
-          return;
-        }
-        const finish = () =>
-          sse(response, [
-            {
-              ...base,
-              choices: [
-                {
-                  index: 0,
-                  delta: { role: "assistant", content: reply.text },
-                  finish_reason: null,
-                },
-              ],
-            },
-            {
-              ...base,
-              choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "stop" }],
-              usage,
-            },
-          ]);
-        if (reply.delayMs) setTimeout(finish, reply.delayMs);
-        else finish();
-      });
-    },
+    handleProvider,
   );
   providerPort = await listen(provider);
   const catalog = options.selectableModels
     ? createHttpServer((request, response) => {
-        if (request.method !== "GET" || request.url !== "/v1/models") {
-          response.writeHead(404).end();
+        if (!(request.method === "GET" && request.url === "/v1/models")) {
+          handleProvider(request, response);
           return;
         }
         const listed = (id: string, label: string) => ({
@@ -1047,6 +1050,7 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_PREPARATION_ACK_LOSS: path.join(testRoot, "preparation-ack-loss"),
     HIMAWARI_TEST_HOST_FINISH_GATE: path.join(testRoot, "host-finish-gate"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
+    ...(catalog ? { HIMAWARI_TEST_MAGPIE_URL: `http://127.0.0.1:${catalogPort}/v1` } : {}),
     HIMAWARI_TEST_JOB_HOST_STDERR: path.join(options.logDirectory, "job-host-stderr-0.log"),
   };
   const serviceArgs = [
