@@ -3743,6 +3743,33 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         }),
       }),
     );
+    const servedRef = await capture("served-model-message", {
+      role: "assistant",
+      timestamp: 791,
+      stopReason: "stop",
+      content: [{ type: "text", text: "done" }],
+      servedModel: "opencode-go/glm-5.3-flash",
+      usage: { input: 5, output: 6, cacheRead: 0, cacheWrite: 0, reasoning: 0, cost: { total: 0 } },
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.message",
+      payload: { payloadRef: servedRef, role: "assistant", phase: "ended" },
+    });
+    expect((await projection.read(query)).records).toContainEqual(
+      expect.objectContaining({
+        name: "runtime.usage",
+        text: JSON.stringify({
+          input: 5,
+          output: 6,
+          cacheRead: 0,
+          cacheWrite: 0,
+          reasoning: 0,
+          servedModel: "opencode-go/glm-5.3-flash",
+          costUsd: 0,
+        }),
+      }),
+    );
     const unresolvedRef = await capture("legacy-unresolved-tool", {
       toolCallId: "legacy-call",
       toolName: "write",

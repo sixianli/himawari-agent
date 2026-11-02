@@ -42,6 +42,7 @@ OWNED_SUMS = {'measurement/OWNED-SHA256SUMS': 'measurement', 'systemd/OWNED-SHA2
 CLOUD_INPUTS = 'acceptance/cloud/cloud-inputs.draft.json'
 CARRY_MANIFEST = 'acceptance/cloud/r2l6-source-manifest.json'
 ADAPTATION_MANIFEST = 'acceptance/cloud/adaptation-manifest.json'
+SOURCE_CACHE_NAME = 'source-cache.git'
 PARAMETERS = 'packet-parameters.json'
 CHECKS_RECORD = 'packet-checks.json'
 PYTHON_MATERIAL = ('python-3.12.10.tar.gz', 'f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca')
@@ -172,7 +173,7 @@ def migration_ledger(commit, current, target):
 def discovery_script():
     return '\n'.join([
         'import hashlib, json, os, pathlib, socket, subprocess, sys',
-        'unit_name, unit_path, config_path, model_ref, prefix_new, operations_new = sys.argv[1:7]',
+        'unit_name, unit_path, config_path, model_ref, prefix_new, operations_new, source_cache = sys.argv[1:8]',
         'unit = pathlib.Path(unit_path).read_bytes()',
         'config_bytes = pathlib.Path(config_path).read_bytes()',
         'config = json.loads(config_bytes)',
@@ -190,6 +191,7 @@ def discovery_script():
         "    'configSha256': hashlib.sha256(config_bytes).hexdigest(),",
         "    'unitSha256': hashlib.sha256(unit).hexdigest(),",
         "    'newPathsExist': [path for path in (prefix_new, operations_new) if os.path.lexists(path)],",
+        "    'sourceCacheCommits': subprocess.run(['/usr/bin/git', '-C', source_cache, 'for-each-ref', '--format=%(objectname)', 'refs/release'], capture_output=True, text=True).stdout.split() if os.path.isdir(source_cache) else [],",
         '}))',
     ]) + '\n'
 
@@ -205,10 +207,14 @@ def run_remote(instance, remote, stdin_bytes, timeout=300):
     return child.stdout
 
 
+def source_cache(instance):
+    return str(Path(instance['fixedByTemplate']['releasesRoot']).parent / SOURCE_CACHE_NAME)
+
+
 def discover(instance, label, date):
     fixed = instance['fixedByTemplate']
     compact = date.replace('-', '')
-    arguments = [fixed['unit'], fixed['unitPath'], fixed['config'], instance['configTargets']['modelRef'], fixed['releasesRoot'] + '/' + date + '-' + (label or 'unknown'), fixed['operationsRoot'] + '/' + (label or 'unknown') + '-' + compact]
+    arguments = [fixed['unit'], fixed['unitPath'], fixed['config'], instance['configTargets']['modelRef'], fixed['releasesRoot'] + '/' + date + '-' + (label or 'unknown'), fixed['operationsRoot'] + '/' + (label or 'unknown') + '-' + compact, source_cache(instance)]
     remote = '/usr/bin/python3 -I - ' + ' '.join(shlex.quote(argument) for argument in arguments)
     return json.loads(run_remote(instance, remote, discovery_script().encode(), timeout=60))
 
@@ -250,6 +256,7 @@ def interpret_discovery(facts, instance, label=None):
         'ORIGINAL_PUBLIC_FETCH_BYTES': fetch_bytes,
         'DISCOVERED_CONFIG_SHA256': facts.get('configSha256'),
         'DISCOVERED_UNIT_SHA256': facts.get('unitSha256'),
+        'SOURCE_CACHE_COMMITS': sorted(commit for commit in facts.get('sourceCacheCommits', []) if re.fullmatch(r'[0-9a-f]{40}', commit)),
     }
 
 
@@ -592,6 +599,10 @@ class Hermes:
             tail = self.ssh('tail -n 20 ' + shlex.quote(log_root + '/' + name + '.log')).decode(errors='replace')
             refuse('PACKET_HERMES_STEP_FAILED', name + ' exit=' + state + '\n' + tail)
 
+    def has_commit(self, commit):
+        command = 'git -C ' + shlex.quote(self.settings['source']) + ' cat-file -e ' + shlex.quote(commit + '^{commit}')
+        return subprocess.run([self.ssh_wrapper, command], capture_output=True, timeout=320, check=False).returncode == 0
+
     def build(self, bundle, commit):
         remote_bundle = self.work + '-inputs/' + bundle.name
         self.upload(bundle, remote_bundle)
@@ -657,17 +668,64 @@ def step(name, started):
     print('PACKET_STEP ' + name + ' ' + str(round(time.monotonic() - started, 1)) + 's', flush=True)
 
 
-def create_bundle(commit, target):
+def bundle_prerequisites(bundle):
+    prerequisites = []
+    with open(bundle, 'rb') as stream:
+        stream.readline()
+        for line in stream:
+            if line.strip() == b'':
+                break
+            if line.startswith(b'-'):
+                prerequisites.append(line[1:41].decode())
+    return prerequisites
+
+
+def commit_is_ancestor(ancestor, descendant):
+    return subprocess.run(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', ancestor, descendant], capture_output=True, check=False).returncode == 0
+
+
+def choose_source_base(commit, cache_commits):
+    if commit in cache_commits:
+        parent = subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--verify', '--quiet', commit + '^'], capture_output=True, text=True, check=False)
+        return parent.stdout.strip() or None
+    best = None
+    for cached in cache_commits:
+        if not commit_is_ancestor(cached, commit):
+            continue
+        distance = int(git('rev-list', '--count', commit, '^' + cached))
+        if best is None or (distance, cached) < best:
+            best = (distance, cached)
+    return best[1] if best else None
+
+
+def create_bundle(commit, target, base=None):
     clone = Path(tempfile.mkdtemp(prefix='packet-bundle-'))
     try:
         subprocess.run(['git', 'clone', '-q', '--shared', '--no-checkout', str(REPO), str(clone / 'repo')], check=True)
         subprocess.run(['git', '-C', str(clone / 'repo'), 'update-ref', '--no-deref', 'HEAD', commit], check=True)
-        subprocess.run(['git', '-C', str(clone / 'repo'), 'bundle', 'create', '-q', str(target), 'HEAD'], check=True)
+        subprocess.run(['git', '-C', str(clone / 'repo'), 'bundle', 'create', '-q', str(target), 'HEAD', *(['^' + base] if base else [])], check=True)
     finally:
         shutil.rmtree(clone, ignore_errors=True)
     heads = subprocess.run(['git', 'bundle', 'list-heads', str(target)], capture_output=True, text=True, check=True).stdout.strip()
     if heads != commit + ' HEAD':
         refuse('PACKET_BUNDLE_HEADS_UNEXPECTED', heads)
+    prerequisites = bundle_prerequisites(target)
+    if base is None and prerequisites:
+        refuse('PACKET_BUNDLE_UNEXPECTED_PREREQUISITES', prerequisites)
+    if base is not None and (not prerequisites or any(not (item == base or commit_is_ancestor(item, base)) for item in prerequisites)):
+        refuse('PACKET_BUNDLE_PREREQUISITES_UNEXPECTED', ','.join(prerequisites))
+
+
+def make_source_bundles(arguments, commit, parameters, materials, work, hermes):
+    base = None if getattr(arguments, 'full_source', False) else choose_source_base(commit, parameters.get('SOURCE_CACHE_COMMITS', []))
+    parameters['SOURCE_BASE_COMMIT'] = base or ''
+    packet_bundle = materials / parameters['BUNDLE_NAME']
+    create_bundle(commit, packet_bundle, base)
+    if base and not hermes.has_commit(base):
+        builder_bundle = work / 'builder.bundle'
+        create_bundle(commit, builder_bundle)
+        return builder_bundle
+    return packet_bundle
 
 
 def packet_directory(root, date, label):
@@ -678,8 +736,9 @@ def packet_directory(root, date, label):
     refuse('PACKET_DIRECTORY_EXHAUSTED')
 
 
-def reuse_materials(previous, commit, materials):
+def reuse_materials(previous, commit, materials, parameters):
     old = json.loads((previous / PARAMETERS).read_text())
+    parameters['SOURCE_BASE_COMMIT'] = old.get('SOURCE_BASE_COMMIT', '')
     if old['COMMIT'] != commit:
         refuse('PACKET_REUSE_OTHER_COMMIT', old['COMMIT'])
     for path in (previous / 'materials').iterdir():
@@ -780,6 +839,8 @@ def require_claims_proven(commit, since, root):
 
 def prepare(arguments):
     started = time.monotonic()
+    if getattr(arguments, 'full_source', False) and arguments.reuse_materials:
+        refuse('PACKET_FULL_SOURCE_WITH_REUSE', '--reuse-materials copies the earlier packet\'s source bundle, so --full-source cannot take effect; drop --reuse-materials')
     instance = load_instance(arguments.instance)
     commit = resolve_commit(arguments.commit)
     require_current_scripts(commit)
@@ -811,12 +872,12 @@ def build_packet(arguments, instance, commit, date, parameters, hermes, work, st
     materials.mkdir()
     walkthrough = None
     if arguments.reuse_materials:
-        walkthrough = reuse_materials(Path(arguments.reuse_materials).resolve(), commit, materials)
+        walkthrough = reuse_materials(Path(arguments.reuse_materials).resolve(), commit, materials, parameters)
         step('reuse-materials', started)
     else:
-        create_bundle(commit, materials / parameters['BUNDLE_NAME'])
+        builder_bundle = make_source_bundles(arguments, commit, parameters, materials, work, hermes)
         step('bundle', started)
-        hermes.build(materials / parameters['BUNDLE_NAME'], commit)
+        hermes.build(builder_bundle, commit)
         hermes.wait('build')
         step('hermes-build', started)
         hermes.start_walkthrough()
@@ -860,6 +921,7 @@ def main(argv=None):
     prepare_parser.add_argument('--date')
     prepare_parser.add_argument('--output-root', default=str(REPO / '.ci-output' / 'production'))
     prepare_parser.add_argument('--reuse-materials')
+    prepare_parser.add_argument('--full-source', action='store_true')
     prepare_parser.add_argument('--since')
     freeze_parser = commands.add_parser('freeze')
     freeze_parser.add_argument('packet')

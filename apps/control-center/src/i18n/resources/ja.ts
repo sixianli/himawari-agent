@@ -133,6 +133,7 @@ export const messages = {
   "answer.at": "{at, time, short}",
   "answer.sources": "出典 {count} 件",
   "process.tokens": "トークン",
+  "process.answeredBy": "回答したモデル",
   "message.copy": "このメッセージをコピー",
   "message.status.sent": "送信済み：サーバーがこのメッセージを保存しました",
   "message.status.received": "処理開始：モデルがこのメッセージを受け取りました",
@@ -423,6 +424,7 @@ export const messages = {
   "preview.page": "{count} ページ中 {page} ページ目",
   "preview.renderFailed":
     "このファイルはここでは表示できませんでした。ダウンロードして開いてください。",
+  "preview.pageFailed": "{page} ページ目は表示できませんでした。他のページには影響ありません。",
   "preview.sheets": "シート",
   "preview.sheetTruncated":
     "大きな表のため、最初の 2,000 行・100 列だけを表示しています。すべて見るにはダウンロードしてください。",

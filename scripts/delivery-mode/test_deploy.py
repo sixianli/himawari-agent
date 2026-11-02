@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -589,6 +590,63 @@ class DeployOrderTest(DeployHarness):
         self.assertEqual(calls, [])
         self.assertIn('PREFLIGHT_REFREEZE', Path(result['log']).read_text())
         self.assertIn('make-packet.py freeze', Path(result['log']).read_text())
+
+
+class SourceCachePreflightTest(unittest.TestCase):
+    BASE = 'a' * 40
+    PREFIX = '/opt/himawari/releases/2026-11-01-twentyfourth'
+
+    def binding(self):
+        return {**BINDING, 'paths': {**BINDING['paths'], 'newPrefix': self.PREFIX}}
+
+    def facts(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update(changes)
+        return facts
+
+    def failed(self, facts, base):
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000, base=base) if not passed]
+
+    def test_cache_path_is_beside_the_releases_directory(self):
+        self.assertEqual(preflight.source_cache(self.binding()), '/opt/himawari/source-cache.git')
+
+    def test_a_packet_with_a_full_bundle_asks_nothing_of_the_cache(self):
+        self.assertEqual(self.failed(self.facts(), ''), [])
+
+    def test_an_incremental_bundle_whose_base_the_cache_lacks_is_refused_before_the_upload(self):
+        self.assertEqual(self.failed(self.facts(sourceCacheBase='absent'), self.BASE), ['SOURCE_CACHE_HAS_BASE'])
+        self.assertEqual(self.failed(self.facts(), self.BASE), ['SOURCE_CACHE_HAS_BASE'])
+        self.assertEqual(self.failed(self.facts(sourceCacheBase='present'), self.BASE), [])
+
+    def test_the_remote_check_reads_the_real_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+            work = root / 'work'
+            subprocess.run(['git', 'init', '-q', str(work)], check=True, env=environment)
+            (work / 'f.txt').write_text('x\n')
+            subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, env=environment)
+            subprocess.run(['git', '-C', str(work), 'commit', '-q', '-m', 'm'], check=True, env=environment)
+            commit = subprocess.run(['git', '-C', str(work), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+            prefix = root / 'opt' / 'releases' / '2026-11-01-twentyfourth'
+            prefix.mkdir(parents=True)
+            cache = root / 'opt' / 'source-cache.git'
+            subprocess.run(['git', 'clone', '-q', '--bare', str(work), str(cache)], check=True)
+            binding = {**BINDING, 'paths': {**BINDING['paths'], 'newPrefix': str(prefix)}}
+            line = re.search(r'if /usr/bin/git -C .*? fi', preflight.remote_script(binding, base=commit)).group(0)
+            present = subprocess.run(['bash', '-c', line], capture_output=True, text=True, check=True).stdout.strip()
+            absent = subprocess.run(['bash', '-c', line.replace(commit, 'e' * 40)], capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual((present, absent), ('sourceCacheBase=present', 'sourceCacheBase=absent'))
+            self.assertNotIn('sourceCacheBase', preflight.remote_script(binding))
+
+    def test_the_base_comes_from_the_packet_parameters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory)
+            self.assertEqual(preflight.source_base(packet), '')
+            (packet / 'packet-parameters.json').write_text(json.dumps({'SOURCE_BASE_COMMIT': self.BASE}))
+            self.assertEqual(preflight.source_base(packet), self.BASE)
+            (packet / 'packet-parameters.json').write_text(json.dumps({'COMMIT': COMMIT}))
+            self.assertEqual(preflight.source_base(packet), '')
 
 
 if __name__ == '__main__':

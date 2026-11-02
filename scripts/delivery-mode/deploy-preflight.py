@@ -35,6 +35,15 @@ def target_paths(binding):
     return sorted({paths[key] for key in ('newPrefix', 'newOperations', 'evidenceRoot') if key in paths} | ({str(Path(paths['transportRoot']).parent)} if 'transportRoot' in paths else set()) | {binding['service']['newQualificationEvidenceRoot']})
 
 
+def source_cache(binding):
+    return str(Path(binding['paths']['newPrefix']).parent.parent / 'source-cache.git')
+
+
+def source_base(packet):
+    path = packet / 'packet-parameters.json'
+    return json.loads(path.read_text()).get('SOURCE_BASE_COMMIT', '') if path.is_file() else ''
+
+
 def sandbox_read_roots(packet):
     seal = (packet / 'signing' / 'cloud-seal.mjs').read_text()
     block = SANDBOX_READ_ROOTS.search(seal)
@@ -43,7 +52,7 @@ def sandbox_read_roots(packet):
     return re.findall(r'"(/[^"]*)"', block.group(1))
 
 
-def remote_script(binding, units=(), paths=(), roots=()):
+def remote_script(binding, units=(), paths=(), roots=(), base=''):
     state_parent = str(Path(binding['paths']['stateRoot']).parent)
     mirror = str(Path(binding['paths']['stateRoot']) / 'authority.json')
     return '; '.join([
@@ -60,6 +69,7 @@ def remote_script(binding, units=(), paths=(), roots=()):
         'echo "lastInstallUsed=$(/usr/bin/python3 -I -c ' + shlex.quote(LAST_INSTALL_USED) + ' ' + shlex.quote(binding['service']['unitFragmentPath']) + ' ' + shlex.quote(str(Path(binding['paths']['evidenceRoot']).parent) if 'evidenceRoot' in binding['paths'] else '/var/lib/himawari') + ' 2>/dev/null)"',
         'echo "scratchScenes=$(' + SCRATCH_SCENE_COUNT + ')"',
         DOCUMENT_TOOLS_CHECK,
+        *(['if /usr/bin/git -C ' + shlex.quote(source_cache(binding)) + ' cat-file -e ' + shlex.quote(base + '^{commit}') + ' 2>/dev/null; then echo sourceCacheBase=present; else echo sourceCacheBase=absent; fi'] if base else []),
         '/usr/bin/python3 -I -c ' + shlex.quote(SANDBOX_LINKS_SCRIPT) + ' ' + ' '.join(shlex.quote(root) for root in roots) + ' || echo sandboxLinks=check-failed',
         *['echo ' + shlex.quote('probeUnit.' + unit) + '="$(/usr/bin/systemctl show -p LoadState --value ' + shlex.quote(unit) + ')"' for unit in units],
         *['if [ -e ' + shlex.quote(path) + ' ] || [ -L ' + shlex.quote(path) + ' ]; then echo ' + shlex.quote('targetPath.' + path + '=present') + '; else echo ' + shlex.quote('targetPath.' + path + '=absent') + '; fi' for path in paths],
@@ -84,7 +94,7 @@ def space(facts, size):
     return {'rootFree': free, 'predictedInstall': install, 'predictedFreeAfterInstall': free - install, 'needAfterInstall': ACCEPTANCE_ROOT_FREE_BYTES + ROOT_RESERVE_BYTES, 'measuredFromLastInstall': int(facts.get('lastInstallUsed') or 0) > 0}
 
 
-def checks(binding, facts, size, units=(), paths=()):
+def checks(binding, facts, size, units=(), paths=(), base=''):
     needed = size * MINIMUM_FREE_FACTOR
     room = space(facts, size)
     authority = str(binding['authority']['authorityEpoch']) + ' ' + str(binding['authority']['fencingToken'])
@@ -100,6 +110,7 @@ def checks(binding, facts, size, units=(), paths=()):
         ('ROOT_FREE_FOR_ACCEPTANCE', room['predictedFreeAfterInstall'] >= room['needAfterInstall']),
         ('TMP_SCRATCH_WITHIN_LIMIT', int(facts.get('scratchScenes') or 0) <= MAX_FAILURE_SCENES),
         ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
+        *([('SOURCE_CACHE_HAS_BASE', facts.get('sourceCacheBase') == 'present')] if base else []),
         ('SANDBOX_COMMAND_LINKS_REACHABLE', facts.get('sandboxLinks') == 'ok'),
         *[('PROBE_UNIT_UNUSED ' + unit, facts.get('probeUnit.' + unit) == 'not-found') for unit in units],
         *[('TARGET_PATH_ABSENT ' + path, facts.get('targetPath.' + path) == 'absent') for path in paths],
@@ -109,14 +120,14 @@ def checks(binding, facts, size, units=(), paths=()):
 def main():
     packet = Path(sys.argv[1]).resolve()
     binding = json.loads((packet / 'inputs' / 'bindings.json').read_text())
-    units, paths = probe_units(packet, binding), target_paths(binding)
-    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding, units, paths, sandbox_read_roots(packet))], capture_output=True, text=True, timeout=60, check=False)
+    units, paths, base = probe_units(packet, binding), target_paths(binding), source_base(packet)
+    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding, units, paths, sandbox_read_roots(packet), base)], capture_output=True, text=True, timeout=60, check=False)
     if child.returncode != 0:
         print('PREFLIGHT_CHECK SSH failed exit=' + str(child.returncode) + ' ' + child.stderr.strip())
         return 1
     facts = dict(line.split('=', 1) for line in child.stdout.splitlines() if '=' in line)
     failed = False
-    results = checks(binding, facts, packet_bytes(packet), units, paths)
+    results = checks(binding, facts, packet_bytes(packet), units, paths, base)
     for name, passed in results:
         print('PREFLIGHT_CHECK ' + name + ' ' + ('passed' if passed else 'failed'))
         failed = failed or not passed
@@ -135,6 +146,8 @@ def main():
         print('PREFLIGHT_SANDBOX_LINKS these commands in /usr/bin are links to a place the model sandbox is not allowed to read, so the model would get command not found for them (' + facts.get('sandboxLinks', 'no answer') + '); add the missing directory to readOnlyToolchainPaths in signing/cloud-seal.mjs, regenerate the packet and run this check again')
     if any(name == 'ROOT_FREE_FOR_ACCEPTANCE' and not passed for name, passed in results):
         print('PREFLIGHT_ROOT_SPACE after installing this release the root disk would have less than the 10 GiB production acceptance needs plus 1 GiB reserve; see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
+    if any(name == 'SOURCE_CACHE_HAS_BASE' and not passed for name, passed in results):
+        print('PREFLIGHT_SOURCE_BASE the source cache ' + source_cache(binding) + ' on the server does not hold ' + base + ', so this packet\'s incremental source bundle cannot be installed; nothing was uploaded; make a new packet that ships the whole history with: python3 ' + str(Path(__file__).resolve().parent / 'make-packet.py') + ' prepare --full-source')
     if any(name in FROZEN_STATE_CHECKS and not passed for name, passed in results):
         print('PREFLIGHT_REFREEZE the production service restarted or changed after this packet was frozen; run: python3 ' + str(Path(__file__).resolve().parent / 'make-packet.py') + ' freeze ' + str(packet))
     return 1 if failed else 0
