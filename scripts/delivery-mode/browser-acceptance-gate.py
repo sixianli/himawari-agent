@@ -10,11 +10,16 @@ REQUIRED_SCENARIOS = (
     'accept-long-answer',
     'accept-run-command',
     'accept-unrelated-no-memory',
+    'accept-model-switch',
+    'accept-conversation-search',
+    'accept-reminders-page',
+    'accept-files-page',
     'accept-slow-memory-search',
     'accept-file-writing-progress',
     'accept-progress-without-state',
     'accept-memory-page',
     'accept-phone-layout',
+    'accept-phone-send',
     'accept-after-restart',
 )
 ANSWER_MS_LIMITS = {

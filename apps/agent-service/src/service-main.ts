@@ -5,10 +5,10 @@ import type {
   PayloadProtectorPort,
 } from "@himawari-agent/application";
 import {
-  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   type ClockPort,
   claimFromRunExecutionLease,
   createProactiveSeal,
+  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DurableMemoryService,
   ExecutionLiveFeed,
   type IdGeneratorPort,
@@ -27,7 +27,6 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
-import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
@@ -45,6 +44,7 @@ import {
   EXECUTION_UDS_ERROR_CODES,
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
+  failureReason,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
@@ -71,9 +71,12 @@ import {
   createPiFilePreparationPool,
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
+import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
+import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
+import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -84,19 +87,19 @@ import {
   type ProductionHttpComposition,
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
+import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
-import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
+import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
-import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
-import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
+import { createProductionModelEgress } from "./production-model-egress.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -105,22 +108,16 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
-import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
-import { createProductionModelEgress } from "./production-model-egress.js";
+import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
-import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
-import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
-import {
-  inspectSandboxCommands,
-  type SandboxCommandInventory,
-} from "./sandbox-command-inventory.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -130,6 +127,10 @@ import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
+import {
+  inspectSandboxCommands,
+  type SandboxCommandInventory,
+} from "./sandbox-command-inventory.js";
 import {
   resolveCodingNetworkFacts,
   WorkspaceAutoAuthorization,
@@ -397,6 +398,11 @@ function servesStaticFile(requestPath: string): boolean {
     requestPath.startsWith("/assets/") ||
     requestPath.startsWith("/icons/")
   );
+}
+
+function failureReasonField(error: unknown): { reason?: string } {
+  const reason = failureReason(error);
+  return reason === undefined ? {} : { reason };
 }
 
 function writeStartupStep(output: NodeJS.WritableStream, step: string): void {
@@ -2091,6 +2097,7 @@ export async function runAgentService(
       component: "agent-service",
       event: "service.failed",
       code: stableErrorCode(error),
+      ...failureReasonField(error),
     });
     return 1;
   }

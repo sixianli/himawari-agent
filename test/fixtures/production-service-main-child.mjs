@@ -51,6 +51,7 @@ const sources = {
 };
 const providerUrl = process.env.HIMAWARI_TEST_MODEL_URL;
 if (!providerUrl?.startsWith("https://127.0.0.1:")) throw new Error("LOCAL_PROVIDER_REQUIRED");
+const magpieUrl = process.env.HIMAWARI_TEST_MAGPIE_URL;
 const output = {
   write: (data) => {
     process.stdout.write(data);
@@ -123,10 +124,15 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
     const ids = { next: (scope) => `${scope}:${randomUUID()}` };
     const handles = new platform.EphemeralSecretPort({ clock, ids });
     const descriptors = agent.resolveConfiguredModelDescriptorSet(configuration);
+    if (descriptors.generation.some((model) => model.provider === "magpie") && !magpieUrl)
+      throw new Error("LOCAL_MAGPIE_REQUIRED");
     const composition = agent.createProductionModelComposition({
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
-      descriptors: descriptors.generation.map((model) => ({ ...model, baseUrl: providerUrl })),
+      descriptors: descriptors.generation.map((model) => ({
+        ...model,
+        baseUrl: model.provider === "magpie" ? magpieUrl : providerUrl,
+      })),
       handles,
       secretSource: sources.provider,
       payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),

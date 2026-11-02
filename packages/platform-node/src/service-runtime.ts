@@ -58,6 +58,12 @@ export function stableErrorCode(error: unknown): string {
   return SERVICE_RUNTIME_ERROR_CODES.STARTUP_FAILED;
 }
 
+export function failureReason(error: unknown): string | undefined {
+  if (stableErrorCode(error) !== SERVICE_RUNTIME_ERROR_CODES.STARTUP_FAILED) return undefined;
+  if (!(error instanceof Error)) return typeof error;
+  return `${error.name}: ${error.message}`.slice(0, 300);
+}
+
 export function writeServiceDiagnostic(
   output: NodeJS.WritableStream,
   diagnostic: Readonly<Record<string, string | number | boolean | readonly string[]>>,

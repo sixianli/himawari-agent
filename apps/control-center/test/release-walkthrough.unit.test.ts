@@ -7,6 +7,7 @@ import { ControlCenterApp } from "../src/app.js";
 import { ControlCenterBrowserStorage } from "../src/browser-storage.js";
 import { messages } from "../src/i18n/resources/zh-CN.js";
 import { completedRun, newsRun, runStart } from "./news-run-fixture.js";
+import { ACCEPTANCE_SELECTABLE_MODELS } from "./release-walkthrough-models.js";
 import { RELEASE_WALKTHROUGH_UI as UI, type WalkthroughTarget } from "./release-walkthrough-ui.js";
 
 const fake = vi.hoisted(() => ({
@@ -80,6 +81,21 @@ vi.mock("../src/gateway-client.js", async (original) => {
       authorizationRef: "authorization-walkthrough",
       canCancelRun: true,
       executionPresentationAvailable: true,
+      filesAvailable: true,
+      availableModels: [
+        {
+          ref: "model-primary",
+          model: "deepseek/deepseek-v4.1-flash",
+          name: "Product path primary",
+          provider: "vercel-ai-gateway",
+          thinkingLevels: [],
+        },
+        ...ACCEPTANCE_SELECTABLE_MODELS.map((entry) => ({
+          ...entry,
+          provider: "vercel-ai-gateway",
+          thinkingLevels: [],
+        })),
+      ],
       installedGatewayV2Operations: [
         ...CONTROL_CENTER_SURFACE_INVENTORY.flatMap((item) => [...item.queries, ...item.mutations]),
         "search.authorization.read",
@@ -161,7 +177,7 @@ vi.mock("../src/gateway-client.js", async (original) => {
         };
       }
       async listFiles() {
-        return { files: [], nextCursor: null };
+        return { items: [], nextCursor: null };
       }
     },
   };
@@ -183,7 +199,13 @@ function roleOf(element: Element) {
   if (element.tagName === "A" && !element.hasAttribute("href")) return null;
   if (element.tagName === "SECTION" && !accessibleName(element)) return null;
   if (element instanceof HTMLInputElement)
-    return element.type === "checkbox" ? "checkbox" : element.type === "text" ? "textbox" : null;
+    return element.type === "checkbox"
+      ? "checkbox"
+      : element.type === "text"
+        ? "textbox"
+        : element.type === "search"
+          ? "searchbox"
+          : null;
   return IMPLICIT_ROLES[element.tagName] ?? null;
 }
 
@@ -237,7 +259,13 @@ function queryAllByRole(scope: Element, target: WalkthroughTarget) {
 
 function byRole(scope: Element, target: WalkthroughTarget | readonly WalkthroughTarget[]) {
   const targets = Array.isArray(target) ? target : [target as WalkthroughTarget];
-  const found = targets.flatMap((item) => queryAllByRole(scope, item));
+  const matches = targets.map((item) => ({ item, found: queryAllByRole(scope, item) }));
+  const ambiguous = matches.find(({ item, found }) => item.role === "region" && found.length > 1);
+  if (ambiguous)
+    throw new Error(
+      `RELEASE_WALKTHROUGH_TARGET_AMBIGUOUS ${ambiguous.found.length} ${ambiguous.item.role}:${ambiguous.item.name ?? ""}`,
+    );
+  const found = matches.flatMap(({ found: elements }) => elements);
   if (found.length === 0)
     throw new Error(
       `RELEASE_WALKTHROUGH_TARGET_MISSING ${targets.map((item) => `${item.role}:${item.name ?? ""}`).join(" | ")}`,
@@ -344,6 +372,18 @@ describe("release walkthrough locators against the real control center", () => {
     expect(byRole(body, UI.send)).toBeDefined();
     expect(byRole(body, UI.newThread)).toBeDefined();
 
+    const picker = body.querySelector<HTMLDetailsElement>(UI.modelPickerRoot);
+    expect(picker).not.toBeNull();
+    expect(body.querySelector(UI.modelPicker)).not.toBeNull();
+    (picker as HTMLDetailsElement).open = true;
+    await click(body.querySelector<HTMLElement>(UI.modelChooser) as HTMLElement);
+    const options = [...body.querySelectorAll<HTMLElement>(UI.modelOption)];
+    expect(options).toHaveLength(ACCEPTANCE_SELECTABLE_MODELS.length + 1);
+    for (const entry of ACCEPTANCE_SELECTABLE_MODELS)
+      expect(options.some((option) => option.textContent?.includes(entry.name))).toBe(true);
+    await click(options[1] as HTMLElement);
+    (picker as HTMLDetailsElement).open = false;
+
     await click(byRole(body, UI.openSettings));
     const dialog = byRole(body, UI.settingsDialog);
     expect(
@@ -395,6 +435,25 @@ describe("release walkthrough locators against the real control center", () => {
     ).toBeGreaterThanOrEqual(2);
     await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
     expect(queryAllByRole(body, UI.memoryPage)).toHaveLength(0);
+
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.openReminders));
+    const reminders = await eventually(() => byRole(body, UI.remindersPage));
+    expect(queryAllByRole(reminders, UI.pageError)).toHaveLength(0);
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.openFiles));
+    const files = await eventually(() => byRole(body, UI.filesPage));
+    expect(queryAllByRole(files, UI.pageError)).toHaveLength(0);
+    const library = await eventually(() => {
+      const found = files.querySelector(UI.filesLibrary);
+      if (!found) throw new Error("RELEASE_WALKTHROUGH_TARGET_MISSING files-library");
+      return found;
+    });
+    expect(library.getAttribute("aria-busy")).toBe("false");
+    expect(queryAllByRole(body, UI.remindersPage)).toHaveLength(0);
+    await click(byRole(byRole(body, UI.sidebarNavigation), UI.newThread[1]));
+    expect(queryAllByRole(body, UI.filesPage)).toHaveLength(0);
+
+    const search = byRole(byRole(body, UI.sidebarNavigation), UI.threadSearch);
+    expect(search).toBeInstanceOf(HTMLInputElement);
 
     expect(fake.unexpected).toEqual([]);
   });
