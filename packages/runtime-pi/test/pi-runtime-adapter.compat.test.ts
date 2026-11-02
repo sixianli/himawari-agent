@@ -2807,6 +2807,9 @@ it("waits for cancelled native history persistence before acknowledging cancel",
     }),
   );
   expect(JSON.stringify(nextModel.observed[0])).toContain("turn_aborted");
+  expect(JSON.stringify(nextModel.observed[0])).toContain(
+    "answer from it without searching or fetching again",
+  );
   expect(lastOwnerWords((nextModel.observed[0] as { messages: unknown[] }).messages)).toBe(
     "只读取验收文件，不执行旧工具。",
   );

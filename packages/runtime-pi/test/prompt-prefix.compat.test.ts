@@ -81,6 +81,7 @@ interface Turn {
   readonly blocks?: readonly RuntimeProjectionContextBlock[];
   readonly occurredAt?: string;
   readonly systemInstruction?: string;
+  readonly interrupted?: boolean;
 }
 
 class ConversationProjection implements RuntimeProjectionPort {
@@ -93,6 +94,7 @@ class ConversationProjection implements RuntimeProjectionPort {
     return {
       systemInstruction: this.turn.systemInstruction ?? "你是 Himawari，主人的个人助手。",
       history: [],
+      ...(this.turn.interrupted ? { interruptedRunId: this.covered[0] } : {}),
       ...(this.saved.length > 0
         ? { nativeHistory: { messages: this.saved, coveredRunIds: this.covered } }
         : {}),
@@ -348,6 +350,30 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(requestsPerTurn).toEqual([2, 2, 2]);
     expect(findConversationBreak(bodies)).toBeNull();
     expect(bodies[2]).toContain("搜索结果：傍晚阴天");
+  });
+
+  it("keeps the follow-up after a stop append-only, with the stop note appended at the end", async () => {
+    const { bodies } = await conversation(
+      [
+        { prompt: "明天是否需要带伞", occurredAt: "2026-11-02T00:40:00.000Z" },
+        {
+          prompt: "直接用已经搜到的资料回答",
+          occurredAt: "2026-11-02T00:44:00.000Z",
+          interrupted: true,
+        },
+        { prompt: "那周末呢？", occurredAt: "2026-11-02T00:50:00.000Z" },
+      ],
+      (index, body) => {
+        const lastRole = (JSON.parse(body).messages as { role: string }[]).at(-1)?.role;
+        return lastRole === "tool"
+          ? { text: `回答${index}` }
+          : { tool: "web_search", input: JSON.stringify({ query: `查询${index}` }) };
+      },
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    expect(bodies[2]).toContain("answer from it without searching or fetching again");
+    expect(bodies[0]).not.toContain("answer from it without searching or fetching again");
+    expect(bodies.at(-1)).toContain("answer from it without searching or fetching again");
   });
 
   it("keeps turns that set a reminder append-only, with the reminder tool listed in every request", async () => {
