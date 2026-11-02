@@ -33,6 +33,7 @@ function renderRun(
   status: Detail["payload"]["runs"][number]["status"],
   records: ThreadExecutionRecord[],
   state?: ThreadExecutionState,
+  extra: Record<string, unknown> = {},
 ) {
   const detail: Detail = {
     schemaVersion: "gateway.thread.v3",
@@ -87,6 +88,7 @@ function renderRun(
       message: (id) => id,
       onFork: () => {},
       renderApproval: () => null,
+      ...extra,
     }),
   );
 }
@@ -262,4 +264,28 @@ it("[I-23] shows no memory step when no memory passed the relevance threshold", 
   expect(html).not.toContain("step.memoryFound");
   expect(html).not.toContain("step.memoryProfile");
   expect(html).not.toContain('data-tool-category="memory"');
+});
+
+it("[UI-12] shows an uploaded file once, in the owner's message, and still lists files the agent wrote", () => {
+  const delivered = (name: string, source: "upload" | "write") => ({
+    key: `run:cancel:${name}`,
+    name,
+    path: name,
+    kind: "data" as const,
+    runId: "run:cancel",
+    turn: 1,
+    source,
+    command: undefined,
+    versions: 1,
+    registered: undefined,
+    trace: undefined,
+  });
+  const html = renderRun("completed", [], undefined, {
+    onOpenFile: () => {},
+    filesByRun: {
+      "run:cancel": [delivered("sales.csv", "upload"), delivered("report.csv", "write")],
+    },
+  });
+  expect(html).toContain("report.csv");
+  expect(html).not.toContain("sales.csv");
 });

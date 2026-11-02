@@ -13,9 +13,10 @@ import {
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
+import { SignOutSetting } from "./components/sign-out-setting.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
-import { Banner } from "./components/index.js";
+import { ActionButton, Banner } from "./components/index.js";
 import {
   focusedMemoryIds,
   MemoryReminders,
@@ -28,6 +29,7 @@ import {
   ProactiveDataSettings,
   ProactiveNotificationSettings,
 } from "./components/proactive-settings.js";
+import { AutoMemorySetting } from "./components/personalization-settings.js";
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import {
   GatewayClient,
@@ -44,6 +46,7 @@ import {
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
+import { resumedAfterLongAbsence } from "./page-resume.js";
 import {
   OPEN_REMINDERS_PAGE,
   openRemindersPage,
@@ -87,6 +90,21 @@ const titleIds: Readonly<Record<SurfaceId, MessageId>> = {
   workers: "workers.title",
 };
 
+function PageNotFound({
+  message,
+  onHome,
+}: {
+  readonly message: (id: MessageId) => string;
+  readonly onHome: () => void;
+}) {
+  return (
+    <Banner title={message("surface.notFound.title")} tone="warning">
+      <p>{message("surface.notFound.description")}</p>
+      <ActionButton onClick={onHome}>{message("surface.notFound.action")}</ActionButton>
+    </Banner>
+  );
+}
+
 function surfaceInventory(surfaceId: SurfaceId): ControlCenterSurfaceInventoryEntry {
   const surface = CONTROL_CENTER_SURFACE_INVENTORY.find((candidate) => candidate.id === surfaceId);
   if (!surface) throw new Error("CONTROL_CENTER_SURFACE_INVALID");
@@ -110,7 +128,6 @@ export function ControlCenterApp() {
       );
     applyTheme();
     media?.addEventListener("change", applyTheme);
-    document.documentElement.setAttribute("data-accent", preferences.accent ?? "violet");
     return () => media?.removeEventListener("change", applyTheme);
   }, [preferences]);
   const updateLocale = (next: ControlCenterUiLocale) => {
@@ -152,6 +169,10 @@ function LocalizedControlCenterApp({
   const { message } = useControlCenterIntl();
   const [launch] = useState(() => readLaunchIntent(window.location, window.history));
   const { match, navigate } = useControlCenterRouter();
+  const goHome = useCallback(
+    () => navigate(routeForSurface("threads", { view: "content" })),
+    [navigate],
+  );
   const route =
     match.kind === "matched" ? match.state : routeForSurface("threads", { view: "content" });
   const surface = surfaceInventory(route.surfaceId);
@@ -288,15 +309,21 @@ function LocalizedControlCenterApp({
     const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
-      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+      if (document.visibilityState === "visible")
+        synchronizer.reconnectNow(resumedAfterLongAbsence());
     };
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", reconnect);
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) synchronizer.reconnectNow(true);
+    };
+    window.addEventListener("pageshow", restored);
     return () => {
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);
       document.removeEventListener("visibilitychange", reconnect);
+      window.removeEventListener("pageshow", restored);
       synchronizer.stop();
     };
   }, [configuration, storage, clearPrivateViewState]);
@@ -318,7 +345,10 @@ function LocalizedControlCenterApp({
     const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
-      if (document.visibilityState === "visible") synchronizer.reconnectNow();
+      if (document.visibilityState !== "visible") return;
+      synchronizer.reconnectNow(resumedAfterLongAbsence());
+      threadEventQueue.current.push(null);
+      setThreadEventSignal((current) => current + 1);
     };
     const synchronizeTab = (event: StorageEvent) => {
       if (event.key === THREAD_CURSOR_STORAGE_KEY) {
@@ -330,11 +360,16 @@ function LocalizedControlCenterApp({
     window.addEventListener("offline", offline);
     window.addEventListener("storage", synchronizeTab);
     document.addEventListener("visibilitychange", reconnect);
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) synchronizer.reconnectNow(true);
+    };
+    window.addEventListener("pageshow", restored);
     return () => {
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);
       window.removeEventListener("storage", synchronizeTab);
       document.removeEventListener("visibilitychange", reconnect);
+      window.removeEventListener("pageshow", restored);
       synchronizer.stop();
     };
   }, [configuration, storage, clearPrivateViewState]);
@@ -382,14 +417,13 @@ function LocalizedControlCenterApp({
           remindersDue:
             (memory.overview?.reminders.length ?? 0) +
             proactiveDueCount(proactive?.overview ?? null, new Date()),
-          renderPage: (page: SidePage, onBack: () => void) => (
+          renderPage: (page: SidePage) => (
             <Suspense fallback={null}>
               {page === "memory" ? (
                 <MemoryPage
                   memory={memory}
                   message={message}
                   focus={memoryFocus}
-                  onBack={onBack}
                   onOpenThread={(threadId) =>
                     navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
                   }
@@ -401,7 +435,6 @@ function LocalizedControlCenterApp({
                   focus={reminderFocus}
                   locale={locale}
                   message={message}
-                  onBack={onBack}
                   onOpenThread={(threadId) =>
                     navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
                   }
@@ -411,7 +444,7 @@ function LocalizedControlCenterApp({
           ),
         }
       : {}),
-    active: route.surfaceId === "threads",
+    active: route.surfaceId === "threads" && match.kind === "matched",
     ownerName: preferences.name,
     modelChoice: preferences.modelRef
       ? { modelRef: preferences.modelRef, thinkingLevel: preferences.thinkingLevel ?? "" }
@@ -489,11 +522,20 @@ function LocalizedControlCenterApp({
     onUnauthorized: clearPrivateViewState,
   });
 
+  const threadsShown = route.surfaceId === "threads" && match.kind === "matched";
   if (!configuration && entry?.kind !== "built-in-login")
     return <BrowserEntryScreen entry={entry} onRetry={retryEntry} onVerifyEmail={verifyEmail} />;
 
   return (
     <ControlCenterShell
+      settingsPersonalization={
+        memory ? <AutoMemorySetting memory={memory} message={message} /> : undefined
+      }
+      settingsAccount={
+        configuration && identityMethod === "built-in" ? (
+          <SignOutSetting csrfToken={configuration.csrfToken} onSignedOut={clearPrivateViewState} />
+        ) : undefined
+      }
       settingsData={
         <>
           {threadModel.settingsData}
@@ -544,6 +586,7 @@ function LocalizedControlCenterApp({
                 proactive={proactive}
                 message={message}
                 outcome={launch.gmail}
+                locale={locale}
               />
             ) : null}
           </>
@@ -554,9 +597,7 @@ function LocalizedControlCenterApp({
       builtInIdentity={identityMethod === "built-in" && Boolean(configuration)}
       healthDependenciesAvailable={configuration?.healthDependenciesAvailable ?? false}
       installedGatewayV2Operations={configuration?.installedGatewayV2Operations ?? []}
-      connection={
-        configuration ? (route.surfaceId === "threads" ? threadConnection : connection) : null
-      }
+      connection={configuration ? (threadsShown ? threadConnection : connection) : null}
       content={
         !configuration && entry?.kind === "built-in-login" ? (
           <AccountLogin onComplete={retryEntry} />
@@ -566,13 +607,13 @@ function LocalizedControlCenterApp({
             onSignedOut={clearPrivateViewState}
             onReauthenticated={() => setBootstrapRevision((value) => value + 1)}
           />
+        ) : configuration && match.kind === "not_found" ? (
+          <PageNotFound message={message} onHome={goHome} />
         ) : configuration && !surfaceInstalled ? (
-          <Banner title={message("surface.notInstalled.title")} tone="warning">
-            <p>{message("surface.notInstalled.description")}</p>
-          </Banner>
+          <PageNotFound message={message} onHome={goHome} />
         ) : route.surfaceId === "health-deployment" && client ? (
           <HealthControlCenter client={client} onUnauthorized={clearPrivateViewState} />
-        ) : route.surfaceId === "threads" ? (
+        ) : threadsShown ? (
           <>
             {memory ? <MemoryReminders memory={memory} message={message} /> : null}
             {threadModel.content}
@@ -580,30 +621,26 @@ function LocalizedControlCenterApp({
         ) : governanceSurface ? (
           governanceModel.content
         ) : (
-          <Banner title={message("surface.notInstalled.title")} tone="warning">
-            <p>{message("surface.notInstalled.description")}</p>
-          </Banner>
+          <PageNotFound message={message} onHome={goHome} />
         )
       }
       details={
         !configuration || !surfaceInstalled || route.surfaceId === "health-deployment"
           ? null
-          : route.surfaceId === "threads"
+          : threadsShown
             ? threadModel.details
             : governanceSurface
               ? governanceModel.details
               : null
       }
-      topbarStart={route.surfaceId === "threads" ? threadModel.start : null}
-      topbarActions={route.surfaceId === "threads" ? threadModel.actions : null}
+      topbarStart={threadsShown ? threadModel.start : null}
+      topbarActions={threadsShown ? threadModel.actions : null}
       list={governanceSurface ? governanceModel.list : threadModel.list}
       locale={locale}
       onLocaleChange={ownerPreferences.changeLocale}
       onNavigate={navigate}
       onPreferencesChange={ownerPreferences.changePreferences}
-      pageTitle={
-        route.surfaceId === "threads" ? threadModel.title : message(titleIds[route.surfaceId])
-      }
+      pageTitle={threadsShown ? threadModel.title : message(titleIds[route.surfaceId])}
       preferences={preferences}
       route={route}
     />

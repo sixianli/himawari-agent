@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
 import { HimawariBrand } from "../components/brand.js";
 import { ActionButton, AppLink } from "../components/index.js";
@@ -22,10 +22,12 @@ export interface ControlCenterShellProps {
   readonly settingsTools?: ReactNode;
   readonly settingsData?: ReactNode;
   readonly settingsNotifications?: ReactNode;
+  readonly settingsPersonalization?: ReactNode;
+  readonly settingsAccount?: ReactNode;
   readonly list: ReactNode;
   readonly locale: ControlCenterUiLocale;
   readonly onLocaleChange: (locale: ControlCenterUiLocale) => void;
-  readonly onNavigate: (state: ControlCenterRouteState) => void;
+  readonly onNavigate: (state: ControlCenterRouteState, replace?: boolean) => void;
   readonly onPreferencesChange: (preferences: ControlCenterPreferences) => void;
   readonly pageTitle: ReactNode;
   readonly preferences: ControlCenterPreferences;
@@ -45,6 +47,8 @@ export function ControlCenterShell({
   settingsTools,
   settingsData,
   settingsNotifications,
+  settingsPersonalization,
+  settingsAccount,
   list,
   locale,
   onLocaleChange,
@@ -68,28 +72,29 @@ export function ControlCenterShell({
     sidebarFocusRequested.current = true;
     setSidebarCollapsed(collapsed);
   };
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState("general");
+  const settingsOpen = route.page === "settings";
+  const settingsTab = ["personalization", "notifications", "tools", "data"].includes(
+    route.pageTab ?? "",
+  )
+    ? (route.pageTab as string)
+    : "general";
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const showSettings = useCallback(
+    (tab: string | null, replace = false) =>
+      onNavigate({ ...routeRef.current, page: "settings", pageTab: tab }, replace),
+    [onNavigate],
+  );
   useEffect(() => {
-    const openNotifications = () => {
-      setSettingsTab("notifications");
-      setSettingsOpen(true);
-    };
-    const openTab = (event: Event) => {
-      setSettingsTab(settingsTabOf(event));
-      setSettingsOpen(true);
-    };
+    const openNotifications = () => showSettings("notifications");
+    const openTab = (event: Event) => showSettings(settingsTabOf(event));
     window.addEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
     window.addEventListener(OPEN_SETTINGS, openTab);
     return () => {
       window.removeEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
       window.removeEventListener(OPEN_SETTINGS, openTab);
     };
-  }, []);
-  useEffect(() => {
-    void route.objectId;
-    setSettingsOpen(false);
-  }, [route.objectId]);
+  }, [showSettings]);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const routeFocusKey = `${route.surfaceId}:${route.objectId ?? ""}:${route.view}`;
   useEffect(() => {
@@ -98,10 +103,7 @@ export function ControlCenterShell({
     }
   }, [routeFocusKey]);
   const updateView = (view: ControlCenterRouteState["view"]) => onNavigate({ ...route, view });
-  const openSettings = () => {
-    setSettingsTab("general");
-    setSettingsOpen(true);
-  };
+  const openSettings = () => showSettings(null);
 
   return (
     <div
@@ -210,7 +212,8 @@ export function ControlCenterShell({
       </div>
       <SettingsDialog
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => onNavigate({ ...route, page: null, pageTab: null })}
+        onTabChange={(tab) => showSettings(tab === "general" ? null : tab, true)}
         locale={locale}
         onLocaleChange={onLocaleChange}
         preferences={preferences}
@@ -218,6 +221,8 @@ export function ControlCenterShell({
         tools={settingsTools}
         data={settingsData}
         notifications={settingsNotifications}
+        personalization={settingsPersonalization}
+        account={settingsAccount}
         initialTab={settingsTab}
       />
     </div>

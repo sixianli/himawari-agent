@@ -16,6 +16,7 @@ import type { ProductionWebPush, WebPushPresence } from "./production-web-push.j
 export const PRODUCTION_WEB_PUSH_OPERATIONS = Object.freeze([
   "push.status.read",
   "push.subscription.set",
+  "push.kind.set",
   "push.test",
   "presence.heartbeat",
   "push.feedback.record",
@@ -49,6 +50,7 @@ export class ProductionWebPushControl {
     if (query.type !== "push.status.read") throw new Error("WEB_PUSH_OPERATION_NOT_INSTALLED");
     const push = this.#options.push;
     const subscriptions = push ? await this.#options.store.listSubscriptions(this.#scope()) : [];
+    const kinds = await this.#options.store.readKinds(this.#scope());
     return {
       ...query,
       kind: "snapshot",
@@ -57,12 +59,13 @@ export class ProductionWebPushControl {
       payload: {
         available: push !== undefined,
         publicKey: push?.publicKey ?? null,
+        kinds: [...kinds],
         subscriptions: subscriptions.map((subscription) => ({
           subscriptionId: subscription.id,
           deviceLabel: subscription.deviceLabel,
           endpointHost: new URL(subscription.endpoint).host,
           locale: subscription.locale,
-          kinds: [...subscription.kinds],
+          kinds: [...kinds],
           state: subscription.state,
           failureCode: subscription.failureCode,
           createdAt: subscription.createdAt,
@@ -99,6 +102,16 @@ export class ProductionWebPushControl {
       });
       return { resultRef: `web-push-feedback:${recorded}`, replayed: false };
     }
+    if (command.type === "push.kind.set") {
+      const saved = await this.#options.store.setKind({
+        ownerId,
+        agentId,
+        kind: command.payload.kind,
+        enabled: command.payload.enabled,
+        now,
+      });
+      return { resultRef: `web-push-kinds:${saved.length}`, replayed: false };
+    }
     const push = this.#options.push;
     if (!push)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "WEB_PUSH_NOT_CONFIGURED");
@@ -127,7 +140,7 @@ export class ProductionWebPushControl {
         replayed: false,
       };
     }
-    if (!endpoint || !keys || !locale || !deviceLabel?.trim() || !kinds)
+    if (!endpoint || !keys || !locale || !deviceLabel?.trim())
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "WEB_PUSH_SUBSCRIPTION_INCOMPLETE",
@@ -141,9 +154,10 @@ export class ProductionWebPushControl {
       auth: keys.auth,
       locale,
       deviceLabel: deviceLabel.trim(),
-      kinds: [...new Set(kinds)],
       now,
     });
+    if (kinds)
+      await this.#options.store.writeKinds({ ownerId, agentId, kinds: [...new Set(kinds)], now });
     return { resultRef: saved.id, replayed: false };
   }
 }

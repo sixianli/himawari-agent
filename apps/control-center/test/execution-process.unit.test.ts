@@ -23,7 +23,7 @@ it("[UI-5] collapses a finished turn into one sentence that says what it did and
   const summary = html.slice(html.indexOf("<summary>"), html.indexOf("</summary>"));
   expect(html).not.toMatch(/<details class="turn-process"[^>]* open/);
   expect(summary).toContain(
-    '<span class="process-took">process.headline(actions=process.did.search(count=2),time=27.1s)</span>',
+    '<span class="process-took">process.headline(actions=process.did.search(count=2),time=more.duration.seconds(seconds=27))</span>',
   );
   expect(summary).not.toContain("process-stack");
   expect(summary).not.toContain("process.longest");
@@ -37,7 +37,9 @@ it("[UI-5] falls back to the total alone when the turn used no tool", () => {
   );
   const html = render(completedRun, records);
   const summary = html.slice(html.indexOf("<summary>"), html.indexOf("</summary>"));
-  expect(summary).toContain('<span class="process-took">process.took(time=27.1s)</span>');
+  expect(summary).toContain(
+    '<span class="process-took">process.took(time=more.duration.seconds(seconds=27))</span>',
+  );
 });
 
 it("[UI-5] shows each step's duration exactly as the recorded timestamps give it, with no start-to-end detail", () => {
@@ -55,16 +57,18 @@ it("[UI-5] shows each step's duration exactly as the recorded timestamps give it
     return Date.parse(record.occurredAt) - origin;
   };
   const searchStart = offset("tool", "tool:zh", "started");
-  const searchEnd = offset("tool", "tool:zh", "completed");
+  const searchEnd = offset("tool", "tool:en", "completed");
+  const seconds = (milliseconds: number) =>
+    `more.duration.seconds(seconds=${Math.max(1, Math.round(milliseconds / 1000))})`;
   const rows = html.split('<li class="execution-step timeline-row').slice(1);
   const search = rows.find((row) => row.includes("step.search"));
   expect(search?.match(/class="row-duration">([^<]+)</)?.[1]).toBe(
-    `${(Math.round((searchEnd - searchStart) / 100) / 10).toFixed(1)}s`,
+    seconds(searchEnd - searchStart),
   );
   expect(html).not.toContain("process.span");
   expect(html).not.toContain("segment-list");
   const total = Date.parse(completedRun.updatedAt) - origin;
-  expect(html).toContain(`time=${(Math.round(total / 100) / 10).toFixed(1)}s)`);
+  expect(html).toContain(`time=${seconds(total)})`);
 });
 
 it("[UI-5] lets a step open only when it has something to show, and marks the ones that do", () => {
@@ -79,27 +83,61 @@ it("[UI-5] lets a step open only when it has something to show, and marks the on
   const youRow = rows.find((row) => row.includes("process.step.you"));
   expect(youRow).not.toContain("<details");
   const searchRow = rows.find((row) => row.includes("step.search"));
-  expect(searchRow).toContain("<details");
+  expect(searchRow).toContain('class="timeline-record is-static"');
+  expect(searchRow).not.toContain("<details");
 });
 
-it("[UI-5] lists every step with a time bar and its duration, and marks the parallel search", () => {
+it("[UI-5] lists every step with whole-second durations and no time bar, and shows parallel searches as one row", () => {
   const html = render();
   const rows = html.split('<li class="execution-step timeline-row').slice(1);
-  expect(rows).toHaveLength(6);
+  expect(rows).toHaveLength(5);
   expect(rows.map((row) => row.match(/class="row-duration">([^<]+)</)?.[1])).toEqual([
-    "2.8s",
-    "8.4s",
-    "2.9s",
-    "2.9s",
-    "2.9s",
-    "3.7s",
+    "more.duration.seconds(seconds=3)",
+    "more.duration.seconds(seconds=8)",
+    "more.duration.seconds(seconds=3)",
+    "more.duration.seconds(seconds=3)",
+    "more.duration.seconds(seconds=4)",
   ]);
-  expect(rows.every((row) => row.includes('class="timeline-track"'))).toBe(true);
-  expect(rows[3]).toContain("process.parallel");
-  expect(rows[2]).not.toContain("process.parallel");
+  expect(html).not.toContain("timeline-track");
+  expect(html).not.toContain("process.parallel");
+  expect(rows.filter((row) => row.includes("step.search"))).toHaveLength(1);
   expect(rows[1]).toContain("process.step.you");
-  expect(rows[5]).toContain("process.characters(count=120)");
-  expect(html).not.toContain("最久");
+  expect(rows[4]).toContain("process.characters(count=120)");
+  expect(html.replace(/<[^>]*>/g, "")).not.toMatch(/\d\.\ds/);
+});
+
+it("[UI-5] names the sites a merged web step used, searched and opened alike", () => {
+  const records = newsRun().map((record) =>
+    record.itemId === "tool:zh" && record.kind === "tool" && record.phase === "completed"
+      ? {
+          ...record,
+          output: JSON.stringify({
+            results: [
+              { url: "https://www.google.com/a", title: "a" },
+              { url: "https://news.google.com/b", title: "b" },
+            ],
+          }),
+        }
+      : record.itemId === "tool:en" && record.kind === "tool"
+        ? { ...record, name: "web_fetch", input: '{"url":"https://www.baidu.com/s?wd=x"}' }
+        : record,
+  );
+  const html = render(completedRun, records);
+  const rows = html.split('<li class="execution-step timeline-row').slice(1);
+  const web = rows.filter((row) => row.includes("step.search"));
+  expect(web).toHaveLength(1);
+  expect(web[0]).toContain('<span class="step-preview">google.com · baidu.com</span>');
+  expect(html).not.toContain("step.fetch");
+});
+
+it("[UI-5] reverse: a non-web tool between two searches keeps them as separate rows", () => {
+  const records = newsRun().map((record) =>
+    record.itemId === "tool:en" && record.kind === "tool" ? { ...record, name: "bash" } : record,
+  );
+  const html = render(completedRun, records);
+  const rows = html.split('<li class="execution-step timeline-row').slice(1);
+  expect(rows.filter((row) => row.includes("step.search"))).toHaveLength(1);
+  expect(rows.filter((row) => row.includes("step.command"))).toHaveLength(1);
 });
 
 it("[UI-5] keeps the narration as a quote under the thinking step instead of a separate row", () => {
@@ -145,9 +183,9 @@ it("[UI-13] shows only the token total and the KV cache hit rate after the turn 
 });
 
 it.each([
-  ["zh-CN", "搜索了 2 次网页，用时 27.1s", "等你确认"],
-  ["en", "searched the web 2 times in 27.1s", "Waiting for your approval"],
-  ["ja", "ウェブを 2 回検索（27.1s）", "承認待ち"],
+  ["zh-CN", "搜索了 2 次网页，用时 27 秒", "等你确认"],
+  ["en", "searched the web 2 times in 27 s", "Waiting for your approval"],
+  ["ja", "ウェブを 2 回検索（27秒）", "承認待ち"],
 ] as const)(
   "[UI-6] renders the whole process area in %s with no untranslated text",
   async (locale, headline, you) => {
@@ -191,8 +229,6 @@ it("[UI-30] opens a command step to whether it worked, with the command itself u
   const html = render(completedRun, records);
   expect(html).toContain("step.outcome.failed · step.outcome.exitCode(code=1)");
   expect(html).toContain('data-glyph="close"');
-  expect(html).toContain("step.outcome.ok");
-  expect(html).toContain('data-glyph="check"');
   const technical = html.match(/<details class="step-technical">[\s\S]*?<\/details>/g) ?? [];
   expect(technical.length).toBeGreaterThan(0);
   expect(technical.join("")).toContain("step.commandDetails");
@@ -216,7 +252,9 @@ it("shows the lines written so far instead of a record error while a file is bei
       stateAvailable: true,
     }),
   );
-  expect(html).toContain("chat.activity.writing(step=step.write,lines=200)");
+  expect(html).toContain(
+    '<span class="process-live-step">chat.activity.writing(step=step.write,lines=200)</span>',
+  );
   expect(html).toContain("chat.phase.writing(lines=200)");
   expect(html).not.toContain("chat.recordUnavailable");
 });
@@ -232,4 +270,35 @@ it("still says the record is unavailable once a finished turn's state cannot be 
     }),
   );
   expect(html).toContain("chat.recordUnavailable");
+});
+
+const acceptedRunWaiting = (waitedMilliseconds: number) => ({
+  ...completedRun,
+  status: "accepted" as const,
+  background: null,
+  backgroundCommands: [],
+  createdAt: new Date(Date.now() - waitedMilliseconds).toISOString(),
+  updatedAt: new Date(Date.now() - waitedMilliseconds).toISOString(),
+});
+
+it("[QUEUE-1] says the turn is waiting in line, with the real wait, once an accepted turn has had no slot for 3 seconds", () => {
+  const html = render(acceptedRunWaiting(30_000), []);
+  expect(html).toContain('<span class="process-live-step">chat.queued(tool=)</span>');
+  expect(html).toContain("chat.queuedWait");
+  expect(html).toContain('<output class="sr-only">chat.queued(tool=)</output>');
+  expect(html.match(/30s|seconds=30/g) ?? []).toHaveLength(1);
+  expect(html).not.toContain("chat.lastActivity");
+  expect(html).not.toContain("chat.progressDelayed");
+});
+
+it("[QUEUE-1] reverse: does not claim a queue for a turn that was accepted a moment ago", () => {
+  const html = render(acceptedRunWaiting(1_000), []);
+  expect(html).not.toContain("chat.queued");
+});
+
+it("[QUEUE-1] reverse: does not claim a queue once the turn has started producing records", () => {
+  const html = render({ ...acceptedRunWaiting(30_000), status: "running" }, newsRun());
+  expect(html).not.toContain("chat.queued");
+  const acceptedWithRecords = render(acceptedRunWaiting(30_000), newsRun());
+  expect(acceptedWithRecords).not.toContain("chat.queued");
 });

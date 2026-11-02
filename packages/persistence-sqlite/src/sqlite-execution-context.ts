@@ -13,6 +13,7 @@ export interface SqliteWorkerConfiguration {
   readonly qualification?: {
     readonly crashAt?: "after_state" | "after_result" | "after_event" | "after_commit";
     readonly holdBeforeCommitMs?: number;
+    readonly holdBeforeReadMs?: number;
     readonly maximumPageCount?: number;
   };
 }
@@ -115,6 +116,10 @@ export class SqliteExecutionContext {
     );
     await context.request<{ readonly writerSequence: number }>("ready", {});
     return context;
+  }
+
+  get pendingCount(): number {
+    return this.pending.size;
   }
 
   request<TResult>(operation: string, payload: unknown): Promise<TResult> {

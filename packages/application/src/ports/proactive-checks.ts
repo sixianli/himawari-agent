@@ -78,6 +78,7 @@ export interface ProactiveInsightContent {
   readonly summary: string;
   readonly reason: string;
   readonly basis: "model" | "daily_limit";
+  readonly floorHit?: boolean;
   readonly from: string;
   readonly subject: string;
   readonly link: string;
@@ -144,8 +145,55 @@ export interface ProactiveInsightWrite {
   readonly push: boolean;
 }
 
+export type ProactiveModelPayloadRole = "model_input" | "model_output";
+
+export interface ProactiveModelPayload {
+  readonly ref: string;
+  readonly role: ProactiveModelPayloadRole;
+}
+
+export interface ProactiveMemoryHit {
+  readonly id: string;
+  readonly text: string;
+  readonly score: number;
+}
+
+export interface ProactiveMemoryQuery {
+  readonly messageId: string;
+  readonly query: string;
+}
+
+export interface ProactiveMemoryRecallResult {
+  readonly hits: ReadonlyMap<string, readonly ProactiveMemoryHit[]>;
+  readonly costMicros: number;
+  readonly failedQueries: number;
+}
+
+export interface ProactiveMemoryRecall {
+  recall(input: {
+    readonly queries: readonly ProactiveMemoryQuery[];
+    readonly deadlineAt: string;
+    readonly signal: AbortSignal;
+  }): Promise<ProactiveMemoryRecallResult>;
+}
+
+export type ProactiveMemoryRecallStatus = "off" | "ok" | "partial" | "failed";
+
+export interface ProactiveCheckInputs {
+  readonly ruleIds: readonly string[];
+  readonly sourceIds: readonly string[];
+  readonly floorHits: Readonly<Record<string, readonly string[]>>;
+  readonly memoryInjected: boolean;
+  readonly memoryIds: readonly string[];
+  readonly usedMemoryIds: readonly string[];
+  readonly memoryByMail: Readonly<Record<string, readonly string[]>>;
+  readonly memoryRecall: ProactiveMemoryRecallStatus;
+}
+
 export interface ProactiveCheckRecord extends ProactiveScope {
   readonly decision: ProactiveDecision;
+  readonly inputs: ProactiveCheckInputs;
+  readonly modelPayloads: readonly ProactiveModelPayload[];
   readonly processed: readonly Omit<
     ProactiveProcessedMessage,
     "reviewedAt" | "ownerRating" | "decisionId" | "processedAt"
@@ -189,6 +237,9 @@ export interface ProactiveStorePort {
     input: ProactiveScope & { readonly source: ProactiveSource },
   ): Promise<readonly string[]>;
   clearRecords(input: ProactiveScope): Promise<readonly string[]>;
+  readDecisionPayloads(
+    input: ProactiveScope & { readonly decisionId: string },
+  ): Promise<readonly ProactiveModelPayload[]>;
   unprocessed(
     input: ProactiveScope & {
       readonly source: ProactiveSource;

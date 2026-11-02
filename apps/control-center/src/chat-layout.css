@@ -641,6 +641,15 @@
   .details-pane {
     min-height: 0;
   }
+  .app-shell[data-mobile-view] .content-pane {
+    display: block;
+  }
+  .app-shell[data-surface="threads"][data-mobile-view] .content-pane {
+    display: flex;
+  }
+  .app-shell[data-mobile-view] .list-pane {
+    display: block;
+  }
 }
 @media (max-width: 640px) {
   .desktop-sidebar-toggle,

@@ -672,7 +672,7 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(stale.controlPlane.executions).toEqual([]);
   });
 
-  it("emits heartbeat comments while waiting and rejects malformed event ordering", async () => {
+  it("emits heartbeat events while waiting and rejects malformed event ordering", async () => {
     const delayed = fixture();
     delayed.reads.delayMilliseconds = 35;
     const heartbeat = await delayed.app.inject({
@@ -683,7 +683,8 @@ describe("HTTP Gateway contract and security boundary", () => {
         "cf-access-jwt-assertion": "assertion-01",
       },
     });
-    expect(heartbeat.body).toContain(": heartbeat");
+    expect(heartbeat.body).toContain("event: gateway.heartbeat");
+    expect(heartbeat.body).toContain('"intervalMilliseconds":20');
     expect(heartbeat.body).toContain("id: cursor-02");
 
     const duplicate = fixture();
@@ -1061,7 +1062,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       expect(String(first.value)).toContain("event: gateway.snapshot_required");
       const heartbeat = await reader.next();
       expect(heartbeat.done).toBe(false);
-      expect(String(heartbeat.value)).toContain(": heartbeat");
+      expect(String(heartbeat.value)).toContain("event: gateway.heartbeat");
       expect(released).toBe(false);
       response.destroy();
       await expect.poll(() => subscriptionSignal?.aborted).toBe(true);
@@ -1480,6 +1481,7 @@ describe("HTTP Gateway contract and security boundary", () => {
       copyRef: `copy-${id}`,
       overlapped: false,
       createdAt: NOW,
+      deletedAt: null,
     }));
     const store: ThreadArtifactStorePort = {
       register: async () => {
@@ -1489,6 +1491,9 @@ describe("HTTP Gateway contract and security boundary", () => {
       get: async ({ id }) => artifacts.find((artifact) => artifact.id === id) ?? null,
       versions: async ({ path }) => artifacts.filter((artifact) => artifact.path === path),
       list: async () => ({ items: artifacts, nextCursor: null }),
+      markDeleted: async () => {
+        throw new Error("unused");
+      },
     };
     const payloads = {
       get: async (ref: string) => ({ ref }) as unknown as PayloadRecord,

@@ -39,6 +39,7 @@ import {
   HIMAWARI_IDENTITY,
   runCapabilityNotice,
 } from "../src/production-run-policy.js";
+import { testModelEgress } from "@himawari-agent/testing";
 
 let temporaryDirectory: string;
 
@@ -111,6 +112,7 @@ function compositionOptions(
 ) {
   const resolve = vi.fn(async () => "fixture-provider-value");
   const options = {
+    egress: testModelEgress(),
     ownerId: "owner-production-model" as never,
     agentId: "agent-production-model" as never,
     descriptors,
@@ -484,6 +486,7 @@ describe("production model composition", () => {
     const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
     const resolvedSecrets: string[] = [];
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      egress: testModelEgress(),
       configuration,
       secretSource: {
         kind: "macos-keychain",
@@ -533,6 +536,7 @@ describe("production model composition", () => {
     };
     const memoryIndex = inMemoryMemoryIndex();
     const composition = await createProductionMemoryCompositionFromConfiguration({
+      egress: testModelEgress(),
       configuration,
       secretSource: {
         kind: "macos-keychain",
@@ -609,9 +613,14 @@ describe("production model composition", () => {
       index: inMemoryMemoryIndex(),
     };
     await expect(
-      createProductionMemoryCompositionFromConfiguration({ ...options, configuration }),
+      createProductionMemoryCompositionFromConfiguration({
+        egress: testModelEgress(),
+        ...options,
+        configuration,
+      }),
     ).rejects.toThrow("MEMORY_MINIMUM_SIMILARITY_REQUIRED");
     const configured = await createProductionMemoryCompositionFromConfiguration({
+      egress: testModelEgress(),
       ...options,
       configuration: {
         ...configuration,
@@ -1168,6 +1177,207 @@ it.each([
     }
   },
 );
+
+it.each([
+  { provider: "magpie", thinkingOff: true, maxTokens: 128 },
+  { provider: "vercel-ai-gateway", thinkingOff: false, maxTokens: 1024 },
+])(
+  "turns thinking off for a title only on Magpie and keeps room for thinking elsewhere (%o)",
+  async ({ provider, thinkingOff, maxTokens }) => {
+    const adapters = createReferenceAdapterSet();
+    const payloads: unknown[] = [];
+    const streamOptions: Record<string, unknown>[] = [];
+    class TitleRuntime extends RecordingRuntime {
+      override getModel(providerId: string, modelId: string): unknown {
+        const value = super.getModel(providerId, modelId);
+        return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+      }
+      stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
+        streamOptions.push(options);
+        const onPayload = options["onPayload"] as ((payload: unknown) => unknown) | undefined;
+        payloads.push(onPayload?.({ model: "m" }));
+        return (async function* () {
+          await (options["fetch"] as typeof fetch)(
+            "https://ai-gateway.vercel.sh/v1/chat/completions",
+          );
+          yield {
+            type: "done",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "日本今日头条" }],
+              api: "openai-completions",
+              provider,
+              model: primaryModel.model,
+              stopReason: "stop",
+              timestamp: Date.now(),
+              usage: {
+                input: 30,
+                output: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 40,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000001 },
+              },
+            },
+          };
+        })();
+      }
+    }
+    const permit: ModelInvocationPermit = {
+      assertActive: vi.fn(async () => {}),
+      markStarted: vi.fn(async () => {}),
+      releaseReserved: vi.fn(async () => {}),
+      settle: vi.fn(async () => {}),
+      markUnknown: vi.fn(async () => {}),
+    };
+    const begin = vi.fn(async () => ({ disposition: "fresh", permit }));
+    const prepared = compositionOptions(adapters, {
+      runtimeFactory: { create: async () => new TitleRuntime() as unknown as PiModelRuntime },
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            `data: ${JSON.stringify({ id: "generation:title", model: primaryModel.model, usage: { cost: 0.000001 }, choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "generation:title", routing: { finalProvider: "deepinfra" }, cost: 0.000001 } } } }] })}\n\ndata: [DONE]\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      ),
+    });
+    const composition = createProductionModelComposition({
+      ...prepared.options,
+      descriptors: prepared.options.descriptors.map((descriptor) => {
+        if (descriptor.api !== "openai-completions") return descriptor;
+        const { providerRouting: _routing, ...withoutRouting } = descriptor;
+        return provider === "magpie"
+          ? {
+              ...withoutRouting,
+              reasoning: true,
+              reasoningRequired: false,
+              provider,
+              baseUrl: "http://127.0.0.1:3425/v1",
+            }
+          : { ...descriptor, reasoning: true, reasoningRequired: false };
+      }),
+    });
+    try {
+      const request = {
+        ownerId: prepared.options.ownerId,
+        agentId: prepared.options.agentId,
+        runId: "run:title-thinking",
+        threadId: "thread:title-thinking",
+        modelRef: primaryModel.ref,
+        dataClassification: "private",
+        systemInstructionRef: "disclosure:title",
+        correlationId: "title:thinking",
+      };
+      const gate = {
+        context: { ownerId: request.ownerId, agentId: request.agentId, runId: request.runId },
+        begin,
+      };
+      expect(
+        await composition.generateTitle?.(
+          request as never,
+          "Generate a short title",
+          gate as never,
+        ),
+      ).toBe("日本今日头条");
+      expect(streamOptions[0]).toMatchObject({ maxTokens });
+      const rewritten = payloads[0] as Record<string, unknown> | undefined;
+      if (thinkingOff) {
+        expect(rewritten).toMatchObject({ thinking: { type: "disabled" } });
+      } else {
+        expect(rewritten?.["thinking"]).toBeUndefined();
+      }
+    } finally {
+      await composition.close();
+    }
+  },
+);
+
+it("retries an auxiliary text call once when the model answers with a tool call instead of text", async () => {
+  const adapters = createReferenceAdapterSet();
+  let calls = 0;
+  class FlakyRuntime extends RecordingRuntime {
+    override getModel(providerId: string, modelId: string): unknown {
+      const value = super.getModel(providerId, modelId);
+      return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+    }
+    stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
+      calls += 1;
+      const first = calls === 1;
+      return (async function* () {
+        await (options["fetch"] as typeof fetch)(
+          "https://ai-gateway.vercel.sh/v1/chat/completions",
+        );
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: first
+              ? [{ type: "toolCall", id: "call_1", name: "bash", arguments: {} }]
+              : [{ type: "text", text: "日本今日头条" }],
+            api: "openai-completions",
+            provider: "vercel-ai-gateway",
+            model: primaryModel.model,
+            stopReason: first ? "toolUse" : "stop",
+            timestamp: Date.now(),
+            usage: {
+              input: 30,
+              output: 10,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 40,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000001 },
+            },
+          },
+        };
+      })();
+    }
+  }
+  const permit: ModelInvocationPermit = {
+    assertActive: vi.fn(async () => {}),
+    markStarted: vi.fn(async () => {}),
+    releaseReserved: vi.fn(async () => {}),
+    settle: vi.fn(async () => {}),
+    markUnknown: vi.fn(async () => {}),
+  };
+  const begin = vi.fn(async () => ({ disposition: "fresh", permit }));
+  const prepared = compositionOptions(adapters, {
+    runtimeFactory: { create: async () => new FlakyRuntime() as unknown as PiModelRuntime },
+    fetch: vi.fn(
+      async () =>
+        new Response(
+          `data: ${JSON.stringify({ id: "generation:title", model: primaryModel.model, usage: { cost: 0.000001 }, choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "generation:title", routing: { finalProvider: "deepinfra" }, cost: 0.000001 } } } }] })}\n\ndata: [DONE]\n\n`,
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+    ),
+  });
+  const composition = createProductionModelComposition(prepared.options);
+  try {
+    const request = {
+      ownerId: prepared.options.ownerId,
+      agentId: prepared.options.agentId,
+      runId: "run:title-retry",
+      threadId: "thread:title-retry",
+      modelRef: primaryModel.ref,
+      dataClassification: "private",
+      systemInstructionRef: "disclosure:title",
+      correlationId: "title:retry",
+    };
+    const gate = {
+      context: { ownerId: request.ownerId, agentId: request.agentId, runId: request.runId },
+      begin,
+    };
+    expect(
+      await composition.generateTitle?.(request as never, "Generate a short title", gate as never),
+    ).toBe("日本今日头条");
+    expect(calls).toBe(2);
+    expect(begin).toHaveBeenCalledTimes(2);
+    expect(begin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ logicalSlot: "thread-title:run:title-retry:retry" }),
+    );
+  } finally {
+    await composition.close();
+  }
+});
 
 it("[PG-12] judges mail through the selected Pi transport with its own invocation and no Run lease", async () => {
   const adapters = createReferenceAdapterSet();

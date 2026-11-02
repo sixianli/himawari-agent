@@ -5,6 +5,7 @@ const glyphs = {
   menu: "menu",
   pin: "pin",
   archive: "archive",
+  trash: "trash",
   rename: "rename",
   settings: "settings",
   compose: "compose",

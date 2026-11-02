@@ -291,7 +291,9 @@ export function ChatHistory({
                   <AnswerSources sources={turnSources(records)} message={message} />
                   {group.run && onOpenFile ? (
                     <DeliveredFileCards
-                      files={filesByRun[group.run.runId] ?? []}
+                      files={(filesByRun[group.run.runId] ?? []).filter(
+                        (file) => file.source !== "upload",
+                      )}
                       openKey={previewKey}
                       onOpen={onOpenFile}
                       onMore={onMoreFiles}

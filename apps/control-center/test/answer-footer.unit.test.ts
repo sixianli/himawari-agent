@@ -394,6 +394,7 @@ it("[BG-9] lists this conversation's files by turn, newest first, and points to 
       commandKey: null,
       stored: true,
       overlapped: false,
+      deleted: false,
       createdAt: at(0),
     },
     trace: undefined,
