@@ -1559,8 +1559,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       } else if (!failed && settled) {
         if (
           finalAssistant &&
-          (finalAssistant.stopReason !== "stop" ||
-            finalAssistant.content.some((part) => part.type === "toolCall"))
+          (finalAssistant.content.some((part) => part.type === "toolCall") ||
+            (finalAssistant.stopReason !== "stop" && finalAssistant.stopReason !== "toolUse"))
         ) {
           emit(
             runtimeFailure(

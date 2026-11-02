@@ -230,7 +230,7 @@ describe("product runtime event and tool contracts", () => {
     ]);
     expect(f.final).not.toHaveBeenCalled();
   });
-  it.each(["length", "toolUse"])(
+  it.each(["length"])(
     "does not report success for incomplete %s output",
     async (stopReason) => {
       const f = fixture((emit) => finish(emit, answer({ stopReason })));
