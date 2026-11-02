@@ -311,7 +311,9 @@ export class SqliteDecisionLedgerOperations {
   private recordMuse(write: MuseReferenceWrite): void {
     this.assertDiskHeadroom();
     const intakeItemKey = write.intakeItemKey ?? null;
+    const pairedMessageId = write.pairedMessageId ?? null;
     const common =
+      (pairedMessageId === null || text(pairedMessageId, 1, 256)) &&
       text(write.id, 1, 128) &&
       validTime(write.museAt) &&
       validTime(write.recordedAt) &&
@@ -325,7 +327,7 @@ export class SqliteDecisionLedgerOperations {
           (write.contentRef !== null || intakeItemKey !== null) &&
           (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128))
         : write.museReminded === false &&
-          text(write.pairedDecisionId, 1, 128) &&
+          (text(write.pairedDecisionId, 1, 128) || pairedMessageId !== null) &&
           !("timingOk" in write) &&
           !("contentOk" in write) &&
           !("contentRef" in write);
@@ -335,8 +337,8 @@ export class SqliteDecisionLedgerOperations {
       .prepare(
         `INSERT INTO muse_reference_entries (
           id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
-          note_ref, paired_decision_id, intake_item_key, recorded_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          note_ref, paired_decision_id, intake_item_key, paired_message_id, recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         write.id,
@@ -350,6 +352,7 @@ export class SqliteDecisionLedgerOperations {
         write.noteRef,
         write.pairedDecisionId,
         intakeItemKey,
+        pairedMessageId,
         write.recordedAt,
       );
   }
@@ -363,7 +366,7 @@ export class SqliteDecisionLedgerOperations {
         `SELECT id, muse_at AS museAt, muse_reminded AS museReminded, timing_ok AS timingOk,
            content_ok AS contentOk, content_ref AS contentRef, note_ref AS noteRef,
            paired_decision_id AS pairedDecisionId, intake_item_key AS intakeItemKey,
-           recorded_at AS recordedAt
+           paired_message_id AS pairedMessageId, recorded_at AS recordedAt
          FROM muse_reference_entries
          WHERE owner_id = ? AND agent_id = ? AND muse_at >= ?
          ORDER BY muse_at DESC, id DESC LIMIT ?`,

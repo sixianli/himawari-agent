@@ -581,6 +581,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0072_thread_artifact_deleted_at.sql",
   },
+  {
+    sequence: 73,
+    name: "muse_reference_paired_message",
+    changeSet: "muse-reference-paired-message",
+    phase: "expand" as const,
+    file: "0073_muse_reference_paired_message.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

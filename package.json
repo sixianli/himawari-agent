@@ -75,6 +75,7 @@
     "eval:jarvis:live": "node scripts/jarvis-test/live.mjs",
     "eval:jarvis:trend": "node scripts/jarvis-test/trend.mjs",
     "eval:memory-retrieval": "node scripts/memory-retrieval-eval/live.mjs",
+    "report:calibration": "node scripts/calibration-report/report.mjs",
     "check:instruction-links": "node scripts/check-instruction-links.mjs"
   },
   "devDependencies": {

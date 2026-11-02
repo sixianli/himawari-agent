@@ -390,6 +390,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           noteRef: "payload-note",
           pairedDecisionId: "paired",
           intakeItemKey: null,
+          pairedMessageId: null,
           recordedAt: T0,
         },
         {
@@ -402,6 +403,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           noteRef: null,
           pairedDecisionId: null,
           intakeItemKey: null,
+          pairedMessageId: null,
           recordedAt: T0,
         },
       ]);
@@ -418,6 +420,55 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           noteRef: null,
           pairedDecisionId: null,
           recordedAt: T0,
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("pairs Muse entries with one Gmail message and accepts a silent entry that names only the message", async () => {
+    const { repository } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      const base = { ...scope, museAt: "2026-10-31T00:30:00.000Z", noteRef: null, recordedAt: T0 };
+      await ledger.recordMuse({
+        ...base,
+        id: "by-mail",
+        museReminded: true,
+        timingOk: true,
+        contentOk: true,
+        contentRef: "payload-muse",
+        pairedDecisionId: null,
+        pairedMessageId: "gmail-message-1",
+      });
+      await ledger.recordMuse({
+        ...base,
+        id: "silent-by-mail",
+        museReminded: false,
+        pairedDecisionId: null,
+        pairedMessageId: "gmail-message-2",
+      });
+      const entries = await ledger.listMuse({ ...scope, since: SINCE, limit: 10 });
+      expect(entries.map((entry) => [entry.id, entry.pairedMessageId]).sort()).toEqual([
+        ["by-mail", "gmail-message-1"],
+        ["silent-by-mail", "gmail-message-2"],
+      ]);
+      await expect(
+        ledger.recordMuse({
+          ...base,
+          id: "silent-nothing",
+          museReminded: false,
+          pairedDecisionId: null,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        ledger.recordMuse({
+          ...base,
+          id: "empty-mail",
+          museReminded: false,
+          pairedDecisionId: null,
+          pairedMessageId: "",
         }),
       ).rejects.toThrow();
     } finally {
@@ -463,6 +514,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         noteRef: null,
         pairedDecisionId: "pushed-1",
         intakeItemKey: null,
+        pairedMessageId: null,
         recordedAt: T0,
       });
       expect(entries.find((entry) => entry.id === "auto-1")?.contentRef).toBeNull();
