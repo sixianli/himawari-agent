@@ -384,6 +384,36 @@ describe("[P0-8] daily decision record check", () => {
     });
   });
 
+  it("ignores switch changes that happened after the day ended", () => {
+    const result = evaluate({
+      events: [
+        SNAPSHOT,
+        event("proactive_disabled", "2026-11-06T15:05:00.000Z"),
+        event("memory_capture_paused", "2026-11-06T15:06:00.000Z"),
+      ],
+      proactiveEnabled: false,
+      capturePaused: true,
+    });
+    expect(byCode(result, "proactive_writing")?.status).toBe("pass");
+    expect(byCode(result, "memory_capture")?.status).toBe("pass");
+  });
+
+  it("names the first block when Gmail was disconnected and later switched off", () => {
+    const result = evaluate({
+      events: [
+        SNAPSHOT,
+        event("source_needs_reconnect", "2026-11-05T16:00:00.000Z"),
+        event("proactive_disabled", "2026-11-05T17:00:00.000Z"),
+        event("proactive_enabled", "2026-11-05T18:00:00.000Z"),
+      ],
+    });
+    expect(byCode(result, "proactive_writing")).toMatchObject({
+      status: "blocked",
+      reason: "source_not_connected",
+      facts: { since: "2026-11-05T16:00:00.000Z" },
+    });
+  });
+
   it("fails on decision record times in the wrong format", () => {
     expect(byCode(evaluate({ malformedTimes: 2 }), "time_format")?.status).toBe("fail");
   });

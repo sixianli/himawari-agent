@@ -341,4 +341,91 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
       await repository.close();
     }
   });
+
+  it("refuses changes to recorded events, rejects a repeated sequence and orders same-moment events by sequence", async () => {
+    const { repository, observation, raw } = await fixture();
+    try {
+      const database = raw();
+      try {
+        const insert = database.prepare(
+          `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, sequence, detail)
+           VALUES (?, ?, ?, ?, ?, ?, '{}')`,
+        );
+        insert.run("later", OWNER_ID, AGENT_ID, "proactive_enabled", T0, 5);
+        insert.run("earlier", OWNER_ID, AGENT_ID, "proactive_disabled", T0, 3);
+        expect(() => insert.run("again", OWNER_ID, AGENT_ID, "proactive_enabled", T0, 5)).toThrow(
+          /UNIQUE/,
+        );
+        expect(() =>
+          database.prepare("UPDATE observation_events SET kind = 'proactive_enabled'").run(),
+        ).toThrow(/OBSERVATION_EVENT_IMMUTABLE/);
+        expect(() => database.prepare("DELETE FROM observation_events").run()).toThrow(
+          /OBSERVATION_EVENT_IMMUTABLE/,
+        );
+      } finally {
+        database.close();
+      }
+      expect((await observation.listEvents({ ...scope, since: T0 })).map(({ id }) => id)).toEqual([
+        "earlier",
+        "later",
+      ]);
+    } finally {
+      await repository.close();
+    }
+  });
+});
+
+describe("[P0-8] observation rows when the whole account is deleted", () => {
+  it("removes every observation row together with the Agent", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-observation-cascade-"));
+    try {
+      const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
+      try {
+        applyMigrations(database, await loadBundledMigrations());
+        database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+        database
+          .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+          .run(AGENT_ID, OWNER_ID);
+        database
+          .prepare(
+            `INSERT INTO ledger_observation_start (
+              owner_id, agent_id, start_day, set_at, service_revision, first_boot_at
+            ) VALUES (?, ?, '2026-11-06', ?, 'r1', ?)`,
+          )
+          .run(OWNER_ID, AGENT_ID, T0, T0);
+        database
+          .prepare(
+            `INSERT INTO service_heartbeats (
+              owner_id, agent_id, hour_start, first_seen_at, last_seen_at, service_revision
+            ) VALUES (?, ?, '2026-11-05T15:00:00.000Z', ?, ?, 'r1')`,
+          )
+          .run(OWNER_ID, AGENT_ID, T0, T0);
+        database
+          .prepare(
+            `INSERT INTO ledger_observation_checks (
+              id, owner_id, agent_id, day, checked_at, service_revision, status, checks, counts
+            ) VALUES ('c1', ?, ?, '2026-11-06', ?, 'r1', 'pass', '[]', '{}')`,
+          )
+          .run(OWNER_ID, AGENT_ID, T0);
+        database
+          .prepare(
+            `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, sequence, detail)
+             VALUES ('e1', ?, ?, 'state_snapshot', ?, 1, '{}')`,
+          )
+          .run(OWNER_ID, AGENT_ID, T0);
+        database.prepare("DELETE FROM agents WHERE id = ?").run(AGENT_ID);
+        for (const table of [
+          "ledger_observation_start",
+          "service_heartbeats",
+          "ledger_observation_checks",
+          "observation_events",
+        ])
+          expect(database.prepare(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(directory, { recursive: true });
+    }
+  });
 });
