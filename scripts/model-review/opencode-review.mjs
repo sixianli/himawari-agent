@@ -183,6 +183,8 @@ export function buildPrompt({ mode, questions, head, base, previous, brief }) {
   return `${fixed}\n\n${material}\n`;
 }
 
+export const validCost = (value) => Number.isFinite(value) && value >= 0;
+
 export function summarizeEvents(jsonl) {
   const usage = {
     steps: 0,
@@ -224,7 +226,7 @@ export function summarizeEvents(jsonl) {
       usage.reasoning += tokens.reasoning ?? 0;
       usage.cacheRead += tokens.cache?.read ?? 0;
       usage.cacheWrite += tokens.cache?.write ?? 0;
-      if (Number.isFinite(part.cost)) usage.cost += part.cost;
+      if (validCost(part.cost)) usage.cost += part.cost;
       else usage.costUnknown = true;
       lastReason = part.reason ?? null;
     }
@@ -448,7 +450,7 @@ function runOpencode({
         if (event.type === "tool_use") calledTool = true;
         if (event.type !== "step_finish") continue;
         const stepCost = event.part?.cost;
-        if (!Number.isFinite(stepCost)) {
+        if (!validCost(stepCost)) {
           if (costLimit !== undefined) stop("cost-unknown");
         } else cost += stepCost;
         if (costLimit !== undefined && cost > costLimit) stop("cost-limit");
@@ -520,11 +522,13 @@ export async function reviewModel({
     ? null
     : !session
       ? "no-session"
-      : remainingUsd < WRAP_UP_MIN_USD
-        ? "no-budget"
-        : remainingMs < WRAP_UP_MIN_MS
-          ? "no-time"
-          : null;
+      : firstSummary.usage.costUnknown
+        ? "cost-unknown"
+        : remainingUsd < WRAP_UP_MIN_USD
+          ? "no-budget"
+          : remainingMs < WRAP_UP_MIN_MS
+            ? "no-time"
+            : null;
   if (!wrapUp || skipped) {
     return {
       runs: [first],

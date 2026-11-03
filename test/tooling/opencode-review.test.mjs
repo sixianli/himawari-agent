@@ -917,9 +917,15 @@ describe("opencode review wrap-up", () => {
     expect(summarizeEvents(events).usage.cost).toBe(0.002);
     expect(summarizeEvents(events).usage.costUnknown).toBe(true);
     expect(spentOf([{ cost: 0.002, costUnknown: true }])).toBe(COST_LIMIT_PER_MODEL_USD);
+    expect(spentOf([{ cost: 0.3, costUnknown: true }])).toBe(0.3);
+    const negative = JSON.stringify({
+      type: "step_finish",
+      part: { reason: "stop", tokens: {}, cost: -1 },
+    });
+    expect(summarizeEvents(negative).usage).toMatchObject({ cost: 0, costUnknown: true });
   });
 
-  it("checks the spending line at every step, even when several steps arrive together", async () => {
+  const reviewBurst = async (costs) => {
     const root = mkdtempSync(join(tmpdir(), "opencode-burst-"));
     try {
       const step = (cost) =>
@@ -934,13 +940,13 @@ describe("opencode review wrap-up", () => {
         [
           "#!/bin/sh",
           'case "$*" in *--session*) exit 0 ;; esac',
-          `printf '%s\\n%s\\n%s\\n' '${step(0.08)}' '${step(0.08)}' '${step(0.08)}'`,
+          `printf '%s\\n' ${costs.map((cost) => `'${step(cost)}'`).join(" ")}`,
           "exec sleep 30",
           "",
         ].join("\n"),
       );
       chmodSync(binary, 0o755);
-      const result = await reviewModel({
+      return await reviewModel({
         binary,
         cwd: root,
         configPath: join(root, "unused.json"),
@@ -950,11 +956,28 @@ describe("opencode review wrap-up", () => {
         prompt: "REVIEW_TASK",
         timeoutMs: 60000,
       });
-      expect(result.runs[0].stopReason).toBe("wrap-up-cost");
-      expect(result.wrapUp).toBe("cost");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  };
+
+  it("checks the spending line at every step, even when several steps arrive together", async () => {
+    const withRoom = await reviewBurst([0.08, 0.08]);
+    expect(withRoom.runs[0].stopReason).toBe("wrap-up-cost");
+    expect(withRoom.wrapUpSkipped).toBeNull();
+    expect(withRoom.runs).toHaveLength(2);
+
+    const overTheCap = await reviewBurst([0.08, 0.08, 0.08]);
+    expect(overTheCap.runs[0].stopReason).toBe("wrap-up-cost");
+    expect(overTheCap.wrapUpSkipped).toBe("no-budget");
+    expect(overTheCap.runs).toHaveLength(1);
+  }, 120000);
+
+  it("does not keep spending after a step whose cost is unknown, even if the cap was reached first", async () => {
+    const result = await reviewBurst([0.16, "未知"]);
+    expect(result.runs[0].stopReason).toBe("wrap-up-cost");
+    expect(result.wrapUpSkipped).toBe("cost-unknown");
+    expect(result.runs).toHaveLength(1);
   }, 60000);
 
   it("keeps the model's thinking from the event stream", () => {
