@@ -44,9 +44,9 @@ date: "2026-11-03"
 ## 决定
 
 1. **迁移 0074 新建 4 张表**（`packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql`）：
-   - `ledger_observation_start`：每个 Agent 一行，记 Andy 选的起点日（日本时间）、选定时间、当时的服务版本、新版本第一次启动的时间。数据库触发器拒绝任何修改；拒绝删除，只有删除整个 Agent 时随之删除。
+   - `ledger_observation_start`：每个 Agent 一行，记 Andy 选的起点日（日本时间）、选定时间、当时的服务版本、新版本第一次启动的时间。数据库触发器拒绝任何修改；拒绝删除，只有删除 Agent 或整个账户时随之删除。
    - `service_heartbeats`：服务运行的每个小时一行（心跳，表示“这个小时服务在跑”）。
-   - `ledger_observation_checks`：每天检查的结果，只能追加，触发器拒绝修改和删除。
+   - `ledger_observation_checks`：每天检查的结果，只能追加，触发器拒绝修改和删除（删除 Agent 或整个账户时随之删除）。
    - `observation_events`：只追加的变化记录：Gmail 主动检查开关、Gmail 连接状态、记忆暂停、清除 Gmail 记录（含删掉的行数）、没留下运行记录的整理记忆失败。这些记录和对应的写入在同一个数据库事务里完成，只记代码和数字，不记正文。服务第一次启动时写一条当时状态的快照。
 2. **服务每 15 分钟做一次**（`apps/agent-service/src/production-observation.ts`）：写当前小时的心跳；对“起点之后、已经结束超过 1 小时、还没有结果或结果是待复查”的每一天做检查，追加一条结果。服务停过，重启后会补查漏掉的日子。
 3. **每天检查六项**（`packages/application/src/services/ledger-observation.ts`），每项结果是通过、失败、受阻、待复查或不适用：

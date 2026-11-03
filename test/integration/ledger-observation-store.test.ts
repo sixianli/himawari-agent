@@ -375,8 +375,11 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
   });
 });
 
-describe("[P0-8] observation rows when the whole account is deleted", () => {
-  it("removes every observation row together with the Agent", async () => {
+describe("[P0-8] observation rows when the Agent or the whole account is deleted", () => {
+  it.each([
+    ["the Agent", "DELETE FROM agents WHERE id = ?", AGENT_ID],
+    ["the whole account", "DELETE FROM owners WHERE id = ?", OWNER_ID],
+  ] as const)("removes every observation row when %s is deleted", async (_label, sql, id) => {
     const directory = await mkdtemp(path.join(tmpdir(), "himawari-observation-cascade-"));
     try {
       const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
@@ -413,7 +416,7 @@ describe("[P0-8] observation rows when the whole account is deleted", () => {
              VALUES ('e1', ?, ?, 'state_snapshot', ?, 1, '{}')`,
           )
           .run(OWNER_ID, AGENT_ID, T0);
-        database.prepare("DELETE FROM agents WHERE id = ?").run(AGENT_ID);
+        database.prepare(sql).run(id);
         for (const table of [
           "ledger_observation_start",
           "service_heartbeats",

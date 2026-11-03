@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a5af46aac79d88fd0b4c85dd98ed96806214dc5cd47f7591d47e30f3086c89b2"
+contract_sha256: "sha256:104474bb65bb239face5e0d08c4fdc5eaa2a92898b33a6e83ba5a805fe80a4dc"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-03"
@@ -79,7 +79,7 @@ date: "2026-11-03"
 2. `ls -l /var/lib/himawari/state/data/` 能看到 `product.sqlite-wal` 和 `product.sqlite-shm`。
 3. 以 `himawari-prod` 只读查询 `SELECT value FROM schema_metadata WHERE key='current_sequence'`，结果不小于 `74`。
 4. 只读查询 `SELECT min(first_seen_at), max(last_seen_at), max(service_revision) FROM service_heartbeats`：有值，且最后一次心跳在 20 分钟以内。最早一次心跳就是新版本第一次启动的时间，数据起点最早是它的下一个日本时间日。
-5. 只读查询 `SELECT kind, occurred_at, sequence, detail FROM observation_events ORDER BY occurred_at, sequence LIMIT 5`：其中有一条 `state_snapshot`（服务第一次启动时写下的开关状态快照；同一时刻的多条记录按写入时的顺序号 `sequence` 排）。
+5. 只读查询 `SELECT occurred_at, detail FROM observation_events WHERE kind = 'state_snapshot'`：正好一条（服务第一次启动时写下的开关状态快照）。
 6. 配置里的 `runPolicy.timeZone` 是 `Asia/Tokyo`（只读 `jq '.runPolicy.timeZone' /etc/himawari/config.json`，不输出其他字段）。
 7. 只读查询 Gmail 提醒和记忆的当前状态：`SELECT enabled FROM proactive_settings`、`SELECT status FROM proactive_connections WHERE source='gmail'`、`SELECT capture_paused FROM memory_settings`。观察期要求 `enabled=1`、`status='connected'`、`capture_paused=0`；不满足时告诉 Andy，由他决定先打开再选起点，还是接受“受阻”。
 
