@@ -1,6 +1,11 @@
 import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useState } from "react";
-import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
+import {
+  type ControlCenterRuntimeConfiguration,
+  type GatewayClient,
+  refreshRuntimeConfiguration,
+} from "./gateway-client.js";
+import { accountRequest } from "./components/account-login.js";
 import { commandMessage, queryMessage } from "./messages.js";
 
 export type ProactiveOverview = Extract<
@@ -21,6 +26,20 @@ export interface ProactiveReviewRating {
   readonly key: string;
   readonly rating: ProactiveRating | null;
 }
+export type ProactiveWeekly = Extract<
+  GatewayV2Snapshot,
+  { type: "proactive.weekly.snapshot" }
+>["payload"];
+export type ObservationDay = ProactiveWeekly["observation"]["days"][number];
+export type ObservationCheckItem = ObservationDay["checks"][number];
+export type CalibrationGroupSummary = ProactiveWeekly["report"]["groups"][number];
+export interface ProactiveWeeklyAccess {
+  readonly read: () => Promise<ProactiveWeekly>;
+  readonly recentAuthentication: () => Promise<string | null>;
+  readonly identityMethod: () => Promise<"built-in" | "cloudflare-access" | null>;
+  readonly start: (startDay: string, recentAuthenticationRef: string) => Promise<void>;
+  readonly csrfToken: string;
+}
 export interface ProactiveSettings {
   readonly enabled: boolean;
   readonly quietHours: readonly ProactiveQuietPeriod[];
@@ -33,6 +52,7 @@ const PROACTIVE_REFRESH_MS = 300_000;
 export interface ProactiveModel {
   readonly overview: ProactiveOverview | null;
   readonly review: ProactiveReview | null;
+  readonly weekly: ProactiveWeeklyAccess | null;
   readonly failed: boolean;
   readonly busy: boolean;
   readonly respondInsight: (
@@ -64,6 +84,8 @@ export function useProactive(input: {
     configuration?.installedGatewayV2Operations?.includes("proactive.overview.read") ?? false;
   const reviewAvailable =
     configuration?.installedGatewayV2Operations?.includes("proactive.review.read") ?? false;
+  const weeklyAvailable =
+    configuration?.installedGatewayV2Operations?.includes("proactive.weekly.read") ?? false;
   const [overview, setOverview] = useState<ProactiveOverview | null>(null);
   const [review, setReview] = useState<ProactiveReview | null>(null);
   const [failed, setFailed] = useState(false);
@@ -121,9 +143,43 @@ export function useProactive(input: {
   if (!available || !client || !configuration) return null;
   const send = (type: GatewayV2Command["type"], payload: unknown) =>
     run(() => client.mutate(commandMessage(configuration, type, payload, { risk: "medium" })));
+  const weekly: ProactiveWeeklyAccess | null = weeklyAvailable
+    ? {
+        read: async () => {
+          const result = await client.query(
+            queryMessage(configuration, "proactive.weekly.read", { end: null }),
+          );
+          if (result.type !== "proactive.weekly.snapshot") throw new Error("PROACTIVE_INVALID");
+          return result.payload;
+        },
+        recentAuthentication: async () =>
+          (await refreshRuntimeConfiguration(window.fetch.bind(window), configuration))
+            .recentAuthenticationRef ?? null,
+        identityMethod: async () => {
+          const value = await accountRequest("method").catch(() => null);
+          return value && typeof value === "object" && "method" in value
+            ? value.method === "built-in" || value.method === "cloudflare-access"
+              ? value.method
+              : null
+            : null;
+        },
+        start: async (startDay, recentAuthenticationRef) => {
+          await client.mutate(
+            commandMessage(
+              configuration,
+              "proactive.observation.start",
+              { startDay, recentAuthenticationRef },
+              { risk: "medium" },
+            ),
+          );
+        },
+        csrfToken: configuration.csrfToken,
+      }
+    : null;
   return {
     overview,
     review,
+    weekly,
     failed,
     busy,
     respondInsight: (insight, action, rating = null) =>

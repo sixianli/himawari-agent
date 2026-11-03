@@ -15,12 +15,20 @@ import { ActionButton } from "./primitives.js";
 export interface ModalDialogProps {
   readonly children: ReactNode;
   readonly closeLabel: string;
+  readonly closeOnBackdrop?: boolean;
   readonly onClose: () => void;
   readonly open: boolean;
   readonly title: ReactNode;
 }
 
-export function ModalDialog({ children, closeLabel, onClose, open, title }: ModalDialogProps) {
+export function ModalDialog({
+  children,
+  closeLabel,
+  closeOnBackdrop = false,
+  onClose,
+  open,
+  title,
+}: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
@@ -37,6 +45,16 @@ export function ModalDialog({ children, closeLabel, onClose, open, title }: Moda
       dialog.close();
     }
   }, [open]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !closeOnBackdrop) return;
+    const backdrop = (event: MouseEvent) => {
+      if (event.target === dialog) onClose();
+    };
+    dialog.addEventListener("click", backdrop);
+    return () => dialog.removeEventListener("click", backdrop);
+  }, [closeOnBackdrop, onClose]);
 
   useEffect(() => {
     const dialog = dialogRef.current;

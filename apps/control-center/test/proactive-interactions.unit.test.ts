@@ -620,15 +620,15 @@ describe("[PG-15] proactive reminders page", () => {
     });
     await flush();
     const summary = text("#apps .proactive-summary");
-    for (const part of [
-      "主动提醒总次数5",
-      "恰当的提醒3",
-      "多余的提醒1",
-      "漏提醒（你查过的邮件里）1",
-      "已审 23 封",
-      "已记录 2 天",
+    expect(summary.replace(/\s/gu, "")).toContain("已记录2天");
+    for (const moved of [
+      "主动提醒总次数",
+      "恰当的提醒",
+      "多余的提醒",
+      "漏提醒（你查过的邮件里）",
+      "已审",
     ])
-      expect(summary.replace(/\s/gu, "")).toContain(part.replace(/\s/gu, ""));
+      expect(text("#apps")).not.toContain(moved);
     const rows = [...document.querySelectorAll<HTMLElement>("#apps .proactive-log-row")];
     expect(rows.map((row) => row.dataset["tone"])).toEqual([
       "spoke",

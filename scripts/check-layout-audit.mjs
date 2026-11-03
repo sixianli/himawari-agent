@@ -224,6 +224,7 @@ export function labels(locale) {
     settings: value("settings.title"),
     memory: value("nav.memory"),
     reminders: value("nav.reminders"),
+    weeklyTab: value("reminders.tab.report"),
     reviewExpand: value("dailyReview.expand"),
     files: value("library.title"),
     fork: value("answer.fork"),
@@ -251,6 +252,30 @@ async function openSettings(page, text, tab) {
     .getByRole("button", { name: text[tab], exact: true })
     .click();
   await page.waitForTimeout(200);
+}
+
+async function openWeeklyReport(page, text) {
+  await openSidebarOnPhone(page);
+  await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
+  await page.getByRole("tab", { name: text.weeklyTab, exact: true }).click();
+  await page.waitForSelector(".weekly-days");
+}
+
+export function findWeeklyProblems() {
+  const problems = [];
+  const report = document.querySelector(".weekly-report");
+  if (!report) return ["WEEKLY_REPORT_MISSING"];
+  const shown = (element) => element.getClientRects().length > 0;
+  const text = report.innerText;
+  if (/\b[a-z]+_[a-z_]+\b/.test(text))
+    problems.push(`WEEKLY_RAW_CODE ${text.match(/\b[a-z]+_[a-z_]+\b/)[0]}`);
+  if (/(^|[^\d.])0(\.0)?\s?%/.test(text)) problems.push("WEEKLY_ZERO_PERCENT");
+  const days = [...report.querySelectorAll(".weekly-day")].filter(shown);
+  if (days.length !== 7) problems.push(`WEEKLY_DAY_COUNT ${days.length}`);
+  const tables = [...report.querySelectorAll(".weekly-table")].filter(shown).length;
+  const cards = [...report.querySelectorAll(".weekly-type-cards")].filter(shown).length;
+  if (tables + cards !== 1) problems.push(`WEEKLY_TYPE_LAYOUT table=${tables} cards=${cards}`);
+  return problems;
 }
 
 export const SCENES = {
@@ -316,6 +341,19 @@ export const SCENES = {
     },
     verify: (page) => page.evaluate(findReviewProblems),
   },
+  weeklyReport: {
+    path: "/threads",
+    act: (page, text) => openWeeklyReport(page, text),
+    verify: (page) => page.evaluate(findWeeklyProblems),
+  },
+  weeklyReportDay: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openWeeklyReport(page, text);
+      await page.locator("button.weekly-day").nth(2).click();
+      await page.waitForTimeout(250);
+    },
+  },
   files: {
     path: "/threads",
     act: async (page, text) => {
@@ -380,6 +418,23 @@ const REVIEW_FITS = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
 <section class="proactive-review"><ul class="proactive-review-list">${"<li style='height:52px'>行</li>".repeat(6)}</ul></section></body></html>`;
 
+const WEEKLY_BROKEN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>proactive_writing gap_too_long</p><p>提醒得对 0%（0/2）</p>
+${"<button class='weekly-day'>第 1 天</button>".repeat(3)}
+<table class="weekly-table"><tr><td>行</td></tr></table><div class="weekly-type-cards">卡片</div></div></body></html>`;
+const WEEKLY_CLEAN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>提醒得对 75.0%（6/8）</p><p>样本不足（4 条）</p>
+${"<button class='weekly-day'>第 1 天</button>".repeat(7)}
+<table class="weekly-table"><tr><td>行</td></tr></table><div class="weekly-type-cards" style="display:none">卡片</div></div></body></html>`;
+const WEEKLY_KINDS = [
+  "WEEKLY_RAW_CODE",
+  "WEEKLY_ZERO_PERCENT",
+  "WEEKLY_DAY_COUNT",
+  "WEEKLY_TYPE_LAYOUT",
+];
+
 export const REQUIRED_KINDS = [
   "PAGE_SCROLLS_SIDEWAYS",
   "OUTSIDE_SCREEN",
@@ -414,8 +469,14 @@ async function selfTest(browser) {
     const tall = await page.evaluate(findReviewProblems);
     for (const kind of ["REVIEW_EXCEEDS_SCREEN", "REVIEW_TOO_MANY_ROWS"])
       if (!tall.some((item) => item.startsWith(kind))) missing.push(`REVIEW_${kind}`);
+    await page.setContent(WEEKLY_BROKEN);
+    const weekly = await page.evaluate(findWeeklyProblems);
+    for (const kind of WEEKLY_KINDS)
+      if (!weekly.some((item) => item.startsWith(kind))) missing.push(kind);
+    await page.setContent(WEEKLY_CLEAN);
+    const weeklyClean = await page.evaluate(findWeeklyProblems);
     await page.setContent(REVIEW_FITS);
-    const fits = await page.evaluate(findReviewProblems);
+    const fits = [...(await page.evaluate(findReviewProblems)), ...weeklyClean];
     await page.setContent(CLEAN);
     const clean = [...(await page.evaluate(findLayoutProblems, "zh-CN")), ...fits];
     const errors = [

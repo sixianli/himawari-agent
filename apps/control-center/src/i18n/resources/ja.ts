@@ -999,8 +999,6 @@ export const messages = {
   "dailyReview.folded": "その他の判断 · {count} 件",
   "dailyReview.expand": "開く",
   "dailyReview.back": "戻る",
-  "proactive.metric.note":
-    "適切 =「正しかった」と採点した、または 24 時間以内に開いた。余計 =「やるべきでなかった」と採点した、または閉じた・24 時間以内に開かなかった。",
   "proactive.log.range": "直近 30 日 · {days} 日分を記録",
   "proactive.log.empty":
     "まだ確認の記録はありません。Gmail をつなぐと 15 分ごとに 1 行記録します。",
@@ -1085,4 +1083,129 @@ export const messages = {
     "新着 {count} 通。すべてプロモーションなどのためルールでスキップし、モデルには送っていません",
   "proactive.settings.badTime":
     "23:00 のような 24 時間表記で入力してください。この時間帯はまだ保存されていません",
+  "reminders.tab.reminders": "リマインダー",
+  "reminders.tab.report": "較正レポート",
+  "weekly.info": "説明",
+  "weekly.loadFailed": "較正レポートを読み込めませんでした。",
+  "weekly.window.range": "{start} – {end}",
+  "weekly.window.sinceStart": "{start}から今日まで",
+  "weekly.window.last7": "直近 7 日",
+  "weekly.obs.title": "観察期間",
+  "weekly.obs.short": "開始日を選ぶと、7 日間続けて観察します。",
+  "weekly.obs.startLabel": "データの起点",
+  "weekly.obs.prevDay": "前の日",
+  "weekly.obs.nextDay": "次の日",
+  "weekly.obs.startButton": "この日から始める",
+  "weekly.obs.notReady": "まだ始められません：サービスが初めて動いた記録がありません。",
+  "weekly.obs.explain":
+    "選んだ日から 7 日間続けて観察し、Himawari が毎日、判断の記録がきちんと書かれているかを自分で確認します。8 日目に最初の較正レポートを出します。",
+  "weekly.obs.dates": "データの起点 {start} · {report}に最初の較正レポート",
+  "weekly.obs.version": "バージョン {v}",
+  "weekly.obs.headNow": "観察期間 {n} / 7 日目",
+  "weekly.obs.headFirst": "最初の較正レポート",
+  "weekly.obs.headWaiting": "まだ観察を始めていません",
+  "weekly.obs.dayN": "{n} 日目",
+  "weekly.obs.today": "今日",
+  "weekly.obs.status":
+    "{s, select, pass {合格} fail {不合格} blocked {中断} pending {再確認中} no_check {確認の記録なし} other {まだ}}",
+  "weekly.obs.hide": "閉じる",
+  "weekly.obs.failedOn": "{days}は不合格",
+  "weekly.obs.noCheckOn": "{days}は確認の記録なし",
+  "weekly.obs.blockedOn": "{days}は中断",
+  "weekly.obs.join": "、",
+  "weekly.obs.partJoin": "、",
+  "weekly.obs.allPass": "7 日間続けてすべて合格",
+  "weekly.obs.broke":
+    "{day}は{s, select, fail {不合格} blocked {中断} no_check {確認の記録なし} other {合格しなかった}}",
+  "weekly.obs.restart": "{broke}。直した後 {since}から数え直し、連続 {n} / 7 日合格",
+  "weekly.obs.badMore":
+    "直したら翌日から数え直し、7 日間続けてすべて合格して観察期間が完了します。",
+  "weekly.confirm.title": "{day}から観察を始めますか？",
+  "weekly.confirm.fixed": "設定後は変更できません。",
+  "weekly.confirm.earliest":
+    "選べるのは {earliest}から。新しいバージョンは {boot}に初めて起動したので、まる 1 日そろうのは翌日からです。先の日付も選べます。",
+  "weekly.confirm.cancel": "キャンセル",
+  "weekly.confirm.ok": "決定",
+  "weekly.confirm.reauth": "データの起点を決める前に、もう一度本人確認をしてください。",
+  "weekly.confirm.reauthAccess":
+    "ログインから 5 分以上たっています。いったんログアウトしてログインし直し、ここに戻って起点を決めてください。",
+  "weekly.confirm.relogin": "ログアウトしてログインし直す",
+  "weekly.confirm.failed": "設定できませんでした。もう一度お試しください。",
+  "weekly.check.serviceAllHours": "サービスは一日中動いていた",
+  "weekly.check.serviceOneHour": "サービスが 1 時間止まっていたが、許容範囲内",
+  "weekly.check.serviceMissing":
+    "サービスが {hours} 時間止まっていた（最長で {longest} 時間続けて）",
+  "weekly.check.gmailOnTime": "Gmail の確認は時間どおり記録を書いた：{rows} 回、最長の間隔 {gap}",
+  "weekly.check.gmailGap": "Gmail の確認の記録は {rows} 回だけ、最長の間隔 {gap}（許容は {limit}）",
+  "weekly.check.gmailClearedSince": "（{time}に Gmail の記録を消した後から数えた）",
+  "weekly.check.gmailOff":
+    "この日 Gmail のリマインダーをオフにした（{time}）ため、この日は合格に数えません",
+  "weekly.check.gmailDisconnected":
+    "この日 Gmail が接続されていなかった（{time}から）ため、この日は合格に数えません",
+  "weekly.check.gmailNotConfigured":
+    "Gmail のリマインダーが設定されていないため確認できず、この日は合格に数えません",
+  "weekly.check.gmailSlow":
+    "Gmail の確認が {minutes} 分おきで 1 時間を超えるため確認できず、この日は合格に数えません",
+  "weekly.check.gmailCleared":
+    "{time}に Gmail の記録を消したため、この日の Gmail の記録は確認できず、合格として数えます",
+  "weekly.check.memoryOn": "自動の記憶はずっとオンだった",
+  "weekly.check.memoryPaused":
+    "この日 自動の記憶を一時停止した（{time}）ため、この日は合格に数えません",
+  "weekly.check.tidyMatch": "記憶の整理と判断の記録が一致：変更 {changes} 件、記録 {rows} 件",
+  "weekly.check.tidyMismatch":
+    "記憶の整理と判断の記録が一致しない：変更 {changes} 件、記録 {rows} 件",
+  "weekly.check.tidyFailed": "この日の記憶の整理は失敗した",
+  "weekly.check.tidyStuck": "記憶の整理が {time}に始まり、12 時間たっても終わっていない",
+  "weekly.check.tidyRunning":
+    "記憶の整理が {time}に始まり、まだ終わっていません。後でもう一度確認します",
+  "weekly.check.tidyNone": "この日は記憶の整理がなく、確認は不要",
+  "weekly.check.rowsKept": "確認済みの日の記録は欠けていない",
+  "weekly.check.rowsCleared":
+    "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
+  "weekly.check.rowsMissing":
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+  "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
+  "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
+  "weekly.check.other":
+    "{s, select, pass {確認が 1 つ合格} fail {確認が 1 つ不合格} blocked {確認が 1 つ中断} pending {確認が 1 つ再確認待ち} other {この日は当てはまらない確認が 1 つ}}",
+  "weekly.check.noRecord":
+    "この日は Himawari 自身の確認の記録がなく、判断の記録がそろっているか分かりません",
+  "weekly.duration.minutes": "{m} 分",
+  "weekly.duration.hours": "{h} 時間 {m} 分",
+  "weekly.type.title": "判断の種類ごと",
+  "weekly.type.column":
+    "{c, select, type {判断の種類} total {判断の件数} rated {採点した件数} other {割合}}",
+  "weekly.type.notStarted": "まだ観察を始めていません",
+  "weekly.type.notStartedMore":
+    "データの起点を決めて 7 日間観察すると、ここに判断の種類ごとの割合が出ます。",
+  "weekly.type.notFull": "観察期間はまだ 7 日に達していません",
+  "weekly.type.notFullMore": "観察期間が 7 日に達したら、判断の種類ごとの割合を出します。",
+  "weekly.type.how1": "分母は採点した件数です。",
+  "weekly.type.how2":
+    "各行には、その種類の判断で起こりうる結果だけを載せます（例：システムが保存しないと判断した記憶は「保存しないのが正しかった」か「保存すべきだった」のどちらかだけ）。",
+  "weekly.type.how3": "採点が {n} 件未満のときは割合を出さず「件数不足」と書きます。",
+  "weekly.type.how4":
+    "区間は 95% Wilson 区間です。採点した件数から出した範囲で、本当の割合は 95% の確かさでこの中に入ります。採点が多いほど狭くなります。",
+  "weekly.group":
+    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} other {外部プログラムによる記憶の読み取り}}",
+  "weekly.groupInfo":
+    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
+  "weekly.rate":
+    "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
+  "weekly.ratio": "{pct}（{k}/{n}）",
+  "weekly.interval": "区間 {low}–{high}",
+  "weekly.few": "件数不足（{n} 件）",
+  "weekly.other": "その他の判断 · {n} 種類 · {open, select, yes {閉じる} other {開く}}",
+  "weekly.stats.title": "自発的なリマインダー · リマインダー確認の記録の 4 つの集計",
+  "weekly.stats.note":
+    "この 4 つの数は直近 30 日分で、上の割合と数え方が違います。ここでは 24 時間以内に開いたものも適切、閉じたものや 24 時間開かなかったものは余計と数えます。上の割合は採点したものだけです。",
+  "weekly.muse.title": "Muse との対照",
+  "weekly.muse.empty": "件数不足：今週は Muse との対照の項目がありません。",
+  "weekly.muse.bucket":
+    "{b, select, both {両方がリマインド} museOnly {Muse だけがリマインド} himawariOnly {Himawari だけがリマインド} bothSilent {どちらもリマインドしなかった} other {Himawari にこのメールの記録がない}}",
+  "weekly.muse.unpaired": "対応づけできなかった件数",
+  "weekly.muse.rate": "対応づけ率",
+  "weekly.muse.def":
+    "対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
+  "weekly.goRate": "「リマインダー」で採点する",
 } satisfies MessageCatalog;
