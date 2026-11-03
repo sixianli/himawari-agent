@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -23,7 +24,7 @@ export const REASONING_VARIANT = "high";
 export const OUTPUT_TOKEN_MAX = 200000;
 export const MIN_OUTPUT_TOKENS = 100000;
 export const STEP_LIMIT = 50;
-export const MODES = ["code-review", "discussion"];
+export const MODES = ["code-review", "plan", "plan-review"];
 export const GIT_READ_COMMANDS = ["git diff", "git log", "git show", "git blame", "git status"];
 export const WRITE_OR_OUTSIDE_PATTERNS = [
   "*>*",
@@ -83,8 +84,8 @@ export function reviewConfig({ mode, baseURL } = {}) {
       grep: "allow",
       bash,
       edit: "deny",
-      webfetch: mode === "discussion" ? "allow" : "deny",
-      websearch: "deny",
+      webfetch: mode === "code-review" ? "deny" : "allow",
+      websearch: mode === "code-review" ? "deny" : "allow",
       task: "deny",
       todowrite: "deny",
       skill: "deny",
@@ -98,7 +99,7 @@ export function reviewConfig({ mode, baseURL } = {}) {
 
 export function expectedTools(mode) {
   const tools = ["bash", "glob", "grep", "read"];
-  if (mode === "discussion") tools.push("webfetch");
+  if (mode !== "code-review") tools.push("webfetch", "websearch");
   return tools.sort();
 }
 
@@ -115,22 +116,47 @@ export function reviewQuestions(markdown) {
   return questions;
 }
 
+const MODE_TEXT = {
+  "code-review": {
+    role: "你是独立的代码复核者。",
+    network: "不能上网。",
+    task: "系统的真相在代码里。下面「作者的说法」可能有错，每一条都要对照代码核对；发现说法和代码不一致，要明确指出。",
+    output:
+      "输出格式：按严重度从高到低排列，每条写：严重度、文件:行、问题、证据（引用你亲自读到的那几行代码）、建议。把「读代码证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。",
+    materialTitle: "作者的说法（可能有错，请核对）：",
+  },
+  plan: {
+    role: "你是独立的方案设计者。",
+    network:
+      "可以用 websearch 搜索、用 webfetch 读网页；业界做法只认一手来源（官方文档、各大 AI 公司的工程文章、成熟开源项目的源码），每条都附网址。",
+    task: "下面只给了问题、目标和约束，没有给出任何人的方案。先读代码弄清现状，再独立提出你认为最好的方案，不要假设已经有人想好了答案。",
+    output:
+      "输出格式：先列方案依赖的前提，每个前提附来源（文件:行或网址）和原话；再写方案本身、考虑过但不选的做法及原因、风险和反例、需要人拍板的取舍。把「读代码或来源证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。",
+    materialTitle: "问题、目标和约束：",
+  },
+  "plan-review": {
+    role: "你是独立的方案审核者。",
+    network:
+      "可以用 websearch 搜索、用 webfetch 读网页；业界做法只认一手来源（官方文档、各大 AI 公司的工程文章、成熟开源项目的源码），每条都附网址。",
+    task: "下面是一份还没动手实施的方案。逐条对照代码和一手来源核对：有没有漏掉的场景、判断错的地方、和业界成熟做法不一致的地方。方案作者的说法可能有错。",
+    output:
+      "输出格式：按严重度从高到低排列，每条写：严重度、问题、证据（文件:行引用的代码，或网址和原话）、你建议怎么改。把「证实的」和「推测」分开写。最后写：如果由你来定，你会怎样改这份方案，并逐条回答必答问题。用简体中文。",
+    materialTitle: "待审核的方案：",
+  },
+};
+
 export function buildPrompt({ mode, questions, head, base, previous, brief }) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   if (!brief || !brief.trim()) throw new Error("BRIEF_EMPTY");
-  const role = mode === "code-review" ? "你是独立的代码复核者。" : "你是独立的方案讨论者。";
-  const network =
-    mode === "code-review"
-      ? "不能上网。"
-      : "可以用 webfetch 读材料里给出的网址或官方文档网页，不能搜索。";
+  const text = MODE_TEXT[mode];
   const fixed = [
-    role,
-    `你只能读：read、grep、glob，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${network}`,
-    "系统的真相在代码里。下面「作者的说法」可能有错，每一条都要对照代码核对；发现说法和代码不一致，要明确指出。",
+    text.role,
+    `你能用的工具：read、grep、glob，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
+    text.task,
     RULE_16_SENTENCE,
     "必答问题：",
     ...questions.map((question, index) => `${index + 1}. ${question}`),
-    "输出格式：按严重度从高到低排列，每条写：严重度、文件:行、问题、证据（引用你亲自读到的那几行代码）、建议。把「读代码证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。",
+    text.output,
   ].join("\n");
   const material = [
     "---- 本次材料 ----",
@@ -139,7 +165,7 @@ export function buildPrompt({ mode, questions, head, base, previous, brief }) {
     previous
       ? `上一轮复核到 ${previous}，先看 git diff ${previous}..${head} 的增量，但可以读任何文件。`
       : null,
-    "作者的说法（可能有错，请核对）：",
+    text.materialTitle,
     brief.trim(),
   ]
     .filter(Boolean)
@@ -463,7 +489,7 @@ export function runOutcome(summary, run) {
 }
 
 export function probePlan(workRoot) {
-  const marker = "OUTSIDE_REPO_MARKER_7f3a";
+  const marker = `OUTSIDE_REPO_MARKER_${randomBytes(8).toString("hex")}`;
   const outsideA = join(workRoot, "outside-a.txt");
   const outsideB = join(workRoot, "outside-b.txt");
   const target = (name) => join(workRoot, `probe-${name}`);

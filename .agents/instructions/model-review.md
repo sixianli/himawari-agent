@@ -1,10 +1,33 @@
 <a id="model-review"></a>
-# 合并前的双模型复核
+# 和 OpenCode 协作：方案讨论和代码复核
 
-每个 PR 合并前，用 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 两个模型，推理强度都设为高，各复核一遍。只能用这两个模型（Andy 在项目指令第 17 条规定）。交给它们的材料只讲问题、目标、约束和已核对的事实，不预设结论，并写明：列出的方案只是参考，请从问题本身出发，提出你认为更好的方案（项目指令第 16 条）。线程对每一条意见逐条处理并写下理由，报告 Andy，Andy 认可才合并。
+用 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 两个模型，推理强度都设为高，各看一遍。只能用这两个模型（Andy 在项目指令第 17 条规定）。一律用 `node scripts/model-review/opencode-review.mjs` 跑（见[怎么跑](#how-to-run)）。交给它们的材料只讲问题、目标、约束和已核对的事实，不预设结论，脚本会自动加上项目指令第 16 条的原话：列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。
+
+- [写代码之前：方案讨论](#plan-discussion)
+- [合并之前：代码复核](#code-review)
+- [每次都要问的问题](#checklist)
+- [怎么跑](#how-to-run)
+
+<a id="plan-discussion"></a>
+## 写代码之前：方案讨论
+
+动手写代码之前要出方案的任务都走这三步；项目规则里的大改动（见[修 bug 和做新功能](../../.claude/rules/owner-standing-rules.md#fixing-bugs-and-new-features)）一定要走。修小 bug 不用。
+
+1. 独立出方案（`--mode plan`）：线程先把自己的方案写好存着，不给模型看。材料只写问题、目标、约束、已核对的事实和查到的一手资料，不写线程的方案或倾向。两个模型各自读代码、上网搜索，各出一套方案。
+2. 审核线程的方案（`--mode plan-review`）：把线程的方案发给两个模型，请它们找漏掉的场景、判断错的地方、和业界成熟做法不一致的地方。先独立、后审核，是为了不让模型顺着线程的思路走。
+3. 线程整合：线程把两个模型的方案、审核意见和自己的方案逐条比较，自己先判断每一条采纳还是不采纳、为什么、最后建议怎么做，线程自己的方案也一样要过这一遍。交给 Andy 的是一份整合后的方案：开头按[方案的前提](../../.claude/rules/proposal-premises.md)列前提和来源，然后是方案，最后只列真正需要他拍板的几项取舍。三方的原始方案和逐条判断作为附件，不要求 Andy 逐条看。Andy 同意后才写代码。
+
+<a id="code-review"></a>
+## 合并之前：代码复核
+
+1. 合并前对 PR 的最终提交做一次完整复核（`--mode code-review`，不传 `--previous`）。开 PR 前不另做。
+2. 线程对每一条意见逐条核对，写下采纳或不采纳的理由。
+3. 按意见改了代码，就对这些改动再复核一轮（传 `--previous <上一轮复核的提交>`，模型先看增量），一直复核到两个模型都没有成立、需要改代码的意见为止。只是说明性的、或已核对后决定不改并写明理由的意见，不算没解决。
+4. 每多跑一轮之前，在汇报里写明已花的累计费用；这一个 PR 的复核累计预计超过 0.5 美元时，先问 Andy（花钱先问）。连续三轮都还有新的成立意见，先停下报告 Andy，不要一直循环。
+5. 报告 Andy，Andy 说“合并”才合并。
 
 <a id="checklist"></a>
-## 每次复核都要问的问题
+## 每次都要问的问题
 
 1. 这个改动会不会改变模型已经见过的请求开头？包括系统提示、工具定义、历史消息、遮盖结果。要求回答：发给模型的内容是不是仍然只在末尾追加，每轮会变的值是不是都在最后一条消息里。依据：[发给模型的内容只追加](../../.claude/rules/prompt-prefix.md#rules)。
 2. 这个改动会不会让同一段文字在不同请求里变成不同的字节（例如依赖前后文的遮盖、带时间的字段、无序的集合）？
@@ -16,8 +39,8 @@
 用 `node scripts/model-review/opencode-review.mjs` 跑，不要自己拼 `opencode run` 命令。它做这些事（Andy 2026-11-03 定）：
 
 - 模型自己读代码：只开读文件、按内容搜索、按文件名找文件，以及 `git diff`、`git log`、`git show`、`git blame`、`git status`；改文件、别的命令、派子代理、仓库外的路径全部禁止。git 命令里的重定向（`>`、`<`）、制表符、`difftool`（它能执行任意命令）、写文件参数（`--output`、`-o`）、读仓库外文件的参数（`--no-index`、`--contents`）、外部程序参数（`--ext-diff`、`--textconv`）另行禁止。opencode 只按命令文字匹配，引号和反斜杠能绕过（实测 `"--output=文件"` 照样写出文件），所以脚本还在模型用的 `PATH` 最前面放了一个 git 替身：它拿到的是 shell 解析后的真实参数，子命令不在上面五个里、参数是这些禁用参数及其缩写、或是会读文件的 `--ignore-revs-file`、`--pathspec-from-file`、`--mailmap-file`、`--orderfile`、`blame -S`、打开帮助程序的 `--help`，或者短参数连写里藏着 `-o`、`-O`（如 `-pO文件`）就拒绝，否则才交给真的 git；同时用 `GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS` 让 git 自己也拒绝缩写，并不读系统和用户的 git 配置。opencode 的文字规则还漏掉了 `cd 副本 && git log > 文件` 这种写法（实测写出了文件），所以模型的命令改在受限 bash（`bash -r`，bash 自带的模式：不许输出重定向、不许 `cd`、不许改 `PATH`、不许用带斜杠的命令名）里执行。文字规则和参数检查挡不住所有写法（实测模型先 `export GIT_EXTERNAL_DIFF=程序` 再跑 `git diff`，git 就会执行那个程序），所以最后一道是系统级沙箱，做法和 Claude Code 在 Linux 上的沙箱一致（[官方说明](https://code.claude.com/docs/en/sandboxing)：权限规则只看命令文字，系统沙箱管的是运行中的进程）：每条命令在新的用户、网络、挂载、进程命名空间（Linux 内核给一组进程单独一套视图的机制，用 `unshare` 开）里运行，没有网络；所有挂载点只读，跑之前逐个试写确认，有一个能写就以 `SANDBOX_NOT_READ_ONLY` 拒绝；`/root`、`/home`、`/tmp`、`/run`、`/mnt` 等目录换成空目录，只把副本和 git 替身放回原处；环境变量清空，只留 `PATH`、`HOME`、`LANG` 和固定的 git 设置；git 替身调用真 git 时再去掉所有 `GIT_*`、`LD_*` 等变量。需要系统有 `unshare` 并允许非特权用户命名空间，没有就直接报错不跑。opencode 自己的读文件、搜索、找文件工具不在沙箱里，靠 opencode 的路径限制和自检。原因：系统的真相在代码里，只读线程给的材料，材料错了复核就跟着错。
-- 代码复核（`--mode code-review`）不联网；方案讨论（`--mode discussion`）可以读网页，没有搜索工具。读网页不限网址，所以模型仍可能去打开搜索引擎的结果页，这一点没有硬拦。
-- 必问问题从 `--base` 提交里的本文件读（方案讨论没有 `--base` 时从 `--head` 提交读），不从被复核的改动或工作区读，免得改动自己改掉要问的问题。
+- 代码复核（`--mode code-review`）不联网；方案讨论的两个模式（`--mode plan`、`--mode plan-review`）可以用 opencode 自带的搜索和读网页工具（Andy 2026-11-03 定）。搜索走 opencode 内置的 Exa 免费搜索服务，不花 Andy 的钱，只是搜索结果会算进模型的输入 token。
+- 必问问题从 `--base` 提交里的本文件读（方案讨论不传 `--base` 时从 `--head` 提交读），不从被复核的改动或工作区读，免得改动自己改掉要问的问题。
 - 第一次运行会联网用 npm 安装 `opencode-ai@1.19.5` 到 `~/.cache/himawari-opencode-1.19.5`，之后复用；也可以用 `HIMAWARI_OPENCODE_BIN` 指定已装好的程序。
 - 在 PR 最新提交的一次性副本里运行：副本是干净克隆，只有提交过的文件。历史里任何一个提交（包括合并提交）的文件树里出现过 `.env` 一类文件（`.env.example` 这类模板除外）就拒绝复核，因为 git 命令能从历史里读出它。副本删掉了远程地址、引用日志（reflog，记录分支移动的日志，里面有原仓库路径）和 `FETCH_HEAD`，用完即删，脚本收到中断或结束信号（`SIGINT`、`SIGTERM`）时也会删；被强杀（`SIGKILL`）时删不掉。副本里 PR 自带的 `.opencode/`、`opencode.json(c)`、提交进仓库的 `.env*` 文件和指向副本外的符号链接会先删掉，因为 opencode 启动时会执行项目目录里的插件，符号链接能把读文件带出副本；配置改从副本外的文件读。副本里的分支和标签全部删掉，只留 `refs/review/head`、`refs/review/base`、`refs/review/previous` 三个引用；其他提交的对象还在，知道哈希仍能读到。opencode 的全局配置（`~/.config/opencode`）不会被读入，脚本给它一个空的配置目录。
 - 把 opencode 默认写死的 32 000 输出上限调高（`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`），DeepSeek 高推理时不再被截断。
@@ -30,6 +53,12 @@
 node scripts/model-review/opencode-review.mjs --mode code-review \
   --base <分叉点提交> --head <PR 最新提交> [--previous <上一轮复核的提交>] \
   --brief <作者说明.md> --out <结果目录>
+
+node scripts/model-review/opencode-review.mjs --mode plan \
+  --head <当前提交> --brief <问题、目标、约束.md> --out <结果目录>
+
+node scripts/model-review/opencode-review.mjs --mode plan-review \
+  --head <当前提交> --brief <线程的方案.md> --out <结果目录>
 ```
 
-`--brief` 只写这次的问题、目标、约束和作者的说法；脚本会在前面加上固定说明（上面的必问问题、项目指令第 16 条原话、「作者的说法可能有错，请对照代码核对」、输出格式），并让模型自己用 `git diff` 看改动。提交可以写分支名，脚本先在原仓库解析成提交哈希。第二轮起传 `--previous`，模型先看增量，但可以读任何文件；合并前最后一轮对最终提交复核时不传它。
+`--brief` 只写这次的材料：代码复核写问题、目标、约束和作者的说法；`plan` 只写问题、目标、约束和已核对的事实，不写线程的方案；`plan-review` 写线程的方案。脚本会在前面加上各模式的固定说明（上面的必问问题、项目指令第 16 条原话、该模式的任务和输出格式），代码复核还会让模型自己用 `git diff` 看改动。提交可以写分支名，脚本先在原仓库解析成提交哈希。按意见修改后的复核传 `--previous`，模型先看增量，但可以读任何文件。

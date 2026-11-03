@@ -1,4 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -86,9 +87,20 @@ describe("opencode review configuration", () => {
     expect(config.provider["opencode-go"].options.baseURL).toBeUndefined();
   });
 
-  it("opens webfetch only for plan discussions", () => {
-    expect(reviewConfig({ mode: "discussion" }).permission.webfetch).toBe("allow");
-    expect(expectedTools("discussion")).toEqual(["bash", "glob", "grep", "read", "webfetch"]);
+  it("opens web reading and web search only for the two plan modes", () => {
+    for (const mode of ["plan", "plan-review"]) {
+      expect(reviewConfig({ mode }).permission.webfetch).toBe("allow");
+      expect(reviewConfig({ mode }).permission.websearch).toBe("allow");
+      expect(expectedTools(mode)).toEqual([
+        "bash",
+        "glob",
+        "grep",
+        "read",
+        "webfetch",
+        "websearch",
+      ]);
+    }
+    expect(reviewConfig({ mode: "code-review" }).permission.websearch).toBe("deny");
     expect(expectedTools("code-review")).toEqual(["bash", "glob", "grep", "read"]);
   });
 
@@ -131,6 +143,15 @@ describe("opencode review prompt", () => {
     expect(first).toContain("不能上网");
   });
 
+  it("asks for an independent plan without any author's conclusion in plan mode", () => {
+    const prompt = buildPrompt({ mode: "plan", questions: ["q"], head: "h", brief: "问题" });
+    expect(prompt).toContain("没有给出任何人的方案");
+    expect(prompt).toContain("websearch");
+    expect(prompt).not.toContain("作者的说法");
+    const review = buildPrompt({ mode: "plan-review", questions: ["q"], head: "h", brief: "方案" });
+    expect(review).toContain("待审核的方案");
+  });
+
   it("refuses an empty brief", () => {
     expect(() =>
       buildPrompt({ mode: "code-review", questions: ["q"], head: "a", base: "b", brief: "  " }),
@@ -141,9 +162,9 @@ describe("opencode review prompt", () => {
     expect(() => parseArgs(["--head", "a", "--brief", "b.md", "--out", "o"])).toThrow(
       "ARG_REQUIRED --base",
     );
-    expect(
-      parseArgs(["--mode", "discussion", "--head", "a", "--brief", "b.md", "--out", "o"]).mode,
-    ).toBe("discussion");
+    expect(parseArgs(["--mode", "plan", "--head", "a", "--brief", "b.md", "--out", "o"]).mode).toBe(
+      "plan",
+    );
   });
 });
 
@@ -415,9 +436,11 @@ describe("opencode review installed guard", () => {
     try {
       const copy = join(root, "repo");
       execFileSync("git", ["clone", "--quiet", "--depth", "3", `file://${process.cwd()}`, copy]);
-      writeFileSync(join(root, "outside.txt"), "OUTSIDE_MARKER\n");
+      const canary = `CANARY_${randomBytes(8).toString("hex")}`;
+      const marker = `OUTSIDE_${randomBytes(8).toString("hex")}`;
+      writeFileSync(join(root, "outside.txt"), `${marker}\n`);
       const guard = installGitGuard(root);
-      const env = { ...process.env, REVIEW_TEST_CANARY: "CANARY_VALUE" };
+      const env = { ...process.env, REVIEW_TEST_CANARY: canary };
       const viaShell = (command) => {
         const result = spawnSync(guard.shell, ["-c", command], {
           cwd: copy,
@@ -437,11 +460,11 @@ describe("opencode review installed guard", () => {
         "",
       );
       expect(existsSync(join(root, "written.txt"))).toBe(false);
-      expect(viaShell("env").text).not.toContain("CANARY_VALUE");
+      expect(viaShell("env").text).not.toContain(canary);
       expect(viaShell("export GIT_EXTERNAL_DIFF=env; git diff HEAD~1 HEAD").text).not.toContain(
-        "CANARY_VALUE",
+        canary,
       );
-      expect(viaShell("cat ../outside.txt").text).not.toContain("OUTSIDE_MARKER");
+      expect(viaShell("cat ../outside.txt").text).not.toContain(marker);
       expect(viaShell(`cat ${join(process.cwd(), "AGENTS.md")}`).text).toContain("No such file");
       const interfaces = viaShell("cat /proc/net/dev").text.trim().split("\n").slice(2);
       expect(interfaces.map((line) => line.trim().split(":")[0])).toEqual(["lo"]);
