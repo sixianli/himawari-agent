@@ -302,8 +302,8 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
       try {
         database
           .prepare(
-            `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, detail)
-             VALUES ('early', ?, ?, 'consolidation_failed', ?, '{}')`,
+            `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, sequence, detail)
+             VALUES ('early', ?, ?, 'consolidation_failed', ?, 1, '{}')`,
           )
           .run(OWNER_ID, AGENT_ID, T0);
       } finally {

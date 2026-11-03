@@ -69,8 +69,9 @@ export function insertObservationEvent(
 ): void {
   database
     .prepare(
-      `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, detail)
-       VALUES (?, ?, ?, ?, COALESCE(?, ${SQL_NOW}), ?)`,
+      `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, sequence, detail)
+       VALUES (?, ?, ?, ?, COALESCE(?, ${SQL_NOW}),
+         (SELECT coalesce(max(sequence), 0) + 1 FROM observation_events), ?)`,
     )
     .run(
       `observation-event:${randomUUID()}`,
@@ -350,7 +351,7 @@ export class SqliteLedgerObservationOperations {
                occurred_at AS occurredAt, detail
              FROM observation_events
              WHERE owner_id = ? AND agent_id = ? AND occurred_at < ?
-             ORDER BY occurred_at, rowid`,
+             ORDER BY occurred_at, sequence`,
           )
           .all(...scope, input.until) as Record<string, unknown>[]
       ).map(eventFromRow);
@@ -449,7 +450,7 @@ export class SqliteLedgerObservationOperations {
           `SELECT id, owner_id AS ownerId, agent_id AS agentId, kind, occurred_at AS occurredAt,
              detail
            FROM observation_events WHERE owner_id = ? AND agent_id = ? AND occurred_at >= ?
-           ORDER BY occurred_at, rowid LIMIT 500`,
+           ORDER BY occurred_at, sequence LIMIT 500`,
         )
         .all(input.ownerId, input.agentId, input.since) as Record<string, unknown>[]
     ).map(eventFromRow);

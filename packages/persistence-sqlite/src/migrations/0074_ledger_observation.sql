@@ -63,10 +63,12 @@ CREATE TABLE observation_events (
     )
   ),
   occurred_at TEXT NOT NULL,
+  sequence INTEGER NOT NULL UNIQUE CHECK (sequence >= 1),
   detail TEXT NOT NULL CHECK (json_valid(detail) AND json_type(detail) = 'object')
 ) STRICT;
 
-CREATE INDEX observation_events_time ON observation_events (owner_id, agent_id, occurred_at);
+CREATE INDEX observation_events_time
+  ON observation_events (owner_id, agent_id, occurred_at, sequence);
 
 CREATE TRIGGER observation_events_no_update BEFORE UPDATE ON observation_events
 BEGIN SELECT RAISE(ABORT, 'OBSERVATION_EVENT_IMMUTABLE'); END;

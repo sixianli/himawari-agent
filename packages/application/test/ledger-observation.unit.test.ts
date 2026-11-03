@@ -242,7 +242,7 @@ describe("[P0-8] daily decision record check", () => {
     expect(byCode(cleared, "rows_kept")).toMatchObject({
       status: "pass",
       reason: "cleared_by_owner",
-      facts: { clearedRows: 96 },
+      facts: { explainedRows: 96 },
     });
     const clearedBefore = evaluate(
       {
@@ -317,7 +317,7 @@ describe("[P0-8] daily decision record check", () => {
           {
             events: [
               SNAPSHOT,
-              event("proactive_records_cleared", "2026-11-06T05:00:00.000Z", { rows: 0 }),
+              event("proactive_records_cleared", "2026-11-06T05:00:00.000Z", { rows: 20 }),
             ],
           },
           { earlier },
@@ -325,6 +325,50 @@ describe("[P0-8] daily decision record check", () => {
         "rows_kept",
       ),
     ).toMatchObject({ status: "fail", reason: "rows_missing" });
+  });
+
+  it("does not reuse one clear to explain losses on several earlier days", () => {
+    const earlier = ["2026-11-04", "2026-11-05"].map((day) => ({
+      day,
+      checkedAt: `${day}T16:30:00.000Z`,
+      counts: { proactive: 96 },
+      now: { proactive: 10 },
+    }));
+    const clear = (rows: number) =>
+      evaluate(
+        {
+          events: [
+            SNAPSHOT,
+            event("proactive_records_cleared", "2026-11-06T05:00:00.000Z", { rows }),
+          ],
+        },
+        { earlier },
+      );
+    expect(byCode(clear(100), "rows_kept")).toMatchObject({
+      status: "fail",
+      reason: "rows_missing",
+      facts: { day: "2026-11-05" },
+    });
+    expect(byCode(clear(172), "rows_kept")).toMatchObject({
+      status: "pass",
+      reason: "cleared_by_owner",
+      facts: { explainedRows: 172 },
+    });
+  });
+
+  it("names the reason of the first block when Gmail was switched off and back on", () => {
+    const result = evaluate({
+      events: [
+        SNAPSHOT,
+        event("proactive_disabled", "2026-11-05T16:00:00.000Z"),
+        event("proactive_enabled", "2026-11-05T17:00:00.000Z"),
+      ],
+    });
+    expect(byCode(result, "proactive_writing")).toMatchObject({
+      status: "blocked",
+      reason: "switched_off",
+      facts: { since: "2026-11-05T16:00:00.000Z" },
+    });
   });
 
   it("fails on decision record times in the wrong format", () => {

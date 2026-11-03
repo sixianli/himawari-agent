@@ -152,14 +152,14 @@ function momentsOff(
   window: ObservationDayWindow,
   facts: ObservationDayFacts,
   off: (state: SourceState) => boolean,
-): readonly string[] {
+): readonly { readonly at: string; readonly state: SourceState }[] {
   const { start, during } = replay(window, facts);
-  const moments: string[] = [];
+  const moments: { at: string; state: SourceState }[] = [];
   let state = start;
-  if (off(state)) moments.push(window.start);
+  if (off(state)) moments.push({ at: window.start, state });
   for (const event of during) {
     state = applyEvent(state, event);
-    if (off(state)) moments.push(event.occurredAt);
+    if (off(state)) moments.push({ at: event.occurredAt, state });
   }
   return moments;
 }
@@ -170,7 +170,7 @@ function memoryCapture(
 ): ObservationCheckItem {
   const pausedAt = momentsOff(window, facts, (state) => state.capturePaused);
   return pausedAt.length > 0
-    ? item("memory_capture", "blocked", "paused", { since: pausedAt[0] ?? null })
+    ? item("memory_capture", "blocked", "paused", { since: pausedAt[0]?.at ?? null })
     : item("memory_capture", "pass", "running");
 }
 
@@ -189,15 +189,14 @@ function proactiveWriting(
     facts,
     (state) => !state.proactiveEnabled || state.sourceStatus !== "connected",
   );
-  if (offAt.length > 0) {
-    const last = replay(window, facts).end;
+  const firstOff = offAt[0];
+  if (firstOff)
     return item(
       "proactive_writing",
       "blocked",
-      last.proactiveEnabled ? "source_not_connected" : "switched_off",
-      { since: offAt[0] ?? null, rows: facts.proactiveTimes.length },
+      firstOff.state.proactiveEnabled ? "source_not_connected" : "switched_off",
+      { since: firstOff.at, rows: facts.proactiveTimes.length },
     );
-  }
   const clearedAt = facts.events
     .filter(
       (event) => event.kind === "proactive_records_cleared" && event.occurredAt >= window.start,
@@ -268,29 +267,53 @@ function rowsKept(
   earlier: readonly EarlierDayCounts[],
   events: readonly ObservationEvent[],
 ): ObservationCheckItem {
-  let cleared = 0;
+  const losses: { day: string; checkedAt: string; before: number; after: number; left: number }[] =
+    [];
   for (const previous of earlier)
     for (const [kind, before] of Object.entries(previous.counts)) {
       const after = previous.now[kind] ?? 0;
       if (after >= before) continue;
-      const clearedRows = events
-        .filter(
-          (event) =>
-            event.kind === "proactive_records_cleared" && event.occurredAt > previous.checkedAt,
-        )
-        .reduce((sum, event) => sum + Number(event.detail["rows"] ?? 0), 0);
-      const explained = kind === "proactive" && clearedRows >= before - after;
-      if (!explained)
+      if (kind !== "proactive")
         return item("rows_kept", "fail", "rows_missing", {
           day: previous.day,
           kind,
           before,
           after,
         });
-      cleared += before - after;
+      losses.push({
+        day: previous.day,
+        checkedAt: previous.checkedAt,
+        before,
+        after,
+        left: before - after,
+      });
     }
-  return cleared > 0
-    ? item("rows_kept", "pass", "cleared_by_owner", { clearedRows: cleared })
+  losses.sort((left, right) => (left.checkedAt < right.checkedAt ? -1 : 1));
+  const clears = events
+    .filter((event) => event.kind === "proactive_records_cleared")
+    .map((event) => ({ at: event.occurredAt, rows: Number(event.detail["rows"] ?? 0) }))
+    .sort((left, right) => (left.at < right.at ? -1 : 1));
+  for (const clear of clears) {
+    let budget = clear.rows;
+    for (const loss of losses) {
+      if (budget <= 0) break;
+      if (loss.left <= 0 || loss.checkedAt >= clear.at) continue;
+      const used = Math.min(budget, loss.left);
+      loss.left -= used;
+      budget -= used;
+    }
+  }
+  const unexplained = losses.find(({ left }) => left > 0);
+  if (unexplained)
+    return item("rows_kept", "fail", "rows_missing", {
+      day: unexplained.day,
+      kind: "proactive",
+      before: unexplained.before,
+      after: unexplained.after,
+    });
+  const explainedRows = losses.reduce((sum, loss) => sum + loss.before - loss.after, 0);
+  return explainedRows > 0
+    ? item("rows_kept", "pass", "cleared_by_owner", { explainedRows })
     : item("rows_kept", "pass", "nothing_missing", { checkedDays: earlier.length });
 }
 

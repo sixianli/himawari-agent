@@ -246,8 +246,9 @@ describe.each(["worker", "direct"] as const)(
         try {
           database
             .prepare(
-              `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, detail)
+              `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, sequence, detail)
                VALUES ('late-failure', ?, ?, 'consolidation_failed', '2026-11-06T15:10:00.000Z',
+                 (SELECT coalesce(max(sequence), 0) + 1 FROM observation_events),
                  json_object('day', '2026-11-06', 'errorCode', 'MODEL_TIMEOUT'))`,
             )
             .run(OWNER_ID, AGENT_ID);
