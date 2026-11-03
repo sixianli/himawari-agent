@@ -3,7 +3,7 @@ import {
   MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useLocaleFormat } from "../i18n/locale-format.js";
+import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryItem, MemoryModel, MemoryOverview } from "../memory.js";
 import {
@@ -36,6 +36,7 @@ import {
   ProactiveReviewSection,
   useHighlight,
 } from "./proactive-reminders.js";
+import { WeeklyReport } from "./weekly-report.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 type Tab = "memories" | "changes";
@@ -763,7 +764,12 @@ export function RemindersPage({
 }) {
   const [notice, setNotice] = useState<Notice>(null);
   const [adding, setAdding] = useState(false);
+  const [tab, setTab] = useState<"reminders" | "report">("reminders");
   const highlight = useHighlight(focus);
+  const weekly = proactive?.weekly ?? null;
+  useEffect(() => {
+    if (focus) setTab("reminders");
+  }, [focus]);
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
@@ -872,9 +878,38 @@ export function RemindersPage({
       </button>
     </>
   );
+  const showReport = tab === "report" && proactive !== null && weekly !== null;
   return (
     <section className="reminders-page side-page-body">
-      {!memory ? (
+      {proactive && weekly ? (
+        <div role="tablist" className="memory-tabs" aria-label={message("nav.reminders")}>
+          {(["reminders", "report"] as const).map((key) => (
+            <button
+              type="button"
+              role="tab"
+              key={key}
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+            >
+              {message(key === "reminders" ? "reminders.tab.reminders" : "reminders.tab.report")}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {showReport ? (
+        <WeeklyReport
+          proactive={proactive}
+          weekly={weekly}
+          message={message}
+          locale={locale ?? DEFAULT_UI_LOCALE}
+          onRate={() => {
+            setTab("reminders");
+            window.requestAnimationFrame(() =>
+              document.querySelector(".proactive-review")?.scrollIntoView?.({ block: "start" }),
+            );
+          }}
+        />
+      ) : !memory ? (
         <p className="settings-note">{message("common.notConfigured")}</p>
       ) : !overview ? (
         <div className="files-library-skeleton" aria-hidden="true">
