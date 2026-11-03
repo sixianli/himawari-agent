@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -75,6 +77,23 @@ describe("[P0-7] calibration report", () => {
       .run(id, IN_WINDOW, rating, rating === null ? null : IN_WINDOW);
   }
 
+  function addProactive(
+    database: Database.Database,
+    verdict: "pushed" | "silent",
+    rating: string | null,
+    checkedAt = IN_WINDOW,
+  ) {
+    counter += 1;
+    database
+      .prepare(
+        `INSERT INTO decision_ledger (
+          id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, reason_code, inputs,
+          cost_micros, duration_ms, owner_rating, rated_at
+        ) VALUES (?, 'o', 'a', 'proactive', 'gmail', ?, '{}', ?, 'fixture', '{}', 0, 0, ?, ?)`,
+      )
+      .run(`p${counter}`, checkedAt, verdict, rating, rating === null ? null : checkedAt);
+  }
+
   function addMail(
     database: Database.Database,
     messageId: string,
@@ -130,11 +149,12 @@ describe("[P0-7] calibration report", () => {
   it("matches the hand computed rates and intervals on constructed data", async () => {
     const { root, databasePath, database } = await fixture();
     for (const rating of ["useful", "useful", "useful", "useful", "useful", "useful"])
-      addMemoryDecision(database, "memory_candidate", "kept", rating);
-    for (const rating of ["unneeded", "unneeded", "unneeded", "missed"])
-      addMemoryDecision(database, "memory_candidate", "discarded", rating);
-    addMemoryDecision(database, "memory_candidate", "kept", null);
-    addMemoryDecision(database, "memory_candidate", "kept", "useful", BEFORE_WINDOW);
+      addProactive(database, "pushed", rating);
+    for (const rating of ["unneeded", "unneeded", "unneeded", "unneeded"])
+      addProactive(database, "pushed", rating);
+    addProactive(database, "pushed", null);
+    for (const rating of ["useful", "useful", "missed"]) addProactive(database, "silent", rating);
+    addProactive(database, "pushed", "useful", BEFORE_WINDOW);
     for (const rating of ["useful", "unneeded", "useful"])
       addMemoryDecision(database, "consolidation", "merge", rating);
     addMemoryDecision(database, "retrieval_degrade", "degraded", null);
@@ -147,32 +167,31 @@ describe("[P0-7] calibration report", () => {
       output,
       root,
     });
-    const memory = result.decisions.find((row) => row.kind === "memory_candidate");
-    expect(memory).toMatchObject({ total: 11, rated: 10, useful: 6, unneeded: 3, missed: 1 });
+    const pushed = result.decisions.find((row) => row.group === "proactive_pushed");
+    expect(pushed).toMatchObject({ total: 11, rated: 10, useful: 6, unneeded: 4, missed: 0 });
     const round = (value: number | null) => Math.round((value as number) * 1000) / 10;
     expect([
-      round(memory?.hit.value ?? null),
-      round(memory?.hit.low ?? null),
-      round(memory?.hit.high ?? null),
+      round(pushed?.rates.useful?.value ?? null),
+      round(pushed?.rates.useful?.low ?? null),
+      round(pushed?.rates.useful?.high ?? null),
     ]).toEqual([60, 31.3, 83.2]);
     expect([
-      round(memory?.nuisance.value ?? null),
-      round(memory?.nuisance.low ?? null),
-      round(memory?.nuisance.high ?? null),
-    ]).toEqual([30, 10.8, 60.3]);
-    expect([
-      round(memory?.missedRate.value ?? null),
-      round(memory?.missedRate.low ?? null),
-      round(memory?.missedRate.high ?? null),
-    ]).toEqual([10, 1.8, 40.4]);
+      round(pushed?.rates.unneeded?.value ?? null),
+      round(pushed?.rates.unneeded?.low ?? null),
+      round(pushed?.rates.unneeded?.high ?? null),
+    ]).toEqual([40, 16.8, 68.7]);
+    expect(pushed?.rates.missed).toBeNull();
+    const silent = result.decisions.find((row) => row.group === "proactive_silent");
+    expect(silent).toMatchObject({ total: 3, rated: 3, useful: 2, missed: 1 });
+    expect(silent?.rates.unneeded).toBeNull();
     const text = output.text();
-    expect(text).toContain("| memory_candidate | 11 | 10 | 60.0%（6/10，95% 区间 31.3%–83.2%）");
     expect(text).toContain(
-      "| consolidation | 3 | 3 | 样本不足（3 条） | 样本不足（3 条） | 样本不足（3 条） |",
+      "| 读完邮件提醒了你 | 11 | 10 | 提醒得对 60.0%（6/10，95% 区间 31.3%–83.2%）；不该提醒 40.0%（4/10，95% 区间 16.8%–68.7%） |",
     );
-    expect(text).toContain(
-      "| retrieval_degrade | 2 | 0 | 样本不足（0 条） | 样本不足（0 条） | 样本不足（0 条） |",
-    );
+    expect(text).toContain("| 读完邮件没提醒 | 3 | 3 | 样本不足（3 条） |");
+    expect(text).toContain("| 整理记忆 | 3 | 3 | 样本不足（3 条） |");
+    expect(text).toContain("| 记忆搜索没生效 | 2 | 0 | 样本不足（0 条） |");
+    expect(text).not.toContain("不适用");
     expect(text).not.toContain("| consolidation | 3 | 3 | 0");
     expect(text).toContain("样本不足：这一周没有 Muse 对照条目。");
   });
@@ -184,7 +203,7 @@ describe("[P0-7] calibration report", () => {
     database.close();
     const output = capture();
     run([`--db=${databasePath}`, `--end=${END}`, "--no-record"], { now: NOW, output, root });
-    expect(output.text()).toContain("| memory_candidate | 8 | 0 | 样本不足（0 条） |");
+    expect(output.text()).toContain("| 已存的记忆 | 8 | 0 | 样本不足（0 条） |");
     expect(output.text()).not.toMatch(/\b0(\.0)?%/u);
 
     const empty = capture();
@@ -258,7 +277,7 @@ describe("[P0-7] calibration report", () => {
     run([...base, "--end=2026-10-26"], { now: NOW, output: capture(), root });
     const output = capture();
     run([...base, `--end=${END}`], { now: NOW, output, root });
-    expect(output.text()).toContain("memory_candidate 命中率：100.0% → 80.0%");
+    expect(output.text()).toContain("已存的记忆 存对了：100.0% → 80.0%");
     const again = capture();
     run([...base, `--end=${END}`], { now: NOW, output: again, root });
     expect(again.text()).toContain("没有重复追加");
@@ -268,10 +287,10 @@ describe("[P0-7] calibration report", () => {
       .map((line) => JSON.parse(line));
     expect(lines).toHaveLength(2);
     expect(lines[1]).toMatchObject({
-      schema: "himawari-calibration-week.v1",
+      schema: "himawari-calibration-week.v2",
       ownerId: "o",
       window: { start: "2026-10-25T15:00:00.000Z", end: "2026-11-01T15:00:00.000Z" },
-      kinds: [{ kind: "memory_candidate", total: 5, rated: 5, useful: 4, unneeded: 1, missed: 0 }],
+      groups: [{ group: "memory_kept", total: 5, rated: 5, useful: 4, unneeded: 1, missed: 0 }],
     });
     expect(await readFile(path.join(root, "reports", "2026-11-02.md"), "utf8")).toContain(
       "# 校准周报",
@@ -293,7 +312,7 @@ describe("[P0-7] calibration report", () => {
       output: capture(),
       root,
     });
-    expect(result.decisions.find((row) => row.kind === "memory_candidate")).toMatchObject({
+    expect(result.decisions.find((row) => row.group === "memory_kept")).toMatchObject({
       total: 2,
       rated: 2,
     });
@@ -385,5 +404,31 @@ describe("[P0-7] calibration report", () => {
         root,
       }),
     ).toThrow(/CALIBRATION_SCOPE/u);
+  });
+
+  it("runs as a plain node program and records the revision it was given", async () => {
+    const { root, databasePath, database } = await fixture();
+    for (let index = 0; index < 5; index += 1) addProactive(database, "pushed", "useful");
+    database.close();
+    const history = path.join(root, "history.jsonl");
+    const script = path.resolve("scripts/calibration-report/report.mjs");
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [
+        script,
+        `--db=${databasePath}`,
+        `--end=${END}`,
+        "--revision=41a6ce3",
+        `--history=${history}`,
+        `--out-dir=${path.join(root, "reports")}`,
+      ],
+      { cwd: root },
+    );
+    expect(stdout).toContain("| 读完邮件提醒了你 | 5 | 5 | 提醒得对 100.0%（5/5");
+    const [line] = (await readFile(history, "utf8")).trim().split("\n");
+    expect(JSON.parse(line as string)).toMatchObject({
+      schema: "himawari-calibration-week.v2",
+      commit: "41a6ce3",
+    });
   });
 });

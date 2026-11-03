@@ -27,6 +27,7 @@ const OPTIONS = new Set([
   "history",
   "out-dir",
   "no-record",
+  "revision",
 ]);
 
 export function parseArguments(argv) {
@@ -38,7 +39,7 @@ export function parseArguments(argv) {
   }
   if (!options.has("db"))
     throw new TypeError(
-      "CALIBRATION_DB_REQUIRED：用法：report.mjs --db=<product.sqlite> [--owner=<id> --agent=<id>] [--days=7] [--end=YYYY-MM-DD] [--min-samples=5] [--no-record]",
+      "CALIBRATION_DB_REQUIRED：用法：report.mjs --db=<product.sqlite> [--owner=<id> --agent=<id>] [--days=7] [--end=YYYY-MM-DD] [--min-samples=5] [--revision=<提交号>] [--no-record]",
     );
   return options;
 }
@@ -116,7 +117,7 @@ export function run(
         decisions,
         muse,
         minimumSamples,
-        commit: currentCommit(root),
+        commit: options.get("revision") ?? currentCommit(root),
         recordedAt: now.toISOString(),
       });
       const outDirectory = path.resolve(

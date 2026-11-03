@@ -41,6 +41,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.snapshot",
   "proactive.review.rate",
   "proactive.source.manage",
+  "proactive.weekly.read",
+  "proactive.weekly.snapshot",
+  "proactive.observation.start",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -591,6 +594,158 @@ const proactiveSourceManageCommandSchema = object({
   payload: object({
     source: enumeration(["gmail"]),
     action: enumeration(["disconnect", "clear_records"]),
+  }),
+});
+
+function numberInRange(minimum: number, maximum: number): Schema<number> {
+  return {
+    parse(input, path = "$") {
+      if (
+        typeof input !== "number" ||
+        !Number.isFinite(input) ||
+        input < minimum ||
+        input > maximum
+      )
+        throw new ContractValidationError(path, `expected a number from ${minimum} to ${maximum}`);
+      return input;
+    },
+  };
+}
+const jstDaySchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(input))
+      throw new ContractValidationError(path, "expected a YYYY-MM-DD day");
+    const parsed = Date.parse(`${input}T00:00:00.000Z`);
+    if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== input)
+      throw new ContractValidationError(path, "expected a real calendar day");
+    return input;
+  },
+};
+const observationFactsSchema: Schema<Readonly<Record<string, string | number | boolean | null>>> = {
+  parse(input, path = "$") {
+    if (input === null || typeof input !== "object" || Array.isArray(input))
+      throw new ContractValidationError(path, "expected an object");
+    const entries = Object.entries(input as Record<string, unknown>);
+    if (entries.length > 40) throw new ContractValidationError(path, "too many facts");
+    const result: Record<string, string | number | boolean | null> = {};
+    for (const [key, value] of entries) {
+      machineString.parse(key, `${path}.${key}`);
+      if (
+        value === null ||
+        typeof value === "boolean" ||
+        (typeof value === "number" && Number.isFinite(value))
+      )
+        result[key] = value;
+      else if (typeof value === "string" && value.length <= 256) result[key] = value;
+      else throw new ContractValidationError(`${path}.${key}`, "expected a short fact");
+    }
+    return Object.freeze(result);
+  },
+};
+const calibrationGroupSchema = enumeration([
+  "proactive_pushed",
+  "proactive_silent",
+  "memory_skipped",
+  "memory_kept",
+  "consolidation",
+  "memory_pending",
+  "context_truncation",
+  "retrieval_degrade",
+  "external_read",
+]);
+const calibrationRateSchema = nullable(
+  object({
+    successes: integer(0),
+    samples: integer(0),
+    enough: booleanValue,
+    value: nullable(numberInRange(0, 1)),
+    low: nullable(numberInRange(0, 1)),
+    high: nullable(numberInRange(0, 1)),
+  }),
+);
+const observationCheckItemSchema = object({
+  code: machineString,
+  status: enumeration(["pass", "fail", "blocked", "pending", "not_applicable"]),
+  reason: machineString,
+  facts: observationFactsSchema,
+});
+const proactiveWeeklyQuerySchema = object({
+  ...envelope("query", "proactive.weekly.read"),
+  payload: object({ end: nullable(jstDaySchema) }),
+});
+const proactiveWeeklySnapshotSchema = object({
+  ...envelope("snapshot", "proactive.weekly.snapshot"),
+  payload: object({
+    serviceRevision: machineString,
+    observation: object({
+      startDay: nullable(jstDaySchema),
+      earliestStartDay: nullable(jstDaySchema),
+      setAt: nullable(timestamp),
+      startRevision: nullable(machineString),
+      firstReportDay: nullable(jstDaySchema),
+      passStreak: integer(0),
+      streakSince: nullable(jstDaySchema),
+      accepted: booleanValue,
+      days: array(
+        object({
+          day: jstDaySchema,
+          status: enumeration(["pass", "fail", "blocked", "pending", "no_check", "upcoming"]),
+          checkedAt: nullable(timestamp),
+          serviceRevision: nullable(machineString),
+          checks: array(observationCheckItemSchema),
+        }),
+      ),
+    }),
+    report: object({
+      start: timestamp,
+      end: timestamp,
+      startDay: jstDaySchema,
+      endDay: jstDaySchema,
+      complete: booleanValue,
+      ratesWithheld: booleanValue,
+      minimumSamples: integer(1),
+      groups: array(
+        object({
+          group: calibrationGroupSchema,
+          total: integer(0),
+          rated: integer(0),
+          useful: integer(0),
+          unneeded: integer(0),
+          missed: integer(0),
+          applicable: array(proactiveRatingSchema),
+          rates: object({
+            useful: calibrationRateSchema,
+            unneeded: calibrationRateSchema,
+            missed: calibrationRateSchema,
+          }),
+        }),
+      ),
+      muse: object({
+        entries: integer(0),
+        reminded: integer(0),
+        silent: integer(0),
+        unpaired: integer(0),
+        pairedMails: integer(0),
+        timing: calibrationRateSchema,
+        content: calibrationRateSchema,
+        pairing: calibrationRateSchema,
+        buckets: object({
+          both: integer(0),
+          museOnly: integer(0),
+          himawariOnly: integer(0),
+          bothSilent: integer(0),
+          noHimawariRecord: integer(0),
+        }),
+      }),
+    }),
+    generatedAt: timestamp,
+  }),
+});
+const proactiveObservationStartCommandSchema = object({
+  ...commandEnvelope("proactive.observation.start"),
+  payload: object({
+    startDay: jstDaySchema,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -1991,6 +2146,9 @@ const schemasByType = {
   "proactive.review.snapshot": proactiveReviewSnapshotSchema,
   "proactive.review.rate": proactiveReviewRateCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
+  "proactive.weekly.read": proactiveWeeklyQuerySchema,
+  "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
+  "proactive.observation.start": proactiveObservationStartCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,

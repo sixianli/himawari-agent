@@ -1,27 +1,8 @@
-export interface ProportionResult {
-  readonly successes: number;
-  readonly samples: number;
-  readonly enough: boolean;
-  readonly value: number | null;
-  readonly low: number | null;
-  readonly high: number | null;
-}
-export const DEFAULT_MINIMUM_SAMPLES: number;
-export function wilsonInterval(
-  successes: number,
-  samples: number,
-  z?: number,
-): { low: number; high: number } | null;
-export function proportion(
-  successes: number,
-  samples: number,
-  minimumSamples?: number,
-): ProportionResult;
-export function formatProportion(result: ProportionResult): string;
-export function resolveWindow(input?: { end?: string | null; days?: number; now?: Date }): {
-  start: string;
-  end: string;
-  days: number;
-  label: string;
-  endDate: string;
-};
+export * from "@himawari-agent/calibration";
+import type { CalibrationDatabase, CalibrationRows } from "@himawari-agent/calibration";
+export function readWindow(
+  database: CalibrationDatabase & { transaction<T>(body: () => T): () => T },
+  scope: { ownerId: string; agentId: string; start: string; end: string },
+): CalibrationRows;
+export function findScopes(database: CalibrationDatabase): { ownerId: string; agentId: string }[];
+export function currentCommit(cwd?: string): string;

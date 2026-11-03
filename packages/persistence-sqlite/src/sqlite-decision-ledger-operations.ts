@@ -3,12 +3,14 @@ import {
   DECISION_KINDS,
   DECISION_OUTCOMES,
   DECISION_RATINGS,
+  type CalibrationRowsSnapshot,
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
+import { readCalibrationRows } from "@himawari-agent/calibration";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
@@ -200,12 +202,35 @@ export class SqliteDecisionLedgerOperations {
         return this.recordMuse(payload as Input<"recordMuse">);
       case "decisionLedger.listMuse":
         return this.listMuse(payload as Input<"listMuse">);
+      case "decisionLedger.readCalibrationRows":
+        return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
           `Unknown decision ledger operation ${operation}`,
         );
     }
+  }
+
+  private readCalibrationRows(input: Input<"readCalibrationRows">): CalibrationRowsSnapshot {
+    if (!validTime(input.start) || !validTime(input.end) || input.start >= input.end)
+      this.fail("PORT_INVALID_OPERATION", "Calibration window is invalid");
+    return this.database.transaction(() => {
+      try {
+        const rows = readCalibrationRows(this.database, input);
+        return {
+          decisions: rows.decisions.map((row) => ({ ...row })),
+          entries: rows.entries.map((row) => ({ ...row })),
+          mailJudgments: [...rows.mailJudgments.entries()].map(
+            ([id, judgment]) => [id, { ...judgment }] as const,
+          ),
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("CALIBRATION_TIMESTAMP_FORMAT"))
+          return this.fail("PORT_INVALID_OPERATION", "CALIBRATION_TIMESTAMP_FORMAT");
+        throw error;
+      }
+    })();
   }
 
   private append(write: Input<"append">): void {

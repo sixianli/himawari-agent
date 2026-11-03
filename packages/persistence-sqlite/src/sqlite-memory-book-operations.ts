@@ -11,6 +11,7 @@ import type {
 import type { AgentId, MemoryGenerationId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 interface Scope {
   readonly ownerId: OwnerId;
@@ -189,14 +190,28 @@ export class SqliteMemoryBookOperations {
     this.assertDiskHeadroom();
     if (typeof input.capturePaused !== "boolean" || !validTime(input.updatedAt))
       this.fail("PORT_INVALID_OPERATION", "Memory settings are invalid");
-    this.database
-      .prepare(
-        `INSERT INTO memory_settings (owner_id, agent_id, capture_paused, updated_at)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT (owner_id, agent_id) DO UPDATE SET capture_paused = excluded.capture_paused,
-          updated_at = excluded.updated_at`,
-      )
-      .run(input.ownerId, input.agentId, input.capturePaused ? 1 : 0, input.updatedAt);
+    this.database.transaction(() => {
+      const before = this.database
+        .prepare(
+          "SELECT capture_paused AS paused FROM memory_settings WHERE owner_id = ? AND agent_id = ?",
+        )
+        .get(input.ownerId, input.agentId) as { paused: number } | undefined;
+      this.database
+        .prepare(
+          `INSERT INTO memory_settings (owner_id, agent_id, capture_paused, updated_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT (owner_id, agent_id) DO UPDATE SET capture_paused = excluded.capture_paused,
+            updated_at = excluded.updated_at`,
+        )
+        .run(input.ownerId, input.agentId, input.capturePaused ? 1 : 0, input.updatedAt);
+      if ((before?.paused === 1) !== input.capturePaused)
+        insertObservationEvent(this.database, {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: input.capturePaused ? "memory_capture_paused" : "memory_capture_resumed",
+          occurredAt: input.updatedAt,
+        });
+    })();
   }
 
   private latestGeneration(scope: Scope): MemoryGenerationId | undefined {
