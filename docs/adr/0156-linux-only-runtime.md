@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0037-macos-bundled-bash.md"
 superseded_by: ""
-amends: "docs/adr/0018-sqlite-product-state-authority.md, docs/adr/0036-agent-worker-restart-as-a-pair.md, docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md, docs/adr/0031-isolated-tool-execution.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0055-bash-uses-system-commands-in-sandbox.md"
+amends: "docs/adr/0018-sqlite-product-state-authority.md, docs/adr/0019-offline-authority-transfer.md, docs/adr/0036-agent-worker-restart-as-a-pair.md, docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md, docs/adr/0031-isolated-tool-execution.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0055-bash-uses-system-commands-in-sandbox.md"
 date: "2026-11-03"
 ---
 
@@ -74,6 +74,7 @@ Andy 在 2026-11-03 的云端线程里作出决定，原话是：“我这个项
 | --- | --- | --- |
 | [ADR 0018](0018-sqlite-product-state-authority.md) | 在 Mac 和 Hermes 两种系统上运行同一套数据，以及 Mac 与 Hermes 之间的停机迁移 | SQLite 是唯一权威数据库；单写者、迁移只在服务停止后导出；迁移在两台 Linux 主机之间进行 |
 | [ADR 0036](0036-agent-worker-restart-as-a-pair.md) 后果 | “实现 Mac 的 launchd 配置时按本决定配置成对重启”这项后续工作取消 | Agent Service 和 Execution Worker 必须成对重启；生产启动器在任一进程退出时自动成对重启（[安装启停 Runbook](../runbooks/install-start-stop-runbook.md)） |
+| [ADR 0019](0019-offline-authority-transfer.md) 背景与验证 | “同一个 Agent 必须能够在 Mac 或 Hermes 运行”、Mac→Hermes 和 Hermes→Mac 双向验证、macOS Keychain 机器秘密 | 停机加密导出/导入迁移、单一权威、机器秘密不进迁移包；迁移在两台 Linux 主机之间进行 |
 | [ADR 0025](0025-pi-tools-and-managed-execution-lifecycles.md) 决定 6 | Mac 的“尽力停止”和脱离进程组的后代可能存活的披露要求 | 每个平台分别证明文件、网络限制、停止和清理；未知不能改成已确认 |
 | [ADR 0031](0031-isolated-tool-execution.md) | macOS 新执行方式必须有任务级停止证明的要求 | 工具不在 Agent 主进程里运行；严格模式下的停止证明要求 |
 | [ADR 0033](0033-process-sandbox-default-and-optional-containers.md) 决定 1 及背景 | “macOS 和 Linux 都默认使用 SRT 模式”中的 macOS，以及“分发给 macOS 用户”这一背景 | Linux 默认用 SRT 模式（SRT 是 `@anthropic-ai/sandbox-runtime`，在宿主上限制单个进程能访问哪些文件和网络的沙箱），容器是可选的严格模式 |
@@ -113,7 +114,7 @@ Andy 在 2026-11-03 的云端线程里作出决定，原话是：“我这个项
 ## 关联文档
 
 - 被取代：[SOURCE: docs/adr/0037-macos-bundled-bash.md]
-- 被部分修正：[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]、[SOURCE: docs/adr/0036-agent-worker-restart-as-a-pair.md]、[SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]、[SOURCE: docs/adr/0031-isolated-tool-execution.md]、[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]、[SOURCE: docs/adr/0055-bash-uses-system-commands-in-sandbox.md]
+- 被部分修正：[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]、[SOURCE: docs/adr/0019-offline-authority-transfer.md]、[SOURCE: docs/adr/0036-agent-worker-restart-as-a-pair.md]、[SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]、[SOURCE: docs/adr/0031-isolated-tool-execution.md]、[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]、[SOURCE: docs/adr/0055-bash-uses-system-commands-in-sandbox.md]
 - Mac 验证无限期推迟：[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]
 - 产品范围：[SOURCE: docs/prd-v0.2.md]
 - 运行位置原则：[SOURCE: docs/product-vision.md]
