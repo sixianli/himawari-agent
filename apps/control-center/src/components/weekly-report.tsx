@@ -454,6 +454,7 @@ export function WeeklyReport({
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmFailed, setConfirmFailed] = useState(false);
   const startLock = useRef(false);
+  const [started, setStarted] = useState(false);
   const [reauthCsrfToken, setReauthCsrfToken] = useState("");
   const [reauthenticating, setReauthenticating] = useState<"built-in" | "cloudflare-access" | null>(
     null,
@@ -689,6 +690,7 @@ export function WeeklyReport({
   const submitStart = async () => {
     if (!chosen || startLock.current) return;
     startLock.current = true;
+    let succeeded = false;
     setConfirmBusy(true);
     setConfirmFailed(false);
     try {
@@ -701,13 +703,15 @@ export function WeeklyReport({
         return;
       }
       await weekly.start(chosen, reference);
+      succeeded = true;
+      setStarted(true);
       setConfirming(false);
       setPick(null);
       setReload((value) => value + 1);
     } catch {
       setConfirmFailed(true);
     } finally {
-      startLock.current = false;
+      startLock.current = succeeded;
       setConfirmBusy(false);
     }
   };
@@ -796,6 +800,7 @@ export function WeeklyReport({
                   </button>
                 </fieldset>
                 <ActionButton
+                  disabled={started}
                   onClick={() => {
                     setConfirmFailed(false);
                     setReauthenticating(null);

@@ -525,6 +525,38 @@ describe("[P0-8] calibration report tab", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
   });
 
+  it("[P0-8] keeps the start button off after a successful start while the report is still reloading", async () => {
+    weekly = unsetFixture();
+    recentRef = "auth-recent";
+    await render();
+    await openReport();
+    const reads = weeklyReads();
+    query.mockImplementation(async (request: { type: string }) =>
+      request.type === "proactive.weekly.read"
+        ? new Promise(() => undefined)
+        : request.type === "proactive.overview.read"
+          ? { type: "proactive.overview.snapshot", payload: overview }
+          : request.type === "proactive.review.read"
+            ? { type: "proactive.review.snapshot", payload: null }
+            : { type: "memory.overview.snapshot", payload: memory },
+    );
+    await click(button("#page .weekly-start", "从这天开始"));
+    await click(button("dialog[open]", "确定"));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(weeklyReads()).toBe(reads + 1);
+    const start = button("#page .weekly-start", "从这天开始");
+    expect(start.disabled).toBe(true);
+    await act(async () => {
+      start.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const again = document.querySelector("dialog[open]") ? button("dialog[open]", "确定") : null;
+    if (again)
+      await act(async () => {
+        again.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
   it("[P0-8] shows an error instead of a password form when the sign-in method cannot be read", async () => {
     weekly = unsetFixture();
     identity = "unavailable";
