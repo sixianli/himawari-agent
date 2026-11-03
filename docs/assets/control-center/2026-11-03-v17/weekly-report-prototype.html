@@ -14,6 +14,7 @@ body{background:var(--page);color:var(--tx);font:400 14px/1.55 -apple-system,Bli
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;min-height:44px;padding:0 18px;border-radius:999px}
 button:focus-visible{outline:2px solid var(--tx);outline-offset:2px}
 button:focus:not(:focus-visible){outline:none}
+[tabindex="-1"]:focus{outline:none}
 .ic{width:20px;height:20px;flex:none;display:block}
 .banner{position:fixed;top:8px;right:8px;z-index:50;pointer-events:none;background:var(--ac);color:var(--on);font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:999px;opacity:.9}
 .proto{max-width:1240px;margin:0 auto 14px;padding:10px 12px;border-radius:14px;background:repeating-linear-gradient(135deg,var(--fill) 0 6px,transparent 6px 12px);font-size:12px;color:var(--mu)}
@@ -91,7 +92,6 @@ th:first-child,td:first-child{padding-left:0}
 td.num,th.num{text-align:right}
 td .iv{display:block;font-size:11.5px;color:var(--mu)}
 td.few{color:var(--mu)}
-.rd{display:block;font-size:12px;line-height:1.45;color:var(--mu);max-width:22em;margin:2px 0 0;font-weight:400}
 .rs{display:flex;flex-wrap:wrap;gap:6px 32px}
 .rs .r{min-width:0}
 .rl{color:var(--mu);margin-right:6px}
@@ -100,19 +100,25 @@ tr.sub td:first-child{padding-left:14px;color:var(--mu)}
 .otherrow td{padding:8px 0}
 .otherrow .lk{margin-top:2px}
 .tcards{display:none}
-.how{margin:12px 0 0;border-radius:14px;background:var(--fill)}
-.how summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;padding:0 14px;min-height:40px;font-size:13px}
-.how summary::-webkit-details-marker{display:none}
-.how summary .ic{width:16px;height:16px;transition:transform .15s}
-.how[open] summary .ic{transform:rotate(90deg)}
-.how ul{margin:0;padding:0 16px 12px 34px;font-size:13px;color:var(--mu)}
-.how li{margin:2px 0}
+.ch{display:flex;align-items:center;gap:2px;margin:0 0 6px;min-width:0}
+.ch h2,.ch h3{margin:0;min-width:0}
+.card>.ch h2{font-size:15.5px;font-weight:600}
+.info{width:44px;height:44px;min-height:44px;padding:0;margin:-10px -8px -10px -4px;display:inline-grid;place-items:center;border-radius:50%;color:var(--mu);flex:none;vertical-align:middle}
+.info .ic{width:18px;height:18px}
+.info:hover,.info[aria-expanded=true]{background:var(--fill);color:var(--tx)}
+.rn{display:inline-flex;align-items:center}
+.win{color:var(--mu);font-size:13px;margin:-6px 0 14px;font-variant-numeric:tabular-nums}
+.pop{position:absolute;z-index:55;width:min(340px,calc(100vw - 16px));background:var(--card);border-radius:16px;box-shadow:var(--sh-up);padding:12px 14px;font-size:13px}
+.pop h3,.sheet h3{font-size:14px;margin:0 0 6px;font-weight:600}
+.itext p{margin:0 0 6px;color:var(--mu);font-size:13.5px}
+.itext ul{margin:0 0 6px;padding-left:18px;color:var(--mu);font-size:13.5px}
+.itext li{margin:2px 0}
+.itext .ver{font-size:11.5px;margin:8px 0 0}
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .tile{background:var(--fill);border-radius:14px;padding:10px 12px;min-width:0}
 .tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.2}
 .tile .l{font-size:12.5px;color:var(--mu);overflow-wrap:anywhere}
 .tile .x{font-size:11.5px;color:var(--mu);margin-top:2px}
-.note{margin:10px 0 0;color:var(--mu);font-size:12.5px}
 .muse{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
 .musefoot{display:flex;flex-wrap:wrap;gap:4px 18px;margin:10px 0 0;font-size:13px;font-variant-numeric:tabular-nums}
 .empty{background:var(--fill);border-radius:12px;padding:10px 12px;color:var(--mu);font-size:13px}
@@ -211,8 +217,10 @@ tr.sub td:first-child{padding-left:14px;color:var(--mu)}
 <div class="banner" id="banner">原型 · 演示数据</div>
 <div class="proto" id="proto"></div>
 <div id="dev"><div class="screen" id="screen"><div class="frame" id="frame"></div></div><div id="overlay"></div></div>
+<div id="pop" hidden></div>
 <script>
 const G={
+info:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".22"/><circle cx="12" cy="7.6" r="1.6" fill="currentColor"/><rect x="10.8" y="10.4" width="2.4" height="7" rx="1.2" fill="currentColor"/></svg>',
 check:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".22"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 fail:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".22"/><path d="M8.6 8.6l6.8 6.8M15.4 8.6l-6.8 6.8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
 blocked:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".22"/><rect x="8.6" y="7.5" width="2.4" height="9" rx="1.2" fill="currentColor"/><rect x="13" y="7.5" width="2.4" height="9" rx="1.2" fill="currentColor"/></svg>',
@@ -270,7 +278,7 @@ zh:{
  ratio:(p,k,n)=>`${p}（${k}/${n}）`,iv:(a,b)=>`区间 ${a}–${b}`,
  few:n=>`样本不足（${n} 条）`,
  other:n=>`其他判断 · ${n} 类`,expand:"展开",collapse:"收起",
- how:"这些数字怎么算",
+
  howItems:["分母是你评过的条数。","每一行只列这类决策可能出现的情况（例如没存下的记忆只会是“不存是对的”或“该存没存”）。","评过的少于 5 条时不算比例，写“样本不足”。","区间是 95% Wilson 区间：按你评过的条数算出的范围，真实比例有 95% 的把握落在里面；评得越多，区间越窄。"],
  typeDesc:{pushed:"Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。",silent:"Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。"},
  types:{pushed:"读完邮件提醒了你",skippedMemory:"系统没存下的记忆",keptMemory:"已存的记忆",consolidation:"整理记忆",silent:"读完邮件没提醒",pendingMemory:"待你确认的记忆",truncation:"回答时没带上的旧内容",degrade:"记忆搜索没生效",externalRead:"外部程序读取记忆"},
@@ -325,7 +333,7 @@ en:{
  ratio:(p,k,n)=>`${p} (${k}/${n})`,iv:(a,b)=>`95% range ${a}–${b}`,
  few:n=>`Too few rated (${n})`,
  other:n=>`Other decisions · ${n} types`,expand:"Show",collapse:"Hide",
- how:"How these numbers are worked out",
+
  howItems:["The denominator is the number you rated.","Each row lists only the outcomes possible for that kind of decision (for example, a memory the system chose not to save can only be “Right not to save” or “Should have saved”).","With fewer than 5 rated, no ratio is shown; it says “Too few rated”.","The range is a 95% Wilson interval: worked out from how many you rated, the true ratio falls inside it with 95% confidence. The more you rate, the narrower it gets."],
  typeDesc:{pushed:"Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.",silent:"Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder."},
  types:{pushed:"Read mail and reminded you",skippedMemory:"Memories the system chose not to save",keptMemory:"Saved memories",consolidation:"Memory tidy-up",silent:"Read mail, no reminder",pendingMemory:"Memories awaiting your confirmation",truncation:"Older content left out of an answer",degrade:"Memory search did not work",externalRead:"Memory read by an outside program"},
@@ -380,7 +388,7 @@ ja:{
  ratio:(p,k,n)=>`${p}（${k}/${n}）`,iv:(a,b)=>`区間 ${a}–${b}`,
  few:n=>`件数不足（${n} 件）`,
  other:n=>`その他の判断 · ${n} 種類`,expand:"開く",collapse:"閉じる",
- how:"この数字の出し方",
+
  howItems:["分母は採点した件数です。","各行には、その種類の判断で起こりうる結果だけを載せます（例：システムが保存しないと判断した記憶は「保存しないのが正しかった」か「保存すべきだった」のどちらかだけ）。","採点が 5 件未満のときは割合を出さず「件数不足」と書きます。","区間は 95% Wilson 区間です。採点した件数から出した範囲で、本当の割合は 95% の確かさでこの中に入ります。採点が多いほど狭くなります。"],
  typeDesc:{pushed:"Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。",silent:"Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。"},
  types:{pushed:"メールを読んで通知した",skippedMemory:"システムが保存しないと判断した記憶",keptMemory:"保存した記憶",consolidation:"記憶の整理",silent:"メールを読んで通知しなかった",pendingMemory:"確認待ちの記憶",truncation:"回答に入れなかった古い内容",degrade:"記憶検索が働かなかった",externalRead:"外部プログラムによる記憶の読み取り"},
@@ -394,8 +402,11 @@ ja:{
  museDef:"対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
  goRate:"「リマインダー」で採点する"
 }};
+Object.assign(L.zh,{info:"说明",obsShort:"选一天开始，连续观察 7 天。",badLine:(a,b)=>`${a}失败、${b}没有检查记录`,badMore:"修好后从第二天起重新数 7 天，首份校准周报跟着推后。",notFull:"观察期还没满 7 天",notFullMore:"观察期满 7 天后再按决策类型算比例。",notStarted:"还没开始观察",notStartedMore:"设好数据起点、观察满 7 天后，这里按决策类型算比例。"});
+Object.assign(L.en,{info:"About this",obsShort:"Pick a day to start; it observes 7 days in a row.",badLine:(a,b)=>`${a} failed; ${b} has no check record`,badMore:"Once fixed, the 7 days start over from the next day, and the first calibration report moves later.",notFull:"Observation period not yet 7 days",notFullMore:"Ratios by decision type come once the observation period reaches 7 days.",notStarted:"Observation hasn’t started",notStartedMore:"Once the data start is set and 7 days are observed, ratios by decision type appear here."});
+Object.assign(L.ja,{info:"説明",obsShort:"開始日を選ぶと、7 日間続けて観察します。",badLine:(a,b)=>`${a}は不合格、${b}は確認の記録なし`,badMore:"直したら翌日から 7 日を数え直し、最初の較正レポートもその分遅れます。",notFull:"観察期間はまだ 7 日に達していません",notFullMore:"観察期間が 7 日に達したら、判断の種類ごとの割合を出します。",notStarted:"まだ観察を始めていません",notStartedMore:"データの起点を決めて 7 日間観察すると、ここに判断の種類ごとの割合が出ます。"});
 const LOC={zh:"zh-CN",en:"en",ja:"ja"};
-const ST={device:"desktop",state:"b1",muse:"none",lang:"zh",theme:"light",tab:"report",openDay:null,otherOpen:false,howOpen:false,confirm:false,pick:6,start:6};
+const ST={info:null,device:"desktop",state:"b1",muse:"none",lang:"zh",theme:"light",tab:"report",openDay:null,otherOpen:false,confirm:false,pick:6,start:6};
 const T=()=>L[ST.lang];
 const day=n=>new Date(2026,10,n);
 function fd(n){const d=day(n);if(ST.lang==="zh")return `${d.getMonth()+1} 月 ${d.getDate()} 日`;return new Intl.DateTimeFormat(LOC[ST.lang],{month:ST.lang==="en"?"short":"numeric",day:"numeric"}).format(d)}
@@ -438,10 +449,23 @@ function cellsHTML(d){const t=T();return `<div class="days">${d.cells.map((c,i)=
  return `<button type="button" class="cell ${s}" data-day="${i}" aria-expanded="${ST.openDay===i}">${lab}</button>`}).join("")}</div>`}
 function checksHTML(list){const t=T();return `<ul class="checks">${list.map(([k,key,a,b])=>{const f=t.ck[key];const txt=typeof f==="function"?f(a,b):f;const g=k==="ok"?G.check:k==="fail"?G.fail:G.blocked;return `<li class="${k}">${g}<span>${txt}</span></li>`}).join("")}</ul>`}
 function detailTitle(d,i){const t=T(),c=d.cells[i];return t.detailTitle(i+1,fd(d.start+i),t.st[c[0]])}
+function infoBtn(key){const t=T();return `<button type="button" class="info" data-info="${key}" aria-label="${t.info}" aria-haspopup="dialog" aria-expanded="${ST.info===key}">${G.info}</button>`}
+function head(title,key,tag){return `<div class="ch"><${tag||"h2"}>${title}</${tag||"h2"}>${infoBtn(key)}</div>`}
+function infoData(key){
+ const t=T(),k=stateInfo().kind;
+ if(key==="obs"){const p=[t.obsExplain];if(ST.state==="a")p.push(t.confirmEarliest(fd(6),fd(5)),t.confirmFixed);if(ST.state==="b2")p.push(t.badMore);return {title:t.obsTitle,paras:p,list:[],ver:t.version("41a6ce3")}}
+ if(key==="type"){if(k==="none"||k==="wait")return {title:t.typeTitle,paras:[t.notStartedMore],list:[]};return {title:t.typeTitle,paras:k==="part"?[t.notFullMore]:[],list:t.howItems}}
+ if(key==="stats")return {title:t.statTitle,paras:[t.statNote],list:[]};
+ if(key==="muse")return {title:t.museTitle,paras:[t.museDef],list:[]};
+ if(key.startsWith("row:")){const x=key.slice(4);return {title:t.types[x],paras:[t.typeDesc[x]],list:[]}}
+ return null;
+}
+function infoBody(d){return `${d.paras.map(p=>`<p>${p}</p>`).join("")}${d.list.length?`<ul>${d.list.map(x=>`<li>${x}</li>`).join("")}</ul>`:""}${d.ver?`<p class="ver">${d.ver}</p>`:""}`}
+function windowLine(){const t=T(),k=stateInfo().kind;if(k==="done"){const d=DAYS[ST.state];return t.scopeDone(fd(d.start),fd(d.start+6))}if(k==="part")return t.scopeIn(fd(DAYS[ST.state].start));return t.scopeLast7}
 function obsCard(){
- const t=T();let h=`<section class="card"><h2>${t.obsTitle}</h2>`;
+ const t=T();let h=`<section class="card">${head(t.obsTitle,"obs")}`;
  if(ST.state==="a"){
-  h+=`<p class="sub">${t.obsExplain}</p><div class="datef"><label id="sl">${t.startLabel}</label><span class="stepper" role="group" aria-labelledby="sl"><button type="button" data-step="-1" aria-label="${t.prevDay}" ${ST.pick<=6?"disabled":""}>${G.chevl}</button><output>${fd(ST.pick)} · ${fw(ST.pick)}</output><button type="button" data-step="1" aria-label="${t.nextDay}">${G.chev}</button></span><button type="button" class="bp" data-act="start">${t.startBtn}</button></div>`;
+  h+=`<p class="sub">${t.obsShort}</p><div class="datef"><label id="sl">${t.startLabel}</label><span class="stepper" role="group" aria-labelledby="sl"><button type="button" data-step="-1" aria-label="${t.prevDay}" ${ST.pick<=6?"disabled":""}>${G.chevl}</button><output>${fd(ST.pick)} · ${fw(ST.pick)}</output><button type="button" data-step="1" aria-label="${t.nextDay}">${G.chev}</button></span><button type="button" class="bp" data-act="start">${t.startBtn}</button></div>`;
  } else if(ST.state==="b0"){
   h+=`<p class="headline">${t.headWait(fd(ST.start),fd(ST.start+7))}</p>`;
   h+=cellsHTML({start:ST.start,today:5,cells:Array(7).fill(["future"])});
@@ -456,40 +480,38 @@ function obsCard(){
   if(ST.state==="c1")h+=`<div class="line ok">${G.check}<span>${t.allPass}</span></div>`;
   if(ST.state==="c2")h+=`<div class="line warn">${G.fail}<span>${t.restart(fd(9),4)}</span></div>`;
  }
- h+=`<p class="ver">${t.version("41a6ce3")}</p></section>`;return h;
+ return h+`</section>`;
 }
 function ratioCells(x,r){const t=T();const [,rev,ks]=r;if(rev<5)return {few:t.few(rev)};const labels=t.rl[LBL[x]];return {vals:ks.map((k,i)=>{const [lo,hi]=wilson(k,rev);return {label:labels[i],main:t.ratio(pct(k/rev),k,rev),iv:t.iv(pct(lo),pct(hi))}})}}
+function rowName(x){const t=T();return t.typeDesc[x]?`<span class="rn">${t.types[x]}${infoBtn("row:"+x)}</span>`:t.types[x]}
+function cardHead(x){const t=T();return t.typeDesc[x]?head(t.types[x],"row:"+x,"h3"):`<h3>${t.types[x]}</h3>`}
 function tableCard(){
  const t=T(),k=stateInfo().kind,nf=n=>new Intl.NumberFormat(LOC[ST.lang]).format(n);
- let h=`<section class="card"><h2>${t.typeTitle}</h2>`;
+ let h=`<section class="card">${head(t.typeTitle,"type")}`;
  if(k==="none"||k==="wait"){h+=`<p class="empty">${t.notStarted}</p></section>`;return h}
- const d=DAYS[ST.state];
  const rows=MAIN.map(x=>[x,0]).concat(ST.otherOpen?OTHER.map(x=>[x,1]):[]);
  if(k==="part"){
-  h+=`<p class="sub">${t.scopeIn(fd(d.start))}</p><p class="empty">${t.notFull}</p>`;
-  h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th></tr></thead><tbody>${rows.map(([x,sub])=>`<tr class="${sub?"sub":""}"><td>${t.types[x]}${t.typeDesc[x]?`<span class="rd">${t.typeDesc[x]}</span>`:""}</td><td class="num">${nf(TD.part[x][0])}</td><td class="num">${nf(TD.part[x][1])}</td></tr>`).join("")}<tr class="otherrow"><td colspan="3">${otherBtn()}</td></tr></tbody></table>`;
-  h+=`<div class="tcards">${rows.map(([x])=>`<div class="tc"><h3>${t.types[x]}</h3>${t.typeDesc[x]?`<p class="rd">${t.typeDesc[x]}</p>`:""}<div class="m"><span>${t.cols[1]}</span><span>${nf(TD.part[x][0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(TD.part[x][1])}</span></div></div>`).join("")}${otherBtn()}</div>`;
-  h+=howBlock()+`</section>`;return h;
+  h+=`<p class="empty">${t.notFull}</p>`;
+  h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th></tr></thead><tbody>${rows.map(([x,sub])=>`<tr class="${sub?"sub":""}"><td>${rowName(x)}</td><td class="num">${nf(TD.part[x][0])}</td><td class="num">${nf(TD.part[x][1])}</td></tr>`).join("")}<tr class="otherrow"><td colspan="3">${otherBtn()}</td></tr></tbody></table>`;
+  h+=`<div class="tcards">${rows.map(([x])=>`<div class="tc">${cardHead(x)}<div class="m"><span>${t.cols[1]}</span><span>${nf(TD.part[x][0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(TD.part[x][1])}</span></div></div>`).join("")}${otherBtn()}</div>`;
+  return h+`</section>`;
  }
- h+=`<p class="sub">${t.scopeDone(fd(d.start),fd(d.start+6))}</p>`;
- h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th><th>${t.cols[3]}</th></tr></thead><tbody>${rows.map(([x,sub])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<tr class="${sub?"sub":""}"><td>${t.types[x]}${t.typeDesc[x]?`<span class="rd">${t.typeDesc[x]}</span>`:""}</td><td class="num">${nf(r[0])}</td><td class="num">${nf(r[1])}</td>${rc.few?`<td class="few">${rc.few}</td>`:`<td><div class="rs">${rc.vals.map(v=>`<div class="r"><span class="rl">${v.label}</span>${v.main}<span class="iv">${v.iv}</span></div>`).join("")}</div></td>`}</tr>`}).join("")}<tr class="otherrow"><td colspan="4">${otherBtn()}</td></tr></tbody></table>`;
- h+=`<div class="tcards">${rows.map(([x])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<div class="tc"><h3>${t.types[x]}</h3>${t.typeDesc[x]?`<p class="rd">${t.typeDesc[x]}</p>`:""}<div class="m"><span>${t.cols[1]}</span><span>${nf(r[0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(r[1])}</span></div>${rc.few?`<div class="m few"><span>${t.cols[3]}</span><span>${rc.few}</span></div>`:rc.vals.map(v=>`<div class="m"><span>${v.label}</span><span>${v.main}<span class="iv">${v.iv}</span></span></div>`).join("")}</div>`}).join("")}${otherBtn()}</div>`;
- h+=howBlock()+`</section>`;return h;
+ h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th><th>${t.cols[3]}</th></tr></thead><tbody>${rows.map(([x,sub])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<tr class="${sub?"sub":""}"><td>${rowName(x)}</td><td class="num">${nf(r[0])}</td><td class="num">${nf(r[1])}</td>${rc.few?`<td class="few">${rc.few}</td>`:`<td><div class="rs">${rc.vals.map(v=>`<div class="r"><span class="rl">${v.label}</span>${v.main}<span class="iv">${v.iv}</span></div>`).join("")}</div></td>`}</tr>`}).join("")}<tr class="otherrow"><td colspan="4">${otherBtn()}</td></tr></tbody></table>`;
+ h+=`<div class="tcards">${rows.map(([x])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<div class="tc">${cardHead(x)}<div class="m"><span>${t.cols[1]}</span><span>${nf(r[0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(r[1])}</span></div>${rc.few?`<div class="m few"><span>${t.cols[3]}</span><span>${rc.few}</span></div>`:rc.vals.map(v=>`<div class="m"><span>${v.label}</span><span>${v.main}<span class="iv">${v.iv}</span></span></div>`).join("")}</div>`}).join("")}${otherBtn()}</div>`;
+ return h+`</section>`;
 }
 function otherBtn(){const t=T();return `<button type="button" class="lk" data-act="other" aria-expanded="${ST.otherOpen}">${t.other(OTHER.length)} · ${ST.otherOpen?t.collapse:t.expand}</button>`}
-function howBlock(){const t=T();return `<details class="how" ${ST.howOpen?"open":""}><summary>${G.chev}${t.how}</summary><ul>${t.howItems.map(x=>`<li>${x}</li>`).join("")}</ul></details>`}
 function statsCard(){
  const t=T(),k=stateInfo().kind,key=k==="done"?"done":k==="part"?"part":"none",v=STATS[key],nf=n=>new Intl.NumberFormat(LOC[ST.lang]).format(n);
- let scope=t.scopeLast7;if(k==="done"){const d=DAYS[ST.state];scope=t.scopeDone(fd(d.start),fd(d.start+6))}if(k==="part")scope=t.scopeIn(fd(DAYS[ST.state].start));
- return `<section class="card"><h2>${t.statTitle}</h2><p class="sub">${scope}</p><div class="stats"><div class="tile"><div class="v">${nf(v[0])}</div><div class="l">${t.m.spoke}</div></div><div class="tile"><div class="v">${nf(v[1])}</div><div class="l">${t.m.hits}</div></div><div class="tile"><div class="v">${nf(v[2])}</div><div class="l">${t.m.misfires}</div></div><div class="tile"><div class="v">${nf(v[3])}</div><div class="l">${t.m.missed}</div><div class="x">${t.m.reviewed(nf(v[4]))}</div></div></div><p class="note">${t.statNote}</p></section>`;
+ return `<section class="card">${head(t.statTitle,"stats")}<div class="stats"><div class="tile"><div class="v">${nf(v[0])}</div><div class="l">${t.m.spoke}</div></div><div class="tile"><div class="v">${nf(v[1])}</div><div class="l">${t.m.hits}</div></div><div class="tile"><div class="v">${nf(v[2])}</div><div class="l">${t.m.misfires}</div></div><div class="tile"><div class="v">${nf(v[3])}</div><div class="l">${t.m.missed}</div><div class="x">${t.m.reviewed(nf(v[4]))}</div></div></div></section>`;
 }
 function museCard(){
  const t=T(),nf=n=>new Intl.NumberFormat(LOC[ST.lang]).format(n);
- let h=`<section class="card"><h2>${t.museTitle}</h2>`;
+ let h=`<section class="card">${head(t.museTitle,"muse")}`;
  if(ST.muse==="none"){h+=`<p class="empty">${t.museEmpty}</p></section>`;return h}
  const m=MUSE,total=m.both+m.museOnly+m.himaOnly+m.neither+m.noRec+m.unpaired,paired=total-m.unpaired;
  h+=`<div class="muse">${["both","museOnly","himaOnly","neither","noRec"].map(x=>`<div class="tile"><div class="v">${nf(m[x])}</div><div class="l">${t.mu[x]}</div></div>`).join("")}</div>`;
- h+=`<div class="musefoot"><span>${t.mu.unpaired} <b>${nf(m.unpaired)}</b></span><span>${t.mu.rate} <b>${t.ratio(pct(paired/total),paired,total)}</b></span></div><p class="note">${t.museDef}</p></section>`;
+ h+=`<div class="musefoot"><span>${t.mu.unpaired} <b>${nf(m.unpaired)}</b></span><span>${t.mu.rate} <b>${t.ratio(pct(paired/total),paired,total)}</b></span></div></section>`;
  return h;
 }
 function isPhone(){return ST.device==="phone"||window.matchMedia("(max-width:640px)").matches}
@@ -498,35 +520,42 @@ function renderFrame(){
  document.getElementById("banner").textContent=t.banner;
  let body;
  if(ST.tab==="rem")body=`<p class="stub">${t.stub}</p>`;
- else body=obsCard()+tableCard()+statsCard()+museCard()+`<div class="foot"><button type="button" class="lk" data-act="goRem">${t.goRate}${G.arrow}</button></div>`;
+ else body=`<p class="win">${windowLine()}</p>`+obsCard()+tableCard()+statsCard()+museCard()+`<div class="foot"><button type="button" class="lk" data-act="goRem">${t.goRate}${G.arrow}</button></div>`;
  document.getElementById("frame").innerHTML=`${side()}<main class="main"><div class="inner"><div class="top"><button type="button" class="rb" aria-label="menu">${G.menu}</button><b class="ttl">${t.title}</b><span class="rb ghost"></span></div><h1>${t.title}</h1><div class="tabs" role="tablist"><button type="button" role="tab" data-tab="rem" aria-selected="${ST.tab==="rem"}">${t.tabRem}</button><button type="button" role="tab" data-tab="report" aria-selected="${ST.tab==="report"}">${t.tabRep}</button></div>${body}</div></main>`;
  renderOverlay();
 }
 function renderOverlay(){
- const t=T(),o=document.getElementById("overlay");
+ const t=T(),o=document.getElementById("overlay"),pop=document.getElementById("pop");pop.innerHTML="";pop.hidden=true;
  if(ST.confirm){o.innerHTML=`<div class="scrim" data-act="cancel"></div><div class="dlg" role="dialog" aria-modal="true" tabindex="-1"><div class="grab"></div><h3>${t.confirmTitle(fd(ST.pick))}</h3><p class="strong">${t.confirmFixed}</p><p>${t.confirmEarliest(fd(6),fd(5))}</p><div class="br"><button type="button" class="bs" data-act="cancel">${t.cancel}</button><button type="button" class="bp" data-act="ok">${t.confirm}</button></div></div>`;o.querySelector(".dlg").focus();return}
- if(ST.openDay!==null&&isPhone()&&DAYS[ST.state]){const d=DAYS[ST.state],c=d.cells[ST.openDay];o.innerHTML=`<div class="scrim" data-act="closeDay"></div><div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><div class="grab"></div><h3>${detailTitle(d,ST.openDay)}</h3>${checksHTML(c[1])}<button type="button" class="bs wide" data-act="closeDay">${t.closeSheet}</button></div>`;o.querySelector(".sheet").focus();return}
+ const d=ST.info&&ST.tab==="report"?infoData(ST.info):null;
+ if(d&&isPhone()){o.innerHTML=`<div class="scrim" data-act="closeInfo"></div><div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><div class="grab"></div><h3>${d.title}</h3><div class="itext">${infoBody(d)}</div><button type="button" class="bs wide" data-act="closeInfo">${t.closeSheet}</button></div>`;o.querySelector(".sheet").focus();return}
+ if(d){const btn=[...document.querySelectorAll(`[data-info="${ST.info}"]`)].find(b=>b.offsetParent!==null);if(btn){pop.hidden=false;pop.innerHTML=`<div class="pop" role="dialog" tabindex="-1"><h3>${d.title}</h3><div class="itext">${infoBody(d)}</div></div>`;const el=pop.firstChild,r=btn.getBoundingClientRect(),w=el.offsetWidth;el.style.top=(r.bottom+window.scrollY+2)+"px";el.style.left=Math.max(8,Math.min(r.left+window.scrollX-12,document.documentElement.clientWidth-w-8))+"px";el.focus({preventScroll:true})}}
+ if(ST.openDay!==null&&isPhone()&&DAYS[ST.state]){const dd=DAYS[ST.state],c=dd.cells[ST.openDay];o.innerHTML=`<div class="scrim" data-act="closeDay"></div><div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><div class="grab"></div><h3>${detailTitle(dd,ST.openDay)}</h3>${checksHTML(c[1])}<button type="button" class="bs wide" data-act="closeDay">${t.closeSheet}</button></div>`;o.querySelector(".sheet").focus();return}
  o.innerHTML="";
 }
 function render(){renderProto();renderFrame()}
 document.addEventListener("click",e=>{
- const p=e.target.closest("[data-p]");if(p){ST[p.dataset.p]=p.dataset.v;if(p.dataset.p==="state"){ST.openDay=null;ST.confirm=false;ST.tab="report"}render();return}
- const tb=e.target.closest("[data-tab]");if(tb){ST.tab=tb.dataset.tab;ST.openDay=null;render();return}
+ let closed=false;if(ST.info&&!e.target.closest(".pop,.sheet,[data-info]")){ST.info=null;closed=true}
+ const p=e.target.closest("[data-p]");if(p){ST[p.dataset.p]=p.dataset.v;if(p.dataset.p==="state"){ST.openDay=null;ST.confirm=false;ST.info=null;ST.tab="report"}render();return}
+ const inf=e.target.closest("[data-info]");if(inf){ST.info=ST.info===inf.dataset.info?null:inf.dataset.info;ST.openDay=null;render();return}
+ const tb=e.target.closest("[data-tab]");if(tb){ST.tab=tb.dataset.tab;ST.openDay=null;ST.info=null;render();return}
  const dy=e.target.closest("[data-day]");if(dy){const i=+dy.dataset.day;ST.openDay=ST.openDay===i?null:i;render();return}
  const st=e.target.closest("[data-step]");if(st){ST.pick=Math.max(6,ST.pick+ +st.dataset.step);render();return}
- const a=e.target.closest("[data-act]");if(!a)return;const act=a.dataset.act;
+ const a=e.target.closest("[data-act]");if(!a){if(closed)render();return}const act=a.dataset.act;
  if(act==="start")ST.confirm=true;
  if(act==="cancel")ST.confirm=false;
  if(act==="ok"){ST.confirm=false;ST.start=ST.pick;ST.state="b0"}
  if(act==="closeDay")ST.openDay=null;
+ if(act==="closeInfo")ST.info=null;
  if(act==="other")ST.otherOpen=!ST.otherOpen;
  if(act==="goRem"){ST.tab="rem";window.scrollTo(0,0);document.getElementById("screen").scrollTop=0}
  render();
 });
-document.addEventListener("toggle",e=>{if(e.target.classList&&e.target.classList.contains("how"))ST.howOpen=e.target.open},true);
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(ST.confirm||ST.openDay!==null)){ST.confirm=false;ST.openDay=null;render()}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(ST.confirm||ST.openDay!==null||ST.info)){ST.confirm=false;ST.openDay=null;ST.info=null;render()}});
 window.matchMedia("(max-width:640px)").addEventListener("change",()=>renderFrame());
-const q=new URLSearchParams(location.search);["device","state","muse","lang","theme","tab"].forEach(k=>{if(q.get(k))ST[k]=q.get(k)});if(q.get("day"))ST.openDay=+q.get("day");if(q.get("other"))ST.otherOpen=true;if(q.get("how"))ST.howOpen=true;if(q.get("confirm"))ST.confirm=true;
+window.addEventListener("resize",()=>{if(ST.info&&!isPhone())renderOverlay()});
+document.getElementById("screen").addEventListener("scroll",()=>{if(ST.info&&!isPhone())renderOverlay()});
+const q=new URLSearchParams(location.search);["device","state","muse","lang","theme","tab","info"].forEach(k=>{if(q.get(k))ST[k]=q.get(k)});if(q.get("day"))ST.openDay=+q.get("day");if(q.get("other"))ST.otherOpen=true;if(q.get("confirm"))ST.confirm=true;
 render();
 </script>
 </body>
