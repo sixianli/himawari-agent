@@ -49,7 +49,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 下面两个时机都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 两个模型各看一遍。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
 
 - 写代码之前要出方案时（大改动一定要）：先让两个模型在不看线程结论的情况下各自出方案（`--mode plan`），再请它们审核线程自己的方案（`--mode plan-review`）。线程把三方逐条比较，先替 Andy 判断采纳什么、不采纳什么、为什么，只把整合后的方案和真正要他拍板的几项交给他。
-- 合并 PR 之前：对最终提交做一次代码复核（`--mode code-review`）。线程把成立的意见分成“会出错”和“可以更好”：会出错的改代码并对改动再复核，直到没有为止；可以更好的不改，列给 Andy，他说采纳才改。
+- 合并 PR 之前：对最终提交做一次代码复核（`--mode code-review`）。线程把成立的意见分成“会出错”和“可以更好”：会出错的改代码并对改动再复核，直到没有为止，连续三轮没过就先停下报告 Andy；可以更好的不改，列给 Andy，他说采纳才改，改完同样再复核。
 
 每次的提示里必须有那份文件列出的问题，包括「这个改动会不会改变模型已经见过的请求开头」。步骤、材料怎么写、费用上限和只读限制，见 [.agents/instructions/model-review.md](.agents/instructions/model-review.md)。
 
