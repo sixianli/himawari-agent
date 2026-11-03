@@ -464,12 +464,13 @@ export class SqliteProactiveOperations {
           "DELETE FROM decision_ledger WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive'",
         )
         .run(scope.ownerId, scope.agentId).changes;
-      insertObservationEvent(this.database, {
-        ownerId: scope.ownerId,
-        agentId: scope.agentId,
-        kind: "proactive_records_cleared",
-        detail: { rows: cleared },
-      });
+      if (cleared > 0)
+        insertObservationEvent(this.database, {
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          kind: "proactive_records_cleared",
+          detail: { rows: cleared },
+        });
       return refs;
     })();
   }

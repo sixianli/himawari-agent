@@ -112,7 +112,7 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
       ])
         await observation.beat({ ...scope, at, serviceRevision: "41a6ce3" });
       expect(await observation.firstHeartbeat(scope)).toBe("2026-11-05T15:01:00.000Z");
-      const facts = await observation.readDayFacts({ ...scope, ...DAY });
+      const facts = await observation.readDayFacts({ ...scope, ...DAY, until: DAY.end });
       expect(facts.heartbeatHours).toEqual([
         "2026-11-05T15:00:00.000Z",
         "2026-11-05T16:00:00.000Z",
@@ -219,7 +219,7 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
       } finally {
         database.close();
       }
-      const facts = await observation.readDayFacts({ ...scope, ...DAY });
+      const facts = await observation.readDayFacts({ ...scope, ...DAY, until: DAY.end });
       expect(facts.proactiveTimes).toEqual([
         "2026-11-05T15:10:00.000Z",
         "2026-11-05T15:25:00.000Z",
@@ -290,6 +290,53 @@ describe.each(["worker", "direct"] as const)("ledger observation store through %
       } finally {
         database.close();
       }
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("writes the first state snapshot even when another event came first, and keeps same-moment events in order", async () => {
+    const { repository, observation, raw } = await fixture();
+    try {
+      const database = raw();
+      try {
+        database
+          .prepare(
+            `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, detail)
+             VALUES ('early', ?, ?, 'consolidation_failed', ?, '{}')`,
+          )
+          .run(OWNER_ID, AGENT_ID, T0);
+      } finally {
+        database.close();
+      }
+      await observation.ensureSnapshot({ ...scope, at: "2026-11-05T15:01:00.000Z" });
+      const settings = { ...scope, quietHours: [], importantSenders: [] };
+      const same = "2026-11-05T16:00:00.000Z";
+      for (let index = 0; index < 10; index += 1) {
+        await repository.proactive().writeSettings({ ...settings, enabled: true, now: same });
+        await repository.proactive().writeSettings({ ...settings, enabled: false, now: same });
+      }
+      const kinds = (
+        await observation.listEvents({ ...scope, since: "1970-01-01T00:00:00.000Z" })
+      ).map(({ kind }) => kind);
+      expect(kinds.slice(0, 2)).toEqual(["consolidation_failed", "state_snapshot"]);
+      expect(kinds.slice(2)).toEqual(
+        Array.from({ length: 20 }, (_, index) =>
+          index % 2 === 0 ? "proactive_enabled" : "proactive_disabled",
+        ),
+      );
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("writes no clear event when there were no Gmail records to clear", async () => {
+    const { repository, observation } = await fixture();
+    try {
+      await repository.proactive().clearRecords(scope);
+      expect(await observation.listEvents({ ...scope, since: "1970-01-01T00:00:00.000Z" })).toEqual(
+        [],
+      );
     } finally {
       await repository.close();
     }

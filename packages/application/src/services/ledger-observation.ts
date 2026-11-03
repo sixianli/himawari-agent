@@ -110,6 +110,70 @@ function serviceRunning(
   );
 }
 
+const STATE_EVENTS: ReadonlySet<ObservationEvent["kind"]> = new Set([
+  "state_snapshot",
+  "proactive_enabled",
+  "proactive_disabled",
+  "source_connected",
+  "source_needs_reconnect",
+  "source_disconnected",
+  "memory_capture_paused",
+  "memory_capture_resumed",
+]);
+
+function replay(
+  window: ObservationDayWindow,
+  facts: ObservationDayFacts,
+): {
+  readonly start: SourceState;
+  readonly end: SourceState;
+  readonly during: readonly ObservationEvent[];
+} {
+  const stateEvents = facts.events.filter(({ kind }) => STATE_EVENTS.has(kind));
+  const before = stateEvents.filter(({ occurredAt }) => occurredAt < window.start);
+  const during = stateEvents.filter(
+    ({ occurredAt }) => occurredAt >= window.start && occurredAt < window.end,
+  );
+  let start: SourceState = {
+    proactiveEnabled: facts.proactiveEnabled,
+    sourceStatus: facts.sourceStatus,
+    capturePaused: facts.capturePaused,
+  };
+  if (before.length > 0 || during.length > 0) {
+    start = { proactiveEnabled: false, sourceStatus: "disconnected", capturePaused: false };
+    for (const event of before) start = applyEvent(start, event);
+  }
+  let end = start;
+  for (const event of during) end = applyEvent(end, event);
+  return { start, end, during };
+}
+
+function momentsOff(
+  window: ObservationDayWindow,
+  facts: ObservationDayFacts,
+  off: (state: SourceState) => boolean,
+): readonly string[] {
+  const { start, during } = replay(window, facts);
+  const moments: string[] = [];
+  let state = start;
+  if (off(state)) moments.push(window.start);
+  for (const event of during) {
+    state = applyEvent(state, event);
+    if (off(state)) moments.push(event.occurredAt);
+  }
+  return moments;
+}
+
+function memoryCapture(
+  window: ObservationDayWindow,
+  facts: ObservationDayFacts,
+): ObservationCheckItem {
+  const pausedAt = momentsOff(window, facts, (state) => state.capturePaused);
+  return pausedAt.length > 0
+    ? item("memory_capture", "blocked", "paused", { since: pausedAt[0] ?? null })
+    : item("memory_capture", "pass", "running");
+}
+
 function proactiveWriting(
   window: ObservationDayWindow,
   facts: ObservationDayFacts,
@@ -120,35 +184,33 @@ function proactiveWriting(
     return item("proactive_writing", "blocked", "interval_too_long", {
       intervalMinutes: Math.round(schedule.intervalMs / 60_000),
     });
-  let state: SourceState = {
-    proactiveEnabled: facts.proactiveEnabled,
-    sourceStatus: facts.sourceStatus,
-    capturePaused: facts.capturePaused,
-  };
-  const before = facts.events.filter(({ occurredAt }) => occurredAt < window.start);
-  const during = facts.events.filter(
-    ({ occurredAt }) => occurredAt >= window.start && occurredAt < window.end,
+  const offAt = momentsOff(
+    window,
+    facts,
+    (state) => !state.proactiveEnabled || state.sourceStatus !== "connected",
   );
-  if (before.length > 0 || during.length > 0) {
-    state = { proactiveEnabled: false, sourceStatus: "disconnected", capturePaused: false };
-    for (const event of before) state = applyEvent(state, event);
-  }
-  const offAt: string[] = [];
-  if (!state.proactiveEnabled || state.sourceStatus !== "connected") offAt.push(window.start);
-  for (const event of during) {
-    state = applyEvent(state, event);
-    if (!state.proactiveEnabled || state.sourceStatus !== "connected") offAt.push(event.occurredAt);
-  }
-  if (offAt.length > 0)
+  if (offAt.length > 0) {
+    const last = replay(window, facts).end;
     return item(
       "proactive_writing",
       "blocked",
-      state.proactiveEnabled ? "source_not_connected" : "switched_off",
+      last.proactiveEnabled ? "source_not_connected" : "switched_off",
       { since: offAt[0] ?? null, rows: facts.proactiveTimes.length },
     );
+  }
+  const clearedAt = facts.events
+    .filter(
+      (event) => event.kind === "proactive_records_cleared" && event.occurredAt >= window.start,
+    )
+    .map(({ occurredAt }) => occurredAt)
+    .sort()
+    .at(-1);
+  if (clearedAt !== undefined && clearedAt >= window.end)
+    return item("proactive_writing", "pass", "records_cleared", { clearedAt });
+  const from = clearedAt ?? window.start;
   const points = [
-    Date.parse(window.start),
-    ...facts.proactiveTimes.map((time) => Date.parse(time)),
+    Date.parse(from),
+    ...facts.proactiveTimes.filter((time) => time >= from).map((time) => Date.parse(time)),
     Date.parse(window.end),
   ];
   let longest = 0;
@@ -156,6 +218,7 @@ function proactiveWriting(
     longest = Math.max(longest, (points[index] as number) - (points[index - 1] as number));
   const limit = 2 * Math.max(schedule.intervalMs, schedule.perCheckMs) + GAP_SLACK_MS;
   const details = {
+    ...(clearedAt === undefined ? {} : { clearedAt }),
     rows: facts.proactiveTimes.length,
     longestGapMinutes: Math.round(longest / 60_000),
     limitMinutes: Math.round(limit / 60_000),
@@ -210,12 +273,13 @@ function rowsKept(
     for (const [kind, before] of Object.entries(previous.counts)) {
       const after = previous.now[kind] ?? 0;
       if (after >= before) continue;
-      const explained =
-        kind === "proactive" &&
-        events.some(
+      const clearedRows = events
+        .filter(
           (event) =>
             event.kind === "proactive_records_cleared" && event.occurredAt > previous.checkedAt,
-        );
+        )
+        .reduce((sum, event) => sum + Number(event.detail["rows"] ?? 0), 0);
+      const explained = kind === "proactive" && clearedRows >= before - after;
       if (!explained)
         return item("rows_kept", "fail", "rows_missing", {
           day: previous.day,
@@ -257,6 +321,7 @@ export function evaluateObservationDay(input: {
   const checks = [
     serviceRunning(input.window, input.facts.heartbeatHours),
     proactiveWriting(input.window, input.facts, input.schedule),
+    memoryCapture(input.window, input.facts),
     consolidation(input.window, input.facts, input.now),
     rowsKept(input.earlier, input.facts.events),
     timeFormat(input.facts),

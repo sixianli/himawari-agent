@@ -88,6 +88,7 @@ describe("[P0-8] daily decision record check", () => {
     expect(result.checks.map(({ code, status }) => [code, status])).toEqual([
       ["service_running", "pass"],
       ["proactive_writing", "pass"],
+      ["memory_capture", "pass"],
       ["consolidation_recorded", "not_applicable"],
       ["rows_kept", "pass"],
       ["time_format", "pass"],
@@ -253,6 +254,77 @@ describe("[P0-8] daily decision record check", () => {
       { earlier },
     );
     expect(byCode(clearedBefore, "rows_kept")?.status).toBe("fail");
+  });
+
+  it("marks the day blocked when memory capture was paused during the day", () => {
+    const result = evaluate({
+      events: [SNAPSHOT, event("memory_capture_paused", "2026-11-06T03:00:00.000Z")],
+      capturePaused: true,
+    });
+    expect(result.status).toBe("blocked");
+    expect(byCode(result, "memory_capture")).toMatchObject({
+      status: "blocked",
+      reason: "paused",
+      facts: { since: "2026-11-06T03:00:00.000Z" },
+    });
+  });
+
+  it("uses the stored switch state only from state events, not from unrelated events", () => {
+    const result = evaluate({
+      events: [event("consolidation_failed", "2026-11-04T00:00:00.000Z", { day: "2026-11-04" })],
+    });
+    expect(byCode(result, "proactive_writing")).toMatchObject({ status: "pass" });
+  });
+
+  it("does not fail the Gmail timing when the owner cleared Gmail records that day or before the check", () => {
+    const clearedMidday = evaluate({
+      proactiveTimes: everyQuarter(36),
+      events: [
+        SNAPSHOT,
+        event("proactive_records_cleared", "2026-11-06T00:00:00.000Z", { rows: 400 }),
+      ],
+    });
+    expect(byCode(clearedMidday, "proactive_writing")).toMatchObject({
+      status: "pass",
+      reason: "on_time",
+      facts: { clearedAt: "2026-11-06T00:00:00.000Z" },
+    });
+    const clearedAfter = evaluate({
+      proactiveTimes: [],
+      events: [
+        SNAPSHOT,
+        event("proactive_records_cleared", "2026-11-06T15:20:00.000Z", { rows: 500 }),
+      ],
+    });
+    expect(byCode(clearedAfter, "proactive_writing")).toMatchObject({
+      status: "pass",
+      reason: "records_cleared",
+    });
+  });
+
+  it("does not let a clear of fewer rows explain a bigger loss", () => {
+    const earlier = [
+      {
+        day: "2026-11-05",
+        checkedAt: "2026-11-05T16:30:00.000Z",
+        counts: { proactive: 96 },
+        now: { proactive: 10 },
+      },
+    ];
+    expect(
+      byCode(
+        evaluate(
+          {
+            events: [
+              SNAPSHOT,
+              event("proactive_records_cleared", "2026-11-06T05:00:00.000Z", { rows: 0 }),
+            ],
+          },
+          { earlier },
+        ),
+        "rows_kept",
+      ),
+    ).toMatchObject({ status: "fail", reason: "rows_missing" });
   });
 
   it("fails on decision record times in the wrong format", () => {

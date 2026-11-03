@@ -25,10 +25,11 @@ import {
   summarizeDecisions,
   summarizeMuse,
 } from "@himawari-agent/calibration";
-import type {
-  GatewayV2Command,
-  GatewayV2Query,
-  GatewayV2Snapshot,
+import {
+  type GatewayV2Command,
+  type GatewayV2Query,
+  type GatewayV2Snapshot,
+  gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 
 export const PRODUCTION_OBSERVATION_OPERATIONS = Object.freeze([
@@ -143,7 +144,7 @@ export class ProductionObservation {
         counts: check.counts,
         now: recount[check.day] ?? {},
       }));
-      const facts = await observation.readDayFacts({ ...scope, ...window });
+      const facts = await observation.readDayFacts({ ...scope, ...window, until: now });
       const result = evaluateObservationDay({
         window,
         facts,
@@ -195,7 +196,7 @@ export class ProductionObservation {
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
       : null;
-    return {
+    const snapshot: GatewayV2Snapshot = {
       ...query,
       kind: "snapshot",
       type: "proactive.weekly.snapshot",
@@ -246,6 +247,8 @@ export class ProductionObservation {
         generatedAt: now,
       },
     };
+    gatewayV2MessageSchema.parse(snapshot);
+    return snapshot;
   }
 
   async execute(command: GatewayV2Command): Promise<{ resultRef: string; replayed: boolean }> {

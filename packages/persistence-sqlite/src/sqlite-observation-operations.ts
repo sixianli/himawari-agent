@@ -260,7 +260,10 @@ export class SqliteLedgerObservationOperations {
     if (!validTime(input.at)) this.invalid("Observation time is invalid");
     this.database.transaction(() => {
       const existing = this.database
-        .prepare("SELECT 1 FROM observation_events WHERE owner_id = ? AND agent_id = ? LIMIT 1")
+        .prepare(
+          `SELECT 1 FROM observation_events
+           WHERE owner_id = ? AND agent_id = ? AND kind = 'state_snapshot' LIMIT 1`,
+        )
         .get(input.ownerId, input.agentId);
       if (existing) return;
       const state = this.currentState(input);
@@ -293,6 +296,8 @@ export class SqliteLedgerObservationOperations {
 
   private readDayFacts(input: Input<"readDayFacts">): ObservationDayFacts {
     this.window(input);
+    if (!validTime(input.until) || input.until < input.end)
+      this.invalid("Observation time is invalid");
     return this.database.transaction(() => {
       const scope = [input.ownerId, input.agentId] as const;
       const heartbeatHours = (
@@ -345,9 +350,9 @@ export class SqliteLedgerObservationOperations {
                occurred_at AS occurredAt, detail
              FROM observation_events
              WHERE owner_id = ? AND agent_id = ? AND occurred_at < ?
-             ORDER BY occurred_at, id`,
+             ORDER BY occurred_at, rowid`,
           )
-          .all(...scope, input.end) as Record<string, unknown>[]
+          .all(...scope, input.until) as Record<string, unknown>[]
       ).map(eventFromRow);
       return Object.freeze({
         heartbeatHours: Object.freeze(heartbeatHours),
@@ -444,7 +449,7 @@ export class SqliteLedgerObservationOperations {
           `SELECT id, owner_id AS ownerId, agent_id AS agentId, kind, occurred_at AS occurredAt,
              detail
            FROM observation_events WHERE owner_id = ? AND agent_id = ? AND occurred_at >= ?
-           ORDER BY occurred_at, id LIMIT 500`,
+           ORDER BY occurred_at, rowid LIMIT 500`,
         )
         .all(input.ownerId, input.agentId, input.since) as Record<string, unknown>[]
     ).map(eventFromRow);

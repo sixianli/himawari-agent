@@ -102,7 +102,9 @@ export interface LedgerObservationPort {
   ): Promise<void>;
   firstHeartbeat(input: ObservationScope): Promise<string | null>;
   ensureSnapshot(input: ObservationScope & { readonly at: string }): Promise<void>;
-  readDayFacts(input: ObservationScope & ObservationDayWindow): Promise<ObservationDayFacts>;
+  readDayFacts(
+    input: ObservationScope & ObservationDayWindow & { readonly until: string },
+  ): Promise<ObservationDayFacts>;
   countDays(
     input: ObservationScope & { readonly days: readonly ObservationDayWindow[] },
   ): Promise<Readonly<Record<string, Readonly<Record<string, number>>>>>;

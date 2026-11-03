@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:87c75347f32b8bfe6915640481feb693a1e009a940e75d016ab46eecc6703695"
+contract_sha256: "sha256:6e35baaf7ae61517af5a2930c31890047cc13ee99fe9dbbc547e3f036b17d3da"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-03"
@@ -154,6 +154,8 @@ date: "2026-11-03"
 | `service_running` / `hours_missing` | 当天缺了 2 个小时以上的心跳，服务停过 | `journalctl -u himawari-prod.service --since` 那天 | 查停服原因；是上线引起的，记事故并考虑上线时段 |
 | `proactive_writing` / `gap_too_long` | Gmail 开着连着，但检查记录中间断档太久 | 那天 `decision_ledger` 里 `kind='proactive'` 的时间；服务日志 `proactive.failed` | 查定时器和 Gmail 读取失败 |
 | `proactive_writing` / `switched_off`、`source_not_connected`、`not_configured`、`interval_too_long` | 受阻：Gmail 被关掉、断开、没配置，或检查间隔超过 1 小时 | `observation_events` 里那天的开关事件 | 告诉 Andy，由他决定 |
+| `memory_capture` / `paused` | 受阻：当天暂停过自动记忆 | `observation_events` 里那天的 `memory_capture_paused` | 告诉 Andy，由他决定 |
+| `proactive_writing` / `records_cleared` | 当天结束后、检查前清除过 Gmail 记录，当天的 Gmail 记录已无法判断，记为通过 | `observation_events` 里的 `proactive_records_cleared` | 无需处理 |
 | `consolidation_recorded` / `run_failed` | 整理记忆失败 | `observation_events` 里 `consolidation_failed` 的 `errorCode`；服务日志 | 查失败原因 |
 | `consolidation_recorded` / `run_stuck` | 整理卡在运行中超过 12 小时 | `memory_consolidation_runs` 那天的行 | 查服务是否在整理中途停掉 |
 | `consolidation_recorded` / `rows_mismatch` | 整理改了 N 条记忆，决策记录不是 N 行 | `memory_consolidation_changes` 和 `decision_ledger` 里该批次的行数 | 这是决策记录漏写，按事故处理 |

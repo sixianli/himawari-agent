@@ -236,6 +236,76 @@ describe.each(["worker", "direct"] as const)(
       }
     });
 
+    it("sees a tidy-up failure that was recorded after the day ended but before the check", async () => {
+      const { repository, service, setNow, raw } = await fixture();
+      try {
+        await service.tick();
+        await service.execute(start("2026-11-06"));
+        const observation = repository.ledgerObservation();
+        const database = raw();
+        try {
+          database
+            .prepare(
+              `INSERT INTO observation_events (id, owner_id, agent_id, kind, occurred_at, detail)
+               VALUES ('late-failure', ?, ?, 'consolidation_failed', '2026-11-06T15:10:00.000Z',
+                 json_object('day', '2026-11-06', 'errorCode', 'MODEL_TIMEOUT'))`,
+            )
+            .run(OWNER_ID, AGENT_ID);
+        } finally {
+          database.close();
+        }
+        setNow("2026-11-06T16:30:00.000Z");
+        await service.checkDueDays();
+        const [check] = await observation.listChecks(scope);
+        expect(check?.checks.find(({ code }) => code === "consolidation_recorded")).toMatchObject({
+          status: "fail",
+          reason: "run_failed",
+        });
+      } finally {
+        await repository.close();
+      }
+    });
+
+    it("refuses to serve a weekly snapshot the contract would reject", async () => {
+      const { repository } = await fixture();
+      try {
+        const observation = repository.ledgerObservation();
+        const broken = new ProductionObservation({
+          scope,
+          observation: {
+            ...observation,
+            readStart: async () => ({
+              ...scope,
+              startDay: "2026-11-06",
+              setAt: FIRST_BOOT,
+              serviceRevision: "41a6ce3",
+              firstBootAt: FIRST_BOOT,
+            }),
+            firstHeartbeat: async () => FIRST_BOOT,
+            listChecks: async () => [
+              {
+                id: "c",
+                ...scope,
+                day: "2026-11-06",
+                checkedAt: "2026-11-06T16:00:00.000Z",
+                serviceRevision: "41a6ce3",
+                status: "great" as never,
+                checks: [],
+                counts: {},
+              },
+            ],
+          },
+          ledger: repository.decisionLedger(),
+          clock: { now: () => "2026-11-07T03:00:00.000Z" },
+          schedule: { configured: false, intervalMs: 0, perCheckMs: 0 },
+          serviceRevision: "41a6ce3",
+        });
+        await expect(broken.query(weekly())).rejects.toThrow(/status/);
+      } finally {
+        await repository.close();
+      }
+    });
+
     it("reads the service version from the build file and falls back when it is missing", async () => {
       const directory = await mkdtemp(path.join(tmpdir(), "himawari-build-info-"));
       directories.push(directory);
