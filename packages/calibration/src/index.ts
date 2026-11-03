@@ -46,8 +46,8 @@ const APPLICABLE: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]
 };
 
 const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
-  proactive_pushed: "系统主动提醒",
-  proactive_silent: "这次检查没提醒",
+  proactive_pushed: "读完邮件提醒了你",
+  proactive_silent: "读完邮件没提醒",
   memory_skipped: "系统没存下的记忆",
   memory_kept: "已存的记忆",
   consolidation: "整理记忆",

@@ -91,6 +91,7 @@ th:first-child,td:first-child{padding-left:0}
 td.num,th.num{text-align:right}
 td .iv{display:block;font-size:11.5px;color:var(--mu)}
 td.few{color:var(--mu)}
+.rd{display:block;font-size:12px;line-height:1.45;color:var(--mu);max-width:22em;margin:2px 0 0;font-weight:400}
 .rs{display:flex;flex-wrap:wrap;gap:6px 32px}
 .rs .r{min-width:0}
 .rl{color:var(--mu);margin-right:6px}
@@ -271,7 +272,8 @@ zh:{
  other:n=>`其他判断 · ${n} 类`,expand:"展开",collapse:"收起",
  how:"这些数字怎么算",
  howItems:["分母是你评过的条数。","每一行只列这类决策可能出现的情况（例如没存下的记忆只会是“不存是对的”或“该存没存”）。","评过的少于 5 条时不算比例，写“样本不足”。","区间是 95% Wilson 区间：按你评过的条数算出的范围，真实比例有 95% 的把握落在里面；评得越多，区间越窄。"],
- types:{pushed:"系统主动提醒",skippedMemory:"系统没存下的记忆",keptMemory:"已存的记忆",consolidation:"整理记忆",silent:"这次检查没提醒",pendingMemory:"待你确认的记忆",truncation:"回答时没带上的旧内容",degrade:"记忆搜索没生效",externalRead:"外部程序读取记忆"},
+ typeDesc:{pushed:"Himawari 每 15 分钟读一次新邮件；这一行是读完后提醒了你的那几次。",silent:"Himawari 每 15 分钟读一次新邮件；这一行是读完觉得都不用提醒你的那几次。"},
+ types:{pushed:"读完邮件提醒了你",skippedMemory:"系统没存下的记忆",keptMemory:"已存的记忆",consolidation:"整理记忆",silent:"读完邮件没提醒",pendingMemory:"待你确认的记忆",truncation:"回答时没带上的旧内容",degrade:"记忆搜索没生效",externalRead:"外部程序读取记忆"},
  statTitle:"系统主动提醒 · 提醒检查记录的四个统计",
  m:{spoke:"主动提醒总次数",hits:"恰当的提醒",misfires:"多余的提醒",missed:"漏提醒（你查过的邮件里）",reviewed:n=>`已审 ${n} 封`},
  statNote:"这四个数和上面的比例算法不同：这里把 24 小时内点开也算恰当、划掉或 24 小时没点开算多余；上面只算你打过分的。",
@@ -325,7 +327,8 @@ en:{
  other:n=>`Other decisions · ${n} types`,expand:"Show",collapse:"Hide",
  how:"How these numbers are worked out",
  howItems:["The denominator is the number you rated.","Each row lists only the outcomes possible for that kind of decision (for example, a memory the system chose not to save can only be “Right not to save” or “Should have saved”).","With fewer than 5 rated, no ratio is shown; it says “Too few rated”.","The range is a 95% Wilson interval: worked out from how many you rated, the true ratio falls inside it with 95% confidence. The more you rate, the narrower it gets."],
- types:{pushed:"Proactive reminders",skippedMemory:"Memories the system chose not to save",keptMemory:"Saved memories",consolidation:"Memory tidy-up",silent:"Checks with no reminder",pendingMemory:"Memories awaiting your confirmation",truncation:"Older content left out of an answer",degrade:"Memory search did not work",externalRead:"Memory read by an outside program"},
+ typeDesc:{pushed:"Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.",silent:"Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder."},
+ types:{pushed:"Read mail and reminded you",skippedMemory:"Memories the system chose not to save",keptMemory:"Saved memories",consolidation:"Memory tidy-up",silent:"Read mail, no reminder",pendingMemory:"Memories awaiting your confirmation",truncation:"Older content left out of an answer",degrade:"Memory search did not work",externalRead:"Memory read by an outside program"},
  statTitle:"Proactive reminders · four counts from the reminder check record",
  m:{spoke:"Total proactive reminders",hits:"Appropriate reminders",misfires:"Unneeded reminders",missed:"Reminders it missed (in emails you checked)",reviewed:n=>`${n} reviewed`},
  statNote:"These four numbers are counted differently from the ratios above: here, opening a reminder within 24 hours also counts as appropriate, and dismissing it or not opening it within 24 hours counts as unneeded. The ratios above count only what you rated.",
@@ -379,7 +382,8 @@ ja:{
  other:n=>`その他の判断 · ${n} 種類`,expand:"開く",collapse:"閉じる",
  how:"この数字の出し方",
  howItems:["分母は採点した件数です。","各行には、その種類の判断で起こりうる結果だけを載せます（例：システムが保存しないと判断した記憶は「保存しないのが正しかった」か「保存すべきだった」のどちらかだけ）。","採点が 5 件未満のときは割合を出さず「件数不足」と書きます。","区間は 95% Wilson 区間です。採点した件数から出した範囲で、本当の割合は 95% の確かさでこの中に入ります。採点が多いほど狭くなります。"],
- types:{pushed:"自発的なリマインダー",skippedMemory:"システムが保存しないと判断した記憶",keptMemory:"保存した記憶",consolidation:"記憶の整理",silent:"通知しなかった確認",pendingMemory:"確認待ちの記憶",truncation:"回答に入れなかった古い内容",degrade:"記憶検索が働かなかった",externalRead:"外部プログラムによる記憶の読み取り"},
+ typeDesc:{pushed:"Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。",silent:"Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。"},
+ types:{pushed:"メールを読んで通知した",skippedMemory:"システムが保存しないと判断した記憶",keptMemory:"保存した記憶",consolidation:"記憶の整理",silent:"メールを読んで通知しなかった",pendingMemory:"確認待ちの記憶",truncation:"回答に入れなかった古い内容",degrade:"記憶検索が働かなかった",externalRead:"外部プログラムによる記憶の読み取り"},
  statTitle:"自発的なリマインダー · リマインダー確認の記録の 4 つの集計",
  m:{spoke:"自発的なリマインダーの総数",hits:"適切なリマインダー",misfires:"余計なリマインダー",missed:"見逃し（確認したメールの中）",reviewed:n=>`${n} 通確認`},
  statNote:"この 4 つの数は上の割合と数え方が違います。ここでは 24 時間以内に開いたものも適切、閉じたものや 24 時間開かなかったものは余計と数えます。上の割合は採点したものだけです。",
@@ -463,13 +467,13 @@ function tableCard(){
  const rows=MAIN.map(x=>[x,0]).concat(ST.otherOpen?OTHER.map(x=>[x,1]):[]);
  if(k==="part"){
   h+=`<p class="sub">${t.scopeIn(fd(d.start))}</p><p class="empty">${t.notFull}</p>`;
-  h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th></tr></thead><tbody>${rows.map(([x,sub])=>`<tr class="${sub?"sub":""}"><td>${t.types[x]}</td><td class="num">${nf(TD.part[x][0])}</td><td class="num">${nf(TD.part[x][1])}</td></tr>`).join("")}<tr class="otherrow"><td colspan="3">${otherBtn()}</td></tr></tbody></table>`;
-  h+=`<div class="tcards">${rows.map(([x])=>`<div class="tc"><h3>${t.types[x]}</h3><div class="m"><span>${t.cols[1]}</span><span>${nf(TD.part[x][0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(TD.part[x][1])}</span></div></div>`).join("")}${otherBtn()}</div>`;
+  h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th></tr></thead><tbody>${rows.map(([x,sub])=>`<tr class="${sub?"sub":""}"><td>${t.types[x]}${t.typeDesc[x]?`<span class="rd">${t.typeDesc[x]}</span>`:""}</td><td class="num">${nf(TD.part[x][0])}</td><td class="num">${nf(TD.part[x][1])}</td></tr>`).join("")}<tr class="otherrow"><td colspan="3">${otherBtn()}</td></tr></tbody></table>`;
+  h+=`<div class="tcards">${rows.map(([x])=>`<div class="tc"><h3>${t.types[x]}</h3>${t.typeDesc[x]?`<p class="rd">${t.typeDesc[x]}</p>`:""}<div class="m"><span>${t.cols[1]}</span><span>${nf(TD.part[x][0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(TD.part[x][1])}</span></div></div>`).join("")}${otherBtn()}</div>`;
   h+=howBlock()+`</section>`;return h;
  }
  h+=`<p class="sub">${t.scopeDone(fd(d.start),fd(d.start+6))}</p>`;
- h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th><th>${t.cols[3]}</th></tr></thead><tbody>${rows.map(([x,sub])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<tr class="${sub?"sub":""}"><td>${t.types[x]}</td><td class="num">${nf(r[0])}</td><td class="num">${nf(r[1])}</td>${rc.few?`<td class="few">${rc.few}</td>`:`<td><div class="rs">${rc.vals.map(v=>`<div class="r"><span class="rl">${v.label}</span>${v.main}<span class="iv">${v.iv}</span></div>`).join("")}</div></td>`}</tr>`}).join("")}<tr class="otherrow"><td colspan="4">${otherBtn()}</td></tr></tbody></table>`;
- h+=`<div class="tcards">${rows.map(([x])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<div class="tc"><h3>${t.types[x]}</h3><div class="m"><span>${t.cols[1]}</span><span>${nf(r[0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(r[1])}</span></div>${rc.few?`<div class="m few"><span>${t.cols[3]}</span><span>${rc.few}</span></div>`:rc.vals.map(v=>`<div class="m"><span>${v.label}</span><span>${v.main}<span class="iv">${v.iv}</span></span></div>`).join("")}</div>`}).join("")}${otherBtn()}</div>`;
+ h+=`<table><thead><tr><th>${t.cols[0]}</th><th class="num">${t.cols[1]}</th><th class="num">${t.cols[2]}</th><th>${t.cols[3]}</th></tr></thead><tbody>${rows.map(([x,sub])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<tr class="${sub?"sub":""}"><td>${t.types[x]}${t.typeDesc[x]?`<span class="rd">${t.typeDesc[x]}</span>`:""}</td><td class="num">${nf(r[0])}</td><td class="num">${nf(r[1])}</td>${rc.few?`<td class="few">${rc.few}</td>`:`<td><div class="rs">${rc.vals.map(v=>`<div class="r"><span class="rl">${v.label}</span>${v.main}<span class="iv">${v.iv}</span></div>`).join("")}</div></td>`}</tr>`}).join("")}<tr class="otherrow"><td colspan="4">${otherBtn()}</td></tr></tbody></table>`;
+ h+=`<div class="tcards">${rows.map(([x])=>{const r=TD.done[x],rc=ratioCells(x,r);return `<div class="tc"><h3>${t.types[x]}</h3>${t.typeDesc[x]?`<p class="rd">${t.typeDesc[x]}</p>`:""}<div class="m"><span>${t.cols[1]}</span><span>${nf(r[0])}</span></div><div class="m"><span>${t.cols[2]}</span><span>${nf(r[1])}</span></div>${rc.few?`<div class="m few"><span>${t.cols[3]}</span><span>${rc.few}</span></div>`:rc.vals.map(v=>`<div class="m"><span>${v.label}</span><span>${v.main}<span class="iv">${v.iv}</span></span></div>`).join("")}</div>`}).join("")}${otherBtn()}</div>`;
  h+=howBlock()+`</section>`;return h;
 }
 function otherBtn(){const t=T();return `<button type="button" class="lk" data-act="other" aria-expanded="${ST.otherOpen}">${t.other(OTHER.length)} · ${ST.otherOpen?t.collapse:t.expand}</button>`}

@@ -979,8 +979,8 @@ export const messages = {
   "dailyReview.countLeft":
     "{count, plural, one {# item} other {# items}} today, {left} more not picked",
   "dailyReview.note": "Items not picked may show up tomorrow, and drop off after 7 days.",
-  "dailyReview.tag.pushed": "Proactive reminder",
-  "dailyReview.tag.silent": "Check with no reminder",
+  "dailyReview.tag.pushed": "Read mail and reminded you",
+  "dailyReview.tag.silent": "Read mail, no reminder",
   "dailyReview.tag.mail": "Email not reminded",
   "dailyReview.tag.skippedMemory": "Memory the system skipped",
   "dailyReview.tag.keptMemory": "Saved memory",

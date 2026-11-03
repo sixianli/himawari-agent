@@ -186,9 +186,9 @@ describe("[P0-7] calibration report", () => {
     expect(silent?.rates.unneeded).toBeNull();
     const text = output.text();
     expect(text).toContain(
-      "| 系统主动提醒 | 11 | 10 | 提醒得对 60.0%（6/10，95% 区间 31.3%–83.2%）；不该提醒 40.0%（4/10，95% 区间 16.8%–68.7%） |",
+      "| 读完邮件提醒了你 | 11 | 10 | 提醒得对 60.0%（6/10，95% 区间 31.3%–83.2%）；不该提醒 40.0%（4/10，95% 区间 16.8%–68.7%） |",
     );
-    expect(text).toContain("| 这次检查没提醒 | 3 | 3 | 样本不足（3 条） |");
+    expect(text).toContain("| 读完邮件没提醒 | 3 | 3 | 样本不足（3 条） |");
     expect(text).toContain("| 整理记忆 | 3 | 3 | 样本不足（3 条） |");
     expect(text).toContain("| 记忆搜索没生效 | 2 | 0 | 样本不足（0 条） |");
     expect(text).not.toContain("不适用");
@@ -424,7 +424,7 @@ describe("[P0-7] calibration report", () => {
       ],
       { cwd: root },
     );
-    expect(stdout).toContain("| 系统主动提醒 | 5 | 5 | 提醒得对 100.0%（5/5");
+    expect(stdout).toContain("| 读完邮件提醒了你 | 5 | 5 | 提醒得对 100.0%（5/5");
     const [line] = (await readFile(history, "utf8")).trim().split("\n");
     expect(JSON.parse(line as string)).toMatchObject({
       schema: "himawari-calibration-week.v2",
