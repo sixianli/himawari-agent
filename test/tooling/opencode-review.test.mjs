@@ -1,6 +1,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -10,16 +11,19 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  budgetCheck,
   buildPrompt,
   COST_LIMIT_PER_MODEL_USD,
   checkGitArgs,
   checkProbeRequests,
   envFilesInHistory,
   expectedTools,
+  FOCUS_SENTENCE,
   GIT_ENV,
   GIT_READ_COMMANDS,
   GIT_REFUSED,
@@ -27,19 +31,30 @@ import {
   installGitGuard,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
+  nextRound,
+  opencodeBinary,
   parseArgs,
   prepareCopy,
   probePlan,
   probeRefused,
   QUESTIONS_PATH,
   questionsSource,
+  REVIEW_MODELS,
   RULE_16_SENTENCE,
+  readUsage,
+  roundsOnDisk,
   resolveCommits,
   reviewConfig,
+  reviewModel,
   reviewQuestions,
   runOutcome,
   SHELL_LOG_NAME,
+  spentOf,
   summarizeEvents,
+  WRAP_UP_MIN_USD,
+  WRAP_UP_PROMPT,
+  WRAP_UP_RESERVE_USD,
+  wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
 
 function lstatExists(path) {
@@ -758,5 +773,442 @@ describe("opencode review repository copy", () => {
     expect(() => resolveCommits(process.cwd(), { head: "no-such-ref-for-review" })).toThrow(
       "GIT_FAILED",
     );
+  });
+});
+
+function startScriptedModel(reply) {
+  const requests = [];
+  const server = http.createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      if (request.method !== "POST") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end('{"data":[]}');
+        return;
+      }
+      const parsed = JSON.parse(body);
+      const main =
+        (Array.isArray(parsed.tools) && parsed.tools.length > 0) ||
+        JSON.stringify(parsed.messages ?? []).includes(WRAP_UP_PROMPT);
+      if (main) requests.push(parsed);
+      const send = (payload) =>
+        response.write(
+          `data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 1, model: parsed.model, ...payload })}\n\n`,
+        );
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const step = main ? reply(parsed, requests.length) : { text: "title" };
+      const delta = { role: "assistant" };
+      if (step.thinking) delta.reasoning_content = step.thinking;
+      if (step.text) delta.content = step.text;
+      if (step.tool)
+        delta.tool_calls = [
+          {
+            index: 0,
+            id: `call-${requests.length}`,
+            type: "function",
+            function: { name: "read", arguments: JSON.stringify({ filePath: "AGENTS.md" }) },
+          },
+        ];
+      send({ choices: [{ index: 0, delta, finish_reason: null }] });
+      send({
+        choices: [{ index: 0, delta: {}, finish_reason: step.tool ? "tool_calls" : "stop" }],
+        usage: {
+          prompt_tokens: step.promptTokens ?? 1,
+          completion_tokens: 1,
+          total_tokens: (step.promptTokens ?? 1) + 1,
+        },
+      });
+      response.end("data: [DONE]\n\n");
+    });
+  });
+  return new Promise((resolveStart) =>
+    server.listen(0, "127.0.0.1", () =>
+      resolveStart({ server, requests, port: server.address().port }),
+    ),
+  );
+}
+
+async function withScriptedReview(reply, run) {
+  const root = mkdtempSync(join(tmpdir(), "opencode-wrap-"));
+  const { server, requests, port } = await startScriptedModel(reply);
+  try {
+    const copy = join(root, "repo");
+    execFileSync("git", ["clone", "--quiet", "--depth", "1", `file://${process.cwd()}`, copy]);
+    const gitGuard = installGitGuard(root);
+    const baseURL = `http://127.0.0.1:${port}/v1`;
+    const configPath = join(root, "review.json");
+    const wrapUpConfigPath = join(root, "wrap-up.json");
+    writeFileSync(configPath, JSON.stringify(reviewConfig({ mode: "plan", baseURL })));
+    writeFileSync(
+      wrapUpConfigPath,
+      JSON.stringify(reviewConfig({ mode: "plan", baseURL, wrapUp: true })),
+    );
+    const review = (options = {}) =>
+      reviewModel({
+        binary: opencodeBinary(),
+        cwd: copy,
+        configPath,
+        wrapUpConfigPath,
+        gitGuard,
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 120000,
+        ...options,
+      });
+    return await run({ review, requests });
+  } finally {
+    await new Promise((resolveClose) => server.close(resolveClose));
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function isWrapUp(request) {
+  return JSON.stringify(request.messages ?? []).includes(WRAP_UP_PROMPT);
+}
+
+function expectAppendedTo(earlier, later) {
+  expect(later.tools).toEqual(earlier.tools);
+  expect(later.messages.slice(0, earlier.messages.length)).toEqual(earlier.messages);
+  expect(later.messages.length).toBeGreaterThan(earlier.messages.length);
+}
+
+describe("opencode review wrap-up", () => {
+  it("has no step limit and tells the model to go straight to what it needs", () => {
+    expect(reviewConfig({ mode: "plan" }).agent).toBeUndefined();
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      const prompt = buildPrompt({ mode, questions: ["q"], head: "h", base: "b", brief: "x" });
+      expect(prompt.slice(0, prompt.indexOf("---- 本次材料 ----"))).toContain(FOCUS_SENTENCE);
+    }
+  });
+
+  it("gives the wrap-up turn a single step and the same tools as the review", () => {
+    const config = reviewConfig({ mode: "plan", wrapUp: true });
+    expect(config.agent).toEqual({ build: { steps: 1 } });
+    expect(config.permission).toEqual(reviewConfig({ mode: "plan" }).permission);
+  });
+
+  it("never asks again after a hard stop or a crash", () => {
+    const empty = { outcome: "no-text" };
+    for (const run of [
+      { code: null, stopReason: "timeout" },
+      { code: null, stopReason: "cost-limit" },
+      { code: null, stopReason: "cost-unknown" },
+      { code: null, stopReason: "wrap-up-tool-call" },
+      { code: null, spawnError: "EACCES" },
+      { code: 1 },
+      { code: null, signal: "SIGKILL" },
+    ])
+      expect(wrapUpReason(empty, run)).toBeNull();
+    expect(wrapUpReason(empty, { code: 0 })).toBe("no-text");
+    expect(wrapUpReason({ outcome: "ok" }, { code: 0 })).toBeNull();
+    expect(wrapUpReason(empty, { code: null, stopReason: "wrap-up-cost" })).toBe("cost");
+    expect(wrapUpReason(empty, { code: null, stopReason: "wrap-up-time" })).toBe("time");
+  });
+
+  it("counts only numeric step costs", () => {
+    const events = [
+      { type: "step_finish", part: { reason: "tool-calls", tokens: {}, cost: "0.5" } },
+      { type: "step_finish", part: { reason: "stop", tokens: {}, cost: 0.002 } },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+    expect(summarizeEvents(events).usage.cost).toBe(0.002);
+    expect(summarizeEvents(events).usage.costUnknown).toBe(true);
+    expect(spentOf([{ cost: 0.002, costUnknown: true }])).toBe(COST_LIMIT_PER_MODEL_USD);
+    expect(spentOf([{ cost: 0.19, costUnknown: true }])).toBeCloseTo(0.19 + WRAP_UP_RESERVE_USD);
+    expect(spentOf([{ cost: 0.3, costUnknown: true }])).toBeCloseTo(0.3 + WRAP_UP_RESERVE_USD);
+    const negative = JSON.stringify({
+      type: "step_finish",
+      part: { reason: "stop", tokens: {}, cost: -1 },
+    });
+    expect(summarizeEvents(negative).usage).toMatchObject({ cost: 0, costUnknown: true });
+  });
+
+  const reviewBurst = async (costs) => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-burst-"));
+    try {
+      const step = (cost) =>
+        JSON.stringify({
+          type: "step_finish",
+          sessionID: "ses_burst",
+          part: { reason: "tool-calls", tokens: {}, cost },
+        });
+      const binary = join(root, "fake-opencode");
+      writeFileSync(
+        binary,
+        [
+          "#!/bin/sh",
+          'case "$*" in *--session*) exit 0 ;; esac',
+          `printf '%s\\n' ${costs.map((cost) => `'${step(cost)}'`).join(" ")}`,
+          "exec sleep 30",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(binary, 0o755);
+      return await reviewModel({
+        binary,
+        cwd: root,
+        configPath: join(root, "unused.json"),
+        wrapUpConfigPath: join(root, "unused.json"),
+        gitGuard: installGitGuard(root),
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 60000,
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  it("checks the spending line at every step, even when several steps arrive together", async () => {
+    const withRoom = await reviewBurst([0.08, 0.08]);
+    expect(withRoom.runs[0].stopReason).toBe("wrap-up-cost");
+    expect(withRoom.wrapUpSkipped).toBeNull();
+    expect(withRoom.runs).toHaveLength(2);
+
+    const overTheCap = await reviewBurst([0.08, 0.08, 0.08]);
+    expect(overTheCap.runs[0].stopReason).toBe("wrap-up-cost");
+    expect(overTheCap.wrapUpSkipped).toBe("no-budget");
+    expect(overTheCap.runs).toHaveLength(1);
+  }, 120000);
+
+  it("does not keep spending after a step whose cost is unknown, even if the follow-up line was reached first", async () => {
+    const result = await reviewBurst([0.16, "未知"]);
+    expect(result.runs[0].stopReason).toBe("wrap-up-cost");
+    expect(result.wrapUpSkipped).toBe("cost-unknown");
+    expect(result.runs).toHaveLength(1);
+  }, 60000);
+
+  it("puts an unknown cost before a lack of budget when both apply", async () => {
+    const result = await reviewBurst([0.19, "未知"]);
+    expect(result.wrapUpSkipped).toBe("cost-unknown");
+  }, 60000);
+
+  it("stops at once on a step whose cost cannot be read, including a negative one", async () => {
+    for (const cost of ["未知", -1]) {
+      const result = await reviewBurst([0.01, cost]);
+      expect(result.runs).toHaveLength(1);
+      expect(result.runs[0].stopReason).toBe("cost-unknown");
+      expect(result.outcome).toBe("cost-unknown");
+      expect(result.wrapUp).toBeNull();
+      expect(result.wrapUpSkipped).toBeNull();
+      expect(result.summary.usage.costUnknown).toBe(true);
+    }
+  }, 120000);
+
+  it("keeps the model's thinking from the event stream", () => {
+    const events = [
+      { type: "reasoning", part: { type: "reasoning", text: "方案在思考里" } },
+      { type: "step_finish", part: { reason: "stop", tokens: {}, cost: 0.001 } },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+    const summary = summarizeEvents(events);
+    expect(summary.outcome).toBe("no-text");
+    expect(summary.thinking).toBe("方案在思考里");
+  });
+
+  it("asks once more when the answer stays in the thinking, and gets it", async () => {
+    await withScriptedReview(
+      (_request, index) =>
+        index === 1 ? { thinking: "THOUGHT_ONLY" } : { text: "WRAPPED_ANSWER" },
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("no-text");
+        expect(result.outcome).toBe("ok");
+        expect(result.summary.text).toBe("WRAPPED_ANSWER");
+        expect(result.summary.thinking).toContain("THOUGHT_ONLY");
+        expect(requests).toHaveLength(2);
+        expect(isWrapUp(requests[1])).toBe(true);
+        expectAppendedTo(requests[0], requests[1]);
+        const appended = JSON.stringify(requests[1].messages.slice(requests[0].messages.length));
+        expect(appended).toContain(WRAP_UP_PROMPT);
+        expect(appended).toContain("MAXIMUM STEPS REACHED");
+        expect(appended).toContain("Respond with text only");
+      },
+    );
+  }, 120000);
+
+  it("stops reading near the spending cap and still gets a conclusion", async () => {
+    await withScriptedReview(
+      (request) =>
+        isWrapUp(request) ? { text: "COST_WRAPPED" } : { tool: true, promptTokens: 220000 },
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("cost");
+        expect(result.outcome).toBe("ok");
+        expect(result.summary.text).toBe("COST_WRAPPED");
+        expect(result.summary.usage.cost).toBeLessThanOrEqual(COST_LIMIT_PER_MODEL_USD);
+        expect(requests.filter(isWrapUp)).toHaveLength(1);
+        expectAppendedTo(requests.at(-2), requests.at(-1));
+      },
+    );
+  }, 120000);
+
+  it("stops reading near the time limit and still gets a conclusion", async () => {
+    await withScriptedReview(
+      (request) => (isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true }),
+      async ({ review }) => {
+        const result = await review({ timeoutMs: 90000 });
+        expect(result.wrapUp).toBe("time");
+        expect(result.outcome).toBe("ok");
+        expect(result.summary.text).toBe("TIME_WRAPPED");
+      },
+    );
+  }, 120000);
+
+  it("stops the wrap-up turn at its first tool call instead of letting it keep reading", async () => {
+    await withScriptedReview(
+      (_request, index) =>
+        index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true, promptTokens: 100000 },
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("no-text");
+        expect(result.outcome).toBe("wrap-up-tool-call");
+        expect(requests.filter(isWrapUp)).toHaveLength(1);
+        expect(result.summary.usage.cost).toBeGreaterThan(0.01);
+      },
+    );
+  }, 120000);
+
+  it("records cost-limit when the wrap-up step that calls a tool also runs past the remaining money", async () => {
+    await withScriptedReview(
+      (request, index) =>
+        index === 1
+          ? { thinking: "THOUGHT_ONLY" }
+          : { tool: true, promptTokens: isWrapUp(request) ? 4000000 : 1 },
+      async ({ review }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("no-text");
+        expect(result.summary.toolCalls.length).toBeGreaterThan(0);
+        expect(result.outcome).toBe("cost-limit");
+      },
+    );
+  }, 120000);
+
+  it("skips the wrap-up turn when too little money is left for it, and says why", async () => {
+    await withScriptedReview(
+      () => ({ thinking: "THOUGHT_ONLY", promptTokens: 10000 }),
+      async ({ review, requests }) => {
+        const result = await review({ costLimit: WRAP_UP_MIN_USD + 0.001 });
+        expect(result.wrapUp).toBe("cost");
+        expect(result.wrapUpSkipped).toBe("no-budget");
+        expect(result.outcome).toBe("wrap-up-cost");
+        expect(requests.filter(isWrapUp)).toHaveLength(0);
+      },
+    );
+  }, 120000);
+
+  it("does not ask again when the first answer is already there", async () => {
+    await withScriptedReview(
+      () => ({ text: "FIRST_ANSWER" }),
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBeNull();
+        expect(result.summary.text).toBe("FIRST_ANSWER");
+        expect(requests).toHaveLength(1);
+      },
+    );
+  }, 120000);
+});
+
+describe("opencode review spending", () => {
+  const record = (cost, round = 1) => ({ cost, round });
+
+  it("refuses a run that could take the task past the ask-first line", () => {
+    expect(budgetCheck({ mode: "plan", records: [], models: REVIEW_MODELS })).toBeNull();
+    expect(
+      budgetCheck({ mode: "plan", records: [record(0.12), record(0.14)], models: REVIEW_MODELS }),
+    ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
+    expect(
+      budgetCheck({
+        mode: "plan",
+        records: [record(0.12), record(0.14)],
+        models: REVIEW_MODELS.slice(1),
+      }),
+    ).toBeNull();
+    expect(
+      budgetCheck({
+        mode: "code-review",
+        records: [record(0.15), record(0.15)],
+        models: REVIEW_MODELS,
+      }),
+    ).toBeNull();
+    expect(
+      budgetCheck({
+        mode: "code-review",
+        records: [record(0.4), record(0.3)],
+        models: REVIEW_MODELS,
+      }),
+    ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
+  });
+
+  it("lets a run through when Andy approved enough for the whole task", () => {
+    const records = [record(0.12), record(0.14)];
+    expect(
+      budgetCheck({ mode: "plan", records, models: REVIEW_MODELS, approvedUsd: 0.7 }),
+    ).toBeNull();
+    expect(budgetCheck({ mode: "plan", records, models: REVIEW_MODELS, approvedUsd: 0.6 })).toMatch(
+      /^BUDGET_NEEDS_APPROVAL /,
+    );
+  });
+
+  it("refuses a damaged ledger instead of guessing what was spent", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-ledger-"));
+    try {
+      writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.0');
+      expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      for (const bad of [
+        '{"round":1}',
+        '{"cost":"0.1"}',
+        '{"cost":0.1,"round":1e999}',
+        '{"cost":0.1,"round":0}',
+        '{"cost":-0.1}',
+      ]) {
+        writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
+        expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      }
+      writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.2,"round":2}\n');
+      expect(spentOf(readUsage(dir))).toBeCloseTo(0.3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not reuse a round folder that is already on disk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rounds-"));
+    try {
+      mkdirSync(join(dir, "round-3"));
+      mkdirSync(join(dir, "round-x"));
+      expect(roundsOnDisk(dir)).toEqual([3]);
+      expect(nextRound([], roundsOnDisk(dir))).toBe(4);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("numbers rounds from what the folder already holds", () => {
+    expect(nextRound([])).toBe(1);
+    expect(nextRound([record(0.1, 1), record(0.1, 1), record(0.1, 2)])).toBe(3);
+    expect(nextRound([{ cost: 0.1 }])).toBe(2);
+  });
+
+  it("reruns only the models asked for", () => {
+    const base = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--out", "o"];
+    expect(parseArgs(base).models).toEqual(REVIEW_MODELS);
+    expect(parseArgs([...base, "--models", "deepseek-v4.1-flash"]).models).toEqual([
+      "opencode-go/deepseek-v4.1-flash",
+    ]);
+    expect(() => parseArgs([...base, "--models", "kimi-k3"])).toThrow("ARG_INVALID --models");
+    expect(
+      parseArgs([...base, "--models", " glm-5.3-flash , opencode-go/deepseek-v4.1-flash"]).models,
+    ).toEqual(["opencode-go/glm-5.3-flash", "opencode-go/deepseek-v4.1-flash"]);
+    for (const bad of ["glm-5.3-flash,", "glm-5.3-flash,glm-5.3-flash", ""])
+      expect(() => parseArgs([...base, "--models", bad])).toThrow("ARG_INVALID --models");
+    expect(parseArgs([...base, "--approved-usd", "0.7"]).approvedUsd).toBe(0.7);
+    expect(() => parseArgs([...base, "--approved-usd", "x"])).toThrow("ARG_INVALID --approved-usd");
   });
 });
