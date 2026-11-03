@@ -62,8 +62,8 @@ export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
 export const COST_LIMIT_PER_MODEL_USD = 0.2;
 export const WRAP_UP_RESERVE_USD = 0.05;
 export const WRAP_UP_RESERVE_MAX_MS = 5 * 60 * 1000;
-export const WRAP_UP_MIN_USD = 0.01;
-export const WRAP_UP_MIN_MS = 5000;
+export const WRAP_UP_MIN_USD = 0.02;
+export const WRAP_UP_MIN_MS = 15000;
 export const ASK_FIRST_LINE_USD = { "code-review": 1, plan: 0.5, "plan-review": 0.5 };
 export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
@@ -224,7 +224,7 @@ export function summarizeEvents(jsonl) {
       usage.reasoning += tokens.reasoning ?? 0;
       usage.cacheRead += tokens.cache?.read ?? 0;
       usage.cacheWrite += tokens.cache?.write ?? 0;
-      usage.cost += part.cost ?? 0;
+      if (Number.isFinite(part.cost)) usage.cost += part.cost;
       lastReason = part.reason ?? null;
     }
   }
@@ -376,6 +376,7 @@ function runOpencode({
     let cost = 0;
     let stopReason = null;
     let settled = false;
+    let calledTool = false;
     const child = spawn(
       binary,
       [
@@ -437,15 +438,19 @@ function runOpencode({
       const lines = pending.split("\n");
       pending = lines.pop();
       for (const line of lines) {
-        if (stopOnToolCall && line.includes('"tool_use"')) stop("wrap-up-tool-call");
-        if (!line.includes('"step_finish"')) continue;
-        let stepCost;
+        let event;
         try {
-          stepCost = JSON.parse(line).part?.cost;
-        } catch {}
-        if (typeof stepCost !== "number") {
+          event = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (event.type === "tool_use") calledTool = true;
+        if (event.type !== "step_finish") continue;
+        const stepCost = event.part?.cost;
+        if (!Number.isFinite(stepCost)) {
           if (costLimit !== undefined) stop("cost-unknown");
         } else cost += stepCost;
+        if (stopOnToolCall && calledTool) stop("wrap-up-tool-call");
       }
       if (costLimit !== undefined && cost > costLimit) stop("cost-limit");
       else if (wrapUpCost !== undefined && cost >= wrapUpCost) stop("wrap-up-cost");
@@ -510,13 +515,23 @@ export async function reviewModel({
   const session = wrapUp ? sessionOf(first.stdout) : null;
   const remainingMs = deadline - Date.now();
   const remainingUsd = costLimit - firstSummary.usage.cost;
-  if (!session || !followUpAllowed({ remainingMs, remainingUsd })) {
+  const skipped = !wrapUp
+    ? null
+    : !session
+      ? "no-session"
+      : remainingUsd < WRAP_UP_MIN_USD
+        ? "no-budget"
+        : remainingMs < WRAP_UP_MIN_MS
+          ? "no-time"
+          : null;
+  if (!wrapUp || skipped) {
     return {
       runs: [first],
       stdout: first.stdout,
       stderr: first.stderr,
       summary: firstSummary,
-      wrapUp: wrapUp && `${wrapUp}-skipped`,
+      wrapUp,
+      wrapUpSkipped: skipped,
       outcome: runOutcome(firstSummary, first),
     };
   }
@@ -541,12 +556,9 @@ export async function reviewModel({
     stderr: `${first.stderr}${second.stderr}`,
     summary: { ...combined, text: secondSummary.text || firstSummary.text },
     wrapUp,
+    wrapUpSkipped: null,
     outcome: runOutcome(secondSummary, second),
   };
-}
-
-export function followUpAllowed({ remainingMs, remainingUsd }) {
-  return remainingMs >= WRAP_UP_MIN_MS && remainingUsd >= WRAP_UP_MIN_USD;
 }
 
 export function spentOf(records) {
@@ -577,7 +589,10 @@ export function readUsage(out) {
       } catch {
         record = null;
       }
-      if (!Number.isFinite(record?.cost)) throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
+      const roundValid =
+        record?.round === undefined || (Number.isSafeInteger(record.round) && record.round > 0);
+      if (!Number.isFinite(record?.cost) || !roundValid)
+        throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
       return record;
     });
 }
@@ -591,7 +606,7 @@ export function roundsOnDisk(out) {
 }
 
 export function nextRound(records, rounds = []) {
-  const recorded = records.map((record) => Number(record.round) || 1);
+  const recorded = records.map((record) => record.round ?? 1);
   return Math.max(0, ...recorded, ...rounds) + 1;
 }
 
@@ -1142,6 +1157,7 @@ async function main() {
           head: commits.head,
           outcome: review.outcome,
           wrapUp: review.wrapUp,
+          wrapUpSkipped: review.wrapUpSkipped,
           lastReason: summary.lastReason,
           exitCode: review.runs.at(-1).code,
           ...summary.usage,
@@ -1156,7 +1172,7 @@ async function main() {
     );
     for (const record of results) {
       console.log(
-        `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`,
+        `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`,
       );
     }
     const totalSpent = spentOf(readUsage(options.out));

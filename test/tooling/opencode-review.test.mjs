@@ -23,7 +23,6 @@ import {
   envFilesInHistory,
   expectedTools,
   FOCUS_SENTENCE,
-  followUpAllowed,
   GIT_ENV,
   GIT_READ_COMMANDS,
   GIT_REFUSED,
@@ -52,6 +51,7 @@ import {
   STEP_LIMIT,
   spentOf,
   summarizeEvents,
+  WRAP_UP_MIN_USD,
   WRAP_UP_PROMPT,
 } from "../../scripts/model-review/opencode-review.mjs";
 
@@ -889,6 +889,16 @@ describe("opencode review wrap-up", () => {
     expect(config.permission).toEqual(reviewConfig({ mode: "plan" }).permission);
   });
 
+  it("counts only numeric step costs", () => {
+    const events = [
+      { type: "step_finish", part: { reason: "tool-calls", tokens: {}, cost: "0.5" } },
+      { type: "step_finish", part: { reason: "stop", tokens: {}, cost: 0.002 } },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+    expect(summarizeEvents(events).usage.cost).toBe(0.002);
+  });
+
   it("keeps the model's thinking from the event stream", () => {
     const events = [
       { type: "reasoning", part: { type: "reasoning", text: "方案在思考里" } },
@@ -921,7 +931,7 @@ describe("opencode review wrap-up", () => {
   it("stops reading near the spending cap and still gets a conclusion", async () => {
     await withScriptedReview(
       (request) =>
-        isWrapUp(request) ? { text: "COST_WRAPPED" } : { tool: true, promptTokens: 300000 },
+        isWrapUp(request) ? { text: "COST_WRAPPED" } : { tool: true, promptTokens: 220000 },
       async ({ review, requests }) => {
         const result = await review();
         expect(result.wrapUp).toBe("cost");
@@ -938,7 +948,7 @@ describe("opencode review wrap-up", () => {
     await withScriptedReview(
       (request) => (isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true }),
       async ({ review }) => {
-        const result = await review({ timeoutMs: 40000 });
+        const result = await review({ timeoutMs: 90000 });
         expect(result.wrapUp).toBe("time");
         expect(result.outcome).toBe("ok");
         expect(result.summary.text).toBe("TIME_WRAPPED");
@@ -948,21 +958,30 @@ describe("opencode review wrap-up", () => {
 
   it("stops the wrap-up turn at its first tool call instead of letting it keep reading", async () => {
     await withScriptedReview(
-      (_request, index) => (index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true }),
+      (_request, index) =>
+        index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true, promptTokens: 100000 },
       async ({ review, requests }) => {
         const result = await review();
         expect(result.wrapUp).toBe("no-text");
         expect(result.outcome).toBe("wrap-up-tool-call");
         expect(requests.filter(isWrapUp)).toHaveLength(1);
+        expect(result.summary.usage.cost).toBeGreaterThan(0.01);
       },
     );
   }, 120000);
 
-  it("skips the wrap-up turn when too little money or time is left for it", () => {
-    expect(followUpAllowed({ remainingMs: 60000, remainingUsd: 0.05 })).toBe(true);
-    expect(followUpAllowed({ remainingMs: 60000, remainingUsd: 0 })).toBe(false);
-    expect(followUpAllowed({ remainingMs: 1000, remainingUsd: 0.05 })).toBe(false);
-  });
+  it("skips the wrap-up turn when too little money is left for it, and says why", async () => {
+    await withScriptedReview(
+      () => ({ thinking: "THOUGHT_ONLY", promptTokens: 10000 }),
+      async ({ review, requests }) => {
+        const result = await review({ costLimit: WRAP_UP_MIN_USD + 0.001 });
+        expect(result.wrapUp).toBe("cost");
+        expect(result.wrapUpSkipped).toBe("no-budget");
+        expect(result.outcome).toBe("wrap-up-cost");
+        expect(requests.filter(isWrapUp)).toHaveLength(0);
+      },
+    );
+  }, 120000);
 
   it("does not ask again when the first answer is already there", async () => {
     await withScriptedReview(
@@ -1023,8 +1042,15 @@ describe("opencode review spending", () => {
     try {
       writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.0');
       expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
-      writeFileSync(join(dir, "usage.jsonl"), '{"round":1}\n');
-      expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      for (const bad of [
+        '{"round":1}',
+        '{"cost":"0.1"}',
+        '{"cost":0.1,"round":1e999}',
+        '{"cost":0.1,"round":0}',
+      ]) {
+        writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
+        expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      }
       writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.2,"round":2}\n');
       expect(spentOf(readUsage(dir))).toBeCloseTo(0.3);
     } finally {
