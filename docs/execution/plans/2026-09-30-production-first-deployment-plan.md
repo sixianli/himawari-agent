@@ -8,7 +8,7 @@ date: "2026-09-30"
 
 # 生产服务器首次部署计划
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
 
 **依据：** [SOURCE: docs/adr/0056-cloud-server-also-test-host.md#hosts]（2026-10-14 起云服务器同时作为受限测试机，测试只以 `himawari-ci` 账号运行，测试结果不能代替部署验收；部署仍只允许经具体授权的有限主机能力验收；首次安装时的规则见 [ADR 0052](../../adr/0052-third-production-host-acceptance-exception.md#hosts)）及 [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]（文本、嵌入及路由）。
 

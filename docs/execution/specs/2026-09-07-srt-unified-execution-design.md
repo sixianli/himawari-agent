@@ -8,7 +8,7 @@ date: "2026-09-07"
 
 # Pi 工具复用与 SRT 受管理执行设计
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
 
 > 2026-09-24 架构修正：本设计的宿主 SRT 首选、单次调用环境和 Mac 尽力停止路线，仅保留为 legacy 实现/证据背景；新执行路径采用任务级隔离环境、可替换 backend 与严格停止证明。其余授权、Pi 复用、结果分离与输出合同继续复用。适用决定见 [ADR 0031](../../adr/0031-isolated-tool-execution.md#amendments)，具体新合同见[隔离执行 Spec](2026-09-24-isolated-tool-execution-design.md)与[迁移 Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
 > [SOURCE: docs/adr/0031-isolated-tool-execution.md]

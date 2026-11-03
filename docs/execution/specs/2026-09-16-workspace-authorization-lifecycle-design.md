@@ -8,7 +8,7 @@ date: "2026-09-16"
 
 # 工作区占用、授权与执行状态协同设计（第三稿，已确认方案修订）
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
 
 > 2026-09-24 架构修正：本文的审批、授权、claim/barrier、文件发布、排队和展示合同继续有效；“Pi 与 Anthropic 沙箱继续作为核心”等表述不再强制具体 SRT binary 或宿主执行路线。新路径的底层执行改为任务级隔离环境；调用 claim 结束不得释放仍存活父环境的 lease。原目录/可选工作副本选择保持，由具体后端验证挂载与最小权限。适用决定见 [ADR 0031](../../adr/0031-isolated-tool-execution.md#amendments)，具体新合同见[隔离执行 Spec](2026-09-24-isolated-tool-execution-design.md)与[迁移 Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
 > [SOURCE: docs/adr/0031-isolated-tool-execution.md]

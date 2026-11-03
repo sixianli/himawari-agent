@@ -8,7 +8,7 @@ date: "2026-09-29"
 
 # 前台工具输出复用加密分块保存设计
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
 
 **审阅状态：方案 B 已批准。用户于 2026-09-29 批准。** 本设计依据 Claude 的 [round2 reply-3](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-3.md)，补充而不替换已提交的 `77fb033` 结果丢失兜底。批准不等于实现完成：当前按 [reply-4](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-4.md) 的修订合同实施，恢复单位与离线就绪边界按 [reply-5](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-5.md) 和 [reply-6](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-6.md) 执行；验证完成前不视为交付。
 
