@@ -511,6 +511,20 @@ describe("[P0-8] calibration report tab", () => {
     expect(sent?.[1]?.headers).toMatchObject({ "x-csrf-token": "csrf-fresh" });
   });
 
+  it("[P0-8] sends one start command when confirm is pressed twice before the page updates", async () => {
+    weekly = unsetFixture();
+    recentRef = "auth-recent";
+    await render();
+    await openReport();
+    await click(button("#page .weekly-start", "从这天开始"));
+    const confirm = button("dialog[open]", "确定");
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      confirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
   it("[P0-8] shows an error instead of a password form when the sign-in method cannot be read", async () => {
     weekly = unsetFixture();
     identity = "unavailable";
