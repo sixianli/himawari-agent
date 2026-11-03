@@ -54,6 +54,7 @@ export const GIT_BANNED_OPTIONS = [
   "--mailmap-file",
   "--orderfile",
   "--help",
+  "--show-signature",
 ];
 const GIT_SHORT_VALUE_LETTERS = "SGLUnlMCBXI";
 export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
@@ -250,42 +251,135 @@ export function checkGitArgs(args) {
   return null;
 }
 
-export function installGitGuard(workRoot) {
-  const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+export const GIT_ENV = {
+  GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_PAGER: "cat",
+  PAGER: "cat",
+};
+export const SANDBOX_KEPT_ENV = ["PATH", "HOME", "LANG", "LC_ALL", "TERM"];
+export const SANDBOX_HIDDEN_DIRS = [
+  "/root",
+  "/home",
+  "/tmp",
+  "/var/tmp",
+  "/dev/shm",
+  "/run",
+  "/mnt",
+];
+export const SANDBOX_NOT_READ_ONLY = "SANDBOX_NOT_READ_ONLY";
+export const SANDBOX_CANARY_ENV = "REVIEW_SANDBOX_CANARY";
+
+export function gitChildEnv(env) {
+  const kept = Object.fromEntries(
+    SANDBOX_KEPT_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
+  );
+  return { ...kept, ...GIT_ENV };
+}
+
+function sandboxScript({ copy, binDir, realBash }) {
+  const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+  const forced = Object.entries(GIT_ENV)
+    .map(([name, value]) => `${name}=${quote(value)}`)
+    .join(" ");
+  return [
+    "set -e",
+    `COPY=${quote(copy)}`,
+    `GUARD=${quote(binDir)}`,
+    'START="$1"',
+    "shift",
+    "mount -t tmpfs tmpfs /mnt",
+    "mkdir /mnt/copy /mnt/guard",
+    'mount --rbind "$COPY" /mnt/copy',
+    'mount --bind "$GUARD" /mnt/guard',
+    `for dir in ${SANDBOX_HIDDEN_DIRS.join(" ")}; do`,
+    '  if [ -d "$dir" ] && [ "$dir" != /mnt ]; then mount -t tmpfs tmpfs "$dir"; fi',
+    "done",
+    'mkdir -p "$COPY" "$GUARD"',
+    'mount --move /mnt/copy "$COPY"',
+    'mount --move /mnt/guard "$GUARD"',
+    "umount /mnt",
+    "mount -t tmpfs tmpfs /mnt",
+    "awk '{print $5}' /proc/self/mountinfo | sort -r | while read -r point; do",
+    '  mount -o remount,bind,ro "$point" 2>/dev/null || mount -o remount,ro "$point" 2>/dev/null || true',
+    "done",
+    'WRITABLE=""',
+    "for point in $(awk '{print $5}' /proc/self/mountinfo | sort -u); do",
+    '  if [ -d "$point" ]; then probe="$point/.review-sandbox-probe"; else probe="$point"; fi',
+    '  if [ -d "$point" ] || [ -f "$point" ]; then',
+    '    if (: >> "$probe") 2>/dev/null; then WRITABLE="$WRITABLE $point"; [ -d "$point" ] && rm -f "$probe"; fi',
+    "  fi",
+    "done",
+    `if [ -n "$WRITABLE" ]; then echo ${SANDBOX_NOT_READ_ONLY}$WRITABLE >&2; exit 97; fi`,
+    `cd "$START"`,
+    `exec env -i PATH=${quote(`${binDir}:/usr/local/bin:/usr/bin:/bin`)} HOME=/nonexistent LANG=C.UTF-8 ${forced} ${quote(realBash)} -r "$@"`,
+    "",
+  ].join("\n");
+}
+
+export function installGitGuard(workRoot, copy = join(workRoot, "repo")) {
+  const which = (name) =>
+    spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
+  const realGit = which("git");
+  const realBash = which("bash");
+  const unshare = which("unshare");
   if (!realGit) throw new Error("GIT_NOT_FOUND");
+  if (!realBash) throw new Error("BASH_NOT_FOUND");
+  if (!unshare) throw new Error("UNSHARE_NOT_FOUND");
   const binDir = join(workRoot, "guard-bin");
   mkdirSync(binDir);
-  const modulePath = fileURLToPath(import.meta.url);
+  const modulePath = join(binDir, "review-guard.mjs");
+  writeFileSync(modulePath, readFileSync(fileURLToPath(import.meta.url)));
   const guard = join(binDir, "git");
   writeFileSync(
     guard,
     [
-      "#!/usr/bin/env node",
+      `#!${process.execPath}`,
       'import { spawnSync } from "node:child_process";',
-      `import { GIT_REFUSED, checkGitArgs } from ${JSON.stringify(modulePath)};`,
+      `import { GIT_REFUSED, checkGitArgs, gitChildEnv } from ${JSON.stringify(modulePath)};`,
       "const args = process.argv.slice(2);",
       "const problem = checkGitArgs(args);",
       "if (problem) {",
       '  process.stderr.write([GIT_REFUSED, problem].join(" ") + "\\n");',
       "  process.exit(1);",
       "}",
-      `const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: "inherit" });`,
+      `const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: "inherit", env: gitChildEnv(process.env) });`,
       "process.exit(result.status ?? 1);",
       "",
     ].join("\n"),
   );
   chmodSync(guard, 0o755);
-  const realBash = spawnSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).stdout.trim();
-  if (!realBash) throw new Error("BASH_NOT_FOUND");
   const shellDir = join(workRoot, "guard-shell");
   mkdirSync(shellDir);
+  const inner = join(shellDir, "sandbox.sh");
+  writeFileSync(inner, sandboxScript({ copy, binDir, realBash }));
   const shell = join(shellDir, "bash");
-  writeFileSync(shell, `#!/bin/sh\nexec ${JSON.stringify(realBash)} -r "$@"\n`);
+  writeFileSync(
+    shell,
+    [
+      "#!/bin/sh",
+      `exec ${JSON.stringify(unshare)} --user --map-root-user --net --mount --pid --fork --mount-proc -- /bin/sh ${JSON.stringify(inner)} "$(pwd)" "$@"`,
+      "",
+    ].join("\n"),
+  );
   chmodSync(shell, 0o755);
-  return { binDir, realGit, shell };
+  const configHome = join(workRoot, "opencode-config-home");
+  mkdirSync(configHome);
+  return { binDir, realGit, shell, configHome };
 }
 
-function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeoutMs, costLimit }) {
+function runOpencode({
+  binary,
+  cwd,
+  configPath,
+  gitGuard,
+  model,
+  prompt,
+  timeoutMs,
+  costLimit,
+  extraEnv = {},
+}) {
   return new Promise((resolvePromise) => {
     let stdout = "";
     let stderr = "";
@@ -303,6 +397,7 @@ function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeout
           PWD: cwd,
           OPENCODE_CONFIG: configPath,
           OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+          XDG_CONFIG_HOME: gitGuard.configHome,
           OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
           GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
           GIT_CONFIG_NOSYSTEM: "1",
@@ -311,6 +406,7 @@ function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeout
           PAGER: "cat",
           PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
           SHELL: gitGuard.shell,
+          ...extraEnv,
         },
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,
@@ -338,9 +434,12 @@ function runOpencode({ binary, cwd, configPath, gitGuard, model, prompt, timeout
       pending = lines.pop();
       for (const line of lines) {
         if (!line.includes('"step_finish"')) continue;
+        let stepCost;
         try {
-          cost += JSON.parse(line).part?.cost ?? 0;
+          stepCost = JSON.parse(line).part?.cost;
         } catch {}
+        if (typeof stepCost !== "number") stop("cost-unknown");
+        else cost += stepCost;
       }
       if (costLimit !== undefined && cost > costLimit) stop("cost-limit");
     });
@@ -420,6 +519,14 @@ export function probePlan(workRoot) {
     { tool: "grep", args: { pattern: marker, path: workRoot } },
     { tool: "glob", args: { pattern: "outside-*.txt", path: workRoot }, leak: "outside-b.txt" },
   ].map((probe) => ({ kind: "read", leak: marker, ...probe }));
+  const contained = [
+    bash("export GIT_EXTERNAL_DIFF=env; git diff HEAD~1 HEAD"),
+    bash("export GIT_EXTERNAL_DIFF=touch; git diff HEAD~1 HEAD"),
+    bash(
+      `export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=env; git diff HEAD~1 HEAD`,
+    ),
+    bash("export NODE_OPTIONS=--version; git log -1 --oneline"),
+  ].map((probe) => ({ kind: "contained", leak: marker, ...probe }));
   return {
     marker,
     outsideFiles: [outsideA, outsideB],
@@ -428,6 +535,7 @@ export function probePlan(workRoot) {
       ...writes,
       ...insideWrites,
       ...reads,
+      ...contained,
     ],
   };
 }
@@ -554,13 +662,10 @@ export function checkProbeRequests({ mode, requests, plan, toolCalls, writtenFil
       if (probe.kind === "allowed" && (call.status !== "completed" || probeRefused(call))) {
         problems.push(`PROBE_READ_COMMAND_BLOCKED ${label}`);
       }
-      if (probe.kind === "read" && call.output.includes(probe.leak)) {
+      if (probe.leak && call.output.includes(probe.leak)) {
         problems.push(`PROBE_READ_OUTSIDE ${label}`);
       }
-      if (
-        (probe.kind === "write" || (probe.kind === "read" && probe.tool === "bash")) &&
-        !probeRefused(call)
-      ) {
+      if ((probe.kind === "write" || probe.kind === "read") && !probeRefused(call)) {
         problems.push(`PROBE_NOT_REFUSED ${label}`);
       }
     }
@@ -590,12 +695,19 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
         model,
         prompt: "probe",
         timeoutMs,
+        extraEnv: { [SANDBOX_CANARY_ENV]: plan.marker },
       });
       const summary = summarizeEvents(run.stdout);
       const writtenFiles = plan.probes
         .filter((probe) => probe.kind === "write" && existsSync(probe.file))
         .map((probe) => probe.file);
       for (const file of writtenFiles) rmSync(file, { force: true });
+      const changed = git(["status", "--porcelain", "--untracked-files=all"], copy);
+      if (changed) {
+        writtenFiles.push(...changed.split("\n").map((line) => `copy:${line.slice(3)}`));
+        git(["checkout", "--quiet", "--", "."], copy);
+        git(["clean", "-fdq"], copy);
+      }
       problems.push(
         ...checkProbeRequests({
           mode,
@@ -624,7 +736,7 @@ export function removeUnsafeProjectFiles(copy) {
       const unsafeName =
         entry.name === ".opencode" ||
         /^opencode\.jsonc?$/.test(entry.name) ||
-        /^\.env(\..*)?$/.test(entry.name);
+        isSecretEnvName(entry.name);
       if (outsideLink || unsafeName) {
         rmSync(path, { recursive: true, force: true });
         removed.push(path);
@@ -647,16 +759,21 @@ function git(args, cwd) {
 export const QUESTIONS_PATH = ".agents/instructions/model-review.md";
 
 export function questionsSource(repo, commits) {
-  if (commits.base) return git(["show", `${commits.base}:${QUESTIONS_PATH}`], repo);
-  return readFileSync(join(repoRoot, QUESTIONS_PATH), "utf8");
+  return git(["show", `${commits.base ?? commits.head}:${QUESTIONS_PATH}`], repo);
+}
+
+export function isSecretEnvName(name) {
+  return /^\.env(?!.*\.(example|sample|template)$)/.test(name);
 }
 
 export function envFilesInHistory(copy) {
   return [
     ...new Set(
-      git(["log", "--all", "--format=", "--name-only"], copy)
+      git(["rev-list", "--all", "--objects"], copy)
         .split("\n")
-        .filter((path) => /^\.env(?!.*\.(example|sample|template)$)/.test(path.split("/").pop())),
+        .filter((line) => line.includes(" "))
+        .map((line) => line.slice(line.indexOf(" ") + 1))
+        .filter((path) => isSecretEnvName(path.split("/").pop())),
     ),
   ].sort();
 }
@@ -674,6 +791,14 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
   if (envFiles.length > 0) throw new Error(`ENV_FILE_IN_HISTORY ${envFiles.join(" ")}`);
   git(["checkout", "--quiet", "--detach", commits.head], copy);
   git(["remote", "remove", "origin"], copy);
+  const refs = git(["for-each-ref", "--format=%(refname)"], copy).split("\n").filter(Boolean);
+  const pruned = spawnSync("git", ["update-ref", "--stdin"], {
+    cwd: copy,
+    input: refs.map((ref) => `delete ${ref}\n`).join(""),
+  });
+  if (pruned.status !== 0) throw new Error("GIT_FAILED update-ref --stdin");
+  for (const [name, commit] of Object.entries(commits).filter(([, value]) => value))
+    git(["update-ref", `refs/review/${name}`, commit], copy);
   git(["reflog", "expire", "--expire=now", "--all"], copy);
   rmSync(join(copy, ".git", "FETCH_HEAD"), { force: true });
   for (const commit of [commits.base, commits.previous].filter(Boolean))

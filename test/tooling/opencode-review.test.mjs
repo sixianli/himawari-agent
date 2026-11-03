@@ -17,9 +17,12 @@ import {
   COST_LIMIT_PER_MODEL_USD,
   checkGitArgs,
   checkProbeRequests,
+  envFilesInHistory,
   expectedTools,
+  GIT_ENV,
   GIT_READ_COMMANDS,
   GIT_REFUSED,
+  gitChildEnv,
   installGitGuard,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
@@ -322,6 +325,7 @@ describe("opencode review self-check", () => {
     };
     expect(check({ toolCalls: calls })).toEqual([
       `PROBE_READ_OUTSIDE ${label(plan.probes[globIndex])}`,
+      `PROBE_NOT_REFUSED ${label(plan.probes[globIndex])}`,
     ]);
   });
 
@@ -394,37 +398,73 @@ describe("opencode review process cleanup", () => {
     const grandchild = Number(readFileSync(pidFile, "utf8").trim());
     expect(killProcessGroup(child, "SIGKILL")).toBe(true);
     await exited;
-    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-    const state = existsSync(`/proc/${grandchild}/stat`)
-      ? readFileSync(`/proc/${grandchild}/stat`, "utf8").split(") ")[1]?.[0]
-      : "gone";
-    expect(["Z", "X", "gone"]).toContain(state);
+    const state = () =>
+      existsSync(`/proc/${grandchild}/stat`)
+        ? readFileSync(`/proc/${grandchild}/stat`, "utf8").split(") ")[1]?.[0]
+        : "gone";
+    for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    expect(["Z", "X", "gone"]).toContain(state());
     rmSync(dir, { recursive: true, force: true });
   });
 });
 
 describe("opencode review installed guard", () => {
-  it("refuses banned git arguments and output redirects when actually run", () => {
+  it("runs the model's commands in a read-only sandbox without network or secrets", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-guard-"));
     try {
+      const copy = join(root, "repo");
+      execFileSync("git", ["clone", "--quiet", "--depth", "3", `file://${process.cwd()}`, copy]);
+      writeFileSync(join(root, "outside.txt"), "OUTSIDE_MARKER\n");
       const guard = installGitGuard(root);
-      const env = { ...process.env, PATH: `${guard.binDir}:${process.env.PATH}` };
-      const viaShell = (command) =>
-        spawnSync(guard.shell, ["-c", command], { cwd: process.cwd(), env, encoding: "utf8" });
-      const target = join(root, "written.txt");
-      const refused = viaShell(`git log -1 "--output=${target}"`);
-      expect(refused.status).not.toBe(0);
-      expect(refused.stderr).toContain(GIT_REFUSED);
-      const redirected = viaShell(`git log -1 --oneline > ${target}`);
-      expect(redirected.stderr).toContain("restricted");
-      expect(viaShell(`cd ${root}`).stderr).toContain("restricted");
-      expect(existsSync(target)).toBe(false);
+      const env = { ...process.env, REVIEW_TEST_CANARY: "CANARY_VALUE" };
+      const viaShell = (command) => {
+        const result = spawnSync(guard.shell, ["-c", command], {
+          cwd: copy,
+          env,
+          encoding: "utf8",
+        });
+        return { status: result.status, text: result.stdout + result.stderr };
+      };
+      expect(viaShell('git log -1 "--output=../written.txt"').text).toContain(GIT_REFUSED);
+      expect(viaShell("git log -1 --oneline > written.txt").text).toContain("restricted");
+      expect(viaShell(`cd ${root}`).text).toContain("restricted");
+      viaShell("export GIT_EXTERNAL_DIFF=touch; git diff HEAD~1 HEAD");
+      viaShell(
+        "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=touch; git diff HEAD~1 HEAD",
+      );
+      expect(execFileSync("git", ["status", "--porcelain"], { cwd: copy, encoding: "utf8" })).toBe(
+        "",
+      );
+      expect(existsSync(join(root, "written.txt"))).toBe(false);
+      expect(viaShell("env").text).not.toContain("CANARY_VALUE");
+      expect(viaShell("export GIT_EXTERNAL_DIFF=env; git diff HEAD~1 HEAD").text).not.toContain(
+        "CANARY_VALUE",
+      );
+      expect(viaShell("cat ../outside.txt").text).not.toContain("OUTSIDE_MARKER");
+      expect(viaShell(`cat ${join(process.cwd(), "AGENTS.md")}`).text).toContain("No such file");
+      const interfaces = viaShell("cat /proc/net/dev").text.trim().split("\n").slice(2);
+      expect(interfaces.map((line) => line.trim().split(":")[0])).toEqual(["lo"]);
       const allowed = viaShell("git log -1 --format=%H");
       expect(allowed.status).toBe(0);
-      expect(allowed.stdout.trim()).toMatch(/^[0-9a-f]{40}$/);
+      expect(allowed.text.trim()).toMatch(/^[0-9a-f]{40}$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  }, 60000);
+
+  it("strips git and loader variables before the real git runs", () => {
+    const env = gitChildEnv({
+      PATH: "/bin",
+      HOME: "/h",
+      GIT_EXTERNAL_DIFF: "touch",
+      GIT_DIR: "/elsewhere/.git",
+      GIT_CONFIG_COUNT: "1",
+      LD_PRELOAD: "/x.so",
+      NODE_OPTIONS: "--require x",
+      GIT_PAGER: "less",
+    });
+    expect(env).toEqual({ PATH: "/bin", HOME: "/h", ...GIT_ENV });
   });
 });
 
@@ -456,6 +496,7 @@ describe("opencode review git guard", () => {
     expect(checkGitArgs(["blame", "--ignore-revs-file=/a"])).toBe("--ignore-revs-file");
     expect(checkGitArgs(["diff", "--pathspec-from-file=/a"])).toBe("--pathspec-from-file");
     expect(checkGitArgs(["show", "--help"])).toBe("--help");
+    expect(checkGitArgs(["log", "--show-signature"])).toBe("--show-signature");
   });
 });
 
@@ -583,6 +624,28 @@ describe("opencode review repository copy", () => {
       expect(() =>
         prepareCopy({ repo: source, copy: join(root, "copy"), commits: { head }, workRoot: root }),
       ).toThrow("ENV_FILE_IN_HISTORY app/.env");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds an .env file that only a merge commit added", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-review-merge-env-"));
+    try {
+      const run = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+      const as = ["-c", "user.name=t", "-c", "user.email=t@t"];
+      execFileSync("git", ["init", "--quiet", "-b", "main", root]);
+      run([...as, "commit", "--quiet", "--allow-empty", "-m", "base"]);
+      run(["checkout", "--quiet", "-b", "side"]);
+      run([...as, "commit", "--quiet", "--allow-empty", "-m", "side"]);
+      run(["checkout", "--quiet", "main"]);
+      run([...as, "commit", "--quiet", "--allow-empty", "-m", "main"]);
+      run([...as, "merge", "--quiet", "--no-commit", "side"]);
+      writeFileSync(join(root, ".env"), "KEY=secret\n");
+      run(["add", ".env"]);
+      run([...as, "commit", "--quiet", "-m", "merge"]);
+      expect(run(["log", "--all", "--format=", "--name-only"])).toBe("");
+      expect(envFilesInHistory(root)).toEqual([".env"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
