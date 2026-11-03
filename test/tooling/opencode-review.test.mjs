@@ -23,6 +23,7 @@ import {
   envFilesInHistory,
   expectedTools,
   FOCUS_SENTENCE,
+  followUpAllowed,
   GIT_ENV,
   GIT_READ_COMMANDS,
   GIT_REFUSED,
@@ -40,6 +41,8 @@ import {
   questionsSource,
   REVIEW_MODELS,
   RULE_16_SENTENCE,
+  readUsage,
+  roundsOnDisk,
   resolveCommits,
   reviewConfig,
   reviewModel,
@@ -47,6 +50,7 @@ import {
   runOutcome,
   SHELL_LOG_NAME,
   STEP_LIMIT,
+  spentOf,
   summarizeEvents,
   WRAP_UP_PROMPT,
 } from "../../scripts/model-review/opencode-review.mjs";
@@ -859,6 +863,16 @@ async function withScriptedReview(reply, run) {
   }
 }
 
+function isWrapUp(request) {
+  return JSON.stringify(request.messages ?? []).includes(WRAP_UP_PROMPT);
+}
+
+function expectAppendedTo(earlier, later) {
+  expect(later.tools).toEqual(earlier.tools);
+  expect(later.messages.slice(0, earlier.messages.length)).toEqual(earlier.messages);
+  expect(later.messages.length).toBeGreaterThan(earlier.messages.length);
+}
+
 describe("opencode review wrap-up", () => {
   it("has no step limit and tells the model to go straight to what it needs", () => {
     expect(reviewConfig({ mode: "plan" }).agent).toBeUndefined();
@@ -869,10 +883,10 @@ describe("opencode review wrap-up", () => {
     }
   });
 
-  it("gives the wrap-up turn no tools and a single step", () => {
+  it("gives the wrap-up turn a single step and the same tools as the review", () => {
     const config = reviewConfig({ mode: "plan", wrapUp: true });
     expect(config.agent).toEqual({ build: { steps: 1 } });
-    expect(Object.values(config.permission).every((value) => value === "deny")).toBe(true);
+    expect(config.permission).toEqual(reviewConfig({ mode: "plan" }).permission);
   });
 
   it("keeps the model's thinking from the event stream", () => {
@@ -898,8 +912,8 @@ describe("opencode review wrap-up", () => {
         expect(result.summary.text).toBe("WRAPPED_ANSWER");
         expect(result.summary.thinking).toContain("THOUGHT_ONLY");
         expect(requests).toHaveLength(2);
-        expect(requests[1].tools ?? []).toHaveLength(0);
-        expect(JSON.stringify(requests[1].messages)).toContain(WRAP_UP_PROMPT);
+        expect(isWrapUp(requests[1])).toBe(true);
+        expectAppendedTo(requests[0], requests[1]);
       },
     );
   }, 120000);
@@ -907,21 +921,22 @@ describe("opencode review wrap-up", () => {
   it("stops reading near the spending cap and still gets a conclusion", async () => {
     await withScriptedReview(
       (request) =>
-        request.tools?.length ? { tool: true, promptTokens: 300000 } : { text: "COST_WRAPPED" },
+        isWrapUp(request) ? { text: "COST_WRAPPED" } : { tool: true, promptTokens: 300000 },
       async ({ review, requests }) => {
         const result = await review();
         expect(result.wrapUp).toBe("cost");
         expect(result.outcome).toBe("ok");
         expect(result.summary.text).toBe("COST_WRAPPED");
         expect(result.summary.usage.cost).toBeLessThanOrEqual(COST_LIMIT_PER_MODEL_USD);
-        expect(requests.at(-1).tools ?? []).toHaveLength(0);
+        expect(requests.filter(isWrapUp)).toHaveLength(1);
+        expectAppendedTo(requests.at(-2), requests.at(-1));
       },
     );
   }, 120000);
 
   it("stops reading near the time limit and still gets a conclusion", async () => {
     await withScriptedReview(
-      (request) => (request.tools?.length ? { tool: true } : { text: "TIME_WRAPPED" }),
+      (request) => (isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true }),
       async ({ review }) => {
         const result = await review({ timeoutMs: 40000 });
         expect(result.wrapUp).toBe("time");
@@ -930,6 +945,24 @@ describe("opencode review wrap-up", () => {
       },
     );
   }, 120000);
+
+  it("stops the wrap-up turn at its first tool call instead of letting it keep reading", async () => {
+    await withScriptedReview(
+      (_request, index) => (index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true }),
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("no-text");
+        expect(result.outcome).toBe("wrap-up-tool-call");
+        expect(requests.filter(isWrapUp)).toHaveLength(1);
+      },
+    );
+  }, 120000);
+
+  it("skips the wrap-up turn when too little money or time is left for it", () => {
+    expect(followUpAllowed({ remainingMs: 60000, remainingUsd: 0.05 })).toBe(true);
+    expect(followUpAllowed({ remainingMs: 60000, remainingUsd: 0 })).toBe(false);
+    expect(followUpAllowed({ remainingMs: 1000, remainingUsd: 0.05 })).toBe(false);
+  });
 
   it("does not ask again when the first answer is already there", async () => {
     await withScriptedReview(
@@ -985,6 +1018,32 @@ describe("opencode review spending", () => {
     );
   });
 
+  it("refuses a damaged ledger instead of guessing what was spent", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-ledger-"));
+    try {
+      writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.0');
+      expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      writeFileSync(join(dir, "usage.jsonl"), '{"round":1}\n');
+      expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.2,"round":2}\n');
+      expect(spentOf(readUsage(dir))).toBeCloseTo(0.3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not reuse a round folder that is already on disk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rounds-"));
+    try {
+      mkdirSync(join(dir, "round-3"));
+      mkdirSync(join(dir, "round-x"));
+      expect(roundsOnDisk(dir)).toEqual([3]);
+      expect(nextRound([], roundsOnDisk(dir))).toBe(4);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("numbers rounds from what the folder already holds", () => {
     expect(nextRound([])).toBe(1);
     expect(nextRound([record(0.1, 1), record(0.1, 1), record(0.1, 2)])).toBe(3);
@@ -998,6 +1057,11 @@ describe("opencode review spending", () => {
       "opencode-go/deepseek-v4.1-flash",
     ]);
     expect(() => parseArgs([...base, "--models", "kimi-k3"])).toThrow("ARG_INVALID --models");
+    expect(
+      parseArgs([...base, "--models", " glm-5.3-flash , opencode-go/deepseek-v4.1-flash"]).models,
+    ).toEqual(["opencode-go/glm-5.3-flash", "opencode-go/deepseek-v4.1-flash"]);
+    for (const bad of ["glm-5.3-flash,", "glm-5.3-flash,glm-5.3-flash", ""])
+      expect(() => parseArgs([...base, "--models", bad])).toThrow("ARG_INVALID --models");
     expect(parseArgs([...base, "--approved-usd", "0.7"]).approvedUsd).toBe(0.7);
     expect(() => parseArgs([...base, "--approved-usd", "x"])).toThrow("ARG_INVALID --approved-usd");
   });

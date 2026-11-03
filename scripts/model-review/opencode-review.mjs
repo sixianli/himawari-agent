@@ -62,6 +62,8 @@ export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
 export const COST_LIMIT_PER_MODEL_USD = 0.2;
 export const WRAP_UP_RESERVE_USD = 0.05;
 export const WRAP_UP_RESERVE_MAX_MS = 5 * 60 * 1000;
+export const WRAP_UP_MIN_USD = 0.01;
+export const WRAP_UP_MIN_MS = 5000;
 export const ASK_FIRST_LINE_USD = { "code-review": 1, plan: 0.5, "plan-review": 0.5 };
 export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
@@ -101,12 +103,7 @@ export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
       doom_loop: "deny",
     },
   };
-  if (!wrapUp) return config;
-  return {
-    ...config,
-    agent: { build: { steps: 1 } },
-    permission: Object.fromEntries(Object.keys(config.permission).map((key) => [key, "deny"])),
-  };
+  return wrapUp ? { ...config, agent: { build: { steps: 1 } } } : config;
 }
 
 export function expectedTools(mode) {
@@ -369,6 +366,7 @@ function runOpencode({
   wrapUpCost,
   wrapUpMs,
   session,
+  stopOnToolCall = false,
   extraEnv = {},
 }) {
   return new Promise((resolvePromise) => {
@@ -439,6 +437,7 @@ function runOpencode({
       const lines = pending.split("\n");
       pending = lines.pop();
       for (const line of lines) {
+        if (stopOnToolCall && line.includes('"tool_use"')) stop("wrap-up-tool-call");
         if (!line.includes('"step_finish"')) continue;
         let stepCost;
         try {
@@ -492,7 +491,7 @@ export async function reviewModel({
   timeoutMs,
   costLimit = COST_LIMIT_PER_MODEL_USD,
 }) {
-  const started = Date.now();
+  const deadline = Date.now() + timeoutMs;
   const reserveMs = Math.min(WRAP_UP_RESERVE_MAX_MS, Math.floor(timeoutMs / 5));
   const first = await runOpencode({
     binary,
@@ -509,13 +508,15 @@ export async function reviewModel({
   const firstSummary = summarizeEvents(first.stdout);
   const wrapUp = wrapUpReason(firstSummary, first);
   const session = wrapUp ? sessionOf(first.stdout) : null;
-  if (!session) {
+  const remainingMs = deadline - Date.now();
+  const remainingUsd = costLimit - firstSummary.usage.cost;
+  if (!session || !followUpAllowed({ remainingMs, remainingUsd })) {
     return {
       runs: [first],
       stdout: first.stdout,
       stderr: first.stderr,
       summary: firstSummary,
-      wrapUp: null,
+      wrapUp: wrapUp && `${wrapUp}-skipped`,
       outcome: runOutcome(firstSummary, first),
     };
   }
@@ -527,8 +528,9 @@ export async function reviewModel({
     model,
     prompt: WRAP_UP_PROMPT,
     session,
-    timeoutMs: Math.max(1000, timeoutMs - (Date.now() - started)),
-    costLimit: costLimit - firstSummary.usage.cost,
+    stopOnToolCall: true,
+    timeoutMs: remainingMs,
+    costLimit: remainingUsd,
   });
   const stdout = `${first.stdout}${first.stdout.endsWith("\n") ? "" : "\n"}${second.stdout}`;
   const secondSummary = summarizeEvents(second.stdout);
@@ -543,8 +545,16 @@ export async function reviewModel({
   };
 }
 
+export function followUpAllowed({ remainingMs, remainingUsd }) {
+  return remainingMs >= WRAP_UP_MIN_MS && remainingUsd >= WRAP_UP_MIN_USD;
+}
+
+export function spentOf(records) {
+  return records.reduce((total, record) => total + record.cost, 0);
+}
+
 export function budgetCheck({ mode, records, models, approvedUsd }) {
-  const spent = records.reduce((total, record) => total + (Number(record.cost) || 0), 0);
+  const spent = spentOf(records);
   const thisRunMax = COST_LIMIT_PER_MODEL_USD * models.length;
   const total = spent + thisRunMax;
   const line = ASK_FIRST_LINE_USD[mode];
@@ -558,12 +568,31 @@ export function readUsage(out) {
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8")
     .split("\n")
-    .filter((line) => line.trim())
-    .map((line) => JSON.parse(line));
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(({ line }) => line.trim())
+    .map(({ line, number }) => {
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        record = null;
+      }
+      if (!Number.isFinite(record?.cost)) throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
+      return record;
+    });
 }
 
-export function nextRound(records) {
-  return records.reduce((round, record) => Math.max(round, Number(record.round) || 1), 0) + 1;
+export function roundsOnDisk(out) {
+  if (!existsSync(out)) return [];
+  return readdirSync(out)
+    .map((name) => /^round-(\d+)$/.exec(name)?.[1])
+    .filter(Boolean)
+    .map(Number);
+}
+
+export function nextRound(records, rounds = []) {
+  const recorded = records.map((record) => Number(record.round) || 1);
+  return Math.max(0, ...recorded, ...rounds) + 1;
 }
 
 export function runOutcome(summary, run) {
@@ -992,8 +1021,12 @@ export function parseArgs(argv) {
     else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
     else if (key === "--models") {
-      const names = take().split(",").filter(Boolean);
-      const models = names.map((name) => REVIEW_MODELS.find((model) => model.endsWith(`/${name}`)));
+      const names = take()
+        .split(",")
+        .map((name) => name.trim());
+      const models = names.map((name) =>
+        REVIEW_MODELS.find((model) => name && (model === name || model.endsWith(`/${name}`))),
+      );
       if (
         names.length === 0 ||
         models.some((model) => !model) ||
@@ -1040,7 +1073,7 @@ async function main() {
         approvedUsd: options.approvedUsd,
       });
   if (overBudget) throw new Error(overBudget);
-  const round = nextRound(records);
+  const round = nextRound(records, roundsOnDisk(options.out));
   const binary = opencodeBinary();
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
@@ -1126,7 +1159,7 @@ async function main() {
         `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`,
       );
     }
-    const totalSpent = readUsage(options.out).reduce((total, record) => total + record.cost, 0);
+    const totalSpent = spentOf(readUsage(options.out));
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
     if (results.some((record) => record.outcome !== "ok")) process.exitCode = 4;
   } finally {
