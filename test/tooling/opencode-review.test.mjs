@@ -918,6 +918,7 @@ describe("opencode review wrap-up", () => {
     expect(summarizeEvents(events).usage.cost).toBe(0.002);
     expect(summarizeEvents(events).usage.costUnknown).toBe(true);
     expect(spentOf([{ cost: 0.002, costUnknown: true }])).toBe(COST_LIMIT_PER_MODEL_USD);
+    expect(spentOf([{ cost: 0.19, costUnknown: true }])).toBeCloseTo(0.19 + WRAP_UP_RESERVE_USD);
     expect(spentOf([{ cost: 0.3, costUnknown: true }])).toBeCloseTo(0.3 + WRAP_UP_RESERVE_USD);
     const negative = JSON.stringify({
       type: "step_finish",
@@ -992,6 +993,8 @@ describe("opencode review wrap-up", () => {
       expect(result.runs).toHaveLength(1);
       expect(result.runs[0].stopReason).toBe("cost-unknown");
       expect(result.outcome).toBe("cost-unknown");
+      expect(result.wrapUp).toBeNull();
+      expect(result.wrapUpSkipped).toBeNull();
       expect(result.summary.usage.costUnknown).toBe(true);
     }
   }, 120000);
@@ -1080,6 +1083,7 @@ describe("opencode review wrap-up", () => {
       async ({ review }) => {
         const result = await review();
         expect(result.wrapUp).toBe("no-text");
+        expect(result.summary.toolCalls.length).toBeGreaterThan(0);
         expect(result.outcome).toBe("cost-limit");
       },
     );
