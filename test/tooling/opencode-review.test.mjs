@@ -1,6 +1,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -897,7 +898,47 @@ describe("opencode review wrap-up", () => {
       .map((event) => JSON.stringify(event))
       .join("\n");
     expect(summarizeEvents(events).usage.cost).toBe(0.002);
+    expect(summarizeEvents(events).usage.costUnknown).toBe(true);
+    expect(spentOf([{ cost: 0.002, costUnknown: true }])).toBe(COST_LIMIT_PER_MODEL_USD);
   });
+
+  it("checks the spending line at every step, even when several steps arrive together", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-burst-"));
+    try {
+      const step = (cost) =>
+        JSON.stringify({
+          type: "step_finish",
+          sessionID: "ses_burst",
+          part: { reason: "tool-calls", tokens: {}, cost },
+        });
+      const binary = join(root, "fake-opencode");
+      writeFileSync(
+        binary,
+        [
+          "#!/bin/sh",
+          'case "$*" in *--session*) exit 0 ;; esac',
+          `printf '%s\\n%s\\n%s\\n' '${step(0.08)}' '${step(0.08)}' '${step(0.08)}'`,
+          "exec sleep 30",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(binary, 0o755);
+      const result = await reviewModel({
+        binary,
+        cwd: root,
+        configPath: join(root, "unused.json"),
+        wrapUpConfigPath: join(root, "unused.json"),
+        gitGuard: installGitGuard(root),
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 60000,
+      });
+      expect(result.runs[0].stopReason).toBe("wrap-up-cost");
+      expect(result.wrapUp).toBe("cost");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60000);
 
   it("keeps the model's thinking from the event stream", () => {
     const events = [
@@ -1047,6 +1088,7 @@ describe("opencode review spending", () => {
         '{"cost":"0.1"}',
         '{"cost":0.1,"round":1e999}',
         '{"cost":0.1,"round":0}',
+        '{"cost":-0.1}',
       ]) {
         writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
         expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");

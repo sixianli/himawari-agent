@@ -225,6 +225,7 @@ export function summarizeEvents(jsonl) {
       usage.cacheRead += tokens.cache?.read ?? 0;
       usage.cacheWrite += tokens.cache?.write ?? 0;
       if (Number.isFinite(part.cost)) usage.cost += part.cost;
+      else usage.costUnknown = true;
       lastReason = part.reason ?? null;
     }
   }
@@ -450,10 +451,10 @@ function runOpencode({
         if (!Number.isFinite(stepCost)) {
           if (costLimit !== undefined) stop("cost-unknown");
         } else cost += stepCost;
+        if (costLimit !== undefined && cost > costLimit) stop("cost-limit");
+        if (wrapUpCost !== undefined && cost >= wrapUpCost) stop("wrap-up-cost");
         if (stopOnToolCall && calledTool) stop("wrap-up-tool-call");
       }
-      if (costLimit !== undefined && cost > costLimit) stop("cost-limit");
-      else if (wrapUpCost !== undefined && cost >= wrapUpCost) stop("wrap-up-cost");
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
@@ -562,7 +563,11 @@ export async function reviewModel({
 }
 
 export function spentOf(records) {
-  return records.reduce((total, record) => total + record.cost, 0);
+  return records.reduce(
+    (total, record) =>
+      total + (record.costUnknown ? Math.max(record.cost, COST_LIMIT_PER_MODEL_USD) : record.cost),
+    0,
+  );
 }
 
 export function budgetCheck({ mode, records, models, approvedUsd }) {
@@ -591,7 +596,7 @@ export function readUsage(out) {
       }
       const roundValid =
         record?.round === undefined || (Number.isSafeInteger(record.round) && record.round > 0);
-      if (!Number.isFinite(record?.cost) || !roundValid)
+      if (!Number.isFinite(record?.cost) || record.cost < 0 || !roundValid)
         throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
       return record;
     });
