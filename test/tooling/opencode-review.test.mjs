@@ -287,9 +287,9 @@ describe("opencode review self-check", () => {
       plan.probes.filter((probe) => probe.kind === "allowed").map((probe) => probe.args.command),
     ).toEqual([
       "git log -1 --oneline",
-      "git diff --stat HEAD~1 HEAD",
+      "git diff --stat HEAD",
       "git show --stat HEAD",
-      "git blame -L 1,3 -- AGENTS.md",
+      "git blame -L 1,1 -- AGENTS.md",
       "git status --short",
     ]);
     expect(plan.probes[0]).toMatchObject({
@@ -424,6 +424,26 @@ describe("opencode review self-check", () => {
       messages: [{ role: "system", content: "前文" }],
     });
     expect(check({ requests: [clean], projectInstructions: heading })).toEqual([]);
+  });
+
+  it("checks project instructions in user messages and limits for prefixed or unknown models", () => {
+    const heading = "# 项目指令";
+    const tools = ["bash", "glob", "grep", "read"];
+    expect(
+      check({
+        requests: [toolRequest(tools, { messages: [{ role: "user", content: heading }] })],
+        projectInstructions: heading,
+      }),
+    ).toEqual(["PROBE_PROJECT_INSTRUCTIONS_LOADED deepseek-v4.1-flash"]);
+    expect(
+      check({
+        requests: [toolRequest(tools, { model: "opencode-go/glm-5.3-flash", max_tokens: 131072 })],
+      }),
+    ).toEqual([]);
+    expect(check({ requests: [toolRequest(tools, { model: "other-model" })] })).toEqual([
+      "PROBE_MODEL_UNKNOWN other-model",
+      "PROBE_OUTPUT_CAP other-model 200000",
+    ]);
   });
 
   it("fails when the output limit is above what the model accepts", () => {

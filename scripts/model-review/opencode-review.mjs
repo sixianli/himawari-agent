@@ -130,7 +130,7 @@ const MODE_TEXT = {
     role: "你是独立的方案设计者。",
     network:
       "可以用 websearch 搜索、用 webfetch 读网页；业界做法只认一手来源（官方文档、各大 AI 公司的工程文章、成熟开源项目的源码），每条都附网址。",
-    task: "下面只给了问题、目标和约束，没有给出任何人的方案。先读代码弄清现状，再独立提出你认为最好的方案，不要假设已经有人想好了答案。",
+    task: "下面只给了问题、目标和约束，没有给出任何人的方案；材料里如果提到某种做法，只作参考。先读代码弄清现状，再独立提出你认为最好的方案，不要假设已经有人想好了答案。",
     output:
       "输出格式：先列方案依赖的前提，每个前提附来源（文件:行或网址）和原话；再写方案本身、考虑过但不选的做法及原因、风险和反例、需要人拍板的取舍。把「读代码或来源证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。",
     materialTitle: "问题、目标和约束：",
@@ -152,7 +152,7 @@ export function buildPrompt({ mode, questions, head, base, previous, brief }) {
   const text = MODE_TEXT[mode];
   const fixed = [
     text.role,
-    `你能用的工具：read、grep、glob，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
+    `你能用的工具：read、grep、glob${mode === "code-review" ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
     text.task,
     RULE_16_SENTENCE,
     "必答问题：",
@@ -440,7 +440,7 @@ export function runOutcome(summary, run) {
   return "ok";
 }
 
-export function probePlan(workRoot) {
+export function probePlan(workRoot, blameFile = "AGENTS.md") {
   const marker = `OUTSIDE_REPO_MARKER_${randomBytes(8).toString("hex")}`;
   const outsideA = join(workRoot, "outside-a.txt");
   const outsideB = join(workRoot, "outside-b.txt");
@@ -512,9 +512,9 @@ export function probePlan(workRoot) {
     outsideFiles: [outsideA, outsideB],
     probes: [
       { kind: "allowed", ...bash("git log -1 --oneline") },
-      { kind: "allowed", ...bash("git diff --stat HEAD~1 HEAD") },
+      { kind: "allowed", ...bash("git diff --stat HEAD") },
       { kind: "allowed", ...bash("git show --stat HEAD") },
-      { kind: "allowed", ...bash("git blame -L 1,3 -- AGENTS.md") },
+      { kind: "allowed", ...bash(`git blame -L 1,1 -- ${blameFile}`) },
       { kind: "allowed", ...bash("git status --short") },
       ...writes,
       ...insideWrites,
@@ -648,11 +648,12 @@ export function checkProbeRequests({
     if (
       projectInstructions &&
       (request.messages ?? [])
-        .filter((message) => message.role === "system")
+        .filter((message) => message.role === "system" || message.role === "user")
         .some((message) => JSON.stringify(message.content).includes(projectInstructions))
     )
       problems.push(`PROBE_PROJECT_INSTRUCTIONS_LOADED ${request.model}`);
-    const modelLimit = MODEL_OUTPUT_LIMITS[request.model];
+    const modelLimit = MODEL_OUTPUT_LIMITS[String(request.model).split("/").pop()];
+    if (modelLimit === undefined) problems.push(`PROBE_MODEL_UNKNOWN ${request.model}`);
     if (!(request.max_tokens >= MIN_OUTPUT_TOKENS) || !(request.max_tokens <= modelLimit))
       problems.push(`PROBE_OUTPUT_CAP ${request.model} ${request.max_tokens}`);
     if (request.reasoning_effort !== REASONING_VARIANT) {
@@ -688,7 +689,12 @@ export function checkProbeRequests({
 }
 
 async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) {
-  const plan = probePlan(workRoot);
+  const plan = probePlan(
+    workRoot,
+    git(["ls-files"], copy)
+      .split("\n")
+      .find((file) => file && !/\s/.test(file)),
+  );
   for (const file of plan.outsideFiles) writeFileSync(file, `${plan.marker}\n${file}\n`);
   const { server, requests, port } = await startProbeServer(plan.probes);
   const configPath = join(workRoot, "probe-opencode.json");
