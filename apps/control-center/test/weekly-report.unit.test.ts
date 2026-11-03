@@ -48,7 +48,7 @@ const query = vi.fn(),
   fetcher = vi.fn();
 const client = { query, mutate } as unknown as GatewayClient;
 let container: HTMLDivElement, root: Root, weekly: ProactiveWeekly, recentRef: string | null;
-let identity: "built-in" | "cloudflare-access";
+let identity: "built-in" | "cloudflare-access" | "unavailable";
 
 const memory = {
   memories: [],
@@ -388,10 +388,10 @@ beforeEach(() => {
         JSON.stringify(
           url === "/api/identity/v1/method"
             ? { method: identity }
-            : { ...withWeekly, recentAuthenticationRef: recentRef },
+            : { ...withWeekly, recentAuthenticationRef: recentRef, csrfToken: "csrf-fresh" },
         ),
         {
-          status: 200,
+          status: url === "/api/identity/v1/method" && identity === "unavailable" ? 503 : 200,
           headers: { "content-type": "application/json" },
         },
       ),
@@ -487,6 +487,72 @@ describe("[P0-8] calibration report tab", () => {
     await click(button("dialog[open]", "退出并重新登录"));
     expect(assign).toHaveBeenCalledWith("/cdn-cgi/access/logout");
     expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[P0-8] sends the built-in identity check with the freshly read form token", async () => {
+    weekly = unsetFixture();
+    await render();
+    await openReport();
+    await click(button("#page .weekly-start", "从这天开始"));
+    await click(button("dialog[open]", "确定"));
+    const form = document.querySelector<HTMLFormElement>("dialog[open] form");
+    if (!form) throw new Error("form missing");
+    for (const [name, value] of [
+      ["username", "andy"],
+      ["password", "secret"],
+    ] as const) {
+      const input = form.querySelector<HTMLInputElement>(`input[name='${name}']`);
+      if (input) input.value = value;
+    }
+    await act(async () => {
+      form.requestSubmit();
+    });
+    const sent = fetcher.mock.calls.find(([url]) => url === "/api/identity/v1/reauthenticate");
+    expect(sent?.[1]?.headers).toMatchObject({ "x-csrf-token": "csrf-fresh" });
+  });
+
+  it("[P0-8] shows an error instead of a password form when the sign-in method cannot be read", async () => {
+    weekly = unsetFixture();
+    identity = "unavailable";
+    await render();
+    await openReport();
+    await click(button("#page .weekly-start", "从这天开始"));
+    await click(button("dialog[open]", "确定"));
+    expect(text("dialog[open]")).toContain("没有设好，请再试一次。");
+    expect(document.querySelector("dialog[open] input[name='password']")).toBeNull();
+    expect(text("dialog[open]")).not.toContain("退出并重新登录");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[P0-8] shows no Muse pairing rate before a start day is set", async () => {
+    const unset = unsetFixture();
+    weekly = {
+      ...unset,
+      report: {
+        ...unset.report,
+        muse: {
+          ...unset.report.muse,
+          entries: 42,
+          unpaired: 2,
+          pairedMails: 40,
+          pairing: {
+            successes: 40,
+            samples: 42,
+            enough: true,
+            value: 40 / 42,
+            low: 0.84,
+            high: 0.99,
+          },
+          buckets: { both: 5, museOnly: 1, himawariOnly: 2, bothSilent: 31, noHimawariRecord: 1 },
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const report = text("#page .weekly-report");
+    expect(report).toContain("两边都没提醒");
+    expect(report).not.toContain("配对率");
+    expect(report).not.toMatch(/%/u);
   });
 
   it("[P0-8] hides every ratio while the observation period is running and explains the bad days", async () => {

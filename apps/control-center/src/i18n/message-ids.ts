@@ -1026,6 +1026,7 @@ export const MESSAGE_IDS = [
   "weekly.type.notStartedMore",
   "weekly.type.notFull",
   "weekly.type.notFullMore",
+  "weekly.type.how0",
   "weekly.type.how1",
   "weekly.type.how2",
   "weekly.type.how3",

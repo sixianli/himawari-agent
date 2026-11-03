@@ -254,23 +254,32 @@ async function openSettings(page, text, tab) {
   await page.waitForTimeout(200);
 }
 
-async function openWeeklyReport(page, text) {
+async function openWeeklyReport(page, text, ready = ".weekly-days") {
   await openSidebarOnPhone(page);
   await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
   await page.getByRole("tab", { name: text.weeklyTab, exact: true }).click();
-  await page.waitForSelector(".weekly-days");
+  await page.waitForSelector(ready);
 }
 
-export function findWeeklyProblems() {
+export function findWeeklyProblems(phase = "reported") {
   const problems = [];
   const report = document.querySelector(".weekly-report");
   if (!report) return ["WEEKLY_REPORT_MISSING"];
   const shown = (element) => element.getClientRects().length > 0;
-  const text = report.innerText;
+  const text = [report, ...document.querySelectorAll("dialog[open]")]
+    .map((element) => element.innerText)
+    .join("\n");
   if (/\b[a-z]+_[a-z_]+\b/.test(text))
     problems.push(`WEEKLY_RAW_CODE ${text.match(/\b[a-z]+_[a-z_]+\b/)[0]}`);
   if (/(^|[^\d.])0(\.0)?\s?%/.test(text)) problems.push("WEEKLY_ZERO_PERCENT");
   const days = [...report.querySelectorAll(".weekly-day")].filter(shown);
+  if (phase === "unset") {
+    if (days.length) problems.push(`WEEKLY_DAY_COUNT ${days.length}`);
+    if (/%/.test(text)) problems.push("WEEKLY_UNSET_RATIO");
+    if (![...report.querySelectorAll(".weekly-stepper")].some(shown))
+      problems.push("WEEKLY_START_MISSING");
+    return problems;
+  }
   if (days.length !== 7) problems.push(`WEEKLY_DAY_COUNT ${days.length}`);
   const tables = [...report.querySelectorAll(".weekly-table")].filter(shown).length;
   const cards = [...report.querySelectorAll(".weekly-type-cards")].filter(shown).length;
@@ -353,6 +362,24 @@ export const SCENES = {
       await page.locator("button.weekly-day").nth(2).click();
       await page.waitForTimeout(250);
     },
+    verify: (page) => page.evaluate(findWeeklyProblems, "reported"),
+  },
+  weeklyUnset: {
+    path: "/threads",
+    weekly: "unset",
+    act: (page, text) => openWeeklyReport(page, text, ".weekly-stepper"),
+    verify: (page) => page.evaluate(findWeeklyProblems, "unset"),
+  },
+  weeklyUnsetConfirm: {
+    path: "/threads",
+    weekly: "unset",
+    act: async (page, text) => {
+      await openWeeklyReport(page, text, ".weekly-stepper");
+      await page.locator(".weekly-start .action-button").click();
+      await page.waitForSelector("dialog[open] .weekly-confirm");
+      await page.waitForTimeout(250);
+    },
+    verify: (page) => page.evaluate(findWeeklyProblems, "unset"),
   },
   files: {
     path: "/threads",
@@ -428,6 +455,14 @@ const WEEKLY_CLEAN = `<!doctype html><html><head><meta charset="utf-8">
 <div class="weekly-report"><p>提醒得对 75.0%（6/8）</p><p>样本不足（4 条）</p>
 ${"<button class='weekly-day'>第 1 天</button>".repeat(7)}
 <table class="weekly-table"><tr><td>行</td></tr></table><div class="weekly-type-cards" style="display:none">卡片</div></div></body></html>`;
+const WEEKLY_UNSET_BROKEN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>配对率 95.2%（40/42）</p>
+${"<button class='weekly-day'>第 1 天</button>".repeat(2)}</div></body></html>`;
+const WEEKLY_UNSET_CLEAN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>还没开始观察</p><fieldset class="weekly-stepper"><output>11 月 5 日</output></fieldset></div></body></html>`;
+const WEEKLY_UNSET_KINDS = ["WEEKLY_UNSET_RATIO", "WEEKLY_START_MISSING", "WEEKLY_DAY_COUNT"];
 const WEEKLY_KINDS = [
   "WEEKLY_RAW_CODE",
   "WEEKLY_ZERO_PERCENT",
@@ -473,8 +508,14 @@ async function selfTest(browser) {
     const weekly = await page.evaluate(findWeeklyProblems);
     for (const kind of WEEKLY_KINDS)
       if (!weekly.some((item) => item.startsWith(kind))) missing.push(kind);
+    await page.setContent(WEEKLY_UNSET_BROKEN);
+    const unset = await page.evaluate(findWeeklyProblems, "unset");
+    for (const kind of WEEKLY_UNSET_KINDS)
+      if (!unset.some((item) => item.startsWith(kind))) missing.push(`UNSET_${kind}`);
+    await page.setContent(WEEKLY_UNSET_CLEAN);
+    const unsetClean = await page.evaluate(findWeeklyProblems, "unset");
     await page.setContent(WEEKLY_CLEAN);
-    const weeklyClean = await page.evaluate(findWeeklyProblems);
+    const weeklyClean = [...(await page.evaluate(findWeeklyProblems)), ...unsetClean];
     await page.setContent(REVIEW_FITS);
     const fits = [...(await page.evaluate(findReviewProblems)), ...weeklyClean];
     await page.setContent(CLEAN);
@@ -584,6 +625,10 @@ async function auditApp(browser, base, only) {
             document.head.append(style);
           });
         });
+        if (job.scene.weekly)
+          await context.addCookies([
+            { name: "himawari-fixture-weekly", value: job.scene.weekly, url: base },
+          ]);
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
         page.on("pageerror", (error) => problems.push(`${where}: PAGE_ERROR ${error.message}`));

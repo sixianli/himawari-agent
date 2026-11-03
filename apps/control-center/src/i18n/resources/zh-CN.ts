@@ -1102,6 +1102,7 @@ export const messages = {
   "weekly.type.notStartedMore": "设好数据起点、观察满 7 天后，这里按决策类型算比例。",
   "weekly.type.notFull": "观察期还没满 7 天",
   "weekly.type.notFullMore": "观察期满 7 天后再按决策类型算比例。",
+  "weekly.type.how0": "决策条数是这段时间里这类决策记了多少条，不管你评没评过。",
   "weekly.type.how1": "分母是你评过的条数。",
   "weekly.type.how2":
     "每一行只列这类决策可能出现的情况（例如没存下的记忆只会是“不存是对的”或“该存没存”）。",

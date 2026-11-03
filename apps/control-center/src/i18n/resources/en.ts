@@ -1189,6 +1189,8 @@ export const messages = {
   "weekly.type.notFull": "Observation period not yet 7 days",
   "weekly.type.notFullMore":
     "Ratios by decision type come once the observation period reaches 7 days.",
+  "weekly.type.how0":
+    "Decisions is how many decisions of this type were recorded in this period, rated or not.",
   "weekly.type.how1": "The denominator is the number you rated.",
   "weekly.type.how2":
     "Each row lists only the outcomes possible for that kind of decision (for example, a memory the system chose not to save can only be “Right not to save” or “Should have saved”).",

@@ -35,10 +35,12 @@ export type ObservationCheckItem = ObservationDay["checks"][number];
 export type CalibrationGroupSummary = ProactiveWeekly["report"]["groups"][number];
 export interface ProactiveWeeklyAccess {
   readonly read: () => Promise<ProactiveWeekly>;
-  readonly recentAuthentication: () => Promise<string | null>;
+  readonly recentAuthentication: () => Promise<{
+    readonly reference: string | null;
+    readonly csrfToken: string;
+  }>;
   readonly identityMethod: () => Promise<"built-in" | "cloudflare-access" | null>;
   readonly start: (startDay: string, recentAuthenticationRef: string) => Promise<void>;
-  readonly csrfToken: string;
 }
 export interface ProactiveSettings {
   readonly enabled: boolean;
@@ -152,9 +154,10 @@ export function useProactive(input: {
           if (result.type !== "proactive.weekly.snapshot") throw new Error("PROACTIVE_INVALID");
           return result.payload;
         },
-        recentAuthentication: async () =>
-          (await refreshRuntimeConfiguration(window.fetch.bind(window), configuration))
-            .recentAuthenticationRef ?? null,
+        recentAuthentication: async () => {
+          const fresh = await refreshRuntimeConfiguration(window.fetch.bind(window), configuration);
+          return { reference: fresh.recentAuthenticationRef ?? null, csrfToken: fresh.csrfToken };
+        },
         identityMethod: async () => {
           const value = await accountRequest("method").catch(() => null);
           return value && typeof value === "object" && "method" in value
@@ -173,7 +176,6 @@ export function useProactive(input: {
             ),
           );
         },
-        csrfToken: configuration.csrfToken,
       }
     : null;
   return {

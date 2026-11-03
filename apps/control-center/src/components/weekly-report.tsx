@@ -453,6 +453,8 @@ export function WeeklyReport({
   const [confirming, setConfirming] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmFailed, setConfirmFailed] = useState(false);
+  const startLock = useRef(false);
+  const [reauthCsrfToken, setReauthCsrfToken] = useState("");
   const [reauthenticating, setReauthenticating] = useState<"built-in" | "cloudflare-access" | null>(
     null,
   );
@@ -616,6 +618,7 @@ export function WeeklyReport({
     }
     if (key === "type") {
       const how = [
+        message("weekly.type.how0"),
         message("weekly.type.how1"),
         message("weekly.type.how2"),
         message("weekly.type.how3", { n: report.minimumSamples }),
@@ -684,17 +687,17 @@ export function WeeklyReport({
   );
 
   const submitStart = async () => {
-    if (!chosen) return;
+    if (!chosen || startLock.current) return;
+    startLock.current = true;
     setConfirmBusy(true);
     setConfirmFailed(false);
     try {
-      const reference = await weekly.recentAuthentication();
+      const { reference, csrfToken } = await weekly.recentAuthentication();
       if (!reference) {
-        setReauthenticating(
-          (await weekly.identityMethod()) === "cloudflare-access"
-            ? "cloudflare-access"
-            : "built-in",
-        );
+        const method = await weekly.identityMethod();
+        if (!method) throw new Error("IDENTITY_METHOD_UNKNOWN");
+        setReauthCsrfToken(csrfToken);
+        setReauthenticating(method);
         return;
       }
       await weekly.start(chosen, reference);
@@ -704,6 +707,7 @@ export function WeeklyReport({
     } catch {
       setConfirmFailed(true);
     } finally {
+      startLock.current = false;
       setConfirmBusy(false);
     }
   };
@@ -1006,7 +1010,7 @@ export function WeeklyReport({
               <span>
                 {message("weekly.muse.unpaired")} <b>{format.count(muse.unpaired)}</b>
               </span>
-              {pairing ? (
+              {pairing && showTable ? (
                 <span>
                   {message("weekly.muse.rate")}{" "}
                   <b>
@@ -1082,7 +1086,7 @@ export function WeeklyReport({
               <>
                 <p className="weekly-strong">{message("weekly.confirm.reauth")}</p>
                 <AccountLogin
-                  csrfToken={weekly.csrfToken}
+                  csrfToken={reauthCsrfToken}
                   onCancel={() => setReauthenticating(null)}
                   onComplete={() => {
                     setReauthenticating(null);

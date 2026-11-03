@@ -922,6 +922,26 @@ function weeklySnapshot() {
   };
 }
 
+function unsetWeeklySnapshot() {
+  const reported = weeklySnapshot();
+  const tomorrow = new Date(Date.now() + 9 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+  return {
+    ...reported,
+    observation: {
+      ...reported.observation,
+      startDay: null,
+      earliestStartDay: tomorrow,
+      setAt: null,
+      startRevision: null,
+      firstReportDay: null,
+      passStreak: 0,
+      streakSince: null,
+      accepted: false,
+      days: [],
+    },
+  };
+}
+
 function reviewSnapshot() {
   const texts = [
     "我最近想吃牛肉，下周去大阪出差的时候想顺便找一家评价不错的烤肉店，最好是靠近车站的",
@@ -964,7 +984,7 @@ function reviewSnapshot() {
   };
 }
 
-function handleOperationsQuery(message) {
+function handleOperationsQuery(message, request) {
   switch (message.type) {
     case "task.detail": {
       const value = tasks.get(message.payload.jobId);
@@ -1001,7 +1021,9 @@ function handleOperationsQuery(message) {
       return memoryFixture
         ? {
             ...envelope("snapshot", "proactive.weekly.snapshot"),
-            payload: weeklySnapshot(),
+            payload: /(^|;\s*)himawari-fixture-weekly=unset(;|$)/.test(request.headers.cookie ?? "")
+              ? unsetWeeklySnapshot()
+              : weeklySnapshot(),
           }
         : undefined;
     case "proactive.overview.read":
@@ -1997,7 +2019,7 @@ async function handleRequest(request, response) {
       json(response, 200, governance);
       return;
     }
-    const operation = handleOperationsQuery(message);
+    const operation = handleOperationsQuery(message, request);
     if (operation !== undefined) {
       if (operation === null) {
         json(response, 404, { error: { code: "PORT_NOT_FOUND" } });
