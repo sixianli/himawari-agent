@@ -794,6 +794,154 @@ function operationsSnapshot(type, payload) {
   };
 }
 
+function weeklySnapshot() {
+  const startDay = "2026-08-19";
+  const day = (offset) =>
+    new Date(Date.parse(`${startDay}T00:00:00.000Z`) + offset * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+  const checks = (offset) => [
+    {
+      code: "service_running",
+      status: "pass",
+      reason: "all_hours",
+      facts: { missingHours: 0, longestGapHours: 0 },
+    },
+    {
+      code: "proactive_writing",
+      status: "pass",
+      reason: "on_time",
+      facts: { rows: 96, longestGapMinutes: 15 + (offset % 2), limitMinutes: 40 },
+    },
+    { code: "memory_capture", status: "pass", reason: "running", facts: {} },
+    {
+      code: "consolidation_recorded",
+      status: "pass",
+      reason: "rows_match",
+      facts: { changes: 3, rows: 3 },
+    },
+    {
+      code: "rows_kept",
+      status: "pass",
+      reason: "nothing_missing",
+      facts: { checkedDays: offset },
+    },
+    { code: "time_format", status: "pass", reason: "well_formed", facts: {} },
+  ];
+  const rate = (successes, samples) => {
+    if (samples < 5)
+      return { successes, samples, enough: false, value: null, low: null, high: null };
+    const z = 1.96;
+    const p = successes / samples;
+    const d = 1 + (z * z) / samples;
+    const c = (p + (z * z) / (2 * samples)) / d;
+    const h = (z * Math.sqrt((p * (1 - p)) / samples + (z * z) / (4 * samples * samples))) / d;
+    return {
+      successes,
+      samples,
+      enough: true,
+      value: p,
+      low: Math.max(0, c - h),
+      high: Math.min(1, c + h),
+    };
+  };
+  const group = (name, total, useful, second, applicable) => {
+    const rated = useful + second;
+    const counts = {
+      useful: 0,
+      unneeded: 0,
+      missed: 0,
+      [applicable[0]]: useful,
+      [applicable[1]]: second,
+    };
+    return {
+      group: name,
+      total,
+      rated,
+      useful: counts.useful,
+      unneeded: counts.unneeded,
+      missed: counts.missed,
+      applicable,
+      rates: {
+        useful: rate(counts.useful, rated),
+        unneeded: applicable.includes("unneeded") ? rate(counts.unneeded, rated) : null,
+        missed: applicable.includes("missed") ? rate(counts.missed, rated) : null,
+      },
+    };
+  };
+  return {
+    serviceRevision: "41a6ce3",
+    observation: {
+      startDay,
+      earliestStartDay: startDay,
+      setAt: "2026-08-18T03:00:00.000Z",
+      startRevision: "41a6ce3",
+      firstReportDay: day(7),
+      passStreak: 7,
+      streakSince: startDay,
+      accepted: true,
+      days: Array.from({ length: 7 }, (_, offset) => ({
+        day: day(offset),
+        status: "pass",
+        checkedAt: `${day(offset + 1)}T00:15:00.000Z`,
+        serviceRevision: "41a6ce3",
+        checks: checks(offset),
+      })),
+    },
+    report: {
+      start: "2026-08-18T15:00:00.000Z",
+      end: "2026-08-25T15:00:00.000Z",
+      startDay,
+      endDay: day(7),
+      complete: true,
+      ratesWithheld: false,
+      minimumSamples: 5,
+      groups: [
+        group("proactive_pushed", 12, 6, 2, ["useful", "unneeded"]),
+        group("proactive_silent", 672, 5, 1, ["useful", "missed"]),
+        group("memory_skipped", 86, 27, 4, ["useful", "missed"]),
+        group("memory_kept", 23, 4, 0, ["useful", "unneeded"]),
+        group("consolidation", 9, 6, 1, ["useful", "unneeded"]),
+        group("memory_pending", 3, 2, 0, ["useful", "unneeded"]),
+        group("context_truncation", 17, 0, 0, ["useful", "unneeded"]),
+        group("retrieval_degrade", 1, 1, 0, ["useful", "unneeded"]),
+      ],
+      muse: {
+        entries: 42,
+        reminded: 8,
+        silent: 34,
+        unpaired: 2,
+        pairedMails: 40,
+        timing: rate(6, 8),
+        content: rate(7, 8),
+        pairing: rate(40, 42),
+        buckets: { both: 5, museOnly: 1, himawariOnly: 2, bothSilent: 31, noHimawariRecord: 1 },
+      },
+    },
+    generatedAt: now,
+  };
+}
+
+function unsetWeeklySnapshot() {
+  const reported = weeklySnapshot();
+  const tomorrow = new Date(Date.now() + 9 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+  return {
+    ...reported,
+    observation: {
+      ...reported.observation,
+      startDay: null,
+      earliestStartDay: tomorrow,
+      setAt: null,
+      startRevision: null,
+      firstReportDay: null,
+      passStreak: 0,
+      streakSince: null,
+      accepted: false,
+      days: [],
+    },
+  };
+}
+
 function reviewSnapshot() {
   const texts = [
     "我最近想吃牛肉，下周去大阪出差的时候想顺便找一家评价不错的烤肉店，最好是靠近车站的",
@@ -836,7 +984,7 @@ function reviewSnapshot() {
   };
 }
 
-function handleOperationsQuery(message) {
+function handleOperationsQuery(message, request) {
   switch (message.type) {
     case "task.detail": {
       const value = tasks.get(message.payload.jobId);
@@ -869,6 +1017,15 @@ function handleOperationsQuery(message) {
             payload: reviewSnapshot(),
           }
         : undefined;
+    case "proactive.weekly.read":
+      return memoryFixture
+        ? {
+            ...envelope("snapshot", "proactive.weekly.snapshot"),
+            payload: /(^|;\s*)himawari-fixture-weekly=unset(;|$)/.test(request.headers.cookie ?? "")
+              ? unsetWeeklySnapshot()
+              : weeklySnapshot(),
+          }
+        : undefined;
     case "proactive.overview.read":
       return memoryFixture
         ? {
@@ -883,7 +1040,7 @@ function handleOperationsQuery(message) {
               insights: [],
               audit: { active: false, since: now, items: [], pending: 0 },
               decisions: [],
-              metrics: { spoke: 0, hits: 0, misfires: 0, missed: 0, reviewed: 0 },
+              metrics: { spoke: 12, hits: 7, misfires: 3, missed: 1, reviewed: 40 },
               generatedAt: now,
             },
           }
@@ -1584,6 +1741,7 @@ async function handleRequest(request, response) {
               "proactive.overview.read",
               "proactive.review.read",
               "proactive.review.rate",
+              "proactive.weekly.read",
             ]
           : []),
       ],
@@ -1861,7 +2019,7 @@ async function handleRequest(request, response) {
       json(response, 200, governance);
       return;
     }
-    const operation = handleOperationsQuery(message);
+    const operation = handleOperationsQuery(message, request);
     if (operation !== undefined) {
       if (operation === null) {
         json(response, 404, { error: { code: "PORT_NOT_FOUND" } });

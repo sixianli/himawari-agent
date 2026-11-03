@@ -555,23 +555,7 @@ export function ProactiveDecisionLog({
         <>
           <p className="proactive-summary">
             <span>{message("proactive.log.range", { days })}</span>
-            <span>
-              {message("proactive.metric.spoke")} <b>{overview.metrics.spoke}</b>
-            </span>
-            <span>
-              {message("proactive.metric.hits")} <b>{overview.metrics.hits}</b>
-            </span>
-            <span>
-              {message("proactive.metric.misfires")}{" "}
-              <b data-tone="warn">{overview.metrics.misfires}</b>
-            </span>
-            <span>
-              {message("proactive.metric.missed")} <b data-tone="need">{overview.metrics.missed}</b>
-              {" · "}
-              {message("proactive.metric.reviewed", { count: overview.metrics.reviewed })}
-            </span>
           </p>
-          <p className="settings-note">{message("proactive.metric.note")}</p>
           {decisions.length === 0 ? <EmptyState title={message("proactive.log.empty")} /> : null}
           {decisions.map((decision) => {
             const label = dayLabel(decision.checkedAt);
