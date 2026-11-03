@@ -643,7 +643,8 @@ const observationFactsSchema: Schema<Readonly<Record<string, string | number | b
   },
 };
 const calibrationGroupSchema = enumeration([
-  "proactive",
+  "proactive_pushed",
+  "proactive_silent",
   "memory_skipped",
   "memory_kept",
   "consolidation",

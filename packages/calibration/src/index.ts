@@ -13,7 +13,8 @@ export const CALIBRATION_RATINGS = ["useful", "unneeded", "missed"] as const;
 export type CalibrationRating = (typeof CALIBRATION_RATINGS)[number];
 
 export const CALIBRATION_GROUPS = [
-  "proactive",
+  "proactive_pushed",
+  "proactive_silent",
   "memory_skipped",
   "memory_kept",
   "consolidation",
@@ -25,14 +26,16 @@ export const CALIBRATION_GROUPS = [
 export type CalibrationGroup = (typeof CALIBRATION_GROUPS)[number];
 
 export const MAIN_CALIBRATION_GROUPS: readonly CalibrationGroup[] = Object.freeze([
-  "proactive",
+  "proactive_pushed",
+  "proactive_silent",
   "memory_skipped",
   "memory_kept",
   "consolidation",
 ]);
 
 const APPLICABLE: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]>> = {
-  proactive: ["useful", "unneeded", "missed"],
+  proactive_pushed: ["useful", "unneeded"],
+  proactive_silent: ["useful", "missed"],
   memory_skipped: ["useful", "missed"],
   memory_kept: ["useful", "unneeded"],
   consolidation: ["useful", "unneeded"],
@@ -43,7 +46,8 @@ const APPLICABLE: Readonly<Record<CalibrationGroup, readonly CalibrationRating[]
 };
 
 const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
-  proactive: "系统主动提醒",
+  proactive_pushed: "系统主动提醒",
+  proactive_silent: "这次检查没提醒",
   memory_skipped: "系统没存下的记忆",
   memory_kept: "已存的记忆",
   consolidation: "整理记忆",
@@ -51,6 +55,20 @@ const GROUP_LABELS: Readonly<Record<CalibrationGroup, string>> = {
   context_truncation: "回答时没带上的旧内容",
   retrieval_degrade: "记忆搜索没生效",
   external_read: "外部程序读取记忆",
+};
+
+const RATING_LABELS: Readonly<
+  Record<CalibrationGroup, Partial<Readonly<Record<CalibrationRating, string>>>>
+> = {
+  proactive_pushed: { useful: "提醒得对", unneeded: "不该提醒" },
+  proactive_silent: { useful: "不提醒是对的", missed: "该提醒没提醒" },
+  memory_skipped: { useful: "不存是对的", missed: "该存没存" },
+  memory_kept: { useful: "存对了", unneeded: "不该存" },
+  consolidation: { useful: "整理得对", unneeded: "不该整理" },
+  memory_pending: { useful: "做对了", unneeded: "不该做" },
+  context_truncation: { useful: "做对了", unneeded: "不该做" },
+  retrieval_degrade: { useful: "做对了", unneeded: "不该做" },
+  external_read: { useful: "做对了", unneeded: "不该做" },
 };
 
 export interface Proportion {
@@ -162,8 +180,7 @@ export function proportion(
   };
 }
 
-export function formatProportion(result: Proportion | null): string {
-  if (result === null) return "不适用";
+export function formatProportion(result: Proportion): string {
   if (!result.enough || result.value === null || result.low === null || result.high === null)
     return `样本不足（${result.samples} 条）`;
   const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -214,7 +231,8 @@ export function resolveWindow({
 }
 
 export function calibrationGroup(row: CalibrationDecisionRow): CalibrationGroup | null {
-  if (row.kind === "proactive") return "proactive";
+  if (row.kind === "proactive")
+    return row.outcome === "silent" ? "proactive_silent" : "proactive_pushed";
   if (row.kind === "memory_candidate") {
     if (row.outcome === "discarded") return "memory_skipped";
     if (row.outcome === "kept") return "memory_kept";
@@ -227,6 +245,10 @@ export function calibrationGroup(row: CalibrationDecisionRow): CalibrationGroup 
 
 export function groupLabel(group: CalibrationGroup): string {
   return GROUP_LABELS[group];
+}
+
+export function ratingLabel(group: CalibrationGroup, rating: CalibrationRating): string | null {
+  return RATING_LABELS[group][rating] ?? null;
 }
 
 export function summarizeDecisions(
@@ -437,20 +459,23 @@ export function buildReport({
   const lines: string[] = [];
   lines.push(`# 校准周报：${window.label}`, "");
   lines.push(
-    `统计范围：这一周内做出的决策里，你评过的那部分。做对了的比例 = 做对了 ÷ 你评过的条数；不该做的比例 = 不该做 ÷ 你评过的条数；该做没做的比例 = 该做没做 ÷ 你评过的条数（只代表你评过的样本）。三个数同一个分母。评过的少于 ${minimumSamples} 条的不出百分比，写「样本不足」。某类决策不可能得到的评价写「不适用」。区间是 95% Wilson 区间。`,
+    `统计范围：这一周内做出的决策里，你评过的那部分。每一类只列它可能出现的情况，例如“系统没存下的记忆”只会是“不存是对的”或“该存没存”；比例 = 这种情况的条数 ÷ 你评过的条数（只代表你评过的样本）。评过的少于 ${minimumSamples} 条的不出百分比，写「样本不足」。区间是 95% Wilson 区间。`,
     "",
   );
   lines.push("## 按决策类型", "");
   if (decisions.length === 0) lines.push("这一周没有决策记录。", "");
   else {
-    lines.push(
-      "| 决策类型 | 决策条数 | 你评过的条数 | 做对了的比例 | 不该做的比例 | 该做没做的比例 |",
-      "| --- | --- | --- | --- | --- | --- |",
-    );
-    for (const row of decisions)
-      lines.push(
-        `| ${groupLabel(row.group)} | ${row.total} | ${row.rated} | ${formatProportion(row.rates.useful)} | ${formatProportion(row.rates.unneeded)} | ${formatProportion(row.rates.missed)} |`,
-      );
+    lines.push("| 决策类型 | 决策条数 | 你评过的条数 | 比例 |", "| --- | --- | --- | --- |");
+    for (const row of decisions) {
+      const shares = row.applicable
+        .map((rating) => {
+          const rate = row.rates[rating];
+          return rate ? `${ratingLabel(row.group, rating)} ${formatProportion(rate)}` : null;
+        })
+        .filter((text): text is string => text !== null);
+      const cell = row.rated < minimumSamples ? `样本不足（${row.rated} 条）` : shares.join("；");
+      lines.push(`| ${groupLabel(row.group)} | ${row.total} | ${row.rated} | ${cell} |`);
+    }
     lines.push("");
   }
   lines.push("## Muse 对照", "");
@@ -479,7 +504,7 @@ export function buildReport({
         ? proportion(before.useful, before.rated, previous.minimumSamples ?? minimumSamples)
         : null;
       lines.push(
-        `- ${groupLabel(row.group)} 做对了的比例：${beforeRate ? show(beforeRate) : "无记录"} → ${show(row.rates.useful)}`,
+        `- ${groupLabel(row.group)} ${ratingLabel(row.group, "useful")}：${beforeRate ? show(beforeRate) : "无记录"} → ${show(row.rates.useful)}`,
       );
     }
     lines.push("", "只有两周的 95% 区间不重叠，才能说比例真的变了；区间重叠只是波动。", "");

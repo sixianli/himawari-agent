@@ -148,18 +148,12 @@ describe("[P0-7] calibration report", () => {
 
   it("matches the hand computed rates and intervals on constructed data", async () => {
     const { root, databasePath, database } = await fixture();
-    for (const rating of [
-      "useful",
-      "useful",
-      "useful",
-      "useful",
-      "unneeded",
-      "unneeded",
-      "unneeded",
-    ])
+    for (const rating of ["useful", "useful", "useful", "useful", "useful", "useful"])
       addProactive(database, "pushed", rating);
+    for (const rating of ["unneeded", "unneeded", "unneeded", "unneeded"])
+      addProactive(database, "pushed", rating);
+    addProactive(database, "pushed", null);
     for (const rating of ["useful", "useful", "missed"]) addProactive(database, "silent", rating);
-    addProactive(database, "silent", null);
     addProactive(database, "pushed", "useful", BEFORE_WINDOW);
     for (const rating of ["useful", "unneeded", "useful"])
       addMemoryDecision(database, "consolidation", "merge", rating);
@@ -173,30 +167,31 @@ describe("[P0-7] calibration report", () => {
       output,
       root,
     });
-    const memory = result.decisions.find((row) => row.group === "proactive");
-    expect(memory).toMatchObject({ total: 11, rated: 10, useful: 6, unneeded: 3, missed: 1 });
+    const pushed = result.decisions.find((row) => row.group === "proactive_pushed");
+    expect(pushed).toMatchObject({ total: 11, rated: 10, useful: 6, unneeded: 4, missed: 0 });
     const round = (value: number | null) => Math.round((value as number) * 1000) / 10;
     expect([
-      round(memory?.rates.useful?.value ?? null),
-      round(memory?.rates.useful?.low ?? null),
-      round(memory?.rates.useful?.high ?? null),
+      round(pushed?.rates.useful?.value ?? null),
+      round(pushed?.rates.useful?.low ?? null),
+      round(pushed?.rates.useful?.high ?? null),
     ]).toEqual([60, 31.3, 83.2]);
     expect([
-      round(memory?.rates.unneeded?.value ?? null),
-      round(memory?.rates.unneeded?.low ?? null),
-      round(memory?.rates.unneeded?.high ?? null),
-    ]).toEqual([30, 10.8, 60.3]);
-    expect([
-      round(memory?.rates.missed?.value ?? null),
-      round(memory?.rates.missed?.low ?? null),
-      round(memory?.rates.missed?.high ?? null),
-    ]).toEqual([10, 1.8, 40.4]);
+      round(pushed?.rates.unneeded?.value ?? null),
+      round(pushed?.rates.unneeded?.low ?? null),
+      round(pushed?.rates.unneeded?.high ?? null),
+    ]).toEqual([40, 16.8, 68.7]);
+    expect(pushed?.rates.missed).toBeNull();
+    const silent = result.decisions.find((row) => row.group === "proactive_silent");
+    expect(silent).toMatchObject({ total: 3, rated: 3, useful: 2, missed: 1 });
+    expect(silent?.rates.unneeded).toBeNull();
     const text = output.text();
-    expect(text).toContain("| 系统主动提醒 | 11 | 10 | 60.0%（6/10，95% 区间 31.3%–83.2%）");
-    expect(text).toContain("| 整理记忆 | 3 | 3 | 样本不足（3 条） | 样本不足（3 条） | 不适用 |");
     expect(text).toContain(
-      "| 记忆搜索没生效 | 2 | 0 | 样本不足（0 条） | 样本不足（0 条） | 不适用 |",
+      "| 系统主动提醒 | 11 | 10 | 提醒得对 60.0%（6/10，95% 区间 31.3%–83.2%）；不该提醒 40.0%（4/10，95% 区间 16.8%–68.7%） |",
     );
+    expect(text).toContain("| 这次检查没提醒 | 3 | 3 | 样本不足（3 条） |");
+    expect(text).toContain("| 整理记忆 | 3 | 3 | 样本不足（3 条） |");
+    expect(text).toContain("| 记忆搜索没生效 | 2 | 0 | 样本不足（0 条） |");
+    expect(text).not.toContain("不适用");
     expect(text).not.toContain("| consolidation | 3 | 3 | 0");
     expect(text).toContain("样本不足：这一周没有 Muse 对照条目。");
   });
@@ -282,7 +277,7 @@ describe("[P0-7] calibration report", () => {
     run([...base, "--end=2026-10-26"], { now: NOW, output: capture(), root });
     const output = capture();
     run([...base, `--end=${END}`], { now: NOW, output, root });
-    expect(output.text()).toContain("已存的记忆 做对了的比例：100.0% → 80.0%");
+    expect(output.text()).toContain("已存的记忆 存对了：100.0% → 80.0%");
     const again = capture();
     run([...base, `--end=${END}`], { now: NOW, output: again, root });
     expect(again.text()).toContain("没有重复追加");
@@ -429,7 +424,7 @@ describe("[P0-7] calibration report", () => {
       ],
       { cwd: root },
     );
-    expect(stdout).toContain("| 系统主动提醒 | 5 | 5 | 100.0%（5/5");
+    expect(stdout).toContain("| 系统主动提醒 | 5 | 5 | 提醒得对 100.0%（5/5");
     const [line] = (await readFile(history, "utf8")).trim().split("\n");
     expect(JSON.parse(line as string)).toMatchObject({
       schema: "himawari-calibration-week.v2",
