@@ -38,6 +38,7 @@ import {
   reviewConfig,
   reviewQuestions,
   runOutcome,
+  SHELL_LOG_NAME,
   summarizeEvents,
 } from "../../scripts/model-review/opencode-review.mjs";
 
@@ -280,8 +281,17 @@ describe("opencode review self-check", () => {
       expect(commands.some((command) => command.includes(shape))).toBe(true);
     }
     expect(plan.probes.filter((probe) => probe.tool !== "bash").map((probe) => probe.tool)).toEqual(
-      ["read", "grep", "glob"],
+      ["read", "read", "grep", "grep", "glob"],
     );
+    expect(
+      plan.probes.filter((probe) => probe.kind === "allowed").map((probe) => probe.args.command),
+    ).toEqual([
+      "git log -1 --oneline",
+      "git diff --stat HEAD~1 HEAD",
+      "git show --stat HEAD",
+      "git blame -L 1,3 -- AGENTS.md",
+      "git status --short",
+    ]);
     expect(plan.probes[0]).toMatchObject({
       kind: "allowed",
       tool: "bash",
@@ -397,6 +407,38 @@ describe("opencode review self-check", () => {
     ]);
   });
 
+  it("fails when opencode did not run the commands through the sandbox shell", () => {
+    expect(check({ shellCalls: 0 })).toEqual(["PROBE_SHELL_NOT_USED 0"]);
+    expect(check({ shellCalls: 40 })).toEqual([]);
+  });
+
+  it("fails when the copy's own AGENTS.md reached the system prompt", () => {
+    const heading = "# 项目指令";
+    const request = toolRequest(["bash", "glob", "grep", "read"], {
+      messages: [{ role: "system", content: `前文\n${heading}\n后文` }],
+    });
+    expect(check({ requests: [request], projectInstructions: heading })).toEqual([
+      "PROBE_PROJECT_INSTRUCTIONS_LOADED deepseek-v4.1-flash",
+    ]);
+    const clean = toolRequest(["bash", "glob", "grep", "read"], {
+      messages: [{ role: "system", content: "前文" }],
+    });
+    expect(check({ requests: [clean], projectInstructions: heading })).toEqual([]);
+  });
+
+  it("fails when the output limit is above what the model accepts", () => {
+    expect(
+      check({
+        requests: [
+          toolRequest(["bash", "glob", "grep", "read"], {
+            model: "glm-5.3-flash",
+            max_tokens: 200000,
+          }),
+        ],
+      }),
+    ).toEqual(["PROBE_OUTPUT_CAP glm-5.3-flash 200000"]);
+  });
+
   it("fails when a probe did not run or no request carried tools", () => {
     const calls = passingCalls();
     const missing = plan.probes[plan.probes.length - 1];
@@ -431,16 +473,18 @@ describe("opencode review process cleanup", () => {
 });
 
 describe("opencode review installed guard", () => {
-  it("runs the model's commands in a read-only sandbox without network or secrets", () => {
+  it("runs the model's commands in restricted bash with the git guard in front", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-guard-"));
     try {
       const copy = join(root, "repo");
       execFileSync("git", ["clone", "--quiet", "--depth", "3", `file://${process.cwd()}`, copy]);
-      const canary = `CANARY_${randomBytes(8).toString("hex")}`;
-      const marker = `OUTSIDE_${randomBytes(8).toString("hex")}`;
-      writeFileSync(join(root, "outside.txt"), `${marker}\n`);
       const guard = installGitGuard(root);
-      const env = { ...process.env, REVIEW_TEST_CANARY: canary };
+      const canary = `CANARY_${randomBytes(8).toString("hex")}`;
+      const env = {
+        ...process.env,
+        PATH: `${guard.binDir}:${process.env.PATH}`,
+        REVIEW_TEST_CANARY: canary,
+      };
       const viaShell = (command) => {
         const result = spawnSync(guard.shell, ["-c", command], {
           cwd: copy,
@@ -460,14 +504,10 @@ describe("opencode review installed guard", () => {
         "",
       );
       expect(existsSync(join(root, "written.txt"))).toBe(false);
-      expect(viaShell("env").text).not.toContain(canary);
       expect(viaShell("export GIT_EXTERNAL_DIFF=env; git diff HEAD~1 HEAD").text).not.toContain(
         canary,
       );
-      expect(viaShell("cat ../outside.txt").text).not.toContain(marker);
-      expect(viaShell(`cat ${join(process.cwd(), "AGENTS.md")}`).text).toContain("No such file");
-      const interfaces = viaShell("cat /proc/net/dev").text.trim().split("\n").slice(2);
-      expect(interfaces.map((line) => line.trim().split(":")[0])).toEqual(["lo"]);
+      expect(readFileSync(join(root, SHELL_LOG_NAME), "utf8").trim().split("\n").length).toBe(6);
       const allowed = viaShell("git log -1 --format=%H");
       expect(allowed.status).toBe(0);
       expect(allowed.text.trim()).toMatch(/^[0-9a-f]{40}$/);
