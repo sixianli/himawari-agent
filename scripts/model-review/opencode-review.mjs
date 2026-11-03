@@ -24,7 +24,6 @@ export const REASONING_VARIANT = "high";
 export const OUTPUT_TOKEN_MAX = 200000;
 export const MIN_OUTPUT_TOKENS = 100000;
 export const MODEL_OUTPUT_LIMITS = { "deepseek-v4.1-flash": 384000, "glm-5.3-flash": 131072 };
-export const STEP_LIMIT = 50;
 export const MODES = ["code-review", "plan", "plan-review"];
 export const GIT_READ_COMMANDS = ["git diff", "git log", "git show", "git blame", "git status"];
 export const WRITE_OR_OUTSIDE_PATTERNS = [
@@ -61,11 +60,18 @@ export const GIT_BANNED_OPTIONS = [
 const GIT_SHORT_VALUE_LETTERS = "SGLUnlMCBXI";
 export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
 export const COST_LIMIT_PER_MODEL_USD = 0.2;
+export const WRAP_UP_RESERVE_USD = 0.05;
+export const WRAP_UP_RESERVE_MAX_MS = 5 * 60 * 1000;
+export const ASK_FIRST_LINE_USD = { "code-review": 1, plan: 0.5, "plan-review": 0.5 };
+export const FOCUS_SENTENCE =
+  "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
+export const WRAP_UP_PROMPT =
+  "现在停止读代码和调用工具。根据你已经读到的内容，按上面要求的输出格式写出完整结论；结论要写在正文里，不要只写在思考里。没核实的地方标「未核实」。";
 export const RULE_16_SENTENCE = "列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-export function reviewConfig({ mode, baseURL } = {}) {
+export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   const bash = { "*": "deny" };
   for (const command of GIT_READ_COMMANDS) {
@@ -75,10 +81,9 @@ export function reviewConfig({ mode, baseURL } = {}) {
   for (const pattern of WRITE_OR_OUTSIDE_PATTERNS) bash[pattern] = "deny";
   const providerOptions = { apiKey: "placeholder" };
   if (baseURL) providerOptions.baseURL = baseURL;
-  return {
+  const config = {
     $schema: "https://opencode.ai/config.json",
     provider: { "opencode-go": { options: providerOptions } },
-    agent: { build: { steps: STEP_LIMIT } },
     permission: {
       read: { "*": "allow", "*.env": "deny", "*.env.*": "deny" },
       glob: "allow",
@@ -95,6 +100,12 @@ export function reviewConfig({ mode, baseURL } = {}) {
       external_directory: "deny",
       doom_loop: "deny",
     },
+  };
+  if (!wrapUp) return config;
+  return {
+    ...config,
+    agent: { build: { steps: 1 } },
+    permission: Object.fromEntries(Object.keys(config.permission).map((key) => [key, "deny"])),
   };
 }
 
@@ -154,6 +165,7 @@ export function buildPrompt({ mode, questions, head, base, previous, brief }) {
     text.role,
     `你能用的工具：read、grep、glob${mode === "code-review" ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
     text.task,
+    FOCUS_SENTENCE,
     RULE_16_SENTENCE,
     "必答问题：",
     ...questions.map((question, index) => `${index + 1}. ${question}`),
@@ -185,6 +197,7 @@ export function summarizeEvents(jsonl) {
     cost: 0,
   };
   const texts = [];
+  const thoughts = [];
   const toolCalls = [];
   let lastReason = null;
   for (const line of jsonl.split("\n")) {
@@ -197,6 +210,7 @@ export function summarizeEvents(jsonl) {
     }
     const part = event.part ?? {};
     if (event.type === "text" && typeof part.text === "string") texts.push(part.text);
+    if (event.type === "reasoning" && typeof part.text === "string") thoughts.push(part.text);
     if (event.type === "tool_use") {
       toolCalls.push({
         tool: part.tool,
@@ -221,7 +235,7 @@ export function summarizeEvents(jsonl) {
   let outcome = "ok";
   if (lastReason === "length") outcome = "truncated";
   else if (!text) outcome = "no-text";
-  return { outcome, lastReason, text, usage, toolCalls };
+  return { outcome, lastReason, text, thinking: thoughts.join("\n").trim(), usage, toolCalls };
 }
 
 export function opencodeBinary() {
@@ -352,6 +366,9 @@ function runOpencode({
   prompt,
   timeoutMs,
   costLimit,
+  wrapUpCost,
+  wrapUpMs,
+  session,
   extraEnv = {},
 }) {
   return new Promise((resolvePromise) => {
@@ -363,7 +380,18 @@ function runOpencode({
     let settled = false;
     const child = spawn(
       binary,
-      ["run", "--format", "json", "-m", model, "--variant", REASONING_VARIANT, prompt],
+      [
+        "run",
+        "--format",
+        "json",
+        "--thinking",
+        ...(session ? ["--session", session] : []),
+        "-m",
+        model,
+        "--variant",
+        REASONING_VARIANT,
+        prompt,
+      ],
       {
         cwd,
         env: {
@@ -399,6 +427,7 @@ function runOpencode({
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(wrapUpTimer);
       clearTimeout(killTimer);
       killProcessGroup(child, "SIGKILL");
       activeChildren.delete(child);
@@ -420,6 +449,7 @@ function runOpencode({
         } else cost += stepCost;
       }
       if (costLimit !== undefined && cost > costLimit) stop("cost-limit");
+      else if (wrapUpCost !== undefined && cost >= wrapUpCost) stop("wrap-up-cost");
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
@@ -428,7 +458,112 @@ function runOpencode({
     child.on("exit", () => killProcessGroup(child, "SIGKILL"));
     child.on("close", (code, signal) => finish({ code, signal }));
     const timer = setTimeout(() => stop("timeout"), timeoutMs);
+    const wrapUpTimer =
+      wrapUpMs === undefined ? undefined : setTimeout(() => stop("wrap-up-time"), wrapUpMs);
   });
+}
+
+export function sessionOf(jsonl) {
+  for (const line of jsonl.split("\n")) {
+    try {
+      const id = JSON.parse(line).sessionID;
+      if (typeof id === "string" && id) return id;
+    } catch {}
+  }
+  return null;
+}
+
+export function wrapUpReason(summary, run) {
+  if (run.stopReason === "wrap-up-cost") return "cost";
+  if (run.stopReason === "wrap-up-time") return "time";
+  if (!run.stopReason && !run.spawnError && run.code === 0 && summary.outcome === "no-text")
+    return "no-text";
+  return null;
+}
+
+export async function reviewModel({
+  binary,
+  cwd,
+  configPath,
+  wrapUpConfigPath,
+  gitGuard,
+  model,
+  prompt,
+  timeoutMs,
+  costLimit = COST_LIMIT_PER_MODEL_USD,
+}) {
+  const started = Date.now();
+  const reserveMs = Math.min(WRAP_UP_RESERVE_MAX_MS, Math.floor(timeoutMs / 5));
+  const first = await runOpencode({
+    binary,
+    cwd,
+    configPath,
+    gitGuard,
+    model,
+    prompt,
+    timeoutMs,
+    costLimit,
+    wrapUpCost: costLimit - WRAP_UP_RESERVE_USD,
+    wrapUpMs: timeoutMs - reserveMs,
+  });
+  const firstSummary = summarizeEvents(first.stdout);
+  const wrapUp = wrapUpReason(firstSummary, first);
+  const session = wrapUp ? sessionOf(first.stdout) : null;
+  if (!session) {
+    return {
+      runs: [first],
+      stdout: first.stdout,
+      stderr: first.stderr,
+      summary: firstSummary,
+      wrapUp: null,
+      outcome: runOutcome(firstSummary, first),
+    };
+  }
+  const second = await runOpencode({
+    binary,
+    cwd,
+    configPath: wrapUpConfigPath,
+    gitGuard,
+    model,
+    prompt: WRAP_UP_PROMPT,
+    session,
+    timeoutMs: Math.max(1000, timeoutMs - (Date.now() - started)),
+    costLimit: costLimit - firstSummary.usage.cost,
+  });
+  const stdout = `${first.stdout}${first.stdout.endsWith("\n") ? "" : "\n"}${second.stdout}`;
+  const secondSummary = summarizeEvents(second.stdout);
+  const combined = summarizeEvents(stdout);
+  return {
+    runs: [first, second],
+    stdout,
+    stderr: `${first.stderr}${second.stderr}`,
+    summary: { ...combined, text: secondSummary.text || firstSummary.text },
+    wrapUp,
+    outcome: runOutcome(secondSummary, second),
+  };
+}
+
+export function budgetCheck({ mode, records, models, approvedUsd }) {
+  const spent = records.reduce((total, record) => total + (Number(record.cost) || 0), 0);
+  const thisRunMax = COST_LIMIT_PER_MODEL_USD * models.length;
+  const total = spent + thisRunMax;
+  const line = ASK_FIRST_LINE_USD[mode];
+  if (total <= line) return null;
+  if (approvedUsd !== undefined && total <= approvedUsd) return null;
+  return `BUDGET_NEEDS_APPROVAL spent=${spent.toFixed(3)} thisRunMax=${thisRunMax.toFixed(3)} total=${total.toFixed(3)} askFirstLine=${line}${approvedUsd === undefined ? "" : ` approved=${approvedUsd}`}`;
+}
+
+export function readUsage(out) {
+  const path = join(out, "usage.jsonl");
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => JSON.parse(line));
+}
+
+export function nextRound(records) {
+  return records.reduce((round, record) => Math.max(round, Number(record.round) || 1), 0) + 1;
 }
 
 export function runOutcome(summary, run) {
@@ -833,7 +968,12 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
 }
 
 export function parseArgs(argv) {
-  const options = { mode: "code-review", repo: repoRoot, timeoutMinutes: 25 };
+  const options = {
+    mode: "code-review",
+    repo: repoRoot,
+    timeoutMinutes: 25,
+    models: REVIEW_MODELS,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
     const value = argv[index + 1];
@@ -851,7 +991,21 @@ export function parseArgs(argv) {
     else if (key === "--out") options.out = resolve(take());
     else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
-    else throw new Error(`ARG_UNKNOWN ${key}`);
+    else if (key === "--models") {
+      const names = take().split(",").filter(Boolean);
+      const models = names.map((name) => REVIEW_MODELS.find((model) => model.endsWith(`/${name}`)));
+      if (
+        names.length === 0 ||
+        models.some((model) => !model) ||
+        new Set(models).size !== models.length
+      )
+        throw new Error("ARG_INVALID --models");
+      options.models = models;
+    } else if (key === "--approved-usd") {
+      options.approvedUsd = Number(take());
+      if (!Number.isFinite(options.approvedUsd) || options.approvedUsd <= 0)
+        throw new Error("ARG_INVALID --approved-usd");
+    } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
   for (const required of ["head", "brief", "out"]) {
@@ -876,6 +1030,17 @@ async function main() {
     brief: readFileSync(options.brief, "utf8"),
   });
   if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
+  const records = options.selfCheckOnly ? [] : readUsage(options.out);
+  const overBudget = options.selfCheckOnly
+    ? null
+    : budgetCheck({
+        mode: options.mode,
+        records,
+        models: options.models,
+        approvedUsd: options.approvedUsd,
+      });
+  if (overBudget) throw new Error(overBudget);
+  const round = nextRound(records);
   const binary = opencodeBinary();
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
@@ -910,47 +1075,59 @@ async function main() {
     if (options.selfCheckOnly) return;
     const configPath = join(workRoot, "opencode.json");
     writeFileSync(configPath, JSON.stringify(reviewConfig({ mode: options.mode }), null, 2));
-    mkdirSync(options.out, { recursive: true });
-    writeFileSync(join(options.out, "prompt.md"), prompt);
+    const wrapUpConfigPath = join(workRoot, "opencode-wrap-up.json");
+    writeFileSync(
+      wrapUpConfigPath,
+      JSON.stringify(reviewConfig({ mode: options.mode, wrapUp: true }), null, 2),
+    );
+    const roundDir = join(options.out, `round-${round}`);
+    mkdirSync(roundDir, { recursive: true });
+    writeFileSync(join(roundDir, "prompt.md"), prompt);
     const results = await Promise.all(
-      REVIEW_MODELS.map(async (model) => {
-        const run = await runOpencode({
+      options.models.map(async (model) => {
+        const review = await reviewModel({
           binary,
           cwd: copy,
           configPath,
+          wrapUpConfigPath,
           gitGuard,
           model,
           prompt,
           timeoutMs,
-          costLimit: COST_LIMIT_PER_MODEL_USD,
         });
         const name = model.split("/").pop();
-        writeFileSync(join(options.out, `${name}.jsonl`), run.stdout);
-        const summary = summarizeEvents(run.stdout);
-        writeFileSync(join(options.out, `${name}.md`), `${summary.text}\n`);
+        writeFileSync(join(roundDir, `${name}.jsonl`), review.stdout);
+        const { summary } = review;
+        writeFileSync(join(roundDir, `${name}.md`), `${summary.text}\n`);
+        if (summary.thinking)
+          writeFileSync(join(roundDir, `${name}.thinking.md`), `${summary.thinking}\n`);
         const record = {
           at: new Date().toISOString(),
+          round,
           mode: options.mode,
           model,
           head: commits.head,
-          outcome: runOutcome(summary, run),
+          outcome: review.outcome,
+          wrapUp: review.wrapUp,
           lastReason: summary.lastReason,
-          exitCode: run.code,
+          exitCode: review.runs.at(-1).code,
           ...summary.usage,
           toolCalls: summary.toolCalls.length,
         };
         appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
-        if (record.outcome !== "ok" && run.stderr.trim()) {
-          writeFileSync(join(options.out, `${name}.stderr.txt`), run.stderr);
+        if (record.outcome !== "ok" && review.stderr.trim()) {
+          writeFileSync(join(roundDir, `${name}.stderr.txt`), review.stderr);
         }
         return record;
       }),
     );
     for (const record of results) {
       console.log(
-        `REVIEW_RESULT ${record.model} outcome=${record.outcome} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`,
+        `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`,
       );
     }
+    const totalSpent = readUsage(options.out).reduce((total, record) => total + record.cost, 0);
+    console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
     if (results.some((record) => record.outcome !== "ok")) process.exitCode = 4;
   } finally {
     process.off("SIGINT", onSignal);

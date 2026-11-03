@@ -10,16 +10,19 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  budgetCheck,
   buildPrompt,
   COST_LIMIT_PER_MODEL_USD,
   checkGitArgs,
   checkProbeRequests,
   envFilesInHistory,
   expectedTools,
+  FOCUS_SENTENCE,
   GIT_ENV,
   GIT_READ_COMMANDS,
   GIT_REFUSED,
@@ -27,19 +30,25 @@ import {
   installGitGuard,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
+  nextRound,
+  opencodeBinary,
   parseArgs,
   prepareCopy,
   probePlan,
   probeRefused,
   QUESTIONS_PATH,
   questionsSource,
+  REVIEW_MODELS,
   RULE_16_SENTENCE,
   resolveCommits,
   reviewConfig,
+  reviewModel,
   reviewQuestions,
   runOutcome,
   SHELL_LOG_NAME,
+  STEP_LIMIT,
   summarizeEvents,
+  WRAP_UP_PROMPT,
 } from "../../scripts/model-review/opencode-review.mjs";
 
 function lstatExists(path) {
@@ -758,5 +767,238 @@ describe("opencode review repository copy", () => {
     expect(() => resolveCommits(process.cwd(), { head: "no-such-ref-for-review" })).toThrow(
       "GIT_FAILED",
     );
+  });
+});
+
+function startScriptedModel(reply) {
+  const requests = [];
+  const server = http.createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      if (request.method !== "POST") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end('{"data":[]}');
+        return;
+      }
+      const parsed = JSON.parse(body);
+      const main =
+        (Array.isArray(parsed.tools) && parsed.tools.length > 0) ||
+        JSON.stringify(parsed.messages ?? []).includes(WRAP_UP_PROMPT);
+      if (main) requests.push(parsed);
+      const send = (payload) =>
+        response.write(
+          `data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 1, model: parsed.model, ...payload })}\n\n`,
+        );
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const step = main ? reply(parsed, requests.length) : { text: "title" };
+      const delta = { role: "assistant" };
+      if (step.thinking) delta.reasoning_content = step.thinking;
+      if (step.text) delta.content = step.text;
+      if (step.tool)
+        delta.tool_calls = [
+          {
+            index: 0,
+            id: `call-${requests.length}`,
+            type: "function",
+            function: { name: "read", arguments: JSON.stringify({ filePath: "AGENTS.md" }) },
+          },
+        ];
+      send({ choices: [{ index: 0, delta, finish_reason: null }] });
+      send({
+        choices: [{ index: 0, delta: {}, finish_reason: step.tool ? "tool_calls" : "stop" }],
+        usage: {
+          prompt_tokens: step.promptTokens ?? 1,
+          completion_tokens: 1,
+          total_tokens: (step.promptTokens ?? 1) + 1,
+        },
+      });
+      response.end("data: [DONE]\n\n");
+    });
+  });
+  return new Promise((resolveStart) =>
+    server.listen(0, "127.0.0.1", () =>
+      resolveStart({ server, requests, port: server.address().port }),
+    ),
+  );
+}
+
+async function withScriptedReview(reply, run) {
+  const root = mkdtempSync(join(tmpdir(), "opencode-wrap-"));
+  const { server, requests, port } = await startScriptedModel(reply);
+  try {
+    const copy = join(root, "repo");
+    execFileSync("git", ["clone", "--quiet", "--depth", "1", `file://${process.cwd()}`, copy]);
+    const gitGuard = installGitGuard(root);
+    const baseURL = `http://127.0.0.1:${port}/v1`;
+    const configPath = join(root, "review.json");
+    const wrapUpConfigPath = join(root, "wrap-up.json");
+    writeFileSync(configPath, JSON.stringify(reviewConfig({ mode: "plan", baseURL })));
+    writeFileSync(
+      wrapUpConfigPath,
+      JSON.stringify(reviewConfig({ mode: "plan", baseURL, wrapUp: true })),
+    );
+    const review = (options = {}) =>
+      reviewModel({
+        binary: opencodeBinary(),
+        cwd: copy,
+        configPath,
+        wrapUpConfigPath,
+        gitGuard,
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 120000,
+        ...options,
+      });
+    return await run({ review, requests });
+  } finally {
+    await new Promise((resolveClose) => server.close(resolveClose));
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("opencode review wrap-up", () => {
+  it("has no step limit and tells the model to go straight to what it needs", () => {
+    expect(reviewConfig({ mode: "plan" }).agent).toBeUndefined();
+    expect(STEP_LIMIT).toBeUndefined();
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      const prompt = buildPrompt({ mode, questions: ["q"], head: "h", base: "b", brief: "x" });
+      expect(prompt.slice(0, prompt.indexOf("---- 本次材料 ----"))).toContain(FOCUS_SENTENCE);
+    }
+  });
+
+  it("gives the wrap-up turn no tools and a single step", () => {
+    const config = reviewConfig({ mode: "plan", wrapUp: true });
+    expect(config.agent).toEqual({ build: { steps: 1 } });
+    expect(Object.values(config.permission).every((value) => value === "deny")).toBe(true);
+  });
+
+  it("keeps the model's thinking from the event stream", () => {
+    const events = [
+      { type: "reasoning", part: { type: "reasoning", text: "方案在思考里" } },
+      { type: "step_finish", part: { reason: "stop", tokens: {}, cost: 0.001 } },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+    const summary = summarizeEvents(events);
+    expect(summary.outcome).toBe("no-text");
+    expect(summary.thinking).toBe("方案在思考里");
+  });
+
+  it("asks once more when the answer stays in the thinking, and gets it", async () => {
+    await withScriptedReview(
+      (_request, index) =>
+        index === 1 ? { thinking: "THOUGHT_ONLY" } : { text: "WRAPPED_ANSWER" },
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("no-text");
+        expect(result.outcome).toBe("ok");
+        expect(result.summary.text).toBe("WRAPPED_ANSWER");
+        expect(result.summary.thinking).toContain("THOUGHT_ONLY");
+        expect(requests).toHaveLength(2);
+        expect(requests[1].tools ?? []).toHaveLength(0);
+        expect(JSON.stringify(requests[1].messages)).toContain(WRAP_UP_PROMPT);
+      },
+    );
+  }, 120000);
+
+  it("stops reading near the spending cap and still gets a conclusion", async () => {
+    await withScriptedReview(
+      (request) =>
+        request.tools?.length ? { tool: true, promptTokens: 300000 } : { text: "COST_WRAPPED" },
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("cost");
+        expect(result.outcome).toBe("ok");
+        expect(result.summary.text).toBe("COST_WRAPPED");
+        expect(result.summary.usage.cost).toBeLessThanOrEqual(COST_LIMIT_PER_MODEL_USD);
+        expect(requests.at(-1).tools ?? []).toHaveLength(0);
+      },
+    );
+  }, 120000);
+
+  it("stops reading near the time limit and still gets a conclusion", async () => {
+    await withScriptedReview(
+      (request) => (request.tools?.length ? { tool: true } : { text: "TIME_WRAPPED" }),
+      async ({ review }) => {
+        const result = await review({ timeoutMs: 40000 });
+        expect(result.wrapUp).toBe("time");
+        expect(result.outcome).toBe("ok");
+        expect(result.summary.text).toBe("TIME_WRAPPED");
+      },
+    );
+  }, 120000);
+
+  it("does not ask again when the first answer is already there", async () => {
+    await withScriptedReview(
+      () => ({ text: "FIRST_ANSWER" }),
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.wrapUp).toBeNull();
+        expect(result.summary.text).toBe("FIRST_ANSWER");
+        expect(requests).toHaveLength(1);
+      },
+    );
+  }, 120000);
+});
+
+describe("opencode review spending", () => {
+  const record = (cost, round = 1) => ({ cost, round });
+
+  it("refuses a run that could take the task past the ask-first line", () => {
+    expect(budgetCheck({ mode: "plan", records: [], models: REVIEW_MODELS })).toBeNull();
+    expect(
+      budgetCheck({ mode: "plan", records: [record(0.12), record(0.14)], models: REVIEW_MODELS }),
+    ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
+    expect(
+      budgetCheck({
+        mode: "plan",
+        records: [record(0.12), record(0.14)],
+        models: REVIEW_MODELS.slice(1),
+      }),
+    ).toBeNull();
+    expect(
+      budgetCheck({
+        mode: "code-review",
+        records: [record(0.15), record(0.15)],
+        models: REVIEW_MODELS,
+      }),
+    ).toBeNull();
+    expect(
+      budgetCheck({
+        mode: "code-review",
+        records: [record(0.4), record(0.3)],
+        models: REVIEW_MODELS,
+      }),
+    ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
+  });
+
+  it("lets a run through when Andy approved enough for the whole task", () => {
+    const records = [record(0.12), record(0.14)];
+    expect(
+      budgetCheck({ mode: "plan", records, models: REVIEW_MODELS, approvedUsd: 0.7 }),
+    ).toBeNull();
+    expect(budgetCheck({ mode: "plan", records, models: REVIEW_MODELS, approvedUsd: 0.6 })).toMatch(
+      /^BUDGET_NEEDS_APPROVAL /,
+    );
+  });
+
+  it("numbers rounds from what the folder already holds", () => {
+    expect(nextRound([])).toBe(1);
+    expect(nextRound([record(0.1, 1), record(0.1, 1), record(0.1, 2)])).toBe(3);
+    expect(nextRound([{ cost: 0.1 }])).toBe(2);
+  });
+
+  it("reruns only the models asked for", () => {
+    const base = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--out", "o"];
+    expect(parseArgs(base).models).toEqual(REVIEW_MODELS);
+    expect(parseArgs([...base, "--models", "deepseek-v4.1-flash"]).models).toEqual([
+      "opencode-go/deepseek-v4.1-flash",
+    ]);
+    expect(() => parseArgs([...base, "--models", "kimi-k3"])).toThrow("ARG_INVALID --models");
+    expect(parseArgs([...base, "--approved-usd", "0.7"]).approvedUsd).toBe(0.7);
+    expect(() => parseArgs([...base, "--approved-usd", "x"])).toThrow("ARG_INVALID --approved-usd");
   });
 });
