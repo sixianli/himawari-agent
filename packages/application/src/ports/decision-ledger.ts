@@ -1,4 +1,15 @@
+import type {
+  CalibrationDecisionRow,
+  MailJudgment,
+  MuseEntryRow,
+} from "@himawari-agent/calibration";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+
+export interface CalibrationRowsSnapshot {
+  readonly decisions: readonly CalibrationDecisionRow[];
+  readonly entries: readonly MuseEntryRow[];
+  readonly mailJudgments: readonly (readonly [string, MailJudgment])[];
+}
 
 export const DECISION_KINDS = [
   "proactive",
@@ -171,6 +182,12 @@ export interface DecisionLedgerPort {
     },
   ): Promise<number>;
   recordMuse(write: MuseReferenceWrite): Promise<void>;
+  readCalibrationRows(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly start: string;
+    readonly end: string;
+  }): Promise<CalibrationRowsSnapshot>;
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;

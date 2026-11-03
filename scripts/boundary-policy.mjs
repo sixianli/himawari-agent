@@ -1,11 +1,13 @@
 export const allowedInternalDependencies = new Map([
   ["@himawari-agent/runtime-sandbox", new Set(["@himawari-agent/execution-contracts"])],
   ["@himawari-agent/domain", new Set()],
+  ["@himawari-agent/calibration", new Set()],
   ["@himawari-agent/gateway-contracts", new Set()],
   ["@himawari-agent/execution-contracts", new Set()],
   [
     "@himawari-agent/application",
     new Set([
+      "@himawari-agent/calibration",
       "@himawari-agent/domain",
       "@himawari-agent/gateway-contracts",
       "@himawari-agent/execution-contracts",
@@ -16,6 +18,7 @@ export const allowedInternalDependencies = new Map([
     "@himawari-agent/persistence-sqlite",
     new Set([
       "@himawari-agent/application",
+      "@himawari-agent/calibration",
       "@himawari-agent/domain",
       "@himawari-agent/gateway-contracts",
       "@himawari-agent/execution-contracts",
@@ -67,6 +70,7 @@ export const allowedInternalDependencies = new Map([
     new Set([
       "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
+      "@himawari-agent/calibration",
       "@himawari-agent/gateway-contracts",
       "@himawari-agent/execution-contracts",
       "@himawari-agent/runtime-pi",

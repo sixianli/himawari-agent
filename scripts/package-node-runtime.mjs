@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { collectArtifactFiles } from "./ci/artifact-files.mjs";
+import { resolveBuildInfo } from "../apps/control-center/build-info.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PI_RUNNER_ENTRY = "pi-coding-main.js";
@@ -15,6 +16,7 @@ const internalRoots = [
   "apps/agent-service",
   "apps/execution-worker",
   "packages/application",
+  "packages/calibration",
   "packages/domain",
   "packages/execution-contracts",
   "packages/gateway-contracts",
@@ -86,6 +88,13 @@ export async function packageNodeRuntime({
       path.join(destination, "package.json"),
       `${JSON.stringify(runtimeManifest(manifest, relativeRoot), null, 2)}\n`,
     );
+    if (relativeRoot === "apps/agent-service") {
+      const build = resolveBuildInfo(process.env, repositoryRoot);
+      await writeFile(
+        path.join(destination, "build-info.json"),
+        `${JSON.stringify({ revision: build?.revision ?? "development", date: build?.date ?? null })}\n`,
+      );
+    }
     if (relativeRoot === "packages/platform-node") {
       await promisify(execFile)("cc", [
         "-std=c11",

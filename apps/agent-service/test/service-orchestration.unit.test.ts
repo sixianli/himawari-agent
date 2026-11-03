@@ -263,6 +263,12 @@ beforeEach(() => {
     "threadRepository",
   ])
     repository[key] = vi.fn(() => ({}));
+  repository["ledgerObservation"] = vi.fn(() => ({
+    ensureSnapshot: vi.fn(async () => {}),
+    beat: vi.fn(async () => {}),
+    readStart: vi.fn(async () => null),
+    listChecks: vi.fn(async () => []),
+  }));
   boundary.open.mockResolvedValue(repository);
   lease = {
     start: vi.fn(async () => {

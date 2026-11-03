@@ -110,6 +110,7 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
@@ -506,6 +507,7 @@ export async function runAgentService(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
+  let observation: ProductionObservation | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -586,6 +588,7 @@ export async function runAgentService(
         await runs?.memoryConsolidation?.stop();
         await webPush?.stop();
         await proactive?.stop();
+        await observation?.stop();
       }
     },
   });
@@ -1689,6 +1692,25 @@ export async function runAgentService(
         webPush.start();
       }
       proactive?.start();
+      observation = new ProductionObservation({
+        scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+        observation: repository.ledgerObservation(),
+        ledger: repository.decisionLedger(),
+        clock,
+        schedule: {
+          configured: proactive !== undefined,
+          intervalMs: configuration.runPolicy?.proactive?.intervalMs ?? 0,
+          perCheckMs: configuration.runPolicy?.proactive?.perCheckMs ?? 0,
+        },
+        serviceRevision: readServiceRevision(),
+        onFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "observation.failed",
+            code: stableErrorCode(error),
+          }),
+      });
+      observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
         egress: createProductionModelEgress(configuration, sources),
@@ -1895,6 +1917,7 @@ export async function runAgentService(
         live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
+        ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,
           onAudit: (record) =>

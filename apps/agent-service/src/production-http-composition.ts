@@ -92,6 +92,10 @@ import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
+import {
+  PRODUCTION_OBSERVATION_OPERATIONS,
+  type ProductionObservation,
+} from "./production-observation.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -178,6 +182,7 @@ export interface ProductionHttpCompositionOptions {
     readonly push: ProductionWebPush | undefined;
   };
   readonly proactive?: ProductionProactive;
+  readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly authority: () => ProductAuthorityFence;
@@ -611,6 +616,7 @@ function routeOptions(
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
+  observationAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -643,6 +649,7 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
+        ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
       ],
       agentId: configuration.agentId,
@@ -1063,6 +1070,7 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
+    ...(options.observation ? { observationControl: options.observation } : {}),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),
@@ -1087,6 +1095,7 @@ export async function createProductionHttpComposition(
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
       Boolean(options.proactive),
+      Boolean(options.observation),
     ),
     gatewayV2,
     threadSearch,

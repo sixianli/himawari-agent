@@ -14,6 +14,7 @@ import type {
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
 
@@ -238,29 +239,41 @@ export class SqliteProactiveOperations {
       )
     )
       this.invalid("Proactive settings are invalid");
-    this.database
-      .prepare(
-        `INSERT INTO proactive_settings (
+    this.database.transaction(() => {
+      const before = this.database
+        .prepare("SELECT enabled FROM proactive_settings WHERE owner_id = ? AND agent_id = ?")
+        .get(input.ownerId, input.agentId) as { enabled: number } | undefined;
+      this.database
+        .prepare(
+          `INSERT INTO proactive_settings (
           owner_id, agent_id, enabled, quiet_hours, important_senders, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (owner_id, agent_id) DO UPDATE SET enabled = excluded.enabled,
           quiet_hours = excluded.quiet_hours, important_senders = excluded.important_senders,
           updated_at = excluded.updated_at`,
-      )
-      .run(
-        input.ownerId,
-        input.agentId,
-        input.enabled ? 1 : 0,
-        JSON.stringify(
-          input.quietHours.map(({ days, start, end }) => ({
-            days: [...days].sort((left, right) => left - right),
-            start,
-            end,
-          })),
-        ),
-        JSON.stringify(input.importantSenders),
-        input.now,
-      );
+        )
+        .run(
+          input.ownerId,
+          input.agentId,
+          input.enabled ? 1 : 0,
+          JSON.stringify(
+            input.quietHours.map(({ days, start, end }) => ({
+              days: [...days].sort((left, right) => left - right),
+              start,
+              end,
+            })),
+          ),
+          JSON.stringify(input.importantSenders),
+          input.now,
+        );
+      if ((before?.enabled === 1) !== input.enabled)
+        insertObservationEvent(this.database, {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: input.enabled ? "proactive_enabled" : "proactive_disabled",
+          occurredAt: input.now,
+        });
+    })();
   }
 
   private readConnection(input: Input<"readConnection">): ProactiveConnection | undefined {
@@ -307,6 +320,14 @@ export class SqliteProactiveOperations {
           connection.connectedAt,
           connection.updatedAt,
         );
+      if (before?.status !== connection.status)
+        insertObservationEvent(this.database, {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: connection.status === "connected" ? "source_connected" : "source_needs_reconnect",
+          occurredAt: connection.updatedAt,
+          detail: { source: connection.source },
+        });
       return before
         ? [before.accountRef, before.tokenRef].filter(
             (ref) => ref !== connection.accountRef && ref !== connection.tokenRef,
@@ -320,12 +341,23 @@ export class SqliteProactiveOperations {
     this.time(input.now);
     if (!["connected", "needs_reconnect"].includes(input.status))
       this.invalid("Proactive connection status is invalid");
-    this.database
-      .prepare(
-        `UPDATE proactive_connections SET status = ?, cursor = COALESCE(?, cursor), updated_at = ?
-         WHERE owner_id = ? AND agent_id = ? AND source = ?`,
-      )
-      .run(input.status, input.cursor, input.now, input.ownerId, input.agentId, input.source);
+    this.database.transaction(() => {
+      const before = this.readConnection(input);
+      this.database
+        .prepare(
+          `UPDATE proactive_connections SET status = ?, cursor = COALESCE(?, cursor), updated_at = ?
+           WHERE owner_id = ? AND agent_id = ? AND source = ?`,
+        )
+        .run(input.status, input.cursor, input.now, input.ownerId, input.agentId, input.source);
+      if (before && before.status !== input.status)
+        insertObservationEvent(this.database, {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: input.status === "connected" ? "source_connected" : "source_needs_reconnect",
+          occurredAt: input.now,
+          detail: { source: input.source },
+        });
+    })();
   }
 
   private collectRefs(scope: ProactiveScope, sourceFilter: string | null): string[] {
@@ -408,6 +440,13 @@ export class SqliteProactiveOperations {
           "DELETE FROM proactive_pushes WHERE owner_id = ? AND agent_id = ? AND status = 'pending'",
         )
         .run(input.ownerId, input.agentId);
+      if (connection)
+        insertObservationEvent(this.database, {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: "source_disconnected",
+          detail: { source: input.source },
+        });
       return connection ? [...refs, connection.accountRef, connection.tokenRef] : refs;
     })();
   }
@@ -420,11 +459,17 @@ export class SqliteProactiveOperations {
         this.database
           .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ?`)
           .run(scope.ownerId, scope.agentId);
-      this.database
+      const cleared = this.database
         .prepare(
           "DELETE FROM decision_ledger WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive'",
         )
-        .run(scope.ownerId, scope.agentId);
+        .run(scope.ownerId, scope.agentId).changes;
+      insertObservationEvent(this.database, {
+        ownerId: scope.ownerId,
+        agentId: scope.agentId,
+        kind: "proactive_records_cleared",
+        detail: { rows: cleared },
+      });
       return refs;
     })();
   }

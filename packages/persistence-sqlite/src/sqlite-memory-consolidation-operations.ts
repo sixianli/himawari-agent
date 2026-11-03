@@ -8,6 +8,7 @@ import type {
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/u;
 function consolidationLedgerId(changeId: string): string {
@@ -130,7 +131,16 @@ export class SqliteMemoryConsolidationOperations {
     if (!current || current.status !== "running")
       this.fail("PORT_CONFLICT", "Memory consolidation run is not running");
     if (input.status === "failed" && current?.changeCount === 0) {
-      this.database.prepare("DELETE FROM memory_consolidation_runs WHERE id = ?").run(input.id);
+      this.database.transaction(() => {
+        insertObservationEvent(this.database, {
+          ownerId: current.ownerId,
+          agentId: current.agentId,
+          kind: "consolidation_failed",
+          occurredAt: input.finishedAt,
+          detail: { runId: input.id, day: current.day, errorCode: input.errorCode },
+        });
+        this.database.prepare("DELETE FROM memory_consolidation_runs WHERE id = ?").run(input.id);
+      })();
       return;
     }
     this.database
