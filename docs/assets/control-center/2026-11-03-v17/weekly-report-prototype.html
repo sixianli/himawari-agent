@@ -248,11 +248,7 @@ zh:{
  confirmTitle:d=>`从 ${d} 开始观察？`,confirmFixed:"设好后不能改。",
  confirmEarliest:(e,v)=>`最早可选 ${e}：新版本 ${v}第一次启动，第二天起才是完整的一天。可以选以后的日子。`,
  cancel:"取消",confirm:"确定",
- headIn:(s,n,r)=>`数据起点 ${s} · 观察期第 ${n} / 7 天 · ${r}出首份校准周报`,
- headWait:(s,r)=>`数据起点 ${s} · ${s}开始观察 · ${r}出首份校准周报`,
- headInBad:(s,n)=>`数据起点 ${s} · 观察期第 ${n} / 7 天`,
  badLine:(a,b)=>`${a}失败、${b}没有检查记录。修好后从第二天起重新数 7 天，首份校准周报跟着推后。`,
- headDone:(a,b)=>`首份校准周报 · ${a} – ${b}`,
  allPass:"连续 7 天全部通过",
  restart:(d,n)=>`第 3 天失败，修好后从 ${d}起重新数，已连续通过 ${n} / 7 天`,
  version:v=>`版本 ${v}`,
@@ -303,11 +299,7 @@ en:{
  confirmTitle:d=>`Start observing on ${d}?`,confirmFixed:"You can’t change this after it’s set.",
  confirmEarliest:(e,v)=>`Earliest you can pick: ${e}. The new version first started on ${v}, so the first full day is the day after. Later days are fine.`,
  cancel:"Cancel",confirm:"Confirm",
- headIn:(s,n,r)=>`Data start ${s} · Observation day ${n} of 7 · First calibration report on ${r}`,
- headWait:(s,r)=>`Data start ${s} · Observation starts ${s} · First calibration report on ${r}`,
- headInBad:(s,n)=>`Data start ${s} · Observation day ${n} of 7`,
  badLine:(a,b)=>`${a} failed and ${b} has no check record. Once fixed, the 7 days start over from the next day, and the first calibration report moves later.`,
- headDone:(a,b)=>`First calibration report · ${a} – ${b}`,
  allPass:"All 7 days passed in a row",
  restart:(d,n)=>`Day 3 failed. After the fix, counting restarted on ${d}: ${n} of 7 days passed in a row so far`,
  version:v=>`Version ${v}`,
@@ -358,11 +350,7 @@ ja:{
  confirmTitle:d=>`${d}から観察を始めますか？`,confirmFixed:"設定後は変更できません。",
  confirmEarliest:(e,v)=>`選べるのは ${e}から。新しいバージョンは ${v}に初めて起動したので、まる 1 日そろうのは翌日からです。先の日付も選べます。`,
  cancel:"キャンセル",confirm:"決定",
- headIn:(s,n,r)=>`データの起点 ${s} · 観察期間 ${n} / 7 日目 · ${r}に最初の較正レポート`,
- headWait:(s,r)=>`データの起点 ${s} · ${s}から観察 · ${r}に最初の較正レポート`,
- headInBad:(s,n)=>`データの起点 ${s} · 観察期間 ${n} / 7 日目`,
  badLine:(a,b)=>`${a}は不合格、${b}は確認の記録なし。直したら翌日から 7 日を数え直し、最初の較正レポートもその分遅れます。`,
- headDone:(a,b)=>`最初の較正レポート · ${a} – ${b}`,
  allPass:"7 日間続けてすべて合格",
  restart:(d,n)=>`3 日目が不合格。直した後 ${d}から数え直し、連続 ${n} / 7 日合格`,
  version:v=>`バージョン ${v}`,
@@ -402,9 +390,9 @@ ja:{
  museDef:"対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
  goRate:"「リマインダー」で採点する"
 }};
-Object.assign(L.zh,{info:"说明",obsShort:"选一天开始，连续观察 7 天。",badLine:(a,b)=>`${a}失败、${b}没有检查记录`,badMore:"修好后从第二天起重新数 7 天，首份校准周报跟着推后。",notFull:"观察期还没满 7 天",notFullMore:"观察期满 7 天后再按决策类型算比例。",notStarted:"还没开始观察",notStartedMore:"设好数据起点、观察满 7 天后，这里按决策类型算比例。"});
-Object.assign(L.en,{info:"About this",obsShort:"Pick a day to start; it observes 7 days in a row.",badLine:(a,b)=>`${a} failed; ${b} has no check record`,badMore:"Once fixed, the 7 days start over from the next day, and the first calibration report moves later.",notFull:"Observation period not yet 7 days",notFullMore:"Ratios by decision type come once the observation period reaches 7 days.",notStarted:"Observation hasn’t started",notStartedMore:"Once the data start is set and 7 days are observed, ratios by decision type appear here."});
-Object.assign(L.ja,{info:"説明",obsShort:"開始日を選ぶと、7 日間続けて観察します。",badLine:(a,b)=>`${a}は不合格、${b}は確認の記録なし`,badMore:"直したら翌日から 7 日を数え直し、最初の較正レポートもその分遅れます。",notFull:"観察期間はまだ 7 日に達していません",notFullMore:"観察期間が 7 日に達したら、判断の種類ごとの割合を出します。",notStarted:"まだ観察を始めていません",notStartedMore:"データの起点を決めて 7 日間観察すると、ここに判断の種類ごとの割合が出ます。"});
+Object.assign(L.zh,{headNow:n=>`观察期第 ${n} / 7 天`,headFirst:"首份校准周报",obsDates:(s,r)=>`数据起点 ${s} · ${r}出首份校准周报`,info:"说明",obsShort:"选一天开始，连续观察 7 天。",badLine:(a,b)=>`${a}失败、${b}没有检查记录`,badMore:"修好后从第二天起重新数 7 天，首份校准周报跟着推后。",notFull:"观察期还没满 7 天",notFullMore:"观察期满 7 天后再按决策类型算比例。",notStarted:"还没开始观察",notStartedMore:"设好数据起点、观察满 7 天后，这里按决策类型算比例。"});
+Object.assign(L.en,{headNow:n=>`Observation day ${n} of 7`,headFirst:"First calibration report",obsDates:(s,r)=>`Data start ${s} · First calibration report on ${r}`,info:"About this",obsShort:"Pick a day to start; it observes 7 days in a row.",badLine:(a,b)=>`${a} failed; ${b} has no check record`,badMore:"Once fixed, the 7 days start over from the next day, and the first calibration report moves later.",notFull:"Observation period not yet 7 days",notFullMore:"Ratios by decision type come once the observation period reaches 7 days.",notStarted:"Observation hasn’t started",notStartedMore:"Once the data start is set and 7 days are observed, ratios by decision type appear here."});
+Object.assign(L.ja,{headNow:n=>`観察期間 ${n} / 7 日目`,headFirst:"最初の較正レポート",obsDates:(s,r)=>`データの起点 ${s} · ${r}に最初の較正レポート`,info:"説明",obsShort:"開始日を選ぶと、7 日間続けて観察します。",badLine:(a,b)=>`${a}は不合格、${b}は確認の記録なし`,badMore:"直したら翌日から 7 日を数え直し、最初の較正レポートもその分遅れます。",notFull:"観察期間はまだ 7 日に達していません",notFullMore:"観察期間が 7 日に達したら、判断の種類ごとの割合を出します。",notStarted:"まだ観察を始めていません",notStartedMore:"データの起点を決めて 7 日間観察すると、ここに判断の種類ごとの割合が出ます。"});
 const LOC={zh:"zh-CN",en:"en",ja:"ja"};
 const ST={info:null,device:"desktop",state:"b1",muse:"none",lang:"zh",theme:"light",tab:"report",openDay:null,otherOpen:false,confirm:false,pick:6,start:6};
 const T=()=>L[ST.lang];
@@ -453,7 +441,7 @@ function infoBtn(key){const t=T();return `<button type="button" class="info" dat
 function head(title,key,tag){return `<div class="ch"><${tag||"h2"}>${title}</${tag||"h2"}>${infoBtn(key)}</div>`}
 function infoData(key){
  const t=T(),k=stateInfo().kind;
- if(key==="obs"){const p=[t.obsExplain];if(ST.state==="a")p.push(t.confirmEarliest(fd(6),fd(5)),t.confirmFixed);if(ST.state==="b2")p.push(t.badMore);return {title:t.obsTitle,paras:p,list:[],ver:t.version("41a6ce3")}}
+ if(key==="obs"){const p=[t.obsExplain];if(ST.state!=="a"){const st=ST.state==="b0"?ST.start:DAYS[ST.state].start;p.unshift(t.obsDates(fd(st),fd(st+7)))}if(ST.state==="a")p.push(t.confirmEarliest(fd(6),fd(5)),t.confirmFixed);if(ST.state==="b2")p.push(t.badMore);return {title:t.obsTitle,paras:p,list:[],ver:t.version("41a6ce3")}}
  if(key==="type"){if(k==="none"||k==="wait")return {title:t.typeTitle,paras:[t.notStartedMore],list:[]};return {title:t.typeTitle,paras:k==="part"?[t.notFullMore]:[],list:t.howItems}}
  if(key==="stats")return {title:t.statTitle,paras:[t.statNote],list:[]};
  if(key==="muse")return {title:t.museTitle,paras:[t.museDef],list:[]};
@@ -467,13 +455,11 @@ function obsCard(){
  if(ST.state==="a"){
   h+=`<p class="sub">${t.obsShort}</p><div class="datef"><label id="sl">${t.startLabel}</label><span class="stepper" role="group" aria-labelledby="sl"><button type="button" data-step="-1" aria-label="${t.prevDay}" ${ST.pick<=6?"disabled":""}>${G.chevl}</button><output>${fd(ST.pick)} · ${fw(ST.pick)}</output><button type="button" data-step="1" aria-label="${t.nextDay}">${G.chev}</button></span><button type="button" class="bp" data-act="start">${t.startBtn}</button></div>`;
  } else if(ST.state==="b0"){
-  h+=`<p class="headline">${t.headWait(fd(ST.start),fd(ST.start+7))}</p>`;
+  h+=`<p class="headline">${t.notStarted}</p>`;
   h+=cellsHTML({start:ST.start,today:5,cells:Array(7).fill(["future"])});
  } else {
   const d=DAYS[ST.state];
-  if(ST.state==="b1")h+=`<p class="headline">${t.headIn(fd(d.start),d.today-d.start+1,fd(d.start+7))}</p>`;
-  if(ST.state==="b2")h+=`<p class="headline">${t.headInBad(fd(d.start),d.today-d.start+1)}</p>`;
-  if(ST.state==="c1"||ST.state==="c2")h+=`<p class="headline">${t.headDone(fd(d.start),fd(d.start+6))}</p>`;
+  h+=`<p class="headline">${ST.state[0]==="c"?t.headFirst:t.headNow(d.today-d.start+1)}</p>`;
   h+=cellsHTML(d);
   if(ST.openDay!==null&&!isPhone()){const c=d.cells[ST.openDay];h+=`<div class="detail" role="region"><h3>${detailTitle(d,ST.openDay)}</h3>${checksHTML(c[1])}<button type="button" class="close" data-act="closeDay">${t.close}</button></div>`}
   if(ST.state==="b2")h+=`<div class="line bad">${G.none}<span>${t.badLine(fd(7),fd(9))}</span></div>`;
