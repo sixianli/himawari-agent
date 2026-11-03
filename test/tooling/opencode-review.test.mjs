@@ -49,11 +49,11 @@ import {
   reviewQuestions,
   runOutcome,
   SHELL_LOG_NAME,
-  STEP_LIMIT,
   spentOf,
   summarizeEvents,
   WRAP_UP_MIN_USD,
   WRAP_UP_PROMPT,
+  wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
 
 function lstatExists(path) {
@@ -877,7 +877,6 @@ function expectAppendedTo(earlier, later) {
 describe("opencode review wrap-up", () => {
   it("has no step limit and tells the model to go straight to what it needs", () => {
     expect(reviewConfig({ mode: "plan" }).agent).toBeUndefined();
-    expect(STEP_LIMIT).toBeUndefined();
     for (const mode of ["code-review", "plan", "plan-review"]) {
       const prompt = buildPrompt({ mode, questions: ["q"], head: "h", base: "b", brief: "x" });
       expect(prompt.slice(0, prompt.indexOf("---- 本次材料 ----"))).toContain(FOCUS_SENTENCE);
@@ -888,6 +887,24 @@ describe("opencode review wrap-up", () => {
     const config = reviewConfig({ mode: "plan", wrapUp: true });
     expect(config.agent).toEqual({ build: { steps: 1 } });
     expect(config.permission).toEqual(reviewConfig({ mode: "plan" }).permission);
+  });
+
+  it("never asks again after a hard stop or a crash", () => {
+    const empty = { outcome: "no-text" };
+    for (const run of [
+      { code: null, stopReason: "timeout" },
+      { code: null, stopReason: "cost-limit" },
+      { code: null, stopReason: "cost-unknown" },
+      { code: null, stopReason: "wrap-up-tool-call" },
+      { code: null, spawnError: "EACCES" },
+      { code: 1 },
+      { code: null, signal: "SIGKILL" },
+    ])
+      expect(wrapUpReason(empty, run)).toBeNull();
+    expect(wrapUpReason(empty, { code: 0 })).toBe("no-text");
+    expect(wrapUpReason({ outcome: "ok" }, { code: 0 })).toBeNull();
+    expect(wrapUpReason(empty, { code: null, stopReason: "wrap-up-cost" })).toBe("cost");
+    expect(wrapUpReason(empty, { code: null, stopReason: "wrap-up-time" })).toBe("time");
   });
 
   it("counts only numeric step costs", () => {
@@ -965,6 +982,10 @@ describe("opencode review wrap-up", () => {
         expect(requests).toHaveLength(2);
         expect(isWrapUp(requests[1])).toBe(true);
         expectAppendedTo(requests[0], requests[1]);
+        const appended = JSON.stringify(requests[1].messages.slice(requests[0].messages.length));
+        expect(appended).toContain(WRAP_UP_PROMPT);
+        expect(appended).toContain("MAXIMUM STEPS REACHED");
+        expect(appended).toContain("Respond with text only");
       },
     );
   }, 120000);
