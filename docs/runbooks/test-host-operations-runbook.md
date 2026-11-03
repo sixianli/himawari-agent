@@ -36,7 +36,7 @@ date: "2026-10-21"
 ## Scope
 
 - 适用：在 Hermes 或云服务器 `84.247.157.41` 的测试账号 `himawari-ci` 上运行第 0–4 层开发测试（定向测试、`npm run check`、受影响模块、完整 `npm test`、真实产品路径），以及每次运行前后的记录和清理。
-- 不适用：生产部署（第 5 层）、生产服务的任何操作、Mac 上的验证（用户 2026-09-30 起无限期推迟）、新下载（工具链、bubblewrap 等，需用户先批准）。用户本人以管理员身份登录生产云服务器、查看生产服务和处理内核锁定，见[生产云服务器访问与系统更新 Runbook](production-server-access-runbook.md)。
+- 不适用：生产部署（第 5 层）、生产服务的任何操作、Mac 上的验证（Himawari 只支持 Linux，见 [ADR 0156](../adr/0156-linux-only-runtime.md)）、新下载（工具链、bubblewrap 等，需用户先批准）。用户本人以管理员身份登录生产云服务器、查看生产服务和处理内核锁定，见[生产云服务器访问与系统更新 Runbook](production-server-access-runbook.md)。
 - 目标：Hermes（Ubuntu 22.04，bwrap 0.6.1）和云服务器的 `himawari-ci` 账号（Ubuntu 24.04，与生产服务同一台机器）。两者的结果互不代替，也都不代替生产安装的行为。
 
 <a id="authoritative-sources"></a>

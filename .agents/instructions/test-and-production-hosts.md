@@ -13,9 +13,9 @@
 - 每次对比测量都以 `.ci-output/handoff/scripts/require-quiet-host.sh hermes|cloud` 开始，只有在出现 `QUIET_HOST_OK` 之后才运行；证据中缺少这一行的对比结果，Claude 一律拒收。
 - 不要放宽测试时限，也不要设置 `HIMAWARI_TEST_TIMEOUT_MS`；测试主机上的超时是一个需要诊断和修复的缺陷。
 - Hermes 上还运行着无关的服务，包括 `/data/hermes/himawari/releases/` 下现有的 Himawari 服务；测试不得读写它们的目录或数据，也不得停止或重启它们。
-- Mac 仍然是受支持的产品平台，但用户已无限期推迟了所有 Mac 验证：在用户恢复之前，不要安排或提议在 Mac 上运行，并把 Mac 上的行为报告为未验证。恢复之后，Mac 专属的验证（macOS 沙箱、Mac 安装程序、Mac 自带的 Bash，以及其他只在 Mac 上出现的运行时行为）只有在改动影响 Mac 专属行为时或在发布之前，才在 MacBook 上运行，并且只有在用户批准了这一次具体运行、它的范围、预计时长和时间安排之后才运行。
+- Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../docs/adr/0156-linux-only-runtime.md)）：不要安排、提议或要求任何 Mac 上的验证，不为 macOS 分支补测试或修缺陷，新代码不得增加 macOS 分支。MacBook 只用于编辑、审查、提交和经 Remote Control 上线。
 - 生产运行在云服务器 `84.247.157.41` 上；那里的每一次生产上线，以及每一次启动或变更生产服务，都需要用户对该次上线的明确授权。
-- 一个平台的结果绝不能代替另一个平台：Mac 和 Linux 不能互相验证；Hermes（Ubuntu 22.04，bwrap 0.6.1）在时序、并发或沙箱方面的结论不能代表生产服务器（Ubuntu 24.04，带有 AppArmor 对用户命名空间的限制）；`himawari-ci` 的结果只说明测试账号自己在 Ubuntu 24.04 上的安装，而不是经过验证的生产安装；2026-10-14 之前的云服务器测试结果只作为历史记录。
+- 一个主机的结果绝不能代替另一个主机：Hermes（Ubuntu 22.04，bwrap 0.6.1）在时序、并发或沙箱方面的结论不能代表生产服务器（Ubuntu 24.04，带有 AppArmor 对用户命名空间的限制）；`himawari-ci` 的结果只说明测试账号自己在 Ubuntu 24.04 上的安装，而不是经过验证的生产安装；2026-10-14 之前的云服务器测试结果只作为历史记录。
 
 <a id="hermes-test-server-connectivity"></a>
 ## 连接 Hermes 测试服务器

@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0156-linux-only-runtime.md"
 date: "2026-09-29"
 ---
 
@@ -65,7 +66,7 @@ Hermes（局域网里运行 Himawari 的 Linux 服务器）上的启动脚本 `s
 
 - 好处：恢复流程只需要面对“两个都在”和“两个都重启过”两种情况，工具结果不会因为只剩一个进程而长时间卡住。
 - 代价：任一进程崩溃都会造成几秒的整体不可用。
-- 后续：实现 Mac 的 launchd 配置时，必须按本决定配置成对重启，并在测试中验证“只杀 Worker”和“只杀 Agent”两种情况最后都是两个进程一起重新启动。Mac 主机名变化后旧锁可能让重启失败，见 [BL-20260929-002](../backlog/BL-20260929-002-mac-主-机-名-变-化-后-状.md)，它会直接影响成对重启能否成功。
+- 后续：实现 Mac 的 launchd 配置时，必须按本决定配置成对重启，并在测试中验证“只杀 Worker”和“只杀 Agent”两种情况最后都是两个进程一起重新启动。Mac 主机名变化后旧锁可能让重启失败，见 [BL-20260929-002](../archive/backlog/BL-20260929-002-mac-主-机-名-变-化-后-状.md)，它会直接影响成对重启能否成功。
 
 [↑ 返回阅读导航](#contents)
 
@@ -75,4 +76,4 @@ Hermes（局域网里运行 Himawari 的 Linux 服务器）上的启动脚本 `s
 
 - 成对重启与离线就绪边界：[SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#成对重启与离线就绪边界]
 - Mac 与 Hermes 服务部署的设计：[SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
-- 相关待办：[SOURCE: docs/backlog/BL-20260929-002-mac-主-机-名-变-化-后-状.md]
+- 相关待办：[SOURCE: docs/archive/backlog/BL-20260929-002-mac-主-机-名-变-化-后-状.md]

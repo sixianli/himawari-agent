@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0021-platform-capability-runtime-isolation.md, docs/adr/0022-mac-tiered-command-sandbox.md, docs/adr/0024-srt-unified-execution.md"
 superseded_by: ""
-amended_by: "docs/adr/0031-isolated-tool-execution.md"
+amended_by: "docs/adr/0031-isolated-tool-execution.md, docs/adr/0156-linux-only-runtime.md"
 date: "2026-09-09"
 ---
 

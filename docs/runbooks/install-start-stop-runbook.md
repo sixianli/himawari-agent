@@ -270,7 +270,7 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 
 2026-10-07 按 reply-07/08，有限恢复探针改为只接受已有 `--runtime`，不安装或写入 runtime，不再准备 Bash。测试外层先安装和准备 Bash，再把测试自有 runtime 设为只读。Hermes 第六组同一代码完整三次通过，十项恢复断言均为真，实际 runtime 摘要运行前后相同；报告同时保留 JobHost、Agent main 和 Bash 文件摘要，测试资格绑定同一实际摘要。输出目录由外层预先创建；临时 state/jobs/workspace/config、非生产资格、身份服务和模型仍在 scratch。证据见[第六组原件](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/l6/group-06/)。清理先保存报告并确认自有进程与任务树为空，再由测试外层恢复自有 scratch 的 owner 写权限并删除；正常探针不得改变正式安装权限。云端未运行此新入口。
 
-新增恢复和清理预算测试只在 Linux 的 opt-in 产品路径项目中执行，因为探针依赖 Linux 的 pidfd 和 `/proc` 进程身份。现有 Mac 场景保持原执行规则；本轮没有运行 Mac 验证。
+新增恢复和清理预算测试只在 Linux 的 opt-in 产品路径项目中执行，因为探针依赖 Linux 的 pidfd 和 `/proc` 进程身份。Mac 场景按 [ADR 0156](../adr/0156-linux-only-runtime.md) 不再运行（Himawari 只支持 Linux）。
 
 该 qualification 文件的既有 CI 登记只允许 `describe.skip`；恢复测试使用 `recoveryDescribe` 条件别名，只有 Linux 且显式 opt-in 时执行，不修改策略白名单。r72 完整第1层因初版 `skipIf` 退出1，原件保留；修正后的第九组三次均2项R2-L6通过、十项恢复断言和独立安装摘要检查成功，临时目录及输出实际读回不存在。证据 `E20261008T040802-9441b7`、`E20261008T040802-80798e`、`E20261008T040802-23a8a3` 绑定最终测试文件 `e5ef2b32…`；完整最终第1/2层仍待运行，详见[第九组记录](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r73/README.md)。
 
@@ -327,7 +327,7 @@ Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只�
 
 前台 SRT 现沿用受保护 Payload 通道额外保存 stdout 分块，任务正常退出且 stdout/stderr 管道已关闭时先保存带 termination 的结束块，再等待宿主清理。最终报告仍未确认管道关闭时，只保存输出前缀，不能生成结束块或完整成功结果；原未知结果、有限恢复和停止规则继续适用。正常 Worker 的原始 stdout Payload 和结果消费者不变；恢复只在接纳释放后核验完整分块、原身份和当前权限，重组成普通 Payload，并将输出归属和 operation CAS 同事务保存。已有等价原 Payload 时复用，已确定 operation 优先，不能用当前文件内容代替旧 read 输出。备份和迁移须同时保留原 Run 的 `sandbox-stream-chunk:*`、`sandbox-stream-end:*`、对应加密 Payload、原调用回执和输出归属；分块 JSON 不是完整输出引用。每次调用增加分块副本与本机 RPC，结束 artifact 还会保存末块 JSON，容量评估不能只按原 stdout 长度计算。合法的取消、输出或资源超限、宿主失败结束块在完整校验后保留原 UNKNOWN 或已有确定错误，不因不能恢复输出而关闭 Agent；未知原因、矛盾字段和损坏分块仍拒绝。后台游标合同不变；完整性、取消、期限、披露和效果验证不放宽。见[前台结果恢复设计](../execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#恢复裁决与事务)。[SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md]
 
-Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。将来的 Mac 常驻启动器必须保持同样的合同。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
+Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
 
 前台没有完整结束块且没有确定 operation 时，不保证恢复原输出。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。常驻 SRT 环境和容器任务环境里的前台调用没有逐次的原签名结束记录，改用调用所在整个任务环境的释放回执证明进程已退出：环境已释放、回执依据不是“创建请求尚未发出”、环境记录里有这条调用；这个证明说明不了命令开始过，绑定之后、发出命令之前中断的调用也记成 `SANDBOX_TOOL_RESULT_LOST`；拼回原输出仍要求完整结束块，写入 `SANDBOX_TOOL_RESULT_LOST` 仍要求原尝试已被取代，两者都不重放工具。详见[第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes) [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。
 
@@ -473,7 +473,7 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 
 项目七工具使用独立的 `dist/capability-programs/pi-coding-main.js`，固定 argv 仍是 hostId/workerInstanceId；在 SRT 常驻环境里，Job Host 启动它时再加上 `--resident <runtimeRoot>`（`runtimeRoot` 是运行时安装目录的绝对路径），让它作为常驻 runner 接收后续命令，其他多出来的参数一律以 `PI_RUNNER_IDENTITY_INVALID` 拒绝；安装 operationBindings 显式声明 `pi-coding-tool` 版本 `1`，只读工具采用 fixed_read，bash 采用 command，write/edit 采用带 verifier 的 verified_effect。scope 必须是 authorized-project.v1，仍复用 Grant targets 和原准入通道。该入口不能替代 host-readonly.v1 的 inspect/read 审批。工具目录不会因为文件存在而自动向模型开放能力。
 
-在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 OS、可实际执行的普通文件，不接受符号链接。Pi 工具自己（`bash` 工具的外壳程序、`grep` 用的 `rg`、`find` 用的 `fd`）只从这个固定目录取得，`PI_OFFLINE=1`，缺依赖明确失败；这些文件计入 runtimeDigest，新增二进制会改变 runtimeDigest，须重新取得当前主机资格。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`（见 [ADR 0055](../adr/0055-bash-uses-system-commands-in-sandbox.md)），所以 `ls`、`cat`、`git`、`python3` 这类系统程序可用，而固定目录在最前，`bash`、`rg`、`fd` 仍用安装包里核验过的那一份。系统程序随服务器系统升级变化，不计入 runtimeDigest，Himawari 不核验它们的版本和摘要；某个系统程序能否在沙箱里实际运行由只读放行列表决定（当前放行 `/usr/bin`、`/usr/lib`、`/lib`、`/lib64` 等，`/usr/local/bin` 不在放行列表里，放在那里的程序预期运行不了）。不要直接复制 macOS 平台签名的系统 Bash 并假定副本能运行；须验证实际安装文件及其签名/加载依赖。不能以工具运行触发隐式下载。
+在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 Linux 主机、可实际执行的普通文件，不接受符号链接。Pi 工具自己（`bash` 工具的外壳程序、`grep` 用的 `rg`、`find` 用的 `fd`）只从这个固定目录取得，`PI_OFFLINE=1`，缺依赖明确失败；这些文件计入 runtimeDigest，新增二进制会改变 runtimeDigest，须重新取得当前主机资格。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`（见 [ADR 0055](../adr/0055-bash-uses-system-commands-in-sandbox.md)），所以 `ls`、`cat`、`git`、`python3` 这类系统程序可用，而固定目录在最前，`bash`、`rg`、`fd` 仍用安装包里核验过的那一份。系统程序随服务器系统升级变化，不计入 runtimeDigest，Himawari 不核验它们的版本和摘要；某个系统程序能否在沙箱里实际运行由只读放行列表决定（当前放行 `/usr/bin`、`/usr/lib`、`/lib`、`/lib64` 等，`/usr/local/bin` 不在放行列表里，放在那里的程序预期运行不了）。须验证实际安装文件及其加载依赖。不能以工具运行触发隐式下载。
 
 Linux候选包的安装命令不自动准备这些宿主二进制。安装成功后仍须核对`pi-tools/bin`中的实际文件、版本、可执行性和摘要，再计算runtimeDigest；不能把安装器成功当作工具已经可用。固定目录里的`bash`、`rg`、`fd`缺失时先取得相应下载授权，不用系统目录中的同名程序替代它们；系统目录只作为`bash`子命令的查找路径（见上一段与[ADR 0055](../adr/0055-bash-uses-system-commands-in-sandbox.md)），不进入runtimeDigest，也不改变`find`/`grep`仍使用固定`fd`/`rg`的规则。
 
@@ -798,7 +798,7 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 - 当安装产物启用持久执行领取时，验证领取使用当前实际权威和新进程身份，旧执行不能续租或写 Run/检查点；恢复必须区分安全续跑与未知结果待核对。停止服务不得伪造 Owner 取消，也不能仅凭启动日志或表中存在租约就认定领取循环已接入。
 - 启用持久 Run 组合时，核对 `deadlines.runMs` 已冻结为受保护输入中的绝对截止时间；恢复不得超过首次冻结的截止时间。缺少截止时间的旧执行快照不能自动重建或继续执行，应保留现场并核实旧执行状态。超时必须请求停止当前执行并拒绝迟到成功，Worker 请求的截止不能超过父 Run。
 - 目标前缀、state root、authority file、SQLite、Payload、runtime/cache 和证据权限符合当前配置；诊断输出不含 token、配置全文或私人正文。
-- 该 Runbook 的成功只证明本机安装/启停边界，不证明 Mac/Hermes 双向迁移、真实 provider/GitHub/Cloudflare、systemd/launchd 或 production readiness。
+- 该 Runbook 的成功只证明本机安装/启停边界，不证明 Linux 主机之间的双向迁移、真实 provider/GitHub/Cloudflare、systemd 或 production readiness。
 
 - 对保存了完整 `awaiting_approval` checkpoint 的 Run，核对对应审批、恢复正文、原工具调用和模型调用序号均可回读；待决时无新执行租约，作出决定后使用新租约。重启后的已确认工具阶段不得重复执行，未知阶段继续核查。原 Run 已取消或超过总期限时不得继续读取或调用模型。
 
@@ -840,9 +840,9 @@ D15 的三条完整归档用例使用同一正式构建产物和匹配 Context�
 - SQLite 版本、schema/migration digest、quick/full integrity、Payload authentication、Worker handshake、doctor/db status 或 recovery identity 任一失败。
 - 能力部署快照缺失、可被其他账号写入、为符号链接、超出上限、SHA-256 不符、含未知或重复项，或 Manifest、资格、runtime binding 与当前平台/注册表不一致。
 - 已批准的授权替换中，新编号已存在、新授权无效或不允许 read、原目录/device/inode 或旧记录改变、创建回执与签名不匹配，或配置差异超出获准字段；旧授权预期到期本身不属于该停止条件。
-- 需要把 secret 放进 argv/env/log/Trace，扩大安装目录、覆盖既有数据、猜测 systemd/launchd 命令，或对 `/data/hermes` 共享 Hermes Agent state root 做写入。
+- 需要把 secret 放进 argv/env/log/Trace，扩大安装目录、覆盖既有数据、猜测 systemd 命令，或对 `/data/hermes` 共享 Hermes Agent state root 做写入。
 - 磁盘不足、安装脚本跨出绝对 prefix、服务未在有界时间内 drain/stop，或 forced stop 后现场无法安全回读。
-- 要求把本地安装通过等同 Mac/Hermes transfer、真实外部账户、public URL、paid model 或 v0.2 production-ready。
+- 要求把本地安装通过等同 Linux 主机之间的 transfer、真实外部账户、public URL、paid model 或 v0.2 production-ready。
 
 ## Troubleshooting
 
@@ -852,7 +852,7 @@ D15 的三条完整归档用例使用同一正式构建产物和匹配 Context�
 
 工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务已退出且原 Job Host（负责启动和清理任务的宿主进程）仍在正常收尾，或原宿主已经确认进入停止阶段时，通过身份和签名检查的新鲜观察返回 `cleanup_pending`。Job Host 已进入运行阶段但任务进程尚未启动，或任务已启动但第一次资源采样尚未完成时，同样的新鲜观察也返回 `cleanup_pending`，未到执行期限前不判 `lost`（规则见[启动阶段的非终态观察](../execution/specs/2026-09-28-sandbox-cleanup-observation-design.md#启动阶段的非终态观察)）。它不是释放证明，不占用终态证据序号，也不据此让 Worker 取消正常启动或正常收尾。后台核查在同一个 owner、revision 和原期限内继续观察：stop 只发送一次，之后每隔 250 毫秒 inspect，最长仍为 30 秒。执行期限到达不禁止清理；观察超过 1.5 秒、身份不符或控制失联不能当作正常 pending。已认证 `finished` 终态的签名时间固定，不作为活动心跳使用；宿主仍存活且任务退出、stdio 已关闭、SRT 已复位时，pending 观察时间取本次身份与终态核验时间，签名文件不改写。运行中观察仍核对原心跳时间，释放仍须证明原宿主和进程组已消失。核查期限届满仍保留占用并记录 unresolved。前台交付在核验证据期间若被后台核查更新记录，会在原 35 秒窗口内重读最新记录、重新检查披露权限和释放事实；仅重试版本确有变化的派发前准备，不重放已经派发的结果。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
 
-Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最多 107 字节（不含终止 NUL）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
+Unix socket 路径以 UTF-8 字节计数，Linux 最多 107 字节（不含终止 NUL；Himawari 只支持 Linux，见 [ADR 0156](../adr/0156-linux-only-runtime.md)）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
 
 | 症状 | 安全诊断 | 停止或有界修复 |
 | --- | --- | --- |
@@ -863,7 +863,7 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 | Worker UDS handshake/authentication failure | 核对 Worker/Agent 配置、boot token reference、deployment epoch/fence 和 socket owner | 停止 Agent；先修复同一运行 Worker，再重新启动，不降级为进程内执行 |
 | `SERVICE_AUTHORITY_MISMATCH` 或 schema error | 对比 authority.json、SQLite deployment、config 和 bundled migration ledger | 停止；选择匹配的 prefix/state root 或走独立迁移/恢复决策，不手工改 authority |
 | forced stop 后无法恢复 | 保留 lock/socket/SQLite 现场，运行只读 doctor、db status 和进程检查 | 若正式 recovery 未证明安全则停止，转入 backup/restore 或 incident diagnosis 的独立 Runbook |
-| 需要 systemd/launchd 或 Hermes 操作 | 仅确认当前 Runbook scope 不包含服务管理器和远端部署 | 停止；选择经过验证且已授权的对应 Runbook，不猜测命令 |
+| 需要 systemd 或 Hermes 操作 | 仅确认当前 Runbook scope 不包含服务管理器和远端部署 | 停止；选择经过验证且已授权的对应 Runbook，不猜测命令 |
 
 ### v2 原环境核查约束（2026-09-09）
 
@@ -931,7 +931,7 @@ Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释
 
 1. 使用已安装构建并完成本 Runbook 的 Live-State Preflight。核对 `identity.kind` 为 `built-in`、配置中的唯一 Owner/Agent/deployment 与 `authority.json` 及数据库活动权威一致，服务已停止，数据库已按正常迁移流程升级到当前 schema。确认保存密码输入与验证器设置资料的目录归当前用户所有、权限为 0700；所有操作只针对选定 state root。
 2. 在该受保护目录准备 `account-input.json`（0600），只包含 `username` 与 `password`。用户名为 3–64 位字母、数字、点、下划线或连字符，首位为字母或数字；会统一为小写。密码为 12–128 个字符，不作为命令行参数、环境变量或诊断输出。目标设置文件必须尚不存在。
-3. 首次创建命令为 `himawari account create --config <绝对配置路径> --input <绝对输入文件路径> --output <新的绝对设置文件路径>`。macOS 默认从与服务相同的钥匙串 Payload source 解析配置的加密密钥；其他平台或文件 source 使用 `--secret-dir <受保护密钥目录>`。命令使用 state-root 独占锁并验证活动权威，不通过公网提供初始化入口。
+3. 首次创建命令为 `himawari account create --config <绝对配置路径> --input <绝对输入文件路径> --output <新的绝对设置文件路径>`。使用 `--secret-dir <受保护密钥目录>` 提供配置的加密密钥（代码里遗留的 macOS 钥匙串来源按 [ADR 0156](../adr/0156-linux-only-runtime.md) 不再支持）。命令使用 state-root 独占锁并验证活动权威，不通过公网提供初始化入口。
 4. 输出的设置文件为 0600，包含用户名、验证器 `otpUri` 与 10 条一次性恢复码。验证器按 `otpUri` 中的 secret 设置 TOTP（SHA1、6 位、30 秒）；妥善保存恢复码。终端结果只报告设置文件路径和是否撤销旧会话。输入/设置资料按 Owner 的秘密保存策略保管，不进入 Git、普通备份日志、浏览器 localStorage 或模型上下文。
 5. 启动 Worker 与 Agent 后，从配置的同源地址打开控制中心。输入用户名/密码，再输入验证码或恢复码；只有第二步成功才建立产品会话。HTTPS Cookie 使用 Secure；明确配置的 loopback HTTP 仍执行同样的认证。跨设备通过 HTTPS 反向代理访问，listener 仍绑定 loopback，不用放宽 Host/Origin 来解决代理配置错误。
 
