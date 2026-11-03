@@ -806,7 +806,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "ledger_observation_start",
     "LedgerObservationPort",
-    "one row per Agent: the day the owner chose to start the decision record observation period, the service version and first start time when it was chosen; triggers refuse every update and delete",
+    "one row per Agent: the day the owner chose to start the decision record observation period, the service version and first start time when it was chosen; triggers refuse every direct update and delete while the Owner and the Agent exist",
     "metadata_only",
     "kept for the life of the Agent; removed only with Owner or Agent deletion",
   ),
@@ -820,7 +820,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "ledger_observation_checks",
     "LedgerObservationPort",
-    "append-only results of the daily decision record check: day, status, each check with its reason and the row counts per decision kind; triggers refuse every update and delete",
+    "append-only results of the daily decision record check: day, status, each check with its reason and the row counts per decision kind; triggers refuse every direct update and delete while the Owner and the Agent exist",
     "metadata_only",
     "kept for the life of the Agent; removed only with Owner or Agent deletion",
   ),

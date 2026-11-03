@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f9d8c5ab5c24f85a72a669409fb95fc042d2d645dc141806980c1be22c6c6a19"
+contract_sha256: "sha256:a4406da48e152827636a3b788bd07424cbc1dc595dfb356aa1783521bc8f89c0"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-03"
@@ -16,6 +16,7 @@ date: "2026-11-03"
 - packages/application/src/services/ledger-observation.ts
 - packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql
 - scripts/calibration-report/report.mjs
+- scripts/delivery-mode/packet-template/s0-db/read-s0-db.mjs
 -->
 
 本手册说明 P0-8 的“连续运行验收”怎样做：带观察功能的版本上线以后，Andy 在网页上选数据起点，服务每天自己检查决策记录（数据库表 `decision_ledger`，记录 Himawari 每次拿主意的那张表）有没有正常写入，第 8 天出首份校准周报。决定和检查规则见 [ADR 0155](../adr/0155-decision-record-observation-and-weekly-report-page.md)。本手册里的时间都是日本时间（JST）。
@@ -63,7 +64,7 @@ date: "2026-11-03"
 
 - 生产机的操作只能从 Andy 的 MacBook 上的 Remote Control 线程做；云端会话连不到生产机。
 - 读数据库只用只读方式（`sqlite3 -readonly` 或 `better-sqlite3` 的 `readonly: true`），以 `himawari-prod` 身份运行。服务运行时数据库旁边已经有 `-wal`、`-shm` 两个附属文件，只读连接不会新建文件；如果这两个文件不在，停下，不要读（只读连接会自己建出附属文件且删不掉，见 `docs/lessons.md` 的 sidecar-reader-choice）。
-- 数据起点：只能由 Andy 在网页的“校准周报”标签里设置，设置前网页会要求重新验证身份；数据库触发器拒绝修改和删除。任何线程都不得直接写 `ledger_observation_start`、`ledger_observation_checks`、`observation_events`。
+- 数据起点：只能由 Andy 在网页的“校准周报”标签里设置，设置前网页会要求重新验证身份；数据库触发器拒绝直接修改和删除（只有删除 Agent 或整个账户时随之删除）。任何线程都不得直接写 `ledger_observation_start`、`ledger_observation_checks`、`observation_events`。
 - 观察期内 Andy 可以清除 Gmail 记录；清除那天的检查会写明清除了多少行，不算失败。
 - 不打印数据库里的正文、加密内容或配置里的机密；本手册的查询只读计数、日期、状态和原因代码。
 
