@@ -8,6 +8,8 @@ date: "2026-08-26"
 
 # Himawari Agent v0.2 主机文件与代码工作区设计 Spec
 
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+
 ## 目标
 
 定义 Agent 在 Mac 与 Hermes 上读取、创建、修改、覆盖、移动和删除文件，以及在 Owner 明确授权的代码工作区中编辑、运行命令和准备本地 Git commit 的完整边界。所有访问必须受主机和目录范围约束，保留已有用户改动，并把联网、安装、系统操作、不可信脚本和 commit 作为可独立审查的行动。

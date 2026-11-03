@@ -8,6 +8,8 @@ date: "2026-08-26"
 
 # Himawari Agent v0.2 生产资格、兼容性与核心升级设计 Spec
 
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+
 ## 目标
 
 定义 Himawari Agent 何时可以被标记为 v0.2 生产版，以及 Mac、Hermes、浏览器、无障碍、长期规模、可感知性能、正常重启、存储压力和连续运行所需的可复验证据；同时定义由 Owner 或运维人员主动发起、可观察且具有明确回退边界的核心程序升级流程。

@@ -8,6 +8,8 @@ date: "2026-08-26"
 
 # Himawari Agent v0.2 Apple/iCloud Calendar 集成设计 Spec
 
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+
 ## 目标
 
 定义 Mac 与 Hermes 上行为一致的可选 Apple/iCloud Calendar 正式适配器：读取 Owner 可见日程，并在明确授权内创建、修改或删除 Owner 的个人事件；任何包含其他参与人、可能发出邀请或通知、身份不清或 adapter 无法证明安全的事件均保持只读。Calendar 未连接或未通过自身资格验证时保持不可用，但不阻塞 v0.2 核心生产组合。

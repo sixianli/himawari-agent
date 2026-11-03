@@ -10,6 +10,8 @@ date: "2026-09-11"
 
 # Hermes 控制中心升级与真实验收
 
+> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）不再适用，只作历史记录或描述冻结代码；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
+
 阅读导航：[适用范围](#scope) · [现场前置核对](#live-state-preflight) · [升级步骤](#procedure) · [验收](#verification) · [并发刷新与回答显示](#concurrent-refresh) · [证据](#evidence) · [回退](#rollback) · [停止条件](#stop-conditions)。
 
 本文绑定 Hermes 的固定日期部署脚本与目录仅保留为历史参照，不适用于云端部署。当前开发测试在 Hermes 的任务自有目录运行，云服务器只用于生产；遵循 [ADR 0052](../adr/0052-third-production-host-acceptance-exception.md#storage)，每次生产部署仍须单独授权。[SOURCE: docs/adr/0052-third-production-host-acceptance-exception.md]
