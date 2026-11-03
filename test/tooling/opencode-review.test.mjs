@@ -53,6 +53,7 @@ import {
   summarizeEvents,
   WRAP_UP_MIN_USD,
   WRAP_UP_PROMPT,
+  WRAP_UP_RESERVE_USD,
   wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
 
@@ -917,7 +918,7 @@ describe("opencode review wrap-up", () => {
     expect(summarizeEvents(events).usage.cost).toBe(0.002);
     expect(summarizeEvents(events).usage.costUnknown).toBe(true);
     expect(spentOf([{ cost: 0.002, costUnknown: true }])).toBe(COST_LIMIT_PER_MODEL_USD);
-    expect(spentOf([{ cost: 0.3, costUnknown: true }])).toBe(0.3);
+    expect(spentOf([{ cost: 0.3, costUnknown: true }])).toBeCloseTo(0.3 + WRAP_UP_RESERVE_USD);
     const negative = JSON.stringify({
       type: "step_finish",
       part: { reason: "stop", tokens: {}, cost: -1 },
@@ -973,12 +974,27 @@ describe("opencode review wrap-up", () => {
     expect(overTheCap.runs).toHaveLength(1);
   }, 120000);
 
-  it("does not keep spending after a step whose cost is unknown, even if the cap was reached first", async () => {
+  it("does not keep spending after a step whose cost is unknown, even if the follow-up line was reached first", async () => {
     const result = await reviewBurst([0.16, "未知"]);
     expect(result.runs[0].stopReason).toBe("wrap-up-cost");
     expect(result.wrapUpSkipped).toBe("cost-unknown");
     expect(result.runs).toHaveLength(1);
   }, 60000);
+
+  it("puts an unknown cost before a lack of budget when both apply", async () => {
+    const result = await reviewBurst([0.19, "未知"]);
+    expect(result.wrapUpSkipped).toBe("cost-unknown");
+  }, 60000);
+
+  it("stops at once on a step whose cost cannot be read, including a negative one", async () => {
+    for (const cost of ["未知", -1]) {
+      const result = await reviewBurst([0.01, cost]);
+      expect(result.runs).toHaveLength(1);
+      expect(result.runs[0].stopReason).toBe("cost-unknown");
+      expect(result.outcome).toBe("cost-unknown");
+      expect(result.summary.usage.costUnknown).toBe(true);
+    }
+  }, 120000);
 
   it("keeps the model's thinking from the event stream", () => {
     const events = [
@@ -1051,6 +1067,20 @@ describe("opencode review wrap-up", () => {
         expect(result.outcome).toBe("wrap-up-tool-call");
         expect(requests.filter(isWrapUp)).toHaveLength(1);
         expect(result.summary.usage.cost).toBeGreaterThan(0.01);
+      },
+    );
+  }, 120000);
+
+  it("records cost-limit when the wrap-up step that calls a tool also runs past the remaining money", async () => {
+    await withScriptedReview(
+      (request, index) =>
+        index === 1
+          ? { thinking: "THOUGHT_ONLY" }
+          : { tool: true, promptTokens: isWrapUp(request) ? 4000000 : 1 },
+      async ({ review }) => {
+        const result = await review();
+        expect(result.wrapUp).toBe("no-text");
+        expect(result.outcome).toBe("cost-limit");
       },
     );
   }, 120000);

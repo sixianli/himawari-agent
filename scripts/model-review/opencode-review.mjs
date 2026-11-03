@@ -569,7 +569,10 @@ export async function reviewModel({
 export function spentOf(records) {
   return records.reduce(
     (total, record) =>
-      total + (record.costUnknown ? Math.max(record.cost, COST_LIMIT_PER_MODEL_USD) : record.cost),
+      total +
+      (record.costUnknown
+        ? Math.max(record.cost + WRAP_UP_RESERVE_USD, COST_LIMIT_PER_MODEL_USD)
+        : record.cost),
     0,
   );
 }
