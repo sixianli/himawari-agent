@@ -288,11 +288,15 @@ function rowsKept(
         left: before - after,
       });
     }
-  losses.sort((left, right) => (left.checkedAt < right.checkedAt ? -1 : 1));
+  losses.sort(
+    (left, right) =>
+      left.checkedAt.localeCompare(right.checkedAt, "en") ||
+      left.day.localeCompare(right.day, "en"),
+  );
   const clears = events
     .filter((event) => event.kind === "proactive_records_cleared")
     .map((event) => ({ at: event.occurredAt, rows: Number(event.detail["rows"] ?? 0) }))
-    .sort((left, right) => (left.at < right.at ? -1 : 1));
+    .sort((left, right) => (left.at < right.at ? -1 : left.at > right.at ? 1 : 0));
   for (const clear of clears) {
     let budget = clear.rows;
     for (const loss of losses) {

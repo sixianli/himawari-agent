@@ -356,6 +356,19 @@ describe("[P0-8] daily decision record check", () => {
     });
   });
 
+  it("reports the earliest day when two lost days were checked at the same moment", () => {
+    const earlier = ["2026-11-05", "2026-11-04"].map((day) => ({
+      day,
+      checkedAt: "2026-11-05T16:30:00.000Z",
+      counts: { proactive: 96 },
+      now: { proactive: 10 },
+    }));
+    expect(byCode(evaluate({}, { earlier }), "rows_kept")).toMatchObject({
+      status: "fail",
+      facts: { day: "2026-11-04" },
+    });
+  });
+
   it("names the reason of the first block when Gmail was switched off and back on", () => {
     const result = evaluate({
       events: [
