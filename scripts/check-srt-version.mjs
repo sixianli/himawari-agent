@@ -34,9 +34,14 @@ export function srtVersionProblems(root) {
     problems.push(
       `SRT_VERSION_DEPENDENCY_MISMATCH packages/runtime-sandbox/package.json ${dependency}`,
     );
-  const locked = JSON.parse(read("package-lock.json")).packages?.[
-    "node_modules/@anthropic-ai/sandbox-runtime"
-  ];
+  const lockPackages = JSON.parse(read("package-lock.json")).packages;
+  const workspaceLocked =
+    lockPackages?.["packages/runtime-sandbox"]?.dependencies?.["@anthropic-ai/sandbox-runtime"];
+  if (workspaceLocked !== constant)
+    problems.push(
+      `SRT_VERSION_LOCK_MISMATCH package-lock.json packages/runtime-sandbox ${workspaceLocked}`,
+    );
+  const locked = lockPackages?.["node_modules/@anthropic-ai/sandbox-runtime"];
   if (
     locked?.version !== constant ||
     locked?.resolved?.endsWith(`/sandbox-runtime-${constant}.tgz`) !== true

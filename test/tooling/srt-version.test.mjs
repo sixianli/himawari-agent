@@ -21,6 +21,7 @@ function fixture({
   installed = version,
   files = {},
   pinned = {},
+  workspaceLock = version,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "srt-version-"));
   roots.push(root);
@@ -40,6 +41,9 @@ function fixture({
     "package-lock.json",
     JSON.stringify({
       packages: {
+        "packages/runtime-sandbox": {
+          dependencies: { "@anthropic-ai/sandbox-runtime": workspaceLock },
+        },
         "node_modules/@anthropic-ai/sandbox-runtime": {
           version: lock,
           resolved: `https://registry.npmjs.org/@anthropic-ai/sandbox-runtime/-/sandbox-runtime-${lock}.tgz`,
@@ -117,6 +121,12 @@ describe("SRT version single source", () => {
     ]);
     expect(srtVersionProblems(fixture({ installed: OLD }))).toEqual([
       `SRT_VERSION_INSTALLED_MISMATCH ${OLD}`,
+    ]);
+  });
+
+  it("fails when the lockfile still records the old version for the runtime-sandbox workspace", () => {
+    expect(srtVersionProblems(fixture({ workspaceLock: OLD }))).toEqual([
+      `SRT_VERSION_LOCK_MISMATCH package-lock.json packages/runtime-sandbox ${OLD}`,
     ]);
   });
 
