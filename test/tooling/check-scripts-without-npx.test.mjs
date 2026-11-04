@@ -7,6 +7,14 @@ import { describe, expect, it } from "vitest";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
+const KEPT = ["HOME", "TMPDIR", "HIMAWARI_TEST_TEMP_ROOT", "LANG"];
+
+function keptEnvironment() {
+  return Object.fromEntries(
+    KEPT.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]),
+  );
+}
+
 function runWithoutNpx(script) {
   const scratch = mkdtempSync(path.join(tmpdir(), "check-without-npx-"));
   try {
@@ -16,7 +24,7 @@ function runWithoutNpx(script) {
     symlinkSync(process.execPath, path.join(bin, "node"));
     return spawnSync(process.execPath, [path.join(root, script)], {
       cwd: elsewhere,
-      env: { ...process.env, PATH: bin },
+      env: { ...keptEnvironment(), PATH: bin },
       encoding: "utf8",
       timeout: 300000,
     });
