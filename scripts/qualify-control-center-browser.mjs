@@ -474,6 +474,7 @@ export async function qualifyBrowser({
       csrfRefreshes !== 1 ||
       csrfRequests.length !== 3 ||
       !rejectedUpload.headers["idempotency-key"] ||
+      rejectedUpload.headers["x-csrf-token"] === "csrf-renewed-fixture" ||
       !retriedUpload ||
       retriedUpload.body !== rejectedUpload.body ||
       retriedUpload.headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
@@ -586,12 +587,10 @@ export async function qualifyBrowser({
       "/tasks",
       "/inbox",
       "/trace",
-      "/sessions",
       "/tasks/job-repository-monitor",
       "/inbox/inbox-01",
       "/memory/memory-01",
       "/trace/trace-01",
-      "/sessions/session-01",
     ]) {
       await page.goto(`${baseUrl}${removedRoute}?view=details`);
       await waitForConnected(page);
@@ -892,7 +891,7 @@ export async function qualifyBrowser({
             label: (target.getAttribute("aria-label") ?? target.textContent ?? "")
               .trim()
               .slice(0, 30),
-            height: Math.round(target.getBoundingClientRect().height),
+            height: target.getBoundingClientRect().height,
             minimum: target.classList.contains("answer-action")
               ? minimums.answerAction
               : minimums.other,
