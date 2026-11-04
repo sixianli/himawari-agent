@@ -320,7 +320,7 @@ export async function qualifyBrowser({
     "撤销会话",
   ];
 
-  const minimumTouchTargetPixels = 36;
+  const minimumTouchTargetPixels = { answerAction: 36, other: 40 };
 
   let browser;
   let page;
@@ -479,9 +479,9 @@ export async function qualifyBrowser({
       retriedUpload.headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
       !parallelUpload ||
       parallelUpload.headers["idempotency-key"] === rejectedUpload.headers["idempotency-key"] ||
-      ![rejectedUpload, parallelUpload].some(
-        (request) => JSON.parse(request.body).content === "浏览器资格测试消息",
-      )
+      JSON.stringify(
+        [rejectedUpload, parallelUpload].map((request) => JSON.parse(request.body).content).sort(),
+      ) !== JSON.stringify(["thread-action:submit", "浏览器资格测试消息"].sort())
     )
       throw new Error(
         `CONTROL_CENTER_CSRF_REFRESH_INVALID:${JSON.stringify({ csrfRefreshes, requests: csrfRequests.map((request) => ({ body: request.body, token: request.headers["x-csrf-token"], idempotencyKey: request.headers["idempotency-key"] })) })}`,
@@ -603,6 +603,8 @@ export async function qualifyBrowser({
     await chooseLocale("English");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
+    await page.goto(`${baseUrl}/approvals`);
+    await page.getByRole("heading", { name: "Approvals", exact: true }).waitFor();
     await chooseLocale("日本語");
     await expect(page.locator("html")).toHaveAttribute("lang", "ja");
 
@@ -880,15 +882,18 @@ export async function qualifyBrowser({
     }
     await expect(page.getByRole("button", { name: "显示详情", exact: true })).toHaveCount(0);
     const smallTargets = await page.locator("button:visible, .primary-nav a:visible").evaluateAll(
-      (targets, minimum) =>
+      (targets, minimums) =>
         targets
           .map((target) => ({
             label: (target.getAttribute("aria-label") ?? target.textContent ?? "")
               .trim()
               .slice(0, 30),
             height: Math.round(target.getBoundingClientRect().height),
+            minimum: target.classList.contains("answer-action")
+              ? minimums.answerAction
+              : minimums.other,
           }))
-          .filter((target) => target.height < minimum),
+          .filter((target) => target.height < target.minimum),
       minimumTouchTargetPixels,
     );
     if (smallTargets.length > 0)
@@ -1034,13 +1039,13 @@ export async function qualifyBrowser({
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
       journeys: [
-        "brand-image-loaded-from-build",
+        "brand-mark-rendered",
         "mobile-composer-prototype-layout-and-menus",
         "deployment-availability-no-unsupported-queries",
         "installed-health-dependencies",
         "thread-chat",
         "expired-csrf-refresh-preserves-command",
-        "thread-ui-language-only",
+        "thread-ui-language-follows-settings",
         "thread-search",
         "thread-revision-conflict-reapply",
         "thread-archive-restore",
@@ -1055,12 +1060,9 @@ export async function qualifyBrowser({
         "grant-revision-conflict-revoke",
         "governance-offline-no-mutation",
         "unapproved-capability-hidden-route-absent",
-        "task-budget-attention-pause",
-        "inbox-digest-result-sources",
-        "memory-sensitive-correction",
-        "trace-observable-causal-chain",
-        "settings-secret-reference-only",
-        "session-device-authoritative-detail",
+        "removed-operations-routes-not-found",
+        "locale-and-theme-in-settings-dialog",
+        "revoked-session-clears-private-view",
         "browser-private-storage-scan",
       ],
       routeStates: [
