@@ -81,7 +81,7 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 1. **取新邮件。** 定时任务每 15 分钟触发一次。第一次连接时只看最近 3 天的收件箱；之后用 Gmail 的 `history.list`（按上次的历史编号只取新变化）。返回 404 说明历史编号已过期，这时重新看最近 3 天。
 2. **整理格式。** 每封邮件整理成各来源共用的格式：来源、发件人、标题、Gmail 一行摘要、原文链接、时间、`message_id`、`thread_id`、Gmail 分类。已经处理过的 `message_id` 直接跳过。
 3. **规则先筛（0 费用）：**
-   - 垃圾邮件和主人自己发的邮件，跳过。被 Gmail 归为推广、社交、论坛的邮件不再跳过，和其他邮件一样送模型（[ADR 0148](../../adr/0148-bring-related-memories-into-gmail-checks.md)）。
+   - 垃圾邮件和主人自己发的邮件，跳过。被 Gmail 归为推广、社交、论坛的邮件不再跳过，和其他邮件一样送模型（[ADR 0158](../../adr/0158-bring-related-memories-into-gmail-checks.md)）。
    - 摘要里有验证码、卡号、密码的，先遮盖再发送，不再整封跳过（[ADR 0146](../../adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)）。
    - Andy 自己发出的邮件不判断，只用来把对应条目标成“你已回复”。
 4. **模型判断。** 剩下的邮件按批交给模型，模型只看发件人、标题、摘要。每封给出：结果（四选一）、有把握 / 拿不准、待办一句话、截止时间、优先级（高中低）、给 Andy 看的一句原因。模型调用走 Pi 运行时（`packages/runtime-pi`），每次检查实际花的钱记在 `proactive_decisions.cost_micros`（单位是百万分之一美元），每日上限按这一列当天的合计来算；不走对话用的用量账本，原因见[实现说明](#implementation)。

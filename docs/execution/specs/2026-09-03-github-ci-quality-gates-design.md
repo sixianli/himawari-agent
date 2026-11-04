@@ -229,7 +229,7 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 <a id="security-and-exceptions"></a>
 ### 7. 安全与例外政策
 
-密钥检测保留现有 `scan-machine-secrets.mjs`，增加固定版本 Gitleaks。PR 扫描候选 head 的完整祖先历史和当前受跟踪内容，包含目标分支中已接受例外的来源提交，检测曾提交后删除的泄漏；不扫描候选祖先之外的无关分支。默认分支和周期检查执行全部可达历史扫描。例外仅限经过审阅、能证明不是密钥的值（合成测试样例和下文 ADR 0158 列出的分类），真实凭据泄漏不可豁免；唯一的例外是 ADR 0158 的 `owner-confirmed-revoked`。
+密钥检测保留现有 `scan-machine-secrets.mjs`，增加固定版本 Gitleaks。PR 扫描候选 head 的完整祖先历史和当前受跟踪内容，包含目标分支中已接受例外的来源提交，检测曾提交后删除的泄漏；不扫描候选祖先之外的无关分支。默认分支和周期检查执行全部可达历史扫描。例外仅限经过审阅、能证明不是密钥的值（合成测试样例和下文 ADR 0159 列出的分类），真实凭据泄漏不可豁免；唯一的例外是 ADR 0159 的 `owner-confirmed-revoked`。
 
 静态安全分析采用固定版本 Semgrep CE 和仓库固定的、许可明确的规则集。启用阻断语义，规则错误、解析失败、空扫描或报告缺失均视为检测失败。高置信度阻断规则先用正反样例验证。不得在运行中下载浮动规则或通过未知 suppressions 消除问题。
 
@@ -239,11 +239,11 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 2026-11-04 经 Owner 明确批准（[ADR 0157](../../adr/0157-gitleaks-allowlist-for-evidence-digests.md)）：Gitleaks 默认规则把非密钥误认成密钥、而且误报形状固定的情况（资格证据里“源码路径: 文件 SHA-256 摘要”的行），不走上面的逐条例外，改在 `ci/rules/gitleaks.toml` 加白名单。白名单必须只针对一条规则（`targetRules`）、同时限定目录和整行形状（`condition = "AND"`、`regexTarget = "line"`），不得按整个目录或整条规则放行；它的效果由 `test/tooling/gitleaks-config.test.mjs` 用锁定版本的真实 Gitleaks 正反验证。个别具体的值仍按逐条例外处理。
 
-2026-11-04 经 Owner 明确批准（[ADR 0158](../../adr/0158-security-exception-classes-proved-by-content.md)）：下文独立批准清单的每个密钥条目可以写 `classification`，按该分类回到源码核对。除原有分类外，新增 `public-test-vector`（摘要登记在 `ci/public-test-vectors.json`，附公开出处和行号）、扩展的 `machine-baseline-fixture`（机器扫描基线里已批准的同一个值）、`git-object-id`（值是仓库里真实存在的 git 文件对象）、`archived-file-digest`（值能从同目录 `raw-logs.tar.gz` 里同名文件重新算出）、`numeric-option`（“名字=纯数字”）和 `thread-id`（`thread:` 后的 UUID）。这些分类的值所在文件在被批准的提交里已删除时，可以只登记历史。`owner-confirmed-revoked` 不靠机器证明，而靠 Owner 确认不是真密钥或已作废：只许 `generic-api-key` 规则、只许已删除文件的历史，是对“真实凭据不可豁免”的唯一明确例外。`git-object-id` 和 `thread-id` 另外允许 `.agents/tasks/` 和 `scripts/operations/` 下的路径。
+2026-11-04 经 Owner 明确批准（[ADR 0159](../../adr/0159-security-exception-classes-proved-by-content.md)）：下文独立批准清单的每个密钥条目可以写 `classification`，按该分类回到源码核对。除原有分类外，新增 `public-test-vector`（摘要登记在 `ci/public-test-vectors.json`，附公开出处和行号）、扩展的 `machine-baseline-fixture`（机器扫描基线里已批准的同一个值）、`git-object-id`（值是仓库里真实存在的 git 文件对象）、`archived-file-digest`（值能从同目录 `raw-logs.tar.gz` 里同名文件重新算出）、`numeric-option`（“名字=纯数字”）和 `thread-id`（`thread:` 后的 UUID）。这些分类的值所在文件在被批准的提交里已删除时，可以只登记历史。`owner-confirmed-revoked` 不靠机器证明，而靠 Owner 确认不是真密钥或已作废：只许 `generic-api-key` 规则、只许已删除文件的历史，是对“真实凭据不可豁免”的唯一明确例外。`git-object-id` 和 `thread-id` 另外允许 `.agents/tasks/` 和 `scripts/operations/` 下的路径。
 
 2026-09-14 经 Owner 明确批准，新增独立的精确清单审批入口，用于尚未进入目标分支的新测试或依赖文档值。常规例外仍从目标分支读取，候选分支不能自行替换它们。`.github/security-review-manifest.json` 保存审核过的原始清单，`.github/security-review-comment.json` 只定位 PR 评论；本地文件中的批准声明不是授权证据。检查通过固定 GitHub HTTPS API 读取评论，核验仓库所有者的数字身份与登录名、仓库和 PR、被审核源码提交、清单原始字节摘要、批准决定与最长 30 天的有效期。新增或修改清单的 PR 还须匹配本次事件编号和 head；来源提交必须属于被测提交的历史。网络失败、缺少记录、错误作者、过期或范围变化均失败。仓库为私有时，本地运行可以经 `HIMAWARI_CI_GITHUB_TOKEN` 提供只读令牌（令牌只经标准输入交给 curl，不进入参数或子进程环境）；在 Actions 里该令牌只用于本仓库。
 
-该入口只能补充批准清单列出的合成 token、机器扫描误报、依赖文档示例和上文 ADR 0158 的分类。token 继续核验不可变源码、字面量分类、历史范围及数量；原有条目使用目标分支的来源证据，新增条目只使用批准提交的对应证据。机器扫描器仍取目标分支版本，报告保留所有发现；批准仅匹配精确路径、规则、摘要及数量，新增、重复或消失的匹配均拒绝。依赖文档使用下述既有成员校验，不扩大为包或目录豁免。清单及评论引用已经原样合入目标分支后，后续 PR 继承该分支接受的精确范围，继续核验评论和有效期；修改清单仍需新的明确批准。既有例外不因这条补充路径延长有效期。
+该入口只能补充批准清单列出的合成 token、机器扫描误报、依赖文档示例和上文 ADR 0159 的分类。token 继续核验不可变源码、字面量分类、历史范围及数量；原有条目使用目标分支的来源证据，新增条目只使用批准提交的对应证据。机器扫描器仍取目标分支版本，报告保留所有发现；批准仅匹配精确路径、规则、摘要及数量，新增、重复或消失的匹配均拒绝。依赖文档使用下述既有成员校验，不扩大为包或目录豁免。清单及评论引用已经原样合入目标分支后，后续 PR 继承该分支接受的精确范围，继续核验评论和有效期；修改清单仍需新的明确批准。既有例外不因这条补充路径延长有效期。
 
 构建归档包含锁定 npm 包原样发布的文档、测试和源映射。对其中已核实为占位值、未求值插值、认证说明或合成密码学测试材料的命中，使用 `ci/security-exceptions.json` 中或上述独立批准清单转换得到的 `published-synthetic-fixture` 精确记录；公开来源本身不构成豁免理由。记录必须绑定包名、版本、锁文件路径、官方发布包完整性摘要、归档成员路径、成员文件摘要，以及每条扫描规则、字面量摘要和准确次数，并保留用途、来源核对依据、Owner 和到期日。任意成员内容、依赖身份或命中集合变化均须重新审阅，不允许按包或目录放行。公开输出检查读取目标分支已接受的例外，并按上述独立审批合同补充精确批准条目；仅在初始化时目标分支的政策和例外均不存在，才按明确的初始化提案路径验证候选政策，并保留待 Owner 审阅状态。缺少执行上下文时不应用例外；敏感哨兵和真实凭据始终阻断。
 
