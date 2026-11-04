@@ -2,6 +2,7 @@ export const allowedInternalDependencies = new Map([
   ["@himawari-agent/runtime-sandbox", new Set(["@himawari-agent/execution-contracts"])],
   ["@himawari-agent/domain", new Set()],
   ["@himawari-agent/calibration", new Set()],
+  ["@himawari-agent/prompt-catalog", new Set()],
   ["@himawari-agent/gateway-contracts", new Set()],
   ["@himawari-agent/execution-contracts", new Set()],
   [
@@ -71,6 +72,7 @@ export const allowedInternalDependencies = new Map([
       "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
       "@himawari-agent/calibration",
+      "@himawari-agent/prompt-catalog",
       "@himawari-agent/gateway-contracts",
       "@himawari-agent/execution-contracts",
       "@himawari-agent/runtime-pi",
