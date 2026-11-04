@@ -871,8 +871,9 @@ function slowStepFinishBinary(dir) {
     path,
     [
       "#!/bin/bash",
+      "set -o pipefail",
       `${JSON.stringify(opencodeBinary())} "$@" | while IFS= read -r line; do`,
-      `  case "$line" in *'"step_finish"'*) printf 'x' >> ${JSON.stringify(join(dir, "delayed"))}; sleep 1;; esac`,
+      `  case "$line" in *'"step_finish"'*) sleep 1; printf 'x' >> ${JSON.stringify(join(dir, "delayed"))};; esac`,
       `  printf '%s\\n' "$line"`,
       "done",
       "",
