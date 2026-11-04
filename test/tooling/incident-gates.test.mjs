@@ -78,6 +78,14 @@ describe("incident and gate list check", () => {
       `# 清单\n\n${header}\n${row({})}\n\n## 另一节\n\n说明\n${row({ id: "I-02", gate: "`scripts/gone.mjs`" })}\n`,
     );
     expect(checkIncidentGates({ root }).errors).toEqual(["INCIDENT_ROW_OUTSIDE_TABLE I-02"]);
+    writeFileSync(
+      join(root, INCIDENT_LIST),
+      `# 清单\n\n${row({ id: "I-03" })}\n\n${header}\n${row({})}\n\n说明\n  ${row({ id: "I-04" })}\n`,
+    );
+    expect(checkIncidentGates({ root }).errors).toEqual([
+      "INCIDENT_ROW_OUTSIDE_TABLE I-03",
+      "INCIDENT_ROW_OUTSIDE_TABLE I-04",
+    ]);
   });
 
   it("checks the repository's own list", () => {

@@ -32,8 +32,8 @@ export function readIncidents(text) {
     const [id, date, symptom, cause, count, gate, state] = cells(lines[end]);
     incidents.push({ id, date, symptom, cause, count, gate, state });
   }
-  for (const line of lines.slice(end))
-    if (/^\|\s*I-\d/.test(line)) errors.push(`INCIDENT_ROW_OUTSIDE_TABLE ${cells(line)[0]}`);
+  for (const line of [...lines.slice(0, header), ...lines.slice(end)])
+    if (/^\s*\|\s*I-\d/.test(line)) errors.push(`INCIDENT_ROW_OUTSIDE_TABLE ${cells(line)[0]}`);
   return { incidents, errors };
 }
 
