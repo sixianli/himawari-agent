@@ -41,7 +41,7 @@ condition = "AND"
 targetRules = ["github-pat"]
 paths = ['''(?:^|/)test/fixtures/memory-capture-eval/dataset\.json$''']
 regexTarget = "secret"
-regexes = ['''^gh[p]_Zk3Qw8Lm2VxN9sTdR4bY[A-Za-z0-9]{16}$''']
+regexes = ['''^gh[p]_Zk3Qw8Lm2VxN9sTdR4bYf7HcJ1pUa6EoXe5G$''']
 
 [[allowlists]]
 description = "沙箱探针脚本里的 tmpfs 大小参数，不是密钥"

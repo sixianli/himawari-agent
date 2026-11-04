@@ -62,17 +62,18 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
   });
 
   it("反向：值的形状限定到已审阅的那一个值，同长度的别的值不放行", () => {
-    const sameLength = (value) => value.replace(/[A-Za-z0-9]/g, (c) => (c === "Q" ? "R" : "Q"));
-    for (const [index, sample] of [
-      "BTBZMqHH6r4Tts7J_aSIgg",
-      "F5u42Bd3HyW8KxkUqo2gRA",
-      "R2T14BEARERVALUE0001",
-      ["gh", "p_Zk3Qw8Lm2VxN9sTdR4bYf7HcJ1pUa6EoXe5G"].join(""),
-      "tmpfs-size=1048576",
-      "f504128e-d710-44e1-a304-6b61c370ef24",
-    ].entries()) {
+    const changeLast = (value) => `${value.slice(0, -1)}${value.endsWith("Q") ? "R" : "Q"}`;
+    const changeFirst = (value) => `${value.startsWith("Q") ? "R" : "Q"}${value.slice(1)}`;
+    for (const [index, sample, mutate] of [
+      ["BTBZMqHH6r4Tts7J_aSIgg", changeLast],
+      ["F5u42Bd3HyW8KxkUqo2gRA", changeFirst],
+      ["R2T14BEARERVALUE0001", changeLast],
+      [["gh", "p_Zk3Qw8Lm2VxN9sTdR4bYf7HcJ1pUa6EoXe5G"].join(""), changeLast],
+      ["tmpfs-size=1048576", changeLast],
+      ["f504128e-d710-44e1-a304-6b61c370ef24", changeLast],
+    ].map(([sample, mutate], index) => [index, sample, mutate])) {
       expect(matches(scoped[index].regexes, sample)).toBe(true);
-      expect(matches(scoped[index].regexes, sameLength(sample))).toBe(false);
+      expect(matches(scoped[index].regexes, mutate(sample))).toBe(false);
     }
   });
 
