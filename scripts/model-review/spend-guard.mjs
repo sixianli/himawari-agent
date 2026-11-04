@@ -5,6 +5,7 @@ export const GUARD_STOP_PREFIX = "REVIEW_SPEND_GUARD_STOP";
 export const UNGUARDED_AGENTS = ["title"];
 
 export function guardDecision(limits, state, now = Date.now()) {
+  if (state.unknown) return "cost-unknown";
   if (state.cost > limits.totalUsd) return "cost-limit";
   if (limits.stopAtUsd !== undefined && state.allowed > 0 && state.cost >= limits.stopAtUsd)
     return "wrap-up-cost";
@@ -27,13 +28,19 @@ export function completedCount(ledger) {
   return count;
 }
 
+export function hasUnknownCost(ledger) {
+  for (const entry of ledger.values()) if (entry.unknown) return true;
+  return false;
+}
+
 export function noteCost(ledger, info) {
   if (info?.role !== "assistant" || typeof info.id !== "string") return;
-  if (!Number.isFinite(info.cost) || info.cost < 0) return;
-  const entry = ledger.get(info.id) ?? { cost: 0, done: false };
+  const entry = ledger.get(info.id) ?? { cost: 0, done: false, unknown: false };
+  const valid = Number.isFinite(info.cost) && info.cost >= 0;
   ledger.set(info.id, {
-    cost: Math.max(entry.cost, info.cost),
+    cost: valid ? Math.max(entry.cost, info.cost) : entry.cost,
     done: entry.done || Boolean(info.time?.completed),
+    unknown: entry.unknown || (Boolean(info.time?.completed) && !valid),
   });
 }
 
@@ -48,14 +55,14 @@ export const SpendGuard = async () => {
   if (!limitsPath) return {};
   const limits = JSON.parse(readFileSync(limitsPath, "utf8"));
   const ledger = new Map();
-  const state = { cost: 0, allowed: 0, reason: null };
+  const state = { cost: 0, allowed: 0, reason: null, unknown: false, baseline: 0 };
   const publish = () =>
     writeMarker(limits.markerPath, {
       loaded: true,
       reason: state.reason,
       totalCostUsd: state.cost,
       allowed: state.allowed,
-      completed: completedCount(ledger),
+      completed: Math.max(0, completedCount(ledger) - state.baseline),
       at: Date.now(),
     });
   publish();
@@ -74,6 +81,8 @@ export const SpendGuard = async () => {
     "chat.params": async (input) => {
       if (UNGUARDED_AGENTS.includes(input.agent)) return;
       state.cost = ledgerTotal(ledger);
+      state.unknown = hasUnknownCost(ledger);
+      if (state.allowed === 0) state.baseline = completedCount(ledger);
       const reason = guardDecision(limits, state);
       if (reason) {
         state.reason = reason;

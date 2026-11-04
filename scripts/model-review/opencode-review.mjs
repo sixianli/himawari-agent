@@ -67,6 +67,7 @@ export const WRAP_UP_MIN_USD = 0.02;
 export const WRAP_UP_MIN_MS = 15000;
 export const GUARD_GRACE_MAX_MS = 30000;
 export const GUARD_GRACE_DIVISOR = 15;
+export const GUARD_DEFERS_TO_PARENT = ["cost-unknown", "wrap-up-tool-call"];
 export const SPEND_GUARD_PATH = join(dirname(fileURLToPath(import.meta.url)), "spend-guard.mjs");
 export const ASK_FIRST_LINE_USD = { "code-review": 1, plan: 0.5, "plan-review": 0.5 };
 export const FOCUS_SENTENCE =
@@ -463,7 +464,8 @@ function runOpencode({
       activeChildren.delete(child);
       const marker = guardFiles ? readGuardMarker(guardFiles.markerPath) : null;
       const inFlight = Boolean(stopReason && marker && marker.allowed > marker.completed);
-      if (!stopReason && marker?.reason) stopReason = marker.reason;
+      if (marker?.reason && !GUARD_DEFERS_TO_PARENT.includes(stopReason))
+        stopReason = marker.reason;
       resolvePromise({ stdout, stderr, stopReason, guard: marker, inFlight, ...result });
     };
     child.stdout.on("data", (chunk) => {
