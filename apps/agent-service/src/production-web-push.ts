@@ -18,6 +18,7 @@ const DEFAULT_INTERVAL_MS = 10_000;
 const PRESENCE_WINDOW_MS = 45_000;
 const REMINDER_WINDOW_MS = 6 * 3_600_000;
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
+const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
 const RUN_WINDOW_MS = 24 * 3_600_000;
 const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
@@ -40,6 +41,9 @@ export const WEB_PUSH_TEXT = {
     mailAct: "邮件里有件事要你处理",
     mailCheck: "有封邮件可能重要，请看原信",
     mailMore: (count: number) => `还有 ${count} 件`,
+    museDown: "Muse 通道中断",
+    museDownBody:
+      "Muse 通道 3 小时没有数据，可能是定时任务的预授权失效或令牌过期，去 Muse 的 Upcoming 看一眼",
   },
   en: {
     reminder: "Himawari reminder",
@@ -55,6 +59,9 @@ export const WEB_PUSH_TEXT = {
     mailAct: "An email needs you to act",
     mailCheck: "An email may be important. Please read it",
     mailMore: (count: number) => `${count} more`,
+    museDown: "Muse channel is down",
+    museDownBody:
+      "No data from Muse for 3 hours. The scheduled task's pre-approval may have expired or the token may be out of date. Check Upcoming in Muse",
   },
   ja: {
     reminder: "Himawari リマインダー",
@@ -70,6 +77,9 @@ export const WEB_PUSH_TEXT = {
     mailAct: "メールに対応が必要な件があります",
     mailCheck: "重要かもしれないメールがあります。原文をご確認ください",
     mailMore: (count: number) => `ほか ${count} 件`,
+    museDown: "Muse の連携が止まっています",
+    museDownBody:
+      "Muse から 3 時間データが届いていません。定期タスクの事前承認が切れたか、トークンの期限切れの可能性があります。Muse の Upcoming を確認してください",
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -151,6 +161,7 @@ export interface ProductionWebPushOptions {
   readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
   readonly proactive?: ProactivePushSource;
+  readonly museChannel?: MuseChannelPushSource;
   readonly readLocale?: () => Promise<WebPushLocale | null>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
@@ -160,6 +171,10 @@ export interface ProductionWebPushOptions {
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
   readonly onFailure: (error: unknown) => void;
+}
+
+export interface MuseChannelPushSource {
+  listActive(now: string): Promise<readonly { readonly outageStartedAt: string }[]>;
 }
 
 export interface ProactivePushSource {
@@ -351,6 +366,17 @@ export class ProductionWebPush {
         createdAt: now,
         expiresAt: new Date(Date.parse(push.readyAt) + PROACTIVE_WINDOW_MS).toISOString(),
       });
+    const museOutages = (await this.#options.museChannel?.listActive(now)) ?? [];
+    for (const outage of museOutages)
+      items.push({
+        ...scope,
+        sourceKey: `muse-channel:${outage.outageStartedAt}`,
+        kind: "reminder",
+        sourceRef: outage.outageStartedAt,
+        threadId: null,
+        createdAt: now,
+        expiresAt: new Date(Date.parse(now) + MUSE_CHANNEL_WINDOW_MS).toISOString(),
+      });
     const next = cursor ? runs.at(-1)?.cursor : now;
     if (items.length === 0 && !next) return;
     await store.enqueue({
@@ -409,6 +435,20 @@ export class ProductionWebPush {
     const origin = this.#options.publicOrigin;
     const threadUrl = (threadId: string | null) =>
       threadId ? `${origin}/threads/${encodeURIComponent(threadId)}` : `${origin}/`;
+    if (item.kind === "reminder" && item.sourceKey.startsWith("muse-channel:")) {
+      const active = await this.#options.museChannel?.listActive(now);
+      if (!active?.some(({ outageStartedAt }) => outageStartedAt === item.sourceRef))
+        return { expired: true };
+      return {
+        expired: false,
+        build: (locale) => ({
+          title: WEB_PUSH_TEXT[locale].museDown,
+          body: WEB_PUSH_TEXT[locale].museDownBody,
+          navigate: `${origin}/`,
+          lang: locale,
+        }),
+      };
+    }
     if (item.kind === "reminder" && item.sourceKey.startsWith("proactive:")) {
       const mail = await this.#options.proactive?.content(item.sourceRef);
       if (!mail) return { expired: true };

@@ -13,6 +13,7 @@
     "./thread-artifacts": "./src/ports/thread-artifacts.ts",
     "./model-usage": "./src/ports/model-usage.ts",
     "./decision-ledger": "./src/ports/decision-ledger.ts",
+    "./muse-intake": "./src/ports/muse-intake.ts",
     "./ledger-observation": "./src/ports/ledger-observation.ts"
   },
   "dependencies": {
