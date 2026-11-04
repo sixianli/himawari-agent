@@ -30,7 +30,7 @@ defaults:
 jobs:
   policy:
     name: policy
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     timeout-minutes: 15
     env:
       CI_NODE: 22.22.3
@@ -84,7 +84,7 @@ jobs:
           retention-days: 7
   static:
     name: static
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
     timeout-minutes: 15
@@ -149,14 +149,9 @@ jobs:
       matrix:
         include:
           - key: linux-x64
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
-            node: 22.22.3
-          - key: macos-arm64
-            runner: macos-15
-            os: darwin
-            arch: arm64
             node: 22.22.3
     env:
       CI_NODE: ${{ matrix.node }}
@@ -228,14 +223,9 @@ jobs:
       matrix:
         include:
           - key: linux-x64
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
-            node: 22.22.3
-          - key: macos-arm64
-            runner: macos-15
-            os: darwin
-            arch: arm64
             node: 22.22.3
     env:
       CI_NODE: ${{ matrix.node }}
@@ -295,7 +285,7 @@ jobs:
           retention-days: 7
   node-floor:
     name: node-floor
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
     timeout-minutes: 30
@@ -360,19 +350,19 @@ jobs:
       matrix:
         include:
           - key: chromium
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
             node: 22.22.3
             browser: chromium
           - key: firefox
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
             node: 22.22.3
             browser: firefox
           - key: webkit
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
             node: 22.22.3
@@ -409,7 +399,7 @@ jobs:
           path: .ci-output/input
           merge-multiple: true
       - name: 安装锁定 Playwright 对应引擎
-        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --with-deps "$CI_MATRIX"
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install "$CI_MATRIX"
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check browser --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --input .ci-output/input/result.json
       - name: 核验公开输出白名单
@@ -437,7 +427,7 @@ jobs:
           retention-days: 7
   coverage:
     name: coverage
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
       - build
@@ -500,7 +490,7 @@ jobs:
           retention-days: 7
   security:
     name: security
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
     timeout-minutes: 15
@@ -559,7 +549,7 @@ jobs:
   required:
     name: ci/required
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
       - static

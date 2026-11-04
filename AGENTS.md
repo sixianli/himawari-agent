@@ -4,7 +4,7 @@
 <a id="delivery-mode"></a>
 ## 交付模式
 
-在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。GitHub Actions（GitHub 自带的自动构建和测试服务）已关闭：CI（持续集成，即每次推送后自动跑的检查）不会运行，所以本地的快速模式检查是唯一的质量门槛，PR 上没有 CI 结果是正常的。
+在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。CI（持续集成，即每次推送后 GitHub Actions 自动跑的检查）按 [ADR 0156](docs/adr/0156-self-hosted-runner-on-hermes.md) 在 Hermes 上的自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）里运行，macOS 检查暂停；在 Andy 决定规则集要求 `ci/required` 之前，合并不等 CI 结果，本地的快速模式检查仍是必过的门槛。runner 暂停时 PR 上暂时没有 CI 结果是正常的。
 
 <a id="product-vision"></a>
 ## 产品愿景

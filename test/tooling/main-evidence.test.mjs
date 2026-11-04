@@ -39,7 +39,7 @@ function fixture() {
   };
   const expected = policy.checks
     .filter((c) => c.id !== "required")
-    .flatMap((c) => c.members.map((m) => `${c.id}/${m.key}`));
+    .flatMap((c) => c.members.filter((m) => m.paused !== true).map((m) => `${c.id}/${m.key}`));
   const summary = {
     schemaVersion: 1,
     ...context,
