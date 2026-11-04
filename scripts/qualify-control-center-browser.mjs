@@ -383,11 +383,11 @@ export async function qualifyBrowser({
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
     const brandLoaded = await page
-      .locator(".himawari-brand img")
+      .locator(".himawari-brand svg")
       .first()
-      .evaluate(async (image) => {
-        await image.decode();
-        return image.naturalWidth > 0 && image.naturalHeight > 0;
+      .evaluate((mark) => {
+        const box = mark.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && mark.querySelectorAll("circle").length > 0;
       });
     if (!brandLoaded) throw new Error("CONTROL_CENTER_BRAND_IMAGE_NOT_LOADED");
     if (fault === "page-error") {
@@ -482,16 +482,24 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_DRAFT_NOT_CLEARED");
     }
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
+    const [rejectedUpload, ...laterUploads] = csrfRequests;
+    const retriedUpload = laterUploads.find(
+      (request) =>
+        request.headers["idempotency-key"] === rejectedUpload?.headers["idempotency-key"],
+    );
+    const parallelUpload = laterUploads.find((request) => request !== retriedUpload);
     if (
       csrfRefreshes !== 1 ||
       csrfRequests.length !== 3 ||
-      csrfRequests[0].body !== csrfRequests[1].body ||
-      !csrfRequests[0].headers["idempotency-key"] ||
-      csrfRequests[0].headers["idempotency-key"] !== csrfRequests[1].headers["idempotency-key"] ||
-      csrfRequests[1].headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
-      csrfRequests[2].headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
-      JSON.parse(csrfRequests[2].body).content !== "浏览器资格测试消息" ||
-      csrfRequests[2].headers["idempotency-key"] === csrfRequests[1].headers["idempotency-key"]
+      !rejectedUpload.headers["idempotency-key"] ||
+      !retriedUpload ||
+      retriedUpload.body !== rejectedUpload.body ||
+      retriedUpload.headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
+      !parallelUpload ||
+      parallelUpload.headers["idempotency-key"] === rejectedUpload.headers["idempotency-key"] ||
+      ![rejectedUpload, parallelUpload].some(
+        (request) => JSON.parse(request.body).content === "浏览器资格测试消息",
+      )
     )
       throw new Error(
         `CONTROL_CENTER_CSRF_REFRESH_INVALID:${JSON.stringify({ csrfRefreshes, requests: csrfRequests.map((request) => ({ body: request.body, token: request.headers["x-csrf-token"], idempotencyKey: request.headers["idempotency-key"] })) })}`,
@@ -502,13 +510,16 @@ export async function qualifyBrowser({
     await expect(page.getByRole("button", { name: "显示详情", exact: true })).toHaveCount(0);
     await expect(page.getByLabel("回答语言", { exact: true })).toHaveCount(0);
     await showNavigation(page);
-    await page.getByRole("button", { name: "搜索对话", exact: true }).click();
-    await page.getByRole("searchbox", { name: "搜索对话", exact: true }).fill("计划");
+    const threadSearch = page.getByRole("searchbox", { name: "搜索对话", exact: true });
+    await threadSearch.fill("计划");
+    await threadSearch.press("Enter");
     await page
-      .locator(".thread-search")
-      .getByRole("button", { name: "搜索对话", exact: true })
+      .locator(".thread-search-results")
+      .getByRole("link")
+      .filter({ hasText: "主对话" })
+      .first()
       .click();
-    await page.getByRole("dialog").getByRole("link").filter({ hasText: "主对话" }).first().click();
+    await threadSearch.fill("");
     await threadAction(page, "重命名");
     await page.getByLabel("会话名称").fill("多客户端冲突后的标题");
     await page.evaluate(() =>
@@ -518,7 +529,7 @@ export async function qualifyBrowser({
         body: JSON.stringify({ threadId: "thread-main" }),
       }),
     );
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByLabel("会话名称").press("Enter");
     await page.getByText("这个对话刚在别处改过", { exact: true }).waitFor();
     await page.getByRole("button", { name: "按最新内容再操作一次", exact: true }).click();
     await waitForAccepted(page);
@@ -554,7 +565,7 @@ export async function qualifyBrowser({
     await page.getByRole("dialog", { name: "设置", exact: true }).press("Escape");
     await expect(page.getByRole("button", { name: "移入回收站", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "检查删除影响", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "从此轮 Fork", exact: true }).first().click();
+    await page.getByRole("button", { name: "分出新对话", exact: true }).first().click();
     await page.waitForURL(/\/threads\/thread-fork%3A|\/threads\/thread-fork:/);
     await expect(page.locator(".thread-message-owner")).not.toHaveCount(0);
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
@@ -566,8 +577,14 @@ export async function qualifyBrowser({
       );
       if (surface.label === "对话") await page.locator("#page-title").waitFor();
       else await page.getByRole("heading", { name: surface.title, exact: true }).waitFor();
-      const focusedId = await page.evaluate(() => document.activeElement?.id ?? null);
-      if (focusedId !== "page-title") {
+      const routeFocused =
+        surface.label === "设置"
+          ? await page
+              .getByRole("dialog", { name: "设置", exact: true })
+              .evaluate((dialog) => dialog === document.activeElement)
+          : await page.evaluate(() => document.activeElement?.id === "page-title");
+      if (!routeFocused) {
+        const focusedId = await page.evaluate(() => document.activeElement?.id ?? null);
         throw new Error(`CONTROL_CENTER_ROUTE_FOCUS_NOT_MOVED:${surface.label}:${focusedId}`);
       }
       if (surface.policy !== "allowed") {

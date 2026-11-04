@@ -39,6 +39,8 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
     page.on("pageerror", (error) => errors.push(error.message));
     let sequence = 0;
     const unique = `${locale}-${width}`;
+    const seconds = (value) =>
+      ({ "zh-CN": `${value} 秒`, en: `${value} s`, ja: `${value}秒` })[locale];
     const record = (values) => {
       sequence += 1;
       return {
@@ -55,7 +57,16 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         ...values,
       };
     };
+    let observedAt = 0;
     const send = async (value) => {
+      const latest = Math.max(
+        observedAt,
+        ...(value.records ?? []).map((item) => Date.parse(item.occurredAt)),
+      );
+      if (latest > observedAt) {
+        observedAt = latest;
+        await page.clock.setFixedTime(observedAt);
+      }
       const response = await page.request.post(`${baseUrl}/__fixture/execution`, {
         data: { threadId: "thread-main", runId: "run-01", ...value },
       });
@@ -95,7 +106,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         record({
           kind: "tool",
           itemId: "search-one",
-          name: "web_search",
+          name: "grep",
           input: JSON.stringify({ query: "Tokyo headlines", longValue: "long".repeat(400) }),
         }),
       ],
@@ -114,10 +125,10 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       const turnBox = await page.locator(".chat-turn").first().boundingBox();
       const inputBox = await page.locator(".composer").boundingBox();
       assert(turnBox && inputBox && Math.abs(turnBox.x - inputBox.x) <= 1);
-      await expect(process.locator(".timeline-record .timeline-bar .segment-reason")).toHaveCount(
-        1,
+      await expect(process.locator(".timeline-bar")).toHaveCount(0);
+      await expect(process.locator(".timeline-record .row-duration").first()).toHaveText(
+        seconds(5),
       );
-      await expect(process.locator(".timeline-record").first()).toContainText("2.0s");
       const reviewText = {
         "zh-CN": ["正在检查这次操作", "自动审查已允许本次操作"],
         en: ["Checking this operation", "Automatic review allowed this operation"],
@@ -130,7 +141,9 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await send({ records: [reviewStart], replay: true });
       const review = process.locator(".authorization-review");
       await expect(review).toHaveCount(1);
-      await expect(page.locator(".turn-activity").first()).toContainText(reviewText[0]);
+      await expect(process.locator(":scope > summary .process-live-step")).toContainText(
+        reviewText[0],
+      );
       await expect(review.locator('[data-tool-category="review"]')).toHaveCount(1);
       const attentionBeforeReview = await page.locator(".thread-attention").count();
       await page.screenshot({ path: path.join(output, `${unique}-review-started.png`) });
@@ -156,7 +169,13 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await expect(first.locator(".call-lifecycle li")).toHaveCount(1);
       await send({
         records: [
-          record({ kind: "tool", itemId: "search-one", phase: "started", name: "web_search" }),
+          record({
+            kind: "tool",
+            itemId: "search-one",
+            phase: "started",
+            name: "grep",
+            occurredAt: "2026-09-14T05:00:10.000Z",
+          }),
           record({
             itemId: "search-one",
             name: "runtime.tool_execution.started",
@@ -173,8 +192,9 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
             kind: "tool",
             itemId: "search-one",
             phase: "completed",
-            name: "web_search",
+            name: "grep",
             output: "Search result: Tokyo news",
+            occurredAt: "2026-09-14T05:00:16.000Z",
           }),
           record({
             itemId: "search-one",
@@ -194,7 +214,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await expect(tools).toHaveCount(2);
       await expect(first.locator(".call-lifecycle li")).toHaveCount(3);
       await expect(first).toContainText("Search result: Tokyo news");
-      await expect(first.locator(".step-status")).toContainText("6s");
+      await expect(first.locator(".row-duration")).toHaveText(seconds(6));
       await first.locator(":scope > summary").click();
       await send({
         records: [
@@ -227,7 +247,9 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         records: [record({ itemId: "search-two", name: "runtime.tool_outcome.unresolved" })],
       });
       await expect(tools.nth(1).locator(".step-status")).toContainText(lifecycleText[1]);
-      await expect(page.locator(".turn-activity").first()).toContainText(lifecycleText[1]);
+      await expect(process.locator(":scope > summary .process-live-step")).toContainText(
+        lifecycleText[1],
+      );
       await expect(page.locator(".turn-activity .run-indicator")).toHaveCount(0);
       await page.screenshot({ path: path.join(output, `${unique}-unresolved.png`) });
       await send({
@@ -244,9 +266,9 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         ],
       });
       await expect(tools).toHaveCount(2);
-      await expect(process).not.toHaveAttribute("open", "");
+      await expect(process).toHaveAttribute("open", "");
       await expect(process.locator(":scope > summary .process-took")).toBeVisible();
-      await expect(process.locator(":scope > .process-ledger")).toHaveCount(1);
+      await expect(process.locator(".process-ledger")).toHaveCount(0);
       const title = `Tokyo headlines ${unique}`;
       await send({ title });
       await expect(page.locator("#page-title")).toHaveText(title);
@@ -271,13 +293,14 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await page.screenshot({ path: path.join(output, `${unique}-overview.png`) });
       await first.locator(":scope > summary").click();
       await expect(first).toContainText("Search result: Tokyo news");
-      await expect(first.locator(".step-status")).toContainText("6s");
+      await expect(first.locator(".row-duration")).toHaveText(seconds(6));
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         true,
       );
       assert.equal(await process.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), true);
       await page.screenshot({ path: path.join(output, `${unique}.png`), fullPage: true });
+      await first.locator(".step-technical > summary").click();
       const result = first.locator("pre").last();
       await result.scrollIntoViewIfNeeded();
       await expect(result).toBeVisible();
@@ -445,7 +468,7 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await page.goto(`${baseUrl}/threads/thread-main`);
         const process = page.locator(".turn-process").first();
         await expect(page.locator("html")).toHaveAttribute("data-theme", colorScheme);
-        await expect(process.locator(".process-result")).toContainText("结果未确认");
+        await expect(process.locator(".process-live-step")).toContainText("结果未确认");
         await expect(process.locator(".tool-record .step-status").nth(0)).toContainText("完成");
         await expect(process.locator(".tool-record .step-status").nth(1)).toContainText(
           "结果未确认",
@@ -493,7 +516,7 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
             availableActions: ["retry_cleanup"],
           },
         });
-        await expect(page.locator(".turn-process .process-result").first()).toContainText(
+        await expect(page.locator(".turn-process .process-live-step").first()).toContainText(
           "结果未确认",
         );
         await expect(
@@ -520,7 +543,9 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
             availableActions: [],
           },
         });
-        await expect(page.locator(".turn-activity output")).toContainText("正在停止");
+        await expect(page.locator(".turn-process .process-live-step").first()).toContainText(
+          "正在停止",
+        );
         await expect(page.locator(".turn-process .tool-record .step-status").first()).toContainText(
           "正在停止",
         );
@@ -539,7 +564,9 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
             availableActions: [],
           },
         });
-        await expect(page.locator(".turn-activity output")).toContainText("正在核验原请求");
+        await expect(page.locator(".turn-process .process-live-step").first()).toContainText(
+          "正在核验原请求",
+        );
         await send({
           status: "cancelled",
           state: {
@@ -549,10 +576,14 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
             availableActions: ["retry_cleanup"],
           },
         });
-        await expect(page.locator(".turn-activity output")).toContainText("结果未确认");
+        await expect(page.locator(".turn-process .process-live-step").first()).toContainText(
+          "结果未确认",
+        );
         await expect(page.locator(".turn-activity .run-indicator")).toHaveCount(0);
         await page.reload();
-        await expect(page.locator(".turn-activity output")).toContainText("结果未确认");
+        await expect(page.locator(".turn-process .process-live-step").first()).toContainText(
+          "结果未确认",
+        );
         await page.screenshot({
           path: path.join(output, `state-${width}-${colorScheme}-resource-expired.png`),
         });
