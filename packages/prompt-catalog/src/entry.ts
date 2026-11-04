@@ -23,9 +23,11 @@ export interface PromptEntry {
 
 export function fixedPrompt<
   const Entry extends Omit<PromptEntry, "segments"> & { readonly text: string },
->(entry: Entry): Entry & { readonly segments: readonly PromptSegment[] } {
+>(
+  entry: Entry,
+): Omit<Entry, "text"> & { readonly text: string; readonly segments: readonly PromptSegment[] } {
   const segments: readonly PromptSegment[] = Object.freeze([{ kind: "text", text: entry.text }]);
-  return Object.freeze({ ...entry, segments });
+  return Object.freeze({ ...entry, text: entry.text as string, segments });
 }
 
 export const text = (value: string): PromptSegment => Object.freeze({ kind: "text", text: value });

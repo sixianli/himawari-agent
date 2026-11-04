@@ -15,7 +15,20 @@ import {
   type RunPayloadArtifactPort,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import { CHAT_ANSWER_LANGUAGE, CHAT_IDENTITY } from "@himawari-agent/prompt-catalog";
+import {
+  CHAT_ANSWER_LANGUAGE,
+  CHAT_CAPABILITIES_DOCUMENT_SKILL,
+  CHAT_CAPABILITIES_HEADER,
+  CHAT_CAPABILITIES_NO_SEARCH,
+  CHAT_CAPABILITIES_SANDBOX_COMMANDS,
+  CHAT_CAPABILITIES_SANDBOX_OFFLINE,
+  CHAT_CAPABILITIES_SEARCH,
+  CHAT_CAPABILITIES_WORKSPACE,
+  CHAT_CAPABILITIES_WORKSPACE_COMMANDS,
+  CHAT_CAPABILITIES_WORKSPACE_FILE_CARDS,
+  CHAT_IDENTITY,
+  renderPrompt,
+} from "@himawari-agent/prompt-catalog";
 import type { SandboxCommandInventory } from "./sandbox-command-inventory.js";
 
 export function createProductionRunPolicy(options: {
@@ -115,31 +128,30 @@ export function runCapabilityNotice(input: {
   readonly documentSkillDirectory?: string;
   readonly sandboxCommands?: SandboxCommandInventory;
 }): string {
-  const lines = ["本轮能力边界："];
+  const lines = [CHAT_CAPABILITIES_HEADER.text];
   if (input.coding) {
-    lines.push(
-      "- 文件和命令工具在隔离沙箱里执行。沙箱没有外网，curl、wget、pip、npm install、git clone 等联网操作一定失败，不要尝试。",
-    );
+    lines.push(CHAT_CAPABILITIES_SANDBOX_OFFLINE.text);
     if (input.sandboxCommands)
       lines.push(
-        `- 沙箱里能直接用的常用命令：${input.sandboxCommands.available.join("、")}。沙箱里没有：${input.sandboxCommands.unavailable.join("、")}。用到没有的命令会得到“command not found”（退出码 127），不要重试，直接换别的办法；上面没列到的命令，用之前在一条命令里用 command -v 一次问清，不要一个个试。`,
+        renderPrompt(CHAT_CAPABILITIES_SANDBOX_COMMANDS, {
+          available: input.sandboxCommands.available.join("、"),
+          unavailable: input.sandboxCommands.unavailable.join("、"),
+        }),
       );
     if (input.workspaceRoot)
       lines.push(
-        `- 工作目录是 ${input.workspaceRoot}。读写文件用相对路径或这个目录下的路径，目录之外的路径会被拒绝。`,
-        "- 命令可以在工作目录里新建、修改和删除文件。每条命令前后系统会对比工作目录，把改了哪些文件附在命令结果末尾并留档。临时文件放到 $TMPDIR，不要放进工作目录。.git、.env、.himawari-recovery 等受保护的文件和文件夹不能读也不能写。",
-        "- 你在工作目录里写出或改动的文件，界面会自动在回答下方显示文件卡片，用户点开就能预览和下载。回答里提到这些文件时只写文件名，不要写服务器上的完整路径，也不要让用户自己去服务器上找。",
+        renderPrompt(CHAT_CAPABILITIES_WORKSPACE, { workspaceRoot: input.workspaceRoot }),
+        CHAT_CAPABILITIES_WORKSPACE_COMMANDS.text,
+        CHAT_CAPABILITIES_WORKSPACE_FILE_CARDS.text,
       );
     if (input.documentSkillDirectory)
       lines.push(
-        `- 做 Word、Excel、PDF 文档或读 PDF 时，先用 bash 运行 cat ${input.documentSkillDirectory}SKILL.md 读完并照做（read 工具只能读工作目录）：需要的库和中日文字体都已装好，不要探测或安装，也不要手写文件格式。`,
+        renderPrompt(CHAT_CAPABILITIES_DOCUMENT_SKILL, {
+          documentSkillDirectory: input.documentSkillDirectory,
+        }),
       );
   }
-  lines.push(
-    input.publicSearch
-      ? "- 需要联网信息时用 web_search 工具，它返回来源网址和摘录，不是完整网页。首次使用可能要等用户在页面打开联网搜索。使用真实查询，并核对来源日期。"
-      : "- 本轮没有联网搜索工具。用户要实时信息（天气、新闻、价格等）时，直接说明现在查不到，不要用沙箱命令联网，也不要让用户去配置网络或代理。",
-  );
+  lines.push(input.publicSearch ? CHAT_CAPABILITIES_SEARCH.text : CHAT_CAPABILITIES_NO_SEARCH.text);
   return lines.join("\n");
 }
 

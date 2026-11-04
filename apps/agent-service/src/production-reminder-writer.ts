@@ -13,6 +13,11 @@ import {
   type RuntimeToolInvocation,
   scanMachineSecrets,
 } from "@himawari-agent/application";
+import {
+  TOOL_REMINDER_CANCEL,
+  TOOL_REMINDER_LIST,
+  TOOL_REMINDER_SET,
+} from "@himawari-agent/prompt-catalog";
 import { containsRestrictedIdentifier, reminderSchedule } from "./production-memory-capture.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
@@ -58,8 +63,7 @@ export function reminderToolDescriptors(): readonly RuntimeToolDescriptor[] {
       name: "reminder_set",
       capabilityRef: REMINDER_SET_CAPABILITY_REF,
       capabilityHandleRef: null,
-      description:
-        "给主人设一个提醒，到点会在 Himawari 网页和已开启的手机通知里提醒。主人要你提醒、别让他忘记某件事时使用，不要只写进文件或说“记住了”。text 写要提醒的事；due 写主人当地时间，有钟点写 YYYY-MM-DDTHH:MM，只有日期写 YYYY-MM-DD（当天早上 9 点提醒），按本轮请求里给出的当地时间换算“明天”“周五”；每年都有的日子（生日、纪念日）repeat 填 yearly，due 写下一次的日期，其余填 none。已过去的时间或两年以后的时间会被拒绝，此时把原因告诉主人，不要说已设好。成功后把返回的提醒时间原样告诉主人。提醒是主人自己的，可以随时取消。",
+      description: TOOL_REMINDER_SET.text,
       parameters: {
         type: "object",
         properties: {
@@ -75,16 +79,14 @@ export function reminderToolDescriptors(): readonly RuntimeToolDescriptor[] {
       name: "reminder_list",
       capabilityRef: REMINDER_LIST_CAPABILITY_REF,
       capabilityHandleRef: null,
-      description:
-        "列出主人还没到点的提醒（含 reminderId、事项和提醒时间）。主人问有哪些提醒，或要取消、确认某个提醒前使用。只读。",
+      description: TOOL_REMINDER_LIST.text,
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
     {
       name: "reminder_cancel",
       capabilityRef: REMINDER_CANCEL_CAPABILITY_REF,
       capabilityHandleRef: null,
-      description:
-        "取消一个还没到点的提醒。reminderId 取自 reminder_set 或 reminder_list 的返回；不确定是哪一个时先用 reminder_list，不要猜。",
+      description: TOOL_REMINDER_CANCEL.text,
       parameters: {
         type: "object",
         properties: { reminderId: { type: "string", minLength: 1, maxLength: 256 } },

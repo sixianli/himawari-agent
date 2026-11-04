@@ -1,4 +1,4 @@
-import { fixedPrompt } from "./entry.js";
+import { fixedPrompt, slot, templatePrompt, text } from "./entry.js";
 
 export const CHAT_IDENTITY = fixedPrompt({
   id: "chat.identity",
@@ -47,4 +47,103 @@ export const CHAT_ANSWER_LANGUAGE = fixedPrompt({
   layer: "system",
   output: "free-text",
   text: "回答语言：用用户本轮提问所用的语言回答；调用工具之前或之间写给用户看的说明也用这种语言。搜索关键词等工具参数可以用别的语言。",
+});
+
+export const CHAT_CAPABILITIES_HEADER = fixedPrompt({
+  id: "chat.capabilities.header",
+  purpose: "能力边界的标题行",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "本轮能力边界：",
+});
+
+export const CHAT_CAPABILITIES_SANDBOX_OFFLINE = fixedPrompt({
+  id: "chat.capabilities.sandbox-offline",
+  purpose: "说明沙箱没有外网",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "- 文件和命令工具在隔离沙箱里执行。沙箱没有外网，curl、wget、pip、npm install、git clone 等联网操作一定失败，不要尝试。",
+});
+
+export const CHAT_CAPABILITIES_SANDBOX_COMMANDS = templatePrompt({
+  id: "chat.capabilities.sandbox-commands",
+  purpose: "列出沙箱里有和没有的命令",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  segments: [
+    text("- 沙箱里能直接用的常用命令："),
+    slot("available"),
+    text("。沙箱里没有："),
+    slot("unavailable"),
+    text(
+      "。用到没有的命令会得到“command not found”（退出码 127），不要重试，直接换别的办法；上面没列到的命令，用之前在一条命令里用 command -v 一次问清，不要一个个试。",
+    ),
+  ],
+});
+
+export const CHAT_CAPABILITIES_WORKSPACE = templatePrompt({
+  id: "chat.capabilities.workspace",
+  purpose: "告诉模型工作目录在哪里",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  segments: [
+    text("- 工作目录是 "),
+    slot("workspaceRoot"),
+    text("。读写文件用相对路径或这个目录下的路径，目录之外的路径会被拒绝。"),
+  ],
+});
+
+export const CHAT_CAPABILITIES_WORKSPACE_COMMANDS = fixedPrompt({
+  id: "chat.capabilities.workspace-commands",
+  purpose: "说明命令能改工作目录里的文件、哪些文件受保护",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "- 命令可以在工作目录里新建、修改和删除文件。每条命令前后系统会对比工作目录，把改了哪些文件附在命令结果末尾并留档。临时文件放到 $TMPDIR，不要放进工作目录。.git、.env、.himawari-recovery 等受保护的文件和文件夹不能读也不能写。",
+});
+
+export const CHAT_CAPABILITIES_WORKSPACE_FILE_CARDS = fixedPrompt({
+  id: "chat.capabilities.workspace-file-cards",
+  purpose: "说明写出的文件会显示成卡片",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "- 你在工作目录里写出或改动的文件，界面会自动在回答下方显示文件卡片，用户点开就能预览和下载。回答里提到这些文件时只写文件名，不要写服务器上的完整路径，也不要让用户自己去服务器上找。",
+});
+
+export const CHAT_CAPABILITIES_DOCUMENT_SKILL = templatePrompt({
+  id: "chat.capabilities.document-skill",
+  purpose: "告诉模型做文档前先读文档技能说明",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  segments: [
+    text("- 做 Word、Excel、PDF 文档或读 PDF 时，先用 bash 运行 cat "),
+    slot("documentSkillDirectory"),
+    text(
+      "SKILL.md 读完并照做（read 工具只能读工作目录）：需要的库和中日文字体都已装好，不要探测或安装，也不要手写文件格式。",
+    ),
+  ],
+});
+
+export const CHAT_CAPABILITIES_SEARCH = fixedPrompt({
+  id: "chat.capabilities.search",
+  purpose: "说明怎么用联网搜索",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "- 需要联网信息时用 web_search 工具，它返回来源网址和摘录，不是完整网页。首次使用可能要等用户在页面打开联网搜索。使用真实查询，并核对来源日期。",
+});
+
+export const CHAT_CAPABILITIES_NO_SEARCH = fixedPrompt({
+  id: "chat.capabilities.no-search",
+  purpose: "说明本轮没有联网搜索",
+  usedBy: ["apps/agent-service/src/production-run-policy.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "- 本轮没有联网搜索工具。用户要实时信息（天气、新闻、价格等）时，直接说明现在查不到，不要用沙箱命令联网，也不要让用户去配置网络或代理。",
 });
