@@ -2,3 +2,57 @@ title = "Himawari fixed Gitleaks defaults"
 
 [extend]
 useDefault = true
+
+[[allowlists]]
+description = "文件名对应 40 位或 64 位十六进制摘要（git 对象号、SHA-256）的清单行，键名里带 secret、credential 等字样被默认规则当成密钥"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''^[^"\s]+\.[A-Za-z0-9]+": "(?:[0-9a-f]{40}|[0-9a-f]{64})"$''']
+
+[[allowlists]]
+description = "Web Push 公开测试向量（RFC 8291）里的 auth 值，只限这三个测试和夹具文件"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)(?:test/integration/production-web-push-control\.test\.ts|packages/gateway-contracts/test/gateway-v2\.fixture\.ts)$''']
+regexTarget = "secret"
+regexes = ['''^[A-Za-z0-9_-]{22}$''']
+
+[[allowlists]]
+description = "已删除的旧推送通道单元测试里的 22 位占位设备值（提交 f73b0b76，已在 9dcdb6e 删除），只限该文件的历史"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)apps/agent-service/test/production-reminder-push\.unit\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^[A-Za-z0-9_-]{22}$''']
+
+[[allowlists]]
+description = "前台结果单元测试里的合成 Bearer 令牌"
+condition = "AND"
+targetRules = ["curl-auth-header"]
+paths = ['''(?:^|/)apps/agent-service/test/production-foreground-result\.unit\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^[A-Za-z0-9._-]{20}$''']
+
+[[allowlists]]
+description = "记忆抽取评测数据集里的假 GitHub 令牌（已离线核对）"
+condition = "AND"
+targetRules = ["github-pat"]
+paths = ['''(?:^|/)test/fixtures/memory-capture-eval/dataset\.json$''']
+regexTarget = "secret"
+regexes = ['''^ghp_[A-Za-z0-9]{36}$''']
+
+[[allowlists]]
+description = "沙箱探针脚本里的 tmpfs 大小参数，不是密钥"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/probe\.sh$''']
+regexTarget = "secret"
+regexes = ['''^tmpfs-size=[0-9]+$''']
+
+[[allowlists]]
+description = "已删除的诊断说明里的线程编号（UUID），只限该文件的历史"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)scripts/operations/cache-zero-diagnosis/README\.md$''']
+regexTarget = "secret"
+regexes = ['''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''']
