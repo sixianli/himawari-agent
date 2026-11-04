@@ -353,6 +353,36 @@ it("[ICON-MOTION-5] with an execution state, the review row follows the state ph
   );
 });
 
+it("[UI-46] while an automatic review is running, the collapsed process says it is checking rather than the open model step", () => {
+  const running = { ...completedRun, status: "running" as const, updatedAt: at(5000) };
+  const modelStarted: ThreadExecutionRecord = {
+    ...reviewRecord(1, 500, "started"),
+    id: "model:1",
+    itemId: "model:1",
+    phase: "started",
+    name: "runtime.model_started",
+  };
+  const liveStep = (html: string) => {
+    const start = html.indexOf('<span class="process-live-step">');
+    return html.slice(start, html.indexOf("</span>", start));
+  };
+  const reviewing = render(running, [modelStarted, reviewRecord(2, 1000, "started")]);
+  expect(liveStep(reviewing)).toBe('<span class="process-live-step">review.authorizationChecking');
+  const approved = render(running, [
+    modelStarted,
+    reviewRecord(2, 1000, "started"),
+    reviewRecord(3, 3000, "approved"),
+  ]);
+  expect(liveStep(approved)).not.toContain("review.authorizationChecking");
+  const reconciling = render({ ...running, status: "reconciling_external_result" as const }, [
+    modelStarted,
+  ]);
+  expect(liveStep(reconciling)).toBe('<span class="process-live-step">chat.phase.unresolved');
+  expect(liveStep(render(running, [modelStarted]))).toBe(
+    '<span class="process-live-step">step.active(step=step.thinking)',
+  );
+});
+
 it("[ICON-MOTION-6] only the latest unfinished thinking row animates, and none once the run has ended", () => {
   const thinking = (sequence: number, milliseconds: number, itemId: string, end: boolean) =>
     ({
