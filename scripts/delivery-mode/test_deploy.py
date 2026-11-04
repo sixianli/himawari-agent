@@ -272,7 +272,7 @@ class KernelPreflightTest(unittest.TestCase):
 
     def test_newest_installed_kernel_ignores_removed_unsigned_and_other_flavours(self):
         listing = '\n'.join([
-            'rc  linux-image-6.8.0-146-generic',
+            'rc  linux-image-6.8.0-148-generic',
             'ii  linux-image-6.8.0-147-generic',
             'hi  linux-image-6.8.0-142-generic',
             'un  linux-image-unsigned-6.8.0-150-generic',
