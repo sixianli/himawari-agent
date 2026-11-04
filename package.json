@@ -30,7 +30,7 @@
     "check:incident-gates": "node scripts/check-incident-gates.mjs",
     "check:glossary": "node scripts/check-glossary.mjs",
     "check:markdown-tables": "node scripts/check-markdown-tables.mjs",
-    "check:adr-numbers": "node scripts/check-adr-numbers.mjs",
+    "check:adr-numbers": "node scripts/check-adr-numbers.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/adr-numbers.test.mjs",
     "check:real-admission": "node scripts/check-real-admission-tests.mjs",
     "check:audit-schema-range": "node scripts/check-audit-schema-range.mjs",
     "check:srt-version": "node scripts/check-srt-version.mjs",
