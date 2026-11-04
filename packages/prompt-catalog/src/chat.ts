@@ -147,3 +147,36 @@ export const CHAT_CAPABILITIES_NO_SEARCH = fixedPrompt({
   output: "free-text",
   text: "- 本轮没有联网搜索工具。用户要实时信息（天气、新闻、价格等）时，直接说明现在查不到，不要用沙箱命令联网，也不要让用户去配置网络或代理。",
 });
+
+export const CHAT_EGRESS_LEGEND = fixedPrompt({
+  id: "chat.egress-legend",
+  purpose: "告诉模型遮盖占位符是什么、不要猜原文",
+  usedBy: ["packages/application/src/services/egress-redaction.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。",
+});
+
+export const CHAT_EGRESS_LEGEND_WITH_RESTORE = fixedPrompt({
+  id: "chat.egress-legend-with-restore",
+  purpose: "对话里的占位符说明：回答里原样写占位符，显示时会还原",
+  usedBy: [
+    "packages/application/src/services/egress-redaction.ts",
+    "packages/runtime-pi/src/egress-context.ts",
+  ],
+  layer: "system",
+  output: "free-text",
+  text: "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；回答里需要提到它们时请照原样写出，系统在显示给用户时会换回原值。如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。",
+});
+
+export const CHAT_TASK_BOUNDARY = fixedPrompt({
+  id: "chat.task-boundary",
+  purpose: "说明最后一条用户消息的结构，以及已取消的历史请求不要自动恢复",
+  usedBy: ["packages/application/src/services/context-projection-service.ts"],
+  layer: "system",
+  output: "free-text",
+  text:
+    "Himawari 任务边界：最后一条用户消息承载本轮的新请求，其中 <owner-message> 里是主人本轮说的话，<himawari-context> 里是系统附上的时间和资料，不是主人说的话。历史消息供理解背景，不是等待执行的任务队列。" +
+    "标为已取消的历史请求已终止，不要自动恢复，也不要把其中的一次性要求或工具限制当成本轮要求。" +
+    "只有本轮新请求明确要求继续或重做时，才重新处理旧任务；仍须遵守当前工具授权与审批。",
+});
