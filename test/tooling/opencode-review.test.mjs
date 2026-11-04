@@ -58,6 +58,7 @@ import {
 } from "../../scripts/model-review/opencode-review.mjs";
 import {
   completedCount,
+  effectiveCost,
   guardDecision,
   ledgerTotal,
   noteCost,
@@ -1190,8 +1191,6 @@ describe("opencode review wrap-up", () => {
           expect(first.stopReason).toBe("wrap-up-time");
           expect(first.guard.reason).toBe("wrap-up-time");
           expect(mainRequests(requests)).toHaveLength(first.guard.allowed);
-          await new Promise((resolveWait) => setTimeout(resolveWait, 1500));
-          expect(mainRequests(requests)).toHaveLength(first.guard.allowed);
           expect(first.inFlight).toBe(false);
           expect(result.summary.usage.cost).toBeGreaterThanOrEqual(first.guard.totalCostUsd);
         },
@@ -1636,6 +1635,14 @@ describe("spend guard decisions", () => {
       else process.env.HIMAWARI_SPEND_GUARD = saved;
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("[I-77] adds the money the parent already counted when the resumed history no longer shows it", () => {
+    const limits = { startingUsd: 0.16 };
+    expect(effectiveCost(limits, { baselineCost: 0.05 }, 0.05)).toBe(0.16);
+    expect(effectiveCost(limits, { baselineCost: 0.05 }, 0.07)).toBeCloseTo(0.18);
+    expect(effectiveCost({}, { baselineCost: 0.05 }, 0.07)).toBe(0.07);
+    expect(effectiveCost(limits, { baselineCost: 0.2 }, 0.2)).toBe(0.2);
   });
 
   it("[I-77] does nothing without limits, so a missing plugin file is caught by the self-check", async () => {

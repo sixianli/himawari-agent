@@ -28,6 +28,10 @@ export function completedCount(ledger) {
   return count;
 }
 
+export function effectiveCost(limits, state, total) {
+  return Math.max(total, (limits.startingUsd ?? 0) + (total - state.baselineCost));
+}
+
 export function hasUnknownCost(ledger) {
   for (const entry of ledger.values()) if (entry.unknown) return true;
   return false;
@@ -55,7 +59,7 @@ export const SpendGuard = async () => {
   if (!limitsPath) return {};
   const limits = JSON.parse(readFileSync(limitsPath, "utf8"));
   const ledger = new Map();
-  const state = { cost: 0, allowed: 0, reason: null, unknown: false, baseline: 0 };
+  const state = { cost: 0, allowed: 0, reason: null, unknown: false, baseline: 0, baselineCost: 0 };
   const publish = () =>
     writeMarker(limits.markerPath, {
       loaded: true,
@@ -71,7 +75,7 @@ export const SpendGuard = async () => {
       if (event.type !== "message.updated") return;
       noteCost(ledger, event.properties?.info);
       if (state.allowed > 0) {
-        state.cost = ledgerTotal(ledger);
+        state.cost = effectiveCost(limits, state, ledgerTotal(ledger));
         publish();
       }
     },
@@ -80,9 +84,13 @@ export const SpendGuard = async () => {
     },
     "chat.params": async (input) => {
       if (UNGUARDED_AGENTS.includes(input.agent)) return;
-      state.cost = ledgerTotal(ledger);
+      const total = ledgerTotal(ledger);
       state.unknown = hasUnknownCost(ledger);
-      if (state.allowed === 0) state.baseline = completedCount(ledger);
+      if (state.allowed === 0) {
+        state.baseline = completedCount(ledger);
+        state.baselineCost = total;
+      }
+      state.cost = effectiveCost(limits, state, total);
       const reason = guardDecision(limits, state);
       if (reason) {
         state.reason = reason;

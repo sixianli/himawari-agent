@@ -515,6 +515,7 @@ function prepareGuard({ gitGuard, guard, startedAt, timeoutMs, wrapUpMs }) {
     deadlineAt: startedAt + timeoutMs,
   };
   if (guard.stopAtUsd !== undefined) limits.stopAtUsd = guard.stopAtUsd;
+  if (guard.startingUsd !== undefined) limits.startingUsd = guard.startingUsd;
   if (wrapUpMs !== undefined) limits.wrapUpAt = startedAt + wrapUpMs;
   if (guard.stopAfterRequests !== undefined) limits.stopAfterRequests = guard.stopAfterRequests;
   writeFileSync(limitsPath, JSON.stringify(limits));
@@ -620,7 +621,7 @@ export async function reviewModel({
     stopOnToolCall: true,
     timeoutMs: remainingMs,
     costLimit: remainingUsd,
-    guard: { totalUsd: costLimit },
+    guard: { totalUsd: costLimit, startingUsd: firstSummary.usage.cost },
   });
   const stdout = `${first.stdout}${first.stdout.endsWith("\n") ? "" : "\n"}${second.stdout}`;
   const secondSummary = summarizeEvents(second.stdout);
