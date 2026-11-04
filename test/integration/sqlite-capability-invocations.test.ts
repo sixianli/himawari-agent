@@ -1048,7 +1048,7 @@ describe("SQLite capability invocation authority", () => {
     }
   });
 
-  it("replays the same key after Handle revocation without a new receipt while reads are blocked", async () => {
+  it("replays the same key after Handle revocation without a new receipt, and blocks new keys and reads", async () => {
     const resource = await openRepository();
     let database: ReturnType<typeof openQualifiedDatabase> | undefined;
     try {
@@ -1082,6 +1082,17 @@ describe("SQLite capability invocation authority", () => {
         replayed: true,
         receipt: { invocationId: "invocation-capability-invocation" },
       });
+      expect(receiptCount()).toBe(1);
+      await expect(
+        consume(
+          invocation({
+            receiptRef: "receipt-capability-invocation-after-revoke",
+            invocationId: "invocation-capability-invocation-after-revoke",
+            idempotencyKey: "capability-invocation-after-revoke-idempotency",
+            consumedAt: T1,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
       expect(receiptCount()).toBe(1);
       await expect(
         callOperation(operations, "capabilityInvocation.read", {
