@@ -109,6 +109,9 @@ describe("SRT version single source", () => {
     ],
     ["scripts/c.yaml", `srt: ${OLD}\n`, `srt: ${OLD}`],
     ["scripts/d.yaml", `srt_version: ${OLD}\n`, `srt_version: ${OLD}`],
+    ["src/a.ts", `const SRT_VERSION: string = "${OLD}";\n`, `SRT_VERSION: string = "${OLD}"`],
+    ["src/b.ts", `  srtVersion?: "${OLD}";\n`, `srtVersion?: "${OLD}"`],
+    ["src/c.ts", `const sandboxRuntimeVersion = "${OLD}";\n`, `sandboxRuntimeVersion = "${OLD}"`],
     ["scripts/e.env", `SRT_VERSION=${OLD}\n`, `SRT_VERSION=${OLD}`],
     ["scripts/f.yaml", `srtVersion: ${OLD}\n`, `srtVersion: ${OLD}`],
     [
@@ -135,6 +138,25 @@ describe("SRT version single source", () => {
     expect(srtVersionProblems(root)).toEqual([]);
   });
 
+  it("checks a Hermes start script that is not one of the frozen releases", () => {
+    expect(
+      srtVersionProblems(
+        fixture({
+          files: { "scripts/operations/hermes-new-release-start.mjs": `srt: "${OLD}"\n` },
+        }),
+      ),
+    ).toEqual([
+      `SRT_VERSION_STALE scripts/operations/hermes-new-release-start.mjs:1 srt: "${OLD}"`,
+    ]);
+  });
+
+  it("fails when a frozen release start script no longer matches its pinned digest", () => {
+    const file = "scripts/operations/hermes-harness-start.mjs";
+    expect(srtVersionProblems(fixture({ files: { [file]: `srt: "${OLD}"\n` } }))).toEqual([
+      `SRT_FROZEN_RELEASE_CHANGED ${file}`,
+    ]);
+  });
+
   it("leaves historical evidence alone", () => {
     expect(
       srtVersionProblems(
@@ -142,7 +164,6 @@ describe("SRT version single source", () => {
           files: {
             "test/qualification/evidence/old.json": `{ "srt": "${OLD}" }\n`,
             "docs/adr/0001.md": `SRT ${OLD} was used\n`,
-            "scripts/operations/hermes-old-release-start.mjs": `    srtVersion: "${OLD}",\n`,
           },
         }),
       ),
