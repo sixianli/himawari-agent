@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 
 const TAG = "[I-23]";
 const FILES = [
@@ -12,14 +11,13 @@ const FILES = [
 ];
 const REQUIRED = 3;
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-memory-relevance-"));
 const report = path.join(directory, "report.json");
 try {
   const run = spawnSync(
     process.execPath,
     [
-      path.join(root, "node_modules/vitest/vitest.mjs"),
+      path.join("node_modules", "vitest", "vitest.mjs"),
       "run",
       "--config",
       "vitest.workspace.ts",
@@ -31,9 +29,9 @@ try {
       "--reporter=json",
       `--outputFile=${report}`,
     ],
-    { cwd: root, stdio: ["ignore", "ignore", "inherit"] },
+    { stdio: ["ignore", "ignore", "inherit"] },
   );
-  if (run.error) console.error(`VITEST_START_FAILED ${run.error.message}`);
+  if (run.error) console.error(`MEMORY_RELEVANCE_VITEST_NOT_STARTED ${run.error.message}`);
   const results = existsSync(report)
     ? JSON.parse(readFileSync(report, "utf8"))
     : { testResults: [] };
