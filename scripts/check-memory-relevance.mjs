@@ -15,9 +15,9 @@ const directory = mkdtempSync(path.join(tmpdir(), "himawari-memory-relevance-"))
 const report = path.join(directory, "report.json");
 try {
   const run = spawnSync(
-    "npx",
+    process.execPath,
     [
-      "vitest",
+      path.join("node_modules", "vitest", "vitest.mjs"),
       "run",
       "--config",
       "vitest.workspace.ts",
@@ -31,6 +31,7 @@ try {
     ],
     { stdio: ["ignore", "ignore", "inherit"] },
   );
+  if (run.error) console.error(`MEMORY_RELEVANCE_VITEST_NOT_STARTED ${run.error.message}`);
   const results = existsSync(report)
     ? JSON.parse(readFileSync(report, "utf8"))
     : { testResults: [] };
