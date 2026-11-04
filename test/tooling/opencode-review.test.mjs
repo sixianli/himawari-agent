@@ -1133,7 +1133,7 @@ describe("opencode review wrap-up", () => {
   }, 120000);
 });
 
-async function authorizationSent({ savedKey }) {
+async function authorizationSent({ savedKey, environmentKey }) {
   const root = mkdtempSync(join(tmpdir(), "opencode-credential-"));
   const headers = [];
   const server = http.createServer((request, response) => {
@@ -1155,7 +1155,7 @@ async function authorizationSent({ savedKey }) {
   }
   const isolated = {
     XDG_DATA_HOME: dataHome,
-    OPENCODE_API_KEY: undefined,
+    OPENCODE_API_KEY: environmentKey,
     OPENCODE_AUTH_CONTENT: undefined,
   };
   const previous = Object.fromEntries(
@@ -1205,6 +1205,16 @@ describe("opencode review credentials", () => {
   it("[OpenCode 401] sends the key saved by opencode auth login, not a placeholder", async () => {
     const savedKey = `saved-${randomBytes(6).toString("hex")}`;
     const headers = await authorizationSent({ savedKey });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBe(`Bearer ${savedKey}`);
+  }, 120000);
+
+  it("[OpenCode 401] prefers the key saved by opencode auth login over OPENCODE_API_KEY", async () => {
+    const savedKey = `saved-${randomBytes(6).toString("hex")}`;
+    const headers = await authorizationSent({
+      savedKey,
+      environmentKey: `environment-${randomBytes(6).toString("hex")}`,
+    });
     expect(headers.length).toBeGreaterThan(0);
     for (const header of headers) expect(header).toBe(`Bearer ${savedKey}`);
   }, 120000);
