@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-04"
 ---
 
-# ADR 0156：CI 改在 Hermes 上的自托管 runner 运行，macOS 检查暂停
+# ADR 0160：CI 改在 Hermes 上的自托管 runner 运行，macOS 检查暂停
 
 <a id="contents"></a>
 

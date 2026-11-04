@@ -470,7 +470,7 @@ export async function writeNonproductionCodingSnapshot({
     qualificationRef: `product-path:${evidenceDigest}`,
     hostId,
     profileRef: binding.profileRef,
-    srtVersion: "0.0.75",
+    srtVersion: "0.0.81",
     platform: process.platform,
     architecture: process.arch,
     osRelease: release(),
@@ -544,7 +544,7 @@ export async function writeNonproductionCodingSnapshot({
         qualification: {
           qualificationVersion: "capability-runtime-qualification.v1",
           platform: process.platform,
-          runtimeIdentity: "srt:0.0.75",
+          runtimeIdentity: "srt:0.0.81",
           productionSuitable: true,
           artifactDigest,
           enforcement: {

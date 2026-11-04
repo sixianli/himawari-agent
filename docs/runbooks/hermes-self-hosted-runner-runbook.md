@@ -14,7 +14,7 @@ date: "2026-11-04"
 - scripts/operations/hermes-runner
 -->
 
-本手册说明 Hermes（家里的 Linux 服务器，Ubuntu 22.04，主机名 `hermes-home`）上那台 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）怎么安装、注册、日常维护、暂停、排错和完整卸载。为什么这样做见 [ADR 0156](../adr/0156-self-hosted-runner-on-hermes.md)。
+本手册说明 Hermes（家里的 Linux 服务器，Ubuntu 22.04，主机名 `hermes-home`）上那台 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）怎么安装、注册、日常维护、暂停、排错和完整卸载。为什么这样做见 [ADR 0160](../adr/0160-self-hosted-runner-on-hermes.md)。
 
 <a id="contents"></a>
 
@@ -36,7 +36,7 @@ date: "2026-11-04"
 ## Scope
 
 - **管的范围**：仓库 `sixianli/himawari-agent` 唯一的自托管 runner，名字和标签都是 `hermes-home`，`ci.yml` 和 `main.yml` 的所有任务都跑在它上面。
-- **不管的范围**：`quality.yml` 仍用 GitHub 托管的 `ubuntu-24.04`；macOS 的构建和测试已暂停（见 ADR 0156 的决定第 3 条）；Hermes 上其他服务、容器和数据一律不碰。
+- **不管的范围**：`quality.yml` 仍用 GitHub 托管的 `ubuntu-24.04`；macOS 的构建和测试已暂停（见 ADR 0160 的决定第 3 条）；Hermes 上其他服务、容器和数据一律不碰。
 
 各部分的位置：
 
@@ -66,7 +66,7 @@ date: "2026-11-04"
 
 ## Authoritative Sources
 
-- 决定和理由：[SOURCE: docs/adr/0156-self-hosted-runner-on-hermes.md]
+- 决定和理由：[SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]
 - 测试主机的硬边界：[测试主机与生产主机](../../.agents/instructions/test-and-production-hosts.md)
 - 安装、注册、卸载、暂停和恢复的脚本，以及服务和钩子的原文：[scripts/operations/hermes-runner/](../../scripts/operations/hermes-runner/)
 - 哪些任务跑在 runner 上：`ci/policy.json`、`.github/workflows/ci.yml`、`.github/workflows/main.yml`

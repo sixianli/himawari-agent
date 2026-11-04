@@ -4,10 +4,9 @@ import { createRequire } from "node:module";
 import { release } from "node:os";
 import path from "node:path";
 import type { SandboxExecutionPlan } from "@himawari-agent/application";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { digestSandboxRuntime } from "@himawari-agent/platform-node";
 
-/** Controlled test qualification only. Live file identities/digests are real;
- * this fixture does not issue an installation or production qualification. */
 export async function macSandboxDeployment(
   root: string,
   plan: SandboxExecutionPlan,
@@ -169,7 +168,7 @@ exit 21
     qualificationRef: plan.binding.qualificationRef,
     hostId: binding.hostId,
     profileRef: binding.profileRef,
-    srtVersion: "0.0.75",
+    srtVersion: SANDBOX_RUNTIME_VERSION,
     platform,
     architecture: process.arch,
     osRelease: release(),
@@ -245,7 +244,7 @@ exit 21
         qualification: {
           qualificationVersion: "capability-runtime-qualification.v1",
           platform,
-          runtimeIdentity: "srt:0.0.75",
+          runtimeIdentity: `srt:${SANDBOX_RUNTIME_VERSION}`,
           productionSuitable: true,
           artifactDigest,
           enforcement: {

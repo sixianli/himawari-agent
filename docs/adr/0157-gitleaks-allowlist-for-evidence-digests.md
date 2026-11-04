@@ -93,6 +93,5 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的安全检查用 Gitl
 ## 关联文档
 
 - [SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions]
-- [SOURCE: docs/adr/0156-self-hosted-runner-on-hermes.md]
 - Gitleaks 8.30.0 官方说明：[README](https://github.com/gitleaks/gitleaks/blob/v8.30.0/README.md)（“The "AND" condition can be used to make sure all criteria match”；`targetRules`：“This will only run on the specified rules, not globally”）
 - Gitleaks 8.30.0 源码：[config/config.go](https://github.com/gitleaks/gitleaks/blob/v8.30.0/config/config.go)（带 `targetRules` 的白名单不进全局列表）、[sources/common.go](https://github.com/gitleaks/gitleaks/blob/v8.30.0/sources/common.go)（全局白名单按路径跳过文件）、[detect/detect.go](https://github.com/gitleaks/gitleaks/blob/v8.30.0/detect/detect.go)（`regexTarget` 和 AND 条件的判断）

@@ -1,6 +1,9 @@
 import { lstatSync, realpathSync } from "node:fs";
 
 const UNEXPECTED = "JOB_HOST_LAUNCH_ARGV_UNEXPECTED";
+const ARGUMENT_FILE = "JOB_HOST_LAUNCH_ARGV_FILE_UNSUPPORTED";
+const HELPER_NOT_IN_USE = "JOB_HOST_SECCOMP_HELPER_NOT_IN_USE";
+const NESTED_USERNS_DENIED = "SRT_ALLOW_NESTED_USERNS=0";
 const BARE = /^[A-Za-z0-9_./:@+,-][A-Za-z0-9_./:=@+,-]*$/;
 const QUOTE_ESCAPE = `'"'"'`;
 const ZERO_ARGUMENT_OPTIONS = new Set([
@@ -99,10 +102,50 @@ function isBwrap(token: string): boolean {
   return token === "bwrap" || (token.startsWith("/") && token.endsWith("/bwrap"));
 }
 
+export interface LinuxLaunch {
+  readonly command: string;
+  readonly helperPath: string;
+  readonly privileged: boolean;
+}
+
+function assertLockedHelper(
+  tokens: readonly string[],
+  separator: number,
+  shell: string,
+  launch: LinuxLaunch,
+) {
+  const wrapper = tokens[separator + 3];
+  if (tokens.length !== separator + 4 || wrapper === undefined) throw new Error(HELPER_NOT_IN_USE);
+  const inner = splitStrict(wrapper);
+  const script = inner[2];
+  if (inner.length !== 3 || inner[0] !== shell || inner[1] !== "-c" || script === undefined)
+    throw new Error(HELPER_NOT_IN_USE);
+  const tail = `${NESTED_USERNS_DENIED} ${quoteArg(launch.helperPath)} ${quote([shell, "-c", launch.command])}`;
+  if (script !== tail && !script.endsWith(`\n${tail}`)) throw new Error(HELPER_NOT_IN_USE);
+}
+
+export function prepareLinuxLaunchArgv(
+  argv: readonly string[],
+  shell: string,
+  launch: LinuxLaunch,
+  resolveTmpfsTarget: (directory: string) => string = (directory) => directory,
+): readonly string[] {
+  return rewrite(argv, shell, resolveTmpfsTarget, launch);
+}
+
 export function rewriteLinuxReadOnlyTmpfs(
   argv: readonly string[],
   shell: string,
   resolveTmpfsTarget: (directory: string) => string = (directory) => directory,
+): readonly string[] {
+  return rewrite(argv, shell, resolveTmpfsTarget, undefined);
+}
+
+function rewrite(
+  argv: readonly string[],
+  shell: string,
+  resolveTmpfsTarget: (directory: string) => string,
+  launch: LinuxLaunch | undefined,
 ): readonly string[] {
   const executable = argv[0];
   const flag = argv[1];
@@ -111,6 +154,7 @@ export function rewriteLinuxReadOnlyTmpfs(
     unexpected();
   const tokens = splitStrict(command);
   const program = tokens[0];
+  if (program === "/bin/sh") throw new Error(ARGUMENT_FILE);
   if (program === undefined || !isBwrap(program)) unexpected();
   const directories: { dest: string; at: number }[] = [];
   const mounts: { dest: string; at: number }[] = [];
@@ -122,6 +166,13 @@ export function rewriteLinuxReadOnlyTmpfs(
     if (token === "--") {
       separator = index;
       break;
+    }
+    if (token === "--args") throw new Error(ARGUMENT_FILE);
+    if (token === "--disable-userns") throw new Error(HELPER_NOT_IN_USE);
+    if (token === "--cap-add") {
+      if (!launch?.privileged || tokens[index + 1] !== "CAP_SETFCAP") unexpected();
+      index += 2;
+      continue;
     }
     if (ZERO_ARGUMENT_OPTIONS.has(token)) {
       index += 1;
@@ -156,6 +207,7 @@ export function rewriteLinuxReadOnlyTmpfs(
     shellFlag !== "-c"
   )
     unexpected();
+  if (launch) assertLockedHelper(tokens, separator, shell, launch);
   const kept = directories.filter((entry) => {
     const resolved = resolveTmpfsTarget(entry.dest);
     if (resolved === entry.dest) return true;

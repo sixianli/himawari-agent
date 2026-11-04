@@ -21,13 +21,13 @@ import type {
   SandboxHostBinding,
   SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
-import { sandboxScopeSchema } from "@himawari-agent/execution-contracts";
+import { SANDBOX_RUNTIME_VERSION, sandboxScopeSchema } from "@himawari-agent/execution-contracts";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   digestSandboxRuntime,
-  runtimeFingerprintLocation,
   resolveSandboxFileWorkspaceClaim,
   resolveSandboxWorkspaceClaim,
+  runtimeFingerprintLocation,
   sandboxHostIdentity,
   verifySandboxHost,
 } from "../src/capabilities/sandbox-host-verifier.js";
@@ -99,7 +99,7 @@ async function fixture() {
     qualificationRef: "test-evidence-only",
     hostId: "host",
     profileRef: "mac",
-    srtVersion: "0.0.75",
+    srtVersion: SANDBOX_RUNTIME_VERSION,
     platform: "darwin",
     architecture: process.arch as "arm64" | "x64",
     osRelease: release(),

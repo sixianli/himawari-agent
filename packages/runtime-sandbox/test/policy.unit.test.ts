@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { compileSandboxPolicy, type SandboxPolicyInput } from "../src/policy.js";
 
@@ -38,6 +39,9 @@ describe("SRT candidate policy compilation", () => {
       allowLocalBinding: false,
     });
     expect(policy.allowAppleEvents).toBe(false);
+    expect(policy.allowNestedUserNamespaces).toBe(false);
+    expect(policy.enableWeakerNestedSandbox).toBe(false);
+    expect(result.version).toBe(SANDBOX_RUNTIME_VERSION);
     expect(result.policyDigest).toBe(createHash("sha256").update(result.policyJson).digest("hex"));
   });
 

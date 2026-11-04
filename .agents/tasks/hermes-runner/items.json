@@ -150,7 +150,7 @@
       "done_when": [
         {
           "type": "doc",
-          "path": "docs/adr/0156-self-hosted-runner-on-hermes.md",
+          "path": "docs/adr/0160-self-hosted-runner-on-hermes.md",
           "quotes": [
             "G1",
             "G5",

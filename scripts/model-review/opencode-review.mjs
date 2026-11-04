@@ -81,10 +81,10 @@ export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
     bash[`${command} *`] = "allow";
   }
   for (const pattern of WRITE_OR_OUTSIDE_PATTERNS) bash[pattern] = "deny";
-  const opencodeGo = baseURL ? { options: { apiKey: "placeholder", baseURL } } : {};
+  const provider = baseURL ? { options: { apiKey: "placeholder", baseURL } } : {};
   const config = {
     $schema: "https://opencode.ai/config.json",
-    provider: { "opencode-go": opencodeGo },
+    provider: { "opencode-go": provider },
     permission: {
       read: { "*": "allow", "*.env": "deny", "*.env.*": "deny" },
       glob: "allow",
@@ -102,7 +102,20 @@ export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
       doom_loop: "deny",
     },
   };
-  return wrapUp ? { ...config, agent: { build: { steps: 1 } } } : config;
+  if (!wrapUp) return config;
+  return {
+    ...config,
+    permission: askInsteadOfAllow(config.permission),
+    agent: { build: { steps: 1 } },
+  };
+}
+
+function askInsteadOfAllow(rule) {
+  if (rule === "allow") return "ask";
+  if (typeof rule !== "object") return rule;
+  return Object.fromEntries(
+    Object.entries(rule).map(([key, value]) => [key, askInsteadOfAllow(value)]),
+  );
 }
 
 export function expectedTools(mode) {
