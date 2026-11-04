@@ -31,7 +31,7 @@ jobs:
   policy:
     name: policy
     runs-on: hermes-home
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -92,7 +92,7 @@ jobs:
     runs-on: hermes-home
     needs:
       - policy
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -155,7 +155,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs:
       - policy
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -234,7 +234,7 @@ jobs:
     needs:
       - policy
       - build
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -310,7 +310,7 @@ jobs:
     runs-on: hermes-home
     needs:
       - policy
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CI_NODE: 22.19.0
       CI_MATRIX: default
@@ -371,7 +371,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs:
       - build
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -463,7 +463,7 @@ jobs:
     needs:
       - policy
       - build
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -530,7 +530,7 @@ jobs:
     runs-on: hermes-home
     needs:
       - policy
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default

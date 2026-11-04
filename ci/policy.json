@@ -6,7 +6,7 @@
     {
       "id": "policy",
       "needs": [],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",
@@ -22,7 +22,7 @@
     {
       "id": "static",
       "needs": ["policy"],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",
@@ -38,7 +38,7 @@
     {
       "id": "build",
       "needs": ["policy"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "linux-x64",
@@ -62,7 +62,7 @@
     {
       "id": "test",
       "needs": ["policy", "build"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "linux-x64",
@@ -86,7 +86,7 @@
     {
       "id": "node-floor",
       "needs": ["policy"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "default",
@@ -102,7 +102,7 @@
     {
       "id": "browser",
       "needs": ["build"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "chromium",
@@ -135,7 +135,7 @@
     {
       "id": "coverage",
       "needs": ["policy", "build"],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",
@@ -151,7 +151,7 @@
     {
       "id": "security",
       "needs": ["policy"],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",

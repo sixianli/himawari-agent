@@ -675,10 +675,17 @@ describe("CI policy contract", () => {
   it("把已接受的托管 runner 政策升级成 hermes-home 加暂停 macOS 一次", () => {
     const { root, git } = fixtureRepository();
     const hosted = clone();
-    for (const check of hosted.checks)
+    for (const check of hosted.checks) {
+      check.timeoutMinutes =
+        check.id === "required"
+          ? 5
+          : ["build", "test", "node-floor", "browser"].includes(check.id)
+            ? 30
+            : 15;
       for (const member of check.members)
         if (member.key === "macos-arm64") delete member.paused;
         else member.runner = "ubuntu-24.04";
+    }
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(hosted));
     writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
     git("add", "ci");

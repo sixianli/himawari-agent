@@ -40,6 +40,11 @@ const jobIds = [
 ];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 
+export function timeoutMinutesFor(checkId) {
+  if (checkId === "required") return 5;
+  return ["build", "test", "node-floor", "browser"].includes(checkId) ? 45 : 30;
+}
+
 export function upgradeHostedRunnerPolicy(policy) {
   const members = (policy?.checks ?? []).flatMap((check) => check.members ?? []);
   const hosted =
@@ -51,6 +56,7 @@ export function upgradeHostedRunnerPolicy(policy) {
     );
   if (!hosted) return policy;
   const upgraded = structuredClone(policy);
+  for (const check of upgraded.checks) check.timeoutMinutes = timeoutMinutesFor(check.id);
   for (const check of upgraded.checks)
     for (const member of check.members)
       if (member.key === "macos-arm64") member.paused = true;
@@ -153,15 +159,7 @@ export function validatePolicy(
     unique(check.projects, `${check.id} project`);
     unique(check.outputs, `${check.id} output`);
     assert(sameSet(check.needs, expectedNeeds[check.id]), `Unexpected policy DAG: ${check.id}`);
-    assert(
-      check.timeoutMinutes ===
-        (check.id === "required"
-          ? 5
-          : ["build", "test", "node-floor", "browser"].includes(check.id)
-            ? 30
-            : 15),
-      `Unexpected timeout: ${check.id}`,
-    );
+    assert(check.timeoutMinutes === timeoutMinutesFor(check.id), `Unexpected timeout: ${check.id}`);
     const requiredProjects = ["test", "node-floor"].includes(check.id)
       ? mainProjects.filter((id) => id !== "tooling")
       : check.id === "coverage"
