@@ -42,11 +42,11 @@ import {
   REVIEW_MODELS,
   RULE_16_SENTENCE,
   readUsage,
-  roundsOnDisk,
   resolveCommits,
   reviewConfig,
   reviewModel,
   reviewQuestions,
+  roundsOnDisk,
   runOutcome,
   SHELL_LOG_NAME,
   spentOf,
@@ -100,7 +100,25 @@ describe("opencode review configuration", () => {
       expect(keys.indexOf(pattern)).toBeGreaterThan(keys.indexOf("git diff *"));
     }
     expect(config.permission.read["*.env"]).toBe("deny");
-    expect(config.provider["opencode-go"].options.baseURL).toBeUndefined();
+    expect(config.provider["opencode-go"].options).toBeUndefined();
+  });
+
+  it("[OpenCode 401] leaves the review credential to OpenCode and keeps the provider entry", () => {
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      for (const wrapUp of [false, true]) {
+        const config = reviewConfig({ mode, wrapUp });
+        expect(config.provider).toEqual({ "opencode-go": {} });
+        expect(JSON.stringify(config)).not.toContain("apiKey");
+        expect(JSON.stringify(config)).not.toContain("placeholder");
+      }
+    }
+  });
+
+  it("keeps the placeholder key and the local address for the self-check", () => {
+    const baseURL = "http://127.0.0.1:9/v1";
+    expect(reviewConfig({ mode: "code-review", baseURL }).provider).toEqual({
+      "opencode-go": { options: { apiKey: "placeholder", baseURL } },
+    });
   });
 
   it("opens web reading and web search only for the two plan modes", () => {
@@ -1112,6 +1130,89 @@ describe("opencode review wrap-up", () => {
         expect(requests).toHaveLength(1);
       },
     );
+  }, 120000);
+});
+
+async function authorizationSent({ savedKey }) {
+  const root = mkdtempSync(join(tmpdir(), "opencode-credential-"));
+  const headers = [];
+  const server = http.createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      if (request.method === "POST") headers.push(request.headers.authorization ?? null);
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end('{"error":{"message":"credential probe"}}');
+    });
+  });
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  const dataHome = join(root, "data");
+  mkdirSync(join(dataHome, "opencode"), { recursive: true });
+  if (savedKey) {
+    writeFileSync(
+      join(dataHome, "opencode", "auth.json"),
+      JSON.stringify({ "opencode-go": { type: "api", key: savedKey } }),
+    );
+  }
+  const isolated = {
+    XDG_DATA_HOME: dataHome,
+    OPENCODE_API_KEY: undefined,
+    OPENCODE_AUTH_CONTENT: undefined,
+  };
+  const previous = Object.fromEntries(
+    Object.keys(isolated).map((name) => [name, process.env[name]]),
+  );
+  const setEnv = (values) => {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  setEnv(isolated);
+  try {
+    const copy = join(root, "repo");
+    mkdirSync(copy);
+    execFileSync("git", ["init", "--quiet"], { cwd: copy });
+    const review = reviewConfig({ mode: "code-review" });
+    const provider = review.provider["opencode-go"];
+    const baseURL = `http://127.0.0.1:${server.address().port}/v1`;
+    const configPath = join(root, "review.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        ...review,
+        provider: { "opencode-go": { ...provider, options: { ...provider.options, baseURL } } },
+      }),
+    );
+    await reviewModel({
+      binary: opencodeBinary(),
+      cwd: copy,
+      configPath,
+      wrapUpConfigPath: configPath,
+      gitGuard: installGitGuard(root),
+      model: "opencode-go/deepseek-v4.1-flash",
+      prompt: "REVIEW_TASK",
+      timeoutMs: 60000,
+    });
+    return headers;
+  } finally {
+    setEnv(previous);
+    await new Promise((resolveClose) => server.close(resolveClose));
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("opencode review credentials", () => {
+  it("[OpenCode 401] sends the key saved by opencode auth login, not a placeholder", async () => {
+    const savedKey = `saved-${randomBytes(6).toString("hex")}`;
+    const headers = await authorizationSent({ savedKey });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBe(`Bearer ${savedKey}`);
+  }, 120000);
+
+  it("[OpenCode 401] sends no key of its own when none is saved, so the cloud proxy can add one", async () => {
+    const headers = await authorizationSent({ savedKey: null });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBeNull();
   }, 120000);
 });
 
