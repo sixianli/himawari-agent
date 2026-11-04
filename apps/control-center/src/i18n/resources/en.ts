@@ -1089,7 +1089,7 @@ export const messages = {
   "muse.channel.down": "The channel is down. Last batch at {time}",
   "muse.channel.paused": "Receiving is paused. New data from Muse is refused",
   "muse.channel.gaps":
-    "Batch numbers skipped {count, plural, one {# time} other {# times}}. A batch may have been missed; the next one will resend it",
+    "Batch numbers skipped {count, plural, one {# time} other {# times}}. A batch may have been missed; Muse decides whether to resend it",
   "muse.received":
     "{count, plural, one {# reminder} other {# reminders}} received in the last 7 days",
   "muse.suppressed":

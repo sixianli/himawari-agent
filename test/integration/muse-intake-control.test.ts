@@ -141,8 +141,17 @@ describe("Muse overview and commands", () => {
     const h = await setup();
     await h.add("counted");
     await h.add("uncounted", { sources: { occurred_at: "unknown" } });
+    await h.add(
+      "uncounted-held",
+      {
+        state: "suppressed",
+        reasonCode: "revalidation_declined",
+        sources: { occurred_at: "unknown" },
+      },
+      null,
+    );
     const overview = await h.overview();
-    expect(overview).toMatchObject({ receivedWeek: 1, pending: 1 });
+    expect(overview).toMatchObject({ receivedWeek: 1, suppressedWeek: 0, pending: 1 });
     expect(overview.items.map((item) => item.naturalKey)).toContain("uncounted");
   });
 

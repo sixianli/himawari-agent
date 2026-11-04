@@ -450,7 +450,7 @@ export class ProductionMuseIntake {
         const keep =
           storable(draft.title) &&
           storable(draft.text) &&
-          draft.write.options.every((option) => storable(option));
+          draft.write.options.every((option) => storable(option) || option.trim().length === 0);
         const seal = async (value: string | null) => {
           if (value === null || !keep) return null;
           const ref = await this.seal.seal({ ...this.scope, text: value, at: receivedAt });

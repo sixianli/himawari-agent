@@ -1087,7 +1087,7 @@ export const messages = {
   "muse.channel.down": "連携が止まっています。最新のバッチ {time}",
   "muse.channel.paused": "受信を一時停止中です。Muse からの新しいデータは拒否されます",
   "muse.channel.gaps":
-    "バッチ番号が {count} 回飛びました。1 件届いていない可能性があり、次のバッチで再送されます",
+    "バッチ番号が {count} 回飛びました。1 件届いていない可能性があり、再送するかどうかは Muse が決めます",
   "muse.received": "直近 7 日で {count} 件受信",
   "muse.suppressed": "ほかに {count} 件は Muse が見送り、あなたには届いていません",
   "muse.pending": "評価待ち {count} 件",

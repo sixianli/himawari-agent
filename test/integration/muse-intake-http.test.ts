@@ -287,6 +287,13 @@ describe("Muse intake over HTTP", () => {
     expect(counts().payloads).toBe(0);
   });
 
+  it("keeps the item when an offered option is only whitespace", async () => {
+    const { post, store } = await setup();
+    await post(batch(1, [proactive("sub-1", { options_offered: field([" "], "chat_record") })]));
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ textWithheld: false });
+  });
+
   it("keeps ordinary options", async () => {
     const { post, store } = await setup();
     await post(batch(1, [proactive("sub-1")]));

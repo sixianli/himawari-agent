@@ -54,7 +54,7 @@ date: "2026-11-01"
 - 服务令牌的 Client Secret 和应用密钥都是密码：不要贴进聊天、日志或仓库；只交给 Muse 那一侧的定时任务配置。
 - Muse 的定时任务把令牌和应用密钥写在任务定义里（`/mnt/project-files/muse-auto-channel/schema-and-push-test.md` 第 108、115 行），所以要按“Muse 一侧的模型和运行环境都能看到这两个值”来设防：令牌只放行这一个地址，只能追加写入；应用密钥单独在 Himawari 作废；两个密码分开保存；每 90 天更换；怀疑泄露就在 Cloudflare 撤销令牌并更换应用密钥。演练和真实上线用不同的令牌和应用密钥，演练用过的立即撤销，因为它们已经出现在 Muse 的对话里。
 - 动生产机配置和重启服务属于上线，必须有 Andy 说“上线”，并由能连生产机的线程执行（见 [delivery-mode.md](../../.agents/instructions/delivery-mode.md)）。Andy 自己在 Cloudflare 网页上的操作不碰生产机。
-- 先在 Hermes 测试机用真实服务令牌和虚构数据演练，再上生产。
+- 先在 Hermes 测试机演练应用层（已通过）；Cloudflare 边缘层改在生产上线后用服务令牌和虚构数据实测。
 
 <a id="live-state-preflight"></a>
 
@@ -63,7 +63,7 @@ date: "2026-11-01"
 上线前只读检查，任何一项不满足就不要开始[第二部分](#part-release)：
 
 1. Andy 已完成[第一部分](#part-owner)，并确认拿到了 Client ID 和 Client Secret。
-2. Hermes 演练已完成：用真实服务令牌和虚构数据，[验证](#verification)的 1–4 全部符合。
+2. Hermes 应用层演练已通过；[验证](#verification)的 1–4（含 Cloudflare 边缘层）列入上线后验收清单，不是上线前条件。
 3. 生产机 `/etc/himawari/config.json` 里还没有 `museIntake`，或其 `enabled` 为 `false`（读配置时不要打印任何 `secretRef` 指向的内容）。
 4. 密钥目录 `/var/lib/himawari/state/secrets` 存在，权限 `0700`。
 

@@ -1022,7 +1022,7 @@ export const messages = {
   "muse.channel.stale": "通道可能中断了，最近一批 {time}",
   "muse.channel.down": "通道已中断，最近一批 {time}",
   "muse.channel.paused": "已暂停接收，Muse 发来的新数据会被拒收",
-  "muse.channel.gaps": "批次序号跳过 {count} 次，可能漏发过一批，下一批会补发",
+  "muse.channel.gaps": "批次序号跳过 {count} 次，可能漏发过一批，是否补发由 Muse 决定",
   "muse.received": "近 7 天收到 {count} 条",
   "muse.suppressed": "另有 {count} 条被 Muse 压下，没有送到你手上",
   "muse.pending": "{count} 条待评价",
