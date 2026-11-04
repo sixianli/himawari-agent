@@ -35,7 +35,7 @@ export function cellCount(line) {
 
 function blocksIn(tokens, found) {
   for (const token of tokens) {
-    if (token.type === "table" || token.type === "paragraph") found.push(token);
+    if (["table", "paragraph", "code", "html"].includes(token.type)) found.push(token);
     for (const key of ["tokens", "items"])
       if (Array.isArray(token[key])) blocksIn(token[key], found);
   }
@@ -54,11 +54,12 @@ function locate(sourceLines, rows, from, to) {
 }
 
 const DELIMITER_ROW = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
-const looksLikeDelimiter = (row) => row.includes("|") && DELIMITER_ROW.test(row.trim());
+const looksLikeDelimiter = (row) => cellCount(row) > 1 && DELIMITER_ROW.test(row.trim());
 
 function problemsInBlock(token) {
   const rows = token.raw.split("\n").filter((row) => row.trim() !== "");
   const problems = [];
+  if (token.type === "code" || token.type === "html") return { rows: rows.slice(0, 1), problems };
   if (token.type === "table") {
     const columns = cellCount(rows[0]);
     rows.forEach((row, offset) => {
@@ -69,7 +70,7 @@ function problemsInBlock(token) {
   }
   rows.forEach((row, offset) => {
     const next = rows[offset + 1];
-    if (row.includes("|") && next !== undefined && looksLikeDelimiter(next)) {
+    if (cellCount(row) > 1 && next !== undefined && looksLikeDelimiter(next)) {
       const expected = cellCount(row);
       const found = cellCount(next);
       if (found !== expected)
@@ -84,17 +85,18 @@ export function findTableProblems(text) {
   const problems = [];
   let blockStart = 0;
   for (const topLevel of Lexer.lex(text, { gfm: true })) {
-    const blockEnd = blockStart + topLevel.raw.split("\n").length - 1;
+    const newlines = topLevel.raw.split("\n").length - 1;
+    const blockEnd = blockStart + newlines + (topLevel.raw.endsWith("\n") ? 0 : 1);
     let cursor = blockStart;
     for (const block of blocksIn([topLevel], [])) {
       const { rows, problems: found } = problemsInBlock(block);
-      if (found.length === 0) continue;
-      const start = locate(sourceLines, rows, cursor, Math.max(blockEnd, blockStart + 1) + 1);
-      if (start >= 0) cursor = start + rows.length;
+      if (rows.length === 0) continue;
+      const start = locate(sourceLines, rows, cursor, blockEnd);
+      if (start >= 0) cursor = start + block.raw.trimEnd().split("\n").length;
       for (const { offset, ...problem } of found)
         problems.push({ line: start >= 0 ? start + offset + 1 : null, ...problem });
     }
-    blockStart = blockEnd;
+    blockStart += newlines;
   }
   return problems;
 }

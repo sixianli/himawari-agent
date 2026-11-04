@@ -98,6 +98,28 @@ describe("markdown table column check", () => {
     expect(positions(quotedInList)).toEqual([{ line: 6, found: 3, expected: 2 }]);
   });
 
+  it("reports the right line when a code block inside the same list or quote holds a copy of the table", () => {
+    const inList =
+      "- 项\n\n  ```\n  | a | b |\n  | --- | --- |\n  | 1 | 2 | 3 |\n  ```\n\n  | a | b |\n  | --- | --- |\n  | 1 | 2 | 3 |\n";
+    const inQuote =
+      "> ```\n> | a | b |\n> | --- | --- |\n> | 1 | 2 | 3 |\n> ```\n>\n> | a | b |\n> | --- | --- |\n> | 1 | 2 | 3 |\n";
+    expect(positions(inList)).toEqual([{ line: 11, found: 3, expected: 2 }]);
+    expect(positions(inQuote)).toEqual([{ line: 9, found: 3, expected: 2 }]);
+  });
+
+  it("reports the right line for a table at the end of a file without a final newline and after a clean table", () => {
+    expect(positions("| a | b |\n| --- | --- |\n| 1 | 2 | 3 |")).toEqual([
+      { line: 3, found: 3, expected: 2 },
+    ]);
+    const twoTables =
+      "段落\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n";
+    expect(positions(twoTables)).toEqual([{ line: 9, found: 3, expected: 2 }]);
+  });
+
+  it("does not treat an escaped pipe as a column when looking for a broken delimiter row", () => {
+    expect(findTableProblems("a \\| b\n--- | ---\n")).toEqual([]);
+  });
+
   it("[reverse case] still checks a table that follows a backtick line which is not a fence", () => {
     const text = "```a`b\n\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n";
     expect(positions(text)).toEqual([{ line: 5, found: 3, expected: 2 }]);
