@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const HISTORICAL = [
@@ -68,7 +68,7 @@ export function srtVersionProblems(root) {
     .filter((file) => !HISTORICAL.some((prefix) => file.startsWith(prefix)));
   for (const file of files) {
     const absolute = path.join(root, file);
-    if (!existsSync(absolute)) continue;
+    if (!existsSync(absolute) || !lstatSync(absolute).isFile()) continue;
     const text = readFileSync(absolute, "utf8");
     if (text.includes("\0")) continue;
     const lines = text.split("\n");

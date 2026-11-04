@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -100,6 +100,14 @@ describe("SRT version single source", () => {
     expect(srtVersionProblems(fixture({ files: { [file]: text } }))).toEqual([
       `SRT_VERSION_STALE ${file}:1 ${found}`,
     ]);
+  });
+
+  it("skips a tracked link to a directory instead of failing", () => {
+    const root = fixture();
+    mkdirSync(join(root, "outside"));
+    symlinkSync(join(root, "outside"), join(root, "linked"));
+    execFileSync("git", ["add", "-A"], { cwd: root });
+    expect(srtVersionProblems(root)).toEqual([]);
   });
 
   it("leaves historical evidence alone", () => {
