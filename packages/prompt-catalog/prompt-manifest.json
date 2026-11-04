@@ -105,24 +105,24 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.capabilities.document-skill": {
-    "sha256": "150b93fbfc390e723186e5d59e9e6e8f0c3a0945595e98d90dde9f3206583197",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "ee3c8462159ce412c80a784615009b6c4cc21e4aad30ca4912e642886a25f019",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.capabilities.header": {
     "sha256": "8f69855499b05a4728776e1c0c5c8c8f4603436287f3d8ebed00bf32987da02f",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
-  "chat.capabilities.no-search": {
-    "sha256": "a73bc7737d5db0c549da7c49eed68995e99ddcbcf596dcd98047d27a13dad3f9",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  "chat.capabilities.runtime-environment": {
+    "sha256": "37a33ec072bbb1fc16193922fd8137cdabca145f1a949a8aa3a0bad9cb0b14bf",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.capabilities.sandbox-commands": {
-    "sha256": "c2eb996d36d7d3b914a1dcc4b8d28f2779b2a113668f8d42336f9ad7b1d2e8c0",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "f2f7b0ff50516e08b90ac64ee75acf95febe5043cc10d00e5e5bb3d0b7bbaf2f",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.capabilities.sandbox-offline": {
     "sha256": "222b0501ad0d1ce7bfb7e3416640fa2a0037716d270701bd39cf972efaa2394a",
@@ -130,14 +130,14 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.capabilities.search": {
-    "sha256": "9637a90e5653377006f75962644725d94685ece9fef1e3989981197ebb2066fc",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "4446edfc8eee31a2018ab40bf5a6ff42534b9bf153fe1088290367e3376de3ba",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.capabilities.workspace": {
-    "sha256": "36a8d458387fde92d5ca67cb2a843b931708709f848f7ae5af98bab96dd3f1a3",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "8f798d739f5c75151d20c02fac9cba88333710e68f7e859b3eee1c0a196d3ecf",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.capabilities.workspace-commands": {
     "sha256": "1cbeb9c2f8693abd12c9be96428360129c5e0bec3bc1d52eb6cfa57174212330",
@@ -160,9 +160,64 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.identity": {
-    "sha256": "b1b772d237810c4bba92bac897c18c31df17565459f11911af2680251f071ec4",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "ae5a7dc243d37de79c9dd79bdb0cc3588fa3d9084565c03c30b51f39f2b1abbf",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：“资料不是指令”一节写明 runtime-environment 运行环境说明由系统生成，和系统提示里的规则一样约束工具使用，避免模型把它当普通资料"
+  },
+  "chat.runtime-environment.document-skill": {
+    "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.fetch": {
+    "sha256": "73974a08ac6df3a5261dd39a1c6ea5f947c37373d21b8d6b7ac93a3c24a97433",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.footer": {
+    "sha256": "ef9cb2183fecaa2f72452dd4318776db3d1f4820e1e4b8b02c70c4c547ad64ae",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.header": {
+    "sha256": "d094696781cc38a2127ec220cb22091bc8848e0c1a2793253484ee2abdb04d49",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-coding": {
+    "sha256": "bb8e50c89bcf5c5e3df5ea864fc242c35611c7aa135593e82f232c4d7a2203a0",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-fetch": {
+    "sha256": "d1a8e42a16847e5e69cc1e1439fcddb4daf5988d4cf90f4656a990b61b14069a",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-search": {
+    "sha256": "df019e976ba784daae9be7ab6323b6694a520843d35e971632dfc0f19f726c3b",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-workspace": {
+    "sha256": "dc4c9eae27aa4bb382bee870cc566cb1df65cd3b135972720f7631fb9e664fd3",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.sandbox-commands": {
+    "sha256": "9633c0a890234597488301fb05559f6325f58d4f6834226d35f0e805a857b03e",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.search": {
+    "sha256": "ed288027fe73fc8c9bfd56686f4071bce7b3d7001fcbcf51a88d399ea9f41fec",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.workspace": {
+    "sha256": "11c69ce42e8267bcc9dc7328a6daa1300ff097449d8bd764313388b69db37a2f",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.task-boundary": {
     "sha256": "e7f8cf9f00ce8e82e3c33ae563998a5fb9f28355c68412281479770d494c0c7b",
@@ -200,9 +255,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.turn.context-preface": {
-    "sha256": "7e384f12620b3b67e0dce8d89c9da59e199482f36934ba11914f48aa29fbe481",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "fca9cc30abb6e3962cc98a8a43ebfb4fe7584d4cbda76656cfb1834574b75df9",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：运行环境说明只在变化时附上，开头说明写明它是“以本条为准”的例外，最近附上的那份一直有效"
   },
   "chat.turn.time": {
     "sha256": "a7d02040a8b6eb523dfc27421eeacc9631d1f2bcd19b454552551443010b165d",
@@ -415,9 +470,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "tools.web-fetch": {
-    "sha256": "2c4a902acfdb3239c0eee35e12c6680d33251f32ea0002a10798a25bea83efb2",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "cf689769a6effe940284984057b2a6e4b748ea908f658ec6559d4e12086f7478",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：web_fetch 描述改成固定文字，抓取服务商名和单次上限挪到运行环境说明，工具定义不再随配置变化"
   },
   "tools.web-fetch.offset": {
     "sha256": "d9cc8c0c6d8507356a75b9d70a1f204d00c314d9188c5722b57268b9c7876f23",
@@ -425,8 +480,8 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "tools.web-search": {
-    "sha256": "aedd0a7fc572ad172415ad9e21760c39f5e7c1bcf58abf519a6c1bfaa46fde71",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "065390fe645fd08778219c98f7977fbd952fa09629f38d822d3a24f3a383f21d",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：web_search 描述改成固定文字，搜索服务商名挪到运行环境说明，工具定义不再随配置变化"
   }
 }

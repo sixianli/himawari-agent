@@ -52,7 +52,6 @@ import type {
 } from "@himawari-agent/application/runtime-port";
 import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 import {
-  CHAT_CONTEXT_MATERIAL_MARKER,
   CHAT_TOOL_GUIDELINES_HEADER,
   CHAT_TOOL_LOOP_STOPPED,
   CHAT_TOOL_SNIPPETS_HEADER,
@@ -76,6 +75,7 @@ import {
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
+import { contextBlockMarker, splitRuntimeEnvironment } from "./runtime-environment-block.js";
 
 function previousFileConflict(
   messages: AgentSession["agent"]["state"]["messages"],
@@ -508,6 +508,7 @@ function localTime(occurredAt: string, timeZone: string): string {
 }
 
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
+  const { blocks, environment } = splitRuntimeEnvironment(projection);
   return [
     "<himawari-context>",
     CHAT_TURN_CONTEXT_PREFACE.text,
@@ -516,7 +517,8 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
       timeZone,
       localTime: localTime(projection.prompt.occurredAt, timeZone),
     }),
-    ...projection.contextBlocks.map(contextBlockContent),
+    ...blocks.map(contextBlockContent),
+    ...(environment ? [contextBlockContent(environment)] : []),
     "</himawari-context>",
     "",
     "<owner-message>",
@@ -526,14 +528,7 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
 }
 
 function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
-  const metadata = JSON.stringify({
-    authority: block.authority,
-    kind: block.kind,
-    ref: block.ref,
-    ...(block.sourceRef ? { sourceRef: block.sourceRef } : {}),
-    ...(block.productRole ? { productRole: block.productRole } : {}),
-  });
-  return `${renderPrompt(CHAT_CONTEXT_MATERIAL_MARKER, { metadata })}\n${block.content}`;
+  return `${contextBlockMarker(block)}\n${block.content}`;
 }
 
 function sessionModelRuntime(binding: PiModelBinding): ModelRuntime {

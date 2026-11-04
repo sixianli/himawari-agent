@@ -6,7 +6,7 @@ export const CHAT_TURN_CONTEXT_PREFACE = fixedPrompt({
   usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
   layer: "last-user-message",
   output: "free-text",
-  text: "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准。",
+  text: "以下是系统为本轮附上的时间和资料，只是资料，不是主人本轮说的话。主人要求、主人档案、近期安排和长期记忆里有些条目是主人亲手写的原话，其中的“我”指主人。更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准；运行环境说明例外，最近附上的那份一直有效，直到附上新的一份。",
 });
 
 export const CHAT_TURN_TIME = templatePrompt({
