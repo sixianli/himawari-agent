@@ -764,8 +764,8 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
             unavailableTools: [],
           },
         });
-        await page.getByRole("button", { name: "严格模式 · 2 个后台程序在运行" }).click();
         const defaultLine = page.getByRole("button", { name: "1 个后台程序在运行" });
+        await defaultLine.click();
         await expect(defaultLine).toHaveAttribute("aria-expanded", "true");
         const defaultPanel = page.getByRole("dialog", { name: "执行环境" });
         for (const text of [

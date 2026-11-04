@@ -113,7 +113,7 @@ export async function qualifyDeploymentAvailability(page, baseUrl) {
   const violations = (await new AxeBuilder({ page }).analyze()).violations;
   if (violations.length) throw new Error("CONTROL_CENTER_AVAILABILITY_AXE_FAILED");
   return {
-    unavailablePages: 13,
+    unavailablePages: unavailableRoutes.length,
     unsupportedQueries,
     approvalVisible: true,
     healthVisible: true,
@@ -583,6 +583,10 @@ export async function qualifyBrowser({
     }
 
     for (const removedRoute of [
+      "/tasks",
+      "/inbox",
+      "/trace",
+      "/sessions",
       "/tasks/job-repository-monitor",
       "/inbox/inbox-01",
       "/memory/memory-01",
