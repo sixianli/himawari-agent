@@ -53,6 +53,7 @@ import type {
 import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
+  CHAT_TOOL_LOOP_REJECTED,
   CHAT_TOOL_LOOP_STOPPED,
   CHAT_TOOL_SNIPPETS_HEADER,
   CHAT_TURN_ABORTED,
@@ -355,6 +356,17 @@ function toolProgressOutput(
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
+
+const TOOL_LOOP_STOPPED_MESSAGE_TYPE = "himawari.tool-loop.stopped";
+
+function toolLoopStoppedMessage() {
+  return {
+    customType: TOOL_LOOP_STOPPED_MESSAGE_TYPE,
+    content: CHAT_TOOL_LOOP_STOPPED.text,
+    display: false,
+    details: {},
+  };
+}
 
 function backgroundCommandMessage(notice: RuntimeBackgroundCommandNotice) {
   return {
@@ -1174,6 +1186,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       }
       let streamOrdinal = continuation?.batch.completedStreamOrdinal ?? 0;
       const toolProgress = new PiToolProgressGuard(continuation?.toolProgress);
+      let loopStoppedAppended = false;
+      const appendLoopStopped = () => {
+        const active = this.#activeSessions.get(request.runId);
+        if (loopStoppedAppended || !active) return;
+        loopStoppedAppended = true;
+        if (active.isStreaming)
+          void active
+            .sendCustomMessage(toolLoopStoppedMessage(), { deliverAs: "steer" })
+            .catch(() => active.agent.abort());
+        else
+          active.agent.steer({
+            role: "custom",
+            ...toolLoopStoppedMessage(),
+            timestamp: Date.now(),
+          });
+      };
       const replayedResults = new Set<string>();
       const descriptorsByName = new Map(
         descriptors.map((descriptor) => [descriptor.name, descriptor]),
@@ -1214,7 +1242,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             hidden: true,
             factory: (pi: ExtensionAPI) => {
               pi.on("tool_call", () => {
-                if (toolProgress.blocked) return { block: true, reason: "PI_TOOL_LOOP_DETECTED" };
+                if (toolProgress.blocked)
+                  return { block: true, reason: CHAT_TOOL_LOOP_REJECTED.text };
               });
               pi.on("tool_result", (event) => {
                 const details = event.details as
@@ -1231,6 +1260,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                       ? details.errorCode
                       : undefined,
                   );
+                if (toolProgress.blocked) appendLoopStopped();
                 if (
                   details?.productOutcome === "failed" ||
                   details?.productOutcome === "result_unknown"
@@ -1399,13 +1429,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         if (toolProgress.blocked) {
           if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
           loopSummaryAttempted = true;
-          context = {
-            ...context,
-            tools: [],
-            systemPrompt: [context.systemPrompt, CHAT_TOOL_LOOP_STOPPED.text]
-              .filter(Boolean)
-              .join("\n\n"),
-          };
         }
         return admitPiStream(
           request,

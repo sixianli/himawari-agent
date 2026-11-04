@@ -274,6 +274,26 @@ const request = {
   dataClassification: "private",
 } as unknown as RuntimeRequest;
 
+function expectLoopStoppedByAppendedMessage(
+  observed: readonly unknown[],
+  { sameSystemPrompt = true }: { readonly sameSystemPrompt?: boolean } = {},
+) {
+  const contexts = observed as readonly {
+    tools: unknown[];
+    systemPrompt: string;
+    messages: unknown[];
+  }[];
+  const first = contexts[0];
+  const last = contexts.at(-1);
+  if (!first || !last) throw new Error("no model request observed");
+  expect(last.tools.length).toBeGreaterThan(0);
+  expect(JSON.stringify(last.tools)).toBe(JSON.stringify(first.tools));
+  if (sameSystemPrompt) expect(last.systemPrompt).toBe(first.systemPrompt);
+  expect(last.systemPrompt).not.toContain("Do not claim overall task success");
+  expect(JSON.stringify(last.messages.at(-1))).toContain("Do not claim overall task success");
+  expect((last.messages.at(-1) as { role: string }).role).toBe("user");
+}
+
 class RecordingProjection implements RuntimeProjectionPort {
   readonly finalAnswers: Parameters<RuntimeProjectionPort["captureFinalAnswer"]>[0][] = [];
   readonly captures: unknown[] = [];
@@ -306,6 +326,20 @@ class RecordingProjection implements RuntimeProjectionPort {
   ): Promise<string> {
     this.compactions.push(input);
     return "compaction-proposal-task-11";
+  }
+}
+
+class HistoryRecordingProjection extends RecordingProjection {
+  readonly histories: unknown[] = [];
+
+  async captureHistory(input: { runId: string; messages: readonly unknown[] }) {
+    this.histories.push(structuredClone(input.messages));
+    return {
+      runId: input.runId as RuntimeRequest["runId"],
+      operationKey: `history:${this.histories.length}`,
+      payloadRef: `history:${this.histories.length}`,
+      dataClassification: "private" as const,
+    };
   }
 }
 
@@ -3181,7 +3215,7 @@ it("summarizes confirmed results once after a loop without declaring task succes
     calls[0],
     calls.slice(1).map((call) => [call]),
   );
-  const projection = new RecordingProjection();
+  const projection = new HistoryRecordingProjection();
   const tools = new RecordingRuntimeTools();
   const adapter = new PiAgentRuntimeAdapter({
     egress: testModelEgress(),
@@ -3206,11 +3240,13 @@ it("summarizes confirmed results once after a loop without declaring task succes
     messages: unknown[];
     systemPrompt: string;
   };
-  expect(finalContext.tools).toEqual([]);
+  expectLoopStoppedByAppendedMessage(model.observed);
   expect(
     finalContext.messages.filter((m) => (m as { role: string }).role === "toolResult"),
   ).toHaveLength(4);
-  expect(finalContext.systemPrompt).toContain("Do not claim overall task success");
+  const saved = JSON.stringify(projection.histories.at(-1));
+  expect(saved).toContain('"customType":"himawari.tool-loop.stopped"');
+  expect(saved).toContain("Do not claim overall task success");
   expect(JSON.stringify(projection.captures)).toContain("Confirmed results are available");
   expect(projection.finalAnswers).toHaveLength(0);
 });
@@ -3299,7 +3335,10 @@ it.each([
     expect(tools.execute).toHaveBeenCalledTimes(4);
     expect(model.observed).toHaveLength(5);
     const context = model.observed.at(-1) as { tools: unknown[]; messages: unknown[] };
-    expect(context.tools.length === 0).toBe(["matching-id", "worker-id"].includes(change));
+    expect(context.tools.length).toBeGreaterThan(0);
+    expect(
+      JSON.stringify(context.messages.at(-1)).includes("Do not claim overall task success"),
+    ).toBe(["matching-id", "worker-id"].includes(change));
     expect(JSON.stringify(context.messages)).toContain("provenance-3");
   },
 );
@@ -3369,7 +3408,7 @@ it("preserves loop detection across approval without counting local result repla
   });
   expect(tools.execute).toHaveBeenCalledTimes(5);
   expect(model.observed).toHaveLength(2);
-  expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
+  expectLoopStoppedByAppendedMessage(model.observed, { sameSystemPrompt: false });
   expect(projection.finalAnswers).toHaveLength(0);
 });
 
@@ -3484,7 +3523,7 @@ it("does not execute tools or pay for a second summary if the finalizer requests
   });
   expect(tools.execute).toHaveBeenCalledTimes(4);
   expect(model.observed).toHaveLength(5);
-  expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
+  expectLoopStoppedByAppendedMessage(model.observed);
   expect(projection.finalAnswers).toHaveLength(0);
 });
 
@@ -3873,7 +3912,7 @@ it("links regenerated file calls through native Pi history and stops changing-co
     errorCode: "PI_TOOL_LOOP_DETECTED",
   });
   expect(model.observed).toHaveLength(8);
-  expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
+  expectLoopStoppedByAppendedMessage(model.observed);
 });
 
 describe("[NL-1] product-selected tool execution mode", () => {

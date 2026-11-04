@@ -59,14 +59,23 @@ export const CHAT_TURN_ABORTED_LEGACY = fixedPrompt({
 
 export const CHAT_TOOL_LOOP_STOPPED = fixedPrompt({
   id: "chat.tool-loop-stopped",
-  purpose: "工具反复调用没有进展时追加到系统提示末尾的说明（第二步方案要改成追加消息）",
+  purpose: "工具反复调用没有进展时，在对话末尾追加的一条说明（不改系统提示、不清空工具）",
   usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
-  layer: "system",
+  layer: "appended-message",
   output: "free-text",
   text:
     "Execution was stopped because repeated tool calls made no progress. " +
-    "No further tools are available in this Run. Summarize confirmed results " +
-    "and identify any incomplete work. Do not claim overall task success.",
+    "Do not call any tool again in this Run; further tool calls will be rejected. " +
+    "Summarize confirmed results and identify any incomplete work. Do not claim overall task success.",
+});
+
+export const CHAT_TOOL_LOOP_REJECTED = fixedPrompt({
+  id: "chat.tool-loop-rejected",
+  purpose: "工具循环停止后，模型再调用工具时返回的固定工具结果",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "Tool not executed: tool calls in this Run were stopped because repeated calls made no progress. Summarize confirmed results without calling tools.",
 });
 
 export const TOOL_BUILTIN_READ_SUFFIX = fixedPrompt({

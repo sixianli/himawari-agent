@@ -229,10 +229,15 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "chat.tool-loop-rejected": {
+    "sha256": "459c3e929ff000a68ab99889bb1f4dda4bda33bc8394f36b6ca4e88975c233d4",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工具循环停止不再改系统提示、不再清空工具，改为在对话末尾追加这条说明（layer 从 system 改为 appended-message）；之后的工具调用返回固定的拒绝结果"
+  },
   "chat.tool-loop-stopped": {
-    "sha256": "151fe28655e7944ab4620618b4e9b05482baabe5d16b013f6c711573ce051c62",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "902501fdd79155724e5aca860c105e5727e4873bb4d07651a841aae6290416fb",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工具循环停止不再改系统提示、不再清空工具，改为在对话末尾追加这条说明（layer 从 system 改为 appended-message）；之后的工具调用返回固定的拒绝结果"
   },
   "chat.tool-snippets-header": {
     "sha256": "9112d2b1fbd7f895287a04640d1d790ee69574165fb647cf7e0d9718bc68fa6b",

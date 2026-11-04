@@ -1957,3 +1957,58 @@ it("[PR-A] keeps the request head byte-identical when the workspace grant expire
     await service.stop();
   }
 }, 120_000);
+
+it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged and keeps the message for the next turn", async () => {
+  const service = await openInstalledMain();
+  const threadId = "thread-tool-loop";
+  let chosen = "";
+  chatReply = (input) => {
+    const names = ((input["tools"] as { function: { name: string } }[] | undefined) ?? []).map(
+      (tool) => tool.function.name,
+    );
+    chosen ||= names.includes("reminder_list") ? "reminder_list" : (names[0] ?? "");
+    const messages = input["messages"] as { role: string; content: unknown }[];
+    if (JSON.stringify(messages.at(-1)).includes("Do not claim overall task success"))
+      return { text: "已确认的结果：提醒列表是空的；这一步卡住了，我换个办法。" };
+    if (messages[0]?.role !== "system" || !chosen) return { text: "安装后的持久回答" };
+    return { tool: chosen, input: {} };
+  };
+  try {
+    await service.command("thread.create", "tool-loop-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("tool-loop-create-payload", "create"),
+    });
+    const start = providerRequests.length;
+    const stopped = await submitTurn(service, threadId, "tool-loop-first", "列出提醒");
+    expect(chosen).not.toBe("");
+    expect(stopped.run?.status).toBe("failed");
+    const loop = agentRequests(start);
+    expect(loop.length).toBe(5);
+    const [before, summary] = [loop.at(-2), loop.at(-1)];
+    if (!before || !summary) throw new Error("LOOP_REQUESTS_MISSING");
+    expect(requestHead(summary)).toEqual(requestHead(loop[0] as (typeof loop)[number]));
+    expect(JSON.parse(requestHead(summary).tools)).not.toEqual([]);
+    expectAppendOnly(before, summary);
+    expect(summary.body.messages.length).toBe(before.body.messages.length + 3);
+    expect(summary.body.messages.at(-1)?.role).toBe("user");
+    expect(lastMessage(summary)).toContain("Do not claim overall task success");
+    expect(requestHead(summary).prefix).not.toContain("Do not claim overall task success");
+    chatReply = undefined;
+    expect((await submitTurn(service, threadId, "tool-loop-second", "好的")).run?.status).toBe(
+      "completed",
+    );
+    const next = agentRequests(start).slice(loop.length).at(-1);
+    if (!next) throw new Error("NEXT_TURN_REQUEST_MISSING");
+    expect(requestHead(next)).toEqual(requestHead(summary));
+    expectAppendOnly(summary, next);
+    expect(
+      next.body.messages
+        .slice(0, -1)
+        .some((message) => JSON.stringify(message).includes("Do not claim overall task success")),
+    ).toBe(true);
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 120_000);
