@@ -602,6 +602,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0075_muse_intake.sql",
   },
+  {
+    sequence: 76,
+    name: "thread_prompt_bundles",
+    changeSet: "thread-prompt-bundles",
+    phase: "expand" as const,
+    file: "0076_thread_prompt_bundles.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

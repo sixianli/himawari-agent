@@ -945,6 +945,14 @@ export class SqliteGovernedDeletionAdapter {
         "SELECT source_ref FROM memory_approval_requests WHERE thread_id = ?",
         [threadId],
       ),
+      ...this.#values(
+        database,
+        "SELECT system_prompt_ref FROM thread_prompt_bundles WHERE thread_id = ?",
+        [threadId],
+      ),
+      ...this.#values(database, "SELECT tools_ref FROM thread_prompt_bundles WHERE thread_id = ?", [
+        threadId,
+      ]),
     ];
     refs.push(...this.#runPayloadRefs(database, runIds, triggerIds));
     return unique(refs);
