@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -41,13 +41,32 @@ async function generateManifest(name: string) {
   return JSON.parse(await readFile(output, "utf8"));
 }
 
+async function workspacePackageRoots() {
+  const roots: string[] = [];
+  for (const parent of ["apps", "packages"])
+    for (const entry of await readdir(parent, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const root = `${parent}/${entry.name}`;
+      if (
+        await access(path.join(root, "package.json")).then(
+          () => true,
+          () => false,
+        )
+      )
+        roots.push(root);
+    }
+  return roots.sort();
+}
+
 describe("build artifact manifest", () => {
   it("records deterministic package and lock checksums", async () => {
     const first = await generateManifest("first");
     const second = await generateManifest("second");
 
     expect(first.schemaVersion).toBe(1);
-    expect(first.packages).toHaveLength(16);
+    expect(first.packages.map((entry: { root: string }) => entry.root).sort()).toEqual(
+      await workspacePackageRoots(),
+    );
     expect(first.packages).toEqual(second.packages);
     expect(first.inputs).toEqual(second.inputs);
     expect(first.nodeArtifacts).toEqual(second.nodeArtifacts);
