@@ -100,7 +100,25 @@ describe("opencode review configuration", () => {
       expect(keys.indexOf(pattern)).toBeGreaterThan(keys.indexOf("git diff *"));
     }
     expect(config.permission.read["*.env"]).toBe("deny");
-    expect(config.provider["opencode-go"].options.baseURL).toBeUndefined();
+    expect(config.provider["opencode-go"].options).toBeUndefined();
+  });
+
+  it("[OpenCode 401] leaves the review credential to OpenCode and keeps the provider entry", () => {
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      for (const wrapUp of [false, true]) {
+        const config = reviewConfig({ mode, wrapUp });
+        expect(config.provider).toEqual({ "opencode-go": {} });
+        expect(JSON.stringify(config)).not.toContain("apiKey");
+        expect(JSON.stringify(config)).not.toContain("placeholder");
+      }
+    }
+  });
+
+  it("keeps the placeholder key and the local address for the self-check", () => {
+    const baseURL = "http://127.0.0.1:9/v1";
+    expect(reviewConfig({ mode: "code-review", baseURL }).provider).toEqual({
+      "opencode-go": { options: { apiKey: "placeholder", baseURL } },
+    });
   });
 
   it("opens web reading and web search only for the two plan modes", () => {
@@ -482,7 +500,37 @@ describe("opencode review self-check", () => {
   });
 });
 
+function processState(
+  pid,
+  { platform = process.platform, read = readFileSync, signal = process.kill } = {},
+) {
+  try {
+    if (platform !== "linux") {
+      signal(pid, 0);
+      return "alive";
+    }
+    return read(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0];
+  } catch (error) {
+    if (error.code === (platform === "linux" ? "ENOENT" : "ESRCH")) return "gone";
+    throw error;
+  }
+}
+
 describe("opencode review process cleanup", () => {
+  it("reads a process that disappears mid-read as gone and keeps other errors", () => {
+    const failing = (code) => () => {
+      throw Object.assign(new Error(code), { code });
+    };
+    const linux = (read) => processState(42, { platform: "linux", read });
+    expect(linux(() => "42 (sleep) S 1 42")).toBe("S");
+    expect(linux(failing("ENOENT"))).toBe("gone");
+    expect(() => linux(failing("EACCES"))).toThrow("EACCES");
+    const darwin = (signal) => processState(42, { platform: "darwin", signal });
+    expect(darwin(() => true)).toBe("alive");
+    expect(darwin(failing("ESRCH"))).toBe("gone");
+    expect(() => darwin(failing("EPERM"))).toThrow("EPERM");
+  });
+
   it("kills the commands opencode started, not only opencode itself", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opencode-kill-"));
     const pidFile = join(dir, "grandchild.pid");
@@ -491,19 +539,23 @@ describe("opencode review process cleanup", () => {
       stdio: "ignore",
     });
     const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
-    while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-    const grandchild = Number(readFileSync(pidFile, "utf8").trim());
-    expect(killProcessGroup(child, "SIGKILL")).toBe(true);
-    await exited;
-    const state = () =>
-      existsSync(`/proc/${grandchild}/stat`)
-        ? readFileSync(`/proc/${grandchild}/stat`, "utf8").split(") ")[1]?.[0]
-        : "gone";
-    for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-    expect(["Z", "X", "gone"]).toContain(state());
-    rmSync(dir, { recursive: true, force: true });
+    let killed = false;
+    try {
+      while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
+        await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+      const grandchild = Number(readFileSync(pidFile, "utf8").trim());
+      const state = () => processState(grandchild);
+      expect(["Z", "X", "gone"]).not.toContain(state());
+      killed = killProcessGroup(child, "SIGKILL");
+      expect(killed).toBe(true);
+      await exited;
+      for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
+        await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+      expect(["Z", "X", "gone"]).toContain(state());
+    } finally {
+      if (!killed) killProcessGroup(child, "SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1149,6 +1201,99 @@ describe("opencode review wrap-up", () => {
         expect(requests).toHaveLength(1);
       },
     );
+  }, 120000);
+});
+
+async function authorizationSent({ savedKey, environmentKey }) {
+  const root = mkdtempSync(join(tmpdir(), "opencode-credential-"));
+  const headers = [];
+  const server = http.createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      if (request.method === "POST") headers.push(request.headers.authorization ?? null);
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end('{"error":{"message":"credential probe"}}');
+    });
+  });
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  const dataHome = join(root, "data");
+  mkdirSync(join(dataHome, "opencode"), { recursive: true });
+  if (savedKey) {
+    writeFileSync(
+      join(dataHome, "opencode", "auth.json"),
+      JSON.stringify({ "opencode-go": { type: "api", key: savedKey } }),
+    );
+  }
+  const isolated = {
+    XDG_DATA_HOME: dataHome,
+    OPENCODE_API_KEY: environmentKey,
+    OPENCODE_AUTH_CONTENT: undefined,
+  };
+  const previous = Object.fromEntries(
+    Object.keys(isolated).map((name) => [name, process.env[name]]),
+  );
+  const setEnv = (values) => {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  setEnv(isolated);
+  try {
+    const copy = join(root, "repo");
+    mkdirSync(copy);
+    execFileSync("git", ["init", "--quiet"], { cwd: copy });
+    const review = reviewConfig({ mode: "code-review" });
+    const provider = review.provider["opencode-go"];
+    const baseURL = `http://127.0.0.1:${server.address().port}/v1`;
+    const configPath = join(root, "review.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        ...review,
+        provider: { "opencode-go": { ...provider, options: { ...provider.options, baseURL } } },
+      }),
+    );
+    await reviewModel({
+      binary: opencodeBinary(),
+      cwd: copy,
+      configPath,
+      wrapUpConfigPath: configPath,
+      gitGuard: installGitGuard(root),
+      model: "opencode-go/deepseek-v4.1-flash",
+      prompt: "REVIEW_TASK",
+      timeoutMs: 60000,
+    });
+    return headers;
+  } finally {
+    setEnv(previous);
+    await new Promise((resolveClose) => server.close(resolveClose));
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("opencode review credentials", () => {
+  it("[OpenCode 401] sends the key saved by opencode auth login, not a placeholder", async () => {
+    const savedKey = `saved-${randomBytes(6).toString("hex")}`;
+    const headers = await authorizationSent({ savedKey });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBe(`Bearer ${savedKey}`);
+  }, 120000);
+
+  it("[OpenCode 401] prefers the key saved by opencode auth login over OPENCODE_API_KEY", async () => {
+    const savedKey = `saved-${randomBytes(6).toString("hex")}`;
+    const headers = await authorizationSent({
+      savedKey,
+      environmentKey: `environment-${randomBytes(6).toString("hex")}`,
+    });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBe(`Bearer ${savedKey}`);
+  }, 120000);
+
+  it("[OpenCode 401] sends no key of its own when none is saved, so the cloud proxy can add one", async () => {
+    const headers = await authorizationSent({ savedKey: null });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBeNull();
   }, 120000);
 });
 
