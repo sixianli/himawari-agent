@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rewriteLinuxReadOnlyTmpfs } from "../src/bwrap-read-only-tmpfs.ts";
+import { prepareLinuxLaunchArgv, rewriteLinuxReadOnlyTmpfs } from "../src/bwrap-read-only-tmpfs.ts";
 
 const SHELL = "/bin/bash";
 const BARE = /^[A-Za-z0-9_./:@+,-][A-Za-z0-9_./:=@+,-]*$/;
@@ -187,7 +187,7 @@ describe("Linux bwrap tmpfs read-only rewrite", () => {
     expectUnexpected(() => rewrite(""));
   });
 
-  it("rejects options SRT 0.0.75 does not emit, and a broken bwrap shape", () => {
+  it("rejects options SRT does not emit, and a broken bwrap shape", () => {
     for (const command of [
       "bwrap --chdir /workspace -- /bin/bash -c true",
       "bwrap --remount-ro /tmp -- /bin/bash -c true",
@@ -213,6 +213,118 @@ describe("Linux bwrap tmpfs read-only rewrite", () => {
     );
     expectUnexpected(() =>
       rewriteLinuxReadOnlyTmpfs([SHELL, "-lc", "bwrap -- /bin/bash -c true"], SHELL),
+    );
+  });
+});
+
+describe("Linux launch with the locked seccomp helper", () => {
+  const HELPER =
+    "/runtime/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp";
+  const COMMAND = "printf 'ready' >&2; exec /usr/bin/node -e \"console.log('a b')\"";
+  const NETWORK =
+    "{ socat TCP6-LISTEN:3128 UNIX-CONNECT:/tmp/http.sock; } >/dev/null 2>&1 &\n_srt_http=$!";
+  const tail = (command: string, helper = HELPER) =>
+    `SRT_ALLOW_NESTED_USERNS=0 ${quoteArg(helper)} ${quote([SHELL, "-c", command])}`;
+  const wrapped = (options: readonly string[], script: string) =>
+    launch(quote(["bwrap", ...options, "--", SHELL, "-c", quote([SHELL, "-c", script])]));
+  const BASE = [
+    "--new-session",
+    "--die-with-parent",
+    "--unshare-net",
+    "--tmpfs",
+    "/tmp",
+    "--cap-drop",
+    "ALL",
+  ];
+  const prepare = (argv: readonly string[], privileged = false, command = COMMAND) =>
+    prepareLinuxLaunchArgv(argv, SHELL, { command, helperPath: HELPER, privileged });
+
+  it("accepts the command SRT 0.0.81 builds and still remounts each tmpfs read-only", () => {
+    const script = `${NETWORK}\n${tail(COMMAND)}`;
+    expect(prepare(wrapped(BASE, script))).toEqual(
+      wrapped([...BASE, "--remount-ro", "/tmp"], script),
+    );
+    expect(prepare(wrapped(BASE, tail(COMMAND)))).toEqual(
+      wrapped([...BASE, "--remount-ro", "/tmp"], tail(COMMAND)),
+    );
+  });
+
+  it("accepts --cap-add CAP_SETFCAP only for a root launch", () => {
+    const argv = wrapped([...BASE, "--cap-add", "CAP_SETFCAP"], tail(COMMAND));
+    expect(prepare(argv, true)).toEqual(
+      wrapped([...BASE, "--cap-add", "CAP_SETFCAP", "--remount-ro", "/tmp"], tail(COMMAND)),
+    );
+    expect(() => prepare(argv, false)).toThrow("JOB_HOST_LAUNCH_ARGV_UNEXPECTED");
+    expect(() =>
+      prepare(wrapped([...BASE, "--cap-add", "CAP_SYS_ADMIN"], tail(COMMAND)), true),
+    ).toThrow("JOB_HOST_LAUNCH_ARGV_UNEXPECTED");
+  });
+
+  it.each([
+    [
+      "no helper prefix",
+      wrapped(BASE, `${NETWORK}\n${quoteArg(HELPER)} ${quote([SHELL, "-c", COMMAND])}`),
+    ],
+    ["no helper at all", wrapped(BASE, `${NETWORK}\n${quote([SHELL, "-c", COMMAND])}`)],
+    [
+      "another helper",
+      wrapped(BASE, `${NETWORK}\n${tail(COMMAND, "/usr/lib/node_modules/x/apply-seccomp")}`),
+    ],
+    ["a different command", wrapped(BASE, `${NETWORK}\n${tail("true")}`)],
+    ["text after the command", wrapped(BASE, `${NETWORK}\n${tail(COMMAND)}\ntrue`)],
+    ["--disable-userns", wrapped([...BASE, "--disable-userns"], tail(COMMAND))],
+    [
+      "an extra word after the wrapper",
+      launch(
+        `${quote(["bwrap", ...BASE, "--", SHELL, "-c", quote([SHELL, "-c", tail(COMMAND)])])} extra`,
+      ),
+    ],
+    [
+      "a wrapper that is not a shell",
+      launch(quote(["bwrap", ...BASE, "--", SHELL, "-c", quote(["/bin/sh", "-c", tail(COMMAND)])])),
+    ],
+  ])("refuses a launch with %s", (_label, argv) => {
+    expect(() => prepare(argv)).toThrow("JOB_HOST_SECCOMP_HELPER_NOT_IN_USE");
+  });
+
+  it("cannot be satisfied by a user command that prints the helper line itself", () => {
+    const forged = `true\n${tail("echo pwned")}`;
+    const script = `${NETWORK}\n${tail(forged)}`;
+    expect(() => prepare(wrapped(BASE, script), false, "echo pwned")).toThrow(
+      "JOB_HOST_SECCOMP_HELPER_NOT_IN_USE",
+    );
+    expect(prepare(wrapped(BASE, script), false, forged)).toEqual(
+      wrapped([...BASE, "--remount-ro", "/tmp"], script),
+    );
+  });
+
+  it("refuses mounts passed through an argument file with its own code", () => {
+    const viaFile = launch(
+      quote([
+        "/bin/sh",
+        "-c",
+        'exec 3<"$1" && shift && exec "$@"',
+        "srt-args",
+        "/proc/self/fd/3",
+        "bwrap",
+        "--new-session",
+        "--args",
+        "3",
+        "--",
+        SHELL,
+        "-c",
+        quote([SHELL, "-c", tail(COMMAND)]),
+      ]),
+    );
+    expect(() => prepare(viaFile)).toThrow("JOB_HOST_LAUNCH_ARGV_FILE_UNSUPPORTED");
+    expect(() => prepare(wrapped([...BASE, "--args", "3"], tail(COMMAND)))).toThrow(
+      "JOB_HOST_LAUNCH_ARGV_FILE_UNSUPPORTED",
+    );
+  });
+
+  it("keeps refusing --dev-bind, which SRT uses only for its own probe", () => {
+    expect(() => prepare(wrapped([...BASE, "--dev-bind", "/", "/"], tail(COMMAND)))).toThrow(
+      "JOB_HOST_LAUNCH_ARGV_UNEXPECTED",
     );
   });
 });

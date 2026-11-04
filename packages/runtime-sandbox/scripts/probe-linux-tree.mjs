@@ -1,5 +1,3 @@
-// Finite fake-data probe of the pinned SRT Linux namespace mechanism.
-// Helper paths and qualification are fixture-owned, not installed product configuration.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { access, lstat, mkdir, mkdtemp, realpath } from "node:fs/promises";
@@ -97,7 +95,7 @@ try {
     JSON.stringify({
       passed: true,
       productionQualified: false,
-      srtVersion: "0.0.75",
+      srtVersion: "0.0.81",
       helperConfiguration: "temporary-fixture",
       owned,
       results,

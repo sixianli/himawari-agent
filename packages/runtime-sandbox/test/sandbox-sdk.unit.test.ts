@@ -253,6 +253,36 @@ describe("sandbox SDK thread boundary", () => {
     await expect(sdk.checkDependenciesAsync()).rejects.toThrow();
   });
 
+  it("passes the runtime identity read on the SDK thread through unchanged", async () => {
+    const { sdk, thread, failed } = await open();
+    const identity = {
+      packageName: "@anthropic-ai/sandbox-runtime",
+      version: "0.0.81",
+      helper: {
+        path: "/runtime/apply-seccomp",
+        realPath: "/runtime/apply-seccomp",
+        regularFile: true,
+        executable: true,
+        sha256: "a".repeat(64),
+      },
+      bwrapVersion: "bubblewrap 0.6.1",
+    };
+    const inspected = sdk.inspectRuntime();
+    expect(request(thread)).toMatchObject({ method: "inspectRuntime", args: [] });
+    respond(thread, identity);
+    await expect(inspected).resolves.toEqual(identity);
+    await close(sdk, thread);
+    expect(failed).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on a malformed runtime identity", async () => {
+    const { sdk, thread, failed } = await open();
+    const inspected = expect(sdk.inspectRuntime()).rejects.toThrow();
+    respond(thread, { version: "0.0.81" });
+    await inspected;
+    expect(failed).toHaveBeenCalledTimes(1);
+  });
+
   it("requires both reset acknowledgement and orderly thread exit", async () => {
     const { sdk, thread, failed } = await open();
     const cleanup = sdk.cleanupAfterCommand();

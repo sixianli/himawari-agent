@@ -173,7 +173,7 @@ async function inspect(mode, invocationId) {
   for (const { binding: value } of receipt.bindings) {
     await platform.verifySandboxHost({ binding: value, hostId: value.hostId, qualification: {
       schemaVersion: "sandbox-runtime-qualification.v1", qualificationRef: "__PKT_LABEL__-cloud-foreground:preflight:" + hash(receiptBytes),
-      hostId: value.hostId, profileRef: value.profileRef, srtVersion: "0.0.75", platform: process.platform,
+      hostId: value.hostId, profileRef: value.profileRef, srtVersion: "0.0.81", platform: process.platform,
       architecture: process.arch, osRelease: release(), runtimeDigest: value.runtimeDigest, runnerDigest: value.runner.sha256,
       evidenceDigest: hash(receiptBytes), resourceMode: "observe_and_stop", terminationMode: "verified_tree",
       guarantees: ["filesystem_default_deny", "network_allowlist", "clean_environment", "bounded_output", "wall_clock_stop", "resource_observation", "durable_start_admission", "unknown_quarantine", "restart_reconciliation", "task_tree_termination", "worker_crash_cleanup"],

@@ -1,5 +1,6 @@
 import { parentPort } from "node:worker_threads";
-import { sandboxSdkFailure, type SandboxSdkRequest } from "./sandbox-sdk.ts";
+import { type SandboxSdkRequest, sandboxSdkFailure } from "./sandbox-sdk.ts";
+import { installedSrtPackageRoot, readSrtRuntimeIdentity } from "./srt-runtime-identity.ts";
 
 if (!parentPort) throw sandboxSdkFailure(undefined);
 const port = parentPort;
@@ -16,6 +17,9 @@ try {
       switch (request.method) {
         case "compileSandboxPolicy":
           value = { policyJson: (await compileSandboxPolicy(request.args[0])).policyJson };
+          break;
+        case "inspectRuntime":
+          value = await readSrtRuntimeIdentity(installedSrtPackageRoot());
           break;
         case "checkDependenciesAsync":
           value = await SandboxManager.checkDependenciesAsync();
@@ -58,7 +62,9 @@ try {
         ? 1
         : request.method === "wrapWithSandboxArgv"
           ? 2
-          : ["checkDependenciesAsync", "cleanupAfterCommand", "reset"].includes(request.method)
+          : ["inspectRuntime", "checkDependenciesAsync", "cleanupAfterCommand", "reset"].includes(
+                request.method,
+              )
             ? 0
             : -1;
     if (

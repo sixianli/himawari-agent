@@ -73,7 +73,7 @@ for (const { key, binding } of receipt.bindings) {
     qualificationRef: "hermes-foreground:" + key + ":" + hash(bytes),
     hostId: binding.hostId,
     profileRef: binding.profileRef,
-    srtVersion: "0.0.75",
+    srtVersion: "0.0.81",
     platform: process.platform,
     architecture: process.arch,
     osRelease: release(),
@@ -150,7 +150,7 @@ for (const { key, binding } of receipt.bindings) {
     qualification: {
       qualificationVersion: "capability-runtime-qualification.v1",
       platform: process.platform,
-      runtimeIdentity: "srt:0.0.75",
+      runtimeIdentity: "srt:0.0.81",
       productionSuitable: true,
       artifactDigest: binding.artifactDigest,
       enforcement: {

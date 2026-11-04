@@ -2,6 +2,7 @@ import {
   type SandboxExecutionSupport,
   withSandboxExecutionSupport,
 } from "./sandbox-execution-support.ts";
+import { SANDBOX_RUNTIME_VERSION } from "./sandbox-runtime-version.ts";
 import {
   array,
   ContractValidationError,
@@ -40,7 +41,7 @@ const shape = object({
   qualificationRef: machineString,
   hostId: machineString,
   profileRef: machineString,
-  srtVersion: literal("0.0.75"),
+  srtVersion: literal(SANDBOX_RUNTIME_VERSION),
   platform: enumeration(["darwin", "linux"]),
   architecture: enumeration(["arm64", "x64"]),
   osRelease: machineString,
@@ -55,8 +56,6 @@ const shape = object({
 export type SandboxRuntimeQualification = InferSchema<typeof shape> & {
   readonly supportedExecutions?: SandboxExecutionSupport;
 };
-/** Qualification evidence has its own explicit guarantees. It must never be
- * converted into a claim of hard quotas or confirmed cleanup for a particular job. */
 export const sandboxRuntimeQualificationSchema: Schema<SandboxRuntimeQualification> =
   withSandboxExecutionSupport({
     parse(value, path = "$") {

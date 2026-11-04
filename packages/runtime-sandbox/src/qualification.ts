@@ -1,28 +1,39 @@
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import { SRT_VERSION } from "./policy.js";
+import {
+  installedSrtPackageRoot,
+  readSrtRuntimeIdentity,
+  requireLockedSrtRuntime,
+} from "./srt-runtime-identity.js";
 
 export interface SrtDependencyReadiness {
   readonly version: typeof SRT_VERSION;
+  readonly installedVersion: string | null;
+  readonly bwrapVersion: string | null;
   readonly platformSupported: boolean;
   readonly errors: readonly string[];
   readonly warnings: readonly string[];
-  /** SDK readiness is insufficient to issue a host qualification. */
   readonly productionSuitable: false;
   readonly missingGuarantees: readonly string[];
-  /** Accepted profile limitations remain visible; acceptance is not a cleanup observation. */
   readonly limitations: readonly string[];
 }
 
-/** Read-only dependency probe. Does not initialize proxies or launch a user command.
- * Missing guarantees must be supplied and separately verified by the host supervisor;
- * neither an SDK success nor a stored boolean can manufacture this evidence. */
 export async function inspectSrtDependencies(): Promise<SrtDependencyReadiness> {
   const platformSupported = SandboxManager.isSupportedPlatform();
   const dependencies = await SandboxManager.checkDependenciesAsync();
+  const identity = await readSrtRuntimeIdentity(installedSrtPackageRoot());
+  const runtimeErrors: string[] = [];
+  try {
+    requireLockedSrtRuntime(identity, SRT_VERSION);
+  } catch (error) {
+    runtimeErrors.push(error instanceof Error ? error.message : "JOB_HOST_SRT_VERSION_MISMATCH");
+  }
   return Object.freeze({
     version: SRT_VERSION,
+    installedVersion: identity.version,
+    bwrapVersion: identity.bwrapVersion,
     platformSupported,
-    errors: Object.freeze([...dependencies.errors]),
+    errors: Object.freeze([...runtimeErrors, ...dependencies.errors]),
     warnings: Object.freeze([...dependencies.warnings]),
     productionSuitable: false,
     missingGuarantees: Object.freeze([
