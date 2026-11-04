@@ -570,8 +570,8 @@ export class ProactiveMailCheckService {
           outcome: "ignore",
           skipReason: null,
           headerRef: await this.#seal(trace, {
-            from: item.from,
-            subject: item.subject,
+            from: masked(item.from),
+            subject: masked(item.subject),
             link: item.link,
           }),
         });
@@ -649,7 +649,7 @@ export class ProactiveMailCheckService {
     items: readonly ProactiveSourceItem[],
     candidates: readonly ProactiveSourceItem[],
     settled: ReadonlyMap<string, { readonly result: ProactiveResult; readonly sure: boolean }>,
-  ): readonly string[] {
+  ): readonly { readonly threadId: string; readonly receivedAt: string }[] {
     const latestOwn = new Map<string, ProactiveSourceItem>();
     for (const item of items) {
       if (!item.sentByOwner || item.categories.includes("spam")) continue;
@@ -669,7 +669,7 @@ export class ProactiveMailCheckService {
           (item) => item.threadId === threadId && item.receivedAt > own.receivedAt,
         );
       })
-      .map(([threadId]) => threadId);
+      .map(([threadId, own]) => ({ threadId, receivedAt: own.receivedAt }));
   }
 
   #reason(
@@ -690,7 +690,12 @@ export class ProactiveMailCheckService {
   }
 
   #base(item: ProactiveSourceItem) {
-    return { source: item.source, messageId: item.messageId, threadId: item.threadId };
+    return {
+      source: item.source,
+      messageId: item.messageId,
+      threadId: item.threadId,
+      receivedAt: item.receivedAt,
+    };
   }
 
   #skip(item: ProactiveSourceItem, reason: ProactiveCheckProcessed["skipReason"]) {
@@ -888,7 +893,7 @@ export class ProactiveMailCheckService {
       readonly counts: ProactiveCounts;
       readonly processed: readonly ProactiveCheckProcessed[];
       readonly insights: readonly ProactiveCheckInsight[];
-      readonly replied: readonly string[];
+      readonly replied: readonly { readonly threadId: string; readonly receivedAt: string }[];
       readonly costMicros: number;
       readonly cursor: string | null;
       readonly quietHours: ProactiveSettings["quietHours"];
@@ -917,8 +922,8 @@ export class ProactiveMailCheckService {
           reason: insight.reason,
           basis: insight.basis,
           floorHit: insight.floorHit,
-          from: insight.item.from,
-          subject: insight.item.subject,
+          from: masked(insight.item.from),
+          subject: masked(insight.item.subject),
           link: insight.item.link,
         }),
         dueAt: insight.dueAt,
@@ -956,7 +961,7 @@ export class ProactiveMailCheckService {
       modelPayloads: trace.payloads,
       processed: input.processed,
       insights: writes,
-      repliedThreadIds: input.replied,
+      repliedThreads: input.replied,
       push,
       cursor: input.cursor,
     });
@@ -970,7 +975,7 @@ export class ProactiveMailCheckService {
 type ProactiveCheckProcessed = Omit<
   ProactiveProcessedMessage,
   "reviewedAt" | "ownerRating" | "decisionId" | "processedAt"
->;
+> & { readonly receivedAt: string };
 
 interface ProactiveCheckInsight {
   readonly item: ProactiveSourceItem;

@@ -1507,6 +1507,49 @@ describe("proactive Gmail check acceptance", () => {
       expect(insights.some((entry) => entry.status === "open")).toBe(true);
     });
 
+    it("[OM-15] keeps the reminder open when a later mail of the thread was processed in an earlier check", async () => {
+      const h = await harness();
+      h.reader.items = [ask()];
+      h.script([{ id: "ask", result: "act", todo: "回复报价请求", priority: "medium" }]);
+      await h.service.run();
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        own("older-own", {
+          threadId: "quote",
+          subject: "Re: お見積もりの件",
+          body: "了解しました。",
+          receivedAt: "2026-11-04T00:05:00.000Z",
+        }),
+        ask(),
+      ];
+      h.script([{ id: "older-own", result: "ignore", confidence: "sure" }]);
+      await h.service.run();
+      const insights = (await h.overview()).insights;
+      expect(insights.find((entry) => entry.status === "replied")).toBeUndefined();
+      expect(insights.some((entry) => entry.status === "open")).toBe(true);
+    });
+
+    it("[OM-16] seals the sender and subject of judged mail masked", async () => {
+      const h = await harness();
+      h.reader.items = [
+        mail("quiet", { subject: "パスワード: hunter2secret の件", snippet: "ご確認ください" }),
+        mail("loud", {
+          from: "Bank <bank@example.com>",
+          subject: "パスワード: hunter3secret の件",
+          threadId: "loud-thread",
+        }),
+      ];
+      h.script([
+        { id: "quiet", result: "ignore" },
+        { id: "loud", result: "act", todo: "確認する", priority: "high" },
+      ]);
+      await h.service.run();
+      const overview = JSON.stringify(await h.overview());
+      expect(overview).toContain("パスワード");
+      expect(overview).not.toContain("hunter2secret");
+      expect(overview).not.toContain("hunter3secret");
+    });
+
     it("[OM-4] leaves the older reminder open and the owner's mail unprocessed when the daily limit stops the model", async () => {
       const h = await harness({ dailyCostMicros: 1_000, cost: 1_000 });
       h.reader.items = [ask()];

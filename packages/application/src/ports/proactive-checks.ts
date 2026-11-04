@@ -204,12 +204,12 @@ export interface ProactiveCheckRecord extends ProactiveScope {
   readonly decision: ProactiveDecision;
   readonly inputs: ProactiveCheckInputs;
   readonly modelPayloads: readonly ProactiveModelPayload[];
-  readonly processed: readonly Omit<
+  readonly processed: readonly (Omit<
     ProactiveProcessedMessage,
     "reviewedAt" | "ownerRating" | "decisionId" | "processedAt"
-  >[];
+  > & { readonly receivedAt: string })[];
   readonly insights: readonly ProactiveInsightWrite[];
-  readonly repliedThreadIds: readonly string[];
+  readonly repliedThreads: readonly { readonly threadId: string; readonly receivedAt: string }[];
   readonly push: { readonly id: string; readonly readyAt: string } | null;
   readonly cursor: string | null;
 }

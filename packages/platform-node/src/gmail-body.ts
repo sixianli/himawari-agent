@@ -1,4 +1,4 @@
-import { windowMailBody } from "@himawari-agent/application";
+import { maskSensitiveText, windowMailBody } from "@himawari-agent/application";
 import { convert } from "html-to-text";
 
 export const GMAIL_BODY_HARD_LIMIT = 200_000;
@@ -193,7 +193,10 @@ export function extractGmailBody(payload: GmailPart | undefined): ExtractedBody 
       unavailable: collected.unavailable || collected.attachments.length === 0,
       attachments: Object.freeze(collected.attachments),
     });
-  const windowed = windowMailBody(text, GMAIL_BODY_HARD_LIMIT);
+  const windowed = windowMailBody(
+    text.length > GMAIL_BODY_HARD_LIMIT ? maskSensitiveText(text) : text,
+    GMAIL_BODY_HARD_LIMIT,
+  );
   return Object.freeze({
     text: windowed.text,
     truncated: windowed.truncated,

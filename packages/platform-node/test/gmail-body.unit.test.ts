@@ -155,4 +155,13 @@ describe("[OM-11] Gmail body extraction", () => {
     expect(result.text).toContain("START-");
     expect(result.text).toContain("-END");
   });
+
+  it("[OM-17] masks a card number that straddles the hard-limit cut before cutting", () => {
+    const head = Math.floor(GMAIL_BODY_HARD_LIMIT * 0.7);
+    const huge = `${"あ".repeat(head - 15)}4111 1111 1111 1111${"あ".repeat(GMAIL_BODY_HARD_LIMIT)}`;
+    const result = extractGmailBody(text("text/plain", huge));
+    expect(result.truncated).toBe(true);
+    expect(result.text).not.toContain("4111");
+    expect(result.text).not.toContain("1111");
+  });
 });

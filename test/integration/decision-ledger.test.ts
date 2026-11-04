@@ -827,7 +827,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         modelPayloads: [],
         processed: [],
         insights: [],
-        repliedThreadIds: [],
+        repliedThreads: [],
         push: null,
         cursor: null,
       });
