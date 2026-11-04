@@ -28,7 +28,7 @@ export function readIncidents(text) {
     errors.push(`INCIDENT_TABLE_COLUMNS_CHANGED expected ${COLUMNS.join(" | ")}`);
   const incidents = [];
   let end = header + 2;
-  for (; end < lines.length && lines[end].startsWith("|"); end += 1) {
+  for (; end < lines.length && lines[end].trimStart().startsWith("|"); end += 1) {
     const [id, date, symptom, cause, count, gate, state] = cells(lines[end]);
     incidents.push({ id, date, symptom, cause, count, gate, state });
   }

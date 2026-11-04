@@ -88,6 +88,16 @@ describe("incident and gate list check", () => {
     ]);
   });
 
+  it("reads indented rows inside the table as part of the table", () => {
+    const root = fixture([row({}), `  ${row({ id: "I-02" })}`, row({ id: "I-03" })]);
+    expect(checkIncidentGates({ root })).toMatchObject({ errors: [] });
+    expect(checkIncidentGates({ root }).incidents.map((incident) => incident.id)).toEqual([
+      "I-01",
+      "I-02",
+      "I-03",
+    ]);
+  });
+
   it("checks the repository's own list", () => {
     expect(checkIncidentGates().errors).toEqual([]);
   });
