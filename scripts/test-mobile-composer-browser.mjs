@@ -93,7 +93,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
         await page.goto(`${baseUrl}/threads/thread-main`);
         const composer = page.locator(".composer");
         const draft = composer.locator("textarea");
-        const attach = composer.locator("button[title]");
+        const attach = composer.locator(".attach-button");
         const model = composer.locator(".model-picker > summary");
         const send = composer.locator(".send-button");
         await expect(model).toContainText("GLM 5.3 Flash");
