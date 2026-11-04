@@ -133,7 +133,7 @@ for(const [name,address] of [['tcp',{port:0,host:'127.0.0.1'}],['unix',${JSON.st
         osRelease: release(),
         architecture: process.arch,
         node: process.version,
-        srt: "0.0.75",
+        srt: "0.0.81",
         productionSuitable: false,
         jobHostDigest: createHash("sha256")
           .update(

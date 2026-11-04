@@ -239,7 +239,7 @@ try {
         osRelease: release(),
         architecture: process.arch,
         node: process.version,
-        srt: "0.0.75",
+        srt: "0.0.81",
         runtime,
         runnerDigest: createHash("sha256")
           .update(await readFile(path.join(moduleRoot, "job-host-main.js")))

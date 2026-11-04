@@ -917,6 +917,24 @@ async function withScriptedReview(reply, run) {
   }
 }
 
+function slowStepFinishBinary(dir) {
+  const path = join(dir, "slow-opencode.sh");
+  writeFileSync(
+    path,
+    [
+      "#!/bin/bash",
+      "set -o pipefail",
+      `${JSON.stringify(opencodeBinary())} "$@" | while IFS= read -r line; do`,
+      `  case "$line" in *'"step_finish"'*) sleep 1; printf 'x' >> ${JSON.stringify(join(dir, "delayed"))};; esac`,
+      `  printf '%s\\n' "$line"`,
+      "done",
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  return path;
+}
+
 function isWrapUp(request) {
   return JSON.stringify(request.messages ?? []).includes(WRAP_UP_PROMPT);
 }
@@ -936,10 +954,16 @@ describe("opencode review wrap-up", () => {
     }
   });
 
-  it("gives the wrap-up turn a single step and the same tools as the review", () => {
-    const config = reviewConfig({ mode: "plan", wrapUp: true });
-    expect(config.agent).toEqual({ build: { steps: 1 } });
-    expect(config.permission).toEqual(reviewConfig({ mode: "plan" }).permission);
+  it("gives the wrap-up turn a single step and turns every allowed tool into ask, so a tool call ends the run", () => {
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      const config = reviewConfig({ mode, wrapUp: true });
+      expect(config.agent).toEqual({ build: { steps: 1 } });
+      const askedAs = JSON.parse(
+        JSON.stringify(reviewConfig({ mode }).permission).replaceAll('"allow"', '"ask"'),
+      );
+      expect(config.permission).toEqual(askedAs);
+      expect(JSON.stringify(config.permission)).not.toContain('"allow"');
+    }
   });
 
   it("never asks again after a hard stop or a crash", () => {
@@ -1113,17 +1137,30 @@ describe("opencode review wrap-up", () => {
   }, 120000);
 
   it("stops the wrap-up turn at its first tool call instead of letting it keep reading", async () => {
-    await withScriptedReview(
-      (_request, index) =>
-        index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true, promptTokens: 100000 },
-      async ({ review, requests }) => {
-        const result = await review();
-        expect(result.wrapUp).toBe("no-text");
-        expect(result.outcome).toBe("wrap-up-tool-call");
-        expect(requests.filter(isWrapUp)).toHaveLength(1);
-        expect(result.summary.usage.cost).toBeGreaterThan(0.01);
-      },
-    );
+    const slow = mkdtempSync(join(tmpdir(), "opencode-slow-"));
+    try {
+      await withScriptedReview(
+        (_request, index) =>
+          index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true, promptTokens: 100000 },
+        async ({ review, requests }) => {
+          const result = await review({ binary: slowStepFinishBinary(slow) });
+          expect(result.wrapUp).toBe("no-text");
+          expect(result.outcome).toBe("wrap-up-tool-call");
+          expect(requests.filter(isWrapUp)).toHaveLength(1);
+          expect(result.summary.usage.cost).toBeGreaterThan(0.01);
+          const wrapUpCall = result.summary.toolCalls.at(-1);
+          expect(wrapUpCall.status).toBe("error");
+          expect(wrapUpCall.output).toContain("rejected permission");
+          const stepFinishes = result.stdout
+            .split("\n")
+            .filter((line) => line.includes('"step_finish"')).length;
+          expect(stepFinishes).toBeGreaterThanOrEqual(2);
+          expect(readFileSync(join(slow, "delayed"), "utf8")).toHaveLength(stepFinishes);
+        },
+      );
+    } finally {
+      rmSync(slow, { recursive: true, force: true });
+    }
   }, 120000);
 
   it("records cost-limit when the wrap-up step that calls a tool also runs past the remaining money", async () => {
