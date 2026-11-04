@@ -1048,6 +1048,59 @@ describe("SQLite capability invocation authority", () => {
     }
   });
 
+  it("replays the same key after Handle revocation without a new receipt, and rejects a new key", async () => {
+    const resource = await openRepository();
+    let database: ReturnType<typeof openQualifiedDatabase> | undefined;
+    try {
+      await seed(resource.repository);
+      const opened = await openOperations(resource);
+      database = opened.database;
+      let operations = opened.operations;
+      const consume = (input: ReturnType<typeof invocation>) =>
+        callOperation(operations, "capabilityInvocation.consume", {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input,
+        });
+      const receiptCount = () =>
+        database?.prepare("SELECT COUNT(*) FROM capability_invocation_receipts").pluck().get();
+      await expect(consume(invocation())).resolves.toMatchObject({ replayed: false });
+      expect(receiptCount()).toBe(1);
+      database.close();
+      database = undefined;
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      await reopened.capabilityStore(OWNER_ID, AGENT_ID).revokeExecutionHandle(handle().ref, T1);
+      await reopened.close();
+      database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      operations = operationsForDatabase(database);
+
+      await expect(consume(invocation({ consumedAt: T2 }))).resolves.toMatchObject({
+        replayed: true,
+        receipt: { invocationId: "invocation-capability-invocation" },
+      });
+      expect(receiptCount()).toBe(1);
+      await expect(
+        consume(
+          invocation({
+            receiptRef: "receipt-capability-invocation-after-revoke",
+            invocationId: "invocation-capability-invocation-after-revoke",
+            idempotencyKey: "capability-invocation-after-revoke-idempotency",
+            consumedAt: T2,
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ApplicationPortError);
+      expect(receiptCount()).toBe(1);
+    } finally {
+      database?.close();
+      await resource.repository.close();
+      await rm(resource.stateRoot, { recursive: true });
+    }
+  });
+
   it("does not read an old receipt after Run or capability authority leaves execution", async () => {
     const resource = await openRepository();
     let database: ReturnType<typeof openQualifiedDatabase> | undefined;
