@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { Lexer } from "marked";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCANNED_DIRECTORIES = ["docs"];
@@ -32,59 +33,44 @@ export function cellCount(line) {
   return parts.length;
 }
 
-const hasPipe = (line) => splitOnPipes(line.trim()).length > 1;
-const CONTAINER_PREFIX = /^\s*(>\s?)*/;
-const content = (line) => line.replace(CONTAINER_PREFIX, "");
-const DELIMITER_ROW = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
-const isDelimiterRow = (line) => {
-  const text = content(line).trim();
-  return text.includes("|") && text.includes("-") && DELIMITER_ROW.test(text);
-};
-const FENCE_OPEN = /^\s*(`{3,}|~{3,})/;
+function tablesIn(tokens, found) {
+  for (const token of tokens) {
+    if (token.type === "table") found.push(token.raw);
+    for (const key of ["tokens", "items"])
+      if (Array.isArray(token[key])) tablesIn(token[key], found);
+  }
+  return found;
+}
 
-function closesFence(line, fence) {
-  const match = /^\s*(`{3,}|~{3,})\s*$/.exec(line);
-  return Boolean(match && match[1][0] === fence[0] && match[1].length >= fence.length);
+const withoutContainers = (line) => line.replace(/^\s*(>\s?)*/, "").trim();
+
+function locate(sourceLines, rows, from) {
+  for (let start = from; start + rows.length <= sourceLines.length; start += 1) {
+    if (rows.every((row, offset) => withoutContainers(sourceLines[start + offset]) === row.trim()))
+      return start;
+  }
+  return -1;
 }
 
 export function findTableProblems(text) {
-  const lines = text.split("\n");
+  const sourceLines = text.split("\n");
   const problems = [];
-  let fence = null;
-  let index = 0;
-  while (index < lines.length) {
-    const line = content(lines[index]);
-    if (fence) {
-      if (closesFence(line, fence)) fence = null;
-      index += 1;
-      continue;
-    }
-    const opening = FENCE_OPEN.exec(line);
-    if (opening) {
-      fence = opening[1];
-      index += 1;
-      continue;
-    }
-    const next = lines[index + 1];
-    if (hasPipe(line) && next !== undefined && isDelimiterRow(next)) {
-      const columns = cellCount(line);
-      const delimiterColumns = cellCount(content(next));
-      if (delimiterColumns !== columns)
-        problems.push({ line: index + 2, found: delimiterColumns, expected: columns });
-      let row = index + 2;
-      while (
-        row < lines.length &&
-        content(lines[row]).trim() !== "" &&
-        hasPipe(content(lines[row]))
-      ) {
-        const found = cellCount(content(lines[row]));
-        if (found !== columns) problems.push({ line: row + 1, found, expected: columns });
-        row += 1;
-      }
-      index = row;
-      continue;
-    }
-    index += 1;
+  let cursor = 0;
+  for (const raw of tablesIn(Lexer.lex(text, { gfm: true }), [])) {
+    const rows = raw.split("\n").filter((row) => row.trim() !== "");
+    const start = locate(sourceLines, rows, cursor);
+    if (start >= 0) cursor = start + rows.length;
+    const columns = cellCount(rows[0]);
+    rows.forEach((row, offset) => {
+      const found = cellCount(row);
+      if (found !== columns)
+        problems.push({
+          line: start >= 0 ? start + offset + 1 : null,
+          found,
+          expected: columns,
+          row: row.trim(),
+        });
+    });
   }
   return problems;
 }
@@ -103,11 +89,12 @@ export function checkMarkdownTables({ root = repositoryRoot } = {}) {
   const files = [];
   for (const directory of SCANNED_DIRECTORIES) walk(root, directory, files);
   const errors = [];
+  if (files.length === 0) errors.push("MARKDOWN_TABLES_NO_FILES docs/ 下没有找到任何 .md 文件");
   for (const relative of files) {
     const text = readFileSync(path.join(root, relative), "utf8");
     for (const problem of findTableProblems(text))
       errors.push(
-        `MARKDOWN_TABLE_COLUMNS ${relative}:${problem.line} 这一行有 ${problem.found} 列，表头是 ${problem.expected} 列`,
+        `MARKDOWN_TABLE_COLUMNS ${relative}:${problem.line ?? "?"} 这一行有 ${problem.found} 列，表头是 ${problem.expected} 列`,
       );
   }
   return { errors, scanned: files.length };

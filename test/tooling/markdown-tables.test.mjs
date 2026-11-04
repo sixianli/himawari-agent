@@ -24,6 +24,9 @@ function fixture(files) {
   return root;
 }
 
+const positions = (text) =>
+  findTableProblems(text).map(({ line, found, expected }) => ({ line, found, expected }));
+
 const threeColumns = "| 检查 | 命令 | 拦什么 |\n| --- | --- | --- |\n| 甲 | `npm run a` | 乙 |\n";
 
 describe("markdown table column check", () => {
@@ -52,7 +55,7 @@ describe("markdown table column check", () => {
   it("[reverse case] keeps scanning after a fence line that carries a language name inside a fence", () => {
     const text =
       "````\n```js\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n````\n| c | d |\n| --- | --- |\n| 1 |\n";
-    expect(findTableProblems(text)).toEqual([{ line: 9, found: 1, expected: 2 }]);
+    expect(positions(text)).toEqual([{ line: 9, found: 1, expected: 2 }]);
     const early = "```\n```js\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
     expect(findTableProblems(early)).toEqual([]);
   });
@@ -63,19 +66,37 @@ describe("markdown table column check", () => {
 
   it("[reverse case] fails when a five-column row sits inside a three-column table", () => {
     const text = `${threeColumns}| 2026-10-30 | 问题 | 原因 | 改法 | 1 |\n| 丙 | 丁 | 戊 |\n`;
-    expect(findTableProblems(text)).toEqual([{ line: 4, found: 5, expected: 3 }]);
+    expect(positions(text)).toEqual([{ line: 4, found: 5, expected: 3 }]);
   });
 
-  it("[reverse case] fails on a row with fewer cells and on a delimiter row that does not match", () => {
-    const text = "| a | b | c |\n| --- | --- |\n| 1 | 2 |\n";
-    expect(findTableProblems(text)).toEqual([
-      { line: 2, found: 2, expected: 3 },
-      { line: 3, found: 2, expected: 3 },
-    ]);
+  it("[reverse case] fails on a row with fewer cells", () => {
+    const text = "| a | b | c |\n| --- | --- | --- |\n| 1 | 2 |\n";
+    expect(positions(text)).toEqual([{ line: 3, found: 2, expected: 3 }]);
   });
 
-  it("ignores tables inside fenced code blocks", () => {
-    const text = "```\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
+  it("ignores text that GitHub does not render as a table", () => {
+    const fenced = "```\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
+    const indentedCode = "文字\n\n    | a | b |\n    | --- | --- |\n    | 1 | 2 | 3 |\n";
+    const quotedFenceInsideFence = "```\n> ```\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
+    const deepFenceInsideFence = "```\n      ```\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
+    const delimiterMismatch = "| a | b | c |\n| --- | --- |\n| 1 | 2 |\n";
+    for (const text of [
+      fenced,
+      indentedCode,
+      quotedFenceInsideFence,
+      deepFenceInsideFence,
+      delimiterMismatch,
+    ])
+      expect(findTableProblems(text)).toEqual([]);
+  });
+
+  it("[reverse case] still checks a table that follows a backtick line which is not a fence", () => {
+    const text = "```a`b\n\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n";
+    expect(positions(text)).toEqual([{ line: 5, found: 3, expected: 2 }]);
+  });
+
+  it("ends a table at a heading that follows it without a blank line", () => {
+    const text = "| a | b |\n| --- | --- |\n| 1 | 2 |\n# 标题 | x | y\n";
     expect(findTableProblems(text)).toEqual([]);
   });
 
@@ -92,11 +113,18 @@ describe("markdown table column check", () => {
     ]);
   });
 
+  it("[reverse case] fails when there is nothing to scan", () => {
+    const { errors, scanned } = checkMarkdownTables({ root: fixture({ "other/a.md": "x\n" }) });
+    expect(scanned).toBe(0);
+    expect(errors).toEqual(["MARKDOWN_TABLES_NO_FILES docs/ 下没有找到任何 .md 文件"]);
+  });
+
   it("passes on the repository as committed", () => {
     const run = spawnSync(process.execPath, ["scripts/check-markdown-tables.mjs"], {
       encoding: "utf8",
     });
     expect(run.stderr).toBe("");
+    expect(run.stdout).toMatch(/^MARKDOWN_TABLES passed files=[1-9]\d* errors=0$/m);
     expect(run.status).toBe(0);
   });
 });
