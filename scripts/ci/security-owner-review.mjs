@@ -177,7 +177,7 @@ export function loadOwnerReview({
   );
   const parts =
     typeof comment.body === "string"
-      ? comment.body.split("<!-- himawari-security-review-v1 -->")
+      ? comment.body.replaceAll("\r\n", "\n").split("<!-- himawari-security-review-v1 -->")
       : [];
   assert(parts.length === 2, "SECURITY_REVIEW_RECORD_MISSING");
   const block = parts[1].trimStart();

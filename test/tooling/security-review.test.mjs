@@ -93,6 +93,14 @@ describe("独立 Owner 精确清单审批", () => {
     expect(result.machineExceptions).toEqual([f.entry]);
     expect(result.sourceSha).toBe(f.manifest.sourceHead);
   });
+  it("接受从 GitHub 网页发出、换行是 CRLF 的审批评论", () => {
+    const f = fixture();
+    f.options.readReviewComment = () => ({
+      ...f.comment,
+      body: `批准\r\n\r\n<!-- himawari-security-review-v1 -->\r\n\x60\x60\x60json\r\n${JSON.stringify(f.approval, null, 2).replaceAll("\n", "\r\n")}\r\n\x60\x60\x60`,
+    });
+    expect(loadReviewedExceptions(f.options).approvalBasis).toBe("owner_pr_comment");
+  });
   it.each(["author", "repository", "pr", "source", "digest", "expired", "decision", "missing"])(
     "拒绝 %s 的审批",
     (change) => {
