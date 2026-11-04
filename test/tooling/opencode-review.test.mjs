@@ -1098,7 +1098,11 @@ describe("opencode review wrap-up", () => {
           const wrapUpCall = result.summary.toolCalls.at(-1);
           expect(wrapUpCall.status).toBe("error");
           expect(wrapUpCall.output).toContain("rejected permission");
-          expect(readFileSync(join(slow, "delayed"), "utf8").length).toBeGreaterThan(0);
+          const stepFinishes = result.stdout
+            .split("\n")
+            .filter((line) => line.includes('"step_finish"')).length;
+          expect(stepFinishes).toBeGreaterThanOrEqual(2);
+          expect(readFileSync(join(slow, "delayed"), "utf8")).toHaveLength(stepFinishes);
         },
       );
     } finally {
