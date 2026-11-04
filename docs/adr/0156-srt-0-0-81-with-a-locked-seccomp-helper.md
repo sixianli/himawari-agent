@@ -63,6 +63,7 @@ Himawari 在 Linux 上用 SRT（Anthropic 的 `@anthropic-ai/sandbox-runtime`，
 - 策略 JSON 多了 `allowNestedUserNamespaces: false`，Job Host 的策略摘要（`policy.ts` 对策略 JSON 算的 SHA-256）随之变化；它由新代码在同一次请求里算出并比对，不会造成不一致。任务环境的摘要（`apps/agent-service/src/production-task-environments.ts` 的 `srtEnvironmentPolicyDigest`）不含策略 JSON，但含运行文件摘要 `runtimeDigest`；新版本上线换了运行文件，已有的任务环境因此按“撤销”重建一次（同文件 `srtEnvironmentRotationReason`）。都不影响发给模型的内容。
 - 升级 SRT 时必须同时改常量、依赖、锁文件、小程序摘要和脚本里的版本号，`npm run check:srt-version` 会拦住漏改的地方。
 - 小程序装坏或被换掉时沙箱拒绝启动，任务失败而不是静默失去保护。
+- 已知限制：0.0.81 在命令行超过 126975 字节（`maxArgStrlen() - 1 - 4096`，0.0.81 `dist/sandbox/linux-sandbox-utils.js:678`、`:836-838`）时把挂载参数移进文件，改走 `/bin/sh … --args`，我们按第 4 条拒绝；0.0.75 没有这条退路，命令行超过 131071 字节才因单个参数过长启动失败。所以命令行在 126976 到 131071 字节之间的任务，0.0.75 能启动、现在会被拒。命令行主要由挂载参数（工作区越大、要禁写的路径越多越长）和转义后的用户命令组成，常见任务约 6 KB。是否支持文件传参待 Andy 定。
 - Hermes 和生产机的资格验证、出包和真实账号验收由 Mac 线程在合并后做；回滚用上一包。
 
 [返回目录](#contents)

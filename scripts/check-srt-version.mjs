@@ -13,15 +13,21 @@ const RELEASE_FROZEN = /^scripts\/operations\/hermes-[a-z0-9-]+-start\.mjs$/;
 const VERSION = String.raw`(?<version>\d+\.\d+\.\d+)`;
 const PATTERNS = [
   new RegExp(String.raw`\bsrt:${VERSION}`, "g"),
-  new RegExp(String.raw`\bsrt[_-]?[vV]ersion['"]?\s*[:=]\s*['"]${VERSION}['"]`, "g"),
   new RegExp(
-    String.raw`\b(?:SRT_VERSION|SANDBOX_RUNTIME_VERSION)\s*[:=]\s*['"]${VERSION}['"]`,
+    String.raw`\bsrt[_-]?[vV]ersion['"]?\s*[:=]\s*(?<quote>['"]?)${VERSION}\k<quote>`,
+    "g",
+  ),
+  new RegExp(
+    String.raw`\b(?:SRT_VERSION|SANDBOX_RUNTIME_VERSION)\s*[:=]\s*(?<quote>['"]?)${VERSION}\k<quote>`,
     "g",
   ),
   new RegExp(String.raw`\bsrt['"]?\s*:\s*(?<quote>['"]?)${VERSION}\k<quote>`, "g"),
   new RegExp(String.raw`sandbox-runtime@[\^~]?${VERSION}`, "g"),
   new RegExp(String.raw`sandbox-runtime-${VERSION}\.tgz`, "g"),
-  new RegExp(String.raw`"@anthropic-ai/sandbox-runtime":\s*"[\^~]?${VERSION}"`, "g"),
+  new RegExp(
+    String.raw`(?<key>['"])@anthropic-ai/sandbox-runtime\k<key>:\s*(?<quote>['"])[\^~]?${VERSION}\k<quote>`,
+    "g",
+  ),
   new RegExp(String.raw`\bSRT ${VERSION}`, "g"),
 ];
 

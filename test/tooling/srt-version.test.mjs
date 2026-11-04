@@ -108,6 +108,14 @@ describe("SRT version single source", () => {
       `sandbox-runtime@^${OLD}`,
     ],
     ["scripts/c.yaml", `srt: ${OLD}\n`, `srt: ${OLD}`],
+    ["scripts/d.yaml", `srt_version: ${OLD}\n`, `srt_version: ${OLD}`],
+    ["scripts/e.env", `SRT_VERSION=${OLD}\n`, `SRT_VERSION=${OLD}`],
+    ["scripts/f.yaml", `srtVersion: ${OLD}\n`, `srtVersion: ${OLD}`],
+    [
+      "scripts/g.mjs",
+      `const deps = { '@anthropic-ai/sandbox-runtime': '${OLD}' };\n`,
+      `'@anthropic-ai/sandbox-runtime': '${OLD}'`,
+    ],
     [
       "scripts/install.sh",
       `npm i @anthropic-ai/sandbox-runtime@${OLD}\n`,
