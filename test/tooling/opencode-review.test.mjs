@@ -500,11 +500,18 @@ describe("opencode review self-check", () => {
   });
 });
 
-function processState(pid, read = readFileSync) {
+function processState(
+  pid,
+  { platform = process.platform, read = readFileSync, signal = process.kill } = {},
+) {
   try {
+    if (platform !== "linux") {
+      signal(pid, 0);
+      return "alive";
+    }
     return read(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0];
   } catch (error) {
-    if (error.code === "ENOENT") return "gone";
+    if (error.code === (platform === "linux" ? "ENOENT" : "ESRCH")) return "gone";
     throw error;
   }
 }
@@ -514,38 +521,40 @@ describe("opencode review process cleanup", () => {
     const failing = (code) => () => {
       throw Object.assign(new Error(code), { code });
     };
-    expect(processState(42, () => "42 (sleep) S 1 42")).toBe("S");
-    expect(processState(42, failing("ENOENT"))).toBe("gone");
-    expect(() => processState(42, failing("EACCES"))).toThrow("EACCES");
+    const linux = (read) => processState(42, { platform: "linux", read });
+    expect(linux(() => "42 (sleep) S 1 42")).toBe("S");
+    expect(linux(failing("ENOENT"))).toBe("gone");
+    expect(() => linux(failing("EACCES"))).toThrow("EACCES");
+    const darwin = (signal) => processState(42, { platform: "darwin", signal });
+    expect(darwin(() => true)).toBe("alive");
+    expect(darwin(failing("ESRCH"))).toBe("gone");
+    expect(() => darwin(failing("EPERM"))).toThrow("EPERM");
   });
 
-  it.skipIf(process.platform !== "linux")(
-    "kills the commands opencode started, not only opencode itself",
-    async () => {
-      const dir = mkdtempSync(join(tmpdir(), "opencode-kill-"));
-      const pidFile = join(dir, "grandchild.pid");
-      const child = spawn("sh", ["-c", `sleep 60 & echo $! > ${pidFile}; wait`], {
-        detached: true,
-        stdio: "ignore",
-      });
-      const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
-      try {
-        while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
-          await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-        const grandchild = Number(readFileSync(pidFile, "utf8").trim());
-        const state = () => processState(grandchild);
-        expect(["Z", "X", "gone"]).not.toContain(state());
-        expect(killProcessGroup(child, "SIGKILL")).toBe(true);
-        await exited;
-        for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
-          await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-        expect(["Z", "X", "gone"]).toContain(state());
-      } finally {
-        killProcessGroup(child, "SIGKILL");
-        rmSync(dir, { recursive: true, force: true });
-      }
-    },
-  );
+  it("kills the commands opencode started, not only opencode itself", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-kill-"));
+    const pidFile = join(dir, "grandchild.pid");
+    const child = spawn("sh", ["-c", `sleep 60 & echo $! > ${pidFile}; wait`], {
+      detached: true,
+      stdio: "ignore",
+    });
+    const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
+    try {
+      while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
+        await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+      const grandchild = Number(readFileSync(pidFile, "utf8").trim());
+      const state = () => processState(grandchild);
+      expect(["Z", "X", "gone"]).not.toContain(state());
+      expect(killProcessGroup(child, "SIGKILL")).toBe(true);
+      await exited;
+      for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
+        await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+      expect(["Z", "X", "gone"]).toContain(state());
+    } finally {
+      killProcessGroup(child, "SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("opencode review installed guard", () => {
