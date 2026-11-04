@@ -24,7 +24,7 @@ def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
     statuses = statuses or {}
     timings = {**TIMED, **(answer_ms or {})}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed'), **({'answerMs': timings[name]} if timings.get(name) is not None else {})} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nsandboxLinks=ok\nscratchScenes=0\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nsandboxLinks=ok\nscratchScenes=0\nrunningKernel=6.8.0-142-generic\nnewestInstalledKernel=6.8.0-142-generic\nqualifiedKernel=6.8.0-142-generic\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -228,6 +228,88 @@ class FrozenStatePreflightTest(unittest.TestCase):
         self.assertIn('/usr/bin/sha256sum /etc/himawari/config.json', script)
         self.assertIn('/usr/bin/sha256sum /etc/systemd/system/himawari-prod.service', script)
         self.assertIn('/var/lib/himawari/state/authority.json', script)
+
+
+class KernelPreflightTest(unittest.TestCase):
+    TAG = '[I-78]'
+
+    def failed(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update(changes)
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000) if not passed]
+
+    def test_matching_kernels_pass(self):
+        self.assertEqual(self.failed(), [])
+
+    def test_production_state_of_november_4_is_refused(self):
+        self.assertEqual(self.failed(runningKernel='6.8.0-142-generic', newestInstalledKernel='6.8.0-147-generic'), ['NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL'])
+
+    def test_unknown_newest_kernel_is_refused(self):
+        self.assertEqual(self.failed(newestInstalledKernel=''), ['NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL'])
+        self.assertEqual(self.failed(runningKernel=''), ['NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL', 'RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+
+    def test_running_kernel_different_from_the_qualified_one_is_refused(self):
+        self.assertEqual(self.failed(qualifiedKernel='6.8.0-139-generic'), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+        self.assertEqual(self.failed(qualifiedKernel=''), ['RUNNING_KERNEL_MATCHES_QUALIFICATION'])
+
+    def test_remote_script_reads_the_three_kernel_facts(self):
+        script = preflight.remote_script(BINDING)
+        for needle in ('runningKernel=', 'newestInstalledKernel=', 'qualifiedKernel=', '/var/lib/himawari/qualification', 'dpkg --compare-versions'):
+            self.assertIn(needle, script)
+
+    def newest(self, running, listing):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory)
+            (fake / 'uname').write_text('#!/bin/sh\necho ' + running + '\n')
+            (fake / 'dpkg-query').write_text('#!/bin/sh\ncat <<\'LIST\'\n' + listing + '\nLIST\n')
+            for name in ('uname', 'dpkg-query'):
+                (fake / name).chmod(0o755)
+            for name in ('dpkg', 'awk'):
+                (fake / name).symlink_to(shutil.which(name))
+            script = preflight.KERNEL_FACTS.replace('/usr/bin/', str(fake) + '/')
+            output = subprocess.run(['/bin/bash', '-c', 'set -u; ' + script], capture_output=True, text=True, check=True).stdout
+            return dict(line.split('=', 1) for line in output.splitlines())
+
+    def test_newest_installed_kernel_ignores_removed_unsigned_and_other_flavours(self):
+        listing = '\n'.join([
+            'rc  linux-image-6.8.0-146-generic',
+            'ii  linux-image-6.8.0-147-generic',
+            'hi  linux-image-6.8.0-142-generic',
+            'un  linux-image-unsigned-6.8.0-150-generic',
+            'ii  linux-image-unsigned-6.8.0-149-generic',
+            'ii  linux-image-6.8.0-160-lowlatency',
+        ])
+        self.assertEqual(self.newest('6.8.0-142-generic', listing), {'runningKernel': '6.8.0-142-generic', 'newestInstalledKernel': '6.8.0-147-generic'})
+
+    def test_kernel_versions_are_compared_as_versions_not_as_text(self):
+        listing = 'ii  linux-image-5.15.0-99-generic\nii  linux-image-5.15.0-100-generic\nhi  linux-image-5.15.0-9-generic'
+        self.assertEqual(self.newest('5.15.0-100-generic', listing)['newestInstalledKernel'], '5.15.0-100-generic')
+
+    def test_no_installed_kernel_gives_an_empty_answer(self):
+        self.assertEqual(self.newest('6.8.0-142-generic', 'rc  linux-image-6.8.0-146-generic')['newestInstalledKernel'], '')
+
+    def test_qualified_kernel_comes_from_the_newest_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, (name, release) in enumerate([('old-20260901', '6.8.0-139-generic'), ('new-20261102', '6.8.0-142-generic')]):
+                (root / name).mkdir()
+                receipt = root / name / 'installation-receipt.json'
+                receipt.write_text(json.dumps({'osRelease': release}))
+                os.utime(receipt, (1000 + index, 1000 + index))
+            (root / 'broken').mkdir()
+            self.assertEqual(self.qualified(root), '6.8.0-142-generic')
+            (root / 'newest-broken').mkdir()
+            broken = root / 'newest-broken' / 'installation-receipt.json'
+            broken.write_text('not json')
+            os.utime(broken, (2000, 2000))
+            self.assertEqual(self.qualified(root), '')
+
+    def qualified(self, root):
+        return subprocess.run(['python3', '-I', '-c', preflight.READ_QUALIFIED_KERNEL, str(root)], capture_output=True, text=True, check=True).stdout.strip()
+
+    def test_a_directory_without_receipts_gives_an_empty_answer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.qualified(Path(directory)), '')
 
 
 class DeployHarness(unittest.TestCase):

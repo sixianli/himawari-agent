@@ -12,6 +12,23 @@ ROOT_RESERVE_BYTES = 1024 ** 3
 UNMEASURED_INSTALL_FACTOR = 3
 MEASURED_INSTALL_HEADROOM = 1.2
 LAST_INSTALL_USED = "import json, pathlib, re, sys; m = re.search(r'--no-global-search-paths \\S+/([a-z]+-[0-9]{8})/pair-supervisor[.]mjs', pathlib.Path(sys.argv[1]).read_text()); r = json.loads((pathlib.Path(sys.argv[2]) / (m.group(1) + '-evidence') / 's1-result.json').read_text()) if m else {}; print(r['rootFreeBeforeBytes'] - r['rootFreeAfterBytes'] if r.get('passed') else '')"
+KERNEL_FACTS = (
+    'running="$(/usr/bin/uname -r)"; flavour="${running##*-}"; newest=""; '
+    "for package in $(/usr/bin/dpkg-query -W -f='${db:Status-Abbrev} ${Package}\\n' 'linux-image-*-'\"$flavour\" 2>/dev/null | /usr/bin/awk '$1 ~ /^.i/ {print $2}'); do "
+    '[ "${package%-$flavour}" != "$package" ] || continue; '
+    'version="${package#linux-image-}"; version="${version%-$flavour}"; '
+    'case "$version" in [0-9]*) ;; *) continue ;; esac; '
+    'if [ -z "$newest" ] || /usr/bin/dpkg --compare-versions "$version" gt "$newest"; then newest="$version"; fi; done; '
+    'echo "runningKernel=$running"; echo "newestInstalledKernel=${newest:+$newest-$flavour}"'
+)
+READ_QUALIFIED_KERNEL = (
+    'import json, pathlib, sys\n'
+    'try:\n'
+    '    receipts = sorted(pathlib.Path(sys.argv[1]).glob("*/installation-receipt.json"), key=lambda path: path.stat().st_mtime)\n'
+    '    print(json.loads(receipts[-1].read_text()).get("osRelease", "") if receipts else "")\n'
+    'except Exception:\n'
+    '    print("")\n'
+)
 DOCUMENT_TOOLS_CHECK = 'if /usr/bin/python3 -I -c "import docx, openpyxl, pypdf, pdfminer, weasyprint, markdown" >/dev/null 2>&1 && /usr/bin/pandoc --version >/dev/null 2>&1 && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "Noto Sans CJK" && /usr/bin/fc-list :lang=zh family 2>/dev/null | /usr/bin/grep -q "LXGW WenKai" && /usr/lib/himawari-document-python/bin/python -I -c "import weasyprint, pypdf; from weasyprint.text.ffi import harfbuzz_subset; assert weasyprint.__version__.split(chr(46))[0] == str(70) and harfbuzz_subset" >/dev/null 2>&1; then echo documentTools=ok; else echo documentTools=missing; fi'
 SANDBOX_LINKS_SCRIPT = (Path(__file__).resolve().parent / 'sandbox-command-links.py').read_text()
 SANDBOX_READ_ROOTS = re.compile(r'readOnlyToolchainPaths: \[(.*?)protectedPaths: \[', re.DOTALL)
@@ -69,6 +86,8 @@ def remote_script(binding, units=(), paths=(), roots=(), base=''):
         'echo "lastInstallUsed=$(/usr/bin/python3 -I -c ' + shlex.quote(LAST_INSTALL_USED) + ' ' + shlex.quote(binding['service']['unitFragmentPath']) + ' ' + shlex.quote(str(Path(binding['paths']['evidenceRoot']).parent) if 'evidenceRoot' in binding['paths'] else '/var/lib/himawari') + ' 2>/dev/null)"',
         'echo "scratchScenes=$(' + SCRATCH_SCENE_COUNT + ')"',
         DOCUMENT_TOOLS_CHECK,
+        KERNEL_FACTS,
+        'echo "qualifiedKernel=$(/usr/bin/python3 -I -c ' + shlex.quote(READ_QUALIFIED_KERNEL) + ' ' + shlex.quote(str(Path(binding['service']['newQualificationEvidenceRoot']).parent)) + ')"',
         *(['if /usr/bin/git -C ' + shlex.quote(source_cache(binding)) + ' cat-file -e ' + shlex.quote(base + '^{commit}') + ' 2>/dev/null; then echo sourceCacheBase=present; else echo sourceCacheBase=absent; fi'] if base else []),
         '/usr/bin/python3 -I -c ' + shlex.quote(SANDBOX_LINKS_SCRIPT) + ' ' + ' '.join(shlex.quote(root) for root in roots) + ' || echo sandboxLinks=check-failed',
         *['echo ' + shlex.quote('probeUnit.' + unit) + '="$(/usr/bin/systemctl show -p LoadState --value ' + shlex.quote(unit) + ')"' for unit in units],
@@ -110,6 +129,8 @@ def checks(binding, facts, size, units=(), paths=(), base=''):
         ('ROOT_FREE_FOR_ACCEPTANCE', room['predictedFreeAfterInstall'] >= room['needAfterInstall']),
         ('TMP_SCRATCH_WITHIN_LIMIT', int(facts.get('scratchScenes') or 0) <= MAX_FAILURE_SCENES),
         ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
+        ('NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL', bool(facts.get('runningKernel')) and facts.get('newestInstalledKernel') == facts.get('runningKernel')),
+        ('RUNNING_KERNEL_MATCHES_QUALIFICATION', bool(facts.get('runningKernel')) and facts.get('qualifiedKernel') == facts.get('runningKernel')),
         *([('SOURCE_CACHE_HAS_BASE', facts.get('sourceCacheBase') == 'present')] if base else []),
         ('SANDBOX_COMMAND_LINKS_REACHABLE', facts.get('sandboxLinks') == 'ok'),
         *[('PROBE_UNIT_UNUSED ' + unit, facts.get('probeUnit.' + unit) == 'not-found') for unit in units],
@@ -142,6 +163,10 @@ def main():
         print('PREFLIGHT_TMP_SCRATCH /tmp holds ' + facts.get('scratchScenes', '?') + ' acceptance scratch directories (h plus 4 characters) after the cleanup, more than the ' + str(MAX_FAILURE_SCENES) + ' failure scene allowed; see them with: ls -ld /tmp/h????, and see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
     if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
         print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai python3-venv, then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
+    if any(name == 'NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL' and not passed for name, passed in results):
+        print('PREFLIGHT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but the newest installed kernel is ' + (facts.get('newestInstalledKernel') or 'unknown') + '; after a reboot the server would start the newer one, the sandbox qualification would no longer match and the service would refuse to start. As root, either make the running kernel the grub default or remove the newer kernel package; do not reboot into the newer kernel, a service that is down cannot be re-qualified by this deploy')
+    if any(name == 'RUNNING_KERNEL_MATCHES_QUALIFICATION' and not passed for name, passed in results):
+        print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel')
     if any(name == 'SANDBOX_COMMAND_LINKS_REACHABLE' and not passed for name, passed in results):
         print('PREFLIGHT_SANDBOX_LINKS these commands in /usr/bin are links to a place the model sandbox is not allowed to read, so the model would get command not found for them (' + facts.get('sandboxLinks', 'no answer') + '); add the missing directory to readOnlyToolchainPaths in signing/cloud-seal.mjs, regenerate the packet and run this check again')
     if any(name == 'ROOT_FREE_FOR_ACCEPTANCE' and not passed for name, passed in results):
