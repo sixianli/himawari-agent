@@ -42,11 +42,11 @@ import {
   REVIEW_MODELS,
   RULE_16_SENTENCE,
   readUsage,
-  roundsOnDisk,
   resolveCommits,
   reviewConfig,
   reviewModel,
   reviewQuestions,
+  roundsOnDisk,
   runOutcome,
   SHELL_LOG_NAME,
   spentOf,
@@ -100,7 +100,25 @@ describe("opencode review configuration", () => {
       expect(keys.indexOf(pattern)).toBeGreaterThan(keys.indexOf("git diff *"));
     }
     expect(config.permission.read["*.env"]).toBe("deny");
-    expect(config.provider["opencode-go"].options.baseURL).toBeUndefined();
+    expect(config.provider["opencode-go"].options).toBeUndefined();
+  });
+
+  it("[OpenCode 401] leaves the review credential to OpenCode and keeps the provider entry", () => {
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      for (const wrapUp of [false, true]) {
+        const config = reviewConfig({ mode, wrapUp });
+        expect(config.provider).toEqual({ "opencode-go": {} });
+        expect(JSON.stringify(config)).not.toContain("apiKey");
+        expect(JSON.stringify(config)).not.toContain("placeholder");
+      }
+    }
+  });
+
+  it("keeps the placeholder key and the local address for the self-check", () => {
+    const baseURL = "http://127.0.0.1:9/v1";
+    expect(reviewConfig({ mode: "code-review", baseURL }).provider).toEqual({
+      "opencode-go": { options: { apiKey: "placeholder", baseURL } },
+    });
   });
 
   it("opens web reading and web search only for the two plan modes", () => {
@@ -482,7 +500,37 @@ describe("opencode review self-check", () => {
   });
 });
 
+function processState(
+  pid,
+  { platform = process.platform, read = readFileSync, signal = process.kill } = {},
+) {
+  try {
+    if (platform !== "linux") {
+      signal(pid, 0);
+      return "alive";
+    }
+    return read(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0];
+  } catch (error) {
+    if (error.code === (platform === "linux" ? "ENOENT" : "ESRCH")) return "gone";
+    throw error;
+  }
+}
+
 describe("opencode review process cleanup", () => {
+  it("reads a process that disappears mid-read as gone and keeps other errors", () => {
+    const failing = (code) => () => {
+      throw Object.assign(new Error(code), { code });
+    };
+    const linux = (read) => processState(42, { platform: "linux", read });
+    expect(linux(() => "42 (sleep) S 1 42")).toBe("S");
+    expect(linux(failing("ENOENT"))).toBe("gone");
+    expect(() => linux(failing("EACCES"))).toThrow("EACCES");
+    const darwin = (signal) => processState(42, { platform: "darwin", signal });
+    expect(darwin(() => true)).toBe("alive");
+    expect(darwin(failing("ESRCH"))).toBe("gone");
+    expect(() => darwin(failing("EPERM"))).toThrow("EPERM");
+  });
+
   it("kills the commands opencode started, not only opencode itself", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opencode-kill-"));
     const pidFile = join(dir, "grandchild.pid");
@@ -491,19 +539,23 @@ describe("opencode review process cleanup", () => {
       stdio: "ignore",
     });
     const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
-    while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-    const grandchild = Number(readFileSync(pidFile, "utf8").trim());
-    expect(killProcessGroup(child, "SIGKILL")).toBe(true);
-    await exited;
-    const state = () =>
-      existsSync(`/proc/${grandchild}/stat`)
-        ? readFileSync(`/proc/${grandchild}/stat`, "utf8").split(") ")[1]?.[0]
-        : "gone";
-    for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-    expect(["Z", "X", "gone"]).toContain(state());
-    rmSync(dir, { recursive: true, force: true });
+    let killed = false;
+    try {
+      while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
+        await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+      const grandchild = Number(readFileSync(pidFile, "utf8").trim());
+      const state = () => processState(grandchild);
+      expect(["Z", "X", "gone"]).not.toContain(state());
+      killed = killProcessGroup(child, "SIGKILL");
+      expect(killed).toBe(true);
+      await exited;
+      for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
+        await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+      expect(["Z", "X", "gone"]).toContain(state());
+    } finally {
+      if (!killed) killProcessGroup(child, "SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -865,6 +917,24 @@ async function withScriptedReview(reply, run) {
   }
 }
 
+function slowStepFinishBinary(dir) {
+  const path = join(dir, "slow-opencode.sh");
+  writeFileSync(
+    path,
+    [
+      "#!/bin/bash",
+      "set -o pipefail",
+      `${JSON.stringify(opencodeBinary())} "$@" | while IFS= read -r line; do`,
+      `  case "$line" in *'"step_finish"'*) sleep 1; printf 'x' >> ${JSON.stringify(join(dir, "delayed"))};; esac`,
+      `  printf '%s\\n' "$line"`,
+      "done",
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  return path;
+}
+
 function isWrapUp(request) {
   return JSON.stringify(request.messages ?? []).includes(WRAP_UP_PROMPT);
 }
@@ -884,10 +954,16 @@ describe("opencode review wrap-up", () => {
     }
   });
 
-  it("gives the wrap-up turn a single step and the same tools as the review", () => {
-    const config = reviewConfig({ mode: "plan", wrapUp: true });
-    expect(config.agent).toEqual({ build: { steps: 1 } });
-    expect(config.permission).toEqual(reviewConfig({ mode: "plan" }).permission);
+  it("gives the wrap-up turn a single step and turns every allowed tool into ask, so a tool call ends the run", () => {
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      const config = reviewConfig({ mode, wrapUp: true });
+      expect(config.agent).toEqual({ build: { steps: 1 } });
+      const askedAs = JSON.parse(
+        JSON.stringify(reviewConfig({ mode }).permission).replaceAll('"allow"', '"ask"'),
+      );
+      expect(config.permission).toEqual(askedAs);
+      expect(JSON.stringify(config.permission)).not.toContain('"allow"');
+    }
   });
 
   it("never asks again after a hard stop or a crash", () => {
@@ -1061,17 +1137,30 @@ describe("opencode review wrap-up", () => {
   }, 120000);
 
   it("stops the wrap-up turn at its first tool call instead of letting it keep reading", async () => {
-    await withScriptedReview(
-      (_request, index) =>
-        index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true, promptTokens: 100000 },
-      async ({ review, requests }) => {
-        const result = await review();
-        expect(result.wrapUp).toBe("no-text");
-        expect(result.outcome).toBe("wrap-up-tool-call");
-        expect(requests.filter(isWrapUp)).toHaveLength(1);
-        expect(result.summary.usage.cost).toBeGreaterThan(0.01);
-      },
-    );
+    const slow = mkdtempSync(join(tmpdir(), "opencode-slow-"));
+    try {
+      await withScriptedReview(
+        (_request, index) =>
+          index === 1 ? { thinking: "THOUGHT_ONLY" } : { tool: true, promptTokens: 100000 },
+        async ({ review, requests }) => {
+          const result = await review({ binary: slowStepFinishBinary(slow) });
+          expect(result.wrapUp).toBe("no-text");
+          expect(result.outcome).toBe("wrap-up-tool-call");
+          expect(requests.filter(isWrapUp)).toHaveLength(1);
+          expect(result.summary.usage.cost).toBeGreaterThan(0.01);
+          const wrapUpCall = result.summary.toolCalls.at(-1);
+          expect(wrapUpCall.status).toBe("error");
+          expect(wrapUpCall.output).toContain("rejected permission");
+          const stepFinishes = result.stdout
+            .split("\n")
+            .filter((line) => line.includes('"step_finish"')).length;
+          expect(stepFinishes).toBeGreaterThanOrEqual(2);
+          expect(readFileSync(join(slow, "delayed"), "utf8")).toHaveLength(stepFinishes);
+        },
+      );
+    } finally {
+      rmSync(slow, { recursive: true, force: true });
+    }
   }, 120000);
 
   it("records cost-limit when the wrap-up step that calls a tool also runs past the remaining money", async () => {
@@ -1112,6 +1201,99 @@ describe("opencode review wrap-up", () => {
         expect(requests).toHaveLength(1);
       },
     );
+  }, 120000);
+});
+
+async function authorizationSent({ savedKey, environmentKey }) {
+  const root = mkdtempSync(join(tmpdir(), "opencode-credential-"));
+  const headers = [];
+  const server = http.createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      if (request.method === "POST") headers.push(request.headers.authorization ?? null);
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end('{"error":{"message":"credential probe"}}');
+    });
+  });
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  const dataHome = join(root, "data");
+  mkdirSync(join(dataHome, "opencode"), { recursive: true });
+  if (savedKey) {
+    writeFileSync(
+      join(dataHome, "opencode", "auth.json"),
+      JSON.stringify({ "opencode-go": { type: "api", key: savedKey } }),
+    );
+  }
+  const isolated = {
+    XDG_DATA_HOME: dataHome,
+    OPENCODE_API_KEY: environmentKey,
+    OPENCODE_AUTH_CONTENT: undefined,
+  };
+  const previous = Object.fromEntries(
+    Object.keys(isolated).map((name) => [name, process.env[name]]),
+  );
+  const setEnv = (values) => {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  setEnv(isolated);
+  try {
+    const copy = join(root, "repo");
+    mkdirSync(copy);
+    execFileSync("git", ["init", "--quiet"], { cwd: copy });
+    const review = reviewConfig({ mode: "code-review" });
+    const provider = review.provider["opencode-go"];
+    const baseURL = `http://127.0.0.1:${server.address().port}/v1`;
+    const configPath = join(root, "review.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        ...review,
+        provider: { "opencode-go": { ...provider, options: { ...provider.options, baseURL } } },
+      }),
+    );
+    await reviewModel({
+      binary: opencodeBinary(),
+      cwd: copy,
+      configPath,
+      wrapUpConfigPath: configPath,
+      gitGuard: installGitGuard(root),
+      model: "opencode-go/deepseek-v4.1-flash",
+      prompt: "REVIEW_TASK",
+      timeoutMs: 60000,
+    });
+    return headers;
+  } finally {
+    setEnv(previous);
+    await new Promise((resolveClose) => server.close(resolveClose));
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("opencode review credentials", () => {
+  it("[OpenCode 401] sends the key saved by opencode auth login, not a placeholder", async () => {
+    const savedKey = `saved-${randomBytes(6).toString("hex")}`;
+    const headers = await authorizationSent({ savedKey });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBe(`Bearer ${savedKey}`);
+  }, 120000);
+
+  it("[OpenCode 401] prefers the key saved by opencode auth login over OPENCODE_API_KEY", async () => {
+    const savedKey = `saved-${randomBytes(6).toString("hex")}`;
+    const headers = await authorizationSent({
+      savedKey,
+      environmentKey: `environment-${randomBytes(6).toString("hex")}`,
+    });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBe(`Bearer ${savedKey}`);
+  }, 120000);
+
+  it("[OpenCode 401] sends no key of its own when none is saved, so the cloud proxy can add one", async () => {
+    const headers = await authorizationSent({ savedKey: null });
+    expect(headers.length).toBeGreaterThan(0);
+    for (const header of headers) expect(header).toBeNull();
   }, 120000);
 });
 
