@@ -16,7 +16,7 @@ function runWithoutNpx(script) {
     symlinkSync(process.execPath, path.join(bin, "node"));
     return spawnSync(process.execPath, [path.join(root, script)], {
       cwd: elsewhere,
-      env: { HOME: process.env.HOME ?? scratch, PATH: bin },
+      env: { ...process.env, PATH: bin },
       encoding: "utf8",
       timeout: 300000,
     });
