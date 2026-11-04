@@ -81,3 +81,74 @@ export const BACKGROUND_OUTCOME_INTERRUPTED = fixedPrompt({
   output: "free-text",
   text: "Himawari 重启，命令被中断，结果没有拿到",
 });
+
+export const TOOL_RESULT_RECALL_EMPTY = fixedPrompt({
+  id: "tool-result.recall-empty",
+  purpose: "查记忆没有结果时的说明",
+  usedBy: ["apps/agent-service/src/production-memory-recall.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有找到相关的记忆或对话摘要。不要编造，直接告诉主人没有记录。",
+});
+
+export const TOOL_RESULT_RECALL_HISTORY = fixedPrompt({
+  id: "tool-result.recall-history",
+  purpose: "查记忆结果里有过时记忆时的说明",
+  usedBy: ["apps/agent-service/src/production-memory-recall.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "current 为 false 的记忆是以前的情况，回答时说明时间。",
+});
+
+export const TOOL_RESULT_BACKGROUND_RUNNING = fixedPrompt({
+  id: "tool-result.background-running",
+  purpose: "读取还在运行的后台命令输出时的说明",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "命令还在运行。输出要等命令结束后才能读取；结束时系统会自动把结果发给你。",
+});
+
+export const BACKGROUND_HANDOFF_STARTED = templatePrompt({
+  id: "tool-result.background-handoff.started",
+  purpose: "命令转入后台时告诉模型等了多久",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text("命令运行超过 "),
+    slot("seconds"),
+    text(" 秒还没结束，已转入后台继续运行，没有被停止。"),
+  ],
+});
+
+export const BACKGROUND_HANDOFF_TASK = templatePrompt({
+  id: "tool-result.background-handoff.task",
+  purpose: "命令转入后台时给出任务编号",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [text("任务编号："), slot("taskRef")],
+});
+
+export const BACKGROUND_HANDOFF_GUIDANCE = fixedPrompt({
+  id: "tool-result.background-handoff.guidance",
+  purpose: "命令转入后台时，告诉模型不要轮询、结果会自动送达、可以用哪些工具",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: [
+    "命令结束时系统会自动把结果发给你，不需要反复查询状态，也不要为了等它而拖住这一轮：可以直接回答用户，告诉他命令在后台运行、结束后会主动汇报。",
+    "如果命令在你还在回答时结束，结果会马上插进来；如果在你答完之后结束，系统会在这个对话里开新的一轮把结果交给你。",
+    "需要时用 execution_task_status 查看状态，用 execution_task_cancel 停止；命令结束后可用 execution_task_output 分页读取输出。",
+  ].join("\n"),
+});
+
+export const BACKGROUND_HANDOFF_DEADLINE = templatePrompt({
+  id: "tool-result.background-handoff.deadline",
+  purpose: "命令转入后台时告诉模型最晚运行到什么时候",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [text("这条命令最晚运行到 "), slot("deadline"), text("，到时还没结束会被停止。")],
+});

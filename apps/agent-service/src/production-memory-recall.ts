@@ -9,7 +9,11 @@ import type {
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import { type MemoryEpisodeService, parseTimeScope } from "@himawari-agent/memory-engine";
-import { TOOL_RECALL } from "@himawari-agent/prompt-catalog";
+import {
+  TOOL_RECALL,
+  TOOL_RESULT_RECALL_EMPTY,
+  TOOL_RESULT_RECALL_HISTORY,
+} from "@himawari-agent/prompt-catalog";
 
 export const MEMORY_RECALL_CAPABILITY_REF = "memory.recall";
 const CLASSIFICATIONS: readonly DataClassification[] = [
@@ -221,8 +225,8 @@ export class ProductionMemoryRecall {
       })),
       note:
         memories.length === 0 && episodes.length === 0
-          ? "没有找到相关的记忆或对话摘要。不要编造，直接告诉主人没有记录。"
-          : "current 为 false 的记忆是以前的情况，回答时说明时间。",
+          ? TOOL_RESULT_RECALL_EMPTY.text
+          : TOOL_RESULT_RECALL_HISTORY.text,
     };
   }
 }
