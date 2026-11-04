@@ -519,26 +519,33 @@ describe("opencode review process cleanup", () => {
     expect(() => processState(42, failing("EACCES"))).toThrow("EACCES");
   });
 
-  it("kills the commands opencode started, not only opencode itself", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "opencode-kill-"));
-    const pidFile = join(dir, "grandchild.pid");
-    const child = spawn("sh", ["-c", `sleep 60 & echo $! > ${pidFile}; wait`], {
-      detached: true,
-      stdio: "ignore",
-    });
-    const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
-    while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-    const grandchild = Number(readFileSync(pidFile, "utf8").trim());
-    const state = () => processState(grandchild);
-    expect(["Z", "X", "gone"]).not.toContain(state());
-    expect(killProcessGroup(child, "SIGKILL")).toBe(true);
-    await exited;
-    for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-    expect(["Z", "X", "gone"]).toContain(state());
-    rmSync(dir, { recursive: true, force: true });
-  });
+  it.skipIf(process.platform !== "linux")(
+    "kills the commands opencode started, not only opencode itself",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "opencode-kill-"));
+      const pidFile = join(dir, "grandchild.pid");
+      const child = spawn("sh", ["-c", `sleep 60 & echo $! > ${pidFile}; wait`], {
+        detached: true,
+        stdio: "ignore",
+      });
+      const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
+      try {
+        while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
+          await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+        const grandchild = Number(readFileSync(pidFile, "utf8").trim());
+        const state = () => processState(grandchild);
+        expect(["Z", "X", "gone"]).not.toContain(state());
+        expect(killProcessGroup(child, "SIGKILL")).toBe(true);
+        await exited;
+        for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
+          await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+        expect(["Z", "X", "gone"]).toContain(state());
+      } finally {
+        killProcessGroup(child, "SIGKILL");
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("opencode review installed guard", () => {
