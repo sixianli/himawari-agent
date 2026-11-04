@@ -6,12 +6,18 @@ import { expect } from "@playwright/test";
 export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
   const results = [];
   for (const width of [393, 1280]) {
-    const context = await browser.newContext({ locale: "zh-CN", viewport: { width, height: 850 } });
+    const context = await browser.newContext({
+      locale: "zh-CN",
+      viewport: { width, height: 850 },
+    });
     const page = await context.newPage();
     const errors = [];
     const network = [];
     page.on("requestfailed", (request) =>
-      network.push({ url: new URL(request.url()).pathname, failure: request.failure() }),
+      network.push({
+        url: new URL(request.url()).pathname,
+        failure: request.failure(),
+      }),
     );
     page.on("pageerror", (error) => errors.push(error.message));
     let failSearchRead = true;
@@ -62,7 +68,10 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
           ...snapshot,
           payload: {
             ...snapshot.payload,
-            runs: snapshot.payload.runs.map((run) => ({ ...run, status: "awaiting_approval" })),
+            runs: snapshot.payload.runs.map((run) => ({
+              ...run,
+              status: "awaiting_approval",
+            })),
           },
         },
       });
@@ -72,7 +81,10 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
       if (request.type === "search.authorization.read") {
         searchReads++;
         if (failSearchRead) {
-          await route.fulfill({ status: 503, json: { code: "FIXTURE_TEMPORARY_UNAVAILABLE" } });
+          await route.fulfill({
+            status: 503,
+            json: { code: "FIXTURE_TEMPORARY_UNAVAILABLE" },
+          });
           return;
         }
         await route.fulfill({
@@ -118,6 +130,9 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
     try {
       await page.goto(`${baseUrl}/threads/thread-main`);
       const search = page.locator(".search-authorization");
+      await expect(page.locator("#page-title")).toBeVisible();
+      const phoneSidebar = await page.locator(".mobile-sidebar-toggle").isVisible();
+      if (phoneSidebar) await page.locator(".mobile-sidebar-toggle").click();
       await page.getByRole("button", { name: "设置", exact: true }).click();
       await page.getByRole("button", { name: "工具与权限", exact: true }).click();
       await expect(search.getByRole("alert")).toBeVisible();
@@ -133,6 +148,7 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
       await expect(search.getByRole("switch", { name: "允许联网搜索", exact: true })).toBeEnabled();
       await expect(search.getByRole("alert")).toHaveCount(0);
       await page.getByRole("dialog", { name: "设置", exact: true }).press("Escape");
+      if (phoneSidebar) await page.locator(".sidebar-scrim").click({ position: { x: 5, y: 5 } });
       const approval = page.locator("#approval-run-01");
       await expect(approval).toBeVisible();
       const beforeApproval = approvalReads;
@@ -145,7 +161,9 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
       assert.equal(mutations, 0, "missing recent authentication must not submit a command");
       assert.deepEqual(errors, []);
       if (output)
-        await page.screenshot({ path: path.join(output, `authorization-feedback-${width}.png`) });
+        await page.screenshot({
+          path: path.join(output, `authorization-feedback-${width}.png`),
+        });
       results.push({
         locale: "zh-CN",
         width,

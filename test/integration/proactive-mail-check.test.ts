@@ -700,6 +700,8 @@ describe("proactive Gmail check acceptance", () => {
     expect(before.audit.items).toEqual([
       {
         messageId: "newsletter",
+        decidedAt: expect.any(String),
+        reviewedAt: null,
         from: "News <news@example.com>",
         subject: "今週のニュース",
         link: "https://mail.google.com/mail/u/0/#all/newsletter",
