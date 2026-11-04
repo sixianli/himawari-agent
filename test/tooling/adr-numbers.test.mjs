@@ -65,6 +65,16 @@ describe("ADR number check", () => {
     expect(unique.stdout).toContain("ADR_NUMBERS passed");
   });
 
+  it("refuses --root without a directory instead of checking the current directory", () => {
+    const script = fileURLToPath(new URL("../../scripts/check-adr-numbers.mjs", import.meta.url));
+    const run = spawnSync(process.execPath, [script, "--root"], {
+      encoding: "utf8",
+      cwd: tmpdir(),
+    });
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("ADR_NUMBER_ROOT_MISSING");
+  });
+
   it("passes on this repository", () => {
     expect(checkAdrNumbers().errors).toEqual([]);
   });

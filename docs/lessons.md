@@ -725,12 +725,12 @@ date: "2026-10-13"
 
 - 反复出现的情况：几个线程同时各开一个 PR，各自按 main 上 `docs/adr/` 的最大编号加一新建 ADR（Architecture Decision Record，记录一项重要设计决定为什么这样定的文档），结果两份 ADR 用了同一个编号。文档里写“ADR 0148”时，读的人和模型分不清指的是哪一份。
 - 发生记录：
-  - 2026-11-01：`0148-bring-related-memories-into-gmail-checks.md`（提交 `1d90719`，12:44 UTC）和 `0148-send-every-model-request-through-one-in-process-egress.md`（提交 `64b9955`，12:50 UTC）都用 0148，先后合并进 main。
+  - 2026-11-01：`0148-bring-related-memories-into-gmail-checks.md`（提交 `1d90719`，12:44 UTC）和 `0148-send-every-model-request-through-one-in-process-egress.md`（提交 `64b9955`，12:50 UTC）都用 0148，先后提交，后来都进了 main。
   - 2026-11-04：还没合并的 PR #229 新建 `0156-self-hosted-runner-on-hermes.md`，PR #234 新建 `0156-srt-0-0-81-with-a-locked-seccomp-helper.md`，又撞在 0156。
 - 为什么要紧：ADR 编号是全项目引用决定的唯一名字；撞号之后，引用会指错文档，按错的决定去改代码。
 - 硬约束（2026-11-04）：
   - `npm run check:adr-numbers`（`scripts/check-adr-numbers.mjs`，`npm run check` 的一步）检查 `docs/adr/` 下每个 `.md` 文件的名字都是“四位编号-小写短名.md”（其他扩展名的文件不检查），并且没有两份 ADR 共用一个编号；有就报 `ADR_NUMBER_DUPLICATE` 并以 1 退出。测试在 `test/tooling/adr-numbers.test.mjs`。
-  - 验证：在改名之前的 main（`f91950b`）上，检查报 `ADR_NUMBER_DUPLICATE 0148` 并以 1 退出；把 Gmail 那份改成 `0158-bring-related-memories-into-gmail-checks.md` 后通过。改它而不改出口那份，是因为指向它的引用最少（3 处），出口那份被 ADR 0146 的 `superseded_by`、ADR 0149 和工程案例集引用。
+  - 验证：在改名之前的 main（`f91950b`）上，检查报 `ADR_NUMBER_DUPLICATE 0148` 并以 1 退出；把 Gmail 那份改成 `0158-bring-related-memories-into-gmail-checks.md` 后通过。两份各有 3 处入链。改 Gmail 那份而不改出口那份，是因为出口那份被 ADR 0146 文件开头的 `superseded_by` 字段引用，改它的编号要动 ADR 的生命周期字段；Gmail 那份只有正文里的普通链接。
   - 新建 ADR 前，除了看 main，还要看还没合并的 PR 新加的 `docs/adr/` 文件，取所有这些编号里最大的加一。
   - 限制：检查只能在两个撞号的 PR 先后进了同一棵树时才失败，例如后合并的那个 PR 先把 main 合并进来再跑 `npm run check`；两个 PR 各自单独跑都会通过。
 

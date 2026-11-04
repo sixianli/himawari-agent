@@ -43,8 +43,13 @@ export function checkAdrNumbers({ root = repositoryRoot } = {}) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const rootArgument = process.argv.indexOf("--root");
+  const rootValue = rootArgument === -1 ? undefined : process.argv[rootArgument + 1];
+  if (rootArgument !== -1 && (rootValue === undefined || rootValue.startsWith("--"))) {
+    process.stderr.write("ADR_NUMBER_ROOT_MISSING --root 后面要跟仓库目录\n");
+    process.exit(2);
+  }
   const { errors, adrs } = checkAdrNumbers(
-    rootArgument === -1 ? {} : { root: path.resolve(process.argv[rootArgument + 1] ?? "") },
+    rootValue === undefined ? {} : { root: path.resolve(rootValue) },
   );
   for (const error of errors) process.stderr.write(`${error}\n`);
   process.stdout.write(
