@@ -9,6 +9,8 @@ import {
   episodeSummaryPrompt,
   QWEN3_MEMORY_QUERY_INSTRUCTION,
 } from "@himawari-agent/memory-engine";
+import { existsSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { managedTaskDescriptors } from "../src/production-managed-tasks.js";
 import { memoryCapturePrompt } from "../src/production-memory-capture.js";
@@ -20,7 +22,30 @@ import {
   runCapabilityNotice,
 } from "../src/production-run-policy.js";
 
-const golden = (name: string) => `./__prompt_golden__/${name}.txt`;
+const GOLDEN_DIRECTORY = fileURLToPath(new URL("./__prompt_golden__/", import.meta.url));
+
+const GOLDEN_NAMES = [
+  "chat.answer-language",
+  "chat.capabilities.coding-full",
+  "chat.capabilities.coding-without-workspace",
+  "chat.capabilities.plain",
+  "chat.capabilities.search",
+  "chat.egress-legend",
+  "chat.egress-legend-with-restore",
+  "chat.identity",
+  "mail.judgment",
+  "memory.capture",
+  "memory.consolidation",
+  "memory.embedding-query-instruction",
+  "memory.episode-summary",
+  "tools.definitions",
+];
+
+const golden = (name: string) => {
+  const path = `${GOLDEN_DIRECTORY}${name}.txt`;
+  if (!existsSync(path)) throw new Error(`PROMPT_GOLDEN_MISSING ${name}`);
+  return path;
+};
 
 const memory = (validFrom: string) =>
   ({
@@ -49,6 +74,20 @@ const SANDBOX = {
 };
 
 describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves into the catalog", () => {
+  it("keeps exactly the golden files rendered from the code before the move", () => {
+    expect(
+      readdirSync(GOLDEN_DIRECTORY)
+        .map((file) => file.replace(/\.txt$/u, ""))
+        .sort(),
+    ).toEqual([...GOLDEN_NAMES].sort());
+  });
+
+  it("REVERSE: fails on a missing golden file instead of writing a new one", () => {
+    expect(() => golden("chat.identity-removed")).toThrow(
+      "PROMPT_GOLDEN_MISSING chat.identity-removed",
+    );
+  });
+
   it("keeps the conversation system prompt pieces", async () => {
     await expect(HIMAWARI_IDENTITY).toMatchFileSnapshot(golden("chat.identity"));
     await expect(ANSWER_LANGUAGE_RULE).toMatchFileSnapshot(golden("chat.answer-language"));

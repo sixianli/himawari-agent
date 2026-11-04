@@ -123,6 +123,44 @@ const KNOWN_TOOL_RESULT_STATUS: readonly (readonly [string, string])[] = [
   ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"工具未执行：无法保存恢复记录。"'],
   ["packages/runtime-pi/src/prepare-file-mutation.ts", "`Successfully wrote $" + "{Buffer.b"],
   ["packages/runtime-pi/src/sandboxed-coding-executor.ts", "`Successfully wrote $" + "{new Text"],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"执行许可已失效，已请求停止；已产生的效果仍需核验。"',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"执行许可已失效，停止尚未确认；不能重新执行该操作。"',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"工具未启动：准备阶段失败，已确认清理完成。"',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"命令执行失败。Himawari 没有核验这条命令是否改动了',
+  ],
+  ["apps/agent-service/src/production-runtime-tools.ts", '"操作未确认成功。"'],
+  [
+    "apps/agent-service/src/production-sandbox-services.ts",
+    '"已核验原操作在发布前因版本冲突停止；候选保留，未重新执行。',
+  ],
+  [
+    "apps/agent-service/src/production-sandbox-services.ts",
+    '"已核验本次目录移动；结果来自原操作记录，未再次执行移动。"',
+  ],
+  [
+    "apps/agent-service/src/production-sandbox-services.ts",
+    '"已核验本次文件保存；结果来自原操作的持久发布记录，未再次执',
+  ],
+  [
+    "packages/application/src/services/context-projection-service.ts",
+    '"[Himawari 系统记录：此历史请求所属任务已取消，仅',
+  ],
+  [
+    "packages/platform-node/src/files/pi-host-publication.ts",
+    '"原文件或依赖已变化；尚未开始保存，副本保留。"',
+  ],
+  ["packages/platform-node/src/files/pi-host-publication.ts", '"本次副本改动已逐文件保存并核验。"'],
 ];
 
 const isEntry = (value: unknown): value is PromptEntry =>
@@ -193,14 +231,40 @@ export function strayPromptLiterals(file: string, source: string): string[] {
   return problems;
 }
 
+const STRING_LITERAL = /"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`|'(?:[^'\\\n]|\\.)*'/uy;
+
+function expressionAfter(source: string, start: number): string {
+  let depth = 0;
+  let index = start;
+  while (index < source.length) {
+    STRING_LITERAL.lastIndex = index;
+    const literal = STRING_LITERAL.exec(source);
+    if (literal) {
+      index += literal[0].length;
+      continue;
+    }
+    const character = source[index] ?? "";
+    if ("([{".includes(character)) depth += 1;
+    else if (")]}".includes(character)) {
+      if (depth === 0) break;
+      depth -= 1;
+    } else if ((character === "," || character === ";") && depth === 0) break;
+    index += 1;
+  }
+  return source.slice(start, index);
+}
+
 export function toolResultLiterals(file: string, source: string): string[] {
   const found: string[] = [];
   for (const match of source.matchAll(
-    /\b(?:(?:modelContent|note)\s*:|type\s*:\s*"text"(?:\s+as\s+const)?\s*,\s*text\s*:)\s*("(?:[^"\\\n]|\\.)+"|`(?:[^`\\]|\\.)+`)/gu,
+    /\b(?:(?:modelContent|note)\s*:|type\s*:\s*"text"(?:\s+as\s+const)?\s*,\s*text\s*:)/gu,
   )) {
-    const literal = match[1] ?? "";
-    if (/^"[A-Z0-9_]+"$/u.test(literal)) continue;
-    found.push(`${file}\u0000${literal.slice(0, 30)}`);
+    const expression = expressionAfter(source, match.index + match[0].length);
+    for (const literal of expression.match(new RegExp(STRING_LITERAL.source, "gu")) ?? []) {
+      if (/^["'`][A-Za-z0-9_.-]*["'`]$/u.test(literal)) continue;
+      if (!/\p{L}/u.test(literal.replace(/\$\{[^}]*\}|\\./gu, ""))) continue;
+      found.push(`${file}\u0000${literal.slice(0, 30)}`);
+    }
   }
   return found;
 }
@@ -275,7 +339,7 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
     expect(problems).toEqual([]);
   });
 
-  it("lists every literal written after modelContent:, note: or a text content block, and nothing more", () => {
+  it("lists every sentence in the value after modelContent:, note: or a text content block, and nothing more", () => {
     const found = sourceFiles().flatMap((file) =>
       toolResultLiterals(file, readFileSync(path.join(repositoryRoot, file), "utf8")),
     );
@@ -290,6 +354,18 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
     expect(toolResultProblems(added)).toContain(
       'PROMPT_TOOL_RESULT_OUTSIDE_CATALOG apps/example/src/tool.ts "命令没有运行，请换一个办法。"',
     );
+    const branched = toolResultLiterals(
+      "apps/example/src/tool.ts",
+      'content: [{ type: "text", text: conflict === "yes" ? "副本已保留。" : "已保存。" }]',
+    );
+    expect(
+      toolResultProblems(branched).filter((line) =>
+        line.startsWith("PROMPT_TOOL_RESULT_OUTSIDE_CATALOG"),
+      ),
+    ).toEqual([
+      'PROMPT_TOOL_RESULT_OUTSIDE_CATALOG apps/example/src/tool.ts "副本已保留。"',
+      'PROMPT_TOOL_RESULT_OUTSIDE_CATALOG apps/example/src/tool.ts "已保存。"',
+    ]);
     expect(
       toolResultProblems([]).filter((line) => line.startsWith("PROMPT_TOOL_RESULT_LIST_STALE")),
     ).toHaveLength(KNOWN_TOOL_RESULT_STATUS.length);
