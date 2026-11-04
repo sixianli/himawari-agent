@@ -107,6 +107,7 @@ date: "2026-10-26"
   80. [一个“今日天气”等了 86 秒：全服务同一时刻只跑一个对话，改大数字还不够](#case-concurrent-dispatch)
   81. [发给模型的敏感信息怎么遮：从三处各遮一遍，改成所有请求只走一个出口，开源网关的做法对照后取长补短](#case-model-egress-redaction)
   82. [多轮对话缓存命中为 0：每轮改写了上一轮的消息，改成只追加并加上逐字节的阻断检查](#case-append-only-prefix)
+  83. [沙箱升级后保护可能静默失效：升到 SRT 0.0.81，并要求启动命令里真的用上锁定的 seccomp 小程序](#case-srt-locked-seccomp-helper)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -130,7 +131,7 @@ date: "2026-10-26"
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
@@ -5230,6 +5231,50 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 **面试 30 秒版**
 
 “用户截图显示多轮对话缓存命中 0%。我先排除界面算错，再在生产上逐字符对比相邻两轮的请求，发现第二轮把上一轮的用户消息从‘资料加提问’改回了‘只剩提问’，前缀从这一条起全变，上一轮的回答和搜索结果全部重算——18 次这样的请求命中只有 9%。修法是历史存实际发出去的内容，只追加；然后加了逐字节的阻断检查、带反向用例，保证以后任何人改上下文拼装都会被拦下。”
+
+[返回目录](#contents)
+
+<a id="case-srt-locked-seccomp-helper"></a>
+
+## 案例 83：沙箱升级后保护可能静默失效：升到 SRT 0.0.81，并要求启动命令里真的用上锁定的 seccomp 小程序
+
+**背景与现象**
+
+Himawari 在 Linux 上用 SRT（Anthropic 的沙箱运行库，底层是 bubblewrap）隔离 Agent 跑的命令，锁定 0.0.75。上游在 #588 公布了一个绕过：沙箱里的命令可以自己建一层用户命名空间（让普通进程拥有私有权限视图的 Linux 机制），在私有视图里拿掉只读绑定，改写被禁写的文件。2026-11-04 线程在云端容器（Ubuntu 24.04、bubblewrap 0.9.0、普通账号）用上游测试的攻击脚本复现：0.0.75 下被禁写的 `.git/config` 被改写（`in-its-own-namespaces: replaced`）。
+
+**根因**
+
+0.0.75 没有拦“自建用户命名空间”。0.0.81 的修复要靠 seccomp 小程序（按系统调用拦截的过滤器）或 bubblewrap 0.8.0 以上的 `--disable-userns`；测试服务器 Hermes 的 bubblewrap 是 0.6.1，只能靠小程序。读 0.0.81 安装包确认两个静默失效的口子：两样都没有时只打一行调试日志照常运行；找小程序时会退回到全局 npm 目录，可能用上旧版小程序。上游提交说明里的自报能力变量 `SRT_HELPER_FEATURES` 在 0.0.81 的小程序源码里不存在，实测两版都只打印用法。
+
+**我们的方案**
+
+升到 0.0.81，版本号只在一个常量里定义，`npm run check:srt-version` 拦住任何地方写死的旧版本号；启动前在加载 SRT 的线程里核对实际安装的版本和小程序的 SHA-256（文件内容摘要）、执行权限，不符就用固定错误名拒绝启动；SRT 生成命令之后，再要求命令结尾严格等于“禁止嵌套命名空间的前缀 + 锁定的小程序 + 我们传入的命令”，用户命令里伪造这一行也骗不过去。真实沙箱检查脚本逐项验证嵌套命名空间、AF_VSOCK（虚拟机和宿主机之间的通信套接字）、io_uring（Linux 的一种异步读写接口，能绕过部分系统调用过滤）被拒，每项都带阳性对照（放开限制后攻击必须成功，否则判失败），放进 Hermes 上的上线包检查。复用 SRT：隔离本身全部由 SRT 做；Himawari 负责“确认它真的生效了”。
+
+**方案讨论与备选**
+
+只升级依赖（放弃：装错或退回旧小程序时照样静默失效）；靠小程序自报能力区分新旧（放弃：0.0.81 没有这个接口）；每个任务启动时再跑一次真实自检（放弃：启动慢曾造成事故 I-07）；把真实检查放进 `npm run check`（放弃：云端容器默认没有 bubblewrap）；换掉 SRT（此前已和 OpenSandbox 比较，不换）。方案先由两个复核模型各自独立出方案、再审核线程方案，采纳了“检查要放在真正加载 SRT 的线程”“就绪探测也要走同一套检查”“root 下整个检查改以普通账号重跑”等意见。
+
+**业界主流做法**
+
+- ✅ 上游修复说明（提交 9a277e5，2026-11-04 打开）：“a command that may create one can take the binds out of its own view”（<https://github.com/anthropics/sandbox-runtime/commit/9a277e5>）。
+- ✅ SRT 0.0.81 README（2026-11-04 打开安装包）：对旧小程序 “imposes no limit, and nothing says so”；`allowNestedUserNamespaces` “(boolean, default: false)”。
+- 🟡 SRT v0.0.80 发布说明（2026-11-04 用网页抓取工具打开，引文经工具转述，未逐字核对）：“Where neither applies nothing limits namespaces, and a line under `SRT_DEBUG` says so.”（<https://github.com/anthropics/sandbox-runtime/releases>）
+
+**对比与取舍**
+
+上游的做法是“能防就防，防不了记一行调试日志”；我们是产品，宁可拒绝启动也不静默降级，所以在上游之外加了版本、摘要和实际命令三道核对。代价是升级 SRT 时要同时改常量、摘要和脚本，检查会把漏改的地方列出来。
+
+**结果数据**
+
+同一个检查脚本在容器里跑两遍（出处：PR 提交说明）：改动前的代码配 0.0.75 有 3 项失败（文件被改写、AF_VSOCK 建成、不带小程序的命令照常启动）；改动后配 0.0.81，12 项全部通过，包括全部阳性对照。Hermes（bubblewrap 0.6.1）和生产机上的结果：未测量（等上线流程）。
+
+**相关 ADR/PR**
+
+[ADR 0156](adr/0156-srt-0-0-81-with-a-locked-seccomp-helper.md)。
+
+**面试 30 秒版**
+
+“我们用的沙箱库公布了一个绕过：命令自建用户命名空间就能改写禁写文件。我先在容器里复现，再读新版安装包，发现修复靠一个 seccomp 小程序，缺了它只打一行调试日志、还可能退回用旧版。所以升级之外，我们在启动前核对版本和小程序摘要，并检查实际要执行的命令里真的用上了它，否则拒绝启动；真实检查每项都带阳性对照，改动前 3 项失败、改动后 12 项全过。”
 
 [返回目录](#contents)
 

@@ -27,9 +27,9 @@
     },
     {
       "source": "packages/runtime-sandbox/scripts/probe-network-boundary.mjs",
-      "sourceSha256": "9c6f4c595a48225eebb4c1ff8db8216f959146de5d08286f97cc0c4addd2acd2",
+      "sourceSha256": "3ef3cf429a1e2f066a224ecfa454e1c0bcdba30885221685e45e2142eb520769",
       "adapter": "adapters/probe-network-boundary.mjs",
-      "adapterSha256": "28c99b1d5b52953713b108aae4f5084241d2ada895f43abb84e349109596b465",
+      "adapterSha256": "cd0bfff0bd8defafef48559e970decf839d019af3daba72b8c70d94bfa5033d5",
       "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
       "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false,
@@ -39,9 +39,9 @@
     },
     {
       "source": "packages/runtime-sandbox/scripts/probe-authorized-network.mjs",
-      "sourceSha256": "348aa838b52e34afbc187af6ea70f53826104215e9b53636be887c95ac907962",
+      "sourceSha256": "b9d308220215e005d14bd64ebd05405cce19fa30e188b2fafa0eea837bc206ea",
       "adapter": "adapters/probe-authorized-network.mjs",
-      "adapterSha256": "e831e9980fe6088e5a398e93ad617b177dcce06cc2fe0409751fe5abe84659d8",
+      "adapterSha256": "599c50954368e4162405871643bf3f6b24ac0021fec65c4bfcd25d5d5f7660d8",
       "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
       "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false,
