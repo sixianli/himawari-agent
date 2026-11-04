@@ -25,7 +25,7 @@
 <a id="the-documentation-check"></a>
 ## 文档检查
 
-- 仓库没有自动的文档治理检查：`npm run check:docs` 及其脚本已删除，提交不会因文档的元数据、链接或 Runbook 封存问题被拦下。`npm run check` 里有几步会读 `docs/` 下的内容，例如 `npm run check:glossary` 查词表里的旧叫法、`npm run check:incident-gates` 查事故清单的格式；`npm run check:markdown-tables` 查 `docs/` 下每张表格，有一行的列数和表头不一样（例如三列表里混进了五列的行）就失败。
+- 仓库没有对 `docs/` 做全面校验的自动检查：`npm run check:docs` 及其脚本已删除，文档的 frontmatter（文件开头的元数据块）和 Runbook 封存不会让提交被拦下。`npm run check` 里有几步只检查 `docs/` 的特定部分，失败时同样会拦下提交：`npm run check:glossary` 查词表里的旧叫法；`npm run check:incident-gates` 查事故清单的格式；`npm run check:instruction-links` 查指令文件指向的 `docs/` 文件和锚点是否存在；`npm run check:markdown-tables` 查 `docs/` 下的表格，有一行的列数和表头不一样（例如三列表里混进了五列的行，或者分隔行少写一列，GitHub 因此不把它显示成表格）就失败。
 - 改动了 `docs/` 下任何文件的提交，提交前必须手动运行这个技能的严格校验（`python3 -B <skill directory>/scripts/validate_docs.py . --strict`，约一秒，只读），并且不得新增校验错误。技能没有加载时，在提交说明和交付报告里写明没能运行校验。在快速模式下，只是说某份仍有效的 Runbook `contract_sha256 does not match` 或 `contract path does not exist` 的问题，可以留到完整模式再处理。
 - 在快速模式下，当一个提交改动了某份 Runbook 的契约源文件（Runbook 里 `runbook-contract` 清单列出的仓库文件，封存时它们的内容会算进 `contract_sha256`）而让它的封存过期时，在提交说明里写 `Docs: deferred (fast mode)` 并写出该 Runbook 的名字。当用户切回完整模式，或某个线程即将按那份 Runbook 操作时，核对并重新封存这些推迟的 Runbook。
 - 绝不只为让检查通过而重新封存 Runbook。`runbook.py seal ... --confirm-reconciled --apply` 必须在对照当前代码复核过 Runbook 之后才运行。

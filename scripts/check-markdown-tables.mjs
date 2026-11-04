@@ -33,44 +33,68 @@ export function cellCount(line) {
   return parts.length;
 }
 
-function tablesIn(tokens, found) {
+function blocksIn(tokens, found) {
   for (const token of tokens) {
-    if (token.type === "table") found.push(token.raw);
+    if (token.type === "table" || token.type === "paragraph") found.push(token);
     for (const key of ["tokens", "items"])
-      if (Array.isArray(token[key])) tablesIn(token[key], found);
+      if (Array.isArray(token[key])) blocksIn(token[key], found);
   }
   return found;
 }
 
-const withoutContainers = (line) => line.replace(/^\s*(>\s?)*/, "").trim();
+const withoutContainers = (line) =>
+  line.replace(/^\s*(?:(?:>\s?|(?:[-*+]|\d{1,9}[.)])\s+)\s*)*/, "").trim();
 
-function locate(sourceLines, rows, from) {
-  for (let start = from; start + rows.length <= sourceLines.length; start += 1) {
+function locate(sourceLines, rows, from, to) {
+  for (let start = from; start + rows.length <= to; start += 1) {
     if (rows.every((row, offset) => withoutContainers(sourceLines[start + offset]) === row.trim()))
       return start;
   }
   return -1;
 }
 
-export function findTableProblems(text) {
-  const sourceLines = text.split("\n");
+const DELIMITER_ROW = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+const looksLikeDelimiter = (row) => row.includes("|") && DELIMITER_ROW.test(row.trim());
+
+function problemsInBlock(token) {
+  const rows = token.raw.split("\n").filter((row) => row.trim() !== "");
   const problems = [];
-  let cursor = 0;
-  for (const raw of tablesIn(Lexer.lex(text, { gfm: true }), [])) {
-    const rows = raw.split("\n").filter((row) => row.trim() !== "");
-    const start = locate(sourceLines, rows, cursor);
-    if (start >= 0) cursor = start + rows.length;
+  if (token.type === "table") {
     const columns = cellCount(rows[0]);
     rows.forEach((row, offset) => {
       const found = cellCount(row);
-      if (found !== columns)
-        problems.push({
-          line: start >= 0 ? start + offset + 1 : null,
-          found,
-          expected: columns,
-          row: row.trim(),
-        });
+      if (found !== columns) problems.push({ offset, found, expected: columns, row: row.trim() });
     });
+    return { rows, problems };
+  }
+  rows.forEach((row, offset) => {
+    const next = rows[offset + 1];
+    if (row.includes("|") && next !== undefined && looksLikeDelimiter(next)) {
+      const expected = cellCount(row);
+      const found = cellCount(next);
+      if (found !== expected)
+        problems.push({ offset: offset + 1, found, expected, row: next.trim() });
+    }
+  });
+  return { rows, problems };
+}
+
+export function findTableProblems(text) {
+  const sourceLines = text.replace(/\r\n|\r/g, "\n").split("\n");
+  const problems = [];
+  let blockStart = 0;
+  for (const topLevel of Lexer.lex(text, { gfm: true })) {
+    const blockEnd = blockStart + topLevel.raw.split("\n").length - 1;
+    let cursor = blockStart;
+    for (const block of blocksIn([topLevel], [])) {
+      const { rows, problems: found } = problemsInBlock(block);
+      if (found.length === 0) continue;
+      const start = locate(sourceLines, rows, cursor, Math.max(blockEnd, blockStart + 1) + 1);
+      if (start >= 0) cursor = start + rows.length;
+      for (const { offset, ...problem } of found)
+        problems.push({ line: start >= 0 ? start + offset + 1 : null, ...problem });
+    }
+    blockStart = blockEnd;
   }
   return problems;
 }

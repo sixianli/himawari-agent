@@ -79,15 +79,23 @@ describe("markdown table column check", () => {
     const indentedCode = "文字\n\n    | a | b |\n    | --- | --- |\n    | 1 | 2 | 3 |\n";
     const quotedFenceInsideFence = "```\n> ```\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
     const deepFenceInsideFence = "```\n      ```\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
-    const delimiterMismatch = "| a | b | c |\n| --- | --- |\n| 1 | 2 |\n";
-    for (const text of [
-      fenced,
-      indentedCode,
-      quotedFenceInsideFence,
-      deepFenceInsideFence,
-      delimiterMismatch,
-    ])
+    for (const text of [fenced, indentedCode, quotedFenceInsideFence, deepFenceInsideFence])
       expect(findTableProblems(text)).toEqual([]);
+  });
+
+  it("[reverse case] fails when the delimiter row has a different number of columns, so GitHub shows plain text", () => {
+    const text = "文字\n\n| a | b | c |\n| --- | --- |\n| 1 | 2 |\n";
+    expect(positions(text)).toEqual([{ line: 4, found: 2, expected: 3 }]);
+  });
+
+  it("reports the line in the source file for tables in lists, quotes and after a copy in a code block", () => {
+    const sameLineAsMarker = "- | a | b |\n  | --- | --- |\n  | 1 | 2 | 3 |\n";
+    const afterCopyInFence =
+      "```\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n";
+    const quotedInList = "1. 一\n2. 二\n\n   > | a | b |\n   > | --- | --- |\n   > | 1 | 2 | 3 |\n";
+    expect(positions(sameLineAsMarker)).toEqual([{ line: 3, found: 3, expected: 2 }]);
+    expect(positions(afterCopyInFence)).toEqual([{ line: 9, found: 3, expected: 2 }]);
+    expect(positions(quotedInList)).toEqual([{ line: 6, found: 3, expected: 2 }]);
   });
 
   it("[reverse case] still checks a table that follows a backtick line which is not a fence", () => {
