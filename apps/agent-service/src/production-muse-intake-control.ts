@@ -80,12 +80,16 @@ export class ProductionMuseControl {
     const nowMs = Date.parse(now);
     const since = new Date(nowMs - MUSE_WINDOW_MS).toISOString();
     const weekStart = nowMs - MUSE_WEEK_MS;
-    const items = await this.#store.listItems({ ...this.#scope, since, limit: 500 });
+    const items = await this.#store.listItems({ ...this.#scope, since, limit: 5000 });
     const status = await this.#store.channelStatus({ ...this.#scope, now });
     const inWeek = (item: MuseIntakeItem) => Date.parse(item.occurredAt) >= weekStart;
-    const proactive = items.filter((item) => item.kind === "proactive" && inWeek(item));
+    const counted = items.filter((item) => museSourceCounts(item.sources["occurred_at"]));
+    const proactive = counted.filter((item) => item.kind === "proactive" && inWeek(item));
     const rateable = items.filter(
       (item) => item.state === "delivered" || item.state === "succeeded",
+    );
+    const countedRateable = rateable.filter((item) =>
+      museSourceCounts(item.sources["occurred_at"]),
     );
     const shown = [...rateable]
       .sort(
@@ -112,7 +116,7 @@ export class ProductionMuseControl {
         },
         receivedWeek: proactive.filter((item) => item.state === "delivered").length,
         suppressedWeek: proactive.filter((item) => item.state === "suppressed").length,
-        pending: rateable.filter((item) => item.timingOk === null).length,
+        pending: countedRateable.filter((item) => item.timingOk === null).length,
         delay: museDelayMedianMinutes(items),
         items: await Promise.all(
           shown.map(async (item) => ({

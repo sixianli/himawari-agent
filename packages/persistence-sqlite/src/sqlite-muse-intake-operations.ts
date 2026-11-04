@@ -310,7 +310,7 @@ export class SqliteMuseIntakeOperations {
 
   private listItems(input: Input<"listItems">): readonly MuseIntakeItem[] {
     if (!validTime(input.since)) this.fail("PORT_INVALID_OPERATION", "Muse intake time is invalid");
-    if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 500)
+    if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 5000)
       this.fail("PORT_INVALID_OPERATION", "Muse intake limit is invalid");
     return this.database
       .prepare(

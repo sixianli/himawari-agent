@@ -137,6 +137,15 @@ describe("Muse overview and commands", () => {
     return { add, overview, command, store, control };
   }
 
+  it("leaves items whose time has no countable source out of the weekly numbers", async () => {
+    const h = await setup();
+    await h.add("counted");
+    await h.add("uncounted", { sources: { occurred_at: "unknown" } });
+    const overview = await h.overview();
+    expect(overview).toMatchObject({ receivedWeek: 1, pending: 1 });
+    expect(overview.items.map((item) => item.naturalKey)).toContain("uncounted");
+  });
+
   it("counts only the last seven days, keeps suppressed separate, and lists unrated items first", async () => {
     const h = await setup();
     await h.add("recent-1");

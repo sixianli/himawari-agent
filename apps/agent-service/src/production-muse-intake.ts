@@ -447,7 +447,10 @@ export class ProductionMuseIntake {
     try {
       const items: MuseIntakeItemWrite[] = [];
       for (const draft of batch.drafts) {
-        const keep = storable(draft.title) && storable(draft.text);
+        const keep =
+          storable(draft.title) &&
+          storable(draft.text) &&
+          draft.write.options.every((option) => storable(option));
         const seal = async (value: string | null) => {
           if (value === null || !keep) return null;
           const ref = await this.seal.seal({ ...this.scope, text: value, at: receivedAt });
@@ -456,6 +459,7 @@ export class ProductionMuseIntake {
         };
         items.push({
           ...draft.write,
+          options: keep ? draft.write.options : [],
           titleRef: await seal(draft.title),
           textRef: await seal(draft.text),
           textWithheld: !keep,

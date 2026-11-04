@@ -269,6 +269,31 @@ describe("Muse intake over HTTP", () => {
     expect(counts().payloads).toBe(0);
   });
 
+  it("withholds the whole item when an offered option contains a machine secret", async () => {
+    const { post, store, counts } = await setup();
+    const response = await post(
+      batch(1, [
+        proactive("sub-1", {
+          options_offered: field(
+            [`key: -----BEGIN ${"RSA PRIVATE"} KEY-----\nabc\n-----END ${"RSA PRIVATE"} KEY-----`],
+            "chat_record",
+          ),
+        }),
+      ]),
+    );
+    expect(response.json()).toMatchObject({ accepted: 1 });
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ textRef: null, titleRef: null, textWithheld: true, options: [] });
+    expect(counts().payloads).toBe(0);
+  });
+
+  it("keeps ordinary options", async () => {
+    const { post, store } = await setup();
+    await post(batch(1, [proactive("sub-1")]));
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ options: ["不用管"], textWithheld: false });
+  });
+
   it("answers 413 for an oversized body, 415 for a wrong content type, 400 for invalid JSON", async () => {
     const { post, counts } = await setup();
     const big = batch(1, [proactive("sub-1", { delivered_text: field("x".repeat(300_000)) })]);
