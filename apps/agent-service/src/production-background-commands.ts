@@ -7,10 +7,22 @@ import type {
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import {
+  BACKGROUND_AWAITING_APPROVAL,
+  BACKGROUND_DONE_COMMAND,
+  BACKGROUND_DONE_DURATION,
+  BACKGROUND_DONE_OUTPUT_HEADER,
+  BACKGROUND_DONE_OUTPUT_TRUNCATED,
+  BACKGROUND_DONE_RESULT,
+  BACKGROUND_DONE_TITLE,
+  BACKGROUND_FAILED,
   BACKGROUND_HANDOFF_DEADLINE,
   BACKGROUND_HANDOFF_GUIDANCE,
   BACKGROUND_HANDOFF_STARTED,
   BACKGROUND_HANDOFF_TASK,
+  BACKGROUND_RESULT_UNKNOWN,
+  BACKGROUND_STOP_REQUESTED,
+  BACKGROUND_STOP_RUN_ENDED,
+  BACKGROUND_SUCCEEDED,
   renderPrompt,
   TOOL_RESULT_BACKGROUND_RUNNING,
 } from "@himawari-agent/prompt-catalog";
@@ -353,16 +365,18 @@ export class ProductionBackgroundCommands {
     const content = task.result?.modelContent ?? "";
     const shown = content.slice(0, NOTICE_OUTPUT_CHARACTERS);
     return [
-      `后台命令已结束（任务编号 ${task.taskRef}）。`,
-      `命令：${task.command.slice(0, COMMAND_PREVIEW_CHARACTERS)}`,
-      `用时：${Math.round(((task.endedAt ?? task.startedAt) - task.startedAt) / 1000)} 秒`,
-      `结果：${outcomeText(task)}`,
-      "输出：",
+      renderPrompt(BACKGROUND_DONE_TITLE, { taskRef: task.taskRef }),
+      renderPrompt(BACKGROUND_DONE_COMMAND, {
+        command: task.command.slice(0, COMMAND_PREVIEW_CHARACTERS),
+      }),
+      renderPrompt(BACKGROUND_DONE_DURATION, {
+        seconds: String(Math.round(((task.endedAt ?? task.startedAt) - task.startedAt) / 1000)),
+      }),
+      renderPrompt(BACKGROUND_DONE_RESULT, { outcome: outcomeText(task) }),
+      BACKGROUND_DONE_OUTPUT_HEADER.text,
       shown,
       ...(content.length > shown.length
-        ? [
-            `输出较长，以上是前 ${shown.length} 个字符；用 execution_task_output 并把 cursor 设为 "${shown.length}" 读取后面的部分。`,
-          ]
+        ? [renderPrompt(BACKGROUND_DONE_OUTPUT_TRUNCATED, { characters: String(shown.length) })]
         : []),
     ].join("\n");
   }
@@ -447,15 +461,17 @@ function backgroundOutcome(task: BackgroundCommand): RunBackgroundOutcome {
 }
 
 function outcomeText(task: BackgroundCommand): string {
-  if (task.stopReason === "requested") return "已按要求停止，命令可能只执行了一部分。";
-  if (task.stopReason === "run_ended") return "已停止，命令可能只执行了一部分。";
+  if (task.stopReason === "requested") return BACKGROUND_STOP_REQUESTED.text;
+  if (task.stopReason === "run_ended") return BACKGROUND_STOP_RUN_ENDED.text;
   const result = task.result;
   if (!result || result.outcome === "result_unknown")
-    return `结果未知（${result?.errorCode ?? "BACKGROUND_COMMAND_RESULT_UNKNOWN"}），不要直接重复执行，先核实已经产生的效果。`;
-  if (result.outcome === "awaiting_approval") return "等待批准，命令没有执行。";
+    return renderPrompt(BACKGROUND_RESULT_UNKNOWN, {
+      errorCode: result?.errorCode ?? "BACKGROUND_COMMAND_RESULT_UNKNOWN",
+    });
+  if (result.outcome === "awaiting_approval") return BACKGROUND_AWAITING_APPROVAL.text;
   return result.outcome === "succeeded"
-    ? "命令已运行结束"
-    : `失败（${result.errorCode ?? "未知错误"}）`;
+    ? BACKGROUND_SUCCEEDED.text
+    : renderPrompt(BACKGROUND_FAILED, { errorCode: result.errorCode ?? "未知错误" });
 }
 
 function refused(errorCode: string, modelContent: string): RuntimeToolExecutionResult {

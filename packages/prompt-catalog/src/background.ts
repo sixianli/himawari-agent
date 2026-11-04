@@ -152,3 +152,121 @@ export const BACKGROUND_HANDOFF_DEADLINE = templatePrompt({
   output: "free-text",
   segments: [text("这条命令最晚运行到 "), slot("deadline"), text("，到时还没结束会被停止。")],
 });
+
+export const BACKGROUND_DONE_TITLE = templatePrompt({
+  id: "background.done.title",
+  purpose: "后台命令结束通知的第一行",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  segments: [text("后台命令已结束（任务编号 "), slot("taskRef"), text("）。")],
+});
+
+export const BACKGROUND_DONE_COMMAND = templatePrompt({
+  id: "background.done.command",
+  purpose: "后台命令结束通知里的命令",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  segments: [text("命令："), slot("command")],
+});
+
+export const BACKGROUND_DONE_DURATION = templatePrompt({
+  id: "background.done.duration",
+  purpose: "后台命令结束通知里的用时",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  segments: [text("用时："), slot("seconds"), text(" 秒")],
+});
+
+export const BACKGROUND_DONE_RESULT = templatePrompt({
+  id: "background.done.result",
+  purpose: "后台命令结束通知里的结果",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  segments: [text("结果："), slot("outcome")],
+});
+
+export const BACKGROUND_DONE_OUTPUT_HEADER = fixedPrompt({
+  id: "background.done.output-header",
+  purpose: "后台命令结束通知里输出段的标题",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  text: "输出：",
+});
+
+export const BACKGROUND_DONE_OUTPUT_TRUNCATED = templatePrompt({
+  id: "background.done.output-truncated",
+  purpose: "输出被截断时告诉模型怎么读后面的部分",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  segments: [
+    text("输出较长，以上是前 "),
+    slot("characters"),
+    text(' 个字符；用 execution_task_output 并把 cursor 设为 "'),
+    slot("characters"),
+    text('" 读取后面的部分。'),
+  ],
+});
+
+export const BACKGROUND_STOP_REQUESTED = fixedPrompt({
+  id: "background.result.stop-requested",
+  purpose: "后台命令按要求停止时的结果说法",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  text: "已按要求停止，命令可能只执行了一部分。",
+});
+
+export const BACKGROUND_STOP_RUN_ENDED = fixedPrompt({
+  id: "background.result.stop-run-ended",
+  purpose: "对话轮次结束时后台命令被停止的结果说法",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  text: "已停止，命令可能只执行了一部分。",
+});
+
+export const BACKGROUND_RESULT_UNKNOWN = templatePrompt({
+  id: "background.result.unknown",
+  purpose: "后台命令结果未知时的说法",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  segments: [
+    text("结果未知（"),
+    slot("errorCode"),
+    text("），不要直接重复执行，先核实已经产生的效果。"),
+  ],
+});
+
+export const BACKGROUND_AWAITING_APPROVAL = fixedPrompt({
+  id: "background.result.awaiting-approval",
+  purpose: "后台命令等待批准时的说法",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  text: "等待批准，命令没有执行。",
+});
+
+export const BACKGROUND_SUCCEEDED = fixedPrompt({
+  id: "background.result.succeeded",
+  purpose: "后台命令成功时的说法",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  text: "命令已运行结束",
+});
+
+export const BACKGROUND_FAILED = templatePrompt({
+  id: "background.result.failed",
+  purpose: "后台命令失败时的说法",
+  usedBy: ["apps/agent-service/src/production-background-commands.ts"],
+  layer: "appended-message",
+  output: "free-text",
+  segments: [text("失败（"), slot("errorCode"), text("）")],
+});

@@ -95,3 +95,21 @@ export const TOOL_BUILTIN_WRITE_SUFFIX = fixedPrompt({
   output: "free-text",
   text: "目标主机、目录、执行权限和输出披露由 Himawari 授权绑定；写入和命令通过受限 Worker 执行。",
 });
+
+export const CHAT_TOOL_SNIPPETS_HEADER = fixedPrompt({
+  id: "chat.tool-snippets-header",
+  purpose: "系统提示里列出文件与命令工具一节的标题",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "文件与命令工具：",
+});
+
+export const CHAT_TOOL_GUIDELINES_HEADER = fixedPrompt({
+  id: "chat.tool-guidelines-header",
+  purpose: "系统提示里工具用法一节的标题",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "system",
+  output: "free-text",
+  text: "工具用法：",
+});

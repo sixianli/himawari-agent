@@ -53,7 +53,9 @@ import type {
 import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_CONTEXT_MATERIAL_MARKER,
+  CHAT_TOOL_GUIDELINES_HEADER,
   CHAT_TOOL_LOOP_STOPPED,
+  CHAT_TOOL_SNIPPETS_HEADER,
   CHAT_TURN_ABORTED,
   CHAT_TURN_CONTEXT_PREFACE,
   CHAT_TURN_TIME,
@@ -480,9 +482,14 @@ function productSystemPrompt(
   ];
   return [
     systemInstruction,
-    ...(snippets.length > 0 ? [["文件与命令工具：", ...snippets].join("\n")] : []),
+    ...(snippets.length > 0 ? [[CHAT_TOOL_SNIPPETS_HEADER.text, ...snippets].join("\n")] : []),
     ...(guidelines.length > 0
-      ? [["工具用法：", ...guidelines.map((guideline) => `- ${guideline}`)].join("\n")]
+      ? [
+          [
+            CHAT_TOOL_GUIDELINES_HEADER.text,
+            ...guidelines.map((guideline) => `- ${guideline}`),
+          ].join("\n"),
+        ]
       : []),
   ].join("\n\n");
 }

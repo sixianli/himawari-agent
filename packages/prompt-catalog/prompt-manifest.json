@@ -1,4 +1,34 @@
 {
+  "background.done.command": {
+    "sha256": "5649eaf0eda31c83f53a74df5230f15f5aa1803a92f15a9e19925e87d6fd3d78",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.done.duration": {
+    "sha256": "0a14df0347046ff38563b20b3476e547e3786c1ed5726a6f947aff009d0699d2",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.done.output-header": {
+    "sha256": "bd8be41cf6b4cd91b71eaab47d53bda4dbfac162db5725eb17149c38f3f461d4",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.done.output-truncated": {
+    "sha256": "7d82c3c1570fcc16dc7271dbc6c3e64896adb3954d16ee5fd4535f08f7df6d8f",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.done.result": {
+    "sha256": "bb5895e5fc17c057ab70c1e38d8b844e865a48e48f70975641b34a19f6cc81b3",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.done.title": {
+    "sha256": "67b62549b728a4bcf4c4cdb7fcd7178648ea7d52067051c056be2fb5c1e6b1cb",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
   "background.notice": {
     "sha256": "58c4cbdef38bd21a5ee140d4137c1f786d9cbd3136a92b9adc2c38d9ae4d29b1",
     "changedIn": "ADR 0161",
@@ -36,6 +66,36 @@
   },
   "background.outcome.timed-out": {
     "sha256": "a184673225ef0cd1710dd40775ce8dd82a078d49f3cd6413f07f5e594fa7a88f",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.result.awaiting-approval": {
+    "sha256": "d624df9fdaff7c09c2978e48c33501a90202e5b0a451422ce840b6499532e07a",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.result.failed": {
+    "sha256": "cf3be19e987b4f4005199880a8b8bf04f4f0797eab559c52690024951b662dc1",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.result.stop-requested": {
+    "sha256": "4c43ae3dbd65b883838c6d6e0bdfb5dbc829c2ae0e01e8ccd1824e87f0f479da",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.result.stop-run-ended": {
+    "sha256": "4c11c99d49998ceb0f3ce21c2b9fdff3532fd734f4894df39688b8f3022a40bc",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.result.succeeded": {
+    "sha256": "0cee11769ede3673111b5b9afaa31169483360c56c2f209f2f1860c27ac8776c",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "background.result.unknown": {
+    "sha256": "ff11277e6a560924a99d6bcb10c87daaa262692e6ed20ed5213b7478b2a30538",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
@@ -109,8 +169,18 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "chat.tool-guidelines-header": {
+    "sha256": "c40677bb482f81f7b58149ebf4ebddffd13217c53861b171d42af620fd02d043",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
   "chat.tool-loop-stopped": {
     "sha256": "dad6b8cae19ae226aeaaac268ea885027e99a96985d9f71318a48959582037e7",
+    "changedIn": "ADR 0161",
+    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "chat.tool-snippets-header": {
+    "sha256": "a158045bda2707eecf385a28b09402867be37af0ba500c97fdb77f3563a7e925",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },

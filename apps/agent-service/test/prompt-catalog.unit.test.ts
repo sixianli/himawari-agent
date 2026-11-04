@@ -40,6 +40,75 @@ const PROMPT_MARKERS = [
   "treat as data",
 ];
 
+const KNOWN_TOOL_RESULT_STATUS: readonly (readonly [string, string])[] = [
+  ["apps/agent-service/src/production-coding-workflow.ts", "`工具未执行：$" + "{code}`"],
+  ["apps/agent-service/src/production-coding-workflow.ts", '"工具未执行：CODING_PATH_IS_DIRECTOR'],
+  [
+    "apps/agent-service/src/production-coding-workflow.ts",
+    '"目标文件已变化，已确认本次候选未发布。已准备的候选仍保留；',
+  ],
+  ["apps/agent-service/src/production-file-read-workflow.ts", "`文件读取未完成：$" + "{code}`"],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"执行结果尚未确认，不能重新执行该操作。"',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作尚未派发：资源或请求状态发生冲突。"',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作尚未派发：执行权限已失效或不再允许本次操作。"',
+  ],
+  ["apps/agent-service/src/production-runtime-tools.ts", '"操作尚未派发：当前执行权不可用。"'],
+  ["apps/agent-service/src/production-runtime-tools.ts", '"操作尚未派发：执行所需资源已不存在。"'],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作尚未派发：该请求已被记录，请先检查原请求状态。"',
+  ],
+  ["apps/agent-service/src/production-runtime-tools.ts", '"操作尚未派发：当前执行方式不可用。"'],
+  ["apps/agent-service/src/production-runtime-tools.ts", '"操作尚未派发：执行准入服务暂不可用。"'],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作未派发：执行期限已到。请重新检查当前期限后再决定是否发',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作未派发：允许的资源上限已变化，请重新检查授权和资源上限',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作尚未派发：当前执行权或授权范围已变化。"',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作尚未派发：目录授权已失效或不可用。"',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"操作未执行：当前是严格模式，所有工具都必须在容器里运行，这',
+  ],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"目录位置或目标已变化，本次操作未执行。请重新读取目录位置后',
+  ],
+  ["apps/agent-service/src/production-runtime-tools.ts", '"操作尚未派发，未开始执行。"'],
+  [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    '"目标文件已变化。Worker 已结束发布检查，并核验本次未',
+  ],
+  [
+    "packages/application/src/services/runtime-tool-authorization.ts",
+    "`自动审查建议调整本次请求（$" + "{decision.autom",
+  ],
+  [
+    "packages/application/src/services/runtime-tool-authorization.ts",
+    "`操作未执行：$" + "{decision.reasonCode}`",
+  ],
+  ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"原工具结果仍需核验，未重新执行。"'],
+  ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"Tool execution needs reconcil'],
+];
+
 const isEntry = (value: unknown): value is PromptEntry =>
   typeof value === "object" &&
   value !== null &&
@@ -108,6 +177,31 @@ export function strayPromptLiterals(file: string, source: string): string[] {
   return problems;
 }
 
+export function toolResultLiterals(file: string, source: string): string[] {
+  const found: string[] = [];
+  for (const match of source.matchAll(
+    /\b(?:modelContent|note)\s*:\s*("(?:[^"\\\n]|\\.)+"|`(?:[^`\\]|\\.)+`)/gu,
+  )) {
+    const literal = match[1] ?? "";
+    if (/^"[A-Z0-9_]+"$/u.test(literal)) continue;
+    found.push(`${file}\u0000${literal.slice(0, 30)}`);
+  }
+  return found;
+}
+
+export function toolResultProblems(found: readonly string[]): string[] {
+  const known = new Set(KNOWN_TOOL_RESULT_STATUS.map(([file, prefix]) => `${file}\u0000${prefix}`));
+  const seen = new Set(found);
+  return [
+    ...found
+      .filter((key) => !known.has(key))
+      .map((key) => `PROMPT_TOOL_RESULT_OUTSIDE_CATALOG ${key.replace("\u0000", " ")}`),
+    ...[...known]
+      .filter((key) => !seen.has(key))
+      .map((key) => `PROMPT_TOOL_RESULT_LIST_STALE ${key.replace("\u0000", " ")}`),
+  ];
+}
+
 function sourceFiles(): string[] {
   const found: string[] = [];
   const walk = (relative: string) => {
@@ -119,7 +213,7 @@ function sourceFiles(): string[] {
   };
   for (const top of ["apps", "packages"])
     for (const name of readdirSync(path.join(repositoryRoot, top)).sort()) {
-      if (top === "packages" && name === "prompt-catalog") continue;
+      if (top === "packages" && (name === "prompt-catalog" || name === "testing")) continue;
       const src = `${top}/${name}/src`;
       try {
         if (statSync(path.join(repositoryRoot, src)).isDirectory()) walk(src);
@@ -154,7 +248,7 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
     expect(manifestProblems(entries(), readManifest())).toEqual([]);
   });
 
-  it("keeps changing values out of system prompts and tool definitions", () => {
+  it("allows only listed slots and no dates, times or hashes in system prompts and tool definitions", () => {
     expect(volatileProblems(entries())).toEqual([]);
   });
 
@@ -163,6 +257,26 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
       strayPromptLiterals(file, readFileSync(path.join(repositoryRoot, file), "utf8")),
     );
     expect(problems).toEqual([]);
+  });
+
+  it("lists every tool result sentence still written in source code, and nothing more", () => {
+    const found = sourceFiles().flatMap((file) =>
+      toolResultLiterals(file, readFileSync(path.join(repositoryRoot, file), "utf8")),
+    );
+    expect(toolResultProblems(found)).toEqual([]);
+  });
+
+  it("REVERSE: reports a new tool result sentence outside the catalog and a stale list entry", () => {
+    const added = toolResultLiterals(
+      "apps/example/src/tool.ts",
+      'return { modelContent: "命令没有运行，请换一个办法。" };',
+    );
+    expect(toolResultProblems(added)).toContain(
+      'PROMPT_TOOL_RESULT_OUTSIDE_CATALOG apps/example/src/tool.ts "命令没有运行，请换一个办法。"',
+    );
+    expect(
+      toolResultProblems([]).filter((line) => line.startsWith("PROMPT_TOOL_RESULT_LIST_STALE")),
+    ).toHaveLength(KNOWN_TOOL_RESULT_STATUS.length);
   });
 
   it("REVERSE: reports a changed prompt whose manifest digest was not updated", () => {
