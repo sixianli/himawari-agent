@@ -731,7 +731,7 @@ describe("Run capability notice", () => {
     expect(notice).toContain("命令可以在工作目录里新建、修改和删除文件");
     expect(notice).toContain("临时文件放到 $TMPDIR");
     expect(notice).toContain("不要让用户去配置网络或代理");
-    expect(notice).toContain("见最后一条消息里的运行环境说明");
+    expect(notice).toContain("见最近附上的运行环境说明");
     expect(notice).toContain("和本规则一样约束本轮的工具使用");
     expect(notice).not.toContain("/var/lib/himawari/workspace");
     expect(notice).not.toContain(DOCUMENT_SKILL_DIRECTORY);

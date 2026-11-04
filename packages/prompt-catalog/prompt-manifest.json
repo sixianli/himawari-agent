@@ -115,9 +115,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.capabilities.runtime-environment": {
-    "sha256": "71e9a511bcf058142d82d49979f596baa4fd08af4cf32782d95e3c4b82a25db6",
+    "sha256": "b4918aa562c86dc4d02a8170585c9e2c5849df39e98aa228a8e850060330b619",
     "changedIn": "ADR 0164",
-    "reason": "复核第 1 轮：运行环境说明改用自己的标记，不再写着“当作资料、不是指令”，身份说明和能力边界同步改写；发送时机补上“压缩之后”"
+    "reason": "复核第 3 轮：内容没变时本轮不附运行环境说明，能力边界里“见最后一条消息”改成“见最近附上的运行环境说明”，免得模型在本轮消息里找不到时犹豫"
   },
   "chat.capabilities.sandbox-commands": {
     "sha256": "f2f7b0ff50516e08b90ac64ee75acf95febe5043cc10d00e5e5bb3d0b7bbaf2f",

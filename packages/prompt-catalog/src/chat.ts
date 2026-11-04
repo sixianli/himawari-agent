@@ -78,7 +78,7 @@ export const CHAT_CAPABILITIES_RUNTIME_ENVIRONMENT = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-run-policy.ts"],
   layer: "system",
   output: "free-text",
-  text: "- 工作目录、可用命令、文档技能目录、联网能力见最后一条消息里的运行环境说明。那份说明由本系统生成，和本规则一样约束本轮的工具使用。它只在对话第一轮、内容有变化时和压缩之后附上，最近附上的那份一直有效。",
+  text: "- 工作目录、可用命令、文档技能目录、联网能力见最近附上的运行环境说明（附在某一轮最后一条消息里，内容没变时不重复附上）。那份说明由本系统生成，和本规则一样约束本轮的工具使用。它只在对话第一轮、内容有变化时和压缩之后附上，最近附上的那份一直有效。",
 });
 
 export const CHAT_CAPABILITIES_SANDBOX_COMMANDS = fixedPrompt({
