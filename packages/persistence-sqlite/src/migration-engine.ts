@@ -583,10 +583,24 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 73,
+    name: "muse_reference_paired_message",
+    changeSet: "muse-reference-paired-message",
+    phase: "expand" as const,
+    file: "0073_muse_reference_paired_message.sql",
+  },
+  {
+    sequence: 74,
+    name: "ledger_observation",
+    changeSet: "ledger-observation",
+    phase: "expand" as const,
+    file: "0074_ledger_observation.sql",
+  },
+  {
+    sequence: 75,
     name: "muse_intake",
     changeSet: "muse-intake",
     phase: "expand" as const,
-    file: "0073_muse_intake.sql",
+    file: "0075_muse_intake.sql",
   },
 ] as const;
 

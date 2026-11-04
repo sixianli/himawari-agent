@@ -84,6 +84,7 @@ import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operati
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
 import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
+import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
@@ -358,6 +359,7 @@ export class SqliteDurableOperations {
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
   private readonly museIntake: SqliteMuseIntakeOperations;
+  private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
   private readonly modelUsage: SqliteModelUsageOperations;
   private readonly webPush: SqliteWebPushOperations;
@@ -433,6 +435,11 @@ export class SqliteDurableOperations {
     this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
     this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
+    this.ledgerObservation = new SqliteLedgerObservationOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.ownerPreferences = new SqliteOwnerPreferencesOperations(
       database,
       fail,
@@ -546,6 +553,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
     if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);
+    if (operation.startsWith("ledgerObservation."))
+      return this.ledgerObservation.execute(operation, payload);
     if (operation.startsWith("ownerPreferences."))
       return this.ownerPreferences.execute(operation, payload);
     if (operation.startsWith("modelUsage.")) return this.modelUsage.execute(operation, payload);

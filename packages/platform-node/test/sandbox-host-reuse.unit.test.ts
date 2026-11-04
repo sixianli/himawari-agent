@@ -6,6 +6,7 @@ import type {
   SandboxHostBinding,
   SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createReusingSandboxHostVerifier,
@@ -80,7 +81,7 @@ async function fixture() {
     qualificationRef: "test-evidence-only",
     hostId: "host",
     profileRef: "mac",
-    srtVersion: "0.0.75",
+    srtVersion: SANDBOX_RUNTIME_VERSION,
     platform: linux ? "linux" : "darwin",
     architecture: process.arch as "arm64" | "x64",
     osRelease: release(),

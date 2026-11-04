@@ -96,36 +96,37 @@ async function applyStaticRootConfiguration(binding) {
 async function main(action) {
   const binding = loadBinding(!action.startsWith("S9_") && action !== "S7_CATALOG_UPGRADE");
   const report = { schemaVersion: "himawari.__PKT_LABEL__-change-maintenance.v1", action, startedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, bindingSha256: sha(readFileSync("/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/inputs/bindings.json")), passed: false };
-  retainedJson(`${action.toLowerCase()}-started.json`, report);
+  const retain = (name, value) => retainedJson(name, value, { supersede: action.startsWith("S9_") });
+  retain(`${action.toLowerCase()}-started.json`, report);
   try {
     if (!["S8_READBACK", "S9_SIDECAR_TIDY"].includes(action)) await requireStateUnlocked(["S3_COPY51", "S9_RAW_RESTORE51"].includes(action) ? oldPrefix : newPrefix);
     if (action === "S3_COPY51") {
       const before = await readMaintenanceState(binding, oldPrefix);
       requireSchemaGate(before, currentSchema);
-      report.before = retainedJson("s3-copy-before__PKT_CURRENT_SCHEMA__.json", before);
+      report.before = retain("s3-copy-before__PKT_CURRENT_SCHEMA__.json", before);
       report.recovery = await copyRecovery(binding, oldPrefix, currentSchema, recoveryIdForSchema(binding, currentSchema), before);
       const after = await readMaintenanceState(binding, oldPrefix);
       verifyHistoryUnchanged(before, after);
-      report.after = retainedJson("s3-copy-after__PKT_CURRENT_SCHEMA__.json", after);
+      report.after = retain("s3-copy-after__PKT_CURRENT_SCHEMA__.json", after);
     } else if (action === "S7_DB_STATUS") {
       requirePassedStep("S3_COPY51");
       const state = await readMaintenanceState(binding, newPrefix);
       requireSchemaGate(state, currentSchema);
       verifyHistoryUnchanged(jsonFile(`${evidenceRoot}/s3-copy-after__PKT_CURRENT_SCHEMA__.json`), state);
       const authorization = readPreUpgradeAuthorization(binding);
-      report.authorization = retainedJson("s7-preupgrade-authorization.json", authorization);
+      report.authorization = retain("s7-preupgrade-authorization.json", authorization);
       report.authorizationVerification = { passed: true, configurationSha256: authorization.configurationSha256, authorizationSha256: report.authorization.sha256, checkedAt: authorization.checkedAt };
-      report.state = retainedJson("s7-preswitch-state.json", state);
+      report.state = retain("s7-preswitch-state.json", state);
     } else if (action === "S7_CONFIG_APPLY") {
       requirePassedStep("S7_DB_STATUS");
       const state = await readMaintenanceState(binding, newPrefix);
       requireSchemaGate(state, currentSchema);
       const preswitch = jsonFile(`${evidenceRoot}/s7-preswitch-state.json`);
       verifyHistoryUnchanged(preswitch, state);
-      report.configuration = retainedJson("s7-config-apply.json", await applyStaticRootConfiguration(binding));
+      report.configuration = retain("s7-config-apply.json", await applyStaticRootConfiguration(binding));
       const authorization = readPreUpgradeAuthorization(binding);
       assert.equal(authorization.configurationSha256, staticRootConfigurationSha256(binding), "__PKT_LABEL_UPPER___MAINTENANCE_STATIC_ROOT_CONFIG_BYTES_CHANGED");
-      report.authorization = retainedJson("s7-static-root-authorization.json", authorization);
+      report.authorization = retain("s7-static-root-authorization.json", authorization);
       if (targetSchema !== currentSchema) {
         const migration = await migrateDatabase({
           requireStopped,
@@ -134,16 +135,16 @@ async function main(action) {
           describeSnapshot: describeMigrationSnapshot,
         });
         verifyHistoryUnchanged(preswitch, migration.after);
-        report.migrationBefore = retainedJson("s7-migrate-before" + currentSchema + ".json", migration.before);
+        report.migrationBefore = retain("s7-migrate-before" + currentSchema + ".json", migration.before);
         report.migrate = migration.migrate.retained;
         report.migrationSnapshot = migration.snapshot;
         report.migrationTransition = migration.transition;
-        report.migrationAfter = retainedJson("s7-migrate-after" + targetSchema + ".json", migration.after);
+        report.migrationAfter = retain("s7-migrate-after" + targetSchema + ".json", migration.after);
       }
       const applied = await readMaintenanceState(binding, newPrefix);
       requireSchemaGate(applied, targetSchema);
       verifyHistoryUnchanged(preswitch, applied);
-      report.after = retainedJson("s7-config-apply-after__PKT_TARGET_SCHEMA__.json", applied);
+      report.after = retain("s7-config-apply-after__PKT_TARGET_SCHEMA__.json", applied);
     } else if (action === "S7_CATALOG_UPGRADE" && currentConfigurationStage(binding) === "prepared") {
       requirePassedStep("S7_CONFIG_APPLY");
       report.recoveryReadback = (await verifyRetainedRecovery(binding)).proof;
@@ -158,10 +159,10 @@ async function main(action) {
       const planDigest = verifyUpgradePlan(resumed.plan, { frozen: upgradedState.frozen, snapshotSha256: resumed.snapshotSha256, authorization: upgradedState.authorization });
       assert.deepEqual(upgradeResultExpectation(resumed.upgrade), upgradeResultExpectation({ snapshotDigest: resumed.plan.snapshotDigest, planDigest, frozen: upgradedState.frozen }), "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_RESULT_CHANGED");
       const upgraded = verifyUpgradedCatalog(upgradedState, resumed.original.records.upgradeAudit);
-      report.catalogAfter = retainedJson("s7-catalog-after.json", { authorization: upgradedState.authorization, records: upgradedState.records, strict: upgradedState.strict, workspace: upgradedState.workspace });
+      report.catalogAfter = retain("s7-catalog-after.json", { authorization: upgradedState.authorization, records: upgradedState.records, strict: upgradedState.strict, workspace: upgradedState.workspace });
       report.catalog = { preparedConfigurationSha256: upgradedState.configurationSha256, snapshotSha256: resumed.snapshotSha256, planDigest, upgraded, upgradeAuditBefore: resumed.original.records.upgradeAudit, upgradeAudit: upgradedState.records.upgradeAudit };
-      report.after = retainedJson("s7-catalog-after__PKT_TARGET_SCHEMA__.json", after);
-      report.postUpgradeState = retainedJson("s7-post-upgrade-state.json", postUpgradeState(binding, after));
+      report.after = retain("s7-catalog-after__PKT_TARGET_SCHEMA__.json", after);
+      report.postUpgradeState = retain("s7-post-upgrade-state.json", postUpgradeState(binding, after));
     } else if (action === "S7_CATALOG_UPGRADE") {
       requirePassedStep("S7_CONFIG_APPLY");
       report.recoveryReadback = (await verifyRetainedRecovery(binding)).proof;
@@ -169,7 +170,7 @@ async function main(action) {
       requireSchemaGate(before, targetSchema);
       verifyHistoryUnchanged(jsonFile(`${evidenceRoot}/s7-preswitch-state.json`), before);
       const original = readPreUpgradeAuthorization(binding);
-      report.catalogBefore = retainedJson("s7-catalog-before.json", original);
+      report.catalogBefore = retain("s7-catalog-before.json", original);
       const prepared = runPrepare(binding);
       report.prepare = prepared.retained;
       loadBinding(false);
@@ -191,19 +192,19 @@ async function main(action) {
       const upgradedState = readCatalogState(binding, { prepared: true, upgraded: true });
       assert.equal(upgradedState.configurationSha256, prepared.configurationSha256, "__PKT_LABEL_UPPER___MAINTENANCE_PREPARED_CONFIG_CHANGED");
       const upgraded = verifyUpgradedCatalog(upgradedState, original.records.upgradeAudit);
-      report.catalogAfter = retainedJson("s7-catalog-after.json", { authorization: upgradedState.authorization, records: upgradedState.records, strict: upgradedState.strict, workspace: upgradedState.workspace });
+      report.catalogAfter = retain("s7-catalog-after.json", { authorization: upgradedState.authorization, records: upgradedState.records, strict: upgradedState.strict, workspace: upgradedState.workspace });
       report.catalog = { preparedConfigurationSha256: prepared.configurationSha256, snapshotSha256: prepared.snapshotSha256, planDigest, upgraded, upgradeAuditBefore: original.records.upgradeAudit, upgradeAudit: upgradedState.records.upgradeAudit };
-      report.after = retainedJson("s7-catalog-after__PKT_TARGET_SCHEMA__.json", after);
-      report.postUpgradeState = retainedJson("s7-post-upgrade-state.json", postUpgradeState(binding, after));
+      report.after = retain("s7-catalog-after__PKT_TARGET_SCHEMA__.json", after);
+      report.postUpgradeState = retain("s7-post-upgrade-state.json", postUpgradeState(binding, after));
     } else if (action === "S8_READBACK") {
       requirePassedStep("S7_CATALOG_UPGRADE");
       verifyHistoryUnchanged(jsonFile(`${evidenceRoot}/s3-copy-after__PKT_CURRENT_SCHEMA__.json`), jsonFile(`${evidenceRoot}/s7-catalog-after__PKT_TARGET_SCHEMA__.json`));
       const after = await readMaintenanceState(binding, newPrefix, true);
       requireSchemaGate(after, targetSchema);
-      report.state = retainedJson("s8-database-readback.json", after);
-      report.authorization = retainedJson("s8-current-authorization.json", readPostSwitchAuthorization(binding));
+      report.state = retain("s8-database-readback.json", after);
+      report.authorization = retain("s8-current-authorization.json", readPostSwitchAuthorization(binding));
       report.recoveryPoints = { ["schema" + currentSchema]: (await verifyRetainedRecovery(binding)).proof };
-      report.history = retainedJson("s8-history-preserved.json", verifyHistoryAgainstRecoveryPoint(binding));
+      report.history = retain("s8-history-preserved.json", verifyHistoryAgainstRecoveryPoint(binding));
       report.scope = "rows-present-at-s3-unchanged-new-rows-allowed-startup-recovery-column-allowed-upgraded-capability-catalog-existing-workspace-grant-and-raw-recovery-point-not-paid-chat-acceptance";
     } else if (action === "S9_SIDECAR_TIDY") {
       const approval = readRollbackApproval(binding, "S9_RAW_RESTORE51");
@@ -229,10 +230,10 @@ async function main(action) {
       report.sidecarsBefore = tidy.sidecarsBefore;
       report.sidecarsBeforeWrite = tidy.sidecarsBeforeWrite;
       report.sidecarsAfter = tidy.sidecarsAfter;
-      report.before = retainedJson("s9_sidecar_tidy-before.json", tidy.before);
-      report.tidy = retainedJson("s9_sidecar_tidy-tidy.json", { readVia: tidy.readVia, noSidecars: tidy.noSidecars, journalMode: tidy.journalMode, checkpoint: tidy.checkpoint, checkpointBusy: tidy.checkpointBusy, sidecarsBefore: tidy.sidecarsBefore, sidecarsBeforeWrite: tidy.sidecarsBeforeWrite, sidecarsAfter: tidy.sidecarsAfter, comparedSections: tidy.comparedSections });
-      report.after = retainedJson("s9_sidecar_tidy-after.json", tidy.after);
-      report.state = retainedJson("s9_sidecar_tidy-state.json", await readMaintenanceState(binding, newPrefix, "rollback-current"));
+      report.before = retain("s9_sidecar_tidy-before.json", tidy.before);
+      report.tidy = retain("s9_sidecar_tidy-tidy.json", { readVia: tidy.readVia, noSidecars: tidy.noSidecars, journalMode: tidy.journalMode, checkpoint: tidy.checkpoint, checkpointBusy: tidy.checkpointBusy, sidecarsBefore: tidy.sidecarsBefore, sidecarsBeforeWrite: tidy.sidecarsBeforeWrite, sidecarsAfter: tidy.sidecarsAfter, comparedSections: tidy.comparedSections });
+      report.after = retain("s9_sidecar_tidy-after.json", tidy.after);
+      report.state = retain("s9_sidecar_tidy-state.json", await readMaintenanceState(binding, newPrefix, "rollback-current"));
       report.scope = "rollback-approval-and-fresh-s2-inspection-required-no-state-lock-no-manual-deletion-wal-checkpoint-truncate-then-content-readback";
     } else {
       const id = recoveryIdForSchema(binding, currentSchema);
@@ -242,7 +243,7 @@ async function main(action) {
       report.approvalRef = approval.approvalRef;
       const current = await readMaintenanceState(binding, newPrefix, "rollback-current");
       assert([currentSchema, targetSchema].includes(current.schema.current), "__PKT_LABEL_UPPER___MAINTENANCE_ROLLBACK_CURRENT_SCHEMA_REQUIRED");
-      report.before = retainedJson(`${action.toLowerCase()}-before.json`, current);
+      report.before = retain(`${action.toLowerCase()}-before.json`, current);
       const retained = await verifyRetainedRecovery(binding, approval.recoveryDigest);
       report.verify = retained.proof;
       const options = await recoveryOptions(binding, oldPrefix, currentSchema, id, retained.reference.ledger);
@@ -253,7 +254,7 @@ async function main(action) {
       const reference = retained.reference;
       verifyHistoryUnchanged(reference, state);
       assert.deepEqual(state.gate, reference.gate, "__PKT_LABEL_UPPER___MAINTENANCE_RESTORED_GATE_CHANGED");
-      report.after = retainedJson(`${action.toLowerCase()}-after.json`, state);
+      report.after = retain(`${action.toLowerCase()}-after.json`, state);
       report.catalog = readRestoredCatalog(binding);
       report.accountRecoveryRequired = true;
       report.serviceStartAuthorized = false;
@@ -269,7 +270,7 @@ async function main(action) {
     if (action !== "S8_READBACK") requireStopped();
     report.passed = true;
     report.finishedAt = new Date().toISOString();
-    const retained = retainedJson(`${action.toLowerCase()}-result.json`, report);
+    const retained = retain(`${action.toLowerCase()}-result.json`, report);
     process.stdout.write(JSON.stringify({ passed: true, action, evidence: retained, productionPaidChatVerified: false }) + "\n");
   } catch (error) {
     report.finishedAt = new Date().toISOString();
@@ -280,7 +281,7 @@ async function main(action) {
     report.failureCode = "__PKT_LABEL_UPPER___DEPLOY_MAINTENANCE_STOPPED";
     const firstLine = error instanceof Error ? error.message.split("\n")[0] : "";
     report.failedCondition = /^[A-Z0-9_]+(:[A-Za-z0-9._-]+)?$/.test(firstLine) ? firstLine : "__PKT_LABEL_UPPER___DEPLOY_MAINTENANCE_UNEXPECTED_FAILURE";
-    const retained = retainedJson(`${action.toLowerCase()}-failure.json`, report);
+    const retained = retain(`${action.toLowerCase()}-failure.json`, report);
     process.stdout.write(JSON.stringify({ passed: false, action, failureCode: report.failureCode, evidence: retained }) + "\n");
     process.exitCode = 1;
   }

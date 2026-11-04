@@ -14,13 +14,20 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { request as requestHttp } from "node:http";
+import {
+  createServer as createHttpServer,
+  type Server as HttpServer,
+  type IncomingMessage,
+  request as requestHttp,
+  type ServerResponse,
+} from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { hostname, release } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PayloadRecord } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -33,10 +40,15 @@ import {
   RestrictedSecretFileSource,
   writeAuthorityFile,
 } from "@himawari-agent/platform-node";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import Database from "better-sqlite3";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
-
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { ACCEPTANCE_SELECTABLE_MODELS } from "../../apps/control-center/test/release-walkthrough-models.ts";
+import {
+  buildProductPathConfiguration,
+  PRODUCT_PATH_AUDIENCE,
+  PRODUCT_PATH_CODING_TOOLS,
+} from "./product-path-configuration.ts";
 import { prepareProductPathTiming } from "./product-path-timing.ts";
 
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -49,10 +61,10 @@ const hostId = "product-path-host";
 const workerInstanceId = `execution-worker:${deploymentId}`;
 const grantId = "directory:product-path-workspace";
 const authority = { deploymentId, authorityEpoch: 1, fencingToken: 1 };
-const audience = "access-audience-product-path";
+const audience = PRODUCT_PATH_AUDIENCE;
 const subject = "subject-product-path";
 const bootstrapToken = "bootstrap-token-product-path";
-const codingTools = ["read", "write", "edit", "ls", "find", "grep", "bash"] as const;
+const codingTools = PRODUCT_PATH_CODING_TOOLS;
 
 export type ModelRequest = {
   readonly path: string;
@@ -160,7 +172,7 @@ async function createCertificates(root: string) {
   return { ca: ca.cert, provider, front };
 }
 
-async function listen(server: HttpsServer): Promise<number> {
+async function listen(server: HttpsServer | HttpServer): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen({ host: "127.0.0.1", port: 0 }, () => resolve());
@@ -170,7 +182,7 @@ async function listen(server: HttpsServer): Promise<number> {
   return address.port;
 }
 
-async function close(server: HttpsServer | undefined): Promise<void> {
+async function close(server: HttpsServer | HttpServer | undefined): Promise<void> {
   if (!server?.listening) return;
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -529,6 +541,21 @@ async function saveStartupFailureLogs(input: {
   );
 }
 
+export function assertLoopbackMagpieUrl(value: string): void {
+  const url = new URL(value);
+  if (
+    url.protocol !== "http:" ||
+    url.hostname !== "127.0.0.1" ||
+    url.port === "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    url.pathname !== "/v1"
+  )
+    throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+}
+
 export async function installProductPath(options: {
   readonly artifact: string;
   readonly context: string;
@@ -537,7 +564,10 @@ export async function installProductPath(options: {
   readonly sourceRoot?: string;
   readonly approval?: "workspace_auto" | "ask";
   readonly webSearch?: boolean;
+  readonly selectableModels?: boolean;
+  readonly realMagpie?: { readonly url: string; readonly keyFile: string };
 }): Promise<ProductPathInstallation> {
+  if (options.realMagpie) assertLoopbackMagpieUrl(options.realMagpie.url);
   const testRoot = await realpath(await mkdtemp(productPathTemporaryPrefix()));
   const stateRoot = path.join(testRoot, "state");
   const runtimePrefix = path.join(testRoot, "prefix");
@@ -586,202 +616,241 @@ export async function installProductPath(options: {
   let providerPort = 0;
   let appPort = 0;
   const issuer = () => `https://127.0.0.1:${providerPort}`;
+  const handleProvider = (request: IncomingMessage, response: ServerResponse) => {
+    const requestPath = request.url ?? "/";
+    if (requestPath === "/cdn-cgi/access/certs") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(jwks));
+      return;
+    }
+    if (requestPath === "/cdn-cgi/access/get-identity") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ user_uuid: subject, iat: Math.floor(Date.now() / 1000) }));
+      return;
+    }
+    let raw = "";
+    request.on("data", (chunk: Buffer | string) => {
+      raw += chunk;
+    });
+    request.on("end", () => {
+      const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      modelRequests.push({
+        path: requestPath,
+        model: typeof body["model"] === "string" ? body["model"] : undefined,
+        body,
+      });
+      if (requestPath === "/v1/embeddings") {
+        if (!embeddingAvailable) {
+          request.socket.destroy();
+          return;
+        }
+        const delayMs = nextEmbeddingDelayMs;
+        nextEmbeddingDelayMs = 0;
+        const answer = () => {
+          if (response.destroyed) return;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              object: "list",
+              model: body["model"],
+              data: [
+                {
+                  object: "embedding",
+                  index: 0,
+                  embedding: Array(Number(body["dimensions"])).fill(0.1),
+                },
+              ],
+              usage: { prompt_tokens: 8, total_tokens: 8 },
+              providerMetadata: {
+                gateway: {
+                  generationId: `embedding-${modelRequests.length}`,
+                  routing: { finalProvider: "deepinfra" },
+                  cost: "0",
+                },
+              },
+            }),
+          );
+        };
+        if (delayMs > 0) setTimeout(answer, delayMs);
+        else answer();
+        return;
+      }
+      if (requestPath !== "/v1/chat/completions") {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      const messages = Array.isArray(body["messages"])
+        ? (body["messages"] as Array<{ role?: string; content?: unknown }>)
+        : [];
+      const lastUser = [...messages].reverse().find((message) => message.role === "user");
+      const lastUserIndex = lastUser ? messages.lastIndexOf(lastUser) : -1;
+      const reply = modelScript({
+        lastUserText: textOf(lastUser?.content),
+        toolResults: messages
+          .slice(lastUserIndex + 1)
+          .filter((message) => message.role === "tool")
+          .map((message) => textOf(message.content)),
+        hasTools: Array.isArray(body["tools"]) && body["tools"].length > 0,
+      });
+      const base = {
+        id: `completion-${modelRequests.length}`,
+        object: "chat.completion.chunk",
+        created: Math.floor(Date.now() / 1000),
+        model: body["model"],
+      };
+      const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0 };
+      const provider_metadata = {
+        gateway: {
+          generationId: `generation-${modelRequests.length}`,
+          routing: { finalProvider: "morph" },
+          cost: "0",
+        },
+      };
+      if (reply.kind === "drop") {
+        request.socket.destroy();
+        return;
+      }
+      if (reply.kind === "http-error") {
+        response.writeHead(reply.status, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({ error: { message: "scripted failure", code: reply.status } }),
+        );
+        return;
+      }
+      if (reply.kind === "tool" && reply.streamMs) {
+        const id = `call-${modelRequests.length}-0`;
+        const argumentsText = JSON.stringify(reply.arguments);
+        const pieces = 40;
+        const size = Math.ceil(argumentsText.length / pieces);
+        const chunk = (delta: object, finish: string | null, extra: object = {}) =>
+          `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`;
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(
+          chunk(
+            {
+              role: "assistant",
+              tool_calls: [
+                { index: 0, id, type: "function", function: { name: reply.name, arguments: "" } },
+              ],
+            },
+            null,
+          ),
+        );
+        toolStreamStartedAt = Date.now();
+        let sent = 0;
+        const timer = setInterval(() => {
+          if (response.destroyed) return clearInterval(timer);
+          const piece = argumentsText.slice(sent * size, (sent + 1) * size);
+          sent += 1;
+          if (piece)
+            response.write(
+              chunk({ tool_calls: [{ index: 0, function: { arguments: piece } }] }, null),
+            );
+          if (sent < pieces) return;
+          clearInterval(timer);
+          response.write(chunk({ provider_metadata }, "tool_calls", { usage }));
+          response.end("data: [DONE]\n\n");
+        }, reply.streamMs / pieces);
+        return;
+      }
+      if (reply.kind === "tool" || reply.kind === "tools") {
+        const calls = reply.kind === "tool" ? [reply] : reply.calls;
+        sse(response, [
+          {
+            ...base,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  role: "assistant",
+                  tool_calls: calls.map((call, index) => ({
+                    index,
+                    id: `call-${modelRequests.length}-${index}`,
+                    type: "function",
+                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                  })),
+                },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            ...base,
+            choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "tool_calls" }],
+            usage,
+          },
+        ]);
+        return;
+      }
+      const finish = () =>
+        sse(response, [
+          {
+            ...base,
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: reply.text },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            ...base,
+            choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "stop" }],
+            usage,
+          },
+        ]);
+      if (reply.delayMs) setTimeout(finish, reply.delayMs);
+      else finish();
+    });
+  };
   const provider = createHttpsServer(
     {
       cert: await readFile(certificates.provider.cert),
       key: await readFile(certificates.provider.key),
     },
-    (request, response) => {
-      const requestPath = request.url ?? "/";
-      if (requestPath === "/cdn-cgi/access/certs") {
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify(jwks));
-        return;
-      }
-      if (requestPath === "/cdn-cgi/access/get-identity") {
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ user_uuid: subject, iat: Math.floor(Date.now() / 1000) }));
-        return;
-      }
-      let raw = "";
-      request.on("data", (chunk) => {
-        raw += chunk;
-      });
-      request.on("end", () => {
-        const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-        modelRequests.push({
-          path: requestPath,
-          model: typeof body["model"] === "string" ? body["model"] : undefined,
-          body,
-        });
-        if (requestPath === "/v1/embeddings") {
-          if (!embeddingAvailable) {
-            request.socket.destroy();
-            return;
-          }
-          const delayMs = nextEmbeddingDelayMs;
-          nextEmbeddingDelayMs = 0;
-          const answer = () => {
-            if (response.destroyed) return;
-            response.writeHead(200, { "content-type": "application/json" });
-            response.end(
-              JSON.stringify({
-                object: "list",
-                model: body["model"],
-                data: [
-                  {
-                    object: "embedding",
-                    index: 0,
-                    embedding: Array(Number(body["dimensions"])).fill(0.1),
-                  },
-                ],
-                usage: { prompt_tokens: 8, total_tokens: 8 },
-                providerMetadata: {
-                  gateway: {
-                    generationId: `embedding-${modelRequests.length}`,
-                    routing: { finalProvider: "deepinfra" },
-                    cost: "0",
-                  },
-                },
-              }),
-            );
-          };
-          if (delayMs > 0) setTimeout(answer, delayMs);
-          else answer();
-          return;
-        }
-        if (requestPath !== "/v1/chat/completions") {
-          response.writeHead(404);
-          response.end();
-          return;
-        }
-        const messages = Array.isArray(body["messages"])
-          ? (body["messages"] as Array<{ role?: string; content?: unknown }>)
-          : [];
-        const lastUser = [...messages].reverse().find((message) => message.role === "user");
-        const lastUserIndex = lastUser ? messages.lastIndexOf(lastUser) : -1;
-        const reply = modelScript({
-          lastUserText: textOf(lastUser?.content),
-          toolResults: messages
-            .slice(lastUserIndex + 1)
-            .filter((message) => message.role === "tool")
-            .map((message) => textOf(message.content)),
-          hasTools: Array.isArray(body["tools"]) && body["tools"].length > 0,
-        });
-        const base = {
-          id: `completion-${modelRequests.length}`,
-          object: "chat.completion.chunk",
-          created: Math.floor(Date.now() / 1000),
-          model: body["model"],
-        };
-        const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0 };
-        const provider_metadata = {
-          gateway: {
-            generationId: `generation-${modelRequests.length}`,
-            routing: { finalProvider: "morph" },
-            cost: "0",
-          },
-        };
-        if (reply.kind === "drop") {
-          request.socket.destroy();
-          return;
-        }
-        if (reply.kind === "http-error") {
-          response.writeHead(reply.status, { "content-type": "application/json" });
-          response.end(
-            JSON.stringify({ error: { message: "scripted failure", code: reply.status } }),
-          );
-          return;
-        }
-        if (reply.kind === "tool" && reply.streamMs) {
-          const id = `call-${modelRequests.length}-0`;
-          const argumentsText = JSON.stringify(reply.arguments);
-          const pieces = 40;
-          const size = Math.ceil(argumentsText.length / pieces);
-          const chunk = (delta: object, finish: string | null, extra: object = {}) =>
-            `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: finish }], ...extra })}\n\n`;
-          response.writeHead(200, { "content-type": "text/event-stream" });
-          response.write(
-            chunk(
-              {
-                role: "assistant",
-                tool_calls: [
-                  { index: 0, id, type: "function", function: { name: reply.name, arguments: "" } },
-                ],
-              },
-              null,
-            ),
-          );
-          toolStreamStartedAt = Date.now();
-          let sent = 0;
-          const timer = setInterval(() => {
-            if (response.destroyed) return clearInterval(timer);
-            const piece = argumentsText.slice(sent * size, (sent + 1) * size);
-            sent += 1;
-            if (piece)
-              response.write(
-                chunk({ tool_calls: [{ index: 0, function: { arguments: piece } }] }, null),
-              );
-            if (sent < pieces) return;
-            clearInterval(timer);
-            response.write(chunk({ provider_metadata }, "tool_calls", { usage }));
-            response.end("data: [DONE]\n\n");
-          }, reply.streamMs / pieces);
-          return;
-        }
-        if (reply.kind === "tool" || reply.kind === "tools") {
-          const calls = reply.kind === "tool" ? [reply] : reply.calls;
-          sse(response, [
-            {
-              ...base,
-              choices: [
-                {
-                  index: 0,
-                  delta: {
-                    role: "assistant",
-                    tool_calls: calls.map((call, index) => ({
-                      index,
-                      id: `call-${modelRequests.length}-${index}`,
-                      type: "function",
-                      function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                    })),
-                  },
-                  finish_reason: null,
-                },
-              ],
-            },
-            {
-              ...base,
-              choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "tool_calls" }],
-              usage,
-            },
-          ]);
-          return;
-        }
-        const finish = () =>
-          sse(response, [
-            {
-              ...base,
-              choices: [
-                {
-                  index: 0,
-                  delta: { role: "assistant", content: reply.text },
-                  finish_reason: null,
-                },
-              ],
-            },
-            {
-              ...base,
-              choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "stop" }],
-              usage,
-            },
-          ]);
-        if (reply.delayMs) setTimeout(finish, reply.delayMs);
-        else finish();
-      });
-    },
+    handleProvider,
   );
   providerPort = await listen(provider);
+  const catalog = options.selectableModels
+    ? createHttpServer((request, response) => {
+        if (!(request.method === "GET" && request.url === "/v1/models")) {
+          handleProvider(request, response);
+          return;
+        }
+        const listed = (id: string, label: string) => ({
+          id,
+          object: "model",
+          type: "model",
+          display_name: label,
+          magpie_label: label,
+          context_window: 32768,
+          context_length: 32768,
+          max_input_tokens: 32768,
+          max_output_tokens: 2048,
+          modalities: { input: ["text"], output: ["text"] },
+          reasoning: false,
+          tool_call: true,
+        });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            object: "list",
+            data: [
+              listed("deepseek/deepseek-v4.1-flash", "Product path primary"),
+              ...ACCEPTANCE_SELECTABLE_MODELS.map((entry) => listed(entry.model, entry.name)),
+            ],
+          }),
+        );
+      })
+    : undefined;
+  const catalogPort = catalog ? await listen(catalog) : 0;
+  const magpieUrl = options.realMagpie
+    ? options.realMagpie.url
+    : catalog
+      ? `http://127.0.0.1:${catalogPort}/v1`
+      : undefined;
 
   const signAssertion = () => {
     const now = Math.floor(Date.now() / 1000);
@@ -906,7 +975,12 @@ export async function installProductPath(options: {
     ["payload-kek.v1", "22".repeat(32)],
     ["identity-csrf.v1", "11".repeat(32)],
     ["identity-bootstrap.v1", bootstrapToken],
-    ["vercel-ai-gateway-api-key.v1", "local-provider-fixture"],
+    [
+      "vercel-ai-gateway-api-key.v1",
+      options.realMagpie
+        ? (await readFile(options.realMagpie.keyFile, "utf8")).trim()
+        : "local-provider-fixture",
+    ],
   ] as const)
     await writeFile(path.join(secretDirectory, name), value, { mode: 0o600 });
 
@@ -922,140 +996,23 @@ export async function installProductPath(options: {
     });
   const capabilityDeployment = await qualifyCapabilities();
 
-  const model = (role: string, ref: string, priority: number) => ({
-    ref,
-    role,
-    provider: "vercel-ai-gateway",
-    model: "deepseek/deepseek-v4.1-flash",
-    version: "v1",
-    allowedDataClassifications: ["public", "private"],
-    disclosure: "trusted_remote",
-    secretRef: "vercel-ai-gateway-api-key",
-    capabilities: ["text", "tools"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    priority,
-    name: `Product path ${role}`,
-    api: "openai-completions",
-    reasoning: false,
-    input: ["text"],
-    contextWindow: 32768,
-    maxTokens: 2048,
-    providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
-  });
-  const webRoute = (capabilityRef: string, maximumBytes: number) => ({
-    scopeSource: "private_temp",
-    hostId,
-    workerInstanceId,
-    capabilityRef,
-    capabilityVersion: "1.0.0",
-    maximumBytes,
-    providers: ["exa-public"],
-  });
-  const configuration = {
-    schemaVersion: "himawari.configuration.v1",
+  const configuration = buildProductPathConfiguration({
     deploymentId,
     ownerId,
     agentId,
     stateRoot,
     runtimeDirectory: layout.runtime,
-    cacheDirectory: path.join(stateRoot, "cache"),
     publicOrigin,
-    publicMode: true,
-    http: {
-      listenHost: "127.0.0.1",
-      listenPort: 0,
-      staticRoot,
-      sessionCookieName: "himawari_session",
-      maximumBodyBytes: 256 * 1024,
-      maximumStaticAssetBytes: 8 * 1024 * 1024,
-      heartbeatMilliseconds: 5_000,
-    },
-    identity: {
-      issuer: issuer(),
-      audience,
-      jwksUrl: `${issuer()}/cdn-cgi/access/certs`,
-      jwksCacheMilliseconds: 300_000,
-      jwksTimeoutMilliseconds: 2_000,
-      jwksMaximumBodyBytes: 65_536,
-      clockToleranceSeconds: 30,
-      identityLookupTimeoutMilliseconds: 2_000,
-      identityLookupMaximumBodyBytes: 65_536,
-      recentAuthentication: { maximumAgeMilliseconds: 900_000, clockSkewMilliseconds: 30_000 },
-      bootstrap: {
-        enabled: true,
-        expiresAt: "2099-01-01T00:00:00.000Z",
-        tokenSecretRef: "identity-bootstrap",
-      },
-      csrf: { keySecretRef: "identity-csrf", ttlMilliseconds: 1_800_000 },
-    },
-    modelDescriptors: [
-      model("primary", "model-primary", 1),
-      {
-        ref: "model-embedding",
-        role: "embedding",
-        provider: "vercel-ai-gateway",
-        model: "alibaba/qwen3-embedding-8b",
-        version: "v1",
-        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
-        disclosure: "trusted_remote",
-        secretRef: "vercel-ai-gateway-api-key",
-        capabilities: ["embedding"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        dimensions: 4096,
-      },
-    ],
-    memory: {
-      adapter: "himawari-sqlite",
-      version: "3.3.1",
-      storagePath: path.join(stateRoot, "data", "memory"),
-      dimensions: 4096,
-    },
-    repositoryAllowlistRefs: [],
-    secretReferences: [
-      { ref: "payload-kek", version: "v1", purpose: "payload-encryption", scope: "agent" },
-      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
-      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
-      {
-        ref: "vercel-ai-gateway-api-key",
-        version: "v1",
-        purpose: "model-provider-auth",
-        scope: "agent",
-      },
-      {
-        ref: "worker-process-token",
-        version: "v1",
-        purpose: "worker-auth",
-        scope: "local-services",
-      },
-    ],
-    concurrency: { totalRuns: 4, foregroundReserved: 1, perCategory: { foreground: 2 } },
-    deadlines: { runMs: 900_000, workerRequestMs: 300_000, providerRequestMs: 120_000 },
+    staticRoot,
+    issuer: issuer(),
+    hostId,
+    workerInstanceId,
+    grantId,
     capabilityDeployment,
-    runPolicy: {
-      version: "product-path-v1",
-      systemInstruction: "请用中文回答。文件工具使用工作目录内的相对路径。",
-      memoryLimit: 5,
-      maxSelectedMemories: 0,
-      maxMemoryClassification: "private",
-      coding: {
-        hostId,
-        workerInstanceId,
-        grantId,
-        capabilityRef: "himawari.pi-coding",
-        capabilityVersion: "1.0.0",
-        maximumBytes: 49152,
-        enabledTools: [...codingTools],
-        approval: options.approval ?? "workspace_auto",
-      },
-      ...(options.webSearch
-        ? {
-            publicSearch: webRoute("himawari.public-search", 4096),
-            publicFetch: webRoute("himawari.public-fetch", 102400),
-          }
-        : {}),
-      timeZone: "Asia/Tokyo",
-    },
-  };
+    approval: options.approval,
+    webSearch: options.webSearch,
+    modelCatalogUrl: magpieUrl,
+  });
   await writeFile(configurationPath, JSON.stringify(configuration), { mode: 0o600 });
 
   const cli = path.join(runtimePrefix, "bin/himawari");
@@ -1121,6 +1078,7 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_PREPARATION_ACK_LOSS: path.join(testRoot, "preparation-ack-loss"),
     HIMAWARI_TEST_HOST_FINISH_GATE: path.join(testRoot, "host-finish-gate"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
+    ...(magpieUrl ? { HIMAWARI_TEST_MAGPIE_URL: magpieUrl } : {}),
     HIMAWARI_TEST_JOB_HOST_STDERR: path.join(options.logDirectory, "job-host-stderr-0.log"),
   };
   const serviceArgs = [
@@ -1605,6 +1563,7 @@ export async function installProductPath(options: {
         ).catch(() => undefined);
       await close(front);
       await close(provider);
+      await close(catalog);
       if (process.env["HIMAWARI_PRODUCT_PATH_KEEP_ROOT"] === "1")
         await writeFile(path.join(options.logDirectory, "kept-root.txt"), `${testRoot}\n`);
       else await rm(testRoot, { recursive: true, force: true, maxRetries: 5 });
@@ -1752,7 +1711,7 @@ async function writeCodingSnapshot(input: {
       qualificationRef: `product-path:${evidenceDigest}`,
       hostId,
       profileRef: binding.profileRef,
-      srtVersion: "0.0.75",
+      srtVersion: SANDBOX_RUNTIME_VERSION,
       platform: process.platform,
       architecture: process.arch,
       osRelease: release(),
@@ -1811,7 +1770,7 @@ async function writeCodingSnapshot(input: {
       qualification: {
         qualificationVersion: "capability-runtime-qualification.v1",
         platform: process.platform,
-        runtimeIdentity: "srt:0.0.75",
+        runtimeIdentity: `srt:${SANDBOX_RUNTIME_VERSION}`,
         productionSuitable: true,
         artifactDigest,
         enforcement: {

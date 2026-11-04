@@ -1335,6 +1335,148 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_NOT_PINNABLE");
   });
 
+  it("[MEM-CAT] moves a memory to another topic and keeps everything else", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-coffee", "我每天必须喝咖啡");
+    await context.protect("payload-mood", "主人最近有点抑郁", "sensitive");
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-coffee", category: "identity", subCategory: "饮食", pinned: true },
+      "manual-coffee",
+    );
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      "manual-mood",
+    );
+    const find = async (needle: string) => {
+      const found = (await overview(context.control)).memories.find(({ text }) =>
+        text.includes(needle),
+      );
+      if (!found) throw new Error(`missing ${needle}`);
+      return found;
+    };
+    const before = await find("咖啡");
+    expect(before.category).toBe("identity");
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: before.memoryId, expectedRevision: before.revision, category: "preference" },
+      "recategorize-coffee",
+    );
+    const after = await find("咖啡");
+    expect(after).toMatchObject({
+      category: "preference",
+      subCategory: "饮食",
+      text: before.text,
+      sourceThreadId: before.sourceThreadId,
+      sourceRefs: before.sourceRefs,
+      inference: before.inference,
+      importance: before.importance,
+      dataClassification: before.dataClassification,
+      profilePin: "on",
+      status: "active",
+      recordedAt: before.recordedAt,
+      revision: before.revision + 1,
+    });
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: before.memoryId, expectedRevision: before.revision, category: "goal" },
+        "recategorize-stale",
+      ),
+    ).rejects.toThrow("MEMORY_REVISION_CHANGED");
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: after.memoryId, expectedRevision: after.revision, category: "finance" },
+        "recategorize-finance",
+      ),
+    ).rejects.toThrow("MEMORY_CATEGORY_LOCKED");
+    const mood = await find("抑郁");
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: mood.memoryId, expectedRevision: mood.revision, category: "other" },
+        "recategorize-mood",
+      ),
+    ).rejects.toThrow("MEMORY_CATEGORY_LOCKED");
+    expect((await find("抑郁")).category).toBe("health");
+    await context.memory.runProjectionBatch(10);
+    expect(
+      context.provider.upserts.filter(({ memory }) => memory.id === after.memoryId).at(-1),
+    ).toMatchObject({
+      content: "我每天必须喝咖啡",
+      memory: { attributes: { category: "preference" } },
+    });
+    const profiled = async () =>
+      (await overview(context.control)).profile.flatMap(({ lines }) =>
+        lines.map(({ text }) => text),
+      );
+    expect(await profiled()).toContain("我每天必须喝咖啡");
+    const preference = await find("咖啡");
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: preference.memoryId, expectedRevision: preference.revision, category: "event" },
+      "recategorize-event",
+    );
+    expect(await profiled()).not.toContain("我每天必须喝咖啡");
+    const eventMemory = await find("咖啡");
+    expect(eventMemory).toMatchObject({ category: "event", profilePin: "on" });
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: eventMemory.memoryId, expectedRevision: eventMemory.revision, category: "rule" },
+      "recategorize-rule",
+    );
+    const sections = (await overview(context.control)).profile
+      .filter(({ lines }) => lines.some(({ text }) => text === "我每天必须喝咖啡"))
+      .map(({ kind }) => kind);
+    expect(sections).toEqual(["rules"]);
+    const ruleMemory = await find("咖啡");
+    expect(ruleMemory.category).toBe("rule");
+    await command(
+      context.control,
+      "memory.category.set",
+      { memoryId: ruleMemory.memoryId, expectedRevision: ruleMemory.revision, category: "event" },
+      "recategorize-event-again",
+    );
+    const eventAgain = await find("咖啡");
+    await command(
+      context.control,
+      "memory.mutate",
+      {
+        memoryId: eventAgain.memoryId,
+        action: "delete",
+        expectedRevision: eventAgain.revision,
+        contentRef: null,
+      },
+      "trash-coffee",
+    );
+    const trashed = await find("咖啡");
+    expect(trashed.status).toBe("trashed");
+    await expect(
+      command(
+        context.control,
+        "memory.category.set",
+        { memoryId: trashed.memoryId, expectedRevision: trashed.revision, category: "goal" },
+        "recategorize-trashed",
+      ),
+    ).rejects.toThrow("cannot be revised from trashed");
+    expect((await find("咖啡")).category).toBe("event");
+  });
+
   it("[MP-4] stops learning from conversations while memory is paused", async () => {
     const context = await setup(
       "我最喜欢的颜色是蓝色。",

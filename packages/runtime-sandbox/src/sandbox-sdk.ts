@@ -3,9 +3,11 @@ import type { SandboxDependencyCheck, SandboxRuntimeConfig } from "@anthropic-ai
 import { SANDBOX_HOST_FAILURE_CODES } from "@himawari-agent/execution-contracts";
 import { JOB_HOST_SYSTEM_CODES } from "./job-host-protocol.ts";
 import type { SandboxPolicyInput } from "./policy.ts";
+import { type SrtRuntimeIdentity, srtRuntimeIdentityValue } from "./srt-runtime-identity.ts";
 
 type SandboxSdkOperation =
   | { readonly method: "compileSandboxPolicy"; readonly args: readonly [SandboxPolicyInput] }
+  | { readonly method: "inspectRuntime"; readonly args: readonly [] }
   | { readonly method: "checkDependenciesAsync"; readonly args: readonly [] }
   | { readonly method: "initialize"; readonly args: readonly [SandboxRuntimeConfig] }
   | { readonly method: "wrapWithSandboxArgv"; readonly args: readonly [string, string] }
@@ -13,6 +15,7 @@ type SandboxSdkOperation =
 export type SandboxSdkRequest = SandboxSdkOperation & { readonly id: number };
 export interface SandboxSdk {
   compileSandboxPolicy(input: SandboxPolicyInput): Promise<{ policyJson: string }>;
+  inspectRuntime(): Promise<SrtRuntimeIdentity>;
   checkDependenciesAsync(): Promise<SandboxDependencyCheck>;
   isSupportedPlatform(): boolean;
   initialize(
@@ -43,6 +46,11 @@ function resultValue(method: SandboxSdkOperation["method"], value: unknown): unk
     if (!object(value) || typeof value["policyJson"] !== "string")
       throw sandboxSdkFailure(undefined);
     return { policyJson: value["policyJson"] };
+  }
+  if (method === "inspectRuntime") {
+    const identity = srtRuntimeIdentityValue(value);
+    if (!identity) throw sandboxSdkFailure(undefined);
+    return identity;
   }
   if (method === "checkDependenciesAsync") {
     if (
@@ -195,6 +203,8 @@ export async function createSandboxSdk(onFailure: () => void): Promise<SandboxSd
       (await operation({ method: "compileSandboxPolicy", args: [input] })) as {
         policyJson: string;
       },
+    inspectRuntime: async () =>
+      (await operation({ method: "inspectRuntime", args: [] })) as SrtRuntimeIdentity,
     checkDependenciesAsync: async () =>
       (await operation({ method: "checkDependenciesAsync", args: [] })) as SandboxDependencyCheck,
     isSupportedPlatform: () => supported,

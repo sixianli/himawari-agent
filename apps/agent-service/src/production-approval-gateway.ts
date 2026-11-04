@@ -40,6 +40,10 @@ import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
+import {
+  PRODUCTION_OBSERVATION_OPERATIONS,
+  type ProductionObservation,
+} from "./production-observation.js";
 import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
@@ -65,6 +69,7 @@ export function createProductionApprovalGateway(options: {
   readonly webPushControl?: ProductionWebPushControl;
   readonly proactiveControl?: Pick<ProductionProactive, "query" | "execute">;
   readonly museControl?: Pick<ProductionMuseControl, "query" | "execute">;
+  readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
 }) {
   const { ownerId, agentId } = options.configuration;
@@ -95,13 +100,15 @@ export function createProductionApprovalGateway(options: {
           ? options.memoryControl.query(query)
           : query.type.startsWith("push.") && options.webPushControl
             ? options.webPushControl.query(query)
-            : query.type.startsWith("proactive.") && options.proactiveControl
-              ? options.proactiveControl.query(query)
-              : query.type.startsWith("muse.") && options.museControl
-                ? options.museControl.query(query)
-                : query.type.startsWith("owner.preferences.") && options.ownerPreferencesControl
-                  ? options.ownerPreferencesControl.query(query)
-                  : searchAuthorization.query(query),
+            : query.type === "proactive.weekly.read" && options.observationControl
+              ? options.observationControl.query(query)
+              : query.type.startsWith("proactive.") && options.proactiveControl
+                ? options.proactiveControl.query(query)
+                : query.type.startsWith("muse.") && options.museControl
+                  ? options.museControl.query(query)
+                  : query.type.startsWith("owner.preferences.") && options.ownerPreferencesControl
+                    ? options.ownerPreferencesControl.query(query)
+                    : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -194,6 +201,13 @@ export function createProductionApprovalGateway(options: {
           options.webPushControl
         )
           return options.webPushControl.execute(command);
+        if (command.type === "proactive.observation.start" && options.observationControl) {
+          await options.recentAuthentication.assertRecentAuthentication({
+            authentication,
+            expectedAuthenticationRef: command.payload.recentAuthenticationRef,
+          });
+          return options.observationControl.execute(command);
+        }
         if (command.type.startsWith("proactive.") && options.proactiveControl)
           return options.proactiveControl.execute(command);
         if (command.type.startsWith("muse.") && options.museControl)
@@ -223,6 +237,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.webPushControl ? PRODUCTION_WEB_PUSH_OPERATIONS : []),
       ...(options.proactiveControl ? PRODUCTION_PROACTIVE_OPERATIONS : []),
       ...(options.museControl ? PRODUCTION_MUSE_OPERATIONS : []),
+      ...(options.observationControl ? PRODUCTION_OBSERVATION_OPERATIONS : []),
       ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
     ],
     reads,

@@ -36,9 +36,9 @@ date: "2026-08-25"
 
 Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `RuntimeToolPort` 和 Worker。产品权威保存在调用回执、Grant/Handle、Run checkpoint、受保护 Payload 和 SQLite 作业观察中；没有独立的第二套工具身份或权限数据库。
 
-SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
+SRT `0.0.81` 已集中在 `packages/runtime-sandbox`，版本号只在 `packages/execution-contracts/src/sandbox-runtime-version.ts` 定义；Linux 上启动前必须用上锁定的 seccomp 小程序（按系统调用拦截的过滤器），否则拒绝启动（[ADR 0156](adr/0156-srt-0-0-81-with-a-locked-seccomp-helper.md)）。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
 
-能力安装声明的 sandbox binding 在加载时按平台核算 `privateRoot` 的 UTF-8 字节预算。SRT 0.0.75 只在 Linux 建 HTTP/SOCKS 网络桥，最紧的 SOCKS 路径 `privateRoot/<44 字节任务编号>/claude-socks-<16 位>.sock` 多 80 字节，受 107 字节限制，因此根目录至多 27 字节。Linux 和 Mac 都建 `srt-mux-<pid>-<36 进制序号>.sock`；PID 分别预留 7 / 5 位；每个 Job Host 为新进程，只接受一次 prepare、初始化一次 SRT，因此 mux 序号为 `0`、占 1 字节。Mac 的 mux 路径多 66 字节，受 103 字节限制，根目录至多 37 字节。Job Host 控制路径 `privateRoot/control-<20 位>/control.sock` 的 100 字节限制更宽。本产品设置的是上游 `parentProxy`，仍会启动本地 mux；不启用 `tlsTerminate` 和 SRT 日志监视套接字。加载器取实际启用套接字的最紧预算，超长时以 `CAPABILITY_DEPLOYMENT_INVALID_VALUE` 拒绝，消息包含实际字节数、上限和决定预算的套接字；配置格式不变。Mac 依据来自固定版本源码阅读，未在 Mac 上验证。各路径与可变字段依据见[套接字预算核算](backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md#socket-budget)。
+能力安装声明的 sandbox binding 在加载时按平台核算 `privateRoot` 的 UTF-8 字节预算。SRT 0.0.81 只在 Linux 建 HTTP/SOCKS 网络桥，最紧的 SOCKS 路径 `privateRoot/<44 字节任务编号>/claude-socks-<16 位>.sock` 多 80 字节，受 107 字节限制，因此根目录至多 27 字节。Linux 和 Mac 都建 `srt-mux-<pid>-<36 进制序号>.sock`；PID 分别预留 7 / 5 位；每个 Job Host 为新进程，只接受一次 prepare、初始化一次 SRT，因此 mux 序号为 `0`、占 1 字节。Mac 的 mux 路径多 66 字节，受 103 字节限制，根目录至多 37 字节。Job Host 控制路径 `privateRoot/control-<20 位>/control.sock` 的 100 字节限制更宽。本产品设置的是上游 `parentProxy`，仍会启动本地 mux；不启用 `tlsTerminate` 和 SRT 日志监视套接字。加载器取实际启用套接字的最紧预算，超长时以 `CAPABILITY_DEPLOYMENT_INVALID_VALUE` 拒绝，消息包含实际字节数、上限和决定预算的套接字；配置格式不变。Mac 依据来自固定版本源码阅读，未在 Mac 上验证。各路径与可变字段依据见[套接字预算核算](backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md#socket-budget)。
 
 Job Host 在动态加载 SRT 及策略编译模块之前，先注册原 IPC 处理器并回应通过会话、序号与年龄校验的准备消息；2026-10-12 起这两个模块只在 SDK 工作线程里加载，主线程只收发消息和心跳，每次心跳带上逐步耗时记录，见[第三轮：主线程只管心跳](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)。消息年龄按到达时判断；加载期间继续受原 1.5 秒监督窗口、30 秒准备上限及任务总期限约束，心跳不代表 ready 或启动授权。2026-10-22 起，Job Host 进程启动（Node 启动和静态模块加载）单独计时：Worker 收到它第一条认证消息之前不执行 1.5 秒窗口、不发心跳，只等最长 10 秒且不超过任务期限的启动期限（一次性路径超时诊断 `JOB_HOST_STARTUP_TIMEOUT`，常驻会话路径按 `host_failure` 结束会话、不生成父进程诊断）；Job Host 发出第一条回复之前接受 10 秒内的父进程消息；之后恢复 1.5 秒窗口，见[第四轮：Job Host 启动单独计时](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-window)。Worker 只用任务期限回调判断绝对期限；任务期限早于或等于准备上限时，不再为同一期限安排第二个准备回调，诊断为 `JOB_HOST_EXECUTION_DEADLINE`。独立的 30 秒准备上限更早时才报告 `JOB_HOST_PREPARATION_TIMEOUT`；取消或结束后不再追加超时分类。加载失败走 `host_failure`，阶段为 `dependencies`；未加载或未完成 reset 时不报告清理成功，原签名终态要求不变。合同及验证边界见[依赖加载期间的启动监督](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)及[期限诊断分类](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#deadline-classification)。
 
@@ -327,7 +327,7 @@ S2 Thread repository 的列表路径把 lifecycle 与 pin 过滤下推到 SQLite
 
 ### Session Trace, protected Payload and deletion propagation
 
-`SessionTraceRecorder` 生成 `trace.v1` 信封并由 Trace Store 强制校验 Run 内严格连续序号、稳定 Run scope、父事件归属及已有因果事件的相关关系。事件正文不内嵌模型输入、工具结果或审批快照，而是在写入前转换为产品 JSON、脱敏、交给 `PayloadProtectorPort`，最后只保存 Payload 引用。无法确认安全转换的负载不会写入 Payload；Trace 改写为不含原文的 `trace.redaction_failed`，并留下最小失败审计记录。
+`SessionTraceRecorder` 生成 `trace.v1` 信封并由 Trace Store 强制校验 Run 内严格连续序号、稳定 Run scope、父事件归属及已有因果事件的相关关系。事件正文不内嵌模型输入、工具结果或审批快照，而是在写入前转换为产品 JSON、遮盖、交给 `PayloadProtectorPort`，最后只保存 Payload 引用。无法确认安全转换的负载不会写入 Payload；Trace 改写为不含原文的 `trace.redaction_failed`，并留下最小失败审计记录。
 
 正文首次保存使用绑定 Owner/Agent、当前 deployment 与有效租约的 `RunPayloadArtifactPort`。保护器先在 SQLite 事务外生成内联密文，再由单一 writer 把正文与 Run 归属、用途、稳定操作身份回执一起提交。相同操作按明文摘要、分类和媒体类型回读原引用，不比较随机密文；异义重试拒绝覆盖。已有回执在 Run 终态仍可读取和同义重放，新建非审计正文要求 Run 尚未终结，这不构成执行动作的授权；终态审计正文仍可保存，Run 删除后不能复活归属。Trace 追加失败不会把已保存正文变成孤儿，两条治理删除路径都先收集归属引用，再回收没有存活引用的正文。正文已保存不等于助手消息已发布。
 
@@ -335,13 +335,13 @@ S2 Thread repository 的列表路径把 lifecycle 与 pin 过滤下推到 SQLite
 
 记录下一条 Trace 前，记录器按最多 1,000 条的有界页读取已有序号，拒绝不前进或超过安全整数容量的序列；不再向 SQLite 请求无限量历史。序号写入仍由 Store 校验，读取与追加不是一个事务，并发冲突会被拒绝而不是静默覆盖。
 
-Payload 端口的持久化输入是 ciphertext、算法标识、key reference、内容 digest 和分类元数据，不接收明文语义字段。`packages/testing` 的 `test-xor-v1` 只用于证明“写前脱敏、保护后存储、引用组装”的接口顺序和防御性复制，不是生产密码学实现，也不能成为部署配置。
+Payload 端口的持久化输入是 ciphertext、算法标识、key reference、内容 digest 和分类元数据，不接收明文语义字段。`packages/testing` 的 `test-xor-v1` 只用于证明“写前遮盖、保护后存储、引用组装”的接口顺序和防御性复制，不是生产密码学实现，也不能成为部署配置。
 
 `SessionDeletionCoordinator` 继续为 Session 删除提供四目标 conformance。`ThreadDeletionCoordinationService` 与 SQLite Thread repository 先在同一权威 writer 中查询稳定 task binding，并以独立、带 revision/fence/idempotency 的 pause、cancel 或 rebind 命令收敛 active task；归档和恢复不修改 Task、Approval 或 Grant。active task 未解决时 Trash 与永久删除原子拒绝，永久删除还要求逐次 authorization reference 与 recent-auth。真实离线物理管理路径由 `SqliteGovernedDeletionAdapter` 承担：Thread、task 与 Memory 进入 7 天 Trash 时立即退出普通读取、调度或检索，但适配器不替 Owner 自动选择 task 动作；`himawari delete trash|restore|inspect|purge|purge-expired` 要求 stopped service、state-root 独占锁和精确确认词，Thread mutation plan 同时显示受影响 task IDs。
 
 永久删除在一个 SQLite 即时事务中级联 Thread/message、Run/checkpoint、Approval、Trace、inbox 和投影行；已经独立暂停、取消或重新绑定的 Task 保留自身定义与历史，来源 Thread binding 失效时变为 `null`，不会随 Thread 被静默删除。保留的长期 Memory 只把 provenance 标为 `source_deleted` 并清空 `source_thread_id`。未被其他行引用的 Payload metadata 与受管 ciphertext file 随后删除；search/cache/archive 使用 state root 内的确定性受管 artifact 路径并逐项回读。每个目标的 attempts、稳定失败码和验证时间保存在 `deletion_tombstones.record_json`，物理目标失败时保持 `deletion_pending`，重试只处理尚未验证的目标。已发布或待发布的外部副作用内容被移除后，只增加 SHA-256 引用的最小 Audit 墓碑，不保存原正文。带 provider projection 的 Memory 先持久进入 `deletion_pending`，必须由既有 durable Memory projection cleanup 到 `deleted_verified` 后才允许产品行与 Payload 最终清除。
 
-SQLite 运行状态公开 `normal`、`warning`、`write_restricted` 三档，并记录 database/WAL/free bytes、writer queue、Outbox、background job、Memory projection、deletion 与 retained SSE 计数。严重 headroom 不足会让普通 repository write fail closed，但认证只读、离线删除、恢复点/transfer 管理路径不依赖该 admission gate；系统没有自动删除 Owner 内容的代码路径。`RuntimeMetricsRegistry` 只接受固定低基数指标名，不接受 Owner、repository 或正文标签；详细 dependency health 与 metrics 仅在认证 API 下返回，公共 `/health/live` 和 `/health/ready` 只返回最小状态。结构化诊断在序列化后再次执行机器秘密脱敏。
+SQLite 运行状态公开 `normal`、`warning`、`write_restricted` 三档，并记录 database/WAL/free bytes、writer queue、Outbox、background job、Memory projection、deletion 与 retained SSE 计数。严重 headroom 不足会让普通 repository write fail closed，但认证只读、离线删除、恢复点/transfer 管理路径不依赖该 admission gate；系统没有自动删除 Owner 内容的代码路径。`RuntimeMetricsRegistry` 只接受固定低基数指标名，不接受 Owner、repository 或正文标签；详细 dependency health 与 metrics 仅在认证 API 下返回，公共 `/health/live` 和 `/health/ready` 只返回最小状态。结构化诊断在序列化后再次执行机器秘密遮盖。
 
 ### Permission, approval and Grants
 
@@ -357,7 +357,7 @@ Grant 与 Capability 声明分离。一次性 Grant 精确绑定原 Intent 并�
 
 `NodeCapabilityRuntimePort` 的正文依赖仅有绑定完整 invocation 的 `readInput` 和 `writeOutput`，不再向执行侧暴露任意 Payload store、加解密器或结果引用生成器。Program、MCP 和 Endpoint 共用此边界；输入读取失败会在执行前拒绝，已发生外部动作但结果写入失败时返回结果不确定。当前八项单元测试验证调用合同和失败行为，其中正文保护使用测试替身，不构成真实密码学或进程隔离证明。生产 Agent 端受保护正文代理、实际委派认证、结果幂等归属与 Worker 总组合尚未接入。
 
-`ProductionPayloadBrokerClient` 已通过独立正文协议实现该窄接口。主代理实测八项协议合同和十八项本机通信、旧执行通道及 Worker 客户端测试通过，覆盖错误脱敏、错关联响应、缓慢正文与响应、超时后不再发起调用，以及已开始的提交不被虚报撤销。`ProductionPayloadBrokerHandler` 已实现 Agent 侧可信处理边界：从已消费回执取得作用域与执行身份，读取时重新检查权限，输出先由 Agent 保护再交持久结果端口。Worker 不持有 SQLite 或正文加密密钥。handler、真实 SQLite 结果观察与客户端分别有回归，但两项服务的安装后完整组合及真实能力注册仍未完成，不能凭有效握手声称业务执行已经接通。
+`ProductionPayloadBrokerClient` 已通过独立正文协议实现该窄接口。主代理实测八项协议合同和十八项本机通信、旧执行通道及 Worker 客户端测试通过，覆盖错误遮盖、错关联响应、缓慢正文与响应、超时后不再发起调用，以及已开始的提交不被虚报撤销。`ProductionPayloadBrokerHandler` 已实现 Agent 侧可信处理边界：从已消费回执取得作用域与执行身份，读取时重新检查权限，输出先由 Agent 保护再交持久结果端口。Worker 不持有 SQLite 或正文加密密钥。handler、真实 SQLite 结果观察与客户端分别有回归，但两项服务的安装后完整组合及真实能力注册仍未完成，不能凭有效握手声称业务执行已经接通。
 
 Capability Registry 分开保存不可变版本声明、安装生命周期和短期执行 Handle。声明固定来源 locator、exact version、SHA-256 integrity、operations、permission refs 与 isolation；记录在 `discovered → installation_proposed → installation_approved → active` 之后才能签发 Handle。更新固定新的 version/integrity，标记 operation 或 permission expansion，并再次经过 proposal/approval 才能激活；停用后的版本先 `disabled` 再 `uninstalled`。
 
@@ -447,7 +447,7 @@ Pi 0.84.2继续负责请求、SSE和工具参数解析。产品共用`gateway-ob
 
 Pi Session 仍使用内存实例，跨进程持久性由产品加密存储提供。适配器恢复原生消息并复用 Pi `convertToLlm()`，保留调用 ID、工具结果、模型来源和原生摘要语义；已由原生历史覆盖的正文不再重复追加。每次 `message_end` / `compaction_end` 保存有效上下文，模型调用和工具执行前等待保存；停止确认也等待最后一次保存。取消记录通过产品 Run 状态转为模型可见中断消息；它不表示副作用已撤销，也不禁止用户明确要求继续旧任务。审批等待期间的本地退出错误不作为真实工具结果保存。
 
-旧运行没有上述快照时，仍按原有授权正文路径读取，保留已知取消状态；这不代表旧工具链已经恢复。旧 Trace 经过脱敏且可能缺少终态，必须单独核验后导入，不能自动把观察日志当原生消息。被删除或不再可读的历史引用拒绝加载；禁止用伪造的工具成功结果填补缺失。此存储变化及核验边界见 [SOURCE: docs/adr/0029-protected-native-runtime-history.md] 和 [SOURCE: docs/execution/specs/2026-09-11-native-runtime-history-design.md]。
+旧运行没有上述快照时，仍按原有授权正文路径读取，保留已知取消状态；这不代表旧工具链已经恢复。旧 Trace 经过遮盖且可能缺少终态，必须单独核验后导入，不能自动把观察日志当原生消息。被删除或不再可读的历史引用拒绝加载；禁止用伪造的工具成功结果填补缺失。此存储变化及核验边界见 [SOURCE: docs/adr/0029-protected-native-runtime-history.md] 和 [SOURCE: docs/execution/specs/2026-09-11-native-runtime-history-design.md]。
 
 `RuntimeRequest` 使用 `contextEnvelopeRef` 和带逻辑 Worker 身份的结果引用，不再传递没有角色的消息引用数组。`ContextProjectionService.resolveProjection()` 核对 context artifact 的作用域与内容摘要，再逐条验证选中消息的身份、角色、正文引用、分类、时间和序号；缺行、内容缺失或不一致均拒绝投影。Worker 结果必须与该 Run 的规范检查点记录一致。输出把系统指令、有角色的历史、独立的新提示及非指令材料分开，Pi 不自行访问 SQLite、Payload Store 或 Trace。
 
@@ -630,13 +630,13 @@ integration 的文件并行保留独立测试进程和模块状态，worker（�
 
 `run.mjs` 是本地和 Actions 共用执行边界。每个检查只写自己的 `CheckResult`，输出保留退出码、实际计数和内容摘要。`aggregate.mjs` 先核对全部 `needs` 成功，再要求完整 12 份成员报告属于同一 repository、event、tested/head/base SHA、run/attempt、政策与工具链，并交叉核对构建和消费者归档摘要。部分重跑、旧报告、空执行、缺矩阵和篡改都不能得到 `passed`。
 
-磁盘观察器记录分配空间的采样峰值下界、硬件、失败次数和有界脱敏诊断。构建仍负责清理自己的临时目录；共享执行器让清理先等待当前采样结束，暂停遍历后清理并恢复采样，避免目录删除与 `du` 遍历竞态。暂停原因、耗时和清理结果单独记录，已有采样失败不会被后续成功覆盖。纯文本脱敏不依赖第三方包，允许在依赖尚未安装时记录诊断。
+磁盘观察器记录分配空间的采样峰值下界、硬件、失败次数和有界遮盖诊断。构建仍负责清理自己的临时目录；共享执行器让清理先等待当前采样结束，暂停遍历后清理并恢复采样，避免目录删除与 `du` 遍历竞态。暂停原因、耗时和清理结果单独记录，已有采样失败不会被后续成功覆盖。纯文本遮盖不依赖第三方包，允许在依赖尚未安装时记录诊断。
 
 覆盖率只合并 unit/contracts/tooling 的进程内证据，完整包含未导入生产文件与自有 CI 工具。新代码的可执行行和可定位分支分别受 90%/85% 阈值约束，workspace 四类指标由接受的目标分支基线控制。安全扫描组合原有机器密钥检查、Gitleaks 当前内容与提交历史和固定 Semgrep CE 规则；例外须有精确范围、来源与 UTC 到期日，首次合成夹具提案与已接受例外分别标识。维护者于 2026-09-04 明确要求移除 npm 依赖漏洞查询，CI 和手动 quality 安全入口均不再请求 advisory 服务，不产生漏洞查询或重试记录。安全检查通过仅代表保留的三项检查通过，不代表依赖无已知漏洞。锁文件依赖身份和安装完整性校验继续执行。
 
 Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且现有校验器通过后，从同一次 snapshot/tests/JSON/LCOV 生成初始基线候选并登记为报告。候选仍须按真实 artifact 身份核验、审阅和提交，执行器不改写仓库基线；初始化结束后只执行原有比较，不再输出初始候选。tooling 项目隔离继承的 GitHub 环境变量，合成仓库测试与显式 hosted 身份测试保持各自输入边界。
 
-`ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测及周期参数分流，schedule 仍停用。共享 Context 已支持核对冻结默认分支提交、启用状态和 cron，并将周期 base 固定为该次 SHA；质量报告独立绑定质量政策摘要。纯政策校验同时检查质量 workflow 的完整执行合同，普通 CI 汇总和 push 交接继续拒绝周期事件。正常 PR 在 `718ef1b` 的 run `33844439408` 中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Ruleset `22256403` 已启用为 Active，要求 PR、来源为 GitHub Actions（App 15368）的 `ci/required`、分支保持最新及讨论解决，禁止强推和删除，无 bypass，审批人数为 0；规则 API 回读与目标配置一致。目标 fork 审批策略和专项红绿拒绝验收仍未全部完成。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和脱敏检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
+`ci.yml` 描述托管完整矩阵，`quality.yml` 描述默认分支手动检测及周期参数分流，schedule 仍停用。共享 Context 已支持核对冻结默认分支提交、启用状态和 cron，并将周期 base 固定为该次 SHA；质量报告独立绑定质量政策摘要。纯政策校验同时检查质量 workflow 的完整执行合同，普通 CI 汇总和 push 交接继续拒绝周期事件。正常 PR 在 `718ef1b` 的 run `33844439408` 中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Ruleset `22256403` 已启用为 Active，要求 PR、来源为 GitHub Actions（App 15368）的 `ci/required`、分支保持最新及讨论解决，禁止强推和删除，无 bypass，审批人数为 0；规则 API 回读与目标配置一致。目标 fork 审批策略和专项红绿拒绝验收仍未全部完成。公开报告与诊断分别按 30/7 天保留，上传通过显式白名单和遮盖检查。S9 交接格式验证默认分支 CI、平台产物、未完成项及 24 小时安全新鲜度，保留生产资格、Owner 签署和持久转存责任。实现与验收进度由 CI Plan 记录，S0/S9 产品验收归属不变。[SOURCE: docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md]
 
 ## 生产主入口与 Memory 调用预算
 

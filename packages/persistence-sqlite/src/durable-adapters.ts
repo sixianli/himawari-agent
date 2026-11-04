@@ -22,6 +22,7 @@ import type {
   ThreadArtifactStorePort,
   DecisionLedgerPort,
   MuseIntakePort,
+  LedgerObservationPort,
   ModelUsageStorePort,
   WebPushStorePort,
   MemoryBookStorePort,
@@ -1005,8 +1006,27 @@ export class SqliteDurableAdapters {
       append: (input) => this.context.write("decisionLedger.append", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       rate: (input) => this.context.write("decisionLedger.rate", input),
+      listReviewPool: (input) => this.context.read("decisionLedger.listReviewPool", input),
+      rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
+      readCalibrationRows: (input) =>
+        this.context.read("decisionLedger.readCalibrationRows", input),
+    });
+  }
+
+  ledgerObservation(): LedgerObservationPort {
+    return Object.freeze<LedgerObservationPort>({
+      readStart: (input) => this.context.read("ledgerObservation.readStart", input),
+      setStart: (input) => this.context.write("ledgerObservation.setStart", input),
+      beat: (input) => this.context.write("ledgerObservation.beat", input),
+      firstHeartbeat: (input) => this.context.read("ledgerObservation.firstHeartbeat", input),
+      ensureSnapshot: (input) => this.context.write("ledgerObservation.ensureSnapshot", input),
+      readDayFacts: (input) => this.context.read("ledgerObservation.readDayFacts", input),
+      countDays: (input) => this.context.read("ledgerObservation.countDays", input),
+      appendCheck: (input) => this.context.write("ledgerObservation.appendCheck", input),
+      listChecks: (input) => this.context.read("ledgerObservation.listChecks", input),
+      listEvents: (input) => this.context.read("ledgerObservation.listEvents", input),
     });
   }
 

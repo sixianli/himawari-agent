@@ -16,6 +16,14 @@ function resourceDisplayPhase(phase: ThreadResourcePhase): ThreadExecutionState[
   return ["queued", "preparing", "executing"].includes(phase) ? "preparing" : "unresolved";
 }
 
+const READ_ONLY_TOOL_NAMES = new Set([
+  "web_search",
+  "web_fetch",
+  "read",
+  "recall",
+  "reminder_list",
+]);
+
 type Interval = readonly [number, number];
 const SAFE_TOOL_REASON_CODES = new Set([
   "SANDBOX_TOOL_RESULT_LOST",
@@ -123,7 +131,13 @@ export function projectThreadExecutionState(
             : tool.phase === "failed"
               ? "failed"
               : terminal
-                ? "unresolved"
+                ? sandboxResourcesAbsent &&
+                  READ_ONLY_TOOL_NAMES.has(tool.name) &&
+                  ["cancelled", "failed"].includes(run.status)
+                  ? run.status === "cancelled"
+                    ? "stopped"
+                    : "failed"
+                  : "unresolved"
                 : "preparing";
     operations.push({
       itemId,
@@ -131,20 +145,23 @@ export function projectThreadExecutionState(
       reasonCode:
         phase === "unresolved"
           ? "TOOL_RESULT_UNCONFIRMED"
-          : phase === "not_dispatched"
-            ? SAFE_TOOL_REASON_CODES.has(toolReasonCode)
-              ? toolReasonCode
-              : "TOOL_NOT_DISPATCHED"
-            : phase === "completed"
-              ? "TOOL_SUCCEEDED"
-              : phase === "failed"
-                ? SAFE_TOOL_REASON_CODES.has(toolReasonCode)
-                  ? toolReasonCode
-                  : "TOOL_FAILED"
-                : "TOOL_START_UNCONFIRMED",
+          : phase === "stopped"
+            ? "TOOL_STOPPED_READ_ONLY"
+            : phase === "not_dispatched"
+              ? SAFE_TOOL_REASON_CODES.has(toolReasonCode)
+                ? toolReasonCode
+                : "TOOL_NOT_DISPATCHED"
+              : phase === "completed"
+                ? "TOOL_SUCCEEDED"
+                : phase === "failed"
+                  ? SAFE_TOOL_REASON_CODES.has(toolReasonCode)
+                    ? toolReasonCode
+                    : "TOOL_FAILED"
+                  : "TOOL_START_UNCONFIRMED",
       lastObservedAt: tool.occurredAt,
       executionMilliseconds: unionDuration(intervals(group, "runtime.tool_execution.")),
     });
+    if (phase === "stopped") continue;
     effectSummary.push({
       itemId,
       outcome:
@@ -284,7 +301,15 @@ export function projectThreadExecutionState(
     checkpoint.diagnosticCode === "RUNTIME_TOOL_RESULT_UNKNOWN" &&
     (sandboxResourcesAbsent || resources?.allReleased === true) &&
     !resources?.pendingResources;
+  const stoppedWithoutSandboxResources =
+    sandboxResourcesAbsent &&
+    run.status === "cancelled" &&
+    !resources?.pendingResources &&
+    !resources?.phase &&
+    !resourceResultUnconfirmed &&
+    !operations.some((operation) => operation.displayPhase === "unresolved");
   if (expired || settledUnknownResult) displayPhase = "failed";
+  else if (stoppedWithoutSandboxResources) displayPhase = "stopped";
   const answeredWithBackground = run.status === "running" && run.background !== null;
   if (answeredWithBackground) displayPhase = "completed";
   const availableActions: ThreadExecutionState["availableActions"][number][] = [];
@@ -296,6 +321,7 @@ export function projectThreadExecutionState(
     !resources?.allReleased &&
     !expiredWithoutSandboxResources &&
     !failedWithoutSandboxResources &&
+    !stoppedWithoutSandboxResources &&
     displayPhase !== "not_dispatched" &&
     !["stopping", "verifying"].includes(resources?.phase ?? "")
   )

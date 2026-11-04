@@ -262,6 +262,75 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
     }
   });
 
+  it("[P0-6] lists unrated rows and rows rated today, leaves out older ones, and rates a batch all-or-nothing", async () => {
+    const { repository } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      const day = "2026-10-31T00:00:00.000Z";
+      await ledger.append(ledgerWrite("open-1"));
+      await ledger.append(ledgerWrite("open-2"));
+      await ledger.append(ledgerWrite("old-rated"));
+      await ledger.append(ledgerWrite("rated-today"));
+      await ledger.append(ledgerWrite("too-old", { decidedAt: "2026-10-01T00:00:00.000Z" }));
+      await ledger.rate({
+        ...scope,
+        decisionId: "old-rated",
+        rating: "useful",
+        now: "2026-10-30T10:00:00.000Z",
+      });
+      expect(
+        await ledger.rateMany({
+          ...scope,
+          ratings: [
+            { decisionId: "rated-today", rating: "missed" },
+            { decisionId: "open-1", rating: "unneeded" },
+          ],
+          now: "2026-10-31T01:00:00.000Z",
+        }),
+      ).toBe(2);
+      const pool = await ledger.listReviewPool({
+        ...scope,
+        since: "2026-10-24T00:00:00.000Z",
+        ratedSince: day,
+        limit: 100,
+      });
+      expect(pool.map(({ id }) => id).sort()).toEqual(["open-1", "open-2", "rated-today"]);
+      expect(pool.find(({ id }) => id === "open-1")).toMatchObject({
+        ownerRating: "unneeded",
+        ratedAt: "2026-10-31T01:00:00.000Z",
+      });
+      await expect(
+        ledger.rateMany({
+          ...scope,
+          ratings: [
+            { decisionId: "open-2", rating: "useful" },
+            { decisionId: "no-such-row", rating: "useful" },
+          ],
+          now: "2026-10-31T02:00:00.000Z",
+        }),
+      ).rejects.toThrow();
+      const after = await ledger.list({ ...scope, since: SINCE, limit: 100 });
+      expect(after.find(({ id }) => id === "open-2")?.ownerRating).toBeNull();
+      await expect(
+        ledger.rateMany({
+          ...scope,
+          ratings: [{ decisionId: "open-2", rating: "bogus" as never }],
+          now: "2026-10-31T02:00:00.000Z",
+        }),
+      ).rejects.toThrow();
+      await expect(
+        ledger.rateMany({
+          ownerId: createOwnerId("other-owner"),
+          agentId: AGENT_ID,
+          ratings: [{ decisionId: "open-2", rating: "useful" }],
+          now: "2026-10-31T02:00:00.000Z",
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("refuses writes whose outcome does not belong to the kind", async () => {
     const { repository, list } = await fixture();
     try {
@@ -321,6 +390,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           noteRef: "payload-note",
           pairedDecisionId: "paired",
           intakeItemKey: null,
+          pairedMessageId: null,
           recordedAt: T0,
         },
         {
@@ -333,6 +403,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           noteRef: null,
           pairedDecisionId: null,
           intakeItemKey: null,
+          pairedMessageId: null,
           recordedAt: T0,
         },
       ]);
@@ -349,6 +420,64 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           noteRef: null,
           pairedDecisionId: null,
           recordedAt: T0,
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("pairs Muse entries with one Gmail message and accepts a silent entry that names only the message", async () => {
+    const { repository } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      const base = { ...scope, museAt: "2026-10-31T00:30:00.000Z", noteRef: null, recordedAt: T0 };
+      await ledger.recordMuse({
+        ...base,
+        id: "by-mail",
+        museReminded: true,
+        timingOk: true,
+        contentOk: true,
+        contentRef: "payload-muse",
+        pairedDecisionId: null,
+        pairedMessageId: "gmail-message-1",
+      });
+      await ledger.recordMuse({
+        ...base,
+        id: "silent-by-mail",
+        museReminded: false,
+        pairedDecisionId: null,
+        pairedMessageId: "gmail-message-2",
+      });
+      const entries = await ledger.listMuse({ ...scope, since: SINCE, limit: 10 });
+      expect(entries.map((entry) => [entry.id, entry.pairedMessageId]).sort()).toEqual([
+        ["by-mail", "gmail-message-1"],
+        ["silent-by-mail", "gmail-message-2"],
+      ]);
+      await expect(
+        ledger.recordMuse({
+          ...base,
+          id: "silent-nothing",
+          museReminded: false,
+          pairedDecisionId: null,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        ledger.recordMuse({
+          ...base,
+          id: "bad-decision",
+          museReminded: false,
+          pairedDecisionId: "",
+          pairedMessageId: "gmail-message-3",
+        }),
+      ).rejects.toThrow();
+      await expect(
+        ledger.recordMuse({
+          ...base,
+          id: "empty-mail",
+          museReminded: false,
+          pairedDecisionId: null,
+          pairedMessageId: "",
         }),
       ).rejects.toThrow();
     } finally {
@@ -394,6 +523,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
         noteRef: null,
         pairedDecisionId: "pushed-1",
         intakeItemKey: null,
+        pairedMessageId: null,
         recordedAt: T0,
       });
       expect(entries.find((entry) => entry.id === "auto-1")?.contentRef).toBeNull();

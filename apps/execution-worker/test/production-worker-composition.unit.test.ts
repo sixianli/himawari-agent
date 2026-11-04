@@ -8,22 +8,22 @@ import type {
   ProductConfiguration,
 } from "@himawari-agent/application";
 import type { ExecuteWorkRequest, ResourceCeiling } from "@himawari-agent/execution-contracts";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import {
   CAPABILITY_DEPLOYMENT_ERROR_CODES,
   ExecutionAdmissionUdsServer,
   type ExecutionUdsCredential,
   PayloadUdsServer,
 } from "@himawari-agent/platform-node";
-import { createV02Fixture } from "@himawari-agent/testing";
+import { createV02Fixture, udsFaultProxy } from "@himawari-agent/testing";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { udsFaultProxy } from "@himawari-agent/testing";
 import {
   createProductionWorkerComposition,
   PRODUCTION_WORKER_COMPOSITION_ERROR_CODES,
   type ProductionWorkerCompositionOptions,
   qualifyProductionWorkerDeployment,
 } from "../src/index.js";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const NOW = "2026-09-05T00:00:00.000Z";
 const ENDPOINT_DIGEST = `sha256:${"a".repeat(64)}`;
@@ -713,14 +713,14 @@ describe("production Worker composition", () => {
         },
         qualification: {
           ...entry.qualification,
-          runtimeIdentity: "srt:0.0.75",
+          runtimeIdentity: `srt:${SANDBOX_RUNTIME_VERSION}`,
           enforcement: { ...entry.qualification.enforcement, resourceCeilings: false },
           sandbox: {
             schemaVersion: "sandbox-runtime-qualification.v1",
             qualificationRef: "qualification:fixture",
             hostId: "host:fixture",
             profileRef: "host-readonly.v1",
-            srtVersion: "0.0.75",
+            srtVersion: SANDBOX_RUNTIME_VERSION,
             platform: "linux",
             architecture: "x64",
             osRelease: "deliberately-unqualified-kernel",

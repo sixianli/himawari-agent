@@ -4,10 +4,7 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import {
-  resolveLinuxTmpfsDestination,
-  rewriteLinuxReadOnlyTmpfs,
-} from "./bwrap-read-only-tmpfs.ts";
+import { prepareLinuxLaunchArgv, resolveLinuxTmpfsDestination } from "./bwrap-read-only-tmpfs.ts";
 import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
 import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
@@ -24,12 +21,12 @@ import {
   parseJobHostRun,
   parseJobHostSessionRequest,
 } from "./job-host-protocol.ts";
+import { startLinuxHostGuardian } from "./linux-host-guardian.ts";
 import {
   captureLinuxNamespace,
   type LinuxNamespaceIdentity,
   readLinuxNamespaceState,
 } from "./linux-namespace.ts";
-import { startLinuxHostGuardian } from "./linux-host-guardian.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { stopProcessGroup } from "./process-group.ts";
 import { readProcessStartToken } from "./process-identity.ts";
@@ -42,10 +39,11 @@ import {
 import {
   classifyObservationError,
   observeTaskResources,
-  readProcessSnapshot,
   type ResourceObservationFailure,
+  readProcessSnapshot,
 } from "./resource-observer.ts";
 import type { SandboxSdk } from "./sandbox-sdk.ts";
+import { requireLockedSrtRuntime, srtRuntimeText } from "./srt-runtime-identity.ts";
 
 const diagnosticStarted = performance.now();
 const bootId = randomUUID();
@@ -83,6 +81,8 @@ let closed = false;
 let finishing = false;
 let diagnostics: typeof import("@himawari-agent/execution-contracts") | undefined;
 let sandboxManager: SandboxSdk | undefined;
+let lockedHelperPath: string | null = null;
+let runtimeText: string | null = null;
 let sdkOperation: Promise<unknown> = Promise.resolve();
 let egress: Awaited<ReturnType<typeof openNetworkEgress>> | undefined;
 let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -457,6 +457,15 @@ async function prepare(value: unknown, controlValue: unknown, session: boolean) 
   enterStage("resource_snapshot");
   if (request.resourceLimits || sessionMode) await readProcessSnapshot();
   enterStage("dependencies");
+  if (!diagnostics) throw new Error("JOB_HOST_NOT_READY");
+  const identity = await manager.inspectRuntime();
+  runtimeText = srtRuntimeText(identity);
+  lockedHelperPath = requireLockedSrtRuntime(
+    identity,
+    diagnostics.SANDBOX_RUNTIME_VERSION,
+    process.platform,
+    process.arch,
+  ).helperPath;
   const dependencies = await manager.checkDependenciesAsync();
   if (!manager.isSupportedPlatform() || dependencies.errors.length || dependencies.warnings.length)
     throw new Error("JOB_HOST_DEPENDENCIES_UNAVAILABLE");
@@ -490,6 +499,7 @@ async function prepare(value: unknown, controlValue: unknown, session: boolean) 
     )
       throw new Error("JOB_HOST_JAVA_AGENT_INVALID");
     configuration.javaAgentJarPath = javaAgentJarPath;
+    if (lockedHelperPath) configuration.seccomp = { applyPath: lockedHelperPath };
     await manager.initialize(configuration, undefined, false);
   })();
   await sdkOperation;
@@ -536,6 +546,15 @@ interface TaskLaunch {
   exited(): void;
   closed(): void;
 }
+function linuxLaunchArgv(argv: readonly string[], command: string): readonly string[] {
+  if (!lockedHelperPath) throw new Error("JOB_HOST_SECCOMP_HELPER_NOT_IN_USE");
+  return prepareLinuxLaunchArgv(
+    argv,
+    "/bin/bash",
+    { command, helperPath: lockedHelperPath, privileged: process.geteuid?.() === 0 },
+    resolveLinuxTmpfsDestination,
+  );
+}
 async function launchTask(launch: TaskLaunch) {
   const current = launch.request;
   const namespaceToken = randomUUID();
@@ -551,9 +570,7 @@ async function launchTask(launch: TaskLaunch) {
     return;
   }
   const launchArgv =
-    process.platform === "linux"
-      ? rewriteLinuxReadOnlyTmpfs(wrapped.argv, "/bin/bash", resolveLinuxTmpfsDestination)
-      : wrapped.argv;
+    process.platform === "linux" ? linuxLaunchArgv(wrapped.argv, command) : wrapped.argv;
   const executable = launchArgv[0];
   if (!executable) throw new Error("JOB_HOST_LAUNCH_INVALID");
   const child = spawn(executable, launchArgv.slice(1), {
@@ -711,16 +728,7 @@ async function start() {
           wrap: async (command) => {
             const wrapped = await manager.wrapWithSandboxArgv(command, "/bin/bash");
             if (process.platform !== "linux") return wrapped;
-            return {
-              ...wrapped,
-              argv: [
-                ...rewriteLinuxReadOnlyTmpfs(
-                  wrapped.argv,
-                  "/bin/bash",
-                  resolveLinuxTmpfsDestination,
-                ),
-              ],
-            };
+            return { ...wrapped, argv: [...linuxLaunchArgv(wrapped.argv, command)] };
           },
         });
         void readiness.result
@@ -1235,7 +1243,7 @@ process.on("message", (message: unknown) => {
               Number.isSafeInteger(incoming["sequence"]) && (incoming["sequence"] as number) >= 0
                 ? incoming["sequence"]
                 : null,
-            text: null,
+            text: runtimeText,
             steps: stepsSnapshot(),
           });
         })(),

@@ -41,6 +41,7 @@ export interface ConfiguredCompletionsGenerationModelDescriptor
   readonly api: "openai-completions";
   readonly reasoning: boolean;
   readonly reasoningRequired?: boolean;
+  readonly thinkingLevels?: readonly string[];
   readonly input: readonly ("text" | "image")[];
   readonly contextWindow: number;
   readonly maxTokens: number;
@@ -218,6 +219,8 @@ export interface ProactiveConfiguration {
   readonly perCheckMs: number;
   readonly dailyCostMicros: number;
   readonly memoryMinimumSimilarity: number;
+  readonly reviewBudgetSeconds: number;
+  readonly reviewSecondsPerItem: number;
 }
 
 export interface MuseIntakeConfiguration {

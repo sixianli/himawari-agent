@@ -118,6 +118,16 @@ export const messages = {
   "step.thinkingFor": "{time} 推論",
   "process.took": "所要 {time}",
   "chat.moreModels": "その他のモデル（{count}）",
+  "chat.autoModel": "自動",
+  "chat.autoModelHint": "枠が尽きたら別の提供元へ切り替え",
+  "chat.searchModels": "モデルを検索",
+  "chat.noModelMatch": "一致するモデルはありません",
+  "chat.priceTier.low": "安い",
+  "chat.priceTier.mid": "中程度",
+  "chat.priceTier.high": "高め",
+  "chat.priceLine": "入力 {input} · 出力 {output} / 100万トークン",
+  "chat.priceNote":
+    "価格は Magpie の一覧にある表示価格（米ドル / 100万トークン）です。ラベルは、価格が付いている全モデルを「入力価格 + 出力価格」で低い順に三等分したものです。加入中のプラン内なら追加料金はかかりませんが、高いモデルほどプランの枠を早く使い切ります。",
   "answer.copy": "回答をコピー",
   "answer.copied": "コピーしました",
   "answer.copyHint": "上の回答本文だけをコピーします（出典とファイルは含みません）",
@@ -133,6 +143,7 @@ export const messages = {
   "answer.at": "{at, time, short}",
   "answer.sources": "出典 {count} 件",
   "process.tokens": "トークン",
+  "process.answeredBy": "回答したモデル",
   "message.copy": "このメッセージをコピー",
   "message.status.sent": "送信済み：サーバーがこのメッセージを保存しました",
   "message.status.received": "処理開始：モデルがこのメッセージを受け取りました",
@@ -220,7 +231,7 @@ export const messages = {
   "chat.reason.resourceCeilingChanged":
     "許可されたリソース上限が変わり、操作は派遣されませんでした",
   "chat.reason.directoryTargetChanged": "ディレクトリの場所または対象が変わりました",
-  "chat.reason.fileVersionConflict": "ファイルの版が変わり、候補は公開されませんでした",
+  "chat.reason.fileVersionConflict": "ファイルの版が変わり、下書きは公開されませんでした",
   "chat.reason.fileWriteNotStarted": "ファイル操作は失敗しました。ファイルは変更されていません",
   "chat.reason.commandEffectUnverified":
     "コマンドは失敗しました。ワークスペースへの影響は確認していません",
@@ -294,6 +305,9 @@ export const messages = {
   "chat.modelUnavailable": "モデル情報がありません",
   "chat.attach": "画像やファイルを追加",
   "chat.retryCleanup": "停止と終了処理の確認を再試行",
+  "chat.retryCleanupChecking": "終了処理を確認しています…",
+  "chat.retryCleanupStillUnconfirmed":
+    "再確認しましたが、リソースの解放はまだ確認できていません。しばらくしてからもう一度お試しください。",
   "chat.stop": "停止",
   "more.button": "その他",
   "more.buttonRunning": "その他：成果物とバックグラウンドコマンド（{count}件実行中）",
@@ -423,6 +437,7 @@ export const messages = {
   "preview.page": "{count} ページ中 {page} ページ目",
   "preview.renderFailed":
     "このファイルはここでは表示できませんでした。ダウンロードして開いてください。",
+  "preview.pageFailed": "{page} ページ目は表示できませんでした。他のページには影響ありません。",
   "preview.sheets": "シート",
   "preview.sheetTruncated":
     "大きな表のため、最初の 2,000 行・100 列だけを表示しています。すべて見るにはダウンロードしてください。",
@@ -531,7 +546,7 @@ export const messages = {
   "reflection.title": "リフレクション設定とチェックポイント",
   "reflection.configure": "リフレクション設定を保存",
   "workers.title": "ワーカー委任",
-  "improvements.title": "自己改善候補",
+  "improvements.title": "採用待ちの改善",
   "threads.draft": "メッセージ下書き",
   "threads.send": "送信",
   "threads.new": "新しいスレッド",
@@ -675,7 +690,7 @@ export const messages = {
     "{c, select, rule {ルール} identity {プロフィール} preference {好み} relationship {人間関係} goal {目標} project {進行中} health {健康} finance {お金} event {予定} other {その他}}",
   "memory.page.auto": "会話から自動で記憶",
   "memory.page.pausedNote":
-    "自動記憶を一時停止中です。既存の記憶は使いますが、会話から新しく記憶せず、毎日の整理もしません。手動で追加したものは記憶します。",
+    "自動記憶を一時停止中です。既存の記憶は使いますが、会話から新しく記憶せず、記憶の整理もしません。手動で追加したものは記憶します。",
   "memory.page.notReady":
     "手動追加とインポートは、会話から最初の記憶ができてから使えます。自動記憶をオンにして、自分のことを一つ話してください（例：「好きな色は青」）。",
   "memory.page.add": "追加",
@@ -721,7 +736,7 @@ export const messages = {
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
   "memory.page.origin":
-    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} other {毎日の整理}}",
+    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} other {記憶の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
@@ -734,7 +749,7 @@ export const messages = {
   "memory.page.recover": "元に戻す",
   "memory.page.deleted": "削除しました。7 日以内なら「最近削除」から戻せます。",
   "memory.page.filter":
-    "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {整理} correct {訂正} other {インポート}}",
+    "{f, select, all {すべて} new {新規} drop {覚えない・削除} tidy {記憶の整理} correct {訂正} other {インポート}}",
   "memory.page.event":
     "{e, select, new {新規} dropped {覚えない} deleted {削除} correct {訂正} import {インポート} merge {統合} supersede {置き換え} archive {アーカイブ} other {推測}}",
   "memory.page.imported":
@@ -872,6 +887,8 @@ export const messages = {
     "{r, select, sensitive {機微な記憶は毎回は持っていかず、関係があるときだけ使います} category {予定、健康、お金、その他の記憶は関係があるときだけ使います} on {あなたがオンにしたので、自動の選択より優先されます} off {あなたがオフにしたので、関係があるときだけ使います} add {オンにすると毎回の会話に持っていきます。オフなら重要度で決まります} other {今は重要度で決まります。変更すると、あなたの選択が優先されます}}",
   "memory.page.detail": "記憶の詳細",
   "memory.page.topic": "トピック",
+  "memory.page.topicChange": "トピックを変更",
+  "memory.page.topicDone": "「{c}」に変更しました",
   "memory.page.importance": "重要度",
   "memory.page.importanceValue":
     "{value} / 1000 · {by, select, owner {手動で追加したときの既定値} other {保存時にモデルが採点}}",
@@ -924,7 +941,7 @@ export const messages = {
   "chat.welcome.stuck": "何か詰まっていますか？一緒に考えましょう。",
   "chat.welcome.late": "こんな時間までお疲れさま。仕上げ、手伝いましょうか？",
   "chat.welcome.morning": "おはようございます。今日は何から始めましょう？",
-  "proactive.log": "判断の記録",
+  "proactive.log": "リマインダー確認の記録",
   "proactive.group":
     "{g, select, check {重要かも、元のメールを確認} none {期限なし} other {知っておくべきこと}}",
   "proactive.when.due": "{time} 締切",
@@ -935,7 +952,7 @@ export const messages = {
   "proactive.pushed":
     "{reaction, select, opened {通知済み · 開きました} dismissed {通知済み · 閉じました} other {通知済み}}",
   "proactive.rate":
-    "{r, select, useful {役立った} unneeded {不要だった} other {知らせてほしかった}}",
+    "{r, select, useful {正しかった} unneeded {やるべきではなかった} other {やるべきだった}}",
   "proactive.done": "完了",
   "proactive.mute": "通知しない",
   "proactive.whyHide": "理由を閉じる",
@@ -959,22 +976,38 @@ export const messages = {
     "本日のメール確認が 1 日の費用上限に達しました。モデルは止めていますが、銀行・学校などのメールはルールで引き続き表示します。0:00 に自動再開し、チャットへの影響はありません。",
   "proactive.paused": "自発的なリマインダーはオフです。メールの確認・記録・通知をしていません。",
   "proactive.foot": "期限が来たリマインダーと急ぎのメールは、通知をオンにした端末に届きます。",
-  "proactive.audit.title": "直近 7 日間にリマインドから外した {count} 通",
-  "proactive.audit.open": "確認する",
-  "proactive.audit.hide": "閉じる",
-  "proactive.audit.note":
-    "リマインドに入れなかったメールです。差出人と件名だけを表示します。「確認済み」を押すと確認件数に入ります。",
-  "proactive.audit.done": "確認済み",
-  "proactive.audit.doneOk": "確認件数に追加しました",
+  "dailyReview.title": "毎日の採点",
+  "dailyReview.count": "今日 {count} 件",
+  "dailyReview.countLeft": "今日 {count} 件、ほかに {left} 件は選ばれていません",
+  "dailyReview.note": "選ばれなかったものは明日また出ることがあり、7 日たつと出なくなります。",
+  "dailyReview.tag.pushed": "メールを読んで通知した",
+  "dailyReview.tag.silent": "メールを読んで通知しなかった",
+  "dailyReview.tag.mail": "リマインドしなかったメール",
+  "dailyReview.tag.skippedMemory": "保存しなかった記憶",
+  "dailyReview.tag.keptMemory": "保存した記憶",
+  "dailyReview.tag.pendingMemory": "確認待ちの記憶",
+  "dailyReview.tag.consolidation": "記憶の整理",
+  "dailyReview.tag.truncation": "回答に入れなかった古い内容",
+  "dailyReview.tag.degrade": "記憶検索が働かなかった",
+  "dailyReview.tag.externalRead": "外部プログラムによる記憶の読み取り",
+  "dailyReview.hidden": "本文はここには表示しません",
+  "dailyReview.fetched": "メール {count} 通を確認",
+  "dailyReview.allFine": "このページは問題なし",
+  "dailyReview.prev": "前へ",
+  "dailyReview.next": "次へ",
+  "dailyReview.page": "{page} / {pages} ページ",
+  "dailyReview.folded": "その他の判断 · {count} 件",
+  "dailyReview.expand": "開く",
+  "dailyReview.back": "戻る",
   "proactive.log.range": "直近 30 日 · {days} 日分を記録",
   "proactive.log.empty":
     "まだ確認の記録はありません。Gmail をつなぐと 15 分ごとに 1 行記録します。",
   "proactive.log.today": "今日",
   "proactive.log.yesterday": "昨日",
-  "proactive.metric.spoke": "通知",
-  "proactive.metric.hits": "役立った",
-  "proactive.metric.misfires": "不要",
-  "proactive.metric.missed": "確認済みの中の見逃し",
+  "proactive.metric.spoke": "自発的なリマインダーの総数",
+  "proactive.metric.hits": "適切なリマインダー",
+  "proactive.metric.misfires": "余計なリマインダー",
+  "proactive.metric.missed": "見逃し（確認したメールの中）",
   "proactive.metric.reviewed": "{count} 通確認",
   "proactive.verdict":
     "{v, select, pushed {通知} silent {通知せず} deferred {保留} failed {失敗} capped {上限到達} capped_daily {上限到達（1 日）} other {対応が必要}}",
@@ -1040,10 +1073,10 @@ export const messages = {
   "proactive.apps.sendersInvalid": "「{value}」はメールアドレスでもドメインでもありません",
   "proactive.apps.save": "保存",
   "proactive.data.title": "自発的なリマインダーの記録",
-  "proactive.data.hint": "判断の記録とメールから抜き出した結果",
+  "proactive.data.hint": "リマインダー確認の記録とメールから抜き出した結果",
   "proactive.data.delete": "すべて削除",
   "proactive.data.confirm":
-    "判断の記録・メールから抜き出した結果・確認の記録をすべて削除します。Gmail の接続は残ります。削除しますか？",
+    "リマインダー確認の記録・メールから抜き出した結果・確認の記録をすべて削除します。Gmail の接続は残ります。削除しますか？",
   "proactive.data.cleared": "すべて削除しました。",
   "muse.title": "Muse との比較",
   "muse.note":
@@ -1089,4 +1122,131 @@ export const messages = {
     "新着 {count} 通。すべてプロモーションなどのためルールでスキップし、モデルには送っていません",
   "proactive.settings.badTime":
     "23:00 のような 24 時間表記で入力してください。この時間帯はまだ保存されていません",
+  "reminders.tab.reminders": "リマインダー",
+  "reminders.tab.report": "較正レポート",
+  "weekly.info": "説明",
+  "weekly.loadFailed": "較正レポートを読み込めませんでした。",
+  "weekly.window.range": "{start} – {end}",
+  "weekly.window.sinceStart": "{start}から今日まで",
+  "weekly.window.last7": "直近 7 日",
+  "weekly.obs.title": "観察期間",
+  "weekly.obs.short": "開始日を選ぶと、7 日間続けて観察します。",
+  "weekly.obs.startLabel": "データの起点",
+  "weekly.obs.prevDay": "前の日",
+  "weekly.obs.nextDay": "次の日",
+  "weekly.obs.startButton": "この日から始める",
+  "weekly.obs.notReady": "まだ始められません：サービスが初めて動いた記録がありません。",
+  "weekly.obs.explain":
+    "選んだ日から 7 日間続けて観察し、Himawari が毎日、判断の記録がきちんと書かれているかを自分で確認します。8 日目に最初の較正レポートを出します。",
+  "weekly.obs.dates": "データの起点 {start} · {report}に最初の較正レポート",
+  "weekly.obs.version": "バージョン {v}",
+  "weekly.obs.headNow": "観察期間 {n} / 7 日目",
+  "weekly.obs.headFirst": "最初の較正レポート",
+  "weekly.obs.headWaiting": "まだ観察を始めていません",
+  "weekly.obs.dayN": "{n} 日目",
+  "weekly.obs.today": "今日",
+  "weekly.obs.status":
+    "{s, select, pass {合格} fail {不合格} blocked {中断} pending {再確認中} no_check {確認の記録なし} other {まだ}}",
+  "weekly.obs.hide": "閉じる",
+  "weekly.obs.failedOn": "{days}は不合格",
+  "weekly.obs.noCheckOn": "{days}は確認の記録なし",
+  "weekly.obs.blockedOn": "{days}は中断",
+  "weekly.obs.join": "、",
+  "weekly.obs.partJoin": "、",
+  "weekly.obs.allPass": "7 日間続けてすべて合格",
+  "weekly.obs.broke":
+    "{day}は{s, select, fail {不合格} blocked {中断} no_check {確認の記録なし} other {合格しなかった}}",
+  "weekly.obs.restart": "{broke}。直した後 {since}から数え直し、連続 {n} / 7 日合格",
+  "weekly.obs.badMore":
+    "直したら翌日から数え直し、7 日間続けてすべて合格して観察期間が完了します。",
+  "weekly.confirm.title": "{day}から観察を始めますか？",
+  "weekly.confirm.fixed": "設定後は変更できません。",
+  "weekly.confirm.earliest":
+    "選べるのは {earliest}から。新しいバージョンは {boot}に初めて起動したので、まる 1 日そろうのは翌日からです。先の日付も選べます。",
+  "weekly.confirm.cancel": "キャンセル",
+  "weekly.confirm.ok": "決定",
+  "weekly.confirm.reauth": "データの起点を決める前に、もう一度本人確認をしてください。",
+  "weekly.confirm.reauthAccess":
+    "ログインから 5 分以上たっています。いったんログアウトしてログインし直し、ここに戻って起点を決めてください。",
+  "weekly.confirm.relogin": "ログアウトしてログインし直す",
+  "weekly.confirm.failed": "設定できませんでした。もう一度お試しください。",
+  "weekly.check.serviceAllHours": "サービスは一日中動いていた",
+  "weekly.check.serviceOneHour": "サービスが 1 時間止まっていたが、許容範囲内",
+  "weekly.check.serviceMissing":
+    "サービスが {hours} 時間止まっていた（最長で {longest} 時間続けて）",
+  "weekly.check.gmailOnTime": "Gmail の確認は時間どおり記録を書いた：{rows} 回、最長の間隔 {gap}",
+  "weekly.check.gmailGap": "Gmail の確認の記録は {rows} 回だけ、最長の間隔 {gap}（許容は {limit}）",
+  "weekly.check.gmailClearedSince": "（{time}に Gmail の記録を消した後から数えた）",
+  "weekly.check.gmailOff":
+    "この日 Gmail のリマインダーをオフにした（{time}）ため、この日は合格に数えません",
+  "weekly.check.gmailDisconnected":
+    "この日 Gmail が接続されていなかった（{time}から）ため、この日は合格に数えません",
+  "weekly.check.gmailNotConfigured":
+    "Gmail のリマインダーが設定されていないため確認できず、この日は合格に数えません",
+  "weekly.check.gmailSlow":
+    "Gmail の確認が {minutes} 分おきで 1 時間を超えるため確認できず、この日は合格に数えません",
+  "weekly.check.gmailCleared":
+    "{time}に Gmail の記録を消したため、この日の Gmail の記録は確認できず、合格として数えます",
+  "weekly.check.memoryOn": "自動の記憶はずっとオンだった",
+  "weekly.check.memoryPaused":
+    "この日 自動の記憶を一時停止した（{time}）ため、この日は合格に数えません",
+  "weekly.check.tidyMatch": "記憶の整理と判断の記録が一致：変更 {changes} 件、記録 {rows} 件",
+  "weekly.check.tidyMismatch":
+    "記憶の整理と判断の記録が一致しない：変更 {changes} 件、記録 {rows} 件",
+  "weekly.check.tidyFailed": "この日の記憶の整理は失敗した",
+  "weekly.check.tidyStuck": "記憶の整理が {time}に始まり、12 時間たっても終わっていない",
+  "weekly.check.tidyRunning":
+    "記憶の整理が {time}に始まり、まだ終わっていません。後でもう一度確認します",
+  "weekly.check.tidyNone": "この日は記憶の整理がなく、確認は不要",
+  "weekly.check.rowsKept": "確認済みの日の記録は欠けていない",
+  "weekly.check.rowsCleared":
+    "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
+  "weekly.check.rowsMissing":
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+  "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
+  "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
+  "weekly.check.other":
+    "{s, select, pass {確認が 1 つ合格} fail {確認が 1 つ不合格} blocked {確認が 1 つ中断} pending {確認が 1 つ再確認待ち} other {この日は当てはまらない確認が 1 つ}}",
+  "weekly.check.noRecord":
+    "この日は Himawari 自身の確認の記録がなく、判断の記録がそろっているか分かりません",
+  "weekly.duration.minutes": "{m} 分",
+  "weekly.duration.hours": "{h} 時間 {m} 分",
+  "weekly.type.title": "判断の種類ごと",
+  "weekly.type.column":
+    "{c, select, type {判断の種類} total {判断の件数} rated {採点した件数} other {割合}}",
+  "weekly.type.notStarted": "まだ観察を始めていません",
+  "weekly.type.notStartedMore":
+    "データの起点を決めて 7 日間観察すると、ここに判断の種類ごとの割合が出ます。",
+  "weekly.type.notFull": "観察期間はまだ 7 日に達していません",
+  "weekly.type.notFullMore": "観察期間が 7 日に達したら、判断の種類ごとの割合を出します。",
+  "weekly.type.how0":
+    "判断の件数は、この期間にこの種類の判断が記録された件数です（評価したかどうかは問いません）。",
+  "weekly.type.how1": "分母は採点した件数です。",
+  "weekly.type.how2":
+    "各行には、その種類の判断で起こりうる結果だけを載せます（例：システムが保存しないと判断した記憶は「保存しないのが正しかった」か「保存すべきだった」のどちらかだけ）。",
+  "weekly.type.how3": "採点が {n} 件未満のときは割合を出さず「件数不足」と書きます。",
+  "weekly.type.how4":
+    "区間は 95% Wilson 区間です。採点した件数から出した範囲で、本当の割合は 95% の確かさでこの中に入ります。採点が多いほど狭くなります。",
+  "weekly.group":
+    "{g, select, proactive_pushed {メールを読んで通知した} proactive_silent {メールを読んで通知しなかった} memory_skipped {システムが保存しないと判断した記憶} memory_kept {保存した記憶} consolidation {記憶の整理} memory_pending {確認待ちの記憶} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索が働かなかった} other {外部プログラムによる記憶の読み取り}}",
+  "weekly.groupInfo":
+    "{g, select, proactive_pushed {Himawari は 15 分ごとに新着メールを読みます。読んだ後に通知した回です。} other {Himawari は 15 分ごとに新着メールを読みます。読んだ後、通知が必要なものがなかった回です。}}",
+  "weekly.rate":
+    "{k, select, proactive_pushed_useful {通知は正しかった} proactive_pushed_unneeded {通知すべきではなかった} proactive_silent_useful {通知しないのが正しかった} proactive_silent_missed {通知すべきだった} memory_skipped_useful {保存しないのが正しかった} memory_skipped_missed {保存すべきだった} memory_kept_useful {正しく保存した} memory_kept_unneeded {保存すべきではなかった} consolidation_useful {整理は正しかった} consolidation_unneeded {整理すべきではなかった} other_useful {正しかった} other_unneeded {やるべきではなかった} other {やるべきだった}}",
+  "weekly.ratio": "{pct}（{k}/{n}）",
+  "weekly.interval": "区間 {low}–{high}",
+  "weekly.few": "件数不足（{n} 件）",
+  "weekly.other": "その他の判断 · {n} 種類 · {open, select, yes {閉じる} other {開く}}",
+  "weekly.stats.title": "自発的なリマインダー · リマインダー確認の記録の 4 つの集計",
+  "weekly.stats.note":
+    "この 4 つの数は直近 30 日分で、上の割合と数え方が違います。ここでは 24 時間以内に開いたものも適切、閉じたものや 24 時間開かなかったものは余計と数えます。上の割合は採点したものだけです。",
+  "weekly.muse.title": "Muse との対照",
+  "weekly.muse.empty": "件数不足：今週は Muse との対照の項目がありません。",
+  "weekly.muse.bucket":
+    "{b, select, both {両方がリマインド} museOnly {Muse だけがリマインド} himawariOnly {Himawari だけがリマインド} bothSilent {どちらもリマインドしなかった} other {Himawari にこのメールの記録がない}}",
+  "weekly.muse.unpaired": "対応づけできなかった件数",
+  "weekly.muse.rate": "対応づけ率",
+  "weekly.muse.def":
+    "対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
+  "weekly.goRate": "「リマインダー」で採点する",
 } satisfies MessageCatalog;

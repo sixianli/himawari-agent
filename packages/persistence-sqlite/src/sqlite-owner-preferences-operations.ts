@@ -32,7 +32,7 @@ const THINKING_LEVELS: readonly OwnerPreferenceThinkingLevel[] = [
   "max",
 ];
 const NAME_LIMIT = 40;
-const MODEL_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const MODEL_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
 const EMPTY: OwnerPreferences = Object.freeze({
   name: null,

@@ -1,6 +1,9 @@
-import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
+import {
+  MEMORY_CATEGORY_NAMES,
+  MEMORY_SENSITIVE_CATEGORY_NAMES,
+} from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useLocaleFormat } from "../i18n/locale-format.js";
+import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryItem, MemoryModel, MemoryOverview } from "../memory.js";
 import {
@@ -25,16 +28,17 @@ import { LineIcon } from "./answer-footer.js";
 import { Glyph } from "./glyphs.js";
 import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
 import { MuseReference } from "./muse-reference.js";
-import { ActionButton, EmptyState } from "./primitives.js";
+import { ActionButton, Dropdown, EmptyState } from "./primitives.js";
 import {
   clock,
   dayAndClock,
   groupInsights,
-  ProactiveAudit,
   ProactiveBanners,
   ProactiveInsightRow,
+  ProactiveReviewSection,
   useHighlight,
 } from "./proactive-reminders.js";
+import { WeeklyReport } from "./weekly-report.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
 type Tab = "memories" | "changes";
@@ -287,7 +291,8 @@ function PinSwitch({
   notify: (notice: Notice) => void;
   label?: string;
 }) {
-  const on = item.profilePin ? item.profilePin === "on" : carried;
+  const on =
+    pinBlock(item) === "category" ? false : item.profilePin ? item.profilePin === "on" : carried;
   return (
     <label className="memory-switch memory-pin">
       {label ? null : message("memory.page.pin")}
@@ -407,6 +412,15 @@ function MemoryDetail({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const block = pinBlock(item);
+  const recategorizable =
+    (item.status === "active" || item.status === "archived") &&
+    item.dataClassification !== "sensitive" &&
+    !item.topic;
+  const categoryChoices = MEMORY_CATEGORY_NAMES.filter(
+    (key) =>
+      key === item.category ||
+      !(MEMORY_SENSITIVE_CATEGORY_NAMES as readonly string[]).includes(key),
+  );
   const origin = item.importBatchId
     ? "import"
     : item.memoryId.startsWith("memory:owner:")
@@ -472,7 +486,29 @@ function MemoryDetail({
         <dl className="memory-detail">
           <dt>{message("memory.page.topic")}</dt>
           <dd>
-            {message("memory.cat", { c: item.category })}
+            {recategorizable ? (
+              <Dropdown
+                label={message("memory.page.topicChange")}
+                value={item.category as MemoryCategory}
+                options={categoryChoices.map((key) => ({
+                  value: key,
+                  label: message("memory.cat", { c: key }),
+                }))}
+                onChange={(key) =>
+                  void memory.setCategory(item, key).then(
+                    (ok) =>
+                      ok &&
+                      notify({
+                        text: message("memory.page.topicDone", {
+                          c: message("memory.cat", { c: key }),
+                        }),
+                      }),
+                  )
+                }
+              />
+            ) : (
+              message("memory.cat", { c: item.category })
+            )}
             {item.subCategory ? ` · ${item.subCategory}` : ""}
           </dd>
           <dt>{message("memory.page.importance")}</dt>
@@ -732,7 +768,12 @@ export function RemindersPage({
 }) {
   const [notice, setNotice] = useState<Notice>(null);
   const [adding, setAdding] = useState(false);
+  const [tab, setTab] = useState<"reminders" | "report">("reminders");
   const highlight = useHighlight(focus);
+  const weekly = proactive?.weekly ?? null;
+  useEffect(() => {
+    if (focus) setTab("reminders");
+  }, [focus]);
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
@@ -841,9 +882,38 @@ export function RemindersPage({
       </button>
     </>
   );
+  const showReport = tab === "report" && proactive !== null && weekly !== null;
   return (
-    <section className="reminders-page side-page-body" aria-label={message("nav.reminders")}>
-      {!memory ? (
+    <section className="reminders-page side-page-body">
+      {proactive && weekly ? (
+        <div role="tablist" className="memory-tabs" aria-label={message("nav.reminders")}>
+          {(["reminders", "report"] as const).map((key) => (
+            <button
+              type="button"
+              role="tab"
+              key={key}
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+            >
+              {message(key === "reminders" ? "reminders.tab.reminders" : "reminders.tab.report")}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {showReport ? (
+        <WeeklyReport
+          proactive={proactive}
+          weekly={weekly}
+          message={message}
+          locale={locale ?? DEFAULT_UI_LOCALE}
+          onRate={() => {
+            setTab("reminders");
+            window.requestAnimationFrame(() =>
+              document.querySelector(".proactive-review")?.scrollIntoView?.({ block: "start" }),
+            );
+          }}
+        />
+      ) : !memory ? (
         <p className="settings-note">{message("common.notConfigured")}</p>
       ) : !overview ? (
         <div className="files-library-skeleton" aria-hidden="true">
@@ -917,7 +987,9 @@ export function RemindersPage({
               {message("reminders.empty")}
             </EmptyState>
           ) : null}
-          {proactive ? <ProactiveAudit proactive={proactive} message={message} /> : null}
+          {proactive ? (
+            <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
+          ) : null}
           {muse ? <MuseReference muse={muse} message={message} locale={locale} /> : null}
           {overview.reminders.length || overview.upcoming.length || mailCount ? (
             <p className="settings-note reminders-notify">{notifyNote}</p>
@@ -2092,7 +2164,7 @@ export function MemoryPage({
     { key: "changes" },
   ];
   return (
-    <section className="memory-page side-page-body" aria-label={message("nav.memory")}>
+    <section className="memory-page side-page-body">
       {memory.failed ? <p role="alert">{message("error.currentUnavailable")}</p> : null}
       {paused ? (
         <p className="memory-banner" data-kind="paused">

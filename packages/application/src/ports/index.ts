@@ -31,6 +31,7 @@ export * from "./memory-episodes.js";
 export * from "./memory-reminders.js";
 export * from "./decision-ledger.js";
 export * from "./muse-intake.js";
+export * from "./ledger-observation.js";
 export * from "./model-usage.js";
 export * from "./web-push.js";
 export * from "./memory-projection.js";

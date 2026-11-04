@@ -1,3 +1,7 @@
+import type {
+  ThreadExecutionRecord,
+  ThreadExecutionState,
+} from "@himawari-agent/gateway-contracts";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createIntl, createIntlCache } from "react-intl";
@@ -13,9 +17,9 @@ const message = (id: MessageId, values?: Record<string, string | number | boolea
         .map(([key, value]) => `${key}=${String(value)}`)
         .join(",")})`
     : id;
-const render = (run = completedRun, records = newsRun()) =>
+const render = (run = completedRun, records = newsRun(), state?: ThreadExecutionState) =>
   renderToStaticMarkup(
-    createElement(ExecutionProcess, { run, records, message, connection: "connected" }),
+    createElement(ExecutionProcess, { run, records, message, connection: "connected", state }),
   );
 
 it("[UI-5] collapses a finished turn into one sentence that says what it did and the total time", () => {
@@ -301,4 +305,73 @@ it("[QUEUE-1] reverse: does not claim a queue once the turn has started producin
   expect(html).not.toContain("chat.queued");
   const acceptedWithRecords = render(acceptedRunWaiting(30_000), newsRun());
   expect(acceptedWithRecords).not.toContain("chat.queued");
+});
+
+const reviewRecord = (
+  sequence: number,
+  milliseconds: number,
+  outcome: "started" | "approved",
+): ThreadExecutionRecord => ({
+  id: `review:${sequence}`,
+  itemId: "review:one",
+  sequence,
+  kind: "status",
+  phase: "updated",
+  name: `runtime.authorization_review.${outcome}`,
+  text: "",
+  input: "",
+  output: "",
+  occurredAt: at(milliseconds),
+});
+
+it("[ICON-MOTION-5] the automatic-review row animates only while the review is still running", () => {
+  const running = { ...completedRun, status: "running" as const, updatedAt: at(5000) };
+  const live = render(running, [reviewRecord(1, 1000, "started")]);
+  expect(live).toContain("execution-stage authorization-review is-running");
+  const done = render(running, [
+    reviewRecord(1, 1000, "started"),
+    reviewRecord(2, 3000, "approved"),
+  ]);
+  expect(done).toContain("execution-stage authorization-review");
+  expect(done).not.toContain("authorization-review is-running");
+  const finished = render(completedRun, [reviewRecord(1, 1000, "started")]);
+  expect(finished).not.toContain("authorization-review is-running");
+});
+
+it("[ICON-MOTION-5] with an execution state, the review row follows the state phase and the records together", () => {
+  const running = { ...completedRun, status: "running" as const, updatedAt: at(5000) };
+  const state = (displayPhase: string) =>
+    ({ displayPhase, lastObservedAt: at(5000) }) as unknown as ThreadExecutionState;
+  const started = [reviewRecord(1, 1000, "started")];
+  expect(render(running, started, state("reviewing"))).toContain("authorization-review is-running");
+  expect(render(running, started, state("running"))).not.toContain(
+    "authorization-review is-running",
+  );
+  const approved = [reviewRecord(1, 1000, "started"), reviewRecord(2, 3000, "approved")];
+  expect(render(running, approved, state("reviewing"))).not.toContain(
+    "authorization-review is-running",
+  );
+});
+
+it("[ICON-MOTION-6] only the latest unfinished thinking row animates, and none once the run has ended", () => {
+  const thinking = (sequence: number, milliseconds: number, itemId: string, end: boolean) =>
+    ({
+      ...reviewRecord(sequence, milliseconds, "started"),
+      id: `${itemId}:${sequence}`,
+      itemId,
+      name: end ? "runtime.thinking.ended" : "runtime.thinking.started",
+    }) as ThreadExecutionRecord;
+  const running = { ...completedRun, status: "running" as const, updatedAt: at(5000) };
+  const records = [
+    thinking(1, 1000, "thinking:old", false),
+    thinking(2, 2000, "thinking:new", false),
+  ];
+  const html = render(running, records);
+  expect(html.match(/execution-stage is-running/g)?.length).toBe(1);
+  expect(render(completedRun, records)).not.toContain("execution-stage is-running");
+  const closed = [
+    thinking(1, 1000, "thinking:old", false),
+    thinking(2, 2000, "thinking:old", true),
+  ];
+  expect(render(running, closed)).not.toContain("execution-stage is-running");
 });

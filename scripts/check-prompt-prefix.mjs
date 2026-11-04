@@ -3,18 +3,20 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 const TAG = "[I-66]";
 const FILES = ["packages/runtime-pi/test/prompt-prefix.compat.test.ts"];
 const REQUIRED = 8;
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-prompt-prefix-"));
 const report = path.join(directory, "report.json");
 try {
   const run = spawnSync(
-    "npx",
+    process.execPath,
     [
-      "vitest",
+      path.join(root, "node_modules", "vitest", "vitest.mjs"),
       "run",
       "--config",
       "vitest.workspace.ts",
@@ -26,8 +28,9 @@ try {
       "--reporter=json",
       `--outputFile=${report}`,
     ],
-    { stdio: ["ignore", "ignore", "inherit"] },
+    { cwd: root, stdio: ["ignore", "ignore", "inherit"] },
   );
+  if (run.error) console.error(`PROMPT_PREFIX_VITEST_NOT_STARTED ${run.error.message}`);
   const results = existsSync(report)
     ? JSON.parse(readFileSync(report, "utf8"))
     : { testResults: [] };

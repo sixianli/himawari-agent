@@ -97,6 +97,10 @@ import {
   PRODUCTION_MUSE_OPERATIONS,
   type ProductionMuseControl,
 } from "./production-muse-intake-control.js";
+import {
+  PRODUCTION_OBSERVATION_OPERATIONS,
+  type ProductionObservation,
+} from "./production-observation.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -148,6 +152,9 @@ export interface ProductionHttpCompositionOptions {
     provider: string;
     thinkingLevels: readonly string[];
     images: boolean;
+    automatic?: boolean;
+    price?: { input: number; output: number };
+    priceTier?: "low" | "mid" | "high";
   }[];
   readonly live?: Pick<ExecutionLiveFeed, "subscribe" | "current">;
   readonly cancelRun?: (
@@ -182,6 +189,7 @@ export interface ProductionHttpCompositionOptions {
   readonly proactive?: ProductionProactive;
   readonly museIntake?: ProductionMuseIntake;
   readonly museControl?: ProductionMuseControl;
+  readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly authority: () => ProductAuthorityFence;
@@ -616,6 +624,7 @@ function routeOptions(
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
   museAvailable: boolean,
+  observationAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -649,6 +658,7 @@ function routeOptions(
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
+        ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
       ],
       agentId: configuration.agentId,
@@ -1070,6 +1080,7 @@ export async function createProductionHttpComposition(
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
     ...(options.museControl ? { museControl: options.museControl } : {}),
+    ...(options.observation ? { observationControl: options.observation } : {}),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),
@@ -1095,6 +1106,7 @@ export async function createProductionHttpComposition(
       Boolean(memoryControl),
       Boolean(options.proactive),
       Boolean(options.museControl),
+      Boolean(options.observation),
     ),
     gatewayV2,
     threadSearch,

@@ -126,6 +126,9 @@ export interface HttpGatewayServerOptions {
       provider: string;
       thinkingLevels: readonly string[];
       images: boolean;
+      automatic?: boolean;
+      price?: { input: number; output: number };
+      priceTier?: "low" | "mid" | "high";
     }[];
     readonly installedGatewayV2Operations?: readonly (GatewayV2Query | GatewayV2Command)["type"][];
     readonly agentId: string;
@@ -772,6 +775,12 @@ function staticContentType(target: string): string {
       return "image/png";
     case ".woff2":
       return "font/woff2";
+    case ".bcmap":
+    case ".pfb":
+    case ".ttf":
+      return "application/octet-stream";
+    case ".wasm":
+      return "application/wasm";
     case ".webmanifest":
       return "application/manifest+json";
     default:

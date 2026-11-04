@@ -21,15 +21,16 @@ TWELFTH = json.loads((FIXTURES / 'twelfth-parameters.json').read_text())
 TWELFTH_FROZEN = json.loads((FIXTURES / 'twelfth-frozen-sha256.json').read_text())
 TWELFTH_COMMIT = TWELFTH['COMMIT']
 MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
-ADDED_FILES = {'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
+ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures.mjs', 'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
-    'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/cloud-inputs.draft.json',
+    'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
+    'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
-    'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 's0-db/read-s0-db.mjs',
-    'signing/cloud-seal.mjs', 'signing/prepare-twelfth-snapshot.sh', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
+    'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
 INSTANCE = json.loads((HERE / 'instances' / 'andy-production.json').read_text())
@@ -144,115 +145,6 @@ class StartupPhaseTest(RenderedPacket):
         self.assertEqual(phases(self.journal(12000), 'start', baseline)['warnings'], [])
         self.assertEqual(phases(self.journal(18824), 'missing', baseline), {'invocationId': 'missing', 'phases': [], 'warnings': [], 'runtimeDigests': []})
 
-    def test_the_install_time_prepare_and_the_service_prepare_share_one_fingerprint_cache(self):
-        packet = self.render()
-        snapshot = next(packet.rglob('prepare-*-snapshot.sh')).read_text()
-        unit = next(packet.rglob('himawari-prod.service.draft')).read_text()
-        prepare = [line for line in snapshot.splitlines() if 'cloud-protected-prepare.mjs" --prepare' in line]
-        self.assertEqual(len(prepare), 1)
-        self.assertIn('state=/var/lib/himawari/state', snapshot)
-        self.assertIn('--reuid=999', prepare[0])
-        self.assertIn('HOME="$state"', prepare[0])
-        self.assertIn('User=himawari-prod', unit)
-        self.assertIn('Environment=HOME=/var/lib/himawari/state', unit)
-        self.assertIn('cloud-protected-prepare.mjs --prepare', unit)
-        self.assertNotIn('HIMAWARI_RUNTIME_FINGERPRINT_FILE', snapshot + unit)
-        self.assertIn("target_name = 'runtime-fingerprints.json'", snapshot)
-        self.assertIn('/usr/bin/python3', snapshot)
-        self.assertIn('/lib/himawari-agent', snapshot.split('runtime=', 1)[1].splitlines()[0])
-
-    def publish_fingerprints(self, snapshot, state, operations, runtime):
-        marker = "/usr/bin/python3 -I - \"$state\" \"$operations\" \"$runtime\" <<'PYTHON'\n"
-        script = snapshot.split(marker, 1)[1].split('\nPYTHON\n', 1)[0]
-        return subprocess.run(['python3', '-I', '-', str(state), str(operations), runtime], input=script, capture_output=True, text=True, timeout=30)
-
-    def test_the_root_step_publishes_the_exact_cache_the_service_will_look_for(self):
-        if os.getuid() != 0:
-            self.skipTest('needs root to create files owned by the service account')
-        packet = self.render()
-        snapshot = next(packet.rglob('prepare-*-snapshot.sh')).read_text()
-        prepare = next(packet.rglob('cloud-protected-prepare.mjs')).read_text()
-        runtime = snapshot.split('runtime=', 1)[1].splitlines()[0]
-        prefix = re.search(r'prefix = "([^"]+)"', prepare).group(1)
-        self.assertEqual(runtime, prefix + '/lib/himawari-agent')
-        switch = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
-        self.assertIn("'newPrefix': '" + prefix + "'", switch)
-        token = subprocess.run(['node', '-e', 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,16))', runtime], capture_output=True, text=True, check=True).stdout
-        state, operations = self.root / 'state', self.root / 'operations'
-        cache = state / 'cache'
-        cache.mkdir(parents=True)
-        os.chown(cache, 999, 988)
-        os.chmod(cache, 0o700)
-        operations.mkdir()
-        os.chmod(operations, 0o755)
-        source = cache / ('runtime-fingerprints-' + token + '.json')
-        published = operations / 'runtime-fingerprints.json'
-        entry = {key: '1' for key in ['dev', 'ino', 'size', 'mode', 'uid', 'mtimeNs', 'ctimeNs']} | {'sha256': 'a' * 64}
-        payload = json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry}})
-
-        def stage(text=payload, owner=999, links=0):
-            source.unlink(missing_ok=True)
-            source.write_text(text)
-            os.chown(source, owner, 988)
-            os.chmod(source, 0o600)
-            for index in range(links):
-                os.link(source, cache / ('extra' + str(index)))
-
-        def refused(code):
-            published.unlink(missing_ok=True)
-            result = self.publish_fingerprints(snapshot, state, operations, runtime)
-            self.assertNotEqual(result.returncode, 0, code)
-            self.assertIn(code, result.stderr)
-            self.assertFalse(published.exists(), code)
-            self.assertEqual(list(operations.glob('*.tmp')), [], code)
-
-        stage()
-        result = self.publish_fingerprints(snapshot, state, operations, runtime)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('RUNTIME_FINGERPRINT_CACHE_PUBLISHED files=1', result.stdout)
-        self.assertEqual(published.read_text(), payload)
-        self.assertEqual((published.stat().st_uid, oct(published.stat().st_mode & 0o777)), (0, '0o644'))
-        self.assertEqual(list(operations.glob('*.tmp')), [])
-        stage(owner=1234)
-        refused('SOURCE_UNSAFE')
-        stage(json.dumps({'version': 1, 'root': runtime + '2', 'files': {'a': entry}}))
-        refused('INVALID')
-        stage(json.dumps({'version': 1, 'root': runtime, 'files': {'a': {}}}))
-        refused('INVALID')
-        stage(json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry | {'sha256': 'zz'}}}))
-        refused('INVALID')
-        stage('not json')
-        with self.subTest('garbage'):
-            published.unlink(missing_ok=True)
-            self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
-        stage(links=1)
-        refused('SOURCE_UNSAFE')
-        (cache / 'extra0').unlink()
-        source.unlink()
-        os.mkfifo(source)
-        os.chown(source, 999, 988)
-        refused('SOURCE_UNSAFE')
-        source.unlink()
-        (cache / 'secret').write_text(payload)
-        source.symlink_to(cache / 'secret')
-        published.unlink(missing_ok=True)
-        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
-        self.assertFalse(published.exists())
-        source.unlink()
-        refused('NOT_WRITTEN')
-        stage()
-        self.assertEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
-        source.unlink()
-        again = self.publish_fingerprints(snapshot, state, operations, runtime)
-        self.assertEqual(again.returncode, 0, again.stderr)
-        self.assertIn('ALREADY_PUBLISHED', again.stdout)
-        shutil.rmtree(cache)
-        (self.root / 'elsewhere').mkdir()
-        cache.symlink_to(self.root / 'elsewhere')
-        published.unlink()
-        self.assertNotEqual(self.publish_fingerprints(snapshot, state, operations, runtime).returncode, 0)
-        self.assertFalse(published.exists())
-
     def test_the_switch_report_warns_when_the_runtime_check_had_to_hash_files_again(self):
         phases, baseline = startup_phases(self.render())
         digest = lambda reused, hashed, retried: (9100, {'component': 'platform-node', 'event': 'sandbox_runtime.digest_completed', 'reused': reused, 'hashed': hashed, 'durationMs': 1100, 'retriedWithoutCache': retried})
@@ -265,6 +157,108 @@ class StartupPhaseTest(RenderedPacket):
         for reused, hashed, retried in [(0, 30879, False), (10, 1, False), (30879, 0, True)]:
             bad = phases(startup_journal('start', [spawn, digest(reused, hashed, retried)]), 'start', baseline)
             self.assertEqual([warning['step'] for warning in bad['warnings']], ['runtime-fingerprint-cache'], (reused, hashed, retried))
+
+    def test_the_s6_root_step_publishes_the_fingerprint_cache_the_service_will_read_and_fails_without_it(self):
+        packet = self.render()
+        step = (packet / 'signing' / 'publish-runtime-protection.mjs').read_text()
+        runner = (packet / 'steps' / 'run-step.py').read_text()
+        self.assertIn("'S6_RUNTIME_PROTECTION': [node, '--no-global-search-paths', str(stage / 'signing/publish-runtime-protection.mjs')]", runner)
+        operations = re.search(r'const destination = "(/opt/himawari/operations/[^"]+)/runtime-protection.json"', step).group(1)
+        self.assertIn('const fingerprintDestination = "' + operations + '/runtime-fingerprints.json";', step)
+        readback = (packet / 'systemd' / 'S7-startup-readback.mjs').read_text()
+        self.assertIn('const operations = "' + operations + '";', readback)
+        self.assertIn('const protectionPath = operations + "/runtime-protection.json";', readback)
+        order = [step.index(marker) for marker in [
+            'await assert.rejects(lstat(fingerprintDestination), { code: "ENOENT" });',
+            'process.env.HIMAWARI_RUNTIME_FINGERPRINT_FILE = fingerprintDestination;',
+            'assert.equal(await platform.digestSandboxRuntime(runtime), receipt.runtimeDigest);',
+            'await chmod(fingerprintDestination, 0o644);',
+            'fingerprintInfo.uid === 0',
+            'Object.keys(fingerprintCache.files).length > 0',
+            'await writeFile(destination, bytes',
+        ]]
+        self.assertEqual(order, sorted(order))
+        self.assertIn('(fingerprintInfo.mode & 0o7777) === 0o644', step)
+        self.assertIn('fingerprintCache: { path: fingerprintDestination', step)
+        self.assertEqual(step.count('runtime-fingerprints.json'), 1)
+        shipped = [name.name for name in packet.rglob('*') if name.is_file() and name.suffix in ('.sh', '.py', '.mjs') and 'runtime-fingerprints' in name.read_text() and name.name != 'publish-runtime-protection.mjs']
+        self.assertEqual(shipped, [])
+
+    def test_an_unnamed_readback_error_keeps_its_original_message_and_location_in_the_failure_line(self):
+        packet = self.render()
+        source = (packet / 'systemd' / 'S7-startup-readback.mjs').read_text()
+        call = 'process.stdout.write(JSON.stringify(await inspect(process.argv[2], process.argv[3])) + "\\n");'
+        self.assertIn(call, source)
+        flat = re.sub(r'^import \{[^}]*\} from "\./[^"]+";\n', '', source, flags=re.M)
+        self.assertNotIn('from "./', flat)
+        broken = flat.replace(call, 'throw new Error("ENOENT: no such file or directory, open \'/x/y\'");')
+        named = flat.replace(call, 'throw new Error("TWELFTH_STARTUP_PID_INVALID");')
+        path = packet / 'systemd' / 'readback-under-test.mjs'
+        secret = flat.replace(call, 'throw new Error("fetch https://u:p@h.example/x?token=abc failed key sk_live_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123 at /opt/himawari/state");')
+        path.write_text(secret)
+        leaked = subprocess.run([shutil.which('node'), str(path), '--preflight'], capture_output=True, text=True, cwd=packet)
+        message = json.loads(leaked.stderr.strip().splitlines()[-1])['errorMessage']
+        self.assertEqual(message, 'fetch <url> failed key <redacted> at /opt/himawari/state')
+        for text, expected in [(broken, None), (named, 'TWELFTH_STARTUP_PID_INVALID')]:
+            path.write_text(text)
+            result = subprocess.run([shutil.which('node'), str(path), '--preflight'], capture_output=True, text=True, cwd=packet)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            line = json.loads(result.stderr.strip().splitlines()[-1])
+            if expected:
+                self.assertEqual(line, {'passed': False, 'code': expected})
+            else:
+                self.assertEqual(line['code'], 'TWELFTH_STARTUP_INSPECTION_FAILED')
+                self.assertEqual((line['errorName'], line['errorMessage']), ('Error', "ENOENT: no such file or directory, open '/x/y'"))
+                self.assertTrue(line['frames'] and all(frame.startswith('at ') for frame in line['frames']))
+
+    def test_a_rerun_moves_aside_the_evidence_files_an_earlier_run_left_instead_of_failing(self):
+        import tempfile
+        packet = self.render()
+        source = (packet / 'maintenance' / 'maintenance-common.mjs').read_text()
+        start = source.index('export function retainedJson')
+        function = source[start:source.index('\n}\n', start) + 3]
+        safe_start = source.index('function safeFile')
+        safe = source[safe_start:source.index('\n}\n', safe_start) + 3]
+        runner = (packet / 'maintenance' / 'run-maintenance.mjs').read_text()
+        self.assertIn('supersede: action.startsWith("S9_")', runner)
+        self.assertEqual(runner[runner.index('async function main'):].count('retainedJson('), 1)
+
+        def run(body):
+            with tempfile.TemporaryDirectory() as directory:
+                evidence = Path(directory).resolve()
+                module = evidence / 'retained-under-test.mjs'
+                module.write_text('\n'.join([
+                    'import assert from "node:assert/strict";',
+                    'import { createHash } from "node:crypto";',
+                    'import path from "node:path";',
+                    'import { existsSync, linkSync, readFileSync, lstatSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";',
+                    f'const evidenceRoot = {json.dumps(str(evidence))};',
+                    'const fixed = { uid: process.getuid() };',
+                    'const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");',
+                    safe, function, body,
+                ]).replace('__PKT_LABEL_UPPER__', 'TWENTYFIFTH'))
+                result = subprocess.run([shutil.which('node'), str(module)], capture_output=True, text=True, cwd=evidence)
+                runs = {item.name: json.loads(item.read_text())['run'] for item in evidence.glob('s9_*') if item.is_file() and not item.is_symlink()}
+                return result, runs
+
+        started = 's9_raw_restore51-started.json'
+        result, runs = run('\n'.join(f'retainedJson("{started}", {{ run: {n} }}, {{ supersede: true }});' for n in (1, 2, 3)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(runs, {started: 3, started + '.superseded-1': 1, started + '.superseded-2': 2})
+
+        result, runs = run('\n'.join(f'retainedJson("{started}", {{ run: {n} }});' for n in (1, 2)))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('EEXIST', result.stderr)
+        self.assertEqual(runs, {started: 1})
+
+        result, runs = run('\n'.join([
+            f'writeFileSync(path.join(evidenceRoot, "other.json"), "{{}}");',
+            f'symlinkSync(path.join(evidenceRoot, "other.json"), path.join(evidenceRoot, "{started}"));',
+            f'retainedJson("{started}", {{ run: 2 }}, {{ supersede: true }});',
+        ]))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('MAINTENANCE_FILE_UNSAFE', result.stderr)
+        self.assertEqual(runs, {})
 
     def test_the_switch_waits_for_both_background_content_audits_before_declaring_the_start_healthy(self):
         source = (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text()
@@ -281,65 +275,6 @@ class StartupPhaseTest(RenderedPacket):
         self.assertFalse(gate([event('started', True), event('started', 12), event('completed', 12), event('completed', True)]))
         self.assertTrue(gate([event('started', 11), event('superseded', 11), event('started', 12), event('completed', 12)]))
         self.assertIn("'__PKT_LABEL_UPPER___SWITCH_CONTENT_AUDITS_NOT_COMPLETED' if not audits_completed".replace('__PKT_LABEL_UPPER__', 'TWELFTH'), (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text())
-
-    def test_the_snapshot_script_never_uses_a_variable_before_it_is_set(self):
-        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
-        self.assertEqual(subprocess.run(['bash', '-n'], input=snapshot, text=True, capture_output=True).returncode, 0)
-        assigned = {'0', '1', '#', '?', '@', '*', '$', '!'}
-        heredoc_end = None
-        for number, line in enumerate(snapshot.splitlines(), 1):
-            if heredoc_end:
-                if line == heredoc_end:
-                    heredoc_end = None
-                continue
-            opener = re.search(r"<<-?\s*'?([A-Z_]+)'?\s*$", line)
-            code = line
-            used = set(re.findall(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)', code))
-            for name in used - assigned - {'PATH'}:
-                self.assertIn(name, assigned, 'line ' + str(number) + ' uses $' + name + ' before it is set')
-            for name in re.findall(r'(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=', code):
-                assigned.add(name)
-            if opener:
-                heredoc_end = opener.group(1)
-
-    def test_the_fingerprint_publish_runs_after_prepare_has_produced_its_source(self):
-        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
-        prepare = snapshot.index('cloud-protected-prepare.mjs" --prepare')
-        publish = snapshot.index('runtime-fingerprints.json')
-        self.assertLess(prepare, publish)
-        self.assertEqual(snapshot.count("target_name = 'runtime-fingerprints.json'"), 1)
-
-    def test_the_tail_of_the_snapshot_script_publishes_for_real_under_strict_shell_options(self):
-        if os.getuid() != 0:
-            self.skipTest('needs root to create files owned by the service account')
-        snapshot = next(self.render().rglob('prepare-*-snapshot.sh')).read_text()
-        lines = snapshot.splitlines()
-        start = next(index for index, line in enumerate(lines) if line.startswith('runtime='))
-        stop = next(index for index, line in enumerate(lines) if index > start and line.startswith('[[ $(stat -c %u "$operations/runtime-fingerprints.json")'))
-        runtime = lines[start].split('=', 1)[1]
-        token = subprocess.run(['node', '-e', 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,16))', runtime], capture_output=True, text=True, check=True).stdout
-        state, operations = self.root / 'state', self.root / 'operations'
-        (state / 'cache').mkdir(parents=True)
-        operations.mkdir()
-        os.chmod(operations, 0o755)
-        os.chown(state / 'cache', 999, 988)
-        entry = {key: '1' for key in ['dev', 'ino', 'size', 'mode', 'uid', 'mtimeNs', 'ctimeNs']} | {'sha256': 'a' * 64}
-        source = state / 'cache' / ('runtime-fingerprints-' + token + '.json')
-        source.write_text(json.dumps({'version': 1, 'root': runtime, 'files': {'a': entry}}))
-        os.chown(source, 999, 988)
-        os.chmod(source, 0o600)
-        script = 'set -euo pipefail\numask 022\nstate=' + str(state) + '\noperations=' + str(operations) + '\n' + '\n'.join(lines[start:stop + 1]) + '\n'
-        result = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('RUNTIME_FINGERPRINT_CACHE_PUBLISHED', result.stdout)
-        source.unlink()
-        again = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
-        self.assertEqual(again.returncode, 0, again.stderr)
-        self.assertIn('ALREADY_PUBLISHED', again.stdout)
-        (operations / 'runtime-fingerprints.json').unlink()
-        missing = subprocess.run(['bash', '-c', script], capture_output=True, text=True, timeout=60)
-        self.assertNotEqual(missing.returncode, 0)
-        self.assertIn('NOT_WRITTEN', missing.stderr)
 
     def test_a_missing_or_malformed_phase_baseline_is_refused(self):
         self.assertEqual(json.loads(packet_maker.startup_phase_baseline(INSTANCE))['sandbox-services-created'], 6000)
@@ -1054,6 +989,145 @@ class DependencyReinstallTest(unittest.TestCase):
         generator = (HERE / 'make-packet.py').read_text()
         uploads = generator[generator.index('def install_scripts(self):'):generator.index('def start(self, name, command):')]
         self.assertIn("'install-dependencies-if-changed.sh'", uploads)
+
+
+class SourceBundleTest(unittest.TestCase):
+    TAG = '[PG-1]'
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.repo = self.root / 'repo'
+        self.git_environment = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+        self.run_git('init', '-q', str(self.repo), cwd=self.root)
+        self.commits = []
+        for index in range(4):
+            (self.repo / ('file-' + str(index) + '.txt')).write_text(os.urandom(2000).hex() + '\n')
+            self.run_git('add', '-A')
+            self.run_git('commit', '-q', '-m', 'commit ' + str(index))
+            self.commits.append(self.run_git('rev-parse', 'HEAD'))
+        patcher = unittest.mock.patch.object(packet_maker, 'REPO', self.repo)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def run_git(self, *arguments, cwd=None):
+        child = subprocess.run(['git', *arguments], cwd=cwd or self.repo, env=self.git_environment, capture_output=True, text=True, check=True)
+        return child.stdout.strip()
+
+    def test_the_nearest_ancestor_the_server_already_holds_is_the_base(self):
+        first, second, third, fourth = self.commits
+        self.assertEqual(packet_maker.choose_source_base(fourth, [first, second]), second)
+        self.assertEqual(packet_maker.choose_source_base(fourth, [second, first]), second)
+        self.assertEqual(packet_maker.choose_source_base(third, [first, second, fourth]), second)
+
+    def test_a_server_without_a_usable_cache_gets_the_whole_history(self):
+        first, second, third, fourth = self.commits
+        self.assertIsNone(packet_maker.choose_source_base(fourth, []))
+        self.assertIsNone(packet_maker.choose_source_base(second, [third, fourth]))
+        self.assertIsNone(packet_maker.choose_source_base(fourth, ['f' * 40]))
+
+    def test_a_commit_the_server_already_holds_is_sent_against_its_parent(self):
+        first, second, third, fourth = self.commits
+        self.assertEqual(packet_maker.choose_source_base(fourth, [first, fourth]), third)
+        self.assertIsNone(packet_maker.choose_source_base(first, [first]))
+
+    def test_an_incremental_bundle_needs_only_its_base_and_is_smaller(self):
+        first, second, third, fourth = self.commits
+        full, incremental = self.root / 'full.bundle', self.root / 'incremental.bundle'
+        packet_maker.create_bundle(fourth, full)
+        packet_maker.create_bundle(fourth, incremental, third)
+        self.assertEqual(packet_maker.bundle_prerequisites(full), [])
+        self.assertEqual(packet_maker.bundle_prerequisites(incremental), [third])
+        self.assertLess(incremental.stat().st_size, full.stat().st_size)
+        cache = self.root / 'cache.git'
+        subprocess.run(['git', 'init', '--bare', '-q', str(cache)], check=True)
+        refused = subprocess.run(['git', '-C', str(cache), 'bundle', 'verify', str(incremental)], capture_output=True, text=True, check=False)
+        self.assertNotEqual(refused.returncode, 0)
+        seeded = self.root / 'seeded.bundle'
+        packet_maker.create_bundle(third, seeded)
+        for bundle, head in ((seeded, third), (incremental, fourth)):
+            subprocess.run(['git', '-C', str(cache), 'fetch', '-q', '--no-tags', str(bundle), 'HEAD:refs/release/' + head], check=True)
+        self.assertEqual(subprocess.run(['git', '-C', str(cache), 'rev-parse', 'refs/release/' + fourth], capture_output=True, text=True, check=True).stdout.strip(), fourth)
+
+    def test_a_cached_commit_on_another_line_of_history_is_not_chosen_as_the_base(self):
+        first, second, third, fourth = self.commits
+        self.run_git('checkout', '-q', '-b', 'side', first)
+        (self.repo / 'side.txt').write_text('side\n')
+        self.run_git('add', '-A')
+        self.run_git('commit', '-q', '-m', 'side')
+        side = self.run_git('rev-parse', 'HEAD')
+        self.assertIsNone(packet_maker.choose_source_base(fourth, [side]))
+        self.assertEqual(packet_maker.choose_source_base(fourth, [side, first]), first)
+
+    def test_hermes_gets_its_own_whole_bundle_when_it_lacks_the_base(self):
+        first, second, third, fourth = self.commits
+        wrapper = self.root / 'hermes-ssh.sh'
+        wrapper.write_text('#!/bin/bash\nexec bash -c "$1"\n')
+        wrapper.chmod(0o755)
+        builder_repo = self.root / 'builder-repo'
+        subprocess.run(['git', 'clone', '-q', '--no-checkout', str(self.repo), str(builder_repo)], check=True)
+        with unittest.mock.patch.dict(os.environ, {'HIMAWARI_HERMES_SSH': str(wrapper)}):
+            hermes = packet_maker.Hermes('twentyfourth-1234abcd-20261101t010203')
+            hermes.settings = {**hermes.settings, 'source': str(builder_repo)}
+            self.assertTrue(hermes.has_commit(third))
+            self.assertFalse(hermes.has_commit('e' * 40))
+            materials, work = self.root / 'materials', self.root / 'work'
+            materials.mkdir()
+            work.mkdir()
+            parameters = {'BUNDLE_NAME': 'source-' + fourth[:7] + '.bundle', 'SOURCE_CACHE_COMMITS': [third]}
+            shared = packet_maker.make_source_bundles(argparse.Namespace(full_source=False), fourth, parameters, materials, work, hermes)
+            self.assertEqual((parameters['SOURCE_BASE_COMMIT'], shared), (third, materials / parameters['BUNDLE_NAME']))
+            self.assertEqual(packet_maker.bundle_prerequisites(shared), [third])
+            hermes.has_commit = lambda commit: False
+            parameters = {'BUNDLE_NAME': 'source-' + fourth[:7] + '.bundle', 'SOURCE_CACHE_COMMITS': [third]}
+            separate = packet_maker.make_source_bundles(argparse.Namespace(full_source=False), fourth, parameters, materials, work, hermes)
+            self.assertEqual((parameters['SOURCE_BASE_COMMIT'], separate), (third, work / 'builder.bundle'))
+            self.assertEqual(packet_maker.bundle_prerequisites(separate), [])
+            self.assertEqual(packet_maker.bundle_prerequisites(materials / parameters['BUNDLE_NAME']), [third])
+
+    def test_the_full_source_flag_ships_the_whole_history(self):
+        first, second, third, fourth = self.commits
+        materials, work = self.root / 'materials', self.root / 'work'
+        materials.mkdir()
+        work.mkdir()
+
+        class Builder:
+            def has_commit(self, commit):
+                raise AssertionError('the builder is not asked when the whole history is shipped')
+        parameters = {'BUNDLE_NAME': 'source-' + fourth[:7] + '.bundle', 'SOURCE_CACHE_COMMITS': [third]}
+        bundle = packet_maker.make_source_bundles(argparse.Namespace(full_source=True), fourth, parameters, materials, work, Builder())
+        self.assertEqual((parameters['SOURCE_BASE_COMMIT'], packet_maker.bundle_prerequisites(bundle)), ('', []))
+
+    def test_full_source_together_with_reused_materials_is_refused_before_anything_runs(self):
+        arguments = argparse.Namespace(full_source=True, reuse_materials='/earlier/packet')
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_FULL_SOURCE_WITH_REUSE'):
+            packet_maker.prepare(arguments)
+
+    def test_discovery_reports_the_releases_the_server_cache_holds(self):
+        facts = production_facts(sourceCacheCommits=['b' * 40, 'a' * 40, 'not-a-commit'])
+        self.assertEqual(packet_maker.interpret_discovery(facts, INSTANCE)['SOURCE_CACHE_COMMITS'], ['a' * 40, 'b' * 40])
+        self.assertEqual(packet_maker.interpret_discovery(production_facts(), INSTANCE)['SOURCE_CACHE_COMMITS'], [])
+        self.assertIn('refs/release', packet_maker.discovery_script())
+        self.assertEqual(packet_maker.source_cache(INSTANCE), '/opt/himawari/source-cache.git')
+
+    def test_the_cache_fixtures_run_with_the_other_packet_checks(self):
+        names = [name for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', False, False)]
+        self.assertIn('install/verify-source-cache-fixtures.mjs', names)
+
+    def test_the_real_sandbox_boundary_check_runs_on_hermes_from_the_source_checkout(self):
+        hermes = {name: (command, directory) for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', True, False)}
+        self.assertEqual(hermes[checks_runner.SRT_BOUNDARY], (['node', 'packages/runtime-sandbox/scripts/check-srt-boundary.mjs'], 'source'))
+        self.assertTrue((HERE.parent.parent / checks_runner.SRT_BOUNDARY).is_file())
+        elsewhere = [name for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', False, False)]
+        self.assertNotIn(checks_runner.SRT_BOUNDARY, elsewhere)
+
+    def test_the_cache_fixtures_pass_against_real_git(self):
+        child = subprocess.run(['node', str(HERE / 'packet-template/install/verify-source-cache-fixtures.mjs')], capture_output=True, text=True, check=False, env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(self.root)})
+        self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+        self.assertTrue(json.loads(child.stdout)['passed'])
 
 
 if __name__ == '__main__':

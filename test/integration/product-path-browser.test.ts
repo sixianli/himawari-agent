@@ -28,7 +28,14 @@ import {
   expect as uiExpect,
 } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parseMagpieModelList } from "../../apps/agent-service/src/production-magpie-models.ts";
+import { ACCEPTANCE_SELECTABLE_MODELS } from "../../apps/control-center/test/release-walkthrough-models.ts";
 import {
+  RELEASE_WALKTHROUGH_UI as UI,
+  type WalkthroughTarget,
+} from "../../apps/control-center/test/release-walkthrough-ui.ts";
+import {
+  assertLoopbackMagpieUrl,
   installProductPath,
   type ModelScript,
   type ProductPathInstallation,
@@ -37,16 +44,12 @@ import {
 } from "../fixtures/product-path-harness.ts";
 import {
   linuxProcessIdentityPresent,
-  readLinuxHostProcessGroup,
   type ProductPathJobHostStart,
+  readLinuxHostProcessGroup,
   readLinuxJobProcesses,
   readResidentJobHostStart,
   readResidentTaskEnvironments,
 } from "../fixtures/product-path-processes.ts";
-import {
-  RELEASE_WALKTHROUGH_UI as UI,
-  type WalkthroughTarget,
-} from "../../apps/control-center/test/release-walkthrough-ui.ts";
 
 const enabled = process.env["HIMAWARI_PRODUCT_PATH_E2E"] === "1";
 const productDescribe = enabled ? describe : describe.skip;
@@ -5486,14 +5489,21 @@ const RELEASE_ACCEPTANCE_SCENARIOS = [
   "accept-long-answer",
   "accept-run-command",
   "accept-unrelated-no-memory",
+  "accept-model-switch",
+  "accept-conversation-search",
+  "accept-reminders-page",
+  "accept-files-page",
   "accept-slow-memory-search",
   "accept-file-writing-progress",
   "accept-progress-without-state",
   "accept-memory-page",
   "accept-phone-layout",
+  "accept-phone-send",
   "accept-after-restart",
 ] as const;
 const RUN_COMMAND_REQUEST = "请统计行数";
+const SEARCH_TOKEN = "蓝鲸搜索验收";
+const SEARCH_TOKEN_REQUEST = `这是一条用来搜索的消息：${SEARCH_TOKEN}`;
 const SEARCH_BATCH_REQUEST = "请查东京和大阪今天的天气";
 const APPROVAL_FOLLOW_UP_LIMIT_MS = 10_000;
 const RUN_COMMAND_OUTPUT = "lines=37";
@@ -5675,6 +5685,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       logDirectory: path.join(outputDirectory, "acceptance-service-logs"),
       approval: "ask",
       webSearch: true,
+      selectableModels: true,
     });
     installation.setModelScript(releaseAcceptanceScript);
     await installation.start();
@@ -5799,6 +5810,73 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(turn.getByText(UI.memoryFoundStep)).toHaveCount(0);
       await uiExpect(page.getByText(UI.unreadableRecords)).toHaveCount(0);
     });
+    await scenario("accept-model-switch", async () => {
+      await newThread();
+      for (const chosen of ACCEPTANCE_SELECTABLE_MODELS) {
+        const picker = page.locator(UI.modelPickerRoot);
+        if (!(await picker.evaluate((element) => element.hasAttribute("open"))))
+          await page.locator(UI.modelPicker).click();
+        await page.locator(UI.modelChooser).click();
+        const options = page.locator(UI.modelOption);
+        await uiExpect(options).toHaveCount(ACCEPTANCE_SELECTABLE_MODELS.length + 1, {
+          timeout: 20_000,
+        });
+        await options.filter({ hasText: chosen.name }).click();
+        const before = installation.modelRequests.length;
+        const prompt = `请用${chosen.name}回答`;
+        const turn = await send(prompt);
+        await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
+        await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+        await uiExpect(turn.getByText(/本轮执行失败/)).toHaveCount(0);
+        await uiExpect(target(page, UI.pageError)).toHaveCount(0);
+        const answering = installation.modelRequests
+          .slice(before)
+          .filter(
+            (request) =>
+              request.path !== "/v1/embeddings" &&
+              JSON.stringify(request.body["messages"] ?? []).includes(prompt),
+          );
+        expect(answering.length).toBeGreaterThan(0);
+        expect(answering[0]?.model).toBe(chosen.model);
+        for (const other of ACCEPTANCE_SELECTABLE_MODELS)
+          if (other.model !== chosen.model)
+            expect(answering.map((request) => request.model)).not.toContain(other.model);
+      }
+    });
+    await scenario("accept-conversation-search", async () => {
+      await newThread();
+      const turn = await send(SEARCH_TOKEN_REQUEST);
+      await uiExpect(turn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
+      await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+      const box = target(target(page, UI.sidebarNavigation), UI.threadSearch);
+      const searchFinished = () =>
+        page.waitForResponse(
+          (response) =>
+            response.url().includes("/api/gateway/thread/v3/queries") &&
+            response.request().postDataJSON()?.type === "thread.search",
+          { timeout: 30_000 },
+        );
+      const found = searchFinished();
+      await box.fill(SEARCH_TOKEN);
+      await box.press("Enter");
+      expect((await found).ok()).toBe(true);
+      await uiExpect(page.locator(UI.threadSearchResult).first()).toBeVisible({ timeout: 30_000 });
+      const missed = searchFinished();
+      await box.fill("毫无关联xqzvk");
+      await box.press("Enter");
+      expect((await missed).ok()).toBe(true);
+      await uiExpect(page.locator(UI.threadSearchResult)).toHaveCount(0, { timeout: 30_000 });
+      await box.fill("");
+      await uiExpect(page.locator(UI.threadSearchResult)).toHaveCount(0);
+    });
+    await scenario("accept-reminders-page", async () => {
+      await target(target(page, UI.sidebarNavigation), UI.openReminders).click();
+      const reminders = target(page, UI.remindersPage);
+      await uiExpect(reminders).toBeVisible({ timeout: 30_000 });
+      await uiExpect(target(reminders, UI.pageError)).toHaveCount(0);
+      await newThread();
+      await uiExpect(reminders).toHaveCount(0, { timeout: 20_000 });
+    });
     await scenario("accept-slow-memory-search", async () => {
       await newThread();
       const embeddingsBefore = installation.modelRequests.filter(
@@ -5829,6 +5907,16 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       } finally {
         await page.unroute("**/api/gateway/thread/v3/queries", slowState);
       }
+    });
+    await scenario("accept-files-page", async () => {
+      await target(target(page, UI.sidebarNavigation), UI.openFiles).click();
+      const files = target(page, UI.filesPage);
+      await uiExpect(files).toBeVisible({ timeout: 30_000 });
+      const library = files.locator(UI.filesLibrary);
+      await uiExpect(library).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+      await uiExpect(target(files, UI.pageError)).toHaveCount(0);
+      await newThread();
+      await uiExpect(files).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-memory-page", async () => {
       await target(target(page, UI.sidebarNavigation), UI.openMemory).click();
@@ -5879,6 +5967,35 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await phoneContext.close();
       }
     });
+    await scenario("accept-phone-send", async () => {
+      const phoneContext = await browser.newContext({
+        ignoreHTTPSErrors: true,
+        locale: "zh-CN",
+        viewport: PHONE_VIEWPORT,
+        isMobile: true,
+        hasTouch: true,
+        storageState: await context.storageState(),
+      });
+      try {
+        const phone = await phoneContext.newPage();
+        await phone.goto(`${installation.origin}/`);
+        const draft = target(phone, UI.composer);
+        await uiExpect(draft).toBeVisible({ timeout: 30_000 });
+        const text = "手机上发一条消息";
+        const answersBefore = await phone.getByText(PLAIN_ANSWER).count();
+        await draft.fill(text);
+        await uiExpect(target(phone, UI.send)).toBeEnabled({ timeout: 20_000 });
+        await target(phone, UI.send).click();
+        await uiExpect(phone.getByText(text).last()).toBeVisible({ timeout: 20_000 });
+        await uiExpect(phone.getByText(PLAIN_ANSWER)).toHaveCount(answersBefore + 1, {
+          timeout: 120_000,
+        });
+        await uiExpect(target(phone, UI.stop)).toHaveCount(0, { timeout: 120_000 });
+        await expectPhoneLayout(phone, "after sending");
+      } finally {
+        await phoneContext.close();
+      }
+    });
     await scenario("accept-after-restart", async () => {
       await installation.stop();
       await installation.start();
@@ -5893,3 +6010,203 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     });
   });
 });
+
+const realMagpieUrl = process.env["HIMAWARI_REAL_MAGPIE_URL"];
+const realMagpieKeyFile = process.env["HIMAWARI_REAL_MAGPIE_KEY_FILE"];
+const realMagpieDescribe = enabled && realMagpieUrl && realMagpieKeyFile ? describe : describe.skip;
+const REAL_MAGPIE_PROMPT = "只回复 ok";
+const REAL_MAGPIE_PRIMARY_NAME = "Product path primary";
+const REAL_MAGPIE_OK_LINE = /(?:^|\n)[\s"'“”`*]*ok[\s.。!！"'“”`*]*(?:\n|$)/i;
+const REAL_MAGPIE_PRIMARY_MODEL = "deepseek/deepseek-v4.1-flash";
+
+async function openFullModelList() {
+  const picker = page.locator(UI.modelPickerRoot);
+  if (!(await picker.evaluate((element) => element.hasAttribute("open"))))
+    await page.locator(UI.modelPicker).click();
+  await page.locator(UI.modelChooser).click();
+  const more = page.locator(UI.modelMore);
+  if ((await more.count()) > 0) await more.click();
+  return page.locator(UI.modelOption);
+}
+
+realMagpieDescribe(
+  "product path: every Magpie model through the real page",
+  { timeout: 3_600_000 },
+  () => {
+    const sweep: Array<{
+      name: string;
+      status: "answered" | "failed";
+      answerMs: number;
+      detail?: string;
+      exception?: true;
+    }> = [];
+    let listedIds: string[] = [];
+    let selectable: ReturnType<typeof parseMagpieModelList> = [];
+    let optionNames: string[] = [];
+    let realKey = "";
+    const redact = (text: string) =>
+      (realKey ? text.split(realKey).join("<key>") : text)
+        .replace(/Bearer\s+\S+/gi, "Bearer <key>")
+        .replace(/sk-[A-Za-z0-9_-]+/g, "<key>");
+
+    beforeAll(async () => {
+      const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+      const contextFile = process.env["HIMAWARI_TEST_CONTEXT"];
+      if (!artifact || !contextFile)
+        throw new Error(
+          "PRODUCT_PATH_REQUIRES_ARTIFACT: set HIMAWARI_TEST_ARTIFACT and HIMAWARI_TEST_CONTEXT",
+        );
+      if (!realMagpieUrl || !realMagpieKeyFile) throw new Error("REAL_MAGPIE_MUST_BE_LOOPBACK");
+      assertLoopbackMagpieUrl(realMagpieUrl);
+      const key = (await readFile(realMagpieKeyFile, "utf8")).trim();
+      realKey = key;
+      const listing = await fetch(`${realMagpieUrl}/models`, {
+        headers: { authorization: `Bearer ${key}` },
+        redirect: "error",
+      });
+      if (!listing.ok) throw new Error(`REAL_MAGPIE_LIST_FAILED ${listing.status}`);
+      const entries = parseMagpieModelList(await listing.json());
+      listedIds = entries.map((entry) => entry.id);
+      selectable = entries.filter(
+        (entry) =>
+          !entry.id.startsWith("group/") &&
+          !entry.id.startsWith("auto/") &&
+          entry.id !== REAL_MAGPIE_PRIMARY_MODEL &&
+          entry.toolCall &&
+          entry.acceptsText,
+      );
+      await mkdir(outputDirectory, { recursive: true });
+      installation = await installProductPath({
+        artifact,
+        context: contextFile,
+        logDirectory: path.join(outputDirectory, "real-magpie-service-logs"),
+        approval: "ask",
+        realMagpie: { url: realMagpieUrl, keyFile: realMagpieKeyFile },
+      });
+      await installation.start();
+      browser = await chromium.launch({
+        channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+        args: [`--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${installation.frontPort}`],
+      });
+      context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
+      page = await context.newPage();
+    }, 400_000);
+
+    afterAll(async () => {
+      await cleanupWithEvidence("real-magpie-teardown", [
+        [
+          "sweep-record",
+          async () =>
+            writeFile(
+              path.join(outputDirectory, "real-magpie-sweep.json"),
+              `${JSON.stringify(
+                { schema: "himawari-real-magpie-sweep.v1", listedIds, optionNames, sweep },
+                null,
+                2,
+              )}\n`,
+            ),
+        ],
+        ["installation", async () => installation?.close()],
+        ["browser", async () => browser?.close()],
+      ]);
+    }, 120_000);
+
+    it("sends one message with every selectable model and gets a reply from each", async () => {
+      const response = await page.goto(`${installation.origin}/`);
+      expect(response?.status()).toBe(200);
+      await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+      await newThread();
+      const options = await openFullModelList();
+      const names = (await options.allInnerTexts()).map(
+        (text) => text.split("\n")[0]?.trim() ?? "",
+      );
+      optionNames = names;
+      expect(names.length, JSON.stringify({ names, listedIds })).toBe(selectable.length + 1);
+      expect(names).toContain(REAL_MAGPIE_PRIMARY_NAME);
+      for (const entry of selectable) expect(names).toContain(entry.label);
+      await page.keyboard.press("Escape");
+      const order = names
+        .map((name, index) => ({ name, index }))
+        .sort(
+          (left, right) =>
+            Number(left.name === REAL_MAGPIE_PRIMARY_NAME) -
+            Number(right.name === REAL_MAGPIE_PRIMARY_NAME),
+        );
+      for (const { name, index } of order) {
+        const started = Date.now();
+        try {
+          await newThread();
+          const list = await openFullModelList();
+          await list.nth(index).click();
+          await uiExpect(page.locator(`${UI.modelPicker} .model-name`)).toHaveText(name, {
+            timeout: 20_000,
+          });
+          const turn = await send(REAL_MAGPIE_PROMPT);
+          const agent = turn.locator(".thread-message-agent");
+          let outcome: "answered" | "failed" | "timeout" = "timeout";
+          let last = "";
+          const deadline = Date.now() + 180_000;
+          while (Date.now() < deadline) {
+            last =
+              (await agent
+                .last()
+                .innerText()
+                .catch(() => "")) ?? "";
+            if (REAL_MAGPIE_OK_LINE.test(last)) {
+              outcome = "answered";
+              break;
+            }
+            if ((await turn.getByText(/本轮执行失败/).count()) > 0) {
+              outcome = "failed";
+              break;
+            }
+            await page.waitForTimeout(500);
+          }
+          await uiExpect(target(page, UI.stop)).toHaveCount(0, { timeout: 180_000 });
+          sweep.push({
+            name,
+            status: outcome === "answered" ? "answered" : "failed",
+            answerMs: Date.now() - started,
+            ...(outcome === "answered"
+              ? {}
+              : {
+                  detail: redact(
+                    outcome === "failed" ? "turn-failed" : `no-reply reply=${last.slice(0, 120)}`,
+                  ),
+                  ...(outcome === "timeout" ? { exception: true as const } : {}),
+                }),
+          });
+        } catch (error) {
+          const send = target(page, UI.send);
+          const state = await Promise.all([
+            send.isEnabled().catch(() => "unknown"),
+            composer()
+              .inputValue()
+              .catch(() => "unknown"),
+            page
+              .locator("body")
+              .innerText()
+              .catch(() => ""),
+          ]);
+          await capture(`real-magpie-failed-${index}`).catch(() => undefined);
+          sweep.push({
+            name,
+            status: "failed",
+            answerMs: Date.now() - started,
+            detail: redact(
+              `${String(error).slice(0, 200)} | send=${state[0]} draft=${String(state[1]).slice(0, 40)} page=${String(state[2]).replace(/\s+/g, " ").slice(0, 300)}`,
+            ),
+            exception: true,
+          });
+        }
+      }
+      const unexpected = sweep.filter(
+        (entry) => entry.status === "failed" && entry.name !== REAL_MAGPIE_PRIMARY_NAME,
+      );
+      expect(unexpected, JSON.stringify(unexpected)).toEqual([]);
+      const negative = sweep.find((entry) => entry.name === REAL_MAGPIE_PRIMARY_NAME);
+      expect(negative?.status).toBe("failed");
+      expect(negative?.exception, JSON.stringify(negative)).toBeUndefined();
+    });
+  },
+);

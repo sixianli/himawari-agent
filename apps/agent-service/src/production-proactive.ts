@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import {
   ApplicationPortError,
   type ClockPort,
+  type DailyReview,
+  type DecisionLedgerPort,
   type IdGeneratorPort,
   PORT_ERROR_CODES,
   type ProactiveConfiguration,
@@ -10,10 +12,14 @@ import {
   type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
   type ProactiveOverview,
+  type ProactiveRating,
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSourceReader,
   type ProactiveStorePort,
+  parseReviewKey,
+  type DailyReviewMemoryText,
+  readDailyReview,
   readProactiveOverview,
   type WebPushFeedback,
 } from "@himawari-agent/application";
@@ -31,6 +37,8 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
+  "proactive.review.read",
+  "proactive.review.rate",
   "proactive.source.manage",
 ] as const);
 
@@ -125,6 +133,9 @@ export interface ProductionProactiveOptions {
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
   readonly memory?: ProactiveMemoryRecall;
+  readonly ledger: Pick<DecisionLedgerPort, "listReviewPool" | "rateMany">;
+  readonly readMemoryText: (ref: string) => Promise<string | undefined>;
+  readonly readMemory?: (memoryId: string) => Promise<DailyReviewMemoryText | undefined>;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
   readonly clock: ClockPort;
@@ -279,7 +290,43 @@ export class ProductionProactive {
     });
   }
 
+  async review(): Promise<DailyReview> {
+    return readDailyReview({
+      scope: this.#options.scope,
+      ledger: this.#options.ledger,
+      overview: await this.overview(),
+      readMemoryText: this.#options.readMemoryText,
+      ...(this.#options.readMemory ? { readMemory: this.#options.readMemory } : {}),
+      timeZone: this.#options.timeZone,
+      now: this.#options.clock.now(),
+      budgetSeconds: this.#options.configuration.reviewBudgetSeconds,
+      secondsPerItem: this.#options.configuration.reviewSecondsPerItem,
+    });
+  }
+
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
+    if (query.type === "proactive.review.read") {
+      const review = await this.review();
+      const item = (entry: DailyReview["items"][number]) => ({
+        ...entry,
+        text: clean(entry.text, 200),
+      });
+      return {
+        ...query,
+        kind: "snapshot",
+        type: "proactive.review.snapshot",
+        actor: { actorType: "system", actorId: "agent-service" },
+        payload: {
+          day: review.day,
+          capacity: review.capacity,
+          sampled: review.sampled,
+          notSampled: review.notSampled,
+          items: review.items.map(item),
+          folded: { total: review.folded.total, items: review.folded.items.map(item) },
+          generatedAt: this.#options.clock.now(),
+        },
+      };
+    }
     if (query.type !== "proactive.overview.read")
       throw new Error("PROACTIVE_OPERATION_NOT_INSTALLED");
     const overview = await this.overview();
@@ -419,6 +466,43 @@ export class ProductionProactive {
             rated += 1;
         if (rated === 0) throw missing();
         return { resultRef: `proactive-rated:${rated}`, replayed: false };
+      }
+      case "proactive.review.rate": {
+        const ledgerRatings: { decisionId: string; rating: ProactiveRating | null }[] = [];
+        const mailRatings: { messageId: string; rating: ProactiveRating | null }[] = [];
+        for (const { key, rating } of command.payload.ratings) {
+          const parsed = parseReviewKey(key);
+          if (!parsed || (parsed.source === "mail" && rating === "unneeded"))
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.INVALID_OPERATION,
+              "PROACTIVE_REVIEW_KEY_INVALID",
+            );
+          if (parsed.source === "ledger") ledgerRatings.push({ decisionId: parsed.id, rating });
+          else mailRatings.push({ messageId: parsed.id, rating });
+        }
+        if (ledgerRatings.length > 0)
+          await this.#options.ledger
+            .rateMany({ ...scope, ratings: ledgerRatings, now })
+            .catch((error: unknown) => {
+              if (error instanceof ApplicationPortError) throw missing();
+              throw error;
+            });
+        for (const { messageId, rating } of mailRatings) {
+          const found = await store.rateProcessed({
+            ...scope,
+            source: "gmail",
+            messageId,
+            rating: rating === "useful" ? null : rating,
+            now,
+          });
+          if (!found) throw missing();
+          if (rating !== null)
+            await store.markReviewed({ ...scope, source: "gmail", messageIds: [messageId], now });
+        }
+        return {
+          resultRef: `proactive-review-rated:${ledgerRatings.length + mailRatings.length}`,
+          replayed: false,
+        };
       }
       case "proactive.source.manage": {
         if (command.payload.action === "clear_records") {

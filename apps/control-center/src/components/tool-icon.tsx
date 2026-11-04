@@ -1,13 +1,13 @@
 import { Glyph, type GlyphName } from "./glyphs.js";
 
 const symbols = {
-  review: "shield",
-  read: "document",
-  write: "write",
+  review: "checklist",
+  read: "book",
+  write: "penBook",
   edit: "compose",
   search: "search",
-  page: "document",
-  web: "globe",
+  page: "radar",
+  web: "radar",
   browser: "browser",
   bash: "terminal",
   memory: "memory",
@@ -27,8 +27,8 @@ export function toolCategory(name: string): keyof typeof symbols {
   if (/^(bash|exec|exec_command|shell|terminal)$/.test(value)) return "bash";
   if (/browser|navigate|screenshot/.test(value)) return "browser";
   if (/fetch|browse/.test(value)) return "page";
-  if (/grep|glob|find|search/.test(value)) return "search";
   if (/web|exa/.test(value)) return "web";
+  if (/grep|glob|find|search/.test(value)) return "search";
   if (/^(memory|recall)$/.test(value)) return "memory";
   if (/sql|database|memory|recall/.test(value)) return "database";
   if (/delegate|spawn|worker/.test(value)) return "delegate";

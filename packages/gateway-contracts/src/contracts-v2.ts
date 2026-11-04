@@ -13,6 +13,7 @@ import {
   parseJson,
   type Schema,
   timestamp,
+  modelRefString,
 } from "./validation.js";
 
 export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
@@ -36,12 +37,18 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
+  "proactive.review.read",
+  "proactive.review.snapshot",
+  "proactive.review.rate",
   "proactive.source.manage",
   "muse.overview.read",
   "muse.overview.snapshot",
   "muse.item.rate",
   "muse.intake.set",
   "muse.data.clear",
+  "proactive.weekly.read",
+  "proactive.weekly.snapshot",
+  "proactive.observation.start",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -52,6 +59,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.create",
+  "memory.category.set",
   "memory.settings.set",
   "memory.page.viewed",
   "memory.person.respond",
@@ -472,7 +480,7 @@ const ownerPreferencesSchema = {
   locale: nullable(enumeration(["zh-CN", "en", "ja"])),
   accent: nullable(enumeration(["violet", "blue", "teal", "amber", "rose", "graphite"])),
   theme: nullable(enumeration(["light", "dark", "system"])),
-  modelRef: nullable(machineString),
+  modelRef: nullable(modelRefString),
   thinkingLevel: nullable(enumeration(["off", "minimal", "low", "medium", "high", "xhigh", "max"])),
 };
 const ownerPreferencesQuerySchema = object({
@@ -526,6 +534,65 @@ const proactiveAuditRespondCommandSchema = object({
     messageIds: proactiveMessageIdsSchema,
     rating: nullable(proactiveRatingSchema),
   }),
+});
+const proactiveReviewKinds = [
+  "proactive",
+  "memory_candidate",
+  "consolidation",
+  "context_truncation",
+  "retrieval_degrade",
+  "external_read",
+  "mail",
+] as const;
+const proactiveReviewItemSchema = object({
+  key: machineString,
+  source: enumeration(["ledger", "mail"]),
+  kind: enumeration(proactiveReviewKinds),
+  outcome: machineString,
+  decidedAt: timestamp,
+  acted: booleanValue,
+  rating: nullable(proactiveRatingSchema),
+  text: proactiveTextSchema(200),
+  textHidden: booleanValue,
+  category: nullable(machineString),
+  fetched: nullable(integer(0)),
+});
+const proactiveReviewQuerySchema = object({
+  ...envelope("query", "proactive.review.read"),
+  payload: object({}),
+});
+const proactiveReviewSnapshotSchema = object({
+  ...envelope("snapshot", "proactive.review.snapshot"),
+  payload: object({
+    day: timestamp,
+    capacity: integer(1),
+    sampled: integer(0),
+    notSampled: integer(0),
+    items: array(proactiveReviewItemSchema),
+    folded: object({ total: integer(0), items: array(proactiveReviewItemSchema) }),
+    generatedAt: timestamp,
+  }),
+});
+const proactiveReviewRatingsSchema: Schema<
+  readonly {
+    readonly key: string;
+    readonly rating: InferSchema<typeof proactiveRatingSchema> | null;
+  }[]
+> = {
+  parse(input, path = "$") {
+    const ratings = array(
+      object({ key: machineString, rating: nullable(proactiveRatingSchema) }),
+    ).parse(input, path);
+    if (ratings.length < 1 || ratings.length > 50)
+      throw new ContractValidationError(path, "expected 1 to 50 ratings");
+    if (new Set(ratings.map(({ key }) => key)).size !== ratings.length)
+      throw new ContractValidationError(path, "expected distinct review keys");
+    return ratings;
+  },
+};
+const proactiveReviewRateCommandSchema = object({
+  ...commandEnvelope("proactive.review.rate"),
+  payload: object({ ratings: proactiveReviewRatingsSchema }),
 });
 const proactiveSourceManageCommandSchema = object({
   ...commandEnvelope("proactive.source.manage"),
@@ -584,6 +651,158 @@ const museDataClearCommandSchema = object({
   payload: object({}),
 });
 
+function numberInRange(minimum: number, maximum: number): Schema<number> {
+  return {
+    parse(input, path = "$") {
+      if (
+        typeof input !== "number" ||
+        !Number.isFinite(input) ||
+        input < minimum ||
+        input > maximum
+      )
+        throw new ContractValidationError(path, `expected a number from ${minimum} to ${maximum}`);
+      return input;
+    },
+  };
+}
+const jstDaySchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(input))
+      throw new ContractValidationError(path, "expected a YYYY-MM-DD day");
+    const parsed = Date.parse(`${input}T00:00:00.000Z`);
+    if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== input)
+      throw new ContractValidationError(path, "expected a real calendar day");
+    return input;
+  },
+};
+const observationFactsSchema: Schema<Readonly<Record<string, string | number | boolean | null>>> = {
+  parse(input, path = "$") {
+    if (input === null || typeof input !== "object" || Array.isArray(input))
+      throw new ContractValidationError(path, "expected an object");
+    const entries = Object.entries(input as Record<string, unknown>);
+    if (entries.length > 40) throw new ContractValidationError(path, "too many facts");
+    const result: Record<string, string | number | boolean | null> = {};
+    for (const [key, value] of entries) {
+      machineString.parse(key, `${path}.${key}`);
+      if (
+        value === null ||
+        typeof value === "boolean" ||
+        (typeof value === "number" && Number.isFinite(value))
+      )
+        result[key] = value;
+      else if (typeof value === "string" && value.length <= 256) result[key] = value;
+      else throw new ContractValidationError(`${path}.${key}`, "expected a short fact");
+    }
+    return Object.freeze(result);
+  },
+};
+const calibrationGroupSchema = enumeration([
+  "proactive_pushed",
+  "proactive_silent",
+  "memory_skipped",
+  "memory_kept",
+  "consolidation",
+  "memory_pending",
+  "context_truncation",
+  "retrieval_degrade",
+  "external_read",
+]);
+const calibrationRateSchema = nullable(
+  object({
+    successes: integer(0),
+    samples: integer(0),
+    enough: booleanValue,
+    value: nullable(numberInRange(0, 1)),
+    low: nullable(numberInRange(0, 1)),
+    high: nullable(numberInRange(0, 1)),
+  }),
+);
+const observationCheckItemSchema = object({
+  code: machineString,
+  status: enumeration(["pass", "fail", "blocked", "pending", "not_applicable"]),
+  reason: machineString,
+  facts: observationFactsSchema,
+});
+const proactiveWeeklyQuerySchema = object({
+  ...envelope("query", "proactive.weekly.read"),
+  payload: object({ end: nullable(jstDaySchema) }),
+});
+const proactiveWeeklySnapshotSchema = object({
+  ...envelope("snapshot", "proactive.weekly.snapshot"),
+  payload: object({
+    serviceRevision: machineString,
+    observation: object({
+      startDay: nullable(jstDaySchema),
+      earliestStartDay: nullable(jstDaySchema),
+      setAt: nullable(timestamp),
+      startRevision: nullable(machineString),
+      firstReportDay: nullable(jstDaySchema),
+      passStreak: integer(0),
+      streakSince: nullable(jstDaySchema),
+      accepted: booleanValue,
+      days: array(
+        object({
+          day: jstDaySchema,
+          status: enumeration(["pass", "fail", "blocked", "pending", "no_check", "upcoming"]),
+          checkedAt: nullable(timestamp),
+          serviceRevision: nullable(machineString),
+          checks: array(observationCheckItemSchema),
+        }),
+      ),
+    }),
+    report: object({
+      start: timestamp,
+      end: timestamp,
+      startDay: jstDaySchema,
+      endDay: jstDaySchema,
+      complete: booleanValue,
+      ratesWithheld: booleanValue,
+      minimumSamples: integer(1),
+      groups: array(
+        object({
+          group: calibrationGroupSchema,
+          total: integer(0),
+          rated: integer(0),
+          useful: integer(0),
+          unneeded: integer(0),
+          missed: integer(0),
+          applicable: array(proactiveRatingSchema),
+          rates: object({
+            useful: calibrationRateSchema,
+            unneeded: calibrationRateSchema,
+            missed: calibrationRateSchema,
+          }),
+        }),
+      ),
+      muse: object({
+        entries: integer(0),
+        reminded: integer(0),
+        silent: integer(0),
+        unpaired: integer(0),
+        pairedMails: integer(0),
+        timing: calibrationRateSchema,
+        content: calibrationRateSchema,
+        pairing: calibrationRateSchema,
+        buckets: object({
+          both: integer(0),
+          museOnly: integer(0),
+          himawariOnly: integer(0),
+          bothSilent: integer(0),
+          noHimawariRecord: integer(0),
+        }),
+      }),
+    }),
+    generatedAt: timestamp,
+  }),
+});
+const proactiveObservationStartCommandSchema = object({
+  ...commandEnvelope("proactive.observation.start"),
+  payload: object({
+    startDay: jstDaySchema,
+    recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
 export const MEMORY_SENSITIVE_TOPICS = [
   "health",
   "finance",
@@ -606,6 +825,7 @@ export const MEMORY_CATEGORY_NAMES = [
   "event",
   "other",
 ] as const;
+export const MEMORY_SENSITIVE_CATEGORY_NAMES = ["health", "finance"] as const;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",
@@ -785,6 +1005,14 @@ const memoryCreateCommandSchema = object({
     pinned: booleanValue,
   }),
 });
+const memoryCategorySetCommandSchema = object({
+  ...commandEnvelope("memory.category.set"),
+  payload: object({
+    memoryId: machineString,
+    expectedRevision: integer(0),
+    category: enumeration(MEMORY_CATEGORY_NAMES),
+  }),
+});
 const memorySettingsSetCommandSchema = object({
   ...commandEnvelope("memory.settings.set"),
   payload: object({ capturePaused: booleanValue }),
@@ -874,7 +1102,7 @@ const githubRepositoryRefSchema: Schema<string> = {
 
 const githubDisclosureSchema = object({
   confirmationRef: machineString,
-  primaryModelRef: machineString,
+  primaryModelRef: modelRefString,
   repositoryRef: githubRepositoryRefSchema,
   disclosedDataClassifications: array(classificationSchema),
   machineSecretsExcluded: literal(true),
@@ -1693,7 +1921,7 @@ export const delegationSnapshotSchema = object({
     outputSchemaRef: machineString,
     contextRefs: array(machineString),
     capabilityHandleRefs: array(machineString),
-    allowedModelRefs: array(machineString),
+    allowedModelRefs: array(modelRefString),
     dataClassification: classificationSchema,
     maximumDurationMs: integer(1),
     maximumCostMicros: integer(0),
@@ -1848,7 +2076,7 @@ export const traceSnapshotSchema = object({
     causationRef: nullable(machineString),
     threadRef: nullable(machineString),
     runRef: machineString,
-    modelRef: nullable(machineString),
+    modelRef: nullable(modelRefString),
     providerRef: nullable(machineString),
     authorizationRef: nullable(machineString),
     capabilityRef: nullable(machineString),
@@ -1872,8 +2100,8 @@ export const settingsSnapshotSchema = object({
   ...envelope("snapshot", "settings.snapshot"),
   payload: object({
     revision: integer(1),
-    primaryModelRef: nullable(machineString),
-    fallbackModelRef: nullable(machineString),
+    primaryModelRef: nullable(modelRefString),
+    fallbackModelRef: nullable(modelRefString),
     globalBudgetMicros: integer(0),
     spentBudgetMicros: integer(0),
     defaultAttention: attentionLevelSchema,
@@ -1968,12 +2196,18 @@ const schemasByType = {
   "proactive.insight.respond": proactiveInsightRespondCommandSchema,
   "proactive.decision.rate": proactiveDecisionRateCommandSchema,
   "proactive.audit.respond": proactiveAuditRespondCommandSchema,
+  "proactive.review.read": proactiveReviewQuerySchema,
+  "proactive.review.snapshot": proactiveReviewSnapshotSchema,
+  "proactive.review.rate": proactiveReviewRateCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,
   "muse.overview.snapshot": museOverviewSnapshotSchema,
   "muse.item.rate": museItemRateCommandSchema,
   "muse.intake.set": museIntakeSetCommandSchema,
   "muse.data.clear": museDataClearCommandSchema,
+  "proactive.weekly.read": proactiveWeeklyQuerySchema,
+  "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
+  "proactive.observation.start": proactiveObservationStartCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
@@ -1984,6 +2218,7 @@ const schemasByType = {
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "memory.reminder.create": memoryReminderCreateCommandSchema,
   "memory.create": memoryCreateCommandSchema,
+  "memory.category.set": memoryCategorySetCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,
   "memory.page.viewed": memoryPageViewedCommandSchema,
   "memory.person.respond": memoryPersonRespondCommandSchema,

@@ -173,7 +173,7 @@ async function inspect(mode, invocationId) {
   for (const { binding: value } of receipt.bindings) {
     await platform.verifySandboxHost({ binding: value, hostId: value.hostId, qualification: {
       schemaVersion: "sandbox-runtime-qualification.v1", qualificationRef: "__PKT_LABEL__-cloud-foreground:preflight:" + hash(receiptBytes),
-      hostId: value.hostId, profileRef: value.profileRef, srtVersion: "0.0.75", platform: process.platform,
+      hostId: value.hostId, profileRef: value.profileRef, srtVersion: "0.0.81", platform: process.platform,
       architecture: process.arch, osRelease: release(), runtimeDigest: value.runtimeDigest, runnerDigest: value.runner.sha256,
       evidenceDigest: hash(receiptBytes), resourceMode: "observe_and_stop", terminationMode: "verified_tree",
       guarantees: ["filesystem_default_deny", "network_allowlist", "clean_environment", "bounded_output", "wall_clock_stop", "resource_observation", "durable_start_admission", "unknown_quarantine", "restart_reconciliation", "task_tree_termination", "worker_crash_cleanup"],
@@ -295,7 +295,10 @@ try {
   process.stdout.write(JSON.stringify(await inspect(process.argv[2], process.argv[3])) + "\n");
 } catch (error) {
   const first = typeof error?.message === "string" ? error.message.split("\n")[0] : "__PKT_LABEL_UPPER___STARTUP_INSPECTION_FAILED";
-  const code = /^(?:__PKT_LABEL_UPPER___|RECEIPT_|RUNNER_|SANDBOX_|SRT_)[A-Z0-9_]+(?::[A-Za-z0-9._-]+)?$/.test(first) ? first : "__PKT_LABEL_UPPER___STARTUP_INSPECTION_FAILED";
-  process.stderr.write(JSON.stringify({ passed: false, code }) + "\n");
+  const named = /^(?:__PKT_LABEL_UPPER___|RECEIPT_|RUNNER_|SANDBOX_|SRT_)[A-Z0-9_]+(?::[A-Za-z0-9._-]+)?$/.test(first);
+  const code = named ? first : "__PKT_LABEL_UPPER___STARTUP_INSPECTION_FAILED";
+  const frames = typeof error?.stack === "string" ? error.stack.split("\n").filter((line) => line.trimStart().startsWith("at ")).slice(0, 3).map((line) => line.trim().slice(0, 200)) : [];
+  const detail = named ? {} : { errorName: String(error?.name ?? typeof error).slice(0, 80), errorCode: typeof error?.code === "string" ? error.code.slice(0, 80) : undefined, errorMessage: first.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, "<url>").replace(/[A-Za-z0-9_+\/=-]{24,}/g, (token) => (token.startsWith("/") ? token : "<redacted>")).slice(0, 300), frames };
+  process.stderr.write(JSON.stringify({ passed: false, code, ...detail }) + "\n");
   process.exitCode = 1;
 }

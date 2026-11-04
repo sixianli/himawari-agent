@@ -68,7 +68,7 @@ S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执�
 | `S6_PUBLISH_MATERIALS` | 发布验收材料和签署辅助文件。 |
 | `S6_FINALIZE_BINDINGS` | 按实际验收读回生成签署输入。 |
 | `S6_SIGN` | 用首次部署的同一签署身份签新版本。 |
-| `S6_RUNTIME_PROTECTION` | 发布新的运行保护文件。 |
+| `S6_RUNTIME_PROTECTION` | 发布新的运行保护文件和运行时指纹缓存（`runtime-fingerprints.json`，root 属主、权限 0644，没产出就失败）。 |
 | `S6_READ` | 与正式服务相同身份和环境下读一次虚构文件，不付费。 |
 | `S7_DB_STATUS` | 新版本的维护程序只读读取数据库：要求 `S3_COPY51` 的报告 passed 且绑定摘要等于当前冻结绑定；Schema 56、没有未结束的 Run、历史与 S3 复制后相同；读取升级前的授权和能力登记（要求三个能力仍是 S0 读到的严格一致状态），配置 SHA 仍是 S0 读到的原配置。见 [S7 说明](../systemd/P9-switch-start-readback.md#前置门槛)。 |
 | `S7_CONFIG_APPLY` | 服务停着时：要求 `S7_DB_STATUS` 已通过、当前配置等于原配置；在 `/etc/himawari/config.json.next`（权限 0600）写出只改了 `http.staticRoot` 的新配置，先用新版本的配置解析器检查（静态目录是新值、文件和解析结果里都没有 `budgets`），通过后改名替换，再读回核对；数据库不升级，换配置后再读一次，要求 Schema 56、历史表与换配置前完全一样（`s7-config-apply-after56.json`）。见 [S7 说明](../systemd/P9-switch-start-readback.md)。 |

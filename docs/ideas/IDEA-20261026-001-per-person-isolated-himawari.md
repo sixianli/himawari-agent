@@ -20,7 +20,7 @@ Andy 想把 Himawari 分享给老婆、朋友，最终可能是任何人使用�
 
 ## Thought Trajectory
 
-代码现状：数据库几乎每张产品表已带 owner_id 和 agent_id；写死单人的是配置里唯一的 ownerId/agentId、内置账号登录总是返回配置里的那个主人、Cloudflare 登录只允许绑定第一个身份、全局 secrets/ 目录、按配置主人计算的联网搜索授权键、只为配置主人运行的每日整理与提醒推送、全局 totalRuns 和单行 authority_revision。业界：Mem0 与 Zep 都按用户标识分记忆，Mem0 文档提醒没传的标识不做限制；AWS SaaS Lens 区分 silo/pool/bridge；Azure 说共用部署靠应用代码和租户标识分开数据；Cloudflare D1 与 Turso 推荐每用户一个 SQLite 库。生产当前连续两版上线出事故，所以开工要等稳定。
+代码现状：数据库几乎每张产品表已带 owner_id 和 agent_id；写死单人的是配置里唯一的 ownerId/agentId、内置账号登录总是返回配置里的那个主人、Cloudflare 登录只允许绑定第一个身份、全局 secrets/ 目录、按配置主人计算的联网搜索授权键、只为配置主人运行的整理记忆与提醒推送、全局 totalRuns 和单行 authority_revision。业界：Mem0 与 Zep 都按用户标识分记忆，Mem0 文档提醒没传的标识不做限制；AWS SaaS Lens 区分 silo/pool/bridge；Azure 说共用部署靠应用代码和租户标识分开数据；Cloudflare D1 与 Turso 推荐每用户一个 SQLite 库。生产当前连续两版上线出事故，所以开工要等稳定。
 
 ## Verbatim Quotes
 

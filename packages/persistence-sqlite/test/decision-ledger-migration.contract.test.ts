@@ -314,4 +314,49 @@ describe("decision ledger migration 0069", () => {
       database.close();
     }
   });
+
+  it("migration 0073 adds a nullable paired mail column and keeps existing Muse entries", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-muse-paired-message-"));
+    directories.push(directory);
+    const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
+    try {
+      const migrations = await loadBundledMigrations();
+      const before = migrations.findIndex((migration) => migration.sequence === 73);
+      expect(before).toBeGreaterThan(0);
+      applyMigrations(database, migrations.slice(0, before));
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0)").run();
+      database.prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0)").run();
+      database
+        .prepare(
+          `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, recorded_at)
+           VALUES ('old', 'o', 'a', ?, 0, ?)`,
+        )
+        .run(T0, T0);
+      const snapshot = await createVerifiedMigrationSnapshot(
+        database,
+        path.join(directory, "pre-0073.sqlite"),
+      );
+      expect(
+        applyMigrations(database, migrations.slice(0, before + 1), { snapshot }).appliedSequences,
+      ).toEqual([73]);
+      const row = database
+        .prepare(
+          "SELECT paired_message_id AS pairedMessageId FROM muse_reference_entries WHERE id = 'old'",
+        )
+        .get() as { pairedMessageId: string | null };
+      expect(row.pairedMessageId).toBeNull();
+      const insert = (id: string, value: string) =>
+        database
+          .prepare(
+            `INSERT INTO muse_reference_entries (id, owner_id, agent_id, muse_at, muse_reminded, paired_message_id, recorded_at)
+             VALUES (?, 'o', 'a', ?, 0, ?, ?)`,
+          )
+          .run(id, T0, value, T0);
+      expect(() => insert("ok", "gmail-message-1")).not.toThrow();
+      expect(() => insert("empty", "")).toThrow();
+      expect(() => insert("long", "x".repeat(257))).toThrow();
+    } finally {
+      database.close();
+    }
+  });
 });

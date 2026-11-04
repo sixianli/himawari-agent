@@ -3,12 +3,13 @@ import path from "node:path";
 import type {
   ModelInvocationAdmissionResolver,
   PayloadProtectorPort,
+  ProductMemoryRecord,
 } from "@himawari-agent/application";
 import {
-  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   type ClockPort,
   claimFromRunExecutionLease,
   createProactiveSeal,
+  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DurableMemoryService,
   ExecutionLiveFeed,
   type IdGeneratorPort,
@@ -18,6 +19,7 @@ import {
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
+  reviewMemoryVisible,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -44,6 +46,7 @@ import {
   EXECUTION_UDS_ERROR_CODES,
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
+  failureReason,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
   MUSE_INTAKE_SECRET_PURPOSE,
   initializeStateRoot,
@@ -71,9 +74,12 @@ import {
   createPiFilePreparationPool,
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
+import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
+import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
+import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -84,19 +90,19 @@ import {
   type ProductionHttpComposition,
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
+import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
-import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
+import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
-import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
-import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
+import { createProductionModelEgress } from "./production-model-egress.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -105,23 +111,19 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
-import { createProductionModelEgress } from "./production-model-egress.js";
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
+import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
+import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
-import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
-import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
-import {
-  inspectSandboxCommands,
-  type SandboxCommandInventory,
-} from "./sandbox-command-inventory.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -131,6 +133,10 @@ import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
+import {
+  inspectSandboxCommands,
+  type SandboxCommandInventory,
+} from "./sandbox-command-inventory.js";
 import {
   resolveCodingNetworkFacts,
   WorkspaceAutoAuthorization,
@@ -400,6 +406,11 @@ function servesStaticFile(requestPath: string): boolean {
   );
 }
 
+function failureReasonField(error: unknown): { reason?: string } {
+  const reason = failureReason(error);
+  return reason === undefined ? {} : { reason };
+}
+
 function writeStartupStep(output: NodeJS.WritableStream, step: string): void {
   writeServiceDiagnostic(output, {
     component: "agent-service",
@@ -501,6 +512,7 @@ export async function runAgentService(
   let proactive: ProductionProactive | undefined;
   let museIntake: ProductionMuseIntake | undefined;
   let museControl: ProductionMuseControl | undefined;
+  let observation: ProductionObservation | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -581,6 +593,7 @@ export async function runAgentService(
         await runs?.memoryConsolidation?.stop();
         await webPush?.stop();
         await proactive?.stop();
+        await observation?.stop();
       }
     },
   });
@@ -611,7 +624,15 @@ export async function runAgentService(
   });
   try {
     const args = parseServiceArguments(arguments_);
-    const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
+    const loadedConfiguration = await new JsonFileConfigurationPort(args.configurationPath).load();
+    const sources = dependencies.secretSources ?? hostModelSources(loadedConfiguration);
+    const magpieModels = await expandConfigurationWithMagpieModels(loadedConfiguration, {
+      resolveSecret: (secretRef, secretVersion) =>
+        sources.provider.resolve(secretRef, secretVersion),
+      onDiagnostic: (event) =>
+        writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+    });
+    const configuration = magpieModels.configuration;
     const webEnabled =
       configuration.publicMode ||
       (configuration.identity?.kind === "built-in" && Boolean(configuration.http));
@@ -624,7 +645,6 @@ export async function runAgentService(
     )
       throw new Error(SERVICE_RUNTIME_ERROR_CODES.PUBLIC_MODE_INCOMPLETE);
     runStopTimeoutMs = configuration.deadlines.providerRequestMs + 30_000;
-    const sources = dependencies.secretSources ?? hostModelSources(configuration);
     protector = configuredPayloadProtector(configuration, sources);
     const layout = await initializeStateRoot(configuration.stateRoot);
     const authorityFile = await readAuthorityFile(layout);
@@ -1380,16 +1400,35 @@ export async function runAgentService(
         configuration.agentId,
       );
       const consolidationJobs = repository.memoryProjectionJobs();
+      const consolidationState = repository.productMemoryState();
       const memoryConsolidation =
         memoryComposition && episodeProtector && durableMemory
           ? new MemoryConsolidationService({
               store: repository.memoryConsolidation(),
-              state: repository.productMemoryState(),
+              state: consolidationState,
               memory: durableMemory,
               generationFor: async (memoryId) =>
                 (await consolidationJobs.listByMemory(memoryId)).at(-1)?.generationId,
               readText: async (record) => {
                 const payload = await consolidationPayloads.get(record.contentRef);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await episodeProtector.unprotect({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    payload,
+                  }),
+                );
+              },
+              readQuote: async (record) => {
+                const events = await consolidationState.listHistory({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  memoryIds: [record.id],
+                });
+                const quoteRef = quoteRefOfMemory(events, record.contentRef);
+                if (!quoteRef) return undefined;
+                const payload = await consolidationPayloads.get(quoteRef);
                 if (!payload || payload.contentType !== "text/plain") return undefined;
                 return new TextDecoder("utf-8", { fatal: true }).decode(
                   await episodeProtector.unprotect({
@@ -1465,6 +1504,22 @@ export async function runAgentService(
           redirectUri: proactiveRedirectUri(configuration.publicOrigin),
         });
         const feedbackStore = repository.webPush();
+        const reviewPayloads = repository.payloadStore(
+          configuration.ownerId,
+          configuration.agentId,
+        );
+        const proactiveMemoryState = repository.productMemoryState();
+        const readReviewText = async (ref: string) => {
+          const payload = await reviewPayloads.get(ref);
+          if (!payload || payload.contentType !== "text/plain" || !protector) return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await protector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          );
+        };
         proactive = new ProductionProactive({
           scope: proactiveScope,
           configuration: proactiveConfiguration,
@@ -1474,6 +1529,22 @@ export async function runAgentService(
           oauth,
           reader: createGmailReader({ oauth }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
+          ledger: repository.decisionLedger(),
+          readMemoryText: readReviewText,
+          readMemory: async (memoryId) => {
+            const record = await proactiveMemoryState.read(memoryId as ProductMemoryRecord["id"]);
+            if (
+              !record ||
+              record.ownerId !== configuration.ownerId ||
+              record.agentId !== configuration.agentId ||
+              record.status === "deleted_verified" ||
+              record.status === "deletion_pending"
+            )
+              return undefined;
+            if (!reviewMemoryVisible(record.dataClassification)) return { text: "", hidden: true };
+            const text = await readReviewText(record.contentRef);
+            return text === undefined ? undefined : { text, hidden: false };
+          },
           ...(memory && durableMemory && protector && repository
             ? ((recallProtector, recallPayloads) => ({
                 memory: createProactiveMemoryRecall({
@@ -1669,6 +1740,25 @@ export async function runAgentService(
         webPush.start();
       }
       proactive?.start();
+      observation = new ProductionObservation({
+        scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+        observation: repository.ledgerObservation(),
+        ledger: repository.decisionLedger(),
+        clock,
+        schedule: {
+          configured: proactive !== undefined,
+          intervalMs: configuration.runPolicy?.proactive?.intervalMs ?? 0,
+          perCheckMs: configuration.runPolicy?.proactive?.perCheckMs ?? 0,
+        },
+        serviceRevision: readServiceRevision(),
+        onFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "observation.failed",
+            code: stableErrorCode(error),
+          }),
+      });
+      observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
         egress: createProductionModelEgress(configuration, sources),
@@ -1861,6 +1951,15 @@ export async function runAgentService(
         onFailure: ({ phase, error }) => failRuntime(error, phase),
       });
       const configuredPiModels = modelComposition.composition.piModels;
+      const tiers = priceTiers(magpieModels.prices);
+      const modelCatalogTags = (ref: string) => {
+        const price = magpieModels.prices.get(ref);
+        const tier = tiers.get(ref);
+        return {
+          ...(magpieModels.automaticRefs.has(ref) ? { automatic: true } : {}),
+          ...(price && tier ? { price, priceTier: tier } : {}),
+        };
+      };
       const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
         live,
@@ -1868,6 +1967,7 @@ export async function runAgentService(
         ...(proactive ? { proactive } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(museControl ? { museControl } : {}),
+        ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,
           onAudit: (record) =>
@@ -1886,9 +1986,10 @@ export async function runAgentService(
                 descriptor.api === "openai-completions" &&
                 descriptor.allowedDataClassifications.includes("private"),
             )
-            .map(async (descriptor) =>
-              getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
-            ),
+            .map(async (descriptor) => ({
+              ...getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
+              ...modelCatalogTags(descriptor.ref),
+            })),
         ),
         onCommandAccepted: () => {
           runs?.loop.wakeup();
@@ -2087,6 +2188,7 @@ export async function runAgentService(
       component: "agent-service",
       event: "service.failed",
       code: stableErrorCode(error),
+      ...failureReasonField(error),
     });
     return 1;
   }

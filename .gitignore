@@ -11,3 +11,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# 本地放置的 Muse 提示词资料，不进仓库
+/muse_prompt/

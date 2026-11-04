@@ -14,7 +14,12 @@
 - 原则之间冲突时按这个顺序裁决：用户主权，其次边界与可逆性，其次记忆可靠性，其次主动性与效率。当一个设计在两条原则之间取舍时，要写明它依据的是哪一条原则。
 - “自有优先、数据自持”（"Owned first, data held by the owner"）取代了早先“本地优先”（"local-first"）的说法：Himawari 在哪里运行、数据存在哪里，由 Andy 控制，可以是 Andy 租用的服务器。不得把 Himawari 描述为本地优先。
 - PRD（产品需求文档）规定一个版本的范围，可以推迟愿景中的部分内容，但不得与愿景矛盾。只有用户能修改愿景正文；新版本替换整份文档，并在附录中记录改动，并新开一份采纳 ADR 取代上一份。
-- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策账本。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标。
+- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策记录。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标；现行愿景 v2.3 的采纳记录是 [ADR 0153](docs/adr/0153-adopt-product-vision-v2-3.md)。
+
+<a id="glossary"></a>
+## 词表
+
+同一个东西，整个系统只用一个名字。改界面文案或写文档、说明、提示文案之前，先读 [docs/glossary.md](docs/glossary.md)：新名在“新名”列，不再用的写法在“旧叫法”列。`npm run check:glossary`（`npm run check` 的一步）读那张表，在三种语言的界面文案、现行文档和指令文件里发现旧叫法就失败。要新增或改名，改词表那一行，不改脚本。
 
 <a id="owners-global-instructions-and-skills"></a>
 ## Andy 的全局指令和技能
@@ -38,9 +43,15 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 设计或修改任何发给模型的上下文（系统提示、工具定义、历史、资料块、遮盖、压缩）之前，先读 [.claude/rules/prompt-prefix.md](.claude/rules/prompt-prefix.md)：已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里。`npm run check:prompt-prefix` 是阻断检查。
 
 <a id="model-review-before-merge"></a>
-## 合并前的双模型复核
+<a id="working-with-opencode"></a>
+## 和 OpenCode 协作：方案讨论和代码复核
 
-合并任何 PR 之前，按 [.agents/instructions/model-review.md](.agents/instructions/model-review.md) 做双模型复核，复核提示里必须有那份文件列出的问题，包括「这个改动会不会改变模型已经见过的请求开头」。
+下面两个时机都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 两个模型各看一遍。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
+
+- 写代码之前要出方案时（大改动一定要）：先让两个模型在不看线程结论的情况下各自出方案（`--mode plan`），再请它们审核线程自己的方案（`--mode plan-review`）。线程把三方逐条比较，先替 Andy 判断采纳什么、不采纳什么、为什么，只把整合后的方案和真正要他拍板的几项交给他。
+- 合并 PR 之前：对最终提交做一次代码复核（`--mode code-review`）。线程把成立的意见分成“会出错”和“可以更好”：会出错的要修改并对修改再复核，连续三轮没过就先停下报告 Andy，否则复核到没有“会出错”的意见为止；可以更好的不修改，列给 Andy，他说采纳才改，改完同样再复核。
+
+每次的提示里必须有那份文件列出的问题，包括「这个改动会不会改变模型已经见过的请求开头」。步骤、材料怎么写、费用先问门槛和只读限制，见 [.agents/instructions/model-review.md](.agents/instructions/model-review.md)。
 
 <a id="proposal-premises"></a>
 ## 方案的前提

@@ -1,4 +1,15 @@
+import type {
+  CalibrationDecisionRow,
+  MailJudgment,
+  MuseEntryRow,
+} from "@himawari-agent/calibration";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+
+export interface CalibrationRowsSnapshot {
+  readonly decisions: readonly CalibrationDecisionRow[];
+  readonly entries: readonly MuseEntryRow[];
+  readonly mailJudgments: readonly (readonly [string, MailJudgment])[];
+}
 
 export const DECISION_KINDS = [
   "proactive",
@@ -100,6 +111,7 @@ interface MuseReferenceBase {
   readonly museAt: string;
   readonly noteRef: string | null;
   readonly intakeItemKey?: string | null;
+  readonly pairedMessageId?: string | null;
   readonly recordedAt: string;
 }
 
@@ -113,7 +125,7 @@ export interface MuseRemindedWrite extends MuseReferenceBase {
 
 export interface MuseSilentWrite extends MuseReferenceBase {
   readonly museReminded: false;
-  readonly pairedDecisionId: string;
+  readonly pairedDecisionId: string | null;
 }
 
 export type MuseReferenceWrite = MuseRemindedWrite | MuseSilentWrite;
@@ -128,6 +140,7 @@ export interface MuseReferenceEntry {
   readonly noteRef: string | null;
   readonly pairedDecisionId: string | null;
   readonly intakeItemKey: string | null;
+  readonly pairedMessageId: string | null;
   readonly recordedAt: string;
 }
 
@@ -152,7 +165,29 @@ export interface DecisionLedgerPort {
       readonly now: string;
     },
   ): Promise<boolean>;
+  listReviewPool(
+    input: DecisionLedgerScope & {
+      readonly since: string;
+      readonly ratedSince: string;
+      readonly limit: number;
+    },
+  ): Promise<readonly DecisionLedgerEntry[]>;
+  rateMany(
+    input: DecisionLedgerScope & {
+      readonly ratings: readonly {
+        readonly decisionId: string;
+        readonly rating: DecisionRating | null;
+      }[];
+      readonly now: string;
+    },
+  ): Promise<number>;
   recordMuse(write: MuseReferenceWrite): Promise<void>;
+  readCalibrationRows(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly start: string;
+    readonly end: string;
+  }): Promise<CalibrationRowsSnapshot>;
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;

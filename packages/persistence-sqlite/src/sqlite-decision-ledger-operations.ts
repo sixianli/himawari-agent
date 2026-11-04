@@ -3,12 +3,14 @@ import {
   DECISION_KINDS,
   DECISION_OUTCOMES,
   DECISION_RATINGS,
+  type CalibrationRowsSnapshot,
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
+import { readCalibrationRows } from "@himawari-agent/calibration";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
@@ -192,16 +194,43 @@ export class SqliteDecisionLedgerOperations {
         return this.list(payload as Input<"list">);
       case "decisionLedger.rate":
         return this.rate(payload as Input<"rate">);
+      case "decisionLedger.listReviewPool":
+        return this.listReviewPool(payload as Input<"listReviewPool">);
+      case "decisionLedger.rateMany":
+        return this.rateMany(payload as Input<"rateMany">);
       case "decisionLedger.recordMuse":
         return this.recordMuse(payload as Input<"recordMuse">);
       case "decisionLedger.listMuse":
         return this.listMuse(payload as Input<"listMuse">);
+      case "decisionLedger.readCalibrationRows":
+        return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
           `Unknown decision ledger operation ${operation}`,
         );
     }
+  }
+
+  private readCalibrationRows(input: Input<"readCalibrationRows">): CalibrationRowsSnapshot {
+    if (!validTime(input.start) || !validTime(input.end) || input.start >= input.end)
+      this.fail("PORT_INVALID_OPERATION", "Calibration window is invalid");
+    return this.database.transaction(() => {
+      try {
+        const rows = readCalibrationRows(this.database, input);
+        return {
+          decisions: rows.decisions.map((row) => ({ ...row })),
+          entries: rows.entries.map((row) => ({ ...row })),
+          mailJudgments: [...rows.mailJudgments.entries()].map(
+            ([id, judgment]) => [id, { ...judgment }] as const,
+          ),
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("CALIBRATION_TIMESTAMP_FORMAT"))
+          return this.fail("PORT_INVALID_OPERATION", "CALIBRATION_TIMESTAMP_FORMAT");
+        throw error;
+      }
+    })();
   }
 
   private append(write: Input<"append">): void {
@@ -254,10 +283,62 @@ export class SqliteDecisionLedgerOperations {
     );
   }
 
+  private listReviewPool(input: Input<"listReviewPool">): readonly DecisionLedgerEntry[] {
+    if (!validTime(input.since) || !validTime(input.ratedSince))
+      this.fail("PORT_INVALID_OPERATION", "Ledger time is invalid");
+    if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 500)
+      this.fail("PORT_INVALID_OPERATION", "Ledger limit is invalid");
+    return this.database
+      .prepare(
+        `SELECT ${entryColumns} FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
+           AND (owner_rating IS NULL OR rated_at >= ?)
+           AND (kind <> 'proactive' OR verdict IN ('pushed', 'deferred', 'silent'))
+         ORDER BY checked_at DESC, id DESC LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.since, input.ratedSince, input.limit)
+      .map((row) => entryFromRow(row as Record<string, unknown>));
+  }
+
+  private rateMany(input: Input<"rateMany">): number {
+    if (!validTime(input.now)) this.fail("PORT_INVALID_OPERATION", "Ledger time is invalid");
+    if (
+      !Array.isArray(input.ratings) ||
+      input.ratings.length < 1 ||
+      input.ratings.length > 50 ||
+      new Set(input.ratings.map(({ decisionId }) => decisionId)).size !== input.ratings.length
+    )
+      this.fail("PORT_INVALID_OPERATION", "Ledger ratings are invalid");
+    for (const { rating } of input.ratings)
+      if (rating !== null && !(DECISION_RATINGS as readonly string[]).includes(rating))
+        this.fail("PORT_INVALID_OPERATION", "Ledger rating is invalid");
+    const update = this.database.prepare(
+      `UPDATE decision_ledger SET owner_rating = ?, rated_at = ?
+       WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+    );
+    return this.database.transaction(() => {
+      let changed = 0;
+      for (const { decisionId, rating } of input.ratings) {
+        const result = update.run(
+          rating,
+          rating === null ? null : input.now,
+          input.ownerId,
+          input.agentId,
+          decisionId,
+        );
+        if (result.changes === 0) this.fail("PORT_NOT_FOUND", "Ledger decision was not found");
+        changed += result.changes;
+      }
+      return changed;
+    })();
+  }
+
   private recordMuse(write: MuseReferenceWrite): void {
     this.assertDiskHeadroom();
     const intakeItemKey = write.intakeItemKey ?? null;
+    const pairedMessageId = write.pairedMessageId ?? null;
     const common =
+      (pairedMessageId === null || text(pairedMessageId, 1, 256)) &&
       text(write.id, 1, 128) &&
       validTime(write.museAt) &&
       validTime(write.recordedAt) &&
@@ -271,7 +352,8 @@ export class SqliteDecisionLedgerOperations {
           (write.contentRef !== null || intakeItemKey !== null) &&
           (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128))
         : write.museReminded === false &&
-          text(write.pairedDecisionId, 1, 128) &&
+          (write.pairedDecisionId === null || text(write.pairedDecisionId, 1, 128)) &&
+          (write.pairedDecisionId !== null || pairedMessageId !== null) &&
           !("timingOk" in write) &&
           !("contentOk" in write) &&
           !("contentRef" in write);
@@ -281,8 +363,8 @@ export class SqliteDecisionLedgerOperations {
       .prepare(
         `INSERT INTO muse_reference_entries (
           id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
-          note_ref, paired_decision_id, intake_item_key, recorded_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          note_ref, paired_decision_id, intake_item_key, paired_message_id, recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         write.id,
@@ -296,6 +378,7 @@ export class SqliteDecisionLedgerOperations {
         write.noteRef,
         write.pairedDecisionId,
         intakeItemKey,
+        pairedMessageId,
         write.recordedAt,
       );
   }
@@ -309,7 +392,7 @@ export class SqliteDecisionLedgerOperations {
         `SELECT id, muse_at AS museAt, muse_reminded AS museReminded, timing_ok AS timingOk,
            content_ok AS contentOk, content_ref AS contentRef, note_ref AS noteRef,
            paired_decision_id AS pairedDecisionId, intake_item_key AS intakeItemKey,
-           recorded_at AS recordedAt
+           paired_message_id AS pairedMessageId, recorded_at AS recordedAt
          FROM muse_reference_entries
          WHERE owner_id = ? AND agent_id = ? AND muse_at >= ?
          ORDER BY muse_at DESC, id DESC LIMIT ?`,

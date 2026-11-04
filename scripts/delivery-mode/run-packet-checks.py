@@ -12,6 +12,7 @@ import tempfile
 import time
 
 NODE_FIXTURES = (
+    'install/verify-source-cache-fixtures.mjs',
     'maintenance/verify-fixtures.mjs',
     'maintenance/verify-raw-copy-fixtures.mjs',
     'maintenance/verify-sidecar-tidy-fixtures.mjs',
@@ -28,6 +29,7 @@ PYTHON_FIXTURES = (
     'measurement/verify-s6-report-contract.py',
 )
 HERMES_ONLY = ('steps/verify-steps.py',)
+SRT_BOUNDARY = 'packages/runtime-sandbox/scripts/check-srt-boundary.mjs'
 MIGRATE_FIXTURE = 'maintenance/verify-migrate-fixtures.mjs'
 OLD_CONFIG_PENDING = "OLD_CONFIG_SHA = 'PENDING:s0.service.configurationSha256'\n"
 OLD_CONFIG_HOLDERS = ('systemd/S2-stop-and-inspect.py', 'maintenance/S9-control-files.py')
@@ -79,6 +81,7 @@ def plan(packet, node, python, include_hermes_only, migrating):
         checks.append((MIGRATE_FIXTURE, [str(node), str(packet / MIGRATE_FIXTURE)], 'migrate'))
     if include_hermes_only:
         checks += [(name, [python, '-I', str(packet / name), 'SCRATCH'], None) for name in HERMES_ONLY]
+        checks.append((SRT_BOUNDARY, [str(node), SRT_BOUNDARY], 'source'))
     return checks
 
 

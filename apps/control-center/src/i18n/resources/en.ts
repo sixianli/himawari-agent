@@ -116,6 +116,16 @@ export const messages = {
   "step.thinkingFor": "Thought for {time}",
   "process.took": "Took {time}",
   "chat.moreModels": "More models ({count})",
+  "chat.autoModel": "Auto",
+  "chat.autoModelHint": "Switches source when a quota runs out",
+  "chat.searchModels": "Search models",
+  "chat.noModelMatch": "No matching model",
+  "chat.priceTier.low": "Cheap",
+  "chat.priceTier.mid": "Mid",
+  "chat.priceTier.high": "Pricey",
+  "chat.priceLine": "In {input} · out {output} / 1M tokens",
+  "chat.priceNote":
+    "Prices are the list prices in Magpie's catalog (USD per 1M tokens). Labels split all priced models in this list into three equal groups by input price + output price. Models on your paid plans cost nothing extra, but pricier ones use up the plan quota faster.",
   "answer.copy": "Copy answer",
   "answer.copied": "Copied",
   "answer.copyHint": "Copy only the answer text above, without sources or files",
@@ -131,6 +141,7 @@ export const messages = {
   "answer.at": "{at, time, short}",
   "answer.sources": "{count, plural, one {# source} other {# sources}}",
   "process.tokens": "Tokens",
+  "process.answeredBy": "Answered by",
   "message.copy": "Copy this message",
   "message.status.sent": "Delivered: the server saved this message",
   "message.status.received": "Being handled: the model has received this message",
@@ -218,7 +229,7 @@ export const messages = {
   "chat.reason.resourceCeilingChanged":
     "Allowed resource limits changed; the operation was not dispatched",
   "chat.reason.directoryTargetChanged": "The directory location or target changed",
-  "chat.reason.fileVersionConflict": "The file version changed; the candidate was not published",
+  "chat.reason.fileVersionConflict": "The file version changed; the draft was not published",
   "chat.reason.fileWriteNotStarted": "The file operation failed; the file was not changed",
   "chat.reason.commandEffectUnverified":
     "The command failed; its effect on the workspace was not verified",
@@ -292,6 +303,9 @@ export const messages = {
   "chat.modelUnavailable": "Model information unavailable",
   "chat.attach": "Add images or files",
   "chat.retryCleanup": "Retry stop and cleanup check",
+  "chat.retryCleanupChecking": "Checking cleanup…",
+  "chat.retryCleanupStillUnconfirmed":
+    "Checked again: resources are still not confirmed released. You can try once more later.",
   "chat.stop": "Stop",
   "more.button": "More",
   "more.buttonRunning": "More: files and background commands ({count} running)",
@@ -419,6 +433,7 @@ export const messages = {
   "preview.diffNote": "Showing this turn’s changes only",
   "preview.page": "Page {page} of {count}",
   "preview.renderFailed": "This file couldn’t be shown here. Download it to open it.",
+  "preview.pageFailed": "Page {page} couldn’t be shown. The other pages are unaffected.",
   "preview.sheets": "Sheets",
   "preview.sheetTruncated":
     "This sheet is large, so only the first 2,000 rows and 100 columns are shown. Download it to see everything.",
@@ -524,7 +539,7 @@ export const messages = {
   "reflection.title": "Reflection configuration and checkpoints",
   "reflection.configure": "Save reflection configuration",
   "workers.title": "Worker delegations",
-  "improvements.title": "Self-improvement candidates",
+  "improvements.title": "Improvements awaiting adoption",
   "threads.draft": "Message draft",
   "threads.send": "Send",
   "threads.new": "New thread",
@@ -668,7 +683,7 @@ export const messages = {
     "{c, select, rule {Rules} identity {Identity} preference {Preferences} relationship {People} goal {Goals} project {In progress} health {Health} finance {Money} event {Events} other {Other}}",
   "memory.page.auto": "Learn from conversations",
   "memory.page.pausedNote":
-    "Learning is paused: Himawari still uses what it knows, but learns nothing new from conversations and skips the daily tidy-up. Memories you add by hand are still saved.",
+    "Learning is paused: Himawari still uses what it knows, but learns nothing new from conversations and skips the memory tidy-up. Memories you add by hand are still saved.",
   "memory.page.notReady":
     'Adding and importing by hand become available once Himawari learns its first memory from a conversation. Turn learning on and tell Himawari one thing about yourself (for example, "my favorite color is blue").',
   "memory.page.add": "Add",
@@ -714,7 +729,7 @@ export const messages = {
   "memory.page.changed": "Changed {count}×",
   "memory.page.source": "Source",
   "memory.page.origin":
-    "{o, select, owner {Added by you} import {Imported} deleted {Source conversation deleted} other {Daily tidy-up}}",
+    "{o, select, owner {Added by you} import {Imported} deleted {Source conversation deleted} other {Memory tidy-up}}",
   "memory.page.used": "Last used",
   "memory.page.notUsed": "Not used yet",
   "memory.page.history": "How it changed",
@@ -727,7 +742,7 @@ export const messages = {
   "memory.page.recover": "Recover",
   "memory.page.deleted": "Deleted. Recover it from Recently deleted within 7 days.",
   "memory.page.filter":
-    "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Tidy-ups} correct {Corrections} other {Imports}}",
+    "{f, select, all {All changes} new {New} drop {Dropped and deleted} tidy {Memory tidy-ups} correct {Corrections} other {Imports}}",
   "memory.page.event":
     "{e, select, new {New} dropped {Dropped} deleted {Deleted} correct {Corrected} import {Imported} merge {Merged} supersede {Replaced} archive {Archived} other {Guess}}",
   "memory.page.imported":
@@ -867,6 +882,8 @@ export const messages = {
     "{r, select, sensitive {Sensitive memories are never brought into every conversation; they come up only when relevant} category {Events, health, money and other memories come up only when relevant} on {You turned this on, so it goes before the automatic picks} off {You turned this off, so it comes up only when relevant} add {Turn on to bring it into every conversation; otherwise its importance decides} other {Its importance decides for now; once you change it, your choice wins}}",
   "memory.page.detail": "Memory details",
   "memory.page.topic": "Topic",
+  "memory.page.topicChange": "Change topic",
+  "memory.page.topicDone": "Moved to {c}",
   "memory.page.importance": "Importance",
   "memory.page.importanceValue":
     "{value} / 1000 · {by, select, owner {default for memories you add} other {scored by the model when saved}}",
@@ -920,7 +937,7 @@ export const messages = {
   "chat.welcome.stuck": "Stuck on something? Let's think it through together.",
   "chat.welcome.late": "Still at it this late? Want me to help you wrap up?",
   "chat.welcome.morning": "Morning! What shall we start with today?",
-  "proactive.log": "Decision log",
+  "proactive.log": "Reminder check record",
   "proactive.group":
     "{g, select, check {Might matter, read the email} none {No deadline} other {Good to know}}",
   "proactive.when.due": "Due {time}",
@@ -932,7 +949,7 @@ export const messages = {
   "proactive.pushed":
     "{reaction, select, opened {Pushed · you opened it} dismissed {Pushed · you dismissed it} other {Pushed to you}}",
   "proactive.rate":
-    "{r, select, useful {Useful} unneeded {Not needed} other {Should have told me}}",
+    "{r, select, useful {Right call} unneeded {Shouldn’t have done it} other {Should have done it}}",
   "proactive.done": "Done",
   "proactive.mute": "Don’t remind",
   "proactive.whyHide": "Hide reason",
@@ -957,23 +974,39 @@ export const messages = {
   "proactive.paused": "Proactive reminders are off: no mail is read, logged or pushed.",
   "proactive.foot":
     "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
-  "proactive.audit.title":
-    "{count, plural, one {# email} other {# emails}} filtered out in the last 7 days",
-  "proactive.audit.open": "Review",
-  "proactive.audit.hide": "Hide",
-  "proactive.audit.note":
-    "These emails were kept out of reminders. Only sender and subject are shown. They count as reviewed only after you tap “Done reviewing”.",
-  "proactive.audit.done": "Done reviewing",
-  "proactive.audit.doneOk": "Counted as reviewed",
+  "dailyReview.title": "Daily rating",
+  "dailyReview.count": "{count, plural, one {# item} other {# items}} today",
+  "dailyReview.countLeft":
+    "{count, plural, one {# item} other {# items}} today, {left} more not picked",
+  "dailyReview.note": "Items not picked may show up tomorrow, and drop off after 7 days.",
+  "dailyReview.tag.pushed": "Read mail and reminded you",
+  "dailyReview.tag.silent": "Read mail, no reminder",
+  "dailyReview.tag.mail": "Email not reminded",
+  "dailyReview.tag.skippedMemory": "Memory the system skipped",
+  "dailyReview.tag.keptMemory": "Saved memory",
+  "dailyReview.tag.pendingMemory": "Memory awaiting your OK",
+  "dailyReview.tag.consolidation": "Memory tidy-up",
+  "dailyReview.tag.truncation": "Older content left out of an answer",
+  "dailyReview.tag.degrade": "Memory search did not work",
+  "dailyReview.tag.externalRead": "Memory read by an outside program",
+  "dailyReview.hidden": "Text not shown here",
+  "dailyReview.fetched": "Checked {count, plural, one {# email} other {# emails}}",
+  "dailyReview.allFine": "This page is all fine",
+  "dailyReview.prev": "Previous",
+  "dailyReview.next": "Next",
+  "dailyReview.page": "Page {page} of {pages}",
+  "dailyReview.folded": "Other decisions · {count}",
+  "dailyReview.expand": "Show",
+  "dailyReview.back": "Back",
   "proactive.log.range": "Last 30 days · {days, plural, one {# day} other {# days}} recorded",
   "proactive.log.empty":
     "No checks yet. After Gmail is connected, a line is added every 15 minutes.",
   "proactive.log.today": "Today",
   "proactive.log.yesterday": "Yesterday",
-  "proactive.metric.spoke": "Spoke up",
-  "proactive.metric.hits": "Helpful",
-  "proactive.metric.misfires": "Unwanted",
-  "proactive.metric.missed": "Missed (in reviewed sample)",
+  "proactive.metric.spoke": "Total proactive reminders",
+  "proactive.metric.hits": "Appropriate reminders",
+  "proactive.metric.misfires": "Unneeded reminders",
+  "proactive.metric.missed": "Reminders it missed (in emails you checked)",
   "proactive.metric.reviewed": "{count} reviewed",
   "proactive.verdict":
     "{v, select, pushed {Pushed} silent {Stayed quiet} deferred {Held} failed {Failed} capped {Hit limit} capped_daily {Hit daily limit} other {Needs you}}",
@@ -1042,10 +1075,10 @@ export const messages = {
   "proactive.apps.sendersInvalid": "“{value}” is not an email address or domain",
   "proactive.apps.save": "Save",
   "proactive.data.title": "Proactive reminder records",
-  "proactive.data.hint": "Decision log and extracted email results",
+  "proactive.data.hint": "Reminder check record and extracted email results",
   "proactive.data.delete": "Delete all",
   "proactive.data.confirm":
-    "This deletes every decision log line, extracted email result and review record. Gmail stays connected. Delete?",
+    "This deletes every reminder check record, extracted email result and review record. Gmail stays connected. Delete?",
   "proactive.data.cleared": "All deleted.",
   "muse.title": "Muse comparison",
   "muse.note":
@@ -1093,4 +1126,140 @@ export const messages = {
   "proactive.line.allSkipped":
     "{count, plural, one {# new email} other {# new emails}}, all promotions and the like, skipped by rule and not sent to the model",
   "proactive.settings.badTime": "Use a 24-hour time such as 23:00; this period isn’t saved yet",
+  "reminders.tab.reminders": "Reminders",
+  "reminders.tab.report": "Calibration report",
+  "weekly.info": "About this",
+  "weekly.loadFailed": "The calibration report couldn’t be loaded.",
+  "weekly.window.range": "{start} – {end}",
+  "weekly.window.sinceStart": "{start} to today",
+  "weekly.window.last7": "Last 7 days",
+  "weekly.obs.title": "Observation period",
+  "weekly.obs.short": "Pick a day to start; it observes 7 days in a row.",
+  "weekly.obs.startLabel": "Data start day",
+  "weekly.obs.prevDay": "Previous day",
+  "weekly.obs.nextDay": "Next day",
+  "weekly.obs.startButton": "Start from this day",
+  "weekly.obs.notReady": "Can’t start yet: there’s no record of the service’s first run.",
+  "weekly.obs.explain":
+    "For 7 days in a row from the day you pick, Himawari checks every day that its decision record is being written properly. The first calibration report comes out on day 8.",
+  "weekly.obs.dates": "Data start day {start} · First calibration report on {report}",
+  "weekly.obs.version": "Version {v}",
+  "weekly.obs.headNow": "Observation day {n} of 7",
+  "weekly.obs.headFirst": "First calibration report",
+  "weekly.obs.headWaiting": "Observation hasn’t started",
+  "weekly.obs.dayN": "Day {n}",
+  "weekly.obs.today": "Today",
+  "weekly.obs.status":
+    "{s, select, pass {Passed} fail {Failed} blocked {Blocked} pending {Rechecking} no_check {No check record} other {Not yet}}",
+  "weekly.obs.hide": "Hide",
+  "weekly.obs.failedOn": "{days} failed",
+  "weekly.obs.noCheckOn": "No check record for {days}",
+  "weekly.obs.blockedOn": "{days} blocked",
+  "weekly.obs.join": ", ",
+  "weekly.obs.partJoin": "; ",
+  "weekly.obs.allPass": "All 7 days passed in a row",
+  "weekly.obs.broke":
+    "{day} {s, select, fail {failed} blocked {was blocked} no_check {had no check record} other {didn’t pass}}",
+  "weekly.obs.restart":
+    "{broke}. After the fix, counting restarted on {since}: {n} of 7 days passed in a row so far",
+  "weekly.obs.badMore":
+    "Once fixed, counting starts over from the next day; the observation period is complete only after 7 days in a row all pass.",
+  "weekly.confirm.title": "Start observing on {day}?",
+  "weekly.confirm.fixed": "You can’t change this after it’s set.",
+  "weekly.confirm.earliest":
+    "Earliest you can pick: {earliest}. The new version first started on {boot}, so the first full day is the day after. Later days are fine.",
+  "weekly.confirm.cancel": "Cancel",
+  "weekly.confirm.ok": "Confirm",
+  "weekly.confirm.reauth": "Verify your identity once more before setting the data start day.",
+  "weekly.confirm.reauthAccess":
+    "Your sign-in is more than 5 minutes old. Sign out, sign in again, then come back here to set the start day.",
+  "weekly.confirm.relogin": "Sign out and sign in again",
+  "weekly.confirm.failed": "It wasn’t set. Please try again.",
+  "weekly.check.serviceAllHours": "The service ran the whole day",
+  "weekly.check.serviceOneHour":
+    "The service wasn’t running for 1 hour, which is within the allowance",
+  "weekly.check.serviceMissing":
+    "The service wasn’t running for {hours} hours; the longest stop lasted {longest, plural, one {# hour} other {# hours}}",
+  "weekly.check.gmailOnTime":
+    "Gmail checks wrote their records on time: {rows} times, longest gap {gap}",
+  "weekly.check.gmailGap":
+    "Gmail checks wrote only {rows} records; the longest gap was {gap}, more than the allowed {limit}",
+  "weekly.check.gmailClearedSince": " (counted from when you cleared the Gmail records at {time})",
+  "weekly.check.gmailOff":
+    "You turned off Gmail reminders this day ({time}), so this day doesn’t count as passed",
+  "weekly.check.gmailDisconnected":
+    "Gmail wasn’t connected this day (from {time}), so this day doesn’t count as passed",
+  "weekly.check.gmailNotConfigured":
+    "Gmail reminders aren’t set up, so this can’t be checked and the day doesn’t count as passed",
+  "weekly.check.gmailSlow":
+    "Gmail is checked every {minutes} minutes, more than an hour apart, so this can’t be checked and the day doesn’t count as passed",
+  "weekly.check.gmailCleared":
+    "You cleared the Gmail records at {time}, so this day’s Gmail records can no longer be checked; it counts as passed",
+  "weekly.check.memoryOn": "Automatic memory stayed on",
+  "weekly.check.memoryPaused":
+    "You paused automatic memory this day ({time}), so this day doesn’t count as passed",
+  "weekly.check.tidyMatch":
+    "Memory tidy-up matches the decision record: {changes} changed, {rows} recorded",
+  "weekly.check.tidyMismatch":
+    "Memory tidy-up doesn’t match the decision record: {changes} changed, {rows} recorded",
+  "weekly.check.tidyFailed": "This day’s memory tidy-up failed",
+  "weekly.check.tidyStuck":
+    "Memory tidy-up started at {time} and still hadn’t finished 12 hours later",
+  "weekly.check.tidyRunning":
+    "Memory tidy-up started at {time} and is still running; it will be checked again",
+  "weekly.check.tidyNone": "There was no memory tidy-up this day, so there’s nothing to check",
+  "weekly.check.rowsKept": "No records missing from days already checked",
+  "weekly.check.rowsCleared":
+    "{rows} Gmail records are gone from days already checked; you cleared them",
+  "weekly.check.rowsMissing":
+    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
+  "weekly.check.timeOk": "All times in the decision record are well formed",
+  "weekly.check.timeBad": "{rows} times in the decision record are malformed",
+  "weekly.check.other":
+    "{s, select, pass {One check passed} fail {One check didn’t pass} blocked {One check was blocked} pending {One check will be rechecked} other {One check didn’t apply this day}}",
+  "weekly.check.noRecord":
+    "There is no self-check record from Himawari for this day, so it’s unknown whether that day’s decision record is complete",
+  "weekly.duration.minutes": "{m, plural, one {# minute} other {# minutes}}",
+  "weekly.duration.hours":
+    "{h, plural, one {# hour} other {# hours}} {m, plural, one {# minute} other {# minutes}}",
+  "weekly.type.title": "By decision type",
+  "weekly.type.column":
+    "{c, select, type {Decision type} total {Decisions} rated {You rated} other {Ratios}}",
+  "weekly.type.notStarted": "Observation hasn’t started",
+  "weekly.type.notStartedMore":
+    "Once the data start day is set and 7 days are observed, ratios by decision type appear here.",
+  "weekly.type.notFull": "Observation period not yet 7 days",
+  "weekly.type.notFullMore":
+    "Ratios by decision type come once the observation period reaches 7 days.",
+  "weekly.type.how0":
+    "Decisions is how many decisions of this type were recorded in this period, rated or not.",
+  "weekly.type.how1": "The denominator is the number you rated.",
+  "weekly.type.how2":
+    "Each row lists only the outcomes possible for that kind of decision (for example, a memory the system chose not to save can only be “Right not to save” or “Should have saved”).",
+  "weekly.type.how3": "With fewer than {n} rated, no ratio is shown; it says “Too few rated”.",
+  "weekly.type.how4":
+    "The range is a 95% Wilson interval: worked out from how many you rated, the true ratio falls inside it with 95% confidence. The more you rate, the narrower it gets.",
+  "weekly.group":
+    "{g, select, proactive_pushed {Read mail and reminded you} proactive_silent {Read mail, no reminder} memory_skipped {Memories the system chose not to save} memory_kept {Saved memories} consolidation {Memory tidy-up} memory_pending {Memories awaiting your confirmation} context_truncation {Older content left out of an answer} retrieval_degrade {Memory search did not work} other {Memory read by an outside program}}",
+  "weekly.groupInfo":
+    "{g, select, proactive_pushed {Himawari reads new mail every 15 minutes; these are the reads after which it reminded you.} other {Himawari reads new mail every 15 minutes; these are the reads after which nothing needed a reminder.}}",
+  "weekly.rate":
+    "{k, select, proactive_pushed_useful {Right to remind} proactive_pushed_unneeded {Shouldn’t have reminded} proactive_silent_useful {Right to stay silent} proactive_silent_missed {Should have reminded} memory_skipped_useful {Right not to save} memory_skipped_missed {Should have saved} memory_kept_useful {Saved correctly} memory_kept_unneeded {Shouldn’t have saved} consolidation_useful {Right tidy-up} consolidation_unneeded {Shouldn’t have tidied} other_useful {Right call} other_unneeded {Shouldn’t have done it} other {Should have done it}}",
+  "weekly.ratio": "{pct} ({k}/{n})",
+  "weekly.interval": "95% range {low}–{high}",
+  "weekly.few": "Too few rated ({n})",
+  "weekly.other":
+    "Other decisions · {n, plural, one {# type} other {# types}} · {open, select, yes {Hide} other {Show}}",
+  "weekly.stats.title": "Proactive reminders · four counts from the reminder check record",
+  "weekly.stats.note":
+    "These four numbers cover the last 30 days and are counted differently from the ratios above: here, opening a reminder within 24 hours also counts as appropriate, and dismissing it or not opening it within 24 hours counts as unneeded. The ratios above count only what you rated.",
+  "weekly.muse.title": "Muse comparison",
+  "weekly.muse.empty": "Too few: no Muse comparison entries this week.",
+  "weekly.muse.bucket":
+    "{b, select, both {Both reminded} museOnly {Only Muse reminded} himawariOnly {Only Himawari reminded} bothSilent {Neither reminded} other {Himawari has no record of this email}}",
+  "weekly.muse.unpaired": "Unpaired entries",
+  "weekly.muse.rate": "Pairing rate",
+  "weekly.muse.def":
+    "Pairing rate = entries matched to the same email ÷ all Muse comparison entries this week.",
+  "weekly.goRate": "Rate them in “Reminders”",
 } satisfies MessageCatalog;

@@ -30,10 +30,20 @@ const MODEL_THINKING_LEVEL_MAPS: Readonly<Record<string, ThinkingLevelMap>> = Ob
   }),
 });
 
+function advertisedThinkingLevelMap(levels: readonly string[]): ThinkingLevelMap {
+  const map: ThinkingLevelMap = {};
+  for (const level of ["minimal", "low", "medium", "high", "xhigh", "max"] as const)
+    map[level] = levels.includes(level) ? level : null;
+  return map;
+}
+
 function thinkingLevelMap(descriptor: ConfiguredPiModelDescriptor): ThinkingLevelMap | undefined {
   if (!descriptor.reasoning) return undefined;
   const map: ThinkingLevelMap = {
     ...MODEL_THINKING_LEVEL_MAPS[descriptor.model],
+    ...(descriptor.thinkingLevels === undefined
+      ? {}
+      : advertisedThinkingLevelMap(descriptor.thinkingLevels)),
     ...(descriptor.reasoningRequired ? { off: null } : {}),
   };
   return Object.keys(map).length === 0 ? undefined : map;
@@ -63,6 +73,7 @@ export interface ConfiguredPiModelDescriptor extends ModelDescriptor {
   readonly baseUrl?: string;
   readonly reasoning: boolean;
   readonly reasoningRequired?: boolean;
+  readonly thinkingLevels?: readonly string[];
   readonly input: readonly ("text" | "image")[];
   readonly cost: PiModelCost;
   readonly contextWindow: number;
@@ -284,7 +295,17 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     if (!options.secretSource.productionSuitable) {
       throw new TypeError("PI_UNSAFE_PROVIDER_SECRET_SOURCE");
     }
-    if (options.descriptors.length !== 1) {
+    const [first] = options.descriptors;
+    if (
+      first === undefined ||
+      options.descriptors.some(
+        (descriptor) =>
+          descriptor.provider !== first.provider ||
+          descriptor.baseUrl !== first.baseUrl ||
+          (descriptor.provider !== "magpie" && descriptor !== first),
+      ) ||
+      new Set(options.descriptors.map(({ ref }) => ref)).size !== options.descriptors.length
+    ) {
       throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_PRIMARY");
     }
     const descriptors = options.descriptors.map(freezeDescriptor);

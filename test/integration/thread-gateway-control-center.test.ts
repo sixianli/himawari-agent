@@ -406,6 +406,34 @@ it("rejects uninstalled model selection and cancellation outside the selected Th
     await expect(gateway.execute({ authentication, command: configured })).rejects.toThrow(
       "MODEL_SELECTION_NOT_INSTALLED",
     );
+    const slashRef = threadGatewayMessageSchema.parse({
+      ...envelope("command", "thread.message.submit_configured"),
+      idempotencyKey: "selection:slash-ref",
+      payload: {
+        threadId: "thread-selection",
+        expectedRevision: 1,
+        messageId: "message:slash",
+        turnId: "turn:slash",
+        runId: "run:slash",
+        sessionId: "session-thread-gateway",
+        contentRef: "payload:create",
+        sourceProofRef: "browser:fixture",
+        dataClassification: "private",
+        occurredAt: clock.now(),
+        resultRef: "payload:pin",
+        modelRef: "magpie:opencode-go/deepseek-v4.1-flash",
+        thinkingLevel: "high",
+      },
+    }) as ThreadGatewayCommand;
+    await expect(gateway.execute({ authentication, command: slashRef })).rejects.toThrow(
+      "MODEL_SELECTION_NOT_INSTALLED",
+    );
+    expect(() =>
+      threadGatewayMessageSchema.parse({
+        ...slashRef,
+        payload: { ...slashRef.payload, modelRef: "DeepSeek V4.1 Flash" },
+      }),
+    ).toThrow("modelRef");
     const cancel = threadGatewayMessageSchema.parse({
       ...envelope("command", "thread.run.cancel"),
       idempotencyKey: "cancel:wrong-run",

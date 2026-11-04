@@ -171,7 +171,7 @@ export function FilesLibrary({
     now,
   );
   return (
-    <section className="files-library" aria-label={message("library.title")} aria-busy={loading}>
+    <section className="files-library" aria-busy={loading}>
       <div className="files-library-body">
         <label className="files-library-search">
           <Glyph name="search" />

@@ -224,6 +224,8 @@ export function labels(locale) {
     settings: value("settings.title"),
     memory: value("nav.memory"),
     reminders: value("nav.reminders"),
+    weeklyTab: value("reminders.tab.report"),
+    reviewExpand: value("dailyReview.expand"),
     files: value("library.title"),
     fork: value("answer.fork"),
     personalization: value("review.settings.personalization"),
@@ -250,6 +252,39 @@ async function openSettings(page, text, tab) {
     .getByRole("button", { name: text[tab], exact: true })
     .click();
   await page.waitForTimeout(200);
+}
+
+async function openWeeklyReport(page, text, ready = ".weekly-days") {
+  await openSidebarOnPhone(page);
+  await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
+  await page.getByRole("tab", { name: text.weeklyTab, exact: true }).click();
+  await page.waitForSelector(ready);
+}
+
+export function findWeeklyProblems(phase = "reported") {
+  const problems = [];
+  const report = document.querySelector(".weekly-report");
+  if (!report) return ["WEEKLY_REPORT_MISSING"];
+  const shown = (element) => element.getClientRects().length > 0;
+  const text = [report, ...document.querySelectorAll("dialog[open]")]
+    .map((element) => element.innerText)
+    .join("\n");
+  if (/\b[a-z]+_[a-z_]+\b/.test(text))
+    problems.push(`WEEKLY_RAW_CODE ${text.match(/\b[a-z]+_[a-z_]+\b/)[0]}`);
+  if (/(^|[^\d.])0(\.0)?\s?%/.test(text)) problems.push("WEEKLY_ZERO_PERCENT");
+  const days = [...report.querySelectorAll(".weekly-day")].filter(shown);
+  if (phase === "unset") {
+    if (days.length) problems.push(`WEEKLY_DAY_COUNT ${days.length}`);
+    if (/%/.test(text)) problems.push("WEEKLY_UNSET_RATIO");
+    if (![...report.querySelectorAll(".weekly-stepper")].some(shown))
+      problems.push("WEEKLY_START_MISSING");
+    return problems;
+  }
+  if (days.length !== 7) problems.push(`WEEKLY_DAY_COUNT ${days.length}`);
+  const tables = [...report.querySelectorAll(".weekly-table")].filter(shown).length;
+  const cards = [...report.querySelectorAll(".weekly-type-cards")].filter(shown).length;
+  if (tables + cards !== 1) problems.push(`WEEKLY_TYPE_LAYOUT table=${tables} cards=${cards}`);
+  return problems;
 }
 
 export const SCENES = {
@@ -292,6 +327,59 @@ export const SCENES = {
       await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
       await page.waitForTimeout(400);
     },
+  },
+  remindersReview: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
+      await page.waitForSelector(".proactive-review");
+    },
+    verify: (page) => page.evaluate(findReviewProblems),
+  },
+  remindersReviewFolded: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.reminders, exact: true }).first().click();
+      await page.waitForSelector(".proactive-review");
+      await page
+        .locator(".proactive-review-fold")
+        .getByRole("button", { name: text.reviewExpand, exact: true })
+        .click();
+    },
+    verify: (page) => page.evaluate(findReviewProblems),
+  },
+  weeklyReport: {
+    path: "/threads",
+    act: (page, text) => openWeeklyReport(page, text),
+    verify: (page) => page.evaluate(findWeeklyProblems),
+  },
+  weeklyReportDay: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openWeeklyReport(page, text);
+      await page.locator("button.weekly-day").nth(2).click();
+      await page.waitForTimeout(250);
+    },
+    verify: (page) => page.evaluate(findWeeklyProblems, "reported"),
+  },
+  weeklyUnset: {
+    path: "/threads",
+    weekly: "unset",
+    act: (page, text) => openWeeklyReport(page, text, ".weekly-stepper"),
+    verify: (page) => page.evaluate(findWeeklyProblems, "unset"),
+  },
+  weeklyUnsetConfirm: {
+    path: "/threads",
+    weekly: "unset",
+    act: async (page, text) => {
+      await openWeeklyReport(page, text, ".weekly-stepper");
+      await page.locator(".weekly-start .action-button").click();
+      await page.waitForSelector("dialog[open] .weekly-confirm");
+      await page.waitForTimeout(250);
+    },
+    verify: (page) => page.evaluate(findWeeklyProblems, "unset"),
   },
   files: {
     path: "/threads",
@@ -337,6 +425,51 @@ const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <svg data-glyph="memory" viewBox="0 0 24 24" width="20" height="20"><path data-tone="base" d="M4 4h16v16H4Z" style="fill:currentColor;fill-opacity:.24"/></svg>
 <button class="action-button-secondary" style="border:0;background:#eee">胶囊按钮</button></body></html>`;
 
+export function findReviewProblems() {
+  const problems = [];
+  const section = document.querySelector(".proactive-review");
+  if (!section) return ["REVIEW_SECTION_MISSING"];
+  const rect = section.getBoundingClientRect();
+  if (rect.height > window.innerHeight)
+    problems.push(`REVIEW_EXCEEDS_SCREEN ${Math.round(rect.height)}>${window.innerHeight}`);
+  const rows = section.querySelectorAll(".proactive-review-list > li").length;
+  if (rows > 6) problems.push(`REVIEW_TOO_MANY_ROWS ${rows}`);
+  if (section.scrollHeight > section.clientHeight + 1) problems.push("REVIEW_SCROLLS_INSIDE");
+  return problems;
+}
+
+const REVIEW_TALL = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<section class="proactive-review"><ul class="proactive-review-list">${"<li style='height:200px'>行</li>".repeat(8)}</ul></section></body></html>`;
+const REVIEW_FITS = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<section class="proactive-review"><ul class="proactive-review-list">${"<li style='height:52px'>行</li>".repeat(6)}</ul></section></body></html>`;
+
+const WEEKLY_BROKEN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>proactive_writing gap_too_long</p><p>提醒得对 0%（0/2）</p>
+${"<button class='weekly-day'>第 1 天</button>".repeat(3)}
+<table class="weekly-table"><tr><td>行</td></tr></table><div class="weekly-type-cards">卡片</div></div></body></html>`;
+const WEEKLY_CLEAN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>提醒得对 75.0%（6/8）</p><p>样本不足（4 条）</p>
+${"<button class='weekly-day'>第 1 天</button>".repeat(7)}
+<table class="weekly-table"><tr><td>行</td></tr></table><div class="weekly-type-cards" style="display:none">卡片</div></div></body></html>`;
+const WEEKLY_UNSET_BROKEN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>配对率 95.2%（40/42）</p>
+${"<button class='weekly-day'>第 1 天</button>".repeat(2)}</div></body></html>`;
+const WEEKLY_UNSET_CLEAN = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">
+<div class="weekly-report"><p>还没开始观察</p><fieldset class="weekly-stepper"><output>11 月 5 日</output></fieldset></div></body></html>`;
+const WEEKLY_UNSET_KINDS = ["WEEKLY_UNSET_RATIO", "WEEKLY_START_MISSING", "WEEKLY_DAY_COUNT"];
+const WEEKLY_KINDS = [
+  "WEEKLY_RAW_CODE",
+  "WEEKLY_ZERO_PERCENT",
+  "WEEKLY_DAY_COUNT",
+  "WEEKLY_TYPE_LAYOUT",
+];
+
 export const REQUIRED_KINDS = [
   "PAGE_SCROLLS_SIDEWAYS",
   "OUTSIDE_SCREEN",
@@ -367,8 +500,26 @@ async function selfTest(browser) {
     found.push(...(await page.evaluate(findLayoutProblems, "zh-CN")));
     await page.setViewportSize({ width: 390, height: 844 });
     const missing = REQUIRED_KINDS.filter((kind) => !found.some((item) => item.startsWith(kind)));
+    await page.setContent(REVIEW_TALL);
+    const tall = await page.evaluate(findReviewProblems);
+    for (const kind of ["REVIEW_EXCEEDS_SCREEN", "REVIEW_TOO_MANY_ROWS"])
+      if (!tall.some((item) => item.startsWith(kind))) missing.push(`REVIEW_${kind}`);
+    await page.setContent(WEEKLY_BROKEN);
+    const weekly = await page.evaluate(findWeeklyProblems);
+    for (const kind of WEEKLY_KINDS)
+      if (!weekly.some((item) => item.startsWith(kind))) missing.push(kind);
+    await page.setContent(WEEKLY_UNSET_BROKEN);
+    const unset = await page.evaluate(findWeeklyProblems, "unset");
+    for (const kind of WEEKLY_UNSET_KINDS)
+      if (!unset.some((item) => item.startsWith(kind))) missing.push(`UNSET_${kind}`);
+    await page.setContent(WEEKLY_UNSET_CLEAN);
+    const unsetClean = await page.evaluate(findWeeklyProblems, "unset");
+    await page.setContent(WEEKLY_CLEAN);
+    const weeklyClean = [...(await page.evaluate(findWeeklyProblems)), ...unsetClean];
+    await page.setContent(REVIEW_FITS);
+    const fits = [...(await page.evaluate(findReviewProblems)), ...weeklyClean];
     await page.setContent(CLEAN);
-    const clean = await page.evaluate(findLayoutProblems, "zh-CN");
+    const clean = [...(await page.evaluate(findLayoutProblems, "zh-CN")), ...fits];
     const errors = [
       ...missing.map((kind) => `LAYOUT_AUDIT_SELF_TEST_MISSED ${kind}`),
       ...clean.map((item) => `LAYOUT_AUDIT_SELF_TEST_FALSE_ALARM ${item}`),
@@ -474,6 +625,10 @@ async function auditApp(browser, base, only) {
             document.head.append(style);
           });
         });
+        if (job.scene.weekly)
+          await context.addCookies([
+            { name: "himawari-fixture-weekly", value: job.scene.weekly, url: base },
+          ]);
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
         page.on("pageerror", (error) => problems.push(`${where}: PAGE_ERROR ${error.message}`));
@@ -484,6 +639,8 @@ async function auditApp(browser, base, only) {
         await page.waitForTimeout(150);
         for (const item of await page.evaluate(findLayoutProblems, job.locale))
           problems.push(`${where}: ${item}`);
+        if (job.scene.verify)
+          for (const item of await job.scene.verify(page)) problems.push(`${where}: ${item}`);
       } catch (error) {
         problems.push(
           `${where}: SCENE_FAILED ${error instanceof Error ? error.message.split("\n")[0] : error}`,
