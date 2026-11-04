@@ -134,6 +134,7 @@ describe("SRT version single source", () => {
           files: {
             "test/qualification/evidence/old.json": `{ "srt": "${OLD}" }\n`,
             "docs/adr/0001.md": `SRT ${OLD} was used\n`,
+            "scripts/operations/hermes-old-release-start.mjs": `    srtVersion: "${OLD}",\n`,
           },
         }),
       ),

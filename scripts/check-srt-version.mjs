@@ -9,6 +9,7 @@ const HISTORICAL = [
   "scripts/delivery-mode/packet-template/acceptance/cloud/basis-04/",
   "scripts/delivery-mode/packet-template/acceptance/cloud/probe-source/",
 ];
+const RELEASE_FROZEN = /^scripts\/operations\/hermes-[a-z0-9-]+-start\.mjs$/;
 const VERSION = String.raw`(?<version>\d+\.\d+\.\d+)`;
 const PATTERNS = [
   new RegExp(String.raw`\bsrt:${VERSION}`, "g"),
@@ -69,7 +70,8 @@ export function srtVersionProblems(root) {
   const files = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
     .split("\0")
     .filter((file) => file && file !== "package-lock.json")
-    .filter((file) => !HISTORICAL.some((prefix) => file.startsWith(prefix)));
+    .filter((file) => !HISTORICAL.some((prefix) => file.startsWith(prefix)))
+    .filter((file) => !RELEASE_FROZEN.test(file));
   const stale = new Set();
   for (const file of files) {
     const absolute = path.join(root, file);
