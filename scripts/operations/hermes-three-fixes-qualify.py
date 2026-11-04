@@ -11,7 +11,7 @@ AUTH=pathlib.Path('/etc/himawari/runtime.json')
 CANDIDATE_AUTH=pathlib.Path('/etc/himawari/three-fixes-candidate.json')
 SCRATCH=pathlib.Path('/data/himawari-r8-protected')
 HERE=pathlib.Path(__file__).resolve().parent
-INPUTS={'hermes-three-fixes-observer.py': '892ae2ef4f8dbbbf5286b51a8ca813c0a8ac1235751b0f3dfe8a2a1153860c3f', 'hermes-three-fixes-seal.mjs': '2bdc36a7b65d9a691ddbc17cfc6f4e516034e329615ea93e7b841c6dc1e79fa7', 'hermes-three-fixes-start.mjs': '363fcfdc19699b2c51b2b08986bd8ba1313c813a9310df69506d55e5bd7d2808', 'probe-protected-runtime.mjs': '8d3c6cc8270dc79d14c1fb97988f1f0dcba97572b623ca49e6cbe1233b92d4de'}
+INPUTS={'hermes-three-fixes-observer.py': '23d616f3ce326bbaca5ba1e3e01925dad0b8218370c1db5d3a0d99630c4ed6ab', 'hermes-three-fixes-seal.mjs': '2bdc36a7b65d9a691ddbc17cfc6f4e516034e329615ea93e7b841c6dc1e79fa7', 'hermes-three-fixes-start.mjs': '363fcfdc19699b2c51b2b08986bd8ba1313c813a9310df69506d55e5bd7d2808', 'probe-protected-runtime.mjs': '8d3c6cc8270dc79d14c1fb97988f1f0dcba97572b623ca49e6cbe1233b92d4de'}
 EXTRA_SOURCE_SHA='42c27ad0d395f09c1203b39685002a8238f7ad6d96cf53604e45af92a78c5744'
 PROBES=[('pi-installed',['packages/runtime-pi/scripts/probe-foreground.mjs']),('composition-installed',['packages/runtime-sandbox/scripts/qualify-production.mjs','--v2']),('network-installed',['packages/runtime-sandbox/scripts/probe-authorized-network.mjs']),('boundary-installed',['packages/runtime-sandbox/scripts/probe-network-boundary.mjs']),('worker-loss-installed',['packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs']),('web-search-installed',['packages/runtime-sandbox/scripts/probe-public-search.mjs'])]
 
@@ -20,8 +20,6 @@ def plain(p):
 
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def localize_workspace_links(source,build):
- # Validate the complete plan before changing links. Only known workspace
- # packages may be relocated; arbitrary external dependencies remain rejected.
  changes=[]
  for p in source.rglob('*'):
   if not p.is_symlink() or p.resolve().is_relative_to(source):continue
@@ -66,7 +64,6 @@ def run_user(name,phase,args,env=None,signer_view=False):
   'TemporaryFileSystem=/data/hermes:ro,mode=0755',
   'BindPaths='+str(R)+' '+str(CANDIDATE)+':'+str(CURRENT)]
  if signer_view:
-  # Expose only the real workspace directory identity. Its 0700 contents remain private.
   properties[properties.index('TemporaryFileSystem=/data/hermes:ro,mode=0755')]+=' '+str(R/'workspaces')+':ro,mode=0755'
   properties[-1]+=' '+str(R/'workspaces/default')+':'+str(R/'workspaces/default')
  if CANDIDATE_AUTH.exists():properties[-1]+=' '+str(CANDIDATE_AUTH)+':'+str(AUTH)
