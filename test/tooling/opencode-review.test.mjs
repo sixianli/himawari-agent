@@ -100,7 +100,21 @@ describe("opencode review configuration", () => {
       expect(keys.indexOf(pattern)).toBeGreaterThan(keys.indexOf("git diff *"));
     }
     expect(config.permission.read["*.env"]).toBe("deny");
-    expect(config.provider["opencode-go"].options.baseURL).toBeUndefined();
+    expect(config.provider["opencode-go"]).toEqual({});
+  });
+
+  it("leaves the saved credential alone in a real review and keeps the placeholder only for the local self-check", () => {
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      for (const wrapUp of [false, true]) {
+        const config = reviewConfig({ mode, wrapUp });
+        expect(config.provider).toEqual({ "opencode-go": {} });
+        expect(JSON.stringify(config)).not.toContain("placeholder");
+      }
+    }
+    const baseURL = "http://127.0.0.1:9/v1";
+    expect(reviewConfig({ mode: "plan", baseURL }).provider).toEqual({
+      "opencode-go": { options: { apiKey: "placeholder", baseURL } },
+    });
   });
 
   it("opens web reading and web search only for the two plan modes", () => {
@@ -1211,4 +1225,103 @@ describe("opencode review spending", () => {
     expect(parseArgs([...base, "--approved-usd", "0.7"]).approvedUsd).toBe(0.7);
     expect(() => parseArgs([...base, "--approved-usd", "x"])).toThrow("ARG_INVALID --approved-usd");
   });
+});
+
+function startAuthorizationRecorder() {
+  const authorizations = [];
+  const server = http.createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      if (request.method !== "POST") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end('{"data":[]}');
+        return;
+      }
+      authorizations.push(request.headers.authorization ?? null);
+      const chunk = (choice, extra = {}) =>
+        `data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 1, model: "m", choices: [{ index: 0, ...choice }], ...extra })}\n\n`;
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write(chunk({ delta: { role: "assistant", content: "ok" }, finish_reason: null }));
+      response.write(
+        chunk(
+          { delta: {}, finish_reason: "stop" },
+          { usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
+        ),
+      );
+      response.end("data: [DONE]\n\n");
+    });
+  });
+  return new Promise((resolveStart) =>
+    server.listen(0, "127.0.0.1", () =>
+      resolveStart({ server, authorizations, port: server.address().port }),
+    ),
+  );
+}
+
+describe("opencode review credential", () => {
+  it("[I-76] a real review sends the key saved by opencode auth login", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-credential-"));
+    const { server, authorizations, port } = await startAuthorizationRecorder();
+    try {
+      const dataHome = join(root, "data");
+      const configHome = join(root, "config");
+      const work = join(root, "work");
+      for (const directory of [join(dataHome, "opencode"), configHome, work])
+        mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(dataHome, "opencode", "auth.json"),
+        JSON.stringify({ "opencode-go": { type: "api", key: "SAVED_LOGIN_KEY" } }),
+      );
+      const real = reviewConfig({ mode: "plan" });
+      const opencodeGo = real.provider["opencode-go"];
+      const configPath = join(root, "review.json");
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          ...real,
+          provider: {
+            "opencode-go": {
+              ...opencodeGo,
+              options: { ...opencodeGo.options, baseURL: `http://127.0.0.1:${port}/v1` },
+            },
+          },
+        }),
+      );
+      const env = {
+        ...process.env,
+        XDG_DATA_HOME: dataHome,
+        XDG_CONFIG_HOME: configHome,
+        OPENCODE_CONFIG: configPath,
+        OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+      };
+      delete env.OPENCODE_API_KEY;
+      const run = await new Promise((resolveRun) => {
+        const child = spawn(
+          opencodeBinary(),
+          ["run", "-m", "opencode-go/deepseek-v4.1-flash", "reply ok"],
+          { cwd: work, env, stdio: ["ignore", "pipe", "pipe"], detached: true },
+        );
+        let output = "";
+        child.stdout.on("data", (data) => {
+          output += data;
+        });
+        child.stderr.on("data", (data) => {
+          output += data;
+        });
+        const timer = setTimeout(() => killProcessGroup(child, "SIGKILL"), 90000);
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          killProcessGroup(child, "SIGKILL");
+          resolveRun({ code, output });
+        });
+      });
+      expect(run.code, run.output).toBe(0);
+      expect(authorizations.length).toBeGreaterThan(0);
+      for (const authorization of authorizations)
+        expect(authorization).toBe("Bearer SAVED_LOGIN_KEY");
+    } finally {
+      await new Promise((resolveClose) => server.close(resolveClose));
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120000);
 });

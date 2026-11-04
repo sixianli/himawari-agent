@@ -81,11 +81,10 @@ export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
     bash[`${command} *`] = "allow";
   }
   for (const pattern of WRITE_OR_OUTSIDE_PATTERNS) bash[pattern] = "deny";
-  const providerOptions = { apiKey: "placeholder" };
-  if (baseURL) providerOptions.baseURL = baseURL;
+  const opencodeGo = baseURL ? { options: { apiKey: "placeholder", baseURL } } : {};
   const config = {
     $schema: "https://opencode.ai/config.json",
-    provider: { "opencode-go": { options: providerOptions } },
+    provider: { "opencode-go": opencodeGo },
     permission: {
       read: { "*": "allow", "*.env": "deny", "*.env.*": "deny" },
       glob: "allow",
