@@ -9,14 +9,18 @@ const HISTORICAL = [
   "scripts/delivery-mode/packet-template/acceptance/cloud/basis-04/",
   "scripts/delivery-mode/packet-template/acceptance/cloud/probe-source/",
 ];
-const VERSION = String.raw`(\d+\.\d+\.\d+)`;
+const VERSION = String.raw`(?<version>\d+\.\d+\.\d+)`;
 const PATTERNS = [
   new RegExp(String.raw`\bsrt:${VERSION}`, "g"),
-  new RegExp(String.raw`\bsrtVersion['"]?\s*[:=]\s*['"]${VERSION}['"]`, "g"),
-  new RegExp(String.raw`\bsrt['"]?\s*:\s*['"]${VERSION}['"]`, "g"),
-  new RegExp(String.raw`sandbox-runtime@${VERSION}`, "g"),
+  new RegExp(String.raw`\bsrt[_-]?[vV]ersion['"]?\s*[:=]\s*['"]${VERSION}['"]`, "g"),
+  new RegExp(
+    String.raw`\b(?:SRT_VERSION|SANDBOX_RUNTIME_VERSION)\s*[:=]\s*['"]${VERSION}['"]`,
+    "g",
+  ),
+  new RegExp(String.raw`\bsrt['"]?\s*:\s*(?<quote>['"]?)${VERSION}\k<quote>`, "g"),
+  new RegExp(String.raw`sandbox-runtime@[\^~]?${VERSION}`, "g"),
   new RegExp(String.raw`sandbox-runtime-${VERSION}\.tgz`, "g"),
-  new RegExp(String.raw`"@anthropic-ai/sandbox-runtime":\s*"${VERSION}"`, "g"),
+  new RegExp(String.raw`"@anthropic-ai/sandbox-runtime":\s*"[\^~]?${VERSION}"`, "g"),
   new RegExp(String.raw`\bSRT ${VERSION}`, "g"),
 ];
 
@@ -66,6 +70,7 @@ export function srtVersionProblems(root) {
     .split("\0")
     .filter((file) => file && file !== "package-lock.json")
     .filter((file) => !HISTORICAL.some((prefix) => file.startsWith(prefix)));
+  const stale = new Set();
   for (const file of files) {
     const absolute = path.join(root, file);
     if (!existsSync(absolute) || !lstatSync(absolute).isFile()) continue;
@@ -75,11 +80,11 @@ export function srtVersionProblems(root) {
     lines.forEach((line, index) => {
       for (const pattern of PATTERNS)
         for (const match of line.matchAll(pattern))
-          if (match[1] !== constant)
-            problems.push(`SRT_VERSION_STALE ${file}:${index + 1} ${match[0]}`);
+          if (match.groups?.version !== constant)
+            stale.add(`SRT_VERSION_STALE ${file}:${index + 1} ${match[0]}`);
     });
   }
-  return problems;
+  return [...problems, ...stale];
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

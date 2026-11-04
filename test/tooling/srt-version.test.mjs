@@ -92,6 +92,23 @@ describe("SRT version single source", () => {
     ["test/fixture.ts", `runtimeIdentity: "srt:${OLD}",\n`, `srt:${OLD}`],
     ["packages/probe.mjs", `        srt: "${OLD}",\n`, `srt: "${OLD}"`],
     [
+      "packages/runtime-sandbox/src/policy.ts",
+      `export const SRT_VERSION = "${OLD}" as const;\n`,
+      `SRT_VERSION = "${OLD}"`,
+    ],
+    [
+      "packages/contracts/version.ts",
+      `export const SANDBOX_RUNTIME_VERSION = "${OLD}";\n`,
+      `SANDBOX_RUNTIME_VERSION = "${OLD}"`,
+    ],
+    ["scripts/a.py", `srt_version = '${OLD}'\n`, `srt_version = '${OLD}'`],
+    [
+      "scripts/b.mjs",
+      `const pin = "@anthropic-ai/sandbox-runtime@^${OLD}";\n`,
+      `sandbox-runtime@^${OLD}`,
+    ],
+    ["scripts/c.yaml", `srt: ${OLD}\n`, `srt: ${OLD}`],
+    [
       "scripts/install.sh",
       `npm i @anthropic-ai/sandbox-runtime@${OLD}\n`,
       `sandbox-runtime@${OLD}`,

@@ -60,7 +60,7 @@ Himawari 在 Linux 上用 SRT（Anthropic 的 `@anthropic-ai/sandbox-runtime`，
 
 ## 后果
 
-- 策略 JSON 多了 `allowNestedUserNamespaces: false`，策略摘要变化。上线后已有的任务环境按“撤销”重建一次（`apps/agent-service/src/production-task-environments.ts` 的 `srtEnvironmentRotationReason`），不影响发给模型的内容。
+- 策略 JSON 多了 `allowNestedUserNamespaces: false`，Job Host 的策略摘要（`policy.ts` 对策略 JSON 算的 SHA-256）随之变化；它由新代码在同一次请求里算出并比对，不会造成不一致。任务环境的摘要（`apps/agent-service/src/production-task-environments.ts` 的 `srtEnvironmentPolicyDigest`）不含策略 JSON，但含运行文件摘要 `runtimeDigest`；新版本上线换了运行文件，已有的任务环境因此按“撤销”重建一次（同文件 `srtEnvironmentRotationReason`）。都不影响发给模型的内容。
 - 升级 SRT 时必须同时改常量、依赖、锁文件、小程序摘要和脚本里的版本号，`npm run check:srt-version` 会拦住漏改的地方。
 - 小程序装坏或被换掉时沙箱拒绝启动，任务失败而不是静默失去保护。
 - Hermes 和生产机的资格验证、出包和真实账号验收由 Mac 线程在合并后做；回滚用上一包。
