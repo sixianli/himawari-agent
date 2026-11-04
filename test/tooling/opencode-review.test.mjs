@@ -42,11 +42,11 @@ import {
   REVIEW_MODELS,
   RULE_16_SENTENCE,
   readUsage,
-  roundsOnDisk,
   resolveCommits,
   reviewConfig,
   reviewModel,
   reviewQuestions,
+  roundsOnDisk,
   runOutcome,
   SHELL_LOG_NAME,
   spentOf,
@@ -872,7 +872,7 @@ function slowStepFinishBinary(dir) {
     [
       "#!/bin/bash",
       `${JSON.stringify(opencodeBinary())} "$@" | while IFS= read -r line; do`,
-      `  case "$line" in *'"step_finish"'*) sleep 1;; esac`,
+      `  case "$line" in *'"step_finish"'*) printf 'x' >> ${JSON.stringify(join(dir, "delayed"))}; sleep 1;; esac`,
       `  printf '%s\\n' "$line"`,
       "done",
       "",
@@ -1098,6 +1098,7 @@ describe("opencode review wrap-up", () => {
           const wrapUpCall = result.summary.toolCalls.at(-1);
           expect(wrapUpCall.status).toBe("error");
           expect(wrapUpCall.output).toContain("rejected permission");
+          expect(readFileSync(join(slow, "delayed"), "utf8").length).toBeGreaterThan(0);
         },
       );
     } finally {
