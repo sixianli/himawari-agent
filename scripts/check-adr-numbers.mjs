@@ -42,7 +42,10 @@ export function checkAdrNumbers({ root = repositoryRoot } = {}) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { errors, adrs } = checkAdrNumbers();
+  const rootArgument = process.argv.indexOf("--root");
+  const { errors, adrs } = checkAdrNumbers(
+    rootArgument === -1 ? {} : { root: path.resolve(process.argv[rootArgument + 1] ?? "") },
+  );
   for (const error of errors) process.stderr.write(`${error}\n`);
   process.stdout.write(
     `ADR_NUMBERS ${errors.length === 0 ? "passed" : "failed"} adrs=${adrs} errors=${errors.length}\n`,

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkAdrNumbers, findAdrNumberProblems } from "../../scripts/check-adr-numbers.mjs";
 
@@ -51,19 +52,17 @@ describe("ADR number check", () => {
     expect(checkAdrNumbers({ root: empty }).errors[0]).toMatch(/^ADR_NUMBER_NO_DIRECTORY /);
   });
 
-  it("exits 1 from the command line when two ADRs share a number", () => {
-    const root = fixture(["0001-a.md", "0001-b.md"]);
-    const script = join(process.cwd(), "scripts/check-adr-numbers.mjs");
-    const run = spawnSync(
-      process.execPath,
-      [
-        "--input-type=module",
-        "-e",
-        `import { checkAdrNumbers } from ${JSON.stringify(script)}; const r = checkAdrNumbers({ root: ${JSON.stringify(root)} }); process.exitCode = r.errors.length === 0 ? 0 : 1;`,
-      ],
-      { encoding: "utf8" },
-    );
-    expect(run.status).toBe(1);
+  it("runs the real command line entry: exits 1 on a shared number and 0 when numbers are unique", () => {
+    const script = fileURLToPath(new URL("../../scripts/check-adr-numbers.mjs", import.meta.url));
+    const run = (root) =>
+      spawnSync(process.execPath, [script, "--root", root], { encoding: "utf8", cwd: tmpdir() });
+    const shared = run(fixture(["0001-a.md", "0001-b.md"]));
+    expect(shared.status).toBe(1);
+    expect(shared.stderr).toContain("ADR_NUMBER_DUPLICATE 0001");
+    expect(shared.stdout).toContain("ADR_NUMBERS failed");
+    const unique = run(fixture(["0001-a.md", "0002-b.md"]));
+    expect(unique.status).toBe(0);
+    expect(unique.stdout).toContain("ADR_NUMBERS passed");
   });
 
   it("passes on this repository", () => {
