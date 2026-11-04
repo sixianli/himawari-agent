@@ -42,12 +42,13 @@ export function checkAdrNumbers({ root = repositoryRoot } = {}) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const rootArgument = process.argv.indexOf("--root");
-  const rootValue = rootArgument === -1 ? undefined : process.argv[rootArgument + 1];
-  if (rootArgument !== -1 && (rootValue === undefined || rootValue.startsWith("--"))) {
-    process.stderr.write("ADR_NUMBER_ROOT_MISSING --root 后面要跟仓库目录\n");
+  const options = process.argv.slice(2);
+  const usage = options.length === 0 || (options.length === 2 && options[0] === "--root");
+  if (!usage || (options.length === 2 && (!options[1] || options[1].startsWith("--")))) {
+    process.stderr.write("ADR_NUMBER_ROOT_MISSING 只接受“--root <仓库目录>”或不带参数\n");
     process.exit(2);
   }
+  const rootValue = options.length === 2 ? options[1] : undefined;
   const { errors, adrs } = checkAdrNumbers(
     rootValue === undefined ? {} : { root: path.resolve(rootValue) },
   );
