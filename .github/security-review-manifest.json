@@ -1,8 +1,8 @@
 {
   "status": "pending_owner_approval",
   "repository": "sixianli/himawari-agent",
-  "pullRequest": 4,
-  "sourceHead": "e2a792f855f82e74519daa9d4bea928370c76c50",
+  "pullRequest": 241,
+  "sourceHead": "b75507634f30f7775b34b1a52a29a8c879ea5c5f",
   "entries": [
     {
       "kind": "machine-secret",
@@ -35,8 +35,96 @@
     {
       "kind": "secret",
       "id": "generic-api-key",
+      "path": ".agents/tasks/round2-tool-execution/evidence.jsonl",
+      "line": 1378,
+      "digest": "d1a4ee241a1453da312f1b1731db01755b1a14f1d3fc482723c1f57eff42e013",
+      "scope": "history",
+      "commit": "08dcf20e731b85792b26c3dae7bf0009b1fcdf09",
+      "classification": "git-object-id"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": ".agents/tasks/round2-tool-execution/evidence.jsonl",
+      "line": 751,
+      "digest": "af6a6f65bc3910853d48cc2b6f0dc715eecfa5f883745cdadc20348b90264f46",
+      "scope": "history",
+      "commit": "28a79bfc97dc09a30da69057b09a5503c07c8127",
+      "classification": "git-object-id"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": ".agents/tasks/round2-tool-execution/evidence.jsonl",
+      "line": 377,
+      "digest": "af6a6f65bc3910853d48cc2b6f0dc715eecfa5f883745cdadc20348b90264f46",
+      "scope": "history",
+      "commit": "a9d42852830b2e3d595626fb2eb3e27a4860ad61",
+      "classification": "git-object-id"
+    },
+    {
+      "kind": "secret",
+      "id": "curl-auth-header",
+      "path": "apps/agent-service/test/production-foreground-result.unit.test.ts",
+      "line": 139,
+      "digest": "da5e452e3ffbfa2e8b91274bf33d8bc2d68f26bba6645ab3c571d8737587d72f",
+      "scope": "current",
+      "commit": null,
+      "classification": "machine-baseline-fixture"
+    },
+    {
+      "kind": "secret",
+      "id": "curl-auth-header",
+      "path": "apps/agent-service/test/production-foreground-result.unit.test.ts",
+      "line": 139,
+      "digest": "da5e452e3ffbfa2e8b91274bf33d8bc2d68f26bba6645ab3c571d8737587d72f",
+      "scope": "history",
+      "commit": "08dcf20e731b85792b26c3dae7bf0009b1fcdf09",
+      "classification": "machine-baseline-fixture"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/agent-service/test/production-reminder-push.unit.test.ts",
+      "line": 10,
+      "digest": "0765b11ca223f1ee0f2cd423a9abe4e7e41f374174a20e5dcf2b0a3bb25856fb",
+      "scope": "history",
+      "commit": "f73b0b76baebbd7f199a4a48d9b4240edb93406e",
+      "classification": "owner-confirmed-revoked"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/agent-service/test/production-reminder-push.unit.test.ts",
+      "line": 60,
+      "digest": "0765b11ca223f1ee0f2cd423a9abe4e7e41f374174a20e5dcf2b0a3bb25856fb",
+      "scope": "history",
+      "commit": "f73b0b76baebbd7f199a4a48d9b4240edb93406e",
+      "classification": "owner-confirmed-revoked"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
       "path": "apps/execution-worker/test/production-payload-broker-client.unit.test.ts",
       "line": 19,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/production-payload-broker-client.unit.test.ts",
+      "line": 19,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "8f934da2b54943e0bd3893bfb602dba2c30223fc"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/production-worker-composition.unit.test.ts",
+      "line": 32,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
       "scope": "current",
       "commit": null
@@ -47,6 +135,15 @@
       "path": "apps/execution-worker/test/production-worker-composition.unit.test.ts",
       "line": 22,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "c75db57b7ee7d32c3fe8abf2e6ab148048db8d99"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "apps/execution-worker/test/service-main.unit.test.ts",
+      "line": 136,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
       "scope": "current",
       "commit": null
     },
@@ -56,17 +153,28 @@
       "path": "apps/execution-worker/test/service-main.unit.test.ts",
       "line": 144,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
-      "scope": "current",
-      "commit": null
+      "scope": "history",
+      "commit": "498736e4ae1d45a540257b23cf6748be647f7423"
     },
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "packages/platform-node/test/payload-uds-transport.contract.test.ts",
-      "line": 24,
-      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "path": "packages/gateway-contracts/test/gateway-v2.fixture.ts",
+      "line": 52,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
       "scope": "current",
-      "commit": null
+      "commit": null,
+      "classification": "public-test-vector"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "packages/gateway-contracts/test/gateway-v2.fixture.ts",
+      "line": 50,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+      "scope": "history",
+      "commit": "c2b8dabf9da62a0312f8a9d657d84c6ed6d597c6",
+      "classification": "public-test-vector"
     },
     {
       "kind": "secret",
@@ -80,8 +188,17 @@
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "test/integration/production-http-composition-process.test.ts",
-      "line": 1177,
+      "path": "packages/platform-node/test/execution-admission-uds-transport.contract.test.ts",
+      "line": 31,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "17f1a4f9c308ddd29a8b4d11d43cd23d436b7818"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "packages/platform-node/test/payload-uds-transport.contract.test.ts",
+      "line": 24,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
       "scope": "current",
       "commit": null
@@ -89,35 +206,75 @@
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "test/integration/sandbox-v2-payload-broker.test.ts",
-      "line": 227,
+      "path": "packages/platform-node/test/payload-uds-transport.contract.test.ts",
+      "line": 24,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "8f934da2b54943e0bd3893bfb602dba2c30223fc"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "scripts/operations/cache-zero-diagnosis/README.md",
+      "line": 8,
+      "digest": "5fc356e76901e83d1d0844ef3faf63b8d43016da9a1c930796b9e28f4d114e4a",
+      "scope": "history",
+      "commit": "047596b2c0a39b7fdd0067bff20543a05164c028",
+      "classification": "thread-id"
+    },
+    {
+      "kind": "secret",
+      "id": "github-pat",
+      "path": "test/fixtures/memory-capture-eval/dataset.json",
+      "line": 2562,
+      "digest": "5e04f37c0332ed3a7702bbef758808dba67108f23f720deff64f03131b9483f5",
+      "scope": "current",
+      "commit": null,
+      "classification": "machine-baseline-fixture"
+    },
+    {
+      "kind": "secret",
+      "id": "github-pat",
+      "path": "test/fixtures/memory-capture-eval/dataset.json",
+      "line": 2960,
+      "digest": "5e04f37c0332ed3a7702bbef758808dba67108f23f720deff64f03131b9483f5",
+      "scope": "history",
+      "commit": "43eb58dc04a6a4501685383014e4b4a17e3e53b0",
+      "classification": "machine-baseline-fixture"
+    },
+    {
+      "kind": "secret",
+      "id": "github-pat",
+      "path": "test/fixtures/memory-capture-eval/dataset.json",
+      "line": 2562,
+      "digest": "5e04f37c0332ed3a7702bbef758808dba67108f23f720deff64f03131b9483f5",
+      "scope": "history",
+      "commit": "d83ba95fdc5780ac8d07eb41fd9e46faa64323bd",
+      "classification": "machine-baseline-fixture"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/fixtures/product-path-harness.ts",
+      "line": 970,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
       "scope": "current",
       "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/fixtures/product-path-harness.ts",
+      "line": 482,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "a4f43ddddc52beb1ac3dacab9e25993117d0019b"
     },
     {
       "kind": "secret",
       "id": "generic-api-key",
       "path": "test/fixtures/production-sandbox-scope.ts",
-      "line": 251,
-      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
-      "scope": "current",
-      "commit": null
-    },
-    {
-      "kind": "secret",
-      "id": "generic-api-key",
-      "path": "test/integration/sqlite-capability-invocations.test.ts",
-      "line": 1629,
-      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
-      "scope": "current",
-      "commit": null
-    },
-    {
-      "kind": "secret",
-      "id": "generic-api-key",
-      "path": "test/qualification/sandbox-production-mac-probe.ts",
-      "line": 154,
+      "line": 636,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
       "scope": "current",
       "commit": null
@@ -134,6 +291,129 @@
     {
       "kind": "secret",
       "id": "generic-api-key",
+      "path": "test/fixtures/queued-live-worker.ts",
+      "line": 47,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/fixtures/queued-live-worker.ts",
+      "line": 32,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "23ba4aa384859c96ce75c0a1787c5838e9db5682"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-http-composition-process.test.ts",
+      "line": 1189,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-http-composition-process.test.ts",
+      "line": 1177,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "49d655772de390e08cfc3c3fd8a90f23ec548306"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-invocation-authority.test.ts",
+      "line": 41,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-invocation-authority.test.ts",
+      "line": 30,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "history",
+      "commit": "32cb658a0a8c9e0912743acc83b2c853d993e5fe"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-web-push-control.test.ts",
+      "line": 54,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+      "scope": "current",
+      "commit": null,
+      "classification": "public-test-vector"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-web-push-control.test.ts",
+      "line": 127,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+      "scope": "current",
+      "commit": null,
+      "classification": "public-test-vector"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-web-push-control.test.ts",
+      "line": 294,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+      "scope": "current",
+      "commit": null,
+      "classification": "public-test-vector"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-web-push-control.test.ts",
+      "line": 127,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+      "scope": "history",
+      "commit": "3677a11fdcadf97f5616b97378d3cf34c686e74e",
+      "classification": "public-test-vector"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-web-push-control.test.ts",
+      "line": 50,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+      "scope": "history",
+      "commit": "c2b8dabf9da62a0312f8a9d657d84c6ed6d597c6",
+      "classification": "public-test-vector"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/production-web-push-control.test.ts",
+      "line": 168,
+      "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+      "scope": "history",
+      "commit": "c2b8dabf9da62a0312f8a9d657d84c6ed6d597c6",
+      "classification": "public-test-vector"
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
+      "path": "test/integration/sandbox-v2-payload-broker.test.ts",
+      "line": 294,
+      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "scope": "current",
+      "commit": null
+    },
+    {
+      "kind": "secret",
+      "id": "generic-api-key",
       "path": "test/integration/sandbox-v2-payload-broker.test.ts",
       "line": 167,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
@@ -143,11 +423,11 @@
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "test/qualification/sandbox-production-mac-probe.ts",
-      "line": 97,
+      "path": "test/integration/sqlite-capability-invocations.test.ts",
+      "line": 1632,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
-      "scope": "history",
-      "commit": "7b38b4c6acb72f281959676787102fb745f151e1"
+      "scope": "current",
+      "commit": null
     },
     {
       "kind": "secret",
@@ -170,56 +450,60 @@
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "test/integration/production-http-composition-process.test.ts",
-      "line": 1177,
-      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
-      "scope": "history",
-      "commit": "49d655772de390e08cfc3c3fd8a90f23ec548306"
+      "path": "test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/probe.sh",
+      "line": 111,
+      "digest": "87085140fa49f03d038f4652d796c1b2ea76b0b2610e9075402ffcfe9a0a11e9",
+      "scope": "current",
+      "commit": null,
+      "classification": "numeric-option"
     },
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "apps/execution-worker/test/service-main.unit.test.ts",
-      "line": 144,
-      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "path": "test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/probe.sh",
+      "line": 111,
+      "digest": "87085140fa49f03d038f4652d796c1b2ea76b0b2610e9075402ffcfe9a0a11e9",
       "scope": "history",
-      "commit": "498736e4ae1d45a540257b23cf6748be647f7423"
+      "commit": "5124f0d5a587b8a664ec89933a23cc88168a1ba9",
+      "classification": "numeric-option"
     },
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "apps/execution-worker/test/production-worker-composition.unit.test.ts",
-      "line": 22,
-      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
-      "scope": "history",
-      "commit": "c75db57b7ee7d32c3fe8abf2e6ab148048db8d99"
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p4-completion-01/archive-readback.json",
+      "line": 68,
+      "digest": "b68b8f1e4a469387de4b36fdb5f1dcb3af492e4eb7320515eedef70211a59b22",
+      "scope": "current",
+      "commit": null,
+      "classification": "archived-file-digest"
     },
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "packages/platform-node/test/execution-admission-uds-transport.contract.test.ts",
-      "line": 31,
-      "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
+      "path": "test/qualification/evidence/workspace-authorization-lifecycle/p4-completion-01/archive-readback.json",
+      "line": 68,
+      "digest": "b68b8f1e4a469387de4b36fdb5f1dcb3af492e4eb7320515eedef70211a59b22",
       "scope": "history",
-      "commit": "17f1a4f9c308ddd29a8b4d11d43cd23d436b7818"
+      "commit": "20a7ec27cb25af3bdfbaea68228b21be295e75db",
+      "classification": "archived-file-digest"
     },
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "packages/platform-node/test/payload-uds-transport.contract.test.ts",
-      "line": 24,
+      "path": "test/qualification/sandbox-production-mac-probe.ts",
+      "line": 192,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
-      "scope": "history",
-      "commit": "8f934da2b54943e0bd3893bfb602dba2c30223fc"
+      "scope": "current",
+      "commit": null
     },
     {
       "kind": "secret",
       "id": "generic-api-key",
-      "path": "apps/execution-worker/test/production-payload-broker-client.unit.test.ts",
-      "line": 19,
+      "path": "test/qualification/sandbox-production-mac-probe.ts",
+      "line": 97,
       "digest": "3eb1bd439947eb762998e566ccc2e099c791118b2f40579cc4f7da2b5061b7f9",
       "scope": "history",
-      "commit": "8f934da2b54943e0bd3893bfb602dba2c30223fc"
+      "commit": "7b38b4c6acb72f281959676787102fb745f151e1"
     },
     {
       "package": "node-forge",
