@@ -38,6 +38,7 @@ date: "2026-10-13"
 - [第 0 层漏跑直接相关的测试文件](#layer0-related-tests)
 - [复制上一次操作包时留下旧文件和旧文件名](#copied-packet-stale-names)
 - [上线验收只查了首页 200 没真点网页](#release-without-browser-walkthrough)
+- [新建 ADR 时只看了 main，和别的线程撞了编号](#adr-number-collision)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -715,5 +716,22 @@ date: "2026-10-13"
   - 这个文件只能由产品路径测试 `test/integration/product-path-browser.test.ts` 里的“release acceptance in a real browser”写出：它在 Hermes 上把这个安装包装好，用 Chromium 打开真实页面，联网搜索走真实的 Exa 服务，测试结束时写出 `browser-acceptance.json`，再原样复制到操作包里。
   - 验证：`scripts/delivery-mode/test_deploy.py` 新增三项，缺文件、换了安装包、一项失败或缺一项时 `deploy.sh` 都以 5 退出且一个上线步骤都没跑（Hermes `news-latency/evidence/ck13/` 与 `ck16/`，`test-deploy-rc=0`）。第十一次的操作包没有这份文件，检查报 `BROWSER_ACCEPTANCE_MISSING` 并拒绝（`ck13/`，`gate-eleventh-rc=1`）。同一个网页验收对第十一次的安装包 `aa563155` 重现了 Andy 遇到的问题：前五项通过，“服务重启后已经打开的页面”这一项在设置里等了 60 秒开关仍勾不上，测试失败（`pp15-old-accept/`）；对修好的 `470b6d30` 六项全部通过（`pp15-new-accept/`，2026-10-26T10:41:56Z），第十二次操作包带着这份结果通过了检查。
   - 限制：网页验收用的是按脚本回答的模拟模型，证明不了生产上真实模型的配置和生产机的网络；生产上的读回和 Andy 的试用仍然要做。验收每次从新装的数据开始，测不出“上线前已经给过的搜索许可在新版本里失效”这类和旧数据有关的问题，这一类靠 `test/integration/public-search-authorization.test.ts` 覆盖。检查只看文件内容，手写一份同样内容的文件也能通过，所以只能复制测试写出的那份。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="adr-number-collision"></a>
+
+## 新建 ADR 时只看了 main，和别的线程撞了编号
+
+- 反复出现的情况：几个线程同时各开一个 PR，各自按 main 上 `docs/adr/` 的最大编号加一新建 ADR（Architecture Decision Record，记录一项重要设计决定为什么这样定的文档），结果两份 ADR 用了同一个编号。文档里写“ADR 0148”时，读的人和模型分不清指的是哪一份。
+- 发生记录：
+  - 2026-11-01：`0148-send-every-model-request-through-one-in-process-egress.md`（12:44 UTC 提交）和 `0148-bring-related-memories-into-gmail-checks.md`（12:50 UTC 提交）都用 0148，先后合并进 main。
+  - 2026-11-04：还没合并的 PR #229 新建 `0156-self-hosted-runner-on-hermes.md`，PR #234 新建 `0156-srt-0-0-81-with-a-locked-seccomp-helper.md`，又撞在 0156。
+- 为什么要紧：ADR 编号是全项目引用决定的唯一名字；撞号之后，引用会指错文档，按错的决定去改代码。
+- 硬约束（2026-11-04）：
+  - `npm run check:adr-numbers`（`scripts/check-adr-numbers.mjs`，`npm run check` 的一步）检查 `docs/adr/` 下的文件名都是“四位编号-小写短名.md”，并且没有两份 ADR 共用一个编号；有就报 `ADR_NUMBER_DUPLICATE` 并以 1 退出。测试在 `test/tooling/adr-numbers.test.mjs`。
+  - 验证：在改名之前的 main（`f91950b`）上，检查报 `ADR_NUMBER_DUPLICATE 0148` 并以 1 退出；把后建的那份改成 `0158-bring-related-memories-into-gmail-checks.md` 后通过。
+  - 新建 ADR 前，除了看 main，还要看还没合并的 PR 新加的 `docs/adr/` 文件，取所有这些编号里最大的加一。
+  - 限制：检查只能在两个撞号的 PR 先后进了同一棵树时才失败，例如后合并的那个 PR 先把 main 合并进来再跑 `npm run check`；两个 PR 各自单独跑都会通过。
 
 [回到目录](#编码代理反复犯的错误)
