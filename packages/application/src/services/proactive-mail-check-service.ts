@@ -634,7 +634,7 @@ export class ProactiveMailCheckService {
       counts,
       processed,
       insights,
-      replied: this.#repliedThreads(items, fetched.items, settled),
+      replied: this.#repliedThreads(items, candidates, settled),
       costMicros,
       cursor: leftover ? null : fetched.cursor,
       quietHours: settings.quietHours,
@@ -660,7 +660,7 @@ export class ProactiveMailCheckService {
 
   #repliedThreads(
     items: readonly ProactiveSourceItem[],
-    fetched: readonly ProactiveSourceItem[],
+    candidates: readonly ProactiveSourceItem[],
     settled: ReadonlyMap<string, { readonly result: ProactiveResult; readonly sure: boolean }>,
   ): readonly string[] {
     const latestOwn = new Map<string, ProactiveSourceItem>();
@@ -678,11 +678,8 @@ export class ProactiveMailCheckService {
       .filter(([threadId, own]) => {
         const verdict = settled.get(own.messageId);
         if (verdict?.result !== "ignore" || !verdict.sure) return false;
-        return !fetched.some(
-          (item) =>
-            item.threadId === threadId &&
-            item.receivedAt > own.receivedAt &&
-            !item.categories.includes("spam"),
+        return !candidates.some(
+          (item) => item.threadId === threadId && item.receivedAt > own.receivedAt,
         );
       })
       .map(([threadId]) => threadId);
