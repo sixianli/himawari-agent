@@ -307,6 +307,16 @@ class KernelPreflightTest(unittest.TestCase):
     def qualified(self, root):
         return subprocess.run(['python3', '-I', '-c', preflight.READ_QUALIFIED_KERNEL, str(root)], capture_output=True, text=True, check=True).stdout.strip()
 
+    def test_equal_receipt_times_are_broken_by_directory_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, release in (('b-second', '6.8.0-142-generic'), ('a-first', '6.8.0-139-generic')):
+                (root / name).mkdir()
+                receipt = root / name / 'installation-receipt.json'
+                receipt.write_text(json.dumps({'osRelease': release}))
+                os.utime(receipt, (1000, 1000))
+            self.assertEqual(self.qualified(root), '6.8.0-142-generic')
+
     def test_a_directory_without_receipts_gives_an_empty_answer(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(self.qualified(Path(directory)), '')

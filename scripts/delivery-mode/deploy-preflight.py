@@ -24,7 +24,7 @@ KERNEL_FACTS = (
 READ_QUALIFIED_KERNEL = (
     'import json, pathlib, sys\n'
     'try:\n'
-    '    receipts = sorted(pathlib.Path(sys.argv[1]).glob("*/installation-receipt.json"), key=lambda path: path.stat().st_mtime)\n'
+    '    receipts = sorted(pathlib.Path(sys.argv[1]).glob("*/installation-receipt.json"), key=lambda path: (path.stat().st_mtime, path.parent.name))\n'
     '    print(json.loads(receipts[-1].read_text()).get("osRelease", "") if receipts else "")\n'
     'except Exception:\n'
     '    print("")\n'
@@ -166,7 +166,7 @@ def main():
     if any(name == 'NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL' and not passed for name, passed in results):
         print('PREFLIGHT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but the newest installed kernel is ' + (facts.get('newestInstalledKernel') or 'unknown') + '; after a reboot the server would start the newer one, the sandbox qualification would no longer match and the service would refuse to start. As root, either make the running kernel the grub default or remove the newer kernel package; do not reboot into the newer kernel, a service that is down cannot be re-qualified by this deploy')
     if any(name == 'RUNNING_KERNEL_MATCHES_QUALIFICATION' and not passed for name, passed in results):
-        print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel')
+        print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel, and the service would refuse to start on any other one; boot the kernel the receipt records, or qualify the running kernel first with the sandbox qualification procedure before deploying')
     if any(name == 'SANDBOX_COMMAND_LINKS_REACHABLE' and not passed for name, passed in results):
         print('PREFLIGHT_SANDBOX_LINKS these commands in /usr/bin are links to a place the model sandbox is not allowed to read, so the model would get command not found for them (' + facts.get('sandboxLinks', 'no answer') + '); add the missing directory to readOnlyToolchainPaths in signing/cloud-seal.mjs, regenerate the packet and run this check again')
     if any(name == 'ROOT_FREE_FOR_ACCEPTANCE' and not passed for name, passed in results):
