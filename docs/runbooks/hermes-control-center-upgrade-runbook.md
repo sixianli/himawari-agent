@@ -10,8 +10,6 @@ date: "2026-09-11"
 
 # Hermes 控制中心升级与真实验收
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
-
 阅读导航：[适用范围](#scope) · [现场前置核对](#live-state-preflight) · [升级步骤](#procedure) · [验收](#verification) · [并发刷新与回答显示](#concurrent-refresh) · [证据](#evidence) · [回退](#rollback) · [停止条件](#stop-conditions)。
 
 本文绑定 Hermes 的固定日期部署脚本与目录仅保留为历史参照，不适用于云端部署。当前开发测试在 Hermes 的任务自有目录运行，云服务器只用于生产；遵循 [ADR 0052](../adr/0052-third-production-host-acceptance-exception.md#storage)，每次生产部署仍须单独授权。[SOURCE: docs/adr/0052-third-production-host-acceptance-exception.md]
@@ -185,7 +183,7 @@ Job Host 还在 DNS 解析前、拨号前通过原认证 Worker IPC 逐次核对
 
 前台 SRT 现沿用受保护 Payload 通道额外保存 stdout 分块，任务正常退出且 stdout/stderr 管道已关闭时先保存带 termination 的结束块，再等待宿主清理。最终报告仍未确认管道关闭时，只保存输出前缀，不能生成结束块或完整成功结果；原未知结果、有限恢复和停止规则继续适用。正常 Worker 的原始 stdout Payload 和结果消费者不变；恢复只在接纳释放后核验完整分块、原身份和当前权限，重组成普通 Payload，并将输出归属和 operation CAS 同事务保存。已有等价原 Payload 时复用，已确定 operation 优先，不能用当前文件内容代替旧 read 输出。备份和迁移须同时保留原 Run 的 `sandbox-stream-chunk:*`、`sandbox-stream-end:*`、对应加密 Payload、原调用回执和输出归属；分块 JSON 不是完整输出引用。每次调用增加分块副本与本机 RPC，结束 artifact 还会保存末块 JSON，容量评估不能只按原 stdout 长度计算。合法的取消、输出或资源超限、宿主失败结束块在完整校验后保留原 UNKNOWN 或已有确定错误，不因不能恢复输出而关闭 Agent；未知原因、矛盾字段和损坏分块仍拒绝。后台游标合同不变；完整性、取消、期限、披露和效果验证不放宽。见[前台结果恢复设计](../execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#恢复裁决与事务)。[SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md]
 
-Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
+Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。将来的 Mac 常驻启动器必须保持同样的合同。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
 
 前台没有完整结束块且没有确定 operation 时，不保证恢复原输出。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。常驻 SRT 环境和容器任务环境里的前台调用没有逐次的原签名结束记录，改用调用所在整个任务环境的释放回执证明进程已退出：环境已释放、回执依据不是“创建请求尚未发出”、环境记录里有这条调用；这个证明说明不了命令开始过，绑定之后、发出命令之前中断的调用也记成 `SANDBOX_TOOL_RESULT_LOST`；拼回原输出仍要求完整结束块，写入 `SANDBOX_TOOL_RESULT_LOST` 仍要求原尝试已被取代，两者都不重放工具。详见[第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes) [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。
 
@@ -235,7 +233,7 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 当前模型入口遵循[网关迁移设计](../execution/specs/2026-10-06-vercel-gateway-migration-design.md)：Vercel AI Gateway的单DeepSeek文本模型、Qwen4096维嵌入和Mem0 3.3.1。真实费用结算及unknown保护由持久准入负责；历史OpenRouter配置、预算与秘密不得用于新迁移验收。下面固定日期的切换、sudo与付费授权均是原现场的历史记录，不能授权现在的任务；本轮不执行这些旧部署步骤，不修改Hermes现有服务。云端生产部署仍需针对目标与版本单独授权。
 
-升级前复核能力安装声明中的 `privateRoot`：Linux 最紧的是 SOCKS 网络桥，最多 27 个 UTF-8 字节（Himawari 只支持 Linux，见 [ADR 0156](../adr/0156-linux-only-runtime.md)，代码里遗留的 Mac 预算不再适用）；当前每个 Job Host 是新进程，只接受一次 prepare、初始化一次 SRT。上游 `parentProxy` 不会关闭 mux，产品未启用 TLS 终止与 SRT 日志监视套接字；控制接口预算仍为 100 字节。加载器取实际启用路径的最紧预算，以 `CAPABILITY_DEPLOYMENT_INVALID_VALUE` 拒绝超长声明，消息包含实际字节数、上限及决定预算的套接字。路径调整须重新计算声明摘要并保留原安装/恢复依据，具体操作边界见[安装 Runbook](install-start-stop-runbook.md#safety-and-preconditions)，组成部分见[按平台核算套接字预算](../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md#socket-budget)。
+升级前复核能力安装声明中的 `privateRoot`：Linux 最紧的是 SOCKS 网络桥，最多 27 个 UTF-8 字节；Mac 不创建该桥，最紧的是本地 mux，按 5 位 PID 与固定序号 `0` 预算，最多 37 个字节；当前每个 Job Host 是新进程，只接受一次 prepare、初始化一次 SRT。上游 `parentProxy` 不会关闭 mux，产品未启用 TLS 终止与 SRT 日志监视套接字；控制接口预算仍为 100 字节。加载器取实际启用路径的最紧预算，以 `CAPABILITY_DEPLOYMENT_INVALID_VALUE` 拒绝超长声明，消息包含实际字节数、上限及决定预算的套接字。路径调整须重新计算声明摘要并保留原安装/恢复依据，具体操作边界见[安装 Runbook](install-start-stop-runbook.md#safety-and-preconditions)，组成部分见[按平台核算套接字预算](../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md#socket-budget)；Mac 依据来自 SRT 0.0.75 源码，未在 Mac 上验证。
 
 Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-qualify.py --qualify`，仅适用于其绑定的 UI-session 版本已经上线的现场。先验证本次源码归档、准备清单和全部安装文件摘要，再复制到独立候选目录；同样使用真实运行账号、最终路径的私有视图和六组安装探针。复制后的 workspace 链接必须指向隔离源码中的同名包，不能沿用构建目录的绝对链接。首次尝试若在链接保护阶段失败、且尚无探针输出或运行授权文件，可使用 `--resume-links`：核验安装文件与源码摘要、保留首次失败记录后，仅重定位身份匹配的 workspace 链接；任意其他外部链接仍然拒绝。此入口不切换线上版本。
 
@@ -540,13 +538,13 @@ Linux 安装必须包含同一候选包编译出的 `linux-host-guardian-main.js
 
 清理进程回收代理时不等待原 Host 收尸，但原 Host 处于僵尸状态，或原 Host 已消失而自身组仍在可信回收期间时，沿用 `cleanup_pending` 在原恢复期限内观察。僵尸、权限错误、身份变化和无法读取的组不能算空；到期仍未清空时保留占用，不增加宽限。真实恢复验收必须覆盖六处 finish 崩溃，并读回 Host 组为空、原结果恰好一次交付且未重新执行。规则见[Linux Host 组清理](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
 
-清理进程属于当前安装和运行中的进程，不属于备份或迁移数据。不能按备份的 PID 重建它的活动身份；目标主机不能替源主机按旧数字杀组，目标启动成功也不证明源主机组已清空。新候选改变运行时字节，原冻结候选的资格不能复用。离组后代限制保留；Himawari 只支持 Linux（[ADR 0156](../adr/0156-linux-only-runtime.md)），不做 Mac 验证。
+清理进程属于当前安装和运行中的进程，不属于备份或迁移数据。不能按备份的 PID 重建它的活动身份；目标主机不能替源主机按旧数字杀组，目标启动成功也不证明源主机组已清空。新候选改变运行时字节，原冻结候选的资格不能复用。离组后代限制和 Mac 规则保留；本轮 Mac 行为未验证。
 
 升级后核查原作业时，已完成清理但终态中的 `taskProcessGroupGone` 为 false，不再阻止按原签名开始记录和当前进程身份补做核验；没有原身份依据、原任务进程组仍存活或 Linux 的 Host 自身组非空时继续保留占用。证明仍仅为 `process_group_gone`，不能推断离组后代已停止；数据格式及本手册的部署授权要求不变。详细边界见[原环境核查约束](install-start-stop-runbook.md#v2-原环境核查约束2026-09-09)。[SOURCE: docs/runbooks/install-start-stop-runbook.md]
 
 历史占用可先按[只读核查流程](workspace-lifecycle-audit-runbook.md)从对应源码 checkout 读取已验证的数据库副本。该入口不随安装产物自动变成管理命令，也不执行迁移、解锁或重放；现场宿主停止证明与具体修复仍需单独核对。
 
-JobHost 控制探针现含脱离原进程组的持续写入子进程，在 Stop 和 Worker 崩溃后独立读取文件。2026-09-20 的隔离实测中，Linux namespace 释放后无新增写入；Mac 后代仍继续写入（Mac 已按 [ADR 0156](../adr/0156-linux-only-runtime.md) 不再支持，此处只作历史记录）。按 ADR 0033，任务进程组全部消失后照样释放占用，cleanup 记为 `process_group_gone`（停止未经严格确认），离开进程组的后代继续写入是所有者已接受的风险；探针只在 cleanup 为 `confirmed` 时要求观察之后没有新增写入。构建产品探针还检查执行前拒绝竞争预约、永久释放后才允许预约及独立数据库读回。这些探针的安装资格为合成夹具，不能替代本 Runbook 要求的最终安装路径、运行账号和权限资格；两个探针也不构成第二个并发 writer 的完整联合验收。见[本次证据边界](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/README.md)。 升级后如需删除旧的未确认 SRT 执行记录，按[删除旧的未确认 SRT 执行记录](install-start-stop-runbook.md#purge-unconfirmed-srt-records)在停机状态下执行；所有者已在 2026-09-26 授权在所有机器上执行这项删除。
+JobHost 控制探针现含脱离原进程组的持续写入子进程，在 Stop 和 Worker 崩溃后独立读取文件。2026-09-20 的隔离实测中，Linux namespace 释放后无新增写入；Mac 后代仍继续写入。按 ADR 0033，Mac 上任务进程组全部消失后照样释放占用，cleanup 记为 `process_group_gone`（停止未经严格确认），离开进程组的后代继续写入是所有者已接受的风险；探针只在 cleanup 为 `confirmed` 时要求观察之后没有新增写入。构建产品探针还检查执行前拒绝竞争预约、永久释放后才允许预约及独立数据库读回。这些探针的安装资格为合成夹具，不能替代本 Runbook 要求的最终安装路径、运行账号和权限资格；两个探针也不构成第二个并发 writer 的完整联合验收。见[本次证据边界](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/README.md)。 升级后如需删除旧的未确认 SRT 执行记录，按[删除旧的未确认 SRT 执行记录](install-start-stop-runbook.md#purge-unconfirmed-srt-records)在停机状态下执行；所有者已在 2026-09-26 授权在所有机器上执行这项删除。
 
 Schema 37 为原调用的恢复结果建立 writer 屏障。恢复结果保存在受保护的 `pi-file-recovery:<invocationId>` Trace artifact 中，与原 Worker 输出分开；不覆盖原输出，也不创建第二个调用回执。旧 writer 不理解该来源，不得直接写入新库。
 

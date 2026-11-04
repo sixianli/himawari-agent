@@ -4,7 +4,6 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amended_by: "docs/adr/0156-linux-only-runtime.md"
 amends: "docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md"
 date: "2026-10-24"
 ---

@@ -8,8 +8,6 @@ date: "2026-08-26"
 
 # Himawari Agent v0.2 持久 Web 基础设计 Spec
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
-
 ## 目标
 
 本 Spec 在已经完成的 Foundation 边界之上，设计 v0.2 的持久 Web 基础切片：把当前以进程内测试适配器为主的组合，推进为可真实启动、跨正常重启恢复、经公共 Web 安全访问，并可在 Mac 与 Hermes 之间停机迁移的单一所有者 Agent。

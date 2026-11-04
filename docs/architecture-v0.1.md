@@ -8,13 +8,6 @@ date: "2026-08-25"
 ---
 # Himawari Agent Architecture v0.1
 
-<a id="runtime-platform"></a>
-## 运行平台：只支持 Linux
-
-2026-11-03 起，Himawari 的服务端（Agent Service、Execution Worker、Job Host、admin CLI 和安装包）只在 Linux 上构建、安装、测试和运行，不再支持 macOS，决定和理由见 [ADR 0156](adr/0156-linux-only-runtime.md)。生产在 Ubuntu 24.04 云服务器上，测试在 Hermes（Ubuntu 22.04）和云服务器的 `himawari-ci` 账号上。Mac 只是所有者的浏览器和操作终端（编辑代码、经 Remote Control 上线），不运行 Himawari。
-
-本文下面关于 Mac 的描述（Seatbelt/XPC 命令沙箱、Apple container、Mac 尽力停止、Mac 套接字路径预算、钥匙串密钥来源、在 Mac 上取得的测试证据等）只是历史记录或仍留在代码里的冻结实现，不是受支持的功能；这些代码按 ADR 0156 不再维护，删除工作见 [BL-20261103-5c43td](backlog/BL-20261103-5c43td-删除产品代码里的-macos-分支.md)。
-
 ## 执行架构：当前实现与已采纳设计
 
 ### 任务级隔离执行的已采纳变更（2026-09-24，待实施）
@@ -23,7 +16,7 @@ date: "2026-08-25"
 
 本轮只增加架构决定与设计文档，未改运行路径；现有 Mac 未知清理和 Linux namespace 证据保持原含义，不能推定已取得新容器资格。ADR 0030 的持久释放事实继续保留，新环境级 lease 与 proof 尚待接入。[SOURCE: docs/adr/0031-isolated-tool-execution.md]
 
-2026-09-26 的 [ADR 0033](adr/0033-process-sandbox-default-and-optional-containers.md) 再次部分修正 0031：macOS 和 Linux 默认都用 SRT 模式（2026-11-03 起只支持 Linux，见 [ADR 0156](adr/0156-linux-only-runtime.md)）（每次调用一个 Job Host 进程，在 SRT 限制下运行工具），进程组全部消失即释放目录并标明“停止未经严格确认”；上面的任务级容器环境只在配置里明确打开 `taskEnvironments` 后的严格模式下使用。新的释放规则、删除旧未确认记录的管理命令和界面状态说明尚未实现，见[新 Spec 的两种执行模式](execution/specs/2026-09-24-isolated-tool-execution-design.md#modes)。[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]
+2026-09-26 的 [ADR 0033](adr/0033-process-sandbox-default-and-optional-containers.md) 再次部分修正 0031：macOS 和 Linux 默认都用 SRT 模式（每次调用一个 Job Host 进程，在 SRT 限制下运行工具），进程组全部消失即释放目录并标明“停止未经严格确认”；上面的任务级容器环境只在配置里明确打开 `taskEnvironments` 后的严格模式下使用。新的释放规则、删除旧未确认记录的管理命令和界面状态说明尚未实现，见[新 Spec 的两种执行模式](execution/specs/2026-09-24-isolated-tool-execution-design.md#modes)。[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]
 
 ### 控制中心展示与执行选择（2026-09-10）
 
@@ -382,7 +375,7 @@ Agent 侧通过 Owner/Agent 绑定的 `CapabilityInvocationReceiptPort` 消费�
 
 `packages/platform-node` 的能力运行时使用 Node `crypto` 验证普通文件 SHA-256、受信 Ed25519 signer 与不可变 metadata；本地 program/stdio MCP 只接受精确 process binding。Linux 后端生成非 setuid `bubblewrap >=0.11.2` 与 `prlimit >=2.38` launch，固定无网络 namespace、只读 runtime root、显式 filesystem bind、清空环境和 CPU/地址空间/进程/输出上限，并由 Worker 监督 wall time 与进程组终止。官方 MCP TypeScript client/server `2.0.0` fixture 验证现代 `2026-07-28` stdio 握手、精确 server identity、批准 tool mapping、输出字节上限和关闭。远程 API/adapter 只可访问绑定的 HTTPS/明确 loopback 同源 endpoint，禁止 redirect，secret material 只由 invocation-bound 短期 Handle 注入声明 header，输出先保护再存储；有副作用请求在断连、非成功响应、响应超限或结果持久化失败后只返回 unknown，不能被当作确定失败自动重试。
 
-平台资格与实现能力分开：以下 Mac 命令沙箱只是冻结的历史实现，按 [ADR 0156](adr/0156-linux-only-runtime.md) 不再支持。Mac 命令沙箱按冻结的 `sandboxTier` 分成两层。`native-low-risk` 只接受无网络、无 secret、无脚本、无写入的只读 Git 关闭集合，并必须由签名的 App Sandbox/XPC helper 执行；这里的 Seatbelt 指 App Sandbox 的正式产品边界，不允许用 `/usr/bin/sandbox-exec` 冒充生产实现。`isolated-high-risk` 覆盖 `node`、`npm`、脚本、secret、写入及所有未知命令，使用 Apple `container 1.2.0` candidate provider，要求 pinned image、`--network none`、`--no-dns`、`--home-mount none`、只读 root、单一 workspace bind、guest `prlimit` 和实际 loopback-only/无 raw-IP 默认路由/宿主不可见/root 不可写 probe。`MacCommandSandboxRouter` 只按冻结 tier 路由，任何后端失败都 fail closed，绝不向较弱层降级。当前签名 helper 尚未交付，Apple container 安装签名也未通过，因此两层都不能标记为 production suitable。
+平台资格与实现能力分开：Mac 命令沙箱按冻结的 `sandboxTier` 分成两层。`native-low-risk` 只接受无网络、无 secret、无脚本、无写入的只读 Git 关闭集合，并必须由签名的 App Sandbox/XPC helper 执行；这里的 Seatbelt 指 App Sandbox 的正式产品边界，不允许用 `/usr/bin/sandbox-exec` 冒充生产实现。`isolated-high-risk` 覆盖 `node`、`npm`、脚本、secret、写入及所有未知命令，使用 Apple `container 1.2.0` candidate provider，要求 pinned image、`--network none`、`--no-dns`、`--home-mount none`、只读 root、单一 workspace bind、guest `prlimit` 和实际 loopback-only/无 raw-IP 默认路由/宿主不可见/root 不可写 probe。`MacCommandSandboxRouter` 只按冻结 tier 路由，任何后端失败都 fail closed，绝不向较弱层降级。当前签名 helper 尚未交付，Apple container 安装签名也未通过，因此两层都不能标记为 production suitable。
 
 Hermes candidate 继续要求 non-setuid `bubblewrap 0.11.2` 与 `prlimit >=2.38`。2026-09-04 经 Owner 授权，仅在机械盘专项目录中校验源码并构建了 `bubblewrap 0.11.2` 与 util-linux `2.42.3` 的 `prlimit`，没有替换系统软件或改动已有服务。临时真实进程探针确认了只读根、隔离网络和宿主敏感目录不可见；原生产参数暴露的用户命名空间与外层进程数限制问题已据此修正。后端现在显式创建用户命名空间，在隔离内通过受摘要和路径校验的 `prlimit` 施加进程数限制，并拒绝覆盖该辅助程序或已校验执行文件的挂载。2026-09-05 使用独立完整临时运行根的 shell/C 探针通过了不加进程数限制的对照、隔离内进程数拒绝、进程组清理和父进程退出清理四项验证。同日用摘要与当前工作区一致的 `isolation.ts` 在 Hermes 实机运行 Node 后端探针：正常 launch 退出 0；篡改的 `prlimit` 摘要和把 helper 放入可写 workspace 的绑定均被拒绝；取消和超时用例先确认 payload 已启动并持有 FIFO，再确认终止后 FIFO 到达 EOF，均以 `SIGTERM` 结束且无输出泄漏。运行根和工作目录始终限于 Owner 授权的机械盘专项目录。该轮使用已有 Node `26.1.0`，证据级别是 `node26-diagnostic-only`；它不是锁定 Node 22 安装产物、真实 capability、Worker 主程序或 Mac 同版本隔离的完整验收。当前没有安装或启用真实 capability，也没有把测试 direct-process fixture 当作生产隔离。`DeterministicRestaurantCapabilityPort` 与 `ScriptedExternalActionReconciliationPort` 仍只验证搜索、预订和对账产品语义；`ProductionExecutionWorker` 已定义 `execution.v2` 严格消息和精确 adapter/version/operation 注册边界，但实际服务入口仍缺少真实能力运行时注册。该边界落实受治理能力决策：[SOURCE: docs/adr/0008-governed-capability-registry.md] [SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]
 

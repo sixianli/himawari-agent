@@ -28,7 +28,3 @@ packages/runtime-sandbox/scripts/ 下的 qualify-job-host.mjs、qualify-policy.m
 ## Notes
 
 - Add evidence, constraints, and decisions here as the item is reviewed.
-
-## 运行平台变化（2026-11-03）
-
-2026-11-03 起 Himawari 只支持 Linux（[ADR 0156](../adr/0156-linux-only-runtime.md)），不再做 Mac 验证；上文关于 Mac 的内容只作历史记录，代码里的 macOS 分支按 [BL-20261103-5c43td](BL-20261103-5c43td-删除产品代码里的-macos-分支.md) 删除。

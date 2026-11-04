@@ -8,8 +8,6 @@ date: "2026-09-03"
 
 # Himawari Agent GitHub CI 与质量门禁实施 Plan
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
-
 本次增量：[2026-09-29 集成测试并行规则与验证](#integration-parallel-20260929)、[2026-10-14 集成测试并行预算调整](#integration-parallel-20261014)。历史实施记录保留其当时的政策与证据边界。
 
 **来源 Spec：** [SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]

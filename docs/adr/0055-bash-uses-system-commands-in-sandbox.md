@@ -4,7 +4,6 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amended_by: "docs/adr/0156-linux-only-runtime.md"
 date: "2026-10-13"
 ---
 

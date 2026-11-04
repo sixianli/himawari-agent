@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md, docs/adr/0026-job-scoped-network-egress.md"
-amended_by: "docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md, docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md, docs/adr/0156-linux-only-runtime.md"
+amended_by: "docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md, docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md"
 date: "2026-09-24"
 ---
 

@@ -8,9 +8,7 @@ date: "2026-09-10"
 
 # 控制中心完整测试与 Hermes 真实服务验收
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
-
-> 2026-10-06适用修正：本文所述Hermes实例和OpenRouter链路是2026-09-10验收基线。当前代码按[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)使用Vercel、单主文本模型和Mem0 3.3.1；这些改动尚未证明已部署到历史实例。测试主机为Hermes，生产主机为云服务器，按 ADR 0156 不再做 Mac 验证，具体位置遵守[ADR 0052](../../adr/0052-third-production-host-acceptance-exception.md#hosts)。原现场及付费授权不自动适用于当前版本。
+> 2026-10-06适用修正：本文所述Hermes实例和OpenRouter链路是2026-09-10验收基线。当前代码按[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)使用Vercel、单主文本模型和Mem0 3.3.1；这些改动尚未证明已部署到历史实例。测试主机为Hermes，生产主机为云服务器，Mac新版本验证仍延期，具体位置遵守[ADR 0052](../../adr/0052-third-production-host-acceptance-exception.md#hosts)。原现场及付费授权不自动适用于当前版本。
 > [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
 
 ## 目标与来源

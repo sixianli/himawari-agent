@@ -10,8 +10,6 @@ date: "2026-08-27"
 
 # 停机加密 Authority Transfer Runbook
 
-> **运行平台说明（2026-11-03）**：Himawari 只在 Linux 上运行，不再支持 macOS（[ADR 0156](../adr/0156-linux-only-runtime.md)）。本文中把 macOS 当作运行、测试或验收平台的内容（Mac 安装、Mac 验收、Mac 与 Hermes 之间迁移、钥匙串、Seatbelt、Apple container 等）一律作废：其中的要求、验收条款和未完成任务不再执行，描述过去结果或冻结代码的段落只作历史记录；把 Mac 当作编辑代码和远程操作终端的内容不受影响。
-
 <!-- runbook-contract:
 - docs/execution/specs/2026-09-24-isolated-tool-execution-design.md
 - packages/platform-node/src/capabilities/isolation.ts
@@ -240,7 +238,7 @@ Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只�
 
 前台 SRT 现沿用受保护 Payload 通道额外保存 stdout 分块，任务正常退出且 stdout/stderr 管道已关闭时先保存带 termination 的结束块，再等待宿主清理。最终报告仍未确认管道关闭时，只保存输出前缀，不能生成结束块或完整成功结果；原未知结果、有限恢复和停止规则继续适用。正常 Worker 的原始 stdout Payload 和结果消费者不变；恢复只在接纳释放后核验完整分块、原身份和当前权限，重组成普通 Payload，并将输出归属和 operation CAS 同事务保存。已有等价原 Payload 时复用，已确定 operation 优先，不能用当前文件内容代替旧 read 输出。备份和迁移须同时保留原 Run 的 `sandbox-stream-chunk:*`、`sandbox-stream-end:*`、对应加密 Payload、原调用回执和输出归属；分块 JSON 不是完整输出引用。每次调用增加分块副本与本机 RPC，结束 artifact 还会保存末块 JSON，容量评估不能只按原 stdout 长度计算。合法的取消、输出或资源超限、宿主失败结束块在完整校验后保留原 UNKNOWN 或已有确定错误，不因不能恢复输出而关闭 Agent；未知原因、矛盾字段和损坏分块仍拒绝。后台游标合同不变；完整性、取消、期限、披露和效果验证不放宽。见[前台结果恢复设计](../execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#恢复裁决与事务)。[SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md]
 
-Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
+Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。将来的 Mac 常驻启动器必须保持同样的合同。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
 
 前台没有完整结束块且没有确定 operation 时，不保证恢复原输出。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。常驻 SRT 环境和容器任务环境里的前台调用没有逐次的原签名结束记录，改用调用所在整个任务环境的释放回执证明进程已退出：环境已释放、回执依据不是“创建请求尚未发出”、环境记录里有这条调用；这个证明说明不了命令开始过，绑定之后、发出命令之前中断的调用也记成 `SANDBOX_TOOL_RESULT_LOST`；拼回原输出仍要求完整结束块，写入 `SANDBOX_TOOL_RESULT_LOST` 仍要求原尝试已被取代，两者都不重放工具。详见[第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes) [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。
 
@@ -284,7 +282,7 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 - 若目标配置声明能力部署快照，必须在 activation 前验证规范路径、Owner/mode、大小、SHA-256，并逐项对照迁移后的 active Capability Registry 与目标平台资格。源主机快照、runtime root 或资格不能复制后直接视为目标已合格。
 - `activate` 只接受权限受限、字段精确的 preflight JSON。CLI 会实际解析目标 Payload 和 recipient key；`doctorReady` 与 `publicIngressReady` 必须来自本次只读检查。文件中的布尔值不是替代证据，缺少原始回读时停止。
 - 迁移包 plaintext staging 只能位于 CLI 生成的受限临时目录。copy-on-write 与 SSD 删除不保证可靠擦除；主要保护来自包加密、受限权限、临时文件清理和后续 key disposal。
-- 任何公网入口切换、Hermes 或生产服务操作、外部账户变更和旧包删除都保持各自授权边界。
+- 任何公网入口切换、Hermes/Mac 服务操作、外部账户变更和旧包删除都保持各自授权边界。
 
 文件读取的 `runPolicy.fileRead` 属于主机路由选择，不能沿用源主机路径和 Worker instance 推断目标主机授权。迁移的 inspect/read 输入、Handle 和回执仅用于历史回读或核实未知结果；新 authority 下不得自动重签执行，须重新核实本地主机、目录 Grant、文件身份及模型披露权限。
 
@@ -305,7 +303,7 @@ himawari doctor --config <absolute-source-or-target-config-path>
 
 同时回读并脱敏记录：当前主机、immutable build identity、Node/SQLite/product/schema/adapter/Memory versions、配置与 state root owner/mode、Owner/Agent/deployment、authority status/epoch/fence/transfer ID、数据库 quick/full integrity、WAL checkpoint 条件、Memory storage、实际引用的 Payload ciphertext、源/目标文件系统可用字节，以及 secret reference 名称/版本/用途和可解析结论。
 
-export 前必须从已验证服务管理器、进程表、`runtime/execution.sock` 和 state-root lock 四个角度证明服务与 stores 已停止。target preflight 必须证明 state root 为空且未持有 authority。若尚无该主机的已验证 install/start/stop 程序，不得猜测 systemd 命令，停止本 Runbook。
+export 前必须从已验证服务管理器、进程表、`runtime/execution.sock` 和 state-root lock 四个角度证明服务与 stores 已停止。target preflight 必须证明 state root 为空且未持有 authority。若尚无该主机的已验证 install/start/stop 程序，不得猜测 launchd/systemd 命令，停止本 Runbook。
 
 ## Procedure
 
@@ -463,7 +461,7 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 - 磁盘不足以同时容纳源数据、SQLite snapshot、加密对象和临时解密 staging；不得自动删除 Owner 内容。
 - preflight evidence 缺失、目标 secrets/doctor/readiness/public ingress 任一未通过，或 activation 后 source 普通启动未 fail closed。
 - 目标能力部署快照缺失、篡改、权限不安全、与迁移后的 active Capability Registry 不一致，或沿用源平台资格冒充目标平台验证。
-- 要求自动恢复 source、手工改 authority、直接复制 plaintext state、跳过确认、提前删包、扩大到生产部署或把一次 fixture 成功当作两台 Linux 主机之间的完整验收。
+- 要求自动恢复 source、手工改 authority、直接复制 plaintext state、跳过确认、提前删包、扩大到生产部署或把一次 fixture 成功当作 Mac↔Hermes 完整验收。
 
 ## Troubleshooting
 
@@ -489,7 +487,7 @@ Linux 安装必须包含同一候选包编译出的 `linux-host-guardian-main.js
 
 清理进程回收代理时不等待原 Host 收尸，但原 Host 处于僵尸状态，或原 Host 已消失而自身组仍在可信回收期间时，沿用 `cleanup_pending` 在原恢复期限内观察。僵尸、权限错误、身份变化和无法读取的组不能算空；到期仍未清空时保留占用，不增加宽限。真实恢复验收必须覆盖六处 finish 崩溃，并读回 Host 组为空、原结果恰好一次交付且未重新执行。规则见[Linux Host 组清理](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
 
-清理进程属于当前安装和运行中的进程，不属于备份或迁移数据。不能按备份的 PID 重建它的活动身份；目标主机不能替源主机按旧数字杀组，目标启动成功也不证明源主机组已清空。新候选改变运行时字节，原冻结候选的资格不能复用。离组后代限制保留；Himawari 只支持 Linux（[ADR 0156](../adr/0156-linux-only-runtime.md)），不做 Mac 验证。
+清理进程属于当前安装和运行中的进程，不属于备份或迁移数据。不能按备份的 PID 重建它的活动身份；目标主机不能替源主机按旧数字杀组，目标启动成功也不证明源主机组已清空。新候选改变运行时字节，原冻结候选的资格不能复用。离组后代限制和 Mac 规则保留；本轮 Mac 行为未验证。
 
 恢复必须保留既有受保护 Run trace 中的控制引用、终态证据及其 Payload；不得仅备份 SQLite 中的 PID。当前 Agent 权威通过原环境认证控制端口 inspect/stop，或读取原 Job Host 的签名终态；身份、目录 inode、策略或宿主变化时继续隔离，不能在目标主机按旧 PID 停止或重启。Agent 仅加载不含 SRT 启动能力的控制客户端。
 

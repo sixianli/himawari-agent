@@ -146,7 +146,7 @@ date: "2026-10-08"
 
 Run 进入 `reconciling_external_result` 不表示停止记录和恢复记录已经持久化。管理员安装场景（产品路径测试 `[prod-sandbox-admin]`）须在原期限内等待公共只读 `inspect-reservation` 接受目标，再保存处置前读回；该等待不替代独立进程组和 final 核查，也不放宽原状态断言。
 
-2026-10-22 起（提交 `36df1cb9`），这个安装场景只在非 Linux 平台运行：Linux 默认安装的前台 bash 改走 SRT 常驻环境，这个场景用来制造目标的一次性前台预约在 Linux 上不再出现，所以 Hermes 上的第 4 层把它标为跳过，原因写在测试常量 `oneShotForegroundSrtIsNonLinuxOnly` 里。Linux 上的处置规则仍由第 2 层集成测试 `test/integration/sandbox-reservation-administration.test.ts` 覆盖（候选 `4126f4f3` 的第 3 层里全部通过）。升级前留下的 `srt` 预约照常按本 Runbook 处置；Himawari 按 [ADR 0156](../adr/0156-linux-only-runtime.md) 只支持 Linux，这个只在非 Linux 平台运行的场景不再需要验证。
+2026-10-22 起（提交 `36df1cb9`），这个安装场景只在非 Linux 平台运行：Linux 默认安装的前台 bash 改走 SRT 常驻环境，这个场景用来制造目标的一次性前台预约在 Linux 上不再出现，所以 Hermes 上的第 4 层把它标为跳过，原因写在测试常量 `oneShotForegroundSrtIsNonLinuxOnly` 里。Linux 上的处置规则仍由第 2 层集成测试 `test/integration/sandbox-reservation-administration.test.ts` 覆盖（候选 `4126f4f3` 的第 3 层里全部通过）。升级前留下的 `srt` 预约照常按本 Runbook 处置；Mac 的产品路径验证按用户 2026-09-30 的决定暂停，目前未验证。
 
 该安装夹具失败时保留原错误和独立读回。只有目标尚无释放回执、原签名 final 的摘要和长度匹配且原宿主与进程组已不存在，才恢复夹具保存的原 final 并等待正常证明释放；已有管理员回执时不恢复 final。失败收尾始终继续报告失败，不能计作管理员场景通过；这也不是生产处置步骤。
 

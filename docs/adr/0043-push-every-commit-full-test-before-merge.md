@@ -150,5 +150,5 @@ date: "2026-09-30"
 - 被取代的决定：[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]
 - 更早的测试位置和测试时机决定，原先由 ADR 0042 取代，现在一并由本 ADR 取代（文档校验要求取代者必须有效，所以三者的 `superseded_by` 都指向本 ADR）：[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]、[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
 - CI 必需检查与证据边界：[SOURCE: docs/architecture-v0.1.md#ci-政策与证据边界]
-- Mac 主机名变化后的旧锁（Mac 验证推迟的影响）：[SOURCE: docs/archive/backlog/BL-20260929-002-mac-主-机-名-变-化-后-状.md]
+- Mac 主机名变化后的旧锁（Mac 验证推迟的影响）：[SOURCE: docs/backlog/BL-20260929-002-mac-主-机-名-变-化-后-状.md]
 - 进行中的工具执行排查：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]

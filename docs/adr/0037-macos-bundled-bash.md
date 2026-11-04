@@ -1,9 +1,9 @@
 ---
-status: superseded
+status: active
 document_type: adr
-decision_status: superseded
+decision_status: accepted
 supersedes: ""
-superseded_by: "docs/adr/0156-linux-only-runtime.md"
+superseded_by: ""
 date: "2026-09-29"
 ---
 
@@ -72,7 +72,7 @@ Himawari 要分发给其他用户使用（见 [ADR 0033](0033-process-sandbox-de
 
 - 好处：macOS 用户安装后不需要额外步骤，`bash` 工具就能使用。
 - 代价：Himawari 要自己维护这份 Bash 的来源、版本、许可证文件和安全更新。
-- 后续：实现工作记录在 [BL-20260929-003](../archive/backlog/BL-20260929-003-macos-安-装-包-自-带-pi-工.md)。实现落地时，同一次修改要更新安装启停 Runbook 的相关规定，并重新封存该 Runbook。
+- 后续：实现工作记录在 [BL-20260929-003](../backlog/BL-20260929-003-macos-安-装-包-自-带-pi-工.md)。实现落地时，同一次修改要更新安装启停 Runbook 的相关规定，并重新封存该 Runbook。
 
 [↑ 返回阅读导航](#contents)
 
@@ -83,4 +83,4 @@ Himawari 要分发给其他用户使用（见 [ADR 0033](0033-process-sandbox-de
 - 现行安装规定：[SOURCE: docs/runbooks/install-start-stop-runbook.md]
 - 受保护的运行时安装：[SOURCE: docs/adr/0028-protected-runtime-installation.md]
 - 分发背景与默认执行方式：[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]
-- 实现待办：[SOURCE: docs/archive/backlog/BL-20260929-003-macos-安-装-包-自-带-pi-工.md]
+- 实现待办：[SOURCE: docs/backlog/BL-20260929-003-macos-安-装-包-自-带-pi-工.md]

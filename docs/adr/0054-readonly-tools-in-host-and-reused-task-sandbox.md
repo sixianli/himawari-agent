@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0031-isolated-tool-execution.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md"
-amended_by: "docs/adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md, docs/adr/0085-remove-per-turn-system-gaps.md, docs/adr/0156-linux-only-runtime.md"
+amended_by: "docs/adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md, docs/adr/0085-remove-per-turn-system-gaps.md"
 date: "2026-10-13"
 ---
 
