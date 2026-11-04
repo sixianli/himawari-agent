@@ -208,6 +208,14 @@ function jobHostEntryLoadDiagnostics() {
   };
 }
 
+function launchReplacement(options: { launchCommand?: string; gateDelaySeconds?: number }) {
+  if (options.launchCommand)
+    return `command = ${JSON.stringify(options.launchCommand)}; process.stderr.write(JSON.stringify({ stage: "r2t10_launch_command", command }) + "\\n"); `;
+  if (options.gateDelaySeconds)
+    return `command = "/usr/bin/sleep ${options.gateDelaySeconds}; " + command; `;
+  return null;
+}
+
 async function configureSdkLoad(
   root: string,
   options: {
@@ -264,6 +272,19 @@ register(${JSON.stringify(pathToFileURL(loader).href)});
     throw Object.assign(new Error("JOB_HOST_TEST_CONTRACTS_IMPORT_FAILURE"), { code: "EIO" });
   }
   const loaded = await nextLoad(url, context);
+  if (${JSON.stringify(launchReplacement(options))} !== null && url.endsWith("/runtime-sandbox/dist/job-host-main.js")) {
+    const original = loaded.source.toString();
+    const declaration = "    const command = namespaceGate\\n";
+    const wrap = 'const wrapping = launch.manager.wrapWithSandboxArgv(command, "/bin/bash");';
+    if (original.split(declaration).length !== 2 || original.split(wrap).length !== 2)
+      throw new Error("LAUNCH_COMMAND_INJECTION_MISSED");
+    return {
+      ...loaded,
+      source: original
+        .replace(declaration, "    let command = namespaceGate\\n")
+        .replace(wrap, ${JSON.stringify(launchReplacement(options))} + wrap),
+    };
+  }
   if (${Boolean(options.blockEntryMs)} && url === ${JSON.stringify(pathToFileURL(launch.entry).href)})
     return { ...loaded, source: ${JSON.stringify(
       `process.stderr.write(JSON.stringify({ stage: "ENTRY_STALL_STARTED", at: Date.now() }) + "\\n");
@@ -331,18 +352,7 @@ SandboxManager.initialize = async (...args) => {
   return result;
 };\n`
           : "") +
-      (options.launchCommand
-        ? `\nconst himawariFixtureWrapArgv = SandboxManager.wrapWithSandboxArgv.bind(SandboxManager);
-SandboxManager.wrapWithSandboxArgv = async (command, shell) => {
-  const wrapped = await himawariFixtureWrapArgv(${JSON.stringify(options.launchCommand)}, shell);
-  process.stderr.write(JSON.stringify({ stage: "r2t10_launch_argv", argv: wrapped.argv }) + "\\n");
-  return wrapped;
-};\n`
-        : options.gateDelaySeconds
-          ? `\nconst himawariFixtureGateWrapArgv = SandboxManager.wrapWithSandboxArgv.bind(SandboxManager);
-SandboxManager.wrapWithSandboxArgv = async (command, shell) =>
-  himawariFixtureGateWrapArgv("/usr/bin/sleep ${options.gateDelaySeconds}; " + command, shell);\n`
-          : ""),
+      "",
   )} };
 }
 `,

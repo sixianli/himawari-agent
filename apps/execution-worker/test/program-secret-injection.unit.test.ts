@@ -81,4 +81,54 @@ describe("program secret injection", () => {
     });
     expect(decoded(result)).toEqual({ secrets: {} });
   });
+
+  it("logs which granted secret was unavailable without its value or the error text", async () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      const result = await injectProgramSecrets({
+        stored: stored({ secretRefs: { deepseek: "deepseek-web", brave: "brave-web" } }),
+        granted: [...granted, { secretRef: "brave-web", secretVersion: "v2" }],
+        networkOnly: true,
+        secrets: {
+          resolve: async (ref: string) => {
+            if (ref === "brave-web") return "brave-secret-value";
+            throw Object.assign(new Error("token sk-leaked-123 at /var/lib/himawari/secrets"), {
+              code: "ENOENT",
+            });
+          },
+        },
+      });
+      expect(decoded(result)).toEqual({ secrets: { brave: "brave-secret-value" } });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      {
+        event: "sandbox.secret.unavailable",
+        name: "deepseek",
+        secretRef: "deepseek-web",
+        secretVersion: "v1",
+        errorCode: "ENOENT",
+      },
+    ]);
+    expect(lines.join("\n")).not.toMatch(/sk-leaked-123|brave-secret-value|\/var\/lib/);
+  });
+
+  it("logs nothing when every granted secret resolves", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await injectProgramSecrets({
+        stored: stored({ secretRefs: { deepseek: "deepseek-web" } }),
+        granted,
+        networkOnly: true,
+        secrets: { resolve: async () => "fixture-value" },
+      });
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

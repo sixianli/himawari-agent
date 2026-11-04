@@ -37,7 +37,18 @@ export async function injectProgramSecrets(input: {
     if (!secret) throw new Error("SANDBOX_SECRET_INPUT_INVALID");
     try {
       values[name] = await input.secrets.resolve(secret.secretRef, secret.secretVersion);
-    } catch {}
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+      console.error(
+        JSON.stringify({
+          event: "sandbox.secret.unavailable",
+          name,
+          secretRef: secret.secretRef,
+          secretVersion: secret.secretVersion,
+          errorCode: /^E[A-Z0-9_]{1,40}$/.test(code) ? code : "UNKNOWN",
+        }),
+      );
+    }
   }
   return Buffer.from(JSON.stringify({ ...rest, secrets: values }));
 }
