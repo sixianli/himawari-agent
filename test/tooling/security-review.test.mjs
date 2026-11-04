@@ -237,6 +237,57 @@ describe("批准清单的解析和来源边界", () => {
     f.manifest.entries = [history];
     expect(() => reload(f)).toThrow("SECURITY_REVIEW_SECRET_INVALID");
   });
+  it("按条目自己的分类生成放行，可证明的分类允许只登记历史并合并同一提交的行", () => {
+    const f = fixture();
+    const history = {
+      kind: "secret",
+      id: "generic-api-key",
+      path: "test/removed.test.ts",
+      digest: "e".repeat(64),
+      scope: "history",
+      commit: f.manifest.sourceHead,
+      classification: "numeric-option",
+    };
+    f.manifest.entries = [
+      { ...history, line: 50 },
+      { ...history, line: 168 },
+    ];
+    expect(reload(f).exceptions[0]).toMatchObject({
+      count: 2,
+      provenance: {
+        classification: "numeric-option",
+        history: [{ sourceCommit: f.manifest.sourceHead, lines: [50, 168], count: 2 }],
+      },
+    });
+    expect(reload(f).exceptions[0].provenance.current).toBeUndefined();
+    f.manifest.entries = [
+      { ...history, line: 50 },
+      { ...history, line: 168, classification: "thread-id" },
+    ];
+    expect(() => reload(f)).toThrow("SECURITY_REVIEW_SECRET_INVALID");
+    f.manifest.entries = [{ ...history, line: 50, classification: undefined }];
+    expect(() => reload(f)).toThrow("SECURITY_REVIEW_SECRET_INVALID");
+    const current = {
+      ...history,
+      scope: "current",
+      commit: null,
+      classification: "public-test-vector",
+    };
+    f.manifest.entries = [
+      { ...current, line: 54 },
+      { ...current, line: 127 },
+      { ...history, line: 50, classification: "public-test-vector" },
+    ];
+    expect(reload(f).exceptions[0]).toMatchObject({
+      count: 3,
+      provenance: { current: { sourceCommit: f.manifest.sourceHead, lines: [54, 127], count: 2 } },
+    });
+    f.manifest.entries = [
+      { ...current, line: 54 },
+      { ...current, line: 54 },
+    ];
+    expect(() => reload(f)).toThrow("SECURITY_REVIEW_SECRET_INVALID");
+  });
   it("发布文档例外绑定确切依赖、成员全文与发现摘要", () => {
     const f = fixture();
     const entry = {

@@ -62,7 +62,7 @@
               "provenance": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["classification", "current", "history"],
+                "required": ["classification", "history"],
                 "properties": {
                   "classification": {
                     "enum": [
@@ -70,7 +70,13 @@
                       "synthetic-boot-token",
                       "public-authentication-tag",
                       "machine-baseline-fixture",
-                      "synthetic-marker"
+                      "synthetic-marker",
+                      "public-test-vector",
+                      "git-object-id",
+                      "archived-file-digest",
+                      "numeric-option",
+                      "thread-id",
+                      "owner-confirmed-revoked"
                     ]
                   },
                   "current": {

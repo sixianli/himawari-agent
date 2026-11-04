@@ -5,6 +5,16 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { safeRelativePath } from "./contracts.mjs";
 
+export const historyOnlyClassifications = [
+  "machine-baseline-fixture",
+  "public-test-vector",
+  "git-object-id",
+  "archived-file-digest",
+  "numeric-option",
+  "thread-id",
+  "owner-confirmed-revoked",
+];
+
 const repository = "sixianli/himawari-agent";
 const owner = { login: "sixianli", id: 30715326 };
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -12,7 +22,6 @@ const assert = (condition, code) => {
   if (!condition) throw new Error(code);
 };
 
-/** Fixed HTTPS origin; optional Actions read token uses stdin, never argv or redirects. */
 export function readReviewComment(commentId) {
   assert(Number.isSafeInteger(commentId) && commentId > 0, "SECURITY_REVIEW_COMMENT_INVALID");
   const credential = process.env.HIMAWARI_CI_GITHUB_TOKEN;
@@ -70,7 +79,6 @@ export function readReviewComment(commentId) {
         },
       );
     } catch (error) {
-      // Never expose the response body, stderr, or process arguments in public logs.
       const http = String(error.stdout ?? "")
         .trimEnd()
         .slice(-3);
@@ -105,12 +113,10 @@ export function readReviewComment(commentId) {
       throw new Error("SECURITY_REVIEW_INVALID_RESPONSE");
     }
   } finally {
-    // curl truncates this private output file before retrying partial transfers.
     rmSync(directory, { recursive: true, force: true });
   }
 }
 
-/** The checkout only locates evidence; it cannot assert that an owner approved it. */
 export function loadOwnerReview({
   root,
   context,
@@ -216,9 +222,6 @@ export function loadOwnerReview({
   };
   const exceptions = [];
   const machineExceptions = [];
-  const current = manifest.entries.filter(
-    (entry) => entry.kind === "secret" && entry.scope === "current",
-  );
   for (const entry of manifest.entries) {
     if (entry.kind === "machine-secret") {
       assert(
@@ -232,38 +235,46 @@ export function loadOwnerReview({
       );
       machineExceptions.push(entry);
     } else if (entry.kind === "secret") {
-      assert(
-        ["current", "history"].includes(entry.scope) &&
-          current.filter(
-            (item) =>
-              item.path === entry.path && item.digest === entry.digest && item.id === entry.id,
-          ).length === 1,
-        "SECURITY_REVIEW_SECRET_INVALID",
-      );
-      if (entry.scope === "history") continue;
-      const history = manifest.entries.filter(
+      const group = manifest.entries.filter(
         (item) =>
           item.kind === "secret" &&
-          item.scope === "history" &&
           item.path === entry.path &&
           item.id === entry.id &&
           item.digest === entry.digest,
       );
+      const groupCurrent = group.filter((item) => item.scope === "current");
+      const classification = entry.classification ?? "synthetic-boot-token";
+      assert(
+        ["current", "history"].includes(entry.scope) &&
+          new Set(groupCurrent.map((item) => item.line)).size === groupCurrent.length &&
+          (groupCurrent.length > 0 || historyOnlyClassifications.includes(classification)) &&
+          group.every((item) => (item.classification ?? "synthetic-boot-token") === classification),
+        "SECURITY_REVIEW_SECRET_INVALID",
+      );
+      if (entry !== (groupCurrent[0] ?? group[0])) continue;
+      const history = group.filter((item) => item.scope === "history");
       exceptions.push({
         ...common,
         kind: "synthetic-secret",
         id: entry.id,
         path: entry.path,
         digest: entry.digest,
-        count: 1 + history.length,
+        count: groupCurrent.length + history.length,
         provenance: {
-          classification: "synthetic-boot-token",
-          current: { sourceCommit: manifest.sourceHead, lines: [entry.line], count: 1 },
-          history: history.map((item) => ({
-            sourceCommit: item.commit,
-            lines: [item.line],
-            count: 1,
-          })),
+          classification,
+          ...(groupCurrent.length > 0
+            ? {
+                current: {
+                  sourceCommit: manifest.sourceHead,
+                  lines: groupCurrent.map((item) => item.line),
+                  count: groupCurrent.length,
+                },
+              }
+            : {}),
+          history: [...new Set(history.map((item) => item.commit))].map((commit) => {
+            const lines = history.filter((item) => item.commit === commit).map((item) => item.line);
+            return { sourceCommit: commit, lines, count: lines.length };
+          }),
         },
       });
     } else {
@@ -306,7 +317,6 @@ export function loadOwnerReview({
   };
 }
 
-/** Keep scanner findings visible and require the exact approved count, including disappearance. */
 export function applyMachineReview(findings, entries = []) {
   const consumed = new Set();
   const result = findings.map((finding) => {

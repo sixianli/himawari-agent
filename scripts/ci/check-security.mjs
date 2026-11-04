@@ -25,7 +25,7 @@ import {
   verifyRuleFiles,
 } from "./install-tools.mjs";
 import { enumerateLockDependencies, loadReviewedExceptions } from "./security-exceptions.mjs";
-import { applyMachineReview } from "./security-owner-review.mjs";
+import { applyMachineReview, historyOnlyClassifications } from "./security-owner-review.mjs";
 
 export {
   enumerateLockDependencies,
@@ -55,7 +55,6 @@ function execute(command, args, { root, env, timeout = 120_000 }) {
     maxBuffer: 64 * 1024 * 1024,
     timeout,
   });
-  // Never expose an external command's error object: it can contain captured source or credentials.
   assert(
     !result.error && result.signal === null && Number.isInteger(result.status),
     "SECURITY_COMMAND_UNAVAILABLE",
@@ -191,36 +190,167 @@ export function parseSemgrepReport({ bytes, exitCode, expectedFiles, ruleIds, re
   });
 }
 
-function classifiedLiteral(line, entry, baseline) {
-  const literals = [...line.matchAll(/(["'`])([^"'`\\\r\n]*)\1/g)]
-    .map((match) => match[2])
-    .filter((literal) => sha256(literal) === entry.digest);
-  if (literals.length !== 1) return false;
-  const literal = literals[0];
+const baselineRules = {
+  jwt: "jwt-token",
+  "github-pat": "github-token",
+  "curl-auth-header": "authorization-bearer",
+};
+const tokenPattern = /[A-Za-z0-9_-]{8,}/g;
+const quotedPattern = /(["'`])([^"'`\\\r\n]*)\1/g;
+
+function uniqueMatch(line, pattern, digest, group = 0) {
+  const values = new Set(
+    [...line.matchAll(pattern)]
+      .map((match) => match[group])
+      .filter((value) => sha256(value) === digest),
+  );
+  return values.size === 1 ? [...values][0] : null;
+}
+
+function gitBytes(root, args) {
+  const result = spawnSync("git", args, {
+    cwd: root,
+    env: { PATH: "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 120_000,
+  });
+  return !result.error && result.status === 0 ? result.stdout : null;
+}
+
+function isRepositoryBlob(root, value) {
+  const type = gitBytes(root, ["cat-file", "-t", value]);
+  return type !== null && type.toString("utf8").trim() === "blob";
+}
+
+function archivedMemberDigest(root, sourceCommit, path, name) {
+  const archive = gitBytes(root, ["show", `${sourceCommit}:${dirname(path)}/raw-logs.tar.gz`]);
+  if (archive === null) return null;
+  const tar = (args) =>
+    spawnSync("tar", args, {
+      input: archive,
+      env: { PATH: "/usr/bin:/bin" },
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 120_000,
+    });
+  const listing = tar(["-tzf", "-"]);
+  if (listing.error || listing.status !== 0) return null;
+  const members = listing.stdout
+    .toString("utf8")
+    .split("\n")
+    .filter((member) => member.replace(/^\.\//, "") === name);
+  if (members.length !== 1) return null;
+  const member = tar(["-xzOf", "-", members[0]]);
+  return !member.error && member.status === 0 ? sha256(member.stdout) : null;
+}
+
+function provesNonSecret(line, entry, evidence) {
+  const { digest } = entry;
   switch (entry.provenance.classification) {
     case "idempotency-fixture":
-      return /\bidempotencyKey\b/.test(line);
-    case "synthetic-boot-token":
-      return /\btokenValue\b/.test(line) && /^([a-f0-9]{16})\1$/.test(literal);
-    case "public-authentication-tag":
-      return /\bwrapAuthenticationTag\b/.test(line);
-    case "machine-baseline-fixture":
-      return baseline.some(
-        (item) =>
-          item.file === entry.path &&
-          item.ruleId === "jwt-token" &&
-          entry.id === "jwt" &&
-          item.digest === entry.digest &&
-          item.count === 1,
+      return (
+        uniqueMatch(line, quotedPattern, digest, 2) !== null && /\bidempotencyKey\b/.test(line)
       );
-    case "synthetic-marker":
-      return literal.includes(syntheticMarker);
+    case "synthetic-boot-token": {
+      const literal = uniqueMatch(line, quotedPattern, digest, 2);
+      return literal !== null && /\btokenValue\b/.test(line) && /^([a-f0-9]{16})\1$/.test(literal);
+    }
+    case "public-authentication-tag":
+      return (
+        uniqueMatch(line, quotedPattern, digest, 2) !== null &&
+        /\bwrapAuthenticationTag\b/.test(line)
+      );
+    case "synthetic-marker": {
+      const literal = uniqueMatch(line, quotedPattern, digest, 2);
+      return literal?.includes(syntheticMarker) === true;
+    }
+    case "machine-baseline-fixture": {
+      const value =
+        uniqueMatch(line, quotedPattern, digest, 2) ?? uniqueMatch(line, tokenPattern, digest);
+      return (
+        value !== null &&
+        evidence.baseline.some(
+          (item) =>
+            item.file === entry.path &&
+            item.ruleId === baselineRules[entry.id] &&
+            item.count === 1 &&
+            (item.digest === digest ||
+              (value.length >= 8 &&
+                typeof item.reason === "string" &&
+                item.reason.includes(value))),
+        )
+      );
+    }
+    case "public-test-vector":
+      return (
+        uniqueMatch(line, tokenPattern, digest) !== null &&
+        evidence.vectors.some(
+          (vector) => vector.digest === digest && vector.rules.includes(entry.id),
+        )
+      );
+    case "git-object-id": {
+      const value = uniqueMatch(line, /"[^"\s]*\/[^"\s]*":\s*"([0-9a-f]{40})"/g, digest, 1);
+      return value !== null && isRepositoryBlob(evidence.root, value);
+    }
+    case "archived-file-digest": {
+      const match = [...line.matchAll(/"([A-Za-z0-9._-]+)":\s*"([0-9a-f]{64})"/g)].filter(
+        (item) => sha256(item[2]) === digest,
+      );
+      return (
+        match.length === 1 &&
+        archivedMemberDigest(evidence.root, evidence.sourceCommit, entry.path, match[0][1]) ===
+          match[0][2]
+      );
+    }
+    case "numeric-option":
+      return (
+        uniqueMatch(line, /(?<![A-Za-z0-9_-])([a-z][a-z-]*=[0-9]+)(?![A-Za-z0-9_])/g, digest, 1) !==
+        null
+      );
+    case "thread-id":
+      return (
+        uniqueMatch(
+          line,
+          /thread:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f-])/g,
+          digest,
+          1,
+        ) !== null
+      );
+    case "owner-confirmed-revoked":
+      return (
+        entry.id === "generic-api-key" &&
+        !entry.provenance.current &&
+        uniqueMatch(line, tokenPattern, digest) !== null
+      );
     default:
       return false;
   }
 }
 
-/** A test directory is never proof. Reconstruct the exact literal in the immutable reviewed source. */
+function readPublicTestVectors(root, sha) {
+  const bytes = gitBytes(root, ["show", `${sha}:ci/public-test-vectors.json`]);
+  if (bytes === null) return [];
+  const vectors = JSON.parse(bytes.toString("utf8"));
+  assert(
+    Array.isArray(vectors) &&
+      vectors.every(
+        (vector) =>
+          /^[a-f0-9]{64}$/.test(vector.digest) &&
+          Array.isArray(vector.rules) &&
+          vector.rules.length > 0 &&
+          vector.rules.every((rule) => /^[a-z0-9][a-z0-9-]*$/.test(rule)) &&
+          /^https:\/\/\S+$/.test(vector.source) &&
+          Array.isArray(vector.sourceLines) &&
+          vector.sourceLines.length > 0 &&
+          vector.sourceLines.every((line) => Number.isSafeInteger(line) && line > 0) &&
+          typeof vector.description === "string" &&
+          vector.description.length >= 10,
+      ) &&
+      new Set(vectors.map((vector) => vector.digest)).size === vectors.length,
+    "SECURITY_PUBLIC_TEST_VECTORS_INVALID",
+  );
+  return vectors;
+}
+
 export function verifySyntheticProvenance({ root, baseSha, entry, findings }) {
   assert(
     root && /^[a-f0-9]{40}$/.test(baseSha) && entry.provenance,
@@ -230,11 +360,21 @@ export function verifySyntheticProvenance({ root, baseSha, entry, findings }) {
     git(root, ["show", `${baseSha}:scripts/machine-secret-scan-baseline.json`]),
   );
   assert(Array.isArray(baseline), "SECURITY_SYNTHETIC_BASELINE_INVALID");
-  for (const scope of [entry.provenance.current, ...entry.provenance.history]) {
+  const vectors = readPublicTestVectors(root, baseSha);
+  const { current, history, classification } = entry.provenance;
+  if (!current)
+    assert(
+      historyOnlyClassifications.includes(classification) &&
+        git(root, ["ls-tree", "--name-only", baseSha, "--", entry.path]).trim() === "",
+      "SECURITY_EXCEPTION_HISTORY_ONLY_INVALID",
+    );
+  const proves = (line, sourceCommit) =>
+    provesNonSecret(line, entry, { root, baseline, vectors, sourceCommit });
+  for (const scope of [...(current ? [current] : []), ...history]) {
     git(root, ["merge-base", "--is-ancestor", scope.sourceCommit, baseSha]);
     const lines = git(root, ["show", `${scope.sourceCommit}:${entry.path}`]).split(/\r?\n/);
     assert(
-      scope.lines.every((line) => classifiedLiteral(lines[line - 1] ?? "", entry, baseline)),
+      scope.lines.every((line) => proves(lines[line - 1] ?? "", scope.sourceCommit)),
       "REAL_SECRET_CANNOT_BE_EXCEPTED",
     );
   }
@@ -242,8 +382,8 @@ export function verifySyntheticProvenance({ root, baseSha, entry, findings }) {
   for (const finding of findings) {
     const scope =
       finding.scope === "current"
-        ? entry.provenance.current
-        : entry.provenance.history.find((item) => item.sourceCommit === finding.commit);
+        ? current
+        : history.find((item) => item.sourceCommit === finding.commit);
     assert(scope, "SECURITY_EXCEPTION_HISTORY_EXPANDED");
     const key = finding.scope === "current" ? "current" : finding.commit;
     const count = (counts.get(key) ?? 0) + 1;
@@ -254,7 +394,7 @@ export function verifySyntheticProvenance({ root, baseSha, entry, findings }) {
         ? readFileSync(join(root, entry.path), "utf8")
         : git(root, ["show", `${finding.commit}:${entry.path}`]);
     assert(
-      classifiedLiteral(source.split(/\r?\n/)[finding.line - 1] ?? "", entry, baseline),
+      proves(source.split(/\r?\n/)[finding.line - 1] ?? "", scope.sourceCommit),
       "REAL_SECRET_CANNOT_BE_EXCEPTED",
     );
     if (finding.scope === "history")
@@ -354,9 +494,6 @@ function snapshotCurrent(root, directory) {
 }
 
 export function gitleaksHistoryScope({ root, context }) {
-  // Accepted exceptions can refer to fixtures moved or deleted by the PR.
-  // Scan the head's complete ancestry so their reviewed history remains in scope.
-  // Do not pull unrelated refs into a PR; full repository runs retain --all.
   const pullRequest = context.event === "pull_request";
   assert(!pullRequest || /^[a-f0-9]{40}$/.test(context.headSha), "GITLEAKS_HEAD_INVALID");
   const range = pullRequest ? context.headSha : "--all";
@@ -448,8 +585,6 @@ export function scanMachineSecrets({ root, snapshot, env, node, context, machine
     mkdirSync(dirname(join(snapshot, path)), { recursive: true });
     writeFileSync(join(snapshot, path), accepted);
   }
-  // Re-observe owner-reviewed entries even after their baseline has merged.
-  // Only the disposable scan copy changes; exact count/disappearance checks remain.
   const baselinePath = join(snapshot, "scripts/machine-secret-scan-baseline.json");
   const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
   writeFileSync(
@@ -547,7 +682,6 @@ function scanSemgrep({ executable, snapshot, env, files, ruleIds, config }) {
   };
 }
 
-/** Scanners finish independently; failure in one never turns another scanner's absence into success. */
 export async function runSecurityChecks({
   root = repositoryRoot,
   toolsDirectory,

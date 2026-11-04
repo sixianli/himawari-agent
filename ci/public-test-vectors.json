@@ -1,0 +1,9 @@
+[
+  {
+    "digest": "42c217f55f2adb8332d4252378027fa7f88d4cd90bf327d85600a71fd436eabe",
+    "rules": ["generic-api-key"],
+    "source": "https://www.rfc-editor.org/rfc/rfc8291.txt",
+    "sourceLines": [422, 648],
+    "description": "RFC 8291 示例里公开的 Web 推送认证密钥（auth_secret），Web 推送测试照抄它来核对加密结果。"
+  }
+]

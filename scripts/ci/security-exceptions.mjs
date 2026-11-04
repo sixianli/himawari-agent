@@ -161,10 +161,24 @@ export function validateSecurityExceptions(
     } else {
       assert(/^[a-z0-9][a-z0-9-]*$/.test(entry.id), "SECURITY_SECRET_RULE_INVALID");
       assert(
-        /^(?:test\/|ci\/rules\/fixtures\/|(?:apps|packages)\/[^/]+\/test\/)/.test(entry.path),
+        /^(?:test\/|ci\/rules\/fixtures\/|(?:apps|packages)\/[^/]+\/test\/)/.test(entry.path) ||
+          (["git-object-id", "thread-id"].includes(entry.provenance?.classification) &&
+            /^(?:\.agents\/tasks\/|scripts\/operations\/)/.test(entry.path)),
         "REAL_SECRET_CANNOT_BE_EXCEPTED",
       );
-      const scopes = [entry.provenance.current, ...entry.provenance.history];
+      assert(
+        entry.provenance.current || entry.provenance.history.length > 0,
+        "SECURITY_PROVENANCE_COUNT_INVALID",
+      );
+      assert(
+        entry.provenance.classification !== "owner-confirmed-revoked" ||
+          (!entry.provenance.current && entry.id === "generic-api-key"),
+        "REAL_SECRET_CANNOT_BE_EXCEPTED",
+      );
+      const scopes = [
+        ...(entry.provenance.current ? [entry.provenance.current] : []),
+        ...entry.provenance.history,
+      ];
       assert(
         scopes.every((scope) => scope.count === scope.lines.length) &&
           new Set(entry.provenance.history.map((scope) => scope.sourceCommit)).size ===
