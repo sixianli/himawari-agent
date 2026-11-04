@@ -110,7 +110,7 @@ date: "2026-11-01"
 
 1. 在生产机生成应用密钥：`openssl rand -hex 32`，不要打印到日志。
 2. 写入密钥文件 `/var/lib/himawari/state/secrets/<引用>.<版本>`（例如 `muse-intake.v1`）：目录权限 `0700`、文件权限 `0600`、属于服务账号；内容是密钥本身，首尾空白会被忽略。
-3. 在 `/etc/himawari/config.json` 的 `secretReferences` 加一项 `{"ref":"muse-intake","version":"v1","purpose":"muse-intake"}`，并在 `runPolicy` 加 `"museIntake":{"enabled":true,"secretRef":"muse-intake"}`。引用必须刚好一个、用途必须是 `muse-intake`，否则服务启动会拒绝配置。
+3. 在 `/etc/himawari/config.json` 的 `secretReferences` 加一项 `{"ref":"muse-intake","version":"v1","purpose":"muse-intake","scope":"agent"}`（四项缺一不可，缺 `scope` 服务起不来），并在 `runPolicy` 加 `"museIntake":{"enabled":true,"secretRef":"muse-intake"}`。引用必须刚好一个、用途必须是 `muse-intake`，否则服务启动会拒绝配置。去掉密钥文件或引用再启动，会报 `HOST_SECRET_NOT_FOUND` 或 `CONFIGURATION_INVALID_VALUE`；`MUSE_INTAKE_RUNTIME_UNAVAILABLE` 只在引用存在但载荷保护器不可用时出现。目录或文件权限不对会报 `SOURCE_UNSAFE`。
 4. 重启 `himawari-prod`，看日志启动成功。
 5. 把应用密钥用安全方式交给 Andy，由他填进 Muse 的定时任务。
 
@@ -125,7 +125,7 @@ date: "2026-11-01"
 3. 三个头都带、发一个空批 `{"sender_id":"muse","batch_seq":1,"sent_at_utc":"<现在>","items":[]}`：应该是 200，`accepted` 为 0。
 4. 打开 Himawari 网页的“提醒”页，“Muse 对照”应显示“通道正常”。这是正向；反向是第 2 步的 401 和第 1 步的拦截。
 5. 演练用的虚构数据，验证完用设置里的“清除 Muse 数据”清掉。
-6. 演练时用一批接近上限的数据实测：单个请求体上限 256 KB，一批最多 100 条、每条文本最多 8000 字符，全部写满会超过请求体上限而整批被拒（413）；Muse 一批要控制在 256 KB 以内。
+6. 演练时用一批接近上限的数据实测：单个请求体上限 256 KB，一批最多 100 条、每条文本最多 8000 字符，全部写满会超过请求体上限而整批被拒（413）；Muse 一批要控制在 256 KB 以内。请求体没超上限、但带了白名单之外的多余字段时，不会报 413，多余字段被直接丢弃，这是预期行为。
 
 <a id="evidence"></a>
 
