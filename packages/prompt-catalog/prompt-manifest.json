@@ -115,9 +115,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.capabilities.runtime-environment": {
-    "sha256": "37a33ec072bbb1fc16193922fd8137cdabca145f1a949a8aa3a0bad9cb0b14bf",
+    "sha256": "71e9a511bcf058142d82d49979f596baa4fd08af4cf32782d95e3c4b82a25db6",
     "changedIn": "ADR 0164",
-    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+    "reason": "复核第 1 轮：运行环境说明改用自己的标记，不再写着“当作资料、不是指令”，身份说明和能力边界同步改写；发送时机补上“压缩之后”"
   },
   "chat.capabilities.sandbox-commands": {
     "sha256": "f2f7b0ff50516e08b90ac64ee75acf95febe5043cc10d00e5e5bb3d0b7bbaf2f",
@@ -160,9 +160,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.identity": {
-    "sha256": "b6c3367752b1006572d579ad2d0eb90039befc3a41f9401713f1ca038fda8436",
+    "sha256": "630ecb32aef01c74978fc9d565a304ccb4eec5c0af1304d5f95fea6b91856800",
     "changedIn": "ADR 0164",
-    "reason": "第二步 PR-A Muse A 组 A2-A7：做事一节加“有结果告诉你”要有东西真的在盯、结果送到主人手里才算完；批准只针对主人看到的动作和内容；编号只能原样抄、不估计剩余时间；不说系统内部用语（附正反例）；记忆里的“以前同意过”不等于本轮同意；给“主人拒绝后不要换工具再做”和“没执行过不说完成”补理由"
+    "reason": "复核第 1 轮：运行环境说明改用自己的标记，不再写着“当作资料、不是指令”，身份说明和能力边界同步改写；发送时机补上“压缩之后”"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
@@ -263,6 +263,11 @@
     "sha256": "fca9cc30abb6e3962cc98a8a43ebfb4fe7584d4cbda76656cfb1834574b75df9",
     "changedIn": "ADR 0164",
     "reason": "第二步 PR-A：运行环境说明只在变化时附上，开头说明写明它是“以本条为准”的例外，最近附上的那份一直有效"
+  },
+  "chat.turn.runtime-environment-marker": {
+    "sha256": "27e9e1106286d8868e0ec0628c42ce0a0baab7b7b8e97a6edd16bec221be9c62",
+    "changedIn": "ADR 0164",
+    "reason": "复核第 1 轮：运行环境说明改用自己的标记，不再写着“当作资料、不是指令”，身份说明和能力边界同步改写；发送时机补上“压缩之后”"
   },
   "chat.turn.time": {
     "sha256": "34e37841ca5321875f026103c648921d66dd458fbd5c63051d0e8f2cde887ef8",

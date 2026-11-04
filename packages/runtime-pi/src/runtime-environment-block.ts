@@ -1,14 +1,19 @@
 import type { RuntimeProjection } from "@himawari-agent/application/runtime-port";
-import { CHAT_CONTEXT_MATERIAL_MARKER, renderPrompt } from "@himawari-agent/prompt-catalog";
+import {
+  CHAT_CONTEXT_MATERIAL_MARKER,
+  CHAT_RUNTIME_ENVIRONMENT_MARKER,
+  renderPrompt,
+} from "@himawari-agent/prompt-catalog";
 
 type ContextBlock = RuntimeProjection["contextBlocks"][number];
 
 const CONTEXT_OPEN = "<himawari-context>\n";
 const CONTEXT_CLOSE = "\n</himawari-context>\n";
-const MARKER_PREFIX = "\n[Himawari context material ";
+const MARKER_PREFIXES = ["\n[Himawari context material ", "\n[Himawari runtime environment"];
 const RUNTIME_ENVIRONMENT_KIND = "runtime-environment";
 
 export function contextBlockMarker(block: ContextBlock): string {
+  if (block.kind === RUNTIME_ENVIRONMENT_KIND) return CHAT_RUNTIME_ENVIRONMENT_MARKER.text;
   const metadata = JSON.stringify({
     authority: block.authority,
     kind: block.kind,
@@ -20,13 +25,7 @@ export function contextBlockMarker(block: ContextBlock): string {
 }
 
 function runtimeEnvironmentMarker(): string {
-  return contextBlockMarker({
-    authority: "non-authoritative",
-    kind: RUNTIME_ENVIRONMENT_KIND,
-    ref: RUNTIME_ENVIRONMENT_KIND,
-    content: "",
-    dataClassification: "public",
-  });
+  return CHAT_RUNTIME_ENVIRONMENT_MARKER.text;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -55,14 +54,20 @@ function environmentIn(segment: string): string | undefined {
   const start = segment.lastIndexOf(marker);
   if (start < 0) return undefined;
   const content = segment.slice(start + marker.length);
-  const next = content.indexOf(MARKER_PREFIX);
-  return next < 0 ? content : content.slice(0, next);
+  const next = Math.min(
+    ...MARKER_PREFIXES.map((prefix) => content.indexOf(prefix)).filter((index) => index >= 0),
+  );
+  return Number.isFinite(next) ? content.slice(0, next) : content;
 }
 
 export function previousRuntimeEnvironment(messages: readonly unknown[]): string | undefined {
   let start = 0;
   messages.forEach((message, index) => {
-    if (record(message) && message["role"] === "compactionSummary") start = index + 1;
+    if (
+      record(message) &&
+      (message["role"] === "compactionSummary" || message["role"] === "branchSummary")
+    )
+      start = index + 1;
   });
   for (let index = messages.length - 1; index >= start; index -= 1) {
     const message = messages[index];
