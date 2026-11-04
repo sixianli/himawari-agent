@@ -14,7 +14,6 @@ import type { RegisteredWorkerAdapter } from "./production-execution-worker.js";
 export interface WorkerDelegationStoreOptions {
   readonly authorityFence: number;
   readonly adapters: readonly RegisteredWorkerAdapter[];
-  /** Complete records loaded from the owner-controlled deployment snapshot. */
   readonly records?: readonly CapabilityRegistryRecord[];
   readonly now: () => string;
 }
@@ -23,13 +22,6 @@ function copy<T>(value: T): T {
   return structuredClone(value);
 }
 
-/**
- * Boot-scoped, volatile authority projection used by the isolated Worker.
- *
- * The Agent Service remains the durable authority and must consume the source
- * Capability Handle before sending a one-use delegation. This store never
- * opens product.sqlite and cannot issue or expand authority.
- */
 export class WorkerDelegationStore
   implements CapabilityRegistryStorePort, CapabilityExecutionHandleStorePort
 {
@@ -126,7 +118,9 @@ export class WorkerDelegationStore
       !capability ||
       capability.declaration.version !== handle.capabilityVersion ||
       !capability.declaration.operations.includes(handle.operation) ||
-      !handle.operations.includes(handle.operation)
+      !handle.operations.includes(handle.operation) ||
+      new Set(handle.operations).size !== handle.operations.length ||
+      !handle.operations.every((operation) => capability.declaration.operations.includes(operation))
     ) {
       this.#reject(`Delegation ${handle.ref} does not match a registered Worker adapter`);
     }
