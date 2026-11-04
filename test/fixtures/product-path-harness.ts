@@ -27,6 +27,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PayloadRecord } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -1710,7 +1711,7 @@ async function writeCodingSnapshot(input: {
       qualificationRef: `product-path:${evidenceDigest}`,
       hostId,
       profileRef: binding.profileRef,
-      srtVersion: "0.0.75",
+      srtVersion: SANDBOX_RUNTIME_VERSION,
       platform: process.platform,
       architecture: process.arch,
       osRelease: release(),
@@ -1769,7 +1770,7 @@ async function writeCodingSnapshot(input: {
       qualification: {
         qualificationVersion: "capability-runtime-qualification.v1",
         platform: process.platform,
-        runtimeIdentity: "srt:0.0.75",
+        runtimeIdentity: `srt:${SANDBOX_RUNTIME_VERSION}`,
         productionSuitable: true,
         artifactDigest,
         enforcement: {

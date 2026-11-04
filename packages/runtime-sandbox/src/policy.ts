@@ -3,13 +3,11 @@ import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { getDefaultWritePaths, SandboxRuntimeConfigSchema } from "@anthropic-ai/sandbox-runtime";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 
-export const SRT_VERSION = "0.0.75" as const;
+export const SRT_VERSION = SANDBOX_RUNTIME_VERSION;
 
-/** Infrastructure input resolved from protected scope and host inventory, never model arguments.
- * Compilation does not authorize execution or establish platform qualification. */
 export interface SandboxPolicyInput {
-  /** Null is a private-only Job; it must not grant a shared writable workspace. */
   readonly workspace: string | null;
   readonly writable: boolean;
   readonly privateDirectory: string;
@@ -73,8 +71,6 @@ async function canonicalPath(value: string, directory: boolean): Promise<string>
   return value;
 }
 
-/** A conservative default-deny candidate. Qualification must verify the compiled policy
- * on the target OS; SRT allowRead alone would not deny access outside the workspace. */
 export async function compileSandboxPolicy(
   input: SandboxPolicyInput,
 ): Promise<CompiledSandboxPolicy> {
@@ -100,7 +96,6 @@ export async function compileSandboxPolicy(
   ) {
     throw new Error("SRT_POLICY_INPUT_INVALID");
   }
-  // Copy before the first await: callers cannot change policy during path resolution.
   const workspaceInput = input.workspace;
   const privateInput = input.privateDirectory;
   const writable = input.writable;
@@ -124,8 +119,6 @@ export async function compileSandboxPolicy(
   ].sort();
   const allows = [...(workspace ? [workspace] : []), privateDirectory, ...toolchains];
   for (const protectedPath of protectedPaths) {
-    // The root read deny already protects host data outside explicit exceptions.
-    // Explicit secret/control paths may not be reopened through an exception.
     if (allows.some((entry) => contains(protectedPath, entry)))
       throw new Error("SRT_POLICY_PROTECTED_PATH_REOPENED");
   }
@@ -141,8 +134,6 @@ export async function compileSandboxPolicy(
     throw new Error("SRT_POLICY_TOOLCHAIN_OVERLAP");
   }
   for (const domain of domains) {
-    // This infrastructure package cannot import product contracts. Independently
-    // revalidate the primitive boundary before handing exact host:port rules to SRT.
     const parts = typeof domain === "string" ? domain.split(":") : [];
     const host = parts[0] ?? "";
     const port = parts[1] ?? "";
@@ -181,8 +172,6 @@ export async function compileSandboxPolicy(
       denyWrite: [
         ...new Set([
           ...protectedPaths,
-          // SDK HOME defaults must refer to the Job Host's private HOME in both
-          // processes. Do not mutate the parent environment to compile a policy.
           ...getDefaultWritePaths()
             .filter((entry) => !entry.startsWith("/dev/"))
             .map((entry) =>
@@ -195,6 +184,7 @@ export async function compileSandboxPolicy(
       allowGitConfig: false,
     },
     enableWeakerNestedSandbox: false,
+    allowNestedUserNamespaces: false,
     enableWeakerNetworkIsolation: false,
     allowAppleEvents: false,
     allowPty: false,

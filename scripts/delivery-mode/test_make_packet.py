@@ -24,12 +24,13 @@ MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
 ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures.mjs', 'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
-    'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/cloud-inputs.draft.json',
+    'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
+    'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
-    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 's0-db/read-s0-db.mjs',
-    'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
+    'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
 INSTANCE = json.loads((HERE / 'instances' / 'andy-production.json').read_text())
@@ -1115,6 +1116,13 @@ class SourceBundleTest(unittest.TestCase):
     def test_the_cache_fixtures_run_with_the_other_packet_checks(self):
         names = [name for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', False, False)]
         self.assertIn('install/verify-source-cache-fixtures.mjs', names)
+
+    def test_the_real_sandbox_boundary_check_runs_on_hermes_from_the_source_checkout(self):
+        hermes = {name: (command, directory) for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', True, False)}
+        self.assertEqual(hermes[checks_runner.SRT_BOUNDARY], (['node', 'packages/runtime-sandbox/scripts/check-srt-boundary.mjs'], 'source'))
+        self.assertTrue((HERE.parent.parent / checks_runner.SRT_BOUNDARY).is_file())
+        elsewhere = [name for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', False, False)]
+        self.assertNotIn(checks_runner.SRT_BOUNDARY, elsewhere)
 
     def test_the_cache_fixtures_pass_against_real_git(self):
         child = subprocess.run(['node', str(HERE / 'packet-template/install/verify-source-cache-fixtures.mjs')], capture_output=True, text=True, check=False, env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(self.root)})

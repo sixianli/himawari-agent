@@ -1,4 +1,7 @@
-import { sandboxRuntimeQualificationSchema } from "@himawari-agent/execution-contracts";
+import {
+  SANDBOX_RUNTIME_VERSION,
+  sandboxRuntimeQualificationSchema,
+} from "@himawari-agent/execution-contracts";
 import { describe, expect, it } from "vitest";
 import {
   productPathSandboxCleanup,
@@ -67,7 +70,7 @@ describe("product path platform toolchain", () => {
           qualificationRef: "product-path:test",
           hostId: "product-path-host",
           profileRef: "authorized-project.v1",
-          srtVersion: "0.0.75",
+          srtVersion: SANDBOX_RUNTIME_VERSION,
           platform,
           architecture: "x64",
           osRelease: "test-release",

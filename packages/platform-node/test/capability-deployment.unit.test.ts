@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CAPABILITY_DEPLOYMENT_ERROR_CODES,
@@ -150,7 +151,7 @@ function sandboxEntry(platform: "darwin" | "linux" = "darwin"): JsonObject {
     qualification: {
       ...(entry["qualification"] as JsonObject),
       platform,
-      runtimeIdentity: "srt:0.0.75",
+      runtimeIdentity: `srt:${SANDBOX_RUNTIME_VERSION}`,
       enforcement: {
         filesystem: true,
         network: true,
@@ -164,7 +165,7 @@ function sandboxEntry(platform: "darwin" | "linux" = "darwin"): JsonObject {
         qualificationRef: "qualification:fixture",
         hostId: "host:fixture",
         profileRef: "host-readonly.v1",
-        srtVersion: "0.0.75",
+        srtVersion: SANDBOX_RUNTIME_VERSION,
         platform,
         architecture: platform === "darwin" ? "arm64" : "x64",
         osRelease: "27.0.0",
@@ -304,7 +305,6 @@ async function writeSnapshot(value: JsonObject, mode = 0o600) {
   const snapshotPath = path.join(root, "deployment.json");
   const bytes = Buffer.from(JSON.stringify(value), "utf8");
   await writeFile(snapshotPath, bytes, { mode });
-  // Exercise the requested permission boundary independently of the runner's umask.
   await chmod(snapshotPath, mode);
   return {
     root,
