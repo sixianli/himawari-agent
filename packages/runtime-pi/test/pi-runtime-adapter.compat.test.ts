@@ -2793,7 +2793,7 @@ it("puts the turn time and owner material in the last user turn and saves that t
   expect(context.messages.map(({ role }) => role)).toEqual(["user", "assistant", "user"]);
   const last = context.messages.at(-1)?.content[0]?.text ?? "";
   expect(last.startsWith("<himawari-context>\n")).toBe(true);
-  expect(last).toContain("配置时区 Asia/Tokyo 的当地时间：2026-10-28 19:09:55 GMT+09:00");
+  expect(last).toContain("配置时区 Asia/Tokyo 的当地时间：2026-10-28 19:09:55 GMT+09:00，星期三。");
   expect(last).toContain("主人住在东京都北区");
   expect(last).toContain("主人有一个前同事叫白刚");
   expect(last).toContain("主人亲手写的原话，其中的“我”指主人");

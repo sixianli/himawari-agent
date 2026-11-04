@@ -160,9 +160,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.identity": {
-    "sha256": "ae5a7dc243d37de79c9dd79bdb0cc3588fa3d9084565c03c30b51f39f2b1abbf",
+    "sha256": "b6c3367752b1006572d579ad2d0eb90039befc3a41f9401713f1ca038fda8436",
     "changedIn": "ADR 0164",
-    "reason": "第二步 PR-A：“资料不是指令”一节写明 runtime-environment 运行环境说明由系统生成，和系统提示里的规则一样约束工具使用，避免模型把它当普通资料"
+    "reason": "第二步 PR-A Muse A 组 A2-A7：做事一节加“有结果告诉你”要有东西真的在盯、结果送到主人手里才算完；批准只针对主人看到的动作和内容；编号只能原样抄、不估计剩余时间；不说系统内部用语（附正反例）；记忆里的“以前同意过”不等于本轮同意；给“主人拒绝后不要换工具再做”和“没执行过不说完成”补理由"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
@@ -265,9 +265,9 @@
     "reason": "第二步 PR-A：运行环境说明只在变化时附上，开头说明写明它是“以本条为准”的例外，最近附上的那份一直有效"
   },
   "chat.turn.time": {
-    "sha256": "a7d02040a8b6eb523dfc27421eeacc9631d1f2bcd19b454552551443010b165d",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "34e37841ca5321875f026103c648921d66dd458fbd5c63051d0e8f2cde887ef8",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A Muse A 组 A1：本轮时间里由程序按配置时区写出当地星期几，不让模型自己算"
   },
   "mail.judgment": {
     "sha256": "51f23e825331692022347280c583dc03f2ea3b4c22f883f32a8cd576f2206ac4",

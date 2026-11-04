@@ -435,7 +435,11 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       [
         { prompt: "看看目录", blocks: [ownerProfile, environment("/home/andy/demo。")] },
         { prompt: "再看一次", blocks: [ownerProfile, environment("/home/andy/demo。")] },
-        { prompt: "现在呢", blocks: [ownerProfile, environment("本轮没有。")] },
+        {
+          prompt: "现在呢",
+          blocks: [ownerProfile, environment("本轮没有。")],
+          occurredAt: "2026-11-04T16:00:00.000Z",
+        },
       ],
       (index) => ({ text: `回答${index}` }),
     );
@@ -454,6 +458,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(last(1)).not.toContain("以上运行环境说明");
     expect(last(1)).not.toContain("工作目录：");
     expect(last(2)).toContain("工作目录：本轮没有。");
+    expect(last(2)).toContain("2026-11-05 01:00:00 GMT+09:00，星期四。");
     expect(last(2).indexOf("工作目录：")).toBeGreaterThan(last(2).indexOf("主人档案"));
     expect(last(2).indexOf("以上运行环境说明")).toBeLessThan(
       last(2).indexOf("</himawari-context>"),

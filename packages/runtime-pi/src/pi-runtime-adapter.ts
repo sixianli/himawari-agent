@@ -541,6 +541,12 @@ function localTime(occurredAt: string, timeZone: string): string {
   }).format(new Date(occurredAt));
 }
 
+function localWeekday(occurredAt: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("zh-CN", { timeZone, weekday: "long" }).format(
+    new Date(occurredAt),
+  );
+}
+
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
   const { blocks, environment } = splitRuntimeEnvironment(projection);
   return [
@@ -550,6 +556,7 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
       occurredAt: projection.prompt.occurredAt,
       timeZone,
       localTime: localTime(projection.prompt.occurredAt, timeZone),
+      weekday: localWeekday(projection.prompt.occurredAt, timeZone),
     }),
     ...blocks.map(contextBlockContent),
     ...(environment ? [contextBlockContent(environment)] : []),

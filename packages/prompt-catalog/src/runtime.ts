@@ -11,7 +11,8 @@ export const CHAT_TURN_CONTEXT_PREFACE = fixedPrompt({
 
 export const CHAT_TURN_TIME = templatePrompt({
   id: "chat.turn.time",
-  purpose: "本轮请求时间和当地时间（每轮不同，只在最后一条消息里）",
+  purpose:
+    "本轮请求时间、当地时间和当地星期几（每轮不同，只在最后一条消息里；星期几由程序按配置时区算好，不让模型算）",
   usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
   layer: "last-user-message",
   output: "free-text",
@@ -22,6 +23,8 @@ export const CHAT_TURN_TIME = templatePrompt({
     slot("timeZone"),
     text(" 的当地时间："),
     slot("localTime"),
+    text("，"),
+    slot("weekday"),
     text("。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。"),
   ],
 });
