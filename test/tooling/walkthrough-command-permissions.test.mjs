@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const repositoryRoot = path.join(import.meta.dirname, "../..");
 const read = (relative) => readFileSync(path.join(repositoryRoot, relative), "utf8");
 const HARNESS = "test/fixtures/product-path-harness.ts";
+const CONFIGURATION = "test/fixtures/product-path-configuration.ts";
 const PRODUCTION_SEAL = "scripts/delivery-mode/packet-template/signing/cloud-seal.mjs";
 
 function slice(source, file, start, end, from = 0) {
@@ -20,7 +21,14 @@ function slice(source, file, start, end, from = 0) {
 function harnessOperations() {
   const source = read(HARNESS);
   const tools = JSON.parse(
-    slice(source, HARNESS, "const codingTools =", "as const;").replaceAll(/\s+/g, ""),
+    slice(
+      read(CONFIGURATION),
+      CONFIGURATION,
+      "export const PRODUCT_PATH_CODING_TOOLS =",
+      "as const;",
+    )
+      .replaceAll(/\s+/g, "")
+      .replace(/,]$/, "]"),
   );
   const expression = slice(
     source,

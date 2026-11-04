@@ -573,6 +573,7 @@ describe("same-artifact verification", () => {
       "apps/agent-service",
       "apps/execution-worker",
       "packages/application",
+      "packages/calibration",
       "packages/domain",
       "packages/execution-contracts",
       "packages/gateway-contracts",

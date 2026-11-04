@@ -230,7 +230,7 @@ function fixtureRepository() {
 
 describe("CI policy contract", () => {
   it("accepts Vitest main and qualification projects only when they agree with policy", () => {
-    expect(validateVitestProjects(policy, vitestConfig()).projects).toBe(15);
+    expect(validateVitestProjects(policy, vitestConfig()).projects).toBe(17);
   });
   it.each([
     [
