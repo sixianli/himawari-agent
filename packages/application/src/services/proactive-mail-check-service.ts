@@ -574,7 +574,7 @@ export class ProactiveMailCheckService {
       if (final.raised) counts.floorRaised += 1;
       counts[final.result] += 1;
       settled.set(item.messageId, {
-        result: final.result,
+        result: judgement.result,
         sure: judgement.confidence === "sure",
       });
       if (final.result === "ignore") {
@@ -817,7 +817,9 @@ export class ProactiveMailCheckService {
       query: [
         ...(item.sentByOwner ? [] : [masked(item.from)]),
         masked(item.subject),
-        masked((item.body ?? item.snippet).slice(0, RECALL_BODY_CHARACTERS)),
+        Array.from(masked(item.body ?? item.snippet))
+          .slice(0, RECALL_BODY_CHARACTERS)
+          .join(""),
       ]
         .join("\n")
         .slice(0, limits.queryCharacters),

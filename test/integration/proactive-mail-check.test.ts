@@ -1245,6 +1245,18 @@ describe("proactive Gmail check acceptance", () => {
         snippet: "本周限定",
       });
 
+    it("[OM-13] masks a card number that straddles the recall body cut before cutting", async () => {
+      const seen: string[] = [];
+      const h = await harness({ memory: recallOf({}, { seen }) });
+      const body = `${"あ".repeat(288)}カード 4111 1111 1111 1111 です`;
+      h.reader.items = [mail("card", { body })];
+      h.script([{ id: "card", result: "ignore" }]);
+      await h.service.run();
+      expect(seen[0]).toBeDefined();
+      expect(seen[0]).not.toContain("4111");
+      expect(seen[0]).not.toContain("1111");
+    });
+
     it("sends a promotion with the matching memory and records exactly what was injected", async () => {
       const seen: string[] = [];
       const h = await harness({ memory: recallOf({ "beef-promo": [beefHit] }, { seen }) });
@@ -1470,6 +1482,27 @@ describe("proactive Gmail check acceptance", () => {
       received.script([{ id: "bill", result: "ignore" }]);
       const raised = await received.service.run();
       expect(raised?.counts).toMatchObject({ floorRaised: 1 });
+    });
+
+    it("[OM-14] keeps the older reminder open when the owner's own mail is judged act even at low priority", async () => {
+      const h = await harness();
+      h.reader.items = [ask()];
+      h.script([{ id: "ask", result: "act", todo: "回复报价请求", priority: "medium" }]);
+      await h.service.run();
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        own("promise", {
+          threadId: "quote",
+          subject: "Re: 見積もり",
+          body: "来月までに改めてご連絡します。",
+          receivedAt: "2026-11-04T01:00:00.000Z",
+        }),
+      ];
+      h.script([{ id: "promise", result: "act", todo: "来月連絡する", priority: "low" }]);
+      await h.service.run();
+      const insights = (await h.overview()).insights;
+      expect(insights.find((entry) => entry.status === "replied")).toBeUndefined();
+      expect(insights.some((entry) => entry.status === "open")).toBe(true);
     });
 
     it("[OM-4] leaves the older reminder open and the owner's mail unprocessed when the daily limit stops the model", async () => {
