@@ -67,6 +67,37 @@ describe("incident and gate list check", () => {
     ]);
   });
 
+  it("refuses incident rows left outside the incident table", () => {
+    const root = mkdtempSync(join(tmpdir(), "incident-gates-"));
+    roots.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    writeFileSync(join(root, "scripts/gate.mjs"), "");
+    writeFileSync(
+      join(root, INCIDENT_LIST),
+      `# 清单\n\n${header}\n${row({})}\n\n## 另一节\n\n说明\n${row({ id: "I-02", gate: "`scripts/gone.mjs`" })}\n`,
+    );
+    expect(checkIncidentGates({ root }).errors).toEqual(["INCIDENT_ROW_OUTSIDE_TABLE I-02"]);
+    writeFileSync(
+      join(root, INCIDENT_LIST),
+      `# 清单\n\n${row({ id: "I-03" })}\n\n${header}\n${row({})}\n\n说明\n  ${row({ id: "I-04" })}\n`,
+    );
+    expect(checkIncidentGates({ root }).errors).toEqual([
+      "INCIDENT_ROW_OUTSIDE_TABLE I-03",
+      "INCIDENT_ROW_OUTSIDE_TABLE I-04",
+    ]);
+  });
+
+  it("reads indented rows inside the table as part of the table", () => {
+    const root = fixture([row({}), `  ${row({ id: "I-02" })}`, row({ id: "I-03" })]);
+    expect(checkIncidentGates({ root })).toMatchObject({ errors: [] });
+    expect(checkIncidentGates({ root }).incidents.map((incident) => incident.id)).toEqual([
+      "I-01",
+      "I-02",
+      "I-03",
+    ]);
+  });
+
   it("checks the repository's own list", () => {
     expect(checkIncidentGates().errors).toEqual([]);
   });
