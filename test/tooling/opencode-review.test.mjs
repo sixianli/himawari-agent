@@ -514,10 +514,14 @@ describe("opencode review process cleanup", () => {
     const grandchild = Number(readFileSync(pidFile, "utf8").trim());
     expect(killProcessGroup(child, "SIGKILL")).toBe(true);
     await exited;
-    const state = () =>
-      existsSync(`/proc/${grandchild}/stat`)
-        ? readFileSync(`/proc/${grandchild}/stat`, "utf8").split(") ")[1]?.[0]
-        : "gone";
+    const state = () => {
+      try {
+        return readFileSync(`/proc/${grandchild}/stat`, "utf8").split(") ")[1]?.[0];
+      } catch (error) {
+        if (error.code === "ENOENT" || error.code === "ESRCH") return "gone";
+        throw error;
+      }
+    };
     for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
       await new Promise((resolveWait) => setTimeout(resolveWait, 20));
     expect(["Z", "X", "gone"]).toContain(state());
