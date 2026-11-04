@@ -122,3 +122,67 @@ export const CHAT_TOOL_GUIDELINES_HEADER = fixedPrompt({
   output: "free-text",
   text: "工具用法：",
 });
+
+export const TOOL_POLICY_BLOCKED_TASK_MANAGEMENT = fixedPrompt({
+  id: "tools.policy-blocked.task-management",
+  purpose: "产品策略拦下后台任务管理工具时（TASK_RESOURCE_AUTHORITY_REQUIRED）返回给模型的说明",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "工具未执行：本轮不能管理后台任务，没有可用的任务授权。不要重试这个工具；告诉主人这一步现在做不了。",
+});
+
+export const TOOL_POLICY_BLOCKED_REMINDER = fixedPrompt({
+  id: "tools.policy-blocked.reminder",
+  purpose: "产品策略拦下提醒工具时（REMINDER_OWNER_SCOPE）返回给模型的说明",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "工具未执行：本轮不能设置或修改提醒。不要重试这个工具；告诉主人提醒没设成，把事项和时间写在回答里，请主人到提醒页新建。",
+});
+
+export const TOOL_POLICY_BLOCKED_MEMORY_RECALL = fixedPrompt({
+  id: "tools.policy-blocked.memory-recall",
+  purpose: "产品策略拦下查记忆工具时（MEMORY_RECALL_OWNER_SCOPE）返回给模型的说明",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "工具未执行：本轮不能查长期记忆。不要重试这个工具；需要以前的信息时，告诉主人现在查不到，不要编造。",
+});
+
+export const TOOL_POLICY_BLOCKED_FILE_REQUEST = fixedPrompt({
+  id: "tools.policy-blocked.file-request",
+  purpose:
+    "产品策略拦下不在本轮范围内的文件或命令请求时（FILE_READ_REQUEST_INVALID）返回给模型的说明",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "工具未执行：这个文件或命令请求不在本轮允许的范围内。不要用同样的参数重试；告诉主人这一步做不了。",
+});
+
+export const TOOL_POLICY_BLOCKED_FILE_AUTHORIZATION = fixedPrompt({
+  id: "tools.policy-blocked.file-authorization",
+  purpose: "没有可用的目录授权时（FILE_READ_AUTHORIZATION_UNAVAILABLE）返回给模型的说明",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "工具未执行：本轮没有可用的目录授权，不能读写文件或运行命令。不要重试；告诉主人目录授权不可用。",
+});
+
+export const TOOL_POLICY_BLOCKED_HANDLE = fixedPrompt({
+  id: "tools.policy-blocked.handle",
+  purpose: "授权句柄已失效或撤销时（GOVERNED_HANDLE_INVALID）返回给模型的说明",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "工具未执行：这项操作的授权已失效或已撤销。不要重试；告诉主人需要重新授权后才能做。",
+});
+
+export const TOOL_POLICY_BLOCKED_OTHER = fixedPrompt({
+  id: "tools.policy-blocked.other",
+  purpose: "产品策略拦下工具调用、原因没有专门说明时返回给模型的通用说明",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "工具未执行：产品策略不允许本轮执行这项操作。不要重试，也不要换个工具做同一件事；告诉主人这一步没有做成。",
+});

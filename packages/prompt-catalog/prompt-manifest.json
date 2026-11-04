@@ -449,6 +449,41 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "tools.policy-blocked.file-authorization": {
+    "sha256": "7c4dc0b70eb7c780f932329cdbfc8a0218ff3c0f643c11581b4df452ef8c13b1",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.file-request": {
+    "sha256": "15e4d22c237c6931ed9f4f36341677db924f667ee7a4b13fc7f89e2b1fad76f4",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.handle": {
+    "sha256": "6551461ad72a9702a9b9f588282505f36a499062210d0c8e48fcf15e71dd924b",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.memory-recall": {
+    "sha256": "510c750050d3eba985374146a60742c39778fa4acd0f0a15e27ab1c3cafd4245",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.other": {
+    "sha256": "3ca28cf81ad07f4e3fda120e24515dd1a31bc0e5fa31c01ae60d90b7eaac69b4",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.reminder": {
+    "sha256": "cdf817308b7e7ee35170e30fcd06670717e87aa5393c5ab1a68319e5b7fd6a51",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.task-management": {
+    "sha256": "5c674cb0db4182b4dc77e902f1c9dd058714d7ec68ec42dbdf5283bc8f2b2db1",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
   "tools.recall": {
     "sha256": "e8ff4b0aac87bfa9348d3600401389c7a57f0adb89c880dce50e6343ced11c4e",
     "changedIn": "ADR 0161",

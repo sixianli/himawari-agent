@@ -110,7 +110,6 @@ const KNOWN_TOOL_RESULT_STATUS: readonly (readonly [string, string])[] = [
     "packages/platform-node/src/files/pi-host-publication.ts",
     '"目标文件已变化，候选保留，尚未开始发布。请读取最新内容并通',
   ],
-  ["packages/runtime-pi/src/pi-runtime-adapter.ts", "`Blocked by product policy: $" + "{"],
   ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"工具未执行：无法保存恢复记录。"'],
   ["packages/runtime-pi/src/prepare-file-mutation.ts", "`Successfully wrote $" + "{Buffer.b"],
   ["packages/runtime-pi/src/sandboxed-coding-executor.ts", "`Successfully wrote $" + "{new Text"],

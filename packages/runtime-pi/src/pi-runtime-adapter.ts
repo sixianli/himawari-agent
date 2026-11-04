@@ -63,6 +63,13 @@ import {
   TOOL_BUILTIN_READ_SUFFIX,
   TOOL_BUILTIN_READONLY_SUFFIX,
   TOOL_BUILTIN_WRITE_SUFFIX,
+  TOOL_POLICY_BLOCKED_FILE_AUTHORIZATION,
+  TOOL_POLICY_BLOCKED_FILE_REQUEST,
+  TOOL_POLICY_BLOCKED_HANDLE,
+  TOOL_POLICY_BLOCKED_MEMORY_RECALL,
+  TOOL_POLICY_BLOCKED_OTHER,
+  TOOL_POLICY_BLOCKED_REMINDER,
+  TOOL_POLICY_BLOCKED_TASK_MANAGEMENT,
 } from "@himawari-agent/prompt-catalog";
 import { observeCacheFields } from "./cache-usage-observation.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
@@ -356,6 +363,21 @@ function toolProgressOutput(
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
+
+const POLICY_BLOCKED_TEXT: Readonly<Record<string, string>> = {
+  TASK_RESOURCE_AUTHORITY_REQUIRED: TOOL_POLICY_BLOCKED_TASK_MANAGEMENT.text,
+  REMINDER_OWNER_SCOPE: TOOL_POLICY_BLOCKED_REMINDER.text,
+  MEMORY_RECALL_OWNER_SCOPE: TOOL_POLICY_BLOCKED_MEMORY_RECALL.text,
+  FILE_READ_REQUEST_INVALID: TOOL_POLICY_BLOCKED_FILE_REQUEST.text,
+  FILE_READ_AUTHORIZATION_UNAVAILABLE: TOOL_POLICY_BLOCKED_FILE_AUTHORIZATION.text,
+  GOVERNED_HANDLE_INVALID: TOOL_POLICY_BLOCKED_HANDLE.text,
+};
+
+function policyBlockedText(reasonCode: string): string {
+  return Object.hasOwn(POLICY_BLOCKED_TEXT, reasonCode)
+    ? (POLICY_BLOCKED_TEXT[reasonCode] as string)
+    : TOOL_POLICY_BLOCKED_OTHER.text;
+}
 
 const TOOL_LOOP_STOPPED_MESSAGE_TYPE = "himawari.tool-loop.stopped";
 
@@ -1826,7 +1848,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         signal?.throwIfAborted();
         if (!decision.allowed) {
           return {
-            content: [{ type: "text", text: `Blocked by product policy: ${decision.reasonCode}` }],
+            content: [{ type: "text", text: policyBlockedText(decision.reasonCode) }],
             details: {
               permissionDecisionRef: decision.permissionDecisionRef,
               reasonCode: decision.reasonCode,
