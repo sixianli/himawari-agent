@@ -27,11 +27,13 @@ export function readIncidents(text) {
   if (cells(lines[header]).join("|") !== COLUMNS.join("|"))
     errors.push(`INCIDENT_TABLE_COLUMNS_CHANGED expected ${COLUMNS.join(" | ")}`);
   const incidents = [];
-  for (const line of lines.slice(header + 2)) {
-    if (!line.startsWith("|")) break;
-    const [id, date, symptom, cause, count, gate, state] = cells(line);
+  let end = header + 2;
+  for (; end < lines.length && lines[end].startsWith("|"); end += 1) {
+    const [id, date, symptom, cause, count, gate, state] = cells(lines[end]);
     incidents.push({ id, date, symptom, cause, count, gate, state });
   }
+  for (const line of lines.slice(end))
+    if (/^\|\s*I-\d/.test(line)) errors.push(`INCIDENT_ROW_OUTSIDE_TABLE ${cells(line)[0]}`);
   return { incidents, errors };
 }
 

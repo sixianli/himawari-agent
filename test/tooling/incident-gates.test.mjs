@@ -67,6 +67,19 @@ describe("incident and gate list check", () => {
     ]);
   });
 
+  it("refuses incident rows left outside the incident table", () => {
+    const root = mkdtempSync(join(tmpdir(), "incident-gates-"));
+    roots.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    writeFileSync(join(root, "scripts/gate.mjs"), "");
+    writeFileSync(
+      join(root, INCIDENT_LIST),
+      `# 清单\n\n${header}\n${row({})}\n\n## 另一节\n\n说明\n${row({ id: "I-02", gate: "`scripts/gone.mjs`" })}\n`,
+    );
+    expect(checkIncidentGates({ root }).errors).toEqual(["INCIDENT_ROW_OUTSIDE_TABLE I-02"]);
+  });
+
   it("checks the repository's own list", () => {
     expect(checkIncidentGates().errors).toEqual([]);
   });
