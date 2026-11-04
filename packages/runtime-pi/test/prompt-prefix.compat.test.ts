@@ -5,12 +5,19 @@ import type {
   RuntimeProjection,
   RuntimeProjectionContextBlock,
   RuntimeProjectionPort,
+  RuntimePromptBundle,
+  RuntimePromptBundlePort,
+  RuntimePromptBundleResolveInput,
   RuntimeRequest,
   RuntimeToolDescriptor,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { afterEach, describe, expect, it } from "vitest";
-import { ConfiguredPiModelBindingPort, PiAgentRuntimeAdapter } from "../src/index.js";
+import {
+  ConfiguredPiModelBindingPort,
+  PiAgentRuntimeAdapter,
+  type PiAgentRuntimeAdapterDependencies,
+} from "../src/index.js";
 import { allowAdmission, fixtureExecutionLease } from "./helpers/admission.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 import { findConversationBreak, findPrefixBreak } from "./helpers/prompt-prefix.js";
@@ -181,6 +188,23 @@ class SearchTools implements RuntimeToolPort {
   }
 }
 
+class FrozenPromptBundles implements RuntimePromptBundlePort {
+  frozen: (RuntimePromptBundle & { readonly toolNames: string }) | undefined;
+  readonly resolved: RuntimePromptBundleResolveInput[] = [];
+
+  async resolve(input: RuntimePromptBundleResolveInput): Promise<RuntimePromptBundle> {
+    this.resolved.push(input);
+    const toolNames = JSON.stringify(input.identity.toolNames);
+    if (!this.frozen || this.frozen.toolNames !== toolNames)
+      this.frozen = {
+        generation: (this.frozen?.generation ?? 0) + 1,
+        toolNames,
+        ...input.candidate,
+      };
+    return this.frozen;
+  }
+}
+
 function runRequest(runId: string): RuntimeRequest {
   return {
     ownerId: "owner-prefix",
@@ -204,6 +228,7 @@ async function conversation(
   turns: readonly Turn[],
   reply: (index: number, body: string) => Reply,
   configure: (projection: ConversationProjection) => void = () => undefined,
+  dependencies: Partial<PiAgentRuntimeAdapterDependencies> = {},
 ) {
   const server = await loopback(reply);
   const models = new ConfiguredPiModelBindingPort({
@@ -243,6 +268,7 @@ async function conversation(
     now: () => NOW,
     admission: async (scope) => allowAdmission(scope),
     logicalSlot: (run, ordinal) => `${run.runId}:prefix:${ordinal}`,
+    ...dependencies,
   });
   const requestsPerTurn: number[] = [];
   for (const [index, turn] of turns.entries()) {
@@ -492,6 +518,78 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       (index) => ({ text: `回答${index}` }),
     );
     expect(findConversationBreak(bodies)).toMatchObject({ where: "message-changed", index: 0 });
+  });
+
+  it("keeps the request head byte-identical when the configured system instruction changes, because the conversation's prompt is frozen", async () => {
+    const bundles = new FrozenPromptBundles();
+    const { bodies } = await conversation(
+      ["请用中文回答。", "请用中文回答，语气更轻松。", "请用中文回答，语气更轻松。"].map(
+        (instruction, index) => ({
+          prompt: `第${index}轮`,
+          blocks: [ownerProfile],
+          systemInstruction: `你是 Himawari。${instruction}`,
+        }),
+      ),
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: bundles },
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    expect(bundles.frozen?.generation).toBe(1);
+    expect(bodies[2]).toContain("你是 Himawari。请用中文回答。");
+    expect(bodies[2]).not.toContain("语气更轻松");
+    expect(bundles.resolved.map(({ identity }) => identity.toolNames)).toEqual([
+      ["reminder_set"],
+      ["reminder_set"],
+      ["reminder_set"],
+    ]);
+  });
+
+  it("REVERSE: the same change breaks the head when the conversation's prompt is not frozen", async () => {
+    const { bodies } = await conversation(
+      ["请用中文回答。", "请用中文回答，语气更轻松。", "请用中文回答，语气更轻松。"].map(
+        (instruction, index) => ({
+          prompt: `第${index}轮`,
+          blocks: [ownerProfile],
+          systemInstruction: `你是 Himawari。${instruction}`,
+        }),
+      ),
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toMatchObject({
+      where: "message-changed",
+      index: 0,
+      request: 1,
+    });
+  });
+
+  it("appends tools granted by a handle after the frozen tools and reports them for measurement", async () => {
+    const bundles = new FrozenPromptBundles();
+    const handles: unknown[] = [];
+    const { bodies } = await conversation(
+      THREE_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      {
+        promptBundles: bundles,
+        onHandleTools: (request, observation) => handles.push([request.runId, observation]),
+      },
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    for (const body of bodies) {
+      const names = (JSON.parse(body).tools as { function: { name: string } }[]).map(
+        (tool) => tool.function.name,
+      );
+      expect(names).toEqual(["reminder_set", "web_search"]);
+    }
+    expect(JSON.parse(bundles.frozen?.tools ?? "[]")).toEqual([
+      expect.objectContaining({ name: "reminder_set" }),
+    ]);
+    expect(handles).toEqual([
+      ["run-prefix-1", { generation: 1, handleTools: 1 }],
+      ["run-prefix-2", { generation: 1, handleTools: 1 }],
+      ["run-prefix-3", { generation: 1, handleTools: 1 }],
+    ]);
   });
 
   it("REVERSE: the checker reports a deleted, reordered or shortened history", () => {

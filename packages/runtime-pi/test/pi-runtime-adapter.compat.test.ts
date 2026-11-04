@@ -3408,7 +3408,7 @@ it("preserves loop detection across approval without counting local result repla
   });
   expect(tools.execute).toHaveBeenCalledTimes(5);
   expect(model.observed).toHaveLength(2);
-  expectLoopStoppedByAppendedMessage(model.observed, { sameSystemPrompt: false });
+  expectLoopStoppedByAppendedMessage(model.observed);
   expect(projection.finalAnswers).toHaveLength(0);
 });
 

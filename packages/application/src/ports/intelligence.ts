@@ -387,6 +387,7 @@ export type RuntimeProjectionRequest = Pick<
 
 export interface RuntimeProjection extends RuntimeProjectionContext {
   readonly systemInstruction: string;
+  readonly answerLocaleRef?: string;
 }
 
 export interface RuntimeProjectionPort {

@@ -95,6 +95,13 @@ export type {
   RuntimeHistoryState,
 } from "./ports/runtime-history.js";
 export type { ClockPort } from "./ports/system.js";
+export type {
+  RuntimePromptBundle,
+  RuntimePromptBundleCandidate,
+  RuntimePromptBundlePort,
+  RuntimePromptBundleResolveInput,
+  ThreadPromptBundleIdentity,
+} from "./ports/thread-prompt-bundles.js";
 export type { ModelUsageObservation, ModelUsageStorePort } from "./ports/model-usage.js";
 export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
