@@ -1263,6 +1263,46 @@ describe("opencode review wrap-up", () => {
     expect(spentOf([{ cost: 0.19, inFlight: true }])).toBeCloseTo(0.19 + WRAP_UP_RESERVE_USD);
   }, 60000);
 
+  it("[I-77] hands the first run's recorded cost to the resumed run as its starting point", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-start-"));
+    try {
+      const binary = join(root, "fake-opencode");
+      const startFile = join(root, "starting.txt");
+      writeFileSync(
+        binary,
+        [
+          "#!/usr/bin/env node",
+          'const fs = require("node:fs");',
+          'const limits = JSON.parse(fs.readFileSync(process.env.HIMAWARI_SPEND_GUARD, "utf8"));',
+          'if (process.argv.includes("--session")) {',
+          `  fs.writeFileSync(${JSON.stringify(startFile)}, String(limits.startingUsd));`,
+          '  console.log(JSON.stringify({ type: "text", sessionID: "ses_x", part: { text: "ANSWER" } }));',
+          '  console.log(JSON.stringify({ type: "step_finish", sessionID: "ses_x", part: { reason: "stop", tokens: {}, cost: 0.001 } }));',
+          "  process.exit(0);",
+          "}",
+          'console.log(JSON.stringify({ type: "step_finish", sessionID: "ses_x", part: { reason: "tool-calls", tokens: {}, cost: 0.16 } }));',
+          "setInterval(() => {}, 1000);",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(binary, 0o755);
+      const result = await reviewModel({
+        binary,
+        cwd: root,
+        configPath: join(root, "unused.json"),
+        wrapUpConfigPath: join(root, "unused.json"),
+        gitGuard: installGitGuard(root),
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 60000,
+      });
+      expect(result.runs).toHaveLength(2);
+      expect(Number(readFileSync(startFile, "utf8"))).toBeCloseTo(0.16);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("[I-77] keeps the reason the guard wrote even when the parent's timer fires before the process exits", async () => {
     const result = await killedWithMarker({ reason: "wrap-up-cost", allowed: 1, completed: 1 });
     expect(result.runs[0].stopReason).toBe("wrap-up-cost");
@@ -1643,6 +1683,40 @@ describe("spend guard decisions", () => {
     expect(effectiveCost(limits, { baselineCost: 0.05 }, 0.07)).toBeCloseTo(0.18);
     expect(effectiveCost({}, { baselineCost: 0.05 }, 0.07)).toBe(0.07);
     expect(effectiveCost(limits, { baselineCost: 0.2 }, 0.2)).toBe(0.2);
+  });
+
+  it("[I-77] starts the guard's count at the money the parent already recorded", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "spend-guard-start-"));
+    const saved = process.env.HIMAWARI_SPEND_GUARD;
+    try {
+      const run = async (startingUsd) => {
+        const markerPath = join(dir, `marker-${startingUsd}.json`);
+        writeFileSync(
+          join(dir, "limits.json"),
+          JSON.stringify({
+            markerPath,
+            totalUsd: 0.2,
+            startingUsd,
+            deadlineAt: Date.now() + 60000,
+          }),
+        );
+        process.env.HIMAWARI_SPEND_GUARD = join(dir, "limits.json");
+        const guard = await SpendGuard();
+        await guard["experimental.chat.messages.transform"]({}, { messages: [] });
+        const verdict = guard["chat.params"]({ agent: "build" });
+        return { verdict, read: () => JSON.parse(readFileSync(markerPath, "utf8")) };
+      };
+      const open = await run(0.1);
+      await open.verdict;
+      expect(open.read()).toMatchObject({ allowed: 1, totalCostUsd: 0.1 });
+      const over = await run(0.21);
+      await expect(over.verdict).rejects.toThrow("cost-limit");
+      expect(over.read()).toMatchObject({ allowed: 0, reason: "cost-limit" });
+    } finally {
+      if (saved === undefined) delete process.env.HIMAWARI_SPEND_GUARD;
+      else process.env.HIMAWARI_SPEND_GUARD = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("[I-77] does nothing without limits, so a missing plugin file is caught by the self-check", async () => {
