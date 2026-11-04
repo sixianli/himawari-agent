@@ -56,6 +56,13 @@ import {
   WRAP_UP_RESERVE_USD,
   wrapUpReason,
 } from "../../scripts/model-review/opencode-review.mjs";
+import {
+  completedCount,
+  guardDecision,
+  ledgerTotal,
+  noteCost,
+  SpendGuard,
+} from "../../scripts/model-review/spend-guard.mjs";
 
 function lstatExists(path) {
   try {
@@ -910,7 +917,7 @@ async function withScriptedReview(reply, run) {
         timeoutMs: 120000,
         ...options,
       });
-    return await run({ review, requests });
+    return await run({ review, requests, port });
   } finally {
     await new Promise((resolveClose) => server.close(resolveClose));
     rmSync(root, { recursive: true, force: true });
@@ -1132,6 +1139,136 @@ describe("opencode review wrap-up", () => {
         expect(result.wrapUp).toBe("time");
         expect(result.outcome).toBe("ok");
         expect(result.summary.text).toBe("TIME_WRAPPED");
+      },
+    );
+  }, 120000);
+
+  const stepFinishCount = (run) =>
+    run.stdout.split("\n").filter((line) => line.includes('"step_finish"')).length;
+  const mainRequests = (requests) => requests.filter((request) => !isWrapUp(request));
+  const withoutGuardConfig = (dir, port) => {
+    const path = join(dir, "no-guard.json");
+    const config = reviewConfig({ mode: "plan", baseURL: `http://127.0.0.1:${port}/v1` });
+    delete config.plugin;
+    writeFileSync(path, JSON.stringify(config));
+    return path;
+  };
+
+  it("[I-77] sends no request after the spending line even when the parent reads step_finish a second late", async () => {
+    const slow = mkdtempSync(join(tmpdir(), "opencode-slow-"));
+    try {
+      await withScriptedReview(
+        (request) =>
+          isWrapUp(request) ? { text: "COST_WRAPPED" } : { tool: true, promptTokens: 120000 },
+        async ({ review, requests }) => {
+          const result = await review({ binary: slowStepFinishBinary(slow) });
+          const first = result.runs[0];
+          expect(first.stopReason).toBe("wrap-up-cost");
+          expect(first.guard.reason).toBe("wrap-up-cost");
+          expect(mainRequests(requests)).toHaveLength(first.guard.allowed);
+          const perStep = first.guard.totalCostUsd / first.guard.allowed;
+          expect(first.guard.totalCostUsd).toBeGreaterThanOrEqual(0.15);
+          expect((first.guard.allowed - 1) * perStep).toBeLessThan(0.15);
+          expect(stepFinishCount(first)).toBeLessThan(first.guard.allowed);
+          expect(result.summary.usage.cost).toBeGreaterThanOrEqual(first.guard.totalCostUsd);
+          expect(result.summary.text).toBe("COST_WRAPPED");
+        },
+      );
+    } finally {
+      rmSync(slow, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  it("[I-77] sends no request after the wrap-up time even when the parent reads step_finish a second late", async () => {
+    const slow = mkdtempSync(join(tmpdir(), "opencode-slow-"));
+    try {
+      await withScriptedReview(
+        (request) => (isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true }),
+        async ({ review, requests }) => {
+          const result = await review({ binary: slowStepFinishBinary(slow), timeoutMs: 12000 });
+          const first = result.runs[0];
+          expect(first.stopReason).toBe("wrap-up-time");
+          expect(first.guard.reason).toBe("wrap-up-time");
+          expect(mainRequests(requests)).toHaveLength(first.guard.allowed);
+          await new Promise((resolveWait) => setTimeout(resolveWait, 1500));
+          expect(mainRequests(requests)).toHaveLength(first.guard.allowed);
+          expect(first.inFlight).toBe(false);
+          expect(result.summary.usage.cost).toBeGreaterThanOrEqual(first.guard.totalCostUsd);
+        },
+      );
+    } finally {
+      rmSync(slow, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  it("[I-77] without the guard plugin the same run sends requests the parent never saw", async () => {
+    const slow = mkdtempSync(join(tmpdir(), "opencode-slow-"));
+    try {
+      await withScriptedReview(
+        (request) =>
+          isWrapUp(request) ? { text: "COST_WRAPPED" } : { tool: true, promptTokens: 120000 },
+        async ({ review, requests, port }) => {
+          const result = await review({
+            binary: slowStepFinishBinary(slow),
+            configPath: withoutGuardConfig(slow, port),
+          });
+          const first = result.runs[0];
+          expect(first.guard).toBeNull();
+          expect(mainRequests(requests).length).toBeGreaterThan(15);
+        },
+      );
+    } finally {
+      rmSync(slow, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  it("[I-77] counts a request still in flight when the parent has to kill the run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-inflight-"));
+    try {
+      const binary = join(root, "fake-opencode");
+      writeFileSync(
+        binary,
+        [
+          "#!/usr/bin/env node",
+          'const fs = require("node:fs");',
+          'if (process.argv.includes("--session")) process.exit(0);',
+          'const limits = JSON.parse(fs.readFileSync(process.env.HIMAWARI_SPEND_GUARD, "utf8"));',
+          "fs.writeFileSync(limits.markerPath, JSON.stringify({ loaded: true, reason: null, totalCostUsd: 0.01, allowed: 2, completed: 1, at: 0 }));",
+          'console.log(JSON.stringify({ type: "step_finish", sessionID: "ses_x", part: { reason: "tool-calls", tokens: {}, cost: 0.01 } }));',
+          "setInterval(() => {}, 1000);",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(binary, 0o755);
+      const result = await reviewModel({
+        binary,
+        cwd: root,
+        configPath: join(root, "unused.json"),
+        wrapUpConfigPath: join(root, "unused.json"),
+        gitGuard: installGitGuard(root),
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 3000,
+      });
+      expect(result.runs[0].stopReason).toBe("wrap-up-time");
+      expect(result.runs[0].inFlight).toBe(true);
+      expect(result.summary.usage.inFlight).toBe(true);
+      expect(spentOf([{ cost: 0.01, inFlight: true }])).toBe(COST_LIMIT_PER_MODEL_USD);
+      expect(spentOf([{ cost: 0.19, inFlight: true }])).toBeCloseTo(0.19 + WRAP_UP_RESERVE_USD);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("[I-77] lets the single wrap-up request through even though the money line was already crossed", async () => {
+    await withScriptedReview(
+      (request) =>
+        isWrapUp(request) ? { text: "COST_WRAPPED" } : { tool: true, promptTokens: 120000 },
+      async ({ review, requests }) => {
+        const result = await review();
+        expect(result.runs).toHaveLength(2);
+        expect(requests.filter(isWrapUp)).toHaveLength(1);
+        expect(result.outcome).toBe("ok");
       },
     );
   }, 120000);
@@ -1392,5 +1529,48 @@ describe("opencode review spending", () => {
       expect(() => parseArgs([...base, "--models", bad])).toThrow("ARG_INVALID --models");
     expect(parseArgs([...base, "--approved-usd", "0.7"]).approvedUsd).toBe(0.7);
     expect(() => parseArgs([...base, "--approved-usd", "x"])).toThrow("ARG_INVALID --approved-usd");
+  });
+});
+
+describe("spend guard decisions", () => {
+  const limits = { totalUsd: 0.2, stopAtUsd: 0.15, deadlineAt: 2000, wrapUpAt: 1000 };
+
+  it("[I-77] stops in the same order the parent does", () => {
+    expect(guardDecision(limits, { cost: 0.01, allowed: 1 }, 0)).toBeNull();
+    expect(guardDecision(limits, { cost: 0.15, allowed: 1 }, 0)).toBe("wrap-up-cost");
+    expect(guardDecision(limits, { cost: 0.21, allowed: 1 }, 0)).toBe("cost-limit");
+    expect(guardDecision(limits, { cost: 0, allowed: 1 }, 1000)).toBe("wrap-up-time");
+    expect(guardDecision(limits, { cost: 0, allowed: 1 }, 2000)).toBe("timeout");
+    expect(guardDecision({ totalUsd: 1, stopAfterRequests: 2 }, { cost: 0, allowed: 2 }, 0)).toBe(
+      "request-limit",
+    );
+  });
+
+  it("[I-77] lets the wrap-up turn through with only a total line", () => {
+    const wrapUpLimits = { totalUsd: 0.2, deadlineAt: 2000 };
+    expect(guardDecision(wrapUpLimits, { cost: 0.16, allowed: 0 }, 1500)).toBeNull();
+  });
+
+  it("[I-77] keeps earlier costs when compaction drops those messages from later requests", () => {
+    const ledger = new Map();
+    noteCost(ledger, { role: "assistant", id: "a", cost: 0.05 });
+    noteCost(ledger, { role: "assistant", id: "b", cost: 0.04 });
+    noteCost(ledger, { role: "assistant", id: "b", cost: 0.06 });
+    noteCost(ledger, { role: "assistant", id: "c", cost: -1 });
+    noteCost(ledger, { role: "assistant", id: "d", cost: Number.NaN });
+    noteCost(ledger, { role: "user", id: "e", cost: 9 });
+    expect(ledgerTotal(ledger)).toBeCloseTo(0.11);
+    noteCost(ledger, { role: "assistant", id: "a", cost: 0.05, time: { completed: 1 } });
+    expect(completedCount(ledger)).toBe(1);
+  });
+
+  it("[I-77] does nothing without limits, so a missing plugin file is caught by the self-check", async () => {
+    const saved = process.env.HIMAWARI_SPEND_GUARD;
+    delete process.env.HIMAWARI_SPEND_GUARD;
+    try {
+      expect(await SpendGuard()).toEqual({});
+    } finally {
+      if (saved !== undefined) process.env.HIMAWARI_SPEND_GUARD = saved;
+    }
   });
 });

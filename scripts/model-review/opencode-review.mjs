@@ -16,7 +16,8 @@ import {
 import http from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
 export const REVIEW_MODELS = ["opencode-go/deepseek-v4.1-flash", "opencode-go/glm-5.3-flash"];
@@ -64,6 +65,9 @@ export const WRAP_UP_RESERVE_USD = 0.05;
 export const WRAP_UP_RESERVE_MAX_MS = 5 * 60 * 1000;
 export const WRAP_UP_MIN_USD = 0.02;
 export const WRAP_UP_MIN_MS = 15000;
+export const GUARD_GRACE_MAX_MS = 30000;
+export const GUARD_GRACE_DIVISOR = 15;
+export const SPEND_GUARD_PATH = join(dirname(fileURLToPath(import.meta.url)), "spend-guard.mjs");
 export const ASK_FIRST_LINE_USD = { "code-review": 1, plan: 0.5, "plan-review": 0.5 };
 export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
@@ -84,6 +88,7 @@ export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
   const provider = baseURL ? { options: { apiKey: "placeholder", baseURL } } : {};
   const config = {
     $schema: "https://opencode.ai/config.json",
+    plugin: [pathToFileURL(SPEND_GUARD_PATH).href],
     provider: { "opencode-go": provider },
     permission: {
       read: { "*": "allow", "*.env": "deny", "*.env.*": "deny" },
@@ -383,8 +388,17 @@ function runOpencode({
   session,
   stopOnToolCall = false,
   extraEnv = {},
+  guard,
 }) {
   return new Promise((resolvePromise) => {
+    const startedAt = Date.now();
+    const guardFiles = guard
+      ? prepareGuard({ gitGuard, guard, startedAt, timeoutMs, wrapUpMs })
+      : null;
+    const graceMs = guard
+      ? Math.min(GUARD_GRACE_MAX_MS, Math.floor(timeoutMs / GUARD_GRACE_DIVISOR))
+      : 0;
+
     let stdout = "";
     let stderr = "";
     let pending = "";
@@ -413,6 +427,8 @@ function runOpencode({
           PWD: cwd,
           OPENCODE_CONFIG: configPath,
           OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+          OPENCODE_PURE: undefined,
+          ...(guardFiles ? { [GUARD_ENV]: guardFiles.limitsPath } : { [GUARD_ENV]: undefined }),
           XDG_CONFIG_HOME: gitGuard.configHome,
           OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
           GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
@@ -445,7 +461,10 @@ function runOpencode({
       clearTimeout(killTimer);
       killProcessGroup(child, "SIGKILL");
       activeChildren.delete(child);
-      resolvePromise({ stdout, stderr, stopReason, ...result });
+      const marker = guardFiles ? readGuardMarker(guardFiles.markerPath) : null;
+      const inFlight = Boolean(stopReason && marker && marker.allowed > marker.completed);
+      if (!stopReason && marker?.reason) stopReason = marker.reason;
+      resolvePromise({ stdout, stderr, stopReason, guard: marker, inFlight, ...result });
     };
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
@@ -476,10 +495,45 @@ function runOpencode({
     child.on("error", (error) => finish({ code: null, signal: null, spawnError: error.message }));
     child.on("exit", () => killProcessGroup(child, "SIGKILL"));
     child.on("close", (code, signal) => finish({ code, signal }));
-    const timer = setTimeout(() => stop("timeout"), timeoutMs);
+    const timer = setTimeout(() => stop("timeout"), timeoutMs + graceMs);
     const wrapUpTimer =
-      wrapUpMs === undefined ? undefined : setTimeout(() => stop("wrap-up-time"), wrapUpMs);
+      wrapUpMs === undefined
+        ? undefined
+        : setTimeout(() => stop("wrap-up-time"), wrapUpMs + graceMs);
   });
+}
+
+function prepareGuard({ gitGuard, guard, startedAt, timeoutMs, wrapUpMs }) {
+  const dir = mkdtempSync(join(dirname(gitGuard.configHome), "spend-guard-"));
+  const limitsPath = join(dir, "limits.json");
+  const markerPath = join(dir, "marker.json");
+  const limits = {
+    markerPath,
+    totalUsd: guard.totalUsd,
+    deadlineAt: startedAt + timeoutMs,
+  };
+  if (guard.stopAtUsd !== undefined) limits.stopAtUsd = guard.stopAtUsd;
+  if (wrapUpMs !== undefined) limits.wrapUpAt = startedAt + wrapUpMs;
+  if (guard.stopAfterRequests !== undefined) limits.stopAfterRequests = guard.stopAfterRequests;
+  writeFileSync(limitsPath, JSON.stringify(limits));
+  return { limitsPath, markerPath };
+}
+
+function readGuardMarker(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function applyGuardUsage(summary, runs) {
+  const guardCost = Math.max(0, ...runs.map((run) => run.guard?.totalCostUsd ?? 0));
+  const inFlight = runs.some((run) => run.inFlight);
+  const usage = { ...summary.usage };
+  if (guardCost > usage.cost) usage.cost = guardCost;
+  if (inFlight) usage.inFlight = true;
+  return { ...summary, usage };
 }
 
 export function sessionOf(jsonl) {
@@ -524,8 +578,9 @@ export async function reviewModel({
     costLimit,
     wrapUpCost: costLimit - WRAP_UP_RESERVE_USD,
     wrapUpMs: timeoutMs - reserveMs,
+    guard: { totalUsd: costLimit, stopAtUsd: costLimit - WRAP_UP_RESERVE_USD },
   });
-  const firstSummary = summarizeEvents(first.stdout);
+  const firstSummary = applyGuardUsage(summarizeEvents(first.stdout), [first]);
   const wrapUp = wrapUpReason(firstSummary, first);
   const session = wrapUp ? sessionOf(first.stdout) : null;
   const remainingMs = deadline - Date.now();
@@ -563,10 +618,11 @@ export async function reviewModel({
     stopOnToolCall: true,
     timeoutMs: remainingMs,
     costLimit: remainingUsd,
+    guard: { totalUsd: costLimit },
   });
   const stdout = `${first.stdout}${first.stdout.endsWith("\n") ? "" : "\n"}${second.stdout}`;
   const secondSummary = summarizeEvents(second.stdout);
-  const combined = summarizeEvents(stdout);
+  const combined = applyGuardUsage(summarizeEvents(stdout), [first, second]);
   return {
     runs: [first, second],
     stdout,
@@ -582,7 +638,7 @@ export function spentOf(records) {
   return records.reduce(
     (total, record) =>
       total +
-      (record.costUnknown
+      (record.costUnknown || record.inFlight
         ? Math.max(record.cost + WRAP_UP_RESERVE_USD, COST_LIMIT_PER_MODEL_USD)
         : record.cost),
     0,
@@ -918,7 +974,9 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
         prompt: "probe",
         timeoutMs,
         extraEnv: { [REVIEW_CANARY_ENV]: plan.marker },
+        guard: { totalUsd: GUARD_PROBE_OPEN_USD },
       });
+      if (!run.guard?.loaded) problems.push(`${model}: GUARD_NOT_LOADED`);
       const summary = summarizeEvents(run.stdout);
       const writtenFiles = plan.probes
         .filter((probe) => probe.kind === "write" && existsSync(probe.file))
@@ -947,6 +1005,90 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
         }).map((problem) => `${model}: ${problem}`),
       );
     }
+    problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode })));
+    return problems;
+  } finally {
+    await new Promise((resolveClose) => server.close(resolveClose));
+  }
+}
+
+export const GUARD_PROBE_OPEN_USD = 1e9;
+export const GUARD_PROBE_REQUESTS = 3;
+
+function startLoopServer() {
+  let mainRequests = 0;
+  const server = http.createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      if (request.method !== "POST") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end('{"data":[]}');
+        return;
+      }
+      let parsed = {};
+      try {
+        parsed = JSON.parse(body);
+      } catch {}
+      const main = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+      if (main) mainRequests += 1;
+      const send = (payload) =>
+        response.write(
+          `data: ${JSON.stringify({ id: "loop", object: "chat.completion.chunk", created: 1, model: parsed.model, ...payload })}\n\n`,
+        );
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const delta = { role: "assistant" };
+      if (main) {
+        delta.tool_calls = [
+          {
+            index: 0,
+            id: `loop-call-${mainRequests}`,
+            type: "function",
+            function: { name: "read", arguments: JSON.stringify({ filePath: "AGENTS.md" }) },
+          },
+        ];
+      } else delta.content = "title";
+      send({ choices: [{ index: 0, delta, finish_reason: null }] });
+      send({
+        choices: [{ index: 0, delta: {}, finish_reason: main ? "tool_calls" : "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      });
+      response.end("data: [DONE]\n\n");
+    });
+  });
+  return new Promise((resolveStart) =>
+    server.listen(0, "127.0.0.1", () =>
+      resolveStart({ server, mainRequests: () => mainRequests, port: server.address().port }),
+    ),
+  );
+}
+
+async function guardProbe({ binary, copy, workRoot, gitGuard, mode }) {
+  const { server, mainRequests, port } = await startLoopServer();
+  const configPath = join(workRoot, "guard-probe-opencode.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify(reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }), null, 2),
+  );
+  try {
+    const run = await runOpencode({
+      binary,
+      cwd: copy,
+      configPath,
+      gitGuard,
+      model: REVIEW_MODELS[0],
+      prompt: "probe",
+      timeoutMs: 20000,
+      guard: { totalUsd: GUARD_PROBE_OPEN_USD, stopAfterRequests: GUARD_PROBE_REQUESTS },
+    });
+    const problems = [];
+    if (!run.guard?.loaded) problems.push("GUARD_PROBE_NOT_LOADED");
+    else if (mainRequests() !== GUARD_PROBE_REQUESTS)
+      problems.push(`GUARD_PROBE_REQUESTS expected=${GUARD_PROBE_REQUESTS} got=${mainRequests()}`);
+    else if (run.stopReason !== "request-limit")
+      problems.push(`GUARD_PROBE_REASON ${run.stopReason}`);
     return problems;
   } finally {
     await new Promise((resolveClose) => server.close(resolveClose));
