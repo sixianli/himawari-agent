@@ -11,6 +11,17 @@ import {
   type RunExecutionLease,
   type RunLifecyclePort,
 } from "@himawari-agent/application";
+import {
+  BACKGROUND_NOTICE,
+  BACKGROUND_NOTICE_INTERRUPTED,
+  BACKGROUND_NOTICE_TASK,
+  BACKGROUND_OUTCOME_COMPLETED,
+  BACKGROUND_OUTCOME_FAILED,
+  BACKGROUND_OUTCOME_INTERRUPTED,
+  BACKGROUND_OUTCOME_STOPPED,
+  BACKGROUND_OUTCOME_TIMED_OUT,
+  renderPrompt,
+} from "@himawari-agent/prompt-catalog";
 import type {
   BackgroundCommandResult,
   ProductionBackgroundCommands,
@@ -260,20 +271,26 @@ export class ProductionBackgroundRuns {
 }
 
 const OUTCOME_TEXT: Readonly<Record<RunBackgroundOutcome, string>> = {
-  completed: "已运行结束",
-  failed: "运行失败",
-  stopped: "已被停止",
-  timed_out: "超过时间上限，已被停止",
-  interrupted: "Himawari 重启，命令被中断，结果没有拿到",
+  completed: BACKGROUND_OUTCOME_COMPLETED.text,
+  failed: BACKGROUND_OUTCOME_FAILED.text,
+  stopped: BACKGROUND_OUTCOME_STOPPED.text,
+  timed_out: BACKGROUND_OUTCOME_TIMED_OUT.text,
+  interrupted: BACKGROUND_OUTCOME_INTERRUPTED.text,
 };
 
 function noticeText(results: readonly BackgroundCommandResult[]): string {
   return [
-    "【系统通知，不是用户发的消息】你在这个对话里早些时候转入后台的命令有了结果。请根据下面的结果，用一两句话主动告诉用户发生了什么、接下来建议做什么；用户可能在此期间聊了别的，结合对话上下文回答。",
+    BACKGROUND_NOTICE.text,
     ...results.map((result) =>
       result.outcome === "interrupted"
-        ? `任务 ${result.taskRef}：${OUTCOME_TEXT.interrupted}。不要假装知道结果；它可能只执行了一部分，重新执行前先核实已经产生的效果。`
-        : [`任务 ${result.taskRef}：${OUTCOME_TEXT[result.outcome]}。`, result.notice].join("\n"),
+        ? `${renderPrompt(BACKGROUND_NOTICE_TASK, { taskRef: result.taskRef, outcome: OUTCOME_TEXT.interrupted })}${BACKGROUND_NOTICE_INTERRUPTED.text}`
+        : [
+            renderPrompt(BACKGROUND_NOTICE_TASK, {
+              taskRef: result.taskRef,
+              outcome: OUTCOME_TEXT[result.outcome],
+            }),
+            result.notice,
+          ].join("\n"),
     ),
   ].join("\n\n");
 }

@@ -595,6 +595,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0074_ledger_observation.sql",
   },
+  {
+    sequence: 75,
+    name: "muse_intake",
+    changeSet: "muse-intake",
+    phase: "expand" as const,
+    file: "0075_muse_intake.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

@@ -23,6 +23,7 @@ const internalRoots = [
   "packages/integration-github",
   "packages/memory-engine",
   "packages/persistence-sqlite",
+  "packages/prompt-catalog",
   "packages/platform-node",
   "packages/runtime-pi",
   "packages/runtime-sandbox",

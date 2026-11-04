@@ -1,17 +1,19 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: provider JSON is untrusted until parsed
+
 import { setTimeout as wait } from "node:timers/promises";
 import {
   type AutomaticReviewDecision,
   assertMachineSecretFree,
   type ClockPort,
   type DataClassification,
-  type ModelDescriptor,
   type ModelCostDescriptor,
+  type ModelDescriptor,
   type ModelInvocationEvent,
   type ModelInvocationRequest,
   type PayloadRef,
   parseAutomaticReviewDecision,
 } from "@himawari-agent/application";
+import { REVIEW_TYPESAFE_QUESTIONS } from "@himawari-agent/prompt-catalog";
 
 import type { SecretMaterialSource, TrustedModelTransport } from "./trusted-model-provider.js";
 
@@ -286,40 +288,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
       const body = JSON.stringify({
         state: envelope,
         model: descriptor.model,
-        questions: {
-          within_delegated_scope: {
-            type: "choice",
-            instructions:
-              "Is this action covered by the Owner's delegation for exactly this frozen request? " +
-              "Answer outside when the scope, recipient, budget or target is unclear.",
-            criteria: {
-              within: "The action is one the Owner already delegated for this exact request.",
-              outside:
-                "The action is not covered by the delegation, or the summary is insufficient.",
-            },
-          },
-          decision: {
-            type: "choice",
-            instructions:
-              "Should the host approve this exact request, deny it, or leave it for the human Owner?",
-            criteria: {
-              approve: "Safe to execute as frozen, with no widened scope.",
-              deny: "Must not execute.",
-              human: "Cannot be decided from the summary alone.",
-            },
-          },
-          reason_code: {
-            type: "choice",
-            instructions: "Pick the single best reason for the decision.",
-            criteria: {
-              WITHIN_DELEGATION: "Delegated and safe to approve.",
-              OUTSIDE_DELEGATION: "Not covered by the delegation.",
-              HIGH_RISK: "Effect or risk is too high for automatic approval.",
-              INSUFFICIENT_CONTEXT: "The frozen summary is not enough to decide.",
-              POLICY_UNCERTAIN: "Policy or delegation state is ambiguous.",
-            },
-          },
-        },
+        questions: REVIEW_TYPESAFE_QUESTIONS.questions,
       });
       if (Buffer.byteLength(body, "utf8") > MAX_REQUEST_BYTES)
         throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_TOO_LARGE", false);

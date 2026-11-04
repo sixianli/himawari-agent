@@ -1,0 +1,1 @@
+Given a question from the owner of a personal assistant, retrieve the remembered facts about the owner that help answer it
