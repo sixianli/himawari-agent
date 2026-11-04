@@ -1260,6 +1260,7 @@ function startAuthorizationRecorder() {
 
 describe("opencode review credential", () => {
   it("[I-76] a real review sends the key saved by opencode auth login", async () => {
+    const savedLoginKey = "SAVED_LOGIN_KEY";
     const root = mkdtempSync(join(tmpdir(), "opencode-credential-"));
     const { server, authorizations, port } = await startAuthorizationRecorder();
     try {
@@ -1270,7 +1271,7 @@ describe("opencode review credential", () => {
         mkdirSync(directory, { recursive: true });
       writeFileSync(
         join(dataHome, "opencode", "auth.json"),
-        JSON.stringify({ "opencode-go": { type: "api", key: "SAVED_LOGIN_KEY" } }),
+        JSON.stringify({ "opencode-go": { type: "api", key: savedLoginKey } }),
       );
       const real = reviewConfig({ mode: "plan" });
       const opencodeGo = real.provider["opencode-go"];
@@ -1318,7 +1319,7 @@ describe("opencode review credential", () => {
       expect(run.code, run.output).toBe(0);
       expect(authorizations.length).toBeGreaterThan(0);
       for (const authorization of authorizations)
-        expect(authorization).toBe("Bearer SAVED_LOGIN_KEY");
+        expect(authorization).toBe(`Bearer ${savedLoginKey}`);
     } finally {
       await new Promise((resolveClose) => server.close(resolveClose));
       rmSync(root, { recursive: true, force: true });
