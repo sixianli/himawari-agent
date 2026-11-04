@@ -6,20 +6,46 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCANNED_DIRECTORIES = ["docs"];
 
-export function cellCount(line) {
-  let body = line.trim();
-  if (body.startsWith("|")) body = body.slice(1);
-  if (body.endsWith("|") && !body.endsWith("\\|")) body = body.slice(0, -1);
-  let count = 1;
-  for (let index = 0; index < body.length; index += 1) {
-    if (body[index] === "\\") index += 1;
-    else if (body[index] === "|") count += 1;
+function splitOnPipes(line) {
+  const parts = [];
+  let current = "";
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      current += line[index] + line[index + 1];
+      index += 1;
+    } else if (line[index] === "|") {
+      parts.push(current);
+      current = "";
+    } else {
+      current += line[index];
+    }
   }
-  return count;
+  parts.push(current);
+  return parts;
 }
 
-const DELIMITER_ROW = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
-const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+export function cellCount(line) {
+  const body = line.trim();
+  const parts = splitOnPipes(body);
+  if (parts.length > 1 && body.startsWith("|")) parts.shift();
+  if (parts.length > 1 && parts[parts.length - 1] === "") parts.pop();
+  return parts.length;
+}
+
+const hasPipe = (line) => splitOnPipes(line.trim()).length > 1;
+const CONTAINER_PREFIX = /^\s*(>\s?)*/;
+const content = (line) => line.replace(CONTAINER_PREFIX, "");
+const DELIMITER_ROW = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+const isDelimiterRow = (line) => {
+  const text = content(line).trim();
+  return text.includes("|") && text.includes("-") && DELIMITER_ROW.test(text);
+};
+const FENCE_OPEN = /^\s*(`{3,}|~{3,})/;
+
+function closesFence(line, fence) {
+  const match = /^\s*(`{3,}|~{3,})\s*$/.exec(line);
+  return Boolean(match && match[1][0] === fence[0] && match[1].length >= fence.length);
+}
 
 export function findTableProblems(text) {
   const lines = text.split("\n");
@@ -27,27 +53,31 @@ export function findTableProblems(text) {
   let fence = null;
   let index = 0;
   while (index < lines.length) {
-    const line = lines[index];
-    const fenceMatch = FENCE.exec(line);
+    const line = content(lines[index]);
     if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
-        fence = null;
+      if (closesFence(line, fence)) fence = null;
       index += 1;
       continue;
     }
-    if (fenceMatch) {
-      fence = fenceMatch[1];
+    const opening = FENCE_OPEN.exec(line);
+    if (opening) {
+      fence = opening[1];
       index += 1;
       continue;
     }
     const next = lines[index + 1];
-    if (line.trimStart().startsWith("|") && next !== undefined && DELIMITER_ROW.test(next)) {
+    if (hasPipe(line) && next !== undefined && isDelimiterRow(next)) {
       const columns = cellCount(line);
-      if (cellCount(next) !== columns)
-        problems.push({ line: index + 2, found: cellCount(next), expected: columns });
+      const delimiterColumns = cellCount(content(next));
+      if (delimiterColumns !== columns)
+        problems.push({ line: index + 2, found: delimiterColumns, expected: columns });
       let row = index + 2;
-      while (row < lines.length && lines[row].trimStart().startsWith("|")) {
-        const found = cellCount(lines[row]);
+      while (
+        row < lines.length &&
+        content(lines[row]).trim() !== "" &&
+        hasPipe(content(lines[row]))
+      ) {
+        const found = cellCount(content(lines[row]));
         if (found !== columns) problems.push({ line: row + 1, found, expected: columns });
         row += 1;
       }

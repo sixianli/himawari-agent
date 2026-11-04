@@ -32,6 +32,29 @@ describe("markdown table column check", () => {
     expect(cellCount("a | b")).toBe(2);
     expect(cellCount("| `x \\| y` | b |")).toBe(2);
     expect(cellCount("| a | b \\|")).toBe(2);
+    expect(cellCount("| a | b \\\\|")).toBe(2);
+    expect(cellCount("| a | |")).toBe(2);
+  });
+
+  it("[reverse case] fails on tables indented inside a list, inside a quote, or without edge pipes", () => {
+    const indented = "1. 第一步\n\n   | a | b |\n   | --- | --- |\n   | 1 | 2 | 3 |\n";
+    const quoted = "> | a | b |\n> | --- | --- |\n> | 1 | 2 | 3 |\n";
+    const bare = "a | b\n--- | ---\n1 | 2 | 3\n";
+    for (const text of [indented, quoted, bare])
+      expect(findTableProblems(text).map((problem) => problem.found)).toEqual([3]);
+  });
+
+  it("does not treat a heading underline or a horizontal rule as a table", () => {
+    expect(findTableProblems("a | b | c\n---\n")).toEqual([]);
+    expect(findTableProblems("文字\n\n---\n\n| x |\n")).toEqual([]);
+  });
+
+  it("[reverse case] keeps scanning after a fence line that carries a language name inside a fence", () => {
+    const text =
+      "````\n```js\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n````\n| c | d |\n| --- | --- |\n| 1 |\n";
+    expect(findTableProblems(text)).toEqual([{ line: 9, found: 1, expected: 2 }]);
+    const early = "```\n```js\n| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n```\n";
+    expect(findTableProblems(early)).toEqual([]);
   });
 
   it("passes tables whose rows match the header", () => {
