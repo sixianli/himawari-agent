@@ -539,19 +539,21 @@ describe("opencode review process cleanup", () => {
       stdio: "ignore",
     });
     const exited = new Promise((resolveExit) => child.on("exit", resolveExit));
+    let killed = false;
     try {
       while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "")
         await new Promise((resolveWait) => setTimeout(resolveWait, 20));
       const grandchild = Number(readFileSync(pidFile, "utf8").trim());
       const state = () => processState(grandchild);
       expect(["Z", "X", "gone"]).not.toContain(state());
-      expect(killProcessGroup(child, "SIGKILL")).toBe(true);
+      killed = killProcessGroup(child, "SIGKILL");
+      expect(killed).toBe(true);
       await exited;
       for (let attempt = 0; attempt < 100 && !["Z", "X", "gone"].includes(state()); attempt += 1)
         await new Promise((resolveWait) => setTimeout(resolveWait, 20));
       expect(["Z", "X", "gone"]).toContain(state());
     } finally {
-      killProcessGroup(child, "SIGKILL");
+      if (!killed) killProcessGroup(child, "SIGKILL");
       rmSync(dir, { recursive: true, force: true });
     }
   });
