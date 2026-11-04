@@ -287,6 +287,19 @@ describe("Muse intake over HTTP", () => {
     expect(counts().payloads).toBe(0);
   });
 
+  it("withholds the item when an offered option holds only a private key header", async () => {
+    const { post, store } = await setup();
+    await post(
+      batch(1, [
+        proactive("sub-1", {
+          options_offered: field([`-----BEGIN ${"RSA PRIVATE"} KEY-----`], "chat_record"),
+        }),
+      ]),
+    );
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ textWithheld: true, options: [] });
+  });
+
   it("keeps the item when an offered option is only whitespace", async () => {
     const { post, store } = await setup();
     await post(batch(1, [proactive("sub-1", { options_offered: field([" "], "chat_record") })]));
