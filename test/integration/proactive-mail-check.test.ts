@@ -1505,6 +1505,28 @@ describe("proactive Gmail check acceptance", () => {
       expect(insights.some((entry) => entry.status === "open")).toBe(true);
     });
 
+    it("[OM-15] keeps the reminder open when an already processed later mail exists in the thread", async () => {
+      const h = await harness();
+      h.reader.items = [ask()];
+      h.script([{ id: "ask", result: "act", todo: "回复报价请求", priority: "medium" }]);
+      await h.service.run();
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [
+        own("older-own", {
+          threadId: "quote",
+          subject: "Re: お見積もりの件",
+          body: "了解しました。",
+          receivedAt: "2026-11-04T00:05:00.000Z",
+        }),
+        ask(),
+      ];
+      h.script([{ id: "older-own", result: "ignore", confidence: "sure" }]);
+      await h.service.run();
+      const insights = (await h.overview()).insights;
+      expect(insights.find((entry) => entry.status === "replied")).toBeUndefined();
+      expect(insights.some((entry) => entry.status === "open")).toBe(true);
+    });
+
     it("[OM-4] leaves the older reminder open and the owner's mail unprocessed when the daily limit stops the model", async () => {
       const h = await harness({ dailyCostMicros: 1_000, cost: 1_000 });
       h.reader.items = [ask()];
