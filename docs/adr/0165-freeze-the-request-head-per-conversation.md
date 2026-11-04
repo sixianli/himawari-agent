@@ -61,9 +61,11 @@ date: "2026-11-04"
 
 2. **冻结记录由哪些输入决定**：工具名的有序列表、模型（`modelRef`）、推理强度、回答语言偏好（上下文里 `answer-locale` 那条系统规则的 `ref`）。任何一项和冻结时不同，就换新一次（代数 generation 加一），并写 trace（运行的追踪事件）`prompt.bundle.invalidated`，带原因。只有提示词文字本身变了（上线了新文字、改了配置里的系统指令）**不换新**，老对话继续用冻结的那份，新对话才用新文字。
 
+   回答语言偏好这一项目前在生产上永远是空的：生产的运行策略不产生 `answer-locale` 系统规则（`apps/agent-service/src/production-run-policy.ts` 返回 `policies: []`，也不给 `answerLocalePolicy` 赋值），对话里存的回答语言偏好不进发给模型的内容，系统提示里的回答语言规则是固定文字。所以现在改对话的回答语言偏好既不改变请求，也不换新，这是对的。以后生产把这条规则接进系统提示时，它的 `ref` 会进到这一项，改语言就会换新一次，不用再改冻结的代码。
+
 3. **执行时用当前的工具描述符**：工具的处理函数照旧来自当前运行。冻结的工具数组里每个工具名都必须在当前描述符里找得到；找不到时，在运行开始时换新（原因 `tool_missing`），在一次运行中途（已钉住的代数）找不到就让这次运行失败（`RUNTIME_PROMPT_BUNDLE_TOOL_MISSING`），不把调不动的工具发给模型。
 
-4. **授权句柄工具**（名字以 `authorized_` 开头、由一次性授权句柄带来的工具，以及 `execution_task_start`）不进冻结记录。运行开始时有这类工具，就接在冻结的工具后面；这一轮工具层不同，缓存会断一次。每次出现都写一行诊断日志 `prompt.bundle.handle_tools`（带 `runId`、代数、句柄工具个数），用来测量出现频率（第 4 条拍板）。
+4. **授权句柄工具**不进冻结记录。它们包括：名字以 `authorized_` 开头、由一次性授权句柄带来的工具（`capabilityHandleRef` 不为空）；`execution_task_start`；以及只因为这次运行持有任务句柄才出现的 `execution_task_status`、`execution_task_output`、`execution_task_cancel`（没有开启可转后台的 `bash` 时，这三个工具只在有任务句柄的运行里出现；开启了 `bash` 时它们每次运行都在，照常冻结）。生产的工具列表（`apps/agent-service/src/production-runtime-tools.ts` 的 `listAuthorized`）给后两类工具打上 `handleBound` 标记，适配器按 `capabilityHandleRef` 和这个标记分出句柄工具，不按名字判断。运行开始时有这类工具，就接在冻结的工具后面；这一轮工具层不同，缓存会断一次，但冻结记录不变，下一轮没有句柄时请求开头回到冻结的那份，不会换新。每次出现都写一行诊断日志 `prompt.bundle.handle_tools`（带 `runId`、代数、句柄工具个数），用来测量出现频率（第 4 条拍板）。
 
 5. **存储**：迁移 `0076_thread_prompt_bundles.sql` 新建 `thread_prompt_bundles` 表：
    - 主键 `(owner_id, agent_id, thread_id, generation)`，外键指向 `threads`，对话删除时级联删除；
@@ -82,7 +84,7 @@ date: "2026-11-04"
 
 9. **数据分类**：冻结内容按建它的那次运行的分类加密，不重新加密成更低的分类。遇到分类比冻结记录低的运行，按这个运行的分类和当前配置重新拼一份，作为换新一次（`classification_lower`）。分类比冻结记录高的运行直接用冻结的那份。
 
-10. **上线时进行中的对话**：不回填。每个对话上线后第一次运行时建第 1 代；已经有历史的对话记为 `origin = "rollout"`，新对话记为 `new_thread`。上线前已经挂起、上线后续跑的运行没有钉住记录，不冻结，照旧重新拼（见[上线影响](#rollout)）。
+10. **上线时进行中的对话**：不回填。每个对话上线后第一次运行时建第 1 代；已经有历史的对话记为 `origin = "rollout"`，新对话记为 `new_thread`。上线前已经挂起、上线后续跑的运行没有钉住记录，不冻结、照旧重新拼，但续跑身份哈希的组成变了，这些续跑会以 `RUNTIME_CONTINUATION_BINDING_CHANGED` 失败（见[上线影响](#rollout)）。上线前开始、被上线重启打断的运行不会重新调用模型：运行协调器把它们转到“核对外部结果”（`packages/application/src/services/run-coordinator.ts` 的 `interrupted` 分支），所以不会出现同一个运行前后用两套请求开头的情况。
 
 11. **生产开关**：配置 `runPolicy.freezeThreadPrompts` 设为 `false` 时不冻结，行为和以前一样（默认冻结）。它用于出问题时退回，以及端到端测试的反向用例。
 
@@ -128,7 +130,7 @@ date: "2026-11-04"
   - 反向：同一场景把生产开关 `freezeThreadPrompts` 关掉，第二轮的开头带着新指令、和第一轮不同，没有冻结记录。
   - 中途开启联网搜索：下一轮请求的工具里有 `web_search`，第 1 代被标为已换掉、第 2 代原因是 `tool_set_changed`；再下一轮开头和第 2 代一致。再把主模型换掉，第 3 代原因是 `model_changed`。两次换新各有一条 `prompt.bundle.invalidated` trace。
 - 数据库和策略层：`test/integration/thread-prompt-bundles.test.ts`（真实 SQLite，经过 SQLite 工作线程和直接执行两种方式）覆盖新对话建第 1 代、只改提示词文字不换新、`rollout`、运行内钉住（工具集合变了同一运行仍用旧代，续跑用同一代）、换新留下旧记录和 trace、换模型、分类变低、显式换新、并发首次运行只建一份、没有对话和上线前挂起的运行不建记录、对话删除时连同 payload 一起删除。
-- 适配器层：`packages/runtime-pi/test/prompt-prefix.compat.test.ts`（`check:prompt-prefix` 的一部分，真实 Pi 加本机回环服务）新增：系统指令变了、冻结时请求逐字节只追加；反向：不冻结时第 1 条消息被改写；句柄工具接在冻结工具后面并写测量日志。`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `pi-runtime-adapter.compat.test.ts` 覆盖运行中压缩后补运行环境说明（`willRetry` 为真才补；反向：去掉补发后用例失败）。
+- 适配器层：`packages/runtime-pi/test/prompt-prefix.compat.test.ts`（`check:prompt-prefix` 的一部分，真实 Pi 加本机回环服务）新增：系统指令变了、冻结时请求逐字节只追加；反向：不冻结时第 1 条消息被改写；句柄工具接在冻结工具后面并写测量日志；任务管理工具随任务句柄出现又消失时，冻结的工具名不变、不换新（反向：适配器不认 `handleBound` 时，三轮的工具名不同）。`apps/agent-service/test/production-runtime-tools.unit.test.ts` 检查生产的工具列表只在没有开启 `bash` 时给三个任务管理工具打标记，`execution_task_start` 总是打标记。`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `pi-runtime-adapter.compat.test.ts` 覆盖运行中压缩后补运行环境说明（`willRetry` 为真才补；反向：去掉补发后用例失败）。
 - 命令行：`apps/admin-cli/test/thread-prompt-rebuild-cli.unit.test.ts` 覆盖确认串、原因和操作人落库、没有冻结记录时拒绝、参数不全时拒绝。
 
 [返回阅读导航](#contents)
@@ -150,6 +152,8 @@ date: "2026-11-04"
 
 ## 没有处理的部分
 
-- **句柄工具的频率**：上线后看 `prompt.bundle.handle_tools` 日志；占比高的话另出方案改成固定的 `authorized_execute`。只有句柄任务时才出现的管理任务工具（没有开 `bash` 时）会改变工具集合、触发换新，测量时一并看。
+- **句柄工具的频率**：上线后看 `prompt.bundle.handle_tools` 日志；占比高的话另出方案改成固定的 `authorized_execute`。
+- **同名工具的参数变了不换新**：冻结记录只按工具名判断工具集合。上线改了某个工具的参数结构但名字不变时，老对话的模型仍看到冻结的旧参数，而执行时 Pi 按当前描述符的参数检查调用，旧格式的调用可能被拒绝，直到对这个对话显式换新。要不要把“去掉说明文字后的参数结构”也算进换新条件，要 Andy 定；在那之前，改工具参数结构的上线要在上线说明里列出受影响的对话并执行 `thread.prompt.rebuild`。
+- **挂起的续跑仍会被工具说明文字的改动挡住**：续跑身份哈希里仍有当前的工具描述符（含说明文字），和本 PR 之前一样。上线只改了工具说明文字时，冻结记录不换新，但挂起中的运行续跑会以 `RUNTIME_CONTINUATION_BINDING_CHANGED` 失败。
 - **提示词规则文件**：`.claude/rules/prompt-prefix.md` 没有提到冻结。建议的补充写在交付报告里，改规则要 Andy 同意。
 - **生产开关的位置**：`freezeThreadPrompts` 放在 `runPolicy` 里，改它要重启服务；以后如果要按对话开关，再另行设计。

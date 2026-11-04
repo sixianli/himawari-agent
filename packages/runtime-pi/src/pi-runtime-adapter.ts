@@ -541,7 +541,10 @@ function providerTool(
 }
 
 function isHandleTool(descriptor: RuntimeToolDescriptor): boolean {
-  return descriptor.capabilityHandleRef !== null || descriptor.name === "execution_task_start";
+  return (
+    descriptor.capabilityHandleRef !== null ||
+    ("handleBound" in descriptor && descriptor.handleBound === true)
+  );
 }
 
 function productSystemPrompt(

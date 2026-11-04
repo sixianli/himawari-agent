@@ -224,6 +224,34 @@ function runRequest(runId: string): RuntimeRequest {
   } as unknown as RuntimeRequest;
 }
 
+class TaskHandleTools extends SearchTools {
+  override async listAuthorized(runId?: string): Promise<readonly RuntimeToolDescriptor[]> {
+    const [, reminder] = await super.listAuthorized();
+    const task = (action: string): RuntimeToolDescriptor => ({
+      capabilityRef: `execution.task.${action}`,
+      capabilityHandleRef: null,
+      handleBound: true,
+      name: `execution_task_${action}`,
+      description: `Task ${action}`,
+      parameters: {
+        type: "object",
+        properties: { resourceRef: { type: "string" } },
+        required: ["resourceRef"],
+        additionalProperties: false,
+      },
+    });
+    return runId === "run-prefix-2"
+      ? [reminder as RuntimeToolDescriptor]
+      : [
+          reminder as RuntimeToolDescriptor,
+          task("status"),
+          task("output"),
+          task("cancel"),
+          task("start"),
+        ];
+  }
+}
+
 async function conversation(
   turns: readonly Turn[],
   reply: (index: number, body: string) => Reply,
@@ -589,6 +617,47 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       ["run-prefix-1", { generation: 1, handleTools: 1 }],
       ["run-prefix-2", { generation: 1, handleTools: 1 }],
       ["run-prefix-3", { generation: 1, handleTools: 1 }],
+    ]);
+  });
+
+  it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {
+    const bundles = new FrozenPromptBundles();
+    const handles: unknown[] = [];
+    const { bodies } = await conversation(
+      THREE_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      {
+        tools: new TaskHandleTools(),
+        promptBundles: bundles,
+        onHandleTools: (request, observation) => handles.push([request.runId, observation]),
+      },
+    );
+    expect(bundles.resolved.map(({ identity }) => identity.toolNames)).toEqual([
+      ["reminder_set"],
+      ["reminder_set"],
+      ["reminder_set"],
+    ]);
+    expect(bundles.frozen?.generation).toBe(1);
+    expect(JSON.parse(bundles.frozen?.tools ?? "[]")).toEqual([
+      expect.objectContaining({ name: "reminder_set" }),
+    ]);
+    const names = bodies.map((body) =>
+      (JSON.parse(body).tools as { function: { name: string } }[]).map(
+        (tool) => tool.function.name,
+      ),
+    );
+    expect(names[1]).toEqual(["reminder_set"]);
+    expect(names[2]).toEqual([
+      "reminder_set",
+      "execution_task_status",
+      "execution_task_output",
+      "execution_task_cancel",
+      "execution_task_start",
+    ]);
+    expect(handles).toEqual([
+      ["run-prefix-1", { generation: 1, handleTools: 4 }],
+      ["run-prefix-3", { generation: 1, handleTools: 4 }],
     ]);
   });
 

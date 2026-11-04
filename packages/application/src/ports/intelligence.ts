@@ -432,6 +432,7 @@ export interface RuntimeCustomToolDescriptor {
   readonly description: string;
   readonly parameters: JsonObject;
   readonly executionMode?: "parallel";
+  readonly handleBound?: true;
 }
 
 export interface RuntimeToolInvocation {
