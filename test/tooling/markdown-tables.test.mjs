@@ -116,6 +116,20 @@ describe("markdown table column check", () => {
     expect(positions(twoTables)).toEqual([{ line: 9, found: 3, expected: 2 }]);
   });
 
+  it("[reverse case] fails when a one-column header or delimiter row does not match the other", () => {
+    expect(positions("文字\n\n| a | b |\n| --- |\n| 1 | 2 |\n")).toEqual([
+      { line: 4, found: 1, expected: 2 },
+    ]);
+    expect(positions("文字\n\n| a |\n| --- | --- |\n| 1 |\n")).toEqual([
+      { line: 4, found: 2, expected: 1 },
+    ]);
+  });
+
+  it("does not let inline HTML inside a paragraph move the line search past a later table", () => {
+    const text = "- 第一项 <br>\n\n  <br>\n\n  | a | b |\n  | --- | --- |\n  | 1 | 2 | 3 |\n";
+    expect(positions(text)).toEqual([{ line: 7, found: 3, expected: 2 }]);
+  });
+
   it("does not treat an escaped pipe as a column when looking for a broken delimiter row", () => {
     expect(findTableProblems("a \\| b\n--- | ---\n")).toEqual([]);
   });

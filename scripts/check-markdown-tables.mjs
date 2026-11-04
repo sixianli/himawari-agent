@@ -36,8 +36,8 @@ export function cellCount(line) {
 function blocksIn(tokens, found) {
   for (const token of tokens) {
     if (["table", "paragraph", "code", "html"].includes(token.type)) found.push(token);
-    for (const key of ["tokens", "items"])
-      if (Array.isArray(token[key])) blocksIn(token[key], found);
+    if (token.type === "list") blocksIn(token.items, found);
+    if (token.type === "list_item" || token.type === "blockquote") blocksIn(token.tokens, found);
   }
   return found;
 }
@@ -54,7 +54,8 @@ function locate(sourceLines, rows, from, to) {
 }
 
 const DELIMITER_ROW = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
-const looksLikeDelimiter = (row) => cellCount(row) > 1 && DELIMITER_ROW.test(row.trim());
+const hasPipe = (row) => splitOnPipes(row.trim()).length > 1;
+const looksLikeDelimiter = (row) => hasPipe(row) && DELIMITER_ROW.test(row.trim());
 
 function problemsInBlock(token) {
   const rows = token.raw.split("\n").filter((row) => row.trim() !== "");
@@ -70,7 +71,7 @@ function problemsInBlock(token) {
   }
   rows.forEach((row, offset) => {
     const next = rows[offset + 1];
-    if (cellCount(row) > 1 && next !== undefined && looksLikeDelimiter(next)) {
+    if (hasPipe(row) && next !== undefined && looksLikeDelimiter(next)) {
       const expected = cellCount(row);
       const found = cellCount(next);
       if (found !== expected)
