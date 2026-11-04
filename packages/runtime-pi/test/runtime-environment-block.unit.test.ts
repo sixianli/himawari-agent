@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import {
   contextBlockMarker,
   previousRuntimeEnvironment,
+  RUNTIME_ENVIRONMENT_MESSAGE_TYPE,
+  runtimeEnvironmentAfterCompaction,
   splitRuntimeEnvironment,
 } from "../src/runtime-environment-block.js";
 
@@ -151,6 +153,45 @@ describe("runtime environment block is sent only when the model has not seen it"
       },
     ];
     expect(previousRuntimeEnvironment(history)).toBeUndefined();
+  });
+
+  it("re-attaches the runtime environment as an appended message when a compaction inside a run dropped it", () => {
+    const compacted = [
+      { role: "compactionSummary", summary: "看过目录。", tokensBefore: 10, timestamp: 3 },
+      { role: "toolResult", toolCallId: "call-1", content: [], timestamp: 4 },
+    ];
+    const appended = runtimeEnvironmentAfterCompaction(
+      compacted,
+      projection([memory, environment(ENVIRONMENT_A)]),
+    );
+    expect(appended).toEqual({
+      customType: RUNTIME_ENVIRONMENT_MESSAGE_TYPE,
+      content: `${MARKER}\n${ENVIRONMENT_A}`,
+      display: false,
+      details: {},
+    });
+    const withAppended = [...compacted, { role: "custom", ...appended, timestamp: 5 }];
+    expect(previousRuntimeEnvironment(withAppended)).toBe(ENVIRONMENT_A);
+    expect(
+      runtimeEnvironmentAfterCompaction(withAppended, projection([environment(ENVIRONMENT_A)])),
+    ).toBeUndefined();
+    expect(
+      splitRuntimeEnvironment(projection([environment(ENVIRONMENT_A)], withAppended)).environment,
+    ).toBeUndefined();
+  });
+
+  it("does not append when the kept messages still carry the same runtime environment or the run has none", () => {
+    const kept = [
+      { role: "compactionSummary", summary: "看过目录。", tokensBefore: 10, timestamp: 3 },
+      sentTurn([`${MARKER}\n${ENVIRONMENT_A}`]),
+    ];
+    expect(
+      runtimeEnvironmentAfterCompaction(kept, projection([environment(ENVIRONMENT_A)])),
+    ).toBeUndefined();
+    expect(runtimeEnvironmentAfterCompaction(kept, projection([memory]))).toBeUndefined();
+    expect(
+      runtimeEnvironmentAfterCompaction(kept, projection([environment(ENVIRONMENT_B)]))?.content,
+    ).toBe(`${MARKER}\n${ENVIRONMENT_B}`);
   });
 
   it("rejects a projection with two runtime environment blocks", () => {

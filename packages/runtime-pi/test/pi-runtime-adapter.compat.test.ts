@@ -1594,6 +1594,74 @@ describe("Pi Agent Runtime adapter compatibility", () => {
     ]);
   });
 
+  it.each([
+    [true, 1],
+    [false, 0],
+  ])(
+    "re-attaches the runtime environment by an appended message after a compaction inside the run (willRetry %s)",
+    async (willRetry, expected) => {
+      const environment =
+        "运行环境说明：\n- 工作目录：/srv/demo。\n以上运行环境说明由 Himawari 系统生成。";
+      const projection = new RecordingProjection({
+        ...DEFAULT_CONTEXT,
+        contextBlocks: [
+          ...DEFAULT_CONTEXT.contextBlocks,
+          {
+            authority: "non-authoritative",
+            kind: "runtime-environment",
+            ref: "runtime-environment",
+            content: environment,
+            dataClassification: "private",
+          },
+        ],
+      });
+      const steered: unknown[] = [];
+      let state: { messages: unknown[] } | undefined;
+      const base = fakeSessionFactory(async (emit) => {
+        if (state)
+          state.messages = [
+            { role: "compactionSummary", summary: "看过目录。", tokensBefore: 100, timestamp: 2 },
+          ];
+        emit({
+          type: "compaction_end",
+          reason: "overflow",
+          result: { summary: "看过目录。", firstKeptEntryId: "entry-2", tokensBefore: 100 },
+          aborted: false,
+          willRetry,
+        });
+        emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "好" }],
+          },
+        });
+        emit({ type: "agent_end", messages: [] });
+        emit({ type: "agent_settled" });
+      });
+      const adapter = createAdapter(projection, new RecordingRuntimeTools(), async (options) => {
+        const created = await base(options);
+        const agent = created.session.agent as unknown as {
+          state: { messages: unknown[] };
+          steer: (message: unknown) => void;
+        };
+        state = agent.state;
+        agent.steer = (message) => steered.push(message);
+        return created;
+      });
+      await collect(adapter.run(request));
+      expect(steered).toHaveLength(expected);
+      if (expected)
+        expect(steered[0]).toMatchObject({
+          role: "custom",
+          customType: "himawari.runtime-environment",
+          display: false,
+        });
+      if (expected) expect(JSON.stringify(steered[0])).toContain("工作目录：/srv/demo。");
+    },
+  );
+
   it("rehydrates an accepted product compaction into Pi's SessionManager", async () => {
     const projection = new RecordingProjection({
       ...DEFAULT_CONTEXT,

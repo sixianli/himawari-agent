@@ -85,7 +85,11 @@ import {
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
-import { contextBlockMarker, splitRuntimeEnvironment } from "./runtime-environment-block.js";
+import {
+  contextBlockMarker,
+  runtimeEnvironmentAfterCompaction,
+  splitRuntimeEnvironment,
+} from "./runtime-environment-block.js";
 
 function previousFileConflict(
   messages: AgentSession["agent"]["state"]["messages"],
@@ -1579,6 +1583,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           );
           this.#historyWrites.set(request.runId, pending);
           void pending.catch(() => session.agent.abort());
+        }
+
+        if (
+          event.type === "compaction_end" &&
+          event.willRetry &&
+          !event.aborted &&
+          event.result !== undefined
+        ) {
+          const environment = runtimeEnvironmentAfterCompaction(
+            session.agent.state.messages,
+            projection,
+          );
+          if (environment)
+            session.agent.steer({ role: "custom", ...environment, timestamp: Date.now() });
         }
 
         if (
