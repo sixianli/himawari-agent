@@ -53,21 +53,28 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
 };
 
+const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
+
 describe("[PROMPT-CONTRACT] background prompts and the parsers that read their answers", () => {
-  it("names a real parser for every catalog prompt that asks for a structured answer", () => {
+  it("names a real parser for every catalog prompt that asks for a structured answer, or lists it as not covered", () => {
     const structured = (Object.values(catalog) as unknown[])
       .filter(isEntry)
-      .filter(
-        (entry) =>
-          (entry.output === "json" || entry.output === "structured-choice") &&
-          entry.parser !== undefined &&
-          entry.parser in PARSERS,
-      );
-    expect(structured.map(({ id }) => id).sort()).toEqual(
-      ["mail.judgment", "memory.capture", "review.typesafe-questions"].sort(),
-    );
-    for (const entry of structured)
-      expect(typeof PARSERS[entry.parser as string], entry.id).toBe("function");
+      .filter((entry) => entry.output === "json" || entry.output === "structured-choice");
+    const problems = structured.flatMap((entry) => {
+      if (NOT_COVERED.has(entry.id))
+        return entry.parser === undefined ? [] : [`LISTED_BUT_HAS_PARSER ${entry.id}`];
+      if (entry.parser === undefined) return [`NO_PARSER ${entry.id}`];
+      return typeof PARSERS[entry.parser] === "function"
+        ? []
+        : [`UNKNOWN_PARSER ${entry.id} ${entry.parser}`];
+    });
+    expect(problems).toEqual([]);
+    expect(
+      structured
+        .filter((entry) => !NOT_COVERED.has(entry.id))
+        .map(({ id }) => id)
+        .sort(),
+    ).toEqual(["mail.judgment", "memory.capture", "review.typesafe-questions"].sort());
   });
 
   it("memory capture: accepts the JSON the prompt asks for, also inside a Markdown fence", () => {

@@ -107,6 +107,22 @@ const KNOWN_TOOL_RESULT_STATUS: readonly (readonly [string, string])[] = [
   ],
   ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"原工具结果仍需核验，未重新执行。"'],
   ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"Tool execution needs reconcil'],
+  [
+    "apps/agent-service/src/capability-programs/pi-coding-request.ts",
+    '"目标路径是目录，不是文件。查看目录内容请用 ls；找到具体',
+  ],
+  [
+    "packages/platform-node/src/files/pi-host-publication.ts",
+    '"目录已移动。后续操作需要重新解析目标位置。"',
+  ],
+  [
+    "packages/platform-node/src/files/pi-host-publication.ts",
+    '"目标文件已变化，候选保留，尚未开始发布。请读取最新内容并通',
+  ],
+  ["packages/runtime-pi/src/pi-runtime-adapter.ts", "`Blocked by product policy: $" + "{"],
+  ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"工具未执行：无法保存恢复记录。"'],
+  ["packages/runtime-pi/src/prepare-file-mutation.ts", "`Successfully wrote $" + "{Buffer.b"],
+  ["packages/runtime-pi/src/sandboxed-coding-executor.ts", "`Successfully wrote $" + "{new Text"],
 ];
 
 const isEntry = (value: unknown): value is PromptEntry =>
@@ -126,7 +142,7 @@ const canonical = (entry: Pick<PromptEntry, "segments">): string =>
     .join("");
 
 const digest = (entry: Pick<PromptEntry, "segments">): string =>
-  createHash("sha256").update(canonical(entry)).digest("hex");
+  createHash("sha256").update(JSON.stringify(entry.segments)).digest("hex");
 
 export function manifestProblems(
   current: readonly PromptEntry[],
@@ -180,7 +196,7 @@ export function strayPromptLiterals(file: string, source: string): string[] {
 export function toolResultLiterals(file: string, source: string): string[] {
   const found: string[] = [];
   for (const match of source.matchAll(
-    /\b(?:modelContent|note)\s*:\s*("(?:[^"\\\n]|\\.)+"|`(?:[^`\\]|\\.)+`)/gu,
+    /\b(?:(?:modelContent|note)\s*:|type\s*:\s*"text"(?:\s+as\s+const)?\s*,\s*text\s*:)\s*("(?:[^"\\\n]|\\.)+"|`(?:[^`\\]|\\.)+`)/gu,
   )) {
     const literal = match[1] ?? "";
     if (/^"[A-Z0-9_]+"$/u.test(literal)) continue;
@@ -259,7 +275,7 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
     expect(problems).toEqual([]);
   });
 
-  it("lists every tool result sentence still written in source code, and nothing more", () => {
+  it("lists every literal written after modelContent:, note: or a text content block, and nothing more", () => {
     const found = sourceFiles().flatMap((file) =>
       toolResultLiterals(file, readFileSync(path.join(repositoryRoot, file), "utf8")),
     );
@@ -277,6 +293,12 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
     expect(
       toolResultProblems([]).filter((line) => line.startsWith("PROMPT_TOOL_RESULT_LIST_STALE")),
     ).toHaveLength(KNOWN_TOOL_RESULT_STATUS.length);
+  });
+
+  it("REVERSE: tells a slot apart from text that looks like a slot", () => {
+    const asSlot = { segments: [{ kind: "slot" as const, name: "x" }] };
+    const asText = { segments: [{ kind: "text" as const, text: "{x}" }] };
+    expect(digest(asSlot)).not.toBe(digest(asText));
   });
 
   it("REVERSE: reports a changed prompt whose manifest digest was not updated", () => {
