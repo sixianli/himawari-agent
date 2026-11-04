@@ -3,6 +3,7 @@ import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
+import { SANDBOX_RUNTIME_VERSION } from "@himawari-agent/execution-contracts";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { runAdminCli } from "../../apps/admin-cli/src/index.ts";
@@ -103,7 +104,7 @@ function entry(capability: Capability, ownerId: string): Json {
     qualification: {
       qualificationVersion: "capability-runtime-qualification.v1",
       platform: PLATFORM,
-      runtimeIdentity: "srt:0.0.75",
+      runtimeIdentity: `srt:${SANDBOX_RUNTIME_VERSION}`,
       productionSuitable: true,
       artifactDigest: manifest["integrity"],
       enforcement: {
@@ -121,7 +122,7 @@ function entry(capability: Capability, ownerId: string): Json {
         qualificationRef: "qualification:upgrade",
         hostId: HOST,
         profileRef: PROFILE,
-        srtVersion: "0.0.75",
+        srtVersion: SANDBOX_RUNTIME_VERSION,
         platform: PLATFORM,
         architecture: PLATFORM === "darwin" ? "arm64" : "x64",
         osRelease: "27.0.0",

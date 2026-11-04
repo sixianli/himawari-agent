@@ -1,12 +1,16 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { PI_RESIDENT_FRAME_LIMIT_BYTES } from "@himawari-agent/execution-contracts";
+import {
+  PI_RESIDENT_FRAME_LIMIT_BYTES,
+  SANDBOX_RUNTIME_VERSION,
+} from "@himawari-agent/execution-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   JOB_HOST_NAMESPACE_GATE_WINDOW_MS,
   type JobHostRequest,
 } from "../src/job-host-protocol.ts";
+import { SRT_SECCOMP_HELPER_SHA256 } from "../src/srt-runtime-identity.ts";
 
 const boundary = vi.hoisted(() => ({
   process: {},
@@ -25,6 +29,7 @@ const boundary = vi.hoisted(() => ({
   sdk: vi.fn(),
   manager: {
     compileSandboxPolicy: vi.fn(),
+    inspectRuntime: vi.fn(),
     checkDependenciesAsync: vi.fn(),
     isSupportedPlatform: vi.fn(),
     initialize: vi.fn(),
@@ -84,12 +89,48 @@ vi.mock("../src/resident-process-tree.ts", async (importOriginal) => {
 const SESSION = "11111111-1111-1111-1111-111111111111";
 const POLICY_JSON = JSON.stringify({ network: { allowedDomains: [] } });
 const DIGEST = createHash("sha256").update(POLICY_JSON).digest("hex");
+const HELPER =
+  "/runtime/node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp";
+const SRT_IDENTITY = {
+  packageName: "@anthropic-ai/sandbox-runtime",
+  version: SANDBOX_RUNTIME_VERSION,
+  helper: {
+    path: HELPER,
+    realPath: HELPER,
+    regularFile: true,
+    executable: true,
+    sha256: SRT_SECCOMP_HELPER_SHA256.x64,
+  },
+  bwrapVersion: "bubblewrap 0.9.0",
+};
+const shellWord = (word: string) =>
+  /^[A-Za-z0-9_./:@+,-][A-Za-z0-9_./:=@+,-]*$/.test(word)
+    ? word
+    : `'${word.replaceAll("'", `'"'"'`)}'`;
+const shellWords = (words: readonly string[]) => words.map(shellWord).join(" ");
+const lockedLaunch = (
+  command: string,
+  options: readonly string[] = ["--new-session", "--die-with-parent"],
+) =>
+  shellWords([
+    "bwrap",
+    ...options,
+    "--",
+    "/bin/bash",
+    "-c",
+    shellWords([
+      "/bin/bash",
+      "-c",
+      `SRT_ALLOW_NESTED_USERNS=0 ${HELPER} ${shellWords(["/bin/bash", "-c", command])}`,
+    ]),
+  ]);
 let listeners: Map<string, (...args: unknown[]) => void>;
 let sent: Record<string, unknown>[];
 let sequence: number;
 let processBoundary: {
   env: Record<string, string>;
   platform: string;
+  arch: string;
   connected: boolean;
   send: ReturnType<typeof vi.fn> | undefined;
   disconnect: ReturnType<typeof vi.fn>;
@@ -179,6 +220,7 @@ beforeEach(() => {
   processBoundary = {
     env: { HOME: "/private-job", TMPDIR: "/private-job", CLAUDE_CODE_TMPDIR: "/private-job" },
     platform: "linux",
+    arch: "x64",
     connected: true,
     send: vi.fn((message, callback) => {
       sent.push(message);
@@ -233,10 +275,11 @@ beforeEach(() => {
   boundary.manager.checkDependenciesAsync.mockResolvedValue({ errors: [], warnings: [] });
   boundary.manager.isSupportedPlatform.mockReturnValue(true);
   boundary.manager.initialize.mockResolvedValue(undefined);
-  boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
-    argv: ["/bin/bash", "-c", "bwrap --new-session --die-with-parent -- /bin/bash -c true"],
+  boundary.manager.inspectRuntime.mockResolvedValue(SRT_IDENTITY);
+  boundary.manager.wrapWithSandboxArgv.mockImplementation(async (command: string) => ({
+    argv: ["/bin/bash", "-c", lockedLaunch(command)],
     env: { FIXTURE: "1" },
-  });
+  }));
   boundary.manager.reset.mockResolvedValue(undefined);
   boundary.sdk.mockResolvedValue(boundary.manager);
   resident.table = [{ pid: 7000, parent: 1, start: "7000" }];
@@ -1052,21 +1095,24 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     },
   );
 
-  const readOnlyTmpfsCommand =
-    "bwrap --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var -- /bin/bash -c true";
-  const readOnlyTmpfsRewritten =
-    "bwrap --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --remount-ro /tmp --remount-ro /var -- /bin/bash -c true";
+  const tmpfsOptions = ["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", "/var"];
+  const readOnlyTmpfsCommand = (command: string) => lockedLaunch(command, tmpfsOptions);
+  const readOnlyTmpfsRewritten = (command: string) =>
+    lockedLaunch(command, [...tmpfsOptions, "--remount-ro", "/tmp", "--remount-ro", "/var"]);
+  const wrapReadOnlyTmpfs = () =>
+    boundary.manager.wrapWithSandboxArgv.mockImplementation(async (command: string) => ({
+      argv: ["/bin/bash", "-c", readOnlyTmpfsCommand(command)],
+      env: { FIXTURE: "1" },
+    }));
 
   it("[R2-T5] rewrites a Linux launch so each tmpfs is remounted read-only before the separator", async () => {
-    boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
-      argv: ["/bin/bash", "-c", readOnlyTmpfsCommand],
-      env: { FIXTURE: "1" },
-    });
+    wrapReadOnlyTmpfs();
     await prepare();
     await startLinux();
+    const command = boundary.manager.wrapWithSandboxArgv.mock.calls[0]?.[0] as string;
     expect(boundary.spawn).toHaveBeenCalledWith(
       "/bin/bash",
-      ["-c", readOnlyTmpfsRewritten],
+      ["-c", readOnlyTmpfsRewritten(command)],
       expect.objectContaining({ shell: false, detached: true }),
     );
   });
@@ -1137,11 +1183,143 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
   });
 
-  it("[R2-T5] returns rewritten argv from the Linux readiness wrap callback", async () => {
-    boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
-      argv: ["/bin/bash", "-c", readOnlyTmpfsCommand],
-      env: { FIXTURE: "1" },
+  it.each([
+    [
+      "an installed SRT that is not the locked version",
+      { version: "0.0.75" },
+      "JOB_HOST_SRT_VERSION_MISMATCH",
+    ],
+    [
+      "a package that is not SRT",
+      { packageName: "other-runtime" },
+      "JOB_HOST_SRT_VERSION_MISMATCH",
+    ],
+    ["no seccomp helper", { helper: null }, "JOB_HOST_SECCOMP_HELPER_UNAVAILABLE"],
+    [
+      "a seccomp helper with other bytes",
+      { helper: { ...SRT_IDENTITY.helper, sha256: "0".repeat(64) } },
+      "JOB_HOST_SECCOMP_HELPER_UNAVAILABLE",
+    ],
+    [
+      "a seccomp helper that is not executable",
+      { helper: { ...SRT_IDENTITY.helper, executable: false } },
+      "JOB_HOST_SECCOMP_HELPER_UNAVAILABLE",
+    ],
+    [
+      "a seccomp helper reached through a link",
+      { helper: { ...SRT_IDENTITY.helper, realPath: "/elsewhere/apply-seccomp" } },
+      "JOB_HOST_SECCOMP_HELPER_UNAVAILABLE",
+    ],
+  ])("refuses to prepare with %s", async (_label, change, code) => {
+    boundary.manager.inspectRuntime.mockResolvedValue({ ...SRT_IDENTITY, ...change });
+    await prepare();
+    expect(boundary.manager.checkDependenciesAsync).not.toHaveBeenCalled();
+    expect(boundary.manager.initialize).not.toHaveBeenCalled();
+    expect(boundary.spawn).not.toHaveBeenCalled();
+    expect(sent.find((item) => item["type"] === "diagnostic")).toMatchObject({
+      detail: { code, command: "prepare", text: expect.stringMatching(/^srt .+; bwrap /) },
     });
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
+  });
+
+  it("hands SRT the locked seccomp helper and records the bubblewrap version on failure", async () => {
+    boundary.manager.initialize.mockRejectedValue(new Error("JOB_HOST_JAVA_AGENT_INVALID"));
+    await prepare();
+    expect(boundary.manager.initialize.mock.calls[0]?.[0]).toMatchObject({
+      seccomp: { applyPath: HELPER },
+    });
+    expect(sent.find((item) => item["type"] === "diagnostic")).toMatchObject({
+      detail: { text: `srt ${SANDBOX_RUNTIME_VERSION}; bwrap bubblewrap 0.9.0` },
+    });
+  });
+
+  it("prepares on Darwin without a seccomp helper", async () => {
+    Object.assign(boundary.process, { platform: "darwin" });
+    boundary.manager.inspectRuntime.mockResolvedValue({ ...SRT_IDENTITY, helper: null });
+    await prepare();
+    expect(boundary.manager.initialize.mock.calls[0]?.[0]).not.toHaveProperty("seccomp");
+    expect(sent.some((item) => item["type"] === "ready")).toBe(true);
+  });
+
+  it.each([
+    [
+      "the helper prefix is missing",
+      (command: string) =>
+        shellWords([
+          "bwrap",
+          "--",
+          "/bin/bash",
+          "-c",
+          shellWords(["/bin/bash", "-c", `${HELPER} ${shellWords(["/bin/bash", "-c", command])}`]),
+        ]),
+      "JOB_HOST_SECCOMP_HELPER_NOT_IN_USE",
+    ],
+    [
+      "another helper is used",
+      (command: string) =>
+        lockedLaunch(command).replace(HELPER, "/usr/lib/node_modules/x/apply-seccomp"),
+      "JOB_HOST_SECCOMP_HELPER_NOT_IN_USE",
+    ],
+    [
+      "bubblewrap is told to disable user namespaces",
+      (command: string) => lockedLaunch(command, ["--new-session", "--disable-userns"]),
+      "JOB_HOST_SECCOMP_HELPER_NOT_IN_USE",
+    ],
+    [
+      "the mounts go through an argument file",
+      () =>
+        '/bin/sh -c \'exec 3<"$1" && shift && exec "$@"\' srt-args /proc/self/fd/3 bwrap --args 3 -- /bin/bash -c true',
+      "JOB_HOST_LAUNCH_ARGV_FILE_UNSUPPORTED",
+    ],
+  ])("does not spawn when %s", async (_label, launch, code) => {
+    boundary.manager.wrapWithSandboxArgv.mockImplementation(async (command: string) => ({
+      argv: ["/bin/bash", "-c", launch(command)],
+      env: { FIXTURE: "1" },
+    }));
+    await prepare();
+    await receive("start");
+    expect(boundary.spawn).not.toHaveBeenCalled();
+    expect(sent.find((item) => item["type"] === "diagnostic")).toMatchObject({
+      detail: { code },
+    });
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
+  });
+
+  it("checks the readiness wrap for the locked helper too", async () => {
+    const input = request();
+    await prepare(
+      {
+        ...input,
+        policy: { ...input.policy, allowedUnixSockets: ["/private-job/ready.sock"] },
+        readiness: {
+          kind: "unix_http" as const,
+          ref: "ready",
+          socketName: "ready.sock",
+          path: "/health",
+          expectedStatus: 200,
+          timeoutMs: 1000,
+        },
+      },
+      {
+        control: {
+          sessionId: SESSION,
+          jobId: input.jobId,
+          attemptId: input.attemptId,
+          directory: "/control",
+        },
+      },
+    );
+    await startLinux();
+    const probe = boundary.readiness.mock.calls[0]?.[0];
+    boundary.manager.wrapWithSandboxArgv.mockImplementation(async (command: string) => ({
+      argv: ["/bin/bash", "-c", lockedLaunch(`${command} ; other`)],
+      env: { FIXTURE: "1" },
+    }));
+    await expect(probe.wrap("probe")).rejects.toThrow("JOB_HOST_SECCOMP_HELPER_NOT_IN_USE");
+  });
+
+  it("[R2-T5] returns rewritten argv from the Linux readiness wrap callback", async () => {
+    wrapReadOnlyTmpfs();
     const input = request();
     await prepare(
       {
@@ -1168,13 +1346,13 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     await startLinux();
     const probe = boundary.readiness.mock.calls[0]?.[0];
     await expect(probe.wrap("probe")).resolves.toMatchObject({
-      argv: ["/bin/bash", "-c", readOnlyTmpfsRewritten],
+      argv: ["/bin/bash", "-c", readOnlyTmpfsRewritten("probe")],
     });
   });
 
   it("[R2-T5] leaves a Darwin launch argv unchanged", async () => {
     Object.assign(boundary.process, { platform: "darwin" });
-    const argv = ["/bin/bash", "-c", readOnlyTmpfsCommand];
+    const argv = ["/bin/bash", "-c", readOnlyTmpfsCommand("true")];
     boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
       argv,
       env: { FIXTURE: "1" },
@@ -1185,7 +1363,7 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     await settle();
     expect(boundary.spawn).toHaveBeenCalledWith(
       "/bin/bash",
-      ["-c", readOnlyTmpfsCommand],
+      ["-c", readOnlyTmpfsCommand("true")],
       expect.objectContaining({ shell: false, detached: true }),
     );
   });

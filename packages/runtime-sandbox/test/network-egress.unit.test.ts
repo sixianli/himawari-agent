@@ -159,6 +159,26 @@ describe("per-job public network egress", () => {
       await proxy.close();
     }
   });
+  it.each([
+    ["10.0.0.5", 4],
+    ["192.168.1.20", 4],
+    ["127.0.0.1", 4],
+    ["169.254.169.254", 4],
+    ["fd00::1", 6],
+  ])(
+    "refuses an allowed domain that resolves only to the private address %s",
+    async (address, family) => {
+      lookup.mockResolvedValue([{ address, family }]);
+      const proxy = await openNetworkEgress(["example.com:80"], async () => {});
+      try {
+        expect((await get(proxy)).status).toBe(403);
+        expect(dial).not.toHaveBeenCalled();
+        expect(proxy.observation()).toMatchObject({ deniedAddresses: 1 });
+      } finally {
+        await proxy.close();
+      }
+    },
+  );
   it("does not dial when a pending resolver completes after revocation", async () => {
     let resolved!: (value: unknown) => void;
     lookup.mockImplementation(

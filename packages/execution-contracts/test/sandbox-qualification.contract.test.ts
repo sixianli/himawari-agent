@@ -3,6 +3,7 @@ import {
   assertSandboxExecutionSupport,
   sandboxExecutionSupportSchema,
   sandboxHostBindingSchema,
+  SANDBOX_RUNTIME_VERSION,
   sandboxRuntimeQualificationSchema,
 } from "../src/index.ts";
 
@@ -11,7 +12,7 @@ const qualification = {
   qualificationRef: "qualification:test",
   hostId: "host:test",
   profileRef: "host-readonly.v1",
-  srtVersion: "0.0.75",
+  srtVersion: SANDBOX_RUNTIME_VERSION,
   platform: "darwin",
   architecture: "arm64",
   osRelease: "27.0.0",
@@ -86,7 +87,7 @@ describe("sandbox host qualification", () => {
     { resourceMode: "hard_limits" },
     { guarantees: qualification.guarantees.filter((value) => value !== "restart_reconciliation") },
     { guarantees: [...qualification.guarantees, "task_tree_termination"] },
-    { srtVersion: "0.0.76" },
+    ...["0.0.75", "0.0.80", "0.0.82"].map((srtVersion) => ({ srtVersion })),
     { guarantees: [...qualification.guarantees, "best_effort_stop"] },
     { extra: true },
   ])("rejects unsupported or omitted evidence: %j", (override) => {

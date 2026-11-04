@@ -159,7 +159,7 @@ try {
         osRelease: release(),
         architecture: process.arch,
         node: process.version,
-        srt: "0.0.75",
+        srt: "0.0.81",
         artifact: process.env.HIMAWARI_PROBE_RUNTIME ? "runtime-path-probe" : "source-build",
         runtimeRoot,
         productionSuitable: false,
