@@ -20,4 +20,12 @@ describe("HIMAWARI_IDENTITY memory and reminder claims", () => {
     expect(HIMAWARI_IDENTITY).toContain("不要说“已设好提醒”");
     expect(HIMAWARI_IDENTITY).toContain("把事项写进文件不算设了提醒");
   });
+
+  it("defers to the tool's own failure note instead of one fixed fallback", () => {
+    const failure = HIMAWARI_IDENTITY.slice(HIMAWARI_IDENTITY.indexOf("工具返回失败"));
+    const failureSentence = failure.slice(0, failure.indexOf("。") + 1);
+    expect(failureSentence).toContain("按工具返回的说明");
+    expect(failureSentence).not.toContain("提醒页");
+    expect(HIMAWARI_IDENTITY).toContain("本轮没有这个工具时");
+  });
 });
