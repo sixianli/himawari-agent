@@ -181,3 +181,12 @@ export const TOOL_RESULT_REMINDER_REJECTED = fixedPrompt({
   output: "free-text",
   text: "这次没有成功，原因见 error。不要说已设好或已取消，如实告诉主人原因，需要时请他改个时间或说得更具体。",
 });
+
+export const TOOL_RESULT_REMINDER_SET = fixedPrompt({
+  id: "tool-result.reminder-set",
+  purpose: "设提醒成功后工具结果里的说明",
+  usedBy: ["apps/agent-service/src/production-reminder-writer.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "把 due 的时间原样告诉主人；remindAt 是实际提醒的时刻。",
+});

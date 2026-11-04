@@ -17,6 +17,7 @@ import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
   TOOL_REMINDER_SET,
+  TOOL_RESULT_REMINDER_SET,
 } from "@himawari-agent/prompt-catalog";
 import { containsRestrictedIdentifier, reminderSchedule } from "./production-memory-capture.js";
 
@@ -399,7 +400,7 @@ export class ProductionReminderTools {
       due: this.#local(created.dueAt),
       remindAt: this.#local(created.remindAt),
       repeat: created.repeat,
-      note: "把 due 的时间原样告诉主人；remindAt 是实际提醒的时刻。",
+      note: TOOL_RESULT_REMINDER_SET.text,
     };
   }
 }
