@@ -1167,7 +1167,10 @@ export class SqliteCapabilityInvocationOperations {
         this.assertRequestScope(input, ownerId, agentId);
 
         const byKey = this.readReceiptByKey(ownerId, agentId, input.idempotencyKey);
-        if (byKey) return this.replayOrConflict(byKey, input);
+        if (byKey) {
+          this.assertReplayNotRevoked(receiptFromRow(byKey));
+          return this.replayOrConflict(byKey, input);
+        }
         const byInvocation = this.readReceiptByInvocation(
           ownerId,
           agentId,
@@ -1768,6 +1771,27 @@ export class SqliteCapabilityInvocationOperations {
          WHERE owner_id = ? AND agent_id = ? AND handle_ref = ? AND invocation_id = ?`,
       )
       .get(ownerId, agentId, handleRef, invocationId) as ReceiptRow | undefined;
+  }
+
+  private assertReplayNotRevoked(receipt: FrozenReceipt): void {
+    const row = this.readHandle(receipt.handleRef);
+    if (!row) {
+      this.fail("PORT_NOT_FOUND", `Capability handle ${receipt.handleRef} not found`);
+      return;
+    }
+    const current = handleRecord(row);
+    if (current.revokedAt !== null || row.handleStatus === "revoked") {
+      this.fail("PORT_HANDLE_REVOKED", "Capability Handle was revoked before this replay");
+      return;
+    }
+    if (current.authorization.type !== "grant") return;
+    const grant = this.database
+      .prepare(
+        "SELECT record_json AS recordJson, owner_id AS ownerId, agent_id AS agentId FROM grants WHERE id = ?",
+      )
+      .get(current.authorization.ref) as GrantRow | undefined;
+    if (!grant || grantRecord(grant)["revokedAt"] !== null)
+      this.fail("PORT_HANDLE_REVOKED", "Capability Handle Grant was revoked before this replay");
   }
 
   private replayOrConflict(row: ReceiptRow, input: ConsumeInput): ConsumeResult {
