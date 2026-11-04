@@ -6,6 +6,7 @@ import {
   usdCostsEqual,
   usdCostToMicros,
 } from "@himawari-agent/application";
+import { MEMORY_EMBEDDING_QUERY_INSTRUCTION } from "@himawari-agent/prompt-catalog";
 
 export const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1" as const;
 export const QWEN3_EMBEDDING_8B_MODEL = "alibaba/qwen3-embedding-8b" as const;
@@ -18,8 +19,7 @@ export const QWEN3_EMBEDDING_8B_COST = Object.freeze({
   cacheWrite: 0,
 });
 
-export const QWEN3_MEMORY_QUERY_INSTRUCTION =
-  "Given a question from the owner of a personal assistant, retrieve the remembered facts about the owner that help answer it" as const;
+export const QWEN3_MEMORY_QUERY_INSTRUCTION = MEMORY_EMBEDDING_QUERY_INSTRUCTION.text;
 
 export const QWEN3_MEMORY_MINIMUM_SIMILARITY = 0.6 as const;
 

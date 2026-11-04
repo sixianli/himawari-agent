@@ -19,6 +19,7 @@
     "@himawari-agent/memory-engine": "0.0.0",
     "@himawari-agent/persistence-sqlite": "0.0.0",
     "@himawari-agent/platform-node": "0.0.0",
+    "@himawari-agent/prompt-catalog": "0.0.0",
     "@himawari-agent/runtime-pi": "0.0.0",
     "@himawari-agent/runtime-sandbox": "0.0.0"
   },
