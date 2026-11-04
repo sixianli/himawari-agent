@@ -258,6 +258,10 @@ export function redactForEgress(
   return Object.freeze({ text, findings: Object.freeze(findings) });
 }
 
+export function maskSensitiveText(input: string): string {
+  return redactForEgress(input).text;
+}
+
 export class EgressRedactionError extends Error {
   readonly code = "EGRESS_REDACTION_INCOMPLETE" as const;
   constructor() {

@@ -46,6 +46,16 @@ export interface ProactiveSourceItem {
   readonly receivedAt: string;
   readonly categories: readonly string[];
   readonly sentByOwner: boolean;
+  readonly body: string | null;
+  readonly bodyTruncated: boolean;
+  readonly bodyUnavailable: boolean;
+  readonly attachments: readonly ProactiveMailAttachment[];
+}
+
+export interface ProactiveMailAttachment {
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly size: number;
 }
 
 export interface ProactiveCounts {

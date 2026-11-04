@@ -969,7 +969,7 @@ export const messages = {
   "proactive.line.floorRaised":
     "{count} 封新邮件，其中 {raised} 封按“重要来信不放过”的规则留在提醒页",
   "proactive.line.quiet":
-    "{count} 封新邮件{skipped, plural, =0 {} other {，# 封按规则跳过（推广等）}}，没有急事",
+    "{count} 封新邮件{skipped, plural, =0 {} other {，# 封垃圾邮件按规则跳过}}，没有急事",
   "proactive.line.judged":
     "模型看了 {judged} 封：要处理 {act} · 请看原信 {check} · 值得知道 {know}",
   "proactive.line.opened": "你点开了",
@@ -996,10 +996,11 @@ export const messages = {
     "{o, select, connected {已连接 Gmail。第一次检查马上开始。} denied {你在 Google 页面没有同意，所以没有连接。} other {连接没有成功，请再试一次。}}",
   "proactive.apps.what": "Himawari 会读什么、发给谁",
   "proactive.apps.what1": "只读新邮件；不归档、不打标签、不回信",
-  "proactive.apps.what2": "推广、社交、论坛和垃圾邮件不看",
+  "proactive.apps.what2": "垃圾邮件不看；你自己发出的邮件也会读",
   "proactive.apps.what3":
-    "只把发件人、标题和 Gmail 自带的一行摘要发给模型，不发正文；摘要含验证码、卡号、密码的不发",
-  "proactive.apps.what4": "不存邮件正文，只存提炼出的待办和关键信息",
+    "把发件人、标题和邮件正文发给模型，附件只发文件名；发出前会遮住认得出的密码、验证码、银行卡号和证件号，其他内容不遮",
+  "proactive.apps.what4":
+    "每次检查发给模型的内容（已遮盖）和模型的回答会加密保存在决策记录里，断开时一起删除；页面上只显示提炼出的待办和关键信息",
   "proactive.apps.what5": "断开时在 Google 撤销授权，并删掉所有提炼结果",
   "proactive.apps.senders": "重要发件人名单",
   "proactive.apps.sendersCount": "{count} 个",
@@ -1015,7 +1016,7 @@ export const messages = {
     "会删掉所有提醒检查记录、邮件提炼结果和你对没提醒的邮件做过的评价，Gmail 仍保持连接。确定删除？",
   "proactive.data.cleared": "已全部删除。",
   "proactive.when.dueToday": "今天 {time} 截止",
-  "proactive.line.allSkipped": "{count} 封新邮件，都是推广这类，按规则跳过，没交给模型",
+  "proactive.line.allSkipped": "{count} 封新邮件，都是垃圾邮件，按规则跳过，没交给模型",
   "proactive.settings.badTime": "请按 23:00 这样的 24 小时格式填写，这一段还没保存",
   "reminders.tab.reminders": "提醒",
   "reminders.tab.report": "校准周报",
