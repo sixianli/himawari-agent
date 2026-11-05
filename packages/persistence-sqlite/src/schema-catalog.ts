@@ -489,6 +489,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Thread deletion; payloads removed with the Thread",
   ),
   entry(
+    "sensitive_interceptions",
+    "SensitiveInterceptionStorePort",
+    "one row per place, kind and value fingerprint where sensitive text was masked or kept out; later sightings raise the count and last time; no original value is stored",
+    "metadata_only",
+    "cascade with Thread deletion; the owner can clear all rows; no automatic expiry",
+  ),
+  entry(
     "thread_derivative_candidates",
     "ThreadDistillationStatePort",
     "immutable generation candidate",
