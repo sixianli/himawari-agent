@@ -500,11 +500,11 @@ describe("runner units and shared limits", () => {
   const render = (id) => shell(`render_runner_unit ${id} "${template}"`);
   const slice = () => unitSettings(readFileSync(path.join(scripts, "gh-runners.slice"), "utf8"));
 
-  it("caps both runners together at 3 cores and 6 GB with low priority against other services", () => {
+  it("caps both runners together at 3 cores and 9 GB with low priority against other services", () => {
     expect(slice()).toMatchObject({
       CPUQuota: "300%",
-      MemoryHigh: "5632M",
-      MemoryMax: "6G",
+      MemoryHigh: "8G",
+      MemoryMax: "9G",
       MemorySwapMax: "0",
       CPUWeight: "20",
       IOWeight: "20",
@@ -528,8 +528,8 @@ describe("runner units and shared limits", () => {
         Group: user,
         WorkingDirectory: `${root}/runner`,
         CPUQuota: "200%",
-        MemoryHigh: "4608M",
-        MemoryMax: "5G",
+        MemoryHigh: "6G",
+        MemoryMax: "7G",
         ProtectProc: "invisible",
         ReadWritePaths: `${root}/runner ${root}/home ${root}/logs`,
       });
