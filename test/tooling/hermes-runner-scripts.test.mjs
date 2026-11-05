@@ -1129,11 +1129,11 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
   };
 
   it("keeps /srv/gh-runner/bin and files it did not install when the install succeeds", () => {
-    const { result, state } = installWithFailingRuleCheck("exit 0", [
+    const { result, state, stderr } = installWithFailingRuleCheck("exit 0", [
       "echo mine > /srv/gh-runner/bin/notes.txt",
     ]);
     expect(result.status).toBe(0);
-    expect(state.rc).toBe("0");
+    expect(state.rc, stderr).toBe("0");
     expect(state["/srv/gh-runner/bin/runner-pause.sh"]).toBe("MISSING");
     expect(state["/srv/gh-runner/bin/notes.txt"]).toBe("mine");
   });
@@ -1141,7 +1141,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
   it("removes the old pause scripts in /srv/gh-runner/bin when the install succeeds", () => {
     const { result, state, stderr } = installWithFailingRuleCheck("exit 0");
     expect(result.status).toBe(0);
-    expect(stderr).not.toContain("INSTALL_FAILED");
+    expect(stderr, stderr).not.toContain("INSTALL_FAILED");
     expect(state.rc).toBe("0");
     expect(state["/srv/gh-runner/bin/runner-pause.sh"]).toBe("MISSING");
     expect(state["/srv/gh-runner/bin/runner-resume.sh"]).toBe("MISSING");
@@ -1157,6 +1157,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(result.status).toBe(0);
     expect(state.rc).toBe(code);
     expect(stderr).toContain("INSTALL_FAILED");
+    if (code === "1") expect(stderr).toMatch(/INSTALL_STEP_FAILED line \d+ exit 1: return 1/);
     expect(stderr).not.toContain("RESTORE_INCOMPLETE");
     expect(stderr).not.toContain("command not found");
     expect(stderr).not.toContain("unbound variable");
