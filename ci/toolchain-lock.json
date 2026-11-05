@@ -1229,7 +1229,7 @@
       },
       {
         "path": "ci/rules/gitleaks.toml",
-        "sha256": "01f433ebb39ef27909f155c66b4a59758b2c049430ea3ae5e172f43b2ca54ce9"
+        "sha256": "6779a355a4c026278143351f9621555238e2c72ed15100c45812a08fbe4ef33f"
       },
       {
         "path": "ci/rules/fixtures/safe.fixture.ts",

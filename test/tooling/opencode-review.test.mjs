@@ -858,30 +858,36 @@ function startScriptedModel(reply) {
         response.write(
           `data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 1, model: parsed.model, ...payload })}\n\n`,
         );
-      response.writeHead(200, { "content-type": "text/event-stream" });
       const step = main ? reply(parsed, requests.length) : { text: "title" };
-      const delta = { role: "assistant" };
-      if (step.thinking) delta.reasoning_content = step.thinking;
-      if (step.text) delta.content = step.text;
-      if (step.tool)
-        delta.tool_calls = [
-          {
-            index: 0,
-            id: `call-${requests.length}`,
-            type: "function",
-            function: { name: "read", arguments: JSON.stringify({ filePath: "AGENTS.md" }) },
+      const callId = `call-${requests.length}`;
+      const answer = () => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        const delta = { role: "assistant" };
+        if (step.thinking) delta.reasoning_content = step.thinking;
+        if (step.text) delta.content = step.text;
+        if (step.tool)
+          delta.tool_calls = [
+            {
+              index: 0,
+              id: callId,
+              type: "function",
+              function: { name: "read", arguments: JSON.stringify({ filePath: "AGENTS.md" }) },
+            },
+          ];
+        send({ choices: [{ index: 0, delta, finish_reason: null }] });
+        send({
+          choices: [{ index: 0, delta: {}, finish_reason: step.tool ? "tool_calls" : "stop" }],
+          usage: {
+            prompt_tokens: step.promptTokens ?? 1,
+            completion_tokens: 1,
+            total_tokens: (step.promptTokens ?? 1) + 1,
           },
-        ];
-      send({ choices: [{ index: 0, delta, finish_reason: null }] });
-      send({
-        choices: [{ index: 0, delta: {}, finish_reason: step.tool ? "tool_calls" : "stop" }],
-        usage: {
-          prompt_tokens: step.promptTokens ?? 1,
-          completion_tokens: 1,
-          total_tokens: (step.promptTokens ?? 1) + 1,
-        },
-      });
-      response.end("data: [DONE]\n\n");
+        });
+        response.end("data: [DONE]\n\n");
+      };
+      const holdMs = (step.holdUntil ?? 0) - Date.now();
+      if (holdMs > 0) setTimeout(answer, holdMs);
+      else answer();
     });
   });
   return new Promise((resolveStart) =>
@@ -1183,13 +1189,18 @@ describe("opencode review wrap-up", () => {
   it("[I-77] sends no request after the wrap-up time even when the parent reads step_finish a second late", async () => {
     const slow = mkdtempSync(join(tmpdir(), "opencode-slow-"));
     try {
+      const timeoutMs = 30000;
+      let pastWrapUp = Number.POSITIVE_INFINITY;
       await withScriptedReview(
-        (request) => (isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true }),
+        (request) =>
+          isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true, holdUntil: pastWrapUp },
         async ({ review, requests }) => {
-          const result = await review({ binary: slowStepFinishBinary(slow), timeoutMs: 12000 });
+          pastWrapUp = Date.now() + timeoutMs - Math.floor(timeoutMs / 5) + 500;
+          const result = await review({ binary: slowStepFinishBinary(slow), timeoutMs });
           const first = result.runs[0];
           expect(first.stopReason).toBe("wrap-up-time");
           expect(first.guard.reason).toBe("wrap-up-time");
+          expect(first.guard.allowed).toBe(1);
           expect(mainRequests(requests)).toHaveLength(first.guard.allowed);
           expect(first.inFlight).toBe(false);
           expect(result.summary.usage.cost).toBeGreaterThanOrEqual(first.guard.totalCostUsd);

@@ -1,0 +1,6 @@
+[Unit]
+Description=Remove old gh-runner work directories and logs
+
+[Service]
+Type=oneshot
+ExecStart=/srv/gh-runner/hooks/clean-old.sh
