@@ -40,7 +40,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="prompt-prefix-append-only"></a>
 ## 发给模型的内容只追加
 
-设计或修改任何发给模型的上下文（系统提示、工具定义、历史、资料块、遮盖、压缩）之前，先读 [.claude/rules/prompt-prefix.md](.claude/rules/prompt-prefix.md)：已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里。`npm run check:prompt-prefix` 是阻断检查。
+设计或修改任何发给模型的上下文（系统提示、工具定义、历史、资料块、遮盖、压缩）之前，先读 [.claude/rules/prompt-prefix.md](.claude/rules/prompt-prefix.md)：已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。每条做法的理由、一手来源和本项目的现状见 [模型请求的 KV 缓存规范](docs/kv-cache-guide.md)。`npm run check:prompt-prefix` 是阻断检查。
 
 <a id="model-review-before-merge"></a>
 <a id="working-with-opencode"></a>
