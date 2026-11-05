@@ -153,13 +153,21 @@
     "sha256": "6d145d28085801e23be4d7df00ea02bdae79d30a6147c32fdccdc36cb41abf05",
     "changedIn": "ADR 0166",
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
-    "emphasis": "“必须用到原值”说的是某项操作本身需要原值，不是强调语气"
+    "emphasis": {
+      "kind": "not-tone",
+      "phrases": ["必须用到原值"],
+      "reason": "说的是某项操作本身需要原值，不是强调语气"
+    }
   },
   "chat.egress-legend-with-restore": {
     "sha256": "f2ae0a53f2ff6a8dcb08a5ef07f93cdf6fce267851871b4225fb38444b280251",
     "changedIn": "ADR 0166",
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
-    "emphasis": "“必须用到原值”说的是某项操作本身需要原值，不是强调语气"
+    "emphasis": {
+      "kind": "not-tone",
+      "phrases": ["必须用到原值"],
+      "reason": "说的是某项操作本身需要原值，不是强调语气"
+    }
   },
   "chat.identity": {
     "sha256": "fda7f9520b2b825ba99e9de6198aafaead9b430560ab0955a8b18fbe055d2103",
@@ -280,13 +288,21 @@
     "sha256": "34e37841ca5321875f026103c648921d66dd458fbd5c63051d0e8f2cde887ef8",
     "changedIn": "ADR 0164",
     "reason": "第二步 PR-A Muse A 组 A1：本轮时间里由程序按配置时区写出当地星期几，不让模型自己算",
-    "emphasis": "W-17 在第 2 批改写，这句和“必须”一起改"
+    "emphasis": {
+      "kind": "deferred",
+      "batch": "第 2 批 W-17",
+      "reason": "W-17 改写这句时把“必须”一起改"
+    }
   },
   "mail.judgment": {
     "sha256": "61aeb26dd4016ec4c85ab341b01f74ca91092efef5bae59759e0be3dfd0e87c2",
     "changedIn": "ADR 0159",
     "reason": "邮件判断改为读正文并看主人自己发的邮件（sentByOwner、bodyTruncated、bodyUnavailable 三条说明）",
-    "emphasis": "W-06、W-11/W-19 在第 3 批改写，先做 A/B 评测"
+    "emphasis": {
+      "kind": "deferred",
+      "batch": "第 3 批 W-06、W-11/W-19",
+      "reason": "邮件判断一次只改一个提示词，先做 A/B 评测（D4）"
+    }
   },
   "mail.judgment.items-header": {
     "sha256": "6a2b6e2e1c4cde35a696edb318b37a5dc3e8ab5dbc4a86d6e900ddfbfa8cd30e",
@@ -307,13 +323,25 @@
     "sha256": "f2ffd6e1725ee691e472b198090bb10220af97efd924fee33e13aeed3b9d5cb4",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变",
-    "emphasis": "“必须填 existingMemoryId”“每条都必须填 quote”是解析函数的硬要求，不填整条作废"
+    "emphasis": {
+      "kind": "hard-condition",
+      "phrases": ["必须填 existingMemoryId", "每条都必须填"],
+      "evidence": [
+        "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
+        "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
+      ],
+      "reason": "解析函数的硬要求：非 create 没有有效的 existingMemoryId 整条作废；非 unchanged 的 quote 对不上原话会被拒"
+    }
   },
   "memory.consolidation": {
     "sha256": "535bd14d079979065d195db9ecbb5ab1deec9abbd5157e4d41c8cca9637b0a08",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变",
-    "emphasis": "W-18 在第 3 批改写"
+    "emphasis": {
+      "kind": "deferred",
+      "batch": "第 3 批 W-18",
+      "reason": "记忆合并在第 3 批改写"
+    }
   },
   "memory.consolidation.format": {
     "sha256": "fd58e8334ce0c815212cafb30887eec45cadc7426b6c48e85afea880b98d831c",
@@ -494,7 +522,14 @@
     "sha256": "d8f94421f7ec0dacf4c53d77757ddace3d4edbe9ada61d8aa0fd04bc542bc9c2",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变",
-    "emphasis": "“目标必须不存在”是执行端的硬条件，目标已存在时会被拒绝"
+    "emphasis": {
+      "kind": "hard-condition",
+      "phrases": ["目标必须不存在"],
+      "evidence": [
+        "packages/platform-node/src/capabilities/directory-move-scope.ts#HOST_FILE_TARGET_EXISTS"
+      ],
+      "reason": "执行端的硬条件，目标已存在时报 HOST_FILE_TARGET_EXISTS"
+    }
   },
   "tools.policy-blocked.file-authorization": {
     "sha256": "7c4dc0b70eb7c780f932329cdbfc8a0218ff3c0f643c11581b4df452ef8c13b1",

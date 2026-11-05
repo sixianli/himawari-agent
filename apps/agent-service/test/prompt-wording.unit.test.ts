@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
@@ -11,11 +11,21 @@ import { HIMAWARI_IDENTITY, runCapabilityNotice } from "../src/production-run-po
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const manifestPath = path.join(repositoryRoot, "packages/prompt-catalog/prompt-manifest.json");
 
+type Emphasis =
+  | {
+      readonly kind: "hard-condition";
+      readonly phrases: readonly string[];
+      readonly evidence: readonly string[];
+      readonly reason: string;
+    }
+  | { readonly kind: "not-tone"; readonly phrases: readonly string[]; readonly reason: string }
+  | { readonly kind: "deferred"; readonly batch: string; readonly reason: string };
+
 interface ManifestRow {
   readonly sha256: string;
   readonly changedIn: string;
   readonly reason: string;
-  readonly emphasis?: string;
+  readonly emphasis?: Emphasis | string;
 }
 
 type Manifest = Readonly<Record<string, ManifestRow>>;
@@ -46,6 +56,13 @@ const FORBIDDEN_WORD_EXCEPTIONS: Readonly<Record<string, string>> = {
 };
 
 const EMPHASIS_WORDS = ["必须", "一律", "务必", "严格", "MUST", "CRITICAL"];
+
+const DEFERRED_BATCH = /^第 [2-9] 批 W-\d+/u;
+
+const BEFORE_BATCH_1_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "fixtures/prompt-wording-before-batch-1.json",
+);
 
 const WHOLE_RECOMPUTE = "所有用到它的对话整段重算一次";
 
@@ -214,11 +231,70 @@ export function forbiddenWordProblems(
   return problems;
 }
 
-export function emphasisProblems(current: readonly PromptEntry[], manifest: Manifest): string[] {
+const occurrences = (text: string, needle: string): number[] => {
+  const found: number[] = [];
+  for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) found.push(at);
+  return found;
+};
+
+const readRepositoryFile = (relative: string): string | undefined => {
+  const absolute = path.join(repositoryRoot, relative);
+  return existsSync(absolute) ? readFileSync(absolute, "utf8") : undefined;
+};
+
+function phraseProblems(id: string, text: string, phrases: readonly string[]): string[] {
+  const problems: string[] = [];
+  const covered: (readonly [number, number])[] = [];
+  for (const phrase of phrases) {
+    const found = occurrences(text, phrase);
+    if (found.length === 0) problems.push(`PROMPT_EMPHASIS_PHRASE_NOT_FOUND ${id} ${phrase}`);
+    if (!EMPHASIS_WORDS.some((word) => phrase.includes(word)))
+      problems.push(`PROMPT_EMPHASIS_PHRASE_WITHOUT_WORD ${id} ${phrase}`);
+    for (const start of found) covered.push([start, start + phrase.length]);
+  }
+  for (const word of EMPHASIS_WORDS)
+    for (const start of occurrences(text, word))
+      if (!covered.some(([from, to]) => from <= start && start + word.length <= to))
+        problems.push(`PROMPT_EMPHASIS_UNCOVERED ${id} ${word}@${start}`);
+  return problems;
+}
+
+export function emphasisProblems(
+  current: readonly PromptEntry[],
+  manifest: Manifest,
+  readFile: (relative: string) => string | undefined = readRepositoryFile,
+): string[] {
   return current.flatMap((entry) => {
     const text = canonical(entry);
-    if (!EMPHASIS_WORDS.some((word) => text.includes(word))) return [];
-    return manifest[entry.id]?.emphasis?.trim() ? [] : [`PROMPT_EMPHASIS_UNEXPLAINED ${entry.id}`];
+    const emphasis = manifest[entry.id]?.emphasis;
+    const used = EMPHASIS_WORDS.some((word) => text.includes(word));
+    if (!used) return emphasis === undefined ? [] : [`PROMPT_EMPHASIS_STALE ${entry.id}`];
+    if (emphasis === undefined) return [`PROMPT_EMPHASIS_UNEXPLAINED ${entry.id}`];
+    if (
+      typeof emphasis !== "object" ||
+      !["hard-condition", "not-tone", "deferred"].includes(emphasis.kind)
+    )
+      return [`PROMPT_EMPHASIS_KIND_INVALID ${entry.id}`];
+    const problems = emphasis.reason.trim() ? [] : [`PROMPT_EMPHASIS_REASON_MISSING ${entry.id}`];
+    if (emphasis.kind === "deferred") {
+      if (!DEFERRED_BATCH.test(emphasis.batch))
+        problems.push(`PROMPT_EMPHASIS_BATCH_INVALID ${entry.id}`);
+      return problems;
+    }
+    problems.push(...phraseProblems(entry.id, text, emphasis.phrases));
+    if (emphasis.kind === "hard-condition") {
+      if (emphasis.evidence.length === 0)
+        problems.push(`PROMPT_EMPHASIS_EVIDENCE_MISSING ${entry.id}`);
+      for (const evidence of emphasis.evidence) {
+        const [file, needle] = evidence.split("#", 2);
+        const content = file ? readFile(file) : undefined;
+        if (content === undefined || !needle)
+          problems.push(`PROMPT_EMPHASIS_EVIDENCE_MISSING ${entry.id} ${evidence}`);
+        else if (!content.includes(needle))
+          problems.push(`PROMPT_EMPHASIS_EVIDENCE_STALE ${entry.id} ${evidence}`);
+      }
+    }
+    return problems;
   });
 }
 
@@ -257,6 +333,26 @@ export function claimProblems(
   );
 }
 
+export function claimReverseProblems(
+  before: Readonly<Record<string, string | null>>,
+  claims: readonly Claim[] = CLAIMS,
+): string[] {
+  const fixtures = Object.entries(before).flatMap(([id, text]) =>
+    text === null ? [] : [fixture(id, "system", text)],
+  );
+  return claims.flatMap((claim) =>
+    claim.ids.flatMap((id) => {
+      if (!(id in before)) return [`PROMPT_CLAIM_BEFORE_MISSING ${claim.problem} ${id}`];
+      return claimProblems(fixtures, [{ ...claim, ids: [id] }]).length > 0
+        ? []
+        : [`PROMPT_CLAIM_NOT_DISCRIMINATING ${claim.problem} ${id}`];
+    }),
+  );
+}
+
+const beforeBatch1 = (): Readonly<Record<string, string | null>> =>
+  JSON.parse(readFileSync(BEFORE_BATCH_1_PATH, "utf8")) as Record<string, string | null>;
+
 describe("[PROMPT-WORDING] batch 1 wording checks (ADR 0166)", () => {
   it("C1: keeps 用户, Owner, Run, Handle and 筛掉 out of every model-facing layer except listed entries", () => {
     expect(forbiddenWordProblems(entries())).toEqual([]);
@@ -284,50 +380,81 @@ describe("[PROMPT-WORDING] batch 1 wording checks (ADR 0166)", () => {
     expect(emphasisProblems(entries(), readManifest())).toEqual([]);
   });
 
-  it("C2 REVERSE: reports an emphasis word without a reason", () => {
-    const entry = fixture("x.strict", "system", "你必须这样做。");
-    expect(emphasisProblems([entry], {})).toEqual(["PROMPT_EMPHASIS_UNEXPLAINED x.strict"]);
+  it("C2 REVERSE: reports an emphasis word whose reason is missing, free text, unproven or out of date", () => {
+    const entry = fixture("x.strict", "system", "目标必须不存在。拿不准时一律选 keep。");
+    const row = (emphasis: unknown) => ({
+      "x.strict": { sha256: "", changedIn: "ADR 0166", reason: "x", emphasis } as ManifestRow,
+    });
+    const files = (relative: string) =>
+      relative === "src/move.ts" ? 'throw new Error("TARGET_EXISTS")' : undefined;
+    expect(emphasisProblems([entry], {}, files)).toEqual(["PROMPT_EMPHASIS_UNEXPLAINED x.strict"]);
+    expect(emphasisProblems([entry], row("执行端硬条件"), files)).toEqual([
+      "PROMPT_EMPHASIS_KIND_INVALID x.strict",
+    ]);
     expect(
-      emphasisProblems([entry], {
-        "x.strict": { sha256: "", changedIn: "ADR 0166", reason: "x", emphasis: "执行端硬条件" },
-      }),
+      emphasisProblems(
+        [entry],
+        row({
+          kind: "hard-condition",
+          phrases: ["目标必须不存在", "目标一律存在"],
+          evidence: ["src/move.ts#TARGET_MISSING", "src/gone.ts#TARGET_EXISTS"],
+          reason: "执行端拒绝已存在的目标",
+        }),
+        files,
+      ),
+    ).toEqual([
+      "PROMPT_EMPHASIS_PHRASE_NOT_FOUND x.strict 目标一律存在",
+      "PROMPT_EMPHASIS_UNCOVERED x.strict 一律@12",
+      "PROMPT_EMPHASIS_EVIDENCE_STALE x.strict src/move.ts#TARGET_MISSING",
+      "PROMPT_EMPHASIS_EVIDENCE_MISSING x.strict src/gone.ts#TARGET_EXISTS",
+    ]);
+    expect(
+      emphasisProblems([entry], row({ kind: "deferred", batch: "以后再说", reason: "" }), files),
+    ).toEqual([
+      "PROMPT_EMPHASIS_REASON_MISSING x.strict",
+      "PROMPT_EMPHASIS_BATCH_INVALID x.strict",
+    ]);
+    expect(
+      emphasisProblems(
+        [entry],
+        row({
+          kind: "hard-condition",
+          phrases: ["目标必须不存在", "一律选 keep"],
+          evidence: ["src/move.ts#TARGET_EXISTS"],
+          reason: "执行端拒绝已存在的目标",
+        }),
+        files,
+      ),
     ).toEqual([]);
+    expect(
+      emphasisProblems(
+        [fixture("x.strict", "system", "目标不能已经存在。")],
+        row({ kind: "not-tone", phrases: [], reason: "x" }),
+        files,
+      ),
+    ).toEqual(["PROMPT_EMPHASIS_STALE x.strict"]);
   });
 
   it("C6: each fixed wording problem keeps its asserted meaning", () => {
     expect(claimProblems(entries())).toEqual([]);
   });
 
-  it("C6 REVERSE: the wording before batch 1 fails the assertions", () => {
-    const before = [
-      fixture(
-        "tools.execution-task-status",
-        "tools",
-        "查询本轮转入后台的命令或已启动任务的实际状态。后台命令结束时系统会主动通知，不要反复轮询。",
-      ),
-      fixture(
-        "tools.web-search",
-        "tools",
-        "搜索公开互联网的最新资料。查询经用户确认后发送给运行环境说明里列出的搜索服务商。",
-      ),
-      fixture(
-        "chat.tool-loop-rejected",
-        "tool-result",
-        "Tool not executed: tool calls in this Run were stopped.",
-      ),
-    ];
-    const problems = claimProblems(
-      before,
-      CLAIMS.filter(({ problem }) => ["W-01", "W-10", "W-21"].includes(problem)),
-    );
-    expect(problems).toEqual(
-      expect.arrayContaining([
-        "PROMPT_CLAIM_MISSING W-01 tools.execution-task-status 这个对话里转入后台的命令",
-        "PROMPT_CLAIM_CONTRADICTED W-01 tools.execution-task-status 本轮转入后台",
-        "PROMPT_CLAIM_CONTRADICTED W-10 tools.web-search 经用户确认",
-        "PROMPT_CLAIM_CONTRADICTED W-21 chat.tool-loop-rejected this Run",
-      ]),
-    );
+  it("C6 REVERSE: every asserted meaning fails on the wording before batch 1", () => {
+    expect(claimReverseProblems(beforeBatch1())).toEqual([]);
+  });
+
+  it("C6 REVERSE: a claim the old wording already meets, or a claim without old wording, is reported", () => {
+    const claim = {
+      problem: "W-99",
+      ids: ["x.kept", "x.new"],
+      mustContain: ["照做"],
+      mustNotContain: [],
+    };
+    expect(claimReverseProblems({ "x.kept": "回答时照做。" }, [claim])).toEqual([
+      "PROMPT_CLAIM_NOT_DISCRIMINATING W-99 x.kept",
+      "PROMPT_CLAIM_BEFORE_MISSING W-99 x.new",
+    ]);
+    expect(claimReverseProblems({ "x.kept": "回答时参考。", "x.new": null }, [claim])).toEqual([]);
   });
 
   it("C6 W-01: the managed task tools the model sees carry the two scopes", () => {

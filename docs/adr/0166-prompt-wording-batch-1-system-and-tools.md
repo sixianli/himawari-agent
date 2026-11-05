@@ -103,8 +103,8 @@ Himawari 发给模型的提示词（系统提示、工具说明、资料标记�
 都接进 `npm run check:prompt-catalog`，每条带反向用例。
 
 - **C1 禁用词**（`apps/agent-service/test/prompt-wording.unit.test.ts`）：系统、工具、工具结果、最后一条用户消息、追加消息、后台这几层不得出现“用户”（“用户消息”这个消息角色名除外）、Owner、Run、Handle、筛掉。例外名单写在测试里，每条写原因（第 2、3 批要改的 5 个条目）；名单里的条目改干净后不删名单会报错。
-- **C2 强调词要有理由**：含“必须、一律、务必、严格、MUST、CRITICAL”的条目，快照清单要有 `emphasis`。
-- **C6 行为断言**：每个修过的问题一条，不只看固定样本。包括后台任务工具的两种范围、主人的要求标记、提醒在 30 分钟后和 3 小时后两个边界上的 `remindAt`、联网搜索、回答语言顺序、六条中文条目里不再有英文原句；Pi 的 read、bash 说明里不再有“能读图片”“存进临时文件”“没有默认时限”“instead of cat”“PI_*”（`packages/runtime-pi/test/pi-builtin-tool-text.compat.test.ts`）。
+- **C2 强调词要有理由**：含“必须、一律、务必、严格、MUST、CRITICAL”的条目，快照清单的 `emphasis` 要写成三种之一，检查会逐项核对，随便写一句不算数：`hard-condition`（这是执行端的硬条件）要列出含强调词的原句和代码出处（`文件#代码片段`），检查确认原句在提示词里、覆盖了每一处强调词，文件存在且含这段代码；`not-tone`（字面意思，不是语气）要列出原句并同样覆盖每一处；`deferred`（排在后面的批次改）要写明“第 N 批 W-xx”。提示词里不再有强调词而 `emphasis` 还在，也报错。
+- **C6 行为断言**：每个修过的问题一条，不只看固定样本。包括后台任务工具的两种范围、主人的要求标记、提醒在 30 分钟后和 3 小时后两个边界上的 `remindAt`、联网搜索、回答语言顺序、六条中文条目里不再有英文原句；Pi 的 read、bash 说明里不再有“能读图片”“存进临时文件”“没有默认时限”“instead of cat”“PI_*”（`packages/runtime-pi/test/pi-builtin-tool-text.compat.test.ts`）。反向检查：`apps/agent-service/test/fixtures/prompt-wording-before-batch-1.json` 存着每条断言涉及的条目在第 1 批之前的原文（当时不存在的记为 `null`），每条断言在每个条目的旧原文上都必须报错；新加断言却没补旧原文、或者旧原文本来就满足断言（说明断言抓不住错），都会报错。
 - **C8 不冻结的文字**：占位符说明和句柄工具不在冻结记录里，每次请求现拼（[ADR 0165](0165-freeze-the-request-head-per-conversation.md)）。这些条目一改，快照清单的原因里必须写“所有用到它的对话整段重算一次”；新加的占位符说明没登记也会报错。
 - **C10 Pi 原文快照**：把被替换的 Pi 0.84.2 原文存一份，Pi 升级后原文变了就失败，提醒人看替换文字还对不对。
 - `npm run check:prompt-prefix` 继续守只追加。
