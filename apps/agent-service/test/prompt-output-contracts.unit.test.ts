@@ -39,6 +39,10 @@ const mail: ProactiveSourceItem = {
   receivedAt: "2026-11-04T00:10:00.000Z",
   categories: [],
   sentByOwner: false,
+  body: "お支払い期限は 11 月 20 日です。",
+  bodyTruncated: false,
+  bodyUnavailable: false,
+  attachments: [],
 };
 
 const isEntry = (value: unknown): value is PromptEntry =>

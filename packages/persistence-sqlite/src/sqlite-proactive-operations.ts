@@ -624,8 +624,8 @@ export class SqliteProactiveOperations {
       const insertProcessed = this.database.prepare(
         `INSERT INTO proactive_processed_messages (
           owner_id, agent_id, source, message_id, thread_id, decision_id, outcome, skip_reason,
-          header_ref, processed_at, reviewed_at, owner_rating
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+          header_ref, processed_at, received_at, reviewed_at, owner_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
         ON CONFLICT (owner_id, agent_id, source, message_id) DO NOTHING`,
       );
       const releasedRefs: string[] = [];
@@ -640,6 +640,7 @@ export class SqliteProactiveOperations {
           message.skipReason,
           message.headerRef,
           decision.checkedAt,
+          message.receivedAt,
         ).changes;
         if (inserted === 0 && message.headerRef) releasedRefs.push(message.headerRef);
       }
@@ -702,10 +703,24 @@ export class SqliteProactiveOperations {
       }
       const markReplied = this.database.prepare(
         `UPDATE source_insights SET status = 'replied', updated_at = ?
-         WHERE owner_id = ? AND agent_id = ? AND source = ? AND thread_id = ? AND status = 'open'`,
+         WHERE owner_id = ? AND agent_id = ? AND source = ? AND thread_id = ? AND status = 'open'
+           AND NOT EXISTS (
+             SELECT 1 FROM proactive_processed_messages later
+             WHERE later.owner_id = ? AND later.agent_id = ? AND later.source = ?
+               AND later.thread_id = ? AND later.received_at > ?
+           )`,
       );
-      for (const threadId of input.repliedThreadIds)
-        markReplied.run(decision.checkedAt, ...scope, decision.scenario, threadId);
+      for (const { threadId, receivedAt } of input.repliedThreads)
+        markReplied.run(
+          decision.checkedAt,
+          ...scope,
+          decision.scenario,
+          threadId,
+          ...scope,
+          decision.scenario,
+          threadId,
+          receivedAt,
+        );
       if (input.push) {
         const pushed = input.insights
           .map((insight, index) => ({ insight, id: insightIds[index] as string }))

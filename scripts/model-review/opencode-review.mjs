@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -57,6 +58,8 @@ export const GIT_BANNED_OPTIONS = [
   "--orderfile",
   "--help",
   "--show-signature",
+  "--text",
+  "--binary",
 ];
 const GIT_SHORT_VALUE_LETTERS = "SGLUnlMCBXI";
 export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
@@ -172,10 +175,26 @@ const MODE_TEXT = {
   },
 };
 
-export function buildPrompt({ mode, questions, head, base, previous, brief }) {
+export const LENS_MODES = ["code-review", "plan-review"];
+export const MODEL_LENSES = {
+  "deepseek-v4.1-flash":
+    "你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作。另一个复核者侧重别的方面，所以你仍要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。",
+  "glm-5.3-flash":
+    "你的额外侧重：测试有没有覆盖这次改动、文档和规则与代码是否一致；挑一条最普通的使用流程，从入口走到结束，标出经过的、没有测试覆盖的代码路径。另一个复核者侧重别的方面，所以你仍要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你走过的流程和结论。",
+};
+
+export function lensFor(mode, model) {
+  if (!LENS_MODES.includes(mode) || !model) return null;
+  const lens = MODEL_LENSES[model.split("/").pop()];
+  if (!lens) throw new Error(`LENS_UNKNOWN ${model}`);
+  return lens;
+}
+
+export function buildPrompt({ mode, model, questions, head, base, previous, brief }) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   if (!brief || !brief.trim()) throw new Error("BRIEF_EMPTY");
   const text = MODE_TEXT[mode];
+  const lens = lensFor(mode, model);
   const fixed = [
     text.role,
     `你能用的工具：read、grep、glob${mode === "code-review" ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
@@ -184,6 +203,7 @@ export function buildPrompt({ mode, questions, head, base, previous, brief }) {
     RULE_16_SENTENCE,
     "必答问题：",
     ...questions.map((question, index) => `${index + 1}. ${question}`),
+    ...(lens ? [lens] : []),
     text.output,
   ].join("\n");
   const material = [
@@ -256,22 +276,73 @@ export function summarizeEvents(jsonl) {
   return { outcome, lastReason, text, thinking: thoughts.join("\n").trim(), usage, toolCalls };
 }
 
+export const OPENCODE_LOCK_DIR = join(dirname(fileURLToPath(import.meta.url)), "opencode-lock");
+export const OPENCODE_LOCK_FILES = ["package.json", "package-lock.json"];
+
+export function installedIntegrityProblems(prefix, lock) {
+  const installedPath = join(prefix, "node_modules", ".package-lock.json");
+  if (!existsSync(installedPath)) return ["installed-lock-missing"];
+  let installed;
+  try {
+    installed = JSON.parse(readFileSync(installedPath, "utf8")).packages ?? {};
+  } catch {
+    return ["installed-lock-unreadable"];
+  }
+  const problems = [];
+  if (!installed["node_modules/opencode-ai"]) problems.push("node_modules/opencode-ai missing");
+  for (const [name, entry] of Object.entries(installed)) {
+    const expected = lock.packages?.[name];
+    if (!expected?.integrity || expected.integrity !== entry.integrity)
+      problems.push(`${name} ${entry.integrity ?? "no-integrity"}`);
+  }
+  return problems;
+}
+
+function npmCi(prefix, lockDir, binary) {
+  rmSync(prefix, { recursive: true, force: true });
+  mkdirSync(prefix, { recursive: true });
+  for (const file of OPENCODE_LOCK_FILES)
+    writeFileSync(join(prefix, file), readFileSync(join(lockDir, file)));
+  const install = spawnSync("npm", ["ci", "--no-audit", "--no-fund"], {
+    cwd: prefix,
+    encoding: "utf8",
+  });
+  process.stderr.write(`${install.stdout ?? ""}${install.stderr ?? ""}`);
+  if (install.status !== 0) {
+    if (/EINTEGRITY|integrity checksum failed/i.test(install.stderr ?? ""))
+      throw new Error("OPENCODE_INTEGRITY_MISMATCH npm-ci");
+    throw new Error("OPENCODE_INSTALL_FAILED");
+  }
+  if (!existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
+}
+
+export function installOpencode({ prefix, lockDir = OPENCODE_LOCK_DIR }) {
+  const lock = JSON.parse(readFileSync(join(lockDir, "package-lock.json"), "utf8"));
+  const binary = join(prefix, "node_modules", ".bin", "opencode");
+  const reused = existsSync(binary);
+  if (!reused) npmCi(prefix, lockDir, binary);
+  let problems = installedIntegrityProblems(prefix, lock);
+  if (problems.length > 0 && reused) {
+    process.stderr.write(`OPENCODE_REINSTALL ${prefix} ${problems.join(" | ")}\n`);
+    npmCi(prefix, lockDir, binary);
+    problems = installedIntegrityProblems(prefix, lock);
+  }
+  if (problems.length > 0)
+    throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${problems.join(" | ")}`);
+  return binary;
+}
+
+export function opencodeInstallDir(lockDir = OPENCODE_LOCK_DIR) {
+  const lockDigest = createHash("sha256")
+    .update(readFileSync(join(lockDir, "package-lock.json")))
+    .digest("hex")
+    .slice(0, 12);
+  return join(homedir(), ".cache", `himawari-opencode-${OPENCODE_VERSION}-${lockDigest}`);
+}
+
 export function opencodeBinary() {
   if (process.env.HIMAWARI_OPENCODE_BIN) return process.env.HIMAWARI_OPENCODE_BIN;
-  const prefix = join(homedir(), ".cache", `himawari-opencode-${OPENCODE_VERSION}`);
-  const binary = join(prefix, "node_modules", ".bin", "opencode");
-  if (!existsSync(binary)) {
-    mkdirSync(prefix, { recursive: true });
-    const install = spawnSync(
-      "npm",
-      ["install", "--prefix", prefix, "--no-save", `opencode-ai@${OPENCODE_VERSION}`],
-      {
-        stdio: "inherit",
-      },
-    );
-    if (install.status !== 0 || !existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
-  }
-  return binary;
+  return installOpencode({ prefix: opencodeInstallDir() });
 }
 
 const activeChildren = new Set();
@@ -285,9 +356,11 @@ export function killProcessGroup(child, signal) {
   return true;
 }
 
+export const REVIEWS_PATH_FRAGMENT = "agents/reviews";
+
 function shortOptionProblem(subcommand, letters) {
   for (const letter of letters) {
-    if (letter === "o" || letter === "O") return true;
+    if (letter === "o" || letter === "O" || letter === "a") return true;
     if (subcommand === "blame" && letter === "S") return true;
     if (subcommand === "blame" && letter === "n") continue;
     if (GIT_SHORT_VALUE_LETTERS.includes(letter)) return false;
@@ -297,6 +370,8 @@ function shortOptionProblem(subcommand, letters) {
 
 export function checkGitArgs(args) {
   if (!GIT_SUBCOMMANDS.includes(args[0])) return `subcommand ${args[0] ?? "(none)"}`;
+  const recordsPath = args.slice(1).find((arg) => arg.includes(REVIEWS_PATH_FRAGMENT));
+  if (recordsPath) return `records-path ${recordsPath}`;
   for (const arg of args.slice(1)) {
     if (arg === "--") break;
     if (arg.startsWith("--")) {
@@ -319,6 +394,45 @@ export const GIT_ENV = {
 };
 export const GIT_KEPT_ENV = ["PATH", "HOME", "LANG", "LC_ALL", "TERM"];
 export const REVIEW_CANARY_ENV = "REVIEW_CANARY";
+export const REVIEW_PARENT_CANARY_ENV = "REVIEW_PARENT_CANARY";
+export const OPENCODE_KEPT_ENV = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "TMPDIR",
+  "TZ",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_STATE_HOME",
+  "HTTPS_PROXY",
+  "https_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+  "NO_PROXY",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+export const PROXY_ENV = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"];
+
+export function proxyCredentialProblems(env) {
+  return PROXY_ENV.filter((name) =>
+    /^(?:[a-z][a-z0-9+.-]*:)?(?:\/\/)?[^/?#]*@/i.test((env[name] ?? "").trim()),
+  );
+}
+
+export function opencodeEnv(env) {
+  return Object.fromEntries(
+    OPENCODE_KEPT_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
+  );
+}
 export const SHELL_LOG_NAME = "review-shell.log";
 
 export function gitChildEnv(env) {
@@ -424,12 +538,11 @@ function runOpencode({
       {
         cwd,
         env: {
-          ...process.env,
+          ...opencodeEnv(process.env),
           PWD: cwd,
           OPENCODE_CONFIG: configPath,
           OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-          OPENCODE_PURE: undefined,
-          ...(guardFiles ? { [GUARD_ENV]: guardFiles.limitsPath } : { [GUARD_ENV]: undefined }),
+          ...(guardFiles ? { [GUARD_ENV]: guardFiles.limitsPath } : {}),
           XDG_CONFIG_HOME: gitGuard.configHome,
           OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
           GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
@@ -661,7 +774,174 @@ export function budgetCheck({ mode, records, models, approvedUsd }) {
 export function readUsage(out) {
   const path = join(out, "usage.jsonl");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
+  return parseUsage(readFileSync(path, "utf8"), path);
+}
+
+export function resultLine(record) {
+  return `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`;
+}
+
+export function lastCompleteRound(records, models = REVIEW_MODELS) {
+  const reviews = records.filter((record) => record.mode === "code-review");
+  const rounds = [...new Set(reviews.map((record) => record.round ?? 1))].sort((a, b) => b - a);
+  for (const round of rounds) {
+    const passed = reviews.filter(
+      (record) => (record.round ?? 1) === round && record.outcome === "ok",
+    );
+    if (!models.every((model) => passed.some((record) => record.model === model))) continue;
+    const heads = [...new Set(passed.map((record) => record.head))];
+    if (heads.length !== 1)
+      throw new Error(`REVIEW_ROUND_HEADS_DIFFER ${round} ${heads.join(",")}`);
+    return { round, head: heads[0] };
+  }
+  return null;
+}
+
+function gitStatus(args, cwd) {
+  return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
+}
+
+export const OVERRIDE_MIN_ROUNDS = 3;
+
+function changedOutside(repo, from, to, ledgerPath) {
+  const result = gitStatus(["diff", "-z", "--no-renames", "--name-only", from, to], repo);
+  if (result.status !== 0) throw new Error(`GIT_FAILED git diff: ${result.stderr.trim()}`);
+  return result.stdout.split("\0").filter((file) => file && !file.startsWith(`${ledgerPath}/`));
+}
+
+export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed }) {
+  const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
+  const head = git(["rev-parse", "HEAD"], repo);
+  const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
+  const records = shown.status === 0 ? parseUsage(shown.stdout, `HEAD:${ledgerPath}`) : null;
+  const complete = records ? lastCompleteRound(records) : null;
+  const problems = [];
+  if (!records) problems.push("ledger-not-committed");
+  else if (!complete) problems.push("no-complete-round");
+  else if (gitStatus(["merge-base", "--is-ancestor", complete.head, head], repo).status !== 0)
+    problems.push(`not-ancestor ${complete.head}`);
+  else
+    for (const file of changedOutside(repo, complete.head, head, ledgerPath))
+      problems.push(`unreviewed ${printable(file)}`);
+  if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
+    problems.push(`main-ref-missing ${printable(mainRef)}`);
+  else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
+    problems.push(`main-not-merged ${printable(mainRef)}`);
+  const summary = `pr=${pr} round=${complete?.round ?? "none"} reviewed=${complete?.head ?? "none"} head=${head}`;
+  const lines =
+    problems.length === 0
+      ? [`REVIEW_CURRENT ${summary}`]
+      : [`REVIEW_NOT_CURRENT ${summary}`, ...problems.map((problem) => `  ${problem}`)];
+  const reviewRounds = new Set(
+    (records ?? [])
+      .filter((record) => record.mode === "code-review")
+      .map((record) => record.round ?? 1),
+  ).size;
+  const overridable =
+    problems.length > 0 &&
+    problems.every((problem) => problem.startsWith("unreviewed ")) &&
+    reviewRounds >= OVERRIDE_MIN_ROUNDS;
+  if (problems.length > 0 && acceptUnreviewed && !overridable) {
+    const reasons = [];
+    if (reviewRounds < OVERRIDE_MIN_ROUNDS)
+      reasons.push(`rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`);
+    if (!problems.every((problem) => problem.startsWith("unreviewed ")))
+      reasons.push("only-unreviewed-files");
+    lines.push(`REVIEW_OVERRIDE_REFUSED ${reasons.join(" ")}`);
+  }
+  const recorded =
+    overridable && records
+      ? records
+          .filter((record) => record.mode === "override" && record.head)
+          .reverse()
+          .find(
+            (record) =>
+              gitStatus(["merge-base", "--is-ancestor", record.head, head], repo).status === 0 &&
+              changedOutside(repo, record.head, head, ledgerPath).length === 0,
+          )
+      : undefined;
+  let overridden = Boolean(recorded);
+  if (recorded) lines.push(`REVIEW_OVERRIDE quote=${recorded.quote} recorded=${recorded.head}`);
+  else if (overridable && acceptUnreviewed) {
+    const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
+    const onDisk = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : null;
+    if (onDisk !== shown.stdout) lines.push("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
+    else {
+      appendFileSync(
+        ledgerFile,
+        `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
+      );
+      lines.push(`REVIEW_OVERRIDE quote=${acceptUnreviewed}`);
+      overridden = true;
+    }
+  }
+  return {
+    round: complete?.round ?? null,
+    reviewed: complete?.head ?? null,
+    head,
+    problems,
+    lines,
+    overridden,
+  };
+}
+
+export const REVIEW_REPORT_DISCLAIMER = "复核模型只读代码、不运行代码；复核通过不等于测试通过。";
+export const STOP_REASONS = {
+  "no-error": () => "没有“会出错”的意见",
+  "three-rounds": () => "连续三轮没过，按规则停下等 Andy 决定",
+  "andy-decision": (quote) => `Andy 裁定：${quote}`,
+  "run-failed": () => "有模型没跑完（outcome 不是 ok）",
+};
+
+export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
+  if (!Object.hasOwn(STOP_REASONS, stop)) throw new Error("ARG_INVALID --stop");
+  const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
+  const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
+  if (shown.status !== 0) throw new Error(`REPORT_LEDGER_NOT_COMMITTED ${ledgerPath}`);
+  const records = parseUsage(shown.stdout, `HEAD:${ledgerPath}`);
+  const reviews = records.filter((record) => record.mode === "code-review");
+  const rounds = [...new Set(reviews.map((record) => record.round ?? 1))];
+  const latest = Math.max(0, ...rounds);
+  const latestComplete = lastCompleteRound(records)?.round === latest && latest > 0;
+  const gate = assertReviewed({ repo, pr, mainRef });
+  const consistent = {
+    "no-error": latestComplete && gate.problems.length === 0,
+    "three-rounds": rounds.length >= 3,
+    "andy-decision": Boolean(andyQuote?.trim()),
+    "run-failed": latest > 0 && !latestComplete,
+  }[stop];
+  if (!consistent) throw new Error(`REPORT_STOP_INCONSISTENT ${stop}`);
+  return [
+    `REVIEW_REPORT pr=${pr}`,
+    ...reviews.map(resultLine),
+    `REVIEW_SPENT_TOTAL ${spentOf(records).toFixed(4)}`,
+    ...gate.lines,
+    `停下的原因：${STOP_REASONS[stop](andyQuote)}`,
+    REVIEW_REPORT_DISCLAIMER,
+  ];
+}
+
+export const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+function hasLineBreak(value) {
+  if (typeof value === "string") return /[\r\n]/.test(value);
+  if (value && typeof value === "object") return Object.values(value).some(hasLineBreak);
+  return false;
+}
+
+export function hasControlCharacter(text) {
+  return [...text].some((character) => {
+    const code = character.codePointAt(0);
+    return code < 32 || code === 127;
+  });
+}
+
+export function printable(text) {
+  return hasControlCharacter(text) ? JSON.stringify(text) : text;
+}
+
+export function parseUsage(text, path) {
+  return text
     .split("\n")
     .map((line, index) => ({ line, number: index + 1 }))
     .filter(({ line }) => line.trim())
@@ -674,7 +954,33 @@ export function readUsage(out) {
       }
       const roundValid =
         record?.round === undefined || (Number.isSafeInteger(record.round) && record.round > 0);
-      if (!Number.isFinite(record?.cost) || record.cost < 0 || !roundValid)
+      const modeValid =
+        record?.mode === undefined || MODES.includes(record.mode) || record.mode === "override";
+      const fieldsValid =
+        !MODES.includes(record?.mode) ||
+        ["head", "model", "outcome"].every(
+          (field) => typeof record[field] === "string" && record[field] !== "",
+        );
+      const headValid =
+        record?.mode === undefined ||
+        record.mode === "override" ||
+        COMMIT_PATTERN.test(record.head);
+      const overrideValid =
+        record?.mode !== "override" ||
+        (COMMIT_PATTERN.test(record.head ?? "") &&
+          typeof record.quote === "string" &&
+          record.quote.trim() !== "");
+      const singleLine = !hasLineBreak(record ?? {});
+      if (
+        !Number.isFinite(record?.cost) ||
+        record.cost < 0 ||
+        !roundValid ||
+        !modeValid ||
+        !fieldsValid ||
+        !headValid ||
+        !overrideValid ||
+        !singleLine
+      )
         throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
       return record;
     });
@@ -689,8 +995,74 @@ export function roundsOnDisk(out) {
 }
 
 export function nextRound(records, rounds = []) {
-  const recorded = records.map((record) => record.round ?? 1);
+  const recorded = records
+    .filter((record) => record.mode !== "override")
+    .map((record) => record.round ?? 1);
   return Math.max(0, ...recorded, ...rounds) + 1;
+}
+
+export function roundForRun({
+  records,
+  rounds,
+  requested,
+  mode,
+  models,
+  head,
+  prompts,
+  promptsOnDisk,
+}) {
+  if (requested === undefined) return nextRound(records, rounds);
+  const inRound = records.filter(
+    (record) => record.mode !== "override" && (record.round ?? 1) === requested,
+  );
+  if (inRound.length === 0 && !rounds.includes(requested))
+    throw new Error(`ROUND_NOT_FOUND ${requested}`);
+  const otherMode = inRound.find((record) => record.mode !== undefined && record.mode !== mode);
+  if (otherMode) throw new Error(`ROUND_MODE_MISMATCH ${requested} ${otherMode.mode} ${mode}`);
+  for (const model of models) {
+    if (inRound.some((record) => record.model === model && record.outcome === "ok"))
+      throw new Error(`ROUND_ALREADY_HAS_RESULT ${requested} ${model}`);
+  }
+  if (inRound.some((record) => !record.head))
+    throw new Error(`ROUND_CANNOT_VERIFY ${requested} head`);
+  const heads = new Set(inRound.map((record) => record.head));
+  if ([...heads].some((recorded) => recorded !== head))
+    throw new Error(`ROUND_HEAD_MISMATCH ${requested} ${[...heads].join(",")} ${head}`);
+  for (const model of models) {
+    const onDisk = promptsOnDisk[model] ?? null;
+    const recordedDigests = inRound
+      .filter((record) => record.model === model && record.promptSha256)
+      .map((record) => record.promptSha256);
+    const digest = createHash("sha256").update(prompts[model]).digest("hex");
+    if (onDisk === null && recordedDigests.length === 0)
+      throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
+    if (
+      (onDisk !== null && onDisk !== prompts[model]) ||
+      recordedDigests.some((recorded) => recorded !== digest)
+    )
+      throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
+  }
+  return requested;
+}
+
+export const KEPT_FILE_SUFFIXES = [".prompt.md", ".md", ".stderr.txt"];
+export const RAW_FILE_SUFFIXES = [".jsonl", ".thinking.md"];
+
+export function keepEarlierAttempt(roundDir, name, suffixes = KEPT_FILE_SUFFIXES) {
+  if (!existsSync(roundDir)) return null;
+  const present = suffixes.filter((suffix) => existsSync(join(roundDir, `${name}${suffix}`)));
+  if (present.length === 0) return null;
+  let attempt = 1;
+  while (
+    suffixes.some((suffix) => existsSync(join(roundDir, `${name}.attempt-${attempt}${suffix}`)))
+  )
+    attempt += 1;
+  for (const suffix of present)
+    renameSync(
+      join(roundDir, `${name}${suffix}`),
+      join(roundDir, `${name}.attempt-${attempt}${suffix}`),
+    );
+  return attempt;
 }
 
 export function runOutcome(summary, run) {
@@ -755,8 +1127,13 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
     bash(`git diff -pO${outsideA} HEAD~1 HEAD`),
     bash(`git diff --pathspec-from-file=${outsideA} HEAD~1 HEAD`),
     bash("git show --help"),
+    bash(`git show HEAD:${REVIEWS_DIR}`),
+    bash("git diff -a HEAD~1 HEAD"),
     { tool: "read", args: { filePath: outsideA } },
     { tool: "read", args: { filePath: "../outside-a.txt" } },
+    ...(process.platform === "linux"
+      ? [{ tool: "read", args: { filePath: "/proc/self/environ" } }]
+      : []),
     { tool: "grep", args: { pattern: marker, path: ".." } },
     { tool: "grep", args: { pattern: marker, path: workRoot } },
     { tool: "glob", args: { pattern: "outside-*.txt", path: workRoot }, leak: "outside-b.txt" },
@@ -768,7 +1145,19 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
       `export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=env; git diff HEAD~1 HEAD`,
     ),
     bash("export NODE_OPTIONS=--version; git log -1 --oneline"),
+    bash(`git log $${REVIEW_PARENT_CANARY_ENV}`),
   ].map((probe) => ({ kind: "contained", leak: marker, ...probe }));
+  const records = [
+    { tool: "glob", args: { pattern: "**/usage.jsonl", path: ".agents" }, leak: "usage.jsonl" },
+    {
+      tool: "bash",
+      args: {
+        command: `git log -p -3 -- '${REVIEWS_DIR.replace("reviews", "rev*")}'`,
+        description: "probe",
+      },
+      leak: '"cacheRead"',
+    },
+  ].map((probe) => ({ kind: "contained", ...probe }));
   return {
     marker,
     outsideFiles: [outsideA, outsideB],
@@ -782,6 +1171,7 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
       ...insideWrites,
       ...reads,
       ...contained,
+      ...records,
     ],
   };
 }
@@ -964,6 +1354,8 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
     configPath,
     JSON.stringify(reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }), null, 2),
   );
+  const savedCanary = process.env[REVIEW_PARENT_CANARY_ENV];
+  process.env[REVIEW_PARENT_CANARY_ENV] = plan.marker;
   try {
     const problems = [];
     for (const model of REVIEW_MODELS) {
@@ -1011,6 +1403,8 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
     problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode })));
     return problems;
   } finally {
+    if (savedCanary === undefined) delete process.env[REVIEW_PARENT_CANARY_ENV];
+    else process.env[REVIEW_PARENT_CANARY_ENV] = savedCanary;
     await new Promise((resolveClose) => server.close(resolveClose));
   }
 }
@@ -1132,8 +1526,11 @@ function git(args, cwd) {
 
 export const QUESTIONS_PATH = ".agents/instructions/model-review.md";
 
-export function questionsSource(repo, commits) {
-  return git(["show", `${commits.base ?? commits.head}:${QUESTIONS_PATH}`], repo);
+export function questionsSource(repo, commits, questionsRef) {
+  const ref = questionsRef
+    ? git(["rev-parse", "--verify", "--quiet", `${questionsRef}^{commit}`], repo)
+    : (commits.base ?? commits.head);
+  return git(["show", `${ref}:${QUESTIONS_PATH}`], repo);
 }
 
 export function isSecretEnvName(name) {
@@ -1163,6 +1560,9 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
   git(["fetch", "--quiet", "origin", "+refs/*:refs/source/*"], copy);
   const envFiles = envFilesInHistory(copy);
   if (envFiles.length > 0) throw new Error(`ENV_FILE_IN_HISTORY ${envFiles.join(" ")}`);
+  git(["sparse-checkout", "set", "--no-cone", "/*", `!/${REVIEWS_DIR}/`], copy);
+  mkdirSync(join(copy, ".git", "info"), { recursive: true });
+  writeFileSync(join(copy, ".git", "info", "attributes"), `/${REVIEWS_DIR}/** -diff\n`);
   git(["checkout", "--quiet", "--detach", commits.head], copy);
   git(["remote", "remove", "origin"], copy);
   const refs = git(["for-each-ref", "--format=%(refname)"], copy).split("\n").filter(Boolean);
@@ -1180,6 +1580,56 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
   return removeUnsafeProjectFiles(copy);
 }
 
+export const REVIEWS_DIR = ".agents/reviews";
+export const TOPIC_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
+
+export function reviewKey({ pr, topic }) {
+  if (pr !== undefined) return `pr-${pr}`;
+  if (topic !== undefined) return `topic-${topic}`;
+  throw new Error("REVIEW_KEY_MISSING");
+}
+
+export function reviewDir(repo, options) {
+  return join(repo, REVIEWS_DIR, reviewKey(options));
+}
+
+export function rawDir(options, round) {
+  const repoId = createHash("sha256").update(resolve(options.repo)).digest("hex").slice(0, 12);
+  return join(tmpdir(), "himawari-review-raw", repoId, reviewKey(options), `round-${round}`);
+}
+
+export function recordText(text) {
+  return `${text.replace(/\r\n?/g, "\n").replace(/[ \t]+$/gm, "")}\n`;
+}
+
+export function prepareRawDir(dir, root = join(tmpdir(), "himawari-review-raw")) {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  chmodSync(root, 0o700);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+}
+
+export function promptFileName(model) {
+  return `${model.split("/").pop()}.prompt.md`;
+}
+
+export const SUBCOMMAND_ONLY_OPTIONS = ["--main-ref", "--stop", "--andy-quote"];
+export const ASSERT_OPTIONS = [
+  "--assert-reviewed",
+  "--pr",
+  "--repo",
+  "--main-ref",
+  "--accept-unreviewed",
+];
+export const REPORT_OPTIONS = [
+  "--report",
+  "--pr",
+  "--repo",
+  "--main-ref",
+  "--stop",
+  "--andy-quote",
+];
+
 export function parseArgs(argv) {
   const options = {
     mode: "code-review",
@@ -1187,9 +1637,11 @@ export function parseArgs(argv) {
     timeoutMinutes: 25,
     models: REVIEW_MODELS,
   };
+  const given = new Set();
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
     const value = argv[index + 1];
+    given.add(key);
     const take = () => {
       index += 1;
       if (value === undefined) throw new Error(`ARG_MISSING_VALUE ${key}`);
@@ -1202,9 +1654,33 @@ export function parseArgs(argv) {
     else if (key === "--previous") options.previous = take();
     else if (key === "--brief") options.brief = resolve(take());
     else if (key === "--out") options.out = resolve(take());
-    else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
+    else if (key === "--pr") {
+      options.pr = Number(take());
+      if (!Number.isSafeInteger(options.pr) || options.pr <= 0) throw new Error("ARG_INVALID --pr");
+    } else if (key === "--topic") {
+      options.topic = take();
+      if (!TOPIC_PATTERN.test(options.topic)) throw new Error("ARG_INVALID --topic");
+    } else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
-    else if (key === "--models") {
+    else if (key === "--assert-reviewed") options.assertReviewed = true;
+    else if (key === "--report") options.report = true;
+    else if (key === "--stop") options.stop = take();
+    else if (key === "--andy-quote") {
+      options.andyQuote = take();
+      if (hasControlCharacter(options.andyQuote)) throw new Error("ARG_INVALID --andy-quote");
+    } else if (key === "--main-ref") {
+      options.mainRef = take();
+      if (options.mainRef.startsWith("-") || hasControlCharacter(options.mainRef))
+        throw new Error("ARG_INVALID --main-ref");
+    } else if (key === "--questions-ref") {
+      options.questionsRef = take();
+      if (options.questionsRef.startsWith("-") || hasControlCharacter(options.questionsRef))
+        throw new Error("ARG_INVALID --questions-ref");
+    } else if (key === "--accept-unreviewed") {
+      options.acceptUnreviewed = take();
+      if (!options.acceptUnreviewed.trim() || hasControlCharacter(options.acceptUnreviewed))
+        throw new Error("ARG_INVALID --accept-unreviewed");
+    } else if (key === "--models") {
       const names = take()
         .split(",")
         .map((name) => name.trim());
@@ -1218,6 +1694,10 @@ export function parseArgs(argv) {
       )
         throw new Error("ARG_INVALID --models");
       options.models = models;
+    } else if (key === "--round") {
+      options.round = Number(take());
+      if (!Number.isSafeInteger(options.round) || options.round <= 0)
+        throw new Error("ARG_INVALID --round");
     } else if (key === "--approved-usd") {
       options.approvedUsd = Number(take());
       if (!Number.isFinite(options.approvedUsd) || options.approvedUsd <= 0)
@@ -1225,10 +1705,33 @@ export function parseArgs(argv) {
     } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
-  for (const required of ["head", "brief", "out"]) {
+  if (options.assertReviewed || options.report) {
+    if (options.assertReviewed && options.report) throw new Error("ARG_ASSERT_AND_REPORT");
+    const allowed = options.report ? REPORT_OPTIONS : ASSERT_OPTIONS;
+    const extra = [...given].filter((key) => !allowed.includes(key));
+    if (extra.length > 0) throw new Error(`ARG_NOT_FOR_SUBCOMMAND ${extra.join(" ")}`);
+    if (options.pr === undefined) throw new Error("ARG_REQUIRED --pr");
+    if (options.report && options.stop === undefined) throw new Error("ARG_REQUIRED --stop");
+    return options;
+  }
+  if (options.acceptUnreviewed !== undefined)
+    throw new Error("ARG_ACCEPT_UNREVIEWED_ONLY_WITH_ASSERT");
+  const subcommandOnly = [...given].filter((key) => SUBCOMMAND_ONLY_OPTIONS.includes(key));
+  if (subcommandOnly.length > 0) throw new Error(`ARG_NOT_FOR_MODE ${subcommandOnly.join(" ")}`);
+  for (const required of ["head", "brief"]) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
+  if (!options.selfCheckOnly) {
+    if (options.out !== undefined) throw new Error("ARG_OUT_ONLY_FOR_SELF_CHECK");
+    if (options.pr !== undefined && options.topic !== undefined)
+      throw new Error("ARG_PR_AND_TOPIC");
+    if (options.mode === "code-review" && options.pr === undefined)
+      throw new Error("ARG_REQUIRED --pr");
+    if (options.mode !== "code-review" && options.topic === undefined)
+      throw new Error("ARG_REQUIRED --topic");
+    options.out = reviewDir(options.repo, options);
+  }
   if (!Number.isFinite(options.timeoutMinutes) || options.timeoutMinutes <= 0) {
     throw new Error("ARG_INVALID --timeout-minutes");
   }
@@ -1237,16 +1740,30 @@ export function parseArgs(argv) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.report) {
+    for (const line of reviewReport(options)) console.log(line);
+    return;
+  }
+  if (options.assertReviewed) {
+    const result = assertReviewed(options);
+    for (const line of result.lines) console.log(line);
+    if (result.problems.length > 0 && !result.overridden) process.exitCode = 5;
+    return;
+  }
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
-  const questions = reviewQuestions(questionsSource(options.repo, commits));
-  const prompt = buildPrompt({
-    ...options,
-    ...commits,
-    questions,
-    brief: readFileSync(options.brief, "utf8"),
-  });
-  if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
+  const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
+  const brief = recordText(readFileSync(options.brief, "utf8"));
+  const prompts = Object.fromEntries(
+    options.models.map((model) => [
+      model,
+      buildPrompt({ ...options, ...commits, model, questions, brief }),
+    ]),
+  );
+  for (const prompt of Object.values(prompts))
+    if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
+  const proxyProblems = proxyCredentialProblems(process.env);
+  if (proxyProblems.length > 0) throw new Error(`PROXY_HAS_CREDENTIALS ${proxyProblems.join(" ")}`);
   const records = options.selfCheckOnly ? [] : readUsage(options.out);
   const overBudget = options.selfCheckOnly
     ? null
@@ -1257,7 +1774,25 @@ async function main() {
         approvedUsd: options.approvedUsd,
       });
   if (overBudget) throw new Error(overBudget);
-  const round = nextRound(records, roundsOnDisk(options.out));
+  const promptOnDisk = (model) => {
+    if (options.round === undefined) return null;
+    const path = join(options.out, `round-${options.round}`, promptFileName(model));
+    return existsSync(path) ? readFileSync(path, "utf8") : null;
+  };
+  const round = options.selfCheckOnly
+    ? 0
+    : roundForRun({
+        records,
+        rounds: roundsOnDisk(options.out),
+        requested: options.round,
+        mode: options.mode,
+        models: options.models,
+        head: commits.head,
+        prompts,
+        promptsOnDisk: Object.fromEntries(
+          options.models.map((model) => [model, promptOnDisk(model)]),
+        ),
+      });
   const binary = opencodeBinary();
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
@@ -1298,10 +1833,17 @@ async function main() {
       JSON.stringify(reviewConfig({ mode: options.mode, wrapUp: true }), null, 2),
     );
     const roundDir = join(options.out, `round-${round}`);
+    const roundRawDir = rawDir(options, round);
     mkdirSync(roundDir, { recursive: true });
-    writeFileSync(join(roundDir, "prompt.md"), prompt);
+    prepareRawDir(roundRawDir);
+    console.log(`REVIEW_RAW_DIR ${roundRawDir}`);
     const results = await Promise.all(
       options.models.map(async (model) => {
+        const name = model.split("/").pop();
+        const prompt = prompts[model];
+        keepEarlierAttempt(roundDir, name);
+        keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
+        writeFileSync(join(roundDir, promptFileName(model)), prompt);
         const review = await reviewModel({
           binary,
           cwd: copy,
@@ -1312,18 +1854,20 @@ async function main() {
           prompt,
           timeoutMs,
         });
-        const name = model.split("/").pop();
-        writeFileSync(join(roundDir, `${name}.jsonl`), review.stdout);
+        writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
         const { summary } = review;
-        writeFileSync(join(roundDir, `${name}.md`), `${summary.text}\n`);
+        writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
         if (summary.thinking)
-          writeFileSync(join(roundDir, `${name}.thinking.md`), `${summary.thinking}\n`);
+          writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
         const record = {
           at: new Date().toISOString(),
           round,
           mode: options.mode,
           model,
           head: commits.head,
+          base: commits.base ?? null,
+          previous: commits.previous ?? null,
+          promptSha256: createHash("sha256").update(prompt).digest("hex"),
           outcome: review.outcome,
           wrapUp: review.wrapUp,
           wrapUpSkipped: review.wrapUpSkipped,
@@ -1334,15 +1878,13 @@ async function main() {
         };
         appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
         if (record.outcome !== "ok" && review.stderr.trim()) {
-          writeFileSync(join(roundDir, `${name}.stderr.txt`), review.stderr);
+          writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
         }
         return record;
       }),
     );
     for (const record of results) {
-      console.log(
-        `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`,
-      );
+      console.log(resultLine(record));
     }
     const totalSpent = spentOf(readUsage(options.out));
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);

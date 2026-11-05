@@ -210,9 +210,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "mail.judgment": {
-    "sha256": "51f23e825331692022347280c583dc03f2ea3b4c22f883f32a8cd576f2206ac4",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "61aeb26dd4016ec4c85ab341b01f74ca91092efef5bae59759e0be3dfd0e87c2",
+    "changedIn": "ADR 0159",
+    "reason": "邮件判断改为读正文并看主人自己发的邮件（sentByOwner、bodyTruncated、bodyUnavailable 三条说明）"
   },
   "mail.judgment.items-header": {
     "sha256": "6a2b6e2e1c4cde35a696edb318b37a5dc3e8ab5dbc4a86d6e900ddfbfa8cd30e",

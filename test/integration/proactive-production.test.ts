@@ -239,6 +239,8 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         intervalMs: 900_000,
         perCheckMs: 180_000,
         dailyCostMicros: 1_000_000,
+        bodyCharactersPerMail: 16_000,
+        bodyCharactersPerBatch: 64_000,
         memoryMinimumSimilarity: 0.45,
         reviewBudgetSeconds: 120,
         reviewSecondsPerItem: 5,
