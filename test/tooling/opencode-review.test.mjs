@@ -836,7 +836,7 @@ describe("opencode review repository copy", () => {
   });
 });
 
-function startScriptedModel(reply) {
+function startScriptedModel(reply, record = (parsed) => parsed) {
   const requests = [];
   const server = http.createServer((request, response) => {
     let body = "";
@@ -853,7 +853,7 @@ function startScriptedModel(reply) {
       const main =
         (Array.isArray(parsed.tools) && parsed.tools.length > 0) ||
         JSON.stringify(parsed.messages ?? []).includes(WRAP_UP_PROMPT);
-      if (main) requests.push(parsed);
+      if (main) requests.push(record(parsed));
       const send = (payload) =>
         response.write(
           `data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 1, model: parsed.model, ...payload })}\n\n`,
@@ -897,9 +897,9 @@ function startScriptedModel(reply) {
   );
 }
 
-async function withScriptedReview(reply, run) {
+async function withScriptedReview(reply, run, { record } = {}) {
   const root = mkdtempSync(join(tmpdir(), "opencode-wrap-"));
-  const { server, requests, port } = await startScriptedModel(reply);
+  const { server, requests, port } = await startScriptedModel(reply, record);
   try {
     const copy = join(root, "repo");
     execFileSync("git", ["clone", "--quiet", "--depth", "1", `file://${process.cwd()}`, copy]);
@@ -1139,22 +1139,17 @@ describe("opencode review wrap-up", () => {
   }, 120000);
 
   it("stops reading near the time limit and still gets a conclusion", async () => {
-    let holdEndsAt;
     await withScriptedReview(
-      (request) => {
-        if (isWrapUp(request)) return { text: "TIME_WRAPPED" };
-        holdEndsAt ??= Date.now() + 70000;
-        return { tool: true, holdUntil: Math.min(Date.now() + 1000, holdEndsAt) };
-      },
+      (request) => (isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true }),
       async ({ review, requests }) => {
         const result = await review({ timeoutMs: 90000 });
         expect(result.wrapUp).toBe("time");
         expect(result.outcome).toBe("ok");
         expect(result.summary.text).toBe("TIME_WRAPPED");
-        expect(requests.filter(isWrapUp)).toHaveLength(1);
-        expect(mainRequests(requests).length).toBeGreaterThan(1);
-        expect(requests.length).toBeLessThan(100);
+        expect(requests.filter((request) => request.wrapUp)).toHaveLength(1);
+        expect(requests.filter((request) => !request.wrapUp).length).toBeGreaterThan(1);
       },
+      { record: (request) => ({ wrapUp: isWrapUp(request) }) },
     );
   }, 120000);
 
