@@ -56,12 +56,12 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | 3 | 告诉模型新情况时追加消息，不改系统提示 | S5、S6 | 做到（ADR 0164：工具循环停止、运行中压缩后补发运行环境说明都用追加消息） |
 | 4 | 已发内容不改、不重排、不删，只追加 | S2、S7 | 做到（[ADR 0149](adr/0149-append-only-model-requests.md)） |
 | 5 | 存历史存实际发出去的那条 | 本项目事故 I-66 | 做到 |
-| 6 | 系统提示和工具按对话冻结，只在规定的几种情况下换新并留记录 | S6 | 做到（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)）；“工具参数结构变了也换新”在 2026-11-05 获批，实现跟随 ADR 0165 的分支 |
+| 6 | 系统提示和工具按对话冻结，只在规定的几种情况下换新并留记录 | S6 | 做到（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)）；“工具参数结构变了也换新”2026-11-05 获批并已实现（只改说明文字不换新） |
 | 7 | 工具集合尽量不变，不能用的工具由执行端拒绝，而不是删掉 | S2、S5、S7 | 部分做到：本项目选择“工具集合变了换新一次”，只因执行句柄出现的工具接在冻结工具后面并计数 |
-| 8 | 同一对话中途不换模型、不换推理强度 | S1、S6 | 换了会换新一次（ADR 0165），没有阻止中途更换 |
-| 9 | 同一对话的请求送到同一个服务方 | S2、S6 | **未核实**，见[已知差距](#gaps) |
+| 8 | 同一对话中途不换模型、不换推理强度，其他请求参数保持稳定 | S1、S2、S6 | 换模型或推理强度会换新一次（ADR 0165），没有阻止中途更换 |
+| 9 | 同一对话的请求送到同一个服务方 | S2、S6 | Magpie 发会话亲和头（`packages/runtime-pi/src/configured-model-binding.ts` 的 `sendSessionAffinityHeaders`）；没有传缓存路由键；实际是否稳定**未核实**，见[已知差距](#gaps) |
 | 10 | 序列化确定：JSON 键顺序、工具顺序、列表顺序固定 | S7 | 冻结后系统提示和工具按原字节读回；资料块和运行环境说明的列表顺序固定（ADR 0164） |
-| 11 | 遮盖确定；主人点名的秘密在整条消息里都遮 | 本项目 | 做到；例外条款 2026-11-05 获批 |
+| 11 | 遮盖确定：一段内容的遮法只取决于它自己和前面的内容；主人点名的秘密（6 个字符以上）从点名处起往后都遮 | 本项目 | 做到（`packages/application/src/services/model-egress.ts`、`egress-redaction.ts`）；例外条款 2026-11-05 获批 |
 | 12 | 压缩集中做、少做，用总输入费用判断是否值得 | S2、S8 | 压缩由 Pi 自动触发；没有按费用评估 |
 | 13 | 压缩请求沿用原对话的系统提示和工具 | S5、S6 | **没做到**，见[已知差距](#gaps) |
 | 14 | 清理旧工具结果要成批、少做、能恢复 | S7、S8 | 没做；排在提示词第二步之后另出方案 |
@@ -69,14 +69,21 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | 16 | 分叉出去的辅助计算沿用父对话的开头 | S5 | 没做（对话标题、记忆捕获各自另起开头） |
 | 17 | 开头相同的并发请求，等第一个开始返回再发 | S1 | 同一对话一般不并发，未专门处理 |
 
+补充几点各家文档里有、但不单列成规则的事实：
+
+- 缓存有最小长度。多数服务方不缓存 1024 个 token 以下的请求（S1、S2；Gemini 的门槛更高，S4），所以短请求命中率低不算异常。
+- 缓存会过期。Anthropic 默认 5 分钟，可选 1 小时（S1）；DeepSeek 通常在“几小时到几天”内清除（S3）。后台结果隔很久才回到对话时，那一轮注定没命中。
+- 写入缓存可能另收费。Anthropic 写入 5 分钟缓存按 1.25 倍计价，1 小时缓存按 2 倍（S1）。DeepSeek 的文档没有写写入费用，以它的价格页为准。
+- 显式缓存断点（Anthropic 的 `cache_control`）要放在最后一个“每次都相同”的块上，不能放在每次都变的块上（S1）。本项目主用的服务方是自动缓存，不需要手动设断点；以后接需要断点的服务方时照这一条做。
+
 [↑ 返回目录](#contents)
 
 <a id="gaps"></a>
 
 ## 已知差距
 
-1. **压缩请求不共用原对话的开头（第 13 条）。**Pi 压缩时，把整段对话序列化成一条新的用户消息，系统提示换成它自己的 `SUMMARIZATION_SYSTEM_PROMPT`（`node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js` 第 469–485 行）。所以每次压缩，整段历史都按全价计算。要修，需要改压缩请求的组装方式，属于大改动，先出方案。
-2. **同一对话会不会换服务方，还没核实（第 9 条）。**生产经 Magpie 和按 `providerRouting.order` 排序的路由调用模型（`apps/agent-service/src/production-model-composition.ts` 第 218–223 行）。如果同一对话的连续请求落到不同服务方，每换一次就要整段重算。先看路由日志确认，再决定要不要按对话固定去向。
+1. **压缩请求不共用原对话的开头（第 13 条）。**Pi 0.84.2 压缩时，把整段对话序列化成一条新的用户消息，系统提示换成它自己的 `SUMMARIZATION_SYSTEM_PROMPT`（安装后的 `@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js`，`compact` 函数里组装压缩请求的那一段）。所以每次压缩，整段历史都按全价计算。要修，需要改压缩请求的组装方式，属于大改动，先出方案。
+2. **同一对话会不会换服务方，还没核实（第 9 条）。**生产主用 Magpie，它带会话亲和头；`providerRouting.order` 只对 Vercel AI Gateway 生效，Magpie 不接受这个配置（`packages/runtime-pi/src/configured-model-binding.ts`）。会话亲和是否真的让同一对话落在同一处，要看 Magpie 的路由日志确认；不稳定的话，再决定要不要传固定的路由键。
 3. **低命中只写日志，不报警（见[怎么检查](#gates)）。**业界把命中率当可用性指标（S5）。可以并进上面任一项一起做。
 
 [↑ 返回目录](#contents)
@@ -87,7 +94,8 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 
 - **阻断检查：**`npm run check:prompt-prefix`。用真实的 Pi 适配器和出口遮盖跑多轮对话，逐字节检查后一次请求是否以前一次请求开头，并带反向用例。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`。
 - **端到端：**`test/integration/production-http-composition-process.test.ts` 里的 `[PR-A]`、`[PR-B]` 用例，用真实服务和 SQLite 抓取原始请求体来比对。
-- **生产监控：**后续轮次的命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`；`node scripts/operations/cache-hit-report.mjs <product.sqlite> --by turn` 给出分轮次的命中率。排查时，先排除缓存过期、按规则换新、换了服务方这三种情况。
+- **其他测试：**换新的各种条件在 `test/integration/thread-prompt-bundles.test.ts`；运行环境说明的发送时机和运行中压缩后补发，在 `packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts`。这些不属于 `check:prompt-prefix` 这一步。
+- **生产监控：**对话的后续轮次请求（输入至少 1024 个 token，上游报告了缓存用量）命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`，条件见 `packages/application/src/ports/model-usage.ts`；`node scripts/operations/cache-hit-report.mjs <product.sqlite> --by turn` 给出分轮次的命中率。排查时先排除四种情况：缓存过期、按规则换新、换了服务方、遮盖密钥轮换。
 
 [↑ 返回目录](#contents)
 
