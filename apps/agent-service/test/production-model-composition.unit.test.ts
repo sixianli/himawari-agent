@@ -689,7 +689,7 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(environmentText).toContain("本轮没有文件和命令工具。");
   expect(first.runtimeEnvironmentRef).toEqual(expect.any(String));
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
-    "主人本轮明确指定的语言；主人的要求里定下的语言；主人本轮提问用的语言；都没有时用简体中文。调用工具之前或之间写给主人看的说明也用这种语言",
+    "主人本轮明确指定的语言；主人的要求里定下的语言；主人本轮提问用的语言；都没有时用简体中文。主人只是换了一种语言提问，不算明确指定。调用工具之前或之间写给主人看的说明也用这种语言",
   );
   expect(instructionText).not.toContain("沙箱没有外网");
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
