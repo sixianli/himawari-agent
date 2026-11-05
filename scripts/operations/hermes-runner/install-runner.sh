@@ -22,7 +22,7 @@ done
 for id in $RUNNER_IDS; do
   runner_select "$id"
   if systemctl is-active --quiet "$RUNNER_UNIT"; then
-    echo "$RUNNER_UNIT is running; run $SHARED/bin/runner-pause.sh first so no job is cut off" >&2
+    echo "$RUNNER_UNIT is running; run scripts/operations/hermes-runner/pause-runners.sh on the Mac first so no job is cut off" >&2
     exit 70
   fi
 done
@@ -90,9 +90,9 @@ for id in $RUNNER_IDS; do
   install_runner_account
 done
 
-install -d -m 0755 -o root -g root "$SHARED/bin"
+rm -f -- "$SHARED/bin/runner-pause.sh" "$SHARED/bin/runner-resume.sh" "$SHARED/bin/runners.sh"
+[ ! -d "$SHARED/bin" ] || rmdir --ignore-fail-on-non-empty -- "$SHARED/bin"
 install -m 0755 -o root -g root "$SRC/clean-old.sh" "$SRC/runners.sh" "$SHARED/hooks/"
-install -m 0755 -o root -g root "$SRC/runner-pause.sh" "$SRC/runner-resume.sh" "$SRC/runners.sh" "$SHARED/bin/"
 install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
 
 apply_runner_controls

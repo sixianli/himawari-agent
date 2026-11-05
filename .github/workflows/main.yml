@@ -16,7 +16,7 @@ jobs:
   plan:
     name: main/evidence
     runs-on: hermes-home
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
       mode: ${{ steps.verify.outputs.mode }}
       evidence: ${{ steps.retain.outputs.artifact-id }}
@@ -67,7 +67,7 @@ jobs:
     needs: plan
     if: needs.plan.result == 'success' && needs.plan.outputs.mode == 'light'
     runs-on: hermes-home
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       CI_NODE: 22.22.3
     steps:

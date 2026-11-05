@@ -5,9 +5,29 @@ HERE=.
 [[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
 source "$HERE/runners.sh"
 
-LIMIT=${1:-3600}
-if ! [[ "$LIMIT" =~ ^[1-9][0-9]{0,4}$ ]] || [ "$LIMIT" -gt 86400 ]; then
-  echo "RUNNER_PAUSE_FAILED wait limit must be 1-86400 seconds, got: ${LIMIT}" >&2
+if [ "${1:-}" = --list ]; then
+  for id in $(installed_runner_ids); do
+    runner_select "$id"
+    systemctl is-enabled --quiet "$RUNNER_UNIT" && printf '%s\n' "$RUNNER_NAME"
+  done
+  exit 0
+fi
+
+if [ "${1:-}" = --status ]; then
+  for id in $(installed_runner_ids); do
+    runner_select "$id"
+    printf '%s=%s\n' "$RUNNER_UNIT" "$(systemctl is-active "$RUNNER_UNIT")"
+  done
+  exit 0
+fi
+
+if [ "${1:-}" != --labels-removed ]; then
+  echo "RUNNER_PAUSE_REFUSED run pause-runners.sh on the Mac: it removes the hermes-home label first so GitHub sends no new job" >&2
+  exit 64
+fi
+QUIET=${2:-90}
+if ! [[ "$QUIET" =~ ^[1-9][0-9]{0,2}$ ]] || [ "$QUIET" -gt 180 ]; then
+  echo "RUNNER_PAUSE_REFUSED quiet window must be 1-180 seconds, got: ${QUIET}" >&2
   exit 64
 fi
 IDS=$(installed_runner_ids)
@@ -27,22 +47,22 @@ busy_runner() {
   return 1
 }
 
-WAITED=0
+WATCHED=0
 while :; do
   busy_runner
   case $? in
-    1) break ;;
+    0)
+      echo "RUNNER_STILL_BUSY $RUNNER_USER is running a job; runners left running"
+      exit 2
+      ;;
     2)
       echo "RUNNER_PAUSE_FAILED could not check whether $RUNNER_USER is running a job; runners left running"
       exit 1
       ;;
   esac
-  if [ "$WAITED" -ge "$LIMIT" ]; then
-    echo "RUNNER_BUSY_TIMEOUT $RUNNER_USER is still running a job after ${LIMIT}s; runners left running"
-    exit 2
-  fi
+  [ "$WATCHED" -ge "$QUIET" ] && break
   sleep 10
-  WAITED=$((WAITED + 10))
+  WATCHED=$((WATCHED + 10))
 done
 
 for id in $IDS; do
@@ -56,4 +76,4 @@ for id in $IDS; do
     exit 1
   fi
 done
-echo "RUNNER_PAUSED $(date -Is) waited=${WAITED}s runners=$(echo $IDS)"
+echo "RUNNER_PAUSED $(date -Is) quiet=${WATCHED}s runners=$(echo $IDS)"

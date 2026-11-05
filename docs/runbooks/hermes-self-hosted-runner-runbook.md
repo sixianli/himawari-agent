@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:422e8cf09eae315a23590b907230ae970125c1140bd39896450f9964b34a1748"
+contract_sha256: "sha256:349b1bef1d31fe7b333811042f078dd736118d46789365e7a28cbce302a4a12a"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -47,7 +47,7 @@ date: "2026-11-04"
 | 每个任务开始和结束时的磁盘记录 `disk.log` | `/srv/gh-runner/logs/`、`/srv/gh-runner-2/logs/` | 各自的账号 |
 | 任务开始、结束钩子 | `/srv/gh-runner/hooks/`、`/srv/gh-runner-2/hooks/` | root，只读 |
 | 每日清理脚本（两个 runner 都清） | `/srv/gh-runner/hooks/clean-old.sh` | root，只读 |
-| 暂停、恢复脚本（两个 runner 一起管） | `/srv/gh-runner/bin/` | root，只读 |
+| 暂停、恢复脚本 | Mac 上的入口 `scripts/operations/hermes-runner/pause-runners.sh`、`resume-runners.sh`；它们每次把 `runners.sh`、`runner-pause.sh`、`runner-resume.sh` 传到 Hermes 的 `/home/andy/himawari-tests/hermes-runner/` 再运行。安装脚本会删掉 `/srv/gh-runner/bin/` 里旧的三个脚本，目录空了才删目录 | andy |
 | systemd 服务（Linux 管理后台服务的程序） | `/etc/systemd/system/gh-runner.service`、`gh-runner-2.service`（都由仓库里的模板 `gh-runner.service.in` 生成）、`gh-runners.slice`、`gh-runner-nft.service`、`gh-runner-clean.service`、`gh-runner-clean.timer` | root |
 | 安装前的备份 | `/var/backups/gh-runner/<时间>/` | root |
 | 防火墙规则 | `/etc/gh-runner/nft.rules`，加载后是 nftables（Linux 自带的防火墙）里的表 `inet gh_runner` | root |
@@ -61,7 +61,7 @@ date: "2026-11-04"
 - `ProtectProc=invisible` 让它在 `/proc` 里只看得到自己的进程，看不到 Hermes 上其他服务的进程和命令行参数。
 - 防火墙规则只对两个 runner 账号生效（一条规则同时匹配两个账号的 uid）：拒绝它访问局域网和 Tailscale 地址（`10/8`、`100.64/10`、`172.16/12`、`192.168/16` 等），以及本机 TCP 端口名单里的端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口，所以某个服务恰好停着时它的端口也不会从名单里掉出去。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来；2026-11-05 核对时 Hermes 本机只有 DNS 的 53 端口在监听 UDP，Hermes 的所有网卡地址都是私有地址，已在拒绝范围内。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
-- 每个 runner 的 CPU 最多两个核（`CPUQuota=200%`），内存最多 5 GB，不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计 CPU 最多三个核（`CPUQuota=300%`），内存最多 6 GB（`MemoryHigh=5632M`、`MemoryMax=6G`），最多 4096 个进程。slice 上的 `CPUWeight=20`、`IOWeight=20` 和服务的 `Nice=10` 让 Hermes 上的其他服务优先。
+- 每个 runner 的 CPU 最多两个核（`CPUQuota=200%`），内存最多 7 GB（`MemoryHigh=6G`、`MemoryMax=7G`），不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计 CPU 最多三个核（`CPUQuota=300%`），内存最多 9 GB（`MemoryHigh=8G`、`MemoryMax=9G`，[ADR 0170](../adr/0170-more-memory-for-hermes-runners.md)），最多 4096 个进程。slice 上的 `CPUWeight=20`、`IOWeight=20` 和服务的 `Nice=10` 让 Hermes 上的其他服务优先。
 - 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个任务可能同时占盘）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每天的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束。
 
 [↑ 返回阅读导航](#contents)
@@ -70,7 +70,7 @@ date: "2026-11-04"
 
 ## Authoritative Sources
 
-- 决定和理由：[SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]、[SOURCE: docs/adr/0164-two-runners-on-hermes.md]
+- 决定和理由：[SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]、[SOURCE: docs/adr/0164-two-runners-on-hermes.md]、[SOURCE: docs/adr/0168-longer-ci-job-limits-on-hermes.md]、[SOURCE: docs/adr/0169-pause-runners-by-removing-the-label.md]、[SOURCE: docs/adr/0170-more-memory-for-hermes-runners.md]
 - 测试主机的硬边界：[测试主机与生产主机](../../.agents/instructions/test-and-production-hosts.md)
 - 安装、注册、卸载、暂停和恢复的脚本，以及服务和钩子的原文：[scripts/operations/hermes-runner/](../../scripts/operations/hermes-runner/)
 - 哪些任务跑在 runner 上：`ci/policy.json`、`.github/workflows/ci.yml`、`.github/workflows/main.yml`
@@ -104,7 +104,7 @@ date: "2026-11-04"
 3. 服务状态：`systemctl is-active gh-runner.service gh-runner-2.service gh-runner-nft.service gh-runner-clean.timer`，四个都应是 `active`。
 4. 用户没有多余的组：`id gh-runner`、`id gh-runner-2` 各自只列出自己的一个组。
 5. 防火墙表在：`sudo -n nft list table inet gh_runner` 需要 root；没有 sudo 时用 `systemctl is-active gh-runner-nft.service` 代替。
-6. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryMax -p CPUQuotaPerSecUSec -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryMax=5368709120`、`CPUQuotaPerSecUSec=2s`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryMax=6442450944`、`CPUQuotaPerSecUSec=3s`、`CPUWeight=20`、`IOWeight=20`。
+6. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryMax -p CPUQuotaPerSecUSec -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryMax=7516192768`、`CPUQuotaPerSecUSec=2s`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryMax=9663676416`、`CPUQuotaPerSecUSec=3s`、`CPUWeight=20`、`IOWeight=20`。
 7. GitHub 上的状态（在 Mac 上运行）：`gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name,status,busy}'`，应看到 `hermes-home` 和 `hermes-home-2` 都为 `online`。
 8. 有没有任务在跑：`pgrep -u gh-runner -x Runner.Worker; pgrep -u gh-runner-2 -x Runner.Worker`，有输出就是有任务。
 
@@ -120,9 +120,9 @@ date: "2026-11-04"
 
 1. 把 `scripts/operations/hermes-runner/` 下的全部文件（包括 `runners.sh` 和 `gh-runner.service.in`）用 `.ci-output/handoff/scripts/hermes-upload.sh` 传到 Hermes 的 `/home/andy/himawari-tests/hermes-runner/`。
 2. 取得临时 sudo（见 [Safety and Preconditions](#safety-and-preconditions)）。
-3. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以先按[暂停和恢复](#pause-and-resume)运行 `runner-pause.sh`。
-4. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：确认主机名是 `hermes-home`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则、`/srv/gh-runner/bin/` 和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回（先复制到旁边再换上，复制失败时原文件不动）、把这次新建的删掉，这次新建的用户（先结束它的进程）、组和这次新建的目录（包括原来就有的 runner 目录下新建的 `home/`、`logs/`）也一并删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项，并指出备份目录，这时照备份目录手动放回；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝，不接管不是它建的账号），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、脚本、slice 和服务（两个服务都由模板生成），按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
-5. 运行 `runner-resume.sh`，已注册的 runner 按新的服务设置启动。新装的第 2 个 runner 还没注册，要先按[注册](#register)注册。
+3. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`。
+4. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：确认主机名是 `hermes-home`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则、`/srv/gh-runner/bin/` 和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回（先复制到旁边再换上，复制失败时原文件不动）、把这次新建的删掉，这次新建的用户（先结束它的进程）、组和这次新建的目录（包括原来就有的 runner 目录下新建的 `home/`、`logs/`）也一并删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项，并指出备份目录，这时照备份目录手动放回；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝，不接管不是它建的账号），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务（两个服务都由模板生成），删掉 `/srv/gh-runner/bin/` 里旧的 `runner-pause.sh`、`runner-resume.sh`、`runners.sh`，目录空了就删掉目录，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
+5. 在 Mac 上运行 `resume-runners.sh`，已注册的 runner 按新的服务设置启动。新装的第 2 个 runner 还没注册，要先按[注册](#register)注册。
 
 <a id="register"></a>
 
@@ -135,9 +135,20 @@ date: "2026-11-04"
 
 ### 暂停和恢复
 
-- 暂停：`/srv/gh-runner/bin/runner-pause.sh [最多等待秒数，默认 3600]`。它等两个 runner 都没有任务，再把两个服务都停掉，打印 `RUNNER_PAUSED`；等满时间还有任务没结束，就打印 `RUNNER_BUSY_TIMEOUT` 并以退出码 2 结束，两个 runner 都保持运行；查不出有没有任务（`pgrep` 自己出错）时打印 `RUNNER_PAUSE_FAILED` 并以退出码 1 结束，不停服务。只装了第 1 个 runner 时只管第 1 个。等待秒数只接受 1 到 86400 的整数，否则以退出码 64 拒绝，不碰服务。脚本确认没有任务到真正停服务之间有几秒空档：GitHub 恰好在这几秒里派来的任务会被停掉，在 GitHub 上显示为取消或失败，恢复后要重新运行那个任务。
-- 恢复：`/srv/gh-runner/bin/runner-resume.sh`。它只启动已注册（服务已启用）的 runner，等它们都运行起来后打印 `RUNNER_RESUMED` 和启动了哪些服务。
-- 暂停期间新的 CI 任务在 GitHub 上排队；GitHub 大约 1 分钟后才把 runner 显示为 `offline`。
+两个入口都在 Andy 的 Mac 上、从仓库根目录运行，用 Andy 已登录的 `gh` 改 runner 标签，用 `.ci-output/handoff/scripts/hermes-ssh.sh` 和 `hermes-upload.sh` 操作 Hermes。Hermes 上不放任何 GitHub 凭证。两个入口共用一把锁（`.ci-output/hermes-runner-pause.lock` 目录），同时只能跑一个，否则以退出码 75 打印 `RUNNER_LOCKED`；进程被强杀留下的锁目录要手动删掉。做法和理由见 [ADR 0169](../adr/0169-pause-runners-by-removing-the-label.md)。
+
+- 暂停：`scripts/operations/hermes-runner/pause-runners.sh`。暂停可能要等到最长任务的时限（`ci/policy.json` 里最大的 `timeoutMinutes`）加 5 分钟，代理要在后台运行它。
+  1. 把 Hermes 上的脚本传过去，读 Hermes 上注册过（服务已启用）的 runner，和 GitHub 上的 runner 对账（只建了账号、还没注册的 runner 不算）：Hermes 上的每个 runner 在 GitHub 上必须恰好有一个同名的，GitHub 上带 `hermes-home` 标签的 runner 也必须都装在 Hermes 上。对不上就打印 `RUNNER_PAUSE_FAILED` 和原因，不改标签、不停服务（Hermes 上的三个脚本已经更新为仓库里的版本）。
+  2. 去掉这些 runner 的 `hermes-home` 标签，再读一遍确认真的去掉了。有一个没去掉，就把已经去掉的加回去，打印 `RUNNER_PAUSE_FAILED`，不碰 Hermes。回读时读不全 GitHub 的列表，也按“没去掉”处理。这一步被 Ctrl-C、`TERM` 或 `HUP` 打断时，同样把已经发出删除请求的标签都加回去，打印 `RUNNER_PAUSE_FAILED interrupted`，以退出码 130 结束。都去掉后打印 `RUNNER_LABELS_REMOVED`：从这时起 GitHub 不再给它们派新任务，新任务在 GitHub 上排队。
+  3. 每 30 秒查一次 GitHub：两个 runner 都显示 `busy=false` 时，在 Hermes 上运行 `runner-pause.sh --labels-removed 90`。它连续观察 90 秒，期间每 10 秒查一次本机有没有 `Runner.Worker`，一直没有才停两个服务，打印 `RUNNER_PAUSED`；中途看到任务就打印 `RUNNER_STILL_BUSY`，以退出码 2 结束、不停服务，Mac 侧接着等。
+  4. 成功时打印 `RUNNER_PAUSED labels=removed services=stopped`。
+  5. 到了等待上限还有任务，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>` 和还在忙的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`），以退出码 2 结束。服务状态读不到时写 `services=unknown`。Hermes 那一步出错（例如只停掉了一个服务）时，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`，以退出码 1 结束；等待期间被 Ctrl-C、`TERM` 或 `HUP` 打断时，打印同样一行并加上 `interrupted`，以退出码 130 结束。这几种情况下标签都保持去掉，还在跑的服务跑完手上的任务，不会再接新任务；重新运行 `pause-runners.sh` 即可，或运行 `resume-runners.sh` 撤销。
+- 恢复：`scripts/operations/hermes-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不启动服务、不加标签；再在 Hermes 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；再等 GitHub 显示它们 `online`（最多 5 分钟），最后把 `hermes-home` 标签加回去并读一遍确认，打印 `RUNNER_RESUMED labels=restored`。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态>`，不加标签；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=<各服务状态> labels=removed` 和没上线的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`）；标签没加上打印 `RUNNER_RESUME_INCOMPLETE` 和每个 runner 的标签状态；对账之后任何时候被 Ctrl-C、`TERM` 或 `HUP` 打断，打印 `RUNNER_RESUME_INCOMPLETE interrupted`、各服务状态和每个 runner 的标签状态（`on`、`off`、`unread`），以退出码 130 结束。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。2026-11-05 实测：恢复后排队的任务约 3.5 分钟才开始跑，两个 runner 同一秒接到任务，原因在 GitHub 一侧、没有确认，等几分钟即可，不要因此重启 runner。
+- 暂停期间新的 CI 任务在 GitHub 上排队；**排队超过 24 小时的任务会被 GitHub 判为失败**，所以暂停不要超过一天。GitHub 大约 1 分钟后才把停掉的 runner 显示为 `offline`。
+- 暂停期间 Hermes 重启：服务会自己起来。按 runner 源码（[`ConfigurationManager.cs`](https://github.com/actions/runner/blob/main/src/Runner.Listener/Configuration/ConfigurationManager.cs)），标签只在配置（`config.sh`）时发给 GitHub，所以重启后标签应该还是去掉的、不会接任务；但启动会话的代码没有核对，也没在 Hermes 上实测过，重启后先用 `gh api` 看一眼标签。之后照常运行 `resume-runners.sh`。不要在暂停期间重新注册 runner（`config.sh --replace` 会重置标签）。
+- 受保护的第 3、4 层测试正在跑时，`hermes-ssh.sh` 只放行只读命令，这时暂停或恢复都做不了，要等那次运行结束。
+- `runner-pause.sh` 不带 `--labels-removed` 时以退出码 64 拒绝：直接在 Hermes 上停服务会让 GitHub 在停之前的空档里派来的任务被取消。
+- GitHub 文档写明，它不能保证常驻 runner 停机时绝对不被派任务（[Self-hosted runners reference](https://docs.github.com/en/actions/reference/runners/self-hosted-runners)）。去掉标签再观察 90 秒，把这个空档压到很小，但不是零。
 
 <a id="routine-maintenance"></a>
 
@@ -145,7 +156,7 @@ date: "2026-11-04"
 
 - **磁盘**：看两个 runner 各自的 `logs/disk.log`，每个任务记一行开始时的可用空间，一行结束时 `_work` 的大小和可用空间。
 - **runner 升级**：runner 会自己升级到 GitHub 要求的版本（它的目录归各自的 runner 账号所有，所以能写）。要换安装脚本里固定的版本时，改 `install-runner.sh` 里的 `VERSION` 和 `SHA256`，SHA-256 从 GitHub 的发布页核对。
-- **本机新增了服务**：防火墙只挡端口名单里的端口。之后新开的本机服务端口不在名单里，要刷新规则：先按[暂停和恢复](#pause-and-resume)运行 `runner-pause.sh`（有 runner 服务在运行时安装脚本以退出码 70 拒绝），再重新运行 `install-runner.sh`（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则），最后运行 `runner-resume.sh`。
+- **本机新增了服务**：防火墙只挡端口名单里的端口。之后新开的本机服务端口不在名单里，要刷新规则：先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`（有 runner 服务在运行时安装脚本以退出码 70 拒绝），再重新运行 `install-runner.sh`（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则），最后运行 `resume-runners.sh`。
 - **防火墙表被清掉**：如果有人重启了系统的 `nftables` 服务，而 `/etc/nftables.conf` 里有 `flush ruleset`，表 `inet gh_runner` 会被一并清掉。用 `sudo systemctl restart gh-runner-nft.service gh-runner.service gh-runner-2.service` 恢复。
 - **重启服务**：`sudo -n /usr/bin/systemctl restart gh-runner.service`（第 2 个是 `gh-runner-2.service`）。runner 会先向 GitHub 注销会话再退出，几秒后重新在线。
 
@@ -180,8 +191,8 @@ date: "2026-11-04"
 
 **只卸第 2 个 runner**：
 
-1. 取得临时 sudo，先运行 `runner-pause.sh`，再在 Hermes 上运行 `sudo -n bash /home/andy/himawari-tests/hermes-runner/uninstall-runner.sh 2`。它停掉并删除 `gh-runner-2.service`、结束 `gh-runner-2` 的进程、删除 `/srv/gh-runner-2/`、删除 `gh-runner-2` 用户和组，再按剩下的第 1 个 runner 重新生成防火墙规则和窄 sudo 规则（端口名单沿用上一份规则里的端口，再加上当时在监听的）。第 1 个 runner 的服务、目录、账号不动。全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束。
-2. 运行 `runner-resume.sh` 启动第 1 个 runner。
+1. 取得临时 sudo，先在 Mac 上运行 `pause-runners.sh`，再在 Hermes 上运行 `sudo -n bash /home/andy/himawari-tests/hermes-runner/uninstall-runner.sh 2`。它停掉并删除 `gh-runner-2.service`、结束 `gh-runner-2` 的进程、删除 `/srv/gh-runner-2/`、删除 `gh-runner-2` 用户和组，再按剩下的第 1 个 runner 重新生成防火墙规则和窄 sudo 规则（端口名单沿用上一份规则里的端口，再加上当时在监听的）。第 1 个 runner 的服务、目录、账号不动。全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束。
+2. 在 Mac 上运行 `resume-runners.sh` 启动第 1 个 runner 并加回它的标签。
 3. 在 Mac 上从 GitHub 删除 `hermes-home-2`：先用 `gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name}'` 查到编号，再运行 `gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/<编号>`。
 4. 验证：`id gh-runner-2` 报用户不存在，`/srv/gh-runner-2` 不存在，`sudo -n nft list table inet gh_runner` 的规则里只剩 `gh-runner` 的 uid，`hermes-home` 仍为 `online`。
 
@@ -217,12 +228,12 @@ date: "2026-11-04"
 | 现象 | 安全的诊断 | 处理 |
 | --- | --- | --- |
 | 日志反复出现 `A session for this runner already exists` 和 `Conflict` | `journalctl -u gh-runner.service --since -10min`（第 2 个看 `gh-runner-2.service`） | runner 上次没来得及注销会话（例如进程被强杀）。GitHub 端的旧会话约 2 到 3 分钟后过期，runner 会自己重连，不用处理。正常重启也出现时，检查服务的启动命令是不是 `bin/runsvc.sh`、停止信号是不是 `SIGTERM`。 |
-| GitHub 显示 `offline` | Preflight 第 3、7 项；对应服务的 `journalctl -u` | 服务停着就 `runner-resume.sh`；服务在跑但连不上，看日志里的网络错误，Hermes 断网时只能等。 |
+| GitHub 显示 `offline` | Preflight 第 3、7 项；对应服务的 `journalctl -u` | 服务停着就在 Mac 上运行 `resume-runners.sh`；服务在跑但连不上，看日志里的网络错误，Hermes 断网时只能等。 |
 | 任务报 `below the 16 GiB floor; job refused` | `df -h /`；两个 runner 的 `disk.log` 末尾几行 | 先报告 Andy；只能清 `/srv/gh-runner/runner/_work`、`/srv/gh-runner-2/runner/_work` 下没有任务在用的旧目录，其他东西不删。 |
 | 任务访问本机服务或局域网地址失败 | `sudo -n nft list table inet gh_runner` | 防火墙按设计拒绝。确实需要时先问 Andy，不自行放开。 |
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | Hermes 上浏览器依赖已装好，workflow 里去掉 `--with-deps`。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
-| 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先运行 `runner-pause.sh`，装完再 `runner-resume.sh`。 |
-| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh-runners.slice/memory.events` 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 6 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0164 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
+| 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
+| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 9 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0164 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
 
 [↑ 返回阅读导航](#contents)
