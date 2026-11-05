@@ -35,6 +35,7 @@
 6. 合并前核对代码都复核过（Andy 2026-11-05 定：合并 main 之后也要再复核，合并前 main 必须已经在分支里）。先 `git fetch origin main`，`origin/main` 不在分支里就先把它合进分支；把复核记录目录提交后，运行 `node scripts/model-review/opencode-review.mjs --assert-reviewed --pr <编号>`。它只读、不花钱，从当前提交里读账本，取最后一个两个模型都是 `ok` 的轮次，要求那一轮复核的提交是当前提交的祖先、两者之间只改了本 PR 的记录目录、`origin/main` 已合进分支。输出 `REVIEW_CURRENT` 才能合并；输出 `REVIEW_NOT_CURRENT`（退出码 5）就对列出的改动再复核一轮（`--previous` 传它打印的 `reviewed`），包括合并 main、解决冲突和复核后顺手的小改动。
    - 例外只有一种：按第 4 步连续三轮没过而停下、Andy 看过报告仍说“合并”时，加 `--accept-unreviewed "<Andy 的原话>"` 运行，它打印 `REVIEW_OVERRIDE` 并把原话和未复核的改动写进账本，线程把这条记录随 PR 提交后再合并。
    - 局限：合并由线程执行，这条检查拦不住线程不跑它；要真正拦下，得等 CI 能读账本、Andy 决定规则集要求 `ci/required`。
+7. PR 描述和给 Andy 的复核汇报，复核部分照贴 `node scripts/model-review/opencode-review.mjs --report --pr <编号> --stop <原因>` 的输出，不手写。它从当前提交的账本生成固定几行：每轮每个模型的 `REVIEW_RESULT`、`REVIEW_SPENT_TOTAL`、第 6 步检查的结果、停下的原因和一句固定的话“复核模型只读代码、不运行代码；复核通过不等于测试通过。”。`--stop` 只能是 `no-error`（没有“会出错”的意见，要求最后一轮两个模型都 `ok` 且第 6 步检查通过）、`three-rounds`（连续三轮没过，至少有三轮）、`andy-decision`（Andy 裁定，必须加 `--andy-quote "<原话>"`）、`run-failed`（最后一轮有模型不是 `ok`）；和账本对不上时以 `REPORT_STOP_INCONSISTENT` 拒绝。哪条意见算“会出错”仍由线程判断，脚本只核对说法和账本是否自洽。
 
 <a id="checklist"></a>
 ## 每次都要问的问题

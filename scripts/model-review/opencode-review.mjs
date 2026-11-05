@@ -803,6 +803,42 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   };
 }
 
+export const REVIEW_REPORT_DISCLAIMER = "复核模型只读代码、不运行代码；复核通过不等于测试通过。";
+export const STOP_REASONS = {
+  "no-error": () => "没有“会出错”的意见",
+  "three-rounds": () => "连续三轮没过，按规则停下等 Andy 决定",
+  "andy-decision": (quote) => `Andy 裁定：${quote}`,
+  "run-failed": () => "有模型没跑完（outcome 不是 ok）",
+};
+
+export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
+  if (!Object.hasOwn(STOP_REASONS, stop)) throw new Error("ARG_INVALID --stop");
+  const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
+  const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
+  if (shown.status !== 0) throw new Error(`REPORT_LEDGER_NOT_COMMITTED ${ledgerPath}`);
+  const records = parseUsage(shown.stdout, `HEAD:${ledgerPath}`);
+  const reviews = records.filter((record) => record.mode === "code-review");
+  const rounds = [...new Set(reviews.map((record) => record.round ?? 1))];
+  const latest = Math.max(0, ...rounds);
+  const latestComplete = lastCompleteRound(records)?.round === latest && latest > 0;
+  const gate = assertReviewed({ repo, pr, mainRef });
+  const consistent = {
+    "no-error": latestComplete && gate.problems.length === 0,
+    "three-rounds": rounds.length >= 3,
+    "andy-decision": Boolean(andyQuote?.trim()),
+    "run-failed": latest > 0 && !latestComplete,
+  }[stop];
+  if (!consistent) throw new Error(`REPORT_STOP_INCONSISTENT ${stop}`);
+  return [
+    `REVIEW_REPORT pr=${pr}`,
+    ...reviews.map(resultLine),
+    `REVIEW_SPENT_TOTAL ${spentOf(records).toFixed(4)}`,
+    ...gate.lines,
+    `停下的原因：${STOP_REASONS[stop](andyQuote)}`,
+    REVIEW_REPORT_DISCLAIMER,
+  ];
+}
+
 export function parseUsage(text, path) {
   return text
     .split("\n")
@@ -1435,6 +1471,9 @@ export function parseArgs(argv) {
     } else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
     else if (key === "--assert-reviewed") options.assertReviewed = true;
+    else if (key === "--report") options.report = true;
+    else if (key === "--stop") options.stop = take();
+    else if (key === "--andy-quote") options.andyQuote = take();
     else if (key === "--main-ref") options.mainRef = take();
     else if (key === "--accept-unreviewed") {
       options.acceptUnreviewed = take();
@@ -1464,8 +1503,9 @@ export function parseArgs(argv) {
     } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
-  if (options.assertReviewed) {
+  if (options.assertReviewed || options.report) {
     if (options.pr === undefined) throw new Error("ARG_REQUIRED --pr");
+    if (options.report && options.stop === undefined) throw new Error("ARG_REQUIRED --stop");
     return options;
   }
   if (options.acceptUnreviewed !== undefined)
@@ -1492,6 +1532,10 @@ export function parseArgs(argv) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.report) {
+    for (const line of reviewReport(options)) console.log(line);
+    return;
+  }
   if (options.assertReviewed) {
     const result = assertReviewed(options);
     for (const line of result.lines) console.log(line);

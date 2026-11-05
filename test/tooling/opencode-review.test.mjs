@@ -30,6 +30,9 @@ import {
   GIT_REFUSED,
   gitChildEnv,
   assertReviewed,
+  REVIEW_REPORT_DISCLAIMER,
+  resultLine,
+  reviewReport,
   installedIntegrityProblems,
   installGitGuard,
   installOpencode,
@@ -1967,6 +1970,88 @@ describe("opencode review merge gate", () => {
       expect(fail.status).toBe(5);
       expect(fail.stdout).toMatch(/^REVIEW_NOT_CURRENT pr=7 /);
       expect(fail.stdout).toContain("unreviewed code.txt");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+  it("[review report] prints the fixed lines from the committed ledger", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const lines = reviewReport({ repo: f.repo, pr: 7, mainRef: "origin/main", stop: "no-error" });
+      expect(lines[0]).toBe("REVIEW_REPORT pr=7");
+      expect(lines[1]).toBe(resultLine(ok(1, f.reviewed, deepseek)));
+      expect(lines[2]).toBe(resultLine(ok(1, f.reviewed, glm)));
+      expect(lines[3]).toBe("REVIEW_SPENT_TOTAL 0.1000");
+      expect(lines[4]).toMatch(/^REVIEW_CURRENT pr=7 round=1 /);
+      expect(lines.at(-2)).toBe("停下的原因：没有“会出错”的意见");
+      expect(lines.at(-1)).toBe(REVIEW_REPORT_DISCLAIMER);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review report] refuses a stop reason the ledger does not support", () => {
+    const f = fixture();
+    try {
+      const report = (stop, extra = {}) =>
+        reviewReport({ repo: f.repo, pr: 7, mainRef: "origin/main", stop, ...extra });
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm, { outcome: "timeout" })]);
+      expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
+      expect(report("run-failed").at(-2)).toBe("停下的原因：有模型没跑完（outcome 不是 ok）");
+      expect(() => report("three-rounds")).toThrow("REPORT_STOP_INCONSISTENT three-rounds");
+      expect(() => report("andy-decision")).toThrow("REPORT_STOP_INCONSISTENT andy-decision");
+      expect(report("andy-decision", { andyQuote: "这条不改" }).at(-2)).toBe(
+        "停下的原因：Andy 裁定：这条不改",
+      );
+      expect(() => report("whatever")).toThrow("ARG_INVALID --stop");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, f.reviewed, deepseek),
+        ok(2, f.reviewed, glm),
+        ok(3, f.reviewed, deepseek),
+        ok(3, f.reviewed, glm),
+      ]);
+      expect(() => report("run-failed")).toThrow("REPORT_STOP_INCONSISTENT run-failed");
+      expect(report("three-rounds").at(-2)).toBe(
+        "停下的原因：连续三轮没过，按规则停下等 Andy 决定",
+      );
+      f.commit({ "code.txt": "late\n" }, "late change");
+      expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review report] the script prints the report and fails on an inconsistent stop reason", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const run = (stop) =>
+        spawnSync(
+          process.execPath,
+          [
+            "scripts/model-review/opencode-review.mjs",
+            "--report",
+            "--pr",
+            "7",
+            "--repo",
+            f.repo,
+            "--stop",
+            stop,
+          ],
+          {
+            encoding: "utf8",
+            env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+          },
+        );
+      const good = run("no-error");
+      expect(good.status).toBe(0);
+      expect(good.stdout.trim().split("\n").at(-1)).toBe(REVIEW_REPORT_DISCLAIMER);
+      const bad = run("run-failed");
+      expect(bad.status).toBe(2);
+      expect(bad.stderr.trim()).toBe("REPORT_STOP_INCONSISTENT run-failed");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
