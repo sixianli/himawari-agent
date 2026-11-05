@@ -420,6 +420,12 @@ export const OPENCODE_KEPT_ENV = [
   "SSL_CERT_DIR",
 ];
 
+export const PROXY_ENV = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"];
+
+export function proxyCredentialProblems(env) {
+  return PROXY_ENV.filter((name) => /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(env[name] ?? ""));
+}
+
 export function opencodeEnv(env) {
   return Object.fromEntries(
     OPENCODE_KEPT_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
@@ -795,6 +801,12 @@ function gitStatus(args, cwd) {
 
 export const OVERRIDE_MIN_ROUNDS = 3;
 
+function changedOutside(repo, from, to, ledgerPath) {
+  return git(["diff", "--no-renames", "--name-only", from, to], repo)
+    .split("\n")
+    .filter((file) => file && !file.startsWith(`${ledgerPath}/`));
+}
+
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
   const head = git(["rev-parse", "HEAD"], repo);
@@ -807,11 +819,8 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   else if (gitStatus(["merge-base", "--is-ancestor", complete.head, head], repo).status !== 0)
     problems.push(`not-ancestor ${complete.head}`);
   else
-    for (const file of git(
-      ["diff", "--no-renames", "--name-only", complete.head, head],
-      repo,
-    ).split("\n"))
-      if (file && !file.startsWith(`${ledgerPath}/`)) problems.push(`unreviewed ${file}`);
+    for (const file of changedOutside(repo, complete.head, head, ledgerPath))
+      problems.push(`unreviewed ${file}`);
   if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
     problems.push(`main-ref-missing ${mainRef}`);
   else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
@@ -828,15 +837,31 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   ).size;
   if (problems.length > 0 && acceptUnreviewed && reviewRounds < OVERRIDE_MIN_ROUNDS)
     lines.push(`REVIEW_OVERRIDE_REFUSED rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`);
-  const overridden =
-    problems.length > 0 && Boolean(acceptUnreviewed) && reviewRounds >= OVERRIDE_MIN_ROUNDS;
-  if (overridden) {
-    mkdirSync(join(repo, ledgerPath), { recursive: true });
-    appendFileSync(
-      join(repo, ledgerPath, "usage.jsonl"),
-      `${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
-    );
-    lines.push(`REVIEW_OVERRIDE quote=${acceptUnreviewed}`);
+  const recorded =
+    problems.length > 0 && records
+      ? records
+          .filter((record) => record.mode === "override" && record.head)
+          .reverse()
+          .find(
+            (record) =>
+              gitStatus(["merge-base", "--is-ancestor", record.head, head], repo).status === 0 &&
+              changedOutside(repo, record.head, head, ledgerPath).length === 0,
+          )
+      : undefined;
+  let overridden = Boolean(recorded);
+  if (recorded) lines.push(`REVIEW_OVERRIDE quote=${recorded.quote} recorded=${recorded.head}`);
+  else if (problems.length > 0 && acceptUnreviewed && reviewRounds >= OVERRIDE_MIN_ROUNDS) {
+    const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
+    const onDisk = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : null;
+    if (onDisk !== shown.stdout) lines.push("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
+    else {
+      appendFileSync(
+        ledgerFile,
+        `${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
+      );
+      lines.push(`REVIEW_OVERRIDE quote=${acceptUnreviewed}`);
+      overridden = true;
+    }
   }
   return {
     round: complete?.round ?? null,
@@ -917,11 +942,24 @@ export function nextRound(records, rounds = []) {
   return Math.max(0, ...recorded, ...rounds) + 1;
 }
 
-export function roundForRun({ records, rounds, requested, models, head, prompts, promptsOnDisk }) {
+export function roundForRun({
+  records,
+  rounds,
+  requested,
+  mode,
+  models,
+  head,
+  prompts,
+  promptsOnDisk,
+}) {
   if (requested === undefined) return nextRound(records, rounds);
-  const inRound = records.filter((record) => (record.round ?? 1) === requested);
+  const inRound = records.filter(
+    (record) => record.mode !== "override" && (record.round ?? 1) === requested,
+  );
   if (inRound.length === 0 && !rounds.includes(requested))
     throw new Error(`ROUND_NOT_FOUND ${requested}`);
+  const otherMode = inRound.find((record) => record.mode !== undefined && record.mode !== mode);
+  if (otherMode) throw new Error(`ROUND_MODE_MISMATCH ${requested} ${otherMode.mode} ${mode}`);
   for (const model of models) {
     if (inRound.some((record) => record.model === model && record.outcome === "ok"))
       throw new Error(`ROUND_ALREADY_HAS_RESULT ${requested} ${model}`);
@@ -935,6 +973,8 @@ export function roundForRun({ records, rounds, requested, models, head, prompts,
       .filter((record) => record.model === model && record.promptSha256)
       .map((record) => record.promptSha256);
     const digest = createHash("sha256").update(prompts[model]).digest("hex");
+    if (onDisk === null && recordedDigests.length === 0)
+      throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
     if (
       (onDisk !== null && onDisk !== prompts[model]) ||
       recordedDigests.some((recorded) => recorded !== digest)
@@ -1633,7 +1673,7 @@ async function main() {
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
   const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
-  const brief = readFileSync(options.brief, "utf8");
+  const brief = recordText(readFileSync(options.brief, "utf8"));
   const prompts = Object.fromEntries(
     options.models.map((model) => [
       model,
@@ -1642,6 +1682,8 @@ async function main() {
   );
   for (const prompt of Object.values(prompts))
     if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
+  const proxyProblems = proxyCredentialProblems(process.env);
+  if (proxyProblems.length > 0) throw new Error(`PROXY_HAS_CREDENTIALS ${proxyProblems.join(" ")}`);
   const records = options.selfCheckOnly ? [] : readUsage(options.out);
   const overBudget = options.selfCheckOnly
     ? null
@@ -1663,6 +1705,7 @@ async function main() {
         records,
         rounds: roundsOnDisk(options.out),
         requested: options.round,
+        mode: options.mode,
         models: options.models,
         head: commits.head,
         prompts,
@@ -1755,7 +1798,7 @@ async function main() {
         };
         appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
         if (record.outcome !== "ok" && review.stderr.trim()) {
-          writeFileSync(join(roundDir, `${name}.stderr.txt`), review.stderr);
+          writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
         }
         return record;
       }),

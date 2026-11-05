@@ -38,6 +38,7 @@ import {
   installOpencode,
   keepEarlierAttempt,
   promptFileName,
+  proxyCredentialProblems,
   recordText,
   rawDir,
   opencodeInstallDir,
@@ -432,13 +433,13 @@ describe("opencode review self-check", () => {
     expect(plan.probes.filter((probe) => probe.tool !== "bash").map((probe) => probe.tool)).toEqual(
       ["read", "read", "read", "grep", "grep", "glob", "glob"],
     );
-    expect(plan.probes).toContainEqual(
-      expect.objectContaining({
-        kind: "read",
-        tool: "read",
-        args: { filePath: "/proc/self/environ" },
-      }),
-    );
+    const environProbe = expect.objectContaining({
+      kind: "read",
+      tool: "read",
+      args: { filePath: "/proc/self/environ" },
+    });
+    if (process.platform === "linux") expect(plan.probes).toContainEqual(environProbe);
+    else expect(plan.probes).not.toContainEqual(environProbe);
     expect(
       plan.probes.filter((probe) => probe.kind === "allowed").map((probe) => probe.args.command),
     ).toEqual([
@@ -2035,6 +2036,17 @@ describe("opencode review merge gate", () => {
         quote: "合并",
         problems: ["unreviewed code.txt"],
       });
+      f.git("add", ".");
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "override");
+      const later = f.check();
+      expect(later.overridden).toBe(true);
+      expect(later.lines.at(-1)).toBe(`REVIEW_OVERRIDE quote=合并 recorded=${written.at(-1).head}`);
+      f.commit({ "code.txt": "changed again\n" }, "after override");
+      expect(f.check().overridden).toBe(false);
+      writeFileSync(join(f.repo, f.ledger), "{}\n");
+      const dirty = f.check({ acceptUnreviewed: "合并" });
+      expect(dirty.overridden).toBe(false);
+      expect(dirty.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2260,7 +2272,7 @@ describe("opencode review spending", () => {
     expect(() => run({ requested: 2, prompts: { [glm]: "other brief" } })).toThrow(
       `ROUND_PROMPT_MISMATCH 2 ${glm}`,
     );
-    expect(run({ requested: 2, promptsOnDisk: {} })).toBe(2);
+    expect(() => run({ requested: 2, promptsOnDisk: {} })).toThrow(`ROUND_CANNOT_VERIFY 2 ${glm}`);
     expect(run({ requested: 2, prompts: { [glm]: "P", [deepseek]: "changed" } })).toBe(2);
     expect(
       parseArgs(["--head", "a", "--brief", "b", "--topic", "t", "--mode", "plan", "--round", "2"])
@@ -2332,6 +2344,88 @@ describe("opencode review spending", () => {
       });
     expect(run("P")).toBe(1);
     expect(() => run("other brief")).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
+  });
+
+  it("[rerun round] refuses another mode's round and ignores override records", () => {
+    const [, glm] = REVIEW_MODELS;
+    const digest = createHash("sha256").update("P").digest("hex");
+    const base = {
+      cost: 0.1,
+      round: 1,
+      model: glm,
+      head: "h",
+      outcome: "timeout",
+      promptSha256: digest,
+    };
+    const run = (records, mode) =>
+      roundForRun({
+        records,
+        rounds: [1],
+        requested: 1,
+        mode,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: "P" },
+        promptsOnDisk: {},
+      });
+    expect(() => run([{ ...base, mode: "plan" }], "plan-review")).toThrow(
+      "ROUND_MODE_MISMATCH 1 plan plan-review",
+    );
+    expect(run([{ ...base, mode: "plan" }], "plan")).toBe(1);
+    expect(
+      run(
+        [
+          { ...base, mode: "code-review" },
+          { cost: 0, mode: "override", head: "other" },
+        ],
+        "code-review",
+      ),
+    ).toBe(1);
+  });
+
+  it("[review env] refuses to start when a proxy address carries a user name or password", () => {
+    expect(
+      proxyCredentialProblems({
+        HTTPS_PROXY: "http://127.0.0.1:8080",
+        http_proxy: "http://u:p@proxy:3128",
+      }),
+    ).toEqual(["http_proxy"]);
+    expect(proxyCredentialProblems({ HTTPS_PROXY: "https://token@proxy" })).toEqual([
+      "HTTPS_PROXY",
+    ]);
+    expect(proxyCredentialProblems({ NO_PROXY: "a@b" })).toEqual([]);
+    const dir = mkdtempSync(join(tmpdir(), "opencode-proxy-"));
+    try {
+      const brief = join(dir, "brief.md");
+      writeFileSync(brief, "material\n");
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--mode",
+          "plan",
+          "--head",
+          "HEAD",
+          "--topic",
+          "proxy-probe",
+          "--brief",
+          brief,
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            HTTPS_PROXY: "http://user:secret@proxy:3128",
+            HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode",
+          },
+        },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr.trim()).toBe("PROXY_HAS_CREDENTIALS HTTPS_PROXY");
+      expect(result.stderr).not.toContain("secret");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("[rerun round] keeps the failed attempt's files next to the new ones", () => {
