@@ -10,3 +10,67 @@ condition = "AND"
 paths = ['''(?:^|/)test/qualification/evidence/workspace-authorization-lifecycle/''']
 regexTarget = "line"
 regexes = ['''^\s*"[^"]+/[^"]+\.[A-Za-z0-9]{1,8}": "[0-9a-f]{64}",?\s*$''']
+
+[[allowlists]]
+description = "已删除的证据清单里的 git 对象号（40 位），文件名在键里，默认规则当成密钥；只限该文件的历史"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)\.agents/tasks/round2-tool-execution/evidence\.jsonl$''']
+regexTarget = "match"
+regexes = ['''^[^"\s]+\.[A-Za-z0-9]+": "[0-9a-f]{40}"$''']
+
+[[allowlists]]
+description = "ADR 0157 白名单漏掉的一行：资格证据回读文件里不带目录的日志文件名对应的 SHA-256"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)test/qualification/evidence/workspace-authorization-lifecycle/p4-completion-01/archive-readback\.json$''']
+regexTarget = "match"
+regexes = ['''^p4-save-secrets-final\.log": "0803b00889e1a37bf2645a12f203d89c5a695b27538e322db7e962339e6a416a"$''']
+
+[[allowlists]]
+description = "Web Push 公开测试向量（RFC 8291）里的 auth 值，只限这两个已审阅的测试和夹具文件"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)(?:test/integration/production-web-push-control\.test\.ts|packages/gateway-contracts/test/gateway-v2\.fixture\.ts)$''']
+regexTarget = "secret"
+regexes = ['''^BTBZMqHH6r4Tts7J_aSIgg$''']
+
+[[allowlists]]
+description = "已删除的旧推送通道单元测试里的 22 位占位设备值（提交 f73b0b76，已在 9dcdb6e 删除），只限该文件的历史"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)apps/agent-service/test/production-reminder-push\.unit\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^F5u42Bd3HyW8Kxk[A-Za-z0-9_-]{7}$''']
+
+[[allowlists]]
+description = "前台结果单元测试里的合成 Bearer 令牌"
+condition = "AND"
+targetRules = ["curl-auth-header"]
+paths = ['''(?:^|/)apps/agent-service/test/production-foreground-result\.unit\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^R2T14BEARERVALUE0001$''']
+
+[[allowlists]]
+description = "记忆抽取评测数据集里的假 GitHub 令牌（已离线核对）"
+condition = "AND"
+targetRules = ["github-pat"]
+paths = ['''(?:^|/)test/fixtures/memory-capture-eval/dataset\.json$''']
+regexTarget = "secret"
+regexes = ['''^gh[p]_Zk3Qw8Lm2VxN9sTdR4bYf7HcJ1pUa6EoXe5G$''']
+
+[[allowlists]]
+description = "沙箱探针脚本里的 tmpfs 大小参数，不是密钥"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)test/qualification/evidence/isolated-tool-execution/p0-platform-probe-01/probe\.sh$''']
+regexTarget = "secret"
+regexes = ['''^tmpfs-size=1048576$''']
+
+[[allowlists]]
+description = "已删除的诊断说明里的线程编号（UUID），只限该文件的历史"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)scripts/operations/cache-zero-diagnosis/README\.md$''']
+regexTarget = "secret"
+regexes = ['''^f504128e-d710-44e1-a304-6b61c370ef24$''']
