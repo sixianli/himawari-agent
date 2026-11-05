@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, expect, webkit } from "@playwright/test";
+import { isWebKitCancelledApiFetch } from "./ci/browser-page-errors.mjs";
 import { qualifyAuthorizationFeedback } from "./test-authorization-feedback-browser.mjs";
 
 export async function qualifyMobileComposer(browser, baseUrl, output) {
@@ -18,7 +19,9 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
       });
       const page = await context.newPage();
       const errors = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("pageerror", (error) => {
+        if (!isWebKitCancelledApiFetch(error.message)) errors.push(error.message);
+      });
       const label = `${locale}-${width}`;
       await context.route("**/api/control-center/v1/config", async (route) => {
         const response = await route.fetch();

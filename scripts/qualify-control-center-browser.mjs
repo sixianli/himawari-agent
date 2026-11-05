@@ -8,6 +8,7 @@ import { chromium, devices, expect, firefox, webkit } from "@playwright/test";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 import { createBrowserObservation } from "./ci/browser-observation.mjs";
+import { isWebKitCancelledApiFetch } from "./ci/browser-page-errors.mjs";
 import { parseArguments } from "./ci/contracts.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
 import { qualifyControlCenterV4 } from "./test-control-center-v4.mjs";
@@ -1006,18 +1007,10 @@ export async function qualifyBrowser({
       .filter({ visible: true })
       .first()
       .waitFor();
-    const expectedOfflineBrowserError = (error) =>
-      error.includes("access control checks") &&
-      [
-        "/api/gateway/v2/events",
-        "/api/gateway/thread/v3/events",
-        "/api/gateway/thread/v3/execution-events",
-        "/api/gateway/thread/v3/queries",
-      ].some((path) => error.includes(path));
     if (requestErrors.length)
       throw new Error(`CONTROL_CENTER_CRITICAL_REQUEST_FAILED:${JSON.stringify(requestErrors)}`);
     const unexpectedBrowserErrors = browserErrors.filter(
-      (error) => !expectedOfflineBrowserError(error),
+      (error) => !isWebKitCancelledApiFetch(error),
     );
     if (unexpectedBrowserErrors.length > 0) {
       throw new Error(`CONTROL_CENTER_PAGE_ERRORS:${unexpectedBrowserErrors.join("|")}`);

@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test";
+import { isWebKitCancelledApiFetch } from "./ci/browser-page-errors.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -14,7 +15,9 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
       const commands = [];
       const errors = [];
       let detailQuery;
-      page.on("pageerror", (e) => errors.push(e.message));
+      page.on("pageerror", (e) => {
+        if (!isWebKitCancelledApiFetch(e.message)) errors.push(e.message);
+      });
       page.on("request", (request) => {
         if (request.method() !== "POST") return;
         if (request.url().endsWith("/api/gateway/thread/v3/commands"))
@@ -133,7 +136,9 @@ export async function qualifyControlCenterV4(browser, baseUrl, out) {
   });
   const page = await context.newPage();
   const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("pageerror", (e) => {
+    if (!isWebKitCancelledApiFetch(e.message)) errors.push(e.message);
+  });
   let release = () => {};
   try {
     const hold = new Promise((resolve) => {
