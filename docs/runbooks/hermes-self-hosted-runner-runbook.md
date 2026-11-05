@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:349b1bef1d31fe7b333811042f078dd736118d46789365e7a28cbce302a4a12a"
+contract_sha256: "sha256:be8261696cd310ba094aee8f0c94b061a7db3f2a8524074c4e3924ec928ed9ee"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -143,7 +143,7 @@ date: "2026-11-04"
   3. 每 30 秒查一次 GitHub：两个 runner 都显示 `busy=false` 时，在 Hermes 上运行 `runner-pause.sh --labels-removed 90`。它连续观察 90 秒，期间每 10 秒查一次本机有没有 `Runner.Worker`，一直没有才停两个服务，打印 `RUNNER_PAUSED`；中途看到任务就打印 `RUNNER_STILL_BUSY`，以退出码 2 结束、不停服务，Mac 侧接着等。
   4. 成功时打印 `RUNNER_PAUSED labels=removed services=stopped`。
   5. 到了等待上限还有任务，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>` 和还在忙的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`），以退出码 2 结束。服务状态读不到时写 `services=unknown`。Hermes 那一步出错（例如只停掉了一个服务）时，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`，以退出码 1 结束；等待期间被 Ctrl-C、`TERM` 或 `HUP` 打断时，打印同样一行并加上 `interrupted`，以退出码 130 结束。这几种情况下标签都保持去掉，还在跑的服务跑完手上的任务，不会再接新任务；重新运行 `pause-runners.sh` 即可，或运行 `resume-runners.sh` 撤销。
-- 恢复：`scripts/operations/hermes-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不启动服务、不加标签；再在 Hermes 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；再等 GitHub 显示它们 `online`（最多 5 分钟），最后把 `hermes-home` 标签加回去并读一遍确认，打印 `RUNNER_RESUMED labels=restored`。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态>`，不加标签；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=<各服务状态> labels=removed` 和没上线的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`）；标签没加上打印 `RUNNER_RESUME_INCOMPLETE` 和每个 runner 的标签状态；对账之后任何时候被 Ctrl-C、`TERM` 或 `HUP` 打断，打印 `RUNNER_RESUME_INCOMPLETE interrupted`、各服务状态和每个 runner 的标签状态（`on`、`off`、`unread`），以退出码 130 结束。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。2026-11-05 实测：恢复后排队的任务约 3.5 分钟才开始跑，两个 runner 同一秒接到任务，原因在 GitHub 一侧、没有确认，等几分钟即可，不要因此重启 runner。
+- 恢复：`scripts/operations/hermes-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不启动服务、不加标签；再把 `hermes-home` 标签加回去并读一遍确认，标签没加上就打印 `RUNNER_RESUME_INCOMPLETE` 和每个 runner 的标签状态、不启动服务；然后在 Hermes 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；最后等 GitHub 显示它们 `online`（最多 5 分钟），打印 `RUNNER_RESUMED labels=restored`。必须先加标签再启动：2026-11-05 两次实测，先启动、上线后才加标签，排队的任务一直不派（一次连续 26 分钟、18 个运行在排队），重启一次 runner 后几秒内就派了；推断 GitHub 在 runner 连上时按当时的标签匹配排队任务，之后补加标签不会重新匹配（没有找到官方文档）。runner 离线时标签在也不会派任务，所以先加标签没有风险。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态> labels=restored`；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=<各服务状态> labels=restored` 和没上线的 runner（一直读不到 GitHub 时写 `(could not read GitHub)`）；对账之后任何时候被 Ctrl-C、`TERM` 或 `HUP` 打断，打印 `RUNNER_RESUME_INCOMPLETE interrupted`、各服务状态和每个 runner 的标签状态（`on`、`off`、`unread`），以退出码 130 结束。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。按旧顺序恢复过、runner 在线空闲而排队任务不动时，用窄 sudo 规则重启其中一个 runner 服务（`sudo -n /usr/bin/systemctl restart gh-runner.service`）即可放开。
 - 暂停期间新的 CI 任务在 GitHub 上排队；**排队超过 24 小时的任务会被 GitHub 判为失败**，所以暂停不要超过一天。GitHub 大约 1 分钟后才把停掉的 runner 显示为 `offline`。
 - 暂停期间 Hermes 重启：服务会自己起来。按 runner 源码（[`ConfigurationManager.cs`](https://github.com/actions/runner/blob/main/src/Runner.Listener/Configuration/ConfigurationManager.cs)），标签只在配置（`config.sh`）时发给 GitHub，所以重启后标签应该还是去掉的、不会接任务；但启动会话的代码没有核对，也没在 Hermes 上实测过，重启后先用 `gh api` 看一眼标签。之后照常运行 `resume-runners.sh`。不要在暂停期间重新注册 runner（`config.sh --replace` 会重置标签）。
 - 受保护的第 3、4 层测试正在跑时，`hermes-ssh.sh` 只放行只读命令，这时暂停或恢复都做不了，要等那次运行结束。

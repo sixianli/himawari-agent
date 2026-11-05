@@ -64,7 +64,7 @@ Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runn
 2. **暂停先去标签，再等空闲，最后停服务。** 先对账：Hermes 上注册过的 runner 和 GitHub 上的同名 runner 一一对上，GitHub 上带 `hermes-home` 的 runner 也都在 Hermes 上，对不上就不改标签、不停服务（这时 Mac 侧已经把三个脚本传到 Hermes）。然后去掉这些 runner 的 `hermes-home` 标签并读一遍确认；有一个没去掉或读不全，就把已发出删除请求的都加回去、不碰 Hermes；这一步被打断时也一样加回。之后每 30 秒查 GitHub，两个都 `busy=false` 时在 Hermes 上运行 `runner-pause.sh --labels-removed 90`：连续 90 秒看不到 `Runner.Worker` 才停服务，看到就不停、Mac 侧接着等。等待上限是 `ci/policy.json` 里最大的 `timeoutMinutes` 加 5 分钟。
 3. **一次远程调用不超过 300 秒。** `hermes-ssh.sh` 每次调用最多 300 秒，所以长时间的等待放在 Mac 侧，Hermes 上每次只观察 90 秒；脚本允许的上限是 180 秒，给串行停两个服务留出时间。
 4. **暂停失败时标签保持去掉。** 到等待上限还有任务，或 Hermes 那一步出错时，标签不加回；没停的服务继续跑完手上的任务（Hermes 上可能已停掉一部分），打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`（等待阶段被打断时同样处理）。runner 不会再接新任务，重新运行暂停即可；运行恢复可以撤销。
-5. **恢复先对账，再启服务，最后加标签。** 对账不一致就不启动、不加标签；对上了再在 Hermes 上启动已注册的服务，等 GitHub 显示它们 `online`，再加回 `hermes-home` 并读一遍确认；对账之后任何时候被打断，都报告各服务状态和每个 runner 的标签状态。
+5. **恢复先对账，再加标签，最后启服务。** 对账不一致就不启动、不加标签；对上了先加回 `hermes-home` 并读一遍确认，没加上就不启动；再在 Hermes 上启动已注册的服务，等 GitHub 显示它们 `online`（2026-11-05 改，原来是先启服务、上线后再加标签，见“后果”）；对账之后任何时候被打断，都报告各服务状态和每个 runner 的标签状态。
 6. **不再单独在 Hermes 上暂停。** `runner-pause.sh` 不带 `--labels-removed` 时以退出码 64 拒绝；Hermes 上的脚本每次由 Mac 侧传到 `/home/andy/himawari-tests/hermes-runner/` 再运行，用的是现有的窄 sudo 规则（只能启停两个 runner 服务），不用再开临时 sudo。`install-runner.sh` 不再往 `/srv/gh-runner/bin/` 装脚本，删掉那里旧的三个脚本，目录空了就删掉目录。暂停和恢复共用一把锁，不能同时运行。
 
 [↑ 返回阅读导航](#contents)
@@ -101,7 +101,7 @@ Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runn
 - 好处：排队再多也能在“最长任务时限 + 5 分钟”内停下，不打断正在跑的任务；暂停期间新任务排队，不显示失败。
 - 代价：暂停和恢复只能在 Andy 的 Mac 上做；暂停可能要等一个多小时，代理要在后台运行；暂停超过 24 小时，排队的任务会被 GitHub 判为失败。
 - 残余风险：GitHub 不保证常驻 runner 停机时绝对不被派任务；去标签加 90 秒观察把这个空档压小，但不是零。
-- 2026-11-05 在 Hermes 上演示（Mac 上的会话，两个脚本在 macOS 自带的 bash 3.2 上运行，退出码都是 0）：去掉标签后新任务排队、没有派给这两个 runner；正在跑的 `static` 在去掉标签后继续跑了约 9 分钟，之后按 Andy 的要求手动取消，所以“一直跑到结束”没有验证；恢复后两个 runner 上线、加回标签，排队任务约 3.5 分钟后开始跑。
+- 2026-11-05 在 Hermes 上演示（Mac 上的会话，两个脚本在 macOS 自带的 bash 3.2 上运行，退出码都是 0）：去掉标签后新任务排队、没有派给这两个 runner；正在跑的 `static` 在去掉标签后继续跑了约 9 分钟，之后按 Andy 的要求手动取消，所以“一直跑到结束”没有验证；恢复后两个 runner 上线、加回标签，但排队任务不派。同一天部署内存上限时又复现一次：恢复后 runner 在线、空闲、带着标签，连续 26 分钟没有派任务（18 个运行在排队）；只重启 `gh-runner`，8 秒内两个 runner 都接到任务。推断：GitHub 在 runner 连上时按当时的标签匹配排队任务，之后补加标签不会重新匹配（没有找到官方文档）。所以把恢复改成先加标签再启服务；runner 离线时标签在也不会派任务。新顺序还没在 Hermes 上实测。
 - 测试：`test/tooling/hermes-runner-scripts.test.mjs` 用假的 `gh` 和 `hermes-ssh.sh` 覆盖对账不一致、删除失败后加回、删除报成功但标签还在、GitHub 显示忙时不停、Hermes 上观察期内出现任务、等到上限、恢复时先上线再加标签、锁。
 
 [↑ 返回阅读导航](#contents)
