@@ -45,7 +45,7 @@ export function validateMainWorkflow(source, lock) {
     ["confirm", confirm],
   ]) {
     assert(
-      job["runs-on"] === "hermes-home" && job["timeout-minutes"] === (id === "plan" ? 5 : 15),
+      job["runs-on"] === "hermes-home" && job["timeout-minutes"] === (id === "plan" ? 5 : 45),
       "runtime",
     );
     assert(

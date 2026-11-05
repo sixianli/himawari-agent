@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3a56cd8364717003e99a44a7a7fe43a41be6787609aa6643d9301af26c826431"
+contract_sha256: "sha256:420dc65c29627b726fed2aa276a4e03b7ecd3a6f01aa0baef2ea28fa32bb97a7"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -175,7 +175,7 @@ date: "2026-11-04"
 触发条件：runner 影响到 Hermes 上的其他服务或受保护测试，或者 Andy 决定不再用它。
 
 1. 在 Mac 上先把 workflow 改回托管机器（还原把 `runs-on` 改成 `hermes-home` 的那次提交），或者按 ADR 0092 的办法关掉 Actions，免得任务排队等一台不存在的 runner。
-2. 取得临时 sudo，在 Hermes 上运行 `sudo -n bash /home/andy/himawari-tests/hermes-runner/uninstall-runner.sh`。它停掉并删除四个服务、删除防火墙表和 `/etc/gh-runner/`、删除窄 sudo 规则、结束 `gh-runner` 的进程、删除 `/srv/gh-runner/`，再删除 `gh-runner` 用户和组。成功时打印 `UNINSTALL_OK`。
+2. 取得临时 sudo，在 Hermes 上运行 `sudo -n bash /home/andy/himawari-tests/hermes-runner/uninstall-runner.sh`。它停掉并删除四个服务、删除防火墙表和 `/etc/gh-runner/`、删除窄 sudo 规则、结束 `gh-runner` 的进程、删除 `/srv/gh-runner/`，再删除 `gh-runner` 用户和组。最后逐项核对这些东西都已不在：全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束，按清单手动处理后再运行一次。
 3. 在 Mac 上从 GitHub 删除 runner：先用 `gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name}'` 查到编号，再运行 `gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/<编号>`。
 4. 验证：`id gh-runner` 报用户不存在，`/srv/gh-runner` 不存在，`nft list tables` 里没有 `gh_runner`，GitHub 的 runner 列表里没有 `hermes-home`，Hermes 上其他服务的状态和端口与卸载前一样。
 

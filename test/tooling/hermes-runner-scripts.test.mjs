@@ -139,3 +139,22 @@ describe("root scripts refuse other hosts", () => {
     expect(result.stderr).toContain("missing python3");
   });
 });
+
+describe("uninstall-runner.sh result", () => {
+  it("reports UNINSTALL_INCOMPLETE instead of success when the account survives", () => {
+    const { root, fake, run } = sandbox();
+    const record = (name) => `printf '${name} %s\\n' "$*" >> "${root}/calls"`;
+    fake("hostname", "echo hermes-home");
+    fake("id", `${record("id")}\n[ "$1" = -u ] && echo 0\nexit 0`);
+    for (const name of ["systemctl", "nft", "rm", "pkill", "userdel", "groupdel"])
+      fake(name, `${record(name)}\nexit 0`);
+    fake("getent", `${record("getent")}\nexit 2`);
+    const result = run("uninstall-runner.sh", [], { inheritPath: false });
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain("UNINSTALL_OK");
+    expect(result.stderr).toContain("UNINSTALL_INCOMPLETE");
+    expect(result.stderr).toContain("user:gh-runner");
+    expect(result.stderr).toContain("nft:inet/gh_runner");
+    expect(readFileSync(path.join(root, "calls"), "utf8")).toContain("userdel gh-runner");
+  });
+});

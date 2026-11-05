@@ -67,7 +67,7 @@ jobs:
     needs: plan
     if: needs.plan.result == 'success' && needs.plan.outputs.mode == 'light'
     runs-on: hermes-home
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       CI_NODE: 22.22.3
     steps:
