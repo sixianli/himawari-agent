@@ -424,7 +424,7 @@ export const PROXY_ENV = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_prox
 
 export function proxyCredentialProblems(env) {
   return PROXY_ENV.filter((name) =>
-    /^(?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]*@/i.test((env[name] ?? "").trim()),
+    /^(?:[a-z][a-z0-9+.-]*:)?(?:\/\/)?[^/?#]*@/i.test((env[name] ?? "").trim()),
   );
 }
 
@@ -822,11 +822,11 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     problems.push(`not-ancestor ${complete.head}`);
   else
     for (const file of changedOutside(repo, complete.head, head, ledgerPath))
-      problems.push(`unreviewed ${file}`);
+      problems.push(`unreviewed ${printable(file)}`);
   if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
-    problems.push(`main-ref-missing ${mainRef}`);
+    problems.push(`main-ref-missing ${printable(mainRef)}`);
   else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
-    problems.push(`main-not-merged ${mainRef}`);
+    problems.push(`main-not-merged ${printable(mainRef)}`);
   const summary = `pr=${pr} round=${complete?.round ?? "none"} reviewed=${complete?.head ?? "none"} head=${head}`;
   const lines =
     problems.length === 0
@@ -841,12 +841,14 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     problems.length > 0 &&
     problems.every((problem) => problem.startsWith("unreviewed ")) &&
     reviewRounds >= OVERRIDE_MIN_ROUNDS;
-  if (problems.length > 0 && acceptUnreviewed && !overridable)
-    lines.push(
-      reviewRounds < OVERRIDE_MIN_ROUNDS
-        ? `REVIEW_OVERRIDE_REFUSED rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`
-        : "REVIEW_OVERRIDE_REFUSED only-unreviewed-files",
-    );
+  if (problems.length > 0 && acceptUnreviewed && !overridable) {
+    const reasons = [];
+    if (reviewRounds < OVERRIDE_MIN_ROUNDS)
+      reasons.push(`rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`);
+    if (!problems.every((problem) => problem.startsWith("unreviewed ")))
+      reasons.push("only-unreviewed-files");
+    lines.push(`REVIEW_OVERRIDE_REFUSED ${reasons.join(" ")}`);
+  }
   const recorded =
     overridable && records
       ? records
@@ -919,7 +921,24 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
   ];
 }
 
-export const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
+export const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+function hasLineBreak(value) {
+  if (typeof value === "string") return /[\r\n]/.test(value);
+  if (value && typeof value === "object") return Object.values(value).some(hasLineBreak);
+  return false;
+}
+
+export function hasControlCharacter(text) {
+  return [...text].some((character) => {
+    const code = character.codePointAt(0);
+    return code < 32 || code === 127;
+  });
+}
+
+export function printable(text) {
+  return hasControlCharacter(text) ? JSON.stringify(text) : text;
+}
 
 export function parseUsage(text, path) {
   return text
@@ -951,9 +970,7 @@ export function parseUsage(text, path) {
         (COMMIT_PATTERN.test(record.head ?? "") &&
           typeof record.quote === "string" &&
           record.quote.trim() !== "");
-      const singleLine = Object.values(record ?? {}).every(
-        (value) => typeof value !== "string" || !/[\r\n]/.test(value),
-      );
+      const singleLine = !hasLineBreak(record ?? {});
       if (
         !Number.isFinite(record?.cost) ||
         record.cost < 0 ||
@@ -1006,7 +1023,9 @@ export function roundForRun({
     if (inRound.some((record) => record.model === model && record.outcome === "ok"))
       throw new Error(`ROUND_ALREADY_HAS_RESULT ${requested} ${model}`);
   }
-  const heads = new Set(inRound.map((record) => record.head).filter(Boolean));
+  if (inRound.some((record) => !record.head))
+    throw new Error(`ROUND_CANNOT_VERIFY ${requested} head`);
+  const heads = new Set(inRound.map((record) => record.head));
   if ([...heads].some((recorded) => recorded !== head))
     throw new Error(`ROUND_HEAD_MISMATCH ${requested} ${[...heads].join(",")} ${head}`);
   for (const model of models) {
@@ -1580,13 +1599,14 @@ export function rawDir(options, round) {
 }
 
 export function recordText(text) {
-  return `${text.replace(/[ \t]+$/gm, "")}\n`;
+  return `${text.replace(/\r\n?/g, "\n").replace(/[ \t]+$/gm, "")}\n`;
 }
 
 export function prepareRawDir(dir, root = join(tmpdir(), "himawari-review-raw")) {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   chmodSync(root, 0o700);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
 }
 
 export function promptFileName(model) {
@@ -1649,7 +1669,8 @@ export function parseArgs(argv) {
       if (/[\r\n]/.test(options.andyQuote)) throw new Error("ARG_INVALID --andy-quote");
     } else if (key === "--main-ref") {
       options.mainRef = take();
-      if (options.mainRef.startsWith("-")) throw new Error("ARG_INVALID --main-ref");
+      if (options.mainRef.startsWith("-") || hasControlCharacter(options.mainRef))
+        throw new Error("ARG_INVALID --main-ref");
     } else if (key === "--questions-ref") {
       options.questionsRef = take();
       if (options.questionsRef.startsWith("-")) throw new Error("ARG_INVALID --questions-ref");

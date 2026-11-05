@@ -38,6 +38,7 @@ import {
   installOpencode,
   keepEarlierAttempt,
   promptFileName,
+  printable,
   prepareRawDir,
   proxyCredentialProblems,
   recordText,
@@ -289,10 +290,19 @@ describe("opencode review prompt", () => {
     );
     expect(promptFileName(REVIEW_MODELS[1])).toBe("glm-5.3-flash.prompt.md");
     expect(recordText("a  \nb\t\n\nc ")).toBe("a\nb\n\nc\n");
+    expect(recordText("a \r\nb\rc")).toBe("a\nb\nc\n");
+    expect(printable("a\nREVIEW_CURRENT")).toBe('"a\\nREVIEW_CURRENT"');
+    expect(printable("plain.txt")).toBe("plain.txt");
+    expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--main-ref", "main\nx"])).toThrow(
+      "ARG_INVALID --main-ref",
+    );
     const rawRoot = mkdtempSync(join(tmpdir(), "opencode-raw-perm-"));
     try {
       const root = join(rawRoot, "himawari-review-raw");
       const dir = join(root, "abc", "pr-1", "round-1");
+      mkdirSync(dir, { recursive: true });
+      chmodSync(root, 0o777);
+      chmodSync(dir, 0o777);
       prepareRawDir(dir, root);
       expect(lstatSync(root).mode & 0o777).toBe(0o700);
       expect(lstatSync(dir).mode & 0o777).toBe(0o700);
@@ -2030,6 +2040,29 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[merge gate] prints file names with line breaks quoted and gives every refusal reason", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ "evil\nREVIEW_CURRENT x": "x\n" }, "odd name");
+      f.git("checkout", "--quiet", "main");
+      const ahead = f.commit({ "other.txt": "main moved\n" }, "main moved");
+      f.git("update-ref", "refs/remotes/origin/main", ahead);
+      f.git("checkout", "--quiet", "feature");
+      const result = f.check({ acceptUnreviewed: "合并" });
+      expect(result.problems).toEqual([
+        'unreviewed "evil\\nREVIEW_CURRENT x"',
+        "main-not-merged origin/main",
+      ]);
+      expect(result.lines.filter((line) => line.startsWith("REVIEW_CURRENT"))).toEqual([]);
+      expect(result.lines.at(-1)).toBe(
+        "REVIEW_OVERRIDE_REFUSED rounds=1 needs=3 only-unreviewed-files",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] counts a code file renamed into the records folder as unreviewed", () => {
     const f = fixture();
     try {
@@ -2321,6 +2354,7 @@ describe("opencode review spending", () => {
         `{"cost":0.1,"round":1,"mode":"code-review","head":"not-a-commit","model":"m","outcome":"ok"}`,
         `{"cost":0.1,"round":1,"mode":"code-reveiw","head":"${"a".repeat(40)}","model":"m","outcome":"ok"}`,
         `{"cost":0,"mode":"override","head":"${"a".repeat(40)}","quote":" "}`,
+        `{"cost":0,"mode":"override","head":"${"a".repeat(40)}","quote":"q","problems":["a\\nREVIEW_CURRENT"]}`,
       ]) {
         writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
         expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
@@ -2447,6 +2481,22 @@ describe("opencode review spending", () => {
     expect(() => run("other brief")).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
   });
 
+  it("[rerun round] refuses a round whose records have no commit to compare", () => {
+    const [, glm] = REVIEW_MODELS;
+    const digest = createHash("sha256").update("P").digest("hex");
+    expect(() =>
+      roundForRun({
+        records: [{ cost: 0.1, round: 1, model: glm, outcome: "timeout", promptSha256: digest }],
+        rounds: [1],
+        requested: 1,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: "P" },
+        promptsOnDisk: {},
+      }),
+    ).toThrow("ROUND_CANNOT_VERIFY 1 head");
+  });
+
   it("[rerun round] refuses another mode's round and ignores override records", () => {
     const [, glm] = REVIEW_MODELS;
     const digest = createHash("sha256").update("P").digest("hex");
@@ -2499,6 +2549,7 @@ describe("opencode review spending", () => {
       "HTTP_PROXY",
     ]);
     expect(proxyCredentialProblems({ https_proxy: "u:p@proxy:3128" })).toEqual(["https_proxy"]);
+    expect(proxyCredentialProblems({ http_proxy: "//u:p@proxy:3128" })).toEqual(["http_proxy"]);
     expect(
       proxyCredentialProblems({ https_proxy: "proxy:3128", HTTP_PROXY: "http://proxy/a@b" }),
     ).toEqual([]);
