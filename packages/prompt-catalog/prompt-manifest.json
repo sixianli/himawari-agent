@@ -330,7 +330,7 @@
         "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
         "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
       ],
-      "reason": "解析函数的硬要求：非 create 没有有效的 existingMemoryId 整条作废；非 unchanged 的 quote 对不上原话会被拒"
+      "reason": "解析函数的硬要求：非 create 的候选没有有效的 existingMemoryId 整条作废；非 unchanged、非 restricted 的候选 quote 对不上原话会被拒。“unchanged 也要填”是给模型的统一要求，代码对 unchanged 和 restricted 不拦"
     }
   },
   "memory.consolidation": {

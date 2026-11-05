@@ -57,7 +57,7 @@ const FORBIDDEN_WORD_EXCEPTIONS: Readonly<Record<string, string>> = {
 
 const EMPHASIS_WORDS = ["必须", "一律", "务必", "严格", "MUST", "CRITICAL"];
 
-const DEFERRED_BATCH = /^第 [2-9] 批 W-\d+/u;
+const DEFERRED_BATCH = /^第 (?:[2-9]|[1-9]\d+) 批 W-\d+/u;
 
 const BEFORE_BATCH_1_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -414,6 +414,20 @@ describe("[PROMPT-WORDING] batch 1 wording checks (ADR 0166)", () => {
       "PROMPT_EMPHASIS_REASON_MISSING x.strict",
       "PROMPT_EMPHASIS_BATCH_INVALID x.strict",
     ]);
+    expect(
+      emphasisProblems(
+        [entry],
+        row({ kind: "deferred", batch: "第 12 批 W-40", reason: "x" }),
+        files,
+      ),
+    ).toEqual([]);
+    expect(
+      emphasisProblems(
+        [entry],
+        row({ kind: "deferred", batch: "第 1 批 W-40", reason: "x" }),
+        files,
+      ),
+    ).toEqual(["PROMPT_EMPHASIS_BATCH_INVALID x.strict"]);
     expect(
       emphasisProblems(
         [entry],
