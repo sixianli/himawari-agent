@@ -63,7 +63,7 @@
   - 五个允许的 git 子命令各有一条必须跑通的探针；受限 bash 外壳每次启动都记一笔，记录数少于这五条就说明 opencode 没有用它，算失败；opencode 发给模型的系统提示里不能出现副本里 `AGENTS.md` 的标题（PR 自带的项目指令不能变成复核模型的指令）；读仓库外的探针也包括 `../` 这种相对路径；`max_tokens` 不能低于 10 万，也不能高于该模型能接受的上限。工具表、输出上限、推理强度也要对。
   - `; touch`、`| tee`、`$(...)` 这类复合命令被拒，靠的是 opencode 把命令按片段分别判断权限（opencode 1.19.5 实测如此）；升级 opencode 后自检突然失败，先查这一点。任何一项不对就以 `SELF_CHECK_FAILED` 停下。
 - 不限步数：提示里要求模型先想清楚要查什么、直奔目标去读，读到足以下结论就停，不要漫无目的地翻代码或反复调用同类工具（Andy 2026-11-03 定）。兜底靠下面的费用封顶和超时，再加 opencode 自带的「同一工具连续三次相同调用就拒绝」（`doom_loop`）。
-- 两个模型并行（`--models` 可以只跑其中一个，例如只重跑失败的那个），每轮的结果写到 `--out` 下的 `round-<序号>/`：模型的答案（`<模型>.md`）、思考内容（`<模型>.thinking.md`，opencode 的 `--thinking` 输出）、原始事件（`<模型>.jsonl`）。每个模型的真实用量（输入、输出、推理、缓存命中 token、费用、轮次、是否追问过）追加到 `--out` 下的 `usage.jsonl`。
+- 两个模型并行（`--models` 可以只跑其中一个，例如只重跑失败的那个），每轮的结果写到这件事的记录目录（见下一条）下的 `round-<序号>/`：每个模型实际收到的提示词（`<模型>.prompt.md`）、模型的答案（`<模型>.md`）、失败时的报错（`<模型>.stderr.txt`）；思考内容（`<模型>.thinking.md`，opencode 的 `--thinking` 输出）和原始事件（`<模型>.jsonl`）太大，写到系统临时目录下的 `himawari-review-raw/<记录目录名>/round-<序号>/`，运行时打印 `REVIEW_RAW_DIR`，不进仓库。每个模型的真实用量（输入、输出、推理、缓存命中 token、费用、轮次、是否追问过）追加到 `--out` 下的 `usage.jsonl`。
   - 一次运行里每个模型账上最多记 0.2 美元（实际花费可能略高：判线时已经在途的那一步，见下文）；花到 0.15 美元、或者用掉超时的八成（最多留 5 分钟）时，脚本先停掉它，再在同一段对话里追问一次「停止调用工具，现在写出结论」；模型正常结束却没写正文（答案只留在思考里）时也追问一次。追问只给一步，工具定义和前面完全一样，只在对话末尾追加这句话，所以前面的内容都能命中缓存（[发给模型的内容只追加](../../.claude/rules/prompt-prefix.md#rules)）；opencode 在这一步会提醒模型不要再调工具（opencode 在只给一步时会自己追加一条「已到最大步数，只能回文字」的提醒，但实测模型仍可以一直调工具）。
   - 所以追问这一步的配置把所有「允许」（`allow`）的工具权限改成「先问」（`ask`），「禁止」的照旧：工具定义不变，但 `opencode run` 没有人回答「先问」，会自动拒绝，而 opencode 在工具被拒后就结束这段对话（opencode 1.19.5 的 [run.ts](https://github.com/anomalyco/opencode/blob/v1.19.5/packages/opencode/src/cli/cmd/run.ts) 自动回复 `reject`；[processor.ts](https://github.com/anomalyco/opencode/blob/v1.19.5/packages/opencode/src/session/processor.ts) 在 `experimental.continue_loop_on_deny` 不为 `true` 时，被拒就返回 `stop`）。模型若仍然调工具，这个工具不会执行，opencode 也不会再发下一次请求；这一步结束、费用入账后，脚本记为 `wrap-up-tool-call`（这一步的费用同时超出剩余额度时记 `cost-limit`）。以前靠脚本看到这一步结束再停进程，可 opencode 在这之间已经执行了工具、发出了下一次请求，这些请求的费用不入账（2026-11-04 复现：把 opencode 输出里每一步结束的那行延后 1 秒，两次各多发了 22、23 次追问请求；`test/tooling/opencode-review.test.mjs` 的追问调工具用例就按这个延后来跑）。
   - 第一次运行也靠 opencode 自己拦：脚本给 opencode 装了一个很小的插件（`scripts/model-review/spend-guard.mjs`，只读，不改任何消息、系统提示和工具定义），每次要发模型请求之前，由插件在 opencode 进程里先判断，到线就抛错，这次请求不会发出去。判断用的是插件自己累计的各步费用（和 `step_finish` 里的 `cost` 同源，压缩历史后也不会漏算）和脚本传给它的几条线：会话总费用上限、收尾费用线（第一次运行）、收尾时刻、总期限；追问运行只带总上限、总期限和脚本已记的首轮费用（插件在追问进程里看到的历史被压缩时也不会漏算首轮），不带收尾线，否则追问的唯一一次请求会被自己拦下。
@@ -72,20 +72,25 @@
   - 开跑前的自检会带着插件跑一次：假模型一直返回工具调用，插件限定放行 3 次，假服务器必须恰好收到 3 次主请求，插件没加载或没拦住就以 `SELF_CHECK_FAILED` 停下（`GUARD_NOT_LOADED`、`GUARD_PROBE_*`）；脚本启动 opencode 前会清掉 `OPENCODE_PURE`，它会让 opencode 不加载外部插件。门槛是 `test/tooling/opencode-review.test.mjs` 里名字带 `[I-77]` 的用例，见 [I-77](../../docs/incidents-and-gates.md#incidents)。
   - 本来要追问（花到 0.15 美元、用掉八成超时、或没写正文）但拿不到会话编号、有一步的费用读不出来、剩下的钱不到 0.02 美元或时间不到 15 秒时不追问，`usage.jsonl` 的 `wrapUpSkipped` 分别记 `no-session`、`cost-unknown`、`no-budget`、`no-time`（顺序如此）。第一次运行里费用读不出来本身就会停掉它（`outcome` 记 `cost-unknown`），这种情况不追问，也没有 `wrapUpSkipped`。追问的钱和时间都算在这个模型的 0.2 美元和总超时里。
   - 某一步的费用读不出来就停（标 `cost-unknown`），不当作 0：`usage.jsonl` 里这条记 `costUnknown: true`，累计时按「已记的费用加 0.05 美元」和「0.2 美元」中较大的一个算（那一步花了多少不知道，所以多留一点）；负数费用同样当作读不出来；费用是每一步结束后才知道的，最后一步可能略超。超时先发结束信号，10 秒不退再强杀。追问后仍被截断、超时、超费用、进程出错、被信号杀掉或没出文字时退出码为 4，按 `usage.jsonl` 里的 `outcome` 处理，不要原样重跑。
-- 同一件事的所有轮次（同一个 PR 的代码复核，或同一份方案的独立出方案和审核）用同一个 `--out`。轮次序号取 `usage.jsonl` 里记录的轮次和已有的 `round-*` 目录中最大的那个加一，不会覆盖旧结果；没有轮次字段的旧记录按第 1 轮算。只重跑某一轮里失败的那个模型时，加 `--round <那一轮的序号>`，结果记进原来那一轮，不另占一个序号：这一轮里这个模型已经有 `outcome` 为 `ok` 的记录（`ROUND_ALREADY_HAS_RESULT`）、这一轮不存在（`ROUND_NOT_FOUND`）、这一轮记录的提交和这次的 `--head` 不同（`ROUND_HEAD_MISMATCH`），或者这一轮的 `prompt.md` 和这次的提示词不同（`ROUND_PROMPT_MISMATCH`，例如改了 `--brief`）时拒绝，都在花钱之前；失败那次的文件改名为 `<模型>.attempt-<序号>.*` 留在原目录。`usage.jsonl` 有一行读不出来、费用不是非负数字或轮次不是正整数，脚本以 `USAGE_LEDGER_INVALID` 拒绝开跑，不猜已花多少。开跑前脚本把 `usage.jsonl` 里已花的加上这一轮最多会花的（每个模型 0.2 美元）：代码复核超过 1 美元、方案讨论超过 0.5 美元，就以 `BUDGET_NEEDS_APPROVAL` 拒绝开跑，并打印这几个数。线程把数报给 Andy，他同意的总额用 `--approved-usd <美元>` 传入，累计不超过这个数才放行。每次运行结束打印 `REVIEW_SPENT_TOTAL`，线程汇报费用就用这个数。
+- 记录目录固定在仓库里：代码复核必须传 `--pr <编号>`，记在 `.agents/reviews/pr-<编号>/`；方案讨论必须传 `--topic <短名>`（小写字母开头，只含小写字母、数字和连字符），记在 `.agents/reviews/topic-<短名>/`。同一个 PR 的所有轮次必然写进同一个账本，换目录名绕不过先问线；`--out` 只在 `--self-check-only` 时允许（Andy 2026-11-05 定记录存这里）。线程在合并前把记录目录随 PR 一起提交。
+  - 复核副本用 sparse checkout 去掉整个 `.agents/reviews/`，并在副本的 `.git/info/attributes` 里把它标成 `-diff`（`git diff`、`git show` 只显示 `Binary files`），git 替身拒绝任何带 `agents/reviews` 的参数和会照样打印内容的 `-a`、`--text`、`--binary`，所以模型读不到之前几轮的结论；自检用 glob 和 `git log -p` 各一条探针核对。局限：模型若先用 `git log --raw` 找到文件的对象编号再 `git show <编号>`，仍能读到。
+  - 轮次序号取 `usage.jsonl` 里记录的轮次和已有的 `round-*` 目录中最大的那个加一，不会覆盖旧结果；没有轮次字段的旧记录按第 1 轮算。
+  - 只重跑某一轮里失败的那个模型时，加 `--round <那一轮的序号>`，结果记进原来那一轮，不另占一个序号：这一轮里这个模型已经有 `outcome` 为 `ok` 的记录（`ROUND_ALREADY_HAS_RESULT`）、这一轮不存在（`ROUND_NOT_FOUND`）、这一轮记录的提交和这次的 `--head` 不同（`ROUND_HEAD_MISMATCH`），或者这一轮里这个模型的 `<模型>.prompt.md` 和这次发给它的提示词不同（`ROUND_PROMPT_MISMATCH`，例如改了 `--brief`）时拒绝，都在花钱之前；失败那次的文件改名为 `<模型>.attempt-<序号>.*` 留在原目录。
+  - `usage.jsonl` 有一行读不出来、费用不是非负数字或轮次不是正整数，脚本以 `USAGE_LEDGER_INVALID` 拒绝开跑，不猜已花多少。
+  - 开跑前脚本把 `usage.jsonl` 里已花的加上这一轮最多会花的（每个模型 0.2 美元）：代码复核超过 1 美元、方案讨论超过 0.5 美元，就以 `BUDGET_NEEDS_APPROVAL` 拒绝开跑，并打印这几个数。线程把数报给 Andy，他同意的总额用 `--approved-usd <美元>` 传入，累计不超过这个数才放行。每次运行结束打印 `REVIEW_SPENT_TOTAL`，线程汇报费用就用这个数。
 
 用法：
 
 ```
 node scripts/model-review/opencode-review.mjs --mode code-review \
   --base <分叉点提交> --head <PR 最新提交> [--previous <上一轮复核的提交>] \
-  --brief <作者说明.md> --out <结果目录>
+  --pr <PR 编号> --brief <作者说明.md>
 
 node scripts/model-review/opencode-review.mjs --mode plan \
-  --head <当前提交> --brief <问题、目标、约束.md> --out <结果目录>
+  --head <当前提交> --topic <短名> --brief <问题、目标、约束.md>
 
 node scripts/model-review/opencode-review.mjs --mode plan-review \
-  --head <当前提交> --brief <线程的方案.md> --out <结果目录>
+  --head <当前提交> --topic <短名> --brief <线程的方案.md>
 ```
 
 三种模式都可以加 `--models deepseek-v4.1-flash`（只跑列出的模型，逗号分隔，可写短名或完整名；自检仍对两个模型都跑，不花钱）、`--round <序号>`（把单个模型的重跑补进原来那一轮，见上文）和 `--approved-usd <美元>`（Andy 同意的这件事的总花费）。

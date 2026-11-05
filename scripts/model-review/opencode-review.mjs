@@ -58,6 +58,8 @@ export const GIT_BANNED_OPTIONS = [
   "--orderfile",
   "--help",
   "--show-signature",
+  "--text",
+  "--binary",
 ];
 const GIT_SHORT_VALUE_LETTERS = "SGLUnlMCBXI";
 export const GIT_REFUSED = "REVIEW_GIT_REFUSED";
@@ -321,9 +323,11 @@ export function killProcessGroup(child, signal) {
   return true;
 }
 
+export const REVIEWS_PATH_FRAGMENT = "agents/reviews";
+
 function shortOptionProblem(subcommand, letters) {
   for (const letter of letters) {
-    if (letter === "o" || letter === "O") return true;
+    if (letter === "o" || letter === "O" || letter === "a") return true;
     if (subcommand === "blame" && letter === "S") return true;
     if (subcommand === "blame" && letter === "n") continue;
     if (GIT_SHORT_VALUE_LETTERS.includes(letter)) return false;
@@ -333,6 +337,8 @@ function shortOptionProblem(subcommand, letters) {
 
 export function checkGitArgs(args) {
   if (!GIT_SUBCOMMANDS.includes(args[0])) return `subcommand ${args[0] ?? "(none)"}`;
+  const recordsPath = args.slice(1).find((arg) => arg.includes(REVIEWS_PATH_FRAGMENT));
+  if (recordsPath) return `records-path ${recordsPath}`;
   for (const arg of args.slice(1)) {
     if (arg === "--") break;
     if (arg.startsWith("--")) {
@@ -760,7 +766,7 @@ export function nextRound(records, rounds = []) {
   return Math.max(0, ...recorded, ...rounds) + 1;
 }
 
-export function roundForRun({ records, rounds, requested, models, head, prompt, promptOnDisk }) {
+export function roundForRun({ records, rounds, requested, models, head, prompts, promptsOnDisk }) {
   if (requested === undefined) return nextRound(records, rounds);
   const inRound = records.filter((record) => (record.round ?? 1) === requested);
   if (inRound.length === 0 && !rounds.includes(requested))
@@ -772,23 +778,24 @@ export function roundForRun({ records, rounds, requested, models, head, prompt, 
   const heads = new Set(inRound.map((record) => record.head).filter(Boolean));
   if ([...heads].some((recorded) => recorded !== head))
     throw new Error(`ROUND_HEAD_MISMATCH ${requested} ${[...heads].join(",")} ${head}`);
-  if (promptOnDisk !== null && promptOnDisk !== prompt)
-    throw new Error(`ROUND_PROMPT_MISMATCH ${requested}`);
+  for (const model of models) {
+    const onDisk = promptsOnDisk[model] ?? null;
+    if (onDisk !== null && onDisk !== prompts[model])
+      throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
+  }
   return requested;
 }
 
-export const ATTEMPT_FILE_SUFFIXES = [".jsonl", ".md", ".thinking.md", ".stderr.txt"];
+export const KEPT_FILE_SUFFIXES = [".prompt.md", ".md", ".stderr.txt"];
+export const RAW_FILE_SUFFIXES = [".jsonl", ".thinking.md"];
 
-export function keepEarlierAttempt(roundDir, name) {
-  const present = ATTEMPT_FILE_SUFFIXES.filter((suffix) =>
-    existsSync(join(roundDir, `${name}${suffix}`)),
-  );
+export function keepEarlierAttempt(roundDir, name, suffixes = KEPT_FILE_SUFFIXES) {
+  if (!existsSync(roundDir)) return null;
+  const present = suffixes.filter((suffix) => existsSync(join(roundDir, `${name}${suffix}`)));
   if (present.length === 0) return null;
   let attempt = 1;
   while (
-    ATTEMPT_FILE_SUFFIXES.some((suffix) =>
-      existsSync(join(roundDir, `${name}.attempt-${attempt}${suffix}`)),
-    )
+    suffixes.some((suffix) => existsSync(join(roundDir, `${name}.attempt-${attempt}${suffix}`)))
   )
     attempt += 1;
   for (const suffix of present)
@@ -861,6 +868,8 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
     bash(`git diff -pO${outsideA} HEAD~1 HEAD`),
     bash(`git diff --pathspec-from-file=${outsideA} HEAD~1 HEAD`),
     bash("git show --help"),
+    bash(`git show HEAD:${REVIEWS_DIR}`),
+    bash("git diff -a HEAD~1 HEAD"),
     { tool: "read", args: { filePath: outsideA } },
     { tool: "read", args: { filePath: "../outside-a.txt" } },
     { tool: "read", args: { filePath: "/proc/self/environ" } },
@@ -877,6 +886,17 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
     bash("export NODE_OPTIONS=--version; git log -1 --oneline"),
     bash(`git log $${REVIEW_PARENT_CANARY_ENV}`),
   ].map((probe) => ({ kind: "contained", leak: marker, ...probe }));
+  const records = [
+    { tool: "glob", args: { pattern: "**/usage.jsonl", path: ".agents" }, leak: "usage.jsonl" },
+    {
+      tool: "bash",
+      args: {
+        command: `git log -p -3 -- '${REVIEWS_DIR.replace("reviews", "rev*")}'`,
+        description: "probe",
+      },
+      leak: '"cacheRead"',
+    },
+  ].map((probe) => ({ kind: "contained", ...probe }));
   return {
     marker,
     outsideFiles: [outsideA, outsideB],
@@ -890,6 +910,7 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
       ...insideWrites,
       ...reads,
       ...contained,
+      ...records,
     ],
   };
 }
@@ -1272,6 +1293,9 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
   git(["fetch", "--quiet", "origin", "+refs/*:refs/source/*"], copy);
   const envFiles = envFilesInHistory(copy);
   if (envFiles.length > 0) throw new Error(`ENV_FILE_IN_HISTORY ${envFiles.join(" ")}`);
+  git(["sparse-checkout", "set", "--no-cone", "/*", `!/${REVIEWS_DIR}/`], copy);
+  mkdirSync(join(copy, ".git", "info"), { recursive: true });
+  writeFileSync(join(copy, ".git", "info", "attributes"), `/${REVIEWS_DIR}/** -diff\n`);
   git(["checkout", "--quiet", "--detach", commits.head], copy);
   git(["remote", "remove", "origin"], copy);
   const refs = git(["for-each-ref", "--format=%(refname)"], copy).split("\n").filter(Boolean);
@@ -1287,6 +1311,27 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
   for (const commit of [commits.base, commits.previous].filter(Boolean))
     git(["cat-file", "-e", `${commit}^{commit}`], copy);
   return removeUnsafeProjectFiles(copy);
+}
+
+export const REVIEWS_DIR = ".agents/reviews";
+export const TOPIC_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
+
+export function reviewKey({ pr, topic }) {
+  if (pr !== undefined) return `pr-${pr}`;
+  if (topic !== undefined) return `topic-${topic}`;
+  throw new Error("REVIEW_KEY_MISSING");
+}
+
+export function reviewDir(repo, options) {
+  return join(repo, REVIEWS_DIR, reviewKey(options));
+}
+
+export function rawDir(options, round) {
+  return join(tmpdir(), "himawari-review-raw", reviewKey(options), `round-${round}`);
+}
+
+export function promptFileName(model) {
+  return `${model.split("/").pop()}.prompt.md`;
 }
 
 export function parseArgs(argv) {
@@ -1311,7 +1356,13 @@ export function parseArgs(argv) {
     else if (key === "--previous") options.previous = take();
     else if (key === "--brief") options.brief = resolve(take());
     else if (key === "--out") options.out = resolve(take());
-    else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
+    else if (key === "--pr") {
+      options.pr = Number(take());
+      if (!Number.isSafeInteger(options.pr) || options.pr <= 0) throw new Error("ARG_INVALID --pr");
+    } else if (key === "--topic") {
+      options.topic = take();
+      if (!TOPIC_PATTERN.test(options.topic)) throw new Error("ARG_INVALID --topic");
+    } else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
     else if (key === "--models") {
       const names = take()
@@ -1338,10 +1389,20 @@ export function parseArgs(argv) {
     } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
-  for (const required of ["head", "brief", "out"]) {
+  for (const required of ["head", "brief"]) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
+  if (!options.selfCheckOnly) {
+    if (options.out !== undefined) throw new Error("ARG_OUT_ONLY_FOR_SELF_CHECK");
+    if (options.pr !== undefined && options.topic !== undefined)
+      throw new Error("ARG_PR_AND_TOPIC");
+    if (options.mode === "code-review" && options.pr === undefined)
+      throw new Error("ARG_REQUIRED --pr");
+    if (options.mode !== "code-review" && options.topic === undefined)
+      throw new Error("ARG_REQUIRED --topic");
+    options.out = reviewDir(options.repo, options);
+  }
   if (!Number.isFinite(options.timeoutMinutes) || options.timeoutMinutes <= 0) {
     throw new Error("ARG_INVALID --timeout-minutes");
   }
@@ -1353,13 +1414,15 @@ async function main() {
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
   const questions = reviewQuestions(questionsSource(options.repo, commits));
-  const prompt = buildPrompt({
-    ...options,
-    ...commits,
-    questions,
-    brief: readFileSync(options.brief, "utf8"),
-  });
-  if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
+  const brief = readFileSync(options.brief, "utf8");
+  const prompts = Object.fromEntries(
+    options.models.map((model) => [
+      model,
+      buildPrompt({ ...options, ...commits, model, questions, brief }),
+    ]),
+  );
+  for (const prompt of Object.values(prompts))
+    if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
   const records = options.selfCheckOnly ? [] : readUsage(options.out);
   const overBudget = options.selfCheckOnly
     ? null
@@ -1370,18 +1433,24 @@ async function main() {
         approvedUsd: options.approvedUsd,
       });
   if (overBudget) throw new Error(overBudget);
-  const requestedPrompt =
-    options.round === undefined ? null : join(options.out, `round-${options.round}`, "prompt.md");
-  const round = roundForRun({
-    records,
-    rounds: roundsOnDisk(options.out),
-    requested: options.round,
-    models: options.models,
-    head: commits.head,
-    prompt,
-    promptOnDisk:
-      requestedPrompt && existsSync(requestedPrompt) ? readFileSync(requestedPrompt, "utf8") : null,
-  });
+  const promptOnDisk = (model) => {
+    if (options.round === undefined) return null;
+    const path = join(options.out, `round-${options.round}`, promptFileName(model));
+    return existsSync(path) ? readFileSync(path, "utf8") : null;
+  };
+  const round = options.selfCheckOnly
+    ? 0
+    : roundForRun({
+        records,
+        rounds: roundsOnDisk(options.out),
+        requested: options.round,
+        models: options.models,
+        head: commits.head,
+        prompts,
+        promptsOnDisk: Object.fromEntries(
+          options.models.map((model) => [model, promptOnDisk(model)]),
+        ),
+      });
   const binary = opencodeBinary();
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
@@ -1422,10 +1491,17 @@ async function main() {
       JSON.stringify(reviewConfig({ mode: options.mode, wrapUp: true }), null, 2),
     );
     const roundDir = join(options.out, `round-${round}`);
+    const roundRawDir = rawDir(options, round);
     mkdirSync(roundDir, { recursive: true });
-    writeFileSync(join(roundDir, "prompt.md"), prompt);
+    mkdirSync(roundRawDir, { recursive: true });
+    console.log(`REVIEW_RAW_DIR ${roundRawDir}`);
     const results = await Promise.all(
       options.models.map(async (model) => {
+        const name = model.split("/").pop();
+        const prompt = prompts[model];
+        keepEarlierAttempt(roundDir, name);
+        keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
+        writeFileSync(join(roundDir, promptFileName(model)), prompt);
         const review = await reviewModel({
           binary,
           cwd: copy,
@@ -1436,19 +1512,20 @@ async function main() {
           prompt,
           timeoutMs,
         });
-        const name = model.split("/").pop();
-        keepEarlierAttempt(roundDir, name);
-        writeFileSync(join(roundDir, `${name}.jsonl`), review.stdout);
+        writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
         const { summary } = review;
         writeFileSync(join(roundDir, `${name}.md`), `${summary.text}\n`);
         if (summary.thinking)
-          writeFileSync(join(roundDir, `${name}.thinking.md`), `${summary.thinking}\n`);
+          writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
         const record = {
           at: new Date().toISOString(),
           round,
           mode: options.mode,
           model,
           head: commits.head,
+          base: commits.base ?? null,
+          previous: commits.previous ?? null,
+          promptSha256: createHash("sha256").update(prompt).digest("hex"),
           outcome: review.outcome,
           wrapUp: review.wrapUp,
           wrapUpSkipped: review.wrapUpSkipped,

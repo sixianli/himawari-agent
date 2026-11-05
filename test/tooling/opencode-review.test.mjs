@@ -33,6 +33,10 @@ import {
   installGitGuard,
   installOpencode,
   keepEarlierAttempt,
+  promptFileName,
+  RAW_FILE_SUFFIXES,
+  REVIEWS_DIR,
+  reviewDir,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   nextRound,
@@ -210,13 +214,41 @@ describe("opencode review prompt", () => {
     ).toThrow("BRIEF_EMPTY");
   });
 
+  it("[review records] keeps each review's ledger in one fixed folder of the repository", () => {
+    const common = ["--head", "a", "--brief", "b.md", "--repo", "/r"];
+    const review = parseArgs([...common, "--base", "c", "--pr", "12"]);
+    expect(review.out).toBe(join("/r", REVIEWS_DIR, "pr-12"));
+    expect(reviewDir("/r", { topic: "x-1" })).toBe(join("/r", REVIEWS_DIR, "topic-x-1"));
+    expect(parseArgs([...common, "--mode", "plan", "--topic", "t2"]).out).toBe(
+      join("/r", REVIEWS_DIR, "topic-t2"),
+    );
+    expect(() => parseArgs([...common, "--base", "c"])).toThrow("ARG_REQUIRED --pr");
+    expect(() => parseArgs([...common, "--mode", "plan"])).toThrow("ARG_REQUIRED --topic");
+    expect(() => parseArgs([...common, "--base", "c", "--pr", "12", "--out", "o"])).toThrow(
+      "ARG_OUT_ONLY_FOR_SELF_CHECK",
+    );
+    expect(() => parseArgs([...common, "--base", "c", "--pr", "1", "--topic", "t"])).toThrow(
+      "ARG_PR_AND_TOPIC",
+    );
+    for (const bad of ["0", "-2", "1.5", "x"])
+      expect(() => parseArgs([...common, "--base", "c", "--pr", bad])).toThrow("ARG_INVALID --pr");
+    for (const bad of ["12", "Abc", "../x", "a/b", "a b", "", `a${"b".repeat(63)}`])
+      expect(() => parseArgs([...common, "--mode", "plan", "--topic", bad])).toThrow(
+        "ARG_INVALID --topic",
+      );
+    expect(parseArgs([...common, "--mode", "plan", "--self-check-only", "--out", "o"]).out).toMatch(
+      /o$/,
+    );
+    expect(promptFileName(REVIEW_MODELS[1])).toBe("glm-5.3-flash.prompt.md");
+  });
+
   it("requires a base commit for code review", () => {
-    expect(() => parseArgs(["--head", "a", "--brief", "b.md", "--out", "o"])).toThrow(
+    expect(() => parseArgs(["--head", "a", "--brief", "b.md", "--pr", "1"])).toThrow(
       "ARG_REQUIRED --base",
     );
-    expect(parseArgs(["--mode", "plan", "--head", "a", "--brief", "b.md", "--out", "o"]).mode).toBe(
-      "plan",
-    );
+    expect(
+      parseArgs(["--mode", "plan", "--head", "a", "--brief", "b.md", "--topic", "t"]).mode,
+    ).toBe("plan");
   });
 });
 
@@ -332,7 +364,7 @@ describe("opencode review self-check", () => {
       expect(commands.some((command) => command.includes(shape))).toBe(true);
     }
     expect(plan.probes.filter((probe) => probe.tool !== "bash").map((probe) => probe.tool)).toEqual(
-      ["read", "read", "read", "grep", "grep", "glob"],
+      ["read", "read", "read", "grep", "grep", "glob", "glob"],
     );
     expect(plan.probes).toContainEqual(
       expect.objectContaining({
@@ -801,6 +833,21 @@ describe("opencode review git guard", () => {
     expect(checkGitArgs(["blame", "-L1,20", "AGENTS.md"])).toBeNull();
   });
 
+  it("[review records] refuses git paths into earlier review records and options that print them anyway", () => {
+    expect(checkGitArgs(["show", `HEAD:${REVIEWS_DIR}/pr-1/usage.jsonl`])).toBe(
+      `records-path HEAD:${REVIEWS_DIR}/pr-1/usage.jsonl`,
+    );
+    expect(checkGitArgs(["log", "-p", "--", `${REVIEWS_DIR}/pr-1`])).toBe(
+      `records-path ${REVIEWS_DIR}/pr-1`,
+    );
+    expect(checkGitArgs(["diff", "-a", "HEAD~1", "HEAD"])).toBe("-a");
+    expect(checkGitArgs(["diff", "-pa", "HEAD~1", "HEAD"])).toBe("-pa");
+    expect(checkGitArgs(["diff", "--text", "HEAD~1", "HEAD"])).toBe("--text");
+    expect(checkGitArgs(["diff", "--binary", "HEAD~1", "HEAD"])).toBe("--binary");
+    expect(checkGitArgs(["log", "--all", "--oneline"])).toBeNull();
+    expect(checkGitArgs(["log", "-Sagents", "-n3"])).toBeNull();
+  });
+
   it("refuses other subcommands and options that write or read outside the copy", () => {
     expect(checkGitArgs(["difftool", "-y"])).toBe("subcommand difftool");
     expect(checkGitArgs(["push"])).toBe("subcommand push");
@@ -862,8 +909,8 @@ describe("opencode review run outcome", () => {
           "b",
           "--brief",
           "b.md",
-          "--out",
-          "o",
+          "--pr",
+          "1",
           "--timeout-minutes",
           value,
         ]),
@@ -921,6 +968,47 @@ describe("opencode review repository copy", () => {
       expect(run(["reflog", "--all"], copy)).toBe("");
       expect(existsSync(join(copy, ".git", "FETCH_HEAD"))).toBe(false);
       expect(run(["log", "-1", "--format=%s", base], copy)).toBe("base");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review records] keeps earlier review records out of the copy the models read", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-review-records-"));
+    try {
+      const source = join(root, "source");
+      const run = (args, cwd = source) =>
+        execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+      execFileSync("git", ["init", "--quiet", "-b", "main", source]);
+      writeFileSync(join(source, "code.txt"), "one\n");
+      run(["add", "."]);
+      run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "base"]);
+      const base = run(["rev-parse", "HEAD"]);
+      mkdirSync(join(source, REVIEWS_DIR, "pr-1", "round-1"), { recursive: true });
+      writeFileSync(
+        join(source, REVIEWS_DIR, "pr-1", "usage.jsonl"),
+        '{"cost":0.1,"cacheRead":5}\n',
+      );
+      writeFileSync(
+        join(source, REVIEWS_DIR, "pr-1", "round-1", "glm-5.3-flash.md"),
+        "EARLIER_VERDICT\n",
+      );
+      writeFileSync(join(source, "code.txt"), "two\n");
+      run(["add", "."]);
+      run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "head"]);
+      const head = run(["rev-parse", "HEAD"]);
+      const copy = join(root, "copy");
+      prepareCopy({ repo: source, copy, commits: { head, base }, workRoot: root });
+      expect(existsSync(join(copy, "code.txt"))).toBe(true);
+      expect(existsSync(join(copy, REVIEWS_DIR))).toBe(false);
+      expect(run(["status", "--porcelain", "--untracked-files=all"], copy)).toBe("");
+      run(["checkout", "--quiet", "--", "."], copy);
+      expect(existsSync(join(copy, REVIEWS_DIR))).toBe(false);
+      const diff = run(["diff", `${base}..${head}`], copy);
+      expect(diff).toContain("+two");
+      expect(diff).not.toContain("EARLIER_VERDICT");
+      expect(diff).not.toContain("cacheRead");
+      expect(diff).toContain("Binary files");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1770,8 +1858,8 @@ describe("opencode review spending", () => {
         rounds: [1, 2],
         models: [glm],
         head: "h2",
-        prompt: "P",
-        promptOnDisk: "P",
+        prompts: { [glm]: "P", [deepseek]: "D" },
+        promptsOnDisk: { [glm]: "P", [deepseek]: "D" },
         ...overrides,
       });
     expect(run({ requested: undefined })).toBe(3);
@@ -1782,35 +1870,55 @@ describe("opencode review spending", () => {
     expect(() => run({ requested: 1 })).toThrow(`ROUND_ALREADY_HAS_RESULT 1 ${glm}`);
     expect(() => run({ requested: 3 })).toThrow("ROUND_NOT_FOUND 3");
     expect(() => run({ requested: 2, head: "h3" })).toThrow("ROUND_HEAD_MISMATCH 2 h2 h3");
-    expect(() => run({ requested: 2, prompt: "other brief" })).toThrow("ROUND_PROMPT_MISMATCH 2");
-    expect(run({ requested: 2, promptOnDisk: null })).toBe(2);
+    expect(() => run({ requested: 2, prompts: { [glm]: "other brief" } })).toThrow(
+      `ROUND_PROMPT_MISMATCH 2 ${glm}`,
+    );
+    expect(run({ requested: 2, promptsOnDisk: {} })).toBe(2);
+    expect(run({ requested: 2, prompts: { [glm]: "P", [deepseek]: "changed" } })).toBe(2);
     expect(
-      parseArgs(["--head", "a", "--brief", "b", "--out", "o", "--mode", "plan", "--round", "2"])
+      parseArgs(["--head", "a", "--brief", "b", "--topic", "t", "--mode", "plan", "--round", "2"])
         .round,
     ).toBe(2);
     for (const bad of ["0", "-1", "1.5", "x"])
       expect(() =>
-        parseArgs(["--head", "a", "--brief", "b", "--out", "o", "--mode", "plan", "--round", bad]),
+        parseArgs([
+          "--head",
+          "a",
+          "--brief",
+          "b",
+          "--topic",
+          "t",
+          "--mode",
+          "plan",
+          "--round",
+          bad,
+        ]),
       ).toThrow("ARG_INVALID --round");
   });
 
   it("[rerun round] keeps the failed attempt's files next to the new ones", () => {
     const dir = mkdtempSync(join(tmpdir(), "opencode-attempt-"));
     try {
+      expect(keepEarlierAttempt(join(dir, "missing"), "glm-5.3-flash")).toBeNull();
       expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBeNull();
-      writeFileSync(join(dir, "glm-5.3-flash.jsonl"), "first");
+      writeFileSync(join(dir, "glm-5.3-flash.prompt.md"), "prompt");
+      writeFileSync(join(dir, "glm-5.3-flash.md"), "first");
       writeFileSync(join(dir, "glm-5.3-flash.stderr.txt"), "first err");
       writeFileSync(join(dir, "deepseek-v4.1-flash.md"), "other model");
       expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBe(1);
-      writeFileSync(join(dir, "glm-5.3-flash.jsonl"), "second");
+      writeFileSync(join(dir, "glm-5.3-flash.md"), "second");
       expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBe(2);
+      writeFileSync(join(dir, "glm-5.3-flash.jsonl"), "raw");
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash", RAW_FILE_SUFFIXES)).toBe(1);
       expect(readdirSync(dir).sort()).toEqual([
         "deepseek-v4.1-flash.md",
         "glm-5.3-flash.attempt-1.jsonl",
+        "glm-5.3-flash.attempt-1.md",
+        "glm-5.3-flash.attempt-1.prompt.md",
         "glm-5.3-flash.attempt-1.stderr.txt",
-        "glm-5.3-flash.attempt-2.jsonl",
+        "glm-5.3-flash.attempt-2.md",
       ]);
-      expect(readFileSync(join(dir, "glm-5.3-flash.attempt-1.jsonl"), "utf8")).toBe("first");
+      expect(readFileSync(join(dir, "glm-5.3-flash.attempt-1.md"), "utf8")).toBe("first");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1822,7 +1930,9 @@ describe("opencode review spending", () => {
       const brief = join(dir, "brief.md");
       writeFileSync(brief, "material\n");
       const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-      const out = join(dir, "out");
+      const repo = join(dir, "repo");
+      execFileSync("git", ["clone", "--quiet", "--depth", "1", `file://${process.cwd()}`, repo]);
+      const out = join(repo, ".agents", "reviews", "topic-rerun");
       mkdirSync(join(out, "round-1"), { recursive: true });
       writeFileSync(
         join(out, "usage.jsonl"),
@@ -1838,8 +1948,10 @@ describe("opencode review spending", () => {
           head,
           "--brief",
           brief,
-          "--out",
-          out,
+          "--repo",
+          repo,
+          "--topic",
+          "rerun",
           "--models",
           "glm-5.3-flash",
           "--round",
@@ -1865,7 +1977,7 @@ describe("opencode review spending", () => {
   });
 
   it("reruns only the models asked for", () => {
-    const base = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--out", "o"];
+    const base = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--topic", "t"];
     expect(parseArgs(base).models).toEqual(REVIEW_MODELS);
     expect(parseArgs([...base, "--models", "deepseek-v4.1-flash"]).models).toEqual([
       "opencode-go/deepseek-v4.1-flash",
