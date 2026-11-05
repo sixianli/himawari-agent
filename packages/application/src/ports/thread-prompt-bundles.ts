@@ -8,6 +8,7 @@ export const THREAD_PROMPT_BUNDLE_ORIGINS = [
   "rollout",
   "tool_set_changed",
   "tool_missing",
+  "tool_schema_changed",
   "model_changed",
   "thinking_level_changed",
   "answer_locale_changed",

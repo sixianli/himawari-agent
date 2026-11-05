@@ -4,8 +4,9 @@ CREATE TABLE thread_prompt_bundles (
   thread_id TEXT NOT NULL,
   generation INTEGER NOT NULL CHECK (generation >= 1),
   origin TEXT NOT NULL CHECK (origin IN (
-    'new_thread', 'rollout', 'tool_set_changed', 'tool_missing', 'model_changed',
-    'thinking_level_changed', 'answer_locale_changed', 'classification_lower', 'rebuild_requested'
+    'new_thread', 'rollout', 'tool_set_changed', 'tool_missing', 'tool_schema_changed',
+    'model_changed', 'thinking_level_changed', 'answer_locale_changed', 'classification_lower',
+    'rebuild_requested'
   )),
   identity_json TEXT NOT NULL CHECK (json_valid(identity_json)),
   system_prompt_ref TEXT NOT NULL REFERENCES payloads(ref) ON DELETE RESTRICT,
