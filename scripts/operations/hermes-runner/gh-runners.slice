@@ -1,0 +1,12 @@
+[Unit]
+Description=Shared limits for the Hermes GitHub Actions runners
+Before=slices.target
+
+[Slice]
+CPUQuota=300%
+CPUWeight=20
+IOWeight=20
+MemoryHigh=5632M
+MemoryMax=6G
+MemorySwapMax=0
+TasksMax=4096

@@ -1,23 +1,24 @@
 [Unit]
-Description=GitHub Actions runner hermes-home for sixianli/himawari-agent
+Description=GitHub Actions runner @NAME@ for sixianli/himawari-agent
 Wants=network-online.target
 After=network-online.target gh-runner-nft.service
 Requires=gh-runner-nft.service
 
 [Service]
 Type=simple
-User=gh-runner
-Group=gh-runner
-WorkingDirectory=/srv/gh-runner/runner
-ExecStart=/srv/gh-runner/runner/bin/runsvc.sh
+Slice=gh-runners.slice
+User=@USER@
+Group=@USER@
+WorkingDirectory=@ROOT@/runner
+ExecStart=@ROOT@/runner/bin/runsvc.sh
 Restart=always
 RestartSec=15
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=5min
-Environment=HOME=/srv/gh-runner/home
-Environment=ACTIONS_RUNNER_HOOK_JOB_STARTED=/srv/gh-runner/hooks/job-started.sh
-Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/srv/gh-runner/hooks/job-completed.sh
+Environment=HOME=@ROOT@/home
+Environment=ACTIONS_RUNNER_HOOK_JOB_STARTED=@ROOT@/hooks/job-started.sh
+Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=@ROOT@/hooks/job-completed.sh
 UMask=0022
 Nice=10
 CPUQuota=200%
@@ -35,8 +36,8 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 ProtectProc=invisible
-ReadWritePaths=/srv/gh-runner/runner /srv/gh-runner/home /srv/gh-runner/logs
-InaccessiblePaths=/data -/run/docker.sock -/var/run/docker.sock
+ReadWritePaths=@ROOT@/runner @ROOT@/home @ROOT@/logs
+InaccessiblePaths=/data -/run/docker.sock -/var/run/docker.sock -@OTHER_ROOT@
 
 [Install]
 WantedBy=multi-user.target
