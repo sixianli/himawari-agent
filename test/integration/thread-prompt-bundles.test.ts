@@ -202,6 +202,16 @@ function request(name: string, overrides: Partial<RuntimeRequest> = {}): Runtime
   } as RuntimeRequest;
 }
 
+const READ_PARAMETERS = {
+  type: "object",
+  properties: {
+    path: { type: "string", description: "要读的文件路径" },
+    limit: { type: "integer", minimum: 1, description: "最多读多少行" },
+  },
+  required: ["path"],
+  additionalProperties: false,
+} as const;
+
 function input(
   name: string,
   options: {
@@ -210,9 +220,19 @@ function input(
     readonly modelRef?: string;
     readonly request?: Partial<RuntimeRequest>;
     readonly hasHistory?: boolean;
+    readonly readDescription?: string;
+    readonly readParameters?: unknown;
   } = {},
 ): RuntimePromptBundleResolveInput {
   const toolNames = options.toolNames ?? ["read", "memory_recall"];
+  const tool = (toolName: string) =>
+    toolName === "read"
+      ? {
+          name: toolName,
+          description: options.readDescription ?? "read 工具",
+          parameters: options.readParameters ?? READ_PARAMETERS,
+        }
+      : { name: toolName, description: `${toolName} 工具` };
   return {
     request: request(name, {
       ...(options.modelRef ? { modelRef: options.modelRef } : {}),
@@ -226,7 +246,7 @@ function input(
     },
     candidate: {
       systemPrompt: options.systemPrompt ?? "规则第一版",
-      tools: JSON.stringify(toolNames.map((tool) => ({ name: tool, description: `${tool} 工具` }))),
+      tools: JSON.stringify(toolNames.map(tool)),
     },
     hasHistory: options.hasHistory ?? false,
   };
@@ -298,6 +318,96 @@ describe.each(["worker", "direct"] as const)("thread prompt bundles through %s",
         }),
       );
       expect(resumed).toEqual(renewed);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[tool-schema] renews once when a frozen tool's parameter structure changes and keeps the new generation afterwards", async () => {
+    const resource = await fixture();
+    try {
+      await resource.service.resolve(input("first"));
+      const changed = {
+        ...READ_PARAMETERS,
+        properties: { ...READ_PARAMETERS.properties, encoding: { type: "string" } },
+        required: ["path", "encoding"],
+      };
+      const renewed = await resource.service.resolve(
+        input("second", { readParameters: changed, systemPrompt: "规则第二版" }),
+      );
+      expect(renewed).toMatchObject({ generation: 2, systemPrompt: "规则第二版" });
+      expect(JSON.parse(renewed?.tools ?? "[]")[0].parameters).toEqual(changed);
+      const next = await resource.service.resolve(
+        input("third", { readParameters: changed, systemPrompt: "规则第三版" }),
+      );
+      expect(next).toEqual(renewed);
+      expect(resource.rows().map(({ generation, origin }) => [generation, origin])).toEqual([
+        [1, "new_thread"],
+        [2, "tool_schema_changed"],
+      ]);
+      expect(resource.traces).toEqual([
+        expect.objectContaining({
+          eventType: PROMPT_BUNDLE_INVALIDATED_EVENT,
+          runId: runId("second"),
+          payload: { reason: "tool_schema_changed", previousGeneration: 1, generation: 2 },
+        }),
+      ]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[tool-schema] keeps the frozen bundle when only descriptions, titles or key order change, but not when a parameter named description is added", async () => {
+    const resource = await fixture();
+    try {
+      const first = await resource.service.resolve(input("first"));
+      const reworded = await resource.service.resolve(
+        input("second", {
+          readDescription: "读取工作区里的一个文件（新说明）",
+          readParameters: {
+            additionalProperties: false,
+            required: ["path"],
+            title: "读文件参数",
+            properties: {
+              limit: { description: "行数上限（新说明）", minimum: 1, type: "integer" },
+              path: { description: "工作区内的相对路径（新说明）", type: "string" },
+            },
+            type: "object",
+          },
+        }),
+      );
+      expect(reworded).toEqual(first);
+      const reordered = await resource.service.resolve(
+        input("third", {
+          readParameters: {
+            properties: {
+              limit: { minimum: 1, type: "integer" },
+              path: { type: "string" },
+            },
+            type: "object",
+            additionalProperties: false,
+            required: ["path"],
+          },
+        }),
+      );
+      expect(reordered).toEqual(first);
+      expect(resource.rows()).toEqual([
+        expect.objectContaining({ generation: 1, origin: "new_thread" }),
+      ]);
+      expect(resource.traces).toEqual([]);
+      const withDescriptionParameter = await resource.service.resolve(
+        input("fourth", {
+          readParameters: {
+            ...READ_PARAMETERS,
+            properties: { ...READ_PARAMETERS.properties, description: { type: "string" } },
+          },
+        }),
+      );
+      expect(withDescriptionParameter).toMatchObject({ generation: 2 });
+      expect(resource.rows().map(({ generation, origin }) => [generation, origin])).toEqual([
+        [1, "new_thread"],
+        [2, "tool_schema_changed"],
+      ]);
     } finally {
       await resource.repository.close();
     }

@@ -47,6 +47,8 @@ date: "2026-11-04"
 
 本 PR 落实第 2、3、4、6 条；第 5 条由 PR-A 落实，本 PR 补上它留下的“同一次运行中途压缩”的缺口；第 1 条决定了本 PR 上线时进行中的对话缓存失效一次。
 
+2026-11-05（JST）Andy 对本 ADR 原先列在“没有处理的部分”的一项拍板。问题是“同名工具的参数结构变了，也算换新条件。建议：算。”，Andy 的原话是“这里按照你的建议来”。它落实在[决定](#decision)第 2 条。
+
 [返回阅读导航](#contents)
 
 <a id="decision"></a>
@@ -61,6 +63,13 @@ date: "2026-11-04"
 
 2. **冻结记录由哪些输入决定**：工具名的有序列表、模型（`modelRef`）、推理强度、回答语言偏好（上下文里 `answer-locale` 那条系统规则的 `ref`）。任何一项和冻结时不同，就换新一次（代数 generation 加一），并写 trace（运行的追踪事件）`prompt.bundle.invalidated`，带原因。只有提示词文字本身变了（上线了新文字、改了配置里的系统指令）**不换新**，老对话继续用冻结的那份，新对话才用新文字。
 
+   **同名工具的参数结构变了也换新**（2026-11-05 Andy 拍板，见 [Andy 的拍板](#owner-decisions)）：工具名的有序列表不变时，`ThreadPromptBundleService` 再把冻结的工具数组和本轮拼出的工具数组按工具名逐个比 `parameters`（工具参数的 JSON Schema，即描述参数格式的标准结构），有一个不同就换新一次，原因是 `tool_schema_changed`。比较之前先去掉只是说明文字的关键字（`title`、`description`、`examples`、`$comment`），`required`（必填参数名的列表）按名字排序，再按键名排序序列化，所以：
+   - 只改了参数的说明文字、标题，或者对象里键的先后顺序变了，**不换新**，和只改提示词文字一样，只有新对话才用新文字；
+   - `properties`（参数名到参数结构的对照表）里的参数名照原样比较，新增一个叫 `description` 的参数也会换新；`const`、`enum`、`default` 的值照原样比较；
+   - 同一份参数结构每轮比出的结果都相同，不会每轮都换新。
+
+   比较只在运行开始、还没钉住代数时做；已钉住的运行照旧用钉住的那一代。授权句柄工具不在冻结记录里，它们的参数变化不影响这条。
+
    回答语言偏好这一项目前在生产上永远是空的：生产的运行策略不产生 `answer-locale` 系统规则（`apps/agent-service/src/production-run-policy.ts` 返回 `policies: []`，也不给 `answerLocalePolicy` 赋值），对话里存的回答语言偏好不进发给模型的内容，系统提示里的回答语言规则是固定文字。所以现在改对话的回答语言偏好既不改变请求，也不换新，这是对的。以后生产把这条规则接进系统提示时，它的 `ref` 会进到这一项，改语言就会换新一次，不用再改冻结的代码。
 
 3. **执行时用当前的工具描述符**：工具的处理函数照旧来自当前运行。冻结的工具数组里每个工具名都必须在当前描述符里找得到；找不到时，在运行开始时换新（原因 `tool_missing`），在一次运行中途（已钉住的代数）找不到就让这次运行失败（`RUNTIME_PROMPT_BUNDLE_TOOL_MISSING`），不把调不动的工具发给模型。
@@ -71,12 +80,12 @@ date: "2026-11-04"
    - 主键 `(owner_id, agent_id, thread_id, generation)`，外键指向 `threads`，对话删除时级联删除；
    - 系统提示和工具数组各存一个加密 payload（`payloads` 表里的加密内容，沿用现有的信封加密），列 `system_prompt_ref`、`tools_ref` 以 `ON DELETE RESTRICT` 指向 `payloads`，所以删除保护的外键检查（`sqlite-governed-deletion.ts` 的 `#payloadReferenced`）自动把它们算作“仍被引用”；对话删除时 `#threadPayloadRefs` 把这两列也列入要删的 payload；
    - 另记两份指纹（sha256），读出时核对，不一致就拒绝使用；
-   - `identity_json` 记第 2 条的四项输入，`origin` 记这一代是怎么来的（`new_thread`、`rollout`、`tool_set_changed`、`tool_missing`、`model_changed`、`thinking_level_changed`、`answer_locale_changed`、`classification_lower`、`rebuild_requested`），`created_by_run_id` 记建它的运行；
+   - `identity_json` 记第 2 条的四项输入，`origin` 记这一代是怎么来的（`new_thread`、`rollout`、`tool_set_changed`、`tool_missing`、`tool_schema_changed`、`model_changed`、`thinking_level_changed`、`answer_locale_changed`、`classification_lower`、`rebuild_requested`），`created_by_run_id` 记建它的运行；
    - 换新时旧记录标上 `superseded_at`，不删；
    - 部分唯一索引 `thread_prompt_bundles_one_current` 保证一个对话同时只有一份没被换掉的记录。同一对话第一次并发运行时，写入在一个 `BEGIN IMMEDIATE` 事务里重读最新代数，代数和调用方看到的不同就不写、把已有的那份交回，所以只会建一份；
    - 登记进 `packages/persistence-sqlite/src/schema-catalog.ts`。
 
-6. **什么时候换新**：新对话；第 2 条的输入变了；显式命令 `thread.prompt.rebuild`。**换新只在运行开始时生效**：运行第一次取冻结记录时，把用到的代数写成这个运行的一条加密“钉住”记录（运行的 payload 工件，`operationKey` 为 `thread-prompt-bundle-pin:v1`）。同一个运行之后的重试、审批后续跑、结果恢复都读这条钉住记录，用同一代，不会因为中途换新触发 `RUNTIME_CONTINUATION_BINDING_CHANGED`。续跑身份哈希里原来的“系统指令”改为“实际使用的系统提示和冻结的工具数组”。
+6. **什么时候换新**：新对话；第 2 条的输入变了，或冻结工具的参数结构变了；显式命令 `thread.prompt.rebuild`。**换新只在运行开始时生效**：运行第一次取冻结记录时，把用到的代数写成这个运行的一条加密“钉住”记录（运行的 payload 工件，`operationKey` 为 `thread-prompt-bundle-pin:v1`）。同一个运行之后的重试、审批后续跑、结果恢复都读这条钉住记录，用同一代，不会因为中途换新触发 `RUNTIME_CONTINUATION_BINDING_CHANGED`。续跑身份哈希里原来的“系统指令”改为“实际使用的系统提示和冻结的工具数组”。
 
 7. **压缩**：默认不换新（第 3 条拍板）。Pi 的压缩请求用的是它自己的摘要系统提示、不带工具（`compaction.js` 里的 `SUMMARIZATION_SYSTEM_PROMPT`），本来就和对话请求不共开头；适配器只改写对话请求（带工具数组的请求），压缩请求原样放行，冻结记录不受压缩影响。
 
@@ -129,7 +138,7 @@ date: "2026-11-04"
   - 两轮之间改了配置里的系统指令并重启服务：第二轮请求的开头（系统提示和工具）和第一轮逐字节相同，且以第一轮为前缀；数据库里只有第 1 代。
   - 反向：同一场景把生产开关 `freezeThreadPrompts` 关掉，第二轮的开头带着新指令、和第一轮不同，没有冻结记录。
   - 中途开启联网搜索：下一轮请求的工具里有 `web_search`，第 1 代被标为已换掉、第 2 代原因是 `tool_set_changed`；再下一轮开头和第 2 代一致。再把主模型换掉，第 3 代原因是 `model_changed`。两次换新各有一条 `prompt.bundle.invalidated` trace。
-- 数据库和策略层：`test/integration/thread-prompt-bundles.test.ts`（真实 SQLite，经过 SQLite 工作线程和直接执行两种方式）覆盖新对话建第 1 代、只改提示词文字不换新、`rollout`、运行内钉住（工具集合变了同一运行仍用旧代，续跑用同一代）、换新留下旧记录和 trace、换模型、分类变低、显式换新、并发首次运行只建一份、没有对话和上线前挂起的运行不建记录、对话删除时连同 payload 一起删除。
+- 数据库和策略层：`test/integration/thread-prompt-bundles.test.ts`（真实 SQLite，经过 SQLite 工作线程和直接执行两种方式）覆盖新对话建第 1 代、只改提示词文字不换新、`rollout`、运行内钉住（工具集合变了同一运行仍用旧代，续跑用同一代）、换新留下旧记录和 trace、换模型、分类变低、显式换新、并发首次运行只建一份、没有对话和上线前挂起的运行不建记录、对话删除时连同 payload 一起删除。两条 `[tool-schema]` 用例覆盖参数结构变了换新一次（原因 `tool_schema_changed`，带 trace，下一轮沿用新一代）；只改工具说明、参数说明、标题或键的顺序不换新；新增一个名叫 `description` 的参数仍换新。反向：去掉参数结构的比较，两条用例都失败；改成不排序、不去说明文字的直接比较，只改说明和键顺序的那条失败（第 2 轮就换新）。
 - 适配器层：`packages/runtime-pi/test/prompt-prefix.compat.test.ts`（`check:prompt-prefix` 的一部分，真实 Pi 加本机回环服务）新增：系统指令变了、冻结时请求逐字节只追加；反向：不冻结时第 1 条消息被改写；句柄工具接在冻结工具后面并写测量日志；任务管理工具随任务句柄出现又消失时，冻结的工具名不变、不换新（反向：适配器不认 `handleBound` 时，三轮的工具名不同）。`apps/agent-service/test/production-runtime-tools.unit.test.ts` 检查生产的工具列表只在没有开启 `bash` 时给三个任务管理工具打标记，`execution_task_start` 总是打标记。`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `pi-runtime-adapter.compat.test.ts` 覆盖运行中压缩后补运行环境说明（`willRetry` 为真才补；反向：去掉补发后用例失败）。
 - 命令行：`apps/admin-cli/test/thread-prompt-rebuild-cli.unit.test.ts` 覆盖确认串、原因和操作人落库、没有冻结记录时拒绝、参数不全时拒绝。
 
@@ -153,7 +162,6 @@ date: "2026-11-04"
 ## 没有处理的部分
 
 - **句柄工具的频率**：上线后看 `prompt.bundle.handle_tools` 日志；占比高的话另出方案改成固定的 `authorized_execute`。
-- **同名工具的参数变了不换新**：冻结记录只按工具名判断工具集合。上线改了某个工具的参数结构但名字不变时，老对话的模型仍看到冻结的旧参数，而执行时 Pi 按当前描述符的参数检查调用，旧格式的调用可能被拒绝，直到对这个对话显式换新。要不要把“去掉说明文字后的参数结构”也算进换新条件，要 Andy 定；在那之前，改工具参数结构的上线要在上线说明里列出受影响的对话并执行 `thread.prompt.rebuild`。
 - **挂起的续跑仍会被工具说明文字的改动挡住**：续跑身份哈希里仍有当前的工具描述符（含说明文字），和本 PR 之前一样。上线只改了工具说明文字时，冻结记录不换新，但挂起中的运行续跑会以 `RUNTIME_CONTINUATION_BINDING_CHANGED` 失败。
 - **提示词规则文件**：`.claude/rules/prompt-prefix.md` 没有提到冻结。建议的补充写在交付报告里，改规则要 Andy 同意。
 - **生产开关的位置**：`freezeThreadPrompts` 放在 `runPolicy` 里，改它要重启服务；以后如果要按对话开关，再另行设计。
