@@ -32,16 +32,16 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 <a id="append-only"></a>
 ## 二、已经发出的内容
 
-4. **已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。**这包括系统提示、工具定义、历史里的每一条消息（用户的话、回答、工具调用、工具结果）。唯一的例外是第 12、14 条那种写进 ADR 的、成批的压缩和清理。
+4. **已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。**这包括系统提示、工具定义、历史里的每一条消息（用户的话、回答、工具调用、工具结果）。例外只有两种：第 6 条列出的换新，以及第 12、14 条那种有 ADR 依据的、成批的压缩和清理。
 5. **存历史时存实际发出去的那一条。**不得在存之前把它换成别的版本，例如去掉资料块、换回原话、缩短搜索结果。
 
 <a id="stable"></a>
 ## 三、同一对话里保持不变的东西
 
-6. **系统提示和工具按对话冻结**（[ADR 0165](../../docs/adr/0165-freeze-the-request-head-per-conversation.md)）。同一对话一直沿用第一次发出时的字节。只有下面这些情况才换新一次，并且每次都留记录：工具集合变了（工具名，或者去掉说明文字后的参数结构）、模型变了、推理强度变了、回答语言变了、数据分类变低了，或者手动执行了 `thread prompt rebuild`。
+6. **系统提示和工具按对话冻结**（[ADR 0165](../../docs/adr/0165-freeze-the-request-head-per-conversation.md)）。同一对话一直沿用第一次发出时的字节。只有下面这些情况才换新一次，并且每次都留记录：工具集合变了（工具名，或者去掉说明文字后的参数结构）、冻结的工具在当前运行里找不到了、模型变了、推理强度变了、回答语言变了、数据分类变低了，或者手动执行了 `thread prompt rebuild`。
    - 改了提示词文字，**只对新对话生效**。要让老对话也用上，必须手动换新。
-7. **工具集合尽量不变。**业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝，而不是把工具删掉或加进来（[Claude Code](https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/)、[OpenAI](https://developers.openai.com/api/docs/guides/prompt-caching)、[Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus)）。本项目目前的取舍：工具集合变了就换新一次；只有手里有执行句柄才会出现的工具不冻结，接在冻结工具的后面，并记日志统计它们出现的频率。要改变这个取舍，先出方案。
-8. **同一对话中途不换模型、不换推理强度，其他请求参数也保持稳定。**每个模型的缓存是分开的，推理强度在多数模型上也会影响缓存；`tool_choice`、输出格式这类参数变了，同样可能让缓存失效。确实要换的话，在对话开头换，或者用单独的辅助调用来做。
+7. **工具集合尽量不变。**业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝，而不是把工具删掉或加进来（[Claude Code](https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/)、[OpenAI](https://developers.openai.com/api/docs/guides/prompt-caching)、[Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus)）。本项目目前的取舍：工具集合变了就换新一次；只有手里有执行句柄才会出现的工具不冻结，接在冻结工具的后面，并记日志统计它们出现的频率。工具定义在请求最前面，所以这类工具出现或消失的那一轮，冻结工具之后的系统提示和全部历史都要重算一次（ADR 0165 已写明这个代价）。要改变这个取舍，先出方案。
+8. **同一对话中途不换模型、不换推理强度，其他请求参数也保持稳定。**每个模型的缓存是分开的，推理强度在多数模型上也会影响缓存；`tool_choice` 变了、提示里图片的有无变了，同样会让缓存失效（Anthropic 原话：“Changes to `tool_choice` or the presence/absence of images anywhere in the prompt invalidate the cache”）。确实要换的话，在对话开头换，或者用单独的辅助调用来做。
 9. **同一对话的请求送到同一个服务方。**缓存存在各服务方自己的机器上，换一家服务方就要整段重算。路由要按对话保持同一个去向：Magpie 走会话亲和（同一会话尽量送到同一处），Vercel AI Gateway 一类按配置的服务方顺序；服务方支持缓存路由键的（例如 OpenAI 的 `prompt_cache_key`），按对话传一个固定的键。本项目目前没有传缓存路由键。
 
 <a id="deterministic"></a>
@@ -49,7 +49,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 
 10. **同样的内容，每次都要序列化成同样的字节。**JSON 的键顺序、工具的顺序、列表的顺序（命令清单、服务商、记忆）都要固定，不能依赖对象遍历顺序或数据库返回顺序。
 11. **遮盖敏感信息必须是确定的。**一条消息遮成什么样，只能取决于它自己和它前面的内容，不能取决于它后面的内容；所以已经发过的历史，不会因为后来的消息被遮成别的样子。
-    - 例外：主人点名的秘密（例如“482910 是验证码”，6 个字符以上），从点名的那一处起，在同一次请求里往后所有出现的地方都遮掉，包括运行环境说明。这是为了不漏掉秘密。它只影响点名处之后的内容，不改变已发内容的字节；点名的那条消息被压缩掉以后，后面的遮法可能变，但压缩本来就会让缓存整段失效一次。
+    - 例外：主人点名的秘密（例如“482910 是验证码”，满 6 个字符），点名的那条消息里所有出现的地方都遮掉（包括排在主人的话前面的运行环境说明），同一次请求里排在它后面的消息也遮掉。这是为了不漏掉秘密。排在点名消息前面的消息不受影响，所以不改变已发内容的字节；点名的那条消息被压缩掉以后，后面的遮法可能变，但压缩本来就会让缓存整段失效一次。
 
 <a id="compaction"></a>
 ## 五、压缩和清理
@@ -72,7 +72,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 - **阻断检查：**`npm run check:prompt-prefix`（属于 `npm run check` 的一步）。它用真实的 Pi 适配器和真实的出口遮盖，对本机回环服务跑多轮对话：包括工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间、运行环境说明只在变化时发，以及按对话冻结。换新的各种条件、运行中压缩后补发运行环境说明，由 `test/integration/thread-prompt-bundles.test.ts`、`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 覆盖，它们不在这一步里。每次都逐字节检查后一次请求是否以前一次请求开头。它还带反向用例：改写历史里的用户消息、让系统提示带上每轮变化的值、关掉冻结，检查都必须报告失败。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`，名字带 `[I-66]`。
 - **端到端：**`test/integration/production-http-composition-process.test.ts` 里的 `[PR-A]`、`[PR-B]` 用例，用真实服务和 SQLite 抓取原始请求体来比对。
 - **生产监控：**
-  - 对话的后续轮次请求（输入至少 1024 个 token、上游报告了缓存用量）命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`（判断条件见 `packages/application/src/ports/model-usage.ts`）。不到 1024 个 token 的请求多数服务方本来就不缓存，不算异常。
+  - 对话的后续轮次请求（输入至少 1024 个 token、上游报告了缓存用量）命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`（阈值和命中率判断见 `packages/application/src/ports/model-usage.ts`，是否后续轮次见 `apps/agent-service/src/cache-hit-monitor.ts`）。不到 1024 个 token 的请求多数服务方本来就不缓存，不算异常。
   - `node scripts/operations/cache-hit-report.mjs <product.sqlite> --by turn` 按“第 1 轮 / 第 2 轮及以后”“首次请求 / 同轮后续”分开给出命中率。
   - 命中率要当作可用性指标来看，掉下来要查原因。排查时先排除这几种：缓存过期（两次请求隔了太久）、按规则换新、换了服务方、遮盖密钥轮换（同一段文字遮成的字节变了）。
 
