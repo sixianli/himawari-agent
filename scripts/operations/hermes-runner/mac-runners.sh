@@ -60,6 +60,21 @@ reconcile_runners() {
   done <<< "$table"
 }
 
+label_states() {
+  local names=$1 table=$2 name count states=""
+  for name in $names; do
+    count=$(runner_field "$table" "$name" 1 | grep -c .)
+    if [ "$count" != 1 ]; then
+      states="$states $name=unread"
+    elif has_label "$(runner_field "$table" "$name" 5)"; then
+      states="$states $name=on"
+    else
+      states="$states $name=off"
+    fi
+  done
+  echo $states
+}
+
 add_label() {
   gh api -X POST "repos/$REPO/actions/runners/$1/labels" -f "labels[]=$LABEL" > /dev/null
 }

@@ -24,12 +24,18 @@ while :; do
   done
   [ -z "$OFFLINE" ] && break
   if [ "$(date +%s)" -ge "$DEADLINE" ]; then
-    echo "RUNNER_RESUME_INCOMPLETE services=running labels=removed offline:$OFFLINE; run resume-runners.sh again once they are online"
+    echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels=removed offline:$OFFLINE; run resume-runners.sh again once they are online"
     exit 2
   fi
   sleep "$POLL"
 done
 
+interrupted_while_adding() {
+  echo "RUNNER_RESUME_INCOMPLETE interrupted services=$(service_states) labels: $(label_states "$NAMES" "$(github_runners)"); run resume-runners.sh again"
+  exit 130
+}
+
+trap interrupted_while_adding INT TERM HUP
 for name in $NAMES; do
   has_label "$(runner_field "$TABLE" "$name" 5)" && continue
   add_label "$(runner_field "$TABLE" "$name" 1)" || echo "could not add $LABEL to $name"
@@ -40,7 +46,7 @@ for name in $NAMES; do
   has_label "$(runner_field "$TABLE" "$name" 5)" || MISSING="$MISSING $name"
 done
 if [ -n "$MISSING" ]; then
-  echo "RUNNER_RESUME_INCOMPLETE services=running $LABEL missing on:$MISSING; queued jobs keep waiting, run resume-runners.sh again"
+  echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) $LABEL missing on:$MISSING; queued jobs keep waiting, run resume-runners.sh again"
   exit 1
 fi
 echo "RUNNER_RESUMED labels=restored runners=$(echo $NAMES)"

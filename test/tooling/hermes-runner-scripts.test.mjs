@@ -229,13 +229,16 @@ const macBox = ({
       `    [ -e "${R}/fail-delete-$id" ] && exit 1`,
       `    [ -e "${R}/ignore-delete-$id" ] && exit 0`,
       `    ${relabel(false)}`,
+      `    [ -e "${R}/interrupt-after-delete-$id" ] && kill -TERM $PPID`,
       "  else",
       `    [ -e "${R}/fail-add-$id" ] && exit 1`,
       `    ${relabel(true)}`,
+      `    [ -e "${R}/interrupt-after-add-$id" ] && kill -TERM $PPID`,
       "  fi",
       "  exit 0",
       "fi",
       `n=$(( $(cat "${R}/list-count" 2> /dev/null || echo 0) + 1 )); echo $n > "${R}/list-count"`,
+      `[ "$n" = "$(cat "${R}/partial-list-at" 2> /dev/null)" ] && { head -1 "${R}/runners.tsv" | sed 's/hermes-home$/X/'; exit 1; }`,
       `b=$(cat "${R}/busy-until" 2> /dev/null || echo 0)`,
       `o=$(cat "${R}/online-from" 2> /dev/null || echo 0)`,
       `awk -F'\\t' -v OFS='\\t' -v n=$n -v b=$b -v o=$o '{ $4 = (n < b) ? "true" : "false"; $3 = (n >= o) ? "online" : "offline"; print }' "${R}/runners.tsv"`,
@@ -385,7 +388,7 @@ describe("pause-runners.sh", () => {
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(2);
     expect(result.stdout).toContain(
-      "RUNNER_PAUSE_INCOMPLETE labels=removed services=running busy: hermes-home hermes-home-2",
+      "RUNNER_PAUSE_INCOMPLETE labels=removed services=gh-runner.service=active gh-runner-2.service=active busy: hermes-home hermes-home-2",
     );
     expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
     expect(
@@ -417,6 +420,29 @@ describe("pause-runners.sh", () => {
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
     expect(existsSync(path.join(box.root, "lock"))).toBe(false);
+  });
+
+  it("puts back a label whose removal went through just before the interruption", () => {
+    const box = macBox();
+    box.set("interrupt-after-delete-11", "");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(130);
+    expect(result.stdout).toContain("put back on: 11");
+    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
+  });
+
+  it("treats an incomplete re-read of GitHub as not removed and puts the labels back", () => {
+    const box = macBox();
+    box.set("partial-list-at", 2);
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "still on: hermes-home(could not read) hermes-home-2(could not read)",
+    );
+    expect(result.stdout).toContain("put back on: 11 12");
+    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
   });
 
   it("reports labels removed and the service states when interrupted while waiting", () => {
@@ -522,8 +548,20 @@ describe("resume-runners.sh", () => {
     box.late();
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(2);
-    expect(result.stdout).toContain("RUNNER_RESUME_INCOMPLETE services=running labels=removed");
+    expect(result.stdout).toContain(
+      "RUNNER_RESUME_INCOMPLETE services=gh-runner.service=active gh-runner-2.service=active labels=removed",
+    );
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("reports services and each label when interrupted while putting labels back", () => {
+    const box = macBox({ labelled: false });
+    box.set("interrupt-after-add-11", "");
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(130);
+    expect(result.stdout).toContain(
+      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: hermes-home=on hermes-home-2=off",
+    );
   });
 
   it("reports the runner whose label could not be put back", () => {
@@ -965,12 +1003,14 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     "/srv/gh-runner/hooks/clean-old.sh",
     "/srv/gh-runner/bin/runner-pause.sh",
     "/srv/gh-runner/bin/runner-resume.sh",
+    "/srv/gh-runner/bin/notes.txt",
+    "/srv/gh-runner/bin",
     "/srv/gh-runner/runner/config.sh",
     "/srv/gh-runner/home",
     "/srv/gh-runner-2",
   ];
 
-  const installWithFailingRuleCheck = (nftCheck) => {
+  const installWithFailingRuleCheck = (nftCheck, extraSetup = []) => {
     const box = sandbox();
     box.fake("hostname", "echo hermes-home");
     box.fake(
@@ -1020,6 +1060,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "echo old-pause > /srv/gh-runner/bin/runner-pause.sh",
       "echo config > /srv/gh-runner/runner/config.sh",
       "chmod 0755 /srv/gh-runner/runner/config.sh",
+      ...extraSetup,
       `bash "$real/scripts/install-runner.sh" > "${box.root}/stdout" 2> "${box.root}/stderr"`,
       'echo "rc=$?"',
       `for path in ${reported.join(" ")}; do`,
@@ -1043,6 +1084,16 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     return { box, result, state, stderr };
   };
 
+  it("keeps /srv/gh-runner/bin and files it did not install when the install succeeds", () => {
+    const { result, state } = installWithFailingRuleCheck("exit 0", [
+      "echo mine > /srv/gh-runner/bin/notes.txt",
+    ]);
+    expect(result.status).toBe(0);
+    expect(state.rc).toBe("0");
+    expect(state["/srv/gh-runner/bin/runner-pause.sh"]).toBe("MISSING");
+    expect(state["/srv/gh-runner/bin/notes.txt"]).toBe("mine");
+  });
+
   it("removes the old pause scripts in /srv/gh-runner/bin when the install succeeds", () => {
     const { result, state, stderr } = installWithFailingRuleCheck("exit 0");
     expect(result.status).toBe(0);
@@ -1051,6 +1102,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(state["/srv/gh-runner/bin/runner-pause.sh"]).toBe("MISSING");
     expect(state["/srv/gh-runner/bin/runner-resume.sh"]).toBe("MISSING");
     expect(state["/srv/gh-runner/hooks/job-started.sh"]).not.toBe("old-hook");
+    expect(state["/srv/gh-runner/bin"]).toBe("MISSING");
   });
 
   it.each([
@@ -1082,6 +1134,8 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "/srv/gh-runner/hooks/clean-old.sh": "MISSING",
       "/srv/gh-runner/bin/runner-pause.sh": "old-pause",
       "/srv/gh-runner/bin/runner-resume.sh": "MISSING",
+      "/srv/gh-runner/bin/notes.txt": "MISSING",
+      "/srv/gh-runner/bin": "DIR",
       "/srv/gh-runner/runner/config.sh": "config",
       "/srv/gh-runner/home": "MISSING",
       "/srv/gh-runner-2": "MISSING",

@@ -37,22 +37,22 @@ trap interrupted_while_removing INT TERM HUP
 for name in $NAMES; do
   id=$(runner_field "$TABLE" "$name" 1)
   has_label "$(runner_field "$TABLE" "$name" 5)" || continue
-  if remove_label "$id"; then
-    REMOVED="$REMOVED $id"
-  else
-    echo "could not remove $LABEL from $name"
-    break
-  fi
+  REMOVED="$REMOVED $id"
+  remove_label "$id" || { echo "could not remove $LABEL from $name"; break; }
 done
 
-TABLE=$(github_runners)
+TABLE=$(github_runners) || TABLE=""
 LEFT=""
-for name in $NAMES; do
-  has_label "$(runner_field "$TABLE" "$name" 5)" && LEFT="$LEFT $name"
+for state in $(label_states "$NAMES" "$TABLE"); do
+  case $state in
+    *=off) ;;
+    *=unread) LEFT="$LEFT ${state%=*}(could not read)" ;;
+    *) LEFT="$LEFT ${state%=*}" ;;
+  esac
 done
-if [ -n "$LEFT" ] || [ -z "$TABLE" ]; then
+if [ -n "$LEFT" ]; then
   put_labels_back
-  echo "RUNNER_PAUSE_FAILED $LABEL still on:${LEFT:- unknown}; put back on:${RESTORED:- none}; services untouched"
+  echo "RUNNER_PAUSE_FAILED $LABEL still on:$LEFT; put back on:${RESTORED:- none}; services untouched"
   exit 1
 fi
 trap interrupted_while_waiting INT TERM HUP
@@ -75,7 +75,7 @@ while :; do
     fi
   fi
   if [ "$(date +%s)" -ge "$DEADLINE" ]; then
-    echo "RUNNER_PAUSE_INCOMPLETE labels=removed services=running busy:${BUSY:- none}; run pause-runners.sh again, or resume-runners.sh to undo"
+    echo "RUNNER_PAUSE_INCOMPLETE labels=removed services=$(service_states) busy:${BUSY:- none}; run pause-runners.sh again, or resume-runners.sh to undo"
     exit 2
   fi
   sleep "$POLL"

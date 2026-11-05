@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e90cd2840da0b24efa1757dfecc135b1abdae1accccb229d7661a5f75d3285bc"
+contract_sha256: "sha256:90accc86c4cf6cf90766e680067f15087b5abf1db503775d06d75b7cc019e3cc"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -121,7 +121,7 @@ date: "2026-11-04"
 1. 把 `scripts/operations/hermes-runner/` 下的全部文件（包括 `runners.sh` 和 `gh-runner.service.in`）用 `.ci-output/handoff/scripts/hermes-upload.sh` 传到 Hermes 的 `/home/andy/himawari-tests/hermes-runner/`。
 2. 取得临时 sudo（见 [Safety and Preconditions](#safety-and-preconditions)）。
 3. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`。
-4. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：确认主机名是 `hermes-home`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则、`/srv/gh-runner/bin/` 和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回（先复制到旁边再换上，复制失败时原文件不动）、把这次新建的删掉，这次新建的用户（先结束它的进程）、组和这次新建的目录（包括原来就有的 runner 目录下新建的 `home/`、`logs/`）也一并删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项，并指出备份目录，这时照备份目录手动放回；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝，不接管不是它建的账号），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务（两个服务都由模板生成），删掉旧的暂停脚本目录 `/srv/gh-runner/bin/`，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
+4. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：确认主机名是 `hermes-home`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则、`/srv/gh-runner/bin/` 和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回（先复制到旁边再换上，复制失败时原文件不动）、把这次新建的删掉，这次新建的用户（先结束它的进程）、组和这次新建的目录（包括原来就有的 runner 目录下新建的 `home/`、`logs/`）也一并删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项，并指出备份目录，这时照备份目录手动放回；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝，不接管不是它建的账号），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务（两个服务都由模板生成），删掉 `/srv/gh-runner/bin/` 里旧的 `runner-pause.sh`、`runner-resume.sh`、`runners.sh`，目录空了就删掉目录，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
 5. 在 Mac 上运行 `resume-runners.sh`，已注册的 runner 按新的服务设置启动。新装的第 2 个 runner 还没注册，要先按[注册](#register)注册。
 
 <a id="register"></a>
@@ -139,13 +139,13 @@ date: "2026-11-04"
 
 - 暂停：`scripts/operations/hermes-runner/pause-runners.sh`。暂停可能要等到最长任务的时限（`ci/policy.json` 里最大的 `timeoutMinutes`）加 5 分钟，代理要在后台运行它。
   1. 把 Hermes 上的脚本传过去，读 Hermes 上装了哪几个 runner，和 GitHub 上的 runner 对账：Hermes 上的每个 runner 在 GitHub 上必须恰好有一个同名的，GitHub 上带 `hermes-home` 标签的 runner 也必须都装在 Hermes 上。对不上就打印 `RUNNER_PAUSE_FAILED` 和原因，不改标签、不停服务（Hermes 上的三个脚本已经更新为仓库里的版本）。
-  2. 去掉这些 runner 的 `hermes-home` 标签，再读一遍确认真的去掉了。有一个没去掉，就把已经去掉的加回去，打印 `RUNNER_PAUSE_FAILED`，不碰 Hermes。这一步被 Ctrl-C 或 `TERM` 打断时，同样把已去掉的加回去，打印 `RUNNER_PAUSE_FAILED interrupted` 后退出。都去掉后打印 `RUNNER_LABELS_REMOVED`：从这时起 GitHub 不再给它们派新任务，新任务在 GitHub 上排队。
+  2. 去掉这些 runner 的 `hermes-home` 标签，再读一遍确认真的去掉了。有一个没去掉，就把已经去掉的加回去，打印 `RUNNER_PAUSE_FAILED`，不碰 Hermes。回读时读不全 GitHub 的列表，也按“没去掉”处理。这一步被 Ctrl-C、`TERM` 或 `HUP` 打断时，同样把已经发出删除请求的标签都加回去，打印 `RUNNER_PAUSE_FAILED interrupted`，以退出码 130 结束。都去掉后打印 `RUNNER_LABELS_REMOVED`：从这时起 GitHub 不再给它们派新任务，新任务在 GitHub 上排队。
   3. 每 30 秒查一次 GitHub：两个 runner 都显示 `busy=false` 时，在 Hermes 上运行 `runner-pause.sh --labels-removed 90`。它连续观察 90 秒，期间每 10 秒查一次本机有没有 `Runner.Worker`，一直没有才停两个服务，打印 `RUNNER_PAUSED`；中途看到任务就打印 `RUNNER_STILL_BUSY`，以退出码 2 结束、不停服务，Mac 侧接着等。
   4. 成功时打印 `RUNNER_PAUSED labels=removed services=stopped`。
-  5. 到了等待上限还有任务，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=running`，以退出码 2 结束。Hermes 那一步出错（例如只停掉了一个服务）时，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`，以退出码 1 结束；等待期间被打断时，打印同样一行并加上 `interrupted`，以退出码 130 结束。这几种情况下标签都保持去掉，还在跑的服务跑完手上的任务，不会再接新任务；重新运行 `pause-runners.sh` 即可，或运行 `resume-runners.sh` 撤销。
-- 恢复：`scripts/operations/hermes-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不启动服务、不加标签；再在 Hermes 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；再等 GitHub 显示它们 `online`（最多 5 分钟），最后把 `hermes-home` 标签加回去并读一遍确认，打印 `RUNNER_RESUMED labels=restored`。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态>`，不加标签；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=running labels=removed`；标签没加上打印 `RUNNER_RESUME_INCOMPLETE` 和是哪个 runner。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。2026-11-05 实测：恢复后排队的任务约 3.5 分钟才开始跑，两个 runner 同一秒接到任务，原因在 GitHub 一侧、没有确认，等几分钟即可，不要因此重启 runner。
+  5. 到了等待上限还有任务，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`，以退出码 2 结束。Hermes 那一步出错（例如只停掉了一个服务）时，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`，以退出码 1 结束；等待期间被 Ctrl-C、`TERM` 或 `HUP` 打断时，打印同样一行并加上 `interrupted`，以退出码 130 结束。这几种情况下标签都保持去掉，还在跑的服务跑完手上的任务，不会再接新任务；重新运行 `pause-runners.sh` 即可，或运行 `resume-runners.sh` 撤销。
+- 恢复：`scripts/operations/hermes-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不启动服务、不加标签；再在 Hermes 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；再等 GitHub 显示它们 `online`（最多 5 分钟），最后把 `hermes-home` 标签加回去并读一遍确认，打印 `RUNNER_RESUMED labels=restored`。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态>`，不加标签；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=<各服务状态> labels=removed`；标签没加上打印 `RUNNER_RESUME_INCOMPLETE` 和是哪个 runner；加标签时被 Ctrl-C、`TERM` 或 `HUP` 打断，打印 `RUNNER_RESUME_INCOMPLETE interrupted`、各服务状态和每个 runner 的标签状态（`on`、`off`、`unread`），以退出码 130 结束。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。2026-11-05 实测：恢复后排队的任务约 3.5 分钟才开始跑，两个 runner 同一秒接到任务，原因在 GitHub 一侧、没有确认，等几分钟即可，不要因此重启 runner。
 - 暂停期间新的 CI 任务在 GitHub 上排队；**排队超过 24 小时的任务会被 GitHub 判为失败**，所以暂停不要超过一天。GitHub 大约 1 分钟后才把停掉的 runner 显示为 `offline`。
-- 暂停期间 Hermes 重启：服务会自己起来，但标签还是去掉的，不会接任务；之后照常运行 `resume-runners.sh`。不要在暂停期间重新注册 runner（`config.sh --replace` 会重置标签）。
+- 暂停期间 Hermes 重启：服务会自己起来。按 runner 源码（[`ConfigurationManager.cs`](https://github.com/actions/runner/blob/main/src/Runner.Listener/Configuration/ConfigurationManager.cs)），标签只在配置（`config.sh`）时发给 GitHub，所以重启后标签应该还是去掉的、不会接任务；但启动会话的代码没有核对，也没在 Hermes 上实测过，重启后先用 `gh api` 看一眼标签。之后照常运行 `resume-runners.sh`。不要在暂停期间重新注册 runner（`config.sh --replace` 会重置标签）。
 - 受保护的第 3、4 层测试正在跑时，`hermes-ssh.sh` 只放行只读命令，这时暂停或恢复都做不了，要等那次运行结束。
 - `runner-pause.sh` 不带 `--labels-removed` 时以退出码 64 拒绝：直接在 Hermes 上停服务会让 GitHub 在停之前的空档里派来的任务被取消。
 - GitHub 文档写明，它不能保证常驻 runner 停机时绝对不被派任务（[Self-hosted runners reference](https://docs.github.com/en/actions/reference/runners/self-hosted-runners)）。去掉标签再观察 90 秒，把这个空档压到很小，但不是零。

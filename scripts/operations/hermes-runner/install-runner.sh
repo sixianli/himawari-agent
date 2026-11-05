@@ -90,7 +90,8 @@ for id in $RUNNER_IDS; do
   install_runner_account
 done
 
-rm -rf -- "$SHARED/bin"
+rm -f -- "$SHARED/bin/runner-pause.sh" "$SHARED/bin/runner-resume.sh" "$SHARED/bin/runners.sh"
+[ ! -d "$SHARED/bin" ] || rmdir --ignore-fail-on-non-empty -- "$SHARED/bin"
 install -m 0755 -o root -g root "$SRC/clean-old.sh" "$SRC/runners.sh" "$SHARED/hooks/"
 install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/gh-runner-nft.service" "$SRC/gh-runner-clean.service" "$SRC/gh-runner-clean.timer" "$UNIT_DIR/"
 
