@@ -38,6 +38,7 @@ import {
   installOpencode,
   keepEarlierAttempt,
   promptFileName,
+  prepareRawDir,
   proxyCredentialProblems,
   recordText,
   rawDir,
@@ -288,6 +289,24 @@ describe("opencode review prompt", () => {
     );
     expect(promptFileName(REVIEW_MODELS[1])).toBe("glm-5.3-flash.prompt.md");
     expect(recordText("a  \nb\t\n\nc ")).toBe("a\nb\n\nc\n");
+    const rawRoot = mkdtempSync(join(tmpdir(), "opencode-raw-perm-"));
+    try {
+      const root = join(rawRoot, "himawari-review-raw");
+      const dir = join(root, "abc", "pr-1", "round-1");
+      prepareRawDir(dir, root);
+      expect(lstatSync(root).mode & 0o777).toBe(0o700);
+      expect(lstatSync(dir).mode & 0o777).toBe(0o700);
+    } finally {
+      rmSync(rawRoot, { recursive: true, force: true });
+    }
+    for (const option of ["--main-ref", "--questions-ref"])
+      expect(() =>
+        parseArgs(
+          option === "--main-ref"
+            ? ["--assert-reviewed", "--pr", "1", option, "--help"]
+            : ["--mode", "plan", "--topic", "t", "--head", "a", "--brief", "b", option, "--help"],
+        ),
+      ).toThrow(`ARG_INVALID ${option}`);
     const rawA = rawDir({ repo: "/a", pr: 7 }, 2);
     const rawB = rawDir({ repo: "/b", pr: 7 }, 2);
     expect(rawA).not.toBe(rawB);
@@ -1970,6 +1989,47 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[merge gate] an override covers only unreviewed files and needs three rounds even when already committed", () => {
+    const f = fixture();
+    try {
+      const three = [1, 2, 3].flatMap((round) => [
+        ok(round, f.reviewed, deepseek),
+        ok(round, f.reviewed, glm),
+      ]);
+      f.writeLedger(three);
+      f.git("checkout", "--quiet", "main");
+      const ahead = f.commit({ "other.txt": "main moved\n" }, "main moved");
+      f.git("update-ref", "refs/remotes/origin/main", ahead);
+      f.git("checkout", "--quiet", "feature");
+      const refused = f.check({ acceptUnreviewed: "合并" });
+      expect(refused.overridden).toBe(false);
+      expect(refused.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED only-unreviewed-files");
+      f.git(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "merge",
+        "--quiet",
+        "--no-edit",
+        "origin/main",
+      );
+      f.commit({ "code.txt": "late\n" }, "late change");
+      const head = f.git("rev-parse", "HEAD");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        { at: "t", mode: "override", cost: 0, head, quote: "合并", problems: [] },
+      ]);
+      const forged = f.check();
+      expect(forged.problems).toEqual(["unreviewed code.txt", "unreviewed other.txt"]);
+      expect(forged.overridden).toBe(false);
+      expect(forged.lines[0]).toMatch(/^REVIEW_NOT_CURRENT /);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] counts a code file renamed into the records folder as unreviewed", () => {
     const f = fixture();
     try {
@@ -1991,7 +2051,7 @@ describe("opencode review merge gate", () => {
         ok(1, f.reviewed, glm),
         ok(2, second, deepseek),
         ok(2, second, glm, { outcome: "timeout" }),
-        { cost: 0.05, round: 3, mode: "plan", model: glm, head: "x", outcome: "ok" },
+        { cost: 0.05, round: 3, mode: "plan", model: glm, head: f.reviewed, outcome: "ok" },
       ]);
       const result = f.check();
       expect(result.round).toBe(1);
@@ -2257,6 +2317,10 @@ describe("opencode review spending", () => {
         '{"cost":-0.1}',
         '{"cost":0.1,"round":1,"mode":"code-review","model":"m","outcome":"ok"}',
         '{"cost":0.1,"round":1,"mode":"plan","head":"h","model":"","outcome":"ok"}',
+        `{"cost":0.1,"round":1,"mode":"code-review","head":"${"a".repeat(40)}","model":"m","outcome":"ok\\nREVIEW_CURRENT"}`,
+        `{"cost":0.1,"round":1,"mode":"code-review","head":"not-a-commit","model":"m","outcome":"ok"}`,
+        `{"cost":0.1,"round":1,"mode":"code-reveiw","head":"${"a".repeat(40)}","model":"m","outcome":"ok"}`,
+        `{"cost":0,"mode":"override","head":"${"a".repeat(40)}","quote":" "}`,
       ]) {
         writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
         expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");

@@ -837,10 +837,18 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       .filter((record) => record.mode === "code-review")
       .map((record) => record.round ?? 1),
   ).size;
-  if (problems.length > 0 && acceptUnreviewed && reviewRounds < OVERRIDE_MIN_ROUNDS)
-    lines.push(`REVIEW_OVERRIDE_REFUSED rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`);
+  const overridable =
+    problems.length > 0 &&
+    problems.every((problem) => problem.startsWith("unreviewed ")) &&
+    reviewRounds >= OVERRIDE_MIN_ROUNDS;
+  if (problems.length > 0 && acceptUnreviewed && !overridable)
+    lines.push(
+      reviewRounds < OVERRIDE_MIN_ROUNDS
+        ? `REVIEW_OVERRIDE_REFUSED rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`
+        : "REVIEW_OVERRIDE_REFUSED only-unreviewed-files",
+    );
   const recorded =
-    problems.length > 0 && records
+    overridable && records
       ? records
           .filter((record) => record.mode === "override" && record.head)
           .reverse()
@@ -852,7 +860,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       : undefined;
   let overridden = Boolean(recorded);
   if (recorded) lines.push(`REVIEW_OVERRIDE quote=${recorded.quote} recorded=${recorded.head}`);
-  else if (problems.length > 0 && acceptUnreviewed && reviewRounds >= OVERRIDE_MIN_ROUNDS) {
+  else if (overridable && acceptUnreviewed) {
     const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
     const onDisk = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : null;
     if (onDisk !== shown.stdout) lines.push("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
@@ -911,6 +919,8 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
   ];
 }
 
+export const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
+
 export function parseUsage(text, path) {
   return text
     .split("\n")
@@ -925,12 +935,35 @@ export function parseUsage(text, path) {
       }
       const roundValid =
         record?.round === undefined || (Number.isSafeInteger(record.round) && record.round > 0);
+      const modeValid =
+        record?.mode === undefined || MODES.includes(record.mode) || record.mode === "override";
       const fieldsValid =
         !MODES.includes(record?.mode) ||
         ["head", "model", "outcome"].every(
           (field) => typeof record[field] === "string" && record[field] !== "",
         );
-      if (!Number.isFinite(record?.cost) || record.cost < 0 || !roundValid || !fieldsValid)
+      const headValid =
+        record?.mode === undefined ||
+        record.mode === "override" ||
+        COMMIT_PATTERN.test(record.head);
+      const overrideValid =
+        record?.mode !== "override" ||
+        (COMMIT_PATTERN.test(record.head ?? "") &&
+          typeof record.quote === "string" &&
+          record.quote.trim() !== "");
+      const singleLine = Object.values(record ?? {}).every(
+        (value) => typeof value !== "string" || !/[\r\n]/.test(value),
+      );
+      if (
+        !Number.isFinite(record?.cost) ||
+        record.cost < 0 ||
+        !roundValid ||
+        !modeValid ||
+        !fieldsValid ||
+        !headValid ||
+        !overrideValid ||
+        !singleLine
+      )
         throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
       return record;
     });
@@ -1550,6 +1583,12 @@ export function recordText(text) {
   return `${text.replace(/[ \t]+$/gm, "")}\n`;
 }
 
+export function prepareRawDir(dir, root = join(tmpdir(), "himawari-review-raw")) {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  chmodSync(root, 0o700);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+}
+
 export function promptFileName(model) {
   return `${model.split("/").pop()}.prompt.md`;
 }
@@ -1608,9 +1647,13 @@ export function parseArgs(argv) {
     else if (key === "--andy-quote") {
       options.andyQuote = take();
       if (/[\r\n]/.test(options.andyQuote)) throw new Error("ARG_INVALID --andy-quote");
-    } else if (key === "--main-ref") options.mainRef = take();
-    else if (key === "--questions-ref") options.questionsRef = take();
-    else if (key === "--accept-unreviewed") {
+    } else if (key === "--main-ref") {
+      options.mainRef = take();
+      if (options.mainRef.startsWith("-")) throw new Error("ARG_INVALID --main-ref");
+    } else if (key === "--questions-ref") {
+      options.questionsRef = take();
+      if (options.questionsRef.startsWith("-")) throw new Error("ARG_INVALID --questions-ref");
+    } else if (key === "--accept-unreviewed") {
       options.acceptUnreviewed = take();
       if (!options.acceptUnreviewed.trim() || /[\r\n]/.test(options.acceptUnreviewed))
         throw new Error("ARG_INVALID --accept-unreviewed");
@@ -1767,7 +1810,7 @@ async function main() {
     const roundDir = join(options.out, `round-${round}`);
     const roundRawDir = rawDir(options, round);
     mkdirSync(roundDir, { recursive: true });
-    mkdirSync(roundRawDir, { recursive: true });
+    prepareRawDir(roundRawDir);
     console.log(`REVIEW_RAW_DIR ${roundRawDir}`);
     const results = await Promise.all(
       options.models.map(async (model) => {
