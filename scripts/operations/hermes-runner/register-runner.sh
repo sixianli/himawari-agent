@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT=/srv/gh-runner
 
+[ "$(hostname)" = hermes-home ] || { echo "this script only runs on hermes-home, not $(hostname)" >&2; exit 68; }
+command -v python3 > /dev/null || { echo "missing python3" >&2; exit 66; }
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
 IFS= read -r ACTIONS_RUNNER_INPUT_TOKEN
 [ -n "$ACTIONS_RUNNER_INPUT_TOKEN" ] || { echo "no registration token on stdin" >&2; exit 64; }

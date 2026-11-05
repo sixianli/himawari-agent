@@ -7,12 +7,15 @@ URL=https://github.com/actions/runner/releases/download/v$VERSION/actions-runner
 ROOT=/srv/gh-runner
 SRC=$(cd "$(dirname "$0")" && pwd)
 
+[ "$(hostname)" = hermes-home ] || { echo "this script only runs on hermes-home, not $(hostname)" >&2; exit 68; }
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
-for tool in nft visudo useradd sha256sum curl ss; do
+for tool in nft visudo useradd sha256sum curl ss python3; do
   command -v "$tool" > /dev/null || { echo "missing $tool" >&2; exit 66; }
 done
 
-if ! id gh-runner > /dev/null 2>&1; then
+if id gh-runner > /dev/null 2>&1; then
+  [ -d $ROOT/runner ] || { echo "a gh-runner user exists but $ROOT/runner does not; refusing to take over an account this script did not create" >&2; exit 69; }
+else
   useradd --system --user-group --home-dir $ROOT/home --no-create-home --shell /usr/sbin/nologin gh-runner
 fi
 if [ -n "$(id -nG gh-runner | tr ' ' '\n' | grep -vx gh-runner)" ]; then
@@ -65,6 +68,7 @@ rm -f "$SUDOERS"
 
 systemctl daemon-reload
 systemctl enable --now gh-runner-nft.service gh-runner-clean.timer
+nft -f /etc/gh-runner/nft.rules
 nft list table inet gh_runner > /dev/null
 
 echo "INSTALL_OK version=$VERSION uid=$RUNNER_UID blocked_local_ports=$PORTS"

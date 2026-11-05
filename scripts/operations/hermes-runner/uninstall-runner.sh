@@ -1,6 +1,7 @@
 #!/bin/bash
 set -u
 
+[ "$(hostname)" = hermes-home ] || { echo "this script only runs on hermes-home, not $(hostname)" >&2; exit 68; }
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
 
 systemctl disable --now gh-runner.service gh-runner-clean.timer 2>/dev/null

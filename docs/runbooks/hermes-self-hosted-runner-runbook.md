@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:9f776f035b8a42b4e9cd7271dfc3881e2fb1bc2e5ea647e692ba8e3567988ff9"
+contract_sha256: "sha256:3a56cd8364717003e99a44a7a7fe43a41be6787609aa6643d9301af26c826431"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -56,9 +56,11 @@ date: "2026-11-04"
 
 - 系统用户 `gh-runner`，不能登录，只属于自己的组，不在 sudo 组或 docker 组里。
 - `ProtectHome=yes` 和 `InaccessiblePaths=/data` 让它看不到 `/home`（包括 andy 的 SSH 密钥）和 `/data`（Hermes 的密钥和其他项目的数据），也碰不到 Docker 的控制接口；`ProtectSystem=strict` 让它只能写自己的三个目录。
-- 防火墙规则只对 `gh-runner` 这个用户生效：拒绝它访问局域网和 Tailscale 地址（`10/8`、`100.64/10`、`172.16/12`、`192.168/16` 等），以及本机在安装时已经在监听的 TCP 端口（DNS 的 53 端口除外）。访问互联网不受影响。
+- `ProtectProc=invisible` 让它在 `/proc` 里只看得到自己的进程，看不到 Hermes 上其他服务的进程和命令行参数。
+- 防火墙规则只对 `gh-runner` 这个用户生效：拒绝它访问局域网和 Tailscale 地址（`10/8`、`100.64/10`、`172.16/12`、`192.168/16` 等），以及本机在最近一次运行安装脚本时已经在监听的 TCP 端口（DNS 的 53 端口除外）。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来；2026-11-05 核对时 Hermes 本机只有 DNS 的 53 端口在监听 UDP，Hermes 的所有网卡地址都是私有地址，已在拒绝范围内。
+- 所有任务都以同一个 `gh-runner` 用户运行，所以一个任务能读到 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
 - CPU 最多两个核（`CPUQuota=200%`），内存最多 5 GB，不用交换分区，最多 2048 个进程；`Nice=10`、`CPUWeight=20`、`IOWeight=20` 让 Hermes 上的其他服务优先。
-- 每个任务开始前检查根盘可用空间，低于 8 GiB 就拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每天的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，有任务在跑时跳过。
+- 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 8 GiB 或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每天的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，有任务在跑时跳过。
 
 [↑ 返回阅读导航](#contents)
 
@@ -79,7 +81,7 @@ date: "2026-11-04"
 
 ## Safety and Preconditions
 
-- **sudo**：安装、注册、卸载和修改服务都要 root。代理没有长期 sudo；需要时先问 Andy，由 Andy 在 Hermes 上运行 `sudo bash grant-temp-sudo.sh <分钟数>`（1 到 120 分钟）。脚本写入临时规则 `/etc/sudoers.d/90-claude-temp`，并装一个 systemd 定时器，到点删除这条规则；关机错过时间的，开机后立即补删。代理不得延长或重新授予。想提前收回，运行 `sudo rm -f /etc/sudoers.d/90-claude-temp`。
+- **sudo**：安装、注册、卸载和修改服务都要 root。代理没有长期 sudo；需要时先问 Andy，由 Andy 在 Hermes 上运行 `sudo bash grant-temp-sudo.sh <分钟数>`（1 到 120 分钟）。脚本写入临时规则 `/etc/sudoers.d/90-claude-temp`，并装一个 systemd 定时器，到点删除这条规则；关机错过时间的，开机后立即补删。代理不得延长或重新授予。到点只会删掉这一条规则：临时授权期间以 root 做过的任何改动（包括再装一条 sudo 规则）都会保留，所以授权期间只做 Andy 同意的那几步，结束后用 `sudo -l` 和 `ls /etc/sudoers.d/` 确认只剩 `91-gh-runner-control`。想提前收回，运行 `sudo rm -f /etc/sudoers.d/90-claude-temp`。
 - **长期保留的窄规则**：andy 免密只能执行 `systemctl start|stop|restart gh-runner.service` 这三条命令，暂停和恢复只用到它们。
 - **注册令牌**：注册令牌（GitHub 发的一次性注册密码，一小时内有效）只能通过标准输入交给 `register-runner.sh`，脚本把它放进环境变量 `ACTIONS_RUNNER_INPUT_TOKEN` 交给 runner 的配置程序。令牌不得出现在命令行参数、文件、日志或提交里；注册完检查日志里没有令牌样的字符串后删除日志。
 - **共享主机**：不清理、修改或重启任何不属于 runner 的容器、镜像、服务或数据；磁盘不够时先报告，不自行删除。
@@ -116,20 +118,20 @@ date: "2026-11-04"
 
 1. 把 `scripts/operations/hermes-runner/` 下的文件用 `.ci-output/handoff/scripts/hermes-upload.sh` 传到 Hermes 的 `/home/andy/himawari-tests/hermes-runner/`。
 2. 取得临时 sudo（见 [Safety and Preconditions](#safety-and-preconditions)）。
-3. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：建 `gh-runner` 用户（已有额外组时拒绝），建 `/srv/gh-runner/` 下的目录，下载 runner 2.338.2 并核对 SHA-256，装钩子、脚本和服务，按当时在监听的端口生成防火墙规则并先用 `nft -c` 检查，装窄 sudo 规则，最后启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`。
+3. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：确认主机名是 `hermes-home`（否则以退出码 68 拒绝），建 `gh-runner` 用户（已有额外组时拒绝；已有这个用户但没有 `/srv/gh-runner/runner` 目录时以退出码 69 拒绝，不接管不是它建的账号），建 `/srv/gh-runner/` 下的目录，下载 runner 2.338.2 并核对 SHA-256，装钩子、脚本和服务，按当时在监听的端口生成防火墙规则并先用 `nft -c` 检查，装窄 sudo 规则，启用防火墙服务和每日清理定时器，最后重新加载一次防火墙规则（防火墙服务已经在运行时，启用它不会重读规则）。成功时打印 `INSTALL_OK`。改了 `gh-runner.service` 后，要按[暂停和恢复](#pause-and-resume)停一次再启动，新的服务设置才生效。
 
 <a id="register"></a>
 
 ### 注册
 
 1. 在 Mac 上用 `gh api -X POST repos/sixianli/himawari-agent/actions/runners/registration-token --jq .token` 取令牌，通过管道直接交给 Hermes 上的 `sudo -n bash register-runner.sh` 的标准输入；令牌不落盘、不进参数。
-2. 脚本先确认这个 runner 版本会读 `ACTIONS_RUNNER_INPUT_TOKEN`（否则拒绝，以免令牌只能放进命令行），再以 `gh-runner` 身份注册，名字和标签都是 `hermes-home`，然后启动 `gh-runner.service`。成功时打印 `REGISTER_OK`。
+2. 脚本先确认主机名是 `hermes-home`、装了 `python3`，再确认这个 runner 版本会读 `ACTIONS_RUNNER_INPUT_TOKEN`（否则拒绝，以免令牌只能放进命令行），再以 `gh-runner` 身份注册，名字和标签都是 `hermes-home`，然后启动 `gh-runner.service`。成功时打印 `REGISTER_OK`。
 
 <a id="pause-and-resume"></a>
 
 ### 暂停和恢复
 
-- 暂停：`/srv/gh-runner/bin/runner-pause.sh [最多等待秒数，默认 3600]`。它先等正在跑的任务结束，再停服务，打印 `RUNNER_PAUSED`；等满时间任务还没结束，就打印 `RUNNER_BUSY_TIMEOUT` 并以退出码 2 结束，runner 保持运行。
+- 暂停：`/srv/gh-runner/bin/runner-pause.sh [最多等待秒数，默认 3600]`。它先等正在跑的任务结束，再停服务，打印 `RUNNER_PAUSED`；等满时间任务还没结束，就打印 `RUNNER_BUSY_TIMEOUT` 并以退出码 2 结束，runner 保持运行。等待秒数只接受 1 到 86400 的整数，否则以退出码 64 拒绝，不碰服务。脚本确认没有任务到真正停服务之间有几秒空档：GitHub 恰好在这几秒里派来的任务会被停掉，在 GitHub 上显示为取消或失败，恢复后要重新运行那个任务。
 - 恢复：`/srv/gh-runner/bin/runner-resume.sh`，打印 `RUNNER_RESUMED`。
 - 暂停期间新的 CI 任务在 GitHub 上排队；GitHub 大约 1 分钟后才把 runner 显示为 `offline`。
 
@@ -139,7 +141,7 @@ date: "2026-11-04"
 
 - **磁盘**：看 `/srv/gh-runner/logs/disk.log`，每个任务记一行开始时的可用空间，一行结束时 `_work` 的大小和可用空间。
 - **runner 升级**：runner 会自己升级到 GitHub 要求的版本（它的目录归 `gh-runner` 所有，所以能写）。要换安装脚本里固定的版本时，改 `install-runner.sh` 里的 `VERSION` 和 `SHA256`，SHA-256 从 GitHub 的发布页核对。
-- **本机新增了服务**：防火墙只挡安装时已在监听的端口。之后新开的本机服务端口不在名单里，要重新运行 `install-runner.sh` 刷新规则（脚本可重复运行，不会重新下载或重建用户）。
+- **本机新增了服务**：防火墙只挡安装时已在监听的端口。之后新开的本机服务端口不在名单里，要重新运行 `install-runner.sh` 刷新规则（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则）。
 - **防火墙表被清掉**：如果有人重启了系统的 `nftables` 服务，而 `/etc/nftables.conf` 里有 `flush ruleset`，表 `inet gh_runner` 会被一并清掉。用 `sudo systemctl restart gh-runner-nft.service gh-runner.service` 恢复。
 - **重启服务**：`sudo -n /usr/bin/systemctl restart gh-runner.service`。runner 会先向 GitHub 注销会话再退出，几秒后重新在线。
 

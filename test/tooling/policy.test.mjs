@@ -705,6 +705,24 @@ describe("CI policy contract", () => {
         if (member.key !== "macos-arm64") member.runner = "ubuntu-24.04";
     expect(upgradeHostedRunnerPolicy(unpausedMac)).toBe(unpausedMac);
     expect(() => validatePolicy(upgradeHostedRunnerPolicy(mixed))).toThrow();
+    const hostedWithTimeouts = (timeoutFor) => {
+      const value = clone();
+      for (const check of value.checks) {
+        check.timeoutMinutes = timeoutFor(check.id);
+        for (const member of check.members)
+          if (member.key === "macos-arm64") delete member.paused;
+          else member.runner = "ubuntu-24.04";
+      }
+      return value;
+    };
+    const legacyTimeout = (id) =>
+      id === "required" ? 5 : ["build", "test", "node-floor", "browser"].includes(id) ? 30 : 15;
+    const legacy = hostedWithTimeouts(legacyTimeout);
+    expect(upgradeHostedRunnerPolicy(legacy)).not.toBe(legacy);
+    expect(() => validatePolicy(upgradeHostedRunnerPolicy(legacy))).not.toThrow();
+    const wrongTimeout = hostedWithTimeouts((id) => (id === "build" ? 1 : legacyTimeout(id)));
+    expect(upgradeHostedRunnerPolicy(wrongTimeout)).toBe(wrongTimeout);
+    expect(() => validatePolicy(upgradeHostedRunnerPolicy(wrongTimeout))).toThrow();
   });
   it("迁移旧采集政策时保留原始来源、阈值和其他要求", () => {
     const { root, git } = fixtureRepository();

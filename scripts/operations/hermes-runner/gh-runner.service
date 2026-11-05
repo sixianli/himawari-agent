@@ -34,6 +34,7 @@ ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
+ProtectProc=invisible
 ReadWritePaths=/srv/gh-runner/runner /srv/gh-runner/home /srv/gh-runner/logs
 InaccessiblePaths=/data -/run/docker.sock -/var/run/docker.sock
 

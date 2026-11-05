@@ -45,10 +45,17 @@ export function timeoutMinutesFor(checkId) {
   return ["build", "test", "node-floor", "browser"].includes(checkId) ? 45 : 30;
 }
 
+function hostedTimeoutMinutesFor(checkId) {
+  if (checkId === "required") return 5;
+  return ["build", "test", "node-floor", "browser"].includes(checkId) ? 30 : 15;
+}
+
 export function upgradeHostedRunnerPolicy(policy) {
-  const members = (policy?.checks ?? []).flatMap((check) => check.members ?? []);
+  const checks = policy?.checks ?? [];
+  const members = checks.flatMap((check) => check.members ?? []);
   const hosted =
     members.length > 0 &&
+    checks.every((check) => check.timeoutMinutes === hostedTimeoutMinutesFor(check.id)) &&
     members.every(
       (member) =>
         !Object.hasOwn(member, "paused") &&
