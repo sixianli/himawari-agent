@@ -64,6 +64,7 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/u;
 const LOCAL_TIME = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})$/u;
 const HOUR = 3_600_000;
 const DATE_ONLY_REMIND_HOUR = 9;
+const MAXIMUM_YEARLY_CATCH_UP = 200;
 const MAXIMUM_REMINDER_HORIZON = 2 * 366 * 24 * HOUR;
 const RESTRICTED_IDENTIFIER =
   /(?<![0-9])(?:[1-9][0-9]{5}(?:19|20)[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])[0-9]{3}[0-9Xx]|[0-9]{16,19})(?![0-9])/u;
@@ -180,7 +181,7 @@ export function reminderSchedule(
   let resolved = resolve(local);
   if (resolved === null) return undefined;
   if (yearly)
-    for (let years = 1; years <= 2 && resolved.due <= sent; years += 1) {
+    for (let years = 1; years <= MAXIMUM_YEARLY_CATCH_UP && resolved.due <= sent; years += 1) {
       resolved = resolve(laterYear(local, years));
       if (resolved === null) return undefined;
     }

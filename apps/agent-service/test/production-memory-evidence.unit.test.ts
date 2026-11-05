@@ -214,6 +214,11 @@ describe("memory evidence from the Owner's own words", () => {
       remindAt: "2027-10-25T10:30:00.000Z",
       repeat: "yearly",
     });
+    expect(reminderSchedule("1990-05-12", "yearly", sentAt, "Asia/Shanghai")).toEqual({
+      dueAt: "2027-05-12T01:00:00.000Z",
+      remindAt: "2027-05-12T01:00:00.000Z",
+      repeat: "yearly",
+    });
     expect(reminderSchedule("2026-03-01", "yearly", sentAt, "Asia/Shanghai")).toEqual({
       dueAt: "2027-03-01T01:00:00.000Z",
       remindAt: "2027-03-01T01:00:00.000Z",
