@@ -52,7 +52,8 @@ import type {
   RuntimeToolInvocation,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
-import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import type { ModelEgress } from "@himawari-agent/application/runtime-port";
+import { redactMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
   CHAT_TOOL_LOOP_REJECTED,

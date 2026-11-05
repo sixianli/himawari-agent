@@ -10,7 +10,7 @@ import {
   type ReflectionModelPort,
 } from "../ports/index.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import { assertMachineSecretFree } from "./machine-secret-exclusion.js";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import type { SuggestionService } from "./suggestion-service.js";
 
 const MAX_CAS_ATTEMPTS = 8;

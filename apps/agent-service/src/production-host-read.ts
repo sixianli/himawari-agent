@@ -1,9 +1,5 @@
-import {
-  containsToolOutputSecret,
-  type HostDirectoryGrant,
-  type HostReadOnlyPort,
-  scanMachineSecrets,
-} from "@himawari-agent/application";
+import type { HostDirectoryGrant, HostReadOnlyPort } from "@himawari-agent/application";
+import { containsToolOutputSecret, scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   executeHostReadOnlyTool,
   fitPiResultOutput,

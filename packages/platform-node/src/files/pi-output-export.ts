@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import path from "node:path";
-import { containsToolOutputSecret } from "@himawari-agent/application";
+import { containsToolOutputSecret } from "@himawari-agent/sensitive-capture";
 
 /** Read an untrusted Pi output locator only in the owned private directory.
  * Bytes, never a host path, cross the existing protected Payload channel. */

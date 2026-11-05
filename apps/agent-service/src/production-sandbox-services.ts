@@ -21,9 +21,9 @@ import {
   type SandboxExecutionRecord,
   SandboxResourceRecoveryService,
   SandboxScopeService,
-  scanMachineSecrets,
   type WorkerDelegationAdmissionServiceOptions,
 } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import {
   assertSandboxExecutionSupport,

@@ -1,7 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import {
   type PublicWebAdapterPort,
-  scanMachineSecrets,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_FETCH_MAXIMUM_OFFSET,
   WEB_PROVIDERS,
@@ -10,6 +9,7 @@ import {
   type WebSearchCandidate,
   type WebSearchProvider,
 } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { type Dispatcher, ProxyAgent, fetch as proxyFetch } from "undici";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";

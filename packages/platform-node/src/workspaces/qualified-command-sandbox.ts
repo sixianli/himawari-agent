@@ -1,10 +1,10 @@
-import {
-  redactMachineSecrets,
-  type ClockPort,
-  type CommandProfile,
-  type CommandSandboxPort,
-  type CommandSecretBinding,
+import type {
+  ClockPort,
+  CommandProfile,
+  CommandSandboxPort,
+  CommandSecretBinding,
 } from "@himawari-agent/application";
+import { redactMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { runSandboxedProcess, type SandboxedProcessLaunch } from "../capabilities/isolation.js";
 
 export interface CommandSandboxLaunchProvider {

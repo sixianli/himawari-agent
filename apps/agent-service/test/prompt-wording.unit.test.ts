@@ -80,7 +80,7 @@ const UNFROZEN = new Set([
 ]);
 
 const UNFROZEN_SOURCES = [
-  "packages/application/src/services/egress-redaction.ts",
+  "packages/application/src/services/egress-legend.ts",
   "packages/runtime-pi/src/egress-context.ts",
 ];
 

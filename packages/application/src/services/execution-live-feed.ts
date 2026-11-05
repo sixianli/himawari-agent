@@ -1,4 +1,4 @@
-import { machineSecretHoldStart } from "./machine-secret-exclusion.js";
+import { machineSecretHoldStart } from "@himawari-agent/sensitive-capture";
 import { executionMessageItemId } from "./thread-execution-projection.js";
 import { redactTracePayload } from "./trace-redaction.js";
 

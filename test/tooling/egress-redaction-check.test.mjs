@@ -58,4 +58,32 @@ describe("egress redaction check", () => {
     });
     expect(findEgressViolations(root).join("\n")).toContain("new-caller.ts");
   });
+
+  it("fails when a detection rule is written outside the sensitive-capture package", () => {
+    const root = fixture({
+      "apps/agent-service/src/memory.ts":
+        "const RULE = /(?<![0-9])(?:[1-9][0-9]{5}(?:19|20)[0-9]{2}(?:0[1-9]|1[0-2])[0-9]{16,19})/u;",
+      "packages/platform-node/src/token.ts": "const T = /\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b/g;",
+      "packages/runtime-pi/src/pw.ts": "const P = /(?:密码|password)\\s*[:：]/u;",
+    });
+    const report = findEgressViolations(root).join("\n");
+    expect(report).toContain(
+      "apps/agent-service/src/memory.ts: 敏感信息识别规则（Chinese identity number）",
+    );
+    expect(report).toContain(
+      "apps/agent-service/src/memory.ts: 敏感信息识别规则（card number run）",
+    );
+    expect(report).toContain(
+      "packages/platform-node/src/token.ts: 敏感信息识别规则（AWS access key）",
+    );
+    expect(report).toContain("packages/runtime-pi/src/pw.ts: 敏感信息识别规则（password keyword）");
+  });
+
+  it("accepts detection rules inside the sensitive-capture package", () => {
+    const root = fixture({
+      "packages/sensitive-capture/src/machine-secrets.ts":
+        "const T = /\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b/g;",
+    });
+    expect(findEgressViolations(root)).toEqual([]);
+  });
 });

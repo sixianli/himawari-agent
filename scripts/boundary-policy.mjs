@@ -3,11 +3,13 @@ export const allowedInternalDependencies = new Map([
   ["@himawari-agent/domain", new Set()],
   ["@himawari-agent/calibration", new Set()],
   ["@himawari-agent/prompt-catalog", new Set()],
+  ["@himawari-agent/sensitive-capture", new Set()],
   ["@himawari-agent/gateway-contracts", new Set()],
   ["@himawari-agent/execution-contracts", new Set()],
   [
     "@himawari-agent/application",
     new Set([
+      "@himawari-agent/sensitive-capture",
       "@himawari-agent/calibration",
       "@himawari-agent/prompt-catalog",
       "@himawari-agent/domain",
@@ -17,7 +19,11 @@ export const allowedInternalDependencies = new Map([
   ],
   [
     "@himawari-agent/runtime-pi",
-    new Set(["@himawari-agent/prompt-catalog", "@himawari-agent/application"]),
+    new Set([
+      "@himawari-agent/sensitive-capture",
+      "@himawari-agent/prompt-catalog",
+      "@himawari-agent/application",
+    ]),
   ],
   [
     "@himawari-agent/persistence-sqlite",
@@ -59,6 +65,7 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/platform-node",
     new Set([
+      "@himawari-agent/sensitive-capture",
       "@himawari-agent/prompt-catalog",
       "@himawari-agent/application",
       "@himawari-agent/domain",
@@ -78,6 +85,7 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/agent-service",
     new Set([
+      "@himawari-agent/sensitive-capture",
       "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
       "@himawari-agent/calibration",
@@ -104,7 +112,10 @@ export const allowedInternalDependencies = new Map([
       "@himawari-agent/testing",
     ]),
   ],
-  ["@himawari-agent/control-center", new Set(["@himawari-agent/gateway-contracts"])],
+  [
+    "@himawari-agent/control-center",
+    new Set(["@himawari-agent/gateway-contracts", "@himawari-agent/sensitive-capture"]),
+  ],
   [
     "@himawari-agent/admin-cli",
     new Set([

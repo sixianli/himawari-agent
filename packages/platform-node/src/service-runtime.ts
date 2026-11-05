@@ -1,5 +1,5 @@
 import process from "node:process";
-import { redactMachineSecrets } from "@himawari-agent/application";
+import { redactMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 export const SERVICE_RUNTIME_ERROR_CODES = Object.freeze({
   ARGUMENT_INVALID: "SERVICE_ARGUMENT_INVALID",

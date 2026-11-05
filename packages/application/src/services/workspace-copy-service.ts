@@ -15,7 +15,7 @@ import {
 } from "../ports/index.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { FileOperationService } from "./file-operation-service.js";
-import { scanMachineSecrets } from "./machine-secret-exclusion.js";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 interface WorkspaceCopyDependencies {
   readonly hostId: string;

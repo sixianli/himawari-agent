@@ -1,5 +1,5 @@
 import type { JsonValue } from "../ports/common.js";
-import { redactMachineSecrets } from "./machine-secret-exclusion.js";
+import { redactMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 const REDACTED = "[REDACTED]";
 const SENSITIVE_KEYS = new Set([

@@ -16,8 +16,23 @@ export const REQUIRED_REDACTION_CALLS = Object.freeze([
 ]);
 
 export const REDACTOR_ONLY_FILES = Object.freeze([
-  "packages/application/src/services/egress-redaction.ts",
+  "packages/sensitive-capture/src/redaction.ts",
   "packages/application/src/services/model-egress.ts",
+]);
+
+export const SENSITIVE_RULE_PACKAGE = "packages/sensitive-capture/src/";
+
+export const SENSITIVE_RULE_SIGNATURES = Object.freeze([
+  { name: "private key block", pattern: /\/-----BEGIN/u },
+  { name: "AWS access key", pattern: /\(\?:AKIA\|ASIA\)/u },
+  { name: "GitHub token", pattern: /gh\[opsu\]_|github_pat_\[/u },
+  { name: "JWT", pattern: /\\beyJ\[/u },
+  { name: "OpenAI key", pattern: /sk-\(\?:proj/u },
+  { name: "Chinese identity number", pattern: /\(\?:19\|20\)(?:\\d|\[0-9\])\{2\}\(\?:0\[1-9\]/u },
+  { name: "card number run", pattern: /(?:\\d|\[0-9\])\{1[2-6],1[89]\}/u },
+  { name: "Luhn checksum", pattern: /function luhn/iu },
+  { name: "password keyword", pattern: /\(\?:密码\|/u },
+  { name: "verification code keyword", pattern: /\(\?:验证码\|/u },
 ]);
 
 export const EGRESS_PATTERNS = Object.freeze([
@@ -60,6 +75,12 @@ export function findEgressViolations(root = repositoryRoot) {
       const relative = path.relative(root, full).split(path.sep).join("/");
       if (!relative.includes("/src/")) continue;
       const text = readFileSync(full, "utf8");
+      if (!relative.startsWith(SENSITIVE_RULE_PACKAGE))
+        for (const { name, pattern } of SENSITIVE_RULE_SIGNATURES)
+          if (pattern.test(text))
+            violations.push(
+              `${relative}: 敏感信息识别规则（${name}）只能写在 ${SENSITIVE_RULE_PACKAGE}，请改为调用 @himawari-agent/sensitive-capture`,
+            );
       if (/\bredactForEgress\(/u.test(text) && !REDACTOR_ONLY_FILES.includes(relative))
         violations.push(
           `${relative}: 只有出口模块能直接调用 redactForEgress，请改走 ModelEgress（packages/application/src/services/model-egress.ts）`,

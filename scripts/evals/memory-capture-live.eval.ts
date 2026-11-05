@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { scanMachineSecrets } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { describe, it } from "vitest";
 import {
