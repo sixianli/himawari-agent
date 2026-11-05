@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -256,22 +256,57 @@ export function summarizeEvents(jsonl) {
   return { outcome, lastReason, text, thinking: thoughts.join("\n").trim(), usage, toolCalls };
 }
 
-export function opencodeBinary() {
-  if (process.env.HIMAWARI_OPENCODE_BIN) return process.env.HIMAWARI_OPENCODE_BIN;
-  const prefix = join(homedir(), ".cache", `himawari-opencode-${OPENCODE_VERSION}`);
+export const OPENCODE_LOCK_DIR = join(dirname(fileURLToPath(import.meta.url)), "opencode-lock");
+export const OPENCODE_LOCK_FILES = ["package.json", "package-lock.json"];
+
+export function installedIntegrityProblems(prefix, lock) {
+  const installedPath = join(prefix, "node_modules", ".package-lock.json");
+  if (!existsSync(installedPath)) return ["installed-lock-missing"];
+  const installed = JSON.parse(readFileSync(installedPath, "utf8")).packages ?? {};
+  const problems = [];
+  if (!installed["node_modules/opencode-ai"]) problems.push("node_modules/opencode-ai missing");
+  for (const [name, entry] of Object.entries(installed)) {
+    const expected = lock.packages?.[name];
+    if (!expected?.integrity || expected.integrity !== entry.integrity)
+      problems.push(`${name} ${entry.integrity ?? "no-integrity"}`);
+  }
+  return problems;
+}
+
+export function installOpencode({ prefix, lockDir = OPENCODE_LOCK_DIR }) {
+  const lock = JSON.parse(readFileSync(join(lockDir, "package-lock.json"), "utf8"));
   const binary = join(prefix, "node_modules", ".bin", "opencode");
   if (!existsSync(binary)) {
     mkdirSync(prefix, { recursive: true });
-    const install = spawnSync(
-      "npm",
-      ["install", "--prefix", prefix, "--no-save", `opencode-ai@${OPENCODE_VERSION}`],
-      {
-        stdio: "inherit",
-      },
-    );
-    if (install.status !== 0 || !existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
+    for (const file of OPENCODE_LOCK_FILES)
+      writeFileSync(join(prefix, file), readFileSync(join(lockDir, file)));
+    const install = spawnSync("npm", ["ci", "--no-audit", "--no-fund"], {
+      cwd: prefix,
+      encoding: "utf8",
+    });
+    process.stderr.write(`${install.stdout ?? ""}${install.stderr ?? ""}`);
+    if (install.status !== 0) {
+      if (/EINTEGRITY|integrity checksum failed/i.test(install.stderr ?? ""))
+        throw new Error("OPENCODE_INTEGRITY_MISMATCH npm-ci");
+      throw new Error("OPENCODE_INSTALL_FAILED");
+    }
+    if (!existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
   }
+  const problems = installedIntegrityProblems(prefix, lock);
+  if (problems.length > 0)
+    throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${problems.join(" | ")}`);
   return binary;
+}
+
+export function opencodeBinary() {
+  if (process.env.HIMAWARI_OPENCODE_BIN) return process.env.HIMAWARI_OPENCODE_BIN;
+  const lockDigest = createHash("sha256")
+    .update(readFileSync(join(OPENCODE_LOCK_DIR, "package-lock.json")))
+    .digest("hex")
+    .slice(0, 12);
+  return installOpencode({
+    prefix: join(homedir(), ".cache", `himawari-opencode-${OPENCODE_VERSION}-${lockDigest}`),
+  });
 }
 
 const activeChildren = new Set();

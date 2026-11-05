@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -28,11 +28,15 @@ import {
   GIT_READ_COMMANDS,
   GIT_REFUSED,
   gitChildEnv,
+  installedIntegrityProblems,
   installGitGuard,
+  installOpencode,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   nextRound,
   OPENCODE_KEPT_ENV,
+  OPENCODE_LOCK_DIR,
+  OPENCODE_VERSION,
   opencodeBinary,
   opencodeEnv,
   parseArgs,
@@ -591,6 +595,77 @@ describe("opencode review process cleanup", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe("opencode install integrity", () => {
+  const lock = JSON.parse(readFileSync(join(OPENCODE_LOCK_DIR, "package-lock.json"), "utf8"));
+  const tampered = `sha512-${createHash("sha512").update("tampered").digest("base64")}`;
+
+  it("[opencode lock] pins opencode-ai and every platform package by sha512", () => {
+    const manifest = JSON.parse(readFileSync(join(OPENCODE_LOCK_DIR, "package.json"), "utf8"));
+    expect(manifest.dependencies).toEqual({ "opencode-ai": OPENCODE_VERSION });
+    const packages = Object.entries(lock.packages).filter(([name]) => name);
+    expect(lock.packages["node_modules/opencode-ai"].version).toBe(OPENCODE_VERSION);
+    for (const platform of ["darwin-arm64", "linux-x64"])
+      expect(lock.packages[`node_modules/opencode-${platform}`]).toBeDefined();
+    for (const [, entry] of packages) {
+      expect(entry.version).toBe(OPENCODE_VERSION);
+      expect(entry.integrity).toMatch(/^sha512-[A-Za-z0-9+/]{86}==$/);
+    }
+  });
+
+  it("[opencode lock] reports an installed package whose digest differs from the lock", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "opencode-installed-"));
+    try {
+      const installed = (integrity) => {
+        mkdirSync(join(prefix, "node_modules"), { recursive: true });
+        writeFileSync(
+          join(prefix, "node_modules", ".package-lock.json"),
+          JSON.stringify({
+            packages: {
+              "node_modules/opencode-ai": lock.packages["node_modules/opencode-ai"],
+              "node_modules/opencode-linux-x64": {
+                ...lock.packages["node_modules/opencode-linux-x64"],
+                integrity,
+              },
+            },
+          }),
+        );
+      };
+      expect(installedIntegrityProblems(prefix, lock)).toEqual(["installed-lock-missing"]);
+      installed(lock.packages["node_modules/opencode-linux-x64"].integrity);
+      expect(installedIntegrityProblems(prefix, lock)).toEqual([]);
+      installed(tampered);
+      expect(installedIntegrityProblems(prefix, lock)).toEqual([
+        `node_modules/opencode-linux-x64 ${tampered}`,
+      ]);
+    } finally {
+      rmSync(prefix, { recursive: true, force: true });
+    }
+  });
+
+  it("[opencode lock] installs the locked version and refuses a download that does not match", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-install-"));
+    try {
+      const good = installOpencode({ prefix: join(root, "good") });
+      expect(execFileSync(good, ["--version"], { encoding: "utf8" }).trim()).toBe(OPENCODE_VERSION);
+      const badLock = join(root, "bad-lock");
+      mkdirSync(badLock);
+      writeFileSync(
+        join(badLock, "package.json"),
+        readFileSync(join(OPENCODE_LOCK_DIR, "package.json")),
+      );
+      const changed = structuredClone(lock);
+      changed.packages["node_modules/opencode-ai"].integrity = tampered;
+      writeFileSync(join(badLock, "package-lock.json"), JSON.stringify(changed, null, 2));
+      expect(() => installOpencode({ prefix: join(root, "bad"), lockDir: badLock })).toThrow(
+        /^OPENCODE_INTEGRITY_MISMATCH/,
+      );
+      expect(existsSync(join(root, "bad", "node_modules", ".bin", "opencode"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 300000);
 });
 
 describe("opencode review installed guard", () => {
