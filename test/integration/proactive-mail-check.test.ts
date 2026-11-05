@@ -104,6 +104,7 @@ describe("proactive Gmail check acceptance", () => {
       memory?: ProactiveMemoryRecall;
       memoryLimits?: ProactiveMailCheckOptions["memoryLimits"];
       bodyLimits?: ProactiveMailCheckOptions["bodyLimits"];
+      onMasked?: ProactiveMailCheckOptions["onMasked"];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-"));
@@ -321,6 +322,7 @@ describe("proactive Gmail check acceptance", () => {
       ...(options.memory ? { memory: options.memory } : {}),
       ...(options.memoryLimits ? { memoryLimits: options.memoryLimits } : {}),
       ...(options.bodyLimits ? { bodyLimits: options.bodyLimits } : {}),
+      ...(options.onMasked ? { onMasked: options.onMasked } : {}),
       ...(options.batchSize === undefined ? {} : { batchSize: options.batchSize }),
       ...(options.outputTokenLimit === undefined
         ? {}
@@ -440,6 +442,38 @@ describe("proactive Gmail check acceptance", () => {
     ]);
     const second = await h.service.run();
     expect(second?.counts).toMatchObject({ fetched: 2, skipped: 0, judged: 2 });
+  });
+
+  it("[SI-3] reports the code masked in a mail sent for judgment without changing the prompt", async () => {
+    const reported: { kind: string; ruleId: string }[][] = [];
+    const items = [
+      mail("code", { subject: "ログイン", snippet: "認証コードは 482913 です" }),
+      mail("hello", { snippet: "明天一起吃饭吗" }),
+    ];
+    const answers = [
+      { id: "code", result: "ignore" as const },
+      { id: "hello", result: "ignore" as const },
+    ];
+    const watched = await harness({
+      onMasked: (sightings) =>
+        reported.push(sightings.map(({ kind, ruleId }) => ({ kind, ruleId }))),
+    });
+    watched.reader.items = items;
+    watched.script(answers);
+    await watched.service.run();
+    const plain = await harness({
+      onMasked: () => {
+        throw new Error("recorder failed");
+      },
+    });
+    plain.reader.items = items;
+    plain.script(answers);
+    await plain.service.run();
+    expect(reported).toEqual([
+      [{ kind: "verification-code", ruleId: "verification-code-keyword" }],
+    ]);
+    expect(watched.prompts).toEqual(plain.prompts);
+    expect(watched.prompts[0]).not.toContain("482913");
   });
 
   it("[PG-4] pushes an unclear ward office letter but only lists the same text from a friend", async () => {

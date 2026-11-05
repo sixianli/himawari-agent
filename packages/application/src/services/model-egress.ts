@@ -6,6 +6,7 @@ import {
   type EgressRedactionFinding,
   type EgressRedactionKind,
   type EgressRedactionRuleId,
+  type EgressRedactionSighting,
   redactForEgress,
 } from "@himawari-agent/sensitive-capture";
 import type {
@@ -477,5 +478,30 @@ export class ModelEgress {
 
   exchange(context?: ModelEgressContext): ModelEgressExchange {
     return new Exchange(this.#options, context);
+  }
+
+  async reportMasked(
+    context: ModelEgressContext,
+    part: SensitiveInterceptionPart,
+    sightings: readonly EgressRedactionSighting[],
+  ): Promise<void> {
+    const report = this.#options.report;
+    if (report === undefined || sightings.length === 0) return;
+    try {
+      const key = await this.#options.key();
+      const unique = new Map<string, ModelEgressSighting>();
+      for (const { kind, ruleId, value } of sightings) {
+        const fingerprint = hex(
+          this.#options.sign(key, `${FINGERPRINT_LABEL}\u0000${kind}\u0000${value}`),
+        );
+        unique.set(
+          `${kind}\u0000${ruleId}\u0000${fingerprint}`,
+          Object.freeze({ part, category: kind, ruleId, fingerprint }),
+        );
+      }
+      report(context, Object.freeze([...unique.values()]));
+    } catch {
+      return;
+    }
   }
 }

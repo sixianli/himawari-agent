@@ -29,7 +29,11 @@ import type {
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
+import {
+  type EgressRedactionSighting,
+  findSensitiveValues,
+  maskSensitiveText,
+} from "@himawari-agent/sensitive-capture";
 import { plainModelText, windowMailBody } from "./proactive-mail-body.js";
 import {
   applyFloor,
@@ -85,6 +89,7 @@ export interface ProactiveMailCheckOptions {
   readonly memory?: ProactiveMemoryRecall;
   readonly memoryLimits?: Partial<ProactiveMemoryLimits>;
   readonly bodyLimits?: Partial<ProactiveBodyLimits>;
+  readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
 }
 
 export interface ProactiveBodyLimits {
@@ -338,6 +343,25 @@ export class ProactiveMailCheckService {
     this.#options = options;
   }
 
+  #reportMasked(batch: readonly ProactiveSourceItem[]): void {
+    const onMasked = this.#options.onMasked;
+    if (onMasked === undefined) return;
+    const sightings = batch.flatMap((item) =>
+      [
+        item.from,
+        item.subject,
+        item.body ?? item.snippet,
+        ...item.attachments.map(({ filename }) => filename),
+      ].flatMap((text) => findSensitiveValues(text)),
+    );
+    if (sightings.length === 0) return;
+    try {
+      onMasked(sightings);
+    } catch {
+      return;
+    }
+  }
+
   async run(): Promise<ProactiveDecision | undefined> {
     const { store, scope, reader } = this.#options;
     const settings = await store.readSettings(scope);
@@ -476,6 +500,7 @@ export class ProactiveMailCheckService {
         stop = "capped";
         break;
       }
+      this.#reportMasked(batch);
       const outcome: JudgeOutcome = await this.#judge(
         batch,
         prompt,

@@ -1536,7 +1536,24 @@ export async function runAgentService(
             }),
           );
         };
+        const mailEgress = createProductionModelEgress(
+          configuration,
+          sources,
+          productionSensitiveInterceptionRecorder(repository),
+        );
         proactive = new ProductionProactive({
+          onMasked: (sightings) =>
+            void mailEgress.reportMasked(
+              {
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                threadId: null,
+                source: "mail",
+                purpose: "mail-judgment",
+              },
+              "mail",
+              sightings,
+            ),
           scope: proactiveScope,
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",

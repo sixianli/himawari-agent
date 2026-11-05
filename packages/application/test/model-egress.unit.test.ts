@@ -575,4 +575,24 @@ describe("reporting what was masked", () => {
       ["embedding_input"],
     ]);
   });
+
+  it("fingerprints values masked elsewhere the same way as in a request, once per value", async () => {
+    const { reports, instance } = reporting();
+    await send(
+      "/chat/completions",
+      { model: "m", messages: [{ role: "user", content: "验证码 482910" }] },
+      { exchange: instance.exchange(context) },
+    );
+    const mailContext = { ...context, source: "mail", threadId: null } as ModelEgressContext;
+    const sighting = {
+      kind: "verification-code",
+      ruleId: "verification-code-keyword",
+      value: "482910",
+    } as const;
+    await instance.reportMasked(mailContext, "mail", [sighting, sighting]);
+    await reporting(true).instance.reportMasked(mailContext, "mail", [sighting]);
+    expect(reports[1]?.context).toBe(mailContext);
+    expect(reports[1]?.sightings).toEqual([{ ...reports[0]?.sightings[0], part: "mail" }]);
+    expect(JSON.stringify(reports[1])).not.toContain("482910");
+  });
 });

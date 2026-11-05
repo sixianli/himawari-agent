@@ -314,6 +314,12 @@ export function credentialFindings(input: string): readonly EgressRedactionFindi
   });
 }
 
+export function findSensitiveValues(input: string): readonly EgressRedactionSighting[] {
+  const found: EgressRedactionSighting[] = [];
+  redactForEgress(input, { observe: (sighting) => found.push(sighting) });
+  return Object.freeze(found);
+}
+
 export function maskSensitiveText(input: string): string {
   return redactForEgress(input).text;
 }
