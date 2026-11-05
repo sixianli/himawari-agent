@@ -1,11 +1,12 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -28,11 +29,33 @@ import {
   GIT_READ_COMMANDS,
   GIT_REFUSED,
   gitChildEnv,
+  assertReviewed,
+  REVIEW_REPORT_DISCLAIMER,
+  resultLine,
+  reviewReport,
+  installedIntegrityProblems,
   installGitGuard,
+  installOpencode,
+  keepEarlierAttempt,
+  promptFileName,
+  printable,
+  prepareRawDir,
+  proxyCredentialProblems,
+  recordText,
+  rawDir,
+  opencodeInstallDir,
+  RAW_FILE_SUFFIXES,
+  REVIEWS_DIR,
+  reviewDir,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
+  MODEL_LENSES,
   nextRound,
+  OPENCODE_KEPT_ENV,
+  OPENCODE_LOCK_DIR,
+  OPENCODE_VERSION,
   opencodeBinary,
+  opencodeEnv,
   parseArgs,
   prepareCopy,
   probePlan,
@@ -40,12 +63,14 @@ import {
   QUESTIONS_PATH,
   questionsSource,
   REVIEW_MODELS,
+  REVIEW_PARENT_CANARY_ENV,
   RULE_16_SENTENCE,
   readUsage,
   resolveCommits,
   reviewConfig,
   reviewModel,
   reviewQuestions,
+  roundForRun,
   roundsOnDisk,
   runOutcome,
   SHELL_LOG_NAME,
@@ -185,6 +210,44 @@ describe("opencode review prompt", () => {
     expect(first).toContain("不能上网");
   });
 
+  it("[model focus] asks every reviewer the cross-module question I-73 missed", () => {
+    const questions = reviewQuestions(instructions);
+    expect(questions).toHaveLength(4);
+    expect(questions[3]).toContain("每一个使用它的地方都能接受吗");
+  });
+
+  it("[model focus] gives each model its own focus and otherwise the same prompt", () => {
+    const [deepseek, glm] = REVIEW_MODELS;
+    const questions = reviewQuestions(instructions);
+    const common = { questions, head: "h", base: "b", brief: "作者说" };
+    for (const mode of ["code-review", "plan-review"]) {
+      const a = buildPrompt({ ...common, mode, model: deepseek });
+      const b = buildPrompt({ ...common, mode, model: glm });
+      expect(a).toBe(buildPrompt({ ...common, mode, model: deepseek }));
+      expect(a).toContain(MODEL_LENSES["deepseek-v4.1-flash"]);
+      expect(a).not.toContain(MODEL_LENSES["glm-5.3-flash"]);
+      expect(b).toContain(MODEL_LENSES["glm-5.3-flash"]);
+      expect(b).not.toContain(MODEL_LENSES["deepseek-v4.1-flash"]);
+      expect(a.replace(`${MODEL_LENSES["deepseek-v4.1-flash"]}\n`, "")).toBe(
+        b.replace(`${MODEL_LENSES["glm-5.3-flash"]}\n`, ""),
+      );
+      expect(a.replace(`${MODEL_LENSES["deepseek-v4.1-flash"]}\n`, "")).toBe(
+        buildPrompt({ ...common, mode }),
+      );
+      for (const [index, question] of questions.entries())
+        for (const prompt of [a, b]) expect(prompt).toContain(`${index + 1}. ${question}`);
+      expect(a.indexOf(MODEL_LENSES["deepseek-v4.1-flash"])).toBeLessThan(
+        a.indexOf("---- 本次材料 ----"),
+      );
+    }
+    expect(buildPrompt({ ...common, mode: "plan", model: deepseek })).toBe(
+      buildPrompt({ ...common, mode: "plan", model: glm }),
+    );
+    expect(() => buildPrompt({ ...common, mode: "code-review", model: "x/other" })).toThrow(
+      "LENS_UNKNOWN x/other",
+    );
+  });
+
   it("asks for an independent plan without any author's conclusion in plan mode", () => {
     const prompt = buildPrompt({ mode: "plan", questions: ["q"], head: "h", brief: "问题" });
     expect(prompt).toContain("没有给出任何人的方案");
@@ -200,13 +263,130 @@ describe("opencode review prompt", () => {
     ).toThrow("BRIEF_EMPTY");
   });
 
+  it("[review records] keeps each review's ledger in one fixed folder of the repository", () => {
+    const common = ["--head", "a", "--brief", "b.md", "--repo", "/r"];
+    const review = parseArgs([...common, "--base", "c", "--pr", "12"]);
+    expect(review.out).toBe(join("/r", REVIEWS_DIR, "pr-12"));
+    expect(reviewDir("/r", { topic: "x-1" })).toBe(join("/r", REVIEWS_DIR, "topic-x-1"));
+    expect(parseArgs([...common, "--mode", "plan", "--topic", "t2"]).out).toBe(
+      join("/r", REVIEWS_DIR, "topic-t2"),
+    );
+    expect(() => parseArgs([...common, "--base", "c"])).toThrow("ARG_REQUIRED --pr");
+    expect(() => parseArgs([...common, "--mode", "plan"])).toThrow("ARG_REQUIRED --topic");
+    expect(() => parseArgs([...common, "--base", "c", "--pr", "12", "--out", "o"])).toThrow(
+      "ARG_OUT_ONLY_FOR_SELF_CHECK",
+    );
+    expect(() => parseArgs([...common, "--base", "c", "--pr", "1", "--topic", "t"])).toThrow(
+      "ARG_PR_AND_TOPIC",
+    );
+    for (const bad of ["0", "-2", "1.5", "x"])
+      expect(() => parseArgs([...common, "--base", "c", "--pr", bad])).toThrow("ARG_INVALID --pr");
+    for (const bad of ["12", "Abc", "../x", "a/b", "a b", "", `a${"b".repeat(63)}`])
+      expect(() => parseArgs([...common, "--mode", "plan", "--topic", bad])).toThrow(
+        "ARG_INVALID --topic",
+      );
+    expect(parseArgs([...common, "--mode", "plan", "--self-check-only", "--out", "o"]).out).toMatch(
+      /o$/,
+    );
+    expect(promptFileName(REVIEW_MODELS[1])).toBe("glm-5.3-flash.prompt.md");
+    expect(recordText("a  \nb\t\n\nc ")).toBe("a\nb\n\nc\n");
+    expect(recordText("a \r\nb\rc")).toBe("a\nb\nc\n");
+    expect(printable("a\nREVIEW_CURRENT")).toBe('"a\\nREVIEW_CURRENT"');
+    expect(printable("plain.txt")).toBe("plain.txt");
+    expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--main-ref", "main\nx"])).toThrow(
+      "ARG_INVALID --main-ref",
+    );
+    const rawRoot = mkdtempSync(join(tmpdir(), "opencode-raw-perm-"));
+    try {
+      const root = join(rawRoot, "himawari-review-raw");
+      const dir = join(root, "abc", "pr-1", "round-1");
+      mkdirSync(dir, { recursive: true });
+      chmodSync(root, 0o777);
+      chmodSync(dir, 0o777);
+      prepareRawDir(dir, root);
+      expect(lstatSync(root).mode & 0o777).toBe(0o700);
+      expect(lstatSync(dir).mode & 0o777).toBe(0o700);
+    } finally {
+      rmSync(rawRoot, { recursive: true, force: true });
+    }
+    for (const option of ["--main-ref", "--questions-ref"])
+      expect(() =>
+        parseArgs(
+          option === "--main-ref"
+            ? ["--assert-reviewed", "--pr", "1", option, "--help"]
+            : ["--mode", "plan", "--topic", "t", "--head", "a", "--brief", "b", option, "--help"],
+        ),
+      ).toThrow(`ARG_INVALID ${option}`);
+    const rawA = rawDir({ repo: "/a", pr: 7 }, 2);
+    const rawB = rawDir({ repo: "/b", pr: 7 }, 2);
+    expect(rawA).not.toBe(rawB);
+    expect(rawA).toMatch(/himawari-review-raw\/[0-9a-f]{12}\/pr-7\/round-2$/);
+    expect(opencodeInstallDir()).toMatch(
+      new RegExp(`himawari-opencode-${OPENCODE_VERSION.replaceAll(".", "\\.")}-[0-9a-f]{12}$`),
+    );
+    expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--out", "o"])).toThrow(
+      "ARG_NOT_FOR_SUBCOMMAND --out",
+    );
+    expect(() =>
+      parseArgs(["--report", "--pr", "1", "--stop", "no-error", "--accept-unreviewed", "合并"]),
+    ).toThrow("ARG_NOT_FOR_SUBCOMMAND --accept-unreviewed");
+    expect(() => parseArgs(["--assert-reviewed", "--report", "--pr", "1"])).toThrow(
+      "ARG_ASSERT_AND_REPORT",
+    );
+    expect(parseArgs(["--assert-reviewed", "--pr", "1", "--main-ref", "main"]).mainRef).toBe(
+      "main",
+    );
+    expect(() =>
+      parseArgs(["--assert-reviewed", "--pr", "1", "--accept-unreviewed", "合并\nREVIEW_CURRENT"]),
+    ).toThrow("ARG_INVALID --accept-unreviewed");
+    expect(() =>
+      parseArgs(["--report", "--pr", "1", "--stop", "andy-decision", "--andy-quote", "a\rb"]),
+    ).toThrow("ARG_INVALID --andy-quote");
+    expect(() =>
+      parseArgs([
+        "--report",
+        "--pr",
+        "1",
+        "--stop",
+        "andy-decision",
+        "--andy-quote",
+        "a\u001b[2Jb",
+      ]),
+    ).toThrow("ARG_INVALID --andy-quote");
+    expect(() =>
+      parseArgs(["--assert-reviewed", "--pr", "1", "--accept-unreviewed", "合\u0008并"]),
+    ).toThrow("ARG_INVALID --accept-unreviewed");
+    expect(() =>
+      parseArgs([
+        "--mode",
+        "plan",
+        "--topic",
+        "t",
+        "--head",
+        "a",
+        "--brief",
+        "b",
+        "--questions-ref",
+        "x\ny",
+      ]),
+    ).toThrow("ARG_INVALID --questions-ref");
+    for (const extra of [
+      ["--stop", "no-error"],
+      ["--andy-quote", "q"],
+      ["--main-ref", "main"],
+    ])
+      expect(() =>
+        parseArgs(["--mode", "plan", "--topic", "t", "--head", "a", "--brief", "b", ...extra]),
+      ).toThrow(`ARG_NOT_FOR_MODE ${extra[0]}`);
+  });
+
   it("requires a base commit for code review", () => {
-    expect(() => parseArgs(["--head", "a", "--brief", "b.md", "--out", "o"])).toThrow(
+    expect(() => parseArgs(["--head", "a", "--brief", "b.md", "--pr", "1"])).toThrow(
       "ARG_REQUIRED --base",
     );
-    expect(parseArgs(["--mode", "plan", "--head", "a", "--brief", "b.md", "--out", "o"]).mode).toBe(
-      "plan",
-    );
+    expect(
+      parseArgs(["--mode", "plan", "--head", "a", "--brief", "b.md", "--topic", "t"]).mode,
+    ).toBe("plan");
   });
 });
 
@@ -322,8 +502,15 @@ describe("opencode review self-check", () => {
       expect(commands.some((command) => command.includes(shape))).toBe(true);
     }
     expect(plan.probes.filter((probe) => probe.tool !== "bash").map((probe) => probe.tool)).toEqual(
-      ["read", "read", "grep", "grep", "glob"],
+      ["read", "read", "read", "grep", "grep", "glob", "glob"],
     );
+    const environProbe = expect.objectContaining({
+      kind: "read",
+      tool: "read",
+      args: { filePath: "/proc/self/environ" },
+    });
+    if (process.platform === "linux") expect(plan.probes).toContainEqual(environProbe);
+    else expect(plan.probes).not.toContainEqual(environProbe);
     expect(
       plan.probes.filter((probe) => probe.kind === "allowed").map((probe) => probe.args.command),
     ).toEqual([
@@ -384,6 +571,22 @@ describe("opencode review self-check", () => {
       `PROBE_READ_OUTSIDE ${label(plan.probes[readIndex])}`,
       `PROBE_NOT_REFUSED ${label(plan.probes[readIndex])}`,
       "PROBE_WROTE_FILE /work/probe-redirect",
+    ]);
+  });
+
+  it("[review env] fails when a variable from the script's own environment reaches the model", () => {
+    const calls = passingCalls();
+    const index = plan.probes.findIndex(
+      (probe) => probe.args.command === `git log $${REVIEW_PARENT_CANARY_ENV}`,
+    );
+    expect(plan.probes[index]).toMatchObject({ kind: "contained", leak: plan.marker });
+    calls[index] = {
+      ...calls[index],
+      status: "completed",
+      output: `fatal: ambiguous argument '${plan.marker}': unknown revision`,
+    };
+    expect(check({ toolCalls: calls })).toEqual([
+      `PROBE_READ_OUTSIDE ${label(plan.probes[index])}`,
     ]);
   });
 
@@ -567,6 +770,84 @@ describe("opencode review process cleanup", () => {
   });
 });
 
+describe("opencode install integrity", () => {
+  const lock = JSON.parse(readFileSync(join(OPENCODE_LOCK_DIR, "package-lock.json"), "utf8"));
+  const tampered = `sha512-${createHash("sha512").update("tampered").digest("base64")}`;
+
+  it("[opencode lock] pins opencode-ai and every platform package by sha512", () => {
+    const manifest = JSON.parse(readFileSync(join(OPENCODE_LOCK_DIR, "package.json"), "utf8"));
+    expect(manifest.dependencies).toEqual({ "opencode-ai": OPENCODE_VERSION });
+    const packages = Object.entries(lock.packages).filter(([name]) => name);
+    expect(lock.packages["node_modules/opencode-ai"].version).toBe(OPENCODE_VERSION);
+    for (const platform of ["darwin-arm64", "linux-x64"])
+      expect(lock.packages[`node_modules/opencode-${platform}`]).toBeDefined();
+    for (const [, entry] of packages) {
+      expect(entry.version).toBe(OPENCODE_VERSION);
+      expect(entry.integrity).toMatch(/^sha512-[A-Za-z0-9+/]{86}==$/);
+    }
+  });
+
+  it("[opencode lock] reports an installed package whose digest differs from the lock", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "opencode-installed-"));
+    try {
+      const installed = (integrity) => {
+        mkdirSync(join(prefix, "node_modules"), { recursive: true });
+        writeFileSync(
+          join(prefix, "node_modules", ".package-lock.json"),
+          JSON.stringify({
+            packages: {
+              "node_modules/opencode-ai": lock.packages["node_modules/opencode-ai"],
+              "node_modules/opencode-linux-x64": {
+                ...lock.packages["node_modules/opencode-linux-x64"],
+                integrity,
+              },
+            },
+          }),
+        );
+      };
+      expect(installedIntegrityProblems(prefix, lock)).toEqual(["installed-lock-missing"]);
+      installed(lock.packages["node_modules/opencode-linux-x64"].integrity);
+      expect(installedIntegrityProblems(prefix, lock)).toEqual([]);
+      installed(tampered);
+      expect(installedIntegrityProblems(prefix, lock)).toEqual([
+        `node_modules/opencode-linux-x64 ${tampered}`,
+      ]);
+    } finally {
+      rmSync(prefix, { recursive: true, force: true });
+    }
+  });
+
+  it("[opencode lock] installs the locked version and refuses a download that does not match", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-install-"));
+    try {
+      const good = installOpencode({ prefix: join(root, "good") });
+      expect(execFileSync(good, ["--version"], { encoding: "utf8" }).trim()).toBe(OPENCODE_VERSION);
+      const installedLock = join(root, "good", "node_modules", ".package-lock.json");
+      writeFileSync(installedLock, "{ not json");
+      expect(installedIntegrityProblems(join(root, "good"), lock)).toEqual([
+        "installed-lock-unreadable",
+      ]);
+      expect(installOpencode({ prefix: join(root, "good") })).toBe(good);
+      expect(installedIntegrityProblems(join(root, "good"), lock)).toEqual([]);
+      const badLock = join(root, "bad-lock");
+      mkdirSync(badLock);
+      writeFileSync(
+        join(badLock, "package.json"),
+        readFileSync(join(OPENCODE_LOCK_DIR, "package.json")),
+      );
+      const changed = structuredClone(lock);
+      changed.packages["node_modules/opencode-ai"].integrity = tampered;
+      writeFileSync(join(badLock, "package-lock.json"), JSON.stringify(changed, null, 2));
+      expect(() => installOpencode({ prefix: join(root, "bad"), lockDir: badLock })).toThrow(
+        /^OPENCODE_INTEGRITY_MISMATCH/,
+      );
+      expect(existsSync(join(root, "bad", "node_modules", ".bin", "opencode"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 300000);
+});
+
 describe("opencode review installed guard", () => {
   it("runs the model's commands in restricted bash with the git guard in front", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-guard-"));
@@ -611,6 +892,67 @@ describe("opencode review installed guard", () => {
     }
   }, 60000);
 
+  it("[review env] passes opencode only the listed variables, never tokens or keys", () => {
+    const parent = {
+      PATH: "/bin",
+      HOME: "/h",
+      HTTPS_PROXY: "http://proxy:1",
+      NODE_EXTRA_CA_CERTS: "/ca.pem",
+      XDG_DATA_HOME: "/data",
+      GITHUB_TOKEN: "ghs_secret",
+      GH_TOKEN: "gh_secret",
+      AWS_SECRET_ACCESS_KEY: "aws_secret",
+      OPENCODE_API_KEY: "oc_secret",
+      OPENCODE_PURE: "1",
+      HIMAWARI_SPEND_GUARD: "/elsewhere/limits.json",
+      NODE_OPTIONS: "--require x",
+      GIT_EXTERNAL_DIFF: "touch",
+    };
+    expect(opencodeEnv(parent)).toEqual({
+      PATH: "/bin",
+      HOME: "/h",
+      HTTPS_PROXY: "http://proxy:1",
+      NODE_EXTRA_CA_CERTS: "/ca.pem",
+      XDG_DATA_HOME: "/data",
+    });
+    for (const name of OPENCODE_KEPT_ENV) expect(name).not.toMatch(/TOKEN|SECRET|KEY|PASS/);
+  });
+
+  it("[review env] the real self-check passes with secrets in the script's environment", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-env-"));
+    try {
+      const brief = join(root, "brief.md");
+      writeFileSync(brief, "self-check\n");
+      const secret = `SECRET_${randomBytes(8).toString("hex")}`;
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--self-check-only",
+          "--mode",
+          "plan",
+          "--head",
+          "HEAD",
+          "--brief",
+          brief,
+          "--out",
+          join(root, "out"),
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, GITHUB_TOKEN: secret, AWS_SECRET_ACCESS_KEY: secret },
+          timeout: 540000,
+        },
+      );
+      const text = result.stdout + result.stderr;
+      expect(text).toContain("SELF_CHECK_OK");
+      expect(result.status).toBe(0);
+      expect(text).not.toContain(secret);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 600000);
+
   it("strips git and loader variables before the real git runs", () => {
     const env = gitChildEnv({
       PATH: "/bin",
@@ -634,6 +976,21 @@ describe("opencode review git guard", () => {
     expect(checkGitArgs(["diff", "HEAD", "--", "--output"])).toBeNull();
     expect(checkGitArgs(["log", "-Sfoo", "-n5"])).toBeNull();
     expect(checkGitArgs(["blame", "-L1,20", "AGENTS.md"])).toBeNull();
+  });
+
+  it("[review records] refuses git paths into earlier review records and options that print them anyway", () => {
+    expect(checkGitArgs(["show", `HEAD:${REVIEWS_DIR}/pr-1/usage.jsonl`])).toBe(
+      `records-path HEAD:${REVIEWS_DIR}/pr-1/usage.jsonl`,
+    );
+    expect(checkGitArgs(["log", "-p", "--", `${REVIEWS_DIR}/pr-1`])).toBe(
+      `records-path ${REVIEWS_DIR}/pr-1`,
+    );
+    expect(checkGitArgs(["diff", "-a", "HEAD~1", "HEAD"])).toBe("-a");
+    expect(checkGitArgs(["diff", "-pa", "HEAD~1", "HEAD"])).toBe("-pa");
+    expect(checkGitArgs(["diff", "--text", "HEAD~1", "HEAD"])).toBe("--text");
+    expect(checkGitArgs(["diff", "--binary", "HEAD~1", "HEAD"])).toBe("--binary");
+    expect(checkGitArgs(["log", "--all", "--oneline"])).toBeNull();
+    expect(checkGitArgs(["log", "-Sagents", "-n3"])).toBeNull();
   });
 
   it("refuses other subcommands and options that write or read outside the copy", () => {
@@ -697,8 +1054,8 @@ describe("opencode review run outcome", () => {
           "b",
           "--brief",
           "b.md",
-          "--out",
-          "o",
+          "--pr",
+          "1",
           "--timeout-minutes",
           value,
         ]),
@@ -756,6 +1113,47 @@ describe("opencode review repository copy", () => {
       expect(run(["reflog", "--all"], copy)).toBe("");
       expect(existsSync(join(copy, ".git", "FETCH_HEAD"))).toBe(false);
       expect(run(["log", "-1", "--format=%s", base], copy)).toBe("base");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review records] keeps earlier review records out of the copy the models read", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-review-records-"));
+    try {
+      const source = join(root, "source");
+      const run = (args, cwd = source) =>
+        execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+      execFileSync("git", ["init", "--quiet", "-b", "main", source]);
+      writeFileSync(join(source, "code.txt"), "one\n");
+      run(["add", "."]);
+      run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "base"]);
+      const base = run(["rev-parse", "HEAD"]);
+      mkdirSync(join(source, REVIEWS_DIR, "pr-1", "round-1"), { recursive: true });
+      writeFileSync(
+        join(source, REVIEWS_DIR, "pr-1", "usage.jsonl"),
+        '{"cost":0.1,"cacheRead":5}\n',
+      );
+      writeFileSync(
+        join(source, REVIEWS_DIR, "pr-1", "round-1", "glm-5.3-flash.md"),
+        "EARLIER_VERDICT\n",
+      );
+      writeFileSync(join(source, "code.txt"), "two\n");
+      run(["add", "."]);
+      run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "head"]);
+      const head = run(["rev-parse", "HEAD"]);
+      const copy = join(root, "copy");
+      prepareCopy({ repo: source, copy, commits: { head, base }, workRoot: root });
+      expect(existsSync(join(copy, "code.txt"))).toBe(true);
+      expect(existsSync(join(copy, REVIEWS_DIR))).toBe(false);
+      expect(run(["status", "--porcelain", "--untracked-files=all"], copy)).toBe("");
+      run(["checkout", "--quiet", "--", "."], copy);
+      expect(existsSync(join(copy, REVIEWS_DIR))).toBe(false);
+      const diff = run(["diff", `${base}..${head}`], copy);
+      expect(diff).toContain("+two");
+      expect(diff).not.toContain("EARLIER_VERDICT");
+      expect(diff).not.toContain("cacheRead");
+      expect(diff).toContain("Binary files");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -822,6 +1220,12 @@ describe("opencode review repository copy", () => {
       writeFileSync(join(root, QUESTIONS_PATH), '<a id="checklist"></a>\n\n- 写得好吗？\n');
       run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-am", "weaken"]);
       expect(reviewQuestions(questionsSource(root, { base }))).toEqual(
+        reviewQuestions(instructions),
+      );
+      expect(() => reviewQuestions(questionsSource(root, { base }, "HEAD"))).toThrow(
+        "REVIEW_CHECKLIST_EMPTY",
+      );
+      expect(reviewQuestions(questionsSource(root, { base: "HEAD" }, base))).toEqual(
         reviewQuestions(instructions),
       );
     } finally {
@@ -1519,6 +1923,429 @@ describe("opencode review credentials", () => {
   }, 120000);
 });
 
+describe("opencode review merge gate", () => {
+  const [deepseek, glm] = REVIEW_MODELS;
+  const ok = (round, head, model, extra = {}) => ({
+    at: "t",
+    cost: 0.05,
+    round,
+    mode: "code-review",
+    model,
+    head,
+    outcome: "ok",
+    steps: 3,
+    input: 10,
+    cacheRead: 5,
+    output: 2,
+    reasoning: 1,
+    ...extra,
+  });
+  const fixture = () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-merge-gate-"));
+    const repo = join(root, "repo");
+    const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+    execFileSync("git", ["init", "--quiet", "-b", "main", repo]);
+    const commit = (files, message) => {
+      for (const [path, text] of Object.entries(files)) {
+        mkdirSync(join(repo, path, ".."), { recursive: true });
+        writeFileSync(join(repo, path), text);
+      }
+      git("add", ".");
+      git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message);
+      return git("rev-parse", "HEAD");
+    };
+    const ledger = `${REVIEWS_DIR}/pr-7/usage.jsonl`;
+    const writeLedger = (records) =>
+      commit({ [ledger]: records.map((r) => `${JSON.stringify(r)}\n`).join("") }, "records");
+    const main = commit({ "code.txt": "base\n" }, "base");
+    git("update-ref", "refs/remotes/origin/main", main);
+    git("checkout", "--quiet", "-b", "feature");
+    const reviewed = commit({ "code.txt": "feature\n" }, "feature");
+    const check = (extra = {}) => assertReviewed({ repo, pr: 7, mainRef: "origin/main", ...extra });
+    return { root, repo, git, commit, writeLedger, main, reviewed, check, ledger };
+  };
+
+  it("[merge gate] passes when only the PR's own records changed after the last complete round", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const result = f.check();
+      expect(result.problems).toEqual([]);
+      expect(result.lines[0]).toMatch(
+        new RegExp(`^REVIEW_CURRENT pr=7 round=1 reviewed=${f.reviewed} head=[0-9a-f]{40}$`),
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] fails on any other change after the review, including a merge of main", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ "docs/rule.md": "tightened\n" }, "small fix after review");
+      expect(f.check().problems).toEqual(["unreviewed docs/rule.md"]);
+      f.git("checkout", "--quiet", "main");
+      const ahead = f.commit({ "other.txt": "main moved\n" }, "main moved");
+      f.git("update-ref", "refs/remotes/origin/main", ahead);
+      f.git("checkout", "--quiet", "feature");
+      expect(f.check().problems).toEqual([
+        "unreviewed docs/rule.md",
+        "main-not-merged origin/main",
+      ]);
+      f.git(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "merge",
+        "--quiet",
+        "--no-edit",
+        "origin/main",
+      );
+      expect(f.check().problems).toEqual(["unreviewed docs/rule.md", "unreviewed other.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] accepts record files with non-ASCII names and appends overrides on a new line", () => {
+    const f = fixture();
+    try {
+      const rounds = [1, 2, 3].flatMap((round) => [
+        ok(round, f.reviewed, deepseek),
+        ok(round, f.reviewed, glm),
+      ]);
+      f.commit(
+        {
+          [f.ledger]: rounds.map((r) => JSON.stringify(r)).join("\n"),
+          [`${REVIEWS_DIR}/pr-7/round-1/判断.md`]: "记录\n",
+        },
+        "records without final newline",
+      );
+      expect(f.check().problems).toEqual([]);
+      f.commit({ "code.txt": "late\n" }, "late change");
+      expect(f.check({ acceptUnreviewed: "合并" }).overridden).toBe(true);
+      const lines = readFileSync(join(f.repo, f.ledger), "utf8").trim().split("\n");
+      expect(lines).toHaveLength(7);
+      expect(JSON.parse(lines[6]).mode).toBe("override");
+      expect(nextRound([{ cost: 0, mode: "override", head: "h" }])).toBe(1);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] an override covers only unreviewed files and needs three rounds even when already committed", () => {
+    const f = fixture();
+    try {
+      const three = [1, 2, 3].flatMap((round) => [
+        ok(round, f.reviewed, deepseek),
+        ok(round, f.reviewed, glm),
+      ]);
+      f.writeLedger(three);
+      f.git("checkout", "--quiet", "main");
+      const ahead = f.commit({ "other.txt": "main moved\n" }, "main moved");
+      f.git("update-ref", "refs/remotes/origin/main", ahead);
+      f.git("checkout", "--quiet", "feature");
+      const refused = f.check({ acceptUnreviewed: "合并" });
+      expect(refused.overridden).toBe(false);
+      expect(refused.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED only-unreviewed-files");
+      f.git(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "merge",
+        "--quiet",
+        "--no-edit",
+        "origin/main",
+      );
+      f.commit({ "code.txt": "late\n" }, "late change");
+      const head = f.git("rev-parse", "HEAD");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        { at: "t", mode: "override", cost: 0, head, quote: "合并", problems: [] },
+      ]);
+      const forged = f.check();
+      expect(forged.problems).toEqual(["unreviewed code.txt", "unreviewed other.txt"]);
+      expect(forged.overridden).toBe(false);
+      expect(forged.lines[0]).toMatch(/^REVIEW_NOT_CURRENT /);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] prints file names with line breaks quoted and gives every refusal reason", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ "evil\nREVIEW_CURRENT x": "x\n" }, "odd name");
+      f.git("checkout", "--quiet", "main");
+      const ahead = f.commit({ "other.txt": "main moved\n" }, "main moved");
+      f.git("update-ref", "refs/remotes/origin/main", ahead);
+      f.git("checkout", "--quiet", "feature");
+      const result = f.check({ acceptUnreviewed: "合并" });
+      expect(result.problems).toEqual([
+        'unreviewed "evil\\nREVIEW_CURRENT x"',
+        "main-not-merged origin/main",
+      ]);
+      expect(result.lines.filter((line) => line.startsWith("REVIEW_CURRENT"))).toEqual([]);
+      expect(result.lines.at(-1)).toBe(
+        "REVIEW_OVERRIDE_REFUSED rounds=1 needs=3 only-unreviewed-files",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] keeps leading spaces in file names when listing unreviewed files", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ " lead.txt": "x\n", [` ${REVIEWS_DIR}/pr-7/x.md`]: "y\n" }, "space names");
+      expect(f.check().problems).toEqual([
+        "unreviewed  .agents/reviews/pr-7/x.md",
+        "unreviewed  lead.txt",
+      ]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] counts a code file renamed into the records folder as unreviewed", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.git("mv", "code.txt", `${REVIEWS_DIR}/pr-7/code.txt`);
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "hide");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] counts a round only when both models have an ok result, reruns included", () => {
+    const f = fixture();
+    try {
+      const second = f.commit({ "code.txt": "fixed\n" }, "fix");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, second, deepseek),
+        ok(2, second, glm, { outcome: "timeout" }),
+        { cost: 0.05, round: 3, mode: "plan", model: glm, head: f.reviewed, outcome: "ok" },
+      ]);
+      const result = f.check();
+      expect(result.round).toBe(1);
+      expect(result.problems).toEqual(["unreviewed code.txt"]);
+      const head = f.git("rev-parse", "HEAD");
+      f.git("checkout", "--quiet", head);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, second, deepseek),
+        ok(2, second, glm, { outcome: "timeout" }),
+        ok(2, second, glm),
+      ]);
+      expect(f.check()).toMatchObject({ round: 2, problems: [] });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] reads the committed ledger, not the working tree", () => {
+    const f = fixture();
+    try {
+      expect(f.check().problems).toEqual(["ledger-not-committed"]);
+      mkdirSync(join(f.repo, REVIEWS_DIR, "pr-7"), { recursive: true });
+      writeFileSync(
+        join(f.repo, f.ledger),
+        `${JSON.stringify(ok(1, f.reviewed, deepseek))}\n${JSON.stringify(ok(1, f.reviewed, glm))}\n`,
+      );
+      expect(f.check().problems).toEqual(["ledger-not-committed"]);
+      f.writeLedger([ok(1, f.reviewed, deepseek)]);
+      expect(f.check().problems).toEqual(["no-complete-round"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] fails when the reviewed commit is not in the branch any more", () => {
+    const f = fixture();
+    try {
+      f.git("checkout", "--quiet", "main");
+      f.git("checkout", "--quiet", "-b", "rewritten");
+      f.commit({ "code.txt": "other\n" }, "rewritten");
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      expect(f.check().problems[0]).toBe(`not-ancestor ${f.reviewed}`);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] records an override with Andy's words instead of passing silently", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ "code.txt": "after one round\n" }, "early fix");
+      const early = f.check({ acceptUnreviewed: "合并" });
+      expect(early.overridden).toBe(false);
+      expect(early.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED rounds=1 needs=3");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, f.reviewed, deepseek),
+        ok(2, f.reviewed, glm),
+        ok(3, f.reviewed, deepseek),
+        ok(3, f.reviewed, glm),
+      ]);
+      const result = f.check({ acceptUnreviewed: "合并" });
+      expect(result.problems).toEqual(["unreviewed code.txt"]);
+      expect(result.overridden).toBe(true);
+      expect(result.lines.at(-1)).toBe("REVIEW_OVERRIDE quote=合并");
+      const written = readFileSync(join(f.repo, f.ledger), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(written.at(-1)).toMatchObject({
+        mode: "override",
+        cost: 0,
+        quote: "合并",
+        problems: ["unreviewed code.txt"],
+      });
+      f.git("add", ".");
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "override");
+      const later = f.check();
+      expect(later.overridden).toBe(true);
+      expect(later.lines.at(-1)).toBe(`REVIEW_OVERRIDE quote=合并 recorded=${written.at(-1).head}`);
+      f.commit({ "code.txt": "changed again\n" }, "after override");
+      expect(f.check().overridden).toBe(false);
+      writeFileSync(join(f.repo, f.ledger), "{}\n");
+      const dirty = f.check({ acceptUnreviewed: "合并" });
+      expect(dirty.overridden).toBe(false);
+      expect(dirty.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] the script answers before installing opencode or spending", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const run = () =>
+        spawnSync(
+          process.execPath,
+          [
+            "scripts/model-review/opencode-review.mjs",
+            "--assert-reviewed",
+            "--pr",
+            "7",
+            "--repo",
+            f.repo,
+          ],
+          {
+            encoding: "utf8",
+            env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+          },
+        );
+      const pass = run();
+      expect(pass.status).toBe(0);
+      expect(pass.stdout).toMatch(/^REVIEW_CURRENT pr=7 round=1 /);
+      f.commit({ "code.txt": "unreviewed\n" }, "late change");
+      const fail = run();
+      expect(fail.status).toBe(5);
+      expect(fail.stdout).toMatch(/^REVIEW_NOT_CURRENT pr=7 /);
+      expect(fail.stdout).toContain("unreviewed code.txt");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
+  it("[review report] prints the fixed lines from the committed ledger", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const lines = reviewReport({ repo: f.repo, pr: 7, mainRef: "origin/main", stop: "no-error" });
+      expect(lines[0]).toBe("REVIEW_REPORT pr=7");
+      expect(lines[1]).toBe(resultLine(ok(1, f.reviewed, deepseek)));
+      expect(lines[2]).toBe(resultLine(ok(1, f.reviewed, glm)));
+      expect(lines[3]).toBe("REVIEW_SPENT_TOTAL 0.1000");
+      expect(lines[4]).toMatch(/^REVIEW_CURRENT pr=7 round=1 /);
+      expect(lines.at(-2)).toBe("停下的原因：没有“会出错”的意见");
+      expect(lines.at(-1)).toBe(REVIEW_REPORT_DISCLAIMER);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review report] refuses a stop reason the ledger does not support", () => {
+    const f = fixture();
+    try {
+      const report = (stop, extra = {}) =>
+        reviewReport({ repo: f.repo, pr: 7, mainRef: "origin/main", stop, ...extra });
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm, { outcome: "timeout" })]);
+      expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
+      expect(report("run-failed").at(-2)).toBe("停下的原因：有模型没跑完（outcome 不是 ok）");
+      expect(() => report("three-rounds")).toThrow("REPORT_STOP_INCONSISTENT three-rounds");
+      expect(() => report("andy-decision")).toThrow("REPORT_STOP_INCONSISTENT andy-decision");
+      expect(report("andy-decision", { andyQuote: "这条不改" }).at(-2)).toBe(
+        "停下的原因：Andy 裁定：这条不改",
+      );
+      expect(() => report("whatever")).toThrow("ARG_INVALID --stop");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, f.reviewed, deepseek),
+        ok(2, f.reviewed, glm),
+        ok(3, f.reviewed, deepseek),
+        ok(3, f.reviewed, glm),
+      ]);
+      expect(() => report("run-failed")).toThrow("REPORT_STOP_INCONSISTENT run-failed");
+      expect(report("three-rounds").at(-2)).toBe(
+        "停下的原因：连续三轮没过，按规则停下等 Andy 决定",
+      );
+      f.commit({ "code.txt": "late\n" }, "late change");
+      expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review report] the script prints the report and fails on an inconsistent stop reason", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const run = (stop) =>
+        spawnSync(
+          process.execPath,
+          [
+            "scripts/model-review/opencode-review.mjs",
+            "--report",
+            "--pr",
+            "7",
+            "--repo",
+            f.repo,
+            "--stop",
+            stop,
+          ],
+          {
+            encoding: "utf8",
+            env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+          },
+        );
+      const good = run("no-error");
+      expect(good.status).toBe(0);
+      expect(good.stdout.trim().split("\n").at(-1)).toBe(REVIEW_REPORT_DISCLAIMER);
+      const bad = run("run-failed");
+      expect(bad.status).toBe(2);
+      expect(bad.stderr.trim()).toBe("REPORT_STOP_INCONSISTENT run-failed");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
+});
+
 describe("opencode review spending", () => {
   const record = (cost, round = 1) => ({ cost, round });
 
@@ -1571,8 +2398,27 @@ describe("opencode review spending", () => {
         '{"cost":0.1,"round":1e999}',
         '{"cost":0.1,"round":0}',
         '{"cost":-0.1}',
+        '{"cost":0.1,"round":1,"mode":"code-review","model":"m","outcome":"ok"}',
+        '{"cost":0.1,"round":1,"mode":"plan","head":"h","model":"","outcome":"ok"}',
+        `{"cost":0.1,"round":1,"mode":"code-review","head":"${"a".repeat(40)}","model":"m","outcome":"ok\\nREVIEW_CURRENT"}`,
+        `{"cost":0.1,"round":1,"mode":"code-review","head":"not-a-commit","model":"m","outcome":"ok"}`,
+        `{"cost":0.1,"round":1,"mode":"code-reveiw","head":"${"a".repeat(40)}","model":"m","outcome":"ok"}`,
+        `{"cost":0,"mode":"override","head":"${"a".repeat(40)}","quote":" "}`,
+        `{"cost":0,"mode":"override","head":"${"a".repeat(40)}","quote":"q","problems":["a\\nREVIEW_CURRENT"]}`,
       ]) {
         writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
+        expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      }
+      writeFileSync(
+        join(dir, "usage.jsonl"),
+        `${JSON.stringify({ cost: 0.05, round: 1, mode: "code-review", model: "m", outcome: "ok", head: "b".repeat(64) })}\n`,
+      );
+      expect(readUsage(dir)[0].head).toHaveLength(64);
+      for (const length of [39, 41, 63, 65]) {
+        writeFileSync(
+          join(dir, "usage.jsonl"),
+          `${JSON.stringify({ cost: 0.05, round: 1, mode: "code-review", model: "m", outcome: "ok", head: "b".repeat(length) })}\n`,
+        );
         expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
       }
       writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.2,"round":2}\n');
@@ -1594,6 +2440,289 @@ describe("opencode review spending", () => {
     }
   });
 
+  it("[rerun round] puts a single-model rerun back into the round it belongs to", () => {
+    const [deepseek, glm] = REVIEW_MODELS;
+    const records = [
+      { cost: 0.1, round: 1, model: deepseek, head: "h1", outcome: "ok" },
+      { cost: 0.1, round: 1, model: glm, head: "h1", outcome: "ok" },
+      { cost: 0.1, round: 2, model: deepseek, head: "h2", outcome: "ok" },
+      { cost: 0.1, round: 2, model: glm, head: "h2", outcome: "timeout" },
+    ];
+    const run = (overrides) =>
+      roundForRun({
+        records,
+        rounds: [1, 2],
+        models: [glm],
+        head: "h2",
+        prompts: { [glm]: "P", [deepseek]: "D" },
+        promptsOnDisk: { [glm]: "P", [deepseek]: "D" },
+        ...overrides,
+      });
+    expect(run({ requested: undefined })).toBe(3);
+    expect(run({ requested: 2 })).toBe(2);
+    expect(() => run({ requested: 2, models: [deepseek] })).toThrow(
+      `ROUND_ALREADY_HAS_RESULT 2 ${deepseek}`,
+    );
+    expect(() => run({ requested: 1 })).toThrow(`ROUND_ALREADY_HAS_RESULT 1 ${glm}`);
+    expect(() => run({ requested: 3 })).toThrow("ROUND_NOT_FOUND 3");
+    expect(() => run({ requested: 2, head: "h3" })).toThrow("ROUND_HEAD_MISMATCH 2 h2 h3");
+    expect(() => run({ requested: 2, prompts: { [glm]: "other brief" } })).toThrow(
+      `ROUND_PROMPT_MISMATCH 2 ${glm}`,
+    );
+    expect(() => run({ requested: 2, promptsOnDisk: {} })).toThrow(`ROUND_CANNOT_VERIFY 2 ${glm}`);
+    expect(run({ requested: 2, prompts: { [glm]: "P", [deepseek]: "changed" } })).toBe(2);
+    expect(
+      parseArgs(["--head", "a", "--brief", "b", "--topic", "t", "--mode", "plan", "--round", "2"])
+        .round,
+    ).toBe(2);
+    for (const bad of ["0", "-1", "1.5", "x"])
+      expect(() =>
+        parseArgs([
+          "--head",
+          "a",
+          "--brief",
+          "b",
+          "--topic",
+          "t",
+          "--mode",
+          "plan",
+          "--round",
+          bad,
+        ]),
+      ).toThrow("ARG_INVALID --round");
+  });
+
+  it("refuses a prompt over the size limit before spending or writing records", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-large-"));
+    try {
+      const brief = join(dir, "brief.md");
+      writeFileSync(brief, "x".repeat(100001));
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--mode",
+          "plan",
+          "--head",
+          "HEAD",
+          "--topic",
+          "prompt-too-large-probe",
+          "--brief",
+          brief,
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr.trim()).toBe("PROMPT_TOO_LARGE");
+      expect(existsSync(join(REVIEWS_DIR, "topic-prompt-too-large-probe"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("[rerun round] falls back to the ledger's prompt digest when the prompt file is gone", () => {
+    const [, glm] = REVIEW_MODELS;
+    const digest = createHash("sha256").update("P").digest("hex");
+    const records = [
+      { cost: 0.1, round: 1, model: glm, head: "h", outcome: "timeout", promptSha256: digest },
+    ];
+    const run = (prompt) =>
+      roundForRun({
+        records,
+        rounds: [1],
+        requested: 1,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: prompt },
+        promptsOnDisk: {},
+      });
+    expect(run("P")).toBe(1);
+    expect(() => run("other brief")).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
+  });
+
+  it("[rerun round] refuses a round whose records have no commit to compare", () => {
+    const [, glm] = REVIEW_MODELS;
+    const digest = createHash("sha256").update("P").digest("hex");
+    expect(() =>
+      roundForRun({
+        records: [{ cost: 0.1, round: 1, model: glm, outcome: "timeout", promptSha256: digest }],
+        rounds: [1],
+        requested: 1,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: "P" },
+        promptsOnDisk: {},
+      }),
+    ).toThrow("ROUND_CANNOT_VERIFY 1 head");
+  });
+
+  it("[rerun round] refuses another mode's round and ignores override records", () => {
+    const [, glm] = REVIEW_MODELS;
+    const digest = createHash("sha256").update("P").digest("hex");
+    const base = {
+      cost: 0.1,
+      round: 1,
+      model: glm,
+      head: "h",
+      outcome: "timeout",
+      promptSha256: digest,
+    };
+    const run = (records, mode) =>
+      roundForRun({
+        records,
+        rounds: [1],
+        requested: 1,
+        mode,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: "P" },
+        promptsOnDisk: {},
+      });
+    expect(() => run([{ ...base, mode: "plan" }], "plan-review")).toThrow(
+      "ROUND_MODE_MISMATCH 1 plan plan-review",
+    );
+    expect(run([{ ...base, mode: "plan" }], "plan")).toBe(1);
+    expect(
+      run(
+        [
+          { ...base, mode: "code-review" },
+          { cost: 0, mode: "override", head: "other" },
+        ],
+        "code-review",
+      ),
+    ).toBe(1);
+  });
+
+  it("[review env] refuses to start when a proxy address carries a user name or password", () => {
+    expect(
+      proxyCredentialProblems({
+        HTTPS_PROXY: "http://127.0.0.1:8080",
+        http_proxy: "http://u:p@proxy:3128",
+      }),
+    ).toEqual(["http_proxy"]);
+    expect(proxyCredentialProblems({ HTTPS_PROXY: "https://token@proxy" })).toEqual([
+      "HTTPS_PROXY",
+    ]);
+    expect(proxyCredentialProblems({ NO_PROXY: "a@b" })).toEqual([]);
+    expect(proxyCredentialProblems({ HTTP_PROXY: " http://u:p@proxy:3128" })).toEqual([
+      "HTTP_PROXY",
+    ]);
+    expect(proxyCredentialProblems({ https_proxy: "u:p@proxy:3128" })).toEqual(["https_proxy"]);
+    expect(proxyCredentialProblems({ http_proxy: "//u:p@proxy:3128" })).toEqual(["http_proxy"]);
+    expect(
+      proxyCredentialProblems({ https_proxy: "proxy:3128", HTTP_PROXY: "http://proxy/a@b" }),
+    ).toEqual([]);
+    const dir = mkdtempSync(join(tmpdir(), "opencode-proxy-"));
+    try {
+      const brief = join(dir, "brief.md");
+      writeFileSync(brief, "material\n");
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--mode",
+          "plan",
+          "--head",
+          "HEAD",
+          "--topic",
+          "proxy-probe",
+          "--brief",
+          brief,
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            HTTPS_PROXY: "http://user:secret@proxy:3128",
+            HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode",
+          },
+        },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr.trim()).toBe("PROXY_HAS_CREDENTIALS HTTPS_PROXY");
+      expect(result.stderr).not.toContain("secret");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("[rerun round] keeps the failed attempt's files next to the new ones", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-attempt-"));
+    try {
+      expect(keepEarlierAttempt(join(dir, "missing"), "glm-5.3-flash")).toBeNull();
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBeNull();
+      writeFileSync(join(dir, "glm-5.3-flash.prompt.md"), "prompt");
+      writeFileSync(join(dir, "glm-5.3-flash.md"), "first");
+      writeFileSync(join(dir, "glm-5.3-flash.stderr.txt"), "first err");
+      writeFileSync(join(dir, "deepseek-v4.1-flash.md"), "other model");
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBe(1);
+      writeFileSync(join(dir, "glm-5.3-flash.md"), "second");
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBe(2);
+      writeFileSync(join(dir, "glm-5.3-flash.jsonl"), "raw");
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash", RAW_FILE_SUFFIXES)).toBe(1);
+      expect(readdirSync(dir).sort()).toEqual([
+        "deepseek-v4.1-flash.md",
+        "glm-5.3-flash.attempt-1.jsonl",
+        "glm-5.3-flash.attempt-1.md",
+        "glm-5.3-flash.attempt-1.prompt.md",
+        "glm-5.3-flash.attempt-1.stderr.txt",
+        "glm-5.3-flash.attempt-2.md",
+      ]);
+      expect(readFileSync(join(dir, "glm-5.3-flash.attempt-1.md"), "utf8")).toBe("first");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("[rerun round] the script refuses a rerun into a round that already has the result, before spending", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rerun-"));
+    try {
+      const brief = join(dir, "brief.md");
+      writeFileSync(brief, "material\n");
+      const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+      const repo = join(dir, "repo");
+      execFileSync("git", ["clone", "--quiet", "--depth", "1", `file://${process.cwd()}`, repo]);
+      const out = join(repo, ".agents", "reviews", "topic-rerun");
+      mkdirSync(join(out, "round-1"), { recursive: true });
+      writeFileSync(
+        join(out, "usage.jsonl"),
+        `${JSON.stringify({ cost: 0.1, round: 1, model: REVIEW_MODELS[1], head, outcome: "ok" })}\n`,
+      );
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--mode",
+          "plan",
+          "--head",
+          head,
+          "--brief",
+          brief,
+          "--repo",
+          repo,
+          "--topic",
+          "rerun",
+          "--models",
+          "glm-5.3-flash",
+          "--round",
+          "1",
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr.trim()).toBe(`ROUND_ALREADY_HAS_RESULT 1 ${REVIEW_MODELS[1]}`);
+      expect(readdirSync(join(out, "round-1"))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("numbers rounds from what the folder already holds", () => {
     expect(nextRound([])).toBe(1);
     expect(nextRound([record(0.1, 1), record(0.1, 1), record(0.1, 2)])).toBe(3);
@@ -1601,7 +2730,7 @@ describe("opencode review spending", () => {
   });
 
   it("reruns only the models asked for", () => {
-    const base = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--out", "o"];
+    const base = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--topic", "t"];
     expect(parseArgs(base).models).toEqual(REVIEW_MODELS);
     expect(parseArgs([...base, "--models", "deepseek-v4.1-flash"]).models).toEqual([
       "opencode-go/deepseek-v4.1-flash",
