@@ -1910,14 +1910,18 @@ export async function runAgentService(
                     errorPrefix: "MEMORY_CAPTURE",
                   });
                 },
-                onAudit: (record) =>
+                onAudit: (record) => {
+                  productionSensitiveInterceptionRecorder(activeRepository).reportMemoryAudit(
+                    record,
+                  );
                   writeServiceDiagnostic(errorOutput, {
                     component: "agent-service",
                     event: "memory-capture.audit",
                     outcome: record.outcome,
                     candidateOrdinal: record.candidateOrdinal ?? -1,
                     classification: record.classification,
-                  }),
+                  });
+                },
                 onFailure: (error) =>
                   writeServiceDiagnostic(errorOutput, {
                     component: "agent-service",
@@ -1998,14 +2002,16 @@ export async function runAgentService(
         ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,
-          onAudit: (record) =>
+          onAudit: (record) => {
+            productionSensitiveInterceptionRecorder(activeRepository).reportMemoryAudit(record);
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "memory-capture.audit",
               outcome: record.outcome,
               candidateOrdinal: record.candidateOrdinal ?? -1,
               classification: record.classification,
-            }),
+            });
+          },
         },
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation

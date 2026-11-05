@@ -230,6 +230,9 @@ export class AutomaticMemoryService {
         decidedAt: this.options.now(),
       });
       await this.options.audit.record({
+        ownerId: request.ownerId,
+        agentId: request.agentId,
+        threadId: request.threadId,
         sourceRef: request.sourceRef,
         generationId: request.generationId,
         policyVersion: request.policyVersion,
@@ -339,6 +342,9 @@ export class AutomaticMemoryService {
       committedAt: this.options.now(),
     });
     await this.options.audit.record({
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      threadId: request.threadId,
       sourceRef: request.sourceRef,
       generationId: request.generationId,
       policyVersion: request.policyVersion,
@@ -573,6 +579,9 @@ export class AutomaticMemoryService {
     secretFindings: MemoryExtractionAuditRecord["secretFindings"],
   ): Promise<void> {
     return this.options.audit.record({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      threadId: input.threadId,
       sourceRef: input.sourceRef,
       generationId: input.generationId,
       policyVersion: input.policyVersion,

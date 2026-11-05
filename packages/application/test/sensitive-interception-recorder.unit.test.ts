@@ -101,4 +101,45 @@ describe("sensitive interception recorder", () => {
     });
     expect(() => noClock.reportEgress(context, [sighting("a".repeat(32))])).not.toThrow();
   });
+
+  it("records a memory left unsaved because of a secret, once per kind, without its text", async () => {
+    const { writes, port } = store();
+    const recorder = new SensitiveInterceptionRecorder({
+      store: port,
+      now: () => "2026-11-05T01:00:00.000Z",
+    });
+    const record = {
+      ownerId: "owner-1",
+      agentId: "agent-1",
+      threadId: "thread-1",
+      sourceRef: "payload-1",
+      generationId: "memory-capture:run-1",
+      policyVersion: "v1",
+      modelDescriptorRef: "m",
+      candidateOrdinal: 2,
+      classification: "private",
+      outcome: "candidate_secret_excluded",
+      secretFindings: [
+        { ruleId: "password", count: 1 },
+        { ruleId: "openai-api-key", count: 1 },
+        { ruleId: "unknown-rule", count: 1 },
+      ],
+      occurredAt: "2026-11-05T01:00:00.000Z",
+    } as unknown as Parameters<typeof recorder.reportMemoryAudit>[0];
+    recorder.reportMemoryAudit(record);
+    recorder.reportMemoryAudit({ ...record, outcome: "auto_committed" });
+    recorder.reportMemoryAudit(record);
+    await recorder.flush();
+    const observations = writes.flatMap((write) => write.observations);
+    expect(
+      observations.map(({ part, category, outcome, source }) => [part, category, outcome, source]),
+    ).toEqual([
+      ["memory_candidate", "password", "not_saved", "memory_capture"],
+      ["memory_candidate", "machine-secret", "not_saved", "memory_capture"],
+      ["memory_candidate", "password", "not_saved", "memory_capture"],
+      ["memory_candidate", "machine-secret", "not_saved", "memory_capture"],
+    ]);
+    expect(observations[0]?.fingerprint).toBe(observations[2]?.fingerprint);
+    expect(observations[0]?.fingerprint).toMatch(/^[0-9a-f]{32}$/u);
+  });
 });
