@@ -141,6 +141,15 @@ describe("runner-pause.sh", () => {
     },
   );
 
+  it("prints the state of each installed runner service", () => {
+    const box = pauseBox({ accounts: ["gh-runner"] });
+    box.fake("systemctl", '[ "$1" = is-active ] && echo inactive && exit 3');
+    const result = box.run("runner-pause.sh", ["--status"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("gh-runner.service=inactive\n");
+    expect(box.calls("sudo-calls")).toBe("");
+  });
+
   it("lists the runners installed on this host", () => {
     expect(pauseBox().run("runner-pause.sh", ["--list"]).stdout).toBe(
       "hermes-home\nhermes-home-2\n",
@@ -216,6 +225,7 @@ const macBox = ({
       "if [[ $args == */labels* ]]; then",
       `  id=$(sed -E 's#.*/runners/([0-9]+)/labels.*#\\1#' <<< "$args")`,
       '  if [[ $args == *"-X DELETE"* ]]; then',
+      `    [ -e "${R}/interrupt-delete-$id" ] && { kill -TERM $PPID; exit 1; }`,
       `    [ -e "${R}/fail-delete-$id" ] && exit 1`,
       `    [ -e "${R}/ignore-delete-$id" ] && exit 0`,
       `    ${relabel(false)}`,
@@ -243,6 +253,7 @@ const macBox = ({
       `printf 'ssh %s\\n' "$*" >> "${R}/calls"`,
       'case "$1" in',
       `  *--list) cat "${R}/hermes-names" ;;`,
+      `  *--status) cat "${R}/service-states" 2> /dev/null || printf 'gh-runner.service=active\\ngh-runner-2.service=active\\n' ;;`,
       "  *--labels-removed*)",
       `    code=$(head -1 "${R}/pause-results" 2> /dev/null || echo 0)`,
       `    sed -i '1d' "${R}/pause-results" 2> /dev/null`,
@@ -252,7 +263,10 @@ const macBox = ({
       "esac",
     ].join("\n"),
   );
-  box.fake("sleep", "exit 0");
+  box.fake(
+    "sleep",
+    `[ -e "${R}/interrupt-sleep" ] && { rm -f "${R}/interrupt-sleep"; kill -TERM $PPID; }\nexit 0`,
+  );
   const set = (name, value) => writeFileSync(path.join(R, name), `${value}`);
   const late = () =>
     box.fake(
@@ -379,13 +393,48 @@ describe("pause-runners.sh", () => {
     ).toBe(false);
   });
 
-  it("keeps labels removed when Hermes fails to stop the services", () => {
+  it("keeps labels removed and reports each service when Hermes stops only one of them", () => {
     const box = macBox();
     box.set("pause-results", "1\n");
+    box.set("service-states", "gh-runner.service=inactive\ngh-runner-2.service=active\n");
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("RUNNER_PAUSE_INCOMPLETE labels=removed services=running");
+    expect(result.stdout).toContain(
+      "RUNNER_PAUSE_INCOMPLETE labels=removed services=gh-runner.service=inactive gh-runner-2.service=active",
+    );
+    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("puts the labels back when interrupted while removing them", () => {
+    const box = macBox();
+    box.set("interrupt-delete-12", "");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(130);
+    expect(result.stdout).toContain(
+      "RUNNER_PAUSE_FAILED interrupted while removing labels; put back on: 11",
+    );
+    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
+    expect(existsSync(path.join(box.root, "lock"))).toBe(false);
+  });
+
+  it("reports labels removed and the service states when interrupted while waiting", () => {
+    const box = macBox();
+    box.set("busy-until", 9999);
+    box.set("interrupt-sleep", "");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(130);
+    expect(result.stdout).toContain(
+      "RUNNER_PAUSE_INCOMPLETE interrupted labels=removed services=gh-runner.service=active gh-runner-2.service=active",
+    );
+    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+  });
+
+  it("says labels and services were untouched when the runners do not match", () => {
+    const result = macBox({ runners: [[11, "hermes-home"]] }).mac("pause-runners.sh");
+    expect(result.stdout).toContain("labels and services untouched");
+    expect(result.stdout).not.toContain("nothing changed");
   });
 
   it("refuses to run while another pause or resume holds the lock", () => {
@@ -422,12 +471,48 @@ describe("resume-runners.sh", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it("leaves the labels off when the services do not start", () => {
-    const box = macBox({ labelled: false });
-    box.set("resume-fail", "");
+  it("changes nothing when the runners on Hermes and GitHub do not match", () => {
+    const box = macBox({ labelled: false, runners: [[11, "hermes-home"]] });
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("RUNNER_RESUME_FAILED");
+    expect(result.stdout).toContain(
+      "RUNNER_RESUME_FAILED GitHub has 0 runners named hermes-home-2",
+    );
+    expect(
+      box
+        .lines()
+        .some(
+          (line) =>
+            (line.startsWith("ssh ") && line.includes("runner-resume.sh")) ||
+            line.includes("-X POST"),
+        ),
+    ).toBe(false);
+  });
+
+  it("changes nothing when GitHub has two runners with the same name", () => {
+    const box = macBox({
+      labelled: false,
+      runners: [
+        [11, "hermes-home"],
+        [12, "hermes-home-2"],
+        [13, "hermes-home-2"],
+      ],
+    });
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("GitHub has 2 runners named hermes-home-2");
+    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("leaves the labels off and reports each service when the services do not start", () => {
+    const box = macBox({ labelled: false });
+    box.set("resume-fail", "");
+    box.set("service-states", "gh-runner.service=active\ngh-runner-2.service=failed\n");
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "RUNNER_RESUME_FAILED services=gh-runner.service=active gh-runner-2.service=failed",
+    );
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
   });
 
@@ -957,6 +1042,16 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       : `namespace setup failed: ${result.status} ${result.stdout} ${result.stderr}`;
     return { box, result, state, stderr };
   };
+
+  it("removes the old pause scripts in /srv/gh-runner/bin when the install succeeds", () => {
+    const { result, state, stderr } = installWithFailingRuleCheck("exit 0");
+    expect(result.status).toBe(0);
+    expect(stderr).not.toContain("INSTALL_FAILED");
+    expect(state.rc).toBe("0");
+    expect(state["/srv/gh-runner/bin/runner-pause.sh"]).toBe("MISSING");
+    expect(state["/srv/gh-runner/bin/runner-resume.sh"]).toBe("MISSING");
+    expect(state["/srv/gh-runner/hooks/job-started.sh"]).not.toBe("old-hook");
+  });
 
   it.each([
     ["a failed step", "exit 1", "1"],

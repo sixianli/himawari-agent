@@ -6,12 +6,14 @@ HERE=.
 source "$HERE/mac-runners.sh"
 
 take_lock
-upload_runner_scripts || { echo "RUNNER_RESUME_FAILED nothing changed"; exit 1; }
-NAMES=$(hermes "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_RESUME_FAILED could not list the runners installed on Hermes"; exit 1; }
+upload_runner_scripts || { echo "RUNNER_RESUME_FAILED labels and services untouched"; exit 1; }
+NAMES=$(hermes "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_RESUME_FAILED could not list the runners installed on Hermes; labels and services untouched"; exit 1; }
+TABLE=$(github_runners) || { echo "RUNNER_RESUME_FAILED could not list runners on GitHub; labels and services untouched"; exit 1; }
+REASON=$(reconcile_runners "$NAMES" "$TABLE") || { echo "RUNNER_RESUME_FAILED $REASON; labels and services untouched"; exit 1; }
 OUTPUT=$(hermes "bash $REMOTE/runner-resume.sh")
 STATUS=$?
 printf '%s\n' "$OUTPUT"
-[ "$STATUS" = 0 ] || { echo "RUNNER_RESUME_FAILED services did not start; labels untouched, queued jobs keep waiting"; exit 1; }
+[ "$STATUS" = 0 ] || { echo "RUNNER_RESUME_FAILED services=$(service_states); labels untouched, queued jobs keep waiting"; exit 1; }
 
 DEADLINE=$(($(date +%s) + 300))
 while :; do

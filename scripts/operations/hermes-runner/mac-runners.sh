@@ -68,6 +68,12 @@ remove_label() {
   gh api -X DELETE "repos/$REPO/actions/runners/$1/labels/$LABEL" > /dev/null
 }
 
+service_states() {
+  local states
+  states=$(hermes "bash $REMOTE/runner-pause.sh --status") || { echo unknown; return; }
+  echo $states
+}
+
 longest_job_seconds() {
   local minutes
   minutes=$(grep -o '"timeoutMinutes": *[0-9]*' "$HERE/../../../ci/policy.json" | grep -o '[0-9]*$' | sort -n | tail -1)

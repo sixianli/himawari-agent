@@ -9,16 +9,33 @@ take_lock
 JOB_SECONDS=$(longest_job_seconds) || { echo "RUNNER_PAUSE_FAILED could not read timeoutMinutes from ci/policy.json"; exit 1; }
 DEADLINE=$(($(date +%s) + JOB_SECONDS + 300))
 
-upload_runner_scripts || { echo "RUNNER_PAUSE_FAILED nothing changed"; exit 1; }
-NAMES=$(hermes "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_PAUSE_FAILED could not list the runners installed on Hermes; nothing changed"; exit 1; }
-TABLE=$(github_runners) || { echo "RUNNER_PAUSE_FAILED could not list runners on GitHub; nothing changed"; exit 1; }
-REASON=$(reconcile_runners "$NAMES" "$TABLE") || { echo "RUNNER_PAUSE_FAILED $REASON; nothing changed"; exit 1; }
+upload_runner_scripts || { echo "RUNNER_PAUSE_FAILED labels and services untouched"; exit 1; }
+NAMES=$(hermes "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_PAUSE_FAILED could not list the runners installed on Hermes; labels and services untouched"; exit 1; }
+TABLE=$(github_runners) || { echo "RUNNER_PAUSE_FAILED could not list runners on GitHub; labels and services untouched"; exit 1; }
+REASON=$(reconcile_runners "$NAMES" "$TABLE") || { echo "RUNNER_PAUSE_FAILED $REASON; labels and services untouched"; exit 1; }
 
-IDS=""
+put_labels_back() {
+  RESTORED=""
+  for id in $REMOVED; do
+    add_label "$id" && RESTORED="$RESTORED $id" || echo "could not put $LABEL back on runner $id"
+  done
+}
+
+interrupted_while_removing() {
+  put_labels_back
+  echo "RUNNER_PAUSE_FAILED interrupted while removing labels; put back on:${RESTORED:- none}; services untouched"
+  exit 130
+}
+
+interrupted_while_waiting() {
+  echo "RUNNER_PAUSE_INCOMPLETE interrupted labels=removed services=$(service_states); run pause-runners.sh again, or resume-runners.sh to undo"
+  exit 130
+}
+
 REMOVED=""
+trap interrupted_while_removing INT TERM HUP
 for name in $NAMES; do
   id=$(runner_field "$TABLE" "$name" 1)
-  IDS="$IDS $id"
   has_label "$(runner_field "$TABLE" "$name" 5)" || continue
   if remove_label "$id"; then
     REMOVED="$REMOVED $id"
@@ -34,13 +51,11 @@ for name in $NAMES; do
   has_label "$(runner_field "$TABLE" "$name" 5)" && LEFT="$LEFT $name"
 done
 if [ -n "$LEFT" ] || [ -z "$TABLE" ]; then
-  RESTORED=""
-  for id in $REMOVED; do
-    add_label "$id" && RESTORED="$RESTORED $id" || echo "could not put $LABEL back on runner $id"
-  done
+  put_labels_back
   echo "RUNNER_PAUSE_FAILED $LABEL still on:${LEFT:- unknown}; put back on:${RESTORED:- none}; services untouched"
   exit 1
 fi
+trap interrupted_while_waiting INT TERM HUP
 echo "RUNNER_LABELS_REMOVED runners=$(echo $NAMES); GitHub sends them no new job, queued jobs wait"
 
 while :; do
@@ -55,7 +70,7 @@ while :; do
     printf '%s\n' "$OUTPUT"
     [ "$STATUS" = 0 ] && break
     if [ "$STATUS" != 2 ]; then
-      echo "RUNNER_PAUSE_INCOMPLETE labels=removed services=running; run pause-runners.sh again, or resume-runners.sh to undo"
+      echo "RUNNER_PAUSE_INCOMPLETE labels=removed services=$(service_states); run pause-runners.sh again, or resume-runners.sh to undo"
       exit 1
     fi
   fi

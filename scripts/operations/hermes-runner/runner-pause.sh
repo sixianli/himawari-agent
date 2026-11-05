@@ -13,6 +13,14 @@ if [ "${1:-}" = --list ]; then
   exit 0
 fi
 
+if [ "${1:-}" = --status ]; then
+  for id in $(installed_runner_ids); do
+    runner_select "$id"
+    printf '%s=%s\n' "$RUNNER_UNIT" "$(systemctl is-active "$RUNNER_UNIT")"
+  done
+  exit 0
+fi
+
 if [ "${1:-}" != --labels-removed ]; then
   echo "RUNNER_PAUSE_REFUSED run pause-runners.sh on the Mac: it removes the hermes-home label first so GitHub sends no new job" >&2
   exit 64

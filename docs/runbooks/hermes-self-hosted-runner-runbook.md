@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:fcd411339ca17dfba515fff0bf41b5cf87149203390b09c3e317cc27920e68e5"
+contract_sha256: "sha256:e90cd2840da0b24efa1757dfecc135b1abdae1accccb229d7661a5f75d3285bc"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -104,7 +104,7 @@ date: "2026-11-04"
 3. 服务状态：`systemctl is-active gh-runner.service gh-runner-2.service gh-runner-nft.service gh-runner-clean.timer`，四个都应是 `active`。
 4. 用户没有多余的组：`id gh-runner`、`id gh-runner-2` 各自只列出自己的一个组。
 5. 防火墙表在：`sudo -n nft list table inet gh_runner` 需要 root；没有 sudo 时用 `systemctl is-active gh-runner-nft.service` 代替。
-6. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryMax -p CPUQuotaPerSecUSec -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryMax=7516192768`、`CPUQuotaPerSecUSec=2s`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryMax=6442450944`、`CPUQuotaPerSecUSec=3s`、`CPUWeight=20`、`IOWeight=20`。
+6. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryMax -p CPUQuotaPerSecUSec -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryMax=7516192768`、`CPUQuotaPerSecUSec=2s`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryMax=9663676416`、`CPUQuotaPerSecUSec=3s`、`CPUWeight=20`、`IOWeight=20`。
 7. GitHub 上的状态（在 Mac 上运行）：`gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name,status,busy}'`，应看到 `hermes-home` 和 `hermes-home-2` 都为 `online`。
 8. 有没有任务在跑：`pgrep -u gh-runner -x Runner.Worker; pgrep -u gh-runner-2 -x Runner.Worker`，有输出就是有任务。
 
@@ -138,12 +138,12 @@ date: "2026-11-04"
 两个入口都在 Andy 的 Mac 上、从仓库根目录运行，用 Andy 已登录的 `gh` 改 runner 标签，用 `.ci-output/handoff/scripts/hermes-ssh.sh` 和 `hermes-upload.sh` 操作 Hermes。Hermes 上不放任何 GitHub 凭证。两个入口共用一把锁（`.ci-output/hermes-runner-pause.lock` 目录），同时只能跑一个，否则以退出码 75 打印 `RUNNER_LOCKED`；进程被强杀留下的锁目录要手动删掉。做法和理由见 [ADR 0169](../adr/0169-pause-runners-by-removing-the-label.md)。
 
 - 暂停：`scripts/operations/hermes-runner/pause-runners.sh`。暂停可能要等到最长任务的时限（`ci/policy.json` 里最大的 `timeoutMinutes`）加 5 分钟，代理要在后台运行它。
-  1. 把 Hermes 上的脚本传过去，读 Hermes 上装了哪几个 runner，和 GitHub 上的 runner 对账：Hermes 上的每个 runner 在 GitHub 上必须恰好有一个同名的，GitHub 上带 `hermes-home` 标签的 runner 也必须都装在 Hermes 上。对不上就打印 `RUNNER_PAUSE_FAILED` 和原因，什么都不改。
-  2. 去掉这些 runner 的 `hermes-home` 标签，再读一遍确认真的去掉了。有一个没去掉，就把已经去掉的加回去，打印 `RUNNER_PAUSE_FAILED`，不碰 Hermes。都去掉后打印 `RUNNER_LABELS_REMOVED`：从这时起 GitHub 不再给它们派新任务，新任务在 GitHub 上排队。
+  1. 把 Hermes 上的脚本传过去，读 Hermes 上装了哪几个 runner，和 GitHub 上的 runner 对账：Hermes 上的每个 runner 在 GitHub 上必须恰好有一个同名的，GitHub 上带 `hermes-home` 标签的 runner 也必须都装在 Hermes 上。对不上就打印 `RUNNER_PAUSE_FAILED` 和原因，不改标签、不停服务（Hermes 上的三个脚本已经更新为仓库里的版本）。
+  2. 去掉这些 runner 的 `hermes-home` 标签，再读一遍确认真的去掉了。有一个没去掉，就把已经去掉的加回去，打印 `RUNNER_PAUSE_FAILED`，不碰 Hermes。这一步被 Ctrl-C 或 `TERM` 打断时，同样把已去掉的加回去，打印 `RUNNER_PAUSE_FAILED interrupted` 后退出。都去掉后打印 `RUNNER_LABELS_REMOVED`：从这时起 GitHub 不再给它们派新任务，新任务在 GitHub 上排队。
   3. 每 30 秒查一次 GitHub：两个 runner 都显示 `busy=false` 时，在 Hermes 上运行 `runner-pause.sh --labels-removed 90`。它连续观察 90 秒，期间每 10 秒查一次本机有没有 `Runner.Worker`，一直没有才停两个服务，打印 `RUNNER_PAUSED`；中途看到任务就打印 `RUNNER_STILL_BUSY`，以退出码 2 结束、不停服务，Mac 侧接着等。
   4. 成功时打印 `RUNNER_PAUSED labels=removed services=stopped`。
-  5. 到了等待上限还有任务，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=running`，以退出码 2 结束；Hermes 那一步出错时同样打印这一行，以退出码 1 结束。这时标签保持去掉、服务继续跑完手上的任务，不会再接新任务；重新运行 `pause-runners.sh` 即可，或运行 `resume-runners.sh` 撤销。
-- 恢复：`scripts/operations/hermes-runner/resume-runners.sh`。它先在 Hermes 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；再等 GitHub 显示它们 `online`（最多 5 分钟），最后把 `hermes-home` 标签加回去并读一遍确认，打印 `RUNNER_RESUMED labels=restored`。服务没起来时打印 `RUNNER_RESUME_FAILED`，不加标签；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=running labels=removed`；标签没加上打印 `RUNNER_RESUME_INCOMPLETE` 和是哪个 runner。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。2026-11-05 实测：恢复后排队的任务约 3.5 分钟才开始跑，两个 runner 同一秒接到任务，原因在 GitHub 一侧、没有确认，等几分钟即可，不要因此重启 runner。
+  5. 到了等待上限还有任务，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=running`，以退出码 2 结束。Hermes 那一步出错（例如只停掉了一个服务）时，打印 `RUNNER_PAUSE_INCOMPLETE labels=removed services=<每个服务当时的状态>`，以退出码 1 结束；等待期间被打断时，打印同样一行并加上 `interrupted`，以退出码 130 结束。这几种情况下标签都保持去掉，还在跑的服务跑完手上的任务，不会再接新任务；重新运行 `pause-runners.sh` 即可，或运行 `resume-runners.sh` 撤销。
+- 恢复：`scripts/operations/hermes-runner/resume-runners.sh`。它先像暂停一样对账，对不上就打印 `RUNNER_RESUME_FAILED` 和原因，不启动服务、不加标签；再在 Hermes 上运行 `runner-resume.sh`，只启动已注册（服务已启用）的 runner；再等 GitHub 显示它们 `online`（最多 5 分钟），最后把 `hermes-home` 标签加回去并读一遍确认，打印 `RUNNER_RESUMED labels=restored`。服务没起来时打印 `RUNNER_RESUME_FAILED services=<每个服务当时的状态>`，不加标签；5 分钟内没上线打印 `RUNNER_RESUME_INCOMPLETE services=running labels=removed`；标签没加上打印 `RUNNER_RESUME_INCOMPLETE` 和是哪个 runner。这几种情况下排队的任务都继续排队，不会失败，处理后重新运行即可。2026-11-05 实测：恢复后排队的任务约 3.5 分钟才开始跑，两个 runner 同一秒接到任务，原因在 GitHub 一侧、没有确认，等几分钟即可，不要因此重启 runner。
 - 暂停期间新的 CI 任务在 GitHub 上排队；**排队超过 24 小时的任务会被 GitHub 判为失败**，所以暂停不要超过一天。GitHub 大约 1 分钟后才把停掉的 runner 显示为 `offline`。
 - 暂停期间 Hermes 重启：服务会自己起来，但标签还是去掉的，不会接任务；之后照常运行 `resume-runners.sh`。不要在暂停期间重新注册 runner（`config.sh --replace` 会重置标签）。
 - 受保护的第 3、4 层测试正在跑时，`hermes-ssh.sh` 只放行只读命令，这时暂停或恢复都做不了，要等那次运行结束。
@@ -234,6 +234,6 @@ date: "2026-11-04"
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | Hermes 上浏览器依赖已装好，workflow 里去掉 `--with-deps`。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
-| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 6 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0164 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
+| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 9 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0164 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
 
 [↑ 返回阅读导航](#contents)
