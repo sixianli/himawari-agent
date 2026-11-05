@@ -112,29 +112,51 @@ describe("runner-pause.sh", () => {
   const pauseBox = ({ pgrep = "exit 1", accounts = ["gh-runner", "gh-runner-2"] } = {}) => {
     const box = sandbox();
     fakeRunnerAccounts(box, accounts);
-    box.fake("pgrep", pgrep);
+    box.fake("pgrep", `printf 'pgrep\\n' >> "${box.root}/pgrep-calls"\n${pgrep}`);
     box.fake("sleep", "exit 0");
     box.fake("sudo", `printf '%s\\n' "$*" >> "${box.root}/sudo-calls"`);
     box.fake("systemctl", "exit 3");
     return box;
   };
 
-  it.each(["abc", "0", "-5", "86401", "999999999999999999999", "1.5"])(
-    "rejects limit %s before touching the service",
-    (limit) => {
-      const { run, calls } = pauseBox();
-      const result = run("runner-pause.sh", [limit]);
+  it("refuses to stop anything unless the Mac removed the label first", () => {
+    const { run, calls } = pauseBox();
+    for (const args of [[], ["3600"], ["--labels-removed-later"]]) {
+      const result = run("runner-pause.sh", args);
       expect(result.status).toBe(64);
-      expect(result.stderr).toContain("1-86400");
+      expect(result.stderr).toContain("pause-runners.sh");
+    }
+    expect(calls("sudo-calls")).toBe("");
+    expect(calls("pgrep-calls")).toBe("");
+  });
+
+  it.each(["abc", "0", "241", "-5", "1.5", "0090"])(
+    "rejects quiet window %s before touching the service",
+    (quiet) => {
+      const { run, calls } = pauseBox();
+      const result = run("runner-pause.sh", ["--labels-removed", quiet]);
+      expect(result.status).toBe(64);
+      expect(result.stderr).toContain("1-240");
       expect(calls("sudo-calls")).toBe("");
     },
   );
 
-  it("stops both runners when neither is running a job", () => {
+  it("lists the runners installed on this host", () => {
+    expect(pauseBox().run("runner-pause.sh", ["--list"]).stdout).toBe(
+      "hermes-home\nhermes-home-2\n",
+    );
+    expect(pauseBox({ accounts: ["gh-runner"] }).run("runner-pause.sh", ["--list"]).stdout).toBe(
+      "hermes-home\n",
+    );
+  });
+
+  it("stops both runners only after watching them idle for the whole quiet window", () => {
     const { run, calls } = pauseBox();
-    const result = run("runner-pause.sh", ["86400"]);
+    const result = run("runner-pause.sh", ["--labels-removed", "30"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("RUNNER_PAUSED");
+    expect(result.stdout).toContain("quiet=30s");
+    expect(calls("pgrep-calls").split("\n").filter(Boolean)).toHaveLength(8);
     expect(calls("sudo-calls")).toBe(
       "-n /usr/bin/systemctl stop gh-runner.service\n-n /usr/bin/systemctl stop gh-runner-2.service\n",
     );
@@ -142,25 +164,290 @@ describe("runner-pause.sh", () => {
 
   it("stops only the first runner when the second account does not exist", () => {
     const { run, calls } = pauseBox({ accounts: ["gh-runner"] });
-    const result = run("runner-pause.sh", ["60"]);
+    const result = run("runner-pause.sh", ["--labels-removed"]);
     expect(result.status).toBe(0);
     expect(calls("sudo-calls")).toBe("-n /usr/bin/systemctl stop gh-runner.service\n");
   });
 
-  it("leaves both runners running while the second one still has a job", () => {
-    const { run, calls } = pauseBox({ pgrep: '[ "$2" = gh-runner-2 ] && exit 0\nexit 1' });
-    const result = run("runner-pause.sh", ["30"]);
+  it("leaves both runners running when a job shows up during the quiet window", () => {
+    const { run, calls } = pauseBox({
+      pgrep: `[ "$(grep -c . "${"$"}{HOME}/pgrep-calls")" -ge 5 ] && [ "$2" = gh-runner-2 ] && exit 0\nexit 1`,
+    });
+    const result = run("runner-pause.sh", ["--labels-removed", "90"]);
     expect(result.status).toBe(2);
-    expect(result.stdout).toContain("RUNNER_BUSY_TIMEOUT");
+    expect(result.stdout).toContain("RUNNER_STILL_BUSY gh-runner-2");
     expect(calls("sudo-calls")).toBe("");
   });
 
   it("does not stop anything when pgrep itself fails", () => {
     const { run, calls } = pauseBox({ pgrep: "exit 3" });
-    const result = run("runner-pause.sh", ["60"]);
+    const result = run("runner-pause.sh", ["--labels-removed"]);
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("RUNNER_PAUSE_FAILED");
     expect(calls("sudo-calls")).toBe("");
+  });
+});
+
+const macBox = ({
+  runners = [
+    [11, "hermes-home"],
+    [12, "hermes-home-2"],
+  ],
+  hermesNames = ["hermes-home", "hermes-home-2"],
+  labelled = true,
+} = {}) => {
+  const box = sandbox();
+  const R = box.root;
+  const handoff = path.join(R, "handoff");
+  mkdirSync(handoff);
+  const labels = (on) => `self-hosted,Linux,X64${on ? ",hermes-home" : ""}`;
+  writeFileSync(
+    path.join(R, "runners.tsv"),
+    runners.map(([id, name]) => `${id}\t${name}\toffline\tfalse\t${labels(labelled)}\n`).join(""),
+  );
+  writeFileSync(path.join(R, "hermes-names"), hermesNames.map((name) => `${name}\n`).join(""));
+  const relabel = (on) =>
+    `awk -F'\\t' -v OFS='\\t' -v id="$id" '$1 == id { $5 = "${labels(on)}" } 1' "${R}/runners.tsv" > "${R}/t" && mv "${R}/t" "${R}/runners.tsv"`;
+  box.fake(
+    "gh",
+    [
+      `printf 'gh %s\\n' "$*" >> "${R}/calls"`,
+      'args="$*"',
+      "if [[ $args == */labels* ]]; then",
+      `  id=$(sed -E 's#.*/runners/([0-9]+)/labels.*#\\1#' <<< "$args")`,
+      '  if [[ $args == *"-X DELETE"* ]]; then',
+      `    [ -e "${R}/fail-delete-$id" ] && exit 1`,
+      `    [ -e "${R}/ignore-delete-$id" ] && exit 0`,
+      `    ${relabel(false)}`,
+      "  else",
+      `    [ -e "${R}/fail-add-$id" ] && exit 1`,
+      `    ${relabel(true)}`,
+      "  fi",
+      "  exit 0",
+      "fi",
+      `n=$(( $(cat "${R}/list-count" 2> /dev/null || echo 0) + 1 )); echo $n > "${R}/list-count"`,
+      `b=$(cat "${R}/busy-until" 2> /dev/null || echo 0)`,
+      `o=$(cat "${R}/online-from" 2> /dev/null || echo 0)`,
+      `awk -F'\\t' -v OFS='\\t' -v n=$n -v b=$b -v o=$o '{ $4 = (n < b) ? "true" : "false"; $3 = (n >= o) ? "online" : "offline"; print }' "${R}/runners.tsv"`,
+    ].join("\n"),
+  );
+  const handoffScript = (name, body) => {
+    const file = path.join(handoff, name);
+    writeFileSync(file, `#!/bin/bash\n${body}\n`);
+    chmodSync(file, 0o755);
+  };
+  handoffScript("hermes-upload.sh", `printf 'upload %s\\n' "$*" >> "${R}/calls"`);
+  handoffScript(
+    "hermes-ssh.sh",
+    [
+      `printf 'ssh %s\\n' "$*" >> "${R}/calls"`,
+      'case "$1" in',
+      `  *--list) cat "${R}/hermes-names" ;;`,
+      "  *--labels-removed*)",
+      `    code=$(head -1 "${R}/pause-results" 2> /dev/null || echo 0)`,
+      `    sed -i '1d' "${R}/pause-results" 2> /dev/null`,
+      '    [ "$code" = 0 ] && echo RUNNER_PAUSED || echo RUNNER_STILL_BUSY',
+      '    exit "$code" ;;',
+      `  *runner-resume.sh) [ -e "${R}/resume-fail" ] && exit 1; echo RUNNER_RESUMED ;;`,
+      "esac",
+    ].join("\n"),
+  );
+  box.fake("sleep", "exit 0");
+  const set = (name, value) => writeFileSync(path.join(R, name), `${value}`);
+  const late = () =>
+    box.fake(
+      "date",
+      `n=$(( $(cat "${R}/date-count" 2> /dev/null || echo 0) + 1 )); echo $n > "${R}/date-count"; [ $n -le 1 ] && echo 1000 || echo 99999999`,
+    );
+  const mac = (script) =>
+    spawnSync("/bin/bash", [path.join(scripts, script)], {
+      encoding: "utf8",
+      env: {
+        PATH: `${box.root}/bin:${process.env.PATH}`,
+        HOME: R,
+        HERMES_HANDOFF: handoff,
+        RUNNER_LOCK_DIR: path.join(R, "lock"),
+        RUNNER_POLL_SECONDS: "0",
+      },
+    });
+  const labelState = () =>
+    Object.fromEntries(
+      readFileSync(path.join(R, "runners.tsv"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => line.split("\t"))
+        .map(([, name, , , l]) => [name, l.split(",").includes("hermes-home")]),
+    );
+  const lines = () => box.calls().split("\n").filter(Boolean);
+  return { ...box, set, late, mac, labelState, lines };
+};
+
+describe("pause-runners.sh", () => {
+  it("removes the label from both runners before asking Hermes to stop them", () => {
+    const box = macBox();
+    const result = box.mac("pause-runners.sh");
+    expect(result.stdout).toContain("RUNNER_PAUSED labels=removed services=stopped");
+    expect(result.stdout).toContain("24 hours");
+    expect(result.status).toBe(0);
+    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+    const order = box.lines();
+    const stop = order.findIndex((line) => line.includes("--labels-removed 90"));
+    const deletes = order.filter((line) => line.includes("-X DELETE"));
+    expect(deletes).toHaveLength(2);
+    expect(order.findIndex((line) => line.includes("-X DELETE"))).toBeLessThan(stop);
+    expect(order.filter((line) => line.startsWith("upload "))).toHaveLength(3);
+    expect(order.some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("waits until GitHub reports both runners idle before asking Hermes to stop", () => {
+    const box = macBox();
+    box.set("busy-until", 5);
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(0);
+    const order = box.lines();
+    const stop = order.findIndex((line) => line.includes("--labels-removed"));
+    const listsBefore = order.slice(0, stop).filter((line) => line.endsWith("@tsv"));
+    expect(listsBefore.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("asks Hermes again when a job was still finishing there", () => {
+    const box = macBox();
+    box.set("pause-results", "2\n2\n0\n");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(0);
+    expect(box.lines().filter((line) => line.includes("--labels-removed"))).toHaveLength(3);
+  });
+
+  it("works with only the first runner installed", () => {
+    const box = macBox({ runners: [[11, "hermes-home"]], hermesNames: ["hermes-home"] });
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(0);
+    expect(box.lines().filter((line) => line.includes("-X DELETE"))).toHaveLength(1);
+  });
+
+  it("changes nothing when Hermes has a runner GitHub does not know", () => {
+    const box = macBox({ runners: [[11, "hermes-home"]] });
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("RUNNER_PAUSE_FAILED GitHub has 0 runners named hermes-home-2");
+    expect(
+      box.lines().some((line) => line.includes("-X") || line.includes("--labels-removed")),
+    ).toBe(false);
+  });
+
+  it("changes nothing when GitHub has a hermes-home runner that is not on Hermes", () => {
+    const box = macBox({ hermesNames: ["hermes-home"] });
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("hermes-home-2 carries hermes-home but is not installed");
+    expect(box.lines().some((line) => line.includes("-X"))).toBe(false);
+  });
+
+  it("puts the label back and leaves Hermes alone when one removal fails", () => {
+    const box = macBox();
+    box.set("fail-delete-12", "");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "RUNNER_PAUSE_FAILED hermes-home still on: hermes-home-2; put back on: 11",
+    );
+    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
+  });
+
+  it("does not trust a removal that GitHub says worked but did not happen", () => {
+    const box = macBox();
+    box.set("ignore-delete-11", "");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("still on: hermes-home");
+    expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
+  });
+
+  it("keeps services running and labels removed when the jobs outlast the deadline", () => {
+    const box = macBox();
+    box.set("busy-until", 9999);
+    box.late();
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain(
+      "RUNNER_PAUSE_INCOMPLETE labels=removed services=running busy: hermes-home hermes-home-2",
+    );
+    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+    expect(
+      box.lines().some((line) => line.includes("--labels-removed") || line.includes("-X POST")),
+    ).toBe(false);
+  });
+
+  it("keeps labels removed when Hermes fails to stop the services", () => {
+    const box = macBox();
+    box.set("pause-results", "1\n");
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("RUNNER_PAUSE_INCOMPLETE labels=removed services=running");
+    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("refuses to run while another pause or resume holds the lock", () => {
+    const box = macBox();
+    mkdirSync(path.join(box.root, "lock"));
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(75);
+    expect(result.stdout).toContain("RUNNER_LOCKED");
+    expect(box.calls()).toBe("");
+    expect(existsSync(path.join(box.root, "lock"))).toBe(true);
+  });
+
+  it("releases the lock when it finishes", () => {
+    const box = macBox();
+    expect(box.mac("pause-runners.sh").status).toBe(0);
+    expect(existsSync(path.join(box.root, "lock"))).toBe(false);
+  });
+});
+
+describe("resume-runners.sh", () => {
+  it("starts the services, waits for GitHub to see them online, then puts the label back", () => {
+    const box = macBox({ labelled: false });
+    box.set("online-from", 3);
+    const result = box.mac("resume-runners.sh");
+    expect(result.stdout).toContain("RUNNER_RESUMED labels=restored");
+    expect(result.status).toBe(0);
+    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    const order = box.lines();
+    const start = order.findIndex((line) => line.includes("runner-resume.sh"));
+    const firstAdd = order.findIndex((line) => line.includes("-X POST"));
+    expect(start).toBeLessThan(firstAdd);
+    expect(
+      order.slice(start, firstAdd).filter((line) => line.endsWith("@tsv")).length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("leaves the labels off when the services do not start", () => {
+    const box = macBox({ labelled: false });
+    box.set("resume-fail", "");
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("RUNNER_RESUME_FAILED");
+    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("leaves the labels off when the runners never come online", () => {
+    const box = macBox({ labelled: false });
+    box.set("online-from", 9999);
+    box.late();
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain("RUNNER_RESUME_INCOMPLETE services=running labels=removed");
+    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("reports the runner whose label could not be put back", () => {
+    const box = macBox({ labelled: false });
+    box.set("fail-add-12", "");
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("hermes-home missing on: hermes-home-2");
+    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": false });
   });
 });
 
@@ -369,7 +656,7 @@ describe("install-runner.sh", () => {
     box.fake("sudo", `${box.record("sudo")}\nexit 0`);
     const result = box.run("install-runner.sh");
     expect(result.status).toBe(70);
-    expect(result.stderr).toContain("runner-pause.sh");
+    expect(result.stderr).toContain("pause-runners.sh");
     expect(box.calls()).not.toMatch(/^(useradd|install|nft|sudo) /m);
   });
 });
