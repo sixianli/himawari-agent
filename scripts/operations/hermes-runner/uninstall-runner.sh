@@ -1,7 +1,9 @@
 #!/bin/bash
 set -u
 
-source "${BASH_SOURCE[0]%/*}/runners.sh"
+HERE=.
+[[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
+source "$HERE/runners.sh"
 
 [ "$(hostname)" = hermes-home ] || { echo "this script only runs on hermes-home, not $(hostname)" >&2; exit 68; }
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }

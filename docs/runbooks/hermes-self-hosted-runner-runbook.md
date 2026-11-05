@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:dca0dd7cf64bfb9058faa042e9c1c498df92bdad29f5b6e95cfad0785e0a4872"
+contract_sha256: "sha256:ce4909b1c6678e1cd9ad32eb2742221ea6fe5e6c269a7789d99cd3c2021504c9"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -59,7 +59,7 @@ date: "2026-11-04"
 - 每个 runner 一个系统用户（`gh-runner`、`gh-runner-2`），不能登录，只属于自己的组，不在 sudo 组或 docker 组里。
 - `ProtectHome=yes` 和 `InaccessiblePaths=/data` 让它看不到 `/home`（包括 andy 的 SSH 密钥）和 `/data`（Hermes 的密钥和其他项目的数据），也碰不到 Docker 的控制接口；`ProtectSystem=strict` 让它只能写自己的三个目录；每个服务还藏起另一个 runner 的目录（`InaccessiblePaths=-/srv/gh-runner-2` 或 `-/srv/gh-runner`）。
 - `ProtectProc=invisible` 让它在 `/proc` 里只看得到自己的进程，看不到 Hermes 上其他服务的进程和命令行参数。
-- 防火墙规则只对两个 runner 账号生效（一条规则同时匹配两个账号的 uid）：拒绝它访问局域网和 Tailscale 地址（`10/8`、`100.64/10`、`172.16/12`、`192.168/16` 等），以及本机在最近一次运行安装脚本时已经在监听的 TCP 端口（DNS 的 53 端口除外）。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来；2026-11-05 核对时 Hermes 本机只有 DNS 的 53 端口在监听 UDP，Hermes 的所有网卡地址都是私有地址，已在拒绝范围内。
+- 防火墙规则只对两个 runner 账号生效（一条规则同时匹配两个账号的 uid）：拒绝它访问局域网和 Tailscale 地址（`10/8`、`100.64/10`、`172.16/12`、`192.168/16` 等），以及本机 TCP 端口名单里的端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口，所以某个服务恰好停着时它的端口也不会从名单里掉出去。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来；2026-11-05 核对时 Hermes 本机只有 DNS 的 53 端口在监听 UDP，Hermes 的所有网卡地址都是私有地址，已在拒绝范围内。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
 - 每个 runner 的 CPU 最多两个核（`CPUQuota=200%`），内存最多 5 GB，不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计 CPU 最多三个核（`CPUQuota=300%`），内存最多 6 GB（`MemoryHigh=5632M`、`MemoryMax=6G`），最多 4096 个进程。slice 上的 `CPUWeight=20`、`IOWeight=20` 和服务的 `Nice=10` 让 Hermes 上的其他服务优先。
 - 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个任务可能同时占盘）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每天的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束。
@@ -121,7 +121,7 @@ date: "2026-11-04"
 1. 把 `scripts/operations/hermes-runner/` 下的全部文件（包括 `runners.sh` 和 `gh-runner.service.in`）用 `.ci-output/handoff/scripts/hermes-upload.sh` 传到 Hermes 的 `/home/andy/himawari-tests/hermes-runner/`。
 2. 取得临时 sudo（见 [Safety and Preconditions](#safety-and-preconditions)）。
 3. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以先按[暂停和恢复](#pause-and-resume)运行 `runner-pause.sh`。
-4. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：确认主机名是 `hermes-home`（否则以退出码 68 拒绝）；把现有的服务文件、`/etc/gh-runner/` 和窄 sudo 规则复制到 `/var/backups/gh-runner/<时间>/`，之后任何一步失败都会自动放回这些文件并打印 `INSTALL_FAILED`；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝，不接管不是它建的账号），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、脚本、slice 和服务（两个服务都由模板生成），按当时在监听的端口和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
+4. `sudo -n bash /home/andy/himawari-tests/hermes-runner/install-runner.sh`。脚本会：确认主机名是 `hermes-home`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则、`/srv/gh-runner/bin/` 和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的删掉，这次新建的用户、组和它的目录（目录原来就有的不删）也一并删掉，重新加载防火墙规则，并打印 `INSTALL_FAILED`；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝，不接管不是它建的账号），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、脚本、slice 和服务（两个服务都由模板生成），按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
 5. 运行 `runner-resume.sh`，已注册的 runner 按新的服务设置启动。新装的第 2 个 runner 还没注册，要先按[注册](#register)注册。
 
 <a id="register"></a>
@@ -145,7 +145,7 @@ date: "2026-11-04"
 
 - **磁盘**：看两个 runner 各自的 `logs/disk.log`，每个任务记一行开始时的可用空间，一行结束时 `_work` 的大小和可用空间。
 - **runner 升级**：runner 会自己升级到 GitHub 要求的版本（它的目录归各自的 runner 账号所有，所以能写）。要换安装脚本里固定的版本时，改 `install-runner.sh` 里的 `VERSION` 和 `SHA256`，SHA-256 从 GitHub 的发布页核对。
-- **本机新增了服务**：防火墙只挡安装时已在监听的端口。之后新开的本机服务端口不在名单里，要重新运行 `install-runner.sh` 刷新规则（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则）。
+- **本机新增了服务**：防火墙只挡端口名单里的端口。之后新开的本机服务端口不在名单里，要刷新规则：先按[暂停和恢复](#pause-and-resume)运行 `runner-pause.sh`（有 runner 服务在运行时安装脚本以退出码 70 拒绝），再重新运行 `install-runner.sh`（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则），最后运行 `runner-resume.sh`。
 - **防火墙表被清掉**：如果有人重启了系统的 `nftables` 服务，而 `/etc/nftables.conf` 里有 `flush ruleset`，表 `inet gh_runner` 会被一并清掉。用 `sudo systemctl restart gh-runner-nft.service gh-runner.service gh-runner-2.service` 恢复。
 - **重启服务**：`sudo -n /usr/bin/systemctl restart gh-runner.service`（第 2 个是 `gh-runner-2.service`）。runner 会先向 GitHub 注销会话再退出，几秒后重新在线。
 
@@ -180,7 +180,7 @@ date: "2026-11-04"
 
 **只卸第 2 个 runner**：
 
-1. 取得临时 sudo，先运行 `runner-pause.sh`，再在 Hermes 上运行 `sudo -n bash /home/andy/himawari-tests/hermes-runner/uninstall-runner.sh 2`。它停掉并删除 `gh-runner-2.service`、结束 `gh-runner-2` 的进程、删除 `/srv/gh-runner-2/`、删除 `gh-runner-2` 用户和组，再按剩下的第 1 个 runner 重新生成防火墙规则和窄 sudo 规则。第 1 个 runner 的服务、目录、账号不动。全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束。
+1. 取得临时 sudo，先运行 `runner-pause.sh`，再在 Hermes 上运行 `sudo -n bash /home/andy/himawari-tests/hermes-runner/uninstall-runner.sh 2`。它停掉并删除 `gh-runner-2.service`、结束 `gh-runner-2` 的进程、删除 `/srv/gh-runner-2/`、删除 `gh-runner-2` 用户和组，再按剩下的第 1 个 runner 重新生成防火墙规则和窄 sudo 规则（端口名单沿用上一份规则里的端口，再加上当时在监听的）。第 1 个 runner 的服务、目录、账号不动。全部删干净才打印 `UNINSTALL_OK`；还有残留时打印 `UNINSTALL_INCOMPLETE` 和残留清单，并以退出码 1 结束。
 2. 运行 `runner-resume.sh` 启动第 1 个 runner。
 3. 在 Mac 上从 GitHub 删除 `hermes-home-2`：先用 `gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name}'` 查到编号，再运行 `gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/<编号>`。
 4. 验证：`id gh-runner-2` 报用户不存在，`/srv/gh-runner-2` 不存在，`sudo -n nft list table inet gh_runner` 的规则里只剩 `gh-runner` 的 uid，`hermes-home` 仍为 `online`。

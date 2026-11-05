@@ -1,7 +1,9 @@
 #!/bin/bash
 set -u
 
-source "${BASH_SOURCE[0]%/*}/runners.sh"
+HERE=.
+[[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
+source "$HERE/runners.sh"
 
 LIMIT=${1:-3600}
 if ! [[ "$LIMIT" =~ ^[1-9][0-9]{0,4}$ ]] || [ "$LIMIT" -gt 86400 ]; then

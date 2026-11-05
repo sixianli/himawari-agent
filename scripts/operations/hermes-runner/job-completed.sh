@@ -1,7 +1,9 @@
 #!/bin/bash
 set -u
 
-ROOT=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)
+HERE=.
+[[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
+ROOT=$(cd "$HERE/.." && pwd)
 WORK=$ROOT/runner/_work
 USED=$(du -sb "$WORK" 2>/dev/null | cut -f1)
 AVAIL=$(df --output=avail -B1 / | tail -1 | tr -d ' ')

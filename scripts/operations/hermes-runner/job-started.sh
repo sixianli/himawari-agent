@@ -1,7 +1,9 @@
 #!/bin/bash
 set -u
 
-ROOT=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)
+HERE=.
+[[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
+ROOT=$(cd "$HERE/.." && pwd)
 TARGET=${1:-$ROOT/runner}
 LOG=${2:-$ROOT/logs/disk.log}
 FLOOR=$((16 * 1024 * 1024 * 1024))

@@ -71,6 +71,48 @@ runner_sudoers_line() {
   printf 'andy ALL=(root) NOPASSWD: %s\n' "$line"
 }
 
+runner_blocked_ports() {
+  local listening previous=""
+  listening=$(ss -ltnH) || return 1
+  [ -f "$1" ] && previous=$(sed -nE 's/.*tcp dport \{ ([0-9, ]+) \}.*/\1/p' "$1" | tr ', ' '\n\n')
+  { printf '%s\n' "$listening" | awk '{print $4}' | sed -E 's/.*:([0-9]+)$/\1/'; printf '%s\n' "$previous"; } \
+    | awk '/^[0-9]+$/ && $0 != 53' | sort -un | paste -sd, -
+}
+
+backup_install_paths() {
+  local backup=$1 path index=0
+  shift
+  : > "$backup/manifest"
+  for path in "$@"; do
+    index=$((index + 1))
+    if [ -e "$path" ]; then
+      cp -a "$path" "$backup/$index" || return 1
+      printf 'present\t%s\t%s\n' "$index" "$path" >> "$backup/manifest"
+    else
+      printf 'absent\t%s\t%s\n' "$index" "$path" >> "$backup/manifest"
+    fi
+  done
+}
+
+record_created_account() {
+  printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$1/created-accounts"
+}
+
+restore_install_paths() {
+  local backup=$1 state index path user root root_existed
+  while IFS=$'\t' read -r state index path; do
+    rm -rf -- "$path"
+    [ "$state" = present ] && cp -a "$backup/$index" "$path"
+  done < "$backup/manifest"
+  [ -f "$backup/created-accounts" ] || return 0
+  while IFS=$'\t' read -r user root root_existed; do
+    userdel "$user"
+    getent group "$user" > /dev/null && groupdel "$user"
+    [ "$root_existed" = no ] && rm -rf -- "$root"
+  done < "$backup/created-accounts"
+  return 0
+}
+
 apply_runner_controls() {
   local ids uids ports rules sudoers id
   ids=$(installed_runner_ids)
@@ -80,7 +122,7 @@ apply_runner_controls() {
     runner_select "$id"
     uids="${uids:+$uids, }$(id -u "$RUNNER_USER")"
   done
-  ports=$(ss -ltnH | awk '{print $4}' | sed -E 's/.*:([0-9]+)$/\1/' | sort -un | grep -vx 53 | paste -sd, -)
+  ports=$(runner_blocked_ports /etc/gh-runner/nft.rules) || ports=""
   [ -n "$ports" ] || { echo "could not list local listening ports" >&2; return 1; }
 
   rules=$(mktemp)

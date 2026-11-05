@@ -4,7 +4,9 @@ set -Eeuo pipefail
 VERSION=2.338.2
 SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
 URL=https://github.com/actions/runner/releases/download/v$VERSION/actions-runner-linux-x64-$VERSION.tar.gz
-SRC=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+HERE=.
+[[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
+SRC=$(cd "$HERE" && pwd)
 SHARED=/srv/gh-runner
 UNIT_DIR=/etc/systemd/system
 SUDOERS_FILE=/etc/sudoers.d/91-gh-runner-control
@@ -25,30 +27,39 @@ for id in $RUNNER_IDS; do
   fi
 done
 
-BACKUP=/var/backups/gh-runner/$(date +%Y%m%dT%H%M%S)
-install -d -m 0700 -o root -g root "$BACKUP"
-for path in $UNIT_DIR/gh-runner*.service $UNIT_DIR/gh-runner*.timer $UNIT_DIR/gh-runners.slice /etc/gh-runner "$SUDOERS_FILE"; do
-  [ -e "$path" ] && cp -a "$path" "$BACKUP/"
+INSTALL_PATHS="$UNIT_DIR/gh-runners.slice $UNIT_DIR/gh-runner-nft.service $UNIT_DIR/gh-runner-clean.service $UNIT_DIR/gh-runner-clean.timer /etc/gh-runner $SUDOERS_FILE $SHARED/bin"
+for id in $RUNNER_IDS; do
+  runner_select "$id"
+  INSTALL_PATHS="$INSTALL_PATHS $UNIT_DIR/$RUNNER_UNIT $RUNNER_ROOT/hooks"
 done
 
+BACKUP=/var/backups/gh-runner/$(date +%Y%m%dT%H%M%S)
+install -d -m 0700 -o root -g root "$BACKUP"
+backup_install_paths "$BACKUP" $INSTALL_PATHS
+
 restore_backup() {
-  trap - ERR
-  echo "INSTALL_FAILED restoring unit, firewall and sudo files from $BACKUP" >&2
-  for path in "$BACKUP"/gh-runner*.service "$BACKUP"/gh-runner*.timer "$BACKUP"/gh-runners.slice; do
-    [ -e "$path" ] && cp -a "$path" "$UNIT_DIR/"
-  done
-  [ -e "$BACKUP/gh-runner" ] && rm -rf /etc/gh-runner && cp -a "$BACKUP/gh-runner" /etc/gh-runner
-  [ -e "$BACKUP/91-gh-runner-control" ] && cp -a "$BACKUP/91-gh-runner-control" "$SUDOERS_FILE"
+  trap - ERR INT TERM HUP
+  set +e
+  echo "INSTALL_FAILED putting back units, firewall rules, sudo rules, scripts and new accounts from $BACKUP" >&2
+  restore_install_paths "$BACKUP"
   systemctl daemon-reload
-  [ -e /etc/gh-runner/nft.rules ] && nft -f /etc/gh-runner/nft.rules
+  if [ -e /etc/gh-runner/nft.rules ]; then
+    nft -f /etc/gh-runner/nft.rules
+  else
+    nft delete table inet gh_runner 2> /dev/null
+  fi
 }
 trap restore_backup ERR
+trap 'restore_backup; exit 130' INT TERM HUP
 
 install_runner_account() {
   if id "$RUNNER_USER" > /dev/null 2>&1; then
     [ -d "$RUNNER_ROOT/runner" ] || { echo "a $RUNNER_USER user exists but $RUNNER_ROOT/runner does not; refusing to take over an account this script did not create" >&2; return 69; }
   else
+    local root_existed=no
+    [ -e "$RUNNER_ROOT" ] && root_existed=yes
     useradd --system --user-group --home-dir "$RUNNER_ROOT/home" --no-create-home --shell /usr/sbin/nologin "$RUNNER_USER"
+    record_created_account "$BACKUP" "$RUNNER_USER" "$RUNNER_ROOT" "$root_existed"
   fi
   if [ -n "$(id -nG "$RUNNER_USER" | tr ' ' '\n' | grep -vx "$RUNNER_USER")" ]; then
     echo "$RUNNER_USER belongs to extra groups: $(id -nG "$RUNNER_USER")" >&2
@@ -89,6 +100,6 @@ apply_runner_controls
 systemctl daemon-reload
 systemctl enable --now gh-runner-nft.service gh-runner-clean.timer
 nft list table inet gh_runner > /dev/null
-trap - ERR
+trap - ERR INT TERM HUP
 
 echo "INSTALL_OK version=$VERSION runner_uids=$RUNNER_CONTROL_UIDS blocked_local_ports=$RUNNER_CONTROL_PORTS backup=$BACKUP"

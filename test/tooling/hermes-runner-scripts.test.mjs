@@ -372,6 +372,127 @@ describe("install-runner.sh", () => {
   });
 });
 
+describe("install-runner.sh rollback", () => {
+  const helper = (box, body) =>
+    spawnSync("/bin/bash", ["-c", `set -euo pipefail\nsource "${scripts}/runners.sh"\n${body}`], {
+      encoding: "utf8",
+      env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
+    });
+
+  it("puts back files that existed and removes files the failed run created", () => {
+    const box = sandbox();
+    const target = path.join(box.root, "target");
+    const backup = path.join(box.root, "backup");
+    mkdirSync(path.join(target, "rules"), { recursive: true });
+    mkdirSync(backup);
+    writeFileSync(path.join(target, "unit"), "old unit\n");
+    writeFileSync(path.join(target, "rules", "nft.rules"), "old rules\n");
+    const paths = ["unit", "rules", "new-unit", "new-dir"].map((name) => path.join(target, name));
+    const result = helper(
+      box,
+      [
+        `backup_install_paths "${backup}" ${paths.join(" ")}`,
+        `echo new > "${target}/unit"`,
+        `echo new > "${target}/rules/nft.rules"`,
+        `echo extra > "${target}/rules/extra"`,
+        `echo new > "${target}/new-unit"`,
+        `mkdir "${target}/new-dir"`,
+        `restore_install_paths "${backup}"`,
+      ].join("\n"),
+    );
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(readFileSync(path.join(target, "unit"), "utf8")).toBe("old unit\n");
+    expect(readFileSync(path.join(target, "rules", "nft.rules"), "utf8")).toBe("old rules\n");
+    expect(existsSync(path.join(target, "rules", "extra"))).toBe(false);
+    expect(existsSync(path.join(target, "new-unit"))).toBe(false);
+    expect(existsSync(path.join(target, "new-dir"))).toBe(false);
+  });
+
+  it("deletes accounts the failed run created, and only the directories it created", () => {
+    const box = sandbox();
+    box.fake("userdel", `${box.record("userdel")}\nexit 0`);
+    box.fake("groupdel", `${box.record("groupdel")}\nexit 0`);
+    box.fake("getent", "exit 0");
+    const backup = path.join(box.root, "backup");
+    const fresh = path.join(box.root, "srv-new");
+    const kept = path.join(box.root, "srv-kept");
+    mkdirSync(backup);
+    mkdirSync(path.join(fresh, "runner"), { recursive: true });
+    mkdirSync(kept);
+    const result = helper(
+      box,
+      [
+        `backup_install_paths "${backup}"`,
+        `record_created_account "${backup}" gh-runner-2 "${fresh}" no`,
+        `record_created_account "${backup}" other "${kept}" yes`,
+        `restore_install_paths "${backup}"`,
+      ].join("\n"),
+    );
+    expect(result.status).toBe(0);
+    expect(box.calls()).toBe(
+      "userdel gh-runner-2\ngroupdel gh-runner-2\nuserdel other\ngroupdel other\n",
+    );
+    expect(existsSync(fresh)).toBe(false);
+    expect(existsSync(kept)).toBe(true);
+  });
+
+  it("keeps ports from the previous rules so a service that is down stays blocked", () => {
+    const box = sandbox();
+    box.fake(
+      "ss",
+      "printf '%s\\n' 'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*' 'LISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:*'",
+    );
+    const previous = path.join(box.root, "nft.rules");
+    writeFileSync(
+      previous,
+      "    meta skuid { 996 } ip daddr 127.0.0.0/8 tcp dport { 22,8080 } reject\n    meta skuid { 996 } ip6 daddr ::1 tcp dport { 22,8080 } reject\n",
+    );
+    const result = helper(box, `runner_blocked_ports "${previous}"`);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("22,8080\n");
+  });
+
+  it("returns an empty list instead of failing when only DNS is listening and there are no previous rules", () => {
+    const box = sandbox();
+    box.fake("ss", "printf '%s\\n' 'LISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:*'");
+    const result = helper(
+      box,
+      `ports=$(runner_blocked_ports "${box.root}/missing")\necho "ports=[$ports]"`,
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("ports=[]\n");
+  });
+
+  it("restores and ends with INSTALL_FAILED when interrupted, and on any failed step", () => {
+    const text = readFileSync(path.join(scripts, "install-runner.sh"), "utf8");
+    expect(text).toMatch(/^trap restore_backup ERR$/m);
+    expect(text).toMatch(/^trap 'restore_backup; exit 130' INT TERM HUP$/m);
+    expect(text.indexOf("backup_install_paths")).toBeLessThan(
+      text.indexOf("install_runner_account\n"),
+    );
+  });
+});
+
+describe("scripts started by bare file name from their own directory", () => {
+  it.each(["register-runner.sh", "uninstall-runner.sh"])("%s still finds runners.sh", (script) => {
+    const box = sandbox();
+    box.fake("hostname", "echo hermes-home");
+    box.fake("id", "echo 0");
+    box.fake("python3", "exit 0");
+    box.fake("nft", "exit 0");
+    const result = spawnSync("/bin/bash", [script], {
+      cwd: scripts,
+      encoding: "utf8",
+      input: "",
+      env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
+    });
+    expect(result.stderr).not.toContain("runners.sh");
+    expect(result.status).toBe(64);
+    expect(result.stderr).toContain("usage");
+  });
+});
+
 describe("uninstall-runner.sh", () => {
   const uninstallBox = () => {
     const box = sandbox();
@@ -433,7 +554,9 @@ describe("uninstall-runner.sh", () => {
       "ss",
       "printf '%s\\n' 'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*' 'LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*'",
     );
-    box.run("uninstall-runner.sh", ["2"]);
+    const result = box.run("uninstall-runner.sh", ["2"]);
+    expect(result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
+    expect(result.status).toBe(0);
     const calls = box.calls();
     expect(calls).toContain("systemctl disable --now gh-runner-2.service\n");
     expect(calls).toContain("userdel gh-runner-2\n");

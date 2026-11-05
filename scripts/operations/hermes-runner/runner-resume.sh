@@ -1,7 +1,9 @@
 #!/bin/bash
 set -u
 
-source "${BASH_SOURCE[0]%/*}/runners.sh"
+HERE=.
+[[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
+source "$HERE/runners.sh"
 
 UNITS=""
 for id in $(installed_runner_ids); do
