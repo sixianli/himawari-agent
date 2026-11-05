@@ -804,9 +804,9 @@ function gitStatus(args, cwd) {
 export const OVERRIDE_MIN_ROUNDS = 3;
 
 function changedOutside(repo, from, to, ledgerPath) {
-  return git(["diff", "-z", "--no-renames", "--name-only", from, to], repo)
-    .split("\0")
-    .filter((file) => file && !file.startsWith(`${ledgerPath}/`));
+  const result = gitStatus(["diff", "-z", "--no-renames", "--name-only", from, to], repo);
+  if (result.status !== 0) throw new Error(`GIT_FAILED git diff: ${result.stderr.trim()}`);
+  return result.stdout.split("\0").filter((file) => file && !file.startsWith(`${ledgerPath}/`));
 }
 
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed }) {
@@ -1613,6 +1613,7 @@ export function promptFileName(model) {
   return `${model.split("/").pop()}.prompt.md`;
 }
 
+export const SUBCOMMAND_ONLY_OPTIONS = ["--main-ref", "--stop", "--andy-quote"];
 export const ASSERT_OPTIONS = [
   "--assert-reviewed",
   "--pr",
@@ -1666,17 +1667,18 @@ export function parseArgs(argv) {
     else if (key === "--stop") options.stop = take();
     else if (key === "--andy-quote") {
       options.andyQuote = take();
-      if (/[\r\n]/.test(options.andyQuote)) throw new Error("ARG_INVALID --andy-quote");
+      if (hasControlCharacter(options.andyQuote)) throw new Error("ARG_INVALID --andy-quote");
     } else if (key === "--main-ref") {
       options.mainRef = take();
       if (options.mainRef.startsWith("-") || hasControlCharacter(options.mainRef))
         throw new Error("ARG_INVALID --main-ref");
     } else if (key === "--questions-ref") {
       options.questionsRef = take();
-      if (options.questionsRef.startsWith("-")) throw new Error("ARG_INVALID --questions-ref");
+      if (options.questionsRef.startsWith("-") || hasControlCharacter(options.questionsRef))
+        throw new Error("ARG_INVALID --questions-ref");
     } else if (key === "--accept-unreviewed") {
       options.acceptUnreviewed = take();
-      if (!options.acceptUnreviewed.trim() || /[\r\n]/.test(options.acceptUnreviewed))
+      if (!options.acceptUnreviewed.trim() || hasControlCharacter(options.acceptUnreviewed))
         throw new Error("ARG_INVALID --accept-unreviewed");
     } else if (key === "--models") {
       const names = take()
@@ -1714,6 +1716,8 @@ export function parseArgs(argv) {
   }
   if (options.acceptUnreviewed !== undefined)
     throw new Error("ARG_ACCEPT_UNREVIEWED_ONLY_WITH_ASSERT");
+  const subcommandOnly = [...given].filter((key) => SUBCOMMAND_ONLY_OPTIONS.includes(key));
+  if (subcommandOnly.length > 0) throw new Error(`ARG_NOT_FOR_MODE ${subcommandOnly.join(" ")}`);
   for (const required of ["head", "brief"]) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }

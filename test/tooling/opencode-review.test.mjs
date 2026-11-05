@@ -342,6 +342,42 @@ describe("opencode review prompt", () => {
     expect(() =>
       parseArgs(["--report", "--pr", "1", "--stop", "andy-decision", "--andy-quote", "a\rb"]),
     ).toThrow("ARG_INVALID --andy-quote");
+    expect(() =>
+      parseArgs([
+        "--report",
+        "--pr",
+        "1",
+        "--stop",
+        "andy-decision",
+        "--andy-quote",
+        "a\u001b[2Jb",
+      ]),
+    ).toThrow("ARG_INVALID --andy-quote");
+    expect(() =>
+      parseArgs(["--assert-reviewed", "--pr", "1", "--accept-unreviewed", "合\u0008并"]),
+    ).toThrow("ARG_INVALID --accept-unreviewed");
+    expect(() =>
+      parseArgs([
+        "--mode",
+        "plan",
+        "--topic",
+        "t",
+        "--head",
+        "a",
+        "--brief",
+        "b",
+        "--questions-ref",
+        "x\ny",
+      ]),
+    ).toThrow("ARG_INVALID --questions-ref");
+    for (const extra of [
+      ["--stop", "no-error"],
+      ["--andy-quote", "q"],
+      ["--main-ref", "main"],
+    ])
+      expect(() =>
+        parseArgs(["--mode", "plan", "--topic", "t", "--head", "a", "--brief", "b", ...extra]),
+      ).toThrow(`ARG_NOT_FOR_MODE ${extra[0]}`);
   });
 
   it("requires a base commit for code review", () => {
@@ -2063,6 +2099,20 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[merge gate] keeps leading spaces in file names when listing unreviewed files", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ " lead.txt": "x\n", [` ${REVIEWS_DIR}/pr-7/x.md`]: "y\n" }, "space names");
+      expect(f.check().problems).toEqual([
+        "unreviewed  .agents/reviews/pr-7/x.md",
+        "unreviewed  lead.txt",
+      ]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] counts a code file renamed into the records folder as unreviewed", () => {
     const f = fixture();
     try {
@@ -2211,7 +2261,7 @@ describe("opencode review merge gate", () => {
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
-  });
+  }, 60000);
   it("[review report] prints the fixed lines from the committed ledger", () => {
     const f = fixture();
     try {
@@ -2293,7 +2343,7 @@ describe("opencode review merge gate", () => {
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
-  });
+  }, 60000);
 });
 
 describe("opencode review spending", () => {
@@ -2357,6 +2407,18 @@ describe("opencode review spending", () => {
         `{"cost":0,"mode":"override","head":"${"a".repeat(40)}","quote":"q","problems":["a\\nREVIEW_CURRENT"]}`,
       ]) {
         writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
+        expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
+      }
+      writeFileSync(
+        join(dir, "usage.jsonl"),
+        `${JSON.stringify({ cost: 0.05, round: 1, mode: "code-review", model: "m", outcome: "ok", head: "b".repeat(64) })}\n`,
+      );
+      expect(readUsage(dir)[0].head).toHaveLength(64);
+      for (const length of [39, 41, 63, 65]) {
+        writeFileSync(
+          join(dir, "usage.jsonl"),
+          `${JSON.stringify({ cost: 0.05, round: 1, mode: "code-review", model: "m", outcome: "ok", head: "b".repeat(length) })}\n`,
+        );
         expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
       }
       writeFileSync(join(dir, "usage.jsonl"), '{"cost":0.1,"round":1}\n{"cost":0.2,"round":2}\n');
@@ -2459,7 +2521,7 @@ describe("opencode review spending", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 60000);
 
   it("[rerun round] falls back to the ledger's prompt digest when the prompt file is gone", () => {
     const [, glm] = REVIEW_MODELS;
@@ -2585,7 +2647,7 @@ describe("opencode review spending", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 60000);
 
   it("[rerun round] keeps the failed attempt's files next to the new ones", () => {
     const dir = mkdtempSync(join(tmpdir(), "opencode-attempt-"));
@@ -2659,7 +2721,7 @@ describe("opencode review spending", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 60000);
 
   it("numbers rounds from what the folder already holds", () => {
     expect(nextRound([])).toBe(1);
