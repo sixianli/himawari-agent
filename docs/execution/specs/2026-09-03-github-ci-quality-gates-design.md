@@ -226,6 +226,7 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 授权、撤销、预算、Secret/Payload、路径边界、幂等和崩溃恢复还必须有对应的负向行为测试。80%/70% 是代码执行证据阈值，不是安全正确性的替代。
 
+<a id="security-and-exceptions"></a>
 ### 7. 安全与例外政策
 
 密钥检测保留现有 `scan-machine-secrets.mjs`，增加固定版本 Gitleaks。PR 扫描候选 head 的完整祖先历史和当前受跟踪内容，包含目标分支中已接受例外的来源提交，检测曾提交后删除的泄漏；不扫描候选祖先之外的无关分支。默认分支和周期检查执行全部可达历史扫描。例外仅限经过审阅的合成测试样例，真实凭据泄漏不可豁免。
@@ -235,6 +236,8 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 维护者于 2026-09-04 明确要求从 CI 移除 npm 依赖漏洞查询。本 Spec 据此取消完整锁文件 advisory 扫描及其网络诊断、重试和 High/Critical 漏洞门禁；PR、默认分支和手动 quality 安全入口采用同一范围。安全检查保留机器密钥、Gitleaks 和 Semgrep，发现阻断项或扫描不可用仍失败。安装仍校验锁文件与依赖完整性并使用 `--no-audit`；安全通过不代表依赖无已知漏洞。
 
 例外必须包含精确 advisory/规则、依赖版本或路径、理由、Owner、审阅依据和到期日。运行时使用 UTC 判断到期；重复、未知、无效或扩大范围的例外失败。新例外与基线变更单独审阅，不由失败 job 自动生成。真实 Secret、缺失测试、缺失平台和伪造产物没有通用豁免入口。
+
+2026-11-04 经 Owner 明确批准（[ADR 0157](../../adr/0157-gitleaks-allowlist-for-evidence-digests.md)）：Gitleaks 默认规则把非密钥误认成密钥、而且误报形状固定的情况（资格证据里“源码路径: 文件 SHA-256 摘要”的行），不走上面的逐条例外，改在 `ci/rules/gitleaks.toml` 加白名单。白名单必须只针对一条规则（`targetRules`）、同时限定目录和整行形状（`condition = "AND"`、`regexTarget = "line"`），不得按整个目录或整条规则放行；它的效果由 `test/tooling/gitleaks-config.test.mjs` 用锁定版本的真实 Gitleaks 正反验证。个别具体的值仍按逐条例外处理。
 
 2026-09-14 经 Owner 明确批准，新增独立的精确清单审批入口，用于尚未进入目标分支的新测试或依赖文档值。常规例外仍从目标分支读取，候选分支不能自行替换它们。`.github/security-review-manifest.json` 保存审核过的原始清单，`.github/security-review-comment.json` 只定位 PR 评论；本地文件中的批准声明不是授权证据。检查通过固定 GitHub HTTPS API 读取评论，核验仓库所有者的数字身份与登录名、仓库和 PR、被审核源码提交、清单原始字节摘要、批准决定与最长 30 天的有效期。新增或修改清单的 PR 还须匹配本次事件编号和 head；来源提交必须属于被测提交的历史。网络失败、缺少记录、错误作者、过期或范围变化均失败。仓库为私有时，本地运行可以经 `HIMAWARI_CI_GITHUB_TOKEN` 提供只读令牌（令牌只经标准输入交给 curl，不进入参数或子进程环境）；在 Actions 里该令牌只用于本仓库。
 

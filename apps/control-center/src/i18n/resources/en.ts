@@ -1033,7 +1033,7 @@ export const messages = {
   "proactive.line.floorRaised":
     "{count, plural, one {# new email} other {# new emails}}; {raised} kept on Reminders by the “never drop important mail” rule",
   "proactive.line.quiet":
-    "{count, plural, one {# new email} other {# new emails}}{skipped, plural, =0 {} other {, # skipped by rule (promotions and the like)}}, nothing urgent",
+    "{count, plural, one {# new email} other {# new emails}}{skipped, plural, =0 {} other {, # spam skipped by rule}}, nothing urgent",
   "proactive.line.judged":
     "The model read {judged}: {act} to do · {check} to check · {know} good to know",
   "proactive.line.opened": "You opened it",
@@ -1061,10 +1061,11 @@ export const messages = {
     "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} other {Connecting didn’t work. Please try again.}}",
   "proactive.apps.what": "What Himawari reads and who receives it",
   "proactive.apps.what1": "Reads new mail only; never archives, labels or replies",
-  "proactive.apps.what2": "Skips promotions, social, forums and spam",
+  "proactive.apps.what2": "Skips spam; also reads the mail you send yourself",
   "proactive.apps.what3":
-    "Sends only the sender, subject and Gmail’s one-line snippet to the model, never the body; snippets with codes, card numbers or passwords are not sent",
-  "proactive.apps.what4": "Stores no email text, only the extracted to-dos and key points",
+    "Sends the sender, subject and full body to the model, with only attachment names; recognisable passwords, verification codes, card numbers and ID numbers are masked first, nothing else is",
+  "proactive.apps.what4":
+    "What each check sends to the model (masked) and the model’s answer are kept encrypted in the decision record and deleted when you disconnect; the page shows only the extracted to-dos and key points",
   "proactive.apps.what5":
     "Disconnecting revokes access at Google and deletes every extracted result",
   "proactive.apps.senders": "Important senders",
@@ -1124,7 +1125,7 @@ export const messages = {
   "muse.settings.cleared": "Cleared.",
   "proactive.when.dueToday": "Due today {time}",
   "proactive.line.allSkipped":
-    "{count, plural, one {# new email} other {# new emails}}, all promotions and the like, skipped by rule and not sent to the model",
+    "{count, plural, one {# new email} other {# new emails}}, all spam, skipped by rule and not sent to the model",
   "proactive.settings.badTime": "Use a 24-hour time such as 23:00; this period isn’t saved yet",
   "reminders.tab.reminders": "Reminders",
   "reminders.tab.report": "Calibration report",

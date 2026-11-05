@@ -79,12 +79,12 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 ## 一次检查的流程
 
 1. **取新邮件。** 定时任务每 15 分钟触发一次。第一次连接时只看最近 3 天的收件箱；之后用 Gmail 的 `history.list`（按上次的历史编号只取新变化）。返回 404 说明历史编号已过期，这时重新看最近 3 天。
-2. **整理格式。** 每封邮件整理成各来源共用的格式：来源、发件人、标题、Gmail 一行摘要、原文链接、时间、`message_id`、`thread_id`、Gmail 分类。已经处理过的 `message_id` 直接跳过。
+2. **整理格式。** 每封邮件整理成各来源共用的格式：来源、发件人、标题、正文（Gmail 完整格式取回；取不到时退回 Gmail 一行摘要）、附件名、原文链接、时间、`message_id`、`thread_id`、Gmail 分类。已经处理过的 `message_id` 直接跳过。
 3. **规则先筛（0 费用）：**
-   - 垃圾邮件和主人自己发的邮件，跳过。被 Gmail 归为推广、社交、论坛的邮件不再跳过，和其他邮件一样送模型（[ADR 0158](../../adr/0158-bring-related-memories-into-gmail-checks.md)）。
+   - 只有垃圾邮件跳过。Andy 自己发出的邮件也送模型（标 `sentByOwner`），但不套地板规则（[ADR 0159](../../adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md)）。被 Gmail 归为推广、社交、论坛的邮件不再跳过，和其他邮件一样送模型（[ADR 0158](../../adr/0158-bring-related-memories-into-gmail-checks.md)）。
    - 摘要里有验证码、卡号、密码的，先遮盖再发送，不再整封跳过（[ADR 0146](../../adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)）。
-   - Andy 自己发出的邮件不判断，只用来把对应条目标成“你已回复”。
-4. **模型判断。** 剩下的邮件按批交给模型，模型只看发件人、标题、摘要。每封给出：结果（四选一）、有把握 / 拿不准、待办一句话、截止时间、优先级（高中低）、给 Andy 看的一句原因。模型调用走 Pi 运行时（`packages/runtime-pi`），每次检查实际花的钱记在 `proactive_decisions.cost_micros`（单位是百万分之一美元），每日上限按这一列当天的合计来算；不走对话用的用量账本，原因见[实现说明](#implementation)。
+   - Andy 自己发出的邮件由模型判断：只有明确的将来承诺才生成提醒；最新一封自己发的邮件被判为忽略且有把握时，才把对应条目标成“你已回复”。
+4. **模型判断。** 剩下的邮件按批交给模型，模型看发件人、标题和正文（单封最多 16000 字、每批最多 64000 字，超出时保留开头和结尾；密码、卡号等可识别的敏感信息先遮盖）。每封给出：结果（四选一）、有把握 / 拿不准、待办一句话、截止时间、优先级（高中低）、给 Andy 看的一句原因。模型调用走 Pi 运行时（`packages/runtime-pi`），每次检查实际花的钱记在 `proactive_decisions.cost_micros`（单位是百万分之一美元），每日上限按这一列当天的合计来算；不走对话用的用量账本，原因见[实现说明](#implementation)。
 5. **地板规则**，见[判断规则和地板规则](#rules)。
 6. **写结果和推送。** 写 `source_insights` 和 `proactive_decisions`，再按[推送](#push)决定是否推送。
 
@@ -147,7 +147,7 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 
 ## 数据
 
-迁移 `0062_proactive_checks` 新建六张表：设置、连接、决策记录、内容条目、已处理邮件、待发推送；下面列出 Andy 能在页面上看到的两张。都不存邮件正文。提炼出的待办和关键信息按现有的受保护数据方式加密存储。每次检查发给模型的完整提示词（含这批邮件的发件人、标题、Gmail 摘要）和模型的每段回答，也以加密形式随这一行保存（迁移 0070 的 `decision_ledger_payloads`，见 [ADR 0147](../../adr/0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)），用来解释这次为什么开口；清除记录或断开 Gmail 时一并删除。不自动删除，Andy 可以在设置“数据”里全部删除。
+迁移 `0062_proactive_checks` 新建六张表：设置、连接、决策记录、内容条目、已处理邮件、待发推送；下面列出 Andy 能在页面上看到的两张。都不存邮件正文。提炼出的待办和关键信息按现有的受保护数据方式加密存储。每次检查发给模型的完整提示词（含这批邮件的发件人、标题、正文，已遮盖密码和卡号）和模型的每段回答，也以加密形式随这一行保存（迁移 0070 的 `decision_ledger_payloads`，见 [ADR 0147](../../adr/0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)），用来解释这次为什么开口；清除记录或断开 Gmail 时一并删除。不自动删除，Andy 可以在设置“数据”里全部删除。
 
 **`proactive_decisions`：每次检查一行**
 
@@ -296,7 +296,7 @@ Himawari 每 15 分钟自己看一次 Andy 的新邮件（Gmail，只读），�
 - **费用怎么记。** 对话用的用量账本（`model_budget`）要求每次模型调用挂在一个正在执行的对话 Run（一次对话回合）下面，后台检查没有 Run。所以检查时给模型调用单独发一个只在本次有效的编号 `proactive:<调用编号>`，费用取模型返回的实际花费，写进 `proactive_decisions.cost_micros`。模型调用仍然经过 Pi 的 `PiModelTransport` 和现有的 `TrustedModelProviderAdapter`（负责取密钥、检查数据能不能发出），只是不经过对话账本。
 - **推送用哪一类。** 复用已有的“提醒”类推送，来源键是 `proactive:<推送编号>`，所以手机上关掉“提醒”类推送也会关掉邮件推送。点开后打开 `/?reminder=<条目编号>`，由界面 PR 落到提醒页对应那一条并高亮。
 - **Gmail 代码放在哪。** 读取和授权在 `packages/platform-node/src/gmail-source.ts`，没有新建单独的包，免得多一套构建和依赖配置。
-- **生产配置。** 在 `/etc/himawari/config.json` 的 `runPolicy.proactive` 里写：`modelRef`（用哪个模型，必须允许私密数据）、`gmail.clientId`、`gmail.clientSecretRef`（指向 `secretReferences` 里 `purpose` 为 `google-oauth-client` 的一项），可选 `intervalMs`（默认 900000，即 15 分钟）、（旧配置里的 `perCheckCostMicros` 仍可读，但不再起作用，单次检查没有费用上限）`perCheckMs`（默认 180000，即 3 分钟）、`dailyCostMicros`（默认 1000000，即 1 美元）。没有这一节时系统主动提醒完全不启动，界面也不显示相关入口。
+- **生产配置。** 在 `/etc/himawari/config.json` 的 `runPolicy.proactive` 里写：`modelRef`（用哪个模型，必须允许私密数据）、`gmail.clientId`、`gmail.clientSecretRef`（指向 `secretReferences` 里 `purpose` 为 `google-oauth-client` 的一项），可选 `intervalMs`（默认 900000，即 15 分钟）、`bodyCharactersPerMail`（默认 16000）、`bodyCharactersPerBatch`（默认 64000）、（旧配置里的 `perCheckCostMicros` 仍可读，但不再起作用，单次检查没有费用上限）`perCheckMs`（默认 180000，即 3 分钟）、`dailyCostMicros`（默认 1000000，即 1 美元）。没有这一节时系统主动提醒完全不启动，界面也不显示相关入口。
 - **Google 里要填的回调地址。** 固定为网站地址加 `/api/proactive/v1/google/callback`，生产机是 `https://himawari.siyi.win/api/proactive/v1/google/callback`。Andy 建 OAuth 客户端时把它填进“已获授权的重定向 URI”。Himawari 的登录 Cookie 是 `SameSite=Strict`，从 Google 跳回时浏览器不会带上它，所以回调发现没有登录信息时，先返回一张只做跳转的页面，由本站页面带着 `return=1` 再访问一次回调，这一次浏览器会带上 Cookie；如果仍然认不出主人，就跳到设置页显示“连接失败”（I-31）。
 - **连接流程。** 设置里的“连接 Gmail”打开 `/api/proactive/v1/google/start`，服务生成一次性的 `state`（防止别人伪造回调，10 分钟有效，只认发起连接的同一台已登录设备），跳到 Google；Google 回到回调地址后，服务换取 refresh token、读出账号邮箱、加密保存，第一次连接时自动打开“系统主动提醒”，然后跳回 `/?settings=apps&gmail=connected`（失败是 `failed`，Andy 在 Google 页点了取消是 `denied`）。
 - **网页接口。** 查询 `proactive.overview.read`；命令 `proactive.settings.set`（开关、不推送时段、重要发件人）、`proactive.insight.respond`（完成、不再提醒、恢复、评价）、`proactive.decision.rate`、`proactive.audit.respond`（看完了、该做没做）、`proactive.source.manage`（断开 Gmail、删除全部记录）。
