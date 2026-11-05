@@ -38,7 +38,8 @@ install -d -m 0700 -o root -g root "$BACKUP"
 backup_install_paths "$BACKUP" $INSTALL_PATHS
 
 restore_backup() {
-  trap - ERR INT TERM HUP
+  trap - ERR
+  trap '' INT TERM HUP
   set +e
   echo "INSTALL_FAILED putting back units, firewall rules, sudo rules, scripts and new accounts from $BACKUP" >&2
   restore_install_paths "$BACKUP"
@@ -49,23 +50,22 @@ restore_backup() {
     nft delete table inet gh_runner 2> /dev/null
   fi
 }
-trap restore_backup ERR
+trap 'status=$?; restore_backup; exit "$status"' ERR
 trap 'restore_backup; exit 130' INT TERM HUP
 
 install_runner_account() {
   if id "$RUNNER_USER" > /dev/null 2>&1; then
     [ -d "$RUNNER_ROOT/runner" ] || { echo "a $RUNNER_USER user exists but $RUNNER_ROOT/runner does not; refusing to take over an account this script did not create" >&2; return 69; }
   else
-    local root_existed=no
-    [ -e "$RUNNER_ROOT" ] && root_existed=yes
+    record_created_account "$BACKUP" "$RUNNER_USER"
     useradd --system --user-group --home-dir "$RUNNER_ROOT/home" --no-create-home --shell /usr/sbin/nologin "$RUNNER_USER"
-    record_created_account "$BACKUP" "$RUNNER_USER" "$RUNNER_ROOT" "$root_existed"
   fi
   if [ -n "$(id -nG "$RUNNER_USER" | tr ' ' '\n' | grep -vx "$RUNNER_USER")" ]; then
     echo "$RUNNER_USER belongs to extra groups: $(id -nG "$RUNNER_USER")" >&2
     return 67
   fi
 
+  record_created_paths "$BACKUP" "$RUNNER_ROOT/runner" "$RUNNER_ROOT/home" "$RUNNER_ROOT/logs" "$RUNNER_ROOT"
   install -d -m 0755 -o root -g root "$RUNNER_ROOT" "$RUNNER_ROOT/hooks"
   install -d -m 0750 -o "$RUNNER_USER" -g "$RUNNER_USER" "$RUNNER_ROOT/runner" "$RUNNER_ROOT/home" "$RUNNER_ROOT/logs"
 
@@ -98,6 +98,7 @@ install -m 0644 -o root -g root "$SRC/gh-runners.slice" "$SRC/gh-runner-nft.serv
 apply_runner_controls
 
 systemctl daemon-reload
+record_newly_enabled_units "$BACKUP" gh-runner-nft.service gh-runner-clean.timer
 systemctl enable --now gh-runner-nft.service gh-runner-clean.timer
 nft list table inet gh_runner > /dev/null
 trap - ERR INT TERM HUP

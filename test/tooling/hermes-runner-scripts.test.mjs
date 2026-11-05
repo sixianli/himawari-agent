@@ -5,7 +5,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -409,32 +411,146 @@ describe("install-runner.sh rollback", () => {
     expect(existsSync(path.join(target, "new-dir"))).toBe(false);
   });
 
-  it("deletes accounts the failed run created, and only the directories it created", () => {
+  it("stops the processes of a created account before deleting it, and deletes its group", () => {
     const box = sandbox();
-    box.fake("userdel", `${box.record("userdel")}\nexit 0`);
-    box.fake("groupdel", `${box.record("groupdel")}\nexit 0`);
+    for (const name of ["pkill", "userdel", "groupdel"])
+      box.fake(name, `${box.record(name)}\nexit 0`);
+    box.fake("id", "exit 0");
     box.fake("getent", "exit 0");
     const backup = path.join(box.root, "backup");
-    const fresh = path.join(box.root, "srv-new");
-    const kept = path.join(box.root, "srv-kept");
     mkdirSync(backup);
-    mkdirSync(path.join(fresh, "runner"), { recursive: true });
-    mkdirSync(kept);
     const result = helper(
       box,
       [
         `backup_install_paths "${backup}"`,
-        `record_created_account "${backup}" gh-runner-2 "${fresh}" no`,
-        `record_created_account "${backup}" other "${kept}" yes`,
+        `record_created_account "${backup}" gh-runner-2`,
         `restore_install_paths "${backup}"`,
       ].join("\n"),
     );
     expect(result.status).toBe(0);
     expect(box.calls()).toBe(
-      "userdel gh-runner-2\ngroupdel gh-runner-2\nuserdel other\ngroupdel other\n",
+      "pkill -KILL -u gh-runner-2\nuserdel gh-runner-2\ngroupdel gh-runner-2\n",
     );
-    expect(existsSync(fresh)).toBe(false);
-    expect(existsSync(kept)).toBe(true);
+  });
+
+  it("reports RESTORE_INCOMPLETE when a created account cannot be deleted", () => {
+    const box = sandbox();
+    box.fake("pkill", "exit 1");
+    box.fake(
+      "userdel",
+      "echo 'userdel: user gh-runner-2 is currently used by process 1' >&2; exit 8",
+    );
+    box.fake("id", "exit 0");
+    box.fake("getent", "exit 2");
+    const backup = path.join(box.root, "backup");
+    mkdirSync(backup);
+    const result = helper(
+      box,
+      [
+        `backup_install_paths "${backup}"`,
+        `record_created_account "${backup}" gh-runner-2`,
+        `restore_install_paths "${backup}" || echo "rc=$?"`,
+      ].join("\n"),
+    );
+    expect(result.stdout).toBe("rc=1\n");
+    expect(result.stderr).toContain("RESTORE_INCOMPLETE could not put back: user:gh-runner-2");
+  });
+
+  it("removes directories the failed run created under a runner root that already existed", () => {
+    const box = sandbox();
+    const backup = path.join(box.root, "backup");
+    const root = path.join(box.root, "srv");
+    mkdirSync(backup);
+    mkdirSync(path.join(root, "runner"), { recursive: true });
+    writeFileSync(path.join(root, "runner", "config.sh"), "kept\n");
+    const result = helper(
+      box,
+      [
+        `backup_install_paths "${backup}"`,
+        `record_created_paths "${backup}" "${root}/runner" "${root}/home" "${root}/logs" "${root}"`,
+        `mkdir "${root}/home" "${root}/logs"`,
+        `restore_install_paths "${backup}"`,
+      ].join("\n"),
+    );
+    expect(result.status).toBe(0);
+    expect(readFileSync(path.join(root, "runner", "config.sh"), "utf8")).toBe("kept\n");
+    expect(existsSync(path.join(root, "home"))).toBe(false);
+    expect(existsSync(path.join(root, "logs"))).toBe(false);
+  });
+
+  it("disables only the units the failed run enabled", () => {
+    const box = sandbox();
+    box.fake(
+      "systemctl",
+      `${box.record("systemctl")}\n[ "$1" = is-enabled ] && [ "$3" = gh-runner-clean.timer ] && exit 0\n[ "$1" = is-enabled ] && exit 1\nexit 0`,
+    );
+    const backup = path.join(box.root, "backup");
+    mkdirSync(backup);
+    const result = helper(
+      box,
+      [
+        `backup_install_paths "${backup}"`,
+        `record_newly_enabled_units "${backup}" gh-runner-nft.service gh-runner-clean.timer`,
+        `restore_install_paths "${backup}"`,
+      ].join("\n"),
+    );
+    expect(result.status).toBe(0);
+    expect(box.calls()).toMatch(/^systemctl disable --now gh-runner-nft.service$/m);
+    expect(box.calls()).not.toMatch(/disable --now gh-runner-clean.timer/);
+  });
+
+  it("keeps the original file and reports RESTORE_INCOMPLETE when the copy back fails", () => {
+    const box = sandbox();
+    const target = path.join(box.root, "target");
+    const backup = path.join(box.root, "backup");
+    mkdirSync(target);
+    mkdirSync(backup);
+    writeFileSync(path.join(target, "unit"), "old unit\n");
+    const result = helper(
+      box,
+      [
+        `backup_install_paths "${backup}" "${target}/unit"`,
+        `echo new > "${target}/unit"`,
+        `cp() { case "\${@: -1}" in *.restoring) return 1 ;; esac; command cp "$@"; }`,
+        `restore_install_paths "${backup}" || echo "rc=$?"`,
+      ].join("\n"),
+    );
+    expect(result.stdout).toBe("rc=1\n");
+    expect(result.stderr).toContain(`RESTORE_INCOMPLETE could not put back: ${target}/unit`);
+    expect(readFileSync(path.join(target, "unit"), "utf8")).toBe("new\n");
+    expect(existsSync(path.join(backup, "1"))).toBe(true);
+  });
+
+  it("puts back a symbolic link whose target is missing", () => {
+    const box = sandbox();
+    const target = path.join(box.root, "target");
+    const backup = path.join(box.root, "backup");
+    mkdirSync(target);
+    mkdirSync(backup);
+    symlinkSync("/nonexistent/unit", path.join(target, "unit"));
+    const result = helper(
+      box,
+      [
+        `backup_install_paths "${backup}" "${target}/unit"`,
+        `rm "${target}/unit"`,
+        `echo new > "${target}/unit"`,
+        `restore_install_paths "${backup}"`,
+      ].join("\n"),
+    );
+    expect(result.status).toBe(0);
+    expect(readlinkSync(path.join(target, "unit"))).toBe("/nonexistent/unit");
+  });
+
+  it("names the real reason when the port list is empty or ss fails", () => {
+    const box = sandbox();
+    fakeRunnerAccounts(box, ["gh-runner"]);
+    box.fake("ss", "exit 1");
+    const empty = helper(box, 'runner_blocked_ports() { echo ""; }\napply_runner_controls');
+    expect(empty.status).toBe(1);
+    expect(empty.stderr).toContain("no local TCP port to block");
+    const failed = helper(box, "apply_runner_controls");
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toContain("could not list local listening ports");
   });
 
   it("keeps ports from the previous rules so a service that is down stays blocked", () => {
@@ -463,14 +579,130 @@ describe("install-runner.sh rollback", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("ports=[]\n");
   });
+});
 
-  it("restores and ends with INSTALL_FAILED when interrupted, and on any failed step", () => {
-    const text = readFileSync(path.join(scripts, "install-runner.sh"), "utf8");
-    expect(text).toMatch(/^trap restore_backup ERR$/m);
-    expect(text).toMatch(/^trap 'restore_backup; exit 130' INT TERM HUP$/m);
-    expect(text.indexOf("backup_install_paths")).toBeLessThan(
-      text.indexOf("install_runner_account\n"),
+describe("install-runner.sh run as root in a private mount namespace", () => {
+  const reported = [
+    "/etc/systemd/system/gh-runner.service",
+    "/etc/systemd/system/gh-runner-2.service",
+    "/etc/systemd/system/gh-runners.slice",
+    "/etc/systemd/system/gh-runner-nft.service",
+    "/etc/sudoers.d/91-gh-runner-control",
+    "/etc/gh-runner/nft.rules",
+    "/srv/gh-runner/hooks/job-started.sh",
+    "/srv/gh-runner/hooks/clean-old.sh",
+    "/srv/gh-runner/bin/runner-pause.sh",
+    "/srv/gh-runner/bin/runner-resume.sh",
+    "/srv/gh-runner/runner/config.sh",
+    "/srv/gh-runner/home",
+    "/srv/gh-runner-2",
+  ];
+
+  const installWithFailingRuleCheck = (nftCheck) => {
+    const box = sandbox();
+    box.fake("hostname", "echo hermes-home");
+    box.fake(
+      "id",
+      [
+        `case "\${@: -1}" in`,
+        '  gh-runner) [ "$1" = -u ] && echo 996; [ "$1" = -nG ] && echo gh-runner; exit 0 ;;',
+        `  gh-runner-2) [ -e "${box.root}/user-gh-runner-2" ] || exit 1; [ "$1" = -u ] && echo 995; [ "$1" = -nG ] && echo gh-runner-2; exit 0 ;;`,
+        "esac",
+        "echo 0",
+      ].join("\n"),
     );
+    box.fake("useradd", `${box.record("useradd")}\ntouch "${box.root}/user-gh-runner-2"`);
+    box.fake("userdel", `${box.record("userdel")}\nrm -f "${box.root}/user-$1"`);
+    box.fake("pkill", `${box.record("pkill")}\nexit 1`);
+    box.fake("getent", "exit 2");
+    box.fake(
+      "install",
+      `args=()\nwhile [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done\nexec /usr/bin/install "\${args[@]}"`,
+    );
+    box.fake("curl", 'while [ $# -gt 0 ]; do [ "$1" = -o ] && : > "$2"; shift; done');
+    box.fake("ss", "printf '%s\\n' 'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*'");
+    box.fake("nft", `${box.record("nft")}\nif [ "$1" = -c ]; then ${nftCheck}; fi\nexit 0`);
+    box.fake(
+      "systemctl",
+      `${box.record("systemctl")}\ncase "$1" in is-active) exit 3 ;; is-enabled) exit 1 ;; esac\nexit 0`,
+    );
+    for (const name of ["visudo", "sha256sum", "python3", "sudo"]) box.fake(name, "exit 0");
+    const inner = [
+      "set -u",
+      `real="${box.root}/real"`,
+      'for dir in etc var; do mkdir -p "$real/$dir" && mount --rbind "/$dir" "$real/$dir" || exit 90; done',
+      "for dir in /etc /var /srv; do mount -t tmpfs tmpfs $dir || exit 91; done",
+      "keep() {",
+      '  for entry in "$real/$1"/*; do',
+      `    case " $2 " in *" \${entry##*/} "*) ;; *) ln -s "$entry" "/$1/\${entry##*/}" ;; esac`,
+      "  done",
+      "}",
+      'keep etc "systemd sudoers.d gh-runner"',
+      'keep var "backups"',
+      "mkdir -p /etc/systemd/system /etc/sudoers.d /etc/gh-runner /srv/gh-runner/runner /srv/gh-runner/hooks /srv/gh-runner/bin",
+      "echo old-unit > /etc/systemd/system/gh-runner.service",
+      "echo old-sudoers > /etc/sudoers.d/91-gh-runner-control",
+      "echo old-rules > /etc/gh-runner/nft.rules",
+      "echo old-hook > /srv/gh-runner/hooks/job-started.sh",
+      "echo old-pause > /srv/gh-runner/bin/runner-pause.sh",
+      "echo config > /srv/gh-runner/runner/config.sh",
+      "chmod 0755 /srv/gh-runner/runner/config.sh",
+      `bash "${scripts}/install-runner.sh" > "${box.root}/stdout" 2> "${box.root}/stderr"`,
+      'echo "rc=$?"',
+      `for path in ${reported.join(" ")}; do`,
+      '  if [ -d "$path" ]; then echo "$path=DIR"; elif [ -e "$path" ]; then echo "$path=$(cat "$path")"; else echo "$path=MISSING"; fi',
+      "done",
+    ].join("\n");
+    const result = spawnSync("unshare", ["-rm", "/bin/bash", "-c", inner], {
+      encoding: "utf8",
+      env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
+    });
+    const state = Object.fromEntries(
+      result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+    const stderrFile = path.join(box.root, "stderr");
+    const stderr = existsSync(stderrFile)
+      ? readFileSync(stderrFile, "utf8")
+      : `namespace setup failed: ${result.status} ${result.stdout} ${result.stderr}`;
+    return { box, result, state, stderr };
+  };
+
+  it.each([
+    ["a failed step", "exit 1", "1"],
+    ["a TERM signal", "kill -TERM $PPID; exit 0", "130"],
+  ])("puts every file back and deletes the new account after %s", (_, nftCheck, code) => {
+    const { box, result, state, stderr } = installWithFailingRuleCheck(nftCheck);
+    expect(result.status).toBe(0);
+    expect(state.rc).toBe(code);
+    expect(stderr).toContain("INSTALL_FAILED");
+    expect(stderr).not.toContain("RESTORE_INCOMPLETE");
+    expect(stderr).not.toContain("command not found");
+    expect(stderr).not.toContain("unbound variable");
+    expect(readFileSync(path.join(box.root, "stdout"), "utf8")).toBe("");
+    expect(box.calls()).toMatch(/^nft -c -f /m);
+    expect(box.calls()).not.toMatch(/^systemctl (enable|is-enabled) /m);
+    expect(box.calls()).toMatch(/^useradd .*gh-runner-2$/m);
+    expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
+    expect(box.calls()).toMatch(/^nft -f \/etc\/gh-runner\/nft.rules$/m);
+    expect(state).toEqual({
+      rc: code,
+      "/etc/systemd/system/gh-runner.service": "old-unit",
+      "/etc/systemd/system/gh-runner-2.service": "MISSING",
+      "/etc/systemd/system/gh-runners.slice": "MISSING",
+      "/etc/systemd/system/gh-runner-nft.service": "MISSING",
+      "/etc/sudoers.d/91-gh-runner-control": "old-sudoers",
+      "/etc/gh-runner/nft.rules": "old-rules",
+      "/srv/gh-runner/hooks/job-started.sh": "old-hook",
+      "/srv/gh-runner/hooks/clean-old.sh": "MISSING",
+      "/srv/gh-runner/bin/runner-pause.sh": "old-pause",
+      "/srv/gh-runner/bin/runner-resume.sh": "MISSING",
+      "/srv/gh-runner/runner/config.sh": "config",
+      "/srv/gh-runner/home": "MISSING",
+      "/srv/gh-runner-2": "MISSING",
+    });
   });
 });
 

@@ -85,7 +85,7 @@ backup_install_paths() {
   : > "$backup/manifest"
   for path in "$@"; do
     index=$((index + 1))
-    if [ -e "$path" ]; then
+    if [ -e "$path" ] || [ -L "$path" ]; then
       cp -a "$path" "$backup/$index" || return 1
       printf 'present\t%s\t%s\n' "$index" "$path" >> "$backup/manifest"
     else
@@ -94,23 +94,62 @@ backup_install_paths() {
   done
 }
 
+record_created_paths() {
+  local backup=$1 path
+  shift
+  for path in "$@"; do
+    [ -e "$path" ] || [ -L "$path" ] || printf '%s\n' "$path" >> "$backup/created-paths"
+  done
+}
+
 record_created_account() {
-  printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$1/created-accounts"
+  printf '%s\n' "$2" >> "$1/created-accounts"
+}
+
+record_newly_enabled_units() {
+  local backup=$1 unit
+  shift
+  for unit in "$@"; do
+    systemctl is-enabled --quiet "$unit" || printf '%s\n' "$unit" >> "$backup/enabled-units"
+  done
 }
 
 restore_install_paths() {
-  local backup=$1 state index path user root root_existed
+  local backup=$1 state index path user unit failed=""
+  if [ -f "$backup/enabled-units" ]; then
+    while read -r unit; do
+      systemctl disable --now "$unit" || failed="$failed unit:$unit"
+    done < "$backup/enabled-units"
+  fi
   while IFS=$'\t' read -r state index path; do
-    rm -rf -- "$path"
-    [ "$state" = present ] && cp -a "$backup/$index" "$path"
+    if [ "$state" = present ]; then
+      rm -rf -- "$path.restoring" &&
+        cp -a "$backup/$index" "$path.restoring" &&
+        rm -rf -- "$path" &&
+        mv -- "$path.restoring" "$path" ||
+        failed="$failed $path"
+    else
+      rm -rf -- "$path" || failed="$failed $path"
+    fi
   done < "$backup/manifest"
-  [ -f "$backup/created-accounts" ] || return 0
-  while IFS=$'\t' read -r user root root_existed; do
-    userdel "$user"
-    getent group "$user" > /dev/null && groupdel "$user"
-    [ "$root_existed" = no ] && rm -rf -- "$root"
-  done < "$backup/created-accounts"
-  return 0
+  if [ -f "$backup/created-accounts" ]; then
+    while read -r user; do
+      id "$user" > /dev/null 2>&1 || continue
+      pkill -KILL -u "$user" || true
+      userdel "$user" || failed="$failed user:$user"
+      if getent group "$user" > /dev/null; then
+        groupdel "$user" || failed="$failed group:$user"
+      fi
+    done < "$backup/created-accounts"
+  fi
+  if [ -f "$backup/created-paths" ]; then
+    while read -r path; do
+      rm -rf -- "$path" || failed="$failed $path"
+    done < "$backup/created-paths"
+  fi
+  [ -z "$failed" ] && return 0
+  echo "RESTORE_INCOMPLETE could not put back:$failed (copies are in $backup)" >&2
+  return 1
 }
 
 apply_runner_controls() {
@@ -122,8 +161,8 @@ apply_runner_controls() {
     runner_select "$id"
     uids="${uids:+$uids, }$(id -u "$RUNNER_USER")"
   done
-  ports=$(runner_blocked_ports /etc/gh-runner/nft.rules) || ports=""
-  [ -n "$ports" ] || { echo "could not list local listening ports" >&2; return 1; }
+  ports=$(runner_blocked_ports /etc/gh-runner/nft.rules) || { echo "could not list local listening ports" >&2; return 1; }
+  [ -n "$ports" ] || { echo "no local TCP port to block: nothing but DNS is listening and there are no earlier rules" >&2; return 1; }
 
   rules=$(mktemp)
   runner_firewall_rules "$uids" "$ports" > "$rules"
