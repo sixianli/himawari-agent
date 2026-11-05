@@ -55,6 +55,7 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/integration-web",
     new Set([
+      "@himawari-agent/sensitive-capture",
       "@himawari-agent/application",
       "@himawari-agent/domain",
       "@himawari-agent/gateway-contracts",

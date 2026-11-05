@@ -11,3 +11,14 @@ const SENSITIVE_MENTION =
 export function mentionsSensitiveMaterial(text: string): boolean {
   return SENSITIVE_MENTION.test(text);
 }
+
+const SENSITIVE_QUERY_PARAMETER = /token|key|secret|password|signature|credential/i;
+const SENSITIVE_FIELD_NAME = /authorization|cookie|token|api.?key|secret|password|credential/i;
+
+export function isSensitiveQueryParameter(name: string): boolean {
+  return SENSITIVE_QUERY_PARAMETER.test(name);
+}
+
+export function isSensitiveFieldName(name: string): boolean {
+  return SENSITIVE_FIELD_NAME.test(name);
+}

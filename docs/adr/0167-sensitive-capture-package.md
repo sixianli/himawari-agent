@@ -30,6 +30,8 @@ date: "2026-11-05"
 - 机器密钥规则在同一目录的 `machine-secret-exclusion.ts`，包括私钥、Bearer、JWT、OpenAI、GitHub、AWS 和通用赋值。
 - 自动整理记忆时判断“受限信息”的正则写在 `apps/agent-service/src/production-memory-capture.ts`。
 - 网页导入记忆时提示“可能敏感”的正则写在 `apps/control-center/src/memory-import.ts`。
+- 网页抓取内容里遮密钥的正则写在 `packages/integration-web/src/untrusted-content.ts`。
+- 给诊断日志打码时判断敏感字段名、网址参数名的两条正则写在 `packages/runtime-pi/src/pi-runtime-adapter.ts`。
 
 前两份和记忆、提醒这些业务代码同在 `packages/application` 里，无法单独拿出去用。
 
@@ -49,9 +51,12 @@ date: "2026-11-05"
 1. **新包 `@himawari-agent/sensitive-capture`**（`packages/sensitive-capture`）。
    - 只放识别和遮盖本身，不依赖 Himawari 的其他包，不做文件、数据库或网络读写，浏览器里也能用。
    - 原来的两个文件原样搬进来，改名为 `src/redaction.ts` 和 `src/machine-secrets.ts`；导出的函数名和行为都不变。
-2. **另外两条规则也搬进来**，放在 `src/identifiers.ts`，规则本身不变。
+2. **散在别处的规则也搬进来**，规则本身不变。
    - `containsRestrictedIdentifier`：记忆、提醒和 Muse 在存储时用它。规则偏宽：16 到 19 位的连续数字，或身份证号的格式，都算受限，不看校验位。
    - `mentionsSensitiveMaterial`：网页导入记忆时用它给出提示。
+   - `isSensitiveFieldName`、`isSensitiveQueryParameter`：诊断日志打码时判断字段名和网址参数名。
+   - `redactWebContentSecrets`（`src/web-content.ts`）：网页抓取内容里的密钥换成 `[REDACTED_MACHINE_SECRET]`。
+   - 后三条是代码复核第 1 轮找出的漏搬规则。
    - 原来打算让存储这一侧也改用出口遮盖那套带校验位的规则。但测试里“我的卡号是 6222020200112233445”过不了 Luhn 校验（银行卡号的校验位算法），改了就会被当作普通记忆存下。存储这一侧宁可多拦，所以保留宽的规则。两套规则用途不同，都放在这个包里。
 3. **Himawari 自己的部分留在原处。**
    - 两句占位符说明（来自提示词目录）放在 `packages/application/src/services/egress-legend.ts`。
@@ -63,7 +68,8 @@ date: "2026-11-05"
 
 ## 检查
 
-- `npm run check:egress-redaction` 新增一项：产品代码（`apps/*/src`、`packages/*/src`）里，除了 `packages/sensitive-capture/src/`，不得出现识别规则的特征写法，包括私钥块、AWS key、GitHub token、JWT、OpenAI key、身份证号格式、银行卡号位数、Luhn 校验、“密码”和“验证码”关键词。这项检查一加上，就抓到了网页导入里那条规则。反向用例在 `test/tooling/egress-redaction-check.test.mjs`。
+- `npm run check:egress-redaction` 新增一项：产品代码（`apps/*/src`、`packages/*/src` 下的 `.ts`、`.tsx`、`.mts`、`.cts`、`.js`、`.mjs`、`.cjs`）里，除了 `packages/sensitive-capture/src/`，不得出现识别规则的特征写法，包括私钥块、AWS key、GitHub token、JWT、OpenAI key、Bearer、`api_key` 这类赋值、身份证号格式、银行卡号位数、Luhn 校验，以及正则里成串的“密码、口令、验证码、password”等关键词。这项检查第一版就抓到了网页导入那条；代码复核指出它太窄后放宽，又抓到了网页抓取和诊断日志打码那三条。反向用例在 `test/tooling/egress-redaction-check.test.mjs`，包括这几条旧规则原本的写法，以及一个日期解析不误报的用例。
+- 这项检查是按特征写法匹配，换个写法仍可能绕过；它防的是“顺手又写一条”，不是故意绕开。
 - 行为不变由现有测试证明：出口遮盖、机器密钥、记忆凭据排除、模型出口、提示词前缀检查（`check:prompt-prefix`）全部原样通过，不需要改断言。
 
 <a id="rollout"></a>

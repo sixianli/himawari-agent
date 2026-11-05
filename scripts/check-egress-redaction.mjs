@@ -23,16 +23,24 @@ export const REDACTOR_ONLY_FILES = Object.freeze([
 export const SENSITIVE_RULE_PACKAGE = "packages/sensitive-capture/src/";
 
 export const SENSITIVE_RULE_SIGNATURES = Object.freeze([
-  { name: "private key block", pattern: /\/-----BEGIN/u },
-  { name: "AWS access key", pattern: /\(\?:AKIA\|ASIA\)/u },
-  { name: "GitHub token", pattern: /gh\[opsu\]_|github_pat_\[/u },
-  { name: "JWT", pattern: /\\beyJ\[/u },
-  { name: "OpenAI key", pattern: /sk-\(\?:proj/u },
-  { name: "Chinese identity number", pattern: /\(\?:19\|20\)(?:\\d|\[0-9\])\{2\}\(\?:0\[1-9\]/u },
-  { name: "card number run", pattern: /(?:\\d|\[0-9\])\{1[2-6],1[89]\}/u },
-  { name: "Luhn checksum", pattern: /function luhn/iu },
-  { name: "password keyword", pattern: /\(\?:密码\|/u },
-  { name: "verification code keyword", pattern: /\(\?:验证码\|/u },
+  { name: "private key block", pattern: /-----BEGIN/u },
+  { name: "AWS access key", pattern: /AKIA\|ASIA|AKIA\[/u },
+  { name: "GitHub token", pattern: /gh\[[a-z]+\]_|ghp_\[|github_pat_\[/u },
+  { name: "JWT", pattern: /eyJ\[/u },
+  { name: "OpenAI key", pattern: /sk-\[|sk-\(/u },
+  { name: "Bearer token", pattern: /Bearer\\s/u },
+  { name: "credential assignment", pattern: /api\[[^\]]*\]\??key|access\[[^\]]*\]\??token/iu },
+  {
+    name: "password or code keyword",
+    pattern:
+      /(?:^|[|(/:])(?:password|passwd|密码|口令|验证码|身份证|银行卡|卡号)\||\|(?:password|passwd|密码|口令|验证码)\b/imu,
+  },
+  {
+    name: "Chinese identity number",
+    pattern: /\(\?:19\|20\)(?:\\d|\[0-9\])\{2\}\(\?:0\[1-9\]/u,
+  },
+  { name: "card number run", pattern: /\{1[2-6],1[89]\}|\{1[2-9],\}/u },
+  { name: "Luhn checksum", pattern: /\bluhn/iu },
 ]);
 
 export const EGRESS_PATTERNS = Object.freeze([
@@ -58,7 +66,8 @@ function sourceFiles(directory) {
     if (entry === "node_modules" || entry === "dist") continue;
     const full = path.join(directory, entry);
     if (statSync(full).isDirectory()) found.push(...sourceFiles(full));
-    else if (/\.(?:ts|mts)$/u.test(entry) && !/\.d\.ts$/u.test(entry)) found.push(full);
+    else if (/\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/u.test(entry) && !/\.d\.ts$/u.test(entry))
+      found.push(full);
   }
   return found;
 }

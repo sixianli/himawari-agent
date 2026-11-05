@@ -10,7 +10,8 @@
 |---|---|
 | `src/machine-secrets.ts` | 机器密钥规则：扫描（`scanMachineSecrets`）、遮盖（`redactMachineSecrets`）、断言（`assertMachineSecretFree`），以及流式输出时的遮盖（`StreamingMachineSecretRedactor`） |
 | `src/redaction.ts` | 发给模型前的遮盖（`redactForEgress`）：机器密钥、密码、验证码、银行卡、证件号，生成稳定的占位符 |
-| `src/identifiers.ts` | 存储时判断受限信息（`containsRestrictedIdentifier`），以及导入时的敏感提示（`mentionsSensitiveMaterial`） |
+| `src/identifiers.ts` | 存储时判断受限信息（`containsRestrictedIdentifier`）、导入时的敏感提示（`mentionsSensitiveMaterial`）、诊断日志打码时的敏感字段名和网址参数名（`isSensitiveFieldName`、`isSensitiveQueryParameter`） |
+| `src/web-content.ts` | 网页抓取内容里的密钥遮盖（`redactWebContentSecrets`） |
 
 ## 约定
 

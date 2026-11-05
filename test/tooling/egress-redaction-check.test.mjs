@@ -76,7 +76,41 @@ describe("egress redaction check", () => {
     expect(report).toContain(
       "packages/platform-node/src/token.ts: 敏感信息识别规则（AWS access key）",
     );
-    expect(report).toContain("packages/runtime-pi/src/pw.ts: 敏感信息识别规则（password keyword）");
+    expect(report).toContain(
+      "packages/runtime-pi/src/pw.ts: 敏感信息识别规则（password or code keyword）",
+    );
+  });
+
+  it("fails on the rules this package absorbed, written the way they were, in any source extension", () => {
+    const root = fixture({
+      "apps/control-center/src/memory-import.tsx":
+        "const SECRET = /密码|口令|password|passwd|token|secret|api[ _-]?key|身份证|银行卡|卡号|ghp_|sk-|\\d{15,19}/i;",
+      "packages/integration-web/src/untrusted-content.js":
+        "const P = /(?:sk-[A-Za-z0-9_-]{12,}|(?:password|passwd|token)\\s*[:=]\\s*[^\\s,;]{4,}|-----BEGIN [A-Z ]+PRIVATE KEY-----)/gi;",
+      "packages/runtime-pi/src/observation.mjs":
+        "const F = /authorization|cookie|token|api.?key|secret|password|credential/i;",
+    });
+    const report = findEgressViolations(root).join("\n");
+    expect(report).toContain(
+      "apps/control-center/src/memory-import.tsx: 敏感信息识别规则（password or code keyword）",
+    );
+    expect(report).toContain(
+      "packages/integration-web/src/untrusted-content.js: 敏感信息识别规则（private key block）",
+    );
+    expect(report).toContain(
+      "packages/integration-web/src/untrusted-content.js: 敏感信息识别规则（OpenAI key）",
+    );
+    expect(report).toContain(
+      "packages/runtime-pi/src/observation.mjs: 敏感信息识别规则（password or code keyword）",
+    );
+  });
+
+  it("leaves date parsing and ordinary alternations alone", () => {
+    const root = fixture({
+      "packages/memory-engine/src/time-scope.ts":
+        'const Y = new RegExp(`((?:19|20)[0-9]{2})\\\\s*年`, "u"); const W = /周一|周二|today|tomorrow/u;',
+    });
+    expect(findEgressViolations(root)).toEqual([]);
   });
 
   it("accepts detection rules inside the sensitive-capture package", () => {

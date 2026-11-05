@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { containsRestrictedIdentifier, mentionsSensitiveMaterial } from "../src/index.js";
+import {
+  containsRestrictedIdentifier,
+  isSensitiveFieldName,
+  isSensitiveQueryParameter,
+  mentionsSensitiveMaterial,
+  redactWebContentSecrets,
+} from "../src/index.js";
 
 describe("storage-boundary identifiers", () => {
   it("treats any 16 to 19 digit run or a Chinese identity number shape as restricted, separators included", () => {
@@ -24,5 +30,28 @@ describe("import hints", () => {
 
   it("REVERSE: leaves ordinary preferences alone", () => {
     expect(mentionsSensitiveMaterial("喜欢喝无糖咖啡")).toBe(false);
+  });
+});
+
+describe("diagnostic field names and web content", () => {
+  it("marks credential-looking field and query names as sensitive", () => {
+    expect(isSensitiveFieldName("Authorization")).toBe(true);
+    expect(isSensitiveFieldName("x_api_key")).toBe(true);
+    expect(isSensitiveQueryParameter("X-Amz-Signature")).toBe(true);
+  });
+
+  it("REVERSE: leaves ordinary names alone", () => {
+    expect(isSensitiveFieldName("model")).toBe(false);
+    expect(isSensitiveQueryParameter("page")).toBe(false);
+  });
+
+  it("removes secrets from fetched web content and reports that it did", () => {
+    const page = ["password", "hunter2hunter2"].join("=");
+    const result = redactWebContentSecrets(`login with ${page} today`);
+    expect(result).toEqual({ text: "login with [REDACTED_MACHINE_SECRET] today", found: true });
+    expect(redactWebContentSecrets("nothing to see")).toEqual({
+      text: "nothing to see",
+      found: false,
+    });
   });
 });
