@@ -547,9 +547,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "tools.reminder-set": {
-    "sha256": "172113d6b886b6e712e5e837fbd11000f497dd74b10f8347bdfca1ed0b697b93",
+    "sha256": "052bba8325aa7a15c5bfa6afce2e0085d2c1e198b68889285b05339f72690794",
     "changedIn": "ADR 0166",
-    "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里"
+    "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
   },
   "tools.save-copy": {
     "sha256": "2879603873a5ef9ce44fdfd844c6acfae39553b7544968c48f722756f619e076",

@@ -150,10 +150,8 @@ export function memoryCapturePrompt(
   ].join("\n");
 }
 
-function addYear(instant: string): string {
-  const date = new Date(instant);
-  date.setUTCFullYear(date.getUTCFullYear() + 1);
-  return date.toISOString();
+function laterYear(localValue: string, years: number): string {
+  return localValue.replace(/^\d{4}/u, (year) => String(Number(year) + years).padStart(4, "0"));
 }
 
 export function reminderSchedule(
@@ -178,19 +176,20 @@ export function reminderSchedule(
     const due = Date.parse(start) + hours * HOUR + minutes * 60_000;
     return { due, remind: timed ? Math.max(due - HOUR, sent) : due };
   };
-  let resolved = resolve(dueAt.trim());
+  const local = dueAt.trim();
+  let resolved = resolve(local);
   if (resolved === null) return undefined;
-  let schedule = {
-    dueAt: new Date(resolved.due).toISOString(),
-    remindAt: new Date(resolved.remind).toISOString(),
-  };
   if (yearly)
-    for (let step = 0; step < 2 && resolved.due <= sent; step += 1) {
-      schedule = { dueAt: addYear(schedule.dueAt), remindAt: addYear(schedule.remindAt) };
-      resolved = { due: Date.parse(schedule.dueAt), remind: Date.parse(schedule.remindAt) };
+    for (let years = 1; years <= 2 && resolved.due <= sent; years += 1) {
+      resolved = resolve(laterYear(local, years));
+      if (resolved === null) return undefined;
     }
   if (resolved.due <= sent || resolved.due - sent > MAXIMUM_REMINDER_HORIZON) return undefined;
-  return { ...schedule, repeat: yearly ? "yearly" : "none" };
+  return {
+    dueAt: new Date(resolved.due).toISOString(),
+    remindAt: new Date(resolved.remind).toISOString(),
+    repeat: yearly ? "yearly" : "none",
+  };
 }
 
 function jsonObject(output: string): unknown {
