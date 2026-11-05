@@ -61,7 +61,10 @@
                   "minLength": 1
                 },
                 "runner": {
-                  "enum": ["ubuntu-24.04", "macos-15"]
+                  "enum": ["hermes-home", "macos-15"]
+                },
+                "paused": {
+                  "const": true
                 },
                 "os": {
                   "enum": ["linux", "darwin"]

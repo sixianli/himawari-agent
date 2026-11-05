@@ -21,24 +21,43 @@ const realShapedKey = ["sk", "live", "9fK2mQ7xT4vB8nL1cZ6wR3yH5jD0aE"].join("_")
 const matches = (patterns, value) => patterns.some((pattern) => pattern.test(value));
 
 describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式", () => {
-  const [hashLines, ...scoped] = blocks;
+  const [, gitObjects, readback, ...scoped] = blocks;
 
-  it("文件名对应 40 或 64 位十六进制摘要的清单行被放行，其他值不放行", () => {
-    expect(hashLines.target).toBe('"generic-api-key"');
-    expect(hashLines.regexTarget).toBe("match");
-    expect(hashLines.condition).toBe("AND");
-    expect(matches(hashLines.paths, "/tmp/x/test/qualification/evidence/p1/frozen.json")).toBe(
+  it("已删除证据清单里的 40 位 git 对象号行被放行，其他值和其他文件不放行", () => {
+    expect(gitObjects.target).toBe('"generic-api-key"');
+    expect(gitObjects.regexTarget).toBe("match");
+    expect(gitObjects.condition).toBe("AND");
+    expect(matches(gitObjects.paths, ".agents/tasks/round2-tool-execution/evidence.jsonl")).toBe(
       true,
     );
-    expect(matches(hashLines.paths, ".agents/tasks/round2-tool-execution/evidence.jsonl")).toBe(
-      true,
-    );
-    expect(matches(hashLines.paths, "src/config/server.json")).toBe(false);
-    expect(matches(hashLines.regexes, `secret-reader.ts": "${"a".repeat(64)}"`)).toBe(true);
-    expect(matches(hashLines.regexes, `credential.json": "${"b".repeat(40)}"`)).toBe(true);
-    expect(matches(hashLines.regexes, `secret-reader.ts": "${realShapedKey}"`)).toBe(false);
-    expect(matches(hashLines.regexes, `secret-reader.ts": "${"a".repeat(41)}"`)).toBe(false);
-    expect(matches(hashLines.regexes, `apiKey = "${"a".repeat(64)}"`)).toBe(false);
+    expect(matches(gitObjects.paths, "test/qualification/evidence/other/frozen.json")).toBe(false);
+    expect(matches(gitObjects.paths, "src/config/server.json")).toBe(false);
+    expect(matches(gitObjects.regexes, `credential.json": "${"b".repeat(40)}"`)).toBe(true);
+    expect(matches(gitObjects.regexes, `credential.json": "${"b".repeat(64)}"`)).toBe(false);
+    expect(matches(gitObjects.regexes, `secret-reader.ts": "${realShapedKey}"`)).toBe(false);
+    expect(matches(gitObjects.regexes, `secret-reader.ts": "${"a".repeat(41)}"`)).toBe(false);
+    expect(matches(gitObjects.regexes, `apiKey = "${"b".repeat(40)}"`)).toBe(false);
+  });
+
+  it("回读文件里那一行摘要只在那个文件里按精确值放行", () => {
+    const line = `p4-save-secrets-final.log": "0803b00889e1a37bf2645a12f203d89c5a695b27538e322db7e962339e6a416a"`;
+    expect(readback.condition).toBe("AND");
+    expect(readback.target).toBe('"generic-api-key"');
+    expect(readback.regexTarget).toBe("match");
+    expect(
+      matches(
+        readback.paths,
+        "/tmp/x/test/qualification/evidence/workspace-authorization-lifecycle/p4-completion-01/archive-readback.json",
+      ),
+    ).toBe(true);
+    expect(
+      matches(
+        readback.paths,
+        "test/qualification/evidence/workspace-authorization-lifecycle/p0/archive-readback.json",
+      ),
+    ).toBe(false);
+    expect(matches(readback.regexes, line)).toBe(true);
+    expect(matches(readback.regexes, line.replace("0803", "0804"))).toBe(false);
   });
 
   it("其余每条白名单都同时限定规则、文件路径和值的形状", () => {

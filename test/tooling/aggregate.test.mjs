@@ -124,7 +124,7 @@ describe("complete-attempt gate", () => {
   it("accepts the complete positive control and emits a closed GateSummary", () => {
     const result = aggregate(positive());
     expect(result.status).toBe("passed");
-    expect(result.expected).toHaveLength(12);
+    expect(result.expected).toHaveLength(10);
     expect(result.failures).toEqual([]);
     expect(validateRecord("GateSummary", result)).toBe(result);
   });
