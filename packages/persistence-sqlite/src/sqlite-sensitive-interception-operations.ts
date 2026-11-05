@@ -12,6 +12,7 @@ import {
   type SensitiveInterceptionRecordInput,
   type SensitiveInterceptionRecordResult,
   type SensitiveInterceptionScope,
+  type SensitiveInterceptionSummary,
 } from "@himawari-agent/application/sensitive-interceptions";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -94,6 +95,8 @@ export class SqliteSensitiveInterceptionOperations {
         return this.record(payload as SensitiveInterceptionRecordInput);
       case "sensitiveInterception.list":
         return this.list(payload as SensitiveInterceptionListInput);
+      case "sensitiveInterception.summarize":
+        return this.summarize(payload as SensitiveInterceptionScope);
       case "sensitiveInterception.clear":
         return this.clear(payload as SensitiveInterceptionScope);
       default:
@@ -203,6 +206,22 @@ export class SqliteSensitiveInterceptionOperations {
           ? Object.freeze({ firstSeenAt: last.firstSeenAt, id: last.id })
           : null,
     });
+  }
+
+  private summarize(input: SensitiveInterceptionScope): SensitiveInterceptionSummary {
+    if (!validScope(input))
+      return this.fail("PORT_INVALID_OPERATION", "Sensitive interception scope is invalid");
+    const rows = this.database
+      .prepare(
+        `SELECT outcome, COUNT(*) AS count FROM sensitive_interceptions
+         WHERE owner_id = ? AND agent_id = ? GROUP BY outcome`,
+      )
+      .all(input.ownerId, input.agentId) as { outcome: string; count: number }[];
+    const counts = { masked: 0, withheld: 0, not_saved: 0 };
+    for (const { outcome, count } of rows)
+      if (outcome === "masked" || outcome === "withheld" || outcome === "not_saved")
+        counts[outcome] = count;
+    return Object.freeze(counts);
   }
 
   private clear(input: SensitiveInterceptionScope): { readonly cleared: number } {

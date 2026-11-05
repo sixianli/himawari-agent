@@ -97,8 +97,11 @@ export interface SensitiveInterceptionPage {
   readonly next: SensitiveInterceptionCursor | null;
 }
 
+export type SensitiveInterceptionSummary = Readonly<Record<SensitiveInterceptionOutcome, number>>;
+
 export interface SensitiveInterceptionStorePort {
   record(input: SensitiveInterceptionRecordInput): Promise<SensitiveInterceptionRecordResult>;
   list(input: SensitiveInterceptionListInput): Promise<SensitiveInterceptionPage>;
+  summarize(input: SensitiveInterceptionScope): Promise<SensitiveInterceptionSummary>;
   clear(input: SensitiveInterceptionScope): Promise<{ readonly cleared: number }>;
 }

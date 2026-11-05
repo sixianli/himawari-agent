@@ -1075,6 +1075,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<SensitiveInterceptionStorePort>({
       record: (input) => this.context.write("sensitiveInterception.record", input),
       list: (input) => this.context.read("sensitiveInterception.list", input),
+      summarize: (input) => this.context.read("sensitiveInterception.summarize", input),
       clear: (input) => this.context.write("sensitiveInterception.clear", input),
     });
   }

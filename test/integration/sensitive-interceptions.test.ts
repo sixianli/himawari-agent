@@ -161,7 +161,9 @@ describe("[SI-1] sensitive interception records", () => {
         observations: [observation({ threadId: null, source: "background" })],
         now: T0,
       });
+      expect(await store.summarize(scope)).toEqual({ masked: 2, withheld: 0, not_saved: 0 });
       expect(await store.clear(scope)).toEqual({ cleared: 2 });
+      expect(await store.summarize(scope)).toEqual({ masked: 0, withheld: 0, not_saved: 0 });
       expect((await store.list({ ...scope, limit: 10, before: null })).items).toEqual([]);
       expect(
         (await store.list({ ownerId: OWNER_ID, agentId: OTHER_AGENT_ID, limit: 10, before: null }))
