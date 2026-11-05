@@ -1,4 +1,4 @@
-import { redactMachineSecrets } from "./machine-secrets.js";
+import { MACHINE_SECRET_RULE_IDS, redactMachineSecrets } from "./machine-secrets.js";
 
 export const EGRESS_REDACTION_KINDS = Object.freeze([
   "machine-secret",
@@ -26,10 +26,30 @@ export type EgressPlaceholderKind =
   | "bank-card"
   | "identity-number";
 
+export const EGRESS_REDACTION_RULE_IDS = Object.freeze([
+  ...MACHINE_SECRET_RULE_IDS,
+  "password-keyword",
+  "cn-identity-number",
+  "iban",
+  "bank-card",
+  "jp-my-number",
+  "verification-code-keyword",
+  "named-earlier",
+] as const);
+
+export type EgressRedactionRuleId = (typeof EGRESS_REDACTION_RULE_IDS)[number];
+
+export interface EgressRedactionSighting {
+  readonly kind: EgressRedactionKind;
+  readonly ruleId: EgressRedactionRuleId;
+  readonly value: string;
+}
+
 export interface EgressRedactionOptions {
   readonly tag?: (kind: EgressPlaceholderKind, value: string) => string;
   readonly known?: Map<string, string>;
   readonly table?: Map<string, string>;
+  readonly observe?: (sighting: EgressRedactionSighting) => void;
 }
 
 export const EGRESS_PLACEHOLDER_PATTERN = /\[(密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]/gu;
@@ -153,8 +173,16 @@ export function redactForEgress(
   options: EgressRedactionOptions = {},
 ): EgressRedaction {
   const counts = new Map<EgressRedactionKind, number>();
-  const { tag, known, table } = options;
+  const { tag, known, table, observe } = options;
   let text = input;
+  const see = (kind: EgressRedactionKind, ruleId: EgressRedactionRuleId, value: string): void => {
+    if (observe === undefined) return;
+    try {
+      observe(Object.freeze({ kind, ruleId, value }));
+    } catch {
+      return;
+    }
+  };
 
   const mask = (
     kind: EgressPlaceholderKind,
@@ -178,7 +206,7 @@ export function redactForEgress(
   };
 
   const machineMarkers = text.split(MACHINE_SECRET_MARKER).length - 1;
-  text = redactMachineSecrets(text);
+  text = redactMachineSecrets(text, (ruleId, value) => see("machine-secret", ruleId, value));
   const afterMachine = text.split(MACHINE_SECRET_MARKER).length - 1;
   for (let index = machineMarkers; index < afterMachine; index += 1)
     tally(counts, "machine-secret");
@@ -187,18 +215,21 @@ export function redactForEgress(
   text = text.replace(PASSWORD_ASSIGNMENT, (_match, lead: string, value: string) => {
     if (value === MACHINE_SECRET_PLACEHOLDER || value.startsWith("[")) return `${lead}${value}`;
     tally(counts, "password");
+    see("password", "password-keyword", value);
     return `${lead}${mask("password", "密码", value, value, true)}`;
   });
 
   text = text.replace(CN_ID_NUMBER, (match) => {
     if (!cnIdChecksumValid(match)) return match;
     tally(counts, "identity-number");
+    see("identity-number", "cn-identity-number", match.toUpperCase());
     return mask("identity-number", "证件号", match, match.toUpperCase(), false);
   });
 
   text = text.replace(IBAN_CANDIDATE, (match) => {
     if (!ibanValid(match)) return match;
     tally(counts, "identity-number");
+    see("identity-number", "iban", match.replace(/ /gu, ""));
     return mask("identity-number", "证件号", match, match.replace(/ /gu, ""), false);
   });
 
@@ -207,6 +238,7 @@ export function redactForEgress(
     if (digits.length < 13 || digits.length > 19) return match;
     if (!plausibleCardNetwork(digits) || !luhnValid(digits)) return match;
     tally(counts, "bank-card");
+    see("bank-card", "bank-card", digits);
     return mask("bank-card", `银行卡 尾号${digits.slice(-4)}`, match, digits, false);
   });
 
@@ -217,6 +249,7 @@ export function redactForEgress(
     );
     if (!JP_MY_NUMBER_KEYWORD.test(window) || !myNumberChecksumValid(match)) return match;
     tally(counts, "identity-number");
+    see("identity-number", "jp-my-number", match);
     return mask("identity-number", "证件号", match, match, false);
   });
 
@@ -228,6 +261,7 @@ export function redactForEgress(
     if (isFormattedNumberNeighbour(whole, offset, end)) return match;
     if (looksLikeCalendarYear(whole, offset, end)) return match;
     tally(counts, "verification-code");
+    see("verification-code", "verification-code-keyword", match);
     return mask("verification-code", "验证码", match, match, true);
   });
 
@@ -238,8 +272,10 @@ export function redactForEgress(
         `(?<![\\p{L}\\p{N}_])${escapeRegExp(value)}(?![\\p{L}\\p{N}_])`,
         "gu",
       );
+      const kind = placeholder.startsWith("[验证码") ? "verification-code" : "password";
       text = text.replace(pattern, () => {
-        tally(counts, placeholder.startsWith("[验证码") ? "verification-code" : "password");
+        tally(counts, kind);
+        see(kind, "named-earlier", value);
         return placeholder;
       });
     }

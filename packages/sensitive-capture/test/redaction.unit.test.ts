@@ -190,3 +190,52 @@ describe("stable placeholders", () => {
     expect(turnTwo.slice(0, 2)).toEqual(turnOne);
   });
 });
+
+describe("reporting what was masked", () => {
+  const mixed = [
+    `密码：hunter22abc，卡号 4111 1111 1111 1111，验证码 482910`,
+    `身份证 11010519491231002X，key ${["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-")}`,
+  ].join("\n");
+
+  it("reports each masked value with its kind and rule, and masks the same bytes as without a listener", () => {
+    const seen: { kind: string; ruleId: string; value: string }[] = [];
+    const known = new Map<string, string>();
+    const observed = redactForEgress(mixed, {
+      tag,
+      known,
+      observe: (sighting) => seen.push({ ...sighting }),
+    }).text;
+    expect(observed).toBe(redactForEgress(mixed, { tag, known: new Map() }).text);
+    expect(seen.map(({ kind, ruleId }) => `${kind}/${ruleId}`).sort()).toEqual([
+      "bank-card/bank-card",
+      "identity-number/cn-identity-number",
+      "machine-secret/openai-api-key",
+      "password/password-keyword",
+      "verification-code/verification-code-keyword",
+    ]);
+    expect(seen.find(({ kind }) => kind === "bank-card")?.value).toBe("4111111111111111");
+    const later: string[] = [];
+    redactForEgress("好的，hunter22abc 已经记下", {
+      tag,
+      known,
+      observe: ({ ruleId, value }) => later.push(`${ruleId}:${value}`),
+    });
+    expect(later).toEqual(["named-earlier:hunter22abc"]);
+  });
+
+  it("still masks the same way when the listener throws", () => {
+    const text = redactForEgress(mixed, {
+      tag,
+      observe: () => {
+        throw new Error("listener failed");
+      },
+    }).text;
+    expect(text).toBe(redactForEgress(mixed, { tag }).text);
+  });
+
+  it("reports nothing for text with nothing to mask", () => {
+    const seen: unknown[] = [];
+    redactForEgress("订单号 20261101123456 已发货", { observe: (sighting) => seen.push(sighting) });
+    expect(seen).toEqual([]);
+  });
+});

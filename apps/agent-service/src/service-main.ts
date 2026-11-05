@@ -102,7 +102,11 @@ import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
-import { createProductionModelEgress } from "./production-model-egress.js";
+import {
+  createProductionModelEgress,
+  flushSensitiveInterceptions,
+  productionSensitiveInterceptionRecorder,
+} from "./production-model-egress.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -287,7 +291,11 @@ async function createDefaultModelComposition(
   const protector = configuredPayloadProtector(configuration, sources);
   try {
     const created = await createProductionModelCompositionFromConfiguration({
-      egress: createProductionModelEgress(configuration, sources),
+      egress: createProductionModelEgress(
+        configuration,
+        sources,
+        productionSensitiveInterceptionRecorder(repository),
+      ),
       configuration,
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
@@ -335,7 +343,11 @@ async function createDefaultMemoryComposition(
 ): Promise<ProductionMemoryComposition> {
   const sources = context.sources ?? hostModelSources(context.configuration);
   return createProductionMemoryCompositionFromConfiguration({
-    egress: createProductionModelEgress(context.configuration, sources),
+    egress: createProductionModelEgress(
+      context.configuration,
+      sources,
+      productionSensitiveInterceptionRecorder(context.repository),
+    ),
     configuration: context.configuration,
     secretSource: sources.provider,
     index: context.repository.memoryIndex(),
@@ -550,6 +562,10 @@ export async function runAgentService(
     return reverseStop;
   };
   lifecycle.register({ name: "repository", close: () => repository?.close() });
+  lifecycle.register({
+    name: "sensitive-interceptions",
+    close: () => (repository === undefined ? undefined : flushSensitiveInterceptions(repository)),
+  });
   lifecycle.register({ name: "authority", close: () => authorityLifecycle?.stop() });
   lifecycle.register({ name: "model", close: () => modelComposition?.composition.close() });
   lifecycle.register({ name: "memory", close: () => memoryComposition?.close() });
@@ -1761,7 +1777,11 @@ export async function runAgentService(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
-        egress: createProductionModelEgress(configuration, sources),
+        egress: createProductionModelEgress(
+          configuration,
+          sources,
+          productionSensitiveInterceptionRecorder(activeRepository),
+        ),
         live,
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         modelUsage: {

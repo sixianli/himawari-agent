@@ -10,6 +10,7 @@ import {
   type DataClassification,
   type ModelDescriptor,
   type ModelEgress,
+  type ModelEgressContext,
   ModelEgressRefusedError,
   type ModelInvocationEvent,
   type ModelInvocationPricing,
@@ -114,6 +115,7 @@ export interface PiModelTransportOptions {
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
   readonly disableThinking?: boolean;
+  readonly egressContext?: ModelEgressContext;
 }
 
 export interface PiModelTransportObservation {
@@ -185,6 +187,7 @@ function pricedCostMicros(
 
 export class PiModelTransport {
   readonly #egress: ModelEgress;
+  readonly #egressContext: ModelEgressContext | undefined;
   readonly #models: PiModelBindingPort;
   readonly #payloads: PiModelPayloadBoundary;
   readonly #clock: ClockPort;
@@ -217,6 +220,7 @@ export class PiModelTransport {
     const fetch = options.fetch ?? globalThis.fetch;
     if (typeof fetch !== "function") throw new TypeError("Pi model transport requires fetch");
     this.#egress = options.egress;
+    this.#egressContext = options.egressContext;
     this.#models = options.models;
     this.#payloads = options.payloads;
     this.#clock = options.clock;
@@ -274,7 +278,7 @@ export class PiModelTransport {
     const context: Context = backgroundModelContext(prompt, Date.now());
     let responseStatus = 0;
     let egressRefused = false;
-    const exchange = this.#egress.exchange();
+    const exchange = this.#egress.exchange(this.#egressContext);
     const redactingFetch = exchange.wrapFetch(this.#fetch);
     const upstreamHeaders: Record<string, string> = {};
     const statusFetch: FetchFunction = async (fetchInput, init) => {

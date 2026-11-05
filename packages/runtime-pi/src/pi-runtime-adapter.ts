@@ -996,7 +996,13 @@ async function admitPiStream(
     }
     const withoutAmbientApiKey: SimpleStreamOptions = { ...options };
     delete withoutAmbientApiKey.apiKey;
-    const exchange = egress.exchange();
+    const exchange = egress.exchange({
+      ownerId: request.ownerId,
+      agentId: request.agentId,
+      threadId: request.threadId,
+      source: "chat",
+      purpose: "chat",
+    });
     const cacheFields = observeCacheFields(exchange.wrapFetch(options?.fetch ?? globalThis.fetch));
     withoutAmbientApiKey.fetch = cacheFields.fetch;
     const gateway = isGateway ? observeGatewayFetch(cacheFields.fetch, model.id) : undefined;

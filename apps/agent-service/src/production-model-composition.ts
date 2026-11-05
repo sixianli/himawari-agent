@@ -325,6 +325,13 @@ function modelTransportFor(
   );
   const piTransport = new PiModelTransport({
     egress: options.egress,
+    egressContext: {
+      ownerId: options.ownerId,
+      agentId: options.agentId,
+      threadId: null,
+      source: "background",
+      purpose: "action-review",
+    },
     models: new ConfiguredPiModelBindingPort({
       descriptors: piOnly,
       secretSource: options.secretSource,
@@ -451,6 +458,13 @@ export function createProductionModelComposition(
       secretSource: options.secretSource,
       transport: new PiModelTransport({
         egress: options.egress,
+        egressContext: {
+          ownerId: options.ownerId,
+          agentId: options.agentId,
+          threadId: null,
+          source: "background",
+          purpose: text.purpose,
+        },
         models: piModels,
         payloads: payloadBoundary,
         clock: options.clock,
