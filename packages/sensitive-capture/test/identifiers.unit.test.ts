@@ -3,6 +3,7 @@ import {
   containsRestrictedIdentifier,
   isSensitiveFieldName,
   isSensitiveQueryParameter,
+  isSensitiveTraceKey,
   mentionsSensitiveMaterial,
   redactWebContentSecrets,
 } from "../src/index.js";
@@ -53,5 +54,18 @@ describe("diagnostic field names and web content", () => {
       text: "nothing to see",
       found: false,
     });
+  });
+});
+
+describe("trace field names", () => {
+  it("matches credential field names after removing case and separators", () => {
+    expect(isSensitiveTraceKey("Client-Secret")).toBe(true);
+    expect(isSensitiveTraceKey("set_cookie")).toBe(true);
+    expect(isSensitiveTraceKey("api_key")).toBe(true);
+  });
+
+  it("REVERSE: matches whole names only, unlike the diagnostic field rule", () => {
+    expect(isSensitiveTraceKey("tokenizer")).toBe(false);
+    expect(isSensitiveTraceKey("keyboard")).toBe(false);
   });
 });

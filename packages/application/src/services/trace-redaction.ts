@@ -1,31 +1,7 @@
 import type { JsonValue } from "../ports/common.js";
-import { redactMachineSecrets } from "@himawari-agent/sensitive-capture";
+import { isSensitiveTraceKey, redactMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 const REDACTED = "[REDACTED]";
-const SENSITIVE_KEYS = new Set([
-  "apikey",
-  "key",
-  "token",
-  "accesstoken",
-  "refreshtoken",
-  "password",
-  "secret",
-  "secretvalue",
-  "clientsecret",
-  "credential",
-  "credentials",
-  "authorization",
-  "proxyauthorization",
-  "cookie",
-  "setcookie",
-  "privatekey",
-  "signature",
-]);
-
-function normalizedKey(key: string): string {
-  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
 function redactString(value: string, sensitiveLiterals: readonly string[]): string {
   let result = redactMachineSecrets(value);
   for (const literal of sensitiveLiterals) {
@@ -39,7 +15,7 @@ function redactString(value: string, sensitiveLiterals: readonly string[]): stri
     if (url.username) url.username = REDACTED;
     if (url.password) url.password = REDACTED;
     for (const key of [...url.searchParams.keys()]) {
-      if (SENSITIVE_KEYS.has(normalizedKey(key))) url.searchParams.set(key, REDACTED);
+      if (isSensitiveTraceKey(key)) url.searchParams.set(key, REDACTED);
     }
     return url.toString();
   } catch {
@@ -82,9 +58,7 @@ function visit(
 
     const result: Record<string, JsonValue> = {};
     for (const [key, nested] of Object.entries(value)) {
-      result[key] = SENSITIVE_KEYS.has(normalizedKey(key))
-        ? REDACTED
-        : visit(nested, sensitiveLiterals, active);
+      result[key] = isSensitiveTraceKey(key) ? REDACTED : visit(nested, sensitiveLiterals, active);
     }
     return result;
   } finally {

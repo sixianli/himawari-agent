@@ -87,6 +87,8 @@ describe("egress redaction check", () => {
         "const SECRET = /密码|口令|password|passwd|token|secret|api[ _-]?key|身份证|银行卡|卡号|ghp_|sk-|\\d{15,19}/i;",
       "packages/integration-web/src/untrusted-content.js":
         "const P = /(?:sk-[A-Za-z0-9_-]{12,}|(?:password|passwd|token)\\s*[:=]\\s*[^\\s,;]{4,}|-----BEGIN [A-Z ]+PRIVATE KEY-----)/gi;",
+      "packages/application/src/services/trace.cts":
+        'const KEYS = new Set(["apikey", "accesstoken", "clientsecret", "password"]);',
       "packages/runtime-pi/src/observation.mjs":
         "const F = /authorization|cookie|token|api.?key|secret|password|credential/i;",
     });
@@ -99,6 +101,9 @@ describe("egress redaction check", () => {
     );
     expect(report).toContain(
       "packages/integration-web/src/untrusted-content.js: 敏感信息识别规则（OpenAI key）",
+    );
+    expect(report).toContain(
+      "packages/application/src/services/trace.cts: 敏感信息识别规则（sensitive key list）",
     );
     expect(report).toContain(
       "packages/runtime-pi/src/observation.mjs: 敏感信息识别规则（password or code keyword）",

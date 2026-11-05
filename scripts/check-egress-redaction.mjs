@@ -41,6 +41,10 @@ export const SENSITIVE_RULE_SIGNATURES = Object.freeze([
   },
   { name: "card number run", pattern: /\{1[2-6],1[89]\}|\{1[2-9],\}/u },
   { name: "Luhn checksum", pattern: /\bluhn/iu },
+  {
+    name: "sensitive key list",
+    pattern: /["'](?:clientsecret|accesstoken|refreshtoken|privatekey)["']/u,
+  },
 ]);
 
 export const EGRESS_PATTERNS = Object.freeze([

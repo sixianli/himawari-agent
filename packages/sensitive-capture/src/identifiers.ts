@@ -22,3 +22,31 @@ export function isSensitiveQueryParameter(name: string): boolean {
 export function isSensitiveFieldName(name: string): boolean {
   return SENSITIVE_FIELD_NAME.test(name);
 }
+
+const SENSITIVE_TRACE_KEYS = new Set([
+  "apikey",
+  "key",
+  "token",
+  "accesstoken",
+  "refreshtoken",
+  "password",
+  "secret",
+  "secretvalue",
+  "clientsecret",
+  "credential",
+  "credentials",
+  "authorization",
+  "proxyauthorization",
+  "cookie",
+  "setcookie",
+  "privatekey",
+  "signature",
+]);
+
+function normalizedKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function isSensitiveTraceKey(key: string): boolean {
+  return SENSITIVE_TRACE_KEYS.has(normalizedKey(key));
+}
