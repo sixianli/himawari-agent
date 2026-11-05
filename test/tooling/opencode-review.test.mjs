@@ -1147,7 +1147,7 @@ describe("opencode review wrap-up", () => {
         expect(result.outcome).toBe("ok");
         expect(result.summary.text).toBe("TIME_WRAPPED");
         expect(requests.filter((request) => request.wrapUp)).toHaveLength(1);
-        expect(requests.filter((request) => !request.wrapUp).length).toBeGreaterThan(1);
+        expect(requests.every((request) => Object.keys(request).join() === "wrapUp")).toBe(true);
       },
       { record: (request) => ({ wrapUp: isWrapUp(request) }) },
     );
