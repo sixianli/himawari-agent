@@ -12,13 +12,13 @@ import type {
   ModelInvocationEvent,
   ModelInvocationRequest,
 } from "@himawari-agent/application/runtime-port";
+import { EGRESS_PLACEHOLDER_LEGEND } from "@himawari-agent/application/runtime-port";
 import { describe, expect, it, vi } from "vitest";
 import {
   type PiModelBinding,
   type PiModelPayloadBoundary,
   PiModelTransport,
 } from "../src/index.js";
-import { withPlaceholderLegendInPrompt } from "../src/egress-context.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 
 const NOW = "2026-08-27T16:00:00.000Z";
@@ -311,11 +311,9 @@ describe("PiModelTransport", () => {
         "model.completed",
       ]);
       expect(payloads.writes).toEqual(["hello", " world"]);
+      expect(observedContext?.systemPrompt).toBe(EGRESS_PLACEHOLDER_LEGEND);
       expect(observedContext?.messages).toEqual([
-        expect.objectContaining({
-          role: "user",
-          content: withPlaceholderLegendInPrompt("Say hello"),
-        }),
+        expect.objectContaining({ role: "user", content: "Say hello" }),
       ]);
       expect(observedOptions).toMatchObject({
         ["apiKey"]: PROVIDER_SECRET,
@@ -452,7 +450,12 @@ describe("PiModelTransport", () => {
             method: "POST",
             body: JSON.stringify({
               model: "m",
-              messages: context.messages.map(({ role, content }) => ({ role, content })),
+              messages: [
+                ...(context.systemPrompt === undefined
+                  ? []
+                  : [{ role: "system", content: context.systemPrompt }]),
+                ...context.messages.map(({ role, content }) => ({ role, content })),
+              ],
             }),
           });
           yield { type: "done", reason: "stop", message: assistant("ok") };
@@ -494,12 +497,36 @@ describe("PiModelTransport", () => {
     expect(body).toMatch(/\[密码#[a-z]{8}\]/u);
   });
 
-  it("sends a prompt without sensitive values as the original text plus the fixed legend", async () => {
+  it("sends a prompt without sensitive values as the original text after the fixed legend", async () => {
     const { events, body } = await sentBody("Say hello");
     expect(events.filter((event) => event.type === "model.failed")).toEqual([]);
-    expect(JSON.parse(body ?? "{}").messages[0].content).toBe(
-      withPlaceholderLegendInPrompt("Say hello"),
-    );
+    expect(JSON.parse(body ?? "{}").messages).toEqual([
+      { role: "system", content: EGRESS_PLACEHOLDER_LEGEND },
+      { role: "user", content: "Say hello" },
+    ]);
+  });
+
+  const legendBeforeTime = (sent: string) => {
+    const legend = sent.indexOf(JSON.stringify(EGRESS_PLACEHOLDER_LEGEND).slice(1, 20));
+    const time = sent.indexOf("当前时间：");
+    return legend >= 0 && time >= 0 && legend < time;
+  };
+
+  it("[W-31] puts the fixed legend before the per-call time of a background prompt", async () => {
+    const prompt =
+      "你是整理器，只看下面的数据。\n数据：主人说他明天去大阪。\n当前时间：2026-11-05T09:00:00+09:00";
+    const { events, body } = await sentBody(prompt);
+    expect(events.filter((event) => event.type === "model.failed")).toEqual([]);
+    expect(legendBeforeTime(body ?? "")).toBe(true);
+    expect(JSON.parse(body ?? "{}").messages.at(-1)).toEqual({ role: "user", content: prompt });
+  });
+
+  it("[W-31] REVERSE: the old layout with the legend appended after the prompt fails the order check", () => {
+    const prompt = "你是整理器。\n当前时间：2026-11-05T09:00:00+09:00";
+    const old = JSON.stringify({
+      messages: [{ role: "user", content: `${prompt}\n\n${EGRESS_PLACEHOLDER_LEGEND}` }],
+    });
+    expect(legendBeforeTime(old)).toBe(false);
   });
 
   it("fails closed when the bound Pi model drifts from the canonical descriptor", async () => {
