@@ -117,14 +117,49 @@ describe("memory evidence from the Owner's own words", () => {
       existingIds: new Set(["memory-phone"]),
       ownerMessage: "我已经换成 Pixel 9 了",
     });
-    expect(parsed.candidates).toHaveLength(2);
+    expect(parsed.candidates).toHaveLength(1);
     expect(parsed.candidates[0]).toMatchObject({
       decision: "create",
       existingMemoryId: null,
       supersedes: "memory-phone",
     });
-    expect(parsed.candidates[1]).toMatchObject({ decision: "create", existingMemoryId: null });
-    expect(parsed.candidates[1]).not.toHaveProperty("supersedes");
+    expect(parsed.invalidCandidates).toBe(1);
+  });
+
+  it("[W-30] counts update, merge or supersede of a memory that does not exist as invalid instead of creating a new one", () => {
+    const item = (decision: string, existingMemoryId: string | null) => ({
+      kind: "durable_fact",
+      decision,
+      existingMemoryId,
+      text: "主人现在用 Pixel 9",
+      classification: "private",
+      confidence: 950,
+      quote: "我已经换成 Pixel 9 了",
+    });
+    const parse = (memories: readonly unknown[]) =>
+      parseMemoryCandidates({
+        output: JSON.stringify({ memories }),
+        sourceRef: "payload-owner",
+        sourceClassification: "private",
+        existingIds: new Set(["memory-phone"]),
+        ownerMessage: "我已经换成 Pixel 9 了",
+      });
+    const unknown = parse([
+      item("update", "memory-unknown"),
+      item("merge", "memory-unknown"),
+      item("supersede", null),
+      item("unchanged", "memory-unknown"),
+    ]);
+    expect(unknown.candidates).toEqual([]);
+    expect(unknown.invalidCandidates).toBe(4);
+    const known = parse([item("update", "memory-phone"), item("create", null)]);
+    expect(known.invalidCandidates).toBe(0);
+    expect(
+      known.candidates.map(({ decision, existingMemoryId }) => [decision, existingMemoryId]),
+    ).toEqual([
+      ["update", "memory-phone"],
+      ["create", null],
+    ]);
   });
 
   it("keeps a one-off correction as a tentative rule and an explicit standing rule active", () => {

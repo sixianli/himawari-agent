@@ -271,7 +271,7 @@ export function parseMemoryCandidates(input: {
       !KINDS.has(kind) ||
       typeof requestedDecision !== "string" ||
       !DECISIONS.has(requestedDecision) ||
-      (requestedDecision === "unchanged" && existing === null)
+      (requestedDecision !== "create" && existing === null)
     ) {
       invalidCandidates += 1;
       continue;
