@@ -1,0 +1,215 @@
+{
+  "task": "hermes-runner",
+  "prefix": "HR",
+  "decisions": {
+    "G1": "durable",
+    "G2": "once",
+    "G3": "once",
+    "G4": "once",
+    "G5": "durable",
+    "G6": "durable",
+    "G7": "once",
+    "G8": "once",
+    "G9": "durable",
+    "G10": "once",
+    "G11": "once"
+  },
+  "items": [
+    {
+      "id": "HR-1",
+      "title": "runner 在 GitHub 上在线且空闲",
+      "goal_ref": [
+        "G1",
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|select(.name==\"hermes-home\" and .status==\"online\" and .busy==false)|.name' | grep -qx hermes-home",
+          "scope": "environment",
+          "host": "MacBookAir",
+          "max_age_days": 1
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "验收 1"
+      }
+    },
+    {
+      "id": "HR-2",
+      "title": "验收 PR 上 ci/required 在 hermes-home 上运行并通过",
+      "goal_ref": [
+        "G1",
+        "G2"
+      ],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "验收 2"
+      }
+    },
+    {
+      "id": "HR-3",
+      "title": "重启 runner 服务后自动重新上线",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "验收 3"
+      }
+    },
+    {
+      "id": "HR-4",
+      "title": "部署前后 Hermes 与其他服务状态对比无中断、无端口冲突",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "验收 4"
+      }
+    },
+    {
+      "id": "HR-5",
+      "title": "用 document-governance 写 Runbook",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/runbooks/hermes-self-hosted-runner-runbook.md"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "验收 5"
+      }
+    },
+    {
+      "id": "HR-6",
+      "title": "workflow 切到自托管 runner 并移除 macOS 的两个 job，ci/required 名字不变",
+      "goal_ref": [
+        "G2",
+        "G3",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "阶段 3"
+      }
+    },
+    {
+      "id": "HR-7",
+      "title": "新 ADR 取代 ADR 0092，记录自托管 runner、22.04 判定、磁盘做法",
+      "goal_ref": [
+        "G1",
+        "G5",
+        "G6",
+        "G9"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0160-self-hosted-runner-on-hermes.md",
+          "quotes": [
+            "G1",
+            "G5",
+            "G6",
+            "G9"
+          ]
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "G6 条件 3"
+      }
+    },
+    {
+      "id": "HR-8",
+      "title": "受保护测试与出包期间的 runner 暂停开关",
+      "goal_ref": [
+        "G6"
+      ],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "G6 条件 1"
+      }
+    },
+    {
+      "id": "HR-9",
+      "title": "部署后试跑一次，量时长、磁盘峰值、测试是否超时",
+      "goal_ref": [
+        "G6"
+      ],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-11-04",
+        "why": "G6 条件 2"
+      }
+    }
+  ],
+  "fingerprint": {
+    "test_exclude": [
+      "docs/",
+      "AGENTS.md"
+    ]
+  }
+}

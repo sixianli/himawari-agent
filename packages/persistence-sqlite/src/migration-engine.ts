@@ -604,10 +604,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 76,
+    name: "proactive_processed_received_at",
+    changeSet: "proactive-processed-received-at",
+    phase: "expand" as const,
+    file: "0076_proactive_processed_received_at.sql",
+  },
+  {
+    sequence: 77,
     name: "thread_prompt_bundles",
     changeSet: "thread-prompt-bundles",
     phase: "expand" as const,
-    file: "0076_thread_prompt_bundles.sql",
+    file: "0077_thread_prompt_bundles.sql",
   },
 ] as const;
 

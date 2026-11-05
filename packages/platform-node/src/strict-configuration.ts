@@ -989,6 +989,8 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "perCheckMs",
       "dailyCostMicros",
       "memoryMinimumSimilarity",
+      "bodyCharactersPerMail",
+      "bodyCharactersPerBatch",
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
     ],
@@ -1004,6 +1006,13 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
   if (input["perCheckCostMicros"] !== undefined)
     integer(input["perCheckCostMicros"], `${field}.perCheckCostMicros`, 1, 10_000_000);
   const dailyCostMicros = optional("dailyCostMicros", 1_000_000, 1, 100_000_000);
+  const bodyCharactersPerMail = optional("bodyCharactersPerMail", 16_000, 500, 200_000);
+  const bodyCharactersPerBatch = optional("bodyCharactersPerBatch", 64_000, 500, 1_000_000);
+  if (bodyCharactersPerBatch < bodyCharactersPerMail)
+    throw invalid(
+      `${field}.bodyCharactersPerBatch`,
+      "must not be smaller than bodyCharactersPerMail",
+    );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1015,6 +1024,8 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
     dailyCostMicros,
+    bodyCharactersPerMail,
+    bodyCharactersPerBatch,
     memoryMinimumSimilarity:
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45

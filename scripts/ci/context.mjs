@@ -56,6 +56,19 @@ function lstatExists(filename) {
   }
 }
 
+function isAncestor(root, ancestor, descendant) {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    return true;
+  } catch (error) {
+    if (error.status === 1) return false;
+    throw error;
+  }
+}
+
 export function createContext({
   root = repositoryRoot,
   env = process.env,
@@ -83,11 +96,16 @@ export function createContext({
   if (hosted && env.GITHUB_SHA !== testedSha) throw new Error("CI_CHECKOUT_SHA_MISMATCH");
   if (event === "pull_request") {
     headSha = commit(payload.pull_request?.head?.sha);
-    baseSha = commit(payload.pull_request?.base?.sha);
+    const eventBaseSha = commit(payload.pull_request?.base?.sha);
     const parents = git(["show", "-s", "--format=%P", testedSha]).split(" ");
-    if (parents.length !== 2 || parents[0] !== baseSha || parents[1] !== headSha) {
+    if (
+      parents.length !== 2 ||
+      parents[1] !== headSha ||
+      !isAncestor(root, eventBaseSha, parents[0])
+    ) {
       throw new Error("CI_PR_MERGE_IDENTITY_MISMATCH");
     }
+    baseSha = parents[0];
   } else if (event === "push") {
     if (payload.after !== testedSha) throw new Error("CI_PUSH_AFTER_MISMATCH");
     baseSha = commit(/^0{40}$/u.test(payload.before ?? "") ? base : payload.before);

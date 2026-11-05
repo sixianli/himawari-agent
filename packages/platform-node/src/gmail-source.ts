@@ -3,6 +3,7 @@ import type {
   ProactiveSourceItem,
   ProactiveSourceReader,
 } from "@himawari-agent/application";
+import { extractGmailBody, type GmailPart } from "./gmail-body.js";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 export const CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
@@ -172,9 +173,7 @@ interface GmailMessage {
   readonly labelIds?: readonly string[];
   readonly snippet?: string;
   readonly internalDate?: string;
-  readonly payload?: {
-    readonly headers?: readonly { readonly name?: string; readonly value?: string }[];
-  };
+  readonly payload?: GmailPart;
 }
 
 export function gmailItem(message: GmailMessage): ProactiveSourceItem | undefined {
@@ -184,6 +183,7 @@ export function gmailItem(message: GmailMessage): ProactiveSourceItem | undefine
   if (!labels.includes("INBOX") && !labels.includes("SENT")) return undefined;
   const received = Number(message.internalDate);
   const from = header(message.payload?.headers, "From");
+  const body = extractGmailBody(message.payload);
   return Object.freeze({
     source: "gmail" as const,
     messageId: message.id,
@@ -198,6 +198,10 @@ export function gmailItem(message: GmailMessage): ProactiveSourceItem | undefine
       labels.flatMap((label) => (CATEGORY_LABELS[label] ? [CATEGORY_LABELS[label]] : [])),
     ),
     sentByOwner: labels.includes("SENT"),
+    body: body.text,
+    bodyTruncated: body.truncated,
+    bodyUnavailable: body.unavailable,
+    attachments: body.attachments,
   });
 }
 
@@ -308,7 +312,7 @@ export function createGmailReader(options: {
             batch.map((id) =>
               get<GmailMessage>(
                 "message",
-                `${GMAIL_API}/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
+                `${GMAIL_API}/messages/${encodeURIComponent(id)}?format=full`,
               ),
             ),
           );

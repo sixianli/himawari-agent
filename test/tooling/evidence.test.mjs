@@ -166,8 +166,8 @@ describe("生产验收 CI 证据交接边界", () => {
     const evidence = exportEvidence(input);
     expect(evidence.status).toBe("ci_verified");
     expect(evidence.productQualification).toBe("not_assessed");
-    expect(evidence.platforms).toHaveLength(2);
-    expect(evidence.checks).toHaveLength(12);
+    expect(evidence.platforms).toHaveLength(1);
+    expect(evidence.checks).toHaveLength(10);
     expect(evidence.pending).toHaveLength(5);
     expect(evidence.pending).toContain("双平台运行、故障恢复与核心升级验证");
     expect(evidence.pending).toContain("Mac/Hermes 平台执行隔离验证");

@@ -145,6 +145,50 @@ describe("CI revision identity", () => {
     writeFileSync(env.GITHUB_EVENT_PATH, JSON.stringify(payload));
     expect(() => createContext({ root, env })).toThrow("PR_MERGE_IDENTITY_MISMATCH");
   });
+  it("uses the merge base parent when the base branch moved after the PR event base", () => {
+    const { root, base, git } = fixture();
+    const tree = git(["rev-parse", "HEAD^{tree}"]);
+    const head = git(["commit-tree", tree, "-p", base, "-m", "fixture PR head"]);
+    const movedBase = git(["commit-tree", tree, "-p", base, "-m", "fixture later main"]);
+    const merge = git([
+      "commit-tree",
+      tree,
+      "-p",
+      movedBase,
+      "-p",
+      head,
+      "-m",
+      "fixture tested merge",
+    ]);
+    git(["update-ref", "HEAD", merge]);
+    const env = hosted(root, merge, "pull_request", {
+      pull_request: { head: { sha: head }, base: { sha: base } },
+    });
+    const context = createContext({ root, env });
+    expect(context).toMatchObject({ headSha: head, baseSha: movedBase, testedSha: merge });
+    expect(verifyContext(context, { root, env })).toEqual(context);
+  });
+  it("rejects a merge whose base parent does not descend from the PR event base", () => {
+    const { root, base, git } = fixture();
+    const tree = git(["rev-parse", "HEAD^{tree}"]);
+    const head = git(["commit-tree", tree, "-p", base, "-m", "fixture PR head"]);
+    const unrelated = git(["commit-tree", tree, "-m", "fixture unrelated root"]);
+    const merge = git([
+      "commit-tree",
+      tree,
+      "-p",
+      unrelated,
+      "-p",
+      head,
+      "-m",
+      "fixture tested merge",
+    ]);
+    git(["update-ref", "HEAD", merge]);
+    const env = hosted(root, merge, "pull_request", {
+      pull_request: { head: { sha: head }, base: { sha: base } },
+    });
+    expect(() => createContext({ root, env })).toThrow("PR_MERGE_IDENTITY_MISMATCH");
+  });
 });
 
 function scheduledFixture({ enabled = true, accepted = true } = {}) {

@@ -76,7 +76,7 @@ date: "2026-11-04"
 
 4. **授权句柄工具**不进冻结记录。它们包括：名字以 `authorized_` 开头、由一次性授权句柄带来的工具（`capabilityHandleRef` 不为空）；`execution_task_start`；以及只因为这次运行持有任务句柄才出现的 `execution_task_status`、`execution_task_output`、`execution_task_cancel`（没有开启可转后台的 `bash` 时，这三个工具只在有任务句柄的运行里出现；开启了 `bash` 时它们每次运行都在，照常冻结）。生产的工具列表（`apps/agent-service/src/production-runtime-tools.ts` 的 `listAuthorized`）给后两类工具打上 `handleBound` 标记，适配器按 `capabilityHandleRef` 和这个标记分出句柄工具，不按名字判断。运行开始时有这类工具，就接在冻结的工具后面；这一轮工具层不同，缓存会断一次，但冻结记录不变，下一轮没有句柄时请求开头回到冻结的那份，不会换新。每次出现都写一行诊断日志 `prompt.bundle.handle_tools`（带 `runId`、代数、句柄工具个数），用来测量出现频率（第 4 条拍板）。
 
-5. **存储**：迁移 `0076_thread_prompt_bundles.sql` 新建 `thread_prompt_bundles` 表：
+5. **存储**：迁移 `0077_thread_prompt_bundles.sql` 新建 `thread_prompt_bundles` 表：
    - 主键 `(owner_id, agent_id, thread_id, generation)`，外键指向 `threads`，对话删除时级联删除；
    - 系统提示和工具数组各存一个加密 payload（`payloads` 表里的加密内容，沿用现有的信封加密），列 `system_prompt_ref`、`tools_ref` 以 `ON DELETE RESTRICT` 指向 `payloads`，所以删除保护的外键检查（`sqlite-governed-deletion.ts` 的 `#payloadReferenced`）自动把它们算作“仍被引用”；对话删除时 `#threadPayloadRefs` 把这两列也列入要删的 payload；
    - 另记两份指纹（sha256），读出时核对，不一致就拒绝使用；
@@ -151,7 +151,7 @@ date: "2026-11-04"
 - **进行中的对话失效一次**：PR-A 改了系统提示，PR-B 上线后每个对话第一次运行建第 1 代，这一轮请求开头和上线前不同（第 1 条拍板已接受）。之后上线新的提示词文字、改配置里的系统指令，都不再让老对话失效。
 - **老对话看不到提示词修复**：安全或正确性修复要对老对话生效，必须对相关对话执行 `thread.prompt.rebuild`。上线说明里要写明。
 - **挂起中的运行**：上线前已经在等审批或等结果的运行，续跑时没有钉住记录，不冻结；续跑身份哈希的组成也变了（“系统指令”换成“实际使用的系统提示和冻结的工具”），这些续跑会以 `RUNTIME_CONTINUATION_BINDING_CHANGED` 失败，和 ADR 0164 记下的影响相同。上线前要确认没有挂起的运行，或接受这些运行失败、由主人重新发起。
-- **数据库迁移**：新增迁移 76，只建表和索引，不改已有数据；上线包会带上迁移步骤。
+- **数据库迁移**：新增迁移 77，只建表和索引，不改已有数据；上线包会带上迁移步骤。
 - **加密密钥**：冻结内容和其他 payload 一样用信封加密，轮换 payload 加密密钥时旧密钥要留着才能读出冻结记录，否则这些对话的运行会失败（`RUNTIME_PROMPT_BUNDLE_*`），需要对它们显式换新。指纹存的是明文的 sha256，和加密密钥无关。
 - **遮盖密钥轮换**：出口层遮盖用的密钥轮换后，同一段文字遮成的字节变了，所有对话的请求开头都会失效一次；冻结内容存的是遮盖之前的明文，所以冻结记录本身不受影响。写进运维手册的事项留给上线时处理。
 

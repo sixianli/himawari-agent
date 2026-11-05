@@ -6,11 +6,11 @@
     {
       "id": "policy",
       "needs": [],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
@@ -22,11 +22,11 @@
     {
       "id": "static",
       "needs": ["policy"],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
@@ -38,11 +38,11 @@
     {
       "id": "build",
       "needs": ["policy"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "linux-x64",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
@@ -52,7 +52,8 @@
           "runner": "macos-15",
           "os": "darwin",
           "arch": "arm64",
-          "node": "22.22.3"
+          "node": "22.22.3",
+          "paused": true
         }
       ],
       "projects": [],
@@ -61,11 +62,11 @@
     {
       "id": "test",
       "needs": ["policy", "build"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "linux-x64",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
@@ -75,7 +76,8 @@
           "runner": "macos-15",
           "os": "darwin",
           "arch": "arm64",
-          "node": "22.22.3"
+          "node": "22.22.3",
+          "paused": true
         }
       ],
       "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
@@ -84,11 +86,11 @@
     {
       "id": "node-floor",
       "needs": ["policy"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "default",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.19.0"
@@ -100,11 +102,11 @@
     {
       "id": "browser",
       "needs": ["build"],
-      "timeoutMinutes": 30,
+      "timeoutMinutes": 45,
       "members": [
         {
           "key": "chromium",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
@@ -112,7 +114,7 @@
         },
         {
           "key": "firefox",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
@@ -120,7 +122,7 @@
         },
         {
           "key": "webkit",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
@@ -133,11 +135,11 @@
     {
       "id": "coverage",
       "needs": ["policy", "build"],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
@@ -149,11 +151,11 @@
     {
       "id": "security",
       "needs": ["policy"],
-      "timeoutMinutes": 15,
+      "timeoutMinutes": 30,
       "members": [
         {
           "key": "default",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
@@ -178,7 +180,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ubuntu-24.04",
+          "runner": "hermes-home",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
