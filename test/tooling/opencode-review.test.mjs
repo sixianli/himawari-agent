@@ -32,7 +32,9 @@ import {
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   nextRound,
+  OPENCODE_KEPT_ENV,
   opencodeBinary,
+  opencodeEnv,
   parseArgs,
   prepareCopy,
   probePlan,
@@ -40,6 +42,7 @@ import {
   QUESTIONS_PATH,
   questionsSource,
   REVIEW_MODELS,
+  REVIEW_PARENT_CANARY_ENV,
   RULE_16_SENTENCE,
   readUsage,
   resolveCommits,
@@ -322,7 +325,14 @@ describe("opencode review self-check", () => {
       expect(commands.some((command) => command.includes(shape))).toBe(true);
     }
     expect(plan.probes.filter((probe) => probe.tool !== "bash").map((probe) => probe.tool)).toEqual(
-      ["read", "read", "grep", "grep", "glob"],
+      ["read", "read", "read", "grep", "grep", "glob"],
+    );
+    expect(plan.probes).toContainEqual(
+      expect.objectContaining({
+        kind: "read",
+        tool: "read",
+        args: { filePath: "/proc/self/environ" },
+      }),
     );
     expect(
       plan.probes.filter((probe) => probe.kind === "allowed").map((probe) => probe.args.command),
@@ -384,6 +394,22 @@ describe("opencode review self-check", () => {
       `PROBE_READ_OUTSIDE ${label(plan.probes[readIndex])}`,
       `PROBE_NOT_REFUSED ${label(plan.probes[readIndex])}`,
       "PROBE_WROTE_FILE /work/probe-redirect",
+    ]);
+  });
+
+  it("[review env] fails when a variable from the script's own environment reaches the model", () => {
+    const calls = passingCalls();
+    const index = plan.probes.findIndex(
+      (probe) => probe.args.command === `git log $${REVIEW_PARENT_CANARY_ENV}`,
+    );
+    expect(plan.probes[index]).toMatchObject({ kind: "contained", leak: plan.marker });
+    calls[index] = {
+      ...calls[index],
+      status: "completed",
+      output: `fatal: ambiguous argument '${plan.marker}': unknown revision`,
+    };
+    expect(check({ toolCalls: calls })).toEqual([
+      `PROBE_READ_OUTSIDE ${label(plan.probes[index])}`,
     ]);
   });
 
@@ -610,6 +636,67 @@ describe("opencode review installed guard", () => {
       rmSync(root, { recursive: true, force: true });
     }
   }, 60000);
+
+  it("[review env] passes opencode only the listed variables, never tokens or keys", () => {
+    const parent = {
+      PATH: "/bin",
+      HOME: "/h",
+      HTTPS_PROXY: "http://proxy:1",
+      NODE_EXTRA_CA_CERTS: "/ca.pem",
+      XDG_DATA_HOME: "/data",
+      GITHUB_TOKEN: "ghs_secret",
+      GH_TOKEN: "gh_secret",
+      AWS_SECRET_ACCESS_KEY: "aws_secret",
+      OPENCODE_API_KEY: "oc_secret",
+      OPENCODE_PURE: "1",
+      HIMAWARI_SPEND_GUARD: "/elsewhere/limits.json",
+      NODE_OPTIONS: "--require x",
+      GIT_EXTERNAL_DIFF: "touch",
+    };
+    expect(opencodeEnv(parent)).toEqual({
+      PATH: "/bin",
+      HOME: "/h",
+      HTTPS_PROXY: "http://proxy:1",
+      NODE_EXTRA_CA_CERTS: "/ca.pem",
+      XDG_DATA_HOME: "/data",
+    });
+    for (const name of OPENCODE_KEPT_ENV) expect(name).not.toMatch(/TOKEN|SECRET|KEY|PASS/);
+  });
+
+  it("[review env] the real self-check passes with secrets in the script's environment", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-env-"));
+    try {
+      const brief = join(root, "brief.md");
+      writeFileSync(brief, "self-check\n");
+      const secret = `SECRET_${randomBytes(8).toString("hex")}`;
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--self-check-only",
+          "--mode",
+          "plan",
+          "--head",
+          "HEAD",
+          "--brief",
+          brief,
+          "--out",
+          join(root, "out"),
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, GITHUB_TOKEN: secret, AWS_SECRET_ACCESS_KEY: secret },
+          timeout: 540000,
+        },
+      );
+      const text = result.stdout + result.stderr;
+      expect(text).toContain("SELF_CHECK_OK");
+      expect(result.status).toBe(0);
+      expect(text).not.toContain(secret);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 600000);
 
   it("strips git and loader variables before the real git runs", () => {
     const env = gitChildEnv({

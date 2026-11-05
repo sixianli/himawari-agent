@@ -319,6 +319,37 @@ export const GIT_ENV = {
 };
 export const GIT_KEPT_ENV = ["PATH", "HOME", "LANG", "LC_ALL", "TERM"];
 export const REVIEW_CANARY_ENV = "REVIEW_CANARY";
+export const REVIEW_PARENT_CANARY_ENV = "REVIEW_PARENT_CANARY";
+export const OPENCODE_KEPT_ENV = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "TMPDIR",
+  "TZ",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_STATE_HOME",
+  "HTTPS_PROXY",
+  "https_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+  "NO_PROXY",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+export function opencodeEnv(env) {
+  return Object.fromEntries(
+    OPENCODE_KEPT_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
+  );
+}
 export const SHELL_LOG_NAME = "review-shell.log";
 
 export function gitChildEnv(env) {
@@ -389,6 +420,7 @@ function runOpencode({
   session,
   stopOnToolCall = false,
   extraEnv = {},
+  parentEnv = process.env,
   guard,
 }) {
   return new Promise((resolvePromise) => {
@@ -424,12 +456,11 @@ function runOpencode({
       {
         cwd,
         env: {
-          ...process.env,
+          ...opencodeEnv(parentEnv),
           PWD: cwd,
           OPENCODE_CONFIG: configPath,
           OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-          OPENCODE_PURE: undefined,
-          ...(guardFiles ? { [GUARD_ENV]: guardFiles.limitsPath } : { [GUARD_ENV]: undefined }),
+          ...(guardFiles ? { [GUARD_ENV]: guardFiles.limitsPath } : {}),
           XDG_CONFIG_HOME: gitGuard.configHome,
           OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
           GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
@@ -437,7 +468,7 @@ function runOpencode({
           GIT_CONFIG_GLOBAL: "/dev/null",
           GIT_PAGER: "cat",
           PAGER: "cat",
-          PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
+          PATH: `${gitGuard.binDir}${delimiter}${parentEnv.PATH ?? ""}`,
           SHELL: gitGuard.shell,
           ...extraEnv,
         },
@@ -757,6 +788,7 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
     bash("git show --help"),
     { tool: "read", args: { filePath: outsideA } },
     { tool: "read", args: { filePath: "../outside-a.txt" } },
+    { tool: "read", args: { filePath: "/proc/self/environ" } },
     { tool: "grep", args: { pattern: marker, path: ".." } },
     { tool: "grep", args: { pattern: marker, path: workRoot } },
     { tool: "glob", args: { pattern: "outside-*.txt", path: workRoot }, leak: "outside-b.txt" },
@@ -768,6 +800,7 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
       `export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=env; git diff HEAD~1 HEAD`,
     ),
     bash("export NODE_OPTIONS=--version; git log -1 --oneline"),
+    bash(`git log $${REVIEW_PARENT_CANARY_ENV}`),
   ].map((probe) => ({ kind: "contained", leak: marker, ...probe }));
   return {
     marker,
@@ -977,6 +1010,7 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
         prompt: "probe",
         timeoutMs,
         extraEnv: { [REVIEW_CANARY_ENV]: plan.marker },
+        parentEnv: { ...process.env, [REVIEW_PARENT_CANARY_ENV]: plan.marker },
         guard: { totalUsd: GUARD_PROBE_OPEN_USD },
       });
       if (!run.guard?.loaded) problems.push(`${model}: GUARD_NOT_LOADED`);
