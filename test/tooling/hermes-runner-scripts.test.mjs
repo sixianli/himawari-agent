@@ -115,7 +115,10 @@ describe("runner-pause.sh", () => {
     box.fake("pgrep", `printf 'pgrep\\n' >> "${box.root}/pgrep-calls"\n${pgrep}`);
     box.fake("sleep", "exit 0");
     box.fake("sudo", `printf '%s\\n' "$*" >> "${box.root}/sudo-calls"`);
-    box.fake("systemctl", "exit 3");
+    box.fake(
+      "systemctl",
+      `[ "$1" = is-enabled ] && [ -e "${box.root}/enabled-$3" ] && exit 0\nexit 3`,
+    );
     return box;
   };
 
@@ -130,13 +133,13 @@ describe("runner-pause.sh", () => {
     expect(calls("pgrep-calls")).toBe("");
   });
 
-  it.each(["abc", "0", "241", "-5", "1.5", "0090"])(
+  it.each(["abc", "0", "181", "-5", "1.5", "0090"])(
     "rejects quiet window %s before touching the service",
     (quiet) => {
       const { run, calls } = pauseBox();
       const result = run("runner-pause.sh", ["--labels-removed", quiet]);
       expect(result.status).toBe(64);
-      expect(result.stderr).toContain("1-240");
+      expect(result.stderr).toContain("1-180");
       expect(calls("sudo-calls")).toBe("");
     },
   );
@@ -150,13 +153,14 @@ describe("runner-pause.sh", () => {
     expect(box.calls("sudo-calls")).toBe("");
   });
 
-  it("lists the runners installed on this host", () => {
-    expect(pauseBox().run("runner-pause.sh", ["--list"]).stdout).toBe(
-      "hermes-home\nhermes-home-2\n",
-    );
-    expect(pauseBox({ accounts: ["gh-runner"] }).run("runner-pause.sh", ["--list"]).stdout).toBe(
-      "hermes-home\n",
-    );
+  it("lists only the runners that are registered on this host", () => {
+    const both = pauseBox();
+    for (const unit of ["gh-runner.service", "gh-runner-2.service"])
+      writeFileSync(path.join(both.root, `enabled-${unit}`), "");
+    expect(both.run("runner-pause.sh", ["--list"]).stdout).toBe("hermes-home\nhermes-home-2\n");
+    const installedNotRegistered = pauseBox();
+    writeFileSync(path.join(installedNotRegistered.root, "enabled-gh-runner.service"), "");
+    expect(installedNotRegistered.run("runner-pause.sh", ["--list"]).stdout).toBe("hermes-home\n");
   });
 
   it("stops both runners only after watching them idle for the whole quiet window", () => {
@@ -238,6 +242,7 @@ const macBox = ({
       "  exit 0",
       "fi",
       `n=$(( $(cat "${R}/list-count" 2> /dev/null || echo 0) + 1 )); echo $n > "${R}/list-count"`,
+      `f=$(cat "${R}/fail-list-from" 2> /dev/null || echo 0); [ "$f" != 0 ] && [ "$n" -ge "$f" ] && exit 1`,
       `[ "$n" = "$(cat "${R}/partial-list-at" 2> /dev/null)" ] && { head -1 "${R}/runners.tsv" | sed 's/hermes-home$/X/'; exit 1; }`,
       `b=$(cat "${R}/busy-until" 2> /dev/null || echo 0)`,
       `o=$(cat "${R}/online-from" 2> /dev/null || echo 0)`,
@@ -445,6 +450,16 @@ describe("pause-runners.sh", () => {
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
   });
 
+  it("says GitHub could not be read instead of calling the runners busy", () => {
+    const box = macBox();
+    box.set("fail-list-from", 3);
+    box.late();
+    const result = box.mac("pause-runners.sh");
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain("busy: (could not read GitHub)");
+    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+  });
+
   it("reports labels removed and the service states when interrupted while waiting", () => {
     const box = macBox();
     box.set("busy-until", 9999);
@@ -564,12 +579,33 @@ describe("resume-runners.sh", () => {
     );
   });
 
+  it("reports services and labels when interrupted while waiting for the runners to come online", () => {
+    const box = macBox({ labelled: false });
+    box.set("online-from", 9999);
+    box.set("interrupt-sleep", "");
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(130);
+    expect(result.stdout).toContain(
+      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: hermes-home=off hermes-home-2=off",
+    );
+    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+  });
+
+  it("says GitHub could not be read instead of calling the runners offline", () => {
+    const box = macBox({ labelled: false });
+    box.set("fail-list-from", 2);
+    box.late();
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain("offline: (could not read GitHub)");
+  });
+
   it("reports the runner whose label could not be put back", () => {
     const box = macBox({ labelled: false });
     box.set("fail-add-12", "");
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("hermes-home missing on: hermes-home-2");
+    expect(result.stdout).toContain("labels: hermes-home=on hermes-home-2=off");
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": false });
   });
 });

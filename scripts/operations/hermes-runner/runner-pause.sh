@@ -8,7 +8,7 @@ source "$HERE/runners.sh"
 if [ "${1:-}" = --list ]; then
   for id in $(installed_runner_ids); do
     runner_select "$id"
-    printf '%s\n' "$RUNNER_NAME"
+    systemctl is-enabled --quiet "$RUNNER_UNIT" && printf '%s\n' "$RUNNER_NAME"
   done
   exit 0
 fi
@@ -26,8 +26,8 @@ if [ "${1:-}" != --labels-removed ]; then
   exit 64
 fi
 QUIET=${2:-90}
-if ! [[ "$QUIET" =~ ^[1-9][0-9]{0,2}$ ]] || [ "$QUIET" -gt 240 ]; then
-  echo "RUNNER_PAUSE_REFUSED quiet window must be 1-240 seconds, got: ${QUIET}" >&2
+if ! [[ "$QUIET" =~ ^[1-9][0-9]{0,2}$ ]] || [ "$QUIET" -gt 180 ]; then
+  echo "RUNNER_PAUSE_REFUSED quiet window must be 1-180 seconds, got: ${QUIET}" >&2
   exit 64
 fi
 IDS=$(installed_runner_ids)

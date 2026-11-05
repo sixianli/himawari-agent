@@ -59,11 +59,14 @@ trap interrupted_while_waiting INT TERM HUP
 echo "RUNNER_LABELS_REMOVED runners=$(echo $NAMES); GitHub sends them no new job, queued jobs wait"
 
 while :; do
-  TABLE=$(github_runners) || TABLE=""
   BUSY=""
-  for name in $NAMES; do
-    [ "$(runner_field "$TABLE" "$name" 4)" = false ] || BUSY="$BUSY $name"
-  done
+  if TABLE=$(github_runners); then
+    for name in $NAMES; do
+      [ "$(runner_field "$TABLE" "$name" 4)" = false ] || BUSY="$BUSY $name"
+    done
+  else
+    BUSY=" (could not read GitHub)"
+  fi
   if [ -z "$BUSY" ]; then
     OUTPUT=$(hermes "bash $REMOTE/runner-pause.sh --labels-removed 90")
     STATUS=$?

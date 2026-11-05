@@ -91,7 +91,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 
 - 好处：任务不再因为跑到 45 分钟被取消，可以看到它们实际要多久、实际在哪里失败。
 - 代价：卡死的任务要等更久才被取消，占住 runner 的时间更长，排队更久。
-- 改动本身的 PR 上，`policy` 检查会失败：检查用 main 上的 `ci/policy.json`、按 PR 里的新代码核对（`scripts/ci/check-policy.mjs` 的 `resolvePolicySource`），而 main 上还是旧时限。合并后在 main 上验证。
+- 改动本身的 PR 上，`policy` 检查会失败：检查用 main 上的 `ci/policy.json`、按 PR 里的新代码核对（`scripts/ci/check-policy.mjs` 的 `resolvePolicySource`），而 main 上还是旧时限。合并后 main 上的第一次运行也会这样失败：推送到 main 时，比较用的基线是推送前的 main（`scripts/ci/context.mjs` 里 `push` 事件取 `payload.before`）。之后的 PR 和下一次推送到 main 才会用上新时限，在那时验证。
 
 [↑ 返回阅读导航](#contents)
 
