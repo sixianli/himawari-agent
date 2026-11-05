@@ -282,7 +282,12 @@ export const OPENCODE_LOCK_FILES = ["package.json", "package-lock.json"];
 export function installedIntegrityProblems(prefix, lock) {
   const installedPath = join(prefix, "node_modules", ".package-lock.json");
   if (!existsSync(installedPath)) return ["installed-lock-missing"];
-  const installed = JSON.parse(readFileSync(installedPath, "utf8")).packages ?? {};
+  let installed;
+  try {
+    installed = JSON.parse(readFileSync(installedPath, "utf8")).packages ?? {};
+  } catch {
+    return ["installed-lock-unreadable"];
+  }
   const problems = [];
   if (!installed["node_modules/opencode-ai"]) problems.push("node_modules/opencode-ai missing");
   for (const [name, entry] of Object.entries(installed)) {
@@ -293,40 +298,51 @@ export function installedIntegrityProblems(prefix, lock) {
   return problems;
 }
 
+function npmCi(prefix, lockDir, binary) {
+  rmSync(prefix, { recursive: true, force: true });
+  mkdirSync(prefix, { recursive: true });
+  for (const file of OPENCODE_LOCK_FILES)
+    writeFileSync(join(prefix, file), readFileSync(join(lockDir, file)));
+  const install = spawnSync("npm", ["ci", "--no-audit", "--no-fund"], {
+    cwd: prefix,
+    encoding: "utf8",
+  });
+  process.stderr.write(`${install.stdout ?? ""}${install.stderr ?? ""}`);
+  if (install.status !== 0) {
+    if (/EINTEGRITY|integrity checksum failed/i.test(install.stderr ?? ""))
+      throw new Error("OPENCODE_INTEGRITY_MISMATCH npm-ci");
+    throw new Error("OPENCODE_INSTALL_FAILED");
+  }
+  if (!existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
+}
+
 export function installOpencode({ prefix, lockDir = OPENCODE_LOCK_DIR }) {
   const lock = JSON.parse(readFileSync(join(lockDir, "package-lock.json"), "utf8"));
   const binary = join(prefix, "node_modules", ".bin", "opencode");
-  if (!existsSync(binary)) {
-    mkdirSync(prefix, { recursive: true });
-    for (const file of OPENCODE_LOCK_FILES)
-      writeFileSync(join(prefix, file), readFileSync(join(lockDir, file)));
-    const install = spawnSync("npm", ["ci", "--no-audit", "--no-fund"], {
-      cwd: prefix,
-      encoding: "utf8",
-    });
-    process.stderr.write(`${install.stdout ?? ""}${install.stderr ?? ""}`);
-    if (install.status !== 0) {
-      if (/EINTEGRITY|integrity checksum failed/i.test(install.stderr ?? ""))
-        throw new Error("OPENCODE_INTEGRITY_MISMATCH npm-ci");
-      throw new Error("OPENCODE_INSTALL_FAILED");
-    }
-    if (!existsSync(binary)) throw new Error("OPENCODE_INSTALL_FAILED");
+  const reused = existsSync(binary);
+  if (!reused) npmCi(prefix, lockDir, binary);
+  let problems = installedIntegrityProblems(prefix, lock);
+  if (problems.length > 0 && reused) {
+    process.stderr.write(`OPENCODE_REINSTALL ${prefix} ${problems.join(" | ")}\n`);
+    npmCi(prefix, lockDir, binary);
+    problems = installedIntegrityProblems(prefix, lock);
   }
-  const problems = installedIntegrityProblems(prefix, lock);
   if (problems.length > 0)
     throw new Error(`OPENCODE_INTEGRITY_MISMATCH ${prefix} ${problems.join(" | ")}`);
   return binary;
 }
 
-export function opencodeBinary() {
-  if (process.env.HIMAWARI_OPENCODE_BIN) return process.env.HIMAWARI_OPENCODE_BIN;
+export function opencodeInstallDir(lockDir = OPENCODE_LOCK_DIR) {
   const lockDigest = createHash("sha256")
-    .update(readFileSync(join(OPENCODE_LOCK_DIR, "package-lock.json")))
+    .update(readFileSync(join(lockDir, "package-lock.json")))
     .digest("hex")
     .slice(0, 12);
-  return installOpencode({
-    prefix: join(homedir(), ".cache", `himawari-opencode-${OPENCODE_VERSION}-${lockDigest}`),
-  });
+  return join(homedir(), ".cache", `himawari-opencode-${OPENCODE_VERSION}-${lockDigest}`);
+}
+
+export function opencodeBinary() {
+  if (process.env.HIMAWARI_OPENCODE_BIN) return process.env.HIMAWARI_OPENCODE_BIN;
+  return installOpencode({ prefix: opencodeInstallDir() });
 }
 
 const activeChildren = new Set();
@@ -479,7 +495,6 @@ function runOpencode({
   session,
   stopOnToolCall = false,
   extraEnv = {},
-  parentEnv = process.env,
   guard,
 }) {
   return new Promise((resolvePromise) => {
@@ -515,7 +530,7 @@ function runOpencode({
       {
         cwd,
         env: {
-          ...opencodeEnv(parentEnv),
+          ...opencodeEnv(process.env),
           PWD: cwd,
           OPENCODE_CONFIG: configPath,
           OPENCODE_DISABLE_PROJECT_CONFIG: "1",
@@ -527,7 +542,7 @@ function runOpencode({
           GIT_CONFIG_GLOBAL: "/dev/null",
           GIT_PAGER: "cat",
           PAGER: "cat",
-          PATH: `${gitGuard.binDir}${delimiter}${parentEnv.PATH ?? ""}`,
+          PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
           SHELL: gitGuard.shell,
           ...extraEnv,
         },
@@ -778,6 +793,8 @@ function gitStatus(args, cwd) {
   return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 }
 
+export const OVERRIDE_MIN_ROUNDS = 3;
+
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
   const head = git(["rev-parse", "HEAD"], repo);
@@ -790,7 +807,10 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   else if (gitStatus(["merge-base", "--is-ancestor", complete.head, head], repo).status !== 0)
     problems.push(`not-ancestor ${complete.head}`);
   else
-    for (const file of git(["diff", "--name-only", complete.head, head], repo).split("\n"))
+    for (const file of git(
+      ["diff", "--no-renames", "--name-only", complete.head, head],
+      repo,
+    ).split("\n"))
       if (file && !file.startsWith(`${ledgerPath}/`)) problems.push(`unreviewed ${file}`);
   if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
     problems.push(`main-ref-missing ${mainRef}`);
@@ -801,7 +821,15 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     problems.length === 0
       ? [`REVIEW_CURRENT ${summary}`]
       : [`REVIEW_NOT_CURRENT ${summary}`, ...problems.map((problem) => `  ${problem}`)];
-  const overridden = problems.length > 0 && Boolean(acceptUnreviewed);
+  const reviewRounds = new Set(
+    (records ?? [])
+      .filter((record) => record.mode === "code-review")
+      .map((record) => record.round ?? 1),
+  ).size;
+  if (problems.length > 0 && acceptUnreviewed && reviewRounds < OVERRIDE_MIN_ROUNDS)
+    lines.push(`REVIEW_OVERRIDE_REFUSED rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`);
+  const overridden =
+    problems.length > 0 && Boolean(acceptUnreviewed) && reviewRounds >= OVERRIDE_MIN_ROUNDS;
   if (overridden) {
     mkdirSync(join(repo, ledgerPath), { recursive: true });
     appendFileSync(
@@ -903,7 +931,14 @@ export function roundForRun({ records, rounds, requested, models, head, prompts,
     throw new Error(`ROUND_HEAD_MISMATCH ${requested} ${[...heads].join(",")} ${head}`);
   for (const model of models) {
     const onDisk = promptsOnDisk[model] ?? null;
-    if (onDisk !== null && onDisk !== prompts[model])
+    const recordedDigests = inRound
+      .filter((record) => record.model === model && record.promptSha256)
+      .map((record) => record.promptSha256);
+    const digest = createHash("sha256").update(prompts[model]).digest("hex");
+    if (
+      (onDisk !== null && onDisk !== prompts[model]) ||
+      recordedDigests.some((recorded) => recorded !== digest)
+    )
       throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
   }
   return requested;
@@ -995,7 +1030,9 @@ export function probePlan(workRoot, blameFile = "AGENTS.md") {
     bash("git diff -a HEAD~1 HEAD"),
     { tool: "read", args: { filePath: outsideA } },
     { tool: "read", args: { filePath: "../outside-a.txt" } },
-    { tool: "read", args: { filePath: "/proc/self/environ" } },
+    ...(process.platform === "linux"
+      ? [{ tool: "read", args: { filePath: "/proc/self/environ" } }]
+      : []),
     { tool: "grep", args: { pattern: marker, path: ".." } },
     { tool: "grep", args: { pattern: marker, path: workRoot } },
     { tool: "glob", args: { pattern: "outside-*.txt", path: workRoot }, leak: "outside-b.txt" },
@@ -1216,6 +1253,8 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
     configPath,
     JSON.stringify(reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }), null, 2),
   );
+  const savedCanary = process.env[REVIEW_PARENT_CANARY_ENV];
+  process.env[REVIEW_PARENT_CANARY_ENV] = plan.marker;
   try {
     const problems = [];
     for (const model of REVIEW_MODELS) {
@@ -1229,7 +1268,6 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
         prompt: "probe",
         timeoutMs,
         extraEnv: { [REVIEW_CANARY_ENV]: plan.marker },
-        parentEnv: { ...process.env, [REVIEW_PARENT_CANARY_ENV]: plan.marker },
         guard: { totalUsd: GUARD_PROBE_OPEN_USD },
       });
       if (!run.guard?.loaded) problems.push(`${model}: GUARD_NOT_LOADED`);
@@ -1264,6 +1302,8 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
     problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode })));
     return problems;
   } finally {
+    if (savedCanary === undefined) delete process.env[REVIEW_PARENT_CANARY_ENV];
+    else process.env[REVIEW_PARENT_CANARY_ENV] = savedCanary;
     await new Promise((resolveClose) => server.close(resolveClose));
   }
 }
@@ -1453,12 +1493,33 @@ export function reviewDir(repo, options) {
 }
 
 export function rawDir(options, round) {
-  return join(tmpdir(), "himawari-review-raw", reviewKey(options), `round-${round}`);
+  const repoId = createHash("sha256").update(resolve(options.repo)).digest("hex").slice(0, 12);
+  return join(tmpdir(), "himawari-review-raw", repoId, reviewKey(options), `round-${round}`);
+}
+
+export function recordText(text) {
+  return `${text.replace(/[ \t]+$/gm, "")}\n`;
 }
 
 export function promptFileName(model) {
   return `${model.split("/").pop()}.prompt.md`;
 }
+
+export const ASSERT_OPTIONS = [
+  "--assert-reviewed",
+  "--pr",
+  "--repo",
+  "--main-ref",
+  "--accept-unreviewed",
+];
+export const REPORT_OPTIONS = [
+  "--report",
+  "--pr",
+  "--repo",
+  "--main-ref",
+  "--stop",
+  "--andy-quote",
+];
 
 export function parseArgs(argv) {
   const options = {
@@ -1467,9 +1528,11 @@ export function parseArgs(argv) {
     timeoutMinutes: 25,
     models: REVIEW_MODELS,
   };
+  const given = new Set();
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
     const value = argv[index + 1];
+    given.add(key);
     const take = () => {
       index += 1;
       if (value === undefined) throw new Error(`ARG_MISSING_VALUE ${key}`);
@@ -1525,6 +1588,10 @@ export function parseArgs(argv) {
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
   if (options.assertReviewed || options.report) {
+    if (options.assertReviewed && options.report) throw new Error("ARG_ASSERT_AND_REPORT");
+    const allowed = options.report ? REPORT_OPTIONS : ASSERT_OPTIONS;
+    const extra = [...given].filter((key) => !allowed.includes(key));
+    if (extra.length > 0) throw new Error(`ARG_NOT_FOR_SUBCOMMAND ${extra.join(" ")}`);
     if (options.pr === undefined) throw new Error("ARG_REQUIRED --pr");
     if (options.report && options.stop === undefined) throw new Error("ARG_REQUIRED --stop");
     return options;
@@ -1666,7 +1733,7 @@ async function main() {
         });
         writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
         const { summary } = review;
-        writeFileSync(join(roundDir, `${name}.md`), `${summary.text}\n`);
+        writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
         if (summary.thinking)
           writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
         const record = {

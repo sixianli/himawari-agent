@@ -38,6 +38,9 @@ import {
   installOpencode,
   keepEarlierAttempt,
   promptFileName,
+  recordText,
+  rawDir,
+  opencodeInstallDir,
   RAW_FILE_SUFFIXES,
   REVIEWS_DIR,
   reviewDir,
@@ -283,6 +286,26 @@ describe("opencode review prompt", () => {
       /o$/,
     );
     expect(promptFileName(REVIEW_MODELS[1])).toBe("glm-5.3-flash.prompt.md");
+    expect(recordText("a  \nb\t\n\nc ")).toBe("a\nb\n\nc\n");
+    const rawA = rawDir({ repo: "/a", pr: 7 }, 2);
+    const rawB = rawDir({ repo: "/b", pr: 7 }, 2);
+    expect(rawA).not.toBe(rawB);
+    expect(rawA).toMatch(/himawari-review-raw\/[0-9a-f]{12}\/pr-7\/round-2$/);
+    expect(opencodeInstallDir()).toMatch(
+      new RegExp(`himawari-opencode-${OPENCODE_VERSION.replaceAll(".", "\\.")}-[0-9a-f]{12}$`),
+    );
+    expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--out", "o"])).toThrow(
+      "ARG_NOT_FOR_SUBCOMMAND --out",
+    );
+    expect(() =>
+      parseArgs(["--report", "--pr", "1", "--stop", "no-error", "--accept-unreviewed", "合并"]),
+    ).toThrow("ARG_NOT_FOR_SUBCOMMAND --accept-unreviewed");
+    expect(() => parseArgs(["--assert-reviewed", "--report", "--pr", "1"])).toThrow(
+      "ARG_ASSERT_AND_REPORT",
+    );
+    expect(parseArgs(["--assert-reviewed", "--pr", "1", "--main-ref", "main"]).mainRef).toBe(
+      "main",
+    );
   });
 
   it("requires a base commit for code review", () => {
@@ -727,6 +750,13 @@ describe("opencode install integrity", () => {
     try {
       const good = installOpencode({ prefix: join(root, "good") });
       expect(execFileSync(good, ["--version"], { encoding: "utf8" }).trim()).toBe(OPENCODE_VERSION);
+      const installedLock = join(root, "good", "node_modules", ".package-lock.json");
+      writeFileSync(installedLock, "{ not json");
+      expect(installedIntegrityProblems(join(root, "good"), lock)).toEqual([
+        "installed-lock-unreadable",
+      ]);
+      expect(installOpencode({ prefix: join(root, "good") })).toBe(good);
+      expect(installedIntegrityProblems(join(root, "good"), lock)).toEqual([]);
       const badLock = join(root, "bad-lock");
       mkdirSync(badLock);
       writeFileSync(
@@ -1904,6 +1934,18 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[merge gate] counts a code file renamed into the records folder as unreviewed", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.git("mv", "code.txt", `${REVIEWS_DIR}/pr-7/code.txt`);
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "hide");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] counts a round only when both models have an ok result, reruns included", () => {
     const f = fixture();
     try {
@@ -1967,7 +2009,18 @@ describe("opencode review merge gate", () => {
     const f = fixture();
     try {
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
-      f.commit({ "code.txt": "after three rounds\n" }, "third-round fix");
+      f.commit({ "code.txt": "after one round\n" }, "early fix");
+      const early = f.check({ acceptUnreviewed: "合并" });
+      expect(early.overridden).toBe(false);
+      expect(early.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED rounds=1 needs=3");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, f.reviewed, deepseek),
+        ok(2, f.reviewed, glm),
+        ok(3, f.reviewed, deepseek),
+        ok(3, f.reviewed, glm),
+      ]);
       const result = f.check({ acceptUnreviewed: "合并" });
       expect(result.problems).toEqual(["unreviewed code.txt"]);
       expect(result.overridden).toBe(true);
@@ -2228,6 +2281,57 @@ describe("opencode review spending", () => {
           bad,
         ]),
       ).toThrow("ARG_INVALID --round");
+  });
+
+  it("refuses a prompt over the size limit before spending or writing records", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-large-"));
+    try {
+      const brief = join(dir, "brief.md");
+      writeFileSync(brief, "x".repeat(100001));
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--mode",
+          "plan",
+          "--head",
+          "HEAD",
+          "--topic",
+          "prompt-too-large-probe",
+          "--brief",
+          brief,
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr.trim()).toBe("PROMPT_TOO_LARGE");
+      expect(existsSync(join(REVIEWS_DIR, "topic-prompt-too-large-probe"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("[rerun round] falls back to the ledger's prompt digest when the prompt file is gone", () => {
+    const [, glm] = REVIEW_MODELS;
+    const digest = createHash("sha256").update("P").digest("hex");
+    const records = [
+      { cost: 0.1, round: 1, model: glm, head: "h", outcome: "timeout", promptSha256: digest },
+    ];
+    const run = (prompt) =>
+      roundForRun({
+        records,
+        rounds: [1],
+        requested: 1,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: prompt },
+        promptsOnDisk: {},
+      });
+    expect(run("P")).toBe(1);
+    expect(() => run("other brief")).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
   });
 
   it("[rerun round] keeps the failed attempt's files next to the new ones", () => {
