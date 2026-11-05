@@ -29,6 +29,7 @@ import {
   GIT_READ_COMMANDS,
   GIT_REFUSED,
   gitChildEnv,
+  assertReviewed,
   installedIntegrityProblems,
   installGitGuard,
   installOpencode,
@@ -1767,6 +1768,209 @@ describe("opencode review credentials", () => {
     expect(headers.length).toBeGreaterThan(0);
     for (const header of headers) expect(header).toBeNull();
   }, 120000);
+});
+
+describe("opencode review merge gate", () => {
+  const [deepseek, glm] = REVIEW_MODELS;
+  const ok = (round, head, model, extra = {}) => ({
+    at: "t",
+    cost: 0.05,
+    round,
+    mode: "code-review",
+    model,
+    head,
+    outcome: "ok",
+    steps: 3,
+    input: 10,
+    cacheRead: 5,
+    output: 2,
+    reasoning: 1,
+    ...extra,
+  });
+  const fixture = () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-merge-gate-"));
+    const repo = join(root, "repo");
+    const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+    execFileSync("git", ["init", "--quiet", "-b", "main", repo]);
+    const commit = (files, message) => {
+      for (const [path, text] of Object.entries(files)) {
+        mkdirSync(join(repo, path, ".."), { recursive: true });
+        writeFileSync(join(repo, path), text);
+      }
+      git("add", ".");
+      git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message);
+      return git("rev-parse", "HEAD");
+    };
+    const ledger = `${REVIEWS_DIR}/pr-7/usage.jsonl`;
+    const writeLedger = (records) =>
+      commit({ [ledger]: records.map((r) => `${JSON.stringify(r)}\n`).join("") }, "records");
+    const main = commit({ "code.txt": "base\n" }, "base");
+    git("update-ref", "refs/remotes/origin/main", main);
+    git("checkout", "--quiet", "-b", "feature");
+    const reviewed = commit({ "code.txt": "feature\n" }, "feature");
+    const check = (extra = {}) => assertReviewed({ repo, pr: 7, mainRef: "origin/main", ...extra });
+    return { root, repo, git, commit, writeLedger, main, reviewed, check, ledger };
+  };
+
+  it("[merge gate] passes when only the PR's own records changed after the last complete round", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const result = f.check();
+      expect(result.problems).toEqual([]);
+      expect(result.lines[0]).toMatch(
+        new RegExp(`^REVIEW_CURRENT pr=7 round=1 reviewed=${f.reviewed} head=[0-9a-f]{40}$`),
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] fails on any other change after the review, including a merge of main", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ "docs/rule.md": "tightened\n" }, "small fix after review");
+      expect(f.check().problems).toEqual(["unreviewed docs/rule.md"]);
+      f.git("checkout", "--quiet", "main");
+      const ahead = f.commit({ "other.txt": "main moved\n" }, "main moved");
+      f.git("update-ref", "refs/remotes/origin/main", ahead);
+      f.git("checkout", "--quiet", "feature");
+      expect(f.check().problems).toEqual([
+        "unreviewed docs/rule.md",
+        "main-not-merged origin/main",
+      ]);
+      f.git(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "merge",
+        "--quiet",
+        "--no-edit",
+        "origin/main",
+      );
+      expect(f.check().problems).toEqual(["unreviewed docs/rule.md", "unreviewed other.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] counts a round only when both models have an ok result, reruns included", () => {
+    const f = fixture();
+    try {
+      const second = f.commit({ "code.txt": "fixed\n" }, "fix");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, second, deepseek),
+        ok(2, second, glm, { outcome: "timeout" }),
+        { cost: 0.05, round: 3, mode: "plan", model: glm, head: "x", outcome: "ok" },
+      ]);
+      const result = f.check();
+      expect(result.round).toBe(1);
+      expect(result.problems).toEqual(["unreviewed code.txt"]);
+      const head = f.git("rev-parse", "HEAD");
+      f.git("checkout", "--quiet", head);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, second, deepseek),
+        ok(2, second, glm, { outcome: "timeout" }),
+        ok(2, second, glm),
+      ]);
+      expect(f.check()).toMatchObject({ round: 2, problems: [] });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] reads the committed ledger, not the working tree", () => {
+    const f = fixture();
+    try {
+      expect(f.check().problems).toEqual(["ledger-not-committed"]);
+      mkdirSync(join(f.repo, REVIEWS_DIR, "pr-7"), { recursive: true });
+      writeFileSync(
+        join(f.repo, f.ledger),
+        `${JSON.stringify(ok(1, f.reviewed, deepseek))}\n${JSON.stringify(ok(1, f.reviewed, glm))}\n`,
+      );
+      expect(f.check().problems).toEqual(["ledger-not-committed"]);
+      f.writeLedger([ok(1, f.reviewed, deepseek)]);
+      expect(f.check().problems).toEqual(["no-complete-round"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] fails when the reviewed commit is not in the branch any more", () => {
+    const f = fixture();
+    try {
+      f.git("checkout", "--quiet", "main");
+      f.git("checkout", "--quiet", "-b", "rewritten");
+      f.commit({ "code.txt": "other\n" }, "rewritten");
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      expect(f.check().problems[0]).toBe(`not-ancestor ${f.reviewed}`);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] records an override with Andy's words instead of passing silently", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ "code.txt": "after three rounds\n" }, "third-round fix");
+      const result = f.check({ acceptUnreviewed: "合并" });
+      expect(result.problems).toEqual(["unreviewed code.txt"]);
+      expect(result.overridden).toBe(true);
+      expect(result.lines.at(-1)).toBe("REVIEW_OVERRIDE quote=合并");
+      const written = readFileSync(join(f.repo, f.ledger), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(written.at(-1)).toMatchObject({
+        mode: "override",
+        cost: 0,
+        quote: "合并",
+        problems: ["unreviewed code.txt"],
+      });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] the script answers before installing opencode or spending", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const run = () =>
+        spawnSync(
+          process.execPath,
+          [
+            "scripts/model-review/opencode-review.mjs",
+            "--assert-reviewed",
+            "--pr",
+            "7",
+            "--repo",
+            f.repo,
+          ],
+          {
+            encoding: "utf8",
+            env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+          },
+        );
+      const pass = run();
+      expect(pass.status).toBe(0);
+      expect(pass.stdout).toMatch(/^REVIEW_CURRENT pr=7 round=1 /);
+      f.commit({ "code.txt": "unreviewed\n" }, "late change");
+      const fail = run();
+      expect(fail.status).toBe(5);
+      expect(fail.stdout).toMatch(/^REVIEW_NOT_CURRENT pr=7 /);
+      expect(fail.stdout).toContain("unreviewed code.txt");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("opencode review spending", () => {

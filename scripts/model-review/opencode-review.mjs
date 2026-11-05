@@ -734,7 +734,77 @@ export function budgetCheck({ mode, records, models, approvedUsd }) {
 export function readUsage(out) {
   const path = join(out, "usage.jsonl");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
+  return parseUsage(readFileSync(path, "utf8"), path);
+}
+
+export function resultLine(record) {
+  return `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`;
+}
+
+export function lastCompleteRound(records, models = REVIEW_MODELS) {
+  const reviews = records.filter((record) => record.mode === "code-review");
+  const rounds = [...new Set(reviews.map((record) => record.round ?? 1))].sort((a, b) => b - a);
+  for (const round of rounds) {
+    const passed = reviews.filter(
+      (record) => (record.round ?? 1) === round && record.outcome === "ok",
+    );
+    if (!models.every((model) => passed.some((record) => record.model === model))) continue;
+    const heads = [...new Set(passed.map((record) => record.head))];
+    if (heads.length !== 1)
+      throw new Error(`REVIEW_ROUND_HEADS_DIFFER ${round} ${heads.join(",")}`);
+    return { round, head: heads[0] };
+  }
+  return null;
+}
+
+function gitStatus(args, cwd) {
+  return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
+}
+
+export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed }) {
+  const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
+  const head = git(["rev-parse", "HEAD"], repo);
+  const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
+  const records = shown.status === 0 ? parseUsage(shown.stdout, `HEAD:${ledgerPath}`) : null;
+  const complete = records ? lastCompleteRound(records) : null;
+  const problems = [];
+  if (!records) problems.push("ledger-not-committed");
+  else if (!complete) problems.push("no-complete-round");
+  else if (gitStatus(["merge-base", "--is-ancestor", complete.head, head], repo).status !== 0)
+    problems.push(`not-ancestor ${complete.head}`);
+  else
+    for (const file of git(["diff", "--name-only", complete.head, head], repo).split("\n"))
+      if (file && !file.startsWith(`${ledgerPath}/`)) problems.push(`unreviewed ${file}`);
+  if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
+    problems.push(`main-ref-missing ${mainRef}`);
+  else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
+    problems.push(`main-not-merged ${mainRef}`);
+  const summary = `pr=${pr} round=${complete?.round ?? "none"} reviewed=${complete?.head ?? "none"} head=${head}`;
+  const lines =
+    problems.length === 0
+      ? [`REVIEW_CURRENT ${summary}`]
+      : [`REVIEW_NOT_CURRENT ${summary}`, ...problems.map((problem) => `  ${problem}`)];
+  const overridden = problems.length > 0 && Boolean(acceptUnreviewed);
+  if (overridden) {
+    mkdirSync(join(repo, ledgerPath), { recursive: true });
+    appendFileSync(
+      join(repo, ledgerPath, "usage.jsonl"),
+      `${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
+    );
+    lines.push(`REVIEW_OVERRIDE quote=${acceptUnreviewed}`);
+  }
+  return {
+    round: complete?.round ?? null,
+    reviewed: complete?.head ?? null,
+    head,
+    problems,
+    lines,
+    overridden,
+  };
+}
+
+export function parseUsage(text, path) {
+  return text
     .split("\n")
     .map((line, index) => ({ line, number: index + 1 }))
     .filter(({ line }) => line.trim())
@@ -1364,7 +1434,12 @@ export function parseArgs(argv) {
       if (!TOPIC_PATTERN.test(options.topic)) throw new Error("ARG_INVALID --topic");
     } else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
-    else if (key === "--models") {
+    else if (key === "--assert-reviewed") options.assertReviewed = true;
+    else if (key === "--main-ref") options.mainRef = take();
+    else if (key === "--accept-unreviewed") {
+      options.acceptUnreviewed = take();
+      if (!options.acceptUnreviewed.trim()) throw new Error("ARG_INVALID --accept-unreviewed");
+    } else if (key === "--models") {
       const names = take()
         .split(",")
         .map((name) => name.trim());
@@ -1389,6 +1464,12 @@ export function parseArgs(argv) {
     } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
+  if (options.assertReviewed) {
+    if (options.pr === undefined) throw new Error("ARG_REQUIRED --pr");
+    return options;
+  }
+  if (options.acceptUnreviewed !== undefined)
+    throw new Error("ARG_ACCEPT_UNREVIEWED_ONLY_WITH_ASSERT");
   for (const required of ["head", "brief"]) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
@@ -1411,6 +1492,12 @@ export function parseArgs(argv) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.assertReviewed) {
+    const result = assertReviewed(options);
+    for (const line of result.lines) console.log(line);
+    if (result.problems.length > 0 && !result.overridden) process.exitCode = 5;
+    return;
+  }
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
   const questions = reviewQuestions(questionsSource(options.repo, commits));
@@ -1542,9 +1629,7 @@ async function main() {
       }),
     );
     for (const record of results) {
-      console.log(
-        `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`,
-      );
+      console.log(resultLine(record));
     }
     const totalSpent = spentOf(readUsage(options.out));
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
