@@ -918,6 +918,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "set -u",
       `real="${box.root}/real"`,
       'for dir in etc var; do mkdir -p "$real/$dir" && mount --rbind "/$dir" "$real/$dir" || exit 90; done',
+      `mkdir -p "$real/scripts" && mount --bind "${scripts}" "$real/scripts" || exit 92`,
       "for dir in /etc /var /srv; do mount -t tmpfs tmpfs $dir || exit 91; done",
       "keep() {",
       '  for entry in "$real/$1"/*; do',
@@ -934,7 +935,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "echo old-pause > /srv/gh-runner/bin/runner-pause.sh",
       "echo config > /srv/gh-runner/runner/config.sh",
       "chmod 0755 /srv/gh-runner/runner/config.sh",
-      `bash "${scripts}/install-runner.sh" > "${box.root}/stdout" 2> "${box.root}/stderr"`,
+      `bash "$real/scripts/install-runner.sh" > "${box.root}/stdout" 2> "${box.root}/stderr"`,
       'echo "rc=$?"',
       `for path in ${reported.join(" ")}; do`,
       '  if [ -d "$path" ]; then echo "$path=DIR"; elif [ -e "$path" ]; then echo "$path=$(cat "$path")"; else echo "$path=MISSING"; fi',
@@ -1073,7 +1074,16 @@ describe("uninstall-runner.sh", () => {
       "ss",
       "printf '%s\\n' 'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*' 'LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*'",
     );
-    const result = box.run("uninstall-runner.sh", ["2"]);
+    const inner = [
+      `scripts="${box.root}/scripts"`,
+      `mkdir -p "$scripts" && mount --bind "${scripts}" "$scripts" || exit 92`,
+      "for dir in /srv /etc/systemd/system /etc/gh-runner; do [ -d $dir ] || continue; mount -t tmpfs tmpfs $dir || exit 91; done",
+      'exec bash "$scripts/uninstall-runner.sh" 2',
+    ].join("\n");
+    const result = spawnSync("unshare", ["-rm", "/bin/bash", "-c", inner], {
+      encoding: "utf8",
+      env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
+    });
     expect(result.stderr).not.toContain("UNINSTALL_INCOMPLETE");
     expect(result.status).toBe(0);
     const calls = box.calls();
