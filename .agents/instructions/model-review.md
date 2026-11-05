@@ -43,6 +43,7 @@
 1. 这个改动会不会改变模型已经见过的请求开头？包括系统提示、工具定义、历史消息、遮盖结果。要求回答：发给模型的内容是不是仍然只在末尾追加，每轮会变的值是不是都在最后一条消息里。依据：[发给模型的内容只追加](../../.claude/rules/prompt-prefix.md#rules)。
 2. 这个改动会不会让同一段文字在不同请求里变成不同的字节（例如依赖前后文的遮盖、带时间的字段、无序的集合）？
 3. 改动有没有对应的自动检查，反向用例是否真的会失败？
+4. 改动产生或修改的每个值（标识、字段、配置键、清单项、序列化格式），每一个使用它的地方都能接受吗？逐个找到产生它的地方和使用它的地方，核对两端的校验，只看改动本身不够。依据：[I-73](../../docs/incidents-and-gates.md#incidents)，双模型复核只看了改动，没问“清单里的 id 能通过后端校验吗”。
 
 <a id="how-to-run"></a>
 ## 怎么跑
@@ -56,7 +57,8 @@
   - git 替身调用真 git 之前会去掉所有 `GIT_*`、`LD_*` 等环境变量，只留 `PATH`、`HOME`、`LANG` 和固定的 git 设置，所以模型先 `export GIT_EXTERNAL_DIFF=程序` 再跑 `git diff` 也不能让 git 执行别的程序（第五轮复核实测过这种写法）。opencode 本身也只拿到一份白名单里的环境变量（脚本里的 `OPENCODE_KEPT_ENV`：`PATH`、`HOME`、语言和时区、临时目录、XDG 数据目录、代理和证书设置），线程容器里的令牌和密钥（例如 `GITHUB_TOKEN`）不传给它：原先整份环境都传过去，模型写 `git log $GITHUB_TOKEN` 就能从 git 的报错里读到值（2026-11-05 在云端容器实测），而方案讨论能读网页，网页内容可能诱导模型这样做。
   - 这套限制防的是复核模型误操作（顺手改了文件、跑了别的命令、上了网），不防有人故意在 PR 里埋恶意代码：PR 都是本项目自己的线程写的，复核又跑在用完即删的云端容器里。Andy 2026-11-03 定：这是开发协作工具，不是 Himawari 的功能，不用系统级沙箱，也不再为后一种情况加固；复核材料不要再让模型专门去找这类绕过办法。原因：系统的真相在代码里，只读线程给的材料，材料错了复核就跟着错。
 - 代码复核（`--mode code-review`）不联网；方案讨论的两个模式（`--mode plan`、`--mode plan-review`）可以用 opencode 自带的搜索和读网页工具（Andy 2026-11-03 定）。搜索走 opencode 内置的 Exa 免费搜索服务，不花 Andy 的钱，只是搜索结果会算进模型的输入 token。
-- 必问问题从 `--base` 提交里的本文件读（方案讨论不传 `--base` 时从 `--head` 提交读），不从被复核的改动或工作区读，免得改动自己改掉要问的问题。
+- 必问问题从 `--base` 提交里的本文件读（方案讨论不传 `--base` 时从 `--head` 提交读），不从被复核的改动或工作区读，免得改动自己改掉要问的问题。要用另一个已提交的版本时（例如在旧提交上做对比实验），传 `--questions-ref <提交>`，仍然只读提交过的内容。
+- 代码复核和方案审核（`--mode plan-review`）里，两个模型除了都回答全部必答问题，还各有一节额外侧重（脚本里的 `MODEL_LENSES`，Andy 2026-11-05 同意）：DeepSeek 先查错误路径、不可信输入、安全、资源耗尽和不可撤销的操作；GLM 先查测试覆盖、文档和规则与代码是否一致，并走一遍最普通的使用流程。侧重写在“本次材料”之前、同一个模型每轮都一样，所以每个模型发出的内容仍然只在末尾追加；两个模型的提示词因此不同，每轮分别存成 `<模型>.prompt.md`。独立出方案（`--mode plan`）不加侧重。依据：Anthropic 官方复核插件把复核分给不同侧重的代理，并在高风险项上让两个代理重复看（https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/plugins/code-review/README.md ）。
 - 第一次运行会联网安装 `opencode-ai@1.19.5` 到 `~/.cache/himawari-opencode-1.19.5-<锁文件摘要前 12 位>`，之后复用；也可以用 `HIMAWARI_OPENCODE_BIN` 指定已装好的程序（这时不做下面的核对）。安装用 `npm ci` 按 `scripts/model-review/opencode-lock/` 里提交的锁文件（`package-lock.json`，逐个记了 `opencode-ai` 和 12 个平台包的 sha512 摘要）进行，下载的包摘要不符时 npm 自己就会拒绝；每次使用前，脚本还会核对已装的每个包的摘要和锁文件一致，不一致以 `OPENCODE_INTEGRITY_MISMATCH` 停下。升级 opencode 时，改 `OPENCODE_VERSION` 和 `opencode-lock/package.json`，在该目录运行 `npm install --package-lock-only --ignore-scripts` 重新生成锁文件，一起提交。
 - 密钥不写进脚本生成的配置，由 OpenCode 自己找：Mac 上先用这个 1.19.5 执行 `opencode auth login` 选 OpenCode Go 登录，密钥存在 `~/.local/share/opencode/auth.json`（OpenCode 保存登录密钥的文件）；云端不用登录，云端容器的出口代理（所有外发请求经过的那一层）会给发往 opencode.ai 的请求补上密钥。配置里一旦写了 `apiKey`，OpenCode 1.19.5 就不再用 auth.json 里的密钥，真实请求会报 401（[I-76](../../docs/incidents-and-gates.md#incidents)）；只有自检连本机假服务器时才写假密钥。
 - 在 PR 最新提交的一次性副本里运行：副本是干净克隆，只有提交过的文件。历史里任何一个提交（包括合并提交）的文件树里出现过 `.env` 一类文件（`.env.example` 这类模板除外）就拒绝复核，因为 git 命令能从历史里读出它。副本删掉了远程地址、引用日志（reflog，记录分支移动的日志，里面有原仓库路径）和 `FETCH_HEAD`，用完即删，脚本收到中断或结束信号（`SIGINT`、`SIGTERM`）时也会删；被强杀（`SIGKILL`）时删不掉。副本里 PR 自带的 `.opencode/`、`opencode.json(c)`、提交进仓库的 `.env*` 文件和指向副本外的符号链接会先删掉，因为 opencode 启动时会执行项目目录里的插件，符号链接能把读文件带出副本；配置改从副本外的文件读。副本里的分支和标签全部删掉，只留 `refs/review/head`、`refs/review/base`、`refs/review/previous` 三个引用；其他提交的对象还在，知道哈希仍能读到。opencode 的全局配置（`~/.config/opencode`）不会被读入，脚本给它一个空的配置目录。
@@ -97,6 +99,6 @@ node scripts/model-review/opencode-review.mjs --mode plan-review \
   --head <当前提交> --topic <短名> --brief <线程的方案.md>
 ```
 
-三种模式都可以加 `--models deepseek-v4.1-flash`（只跑列出的模型，逗号分隔，可写短名或完整名；自检仍对两个模型都跑，不花钱）、`--round <序号>`（把单个模型的重跑补进原来那一轮，见上文）和 `--approved-usd <美元>`（Andy 同意的这件事的总花费）。
+三种模式都可以加 `--models deepseek-v4.1-flash`（只跑列出的模型，逗号分隔，可写短名或完整名；自检仍对两个模型都跑，不花钱）、`--round <序号>`（把单个模型的重跑补进原来那一轮，见上文）、`--questions-ref <提交>`（从这个提交读必问问题，见上文）和 `--approved-usd <美元>`（Andy 同意的这件事的总花费）。
 
 `--brief` 只写这次的材料：代码复核写问题、目标、约束和作者的说法；`plan` 只写问题、目标、约束和已核对的事实，不写线程的方案；`plan-review` 写线程的方案。脚本会在前面加上各模式的固定说明（上面的必问问题、项目指令第 16 条原话、该模式的任务和输出格式），代码复核还会让模型自己用 `git diff` 看改动。提交可以写分支名，脚本先在原仓库解析成提交哈希。按意见修改后的复核传 `--previous`，模型先看增量，但可以读任何文件。

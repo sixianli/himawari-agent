@@ -175,10 +175,26 @@ const MODE_TEXT = {
   },
 };
 
-export function buildPrompt({ mode, questions, head, base, previous, brief }) {
+export const LENS_MODES = ["code-review", "plan-review"];
+export const MODEL_LENSES = {
+  "deepseek-v4.1-flash":
+    "你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作。另一个复核者侧重别的方面，所以你仍要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。",
+  "glm-5.3-flash":
+    "你的额外侧重：测试有没有覆盖这次改动、文档和规则与代码是否一致；挑一条最普通的使用流程，从入口走到结束，标出经过的、没有测试覆盖的代码路径。另一个复核者侧重别的方面，所以你仍要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你走过的流程和结论。",
+};
+
+export function lensFor(mode, model) {
+  if (!LENS_MODES.includes(mode) || !model) return null;
+  const lens = MODEL_LENSES[model.split("/").pop()];
+  if (!lens) throw new Error(`LENS_UNKNOWN ${model}`);
+  return lens;
+}
+
+export function buildPrompt({ mode, model, questions, head, base, previous, brief }) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   if (!brief || !brief.trim()) throw new Error("BRIEF_EMPTY");
   const text = MODE_TEXT[mode];
+  const lens = lensFor(mode, model);
   const fixed = [
     text.role,
     `你能用的工具：read、grep、glob${mode === "code-review" ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
@@ -187,6 +203,7 @@ export function buildPrompt({ mode, questions, head, base, previous, brief }) {
     RULE_16_SENTENCE,
     "必答问题：",
     ...questions.map((question, index) => `${index + 1}. ${question}`),
+    ...(lens ? [lens] : []),
     text.output,
   ].join("\n");
   const material = [
@@ -1368,8 +1385,11 @@ function git(args, cwd) {
 
 export const QUESTIONS_PATH = ".agents/instructions/model-review.md";
 
-export function questionsSource(repo, commits) {
-  return git(["show", `${commits.base ?? commits.head}:${QUESTIONS_PATH}`], repo);
+export function questionsSource(repo, commits, questionsRef) {
+  const ref = questionsRef
+    ? git(["rev-parse", "--verify", "--quiet", `${questionsRef}^{commit}`], repo)
+    : (commits.base ?? commits.head);
+  return git(["show", `${ref}:${QUESTIONS_PATH}`], repo);
 }
 
 export function isSecretEnvName(name) {
@@ -1475,6 +1495,7 @@ export function parseArgs(argv) {
     else if (key === "--stop") options.stop = take();
     else if (key === "--andy-quote") options.andyQuote = take();
     else if (key === "--main-ref") options.mainRef = take();
+    else if (key === "--questions-ref") options.questionsRef = take();
     else if (key === "--accept-unreviewed") {
       options.acceptUnreviewed = take();
       if (!options.acceptUnreviewed.trim()) throw new Error("ARG_INVALID --accept-unreviewed");
@@ -1544,7 +1565,7 @@ async function main() {
   }
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
-  const questions = reviewQuestions(questionsSource(options.repo, commits));
+  const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
   const brief = readFileSync(options.brief, "utf8");
   const prompts = Object.fromEntries(
     options.models.map((model) => [

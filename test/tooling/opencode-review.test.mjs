@@ -43,6 +43,7 @@ import {
   reviewDir,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
+  MODEL_LENSES,
   nextRound,
   OPENCODE_KEPT_ENV,
   OPENCODE_LOCK_DIR,
@@ -201,6 +202,44 @@ describe("opencode review prompt", () => {
     expect(first).toContain("git diff bbb..aaa");
     expect(second).toContain("git diff eee..ccc");
     expect(first).toContain("不能上网");
+  });
+
+  it("[model focus] asks every reviewer the cross-module question I-73 missed", () => {
+    const questions = reviewQuestions(instructions);
+    expect(questions).toHaveLength(4);
+    expect(questions[3]).toContain("每一个使用它的地方都能接受吗");
+  });
+
+  it("[model focus] gives each model its own focus and otherwise the same prompt", () => {
+    const [deepseek, glm] = REVIEW_MODELS;
+    const questions = reviewQuestions(instructions);
+    const common = { questions, head: "h", base: "b", brief: "作者说" };
+    for (const mode of ["code-review", "plan-review"]) {
+      const a = buildPrompt({ ...common, mode, model: deepseek });
+      const b = buildPrompt({ ...common, mode, model: glm });
+      expect(a).toBe(buildPrompt({ ...common, mode, model: deepseek }));
+      expect(a).toContain(MODEL_LENSES["deepseek-v4.1-flash"]);
+      expect(a).not.toContain(MODEL_LENSES["glm-5.3-flash"]);
+      expect(b).toContain(MODEL_LENSES["glm-5.3-flash"]);
+      expect(b).not.toContain(MODEL_LENSES["deepseek-v4.1-flash"]);
+      expect(a.replace(`${MODEL_LENSES["deepseek-v4.1-flash"]}\n`, "")).toBe(
+        b.replace(`${MODEL_LENSES["glm-5.3-flash"]}\n`, ""),
+      );
+      expect(a.replace(`${MODEL_LENSES["deepseek-v4.1-flash"]}\n`, "")).toBe(
+        buildPrompt({ ...common, mode }),
+      );
+      for (const [index, question] of questions.entries())
+        for (const prompt of [a, b]) expect(prompt).toContain(`${index + 1}. ${question}`);
+      expect(a.indexOf(MODEL_LENSES["deepseek-v4.1-flash"])).toBeLessThan(
+        a.indexOf("---- 本次材料 ----"),
+      );
+    }
+    expect(buildPrompt({ ...common, mode: "plan", model: deepseek })).toBe(
+      buildPrompt({ ...common, mode: "plan", model: glm }),
+    );
+    expect(() => buildPrompt({ ...common, mode: "code-review", model: "x/other" })).toThrow(
+      "LENS_UNKNOWN x/other",
+    );
   });
 
   it("asks for an independent plan without any author's conclusion in plan mode", () => {
@@ -1079,6 +1118,12 @@ describe("opencode review repository copy", () => {
       writeFileSync(join(root, QUESTIONS_PATH), '<a id="checklist"></a>\n\n- 写得好吗？\n');
       run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-am", "weaken"]);
       expect(reviewQuestions(questionsSource(root, { base }))).toEqual(
+        reviewQuestions(instructions),
+      );
+      expect(() => reviewQuestions(questionsSource(root, { base }, "HEAD"))).toThrow(
+        "REVIEW_CHECKLIST_EMPTY",
+      );
+      expect(reviewQuestions(questionsSource(root, { base: "HEAD" }, base))).toEqual(
         reviewQuestions(instructions),
       );
     } finally {
