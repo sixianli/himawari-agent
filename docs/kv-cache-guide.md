@@ -56,14 +56,14 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | 1 | 固定的在前，会变的在后：工具定义 → 系统提示 → 历史 → 最后一条用户消息 | S1、S2、S4、S5 | 做到 |
 | 2 | 每轮会变的内容只放最后一条用户消息；系统提示和工具定义里没有会变的值 | S5、S7 | 做到（[ADR 0164](adr/0164-move-changing-values-out-of-the-request-head.md)：运行环境说明放在最后一条消息里，只在第一轮、内容变化时和压缩后发） |
 | 3 | 告诉模型新情况时追加消息，不改系统提示 | S5、S6 | 做到（ADR 0164：工具循环停止、运行中压缩后补发运行环境说明都用追加消息） |
-| 4 | 已发内容不改、不重排、不删，只追加 | S2、S7 | 做到（[ADR 0149](adr/0149-append-only-model-requests.md)） |
-| 5 | 存历史存实际发出去的那条 | 本项目事故 I-66 | 做到 |
-| 6 | 系统提示和工具按对话冻结，只在规定的几种情况下换新并留记录 | S6 | 做到（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)）；“工具参数结构变了也换新”2026-11-05 获批并已实现（只改说明文字不换新） |
+| 4 | 已发内容不改、不重排、不删，只追加 | S2、S7 | 做到（[ADR 0149](adr/0149-append-only-model-requests.md)）；例外三种，见规则第 4 条 |
+| 5 | 存历史存实际发出去的那条 | 本项目事故 I-66 | 做到；出口遮盖除外：历史存遮盖前的内容，每次发送时确定地重新遮盖 |
+| 6 | 系统提示和工具按对话冻结，只在规定的几种情况下换新并留记录 | S6 | 做到（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)）；“工具参数结构变了也换新”2026-11-05 获批并已实现（只改说明文字不换新）；只在一轮运行开始时判断，运行中途找不到冻结的工具时这一轮失败 |
 | 7 | 工具集合尽量不变，不能用的工具由执行端拒绝，而不是删掉 | S2、S5、S7 | 部分做到：本项目选择“工具集合变了换新一次”，只因执行句柄出现的工具接在冻结工具后面并计数；它们出现或消失的那一轮，冻结工具之后的系统提示和历史整段重算 |
 | 8 | 同一对话中途不换模型、不换推理强度，其他请求参数保持稳定 | S1、S2、S6 | 换模型或推理强度会换新一次（ADR 0165），没有阻止中途更换 |
 | 9 | 同一对话的请求送到同一个服务方 | S2、S6 | Magpie 发会话亲和头（`packages/runtime-pi/src/configured-model-binding.ts` 的 `sendSessionAffinityHeaders`）；没有传缓存路由键；实际是否稳定**未核实**，见[已知差距](#gaps) |
 | 10 | 序列化确定：JSON 键顺序、工具顺序、列表顺序固定 | S7 | 冻结后系统提示和工具按原字节读回；资料块和运行环境说明的列表顺序固定（ADR 0164） |
-| 11 | 遮盖确定：一段内容的遮法只取决于它自己和前面的内容；主人点名的秘密（满 6 个字符）在点名的那条消息里处处都遮，同一次请求里后面的消息也遮 | 本项目 | 做到（`packages/application/src/services/model-egress.ts`、`egress-redaction.ts`）；例外条款 2026-11-05 获批 |
+| 11 | 遮盖确定：一段内容的遮法只取决于它自己和前面的内容；出口遮盖认出的密码或验证码（满 6 个字符）会被记下，在点名的那条消息里和同一次请求后面的消息里，单独出现的地方都遮 | 本项目 | 做到（`packages/application/src/services/model-egress.ts`、`egress-redaction.ts`）；例外条款 2026-11-05 获批 |
 | 12 | 压缩集中做、少做，用总输入费用判断是否值得 | S2、S8 | 压缩由 Pi 自动触发；没有按费用评估 |
 | 13 | 压缩请求沿用原对话的系统提示和工具 | S5、S6 | **没做到**，见[已知差距](#gaps) |
 | 14 | 清理旧工具结果要成批、少做、能恢复 | S7、S8 | 没做；排在提示词第二步之后另出方案 |
@@ -94,7 +94,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 
 ## 怎么检查
 
-- **阻断检查：**`npm run check:prompt-prefix`。用真实的 Pi 适配器和出口遮盖跑多轮对话，逐字节检查后一次请求是否以前一次请求开头，并带反向用例。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`。
+- **阻断检查：**`npm run check:prompt-prefix`。用真实的 Pi 适配器和出口遮盖跑多轮对话，检查后一次请求是否以前一次请求开头（`messages` 逐字节比，其他字段按值比，`max_tokens` 除外），并带反向用例。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`。
 - **端到端：**`test/integration/production-http-composition-process.test.ts` 里的 `[PR-A]`、`[PR-B]` 用例，用真实服务和 SQLite 抓取原始请求体来比对。
 - **其他测试：**换新的各种条件在 `test/integration/thread-prompt-bundles.test.ts`；运行环境说明的发送时机和运行中压缩后补发，在 `packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts`。这些不属于 `check:prompt-prefix` 这一步。
 - **生产监控：**对话的后续轮次请求（输入至少 1024 个 token，上游报告了缓存用量）命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`，阈值和命中率判断见 `packages/application/src/ports/model-usage.ts`，是否后续轮次见 `apps/agent-service/src/cache-hit-monitor.ts`；`node scripts/operations/cache-hit-report.mjs <product.sqlite> --by turn` 给出分轮次的命中率。排查时先排除四种情况：缓存过期、按规则换新、换了服务方、遮盖密钥轮换。
