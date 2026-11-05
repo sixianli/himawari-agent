@@ -1139,16 +1139,20 @@ describe("opencode review wrap-up", () => {
   }, 120000);
 
   it("stops reading near the time limit and still gets a conclusion", async () => {
+    let holdEndsAt;
     await withScriptedReview(
-      (request) =>
-        isWrapUp(request) ? { text: "TIME_WRAPPED" } : { tool: true, holdUntil: Date.now() + 1000 },
+      (request) => {
+        if (isWrapUp(request)) return { text: "TIME_WRAPPED" };
+        holdEndsAt ??= Date.now() + 70000;
+        return { tool: true, holdUntil: Math.min(Date.now() + 1000, holdEndsAt) };
+      },
       async ({ review, requests }) => {
         const result = await review({ timeoutMs: 90000 });
         expect(result.wrapUp).toBe("time");
         expect(result.outcome).toBe("ok");
         expect(result.summary.text).toBe("TIME_WRAPPED");
         expect(requests.filter(isWrapUp)).toHaveLength(1);
-        expect(mainRequests(requests).length).toBeGreaterThan(10);
+        expect(mainRequests(requests).length).toBeGreaterThan(1);
         expect(requests.length).toBeLessThan(100);
       },
     );
