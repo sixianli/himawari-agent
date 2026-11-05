@@ -135,17 +135,21 @@ export class SqliteSensitiveInterceptionOperations {
         let recorded = 0;
         let skipped = 0;
         for (const observed of input.observations) {
-          const resolved =
+          const run =
             observed.threadId === null && observed.runId
-              ? ((runThread.get(input.ownerId, input.agentId, observed.runId) as
+              ? (runThread.get(input.ownerId, input.agentId, observed.runId) as
                   | string
                   | null
-                  | undefined) ?? null)
-              : observed.threadId;
-          const item = { ...observed, threadId: resolved } as SensitiveInterceptionObservation;
+                  | undefined)
+              : null;
+          const item = {
+            ...observed,
+            threadId: run ?? observed.threadId,
+          } as SensitiveInterceptionObservation;
           if (
-            item.threadId !== null &&
-            !threadExists.get(input.ownerId, input.agentId, item.threadId)
+            run === undefined ||
+            (item.threadId !== null &&
+              !threadExists.get(input.ownerId, input.agentId, item.threadId))
           ) {
             skipped += 1;
             continue;

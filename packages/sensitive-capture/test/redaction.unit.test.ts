@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactForEgress } from "../src/index.js";
+import { locateMaskedValues, redactForEgress } from "../src/index.js";
 
 const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["验证码中文", "您的验证码是 482910，5 分钟内有效", "您的验证码是 [验证码]，5 分钟内有效"],
@@ -237,5 +237,30 @@ describe("reporting what was masked", () => {
     const seen: unknown[] = [];
     redactForEgress("订单号 20261101123456 已发货", { observe: (sighting) => seen.push(sighting) });
     expect(seen).toEqual([]);
+  });
+});
+
+describe("locating masked values in the masked text", () => {
+  it("returns the same masked text and where each value's placeholder sits", () => {
+    const key = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-");
+    const input = `密码：hunter22abc 和 key ${key}，卡号 4111 1111 1111 1111，又一个 key ${key}`;
+    const located = locateMaskedValues(input);
+    expect(located?.text).toBe(redactForEgress(input).text);
+    expect(
+      located?.spans.map(({ start, end, sighting }) => [
+        located.text.slice(start, end),
+        sighting.kind,
+        sighting.value,
+      ]),
+    ).toEqual([
+      ["[密码]", "password", "hunter22abc"],
+      ["[密钥]", "machine-secret", key],
+      ["[银行卡 尾号1111]", "bank-card", "4111111111111111"],
+      ["[密钥]", "machine-secret", key],
+    ]);
+  });
+
+  it("gives up instead of guessing when the text already holds a placeholder", () => {
+    expect(locateMaskedValues("早就遮过的 [密钥] 和密码：hunter22abc")).toBeNull();
   });
 });

@@ -332,6 +332,7 @@ function modelTransportFor(
       source: "background",
       purpose: "action-review",
     },
+    egressRunScoped: true,
     models: new ConfiguredPiModelBindingPort({
       descriptors: piOnly,
       secretSource: options.secretSource,

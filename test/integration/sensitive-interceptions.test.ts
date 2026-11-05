@@ -215,10 +215,10 @@ describe("[SI-1] sensitive interception records", () => {
     }
   });
 
-  it("files a background record under the conversation of the run that made it", async () => {
+  it("files a background record under its run's conversation, and drops it when the run is gone with its conversation", async () => {
     const { repository, store } = await open();
     try {
-      await store.record({
+      const result = await store.record({
         ...scope,
         observations: [
           observation({ threadId: null, runId: createRunId("run-si"), source: "background" }),
@@ -231,8 +231,9 @@ describe("[SI-1] sensitive interception records", () => {
         ],
         now: T0,
       });
+      expect(result).toEqual({ recorded: 1, skipped: 1 });
       const { items } = await store.list({ ...scope, limit: 10, before: null });
-      expect(items.map(({ threadId }) => threadId).sort()).toEqual([null, THREAD_ID]);
+      expect(items.map(({ threadId }) => threadId)).toEqual([THREAD_ID]);
     } finally {
       await repository.close();
     }

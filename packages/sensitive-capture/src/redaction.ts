@@ -320,6 +320,84 @@ export function findSensitiveValues(input: string): readonly EgressRedactionSigh
   return Object.freeze(found);
 }
 
+export interface MaskedValueSpan {
+  readonly start: number;
+  readonly end: number;
+  readonly sighting: EgressRedactionSighting;
+}
+
+const LOCATED_PLACEHOLDER = /\[(?:密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]|\[密钥\]/gu;
+
+function spanTag(index: number): string {
+  let out = "";
+  let rest = index;
+  for (let digit = 0; digit < 8; digit += 1) {
+    out = String.fromCharCode(97 + (rest % 26)) + out;
+    rest = Math.floor(rest / 26);
+  }
+  return out;
+}
+
+function machinePositions(
+  input: string,
+  sightings: readonly EgressRedactionSighting[],
+): readonly EgressRedactionSighting[] | null {
+  const placed: { position: number; sighting: EgressRedactionSighting }[] = [];
+  const next = new Map<string, number>();
+  for (const sighting of sightings) {
+    const position = input.indexOf(sighting.value, next.get(sighting.value) ?? 0);
+    if (position < 0) return null;
+    next.set(sighting.value, position + sighting.value.length);
+    placed.push({ position, sighting });
+  }
+  return placed
+    .sort((left, right) => left.position - right.position)
+    .map(({ sighting }) => sighting);
+}
+
+export function locateMaskedValues(
+  input: string,
+): { readonly text: string; readonly spans: readonly MaskedValueSpan[] } | null {
+  const machine: EgressRedactionSighting[] = [];
+  const tagged = new Map<string, EgressRedactionSighting>();
+  let pending: EgressRedactionSighting | undefined;
+  let counter = 0;
+  const marked = redactForEgress(input, {
+    observe: (sighting) => {
+      if (sighting.kind === "machine-secret") machine.push(sighting);
+      else pending = sighting;
+    },
+    tag: () => {
+      const id = spanTag(counter);
+      counter += 1;
+      if (pending !== undefined) tagged.set(id, pending);
+      pending = undefined;
+      return id;
+    },
+  }).text;
+  const ordered = machinePositions(input, machine);
+  if (ordered === null) return null;
+  const spans: MaskedValueSpan[] = [];
+  let text = "";
+  let last = 0;
+  let machineIndex = 0;
+  for (const match of marked.matchAll(LOCATED_PLACEHOLDER)) {
+    const index = match.index ?? 0;
+    text += marked.slice(last, index);
+    const id = match[1];
+    const bare = id === undefined ? match[0] : match[0].replace(`#${id}`, "");
+    const start = text.length;
+    text += bare;
+    last = index + match[0].length;
+    const sighting = id === undefined ? ordered[machineIndex++] : tagged.get(id);
+    if (sighting === undefined) return null;
+    spans.push(Object.freeze({ start, end: text.length, sighting }));
+  }
+  text += marked.slice(last);
+  if (machineIndex !== ordered.length || text !== redactForEgress(input).text) return null;
+  return Object.freeze({ text, spans: Object.freeze(spans) });
+}
+
 export function maskSensitiveText(input: string): string {
   return redactForEgress(input).text;
 }

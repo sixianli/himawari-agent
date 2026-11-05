@@ -32,9 +32,10 @@ import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import {
   type EgressRedactionSighting,
   findSensitiveValues,
+  locateMaskedValues,
   maskSensitiveText,
 } from "@himawari-agent/sensitive-capture";
-import { plainModelText, windowMailBody } from "./proactive-mail-body.js";
+import { mailBodyWindow, plainModelText, windowMailBody } from "./proactive-mail-body.js";
 import {
   applyFloor,
   floorHitIds,
@@ -186,6 +187,31 @@ interface ProactiveMailView {
 }
 
 const mailViews = new WeakMap<ProactiveSourceItem, Map<number, ProactiveMailView>>();
+
+function sentBodyValues(body: string, limit: number): readonly EgressRedactionSighting[] {
+  const located = locateMaskedValues(body);
+  if (located === null) return findSensitiveValues(windowMailBody(body, limit).text);
+  const starts = [0];
+  for (const point of located.text) starts.push((starts.at(-1) ?? 0) + point.length);
+  const pointAt = (unit: number) => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((starts[middle] ?? 0) <= unit) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  };
+  const length = starts.length - 1;
+  const window = mailBodyWindow(length, limit);
+  return located.spans
+    .filter(
+      ({ start, end }) =>
+        window === null || pointAt(start) < window.head || pointAt(end) > length - window.tail,
+    )
+    .map(({ sighting }) => sighting);
+}
 
 function masked(value: string): string {
   return maskSensitiveText(value);
@@ -351,9 +377,11 @@ export class ProactiveMailCheckService {
         [
           item.from,
           item.subject,
-          item.body === null ? item.snippet : windowMailBody(item.body, bodyLimit).text,
           ...item.attachments.slice(0, MAX_ATTACHMENTS_SHOWN).map(({ filename }) => filename),
-        ].flatMap((text) => findSensitiveValues(text)),
+          ...(item.body === null ? [item.snippet] : []),
+        ]
+          .flatMap((text) => findSensitiveValues(text))
+          .concat(item.body === null ? [] : sentBodyValues(item.body, bodyLimit)),
       );
       if (sightings.length > 0) onMasked(sightings);
     } catch {

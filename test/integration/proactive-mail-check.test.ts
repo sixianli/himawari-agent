@@ -501,6 +501,27 @@ describe("proactive Gmail check acceptance", () => {
     expect(reported).not.toContain("lastfile99.txt");
   });
 
+  it("[SI-3] decides what was sent by where values land after masking, not in the original text", async () => {
+    const reported: string[] = [];
+    const h = await harness({
+      bodyLimits: { perMail: 400 },
+      onMasked: (sightings) => reported.push(...sightings.map(({ value }) => value)),
+    });
+    const cards = "カード 4111 1111 1111 1111 ".repeat(15);
+    const filler = "長いお知らせです。".repeat(150);
+    h.reader.items = [
+      mail("shifted", {
+        body: `${cards}パスワード：shiftpass99 ${filler}パスワード：droppedpass99 ${filler}`,
+      }),
+    ];
+    h.script([{ id: "shifted", result: "ignore" }]);
+    await h.service.run();
+    expect(h.prompts[0]).toContain("bodyTruncated");
+    expect(reported).toContain("shiftpass99");
+    expect(reported).not.toContain("droppedpass99");
+    expect(reported.filter((value) => value === "4111111111111111")).toHaveLength(15);
+  });
+
   it("[PG-4] pushes an unclear ward office letter but only lists the same text from a friend", async () => {
     const h = await harness();
     const snippet = "添付ファイルをご確認ください";

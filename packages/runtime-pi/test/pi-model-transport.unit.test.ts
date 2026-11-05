@@ -439,7 +439,7 @@ describe("PiModelTransport", () => {
 
   async function sentBody(
     prompt: string,
-    egress: Pick<PiModelTransportOptions, "egress" | "egressContext"> = {
+    egress: Pick<PiModelTransportOptions, "egress" | "egressContext" | "egressRunScoped"> = {
       egress: testModelEgress(),
     },
   ): Promise<{
@@ -512,14 +512,14 @@ describe("PiModelTransport", () => {
       source: "background",
       purpose: "thread-title",
     } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>;
-    await sentBody("验证码 482910", {
-      egress: testModelEgress(undefined, (context, sightings) =>
-        reports.push({ context, sightings }),
-      ),
-      egressContext,
-    });
-    expect(reports).toHaveLength(1);
+    const egress = testModelEgress(undefined, (context, sightings) =>
+      reports.push({ context, sightings }),
+    );
+    await sentBody("验证码 482910", { egress, egressContext, egressRunScoped: true });
+    await sentBody("验证码 482910", { egress, egressContext });
+    expect(reports).toHaveLength(2);
     expect(reports[0]?.context).toEqual({ ...egressContext, runId: request.runId });
+    expect(reports[1]?.context).toEqual(egressContext);
     expect(reports[0]?.sightings.map(({ part }) => part)).toEqual(["owner_message"]);
   });
 

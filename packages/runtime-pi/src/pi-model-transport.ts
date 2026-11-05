@@ -116,6 +116,7 @@ export interface PiModelTransportOptions {
   readonly temperature?: number;
   readonly disableThinking?: boolean;
   readonly egressContext?: ModelEgressContext;
+  readonly egressRunScoped?: boolean;
 }
 
 export interface PiModelTransportObservation {
@@ -188,6 +189,7 @@ function pricedCostMicros(
 export class PiModelTransport {
   readonly #egress: ModelEgress;
   readonly #egressContext: ModelEgressContext | undefined;
+  readonly #egressRunScoped: boolean;
   readonly #models: PiModelBindingPort;
   readonly #payloads: PiModelPayloadBoundary;
   readonly #clock: ClockPort;
@@ -221,6 +223,7 @@ export class PiModelTransport {
     if (typeof fetch !== "function") throw new TypeError("Pi model transport requires fetch");
     this.#egress = options.egress;
     this.#egressContext = options.egressContext;
+    this.#egressRunScoped = options.egressRunScoped === true;
     this.#models = options.models;
     this.#payloads = options.payloads;
     this.#clock = options.clock;
@@ -279,8 +282,8 @@ export class PiModelTransport {
     let responseStatus = 0;
     let egressRefused = false;
     const exchange = this.#egress.exchange(
-      this.#egressContext === undefined
-        ? undefined
+      this.#egressContext === undefined || !this.#egressRunScoped
+        ? this.#egressContext
         : { ...this.#egressContext, runId: request.runId },
     );
     const redactingFetch = exchange.wrapFetch(this.#fetch);
