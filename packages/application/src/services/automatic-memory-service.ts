@@ -3,9 +3,8 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import {
   ApplicationPortError,
-  DEFAULT_MEMORY_ATTRIBUTES,
-  PORT_ERROR_CODES,
   type ApprovedMemoryContentPort,
+  DEFAULT_MEMORY_ATTRIBUTES,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
   type ExtractedMemoryCandidate,
@@ -13,11 +12,13 @@ import {
   type IncrementalMemoryProductPort,
   type MemoryExtractionAuditPort,
   type MemoryExtractionAuditRecord,
+  PORT_ERROR_CODES,
   type ProductMemoryProposal,
   type SensitiveMemoryApprovalRequest,
   type SensitiveMemoryApprovalStatePort,
   type SensitiveMemoryCandidatePort,
 } from "../ports/index.js";
+import { credentialFindings } from "./egress-redaction.js";
 import { scanMachineSecrets } from "./machine-secret-exclusion.js";
 
 export interface AutomaticMemoryServiceOptions {
@@ -68,6 +69,16 @@ export type SensitiveMemoryResolution =
   | { readonly requestId: string; readonly resolution: "edited"; readonly editedText: string };
 
 type KeptReason = "auto_committed" | "explicitly_approved" | "approval_committed";
+
+function candidateSecretFindings(
+  candidate: ExtractedMemoryCandidate,
+): MemoryExtractionAuditRecord["secretFindings"] {
+  const text = candidate.quote ? `${candidate.text}\n${candidate.quote}` : candidate.text;
+  return [
+    ...scanMachineSecrets(text),
+    ...credentialFindings(text).map(({ kind, count }) => ({ ruleId: kind, count })),
+  ];
+}
 
 function ledgerId(key: string): string {
   return `ledger:${bytesToHex(sha256(utf8ToBytes(key))).slice(0, 40)}`;
@@ -123,7 +134,7 @@ export class AutomaticMemoryService {
     const approvalRequestIds: string[] = [];
     const excludedCandidateOrdinals: number[] = [];
     for (const [candidateOrdinal, candidate] of candidates.entries()) {
-      const candidateFindings = scanMachineSecrets(candidate.text);
+      const candidateFindings = candidateSecretFindings(candidate);
       if (candidateFindings.length > 0) {
         excludedCandidateOrdinals.push(candidateOrdinal);
         await this.audit(input, candidateOrdinal, "candidate_secret_excluded", candidateFindings);
@@ -191,7 +202,7 @@ export class AutomaticMemoryService {
         candidate,
         candidateOrdinal,
         "evidence_unverified",
-        scanMachineSecrets(candidate.text).length === 0 &&
+        candidateSecretFindings(candidate).length === 0 &&
           candidate.dataClassification !== "restricted",
       );
     }
