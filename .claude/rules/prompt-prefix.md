@@ -39,7 +39,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 ## 三、同一对话里保持不变的东西
 
 6. **系统提示和工具按对话冻结**（[ADR 0165](../../docs/adr/0165-freeze-the-request-head-per-conversation.md)）。同一对话一直沿用第一次发出时的字节。只有下面这些情况才换新一次，并且每次都留记录：工具集合变了（工具名，或者去掉说明文字后的参数结构）、冻结的工具找不到了、模型变了、推理强度变了、回答语言变了、数据分类变低了，或者手动执行了 `thread prompt rebuild`。
-   - 是否换新只在一轮运行开始时判断，一轮运行中途不换新。运行中途发现冻结的工具找不到了，这一轮不换新，按运行出错处理（服务层抛 `RUNTIME_PROMPT_BUNDLE_TOOL_MISSING`）。
+   - 是否换新只在一轮运行开始时判断，一轮运行中途不换新。
    - 改了提示词文字，**只对新对话生效**。要让老对话也用上，必须手动换新。
 7. **工具集合尽量不变。**业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝，而不是把工具删掉或加进来（[Claude Code](https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/)、[OpenAI](https://developers.openai.com/api/docs/guides/prompt-caching)、[Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus)）。本项目目前的取舍：工具集合变了就换新一次；只有手里有执行句柄才会出现的工具不冻结，接在冻结工具的后面，并记日志统计它们出现的频率。工具定义在请求最前面，所以这类工具出现或消失的那一轮，冻结工具之后的系统提示和全部历史都要重算一次（ADR 0165 已写明这个代价）。要改变这个取舍，先出方案。
 8. **同一对话中途不换模型、不换推理强度，其他请求参数也保持稳定。**每个模型的缓存是分开的，推理强度在多数模型上也会影响缓存；`tool_choice` 变了、提示里图片的有无变了，同样会让缓存失效（Anthropic 原话：“Changes to `tool_choice` or the presence/absence of images anywhere in the prompt invalidate the cache”）。确实要换的话，在对话开头换，或者用单独的辅助调用来做。
