@@ -171,6 +171,10 @@ export class ProductionProactive {
       clock: options.clock,
       ids: options.ids,
       outputTokenLimit: PROACTIVE_MAX_OUTPUT_TOKENS,
+      bodyLimits: {
+        perMail: options.configuration.bodyCharactersPerMail,
+        perBatch: options.configuration.bodyCharactersPerBatch,
+      },
     });
   }
 

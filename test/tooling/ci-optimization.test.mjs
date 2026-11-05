@@ -97,4 +97,13 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
       tools,
     ),
   ).toThrow();
+  expect(() =>
+    validateMainWorkflow(
+      text.replace(
+        "runs-on: hermes-home\n    timeout-minutes: 45",
+        "runs-on: hermes-home\n    timeout-minutes: 15",
+      ),
+      tools,
+    ),
+  ).toThrow("runtime");
 });

@@ -1033,7 +1033,7 @@ export const messages = {
   "proactive.line.floorRaised":
     "新着 {count} 通。うち {raised} 通は「重要なメールは見逃さない」ルールでリマインダーに残しました",
   "proactive.line.quiet":
-    "新着 {count} 通。{skipped, plural, =0 {} other {# 通はルールでスキップ（プロモーションなど）、}}急ぎはなし",
+    "新着 {count} 通。{skipped, plural, =0 {} other {# 通は迷惑メールのためルールでスキップ、}}急ぎはなし",
   "proactive.line.judged": "モデルが {judged} 通を確認：対応 {act} · 要確認 {check} · 参考 {know}",
   "proactive.line.opened": "開きました",
   "proactive.settings.enabled": "自発的なリマインダー",
@@ -1060,10 +1060,11 @@ export const messages = {
     "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} other {接続できませんでした。もう一度お試しください。}}",
   "proactive.apps.what": "Himawari が読むものと送り先",
   "proactive.apps.what1": "新着メールを読むだけ。アーカイブ・ラベル付け・返信はしません",
-  "proactive.apps.what2": "プロモーション・ソーシャル・フォーラム・迷惑メールは読みません",
+  "proactive.apps.what2": "迷惑メールは読みません。自分が送ったメールは読みます",
   "proactive.apps.what3":
-    "差出人・件名・Gmail の 1 行要約だけをモデルに送り、本文は送りません。要約に認証コード・カード番号・パスワードを含む場合は送りません",
-  "proactive.apps.what4": "メール本文は保存せず、抜き出した対応事項と要点だけを保存します",
+    "差出人・件名・本文をモデルに送ります。添付ファイルは名前だけです。送る前に、見分けられるパスワード・認証コード・カード番号・証明書番号は伏せ、それ以外は伏せません",
+  "proactive.apps.what4":
+    "各チェックでモデルに送った内容（伏せ字済み）とモデルの回答は、暗号化して判断記録に保存し、切断すると一緒に削除します。画面には抜き出した対応事項と要点だけを表示します",
   "proactive.apps.what5": "切断すると Google 側の許可を取り消し、抜き出した結果をすべて削除します",
   "proactive.apps.senders": "重要な差出人",
   "proactive.apps.sendersCount": "{count} 件",
@@ -1119,7 +1120,7 @@ export const messages = {
   "muse.settings.cleared": "消去しました。",
   "proactive.when.dueToday": "本日 {time} 締切",
   "proactive.line.allSkipped":
-    "新着 {count} 通。すべてプロモーションなどのためルールでスキップし、モデルには送っていません",
+    "新着 {count} 通。すべて迷惑メールのためルールでスキップし、モデルには送っていません",
   "proactive.settings.badTime":
     "23:00 のような 24 時間表記で入力してください。この時間帯はまだ保存されていません",
   "reminders.tab.reminders": "リマインダー",

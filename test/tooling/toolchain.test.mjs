@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -160,6 +160,69 @@ describe("固定工具身份", () => {
         directory,
       ),
     ).rejects.toThrow("下载摘要不匹配");
+  });
+
+  describe("网络下载重试", () => {
+    const bytes = Buffer.from("published artifact");
+    const expected = {
+      filename: "tool.tar.gz",
+      url: "https://nodejs.org/dist/v1/tool.tar.gz",
+      sha256: sha256(bytes),
+    };
+    const networkError = () =>
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+      });
+    const scripted = (...outcomes) => {
+      const calls = [];
+      const fetch = async (url) => {
+        calls.push(url);
+        const outcome = outcomes[Math.min(calls.length, outcomes.length) - 1];
+        if (outcome instanceof Error) throw outcome;
+        return new Response(outcome.body ?? null, { status: outcome.status });
+      };
+      return { calls, fetch };
+    };
+    const download = (fetch, waits = []) =>
+      downloadArtifact(expected, temporary(), {
+        fetch,
+        wait: async (attempt) => {
+          waits.push(attempt);
+        },
+      });
+
+    it.each([
+      ["连接中断", networkError()],
+      ["HTTP 503", { status: 503 }],
+      ["HTTP 429", { status: 429 }],
+    ])("%s 后重试并拿到正确内容", async (_, firstOutcome) => {
+      const { calls, fetch } = scripted(firstOutcome, { status: 200, body: bytes });
+      const waits = [];
+      const path = await download(fetch, waits);
+      expect(readFileSync(path)).toEqual(bytes);
+      expect(calls).toEqual([expected.url, expected.url]);
+      expect(waits).toEqual([1]);
+    });
+
+    it("一直连不上时试满 3 次，报错写明主机和底层原因", async () => {
+      const { calls, fetch } = scripted(networkError());
+      await expect(download(fetch)).rejects.toThrow(
+        /tool\.tar\.gz.*nodejs\.org.*第 3 次.*ECONNRESET/,
+      );
+      expect(calls).toHaveLength(3);
+    });
+
+    it("HTTP 404 不重试", async () => {
+      const { calls, fetch } = scripted({ status: 404 });
+      await expect(download(fetch)).rejects.toThrow(/nodejs\.org.*HTTP 404/);
+      expect(calls).toHaveLength(1);
+    });
+
+    it("下载成功但摘要不符时不重试", async () => {
+      const { calls, fetch } = scripted({ status: 200, body: "tampered" });
+      await expect(download(fetch)).rejects.toThrow("下载摘要不匹配");
+      expect(calls).toHaveLength(1);
+    });
   });
 
   it("子进程只使用临时 HOME 和显式环境，不继承凭据或 Node 注入选项", () => {

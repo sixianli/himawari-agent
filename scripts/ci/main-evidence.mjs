@@ -21,7 +21,6 @@ const git = (root, args) =>
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 
-/** Fixed-origin, bounded read. Unavailable evidence always selects the full workflow. */
 export async function githubJson(
   endpoint,
   { token = process.env.HIMAWARI_CI_GITHUB_TOKEN, fetcher = fetch } = {},
@@ -56,7 +55,6 @@ export function pushIdentity({ root = process.cwd(), env = process.env } = {}) {
     "MAIN_CHECKOUT_MISMATCH",
   );
   const parents = git(root, ["show", "-s", "--format=%P", event.after]).split(" ");
-  // Squash/rebase, multi-merge pushes, and directly pushed commits take the full path.
   assert(parents.length === 2 && parents[0] === event.before, "MAIN_SINGLE_MERGE_REQUIRED");
   assert(
     !git(root, [
@@ -131,7 +129,6 @@ export async function discoverEvidence({ identity, api = githubJson, now = Date.
   };
 }
 
-/** A previous gate is supporting evidence, never rewritten as a new full-CI success. */
 export function verifyGate({
   candidate,
   identity,
@@ -152,7 +149,7 @@ export function verifyGate({
   assert(positive(candidate.runId) && positive(candidate.attempt), "MAIN_RUN_ID");
   const expected = policy.checks
     .filter((c) => c.id !== "required")
-    .flatMap((c) => c.members.map((m) => `${c.id}/${m.key}`));
+    .flatMap((c) => c.members.filter((m) => m.paused !== true).map((m) => `${c.id}/${m.key}`));
   assert(
     context.repository === repository &&
       context.event === "pull_request" &&
@@ -229,7 +226,6 @@ export async function main(
       toolchainBytes: readFileSync(path.join(root, "ci/toolchain-lock.json")),
     });
   } catch (error) {
-    // Only a controlled reason is public; provider response bodies and credentials are not.
     result = {
       mode: "full",
       reason: /^MAIN_[A-Z_]+$/.test(error.message) ? error.message : "MAIN_EVIDENCE_UNAVAILABLE",

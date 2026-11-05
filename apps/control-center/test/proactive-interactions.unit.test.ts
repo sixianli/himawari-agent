@@ -641,7 +641,7 @@ describe("[PG-15] proactive reminders page", () => {
     ]);
     expect(rows[0]?.textContent).toContain("推送了 1 件要你处理的事");
     expect(rows[0]?.textContent).toContain("你点开了");
-    expect(rows[1]?.textContent).toContain("2 封新邮件，都是推广这类，按规则跳过，没交给模型");
+    expect(rows[1]?.textContent).toContain("2 封新邮件，都是垃圾邮件，按规则跳过，没交给模型");
     expect(rows[2]?.textContent).toContain("15 分钟后照常再看");
     expect(rows[3]?.textContent).toContain("每日费用上限");
     expect(rows[4]?.textContent).toContain("想得太久，答案没写完就被截断了");
@@ -750,7 +750,8 @@ describe("[PG-15] proactive settings", () => {
     await flush();
     expect(text("#apps")).toContain("已连接 Gmail");
     expect(text("#apps .proactive-app")).toContain("已连接 · andy@example.com");
-    expect(text("#apps details")).toContain("不发正文");
+    expect(text("#apps details")).toContain("邮件正文发给模型");
+    expect(text("#apps details")).not.toContain("不发正文");
     await click("#apps .proactive-senders", "管理");
     const area = document.querySelector<HTMLTextAreaElement>("#apps textarea");
     const write = async (value: string) =>
