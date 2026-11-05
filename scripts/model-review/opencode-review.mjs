@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -759,6 +760,45 @@ export function nextRound(records, rounds = []) {
   return Math.max(0, ...recorded, ...rounds) + 1;
 }
 
+export function roundForRun({ records, rounds, requested, models, head, prompt, promptOnDisk }) {
+  if (requested === undefined) return nextRound(records, rounds);
+  const inRound = records.filter((record) => (record.round ?? 1) === requested);
+  if (inRound.length === 0 && !rounds.includes(requested))
+    throw new Error(`ROUND_NOT_FOUND ${requested}`);
+  for (const model of models) {
+    if (inRound.some((record) => record.model === model && record.outcome === "ok"))
+      throw new Error(`ROUND_ALREADY_HAS_RESULT ${requested} ${model}`);
+  }
+  const heads = new Set(inRound.map((record) => record.head).filter(Boolean));
+  if ([...heads].some((recorded) => recorded !== head))
+    throw new Error(`ROUND_HEAD_MISMATCH ${requested} ${[...heads].join(",")} ${head}`);
+  if (promptOnDisk !== null && promptOnDisk !== prompt)
+    throw new Error(`ROUND_PROMPT_MISMATCH ${requested}`);
+  return requested;
+}
+
+export const ATTEMPT_FILE_SUFFIXES = [".jsonl", ".md", ".thinking.md", ".stderr.txt"];
+
+export function keepEarlierAttempt(roundDir, name) {
+  const present = ATTEMPT_FILE_SUFFIXES.filter((suffix) =>
+    existsSync(join(roundDir, `${name}${suffix}`)),
+  );
+  if (present.length === 0) return null;
+  let attempt = 1;
+  while (
+    ATTEMPT_FILE_SUFFIXES.some((suffix) =>
+      existsSync(join(roundDir, `${name}.attempt-${attempt}${suffix}`)),
+    )
+  )
+    attempt += 1;
+  for (const suffix of present)
+    renameSync(
+      join(roundDir, `${name}${suffix}`),
+      join(roundDir, `${name}.attempt-${attempt}${suffix}`),
+    );
+  return attempt;
+}
+
 export function runOutcome(summary, run) {
   if (run.spawnError) return "spawn-error";
   if (run.stopReason) return run.stopReason;
@@ -1287,6 +1327,10 @@ export function parseArgs(argv) {
       )
         throw new Error("ARG_INVALID --models");
       options.models = models;
+    } else if (key === "--round") {
+      options.round = Number(take());
+      if (!Number.isSafeInteger(options.round) || options.round <= 0)
+        throw new Error("ARG_INVALID --round");
     } else if (key === "--approved-usd") {
       options.approvedUsd = Number(take());
       if (!Number.isFinite(options.approvedUsd) || options.approvedUsd <= 0)
@@ -1326,7 +1370,18 @@ async function main() {
         approvedUsd: options.approvedUsd,
       });
   if (overBudget) throw new Error(overBudget);
-  const round = nextRound(records, roundsOnDisk(options.out));
+  const requestedPrompt =
+    options.round === undefined ? null : join(options.out, `round-${options.round}`, "prompt.md");
+  const round = roundForRun({
+    records,
+    rounds: roundsOnDisk(options.out),
+    requested: options.round,
+    models: options.models,
+    head: commits.head,
+    prompt,
+    promptOnDisk:
+      requestedPrompt && existsSync(requestedPrompt) ? readFileSync(requestedPrompt, "utf8") : null,
+  });
   const binary = opencodeBinary();
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
@@ -1382,6 +1437,7 @@ async function main() {
           timeoutMs,
         });
         const name = model.split("/").pop();
+        keepEarlierAttempt(roundDir, name);
         writeFileSync(join(roundDir, `${name}.jsonl`), review.stdout);
         const { summary } = review;
         writeFileSync(join(roundDir, `${name}.md`), `${summary.text}\n`);

@@ -72,7 +72,7 @@
   - 开跑前的自检会带着插件跑一次：假模型一直返回工具调用，插件限定放行 3 次，假服务器必须恰好收到 3 次主请求，插件没加载或没拦住就以 `SELF_CHECK_FAILED` 停下（`GUARD_NOT_LOADED`、`GUARD_PROBE_*`）；脚本启动 opencode 前会清掉 `OPENCODE_PURE`，它会让 opencode 不加载外部插件。门槛是 `test/tooling/opencode-review.test.mjs` 里名字带 `[I-77]` 的用例，见 [I-77](../../docs/incidents-and-gates.md#incidents)。
   - 本来要追问（花到 0.15 美元、用掉八成超时、或没写正文）但拿不到会话编号、有一步的费用读不出来、剩下的钱不到 0.02 美元或时间不到 15 秒时不追问，`usage.jsonl` 的 `wrapUpSkipped` 分别记 `no-session`、`cost-unknown`、`no-budget`、`no-time`（顺序如此）。第一次运行里费用读不出来本身就会停掉它（`outcome` 记 `cost-unknown`），这种情况不追问，也没有 `wrapUpSkipped`。追问的钱和时间都算在这个模型的 0.2 美元和总超时里。
   - 某一步的费用读不出来就停（标 `cost-unknown`），不当作 0：`usage.jsonl` 里这条记 `costUnknown: true`，累计时按「已记的费用加 0.05 美元」和「0.2 美元」中较大的一个算（那一步花了多少不知道，所以多留一点）；负数费用同样当作读不出来；费用是每一步结束后才知道的，最后一步可能略超。超时先发结束信号，10 秒不退再强杀。追问后仍被截断、超时、超费用、进程出错、被信号杀掉或没出文字时退出码为 4，按 `usage.jsonl` 里的 `outcome` 处理，不要原样重跑。
-- 同一件事的所有轮次（同一个 PR 的代码复核，或同一份方案的独立出方案和审核）用同一个 `--out`。轮次序号取 `usage.jsonl` 里记录的轮次和已有的 `round-*` 目录中最大的那个加一，不会覆盖旧结果；没有轮次字段的旧记录按第 1 轮算。`usage.jsonl` 有一行读不出来、费用不是非负数字或轮次不是正整数，脚本以 `USAGE_LEDGER_INVALID` 拒绝开跑，不猜已花多少。开跑前脚本把 `usage.jsonl` 里已花的加上这一轮最多会花的（每个模型 0.2 美元）：代码复核超过 1 美元、方案讨论超过 0.5 美元，就以 `BUDGET_NEEDS_APPROVAL` 拒绝开跑，并打印这几个数。线程把数报给 Andy，他同意的总额用 `--approved-usd <美元>` 传入，累计不超过这个数才放行。每次运行结束打印 `REVIEW_SPENT_TOTAL`，线程汇报费用就用这个数。
+- 同一件事的所有轮次（同一个 PR 的代码复核，或同一份方案的独立出方案和审核）用同一个 `--out`。轮次序号取 `usage.jsonl` 里记录的轮次和已有的 `round-*` 目录中最大的那个加一，不会覆盖旧结果；没有轮次字段的旧记录按第 1 轮算。只重跑某一轮里失败的那个模型时，加 `--round <那一轮的序号>`，结果记进原来那一轮，不另占一个序号：这一轮里这个模型已经有 `outcome` 为 `ok` 的记录（`ROUND_ALREADY_HAS_RESULT`）、这一轮不存在（`ROUND_NOT_FOUND`）、这一轮记录的提交和这次的 `--head` 不同（`ROUND_HEAD_MISMATCH`），或者这一轮的 `prompt.md` 和这次的提示词不同（`ROUND_PROMPT_MISMATCH`，例如改了 `--brief`）时拒绝，都在花钱之前；失败那次的文件改名为 `<模型>.attempt-<序号>.*` 留在原目录。`usage.jsonl` 有一行读不出来、费用不是非负数字或轮次不是正整数，脚本以 `USAGE_LEDGER_INVALID` 拒绝开跑，不猜已花多少。开跑前脚本把 `usage.jsonl` 里已花的加上这一轮最多会花的（每个模型 0.2 美元）：代码复核超过 1 美元、方案讨论超过 0.5 美元，就以 `BUDGET_NEEDS_APPROVAL` 拒绝开跑，并打印这几个数。线程把数报给 Andy，他同意的总额用 `--approved-usd <美元>` 传入，累计不超过这个数才放行。每次运行结束打印 `REVIEW_SPENT_TOTAL`，线程汇报费用就用这个数。
 
 用法：
 
@@ -88,6 +88,6 @@ node scripts/model-review/opencode-review.mjs --mode plan-review \
   --head <当前提交> --brief <线程的方案.md> --out <结果目录>
 ```
 
-三种模式都可以加 `--models deepseek-v4.1-flash`（只跑列出的模型，逗号分隔，可写短名或完整名；自检仍对两个模型都跑，不花钱）和 `--approved-usd <美元>`（Andy 同意的这件事的总花费）。
+三种模式都可以加 `--models deepseek-v4.1-flash`（只跑列出的模型，逗号分隔，可写短名或完整名；自检仍对两个模型都跑，不花钱）、`--round <序号>`（把单个模型的重跑补进原来那一轮，见上文）和 `--approved-usd <美元>`（Andy 同意的这件事的总花费）。
 
 `--brief` 只写这次的材料：代码复核写问题、目标、约束和作者的说法；`plan` 只写问题、目标、约束和已核对的事实，不写线程的方案；`plan-review` 写线程的方案。脚本会在前面加上各模式的固定说明（上面的必问问题、项目指令第 16 条原话、该模式的任务和输出格式），代码复核还会让模型自己用 `git diff` 看改动。提交可以写分支名，脚本先在原仓库解析成提交哈希。按意见修改后的复核传 `--previous`，模型先看增量，但可以读任何文件。

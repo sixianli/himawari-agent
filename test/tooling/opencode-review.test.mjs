@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -31,6 +32,7 @@ import {
   installedIntegrityProblems,
   installGitGuard,
   installOpencode,
+  keepEarlierAttempt,
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   nextRound,
@@ -53,6 +55,7 @@ import {
   reviewConfig,
   reviewModel,
   reviewQuestions,
+  roundForRun,
   roundsOnDisk,
   runOutcome,
   SHELL_LOG_NAME,
@@ -1748,6 +1751,108 @@ describe("opencode review spending", () => {
       mkdirSync(join(dir, "round-x"));
       expect(roundsOnDisk(dir)).toEqual([3]);
       expect(nextRound([], roundsOnDisk(dir))).toBe(4);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("[rerun round] puts a single-model rerun back into the round it belongs to", () => {
+    const [deepseek, glm] = REVIEW_MODELS;
+    const records = [
+      { cost: 0.1, round: 1, model: deepseek, head: "h1", outcome: "ok" },
+      { cost: 0.1, round: 1, model: glm, head: "h1", outcome: "ok" },
+      { cost: 0.1, round: 2, model: deepseek, head: "h2", outcome: "ok" },
+      { cost: 0.1, round: 2, model: glm, head: "h2", outcome: "timeout" },
+    ];
+    const run = (overrides) =>
+      roundForRun({
+        records,
+        rounds: [1, 2],
+        models: [glm],
+        head: "h2",
+        prompt: "P",
+        promptOnDisk: "P",
+        ...overrides,
+      });
+    expect(run({ requested: undefined })).toBe(3);
+    expect(run({ requested: 2 })).toBe(2);
+    expect(() => run({ requested: 2, models: [deepseek] })).toThrow(
+      `ROUND_ALREADY_HAS_RESULT 2 ${deepseek}`,
+    );
+    expect(() => run({ requested: 1 })).toThrow(`ROUND_ALREADY_HAS_RESULT 1 ${glm}`);
+    expect(() => run({ requested: 3 })).toThrow("ROUND_NOT_FOUND 3");
+    expect(() => run({ requested: 2, head: "h3" })).toThrow("ROUND_HEAD_MISMATCH 2 h2 h3");
+    expect(() => run({ requested: 2, prompt: "other brief" })).toThrow("ROUND_PROMPT_MISMATCH 2");
+    expect(run({ requested: 2, promptOnDisk: null })).toBe(2);
+    expect(
+      parseArgs(["--head", "a", "--brief", "b", "--out", "o", "--mode", "plan", "--round", "2"])
+        .round,
+    ).toBe(2);
+    for (const bad of ["0", "-1", "1.5", "x"])
+      expect(() =>
+        parseArgs(["--head", "a", "--brief", "b", "--out", "o", "--mode", "plan", "--round", bad]),
+      ).toThrow("ARG_INVALID --round");
+  });
+
+  it("[rerun round] keeps the failed attempt's files next to the new ones", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-attempt-"));
+    try {
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBeNull();
+      writeFileSync(join(dir, "glm-5.3-flash.jsonl"), "first");
+      writeFileSync(join(dir, "glm-5.3-flash.stderr.txt"), "first err");
+      writeFileSync(join(dir, "deepseek-v4.1-flash.md"), "other model");
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBe(1);
+      writeFileSync(join(dir, "glm-5.3-flash.jsonl"), "second");
+      expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBe(2);
+      expect(readdirSync(dir).sort()).toEqual([
+        "deepseek-v4.1-flash.md",
+        "glm-5.3-flash.attempt-1.jsonl",
+        "glm-5.3-flash.attempt-1.stderr.txt",
+        "glm-5.3-flash.attempt-2.jsonl",
+      ]);
+      expect(readFileSync(join(dir, "glm-5.3-flash.attempt-1.jsonl"), "utf8")).toBe("first");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("[rerun round] the script refuses a rerun into a round that already has the result, before spending", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rerun-"));
+    try {
+      const brief = join(dir, "brief.md");
+      writeFileSync(brief, "material\n");
+      const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+      const out = join(dir, "out");
+      mkdirSync(join(out, "round-1"), { recursive: true });
+      writeFileSync(
+        join(out, "usage.jsonl"),
+        `${JSON.stringify({ cost: 0.1, round: 1, model: REVIEW_MODELS[1], head, outcome: "ok" })}\n`,
+      );
+      const result = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--mode",
+          "plan",
+          "--head",
+          head,
+          "--brief",
+          brief,
+          "--out",
+          out,
+          "--models",
+          "glm-5.3-flash",
+          "--round",
+          "1",
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr.trim()).toBe(`ROUND_ALREADY_HAS_RESULT 1 ${REVIEW_MODELS[1]}`);
+      expect(readdirSync(join(out, "round-1"))).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
