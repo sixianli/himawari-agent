@@ -307,6 +307,12 @@ describe("opencode review prompt", () => {
     expect(parseArgs(["--assert-reviewed", "--pr", "1", "--main-ref", "main"]).mainRef).toBe(
       "main",
     );
+    expect(() =>
+      parseArgs(["--assert-reviewed", "--pr", "1", "--accept-unreviewed", "合并\nREVIEW_CURRENT"]),
+    ).toThrow("ARG_INVALID --accept-unreviewed");
+    expect(() =>
+      parseArgs(["--report", "--pr", "1", "--stop", "andy-decision", "--andy-quote", "a\rb"]),
+    ).toThrow("ARG_INVALID --andy-quote");
   });
 
   it("requires a base commit for code review", () => {
@@ -1935,6 +1941,32 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[merge gate] accepts record files with non-ASCII names and appends overrides on a new line", () => {
+    const f = fixture();
+    try {
+      const rounds = [1, 2, 3].flatMap((round) => [
+        ok(round, f.reviewed, deepseek),
+        ok(round, f.reviewed, glm),
+      ]);
+      f.commit(
+        {
+          [f.ledger]: rounds.map((r) => JSON.stringify(r)).join("\n"),
+          [`${REVIEWS_DIR}/pr-7/round-1/判断.md`]: "记录\n",
+        },
+        "records without final newline",
+      );
+      expect(f.check().problems).toEqual([]);
+      f.commit({ "code.txt": "late\n" }, "late change");
+      expect(f.check({ acceptUnreviewed: "合并" }).overridden).toBe(true);
+      const lines = readFileSync(join(f.repo, f.ledger), "utf8").trim().split("\n");
+      expect(lines).toHaveLength(7);
+      expect(JSON.parse(lines[6]).mode).toBe("override");
+      expect(nextRound([{ cost: 0, mode: "override", head: "h" }])).toBe(1);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] counts a code file renamed into the records folder as unreviewed", () => {
     const f = fixture();
     try {
@@ -2220,6 +2252,8 @@ describe("opencode review spending", () => {
         '{"cost":0.1,"round":1e999}',
         '{"cost":0.1,"round":0}',
         '{"cost":-0.1}',
+        '{"cost":0.1,"round":1,"mode":"code-review","model":"m","outcome":"ok"}',
+        '{"cost":0.1,"round":1,"mode":"plan","head":"h","model":"","outcome":"ok"}',
       ]) {
         writeFileSync(join(dir, "usage.jsonl"), `${bad}\n`);
         expect(() => readUsage(dir)).toThrow("USAGE_LEDGER_INVALID");
@@ -2394,6 +2428,13 @@ describe("opencode review spending", () => {
       "HTTPS_PROXY",
     ]);
     expect(proxyCredentialProblems({ NO_PROXY: "a@b" })).toEqual([]);
+    expect(proxyCredentialProblems({ HTTP_PROXY: " http://u:p@proxy:3128" })).toEqual([
+      "HTTP_PROXY",
+    ]);
+    expect(proxyCredentialProblems({ https_proxy: "u:p@proxy:3128" })).toEqual(["https_proxy"]);
+    expect(
+      proxyCredentialProblems({ https_proxy: "proxy:3128", HTTP_PROXY: "http://proxy/a@b" }),
+    ).toEqual([]);
     const dir = mkdtempSync(join(tmpdir(), "opencode-proxy-"));
     try {
       const brief = join(dir, "brief.md");

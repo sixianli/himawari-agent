@@ -423,7 +423,9 @@ export const OPENCODE_KEPT_ENV = [
 export const PROXY_ENV = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"];
 
 export function proxyCredentialProblems(env) {
-  return PROXY_ENV.filter((name) => /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(env[name] ?? ""));
+  return PROXY_ENV.filter((name) =>
+    /^(?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]*@/i.test((env[name] ?? "").trim()),
+  );
 }
 
 export function opencodeEnv(env) {
@@ -802,8 +804,8 @@ function gitStatus(args, cwd) {
 export const OVERRIDE_MIN_ROUNDS = 3;
 
 function changedOutside(repo, from, to, ledgerPath) {
-  return git(["diff", "--no-renames", "--name-only", from, to], repo)
-    .split("\n")
+  return git(["diff", "-z", "--no-renames", "--name-only", from, to], repo)
+    .split("\0")
     .filter((file) => file && !file.startsWith(`${ledgerPath}/`));
 }
 
@@ -857,7 +859,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     else {
       appendFileSync(
         ledgerFile,
-        `${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
+        `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
       );
       lines.push(`REVIEW_OVERRIDE quote=${acceptUnreviewed}`);
       overridden = true;
@@ -923,7 +925,12 @@ export function parseUsage(text, path) {
       }
       const roundValid =
         record?.round === undefined || (Number.isSafeInteger(record.round) && record.round > 0);
-      if (!Number.isFinite(record?.cost) || record.cost < 0 || !roundValid)
+      const fieldsValid =
+        !MODES.includes(record?.mode) ||
+        ["head", "model", "outcome"].every(
+          (field) => typeof record[field] === "string" && record[field] !== "",
+        );
+      if (!Number.isFinite(record?.cost) || record.cost < 0 || !roundValid || !fieldsValid)
         throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
       return record;
     });
@@ -938,7 +945,9 @@ export function roundsOnDisk(out) {
 }
 
 export function nextRound(records, rounds = []) {
-  const recorded = records.map((record) => record.round ?? 1);
+  const recorded = records
+    .filter((record) => record.mode !== "override")
+    .map((record) => record.round ?? 1);
   return Math.max(0, ...recorded, ...rounds) + 1;
 }
 
@@ -1596,12 +1605,15 @@ export function parseArgs(argv) {
     else if (key === "--assert-reviewed") options.assertReviewed = true;
     else if (key === "--report") options.report = true;
     else if (key === "--stop") options.stop = take();
-    else if (key === "--andy-quote") options.andyQuote = take();
-    else if (key === "--main-ref") options.mainRef = take();
+    else if (key === "--andy-quote") {
+      options.andyQuote = take();
+      if (/[\r\n]/.test(options.andyQuote)) throw new Error("ARG_INVALID --andy-quote");
+    } else if (key === "--main-ref") options.mainRef = take();
     else if (key === "--questions-ref") options.questionsRef = take();
     else if (key === "--accept-unreviewed") {
       options.acceptUnreviewed = take();
-      if (!options.acceptUnreviewed.trim()) throw new Error("ARG_INVALID --accept-unreviewed");
+      if (!options.acceptUnreviewed.trim() || /[\r\n]/.test(options.acceptUnreviewed))
+        throw new Error("ARG_INVALID --accept-unreviewed");
     } else if (key === "--models") {
       const names = take()
         .split(",")
