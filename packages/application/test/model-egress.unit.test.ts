@@ -516,6 +516,28 @@ describe("reporting what was masked", () => {
     expect(reports[1]?.sightings).toEqual(reports[0]?.sightings);
   });
 
+  it("reports a value named once and repeated later in the same part as one sighting", async () => {
+    const { reports, instance } = reporting();
+    await send(
+      "/chat/completions",
+      {
+        model: "m",
+        messages: [
+          { role: "user", content: "密码：hunter22abc" },
+          { role: "assistant", content: "好的" },
+          { role: "user", content: "再说一次，hunter22abc 别忘了" },
+        ],
+      },
+      { exchange: instance.exchange(context) },
+    );
+    expect(reports[0]?.sightings).toHaveLength(1);
+    expect(reports[0]?.sightings[0]).toMatchObject({
+      part: "owner_message",
+      category: "password",
+      ruleId: "password-keyword",
+    });
+  });
+
   it("reports nothing without a context or when nothing was masked", async () => {
     const { reports, instance } = reporting();
     await send("/chat/completions", chat, { exchange: instance.exchange() });

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SensitiveInterceptionObservation } from "@himawari-agent/application";
-import { createAgentId, createOwnerId, createThreadId } from "@himawari-agent/domain";
+import { createAgentId, createOwnerId, createRunId, createThreadId } from "@himawari-agent/domain";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -67,6 +67,29 @@ describe("[SI-1] sensitive interception records", () => {
            VALUES (?, ?, ?, 0, 'open', ?, ?)`,
         )
         .run(thread, OWNER_ID, AGENT_ID, T0, T0);
+    database
+      .prepare(
+        `INSERT INTO payloads (ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+           content_digest, lifecycle_state, created_at, content_type)
+         VALUES ('payload-si-trigger', ?, ?, 'private', 'sqlite_blob', X'00',
+           'sha256:si-trigger', 'active', ?, 'application/octet-stream')`,
+      )
+      .run(OWNER_ID, AGENT_ID, T0);
+    database
+      .prepare(
+        `INSERT INTO triggers (id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+           source_id, payload_ref, source_proof_ref, occurred_at)
+         VALUES ('trigger-si', ?, ?, ?, 'trigger-si', 'user_message', 'fixture-si',
+           'payload-si-trigger', 'proof-si', ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, THREAD_ID, T0);
+    database
+      .prepare(
+        `INSERT INTO runs (id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+           status, created_at, updated_at)
+         VALUES ('run-si', ?, ?, ?, 'session-si', 'trigger-si', 1, 'running', ?, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, THREAD_ID, T0, T0);
     database.close();
     const repository = await SqliteProductStateRepository.open({
       stateRoot,
@@ -192,6 +215,46 @@ describe("[SI-1] sensitive interception records", () => {
     }
   });
 
+  it("files a background record under the conversation of the run that made it", async () => {
+    const { repository, store } = await open();
+    try {
+      await store.record({
+        ...scope,
+        observations: [
+          observation({ threadId: null, runId: createRunId("run-si"), source: "background" }),
+          observation({
+            threadId: null,
+            runId: createRunId("run-unknown"),
+            source: "background",
+            fingerprint: "e".repeat(32),
+          }),
+        ],
+        now: T0,
+      });
+      const { items } = await store.list({ ...scope, limit: 10, before: null });
+      expect(items.map(({ threadId }) => threadId).sort()).toEqual([null, THREAD_ID]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("keeps one row when a value is caught by a different rule in the same place", async () => {
+    const { repository, store } = await open();
+    try {
+      await store.record({ ...scope, observations: [observation()], now: T0 });
+      await store.record({
+        ...scope,
+        observations: [observation({ ruleId: "named-earlier" })],
+        now: T1,
+      });
+      const { items } = await store.list({ ...scope, limit: 10, before: null });
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ ruleId: "password", seenCount: 2, lastSeenAt: T1 });
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("refuses records that do not fit the fixed fields", async () => {
     const { repository, store } = await open();
     try {
@@ -222,6 +285,13 @@ describe("[SI-1] sensitive interception records", () => {
           observation(),
           observation({ threadId: KEPT_THREAD_ID }),
           observation({ threadId: null, source: "mail", part: "mail", purpose: "mail-judgment" }),
+          observation({
+            threadId: null,
+            runId: createRunId("run-si"),
+            source: "background",
+            purpose: "thread-title",
+            fingerprint: "f".repeat(32),
+          }),
         ],
         now: T0,
       });

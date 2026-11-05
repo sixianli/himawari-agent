@@ -1,4 +1,4 @@
-import type { AgentId, OwnerId, ThreadId } from "@himawari-agent/domain";
+import type { AgentId, OwnerId, RunId, ThreadId } from "@himawari-agent/domain";
 import {
   assertMachineSecretFree,
   EGRESS_PLACEHOLDER_PATTERN,
@@ -28,6 +28,7 @@ export interface ModelEgressContext {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly threadId: ThreadId | null;
+  readonly runId?: RunId | null;
   readonly source: SensitiveInterceptionSource;
   readonly purpose: string | null;
 }
@@ -198,7 +199,7 @@ class Exchange implements ModelEgressExchange {
                 const fingerprint = hex(
                   this.#options.sign(key, `${FINGERPRINT_LABEL}\u0000${kind}\u0000${seen}`),
                 );
-                const identity = `${part}\u0000${kind}\u0000${ruleId}\u0000${fingerprint}`;
+                const identity = `${part}\u0000${kind}\u0000${fingerprint}`;
                 if (!sightings.has(identity))
                   sightings.set(
                     identity,
@@ -494,10 +495,11 @@ export class ModelEgress {
         const fingerprint = hex(
           this.#options.sign(key, `${FINGERPRINT_LABEL}\u0000${kind}\u0000${value}`),
         );
-        unique.set(
-          `${kind}\u0000${ruleId}\u0000${fingerprint}`,
-          Object.freeze({ part, category: kind, ruleId, fingerprint }),
-        );
+        if (!unique.has(`${kind}\u0000${fingerprint}`))
+          unique.set(
+            `${kind}\u0000${fingerprint}`,
+            Object.freeze({ part, category: kind, ruleId, fingerprint }),
+          );
       }
       report(context, Object.freeze([...unique.values()]));
     } catch {

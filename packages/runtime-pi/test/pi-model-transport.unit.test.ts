@@ -18,6 +18,7 @@ import {
   type PiModelBinding,
   type PiModelPayloadBoundary,
   PiModelTransport,
+  type PiModelTransportOptions,
 } from "../src/index.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 
@@ -436,7 +437,12 @@ describe("PiModelTransport", () => {
     });
   });
 
-  async function sentBody(prompt: string): Promise<{
+  async function sentBody(
+    prompt: string,
+    egress: Pick<PiModelTransportOptions, "egress" | "egressContext"> = {
+      egress: testModelEgress(),
+    },
+  ): Promise<{
     readonly events: ModelInvocationEvent[];
     readonly body: string | undefined;
   }> {
@@ -463,7 +469,7 @@ describe("PiModelTransport", () => {
       },
     };
     const transport = new PiModelTransport({
-      egress: testModelEgress(),
+      ...egress,
       models: {
         resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
       },
@@ -495,6 +501,26 @@ describe("PiModelTransport", () => {
     expect(body).toMatch(/\[验证码#[a-z]{8}\]/u);
     expect(body).toMatch(/\[银行卡 尾号1111#[a-z]{8}\]/u);
     expect(body).toMatch(/\[密码#[a-z]{8}\]/u);
+  });
+
+  it("[SI-2] reports what a background call masked with its purpose, conversation and run", async () => {
+    const reports: { context: unknown; sightings: readonly { part: string }[] }[] = [];
+    const egressContext = {
+      ownerId: "owner-background",
+      agentId: "agent-background",
+      threadId: "thread-background",
+      source: "background",
+      purpose: "thread-title",
+    } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>;
+    await sentBody("验证码 482910", {
+      egress: testModelEgress(undefined, (context, sightings) =>
+        reports.push({ context, sightings }),
+      ),
+      egressContext,
+    });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.context).toEqual({ ...egressContext, runId: request.runId });
+    expect(reports[0]?.sightings.map(({ part }) => part)).toEqual(["owner_message"]);
   });
 
   it("sends a prompt without sensitive values as the original text after the fixed legend", async () => {

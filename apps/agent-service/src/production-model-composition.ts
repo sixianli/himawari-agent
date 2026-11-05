@@ -449,6 +449,7 @@ export function createProductionModelComposition(
       | "disableThinking"
     >,
     admission: TrustedModelAdmissionResolver,
+    threadId: RuntimeRequest["threadId"] = null,
   ): TrustedModelProviderAdapter =>
     new TrustedModelProviderAdapter({
       ownerId: options.ownerId,
@@ -461,7 +462,7 @@ export function createProductionModelComposition(
         egressContext: {
           ownerId: options.ownerId,
           agentId: options.agentId,
-          threadId: null,
+          threadId,
           source: "background",
           purpose: text.purpose,
         },
@@ -572,7 +573,12 @@ export function createProductionModelComposition(
     let output = "";
     let completed = false;
     try {
-      const auxiliaryModel = auxiliaryModelFor(descriptor, text, async () => gate);
+      const auxiliaryModel = auxiliaryModelFor(
+        descriptor,
+        text,
+        async () => gate,
+        request.threadId,
+      );
       handle = descriptor.secretRequirement
         ? await options.handles.issueHandle({
             ownerId: options.ownerId,

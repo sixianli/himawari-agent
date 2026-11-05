@@ -343,20 +343,19 @@ export class ProactiveMailCheckService {
     this.#options = options;
   }
 
-  #reportMasked(batch: readonly ProactiveSourceItem[]): void {
+  #reportMasked(batch: readonly ProactiveSourceItem[], bodyLimit: number): void {
     const onMasked = this.#options.onMasked;
     if (onMasked === undefined) return;
-    const sightings = batch.flatMap((item) =>
-      [
-        item.from,
-        item.subject,
-        item.body ?? item.snippet,
-        ...item.attachments.map(({ filename }) => filename),
-      ].flatMap((text) => findSensitiveValues(text)),
-    );
-    if (sightings.length === 0) return;
     try {
-      onMasked(sightings);
+      const sightings = batch.flatMap((item) =>
+        [
+          item.from,
+          item.subject,
+          item.body === null ? item.snippet : windowMailBody(item.body, bodyLimit).text,
+          ...item.attachments.slice(0, MAX_ATTACHMENTS_SHOWN).map(({ filename }) => filename),
+        ].flatMap((text) => findSensitiveValues(text)),
+      );
+      if (sightings.length > 0) onMasked(sightings);
     } catch {
       return;
     }
@@ -500,7 +499,7 @@ export class ProactiveMailCheckService {
         stop = "capped";
         break;
       }
-      this.#reportMasked(batch);
+      this.#reportMasked(batch, bodyLimits.perMail);
       const outcome: JudgeOutcome = await this.#judge(
         batch,
         prompt,

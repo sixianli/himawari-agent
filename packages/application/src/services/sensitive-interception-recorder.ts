@@ -68,6 +68,7 @@ export class SensitiveInterceptionRecorder {
       context,
       sightings.map((sighting) => ({
         threadId: context.threadId,
+        runId: context.runId ?? null,
         source: context.source,
         purpose: context.purpose,
         part: sighting.part,
@@ -121,17 +122,16 @@ export class SensitiveInterceptionRecorder {
     }
     for (const observation of observations)
       this.#queue.push({ ownerId: scope.ownerId, agentId: scope.agentId, observation, at });
-    const excess = this.#queue.length - this.#limit;
-    if (excess > 0) {
-      this.#queue.splice(0, excess);
-      this.#dropped += excess;
-      try {
-        this.#options.onDropped?.(excess);
-      } catch {
-        return;
-      }
-    }
     this.#schedule();
+    const excess = this.#queue.length - this.#limit;
+    if (excess <= 0) return;
+    this.#queue.splice(0, excess);
+    this.#dropped += excess;
+    try {
+      this.#options.onDropped?.(excess);
+    } catch {
+      return;
+    }
   }
 
   flush(): Promise<void> {

@@ -1,4 +1,4 @@
-import type { AgentId, OwnerId, ThreadId } from "@himawari-agent/domain";
+import type { AgentId, OwnerId, RunId, ThreadId } from "@himawari-agent/domain";
 
 export const SENSITIVE_INTERCEPTION_SOURCES = [
   "chat",
@@ -48,6 +48,7 @@ export interface SensitiveInterceptionScope {
 
 export interface SensitiveInterceptionObservation {
   readonly threadId: ThreadId | null;
+  readonly runId?: RunId | null;
   readonly source: SensitiveInterceptionSource;
   readonly purpose: string | null;
   readonly part: SensitiveInterceptionPart;

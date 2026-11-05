@@ -278,7 +278,11 @@ export class PiModelTransport {
     const context: Context = backgroundModelContext(prompt, Date.now());
     let responseStatus = 0;
     let egressRefused = false;
-    const exchange = this.#egress.exchange(this.#egressContext);
+    const exchange = this.#egress.exchange(
+      this.#egressContext === undefined
+        ? undefined
+        : { ...this.#egressContext, runId: request.runId },
+    );
     const redactingFetch = exchange.wrapFetch(this.#fetch);
     const upstreamHeaders: Record<string, string> = {};
     const statusFetch: FetchFunction = async (fetchInput, init) => {

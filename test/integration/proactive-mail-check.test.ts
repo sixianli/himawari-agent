@@ -476,6 +476,31 @@ describe("proactive Gmail check acceptance", () => {
     expect(watched.prompts[0]).not.toContain("482913");
   });
 
+  it("[SI-3] reports only what the model is shown: the kept part of a long body and the first ten attachment names", async () => {
+    const reported: string[] = [];
+    const h = await harness({
+      bodyLimits: { perMail: 400 },
+      onMasked: (sightings) => reported.push(...sightings.map(({ value }) => value)),
+    });
+    const filler = "これは長いお知らせの本文です。".repeat(60);
+    h.reader.items = [
+      mail("long", {
+        body: `パスワード：headpass99 ${filler}パスワード：middlepass99 ${filler}`,
+        attachments: Array.from({ length: 11 }, (_, index) => ({
+          filename: index === 10 ? "パスワード：lastfile99.txt" : `file-${index}.pdf`,
+          mimeType: "application/pdf",
+          size: 1000,
+        })),
+      }),
+    ];
+    h.script([{ id: "long", result: "ignore" }]);
+    await h.service.run();
+    expect(h.prompts[0]).toContain("bodyTruncated");
+    expect(reported).toContain("headpass99");
+    expect(reported).not.toContain("middlepass99");
+    expect(reported).not.toContain("lastfile99.txt");
+  });
+
   it("[PG-4] pushes an unclear ward office letter but only lists the same text from a friend", async () => {
     const h = await harness();
     const snippet = "添付ファイルをご確認ください";

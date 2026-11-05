@@ -44,6 +44,7 @@ function validScope(input: SensitiveInterceptionScope): boolean {
 function validObservation(item: SensitiveInterceptionObservation): boolean {
   return (
     (item.threadId === null || boundedText(item.threadId, 256)) &&
+    (item.runId === undefined || item.runId === null || boundedText(item.runId, 256)) &&
     oneOf(SENSITIVE_INTERCEPTION_SOURCES, item.source) &&
     (item.purpose === null || boundedText(item.purpose, 64)) &&
     oneOf(SENSITIVE_INTERCEPTION_PARTS, item.part) &&
@@ -66,7 +67,6 @@ export function sensitiveInterceptionDedupeKey(item: SensitiveInterceptionObserv
         item.purpose,
         item.part,
         item.category,
-        item.ruleId,
         item.fingerprint,
         item.outcome,
       ]),
@@ -118,6 +118,9 @@ export class SqliteSensitiveInterceptionOperations {
     const threadExists = this.database.prepare(
       "SELECT 1 FROM threads WHERE owner_id = ? AND agent_id = ? AND id = ?",
     );
+    const runThread = this.database
+      .prepare("SELECT thread_id FROM runs WHERE owner_id = ? AND agent_id = ? AND id = ?")
+      .pluck();
     const upsert = this.database.prepare(
       `INSERT INTO sensitive_interceptions (
          owner_id, agent_id, dedupe_key, thread_id, source, purpose, part, category, rule_id,
@@ -131,7 +134,15 @@ export class SqliteSensitiveInterceptionOperations {
       .transaction((): SensitiveInterceptionRecordResult => {
         let recorded = 0;
         let skipped = 0;
-        for (const item of input.observations) {
+        for (const observed of input.observations) {
+          const resolved =
+            observed.threadId === null && observed.runId
+              ? ((runThread.get(input.ownerId, input.agentId, observed.runId) as
+                  | string
+                  | null
+                  | undefined) ?? null)
+              : observed.threadId;
+          const item = { ...observed, threadId: resolved } as SensitiveInterceptionObservation;
           if (
             item.threadId !== null &&
             !threadExists.get(input.ownerId, input.agentId, item.threadId)

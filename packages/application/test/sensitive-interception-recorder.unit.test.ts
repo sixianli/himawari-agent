@@ -81,6 +81,21 @@ describe("sensitive interception recorder", () => {
     expect(writes[0]?.observations.map(({ fingerprint }) => fingerprint[0])).toEqual(["2", "3"]);
   });
 
+  it("still writes on its own when the overflow listener fails", async () => {
+    const { writes, port } = store();
+    const recorder = new SensitiveInterceptionRecorder({
+      store: port,
+      now: () => "2026-11-05T01:00:00.000Z",
+      queueLimit: 1,
+      onDropped: () => {
+        throw new Error("log failed");
+      },
+    });
+    recorder.reportEgress(context, [sighting("a".repeat(32)), sighting("b".repeat(32))]);
+    await expect.poll(() => writes.length, { timeout: 2000 }).toBe(1);
+    expect(writes[0]?.observations.map(({ fingerprint }) => fingerprint[0])).toEqual(["b"]);
+  });
+
   it("never throws to the caller when the clock, the database or the failure listener fails", async () => {
     const failures: unknown[] = [];
     const broken = new SensitiveInterceptionRecorder({
