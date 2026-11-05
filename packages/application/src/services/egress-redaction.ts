@@ -1,3 +1,7 @@
+import {
+  CHAT_EGRESS_LEGEND,
+  CHAT_EGRESS_LEGEND_WITH_RESTORE,
+} from "@himawari-agent/prompt-catalog";
 import { redactMachineSecrets } from "./machine-secret-exclusion.js";
 
 export const EGRESS_REDACTION_KINDS = Object.freeze([
@@ -32,11 +36,9 @@ export interface EgressRedactionOptions {
   readonly table?: Map<string, string>;
 }
 
-export const EGRESS_PLACEHOLDER_LEGEND =
-  "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。";
+export const EGRESS_PLACEHOLDER_LEGEND = CHAT_EGRESS_LEGEND.text;
 
-export const EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE =
-  "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求用户核实它们，也不要换成示例；回答里需要提到它们时请照原样写出，系统在显示给用户时会换回原值。如果某项操作必须用到原值，请直接告诉用户这项信息已被遮掉。";
+export const EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE = CHAT_EGRESS_LEGEND_WITH_RESTORE.text;
 
 export const EGRESS_PLACEHOLDER_PATTERN = /\[(密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]/gu;
 

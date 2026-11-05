@@ -30,8 +30,8 @@ defaults:
 jobs:
   policy:
     name: policy
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    runs-on: hermes-home
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -45,14 +45,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -84,10 +89,10 @@ jobs:
           retention-days: 7
   static:
     name: static
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -101,18 +106,25 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+      - name: 安装布局检查用的 Chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check static --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -143,20 +155,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs:
       - policy
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - key: linux-x64
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
-            node: 22.22.3
-          - key: macos-arm64
-            runner: macos-15
-            os: darwin
-            arch: arm64
             node: 22.22.3
     env:
       CI_NODE: ${{ matrix.node }}
@@ -171,14 +178,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -222,20 +234,15 @@ jobs:
     needs:
       - policy
       - build
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - key: linux-x64
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
-            node: 22.22.3
-          - key: macos-arm64
-            runner: macos-15
-            os: darwin
-            arch: arm64
             node: 22.22.3
     env:
       CI_NODE: ${{ matrix.node }}
@@ -250,14 +257,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -295,10 +307,10 @@ jobs:
           retention-days: 7
   node-floor:
     name: node-floor
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CI_NODE: 22.19.0
       CI_MATRIX: default
@@ -312,14 +324,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.19.0
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -354,25 +371,25 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs:
       - build
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - key: chromium
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
             node: 22.22.3
             browser: chromium
           - key: firefox
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
             node: 22.22.3
             browser: firefox
           - key: webkit
-            runner: ubuntu-24.04
+            runner: hermes-home
             os: linux
             arch: x64
             node: 22.22.3
@@ -390,14 +407,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -409,7 +431,7 @@ jobs:
           path: .ci-output/input
           merge-multiple: true
       - name: 安装锁定 Playwright 对应引擎
-        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --with-deps "$CI_MATRIX"
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install "$CI_MATRIX"
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check browser --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --input .ci-output/input/result.json
       - name: 核验公开输出白名单
@@ -437,11 +459,11 @@ jobs:
           retention-days: 7
   coverage:
     name: coverage
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
       - build
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -455,14 +477,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -500,10 +527,10 @@ jobs:
           retention-days: 7
   security:
     name: security
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -517,14 +544,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -559,7 +591,7 @@ jobs:
   required:
     name: ci/required
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: hermes-home
     needs:
       - policy
       - static
@@ -583,14 +615,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
+      - name: 缓存已校验工具下载
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             .ci-output/tools/downloads
             .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
+          key: ci-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs') }}
+      - name: 缓存 npm 下载
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .ci-output/npm-cache
+          key: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'scripts/ci/install-dependencies.mjs') }}
+          restore-keys: ci-npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE" --without-scanners
       - name: 安装汇总器最小依赖

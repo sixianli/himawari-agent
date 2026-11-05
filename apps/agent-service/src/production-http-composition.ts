@@ -92,6 +92,11 @@ import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
+import { type ProductionMuseIntake, registerMuseIntakeRoute } from "./production-muse-intake.js";
+import {
+  PRODUCTION_MUSE_OPERATIONS,
+  type ProductionMuseControl,
+} from "./production-muse-intake-control.js";
 import {
   PRODUCTION_OBSERVATION_OPERATIONS,
   type ProductionObservation,
@@ -182,6 +187,8 @@ export interface ProductionHttpCompositionOptions {
     readonly push: ProductionWebPush | undefined;
   };
   readonly proactive?: ProductionProactive;
+  readonly museIntake?: ProductionMuseIntake;
+  readonly museControl?: ProductionMuseControl;
   readonly observation?: ProductionObservation;
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -616,6 +623,7 @@ function routeOptions(
   executionEnvironmentAvailable: boolean,
   memoryAvailable: boolean,
   proactiveAvailable: boolean,
+  museAvailable: boolean,
   observationAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
@@ -649,6 +657,7 @@ function routeOptions(
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
         ...PRODUCTION_WEB_PUSH_OPERATIONS,
         ...(proactiveAvailable ? PRODUCTION_PROACTIVE_OPERATIONS : []),
+        ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
       ],
@@ -1070,6 +1079,7 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
+    ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
@@ -1095,6 +1105,7 @@ export async function createProductionHttpComposition(
       Boolean(options.executionEnvironment),
       Boolean(memoryControl),
       Boolean(options.proactive),
+      Boolean(options.museControl),
       Boolean(options.observation),
     ),
     gatewayV2,
@@ -1114,6 +1125,7 @@ export async function createProductionHttpComposition(
       sessionCookieName: httpConfiguration.sessionCookieName,
       ownerId,
     });
+  if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)

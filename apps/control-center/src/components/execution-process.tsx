@@ -148,24 +148,30 @@ export function ExecutionProcess({
   const liveStep =
     run.status === "awaiting_approval"
       ? message("runs.status.awaitingApproval")
-      : writing && writingSummary
-        ? message("chat.activity.writing", {
-            step: message(writingSummary.id),
-            lines: writing.lines,
-          })
-        : runningStep
-          ? message("step.active", {
-              step: runningTool
-                ? message(liveToolLabel(toolStepSummary(runningTool.name, runningTool.input).id))
-                : runningStep.kind === "tool"
-                  ? message("step.other")
-                  : message(stepLabels[runningStep.kind]),
-            })
-          : activeSummary
-            ? message("step.active", { step: message(liveToolLabel(activeSummary.id)) })
-            : message(queued ? "chat.queued" : (stateLabel ?? activity.label), {
-                tool: activity.tool,
-              });
+      : run.status === "reconciling_external_result"
+        ? message(stateLabel ?? "chat.phase.unresolved")
+        : runningReviewId
+          ? message("review.authorizationChecking")
+          : writing && writingSummary
+            ? message("chat.activity.writing", {
+                step: message(writingSummary.id),
+                lines: writing.lines,
+              })
+            : runningStep
+              ? message("step.active", {
+                  step: runningTool
+                    ? message(
+                        liveToolLabel(toolStepSummary(runningTool.name, runningTool.input).id),
+                      )
+                    : runningStep.kind === "tool"
+                      ? message("step.other")
+                      : message(stepLabels[runningStep.kind]),
+                })
+              : activeSummary
+                ? message("step.active", { step: message(liveToolLabel(activeSummary.id)) })
+                : message(queued ? "chat.queued" : (stateLabel ?? activity.label), {
+                    tool: activity.tool,
+                  });
   const liveElapsed = timeline ? timeline.total : queuedFor;
   return (
     <>

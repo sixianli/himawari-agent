@@ -2,18 +2,23 @@ export const allowedInternalDependencies = new Map([
   ["@himawari-agent/runtime-sandbox", new Set(["@himawari-agent/execution-contracts"])],
   ["@himawari-agent/domain", new Set()],
   ["@himawari-agent/calibration", new Set()],
+  ["@himawari-agent/prompt-catalog", new Set()],
   ["@himawari-agent/gateway-contracts", new Set()],
   ["@himawari-agent/execution-contracts", new Set()],
   [
     "@himawari-agent/application",
     new Set([
       "@himawari-agent/calibration",
+      "@himawari-agent/prompt-catalog",
       "@himawari-agent/domain",
       "@himawari-agent/gateway-contracts",
       "@himawari-agent/execution-contracts",
     ]),
   ],
-  ["@himawari-agent/runtime-pi", new Set(["@himawari-agent/application"])],
+  [
+    "@himawari-agent/runtime-pi",
+    new Set(["@himawari-agent/prompt-catalog", "@himawari-agent/application"]),
+  ],
   [
     "@himawari-agent/persistence-sqlite",
     new Set([
@@ -26,7 +31,11 @@ export const allowedInternalDependencies = new Map([
   ],
   [
     "@himawari-agent/memory-engine",
-    new Set(["@himawari-agent/application", "@himawari-agent/domain"]),
+    new Set([
+      "@himawari-agent/prompt-catalog",
+      "@himawari-agent/application",
+      "@himawari-agent/domain",
+    ]),
   ],
   [
     "@himawari-agent/integration-github",
@@ -50,6 +59,7 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/platform-node",
     new Set([
+      "@himawari-agent/prompt-catalog",
       "@himawari-agent/application",
       "@himawari-agent/domain",
       "@himawari-agent/gateway-contracts",
@@ -71,6 +81,7 @@ export const allowedInternalDependencies = new Map([
       "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
       "@himawari-agent/calibration",
+      "@himawari-agent/prompt-catalog",
       "@himawari-agent/gateway-contracts",
       "@himawari-agent/execution-contracts",
       "@himawari-agent/runtime-pi",

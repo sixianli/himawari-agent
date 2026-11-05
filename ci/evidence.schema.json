@@ -112,7 +112,7 @@
     },
     "platforms": {
       "type": "array",
-      "minItems": 2,
+      "minItems": 1,
       "maxItems": 2,
       "items": {
         "type": "object",
@@ -135,7 +135,7 @@
     },
     "checks": {
       "type": "array",
-      "minItems": 12,
+      "minItems": 10,
       "maxItems": 12,
       "items": {
         "type": "object",

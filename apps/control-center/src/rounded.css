@@ -243,6 +243,7 @@ input:not(
     grid-row: 2;
     grid-column: 2;
     justify-self: start;
+    max-width: 100%;
     margin: -4px 0 0;
     text-align: start;
     padding-left: 6px;
@@ -645,10 +646,6 @@ input:not(
     border: 0;
     border-radius: var(--radius-control);
     background: var(--fill);
-  }
-  .composer-tools > .attach-button {
-    width: 36px;
-    min-width: 36px;
   }
   :is(.thread-content > .composer, .composer) textarea {
     padding-inline: 4px;

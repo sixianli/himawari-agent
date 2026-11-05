@@ -83,6 +83,7 @@ import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
+import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
@@ -357,6 +358,7 @@ export class SqliteDurableOperations {
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
+  private readonly museIntake: SqliteMuseIntakeOperations;
   private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
   private readonly modelUsage: SqliteModelUsageOperations;
@@ -432,6 +434,7 @@ export class SqliteDurableOperations {
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
+    this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
     this.ledgerObservation = new SqliteLedgerObservationOperations(
       database,
       fail,
@@ -549,6 +552,7 @@ export class SqliteDurableOperations {
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
+    if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);
     if (operation.startsWith("ledgerObservation."))
       return this.ledgerObservation.execute(operation, payload);
     if (operation.startsWith("ownerPreferences."))

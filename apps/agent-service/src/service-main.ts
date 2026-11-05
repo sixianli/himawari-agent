@@ -48,6 +48,7 @@ import {
   ExecutionUdsError,
   failureReason,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+  MUSE_INTAKE_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
@@ -110,6 +111,8 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
+import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
@@ -507,6 +510,8 @@ export async function runAgentService(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
+  let museIntake: ProductionMuseIntake | undefined;
+  let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
@@ -1596,6 +1601,41 @@ export async function runAgentService(
             }),
         });
       }
+      const museIntakeConfiguration = configuration.runPolicy?.museIntake;
+      const museIntakeSecret =
+        museIntakeConfiguration?.enabled === true
+          ? configuration.secretReferences.find(
+              ({ ref, purpose }) =>
+                ref === museIntakeConfiguration.secretRef && purpose === MUSE_INTAKE_SECRET_PURPOSE,
+            )
+          : undefined;
+      if (museIntakeSecret && protector) {
+        const museSeal = createProactiveSeal({
+          payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+          protector,
+          ids,
+        });
+        museControl = new ProductionMuseControl({
+          scope: proactiveScope,
+          store: repository.museIntake(),
+          seal: museSeal,
+          ids,
+          clock,
+        });
+        museIntake = new ProductionMuseIntake({
+          scope: proactiveScope,
+          store: repository.museIntake(),
+          seal: museSeal,
+          ids,
+          clock,
+          secret: await hostModelSources(configuration).provider.resolve(
+            museIntakeSecret.ref,
+            museIntakeSecret.version,
+          ),
+        });
+      } else if (museIntakeConfiguration?.enabled === true) {
+        throw new Error("MUSE_INTAKE_RUNTIME_UNAVAILABLE");
+      }
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
         ? configuration.secretReferences.find(
@@ -1639,6 +1679,14 @@ export async function runAgentService(
             pushRepository
               .authorizationStore()
               .listApprovals(configuration.ownerId, configuration.agentId, { status: "pending" }),
+          ...(museIntake
+            ? {
+                museChannel: createMuseChannelPushSource({
+                  scope: proactiveScope,
+                  store: repository.museIntake(),
+                }),
+              }
+            : {}),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -1917,6 +1965,8 @@ export async function runAgentService(
         live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
+        ...(museIntake ? { museIntake } : {}),
+        ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,

@@ -1,0 +1,13 @@
+[Unit]
+Description=Network limits for the gh-runner user
+After=network-pre.target
+Before=gh-runner.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/gh-runner/nft.rules
+ExecStop=/usr/sbin/nft delete table inet gh_runner
+
+[Install]
+WantedBy=multi-user.target

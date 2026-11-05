@@ -83,7 +83,10 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
             payload: {
               ...snapshot.payload,
               runs: forceRunning
-                ? snapshot.payload.runs.map((run) => ({ ...run, status: "running" }))
+                ? snapshot.payload.runs.map((run) => ({
+                    ...run,
+                    status: "running",
+                  }))
                 : snapshot.payload.runs,
             },
           },
@@ -109,13 +112,26 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
             );
             assert.ok(
               box.height >= 40 && box.width >= 40,
-              "mobile controls must have usable touch targets",
-            );
-            assert.ok(
-              Math.abs(box.y + box.height / 2 - (boxes[0].y + boxes[0].height / 2)) <= 1,
-              "attachment, model and send must share one toolbar row",
+              `mobile controls must have usable touch targets: ${JSON.stringify(boxes)}`,
             );
           }
+          const [attachBox, modelBox, sendBox] = boxes;
+          const draftBox = await draft.boundingBox();
+          const middle = (box) => box.y + box.height / 2;
+          assert.ok(
+            Math.abs(middle(sendBox) - middle(attachBox)) <= 1,
+            "attachment and send must share the capsule row",
+          );
+          assert.ok(
+            attachBox.x + attachBox.width <= draftBox.x + 1 &&
+              draftBox.x + draftBox.width <= sendBox.x + 1,
+            "draft must sit between attachment and send",
+          );
+          assert.ok(
+            middle(modelBox) >
+              Math.max(attachBox.y + attachBox.height, draftBox.y + draftBox.height),
+            `model must sit on its own row below the draft: ${JSON.stringify({ draftBox, modelBox })}`,
+          );
           for (let index = 1; index < boxes.length; index++)
             assert.ok(
               boxes[index - 1].x + boxes[index - 1].width <= boxes[index].x + 1,
@@ -143,7 +159,10 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
         }
         await toolbar();
         await page.locator("#page-title").click();
-        if (output) await page.screenshot({ path: path.join(output, `${label}-default.png`) });
+        if (output)
+          await page.screenshot({
+            path: path.join(output, `${label}-default.png`),
+          });
         await model.click();
         await panel(".model-panel");
         await page.locator(".picker-model-name").click();
@@ -226,7 +245,9 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
               2,
             ),
           );
-          await page.screenshot({ path: path.join(output, `${label}-failure.png`) });
+          await page.screenshot({
+            path: path.join(output, `${label}-failure.png`),
+          });
           await writeFile(
             path.join(output, "failure.json"),
             JSON.stringify({ label, error: error.message, errors }, null, 2),

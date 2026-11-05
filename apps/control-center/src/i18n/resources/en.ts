@@ -1080,6 +1080,48 @@ export const messages = {
   "proactive.data.confirm":
     "This deletes every reminder check record, extracted email result and review record. Gmail stays connected. Delete?",
   "proactive.data.cleared": "All deleted.",
+  "muse.title": "Muse comparison",
+  "muse.note":
+    "These are reminders Muse pushes to Himawari on a schedule. For each one, judge two things: was the timing right, and was the content right. No hit rate is shown until there are enough samples.",
+  "muse.channel.never": "No data from Muse yet.",
+  "muse.channel.ok": "Channel is working. Last batch at {time}",
+  "muse.channel.stale": "The channel may be down. Last batch at {time}",
+  "muse.channel.down": "The channel is down. Last batch at {time}",
+  "muse.channel.paused": "Receiving is paused. New data from Muse is refused",
+  "muse.channel.gaps":
+    "Batch numbers skipped {count, plural, one {# time} other {# times}}. A batch may have been missed; Muse decides whether to resend it",
+  "muse.received":
+    "{count, plural, one {# reminder} other {# reminders}} received in the last 7 days",
+  "muse.suppressed":
+    "{count, plural, one {# more was} other {# more were}} held back by Muse and never reached you",
+  "muse.pending": "{count} waiting for your rating",
+  "muse.delay":
+    "Median delay from event to reminder: about {duration} ({count, plural, one {# reminder} other {# reminders}})",
+  "muse.duration.minutes": "{value} min",
+  "muse.duration.hours": "{value} h",
+  "muse.kind.proactive": "Proactive",
+  "muse.kind.scheduled": "Scheduled",
+  "muse.withheld": "A sensitive item",
+  "muse.noText": "No text",
+  "muse.timing": "Timing",
+  "muse.content": "Content",
+  "muse.right": "Right",
+  "muse.wrong": "Wrong",
+  "muse.undo": "Undo rating",
+  "muse.empty": "Nothing to rate in the last 30 days.",
+  "muse.failed": "Muse comparison can’t be read right now. It will retry shortly.",
+  "muse.settings.title": "Receive Muse data",
+  "muse.settings.hint":
+    "While paused, new data from Muse is refused. What was already received stays.",
+  "muse.settings.pause": "Pause receiving",
+  "muse.settings.resume": "Resume receiving",
+  "muse.settings.paused": "Paused",
+  "muse.settings.clear": "Clear Muse data",
+  "muse.settings.clearHint":
+    "Deletes the Muse items received automatically and your ratings of them. Muse comparison entries you typed in by hand stay.",
+  "muse.settings.clearConfirm":
+    "Delete every Muse item received automatically and your ratings of them? This can’t be undone.",
+  "muse.settings.cleared": "Cleared.",
   "proactive.when.dueToday": "Due today {time}",
   "proactive.line.allSkipped":
     "{count, plural, one {# new email} other {# new emails}}, all promotions and the like, skipped by rule and not sent to the model",
