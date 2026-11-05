@@ -50,7 +50,7 @@ export const CHAT_ANSWER_LANGUAGE = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-run-policy.ts"],
   layer: "system",
   output: "free-text",
-  text: "回答语言按这个顺序定：主人本轮明确指定的语言；主人的要求里定下的语言；主人本轮提问用的语言；都没有时用简体中文。调用工具之前或之间写给主人看的说明也用这种语言；搜索关键词等工具参数可以用别的语言。",
+  text: "回答语言按这个顺序定：主人本轮明确指定的语言；主人的要求里定下的语言；主人本轮提问用的语言；都没有时用简体中文。主人只是换了一种语言提问，不算明确指定。调用工具之前或之间写给主人看的说明也用这种语言；搜索关键词等工具参数可以用别的语言。",
 });
 
 export const CHAT_CAPABILITIES_HEADER = fixedPrompt({

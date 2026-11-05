@@ -41,6 +41,14 @@ function piOriginalText() {
   };
 }
 
+function piTextDrift(current: Record<string, unknown>): string[] {
+  return Object.keys(PI_ORIGINAL_TEXT).filter(
+    (key) =>
+      JSON.stringify(current[key]) !==
+      JSON.stringify(PI_ORIGINAL_TEXT[key as keyof typeof PI_ORIGINAL_TEXT]),
+  );
+}
+
 function contradictions(text: {
   readonly description: string;
   readonly guidelines: readonly string[];
@@ -59,7 +67,7 @@ function contradictions(text: {
 
 describe("[PROMPT-PI-TEXT] Himawari replaces only the Pi built-in tool text that contradicts it (ADR 0166)", () => {
   it("C10: the Pi text we replace is still the Pi 0.84.2 original; a Pi upgrade that changes it fails here", () => {
-    expect(piOriginalText()).toEqual(PI_ORIGINAL_TEXT);
+    expect(piTextDrift(piOriginalText())).toEqual([]);
   });
 
   it("C6 W-02, W-03, W-04, W-25: the read and bash text the model sees comes from the catalog", () => {
@@ -113,9 +121,11 @@ describe("[PROMPT-PI-TEXT] Himawari replaces only the Pi built-in tool text that
   });
 
   it("C10 REVERSE: a changed Pi original is reported", () => {
-    expect({
-      ...piOriginalText(),
-      readGuidelines: ["Use read to examine files."],
-    }).not.toEqual(PI_ORIGINAL_TEXT);
+    expect(
+      piTextDrift({ ...piOriginalText(), readGuidelines: ["Use read to examine files."] }),
+    ).toEqual(["readGuidelines"]);
+    expect(
+      piTextDrift({ ...piOriginalText(), bashTimeout: "Timeout in seconds (default 120)" }),
+    ).toEqual(["bashTimeout"]);
   });
 });

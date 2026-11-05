@@ -100,9 +100,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.answer-language": {
-    "sha256": "e86ba285112014716ceffad01ff5b77c9a98d349334fa0e0016b432cc128d2ee",
+    "sha256": "6c02476fcff231223c9dde6eb8bc1258951ea2c614fb136323da5a11ad7d3f6e",
     "changedIn": "ADR 0166",
-    "reason": "W-12、W-14：回答语言按“本轮明确指定 > 主人的要求 > 本轮提问的语言 > 简体中文”排（Andy 2026-11-05 定 D3）；“用户”改“主人”"
+    "reason": "W-12、W-14：回答语言按“本轮明确指定 > 主人的要求 > 本轮提问的语言 > 简体中文”排（Andy 2026-11-05 定 D3）；“用户”改“主人”；复核第 1 轮补一句“只是换了一种语言提问，不算明确指定”，消掉和“本轮另有说法时以本轮为准”的两种读法"
   },
   "chat.capabilities.document-skill": {
     "sha256": "445a934f4ca3cc70f31185f86113713b792fd5a08b87eb42519cc447b2ae34e9",
@@ -436,9 +436,9 @@
     "reason": "W-04、Q1：替换 Pi 原文“没有默认时限”，写明不填时会转入后台、最晚运行到结果里写的时间"
   },
   "tools.builtin.read": {
-    "sha256": "65c9c57ebcf5e54b5c083b6ab2193d00878c1a9230703319ee8c66a447b81dcf",
+    "sha256": "06b2dde4e18234adcd9eb0ff01c4c32a68fd06140834c014717aefc64d367a24",
     "changedIn": "ADR 0166",
-    "reason": "W-03、Q1：替换 Pi 原文里“能读图片”的错话，用 Andy 2026-11-05 定的原句"
+    "reason": "W-03、Q1：替换 Pi 原文里“能读图片”的错话，用 Andy 2026-11-05 定的原句；复核第 1 轮补上前提：本轮模型不能看图时图片会被略过（pi-ai transform-messages 按 model.input 去掉图片）"
   },
   "tools.builtin.read-guideline": {
     "sha256": "12b9547f89964afcb31530f3fbb180cce7d62d4254cb990cc12385947b8b10a8",

@@ -103,7 +103,7 @@ export const TOOL_BUILTIN_READ = fixedPrompt({
   usedBy: ["packages/runtime-pi/src/pi-builtin-tool-text.ts"],
   layer: "tools",
   output: "free-text",
-  text: "读工作目录里的文本文件。read 现在只能读文本文件，读不了图片；主人在对话里发的图片你能直接看到。文件太长时只返回一段，结果末尾会写明用 offset 从哪一行接着读；需要全文时照着继续读完。目录之外的路径会被拒绝。",
+  text: "读工作目录里的文本文件。read 只能读文本文件，读不了图片。主人在对话里发的图片会直接附在消息里给你，不用 read 去读；本轮模型不能看图时，图片会被略过。文件太长时只返回一段，结果末尾会写明用 offset 从哪一行接着读；需要全文时照着继续读完。目录之外的路径会被拒绝。",
 });
 
 export const TOOL_BUILTIN_READ_GUIDELINE = fixedPrompt({
