@@ -62,9 +62,6 @@ import {
   CHAT_TURN_CONTEXT_PREFACE,
   CHAT_TURN_TIME,
   renderPrompt,
-  TOOL_BUILTIN_READ_SUFFIX,
-  TOOL_BUILTIN_READONLY_SUFFIX,
-  TOOL_BUILTIN_WRITE_SUFFIX,
   TOOL_POLICY_BLOCKED_FILE_AUTHORIZATION,
   TOOL_POLICY_BLOCKED_FILE_REQUEST,
   TOOL_POLICY_BLOCKED_HANDLE,
@@ -78,6 +75,7 @@ import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+import { himawariBuiltinToolText } from "./pi-builtin-tool-text.js";
 import { nativeHistoryMessages } from "./pi-native-history.js";
 import {
   capturePiToolBatch,
@@ -1836,20 +1834,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
       });
       if (!builtin) throw new Error("PI_READ_DEFINITION_MISSING");
+      const text = himawariBuiltinToolText(builtin);
       return {
         name: builtin.name,
         label: builtin.label,
-        description:
-          descriptor.definition === "builtin-read"
-            ? `${builtin.description}\n${TOOL_BUILTIN_READ_SUFFIX.text}`
-            : ["read", "ls", "find", "grep"].includes(descriptor.name)
-              ? `${builtin.description}\n${TOOL_BUILTIN_READONLY_SUFFIX.text}`
-              : `${builtin.description}\n${TOOL_BUILTIN_WRITE_SUFFIX.text}`,
-        parameters: builtin.parameters,
+        description: text.description,
+        parameters: text.parameters,
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
-        ...(builtin.promptGuidelines === undefined
+        ...(text.promptGuidelines === undefined
           ? {}
-          : { promptGuidelines: builtin.promptGuidelines }),
+          : { promptGuidelines: [...text.promptGuidelines] }),
         ...(builtin.constrainedSampling === undefined
           ? {}
           : { constrainedSampling: builtin.constrainedSampling }),

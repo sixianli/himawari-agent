@@ -49,6 +49,8 @@ import {
   TOOL_RESULT_REMINDER_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_SAVE_COPY,
+  TOOL_SAVE_COPY_EXPECTED_HASH,
+  TOOL_SAVE_COPY_OPERATION_ID,
   TOOL_TASK_START,
   TOOL_WEB_FETCH,
   TOOL_WEB_FETCH_OFFSET,
@@ -417,7 +419,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 description: TOOL_SAVE_COPY.text,
                 parameters: {
                   type: "object",
-                  properties: { operationId: { type: "string" }, expectedHash: { type: "string" } },
+                  properties: {
+                    operationId: { type: "string", description: TOOL_SAVE_COPY_OPERATION_ID.text },
+                    expectedHash: {
+                      type: "string",
+                      description: TOOL_SAVE_COPY_EXPECTED_HASH.text,
+                    },
+                  },
                   required: ["operationId", "expectedHash"],
                   additionalProperties: false,
                 },

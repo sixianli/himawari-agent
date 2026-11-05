@@ -8,7 +8,10 @@ import type {
 } from "@himawari-agent/application";
 import {
   TOOL_TASK_CANCEL,
+  TOOL_TASK_CURSOR,
+  TOOL_TASK_LIMIT,
   TOOL_TASK_OUTPUT,
+  TOOL_TASK_RESOURCE_REF,
   TOOL_TASK_STATUS,
 } from "@himawari-agent/prompt-catalog";
 
@@ -31,11 +34,16 @@ export function managedTaskDescriptors(): RuntimeToolDescriptor[] {
     parameters: {
       type: "object",
       properties: {
-        resourceRef: { type: "string" },
+        resourceRef: { type: "string", description: TOOL_TASK_RESOURCE_REF.text },
         ...(action === "output"
           ? {
-              cursor: { type: ["string", "null"] },
-              limit: { type: "integer", minimum: 1, maximum: 32768 },
+              cursor: { type: ["string", "null"], description: TOOL_TASK_CURSOR.text },
+              limit: {
+                type: "integer",
+                minimum: 1,
+                maximum: 32768,
+                description: TOOL_TASK_LIMIT.text,
+              },
             }
           : {}),
       },

@@ -21,6 +21,7 @@ import {
   createReferenceAdapterSet,
   inMemoryMemoryIndex,
   type ReferenceAdapterSet,
+  testModelEgress,
 } from "@himawari-agent/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
@@ -40,7 +41,6 @@ import {
   runCapabilityNotice,
   runtimeEnvironmentNotice,
 } from "../src/production-run-policy.js";
-import { testModelEgress } from "@himawari-agent/testing";
 
 let temporaryDirectory: string;
 
@@ -689,7 +689,7 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(environmentText).toContain("本轮没有文件和命令工具。");
   expect(first.runtimeEnvironmentRef).toEqual(expect.any(String));
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
-    "用用户本轮提问所用的语言回答；调用工具之前或之间写给用户看的说明也用这种语言",
+    "主人本轮明确指定的语言；主人的要求里定下的语言；主人本轮提问用的语言；都没有时用简体中文。调用工具之前或之间写给主人看的说明也用这种语言",
   );
   expect(instructionText).not.toContain("沙箱没有外网");
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
@@ -730,7 +730,7 @@ describe("Run capability notice", () => {
     expect(notice).toContain("目录之外的路径会被拒绝");
     expect(notice).toContain("命令可以在工作目录里新建、修改和删除文件");
     expect(notice).toContain("临时文件放到 $TMPDIR");
-    expect(notice).toContain("不要让用户去配置网络或代理");
+    expect(notice).toContain("不要让主人去配置网络或代理");
     expect(notice).toContain("见最近附上的运行环境说明");
     expect(notice).toContain("和本规则一样约束本轮的工具使用");
     expect(notice).not.toContain("/var/lib/himawari/workspace");
