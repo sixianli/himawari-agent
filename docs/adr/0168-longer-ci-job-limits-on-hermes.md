@@ -54,6 +54,10 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 
   > 时间放宽，然后去查清 Hermes 为什么这么慢
 
+- 2026-11-06，问题是“把 `tooling` 测试组的单条测试时限从 5 秒放宽到 15 秒，可以吗？”回答：
+
+  > 1 可以
+
 [↑ 返回阅读导航](#contents)
 
 <a id="decision"></a>
@@ -62,7 +66,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 
 1. 任务整体时限改为：`build`、`test`、`node-floor`、`browser` 90 分钟（原 45）；`policy`、`static`、`coverage`、`security` 60 分钟（原 30）；`ci/required` 15 分钟（原 5）。main 推送后的确认运行：`plan` 15 分钟（原 5），`confirm` 90 分钟（原 45）。
 2. `ci/policy.schema.json` 里 `timeoutMinutes` 的上限从 60 提到 120，给以后留一次调整的余地。
-3. 只改任务整体时限。Andy 也说了放开单条测试的时限（Vitest 默认 5 秒，`integration` 项目 30 秒），但这条暂缓：[BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 记录过，2026-10 在不限 CPU 的 Hermes 上用默认时限跑通了第 3 层 5133/5133；[测试主机操作手册](../runbooks/test-host-operations-runbook.md) 写明“超时是要诊断修复的缺陷，不是环境问题”。Claude 已把这两条交给 Andy，他看过后再定，定了再在这里记录。
+3. 单条测试的时限：起初暂缓（[BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 记录过不限 CPU 的 Hermes 上默认时限能跑通；[测试主机操作手册](../runbooks/test-host-operations-runbook.md) 写明“超时是要诊断修复的缺陷”）。内存上限提高后（[ADR 0170](0170-more-memory-for-hermes-runners.md)），PR 260 的 CI（运行 42128728797）里 `tooling` 项目仍有 3 条超过 5 秒：`markdown-tables` 8.7 秒、`srt-version` 7.0 秒、`security-review` 6.4 秒，都是读整个仓库或起子进程的检查。2026-11-06 Andy 同意只把 `tooling` 项目的单条测试时限提到 15 秒（`vitest.workspace.ts`），其他项目仍用 Vitest 默认 5 秒，`integration` 仍是 30 秒；`test/tooling/test-timeout.test.mjs` 锁住这三个值。
 4. 放宽之后要查清 Hermes 为什么慢，查到的原因按“修 bug 先查根因”处理；查清后如果整体时限可以收回，再改回来并在这里记录。
 
 [↑ 返回阅读导航](#contents)
@@ -71,7 +75,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 
 ## 与 ADR 0160 的关系
 
-本 ADR 改动 ADR 0160 决定第 8 条里的“不放宽任何测试时限”：任务整体时限按上面第 1 条放宽；单条测试的时限暂不改，见第 3 条。ADR 0160 的其他决定不变。
+本 ADR 改动 ADR 0160 决定第 8 条里的“不放宽任何测试时限”：任务整体时限按上面第 1 条放宽；单条测试的时限只放宽 `tooling` 项目，见第 3 条。ADR 0160 的其他决定不变。
 
 [↑ 返回阅读导航](#contents)
 

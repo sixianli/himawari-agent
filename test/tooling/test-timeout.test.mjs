@@ -33,10 +33,13 @@ function projectConfiguration(value) {
 }
 
 describe("test timeout configuration", () => {
-  it("[R2-E3] keeps the existing defaults when the variable is absent", () => {
+  it("[R2-E3] uses 30 s for integration, 15 s for tooling and the Vitest default elsewhere when the variable is absent", () => {
     const projects = projectConfiguration(undefined);
     expect(projects.find(({ name }) => name === "integration").testTimeout).toBe(30_000);
-    for (const project of projects.filter(({ name }) => name !== "integration")) {
+    expect(projects.find(({ name }) => name === "tooling").testTimeout).toBe(15_000);
+    for (const project of projects.filter(
+      ({ name }) => !["integration", "tooling"].includes(name),
+    )) {
       expect(project).not.toHaveProperty("testTimeout");
     }
   });

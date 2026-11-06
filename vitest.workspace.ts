@@ -3,7 +3,6 @@ import coveragePolicy from "./ci/coverage-policy.json" with { type: "json" };
 import policy from "./ci/policy.json" with { type: "json" };
 import { testWorkerCount } from "./scripts/ci/test-concurrency.mjs";
 
-// Tooling owns synthetic Git repositories; hosted cases supply their own GitHub identity.
 const toolingEnvironment = {
   ...Object.fromEntries(
     Object.keys(process.env)
@@ -35,8 +34,6 @@ export default defineConfig({
           exclude: project.exclude,
           fileParallelism: project.fileParallelism,
           retry: 0,
-          // Durable integration cases start workers and use real filesystem/UDS I/O.
-          // Their harness deadline is separate from asserted product deadlines.
           ...(project.id === "integration"
             ? {
                 testTimeout: 30_000,
@@ -46,7 +43,7 @@ export default defineConfig({
                 sequence: { groupOrder: 1 },
               }
             : {}),
-          ...(project.id === "tooling" ? { env: toolingEnvironment } : {}),
+          ...(project.id === "tooling" ? { env: toolingEnvironment, testTimeout: 15_000 } : {}),
         },
       })),
       ...policy.registeredTests
