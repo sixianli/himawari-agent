@@ -30,7 +30,7 @@ defaults:
 jobs:
   policy:
     name: policy
-    runs-on: hermes-home
+    runs-on: ci-vps
     timeout-minutes: 60
     env:
       CI_NODE: 22.22.3
@@ -76,7 +76,7 @@ jobs:
           retention-days: 1
   static:
     name: static
-    runs-on: hermes-home
+    runs-on: ci-vps
     needs:
       - policy
     timeout-minutes: 60
@@ -135,7 +135,7 @@ jobs:
       matrix:
         include:
           - key: linux-x64
-            runner: hermes-home
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
@@ -201,7 +201,7 @@ jobs:
       matrix:
         include:
           - key: linux-x64
-            runner: hermes-home
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
@@ -255,7 +255,7 @@ jobs:
           retention-days: 1
   node-floor:
     name: node-floor
-    runs-on: hermes-home
+    runs-on: ci-vps
     needs:
       - policy
     timeout-minutes: 90
@@ -312,19 +312,19 @@ jobs:
       matrix:
         include:
           - key: chromium
-            runner: hermes-home
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
             browser: chromium
           - key: firefox
-            runner: hermes-home
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
             browser: firefox
           - key: webkit
-            runner: hermes-home
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
@@ -381,7 +381,7 @@ jobs:
           retention-days: 1
   coverage:
     name: coverage
-    runs-on: hermes-home
+    runs-on: ci-vps
     needs:
       - policy
       - build
@@ -436,7 +436,7 @@ jobs:
           retention-days: 1
   security:
     name: security
-    runs-on: hermes-home
+    runs-on: ci-vps
     needs:
       - policy
     timeout-minutes: 60
@@ -487,7 +487,7 @@ jobs:
   required:
     name: ci/required
     if: always()
-    runs-on: hermes-home
+    runs-on: ci-vps
     needs:
       - policy
       - static

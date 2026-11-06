@@ -15,6 +15,6 @@ if ! [[ "$AVAIL" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 if [ "$AVAIL" -lt "$FLOOR" ]; then
-  echo "::error::the Hermes disk holding ${TARGET} has ${AVAIL} bytes free, below the 16 GiB floor; job refused"
+  echo "::error::the disk holding ${TARGET} has ${AVAIL} bytes free, below the 16 GiB floor; job refused"
   exit 1
 fi

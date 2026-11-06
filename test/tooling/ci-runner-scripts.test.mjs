@@ -13,8 +13,9 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { linuxRunnerLabel } from "../../scripts/ci/contracts.mjs";
 
-const scripts = path.resolve(import.meta.dirname, "../../scripts/operations/hermes-runner");
+const scripts = path.resolve(import.meta.dirname, "../../scripts/operations/ci-runner");
 const directories = [];
 
 afterEach(() => {
@@ -23,7 +24,7 @@ afterEach(() => {
 });
 
 const sandbox = () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), "hermes-runner-scripts-"));
+  const root = mkdtempSync(path.join(os.tmpdir(), "ci-runner-scripts-"));
   directories.push(root);
   const bin = path.join(root, "bin");
   mkdirSync(bin);
@@ -157,10 +158,10 @@ describe("runner-pause.sh", () => {
     const both = pauseBox();
     for (const unit of ["gh-runner.service", "gh-runner-2.service"])
       writeFileSync(path.join(both.root, `enabled-${unit}`), "");
-    expect(both.run("runner-pause.sh", ["--list"]).stdout).toBe("hermes-home\nhermes-home-2\n");
+    expect(both.run("runner-pause.sh", ["--list"]).stdout).toBe("ci-vps-1\nci-vps-2\n");
     const installedNotRegistered = pauseBox();
     writeFileSync(path.join(installedNotRegistered.root, "enabled-gh-runner.service"), "");
-    expect(installedNotRegistered.run("runner-pause.sh", ["--list"]).stdout).toBe("hermes-home\n");
+    expect(installedNotRegistered.run("runner-pause.sh", ["--list"]).stdout).toBe("ci-vps-1\n");
   });
 
   it("stops both runners only after watching them idle for the whole quiet window", () => {
@@ -203,22 +204,20 @@ describe("runner-pause.sh", () => {
 
 const macBox = ({
   runners = [
-    [11, "hermes-home"],
-    [12, "hermes-home-2"],
+    [11, "ci-vps-1"],
+    [12, "ci-vps-2"],
   ],
-  hermesNames = ["hermes-home", "hermes-home-2"],
+  vpsNames = ["ci-vps-1", "ci-vps-2"],
   labelled = true,
 } = {}) => {
   const box = sandbox();
   const R = box.root;
-  const handoff = path.join(R, "handoff");
-  mkdirSync(handoff);
-  const labels = (on) => `self-hosted,Linux,X64${on ? ",hermes-home" : ""}`;
+  const labels = (on) => `self-hosted,Linux,X64${on ? ",ci-vps" : ""}`;
   writeFileSync(
     path.join(R, "runners.tsv"),
     runners.map(([id, name]) => `${id}\t${name}\toffline\tfalse\t${labels(labelled)}\n`).join(""),
   );
-  writeFileSync(path.join(R, "hermes-names"), hermesNames.map((name) => `${name}\n`).join(""));
+  writeFileSync(path.join(R, "vps-names"), vpsNames.map((name) => `${name}\n`).join(""));
   const relabel = (on) =>
     `awk -F'\\t' -v OFS='\\t' -v id="$id" '$1 == id { $5 = "${labels(on)}" } 1' "${R}/runners.tsv" > "${R}/t" && mv "${R}/t" "${R}/runners.tsv"`;
   box.fake(
@@ -243,24 +242,20 @@ const macBox = ({
       "fi",
       `n=$(( $(cat "${R}/list-count" 2> /dev/null || echo 0) + 1 )); echo $n > "${R}/list-count"`,
       `f=$(cat "${R}/fail-list-from" 2> /dev/null || echo 0); [ "$f" != 0 ] && [ "$n" -ge "$f" ] && exit 1`,
-      `[ "$n" = "$(cat "${R}/partial-list-at" 2> /dev/null)" ] && { head -1 "${R}/runners.tsv" | sed 's/hermes-home$/X/'; exit 1; }`,
+      `[ "$n" = "$(cat "${R}/partial-list-at" 2> /dev/null)" ] && { head -1 "${R}/runners.tsv" | sed 's/ci-vps$/X/'; exit 1; }`,
       `b=$(cat "${R}/busy-until" 2> /dev/null || echo 0)`,
       `o=$(cat "${R}/online-from" 2> /dev/null || echo 0)`,
       `awk -F'\\t' -v OFS='\\t' -v n=$n -v b=$b -v o=$o '{ $4 = (n < b) ? "true" : "false"; $3 = (n >= o) ? "online" : "offline"; print }' "${R}/runners.tsv"`,
     ].join("\n"),
   );
-  const handoffScript = (name, body) => {
-    const file = path.join(handoff, name);
-    writeFileSync(file, `#!/bin/bash\n${body}\n`);
-    chmodSync(file, 0o755);
-  };
-  handoffScript("hermes-upload.sh", `printf 'upload %s\\n' "$*" >> "${R}/calls"`);
-  handoffScript(
-    "hermes-ssh.sh",
+  box.fake("scp", `printf 'upload %s\\n' "$*" >> "${R}/calls"`);
+  box.fake(
+    "ssh",
     [
-      `printf 'ssh %s\\n' "$*" >> "${R}/calls"`,
-      'case "$1" in',
-      `  *--list) cat "${R}/hermes-names" ;;`,
+      "for command; do :; done",
+      `printf 'ssh %s\\n' "$command" >> "${R}/calls"`,
+      'case "$command" in',
+      `  *--list) cat "${R}/vps-names" ;;`,
       `  *--status) cat "${R}/service-states" 2> /dev/null || printf 'gh-runner.service=active\\ngh-runner-2.service=active\\n' ;;`,
       "  *--labels-removed*)",
       `    code=$(head -1 "${R}/pause-results" 2> /dev/null || echo 0)`,
@@ -287,7 +282,6 @@ const macBox = ({
       env: {
         PATH: `${box.root}/bin:${process.env.PATH}`,
         HOME: R,
-        HERMES_HANDOFF: handoff,
         RUNNER_LOCK_DIR: path.join(R, "lock"),
         RUNNER_POLL_SECONDS: "0",
       },
@@ -298,20 +292,36 @@ const macBox = ({
         .trim()
         .split("\n")
         .map((line) => line.split("\t"))
-        .map(([, name, , , l]) => [name, l.split(",").includes("hermes-home")]),
+        .map(([, name, , , l]) => [name, l.split(",").includes("ci-vps")]),
     );
   const lines = () => box.calls().split("\n").filter(Boolean);
   return { ...box, set, late, mac, labelState, lines };
 };
 
+describe("[HR-11] runner 名字和标签", () => {
+  it("注册用的标签和主机就是 CI 工作流要的 ci-vps", () => {
+    const runners = readFileSync(path.join(scripts, "runners.sh"), "utf8");
+    expect(runners).toContain(`RUNNER_LABEL=${linuxRunnerLabel}\n`);
+    expect(runners).toContain("RUNNER_HOST=ci-vps\n");
+    expect(runners).toContain("RUNNER_NAME=ci-vps-1\n");
+    expect(runners).toContain("RUNNER_NAME=ci-vps-2\n");
+    expect(readFileSync(path.join(scripts, "register-runner.sh"), "utf8")).toContain(
+      '--labels "$RUNNER_LABEL"',
+    );
+    expect(readFileSync(path.join(scripts, "mac-runners.sh"), "utf8")).toContain(
+      "LABEL=$RUNNER_LABEL\n",
+    );
+  });
+});
+
 describe("pause-runners.sh", () => {
-  it("removes the label from both runners before asking Hermes to stop them", () => {
+  it("removes the label from both runners before asking the VPS to stop them", () => {
     const box = macBox();
     const result = box.mac("pause-runners.sh");
     expect(result.stdout).toContain("RUNNER_PAUSED labels=removed services=stopped");
     expect(result.stdout).toContain("24 hours");
     expect(result.status).toBe(0);
-    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+    expect(box.labelState()).toEqual({ "ci-vps-1": false, "ci-vps-2": false });
     const order = box.lines();
     const stop = order.findIndex((line) => line.includes("--labels-removed 90"));
     const deletes = order.filter((line) => line.includes("-X DELETE"));
@@ -319,9 +329,12 @@ describe("pause-runners.sh", () => {
     expect(order.findIndex((line) => line.includes("-X DELETE"))).toBeLessThan(stop);
     expect(order.filter((line) => line.startsWith("upload "))).toHaveLength(3);
     expect(order.some((line) => line.includes("-X POST"))).toBe(false);
+    const remote = order.filter((line) => line.startsWith("ssh "));
+    expect(remote.length).toBeGreaterThan(0);
+    for (const line of remote) expect(line).toContain('[ "$(hostname)" = ci-vps ] ||');
   });
 
-  it("waits until GitHub reports both runners idle before asking Hermes to stop", () => {
+  it("waits until GitHub reports both runners idle before asking the VPS to stop", () => {
     const box = macBox();
     box.set("busy-until", 5);
     const result = box.mac("pause-runners.sh");
@@ -332,7 +345,7 @@ describe("pause-runners.sh", () => {
     expect(listsBefore.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("asks Hermes again when a job was still finishing there", () => {
+  it("asks the VPS again when a job was still finishing there", () => {
     const box = macBox();
     box.set("pause-results", "2\n2\n0\n");
     const result = box.mac("pause-runners.sh");
@@ -341,39 +354,39 @@ describe("pause-runners.sh", () => {
   });
 
   it("works with only the first runner installed", () => {
-    const box = macBox({ runners: [[11, "hermes-home"]], hermesNames: ["hermes-home"] });
+    const box = macBox({ runners: [[11, "ci-vps-1"]], vpsNames: ["ci-vps-1"] });
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(0);
     expect(box.lines().filter((line) => line.includes("-X DELETE"))).toHaveLength(1);
   });
 
-  it("changes nothing when Hermes has a runner GitHub does not know", () => {
-    const box = macBox({ runners: [[11, "hermes-home"]] });
+  it("changes nothing when the VPS has a runner GitHub does not know", () => {
+    const box = macBox({ runners: [[11, "ci-vps-1"]] });
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("RUNNER_PAUSE_FAILED GitHub has 0 runners named hermes-home-2");
+    expect(result.stdout).toContain("RUNNER_PAUSE_FAILED GitHub has 0 runners named ci-vps-2");
     expect(
       box.lines().some((line) => line.includes("-X") || line.includes("--labels-removed")),
     ).toBe(false);
   });
 
-  it("changes nothing when GitHub has a hermes-home runner that is not on Hermes", () => {
-    const box = macBox({ hermesNames: ["hermes-home"] });
+  it("changes nothing when GitHub has a ci-vps runner that is not on the VPS", () => {
+    const box = macBox({ vpsNames: ["ci-vps-1"] });
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("hermes-home-2 carries hermes-home but is not installed");
+    expect(result.stdout).toContain("ci-vps-2 carries ci-vps but is not installed");
     expect(box.lines().some((line) => line.includes("-X"))).toBe(false);
   });
 
-  it("puts the label back and leaves Hermes alone when one removal fails", () => {
+  it("puts the label back and leaves the VPS alone when one removal fails", () => {
     const box = macBox();
     box.set("fail-delete-12", "");
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "RUNNER_PAUSE_FAILED hermes-home still on: hermes-home-2; put back on: 11",
+      "RUNNER_PAUSE_FAILED ci-vps still on: ci-vps-2; put back on: 11",
     );
-    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
   });
 
@@ -382,7 +395,7 @@ describe("pause-runners.sh", () => {
     box.set("ignore-delete-11", "");
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("still on: hermes-home");
+    expect(result.stdout).toContain("still on: ci-vps-1");
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
   });
 
@@ -393,15 +406,15 @@ describe("pause-runners.sh", () => {
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(2);
     expect(result.stdout).toContain(
-      "RUNNER_PAUSE_INCOMPLETE labels=removed services=gh-runner.service=active gh-runner-2.service=active busy: hermes-home hermes-home-2",
+      "RUNNER_PAUSE_INCOMPLETE labels=removed services=gh-runner.service=active gh-runner-2.service=active busy: ci-vps-1 ci-vps-2",
     );
-    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+    expect(box.labelState()).toEqual({ "ci-vps-1": false, "ci-vps-2": false });
     expect(
       box.lines().some((line) => line.includes("--labels-removed") || line.includes("-X POST")),
     ).toBe(false);
   });
 
-  it("keeps labels removed and reports each service when Hermes stops only one of them", () => {
+  it("keeps labels removed and reports each service when the VPS stops only one of them", () => {
     const box = macBox();
     box.set("pause-results", "1\n");
     box.set("service-states", "gh-runner.service=inactive\ngh-runner-2.service=active\n");
@@ -410,7 +423,7 @@ describe("pause-runners.sh", () => {
     expect(result.stdout).toContain(
       "RUNNER_PAUSE_INCOMPLETE labels=removed services=gh-runner.service=inactive gh-runner-2.service=active",
     );
-    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+    expect(box.labelState()).toEqual({ "ci-vps-1": false, "ci-vps-2": false });
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
   });
 
@@ -422,7 +435,7 @@ describe("pause-runners.sh", () => {
     expect(result.stdout).toContain(
       "RUNNER_PAUSE_FAILED interrupted while removing labels; put back on: 11",
     );
-    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
     expect(existsSync(path.join(box.root, "lock"))).toBe(false);
   });
@@ -433,7 +446,7 @@ describe("pause-runners.sh", () => {
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(130);
     expect(result.stdout).toContain("put back on: 11");
-    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
   });
 
@@ -442,11 +455,9 @@ describe("pause-runners.sh", () => {
     box.set("partial-list-at", 2);
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain(
-      "still on: hermes-home(could not read) hermes-home-2(could not read)",
-    );
+    expect(result.stdout).toContain("still on: ci-vps-1(could not read) ci-vps-2(could not read)");
     expect(result.stdout).toContain("put back on: 11 12");
-    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
     expect(box.lines().some((line) => line.includes("--labels-removed"))).toBe(false);
   });
 
@@ -457,7 +468,7 @@ describe("pause-runners.sh", () => {
     const result = box.mac("pause-runners.sh");
     expect(result.status).toBe(2);
     expect(result.stdout).toContain("busy: (could not read GitHub)");
-    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+    expect(box.labelState()).toEqual({ "ci-vps-1": false, "ci-vps-2": false });
   });
 
   it("reports labels removed and the service states when interrupted while waiting", () => {
@@ -469,11 +480,11 @@ describe("pause-runners.sh", () => {
     expect(result.stdout).toContain(
       "RUNNER_PAUSE_INCOMPLETE interrupted labels=removed services=gh-runner.service=active gh-runner-2.service=active",
     );
-    expect(box.labelState()).toEqual({ "hermes-home": false, "hermes-home-2": false });
+    expect(box.labelState()).toEqual({ "ci-vps-1": false, "ci-vps-2": false });
   });
 
   it("says labels and services were untouched when the runners do not match", () => {
-    const result = macBox({ runners: [[11, "hermes-home"]] }).mac("pause-runners.sh");
+    const result = macBox({ runners: [[11, "ci-vps-1"]] }).mac("pause-runners.sh");
     expect(result.stdout).toContain("labels and services untouched");
     expect(result.stdout).not.toContain("nothing changed");
   });
@@ -502,7 +513,7 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.stdout).toContain("RUNNER_RESUMED labels=restored");
     expect(result.status).toBe(0);
-    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
     const order = box.lines();
     const start = order.findIndex((line) => line.includes("runner-resume.sh"));
     const firstAdd = order.findIndex((line) => line.includes("-X POST"));
@@ -512,13 +523,11 @@ describe("resume-runners.sh", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it("changes nothing when the runners on Hermes and GitHub do not match", () => {
-    const box = macBox({ labelled: false, runners: [[11, "hermes-home"]] });
+  it("changes nothing when the runners on the VPS and GitHub do not match", () => {
+    const box = macBox({ labelled: false, runners: [[11, "ci-vps-1"]] });
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain(
-      "RUNNER_RESUME_FAILED GitHub has 0 runners named hermes-home-2",
-    );
+    expect(result.stdout).toContain("RUNNER_RESUME_FAILED GitHub has 0 runners named ci-vps-2");
     expect(
       box
         .lines()
@@ -534,14 +543,14 @@ describe("resume-runners.sh", () => {
     const box = macBox({
       labelled: false,
       runners: [
-        [11, "hermes-home"],
-        [12, "hermes-home-2"],
-        [13, "hermes-home-2"],
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-2"],
       ],
     });
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("GitHub has 2 runners named hermes-home-2");
+    expect(result.stdout).toContain("GitHub has 2 runners named ci-vps-2");
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
   });
 
@@ -575,7 +584,7 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(130);
     expect(result.stdout).toContain(
-      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: hermes-home=on hermes-home-2=off",
+      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: ci-vps-1=on ci-vps-2=off",
     );
   });
 
@@ -586,7 +595,7 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(130);
     expect(result.stdout).toContain(
-      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: hermes-home=off hermes-home-2=off",
+      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: ci-vps-1=off ci-vps-2=off",
     );
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
   });
@@ -605,8 +614,8 @@ describe("resume-runners.sh", () => {
     box.set("fail-add-12", "");
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("labels: hermes-home=on hermes-home-2=off");
-    expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": false });
+    expect(result.stdout).toContain("labels: ci-vps-1=on ci-vps-2=off");
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": false });
   });
 });
 
@@ -661,8 +670,8 @@ describe("runner units and shared limits", () => {
 
   it("gives both runners all cores and 14 GB together with default priority on a CI-only host", () => {
     expect(slice()).toMatchObject({
-      MemoryHigh: "13G",
-      MemoryMax: "14G",
+      MemoryHigh: "19G",
+      MemoryMax: "20G",
       MemorySwapMax: "0",
       TasksMax: "4096",
     });
@@ -673,8 +682,8 @@ describe("runner units and shared limits", () => {
   });
 
   it.each([
-    [1, "gh-runner", "/srv/gh-runner", "/srv/gh-runner-2", "hermes-home"],
-    [2, "gh-runner-2", "/srv/gh-runner-2", "/srv/gh-runner", "hermes-home-2"],
+    [1, "gh-runner", "/srv/gh-runner", "/srv/gh-runner-2", "ci-vps-1"],
+    [2, "gh-runner-2", "/srv/gh-runner-2", "/srv/gh-runner", "ci-vps-2"],
   ])(
     "runner %s runs as its own account inside the shared slice and cannot see the other runner",
     (id, user, root, other, name) => {
@@ -687,8 +696,8 @@ describe("runner units and shared limits", () => {
         User: user,
         Group: user,
         WorkingDirectory: `${root}/runner`,
-        MemoryHigh: "12G",
-        MemoryMax: "13G",
+        MemoryHigh: "14G",
+        MemoryMax: "15G",
         MemorySwapMax: "0",
         TasksMax: "2048",
         ProtectProc: "invisible",
@@ -696,7 +705,7 @@ describe("runner units and shared limits", () => {
       });
       expect(unit.Description).toContain(name);
       expect(unit.InaccessiblePaths.split(" ")).toEqual(
-        expect.arrayContaining(["/data", `-${other}`]),
+        expect.arrayContaining(["-/var/run/docker.sock", `-${other}`]),
       );
       expect(bytes(unit.MemoryMax)).toBeLessThanOrEqual(bytes(slice().MemoryMax));
       for (const key of ["CPUQuota", "CPUWeight", "IOWeight", "Nice"]) {
@@ -708,7 +717,7 @@ describe("runner units and shared limits", () => {
   it("gives both runners the same hardening apart from their own paths and names", () => {
     const normalize = (id, text) =>
       text
-        .replaceAll(id === 1 ? "hermes-home" : "hermes-home-2", "NAME")
+        .replaceAll(id === 1 ? "ci-vps-1" : "ci-vps-2", "NAME")
         .replace(id === 1 ? /\/srv\/gh-runner(?!-2)/g : /\/srv\/gh-runner-2/g, "ROOT");
     const first = render(1).stdout;
     const second = render(2).stdout;
@@ -725,15 +734,17 @@ describe("runner units and shared limits", () => {
   it("firewall rules apply to every runner account", () => {
     const result = shell('runner_firewall_rules "996, 995" "22,8080"');
     const ruleLines = result.stdout.split("\n").filter((line) => line.includes("reject"));
-    expect(ruleLines).toHaveLength(4);
+    expect(ruleLines).toHaveLength(3);
     for (const line of ruleLines) expect(line).toContain("meta skuid { 996, 995 }");
-    expect(result.stdout).toContain("tcp dport { 22,8080 }");
+    expect(result.stdout).toContain(
+      "meta skuid { 996, 995 } fib daddr type local tcp dport { 22,8080 } reject",
+    );
   });
 
-  it("andy may only start, stop and restart the runner services", () => {
+  it("ubuntu may only start, stop and restart the runner services", () => {
     const result = shell("runner_sudoers_line 1 2");
     expect(result.stdout).toBe(
-      "andy ALL=(root) NOPASSWD: " +
+      "ubuntu ALL=(root) NOPASSWD: " +
         [
           "/usr/bin/systemctl start gh-runner.service",
           "/usr/bin/systemctl stop gh-runner.service",
@@ -756,16 +767,16 @@ describe("root scripts refuse other hosts", () => {
       fake("id", `printf '%s\\n' "$*" >> "${root}/id-calls"; exit 1`);
       const result = run(script);
       expect(result.status).toBe(68);
-      expect(result.stderr).toContain("only runs on hermes-home");
+      expect(result.stderr).toContain("only runs on ci-vps");
       expect(existsSync(path.join(root, "id-calls"))).toBe(false);
     },
   );
 
   it.each(["install-runner.sh", "register-runner.sh", "uninstall-runner.sh"])(
-    "%s passes the host check on hermes-home and still requires root",
+    "%s passes the host check on ci-vps and still requires root",
     (script) => {
       const { fake, run } = sandbox();
-      fake("hostname", "echo hermes-home");
+      fake("hostname", "echo ci-vps");
       fake("id", "echo 1000");
       const result = run(script);
       expect(result.status).toBe(65);
@@ -775,7 +786,7 @@ describe("root scripts refuse other hosts", () => {
 
   it("register-runner.sh names a missing python3 before asking for the token", () => {
     const { fake, run } = sandbox();
-    fake("hostname", "echo hermes-home");
+    fake("hostname", "echo ci-vps");
     const result = run("register-runner.sh", [], { inheritPath: false });
     expect(result.status).toBe(66);
     expect(result.stderr).toContain("missing python3");
@@ -785,7 +796,7 @@ describe("root scripts refuse other hosts", () => {
 describe("register-runner.sh arguments", () => {
   const registerBox = () => {
     const box = sandbox();
-    box.fake("hostname", "echo hermes-home");
+    box.fake("hostname", "echo ci-vps");
     box.fake("id", "echo 0");
     box.fake("sudo", `${box.record("sudo")}\nexit 0`);
     return box;
@@ -811,7 +822,7 @@ describe("register-runner.sh arguments", () => {
 describe("install-runner.sh", () => {
   it("refuses to change anything while a runner service is active", () => {
     const box = sandbox();
-    box.fake("hostname", "echo hermes-home");
+    box.fake("hostname", "echo ci-vps");
     fakeRunnerAccounts(box, ["gh-runner"]);
     for (const tool of ["nft", "visudo", "useradd", "sha256sum", "curl", "ss", "python3"])
       box.fake(tool, `${box.record(tool)}\nexit 0`);
@@ -1013,7 +1024,7 @@ describe("install-runner.sh rollback", () => {
     const previous = path.join(box.root, "nft.rules");
     writeFileSync(
       previous,
-      "    meta skuid { 996 } ip daddr 127.0.0.0/8 tcp dport { 22,8080 } reject\n    meta skuid { 996 } ip6 daddr ::1 tcp dport { 22,8080 } reject\n",
+      "    meta skuid { 996 } fib daddr type local tcp dport { 22,8080 } reject\n",
     );
     const result = helper(box, `runner_blocked_ports "${previous}"`);
     expect(result.status).toBe(0);
@@ -1053,7 +1064,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
 
   const installWithFailingRuleCheck = (nftCheck, extraSetup = []) => {
     const box = sandbox();
-    box.fake("hostname", "echo hermes-home");
+    box.fake("hostname", "echo ci-vps");
     box.fake(
       "id",
       [
@@ -1079,7 +1090,8 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "systemctl",
       `${box.record("systemctl")}\ncase "$1" in is-active) exit 3 ;; is-enabled) exit 1 ;; esac\nexit 0`,
     );
-    for (const name of ["visudo", "sha256sum", "python3", "sudo"]) box.fake(name, "exit 0");
+    for (const name of ["visudo", "python3", "sudo"]) box.fake(name, "exit 0");
+    box.fake("sha256sum", "cat > /dev/null\nexit 0");
     const inner = [
       "set -u",
       `real="${box.root}/real"`,
@@ -1187,7 +1199,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
 describe("scripts started by bare file name from their own directory", () => {
   it.each(["register-runner.sh", "uninstall-runner.sh"])("%s still finds runners.sh", (script) => {
     const box = sandbox();
-    box.fake("hostname", "echo hermes-home");
+    box.fake("hostname", "echo ci-vps");
     box.fake("id", "echo 0");
     box.fake("python3", "exit 0");
     box.fake("nft", "exit 0");
@@ -1206,7 +1218,7 @@ describe("scripts started by bare file name from their own directory", () => {
 describe("uninstall-runner.sh", () => {
   const uninstallBox = () => {
     const box = sandbox();
-    box.fake("hostname", "echo hermes-home");
+    box.fake("hostname", "echo ci-vps");
     for (const name of ["systemctl", "rm", "pkill", "groupdel"])
       box.fake(name, `${box.record(name)}\nexit 0`);
     box.fake("getent", `${box.record("getent")}\nexit 2`);
@@ -1287,7 +1299,7 @@ describe("uninstall-runner.sh", () => {
       "meta skuid { 996 }",
     );
     expect(readFileSync(path.join(box.root, "sudoers-checked"), "utf8")).toBe(
-      "andy ALL=(root) NOPASSWD: /usr/bin/systemctl start gh-runner.service, /usr/bin/systemctl stop gh-runner.service, /usr/bin/systemctl restart gh-runner.service\n",
+      "ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start gh-runner.service, /usr/bin/systemctl stop gh-runner.service, /usr/bin/systemctl restart gh-runner.service\n",
     );
   });
 });

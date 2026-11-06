@@ -20,8 +20,8 @@ Environment=HOME=@ROOT@/home
 Environment=ACTIONS_RUNNER_HOOK_JOB_STARTED=@ROOT@/hooks/job-started.sh
 Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=@ROOT@/hooks/job-completed.sh
 UMask=0022
-MemoryHigh=12G
-MemoryMax=13G
+MemoryHigh=14G
+MemoryMax=15G
 MemorySwapMax=0
 TasksMax=2048
 NoNewPrivileges=yes
@@ -33,7 +33,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 ProtectProc=invisible
 ReadWritePaths=@ROOT@/runner @ROOT@/home @ROOT@/logs
-InaccessiblePaths=/data -/run/docker.sock -/var/run/docker.sock -@OTHER_ROOT@
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -@OTHER_ROOT@
 
 [Install]
 WantedBy=multi-user.target

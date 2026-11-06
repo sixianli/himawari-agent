@@ -13,6 +13,7 @@ import {
   resolvePolicySource,
   resolveTestHygieneBaseline,
   upgradeHostedRunnerPolicy,
+  upgradeRunnerLabel,
   validatePolicy,
   validateTestFileSource,
   validateTestHygiene,
@@ -25,6 +26,7 @@ import {
   activeMembers,
   expectedMembers,
   githubExpression,
+  linuxRunnerLabel,
   readJson,
   repositoryRoot,
   sha256,
@@ -672,7 +674,7 @@ describe("CI policy contract", () => {
     expect(ids).toHaveLength(10);
     expect(ids.some((id) => id.includes("macos-arm64"))).toBe(false);
   });
-  it("把已接受的托管 runner 政策升级成 hermes-home 加暂停 macOS 一次", () => {
+  it("把已接受的托管 runner 政策升级成 ci-vps 加暂停 macOS 一次", () => {
     const { root, git } = fixtureRepository();
     const hosted = clone();
     for (const check of hosted.checks) {
@@ -738,6 +740,60 @@ describe("CI policy contract", () => {
     const wrongTimeout = hostedWithTimeouts((id) => (id === "build" ? 1 : legacyTimeout(id)));
     expect(upgradeHostedRunnerPolicy(wrongTimeout)).toBe(wrongTimeout);
     expect(() => validatePolicy(upgradeHostedRunnerPolicy(wrongTimeout))).toThrow();
+  });
+  const hermesPolicy = () => {
+    const value = clone();
+    for (const check of value.checks)
+      for (const member of check.members)
+        if (member.key !== "macos-arm64") member.runner = "hermes-home";
+    return value;
+  };
+  it("[HR-11] 基准上恰好是 hermes-home 的策略升级成 ci-vps，摘要仍按原始字节算", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = hermesPolicy();
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted hermes-home");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
+      jobs: 9,
+      members: 13,
+    });
+  });
+  it("[HR-11] 只升级完整的 hermes-home 写法，混写、未暂停 macOS、时限不对的照样被拒", () => {
+    expect(linuxRunnerLabel).toBe("ci-vps");
+    expect(upgradeRunnerLabel(policy)).toBe(policy);
+    const mixed = hermesPolicy();
+    mixed.checks.find((check) => check.id === "static").members[0].runner = linuxRunnerLabel;
+    expect(upgradeRunnerLabel(mixed)).toBe(mixed);
+    expect(() => validatePolicy(upgradeRunnerLabel(mixed))).toThrow();
+    const unpausedMac = hermesPolicy();
+    for (const check of unpausedMac.checks)
+      for (const member of check.members) if (member.key === "macos-arm64") delete member.paused;
+    expect(upgradeRunnerLabel(unpausedMac)).toBe(unpausedMac);
+    const wrongTimeout = hermesPolicy();
+    wrongTimeout.checks.find((check) => check.id === "build").timeoutMinutes = 1;
+    expect(upgradeRunnerLabel(wrongTimeout)).toBe(wrongTimeout);
+    expect(() => validatePolicy(upgradeRunnerLabel(wrongTimeout))).toThrow();
+    expect(() => validatePolicy(hermesPolicy())).toThrow(
+      "runner must be equal to one of the allowed values",
+    );
+  });
+  it("[HR-11] 工作流里留下一处 hermes-home 就被拒", () => {
+    const value = workflow();
+    const job = Object.values(value.jobs).find((entry) => entry["runs-on"] === linuxRunnerLabel);
+    job["runs-on"] = "hermes-home";
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
+    for (const file of [
+      ".github/workflows/ci.yml",
+      ".github/workflows/main.yml",
+      ".github/workflows/quality.yml",
+      ".github/actionlint.yaml",
+    ])
+      expect(readFileSync(path.join(repositoryRoot, file), "utf8")).not.toContain("hermes-home");
   });
   it("迁移旧采集政策时保留原始来源、阈值和其他要求", () => {
     const { root, git } = fixtureRepository();
