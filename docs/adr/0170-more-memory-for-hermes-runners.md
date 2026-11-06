@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: "docs/adr/0173-hermes-runs-only-ci.md"
 amends: "docs/adr/0171-two-runners-on-hermes.md"
 date: "2026-11-05"
 ---
