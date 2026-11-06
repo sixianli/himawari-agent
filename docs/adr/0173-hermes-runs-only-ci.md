@@ -57,7 +57,7 @@ Hermes（家里的 Linux 服务器，4 核，16 GB 内存，系统盘是固态�
 
 ## 决定
 
-1. `gh-runners.slice`：去掉 `CPUQuota`、`CPUWeight`、`IOWeight`，两个 runner 可以用满 4 个核，CPU 和磁盘优先级回到系统默认；内存软上限 `MemoryHigh=13G`、硬上限 `MemoryMax=14G`。整机约 15.4 GiB，留约 1.4 GiB 给 ssh、tailscale、cloudflared、docker 守护进程和系统日志，保证内存用满时还能远程登录。
+1. `gh-runners.slice`：去掉 `CPUQuota`、`CPUWeight`、`IOWeight`，两个 runner 可以用满 4 个核，CPU 和磁盘优先级回到系统默认；内存软上限 `MemoryHigh=13G`、硬上限 `MemoryMax=14G`。整机约 15.4 GiB，留约 1.4 GiB 给 ssh、tailscale、cloudflared、docker 守护进程和系统日志，让 runner 把自己的内存用满时还能远程登录。这不是硬保证：上限只管住 runner，组外的进程用量变大时，整机仍可能内存不足。
 2. 每个 runner 的服务（`gh-runner.service.in` 模板）：去掉 `CPUQuota`、`CPUWeight`、`IOWeight`、`Nice`；`MemoryHigh=12G`、`MemoryMax=13G`。只有一个任务时它几乎能用满整组内存。
 3. 不变的：不用交换分区（`MemorySwapMax=0`，换页会让系统盘排队）、进程数上限、全部安全加固（账号隔离、`ProtectProc`、`InaccessiblePaths=/data`、防火墙规则）。
 4. 停掉的服务只是停止并取消开机自启，没有删除数据。停之前的清单记在 Hermes 的 `/home/andy/ci-only-20261106/`，要恢复时按清单启动。
