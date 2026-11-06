@@ -205,7 +205,10 @@ export function redactForEgress(
   input: string,
   options: EgressRedactionOptions = {},
 ): EgressRedaction {
-  const filler = TRUSTED_FILLERS.find((candidate) => !input.includes(candidate));
+  const known = [...(options.known?.keys() ?? [])];
+  const filler = TRUSTED_FILLERS.find(
+    (candidate) => !input.includes(candidate) && !known.some((value) => value.includes(candidate)),
+  );
   const spans = filler === undefined ? [] : trustedSpans(input, options.trusted ?? []);
   if (filler === undefined || spans.length === 0) return redactUntrusted(input, options);
   let view = "";

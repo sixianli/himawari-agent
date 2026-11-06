@@ -65,7 +65,7 @@ export function trustedPromptTexts(entries: readonly unknown[]): readonly string
     const segments = (entry as { readonly segments: unknown }).segments;
     if (!Array.isArray(segments)) continue;
     for (const segment of segments as readonly PromptSegment[])
-      if (segment.kind === "text" && segment.text.length >= TRUSTED_TEXT_MINIMUM_LENGTH)
+      if (segment.kind === "text" && [...segment.text].length >= TRUSTED_TEXT_MINIMUM_LENGTH)
         texts.add(segment.text);
   }
   return Object.freeze(

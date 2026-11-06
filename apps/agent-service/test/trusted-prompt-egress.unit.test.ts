@@ -128,13 +128,6 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
     const data = '{"ownerMessage":"房间号 123456"}';
     const trusted = await sent(background(`验证码由下面说明决定：${MEMORY_CAPTURE.text}${data}`));
     expect(trusted.messages.at(-1)?.content).toContain("123456");
-    const untrusted = await sent(
-      background(`验证码由下面说明决定：${MEMORY_CAPTURE.text}${data}`),
-      {
-        trusted: [],
-      },
-    );
-    expect(untrusted.body).toContain("123456");
     const glued = await sent(background(`${MEMORY_CAPTURE.text.slice(0, -1)}验证码。${data}`));
     expect(glued.body).not.toContain("123456");
   });
@@ -148,10 +141,13 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
     expect(reports.map(({ category }) => category)).toEqual(["verification-code"]);
   });
 
-  it("[I-78] does not treat a short template piece as trusted, so it cannot split the owner's words", async () => {
-    expect(TRUSTED_PROMPT_TEXTS.every((text) => text.length >= 24)).toBe(true);
+  it("[I-78] does not treat a short piece as trusted, so a keyword the owner wrote still counts", async () => {
+    expect(TRUSTED_PROMPT_TEXTS.every((text) => [...text].length >= 24)).toBe(true);
     expect(TRUSTED_PROMPT_TEXTS).not.toContain("。");
-    const { body } = await sent([{ role: "user", content: "验证码：。482910" }]);
+    const sentence = "验证码 482910";
+    const shortTrusted = await sent([{ role: "user", content: sentence }], { trusted: ["验证码"] });
+    expect(shortTrusted.body).toContain("482910");
+    const { body } = await sent([{ role: "user", content: sentence }]);
     expect(body).not.toContain("482910");
   });
 

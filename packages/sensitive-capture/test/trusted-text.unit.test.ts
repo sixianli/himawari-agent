@@ -101,6 +101,19 @@ describe("trusted text in outbound redaction", () => {
     expect(table.size).toBe(1);
   });
 
+  it("[I-78] does not pick a filler that a value named earlier holds", () => {
+    const named = `abc\uFFFFdef`;
+    const known = new Map([[named, "[密码#abcdefgh]"]]);
+    const input = `${FIXED}\n${named}`;
+    const result = redactForEgress(input, {
+      trusted: [FIXED],
+      known,
+      table: new Map(),
+      tag: () => "x",
+    });
+    expect(result.text).toBe(`${FIXED}\n[密码#abcdefgh]`);
+  });
+
   it("[I-78] behaves exactly as before when nothing trusted appears", () => {
     for (const input of ["验证码 482910", "你好 1000", "密码：hunter22", ""])
       expect(redactForEgress(input, { trusted: [FIXED] })).toEqual(redactForEgress(input));
