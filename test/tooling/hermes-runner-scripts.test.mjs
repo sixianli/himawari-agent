@@ -1095,7 +1095,8 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "systemctl",
       `${box.record("systemctl")}\ncase "$1" in is-active) exit 3 ;; is-enabled) exit 1 ;; esac\nexit 0`,
     );
-    for (const name of ["visudo", "sha256sum", "python3", "sudo"]) box.fake(name, "exit 0");
+    for (const name of ["visudo", "python3", "sudo"]) box.fake(name, "exit 0");
+    box.fake("sha256sum", "cat > /dev/null");
     const inner = [
       "set -u",
       `real="${box.root}/real"`,
