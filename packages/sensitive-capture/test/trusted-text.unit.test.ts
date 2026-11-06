@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactForEgress } from "../src/index.js";
+import { redactForEgress, TRUSTED_TEXT_MINIMUM_CHARACTERS } from "../src/index.js";
 
 const FIXED = "数字字段只写整数，证件号码、密码和验证码用 restricted。";
 
@@ -101,17 +101,23 @@ describe("trusted text in outbound redaction", () => {
     expect(table.size).toBe(1);
   });
 
-  it("[I-78] does not pick a filler that a value named earlier holds", () => {
-    const named = `abc\uFFFFdef`;
-    const known = new Map([[named, "[密码#abcdefgh]"]]);
-    const input = `${FIXED}\n${named}`;
+  it("[I-78] does not pick a filler that a value named earlier would match across the trusted text", () => {
+    const fixed = "说明：验证码字段写 1000 以内的整数，不要写别的内容。";
+    const input = `ab${fixed}cd`;
+    const known = new Map([[`ab${"\uFFFF".repeat(fixed.length)}cd`, "[密码#abcdefgh]"]]);
     const result = redactForEgress(input, {
-      trusted: [FIXED],
+      trusted: [fixed],
       known,
       table: new Map(),
       tag: () => "x",
     });
-    expect(result.text).toBe(`${FIXED}\n[密码#abcdefgh]`);
+    expect(result.text).toBe(input);
+    expect(redactForEgress(input).text).not.toContain("1000");
+  });
+
+  it("[I-78] ignores a trusted entry shorter than 24 characters", () => {
+    expect(TRUSTED_TEXT_MINIMUM_CHARACTERS).toBe(24);
+    expect(redactForEgress("验证码 482910", { trusted: ["验证码"] }).text).toBe("验证码 [验证码]");
   });
 
   it("[I-78] behaves exactly as before when nothing trusted appears", () => {

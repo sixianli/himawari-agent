@@ -69,8 +69,8 @@ export function trustedPromptTexts(entries: readonly unknown[]): readonly string
         texts.add(segment.text);
   }
   return Object.freeze(
-    [...texts].sort((left, right) =>
-      right.length !== left.length ? right.length - left.length : left < right ? -1 : 1,
+    [...texts].sort(
+      (left, right) => [...right].length - [...left].length || (left < right ? -1 : 1),
     ),
   );
 }

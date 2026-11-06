@@ -146,7 +146,7 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
     expect(TRUSTED_PROMPT_TEXTS).not.toContain("。");
     const sentence = "验证码 482910";
     const shortTrusted = await sent([{ role: "user", content: sentence }], { trusted: ["验证码"] });
-    expect(shortTrusted.body).toContain("482910");
+    expect(shortTrusted.body).not.toContain("482910");
     const { body } = await sent([{ role: "user", content: sentence }]);
     expect(body).not.toContain("482910");
   });

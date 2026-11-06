@@ -169,6 +169,8 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
+export const TRUSTED_TEXT_MINIMUM_CHARACTERS = 24;
+
 const TRUSTED_FILLERS: readonly string[] = Object.freeze([
   "\uFFFF",
   "\uFFFE",
@@ -205,11 +207,15 @@ export function redactForEgress(
   input: string,
   options: EgressRedactionOptions = {},
 ): EgressRedaction {
+  const trusted = (options.trusted ?? []).filter(
+    (value) => [...value].length >= TRUSTED_TEXT_MINIMUM_CHARACTERS,
+  );
+  if (trusted.length === 0) return redactUntrusted(input, options);
   const known = [...(options.known?.keys() ?? [])];
   const filler = TRUSTED_FILLERS.find(
     (candidate) => !input.includes(candidate) && !known.some((value) => value.includes(candidate)),
   );
-  const spans = filler === undefined ? [] : trustedSpans(input, options.trusted ?? []);
+  const spans = filler === undefined ? [] : trustedSpans(input, trusted);
   if (filler === undefined || spans.length === 0) return redactUntrusted(input, options);
   let view = "";
   let cursor = 0;
