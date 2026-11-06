@@ -8,7 +8,7 @@ amends: "docs/adr/0068-deepseek-only-codebuddy-fallback.md"
 date: "2026-11-06"
 ---
 
-# ADR 0174：代码复核第 2 轮起只用 DeepSeek，低严重度意见不再触发下一轮
+# ADR 0175：代码复核第 2 轮起只用 DeepSeek，低严重度意见不再触发下一轮
 
 <a id="contents"></a>
 

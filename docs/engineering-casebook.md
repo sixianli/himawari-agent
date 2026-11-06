@@ -5318,7 +5318,7 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
 
 **相关 ADR/PR**
 
-[ADR 0174](adr/0174-cheaper-code-review-rounds.md)（部分修正 [ADR 0068](adr/0068-deepseek-only-codebuddy-fallback.md)）、PR #263、方案文件 `.agents/handoffs/2026-11-06-review-cost-plan-v2.md`。
+[ADR 0175](adr/0175-cheaper-code-review-rounds.md)（部分修正 [ADR 0068](adr/0068-deepseek-only-codebuddy-fallback.md)）、PR #263、方案文件 `.agents/handoffs/2026-11-06-review-cost-plan-v2.md`。
 
 **面试 30 秒版**
 
