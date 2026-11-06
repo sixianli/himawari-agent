@@ -1025,15 +1025,17 @@ export function coveragePoints(records) {
         ? "deepseek"
         : "substitute";
     points.push({ round, head: heads[0], previous: previous.length === 1 ? previous[0] : "", by });
-    for (const record of records.filter((fix) => fix.mode === "low-fix" && fix.round === round))
-      points.push({
-        round,
-        head: record.head,
-        from: record.from,
-        files: record.files,
-        findings: record.findings,
-        by: "low-fix",
-      });
+    for (const [index, record] of records.entries())
+      if (record.mode === "low-fix" && record.round === round)
+        points.push({
+          index,
+          round,
+          head: record.head,
+          from: record.from,
+          files: record.files,
+          findings: record.findings,
+          by: "low-fix",
+        });
   }
   return points;
 }
@@ -1260,15 +1262,12 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     "run-failed": latest > 0 && !latestComplete,
   }[stop];
   if (!consistent) throw new Error(`REPORT_STOP_INCONSISTENT ${stop}`);
-  const onChain = (record) =>
-    gate.accepted.some(
-      (point) =>
-        point.by === "low-fix" && point.round === record.round && point.head === record.head,
-    );
-  const lowFixLines = records
-    .filter((record) => record.mode === "low-fix")
-    .flatMap((record) => {
-      if (!onChain(record))
+  const onChain = (index) =>
+    gate.accepted.some((point) => point.by === "low-fix" && point.index === index);
+  const lowFixLines = [...records.entries()]
+    .filter(([, record]) => record.mode === "low-fix")
+    .flatMap(([index, record]) => {
+      if (!onChain(index))
         return [
           `REVIEW_LOW_FIX_NOT_IN_CHAIN round=${record.round} head=${record.head} files=${record.files.map(printable).join(",")}`,
         ];

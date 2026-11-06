@@ -2607,6 +2607,19 @@ describe("opencode review merge gate", () => {
         `REVIEW_LOW_FIX_NOT_IN_CHAIN round=99 head=${fixed} files=code.txt,test/code.test.mjs`,
       );
       expect(report.filter((line) => line.startsWith("REVIEW_LOW_FIX "))).toHaveLength(1);
+      f.writeLedger([...first, record, { ...record, findings: ["V9"] }]);
+      const duplicated = reviewReport({
+        repo: f.repo,
+        pr: 7,
+        mainRef: "origin/main",
+        stop: "andy-decision",
+        andyQuote: "看一下",
+      });
+      expect(duplicated.filter((line) => line.startsWith("REVIEW_LOW_FIX "))).toHaveLength(1);
+      expect(duplicated).toContain(
+        `REVIEW_LOW_FIX_NOT_IN_CHAIN round=1 head=${fixed} files=code.txt,test/code.test.mjs`,
+      );
+      expect(duplicated.join("\n")).not.toContain("V9 ");
       f.git("rm", "-q", `${REVIEWS_DIR}/pr-7/round-1/verdicts.jsonl`);
       const dropped = f.commit({ "other.txt": "x\n" }, "drop verdicts");
       f.writeLedger([...first, { ...record, head: dropped }]);
