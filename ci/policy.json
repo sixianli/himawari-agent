@@ -360,7 +360,7 @@
     }
   ],
   "retentionDays": {
-    "reports": 30,
-    "diagnostics": 7
+    "reports": 1,
+    "diagnostics": 1
   }
 }
