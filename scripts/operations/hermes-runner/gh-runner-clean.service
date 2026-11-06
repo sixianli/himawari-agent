@@ -1,5 +1,5 @@
 [Unit]
-Description=Remove old gh-runner work directories and logs
+Description=Remove old work directories and logs of the GitHub Actions runners
 
 [Service]
 Type=oneshot

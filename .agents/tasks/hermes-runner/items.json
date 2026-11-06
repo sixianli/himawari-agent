@@ -12,7 +12,12 @@
     "G8": "once",
     "G9": "durable",
     "G10": "once",
-    "G11": "once"
+    "G11": "once",
+    "G12": "durable",
+    "G13": "once",
+    "G14": "once",
+    "G15": "once",
+    "G16": "durable"
   },
   "items": [
     {
