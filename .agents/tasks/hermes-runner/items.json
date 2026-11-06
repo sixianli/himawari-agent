@@ -18,7 +18,8 @@
     "G14": "once",
     "G15": "once",
     "G16": "durable",
-    "G18": "once"
+    "G18": "once",
+    "G19": "durable"
   },
   "items": [
     {
