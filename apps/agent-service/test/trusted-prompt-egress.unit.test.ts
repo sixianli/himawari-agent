@@ -180,6 +180,13 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
     expect(messages[0]?.content).toBe("[密钥]");
   });
 
+  it("[I-78] keeps the memory capture instructions unchanged when the owner's message holds an odd character", async () => {
+    const prompt = memoryCapturePrompt("\uFFFF写一个小游戏", []);
+    const { messages, reports } = await sent(background(prompt));
+    expect(messages.at(-1)?.content).toBe(prompt);
+    expect(reports).toEqual([]);
+  });
+
   it("[I-78] masks the same content to the same bytes every time", async () => {
     const prompt = memoryCapturePrompt("我的验证码是 482910", []);
     const first = await sent(background(prompt));

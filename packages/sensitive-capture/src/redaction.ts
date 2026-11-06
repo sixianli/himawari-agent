@@ -169,13 +169,17 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-const TRUSTED_FILLER = "\uFFFF";
+const TRUSTED_FILLERS: readonly string[] = Object.freeze([
+  "\uFFFF",
+  "\uFFFE",
+  ...Array.from({ length: 32 }, (_, index) => String.fromCharCode(0xfdd0 + index)),
+]);
 
 function trustedSpans(
   input: string,
   trusted: readonly string[],
 ): readonly (readonly [number, number])[] {
-  if (trusted.length === 0 || input.includes(TRUSTED_FILLER)) return [];
+  if (trusted.length === 0) return [];
   const found: (readonly [number, number])[] = [];
   for (const value of trusted) {
     if (value.length === 0) continue;
@@ -201,12 +205,13 @@ export function redactForEgress(
   input: string,
   options: EgressRedactionOptions = {},
 ): EgressRedaction {
-  const spans = trustedSpans(input, options.trusted ?? []);
-  if (spans.length === 0) return redactUntrusted(input, options);
+  const filler = TRUSTED_FILLERS.find((candidate) => !input.includes(candidate));
+  const spans = filler === undefined ? [] : trustedSpans(input, options.trusted ?? []);
+  if (filler === undefined || spans.length === 0) return redactUntrusted(input, options);
   let view = "";
   let cursor = 0;
   for (const [start, end] of spans) {
-    view += input.slice(cursor, start) + TRUSTED_FILLER.repeat(end - start);
+    view += input.slice(cursor, start) + filler.repeat(end - start);
     cursor = end;
   }
   view += input.slice(cursor);
@@ -214,9 +219,10 @@ export function redactForEgress(
     ...(options.known === undefined ? {} : { known: new Map(options.known) }),
     ...(options.tag === undefined ? {} : { tag: () => "aaaaaaaa" }),
   }).text;
-  if (restoredText(rehearsal, input, spans) === undefined) return redactUntrusted(input, options);
+  if (restoredText(rehearsal, input, spans, filler) === undefined)
+    return redactUntrusted(input, options);
   const masked = redactUntrusted(view, options);
-  const text = restoredText(masked.text, input, spans);
+  const text = restoredText(masked.text, input, spans, filler);
   if (text === undefined) throw new EgressRedactionError();
   return Object.freeze({ text, findings: masked.findings });
 }
@@ -225,18 +231,19 @@ function restoredText(
   masked: string,
   input: string,
   spans: readonly (readonly [number, number])[],
+  filler: string,
 ): string | undefined {
   let text = "";
   let read = 0;
   for (const [start, end] of spans) {
-    const at = masked.indexOf(TRUSTED_FILLER, read);
+    const at = masked.indexOf(filler, read);
     const length = end - start;
-    if (at < 0 || masked.slice(at, at + length) !== TRUSTED_FILLER.repeat(length)) return undefined;
+    if (at < 0 || masked.slice(at, at + length) !== filler.repeat(length)) return undefined;
     text += masked.slice(read, at) + input.slice(start, end);
     read = at + length;
   }
   text += masked.slice(read);
-  return text.includes(TRUSTED_FILLER) ? undefined : text;
+  return text.includes(filler) ? undefined : text;
 }
 
 function redactUntrusted(input: string, options: EgressRedactionOptions): EgressRedaction {

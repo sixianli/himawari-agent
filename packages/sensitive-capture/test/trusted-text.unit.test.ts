@@ -41,13 +41,11 @@ describe("trusted text in outbound redaction", () => {
     expect(result.text).toBe(`旧号码 [验证码#abcdefgh]\n${FIXED}\n[验证码#abcdefgh] 是验证码`);
   });
 
-  it("[I-78] picks the longest trusted text at the same place and the leftmost when two overlap", () => {
-    const long = `${FIXED}以上。`;
-    const input = `${long}验证码 482910`;
-    expect(redactForEgress(input, { trusted: [FIXED, long] }).text).toBe(`${long}验证码 [验证码]`);
-    expect(redactForEgress(input, { trusted: [long, FIXED] }).text).toBe(
-      redactForEgress(input, { trusted: [FIXED, long] }).text,
-    );
+  it("[I-78] picks the longest trusted text at the same place, whatever the order of the list", () => {
+    const long = `${FIXED}验证码 482910`;
+    expect(redactForEgress(long, { trusted: [FIXED, long] }).text).toBe(long);
+    expect(redactForEgress(long, { trusted: [long, FIXED] }).text).toBe(long);
+    expect(redactForEgress(long, { trusted: [FIXED] }).text).toBe(`${FIXED}验证码 [验证码]`);
   });
 
   it("[I-78] still lets a keyword in untrusted text reach a code on the other side of trusted text", () => {
@@ -55,10 +53,17 @@ describe("trusted text in outbound redaction", () => {
     expect(redactForEgress(input, { trusted: [FIXED] }).text).toBe(`验证码${FIXED}[验证码]`);
   });
 
-  it("[I-78] treats an empty trusted entry as nothing, and input that already holds the filler as untrusted", () => {
+  it("[I-78] treats an empty trusted entry as nothing, and picks a filler the input does not already hold", () => {
     expect(redactForEgress("验证码 482910", { trusted: [""] }).text).toBe("验证码 [验证码]");
-    const odd = `\uFFFF${FIXED}{"n":"482910"}`;
-    expect(redactForEgress(odd, { trusted: [FIXED] })).toEqual(redactForEgress(odd));
+    const odd = `\uFFFF\uFFFE${FIXED}{"n":"482910"}`;
+    expect(redactForEgress(odd, { trusted: [FIXED] }).text).toBe(odd);
+    const crowded = [
+      "\uFFFF",
+      "\uFFFE",
+      ...Array.from({ length: 32 }, (_, index) => String.fromCharCode(0xfdd0 + index)),
+    ].join("");
+    const full = `${crowded}${FIXED}{"n":"482910"}`;
+    expect(redactForEgress(full, { trusted: [FIXED] })).toEqual(redactForEgress(full));
   });
 
   it("[I-78] falls back to checking everything when a rule would run into trusted text", () => {
