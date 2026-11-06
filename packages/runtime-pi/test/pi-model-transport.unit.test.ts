@@ -1065,6 +1065,48 @@ it("passes cancellation to the pinned Pi provider API without adding tools", asy
   expect(context?.tools).toBeUndefined();
 });
 
+it("[SI-2] stops waiting for the conversation lookup when the request is cancelled", async () => {
+  const controller = new AbortController();
+  const stream = vi.fn(() => runtimeWithTerminal(assistant("{}")).stream(model, { messages: [] }));
+  const lookups: unknown[] = [];
+  const transport = new PiModelTransport({
+    egress: testModelEgress(),
+    egressContext: {
+      ownerId: "owner-cancel",
+      agentId: "agent-cancel",
+      threadId: null,
+      source: "background",
+      purpose: "action-review",
+    } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>,
+    egressThreadOf: (runId) => {
+      lookups.push(runId);
+      queueMicrotask(() => controller.abort());
+      return new Promise(() => undefined);
+    },
+    models: {
+      resolve: async () => ({ model, modelRuntime: { stream } }) as unknown as PiModelBinding,
+    },
+    payloads: payloadBoundary("判断这个动作").boundary,
+    clock: { now: () => NOW },
+  });
+  const outcome = await Promise.race([
+    collect(
+      transport.invoke({
+        descriptor,
+        request: { ...request, signal: controller.signal },
+        secretValues: [PROVIDER_SECRET],
+      }),
+    ).then(
+      (events) => events.map(({ type }) => type),
+      () => ["thrown"],
+    ),
+    new Promise((resolve) => setTimeout(() => resolve("still waiting"), 1000)),
+  ]);
+  expect(lookups).toEqual([request.runId]);
+  expect(outcome).toEqual(["model.started", "model.failed"]);
+  expect(stream).not.toHaveBeenCalled();
+});
+
 it("does not read model input or resolve a binding after request cancellation", async () => {
   const controller = new AbortController();
   controller.abort();

@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import {
   type ProductConfiguration,
   SensitiveInterceptionRecorder,
+  type SensitiveInterceptionRunInput,
+  type SensitiveInterceptionScope,
   type SensitiveInterceptionStorePort,
 } from "@himawari-agent/application";
 import { ModelEgress } from "@himawari-agent/application/runtime-port";
@@ -39,6 +41,20 @@ export function productionSensitiveInterceptionRecorder(repository: {
     recorders.set(repository, recorder);
   }
   return recorder;
+}
+
+export function productionEgressThreadOf(
+  repository: { sensitiveInterceptions(): SensitiveInterceptionStorePort },
+  scope: SensitiveInterceptionScope,
+): (
+  runId: SensitiveInterceptionRunInput["runId"],
+) => ReturnType<SensitiveInterceptionStorePort["threadOfRun"]> {
+  return (runId) =>
+    repository.sensitiveInterceptions().threadOfRun({
+      ownerId: scope.ownerId,
+      agentId: scope.agentId,
+      runId,
+    });
 }
 
 export async function flushSensitiveInterceptions(repository: object): Promise<void> {

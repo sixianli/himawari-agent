@@ -243,14 +243,27 @@ export class PiModelTransport {
   }
 
   async #egressContextFor(
-    runId: ModelInvocationRequest["runId"],
+    request: ModelInvocationRequest,
   ): Promise<ModelEgressContext | undefined> {
     const context = this.#egressContext;
-    if (context === undefined || this.#egressThreadOf === undefined) return context;
+    const threadOf = this.#egressThreadOf;
+    const signal = request.signal;
+    if (context === undefined || threadOf === undefined || signal?.aborted) return context;
+    let stop: (() => void) | undefined;
+    const cancelled = new Promise<null>((resolve) => {
+      stop = () => resolve(null);
+      signal?.addEventListener("abort", stop, { once: true });
+    });
     try {
-      return { ...context, threadId: await this.#egressThreadOf(runId) };
+      const found = await Promise.race([
+        threadOf(request.runId).then((threadId) => ({ threadId })),
+        cancelled,
+      ]);
+      return found === null ? context : { ...context, threadId: found.threadId };
     } catch {
       return context;
+    } finally {
+      if (stop !== undefined) signal?.removeEventListener("abort", stop);
     }
   }
 
@@ -297,7 +310,7 @@ export class PiModelTransport {
     const context: Context = backgroundModelContext(prompt, Date.now());
     let responseStatus = 0;
     let egressRefused = false;
-    const exchange = this.#egress.exchange(await this.#egressContextFor(request.runId));
+    const exchange = this.#egress.exchange(await this.#egressContextFor(request));
     const redactingFetch = exchange.wrapFetch(this.#fetch);
     const upstreamHeaders: Record<string, string> = {};
     const statusFetch: FetchFunction = async (fetchInput, init) => {

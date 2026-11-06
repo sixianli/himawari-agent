@@ -105,6 +105,7 @@ import {
 import {
   createProductionModelEgress,
   flushSensitiveInterceptions,
+  productionEgressThreadOf,
   productionSensitiveInterceptionRecorder,
 } from "./production-model-egress.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
@@ -296,12 +297,7 @@ async function createDefaultModelComposition(
         sources,
         productionSensitiveInterceptionRecorder(repository),
       ),
-      egressThreadOf: (runId) =>
-        repository.sensitiveInterceptions().threadOfRun({
-          ownerId: configuration.ownerId,
-          agentId: configuration.agentId,
-          runId,
-        }),
+      egressThreadOf: productionEgressThreadOf(repository, configuration),
       configuration,
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
