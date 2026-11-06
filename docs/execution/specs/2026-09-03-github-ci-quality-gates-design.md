@@ -124,7 +124,7 @@ date: "2026-09-03"
 
 所有直接依赖使用精确版本。安装后核对 manifests、lockfile、实际 Pi 版本和真实路径。工作区内部正常 symlink 被允许，外部 Pi 包不得指向仓库外或本地源码。CI 不运行 `check:local-pi`，也不需要 `../pi-mono`。
 
-缓存仅覆盖已验证的下载内容。npm key 包含 OS、arch、Node ABI、npm 版本和锁文件摘要。浏览器缓存包含 Playwright 版本与 OS/arch。每次仍执行锁文件安装；不跨平台缓存或传递 `node_modules`，不把缓存命中当验收。
+2026-11-06 起 CI 不再使用 GitHub 缓存，每个任务都从锁定的下载地址重新下载并校验，以免产生 GitHub 存储费（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）。每次仍执行锁文件安装；不跨平台传递 `node_modules`。
 
 文档治理运行依赖放在仓库内的固定工具目录，保留上游 Skill 来源、许可依据、完整依赖闭包和内容摘要。采用原始 `validate_docs.py`、其导入模块及必需资源，不另写文档规则。更新由显式同步工具整体完成，CI 只读验证。来源或许可未明确时该任务未完成，不能静默跳过文档检查。
 
@@ -295,7 +295,7 @@ API 不可用、下载失败、证据缺失、内容或配置不一致均选择�
 
 轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
 
-npm 下载和固定工具的 downloads/wheels 归档通过锁定的 cache Action 复用；工具每次从已验证归档重新安装，不缓存解压后的 executable 或安装记录。缓存键包含 OS、arch、精确 Node、job、package-lock、toolchain-lock 和安装脚本摘要；toolchain-lock 同时绑定 npm 和 Node ABI。恢复后仍校验下载完整性、执行锁文件安装和原生探针，禁止缓存 node_modules 或凭据。缓存缺失正常冷安装；损坏下载按现有校验拒绝。
+npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action 复用（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)），每个任务都重新下载；工具每次从已验证归档重新安装。仍校验下载完整性、执行锁文件安装和原生探针；损坏下载按现有校验拒绝。
 
 完整 CI 的 required job 保持原有 aggregate/context/报告校验逻辑，只把安装范围改为主锁文件中的 Ajv、TypeScript、YAML 及其精确传递依赖。最小安装禁止 lifecycle 和链接依赖；只在没有 node_modules 的隔离 checkout 中创建安装结果，不覆盖已有开发依赖。
 
@@ -317,7 +317,7 @@ npm 下载和固定工具的 downloads/wheels 归档通过锁定的 cache Action
 
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
-记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘、缓存冷热和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟、scale 60 分钟、汇总 5 分钟。超时是资源上限，不是实测性能承诺。完整报告的常规保留期为 30 天，诊断 screenshot/trace 为 7 天；缺少保留能力要明确报告。
+记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟、scale 60 分钟、汇总 5 分钟。超时是资源上限，不是实测性能承诺。完整报告和诊断 screenshot/trace 都只在 GitHub 上保留 1 天（2026-11-06 起，原为 30 天和 7 天，见 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）；缺少保留能力要明确报告。
 
 公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 

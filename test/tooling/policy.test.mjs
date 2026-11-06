@@ -650,12 +650,12 @@ describe("CI policy contract", () => {
     git("add", "ci");
     git("commit", "--quiet", "-m", "accepted");
     const proposed = clone();
-    proposed.retentionDays.reports = 1;
+    proposed.retentionDays.reports = 2;
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(proposed));
     writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify({ baseline: 0 }));
     const selected = resolvePolicySource({ root });
     expect(selected.initialization).toBe(false);
-    expect(selected.policy.retentionDays.reports).toBe(30);
+    expect(selected.policy.retentionDays.reports).toBe(1);
     expect(selected.coverage.baseline.groups["scripts/ci"].lines.pct).toBe(80);
     expect(() => resolvePolicySource({ root, base: "--help" })).toThrow();
     expect(() => resolvePolicySource({ root, base: "f".repeat(40) })).toThrow();
