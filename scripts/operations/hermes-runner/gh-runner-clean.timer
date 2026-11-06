@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily cleanup of old gh-runner work directories and logs
+Description=Daily cleanup of old GitHub Actions runner work directories and logs
 
 [Timer]
 OnCalendar=daily
