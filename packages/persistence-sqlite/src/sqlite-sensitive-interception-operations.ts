@@ -11,6 +11,7 @@ import {
   type SensitiveInterceptionPage,
   type SensitiveInterceptionRecordInput,
   type SensitiveInterceptionRecordResult,
+  type SensitiveInterceptionRunInput,
   type SensitiveInterceptionScope,
   type SensitiveInterceptionSummary,
 } from "@himawari-agent/application/sensitive-interceptions";
@@ -44,7 +45,6 @@ function validScope(input: SensitiveInterceptionScope): boolean {
 function validObservation(item: SensitiveInterceptionObservation): boolean {
   return (
     (item.threadId === null || boundedText(item.threadId, 256)) &&
-    (item.runId === undefined || item.runId === null || boundedText(item.runId, 256)) &&
     oneOf(SENSITIVE_INTERCEPTION_SOURCES, item.source) &&
     (item.purpose === null || boundedText(item.purpose, 64)) &&
     oneOf(SENSITIVE_INTERCEPTION_PARTS, item.part) &&
@@ -99,6 +99,8 @@ export class SqliteSensitiveInterceptionOperations {
         return this.summarize(payload as SensitiveInterceptionScope);
       case "sensitiveInterception.clear":
         return this.clear(payload as SensitiveInterceptionScope);
+      case "sensitiveInterception.threadOfRun":
+        return this.threadOfRun(payload as SensitiveInterceptionRunInput);
       default:
         return this.fail("PORT_INVALID_OPERATION", "Unknown sensitive interception operation");
     }
@@ -118,9 +120,6 @@ export class SqliteSensitiveInterceptionOperations {
     const threadExists = this.database.prepare(
       "SELECT 1 FROM threads WHERE owner_id = ? AND agent_id = ? AND id = ?",
     );
-    const runThread = this.database
-      .prepare("SELECT thread_id FROM runs WHERE owner_id = ? AND agent_id = ? AND id = ?")
-      .pluck();
     const upsert = this.database.prepare(
       `INSERT INTO sensitive_interceptions (
          owner_id, agent_id, dedupe_key, thread_id, source, purpose, part, category, rule_id,
@@ -134,22 +133,10 @@ export class SqliteSensitiveInterceptionOperations {
       .transaction((): SensitiveInterceptionRecordResult => {
         let recorded = 0;
         let skipped = 0;
-        for (const observed of input.observations) {
-          const run =
-            observed.threadId === null && observed.runId
-              ? (runThread.get(input.ownerId, input.agentId, observed.runId) as
-                  | string
-                  | null
-                  | undefined)
-              : null;
-          const item = {
-            ...observed,
-            threadId: run ?? observed.threadId,
-          } as SensitiveInterceptionObservation;
+        for (const item of input.observations) {
           if (
-            run === undefined ||
-            (item.threadId !== null &&
-              !threadExists.get(input.ownerId, input.agentId, item.threadId))
+            item.threadId !== null &&
+            !threadExists.get(input.ownerId, input.agentId, item.threadId)
           ) {
             skipped += 1;
             continue;
@@ -237,6 +224,16 @@ export class SqliteSensitiveInterceptionOperations {
       if (outcome === "masked" || outcome === "withheld" || outcome === "not_saved")
         counts[outcome] = count;
     return Object.freeze(counts);
+  }
+
+  private threadOfRun(input: SensitiveInterceptionRunInput): string | null {
+    if (!validScope(input) || !boundedText(input?.runId, 256))
+      return this.fail("PORT_INVALID_OPERATION", "Sensitive interception run is invalid");
+    const threadId = this.database
+      .prepare("SELECT thread_id FROM runs WHERE owner_id = ? AND agent_id = ? AND id = ?")
+      .pluck()
+      .get(input.ownerId, input.agentId, input.runId) as string | null | undefined;
+    return threadId ?? null;
   }
 
   private clear(input: SensitiveInterceptionScope): { readonly cleared: number } {

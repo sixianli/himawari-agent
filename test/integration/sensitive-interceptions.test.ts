@@ -215,25 +215,33 @@ describe("[SI-1] sensitive interception records", () => {
     }
   });
 
-  it("files a background record under its run's conversation, and drops it when the run is gone with its conversation", async () => {
-    const { repository, store } = await open();
+  it("finds the conversation a run belongs to, and keeps the record after the run alone is deleted", async () => {
+    const { repository, store, databasePath } = await open();
     try {
+      const threadId = await store.threadOfRun({ ...scope, runId: createRunId("run-si") });
+      expect(threadId).toBe(THREAD_ID);
+      expect(await store.threadOfRun({ ...scope, runId: createRunId("run-unknown") })).toBeNull();
+      expect(
+        await store.threadOfRun({
+          ownerId: OWNER_ID,
+          agentId: OTHER_AGENT_ID,
+          runId: createRunId("run-si"),
+        }),
+      ).toBeNull();
+      const writer = new Database(databasePath);
+      try {
+        writer.prepare("DELETE FROM runs WHERE id = 'run-si'").run();
+      } finally {
+        writer.close();
+      }
       const result = await store.record({
         ...scope,
-        observations: [
-          observation({ threadId: null, runId: createRunId("run-si"), source: "background" }),
-          observation({
-            threadId: null,
-            runId: createRunId("run-unknown"),
-            source: "background",
-            fingerprint: "e".repeat(32),
-          }),
-        ],
+        observations: [observation({ threadId, source: "background", purpose: "action-review" })],
         now: T0,
       });
-      expect(result).toEqual({ recorded: 1, skipped: 1 });
+      expect(result).toEqual({ recorded: 1, skipped: 0 });
       const { items } = await store.list({ ...scope, limit: 10, before: null });
-      expect(items.map(({ threadId }) => threadId)).toEqual([THREAD_ID]);
+      expect(items.map(({ threadId: filed }) => filed)).toEqual([THREAD_ID]);
     } finally {
       await repository.close();
     }
@@ -287,8 +295,7 @@ describe("[SI-1] sensitive interception records", () => {
           observation({ threadId: KEPT_THREAD_ID }),
           observation({ threadId: null, source: "mail", part: "mail", purpose: "mail-judgment" }),
           observation({
-            threadId: null,
-            runId: createRunId("run-si"),
+            threadId: THREAD_ID,
             source: "background",
             purpose: "thread-title",
             fingerprint: "f".repeat(32),

@@ -1,4 +1,4 @@
-import type { AgentId, OwnerId, RunId, ThreadId } from "@himawari-agent/domain";
+import type { AgentId, OwnerId, ThreadId } from "@himawari-agent/domain";
 import {
   assertMachineSecretFree,
   EGRESS_PLACEHOLDER_PATTERN,
@@ -28,7 +28,6 @@ export interface ModelEgressContext {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly threadId: ThreadId | null;
-  readonly runId?: RunId | null;
   readonly source: SensitiveInterceptionSource;
   readonly purpose: string | null;
 }

@@ -33,6 +33,7 @@ function store(fail = false) {
     list: async () => ({ items: [], next: null }),
     summarize: async () => ({ masked: 0, withheld: 0, not_saved: 0 }),
     clear: async () => ({ cleared: 0 }),
+    threadOfRun: async () => null,
   };
   return { writes, port };
 }

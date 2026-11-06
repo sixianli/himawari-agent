@@ -439,7 +439,7 @@ describe("PiModelTransport", () => {
 
   async function sentBody(
     prompt: string,
-    egress: Pick<PiModelTransportOptions, "egress" | "egressContext" | "egressRunScoped"> = {
+    egress: Pick<PiModelTransportOptions, "egress" | "egressContext" | "egressThreadOf"> = {
       egress: testModelEgress(),
     },
   ): Promise<{
@@ -503,23 +503,37 @@ describe("PiModelTransport", () => {
     expect(body).toMatch(/\[密码#[a-z]{8}\]/u);
   });
 
-  it("[SI-2] reports what a background call masked with its purpose, conversation and run", async () => {
+  it("[SI-2] reports what a background call masked under the conversation its run belongs to when it was sent", async () => {
     const reports: { context: unknown; sightings: readonly { part: string }[] }[] = [];
     const egressContext = {
       ownerId: "owner-background",
       agentId: "agent-background",
-      threadId: "thread-background",
+      threadId: null,
       source: "background",
-      purpose: "thread-title",
+      purpose: "action-review",
     } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>;
     const egress = testModelEgress(undefined, (context, sightings) =>
       reports.push({ context, sightings }),
     );
-    await sentBody("验证码 482910", { egress, egressContext, egressRunScoped: true });
+    const asked: unknown[] = [];
+    const egressThreadOf = async (runId: unknown) => {
+      asked.push(runId);
+      return "thread-of-run" as never;
+    };
+    await sentBody("验证码 482910", { egress, egressContext, egressThreadOf });
     await sentBody("验证码 482910", { egress, egressContext });
-    expect(reports).toHaveLength(2);
-    expect(reports[0]?.context).toEqual({ ...egressContext, runId: request.runId });
+    await sentBody("验证码 482910", {
+      egress,
+      egressContext,
+      egressThreadOf: async () => {
+        throw new Error("database unavailable");
+      },
+    });
+    expect(asked).toEqual([request.runId]);
+    expect(reports).toHaveLength(3);
+    expect(reports[0]?.context).toEqual({ ...egressContext, threadId: "thread-of-run" });
     expect(reports[1]?.context).toEqual(egressContext);
+    expect(reports[2]?.context).toEqual(egressContext);
     expect(reports[0]?.sightings.map(({ part }) => part)).toEqual(["owner_message"]);
   });
 

@@ -116,7 +116,9 @@ export interface PiModelTransportOptions {
   readonly temperature?: number;
   readonly disableThinking?: boolean;
   readonly egressContext?: ModelEgressContext;
-  readonly egressRunScoped?: boolean;
+  readonly egressThreadOf?: (
+    runId: ModelInvocationRequest["runId"],
+  ) => Promise<ModelEgressContext["threadId"]>;
 }
 
 export interface PiModelTransportObservation {
@@ -189,7 +191,9 @@ function pricedCostMicros(
 export class PiModelTransport {
   readonly #egress: ModelEgress;
   readonly #egressContext: ModelEgressContext | undefined;
-  readonly #egressRunScoped: boolean;
+  readonly #egressThreadOf:
+    | ((runId: ModelInvocationRequest["runId"]) => Promise<ModelEgressContext["threadId"]>)
+    | undefined;
   readonly #models: PiModelBindingPort;
   readonly #payloads: PiModelPayloadBoundary;
   readonly #clock: ClockPort;
@@ -223,7 +227,7 @@ export class PiModelTransport {
     if (typeof fetch !== "function") throw new TypeError("Pi model transport requires fetch");
     this.#egress = options.egress;
     this.#egressContext = options.egressContext;
-    this.#egressRunScoped = options.egressRunScoped === true;
+    this.#egressThreadOf = options.egressThreadOf;
     this.#models = options.models;
     this.#payloads = options.payloads;
     this.#clock = options.clock;
@@ -236,6 +240,18 @@ export class PiModelTransport {
 
   observations(): readonly PiModelTransportObservation[] {
     return structuredClone(this.#observations);
+  }
+
+  async #egressContextFor(
+    runId: ModelInvocationRequest["runId"],
+  ): Promise<ModelEgressContext | undefined> {
+    const context = this.#egressContext;
+    if (context === undefined || this.#egressThreadOf === undefined) return context;
+    try {
+      return { ...context, threadId: await this.#egressThreadOf(runId) };
+    } catch {
+      return context;
+    }
   }
 
   async *invoke(input: PiModelTransportInput): AsyncIterable<ModelInvocationEvent> {
@@ -281,11 +297,7 @@ export class PiModelTransport {
     const context: Context = backgroundModelContext(prompt, Date.now());
     let responseStatus = 0;
     let egressRefused = false;
-    const exchange = this.#egress.exchange(
-      this.#egressContext === undefined || !this.#egressRunScoped
-        ? this.#egressContext
-        : { ...this.#egressContext, runId: request.runId },
-    );
+    const exchange = this.#egress.exchange(await this.#egressContextFor(request.runId));
     const redactingFetch = exchange.wrapFetch(this.#fetch);
     const upstreamHeaders: Record<string, string> = {};
     const statusFetch: FetchFunction = async (fetchInput, init) => {

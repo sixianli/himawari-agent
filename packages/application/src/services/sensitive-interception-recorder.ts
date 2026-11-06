@@ -68,7 +68,6 @@ export class SensitiveInterceptionRecorder {
       context,
       sightings.map((sighting) => ({
         threadId: context.threadId,
-        runId: context.runId ?? null,
         source: context.source,
         purpose: context.purpose,
         part: sighting.part,

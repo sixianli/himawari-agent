@@ -296,6 +296,12 @@ async function createDefaultModelComposition(
         sources,
         productionSensitiveInterceptionRecorder(repository),
       ),
+      egressThreadOf: (runId) =>
+        repository.sensitiveInterceptions().threadOfRun({
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+          runId,
+        }),
       configuration,
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,

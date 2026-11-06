@@ -344,15 +344,39 @@ function machinePositions(
 ): readonly EgressRedactionSighting[] | null {
   const placed: { position: number; sighting: EgressRedactionSighting }[] = [];
   const next = new Map<string, number>();
+  const sighted = new Map<string, number>();
   for (const sighting of sightings) {
+    if (sighting.value.length === 0) return null;
     const position = input.indexOf(sighting.value, next.get(sighting.value) ?? 0);
     if (position < 0) return null;
     next.set(sighting.value, position + sighting.value.length);
+    sighted.set(sighting.value, (sighted.get(sighting.value) ?? 0) + 1);
     placed.push({ position, sighting });
   }
-  return placed
-    .sort((left, right) => left.position - right.position)
-    .map(({ sighting }) => sighting);
+  for (const [value, count] of sighted) if (occurrences(input, value) !== count) return null;
+  placed.sort((left, right) => left.position - right.position);
+  for (let index = 1; index < placed.length; index += 1) {
+    const previous = placed[index - 1];
+    const current = placed[index];
+    if (
+      previous !== undefined &&
+      current !== undefined &&
+      previous.position + previous.sighting.value.length > current.position
+    )
+      return null;
+  }
+  return placed.map(({ sighting }) => sighting);
+}
+
+function occurrences(input: string, value: string): number {
+  let count = 0;
+  for (
+    let position = input.indexOf(value);
+    position >= 0;
+    position = input.indexOf(value, position + value.length)
+  )
+    count += 1;
+  return count;
 }
 
 export function locateMaskedValues(

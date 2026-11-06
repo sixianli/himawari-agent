@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { locateMaskedValues, redactForEgress } from "../src/index.js";
+import { findSensitiveValues, locateMaskedValues, redactForEgress } from "../src/index.js";
 
 const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["验证码中文", "您的验证码是 482910，5 分钟内有效", "您的验证码是 [验证码]，5 分钟内有效"],
@@ -258,6 +258,24 @@ describe("locating masked values in the masked text", () => {
       ["[银行卡 尾号1111]", "bank-card", "4111111111111111"],
       ["[密钥]", "machine-secret", key],
     ]);
+  });
+
+  it("gives up instead of pairing a key with the wrong placeholder when it also sits inside a Bearer token", () => {
+    const key = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-");
+    const github = ["ghp", "abcdefghijklmnopqrstuvwxyz0123"].join("_");
+    const input = `Authorization: Bearer ${key}，然后 ${github}，最后单独的 ${key}`;
+    expect(findSensitiveValues(input).map(({ ruleId }) => ruleId)).toEqual([
+      "authorization-bearer",
+      "openai-api-key",
+      "github-token",
+    ]);
+    expect(locateMaskedValues(input)).toBeNull();
+  });
+
+  it("still locates a value that appears several times when every copy was masked", () => {
+    const github = ["ghp", "abcdefghijklmnopqrstuvwxyz0123"].join("_");
+    const located = locateMaskedValues(`${github} 和 ${github}`);
+    expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual([github, github]);
   });
 
   it("gives up instead of guessing when the text already holds a placeholder", () => {

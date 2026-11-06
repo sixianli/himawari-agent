@@ -1077,6 +1077,7 @@ export class SqliteDurableAdapters {
       list: (input) => this.context.read("sensitiveInterception.list", input),
       summarize: (input) => this.context.read("sensitiveInterception.summarize", input),
       clear: (input) => this.context.write("sensitiveInterception.clear", input),
+      threadOfRun: (input) => this.context.read("sensitiveInterception.threadOfRun", input),
     });
   }
 

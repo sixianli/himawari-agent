@@ -48,7 +48,6 @@ export interface SensitiveInterceptionScope {
 
 export interface SensitiveInterceptionObservation {
   readonly threadId: ThreadId | null;
-  readonly runId?: RunId | null;
   readonly source: SensitiveInterceptionSource;
   readonly purpose: string | null;
   readonly part: SensitiveInterceptionPart;
@@ -62,6 +61,10 @@ export interface SensitiveInterceptionObservation {
 export interface SensitiveInterceptionRecordInput extends SensitiveInterceptionScope {
   readonly observations: readonly SensitiveInterceptionObservation[];
   readonly now: string;
+}
+
+export interface SensitiveInterceptionRunInput extends SensitiveInterceptionScope {
+  readonly runId: RunId;
 }
 
 export interface SensitiveInterceptionRecordResult {
@@ -105,4 +108,5 @@ export interface SensitiveInterceptionStorePort {
   list(input: SensitiveInterceptionListInput): Promise<SensitiveInterceptionPage>;
   summarize(input: SensitiveInterceptionScope): Promise<SensitiveInterceptionSummary>;
   clear(input: SensitiveInterceptionScope): Promise<{ readonly cleared: number }>;
+  threadOfRun(input: SensitiveInterceptionRunInput): Promise<ThreadId | null>;
 }

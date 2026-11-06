@@ -36,6 +36,7 @@ import {
   type PiModelBindingPort,
   type PiModelRuntimeFactory,
   PiModelTransport,
+  type PiModelTransportOptions,
   ProtectedPiModelPayloadBoundary,
 } from "@himawari-agent/runtime-pi";
 
@@ -101,6 +102,7 @@ export interface ProductionModelCompositionOptions {
   readonly temperature?: number;
   readonly admission?: ModelInvocationAdmissionResolver;
   readonly usage?: ModelUsageRecording;
+  readonly egressThreadOf?: PiModelTransportOptions["egressThreadOf"];
 }
 
 export interface ModelUsageRecording {
@@ -332,7 +334,7 @@ function modelTransportFor(
       source: "background",
       purpose: "action-review",
     },
-    egressRunScoped: true,
+    ...(options.egressThreadOf === undefined ? {} : { egressThreadOf: options.egressThreadOf }),
     models: new ConfiguredPiModelBindingPort({
       descriptors: piOnly,
       secretSource: options.secretSource,
