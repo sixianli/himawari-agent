@@ -12,7 +12,7 @@
     "node-observation": 15,
     "container": 30
   },
-  "retentionDays": { "reports": 30, "diagnostics": 7 },
+  "retentionDays": { "reports": 1, "diagnostics": 1 },
   "securityFreshnessHours": 24,
   "container": {
     "images": [

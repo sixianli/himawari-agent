@@ -650,12 +650,12 @@ describe("CI policy contract", () => {
     git("add", "ci");
     git("commit", "--quiet", "-m", "accepted");
     const proposed = clone();
-    proposed.retentionDays.reports = 1;
+    proposed.retentionDays.reports = 2;
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(proposed));
     writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify({ baseline: 0 }));
     const selected = resolvePolicySource({ root });
     expect(selected.initialization).toBe(false);
-    expect(selected.policy.retentionDays.reports).toBe(30);
+    expect(selected.policy.retentionDays.reports).toBe(1);
     expect(selected.coverage.baseline.groups["scripts/ci"].lines.pct).toBe(80);
     expect(() => resolvePolicySource({ root, base: "--help" })).toThrow();
     expect(() => resolvePolicySource({ root, base: "f".repeat(40) })).toThrow();
@@ -693,6 +693,21 @@ describe("CI policy contract", () => {
     const selected = resolvePolicySource({ root });
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(hosted)));
+  });
+  it("把已接受的 30 天和 7 天保存期升级成 1 天一次，别的值照样被拒", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = clone();
+    accepted.retentionDays = { reports: 30, diagnostics: 7 };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted 30/7");
+    expect(resolvePolicySource({ root }).policy).toEqual(policy);
+    accepted.retentionDays = { reports: 14, diagnostics: 7 };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted 14/7");
+    expect(() => resolvePolicySource({ root })).toThrow("retentionDays");
   });
   it("只升级完整的托管 runner 写法，混合写法照样被拒", () => {
     const mixed = clone();
