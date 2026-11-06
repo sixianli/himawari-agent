@@ -25,7 +25,7 @@ TABLE=$(github_runners) || TABLE=""
 STATES=$(label_states "$NAMES" "$TABLE")
 case " $STATES " in
   *=off\ * | *=unread\ *)
-    echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels: $STATES; did not start the services, run resume-runners.sh again"
+    echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels: $STATES; did not start the services, but a runner that was already running may take queued jobs, run resume-runners.sh again"
     exit 1
     ;;
 esac

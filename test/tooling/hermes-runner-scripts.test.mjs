@@ -609,7 +609,7 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "labels: hermes-home=unread hermes-home-2=unread; did not start the services",
+      "labels: hermes-home=unread hermes-home-2=unread; did not start the services, but a runner that was already running may take queued jobs",
     );
     expect(
       box.lines().some((line) => line.startsWith("ssh ") && line.includes("runner-resume.sh")),
@@ -622,7 +622,7 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "labels: hermes-home=on hermes-home-2=off; did not start the services",
+      "labels: hermes-home=on hermes-home-2=off; did not start the services, but a runner that was already running may take queued jobs",
     );
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": false });
     expect(
@@ -1067,7 +1067,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     "/srv/gh-runner-2",
   ];
 
-  const installWithFailingRuleCheck = (nftCheck, extraSetup = []) => {
+  const installWithFailingRuleCheck = (nftCheck, extraSetup = [], stderrRedirect = null) => {
     const box = sandbox();
     box.fake("hostname", "echo hermes-home");
     box.fake(
@@ -1118,7 +1118,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       "echo config > /srv/gh-runner/runner/config.sh",
       "chmod 0755 /srv/gh-runner/runner/config.sh",
       ...extraSetup,
-      `bash "$real/scripts/install-runner.sh" > "${box.root}/stdout" 2> "${box.root}/stderr"`,
+      `bash "$real/scripts/install-runner.sh" > "${box.root}/stdout" ${stderrRedirect ?? `2> "${box.root}/stderr"`}`,
       'echo "rc=$?"',
       `for path in ${reported.join(" ")}; do`,
       '  if [ -d "$path" ]; then echo "$path=DIR"; elif [ -e "$path" ]; then echo "$path=$(cat "$path")"; else echo "$path=MISSING"; fi',
@@ -1140,6 +1140,16 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       : `namespace setup failed: ${result.status} ${result.stdout} ${result.stderr}`;
     return { box, result, state, stderr };
   };
+
+  it("puts every file back even when stderr cannot be written", () => {
+    const { box, result, state } = installWithFailingRuleCheck("exit 1", [], "2>&-");
+    expect(result.status).toBe(0);
+    expect(state.rc).toBe("1");
+    expect(state["/etc/systemd/system/gh-runner.service"]).toBe("old-unit");
+    expect(state["/etc/sudoers.d/91-gh-runner-control"]).toBe("old-sudoers");
+    expect(state["/srv/gh-runner-2"]).toBe("MISSING");
+    expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
+  });
 
   it("keeps /srv/gh-runner/bin and files it did not install when the install succeeds", () => {
     const { result, state, stderr } = installWithFailingRuleCheck("exit 0", [

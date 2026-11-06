@@ -41,6 +41,7 @@ restore_backup() {
   trap - ERR
   trap '' INT TERM HUP
   set +e
+  [ -z "${1:-}" ] || echo "INSTALL_STEP_FAILED $1" >&2
   echo "INSTALL_FAILED putting back units, firewall rules, sudo rules, scripts and new accounts from $BACKUP" >&2
   restore_install_paths "$BACKUP"
   systemctl daemon-reload
@@ -50,7 +51,7 @@ restore_backup() {
     nft delete table inet gh_runner 2> /dev/null
   fi
 }
-trap 'status=$?; echo "INSTALL_STEP_FAILED line $LINENO exit $status: $BASH_COMMAND" >&2; restore_backup; exit "$status"' ERR
+trap 'status=$?; restore_backup "line $LINENO exit $status: $BASH_COMMAND"; exit "$status"' ERR
 trap 'restore_backup; exit 130' INT TERM HUP
 
 install_runner_account() {
