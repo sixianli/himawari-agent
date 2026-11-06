@@ -57,7 +57,7 @@ jobs:
           name: main-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ci-output/main-evidence/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
   full:
     needs: plan
     if: always() && (needs.plan.result != 'success' || needs.plan.outputs.mode != 'light')
@@ -108,4 +108,4 @@ jobs:
           name: main-confirmation-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ci-output/main-public/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
