@@ -17,10 +17,23 @@ interrupted() {
 }
 
 trap interrupted INT TERM HUP
+for name in $NAMES; do
+  has_label "$(runner_field "$TABLE" "$name" 5)" && continue
+  add_label "$(runner_field "$TABLE" "$name" 1)" || echo "could not add $LABEL to $name"
+done
+TABLE=$(github_runners) || TABLE=""
+STATES=$(label_states "$NAMES" "$TABLE")
+case " $STATES " in
+  *=off\ * | *=unread\ *)
+    echo "RUNNER_RESUME_INCOMPLETE labels: $STATES; services not started, queued jobs keep waiting, run resume-runners.sh again"
+    exit 1
+    ;;
+esac
+
 OUTPUT=$(hermes "bash $REMOTE/runner-resume.sh")
 STATUS=$?
 printf '%s\n' "$OUTPUT"
-[ "$STATUS" = 0 ] || { echo "RUNNER_RESUME_FAILED services=$(service_states); labels untouched, queued jobs keep waiting"; exit 1; }
+[ "$STATUS" = 0 ] || { echo "RUNNER_RESUME_FAILED services=$(service_states) labels=restored; queued jobs keep waiting until the services start"; exit 1; }
 
 DEADLINE=$(($(date +%s) + 300))
 while :; do
@@ -34,24 +47,9 @@ while :; do
   fi
   [ -z "$OFFLINE" ] && break
   if [ "$(date +%s)" -ge "$DEADLINE" ]; then
-    echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels=removed offline:$OFFLINE; run resume-runners.sh again once they are online"
+    echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels=restored offline:$OFFLINE; run resume-runners.sh again once they are online"
     exit 2
   fi
   sleep "$POLL"
 done
-
-for name in $NAMES; do
-  has_label "$(runner_field "$TABLE" "$name" 5)" && continue
-  add_label "$(runner_field "$TABLE" "$name" 1)" || echo "could not add $LABEL to $name"
-done
-TABLE=$(github_runners) || TABLE=""
-STATES=$(label_states "$NAMES" "$TABLE")
-case " $STATES " in
-  *=off\ * | *=unread\ *) MISSING=1 ;;
-  *) MISSING="" ;;
-esac
-if [ -n "$MISSING" ]; then
-  echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels: $STATES; queued jobs keep waiting, run resume-runners.sh again"
-  exit 1
-fi
 echo "RUNNER_RESUMED labels=restored runners=$(echo $NAMES)"
