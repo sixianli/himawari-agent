@@ -90,6 +90,20 @@ describe("probe source digests", () => {
     ]);
   });
 
+  it("fails when a bootstrap entry has an upper-case digest the packet check cannot read", () => {
+    const root = fixture({ extraBootstrap: `  "sandbox-sdk-extra.js": "${"C".repeat(64)}",\n` });
+    expect(probeSourceProblems(root)).toEqual([
+      `PROBE_BOOTSTRAP_ENTRY_FORMAT "sandbox-sdk-extra.js": "${"C".repeat(64)}",`,
+    ]);
+  });
+
+  it("fails when a bootstrap entry has a digest one character short", () => {
+    const root = fixture({ extraBootstrap: `  "sandbox-sdk-extra.js": "${"c".repeat(63)}",\n` });
+    expect(probeSourceProblems(root)).toEqual([
+      `PROBE_BOOTSTRAP_ENTRY_FORMAT "sandbox-sdk-extra.js": "${"c".repeat(63)}",`,
+    ]);
+  });
+
   it("fails when a recorded bootstrap entry has no trailing comma", () => {
     const root = fixture();
     writeFileSync(

@@ -9,6 +9,7 @@ const SOURCE_DIRECTORY = "packages/runtime-sandbox/src/";
 const BUILT_NAME = /^[a-z-]+\.js$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const PACKET_CHECK_ENTRY = /(?<=^|\n)\s+"([a-z-]+\.js)": "([0-9a-f]{64})",(?=\n|$)/g;
+const OTHER_LINE_IN_ORIGINALS = /^\s*"[^"]*"\s*:|[0-9a-f]{64}/i;
 const REFRESH_HINT =
   "PROBE_SOURCES_REFRESH build the candidate on Hermes, put the new runtime-sandbox/dist digests into the probe bootstrap and both digests into " +
   RECORD;
@@ -67,7 +68,7 @@ function bootstrapDigests(text) {
   }
   lines.forEach((line, index) => {
     const inside = index > start && index < end;
-    if (inside && !entryLines.has(index) && /[0-9a-f]{64}/.test(line))
+    if (inside && !entryLines.has(index) && OTHER_LINE_IN_ORIGINALS.test(line))
       parsed.malformed.push(line.trim());
   });
   return parsed;
