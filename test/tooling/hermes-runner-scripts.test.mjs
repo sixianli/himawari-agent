@@ -664,6 +664,7 @@ describe("runner units and shared limits", () => {
       MemoryHigh: "13G",
       MemoryMax: "14G",
       MemorySwapMax: "0",
+      TasksMax: "4096",
     });
     for (const key of ["CPUQuota", "CPUWeight", "IOWeight"]) {
       expect(slice()).not.toHaveProperty(key);
@@ -688,6 +689,8 @@ describe("runner units and shared limits", () => {
         WorkingDirectory: `${root}/runner`,
         MemoryHigh: "12G",
         MemoryMax: "13G",
+        MemorySwapMax: "0",
+        TasksMax: "2048",
         ProtectProc: "invisible",
         ReadWritePaths: `${root}/runner ${root}/home ${root}/logs`,
       });
