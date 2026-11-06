@@ -20,12 +20,8 @@ Environment=HOME=@ROOT@/home
 Environment=ACTIONS_RUNNER_HOOK_JOB_STARTED=@ROOT@/hooks/job-started.sh
 Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=@ROOT@/hooks/job-completed.sh
 UMask=0022
-Nice=10
-CPUQuota=200%
-CPUWeight=20
-IOWeight=20
-MemoryHigh=6G
-MemoryMax=7G
+MemoryHigh=12G
+MemoryMax=13G
 MemorySwapMax=0
 TasksMax=2048
 NoNewPrivileges=yes
