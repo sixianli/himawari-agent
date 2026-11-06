@@ -2278,24 +2278,110 @@ describe("opencode review merge gate", () => {
       const second = f.commit({ "code.txt": "fixed\n" }, "fix");
       f.writeLedger([
         ok(1, f.reviewed, deepseek),
-        ok(1, f.reviewed, glm),
-        ok(2, second, deepseek),
-        ok(2, second, glm, { outcome: "timeout" }),
+        ok(1, f.reviewed, glm, { outcome: "timeout" }),
+        ok(2, second, deepseek, { outcome: "timeout" }),
+        ok(2, second, glm),
         { cost: 0.05, round: 3, mode: "plan", model: glm, head: f.reviewed, outcome: "ok" },
       ]);
-      const result = f.check();
-      expect(result.round).toBe(1);
-      expect(result.problems).toEqual(["unreviewed code.txt"]);
+      expect(f.check().problems).toEqual(["no-complete-round"]);
       const head = f.git("rev-parse", "HEAD");
       f.git("checkout", "--quiet", head);
       f.writeLedger([
         ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm, { outcome: "timeout" }),
         ok(1, f.reviewed, glm),
-        ok(2, second, deepseek),
-        ok(2, second, glm, { outcome: "timeout" }),
+        ok(2, second, deepseek, { outcome: "timeout" }),
         ok(2, second, glm),
       ]);
-      expect(f.check()).toMatchObject({ round: 2, problems: [] });
+      const result = f.check();
+      expect(result.round).toBe(1);
+      expect(result.problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review chain] a DeepSeek round after a full round covers the later commit", () => {
+    const f = fixture();
+    try {
+      const second = f.commit({ "code.txt": "fixed\n" }, "fix");
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm), ok(2, second, deepseek)]);
+      const result = f.check();
+      expect(result).toMatchObject({ round: 2, reviewed: second, problems: [] });
+      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:both round-2:deepseek");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review chain] counts GLM alone only when it stood in for DeepSeek", () => {
+    const f = fixture();
+    try {
+      const second = f.commit({ "code.txt": "fixed\n" }, "fix");
+      const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)];
+      f.writeLedger([...first, ok(2, second, glm)]);
+      expect(f.check()).toMatchObject({ round: 1, problems: ["unreviewed code.txt"] });
+      f.writeLedger([...first, ok(2, second, glm, { substitute: true, substituteFor: glm })]);
+      expect(f.check()).toMatchObject({ round: 1, problems: ["unreviewed code.txt"] });
+      f.writeLedger([
+        ...first,
+        ok(2, second, deepseek, { outcome: "api-error" }),
+        ok(2, second, glm, { substitute: true, substituteFor: deepseek }),
+      ]);
+      const result = f.check();
+      expect(result).toMatchObject({ round: 2, problems: [] });
+      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:both round-2:substitute");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review chain] refuses a DeepSeek round on a commit the full round never led to", () => {
+    const f = fixture();
+    try {
+      f.git("checkout", "--quiet", "-b", "side", f.main);
+      const rewritten = f.commit({ "code.txt": "rewritten\n" }, "rewritten");
+      f.git("checkout", "--quiet", "feature");
+      f.git(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "merge",
+        "--quiet",
+        "-s",
+        "ours",
+        "-m",
+        "take side",
+        "side",
+      );
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, rewritten, deepseek),
+      ]);
+      const result = f.check();
+      expect(result.problems).toEqual([`chain-broken round=2 ${rewritten}`]);
+      expect(f.check({ acceptUnreviewed: "合并" }).lines).toContain(
+        "REVIEW_OVERRIDE_REFUSED rounds=2 needs=3 only-unreviewed-files",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review chain] the report accepts a DeepSeek-only last round and flags a failed one", () => {
+    const f = fixture();
+    try {
+      const second = f.commit({ "code.txt": "fixed\n" }, "fix");
+      const report = (stop) => reviewReport({ repo: f.repo, pr: 7, mainRef: "origin/main", stop });
+      const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)];
+      f.writeLedger([...first, ok(2, second, deepseek)]);
+      expect(report("no-error").at(-2)).toBe("停下的原因：没有“会出错”的意见");
+      expect(() => report("run-failed")).toThrow("REPORT_STOP_INCONSISTENT run-failed");
+      f.writeLedger([...first, ok(2, second, deepseek, { outcome: "timeout" })]);
+      expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
+      expect(report("run-failed").at(-2)).toBe("停下的原因：有模型没跑完（outcome 不是 ok）");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2874,6 +2960,48 @@ describe("opencode review spending", () => {
     expect(nextRound([])).toBe(1);
     expect(nextRound([record(0.1, 1), record(0.1, 1), record(0.1, 2)])).toBe(3);
     expect(nextRound([{ cost: 0.1 }])).toBe(2);
+  });
+
+  it("[review chain] needs both models in the first code-review round and defaults to DeepSeek later", () => {
+    const base = ["--head", "a", "--base", "b", "--brief", "b.md", "--pr", "7"];
+    expect(parseArgs(base).models).toEqual(REVIEW_MODELS);
+    expect(() => parseArgs([...base, "--models", "deepseek-v4.1-flash"])).toThrow(
+      "ARG_FIRST_ROUND_NEEDS_BOTH_MODELS",
+    );
+    expect(parseArgs([...base, "--models", "glm-5.3-flash", "--round", "1"]).models).toEqual([
+      REVIEW_MODELS[1],
+    ]);
+    expect(parseArgs([...base, "--previous", "c"]).models).toEqual([REVIEW_MODELS[0]]);
+    expect(
+      parseArgs([...base, "--previous", "c", "--models", "deepseek-v4.1-flash,glm-5.3-flash"])
+        .models,
+    ).toEqual(REVIEW_MODELS);
+    const plan = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--topic", "t"];
+    expect(parseArgs([...plan, "--models", "glm-5.3-flash"]).models).toEqual([REVIEW_MODELS[1]]);
+    expect(
+      parseArgs([
+        "--mode",
+        "plan-review",
+        "--head",
+        "a",
+        "--brief",
+        "b.md",
+        "--topic",
+        "t",
+        "--models",
+        "deepseek-v4.1-flash",
+      ]).models,
+    ).toEqual([REVIEW_MODELS[0]]);
+  });
+
+  it("[review chain] gives DeepSeek the same fixed prompt with or without a previous round", () => {
+    const questions = reviewQuestions(instructions);
+    const common = { mode: "code-review", model: REVIEW_MODELS[0], questions, base: "b" };
+    const first = buildPrompt({ ...common, head: "h1", brief: "第一轮" });
+    const later = buildPrompt({ ...common, head: "h2", previous: "h1", brief: "第二轮" });
+    const fixedEnd = first.indexOf("---- 本次材料 ----");
+    expect(later.slice(0, fixedEnd)).toBe(first.slice(0, fixedEnd));
+    expect(first.slice(0, fixedEnd)).toContain("规则文件、说明文档和代码是否一致");
   });
 
   it("reruns only the models asked for", () => {

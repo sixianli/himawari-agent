@@ -178,7 +178,7 @@ const MODE_TEXT = {
 export const LENS_MODES = ["code-review", "plan-review"];
 export const MODEL_LENSES = {
   "deepseek-v4.1-flash":
-    "你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作。另一个复核者侧重别的方面，所以你仍要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。",
+    "你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作，以及规则文件、说明文档和代码是否一致。有时另有一个复核者侧重别的方面，有时只有你一个，所以你都要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。",
   "glm-5.3-flash":
     "你的额外侧重：测试有没有覆盖这次改动、文档和规则与代码是否一致；挑一条最普通的使用流程，从入口走到结束，标出经过的、没有测试覆盖的代码路径。另一个复核者侧重别的方面，所以你仍要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你走过的流程和结论。",
 };
@@ -893,6 +893,36 @@ export function lastCompleteRound(records, models = REVIEW_MODELS) {
   return null;
 }
 
+export function coveragePoints(records) {
+  const start = lastCompleteRound(records);
+  if (!start) return null;
+  const reviews = records.filter((record) => record.mode === "code-review");
+  const later = [...new Set(reviews.map((record) => record.round ?? 1))]
+    .filter((round) => round > start.round)
+    .sort((a, b) => a - b);
+  const points = [{ round: start.round, head: start.head, by: "both" }];
+  for (const round of later) {
+    const covering = reviews.filter(
+      (record) =>
+        (record.round ?? 1) === round &&
+        record.outcome === "ok" &&
+        (record.model === REVIEW_MODELS[0] ||
+          (record.substitute === true &&
+            record.substituteFor === REVIEW_MODELS[0] &&
+            record.model === SUBSTITUTES[REVIEW_MODELS[0]])),
+    );
+    if (covering.length === 0) continue;
+    const heads = [...new Set(covering.map((record) => record.head))];
+    if (heads.length !== 1)
+      throw new Error(`REVIEW_ROUND_HEADS_DIFFER ${round} ${heads.join(",")}`);
+    const by = covering.some((record) => record.model === REVIEW_MODELS[0])
+      ? "deepseek"
+      : "substitute";
+    points.push({ round, head: heads[0], by });
+  }
+  return points;
+}
+
 function gitStatus(args, cwd) {
   return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 }
@@ -910,12 +940,18 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   const head = git(["rev-parse", "HEAD"], repo);
   const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
   const records = shown.status === 0 ? parseUsage(shown.stdout, `HEAD:${ledgerPath}`) : null;
-  const complete = records ? lastCompleteRound(records) : null;
+  const points = records ? coveragePoints(records) : null;
+  const complete = points?.at(-1) ?? null;
+  const isAncestor = (from, to) =>
+    gitStatus(["merge-base", "--is-ancestor", from, to], repo).status === 0;
+  const broken = (points ?? []).find(
+    (point, index) => index > 0 && !isAncestor(points[index - 1].head, point.head),
+  );
   const problems = [];
   if (!records) problems.push("ledger-not-committed");
   else if (!complete) problems.push("no-complete-round");
-  else if (gitStatus(["merge-base", "--is-ancestor", complete.head, head], repo).status !== 0)
-    problems.push(`not-ancestor ${complete.head}`);
+  else if (broken) problems.push(`chain-broken round=${broken.round} ${broken.head}`);
+  else if (!isAncestor(complete.head, head)) problems.push(`not-ancestor ${complete.head}`);
   else
     for (const file of changedOutside(repo, complete.head, head, ledgerPath))
       problems.push(`unreviewed ${printable(file)}`);
@@ -924,10 +960,14 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
     problems.push(`main-not-merged ${printable(mainRef)}`);
   const summary = `pr=${pr} round=${complete?.round ?? "none"} reviewed=${complete?.head ?? "none"} head=${head}`;
+  const chain =
+    points && points.length > 1
+      ? [`REVIEW_CHAIN ${points.map((point) => `round-${point.round}:${point.by}`).join(" ")}`]
+      : [];
   const lines =
     problems.length === 0
-      ? [`REVIEW_CURRENT ${summary}`]
-      : [`REVIEW_NOT_CURRENT ${summary}`, ...problems.map((problem) => `  ${problem}`)];
+      ? [`REVIEW_CURRENT ${summary}`, ...chain]
+      : [`REVIEW_NOT_CURRENT ${summary}`, ...chain, ...problems.map((problem) => `  ${problem}`)];
   const reviewRounds = new Set(
     (records ?? [])
       .filter((record) => record.mode === "code-review")
@@ -998,7 +1038,8 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
   const reviews = records.filter((record) => record.mode === "code-review");
   const rounds = [...new Set(reviews.map((record) => record.round ?? 1))];
   const latest = Math.max(0, ...rounds);
-  const latestComplete = lastCompleteRound(records)?.round === latest && latest > 0;
+  const latestComplete =
+    latest > 0 && (coveragePoints(records) ?? []).some((point) => point.round === latest);
   const gate = assertReviewed({ repo, pr, mainRef });
   const consistent = {
     "no-error": latestComplete && gate.problems.length === 0,
@@ -1818,6 +1859,12 @@ export function parseArgs(argv) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
+  if (options.mode === "code-review" && !options.selfCheckOnly) {
+    const firstRound = !options.previous && options.round === undefined;
+    if (firstRound && options.models.length !== REVIEW_MODELS.length)
+      throw new Error("ARG_FIRST_ROUND_NEEDS_BOTH_MODELS");
+    if (options.previous && !given.has("--models")) options.models = [REVIEW_MODELS[0]];
+  }
   if (!options.selfCheckOnly) {
     if (options.out !== undefined) throw new Error("ARG_OUT_ONLY_FOR_SELF_CHECK");
     if (options.pr !== undefined && options.topic !== undefined)
