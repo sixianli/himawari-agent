@@ -180,7 +180,7 @@ export const MODEL_LENSES = {
   "deepseek-v4.1-flash":
     "你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作，以及规则文件、说明文档和代码是否一致。有时另有一个复核者侧重别的方面，有时只有你一个，所以你都要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。",
   "glm-5.3-flash":
-    "你的额外侧重：测试有没有覆盖这次改动、文档和规则与代码是否一致；挑一条最普通的使用流程，从入口走到结束，标出经过的、没有测试覆盖的代码路径。另一个复核者侧重别的方面，所以你仍要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你走过的流程和结论。",
+    "你的额外侧重：测试有没有覆盖这次改动、文档和规则与代码是否一致；挑一条最普通的使用流程，从入口走到结束，标出经过的、没有测试覆盖的代码路径。有时另有一个复核者侧重别的方面，有时只有你一个，所以你都要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你走过的流程和结论。",
 };
 
 export function lensFor(mode, model) {
@@ -882,22 +882,6 @@ export function resultLine(record) {
   return `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`;
 }
 
-export function lastCompleteRound(records, models = REVIEW_MODELS) {
-  const reviews = records.filter((record) => record.mode === "code-review");
-  const rounds = [...new Set(reviews.map((record) => record.round ?? 1))].sort((a, b) => b - a);
-  for (const round of rounds) {
-    const passed = reviews.filter(
-      (record) => (record.round ?? 1) === round && record.outcome === "ok",
-    );
-    if (!models.every((model) => passed.some((record) => record.model === model))) continue;
-    const heads = [...new Set(passed.map((record) => record.head))];
-    if (heads.length !== 1)
-      throw new Error(`REVIEW_ROUND_HEADS_DIFFER ${round} ${heads.join(",")}`);
-    return { round, head: heads[0] };
-  }
-  return null;
-}
-
 export const LOW_FIX_MAX_FILES = 5;
 export const LOW_FIX_MAX_LINES_PER_FILE = 30;
 export const VERDICT_CLASSES = ["error", "better"];
@@ -906,6 +890,7 @@ const VERDICT_TEXT_FIELDS = ["id", "model", "quote"];
 const LOW_MODEL_SEVERITY = /^(?:低|low|minor|轻微|nit)/i;
 
 export function isTestFile(path) {
+  if (path.endsWith(".md")) return false;
   return (
     /(?:^|\/)(?:test|tests|__tests__)\//.test(path) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path)
   );
@@ -988,7 +973,7 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
     const match = /^(-|\d+)\t(-|\d+)\t([\s\S]+)$/.exec(entry);
     if (!match || match[3].startsWith(`${ledgerPath}/`)) continue;
     const lines = match[1] === "-" ? Infinity : Number(match[1]) + Number(match[2]);
-    changes.push({ file: match[3], lines });
+    changes.push({ file: match[3], lines, added: match[1] === "-" ? 0 : Number(match[1]) });
   }
   if (changes.length === 0) problems.push("no-changes");
   if (changes.length > LOW_FIX_MAX_FILES)
@@ -998,8 +983,15 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
       problems.push(
         `too-many-lines ${printable(change.file)} ${change.lines} max=${LOW_FIX_MAX_LINES_PER_FILE}`,
       );
+  for (const change of changes)
+    if (/[\r\n]/.test(change.file))
+      problems.push(`file-name-has-line-break ${printable(change.file)}`);
   const docsOnly = changes.every((change) => change.file.endsWith(".md"));
-  if (changes.length > 0 && !docsOnly && !changes.some((change) => isTestFile(change.file)))
+  if (
+    changes.length > 0 &&
+    !docsOnly &&
+    !changes.some((change) => isTestFile(change.file) && change.added > 0)
+  )
     problems.push("no-test-change");
   return { problems, files: changes.map((change) => change.file), errors };
 }
@@ -1060,6 +1052,7 @@ export function walkChain(points, { isAncestor, lowFixCheck }) {
     const problems = [];
     if (point.by === "low-fix") {
       if (point.from !== covered || !isAncestor(covered, point.head)) problems.push("chain-broken");
+      else if (accepted.at(-1).by === "low-fix") problems.push("second-low-fix");
       else problems.push(...lowFixCheck(point));
     } else if (
       !point.previous ||
@@ -1184,6 +1177,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     else if (!problems.every((problem) => problem.startsWith("unreviewed ")))
       reasons.push("only-unreviewed-files");
     else if (complete.round !== acceptLow) reasons.push(`not-last-round last=${complete.round}`);
+    else if (complete.by === "low-fix") reasons.push(`already-low-fixed round=${acceptLow}`);
     const check =
       reasons.length === 0
         ? lowFixProblems({ repo, ledgerPath, round: acceptLow, from: complete.head, to: head })
@@ -1270,8 +1264,13 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     .filter((record) => record.mode === "low-fix")
     .flatMap((record) => {
       const path = `${ledgerPath}/round-${record.round}/verdicts.jsonl`;
-      const text = gitStatus(["show", `HEAD:${path}`], repo);
-      const verdicts = text.status === 0 ? parseVerdicts(text.stdout, path) : [];
+      const text = gitStatus(["show", `${record.head}:${path}`], repo);
+      let verdicts = [];
+      try {
+        if (text.status === 0) verdicts = parseVerdicts(text.stdout, path);
+      } catch {
+        verdicts = [];
+      }
       return [
         `REVIEW_LOW_FIX round=${record.round} from=${record.from} head=${record.head} files=${record.files.map(printable).join(",")}`,
         ...record.findings.map((id) => {

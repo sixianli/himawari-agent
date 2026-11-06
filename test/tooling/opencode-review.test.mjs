@@ -235,6 +235,10 @@ describe("opencode review prompt", () => {
       const b = buildPrompt({ ...common, mode, model: glm });
       expect(a).toBe(buildPrompt({ ...common, mode, model: deepseek }));
       expect(a).toContain(MODEL_LENSES["deepseek-v4.1-flash"]);
+      for (const lens of Object.values(MODEL_LENSES)) {
+        expect(lens).toContain("有时只有你一个");
+        expect(lens).not.toContain("另一个复核者侧重别的方面");
+      }
       expect(a).not.toContain(MODEL_LENSES["glm-5.3-flash"]);
       expect(b).toContain(MODEL_LENSES["glm-5.3-flash"]);
       expect(b).not.toContain(MODEL_LENSES["deepseek-v4.1-flash"]);
@@ -2503,6 +2507,79 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  it("[low fix] allows one low-fix per round and reports the quotes from the record's own commit", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "low fix");
+      expect(f.check({ acceptLow: 1 }).overridden).toBe(true);
+      const firstFix = f.commitLedgerOnDisk();
+      f.commit(
+        {
+          [`${REVIEWS_DIR}/pr-7/round-1/verdicts.jsonl`]: `${JSON.stringify(verdict({ quote: "改过的原话" }))}\n`,
+        },
+        "edit verdicts after acceptance",
+      );
+      const report = reviewReport({
+        repo: f.repo,
+        pr: 7,
+        mainRef: "origin/main",
+        stop: "no-error",
+      });
+      expect(report).toContain(`  V1 deepseek-v4.1-flash：${verdict().quote}`);
+      f.commit(
+        { "code.txt": "fixed again\n", "test/code.test.mjs": "check again\n" },
+        "second fix",
+      );
+      expect(f.check({ acceptLow: 1 }).lines.at(-1)).toBe(
+        "REVIEW_LOW_FIX_REFUSED already-low-fixed round=1",
+      );
+      const ledger = readFileSync(join(f.repo, f.ledger), "utf8");
+      const head = f.git("rev-parse", "HEAD");
+      const lowFix = JSON.parse(ledger.trim().split("\n").at(-1));
+      f.commit(
+        {
+          [f.ledger]: `${ledger}${JSON.stringify({ ...lowFix, head, from: lowFix.head })}\n`,
+        },
+        "hand-written second low-fix",
+      );
+      expect(f.check().problems).toEqual(["low-fix-invalid round=1 second-low-fix"]);
+      expect(firstFix).toMatch(/^[0-9a-f]{40}$/);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] needs a test file with added lines and refuses file names with line breaks", () => {
+    const refusal = (prepare) => {
+      const f = lowFixFixture();
+      try {
+        prepare(f);
+        return f.check({ acceptLow: 1 }).lines.at(-1);
+      } finally {
+        rmSync(f.root, { recursive: true, force: true });
+      }
+    };
+    expect(
+      refusal((f) => f.commit({ "code.txt": "fixed\n", "test/README.md": "notes\n" }, "fix")),
+    ).toBe("REVIEW_LOW_FIX_REFUSED no-test-change");
+    expect(
+      refusal((f) => {
+        f.commit({ "test/old.test.mjs": "old\n" }, "add a test");
+        f.writeLedger([
+          ok(1, f.git("rev-parse", "HEAD"), deepseek),
+          ok(1, f.git("rev-parse", "HEAD"), glm),
+        ]);
+        f.git("rm", "-q", "test/old.test.mjs");
+        f.commit({ "code.txt": "fixed\n" }, "delete the test");
+      }),
+    ).toBe("REVIEW_LOW_FIX_REFUSED no-test-change");
+    expect(
+      refusal((f) =>
+        f.commit({ "code.txt": "fixed\n", "test/odd\nname.test.mjs": "check\n" }, "fix"),
+      ),
+    ).toBe('REVIEW_LOW_FIX_REFUSED file-name-has-line-break "test/odd\\nname.test.mjs"');
+  });
+
   it("[low fix] lets a docs-only fix through without a test change", () => {
     const f = lowFixFixture();
     try {
@@ -3342,7 +3419,13 @@ describe("opencode review spending", () => {
       "x/__tests__/b.js",
     ])
       expect(isTestFile(path)).toBe(true);
-    for (const path of ["src/a.ts", "testing/a.ts", "docs/test.md", "latest/a.mjs"])
+    for (const path of [
+      "src/a.ts",
+      "testing/a.ts",
+      "docs/test.md",
+      "latest/a.mjs",
+      "test/README.md",
+    ])
       expect(isTestFile(path)).toBe(false);
   });
 
