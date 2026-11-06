@@ -26,7 +26,7 @@ date: "2026-09-11"
 4. Pi 适配层验证原生数据，恢复时保留 SessionManager 支持的原生自定义消息类型；不将取消事件提前转换为普通用户消息再存回历史。Pi 在实际模型输入阶段负责转换。新的产品材料替换旧材料；工具结果、拒绝、错误、摘要与模型来源保留。
 5. 消息结束及压缩完成时保存快照。持久化失败阻止后续模型或工具执行。停止等待最后一次保存；审批等待保留真实调用，忽略本地退出错误。
 
-Pi 适配层保留固定版本自带的工具说明与使用规则：发给模型的系统提示里必须带上 Pi 内置工具的 `promptSnippet` 和 `promptGuidelines`，不能丢弃。`systemPrompt` 与 `appendSystemPrompt` 的文件来源显式设为空，禁止自动发现工作目录中的 `SYSTEM.md`、`APPEND_SYSTEM.md`，也不能把产品策略文本解释成本地文件路径。工具授权、审批和受保护历史仍由 Himawari 管理。
+Pi 适配层保留固定版本自带的工具说明与使用规则：发给模型的系统提示里带上 Pi 内置工具的 `promptSnippet` 和 `promptGuidelines`。例外是和 Himawari 实际行为相反的几处：read 的说明和用法规则、bash 的说明和 `timeout` 参数说明换成 `packages/prompt-catalog` 里的中文条目，bash 的 `PI_*` 用法规则去掉（[ADR 0166](../../adr/0166-prompt-wording-batch-1-system-and-tools.md)，Andy 2026-11-05 决定）；被替换的 Pi 原文存有快照，Pi 升级后原文变了检查会失败。`systemPrompt` 与 `appendSystemPrompt` 的文件来源显式设为空，禁止自动发现工作目录中的 `SYSTEM.md`、`APPEND_SYSTEM.md`，也不能把产品策略文本解释成本地文件路径。工具授权、审批和受保护历史仍由 Himawari 管理。
 
 2026-10-26 补充（[ADR 0084](../../adr/0084-himawari-identity-system-prompt.md)）：原做法是保留 Pi 默认提示、再用 `appendSystemPromptOverride` 追加产品策略（与 Cindy 相同），结果系统提示开头一直是 Pi 的英文“编程助手”说明。现在改用 `systemPromptOverride` 传入“产品系统指令（以 Himawari 身份说明开头）+ 文件与命令工具简介 + 工具用法”，工具简介和用法规则原样取自 Pi 内置工具定义，上面保留工具说明的要求不变。
 

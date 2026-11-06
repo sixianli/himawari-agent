@@ -2,7 +2,6 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  assertMachineSecretFree,
   type CapabilityDeploymentConfiguration,
   isWebProviderId,
   WEB_FETCH_MAXIMUM_BYTES,
@@ -26,6 +25,7 @@ import {
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
 } from "@himawari-agent/application";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
@@ -1073,6 +1073,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "version",
       "timeZone",
       "systemInstruction",
+      "freezeThreadPrompts",
       "memoryLimit",
       "maxSelectedMemories",
       "maxMemoryClassification",
@@ -1125,6 +1126,14 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
+    ...(input["freezeThreadPrompts"] === undefined
+      ? {}
+      : {
+          freezeThreadPrompts: boolean(
+            input["freezeThreadPrompts"],
+            "configuration.runPolicy.freezeThreadPrompts",
+          ),
+        }),
     memoryLimit,
     maxSelectedMemories: integer(
       input["maxSelectedMemories"],

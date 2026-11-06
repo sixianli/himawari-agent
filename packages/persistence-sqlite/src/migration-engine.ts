@@ -609,6 +609,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0076_proactive_processed_received_at.sql",
   },
+  {
+    sequence: 77,
+    name: "thread_prompt_bundles",
+    changeSet: "thread-prompt-bundles",
+    phase: "expand" as const,
+    file: "0077_thread_prompt_bundles.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

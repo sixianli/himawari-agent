@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:349b1bef1d31fe7b333811042f078dd736118d46789365e7a28cbce302a4a12a"
+contract_sha256: "sha256:cae601d97064f8f8ff5669c311365ced6d5ab9d4e924a451cf1a008df2903b3e"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -14,7 +14,7 @@ date: "2026-11-04"
 - scripts/operations/hermes-runner
 -->
 
-本手册说明 Hermes（家里的 Linux 服务器，Ubuntu 22.04，主机名 `hermes-home`）上那两个 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）怎么安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0160](../adr/0160-self-hosted-runner-on-hermes.md) 和 [ADR 0164](../adr/0164-two-runners-on-hermes.md)。
+本手册说明 Hermes（家里的 Linux 服务器，Ubuntu 22.04，主机名 `hermes-home`）上那两个 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）怎么安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0160](../adr/0160-self-hosted-runner-on-hermes.md) 和 [ADR 0171](../adr/0171-two-runners-on-hermes.md)。
 
 <a id="contents"></a>
 
@@ -70,7 +70,7 @@ date: "2026-11-04"
 
 ## Authoritative Sources
 
-- 决定和理由：[SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]、[SOURCE: docs/adr/0164-two-runners-on-hermes.md]、[SOURCE: docs/adr/0168-longer-ci-job-limits-on-hermes.md]、[SOURCE: docs/adr/0169-pause-runners-by-removing-the-label.md]、[SOURCE: docs/adr/0170-more-memory-for-hermes-runners.md]、[SOURCE: docs/adr/0172-resume-runners-labels-first.md]
+- 决定和理由：[SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]、[SOURCE: docs/adr/0171-two-runners-on-hermes.md]、[SOURCE: docs/adr/0168-longer-ci-job-limits-on-hermes.md]、[SOURCE: docs/adr/0169-pause-runners-by-removing-the-label.md]、[SOURCE: docs/adr/0170-more-memory-for-hermes-runners.md]、[SOURCE: docs/adr/0172-resume-runners-labels-first.md]
 - 测试主机的硬边界：[测试主机与生产主机](../../.agents/instructions/test-and-production-hosts.md)
 - 安装、注册、卸载、暂停和恢复的脚本，以及服务和钩子的原文：[scripts/operations/hermes-runner/](../../scripts/operations/hermes-runner/)
 - 哪些任务跑在 runner 上：`ci/policy.json`、`.github/workflows/ci.yml`、`.github/workflows/main.yml`
@@ -187,7 +187,7 @@ date: "2026-11-04"
 
 ## Rollback
 
-触发条件：runner 影响到 Hermes 上的其他服务或受保护测试，或者 Andy 决定不再用它；或者第 2 个 runner 的一周试跑不达标（标准见 ADR 0164 决定第 8 条）。
+触发条件：runner 影响到 Hermes 上的其他服务或受保护测试，或者 Andy 决定不再用它；或者第 2 个 runner 的一周试跑不达标（标准见 ADR 0171 决定第 8 条）。
 
 **只卸第 2 个 runner**：
 
@@ -234,6 +234,6 @@ date: "2026-11-04"
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | Hermes 上浏览器依赖已装好，workflow 里去掉 `--with-deps`。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
-| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 9 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0164 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
+| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 9 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0171 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
 
 [↑ 返回阅读导航](#contents)

@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0164-two-runners-on-hermes.md"
+amends: "docs/adr/0171-two-runners-on-hermes.md"
 date: "2026-11-05"
 ---
 
@@ -17,7 +17,7 @@ date: "2026-11-05"
 - [背景](#context)
 - [Andy 的原话](#owner-decisions)
 - [决定](#decision)
-- [与 ADR 0164 的关系](#amendments)
+- [与 ADR 0171 的关系](#amendments)
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [关联文档](#references)
@@ -26,7 +26,7 @@ date: "2026-11-05"
 
 ## 背景
 
-Hermes（家里的 Linux 服务器，16 GB 内存，4 核，固态盘）上的两个 GitHub 自托管 runner（替 GitHub 执行 CI 任务的程序）放在同一个资源组 `gh-runners.slice` 里。按 [ADR 0164](0164-two-runners-on-hermes.md)，两个合计内存最多 6 GB（软上限 `MemoryHigh=5632M`），每个最多 5 GB（软上限 4608M）。软上限的作用：资源组碰到它，系统就强行回收这一组的内存，组里的进程会变慢。
+Hermes（家里的 Linux 服务器，16 GB 内存，4 核，固态盘）上的两个 GitHub 自托管 runner（替 GitHub 执行 CI 任务的程序）放在同一个资源组 `gh-runners.slice` 里。按 [ADR 0171](0171-two-runners-on-hermes.md)，两个合计内存最多 6 GB（软上限 `MemoryHigh=5632M`），每个最多 5 GB（软上限 4608M）。软上限的作用：资源组碰到它，系统就强行回收这一组的内存，组里的进程会变慢。
 
 CI 任务在 Hermes 上比 GitHub 托管机器慢得多，要查原因（[ADR 0168](0168-longer-ci-job-limits-on-hermes.md) 决定第 4 条）。2026-11-05 Mac 上的会话在 Hermes 上用只读命令量到：
 
@@ -70,9 +70,9 @@ CI 任务在 Hermes 上比 GitHub 托管机器慢得多，要查原因（[ADR 01
 
 <a id="amendments"></a>
 
-## 与 ADR 0164 的关系
+## 与 ADR 0171 的关系
 
-本 ADR 改动 ADR 0164 的两处：决定第 2 条里资源组的内存上限（6 GB 改为 9 GB），以及决定第 4 条所说每个 runner 的内存上限（5 GB 改为 7 GB）。CPU 上限和优先级不变，ADR 0164 的其他决定也不变。
+本 ADR 改动 ADR 0171 的两处：决定第 2 条里资源组的内存上限（6 GB 改为 9 GB），以及决定第 4 条所说每个 runner 的内存上限（5 GB 改为 7 GB）。CPU 上限和优先级不变，ADR 0171 的其他决定也不变。
 
 [↑ 返回阅读导航](#contents)
 
@@ -82,7 +82,7 @@ CI 任务在 Hermes 上比 GitHub 托管机器慢得多，要查原因（[ADR 01
 
 - **提高内存上限（选中）**：直接针对“缓存被反复清掉、再从磁盘重读”。runner 程序本身只占约 0.5 GB，多出来的主要是文件缓存，整机内存紧张时系统可以回收它，不会像程序内存那样挤垮别的服务。
 - **提高磁盘优先级 `IOWeight`**：磁盘优先级只决定和别的服务抢磁盘时谁先。停掉 runner 后几乎不再等磁盘，说明不是别的服务在抢，调它帮助小，反而会让 Hermes 上的其他服务变慢。
-- **同一时间只跑一个任务（停掉第二个 runner）**：每个任务能独占现在的 6 GB，但任务要排队。先试提高上限；量下来仍不好，再按 ADR 0164 决定第 8 条考虑撤掉第二个 runner。
+- **同一时间只跑一个任务（停掉第二个 runner）**：每个任务能独占现在的 6 GB，但任务要排队。先试提高上限；量下来仍不好，再按 ADR 0171 决定第 8 条考虑撤掉第二个 runner。
 
 [↑ 返回阅读导航](#contents)
 
@@ -100,7 +100,7 @@ CI 任务在 Hermes 上比 GitHub 托管机器慢得多，要查原因（[ADR 01
 
 ## 关联文档
 
-- [ADR 0164：Hermes 上跑两个常驻 runner](0164-two-runners-on-hermes.md)
+- [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
 - [ADR 0168：放宽 Hermes 上 CI 任务的整体时限](0168-longer-ci-job-limits-on-hermes.md)
 - [Hermes 自托管 runner 操作手册](../runbooks/hermes-self-hosted-runner-runbook.md)
 

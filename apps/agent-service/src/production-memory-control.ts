@@ -1,7 +1,6 @@
 import {
   ApplicationPortError,
   PORT_ERROR_CODES,
-  scanMachineSecrets,
   type ClockPort,
   type DurableMemoryService,
   type DecisionLedgerPort,
@@ -22,6 +21,10 @@ import {
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
 import {
+  containsRestrictedIdentifier,
+  scanMachineSecrets,
+} from "@himawari-agent/sensitive-capture";
+import {
   MEMORY_SENSITIVE_CATEGORY_NAMES,
   type GatewayV2Command,
   type GatewayV2Query,
@@ -29,7 +32,6 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 import {
-  containsRestrictedIdentifier,
   createProductionAutomaticMemory,
   protectedMemoryCandidates,
 } from "./production-memory-capture.js";

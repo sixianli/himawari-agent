@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  EGRESS_PLACEHOLDER_LEGEND,
-  EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
-  redactForEgress,
-} from "../src/index.js";
+import { redactForEgress } from "../src/index.js";
 
 const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["验证码中文", "您的验证码是 482910，5 分钟内有效", "您的验证码是 [验证码]，5 分钟内有效"],
@@ -124,18 +120,6 @@ describe("outbound redaction", () => {
       "verification-code",
     ]);
     expect(JSON.stringify(result.findings)).not.toContain("482910");
-  });
-
-  it("states what the placeholders mean in one fixed sentence", () => {
-    for (const legend of [EGRESS_PLACEHOLDER_LEGEND, EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE]) {
-      expect(legend).toContain("[验证码#abcdefgh]");
-      expect(legend).toContain("不要要求用户核实");
-      expect(legend).toContain("不要换成示例");
-      expect(legend).not.toContain("不要猜测");
-      expect(legend).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
-    }
-    expect(EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE).toContain("显示给用户时会换回原值");
-    expect(EGRESS_PLACEHOLDER_LEGEND).not.toContain("换回原值");
   });
 });
 

@@ -8,8 +8,8 @@ import {
   type SandboxExecutionRecord,
   type SandboxReservationReleaseVerification,
   sandboxReconciliationFailureReason,
-  scanMachineSecrets,
 } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   FIXED_FILE_COMPLETION_GUARANTEE,
   PI_COPY_SAVE_CONTRACT,

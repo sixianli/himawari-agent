@@ -8,7 +8,7 @@ amends: "docs/adr/0160-self-hosted-runner-on-hermes.md"
 date: "2026-11-05"
 ---
 
-# ADR 0164：Hermes 上跑两个常驻 runner，合计最多 3 核 6 GB
+# ADR 0171：Hermes 上跑两个常驻 runner，合计最多 3 核 6 GB
 
 <a id="contents"></a>
 

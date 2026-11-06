@@ -4,7 +4,6 @@ import type {
   AssistantMessageEvent,
   Context,
   FetchFunction,
-  UserMessage,
 } from "@earendil-works/pi-ai";
 import {
   type ClockPort,
@@ -18,10 +17,10 @@ import {
   type PayloadProtectionRequest,
   type PayloadProtectorPort,
   type PayloadStorePort,
-  StreamingMachineSecretRedactor,
 } from "@himawari-agent/application/runtime-port";
+import { StreamingMachineSecretRedactor } from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
-import { withPlaceholderLegendInPrompt } from "./egress-context.js";
+import { backgroundModelContext } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import type { PiModelBindingPort } from "./pi-runtime-adapter.js";
 
@@ -255,7 +254,7 @@ export class PiModelTransport {
 
     let prompt: string;
     try {
-      prompt = withPlaceholderLegendInPrompt(await this.#payloads.readText(request.inputRef));
+      prompt = await this.#payloads.readText(request.inputRef);
     } catch {
       yield failed(request, "AI_GATEWAY_INPUT_REJECTED", false, Date.now() - startedAt, now());
       return;
@@ -272,8 +271,7 @@ export class PiModelTransport {
       yield failed(request, "PI_MODEL_BINDING_MISMATCH", false, Date.now() - startedAt, now());
       return;
     }
-    const message: UserMessage = { role: "user", content: prompt, timestamp: Date.now() };
-    const context: Context = { messages: [message] };
+    const context: Context = backgroundModelContext(prompt, Date.now());
     let responseStatus = 0;
     let egressRefused = false;
     const exchange = this.#egress.exchange();

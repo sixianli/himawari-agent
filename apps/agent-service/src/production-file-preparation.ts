@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import {
-  containsToolOutputSecret,
-  scanMachineSecrets,
-  type CapabilityResourceCeiling,
-  type HostDirectoryGrant,
-} from "@himawari-agent/application";
+import type { CapabilityResourceCeiling, HostDirectoryGrant } from "@himawari-agent/application";
+import { containsToolOutputSecret, scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   sandboxPreparedFileSchema,
   type SandboxFileTarget,

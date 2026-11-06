@@ -29,7 +29,7 @@ import type {
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import { maskSensitiveText } from "./egress-redaction.js";
+import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
 import { plainModelText, windowMailBody } from "./proactive-mail-body.js";
 import {
   applyFloor,

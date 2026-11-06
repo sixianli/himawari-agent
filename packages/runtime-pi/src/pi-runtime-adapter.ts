@@ -8,6 +8,7 @@ import type {
   Message,
   Model,
   SimpleStreamOptions,
+  Tool,
   ToolResultMessage,
   UserMessage,
 } from "@earendil-works/pi-ai";
@@ -45,30 +46,41 @@ import type {
   RuntimeProjectionContent,
   RuntimeProjectionMessage,
   RuntimeProjectionPort,
+  RuntimePromptBundlePort,
   RuntimeRequest,
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
-import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import type { ModelEgress } from "@himawari-agent/application/runtime-port";
 import {
-  CHAT_CONTEXT_MATERIAL_MARKER,
+  redactMachineSecrets,
+  isSensitiveFieldName,
+  isSensitiveQueryParameter,
+} from "@himawari-agent/sensitive-capture";
+import {
   CHAT_TOOL_GUIDELINES_HEADER,
+  CHAT_TOOL_LOOP_REJECTED,
   CHAT_TOOL_LOOP_STOPPED,
   CHAT_TOOL_SNIPPETS_HEADER,
   CHAT_TURN_ABORTED,
   CHAT_TURN_CONTEXT_PREFACE,
   CHAT_TURN_TIME,
   renderPrompt,
-  TOOL_BUILTIN_READ_SUFFIX,
-  TOOL_BUILTIN_READONLY_SUFFIX,
-  TOOL_BUILTIN_WRITE_SUFFIX,
+  TOOL_POLICY_BLOCKED_FILE_AUTHORIZATION,
+  TOOL_POLICY_BLOCKED_FILE_REQUEST,
+  TOOL_POLICY_BLOCKED_HANDLE,
+  TOOL_POLICY_BLOCKED_MEMORY_RECALL,
+  TOOL_POLICY_BLOCKED_OTHER,
+  TOOL_POLICY_BLOCKED_REMINDER,
+  TOOL_POLICY_BLOCKED_TASK_MANAGEMENT,
 } from "@himawari-agent/prompt-catalog";
 import { observeCacheFields } from "./cache-usage-observation.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+import { himawariBuiltinToolText } from "./pi-builtin-tool-text.js";
 import { nativeHistoryMessages } from "./pi-native-history.js";
 import {
   capturePiToolBatch,
@@ -76,6 +88,11 @@ import {
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
+import {
+  contextBlockMarker,
+  runtimeEnvironmentAfterCompaction,
+  splitRuntimeEnvironment,
+} from "./runtime-environment-block.js";
 
 function previousFileConflict(
   messages: AgentSession["agent"]["state"]["messages"],
@@ -150,6 +167,11 @@ export interface PiRuntimeResourcePort {
 export interface PiAgentRuntimeAdapterDependencies {
   readonly egress: ModelEgress;
   readonly projection: RuntimeProjectionPort;
+  readonly promptBundles?: RuntimePromptBundlePort;
+  readonly onHandleTools?: (
+    request: RuntimeRequest,
+    observation: { readonly generation: number | null; readonly handleTools: number },
+  ) => void;
   readonly continuations?: RuntimeContinuationPort;
   readonly tools: RuntimeToolPort;
   readonly models: PiModelBindingPort;
@@ -296,7 +318,7 @@ function redactObservation(value: unknown, seen = new WeakSet<object>()): unknow
     try {
       const url = new URL(value);
       for (const key of [...url.searchParams.keys()]) {
-        if (/token|key|secret|password|signature|credential/i.test(key)) {
+        if (isSensitiveQueryParameter(key)) {
           url.searchParams.set(key, "[REDACTED]");
         }
       }
@@ -312,9 +334,7 @@ function redactObservation(value: unknown, seen = new WeakSet<object>()): unknow
 
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    result[key] = /authorization|cookie|token|api.?key|secret|password|credential/i.test(key)
-      ? "[REDACTED]"
-      : redactObservation(entry, seen);
+    result[key] = isSensitiveFieldName(key) ? "[REDACTED]" : redactObservation(entry, seen);
   }
   return result;
 }
@@ -355,6 +375,32 @@ function toolProgressOutput(
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
+
+const POLICY_BLOCKED_TEXT: Readonly<Record<string, string>> = {
+  TASK_RESOURCE_AUTHORITY_REQUIRED: TOOL_POLICY_BLOCKED_TASK_MANAGEMENT.text,
+  REMINDER_OWNER_SCOPE: TOOL_POLICY_BLOCKED_REMINDER.text,
+  MEMORY_RECALL_OWNER_SCOPE: TOOL_POLICY_BLOCKED_MEMORY_RECALL.text,
+  FILE_READ_REQUEST_INVALID: TOOL_POLICY_BLOCKED_FILE_REQUEST.text,
+  FILE_READ_AUTHORIZATION_UNAVAILABLE: TOOL_POLICY_BLOCKED_FILE_AUTHORIZATION.text,
+  GOVERNED_HANDLE_INVALID: TOOL_POLICY_BLOCKED_HANDLE.text,
+};
+
+function policyBlockedText(reasonCode: string): string {
+  return Object.hasOwn(POLICY_BLOCKED_TEXT, reasonCode)
+    ? (POLICY_BLOCKED_TEXT[reasonCode] as string)
+    : TOOL_POLICY_BLOCKED_OTHER.text;
+}
+
+const TOOL_LOOP_STOPPED_MESSAGE_TYPE = "himawari.tool-loop.stopped";
+
+function toolLoopStoppedMessage() {
+  return {
+    customType: TOOL_LOOP_STOPPED_MESSAGE_TYPE,
+    content: CHAT_TOOL_LOOP_STOPPED.text,
+    display: false,
+    details: {},
+  };
+}
 
 function backgroundCommandMessage(notice: RuntimeBackgroundCommandNotice) {
   return {
@@ -466,6 +512,42 @@ type PiToolDefinitionText = Pick<
   | "constrainedSampling"
 >;
 
+function frozenToolText(definition: PiToolDefinitionText) {
+  return {
+    name: definition.name,
+    label: definition.label,
+    description: definition.description,
+    parameters: definition.parameters,
+    ...(definition.promptSnippet === undefined ? {} : { promptSnippet: definition.promptSnippet }),
+    ...(definition.promptGuidelines === undefined
+      ? {}
+      : { promptGuidelines: definition.promptGuidelines }),
+    ...(definition.constrainedSampling === undefined
+      ? {}
+      : { constrainedSampling: definition.constrainedSampling }),
+  };
+}
+
+function providerTool(
+  definition: Pick<Tool, "name" | "description" | "parameters" | "constrainedSampling">,
+): Tool {
+  return {
+    name: definition.name,
+    description: definition.description,
+    parameters: definition.parameters,
+    ...(definition.constrainedSampling === undefined
+      ? {}
+      : { constrainedSampling: definition.constrainedSampling }),
+  };
+}
+
+function isHandleTool(descriptor: RuntimeToolDescriptor): boolean {
+  return (
+    descriptor.capabilityHandleRef !== null ||
+    ("handleBound" in descriptor && descriptor.handleBound === true)
+  );
+}
+
 function productSystemPrompt(
   systemInstruction: string,
   tools: readonly PiToolDefinitionText[],
@@ -507,7 +589,14 @@ function localTime(occurredAt: string, timeZone: string): string {
   }).format(new Date(occurredAt));
 }
 
+function localWeekday(occurredAt: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("zh-CN", { timeZone, weekday: "long" }).format(
+    new Date(occurredAt),
+  );
+}
+
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
+  const { blocks, environment } = splitRuntimeEnvironment(projection);
   return [
     "<himawari-context>",
     CHAT_TURN_CONTEXT_PREFACE.text,
@@ -515,8 +604,10 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
       occurredAt: projection.prompt.occurredAt,
       timeZone,
       localTime: localTime(projection.prompt.occurredAt, timeZone),
+      weekday: localWeekday(projection.prompt.occurredAt, timeZone),
     }),
-    ...projection.contextBlocks.map(contextBlockContent),
+    ...blocks.map(contextBlockContent),
+    ...(environment ? [contextBlockContent(environment)] : []),
     "</himawari-context>",
     "",
     "<owner-message>",
@@ -526,14 +617,7 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
 }
 
 function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
-  const metadata = JSON.stringify({
-    authority: block.authority,
-    kind: block.kind,
-    ref: block.ref,
-    ...(block.sourceRef ? { sourceRef: block.sourceRef } : {}),
-    ...(block.productRole ? { productRole: block.productRole } : {}),
-  });
-  return `${renderPrompt(CHAT_CONTEXT_MATERIAL_MARKER, { metadata })}\n${block.content}`;
+  return `${contextBlockMarker(block)}\n${block.content}`;
 }
 
 function sessionModelRuntime(binding: PiModelBinding): ModelRuntime {
@@ -1130,17 +1214,50 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         throw new TypeError("RUNTIME_PROJECTION_EMPTY_PROMPT");
       }
       const turn = turnPrompt(projection, this.#dependencies.timeZone ?? "UTC");
-      const systemPrompt = productSystemPrompt(
-        projection.systemInstruction,
-        descriptors.map((descriptor) => this.toolDefinition(descriptor)),
+      const frozenDescriptors = descriptors.filter((descriptor) => !isHandleTool(descriptor));
+      const handleDescriptors = descriptors.filter(isHandleTool);
+      const frozenDefinitions = frozenDescriptors.map((descriptor) =>
+        this.toolDefinition(descriptor),
       );
+      const bundle = await this.#dependencies.promptBundles?.resolve({
+        request,
+        identity: {
+          toolNames: frozenDescriptors.map(({ name }) => name),
+          modelRef: request.modelRef,
+          thinkingLevel: request.thinkingLevel ?? "off",
+          answerLocale: projection.answerLocaleRef ?? null,
+        },
+        candidate: {
+          systemPrompt: productSystemPrompt(projection.systemInstruction, frozenDefinitions),
+          tools: JSON.stringify(frozenDefinitions.map(frozenToolText)),
+        },
+        hasHistory: projection.nativeHistory !== undefined || projection.history.length > 0,
+      });
+      const systemPrompt =
+        bundle?.systemPrompt ??
+        productSystemPrompt(
+          projection.systemInstruction,
+          descriptors.map((descriptor) => this.toolDefinition(descriptor)),
+        );
+      const requestTools = bundle
+        ? [
+            ...(JSON.parse(bundle.tools) as Tool[]).map(providerTool),
+            ...handleDescriptors.map((descriptor) => providerTool(this.toolDefinition(descriptor))),
+          ]
+        : undefined;
+      if (handleDescriptors.length > 0)
+        this.#dependencies.onHandleTools?.(request, {
+          generation: bundle?.generation ?? null,
+          handleTools: handleDescriptors.length,
+        });
       const identity = createHash("sha256")
         .update(
           JSON.stringify({
             model: binding.descriptor,
             descriptors,
             resources,
-            systemInstruction: projection.systemInstruction,
+            systemPrompt,
+            frozenTools: bundle?.tools ?? null,
             cwd: this.#dependencies.cwd,
           }),
         )
@@ -1179,6 +1296,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       }
       let streamOrdinal = continuation?.batch.completedStreamOrdinal ?? 0;
       const toolProgress = new PiToolProgressGuard(continuation?.toolProgress);
+      let loopStoppedAppended = false;
+      const appendLoopStopped = () => {
+        const active = this.#activeSessions.get(request.runId);
+        if (loopStoppedAppended || !active) return;
+        loopStoppedAppended = true;
+        if (active.isStreaming)
+          void active
+            .sendCustomMessage(toolLoopStoppedMessage(), { deliverAs: "steer" })
+            .catch(() => active.agent.abort());
+        else
+          active.agent.steer({
+            role: "custom",
+            ...toolLoopStoppedMessage(),
+            timestamp: Date.now(),
+          });
+      };
       const replayedResults = new Set<string>();
       const descriptorsByName = new Map(
         descriptors.map((descriptor) => [descriptor.name, descriptor]),
@@ -1219,7 +1352,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             hidden: true,
             factory: (pi: ExtensionAPI) => {
               pi.on("tool_call", () => {
-                if (toolProgress.blocked) return { block: true, reason: "PI_TOOL_LOOP_DETECTED" };
+                if (toolProgress.blocked)
+                  return { block: true, reason: CHAT_TOOL_LOOP_REJECTED.text };
               });
               pi.on("tool_result", (event) => {
                 const details = event.details as
@@ -1236,6 +1370,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                       ? details.errorCode
                       : undefined,
                   );
+                if (toolProgress.blocked) appendLoopStopped();
                 if (
                   details?.productOutcome === "failed" ||
                   details?.productOutcome === "result_unknown"
@@ -1395,7 +1530,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       const originalStreamFunction = session.agent.streamFunction;
       restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
       let loopSummaryAttempted = false;
-      session.agent.streamFunction = async (model, context, options) => {
+      session.agent.streamFunction = async (model, requested, options) => {
+        const context = Array.isArray(requested.tools)
+          ? { ...requested, systemPrompt, ...(requestTools ? { tools: requestTools } : {}) }
+          : requested;
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
@@ -1404,13 +1542,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         if (toolProgress.blocked) {
           if (loopSummaryAttempted) return failedPiStream(model, "PI_TOOL_LOOP_DETECTED");
           loopSummaryAttempted = true;
-          context = {
-            ...context,
-            tools: [],
-            systemPrompt: [context.systemPrompt, CHAT_TOOL_LOOP_STOPPED.text]
-              .filter(Boolean)
-              .join("\n\n"),
-          };
         }
         return admitPiStream(
           request,
@@ -1456,6 +1587,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           );
           this.#historyWrites.set(request.runId, pending);
           void pending.catch(() => session.agent.abort());
+        }
+
+        if (
+          event.type === "compaction_end" &&
+          event.willRetry &&
+          !event.aborted &&
+          event.result !== undefined
+        ) {
+          const environment = runtimeEnvironmentAfterCompaction(
+            session.agent.state.messages,
+            projection,
+          );
+          if (environment)
+            session.agent.steer({ role: "custom", ...environment, timestamp: Date.now() });
         }
 
         if (
@@ -1692,20 +1837,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
       });
       if (!builtin) throw new Error("PI_READ_DEFINITION_MISSING");
+      const text = himawariBuiltinToolText(builtin);
       return {
         name: builtin.name,
         label: builtin.label,
-        description:
-          descriptor.definition === "builtin-read"
-            ? `${builtin.description}\n${TOOL_BUILTIN_READ_SUFFIX.text}`
-            : ["read", "ls", "find", "grep"].includes(descriptor.name)
-              ? `${builtin.description}\n${TOOL_BUILTIN_READONLY_SUFFIX.text}`
-              : `${builtin.description}\n${TOOL_BUILTIN_WRITE_SUFFIX.text}`,
-        parameters: builtin.parameters,
+        description: text.description,
+        parameters: text.parameters,
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
-        ...(builtin.promptGuidelines === undefined
+        ...(text.promptGuidelines === undefined
           ? {}
-          : { promptGuidelines: builtin.promptGuidelines }),
+          : { promptGuidelines: [...text.promptGuidelines] }),
         ...(builtin.constrainedSampling === undefined
           ? {}
           : { constrainedSampling: builtin.constrainedSampling }),
@@ -1808,7 +1949,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         signal?.throwIfAborted();
         if (!decision.allowed) {
           return {
-            content: [{ type: "text", text: `Blocked by product policy: ${decision.reasonCode}` }],
+            content: [{ type: "text", text: policyBlockedText(decision.reasonCode) }],
             details: {
               permissionDecisionRef: decision.permissionDecisionRef,
               reasonCode: decision.reasonCode,

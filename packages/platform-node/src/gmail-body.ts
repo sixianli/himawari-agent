@@ -1,4 +1,5 @@
-import { maskSensitiveText, windowMailBody } from "@himawari-agent/application";
+import { windowMailBody } from "@himawari-agent/application";
+import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
 import { convert } from "html-to-text";
 
 export const GMAIL_BODY_HARD_LIMIT = 200_000;

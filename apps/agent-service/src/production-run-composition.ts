@@ -23,6 +23,7 @@ import {
   type RuntimeToolPort,
   type SandboxExecutionRecord,
   SessionTraceRecorder,
+  ThreadPromptBundleService,
   type TraceStorePort,
   type WorkerRunPort,
 } from "@himawari-agent/application";
@@ -106,7 +107,16 @@ export interface ProductionRunCompositionOptions {
   readonly configuration: Pick<
     ProductConfiguration,
     "ownerId" | "agentId" | "concurrency" | "deadlines"
-  >;
+  > & {
+    readonly runPolicy?: Pick<
+      NonNullable<ProductConfiguration["runPolicy"]>,
+      "freezeThreadPrompts"
+    >;
+  };
+  readonly onHandleTools?: (
+    request: RuntimeRequest,
+    observation: { readonly generation: number | null; readonly handleTools: number },
+  ) => void;
   readonly repository: SqliteProductStateRepository;
   readonly authority: Pick<
     ProductionAuthorityLifecycle,
@@ -365,10 +375,27 @@ export function createProductionRunComposition(options: ProductionRunComposition
       if (!current || current.run.status !== "running") throw new Error("RUNTIME_RUN_NOT_ACTIVE");
     },
   });
+  const promptBundles =
+    configuration.runPolicy?.freezeThreadPrompts === false
+      ? undefined
+      : timings.methods(
+          new ThreadPromptBundleService({
+            store: repository.threadPromptBundles(),
+            payloads,
+            artifacts,
+            protector,
+            clock,
+            ids,
+            trace: (input) => trace.record(input),
+          }),
+          { resolve: "pi.prompt_bundle" },
+        );
   const runtime = new PiAgentRuntimeAdapter({
     egress: options.egress,
     continuations,
     projection,
+    ...(promptBundles ? { promptBundles } : {}),
+    ...(options.onHandleTools ? { onHandleTools: options.onHandleTools } : {}),
     tools: timings.methods(
       options.tools,
       {

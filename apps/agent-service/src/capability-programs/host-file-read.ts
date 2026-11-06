@@ -1,12 +1,12 @@
 import {
   HostFileReadService,
   resolveHostFileReadPath,
-  scanMachineSecrets,
   type ClockPort,
   type HostDirectoryGrant,
   type HostFilePlatformPort,
   type ResolvedHostFileReadTarget,
 } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { executeGovernedPiRead } from "@himawari-agent/runtime-pi";
 
 /** Handler for the qualified program capability, after normal Worker Handle admission. */
