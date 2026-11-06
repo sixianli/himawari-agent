@@ -694,6 +694,21 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(hosted)));
   });
+  it("把已接受的 30 天和 7 天保存期升级成 1 天一次，别的值照样被拒", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = clone();
+    accepted.retentionDays = { reports: 30, diagnostics: 7 };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted 30/7");
+    expect(resolvePolicySource({ root }).policy).toEqual(policy);
+    accepted.retentionDays = { reports: 14, diagnostics: 7 };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted 14/7");
+    expect(() => resolvePolicySource({ root })).toThrow("retentionDays");
+  });
   it("只升级完整的托管 runner 写法，混合写法照样被拒", () => {
     const mixed = clone();
     mixed.checks.find((check) => check.id === "static").members[0].runner = "ubuntu-24.04";

@@ -71,6 +71,17 @@ export function upgradeHostedRunnerPolicy(policy) {
   return upgraded;
 }
 
+export function upgradeArtifactRetention(policy) {
+  const retention = policy?.retentionDays;
+  const accepted =
+    retention &&
+    Object.keys(retention).length === 2 &&
+    retention.reports === 30 &&
+    retention.diagnostics === 7;
+  if (!accepted) return policy;
+  return { ...policy, retentionDays: { reports: 1, diagnostics: 1 } };
+}
+
 export function validatePolicy(
   policy,
   { allowLegacyCoverage = false, allowLegacyIntegration = false } = {},
@@ -978,10 +989,13 @@ export function resolvePolicySource({
   const bytes = hasPolicy
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
-  const policy = validatePolicy(upgradeHostedRunnerPolicy(JSON.parse(bytes)), {
-    allowLegacyCoverage: true,
-    allowLegacyIntegration: true,
-  });
+  const policy = validatePolicy(
+    upgradeArtifactRetention(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+    {
+      allowLegacyCoverage: true,
+      allowLegacyIntegration: true,
+    },
+  );
   const integration = policy.testProjects.find((project) => project.id === "integration");
   if (!integration.fileParallelism && !integration.workerLimits) {
     integration.fileParallelism = true;

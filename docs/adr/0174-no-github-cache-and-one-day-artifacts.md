@@ -64,7 +64,8 @@ CI（持续集成，每次推送后 GitHub Actions 自动跑的检查）原来�
 2. 所有 artifact 的 `retention-days` 都是 1，报告和失败诊断一样。`ci/policy.json`、`ci/quality-policy.json`、`ci/policy.schema.json` 和 `scripts/ci/quality-policy.mjs` 里的保存天数都改成 1。
 3. `actions/cache` 从 `ci/toolchain-lock.json` 和 `scripts/ci/install-tools.mjs` 的 Action 清单里删掉，因为已经没有工作流用它。
 4. `test/tooling/ci-optimization.test.mjs` 检查三个工作流都没有缓存步骤、每个上传步骤都只保存 1 天，防止以后有人加回来。
-5. 2026-11-06 已按 Andy 的“全部删掉”用 GitHub 接口删除了全部 801 个已存 artifact，删除失败 0 个；删完复查，没过期的 artifact 和缓存都是 0。
+5. CI 校验 PR 时，`scripts/ci/check-policy.mjs` 的 `resolvePolicySource` 从基准提交读已接受的策略，再用当前的 `ci/policy.schema.json` 检查。基准上还是 30 天和 7 天时（本 PR 自己的 CI 和合并后第一次 `main` 确认就是这样），不升级就会被新规则拒绝。所以 `upgradeArtifactRetention` 只把恰好是“报告 30 天、诊断 7 天”的旧写法升级成 1 天，别的值照样拒绝；做法和已有的 `upgradeHostedRunnerPolicy` 一样，`test/tooling/policy.test.mjs` 里有正反两个用例。
+6. 2026-11-06 已按 Andy 的“全部删掉”用 GitHub 接口删除了全部 801 个已存 artifact，删除失败 0 个；删完复查，没过期的 artifact 和缓存都是 0。
 
 [↑ 返回阅读导航](#contents)
 
@@ -84,8 +85,8 @@ CI（持续集成，每次推送后 GitHub Actions 自动跑的检查）原来�
 
 - 每个任务都要重新下载工具和 npm 包。按 [CI 计划](../execution/plans/2026-09-03-github-ci-quality-gates-plan.md) 里同一台机器上的实测，锁文件重装冷缓存 120.6 秒、热缓存 77.9 秒，每个任务大约多 40 多秒；完整 CI 有 9 个任务。新的 CI 服务器上实际多多少，等第一次完整 CI 再看。
 - CI 跑完 1 天后 GitHub 就删掉报告和诊断。要查失败原因，必须在 1 天内下载；`quality.yml` 手动交接任务读取的 CI 证据也必须在 1 天内用，`scripts/ci/export-evidence.mjs` 按 1 天判断过期，超过时报 `CI_HANDOFF_EVIDENCE_EXPIRED`。
-- CI 校验 PR 时，会用当前的 `ci/policy.schema.json` 检查基准分支上的旧策略。本 PR 和它合并后的第一次 `main` 确认，基准分支上还是 30 天和 7 天，会被新规则拒绝一次；之后基准分支也是 1 天，不再出现。这是读代码得出的推断，没有实跑。现在 GitHub Actions 停着，这两次都不会运行。
-- `quality.yml` 的任务仍在 GitHub 自己的机器（`ubuntu-24.04`）上跑。私有仓库按分钟计费，所以重新打开 Actions 之前，要另外决定它搬到自己的服务器还是继续停着。
+- 目前三个工作流在 GitHub 上是停用状态：Hermes 跑 CI 太慢，要等新的 CI 服务器装好再打开。[ADR 0173](0173-hermes-runs-only-ci.md) 定的“CI 在自己的服务器上跑”不变，停用只是等新服务器期间的临时状态。
+- `quality.yml` 的任务仍在 GitHub 自己的机器（`ubuntu-24.04`）上跑。私有仓库按分钟计费，所以重新打开工作流之前，要另外决定它搬到自己的服务器还是继续停着。
 
 [↑ 返回阅读导航](#contents)
 
