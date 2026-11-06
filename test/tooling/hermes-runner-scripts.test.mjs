@@ -682,15 +682,16 @@ describe("runner units and shared limits", () => {
   const render = (id) => shell(`render_runner_unit ${id} "${template}"`);
   const slice = () => unitSettings(readFileSync(path.join(scripts, "gh-runners.slice"), "utf8"));
 
-  it("caps both runners together at 3 cores and 9 GB with low priority against other services", () => {
+  it("gives both runners all cores and 14 GB together with default priority on a CI-only host", () => {
     expect(slice()).toMatchObject({
-      CPUQuota: "300%",
-      MemoryHigh: "8G",
-      MemoryMax: "9G",
+      MemoryHigh: "13G",
+      MemoryMax: "14G",
       MemorySwapMax: "0",
-      CPUWeight: "20",
-      IOWeight: "20",
+      TasksMax: "4096",
     });
+    for (const key of ["CPUQuota", "CPUWeight", "IOWeight"]) {
+      expect(slice()).not.toHaveProperty(key);
+    }
     expect(bytes(slice().MemoryHigh)).toBeLessThan(bytes(slice().MemoryMax));
   });
 
@@ -709,9 +710,10 @@ describe("runner units and shared limits", () => {
         User: user,
         Group: user,
         WorkingDirectory: `${root}/runner`,
-        CPUQuota: "200%",
-        MemoryHigh: "6G",
-        MemoryMax: "7G",
+        MemoryHigh: "12G",
+        MemoryMax: "13G",
+        MemorySwapMax: "0",
+        TasksMax: "2048",
         ProtectProc: "invisible",
         ReadWritePaths: `${root}/runner ${root}/home ${root}/logs`,
       });
@@ -720,6 +722,9 @@ describe("runner units and shared limits", () => {
         expect.arrayContaining(["/data", `-${other}`]),
       );
       expect(bytes(unit.MemoryMax)).toBeLessThanOrEqual(bytes(slice().MemoryMax));
+      for (const key of ["CPUQuota", "CPUWeight", "IOWeight", "Nice"]) {
+        expect(unit).not.toHaveProperty(key);
+      }
     },
   );
 
