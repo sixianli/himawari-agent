@@ -15,7 +15,6 @@ export type ProductContextTriggerSource = "user_message" | "schedule" | "externa
 
 export type ProductContextMessageRole = "owner" | "agent" | "system";
 
-/** Canonical Run state at context formation time, not at replay time. */
 export interface ProductContextRunState {
   readonly runId: RunId;
   readonly status: RunStatus;
@@ -38,7 +37,6 @@ export interface ProductContextHistoryItem {
   readonly contentRef: PayloadRef;
   readonly occurredAt: string;
   readonly dataClassification: DataClassification;
-  /** Absent in older persisted envelopes or messages with no associated Run. */
   readonly runState?: ProductContextRunState;
 }
 
@@ -61,7 +59,10 @@ export type ProductContextBlockKind =
   | "owner-profile"
   | "owner-agenda"
   | "memory"
-  | "capability-summary";
+  | "capability-summary"
+  | "runtime-environment";
+
+export const RUNTIME_ENVIRONMENT_BLOCK_REF = "runtime-environment";
 
 export interface ProductContextBlock {
   readonly kind: ProductContextBlockKind;

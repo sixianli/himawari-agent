@@ -4,11 +4,11 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0170-more-memory-for-hermes-runners.md"
 superseded_by: ""
-amends: "docs/adr/0164-two-runners-on-hermes.md"
+amends: "docs/adr/0171-two-runners-on-hermes.md"
 date: "2026-11-06"
 ---
 
-# ADR 0171：Hermes 只跑 CI，两个 runner 不再限 CPU 和优先级，内存放宽到 14 GB
+# ADR 0173：Hermes 只跑 CI，两个 runner 不再限 CPU 和优先级，内存放宽到 14 GB
 
 <a id="contents"></a>
 
@@ -17,7 +17,7 @@ date: "2026-11-06"
 - [背景](#context)
 - [Andy 的原话](#owner-decisions)
 - [决定](#decision)
-- [与 ADR 0164、ADR 0170 的关系](#amendments)
+- [与 ADR 0171、ADR 0170 的关系](#amendments)
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [关联文档](#references)
@@ -26,7 +26,7 @@ date: "2026-11-06"
 
 ## 背景
 
-Hermes（家里的 Linux 服务器，4 核，16 GB 内存，系统盘是固态盘）上跑着两个 GitHub 自托管 runner（替 GitHub 执行 CI 任务的程序），放在同一个资源组 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的 systemd 单元）里。按 [ADR 0164](0164-two-runners-on-hermes.md) 和 [ADR 0170](0170-more-memory-for-hermes-runners.md)，两个合计最多 3 个核、9 GB 内存；每个最多 2 个核、7 GB；CPU 和磁盘的优先级都压低（`CPUWeight=20`、`IOWeight=20`、`Nice=10`），好让 Hermes 上的其他服务先用。
+Hermes（家里的 Linux 服务器，4 核，16 GB 内存，系统盘是固态盘）上跑着两个 GitHub 自托管 runner（替 GitHub 执行 CI 任务的程序），放在同一个资源组 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的 systemd 单元）里。按 [ADR 0171](0171-two-runners-on-hermes.md) 和 [ADR 0170](0170-more-memory-for-hermes-runners.md)，两个合计最多 3 个核、9 GB 内存；每个最多 2 个核、7 GB；CPU 和磁盘的优先级都压低（`CPUWeight=20`、`IOWeight=20`、`Nice=10`），好让 Hermes 上的其他服务先用。
 
 2026-11-06 Hermes 上除了 runner 还跑着 38 个容器（langfuse、just-rag、firecrawl、feeding-me、flashanki、keycloak、mem0、监控等）和 `hermes-gateway`、flashanki 的后台进程等服务。Andy 决定 Hermes 只用来跑 CI，这些服务全部停掉。2026-11-06 10:25（JST）停完后在 Hermes 上量到：可用内存从 9.0 GB 升到 14 GB，交换空间占用从 3.2 GB 降到 42 MB，容器数为 0。
 
@@ -67,10 +67,10 @@ Hermes（家里的 Linux 服务器，4 核，16 GB 内存，系统盘是固态�
 
 <a id="amendments"></a>
 
-## 与 ADR 0164、ADR 0170 的关系
+## 与 ADR 0171、ADR 0170 的关系
 
 - 取代 ADR 0170：它的内存上限（合计 9 GB、每个 7 GB）和“CPU 上限与优先级不变”都由本 ADR 的决定第 1、2 条代替。
-- 修订 ADR 0164 决定第 2 条：资源组不再设 CPU 上限和低优先级，内存上限按本 ADR。ADR 0164 的其他决定不变。
+- 修订 ADR 0171 决定第 2 条：资源组不再设 CPU 上限和低优先级，内存上限按本 ADR。ADR 0171 的其他决定不变。
 
 [↑ 返回阅读导航](#contents)
 
@@ -99,7 +99,7 @@ Hermes（家里的 Linux 服务器，4 核，16 GB 内存，系统盘是固态�
 
 ## 关联文档
 
-- [ADR 0164：Hermes 上跑两个常驻 runner](0164-two-runners-on-hermes.md)
+- [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
 - [ADR 0170：Hermes 上两个 runner 的内存上限从 6 GB 提到 9 GB](0170-more-memory-for-hermes-runners.md)
 - [Hermes 自托管 runner 操作手册](../runbooks/hermes-self-hosted-runner-runbook.md)
 

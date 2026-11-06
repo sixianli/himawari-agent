@@ -31,6 +31,7 @@ import { runDiagnoseCommand } from "./diagnose-command.js";
 import { runInitializeCommand } from "./initialize-command.js";
 import { runPushCommand } from "./push-command.js";
 import { runSandboxCommand } from "./sandbox-command.js";
+import { runThreadCommand } from "./thread-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
 
 export const adminCliWorkspace = {
@@ -770,6 +771,10 @@ export async function runAdminCli(
     }
     if (arguments_[0] === "push") {
       output.write(`${JSON.stringify(await runPushCommand(arguments_))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "thread") {
+      output.write(`${JSON.stringify(await runThreadCommand(arguments_, output))}\n`);
       return 0;
     }
     if (arguments_[0] === "sandbox") {

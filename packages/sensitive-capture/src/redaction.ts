@@ -1,8 +1,4 @@
-import {
-  CHAT_EGRESS_LEGEND,
-  CHAT_EGRESS_LEGEND_WITH_RESTORE,
-} from "@himawari-agent/prompt-catalog";
-import { redactMachineSecrets } from "./machine-secret-exclusion.js";
+import { redactMachineSecrets } from "./machine-secrets.js";
 
 export const EGRESS_REDACTION_KINDS = Object.freeze([
   "machine-secret",
@@ -35,10 +31,6 @@ export interface EgressRedactionOptions {
   readonly known?: Map<string, string>;
   readonly table?: Map<string, string>;
 }
-
-export const EGRESS_PLACEHOLDER_LEGEND = CHAT_EGRESS_LEGEND.text;
-
-export const EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE = CHAT_EGRESS_LEGEND_WITH_RESTORE.text;
 
 export const EGRESS_PLACEHOLDER_PATTERN = /\[(密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]/gu;
 
@@ -258,6 +250,32 @@ export function redactForEgress(
     return count === undefined ? [] : [Object.freeze({ kind, count })];
   });
   return Object.freeze({ text, findings: Object.freeze(findings) });
+}
+
+const CREDENTIAL_KINDS: ReadonlySet<EgressRedactionKind> = new Set([
+  "password",
+  "verification-code",
+]);
+
+const CREDENTIAL_PLACEHOLDER_KINDS: Readonly<Record<string, EgressRedactionKind>> = {
+  密码: "password",
+  验证码: "verification-code",
+};
+
+export function credentialFindings(input: string): readonly EgressRedactionFinding[] {
+  const counts = new Map<EgressRedactionKind, number>();
+  for (const { kind, count } of redactForEgress(input).findings)
+    if (CREDENTIAL_KINDS.has(kind)) counts.set(kind, (counts.get(kind) ?? 0) + count);
+  for (const match of input.matchAll(EGRESS_PLACEHOLDER_PATTERN)) {
+    const kind = CREDENTIAL_PLACEHOLDER_KINDS[match[1] ?? ""];
+    if (kind !== undefined) tally(counts, kind);
+  }
+  const masked = input.split(MACHINE_SECRET_PLACEHOLDER).length - 1;
+  if (masked > 0) counts.set("machine-secret", masked);
+  return EGRESS_REDACTION_KINDS.flatMap((kind) => {
+    const count = counts.get(kind);
+    return count === undefined ? [] : [{ kind, count }];
+  });
 }
 
 export function maskSensitiveText(input: string): string {

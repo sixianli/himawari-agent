@@ -387,6 +387,7 @@ export type RuntimeProjectionRequest = Pick<
 
 export interface RuntimeProjection extends RuntimeProjectionContext {
   readonly systemInstruction: string;
+  readonly answerLocaleRef?: string;
 }
 
 export interface RuntimeProjectionPort {
@@ -431,6 +432,7 @@ export interface RuntimeCustomToolDescriptor {
   readonly description: string;
   readonly parameters: JsonObject;
   readonly executionMode?: "parallel";
+  readonly handleBound?: true;
 }
 
 export interface RuntimeToolInvocation {

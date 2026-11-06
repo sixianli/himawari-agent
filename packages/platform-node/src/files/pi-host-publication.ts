@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { containsToolOutputSecret, scanMachineSecrets } from "@himawari-agent/application";
+import { containsToolOutputSecret, scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import type { SandboxScope } from "@himawari-agent/execution-contracts";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 import { createDirectoryMoveJournal } from "./directory-move.js";

@@ -20,6 +20,7 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  ThreadPromptBundleStorePort,
   DecisionLedgerPort,
   MuseIntakePort,
   LedgerObservationPort,
@@ -1066,6 +1067,15 @@ export class SqliteDurableAdapters {
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),
       listFinishedRuns: (input) => this.context.read("webPush.listFinishedRuns", input),
       prune: (input) => this.context.write("webPush.prune", input),
+    });
+  }
+
+  threadPromptBundles(): ThreadPromptBundleStorePort {
+    return Object.freeze<ThreadPromptBundleStorePort>({
+      latest: (input) => this.context.read("threadPromptBundle.latest", input),
+      get: (input) => this.context.read("threadPromptBundle.get", input),
+      create: (input) => this.context.write("threadPromptBundle.create", input),
+      requestRebuild: (input) => this.context.write("threadPromptBundle.requestRebuild", input),
     });
   }
 

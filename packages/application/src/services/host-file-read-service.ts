@@ -10,7 +10,7 @@ import {
   type PayloadRef,
 } from "../ports/index.js";
 import type { ClockPort } from "../ports/system.js";
-import { scanMachineSecrets } from "./machine-secret-exclusion.js";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { normalizeRelativePath } from "./file-operation-service.js";
 
 export class HostFileReadService {

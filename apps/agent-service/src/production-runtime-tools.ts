@@ -28,10 +28,8 @@ import {
   type RuntimeToolSettledResult,
   type SandboxExecutionPreparationPort,
   WEB_FETCH_MAXIMUM_OFFSET,
-  type WebProviderId,
   type WorkerDelegationAdmissionServiceOptions,
   WorkerDelegationService,
-  webProviderChain,
 } from "@himawari-agent/application";
 import { isSandboxReservationNeverStarted } from "@himawari-agent/application/sandbox-execution-projection";
 import {
@@ -51,6 +49,8 @@ import {
   TOOL_RESULT_REMINDER_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_SAVE_COPY,
+  TOOL_SAVE_COPY_EXPECTED_HASH,
+  TOOL_SAVE_COPY_OPERATION_ID,
   TOOL_TASK_START,
   TOOL_WEB_FETCH,
   TOOL_WEB_FETCH_OFFSET,
@@ -123,10 +123,6 @@ const unknownResult = (): RuntimeToolSettledResult => ({
   externalActionId: null,
   modelContent: "执行结果尚未确认，不能重新执行该操作。",
 });
-const providerNames = (providers: readonly WebProviderId[] | undefined) => {
-  const [first, ...rest] = webProviderChain(providers).map((provider) => provider.displayName);
-  return rest.length ? `${first}（失败时依次改用 ${rest.join("、")}）` : `${first}`;
-};
 
 function digest(value: unknown): string {
   return createHash("sha256")
@@ -423,7 +419,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 description: TOOL_SAVE_COPY.text,
                 parameters: {
                   type: "object",
-                  properties: { operationId: { type: "string" }, expectedHash: { type: "string" } },
+                  properties: {
+                    operationId: { type: "string", description: TOOL_SAVE_COPY_OPERATION_ID.text },
+                    expectedHash: {
+                      type: "string",
+                      description: TOOL_SAVE_COPY_EXPECTED_HASH.text,
+                    },
+                  },
                   required: ["operationId", "expectedHash"],
                   additionalProperties: false,
                 },
@@ -459,9 +461,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         ...(this.#options.fileRead?.hostWeb ? { executionMode: "parallel" as const } : {}),
         capabilityRef: `${this.#options.publicSearch.capabilityRef}.web_search`,
         capabilityHandleRef: null,
-        description: renderPrompt(TOOL_WEB_SEARCH, {
-          providers: providerNames(this.#options.publicSearch.providers),
-        }),
+        description: TOOL_WEB_SEARCH.text,
         parameters: {
           type: "object",
           properties: {
@@ -478,10 +478,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         ...(this.#options.fileRead?.hostWeb ? { executionMode: "parallel" as const } : {}),
         capabilityRef: `${this.#options.publicFetch.capabilityRef}.web_fetch`,
         capabilityHandleRef: null,
-        description: renderPrompt(TOOL_WEB_FETCH, {
-          providers: providerNames(this.#options.publicFetch.providers),
-          maximumKib: String(Math.floor(this.#options.publicFetch.maximumBytes / 1024)),
-        }),
+        description: TOOL_WEB_FETCH.text,
         parameters: {
           type: "object",
           properties: {
@@ -527,11 +524,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           descriptor.name === "bash",
       );
     if (startable || backgroundBash) {
-      descriptors.push(...managedTaskDescriptors());
+      descriptors.push(
+        ...managedTaskDescriptors().map((descriptor) =>
+          backgroundBash ? descriptor : { ...descriptor, handleBound: true as const },
+        ),
+      );
       if (startable)
         descriptors.push({
           capabilityRef: "execution.task.start",
           capabilityHandleRef: null,
+          handleBound: true,
           name: "execution_task_start",
           description: TOOL_TASK_START.text,
           parameters: {

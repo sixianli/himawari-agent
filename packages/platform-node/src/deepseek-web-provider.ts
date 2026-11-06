@@ -5,7 +5,8 @@ import type {
   WebSearchCandidate,
   WebSearchProvider,
 } from "@himawari-agent/application";
-import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
+import { WEB_PROVIDERS } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { fetch as proxyFetch } from "undici";
 import {
   pageWindow,

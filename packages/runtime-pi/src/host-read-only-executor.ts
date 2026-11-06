@@ -7,7 +7,6 @@ import {
   truncateLine,
 } from "@earendil-works/pi-coding-agent";
 import {
-  assertMachineSecretFree,
   firstProtectedDirectoryEntry,
   firstRejectedPathComponent,
   HOST_READ_ONLY_ERROR_CODES,
@@ -16,6 +15,7 @@ import {
   type HostReadOnlyEntryKind,
   type HostReadOnlyPort,
 } from "@himawari-agent/application/runtime-port";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import ignore from "ignore";
 
 const GREP_MAX_LINE_LENGTH = 500;

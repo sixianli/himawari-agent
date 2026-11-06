@@ -95,12 +95,19 @@ export type {
   RuntimeHistoryState,
 } from "./ports/runtime-history.js";
 export type { ClockPort } from "./ports/system.js";
+export type {
+  RuntimePromptBundle,
+  RuntimePromptBundleCandidate,
+  RuntimePromptBundlePort,
+  RuntimePromptBundleResolveInput,
+  ThreadPromptBundleIdentity,
+} from "./ports/thread-prompt-bundles.js";
 export type { ModelUsageObservation, ModelUsageStorePort } from "./ports/model-usage.js";
 export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
   EGRESS_PLACEHOLDER_LEGEND,
   EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
-} from "./services/egress-redaction.js";
+} from "./services/egress-legend.js";
 export {
   ModelEgress,
   ModelEgressRefusedError,
@@ -108,8 +115,3 @@ export {
   type ModelEgressOptions,
   type StreamingPlaceholderRestorer,
 } from "./services/model-egress.js";
-export {
-  assertMachineSecretFree,
-  redactMachineSecrets,
-  StreamingMachineSecretRedactor,
-} from "./services/machine-secret-exclusion.js";

@@ -1,6 +1,5 @@
 import {
   ApplicationPortError,
-  assertMachineSecretFree,
   type ClockPort,
   type ModelDescriptor,
   type ModelInvocationAdmissionInput,
@@ -17,6 +16,7 @@ import {
   PORT_ERROR_CODES,
   type SecretPort,
 } from "@himawari-agent/application";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 
 export interface SecretMaterialSource {

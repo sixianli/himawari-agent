@@ -3,7 +3,6 @@
 import { setTimeout as wait } from "node:timers/promises";
 import {
   type AutomaticReviewDecision,
-  assertMachineSecretFree,
   type ClockPort,
   type DataClassification,
   type ModelCostDescriptor,
@@ -13,6 +12,7 @@ import {
   type PayloadRef,
   parseAutomaticReviewDecision,
 } from "@himawari-agent/application";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { REVIEW_TYPESAFE_QUESTIONS } from "@himawari-agent/prompt-catalog";
 
 import type { SecretMaterialSource, TrustedModelTransport } from "./trusted-model-provider.js";

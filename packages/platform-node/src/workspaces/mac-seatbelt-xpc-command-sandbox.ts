@@ -1,9 +1,9 @@
-import {
-  redactMachineSecrets,
-  type CommandProfile,
-  type CommandSandboxPort,
-  type CommandSecretBinding,
+import type {
+  CommandProfile,
+  CommandSandboxPort,
+  CommandSecretBinding,
 } from "@himawari-agent/application";
+import { redactMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 export const MAC_SEATBELT_XPC_ERROR_CODES = Object.freeze({
   PLATFORM_UNSUPPORTED: "COMMAND_MAC_SEATBELT_PLATFORM_UNSUPPORTED",

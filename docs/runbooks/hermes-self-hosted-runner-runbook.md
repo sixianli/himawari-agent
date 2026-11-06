@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:349b1bef1d31fe7b333811042f078dd736118d46789365e7a28cbce302a4a12a"
+contract_sha256: "sha256:6bb0840c9b3cb5a9cda1525255fc1a80a8a0423ecba61c5dd7fdeb006fbc3147"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -14,7 +14,7 @@ date: "2026-11-04"
 - scripts/operations/hermes-runner
 -->
 
-本手册说明 Hermes（家里的 Linux 服务器，Ubuntu 22.04，主机名 `hermes-home`）上那两个 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）怎么安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0160](../adr/0160-self-hosted-runner-on-hermes.md) 和 [ADR 0164](../adr/0164-two-runners-on-hermes.md)。
+本手册说明 Hermes（家里的 Linux 服务器，Ubuntu 22.04，主机名 `hermes-home`）上那两个 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）怎么安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0160](../adr/0160-self-hosted-runner-on-hermes.md) 和 [ADR 0171](../adr/0171-two-runners-on-hermes.md)。
 
 <a id="contents"></a>
 
@@ -61,7 +61,7 @@ date: "2026-11-04"
 - `ProtectProc=invisible` 让它在 `/proc` 里只看得到自己的进程，看不到 Hermes 上其他服务的进程和命令行参数。
 - 防火墙规则只对两个 runner 账号生效（一条规则同时匹配两个账号的 uid）：拒绝它访问局域网和 Tailscale 地址（`10/8`、`100.64/10`、`172.16/12`、`192.168/16` 等），以及本机 TCP 端口名单里的端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口，所以某个服务恰好停着时它的端口也不会从名单里掉出去。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来；2026-11-05 核对时 Hermes 本机只有 DNS 的 53 端口在监听 UDP，Hermes 的所有网卡地址都是私有地址，已在拒绝范围内。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
-- Hermes 只跑 CI（[ADR 0171](../adr/0171-hermes-runs-only-ci.md)），所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个 runner 内存最多 13 GB（`MemoryHigh=12G`、`MemoryMax=13G`），不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 14 GB（`MemoryHigh=13G`、`MemoryMax=14G`），最多 4096 个进程；留出的约 1.4 GB 让 ssh 和 tailscale 在内存用满时仍能登录。
+- Hermes 只跑 CI（[ADR 0173](../adr/0173-hermes-runs-only-ci.md)），所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个 runner 内存最多 13 GB（`MemoryHigh=12G`、`MemoryMax=13G`），不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 14 GB（`MemoryHigh=13G`、`MemoryMax=14G`），最多 4096 个进程；留出的约 1.4 GB 让 ssh 和 tailscale 在内存用满时仍能登录。
 - 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个任务可能同时占盘）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每天的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束。
 
 [↑ 返回阅读导航](#contents)
@@ -70,7 +70,7 @@ date: "2026-11-04"
 
 ## Authoritative Sources
 
-- 决定和理由：[SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]、[SOURCE: docs/adr/0164-two-runners-on-hermes.md]、[SOURCE: docs/adr/0168-longer-ci-job-limits-on-hermes.md]、[SOURCE: docs/adr/0169-pause-runners-by-removing-the-label.md]、[SOURCE: docs/adr/0170-more-memory-for-hermes-runners.md]、[SOURCE: docs/adr/0171-hermes-runs-only-ci.md]
+- 决定和理由：[SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]、[SOURCE: docs/adr/0171-two-runners-on-hermes.md]、[SOURCE: docs/adr/0168-longer-ci-job-limits-on-hermes.md]、[SOURCE: docs/adr/0169-pause-runners-by-removing-the-label.md]、[SOURCE: docs/adr/0170-more-memory-for-hermes-runners.md]、[SOURCE: docs/adr/0173-hermes-runs-only-ci.md]
 - 测试主机的硬边界：[测试主机与生产主机](../../.agents/instructions/test-and-production-hosts.md)
 - 安装、注册、卸载、暂停和恢复的脚本，以及服务和钩子的原文：[scripts/operations/hermes-runner/](../../scripts/operations/hermes-runner/)
 - 哪些任务跑在 runner 上：`ci/policy.json`、`.github/workflows/ci.yml`、`.github/workflows/main.yml`
@@ -187,7 +187,7 @@ date: "2026-11-04"
 
 ## Rollback
 
-触发条件：runner 影响到 Hermes 上的其他服务或受保护测试，或者 Andy 决定不再用它；或者第 2 个 runner 的一周试跑不达标（标准见 ADR 0164 决定第 8 条）。
+触发条件：runner 影响到 Hermes 上的其他服务或受保护测试，或者 Andy 决定不再用它；或者第 2 个 runner 的一周试跑不达标（标准见 ADR 0171 决定第 8 条）。
 
 **只卸第 2 个 runner**：
 
@@ -234,6 +234,6 @@ date: "2026-11-04"
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | Hermes 上浏览器依赖已装好，workflow 里去掉 `--with-deps`。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
-| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 9 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0164 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
+| 两个任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 14 GB 不够用的迹象。记录下来报告 Andy，按 ADR 0171 决定第 8 条判断是否卸掉第 2 个 runner；不自行调高上限。 |
 
 [↑ 返回阅读导航](#contents)

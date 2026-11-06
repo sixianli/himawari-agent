@@ -8,7 +8,7 @@ import type {
   HostFileIdentity,
   HostFilePublication,
 } from "@himawari-agent/application";
-import { scanMachineSecrets } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   firstRejectedPathComponent,
   type SandboxFileTarget,

@@ -1,6 +1,6 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: untrusted provider records require index access
 import type { ProductConfiguration } from "@himawari-agent/application";
-import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import { redactMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))

@@ -21,7 +21,6 @@ import {
 import type { ExecuteCoordinatedRunInput, RunCoordinatorCommands } from "./run-coordinator.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
 
-/** Trusted Core policy; browser messages and model output cannot supply this object. */
 export interface RunExecutionPolicy {
   readonly thinkingLevel?: import("../ports/run-execution-source.js").RunThinkingLevel;
   readonly modelRef: string;
@@ -30,6 +29,7 @@ export interface RunExecutionPolicy {
   readonly policies: ExecuteCoordinatedRunInput["context"]["policies"];
   readonly answerLocalePolicy?: ExecuteCoordinatedRunInput["context"]["answerLocalePolicy"];
   readonly capabilities: ExecuteCoordinatedRunInput["context"]["capabilities"];
+  readonly runtimeEnvironmentRef?: string;
   readonly capabilityHandleRefs: readonly string[];
   readonly maxMemoryClassification: DataClassification;
   readonly memoryLimit: number;
@@ -44,7 +44,6 @@ interface FrozenRunInput {
   readonly policy: RunExecutionPolicy;
 }
 
-// Keep the durable operation identity: a version change must not issue a fresh budget.
 const OPERATION_KEY = "run-execution-input:v1";
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 
@@ -81,16 +80,14 @@ function assertPolicy(policy: RunExecutionPolicy): void {
     policy.capabilityHandleRefs.some((ref) => typeof ref !== "string" || !ref) ||
     new Set(policy.capabilityHandleRefs).size !== policy.capabilityHandleRefs.length ||
     !Array.isArray(policy.policies) ||
-    !Array.isArray(policy.capabilities)
+    !Array.isArray(policy.capabilities) ||
+    (policy.runtimeEnvironmentRef !== undefined &&
+      (typeof policy.runtimeEnvironmentRef !== "string" || !policy.runtimeEnvironmentRef))
   ) {
     invalid("Run execution policy is invalid");
   }
 }
 
-/**
- * Freezes execution policy once, while resolving the triggering input from its
- * canonical durable identity. Only the current lease is replaced after restart.
- */
 export class RunExecutionInputService {
   readonly #options: RunExecutionInputServiceOptions;
 
@@ -167,7 +164,6 @@ export class RunExecutionInputService {
       ...scope,
       authority,
       executionLease: claimFromRunExecutionLease(lease),
-      // Configuration may shorten a persisted budget, but never extend it on restart.
       executionDeadlineAt: new Date(
         Math.min(
           Date.parse(frozen.deadlineAt),
@@ -194,6 +190,9 @@ export class RunExecutionInputService {
         maxSelectedMemories: policy.maxSelectedMemories,
         maxMemoryClassification: policy.maxMemoryClassification,
         capabilities: policy.capabilities,
+        ...(policy.runtimeEnvironmentRef
+          ? { runtimeEnvironmentRef: policy.runtimeEnvironmentRef }
+          : {}),
         correlationId,
         causationId: source.triggerId,
         parentEventId: null,
@@ -270,7 +269,6 @@ export class RunExecutionInputService {
       createdAt: this.#options.clock.now(),
     });
     await this.#options.artifacts.commit({ ...key, payload });
-    // Read the committed value so all callers use the same persisted representation.
     return this.#freeze(source);
   }
 }

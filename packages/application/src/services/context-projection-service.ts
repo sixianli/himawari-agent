@@ -81,8 +81,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const contextBlocks = await this.readContextBlocks(input, envelope, history.systemBlocks);
     await this.assertWorkerReferences(input);
     const workerBlocks = await this.readWorkerResults(input);
+    const answerLocale = envelope.systemPolicyRefs.find(({ kind }) => kind === "answer-locale");
     return Object.freeze({
       systemInstruction,
+      ...(answerLocale ? { answerLocaleRef: answerLocale.ref } : {}),
       ...(nativeHistory ? { nativeHistory } : {}),
       coveredRunIds: [
         ...new Set([
@@ -731,7 +733,8 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
           item["kind"] === "owner-rules" ||
           item["kind"] === "owner-profile" ||
           item["kind"] === "owner-agenda" ||
-          item["kind"] === "capability-summary") &&
+          item["kind"] === "capability-summary" ||
+          item["kind"] === "runtime-environment") &&
         nonEmpty(item["ref"]) &&
         nonEmpty(item["payloadRef"]) &&
         (item["sourceRef"] === undefined || nonEmpty(item["sourceRef"])) &&

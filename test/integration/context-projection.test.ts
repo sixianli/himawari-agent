@@ -143,6 +143,7 @@ async function putText(
 async function createContext(
   fixture: ReturnType<typeof createFixture>,
   scenario?: { readonly previous: string; readonly current: string; readonly runState: unknown },
+  runtimeEnvironment?: string,
 ): Promise<string> {
   const envelope = {
     schemaVersion: "context.v1" as const,
@@ -188,6 +189,16 @@ async function createContext(
         sourceRef: "memory-source",
         dataClassification: "private" as const,
       },
+      ...(runtimeEnvironment === undefined
+        ? []
+        : [
+            {
+              kind: "runtime-environment" as const,
+              ref: "runtime-environment",
+              payloadRef: "payload-runtime-environment",
+              dataClassification: "private" as const,
+            },
+          ]),
     ],
   };
   for (const [ref, text] of [
@@ -198,6 +209,7 @@ async function createContext(
     ["payload-history-system", "历史系统材料"],
     ["payload-memory", "非权威记忆摘要"],
     ["payload-worker-result", "Worker result material"],
+    ["payload-runtime-environment", runtimeEnvironment ?? ""],
   ] as const) {
     await putText(fixture, ref, text);
   }
@@ -431,6 +443,25 @@ describe("ContextProjectionService", () => {
     await expect(fixture.service.resolveProjection(request(contextRef))).rejects.toMatchObject({
       code: "PORT_NOT_AUTHORITATIVE",
     });
+  });
+
+  it("projects the runtime environment block with its fixed ref after the other blocks", async () => {
+    const fixture = createFixture();
+    const contextRef = await createContext(
+      fixture,
+      undefined,
+      "运行环境说明：\n- 工作目录：本轮没有。",
+    );
+    const projection = await fixture.service.resolveProjection(request(contextRef));
+    const blocks = projection.contextBlocks.filter(({ kind }) => kind !== "worker-result");
+    expect(blocks.at(-1)).toEqual({
+      authority: "non-authoritative",
+      kind: "runtime-environment",
+      ref: "runtime-environment",
+      content: "运行环境说明：\n- 工作目录：本轮没有。",
+      dataClassification: "private",
+    });
+    expect(projection.systemInstruction).not.toContain("工作目录");
   });
 
   it("re-materializes the same protected envelope after a projection service restart", async () => {
