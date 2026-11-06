@@ -16,6 +16,11 @@ interrupted() {
   exit 130
 }
 
+ONLINE_BEFORE=""
+for name in $NAMES; do
+  [ "$(runner_field "$TABLE" "$name" 3)" = online ] && ONLINE_BEFORE="$ONLINE_BEFORE $name"
+done
+
 trap interrupted INT TERM HUP
 for name in $NAMES; do
   has_label "$(runner_field "$TABLE" "$name" 5)" && continue
@@ -53,3 +58,6 @@ while :; do
   sleep "$POLL"
 done
 echo "RUNNER_RESUMED labels=restored runners=$(echo $NAMES)"
+if [ -n "$ONLINE_BEFORE" ]; then
+  echo "NOTE already online when the label came back:$ONLINE_BEFORE; if queued jobs do not start within a few minutes, restart that runner (sudo -n /usr/bin/systemctl restart gh-runner.service or gh-runner-2.service)"
+fi

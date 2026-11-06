@@ -501,6 +501,7 @@ describe("resume-runners.sh", () => {
     box.set("online-from", 4);
     const result = box.mac("resume-runners.sh");
     expect(result.stdout).toContain("RUNNER_RESUMED labels=restored");
+    expect(result.stdout).not.toContain("NOTE");
     expect(result.status).toBe(0);
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
     const order = box.lines();
@@ -515,6 +516,16 @@ describe("resume-runners.sh", () => {
     expect(
       order.slice(start).filter((line) => line.endsWith("@tsv")).length,
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("tells Andy to restart a runner that was already online when its label came back", () => {
+    const box = macBox({ labelled: false });
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("RUNNER_RESUMED labels=restored");
+    expect(result.stdout).toMatch(
+      /^NOTE already online when the label came back: hermes-home hermes-home-2; .*restart that runner/m,
+    );
   });
 
   it("changes nothing when the runners on Hermes and GitHub do not match", () => {
@@ -1148,6 +1159,21 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
     expect(state.rc).toBe("1");
     expect(state["/etc/systemd/system/gh-runner.service"]).toBe("old-unit");
     expect(state["/etc/sudoers.d/91-gh-runner-control"]).toBe("old-sudoers");
+    expect(state["/srv/gh-runner-2"]).toBe("MISSING");
+    expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
+  });
+
+  it("puts every file back when stderr is a pipe nobody reads any more", () => {
+    const { box, result, state } = installWithFailingRuleCheck(
+      "exit 1",
+      [`mkfifo "$HOME/gone"`, `(exec 5< "$HOME/gone") & exec 3> "$HOME/gone"; wait`],
+      "2>&3",
+    );
+    expect(result.status).toBe(0);
+    expect(state.rc).not.toBe("0");
+    expect(state["/etc/systemd/system/gh-runner.service"]).toBe("old-unit");
+    expect(state["/etc/sudoers.d/91-gh-runner-control"]).toBe("old-sudoers");
+    expect(state["/etc/gh-runner/nft.rules"]).toBe("old-rules");
     expect(state["/srv/gh-runner-2"]).toBe("MISSING");
     expect(box.calls()).toMatch(/^userdel gh-runner-2$/m);
   });

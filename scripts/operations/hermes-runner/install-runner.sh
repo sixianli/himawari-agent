@@ -39,7 +39,7 @@ backup_install_paths "$BACKUP" $INSTALL_PATHS
 
 restore_backup() {
   trap - ERR
-  trap '' INT TERM HUP
+  trap '' INT TERM HUP PIPE
   set +e
   [ -z "${1:-}" ] || echo "INSTALL_STEP_FAILED $1" >&2
   echo "INSTALL_FAILED putting back units, firewall rules, sudo rules, scripts and new accounts from $BACKUP" >&2
