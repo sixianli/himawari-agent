@@ -17,6 +17,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  API_ERROR_MESSAGE_MAX,
+  apiErrorText,
   budgetCheck,
   buildPrompt,
   COST_LIMIT_PER_MODEL_USD,
@@ -70,11 +72,14 @@ import {
   reviewConfig,
   reviewModel,
   reviewQuestions,
+  retryAfterApiError,
   roundForRun,
   roundsOnDisk,
   runOutcome,
   SHELL_LOG_NAME,
   spentOf,
+  SUBSTITUTES,
+  substituteFor,
   summarizeEvents,
   WRAP_UP_MIN_USD,
   WRAP_UP_PROMPT,
@@ -445,6 +450,93 @@ describe("opencode review output", () => {
   it("reports a run with no answer text", () => {
     const events = JSON.stringify({ type: "step_finish", part: { reason: "stop", tokens: {} } });
     expect(summarizeEvents(events).outcome).toBe("no-text");
+  });
+
+  it("[api error] reads the service's refusal from a real run instead of calling it no text", () => {
+    const events = readFileSync(
+      new URL("./fixtures/opencode-review/deepseek-429-events.jsonl", import.meta.url),
+      "utf8",
+    );
+    const summary = summarizeEvents(events);
+    expect(summary.outcome).toBe("api-error");
+    expect(summary.apiError).toEqual({
+      message:
+        "Upstream request failed: [prefill_cap_refused] the cell is at capacity; retry shortly (after 5 s)",
+      statusCode: 429,
+      retryable: true,
+    });
+    expect(summary.usage.steps).toBe(2);
+    expect(apiErrorText(summary.apiError)).toMatch(/^429 Upstream request failed/);
+  });
+
+  it("[api error] keeps the error on one short line and treats a refusal without retry hints as final", () => {
+    const event = (data) => JSON.stringify({ type: "error", error: { name: "APIError", data } });
+    const long = summarizeEvents(
+      event({ message: `a\nb\r\u001b[31m${"x".repeat(1000)}`, statusCode: 401 }),
+    ).apiError;
+    expect(long.message.startsWith("a b [31m")).toBe(true);
+    expect(long.message).toHaveLength(API_ERROR_MESSAGE_MAX);
+    expect(long.retryable).toBe(false);
+    expect(
+      summarizeEvents(event({ message: "busy", responseHeaders: { "retry-after": "5" } })).apiError
+        .retryable,
+    ).toBe(true);
+    expect(summarizeEvents(JSON.stringify({ type: "error", error: {} })).apiError).toEqual({
+      message: "unknown",
+      statusCode: null,
+      retryable: false,
+    });
+    expect(runOutcome(summarizeEvents(event({ message: "busy" })), { code: 1 })).toBe("api-error");
+  });
+});
+
+describe("opencode review retry and substitute", () => {
+  const failed = (apiError, usage = { cost: 0.01 }) => ({
+    outcome: "api-error",
+    summary: { apiError, usage },
+  });
+  const busy = { message: "busy", statusCode: 429, retryable: true };
+  const room = { remainingMs: 20 * 60000, remainingUsd: 0.19, waitMs: 60000 };
+
+  it("[api error] retries once only when the service said to and money and time are left", () => {
+    expect(retryAfterApiError(failed(busy), room)).toBe("retry");
+    expect(retryAfterApiError(failed({ ...busy, retryable: false }), room)).toBeNull();
+    expect(retryAfterApiError({ outcome: "timeout", summary: { usage: {} } }, room)).toBeNull();
+    expect(retryAfterApiError(failed(busy), { ...room, remainingUsd: 0.06 })).toBe("no-budget");
+    expect(retryAfterApiError(failed(busy), { ...room, remainingMs: 70000 })).toBe("no-time");
+    expect(retryAfterApiError(failed(busy, { cost: 0, costUnknown: true }), room)).toBe(
+      "cost-unknown",
+    );
+  });
+
+  const run = (outcome, apiError) => ({
+    record: { outcome },
+    review: { summary: { apiError } },
+  });
+  const deepseek = REVIEW_MODELS[0];
+  const glm = REVIEW_MODELS[1];
+  const later = { mode: "code-review", previous: "a".repeat(40), models: [deepseek] };
+
+  it("[substitute] lets GLM take a later code-review round only when DeepSeek's service refused", () => {
+    expect(SUBSTITUTES).toEqual({ [deepseek]: glm });
+    expect(substituteFor({ ...later, runs: [run("api-error", busy)] })).toEqual({
+      model: glm,
+      for: deepseek,
+    });
+    const none = [
+      { ...later, runs: [run("ok", null)] },
+      { ...later, runs: [run("timeout", null)] },
+      { ...later, runs: [run("api-error", { ...busy, retryable: false })] },
+      { ...later, previous: undefined, runs: [run("api-error", busy)] },
+      { ...later, mode: "plan-review", runs: [run("api-error", busy)] },
+      { ...later, models: [glm], runs: [run("api-error", busy)] },
+      {
+        ...later,
+        models: [deepseek, glm],
+        runs: [run("api-error", busy), run("ok", null)],
+      },
+    ];
+    for (const options of none) expect(substituteFor(options)).toBeNull();
   });
 });
 
@@ -1264,6 +1356,14 @@ function startScriptedModel(reply, record = (parsed) => parsed) {
         );
       const step = main ? reply(parsed, requests.length) : { text: "title" };
       const callId = `call-${requests.length}`;
+      if (step.status) {
+        response.writeHead(step.status, {
+          "content-type": "application/json",
+          ...(step.retryAfter ? { "retry-after": String(step.retryAfter) } : {}),
+        });
+        response.end(JSON.stringify({ error: { type: "server_error", message: "BUSY_CELL" } }));
+        return;
+      }
       const answer = () => {
         response.writeHead(200, { "content-type": "text/event-stream" });
         const delta = { role: "assistant" };
@@ -1813,6 +1913,53 @@ describe("opencode review wrap-up", () => {
         expect(result.wrapUpSkipped).toBe("no-budget");
         expect(result.outcome).toBe("wrap-up-cost");
         expect(requests.filter(isWrapUp)).toHaveLength(0);
+      },
+    );
+  }, 120000);
+
+  it("[api error] waits and runs the review again after the service stays busy, and adds up both costs", async () => {
+    await withScriptedReview(
+      (_request, index) =>
+        index <= 6 ? { status: 429, retryAfter: 1 } : { text: "AFTER_RETRY", promptTokens: 1000 },
+      async ({ review, requests }) => {
+        const started = Date.now();
+        const result = await review({ retryWaitMs: 3000 });
+        expect(Date.now() - started).toBeGreaterThanOrEqual(3000);
+        expect(result.outcome).toBe("ok");
+        expect(result.retry).toBe("retried");
+        expect(result.retriedAfter).toContain("BUSY_CELL");
+        expect(result.summary.text).toBe("AFTER_RETRY");
+        expect(result.summary.apiError).toBeNull();
+        expect(result.runs).toHaveLength(2);
+        expect(requests).toHaveLength(7);
+        expect(requests[6].messages).toEqual(requests[0].messages);
+      },
+    );
+  }, 120000);
+
+  it("[api error] retries only once and records the service error when it is still busy", async () => {
+    await withScriptedReview(
+      () => ({ status: 429, retryAfter: 1 }),
+      async ({ review, requests }) => {
+        const result = await review({ retryWaitMs: 1000 });
+        expect(result.outcome).toBe("api-error");
+        expect(result.retry).toBe("retried");
+        expect(result.summary.apiError).toMatchObject({ statusCode: 429, retryable: true });
+        expect(result.runs).toHaveLength(2);
+        expect(requests).toHaveLength(12);
+      },
+    );
+  }, 120000);
+
+  it("[api error] does not retry a refusal the service marks as final", async () => {
+    await withScriptedReview(
+      () => ({ status: 401 }),
+      async ({ review }) => {
+        const result = await review({ retryWaitMs: 1000 });
+        expect(result.outcome).toBe("api-error");
+        expect(result.summary.apiError).toMatchObject({ statusCode: 401, retryable: false });
+        expect(result.retry).toBeNull();
+        expect(result.runs).toHaveLength(1);
       },
     );
   }, 120000);

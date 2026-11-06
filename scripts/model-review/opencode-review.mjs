@@ -223,6 +223,27 @@ export function buildPrompt({ mode, model, questions, head, base, previous, brie
 
 export const validCost = (value) => Number.isFinite(value) && value >= 0;
 
+export const API_ERROR_MESSAGE_MAX = 300;
+
+export function apiErrorOf(event) {
+  const data = event.error?.data ?? {};
+  const headers = data.responseHeaders ?? {};
+  const raw = String(data.message ?? event.error?.name ?? "unknown");
+  const message = [...raw]
+    .map((character) => (hasControlCharacter(character) ? " " : character))
+    .join("")
+    .replace(/ +/g, " ")
+    .trim()
+    .slice(0, API_ERROR_MESSAGE_MAX);
+  const statusCode = Number.isSafeInteger(data.statusCode) ? data.statusCode : null;
+  const retryAfterMs = Number(headers["retry-after-ms"] ?? Number(headers["retry-after"]) * 1000);
+  return {
+    message,
+    statusCode,
+    retryable: data.isRetryable === true || Number.isFinite(retryAfterMs),
+  };
+}
+
 export function summarizeEvents(jsonl) {
   const usage = {
     steps: 0,
@@ -237,6 +258,7 @@ export function summarizeEvents(jsonl) {
   const thoughts = [];
   const toolCalls = [];
   let lastReason = null;
+  let apiError = null;
   for (const line of jsonl.split("\n")) {
     if (!line.trim()) continue;
     let event;
@@ -246,6 +268,7 @@ export function summarizeEvents(jsonl) {
       continue;
     }
     const part = event.part ?? {};
+    if (event.type === "error") apiError = apiErrorOf(event);
     if (event.type === "text" && typeof part.text === "string") texts.push(part.text);
     if (event.type === "reasoning" && typeof part.text === "string") thoughts.push(part.text);
     if (event.type === "tool_use") {
@@ -271,9 +294,18 @@ export function summarizeEvents(jsonl) {
   }
   const text = texts.join("\n").trim();
   let outcome = "ok";
-  if (lastReason === "length") outcome = "truncated";
+  if (apiError) outcome = "api-error";
+  else if (lastReason === "length") outcome = "truncated";
   else if (!text) outcome = "no-text";
-  return { outcome, lastReason, text, thinking: thoughts.join("\n").trim(), usage, toolCalls };
+  return {
+    outcome,
+    lastReason,
+    apiError,
+    text,
+    thinking: thoughts.join("\n").trim(),
+    usage,
+    toolCalls,
+  };
 }
 
 export const OPENCODE_LOCK_DIR = join(dirname(fileURLToPath(import.meta.url)), "opencode-lock");
@@ -670,7 +702,69 @@ export function wrapUpReason(summary, run) {
   return null;
 }
 
-export async function reviewModel({
+export const API_ERROR_RETRY_WAIT_MS = 60000;
+export const SUBSTITUTES = { [REVIEW_MODELS[0]]: REVIEW_MODELS[1] };
+
+export function apiErrorText(apiError) {
+  return `${apiError.statusCode ?? "-"} ${apiError.message}`;
+}
+
+export function substituteFor({ mode, previous, models, runs }) {
+  if (mode !== "code-review" || !previous || models.length !== 1) return null;
+  const replacement = SUBSTITUTES[models[0]];
+  const [run] = runs;
+  if (!replacement || run.record.outcome !== "api-error") return null;
+  if (!run.review.summary.apiError?.retryable) return null;
+  return { model: replacement, for: models[0] };
+}
+
+export function retryAfterApiError(result, { remainingMs, remainingUsd, waitMs }) {
+  if (result.outcome !== "api-error" || !result.summary.apiError?.retryable) return null;
+  if (result.summary.usage.costUnknown) return "cost-unknown";
+  if (remainingUsd < WRAP_UP_RESERVE_USD + WRAP_UP_MIN_USD) return "no-budget";
+  if (remainingMs - waitMs < WRAP_UP_MIN_MS * 4) return "no-time";
+  return "retry";
+}
+
+export async function reviewModel(options) {
+  const {
+    timeoutMs,
+    costLimit = COST_LIMIT_PER_MODEL_USD,
+    retryWaitMs = API_ERROR_RETRY_WAIT_MS,
+  } = options;
+  const deadline = Date.now() + timeoutMs;
+  const first = await reviewOnce({ ...options, costLimit, startingUsd: 0 });
+  const remainingUsd = costLimit - first.summary.usage.cost;
+  const decision = retryAfterApiError(first, {
+    remainingMs: deadline - Date.now(),
+    remainingUsd,
+    waitMs: retryWaitMs,
+  });
+  if (decision !== "retry") return { ...first, retry: decision };
+  await new Promise((resolveWait) => setTimeout(resolveWait, retryWaitMs));
+  const second = await reviewOnce({
+    ...options,
+    timeoutMs: deadline - Date.now(),
+    costLimit,
+    startingUsd: first.summary.usage.cost,
+  });
+  const stdout = `${first.stdout}${first.stdout.endsWith("\n") ? "" : "\n"}${second.stdout}`;
+  const usage = { ...summarizeEvents(stdout).usage };
+  usage.cost = first.summary.usage.cost + second.summary.usage.cost;
+  for (const flag of ["costUnknown", "inFlight"])
+    if (first.summary.usage[flag] || second.summary.usage[flag]) usage[flag] = true;
+  return {
+    ...second,
+    runs: [...first.runs, ...second.runs],
+    stdout,
+    stderr: `${first.stderr}${second.stderr}`,
+    summary: { ...second.summary, usage },
+    retry: "retried",
+    retriedAfter: first.summary.apiError.message,
+  };
+}
+
+async function reviewOnce({
   binary,
   cwd,
   configPath,
@@ -679,10 +773,12 @@ export async function reviewModel({
   model,
   prompt,
   timeoutMs,
-  costLimit = COST_LIMIT_PER_MODEL_USD,
+  costLimit,
+  startingUsd,
 }) {
   const deadline = Date.now() + timeoutMs;
   const reserveMs = Math.min(WRAP_UP_RESERVE_MAX_MS, Math.floor(timeoutMs / 5));
+  const ownLimit = costLimit - startingUsd;
   const first = await runOpencode({
     binary,
     cwd,
@@ -691,16 +787,16 @@ export async function reviewModel({
     model,
     prompt,
     timeoutMs,
-    costLimit,
-    wrapUpCost: costLimit - WRAP_UP_RESERVE_USD,
+    costLimit: ownLimit,
+    wrapUpCost: ownLimit - WRAP_UP_RESERVE_USD,
     wrapUpMs: timeoutMs - reserveMs,
-    guard: { totalUsd: costLimit, stopAtUsd: costLimit - WRAP_UP_RESERVE_USD },
+    guard: { totalUsd: ownLimit, stopAtUsd: ownLimit - WRAP_UP_RESERVE_USD },
   });
   const firstSummary = applyGuardUsage(summarizeEvents(first.stdout), [first]);
   const wrapUp = wrapUpReason(firstSummary, first);
   const session = wrapUp ? sessionOf(first.stdout) : null;
   const remainingMs = deadline - Date.now();
-  const remainingUsd = costLimit - firstSummary.usage.cost;
+  const remainingUsd = ownLimit - firstSummary.usage.cost;
   const skipped = !wrapUp
     ? null
     : !session
@@ -734,7 +830,7 @@ export async function reviewModel({
     stopOnToolCall: true,
     timeoutMs: remainingMs,
     costLimit: remainingUsd,
-    guard: { totalUsd: costLimit, startingUsd: firstSummary.usage.cost },
+    guard: { totalUsd: ownLimit, startingUsd: firstSummary.usage.cost },
   });
   const stdout = `${first.stdout}${first.stdout.endsWith("\n") ? "" : "\n"}${second.stdout}`;
   const secondSummary = summarizeEvents(second.stdout);
@@ -1837,58 +1933,95 @@ async function main() {
     mkdirSync(roundDir, { recursive: true });
     prepareRawDir(roundRawDir);
     console.log(`REVIEW_RAW_DIR ${roundRawDir}`);
-    const results = await Promise.all(
-      options.models.map(async (model) => {
-        const name = model.split("/").pop();
-        const prompt = prompts[model];
-        keepEarlierAttempt(roundDir, name);
-        keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
-        writeFileSync(join(roundDir, promptFileName(model)), prompt);
-        const review = await reviewModel({
-          binary,
-          cwd: copy,
-          configPath,
-          wrapUpConfigPath,
-          gitGuard,
-          model,
-          prompt,
-          timeoutMs,
+    const runOne = async (model, prompt, extra = {}) => {
+      const name = model.split("/").pop();
+      keepEarlierAttempt(roundDir, name);
+      keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
+      writeFileSync(join(roundDir, promptFileName(model)), prompt);
+      const review = await reviewModel({
+        binary,
+        cwd: copy,
+        configPath,
+        wrapUpConfigPath,
+        gitGuard,
+        model,
+        prompt,
+        timeoutMs,
+      });
+      writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
+      const { summary } = review;
+      writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
+      if (summary.thinking)
+        writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
+      const record = {
+        at: new Date().toISOString(),
+        round,
+        mode: options.mode,
+        model,
+        head: commits.head,
+        base: commits.base ?? null,
+        previous: commits.previous ?? null,
+        promptSha256: createHash("sha256").update(prompt).digest("hex"),
+        outcome: review.outcome,
+        wrapUp: review.wrapUp,
+        wrapUpSkipped: review.wrapUpSkipped,
+        lastReason: summary.lastReason,
+        exitCode: review.runs.at(-1).code,
+        ...summary.usage,
+        toolCalls: summary.toolCalls.length,
+        ...(summary.apiError ? { apiError: apiErrorText(summary.apiError) } : {}),
+        ...(review.retry ? { retry: review.retry } : {}),
+        ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
+        ...extra,
+      };
+      appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
+      if (record.outcome !== "ok" && review.stderr.trim()) {
+        writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
+      }
+      return { record, review };
+    };
+    const runs = await Promise.all(options.models.map((model) => runOne(model, prompts[model])));
+    const results = runs.map((run) => run.record);
+    const substitute = substituteFor({ ...options, ...commits, runs });
+    if (substitute) {
+      const substitutePrompt = buildPrompt({
+        ...options,
+        ...commits,
+        model: substitute.model,
+        questions,
+        brief,
+      });
+      const refused =
+        Buffer.byteLength(substitutePrompt) > 100000
+          ? "PROMPT_TOO_LARGE"
+          : budgetCheck({
+              mode: options.mode,
+              records: readUsage(options.out),
+              models: [substitute.model],
+              approvedUsd: options.approvedUsd,
+            });
+      if (refused) console.log(`REVIEW_SUBSTITUTE_SKIPPED ${substitute.model} ${refused}`);
+      else {
+        console.log(`REVIEW_SUBSTITUTE ${substitute.model} for=${substitute.for}`);
+        const { record } = await runOne(substitute.model, substitutePrompt, {
+          substitute: true,
+          substituteFor: substitute.for,
         });
-        writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
-        const { summary } = review;
-        writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
-        if (summary.thinking)
-          writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
-        const record = {
-          at: new Date().toISOString(),
-          round,
-          mode: options.mode,
-          model,
-          head: commits.head,
-          base: commits.base ?? null,
-          previous: commits.previous ?? null,
-          promptSha256: createHash("sha256").update(prompt).digest("hex"),
-          outcome: review.outcome,
-          wrapUp: review.wrapUp,
-          wrapUpSkipped: review.wrapUpSkipped,
-          lastReason: summary.lastReason,
-          exitCode: review.runs.at(-1).code,
-          ...summary.usage,
-          toolCalls: summary.toolCalls.length,
-        };
-        appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
-        if (record.outcome !== "ok" && review.stderr.trim()) {
-          writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
-        }
-        return record;
-      }),
-    );
+        results.push(record);
+      }
+    }
     for (const record of results) {
       console.log(resultLine(record));
     }
     const totalSpent = spentOf(readUsage(options.out));
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
-    if (results.some((record) => record.outcome !== "ok")) process.exitCode = 4;
+    const covered = results.some((record) => record.substitute && record.outcome === "ok");
+    if (
+      results.some(
+        (record) => record.outcome !== "ok" && !(covered && record.model === results[0].model),
+      )
+    )
+      process.exitCode = 4;
   } finally {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
