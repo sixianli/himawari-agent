@@ -8,7 +8,7 @@ const BOOTSTRAP = "scripts/delivery-mode/packet-template/measurement/probe/boots
 const SOURCE_DIRECTORY = "packages/runtime-sandbox/src/";
 const BUILT_NAME = /^[a-z-]+\.js$/;
 const DIGEST = /^[0-9a-f]{64}$/;
-const PACKET_CHECK_LINE = /^\s+"([a-z-]+\.js)": "([0-9a-f]{64})",$/;
+const PACKET_CHECK_ENTRY = /(?<=^|\n)\s+"([a-z-]+\.js)": "([0-9a-f]{64})",(?=\n|$)/g;
 const REFRESH_HINT =
   "PROBE_SOURCES_REFRESH build the candidate on Hermes, put the new runtime-sandbox/dist digests into the probe bootstrap and both digests into " +
   RECORD;
@@ -37,7 +37,9 @@ function recordProblems(record) {
     BUILT_NAME.test(file.built) &&
     typeof file.source === "string" &&
     file.source === `${SOURCE_DIRECTORY}${file.built.replace(/\.js$/, ".ts")}` &&
+    typeof file.builtSha256 === "string" &&
     DIGEST.test(file.builtSha256) &&
+    typeof file.sourceSha256 === "string" &&
     DIGEST.test(file.sourceSha256)
       ? []
       : [`PROBE_SOURCES_RECORD_INVALID files[${index}]`],
@@ -49,17 +51,24 @@ function recordProblems(record) {
 }
 
 function bootstrapDigests(text) {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const normalized = text.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
   const start = lines.indexOf("const originals = {");
   const end = start === -1 ? -1 : lines.indexOf("};", start + 1);
   if (end === -1) return null;
   const parsed = { entries: [], malformed: [], outside: [] };
+  const entryLines = new Set();
+  for (const match of normalized.matchAll(PACKET_CHECK_ENTRY)) {
+    const nameAt = match.index + match[0].indexOf('"');
+    const line = normalized.slice(0, nameAt).split("\n").length - 1;
+    entryLines.add(line);
+    parsed.entries.push([match[1], match[2]]);
+    if (line <= start || line >= end) parsed.outside.push(match[1]);
+  }
   lines.forEach((line, index) => {
     const inside = index > start && index < end;
-    const match = line.match(PACKET_CHECK_LINE);
-    if (match) parsed.entries.push([match[1], match[2]]);
-    if (match && !inside) parsed.outside.push(match[1]);
-    if (!match && inside && /[0-9a-f]{64}/.test(line)) parsed.malformed.push(line.trim());
+    if (inside && !entryLines.has(index) && /[0-9a-f]{64}/.test(line))
+      parsed.malformed.push(line.trim());
   });
   return parsed;
 }

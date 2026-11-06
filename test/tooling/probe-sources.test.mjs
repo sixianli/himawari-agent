@@ -132,6 +132,23 @@ describe("probe source digests", () => {
     ]);
   });
 
+  it("finds an unindented entry after a blank line outside the block like re.M does", () => {
+    const root = fixture({ aroundBootstrap: `\n"sandbox-sdk.js": "${"c".repeat(64)}",\n` });
+    expect(probeSourceProblems(root)).toEqual([
+      "PROBE_BOOTSTRAP_ENTRY_OUTSIDE_ORIGINALS sandbox-sdk.js",
+      "PROBE_BOOTSTRAP_ENTRY_OUTSIDE_ORIGINALS sandbox-sdk.js",
+      "PROBE_BOOTSTRAP_DUPLICATE_NAME",
+      "PROBE_SOURCE_UNLISTED sandbox-sdk.js",
+    ]);
+  });
+
+  it("does not treat a line separator character as a line start", () => {
+    const root = fixture({
+      aroundBootstrap: `const x = 1;\u2028  "sandbox-sdk.js": "${"c".repeat(64)}",\n`,
+    });
+    expect(probeSourceProblems(root)).toEqual([]);
+  });
+
   it("fails when the originals block names a file twice", () => {
     const root = fixture({ extraBootstrap: `  "job-host-main.js": "${BUILT}",\n` });
     expect(probeSourceProblems(root)).toEqual(["PROBE_BOOTSTRAP_DUPLICATE_NAME"]);
@@ -213,6 +230,10 @@ describe("probe source digests", () => {
     ],
     [
       JSON.stringify({ bootstrap: BOOTSTRAP, files: [{ built: "job-host-main.js" }] }),
+      "PROBE_SOURCES_RECORD_INVALID files[0]",
+    ],
+    [
+      JSON.stringify({ bootstrap: BOOTSTRAP, files: [{ ...entry, builtSha256: [BUILT] }] }),
       "PROBE_SOURCES_RECORD_INVALID files[0]",
     ],
   ])("fails clearly on a broken record %#", (text, problem) => {
