@@ -486,6 +486,14 @@ describe("opencode review output", () => {
       summarizeEvents(event({ message: "busy", responseHeaders: { "retry-after": "5" } })).apiError
         .retryable,
     ).toBe(true);
+    for (const headers of [
+      { "retry-after": "" },
+      { "retry-after": null },
+      { "retry-after-ms": " " },
+    ])
+      expect(
+        summarizeEvents(event({ message: "busy", responseHeaders: headers })).apiError.retryable,
+      ).toBe(false);
     expect(summarizeEvents(JSON.stringify({ type: "error", error: {} })).apiError).toEqual({
       message: "unknown",
       statusCode: null,
@@ -514,9 +522,9 @@ describe("opencode review retry and substitute", () => {
     );
   });
 
-  const run = (outcome, apiError) => ({
+  const run = (outcome, apiError, retry = "retried") => ({
     record: { outcome },
-    review: { summary: { apiError } },
+    review: { summary: { apiError }, retry },
   });
   const deepseek = REVIEW_MODELS[0];
   const glm = REVIEW_MODELS[1];
@@ -532,6 +540,9 @@ describe("opencode review retry and substitute", () => {
       { ...later, runs: [run("ok", null)] },
       { ...later, runs: [run("timeout", null)] },
       { ...later, runs: [run("api-error", { ...busy, retryable: false })] },
+      { ...later, runs: [run("api-error", busy, "no-time")] },
+      { ...later, runs: [run("api-error", busy, "no-budget")] },
+      { ...later, runs: [run("api-error", busy, null)] },
       { ...later, previous: undefined, runs: [run("api-error", busy)] },
       { ...later, mode: "plan-review", runs: [run("api-error", busy)] },
       { ...later, models: [glm], runs: [run("api-error", busy)] },
@@ -2310,10 +2321,40 @@ describe("opencode review merge gate", () => {
     const f = fixture();
     try {
       const second = f.commit({ "code.txt": "fixed\n" }, "fix");
-      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm), ok(2, second, deepseek)]);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, second, deepseek, { previous: f.reviewed }),
+      ]);
       const result = f.check();
       expect(result).toMatchObject({ round: 2, reviewed: second, problems: [] });
       expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:both round-2:deepseek");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review chain] refuses a single-model round whose previous commit skips unreviewed work", () => {
+    const f = fixture();
+    try {
+      const unreviewed = f.commit({ "code.txt": "unreviewed\n" }, "unreviewed");
+      const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)];
+      for (const extra of [{ previous: unreviewed }, {}, { previous: null }]) {
+        f.writeLedger([...first, ok(2, unreviewed, deepseek, extra)]);
+        expect(f.check().problems).toEqual([`chain-broken round=2 ${unreviewed}`]);
+      }
+      f.writeLedger([...first, ok(2, unreviewed, deepseek, { previous: f.main })]);
+      expect(f.check()).toMatchObject({ round: 2, problems: [] });
+      const third = f.commit({ "code.txt": "third\n" }, "third");
+      f.writeLedger([
+        ...first,
+        ok(2, unreviewed, deepseek, { previous: f.reviewed }),
+        ok(3, third, deepseek, { previous: unreviewed }),
+        ok(3, third, glm, { previous: unreviewed }),
+      ]);
+      const result = f.check();
+      expect(result).toMatchObject({ round: 3, problems: [] });
+      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:both round-2:deepseek round-3:both");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2330,8 +2371,8 @@ describe("opencode review merge gate", () => {
       expect(f.check()).toMatchObject({ round: 1, problems: ["unreviewed code.txt"] });
       f.writeLedger([
         ...first,
-        ok(2, second, deepseek, { outcome: "api-error" }),
-        ok(2, second, glm, { substitute: true, substituteFor: deepseek }),
+        ok(2, second, deepseek, { outcome: "api-error", previous: f.reviewed }),
+        ok(2, second, glm, { substitute: true, substituteFor: deepseek, previous: f.reviewed }),
       ]);
       const result = f.check();
       expect(result).toMatchObject({ round: 2, problems: [] });
@@ -2363,7 +2404,7 @@ describe("opencode review merge gate", () => {
       f.writeLedger([
         ok(1, f.reviewed, deepseek),
         ok(1, f.reviewed, glm),
-        ok(2, rewritten, deepseek),
+        ok(2, rewritten, deepseek, { previous: f.reviewed }),
       ]);
       const result = f.check();
       expect(result.problems).toEqual([`chain-broken round=2 ${rewritten}`]);
@@ -2381,10 +2422,13 @@ describe("opencode review merge gate", () => {
       const second = f.commit({ "code.txt": "fixed\n" }, "fix");
       const report = (stop) => reviewReport({ repo: f.repo, pr: 7, mainRef: "origin/main", stop });
       const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)];
-      f.writeLedger([...first, ok(2, second, deepseek)]);
+      f.writeLedger([...first, ok(2, second, deepseek, { previous: f.reviewed })]);
       expect(report("no-error").at(-2)).toBe("停下的原因：没有“会出错”的意见");
       expect(() => report("run-failed")).toThrow("REPORT_STOP_INCONSISTENT run-failed");
-      f.writeLedger([...first, ok(2, second, deepseek, { outcome: "timeout" })]);
+      f.writeLedger([
+        ...first,
+        ok(2, second, deepseek, { outcome: "timeout", previous: f.reviewed }),
+      ]);
       expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
       expect(report("run-failed").at(-2)).toBe("停下的原因：有模型没跑完（outcome 不是 ok）");
     } finally {
@@ -2516,7 +2560,11 @@ describe("opencode review merge gate", () => {
     const f = lowFixFixture();
     try {
       const second = f.commit({ "code.txt": "second\n" }, "second");
-      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm), ok(2, second, deepseek)]);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        ok(2, second, deepseek, { previous: f.reviewed }),
+      ]);
       f.commit({ "test/code.test.mjs": "check\n" }, "fix");
       expect(f.check({ acceptLow: 1 }).lines.at(-1)).toBe(
         "REVIEW_LOW_FIX_REFUSED not-last-round last=2",
@@ -2528,6 +2576,81 @@ describe("opencode review merge gate", () => {
       rmSync(f.root, { recursive: true, force: true });
     }
   });
+
+  it("[low fix] checks a low-fix record against the evidence at its own commit and its own lists", () => {
+    const record = (head, extra = {}) => ({
+      at: "t",
+      mode: "low-fix",
+      cost: 0,
+      round: 1,
+      head,
+      files: ["code.txt", "test/code.test.mjs"],
+      findings: ["V1"],
+      ...extra,
+    });
+    const f = fixture();
+    try {
+      const fixed = f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "fix");
+      const roundDir = `${REVIEWS_DIR}/pr-7/round-1`;
+      f.commit(
+        {
+          [`${roundDir}/deepseek-v4.1-flash.md`]: `${answer}\n`,
+          [`${roundDir}/verdicts.jsonl`]: `${JSON.stringify(verdict())}\n`,
+        },
+        "evidence added after the fix",
+      );
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        record(fixed, { from: f.reviewed }),
+      ]);
+      expect(f.check().problems).toEqual([
+        "low-fix-invalid round=1 verdicts-not-committed round-1",
+      ]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+    const g = lowFixFixture();
+    try {
+      const fixed = g.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "fix");
+      const first = [ok(1, g.reviewed, deepseek), ok(1, g.reviewed, glm)];
+      g.writeLedger([...first, record(fixed, { from: g.reviewed, files: ["test/code.test.mjs"] })]);
+      expect(g.check().problems).toEqual(["low-fix-invalid round=1 files-differ"]);
+      g.writeLedger([...first, record(fixed, { from: g.reviewed, findings: ["V9"] })]);
+      expect(g.check().problems).toEqual(["low-fix-invalid round=1 findings-differ"]);
+      g.writeLedger([...first, record(fixed, { from: g.reviewed })]);
+      expect(g.check().problems).toEqual([]);
+    } finally {
+      rmSync(g.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] a refused --accept-low exits non-zero even when nothing is unreviewed", () => {
+    const f = lowFixFixture();
+    try {
+      const run = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--assert-reviewed",
+          "--pr",
+          "7",
+          "--repo",
+          f.repo,
+          "--accept-low",
+          "1",
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(run.stdout).toContain("REVIEW_LOW_FIX_REFUSED nothing-unreviewed");
+      expect(run.status).toBe(5);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
 
   it("[low fix] checks a hand-written low-fix record again at the gate", () => {
     const f = lowFixFixture();

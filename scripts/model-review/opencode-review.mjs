@@ -236,11 +236,15 @@ export function apiErrorOf(event) {
     .trim()
     .slice(0, API_ERROR_MESSAGE_MAX);
   const statusCode = Number.isSafeInteger(data.statusCode) ? data.statusCode : null;
-  const retryAfterMs = Number(headers["retry-after-ms"] ?? Number(headers["retry-after"]) * 1000);
+  const hint = (value) =>
+    typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
+  const retryAfterMs = Number.isFinite(hint(headers["retry-after-ms"]))
+    ? hint(headers["retry-after-ms"])
+    : hint(headers["retry-after"]) * 1000;
   return {
     message,
     statusCode,
-    retryable: data.isRetryable === true || Number.isFinite(retryAfterMs),
+    retryable: data.isRetryable === true || (Number.isFinite(retryAfterMs) && retryAfterMs >= 0),
   };
 }
 
@@ -713,7 +717,8 @@ export function substituteFor({ mode, previous, models, runs }) {
   if (mode !== "code-review" || !previous || models.length !== 1) return null;
   const replacement = SUBSTITUTES[models[0]];
   const [run] = runs;
-  if (!replacement || run.record.outcome !== "api-error") return null;
+  if (!replacement || run.record.outcome !== "api-error" || run.review.retry !== "retried")
+    return null;
   if (!run.review.summary.apiError?.retryable) return null;
   return { model: replacement, for: models[0] };
 }
@@ -944,15 +949,15 @@ export function parseVerdicts(text, path) {
     });
 }
 
-function showAt(repo, path) {
-  const shown = gitStatus(["show", `HEAD:${path}`], repo);
+function showAt(repo, commit, path) {
+  const shown = gitStatus(["show", `${commit}:${path}`], repo);
   return shown.status === 0 ? shown.stdout : null;
 }
 
 export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
   const problems = [];
   const verdictsPath = `${ledgerPath}/round-${round}/verdicts.jsonl`;
-  const text = showAt(repo, verdictsPath);
+  const text = showAt(repo, to, verdictsPath);
   if (text === null)
     return { problems: [`verdicts-not-committed round-${round}`], files: [], errors: [] };
   let verdicts;
@@ -966,7 +971,7 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
     if (!answers.has(verdict.model))
       answers.set(
         verdict.model,
-        showAt(repo, `${ledgerPath}/round-${round}/${verdict.model.split("/").pop()}.md`),
+        showAt(repo, to, `${ledgerPath}/round-${round}/${verdict.model.split("/").pop()}.md`),
       );
     if (!answers.get(verdict.model)?.includes(verdict.quote))
       problems.push(`quote-not-found ${printable(verdict.id)}`);
@@ -1000,42 +1005,72 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
 }
 
 export function coveragePoints(records) {
-  const start = lastCompleteRound(records);
-  if (!start) return null;
   const reviews = records.filter((record) => record.mode === "code-review");
-  const later = [...new Set(reviews.map((record) => record.round ?? 1))]
-    .filter((round) => round > start.round)
-    .sort((a, b) => a - b);
-  const points = [{ round: start.round, head: start.head, by: "both" }];
-  for (const round of later) {
-    const covering = reviews.filter(
-      (record) =>
-        (record.round ?? 1) === round &&
-        record.outcome === "ok" &&
-        (record.model === REVIEW_MODELS[0] ||
-          (record.substitute === true &&
-            record.substituteFor === REVIEW_MODELS[0] &&
-            record.model === SUBSTITUTES[REVIEW_MODELS[0]])),
+  const rounds = [...new Set(reviews.map((record) => record.round ?? 1))].sort((a, b) => a - b);
+  const points = [];
+  for (const round of rounds) {
+    const passed = reviews.filter(
+      (record) => (record.round ?? 1) === round && record.outcome === "ok",
     );
+    const both = REVIEW_MODELS.every((model) => passed.some((record) => record.model === model));
+    const covering = both
+      ? passed
+      : passed.filter(
+          (record) =>
+            record.model === REVIEW_MODELS[0] ||
+            (record.substitute === true &&
+              record.substituteFor === REVIEW_MODELS[0] &&
+              record.model === SUBSTITUTES[REVIEW_MODELS[0]]),
+        );
     if (covering.length === 0) continue;
     const heads = [...new Set(covering.map((record) => record.head))];
     if (heads.length !== 1)
       throw new Error(`REVIEW_ROUND_HEADS_DIFFER ${round} ${heads.join(",")}`);
-    const by = covering.some((record) => record.model === REVIEW_MODELS[0])
-      ? "deepseek"
-      : "substitute";
-    points.push({ round, head: heads[0], by });
+    const previous = [...new Set(covering.map((record) => record.previous ?? null))];
+    const by = both
+      ? "both"
+      : covering.some((record) => record.model === REVIEW_MODELS[0])
+        ? "deepseek"
+        : "substitute";
+    points.push({ round, head: heads[0], previous: previous.length === 1 ? previous[0] : "", by });
+    for (const record of records.filter((fix) => fix.mode === "low-fix" && fix.round === round))
+      points.push({
+        round,
+        head: record.head,
+        from: record.from,
+        files: record.files,
+        findings: record.findings,
+        by: "low-fix",
+      });
   }
-  const lowFixes = records.filter(
-    (record) => record.mode === "low-fix" && record.round >= start.round,
-  );
-  const ordered = [];
+  return points;
+}
+
+export function walkChain(points, { isAncestor, lowFixCheck }) {
+  let accepted = [];
+  let broken = null;
   for (const point of points) {
-    ordered.push(point);
-    for (const record of lowFixes.filter((fix) => fix.round === point.round))
-      ordered.push({ round: record.round, head: record.head, from: record.from, by: "low-fix" });
+    if (point.by === "both" && point.previous === null) {
+      accepted = [point];
+      broken = null;
+      continue;
+    }
+    if (accepted.length === 0 || broken) continue;
+    const covered = accepted.at(-1).head;
+    const problems = [];
+    if (point.by === "low-fix") {
+      if (point.from !== covered || !isAncestor(covered, point.head)) problems.push("chain-broken");
+      else problems.push(...lowFixCheck(point));
+    } else if (
+      !point.previous ||
+      !isAncestor(point.previous, covered) ||
+      !isAncestor(covered, point.head)
+    )
+      problems.push("chain-broken");
+    if (problems.length === 0) accepted.push(point);
+    else broken = { point, problems };
   }
-  return ordered;
+  return { accepted, broken };
 }
 
 function gitStatus(args, cwd) {
@@ -1055,28 +1090,40 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   const head = git(["rev-parse", "HEAD"], repo);
   const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
   const records = shown.status === 0 ? parseUsage(shown.stdout, `HEAD:${ledgerPath}`) : null;
-  const points = records ? coveragePoints(records) : null;
-  const complete = points?.at(-1) ?? null;
   const isAncestor = (from, to) =>
     gitStatus(["merge-base", "--is-ancestor", from, to], repo).status === 0;
-  const chainProblems = [];
-  for (const [index, point] of (points ?? []).entries()) {
-    if (index === 0) continue;
-    const before = points[index - 1];
-    if (!isAncestor(before.head, point.head) || (point.from && point.from !== before.head)) {
-      chainProblems.push(`chain-broken round=${point.round} ${point.head}`);
-      break;
-    }
-    if (point.by === "low-fix")
-      for (const problem of lowFixProblems({
-        repo,
-        ledgerPath,
-        round: point.round,
-        from: point.from,
-        to: point.head,
-      }).problems)
-        chainProblems.push(`low-fix-invalid round=${point.round} ${problem}`);
-  }
+  const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  const lowFixCheck = (point) => {
+    const check = lowFixProblems({
+      repo,
+      ledgerPath,
+      round: point.round,
+      from: point.from,
+      to: point.head,
+    });
+    const problems = [...check.problems];
+    if (check.problems.length === 0 && !sameList(point.files, check.files))
+      problems.push("files-differ");
+    if (
+      check.problems.length === 0 &&
+      !sameList(
+        point.findings,
+        check.errors.map((verdict) => verdict.id),
+      )
+    )
+      problems.push("findings-differ");
+    return problems;
+  };
+  const points = records ? coveragePoints(records) : [];
+  const { accepted, broken } = walkChain(points, { isAncestor, lowFixCheck });
+  const complete = accepted.at(-1) ?? null;
+  const chainProblems = broken
+    ? broken.problems.map((problem) =>
+        problem === "chain-broken"
+          ? `chain-broken round=${broken.point.round} ${broken.point.head}`
+          : `low-fix-invalid round=${broken.point.round} ${problem}`,
+      )
+    : [];
   const problems = [];
   if (!records) problems.push("ledger-not-committed");
   else if (!complete) problems.push("no-complete-round");
@@ -1091,8 +1138,8 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     problems.push(`main-not-merged ${printable(mainRef)}`);
   const summary = `pr=${pr} round=${complete?.round ?? "none"} reviewed=${complete?.head ?? "none"} head=${head}`;
   const chain =
-    points && points.length > 1
-      ? [`REVIEW_CHAIN ${points.map((point) => `round-${point.round}:${point.by}`).join(" ")}`]
+    accepted.length > 1
+      ? [`REVIEW_CHAIN ${accepted.map((point) => `round-${point.round}:${point.by}`).join(" ")}`]
       : [];
   const lines =
     problems.length === 0
@@ -1130,6 +1177,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   const ledgerMatchesHead = () =>
     (existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : null) === shown.stdout;
   let lowFixed = false;
+  let lowFixRefused = false;
   if (acceptLow !== undefined) {
     const reasons = [];
     if (problems.length === 0) reasons.push("nothing-unreviewed");
@@ -1142,8 +1190,10 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
         : null;
     if (check) reasons.push(...check.problems);
     if (reasons.length === 0 && !ledgerMatchesHead()) reasons.push("ledger-differs-from-HEAD");
-    if (reasons.length > 0) lines.push(`REVIEW_LOW_FIX_REFUSED ${reasons.join(" ")}`);
-    else {
+    if (reasons.length > 0) {
+      lines.push(`REVIEW_LOW_FIX_REFUSED ${reasons.join(" ")}`);
+      lowFixRefused = true;
+    } else {
       appendFileSync(
         ledgerFile,
         `${shown.stdout && !shown.stdout.endsWith("\n") ? "\n" : ""}${JSON.stringify({
@@ -1184,6 +1234,8 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     problems,
     lines,
     overridden,
+    lowFixRefused,
+    accepted,
   };
 }
 
@@ -1204,9 +1256,9 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
   const reviews = records.filter((record) => record.mode === "code-review");
   const rounds = [...new Set(reviews.map((record) => record.round ?? 1))];
   const latest = Math.max(0, ...rounds);
-  const latestComplete =
-    latest > 0 && (coveragePoints(records) ?? []).some((point) => point.round === latest);
   const gate = assertReviewed({ repo, pr, mainRef });
+  const latestComplete =
+    latest > 0 && gate.accepted.some((point) => point.round === latest && point.by !== "low-fix");
   const consistent = {
     "no-error": latestComplete && gate.problems.length === 0,
     "three-rounds": rounds.length >= 3,
@@ -2094,7 +2146,8 @@ async function main() {
   if (options.assertReviewed) {
     const result = assertReviewed(options);
     for (const line of result.lines) console.log(line);
-    if (result.problems.length > 0 && !result.overridden) process.exitCode = 5;
+    if ((result.problems.length > 0 && !result.overridden) || result.lowFixRefused)
+      process.exitCode = 5;
     return;
   }
   const timeoutMs = options.timeoutMinutes * 60 * 1000;

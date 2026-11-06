@@ -46,7 +46,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="working-with-opencode"></a>
 ## 和 OpenCode 协作：方案讨论和代码复核
 
-下面两个时机都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 两个模型各看一遍。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
+下面两个时机都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 看：方案讨论两个模型各看一遍；代码复核第 1 轮两个模型各看一遍，之后默认只用 DeepSeek。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
 
 - 写代码之前要出方案时（大改动一定要）：先让两个模型在不看线程结论的情况下各自出方案（`--mode plan`），再请它们审核线程自己的方案（`--mode plan-review`）。线程把三方逐条比较，先替 Andy 判断采纳什么、不采纳什么、为什么，只把整合后的方案和真正要他拍板的几项交给他。
 - 合并 PR 之前：对最终提交做一次代码复核（`--mode code-review`），第 1 轮两个模型都跑，之后的轮次默认只用 DeepSeek。线程把成立的意见分成“会出错”和“可以更好”，“会出错”的再分中、高和低两档：中、高的要修改并对修改再复核，连续三轮没过就先停下报告 Andy，否则复核到没有中、高的“会出错”意见为止；低的照样修改、补测试，但改动够小时用 `--accept-low` 记进账本，不再复核，汇报里逐条列给 Andy 抽查；可以更好的不修改，列给 Andy，他说采纳才改，改完同样再复核。
