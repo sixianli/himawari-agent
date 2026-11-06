@@ -29,6 +29,7 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  SensitiveInterceptionStorePort,
   ThreadPromptBundleStorePort,
   DecisionLedgerPort,
   MuseIntakePort,
@@ -568,6 +569,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   threadPromptBundles(): ThreadPromptBundleStorePort {
     return this.durable.threadPromptBundles();
+  }
+
+  sensitiveInterceptions(): SensitiveInterceptionStorePort {
+    return this.durable.sensitiveInterceptions();
   }
 
   memoryBook(): MemoryBookStorePort {

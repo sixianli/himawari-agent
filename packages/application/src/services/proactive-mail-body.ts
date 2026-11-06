@@ -7,13 +7,22 @@ export interface WindowedBody {
   readonly truncated: boolean;
 }
 
+export function mailBodyWindow(
+  length: number,
+  limit: number,
+): { readonly head: number; readonly tail: number } | null {
+  if (length <= limit) return null;
+  const room = Math.max(0, limit - Array.from(PROACTIVE_BODY_OMISSION_MARKER).length);
+  const head = Math.ceil(room * HEAD_SHARE);
+  return { head, tail: room - head };
+}
+
 export function windowMailBody(body: string, limit: number): WindowedBody {
   const points = Array.from(body);
-  if (points.length <= limit) return Object.freeze({ text: body, truncated: false });
+  const window = mailBodyWindow(points.length, limit);
+  if (window === null) return Object.freeze({ text: body, truncated: false });
   const marker = Array.from(PROACTIVE_BODY_OMISSION_MARKER);
-  const room = Math.max(0, limit - marker.length);
-  const head = Math.ceil(room * HEAD_SHARE);
-  const tail = room - head;
+  const { head, tail } = window;
   const kept = [
     ...points.slice(0, head),
     ...marker,

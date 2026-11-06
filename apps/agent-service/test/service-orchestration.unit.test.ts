@@ -261,6 +261,7 @@ beforeEach(() => {
     "memoryEpisodes",
     "memoryConsolidation",
     "threadRepository",
+    "sensitiveInterceptions",
   ])
     repository[key] = vi.fn(() => ({}));
   repository["ledgerObservation"] = vi.fn(() => ({

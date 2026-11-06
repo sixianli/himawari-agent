@@ -97,6 +97,7 @@ import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
+import { SqliteSensitiveInterceptionOperations } from "./sqlite-sensitive-interception-operations.ts";
 import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
@@ -366,6 +367,7 @@ export class SqliteDurableOperations {
   private readonly webPush: SqliteWebPushOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
+  private readonly sensitiveInterceptions: SqliteSensitiveInterceptionOperations;
   private readonly memoryBook: SqliteMemoryBookOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
@@ -451,6 +453,11 @@ export class SqliteDurableOperations {
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
+    this.sensitiveInterceptions = new SqliteSensitiveInterceptionOperations(
       database,
       fail,
       assertDiskHeadroom,
@@ -570,6 +577,8 @@ export class SqliteDurableOperations {
       return this.threadArtifacts.execute(operation, payload);
     if (operation.startsWith("threadPromptBundle."))
       return this.threadPromptBundles.execute(operation, payload);
+    if (operation.startsWith("sensitiveInterception."))
+      return this.sensitiveInterceptions.execute(operation, payload);
     if (operation.startsWith("memoryBook.")) return this.memoryBook.execute(operation, payload);
     switch (operation) {
       case "event.append":

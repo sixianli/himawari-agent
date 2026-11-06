@@ -639,6 +639,9 @@ input:not(
   box-shadow: 0 0 0 2px var(--focus);
 }
 @media (max-width: 640px) {
+  .modal-dialog .settings-nav .action-button {
+    flex: none;
+  }
   .modal-dialog .settings-nav {
     width: auto;
     margin: 0 16px 8px;

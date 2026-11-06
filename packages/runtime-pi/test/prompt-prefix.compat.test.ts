@@ -444,6 +444,39 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(findConversationBreak(bodies)).toBeNull();
   });
 
+  it("[SI-2] records a masked card once per request with the same identity, and sends the same bytes as without recording", async () => {
+    const turns = [
+      { prompt: `我的卡号 ${CARD}，帮我记着`, blocks: [ownerProfile] },
+      { prompt: "刚才那张卡是什么类型？", blocks: [ownerProfile] },
+      { prompt: "谢谢", blocks: [ownerProfile] },
+    ];
+    const reports: { context: unknown; sightings: readonly unknown[] }[] = [];
+    const recorded = await conversation(turns, (index) => ({ text: `回答${index}` }), undefined, {
+      egress: testModelEgress(undefined, (context, sightings) =>
+        reports.push({ context, sightings }),
+      ),
+    });
+    const plain = await conversation(turns, (index) => ({ text: `回答${index}` }));
+    expect(recorded.bodies).toEqual(plain.bodies);
+    expect(reports).toHaveLength(recorded.bodies.length);
+    for (const report of reports) {
+      expect(report.context).toEqual({
+        ownerId: "owner-prefix",
+        agentId: "agent-prefix",
+        threadId: "thread-prefix",
+        source: "chat",
+        purpose: "chat",
+      });
+      expect(report.sightings).toEqual([reports[0]?.sightings[0]]);
+    }
+    expect(reports[0]?.sightings[0]).toMatchObject({
+      part: "owner_message",
+      category: "bank-card",
+      ruleId: "bank-card",
+    });
+    expect(JSON.stringify(reports)).not.toContain(CARD.replaceAll(" ", ""));
+  });
+
   it("keeps long attachment text and many memories append-only", async () => {
     const attachment = `<file name="报告.txt" ref="payload:1"/>\n${"附件正文第一行。\n".repeat(200)}`;
     const memories = Array.from({ length: 30 }, (_, index) =>

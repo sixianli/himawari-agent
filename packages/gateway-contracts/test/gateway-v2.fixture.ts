@@ -325,6 +325,27 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
+  fixture("query", "sensitive.interceptions.read", { before: null }),
+  fixture("snapshot", "sensitive.interceptions.snapshot", {
+    counts: { masked: 1, withheld: 0, notSaved: 0 },
+    items: [
+      {
+        id: "a".repeat(64),
+        threadId: "thread-1",
+        source: "chat",
+        purpose: "chat",
+        part: "owner_message",
+        category: "password",
+        outcome: "masked",
+        firstSeenAt: "2026-11-05T01:00:00.000Z",
+        lastSeenAt: "2026-11-05T02:00:00.000Z",
+        seenCount: 3,
+      },
+    ],
+    next: null,
+    generatedAt: "2026-11-05T03:00:00.000Z",
+  }),
+  fixture("command", "sensitive.interceptions.clear", {}),
   fixture("query", "memory.overview.read", {}),
   fixture("snapshot", "memory.overview.snapshot", {
     memories: [

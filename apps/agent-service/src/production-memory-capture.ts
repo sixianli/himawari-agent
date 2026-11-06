@@ -728,6 +728,9 @@ export class ProductionMemoryCapture {
     };
     const audit = (outcome: MemoryExtractionAuditRecord["outcome"]) =>
       this.options.onAudit({
+        ownerId,
+        agentId,
+        threadId,
         sourceRef: input.sourceRef,
         generationId,
         policyVersion: input.policyVersion,
