@@ -128,9 +128,14 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(self.plan['evidenceRoot'], binding['paths']['evidenceRoot'])
 
     def test_plan_runs_only_steps_the_packet_and_deploy_script_define(self):
-        steps = set(re.findall(r"'(S[0-9]+_[A-Z0-9_]+)'", (self.packet / 'steps' / 'run-step.py').read_text()))
+        step_table = (self.packet / 'steps' / 'run-step.py').read_text()
+        steps = set(re.findall(r"'(S[0-9]+_[A-Z0-9_]+)'", step_table))
         for action in (self.plan['restoreAction'], self.plan['controlAction']):
             self.assertIn(action, steps)
+        maintenance = set(re.findall(r"'(S[0-9]+_[A-Z0-9_]+)'", re.search(r'^MAINTENANCE_ACTIONS = \{([^}]*)\}', step_table, re.M).group(1)))
+        self.assertIn(self.plan['restoreAction'], maintenance)
+        self.assertNotIn(self.plan['controlAction'], maintenance)
+        self.assertRegex(step_table, "'" + re.escape(self.plan['controlAction']) + r"': \[[^\]]*'" + re.escape(self.plan['restoreAction']) + r"'\]")
         orders = [order.split() for order in re.findall(r'actions=\(([^)]*)\)', (HERE / 'deploy.sh').read_text())]
         self.assertTrue(orders)
         copies = {action for order in orders for action in order if action.startswith('S3_')}
