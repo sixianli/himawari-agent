@@ -15,16 +15,7 @@ interface ManifestRow {
   readonly reason: string;
 }
 
-const SYSTEM_LAYER_SLOTS = new Set([
-  "available",
-  "unavailable",
-  "workspaceRoot",
-  "documentSkillDirectory",
-  "providers",
-  "maximumKib",
-  "capabilityRef",
-  "operation",
-]);
+const SYSTEM_LAYER_SLOTS = new Set(["capabilityRef", "operation"]);
 
 const VOLATILE_TEXT = [/\b20\d{2}-\d{2}-\d{2}\b/u, /\bT\d{2}:\d{2}/u, /\b[0-9a-f]{32,}\b/u];
 
@@ -119,7 +110,6 @@ const KNOWN_TOOL_RESULT_STATUS: readonly (readonly [string, string])[] = [
     "packages/platform-node/src/files/pi-host-publication.ts",
     '"目标文件已变化，候选保留，尚未开始发布。请读取最新内容并通',
   ],
-  ["packages/runtime-pi/src/pi-runtime-adapter.ts", "`Blocked by product policy: $" + "{"],
   ["packages/runtime-pi/src/pi-runtime-adapter.ts", '"工具未执行：无法保存恢复记录。"'],
   ["packages/runtime-pi/src/prepare-file-mutation.ts", "`Successfully wrote $" + "{Buffer.b"],
   ["packages/runtime-pi/src/sandboxed-coding-executor.ts", "`Successfully wrote $" + "{new Text"],
@@ -409,6 +399,31 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
         },
       ]),
     ).toEqual(["PROMPT_VOLATILE_TEXT x.date", "PROMPT_SLOT_NOT_ALLOWED x.slot now"]);
+  });
+
+  it("REVERSE: reports a workspace, command list, provider or fetch limit slot moved back into the system prompt or a tool", () => {
+    const base = { purpose: "x", usedBy: [], output: "free-text" as const };
+    const moved = [
+      "workspaceRoot",
+      "documentSkillDirectory",
+      "available",
+      "unavailable",
+      "providers",
+      "maximumKib",
+    ];
+    expect(
+      volatileProblems(
+        moved.map((name, index) => ({
+          ...base,
+          id: `x.moved-${index}`,
+          layer: index % 2 === 0 ? ("system" as const) : ("tools" as const),
+          segments: [
+            { kind: "text" as const, text: "值：" },
+            { kind: "slot" as const, name },
+          ],
+        })),
+      ),
+    ).toEqual(moved.map((name, index) => `PROMPT_SLOT_NOT_ALLOWED x.moved-${index} ${name}`));
   });
 
   it("REVERSE: reports a prompt written directly in source code", () => {

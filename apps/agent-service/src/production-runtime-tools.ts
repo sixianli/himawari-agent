@@ -28,10 +28,8 @@ import {
   type RuntimeToolSettledResult,
   type SandboxExecutionPreparationPort,
   WEB_FETCH_MAXIMUM_OFFSET,
-  type WebProviderId,
   type WorkerDelegationAdmissionServiceOptions,
   WorkerDelegationService,
-  webProviderChain,
 } from "@himawari-agent/application";
 import { isSandboxReservationNeverStarted } from "@himawari-agent/application/sandbox-execution-projection";
 import {
@@ -123,10 +121,6 @@ const unknownResult = (): RuntimeToolSettledResult => ({
   externalActionId: null,
   modelContent: "执行结果尚未确认，不能重新执行该操作。",
 });
-const providerNames = (providers: readonly WebProviderId[] | undefined) => {
-  const [first, ...rest] = webProviderChain(providers).map((provider) => provider.displayName);
-  return rest.length ? `${first}（失败时依次改用 ${rest.join("、")}）` : `${first}`;
-};
 
 function digest(value: unknown): string {
   return createHash("sha256")
@@ -459,9 +453,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         ...(this.#options.fileRead?.hostWeb ? { executionMode: "parallel" as const } : {}),
         capabilityRef: `${this.#options.publicSearch.capabilityRef}.web_search`,
         capabilityHandleRef: null,
-        description: renderPrompt(TOOL_WEB_SEARCH, {
-          providers: providerNames(this.#options.publicSearch.providers),
-        }),
+        description: TOOL_WEB_SEARCH.text,
         parameters: {
           type: "object",
           properties: {
@@ -478,10 +470,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         ...(this.#options.fileRead?.hostWeb ? { executionMode: "parallel" as const } : {}),
         capabilityRef: `${this.#options.publicFetch.capabilityRef}.web_fetch`,
         capabilityHandleRef: null,
-        description: renderPrompt(TOOL_WEB_FETCH, {
-          providers: providerNames(this.#options.publicFetch.providers),
-          maximumKib: String(Math.floor(this.#options.publicFetch.maximumBytes / 1024)),
-        }),
+        description: TOOL_WEB_FETCH.text,
         parameters: {
           type: "object",
           properties: {

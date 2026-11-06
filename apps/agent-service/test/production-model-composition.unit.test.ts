@@ -38,6 +38,7 @@ import {
   DOCUMENT_SKILL_DIRECTORY,
   HIMAWARI_IDENTITY,
   runCapabilityNotice,
+  runtimeEnvironmentNotice,
 } from "../src/production-run-policy.js";
 import { testModelEgress } from "@himawari-agent/testing";
 
@@ -680,15 +681,17 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(instructionText).not.toContain("coding assistant");
   expect(instructionText).not.toContain("本轮请求时间");
   expect(instructionText).not.toContain("2026-09-1");
-  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
-    "本轮没有联网搜索工具",
-  );
+  expect(instructionText).toContain("联网搜索没开时");
+  expect(instructionText).toContain("运行环境说明");
+  expect(instructionText).not.toContain("联网搜索：本轮没有");
+  const environmentText = new TextDecoder().decode(protect.mock.calls[1]?.[0].plaintext);
+  expect(environmentText).toContain("联网搜索：本轮没有。");
+  expect(environmentText).toContain("本轮没有文件和命令工具。");
+  expect(first.runtimeEnvironmentRef).toEqual(expect.any(String));
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
     "用用户本轮提问所用的语言回答；调用工具之前或之间写给用户看的说明也用这种语言",
   );
-  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).not.toContain(
-    "使用真实查询",
-  );
+  expect(instructionText).not.toContain("沙箱没有外网");
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
   expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);
   const threadSource = {
@@ -698,7 +701,8 @@ it("selects trusted Run policy and binds instruction content across configuratio
   const threadPolicy = await policy(threadSource);
   expect(threadPolicy.answerLocalePolicy).toBeUndefined();
   expect(threadPolicy.systemInstructionRef).toBe(first.systemInstructionRef);
-  expect(protect).toHaveBeenCalledTimes(1);
+  expect(threadPolicy.runtimeEnvironmentRef).toBe(first.runtimeEnvironmentRef);
+  expect(protect).toHaveBeenCalledTimes(2);
   const changed = await createProductionRunPolicy({
     ...options,
     configuration: {
@@ -720,33 +724,60 @@ it("selects trusted Run policy and binds instruction content across configuratio
 });
 
 describe("Run capability notice", () => {
-  it("tells the model what it cannot reach when no search is configured", () => {
-    const notice = runCapabilityNotice({
-      publicSearch: false,
+  it("keeps only rules in the system prompt and moves every changing value to the runtime environment", () => {
+    const notice = runCapabilityNotice({ coding: true });
+    expect(notice).toContain("沙箱没有外网");
+    expect(notice).toContain("目录之外的路径会被拒绝");
+    expect(notice).toContain("命令可以在工作目录里新建、修改和删除文件");
+    expect(notice).toContain("临时文件放到 $TMPDIR");
+    expect(notice).toContain("不要让用户去配置网络或代理");
+    expect(notice).toContain("见最近附上的运行环境说明");
+    expect(notice).toContain("和本规则一样约束本轮的工具使用");
+    expect(notice).not.toContain("/var/lib/himawari/workspace");
+    expect(notice).not.toContain(DOCUMENT_SKILL_DIRECTORY);
+    const environment = runtimeEnvironmentNotice({
       coding: true,
       workspaceRoot: "/var/lib/himawari/workspace",
     });
-    expect(notice).toContain("沙箱没有外网");
-    expect(notice).toContain("工作目录是 /var/lib/himawari/workspace");
-    expect(notice).toContain("命令可以在工作目录里新建、修改和删除文件");
-    expect(notice).toContain("临时文件放到 $TMPDIR");
-    expect(notice).toContain("本轮没有联网搜索工具");
-    expect(notice).toContain("不要让用户去配置网络或代理");
-    expect(notice).not.toContain("web_search");
+    expect(environment).toContain("工作目录：/var/lib/himawari/workspace。");
+    expect(environment).toContain("联网搜索：本轮没有。");
+    expect(environment).toContain("抓取网页：本轮没有。");
+  });
+
+  it("states in the runtime environment that the workspace is gone after the grant expires", () => {
+    const environment = runtimeEnvironmentNotice({ coding: true, workspaceRoot: null });
+    expect(environment).toContain("工作目录：本轮没有。");
+    expect(environment).not.toContain("/var/lib/himawari/workspace");
+    expect(runCapabilityNotice({ coding: true })).toBe(runCapabilityNotice({ coding: true }));
+  });
+
+  it("names search and fetch providers and the fetch limit only in the runtime environment", () => {
+    const environment = runtimeEnvironmentNotice({
+      coding: false,
+      workspaceRoot: null,
+      publicSearch: { providers: ["exa-public", "deepseek"] },
+      publicFetch: { providers: ["exa-public"], maximumBytes: 512 * 1024 },
+    });
+    expect(environment).toContain("本轮没有文件和命令工具。");
+    expect(environment).toMatch(/联网搜索：已开启，查询发送给 .+（失败时依次改用 .+）。/u);
+    expect(environment).toContain("一次最多返回约 512 KiB。");
+    expect(environment.split("\n").at(-1)).not.toMatch(/\d/u);
   });
 
   it("points the model to the document skill only when it has the coding sandbox", () => {
-    const withSandbox = runCapabilityNotice({
-      publicSearch: false,
-      coding: true,
-      workspaceRoot: "/var/lib/himawari/workspace",
-      documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
-    });
-    expect(withSandbox).toContain(`cat ${DOCUMENT_SKILL_DIRECTORY}SKILL.md`);
+    const withSandbox = runCapabilityNotice({ coding: true });
+    expect(withSandbox).toContain("文档技能目录下的 SKILL.md");
     expect(withSandbox).toContain("不要探测或安装");
     expect(
-      runCapabilityNotice({
-        publicSearch: true,
+      runtimeEnvironmentNotice({
+        coding: true,
+        workspaceRoot: null,
+        documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
+      }),
+    ).toContain(`文档技能目录：${DOCUMENT_SKILL_DIRECTORY}`);
+    expect(runCapabilityNotice({ coding: false })).not.toContain("SKILL.md");
+    expect(
+      runtimeEnvironmentNotice({
         coding: false,
         workspaceRoot: null,
         documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
@@ -762,12 +793,12 @@ describe("Run capability notice", () => {
     }
   });
 
-  it("points the model to web_search when search is configured", () => {
-    const notice = runCapabilityNotice({ publicSearch: true, coding: false, workspaceRoot: null });
+  it("keeps the web_search rule in the system prompt whether or not search is configured", () => {
+    const notice = runCapabilityNotice({ coding: false });
     expect(notice).toContain("web_search");
     expect(notice).toContain("核对来源日期");
-    expect(notice).not.toContain("沙箱");
-    expect(notice).not.toContain("工作目录");
+    expect(notice).not.toContain("沙箱没有外网");
+    expect(notice).not.toContain("工作目录：");
   });
 
   it("names the workspace only from a current coding grant", async () => {

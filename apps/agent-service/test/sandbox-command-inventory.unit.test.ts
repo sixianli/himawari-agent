@@ -10,7 +10,7 @@ import {
   SANDBOX_READ_ROOTS,
   sandboxCanRead,
 } from "../src/sandbox-command-inventory.js";
-import { runCapabilityNotice } from "../src/production-run-policy.js";
+import { runCapabilityNotice, runtimeEnvironmentNotice } from "../src/production-run-policy.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -81,18 +81,18 @@ describe("sandbox command inventory", () => {
   });
 
   it("tells the model which commands exist and which do not", () => {
-    const notice = runCapabilityNotice({
-      publicSearch: false,
+    const environment = runtimeEnvironmentNotice({
       coding: true,
       workspaceRoot: "/var/lib/himawari/workspace",
       sandboxCommands: { available: ["bash", "sed"], unavailable: ["awk", "zip"] },
     });
-    expect(notice).toContain("能直接用的常用命令：bash、sed");
-    expect(notice).toContain("沙箱里没有：awk、zip");
-    expect(notice).toContain("command -v");
-    expect(
-      runCapabilityNotice({ publicSearch: false, coding: false, workspaceRoot: null }),
-    ).not.toContain("常用命令");
+    expect(environment).toContain("能直接用的常用命令：bash、sed");
+    expect(environment).toContain("沙箱里没有：awk、zip");
+    expect(runCapabilityNotice({ coding: true })).toContain("command -v");
+    expect(runCapabilityNotice({ coding: true })).not.toContain("bash、sed");
+    expect(runtimeEnvironmentNotice({ coding: false, workspaceRoot: null })).not.toContain(
+      "常用命令",
+    );
   });
 
   it("does not offer candidates that need the network", () => {

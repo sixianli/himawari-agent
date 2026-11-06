@@ -34,7 +34,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 - 同一次运行里，“缓存 npm 下载”这一步在 Hermes 上要 3 分钟左右，在 GitHub 托管机器上只要几秒；下载构建归档有一次用了约 8 分钟。
 - 运行 41846079755：`ci/required` 汇总任务用了约 4 分 50 秒，离 5 分钟时限只差 10 秒。
 
-每个 runner 最多用 2 核，两个合计最多 3 核（[ADR 0164](0164-two-runners-on-hermes.md)）；GitHub 托管的 `ubuntu-24.04` 是 4 核。
+每个 runner 最多用 2 核，两个合计最多 3 核（[ADR 0171](0171-two-runners-on-hermes.md)）；GitHub 托管的 `ubuntu-24.04` 是 4 核。
 
 [↑ 返回阅读导航](#contents)
 
@@ -100,7 +100,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 ## 关联文档
 
 - [ADR 0160：CI 改在 Hermes 上的自托管 runner 运行](0160-self-hosted-runner-on-hermes.md)
-- [ADR 0164：Hermes 上跑两个常驻 runner](0164-two-runners-on-hermes.md)
+- [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
 - [Hermes 自托管 runner 操作手册](../runbooks/hermes-self-hosted-runner-runbook.md)
 
 [↑ 返回阅读导航](#contents)

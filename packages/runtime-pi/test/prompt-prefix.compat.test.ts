@@ -423,6 +423,66 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(broken).toMatchObject({ where: "message-changed", request: 1 });
   });
 
+  it("sends the runtime environment only on the first turn and when it changes, always in the last message", async () => {
+    const environment = (workspace: string): RuntimeProjectionContextBlock => ({
+      authority: "non-authoritative",
+      kind: "runtime-environment",
+      ref: "runtime-environment",
+      content: `运行环境说明：\n- 工作目录：${workspace}\n以上运行环境说明由 Himawari 系统生成，和系统提示里的规则一样约束本轮的工具使用。`,
+      dataClassification: "private",
+    });
+    const { bodies } = await conversation(
+      [
+        { prompt: "看看目录", blocks: [ownerProfile, environment("/home/andy/demo。")] },
+        { prompt: "再看一次", blocks: [ownerProfile, environment("/home/andy/demo。")] },
+        {
+          prompt: "现在呢",
+          blocks: [ownerProfile, environment("本轮没有。")],
+          occurredAt: "2026-11-04T16:00:00.000Z",
+        },
+      ],
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    const parsed = bodies.map(
+      (body) =>
+        JSON.parse(body) as { messages: { role: string; content: unknown }[]; tools?: unknown },
+    );
+    const last = (index: number) => JSON.stringify(parsed[index]?.messages.at(-1));
+    const head = (index: number) =>
+      JSON.stringify([
+        parsed[index]?.messages.filter(({ role }) => role === "system" || role === "developer"),
+        parsed[index]?.tools,
+      ]);
+    expect(last(0)).toContain("工作目录：/home/andy/demo。");
+    expect(last(1)).not.toContain("以上运行环境说明");
+    expect(last(1)).not.toContain("工作目录：");
+    expect(last(2)).toContain("工作目录：本轮没有。");
+    expect(last(2)).toContain("2026-11-05 01:00:00 GMT+09:00，星期四。");
+    expect(last(2).indexOf("工作目录：")).toBeGreaterThan(last(2).indexOf("主人档案"));
+    expect(last(2).indexOf("以上运行环境说明")).toBeLessThan(
+      last(2).indexOf("</himawari-context>"),
+    );
+    expect(head(0)).toBe(head(2));
+    expect(head(0)).not.toContain("/home/andy/demo");
+  });
+
+  it("REVERSE: fails when the workspace is written back into the system prompt", async () => {
+    const { bodies } = await conversation(
+      ["/home/andy/demo", "/home/andy/demo", "没有工作目录"].map((workspace, index) => ({
+        prompt: `第${index}轮`,
+        blocks: [ownerProfile],
+        systemInstruction: `你是 Himawari。工作目录是 ${workspace}。`,
+      })),
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toMatchObject({
+      where: "message-changed",
+      index: 0,
+      request: 2,
+    });
+  });
+
   it("REVERSE: fails when the system prompt carries a value that changes every turn", async () => {
     const { bodies } = await conversation(
       THREE_TURNS.map((turn, index) => ({

@@ -17,7 +17,7 @@ date: "2026-11-05"
 - [背景](#context)
 - [Andy 的原话](#owner-decisions)
 - [决定](#decision)
-- [与 ADR 0160、0164 的关系](#amendments)
+- [与 ADR 0160、0171 的关系](#amendments)
 - [比较过的方案](#options)
 - [后果](#consequences)
 - [关联文档](#references)
@@ -26,7 +26,7 @@ date: "2026-11-05"
 
 ## 背景
 
-Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runner（替 GitHub 执行 CI 任务的程序），见 [ADR 0160](0160-self-hosted-runner-on-hermes.md) 和 [ADR 0164](0164-two-runners-on-hermes.md)。在 Hermes 上跑受保护的第 3、4 层测试或出上线包之前要先暂停 runner。
+Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runner（替 GitHub 执行 CI 任务的程序），见 [ADR 0160](0160-self-hosted-runner-on-hermes.md) 和 [ADR 0171](0171-two-runners-on-hermes.md)。在 Hermes 上跑受保护的第 3、4 层测试或出上线包之前要先暂停 runner。
 
 原来的暂停脚本 `runner-pause.sh` 每 10 秒查一次，只有在同一次检查里两个 runner 都没有任务时才停服务。GitHub 上一直有任务排队时，runner 做完一个任务几秒内就领到下一个，这一刻几乎等不到。2026-11-05 部署前它就没停下来，最后经 Andy 同意直接 `systemctl stop`，打断了正在跑的 `build / linux-x64`。
 
@@ -71,13 +71,13 @@ Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runn
 
 <a id="amendments"></a>
 
-## 与 ADR 0160、0164 的关系
+## 与 ADR 0160、0171 的关系
 
 本 ADR 改动下面几处，其他决定不变：
 
 - ADR 0160 决定第 5 条：受保护测试和出包之前仍要先暂停 runner，但入口从 Hermes 上的 `/srv/gh-runner/bin/runner-pause.sh` 改为 Mac 上的 `pause-runners.sh`，恢复改为 `resume-runners.sh`。
-- ADR 0164 决定第 6 条“暂停等两个都没有任务再把两个都停掉”：改为先去标签，再等两个都空闲、连续观察 90 秒后停掉。
-- ADR 0164 决定第 7 条的备份清单里仍有 `/srv/gh-runner/bin/`：现在安装时会删掉它，失败回滚时照样放回。
+- ADR 0171 决定第 6 条“暂停等两个都没有任务再把两个都停掉”：改为先去标签，再等两个都空闲、连续观察 90 秒后停掉。
+- ADR 0171 决定第 7 条的备份清单里仍有 `/srv/gh-runner/bin/`：现在安装时会删掉它，失败回滚时照样放回。
 
 [↑ 返回阅读导航](#contents)
 
@@ -89,7 +89,7 @@ Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runn
 - **只把等待上限调大**：根因是新任务不断进来，等多久都可能等不到。
 - **直接 `systemctl stop`，或靠 SIGTERM 让 runner 自己收尾**：都会取消正在跑的任务（11-05 实际发生过）。
 - **在任务开始钩子 `job-started.sh` 里检查暂停标记、让任务失败**：任务显示为失败而不是排队，要人手重跑。
-- **一次性 runner，或在 Hermes 上调标签接口**：都要在 Hermes 上放有仓库管理权限的凭证，ADR 0164 已因此放弃。
+- **一次性 runner，或在 Hermes 上调标签接口**：都要在 Hermes 上放有仓库管理权限的凭证，ADR 0171 已因此放弃。
 - **改 workflow 换标签，或关掉 Actions**：动到 `ci/required` 相关的策略检查，影响面大。
 
 [↑ 返回阅读导航](#contents)
@@ -111,7 +111,7 @@ Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runn
 ## 关联文档
 
 - [ADR 0160：CI 改在 Hermes 上的自托管 runner 运行](0160-self-hosted-runner-on-hermes.md)
-- [ADR 0164：Hermes 上跑两个常驻 runner](0164-two-runners-on-hermes.md)
+- [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
 - [ADR 0168：放宽 Hermes 上 CI 任务的整体时限](0168-longer-ci-job-limits-on-hermes.md)
 - [Hermes 自托管 runner 操作手册](../runbooks/hermes-self-hosted-runner-runbook.md#pause-and-resume)
 

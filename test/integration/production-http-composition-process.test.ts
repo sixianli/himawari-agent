@@ -67,7 +67,10 @@ const providerRequests: Array<{
   readonly assertion: string | undefined;
   readonly accept: string | undefined;
   body?: Readonly<Record<string, unknown>>;
+  raw?: string;
 }> = [];
+type ChatReply = { readonly text: string } | { readonly tool: string; readonly input: object };
+let chatReply: ((input: Readonly<Record<string, unknown>>) => ChatReply) | undefined;
 const agentGenerationRequests = () =>
   providerRequests.filter(
     ({ path: route, body }) =>
@@ -231,6 +234,8 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
       request.on("end", () => {
         const input = JSON.parse(body);
         capturedRequest.body = input;
+        capturedRequest.raw = body;
+        const reply = chatReply?.(input) ?? { text: "安装后的持久回答" };
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(
           `data: ${JSON.stringify({
@@ -241,7 +246,20 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
             choices: [
               {
                 index: 0,
-                delta: { role: "assistant", content: "安装后的持久回答" },
+                delta:
+                  "tool" in reply
+                    ? {
+                        role: "assistant",
+                        tool_calls: [
+                          {
+                            index: 0,
+                            id: `call-${providerRequests.length}`,
+                            type: "function",
+                            function: { name: reply.tool, arguments: JSON.stringify(reply.input) },
+                          },
+                        ],
+                      }
+                    : { role: "assistant", content: reply.text },
                 finish_reason: null,
               },
             ],
@@ -264,7 +282,7 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
                     },
                   },
                 },
-                finish_reason: "stop",
+                finish_reason: "tool" in reply ? "tool_calls" : "stop",
               },
             ],
             usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: "0.000077" },
@@ -1120,7 +1138,10 @@ async function writeServiceCapabilitySnapshot() {
   return { snapshotPath: capabilityDeploymentPath, sha256: capabilityDeploymentSha256 };
 }
 
-async function openInstalledMain() {
+const WORKSPACE_GRANT_ID = "directory-installed";
+const WORKSPACE_PATH = "/srv/himawari/workspace-installed";
+
+async function openInstalledMain(options: { readonly coding?: boolean } = {}) {
   stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-main-state-`);
   cleanupRoots.push(stateRoot);
   await initializeTestDatabase();
@@ -1150,7 +1171,52 @@ async function openInstalledMain() {
     memoryLimit: 10,
     maxSelectedMemories: 5,
     maxMemoryClassification: "private",
+    ...(options.coding
+      ? {
+          coding: {
+            hostId: "host-installed",
+            workerInstanceId: "worker-installed",
+            grantId: WORKSPACE_GRANT_ID,
+            capabilityRef: "installed.coding",
+            capabilityVersion: "1.0.0",
+            maximumBytes: 4096,
+            enabledTools: ["read"],
+          },
+        }
+      : {}),
   };
+  if (options.coding) {
+    const seeded = openQualifiedDatabase(databasePath);
+    try {
+      seeded
+        .prepare(
+          "INSERT INTO product_state_records (key, owner_id, agent_id, revision, value_json, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+        )
+        .run(
+          `host-workspace:directory-grant:${WORKSPACE_GRANT_ID}`,
+          ownerId,
+          agentId,
+          JSON.stringify({
+            id: WORKSPACE_GRANT_ID,
+            revision: 1,
+            hostId: "host-installed",
+            canonicalRootId: "root-installed",
+            displayPath: WORKSPACE_PATH,
+            operations: ["read"],
+            dataClassification: "private",
+            disclosure: "model",
+            pathPolicy: "same_filesystem_no_links",
+            mountPolicy: "fixed_device",
+            authorizationRef: "authorization-installed",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            revokedAt: null,
+          }),
+          new Date().toISOString(),
+        );
+    } finally {
+      seeded.close();
+    }
+  }
   raw["capabilityDeployment"] = await writeServiceCapabilitySnapshot();
   raw["secretReferences"] = [
     ...(raw["secretReferences"] as object[]),
@@ -1785,3 +1851,164 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
   },
   90_000,
 );
+
+type ChatBody = {
+  readonly messages: readonly { readonly role: string; readonly content: unknown }[];
+  readonly tools?: unknown;
+};
+
+function agentRequests(from: number) {
+  return providerRequests
+    .slice(from)
+    .filter(
+      ({ path: route, body }) =>
+        route === "/v1/chat/completions" &&
+        (body?.["messages"] as Array<{ role?: unknown }> | undefined)?.[0]?.role === "system",
+    )
+    .map(({ raw, body }) => ({ raw: raw ?? "", body: body as unknown as ChatBody }));
+}
+
+function requestHead(request: { readonly raw: string; readonly body: ChatBody }) {
+  const second = request.body.messages[1];
+  const end = second === undefined ? -1 : request.raw.indexOf(JSON.stringify(second));
+  if (end < 0) throw new Error("REQUEST_HEAD_NOT_FOUND");
+  return { prefix: request.raw.slice(0, end), tools: JSON.stringify(request.body.tools ?? null) };
+}
+
+function expectAppendOnly(
+  previous: { readonly body: ChatBody },
+  next: { readonly body: ChatBody },
+) {
+  expect(next.body.messages.length).toBeGreaterThan(previous.body.messages.length);
+  previous.body.messages.forEach((message, index) => {
+    expect(JSON.stringify(next.body.messages[index])).toBe(JSON.stringify(message));
+  });
+}
+
+const lastMessage = (request: { readonly body: ChatBody }) =>
+  JSON.stringify(request.body.messages.at(-1));
+
+async function submitTurn(
+  service: Awaited<ReturnType<typeof openInstalledMain>>,
+  threadId: string,
+  name: string,
+  content: string,
+) {
+  const detail = await service.query("thread.detail", { threadId, afterSequence: 0, limit: 100 });
+  const revision = (detail.body as { payload: { thread: { revision: number } } }).payload.thread
+    .revision;
+  await service.submit({
+    threadId,
+    expectedRevision: revision,
+    name,
+    runId: `run:${name}`,
+    content,
+  });
+  return waitForRunToLeaveExecution(service, threadId, `run:${name}`);
+}
+
+it("[PR-A] keeps the request head byte-identical when the workspace grant expires and sends the runtime environment only when it changes", async () => {
+  const service = await openInstalledMain({ coding: true });
+  const threadId = "thread-runtime-environment";
+  try {
+    await service.command("thread.create", "runtime-environment-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("runtime-environment-create-payload", "create"),
+    });
+    const start = providerRequests.length;
+    expect((await submitTurn(service, threadId, "environment-first", "第一轮")).run?.status).toBe(
+      "completed",
+    );
+    const first = agentRequests(start);
+    expect((await submitTurn(service, threadId, "environment-second", "第二轮")).run?.status).toBe(
+      "completed",
+    );
+    const second = agentRequests(start).slice(first.length);
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      database
+        .prepare(
+          "UPDATE product_state_records SET value_json = json_set(value_json, '$.expiresAt', ?) WHERE key = ?",
+        )
+        .run("2020-01-01T00:00:00.000Z", `host-workspace:directory-grant:${WORKSPACE_GRANT_ID}`);
+    } finally {
+      database.close();
+    }
+    expect((await submitTurn(service, threadId, "environment-third", "第三轮")).run?.status).toBe(
+      "completed",
+    );
+    const third = agentRequests(start).slice(first.length + second.length);
+    const turns = [first.at(-1), second.at(-1), third.at(-1)];
+    const [one, two, three] = turns;
+    if (!one || !two || !three) throw new Error("AGENT_REQUEST_MISSING");
+    expect(requestHead(two)).toEqual(requestHead(one));
+    expect(requestHead(three)).toEqual(requestHead(one));
+    expect(requestHead(one).prefix).not.toContain(WORKSPACE_PATH);
+    expect(requestHead(one).tools).not.toContain(WORKSPACE_PATH);
+    expectAppendOnly(one, two);
+    expectAppendOnly(two, three);
+    expect(lastMessage(one)).toContain(`工作目录：${WORKSPACE_PATH}。`);
+    expect(lastMessage(two)).not.toContain("以上运行环境说明");
+    expect(lastMessage(two)).not.toContain("工作目录：");
+    expect(lastMessage(three)).toContain("工作目录：本轮没有。");
+    expect(lastMessage(three)).not.toContain(WORKSPACE_PATH);
+  } finally {
+    await service.stop();
+  }
+}, 120_000);
+
+it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged and keeps the message for the next turn", async () => {
+  const service = await openInstalledMain();
+  const threadId = "thread-tool-loop";
+  let chosen = "";
+  chatReply = (input) => {
+    const names = ((input["tools"] as { function: { name: string } }[] | undefined) ?? []).map(
+      (tool) => tool.function.name,
+    );
+    chosen ||= names.includes("reminder_list") ? "reminder_list" : (names[0] ?? "");
+    const messages = input["messages"] as { role: string; content: unknown }[];
+    if (JSON.stringify(messages.at(-1)).includes("Do not claim overall task success"))
+      return { text: "已确认的结果：提醒列表是空的；这一步卡住了，我换个办法。" };
+    if (messages[0]?.role !== "system" || !chosen) return { text: "安装后的持久回答" };
+    return { tool: chosen, input: {} };
+  };
+  try {
+    await service.command("thread.create", "tool-loop-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("tool-loop-create-payload", "create"),
+    });
+    const start = providerRequests.length;
+    const stopped = await submitTurn(service, threadId, "tool-loop-first", "列出提醒");
+    expect(chosen).not.toBe("");
+    expect(stopped.run?.status).toBe("failed");
+    const loop = agentRequests(start);
+    expect(loop.length).toBe(5);
+    const [before, summary] = [loop.at(-2), loop.at(-1)];
+    if (!before || !summary) throw new Error("LOOP_REQUESTS_MISSING");
+    expect(requestHead(summary)).toEqual(requestHead(loop[0] as (typeof loop)[number]));
+    expect(JSON.parse(requestHead(summary).tools)).not.toEqual([]);
+    expectAppendOnly(before, summary);
+    expect(summary.body.messages.length).toBe(before.body.messages.length + 3);
+    expect(summary.body.messages.at(-1)?.role).toBe("user");
+    expect(lastMessage(summary)).toContain("Do not claim overall task success");
+    expect(requestHead(summary).prefix).not.toContain("Do not claim overall task success");
+    chatReply = undefined;
+    expect((await submitTurn(service, threadId, "tool-loop-second", "好的")).run?.status).toBe(
+      "completed",
+    );
+    const next = agentRequests(start).slice(loop.length).at(-1);
+    if (!next) throw new Error("NEXT_TURN_REQUEST_MISSING");
+    expect(requestHead(next)).toEqual(requestHead(summary));
+    expectAppendOnly(summary, next);
+    expect(
+      next.body.messages
+        .slice(0, -1)
+        .some((message) => JSON.stringify(message).includes("Do not claim overall task success")),
+    ).toBe(true);
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 120_000);
