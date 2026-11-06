@@ -2,9 +2,9 @@ import {
   MACHINE_SECRET_RULE_IDS,
   assertMachineSecretFree,
   redactMachineSecrets,
-  redactTracePayload,
   scanMachineSecrets,
-} from "../src/index.js";
+} from "@himawari-agent/sensitive-capture";
+import { redactTracePayload } from "../src/index.js";
 import { describe, expect, it } from "vitest";
 
 const secretFixtures = Object.freeze([

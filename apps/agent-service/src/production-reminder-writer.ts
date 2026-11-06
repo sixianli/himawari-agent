@@ -1,25 +1,28 @@
-import {
-  type ClockPort,
-  type DurableMemoryService,
-  type MemoryBookStorePort,
-  type MemoryReminder,
-  type MemoryReminderStorePort,
-  type PayloadProtectorPort,
-  type PayloadStorePort,
-  type ProductConfiguration,
-  type ProductMemoryRecord,
-  type ProductMemoryStatePort,
-  type RuntimeToolDescriptor,
-  type RuntimeToolInvocation,
-  scanMachineSecrets,
+import type {
+  ClockPort,
+  DurableMemoryService,
+  MemoryBookStorePort,
+  MemoryReminder,
+  MemoryReminderStorePort,
+  PayloadProtectorPort,
+  PayloadStorePort,
+  ProductConfiguration,
+  ProductMemoryRecord,
+  ProductMemoryStatePort,
+  RuntimeToolDescriptor,
+  RuntimeToolInvocation,
 } from "@himawari-agent/application";
+import {
+  containsRestrictedIdentifier,
+  scanMachineSecrets,
+} from "@himawari-agent/sensitive-capture";
 import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
   TOOL_REMINDER_SET,
   TOOL_RESULT_REMINDER_SET,
 } from "@himawari-agent/prompt-catalog";
-import { containsRestrictedIdentifier, reminderSchedule } from "./production-memory-capture.js";
+import { reminderSchedule } from "./production-memory-capture.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";

@@ -71,7 +71,7 @@
       ]
     },
     {
-      "path": "packages/application/src/services/machine-secret-exclusion.ts",
+      "path": "packages/sensitive-capture/src/machine-secrets.ts",
       "all": [
         "assertMachineSecretFree",
         "MACHINE_SECRET_EXCLUDED",

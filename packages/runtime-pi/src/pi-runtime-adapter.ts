@@ -52,7 +52,12 @@ import type {
   RuntimeToolInvocation,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
-import { type ModelEgress, redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import type { ModelEgress } from "@himawari-agent/application/runtime-port";
+import {
+  redactMachineSecrets,
+  isSensitiveFieldName,
+  isSensitiveQueryParameter,
+} from "@himawari-agent/sensitive-capture";
 import {
   CHAT_TOOL_GUIDELINES_HEADER,
   CHAT_TOOL_LOOP_REJECTED,
@@ -313,7 +318,7 @@ function redactObservation(value: unknown, seen = new WeakSet<object>()): unknow
     try {
       const url = new URL(value);
       for (const key of [...url.searchParams.keys()]) {
-        if (/token|key|secret|password|signature|credential/i.test(key)) {
+        if (isSensitiveQueryParameter(key)) {
           url.searchParams.set(key, "[REDACTED]");
         }
       }
@@ -329,9 +334,7 @@ function redactObservation(value: unknown, seen = new WeakSet<object>()): unknow
 
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    result[key] = /authorization|cookie|token|api.?key|secret|password|credential/i.test(key)
-      ? "[REDACTED]"
-      : redactObservation(entry, seen);
+    result[key] = isSensitiveFieldName(key) ? "[REDACTED]" : redactObservation(entry, seen);
   }
   return result;
 }

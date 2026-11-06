@@ -1,7 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { containsToolOutputSecret } from "@himawari-agent/application";
+import { containsToolOutputSecret } from "@himawari-agent/sensitive-capture";
 import {
   firstRejectedPathComponent,
   piRunnerInputSchema,

@@ -249,7 +249,7 @@ export const CHAT_RUNTIME_ENVIRONMENT_FOOTER = fixedPrompt({
 export const CHAT_EGRESS_LEGEND = fixedPrompt({
   id: "chat.egress-legend",
   purpose: "告诉模型遮盖占位符是什么、不要猜原文",
-  usedBy: ["packages/application/src/services/egress-redaction.ts"],
+  usedBy: ["packages/application/src/services/egress-legend.ts"],
   layer: "system",
   output: "free-text",
   text: "文中形如 [密码#abcdefgh]、[验证码#abcdefgh]、[银行卡 尾号1111#abcdefgh]、[证件号#abcdefgh]、[密钥] 的方括号内容，是系统遮住的真实敏感信息，同一个值始终是同一个编号。请照原样当作普通内容使用，不要要求主人核实它们，也不要换成示例；如果某项操作必须用到原值，请直接告诉主人这项信息已被遮掉。",
@@ -259,7 +259,7 @@ export const CHAT_EGRESS_LEGEND_WITH_RESTORE = fixedPrompt({
   id: "chat.egress-legend-with-restore",
   purpose: "对话里的占位符说明：回答里原样写占位符，显示时会还原",
   usedBy: [
-    "packages/application/src/services/egress-redaction.ts",
+    "packages/application/src/services/egress-legend.ts",
     "packages/runtime-pi/src/egress-context.ts",
   ],
   layer: "system",

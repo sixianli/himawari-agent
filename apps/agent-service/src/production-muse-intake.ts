@@ -1,6 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
-  containsToolOutputSecret,
   type ClockPort,
   type IdGeneratorPort,
   MUSE_INTAKE_SENDER,
@@ -11,10 +10,13 @@ import {
   type MuseIntakeSource,
   type ProactiveScope,
   type ProactiveSealPort,
-  scanMachineSecrets,
 } from "@himawari-agent/application";
+import {
+  containsRestrictedIdentifier,
+  containsToolOutputSecret,
+  scanMachineSecrets,
+} from "@himawari-agent/sensitive-capture";
 import type { FastifyInstance } from "fastify";
-import { containsRestrictedIdentifier } from "./production-memory-capture.js";
 import type { MuseChannelPushSource } from "./production-web-push.js";
 
 export const MUSE_INTAKE_PATH = "/api/muse-intake/v1/batch";

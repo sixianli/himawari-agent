@@ -8,7 +8,7 @@ import {
   AutomaticMemoryService,
   type CommittedRunMemoryInput,
 } from "../src/services/automatic-memory-service.js";
-import { credentialFindings } from "../src/services/egress-redaction.js";
+import { credentialFindings } from "@himawari-agent/sensitive-capture";
 
 const candidate = (text: string, quote?: string): ExtractedMemoryCandidate => ({
   kind: "durable_fact",

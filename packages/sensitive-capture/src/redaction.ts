@@ -1,8 +1,4 @@
-import {
-  CHAT_EGRESS_LEGEND,
-  CHAT_EGRESS_LEGEND_WITH_RESTORE,
-} from "@himawari-agent/prompt-catalog";
-import { redactMachineSecrets } from "./machine-secret-exclusion.js";
+import { redactMachineSecrets } from "./machine-secrets.js";
 
 export const EGRESS_REDACTION_KINDS = Object.freeze([
   "machine-secret",
@@ -35,10 +31,6 @@ export interface EgressRedactionOptions {
   readonly known?: Map<string, string>;
   readonly table?: Map<string, string>;
 }
-
-export const EGRESS_PLACEHOLDER_LEGEND = CHAT_EGRESS_LEGEND.text;
-
-export const EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE = CHAT_EGRESS_LEGEND_WITH_RESTORE.text;
 
 export const EGRESS_PLACEHOLDER_PATTERN = /\[(密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]/gu;
 

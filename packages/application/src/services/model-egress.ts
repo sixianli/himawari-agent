@@ -3,8 +3,8 @@ import {
   type EgressPlaceholderKind,
   type EgressRedactionFinding,
   redactForEgress,
-} from "./egress-redaction.js";
-import { assertMachineSecretFree } from "./machine-secret-exclusion.js";
+} from "@himawari-agent/sensitive-capture";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 
 export class ModelEgressRefusedError extends Error {
   readonly code = "MODEL_EGRESS_REFUSED" as const;

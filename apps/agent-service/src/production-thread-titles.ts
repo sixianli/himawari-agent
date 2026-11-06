@@ -1,5 +1,4 @@
 import {
-  assertMachineSecretFree,
   type ClockPort,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -8,6 +7,7 @@ import {
   type ThreadRepositoryPort,
   type ThreadUpdateInput,
 } from "@himawari-agent/application";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { THREAD_TITLE } from "@himawari-agent/prompt-catalog";
 
 export class ProductionThreadTitles {

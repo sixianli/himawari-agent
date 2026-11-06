@@ -17,8 +17,8 @@ import {
   type PayloadProtectionRequest,
   type PayloadProtectorPort,
   type PayloadStorePort,
-  StreamingMachineSecretRedactor,
 } from "@himawari-agent/application/runtime-port";
+import { StreamingMachineSecretRedactor } from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
 import { backgroundModelContext } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";

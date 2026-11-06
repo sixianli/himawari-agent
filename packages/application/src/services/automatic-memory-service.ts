@@ -18,8 +18,8 @@ import {
   type SensitiveMemoryApprovalStatePort,
   type SensitiveMemoryCandidatePort,
 } from "../ports/index.js";
-import { credentialFindings } from "./egress-redaction.js";
-import { scanMachineSecrets } from "./machine-secret-exclusion.js";
+import { credentialFindings } from "@himawari-agent/sensitive-capture";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 export interface AutomaticMemoryServiceOptions {
   readonly extraction: IncrementalMemoryExtractionPort;
