@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -79,5 +80,39 @@ describe("probe source digests", () => {
   it("fails when the bootstrap instruments a file the record does not list", () => {
     const root = fixture({ extraBootstrap: `  "sandbox-sdk.js": "${"c".repeat(64)}",\n` });
     expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCE_UNLISTED sandbox-sdk.js"]);
+  });
+
+  it("fails when an unlisted bootstrap entry has an unusual name and no trailing comma", () => {
+    const root = fixture({ extraBootstrap: `  "Sandbox_SDK2.js": "${"c".repeat(64)}"\n` });
+    expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCE_UNLISTED Sandbox_SDK2.js"]);
+  });
+
+  it.each([
+    ["{not json", "PROBE_SOURCES_RECORD_INVALID json"],
+    [JSON.stringify({ bootstrap: BOOTSTRAP, files: [] }), "PROBE_SOURCES_RECORD_INVALID files"],
+    [
+      JSON.stringify({ bootstrap: "../outside.mjs", files: [{}] }),
+      "PROBE_SOURCES_RECORD_INVALID bootstrap",
+    ],
+    [
+      JSON.stringify({ bootstrap: BOOTSTRAP, files: [{ built: "job-host-main.js" }] }),
+      "PROBE_SOURCES_RECORD_INVALID files[0]",
+    ],
+  ])("fails clearly on a broken record %#", (text, problem) => {
+    const root = fixture();
+    writeFileSync(join(root, "scripts/delivery-mode/probe-sources.json"), text);
+    expect(probeSourceProblems(root)).toEqual([problem]);
+  });
+
+  it("exits non-zero from the command line when the record is broken", () => {
+    const root = fixture();
+    writeFileSync(join(root, "scripts/delivery-mode/probe-sources.json"), "{not json");
+    const run = spawnSync(
+      process.execPath,
+      [join(repository, "scripts/check-probe-sources.mjs"), root],
+      { encoding: "utf8" },
+    );
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("PROBE_SOURCES failed");
   });
 });
