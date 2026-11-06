@@ -74,7 +74,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -82,7 +82,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   static:
     name: static
     runs-on: hermes-home
@@ -133,7 +133,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -141,7 +141,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   build:
     name: build / ${{ matrix.key }}
     runs-on: ${{ matrix.runner }}
@@ -199,7 +199,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -207,7 +207,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
       - name: 按平台传递不可变 artifact ID
         run: .ci-output/tools/bin/node scripts/ci/artifact-output.mjs
         id: identity
@@ -280,7 +280,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-test-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -288,7 +288,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-test-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   node-floor:
     name: node-floor
     runs-on: hermes-home
@@ -337,7 +337,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-node-floor-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -345,7 +345,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-node-floor-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   browser:
     name: browser / ${{ matrix.key }}
     runs-on: ${{ matrix.runner }}
@@ -424,7 +424,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -432,7 +432,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   coverage:
     name: coverage
     runs-on: hermes-home
@@ -488,7 +488,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-coverage-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -496,7 +496,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-coverage-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   security:
     name: security
     runs-on: hermes-home
@@ -547,7 +547,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -555,7 +555,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   required:
     name: ci/required
     if: always()
@@ -612,4 +612,4 @@ jobs:
           name: gate-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ci-output/gate/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
