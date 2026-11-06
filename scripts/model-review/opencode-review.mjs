@@ -893,6 +893,110 @@ export function lastCompleteRound(records, models = REVIEW_MODELS) {
   return null;
 }
 
+export const LOW_FIX_MAX_FILES = 5;
+export const LOW_FIX_MAX_LINES_PER_FILE = 30;
+export const VERDICT_CLASSES = ["error", "better"];
+export const VERDICT_SEVERITIES = ["low", "medium-high"];
+const VERDICT_TEXT_FIELDS = ["id", "model", "quote"];
+const LOW_MODEL_SEVERITY = /^(?:低|low|minor|轻微|nit)/i;
+
+export function isTestFile(path) {
+  return (
+    /(?:^|\/)(?:test|tests|__tests__)\//.test(path) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path)
+  );
+}
+
+export function parseVerdicts(text, path) {
+  return text
+    .split("\n")
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(({ line }) => line.trim())
+    .map(({ line, number }) => {
+      let verdict;
+      try {
+        verdict = JSON.parse(line);
+      } catch {
+        verdict = null;
+      }
+      const filled = (field) =>
+        typeof verdict?.[field] === "string" && verdict[field].trim() !== "";
+      const valid =
+        verdict !== null &&
+        typeof verdict === "object" &&
+        VERDICT_TEXT_FIELDS.every(filled) &&
+        REVIEW_MODELS.includes(verdict.model) &&
+        typeof verdict.valid === "boolean" &&
+        VERDICT_CLASSES.includes(verdict.class) &&
+        !hasLineBreak(verdict) &&
+        (!verdict.valid ||
+          verdict.class !== "error" ||
+          (VERDICT_SEVERITIES.includes(verdict.severity) &&
+            filled("trigger") &&
+            filled("consequence") &&
+            filled("modelSeverity") &&
+            (verdict.severity !== "low" ||
+              LOW_MODEL_SEVERITY.test(verdict.modelSeverity.trim()) ||
+              filled("reason"))));
+      if (!valid) throw new Error(`VERDICTS_INVALID ${path}:${number}`);
+      return verdict;
+    });
+}
+
+function showAt(repo, path) {
+  const shown = gitStatus(["show", `HEAD:${path}`], repo);
+  return shown.status === 0 ? shown.stdout : null;
+}
+
+export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
+  const problems = [];
+  const verdictsPath = `${ledgerPath}/round-${round}/verdicts.jsonl`;
+  const text = showAt(repo, verdictsPath);
+  if (text === null)
+    return { problems: [`verdicts-not-committed round-${round}`], files: [], errors: [] };
+  let verdicts;
+  try {
+    verdicts = parseVerdicts(text, verdictsPath);
+  } catch (error) {
+    return { problems: [error.message], files: [], errors: [] };
+  }
+  const answers = new Map();
+  for (const verdict of verdicts) {
+    if (!answers.has(verdict.model))
+      answers.set(
+        verdict.model,
+        showAt(repo, `${ledgerPath}/round-${round}/${verdict.model.split("/").pop()}.md`),
+      );
+    if (!answers.get(verdict.model)?.includes(verdict.quote))
+      problems.push(`quote-not-found ${printable(verdict.id)}`);
+  }
+  const errors = verdicts.filter((verdict) => verdict.valid && verdict.class === "error");
+  for (const verdict of errors)
+    if (verdict.severity !== "low") problems.push(`not-low ${printable(verdict.id)}`);
+  if (errors.length === 0) problems.push("no-low-errors");
+  const result = gitStatus(["diff", "-z", "--no-renames", "--numstat", from, to], repo);
+  if (result.status !== 0) throw new Error(`GIT_FAILED git diff: ${result.stderr.trim()}`);
+  const fields = result.stdout.split("\0");
+  const changes = [];
+  for (const entry of fields) {
+    const match = /^(-|\d+)\t(-|\d+)\t([\s\S]+)$/.exec(entry);
+    if (!match || match[3].startsWith(`${ledgerPath}/`)) continue;
+    const lines = match[1] === "-" ? Infinity : Number(match[1]) + Number(match[2]);
+    changes.push({ file: match[3], lines });
+  }
+  if (changes.length === 0) problems.push("no-changes");
+  if (changes.length > LOW_FIX_MAX_FILES)
+    problems.push(`too-many-files ${changes.length} max=${LOW_FIX_MAX_FILES}`);
+  for (const change of changes)
+    if (change.lines > LOW_FIX_MAX_LINES_PER_FILE)
+      problems.push(
+        `too-many-lines ${printable(change.file)} ${change.lines} max=${LOW_FIX_MAX_LINES_PER_FILE}`,
+      );
+  const docsOnly = changes.every((change) => change.file.endsWith(".md"));
+  if (changes.length > 0 && !docsOnly && !changes.some((change) => isTestFile(change.file)))
+    problems.push("no-test-change");
+  return { problems, files: changes.map((change) => change.file), errors };
+}
+
 export function coveragePoints(records) {
   const start = lastCompleteRound(records);
   if (!start) return null;
@@ -920,7 +1024,16 @@ export function coveragePoints(records) {
       : "substitute";
     points.push({ round, head: heads[0], by });
   }
-  return points;
+  const lowFixes = records.filter(
+    (record) => record.mode === "low-fix" && record.round >= start.round,
+  );
+  const ordered = [];
+  for (const point of points) {
+    ordered.push(point);
+    for (const record of lowFixes.filter((fix) => fix.round === point.round))
+      ordered.push({ round: record.round, head: record.head, from: record.from, by: "low-fix" });
+  }
+  return ordered;
 }
 
 function gitStatus(args, cwd) {
@@ -935,7 +1048,7 @@ function changedOutside(repo, from, to, ledgerPath) {
   return result.stdout.split("\0").filter((file) => file && !file.startsWith(`${ledgerPath}/`));
 }
 
-export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed }) {
+export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed, acceptLow }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
   const head = git(["rev-parse", "HEAD"], repo);
   const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
@@ -944,13 +1057,28 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   const complete = points?.at(-1) ?? null;
   const isAncestor = (from, to) =>
     gitStatus(["merge-base", "--is-ancestor", from, to], repo).status === 0;
-  const broken = (points ?? []).find(
-    (point, index) => index > 0 && !isAncestor(points[index - 1].head, point.head),
-  );
+  const chainProblems = [];
+  for (const [index, point] of (points ?? []).entries()) {
+    if (index === 0) continue;
+    const before = points[index - 1];
+    if (!isAncestor(before.head, point.head) || (point.from && point.from !== before.head)) {
+      chainProblems.push(`chain-broken round=${point.round} ${point.head}`);
+      break;
+    }
+    if (point.by === "low-fix")
+      for (const problem of lowFixProblems({
+        repo,
+        ledgerPath,
+        round: point.round,
+        from: point.from,
+        to: point.head,
+      }).problems)
+        chainProblems.push(`low-fix-invalid round=${point.round} ${problem}`);
+  }
   const problems = [];
   if (!records) problems.push("ledger-not-committed");
   else if (!complete) problems.push("no-complete-round");
-  else if (broken) problems.push(`chain-broken round=${broken.round} ${broken.head}`);
+  else if (chainProblems.length > 0) problems.push(...chainProblems);
   else if (!isAncestor(complete.head, head)) problems.push(`not-ancestor ${complete.head}`);
   else
     for (const file of changedOutside(repo, complete.head, head, ledgerPath))
@@ -996,12 +1124,48 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
               changedOutside(repo, record.head, head, ledgerPath).length === 0,
           )
       : undefined;
-  let overridden = Boolean(recorded);
+  const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
+  const ledgerMatchesHead = () =>
+    (existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : null) === shown.stdout;
+  let lowFixed = false;
+  if (acceptLow !== undefined) {
+    const reasons = [];
+    if (problems.length === 0) reasons.push("nothing-unreviewed");
+    else if (!problems.every((problem) => problem.startsWith("unreviewed ")))
+      reasons.push("only-unreviewed-files");
+    else if (complete.round !== acceptLow) reasons.push(`not-last-round last=${complete.round}`);
+    const check =
+      reasons.length === 0
+        ? lowFixProblems({ repo, ledgerPath, round: acceptLow, from: complete.head, to: head })
+        : null;
+    if (check) reasons.push(...check.problems);
+    if (reasons.length === 0 && !ledgerMatchesHead()) reasons.push("ledger-differs-from-HEAD");
+    if (reasons.length > 0) lines.push(`REVIEW_LOW_FIX_REFUSED ${reasons.join(" ")}`);
+    else {
+      appendFileSync(
+        ledgerFile,
+        `${shown.stdout && !shown.stdout.endsWith("\n") ? "\n" : ""}${JSON.stringify({
+          at: new Date().toISOString(),
+          mode: "low-fix",
+          cost: 0,
+          round: acceptLow,
+          head,
+          from: complete.head,
+          files: check.files,
+          findings: check.errors.map((verdict) => verdict.id),
+        })}\n`,
+      );
+      lines.push(
+        `REVIEW_LOW_FIX round=${acceptLow} from=${complete.head} head=${head} files=${check.files.map(printable).join(",")}`,
+      );
+      lowFixed = true;
+    }
+  }
+  let overridden = Boolean(recorded) || lowFixed;
   if (recorded) lines.push(`REVIEW_OVERRIDE quote=${recorded.quote} recorded=${recorded.head}`);
   else if (overridable && acceptUnreviewed) {
-    const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
-    const onDisk = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : null;
-    if (onDisk !== shown.stdout) lines.push("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
+    const onDisk = shown.stdout;
+    if (!ledgerMatchesHead()) lines.push("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
     else {
       appendFileSync(
         ledgerFile,
@@ -1048,10 +1212,25 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     "run-failed": latest > 0 && !latestComplete,
   }[stop];
   if (!consistent) throw new Error(`REPORT_STOP_INCONSISTENT ${stop}`);
+  const lowFixLines = records
+    .filter((record) => record.mode === "low-fix")
+    .flatMap((record) => {
+      const path = `${ledgerPath}/round-${record.round}/verdicts.jsonl`;
+      const text = gitStatus(["show", `HEAD:${path}`], repo);
+      const verdicts = text.status === 0 ? parseVerdicts(text.stdout, path) : [];
+      return [
+        `REVIEW_LOW_FIX round=${record.round} from=${record.from} head=${record.head} files=${record.files.map(printable).join(",")}`,
+        ...record.findings.map((id) => {
+          const verdict = verdicts.find((item) => item.id === id);
+          return `  ${printable(id)} ${verdict ? `${verdict.model.split("/").pop()}：${printable(verdict.quote)}` : "verdict-missing"}`;
+        }),
+      ];
+    });
   return [
     `REVIEW_REPORT pr=${pr}`,
     ...reviews.map(resultLine),
     `REVIEW_SPENT_TOTAL ${spentOf(records).toFixed(4)}`,
+    ...(lowFixLines.length > 0 ? ["低严重度已改、未复核：", ...lowFixLines] : []),
     ...gate.lines,
     `停下的原因：${STOP_REASONS[stop](andyQuote)}`,
     REVIEW_REPORT_DISCLAIMER,
@@ -1059,6 +1238,7 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
 }
 
 export const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+export const NOTE_MODES = ["override", "low-fix"];
 
 function hasLineBreak(value) {
   if (typeof value === "string") return /[\r\n]/.test(value);
@@ -1092,7 +1272,9 @@ export function parseUsage(text, path) {
       const roundValid =
         record?.round === undefined || (Number.isSafeInteger(record.round) && record.round > 0);
       const modeValid =
-        record?.mode === undefined || MODES.includes(record.mode) || record.mode === "override";
+        record?.mode === undefined ||
+        MODES.includes(record.mode) ||
+        NOTE_MODES.includes(record.mode);
       const fieldsValid =
         !MODES.includes(record?.mode) ||
         ["head", "model", "outcome"].every(
@@ -1102,6 +1284,17 @@ export function parseUsage(text, path) {
         record?.mode === undefined ||
         record.mode === "override" ||
         COMMIT_PATTERN.test(record.head);
+      const lowFixValid =
+        record?.mode !== "low-fix" ||
+        (Number.isSafeInteger(record.round) &&
+          COMMIT_PATTERN.test(record.from ?? "") &&
+          record.cost === 0 &&
+          [record.files, record.findings].every(
+            (list) =>
+              Array.isArray(list) &&
+              list.length > 0 &&
+              list.every((item) => typeof item === "string" && item !== ""),
+          ));
       const overrideValid =
         record?.mode !== "override" ||
         (COMMIT_PATTERN.test(record.head ?? "") &&
@@ -1116,6 +1309,7 @@ export function parseUsage(text, path) {
         !fieldsValid ||
         !headValid ||
         !overrideValid ||
+        !lowFixValid ||
         !singleLine
       )
         throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
@@ -1133,7 +1327,7 @@ export function roundsOnDisk(out) {
 
 export function nextRound(records, rounds = []) {
   const recorded = records
-    .filter((record) => record.mode !== "override")
+    .filter((record) => !NOTE_MODES.includes(record.mode))
     .map((record) => record.round ?? 1);
   return Math.max(0, ...recorded, ...rounds) + 1;
 }
@@ -1150,7 +1344,7 @@ export function roundForRun({
 }) {
   if (requested === undefined) return nextRound(records, rounds);
   const inRound = records.filter(
-    (record) => record.mode !== "override" && (record.round ?? 1) === requested,
+    (record) => !NOTE_MODES.includes(record.mode) && (record.round ?? 1) === requested,
   );
   if (inRound.length === 0 && !rounds.includes(requested))
     throw new Error(`ROUND_NOT_FOUND ${requested}`);
@@ -1757,6 +1951,7 @@ export const ASSERT_OPTIONS = [
   "--repo",
   "--main-ref",
   "--accept-unreviewed",
+  "--accept-low",
 ];
 export const REPORT_OPTIONS = [
   "--report",
@@ -1817,6 +2012,10 @@ export function parseArgs(argv) {
       options.acceptUnreviewed = take();
       if (!options.acceptUnreviewed.trim() || hasControlCharacter(options.acceptUnreviewed))
         throw new Error("ARG_INVALID --accept-unreviewed");
+    } else if (key === "--accept-low") {
+      options.acceptLow = Number(take());
+      if (!Number.isSafeInteger(options.acceptLow) || options.acceptLow <= 0)
+        throw new Error("ARG_INVALID --accept-low");
     } else if (key === "--models") {
       const names = take()
         .split(",")
@@ -1849,10 +2048,13 @@ export function parseArgs(argv) {
     if (extra.length > 0) throw new Error(`ARG_NOT_FOR_SUBCOMMAND ${extra.join(" ")}`);
     if (options.pr === undefined) throw new Error("ARG_REQUIRED --pr");
     if (options.report && options.stop === undefined) throw new Error("ARG_REQUIRED --stop");
+    if (options.acceptLow !== undefined && options.acceptUnreviewed !== undefined)
+      throw new Error("ARG_ACCEPT_LOW_AND_UNREVIEWED");
     return options;
   }
   if (options.acceptUnreviewed !== undefined)
     throw new Error("ARG_ACCEPT_UNREVIEWED_ONLY_WITH_ASSERT");
+  if (options.acceptLow !== undefined) throw new Error("ARG_ACCEPT_LOW_ONLY_WITH_ASSERT");
   const subcommandOnly = [...given].filter((key) => SUBCOMMAND_ONLY_OPTIONS.includes(key));
   if (subcommandOnly.length > 0) throw new Error(`ARG_NOT_FOR_MODE ${subcommandOnly.join(" ")}`);
   for (const required of ["head", "brief"]) {

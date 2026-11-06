@@ -38,7 +38,10 @@ import {
   installedIntegrityProblems,
   installGitGuard,
   installOpencode,
+  isTestFile,
   keepEarlierAttempt,
+  LOW_FIX_MAX_FILES,
+  LOW_FIX_MAX_LINES_PER_FILE,
   promptFileName,
   printable,
   prepareRawDir,
@@ -59,6 +62,8 @@ import {
   opencodeBinary,
   opencodeEnv,
   parseArgs,
+  parseUsage,
+  parseVerdicts,
   prepareCopy,
   probePlan,
   probeRefused,
@@ -2387,6 +2392,167 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  const answer = "严重度：低。tools.mjs:3 少了一个空行检查。";
+  const verdict = (extra = {}) => ({
+    id: "V1",
+    model: deepseek,
+    quote: "tools.mjs:3 少了一个空行检查",
+    valid: true,
+    class: "error",
+    severity: "low",
+    trigger: "输入为空行",
+    consequence: "多打印一行空白",
+    modelSeverity: "低",
+    ...extra,
+  });
+  const lowFixFixture = (verdicts = [verdict()]) => {
+    const f = fixture();
+    const roundDir = `${REVIEWS_DIR}/pr-7/round-1`;
+    f.commit(
+      {
+        [`${roundDir}/deepseek-v4.1-flash.md`]: `${answer}\n`,
+        [`${roundDir}/verdicts.jsonl`]: verdicts.map((v) => `${JSON.stringify(v)}\n`).join(""),
+      },
+      "verdicts",
+    );
+    f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+    const commitLedgerOnDisk = () =>
+      f.commit({ [f.ledger]: readFileSync(join(f.repo, f.ledger), "utf8") }, "low-fix record");
+    return { ...f, commitLedgerOnDisk };
+  };
+
+  it("[low fix] accepts a small fix with a test change for a round whose errors are all low", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "low fix");
+      const accepted = f.check({ acceptLow: 1 });
+      expect(accepted.overridden).toBe(true);
+      expect(accepted.lines.at(-1)).toMatch(
+        /^REVIEW_LOW_FIX round=1 from=[0-9a-f]{40} head=[0-9a-f]{40} files=code\.txt,test\/code\.test\.mjs$/,
+      );
+      const records = parseUsage(readFileSync(join(f.repo, f.ledger), "utf8"), "ledger");
+      expect(records.at(-1)).toMatchObject({
+        mode: "low-fix",
+        cost: 0,
+        round: 1,
+        from: f.reviewed,
+        files: ["code.txt", "test/code.test.mjs"],
+        findings: ["V1"],
+      });
+      expect(nextRound(records)).toBe(2);
+      f.commitLedgerOnDisk();
+      const after = f.check();
+      expect(after.problems).toEqual([]);
+      expect(after.lines[1]).toBe("REVIEW_CHAIN round-1:both round-1:low-fix");
+      const report = reviewReport({
+        repo: f.repo,
+        pr: 7,
+        mainRef: "origin/main",
+        stop: "no-error",
+      });
+      expect(report).toContain("低严重度已改、未复核：");
+      expect(report).toContain(`  V1 deepseek-v4.1-flash：${verdict().quote}`);
+      f.commit({ "code.txt": "again\n" }, "later change");
+      expect(f.check().problems).toEqual(["unreviewed code.txt"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] lets a docs-only fix through without a test change", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "docs/rule.md": "wording\n" }, "doc fix");
+      expect(f.check({ acceptLow: 1 }).overridden).toBe(true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] refuses medium or high errors, missing tests, oversized fixes and unproven quotes", () => {
+    const refusal = (verdicts, files) => {
+      const f = lowFixFixture(verdicts);
+      try {
+        if (files) f.commit(files, "fix");
+        const result = f.check({ acceptLow: 1 });
+        expect(result.overridden).toBe(false);
+        expect(existsSync(join(f.repo, f.ledger))).toBe(true);
+        expect(readFileSync(join(f.repo, f.ledger), "utf8")).not.toContain("low-fix");
+        return result.lines.find((line) => line.startsWith("REVIEW_LOW_FIX_REFUSED"));
+      } finally {
+        rmSync(f.root, { recursive: true, force: true });
+      }
+    };
+    const small = { "code.txt": "fixed\n", "test/code.test.mjs": "check\n" };
+    expect(refusal([verdict({ severity: "medium-high", modelSeverity: "高" })], small)).toBe(
+      "REVIEW_LOW_FIX_REFUSED not-low V1",
+    );
+    expect(refusal([verdict()], { "code.txt": "fixed\n" })).toBe(
+      "REVIEW_LOW_FIX_REFUSED no-test-change",
+    );
+    const many = Object.fromEntries(
+      Array.from({ length: LOW_FIX_MAX_FILES + 1 }, (_, index) => [
+        `test/f${index}.test.mjs`,
+        "x\n",
+      ]),
+    );
+    expect(refusal([verdict()], many)).toBe(
+      `REVIEW_LOW_FIX_REFUSED too-many-files ${LOW_FIX_MAX_FILES + 1} max=${LOW_FIX_MAX_FILES}`,
+    );
+    const long = "x\n".repeat(LOW_FIX_MAX_LINES_PER_FILE + 1);
+    expect(refusal([verdict()], { "test/code.test.mjs": long })).toBe(
+      `REVIEW_LOW_FIX_REFUSED too-many-lines test/code.test.mjs ${LOW_FIX_MAX_LINES_PER_FILE + 1} max=${LOW_FIX_MAX_LINES_PER_FILE}`,
+    );
+    expect(refusal([verdict({ quote: "模型没说过这句" })], small)).toBe(
+      "REVIEW_LOW_FIX_REFUSED quote-not-found V1",
+    );
+    expect(refusal([verdict({ class: "better" })], small)).toBe(
+      "REVIEW_LOW_FIX_REFUSED no-low-errors",
+    );
+    expect(refusal([verdict()])).toBe("REVIEW_LOW_FIX_REFUSED nothing-unreviewed");
+  });
+
+  it("[low fix] refuses a round that is not the last one covered and a round without verdicts", () => {
+    const f = lowFixFixture();
+    try {
+      const second = f.commit({ "code.txt": "second\n" }, "second");
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm), ok(2, second, deepseek)]);
+      f.commit({ "test/code.test.mjs": "check\n" }, "fix");
+      expect(f.check({ acceptLow: 1 }).lines.at(-1)).toBe(
+        "REVIEW_LOW_FIX_REFUSED not-last-round last=2",
+      );
+      expect(f.check({ acceptLow: 2 }).lines.at(-1)).toBe(
+        "REVIEW_LOW_FIX_REFUSED verdicts-not-committed round-2",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] checks a hand-written low-fix record again at the gate", () => {
+    const f = lowFixFixture();
+    try {
+      const fixed = f.commit({ "code.txt": "fixed\n" }, "fix without test");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm),
+        {
+          at: "t",
+          mode: "low-fix",
+          cost: 0,
+          round: 1,
+          head: fixed,
+          from: f.reviewed,
+          files: ["code.txt"],
+          findings: ["V1"],
+        },
+      ]);
+      expect(f.check().problems).toEqual(["low-fix-invalid round=1 no-test-change"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[merge gate] reads the committed ledger, not the working tree", () => {
     const f = fixture();
     try {
@@ -3002,6 +3168,100 @@ describe("opencode review spending", () => {
     const fixedEnd = first.indexOf("---- 本次材料 ----");
     expect(later.slice(0, fixedEnd)).toBe(first.slice(0, fixedEnd));
     expect(first.slice(0, fixedEnd)).toContain("规则文件、说明文档和代码是否一致");
+  });
+
+  it("[low fix] reads verdict lines strictly and needs a reason when the thread lowers the model's severity", () => {
+    const line = (extra = {}) =>
+      JSON.stringify({
+        id: "V1",
+        model: REVIEW_MODELS[0],
+        quote: "原话",
+        valid: true,
+        class: "error",
+        severity: "low",
+        trigger: "触发",
+        consequence: "后果",
+        modelSeverity: "低",
+        ...extra,
+      });
+    expect(parseVerdicts(`${line()}\n\n`, "v")).toHaveLength(1);
+    expect(
+      parseVerdicts(line({ valid: false, severity: undefined, trigger: "" }), "v"),
+    ).toHaveLength(1);
+    expect(parseVerdicts(line({ class: "better", severity: undefined }), "v")).toHaveLength(1);
+    expect(
+      parseVerdicts(line({ modelSeverity: "中", reason: "只在手动调试时出现" }), "v"),
+    ).toHaveLength(1);
+    for (const bad of [
+      line({ modelSeverity: "中" }),
+      line({ trigger: " " }),
+      line({ consequence: undefined }),
+      line({ severity: "medium" }),
+      line({ model: "x/other" }),
+      line({ class: "nit" }),
+      line({ quote: "第一行\n第二行" }),
+      line({ valid: "yes" }),
+      "not json",
+    ])
+      expect(() => parseVerdicts(bad, "v")).toThrow("VERDICTS_INVALID v:1");
+  });
+
+  it("[low fix] tells test files apart from code", () => {
+    for (const path of [
+      "test/a.mjs",
+      "packages/x/test/a.ts",
+      "src/a.test.ts",
+      "a.spec.mjs",
+      "x/__tests__/b.js",
+    ])
+      expect(isTestFile(path)).toBe(true);
+    for (const path of ["src/a.ts", "testing/a.ts", "docs/test.md", "latest/a.mjs"])
+      expect(isTestFile(path)).toBe(false);
+  });
+
+  it("[low fix] keeps low-fix records out of round numbers and rejects malformed ones", () => {
+    const commit = "a".repeat(40);
+    const good = {
+      at: "t",
+      mode: "low-fix",
+      cost: 0,
+      round: 1,
+      head: commit,
+      from: commit,
+      files: ["a"],
+      findings: ["V1"],
+    };
+    expect(nextRound(parseUsage(JSON.stringify(good), "l"))).toBe(1);
+    for (const bad of [
+      { ...good, from: undefined },
+      { ...good, cost: 0.1 },
+      { ...good, files: [] },
+      { ...good, findings: [""] },
+      { ...good, round: undefined },
+    ])
+      expect(() => parseUsage(JSON.stringify(bad), "l")).toThrow("USAGE_LEDGER_INVALID l:1");
+    const base = ["--head", "a", "--base", "b", "--brief", "b.md", "--pr", "7"];
+    expect(() => parseArgs([...base, "--accept-low", "1"])).toThrow(
+      "ARG_ACCEPT_LOW_ONLY_WITH_ASSERT",
+    );
+    expect(parseArgs(["--assert-reviewed", "--pr", "7", "--accept-low", "2"]).acceptLow).toBe(2);
+    expect(() => parseArgs(["--assert-reviewed", "--pr", "7", "--accept-low", "0"])).toThrow(
+      "ARG_INVALID --accept-low",
+    );
+    expect(() =>
+      parseArgs([
+        "--assert-reviewed",
+        "--pr",
+        "7",
+        "--accept-low",
+        "1",
+        "--accept-unreviewed",
+        "x",
+      ]),
+    ).toThrow("ARG_ACCEPT_LOW_AND_UNREVIEWED");
+    expect(() =>
+      parseArgs(["--report", "--pr", "7", "--stop", "no-error", "--accept-low", "1"]),
+    ).toThrow("ARG_NOT_FOR_SUBCOMMAND --accept-low");
   });
 
   it("reruns only the models asked for", () => {
