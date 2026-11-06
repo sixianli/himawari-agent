@@ -109,6 +109,15 @@ describe("probe source digests", () => {
     expect(probeSourceProblems(root)).toEqual([]);
   });
 
+  it("reads entries outside the originals block the way the packet check does", () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, BOOTSTRAP),
+      `const originals = {\n  "job-host-main.js": "${BUILT}",\n};\nconst more = {\n  "sandbox-sdk.js": "${"c".repeat(64)}",\n};\n`,
+    );
+    expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCE_UNLISTED sandbox-sdk.js"]);
+  });
+
   it("fails when the originals block names a file twice", () => {
     const root = fixture({ extraBootstrap: `  "job-host-main.js": "${BUILT}",\n` });
     expect(probeSourceProblems(root)).toEqual(["PROBE_BOOTSTRAP_DUPLICATE_NAME"]);
@@ -144,6 +153,15 @@ describe("probe source digests", () => {
     writeFileSync(
       join(root, "scripts/delivery-mode/probe-sources.json"),
       JSON.stringify({ bootstrap: BOOTSTRAP, files: [file] }),
+    );
+    expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCES_RECORD_INVALID files[0]"]);
+  });
+
+  it("rejects an absolute source path even when it points inside the sandbox sources", () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, "scripts/delivery-mode/probe-sources.json"),
+      JSON.stringify({ bootstrap: BOOTSTRAP, files: [{ ...entry, source: join(root, SOURCE) }] }),
     );
     expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCES_RECORD_INVALID files[0]"]);
   });

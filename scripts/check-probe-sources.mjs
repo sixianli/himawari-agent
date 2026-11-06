@@ -9,6 +9,7 @@ const SOURCE_DIRECTORY = "packages/runtime-sandbox/src/";
 const BUILT_NAME = /^[a-z-]+\.js$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const PACKET_CHECK_LINE = /^\s+"([a-z-]+\.js)": "([0-9a-f]{64})",$/;
+const PACKET_CHECK_ENTRIES = /^\s+"([a-z-]+\.js)": "([0-9a-f]{64})",$/gm;
 const REFRESH_HINT =
   "PROBE_SOURCES_REFRESH build the candidate on Hermes, put the new runtime-sandbox/dist digests into the probe bootstrap and both digests into " +
   RECORD;
@@ -29,7 +30,7 @@ function readPlainFile(root, relative) {
 }
 
 function insideSourceDirectory(root, source) {
-  if (source.includes("\\")) return false;
+  if (source.includes("\\") || path.isAbsolute(source)) return false;
   const relative = path.relative(path.join(root, SOURCE_DIRECTORY), path.resolve(root, source));
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
@@ -55,16 +56,12 @@ function recordProblems(root, record) {
 }
 
 function bootstrapDigests(text) {
+  const entries = [...text.matchAll(PACKET_CHECK_ENTRIES)].map((match) => [match[1], match[2]]);
   const block = text.match(/^const originals = \{\n([\s\S]*?)^\};$/m);
-  if (!block) return null;
-  const entries = [];
-  const malformed = [];
-  for (const line of block[1].split("\n")) {
-    if (!/[0-9a-f]{64}/.test(line)) continue;
-    const match = line.match(PACKET_CHECK_LINE);
-    if (match) entries.push([match[1], match[2]]);
-    else malformed.push(line.trim());
-  }
+  const malformed = (block?.[1] ?? "")
+    .split("\n")
+    .filter((line) => /[0-9a-f]{64}/.test(line) && !PACKET_CHECK_LINE.test(line))
+    .map((line) => line.trim());
   return { entries, malformed };
 }
 
@@ -84,7 +81,7 @@ export function probeSourceProblems(root) {
   if (bootstrapFile.missing) return [`PROBE_BOOTSTRAP_MISSING ${BOOTSTRAP}`];
   if (bootstrapFile.unreadable) return [`PROBE_BOOTSTRAP_UNREADABLE ${BOOTSTRAP}`];
   const parsed = bootstrapDigests(bootstrapFile.bytes.toString("utf8"));
-  if (!parsed || parsed.entries.length + parsed.malformed.length === 0)
+  if (parsed.entries.length + parsed.malformed.length === 0)
     return [`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`];
   const { entries, malformed } = parsed;
   const recorded = new Map(entries);
