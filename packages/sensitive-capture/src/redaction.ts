@@ -50,6 +50,7 @@ export interface EgressRedactionOptions {
   readonly known?: Map<string, string>;
   readonly table?: Map<string, string>;
   readonly observe?: (sighting: EgressRedactionSighting) => void;
+  readonly trusted?: readonly string[];
 }
 
 export const EGRESS_PLACEHOLDER_PATTERN = /\[(密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]/gu;
@@ -168,10 +169,93 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
+export const TRUSTED_TEXT_MINIMUM_CHARACTERS = 24;
+
+const TRUSTED_FILLERS: readonly string[] = Object.freeze([
+  "\uFFFF",
+  "\uFFFE",
+  ...Array.from({ length: 32 }, (_, index) => String.fromCharCode(0xfdd0 + index)),
+]);
+
+function trustedSpans(
+  input: string,
+  trusted: readonly string[],
+): readonly (readonly [number, number])[] {
+  if (trusted.length === 0) return [];
+  const found: (readonly [number, number])[] = [];
+  for (const value of trusted) {
+    if (value.length === 0) continue;
+    for (
+      let position = input.indexOf(value);
+      position >= 0;
+      position = input.indexOf(value, position + 1)
+    )
+      found.push([position, position + value.length]);
+  }
+  found.sort((left, right) => left[0] - right[0] || right[1] - left[1]);
+  const spans: (readonly [number, number])[] = [];
+  let cursor = 0;
+  for (const span of found) {
+    if (span[0] < cursor) continue;
+    spans.push(span);
+    cursor = span[1];
+  }
+  return spans;
+}
+
 export function redactForEgress(
   input: string,
   options: EgressRedactionOptions = {},
 ): EgressRedaction {
+  const trusted = (options.trusted ?? []).filter(
+    (value) => [...value].length >= TRUSTED_TEXT_MINIMUM_CHARACTERS,
+  );
+  if (trusted.length === 0) return redactUntrusted(input, options);
+  const known = [...(options.known?.keys() ?? [])];
+  const filler = TRUSTED_FILLERS.find(
+    (candidate) => !input.includes(candidate) && !known.some((value) => value.includes(candidate)),
+  );
+  const spans = filler === undefined ? [] : trustedSpans(input, trusted);
+  if (filler === undefined || spans.length === 0) return redactUntrusted(input, options);
+  let view = "";
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    view += input.slice(cursor, start) + filler.repeat(end - start);
+    cursor = end;
+  }
+  view += input.slice(cursor);
+  const rehearsal = redactUntrusted(view, {
+    ...(options.known === undefined ? {} : { known: new Map(options.known) }),
+    ...(options.tag === undefined ? {} : { tag: () => "aaaaaaaa" }),
+  }).text;
+  if (restoredText(rehearsal, input, spans, filler) === undefined)
+    return redactUntrusted(input, options);
+  const masked = redactUntrusted(view, options);
+  const text = restoredText(masked.text, input, spans, filler);
+  if (text === undefined) throw new EgressRedactionError();
+  return Object.freeze({ text, findings: masked.findings });
+}
+
+function restoredText(
+  masked: string,
+  input: string,
+  spans: readonly (readonly [number, number])[],
+  filler: string,
+): string | undefined {
+  let text = "";
+  let read = 0;
+  for (const [start, end] of spans) {
+    const at = masked.indexOf(filler, read);
+    const length = end - start;
+    if (at < 0 || masked.slice(at, at + length) !== filler.repeat(length)) return undefined;
+    text += masked.slice(read, at) + input.slice(start, end);
+    read = at + length;
+  }
+  text += masked.slice(read);
+  return text.includes(filler) ? undefined : text;
+}
+
+function redactUntrusted(input: string, options: EgressRedactionOptions): EgressRedaction {
   const counts = new Map<EgressRedactionKind, number>();
   const { tag, known, table, observe } = options;
   let text = input;
