@@ -496,6 +496,8 @@ describe("pause-runners.sh", () => {
 });
 
 describe("resume-runners.sh", () => {
+  const startsServices = (line) => line.startsWith("ssh ") && line.includes("runner-resume.sh");
+
   it("puts the label back before starting the services, then waits for GitHub to see them online", () => {
     const box = macBox({ labelled: false });
     box.set("online-from", 4);
@@ -504,13 +506,16 @@ describe("resume-runners.sh", () => {
     expect(result.status).toBe(0);
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
     const order = box.lines();
-    const start = order.findIndex((line) => line.includes("runner-resume.sh"));
+    const start = order.findIndex(startsServices);
+    expect(start).toBeGreaterThan(-1);
     const adds = order
       .map((line, index) => (line.includes("-X POST") ? index : -1))
       .filter((index) => index >= 0);
     expect(adds).toHaveLength(2);
     expect(Math.max(...adds)).toBeLessThan(start);
-    expect(order.slice(start).filter((line) => line.endsWith("@tsv")).length).toBeGreaterThanOrEqual(2);
+    expect(
+      order.slice(start).filter((line) => line.endsWith("@tsv")).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it("changes nothing when the runners on Hermes and GitHub do not match", () => {
@@ -520,15 +525,9 @@ describe("resume-runners.sh", () => {
     expect(result.stdout).toContain(
       "RUNNER_RESUME_FAILED GitHub has 0 runners named hermes-home-2",
     );
-    expect(
-      box
-        .lines()
-        .some(
-          (line) =>
-            (line.startsWith("ssh ") && line.includes("runner-resume.sh")) ||
-            line.includes("-X POST"),
-        ),
-    ).toBe(false);
+    expect(box.lines().some((line) => startsServices(line) || line.includes("-X POST"))).toBe(
+      false,
+    );
   });
 
   it("changes nothing when GitHub has two runners with the same name", () => {
@@ -555,7 +554,7 @@ describe("resume-runners.sh", () => {
       "RUNNER_RESUME_INCOMPLETE labels: hermes-home=on hermes-home-2=off; services not started",
     );
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": false });
-    expect(box.lines().some((line) => line.includes("runner-resume.sh"))).toBe(false);
+    expect(box.lines().some(startsServices)).toBe(false);
   });
 
   it("does not start the services when the labels cannot be read back", () => {
@@ -563,8 +562,10 @@ describe("resume-runners.sh", () => {
     box.set("fail-list-from", 2);
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("hermes-home=unread hermes-home-2=unread; services not started");
-    expect(box.lines().some((line) => line.includes("runner-resume.sh"))).toBe(false);
+    expect(result.stdout).toContain(
+      "hermes-home=unread hermes-home-2=unread; services not started",
+    );
+    expect(box.lines().some(startsServices)).toBe(false);
   });
 
   it("keeps the labels on and reports each service when the services do not start", () => {
@@ -600,7 +601,7 @@ describe("resume-runners.sh", () => {
     expect(result.stdout).toContain(
       "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=inactive gh-runner-2.service=inactive labels: hermes-home=on hermes-home-2=off",
     );
-    expect(box.lines().some((line) => line.includes("runner-resume.sh"))).toBe(false);
+    expect(box.lines().some(startsServices)).toBe(false);
   });
 
   it("reports services and labels when interrupted while waiting for the runners to come online", () => {
@@ -628,7 +629,7 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(0);
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
-    expect(box.lines().some((line) => line.includes("runner-resume.sh"))).toBe(true);
+    expect(box.lines().some(startsServices)).toBe(true);
   });
 });
 
