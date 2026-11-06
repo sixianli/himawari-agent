@@ -1,58 +1,79 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const RECORD = "scripts/delivery-mode/probe-sources.json";
+const BOOTSTRAP = "scripts/delivery-mode/packet-template/measurement/probe/bootstrap.mjs";
+const SOURCE_DIRECTORY = "packages/runtime-sandbox/src/";
+const BUILT_NAME = /^[a-z-]+\.js$/;
+const DIGEST = /^[0-9a-f]{64}$/;
 const REFRESH_HINT =
   "PROBE_SOURCES_REFRESH build the candidate on Hermes, put the new runtime-sandbox/dist digests into the probe bootstrap and both digests into " +
-  RECORD +
-  "; changing only sourceSha256 without a Hermes build leaves the packet check to fail later";
-const DIGEST = /^[0-9a-f]{64}$/;
+  RECORD;
+const PASSED_NOTE =
+  "PROBE_SOURCES_NOTE built digests are only compared with a real build by the packet check on Hermes";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-function inside(root, relative) {
-  const resolved = path.resolve(root, relative);
-  return resolved.startsWith(path.resolve(root) + path.sep) ? resolved : null;
+function readPlainFile(root, relative) {
+  const full = path.join(root, relative);
+  if (!existsSync(full)) return { missing: true };
+  const stat = lstatSync(full);
+  if (!stat.isFile()) return { unreadable: true };
+  return { bytes: readFileSync(full) };
 }
 
-function recordProblems(root, record) {
-  if (typeof record?.bootstrap !== "string" || !inside(root, record.bootstrap))
-    return ["PROBE_SOURCES_RECORD_INVALID bootstrap"];
+function recordProblems(record) {
+  if (record?.bootstrap !== BOOTSTRAP) return ["PROBE_SOURCES_RECORD_INVALID bootstrap"];
   if (!Array.isArray(record.files) || record.files.length === 0)
     return ["PROBE_SOURCES_RECORD_INVALID files"];
-  return record.files.flatMap((file, index) =>
+  const problems = record.files.flatMap((file, index) =>
     typeof file?.built === "string" &&
+    BUILT_NAME.test(file.built) &&
     typeof file.source === "string" &&
-    inside(root, file.source) &&
+    file.source.startsWith(SOURCE_DIRECTORY) &&
+    !file.source.split("/").includes("..") &&
     DIGEST.test(file.builtSha256) &&
     DIGEST.test(file.sourceSha256)
       ? []
       : [`PROBE_SOURCES_RECORD_INVALID files[${index}]`],
   );
+  const names = record.files.map((file) => file?.built);
+  if (new Set(names).size !== names.length)
+    problems.push("PROBE_SOURCES_RECORD_INVALID duplicate built");
+  return problems;
+}
+
+function bootstrapDigests(text) {
+  const block = text.match(/^const originals = \{\n([\s\S]*?)^\};$/m);
+  if (!block) return null;
+  const entries = [...block[1].matchAll(/"([^"\n]+)"\s*:\s*"([0-9a-f]{64})"/g)].map((match) => [
+    match[1],
+    match[2],
+  ]);
+  return entries;
 }
 
 export function probeSourceProblems(root) {
-  const recordPath = path.join(root, RECORD);
-  if (!existsSync(recordPath)) return [`PROBE_SOURCES_RECORD_MISSING ${RECORD}`];
+  const recordFile = readPlainFile(root, RECORD);
+  if (recordFile.missing) return [`PROBE_SOURCES_RECORD_MISSING ${RECORD}`];
   let record;
   try {
-    record = JSON.parse(readFileSync(recordPath, "utf8"));
+    record = JSON.parse(recordFile.bytes?.toString("utf8"));
   } catch {
     return ["PROBE_SOURCES_RECORD_INVALID json"];
   }
-  const invalid = recordProblems(root, record);
+  const invalid = recordProblems(record);
   if (invalid.length) return invalid;
-  const bootstrapPath = inside(root, record.bootstrap);
-  if (!existsSync(bootstrapPath)) return [`PROBE_BOOTSTRAP_MISSING ${record.bootstrap}`];
-  const recorded = new Map(
-    [...readFileSync(bootstrapPath, "utf8").matchAll(/"([^"\n]+)"\s*:\s*"([0-9a-f]{64})"/g)].map(
-      (match) => [match[1], match[2]],
-    ),
-  );
-  if (recorded.size === 0) return [`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${record.bootstrap}`];
+  const bootstrapFile = readPlainFile(root, BOOTSTRAP);
+  if (bootstrapFile.missing) return [`PROBE_BOOTSTRAP_MISSING ${BOOTSTRAP}`];
+  if (bootstrapFile.unreadable) return [`PROBE_BOOTSTRAP_UNREADABLE ${BOOTSTRAP}`];
+  const entries = bootstrapDigests(bootstrapFile.bytes.toString("utf8"));
+  if (!entries?.length) return [`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`];
+  const recorded = new Map(entries);
   const problems = [];
+  if (recorded.size !== entries.length) problems.push("PROBE_BOOTSTRAP_DUPLICATE_NAME");
   const listed = new Set(record.files.map((file) => file.built));
   for (const name of recorded.keys())
     if (!listed.has(name)) problems.push(`PROBE_SOURCE_UNLISTED ${name}`);
@@ -61,12 +82,16 @@ export function probeSourceProblems(root) {
       problems.push(
         `PROBE_BUILT_DIGEST_MISMATCH ${file.built} bootstrap=${recorded.get(file.built) ?? "absent"} record=${file.builtSha256}`,
       );
-    const sourcePath = inside(root, file.source);
-    if (!existsSync(sourcePath)) {
+    const source = readPlainFile(root, file.source);
+    if (source.missing) {
       problems.push(`PROBE_SOURCE_MISSING ${file.source}`);
       continue;
     }
-    const actual = sha256(readFileSync(sourcePath));
+    if (source.unreadable) {
+      problems.push(`PROBE_SOURCE_UNREADABLE ${file.source}`);
+      continue;
+    }
+    const actual = sha256(source.bytes);
     if (actual !== file.sourceSha256)
       problems.push(
         `PROBE_SOURCE_CHANGED ${file.source} recorded=${file.sourceSha256.slice(0, 12)} now=${actual.slice(0, 12)}`,
@@ -78,7 +103,7 @@ export function probeSourceProblems(root) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const problems = probeSourceProblems(path.resolve(process.argv[2] ?? "."));
   for (const problem of problems) console.log(problem);
-  if (problems.length) console.log(REFRESH_HINT);
+  console.log(problems.length ? REFRESH_HINT : PASSED_NOTE);
   console.log(`PROBE_SOURCES ${problems.length ? "failed" : "passed"}`);
   process.exitCode = problems.length ? 1 : 0;
 }

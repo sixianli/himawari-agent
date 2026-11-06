@@ -739,8 +739,10 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         (root / 'browsers').mkdir()
         source = root / 'source'
         source.mkdir()
+        (source / 'package.json').write_text('{}')
         subprocess.run(['git', 'init', '-q', str(source)], check=True)
         subprocess.run(['git', '-C', str(source), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
+        self.source = source
         revision = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
         self.work = root / 'work'
         materials = self.work / 'walk-1' / 'materials'
@@ -776,6 +778,14 @@ class ReleaseWalkthroughTest(unittest.TestCase):
             run = self.walkthrough(argument)
             self.assertEqual(run.returncode, 5)
             self.assertIn('PI_TOOL_MISSING ' + str(self.toolbin / 'fd'), run.stderr)
+        self.assertFalse((self.work / 'walk-1' / 'walkthrough').exists())
+
+    def test_a_source_checkout_without_files_stops_the_preflight(self):
+        (self.source / 'package.json').unlink()
+        for argument in ('--preflight', 'walk-1'):
+            run = self.walkthrough(argument)
+            self.assertEqual(run.returncode, 3)
+            self.assertIn('SOURCE_TREE_EMPTY ' + str(self.source), run.stderr)
         self.assertFalse((self.work / 'walk-1' / 'walkthrough').exists())
 
     def test_a_python_that_is_not_the_locked_one_stops_the_preflight(self):

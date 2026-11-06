@@ -23,6 +23,7 @@ function fixture({
   recordedSource,
   bootstrapBuilt = BUILT,
   extraBootstrap = "",
+  aroundBootstrap = "",
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "probe-sources-"));
   roots.push(root);
@@ -33,7 +34,7 @@ function fixture({
   write(SOURCE, source);
   write(
     BOOTSTRAP,
-    `const originals = {\n  "job-host-main.js": "${bootstrapBuilt}",\n${extraBootstrap}};\n`,
+    `${aroundBootstrap}const originals = {\n  "job-host-main.js": "${bootstrapBuilt}",\n${extraBootstrap}};\n${aroundBootstrap}`,
   );
   write(
     "scripts/delivery-mode/probe-sources.json",
@@ -87,8 +88,56 @@ describe("probe source digests", () => {
     expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCE_UNLISTED Sandbox_SDK2.js"]);
   });
 
+  it("ignores digest-like strings outside the originals block", () => {
+    const root = fixture({
+      aroundBootstrap: `const other = { "job-host-main.js": "${"d".repeat(64)}" };\n`,
+    });
+    expect(probeSourceProblems(root)).toEqual([]);
+  });
+
+  it("fails when the originals block names a file twice", () => {
+    const root = fixture({ extraBootstrap: `  "job-host-main.js": "${BUILT}",\n` });
+    expect(probeSourceProblems(root)).toEqual(["PROBE_BOOTSTRAP_DUPLICATE_NAME"]);
+  });
+
+  it("fails when the bootstrap has no originals block", () => {
+    const root = fixture();
+    writeFileSync(join(root, BOOTSTRAP), `const table = { "job-host-main.js": "${BUILT}" };\n`);
+    expect(probeSourceProblems(root)).toEqual([`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`]);
+  });
+
+  it("fails when a recorded source is a directory", () => {
+    const root = fixture();
+    rmSync(join(root, SOURCE));
+    mkdirSync(join(root, SOURCE));
+    expect(probeSourceProblems(root)).toEqual([`PROBE_SOURCE_UNREADABLE ${SOURCE}`]);
+  });
+
+  const entry = {
+    built: "job-host-main.js",
+    builtSha256: BUILT,
+    source: SOURCE,
+    sourceSha256: BUILT,
+  };
+  it.each([
+    [{ ...entry, built: "Job_Host.js" }],
+    [{ ...entry, source: "packages/other/src/job-host-main.ts" }],
+    [{ ...entry, source: "packages/runtime-sandbox/src/../../../outside.ts" }],
+  ])("rejects a record entry the packet check could not use %#", (file) => {
+    const root = fixture();
+    writeFileSync(
+      join(root, "scripts/delivery-mode/probe-sources.json"),
+      JSON.stringify({ bootstrap: BOOTSTRAP, files: [file] }),
+    );
+    expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCES_RECORD_INVALID files[0]"]);
+  });
+
   it.each([
     ["{not json", "PROBE_SOURCES_RECORD_INVALID json"],
+    [
+      JSON.stringify({ bootstrap: BOOTSTRAP, files: [entry, entry] }),
+      "PROBE_SOURCES_RECORD_INVALID duplicate built",
+    ],
     [JSON.stringify({ bootstrap: BOOTSTRAP, files: [] }), "PROBE_SOURCES_RECORD_INVALID files"],
     [
       JSON.stringify({ bootstrap: "../outside.mjs", files: [{}] }),
@@ -114,5 +163,15 @@ describe("probe source digests", () => {
     );
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("PROBE_SOURCES failed");
+  });
+
+  it("reminds on success that built digests are checked only by the packet check", () => {
+    const run = spawnSync(
+      process.execPath,
+      [join(repository, "scripts/check-probe-sources.mjs"), fixture()],
+      { encoding: "utf8" },
+    );
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("PROBE_SOURCES_NOTE");
   });
 });
