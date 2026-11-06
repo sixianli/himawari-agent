@@ -580,7 +580,7 @@ class HermesCommandTest(unittest.TestCase):
         self.hermes.install_scripts()
         uploaded = Path(self.hermes.scripts) / 'builder.json'
         settings = json.loads(uploaded.read_text())
-        settings['hostname'] = subprocess.run(['hostname'], capture_output=True, text=True, check=True).stdout.strip() + '-elsewhere'
+        settings['hostname'] += '-elsewhere'
         uploaded.write_text(json.dumps(settings))
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_PREFLIGHT_FAILED .*HERMES_WALKTHROUGH_FAILED HOST_UNEXPECTED'):
             self.hermes.preflight()
