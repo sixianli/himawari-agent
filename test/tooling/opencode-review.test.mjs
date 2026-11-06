@@ -2580,6 +2580,53 @@ describe("opencode review merge gate", () => {
     ).toBe('REVIEW_LOW_FIX_REFUSED file-name-has-line-break "test/odd\\nname.test.mjs"');
   });
 
+  it("[low fix] the report lists only low-fix records on the chain and marks the rest", () => {
+    const f = lowFixFixture();
+    try {
+      const fixed = f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "fix");
+      const record = {
+        at: "t",
+        mode: "low-fix",
+        cost: 0,
+        round: 1,
+        head: fixed,
+        from: f.reviewed,
+        files: ["code.txt", "test/code.test.mjs"],
+        findings: ["V1"],
+      };
+      const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)];
+      f.writeLedger([...first, record, { ...record, round: 99 }]);
+      const report = reviewReport({
+        repo: f.repo,
+        pr: 7,
+        mainRef: "origin/main",
+        stop: "no-error",
+      });
+      expect(report).toContain(`  V1 deepseek-v4.1-flash：${verdict().quote}`);
+      expect(report).toContain(
+        `REVIEW_LOW_FIX_NOT_IN_CHAIN round=99 head=${fixed} files=code.txt,test/code.test.mjs`,
+      );
+      expect(report.filter((line) => line.startsWith("REVIEW_LOW_FIX "))).toHaveLength(1);
+      f.git("rm", "-q", `${REVIEWS_DIR}/pr-7/round-1/verdicts.jsonl`);
+      const dropped = f.commit({ "other.txt": "x\n" }, "drop verdicts");
+      f.writeLedger([...first, { ...record, head: dropped }]);
+      const missing = reviewReport({
+        repo: f.repo,
+        pr: 7,
+        mainRef: "origin/main",
+        stop: "andy-decision",
+        andyQuote: "看一下",
+      });
+      expect(missing).toContain(
+        "REVIEW_LOW_FIX_NOT_IN_CHAIN round=1 head=" +
+          dropped +
+          " files=code.txt,test/code.test.mjs",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[low fix] lets a docs-only fix through without a test change", () => {
     const f = lowFixFixture();
     try {
@@ -3425,6 +3472,7 @@ describe("opencode review spending", () => {
       "docs/test.md",
       "latest/a.mjs",
       "test/README.md",
+      "test/README.MD",
     ])
       expect(isTestFile(path)).toBe(false);
   });

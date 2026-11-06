@@ -890,7 +890,7 @@ const VERDICT_TEXT_FIELDS = ["id", "model", "quote"];
 const LOW_MODEL_SEVERITY = /^(?:低|low|minor|轻微|nit)/i;
 
 export function isTestFile(path) {
-  if (path.endsWith(".md")) return false;
+  if (/\.md$/i.test(path)) return false;
   return (
     /(?:^|\/)(?:test|tests|__tests__)\//.test(path) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path)
   );
@@ -986,7 +986,7 @@ export function lowFixProblems({ repo, ledgerPath, round, from, to }) {
   for (const change of changes)
     if (/[\r\n]/.test(change.file))
       problems.push(`file-name-has-line-break ${printable(change.file)}`);
-  const docsOnly = changes.every((change) => change.file.endsWith(".md"));
+  const docsOnly = changes.every((change) => /\.md$/i.test(change.file));
   if (
     changes.length > 0 &&
     !docsOnly &&
@@ -1260,22 +1260,26 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     "run-failed": latest > 0 && !latestComplete,
   }[stop];
   if (!consistent) throw new Error(`REPORT_STOP_INCONSISTENT ${stop}`);
+  const onChain = (record) =>
+    gate.accepted.some(
+      (point) =>
+        point.by === "low-fix" && point.round === record.round && point.head === record.head,
+    );
   const lowFixLines = records
     .filter((record) => record.mode === "low-fix")
     .flatMap((record) => {
+      if (!onChain(record))
+        return [
+          `REVIEW_LOW_FIX_NOT_IN_CHAIN round=${record.round} head=${record.head} files=${record.files.map(printable).join(",")}`,
+        ];
       const path = `${ledgerPath}/round-${record.round}/verdicts.jsonl`;
       const text = gitStatus(["show", `${record.head}:${path}`], repo);
-      let verdicts = [];
-      try {
-        if (text.status === 0) verdicts = parseVerdicts(text.stdout, path);
-      } catch {
-        verdicts = [];
-      }
+      const verdicts = parseVerdicts(text.stdout, path);
       return [
         `REVIEW_LOW_FIX round=${record.round} from=${record.from} head=${record.head} files=${record.files.map(printable).join(",")}`,
         ...record.findings.map((id) => {
           const verdict = verdicts.find((item) => item.id === id);
-          return `  ${printable(id)} ${verdict ? `${verdict.model.split("/").pop()}：${printable(verdict.quote)}` : "verdict-missing"}`;
+          return `  ${printable(id)} ${verdict.model.split("/").pop()}：${printable(verdict.quote)}`;
         }),
       ];
     });
