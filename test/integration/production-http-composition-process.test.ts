@@ -1141,7 +1141,9 @@ async function writeServiceCapabilitySnapshot() {
 const WORKSPACE_GRANT_ID = "directory-installed";
 const WORKSPACE_PATH = "/srv/himawari/workspace-installed";
 
-async function openInstalledMain(options: { readonly coding?: boolean } = {}) {
+async function openInstalledMain(
+  options: { readonly coding?: boolean; readonly runPolicy?: Record<string, unknown> } = {},
+) {
   stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-main-state-`);
   cleanupRoots.push(stateRoot);
   await initializeTestDatabase();
@@ -1166,6 +1168,7 @@ async function openInstalledMain(options: { readonly coding?: boolean } = {}) {
   }));
   raw["memory"] = { ...(raw["memory"] as Record<string, unknown>), dimensions: 4096 };
   raw["runPolicy"] = {
+    ...options.runPolicy,
     version: "installed-policy-v1",
     systemInstruction: "请用中文回答。",
     memoryLimit: 10,
@@ -2012,3 +2015,154 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     await service.stop();
   }
 }, 120_000);
+
+async function reconfigure(
+  service: Awaited<ReturnType<typeof openInstalledMain>>,
+  change: (raw: Record<string, unknown> & { runPolicy: Record<string, unknown> }) => void,
+) {
+  const raw = JSON.parse(await readFile(configurationPath, "utf8"));
+  change(raw);
+  await writeFile(configurationPath, JSON.stringify(raw), { mode: 0o600 });
+  await service.restart();
+}
+
+function bundleRows(threadId: string) {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    return database
+      .prepare(
+        `SELECT generation, origin, superseded_at IS NOT NULL AS superseded
+         FROM thread_prompt_bundles WHERE thread_id = ? ORDER BY generation`,
+      )
+      .all(threadId) as Array<{ generation: number; origin: string; superseded: number }>;
+  } finally {
+    database.close();
+  }
+}
+
+function invalidationTraces(threadId: string) {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    return database
+      .prepare(
+        "SELECT run_id AS runId FROM trace_events WHERE thread_id = ? AND event_type = 'prompt.bundle.invalidated' ORDER BY occurred_at, sequence",
+      )
+      .all(threadId) as Array<{ runId: string }>;
+  } finally {
+    database.close();
+  }
+}
+
+const toolNames = (request: { readonly body: ChatBody }) =>
+  ((request.body.tools as { function: { name: string } }[] | undefined) ?? []).map(
+    (tool) => tool.function.name,
+  );
+
+async function systemInstructionChange(runPolicy: Record<string, unknown>) {
+  const service = await openInstalledMain({ runPolicy });
+  const threadId = `thread-frozen-instruction-${Object.keys(runPolicy).length}`;
+  try {
+    await service.command("thread.create", `${threadId}-create`, {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload(`${threadId}-create-payload`, "create"),
+    });
+    const start = providerRequests.length;
+    expect((await submitTurn(service, threadId, `${threadId}-1`, "第一轮")).run?.status).toBe(
+      "completed",
+    );
+    const first = agentRequests(start).at(-1);
+    await reconfigure(service, (raw) => {
+      raw.runPolicy["systemInstruction"] = "请用中文回答，语气更轻松。";
+    });
+    expect((await submitTurn(service, threadId, `${threadId}-2`, "第二轮")).run?.status).toBe(
+      "completed",
+    );
+    const second = agentRequests(start).at(-1);
+    if (!first || !second || first === second) throw new Error("AGENT_REQUEST_MISSING");
+    return { first, second, rows: bundleRows(threadId) };
+  } finally {
+    await service.stop();
+  }
+}
+
+it("[PR-B] keeps the request head byte-identical when the configured system instruction changes between turns", async () => {
+  const { first, second, rows } = await systemInstructionChange({});
+  expect(requestHead(second)).toEqual(requestHead(first));
+  expectAppendOnly(first, second);
+  expect(requestHead(second).prefix).toContain("请用中文回答。");
+  expect(requestHead(second).prefix).not.toContain("语气更轻松");
+  expect(rows).toEqual([{ generation: 1, origin: "new_thread", superseded: 0 }]);
+}, 120_000);
+
+it("[PR-B] REVERSE: with the production switch turning the freeze off, the same change rewrites the request head", async () => {
+  const { first, second, rows } = await systemInstructionChange({ freezeThreadPrompts: false });
+  expect(requestHead(second)).not.toEqual(requestHead(first));
+  expect(requestHead(second).prefix).toContain("语气更轻松");
+  expect(rows).toEqual([]);
+}, 120_000);
+
+it("[PR-B] renews the frozen prompt once when web search is turned on and once when the model changes, and the next turn can call web_search", async () => {
+  const service = await openInstalledMain();
+  const threadId = "thread-frozen-renewal";
+  try {
+    await service.command("thread.create", "frozen-renewal-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("frozen-renewal-create-payload", "create"),
+    });
+    const start = providerRequests.length;
+    expect((await submitTurn(service, threadId, "renewal-first", "第一轮")).run?.status).toBe(
+      "completed",
+    );
+    const first = agentRequests(start).at(-1);
+    await reconfigure(service, (raw) => {
+      raw.runPolicy["publicSearch"] = {
+        hostId: "host-installed",
+        workerInstanceId: "worker-installed",
+        capabilityRef: "installed.search",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        scopeSource: "private_temp",
+      };
+    });
+    expect((await submitTurn(service, threadId, "renewal-second", "第二轮")).run?.status).toBe(
+      "completed",
+    );
+    const second = agentRequests(start).at(-1);
+    expect((await submitTurn(service, threadId, "renewal-third", "第三轮")).run?.status).toBe(
+      "completed",
+    );
+    const third = agentRequests(start).at(-1);
+    if (!first || !second || !third) throw new Error("AGENT_REQUEST_MISSING");
+    expect(toolNames(first)).not.toContain("web_search");
+    expect(toolNames(second)).toContain("web_search");
+    expect(requestHead(second)).not.toEqual(requestHead(first));
+    expect(requestHead(third)).toEqual(requestHead(second));
+    expectAppendOnly(second, third);
+    expect(bundleRows(threadId)).toEqual([
+      { generation: 1, origin: "new_thread", superseded: 1 },
+      { generation: 2, origin: "tool_set_changed", superseded: 0 },
+    ]);
+    await reconfigure(service, (raw) => {
+      const models = raw["modelDescriptors"] as Array<Record<string, unknown>>;
+      raw["modelDescriptors"] = models.map((model) =>
+        model["role"] === "primary" ? { ...model, ref: "model-primary-next" } : model,
+      );
+    });
+    expect((await submitTurn(service, threadId, "renewal-fourth", "第四轮")).run?.status).toBe(
+      "completed",
+    );
+    expect(bundleRows(threadId)).toEqual([
+      { generation: 1, origin: "new_thread", superseded: 1 },
+      { generation: 2, origin: "tool_set_changed", superseded: 1 },
+      { generation: 3, origin: "model_changed", superseded: 0 },
+    ]);
+    expect(invalidationTraces(threadId)).toEqual([
+      { runId: "run:renewal-second" },
+      { runId: "run:renewal-fourth" },
+    ]);
+  } finally {
+    await service.stop();
+  }
+}, 180_000);

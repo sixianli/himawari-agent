@@ -8,6 +8,7 @@ import type {
   Message,
   Model,
   SimpleStreamOptions,
+  Tool,
   ToolResultMessage,
   UserMessage,
 } from "@earendil-works/pi-ai";
@@ -45,6 +46,7 @@ import type {
   RuntimeProjectionContent,
   RuntimeProjectionMessage,
   RuntimeProjectionPort,
+  RuntimePromptBundlePort,
   RuntimeRequest,
   RuntimeToolDescriptor,
   RuntimeToolInvocation,
@@ -83,7 +85,11 @@ import {
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
-import { contextBlockMarker, splitRuntimeEnvironment } from "./runtime-environment-block.js";
+import {
+  contextBlockMarker,
+  runtimeEnvironmentAfterCompaction,
+  splitRuntimeEnvironment,
+} from "./runtime-environment-block.js";
 
 function previousFileConflict(
   messages: AgentSession["agent"]["state"]["messages"],
@@ -158,6 +164,11 @@ export interface PiRuntimeResourcePort {
 export interface PiAgentRuntimeAdapterDependencies {
   readonly egress: ModelEgress;
   readonly projection: RuntimeProjectionPort;
+  readonly promptBundles?: RuntimePromptBundlePort;
+  readonly onHandleTools?: (
+    request: RuntimeRequest,
+    observation: { readonly generation: number | null; readonly handleTools: number },
+  ) => void;
   readonly continuations?: RuntimeContinuationPort;
   readonly tools: RuntimeToolPort;
   readonly models: PiModelBindingPort;
@@ -499,6 +510,42 @@ type PiToolDefinitionText = Pick<
   | "promptGuidelines"
   | "constrainedSampling"
 >;
+
+function frozenToolText(definition: PiToolDefinitionText) {
+  return {
+    name: definition.name,
+    label: definition.label,
+    description: definition.description,
+    parameters: definition.parameters,
+    ...(definition.promptSnippet === undefined ? {} : { promptSnippet: definition.promptSnippet }),
+    ...(definition.promptGuidelines === undefined
+      ? {}
+      : { promptGuidelines: definition.promptGuidelines }),
+    ...(definition.constrainedSampling === undefined
+      ? {}
+      : { constrainedSampling: definition.constrainedSampling }),
+  };
+}
+
+function providerTool(
+  definition: Pick<Tool, "name" | "description" | "parameters" | "constrainedSampling">,
+): Tool {
+  return {
+    name: definition.name,
+    description: definition.description,
+    parameters: definition.parameters,
+    ...(definition.constrainedSampling === undefined
+      ? {}
+      : { constrainedSampling: definition.constrainedSampling }),
+  };
+}
+
+function isHandleTool(descriptor: RuntimeToolDescriptor): boolean {
+  return (
+    descriptor.capabilityHandleRef !== null ||
+    ("handleBound" in descriptor && descriptor.handleBound === true)
+  );
+}
 
 function productSystemPrompt(
   systemInstruction: string,
@@ -1166,17 +1213,50 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         throw new TypeError("RUNTIME_PROJECTION_EMPTY_PROMPT");
       }
       const turn = turnPrompt(projection, this.#dependencies.timeZone ?? "UTC");
-      const systemPrompt = productSystemPrompt(
-        projection.systemInstruction,
-        descriptors.map((descriptor) => this.toolDefinition(descriptor)),
+      const frozenDescriptors = descriptors.filter((descriptor) => !isHandleTool(descriptor));
+      const handleDescriptors = descriptors.filter(isHandleTool);
+      const frozenDefinitions = frozenDescriptors.map((descriptor) =>
+        this.toolDefinition(descriptor),
       );
+      const bundle = await this.#dependencies.promptBundles?.resolve({
+        request,
+        identity: {
+          toolNames: frozenDescriptors.map(({ name }) => name),
+          modelRef: request.modelRef,
+          thinkingLevel: request.thinkingLevel ?? "off",
+          answerLocale: projection.answerLocaleRef ?? null,
+        },
+        candidate: {
+          systemPrompt: productSystemPrompt(projection.systemInstruction, frozenDefinitions),
+          tools: JSON.stringify(frozenDefinitions.map(frozenToolText)),
+        },
+        hasHistory: projection.nativeHistory !== undefined || projection.history.length > 0,
+      });
+      const systemPrompt =
+        bundle?.systemPrompt ??
+        productSystemPrompt(
+          projection.systemInstruction,
+          descriptors.map((descriptor) => this.toolDefinition(descriptor)),
+        );
+      const requestTools = bundle
+        ? [
+            ...(JSON.parse(bundle.tools) as Tool[]).map(providerTool),
+            ...handleDescriptors.map((descriptor) => providerTool(this.toolDefinition(descriptor))),
+          ]
+        : undefined;
+      if (handleDescriptors.length > 0)
+        this.#dependencies.onHandleTools?.(request, {
+          generation: bundle?.generation ?? null,
+          handleTools: handleDescriptors.length,
+        });
       const identity = createHash("sha256")
         .update(
           JSON.stringify({
             model: binding.descriptor,
             descriptors,
             resources,
-            systemInstruction: projection.systemInstruction,
+            systemPrompt,
+            frozenTools: bundle?.tools ?? null,
             cwd: this.#dependencies.cwd,
           }),
         )
@@ -1449,7 +1529,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       const originalStreamFunction = session.agent.streamFunction;
       restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
       let loopSummaryAttempted = false;
-      session.agent.streamFunction = async (model, context, options) => {
+      session.agent.streamFunction = async (model, requested, options) => {
+        const context = Array.isArray(requested.tools)
+          ? { ...requested, systemPrompt, ...(requestTools ? { tools: requestTools } : {}) }
+          : requested;
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
@@ -1503,6 +1586,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           );
           this.#historyWrites.set(request.runId, pending);
           void pending.catch(() => session.agent.abort());
+        }
+
+        if (
+          event.type === "compaction_end" &&
+          event.willRetry &&
+          !event.aborted &&
+          event.result !== undefined
+        ) {
+          const environment = runtimeEnvironmentAfterCompaction(
+            session.agent.state.messages,
+            projection,
+          );
+          if (environment)
+            session.agent.steer({ role: "custom", ...environment, timestamp: Date.now() });
         }
 
         if (

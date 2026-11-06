@@ -1808,6 +1808,14 @@ export async function runAgentService(
             event: "run.timing",
             ...diagnostic,
           }),
+        onHandleTools: (request, observation) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "prompt.bundle.handle_tools",
+            runId: request.runId,
+            generation: observation.generation ?? -1,
+            handleTools: observation.handleTools,
+          }),
         ...(modelComposition.composition.generateTitle
           ? { generateTitle: modelComposition.composition.generateTitle }
           : {}),

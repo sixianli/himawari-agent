@@ -1073,6 +1073,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "version",
       "timeZone",
       "systemInstruction",
+      "freezeThreadPrompts",
       "memoryLimit",
       "maxSelectedMemories",
       "maxMemoryClassification",
@@ -1125,6 +1126,14 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
+    ...(input["freezeThreadPrompts"] === undefined
+      ? {}
+      : {
+          freezeThreadPrompts: boolean(
+            input["freezeThreadPrompts"],
+            "configuration.runPolicy.freezeThreadPrompts",
+          ),
+        }),
     memoryLimit,
     maxSelectedMemories: integer(
       input["maxSelectedMemories"],

@@ -242,6 +242,7 @@ export interface RunPolicyConfiguration {
   readonly automaticReview?: AutomaticReviewConfiguration;
   readonly version: string;
   readonly systemInstruction: string;
+  readonly freezeThreadPrompts?: boolean;
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
   readonly maxMemoryClassification: DataClassification;

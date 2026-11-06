@@ -516,11 +516,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           descriptor.name === "bash",
       );
     if (startable || backgroundBash) {
-      descriptors.push(...managedTaskDescriptors());
+      descriptors.push(
+        ...managedTaskDescriptors().map((descriptor) =>
+          backgroundBash ? descriptor : { ...descriptor, handleBound: true as const },
+        ),
+      );
       if (startable)
         descriptors.push({
           capabilityRef: "execution.task.start",
           capabilityHandleRef: null,
+          handleBound: true,
           name: "execution_task_start",
           description: TOOL_TASK_START.text,
           parameters: {

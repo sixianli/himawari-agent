@@ -11,6 +11,7 @@ const CONTEXT_OPEN = "<himawari-context>\n";
 const CONTEXT_CLOSE = "\n</himawari-context>\n";
 const MARKER_PREFIXES = ["\n[Himawari context material ", "\n[Himawari runtime environment"];
 const RUNTIME_ENVIRONMENT_KIND = "runtime-environment";
+export const RUNTIME_ENVIRONMENT_MESSAGE_TYPE = "himawari.runtime-environment";
 
 export function contextBlockMarker(block: ContextBlock): string {
   if (block.kind === RUNTIME_ENVIRONMENT_KIND) return CHAT_RUNTIME_ENVIRONMENT_MARKER.text;
@@ -71,7 +72,17 @@ export function previousRuntimeEnvironment(messages: readonly unknown[]): string
   });
   for (let index = messages.length - 1; index >= start; index -= 1) {
     const message = messages[index];
-    if (!record(message) || message["role"] !== "user") continue;
+    if (!record(message)) continue;
+    if (
+      message["role"] === "custom" &&
+      message["customType"] === RUNTIME_ENVIRONMENT_MESSAGE_TYPE &&
+      typeof message["content"] === "string"
+    ) {
+      const found = environmentIn(`\n${message["content"]}`);
+      if (found !== undefined) return found;
+      continue;
+    }
+    if (message["role"] !== "user") continue;
     for (const text of userTexts(message).reverse()) {
       const segment = contextSegment(text);
       const found = segment === undefined ? undefined : environmentIn(segment);
@@ -79,6 +90,27 @@ export function previousRuntimeEnvironment(messages: readonly unknown[]): string
     }
   }
   return undefined;
+}
+
+export function runtimeEnvironmentMessage(environment: string) {
+  return {
+    customType: RUNTIME_ENVIRONMENT_MESSAGE_TYPE,
+    content: `${runtimeEnvironmentMarker()}\n${environment}`,
+    display: false,
+    details: {},
+  };
+}
+
+export function runtimeEnvironmentAfterCompaction(
+  messages: readonly unknown[],
+  projection: RuntimeProjection,
+) {
+  const environment = projection.contextBlocks.find(
+    ({ kind }) => kind === RUNTIME_ENVIRONMENT_KIND,
+  )?.content;
+  if (environment === undefined || previousRuntimeEnvironment(messages) === environment)
+    return undefined;
+  return runtimeEnvironmentMessage(environment);
 }
 
 export function splitRuntimeEnvironment(projection: RuntimeProjection): {

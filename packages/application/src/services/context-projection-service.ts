@@ -81,8 +81,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const contextBlocks = await this.readContextBlocks(input, envelope, history.systemBlocks);
     await this.assertWorkerReferences(input);
     const workerBlocks = await this.readWorkerResults(input);
+    const answerLocale = envelope.systemPolicyRefs.find(({ kind }) => kind === "answer-locale");
     return Object.freeze({
       systemInstruction,
+      ...(answerLocale ? { answerLocaleRef: answerLocale.ref } : {}),
       ...(nativeHistory ? { nativeHistory } : {}),
       coveredRunIds: [
         ...new Set([

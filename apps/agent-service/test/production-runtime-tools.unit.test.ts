@@ -1567,6 +1567,50 @@ it("exposes task management only when a task can start or bash can move to the b
   expect(f.request).not.toHaveBeenCalled();
 });
 
+it("[PR-B] marks task tools that only a task handle brings, so they stay out of the conversation's frozen tools", async () => {
+  const f = fixture();
+  const base = hostOptions(
+    f,
+    vi.fn(async () => ({ modelContent: "unused", isError: false, errorCode: null })),
+  );
+  const managedTasks = { execute: vi.fn() };
+  const bound = async (
+    options: ConstructorParameters<typeof ProductionRuntimeTools>[0],
+    refs: readonly string[],
+  ) =>
+    (await new ProductionRuntimeTools(options).listAuthorized(invocation.runId, refs))
+      .filter(({ name }) => name.startsWith("execution_task_"))
+      .map((descriptor) => [
+        descriptor.name,
+        "handleBound" in descriptor && descriptor.handleBound === true,
+      ]);
+  const withHandle = { ...f.options, managedTasks, taskHandle: async () => true };
+  expect(await bound(withHandle, [invocation.capabilityHandleRef])).toEqual([
+    ["execution_task_status", true],
+    ["execution_task_output", true],
+    ["execution_task_cancel", true],
+    ["execution_task_start", true],
+  ]);
+  const bash = {
+    ...base,
+    managedTasks,
+    taskHandle: async () => true,
+    coding: { ...base.coding, enabledTools: ["read", "bash"] as const },
+    backgroundCommands: { waitMs: 30_000, maximumMs: 60_000 },
+  };
+  expect(await bound(bash, [])).toEqual([
+    ["execution_task_status", false],
+    ["execution_task_output", false],
+    ["execution_task_cancel", false],
+  ]);
+  expect(await bound(bash, [invocation.capabilityHandleRef])).toEqual([
+    ["execution_task_status", false],
+    ["execution_task_output", false],
+    ["execution_task_cancel", false],
+    ["execution_task_start", true],
+  ]);
+});
+
 it("[BG-8] gives a bash command its own 30-minute limit instead of the 5-minute answer limit", async () => {
   const f = fixture();
   const base = hostOptions(
