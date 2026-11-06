@@ -51,6 +51,7 @@ describe("npm run check", () => {
     expect(manifest.scripts.check).toBe("node scripts/run-all-checks.mjs");
     const names = stepNames(manifest.scripts["check:steps"]);
     expect(names).toContain("check:boundaries");
+    expect(names).toContain("check:delivery-packet");
     for (const name of names) expect(manifest.scripts[name], name).toBeTypeOf("string");
   });
 
