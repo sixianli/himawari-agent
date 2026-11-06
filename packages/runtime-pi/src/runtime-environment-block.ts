@@ -1,7 +1,9 @@
 import type { RuntimeProjection } from "@himawari-agent/application/runtime-port";
 import {
   CHAT_CONTEXT_MATERIAL_MARKER,
+  CHAT_OWNER_RULES_MARKER,
   CHAT_RUNTIME_ENVIRONMENT_MARKER,
+  type PromptEntry,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 
@@ -9,8 +11,20 @@ type ContextBlock = RuntimeProjection["contextBlocks"][number];
 
 const CONTEXT_OPEN = "<himawari-context>\n";
 const CONTEXT_CLOSE = "\n</himawari-context>\n";
-const MARKER_PREFIXES = ["\n[Himawari context material ", "\n[Himawari runtime environment"];
 const RUNTIME_ENVIRONMENT_KIND = "runtime-environment";
+const OWNER_RULES_KIND = "owner-rules";
+
+function leadingText(entry: Pick<PromptEntry, "id" | "segments">): string {
+  const [first] = entry.segments;
+  if (first?.kind !== "text") throw new Error(`PROMPT_MARKER_PREFIX_MISSING ${entry.id}`);
+  return first.text;
+}
+
+export const CONTEXT_MARKER_PREFIXES: readonly string[] = Object.freeze(
+  [CHAT_CONTEXT_MATERIAL_MARKER, CHAT_OWNER_RULES_MARKER, CHAT_RUNTIME_ENVIRONMENT_MARKER].map(
+    (entry) => `\n${leadingText(entry)}`,
+  ),
+);
 export const RUNTIME_ENVIRONMENT_MESSAGE_TYPE = "himawari.runtime-environment";
 
 export function contextBlockMarker(block: ContextBlock): string {
@@ -22,7 +36,10 @@ export function contextBlockMarker(block: ContextBlock): string {
     ...(block.sourceRef ? { sourceRef: block.sourceRef } : {}),
     ...(block.productRole ? { productRole: block.productRole } : {}),
   });
-  return renderPrompt(CHAT_CONTEXT_MATERIAL_MARKER, { metadata });
+  return renderPrompt(
+    block.kind === OWNER_RULES_KIND ? CHAT_OWNER_RULES_MARKER : CHAT_CONTEXT_MATERIAL_MARKER,
+    { metadata },
+  );
 }
 
 function runtimeEnvironmentMarker(): string {
@@ -56,7 +73,9 @@ function environmentIn(segment: string): string | undefined {
   if (start < 0) return undefined;
   const content = segment.slice(start + marker.length);
   const next = Math.min(
-    ...MARKER_PREFIXES.map((prefix) => content.indexOf(prefix)).filter((index) => index >= 0),
+    ...CONTEXT_MARKER_PREFIXES.map((prefix) => content.indexOf(prefix)).filter(
+      (index) => index >= 0,
+    ),
   );
   return Number.isFinite(next) ? content.slice(0, next) : content;
 }

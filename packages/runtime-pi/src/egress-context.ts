@@ -2,8 +2,8 @@ import {
   type AssistantMessage,
   type AssistantMessageEvent,
   type AssistantMessageEventStream,
-  createAssistantMessageEventStream,
   type Context,
+  createAssistantMessageEventStream,
 } from "@earendil-works/pi-ai";
 import {
   EGRESS_PLACEHOLDER_LEGEND,
@@ -20,8 +20,11 @@ export function withPlaceholderLegend(context: Context): Context {
   return { ...context, systemPrompt };
 }
 
-export function withPlaceholderLegendInPrompt(prompt: string): string {
-  return `${prompt}\n\n${EGRESS_PLACEHOLDER_LEGEND}`;
+export function backgroundModelContext(prompt: string, timestamp: number): Context {
+  return {
+    systemPrompt: EGRESS_PLACEHOLDER_LEGEND,
+    messages: [{ role: "user", content: prompt, timestamp }],
+  };
 }
 
 function restoredMessage(

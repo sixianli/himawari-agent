@@ -74,5 +74,6 @@ date: "2026-10-26"
 - [SOURCE: docs/engineering-casebook.md]
 - 案例：[工程案例库：系统提示开头一直是“编程助手”](../engineering-casebook.md#case-identity-prompt)
 - [PR #39](https://github.com/sixianli/himawari-agent/pull/39)（发现问题的线程）
+- 后续：[ADR 0166](0166-prompt-wording-batch-1-system-and-tools.md) 按 Andy 2026-11-05 的决定，把 Pi 的 read 说明和用法规则、bash 说明和 `timeout` 参数说明换成目录里的中文条目，去掉 bash 的 `PI_*` 用法规则；第 2 条“工具简介和用法规则没有改写”从那时起只对其余工具成立。
 
 [返回目录](#contents)
