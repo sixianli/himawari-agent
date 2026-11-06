@@ -109,7 +109,7 @@ describe("probe source digests", () => {
     expect(probeSourceProblems(root)).toEqual([]);
   });
 
-  it("reads entries outside the originals block the way the packet check does", () => {
+  it("rejects entries outside the originals block, which the probe never uses", () => {
     const root = fixture();
     writeFileSync(
       join(root, BOOTSTRAP),
@@ -234,6 +234,10 @@ describe("probe source digests", () => {
     ],
     [
       JSON.stringify({ bootstrap: BOOTSTRAP, files: [{ ...entry, builtSha256: [BUILT] }] }),
+      "PROBE_SOURCES_RECORD_INVALID files[0]",
+    ],
+    [
+      JSON.stringify({ bootstrap: BOOTSTRAP, files: [{ ...entry, sourceSha256: [BUILT] }] }),
       "PROBE_SOURCES_RECORD_INVALID files[0]",
     ],
   ])("fails clearly on a broken record %#", (text, problem) => {
