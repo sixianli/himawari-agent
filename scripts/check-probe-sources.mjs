@@ -8,6 +8,7 @@ const BOOTSTRAP = "scripts/delivery-mode/packet-template/measurement/probe/boots
 const SOURCE_DIRECTORY = "packages/runtime-sandbox/src/";
 const BUILT_NAME = /^[a-z-]+\.js$/;
 const DIGEST = /^[0-9a-f]{64}$/;
+const PACKET_CHECK_LINE = /^\s+"([a-z-]+\.js)": "([0-9a-f]{64})",$/;
 const REFRESH_HINT =
   "PROBE_SOURCES_REFRESH build the candidate on Hermes, put the new runtime-sandbox/dist digests into the probe bootstrap and both digests into " +
   RECORD;
@@ -19,12 +20,21 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 function readPlainFile(root, relative) {
   const full = path.join(root, relative);
   if (!existsSync(full)) return { missing: true };
-  const stat = lstatSync(full);
-  if (!stat.isFile()) return { unreadable: true };
-  return { bytes: readFileSync(full) };
+  try {
+    if (!lstatSync(full).isFile()) return { unreadable: true };
+    return { bytes: readFileSync(full) };
+  } catch {
+    return { unreadable: true };
+  }
 }
 
-function recordProblems(record) {
+function insideSourceDirectory(root, source) {
+  if (source.includes("\\")) return false;
+  const relative = path.relative(path.join(root, SOURCE_DIRECTORY), path.resolve(root, source));
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function recordProblems(root, record) {
   if (record?.bootstrap !== BOOTSTRAP) return ["PROBE_SOURCES_RECORD_INVALID bootstrap"];
   if (!Array.isArray(record.files) || record.files.length === 0)
     return ["PROBE_SOURCES_RECORD_INVALID files"];
@@ -32,8 +42,7 @@ function recordProblems(record) {
     typeof file?.built === "string" &&
     BUILT_NAME.test(file.built) &&
     typeof file.source === "string" &&
-    file.source.startsWith(SOURCE_DIRECTORY) &&
-    !file.source.split("/").includes("..") &&
+    insideSourceDirectory(root, file.source) &&
     DIGEST.test(file.builtSha256) &&
     DIGEST.test(file.sourceSha256)
       ? []
@@ -48,31 +57,38 @@ function recordProblems(record) {
 function bootstrapDigests(text) {
   const block = text.match(/^const originals = \{\n([\s\S]*?)^\};$/m);
   if (!block) return null;
-  const entries = [...block[1].matchAll(/"([^"\n]+)"\s*:\s*"([0-9a-f]{64})"/g)].map((match) => [
-    match[1],
-    match[2],
-  ]);
-  return entries;
+  const entries = [];
+  const malformed = [];
+  for (const line of block[1].split("\n")) {
+    if (!/[0-9a-f]{64}/.test(line)) continue;
+    const match = line.match(PACKET_CHECK_LINE);
+    if (match) entries.push([match[1], match[2]]);
+    else malformed.push(line.trim());
+  }
+  return { entries, malformed };
 }
 
 export function probeSourceProblems(root) {
   const recordFile = readPlainFile(root, RECORD);
   if (recordFile.missing) return [`PROBE_SOURCES_RECORD_MISSING ${RECORD}`];
+  if (recordFile.unreadable) return [`PROBE_SOURCES_RECORD_UNREADABLE ${RECORD}`];
   let record;
   try {
-    record = JSON.parse(recordFile.bytes?.toString("utf8"));
+    record = JSON.parse(recordFile.bytes.toString("utf8"));
   } catch {
     return ["PROBE_SOURCES_RECORD_INVALID json"];
   }
-  const invalid = recordProblems(record);
+  const invalid = recordProblems(root, record);
   if (invalid.length) return invalid;
   const bootstrapFile = readPlainFile(root, BOOTSTRAP);
   if (bootstrapFile.missing) return [`PROBE_BOOTSTRAP_MISSING ${BOOTSTRAP}`];
   if (bootstrapFile.unreadable) return [`PROBE_BOOTSTRAP_UNREADABLE ${BOOTSTRAP}`];
-  const entries = bootstrapDigests(bootstrapFile.bytes.toString("utf8"));
-  if (!entries?.length) return [`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`];
+  const parsed = bootstrapDigests(bootstrapFile.bytes.toString("utf8"));
+  if (!parsed || parsed.entries.length + parsed.malformed.length === 0)
+    return [`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`];
+  const { entries, malformed } = parsed;
   const recorded = new Map(entries);
-  const problems = [];
+  const problems = malformed.map((line) => `PROBE_BOOTSTRAP_ENTRY_FORMAT ${line}`);
   if (recorded.size !== entries.length) problems.push("PROBE_BOOTSTRAP_DUPLICATE_NAME");
   const listed = new Set(record.files.map((file) => file.built));
   for (const name of recorded.keys())

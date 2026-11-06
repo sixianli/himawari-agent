@@ -83,9 +83,23 @@ describe("probe source digests", () => {
     expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCE_UNLISTED sandbox-sdk.js"]);
   });
 
-  it("fails when an unlisted bootstrap entry has an unusual name and no trailing comma", () => {
-    const root = fixture({ extraBootstrap: `  "Sandbox_SDK2.js": "${"c".repeat(64)}"\n` });
-    expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCE_UNLISTED Sandbox_SDK2.js"]);
+  it("fails when a bootstrap entry has an unusual name the packet check cannot read", () => {
+    const root = fixture({ extraBootstrap: `  "Sandbox_SDK2.js": "${"c".repeat(64)}",\n` });
+    expect(probeSourceProblems(root)).toEqual([
+      `PROBE_BOOTSTRAP_ENTRY_FORMAT "Sandbox_SDK2.js": "${"c".repeat(64)}",`,
+    ]);
+  });
+
+  it("fails when a recorded bootstrap entry has no trailing comma", () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, BOOTSTRAP),
+      `const originals = {\n  "job-host-main.js": "${BUILT}"\n};\n`,
+    );
+    expect(probeSourceProblems(root)).toEqual([
+      `PROBE_BOOTSTRAP_ENTRY_FORMAT "job-host-main.js": "${BUILT}"`,
+      expect.stringMatching(/^PROBE_BUILT_DIGEST_MISMATCH job-host-main\.js bootstrap=absent /),
+    ]);
   });
 
   it("ignores digest-like strings outside the originals block", () => {
@@ -123,6 +137,8 @@ describe("probe source digests", () => {
     [{ ...entry, built: "Job_Host.js" }],
     [{ ...entry, source: "packages/other/src/job-host-main.ts" }],
     [{ ...entry, source: "packages/runtime-sandbox/src/../../../outside.ts" }],
+    [{ ...entry, source: "packages/runtime-sandbox/src/..\\..\\outside.ts" }],
+    [{ ...entry, source: "packages/runtime-sandbox/src/" }],
   ])("rejects a record entry the packet check could not use %#", (file) => {
     const root = fixture();
     writeFileSync(
@@ -151,6 +167,16 @@ describe("probe source digests", () => {
     const root = fixture();
     writeFileSync(join(root, "scripts/delivery-mode/probe-sources.json"), text);
     expect(probeSourceProblems(root)).toEqual([problem]);
+  });
+
+  it("fails clearly when the record is not a plain file", () => {
+    const root = fixture();
+    const record = join(root, "scripts/delivery-mode/probe-sources.json");
+    rmSync(record);
+    mkdirSync(record);
+    expect(probeSourceProblems(root)).toEqual([
+      "PROBE_SOURCES_RECORD_UNREADABLE scripts/delivery-mode/probe-sources.json",
+    ]);
   });
 
   it("exits non-zero from the command line when the record is broken", () => {
