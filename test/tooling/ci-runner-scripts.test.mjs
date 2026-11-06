@@ -16,6 +16,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import { linuxRunnerLabel } from "../../scripts/ci/contracts.mjs";
 
 const scripts = path.resolve(import.meta.dirname, "../../scripts/operations/ci-runner");
+const asRootInPrivateMounts = (script) => [
+  "--unshare-user",
+  "--uid",
+  "0",
+  "--gid",
+  "0",
+  "--cap-add",
+  "ALL",
+  "--dev-bind",
+  "/",
+  "/",
+  "/bin/bash",
+  "-c",
+  script,
+];
 const directories = [];
 
 afterEach(() => {
@@ -1120,7 +1135,7 @@ describe("install-runner.sh run as root in a private mount namespace", () => {
       '  if [ -d "$path" ]; then echo "$path=DIR"; elif [ -e "$path" ]; then echo "$path=$(cat "$path")"; else echo "$path=MISSING"; fi',
       "done",
     ].join("\n");
-    const result = spawnSync("unshare", ["-rm", "/bin/bash", "-c", inner], {
+    const result = spawnSync("bwrap", asRootInPrivateMounts(inner), {
       encoding: "utf8",
       env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
     });
@@ -1282,7 +1297,7 @@ describe("uninstall-runner.sh", () => {
       "for dir in /srv /etc/systemd/system /etc/gh-runner; do [ -d $dir ] || continue; mount -t tmpfs tmpfs $dir || exit 91; done",
       'exec bash "$scripts/uninstall-runner.sh" 2',
     ].join("\n");
-    const result = spawnSync("unshare", ["-rm", "/bin/bash", "-c", inner], {
+    const result = spawnSync("bwrap", asRootInPrivateMounts(inner), {
       encoding: "utf8",
       env: { PATH: `${box.root}/bin:${process.env.PATH}`, HOME: box.root },
     });

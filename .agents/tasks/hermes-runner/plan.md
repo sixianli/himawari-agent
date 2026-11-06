@@ -38,6 +38,7 @@
 - 2026-11-06 23:52 补记 G17 至 G20。G17、G19 记为 once；G18、G20 记为 durable，由 HR-14 的新 ADR 承接。G20 决定 CI 搬到 OVH VPS、注销 Hermes runner，所以撤掉只对 Hermes 有意义的 HR-2、HR-8、HR-9，新增 HR-10 至 HR-16；当前批次改为 HR-10、HR-11、HR-12。另加 HR-17，核对长期决定 G12、G16 已由 ADR 0168、ADR 0170 原文承接。
 - 2026-11-06 23:54 更正 HR-17 的 done_when：ADR 0168 把 G12 的两句话分在两个问题下引用，不是连续原文；改为由沿用这些时限的 ADR 0176 连续引用 G12。
 - 2026-11-07 00:32 HR-10、HR-12 做完，当前批次换成 HR-13（开 PR 在 VPS 上跑完整 CI）和 HR-15（CI 通过后注销 Hermes 的 runner）。quality.yml（HR-16）照 ADR 0176 决定第 8 条另开 PR。
+- 2026-11-07 00:40 G21：quality.yml 的 container 检查给第三个专用账号用 rootless Docker，记为 durable，由 HR-16 那个 PR 的 ADR 原文承接；HR-16 的 goal_ref 加 G21。
 
 ## 意外和发现
 

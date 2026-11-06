@@ -114,3 +114,9 @@
 问题：搬迁方案（推荐做法）：1. 加固 VPS：关掉密码登录，打开防火墙，只开 SSH 端口。2. 在 VPS 上建一个专用账号跑 runner，先装 2 个，跑一次完整 CI 再决定要不要加到 3 个。3. 仓库改动单独开一个 PR：runner 标签 hermes-home 改成不带“Hermes”的新名字，一开始就处理基准提交上还是旧名字的情况；quality.yml 改到 VPS 上跑；写新的 ADR 并更新相关文档；动工前先请 OpenCode 上的两个模型审方案，预计不到 0.5 美元。4. 切换步骤：VPS 上的 runner 上线后，重新打开那三个工作流，用一个 PR 跑一次完整 CI。全部通过后，注销 Hermes 上的两个 runner，不留作备用。选“按推荐做”就同时授权了加固 VPS 和注销 Hermes 上的 runner。
 
 > 按推荐做
+
+## G21 2026-11-07 用户原话
+
+问题：quality.yml 的 container 检查要用 Docker：给另一个专用账号用 rootless Docker（不要 root 的 Docker 运行方式），还是这项先不跑？
+
+> 给另一个专用账号

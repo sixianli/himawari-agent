@@ -21,7 +21,8 @@
     "G17": "once",
     "G18": "durable",
     "G19": "once",
-    "G20": "durable"
+    "G20": "durable",
+    "G21": "durable"
   },
   "items": [
     {
@@ -360,9 +361,15 @@
       "title": "quality.yml 搬到 VPS 并手动跑通",
       "goal_ref": [
         "G18",
-        "G20"
+        "G20",
+        "G21"
       ],
       "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0177-quality-on-ci-vps.md",
+          "quotes": "G21"
+        },
         {
           "type": "review",
           "by": "claude"
