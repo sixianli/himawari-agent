@@ -116,7 +116,6 @@ export function validateToolchainLock(lock) {
   platformArtifacts(lock.python.artifacts);
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
   const expectedActions = [
-    "actions/cache",
     "actions/checkout",
     "actions/setup-node",
     "actions/setup-python",
