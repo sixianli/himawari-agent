@@ -52,6 +52,10 @@ describe("npm run check", () => {
     const names = stepNames(manifest.scripts["check:steps"]);
     expect(names).toContain("check:boundaries");
     expect(names).toContain("check:delivery-packet");
+    expect(names).toContain("check:delivery-deploy");
+    expect(names).toContain("check:delivery-rollback");
+    expect(names).toContain("check:delivery-cleanup");
+    expect(names).toContain("check:untested-claims");
     expect(names).toContain("check:check-runner");
     for (const name of names) expect(manifest.scripts[name], name).toBeTypeOf("string");
   });

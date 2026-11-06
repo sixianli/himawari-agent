@@ -13,8 +13,8 @@ import http.server
 import unittest
 
 HERE = Path(__file__).resolve().parent
-PACKET = Path(os.environ['ROLLBACK_TEST_PACKET'])
 NODE = os.environ.get('ROLLBACK_TEST_NODE', 'node')
+PACKET_PARAMETERS = json.loads((HERE / 'fixtures' / 'twelfth-parameters.json').read_text())
 
 
 def load(name, filename):
@@ -26,7 +26,39 @@ def load(name, filename):
 
 remote = load('rollback_remote', 'rollback-remote.py')
 orchestrator = load('rollback_orchestrator', 'rollback.py')
+packet_maker = load('make_packet', 'make-packet.py')
 DEPLOYMENT = {'id': 'himawari-prod-deployment', 'ownerId': 'owner:first-production', 'agentId': 'agent:first-production', 'revision': 7, 'status': 'active', 'authorityEpoch': 1, 'fencingToken': 12, 'transferId': None}
+S0_READBACK = {
+    'schema.current': PACKET_PARAMETERS['CURRENT_SCHEMA'],
+    'schema.minimumWriter': PACKET_PARAMETERS['CURRENT_SCHEMA'],
+    'identity.deploymentId': DEPLOYMENT['id'],
+    'identity.hostId': 'host:rollback-test',
+    'service.unitFragmentSha256': 'b' * 64,
+    'service.configurationSha256': 'c' * 64,
+    'authority.authorityEpoch': DEPLOYMENT['authorityEpoch'],
+    'authority.fencingToken': DEPLOYMENT['fencingToken'],
+    'authority.ownerId': DEPLOYMENT['ownerId'],
+    'authority.agentId': DEPLOYMENT['agentId'],
+    'authority.deploymentId': DEPLOYMENT['id'],
+    'authority.status': DEPLOYMENT['status'],
+}
+
+
+def with_s0_readback(value):
+    if isinstance(value, dict):
+        return {key: with_s0_readback(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [with_s0_readback(item) for item in value]
+    if isinstance(value, str) and value.startswith('S0_DB:'):
+        return S0_READBACK[value.removeprefix('S0_DB:')]
+    return value
+
+
+def packet_from_template(target):
+    packet_maker.render(target, PACKET_PARAMETERS)
+    draft = json.loads((target / 'inputs' / 'bindings.draft.json').read_text())
+    (target / 'inputs' / 'bindings.json').write_text(json.dumps(with_s0_readback(draft)))
+    return target
 
 
 def recovery_database(path, deployment):
@@ -79,18 +111,24 @@ class AuthorityMirrorTest(unittest.TestCase):
 
 
 class PlanTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(directory.cleanup)
+        cls.packet = packet_from_template(Path(directory.name) / 'packet')
+
     def setUp(self):
-        self.plan = orchestrator.rollback_plan(PACKET)
+        self.plan = orchestrator.rollback_plan(self.packet)
 
     def test_plan_matches_the_packet_rollback_route(self):
-        binding = json.loads((PACKET / 'inputs' / 'bindings.json').read_text())
+        binding = json.loads((self.packet / 'inputs' / 'bindings.json').read_text())
         schema = binding['maintenance']['expectedInitialSchema']
         self.assertEqual(self.plan['recoveryId'], binding['maintenance']['recovery' + str(schema) + 'Id'])
         self.assertEqual(self.plan['oldPrefix'], binding['paths']['oldPrefix'])
         self.assertEqual(self.plan['evidenceRoot'], binding['paths']['evidenceRoot'])
 
     def test_plan_runs_only_steps_the_packet_and_deploy_script_define(self):
-        steps = set(re.findall(r"'(S[0-9]+_[A-Z0-9_]+)'", (PACKET / 'steps' / 'run-step.py').read_text()))
+        steps = set(re.findall(r"'(S[0-9]+_[A-Z0-9_]+)'", (self.packet / 'steps' / 'run-step.py').read_text()))
         for action in (self.plan['restoreAction'], self.plan['controlAction']):
             self.assertIn(action, steps)
         orders = [order.split() for order in re.findall(r'actions=\(([^)]*)\)', (HERE / 'deploy.sh').read_text())]
@@ -109,7 +147,7 @@ class PlanTest(unittest.TestCase):
             'common.verifyRollbackApproval(approval, common.rollbackApprovalExpectation(binding, approval.action));'
             'console.log("APPROVAL_ACCEPTED");'
         )
-        child = subprocess.run([NODE, '--input-type=module', '-e', script, (PACKET / 'maintenance' / 'maintenance-common.mjs').as_uri(), str(PACKET / 'inputs' / 'bindings.json'), json.dumps(approval)], capture_output=True, text=True, check=False)
+        child = subprocess.run([NODE, '--input-type=module', '-e', script, (self.packet / 'maintenance' / 'maintenance-common.mjs').as_uri(), str(self.packet / 'inputs' / 'bindings.json'), json.dumps(approval)], capture_output=True, text=True, check=False)
         self.assertEqual(child.returncode, 0, child.stderr)
         self.assertIn('APPROVAL_ACCEPTED', child.stdout)
 
