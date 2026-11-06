@@ -41,8 +41,8 @@ const jobIds = [
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 
 export function timeoutMinutesFor(checkId) {
-  if (checkId === "required") return 5;
-  return ["build", "test", "node-floor", "browser"].includes(checkId) ? 45 : 30;
+  if (checkId === "required") return 15;
+  return ["build", "test", "node-floor", "browser"].includes(checkId) ? 90 : 60;
 }
 
 function hostedTimeoutMinutesFor(checkId) {

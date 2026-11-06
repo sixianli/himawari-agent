@@ -1,0 +1,7 @@
+{
+  "name": "himawari-opencode-review",
+  "private": true,
+  "dependencies": {
+    "opencode-ai": "1.19.5"
+  }
+}

@@ -35,8 +35,15 @@ const EXPECTED_WITH_REPOSITORY_CONFIG = [
   "test/fixtures/digest-map.json generic-api-key",
 ].sort();
 
+function gitleaksOnPath(version) {
+  const probe = spawnSync("gitleaks", ["version"], { encoding: "utf8" });
+  return probe.status === 0 && probe.stdout.trim() === version ? "gitleaks" : undefined;
+}
+
 async function lockedGitleaks() {
   const tool = loadToolchainLock().tools.gitleaks;
+  const installed = gitleaksOnPath(tool.version);
+  if (installed) return installed;
   const expected = tool.artifacts[`${process.platform}-${process.arch}`];
   const prefix = join(homedir(), ".cache", `himawari-gitleaks-${tool.version}`);
   const binary = join(prefix, "gitleaks");
