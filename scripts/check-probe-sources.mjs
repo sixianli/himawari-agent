@@ -9,7 +9,6 @@ const SOURCE_DIRECTORY = "packages/runtime-sandbox/src/";
 const BUILT_NAME = /^[a-z-]+\.js$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const PACKET_CHECK_LINE = /^\s+"([a-z-]+\.js)": "([0-9a-f]{64})",$/;
-const PACKET_CHECK_ENTRIES = /^\s+"([a-z-]+\.js)": "([0-9a-f]{64})",$/gm;
 const REFRESH_HINT =
   "PROBE_SOURCES_REFRESH build the candidate on Hermes, put the new runtime-sandbox/dist digests into the probe bootstrap and both digests into " +
   RECORD;
@@ -29,13 +28,7 @@ function readPlainFile(root, relative) {
   }
 }
 
-function insideSourceDirectory(root, source) {
-  if (source.includes("\\") || path.isAbsolute(source)) return false;
-  const relative = path.relative(path.join(root, SOURCE_DIRECTORY), path.resolve(root, source));
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
-
-function recordProblems(root, record) {
+function recordProblems(record) {
   if (record?.bootstrap !== BOOTSTRAP) return ["PROBE_SOURCES_RECORD_INVALID bootstrap"];
   if (!Array.isArray(record.files) || record.files.length === 0)
     return ["PROBE_SOURCES_RECORD_INVALID files"];
@@ -43,8 +36,7 @@ function recordProblems(root, record) {
     typeof file?.built === "string" &&
     BUILT_NAME.test(file.built) &&
     typeof file.source === "string" &&
-    insideSourceDirectory(root, file.source) &&
-    path.posix.basename(file.source) === file.built.replace(/\.js$/, ".ts") &&
+    file.source === `${SOURCE_DIRECTORY}${file.built.replace(/\.js$/, ".ts")}` &&
     DIGEST.test(file.builtSha256) &&
     DIGEST.test(file.sourceSha256)
       ? []
@@ -57,14 +49,19 @@ function recordProblems(root, record) {
 }
 
 function bootstrapDigests(text) {
-  const block = text.match(/^const originals = \{\n([\s\S]*?)^\};$/m);
-  if (!block) return null;
-  const entries = [...text.matchAll(PACKET_CHECK_ENTRIES)].map((match) => [match[1], match[2]]);
-  const malformed = block[1]
-    .split("\n")
-    .filter((line) => /[0-9a-f]{64}/.test(line) && !PACKET_CHECK_LINE.test(line))
-    .map((line) => line.trim());
-  return { entries, malformed };
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const start = lines.indexOf("const originals = {");
+  const end = start === -1 ? -1 : lines.indexOf("};", start + 1);
+  if (end === -1) return null;
+  const parsed = { entries: [], malformed: [], outside: [] };
+  lines.forEach((line, index) => {
+    const inside = index > start && index < end;
+    const match = line.match(PACKET_CHECK_LINE);
+    if (match) parsed.entries.push([match[1], match[2]]);
+    if (match && !inside) parsed.outside.push(match[1]);
+    if (!match && inside && /[0-9a-f]{64}/.test(line)) parsed.malformed.push(line.trim());
+  });
+  return parsed;
 }
 
 export function probeSourceProblems(root) {
@@ -77,19 +74,21 @@ export function probeSourceProblems(root) {
   } catch {
     return ["PROBE_SOURCES_RECORD_INVALID json"];
   }
-  const invalid = recordProblems(root, record);
+  const invalid = recordProblems(record);
   if (invalid.length) return invalid;
   const bootstrapFile = readPlainFile(root, BOOTSTRAP);
   if (bootstrapFile.missing) return [`PROBE_BOOTSTRAP_MISSING ${BOOTSTRAP}`];
   if (bootstrapFile.unreadable) return [`PROBE_BOOTSTRAP_UNREADABLE ${BOOTSTRAP}`];
   const text = bootstrapFile.bytes.toString("utf8");
-  if (text.includes("\r")) return [`PROBE_BOOTSTRAP_LINE_ENDINGS ${BOOTSTRAP}`];
   const parsed = bootstrapDigests(text);
   if (!parsed || parsed.entries.length + parsed.malformed.length === 0)
     return [`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`];
   const { entries, malformed } = parsed;
   const recorded = new Map(entries);
-  const problems = malformed.map((line) => `PROBE_BOOTSTRAP_ENTRY_FORMAT ${line}`);
+  const problems = [
+    ...malformed.map((line) => `PROBE_BOOTSTRAP_ENTRY_FORMAT ${line}`),
+    ...parsed.outside.map((name) => `PROBE_BOOTSTRAP_ENTRY_OUTSIDE_ORIGINALS ${name}`),
+  ];
   if (recorded.size !== entries.length) problems.push("PROBE_BOOTSTRAP_DUPLICATE_NAME");
   const listed = new Set(record.files.map((file) => file.built));
   for (const name of recorded.keys())

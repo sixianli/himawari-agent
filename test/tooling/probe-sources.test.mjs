@@ -115,7 +115,21 @@ describe("probe source digests", () => {
       join(root, BOOTSTRAP),
       `const originals = {\n  "job-host-main.js": "${BUILT}",\n};\nconst more = {\n  "sandbox-sdk.js": "${"c".repeat(64)}",\n};\n`,
     );
-    expect(probeSourceProblems(root)).toEqual(["PROBE_SOURCE_UNLISTED sandbox-sdk.js"]);
+    expect(probeSourceProblems(root)).toEqual([
+      "PROBE_BOOTSTRAP_ENTRY_OUTSIDE_ORIGINALS sandbox-sdk.js",
+      "PROBE_SOURCE_UNLISTED sandbox-sdk.js",
+    ]);
+  });
+
+  it("fails when the originals block is empty and its entries sit outside it", () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, BOOTSTRAP),
+      `const originals = {\n};\n  "job-host-main.js": "${BUILT}",\n`,
+    );
+    expect(probeSourceProblems(root)).toEqual([
+      "PROBE_BOOTSTRAP_ENTRY_OUTSIDE_ORIGINALS job-host-main.js",
+    ]);
   });
 
   it("fails when the originals block names a file twice", () => {
@@ -138,13 +152,13 @@ describe("probe source digests", () => {
     expect(probeSourceProblems(root)).toEqual([`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`]);
   });
 
-  it("fails when the bootstrap has Windows line endings the packet check reads differently", () => {
+  it("accepts Windows line endings because the packet check reads the file as text", () => {
     const root = fixture();
     writeFileSync(
       join(root, BOOTSTRAP),
       `const originals = {\r\n  "job-host-main.js": "${BUILT}",\r\n};\r\n`,
     );
-    expect(probeSourceProblems(root)).toEqual([`PROBE_BOOTSTRAP_LINE_ENDINGS ${BOOTSTRAP}`]);
+    expect(probeSourceProblems(root)).toEqual([]);
   });
 
   it("fails when a recorded source is a directory", () => {
@@ -167,6 +181,7 @@ describe("probe source digests", () => {
     [{ ...entry, source: "packages/runtime-sandbox/src/..\\..\\outside.ts" }],
     [{ ...entry, source: "packages/runtime-sandbox/src/" }],
     [{ ...entry, source: "packages/runtime-sandbox/src/sandbox-sdk.ts" }],
+    [{ ...entry, source: "packages/runtime-sandbox/src/sub/job-host-main.ts" }],
   ])("rejects a record entry the packet check could not use %#", (file) => {
     const root = fixture();
     writeFileSync(
