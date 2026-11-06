@@ -129,6 +129,24 @@ describe("probe source digests", () => {
     expect(probeSourceProblems(root)).toEqual([`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`]);
   });
 
+  it("fails when multi-line entries remain but the originals declaration is gone", () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, BOOTSTRAP),
+      `const table = {\n  "job-host-main.js": "${BUILT}",\n};\n`,
+    );
+    expect(probeSourceProblems(root)).toEqual([`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`]);
+  });
+
+  it("fails when the bootstrap has Windows line endings the packet check reads differently", () => {
+    const root = fixture();
+    writeFileSync(
+      join(root, BOOTSTRAP),
+      `const originals = {\r\n  "job-host-main.js": "${BUILT}",\r\n};\r\n`,
+    );
+    expect(probeSourceProblems(root)).toEqual([`PROBE_BOOTSTRAP_LINE_ENDINGS ${BOOTSTRAP}`]);
+  });
+
   it("fails when a recorded source is a directory", () => {
     const root = fixture();
     rmSync(join(root, SOURCE));
@@ -148,6 +166,7 @@ describe("probe source digests", () => {
     [{ ...entry, source: "packages/runtime-sandbox/src/../../../outside.ts" }],
     [{ ...entry, source: "packages/runtime-sandbox/src/..\\..\\outside.ts" }],
     [{ ...entry, source: "packages/runtime-sandbox/src/" }],
+    [{ ...entry, source: "packages/runtime-sandbox/src/sandbox-sdk.ts" }],
   ])("rejects a record entry the packet check could not use %#", (file) => {
     const root = fixture();
     writeFileSync(

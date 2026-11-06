@@ -44,6 +44,7 @@ function recordProblems(root, record) {
     BUILT_NAME.test(file.built) &&
     typeof file.source === "string" &&
     insideSourceDirectory(root, file.source) &&
+    path.posix.basename(file.source) === file.built.replace(/\.js$/, ".ts") &&
     DIGEST.test(file.builtSha256) &&
     DIGEST.test(file.sourceSha256)
       ? []
@@ -56,9 +57,10 @@ function recordProblems(root, record) {
 }
 
 function bootstrapDigests(text) {
-  const entries = [...text.matchAll(PACKET_CHECK_ENTRIES)].map((match) => [match[1], match[2]]);
   const block = text.match(/^const originals = \{\n([\s\S]*?)^\};$/m);
-  const malformed = (block?.[1] ?? "")
+  if (!block) return null;
+  const entries = [...text.matchAll(PACKET_CHECK_ENTRIES)].map((match) => [match[1], match[2]]);
+  const malformed = block[1]
     .split("\n")
     .filter((line) => /[0-9a-f]{64}/.test(line) && !PACKET_CHECK_LINE.test(line))
     .map((line) => line.trim());
@@ -80,8 +82,10 @@ export function probeSourceProblems(root) {
   const bootstrapFile = readPlainFile(root, BOOTSTRAP);
   if (bootstrapFile.missing) return [`PROBE_BOOTSTRAP_MISSING ${BOOTSTRAP}`];
   if (bootstrapFile.unreadable) return [`PROBE_BOOTSTRAP_UNREADABLE ${BOOTSTRAP}`];
-  const parsed = bootstrapDigests(bootstrapFile.bytes.toString("utf8"));
-  if (parsed.entries.length + parsed.malformed.length === 0)
+  const text = bootstrapFile.bytes.toString("utf8");
+  if (text.includes("\r")) return [`PROBE_BOOTSTRAP_LINE_ENDINGS ${BOOTSTRAP}`];
+  const parsed = bootstrapDigests(text);
+  if (!parsed || parsed.entries.length + parsed.malformed.length === 0)
     return [`PROBE_BOOTSTRAP_DIGESTS_NOT_FOUND ${BOOTSTRAP}`];
   const { entries, malformed } = parsed;
   const recorded = new Map(entries);
