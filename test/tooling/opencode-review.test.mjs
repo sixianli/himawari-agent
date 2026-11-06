@@ -3204,6 +3204,10 @@ describe("opencode review spending", () => {
       "not json",
     ])
       expect(() => parseVerdicts(bad, "v")).toThrow("VERDICTS_INVALID v:1");
+    expect(() => parseVerdicts(`${line()}\n${line({ quote: "另一句" })}\n`, "v")).toThrow(
+      "VERDICTS_INVALID v:2",
+    );
+    expect(parseVerdicts(`${line()}\n${line({ id: "V2" })}\n`, "v")).toHaveLength(2);
   });
 
   it("[low fix] tells test files apart from code", () => {

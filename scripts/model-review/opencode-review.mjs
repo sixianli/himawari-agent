@@ -907,6 +907,7 @@ export function isTestFile(path) {
 }
 
 export function parseVerdicts(text, path) {
+  const seen = new Set();
   return text
     .split("\n")
     .map((line, index) => ({ line, number: index + 1 }))
@@ -937,7 +938,8 @@ export function parseVerdicts(text, path) {
             (verdict.severity !== "low" ||
               LOW_MODEL_SEVERITY.test(verdict.modelSeverity.trim()) ||
               filled("reason"))));
-      if (!valid) throw new Error(`VERDICTS_INVALID ${path}:${number}`);
+      if (!valid || seen.has(verdict.id)) throw new Error(`VERDICTS_INVALID ${path}:${number}`);
+      seen.add(verdict.id);
       return verdict;
     });
 }
