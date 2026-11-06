@@ -50,6 +50,7 @@ export interface EgressRedactionOptions {
   readonly known?: Map<string, string>;
   readonly table?: Map<string, string>;
   readonly observe?: (sighting: EgressRedactionSighting) => void;
+  readonly trusted?: readonly string[];
 }
 
 export const EGRESS_PLACEHOLDER_PATTERN = /\[(密码|验证码|证件号|银行卡 尾号\d{4})#([a-z]{8})\]/gu;
@@ -60,7 +61,7 @@ const MACHINE_SECRET_MARKER = "[MACHINE_SECRET_REDACTED]";
 const MACHINE_SECRET_PLACEHOLDER = "[密钥]";
 
 const PASSWORD_ASSIGNMENT =
-  /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；]+)/giu;
+  /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；\uFFFF]+)/giu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
@@ -168,10 +169,64 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
+const TRUSTED_FILLER = "\uFFFF";
+
+function trustedSpans(
+  input: string,
+  trusted: readonly string[],
+): readonly (readonly [number, number])[] {
+  if (trusted.length === 0 || input.includes(TRUSTED_FILLER)) return [];
+  const found: (readonly [number, number])[] = [];
+  for (const value of trusted) {
+    if (value.length === 0) continue;
+    for (
+      let position = input.indexOf(value);
+      position >= 0;
+      position = input.indexOf(value, position + 1)
+    )
+      found.push([position, position + value.length]);
+  }
+  found.sort((left, right) => left[0] - right[0] || right[1] - left[1]);
+  const spans: (readonly [number, number])[] = [];
+  let cursor = 0;
+  for (const span of found) {
+    if (span[0] < cursor) continue;
+    spans.push(span);
+    cursor = span[1];
+  }
+  return spans;
+}
+
 export function redactForEgress(
   input: string,
   options: EgressRedactionOptions = {},
 ): EgressRedaction {
+  const spans = trustedSpans(input, options.trusted ?? []);
+  if (spans.length === 0) return redactUntrusted(input, options);
+  let view = "";
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    view += input.slice(cursor, start) + TRUSTED_FILLER.repeat(end - start);
+    cursor = end;
+  }
+  view += input.slice(cursor);
+  const masked = redactUntrusted(view, options);
+  let text = "";
+  let read = 0;
+  for (const [start, end] of spans) {
+    const at = masked.text.indexOf(TRUSTED_FILLER, read);
+    const length = end - start;
+    if (at < 0 || masked.text.slice(at, at + length) !== TRUSTED_FILLER.repeat(length))
+      throw new EgressRedactionError();
+    text += masked.text.slice(read, at) + input.slice(start, end);
+    read = at + length;
+  }
+  text += masked.text.slice(read);
+  if (text.includes(TRUSTED_FILLER)) throw new EgressRedactionError();
+  return Object.freeze({ text, findings: masked.findings });
+}
+
+function redactUntrusted(input: string, options: EgressRedactionOptions): EgressRedaction {
   const counts = new Map<EgressRedactionKind, number>();
   const { tag, known, table, observe } = options;
   let text = input;

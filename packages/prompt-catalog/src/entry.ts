@@ -55,3 +55,22 @@ export function renderPrompt(
     })
     .join("");
 }
+
+export const TRUSTED_TEXT_MINIMUM_LENGTH = 24;
+
+export function trustedPromptTexts(entries: readonly unknown[]): readonly string[] {
+  const texts = new Set<string>();
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null || !("segments" in entry)) continue;
+    const segments = (entry as { readonly segments: unknown }).segments;
+    if (!Array.isArray(segments)) continue;
+    for (const segment of segments as readonly PromptSegment[])
+      if (segment.kind === "text" && segment.text.length >= TRUSTED_TEXT_MINIMUM_LENGTH)
+        texts.add(segment.text);
+  }
+  return Object.freeze(
+    [...texts].sort((left, right) =>
+      right.length !== left.length ? right.length - left.length : left < right ? -1 : 1,
+    ),
+  );
+}

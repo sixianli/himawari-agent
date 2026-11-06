@@ -22,7 +22,7 @@ const RULES: ReadonlyArray<{
   {
     id: "private-key-block",
     pattern:
-      /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
+      /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[^\uFFFF]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
   },
   { id: "authorization-bearer", pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi },
   {

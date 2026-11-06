@@ -68,3 +68,36 @@ it("[SI-4] names a known conversation by its title and an unknown one without in
   expect(html).toContain("后台 · 记忆检索");
   expect(html).not.toContain("后台 · 记忆检索 · 记忆检索");
 });
+
+it("[I-78] names which call masked a value inside a conversation, and does not call Himawari's own background request your message", async () => {
+  const html = await render([
+    item({ id: "e".repeat(64), source: "background", purpose: "thread-title" }),
+    item({ id: "f".repeat(64), source: "background", purpose: "memory-capture" }),
+    item({
+      id: "1".repeat(64),
+      source: "background",
+      purpose: "action-review",
+      part: "tool_result",
+    }),
+    item({ id: "2".repeat(64), threadId: null, source: "background", purpose: "mail-judgment" }),
+  ]);
+  expect(html).toContain("对话「家里网络设置」 · 起对话标题<");
+  expect(html).toContain("对话「家里网络设置」 · 自动整理记忆<");
+  expect(html).toContain("对话「家里网络设置」 · 动作复核 · 工具结果");
+  expect(html).toContain("后台 · 邮件判断<");
+  expect(html).not.toContain("起对话标题 · 你的话");
+  expect(html).not.toContain("自动整理记忆 · 你的话");
+});
+
+it("[I-78] keeps saying where the value was when the call is not one the page knows", async () => {
+  const html = await render([
+    item({ id: "4".repeat(64), source: "background", purpose: "something-new" }),
+  ]);
+  expect(html).toContain("对话「家里网络设置」 · 其他 · 你的话");
+});
+
+it("[I-78] REVERSE: a chat record in a conversation still says it was your message, without repeating chat", async () => {
+  const html = await render([item({ id: "3".repeat(64) })]);
+  expect(html).toContain("对话「家里网络设置」 · 你的话");
+  expect(html).not.toContain("聊天");
+});

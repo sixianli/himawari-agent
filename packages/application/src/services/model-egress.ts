@@ -1,4 +1,5 @@
 import type { AgentId, OwnerId, ThreadId } from "@himawari-agent/domain";
+import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import {
   assertMachineSecretFree,
   EGRESS_PLACEHOLDER_PATTERN,
@@ -42,6 +43,7 @@ export interface ModelEgressSighting {
 export interface ModelEgressOptions {
   readonly key: () => Promise<Uint8Array>;
   readonly sign: (key: Uint8Array, message: string) => Uint8Array;
+  readonly trusted?: readonly string[];
   readonly report?: (
     context: ModelEgressContext,
     sightings: readonly ModelEgressSighting[],
@@ -192,6 +194,7 @@ class Exchange implements ModelEgressExchange {
           letters(this.#options.sign(key, `${kind}\u0000${secret}`)),
         known: this.#known,
         table: this.table,
+        trusted: this.#options.trusted ?? TRUSTED_PROMPT_TEXTS,
         ...(recording
           ? {
               observe: ({ kind, ruleId, value: seen }) => {

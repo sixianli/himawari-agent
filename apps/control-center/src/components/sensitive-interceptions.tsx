@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { MessageId } from "../i18n/message-ids.js";
 import { useLocaleFormat } from "../i18n/locale-format.js";
+import type { MessageId } from "../i18n/message-ids.js";
 import {
   type SensitiveInterceptionItem,
   type SensitiveInterceptionsModel,
@@ -97,22 +97,29 @@ export function SensitiveInterceptionsPage({
     else groups.push({ day, label: dayLabel(item.firstSeenAt), items: [item] });
   }
   const where = (item: SensitiveInterceptionItem) => {
-    const part = message(`sensitive.part.${item.part}` as MessageId);
-    if (item.threadId !== null) {
-      const title = threadTitle(item.threadId);
-      return `${title ? message("sensitive.thread", { title }) : message("sensitive.threadUntitled")} · ${part}`;
-    }
     const purpose =
-      item.purpose === null
+      item.purpose === null || (item.purpose === "chat" && item.threadId !== null)
         ? null
         : message(
             (MESSAGE_PURPOSES.has(item.purpose)
               ? `sensitive.purpose.${item.purpose}`
               : "sensitive.purpose.other") as MessageId,
           );
-    return [...new Set([message("sensitive.background"), purpose, part])]
-      .filter((value) => value !== null)
-      .join(" · ");
+    const part =
+      item.purpose !== null &&
+      item.purpose !== "chat" &&
+      MESSAGE_PURPOSES.has(item.purpose) &&
+      item.part === "owner_message"
+        ? null
+        : message(`sensitive.part.${item.part}` as MessageId);
+    const title = item.threadId === null ? undefined : threadTitle(item.threadId);
+    const origin =
+      item.threadId === null
+        ? message("sensitive.background")
+        : title
+          ? message("sensitive.thread", { title })
+          : message("sensitive.threadUntitled");
+    return [...new Set([origin, purpose, part])].filter((value) => value !== null).join(" · ");
   };
   const what = (item: SensitiveInterceptionItem) => {
     const time = format.clockShort(item.firstSeenAt);
