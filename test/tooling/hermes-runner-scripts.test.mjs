@@ -557,7 +557,7 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "RUNNER_RESUME_FAILED services=gh-runner.service=active gh-runner-2.service=failed labels=restored",
+      "RUNNER_RESUME_FAILED services=gh-runner.service=active gh-runner-2.service=failed labels=restored; an active runner may already take queued jobs",
     );
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": true });
   });
@@ -603,13 +603,26 @@ describe("resume-runners.sh", () => {
     expect(result.stdout).toContain("offline: (could not read GitHub)");
   });
 
+  it("does not start the services when GitHub cannot be read after putting the labels back", () => {
+    const box = macBox({ labelled: false });
+    box.set("fail-list-from", 2);
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "labels: hermes-home=unread hermes-home-2=unread; did not start the services",
+    );
+    expect(
+      box.lines().some((line) => line.startsWith("ssh ") && line.includes("runner-resume.sh")),
+    ).toBe(false);
+  });
+
   it("reports the runner whose label could not be put back", () => {
     const box = macBox({ labelled: false });
     box.set("fail-add-12", "");
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "labels: hermes-home=on hermes-home-2=off; services not started",
+      "labels: hermes-home=on hermes-home-2=off; did not start the services",
     );
     expect(box.labelState()).toEqual({ "hermes-home": true, "hermes-home-2": false });
     expect(

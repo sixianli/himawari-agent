@@ -102,7 +102,7 @@ Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runn
 - 代价：暂停和恢复只能在 Andy 的 Mac 上做；暂停可能要等一个多小时，代理要在后台运行；暂停超过 24 小时，排队的任务会被 GitHub 判为失败。
 - 残余风险：GitHub 不保证常驻 runner 停机时绝对不被派任务；去标签加 90 秒观察把这个空档压小，但不是零。
 - 2026-11-05 在 Hermes 上演示（Mac 上的会话，两个脚本在 macOS 自带的 bash 3.2 上运行，退出码都是 0）：去掉标签后新任务排队、没有派给这两个 runner；正在跑的 `static` 在去掉标签后继续跑了约 9 分钟，之后按 Andy 的要求手动取消，所以“一直跑到结束”没有验证；恢复后两个 runner 上线、加回标签，但排队任务不派。同一天部署内存上限时又复现一次：恢复后 runner 在线、空闲、带着标签，连续 26 分钟没有派任务（18 个运行在排队）；只重启 `gh-runner`，8 秒内两个 runner 都接到任务。推断：GitHub 在 runner 连上时按当时的标签匹配排队任务，之后补加标签不会重新匹配（没有找到官方文档）。所以把恢复改成先加标签再启服务；runner 离线时标签在也不会派任务。新顺序还没在 Hermes 上实测。
-- 测试：`test/tooling/hermes-runner-scripts.test.mjs` 用假的 `gh` 和 `hermes-ssh.sh` 覆盖对账不一致、删除失败后加回、删除报成功但标签还在、GitHub 显示忙时不停、Hermes 上观察期内出现任务、等到上限、恢复时先上线再加标签、锁。
+- 测试：`test/tooling/hermes-runner-scripts.test.mjs` 用假的 `gh` 和 `hermes-ssh.sh` 覆盖对账不一致、删除失败后加回、删除报成功但标签还在、GitHub 显示忙时不停、Hermes 上观察期内出现任务、等到上限、恢复时先加标签再启服务、加标签后读不到 GitHub 时不启动服务、锁。
 
 [↑ 返回阅读导航](#contents)
 

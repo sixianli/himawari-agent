@@ -11,7 +11,7 @@
 - `himawari-ci` 的结果绝不能代替生产上线的受限主机验收或签名。第四次及以后的上线没有长期有效的验收例外：它冻结的运维上线包（安装、用户/权限、签名、验收、清理、服务启动）需要用户本人授权。
 - 检出放在 NVMe 根盘上，测试输出放在检出的 `.ci-output/` 里，证据放在 `/data` 上，临时文件放在一个 10 字节长的 `mktemp -d /tmp/hXXXX` 根目录中，并把它作为 `HIMAWARI_TEST_TEMP_ROOT` 和 `TMPDIR` 传入；用 `umask 022` 运行；每次运行后归还根盘空间，并解释任何不足。细节和理由见该 Runbook。
 - 每次对比测量都以 `.ci-output/handoff/scripts/require-quiet-host.sh hermes|cloud` 开始，只有在出现 `QUIET_HOST_OK` 之后才运行；证据中缺少这一行的对比结果，Claude 一律拒收。
-- 不要放宽测试时限，也不要设置 `HIMAWARI_TEST_TIMEOUT_MS`；测试主机上的超时是一个需要诊断和修复的缺陷。
+- 不要放宽测试时限（唯一的例外：`tooling` 项目的单条测试时限是 15 秒，写在 `vitest.workspace.ts` 里，见 [ADR 0168](../../docs/adr/0168-longer-ci-job-limits-on-hermes.md) 决定第 3 条），也不要设置 `HIMAWARI_TEST_TIMEOUT_MS`；测试主机上的超时是一个需要诊断和修复的缺陷。
 - Hermes 上还运行着无关的服务，包括 `/data/hermes/himawari/releases/` 下现有的 Himawari 服务；测试不得读写它们的目录或数据，也不得停止或重启它们。
 - Mac 仍然是受支持的产品平台，但用户已无限期推迟了所有 Mac 验证：在用户恢复之前，不要安排或提议在 Mac 上运行，并把 Mac 上的行为报告为未验证。恢复之后，Mac 专属的验证（macOS 沙箱、Mac 安装程序、Mac 自带的 Bash，以及其他只在 Mac 上出现的运行时行为）只有在改动影响 Mac 专属行为时或在发布之前，才在 MacBook 上运行，并且只有在用户批准了这一次具体运行、它的范围、预计时长和时间安排之后才运行。
 - 生产运行在云服务器 `84.247.157.41` 上；那里的每一次生产上线，以及每一次启动或变更生产服务，都需要用户对该次上线的明确授权。

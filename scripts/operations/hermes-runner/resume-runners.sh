@@ -25,7 +25,7 @@ TABLE=$(github_runners) || TABLE=""
 STATES=$(label_states "$NAMES" "$TABLE")
 case " $STATES " in
   *=off\ * | *=unread\ *)
-    echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels: $STATES; services not started, queued jobs keep waiting, run resume-runners.sh again"
+    echo "RUNNER_RESUME_INCOMPLETE services=$(service_states) labels: $STATES; did not start the services, run resume-runners.sh again"
     exit 1
     ;;
 esac
@@ -33,7 +33,7 @@ esac
 OUTPUT=$(hermes "bash $REMOTE/runner-resume.sh")
 STATUS=$?
 printf '%s\n' "$OUTPUT"
-[ "$STATUS" = 0 ] || { echo "RUNNER_RESUME_FAILED services=$(service_states) labels=restored; queued jobs keep waiting"; exit 1; }
+[ "$STATUS" = 0 ] || { echo "RUNNER_RESUME_FAILED services=$(service_states) labels=restored; an active runner may already take queued jobs, run resume-runners.sh again"; exit 1; }
 
 DEADLINE=$(($(date +%s) + 300))
 while :; do
