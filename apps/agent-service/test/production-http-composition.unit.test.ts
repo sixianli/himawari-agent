@@ -345,6 +345,8 @@ describe("production HTTP composition", () => {
           "push.feedback.record",
           "owner.preferences.read",
           "owner.preferences.set",
+          "sensitive.interceptions.read",
+          "sensitive.interceptions.clear",
         ],
         healthDependenciesAvailable: true,
       });
@@ -989,6 +991,80 @@ describe("production HTTP composition", () => {
       expect(read.json()).toMatchObject({
         type: "owner.preferences.snapshot",
         payload: { ...saved, revision: 1 },
+      });
+      const readInterceptions = async () => {
+        const response = await running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, second.cookie),
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "sensitive.interceptions.read"),
+            kind: "query",
+            payload: { before: null },
+          },
+        });
+        expect(response.statusCode, response.body).toBe(200);
+        expect(String(response.headers["cache-control"])).toContain("no-store");
+        return response.json() as {
+          type: string;
+          payload: { counts: unknown; items: Record<string, unknown>[]; next: unknown };
+        };
+      };
+      expect((await readInterceptions()).payload).toMatchObject({
+        counts: { masked: 0, withheld: 0, notSaved: 0 },
+        items: [],
+        next: null,
+      });
+      await running.repository.sensitiveInterceptions().record({
+        ownerId: configuration(paths).ownerId,
+        agentId: configuration(paths).agentId,
+        observations: [
+          {
+            threadId: null,
+            source: "mail",
+            purpose: "mail-judgment",
+            part: "mail",
+            category: "verification-code",
+            ruleId: "verification-code-keyword",
+            fingerprint: "f".repeat(32),
+            outcome: "masked",
+            occurrences: 1,
+          },
+        ],
+        now: NOW.toISOString(),
+      });
+      const listed = await readInterceptions();
+      expect(listed.type).toBe("sensitive.interceptions.snapshot");
+      expect(listed.payload.counts).toEqual({ masked: 1, withheld: 0, notSaved: 0 });
+      expect(listed.payload.items).toEqual([
+        expect.objectContaining({
+          threadId: null,
+          source: "mail",
+          purpose: "mail-judgment",
+          category: "verification-code",
+          seenCount: 1,
+        }),
+      ]);
+      expect(Object.keys(listed.payload.items[0] ?? {})).not.toContain("fingerprint");
+      expect(Object.keys(listed.payload.items[0] ?? {})).not.toContain("ruleId");
+      const cleared = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, second.cookie, second.csrf),
+          "idempotency-key": "sensitive-interceptions-clear-01",
+        },
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "sensitive.interceptions.clear"),
+          kind: "command",
+          idempotencyKey: "sensitive-interceptions-clear-01",
+          payload: {},
+        },
+      });
+      expect(cleared.statusCode, cleared.body).toBe(200);
+      expect((await readInterceptions()).payload).toMatchObject({
+        counts: { masked: 0, withheld: 0, notSaved: 0 },
+        items: [],
       });
     } finally {
       await running.composition.close();

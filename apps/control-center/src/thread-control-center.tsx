@@ -131,6 +131,7 @@ export interface ThreadControlCenterModel {
   readonly actions: ReactNode;
   readonly start: ReactNode;
   readonly settingsData: ReactNode;
+  readonly threadTitle: (threadId: string) => string | undefined;
   readonly list: ReactNode;
   readonly refresh: () => Promise<void>;
 }
@@ -1985,6 +1986,7 @@ export function useThreadControlCenter(
       />
     ),
     details: null,
+    threadTitle,
     actions,
     start,
     list,

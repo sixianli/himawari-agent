@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactForEgress } from "../src/index.js";
+import { findSensitiveValues, locateMaskedValues, redactForEgress } from "../src/index.js";
 
 const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["验证码中文", "您的验证码是 482910，5 分钟内有效", "您的验证码是 [验证码]，5 分钟内有效"],
@@ -188,5 +188,97 @@ describe("stable placeholders", () => {
       (text) => redactForEgress(text, { tag, known: knownTwo }).text,
     );
     expect(turnTwo.slice(0, 2)).toEqual(turnOne);
+  });
+});
+
+describe("reporting what was masked", () => {
+  const mixed = [
+    `密码：hunter22abc，卡号 4111 1111 1111 1111，验证码 482910`,
+    `身份证 11010519491231002X，key ${["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-")}`,
+  ].join("\n");
+
+  it("reports each masked value with its kind and rule, and masks the same bytes as without a listener", () => {
+    const seen: { kind: string; ruleId: string; value: string }[] = [];
+    const known = new Map<string, string>();
+    const observed = redactForEgress(mixed, {
+      tag,
+      known,
+      observe: (sighting) => seen.push({ ...sighting }),
+    }).text;
+    expect(observed).toBe(redactForEgress(mixed, { tag, known: new Map() }).text);
+    expect(seen.map(({ kind, ruleId }) => `${kind}/${ruleId}`).sort()).toEqual([
+      "bank-card/bank-card",
+      "identity-number/cn-identity-number",
+      "machine-secret/openai-api-key",
+      "password/password-keyword",
+      "verification-code/verification-code-keyword",
+    ]);
+    expect(seen.find(({ kind }) => kind === "bank-card")?.value).toBe("4111111111111111");
+    const later: string[] = [];
+    redactForEgress("好的，hunter22abc 已经记下", {
+      tag,
+      known,
+      observe: ({ ruleId, value }) => later.push(`${ruleId}:${value}`),
+    });
+    expect(later).toEqual(["named-earlier:hunter22abc"]);
+  });
+
+  it("still masks the same way when the listener throws", () => {
+    const text = redactForEgress(mixed, {
+      tag,
+      observe: () => {
+        throw new Error("listener failed");
+      },
+    }).text;
+    expect(text).toBe(redactForEgress(mixed, { tag }).text);
+  });
+
+  it("reports nothing for text with nothing to mask", () => {
+    const seen: unknown[] = [];
+    redactForEgress("订单号 20261101123456 已发货", { observe: (sighting) => seen.push(sighting) });
+    expect(seen).toEqual([]);
+  });
+});
+
+describe("locating masked values in the masked text", () => {
+  it("returns the same masked text and where each value's placeholder sits", () => {
+    const key = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-");
+    const input = `密码：hunter22abc 和 key ${key}，卡号 4111 1111 1111 1111，又一个 key ${key}`;
+    const located = locateMaskedValues(input);
+    expect(located?.text).toBe(redactForEgress(input).text);
+    expect(
+      located?.spans.map(({ start, end, sighting }) => [
+        located.text.slice(start, end),
+        sighting.kind,
+        sighting.value,
+      ]),
+    ).toEqual([
+      ["[密码]", "password", "hunter22abc"],
+      ["[密钥]", "machine-secret", key],
+      ["[银行卡 尾号1111]", "bank-card", "4111111111111111"],
+      ["[密钥]", "machine-secret", key],
+    ]);
+  });
+
+  it("gives up instead of pairing a key with the wrong placeholder when it also sits inside a Bearer token", () => {
+    const key = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-");
+    const github = ["ghp", "abcdefghijklmnopqrstuvwxyz0123"].join("_");
+    const input = `Authorization: Bearer ${key}，然后 ${github}，最后单独的 ${key}`;
+    expect(findSensitiveValues(input).map(({ ruleId }) => ruleId)).toEqual([
+      "authorization-bearer",
+      "openai-api-key",
+      "github-token",
+    ]);
+    expect(locateMaskedValues(input)).toBeNull();
+  });
+
+  it("still locates a value that appears several times when every copy was masked", () => {
+    const github = ["ghp", "abcdefghijklmnopqrstuvwxyz0123"].join("_");
+    const located = locateMaskedValues(`${github} 和 ${github}`);
+    expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual([github, github]);
+  });
+
+  it("gives up instead of guessing when the text already holds a placeholder", () => {
+    expect(locateMaskedValues("早就遮过的 [密钥] 和密码：hunter22abc")).toBeNull();
   });
 });

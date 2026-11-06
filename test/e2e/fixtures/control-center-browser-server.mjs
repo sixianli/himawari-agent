@@ -571,6 +571,66 @@ const museInitialItems = () => [
     contentOk: false,
   },
 ];
+const sensitiveFixtureState = { commands: [], items: [] };
+function sensitiveReset(mode) {
+  const at = (minutesAgo) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+  const item = (id, minutesAgo, fields) => ({
+    id: id.padEnd(64, "0"),
+    threadId: null,
+    source: "chat",
+    purpose: "chat",
+    part: "owner_message",
+    outcome: "masked",
+    firstSeenAt: at(minutesAgo),
+    lastSeenAt: at(Math.max(0, minutesAgo - 30)),
+    seenCount: 1,
+    ...fields,
+  });
+  sensitiveFixtureState.items =
+    mode === "empty"
+      ? []
+      : [
+          item("a1", 20, { threadId: "thread-main", category: "password", seenCount: 5 }),
+          item("a2", 21, {
+            threadId: "thread-main",
+            source: "memory_capture",
+            purpose: "memory-capture",
+            part: "memory_candidate",
+            category: "password",
+            outcome: "not_saved",
+          }),
+          item("a3", 160, {
+            threadId: "thread-main",
+            part: "tool_result",
+            category: "machine-secret",
+            seenCount: 3,
+          }),
+          item("a4", 300, {
+            source: "mail",
+            purpose: "mail-judgment",
+            part: "mail",
+            category: "verification-code",
+          }),
+          item("b1", 2 * 1440 + 30, {
+            threadId: "thread-gone",
+            category: "bank-card",
+            seenCount: 7,
+          }),
+        ];
+}
+sensitiveReset("demo");
+function sensitiveSnapshot() {
+  const count = (outcome) =>
+    sensitiveFixtureState.items.filter((entry) => entry.outcome === outcome).length;
+  return {
+    counts: { masked: count("masked"), withheld: count("withheld"), notSaved: count("not_saved") },
+    items: [...sensitiveFixtureState.items].sort((left, right) =>
+      right.firstSeenAt.localeCompare(left.firstSeenAt),
+    ),
+    next: null,
+    generatedAt: new Date().toISOString(),
+  };
+}
 const museFixtureState = { commands: [] };
 function museReset(mode) {
   const channels = {
@@ -1125,6 +1185,13 @@ function handleOperationsQuery(message, request) {
     case "memory.overview.read":
       return memoryFixture
         ? { ...envelope("snapshot", "memory.overview.snapshot"), payload: memoryOverview() }
+        : undefined;
+    case "sensitive.interceptions.read":
+      return memoryFixture
+        ? {
+            ...envelope("snapshot", "sensitive.interceptions.snapshot"),
+            payload: sensitiveSnapshot(),
+          }
         : undefined;
     case "muse.overview.read":
       return memoryFixture
@@ -1863,6 +1930,8 @@ async function handleRequest(request, response) {
               "muse.item.rate",
               "muse.intake.set",
               "muse.data.clear",
+              "sensitive.interceptions.read",
+              "sensitive.interceptions.clear",
               "proactive.review.read",
               "proactive.review.rate",
               "proactive.weekly.read",
@@ -1877,6 +1946,14 @@ async function handleRequest(request, response) {
       repositoryAllowlistRefs: ["fixture-owner/fixture-repository"],
       disclosedDataClassifications: ["private"],
     });
+    return;
+  }
+  if (memoryFixture && url.pathname === "/__fixture/sensitive") {
+    if (request.method === "POST") {
+      const { mode } = await body(request);
+      if (mode !== undefined) sensitiveReset(mode);
+    }
+    json(response, 200, sensitiveFixtureState);
     return;
   }
   if (memoryFixture && url.pathname === "/__fixture/muse") {
@@ -2278,6 +2355,12 @@ async function handleRequest(request, response) {
       const operation = handleOperationsCommand(message);
       if (operation) {
         json(response, operation.status, operation.body);
+        return;
+      }
+      if (memoryFixture && message.type === "sensitive.interceptions.clear") {
+        sensitiveFixtureState.commands.push({ type: message.type, payload: message.payload });
+        sensitiveFixtureState.items = [];
+        json(response, 200, { resultRef: "sensitive-interceptions-cleared", replayed: false });
         return;
       }
       const muse = memoryFixture ? handleMuseCommand(message) : null;

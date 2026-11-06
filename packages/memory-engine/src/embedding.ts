@@ -1,6 +1,7 @@
 import {
   ApplicationPortError,
   type ModelEgress,
+  type ModelEgressContext,
   type ModelInvocationUsage,
   PORT_ERROR_CODES,
   usdCostsEqual,
@@ -133,6 +134,7 @@ function decodedEmbedding(value: unknown, dimensions: number): readonly number[]
 
 export interface GatewayEmbedderOptions {
   readonly egress: ModelEgress;
+  readonly egressContext?: ModelEgressContext;
   readonly baseUrl: string;
   readonly model: string;
   readonly dimensions: number;
@@ -188,7 +190,7 @@ export class GatewayEmbedder implements Embedder {
   ): Promise<EmbeddingResponse> {
     const timeout = AbortSignal.timeout(options.timeoutMs ?? this.#timeoutMs);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
-    const exchange = this.#options.egress.exchange();
+    const exchange = this.#options.egress.exchange(this.#options.egressContext);
     const response = await exchange.wrapFetch(this.#options.fetch ?? fetch)(
       `${this.#options.baseUrl.replace(/\/+$/u, "")}/embeddings`,
       {

@@ -111,7 +111,9 @@ export {
 export {
   ModelEgress,
   ModelEgressRefusedError,
+  type ModelEgressContext,
   type ModelEgressExchange,
   type ModelEgressOptions,
+  type ModelEgressSighting,
   type StreamingPlaceholderRestorer,
 } from "./services/model-egress.js";

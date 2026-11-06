@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ModelEgress, ModelEgressRefusedError } from "../src/index.js";
+import {
+  ModelEgress,
+  type ModelEgressContext,
+  ModelEgressRefusedError,
+  type ModelEgressSighting,
+} from "../src/runtime-port.js";
 
 const key = new Uint8Array([1, 2, 3, 4]);
 
@@ -424,5 +429,192 @@ describe("putting values back", () => {
     const restorer = egress().exchange().streamingRestorer();
     expect(restorer.append("看这里 [密码#abc")).toBe("看这里 ");
     expect(restorer.flush()).toBe("[密码#abc");
+  });
+});
+
+describe("reporting what was masked", () => {
+  const context = {
+    ownerId: "owner-1",
+    agentId: "agent-1",
+    threadId: "thread-1",
+    source: "chat",
+    purpose: "chat",
+  } as unknown as ModelEgressContext;
+
+  function reporting(fail = false) {
+    const reports: { context: ModelEgressContext; sightings: readonly ModelEgressSighting[] }[] =
+      [];
+    const instance = new ModelEgress({
+      key: async () => key,
+      sign,
+      report: (seenContext, sightings) => {
+        if (fail) throw new Error("recorder failed");
+        reports.push({ context: seenContext, sightings });
+      },
+    });
+    return { reports, instance };
+  }
+
+  const chat = {
+    model: "m",
+    messages: [
+      { role: "system", content: "密码：sys9pass99" },
+      { role: "user", content: `卡号 ${CARD}，再说一次卡号 ${CARD}` },
+      {
+        role: "assistant",
+        content: "好的",
+        tool_calls: [
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "f", arguments: '{"q":"验证码 482910"}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "c1", content: "身份证 11010519491231002X" },
+    ],
+  };
+
+  it("names the part of the request each masked value was in, once per request", async () => {
+    const { reports, instance } = reporting();
+    const { raw } = await send("/chat/completions", chat, { exchange: instance.exchange(context) });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.context).toBe(context);
+    expect(
+      reports[0]?.sightings.map(({ part, category, ruleId }) => `${part}/${category}/${ruleId}`),
+    ).toEqual([
+      "system/password/password-keyword",
+      "owner_message/bank-card/bank-card",
+      "tool_call/verification-code/verification-code-keyword",
+      "tool_result/identity-number/cn-identity-number",
+    ]);
+    const serialized = JSON.stringify(reports);
+    for (const value of ["sys9pass99", "4111", "482910", "11010519491231002X"]) {
+      expect(serialized).not.toContain(value);
+      expect(raw).not.toContain(value);
+    }
+    for (const { fingerprint } of reports[0]?.sightings ?? [])
+      expect(fingerprint).toMatch(/^[0-9a-f]{32}$/u);
+  });
+
+  it("sends the same bytes whether or not anything is recorded, and even when recording fails", async () => {
+    const plain = await send("/chat/completions", chat);
+    const recorded = await send("/chat/completions", chat, {
+      exchange: reporting().instance.exchange(context),
+    });
+    const failing = await send("/chat/completions", chat, {
+      exchange: reporting(true).instance.exchange(context),
+    });
+    expect(recorded.raw).toBe(plain.raw);
+    expect(failing.raw).toBe(plain.raw);
+  });
+
+  it("gives the same value the same fingerprint in every request", async () => {
+    const { reports, instance } = reporting();
+    await send("/chat/completions", chat, { exchange: instance.exchange(context) });
+    await send("/chat/completions", chat, { exchange: instance.exchange(context) });
+    expect(reports[1]?.sightings).toEqual(reports[0]?.sightings);
+  });
+
+  it("reports a value named once and repeated later in the same part as one sighting", async () => {
+    const { reports, instance } = reporting();
+    await send(
+      "/chat/completions",
+      {
+        model: "m",
+        messages: [
+          { role: "user", content: "密码：hunter22abc" },
+          { role: "assistant", content: "好的" },
+          { role: "user", content: "再说一次，hunter22abc 别忘了" },
+        ],
+      },
+      { exchange: instance.exchange(context) },
+    );
+    expect(reports[0]?.sightings).toHaveLength(1);
+    expect(reports[0]?.sightings[0]).toMatchObject({
+      part: "owner_message",
+      category: "password",
+      ruleId: "password-keyword",
+    });
+  });
+
+  it("reports nothing without a context or when nothing was masked", async () => {
+    const { reports, instance } = reporting();
+    await send("/chat/completions", chat, { exchange: instance.exchange() });
+    await send(
+      "/chat/completions",
+      { model: "m", messages: [{ role: "user", content: "你好" }] },
+      { exchange: instance.exchange(context) },
+    );
+    expect(reports).toEqual([]);
+  });
+
+  it("names anthropic, responses and embeddings parts", async () => {
+    const { reports, instance } = reporting();
+    await send(
+      "/messages",
+      {
+        model: "m",
+        system: "密码：sys9pass99",
+        messages: [
+          {
+            role: "assistant",
+            content: [{ type: "tool_use", id: "t", name: "f", input: { q: "密码：tool9pass9" } }],
+          },
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "t", content: `卡号 ${CARD}` }],
+          },
+        ],
+      },
+      { exchange: instance.exchange(context) },
+    );
+    await send(
+      "/responses",
+      {
+        model: "m",
+        instructions: "密码：sys9pass99",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "验证码 482910" }],
+          },
+          { type: "function_call", call_id: "x", name: "f", arguments: '{"p":"密码：call9pass9"}' },
+          { type: "function_call_output", call_id: "x", output: `卡号 ${CARD}` },
+        ],
+      },
+      { exchange: instance.exchange(context) },
+    );
+    await send(
+      "/embeddings",
+      { model: "e", input: ["验证码 482910"] },
+      { exchange: instance.exchange({ ...context, source: "embedding", threadId: null }) },
+    );
+    expect(reports.map(({ sightings }) => sightings.map(({ part }) => part))).toEqual([
+      ["system", "tool_call", "tool_result"],
+      ["system", "owner_message", "tool_call", "tool_result"],
+      ["embedding_input"],
+    ]);
+  });
+
+  it("fingerprints values masked elsewhere the same way as in a request, once per value", async () => {
+    const { reports, instance } = reporting();
+    await send(
+      "/chat/completions",
+      { model: "m", messages: [{ role: "user", content: "验证码 482910" }] },
+      { exchange: instance.exchange(context) },
+    );
+    const mailContext = { ...context, source: "mail", threadId: null } as ModelEgressContext;
+    const sighting = {
+      kind: "verification-code",
+      ruleId: "verification-code-keyword",
+      value: "482910",
+    } as const;
+    await instance.reportMasked(mailContext, "mail", [sighting, sighting]);
+    await reporting(true).instance.reportMasked(mailContext, "mail", [sighting]);
+    expect(reports[1]?.context).toBe(mailContext);
+    expect(reports[1]?.sightings).toEqual([{ ...reports[0]?.sightings[0], part: "mail" }]);
+    expect(JSON.stringify(reports[1])).not.toContain("482910");
   });
 });
