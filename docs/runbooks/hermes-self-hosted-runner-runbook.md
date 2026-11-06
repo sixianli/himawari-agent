@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:6e08c94ccb6d4a19eecb21c5eca6caee0e67c79e523a9d315af28c12fe3ea872"
+contract_sha256: "sha256:7f5f2ab716eaf0be8eed174d0fbe50ad8dec3b730f836a28c76f6abb5b31cd15"
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
@@ -61,7 +61,7 @@ date: "2026-11-04"
 - `ProtectProc=invisible` 让它在 `/proc` 里只看得到自己的进程，看不到 Hermes 上其他服务的进程和命令行参数。
 - 防火墙规则只对两个 runner 账号生效（一条规则同时匹配两个账号的 uid）：拒绝它访问局域网和 Tailscale 地址（`10/8`、`100.64/10`、`172.16/12`、`192.168/16` 等），以及本机 TCP 端口名单里的端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口，所以某个服务恰好停着时它的端口也不会从名单里掉出去。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来；2026-11-05 核对时 Hermes 本机只有 DNS 的 53 端口在监听 UDP，Hermes 的所有网卡地址都是私有地址，已在拒绝范围内。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
-- Hermes 只跑 CI（[ADR 0173](../adr/0173-hermes-runs-only-ci.md)），所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个 runner 内存最多 13 GB（`MemoryHigh=12G`、`MemoryMax=13G`），不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 14 GB（`MemoryHigh=13G`、`MemoryMax=14G`），最多 4096 个进程；留出的约 1.4 GB 让 ssh 和 tailscale 在 runner 用满自己的内存时仍能登录；这不是硬保证，组外进程用量变大时整机仍可能内存不足。
+- Hermes 只跑 CI（[ADR 0173](../adr/0173-hermes-runs-only-ci.md)），所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个 runner 内存最多 13 GB（`MemoryHigh=12G`、`MemoryMax=13G`），不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 14 GB（`MemoryHigh=13G`、`MemoryMax=14G`），最多 4096 个进程；留出的约 1.4 GiB 让 ssh 和 tailscale 在 runner 用满自己的内存时仍能登录；这不是硬保证，组外进程用量变大时整机仍可能内存不足。
 - 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（两个任务可能同时占盘）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每天的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束。
 
 [↑ 返回阅读导航](#contents)
@@ -104,7 +104,7 @@ date: "2026-11-04"
 3. 服务状态：`systemctl is-active gh-runner.service gh-runner-2.service gh-runner-nft.service gh-runner-clean.timer`，四个都应是 `active`。
 4. 用户没有多余的组：`id gh-runner`、`id gh-runner-2` 各自只列出自己的一个组。
 5. 防火墙表在：`sudo -n nft list table inet gh_runner` 需要 root；没有 sudo 时用 `systemctl is-active gh-runner-nft.service` 代替。
-6. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryMax -p CPUQuotaPerSecUSec -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryMax=13958643712`、`CPUQuotaPerSecUSec=infinity`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryHigh -p MemoryMax -p CPUQuotaPerSecUSec` 应为 `MemoryHigh=13958643712`、`MemoryMax=15032385536`、`CPUQuotaPerSecUSec=infinity`。
+6. 限额生效：`systemctl show gh-runner.service gh-runner-2.service -p Slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight -p Nice -p ExecStart`，两个都应为 `Slice=gh-runners.slice`、`MemoryHigh=12884901888`、`MemoryMax=13958643712`、`MemorySwapMax=0`、`TasksMax=2048`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`、`Nice=0`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh` 和 `/srv/gh-runner-2/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryHigh=13958643712`、`MemoryMax=15032385536`、`MemorySwapMax=0`、`TasksMax=4096`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`。
 7. GitHub 上的状态（在 Mac 上运行）：`gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name,status,busy}'`，应看到 `hermes-home` 和 `hermes-home-2` 都为 `online`。
 8. 有没有任务在跑：`pgrep -u gh-runner -x Runner.Worker; pgrep -u gh-runner-2 -x Runner.Worker`，有输出就是有任务。
 
