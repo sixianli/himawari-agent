@@ -106,10 +106,7 @@ export function SensitiveInterceptionsPage({
               : "sensitive.purpose.other") as MessageId,
           );
     const part =
-      item.purpose !== null &&
-      item.purpose !== "chat" &&
-      MESSAGE_PURPOSES.has(item.purpose) &&
-      item.part === "owner_message"
+      item.source === "background" && item.part === "owner_message"
         ? null
         : message(`sensitive.part.${item.part}` as MessageId);
     const title = item.threadId === null ? undefined : threadTitle(item.threadId);

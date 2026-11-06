@@ -89,11 +89,12 @@ it("[I-78] names which call masked a value inside a conversation, and does not c
   expect(html).not.toContain("自动整理记忆 · 你的话");
 });
 
-it("[I-78] keeps saying where the value was when the call is not one the page knows", async () => {
+it("[I-78] does not call a background request your message even when the page does not know its purpose", async () => {
   const html = await render([
     item({ id: "4".repeat(64), source: "background", purpose: "something-new" }),
   ]);
-  expect(html).toContain("对话「家里网络设置」 · 其他 · 你的话");
+  expect(html).toContain("对话「家里网络设置」 · 其他<");
+  expect(html).not.toContain("你的话");
 });
 
 it("[I-78] REVERSE: a chat record in a conversation still says it was your message, without repeating chat", async () => {

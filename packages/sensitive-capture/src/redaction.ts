@@ -61,7 +61,7 @@ const MACHINE_SECRET_MARKER = "[MACHINE_SECRET_REDACTED]";
 const MACHINE_SECRET_PLACEHOLDER = "[密钥]";
 
 const PASSWORD_ASSIGNMENT =
-  /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；\uFFFF]+)/giu;
+  /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；]+)/giu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
@@ -210,20 +210,33 @@ export function redactForEgress(
     cursor = end;
   }
   view += input.slice(cursor);
+  const rehearsal = redactUntrusted(view, {
+    ...(options.known === undefined ? {} : { known: new Map(options.known) }),
+    ...(options.tag === undefined ? {} : { tag: () => "aaaaaaaa" }),
+  }).text;
+  if (restoredText(rehearsal, input, spans) === undefined) return redactUntrusted(input, options);
   const masked = redactUntrusted(view, options);
+  const text = restoredText(masked.text, input, spans);
+  if (text === undefined) throw new EgressRedactionError();
+  return Object.freeze({ text, findings: masked.findings });
+}
+
+function restoredText(
+  masked: string,
+  input: string,
+  spans: readonly (readonly [number, number])[],
+): string | undefined {
   let text = "";
   let read = 0;
   for (const [start, end] of spans) {
-    const at = masked.text.indexOf(TRUSTED_FILLER, read);
+    const at = masked.indexOf(TRUSTED_FILLER, read);
     const length = end - start;
-    if (at < 0 || masked.text.slice(at, at + length) !== TRUSTED_FILLER.repeat(length))
-      throw new EgressRedactionError();
-    text += masked.text.slice(read, at) + input.slice(start, end);
+    if (at < 0 || masked.slice(at, at + length) !== TRUSTED_FILLER.repeat(length)) return undefined;
+    text += masked.slice(read, at) + input.slice(start, end);
     read = at + length;
   }
-  text += masked.text.slice(read);
-  if (text.includes(TRUSTED_FILLER)) throw new EgressRedactionError();
-  return Object.freeze({ text, findings: masked.findings });
+  text += masked.slice(read);
+  return text.includes(TRUSTED_FILLER) ? undefined : text;
 }
 
 function redactUntrusted(input: string, options: EgressRedactionOptions): EgressRedaction {

@@ -4,6 +4,7 @@ import {
   assertMachineSecretFree,
   EGRESS_PLACEHOLDER_PATTERN,
   type EgressPlaceholderKind,
+  EgressRedactionError,
   type EgressRedactionFinding,
   type EgressRedactionKind,
   type EgressRedactionRuleId,
@@ -189,7 +190,7 @@ class Exchange implements ModelEgressExchange {
     const sightings = new Map<string, ModelEgressSighting>();
     const recording = this.#options.report !== undefined && this.#context !== undefined;
     const text = (value: string, part: SensitiveInterceptionPart): string => {
-      const result = redactForEgress(value, {
+      const result = redactedOrRefused(value, {
         tag: (kind: EgressPlaceholderKind, secret: string) =>
           letters(this.#options.sign(key, `${kind}\u0000${secret}`)),
         known: this.#known,
@@ -470,6 +471,18 @@ function redactEmbeddings(body: unknown, text: TextRedactor): unknown {
       mapArray(input, (item) => text(item as string, "embedding_input")),
     );
   return refuse("embeddings input is not text");
+}
+
+function redactedOrRefused(
+  value: string,
+  options: Parameters<typeof redactForEgress>[1],
+): ReturnType<typeof redactForEgress> {
+  try {
+    return redactForEgress(value, options);
+  } catch (error) {
+    if (error instanceof EgressRedactionError) refuse("trusted text could not be restored");
+    throw error;
+  }
 }
 
 export class ModelEgress {

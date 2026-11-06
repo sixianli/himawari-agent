@@ -172,6 +172,14 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
     expect(body).not.toContain("482910");
   });
 
+  it("[I-78] masks a private key that wraps a fixed text instead of refusing the request", async () => {
+    const fence = (word: string) =>
+      `${"-".repeat(5)}${word} ${["PRIVATE", "KEY"].join(" ")}${"-".repeat(5)}`;
+    const prompt = `${fence("BEGIN")}\n${MEMORY_CAPTURE.text}\n${fence("END")}`;
+    const { messages } = await sent([{ role: "user", content: prompt }]);
+    expect(messages[0]?.content).toBe("[密钥]");
+  });
+
   it("[I-78] masks the same content to the same bytes every time", async () => {
     const prompt = memoryCapturePrompt("我的验证码是 482910", []);
     const first = await sent(background(prompt));
