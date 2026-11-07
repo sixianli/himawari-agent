@@ -200,7 +200,10 @@ function npmPack(spec, destination) {
     ["pack", spec, "--pack-destination", destination, "--json", "--silent"],
     { encoding: "utf8", timeout: 300000 },
   );
-  if (result.status !== 0) throw new Error(`GATEWAY_PLUGIN_DOWNLOAD_FAILED ${spec}`);
+  if (result.status !== 0)
+    throw new Error(
+      `GATEWAY_PLUGIN_DOWNLOAD_FAILED ${spec} ${(result.stderr ?? result.error?.message ?? "").trim()}`,
+    );
   const [packed] = JSON.parse(result.stdout);
   return join(destination, packed.filename);
 }
@@ -374,7 +377,7 @@ export function creditsPerUsd(records, provider, fallback) {
   const ratios = records
     .filter((record) => record.gateway === "magpie" && record.cost > 0)
     .filter((record) => {
-      const used = Object.keys(record.providers ?? {});
+      const used = Object.keys(record.providers ?? {}).filter((id) => id !== "none");
       return used.length === 1 && used[0] === provider;
     })
     .map((record) => record.providers[provider].credits / record.cost)
@@ -436,8 +439,8 @@ export function summarizeGatewayUsage(lines, config) {
     } else {
       const price = priceOf(config, model);
       const usd =
-        (count(line.in) * price.input +
-          (count(line.out) + tokens(line.reasoning)) * price.output +
+        (required(line.in) * price.input +
+          (required(line.out) + tokens(line.reasoning)) * price.output +
           tokens(line.cache_read) * price.cache_read) /
         1e6;
       if (Number.isNaN(usd)) unreadable += 1;
@@ -707,7 +710,10 @@ export async function startGateway({
 }
 
 async function upgrade() {
-  const feedText = spawnSync("curl", ["-fsSL", GATEWAY_FEED_URL], { encoding: "utf8" });
+  const feedText = spawnSync("curl", ["-fsSL", GATEWAY_FEED_URL], {
+    encoding: "utf8",
+    timeout: 300000,
+  });
   if (feedText.status !== 0)
     throw new Error(
       `GATEWAY_FEED_FAILED ${(feedText.stderr ?? feedText.error?.message ?? "").trim()}`,
@@ -716,6 +722,7 @@ async function upgrade() {
   const name = current?.plugin?.name ?? "@magpie-community/opencode-workbuddy-auth";
   const view = spawnSync("npm", ["view", name, "version", "dist.integrity", "--json"], {
     encoding: "utf8",
+    timeout: 300000,
   });
   if (view.status !== 0 || !view.stdout) throw new Error(`GATEWAY_PLUGIN_VIEW_FAILED ${name}`);
   const info = JSON.parse(view.stdout);

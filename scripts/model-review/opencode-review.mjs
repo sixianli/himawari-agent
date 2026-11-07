@@ -2492,7 +2492,7 @@ export function withProviderMoney(record, creditProvider) {
 
 export function gatewayRequested(review) {
   const allowed = review.runs.reduce((total, run) => total + (run.guard?.allowed ?? 0), 0);
-  return Math.max(review.summary.usage.steps > 0 ? 1 : 0, allowed);
+  return Math.max(review.summary.usage.steps, allowed);
 }
 
 export function gatewayUsageLine(record) {

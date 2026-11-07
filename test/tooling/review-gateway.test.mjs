@@ -239,6 +239,9 @@ describe("review gateway ledger", () => {
     expect(unknown(lines, 3)).toBeUndefined();
     expect(unknown(null, 1)).toBe(true);
     expect(unknown(null, 0)).toBeUndefined();
+    const goFailed = { req: lines[0].req, provider: "opencode-go", status: 502 };
+    expect(unknown([...lines, goFailed], 0)).toBe(true);
+    expect(unknown([...lines, { ...goFailed, in: 9, out: 0 }], 0)).toBeUndefined();
   });
 });
 
@@ -285,6 +288,9 @@ describe("review gateway credit floor", () => {
       { cost: 0.08 },
     ];
     expect(creditsPerUsd(records, "workbuddy-ai", fallback)).toBeCloseTo(100, 6);
+    records[0].providers.none = { requests: 1, failed: 1 };
+    records[0].providers["workbuddy-ai"].credits = 0.4;
+    expect(creditsPerUsd(records, "workbuddy-ai", fallback)).toBeCloseTo(200, 6);
   });
 
   it("[gateway] keeps CodeBuddy only while the credits left after the reserve stay at or above the floor", () => {
@@ -610,7 +616,7 @@ describe("review gateway round 4 fixes", () => {
       runs: [{ guard: allowed === undefined ? null : { allowed } }],
     });
     expect(gatewayRequested(review(0, 3))).toBe(3);
-    expect(gatewayRequested(review(2, 0))).toBe(1);
+    expect(gatewayRequested(review(2, 0))).toBe(2);
     expect(gatewayRequested(review(0, 0))).toBe(0);
     expect(gatewayRequested(review(0))).toBe(0);
   });
