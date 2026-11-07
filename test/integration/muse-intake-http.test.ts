@@ -325,6 +325,17 @@ describe("Muse intake over HTTP", () => {
     expect(tooLong.json()).toMatchObject({ accepted: 0 });
   });
 
+  it("fills the Gmail message id when Muse sends the same reminder again with it, as a duplicate", async () => {
+    const { post, store } = await setup();
+    await post(batch(1, [proactive("sub-1")]));
+    const again = await post(
+      batch(2, [proactive("sub-1", { gmail_message_id: field("1a1b53d1b88e9acc") })]),
+    );
+    expect(again.json()).toMatchObject({ accepted: 0, duplicate: 1, conflict: 0 });
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ gmailMessageId: "1a1b53d1b88e9acc" });
+  });
+
   it("keeps ordinary options", async () => {
     const { post, store } = await setup();
     await post(batch(1, [proactive("sub-1")]));
