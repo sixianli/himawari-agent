@@ -13,10 +13,12 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
+import { CHAT_EGRESS_LEGEND } from "@himawari-agent/prompt-catalog";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
+import { readRequestBody } from "../fixtures/request-body.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(
@@ -71,13 +73,19 @@ const providerRequests: Array<{
 }> = [];
 type ChatReply = { readonly text: string } | { readonly tool: string; readonly input: object };
 let chatReply: ((input: Readonly<Record<string, unknown>>) => ChatReply) | undefined;
-const agentGenerationRequests = () =>
-  providerRequests.filter(
-    ({ path: route, body }) =>
-      route === "/v1/chat/completions" &&
-      Array.isArray(body?.["messages"]) &&
-      (body["messages"] as Array<{ role?: unknown }>)[0]?.role === "system",
-  ).length;
+function isAgentRequest({
+  path: route,
+  body,
+}: {
+  readonly path: string;
+  readonly body?: Readonly<Record<string, unknown>> | undefined;
+}): boolean {
+  if (route !== "/v1/chat/completions" || !Array.isArray(body?.["messages"])) return false;
+  const first = (body["messages"] as Array<{ role?: unknown; content?: unknown }>)[0];
+  return first?.role === "system" && first.content !== CHAT_EGRESS_LEGEND.text;
+}
+
+const agentGenerationRequests = () => providerRequests.filter(isAgentRequest).length;
 
 type HttpResult = {
   readonly status: number;
@@ -196,11 +204,7 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
         );
         return;
       }
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk;
-      });
-      request.on("end", () => {
+      void readRequestBody(request).then((body) => {
         const input = JSON.parse(body);
         capturedRequest.body = input;
         response.writeHead(200, { "content-type": "application/json" });
@@ -227,11 +231,7 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
       return;
     }
     if (requestPath === "/v1/chat/completions") {
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk;
-      });
-      request.on("end", () => {
+      void readRequestBody(request).then((body) => {
         const input = JSON.parse(body);
         capturedRequest.body = input;
         capturedRequest.raw = body;
@@ -1863,11 +1863,7 @@ type ChatBody = {
 function agentRequests(from: number) {
   return providerRequests
     .slice(from)
-    .filter(
-      ({ path: route, body }) =>
-        route === "/v1/chat/completions" &&
-        (body?.["messages"] as Array<{ role?: unknown }> | undefined)?.[0]?.role === "system",
-    )
+    .filter(isAgentRequest)
     .map(({ raw, body }) => ({ raw: raw ?? "", body: body as unknown as ChatBody }));
 }
 
