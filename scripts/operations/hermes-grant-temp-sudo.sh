@@ -7,7 +7,7 @@ RULE=/etc/sudoers.d/90-claude-temp
 UNIT=claude-temp-sudo-expire
 
 if ! [[ "$MINUTES" =~ ^[0-9]+$ ]] || [ "$MINUTES" -lt 1 ] || [ "$MINUTES" -gt 120 ]; then
-  echo "usage: sudo bash grant-temp-sudo.sh <minutes 1-120>" >&2
+  echo "usage: sudo bash hermes-grant-temp-sudo.sh <minutes 1-120>" >&2
   exit 64
 fi
 if [ "$(id -u)" -ne 0 ]; then

@@ -13,7 +13,7 @@ SUDOERS_FILE=/etc/sudoers.d/91-gh-runner-control
 
 source "$SRC/runners.sh"
 
-[ "$(hostname)" = hermes-home ] || { echo "this script only runs on hermes-home, not $(hostname)" >&2; exit 68; }
+require_runner_host
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
 for tool in nft visudo useradd sha256sum curl ss python3; do
   command -v "$tool" > /dev/null || { echo "missing $tool" >&2; exit 66; }
@@ -22,7 +22,7 @@ done
 for id in $RUNNER_IDS; do
   runner_select "$id"
   if systemctl is-active --quiet "$RUNNER_UNIT"; then
-    echo "$RUNNER_UNIT is running; run scripts/operations/hermes-runner/pause-runners.sh on the Mac first so no job is cut off" >&2
+    echo "$RUNNER_UNIT is running; run scripts/operations/ci-runner/pause-runners.sh on the Mac first so no job is cut off" >&2
     exit 70
   fi
 done
