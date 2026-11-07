@@ -1971,7 +1971,7 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     );
     chosen ||= names.includes("reminder_list") ? "reminder_list" : (names[0] ?? "");
     const messages = input["messages"] as { role: string; content: unknown }[];
-    if (JSON.stringify(messages.at(-1)).includes("Do not claim overall task success"))
+    if (JSON.stringify(messages.at(-1)).includes("不要说整个任务已经成功"))
       return { text: "已确认的结果：提醒列表是空的；这一步卡住了，我换个办法。" };
     if (messages[0]?.role !== "system" || !chosen) return { text: "安装后的持久回答" };
     return { tool: chosen, input: {} };
@@ -1995,8 +1995,8 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     expectAppendOnly(before, summary);
     expect(summary.body.messages.length).toBe(before.body.messages.length + 3);
     expect(summary.body.messages.at(-1)?.role).toBe("user");
-    expect(lastMessage(summary)).toContain("Do not claim overall task success");
-    expect(requestHead(summary).prefix).not.toContain("Do not claim overall task success");
+    expect(lastMessage(summary)).toContain("不要说整个任务已经成功");
+    expect(requestHead(summary).prefix).not.toContain("不要说整个任务已经成功");
     chatReply = undefined;
     expect((await submitTurn(service, threadId, "tool-loop-second", "好的")).run?.status).toBe(
       "completed",
@@ -2008,7 +2008,7 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     expect(
       next.body.messages
         .slice(0, -1)
-        .some((message) => JSON.stringify(message).includes("Do not claim overall task success")),
+        .some((message) => JSON.stringify(message).includes("不要说整个任务已经成功")),
     ).toBe(true);
   } finally {
     chatReply = undefined;

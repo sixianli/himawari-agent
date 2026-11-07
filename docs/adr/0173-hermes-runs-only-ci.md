@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: "docs/adr/0170-more-memory-for-hermes-runners.md"
-superseded_by: ""
+superseded_by: "docs/adr/0176-ci-on-ovh-vps.md"
 amends: "docs/adr/0171-two-runners-on-hermes.md"
 date: "2026-11-06"
 ---
