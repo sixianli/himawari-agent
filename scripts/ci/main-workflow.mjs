@@ -1,5 +1,5 @@
 import { parseDocument } from "yaml";
-import { githubExpression as expression } from "./contracts.mjs";
+import { githubExpression as expression, linuxRunnerLabel } from "./contracts.mjs";
 
 const assert = (value, code) => {
   if (!value) throw new Error(`MAIN_WORKFLOW:${code}`);
@@ -45,7 +45,7 @@ export function validateMainWorkflow(source, lock) {
     ["confirm", confirm],
   ]) {
     assert(
-      job["runs-on"] === "hermes-home" && job["timeout-minutes"] === (id === "plan" ? 15 : 90),
+      job["runs-on"] === linuxRunnerLabel && job["timeout-minutes"] === (id === "plan" ? 15 : 90),
       "runtime",
     );
     assert(

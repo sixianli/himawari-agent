@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: "docs/adr/0092-pause-github-actions.md"
-superseded_by: ""
+superseded_by: "docs/adr/0176-ci-on-ovh-vps.md"
 date: "2026-11-04"
 ---
 
