@@ -1958,7 +1958,7 @@ productDescribe(
       });
     });
 
-    it("[R2-T14] withholds machine secrets but keeps the real command exit status", async () => {
+    it("[R2-T14] masks machine secrets in the output sent to the model and keeps the real command exit status", async () => {
       await scenario("r2t14-secret-output", async () => {
         const cases = [
           { text: "请运行 R2T14 秘密输出命令，退出 0", exitCode: 0, phase: "已完成" },
@@ -1974,16 +1974,15 @@ productDescribe(
             path.join(outputDirectory, `r2t14-secret-output-exit-${entry.exitCode}-readback.json`),
             JSON.stringify({ toolMessage: observed.raw, delivery }, null, 2),
           );
-          expect(observed.raw).not.toContain("R2T14SECRETVALUE0001");
-          expect(observed.raw).not.toContain("api_key=");
-          expect(observed.content).toContain("疑似密钥");
+          expect(observed.content).not.toContain("R2T14SECRETVALUE0001");
+          expect(observed.content).toContain("[密钥]");
           expect(observed.result).toMatchObject({
             schemaVersion: "pi-result.v1",
             tool: "bash",
             isError: entry.exitCode !== 0,
             commandExitCode: entry.exitCode,
           });
-          expect(observed.result?.["source"]).not.toHaveProperty("parameters");
+          expect(observed.result?.["source"]).toHaveProperty("parameters");
           if (entry.exitCode === 0) {
             expect(observed.result).not.toHaveProperty("effectNotice");
             expect(delivery).toMatchObject({ outcome: "succeeded" });
@@ -1999,7 +1998,7 @@ productDescribe(
       });
     });
 
-    it("[R2-T14] withholds a private key whose first line truncation cut off", async () => {
+    it("[R2-T14] masks a private key whose first line truncation cut off", async () => {
       await scenario("r2t14-truncated-key", async () => {
         const text = "请运行 R2T14 截断私钥命令";
         const before = new Set(executionReadback().map((record) => record.jobId));
@@ -2012,17 +2011,13 @@ productDescribe(
           JSON.stringify({ toolMessage: observed.raw, delivery }, null, 2),
         );
         expect(observed.raw).not.toContain("R2T14E2EKEYBODY");
-        expect(observed.raw).not.toContain("PRIVATE KEY");
-        expect(observed.content).toContain("疑似密钥");
+        expect(observed.content).toContain("[密钥]");
         expect(observed.result).toMatchObject({
           schemaVersion: "pi-result.v1",
           tool: "bash",
-          details: {},
-          fullOutput: null,
           isError: true,
           commandExitCode: 3,
         });
-        expect(observed.result?.["source"]).not.toHaveProperty("parameters");
         expect(observed.result?.["effectNotice"]).toContain("命令以退出码 3 结束");
         await uiExpect(answer).not.toContainText("R2T14E2EKEYBODY");
         expect(delivery).toMatchObject({
@@ -2057,7 +2052,7 @@ productDescribe(
       });
     });
 
-    it("[R2-T14] applies an edit beside a private key and withholds the diff that would show part of it", async () => {
+    it("[R2-T14] applies an edit beside a private key and masks the part of it the diff shows", async () => {
       await scenario("r2t14-key-notes-edit", async () => {
         await newThread();
         const file = path.join(installation.workspace, "key-notes.txt");
@@ -2089,16 +2084,14 @@ productDescribe(
         );
         expect(controlAfter).toBe(PLAIN_NOTES.replace("deploy key:", "old deploy key:"));
         expect(control.result).toMatchObject({ tool: "edit", isError: false });
-        expect(control.content).not.toContain("疑似密钥");
+        expect(control.raw).not.toContain("[密钥]");
         expect(after).toBe(KEY_NOTES.replace("deploy key:", "old deploy key:"));
         expect(observed.raw).not.toContain("R2T14EDITBODY");
-        expect(observed.raw).not.toContain("PRIVATE KEY");
-        expect(observed.content).toMatch(/已修改.*疑似密钥/);
+        expect(observed.raw).toContain("[密钥]");
         expect(observed.result).toMatchObject({
           schemaVersion: "pi-result.v1",
           tool: "edit",
           isError: false,
-          details: {},
           verifiedWrite: expect.any(Object),
         });
         await uiExpect(answer).not.toContainText("R2T14EDITBODY");
