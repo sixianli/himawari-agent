@@ -1,0 +1,8 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "Hermes 有 Magpie 管理页的说法与仓库现有文档冲突，且没有仓库内证据", "valid": true, "class": "error", "severity": "medium-high", "trigger": "读者对照 ADR 0142", "consequence": "Runbook 没写出处，读者不知该信哪份", "modelSeverity": "中"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“开机自动连接”没有给出可直接使用的 launchd plist，失败时也没有日志", "valid": true, "class": "better"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "密码文件 `/etc/magpie/web.env` 的权限没有被检查，而生产机上有一个无 sudo 的普通测试账号", "valid": true, "class": "error", "severity": "medium-high", "trigger": "web.env 按默认 umask 是 0644", "consequence": "无 sudo 的 himawari-ci 账号能读到生产管理页密码", "modelSeverity": "中（潜在高）"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "生产密码被放进保留 400 天的浏览器 cookie", "valid": true, "class": "better"}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“只监听回环就公网连不到”的论证漏掉了本机反向隧道（cloudflared）", "valid": false, "class": "better"}
+{"id": "d6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0117 的“只监听 3425”与新段落的“3425 和 3430”没有对齐", "valid": true, "class": "better"}
+{"id": "d7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "这次改动没有对应的自动检查，runbook 契约也不覆盖新增的 ADR 0117 依赖", "valid": true, "class": "better"}
+{"id": "d8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "管理页改动是立即生效的生产变更，但文档没有备份/回滚步骤", "valid": true, "class": "better"}
