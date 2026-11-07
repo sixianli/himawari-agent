@@ -61,7 +61,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
   });
 
   it("其余每条白名单都同时限定规则、文件路径和值的形状", () => {
-    expect(scoped).toHaveLength(6);
+    expect(scoped).toHaveLength(9);
     for (const block of scoped) {
       expect(block.condition).toBe("AND");
       expect(block.regexTarget).toBe("secret");
@@ -90,10 +90,33 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
       [["gh", "p_Zk3Qw8Lm2VxN9sTdR4bYf7HcJ1pUa6EoXe5G"].join(""), changeLast],
       ["tmpfs-size=1048576", changeLast],
       ["f504128e-d710-44e1-a304-6b61c370ef24", changeLast],
+      [["0123456789abcdef", "0123456789abcdef"].join(""), changeLast],
+      [["sensitive", "interceptions", "clear", "01"].join("-"), changeLast],
+      [
+        ["0803b00889e1a37bf2645a12f203d89c", "5a695b27538e322db7e962339e6a416a"].join(""),
+        changeFirst,
+      ],
     ].map(([sample, mutate], index) => [index, sample, mutate])) {
       expect(matches(scoped[index].regexes, sample)).toBe(true);
       expect(matches(scoped[index].regexes, mutate(sample))).toBe(false);
     }
+  });
+
+  it("PR 273 复核记录里的合成令牌只在第 1、4 轮的 DeepSeek 记录里被放行", () => {
+    const block = scoped[6];
+    expect(matches(block.paths, ".agents/reviews/pr-273/round-1/deepseek-v4.1-flash.md")).toBe(
+      true,
+    );
+    expect(matches(block.paths, ".agents/reviews/pr-273/round-4/deepseek-v4.1-flash.md")).toBe(
+      true,
+    );
+    expect(matches(block.paths, ".agents/reviews/pr-273/round-2/deepseek-v4.1-flash.md")).toBe(
+      false,
+    );
+    expect(matches(block.paths, ".agents/reviews/pr-274/round-1/deepseek-v4.1-flash.md")).toBe(
+      false,
+    );
+    expect(matches(block.paths, ".agents/reviews/pr-273/round-1/glm-5.3-flash.md")).toBe(false);
   });
 
   it("Web Push 测试向量只在两个已审阅的文件里被放行", () => {

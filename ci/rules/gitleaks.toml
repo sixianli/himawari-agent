@@ -74,3 +74,27 @@ targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)scripts/operations/cache-zero-diagnosis/README\.md$''']
 regexTarget = "secret"
 regexes = ['''^f504128e-d710-44e1-a304-6b61c370ef24$''']
+
+[[allowlists]]
+description = "PR 273 复核记录里模型原样引用的合成启动令牌（测试里的 tokenValue 样例），只限这两个记录文件"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)\.agents/reviews/pr-273/round-[14]/deepseek-v4\.1-flash\.md$''']
+regexTarget = "secret"
+regexes = ['''^0123456789abcdef0123456789abcdef$''']
+
+[[allowlists]]
+description = "敏感信息拦截记录清除接口测试里的幂等键，不是密钥"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)apps/agent-service/test/production-http-composition\.unit\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^sensitive-interceptions-clear-01$''']
+
+[[allowlists]]
+description = "白名单测试里用来核对回读文件那一行的同一个文件摘要，只限这个测试文件"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)test/tooling/gitleaks-allowlist\.test\.mjs$''']
+regexTarget = "secret"
+regexes = ['''^0803b00889e1a37bf2645a12f203d89c5a695b27538e322db7e962339e6a416a$''']
