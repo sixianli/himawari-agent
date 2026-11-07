@@ -1,0 +1,4 @@
+{"id": "r6-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "异常停机路径不释放模型输入 payload", "valid": false, "class": "better"}
+{"id": "r6-glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "一批内任意一封邮件 GET 抛 `GoogleRequestError` 会经 `Promise.all` 失败整批", "valid": false, "class": "better"}
+{"id": "r6-glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "`cancel()` 是永久闩锁", "valid": false, "class": "better"}
+{"id": "r6-glm-4", "model": "opencode-go/glm-5.3-flash", "quote": "`proactive_replay_runs_recent` 索引与 `PROACTIVE_REPLAY_PAGE_LIMIT`", "valid": false, "class": "better"}
