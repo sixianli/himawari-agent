@@ -19,6 +19,9 @@ import type {
   ProactiveModelPayload,
   ProactivePriority,
   ProactiveProcessedMessage,
+  ProactiveRelatedLimits,
+  ProactiveRelatedReadStatus,
+  ProactiveRelatedStats,
   ProactiveResult,
   ProactiveScope,
   ProactiveSealPort,
@@ -90,6 +93,7 @@ export interface ProactiveMailCheckOptions {
   readonly memory?: ProactiveMemoryRecall;
   readonly memoryLimits?: Partial<ProactiveMemoryLimits>;
   readonly bodyLimits?: Partial<ProactiveBodyLimits>;
+  readonly relatedLimits?: Partial<ProactiveRelatedServiceLimits>;
   readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
 }
 
@@ -102,6 +106,24 @@ export const DEFAULT_PROACTIVE_BODY_LIMITS: ProactiveBodyLimits = Object.freeze(
   perMail: 16_000,
   perBatch: 64_000,
 });
+
+export interface ProactiveRelatedServiceLimits extends ProactiveRelatedLimits {
+  readonly charactersPerRelated: number;
+  readonly charactersPerMail: number;
+}
+
+export const DEFAULT_PROACTIVE_RELATED_LIMITS: ProactiveRelatedServiceLimits = Object.freeze({
+  perMail: 6,
+  requestsPerCheck: 120,
+  charactersPerRelated: 2_000,
+  charactersPerMail: 12_000,
+});
+
+interface RelatedView {
+  readonly mails: readonly ProactiveSourceItem[];
+  readonly json: readonly Record<string, unknown>[];
+  readonly unavailable: boolean;
+}
 
 const RECALL_BODY_CHARACTERS = 300;
 const MAX_ATTACHMENTS_SHOWN = 10;
@@ -150,6 +172,10 @@ interface CheckTrace {
   readonly usedMemoryIds: Set<string>;
   readonly memoryByMail: Map<string, string[]>;
   memoryRecall: ProactiveMemoryRecallStatus;
+  readonly relatedByMail: Map<string, string[]>;
+  readonly relatedFailedSteps: Set<string>;
+  relatedRead: ProactiveRelatedReadStatus;
+  relatedStats: ProactiveRelatedStats;
   recorded: boolean;
 }
 
@@ -217,7 +243,62 @@ function masked(value: string): string {
   return maskSensitiveText(value);
 }
 
-export function proactiveMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMailView {
+function relatedMailView(
+  mails: readonly ProactiveSourceItem[],
+  unavailable: boolean,
+  limits: ProactiveRelatedServiceLimits,
+): RelatedView {
+  const chosen: { mail: ProactiveSourceItem; json: Record<string, unknown> }[] = [];
+  let total = 0;
+  for (const mail of [...mails].reverse().slice(0, limits.perMail)) {
+    const windowed =
+      mail.body === null
+        ? undefined
+        : windowMailBody(masked(mail.body), limits.charactersPerRelated);
+    const json: Record<string, unknown> = {
+      id: mail.messageId,
+      from: masked(mail.from),
+      subject: masked(mail.subject),
+      ...(mail.sentByOwner ? { sentByOwner: true } : {}),
+      ...(windowed
+        ? { body: windowed.text }
+        : {
+            snippet: Array.from(masked(mail.snippet))
+              .slice(0, limits.charactersPerRelated)
+              .join(""),
+          }),
+      ...(windowed?.truncated || mail.bodyTruncated ? { bodyTruncated: true } : {}),
+      receivedAt: mail.receivedAt,
+    };
+    const size = JSON.stringify(json).length;
+    if (chosen.length > 0 && total + size > limits.charactersPerMail) break;
+    total += size;
+    chosen.push({ mail, json });
+  }
+  chosen.reverse();
+  return Object.freeze({
+    mails: chosen.map(({ mail }) => mail),
+    json: chosen.map(({ json }) => json),
+    unavailable,
+  });
+}
+
+export function proactiveMailView(
+  item: ProactiveSourceItem,
+  bodyLimit: number,
+  related?: RelatedView,
+): ProactiveMailView {
+  const base = baseMailView(item, bodyLimit);
+  if (related === undefined || (related.json.length === 0 && !related.unavailable)) return base;
+  const json: Record<string, unknown> = {
+    ...base.json,
+    ...(related.json.length > 0 ? { related: related.json } : {}),
+    ...(related.unavailable ? { relatedUnavailable: true } : {}),
+  };
+  return Object.freeze({ json, size: JSON.stringify(json).length });
+}
+
+function baseMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMailView {
   const byLimit = mailViews.get(item) ?? new Map<number, ProactiveMailView>();
   const cached = byLimit.get(bodyLimit);
   if (cached) return cached;
@@ -253,6 +334,7 @@ export function proactivePrompt(
   timeZone: string,
   memories: readonly PromptMemory[] = [],
   bodyLimit: number = DEFAULT_PROACTIVE_BODY_LIMITS.perMail,
+  related: ReadonlyMap<string, RelatedView> = new Map(),
 ): string {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -265,7 +347,9 @@ export function proactivePrompt(
     MAIL_JUDGMENT.text,
     ...(memories.length > 0 ? [MAIL_JUDGMENT_MEMORIES_HEADER.text, JSON.stringify(memories)] : []),
     MAIL_JUDGMENT_ITEMS_HEADER.text,
-    JSON.stringify(items.map((item) => proactiveMailView(item, bodyLimit).json)),
+    JSON.stringify(
+      items.map((item) => proactiveMailView(item, bodyLimit, related.get(item.messageId)).json),
+    ),
     renderPrompt(MAIL_JUDGMENT_NOW, { now, timeZone, today }),
   ].join("\n");
 }
@@ -369,7 +453,11 @@ export class ProactiveMailCheckService {
     this.#options = options;
   }
 
-  #reportMasked(batch: readonly ProactiveSourceItem[], bodyLimit: number): void {
+  #reportMasked(
+    batch: readonly ProactiveSourceItem[],
+    bodyLimit: number,
+    related: ReadonlyMap<string, RelatedView>,
+  ): void {
     const onMasked = this.#options.onMasked;
     if (onMasked === undefined) return;
     try {
@@ -381,12 +469,95 @@ export class ProactiveMailCheckService {
           ...(item.body === null ? [item.snippet] : []),
         ]
           .flatMap((text) => findSensitiveValues(text))
-          .concat(item.body === null ? [] : sentBodyValues(item.body, bodyLimit)),
+          .concat(item.body === null ? [] : sentBodyValues(item.body, bodyLimit))
+          .concat(
+            (related.get(item.messageId)?.mails ?? []).flatMap((mail) =>
+              [mail.from, mail.subject, ...(mail.body === null ? [mail.snippet] : [])]
+                .flatMap((text) => findSensitiveValues(text))
+                .concat(
+                  mail.body === null
+                    ? []
+                    : sentBodyValues(mail.body, this.#relatedLimits().charactersPerRelated),
+                ),
+            ),
+          ),
       );
       if (sightings.length > 0) onMasked(sightings);
     } catch {
       return;
     }
+  }
+
+  #relatedLimits(): ProactiveRelatedServiceLimits {
+    return {
+      ...DEFAULT_PROACTIVE_RELATED_LIMITS,
+      ...this.#options.relatedLimits,
+    };
+  }
+
+  async #related(
+    token: string,
+    candidates: readonly ProactiveSourceItem[],
+    signal: AbortSignal,
+    trace: CheckTrace,
+  ): Promise<ReadonlyMap<string, RelatedView>> {
+    const { reader, clock } = this.#options;
+    const views = new Map<string, RelatedView>();
+    const limits = this.#relatedLimits();
+    if (reader.related === undefined || candidates.length === 0 || limits.perMail < 1) return views;
+    const startedMs = Date.parse(clock.now());
+    let requests = 0;
+    let fetched: Awaited<ReturnType<NonNullable<typeof reader.related>>> | undefined;
+    try {
+      fetched = await reader.related({
+        token,
+        items: candidates,
+        limits,
+        signal,
+      });
+      requests = fetched.requests;
+    } catch {
+      fetched = undefined;
+    }
+    let failedMails = 0;
+    for (const item of candidates) {
+      const failure = fetched === undefined ? "read" : fetched.failed.get(item.messageId);
+      if (failure !== undefined) {
+        failedMails += 1;
+        trace.relatedFailedSteps.add(
+          failure
+            .toLowerCase()
+            .replace(/[^a-z0-9_]+/gu, "_")
+            .slice(0, 64),
+        );
+      }
+      const view = relatedMailView(
+        fetched?.byMail.get(item.messageId) ?? [],
+        failure !== undefined,
+        limits,
+      );
+      views.set(item.messageId, view);
+      if (view.mails.length > 0)
+        trace.relatedByMail.set(
+          item.messageId,
+          view.mails.map(({ messageId }) => messageId),
+        );
+      trace.relatedStats = {
+        ...trace.relatedStats,
+        messages: trace.relatedStats.messages + view.mails.length,
+        characters:
+          trace.relatedStats.characters +
+          view.json.reduce<number>((sum, entry) => sum + JSON.stringify(entry).length, 0),
+      };
+    }
+    trace.relatedRead =
+      failedMails === 0 ? "ok" : failedMails >= candidates.length ? "failed" : "partial";
+    trace.relatedStats = {
+      ...trace.relatedStats,
+      requests,
+      durationMs: Math.max(0, Date.parse(clock.now()) - startedMs),
+    };
+    return views;
   }
 
   async run(): Promise<ProactiveDecision | undefined> {
@@ -423,6 +594,10 @@ export class ProactiveMailCheckService {
       usedMemoryIds: new Set(),
       memoryByMail: new Map(),
       memoryRecall: "off",
+      relatedByMail: new Map(),
+      relatedFailedSteps: new Set(),
+      relatedRead: "off",
+      relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
       recorded: false,
     };
     try {
@@ -501,6 +676,7 @@ export class ProactiveMailCheckService {
     });
     const judged = new Map<string, Judgement>();
     let costMicros = 0;
+    const relatedViews = await this.#related(token, candidates, controller.signal, trace);
     const recalled = await this.#recall(candidates, deadlineAt, controller.signal, trace);
     costMicros += recalled.costMicros;
     let stop: Stop = null;
@@ -509,7 +685,7 @@ export class ProactiveMailCheckService {
     const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
     let failure: string | null = null;
     while (queue.length > 0 && stop === null) {
-      const batch = this.#fitBatch(queue, batchSize, bodyLimits);
+      const batch = this.#fitBatch(queue, batchSize, bodyLimits, relatedViews);
       const promptMemories = this.#batchMemories(batch, recalled.hits);
       const prompt = proactivePrompt(
         batch,
@@ -517,6 +693,7 @@ export class ProactiveMailCheckService {
         this.#options.timeZone,
         promptMemories,
         bodyLimits.perMail,
+        relatedViews,
       );
       const estimate = this.#options.limits.estimateCostMicros(prompt);
       if (spentToday + costMicros + estimate > this.#options.limits.dailyCostMicros) {
@@ -527,7 +704,7 @@ export class ProactiveMailCheckService {
         stop = "capped";
         break;
       }
-      this.#reportMasked(batch, bodyLimits.perMail);
+      this.#reportMasked(batch, bodyLimits.perMail, relatedViews);
       const outcome: JudgeOutcome = await this.#judge(
         batch,
         prompt,
@@ -685,11 +862,12 @@ export class ProactiveMailCheckService {
     queue: readonly ProactiveSourceItem[],
     batchSize: number,
     bodyLimits: ProactiveBodyLimits,
+    related: ReadonlyMap<string, RelatedView>,
   ): readonly ProactiveSourceItem[] {
     const batch: ProactiveSourceItem[] = [];
     let size = 0;
     for (const item of queue.slice(0, batchSize)) {
-      const next = proactiveMailView(item, bodyLimits.perMail).size;
+      const next = proactiveMailView(item, bodyLimits.perMail, related.get(item.messageId)).size;
       if (batch.length > 0 && size + next > bodyLimits.perBatch) break;
       batch.push(item);
       size += next;
@@ -1005,6 +1183,10 @@ export class ProactiveMailCheckService {
       usedMemoryIds: [...trace.usedMemoryIds],
       memoryByMail: Object.fromEntries(trace.memoryByMail),
       memoryRecall: trace.memoryRecall,
+      relatedByMail: Object.fromEntries(trace.relatedByMail),
+      relatedRead: trace.relatedRead,
+      relatedStats: trace.relatedStats,
+      relatedFailedSteps: [...trace.relatedFailedSteps].sort(),
     });
     const result = await store.record({
       ...scope,
