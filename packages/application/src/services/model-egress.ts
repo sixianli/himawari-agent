@@ -11,6 +11,7 @@ import {
   type EgressRedactionSighting,
   redactForEgress,
   redactMachineSecrets,
+  scanMachineSecrets,
 } from "@himawari-agent/sensitive-capture";
 import type {
   SensitiveInterceptionPart,
@@ -407,7 +408,7 @@ function maskArguments(
 }
 
 const BASE64_DATA_URL =
-  /^data:[\w.+-]+\/[\w.+-]+(?:;[\w.+-]+=[\w.+-]+)*;base64,[A-Za-z0-9+/=\r\n]*$/u;
+  /^data:[\w.+-]+\/[\w.+-]+(?:;[\w.+-]+=[\w.+-]+)*;base64,[A-Za-z0-9+/\r\n]*={0,2}$/u;
 
 function maskTree(
   value: unknown,
@@ -416,7 +417,7 @@ function maskTree(
   inherited: SensitiveInterceptionPart,
 ): unknown {
   if (typeof value === "string") {
-    if (BASE64_DATA_URL.test(value)) return value;
+    if (BASE64_DATA_URL.test(value) && scanMachineSecrets(value).length === 0) return value;
     const result = text(value, inherited);
     return result === value ? value : result;
   }

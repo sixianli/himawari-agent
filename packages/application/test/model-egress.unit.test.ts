@@ -127,17 +127,21 @@ describe("chat completions", () => {
   });
 
   it("masks text that only starts with data: and keeps real base64 data URLs", async () => {
+    const AWS_LIKE = ["AKIA", "ABCDEFGHIJKLMNOP"].join("");
     const image = "data:image/png;base64,AAAA4111111111111111";
     const { raw } = await send("/chat/completions", {
       model: "m",
       messages: [
         { role: "tool", tool_call_id: "c", content: `data: token sk-${"a".repeat(24)}` },
         { role: "user", content: `data:text/plain,password=hunter22abc` },
+        { role: "user", content: "data:text/plain;base64,password=hunter22abc" },
+        { role: "user", content: `data:image/png;base64,${AWS_LIKE}` },
         { role: "user", content: image },
       ],
     });
     expect(raw).not.toContain("a".repeat(24));
     expect(raw).not.toContain("hunter22abc");
+    expect(raw).not.toContain(AWS_LIKE);
     expect(raw).toContain(image);
   });
 

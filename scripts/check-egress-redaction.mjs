@@ -93,9 +93,9 @@ const PASS = "改成原样放行";
 export const SENSITIVE_GATE_CALLS = Object.freeze([
   {
     file: "packages/application/src/services/model-egress.ts",
-    calls: { assertMachineSecretFree: 1 },
+    calls: { assertMachineSecretFree: 1, scanMachineSecrets: 1 },
     decision: KEEP,
-    reason: "遮完之后的自检：遮盖出 bug、仍有密钥时不发",
+    reason: "遮完之后的自检：遮盖出 bug、仍有密钥时不发；数据网址里认出密钥时改按文字遮",
   },
   {
     file: "packages/platform-node/src/trusted-model-provider.ts",
