@@ -1,0 +1,4 @@
+{"id": "g1", "model": "opencode-go/glm-5.3-flash", "quote": "管理页登录行为按 Magpie 上游 main（2026-11-07）描述，生产装的是 v0.1.2001", "valid": true, "class": "error", "severity": "medium-high", "trigger": "生产旧版本的登录方式与上游 main 不同", "consequence": "读者照 ?k= 登录不了", "modelSeverity": "中"}
+{"id": "g2", "model": "opencode-go/glm-5.3-flash", "quote": "文档类改动没有任何自动检查，反向用例不存在", "valid": false, "class": "better"}
+{"id": "g3", "model": "opencode-go/glm-5.3-flash", "quote": "`cut -d= -f1 /etc/magpie/web.env` 会把注释行和空行原样打出", "valid": true, "class": "error", "severity": "low", "trigger": "web.env 里有带值的注释行", "consequence": "注释内容打印到终端；本 Runbook 的使用者就是能读该文件的 root，不会给出错误结论", "modelSeverity": "低"}
+{"id": "g4", "model": "opencode-go/glm-5.3-flash", "quote": "Magpie 一节新增了对 ADR 0117 的实质依赖，但 ADR 0117 没加进 `runbook-contract` 契约源文件清单", "valid": true, "class": "better"}
