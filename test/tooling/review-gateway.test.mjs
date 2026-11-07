@@ -10,6 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,6 +21,7 @@ import {
   creditsPerUsd,
   desktopSignIn,
   floorDecision,
+  gatewayConfigProblems,
   CLIENT_KEY,
   GATEWAY_PLATFORMS,
   groupArgs,
@@ -29,7 +31,12 @@ import {
   PLACEHOLDER,
   readGatewayConfig,
   readGatewayLock,
+  installGateway as installRealGateway,
+  postJson,
+  runningGatewayCount,
   sha256File,
+  startGateway,
+  stopAllGateways,
   summarizeGatewayUsage,
 } from "../../scripts/model-review/gateway.mjs";
 import {
@@ -46,6 +53,7 @@ import {
   PASSTHROUGH_PROMPT,
   REVIEW_MODELS,
   reviewConfig,
+  startLiveGateway,
 } from "../../scripts/model-review/opencode-review.mjs";
 
 const config = readGatewayConfig();
@@ -214,7 +222,8 @@ describe("review gateway ledger", () => {
       { req: "group/review-glm-5.3-flash", provider: "", status: 404 },
       { req: "opencode-go/deepseek-v4.1-flash", provider: "opencode-go", status: 200, in: 5 },
     ];
-    const summary = summarizeGatewayUsage(lines, config);
+    const { byModel: summary, unreadable } = summarizeGatewayUsage(lines, config);
+    expect(unreadable).toBe(0);
     expect(summary[deepseek]["workbuddy-ai"]).toEqual({ requests: 2, failed: 1, credits: 0.3 });
     expect(summary[deepseek]["opencode-go"].usd).toBeCloseTo(0.15 + 0.003, 10);
     expect(summary[glm]).toEqual({ none: { requests: 1, failed: 1, usd: 0 } });
@@ -429,6 +438,251 @@ describe("review gateway install", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("review gateway hardening", () => {
+  it("[gateway] matches the direct configuration of the commit before the gateway, byte for byte", () => {
+    const before = {
+      "code-review": "220dd623ff95b44bfd27c1ecf80287ec7a1690fd0d1348bc2674b885ead9f9b6",
+      "code-review+wrapUp": "b6dd6cd61b2508da483d3f1687f8c2a85c3f39643f82f2a134a13fbdfb61e7c6",
+      plan: "93f1ae700b04b0d266eb847f2f9be9e1759c9d6ea13943870be0d0e4c4514de1",
+      "plan+wrapUp": "3fba1c65bd37e8dc1e3b1da3bece28823eeefa84841e0647ca2c6536319c3e87",
+      "plan-review": "93f1ae700b04b0d266eb847f2f9be9e1759c9d6ea13943870be0d0e4c4514de1",
+      "plan-review+wrapUp": "3fba1c65bd37e8dc1e3b1da3bece28823eeefa84841e0647ca2c6536319c3e87",
+    };
+    for (const mode of ["code-review", "plan", "plan-review"])
+      for (const wrapUp of [false, true]) {
+        const text = JSON.stringify(reviewConfig({ mode, wrapUp }))
+          .split(process.cwd())
+          .join("<ROOT>");
+        expect(createHash("sha256").update(text).digest("hex")).toBe(
+          before[`${mode}${wrapUp ? "+wrapUp" : ""}`],
+        );
+      }
+  });
+
+  it("[gateway] refuses a gateway configuration that would silently turn the credit floor off", () => {
+    expect(gatewayConfigProblems(config, REVIEW_MODELS)).toEqual([]);
+    const broken = (change) =>
+      gatewayConfigProblems({ ...structuredClone(config), ...change }, REVIEW_MODELS);
+    expect(broken({ creditFloor: undefined })).toContain("creditFloor");
+    expect(broken({ defaultCreditsPerUsd: Number.NaN })).toContain("defaultCreditsPerUsd");
+    expect(broken({ creditProvider: "workbuddy" })).toContain("creditProvider");
+    expect(broken({ stays: "forever" })).toContain("stays");
+    const models = structuredClone(config.models);
+    models[deepseek].members = ["codebuddy/deepseek-v4.1-flash-sg"];
+    delete models[glm].cost.output;
+    expect(broken({ models })).toEqual([`models.${deepseek}.members`, `models.${glm}.cost`]);
+    const { [glm]: _dropped, ...onlyDeepseek } = config.models;
+    expect(broken({ models: onlyDeepseek })).toEqual([`models.${glm}`]);
+    expect(() => readGatewayConfig(join(tmpdir(), "missing-gateway.json"))).toThrow();
+  });
+
+  it("[gateway] keeps CodeBuddy out when the floor numbers are not numbers", () => {
+    expect(floorDecision({ left: 200, reserve: Number.NaN, floor: 20 })).toEqual({
+      use: false,
+      reason: "floor-invalid",
+    });
+    expect(floorDecision({ left: 200, reserve: 10, floor: undefined })).toEqual({
+      use: false,
+      reason: "floor-invalid",
+    });
+  });
+
+  it("[gateway] refuses a credits card whose percent and used amount disagree", () => {
+    const card = (window) => [
+      {
+        provider: "workbuddy-ai",
+        windows: [{ name: "Total credits", unit: "credits", ...window }],
+      },
+    ];
+    expect(
+      creditsLeft(card({ remaining: 95.488, limit: 250, amount: 11.28 }), "workbuddy-ai"),
+    ).toBeCloseTo(238.72, 6);
+    expect(
+      creditsLeft(card({ remaining: 238.72, limit: 250, amount: 11.28 }), "workbuddy-ai"),
+    ).toBeNull();
+    expect(
+      creditsLeft(card({ remaining: 90, limit: 250, amount: 11.28 }), "workbuddy-ai"),
+    ).toBeNull();
+    expect(creditsLeft(card({ remaining: 50, limit: 100 }), "workbuddy-ai")).toBe(50);
+  });
+
+  it("[gateway] writes a ledger line even when Magpie's usage record is malformed, marking the cost unknown", () => {
+    const polluted = [
+      null,
+      { req: "group/review-deepseek-v4.1-flash", provider: "__proto__", status: 200, in: 1 },
+      {
+        req: "group/review-deepseek-v4.1-flash",
+        provider: "workbuddy-ai",
+        status: 200,
+        credits: "lots",
+      },
+      { req: "group/review-glm-5.3-flash", provider: "opencode-go", status: 200, in: Number.NaN },
+      { req: { toString: () => "group/review-glm-5.3-flash" }, provider: "opencode-go" },
+    ];
+    const { byModel, unreadable } = summarizeGatewayUsage(polluted, config);
+    expect(unreadable).toBe(3);
+    expect({}.requests).toBeUndefined();
+    expect(Object.keys(byModel[deepseek]).sort()).toEqual(["unknown", "workbuddy-ai"]);
+    const fields = gatewayRecordFields(polluted, config, deepseek);
+    expect(fields.costUnknown).toBe(true);
+    expect(parseUsage(ledgerLine(fields), "u")).toHaveLength(1);
+    const noPrices = {
+      ...config,
+      models: { [deepseek]: { ...config.models[deepseek], cost: undefined } },
+    };
+    expect(
+      gatewayRecordFields(
+        [{ req: "group/review-deepseek-v4.1-flash", provider: "opencode-go", status: 200 }],
+        noPrices,
+        deepseek,
+      ),
+    ).toEqual({ gateway: "magpie", providers: {}, costUnknown: true });
+  });
+});
+
+function probeServer() {
+  let hits = 0;
+  const server = http.createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      if (request.method !== "POST") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            object: "list",
+            data: REVIEW_MODELS.map((model) => ({ id: model.split("/").pop() })),
+          }),
+        );
+        return;
+      }
+      hits += 1;
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write(
+        `data: ${JSON.stringify({ id: "p", object: "chat.completion.chunk", created: 1, model: "m", choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 } })}\n\n`,
+      );
+      response.end("data: [DONE]\n\n");
+    });
+  });
+  return new Promise((resolveStart) =>
+    server.listen(0, "127.0.0.1", () =>
+      resolveStart({ server, port: server.address().port, hits: () => hits }),
+    ),
+  );
+}
+
+describe("review gateway live start", () => {
+  const install = () => installRealGateway();
+  const liveConfig = (port, members) => ({
+    ...structuredClone(config),
+    providers: [
+      { id: "workbuddy-ai", kind: "plugin", signIn: "desktop" },
+      {
+        id: "probe",
+        kind: "custom",
+        url: `http://127.0.0.1:${port}/v1`,
+        models: REVIEW_MODELS.map((model) => model.split("/").pop()),
+      },
+    ],
+    models: Object.fromEntries(
+      REVIEW_MODELS.map((model) => [
+        model,
+        { ...config.models[model], members: members(model.split("/").pop()) },
+      ]),
+    ),
+  });
+
+  it("[gateway] goes without CodeBuddy when its sign-in is unavailable, serves the review and records usage per provider", async () => {
+    const upstream = await probeServer();
+    const root = mkdtempSync(join(tmpdir(), "gateway-live-"));
+    try {
+      const gatewayConfig = liveConfig(upstream.port, (short) => [
+        `workbuddy-ai/${short}`,
+        `probe/${short}`,
+      ]);
+      expect(gatewayConfigProblems(gatewayConfig, REVIEW_MODELS)).toEqual([]);
+      const { live, drop } = await startLiveGateway({
+        gateway: { install: install(), config: gatewayConfig },
+        workRoot: root,
+        records: [],
+        models: [deepseek],
+        accountUid: () => null,
+      });
+      try {
+        expect(drop).toEqual(["workbuddy-ai"]);
+        const answer = await postJson(`${live.baseURL}/chat/completions`, {
+          model: "group/review-deepseek-v4.1-flash",
+          stream: true,
+          messages: [{ role: "user", content: "hi" }],
+        });
+        expect(answer.status).toBe(200);
+        expect(upstream.hits()).toBe(1);
+        const fields = gatewayRecordFields(live.usage(), gatewayConfig, deepseek);
+        expect(fields.costUnknown).toBeUndefined();
+        expect(fields.providers.probe).toMatchObject({ requests: 1, failed: 0 });
+        expect(fields.providers["workbuddy-ai"]).toBeUndefined();
+      } finally {
+        live.stop();
+      }
+    } finally {
+      upstream.server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  it("[gateway] stops before any model call when a group member is not served, and leaves no Magpie running", async () => {
+    const upstream = await probeServer();
+    const root = mkdtempSync(join(tmpdir(), "gateway-preflight-"));
+    try {
+      await expect(
+        startLiveGateway({
+          gateway: {
+            install: install(),
+            config: liveConfig(upstream.port, (short) => [
+              `probe/${short}`,
+              `probe/${short}-missing`,
+            ]),
+          },
+          workRoot: root,
+          records: [],
+          models: REVIEW_MODELS,
+          accountUid: () => null,
+        }),
+      ).rejects.toThrow("GATEWAY_PREFLIGHT_FAILED");
+      expect(upstream.hits()).toBe(0);
+      expect(runningGatewayCount()).toBe(0);
+    } finally {
+      upstream.server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  it("[gateway] stops every Magpie it started, including ones nobody kept a handle to", async () => {
+    const root = mkdtempSync(join(tmpdir(), "gateway-stop-all-"));
+    try {
+      const gateways = [];
+      for (const name of ["a", "b"]) {
+        const live = await startGateway({
+          install: install(),
+          config,
+          root: join(root, name),
+          models: [],
+          providers: [],
+        });
+        await live.serve();
+        gateways.push(live.child().pid);
+      }
+      expect(runningGatewayCount()).toBe(2);
+      stopAllGateways();
+      expect(runningGatewayCount()).toBe(0);
+      await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+      for (const pid of gateways) expect(() => process.kill(pid, 0)).toThrow();
+    } finally {
+      stopAllGateways();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120000);
 });
 
 describe("review gateway self-check", () => {

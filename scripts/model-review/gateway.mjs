@@ -63,8 +63,67 @@ export function readGatewayLock(path = GATEWAY_LOCK_PATH) {
   return readJson(path);
 }
 
-export function readGatewayConfig(path = GATEWAY_CONFIG_PATH) {
-  return readJson(path);
+export const ROUTING_VALUES = ["order", "smart", "rotate", "usage", "pace", "weight", "fast"];
+export const STAYS_VALUES = ["auto", "session", "turn", "off", "strict"];
+export const PROVIDER_KINDS = ["plugin", "preset", "custom"];
+
+const nonNegative = (value) => Number.isFinite(value) && value >= 0;
+const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
+
+export function gatewayConfigProblems(config, requiredModels = []) {
+  const problems = [];
+  if (!config || typeof config !== "object") return ["config"];
+  if (!ROUTING_VALUES.includes(config.routing)) problems.push("routing");
+  if (!STAYS_VALUES.includes(config.stays)) problems.push("stays");
+  if (!nonNegative(config.creditFloor)) problems.push("creditFloor");
+  if (!(Number.isFinite(config.defaultCreditsPerUsd) && config.defaultCreditsPerUsd > 0))
+    problems.push("defaultCreditsPerUsd");
+  const providers = Array.isArray(config.providers) ? config.providers : [];
+  if (providers.length === 0) problems.push("providers");
+  const ids = providers.map((provider) => provider?.id);
+  if (new Set(ids).size !== ids.length || ids.some((id) => typeof id !== "string" || !id))
+    problems.push("providers.id");
+  for (const provider of providers) {
+    if (!PROVIDER_KINDS.includes(provider?.kind)) problems.push(`providers.${provider?.id}.kind`);
+    if (
+      provider?.kind === "custom" &&
+      !(typeof provider.url === "string" && Array.isArray(provider.models))
+    )
+      problems.push(`providers.${provider.id}.custom`);
+  }
+  if (!ids.includes(config.creditProvider)) problems.push("creditProvider");
+  const models = config.models && typeof config.models === "object" ? config.models : {};
+  for (const model of requiredModels)
+    if (!Object.hasOwn(models, model)) problems.push(`models.${model}`);
+  for (const [model, entry] of Object.entries(models)) {
+    const members = Array.isArray(entry?.members) ? entry.members : [];
+    if (
+      members.length === 0 ||
+      members.some(
+        (member) =>
+          typeof member !== "string" ||
+          !ids.includes(member.split("/")[0]) ||
+          !member.includes("/"),
+      )
+    )
+      problems.push(`models.${model}.members`);
+    if (
+      typeof entry?.name !== "string" ||
+      !positiveInteger(entry?.context) ||
+      !positiveInteger(entry?.output)
+    )
+      problems.push(`models.${model}.limits`);
+    if (!["input", "output", "cache_read"].every((key) => nonNegative(entry?.cost?.[key])))
+      problems.push(`models.${model}.cost`);
+  }
+  return problems;
+}
+
+export function readGatewayConfig(path = GATEWAY_CONFIG_PATH, requiredModels = []) {
+  const config = readJson(path);
+  const problems = gatewayConfigProblems(config, requiredModels);
+  if (problems.length > 0) throw new Error(`GATEWAY_CONFIG_INVALID ${problems.join(",")}`);
+  return config;
 }
 
 export function platformKey(platform = process.platform, arch = process.arch) {
@@ -272,9 +331,13 @@ export function creditsLeft(quotas, provider) {
     windows.find((item) => item?.name === "Total credits") ??
     (windows.length === 1 && windows[0]?.unit === "credits" ? windows[0] : undefined);
   if (!window) return null;
-  const { limit, remaining } = window;
+  const { limit, remaining, amount } = window;
   if (!Number.isFinite(limit) || !Number.isFinite(remaining) || limit < 0) return null;
-  return (limit * remaining) / 100;
+  if (remaining < 0 || remaining > 100) return null;
+  const left = (limit * remaining) / 100;
+  if (amount !== undefined && !(Number.isFinite(amount) && Math.abs(limit - amount - left) <= 0.5))
+    return null;
+  return left;
 }
 
 export function creditsPerUsd(records, provider, fallback) {
@@ -295,6 +358,8 @@ export function creditReserve({ records, models, costLimitUsd, provider, fallbac
 
 export function floorDecision({ left, reserve, floor }) {
   if (left === null || left === undefined) return { use: false, reason: "credits-unknown" };
+  if (![left, reserve, floor].every(Number.isFinite))
+    return { use: false, reason: "floor-invalid" };
   if (left - reserve < floor)
     return {
       use: false,
@@ -307,32 +372,47 @@ export function priceOf(config, model) {
   return config.models[model]?.cost ?? null;
 }
 
+const tokens = (value) => (value === undefined ? 0 : nonNegative(value) ? value : Number.NaN);
+
 export function summarizeGatewayUsage(lines, config) {
-  const byModel = {};
+  const known = new Set(config.providers.map((provider) => provider.id));
+  const byModel = new Map();
+  let unreadable = 0;
   for (const line of lines) {
-    const requested = String(line.req ?? "");
+    if (!line || typeof line !== "object") {
+      unreadable += 1;
+      continue;
+    }
+    const requested = typeof line.req === "string" ? line.req : "";
     if (!requested.startsWith("group/")) continue;
     const model = Object.keys(config.models).find((name) => groupName(name) === requested.slice(6));
     if (!model) continue;
-    const provider = String(line.provider || "none");
-    byModel[model] ??= {};
-    byModel[model][provider] ??= { requests: 0, failed: 0 };
-    const slot = byModel[model][provider];
+    const provider = known.has(line.provider) ? line.provider : line.provider ? "unknown" : "none";
+    if (!byModel.has(model)) byModel.set(model, new Map());
+    const slots = byModel.get(model);
+    if (!slots.has(provider)) slots.set(provider, { requests: 0, failed: 0 });
+    const slot = slots.get(provider);
     slot.requests += 1;
     if (!(line.status >= 200 && line.status < 300)) slot.failed += 1;
     if (provider === config.creditProvider) {
-      slot.credits = (slot.credits ?? 0) + (Number.isFinite(line.credits) ? line.credits : 0);
+      const credits = tokens(line.credits);
+      if (Number.isNaN(credits)) unreadable += 1;
+      else slot.credits = (slot.credits ?? 0) + credits;
     } else {
       const price = priceOf(config, model);
       const usd =
-        ((line.in ?? 0) * price.input +
-          ((line.out ?? 0) + (line.reasoning ?? 0)) * price.output +
-          (line.cache_read ?? 0) * price.cache_read) /
+        (tokens(line.in) * price.input +
+          (tokens(line.out) + tokens(line.reasoning)) * price.output +
+          tokens(line.cache_read) * price.cache_read) /
         1e6;
-      slot.usd = (slot.usd ?? 0) + usd;
+      if (Number.isNaN(usd)) unreadable += 1;
+      else slot.usd = (slot.usd ?? 0) + usd;
     }
   }
-  return byModel;
+  const summary = Object.fromEntries(
+    [...byModel].map(([model, slots]) => [model, Object.fromEntries(slots)]),
+  );
+  return { byModel: summary, unreadable };
 }
 
 export function readGatewayUsage(root) {
@@ -451,6 +531,23 @@ export function workbuddyAccountUid(env = process.env) {
   }
 }
 
+const runningGateways = new Set();
+
+function killGateway(child) {
+  runningGateways.delete(child);
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {}
+}
+
+export function stopAllGateways() {
+  for (const child of [...runningGateways]) killGateway(child);
+}
+
+export function runningGatewayCount() {
+  return runningGateways.size;
+}
+
 export async function startGateway({
   install,
   config,
@@ -520,6 +617,7 @@ export async function startGateway({
       stdio: ["ignore", "ignore", "pipe"],
       detached: true,
     });
+    runningGateways.add(child);
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-4000);
@@ -532,9 +630,7 @@ export async function startGateway({
   };
   const stop = () => {
     if (!child) return;
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {}
+    killGateway(child);
     child = null;
   };
   return {

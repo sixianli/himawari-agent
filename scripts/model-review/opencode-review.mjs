@@ -32,6 +32,7 @@ import {
   postJson,
   readGatewayConfig,
   startGateway,
+  stopAllGateways,
   summarizeGatewayUsage,
   workbuddyAccountUid,
 } from "./gateway.mjs";
@@ -2184,6 +2185,8 @@ async function guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway }) {
       problems.push(`GUARD_PROBE_REQUESTS expected=${GUARD_PROBE_REQUESTS} got=${mainRequests()}`);
     else if (run.stopReason !== "request-limit")
       problems.push(`GUARD_PROBE_REASON ${run.stopReason}`);
+    if (gateway && !(summarizeEvents(run.stdout).usage.cost > 0))
+      problems.push("GATEWAY_COST_NOT_COUNTED");
     return problems;
   } finally {
     live?.stop();
@@ -2455,8 +2458,16 @@ export function parseArgs(argv) {
 }
 
 export function gatewayRecordFields(usage, config, model) {
-  if (usage === null) return { gateway: "magpie", providers: {}, costUnknown: true };
-  return { gateway: "magpie", providers: summarizeGatewayUsage(usage, config)[model] ?? {} };
+  const unknown = { gateway: "magpie", providers: {}, costUnknown: true };
+  if (usage === null) return unknown;
+  try {
+    const { byModel, unreadable } = summarizeGatewayUsage(usage, config);
+    const providers = byModel[model] ?? {};
+    if (!providersValid(providers)) return unknown;
+    return unreadable > 0 ? { ...unknown, providers } : { gateway: "magpie", providers };
+  } catch {
+    return unknown;
+  }
 }
 
 export function gatewayUsageLine(record) {
@@ -2467,9 +2478,15 @@ export function gatewayUsageLine(record) {
   return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}`;
 }
 
-async function startLiveGateway({ gateway, workRoot, records, models }) {
+export async function startLiveGateway({
+  gateway,
+  workRoot,
+  records,
+  models,
+  accountUid = () => workbuddyAccountUid(process.env),
+}) {
   const { config } = gateway;
-  const uid = workbuddyAccountUid(process.env);
+  const uid = accountUid();
   const withCredit = config.providers
     .map((provider) =>
       provider.signIn ? (uid ? { ...provider, signIn: { uid } } : null) : provider,
@@ -2531,7 +2548,9 @@ async function startLiveGateway({ gateway, workRoot, records, models }) {
       throw new Error(`GATEWAY_PREFLIGHT_FAILED missing=${missing.join(",") || listed.status}`);
   } catch (error) {
     live.stop();
-    throw error;
+    throw error.message.startsWith("GATEWAY_PREFLIGHT_FAILED")
+      ? error
+      : new Error(`GATEWAY_PREFLIGHT_FAILED ${error.message}`);
   }
   return { live, drop };
 }
@@ -2594,7 +2613,7 @@ async function main() {
       });
   const binary = opencodeBinary();
   const gateway = options.gateway
-    ? { install: installGateway(), config: readGatewayConfig() }
+    ? { install: installGateway(), config: readGatewayConfig(undefined, REVIEW_MODELS) }
     : null;
   if (gateway) {
     const changed = binaryProblem(gateway.install);
@@ -2602,9 +2621,8 @@ async function main() {
   }
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
-  let stopGateway = () => {};
   const cleanup = () => {
-    stopGateway();
+    stopAllGateways();
     for (const child of activeChildren) killProcessGroup(child, "SIGKILL");
     rmSync(workRoot, { recursive: true, force: true });
   };
@@ -2642,7 +2660,6 @@ async function main() {
         records,
         models: options.models,
       });
-      stopGateway = () => liveGateway.live.stop();
     }
     const routed = liveGateway
       ? { baseURL: liveGateway.live.baseURL, config: gateway.config }
