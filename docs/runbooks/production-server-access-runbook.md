@@ -173,14 +173,14 @@ Magpie（装在生产机上的模型路由程序，Himawari 经它调用模型�
 1. `~/.ssh/config` 里加一个 `Host magpie-prod`，写 `HostName 84.247.157.41`、`User root`、`LocalForward 127.0.0.1:3430 127.0.0.1:3430`、`ServerAliveInterval 30`、`ServerAliveCountMax 3`、`ExitOnForwardFailure yes`、`AddKeysToAgent yes`、`UseKeychain yes`。
 2. `~/Library/LaunchAgents/com.andy.magpie-tunnel.plist` 让 macOS 的 launchd（自动启动并看管后台程序的系统服务）在用户登录后运行 `/usr/bin/ssh -N -o BatchMode=yes magpie-prod`，`Label` 为 `com.andy.magpie-tunnel`，设 `RunAtLoad`、`KeepAlive` 为真，`ThrottleInterval` 为 15 秒；断线后自动重连。它是用户级的 LaunchAgent，Mac 开机后要用户登录才会运行。
 3. 启用：`launchctl load ~/Library/LaunchAgents/com.andy.magpie-tunnel.plist`；停用：`launchctl unload` 同一路径。看状态：`launchctl list | grep magpie-tunnel`，第一列是进程号，第二列是上次退出码。
-4. 验证：`curl -sS -o /dev/null -w '%{http_code}\n' --noproxy '*' http://127.0.0.1:3430/` 输出 `401`，表示请求已经到达生产机的管理页、只是还没登录；输出 `000` 表示隧道没通。
+4. 验证：`curl -sS -o /dev/null -w '%{http_code}\n' --noproxy '*' http://127.0.0.1:3430/` 输出 `401`，表示请求已经到达生产机的管理页、只是还没登录；输出 `000` 表示没拿到网页回应：隧道没通，或生产机上的 Magpie 没在运行。
 
-**登录**：在浏览器里打开一次 `http://127.0.0.1:3430/?k=<密码>`（密码含 `+`、`&`、`#`、`%` 时先做网址编码），跳转后地址栏不再带密码，再到浏览历史里删掉带 `k=` 的那一条（不要用无痕窗口，关窗后 cookie 就没了）；把这个不带密码的 `http://127.0.0.1:3430/` 存成书签。之后 cookie 有效期内直接点书签就能进；浏览器清了 cookie 时再用 `?k=` 登录一次。
+**登录**：在浏览器里打开一次 `http://127.0.0.1:3430/?k=<密码>`（密码不是纯字母数字时，先对整个密码做网址编码，例如 `python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' <密码>`），跳转后地址栏不再带密码，再到浏览历史里删掉带 `k=` 的那一条（不要用无痕窗口，关窗后 cookie 就没了）；把这个不带密码的 `http://127.0.0.1:3430/` 存成书签。之后 cookie 有效期内直接点书签就能进；浏览器清了 cookie 时再用 `?k=` 登录一次。浏览器的 cookie 按主机名区分、不按端口区分，这个 cookie 里就是生产密码，同一个浏览器打开任何 `http://127.0.0.1:<端口>/` 的页面都会把它发过去；所以生产管理页用一个单独的浏览器（或单独的浏览器用户），这个浏览器里不打开别的本机页面。
 
 注意：
 
 - 在管理页里改的路由组、账号或密钥立即影响线上对话，算生产配置变更，按[授权、上线和合并](../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)处理。路由组 `group/himawari-main` 改动的历史见 [ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md)，当前顺序以管理页显示的为准。
-- Hermes 测试环境的 Magpie 管理页也用 3430。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。浏览器的 cookie 按主机名区分、不按端口区分：连 Hermes 时用 `http://localhost:3430/` 登录，不要用 `127.0.0.1`，否则浏览器会把生产管理页的 cookie（里面就是生产密码）发给 Hermes 的 Magpie。
+- Hermes 测试环境的 Magpie 管理页也用 3430。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。Hermes 的管理页在平时用的浏览器里打开，不要在登过生产管理页的那个浏览器里打开，原因见上面的登录一段。
 - SSH 密钥设了口令时，后台的 `ssh` 无法弹窗输入，会每 15 秒重试一次、一直连不上；先运行一次 `ssh-add --apple-use-keychain <私钥文件>` 把口令存进钥匙串。
 
 [返回导航](#阅读导航)
