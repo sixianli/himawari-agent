@@ -137,6 +137,14 @@ describe("external egress registration", () => {
     expect(findEgressViolations(root)).toEqual([]);
   });
 
+  it("leaves nearby strings that are not external requests alone", () => {
+    const root = fixture({
+      "packages/application/src/ports/web-providers.ts":
+        'const recipient = "https://mcp.exa.ai"; const egress = ["mcp.exa.ai:443"]; const kind = "typesafe-systemone";',
+    });
+    expect(findEgressViolations(root)).toEqual([]);
+  });
+
   it("fails when an external service request appears in an unregistered file", () => {
     const root = fixture({
       "apps/agent-service/src/new-search.ts": 'await fetch("https://mcp.exa.ai/mcp", init);',
@@ -209,6 +217,38 @@ describe("sensitive gate registration", () => {
     expect(findSensitiveGateViolations(root, registry).join("\n")).toContain(
       "packages/application/src/services/model-egress.ts: 整段拦下的调用和登记不一致",
     );
+  });
+
+  it("counts optional calls and refuses renamed imports", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts":
+        "assertMachineSecretFree(text); scanMachineSecrets?.(text);",
+      "apps/agent-service/src/renamed.ts":
+        "import { containsToolOutputSecret as hasSecret } from '@himawari-agent/sensitive-capture';",
+    });
+    const report = findSensitiveGateViolations(root, registry).join("\n");
+    expect(report).toContain(
+      "packages/application/src/services/model-egress.ts: 整段拦下的调用和登记不一致",
+    );
+    expect(report).toContain(
+      "apps/agent-service/src/renamed.ts: 给整段拦下的函数 containsToolOutputSecret 起了别名",
+    );
+  });
+
+  it("refuses registry rows without a known decision, a reason or call counts", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts": "assertMachineSecretFree(text);",
+    });
+    const report = findSensitiveGateViolations(root, [
+      { ...registry[0], decision: "随便", reason: " ", calls: { assertMachineSecretFree: 1 } },
+    ]).join("\n");
+    expect(report).toContain("SENSITIVE_GATE_CALLS 的结论只能是");
+    expect(report).toContain("SENSITIVE_GATE_CALLS 要写明理由");
+    expect(
+      findSensitiveGateViolations(root, [
+        { ...registry[0], calls: { scanMachineSecrets: 0 } },
+      ]).join("\n"),
+    ).toContain("SENSITIVE_GATE_CALLS 的调用数要写成");
   });
 
   it("fails when a registered call is gone but the registry still lists it", () => {

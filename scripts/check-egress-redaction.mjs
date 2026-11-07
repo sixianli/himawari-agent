@@ -307,11 +307,40 @@ export function findEgressViolations(root = repositoryRoot) {
   return violations;
 }
 
+const GATE_NAMES = SENSITIVE_GATE_FUNCTIONS.join("|");
+const GATE_CALL = new RegExp(`\\b(${GATE_NAMES})\\s*(?:\\?\\.\\s*)?\\(`, "gu");
+const GATE_ALIAS = new RegExp(`\\b(${GATE_NAMES})\\s+as\\s+[A-Za-z_$][\\w$]*`, "gu");
+const GATE_DECISIONS = new Set([KEEP, MASK, PASS]);
+
 function gateCallCounts(text) {
   const counts = {};
-  const pattern = new RegExp(`\\b(${SENSITIVE_GATE_FUNCTIONS.join("|")})\\(`, "gu");
-  for (const match of text.matchAll(pattern)) counts[match[1]] = (counts[match[1]] ?? 0) + 1;
+  for (const match of text.matchAll(GATE_CALL)) counts[match[1]] = (counts[match[1]] ?? 0) + 1;
   return counts;
+}
+
+function registryViolations(registry) {
+  const violations = [];
+  for (const entry of registry) {
+    if (!GATE_DECISIONS.has(entry.decision))
+      violations.push(
+        `${entry.file}: SENSITIVE_GATE_CALLS 的结论只能是 ${[...GATE_DECISIONS].join("、")}`,
+      );
+    if (typeof entry.reason !== "string" || entry.reason.trim() === "")
+      violations.push(`${entry.file}: SENSITIVE_GATE_CALLS 要写明理由`);
+    const calls = entry.calls ?? {};
+    const names = Object.keys(calls);
+    if (
+      names.length === 0 ||
+      names.some(
+        (name) =>
+          !SENSITIVE_GATE_FUNCTIONS.includes(name) ||
+          !Number.isInteger(calls[name]) ||
+          calls[name] < 1,
+      )
+    )
+      violations.push(`${entry.file}: SENSITIVE_GATE_CALLS 的调用数要写成 { 函数名: 正整数 }`);
+  }
+  return violations;
 }
 
 function sameCounts(left, right) {
@@ -324,7 +353,7 @@ export function findSensitiveGateViolations(
   root = repositoryRoot,
   registry = SENSITIVE_GATE_CALLS,
 ) {
-  const violations = [];
+  const violations = registryViolations(registry);
   const registered = new Map(registry.map((entry) => [entry.file, entry]));
   const seen = new Set();
   for (const base of ["packages", "apps"]) {
@@ -338,7 +367,12 @@ export function findSensitiveGateViolations(
     for (const full of files) {
       const relative = path.relative(root, full).split(path.sep).join("/");
       if (!relative.includes("/src/") || relative.startsWith(SENSITIVE_RULE_PACKAGE)) continue;
-      const counts = gateCallCounts(readFileSync(full, "utf8"));
+      const text = readFileSync(full, "utf8");
+      for (const match of text.matchAll(GATE_ALIAS))
+        violations.push(
+          `${relative}: 给整段拦下的函数 ${match[1]} 起了别名，检查会数漏；请直接用原名调用`,
+        );
+      const counts = gateCallCounts(text);
       if (Object.keys(counts).length === 0) continue;
       seen.add(relative);
       const entry = registered.get(relative);
