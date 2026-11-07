@@ -34,6 +34,7 @@ MIGRATE_FIXTURE = 'maintenance/verify-migrate-fixtures.mjs'
 INSTALLED_PROBE = 'acceptance/cloud/adapters/probe-foreground.mjs'
 PRODUCTION_PROBE_RUNNER = 'acceptance/cloud/run-network-preparation.py'
 PI_TOOLS_VARIABLE = 'HIMAWARI_PACKET_PI_TOOLS'
+INSTALLED_PROBE_TIMEOUT_SECONDS = 900
 OLD_CONFIG_PENDING = "OLD_CONFIG_SHA = 'PENDING:s0.service.configurationSha256'\n"
 OLD_CONFIG_HOLDERS = ('systemd/S2-stop-and-inspect.py', 'maintenance/S9-control-files.py')
 
@@ -90,17 +91,19 @@ def installed_probe_problem(packet, stdout):
         return 'INSTALLED_PROBE_COUNT passed=' + json.dumps(report.get('passed')) + ' expected=' + str(expected)
     if report.get('qualification') is not False:
         return 'INSTALLED_PROBE_QUALIFICATION_ISSUED'
-    if not all(row.get('namespaceState') == 'released' for row in report.get('reports', [])):
+    rows = report.get('reports')
+    if not isinstance(rows, list) or len(rows) != expected:
+        return 'INSTALLED_PROBE_REPORT_ROWS expected=' + str(expected)
+    if not all(isinstance(row, dict) and row.get('namespaceState') == 'released' for row in rows):
         return 'INSTALLED_PROBE_NAMESPACE_NOT_RELEASED'
     return None
 
 
 def pi_tools(environment):
     directory = environment.get(PI_TOOLS_VARIABLE)
-    if not directory:
+    if not directory or not Path(directory).is_dir():
         return None
-    search = directory + ':/usr/bin:/bin'
-    found = {name: shutil.which(name, path=search) for name in ('bash', 'rg', 'fd')}
+    found = {'bash': shutil.which('bash', path='/usr/bin:/bin'), 'rg': shutil.which('rg', path='/usr/bin:/bin'), 'fd': shutil.which('fd', path=directory)}
     return found if all(found.values()) else None
 
 
@@ -124,7 +127,11 @@ def run_installed_probe(command, packet, source, environment, output, scratch):
     for name, found in tools.items():
         shutil.copy(found, binaries / name)
     probe_environment = {**environment, 'HOME': str(scratch), 'TMPDIR': str(scratch), 'HIMAWARI_TEST_TEMP_ROOT': str(scratch), 'HIMAWARI_LIVE_SANDBOX_PROBE': '1', 'HIMAWARI_PROBE_SCRATCH': str(scratch), 'HIMAWARI_PROBE_RUNTIME': str(runtime), 'NODE_PATH': '', 'NODE_OPTIONS': ''}
-    result = subprocess.run(command, cwd=scratch, env=probe_environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=output, check=False, umask=0o022)
+    try:
+        result = subprocess.run(command, cwd=scratch, env=probe_environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=output, check=False, umask=0o022, timeout=INSTALLED_PROBE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        output.write(b'INSTALLED_PROBE_TIMEOUT ' + str(INSTALLED_PROBE_TIMEOUT_SECONDS).encode() + b'\n')
+        return 1
     output.write(result.stdout)
     if result.returncode != 0:
         return result.returncode
