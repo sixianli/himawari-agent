@@ -74,6 +74,16 @@ describe("private key fragments", () => {
     expect(masked).not.toContain("A".repeat(1000));
   });
 
+  it("masks a later key tail after an earlier key was masked, also in JSON-escaped text", () => {
+    const whole = [marker("BEGIN"), ...body.slice(0, 2), marker("END")];
+    const tail = [...body.slice(3), marker("END")];
+    const text = [...whole, "between", ...tail, "after"].join("\n");
+    expect(redactPrivateKeyFragments(text)).toBe(`${MASK}\nbetween\n${MASK}\nafter`);
+    expect(redactPrivateKeyFragments(JSON.stringify(text))).toBe(
+      JSON.stringify(`${MASK}\nbetween\n${MASK}\nafter`),
+    );
+  });
+
   it("stays fast on many end markers that have no key before them", () => {
     const text = Array.from({ length: 40000 }, () => `${marker("END")} x`).join("\n");
     const started = performance.now();
