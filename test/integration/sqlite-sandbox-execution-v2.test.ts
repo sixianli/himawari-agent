@@ -6641,6 +6641,42 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
+  it.each([
+    ["SANDBOX_CPU_TIME_LIMIT", true],
+    ["SANDBOX_MEMORY_LIMIT", true],
+    ["SANDBOX_RESOURCE_LIMIT", true],
+    ["SANDBOX_OPERATION_FAILED", false],
+  ] as const)(
+    "[I-83] records the ceiling in force for this command only on a resource-limit failure (%s)",
+    async (reasonCode, carries) => {
+      const f = await openSandboxJournal();
+      try {
+        const { completion, receipt } = await completeFailedExecution(
+          f,
+          `-ceiling-${reasonCode}`,
+          carries
+            ? { ref: "command", version: "1", kind: "command" }
+            : { ref: "fixed-read", version: "1", kind: "fixed_read" },
+          carries ? { kind: "unknown", reasonCode } : { kind: "not_applicable" },
+          { reasonCode, termination: { type: "failure" } },
+        );
+        if (carries) {
+          expect(completion).toMatchObject({ resourceCeiling: f.plan.resourceCeiling });
+          expect(receipt).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ resourceCeiling: f.plan.resourceCeiling }),
+          );
+        } else {
+          expect(completion).not.toHaveProperty("resourceCeiling");
+          expect(receipt).toHaveBeenCalledExactlyOnceWith(
+            expect.not.objectContaining({ resourceCeiling: expect.anything() }),
+          );
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
   it("hands a failed read-only tool's own error output to the model", async () => {
     const f = await openSandboxJournal();
     try {
