@@ -46,6 +46,9 @@ describe("backend execution state", () => {
     ["SANDBOX_STRICT_MODE_UNAVAILABLE", "SANDBOX_STRICT_MODE_UNAVAILABLE"],
     ["FILE_WRITE_NOT_STARTED", "FILE_WRITE_NOT_STARTED"],
     ["SANDBOX_WRITE_EFFECT_UNVERIFIED", "SANDBOX_WRITE_EFFECT_UNVERIFIED"],
+    ["SANDBOX_CPU_TIME_LIMIT", "SANDBOX_CPU_TIME_LIMIT"],
+    ["SANDBOX_MEMORY_LIMIT", "SANDBOX_MEMORY_LIMIT"],
+    ["SANDBOX_RESOURCE_LIMIT", "SANDBOX_RESOURCE_LIMIT"],
     ["/private/host/token", "TOOL_FAILED"],
   ] as const)("projects only allowlisted tool failure reasons (%s)", (reason, expected) => {
     const state = projectThreadExecutionState(

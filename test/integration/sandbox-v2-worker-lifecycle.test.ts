@@ -27,6 +27,7 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
 import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
 import {
+  isSandboxBoundedToolFailure,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
@@ -80,6 +81,8 @@ it.each([
   "stream-authority-revoked",
   "stream-environment-changed",
   "stream-repeated-race",
+  "[I-83] resource-limit",
+  "[I-83] resource-limit-unobserved",
 ] as const)("v2 lifecycle: %s", async (scenario) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
@@ -96,6 +99,8 @@ it.each([
   const preBindContainer = scenario === "[R2-P2] bind-pre-failure-container";
   const preBind = preBindResident || preBindContainer;
   const startPending = scenario === "[R2-D26] start-pending";
+  const resourceLimit = scenario.startsWith("[I-83] resource-limit");
+  const resourceLimitObserved = scenario === "[I-83] resource-limit";
   let pendingObservations = 0;
   let streamAttempts = 0;
   const streamChunks = new Map<number, unknown>();
@@ -136,7 +141,7 @@ it.each([
                 }
               : { kind: "task_start" as const, ref: "task", version: "1" },
           }
-        : scenario === "command" || scenario === "network"
+        : scenario === "command" || scenario === "network" || resourceLimit
           ? {
               ...admitted.plan,
               operationContract: {
@@ -193,6 +198,26 @@ it.each([
         scenario === "finished-during-check"
       )
         return;
+      if (resourceLimit) {
+        resolveResult({
+          stdout: new TextEncoder().encode("result"),
+          taskStarted: true,
+          taskProcessExited: true,
+          exitCode: null,
+          stdioClosed: true,
+          reason: "resource_limit",
+          ...(resourceLimitObserved
+            ? {
+                resources: {
+                  samples: 2,
+                  observedCpuTimeMs: plan.resourceCeiling.maxCpuTimeMs + 1,
+                  peakObservedMemoryBytes: 1,
+                },
+              }
+            : {}),
+        });
+        return;
+      }
       resolveResult({
         stdout: new TextEncoder().encode("result"),
         taskStarted: true,
@@ -738,6 +763,7 @@ it.each([
     scenario === "normal" ||
       scenario === "command" ||
       scenario === "network" ||
+      resourceLimit ||
       validPi ||
       scenario === "finished-during-check" ||
       scenario === "revoked-running"
@@ -747,6 +773,13 @@ it.each([
   if (scenario === "normal" || validPi) expect(facts.effect).toEqual({ kind: "not_applicable" });
   if (scenario === "command" || scenario === "network")
     expect(facts.effect).toEqual({ kind: "not_asserted" });
+  if (resourceLimit) {
+    const reasonCode = resourceLimitObserved ? "SANDBOX_CPU_TIME_LIMIT" : "SANDBOX_RESOURCE_LIMIT";
+    expect(facts.result).toMatchObject({ kind: "error", reasonCode, output: { ref: "output" } });
+    expect(facts.result).not.toMatchObject({ kind: "unknown" });
+    expect(facts.effect).toEqual({ kind: "unknown", reasonCode });
+    expect(isSandboxBoundedToolFailure(facts.result)).toBe(true);
+  }
   if (scenario === "finished-during-check") {
     expect(calls).not.toContain("observe_control");
     expect(calls).toContain("append");

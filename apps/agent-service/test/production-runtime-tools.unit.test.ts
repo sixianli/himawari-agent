@@ -472,7 +472,7 @@ describe("ProductionRuntimeTools", () => {
     ["SANDBOX_MEMORY_LIMIT", "内存"],
     ["SANDBOX_RESOURCE_LIMIT", "资源"],
   ] as const)(
-    "[I-81] tells the model which resource limit stopped the command and what that limit is (%s)",
+    "[I-83] tells the model which resource limit stopped the command and what that limit is (%s)",
     async (errorCode, limitName) => {
       const f = fixture();
       const completeSandboxToolResult = vi.fn<
@@ -488,14 +488,18 @@ describe("ProductionRuntimeTools", () => {
         await delivery.saveReceipt(completion);
         return completion;
       });
-      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      const ceiling = { ...f.options.ceiling, maxCpuTimeMs: 12_500, maxMemoryBytes: 268_435_456 };
+      const tool = new ProductionRuntimeTools({ ...f.options, ceiling, completeSandboxToolResult });
       await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
 
       const result = await tool.execute(invocation);
       expect(result).toMatchObject({ dispatchState: "accepted", outcome: "failed", errorCode });
       expect(result.modelContent).toContain(limitName);
-      expect(result.modelContent).toContain(`${f.options.ceiling.maxCpuTimeMs / 1000} 秒`);
-      expect(result.modelContent).toContain(`${f.options.ceiling.maxMemoryBytes / 1_000_000} MB`);
+      expect(result.modelContent).toContain("CPU 时间 12.5 秒");
+      expect(result.modelContent).toContain("内存 268.4 MB");
+      expect(result.modelContent).not.toContain(
+        `${f.options.ceiling.maxCpuTimeMs / 1000} 秒、内存 ${f.options.ceiling.maxMemoryBytes / 1_000_000} MB`,
+      );
       expect(result.modelContent).not.toBe("操作未确认成功。");
     },
   );

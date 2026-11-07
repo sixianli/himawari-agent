@@ -4,7 +4,10 @@ import type {
   SandboxOperationResult,
 } from "@himawari-agent/execution-contracts";
 import { describe, expect, it } from "vitest";
-import { sandboxCommandEffectReason } from "../src/production-sandbox-tool-result.js";
+import {
+  sandboxCommandEffectReason,
+  sandboxFailureKeepsOutput,
+} from "../src/production-sandbox-tool-result.js";
 
 const identity = {
   jobId: "job",
@@ -111,5 +114,37 @@ describe("sandbox command effect reason", () => {
         effectKind: "unknown",
       }),
     ).toBeNull();
+  });
+});
+
+describe("sandbox failure output retention", () => {
+  it.each(["SANDBOX_CPU_TIME_LIMIT", "SANDBOX_MEMORY_LIMIT", "SANDBOX_RESOURCE_LIMIT"] as const)(
+    "[I-83] drops the partial output of a fixed read stopped by a resource limit so the model gets the explicit failure (%s)",
+    (reasonCode) => {
+      expect(
+        sandboxFailureKeepsOutput({
+          operationKind: "fixed_read",
+          reasonCode,
+          hostResultRejected: false,
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it("[I-83] keeps the output of an ordinary fixed read failure", () => {
+    expect(
+      sandboxFailureKeepsOutput({
+        operationKind: "fixed_read",
+        reasonCode: "FILE_READ_FAILED",
+        hostResultRejected: false,
+      }),
+    ).toBe(true);
+    expect(
+      sandboxFailureKeepsOutput({
+        operationKind: "command",
+        reasonCode: "FILE_VERSION_CONFLICT",
+        hostResultRejected: false,
+      }),
+    ).toBe(true);
   });
 });

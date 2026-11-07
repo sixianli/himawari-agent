@@ -28,6 +28,8 @@ import {
   type SandboxExecutionFacts,
   type SandboxOperationContract,
   SANDBOX_EXECUTION_BACKEND_REFS,
+  SANDBOX_TOOL_RESULT_UNRECOVERABLE,
+  sandboxUnrecoverableResultOperationKey,
   SRT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   sandboxExecutionFactsSchema,
@@ -4494,6 +4496,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "unknown-released",
     "lost-candidate",
     "stream-candidate",
+    "stream-candidate-unrecoverable",
     "cancelled",
   ] as const)(
     "discovers a known sandbox result for a stranded Run without executable replay: %s",
@@ -4501,7 +4504,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       const f = await openSandboxJournal();
       try {
         let record = start(f);
-        if (!["unknown-released", "lost-candidate", "stream-candidate"].includes(scenario))
+        if (
+          !["unknown-released", "lost-candidate", "stream-candidate"].includes(scenario) &&
+          scenario !== "stream-candidate-unrecoverable"
+        )
           record = append(f, record, result(f, record), true);
         record = append(f, record, resource(record, "stopping"));
         if (scenario !== "known-unreleased")
@@ -4536,7 +4542,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           now: () => T1,
         });
         try {
-          if (scenario === "stream-candidate") {
+          if (scenario.startsWith("stream-candidate")) {
             const { createProductionSandboxStream } = await import(
               "../../apps/agent-service/src/production-sandbox-stream.ts"
             );
@@ -4557,6 +4563,25 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               end: true,
               termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
             });
+            if (scenario === "stream-candidate-unrecoverable") {
+              const payload = await f.protector.protect({
+                ownerId: OWNER_ID,
+                agentId: AGENT_ID,
+                ref: "discovery-unrecoverable",
+                dataClassification: "public",
+                contentType: "text/plain",
+                plaintext: Buffer.from(SANDBOX_TOOL_RESULT_UNRECOVERABLE),
+                createdAt: T1,
+              });
+              await reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority).commit({
+                runId,
+                purpose: "trace",
+                operationKey: sandboxUnrecoverableResultOperationKey(
+                  record.plan.identity.invocationId,
+                ),
+                payload,
+              });
+            }
           }
           const dispatch = reopened.runDispatch(
             OWNER_ID,
@@ -5259,6 +5284,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "late",
     "loss-stale-handle",
     "loss-unverified",
+    "loss-unrecoverable",
     "loss-coding",
     "loss-cancelled",
     "loss-expired",
@@ -5358,6 +5384,21 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       );
       const probes: string[] = [];
       const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
+      let streamSequence = 0;
+      const recoveryStream = async () => {
+        const { createProductionSandboxStream } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream.ts"
+        );
+        return createProductionSandboxStream({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          payloads,
+          protector: f.protector,
+          artifacts: () => repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority),
+          clock: { now: () => now },
+          ids: { next: () => `recovery-stream-${++streamSequence}` },
+        });
+      };
       let record: SandboxExecutionRecord | undefined;
       let reservation: Extract<SandboxExecutionAdmissionRecord, { phase: "reserved" }> | undefined;
       let calls = 0;
@@ -5663,6 +5704,12 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         };
         return createProductionRunComposition({
           egress: testModelEgress(),
+          sandboxResultUnrecoverable: async (current: SandboxExecutionRecord) => {
+            const { sandboxStreamResultUnrecoverable } = await import(
+              "../../apps/agent-service/src/production-sandbox-stream.ts"
+            );
+            return sandboxStreamResultUnrecoverable(await recoveryStream(), current);
+          },
           ...(lost
             ? {
                 recoverMissingToolResult: async (current: SandboxExecutionRecord) => {
@@ -5674,7 +5721,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                     authority: () => authority,
                     now: clock.now,
                     recoverableBackend: async (value) => value.plan.backendRef === "srt",
-                    verifyExited: async () => variant !== "unverified",
+                    verifyExited: async () => !["unverified", "unrecoverable"].includes(variant),
                     verifyFresh: async (value) => {
                       const proof = context(value, value.facts).verification;
                       if (!proof) throw new Error("Fixture proof missing");
@@ -5715,7 +5762,9 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             agentId: AGENT_ID,
             concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
             deadlines: {
-              runMs: variant === "unverified" ? Date.parse(T2) - Date.parse(T1) : 120000,
+              runMs: ["unverified", "unrecoverable"].includes(variant)
+                ? Date.parse(T2) - Date.parse(T1)
+                : 120000,
               workerRequestMs: 10000,
               providerRequestMs: 10000,
             },
@@ -6032,6 +6081,16 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(originalHandle).toMatchObject({ authorityFence: 1 });
           expect(authority.product.fencingToken).toBe(2);
         }
+        if (variant === "unrecoverable") {
+          if (!record) throw new Error("Unrecoverable fixture record missing");
+          await (await recoveryStream()).append(record, {
+            index: 0,
+            offset: 0,
+            bytesBase64: Buffer.from("部分输出").toString("base64"),
+            end: true,
+            termination: { exitCode: null, reasonCode: "resource_limit", taskProcessExited: true },
+          });
+        }
         const outcomes = ["competing", "coding-competing"].includes(variant)
           ? await Promise.all([
               make("first-recovery").dispatcher.pump(),
@@ -6058,34 +6117,35 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(request).not.toHaveBeenCalled();
           return;
         }
-        if (variant === "unverified") {
-          expect(outcomes[0]).toMatchObject({ claimed: 0, settled: 0 });
-          expect(
+        if (["unverified", "unrecoverable"].includes(variant)) {
+          const decisive = variant === "unrecoverable";
+          const status = async () =>
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status;
+          const markers = () =>
             f.database
               .prepare(
                 "SELECT COUNT(*) AS count FROM run_payload_artifacts WHERE run_id=? AND purpose='trace' AND operation_key LIKE 'sandbox-tool-result-unrecoverable:%'",
               )
-              .get(runId),
-          ).toEqual({ count: 1 });
-          expect(
-            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
-              ?.run.status,
-          ).toBe("reconciling_external_result");
+              .get(runId);
+          expect(outcomes[0]).toMatchObject({ claimed: 0, settled: 0 });
+          expect(markers()).toEqual({ count: decisive ? 1 : 0 });
+          expect(await status()).toBe("reconciling_external_result");
           expect(await make("settling-consumer").dispatcher.pump()).toMatchObject({
-            reconciled: 1,
+            reconciled: decisive ? 1 : 0,
             claimed: 0,
           });
-          expect(
-            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
-              ?.run.status,
-          ).toBe("failed");
+          expect(await status()).toBe(decisive ? "failed" : "reconciling_external_result");
           expect(
             f.database
               .prepare(
                 "SELECT phase AS phase,diagnostic_code AS code FROM run_coordination_checkpoints WHERE run_id=?",
               )
               .get(runId),
-          ).toEqual({ phase: "failed", code: "RUNTIME_TOOL_RESULT_UNKNOWN" });
+          ).toEqual({
+            phase: decisive ? "failed" : "reconciling_external_result",
+            code: "RUNTIME_TOOL_RESULT_UNKNOWN",
+          });
           expect(request).not.toHaveBeenCalled();
           return;
         }

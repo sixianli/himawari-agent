@@ -259,6 +259,13 @@ export const SANDBOX_WRITE_EFFECT_UNVERIFIED = "SANDBOX_WRITE_EFFECT_UNVERIFIED"
 export const SANDBOX_CPU_TIME_LIMIT = "SANDBOX_CPU_TIME_LIMIT";
 export const SANDBOX_MEMORY_LIMIT = "SANDBOX_MEMORY_LIMIT";
 export const SANDBOX_RESOURCE_LIMIT = "SANDBOX_RESOURCE_LIMIT";
+export function isSandboxResourceLimitReason(reasonCode: string) {
+  return (
+    reasonCode === SANDBOX_CPU_TIME_LIMIT ||
+    reasonCode === SANDBOX_MEMORY_LIMIT ||
+    reasonCode === SANDBOX_RESOURCE_LIMIT
+  );
+}
 export function sandboxResourceLimitReason(
   ceiling: { readonly maxCpuTimeMs: number; readonly maxMemoryBytes: number },
   observed: {
@@ -273,6 +280,15 @@ export function sandboxResourceLimitReason(
 }
 export const sandboxLostResultOperationKey = (invocationId: string) =>
   `sandbox-tool-result-lost:${invocationId}`;
+export const SANDBOX_UNRECOVERABLE_TERMINATION_REASONS = [
+  "cancelled",
+  "output_limit",
+  "resource_limit",
+  "host_failure",
+] as const;
+export function isSandboxUnrecoverableTermination(reasonCode: string) {
+  return (SANDBOX_UNRECOVERABLE_TERMINATION_REASONS as readonly string[]).includes(reasonCode);
+}
 export const SANDBOX_TOOL_RESULT_UNRECOVERABLE = "SANDBOX_TOOL_RESULT_UNRECOVERABLE";
 export const sandboxUnrecoverableResultOperationKey = (invocationId: string) =>
   `sandbox-tool-result-unrecoverable:${invocationId}`;

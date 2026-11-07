@@ -97,6 +97,7 @@ export interface ProductionRunCompositionOptions {
   readonly recoverMissingToolResult?: (
     record: SandboxExecutionRecord,
   ) => Promise<SandboxExecutionRecord>;
+  readonly sandboxResultUnrecoverable?: (record: SandboxExecutionRecord) => Promise<boolean>;
   readonly resources?: {
     recoverPending?(signal: AbortSignal, maximum: number): Promise<void>;
     stopRun(
@@ -313,6 +314,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const prepareToolResultRecovery = createProductionToolResultRecovery({
     ...(options.recoverMissingToolResult
       ? { recoverMissingResult: options.recoverMissingToolResult }
+      : {}),
+    ...(options.sandboxResultUnrecoverable
+      ? { resultUnrecoverable: options.sandboxResultUnrecoverable }
       : {}),
     ownerId,
     agentId,

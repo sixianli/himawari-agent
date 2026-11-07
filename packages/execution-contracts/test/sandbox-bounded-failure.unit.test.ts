@@ -118,7 +118,7 @@ describe("sandboxFileOperationFailureReason", () => {
 describe("sandboxResourceLimitReason", () => {
   const ceiling = { maxCpuTimeMs: 1000, maxMemoryBytes: 2000 };
 
-  it("[I-81] names the limit the command crossed", () => {
+  it("[I-83] names the limit the command crossed", () => {
     expect(
       sandboxResourceLimitReason(ceiling, { observedCpuTimeMs: 1001, peakObservedMemoryBytes: 10 }),
     ).toBe(SANDBOX_CPU_TIME_LIMIT);
@@ -127,7 +127,7 @@ describe("sandboxResourceLimitReason", () => {
     ).toBe(SANDBOX_MEMORY_LIMIT);
   });
 
-  it("[I-81] falls back to the unnamed limit when the observation is missing or within both limits", () => {
+  it("[I-83] falls back to the unnamed limit when the observation is missing or within both limits", () => {
     expect(sandboxResourceLimitReason(ceiling, null)).toBe(SANDBOX_RESOURCE_LIMIT);
     expect(
       sandboxResourceLimitReason(ceiling, {
@@ -137,7 +137,7 @@ describe("sandboxResourceLimitReason", () => {
     ).toBe(SANDBOX_RESOURCE_LIMIT);
   });
 
-  it("[I-81] bounds every resource-limit failure so the turn does not wait for reconciliation", () => {
+  it("[I-83] bounds every resource-limit failure so the turn does not wait for reconciliation", () => {
     for (const reasonCode of [SANDBOX_CPU_TIME_LIMIT, SANDBOX_MEMORY_LIMIT, SANDBOX_RESOURCE_LIMIT])
       expect(isSandboxBoundedToolFailure(failure(reasonCode))).toBe(true);
     expect(

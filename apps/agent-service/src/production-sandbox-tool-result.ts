@@ -18,6 +18,7 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import {
   FILE_WRITE_NOT_STARTED,
+  isSandboxResourceLimitReason,
   isSandboxToolResultLost,
   SANDBOX_CPU_TIME_LIMIT,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
@@ -124,6 +125,21 @@ export {
 
 const limitAmount = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
 
+export function sandboxFailureKeepsOutput(input: {
+  readonly operationKind: SandboxOperationContract["kind"];
+  readonly reasonCode: string;
+  readonly hostResultRejected: boolean;
+}) {
+  return (
+    !input.hostResultRejected &&
+    input.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
+    input.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
+    !isSandboxResourceLimitReason(input.reasonCode) &&
+    (input.reasonCode === "FILE_VERSION_CONFLICT" ||
+      input.reasonCode === FILE_WRITE_NOT_STARTED ||
+      input.operationKind === "fixed_read")
+  );
+}
 export function sandboxResourceLimitMessage(
   reasonCode: string,
   ceiling: { readonly maxCpuTimeMs: number; readonly maxMemoryBytes: number },
@@ -342,12 +358,11 @@ export function createProductionSandboxToolResult(options: {
               outputRef:
                 processExitCode !== undefined ||
                 (result.kind === "error" &&
-                  !hostResultRejected &&
-                  result.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
-                  result.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
-                  (result.reasonCode === "FILE_VERSION_CONFLICT" ||
-                    result.reasonCode === FILE_WRITE_NOT_STARTED ||
-                    plan.operationContract.kind === "fixed_read"))
+                  sandboxFailureKeepsOutput({
+                    operationKind: plan.operationContract.kind,
+                    reasonCode: result.reasonCode,
+                    hostResultRejected,
+                  }))
                   ? result.output.ref
                   : null,
               errorCode:

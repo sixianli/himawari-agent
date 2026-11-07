@@ -3,6 +3,7 @@ import type { RunPayloadArtifactPort, SandboxExecutionRecord } from "@himawari-a
 import {
   type SandboxOutputChunk,
   type SandboxResourceOutputQuery,
+  isSandboxUnrecoverableTermination,
   sandboxOutputChunkSchema,
   sandboxResourceOutputPageSchema,
   sandboxResourceOutputQuerySchema,
@@ -10,6 +11,16 @@ import {
 import type { createProductionSandboxOutput } from "./production-sandbox-output.js";
 
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+export async function sandboxStreamResultUnrecoverable(
+  stream: {
+    termination: (record: SandboxExecutionRecord) => Promise<{ reasonCode: string } | null>;
+  },
+  record: SandboxExecutionRecord,
+) {
+  if (record.plan.mode !== "foreground" || record.workspaceBlocked) return false;
+  const termination = await stream.termination(record);
+  return termination !== null && isSandboxUnrecoverableTermination(termination.reasonCode);
+}
 const key = (value: unknown) => hash(Buffer.from(JSON.stringify(value)));
 /** Immutable, contiguous protected chunks. Polling an issued cursor performs only
  * artifact reads; neither process liveness nor execution authority comes from it. */
@@ -85,9 +96,7 @@ export function createProductionSandboxStream(
       const terminal = sandboxOutputChunkSchema.parse(saved.value);
       const unrecoverable =
         terminal.termination !== undefined &&
-        ["cancelled", "output_limit", "resource_limit", "host_failure"].includes(
-          terminal.termination.reasonCode,
-        );
+        isSandboxUnrecoverableTermination(terminal.termination.reasonCode);
       if (
         !terminal.end ||
         !terminal.termination ||

@@ -932,6 +932,9 @@ describe.each([
   "SANDBOX_TOOL_DEADLINE_EXCEEDED",
   "SANDBOX_TOOL_NOT_STARTED",
   "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+  "SANDBOX_CPU_TIME_LIMIT",
+  "SANDBOX_MEMORY_LIMIT",
+  "SANDBOX_RESOURCE_LIMIT",
 ])("bounded failure disclosure %s", (reasonCode) => {
   it.each(["read", "write", "shell"] as const)(
     "delivers a bounded %s failure without inventing its effects",

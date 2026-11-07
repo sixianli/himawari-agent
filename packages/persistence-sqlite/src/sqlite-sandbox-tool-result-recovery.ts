@@ -1,3 +1,4 @@
+import { sandboxUnrecoverableResultOperationKey } from "@himawari-agent/execution-contracts";
 import { RUN_RESOURCES_RELEASED_SQL } from "./sqlite-run-resource-guard.ts";
 import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "./sqlite-sandbox-reservation-never-started.ts";
 
@@ -19,7 +20,7 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
             AND NOT EXISTS (SELECT 1 FROM run_payload_artifacts attempted
               WHERE attempted.owner_id=r.owner_id AND attempted.agent_id=r.agent_id AND attempted.run_id=r.id
                 AND attempted.purpose='trace'
-                AND attempted.operation_key='sandbox-tool-result-unrecoverable:'
+                AND attempted.operation_key='${sandboxUnrecoverableResultOperationKey("")}'
                   ||json_extract(result.plan_json,'$.identity.invocationId'))
             AND EXISTS (SELECT 1 FROM sandbox_release_receipts released WHERE released.job_id=result.job_id AND released.accepted_at<=@resourceNow)
             AND (EXISTS (SELECT 1 FROM run_payload_artifacts stream

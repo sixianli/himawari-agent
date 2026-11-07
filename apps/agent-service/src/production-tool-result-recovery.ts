@@ -46,6 +46,7 @@ export function createProductionToolResultRecovery(options: {
   readonly recoverMissingResult?: (
     record: SandboxExecutionRecord,
   ) => Promise<SandboxExecutionRecord>;
+  readonly resultUnrecoverable?: (record: SandboxExecutionRecord) => Promise<boolean>;
 }) {
   const { ownerId, agentId, repository, artifacts, checkpoints, protector, clock } = options;
   const payloads = repository.payloadStore(ownerId, agentId);
@@ -154,11 +155,15 @@ export function createProductionToolResultRecovery(options: {
         admission = { ...admission, record: await options.recoverMissingResult(admission.record) };
       }
       if (
+        saved.checkpoint.diagnosticCode === "RUNTIME_TOOL_RESULT_UNKNOWN" &&
+        options.resultUnrecoverable &&
         admission.phase === "bound" &&
         admission.record.plan.mode === "foreground" &&
         admission.record.releaseReceipt &&
+        !admission.record.workspaceBlocked &&
         admission.record.facts.resource.supervision === "released" &&
-        !["result", "error"].includes(admission.record.facts.result?.kind ?? "")
+        !["result", "error"].includes(admission.record.facts.result?.kind ?? "") &&
+        (await options.resultUnrecoverable(admission.record))
       )
         await markUnrecoverable(candidate.runId, admission.record);
       const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;

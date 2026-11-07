@@ -2100,6 +2100,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       };
     } else {
       const commandEffectUnverified = completion.errorCode === "SANDBOX_COMMAND_EFFECT_UNVERIFIED";
+      const resourceLimitNotice = sandboxResourceLimitMessage(completion.errorCode ?? "", ceiling);
       if (
         commandEffectUnverified &&
         completion.outputRef &&
@@ -2142,8 +2143,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             ? `${SANDBOX_TOOL_RESULT_LOST}：${SANDBOX_TOOL_RESULT_LOST_MESSAGE}`
             : completion.errorCode === SANDBOX_TOOL_DEADLINE_EXCEEDED
               ? `${SANDBOX_TOOL_DEADLINE_EXCEEDED}：${SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE}`
-              : sandboxResourceLimitMessage(completion.errorCode ?? "", ceiling)
-                ? (sandboxResourceLimitMessage(completion.errorCode ?? "", ceiling) as string)
+              : resourceLimitNotice
+                ? resourceLimitNotice
                 : completion.errorCode === SANDBOX_HOST_COMPLETION_CONTRADICTED
                   ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
                   : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
