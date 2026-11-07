@@ -21,7 +21,6 @@ import {
 import {
   type ProactiveBodyLimits,
   ProactiveMailCheckService,
-  type ProactiveMailCheckOptions,
   type ProactiveModelInvoker,
 } from "./proactive-mail-check-service.js";
 
@@ -47,7 +46,6 @@ export interface ProactiveReplayOptions {
   readonly ids: IdGeneratorPort;
   readonly outputTokenLimit?: number;
   readonly bodyLimits?: Partial<ProactiveBodyLimits>;
-  readonly onMasked?: ProactiveMailCheckOptions["onMasked"];
 }
 
 export interface ProactiveReplayRequest {
@@ -107,6 +105,8 @@ function isolatedStore(
 
 export class ProactiveReplayService {
   readonly #options: ProactiveReplayOptions;
+  #cancelled = false;
+  #active: Promise<void> | undefined;
 
   constructor(options: ProactiveReplayOptions) {
     this.#options = options;
@@ -117,6 +117,16 @@ export class ProactiveReplayService {
       ...this.#options.scope,
       now: this.#options.clock.now(),
     });
+  }
+
+  async cancel(): Promise<void> {
+    this.#cancelled = true;
+    await this.#active;
+  }
+
+  async deleteRun(runId: string): Promise<void> {
+    const refs = await this.#options.replays.deleteRun({ ...this.#options.scope, runId });
+    if (refs.length > 0) await this.#options.seal.release({ ...this.#options.scope, refs });
   }
 
   readRun(runId: string) {
@@ -149,6 +159,7 @@ export class ProactiveReplayService {
         PORT_ERROR_CODES.INVALID_OPERATION,
         PROACTIVE_REPLAY_ERROR_CODES.NOT_CONNECTED,
       );
+    this.#cancelled = false;
     const runId = ids.next("proactive-replay");
     const started = await replays.startRun({
       ...scope,
@@ -176,6 +187,7 @@ export class ProactiveReplayService {
         })
         .catch(() => undefined);
     });
+    this.#active = done;
     return { runId, done };
   }
 
@@ -185,7 +197,7 @@ export class ProactiveReplayService {
     request: ProactiveReplayRequest,
   ): Promise<void> {
     const { scope, store, replays, seal, history, clock } = this.#options;
-    const finish = (status: "finished" | "failed", reasonCode: string) =>
+    const finish = (status: "finished" | "failed" | "interrupted", reasonCode: string) =>
       replays.finishRun({ ...scope, runId, status, reasonCode, now: clock.now() });
     const token = await seal.open({ ...scope, ref: connection.tokenRef });
     if (!token) return finish("failed", "SOURCE_TOKEN_MISSING");
@@ -210,7 +222,11 @@ export class ProactiveReplayService {
         .catch(() => ({ kind: "failed" as const, step: "message" }));
       if (read.kind === "unauthorized") return finish("failed", "SOURCE_UNAUTHORIZED");
       if (read.kind === "failed") return finish("failed", this.#readCode(read.step));
-      for (const item of read.items) {
+      const inRange = read.items.filter(
+        ({ receivedAt }) => receivedAt >= request.from && receivedAt < request.to,
+      );
+      for (const item of inRange) {
+        if (this.#cancelled) return finish("interrupted", "SERVICE_STOPPING");
         const captured: Captured = { record: undefined };
         const decision = await this.#judge(
           item,
@@ -235,7 +251,13 @@ export class ProactiveReplayService {
         }
         spent += decision.costMicros;
         const result = this.#result(item, decision, record);
-        if (!(await replays.recordResult({ ...scope, runId, result }))) {
+        const stored = await replays
+          .recordResult({ ...scope, runId, result })
+          .catch(async (error: unknown) => {
+            await this.#releaseSealed(record);
+            throw error;
+          });
+        if (!stored) {
           await this.#releaseSealed(record);
           return;
         }
@@ -278,7 +300,6 @@ export class ProactiveReplayService {
         ? {}
         : { outputTokenLimit: options.outputTokenLimit }),
       ...(options.bodyLimits ? { bodyLimits: options.bodyLimits } : {}),
-      ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
     return service.run().then((decision) => {
       if (!decision) throw new Error("PROACTIVE_REPLAY_NOT_RUN");

@@ -207,7 +207,6 @@ export class ProductionProactive {
               perMail: options.configuration.bodyCharactersPerMail,
               perBatch: options.configuration.bodyCharactersPerBatch,
             },
-            ...(options.onMasked ? { onMasked: options.onMasked } : {}),
           })
         : undefined;
   }
@@ -223,6 +222,7 @@ export class ProductionProactive {
   async stop(): Promise<void> {
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = undefined;
+    await this.#replay?.cancel();
     await this.#running;
   }
 

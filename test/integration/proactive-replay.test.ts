@@ -10,6 +10,7 @@ import {
   ProactiveReplayService,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import { gatewayV2MessageSchema, type GatewayV2Command } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -22,6 +23,7 @@ import {
   ManualClock,
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionProactive } from "../../apps/agent-service/src/production-proactive.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-proactive-replay");
@@ -68,7 +70,8 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(options: { failAfter?: number } = {}) {
+  async function setup(options: { failAfter?: number; mails?: ProactiveSourceItem[] } = {}) {
+    const mails = options.mails ?? MAILS;
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-replay-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -209,12 +212,12 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
       source: "gmail",
       async list(input) {
         listed.push({ from: input.from, to: input.to, limit: input.limit });
-        return { kind: "ids", ids: MAILS.map(({ messageId }) => messageId).slice(0, input.limit) };
+        return { kind: "ids", ids: mails.map(({ messageId }) => messageId).slice(0, input.limit) };
       },
       async read({ messageIds }) {
         return {
           kind: "items",
-          items: MAILS.filter(({ messageId }) => messageIds.includes(messageId)),
+          items: mails.filter(({ messageId }) => messageIds.includes(messageId)),
         };
       },
     };
@@ -232,7 +235,20 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
       ids,
     });
     const count = (table: string) => (repository as unknown as { count?: never }).count ?? table;
-    return { service, replays, store, prompts, listed, repository, payloadStore, count, clock };
+    return {
+      service,
+      replays,
+      store,
+      seal,
+      prompts,
+      listed,
+      repository,
+      payloadStore,
+      count,
+      clock,
+      model,
+      history,
+    };
   }
 
   async function results(h: Awaited<ReturnType<typeof setup>>, runId: string) {
@@ -392,5 +408,164 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
     const released = await h.store.clearRecords(scope);
     expect(released).toContain(only?.contentRef);
     expect(await h.replays.readRun({ ...scope, runId })).toBeUndefined();
+  });
+
+  it("drops mail outside the asked range even if the source returns it", async () => {
+    const h = await setup({
+      mails: [
+        mail("m-in", "範囲内", "2025-11-10T00:00:00.000Z"),
+        mail("m-before", "範囲外の前", "2025-10-31T23:59:59.000Z"),
+        mail("m-after", "範囲外の後", "2025-12-01T00:00:00.000Z"),
+      ],
+    });
+    const { runId, done } = await h.service.start({
+      from: FROM,
+      to: TO,
+      mailLimit: 10,
+      budgetMicros: 100_000,
+    });
+    await done;
+    expect((await results(h, runId)).map(({ messageId }) => messageId)).toEqual(["m-in"]);
+  });
+
+  it("releases the sealed text when the stored result cannot be written", async () => {
+    const h = await setup({
+      mails: [mail("m-bill", "請求書 11/5 まで", "2025-11-03T00:00:00.000Z")],
+    });
+    const released: string[] = [];
+    const release = h.seal.release.bind(h.seal);
+    const failing = new ProactiveReplayService({
+      scope,
+      store: h.store,
+      replays: { ...h.replays, recordResult: async () => Promise.reject(new Error("DISK_FULL")) },
+      seal: {
+        ...h.seal,
+        release: async (input) => {
+          released.push(...input.refs);
+          await release(input);
+        },
+      },
+      history: h.history,
+      model: h.model,
+      perCheckMs: 60_000,
+      estimateCostMicros: () => 100,
+      timeZone: "Asia/Tokyo",
+      clock: h.clock,
+      ids: new DeterministicIdGenerator(),
+    });
+    const { runId, done } = await failing.start({
+      from: FROM,
+      to: TO,
+      mailLimit: 10,
+      budgetMicros: 100_000,
+    });
+    await done;
+    expect(released.length).toBeGreaterThan(0);
+    expect(await h.replays.readRun({ ...scope, runId })).toMatchObject({
+      status: "failed",
+      reasonCode: "REPLAY_ERROR",
+    });
+  });
+
+  it("stops a running replay on cancel and marks it interrupted", async () => {
+    const h = await setup();
+    const { runId, done } = await h.service.start({
+      from: FROM,
+      to: TO,
+      mailLimit: 10,
+      budgetMicros: 100_000,
+    });
+    await h.service.cancel();
+    await done;
+    expect(await h.replays.readRun({ ...scope, runId })).toMatchObject({
+      status: "interrupted",
+      reasonCode: "SERVICE_STOPPING",
+    });
+  });
+
+  it("deleting a run through the service also removes the sealed text itself", async () => {
+    const h = await setup();
+    const { runId, done } = await h.service.start({
+      from: FROM,
+      to: TO,
+      mailLimit: 1,
+      budgetMicros: 100_000,
+    });
+    await done;
+    const [only] = await results(h, runId);
+    expect(await h.payloadStore.get(only?.contentRef ?? "")).toBeDefined();
+    await h.service.deleteRun(runId);
+    expect(await h.payloadStore.get(only?.contentRef ?? "")).toBeUndefined();
+  });
+
+  it("never reports masked values from replayed mail to the live sensitive-interception log", async () => {
+    const h = await setup({
+      mails: [
+        mail("m-card", "カード 4111 1111 1111 1111 のご利用", "2025-11-03T00:00:00.000Z", {
+          body: "カード番号 4111 1111 1111 1111 暗証番号 パスワード: hunter2hunter2",
+        }),
+      ],
+    });
+    const masked: unknown[] = [];
+    const proactive = new ProductionProactive({
+      scope,
+      configuration: {
+        modelRef: "replay-model",
+        gmail: { clientId: "client-1", clientSecretRef: "google-oauth" },
+        intervalMs: 900_000,
+        perCheckMs: 60_000,
+        dailyCostMicros: 1_000_000,
+        bodyCharactersPerMail: 16_000,
+        bodyCharactersPerBatch: 64_000,
+        memoryMinimumSimilarity: 0.45,
+        reviewBudgetSeconds: 120,
+        reviewSecondsPerItem: 5,
+      },
+      timeZone: "Asia/Tokyo",
+      store: h.store,
+      seal: h.seal,
+      oauth: {} as never,
+      reader: { source: "gmail", fetch: async () => ({ kind: "failed", step: "none" }) },
+      readAccount: async () => "andy@example.com",
+      model: h.model,
+      ledger: {} as never,
+      readMemoryText: async () => undefined,
+      estimateCostMicros: () => 100,
+      feedback: async () => [],
+      clock: h.clock,
+      ids: new DeterministicIdGenerator(),
+      onFailure: (error) => {
+        throw error;
+      },
+      onMasked: (sightings) => masked.push(...sightings),
+      replays: h.replays,
+      history: h.history,
+    });
+    const command = gatewayV2MessageSchema.parse({
+      schemaVersion: "gateway.v2",
+      kind: "command",
+      type: "proactive.replay.start",
+      messageId: "message-replay",
+      correlationId: "correlation-replay",
+      causationId: null,
+      dataClassification: "private",
+      risk: "low",
+      authorizationRef: "authorization-01",
+      scope,
+      authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+      actor: { actorType: "owner", actorId: "owner-subject" },
+      idempotencyKey: "idempotency-replay",
+      payload: { from: FROM, to: TO, mailLimit: 5, budgetMicros: 100_000 },
+    }) as GatewayV2Command;
+    const { resultRef } = await proactive.execute(command);
+    const runId = resultRef.replace("proactive-replay:", "");
+    for (let wait = 0; wait < 100; wait += 1) {
+      const run = await h.replays.readRun({ ...scope, runId });
+      if (run && run.status !== "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(await h.replays.readRun({ ...scope, runId })).toMatchObject({ status: "finished" });
+    expect(h.prompts.join("\n")).not.toContain("4111 1111 1111 1111");
+    expect(masked).toEqual([]);
   });
 });
