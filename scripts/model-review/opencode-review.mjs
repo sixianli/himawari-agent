@@ -2488,11 +2488,19 @@ export function gatewayUsageLine(record) {
   return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}${dropped}`;
 }
 
+export function reserveModels({ mode, previous, models }) {
+  const substitute = SUBSTITUTES[models[0]];
+  if (mode === "code-review" && previous && models.length === 1 && substitute)
+    return [...models, substitute];
+  return models;
+}
+
 export async function startLiveGateway({
   gateway,
   workRoot,
   records,
   models,
+  reserveFor = models,
   accountUid = () => workbuddyAccountUid(process.env),
 }) {
   const { config } = gateway;
@@ -2527,7 +2535,7 @@ export async function startLiveGateway({
     live = await start(withCredit, join(workRoot, "gateway-live"));
   } catch (error) {
     if (!uid) throw error;
-    console.log(`GATEWAY_CREDIT_FLOOR ${config.creditProvider} sign-in-failed ${error.message}`);
+    console.log(`GATEWAY_CREDIT_FLOOR ${config.creditProvider} start-failed ${error.message}`);
     drop = [config.creditProvider];
     live = await start(
       withCredit.filter((provider) => provider.id !== config.creditProvider),
@@ -2538,7 +2546,7 @@ export async function startLiveGateway({
     const left = live.quota(config.creditProvider);
     const reserve = creditReserve({
       records,
-      models,
+      models: reserveFor,
       costLimitUsd: COST_LIMIT_PER_MODEL_USD,
       provider: config.creditProvider,
       fallback: config.defaultCreditsPerUsd,
@@ -2678,6 +2686,7 @@ async function main() {
         workRoot,
         records,
         models: options.models,
+        reserveFor: reserveModels(options),
       });
     }
     const routed = liveGateway
@@ -2740,7 +2749,7 @@ async function main() {
         ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
         ...(liveGateway
           ? {
-              ...gatewayRecordFields(liveGateway.live.usage(), gateway.config, model, {
+              ...gatewayRecordFields(await liveGateway.live.stableUsage(), gateway.config, model, {
                 requested: summary.usage.steps > 0,
               }),
               ...(liveGateway.drop.length ? { gatewayDropped: liveGateway.drop } : {}),

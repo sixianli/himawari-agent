@@ -32,6 +32,7 @@ import {
   readGatewayConfig,
   readGatewayLock,
   readGatewayUsage,
+  readStableUsage,
   installGateway as installRealGateway,
   postJson,
   runningGatewayCount,
@@ -53,6 +54,7 @@ import {
   passthroughProblems,
   PASSTHROUGH_PROMPT,
   REVIEW_MODELS,
+  reserveModels,
   reviewConfig,
   startLiveGateway,
 } from "../../scripts/model-review/opencode-review.mjs";
@@ -576,6 +578,117 @@ function probeServer() {
 }
 
 const install = () => installRealGateway();
+
+describe("review gateway round 3 fixes", () => {
+  it("[gateway] reserves credits for GLM too when it may stand in for DeepSeek", () => {
+    expect(reserveModels({ mode: "code-review", previous: "abc", models: [deepseek] })).toEqual([
+      deepseek,
+      glm,
+    ]);
+    expect(
+      reserveModels({ mode: "code-review", previous: undefined, models: REVIEW_MODELS }),
+    ).toEqual(REVIEW_MODELS);
+    expect(reserveModels({ mode: "code-review", previous: "abc", models: [glm] })).toEqual([glm]);
+    expect(reserveModels({ mode: "plan", previous: undefined, models: [deepseek] })).toEqual([
+      deepseek,
+    ]);
+    const reserve = (models) =>
+      creditReserve({
+        records: [],
+        models,
+        costLimitUsd: COST_LIMIT_PER_MODEL_USD,
+        provider: "workbuddy-ai",
+        fallback: 54,
+      });
+    const left = 35;
+    expect(floorDecision({ left, reserve: reserve([deepseek]), floor: 20 }).use).toBe(true);
+    expect(
+      floorDecision({
+        left,
+        reserve: reserve(
+          reserveModels({ mode: "code-review", previous: "abc", models: [deepseek] }),
+        ),
+        floor: 20,
+      }).use,
+    ).toBe(false);
+  });
+
+  it("[gateway] reads the credits left from Magpie's real quota output", () => {
+    const real = [
+      {
+        provider: "workbuddy-ai",
+        name: "WorkBuddy AI",
+        kind: "subscription",
+        plan: "Free plan",
+        windows: [
+          {
+            name: "Credits",
+            used: 0,
+            remaining: 100,
+            resetsAt: "2026-11-30T15:59:59Z",
+            display: "0 / 100",
+            limit: 100,
+            unit: "credits",
+          },
+          {
+            name: "Extra credits",
+            used: 7.519999993333334,
+            remaining: 92.48000000666667,
+            display: "11.28 / 150",
+            amount: 11.27999999,
+            limit: 150,
+            unit: "credits",
+            runsOutAt: "2026-11-21T03:36:19Z",
+            runsOut: 18.72000001,
+          },
+          {
+            name: "Total credits",
+            used: 4.511999996,
+            remaining: 95.488000004,
+            resetsAt: "2026-11-30T15:59:59Z",
+            display: "11.28 / 250",
+            amount: 11.27999999,
+            limit: 250,
+            unit: "credits",
+            runsOutAt: "2026-11-21T03:36:19Z",
+            runsOut: 18.72000001,
+            holdsWhy: "low",
+          },
+        ],
+        readAt: "2026-11-07T11:16:00.857632349Z",
+      },
+      {
+        provider: "opencode-go",
+        name: "OpenCode Go",
+        kind: "plan",
+        windows: [],
+        error: "OpenCode didn't take this key (401 Unauthorized: Unauthorized)",
+      },
+    ];
+    expect(creditsLeft(real, "workbuddy-ai")).toBeCloseTo(238.72, 4);
+    const wrongUnit = structuredClone(real);
+    wrongUnit[0].windows[2].unit = "tokens";
+    expect(creditsLeft(wrongUnit, "workbuddy-ai")).toBeNull();
+  });
+
+  it("[gateway] waits until Magpie's usage file stops growing before reading it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "gateway-stable-"));
+    try {
+      const file = join(root, "config", "magpie", "usage.jsonl");
+      mkdirSync(join(root, "config", "magpie"), { recursive: true });
+      writeFileSync(file, `${JSON.stringify({ req: "group/review-deepseek-v4.1-flash" })}\n`);
+      setTimeout(
+        () =>
+          writeFileSync(file, `${readFileSync(file, "utf8")}${JSON.stringify({ req: "late" })}\n`),
+        100,
+      );
+      expect(await readStableUsage(root, { waitMs: 200, tries: 4 })).toHaveLength(2);
+      expect(await readStableUsage(join(root, "absent"), { waitMs: 10, tries: 2 })).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("review gateway usage gaps", () => {
   it("[gateway] marks the cost unknown when an answered request lacks its tokens or credits, or names an unknown provider", () => {

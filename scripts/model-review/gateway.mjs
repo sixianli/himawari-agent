@@ -331,7 +331,7 @@ export function creditsLeft(quotas, provider) {
   const entry = (Array.isArray(quotas) ? quotas : []).find((item) => item?.provider === provider);
   const windows = Array.isArray(entry?.windows) ? entry.windows : [];
   const window =
-    windows.find((item) => item?.name === "Total credits") ??
+    windows.find((item) => item?.name === "Total credits" && item?.unit === "credits") ??
     (windows.length === 1 && windows[0]?.unit === "credits" ? windows[0] : undefined);
   if (!window) return null;
   const { limit, remaining, amount } = window;
@@ -441,6 +441,17 @@ export function readGatewayUsage(root) {
     }
   }
   return lines;
+}
+
+export async function readStableUsage(root, { waitMs = 500, tries = 4 } = {}) {
+  let previous = readGatewayUsage(root);
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, waitMs));
+    const current = readGatewayUsage(root);
+    if (previous !== null && current !== null && current.length === previous.length) return current;
+    previous = current;
+  }
+  return null;
 }
 
 function freePort() {
@@ -662,6 +673,7 @@ export async function startGateway({
     stop,
     child: () => child,
     usage: () => readGatewayUsage(root),
+    stableUsage: () => readStableUsage(root),
   };
 }
 
