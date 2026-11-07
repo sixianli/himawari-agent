@@ -66,6 +66,21 @@ describe("private key fragments", () => {
     expect(masked.endsWith("\nafter")).toBe(true);
   });
 
+  it("masks the window part of a long line that is followed by more key lines", () => {
+    const text = `${"A".repeat(20000)}\nMIIE${"Q".repeat(60)}\n${marker("END")}`;
+    const masked = redactPrivateKeyFragments(text);
+    expect(masked).toContain(MASK);
+    expect(masked).not.toContain("Q".repeat(60));
+    expect(masked).not.toContain("A".repeat(1000));
+  });
+
+  it("stays fast on many end markers that have no key before them", () => {
+    const text = Array.from({ length: 40000 }, () => `${marker("END")} x`).join("\n");
+    const started = performance.now();
+    expect(redactPrivateKeyFragments(text)).toBe(text);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   it("stays fast on one very long line next to a key marker", () => {
     const line = "A".repeat(2_000_000);
     const started = performance.now();

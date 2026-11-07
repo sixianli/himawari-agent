@@ -95,26 +95,18 @@ const KEY_TAIL = new RegExp(
   `${KEY_LINE_START}(?:${KEY_LINE}${KEY_LINE_BREAK}){1,${KEY_LINES}}(?:${KEY_SHORT_LINE}${KEY_LINE_BREAK})?${KEY_LINE_PREFIX}$`,
 );
 
-function nextLineStart(input: string, from: number, limit: number): number {
-  const plain = input.indexOf("\n", from);
-  const escaped = input.indexOf("\\n", from);
-  const starts = [plain === -1 ? limit : plain + 1, escaped === -1 ? limit : escaped + 2];
-  return Math.min(limit, ...starts);
-}
-
 function maskKeyTails(input: string, see: (value: string) => void): string {
   if (!input.includes("-----END ")) return input;
   let output = "";
   let cursor = 0;
+  let floor = 0;
   for (const marker of input.matchAll(KEY_END)) {
+    const from = Math.max(floor, marker.index - KEY_TAIL_WINDOW);
+    floor = marker.index + marker[0].length;
     if (marker.index < cursor) continue;
-    const earliest = Math.max(cursor, marker.index - KEY_TAIL_WINDOW);
-    const lineStart = earliest === cursor ? earliest : nextLineStart(input, earliest, marker.index);
-    const found = [lineStart, earliest]
-      .map((from) => ({ from, tail: KEY_TAIL.exec(input.slice(from, marker.index)) }))
-      .find(({ tail }) => tail !== null);
-    if (found?.tail == null) continue;
-    const start = found.from + found.tail.index;
+    const tail = KEY_TAIL.exec(input.slice(from, marker.index));
+    if (tail === null) continue;
+    const start = from + tail.index;
     const end = marker.index + marker[0].length;
     see(input.slice(start, end));
     output += input.slice(cursor, start) + REDACTED;
