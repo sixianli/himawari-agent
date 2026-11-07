@@ -289,22 +289,25 @@ describe("合入 main 后的审批继承", () => {
 });
 
 describe("仓库里提交的例外清单和 Owner 复核清单", () => {
-  function committedReview(root) {
-    const run = (...args) =>
+  const isolatedGit = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+  const gitIn =
+    (root) =>
+    (...args) =>
       execFileSync("git", ["-C", root, ...args], {
         encoding: "utf8",
+        env: isolatedGit,
         stdio: ["ignore", "pipe", "pipe"],
       }).trim();
+
+  function committedReview(root) {
+    const run = gitIn(root);
     const head = run("rev-parse", "HEAD");
     const exceptionsDocument = JSON.parse(run("show", "HEAD:ci/security-exceptions.json"));
-    const manifestBytes = execFileSync("git", [
-      "-C",
-      root,
-      "show",
-      "HEAD:.github/security-review-manifest.json",
-    ]);
+    const manifestBytes = readFileSync(join(root, ".github/security-review-manifest.json"));
     const manifest = JSON.parse(manifestBytes);
-    const { commentId } = JSON.parse(run("show", "HEAD:.github/security-review-comment.json"));
+    const { commentId } = JSON.parse(
+      readFileSync(join(root, ".github/security-review-comment.json"), "utf8"),
+    );
     const reviewedAt = new Date(
       exceptionsDocument.proposal?.proposedAt ??
         run("log", "-1", "--format=%cI", "HEAD", "--", "ci/security-exceptions.json"),
@@ -352,10 +355,13 @@ describe("仓库里提交的例外清单和 Owner 复核清单", () => {
   it("把复核清单已覆盖的一条再登记进例外清单，就报 SECURITY_EXCEPTION_DUPLICATE", () => {
     const root = mkdtempSync(join(tmpdir(), "himawari-committed-review-"));
     roots.push(root);
-    execFileSync("git", ["clone", "-q", "--shared", "--no-checkout", resolve("."), root]);
-    const { options, run } = committedReview(root);
+    execFileSync("git", ["clone", "-q", "--shared", "--no-checkout", resolve("."), root], {
+      env: isolatedGit,
+    });
+    const run = gitIn(root);
     run("read-tree", "HEAD");
     run("checkout", "HEAD", "--", "ci", ".github");
+    const { options } = committedReview(root);
     const reviewed = loadReviewedExceptions(options);
     const committed = JSON.parse(readFileSync(join(root, "ci/security-exceptions.json"), "utf8"));
     const covered = reviewed.exceptions
