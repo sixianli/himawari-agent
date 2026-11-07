@@ -66,6 +66,10 @@ describe("npm run check", () => {
       expect(manifest.scripts[name], name).toBe(`python3 -I scripts/delivery-mode/${file}`);
     }
     expect(names).toContain("check:check-runner");
+    expect(names).toContain("check:security-review");
+    expect(manifest.scripts["check:security-review"]).toBe(
+      "vitest run --config vitest.workspace.ts --project tooling test/tooling/security-review.test.mjs",
+    );
     for (const name of names) expect(manifest.scripts[name], name).toBeTypeOf("string");
   });
 
