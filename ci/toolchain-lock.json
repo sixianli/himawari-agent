@@ -1219,7 +1219,7 @@
       },
       {
         "path": "ci/rules/gitleaks.toml",
-        "sha256": "9b47795fac3d616dd579278a7c46860600b3a32728b531184c537e171a9f912f"
+        "sha256": "c72797bf216cd88c8b52c5859be4f1031d169be734e321bccd9a3be4bc9a4fdb"
       },
       {
         "path": "ci/rules/fixtures/safe.fixture.ts",

@@ -41,7 +41,7 @@ condition = "AND"
 targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)apps/agent-service/test/production-reminder-push\.unit\.test\.ts$''']
 regexTarget = "secret"
-regexes = ['''^F5u42Bd3HyW8Kxk[A-Za-z0-9_-]{7}$''']
+regexes = ['''^F5u42Bd3HyW8KxkUqo2gRA$''']
 
 [[allowlists]]
 description = "前台结果单元测试里的合成 Bearer 令牌"

@@ -83,10 +83,6 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
   it("反向：值的形状限定到已审阅的那一个值，同长度的别的值不放行", () => {
     const changeLast = (value) => `${value.slice(0, -1)}${value.endsWith("Q") ? "R" : "Q"}`;
     const changeFirst = (value) => `${value.startsWith("Q") ? "R" : "Q"}${value.slice(1)}`;
-    const deletedPushTestBlock = 1;
-    expect(scoped[deletedPushTestBlock].regexes.map(String)).toEqual([
-      "/^F5u42Bd3HyW8Kxk[A-Za-z0-9_-]{7}$/",
-    ]);
     const sameKindLast = (value) => {
       const last = value.at(-1);
       const other = /\d/.test(last) ? "01" : /[a-z]/.test(last) ? "ab" : "AB";
@@ -108,9 +104,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
     ].map(([sample, mutate], index) => [index, sample, mutate])) {
       expect(matches(scoped[index].regexes, sample)).toBe(true);
       expect(matches(scoped[index].regexes, mutate(sample))).toBe(false);
-      if (index !== deletedPushTestBlock) {
-        expect(matches(scoped[index].regexes, sameKindLast(sample))).toBe(false);
-      }
+      expect(matches(scoped[index].regexes, sameKindLast(sample))).toBe(false);
     }
   });
 
