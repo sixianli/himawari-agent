@@ -1,0 +1,23 @@
+{
+  "bootstrap": "scripts/delivery-mode/packet-template/measurement/probe/bootstrap.mjs",
+  "files": [
+    {
+      "built": "job-host-main.js",
+      "builtSha256": "8e3ad362b65c8cfcff1cfe8819fec375bbd99a4f1fa2975442eee05e5c5048df",
+      "source": "packages/runtime-sandbox/src/job-host-main.ts",
+      "sourceSha256": "86866011867c3f380d53ffb888223bec77971bfbdbcaf89b109b2214c28f074d"
+    },
+    {
+      "built": "sandbox-sdk.js",
+      "builtSha256": "bc9bb997c5c6bd8f0c046c4860ba07ee3ca9fb01d84bd4facfbbc9332b2e96a0",
+      "source": "packages/runtime-sandbox/src/sandbox-sdk.ts",
+      "sourceSha256": "3bb58e691eaa28670277dcc7d0f0c8740283144433bcf68d472cfe7a75b165a5"
+    },
+    {
+      "built": "sandbox-sdk-worker.js",
+      "builtSha256": "42d5a4866d36130e49a378661b240cecd67804b01fe03560019701eff4a54936",
+      "source": "packages/runtime-sandbox/src/sandbox-sdk-worker.ts",
+      "sourceSha256": "517662e445c22a2e4b30d1c4118fdfb3276ea884034c15e20eeb83047277c51d"
+    }
+  ]
+}
