@@ -5,7 +5,7 @@ HERE=.
 [[ ${BASH_SOURCE[0]} == */* ]] && HERE=${BASH_SOURCE[0]%/*}
 source "$HERE/runners.sh"
 
-[ "$(hostname)" = hermes-home ] || { echo "this script only runs on hermes-home, not $(hostname)" >&2; exit 68; }
+require_runner_host
 command -v python3 > /dev/null || { echo "missing python3" >&2; exit 66; }
 [ "$(id -u)" -eq 0 ] || { echo "run it with sudo" >&2; exit 65; }
 case "${1:-}" in
@@ -26,7 +26,7 @@ sudo -u "$RUNNER_USER" --preserve-env=ACTIONS_RUNNER_INPUT_TOKEN HOME="$RUNNER_R
   --unattended \
   --url https://github.com/sixianli/himawari-agent \
   --name "$RUNNER_NAME" \
-  --labels hermes-home \
+  --labels "$RUNNER_LABEL" \
   --work _work \
   --replace
 unset ACTIONS_RUNNER_INPUT_TOKEN
