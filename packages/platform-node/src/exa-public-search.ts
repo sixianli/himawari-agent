@@ -117,6 +117,11 @@ export function parseExaFetchResult(
   return { url, title, ...pageWindow(text, offset, maximumBytes) };
 }
 
+export function maskedPublicFetchUrl(value: string): string {
+  if (Buffer.byteLength(value) > 4 * 8192) throw new Error("WEB_FETCH_INPUT_INVALID");
+  return validatePublicFetchUrl(redactForExternalUrl(value).text);
+}
+
 export function validatePublicFetchUrl(value: string): string {
   if (Buffer.byteLength(value) > 8192) throw new Error("WEB_FETCH_INPUT_INVALID");
   let url: URL;
@@ -207,6 +212,7 @@ export class ExaPublicSearchAdapter
     readonly limit: number;
     readonly signal?: AbortSignal;
   }): Promise<readonly WebSearchCandidate[]> {
+    if (Buffer.byteLength(input.query) > 4 * 4096) throw new Error("WEB_SEARCH_INPUT_INVALID");
     const query = redactForExternalText(input.query.trim()).text;
     if (
       !query ||
@@ -271,7 +277,7 @@ export class ExaPublicSearchAdapter
     readonly signal?: AbortSignal;
   }): Promise<WebFetchResult> {
     validateFetchWindow(input);
-    const url = validatePublicFetchUrl(redactForExternalUrl(input.url).text);
+    const url = maskedPublicFetchUrl(input.url);
     const characters = input.offset + input.maximumBytes + 1;
     let toolName: string | undefined;
     let toolArguments: Record<string, unknown> | undefined;

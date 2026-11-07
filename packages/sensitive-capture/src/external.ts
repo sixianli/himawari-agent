@@ -1,15 +1,18 @@
 import {
+  EGRESS_REDACTION_KINDS,
   type EgressPlaceholderKind,
   type EgressRedaction,
   type EgressRedactionFinding,
   type EgressRedactionKind,
-  EGRESS_REDACTION_KINDS,
   redactForEgress,
 } from "./redaction.js";
 
 export interface ExternalRedactionOptions {
   readonly tag?: (kind: EgressPlaceholderKind, value: string) => string;
+  readonly known?: Map<string, string>;
 }
+
+const KNOWN_VALUE_MINIMUM_LENGTH = 6;
 
 const SENSITIVE_URL_PARAMETERS: ReadonlySet<string> = new Set([
   "token",
@@ -54,11 +57,30 @@ export function isSensitiveUrlParameter(name: string): boolean {
   );
 }
 
+function sequentialTag(): (kind: EgressPlaceholderKind, value: string) => string {
+  const ids = new Map<string, number>();
+  return (kind, value) => {
+    const identity = `${kind}\u0000${value}`;
+    const index = ids.get(identity) ?? ids.size;
+    ids.set(identity, index);
+    let out = "";
+    let rest = index;
+    for (let digit = 0; digit < 8; digit += 1) {
+      out = String.fromCharCode(97 + (rest % 26)) + out;
+      rest = Math.floor(rest / 26);
+    }
+    return out;
+  };
+}
+
 export function redactForExternalText(
   input: string,
   options: ExternalRedactionOptions = {},
 ): EgressRedaction {
-  return redactForEgress(input, options.tag === undefined ? {} : { tag: options.tag });
+  return redactForEgress(input, {
+    known: options.known ?? new Map<string, string>(),
+    tag: options.tag ?? sequentialTag(),
+  });
 }
 
 const URL_AUTHORITY = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#]*)/iu;
@@ -78,7 +100,7 @@ function withoutUserInfo(input: string): { readonly text: string; readonly remov
 
 const PLACEHOLDER = /\[(?:密码|密钥|验证码|证件号|银行卡 尾号\d{4})(?:#[a-z]{8})?\]/gu;
 const WHOLE_PLACEHOLDER = new RegExp(`^${PLACEHOLDER.source}$`, "u");
-const ENCODED_PLACEHOLDER = /%5B(?:%[0-9A-F]{2}|[ a-z0-9])*?%5D/giu;
+const ENCODED_PLACEHOLDER = /%5B(?:%[0-9A-F]{2}|[a-z0-9]){0,160}?%5D/giu;
 
 function decoded(value: string): string {
   try {
@@ -96,41 +118,58 @@ function isPlaceholder(value: string): boolean {
   return WHOLE_PLACEHOLDER.test(decoded(value));
 }
 
-function maskedParameterValue(value: string, options: ExternalRedactionOptions): string {
-  const placeholder =
-    options.tag === undefined ? "[密码]" : `[密码#${options.tag("password", value)}]`;
-  return encodeURIComponent(placeholder);
+function maskParameterPairs(
+  segment: string,
+  tag: (kind: EgressPlaceholderKind, value: string) => string,
+  known: Map<string, string>,
+): { readonly text: string; readonly masked: number } {
+  let masked = 0;
+  const pairs = segment.split("&").map((pair) => {
+    const equals = pair.indexOf("=");
+    if (equals < 0) return pair;
+    const value = pair.slice(equals + 1);
+    if (
+      value.length === 0 ||
+      isPlaceholder(value) ||
+      !isSensitiveUrlParameter(pair.slice(0, equals))
+    )
+      return pair;
+    masked += 1;
+    const plain = decoded(value);
+    const placeholder = `[密码#${tag("password", plain)}]`;
+    for (const original of new Set([value, plain]))
+      if (original.length >= KNOWN_VALUE_MINIMUM_LENGTH && !known.has(original))
+        known.set(original, placeholder);
+    return `${pair.slice(0, equals + 1)}${encodeURIComponent(placeholder)}`;
+  });
+  return { text: pairs.join("&"), masked };
 }
 
 function withoutSensitiveParameters(
   input: string,
-  options: ExternalRedactionOptions,
+  tag: (kind: EgressPlaceholderKind, value: string) => string,
+  known: Map<string, string>,
 ): { readonly text: string; readonly masked: number } {
-  const query = input.indexOf("?");
-  if (query < 0) return { text: input, masked: 0 };
-  const fragment = input.indexOf("#", query);
-  const end = fragment < 0 ? input.length : fragment;
+  const hash = input.indexOf("#");
+  const beforeFragment = hash < 0 ? input : input.slice(0, hash);
+  const fragment = hash < 0 ? "" : input.slice(hash);
   let masked = 0;
-  const pairs = input
-    .slice(query + 1, end)
-    .split("&")
-    .map((pair) => {
-      const equals = pair.indexOf("=");
-      if (equals < 0) return pair;
-      const value = pair.slice(equals + 1);
-      if (
-        value.length === 0 ||
-        isPlaceholder(value) ||
-        !isSensitiveUrlParameter(pair.slice(0, equals))
-      )
-        return pair;
-      masked += 1;
-      return `${pair.slice(0, equals + 1)}${maskedParameterValue(value, options)}`;
-    });
-  return {
-    text: `${input.slice(0, query + 1)}${pairs.join("&")}${input.slice(end)}`,
-    masked,
-  };
+  let head = beforeFragment;
+  const query = beforeFragment.indexOf("?");
+  if (query >= 0) {
+    const result = maskParameterPairs(beforeFragment.slice(query + 1), tag, known);
+    head = beforeFragment.slice(0, query + 1) + result.text;
+    masked += result.masked;
+  }
+  let tail = fragment;
+  if (hash >= 0) {
+    const fragmentQuery = fragment.indexOf("?");
+    const start = fragmentQuery >= 0 ? fragmentQuery + 1 : 1;
+    const result = maskParameterPairs(fragment.slice(start), tag, known);
+    tail = fragment.slice(0, start) + result.text;
+    masked += result.masked;
+  }
+  return { text: head + tail, masked };
 }
 
 function redactOutsidePlaceholders(
@@ -177,9 +216,12 @@ export function redactForExternalUrl(
   input: string,
   options: ExternalRedactionOptions = {},
 ): EgressRedaction {
+  const known = options.known ?? new Map<string, string>();
+  const tag = options.tag ?? sequentialTag();
+  const shared = { tag, known };
   const userInfo = withoutUserInfo(encodedPlaceholders(input));
-  const parameters = withoutSensitiveParameters(userInfo.text, options);
-  const rest = redactOutsidePlaceholders(parameters.text, options);
+  const parameters = withoutSensitiveParameters(userInfo.text, tag, known);
+  const rest = redactOutsidePlaceholders(parameters.text, shared);
   return Object.freeze({
     text: rest.text,
     findings: withFinding(

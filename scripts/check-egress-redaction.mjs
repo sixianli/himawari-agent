@@ -94,7 +94,7 @@ export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
     ],
     [
       "packages/platform-node/src/deepseek-web-provider.ts",
-      ["redactForExternalText", "redactForExternalUrl"],
+      ["redactForExternalText", "maskedPublicFetchUrl"],
     ],
   ]),
 );

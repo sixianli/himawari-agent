@@ -118,3 +118,54 @@ describe("redactForExternalUrl", () => {
     });
   });
 });
+
+describe("[mask-not-block] round 1 review fixes", () => {
+  it("masks a password that appears again on its own later in the same text", () => {
+    const text = redactForExternalText("password: hunter2abc and then hunter2abc again", {
+      tag,
+    }).text;
+    expect(text).not.toContain("hunter2abc");
+    expect(text.match(/\[密码#[a-z]{8}\]/gu)).toHaveLength(2);
+  });
+
+  it("masks a parameter value that appears again elsewhere in the address", () => {
+    const text = redactForExternalUrl(
+      "https://example.org/hunter2abc/page?password=hunter2abc&also=hunter2abc",
+      { tag },
+    ).text;
+    expect(text).not.toContain("hunter2abc");
+  });
+
+  it("shares what it learned between calls only when the caller passes the same map", () => {
+    const known = new Map<string, string>();
+    redactForExternalText("password: hunter2abc", { tag, known });
+    expect(redactForExternalText("only hunter2abc here", { tag, known }).text).toMatch(
+      /^only \[密码#[a-z]{8}\] here$/u,
+    );
+    expect(redactForExternalText("only hunter2abc here", { tag }).text).toBe(
+      "only hunter2abc here",
+    );
+  });
+
+  it.each([
+    ["https://example.org/cb#access_token=short1&state=ok", "state=ok"],
+    ["https://example.org/#/reset?token=short1&x=1", "x=1"],
+    ["https://example.org/a?q=1#token=short1", "q=1"],
+  ])("masks sensitive parameters in the fragment of %s", (url, kept) => {
+    const text = redactForExternalUrl(url, { tag }).text;
+    expect(text).not.toContain("short1");
+    expect(text).toContain(kept);
+  });
+
+  it("leaves a fragment without parameters alone", () => {
+    const url = "https://example.org/docs#section-2/key-concepts";
+    expect(redactForExternalUrl(url, { tag }).text).toBe(url);
+  });
+
+  it("stays fast on an address made of many encoded brackets without a closing one", () => {
+    const started = performance.now();
+    const text = redactForExternalUrl(`https://example.org/${"%5B".repeat(60_000)}`, { tag }).text;
+    expect(text.startsWith("https://example.org/%5B")).toBe(true);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});

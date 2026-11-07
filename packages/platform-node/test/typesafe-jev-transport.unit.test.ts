@@ -214,6 +214,19 @@ describe("TypeSafe JEV transport", () => {
     expect((await run()).sent).toBe(first.sent);
   });
 
+  it("[mask-not-block] masks a password that appears again in another field of the review state", async () => {
+    const { transport, seen } = transportFor(
+      envelope({ note: "password: hunter2abc", later: "hunter2abc was reused" }),
+      () => new Response("{}", { status: 500 }),
+    );
+    await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    expect(JSON.stringify(seen[0]?.body)).not.toContain("hunter2abc");
+  });
+
   it.each([
     ["deny", "HIGH_RISK", "deny"],
     ["human", "INSUFFICIENT_CONTEXT", "human"],

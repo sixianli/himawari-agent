@@ -95,7 +95,7 @@ describe("DeepSeek search and fetch adapter", () => {
       maximumBytes: 64,
     });
     expect(JSON.parse(state.fetch.mock.calls[2]?.[1].body)).toEqual({
-      url: "https://example.org/a?token=%5B%E5%AF%86%E7%A0%81%5D",
+      url: "https://example.org/a?token=%5B%E5%AF%86%E7%A0%81%23aaaaaaaa%5D",
     });
   });
   it("reports a query longer than 128 characters as unsupported without sending it", async () => {

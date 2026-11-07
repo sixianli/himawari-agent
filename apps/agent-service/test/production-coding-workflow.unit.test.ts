@@ -943,6 +943,53 @@ it("[mask-not-block] saves the masked query as the sandboxed search program inpu
 });
 
 it.each([
+  ["web_search", { query: "Tokyo forecast" }, "WEB_SEARCH_UNAVAILABLE"],
+  ["web_fetch", { url: "https://example.org/a" }, "WEB_FETCH_UNAVAILABLE"],
+] as const)(
+  "[mask-not-block] reports %s as unavailable without disclosure when the numbering key cannot be read",
+  async (tool, args, code) => {
+    const f = fixture();
+    f.services.binding = async () => ({ ...f.binding, grant: null });
+    const issue = vi.fn(async () => ({ ref: "handle:x" }));
+    const services = {
+      ...f.services,
+      authorize: allowRead(),
+      issue,
+      externalTag: async () => {
+        throw new Error("key unavailable");
+      },
+    } as unknown as typeof f.services;
+    const result = await executeProductionCodingRequest(
+      { ...f.call, capabilityRef: `coding.${tool}`, arguments: args },
+      tool,
+      services,
+      f.ctx,
+    );
+    expect(result).toMatchObject({ outcome: "failed", dispatchState: "not_sent", errorCode: code });
+    expect(services.authorize).not.toHaveBeenCalled();
+    expect(issue).not.toHaveBeenCalled();
+  },
+);
+
+it("[mask-not-block] rejects an oversized web call before masking it", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const externalTagCalls = vi.fn(async () => undefined);
+  const result = await executeProductionCodingRequest(
+    {
+      ...f.call,
+      capabilityRef: "coding.web_fetch",
+      arguments: { url: `https://example.org/${"%5B".repeat(40_000)}` },
+    },
+    "web_fetch",
+    { ...f.services, externalTag: externalTagCalls } as unknown as typeof f.services,
+    f.ctx,
+  );
+  expect(result.errorCode).toBe("CODING_INPUT_TOO_LARGE");
+  expect(externalTagCalls).not.toHaveBeenCalled();
+});
+
+it.each([
   ["https://user:pw@example.org/a", "https://example.org/a"],
   [
     "https://example.org/a?monkey=1&sig=abcdef123456&X-Amz-Credential=AKID%2F20261107",

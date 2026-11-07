@@ -365,7 +365,7 @@ describe("[mask-not-block] Exa receives masked queries and addresses", () => {
     });
     const sent = (state.callTool.mock.calls[0]?.[0] as { arguments: { url: string } }).arguments
       .url;
-    expect(sent).toBe("https://example.org/a?sig=%5B%E5%AF%86%E7%A0%81%5D&page=2");
+    expect(sent).toBe("https://example.org/a?sig=%5B%E5%AF%86%E7%A0%81%23aaaaaaaa%5D&page=2");
     expect(page.url).toBe(sent);
   });
 });

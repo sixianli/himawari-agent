@@ -882,9 +882,14 @@ export async function runAgentService(
       hostReadOnlyPort,
       workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
-      externalTag: () => {
+      externalTag: async () => {
         externalEgress ??= createProductionModelEgress(configuration, sources);
-        return externalEgress.externalTag();
+        try {
+          return await externalEgress.externalTag();
+        } catch (error) {
+          externalEgress = undefined;
+          throw error;
+        }
       },
       ...(automaticReview ? { automaticReview } : {}),
       ...(workspaceAuto ? { workspaceAuto } : {}),

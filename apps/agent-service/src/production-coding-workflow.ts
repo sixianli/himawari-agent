@@ -181,9 +181,14 @@ export async function executeProductionCodingRequest(
       grant.dataClassification !== "private")
   )
     return failed("CODING_DIRECTORY_UNAVAILABLE");
-  const args = webTool(tool)
-    ? await outboundWebArguments(call.arguments, services)
-    : call.arguments;
+  if (Buffer.byteLength(JSON.stringify(call.arguments)) > 49152)
+    return failed("CODING_INPUT_TOO_LARGE");
+  let args: RuntimeToolInvocation["arguments"];
+  try {
+    args = webTool(tool) ? await outboundWebArguments(call.arguments, services) : call.arguments;
+  } catch {
+    return failed(tool === "web_search" ? "WEB_SEARCH_UNAVAILABLE" : "WEB_FETCH_UNAVAILABLE");
+  }
   if (Buffer.byteLength(JSON.stringify(args)) > 49152) return failed("CODING_INPUT_TOO_LARGE");
   if (
     tool === "web_search" &&
