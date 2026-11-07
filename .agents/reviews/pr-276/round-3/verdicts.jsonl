@@ -1,0 +1,4 @@
+{"id": "G1", "model": "opencode-go/glm-5.3-flash", "quote": "“在两个测试项目里各跑一次”对门检本身不成立，容易让读者用错误的口径复现", "valid": true, "class": "error", "severity": "low", "trigger": "照案例的说法复现反向验证", "consequence": "用 check:prompt-catalog 只会跑一个项目，次数对不上；已写明是不带项目过滤的跑法", "modelSeverity": "低"}
+{"id": "G2", "model": "opencode-go/glm-5.3-flash", "quote": "“全部 34 个候选字符被占用时退回整段检查”没有专门测试用例", "valid": false, "class": "better", "reason": "trusted-text.unit.test.ts 的“treats an empty trusted entry as nothing, and picks a filler the input does not already hold”用例里，crowded 拼出全部 34 个候选字符，断言结果与不带清单时相同"}
+{"id": "G3", "model": "opencode-go/glm-5.3-flash", "quote": "占位符写法不一致", "valid": true, "class": "error", "severity": "low", "trigger": "面试时引用占位符写法", "consequence": "同一占位符两种写法；统一成 [验证码#…]", "modelSeverity": "低"}
+{"id": "G4", "model": "opencode-go/glm-5.3-flash", "quote": "“‘写一个小游戏’各有一条”等细节仅与事故表互证", "valid": false, "class": "better", "reason": "模型自己写明无问题、不要求改动"}

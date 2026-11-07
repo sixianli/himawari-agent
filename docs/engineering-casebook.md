@@ -109,6 +109,7 @@ date: "2026-10-26"
   82. [多轮对话缓存命中为 0：每轮改写了上一轮的消息，改成只追加并加上逐字节的阻断检查](#case-append-only-prefix)
   83. [沙箱升级后保护可能静默失效：升到 SRT 0.0.81，并要求启动命令里真的用上锁定的 seccomp 小程序](#case-srt-locked-seccomp-helper)
   84. [AI 代码复核一个 PR 花 0.79 美元：第 2 轮起只用一个模型，低严重度意见改完不再复核](#case-cheaper-code-review)
+  85. [没人输入验证码，拦截记录里却天天有“验证码”：敏感信息检查把 Himawari 自己写的指令当成了外来内容](#case-trusted-prompt-text)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -132,7 +133,7 @@ date: "2026-10-26"
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments)、[资料放在上下文的哪里](#case-owner-material-position)、[评测裁判花钱超过生产](#case-no-expensive-models)、[评测花超拖垮生产](#case-eval-budget-outage)、[经 Magpie 用已付费套餐](#case-magpie-subscriptions)、[按实测首字定路由顺序](#case-conversation-speed)、[缓存命中的尺子](#case-cache-usage-ruler)、[搜索索引放到后台](#case-search-index-background)、[读和写挤在同一条数据库队里](#case-read-write-lanes)、[所有模型请求只走一个出口](#case-model-egress-redaction)、[发给模型的内容只追加](#case-append-only-prefix) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[主动看邮件不乱打扰](#case-proactive-gmail)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
@@ -5182,6 +5183,10 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 [ADR 0146](adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（第一版，已被取代）、[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、PR #185、#187、#190。
 
+**后续（2026-11-07）**
+
+上线后才发现这个出口一直在误遮 Himawari 自己写的固定指令：整理记忆的指令里“0 到 1000 的整数”被当成验证码遮掉。修复和生产上的正反验收见[案例 85](#case-trusted-prompt-text)。
+
 **面试 30 秒版**
 
 “Andy 要求发给模型的内容统一遮掉验证码、卡号、密码。第一版我在三个调用点各遮一遍，他追问为什么不是一个出口。我读了 LiteLLM、Portkey、Bifrost 和 Magpie 的源码：前三个只看固定位置，遇到不认识的格式放行；Magpie 按键名排除，自己的事故记录里写着模型起的工具参数名可以冒充受保护的名字。所以我做了进程内一个出口：默认全遮、按位置排除、不认识就拒绝发送，占位符用带密钥的哈希保持稳定，这样缓存前缀不变，回复里的占位符还能还原给用户看。”
@@ -5323,6 +5328,87 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
 **面试 30 秒版**
 
 “我们用两个模型做 AI 代码复核，一个 PR 复核 6 轮花了 0.79 美元。拆账本发现钱主要花在后几轮为小问题再完整看一遍。改法是第 1 轮两个模型看全量，之后只用一个模型；意见分严重度，低档改完由脚本核对规模和模型原话后放行，不再多花一轮；合并前检查改成一条必须连续的复核链。按账本推算能降到三分之一左右。”
+
+[返回目录](#contents)
+
+<a id="case-trusted-prompt-text"></a>
+
+## 案例 85：没人输入验证码，拦截记录里却天天有“验证码”：敏感信息检查把 Himawari 自己写的指令当成了外来内容
+
+**背景与现象**
+
+2026-11-06，PR #258 上线了“敏感信息拦截记录”页面，Andy 在上面看到：“写一个小游戏”“美国中期选举结果”这些对话里，他根本没输入过敏感信息，却各有一条“验证码 · 你的话”。顺着查下去，问题比页面上的误报更严重：发给模型的整理记忆指令被改成了“confidence 是 0 到 [验证码#…] 的整数”，打分说明从出口遮盖上线（[案例 81](#case-model-egress-redaction)，ADR 0148）起就一直是坏的。出口遮盖指的是请求发给模型之前，把敏感信息换成占位符的那一层。
+
+**根因**
+
+- **规则本身没错**：验证码规则是“4 到 8 位数字，前后 40 个字符内有‘验证码’这类关键词”。这是业界通行的“关键词加距离”做法。
+- **错在检查对象**：整理记忆的固定指令里，上一行末尾是“……密码和验证码用 restricted。”，下一行是“confidence 是 0 到 1000 的整数”。“1000”离“验证码”不到 40 个字符。整理记忆请求把固定指令和本次数据拼成一条消息发出，出口遮盖分不清哪段是 Himawari 自己写的，就把固定指令也当外来内容检查了。
+- **怎么确认的**：对这段固定指令运行识别函数，返回 `1000`，复现误遮。
+
+**我们的方案**
+
+1. **固定文字清单**：从提示词目录（`packages/prompt-catalog`，所有固定指令集中存放的地方）里取出不少于 24 个字符的文字片段，组成一份固定清单。少于 24 个字符的片段（例如“。”“命令：”）不进清单，否则主人自己写的短词也会被当成固定文字。
+2. **原地填充，距离不变**：请求里和清单完全一致的那段，先原地换成同样长度的填充字符，跑完全部识别规则，再换回原文。这样：
+   - 固定文字不检查，里面的“验证码”也不算关键词。
+   - 外来内容之间的距离和以前一模一样：主人写了“验证码”，中间隔着一段固定文字，后面的号码照样会被遮住。
+3. **先空跑一遍，宁可多遮**：填充字符并不是任何规则都碰不到，例如密码规则的值可以是任意非空白字符。所以正式遮盖前先用填充后的文字空跑一遍，不留任何记录。只要有规则会碰到填充字符（例如“密码：”后面紧跟一段固定文字），这一段就退回修复前的方式整段检查。
+4. **填充字符自己挑**：从 34 个 Unicode 非字符里挑第一个既不在输入里、也不在前面记下的点名值里的。非字符是 Unicode 保留、永远不会分配给真实文字的码位，例如 U+FFFF。输入和记下的值里合起来已经出现全部 34 个候选字符时，这一段退回整段检查。
+5. **页面写明是哪次调用**：对话里的记录写明“起对话标题”“自动整理记忆”等，后台调用里 Himawari 拼出来的消息不再显示成“你的话”。
+6. **门槛（I-78）**：用生产环境的出口遮盖，把提示词目录里每个条目都发一遍，断言原样发出、不产生拦截记录。把清单撤掉，这个测试会失败。
+
+**方案讨论与备选**
+
+- **改写提示词措辞来绕开规则**：Andy 一开始就否了，换一段文字就会复发。项目里之前就有过这种做法：让运行环境说明的结尾凑满 40 个不含数字的字，用距离把它和主人的话隔开。
+- **把“1000”加进允许清单**：主人自己说“验证码 1000”时也会漏遮，不选。
+- **按消息角色跳过 system**：聊天的系统提示里拼着部署配置写的内容，不全是 Himawari 自己写的；后台调用的固定指令又在 user 消息里。不选。
+- **把后台调用的固定指令挪进 system，再整体跳过 system**（GLM 独立出方案时提的，见 `.agents/reviews/topic-trusted-prompt-egress/round-1/glm-5.3-flash.md`）：要改整理记忆、起标题、合并记忆、邮件判断四个后台调用的请求结构，模型看到的位置变了，输出要重新评测；聊天最后一条消息里的固定说明也挪不走。不选。
+- **在固定文字处把文本切成几段分别检查**（线程第一版）：DeepSeek 审核方案时指出，这会切断外来内容自己的关键词窗口。主人写“验证码”、中间夹一段固定指令、后面是真号码时会漏遮。改成原地填充。
+- **为了“规则不吞填充字符”而改共享规则**（第一版代码）：代码复核第 1 轮指出，在真实密码或私钥里插一个 U+FFFF 就能绕过遮盖。共享规则恢复原样，改用“先空跑、有冲突就退回整段检查”。
+- **放弃了什么**：
+  - 外来内容如果原样抄了一整段 Himawari 的固定指令，这一段里自己的数字不再检查。Andy 接受了这个风险：要借此藏一个秘密得刻意构造，而且秘密本来就是外来内容自己带来的。
+  - 固定文字里即使恰好出现主人点名过的值，也不遮（退回整段检查的两种情况除外）：这段文字是 Himawari 自己写的，不是主人的秘密（规则文件第 11 条，测试 `[I-78] never changes the trusted text, even when it holds a value named elsewhere`）。
+
+**业界主流做法**
+
+- ✅ Google Sensitive Data Protection 的自定义规则文档（<https://docs.cloud.google.com/sensitive-data-protection/docs/creating-custom-infotypes-rules>）：排除规则可以用词典，“A Dictionary object, which contains a list of strings to exclude from the results.”；也可以按附近有没有某个关键词来排除（`ExcludeByHotword`），距离由“A proximity value that defines how near the hotword must be to the finding.”规定。
+- ✅ Microsoft Presidio 允许清单（<https://presidio.dataprivacystack.org/tutorial/13_allow_list/>）：“To specify an allow list we just pass a list of values we want to keep as a parameter to call to `analyze`.”。
+
+**对比与取舍**
+
+- **相同**：两家都提供“排除已知误报”。我们的识别规则没变，补的就是排除这一层。
+- **不同**：
+  - Google 的词典排除和 Presidio 的允许清单，排除的是“被认出的那个值”。只把“1000”放进去，主人自己说“验证码 1000”时也会漏遮。
+  - Google 的 `ExcludeByHotword` 是“命中附近有某个词就排除这次命中”，按词判断，不分这个词出自谁写的哪段文字。
+  - 我们排除的是“提供关键词的那段固定文字”：它不再当关键词来源，同时外来内容之间的距离保持不变。这次误报的来源是固定指令里的“验证码”，不是“1000”这个值本身。
+- **取舍**：
+  - 按内容匹配固定文字，所以外来内容原样抄一整段固定指令时也会被信任。
+  - 遮盖要多跑一遍空跑，换来不改共享规则、冲突时宁可多遮。
+  - 退回整段检查时，固定文字又会被检查，“1000”可能再被遮。外来内容可以故意带上全部 34 个候选字符来触发，让那一次请求的开头和平时不同、缓存未命中一次；方向是多遮，不会漏遮。
+  - 清单随提示词目录变化：以后改提示词文字，老对话里冻结的旧文字不再受信任，那个对话的请求开头可能变一次。这一点已写进规则文件 `.claude/rules/prompt-prefix.md` 第 11 条。
+
+**结果数据**
+
+- **生产验收**（出处：Andy 2026-11-07 在线程里发的页面截图和原话“验收通过”，截图没有存进仓库；测之前先清空了记录）：
+  - 正向：发“我的验证码是 482910”，出现 4 条记录：自动整理记忆、起对话标题、你的话、记忆检索，各遮 1 次。
+  - 反向：新开对话发“写一个小游戏”，等自动整理记忆跑完，没有任何记录。
+- **性能**：20 万字符的输入，不带清单 7.4 毫秒，带 75 段清单 7.8 毫秒（PR #268 第一个修复提交的说明）。加上空跑之后的总开销：未测量。
+- **门槛的反向验证**：
+  - 第一版修复提交里，把默认清单换成空的，“10 个用例失败”，“恢复后 18 个通过”（同一提交说明的原话）。
+  - 合并后的最终代码（main `5cedac65`）上 2026-11-07 重做：不带项目过滤直接运行门槛测试文件，它的 11 个用例会在两个测试项目里各跑一次，共 22 次（`npm run check:prompt-catalog` 里只跑其中一个项目）；清单换成空的时 12 次失败，恢复后 22 次全部通过（PR #276 第三个提交的说明里记有这次运行）。
+- **花费**：方案讨论 0.3471 美元（`.agents/reviews/topic-trusted-prompt-egress/usage.jsonl`），代码复核 4 轮共 0.5596 美元（`.agents/reviews/pr-268/usage.jsonl`）。
+- **缓存**：整理记忆这类后台请求共用的开头变了一次，之后的命中率变化：未测量。
+
+**相关 ADR/PR**
+
+- 事故：[I-78](incidents-and-gates.md#incidents)
+- 规则：`.claude/rules/prompt-prefix.md` 第 11 条
+- PR：#268（PR #258 的拦截记录页面暴露了这个问题）
+- 前置决定：[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)
+- 方案讨论和逐条判断：`.agents/reviews/topic-trusted-prompt-egress/`、`.agents/reviews/pr-268/`
+
+**面试 30 秒版**
+
+“我们在请求发给模型前做敏感信息遮盖，用的是业界通行的‘关键词加距离’规则。上线后发现它一直在遮我们自己写的指令：整理记忆的提示里‘验证码’和‘1000’挨得近，1000 被当成验证码遮掉了。Google 的词典排除和 Presidio 的允许清单排除的是被认出的值，但这里误报的来源是提供关键词的那段指令，所以我们排除的是这段文字本身：原地换成同样长度的填充字符再跑规则，外来内容之间的距离不变。复核中还发现第一版改了共享规则，能被一个特殊字符绕过，于是改成‘先空跑，有冲突就退回整段检查’。生产上正反验收都通过。”
 
 [返回目录](#contents)
 
