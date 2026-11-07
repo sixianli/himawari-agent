@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3efb23c2ed8c37549bdec0a5b42d4ba9a967b0da3924456f66f71f302edd0568"
+contract_sha256: "sha256:cc4be7ff3e2c728e6f24637d069a62fcfd302aa6f4f255dfb9c8a0877b64be48"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -173,7 +173,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 ### 注销 Hermes 上的旧 runner（一次性）
 
-ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 CI 之后做；Andy 2026-11-07 要求提前做，当天已完成下面第 1、2 步，第 3 步等 Andy 运行。要在改名的 PR 合并之前做，用 `main` 上还在的旧脚本（`scripts/operations/hermes-runner/`）；合并之后只能从历史里取，例如 `git show 058293d1:scripts/operations/hermes-runner/uninstall-runner.sh`。
+ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 CI 之后做；Andy 2026-11-07 要求提前做，当天三步都已完成（第 3 步由 Andy 运行，输出 `UNINSTALL_OK`；随后核对 Hermes 上 `gh-runner`、`gh-runner-2` 两个账号都已不存在，GitHub 上只剩 `ci-vps-1`、`ci-vps-2`）。要在改名的 PR 合并之前做，用 `main` 上还在的旧脚本（`scripts/operations/hermes-runner/`）；合并之后只能从历史里取，例如 `git show 058293d1:scripts/operations/hermes-runner/uninstall-runner.sh`。
 
 1. 在 Mac 上从 `main` 的检出运行 `scripts/operations/hermes-runner/pause-runners.sh`，看到 `RUNNER_PAUSED labels=removed services=stopped`。
 2. 从 GitHub 删除 `hermes-home` 和 `hermes-home-2`：`gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name}'` 查编号，再 `gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/<编号>`。
