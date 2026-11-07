@@ -1961,6 +1961,37 @@ describe("proactive Gmail check acceptance", () => {
       expect(entry?.inputs.relatedStats?.messages).toBe(1);
     });
 
+    it("masks sensitive values inside the body of an earlier mail", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map([
+          [
+            items[0]?.messageId ?? "",
+            [
+              mail("old", {
+                subject: "ログイン",
+                body: "認証コードは 482913 です。以前のご案内です。",
+                receivedAt: "2026-11-01T00:00:00.000Z",
+              }),
+            ],
+          ],
+        ]),
+        failed: new Map(),
+        requests: 1,
+      });
+      const reported: string[] = [];
+      const watched = await harness({
+        onMasked: (sightings) => reported.push(...sightings.map(({ kind }) => kind)),
+      });
+      watched.reader.related = h.reader.related;
+      watched.reader.items = [today];
+      watched.script([{ id: "closing", result: "ignore" }]);
+      await watched.service.run();
+      expect(itemsPart(watched.prompts[0] ?? "")).toContain("以前のご案内です");
+      expect(watched.prompts[0]).not.toContain("482913");
+      expect(reported).toContain("verification-code");
+    });
+
     it("does not look up earlier mail once the daily limit is already spent", async () => {
       const h = await harness({ dailyCostMicros: 1_000, cost: 1_000 });
       let lookups = 0;

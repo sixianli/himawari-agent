@@ -68,13 +68,16 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     expect(extractReferenceIds("注文番号: 250-1234567-8901234 をご確認ください")).toEqual([
       "250-1234567-8901234",
     ]);
-    expect(extractReferenceIds("Booking reference ABC123456 and case #CS-778899")).toEqual([
+    expect(extractReferenceIds("Booking number ABC123456 and case #CS-778899")).toEqual([
       "ABC123456",
       "CS-778899",
     ]);
+    expect(extractReferenceIds("ID 123456 and No. 99887766 and # 12345678")).toEqual([]);
     expect(extractReferenceIds("order number: ABCDEFGH")).toEqual([]);
     expect(extractReferenceIds("お問い合わせ番号 12")).toEqual([]);
-    expect(extractReferenceIds("注文 111111 注文 222222 注文 333333 注文 444444")).toHaveLength(3);
+    expect(
+      extractReferenceIds("注文 11111111 注文 22222222 注文 33333333 注文 44444444"),
+    ).toHaveLength(3);
   });
 
   it("uses the other side as the counterpart for the owner's own mail", () => {
@@ -137,6 +140,32 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
       "in-thread",
     ]);
     expect(result.failed.size).toBe(0);
+  });
+
+  it("only joins mail that arrived strictly before the new mail, never a newer one from the same thread", async () => {
+    const earlier = item("a", { threadId: "t-x", receivedAt: "2026-11-01T00:00:00.000Z" });
+    const later = item("b", { threadId: "t-x", receivedAt: "2026-11-02T00:00:00.000Z" });
+    const result = await findRelatedMail({
+      items: [earlier, later],
+      limits,
+      signal: new AbortController().signal,
+      transport: mailbox([earlier, later]),
+    });
+    expect(result.byMail.get("a")).toEqual([]);
+    expect(result.byMail.get("b")?.map(({ messageId }) => messageId)).toEqual(["a"]);
+  });
+
+  it("does not join a mail that only contains the number inside a longer one", async () => {
+    const current = item("now", { body: "注文番号 12345678 の件" });
+    const longer = item("longer", { subject: "別件", body: "参照 912345678901 です" });
+    const exact = item("exact", { subject: "別件2", body: "ご注文 12345678 を発送" });
+    const result = await findRelatedMail({
+      items: [current],
+      limits,
+      signal: new AbortController().signal,
+      transport: mailbox([current, longer, exact]),
+    });
+    expect(result.byMail.get("now")?.map(({ messageId }) => messageId)).toEqual(["exact"]);
   });
 
   it("does not trust a search hit that does not really contain the number", async () => {

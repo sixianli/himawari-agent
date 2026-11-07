@@ -11,7 +11,7 @@ const MAX_REFERENCES_PER_MAIL = 3;
 const SEARCH_RESULTS = 5;
 const FETCH_PARALLEL = 5;
 const REFERENCE_CONTEXT =
-  /(?<![A-Za-z])(?:order|booking|reservation|ticket|case|claim|invoice|reference|confirmation|tracking|注文|订单|訂單|予約|预约|預約|案件|受付|申込|申请|お問い合わせ|問い合わせ|番号|編号|编号|No\.?|ID|＃|#)\s*(?:number|no\.?|id|番号|編号|编号|号)?\s*[:：#＃]?\s*((?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{5,39})/giu;
+  /(?<![A-Za-z])(?:order|booking|reservation|ticket|case|claim|invoice|confirmation|tracking|注文|订单|訂單|予約|预约|預約|案件|受付|申込|申请|お問い合わせ|問い合わせ)\s*(?:number|no\.?|id|番号|編号|编号|号)?\s*[:：#＃]?\s*((?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{7,39})/giu;
 
 export function normalizeSubject(subject: string): string {
   return subject.replace(SUBJECT_PREFIX, "").replace(/\s+/gu, " ").trim().toLowerCase();
@@ -21,7 +21,7 @@ export function extractReferenceIds(text: string): readonly string[] {
   const found: string[] = [];
   for (const match of text.matchAll(REFERENCE_CONTEXT)) {
     const value = match[1]?.replace(/-+$/u, "").toUpperCase();
-    if (value === undefined || value.length < 6 || !/\d/u.test(value)) continue;
+    if (value === undefined || value.length < 8 || !/\d/u.test(value)) continue;
     if (!found.includes(value)) found.push(value);
     if (found.length >= MAX_REFERENCES_PER_MAIL) break;
   }
@@ -42,7 +42,21 @@ function sharesCounterpart(item: ProactiveSourceItem, other: ProactiveSourceItem
 
 function mentions(candidate: ProactiveSourceItem, reference: string): boolean {
   const haystack = `${candidate.subject}\n${candidate.body ?? candidate.snippet}`.toUpperCase();
-  return haystack.includes(reference);
+  let from = haystack.indexOf(reference);
+  while (from >= 0) {
+    const before = haystack[from - 1] ?? "";
+    const after = haystack[from + reference.length] ?? "";
+    if (!/[A-Z0-9-]/u.test(before) && !/[A-Z0-9-]/u.test(after)) return true;
+    from = haystack.indexOf(reference, from + 1);
+  }
+  return false;
+}
+
+function isEarlier(candidate: ProactiveSourceItem, item: ProactiveSourceItem): boolean {
+  return (
+    candidate.receivedAt < item.receivedAt ||
+    (candidate.receivedAt === item.receivedAt && candidate.messageId < item.messageId)
+  );
 }
 
 export interface GmailRelatedTransport {
@@ -105,7 +119,8 @@ export async function findRelatedMail(input: {
     }
     const pool = new Map<string, ProactiveSourceItem>();
     const add = (candidate: ProactiveSourceItem) => {
-      if (candidate.messageId !== item.messageId) pool.set(candidate.messageId, candidate);
+      if (candidate.messageId !== item.messageId && isEarlier(candidate, item))
+        pool.set(candidate.messageId, candidate);
     };
     let step = "thread";
     try {
