@@ -1,0 +1,9 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "README 的说明与代码不一致：`npm run check` 现在会跑 tooling 测试", "valid": false, "class": "error", "reason": "main（bc380a6e）的 check:steps 早已单独跑 check:check-runner、check:adr-numbers 等 tooling 测试文件，不是本 PR 引入；README 那句是说完整 test:tooling 不在 check 里、不能替代它，仍然正确"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "同时从 bootstrap 和记录里删掉一项时，门禁静默放行，探针覆盖缩小", "valid": true, "class": "better", "reason": "两处同时删是明显的有意改动，会出现在 diff 里由复核看到；I-79 防的是源码变了没人更新摘要，这种情况不会发生在无意之中"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "只解析 `originals` 的字面量；动态加入的文件既不会被记录，也不会被包检查发现", "valid": true, "class": "better", "reason": "模型自己标为推测、当前 bootstrap 没有这种写法；上线包检查用同样的正则，要改得两边一起改"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "源码摘要按原始字节算，CRLF 工作区可能误报", "valid": true, "class": "better", "reason": "同第 10 轮 D5：只会多拦、不会放过，项目只在 Mac 和 Linux 上检出"}
+{"id": "G1", "model": "opencode-go/glm-5.3-flash", "quote": "`review-explanations.json` 长度语义改变", "valid": false, "class": "error", "reason": "仓库里没有 review-explanations.json，git ls-files 查不到；GLM 这一轮复核的不是本 PR，标题写成第 9 轮、基线 aa03fc2 → d3ba7ce 也都不是本 PR 的提交"}
+{"id": "G2", "model": "opencode-go/glm-5.3-flash", "quote": "`run_diff.py` 的语义换脸", "valid": false, "class": "error", "reason": "仓库里没有 run_diff.py 或 run-diff.py"}
+{"id": "G3", "model": "opencode-go/glm-5.3-flash", "quote": "「read 不到 incident 就读不到 explanations」的这条规则是**本次新加的**", "valid": false, "class": "error", "reason": "所引 run-review.py、tag_assess.py 在仓库里都不存在"}
+{"id": "G4", "model": "opencode-go/glm-5.3-flash", "quote": "run-review.py:64 取出的下一个 round explanation", "valid": false, "class": "error", "reason": "仓库里没有 run-review.py"}
+{"id": "G5", "model": "opencode-go/glm-5.3-flash", "quote": "旧命名空间未同步", "valid": false, "class": "better", "reason": "所引 run-review.py 不存在，与本 PR 改动无关"}

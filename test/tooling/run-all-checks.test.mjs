@@ -51,6 +51,10 @@ describe("npm run check", () => {
     expect(manifest.scripts.check).toBe("node scripts/run-all-checks.mjs");
     const names = stepNames(manifest.scripts["check:steps"]);
     expect(names).toContain("check:boundaries");
+    expect(names).toContain("check:probe-sources");
+    expect(manifest.scripts["check:probe-sources"]).toBe(
+      "node scripts/check-probe-sources.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/probe-sources.test.mjs",
+    );
     for (const [name, file] of [
       ["check:delivery-packet", "test_make_packet.py"],
       ["check:delivery-deploy", "test_deploy.py"],
