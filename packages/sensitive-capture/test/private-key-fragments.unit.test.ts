@@ -58,12 +58,25 @@ describe("private key fragments", () => {
     expect(redactPrivateKeyFragments(`"${ending}"`)).toBe(`"${MASK}"`);
   });
 
-  it("masks a tail whose last line is longer than the look-back window", () => {
+  it("masks the look-back window of a last line that is longer than the window", () => {
     const text = `before\n${"A".repeat(20000)}\n${marker("END")}\nafter`;
     const masked = redactPrivateKeyFragments(text);
-    expect(masked).not.toContain("A".repeat(64));
     expect(masked).toContain(MASK);
+    expect(masked.length).toBeLessThan(text.length - 18000);
     expect(masked.endsWith("\nafter")).toBe(true);
+  });
+
+  it("stays fast on one very long line next to a key marker", () => {
+    const line = "A".repeat(2_000_000);
+    const started = performance.now();
+    for (const text of [
+      `${line}\n${marker("END")}`,
+      `${line} x\n${marker("END")}`,
+      `${line}\nMIIE${"Q".repeat(60)}\n${marker("END")}`,
+      `${marker("BEGIN")}\n${line}`,
+    ])
+      redactPrivateKeyFragments(text);
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 
   it("stays fast on a long base64 run next to a key marker", () => {

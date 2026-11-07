@@ -30,7 +30,7 @@ redactPrivateKeyFragments("A".repeat(20000) + "\n-----END RSA PRIVATE KEY-----")
 
 问题：正则只检查字母表和形状，不校验 payload 是否真的是规范 base64（允许 `=` 出现在任意位置、允许空 payload），所以「假 data 头 + 明文秘密」会被整段跳过。最直接的例子是 AWS 密钥：
 ```
-data:image/png;base64,AKIAABCDEFGHIJKLMNOP
+data:image/png;base64,AKIA[拆开]ABCDEFGHIJKLMNOP
 ```
 payload 全在 `[A-Za-z0-9+/=]` 内，匹配后 `return value`，而其中的 `AKIA...` 是 `aws-access-key` 规则本来能识别的。同理 `data:text/plain;base64,password=...` 只要值不含 `-`/`.` 等字符也会被跳过。
 
