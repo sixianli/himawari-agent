@@ -53,16 +53,18 @@ READ_NEXT_BOOT_KERNEL = (
     '    config = pathlib.Path(sys.argv[1]).read_text()\n'
     '    environment = dict(line.split("=", 1) for line in pathlib.Path(sys.argv[2]).read_text(errors="replace").splitlines() if "=" in line and not line.startswith("#"))\n'
     '    target = environment.get("next_entry") or environment.get("saved_entry", "")\n'
-    '    kernel = resolve(menu(config), target) if target and \'set default="${saved_entry}"\' in config else ""\n'
+    '    defaults = [line.strip() for line in config.splitlines() if line.strip().startswith("set default=") and line.strip() != \'set default="${next_entry}"\']\n'
+    '    kernel = resolve(menu(config), target) if target and defaults and defaults[-1] == \'set default="${saved_entry}"\' else ""\n'
     '    print(kernel if kernel and (pathlib.Path(sys.argv[3]) / ("vmlinuz-" + kernel)).is_file() else "")\n'
     'except Exception:\n'
     '    print("")\n'
 )
 READ_QUALIFIED_KERNEL = (
-    'import json, pathlib, sys\n'
+    'import json, pathlib, re, sys\n'
     'try:\n'
     '    receipts = sorted(pathlib.Path(sys.argv[1]).glob("*/installation-receipt.json"), key=lambda path: (path.stat().st_mtime, path.parent.name))\n'
-    '    print(json.loads(receipts[-1].read_text()).get("osRelease", "") if receipts else "")\n'
+    '    release = json.loads(receipts[-1].read_text()).get("osRelease", "") if receipts else ""\n'
+    '    print(release if isinstance(release, str) and re.fullmatch(r"[0-9A-Za-z.+~_-]+", release) else "")\n'
     'except Exception:\n'
     '    print("")\n'
 )
@@ -202,9 +204,9 @@ def main():
     if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
         print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai python3-venv, then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
     if any(name == 'NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL' and not passed for name, passed in results):
-        print('PREFLIGHT_NEXT_BOOT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but after a reboot GRUB would start ' + (facts.get('nextBootKernel') or 'an unknown kernel') + '; the sandbox qualification is bound to the running kernel and the service would refuse to start on any other one. This check reads ' + GRUB_CONFIG + ' and ' + GRUB_ENVIRONMENT + ': grub.cfg must boot the saved entry (GRUB_DEFAULT=saved, then update-grub), and the one-time next_entry, or else saved_entry, must name a menu entry that boots an installed kernel. As root, point GRUB back at the running kernel with grub-set-default and the id of its menu entry (grep menuentry_id_option ' + GRUB_CONFIG + '), and clear a one-time choice with: grub-editenv ' + GRUB_ENVIRONMENT + ' unset next_entry. Keep the other installed kernels, they are the fallback')
+        print('PREFLIGHT_NEXT_BOOT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but after a reboot GRUB would start ' + (facts.get('nextBootKernel') or 'an unknown kernel (' + GRUB_CONFIG + ' or ' + GRUB_ENVIRONMENT + ' could not be read or parsed, grub.cfg does not boot the saved entry, or the chosen entry boots no kernel in ' + BOOT_DIRECTORY + ')') + '; the sandbox qualification is bound to the running kernel and the service would refuse to start on any other one. Nothing was changed. With the owner\'s approval, as root, follow the rollback section of docs/runbooks/production-server-access-runbook.md: run grub-editenv ' + GRUB_ENVIRONMENT + ' list, then point GRUB at the running kernel with its full quoted entry path, submenu id, then >, then entry id, for example: grub-set-default \'gnulinux-advanced-<uuid>>gnulinux-' + facts.get('runningKernel', '<kernel>') + '-advanced-<uuid>\' (both ids from: grep menuentry_id_option ' + GRUB_CONFIG + '), remove a one-time choice with: grub-editenv ' + GRUB_ENVIRONMENT + ' unset next_entry, run grub-editenv list again and run this check again. If grub.cfg does not boot the saved entry, set GRUB_DEFAULT=saved in /etc/default/grub and run update-grub first. Keep the other installed kernels, they are the fallback')
     if any(name == 'RUNNING_KERNEL_MATCHES_QUALIFICATION' and not passed for name, passed in results):
-        print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel, and the service would refuse to start on any other one; boot the kernel the receipt records, or qualify the running kernel first with the sandbox qualification procedure before deploying')
+        print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel, and the service would refuse to start on any other one. Nothing was changed. With the owner\'s approval, either boot the kernel the receipt records following the rollback section of docs/runbooks/production-server-access-runbook.md (keep the running kernel as the fallback), or qualify the running kernel first with the sandbox qualification procedure before deploying')
     if any(name == 'SANDBOX_COMMAND_LINKS_REACHABLE' and not passed for name, passed in results):
         print('PREFLIGHT_SANDBOX_LINKS these commands in /usr/bin are links to a place the model sandbox is not allowed to read, so the model would get command not found for them (' + facts.get('sandboxLinks', 'no answer') + '); add the missing directory to readOnlyToolchainPaths in signing/cloud-seal.mjs, regenerate the packet and run this check again')
     if any(name == 'ROOT_FREE_FOR_ACCEPTANCE' and not passed for name, passed in results):

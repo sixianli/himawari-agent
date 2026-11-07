@@ -61,6 +61,7 @@ date: "2026-10-28"
 - **不要用 Contabo 面板的 “Reset credentials”**，除非现有密钥确实失效：它重置默认用户（`root`）的凭据，可能替换而不是追加 `root` 的密钥列表，让操作包脚本用的密钥失效；也可能需要重启服务器。确需使用时选 “SSH-Key” 页，粘贴 Mac 上 `.pub` 公钥文件的一整行，绝不粘贴私钥。
 - **启动前检查核对的系统状态**：内核版本（`os.release()`）必须与安装回执里封存时的版本完全相同；`/usr/bin/bwrap`、`/usr/bin/socat`、`/usr/bin/bash`、`/usr/bin/rg` 和 `bwrap` 的 AppArmor 配置文件的摘要必须不变。任何一项变化，服务启动前检查就失败，`systemd` 每 10 秒重试一次，且没有告警。
 - **当前锁定状态（2026-10-22 起）**：GRUB 长期默认启动 `6.8.0-142-generic`（`GRUB_DEFAULT=saved`，`saved_entry` 指向 142）；`apt-mark hold` 了 `linux-virtual`、`linux-image-virtual`、`linux-headers-virtual`、`linux-image-6.8.0-142-generic`、`linux-modules-6.8.0-142-generic`、`bubblewrap`、`socat`、`bash`、`ripgrep`；`/etc/apt/apt.conf.d/52himawari-hold` 让自动更新排除 `^linux-`、`^bubblewrap$`、`^socat$`、`^bash$`、`^ripgrep$`。代价是这些软件暂时收不到安全补丁。
+- **上线前检查会读重启后进哪个内核**：`scripts/delivery-mode/deploy-preflight.py` 的 `NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL` 读 `/boot/grub/grub.cfg` 和 `/boot/grub/grubenv`（GRUB 的启动菜单和它保存的启动项），重启后会启动的内核不是当前运行的内核、或者读不出来，就拦下这次上线，什么都不改。要改回时按下文[回滚](#rollback)一节，`grub-set-default` 写完整的带引号路径（子菜单标识、`>`、菜单项标识），例如 `grub-set-default 'gnulinux-advanced-<uuid>>gnulinux-6.8.0-142-generic-advanced-<uuid>'`。
 - 不运行 `apt upgrade`、`apt full-upgrade` 或 `do-release-upgrade`：它们会绕过上面的排除名单改动受检查的程序，系统大版本升级还会让当前安装的验收全部失效。
 
 [返回导航](#阅读导航)
