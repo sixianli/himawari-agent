@@ -10,6 +10,12 @@ import configuration from "../../vitest.workspace.ts";
 const policy = JSON.parse(readFileSync(new URL("../../ci/policy.json", import.meta.url)));
 const workerLimits = { maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 };
 const directories = [];
+const isolatedEnvironment = () => {
+  const environment = { ...process.env };
+  delete environment.HIMAWARI_TEST_ARTIFACT;
+  delete environment.HIMAWARI_TEST_CONTEXT;
+  return environment;
+};
 afterEach(() => {
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
@@ -41,6 +47,7 @@ describe("bounded integration scheduling", () => {
           globals: true,
           include: [filename],
           exclude: [],
+          globalSetup: [],
           ...(name === "integration" ? { maxWorkers: 2 } : {}),
         },
       };
@@ -65,7 +72,7 @@ describe("bounded integration scheduling", () => {
         "--reporter=json",
         `--outputFile.json=${report}`,
       ],
-      { cwd: root, encoding: "utf8" },
+      { cwd: root, encoding: "utf8", env: isolatedEnvironment() },
     );
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     const actual = JSON.parse(readFileSync(report, "utf8"));
