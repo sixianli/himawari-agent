@@ -76,6 +76,28 @@ describe("DeepSeek search and fetch adapter", () => {
     expect(init.redirect).toBe("error");
     expect(state.close).toHaveBeenCalledOnce();
   });
+  it("[mask-not-block] masks a secret in the query and a signed address before sending", async () => {
+    const token = ["ghp", "_", "B".repeat(30)].join("");
+    state.fetch.mockImplementation(async () => json({ results: [] }));
+    await provider().search({ query: `repo ${token}`, limit: 1 });
+    await provider().search({ query: `repo ${token}`, limit: 1 });
+    const bodies = state.fetch.mock.calls.map(([, init]) => init.body as string);
+    expect(bodies[0]).toBe(bodies[1]);
+    expect(JSON.parse(bodies[0] ?? "{}")).toEqual({
+      query: "repo [密钥]",
+      count: 1,
+      need_content: false,
+    });
+    state.fetch.mockResolvedValue(json({ title: "Page", content: "body" }));
+    await provider().fetch({
+      url: "https://user:pw@example.org/a?token=abcdef123456",
+      offset: 0,
+      maximumBytes: 64,
+    });
+    expect(JSON.parse(state.fetch.mock.calls[2]?.[1].body)).toEqual({
+      url: "https://example.org/a?token=%5B%E5%AF%86%E7%A0%81%5D",
+    });
+  });
   it("reports a query longer than 128 characters as unsupported without sending it", async () => {
     await expect(provider().search({ query: "a".repeat(129), limit: 1 })).rejects.toThrow(
       "WEB_SEARCH_INPUT_UNSUPPORTED",

@@ -156,11 +156,8 @@ describe("TypeSafe JEV transport", () => {
       "reason_code",
       "within_delegated_scope",
     ]);
-    // The host owns the decision vocabulary; the model only answers.
     expect(JSON.stringify(seen[0]?.body)).toContain("within_delegated_scope");
     expect(payloads.written).toHaveLength(1);
-    // The host re-binds its own answer to the frozen request identity, so the
-    // persisted decision is the full validated shape, not the raw answer.
     expect(JSON.parse(payloads.written[0] ?? "{}")).toEqual({
       schemaVersion: "automatic-review.v1",
       reviewId: "automatic-review:1",
@@ -179,6 +176,42 @@ describe("TypeSafe JEV transport", () => {
       cacheReadTokens: 0,
       costMicros: 412,
     });
+  });
+
+  it("[mask-not-block] masks secrets in the review state before sending and accepts the answer", async () => {
+    const token = ["ghp", "_", "R".repeat(30)].join("");
+    const run = async () => {
+      const { transport, seen, payloads } = transportFor(
+        envelope({ note: `deploy with ${token}` }),
+        () =>
+          new Response(
+            JSON.stringify({
+              model: "jev-1.13.0",
+              answers: {
+                within_delegated_scope: answer("within"),
+                decision: answer("approve", 0.91),
+                reason_code: answer("WITHIN_DELEGATION"),
+              },
+              usage: { input_tokens: 412, output_tokens: 31 },
+              echo: `deploy with ${token}`,
+            }),
+            { status: 200 },
+          ),
+      );
+      const events = await collect(transport, {
+        descriptor: descriptor(),
+        request: request(),
+        secretValues: ["key"],
+      });
+      return { events, sent: JSON.stringify(seen[0]?.body), payloads };
+    };
+    const first = await run();
+    expect(first.sent).not.toContain(token);
+    expect(first.sent).toContain('"note":"deploy with [密钥]"');
+    expect(first.sent).toContain('"reviewId":"automatic-review:1"');
+    expect(first.events.map(({ type }) => type)).toEqual(["model.output", "model.completed"]);
+    expect(JSON.parse(first.payloads.written[0] ?? "{}")).toMatchObject({ decision: "approve" });
+    expect((await run()).sent).toBe(first.sent);
   });
 
   it.each([
@@ -456,9 +489,7 @@ describe("TypeSafe JEV transport", () => {
       fetch: (async () =>
         new Response(
           new ReadableStream({
-            pull() {
-              /* Wait for the transport deadline. */
-            },
+            pull: () => new Promise<void>(() => undefined),
           }),
         )) as unknown as typeof globalThis.fetch,
     });

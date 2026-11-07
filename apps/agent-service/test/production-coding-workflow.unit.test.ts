@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type GovernedActionIntent,
   HOST_READ_ONLY_ERROR_CODES,
@@ -484,7 +485,6 @@ it("answers a repeated approved search from host memory without a second provide
 it.each([
   { url: "http://localhost:8080/admin" },
   { url: "http://192.168.1.10/" },
-  { url: "https://user:pw@example.org/" },
   { url: "file:///etc/passwd" },
   { url: "https://example.org/", maximumBytes: 1 },
   { url: "https://example.org/", offset: -1 },
@@ -868,6 +868,113 @@ it("[NL-2] runs web search in the service process without issuing a sandbox hand
   expect(replay).toEqual(first);
   expect(execute).toHaveBeenCalledTimes(1);
 });
+
+const externalTag = async () => (kind: string, value: string) =>
+  createHash("sha256")
+    .update(`${kind}\u0000${value}`)
+    .digest("hex")
+    .replace(/[^a-z]/gu, "")
+    .padEnd(8, "z")
+    .slice(0, 8);
+
+const webPassword = (suffix: string) => ["hunter", "2", suffix].join("");
+const webToken = () => ["ghp", "_", "Q".repeat(30)].join("");
+
+it("[mask-not-block] masks secrets in a search query once at entry and sends, caches and saves that value", async () => {
+  const sent: string[] = [];
+  const execute = vi.fn<NonNullable<ProductionFileReadServices["hostWeb"]>["execute"]>(
+    async (input) => {
+      sent.push(String(input.arguments["query"]));
+      return {
+        ok: true,
+        code: null,
+        output: `{"query":${JSON.stringify(input.arguments["query"])}}`,
+      };
+    },
+  );
+  const memory = new WebToolMemory();
+  const search = async (toolCallId: string, query: string) => {
+    const { f, services } = hostWebFixture(execute, memory);
+    const result = await executeProductionCodingRequest(
+      { ...f.call, toolCallId, capabilityRef: "coding.web_search", arguments: { query } },
+      "web_search",
+      { ...services, externalTag },
+      f.ctx,
+    );
+    return { result, f };
+  };
+  const first = await search("call-a", `login password: ${webPassword("abc")} ${webToken()}`);
+  expect(first.result.outcome).toBe("succeeded");
+  expect(sent[0]).toMatch(/^login password: \[密码#[a-z]{8}\] \[密钥\]$/u);
+  expect(sent[0]).not.toContain(webPassword("abc"));
+  expect(sent[0]).not.toContain(webToken());
+  await search("call-b", `login password: ${webPassword("abc")} ${webToken()}`);
+  expect(execute).toHaveBeenCalledTimes(1);
+  await search("call-c", `login password: ${webPassword("xyz")} ${webToken()}`);
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(sent[1]).toMatch(/^login password: \[密码#[a-z]{8}\] \[密钥\]$/u);
+  expect(sent[1]).not.toBe(sent[0]);
+  await search("call-d", "Tokyo forecast");
+  expect(sent[2]).toBe("Tokyo forecast");
+});
+
+it("[mask-not-block] saves the masked query as the sandboxed search program input", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const issue = vi.fn(async () => ({ ref: "handle:search" }));
+  const services = {
+    ...f.services,
+    authorize: allowRead(),
+    issue,
+    externalTag,
+  } as unknown as typeof f.services;
+  const result = await executeProductionCodingRequest(
+    {
+      ...f.call,
+      capabilityRef: "coding.web_search",
+      arguments: { query: `deploy ${webToken()} failing` },
+    },
+    "web_search",
+    services,
+    f.ctx,
+  );
+  expect(result.errorCode).not.toBe("WEB_SEARCH_INPUT_INVALID");
+  expect(f.values.get("input")).toEqual({ query: "deploy [密钥] failing" });
+});
+
+it.each([
+  ["https://user:pw@example.org/a", "https://example.org/a"],
+  [
+    "https://example.org/a?monkey=1&sig=abcdef123456&X-Amz-Credential=AKID%2F20261107",
+    /^https:\/\/example\.org\/a\?monkey=1&sig=%5B%E5%AF%86%E7%A0%81%23[a-z]{8}%5D&X-Amz-Credential=%5B%E5%AF%86%E7%A0%81%23[a-z]{8}%5D$/u,
+  ],
+  ["https://example.org/a?page=2", "https://example.org/a?page=2"],
+])(
+  "[mask-not-block] cleans a fetch url %s once at entry and saves that value",
+  async (url, saved) => {
+    const f = fixture();
+    f.services.binding = async () => ({ ...f.binding, grant: null });
+    const issue = vi.fn(async () => ({ ref: "handle:fetch" }));
+    const services = {
+      ...f.services,
+      authorize: allowRead(),
+      issue,
+      externalTag,
+    } as unknown as typeof f.services;
+    const result = await executeProductionCodingRequest(
+      { ...f.call, capabilityRef: "coding.web_fetch", arguments: { url } },
+      "web_fetch",
+      services,
+      f.ctx,
+    );
+    expect(result.errorCode).not.toBe("WEB_FETCH_INPUT_INVALID");
+    const input = f.values.get("input") as { url: string };
+    if (typeof saved === "string") expect(input.url).toBe(saved);
+    else expect(input.url).toMatch(saved);
+    expect(input.url).not.toContain("pw@");
+    expect(input.url).not.toContain("abcdef123456");
+  },
+);
 
 it("[NL-2] marks a host web fetch that ran and failed as dispatched and does not cache it", async () => {
   const execute = vi.fn<NonNullable<ProductionFileReadServices["hostWeb"]>["execute"]>(

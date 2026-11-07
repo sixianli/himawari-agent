@@ -9,7 +9,7 @@ import {
   type WebSearchCandidate,
   type WebSearchProvider,
 } from "@himawari-agent/application";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
+import { redactForExternalText, redactForExternalUrl } from "@himawari-agent/sensitive-capture";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { type Dispatcher, ProxyAgent, fetch as proxyFetch } from "undici";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
@@ -118,8 +118,7 @@ export function parseExaFetchResult(
 }
 
 export function validatePublicFetchUrl(value: string): string {
-  if (Buffer.byteLength(value) > 8192 || scanMachineSecrets(value).length)
-    throw new Error("WEB_FETCH_INPUT_INVALID");
+  if (Buffer.byteLength(value) > 8192) throw new Error("WEB_FETCH_INPUT_INVALID");
   let url: URL;
   try {
     url = new URL(value);
@@ -208,16 +207,15 @@ export class ExaPublicSearchAdapter
     readonly limit: number;
     readonly signal?: AbortSignal;
   }): Promise<readonly WebSearchCandidate[]> {
+    const query = redactForExternalText(input.query.trim()).text;
     if (
-      !input.query.trim() ||
-      Buffer.byteLength(input.query) > 4096 ||
+      !query ||
+      Buffer.byteLength(query) > 4096 ||
       !Number.isInteger(input.limit) ||
       input.limit < 1 ||
-      input.limit > 10 ||
-      scanMachineSecrets(input.query).length
+      input.limit > 10
     )
       throw new Error("WEB_SEARCH_INPUT_INVALID");
-    const query = input.query.trim();
     const limit = input.limit;
     return this.#session(
       "WEB_SEARCH",
@@ -273,7 +271,7 @@ export class ExaPublicSearchAdapter
     readonly signal?: AbortSignal;
   }): Promise<WebFetchResult> {
     validateFetchWindow(input);
-    const url = validatePublicFetchUrl(input.url);
+    const url = validatePublicFetchUrl(redactForExternalUrl(input.url).text);
     const characters = input.offset + input.maximumBytes + 1;
     let toolName: string | undefined;
     let toolArguments: Record<string, unknown> | undefined;

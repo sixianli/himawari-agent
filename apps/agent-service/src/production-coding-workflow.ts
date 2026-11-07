@@ -16,8 +16,8 @@ import {
   webProviderEgress,
   webProviderRecipients,
 } from "@himawari-agent/application";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { validatePublicFetchUrl } from "@himawari-agent/platform-node";
+import { redactForExternalText, redactForExternalUrl } from "@himawari-agent/sensitive-capture";
 import type {
   FileReadExecutionContext,
   ProductionFileReadServices,
@@ -105,6 +105,22 @@ export const fileVersionConflictResult = (
     "目标文件已变化，已确认本次候选未发布。已准备的候选仍保留；请重新读取最新内容，理解并保留他人修改后，用新的工具调用提出修改。新内容仍须经过原权限检查；无法确定意图时暂停说明。",
 });
 
+async function outboundWebArguments(
+  args: RuntimeToolInvocation["arguments"],
+  services: ProductionFileReadServices,
+): Promise<RuntimeToolInvocation["arguments"]> {
+  const query = args["query"];
+  const url = args["url"];
+  if (typeof query !== "string" && typeof url !== "string") return args;
+  const tag = await services.externalTag?.();
+  const options = tag === undefined ? {} : { tag };
+  return {
+    ...args,
+    ...(typeof query === "string" ? { query: redactForExternalText(query, options).text } : {}),
+    ...(typeof url === "string" ? { url: redactForExternalUrl(url, options).text } : {}),
+  };
+}
+
 export async function executeProductionCodingRequest(
   call: RuntimeToolInvocation,
   tool: Tool,
@@ -165,14 +181,15 @@ export async function executeProductionCodingRequest(
       grant.dataClassification !== "private")
   )
     return failed("CODING_DIRECTORY_UNAVAILABLE");
-  const args = call.arguments;
+  const args = webTool(tool)
+    ? await outboundWebArguments(call.arguments, services)
+    : call.arguments;
   if (Buffer.byteLength(JSON.stringify(args)) > 49152) return failed("CODING_INPUT_TOO_LARGE");
   if (
     tool === "web_search" &&
     (typeof args["query"] !== "string" ||
       !args["query"].trim() ||
       Buffer.byteLength(args["query"]) > 4096 ||
-      scanMachineSecrets(args["query"]).length ||
       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
       (args["limit"] !== undefined &&
         (!Number.isInteger(args["limit"]) ||
