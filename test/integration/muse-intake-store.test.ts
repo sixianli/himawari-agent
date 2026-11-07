@@ -337,6 +337,50 @@ describe.each(["worker", "direct"] as const)("Muse intake store through %s", (ex
     }
   });
 
+  it("fills a missing Gmail message id when Muse sends the same item again, and never replaces one", async () => {
+    const { repository, intake } = await fixture();
+    try {
+      await intake.ingestBatch(batch(1, [item("a"), item("b", { gmailMessageId: "first" })]));
+      await intake.rate({
+        ...scope,
+        kind: "proactive",
+        naturalKey: "a",
+        timingOk: true,
+        contentOk: true,
+        entryId: "rating-a",
+        now: at(5000),
+      });
+      const again = await intake.ingestBatch(
+        batch(2, [
+          item("a", { gmailMessageId: "1a1b53d1b88e9acc" }),
+          item("b", { gmailMessageId: "second" }),
+        ]),
+      );
+      expect(again).toMatchObject({ status: "accepted", accepted: 0, duplicate: 2, conflict: 0 });
+      const listed = await intake.listItems({ ...scope, since: SINCE, limit: 10 });
+      expect(
+        Object.fromEntries(listed.map((entry) => [entry.naturalKey, entry.gmailMessageId])),
+      ).toEqual({ a: "1a1b53d1b88e9acc", b: "first" });
+      const [entry] = await repository
+        .decisionLedger()
+        .listMuse({ ...scope, since: SINCE, limit: 10 });
+      expect(entry).toMatchObject({ id: "rating-a", pairedMessageId: "1a1b53d1b88e9acc" });
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("refuses a Gmail message id with characters a Gmail id never has", async () => {
+    const { repository, intake } = await fixture();
+    try {
+      await expect(
+        intake.ingestBatch(batch(1, [item("a", { gmailMessageId: "a b" })])),
+      ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("refuses to rate an item that does not exist or belongs to another owner", async () => {
     const { repository, intake } = await fixture();
     try {

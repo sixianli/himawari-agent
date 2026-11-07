@@ -319,6 +319,10 @@ describe("Muse intake over HTTP", () => {
       batch(2, [proactive("sub-2", { gmail_message_id: field("not an id; drop table") })]),
     );
     expect(rejected.json()).toMatchObject({ accepted: 0 });
+    const tooLong = await post(
+      batch(3, [proactive("sub-3", { gmail_message_id: field("a".repeat(257)) })]),
+    );
+    expect(tooLong.json()).toMatchObject({ accepted: 0 });
   });
 
   it("keeps ordinary options", async () => {

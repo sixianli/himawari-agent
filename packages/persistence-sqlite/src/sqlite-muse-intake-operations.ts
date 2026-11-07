@@ -38,6 +38,12 @@ function nullableText(value: unknown, max: number): boolean {
   return value === null || text(value, 1, max);
 }
 
+const GMAIL_MESSAGE_ID = /^[A-Za-z0-9_-]{1,256}$/u;
+
+function gmailMessageId(value: unknown): boolean {
+  return value === null || (typeof value === "string" && GMAIL_MESSAGE_ID.test(value));
+}
+
 function nullableTime(value: unknown): boolean {
   return value === null || validTime(value);
 }
@@ -78,7 +84,7 @@ function itemProblem(item: MuseIntakeItemWrite): string | null {
     !item.options.every((option) => text(option, 1, 80))
   )
     return "options";
-  if (!nullableText(item.gmailMessageId, 256)) return "gmail message id";
+  if (!gmailMessageId(item.gmailMessageId)) return "gmail message id";
   if (typeof item.sources !== "object" || item.sources === null) return "sources";
   const sources = Object.entries(item.sources);
   if (
@@ -218,6 +224,15 @@ export class SqliteMuseIntakeOperations {
         `SELECT content_digest AS digest FROM muse_intake_items
          WHERE owner_id = ? AND agent_id = ? AND kind = ? AND natural_key = ?`,
       );
+      const fillGmailMessage = this.database.prepare(
+        `UPDATE muse_intake_items SET gmail_message_id = ?
+         WHERE owner_id = ? AND agent_id = ? AND kind = ? AND natural_key = ?
+           AND gmail_message_id IS NULL`,
+      );
+      const fillPairedMessage = this.database.prepare(
+        `UPDATE muse_reference_entries SET paired_message_id = ?
+         WHERE owner_id = ? AND agent_id = ? AND intake_item_key = ? AND paired_message_id IS NULL`,
+      );
       const noteConflict = this.database.prepare(
         `INSERT INTO muse_intake_conflicts (
           owner_id, agent_id, kind, natural_key, conflict_count, first_seen_at, last_seen_at
@@ -265,6 +280,22 @@ export class SqliteMuseIntakeOperations {
         ) as { digest: string } | undefined;
         if (stored?.digest === item.contentDigest) {
           duplicate += 1;
+          if (item.gmailMessageId !== null) {
+            const filled = fillGmailMessage.run(
+              item.gmailMessageId,
+              write.ownerId,
+              write.agentId,
+              item.kind,
+              item.naturalKey,
+            );
+            if (filled.changes === 1)
+              fillPairedMessage.run(
+                item.gmailMessageId,
+                write.ownerId,
+                write.agentId,
+                museIntakeItemKey(item.kind, item.naturalKey),
+              );
+          }
         } else {
           conflict += 1;
           noteConflict.run(

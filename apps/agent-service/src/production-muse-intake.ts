@@ -273,7 +273,6 @@ function parseProactive(raw: Json, reader: ItemReader): MuseItemDraft | null {
     handoffAt: safe(handoffAt),
     eventAt: safe(eventAt),
     options: offered as readonly string[],
-    gmailMessageId: safe(gmailMessageId),
     sources: reader.sources,
     editionId: typeof raw["edition_id"] === "string" ? raw["edition_id"] : null,
   };
