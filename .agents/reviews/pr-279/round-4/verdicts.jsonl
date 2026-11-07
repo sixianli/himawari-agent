@@ -1,0 +1,7 @@
+{"id": "r4-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "proactive.replay.start 没有任何生产可达的发送方，结果也无读取消息类型", "valid": false, "class": "better"}
+{"id": "r4-glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "整轮回放没有总时限，最多可占用唯一 running 槽很久", "valid": true, "class": "error", "severity": "low", "trigger": "模型每封都接近单封超时但不失败，且邮件很多", "consequence": "回放长时间占着唯一的运行名额，下一个回放要等；不丢数据、不出错误结果", "modelSeverity": "中低", "reason": "模型写“中低”；只是占名额、受 mailLimit 2000 和预算上限约束，没有错误结果，线程判低"}
+{"id": "r4-glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "上限常量四处硬编码，三处没有合同测试兜底", "valid": false, "class": "better"}
+{"id": "r4-glm-4", "model": "opencode-go/glm-5.3-flash", "quote": "三个错误恢复分支没有任何测试覆盖", "valid": false, "class": "better"}
+{"id": "r4-glm-5", "model": "opencode-go/glm-5.3-flash", "quote": "PROACTIVE_OPERATION_NOT_INSTALLED 抛裸 Error", "valid": false, "class": "better"}
+{"id": "r4-glm-6", "model": "opencode-go/glm-5.3-flash", "quote": "Gmail 404 的邮件被静默跳过", "valid": false, "class": "better"}
+{"id": "r4-glm-7", "model": "opencode-go/glm-5.3-flash", "quote": "docs 下没有这个功能对应的设计记录", "valid": false, "class": "better"}

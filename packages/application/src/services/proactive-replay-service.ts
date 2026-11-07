@@ -32,6 +32,7 @@ export const PROACTIVE_REPLAY_ERROR_CODES = Object.freeze({
 } as const);
 
 const CONSECUTIVE_FAILURE_LIMIT = 3;
+export const PROACTIVE_REPLAY_MAX_RUN_MS = 6 * 60 * 60_000;
 
 export interface ProactiveReplayOptions {
   readonly scope: ProactiveScope;
@@ -216,6 +217,7 @@ export class ProactiveReplayService {
     const messageIds = [...new Set(listed.ids)].slice(0, request.mailLimit);
     await replays.markListed({ ...scope, runId, listed: messageIds.length });
     const settings = await store.readSettings(scope);
+    const runStartedAt = Date.parse(clock.now());
     let spent = 0;
     let failures = 0;
     for (let start = 0; start < messageIds.length; start += PROACTIVE_HISTORY_READ_CHUNK) {
@@ -235,6 +237,8 @@ export class ProactiveReplayService {
       );
       for (const item of inRange) {
         if (this.#cancelled) return finish("interrupted", "SERVICE_STOPPING");
+        if (Date.parse(clock.now()) - runStartedAt > PROACTIVE_REPLAY_MAX_RUN_MS)
+          return finish("finished", "TIME_LIMIT");
         const captured: Captured = { record: undefined };
         const decision = await this.#judge(
           item,

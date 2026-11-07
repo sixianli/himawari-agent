@@ -608,4 +608,39 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
       reasonCode: "SERVICE_STOPPING",
     });
   });
+
+  it("stops a replay that has run longer than the time limit", async () => {
+    const h = await setup();
+    const slow = new ProactiveReplayService({
+      scope,
+      store: h.store,
+      replays: h.replays,
+      seal: h.seal,
+      history: h.history,
+      model: {
+        ...h.model,
+        prepare: async (input) => {
+          h.clock.advance(7 * 60 * 60_000);
+          return h.model.prepare(input);
+        },
+      },
+      perCheckMs: 60_000,
+      estimateCostMicros: () => 100,
+      timeZone: "Asia/Tokyo",
+      clock: h.clock,
+      ids: new DeterministicIdGenerator(),
+    });
+    const { runId, done } = await slow.start({
+      from: FROM,
+      to: TO,
+      mailLimit: 10,
+      budgetMicros: 100_000,
+    });
+    await done;
+    expect(await h.replays.readRun({ ...scope, runId })).toMatchObject({
+      status: "finished",
+      reasonCode: "TIME_LIMIT",
+      judged: 1,
+    });
+  });
 });
