@@ -126,6 +126,25 @@ describe("chat completions", () => {
     expect(JSON.stringify(messages[4])).toContain("data:image/png;base64,AAAA4111111111111111");
   });
 
+  it("masks text that only starts with data: and keeps real base64 data URLs", async () => {
+    const AWS_LIKE = ["AKIA", "ABCDEFGHIJKLMNOP"].join("");
+    const image = "data:image/png;base64,AAAA4111111111111111";
+    const { raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [
+        { role: "tool", tool_call_id: "c", content: `data: token sk-${"a".repeat(24)}` },
+        { role: "user", content: `data:text/plain,password=hunter22abc` },
+        { role: "user", content: "data:text/plain;base64,password=hunter22abc" },
+        { role: "user", content: `data:image/png;base64,${AWS_LIKE}` },
+        { role: "user", content: image },
+      ],
+    });
+    expect(raw).not.toContain("a".repeat(24));
+    expect(raw).not.toContain("hunter22abc");
+    expect(raw).not.toContain(AWS_LIKE);
+    expect(raw).toContain(image);
+  });
+
   it("masks a secret that sits in the very first history message", async () => {
     const { raw } = await send("/chat/completions", {
       model: "m",
@@ -495,6 +514,53 @@ describe("reporting what was masked", () => {
     }
     for (const { fingerprint } of reports[0]?.sightings ?? [])
       expect(fingerprint).toMatch(/^[0-9a-f]{32}$/u);
+  });
+
+  it("records every value as withheld when the self-check refuses to send the request", async () => {
+    const reports: (readonly ModelEgressSighting[])[] = [];
+    const leaked = `固定说明里不该有的 token sk-${"a".repeat(24)} 结尾`;
+    const instance = new ModelEgress({
+      key: async () => key,
+      sign,
+      trusted: [leaked],
+      report: (_context, sightings) => reports.push(sightings),
+    });
+    await expect(
+      send(
+        "/chat/completions",
+        {
+          model: "m",
+          messages: [{ role: "user", content: `卡号 ${CARD}\n${leaked}` }],
+        },
+        { exchange: instance.exchange(context) },
+      ),
+    ).rejects.toThrow(ModelEgressRefusedError);
+    expect(reports).toHaveLength(1);
+    expect(
+      reports[0]?.map(({ part, category, ruleId, outcome }) =>
+        [part, category, ruleId, outcome].join("/"),
+      ),
+    ).toEqual([
+      "owner_message/bank-card/bank-card/withheld",
+      "owner_message/machine-secret/openai-api-key/withheld",
+    ]);
+    expect(JSON.stringify(reports)).not.toContain("a".repeat(24));
+  });
+
+  it("masks and records part of a private key", async () => {
+    const { reports, instance } = reporting();
+    const marker = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+    const fragment = [marker, `MIIE${"Qk".repeat(30)}`, `MIIF${"Qk".repeat(30)}`].join("\n");
+    const { raw } = await send(
+      "/chat/completions",
+      { model: "m", messages: [{ role: "user", content: `看一下\n${fragment}` }] },
+      { exchange: instance.exchange(context) },
+    );
+    expect(raw).not.toContain("Qk".repeat(30));
+    expect(raw).toContain("[密钥]");
+    expect(
+      reports[0]?.sightings.map(({ part, category, ruleId }) => `${part}/${category}/${ruleId}`),
+    ).toEqual(["owner_message/machine-secret/private-key-block"]);
   });
 
   it("sends the same bytes whether or not anything is recorded, and even when recording fails", async () => {

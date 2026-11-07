@@ -2,10 +2,8 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import path from "node:path";
-import { containsToolOutputSecret } from "@himawari-agent/sensitive-capture";
+import { containsToolOutputSecret, redactForEgress } from "@himawari-agent/sensitive-capture";
 
-/** Read an untrusted Pi output locator only in the owned private directory.
- * Bytes, never a host path, cross the existing protected Payload channel. */
 export async function exportPiOutputFile(
   filename: string,
   privateDirectory: string,
@@ -40,15 +38,35 @@ export async function exportPiOutputFile(
     const after = await handle.stat();
     if (after.size !== before.size || after.ctimeMs !== before.ctimeMs || after.nlink !== 1)
       throw new Error("PI_OUTPUT_FILE_CHANGED");
-    if (containsToolOutputSecret(bytes.toString("utf8")))
-      throw new Error("PI_OUTPUT_SECRET_REJECTED");
-    return {
-      encoding: "base64",
-      data: bytes.toString("base64"),
-      byteLength: bytes.length,
-      digest: createHash("sha256").update(bytes).digest("hex"),
-    } as const;
+    const text = utf8Text(bytes);
+    if (text === null) {
+      if (containsToolOutputSecret(bytes.toString("utf8")))
+        throw new Error("PI_OUTPUT_SECRET_DROPPED");
+      return exportedOutput(bytes, false);
+    }
+    const masked = redactForEgress(text).text;
+    return masked === text
+      ? exportedOutput(bytes, false)
+      : exportedOutput(Buffer.from(masked), true);
   } finally {
     await handle.close();
+  }
+}
+
+function exportedOutput(bytes: Buffer, redacted: boolean) {
+  return {
+    encoding: "base64",
+    data: bytes.toString("base64"),
+    byteLength: bytes.length,
+    digest: createHash("sha256").update(bytes).digest("hex"),
+    ...(redacted ? { redacted: true } : {}),
+  } as const;
+}
+
+function utf8Text(bytes: Buffer): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
   }
 }

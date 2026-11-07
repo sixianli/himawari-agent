@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { containsToolOutputSecret, scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import type { SandboxScope } from "@himawari-agent/execution-contracts";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 import { createDirectoryMoveJournal } from "./directory-move.js";
@@ -46,14 +45,7 @@ export function isPiHostPublication(input: {
 const FULL_OUTPUT_ENVELOPE_RESERVE = 512;
 const FULL_OUTPUT_KEPT = "本次受保护结果的 fullOutput 字段";
 const FULL_OUTPUT_DROPPED = "完整输出超过上限，未保留";
-const COMMAND_SECRET_WITHHELD =
-  "命令或它的输出中有疑似密钥的内容，为防止泄露，输出没有交给模型。请改用不会打印密钥的命令，例如只检查某个变量是否已设置，而不打印它的值。";
-const FILE_SECRET_WITHHELD_WRITTEN =
-  "文件已修改并通过核实；修改结果里有疑似密钥的内容，为防止泄露，没有交给模型。";
-const FILE_SECRET_WITHHELD_NOT_WRITTEN =
-  "操作没有成功，文件没有被修改；错误信息里有疑似密钥的内容，为防止泄露，没有交给模型。";
-const FILE_SECRET_WITHHELD_UNKNOWN =
-  "操作没有成功，文件可能已被修改；错误信息里有疑似密钥的内容，为防止泄露，没有交给模型。请先读取目标文件确认内容，再决定下一步。";
+const FULL_OUTPUT_SECRET_DROPPED = "完整输出不是文字且含疑似密钥，未保留";
 
 function exactFitOutput(json: string, maxBytes: number): string | null {
   return Buffer.byteLength(json) <= maxBytes ? json : null;
@@ -95,25 +87,18 @@ export async function formatForegroundPiResult(input: {
         : part,
     );
 
-  const serialize = (
-    parts: readonly unknown[],
-    fullOutput: unknown,
-    shown: { readonly details: unknown; readonly source: unknown } = {
-      details,
-      source: input.source,
-    },
-  ): string =>
+  const serialize = (parts: readonly unknown[], fullOutput: unknown): string =>
     JSON.stringify({
       schemaVersion: "pi-result.v1",
       tool: input.tool,
       content: parts,
-      details: shown.details,
+      details,
       fullOutput,
       isError: input.result.isError,
       commandExitCode: input.commandExitCode,
       verifiedWrite: input.verifiedWrite,
       ...input.closing,
-      source: shown.source,
+      source: input.source,
     });
 
   const fitBody = (json: string): string => {
@@ -128,40 +113,6 @@ export async function formatForegroundPiResult(input: {
       ? input.commandExitCode
       : 1;
 
-  const withhold = (): PiPublicationOutput => {
-    if (input.tool === "bash") {
-      const withheld = serialize([{ type: "text", text: COMMAND_SECRET_WITHHELD }], null, {
-        details: {},
-        source: Object.fromEntries(
-          Object.entries(input.source).filter(([key]) => key !== "parameters"),
-        ),
-      });
-      if (containsToolOutputSecret(withheld)) throw new Error("PI_RESULT_SECRET_REJECTED");
-      return { output: fitBody(withheld), exitCode };
-    }
-    if (input.tool !== "write" && input.tool !== "edit")
-      throw new Error("PI_RESULT_SECRET_REJECTED");
-    const notice =
-      !input.result.isError && input.verifiedWrite != null
-        ? FILE_SECRET_WITHHELD_WRITTEN
-        : input.result.isError && input.closing["writeNotStarted"] === true
-          ? FILE_SECRET_WITHHELD_NOT_WRITTEN
-          : FILE_SECRET_WITHHELD_UNKNOWN;
-    const withheld = serialize([{ type: "text", text: notice }], null, {
-      details: {},
-      source: input.source,
-    });
-    if (scanMachineSecrets(withheld).length) throw new Error("PI_RESULT_SECRET_REJECTED");
-    return { output: fitBody(withheld), exitCode };
-  };
-
-  const shown = content(FULL_OUTPUT_KEPT);
-  if (
-    scanMachineSecrets(serialize(shown, null)).length ||
-    containsToolOutputSecret(JSON.stringify({ content: shown, details }))
-  )
-    return withhold();
-
   const bodyOnly = fitBody(serialize(content(FULL_OUTPUT_DROPPED), null));
   if (hasFullOutput) {
     const remaining =
@@ -172,8 +123,11 @@ export async function formatForegroundPiResult(input: {
       try {
         exported = await exportPiOutputFile(fullPath as string, input.privateDirectory, fileBudget);
       } catch (error) {
-        if (error instanceof Error && error.message === "PI_OUTPUT_SECRET_REJECTED")
-          return withhold();
+        if (error instanceof Error && error.message === "PI_OUTPUT_SECRET_DROPPED")
+          return {
+            output: fitBody(serialize(content(FULL_OUTPUT_SECRET_DROPPED), null)),
+            exitCode,
+          };
         if (error instanceof Error && error.message === "PI_OUTPUT_FILE_REJECTED") exported = null;
         else throw error;
       }
@@ -190,8 +144,7 @@ export async function formatForegroundPiResult(input: {
 }
 
 function bounded(output: string, maxOutputBytes: number) {
-  if (Buffer.byteLength(output) > maxOutputBytes || scanMachineSecrets(output).length)
-    throw new Error("PI_RESULT_OUTPUT_LIMIT");
+  if (Buffer.byteLength(output) > maxOutputBytes) throw new Error("PI_RESULT_OUTPUT_LIMIT");
   return output;
 }
 

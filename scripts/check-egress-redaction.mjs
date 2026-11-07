@@ -18,6 +18,7 @@ export const REQUIRED_REDACTION_CALLS = Object.freeze([
 export const REDACTOR_ONLY_FILES = Object.freeze([
   "packages/sensitive-capture/src/redaction.ts",
   "packages/application/src/services/model-egress.ts",
+  "packages/platform-node/src/files/pi-output-export.ts",
 ]);
 
 export const SENSITIVE_RULE_PACKAGE = "packages/sensitive-capture/src/";
@@ -92,9 +93,9 @@ const PASS = "改成原样放行";
 export const SENSITIVE_GATE_CALLS = Object.freeze([
   {
     file: "packages/application/src/services/model-egress.ts",
-    calls: { assertMachineSecretFree: 1 },
+    calls: { assertMachineSecretFree: 1, scanMachineSecrets: 1 },
     decision: KEEP,
-    reason: "遮完之后的自检：遮盖出 bug、仍有密钥时不发",
+    reason: "遮完之后的自检：遮盖出 bug、仍有密钥时不发；数据网址里认出密钥时改按文字遮",
   },
   {
     file: "packages/platform-node/src/trusted-model-provider.ts",
@@ -115,12 +116,6 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     reason: "记忆存原文，发给模型时由出口遮盖遮值",
   },
   {
-    file: "packages/application/src/services/host-file-read-service.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "读到的文件发给模型时由出口遮盖遮值",
-  },
-  {
     file: "packages/application/src/services/reflection-service.ts",
     calls: { assertMachineSecretFree: 1 },
     decision: MASK,
@@ -133,28 +128,16 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     reason: "检查点存原文，发给模型时遮值",
   },
   {
-    file: "packages/application/src/services/workspace-copy-service.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: PASS,
-    reason: "复制文件要求字节原样",
-  },
-  {
     file: "packages/platform-node/src/deepseek-web-provider.ts",
-    calls: { scanMachineSecrets: 2 },
+    calls: { scanMachineSecrets: 1 },
     decision: MASK,
-    reason: "查询词先遮再发；结果发给模型时由出口遮盖遮值",
+    reason: "查询词先遮再发",
   },
   {
     file: "packages/platform-node/src/exa-public-search.ts",
-    calls: { scanMachineSecrets: 4 },
+    calls: { scanMachineSecrets: 2 },
     decision: MASK,
-    reason: "查询词和网址先遮再发；结果发给模型时由出口遮盖遮值",
-  },
-  {
-    file: "packages/platform-node/src/files/pi-host-publication.ts",
-    calls: { containsToolOutputSecret: 2, scanMachineSecrets: 3 },
-    decision: MASK,
-    reason: "工具结果发给模型时由出口遮盖遮值",
+    reason: "查询词和网址先遮再发",
   },
   {
     file: "packages/platform-node/src/files/pi-output-export.ts",
@@ -163,52 +146,16 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     reason: "完整输出先遮文字再 base64 编码",
   },
   {
-    file: "packages/platform-node/src/files/sandboxed-coding-operations.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "读给模型的内容由出口遮盖遮值，编辑用真实内容",
-  },
-  {
     file: "packages/platform-node/src/typesafe-jev-transport.ts",
     calls: { assertMachineSecretFree: 2 },
     decision: MASK,
     reason: "请求先遮再发；回复存原文",
   },
   {
-    file: "packages/runtime-pi/src/host-read-only-executor.ts",
-    calls: { assertMachineSecretFree: 1 },
-    decision: MASK,
-    reason: "读到的文件发给模型时由出口遮盖遮值",
-  },
-  {
-    file: "apps/agent-service/src/capability-programs/host-file-read.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "读到的文件发给模型时由出口遮盖遮值",
-  },
-  {
-    file: "apps/agent-service/src/capability-programs/pi-coding-request.ts",
-    calls: { containsToolOutputSecret: 1 },
-    decision: MASK,
-    reason: "后台命令输出发给模型时由出口遮盖遮值",
-  },
-  {
     file: "apps/agent-service/src/production-coding-workflow.ts",
     calls: { scanMachineSecrets: 1 },
     decision: MASK,
     reason: "搜索词先遮再发",
-  },
-  {
-    file: "apps/agent-service/src/production-file-preparation.ts",
-    calls: { scanMachineSecrets: 1, containsToolOutputSecret: 1 },
-    decision: PASS,
-    reason: "编辑读真实内容；结果发给模型时由出口遮盖遮值",
-  },
-  {
-    file: "apps/agent-service/src/production-host-read.ts",
-    calls: { scanMachineSecrets: 1, containsToolOutputSecret: 1 },
-    decision: MASK,
-    reason: "读到的内容发给模型时由出口遮盖遮值",
   },
   {
     file: "apps/agent-service/src/production-memory-capture.ts",
@@ -239,12 +186,6 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     calls: { scanMachineSecrets: 1 },
     decision: MASK,
     reason: "沙箱诊断存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-sandbox-services.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "恢复的工具结果发给模型时由出口遮盖遮值",
   },
   {
     file: "apps/agent-service/src/production-thread-titles.ts",

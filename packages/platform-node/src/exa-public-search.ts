@@ -248,7 +248,6 @@ export class ExaPublicSearchAdapter
             .filter((item) => item.type === "text")
             .map((item) => item.text)
             .join("\n\n---\n\n");
-          if (scanMachineSecrets(text).length) throw new Error("WEB_SEARCH_OUTPUT_REDACTED");
           return parseExaSearchResults(text, limit);
         };
         try {
@@ -317,7 +316,6 @@ export class ExaPublicSearchAdapter
                 ? "WEB_FETCH_TIMEOUT"
                 : "WEB_FETCH_UNREACHABLE",
           );
-        if (scanMachineSecrets(text).length) throw new Error("WEB_FETCH_OUTPUT_REDACTED");
         return parseExaFetchResult(text, url, input.offset, input.maximumBytes);
       },
     );
