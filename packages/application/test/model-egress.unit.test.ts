@@ -126,6 +126,21 @@ describe("chat completions", () => {
     expect(JSON.stringify(messages[4])).toContain("data:image/png;base64,AAAA4111111111111111");
   });
 
+  it("masks text that only starts with data: and keeps real base64 data URLs", async () => {
+    const image = "data:image/png;base64,AAAA4111111111111111";
+    const { raw } = await send("/chat/completions", {
+      model: "m",
+      messages: [
+        { role: "tool", tool_call_id: "c", content: `data: token sk-${"a".repeat(24)}` },
+        { role: "user", content: `data:text/plain,password=hunter22abc` },
+        { role: "user", content: image },
+      ],
+    });
+    expect(raw).not.toContain("a".repeat(24));
+    expect(raw).not.toContain("hunter22abc");
+    expect(raw).toContain(image);
+  });
+
   it("masks a secret that sits in the very first history message", async () => {
     const { raw } = await send("/chat/completions", {
       model: "m",

@@ -406,6 +406,9 @@ function maskArguments(
   return next === parsed ? value : JSON.stringify(next);
 }
 
+const BASE64_DATA_URL =
+  /^data:[\w.+-]+\/[\w.+-]+(?:;[\w.+-]+=[\w.+-]+)*;base64,[A-Za-z0-9+/=\r\n]*$/u;
+
 function maskTree(
   value: unknown,
   text: TextRedactor,
@@ -413,7 +416,7 @@ function maskTree(
   inherited: SensitiveInterceptionPart,
 ): unknown {
   if (typeof value === "string") {
-    if (value.startsWith("data:")) return value;
+    if (BASE64_DATA_URL.test(value)) return value;
     const result = text(value, inherited);
     return result === value ? value : result;
   }

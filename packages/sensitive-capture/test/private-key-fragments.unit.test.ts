@@ -49,6 +49,28 @@ describe("private key fragments", () => {
     expect(redactPrivateKeyFragments(text)).toBe(JSON.stringify({ text: MASK }));
   });
 
+  it("masks a short body, a body on the marker's own line, and escaped CRLF line breaks", () => {
+    expect(redactPrivateKeyFragments(`${marker("BEGIN")}\nMIIEvQ`)).toBe(MASK);
+    expect(redactPrivateKeyFragments(`${marker("BEGIN")}${body[0]} tail`)).toBe(`${MASK} tail`);
+    const escaped = [marker("BEGIN"), ...body.slice(0, 2)].join("\\r\\n");
+    expect(redactPrivateKeyFragments(`"${escaped}"`)).toBe(`"${MASK}"`);
+    const ending = [...body.slice(0, 2), marker("END")].join("\\r\\n");
+    expect(redactPrivateKeyFragments(`"${ending}"`)).toBe(`"${MASK}"`);
+  });
+
+  it("stays fast on a long base64 run next to a key marker", () => {
+    const run = Array.from({ length: 20000 }, (_, index) => `${index}`.padStart(64, "Q"));
+    const started = performance.now();
+    for (const text of [
+      [...run, marker("END")],
+      [marker("BEGIN"), ...run],
+      [...run, "x y", marker("END")],
+      [marker("BEGIN"), "x", ...run, "x y"],
+    ])
+      redactPrivateKeyFragments(text.join("\n"));
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   it("leaves bare markers and ordinary text alone", () => {
     for (const text of [
       `grep -rn -- '${marker("BEGIN")}' .`,

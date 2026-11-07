@@ -36,6 +36,14 @@ describe("[R2-T9] fitPiResultOutput", () => {
     expect(fitPiResultOutput(json, 4096)).toBe(json);
   });
 
+  it("drops the cut-off start of a token when one long line is cut in the middle", () => {
+    const line = `${"x ".repeat(3000)}token=sk-${"a".repeat(40)} done`;
+    const fitted = fitPiResultOutput(envelope(line, "bash"), 4096);
+    const text = (JSON.parse(fitted ?? "{}") as FittedEnvelope).content[0]?.text ?? "";
+    expect(text).toMatch(/^ /u);
+    expect(text).not.toMatch(/^[A-Za-z0-9._~+/=-]/u);
+  });
+
   it("[R2-T9] truncates the head of an over-limit result and adds Pi's limit notice", () => {
     const fitted = fitPiResultOutput(envelope(manyLines), 4096);
     expect(fitted).not.toBeNull();

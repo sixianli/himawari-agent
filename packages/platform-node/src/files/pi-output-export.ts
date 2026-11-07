@@ -39,7 +39,7 @@ export async function exportPiOutputFile(
     if (after.size !== before.size || after.ctimeMs !== before.ctimeMs || after.nlink !== 1)
       throw new Error("PI_OUTPUT_FILE_CHANGED");
     const text = utf8Text(bytes);
-    if (text === null || text.includes("\0")) {
+    if (text === null) {
       if (containsToolOutputSecret(bytes.toString("utf8")))
         throw new Error("PI_OUTPUT_FILE_REJECTED");
       return exportedOutput(bytes, false);

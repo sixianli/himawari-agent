@@ -252,6 +252,12 @@ describe("Pi output export", () => {
     expect(Buffer.from(raw.data, "base64").equals(latin)).toBe(true);
     expect(raw).not.toHaveProperty("redacted");
     await writeFile(file, `\u0000sk-${"a".repeat(24)}`);
+    const withNul = await exportPiOutputFile(file, root, 1024);
+    expect(Buffer.from(withNul.data, "base64").toString()).toBe("\u0000[密钥]");
+    await writeFile(
+      file,
+      Buffer.concat([Buffer.from([0xff]), Buffer.from(`sk-${"a".repeat(24)}`)]),
+    );
     await expect(exportPiOutputFile(file, root, 1024)).rejects.toThrow("PI_OUTPUT_FILE_REJECTED");
   });
   it("rejects forged paths, links and oversized files", async () => {
