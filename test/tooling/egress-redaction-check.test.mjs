@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   findEgressViolations,
+  findSensitiveGateViolations,
   REQUIRED_REDACTION_CALLS,
 } from "../../scripts/check-egress-redaction.mjs";
 
@@ -124,5 +125,98 @@ describe("egress redaction check", () => {
         "const T = /\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b/g;",
     });
     expect(findEgressViolations(root)).toEqual([]);
+  });
+});
+
+describe("external egress registration", () => {
+  it("accepts an external service request in its registered file", () => {
+    const root = fixture({
+      "packages/platform-node/src/exa-public-search.ts":
+        'const endpoint = "https://mcp.exa.ai/mcp";',
+    });
+    expect(findEgressViolations(root)).toEqual([]);
+  });
+
+  it("fails when an external service request appears in an unregistered file", () => {
+    const root = fixture({
+      "apps/agent-service/src/new-search.ts": 'await fetch("https://mcp.exa.ai/mcp", init);',
+      "packages/platform-node/src/review.ts": 'fetchImpl(base + "/v1/systemone", init);',
+      "packages/platform-node/src/web.ts": 'post("/v1/tools/fetch", body);',
+    });
+    const report = findEgressViolations(root).join("\n");
+    expect(report).toContain(
+      "apps/agent-service/src/new-search.ts: 出现了没有登记的外部出口（Exa MCP request）",
+    );
+    expect(report).toContain(
+      "packages/platform-node/src/review.ts: 出现了没有登记的外部出口（TypeSafe review request）",
+    );
+    expect(report).toContain(
+      "packages/platform-node/src/web.ts: 出现了没有登记的外部出口（DeepSeek web tool request）",
+    );
+  });
+});
+
+describe("sensitive gate registration", () => {
+  const registry = [
+    {
+      file: "packages/application/src/services/model-egress.ts",
+      calls: { assertMachineSecretFree: 1 },
+      decision: "保留",
+      reason: "fixture",
+    },
+  ];
+
+  function gateFixture(files) {
+    const root = mkdtempSync(join(tmpdir(), "gates-"));
+    roots.push(root);
+    for (const [file, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, file)), { recursive: true });
+      writeFileSync(join(root, file), text);
+    }
+    return root;
+  }
+
+  it("passes on this repository", () => {
+    expect(findSensitiveGateViolations()).toEqual([]);
+  });
+
+  it("passes when every call matches the registry", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts": "assertMachineSecretFree(text);",
+      "packages/application/test/model-egress.unit.test.ts": "scanMachineSecrets(text);",
+      "packages/sensitive-capture/src/machine-secrets.ts": "scanMachineSecrets(text);",
+      "apps/agent-service/src/plain.ts": "import { scanMachineSecrets } from 'x';",
+    });
+    expect(findSensitiveGateViolations(root, registry)).toEqual([]);
+  });
+
+  it("fails when a new file starts blocking whole content", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts": "assertMachineSecretFree(text);",
+      "apps/agent-service/src/new-tool.ts":
+        "if (containsToolOutputSecret(output)) throw new Error();",
+    });
+    expect(findSensitiveGateViolations(root, registry).join("\n")).toContain(
+      "apps/agent-service/src/new-tool.ts: 新增了整段拦下的调用（containsToolOutputSecret）",
+    );
+  });
+
+  it("fails when a registered file adds another blocking call", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts":
+        "assertMachineSecretFree(text); scanMachineSecrets(text);",
+    });
+    expect(findSensitiveGateViolations(root, registry).join("\n")).toContain(
+      "packages/application/src/services/model-egress.ts: 整段拦下的调用和登记不一致",
+    );
+  });
+
+  it("fails when a registered call is gone but the registry still lists it", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts": "redactForEgress(text);",
+    });
+    expect(findSensitiveGateViolations(root, registry).join("\n")).toContain(
+      "packages/application/src/services/model-egress.ts: 登记里还有它，但已经没有整段拦下的调用了",
+    );
   });
 });
