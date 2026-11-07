@@ -14,6 +14,7 @@
 - 不要放宽测试时限，也不要设置 `HIMAWARI_TEST_TIMEOUT_MS`；测试主机上的超时是一个需要诊断和修复的缺陷。
 - Hermes 上还运行着无关的服务，包括 `/data/hermes/himawari/releases/` 下现有的 Himawari 服务；测试不得读写它们的目录或数据，也不得停止或重启它们。
 - Mac 仍然是受支持的产品平台，但用户已无限期推迟了所有 Mac 验证：在用户恢复之前，不要安排或提议在 Mac 上运行，并把 Mac 上的行为报告为未验证。恢复之后，Mac 专属的验证（macOS 沙箱、Mac 安装程序、Mac 自带的 Bash，以及其他只在 Mac 上出现的运行时行为）只有在改动影响 Mac 专属行为时或在发布之前，才在 MacBook 上运行，并且只有在用户批准了这一次具体运行、它的范围、预计时长和时间安排之后才运行。
+- CI VPS（`ubuntu@158.69.191.249`，主机名 `ci-vps`，Ubuntu 24.04）只跑 GitHub CI 的自托管 runner（[ADR 0176](../../docs/adr/0176-ci-on-ovh-vps.md)），不用来跑开发测试、资格验证或上线演练；它的结果不能代替 Hermes 上合并前的本地检查，也不能代替生产机上的验证。在 Mac 上直接用 `ssh -o BatchMode=yes` 连接并先核对主机名，操作按 [CI VPS 上的自托管 runner Runbook](../../docs/runbooks/ci-vps-runner-runbook.md)。
 - 生产运行在云服务器 `84.247.157.41` 上；那里的每一次生产上线，以及每一次启动或变更生产服务，都需要用户对该次上线的明确授权。
 - 一个平台的结果绝不能代替另一个平台：Mac 和 Linux 不能互相验证；Hermes（Ubuntu 22.04，bwrap 0.6.1）在时序、并发或沙箱方面的结论不能代表生产服务器（Ubuntu 24.04，带有 AppArmor 对用户命名空间的限制）；`himawari-ci` 的结果只说明测试账号自己在 Ubuntu 24.04 上的安装，而不是经过验证的生产安装；2026-10-14 之前的云服务器测试结果只作为历史记录。
 
