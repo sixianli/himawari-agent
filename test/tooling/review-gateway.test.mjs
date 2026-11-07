@@ -134,6 +134,15 @@ describe("review gateway configuration", () => {
     const base = ["--mode", "plan", "--head", "HEAD", "--brief", "b.md", "--topic", "x"];
     expect(parseArgs([...base, "--gateway", "magpie"]).gateway).toBe("magpie");
     expect(parseArgs(base).gateway).toBeUndefined();
+    const wired = spawnSync(
+      process.execPath,
+      ["scripts/model-review/opencode-review.mjs", ...base],
+      {
+        encoding: "utf8",
+        env: { ...process.env, HIMAWARI_REVIEW_GATEWAY: "litellm" },
+      },
+    );
+    expect([wired.status, wired.stderr.trim()]).toEqual([2, "ARG_INVALID HIMAWARI_REVIEW_GATEWAY"]);
     expect(parseArgs(base, { defaultGateway: "magpie" }).gateway).toBe("magpie");
     expect(parseArgs([...base, "--gateway", "direct"], { defaultGateway: "magpie" }).gateway).toBe(
       undefined,
@@ -155,12 +164,15 @@ describe("review gateway configuration", () => {
       "group",
       "add",
       "review-deepseek-v4.1-flash",
-      `models=${config.models[deepseek].members.join(",")}`,
+      "models=workbuddy-ai/deepseek-v4.1-flash-sg,opendesign/deepseek-v4.1-flash,opencode-go/deepseek-v4.1-flash",
       "routing=order",
       "stays=session",
     ]);
     expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai"] })[3]).toBe(
       "models=opendesign/glm-5.3-flash,opencode-go/glm-5.3-flash",
+    );
+    expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign"] })[3]).toBe(
+      "models=opencode-go/glm-5.3-flash",
     );
     expect(() =>
       groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go"] }),
@@ -651,6 +663,15 @@ describe("review gateway round 4 fixes", () => {
       expect.arrayContaining([`models.${deepseek}.fallback`, "models.groups"]),
     );
     expect(withProviders([...base, { id: "Bad Id", kind: "preset" }])).toContain("providers.id");
+    const emptyCustom = base.map((provider) =>
+      provider.id === "opendesign" ? { ...provider, models: [""] } : provider,
+    );
+    expect(withProviders(emptyCustom)).toContain("providers.opendesign.custom");
+    const typo = structuredClone(config.models);
+    typo[glm].members[1] = "opendesign/glm-5.3-flash-typo";
+    expect(gatewayConfigProblems({ ...config, models: typo }, REVIEW_MODELS)).toContain(
+      `models.${glm}.custom`,
+    );
     expect(
       withProviders(
         base.map((provider) =>

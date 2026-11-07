@@ -100,7 +100,12 @@ export function gatewayConfigProblems(config, requiredModels = []) {
     if (!PROVIDER_KINDS.includes(provider?.kind)) problems.push(`providers.${provider?.id}.kind`);
     if (
       provider?.kind === "custom" &&
-      !(typeof provider.url === "string" && Array.isArray(provider.models))
+      !(
+        typeof provider.url === "string" &&
+        Array.isArray(provider.models) &&
+        provider.models.length > 0 &&
+        provider.models.every((model) => typeof model === "string" && model.length > 0)
+      )
     )
       problems.push(`providers.${provider.id}.custom`);
   }
@@ -126,6 +131,14 @@ export function gatewayConfigProblems(config, requiredModels = []) {
       )
     )
       problems.push(`models.${model}.members`);
+    const unlisted = members.some((member) => {
+      const id = String(member).split("/")[0];
+      const custom = providers.find(
+        (provider) => provider?.id === id && provider.kind === "custom",
+      );
+      return custom && !(custom.models ?? []).includes(String(member).slice(id.length + 1));
+    });
+    if (unlisted) problems.push(`models.${model}.custom`);
     if (
       typeof entry?.name !== "string" ||
       !positiveInteger(entry?.context) ||
@@ -633,7 +646,7 @@ export async function startGateway({
           "add",
           provider.id,
           `url=${provider.url}`,
-          "key=probe",
+          `key=${PLACEHOLDER}`,
           `models=${provider.models.join(",")}`,
         ],
         env,
