@@ -28,6 +28,7 @@ export const PROACTIVE_REPLAY_ERROR_CODES = Object.freeze({
   INVALID: "PROACTIVE_REPLAY_INVALID",
   NOT_CONNECTED: "PROACTIVE_REPLAY_NOT_CONNECTED",
   ALREADY_RUNNING: "PROACTIVE_REPLAY_ALREADY_RUNNING",
+  STOPPING: "PROACTIVE_REPLAY_STOPPING",
 } as const);
 
 const CONSECUTIVE_FAILURE_LIMIT = 3;
@@ -137,6 +138,11 @@ export class ProactiveReplayService {
     request: ProactiveReplayRequest,
   ): Promise<{ readonly runId: string; readonly done: Promise<void> }> {
     const { scope, store, replays, history, clock, ids } = this.#options;
+    if (this.#cancelled)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        PROACTIVE_REPLAY_ERROR_CODES.STOPPING,
+      );
     if (
       !instant(request.from) ||
       !instant(request.to) ||
@@ -159,7 +165,6 @@ export class ProactiveReplayService {
         PORT_ERROR_CODES.INVALID_OPERATION,
         PROACTIVE_REPLAY_ERROR_CODES.NOT_CONNECTED,
       );
-    this.#cancelled = false;
     const runId = ids.next("proactive-replay");
     const started = await replays.startRun({
       ...scope,
@@ -223,7 +228,9 @@ export class ProactiveReplayService {
       if (read.kind === "unauthorized") return finish("failed", "SOURCE_UNAUTHORIZED");
       if (read.kind === "failed") return finish("failed", this.#readCode(read.step));
       const inRange = read.items.filter(
-        ({ receivedAt }) => receivedAt >= request.from && receivedAt < request.to,
+        ({ receivedAt }) =>
+          Date.parse(receivedAt) >= Date.parse(request.from) &&
+          Date.parse(receivedAt) < Date.parse(request.to),
       );
       for (const item of inRange) {
         if (this.#cancelled) return finish("interrupted", "SERVICE_STOPPING");

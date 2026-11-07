@@ -70,7 +70,9 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(options: { failAfter?: number; mails?: ProactiveSourceItem[] } = {}) {
+  async function setup(
+    options: { failAfter?: number; mails?: ProactiveSourceItem[]; gate?: Promise<void> } = {},
+  ) {
     const mails = options.mails ?? MAILS;
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-replay-"));
     directories.push(stateRoot);
@@ -211,6 +213,7 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
     const history: ProactiveHistoryReader = {
       source: "gmail",
       async list(input) {
+        await options.gate;
         listed.push({ from: input.from, to: input.to, limit: input.limit });
         return { kind: "ids", ids: mails.map(({ messageId }) => messageId).slice(0, input.limit) };
       },
@@ -567,5 +570,30 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
     expect(await h.replays.readRun({ ...scope, runId })).toMatchObject({ status: "finished" });
     expect(h.prompts.join("\n")).not.toContain("4111 1111 1111 1111");
     expect(masked).toEqual([]);
+  });
+
+  it("keeps a stop request when a second start is refused, and refuses new starts after stop", async () => {
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const h = await setup({ gate });
+    const request = { from: FROM, to: TO, mailLimit: 10, budgetMicros: 100_000 };
+    const first = await h.service.start(request);
+    await expect(h.service.start(request)).rejects.toMatchObject({
+      message: "PROACTIVE_REPLAY_ALREADY_RUNNING",
+    });
+    const stopping = h.service.cancel();
+    await expect(h.service.start(request)).rejects.toMatchObject({
+      message: "PROACTIVE_REPLAY_STOPPING",
+    });
+    open();
+    await stopping;
+    await first.done;
+    expect(await h.replays.readRun({ ...scope, runId: first.runId })).toMatchObject({
+      status: "interrupted",
+      reasonCode: "SERVICE_STOPPING",
+      judged: 0,
+    });
   });
 });
