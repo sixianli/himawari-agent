@@ -1,0 +1,3 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "事故编号改号没有跨引用自动检查", "valid": true, "class": "better", "reason": "要新做一项检查，不是本 PR 的改动引入的问题"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "探针解析器对「格式不对的摘要」会静默漏过", "valid": true, "class": "error", "severity": "low", "trigger": "originals 块里一行条目的摘要写成大写或少一位，且这个文件名不在 probe-sources.json 里", "consequence": "check:probe-sources 不报错，要等 Hermes 上构建后探针运行才发现", "modelSeverity": "低"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "I-55 门槛描述里的步数已过期", "valid": true, "class": "better", "reason": "I-55 那行不是本 PR 改的，属于另一份文档整理"}

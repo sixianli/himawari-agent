@@ -1,0 +1,4 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "源码指纹按工作区原始字节计算，但 bootstrap 的解析前先做了换行归一化", "valid": true, "class": "better", "reason": "同第 10 轮 D5、第 12 轮 D4：只会多拦、不会放过，项目只在 Mac 和 Linux 上检出"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "若有人同时从 bootstrap 和记录里删掉某个文件，检查会静默通过", "valid": true, "class": "better", "reason": "同第 12 轮 D2：两处同时删是明显的有意改动，复核能看到"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "#272 **没有在 `check:steps` 新增步骤**", "valid": false, "class": "better", "reason": "只是指出作者说明的措辞，模型自己核对合并结果无重复、无丢失；不涉及代码"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者说增量只有两段", "valid": false, "class": "better", "reason": "模型标为非问题，只是核对作者说法为真"}

@@ -20,6 +20,7 @@ python=$tools/python/python/bin/python3
 [[ -x "$toolbin/fd" ]] || fail "PI_TOOL_MISSING $toolbin/fd" 5
 PATH="$toolbin:/usr/bin:/bin" command -v rg > /dev/null || fail "PI_TOOL_MISSING rg" 5
 git -C "$source" rev-parse HEAD > /dev/null 2>&1 || fail "SOURCE_MISSING $source" 3
+[[ -f "$source/package.json" ]] || fail "SOURCE_TREE_EMPTY $source" 3
 if [[ "$1" == "--preflight" ]]; then
   echo "HERMES_WALKTHROUGH_PREFLIGHT_OK"
   exit 0
