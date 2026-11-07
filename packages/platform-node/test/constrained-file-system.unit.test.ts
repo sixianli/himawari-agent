@@ -636,7 +636,7 @@ describe("ConstrainedHostFileSystem", () => {
     await expect(readFile(path.join(root, "moved/result.txt"))).rejects.toThrow();
   });
 
-  it("returns only protected references and blocks machine-secret disclosure", async () => {
+  it("returns only protected references, including for files that hold secrets", async () => {
     const { root, grant, state, platform } = await fixture();
     await writeFile(path.join(root, "public-note.txt"), "safe fixture text");
     await writeFile(path.join(root, "secret-note.txt"), `api_${"key"}=abcdefghijklmnop`);
@@ -662,14 +662,14 @@ describe("ConstrainedHostFileSystem", () => {
     });
     expect(ref).toBe("payload:host-read:1");
     expect(protectedPayloads.get(ref)).toBe("safe fixture text");
-    await expect(
-      reads.readProtected({
-        grantId: grant.id,
-        relativePath: "secret-note.txt",
-        destination: "model",
-        maximumBytes: 1_024,
-      }),
-    ).rejects.toThrow("machine-secret material");
+    const secretRef = await reads.readProtected({
+      grantId: grant.id,
+      relativePath: "secret-note.txt",
+      destination: "model",
+      maximumBytes: 1_024,
+    });
+    expect(secretRef).toBe("payload:host-read:2");
+    expect(protectedPayloads.get(secretRef)).toBe(`api_${"key"}=abcdefghijklmnop`);
   });
 
   it("reads every byte when the descriptor returns short reads", async () => {

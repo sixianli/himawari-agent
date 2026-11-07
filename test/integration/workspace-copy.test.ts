@@ -340,6 +340,13 @@ describe("optional workspace copies", () => {
       expect(await readFile(path.join(f.source, "a.txt"), "utf8")).toBe("later owner edit");
     },
   );
+  it("copies a file that holds a machine secret byte for byte", async () => {
+    const f = await fixture();
+    const secret = Buffer.from(`token = sk-${"a".repeat(24)}\r\nGITHUB=ghp_${"b".repeat(36)}\n`);
+    await writeFile(path.join(f.source, "a.txt"), secret);
+    const copy = await f.create();
+    expect((await readFile(path.join(copy, "a.txt"))).equals(secret)).toBe(true);
+  });
   it("rejects stale input before preparation and keeps the unique candidate", async () => {
     const f = await fixture();
     const copy = await f.create();

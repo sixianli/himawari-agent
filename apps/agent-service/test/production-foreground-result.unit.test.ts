@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -5,6 +6,7 @@ import { PI_RUNNER_CONTRACT, PI_WRITE_VERIFIER } from "@himawari-agent/execution
 import { formatForegroundPiResult, verifyPiWriteEvidence } from "@himawari-agent/platform-node";
 import { fitPiResultOutput } from "@himawari-agent/runtime-pi";
 import { afterEach, describe, expect, it } from "vitest";
+import { toolResultSentToModel } from "./fixtures/model-egress.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -90,66 +92,67 @@ describe("[R2-T9] foreground Pi result over the limit", () => {
   });
 });
 
+function shownText(output: string): string | undefined {
+  return (JSON.parse(output) as { content: { text: string }[] }).content[0]?.text;
+}
+
+function decodedFullOutput(output: string): Buffer {
+  const { fullOutput } = JSON.parse(output) as { fullOutput: { data: string } };
+  return Buffer.from(fullOutput.data, "base64");
+}
+
+const SECRET_OUTPUT = "api_key=R2T14SECRETVALUE0001\n";
+
 describe("[R2-T14] command output that contains machine secrets", () => {
   it.each([
     [false, 0, 0],
     [true, 2, 2],
     [true, null, 1],
   ] as const)(
-    "withholds the output but keeps the real command status (error %s, exit %s)",
+    "returns the output and the real command status, and egress masks the secret (error %s, exit %s)",
     async (isError, commandExitCode, processExitCode) => {
       const directory = await privateDirectory();
-      const input = publication(directory, "api_key=R2T14SECRETVALUE0001\n", {}, 48 * 1024);
+      const input = publication(directory, SECRET_OUTPUT, {}, 48 * 1024);
       const { output, exitCode } = await formatForegroundPiResult({
         ...input,
         result: { ...input.result, isError },
         commandExitCode,
       });
       expect(exitCode).toBe(processExitCode);
-      expect(output).not.toContain("R2T14SECRETVALUE0001");
-      expect(output).not.toContain("api_key=");
-      const parsed = JSON.parse(output) as Record<string, unknown>;
-      expect(parsed).toMatchObject({
+      expect(JSON.parse(output)).toMatchObject({
         schemaVersion: "pi-result.v1",
         tool: "bash",
-        details: {},
+        content: [{ type: "text", text: SECRET_OUTPUT }],
         fullOutput: null,
         isError,
         commandExitCode,
+        source: { parameters: { command: "big" } },
       });
-      expect(parsed["content"]).toEqual([
-        { type: "text", text: expect.stringContaining("疑似密钥") },
-      ]);
-      expect(parsed["source"]).toEqual({
-        workspace: "/workspace",
-        toolCallId: "r2t9-bash",
-        directoryGrantRef: "grant",
-        directoryGrantRevision: 1,
-      });
+      const sent = await toolResultSentToModel(output);
+      expect(sent).not.toContain("R2T14SECRETVALUE0001");
+      expect(sent).toContain("[密钥]");
     },
   );
 
-  it("withholds a command whose own text carries a machine secret", async () => {
+  it("keeps a command whose own text carries a machine secret, and egress masks it", async () => {
     const directory = await privateDirectory();
+    const command = "curl -H 'Authorization: Bearer R2T14BEARERVALUE0001' x";
     const input = publication(directory, "ok\n", {}, 48 * 1024);
     const { output, exitCode } = await formatForegroundPiResult({
       ...input,
-      source: {
-        ...input.source,
-        parameters: { command: "curl -H 'Authorization: Bearer R2T14BEARERVALUE0001' x" },
-      },
+      source: { ...input.source, parameters: { command } },
     });
     expect(exitCode).toBe(0);
-    expect(output).not.toContain("R2T14BEARERVALUE0001");
-    expect(output).toContain("疑似密钥");
+    expect(JSON.parse(output)).toMatchObject({ source: { parameters: { command } } });
+    expect(await toolResultSentToModel(output)).not.toContain("R2T14BEARERVALUE0001");
   });
 
-  it("still refuses machine secrets from tools other than bash", async () => {
+  it("returns machine secrets from tools other than bash too", async () => {
     const directory = await privateDirectory();
-    const input = publication(directory, "api_key=R2T14SECRETVALUE0001\n", {}, 48 * 1024);
-    await expect(formatForegroundPiResult({ ...input, tool: "read" })).rejects.toThrow(
-      "PI_RESULT_SECRET_REJECTED",
-    );
+    const input = publication(directory, SECRET_OUTPUT, {}, 48 * 1024);
+    const { output } = await formatForegroundPiResult({ ...input, tool: "read" });
+    expect(shownText(output)).toBe(SECRET_OUTPUT);
+    expect(await toolResultSentToModel(output)).not.toContain("R2T14SECRETVALUE0001");
   });
 });
 
@@ -160,21 +163,14 @@ const keyBody = Array.from(
 );
 const fullKey = [keyMarker("BEGIN"), ...keyBody, keyMarker("END")].join("\n");
 
-function expectWithheld(output: string, isError: boolean, commandExitCode: number | null) {
-  expect(output).not.toContain("R2T14KEYBODY");
-  expect(output).not.toContain("PRIVATE KEY");
-  expect(JSON.parse(output)).toMatchObject({
-    tool: "bash",
-    content: [{ type: "text", text: expect.stringContaining("疑似密钥") }],
-    details: {},
-    fullOutput: null,
-    isError,
-    commandExitCode,
-  });
+async function expectKeyMasked(output: string) {
+  const sent = await toolResultSentToModel(output);
+  expect(sent).not.toContain("R2T14KEYBODY");
+  expect(sent).toContain("[密钥]");
 }
 
 describe("[R2-T14] command output that carries part of a private key", () => {
-  it("withholds the kept tail when truncation cut off the key's first line", async () => {
+  it("returns the kept tail when truncation cut off the key's first line, and egress masks it", async () => {
     const directory = await privateDirectory();
     const file = path.join(directory, "pi-bash-0123456789abcdef.log");
     const filler = Array.from({ length: 4000 }, (_, index) => `line ${index} ${"f".repeat(40)}`);
@@ -192,20 +188,22 @@ describe("[R2-T14] command output that carries part of a private key", () => {
       commandExitCode: 1,
     });
     expect(exitCode).toBe(1);
-    expectWithheld(output, true, 1);
+    expect(shownText(output)).toContain(keyBody[10]);
+    await expectKeyMasked(output);
   });
 
-  it("withholds output that shows only the key's first line and body", async () => {
+  it("returns output that shows only the key's first line and body, and egress masks it", async () => {
     const directory = await privateDirectory();
     const head = [keyMarker("BEGIN"), ...keyBody.slice(0, 4)].join("\n");
     const { output, exitCode } = await formatForegroundPiResult(
       publication(directory, `${head}\n`, {}, 48 * 1024),
     );
     expect(exitCode).toBe(0);
-    expectWithheld(output, false, 0);
+    expect(shownText(output)).toBe(`${head}\n`);
+    await expectKeyMasked(output);
   });
 
-  it("withholds instead of failing when only the full output file holds the key", async () => {
+  it("masks the full output file before encoding it, and records the masked bytes", async () => {
     const directory = await privateDirectory();
     const file = path.join(directory, "pi-bash-0123456789abcdef.log");
     await writeFile(file, `${fullKey}\nclean tail\n`, { mode: 0o600 });
@@ -218,10 +216,19 @@ describe("[R2-T14] command output that carries part of a private key", () => {
       ),
     );
     expect(exitCode).toBe(0);
-    expectWithheld(output, false, 0);
+    const decoded = decodedFullOutput(output);
+    expect(decoded.toString()).toBe("[密钥]\nclean tail\n");
+    expect(JSON.parse(output)).toMatchObject({
+      fullOutput: {
+        encoding: "base64",
+        redacted: true,
+        byteLength: decoded.length,
+        digest: createHash("sha256").update(decoded).digest("hex"),
+      },
+    });
   });
 
-  it("withholds when the full output file holds only the key's first line and body", async () => {
+  it("masks a full output file that holds only the key's first line and body", async () => {
     const directory = await privateDirectory();
     const file = path.join(directory, "pi-bash-0123456789abcdef.log");
     await writeFile(file, `${[keyMarker("BEGIN"), ...keyBody.slice(0, 4)].join("\n")}\nclean\n`, {
@@ -235,10 +242,28 @@ describe("[R2-T14] command output that carries part of a private key", () => {
         48 * 1024,
       ),
     );
-    expectWithheld(output, false, 0);
+    expect(decodedFullOutput(output).toString()).not.toContain("R2T14KEYBODY");
   });
 
-  it("still refuses part of a private key from tools other than bash", async () => {
+  it("leaves a clean full output file as it is", async () => {
+    const directory = await privateDirectory();
+    const file = path.join(directory, "pi-bash-0123456789abcdef.log");
+    await writeFile(file, "clean\n", { mode: 0o600 });
+    const { output } = await formatForegroundPiResult(
+      publication(
+        directory,
+        `clean\n\n[Showing lines 1-1 of 1. Full output: ${file}]`,
+        { fullOutputPath: file },
+        48 * 1024,
+      ),
+    );
+    expect(decodedFullOutput(output).toString()).toBe("clean\n");
+    expect((JSON.parse(output) as { fullOutput: object }).fullOutput).not.toHaveProperty(
+      "redacted",
+    );
+  });
+
+  it("returns part of a private key from tools other than bash, and egress masks it", async () => {
     const directory = await privateDirectory();
     const input = publication(
       directory,
@@ -246,16 +271,16 @@ describe("[R2-T14] command output that carries part of a private key", () => {
       {},
       48 * 1024,
     );
-    await expect(formatForegroundPiResult({ ...input, tool: "grep" })).rejects.toThrow(
-      "PI_RESULT_SECRET_REJECTED",
-    );
+    const { output } = await formatForegroundPiResult({ ...input, tool: "grep" });
+    await expectKeyMasked(output);
   });
 
   it("keeps ordinary output that only names private keys", async () => {
     const directory = await privateDirectory();
     const text = "docs/keys.md: rotate the PRIVATE KEY yearly\n";
     const { output } = await formatForegroundPiResult(publication(directory, text, {}, 48 * 1024));
-    expect((JSON.parse(output) as { content: { text: string }[] }).content[0]?.text).toBe(text);
+    expect(shownText(output)).toBe(text);
+    expect(await toolResultSentToModel(output)).toContain("rotate the PRIVATE KEY yearly");
   });
 
   it("keeps the clean output of a command whose own text shows a key's first line", async () => {
@@ -276,6 +301,7 @@ describe("[R2-T14] command output that carries part of a private key", () => {
       commandExitCode: 1,
       source: { parameters: { command } },
     });
+    expect(await toolResultSentToModel(output)).toContain(keyMarker("BEGIN"));
   });
 
   it("returns the result of a write whose own content shows part of a key", async () => {
@@ -295,6 +321,7 @@ describe("[R2-T14] command output that carries part of a private key", () => {
       isError: false,
       source: { parameters: { path: "pem.md", content } },
     });
+    await expectKeyMasked(output);
   });
 });
 
@@ -349,24 +376,23 @@ describe("[R2-T14] file tool result that carries part of a private key", () => {
       workspace: "/workspace",
     });
 
-  it("withholds the diff of a verified edit but keeps its write proof and parameters", async () => {
+  it("returns the diff of a verified edit with its write proof, and egress masks the key", async () => {
     const directory = await privateDirectory();
     const { output, exitCode } = await formatForegroundPiResult(editInput(directory));
     expect(exitCode).toBe(0);
-    expect(output).not.toContain("R2T14KEYBODY");
-    expect(output).not.toContain("PRIVATE KEY");
     expect(JSON.parse(output)).toMatchObject({
       tool: "edit",
-      content: [{ type: "text", text: expect.stringMatching(/已修改.*疑似密钥/) }],
-      details: {},
+      content: [{ type: "text", text: "Successfully replaced text in key-notes.txt." }],
+      details: { diff: keyDiff },
       isError: false,
       verifiedWrite: { path: "/workspace/key-notes.txt" },
       source: { toolCallId: "r2t14-edit", parameters: editParameters },
     });
     expect(verifyEdit(output)).toBe("published");
+    await expectKeyMasked(output);
   });
 
-  it("withholds the error of an edit that failed before writing and keeps that claim", async () => {
+  it("returns the error of an edit that failed before writing, and egress masks the key", async () => {
     const directory = await privateDirectory();
     const input = editInput(directory);
     const { output, exitCode } = await formatForegroundPiResult({
@@ -380,33 +406,29 @@ describe("[R2-T14] file tool result that carries part of a private key", () => {
       closing: { writeNotStarted: true },
     });
     expect(exitCode).toBe(1);
-    expect(output).not.toContain("R2T14KEYBODY");
-    expect(output).not.toContain("PRIVATE KEY");
     expect(JSON.parse(output)).toMatchObject({
       tool: "edit",
-      content: [{ type: "text", text: expect.stringMatching(/没有被修改.*疑似密钥/) }],
-      details: {},
       isError: true,
       verifiedWrite: null,
       writeNotStarted: true,
     });
     expect(verifyEdit(output)).toBe("not_written");
+    await expectKeyMasked(output);
   });
 
-  it("still refuses an edit whose own parameters carry a machine secret", async () => {
+  it("returns an edit whose own parameters carry a machine secret, and egress masks it", async () => {
     const directory = await privateDirectory();
     const input = editInput(directory);
-    await expect(
-      formatForegroundPiResult({
-        ...input,
-        source: {
-          ...input.source,
-          parameters: {
-            path: "key-notes.txt",
-            edits: [{ oldText: "deploy key:", newText: "api_key=R2T14SECRETVALUE0001" }],
-          },
+    const { output } = await formatForegroundPiResult({
+      ...input,
+      source: {
+        ...input.source,
+        parameters: {
+          path: "key-notes.txt",
+          edits: [{ oldText: "deploy key:", newText: "api_key=R2T14SECRETVALUE0001" }],
         },
-      }),
-    ).rejects.toThrow("PI_RESULT_SECRET_REJECTED");
+      },
+    });
+    expect(await toolResultSentToModel(output)).not.toContain("R2T14SECRETVALUE0001");
   });
 });

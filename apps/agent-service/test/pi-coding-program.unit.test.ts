@@ -428,19 +428,28 @@ describe("installed Pi coding program boundary", () => {
     ]);
     expect(boundary.process.exitCode).toBe(7);
   });
-  it.each(["too-large", "secret", "[R2-T14] key tail"])(
-    "blocks unsafe background output (%s)",
-    async (kind) => {
+  it("blocks background output that is too large", async () => {
+    boundary.command.mockImplementation(async ({ onData }) => {
+      onData(Buffer.from("x".repeat(65537)));
+      return { exitCode: 0 };
+    });
+    boundary.execute.mockImplementation(async ({ operations }) => {
+      await operations.executeCommand({ command: "fixture", onData: vi.fn() });
+      return { content: [], isError: false };
+    });
+    await run({ ...input("bash"), executionMode: "background" });
+    failed();
+    expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["secret", ["-----BEGIN", "PRIVATE KEY-----\n"].join(" ")],
+    ["[R2-T14] key tail", `MIIEvR2T14TAILBODY\n${["-----END", "PRIVATE KEY-----\n"].join(" ")}`],
+  ])(
+    "streams background output that looks like a key (%s); egress masks it later",
+    async (_kind, text) => {
       boundary.command.mockImplementation(async ({ onData }) => {
-        onData(
-          Buffer.from(
-            kind === "too-large"
-              ? "x".repeat(65537)
-              : kind === "secret"
-                ? ["-----BEGIN", "PRIVATE KEY-----\n"].join(" ")
-                : `MIIEvR2T14TAILBODY\n${["-----END", "PRIVATE KEY-----\n"].join(" ")}`,
-          ),
-        );
+        onData(Buffer.from(text));
         return { exitCode: 0 };
       });
       boundary.execute.mockImplementation(async ({ operations }) => {
@@ -448,8 +457,10 @@ describe("installed Pi coding program boundary", () => {
         return { content: [], isError: false };
       });
       await run({ ...input("bash"), executionMode: "background" });
-      failed();
-      expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+      const written = boundary.process.stdout.write.mock.calls
+        .map(([value]) => String(value))
+        .join("");
+      expect(written).toContain(text);
     },
   );
 });

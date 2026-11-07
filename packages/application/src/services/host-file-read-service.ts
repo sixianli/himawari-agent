@@ -10,7 +10,6 @@ import {
   type PayloadRef,
 } from "../ports/index.js";
 import type { ClockPort } from "../ports/system.js";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { normalizeRelativePath } from "./file-operation-service.js";
 
 export class HostFileReadService {
@@ -34,7 +33,6 @@ export class HostFileReadService {
     this.#hostId = input.hostId;
   }
 
-  /** Run on the selected host. grantId and maximumBytes come from product policy. */
   async resolveTarget(input: {
     readonly hostId: string;
     readonly grantId: string;
@@ -67,7 +65,6 @@ export class HostFileReadService {
     ) {
       throw new Error(HOST_FILE_ERROR_CODES.READ_LIMIT_EXCEEDED);
     }
-    // Inspection may yield to a revocation, expiry or grant replacement.
     const current = await this.#state.readGrant(input.grantId);
     this.#assertReadableGrant(current, input.grantId);
     if (
@@ -150,13 +147,6 @@ export class HostFileReadService {
         "Host file read limit is invalid",
       );
     const bytes = await this.#platform.read(grant, input.relativePath, input.maximumBytes);
-    const findings = scanMachineSecrets(new TextDecoder().decode(bytes));
-    if (findings.length > 0)
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "Host file contains machine-secret material and cannot cross this disclosure boundary",
-        { ruleIds: findings.map(({ ruleId }) => ruleId).join(",") },
-      );
     return this.#disclosure.protect({
       grantId: grant.id,
       relativePath: input.relativePath,
@@ -167,9 +157,7 @@ export class HostFileReadService {
   }
 }
 
-/** Pure scope check shared by the Service and the target Worker; no filesystem probes. */
 export function resolveHostFileReadPath(grant: HostDirectoryGrant, requestedPath: string): string {
-  // Do not normalize away traversal, expand ~, or consult another host's filesystem.
   const root = grant.displayPath.replace(/\/+$/, "") || "/";
   if (
     !grant.displayPath.startsWith("/") ||

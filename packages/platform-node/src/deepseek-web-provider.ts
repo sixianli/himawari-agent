@@ -30,7 +30,6 @@ async function boundedJson(response: Awaited<ReturnType<typeof proxyFetch>>, pre
     chunks.push(chunk);
   }
   const text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
-  if (scanMachineSecrets(text).length) throw new Error(`${prefix}_OUTPUT_REDACTED`);
   try {
     return JSON.parse(text) as unknown;
   } catch {

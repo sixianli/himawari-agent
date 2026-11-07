@@ -72,6 +72,69 @@ export function redactMachineSecrets(
   return result;
 }
 
+const KEY_KIND = "(?:RSA |EC |OPENSSH )?PRIVATE KEY-----";
+const KEY_MARKER = "PRIVATE KEY-----";
+const KEY_LINES = 120;
+const KEY_LINE_BREAK = String.raw`(?:\\r\\n|\\n|\r?\n)`;
+const KEY_LINE_PREFIX = String.raw`(?:[^\s:\\"]*?[:-]\d+[:-])?[ \t+-]*\d*[ \t:]*`;
+const KEY_LINE_START = String.raw`(?<=^|\\n|\n|")`;
+const KEY_LINE_END = String.raw`(?=\\r|\\n|\r|\n|"|$)`;
+const KEY_TEXT = "[A-Za-z0-9+/=]";
+const KEY_LINE = `${KEY_LINE_PREFIX}${KEY_TEXT}{16,}${KEY_LINE_END}`;
+const KEY_SHORT_LINE = `${KEY_LINE_PREFIX}${KEY_TEXT}+${KEY_LINE_END}`;
+const KEY_TAIL_WINDOW = KEY_LINES * 160;
+const PRIVATE_KEY_BLOCK = RULES.filter((rule) => rule.id === "private-key-block").map(
+  (rule) => rule.pattern,
+);
+const KEY_HEAD = new RegExp(
+  `-----BEGIN ${KEY_KIND}(?:[ \t]*${KEY_LINE_BREAK}${KEY_LINE_PREFIX}${KEY_TEXT}+|[ \t]*${KEY_TEXT}{16,})(?:${KEY_LINE_BREAK}${KEY_SHORT_LINE}){0,${KEY_LINES}}`,
+  "g",
+);
+const KEY_END = new RegExp(`-----END ${KEY_KIND}`, "g");
+const KEY_TAIL = new RegExp(
+  `${KEY_LINE_START}(?:${KEY_LINE}${KEY_LINE_BREAK}){1,${KEY_LINES}}(?:${KEY_SHORT_LINE}${KEY_LINE_BREAK})?${KEY_LINE_PREFIX}$`,
+);
+
+function maskKeyTails(input: string, see: (value: string) => void): string {
+  if (!input.includes("-----END ")) return input;
+  let output = "";
+  let cursor = 0;
+  let floor = 0;
+  for (const marker of input.matchAll(KEY_END)) {
+    const from = Math.max(floor, marker.index - KEY_TAIL_WINDOW);
+    floor = marker.index + marker[0].length;
+    if (marker.index < cursor) continue;
+    const tail = KEY_TAIL.exec(input.slice(from, marker.index));
+    if (tail === null) continue;
+    const start = from + tail.index;
+    const end = marker.index + marker[0].length;
+    see(input.slice(start, end));
+    output += input.slice(cursor, start) + REDACTED;
+    cursor = end;
+  }
+  return output + input.slice(cursor);
+}
+
+export function redactPrivateKeyFragments(
+  input: string,
+  observe?: (ruleId: MachineSecretRuleId, value: string) => void,
+): string {
+  if (!input.includes(KEY_MARKER)) return input;
+  const see = (value: string) => observe?.("private-key-block", value);
+  let result = input;
+  for (const pattern of PRIVATE_KEY_BLOCK)
+    result = result.replace(pattern, (match) => {
+      see(match);
+      return REDACTED;
+    });
+  if (result.includes("-----BEGIN "))
+    result = result.replace(KEY_HEAD, (match) => {
+      see(match);
+      return REDACTED;
+    });
+  return maskKeyTails(result, see);
+}
+
 export class MachineSecretExclusionError extends Error {
   readonly code = "MACHINE_SECRET_EXCLUDED" as const;
   readonly findings: readonly MachineSecretFinding[];
