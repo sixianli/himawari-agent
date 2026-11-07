@@ -104,15 +104,18 @@ describe("DeepSeek search and fetch adapter", () => {
       url: "https://example.org/a",
     });
   });
-  it("refuses private addresses and secret-bearing responses", async () => {
+  it("refuses private addresses and returns secret-bearing pages for egress to mask", async () => {
     await expect(
       provider().fetch({ url: "http://10.0.0.1/", offset: 0, maximumBytes: 1024 }),
     ).rejects.toThrow("WEB_FETCH_INPUT_INVALID");
     state.fetch.mockResolvedValue(
       json({ title: "Leak", content: `token ${"ghp_"}${"a".repeat(36)}` }),
     );
-    await expect(
-      provider().fetch({ url: "https://example.org/", offset: 0, maximumBytes: 1024 }),
-    ).rejects.toThrow("WEB_FETCH_OUTPUT_REDACTED");
+    const page = await provider().fetch({
+      url: "https://example.org/",
+      offset: 0,
+      maximumBytes: 1024,
+    });
+    expect(page.markdown).toContain(`token ${"ghp_"}${"a".repeat(36)}`);
   });
 });

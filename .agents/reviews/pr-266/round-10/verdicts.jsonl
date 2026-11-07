@@ -1,0 +1,5 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新门槛的接线断言只核对“名字存在”，不核对命令内容", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把 package.json 里 check:probe-sources 的命令改成 true 或空命令", "consequence": "npm run check 不再运行探针检查和它的测试，run-all-checks.test.mjs 仍然通过", "modelSeverity": "中"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "只更新记录的源码指纹即可让门槛通过，构建指纹仍可能是旧的", "valid": true, "class": "better", "reason": "I-79 已写明未覆盖，构建指纹只能由 Hermes 上的上线包检查发现"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`check:probe-sources` 不检查 bootstrap 的 `replace()` 锚点，文档“未覆盖”未提到", "valid": true, "class": "better", "reason": "锚点要构建产物才能核对，已由上线包检查 PROBE_ANCHOR_COUNT 拦下"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试未固定完整的 40 步清单", "valid": true, "class": "better", "reason": "不是本 PR 引入的，固定全量清单会让每次加步骤都要改测试"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "源码哈希按原始字节计算，CRLF 检出会误报", "valid": true, "class": "better", "reason": "只会多拦、不会放过；项目只在 Mac 和 Linux 上检出"}

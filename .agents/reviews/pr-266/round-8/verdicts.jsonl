@@ -1,0 +1,4 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档与代码不一致：I-79 说 `test_make_packet.py` 不在 `npm run check`，合并后已经不成立", "valid": true, "class": "error", "severity": "low", "trigger": "读 I-79 的门槛说明", "consequence": "以为 package.json 那一项没有自动检查；实际合并 main 后已由 check:delivery-packet 运行", "modelSeverity": "低"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "PR 检查比它声称模仿的 Python 检查更严：块外条目 Python 会采用，JS 会判失败", "valid": true, "class": "better", "reason": "第 6 轮 D2 有意这样定：探针只用块里的条目，块外条目等于没有插桩；只把测试名改准"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "块定位要求整行精确匹配，重排模板会误报“找不到摘要”", "valid": true, "class": "better", "reason": "只会多拦、不会放过；现有写法就是 Biome 格式化的结果，不改"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "覆盖缺口：缺失文件分支、`sourceSha256` 非字符串没有用例", "valid": true, "class": "better", "reason": "补 sourceSha256 是数组的用例；缺失文件分支不加"}

@@ -1,0 +1,2 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`check:probe-sources` 的完整命令原文在两处逐字重复", "valid": false, "class": "better", "reason": "模型自己也建议保持现状：这就是第 10 轮 D1 要的断言，改成只核对前缀会让命令改成 true 时测试不失败"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "本次受限环境无法重算 SHA-256", "valid": false, "class": "better", "reason": "已在 Hermes 上对 51f8d142 的内容跑 npm run check，CHECK_ALL_PASSED 40 steps，其中 check:probe-sources 会重算三个源码文件的 SHA-256 并比对记录"}

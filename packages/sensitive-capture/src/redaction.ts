@@ -1,4 +1,9 @@
-import { MACHINE_SECRET_RULE_IDS, redactMachineSecrets } from "./machine-secrets.js";
+import {
+  MACHINE_SECRET_RULE_IDS,
+  type MachineSecretRuleId,
+  redactMachineSecrets,
+  redactPrivateKeyFragments,
+} from "./machine-secrets.js";
 
 export const EGRESS_REDACTION_KINDS = Object.freeze([
   "machine-secret",
@@ -290,7 +295,9 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
   };
 
   const machineMarkers = text.split(MACHINE_SECRET_MARKER).length - 1;
-  text = redactMachineSecrets(text, (ruleId, value) => see("machine-secret", ruleId, value));
+  const seeMachine = (ruleId: MachineSecretRuleId, value: string) =>
+    see("machine-secret", ruleId, value);
+  text = redactMachineSecrets(redactPrivateKeyFragments(text, seeMachine), seeMachine);
   const afterMachine = text.split(MACHINE_SECRET_MARKER).length - 1;
   for (let index = machineMarkers; index < afterMachine; index += 1)
     tally(counts, "machine-secret");

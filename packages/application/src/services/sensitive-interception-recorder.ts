@@ -74,7 +74,7 @@ export class SensitiveInterceptionRecorder {
         category: sighting.category,
         ruleId: sighting.ruleId,
         fingerprint: sighting.fingerprint,
-        outcome: "masked",
+        outcome: sighting.outcome ?? "masked",
         occurrences: 1,
       })),
     );

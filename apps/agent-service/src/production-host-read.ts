@@ -1,5 +1,4 @@
 import type { HostDirectoryGrant, HostReadOnlyPort } from "@himawari-agent/application";
-import { containsToolOutputSecret, scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   executeHostReadOnlyTool,
   fitPiResultOutput,
@@ -73,15 +72,6 @@ export function createProductionHostReadOnly(port: HostReadOnlyPort): Production
           parameters: input.parameters,
         },
       });
-      if (
-        scanMachineSecrets(output).length ||
-        containsToolOutputSecret(JSON.stringify({ content, details }))
-      )
-        return {
-          modelContent: "PI_RESULT_SECRET_REJECTED",
-          isError: true,
-          errorCode: "PI_RESULT_SECRET_REJECTED",
-        };
       if (Buffer.byteLength(output) > input.maximumOutputBytes) {
         const fitted = fitPiResultOutput(output, input.maximumOutputBytes);
         if (fitted === null)

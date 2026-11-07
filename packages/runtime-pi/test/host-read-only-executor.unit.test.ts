@@ -134,14 +134,14 @@ describe("host read-only executor", () => {
     expect(result.errorCode).toBe("PI_PROTECTED_PATH");
   });
 
-  it("refuses content with machine secrets", async () => {
+  it("returns content with machine secrets; egress masks it before the model sees it", async () => {
     const fakeKey = "sk-" + "abcdefghijklmnopqrstuvwx";
     const port = new FakePort({
       "keys.txt": { kind: "file", content: `${fakeKey}\n` },
     });
     const result = await run(port, "read", "keys.txt", { path: "keys.txt" });
-    expect(result.isError).toBe(true);
-    expect(result.errorCode).toBe("PI_TEXT_READ_REJECTED");
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain(fakeKey);
   });
 
   it("lists entries with Pi's ls formatting", async () => {

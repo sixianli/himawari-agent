@@ -8,7 +8,6 @@ import type {
   HostFileIdentity,
   HostFilePublication,
 } from "@himawari-agent/application";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   firstRejectedPathComponent,
   type SandboxFileTarget,
@@ -162,8 +161,7 @@ export async function createSandboxedCodingOperations(input: {
         "opened_version",
       );
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      if (text.includes("\0") || scanMachineSecrets(text).length)
-        throw new Error("PI_TEXT_READ_REJECTED");
+      if (text.includes("\0")) throw new Error("PI_TEXT_READ_REJECTED");
       return bytes;
     },
     async makeDirectory(absolute) {
