@@ -29,6 +29,8 @@ const READBACK_DIGEST = [
 const REVIEWS = ".agents/reviews/pr-273";
 const PUSH_DEVICE = ["F5u42Bd3HyW8Kxk", "Uqo2gRA"].join("");
 const PUSH_TEST = "apps/agent-service/test/production-reminder-push.unit.test.ts";
+const PUSH_SIBLING = ["F5u42Bd3HyW8Kxk", "Uqo2gRB"].join("");
+const PUSH_SIBLING_TEST = `sibling/${PUSH_TEST}`;
 
 const FIXTURES = {
   [`${REVIEWS}/round-4/deepseek-v4.1-flash.md`]: `- blame → \`tokenValue: "${SYNTHETIC_TOKEN}"\`\n`,
@@ -41,6 +43,7 @@ const FIXTURES = {
   [`${EVIDENCE}/mixed.json`]: `{"packages/a/auth.ts": "${hex("digest-3")}", "apiKey": "${hex("api-key-2")}"}\n`,
   [PUSH_TEST]: `const SECRET = JSON.stringify({ deviceKey: "${PUSH_DEVICE}", encryptionKey: KEY });\nexpect(url).toBe("https://api.day.app/${PUSH_DEVICE}");\n`,
   "apps/agent-service/test/other-push.unit.test.ts": `const SECRET = JSON.stringify({ deviceKey: "${PUSH_DEVICE}", encryptionKey: KEY });\n`,
+  [PUSH_SIBLING_TEST]: `const SECRET = JSON.stringify({ deviceKey: "${PUSH_SIBLING}", encryptionKey: KEY });\n`,
   "test/fixtures/digest-map.json": `{\n  "packages/application/src/ports/recent-authentication.ts": "${hex("digest-4")}"\n}\n`,
 };
 
@@ -48,6 +51,7 @@ const EXPECTED_WITH_REPOSITORY_CONFIG = [
   `${REVIEWS}/round-2/deepseek-v4.1-flash.md generic-api-key`,
   `${EVIDENCE}/api.json generic-api-key`,
   "apps/agent-service/test/other-push.unit.test.ts generic-api-key",
+  `${PUSH_SIBLING_TEST} generic-api-key`,
   `${EVIDENCE}/mixed.json generic-api-key`,
   `${EVIDENCE}/token.json github-pat`,
   "test/fixtures/digest-map.json generic-api-key",
@@ -178,11 +182,12 @@ describe("gitleaks repository configuration", () => {
       "'''(?:^|/)test/qualification/evidence/workspace-authorization-lifecycle/'''",
       "'''.*'''",
     ],
+    ["push value", "'''^F5u42Bd3HyW8KxkUqo2gRA$'''", "'''^F5u42Bd3HyW8Kxk[A-Za-z0-9_-]{7}$'''"],
   ])(
     "fails the check when the allowlist is widened: %s",
     (_name, from, to) => {
       expect(repositoryConfig).toContain(from);
-      const findings = scan(repositoryConfig.replace(from, to));
+      const findings = scan(repositoryConfig.replace(from, () => to));
       expect([findings.current, findings.history]).not.toEqual([
         EXPECTED_WITH_REPOSITORY_CONFIG,
         EXPECTED_WITH_REPOSITORY_CONFIG,
