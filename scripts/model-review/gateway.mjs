@@ -110,8 +110,12 @@ export function gatewayConfigProblems(config, requiredModels = []) {
   const models = config.models && typeof config.models === "object" ? config.models : {};
   for (const model of requiredModels)
     if (!Object.hasOwn(models, model)) problems.push(`models.${model}`);
+  const names = Object.keys(models).map(groupName);
+  if (new Set(names).size !== names.length) problems.push("models.groups");
   for (const [model, entry] of Object.entries(models)) {
     const members = Array.isArray(entry?.members) ? entry.members : [];
+    if (!members.some((member) => String(member).split("/")[0] !== config.creditProvider))
+      problems.push(`models.${model}.fallback`);
     if (
       members.length === 0 ||
       members.some(
@@ -182,6 +186,7 @@ export function gatewayInstallDir(lock) {
 function curlDownload(url, target) {
   const result = spawnSync("curl", ["-fsSL", "--retry", "2", "-o", target, url], {
     encoding: "utf8",
+    timeout: 300000,
   });
   if (result.status !== 0)
     throw new Error(
@@ -193,7 +198,7 @@ function npmPack(spec, destination) {
   const result = spawnSync(
     "npm",
     ["pack", spec, "--pack-destination", destination, "--json", "--silent"],
-    { encoding: "utf8" },
+    { encoding: "utf8", timeout: 300000 },
   );
   if (result.status !== 0) throw new Error(`GATEWAY_PLUGIN_DOWNLOAD_FAILED ${spec}`);
   const [packed] = JSON.parse(result.stdout);
@@ -202,7 +207,10 @@ function npmPack(spec, destination) {
 
 function extractTarball(tarball, destination) {
   mkdirSync(destination, { recursive: true });
-  const result = spawnSync("tar", ["-xzf", tarball, "-C", destination], { encoding: "utf8" });
+  const result = spawnSync("tar", ["-xzf", tarball, "-C", destination], {
+    encoding: "utf8",
+    timeout: 300000,
+  });
   if (result.status !== 0)
     throw new Error(
       `GATEWAY_PLUGIN_EXTRACT_FAILED ${(result.stderr ?? result.error?.message ?? "").trim()}`,
@@ -451,7 +459,9 @@ export function readGatewayUsage(root) {
     return null;
   }
   const lines = [];
-  for (const entry of text.split("\n")) {
+  const entries = text.split("\n");
+  if (!text.endsWith("\n")) entries.pop();
+  for (const entry of entries) {
     if (!entry.trim()) continue;
     try {
       lines.push(JSON.parse(entry));

@@ -233,11 +233,12 @@ describe("review gateway ledger", () => {
     expect(summary[deepseek]["workbuddy-ai"]).toEqual({ requests: 2, failed: 1, credits: 0.3 });
     expect(summary[deepseek]["opencode-go"].usd).toBeCloseTo(0.15 + 0.003, 10);
     expect(summary[glm]).toEqual({ none: { requests: 1, failed: 1 } });
-    expect(gatewayRecordFields(null, config, deepseek)).toEqual({
-      gateway: "magpie",
-      providers: {},
-      costUnknown: true,
-    });
+    const unknown = (usage, requested) =>
+      gatewayRecordFields(usage, config, deepseek, { requested }).costUnknown;
+    expect(unknown(lines, 4)).toBe(true);
+    expect(unknown(lines, 3)).toBeUndefined();
+    expect(unknown(null, 1)).toBe(true);
+    expect(unknown(null, 0)).toBeUndefined();
   });
 });
 
@@ -608,10 +609,10 @@ describe("review gateway round 4 fixes", () => {
       summary: { usage: { steps } },
       runs: [{ guard: allowed === undefined ? null : { allowed } }],
     });
-    expect(gatewayRequested(review(0, 1))).toBe(true);
-    expect(gatewayRequested(review(2, 0))).toBe(true);
-    expect(gatewayRequested(review(0, 0))).toBe(false);
-    expect(gatewayRequested(review(0))).toBe(false);
+    expect(gatewayRequested(review(0, 3))).toBe(3);
+    expect(gatewayRequested(review(2, 0))).toBe(1);
+    expect(gatewayRequested(review(0, 0))).toBe(0);
+    expect(gatewayRequested(review(0))).toBe(0);
   });
 
   it("[gateway] reads a lone credits window only when it is the plan's own Credits card", () => {
@@ -627,6 +628,12 @@ describe("review gateway round 4 fixes", () => {
       gatewayConfigProblems({ ...structuredClone(config), providers }, REVIEW_MODELS);
     const base = structuredClone(config.providers);
     expect(withProviders([...base, { id: "none", kind: "preset" }])).toContain("providers.id");
+    const models = structuredClone(config.models);
+    models[deepseek].members = ["workbuddy-ai/deepseek-v4.1-flash-sg"];
+    models["x/deepseek-v4.1-flash"] = models[glm];
+    expect(gatewayConfigProblems({ ...config, models }, REVIEW_MODELS)).toEqual(
+      expect.arrayContaining([`models.${deepseek}.fallback`, "models.groups"]),
+    );
     expect(withProviders([...base, { id: "Bad Id", kind: "preset" }])).toContain("providers.id");
     expect(
       withProviders(
@@ -741,6 +748,11 @@ describe("review gateway round 3 fixes", () => {
     try {
       const file = join(root, "config", "magpie", "usage.jsonl");
       mkdirSync(join(root, "config", "magpie"), { recursive: true });
+      writeFileSync(
+        file,
+        `${JSON.stringify({ req: "group/review-deepseek-v4.1-flash" })}\n{"req":"gro`,
+      );
+      expect(readGatewayUsage(root)).toHaveLength(1);
       writeFileSync(file, `${JSON.stringify({ req: "group/review-deepseek-v4.1-flash" })}\n`);
       setTimeout(
         () =>

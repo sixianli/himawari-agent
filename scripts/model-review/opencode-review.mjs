@@ -2465,12 +2465,13 @@ export function parseArgs(argv) {
 
 export function gatewayRecordFields(usage, config, model, { requested = false } = {}) {
   const unknown = { gateway: "magpie", providers: {}, costUnknown: true };
-  if (usage === null) return unknown;
+  if (usage === null) return requested ? unknown : { gateway: "magpie", providers: {} };
   try {
     const { byModel, unreadable } = summarizeGatewayUsage(usage, config);
     const providers = byModel[model] ?? {};
     if (!providersValid(providers)) return unknown;
-    const missing = requested && Object.keys(providers).length === 0;
+    const recorded = Object.values(providers).reduce((total, slot) => total + slot.requests, 0);
+    const missing = recorded < Number(requested);
     return unreadable > 0 || missing ? { ...unknown, providers } : { gateway: "magpie", providers };
   } catch {
     return unknown;
@@ -2490,7 +2491,8 @@ export function withProviderMoney(record, creditProvider) {
 }
 
 export function gatewayRequested(review) {
-  return review.summary.usage.steps > 0 || review.runs.some((run) => (run.guard?.allowed ?? 0) > 0);
+  const allowed = review.runs.reduce((total, run) => total + (run.guard?.allowed ?? 0), 0);
+  return Math.max(review.summary.usage.steps > 0 ? 1 : 0, allowed);
 }
 
 export function gatewayUsageLine(record) {
