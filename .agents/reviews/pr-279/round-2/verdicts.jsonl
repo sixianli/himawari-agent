@@ -1,0 +1,5 @@
+{"id": "r2-ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`start()` 在确认“没有正在运行的回放”之前就清掉取消标记，可把 `stop()` 的取消冲掉", "valid": true, "class": "error", "severity": "medium-high", "trigger": "stop() 之后又有一次 start 被拒绝", "consequence": "取消被冲掉，在跑的回放继续花预算并以 finished 结束", "modelSeverity": "中"}
+{"id": "r2-ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增的 `service.deleteRun` 在生产里没有调用方", "valid": true, "class": "error", "severity": "low", "trigger": "读“已修”说法的人以为生产已有删单条入口", "consequence": "说法与现状不符", "modelSeverity": "低"}
+{"id": "r2-ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "删行与释放封存文字之间的崩溃/失败窗口没有补偿，会留下孤儿密文", "valid": false, "class": "better"}
+{"id": "r2-ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "范围后置过滤用字符串比较，且接口不保证 `receivedAt` 是规范 ISO", "valid": true, "class": "error", "severity": "low", "trigger": "自定义读取器返回带偏移的时间", "consequence": "邮件被错判在范围内或范围外", "modelSeverity": "低"}
+{"id": "r2-ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新测试没有覆盖作者声称的两个关键语义", "valid": true, "class": "better"}

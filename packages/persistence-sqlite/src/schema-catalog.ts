@@ -493,7 +493,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "ProactiveReplayStorePort",
     "one row per owner-started replay of past mail through the proactive judgment; range, mail limit, budget, status, counts and spent cost; at most one running row per agent",
     "metadata_only",
-    "cascade with Owner or Agent deletion; removed when the owner deletes the run, clears proactive records or disconnects the source",
+    "cascade with Owner or Agent deletion; removed when the owner clears proactive records or disconnects the source; deleting a single run is not exposed to the owner yet",
   ),
   entry(
     "proactive_replay_results",

@@ -204,6 +204,7 @@ export class ProactiveReplayService {
     const { scope, store, replays, seal, history, clock } = this.#options;
     const finish = (status: "finished" | "failed" | "interrupted", reasonCode: string) =>
       replays.finishRun({ ...scope, runId, status, reasonCode, now: clock.now() });
+    if (this.#cancelled) return finish("interrupted", "SERVICE_STOPPING");
     const token = await seal.open({ ...scope, ref: connection.tokenRef });
     if (!token) return finish("failed", "SOURCE_TOKEN_MISSING");
     const signal = AbortSignal.timeout(this.#options.perCheckMs);

@@ -596,4 +596,16 @@ describe("[PR-1] replaying past mail through the proactive judgment", () => {
       judged: 0,
     });
   });
+
+  it("interrupts a replay whose stop request lands while it is still being started", async () => {
+    const h = await setup({ mails: [] });
+    const starting = h.service.start({ from: FROM, to: TO, mailLimit: 10, budgetMicros: 100_000 });
+    const stopping = h.service.cancel();
+    const { runId, done } = await starting;
+    await Promise.all([done, stopping]);
+    expect(await h.replays.readRun({ ...scope, runId })).toMatchObject({
+      status: "interrupted",
+      reasonCode: "SERVICE_STOPPING",
+    });
+  });
 });

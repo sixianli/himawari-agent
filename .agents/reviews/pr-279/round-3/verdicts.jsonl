@@ -1,0 +1,4 @@
+{"id": "r3-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "取消标记永久锁存，“一律拒绝”只对生产成立", "valid": false, "class": "better"}
+{"id": "r3-glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "cancel 与 start 仍有竞态，作者“一律拒绝”的说法不完全成立", "valid": true, "class": "error", "severity": "low", "trigger": "stop 恰好落在 start 的读连接、写运行记录两个等待之间，且范围内没有邮件", "consequence": "新回放以 finished 而不是 interrupted 结束；有邮件时第一封前就会被打断", "modelSeverity": "低"}
+{"id": "r3-glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "作者描述与代码不符：gate 挡在“列出”而非“读取”", "valid": false, "class": "better"}
+{"id": "r3-glm-4", "model": "opencode-go/glm-5.3-flash", "quote": "Date.parse 过滤无排除方向的用例，且对 NaN 静默排除", "valid": false, "class": "better"}
