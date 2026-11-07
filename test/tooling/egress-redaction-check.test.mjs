@@ -155,6 +155,16 @@ describe("external egress registration", () => {
     );
   });
 
+  it("fails when the DeepSeek web tool file sends an address without masking it", () => {
+    const root = fixture({
+      "packages/platform-node/src/deepseek-web-provider.ts":
+        'post("/v1/tools/search", body); redactForExternalText(query);',
+    });
+    expect(findEgressViolations(root).join("\n")).toContain(
+      "packages/platform-node/src/deepseek-web-provider.ts: 发往外部服务（DeepSeek web tool request）前要先遮敏感值，缺少 maskedPublicFetchUrl(…) 调用",
+    );
+  });
+
   it("names the masking call for every registered external service file", () => {
     for (const file of ALLOWED_EXTERNAL_EGRESS_FILES.keys())
       expect(REQUIRED_EXTERNAL_REDACTION_CALLS.get(file)?.length ?? 0).toBeGreaterThan(0);

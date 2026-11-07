@@ -98,6 +98,12 @@ describe("DeepSeek search and fetch adapter", () => {
       url: "https://example.org/a?token=%5B%E5%AF%86%E7%A0%81%23aaaaaaaa%5D",
     });
   });
+  it("[mask-not-block] rejects a query by its byte size before masking it", async () => {
+    await expect(provider().search({ query: "あ".repeat(6000), limit: 1 })).rejects.toThrow(
+      "WEB_SEARCH_INPUT_INVALID",
+    );
+    expect(state.fetch).not.toHaveBeenCalled();
+  });
   it("reports a query longer than 128 characters as unsupported without sending it", async () => {
     await expect(provider().search({ query: "a".repeat(129), limit: 1 })).rejects.toThrow(
       "WEB_SEARCH_INPUT_UNSUPPORTED",

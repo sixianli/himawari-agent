@@ -227,6 +227,22 @@ describe("TypeSafe JEV transport", () => {
     expect(JSON.stringify(seen[0]?.body)).not.toContain("hunter2abc");
   });
 
+  it("[mask-not-block] gives different passwords in different fields of the review state different placeholders", async () => {
+    const { transport, seen } = transportFor(
+      envelope({ note: "password: hunter2abc", other: "password: another9xyz" }),
+      () => new Response("{}", { status: 500 }),
+    );
+    await collect(transport, {
+      descriptor: descriptor(),
+      request: request(),
+      secretValues: ["key"],
+    });
+    const sent = JSON.stringify(seen[0]?.body);
+    const placeholders = sent.match(/\[密码#[a-z]{8}\]/gu) ?? [];
+    expect(placeholders).toHaveLength(2);
+    expect(new Set(placeholders).size).toBe(2);
+  });
+
   it.each([
     ["deny", "HIGH_RISK", "deny"],
     ["human", "INSUFFICIENT_CONTEXT", "human"],

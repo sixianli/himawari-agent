@@ -67,7 +67,7 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
     readonly limit: number;
     readonly signal?: AbortSignal;
   }): Promise<readonly WebSearchCandidate[]> {
-    if (input.query.length > 4 * 4096) throw new Error("WEB_SEARCH_INPUT_INVALID");
+    if (Buffer.byteLength(input.query) > 4 * 4096) throw new Error("WEB_SEARCH_INPUT_INVALID");
     const query = redactForExternalText(input.query.trim()).text;
     if (!query || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 10)
       throw new Error("WEB_SEARCH_INPUT_INVALID");

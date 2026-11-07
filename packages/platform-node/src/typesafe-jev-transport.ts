@@ -13,7 +13,11 @@ import {
   parseAutomaticReviewDecision,
 } from "@himawari-agent/application";
 import { REVIEW_TYPESAFE_QUESTIONS } from "@himawari-agent/prompt-catalog";
-import { redactForExternalText } from "@himawari-agent/sensitive-capture";
+import {
+  type ExternalRedactionOptions,
+  redactForExternalText,
+  sequentialPlaceholderTag,
+} from "@himawari-agent/sensitive-capture";
 
 import type { SecretMaterialSource, TrustedModelTransport } from "./trusted-model-provider.js";
 
@@ -110,12 +114,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function redactedState(value: unknown, known: Map<string, string> = new Map()): unknown {
-  if (typeof value === "string") return redactForExternalText(value, { known }).text;
-  if (Array.isArray(value)) return value.map((entry) => redactedState(entry, known));
+function redactedState(
+  value: unknown,
+  options: ExternalRedactionOptions = {
+    known: new Map<string, string>(),
+    tag: sequentialPlaceholderTag(),
+  },
+): unknown {
+  if (typeof value === "string") return redactForExternalText(value, options).text;
+  if (Array.isArray(value)) return value.map((entry) => redactedState(entry, options));
   if (!isRecord(value)) return value;
   return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, redactedState(entry, known)]),
+    Object.entries(value).map(([key, entry]) => [key, redactedState(entry, options)]),
   );
 }
 

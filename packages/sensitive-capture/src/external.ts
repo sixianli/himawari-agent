@@ -57,7 +57,7 @@ export function isSensitiveUrlParameter(name: string): boolean {
   );
 }
 
-function sequentialTag(): (kind: EgressPlaceholderKind, value: string) => string {
+export function sequentialPlaceholderTag(): (kind: EgressPlaceholderKind, value: string) => string {
   const ids = new Map<string, number>();
   return (kind, value) => {
     const identity = `${kind}\u0000${value}`;
@@ -79,7 +79,7 @@ export function redactForExternalText(
 ): EgressRedaction {
   return redactForEgress(input, {
     known: options.known ?? new Map<string, string>(),
-    tag: options.tag ?? sequentialTag(),
+    tag: options.tag ?? sequentialPlaceholderTag(),
   });
 }
 
@@ -217,7 +217,7 @@ export function redactForExternalUrl(
   options: ExternalRedactionOptions = {},
 ): EgressRedaction {
   const known = options.known ?? new Map<string, string>();
-  const tag = options.tag ?? sequentialTag();
+  const tag = options.tag ?? sequentialPlaceholderTag();
   const shared = { tag, known };
   const userInfo = withoutUserInfo(encodedPlaceholders(input));
   const parameters = withoutSensitiveParameters(userInfo.text, tag, known);
