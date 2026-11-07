@@ -83,6 +83,7 @@ it.each([
   "stream-repeated-race",
   "[I-83] resource-limit",
   "[I-83] resource-limit-unobserved",
+  "[I-83] output-limit",
 ] as const)("v2 lifecycle: %s", async (scenario) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
@@ -101,6 +102,7 @@ it.each([
   const startPending = scenario === "[R2-D26] start-pending";
   const resourceLimit = scenario.startsWith("[I-83] resource-limit");
   const resourceLimitObserved = scenario === "[I-83] resource-limit";
+  const outputLimit = scenario === "[I-83] output-limit";
   let pendingObservations = 0;
   let streamAttempts = 0;
   const streamChunks = new Map<number, unknown>();
@@ -141,7 +143,7 @@ it.each([
                 }
               : { kind: "task_start" as const, ref: "task", version: "1" },
           }
-        : scenario === "command" || scenario === "network" || resourceLimit
+        : scenario === "command" || scenario === "network" || resourceLimit || outputLimit
           ? {
               ...admitted.plan,
               operationContract: {
@@ -198,14 +200,14 @@ it.each([
         scenario === "finished-during-check"
       )
         return;
-      if (resourceLimit) {
+      if (resourceLimit || outputLimit) {
         resolveResult({
           stdout: new TextEncoder().encode("result"),
           taskStarted: true,
           taskProcessExited: true,
           exitCode: null,
           stdioClosed: true,
-          reason: "resource_limit",
+          reason: outputLimit ? "output_limit" : "resource_limit",
           ...(resourceLimitObserved
             ? {
                 resources: {
@@ -764,6 +766,7 @@ it.each([
       scenario === "command" ||
       scenario === "network" ||
       resourceLimit ||
+      outputLimit ||
       validPi ||
       scenario === "finished-during-check" ||
       scenario === "revoked-running"
@@ -773,6 +776,11 @@ it.each([
   if (scenario === "normal" || validPi) expect(facts.effect).toEqual({ kind: "not_applicable" });
   if (scenario === "command" || scenario === "network")
     expect(facts.effect).toEqual({ kind: "not_asserted" });
+  if (outputLimit) {
+    expect(facts.result).toMatchObject({ kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" });
+    expect(facts.effect).toMatchObject({ kind: "unknown" });
+    expect(isSandboxBoundedToolFailure(facts.result)).toBe(false);
+  }
   if (resourceLimit) {
     const reasonCode = resourceLimitObserved ? "SANDBOX_CPU_TIME_LIMIT" : "SANDBOX_RESOURCE_LIMIT";
     expect(facts.result).toMatchObject({ kind: "error", reasonCode, output: { ref: "output" } });

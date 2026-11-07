@@ -4491,6 +4491,66 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
   );
 
   it.each([
+    ["resource_limit", true, true, "foreground", false, true],
+    ["exited", true, true, "foreground", false, false],
+    ["resource_limit", false, true, "foreground", false, false],
+    ["resource_limit", true, true, "background", false, false],
+    ["resource_limit", true, true, "foreground", true, false],
+    [null, false, false, "foreground", false, false],
+  ] as const)(
+    "[I-83] only treats a stream termination that can never yield a result as unrecoverable: %s/%s/%s/%s/%s",
+    async (reasonCode, taskProcessExited, hasStream, mode, workspaceBlocked, expected) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        const { createProductionSandboxStream, sandboxStreamResultUnrecoverable } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream.ts"
+        );
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        repository = opened;
+        let next = 0;
+        const stream = createProductionSandboxStream({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          artifacts: () => opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+          clock: { now: () => T1 },
+          ids: { next: () => `guard-stream-${++next}` },
+        });
+        if (hasStream && reasonCode !== null)
+          await stream.append(record, {
+            index: 0,
+            offset: 0,
+            bytesBase64: Buffer.from("部分输出").toString("base64"),
+            end: true,
+            termination: {
+              exitCode: reasonCode === "exited" ? 0 : null,
+              reasonCode,
+              taskProcessExited,
+            },
+          });
+        const candidate = {
+          ...record,
+          plan: { ...record.plan, mode },
+          workspaceBlocked,
+        } as typeof record;
+        expect(await sandboxStreamResultUnrecoverable(stream, candidate)).toBe(expected);
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
     "known-released",
     "known-unreleased",
     "unknown-released",
@@ -5285,6 +5345,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "loss-stale-handle",
     "loss-unverified",
     "loss-unrecoverable",
+    "loss-stream-exited",
     "loss-coding",
     "loss-cancelled",
     "loss-expired",
@@ -5721,7 +5782,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                     authority: () => authority,
                     now: clock.now,
                     recoverableBackend: async (value) => value.plan.backendRef === "srt",
-                    verifyExited: async () => !["unverified", "unrecoverable"].includes(variant),
+                    verifyExited: async () =>
+                      !["unverified", "unrecoverable", "stream-exited"].includes(variant),
                     verifyFresh: async (value) => {
                       const proof = context(value, value.facts).verification;
                       if (!proof) throw new Error("Fixture proof missing");
@@ -5762,7 +5824,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             agentId: AGENT_ID,
             concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
             deadlines: {
-              runMs: ["unverified", "unrecoverable"].includes(variant)
+              runMs: ["unverified", "unrecoverable", "stream-exited"].includes(variant)
                 ? Date.parse(T2) - Date.parse(T1)
                 : 120000,
               workerRequestMs: 10000,
@@ -6081,14 +6143,17 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(originalHandle).toMatchObject({ authorityFence: 1 });
           expect(authority.product.fencingToken).toBe(2);
         }
-        if (variant === "unrecoverable") {
+        if (["unrecoverable", "stream-exited"].includes(variant)) {
           if (!record) throw new Error("Unrecoverable fixture record missing");
           await (await recoveryStream()).append(record, {
             index: 0,
             offset: 0,
             bytesBase64: Buffer.from("部分输出").toString("base64"),
             end: true,
-            termination: { exitCode: null, reasonCode: "resource_limit", taskProcessExited: true },
+            termination:
+              variant === "stream-exited"
+                ? { exitCode: 0, reasonCode: "exited", taskProcessExited: true }
+                : { exitCode: null, reasonCode: "resource_limit", taskProcessExited: true },
           });
         }
         const outcomes = ["competing", "coding-competing"].includes(variant)
@@ -6117,7 +6182,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(request).not.toHaveBeenCalled();
           return;
         }
-        if (["unverified", "unrecoverable"].includes(variant)) {
+        if (["unverified", "unrecoverable", "stream-exited"].includes(variant)) {
           const decisive = variant === "unrecoverable";
           const status = async () =>
             (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))

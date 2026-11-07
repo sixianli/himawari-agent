@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   type CapabilityInvocationAuthority,
+  type CapabilityResourceCeiling,
   projectSandboxExecution,
   RECOVERY_SETTLE_WAIT_MS,
   type SandboxExecutionJournalPort,
@@ -39,6 +40,7 @@ export interface SandboxToolCompletion {
   readonly errorCode: string | null;
   readonly externalActionId: null;
   readonly processExitCode?: number;
+  readonly resourceCeiling?: CapabilityResourceCeiling;
 }
 export interface SandboxToolDelivery {
   readonly resultRecovery?: {
@@ -345,6 +347,9 @@ export function createProductionSandboxToolResult(options: {
             effectKind: record.facts.effect.kind,
           });
       const processExitCode = commandEffectReason ? commandProcessExitCode(result) : undefined;
+      const failureReason =
+        (hostResultRejected ? result.reasonCode : commandEffectReason) ??
+        (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED");
       const completion: SandboxToolCompletion =
         projection.conclusion === "succeeded"
           ? {
@@ -365,10 +370,11 @@ export function createProductionSandboxToolResult(options: {
                   }))
                   ? result.output.ref
                   : null,
-              errorCode:
-                (hostResultRejected ? result.reasonCode : commandEffectReason) ??
-                (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED"),
+              errorCode: failureReason,
               externalActionId: null,
+              ...(isSandboxResourceLimitReason(failureReason)
+                ? { resourceCeiling: plan.resourceCeiling }
+                : {}),
               ...(processExitCode === undefined ? {} : { processExitCode }),
             };
       await delivery.saveReceipt(completion);

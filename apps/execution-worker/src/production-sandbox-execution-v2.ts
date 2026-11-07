@@ -889,11 +889,9 @@ export class ProductionSandboxExecutionV2 {
         !authenticatedDeadline &&
         !authenticatedNotStarted &&
         latest.facts.result?.kind !== "started"
-          ? result.reason === "output_limit"
-            ? "SANDBOX_OUTPUT_LIMIT"
-            : result.reason === "resource_limit"
-              ? sandboxResourceLimitReason(plan.resourceCeiling, result.resources)
-              : null
+          ? result.reason === "resource_limit"
+            ? sandboxResourceLimitReason(plan.resourceCeiling, result.resources)
+            : null
           : null;
       const operation = {
         effect:

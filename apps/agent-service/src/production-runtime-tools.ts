@@ -112,7 +112,7 @@ type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
 type WorkerToolCompletion = Pick<
   Extract<ExecutionV2Event, { type: "work.result" }>["payload"],
   "outcome" | "outputRef" | "errorCode" | "externalActionId"
-> & { readonly processExitCode?: number };
+> & { readonly processExitCode?: number; readonly resourceCeiling?: CapabilityResourceCeiling };
 const EVENT_POLL_MS = 50;
 const AUTHORITY_STOP_WAIT_MS = 30_000;
 const RANK = ["public", "private", "sensitive", "restricted"] as const;
@@ -2100,7 +2100,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       };
     } else {
       const commandEffectUnverified = completion.errorCode === "SANDBOX_COMMAND_EFFECT_UNVERIFIED";
-      const resourceLimitNotice = sandboxResourceLimitMessage(completion.errorCode ?? "", ceiling);
+      const resourceLimitNotice = sandboxResourceLimitMessage(
+        completion.errorCode ?? "",
+        completion.resourceCeiling ?? ceiling,
+      );
       if (
         commandEffectUnverified &&
         completion.outputRef &&

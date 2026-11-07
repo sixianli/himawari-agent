@@ -335,7 +335,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ids,
     authorizeAuthorityChange: async (request, ref, previousAuthority) => {
       if (request.knownToolResult) {
-        const prepared = await prepareToolResultRecovery(request);
+        const prepared = await prepareToolResultRecovery(request, { recordUnrecoverable: false });
         return (
           prepared !== undefined &&
           prepared.binding.continuationRef === ref &&

@@ -13,13 +13,16 @@ import type { createProductionSandboxOutput } from "./production-sandbox-output.
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 export async function sandboxStreamResultUnrecoverable(
   stream: {
-    termination: (record: SandboxExecutionRecord) => Promise<{ reasonCode: string } | null>;
+    termination: (
+      record: SandboxExecutionRecord,
+    ) => Promise<{ reasonCode: string; taskProcessExited: boolean } | null>;
   },
   record: SandboxExecutionRecord,
 ) {
   if (record.plan.mode !== "foreground" || record.workspaceBlocked) return false;
   const termination = await stream.termination(record);
-  return termination !== null && isSandboxUnrecoverableTermination(termination.reasonCode);
+  if (!termination?.taskProcessExited) return false;
+  return isSandboxUnrecoverableTermination(termination.reasonCode);
 }
 const key = (value: unknown) => hash(Buffer.from(JSON.stringify(value)));
 /** Immutable, contiguous protected chunks. Polling an issued cursor performs only
