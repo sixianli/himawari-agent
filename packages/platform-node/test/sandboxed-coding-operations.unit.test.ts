@@ -160,6 +160,13 @@ describe("sandboxed coding file operations", () => {
     await port.writeFile(file, "");
     expect(await readFile(file, "utf8")).toBe("");
   });
+  it("reads a file that holds a machine secret as it is, and still refuses binary text", async () => {
+    const secret = `token = sk-${"a".repeat(24)}\n`;
+    const { file, port } = await setup(secret);
+    expect(Buffer.from(await port.readFile(file)).toString("utf8")).toBe(secret);
+    const binary = await setup("a\u0000b");
+    await expect(binary.port.readFile(binary.file)).rejects.toThrow("PI_TEXT_READ_REJECTED");
+  });
   it("safely replaces an empty existing file", async () => {
     const { file, port } = await setup("");
     expect(await port.readFile(file)).toHaveLength(0);
@@ -231,6 +238,21 @@ describe("Pi output export", () => {
     const result = await exportPiOutputFile(file, root, 64);
     expect(Buffer.from(result.data, "base64").toString()).toBe("output");
     expect(JSON.stringify(result)).not.toContain(root);
+  });
+  it("masks secrets in exported text before encoding and keeps other bytes as they are", async () => {
+    const { root } = await setup();
+    const file = path.join(root, "pi-bash-456def.log");
+    await writeFile(file, `ok\ntoken = sk-${"a".repeat(24)}\n`);
+    const masked = await exportPiOutputFile(file, root, 1024);
+    expect(Buffer.from(masked.data, "base64").toString()).toBe("ok\ntoken = [密钥]\n");
+    expect(masked).toMatchObject({ redacted: true });
+    const latin = Buffer.from([0x68, 0x69, 0xe9, 0x0a]);
+    await writeFile(file, latin);
+    const raw = await exportPiOutputFile(file, root, 1024);
+    expect(Buffer.from(raw.data, "base64").equals(latin)).toBe(true);
+    expect(raw).not.toHaveProperty("redacted");
+    await writeFile(file, `\u0000sk-${"a".repeat(24)}`);
+    await expect(exportPiOutputFile(file, root, 1024)).rejects.toThrow("PI_OUTPUT_FILE_REJECTED");
   });
   it("rejects forged paths, links and oversized files", async () => {
     const { root, file } = await setup("private bytes");

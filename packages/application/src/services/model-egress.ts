@@ -10,6 +10,7 @@ import {
   type EgressRedactionRuleId,
   type EgressRedactionSighting,
   redactForEgress,
+  redactMachineSecrets,
 } from "@himawari-agent/sensitive-capture";
 import type {
   SensitiveInterceptionPart,
@@ -39,6 +40,7 @@ export interface ModelEgressSighting {
   readonly category: EgressRedactionKind;
   readonly ruleId: EgressRedactionRuleId;
   readonly fingerprint: string;
+  readonly outcome?: "withheld";
 }
 
 export interface ModelEgressOptions {
@@ -189,6 +191,23 @@ class Exchange implements ModelEgressExchange {
     const key = await this.#options.key();
     const sightings = new Map<string, ModelEgressSighting>();
     const recording = this.#options.report !== undefined && this.#context !== undefined;
+    const sighting = (
+      part: SensitiveInterceptionPart,
+      { kind, ruleId, value: seen }: EgressRedactionSighting,
+    ): readonly [string, ModelEgressSighting] => {
+      const fingerprint = hex(
+        this.#options.sign(key, `${FINGERPRINT_LABEL}\u0000${kind}\u0000${seen}`),
+      );
+      return [
+        `${part}\u0000${kind}\u0000${fingerprint}`,
+        Object.freeze({ part, category: kind, ruleId, fingerprint }),
+      ];
+    };
+    const see = (part: SensitiveInterceptionPart, seen: EgressRedactionSighting): void => {
+      if (!recording) return;
+      const [identity, value] = sighting(part, seen);
+      if (!sightings.has(identity)) sightings.set(identity, value);
+    };
     const text = (value: string, part: SensitiveInterceptionPart): string => {
       const result = redactedOrRefused(value, {
         tag: (kind: EgressPlaceholderKind, secret: string) =>
@@ -196,27 +215,23 @@ class Exchange implements ModelEgressExchange {
         known: this.#known,
         table: this.table,
         trusted: this.#options.trusted ?? TRUSTED_PROMPT_TEXTS,
-        ...(recording
-          ? {
-              observe: ({ kind, ruleId, value: seen }) => {
-                const fingerprint = hex(
-                  this.#options.sign(key, `${FINGERPRINT_LABEL}\u0000${kind}\u0000${seen}`),
-                );
-                const identity = `${part}\u0000${kind}\u0000${fingerprint}`;
-                if (!sightings.has(identity))
-                  sightings.set(
-                    identity,
-                    Object.freeze({ part, category: kind, ruleId, fingerprint }),
-                  );
-              },
-            }
-          : {}),
+        ...(recording ? { observe: (seen: EgressRedactionSighting) => see(part, seen) } : {}),
       });
       for (const finding of result.findings)
         this.#counts.set(finding.kind, (this.#counts.get(finding.kind) ?? 0) + finding.count);
       try {
         assertMachineSecretFree(result.text);
       } catch {
+        if (recording) {
+          const withheld = new Map<string, ModelEgressSighting>();
+          const hold = ([identity, value]: readonly [string, ModelEgressSighting]) =>
+            withheld.set(identity, Object.freeze({ ...value, outcome: "withheld" }));
+          for (const entry of sightings) hold(entry);
+          redactMachineSecrets(result.text, (ruleId, seen) =>
+            hold(sighting(part, { kind: "machine-secret", ruleId, value: seen })),
+          );
+          this.#report(withheld);
+        }
         refuse("sensitive material remained after redaction");
       }
       return result.text;

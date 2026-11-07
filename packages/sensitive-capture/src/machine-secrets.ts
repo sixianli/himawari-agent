@@ -72,6 +72,38 @@ export function redactMachineSecrets(
   return result;
 }
 
+const KEY_KIND = "(?:RSA |EC |OPENSSH )?PRIVATE KEY-----";
+const KEY_LINE_BREAK = String.raw`(?:\\n|\r?\n)`;
+const KEY_LINE_PREFIX = String.raw`(?:[^\s:\\"]*?[:-]\d+[:-])?[ \t+-]*\d*[ \t:]*`;
+const KEY_LINE_START = String.raw`(?<=^|\\n|\n|")`;
+const KEY_LINE_END = String.raw`(?=\\n|\r?\n|"|$)`;
+const KEY_LINE = `${KEY_LINE_PREFIX}[A-Za-z0-9+/=]{16,}${KEY_LINE_END}`;
+const KEY_LAST_LINE = `${KEY_LINE_PREFIX}[A-Za-z0-9+/=]+${KEY_LINE_END}`;
+const PRIVATE_KEY_FRAGMENTS = Object.freeze([
+  ...RULES.filter((rule) => rule.id === "private-key-block").map((rule) => rule.pattern),
+  new RegExp(
+    `-----BEGIN ${KEY_KIND}(?:${KEY_LINE_BREAK}${KEY_LINE})+(?:${KEY_LINE_BREAK}${KEY_LAST_LINE})?`,
+    "g",
+  ),
+  new RegExp(
+    `${KEY_LINE_START}(?:${KEY_LINE}${KEY_LINE_BREAK})+(?:${KEY_LAST_LINE}${KEY_LINE_BREAK})?${KEY_LINE_PREFIX}-----END ${KEY_KIND}`,
+    "g",
+  ),
+]);
+
+export function redactPrivateKeyFragments(
+  input: string,
+  observe?: (ruleId: MachineSecretRuleId, value: string) => void,
+): string {
+  let result = input;
+  for (const pattern of PRIVATE_KEY_FRAGMENTS)
+    result = result.replace(pattern, (match) => {
+      observe?.("private-key-block", match);
+      return REDACTED;
+    });
+  return result;
+}
+
 export class MachineSecretExclusionError extends Error {
   readonly code = "MACHINE_SECRET_EXCLUDED" as const;
   readonly findings: readonly MachineSecretFinding[];

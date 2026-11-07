@@ -16,9 +16,7 @@ export function webProviderFailure(error: unknown): WebProviderError {
             ? "INPUT_UNSUPPORTED"
             : /INPUT_INVALID$|INPUT_LIMIT$/.test(message)
               ? "INPUT_INVALID"
-              : /OUTPUT_REDACTED$/.test(message)
-                ? "OUTPUT_REDACTED"
-                : "UNAVAILABLE";
+              : "UNAVAILABLE";
   return new WebProviderError(code, message || code);
 }
 
@@ -44,10 +42,6 @@ const searchReports: Readonly<Record<WebProviderFailureCode, FailureReport>> = {
   INPUT_INVALID: {
     code: "WEB_SEARCH_INPUT_INVALID",
     message: "查询不符合要求：不能为空、不能超过 4096 字节、不能包含凭据。改好后再搜。",
-  },
-  OUTPUT_REDACTED: {
-    code: "WEB_SEARCH_OUTPUT_REJECTED",
-    message: "搜索结果里出现了疑似凭据，整批结果已丢弃。换一个查询再搜。",
   },
   PAGE_UNREACHABLE: {
     code: "WEB_SEARCH_UNAVAILABLE",
@@ -80,10 +74,6 @@ const fetchReports: Readonly<Record<WebProviderFailureCode, FailureReport>> = {
     code: "WEB_FETCH_INPUT_INVALID",
     message:
       "网址或参数不符合要求：只能读公开的 http(s) 网址，不能是内网地址，不能带账号密码或凭据；offset 必须是不小于 0 的整数。",
-  },
-  OUTPUT_REDACTED: {
-    code: "WEB_FETCH_OUTPUT_REJECTED",
-    message: "网页内容里出现了疑似凭据，整页内容已丢弃。请换其他来源网址。",
   },
   PAGE_UNREACHABLE: {
     code: "WEB_FETCH_UNREACHABLE",

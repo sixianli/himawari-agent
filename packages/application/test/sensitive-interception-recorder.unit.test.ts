@@ -63,6 +63,19 @@ describe("sensitive interception recorder", () => {
     ]);
   });
 
+  it("keeps the withheld outcome of a request that was not sent", async () => {
+    const { writes, port } = store();
+    const recorder = new SensitiveInterceptionRecorder({
+      store: port,
+      now: () => "2026-11-07T01:00:00.000Z",
+    });
+    recorder.reportEgress(context, [{ ...sighting("c".repeat(32)), outcome: "withheld" }]);
+    await recorder.flush();
+    expect(writes[0]?.observations).toEqual([
+      expect.objectContaining({ fingerprint: "c".repeat(32), outcome: "withheld" }),
+    ]);
+  });
+
   it("drops the oldest sightings beyond the queue limit and says how many", async () => {
     const { writes, port } = store();
     const dropped: number[] = [];
