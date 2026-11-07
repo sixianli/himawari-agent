@@ -39,7 +39,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的 security 检查（`
 - `apps/agent-service/test/production-http-composition.unit.test.ts` 里的幂等键，命中的那一行写的是请求头 `"idempotency-key"`，不符合 `classifiedLiteral` 的写法。
 - `test/tooling/gitleaks-allowlist.test.mjs` 里核对回读文件那一行用的文件摘要，也不符合任何一种写法。
 
-2026-11-05 合并的 PR 248（提交 bd0859a9；Andy 2026-11-04 批准）在 `ci/rules/gitleaks.toml` 里加了八块白名单处理同类误报，但没有写进 ADR，ADR 0157 第 1 条和现行 Spec 仍写着“个别具体的值仍按逐条例外处理”，文档和代码不一致。2026-11-07 的 PR 275 复核时，GLM 指出了这处不一致。这八块是：
+2026-11-05 合并的 PR 248（提交 bd0859a9；Andy 2026-11-04 批准）在 `ci/rules/gitleaks.toml` 里加了八块白名单处理同类误报，但没有写进 ADR。PR 275 之前，ADR 0157 第 1 条和 Spec 都只写着“个别具体的值仍按逐条例外处理”，文档和代码不一致；PR 275 随本 ADR 一起更新了 Spec，ADR 0157 用 `amended_by` 指向本 ADR。2026-11-07 的 PR 275 复核时，GLM 指出了这处不一致。这八块是：
 
 - 六块按 `regexTarget = "secret"`（只看 Gitleaks 认出的那个值）放行。其中五块各锚定一个精确值；另一块（已删除的 `apps/agent-service/test/production-reminder-push.unit.test.ts` 里的合成值）写成“固定前缀 + 任意 7 个字符”。git 历史里这个前缀只出现过 `F5u42Bd3HyW8KxkUqo2gRA` 一个值，PR 275 把它收紧成这个精确值。
 - 两块按 `regexTarget = "match"`（看 Gitleaks 命中的那一段文字）放行，都只覆盖一个文件：已删除的 `.agents/tasks/round2-tool-execution/evidence.jsonl` 在 git 历史里的“文件名: 40 位 git 对象号”行（写成形状，因为历史里有许多不同的对象号），和一份资格证据回读文件里那一整段摘要（精确值）。
@@ -66,7 +66,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的 security 检查（`
    - `regexTarget = "secret"`，`regexes` 只有一个正则，用 `^…$` 锚定那一个精确值（不得写成字符类，例如“任意 32 位十六进制”）；
    - `description` 写明这个值是什么、为什么不是密钥。
 3. **PR 248 那两块按命中片段放行的白名单照旧保留。** 它们不满足第 2 条的 `regexTarget = "secret"`，也不满足 ADR 0157 的 `regexTarget = "line"`，但都只认一个文件：一块只覆盖已删除文件的 git 历史，那个文件不会再出现新内容；另一块锚定一整段精确文字。改用第 2 条的写法要重新核对历史里每一个命中，收益很小，所以不改；`test/tooling/gitleaks-allowlist.test.mjs` 分别核对它们的路径和值的正反例。
-4. **改动都要有测试。** `test/tooling/gitleaks-allowlist.test.mjs` 核对每块的形状、路径正反例，以及“改一个字符就不放行”（包括改成同类字符，挡住放宽成字符类）；`test/tooling/gitleaks-config.test.mjs` 用锁定版本的真实 Gitleaks 核对放行的文件不再报、同一个值出现在别的文件里照报。`ci/toolchain-lock.json` 里 `ci/rules/gitleaks.toml` 的 sha256 同步更新。
+4. **改动都要有测试。** `test/tooling/gitleaks-allowlist.test.mjs` 核对每块的形状、路径正反例，以及“改一个字符就不放行”（包括改成同类字符，挡住放宽成字符类）；新加或改动的块，还要在 `test/tooling/gitleaks-config.test.mjs` 里加样例，用锁定版本的真实 Gitleaks 核对放行的文件不再报、同一个值出现在别的文件里照报。`ci/toolchain-lock.json` 里 `ci/rules/gitleaks.toml` 的 sha256 同步更新。
 5. **只放行已经核实不是密钥的值。** 加白名单之前，先确认它是合成样例、标识或摘要，不是任何真实凭据。真密钥误入仓库时，按真密钥处理（轮换），不加白名单。
 
 取舍依据的原则：这是在“边界与可逆性”和“主动性与效率”之间取舍。白名单不会像例外那样 30 天到期，边界放松了一点；所以每块只认一个文件里的一个值，比例外清单（按路径、规则、摘要和次数）只宽在“没有到期日、不核对次数”。

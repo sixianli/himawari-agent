@@ -27,6 +27,8 @@ const READBACK_DIGEST = [
   "5a695b27538e322db7e962339e6a416a",
 ].join("");
 const REVIEWS = ".agents/reviews/pr-273";
+const PUSH_DEVICE = ["F5u42Bd3HyW8Kxk", "Uqo2gRA"].join("");
+const PUSH_TEST = "apps/agent-service/test/production-reminder-push.unit.test.ts";
 
 const FIXTURES = {
   [`${REVIEWS}/round-4/deepseek-v4.1-flash.md`]: `- blame → \`tokenValue: "${SYNTHETIC_TOKEN}"\`\n`,
@@ -37,12 +39,15 @@ const FIXTURES = {
   [`${EVIDENCE}/token.json`]: `{\n  "token": "${githubToken()}"\n}\n`,
   [`${EVIDENCE}/api.json`]: `{\n  "apiKey": "${hex("api-key")}"\n}\n`,
   [`${EVIDENCE}/mixed.json`]: `{"packages/a/auth.ts": "${hex("digest-3")}", "apiKey": "${hex("api-key-2")}"}\n`,
+  [PUSH_TEST]: `const SECRET = JSON.stringify({ deviceKey: "${PUSH_DEVICE}", encryptionKey: KEY });\nexpect(url).toBe("https://api.day.app/${PUSH_DEVICE}");\n`,
+  "apps/agent-service/test/other-push.unit.test.ts": `const SECRET = JSON.stringify({ deviceKey: "${PUSH_DEVICE}", encryptionKey: KEY });\n`,
   "test/fixtures/digest-map.json": `{\n  "packages/application/src/ports/recent-authentication.ts": "${hex("digest-4")}"\n}\n`,
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
   `${REVIEWS}/round-2/deepseek-v4.1-flash.md generic-api-key`,
   `${EVIDENCE}/api.json generic-api-key`,
+  "apps/agent-service/test/other-push.unit.test.ts generic-api-key",
   `${EVIDENCE}/mixed.json generic-api-key`,
   `${EVIDENCE}/token.json github-pat`,
   "test/fixtures/digest-map.json generic-api-key",
@@ -153,6 +158,7 @@ describe("gitleaks repository configuration", () => {
           `${REVIEWS}/round-4/deepseek-v4.1-flash.md generic-api-key`,
           "apps/agent-service/test/production-http-composition.unit.test.ts generic-api-key",
           "test/tooling/gitleaks-allowlist.test.mjs generic-api-key",
+          `${PUSH_TEST} generic-api-key`,
         ].sort(),
       );
   }, 120000);
