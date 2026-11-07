@@ -12,14 +12,51 @@ ROOT_RESERVE_BYTES = 1024 ** 3
 UNMEASURED_INSTALL_FACTOR = 3
 MEASURED_INSTALL_HEADROOM = 1.2
 LAST_INSTALL_USED = "import json, pathlib, re, sys; m = re.search(r'--no-global-search-paths \\S+/([a-z]+-[0-9]{8})/pair-supervisor[.]mjs', pathlib.Path(sys.argv[1]).read_text()); r = json.loads((pathlib.Path(sys.argv[2]) / (m.group(1) + '-evidence') / 's1-result.json').read_text()) if m else {}; print(r['rootFreeBeforeBytes'] - r['rootFreeAfterBytes'] if r.get('passed') else '')"
-KERNEL_FACTS = (
-    'running="$(/usr/bin/uname -r)"; flavour="${running##*-}"; newest=""; '
-    "for package in $(/usr/bin/dpkg-query -W -f='${db:Status-Abbrev} ${Package}\\n' 'linux-image-*-'\"$flavour\" 2>/dev/null | /usr/bin/awk '$1 ~ /^.i/ {print $2}'); do "
-    '[ "${package%-$flavour}" != "$package" ] || continue; '
-    'version="${package#linux-image-}"; version="${version%-$flavour}"; '
-    'case "$version" in [0-9]*) ;; *) continue ;; esac; '
-    'if [ -z "$newest" ] || /usr/bin/dpkg --compare-versions "$version" gt "$newest"; then newest="$version"; fi; done; '
-    'echo "runningKernel=$running"; echo "newestInstalledKernel=${newest:+$newest-$flavour}"'
+RUNNING_KERNEL = 'echo "runningKernel=$(/usr/bin/uname -r)"'
+GRUB_CONFIG = '/boot/grub/grub.cfg'
+GRUB_ENVIRONMENT = '/boot/grub/grubenv'
+BOOT_DIRECTORY = '/boot'
+READ_NEXT_BOOT_KERNEL = (
+    'import pathlib, re, shlex, sys\n'
+    'def menu(text):\n'
+    '    root = []\n'
+    '    stack = [("menu", root)]\n'
+    '    for raw in text.splitlines():\n'
+    '        line = raw.strip()\n'
+    '        if line.startswith(("menuentry ", "submenu ")) and line.endswith("{"):\n'
+    '            words = shlex.split(line[:-1])\n'
+    '            node = {"title": words[1], "id": words[words.index("$menuentry_id_option") + 1] if "$menuentry_id_option" in words else "", "children": [] if words[0] == "submenu" else None, "kernel": ""}\n'
+    '            if stack[-1][0] == "menu":\n'
+    '                stack[-1][1].append(node)\n'
+    '            stack.append(("menu", node["children"]) if node["children"] is not None else ("entry", node))\n'
+    '        elif line.endswith("{"):\n'
+    '            stack.append(("other", None))\n'
+    '        elif line == "}" and len(stack) > 1:\n'
+    '            stack.pop()\n'
+    '        elif stack[-1][0] == "entry":\n'
+    '            found = re.match(r"linux(?:efi)?\\s+\\S*/vmlinuz-(\\S+)", line)\n'
+    '            if found:\n'
+    '                stack[-1][1]["kernel"] = found.group(1)\n'
+    '    return root\n'
+    'def resolve(entries, target):\n'
+    '    node = None\n'
+    '    for part in target.split(">"):\n'
+    '        if node is not None:\n'
+    '            if node["children"] is None:\n'
+    '                return ""\n'
+    '            entries = node["children"]\n'
+    '        node = (entries[int(part)] if int(part) < len(entries) else None) if part.isdigit() else next((entry for entry in entries if part in (entry["id"], entry["title"])), None)\n'
+    '        if node is None:\n'
+    '            return ""\n'
+    '    return node["kernel"]\n'
+    'try:\n'
+    '    config = pathlib.Path(sys.argv[1]).read_text()\n'
+    '    environment = dict(line.split("=", 1) for line in pathlib.Path(sys.argv[2]).read_text(errors="replace").splitlines() if "=" in line and not line.startswith("#"))\n'
+    '    target = environment.get("next_entry") or environment.get("saved_entry", "")\n'
+    '    kernel = resolve(menu(config), target) if target and \'set default="${saved_entry}"\' in config else ""\n'
+    '    print(kernel if kernel and (pathlib.Path(sys.argv[3]) / ("vmlinuz-" + kernel)).is_file() else "")\n'
+    'except Exception:\n'
+    '    print("")\n'
 )
 READ_QUALIFIED_KERNEL = (
     'import json, pathlib, sys\n'
@@ -86,7 +123,8 @@ def remote_script(binding, units=(), paths=(), roots=(), base=''):
         'echo "lastInstallUsed=$(/usr/bin/python3 -I -c ' + shlex.quote(LAST_INSTALL_USED) + ' ' + shlex.quote(binding['service']['unitFragmentPath']) + ' ' + shlex.quote(str(Path(binding['paths']['evidenceRoot']).parent) if 'evidenceRoot' in binding['paths'] else '/var/lib/himawari') + ' 2>/dev/null)"',
         'echo "scratchScenes=$(' + SCRATCH_SCENE_COUNT + ')"',
         DOCUMENT_TOOLS_CHECK,
-        KERNEL_FACTS,
+        RUNNING_KERNEL,
+        'echo "nextBootKernel=$(/usr/bin/python3 -I -c ' + shlex.quote(READ_NEXT_BOOT_KERNEL) + ' ' + ' '.join(shlex.quote(path) for path in (GRUB_CONFIG, GRUB_ENVIRONMENT, BOOT_DIRECTORY)) + ')"',
         'echo "qualifiedKernel=$(/usr/bin/python3 -I -c ' + shlex.quote(READ_QUALIFIED_KERNEL) + ' ' + shlex.quote(str(Path(binding['service']['newQualificationEvidenceRoot']).parent)) + ')"',
         *(['if /usr/bin/git -C ' + shlex.quote(source_cache(binding)) + ' cat-file -e ' + shlex.quote(base + '^{commit}') + ' 2>/dev/null; then echo sourceCacheBase=present; else echo sourceCacheBase=absent; fi'] if base else []),
         '/usr/bin/python3 -I -c ' + shlex.quote(SANDBOX_LINKS_SCRIPT) + ' ' + ' '.join(shlex.quote(root) for root in roots) + ' || echo sandboxLinks=check-failed',
@@ -129,7 +167,7 @@ def checks(binding, facts, size, units=(), paths=(), base=''):
         ('ROOT_FREE_FOR_ACCEPTANCE', room['predictedFreeAfterInstall'] >= room['needAfterInstall']),
         ('TMP_SCRATCH_WITHIN_LIMIT', int(facts.get('scratchScenes') or 0) <= MAX_FAILURE_SCENES),
         ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
-        ('NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL', bool(facts.get('runningKernel')) and facts.get('newestInstalledKernel') == facts.get('runningKernel')),
+        ('NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL', bool(facts.get('runningKernel')) and facts.get('nextBootKernel') == facts.get('runningKernel')),
         ('RUNNING_KERNEL_MATCHES_QUALIFICATION', bool(facts.get('runningKernel')) and facts.get('qualifiedKernel') == facts.get('runningKernel')),
         *([('SOURCE_CACHE_HAS_BASE', facts.get('sourceCacheBase') == 'present')] if base else []),
         ('SANDBOX_COMMAND_LINKS_REACHABLE', facts.get('sandboxLinks') == 'ok'),
@@ -163,8 +201,8 @@ def main():
         print('PREFLIGHT_TMP_SCRATCH /tmp holds ' + facts.get('scratchScenes', '?') + ' acceptance scratch directories (h plus 4 characters) after the cleanup, more than the ' + str(MAX_FAILURE_SCENES) + ' failure scene allowed; see them with: ls -ld /tmp/h????, and see what the cleanup would remove with: python3 ' + str(Path(__file__).resolve().parent / 'release-cleanup.py') + ' ' + str(packet) + ' plan')
     if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
         print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai python3-venv, then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
-    if any(name == 'NEWEST_INSTALLED_KERNEL_IS_RUNNING_KERNEL' and not passed for name, passed in results):
-        print('PREFLIGHT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but the newest installed kernel is ' + (facts.get('newestInstalledKernel') or 'unknown') + '; after a reboot the server may start the newer one, the sandbox qualification would no longer match and the service would refuse to start. As root, remove the newer kernel package (this check reads installed packages, not grub, so pinning the grub default does not make it pass); do not reboot into the newer kernel, a service that is down cannot be re-qualified by this deploy')
+    if any(name == 'NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL' and not passed for name, passed in results):
+        print('PREFLIGHT_NEXT_BOOT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but after a reboot GRUB would start ' + (facts.get('nextBootKernel') or 'an unknown kernel') + '; the sandbox qualification is bound to the running kernel and the service would refuse to start on any other one. This check reads ' + GRUB_CONFIG + ' and ' + GRUB_ENVIRONMENT + ': grub.cfg must boot the saved entry (GRUB_DEFAULT=saved, then update-grub), and the one-time next_entry, or else saved_entry, must name a menu entry that boots an installed kernel. As root, point GRUB back at the running kernel with grub-set-default and the id of its menu entry (grep menuentry_id_option ' + GRUB_CONFIG + '), and clear a one-time choice with: grub-editenv ' + GRUB_ENVIRONMENT + ' unset next_entry. Keep the other installed kernels, they are the fallback')
     if any(name == 'RUNNING_KERNEL_MATCHES_QUALIFICATION' and not passed for name, passed in results):
         print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel, and the service would refuse to start on any other one; boot the kernel the receipt records, or qualify the running kernel first with the sandbox qualification procedure before deploying')
     if any(name == 'SANDBOX_COMMAND_LINKS_REACHABLE' and not passed for name, passed in results):
