@@ -22,6 +22,7 @@ export function extractReferenceIds(text: string): readonly string[] {
   for (const match of text.matchAll(REFERENCE_CONTEXT)) {
     const value = match[1]?.replace(/-+$/u, "").toUpperCase();
     if (value === undefined || value.length < 8 || !/\d/u.test(value)) continue;
+    if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) continue;
     if (!found.includes(value)) found.push(value);
     if (found.length >= MAX_REFERENCES_PER_MAIL) break;
   }
@@ -46,7 +47,9 @@ function mentions(candidate: ProactiveSourceItem, reference: string): boolean {
   while (from >= 0) {
     const before = haystack[from - 1] ?? "";
     const after = haystack[from + reference.length] ?? "";
-    if (!/[A-Z0-9-]/u.test(before) && !/[A-Z0-9-]/u.test(after)) return true;
+    const afterNext = haystack[from + reference.length + 1] ?? "";
+    const longerAfter = /[A-Z0-9]/u.test(after) || (after === "-" && /[A-Z0-9]/u.test(afterNext));
+    if (!/[A-Z0-9-]/u.test(before) && !longerAfter) return true;
     from = haystack.indexOf(reference, from + 1);
   }
   return false;

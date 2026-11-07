@@ -42,7 +42,7 @@ date: "2026-11-07"
 2. **时间线按时间从早到晚放进这封邮件自己的数据里**（`related` 字段，主人自己发的带 `sentByOwner`）。只收比这封邮件更早的邮件，同一批里更晚到的邮件不进时间线。旧邮件和新邮件走同一套遮盖，每封旧邮件正文先遮盖再按字数截取。固定说明新增两条（`related` 怎么读、`relatedUnavailable` 的意思），插在“对每封邮件给出一个结论”之前，其他文字不动。这是一次性的后台调用，没有对话历史，不涉及 [发给模型的内容只追加](../../.claude/rules/prompt-prefix.md) 里的冻结前缀。
 3. **上限都放配置**（`runPolicy.proactive`，默认值括号里）：`relatedMailsPerMail`（6，0 表示不找）、`relatedCharactersPerRelatedMail`（2000）、`relatedCharactersPerMail`（12000，不得小于前者）、`relatedRequestsPerCheck`（300，一次检查里向 Gmail 发的请求总数）。取最近的几封；`relatedCharactersPerMail` 按每封旧邮件的 JSON 大小累计，最新的一封一定放入，所以它是近似上限。找旧邮件阶段自己最多用掉每次检查时限的一半（从它开始算起；读新邮件和搜记忆也占同一个总时限），到点后剩下的邮件按“前情可能不全”处理（`relatedFailedSteps` 记 `timeout`）。`relatedRead` 和 `relatedFailedSteps` 说的是“这次检查里全部待判邮件的读取情况”，`relatedByMail` 才只记真正发给模型的。一批放得下几封邮件，按含旧邮件之后的大小算，所以费用的上升受每日上限约束。
 4. **账本记依据。** `sourceIds` 的含义不变，仍是真正放进提示词的“被判断的邮件”编号（[ADR 0147](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)）；前情邮件的编号另记在 `relatedByMail`，只记真正随提示词发给模型的那几批，因费用上限或失败没轮到的邮件不记。决策记录的 `inputs` 新增 `relatedByMail`（每封邮件实际交给模型的旧邮件编号）、`relatedRead`（`off`/`ok`/`partial`/`failed`）、`relatedStats`（请求次数、交给模型的旧邮件封数和字数、耗时）、`relatedFailedSteps`（失败的步骤：`thread`、`subject`、`reference`、`budget`、`timeout`、`read`）。存在已有的 JSON 列里，不需要新的数据库迁移；老记录读出来是 `off` 和空。读取的是“钱以外的成本”：Gmail 读取不花模型费用，模型费用照旧记在这次检查的 `costMicros` 里。
-5. **读取失败退回只看这封邮件。** 某封邮件的旧邮件没读全（接口报错、超时、请求用完）时，这封仍然带着全文去判断，数据里加 `relatedUnavailable: true` 告诉模型“前情可能不全，证据不足判 check”，账本记 `failed` 或 `partial` 加失败步骤，这就是降级记录。整个检查不因此失败。
+5. **读取失败退回只看这封邮件，已经取到的部分旧邮件保留。** 某封邮件的旧邮件没读全（接口报错、超时、请求用完）时，这封仍然带着全文去判断，数据里加 `relatedUnavailable: true` 告诉模型“前情可能不全，证据不足判 check”，账本记 `failed` 或 `partial` 加失败步骤，这就是降级记录。整个检查不因此失败。
 6. **设置页的说明改三种语言**（`proactive.apps.what1`），如实写明会查以前的往来邮件，包括已归档的和主人发出的。
 
 <a id="options"></a>

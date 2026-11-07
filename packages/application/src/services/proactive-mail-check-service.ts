@@ -526,17 +526,18 @@ export class ProactiveMailCheckService {
     } catch {
       fetched = undefined;
     }
+    const readFailure = signal.aborted ? "timeout" : "read";
     let failedMails = 0;
     for (const item of candidates) {
-      const failure = fetched === undefined ? "read" : fetched.failed.get(item.messageId);
+      const failure = fetched === undefined ? readFailure : fetched.failed.get(item.messageId);
       if (failure !== undefined) {
         failedMails += 1;
-        trace.relatedFailedSteps.add(
-          failure
-            .toLowerCase()
-            .replace(/[^a-z0-9_]+/gu, "_")
-            .slice(0, 64),
-        );
+        const step = failure
+          .toLowerCase()
+          .replace(/[^a-z0-9_]+/gu, "_")
+          .slice(0, 64);
+        if (trace.relatedFailedSteps.size < 16)
+          trace.relatedFailedSteps.add(step === "" ? "read" : step);
       }
       const view = relatedMailView(
         fetched?.byMail.get(item.messageId) ?? [],

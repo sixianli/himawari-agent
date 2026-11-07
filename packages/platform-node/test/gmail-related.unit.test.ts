@@ -73,6 +73,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
       "CS-778899",
     ]);
     expect(extractReferenceIds("ID 123456 and No. 99887766 and # 12345678")).toEqual([]);
+    expect(extractReferenceIds("order 2026-11-07 shipped")).toEqual([]);
     expect(extractReferenceIds("order number: ABCDEFGH")).toEqual([]);
     expect(extractReferenceIds("お問い合わせ番号 12")).toEqual([]);
     expect(
@@ -166,6 +167,14 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
       transport: mailbox([current, longer, exact]),
     });
     expect(result.byMail.get("now")?.map(({ messageId }) => messageId)).toEqual(["exact"]);
+    const dashed = item("dashed", { subject: "別件3", body: "ご注文 12345678-の件" });
+    const again = await findRelatedMail({
+      items: [current],
+      limits,
+      signal: new AbortController().signal,
+      transport: mailbox([current, dashed]),
+    });
+    expect(again.byMail.get("now")?.map(({ messageId }) => messageId)).toEqual(["dashed"]);
   });
 
   it("does not trust a search hit that does not really contain the number", async () => {

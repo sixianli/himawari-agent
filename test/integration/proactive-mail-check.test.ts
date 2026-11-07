@@ -1915,6 +1915,25 @@ describe("proactive Gmail check acceptance", () => {
       expect(entry?.inputs.relatedByMail).toEqual({});
     });
 
+    it("keeps the ledger valid when a reader reports odd or too many failure steps", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map(),
+        failed: new Map(
+          items.map((item, index) => [item.messageId, index === 0 ? "" : `step-${index}`]),
+        ),
+        requests: 1,
+      });
+      h.reader.items = Array.from({ length: 20 }, (_, index) => mail(`m${index}`));
+      h.script(h.reader.items.map((item) => ({ id: item.messageId, result: "ignore" as const })));
+      const decision = await h.service.run();
+      expect(decision?.verdict).not.toBe("failed");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.relatedRead).toBe("failed");
+      expect(entry?.inputs.relatedFailedSteps?.length).toBeLessThanOrEqual(16);
+      expect(entry?.inputs.relatedFailedSteps).toContain("read");
+    });
+
     it("marks the check partial when only some mails lost their history", async () => {
       const h = await harness();
       h.reader.related = async ({ items }) => ({
