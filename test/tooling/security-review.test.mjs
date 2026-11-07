@@ -4,7 +4,11 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadReviewedExceptions } from "../../scripts/ci/security-exceptions.mjs";
+import { parse } from "yaml";
+import {
+  enumerateLockDependencies,
+  loadReviewedExceptions,
+} from "../../scripts/ci/security-exceptions.mjs";
 import { applyMachineReview } from "../../scripts/ci/security-owner-review.mjs";
 
 const roots = [];
@@ -281,5 +285,98 @@ describe("合入 main 后的审批继承", () => {
     writeFileSync(f.manifestPath, JSON.stringify(f.manifest));
     f.approval.manifestSha256 = digest(readFileSync(f.manifestPath));
     expect(() => loadReviewedExceptions(f.options)).toThrow("SECURITY_REVIEW_PR_MISMATCH");
+  });
+});
+
+describe("仓库里提交的例外清单和 Owner 复核清单", () => {
+  function committedReview(root) {
+    const run = (...args) =>
+      execFileSync("git", ["-C", root, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    const head = run("rev-parse", "HEAD");
+    const exceptionsDocument = JSON.parse(run("show", "HEAD:ci/security-exceptions.json"));
+    const manifestBytes = execFileSync("git", [
+      "-C",
+      root,
+      "show",
+      "HEAD:.github/security-review-manifest.json",
+    ]);
+    const manifest = JSON.parse(manifestBytes);
+    const { commentId } = JSON.parse(run("show", "HEAD:.github/security-review-comment.json"));
+    const reviewedAt = new Date(
+      exceptionsDocument.proposal?.proposedAt ??
+        run("log", "-1", "--format=%cI", "HEAD", "--", "ci/security-exceptions.json"),
+    );
+    const expiresAt = new Date(reviewedAt.getTime() + 2 * 86_400_000)
+      .toISOString()
+      .replace(/T.*$/, "T00:00:00Z");
+    const approval = {
+      schemaVersion: 1,
+      decision: "approved",
+      repository,
+      pullRequest: manifest.pullRequest,
+      sourceHead: manifest.sourceHead,
+      manifestSha256: digest(manifestBytes),
+      expiresAt,
+    };
+    return {
+      run,
+      options: {
+        root,
+        context: { repository, baseSha: head, headSha: head, initialization: false },
+        now: reviewedAt,
+        dependencies: enumerateLockDependencies(JSON.parse(run("show", "HEAD:package-lock.json"))),
+        ruleIds: parse(run("show", "HEAD:ci/rules/semgrep.yml")).rules.map((rule) => rule.id),
+        readReviewComment: () => ({
+          id: commentId,
+          user: { id: 30715326, login: "sixianli", type: "User" },
+          issue_url: `https://api.github.com/repos/${repository}/issues/${manifest.pullRequest}`,
+          html_url: `https://github.com/${repository}/pull/${manifest.pullRequest}#issuecomment-${commentId}`,
+          created_at: new Date(reviewedAt.getTime() - 3_600_000).toISOString(),
+          body: `<!-- himawari-security-review-v1 -->\n\x60\x60\x60json\n${JSON.stringify(approval)}\n\x60\x60\x60`,
+        }),
+      },
+    };
+  }
+
+  it("合起来没有重复登记，复核清单里的每条测试令牌都只登记一次", () => {
+    const { options, run } = committedReview(resolve("."));
+    const result = loadReviewedExceptions(options);
+    const committed = JSON.parse(run("show", "HEAD:ci/security-exceptions.json")).exceptions;
+    expect(result.approvalBasis).toBe("owner_pr_comment");
+    expect(result.exceptions.length).toBeGreaterThan(committed.length);
+  });
+
+  it("把复核清单已覆盖的一条再登记进例外清单，就报 SECURITY_EXCEPTION_DUPLICATE", () => {
+    const root = mkdtempSync(join(tmpdir(), "himawari-committed-review-"));
+    roots.push(root);
+    execFileSync("git", ["clone", "-q", "--shared", "--no-checkout", resolve("."), root]);
+    const { options, run } = committedReview(root);
+    run("read-tree", "HEAD");
+    run("checkout", "HEAD", "--", "ci", ".github");
+    const reviewed = loadReviewedExceptions(options);
+    const committed = JSON.parse(readFileSync(join(root, "ci/security-exceptions.json"), "utf8"));
+    const covered = reviewed.exceptions
+      .slice(committed.exceptions.length)
+      .find((entry) => entry.kind === "synthetic-secret");
+    expect(covered).toBeDefined();
+    committed.exceptions.push(covered);
+    writeFileSync(join(root, "ci/security-exceptions.json"), JSON.stringify(committed, null, 2));
+    run("add", "ci/security-exceptions.json");
+    run(
+      "-c",
+      "user.name=Synthetic Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-qm",
+      "duplicate one reviewed entry",
+    );
+    const duplicated = committedReview(root);
+    expect(() => loadReviewedExceptions(duplicated.options)).toThrow(
+      "SECURITY_EXCEPTION_DUPLICATE",
+    );
   });
 });
