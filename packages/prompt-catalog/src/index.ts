@@ -6,3 +6,4 @@ export * from "./memory.js";
 export * from "./review.js";
 export * from "./runtime.js";
 export * from "./tools.js";
+export * from "./trusted.js";

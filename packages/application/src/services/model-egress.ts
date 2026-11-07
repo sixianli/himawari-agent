@@ -1,8 +1,10 @@
 import type { AgentId, OwnerId, ThreadId } from "@himawari-agent/domain";
+import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import {
   assertMachineSecretFree,
   EGRESS_PLACEHOLDER_PATTERN,
   type EgressPlaceholderKind,
+  EgressRedactionError,
   type EgressRedactionFinding,
   type EgressRedactionKind,
   type EgressRedactionRuleId,
@@ -42,6 +44,7 @@ export interface ModelEgressSighting {
 export interface ModelEgressOptions {
   readonly key: () => Promise<Uint8Array>;
   readonly sign: (key: Uint8Array, message: string) => Uint8Array;
+  readonly trusted?: readonly string[];
   readonly report?: (
     context: ModelEgressContext,
     sightings: readonly ModelEgressSighting[],
@@ -187,11 +190,12 @@ class Exchange implements ModelEgressExchange {
     const sightings = new Map<string, ModelEgressSighting>();
     const recording = this.#options.report !== undefined && this.#context !== undefined;
     const text = (value: string, part: SensitiveInterceptionPart): string => {
-      const result = redactForEgress(value, {
+      const result = redactedOrRefused(value, {
         tag: (kind: EgressPlaceholderKind, secret: string) =>
           letters(this.#options.sign(key, `${kind}\u0000${secret}`)),
         known: this.#known,
         table: this.table,
+        trusted: this.#options.trusted ?? TRUSTED_PROMPT_TEXTS,
         ...(recording
           ? {
               observe: ({ kind, ruleId, value: seen }) => {
@@ -467,6 +471,18 @@ function redactEmbeddings(body: unknown, text: TextRedactor): unknown {
       mapArray(input, (item) => text(item as string, "embedding_input")),
     );
   return refuse("embeddings input is not text");
+}
+
+function redactedOrRefused(
+  value: string,
+  options: Parameters<typeof redactForEgress>[1],
+): ReturnType<typeof redactForEgress> {
+  try {
+    return redactForEgress(value, options);
+  } catch (error) {
+    if (error instanceof EgressRedactionError) refuse("trusted text could not be restored");
+    throw error;
+  }
 }
 
 export class ModelEgress {

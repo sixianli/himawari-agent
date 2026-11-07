@@ -1,0 +1,3 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "按行解析仍不完全等价于上线包检查的 Python 读法", "valid": true, "class": "error", "severity": "low", "trigger": "originals 块外先有空行、再有一行顶格写的条目", "consequence": "Python 的 ^\\s+ 跨过空行读到它，仓库检查读不到，失败推迟到出包；块内同样排版时仓库检查会多拦", "modelSeverity": "低"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "摘要字段没有先校验字符串类型", "valid": true, "class": "error", "severity": "low", "trigger": "记录里摘要写成只含一个摘要字符串的数组", "consequence": "格式校验放过，后面的比较一定不等而报错，不会误通过", "modelSeverity": "低"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "部分错误分支和 U+2028/U+2029 没有自动用例；预检测试不在 `npm run check` 里", "valid": true, "class": "better", "reason": "补 U+2028 用例；test_make_packet.py 已随合并 main（PR #269）进了 check:delivery-packet；缺失文件的分支用例不加"}

@@ -29,7 +29,7 @@ INTENDED_CHANGES = {
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
     'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
-    'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 's0-db/read-s0-db.mjs',
+    'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
     'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
@@ -578,6 +578,10 @@ class HermesCommandTest(unittest.TestCase):
 
     def test_a_walkthrough_preflight_failure_refuses_the_packet(self):
         self.hermes.install_scripts()
+        uploaded = Path(self.hermes.scripts) / 'builder.json'
+        settings = json.loads(uploaded.read_text())
+        settings['hostname'] += '-elsewhere'
+        uploaded.write_text(json.dumps(settings))
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_PREFLIGHT_FAILED .*HERMES_WALKTHROUGH_FAILED HOST_UNEXPECTED'):
             self.hermes.preflight()
 
@@ -739,8 +743,10 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         (root / 'browsers').mkdir()
         source = root / 'source'
         source.mkdir()
+        (source / 'package.json').write_text('{}')
         subprocess.run(['git', 'init', '-q', str(source)], check=True)
         subprocess.run(['git', '-C', str(source), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
+        self.source = source
         revision = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
         self.work = root / 'work'
         materials = self.work / 'walk-1' / 'materials'
@@ -776,6 +782,14 @@ class ReleaseWalkthroughTest(unittest.TestCase):
             run = self.walkthrough(argument)
             self.assertEqual(run.returncode, 5)
             self.assertIn('PI_TOOL_MISSING ' + str(self.toolbin / 'fd'), run.stderr)
+        self.assertFalse((self.work / 'walk-1' / 'walkthrough').exists())
+
+    def test_a_source_checkout_without_files_stops_the_preflight(self):
+        (self.source / 'package.json').unlink()
+        for argument in ('--preflight', 'walk-1'):
+            run = self.walkthrough(argument)
+            self.assertEqual(run.returncode, 3)
+            self.assertIn('SOURCE_TREE_EMPTY ' + str(self.source), run.stderr)
         self.assertFalse((self.work / 'walk-1' / 'walkthrough').exists())
 
     def test_a_python_that_is_not_the_locked_one_stops_the_preflight(self):
