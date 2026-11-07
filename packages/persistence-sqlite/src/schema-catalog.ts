@@ -482,6 +482,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with generation deletion",
   ),
   entry(
+    "thread_prompt_bundles",
+    "ThreadPromptBundleStorePort",
+    "one row per generation of the system prompt and tool list frozen for a conversation; a new generation supersedes the previous one, which is kept",
+    "payload_reference",
+    "cascade with Thread deletion; payloads removed with the Thread",
+  ),
+  entry(
+    "sensitive_interceptions",
+    "SensitiveInterceptionStorePort",
+    "one row per place, kind and value fingerprint where sensitive text was masked or kept out; later sightings raise the count and last time; no original value is stored",
+    "metadata_only",
+    "cascade with Thread deletion; the owner can clear all rows; no automatic expiry",
+  ),
+  entry(
     "thread_derivative_candidates",
     "ThreadDistillationStatePort",
     "immutable generation candidate",

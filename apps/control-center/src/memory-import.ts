@@ -1,4 +1,5 @@
 import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
+import { mentionsSensitiveMaterial } from "@himawari-agent/sensitive-capture";
 
 export type MemoryCategory = (typeof MEMORY_CATEGORY_NAMES)[number];
 
@@ -19,8 +20,6 @@ export interface ImportParse {
 }
 
 const RULE = /不要|别|一律|每次|以后|总是|先.+再|never|always|don't|do not/i;
-const SECRET =
-  /密码|口令|password|passwd|token|secret|api[ _-]?key|身份证|银行卡|卡号|ghp_|sk-|\d{15,19}/i;
 const SKIPPED_SECTION =
   /what's in memory|older memory topics|^task \d+|rollout_summary_files|keywords/i;
 const MAXIMUM_TEXT = 500;
@@ -84,7 +83,7 @@ export function parseMemoryText(
       .trim()
       .slice(0, MAXIMUM_TEXT);
     if (line.length < 2) return;
-    if (SECRET.test(line)) {
+    if (mentionsSensitiveMaterial(line)) {
       dropped += 1;
       return;
     }

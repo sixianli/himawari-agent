@@ -51,6 +51,25 @@ describe("npm run check", () => {
     expect(manifest.scripts.check).toBe("node scripts/run-all-checks.mjs");
     const names = stepNames(manifest.scripts["check:steps"]);
     expect(names).toContain("check:boundaries");
+    expect(names).toContain("check:probe-sources");
+    expect(manifest.scripts["check:probe-sources"]).toBe(
+      "node scripts/check-probe-sources.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/probe-sources.test.mjs",
+    );
+    for (const [name, file] of [
+      ["check:delivery-packet", "test_make_packet.py"],
+      ["check:delivery-deploy", "test_deploy.py"],
+      ["check:delivery-rollback", "test_rollback.py"],
+      ["check:delivery-cleanup", "test_release_cleanup.py"],
+      ["check:untested-claims", "test_untested_claims.py"],
+    ]) {
+      expect(names).toContain(name);
+      expect(manifest.scripts[name], name).toBe(`python3 -I scripts/delivery-mode/${file}`);
+    }
+    expect(names).toContain("check:check-runner");
+    expect(names).toContain("check:security-review");
+    expect(manifest.scripts["check:security-review"]).toBe(
+      "vitest run --config vitest.workspace.ts --project tooling test/tooling/security-review.test.mjs",
+    );
     for (const name of names) expect(manifest.scripts[name], name).toBeTypeOf("string");
   });
 

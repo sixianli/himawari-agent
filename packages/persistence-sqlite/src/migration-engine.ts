@@ -602,6 +602,27 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0075_muse_intake.sql",
   },
+  {
+    sequence: 76,
+    name: "proactive_processed_received_at",
+    changeSet: "proactive-processed-received-at",
+    phase: "expand" as const,
+    file: "0076_proactive_processed_received_at.sql",
+  },
+  {
+    sequence: 77,
+    name: "thread_prompt_bundles",
+    changeSet: "thread-prompt-bundles",
+    phase: "expand" as const,
+    file: "0077_thread_prompt_bundles.sql",
+  },
+  {
+    sequence: 78,
+    name: "sensitive_interceptions",
+    changeSet: "sensitive-interceptions",
+    phase: "expand" as const,
+    file: "0078_sensitive_interceptions.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

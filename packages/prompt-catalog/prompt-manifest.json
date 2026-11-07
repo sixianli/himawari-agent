@@ -100,44 +100,44 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.answer-language": {
-    "sha256": "26ca2a157688fd3e73878b767c51a37f381598df47e9c34eb100b876c01b615e",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "6c02476fcff231223c9dde6eb8bc1258951ea2c614fb136323da5a11ad7d3f6e",
+    "changedIn": "ADR 0166",
+    "reason": "W-12、W-14：回答语言按“本轮明确指定 > 主人的要求 > 本轮提问的语言 > 简体中文”排（Andy 2026-11-05 定 D3）；“用户”改“主人”；复核第 1 轮补一句“只是换了一种语言提问，不算明确指定”，消掉和“本轮另有说法时以本轮为准”的两种读法"
   },
   "chat.capabilities.document-skill": {
-    "sha256": "150b93fbfc390e723186e5d59e9e6e8f0c3a0945595e98d90dde9f3206583197",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "445a934f4ca3cc70f31185f86113713b792fd5a08b87eb42519cc447b2ae34e9",
+    "changedIn": "ADR 0166",
+    "reason": "W-02：写明 SKILL.md 在工作目录之外、read 读不到，和 read 的新用法规则一致"
   },
   "chat.capabilities.header": {
     "sha256": "8f69855499b05a4728776e1c0c5c8c8f4603436287f3d8ebed00bf32987da02f",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
-  "chat.capabilities.no-search": {
-    "sha256": "a73bc7737d5db0c549da7c49eed68995e99ddcbcf596dcd98047d27a13dad3f9",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  "chat.capabilities.runtime-environment": {
+    "sha256": "b4918aa562c86dc4d02a8170585c9e2c5849df39e98aa228a8e850060330b619",
+    "changedIn": "ADR 0164",
+    "reason": "复核第 3 轮：内容没变时本轮不附运行环境说明，能力边界里“见最后一条消息”改成“见最近附上的运行环境说明”，免得模型在本轮消息里找不到时犹豫"
   },
   "chat.capabilities.sandbox-commands": {
-    "sha256": "c2eb996d36d7d3b914a1dcc4b8d28f2779b2a113668f8d42336f9ad7b1d2e8c0",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "f2f7b0ff50516e08b90ac64ee75acf95febe5043cc10d00e5e5bb3d0b7bbaf2f",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.capabilities.sandbox-offline": {
-    "sha256": "222b0501ad0d1ce7bfb7e3416640fa2a0037716d270701bd39cf972efaa2394a",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "5bf9242bde19a325ab0c0a2b5d43c007d2dc173eff5376b0781aa7527b384bd9",
+    "changedIn": "ADR 0166",
+    "reason": "W-24：“一定失败，不要尝试”改成事实加替代做法"
   },
   "chat.capabilities.search": {
-    "sha256": "9637a90e5653377006f75962644725d94685ece9fef1e3989981197ebb2066fc",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "b1dc8f9919470664abe109f7fe172e23d7e639e8eb1c84b047ed3053b3edf187",
+    "changedIn": "ADR 0166",
+    "reason": "W-10、W-14：联网搜索默认打开、不逐次询问（ADR 0121），删掉“首次使用可能要等用户打开”；“用户”改“主人”"
   },
   "chat.capabilities.workspace": {
-    "sha256": "36a8d458387fde92d5ca67cb2a843b931708709f848f7ae5af98bab96dd3f1a3",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "8f798d739f5c75151d20c02fac9cba88333710e68f7e859b3eee1c0a196d3ecf",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.capabilities.workspace-commands": {
     "sha256": "1cbeb9c2f8693abd12c9be96428360129c5e0bec3bc1d52eb6cfa57174212330",
@@ -145,24 +145,89 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.capabilities.workspace-file-cards": {
-    "sha256": "5949db1176eb42370eaa2867be293679ee082c416e5f3195088f86935e91b214",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "fdfb456e1634c86e4b665515baab9ef05c26bac69b1564cad8a4622140b1723b",
+    "changedIn": "ADR 0166",
+    "reason": "W-14：“用户”改“主人”"
   },
   "chat.egress-legend": {
-    "sha256": "0bca5caaface39b9faf55350674a53f5856fc18ed7415ccbc3cec92393c6965b",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "6d145d28085801e23be4d7df00ea02bdae79d30a6147c32fdccdc36cb41abf05",
+    "changedIn": "ADR 0166",
+    "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
+    "emphasis": {
+      "kind": "not-tone",
+      "phrases": ["必须用到原值"],
+      "reason": "说的是某项操作本身需要原值，不是强调语气"
+    }
   },
   "chat.egress-legend-with-restore": {
-    "sha256": "d78026a82568508f1ea7d740ecd9aa3b7eaa61d5031603c926d58b652512ace2",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "f2ae0a53f2ff6a8dcb08a5ef07f93cdf6fce267851871b4225fb38444b280251",
+    "changedIn": "ADR 0166",
+    "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
+    "emphasis": {
+      "kind": "not-tone",
+      "phrases": ["必须用到原值"],
+      "reason": "说的是某项操作本身需要原值，不是强调语气"
+    }
   },
   "chat.identity": {
-    "sha256": "b1b772d237810c4bba92bac897c18c31df17565459f11911af2680251f071ec4",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "fda7f9520b2b825ba99e9de6198aafaead9b430560ab0955a8b18fbe055d2103",
+    "changedIn": "ADR 0166",
+    "reason": "W-05、W-09、W-12、W-21、W-24：资料标记改中文并给主人的要求单独标记；提醒成功后说事情时间和提醒时刻；删掉和回答语言规则重复的一句；审批写成系统自动发起的事实"
+  },
+  "chat.runtime-environment.document-skill": {
+    "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.fetch": {
+    "sha256": "73974a08ac6df3a5261dd39a1c6ea5f947c37373d21b8d6b7ac93a3c24a97433",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.footer": {
+    "sha256": "ef9cb2183fecaa2f72452dd4318776db3d1f4820e1e4b8b02c70c4c547ad64ae",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.header": {
+    "sha256": "d094696781cc38a2127ec220cb22091bc8848e0c1a2793253484ee2abdb04d49",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-coding": {
+    "sha256": "bb8e50c89bcf5c5e3df5ea864fc242c35611c7aa135593e82f232c4d7a2203a0",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-fetch": {
+    "sha256": "d1a8e42a16847e5e69cc1e1439fcddb4daf5988d4cf90f4656a990b61b14069a",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-search": {
+    "sha256": "df019e976ba784daae9be7ab6323b6694a520843d35e971632dfc0f19f726c3b",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.no-workspace": {
+    "sha256": "dc4c9eae27aa4bb382bee870cc566cb1df65cd3b135972720f7631fb9e664fd3",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.sandbox-commands": {
+    "sha256": "9633c0a890234597488301fb05559f6325f58d4f6834226d35f0e805a857b03e",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.search": {
+    "sha256": "ed288027fe73fc8c9bfd56686f4071bce7b3d7001fcbcf51a88d399ea9f41fec",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
+  },
+  "chat.runtime-environment.workspace": {
+    "sha256": "11c69ce42e8267bcc9dc7328a6daa1300ff097449d8bd764313388b69db37a2f",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：工作目录、沙箱命令清单、文档技能目录、联网搜索开关、搜索和抓取服务商名、抓取上限从系统提示和工具定义挪到最后一条消息的运行环境说明；系统提示只留不随这些值变化的规则，并写明运行环境说明的约束力和发送时机"
   },
   "chat.task-boundary": {
     "sha256": "e7f8cf9f00ce8e82e3c33ae563998a5fb9f28355c68412281479770d494c0c7b",
@@ -174,10 +239,15 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "chat.tool-loop-rejected": {
+    "sha256": "c74f34d203af149d37046658119b7abec8f2db593873162b254ae5f6c224a05f",
+    "changedIn": "ADR 0166",
+    "reason": "W-21：英文改中文（Andy 2026-11-05 定），“Run”写成“这一轮”"
+  },
   "chat.tool-loop-stopped": {
-    "sha256": "151fe28655e7944ab4620618b4e9b05482baabe5d16b013f6c711573ce051c62",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "d52b17080ec79bc5de8e7adc2060de059a8e804a1890d16ea3354aa41c171875",
+    "changedIn": "ADR 0166",
+    "reason": "W-21：英文改中文（Andy 2026-11-05 定），“Run”写成“这一轮”"
   },
   "chat.tool-snippets-header": {
     "sha256": "9112d2b1fbd7f895287a04640d1d790ee69574165fb647cf7e0d9718bc68fa6b",
@@ -185,34 +255,54 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "chat.turn-aborted": {
-    "sha256": "bdd085f2dbd22dad302e0f14b2d89a771757ab698c4d27be9754d0537df9fc94",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "ce1d54bc98542612a6bd7ba2f24604725ac6a0152ac672805182ab359e53c687",
+    "changedIn": "ADR 0166",
+    "reason": "W-21：英文改中文（Andy 2026-11-05 定），标签名 <turn_aborted> 保留"
   },
   "chat.turn-aborted.legacy": {
-    "sha256": "a004a97b6758a709ed9674259fb4440a7171fc33f647421d1d13aa3c2c6235d9",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "79726c2e26eb44592332c97c104ecdb7b2772b9d3bf9de040dc47725cd8e285c",
+    "changedIn": "ADR 0166",
+    "reason": "W-21：英文改中文（Andy 2026-11-05 定），只影响以后的旧历史迁移"
   },
   "chat.turn.context-material-marker": {
-    "sha256": "7598821da61e02f8382269bb3265c014caab78469ade6b861b6ecdeb0bd54f01",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "552c15e477a7e29a58b357ae9e037edc1240b2c1b417535da1b8b49a50ff105b",
+    "changedIn": "ADR 0166",
+    "reason": "W-21、W-05：资料标记改中文；主人的要求改用单独的标记；runtime-environment-block.ts 的标记前缀改为从目录生成"
   },
   "chat.turn.context-preface": {
-    "sha256": "7e384f12620b3b67e0dce8d89c9da59e199482f36934ba11914f48aa29fbe481",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "fca9cc30abb6e3962cc98a8a43ebfb4fe7584d4cbda76656cfb1834574b75df9",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：运行环境说明只在变化时附上，开头说明写明它是“以本条为准”的例外，最近附上的那份一直有效"
+  },
+  "chat.turn.owner-rules-marker": {
+    "sha256": "9c43cbeab3df5f2ee401c71b71bed62171731b2746bf54a8ecf0a534e2cc5df7",
+    "changedIn": "ADR 0166",
+    "reason": "W-05：新增主人的要求的标记，写明回答时照做、本轮另有说法时以本轮为准（Andy 2026-11-05 定 D2：先用措辞止血）"
+  },
+  "chat.turn.runtime-environment-marker": {
+    "sha256": "8d774f874e6bda6716390596c778e1d8e7c160d0c4656ce69ca3a822bb786510",
+    "changedIn": "ADR 0166",
+    "reason": "W-21：运行环境说明的标记改中文；老对话上线后第一轮会再附一次运行环境说明，是末尾追加"
   },
   "chat.turn.time": {
-    "sha256": "a7d02040a8b6eb523dfc27421eeacc9631d1f2bcd19b454552551443010b165d",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "34e37841ca5321875f026103c648921d66dd458fbd5c63051d0e8f2cde887ef8",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A Muse A 组 A1：本轮时间里由程序按配置时区写出当地星期几，不让模型自己算",
+    "emphasis": {
+      "kind": "deferred",
+      "batch": "第 2 批 W-17",
+      "reason": "W-17 改写这句时把“必须”一起改"
+    }
   },
   "mail.judgment": {
-    "sha256": "51f23e825331692022347280c583dc03f2ea3b4c22f883f32a8cd576f2206ac4",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "61aeb26dd4016ec4c85ab341b01f74ca91092efef5bae59759e0be3dfd0e87c2",
+    "changedIn": "ADR 0159",
+    "reason": "邮件判断改为读正文并看主人自己发的邮件（sentByOwner、bodyTruncated、bodyUnavailable 三条说明）",
+    "emphasis": {
+      "kind": "deferred",
+      "batch": "第 3 批 W-06、W-11/W-19",
+      "reason": "邮件判断一次只改一个提示词，先做 A/B 评测（D4）"
+    }
   },
   "mail.judgment.items-header": {
     "sha256": "6a2b6e2e1c4cde35a696edb318b37a5dc3e8ab5dbc4a86d6e900ddfbfa8cd30e",
@@ -232,12 +322,26 @@
   "memory.capture": {
     "sha256": "f2ffd6e1725ee691e472b198090bb10220af97efd924fee33e13aeed3b9d5cb4",
     "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "reason": "初次登记：从源码原样搬入目录，文字不变",
+    "emphasis": {
+      "kind": "hard-condition",
+      "phrases": ["必须填 existingMemoryId", "每条都必须填"],
+      "evidence": [
+        "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
+        "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
+      ],
+      "reason": "解析函数的硬要求：非 create 的候选没有有效的 existingMemoryId 整条作废；非 unchanged、非 restricted 的候选 quote 对不上原话会被拒。“unchanged 也要填”是给模型的统一要求，代码对 unchanged 和 restricted 不拦"
+    }
   },
   "memory.consolidation": {
     "sha256": "535bd14d079979065d195db9ecbb5ab1deec9abbd5157e4d41c8cca9637b0a08",
     "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "reason": "初次登记：从源码原样搬入目录，文字不变",
+    "emphasis": {
+      "kind": "deferred",
+      "batch": "第 3 批 W-18",
+      "reason": "记忆合并在第 3 批改写"
+    }
   },
   "memory.consolidation.format": {
     "sha256": "fd58e8334ce0c815212cafb30887eec45cadc7426b6c48e85afea880b98d831c",
@@ -335,9 +439,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "tool-result.reminder-set": {
-    "sha256": "585335801e8c0ac762b1393d72fcb5d990153b96061db8d767d2091a18702dfc",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "760c08efdc3583b42fbb45f772a97625e0f0a512cca723baa540702d5f2966c8",
+    "changedIn": "ADR 0166",
+    "reason": "W-09：说清 due 是事情的时间、remindAt 是提醒时刻"
   },
   "tool-result.reminder-unavailable": {
     "sha256": "b695dc0117e07e9422888f5fc4f99523fb06477a292d768a631c6bfc31b558fe",
@@ -345,49 +449,122 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "tools.authorized": {
-    "sha256": "a3f08cc3b711ccb840f14a3da6e74f7ede7e807e5aeaf2f20b5c7a765d821db9",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "e2bf668e954070fb41a107317b84ba9f5fc433f2a1b9a37b148f62fc76787fab",
+    "changedIn": "ADR 0166",
+    "reason": "W-15：去掉行话，说清什么时候调用、inputRef 只能选列出的取值；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线"
   },
-  "tools.builtin.read-suffix": {
-    "sha256": "851eeb1fb9f2124a40842f00a85a05205174f99418391fd2b4d0a2ea5f1e4bc4",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+  "tools.builtin.bash": {
+    "sha256": "e1c490299a52e9f2034e4de25f98fffbf7cc0c96ef5dc432c0efd454cd800d44",
+    "changedIn": "ADR 0166",
+    "reason": "W-04、Q1：替换 Pi 原文里“完整输出存进临时文件”的错话，按 sandboxed-coding-operations.ts、pi-host-publication.ts 的实际行为写（Andy 2026-11-05 定 Q1 选 B）"
+  },
+  "tools.builtin.bash.timeout": {
+    "sha256": "19e3ed360fc2c25292325151780c74f5a629c4f3b8e02b4fe7d6cadb80254d7b",
+    "changedIn": "ADR 0166",
+    "reason": "W-04、Q1：替换 Pi 原文“没有默认时限”，写明不填时会转入后台、最晚运行到结果里写的时间"
+  },
+  "tools.builtin.read": {
+    "sha256": "06b2dde4e18234adcd9eb0ff01c4c32a68fd06140834c014717aefc64d367a24",
+    "changedIn": "ADR 0166",
+    "reason": "W-03、Q1：替换 Pi 原文里“能读图片”的错话，用 Andy 2026-11-05 定的原句；复核第 1 轮补上前提：本轮模型不能看图时图片会被略过（pi-ai transform-messages 按 model.input 去掉图片）"
+  },
+  "tools.builtin.read-guideline": {
+    "sha256": "12b9547f89964afcb31530f3fbb180cce7d62d4254cb990cc12385947b8b10a8",
+    "changedIn": "ADR 0166",
+    "reason": "W-02、Q1：替换 Pi 原文“用 read 别用 cat”，用 Andy 2026-11-05 定的原句写明 SKILL.md 用 bash cat 读"
   },
   "tools.builtin.readonly-suffix": {
-    "sha256": "ccccbf18139c724c40ea51c0caf075d701339ff1be0f3fa1e86b1d0f36940781",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "eaa271cea7ca50f5cf3c16fc31f2439bf02accf6f7f0adaf514ce1bb02470144",
+    "changedIn": "ADR 0166",
+    "reason": "W-15：去掉“可信主进程、严格路径检查”等行话，写成目录之外会被拒绝"
   },
   "tools.builtin.write-suffix": {
-    "sha256": "2a737d566b3207b1f0df2ee6cb22f0357676a7410ba58f52a4211c89651f9150",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "e32d747a0ab7c0906c0b623823a615eb22fe3fa89717e39034f9585e1a0b7282",
+    "changedIn": "ADR 0166",
+    "reason": "W-15：去掉“受限 Worker、输出披露”等行话；bash 改用 tools.builtin.bash，这条只接在 write、edit 后面"
   },
   "tools.execution-task-cancel": {
-    "sha256": "27cf41a7371c0c8eb402f3339ace0185ad8ec0545f0d711746c60302e1273c91",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "a5804e88d5cb351804fc32276d6cb9a5d40f4ac17dccdaab0b5dd8a83a1b2e18",
+    "changedIn": "ADR 0166",
+    "reason": "W-01：后台命令按对话、托管任务按本轮，两种范围都写明；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
   },
   "tools.execution-task-output": {
-    "sha256": "9c916ccf6e2f9eaf2b648c71e3a11a3b7f09a3c03e66c2ef1ff2b3180e981613",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "8ff7af6090d77c65ab124f2fd7b2a64c9a8caad62e18a980fbd8855fc749d7f7",
+    "changedIn": "ADR 0166",
+    "reason": "W-01：后台命令按对话、托管任务按本轮；写明命令还在运行时读不到输出；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
   },
   "tools.execution-task-start": {
-    "sha256": "a88810e1f24ac6cf50c97a17135ef9b3bba3b23995bf94ce3764c0eb277a2c51",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "1fd26b2a741a5c14907f8d7380d948a2b4baaee0e5c146f9d274007a245f93e2",
+    "changedIn": "ADR 0166",
+    "reason": "W-15：去掉“Handle、冻结输入”，说清参数和返回 started 的意思；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线"
   },
   "tools.execution-task-status": {
-    "sha256": "ec7f40045d70b2de59ce9df118e5b616e44ba1cf576feb5609d71b9ba0a79540",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "7ebf30de1d86456886677dfa7fb7afc77bf42bed6aa8a4055c3b230df9cd206e",
+    "changedIn": "ADR 0166",
+    "reason": "W-01：后台命令按对话、托管任务按本轮，两种范围都写明；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
+  },
+  "tools.execution-task.cursor": {
+    "sha256": "c77ced855997a6123ded320ffcddcca027b8e84c824cbecacfd343b3af2046d9",
+    "changedIn": "ADR 0166",
+    "reason": "W-16：新增参数说明，填上一次结果里的 nextCursor；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
+  },
+  "tools.execution-task.limit": {
+    "sha256": "3e5f87bc591ffdc770c7f943819cd10ba80cbede4078f4a98c7eeb0145f425c5",
+    "changedIn": "ADR 0166",
+    "reason": "W-16：新增参数说明；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
+  },
+  "tools.execution-task.resource-ref": {
+    "sha256": "b40eb04624d620833941271a7884d38ee312e4784aca68a8e672eefbdbf85055",
+    "changedIn": "ADR 0166",
+    "reason": "W-16：新增参数说明，任务编号从哪里抄；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
   },
   "tools.move-directory": {
     "sha256": "d8f94421f7ec0dacf4c53d77757ddace3d4edbe9ada61d8aa0fd04bc542bc9c2",
     "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "reason": "初次登记：从源码原样搬入目录，文字不变",
+    "emphasis": {
+      "kind": "hard-condition",
+      "phrases": ["目标必须不存在"],
+      "evidence": [
+        "packages/platform-node/src/capabilities/directory-move-scope.ts#HOST_FILE_TARGET_EXISTS"
+      ],
+      "reason": "执行端的硬条件，目标已存在时报 HOST_FILE_TARGET_EXISTS"
+    }
+  },
+  "tools.policy-blocked.file-authorization": {
+    "sha256": "7c4dc0b70eb7c780f932329cdbfc8a0218ff3c0f643c11581b4df452ef8c13b1",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.file-request": {
+    "sha256": "15e4d22c237c6931ed9f4f36341677db924f667ee7a4b13fc7f89e2b1fad76f4",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.handle": {
+    "sha256": "6551461ad72a9702a9b9f588282505f36a499062210d0c8e48fcf15e71dd924b",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.memory-recall": {
+    "sha256": "510c750050d3eba985374146a60742c39778fa4acd0f0a15e27ab1c3cafd4245",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.other": {
+    "sha256": "3ca28cf81ad07f4e3fda120e24515dd1a31bc0e5fa31c01ae60d90b7eaac69b4",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.reminder": {
+    "sha256": "cdf817308b7e7ee35170e30fcd06670717e87aa5393c5ab1a68319e5b7fd6a51",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
+  },
+  "tools.policy-blocked.task-management": {
+    "sha256": "5c674cb0db4182b4dc77e902f1c9dd058714d7ec68ec42dbdf5283bc8f2b2db1",
+    "changedIn": "ADR 0164",
+    "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
   },
   "tools.recall": {
     "sha256": "e8ff4b0aac87bfa9348d3600401389c7a57f0adb89c880dce50e6343ced11c4e",
@@ -405,19 +582,29 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "tools.reminder-set": {
-    "sha256": "b775fc48df714dc164b03ed221bd40064102e56b6e8a17cc1d46458b4b3b3199",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "052bba8325aa7a15c5bfa6afce2e0085d2c1e198b68889285b05339f72690794",
+    "changedIn": "ADR 0166",
+    "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
   },
   "tools.save-copy": {
-    "sha256": "0c3665692e4b01e6bb75529f1b34d936f097ba1163c2aa563b43cc3cd0378270",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "2879603873a5ef9ce44fdfd844c6acfae39553b7544968c48f722756f619e076",
+    "changedIn": "ADR 0166",
+    "reason": "W-15：去掉 Owner 等行话，说清保存什么、什么时候用、冲突时怎样"
+  },
+  "tools.save-copy.expected-hash": {
+    "sha256": "df71f2d2a68bd9fd4f5cf67995c4f319f0432093540df057864f0483af94a6e8",
+    "changedIn": "ADR 0166",
+    "reason": "W-15a：新增参数说明，写明 expectedHash 填准备结果里的 canonicalHash"
+  },
+  "tools.save-copy.operation-id": {
+    "sha256": "101f34dda3cc16f8f8e96e1977ddbd83927e8b2a602e0e91aa336c3f3653651e",
+    "changedIn": "ADR 0166",
+    "reason": "W-15a：新增参数说明"
   },
   "tools.web-fetch": {
-    "sha256": "2c4a902acfdb3239c0eee35e12c6680d33251f32ea0002a10798a25bea83efb2",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "3af5f1ce44de795a72860f18b3e1ec3d5fbdb114a9fa6acd5db7a33c6019fcb8",
+    "changedIn": "ADR 0166",
+    "reason": "W-10、W-14：读网页默认打开、不逐次询问（ADR 0121），删掉“经用户确认”"
   },
   "tools.web-fetch.offset": {
     "sha256": "d9cc8c0c6d8507356a75b9d70a1f204d00c314d9188c5722b57268b9c7876f23",
@@ -425,8 +612,8 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
   "tools.web-search": {
-    "sha256": "aedd0a7fc572ad172415ad9e21760c39f5e7c1bcf58abf519a6c1bfaa46fde71",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "a55c0eceeba5e2b024a12f881ccc8ccb7e9029e470da74d3aa09df7adff68f3d",
+    "changedIn": "ADR 0166",
+    "reason": "W-10、W-14：联网搜索默认打开、不逐次询问（ADR 0121），删掉“经用户确认”"
   }
 }

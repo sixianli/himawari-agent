@@ -1,11 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import {
-  containsToolOutputSecret,
-  scanMachineSecrets,
-  type CapabilityResourceCeiling,
-  type HostDirectoryGrant,
-} from "@himawari-agent/application";
+import type { CapabilityResourceCeiling, HostDirectoryGrant } from "@himawari-agent/application";
 import {
   sandboxPreparedFileSchema,
   type SandboxFileTarget,
@@ -14,8 +9,6 @@ import { ConstrainedHostFileSystem } from "@himawari-agent/platform-node";
 import { preparePiFileMutation } from "@himawari-agent/runtime-pi";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-/** Runs before reservation: only a frozen snapshot and private candidate files.
- * Admission still checks live authority and the original target version afterward. */
 export async function prepareProductionFile(
   input: {
     readonly grant: HostDirectoryGrant;
@@ -53,8 +46,7 @@ export async function prepareProductionFile(
     throw new Error("PI_DIRECTORY_OPERATION_DENIED");
   if (before && input.tool === "edit") {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(before);
-    if (text.includes("\0") || scanMachineSecrets(text).length)
-      throw new Error("PI_TEXT_READ_REJECTED");
+    if (text.includes("\0")) throw new Error("PI_TEXT_READ_REJECTED");
   }
   const prepared = await prepare({
     tool: input.tool,
@@ -69,15 +61,12 @@ export async function prepareProductionFile(
   const result = Buffer.from(JSON.stringify(prepared.result));
   if (result.length > input.resourceCeiling.maxOutputBytes || result.length > 16 * 1024 * 1024)
     throw new Error("PI_RESULT_OUTPUT_LIMIT");
-  if (containsToolOutputSecret(result.toString("utf8")))
-    throw new Error("PI_RESULT_SECRET_REJECTED");
   if (
     (await platform.storageObservation(input.grant)).availableBytes <
     prepared.bytes.length + result.length + 64 * 1024 * 1024
   )
     throw new Error("PI_STORAGE_RESERVE");
   signal?.throwIfAborted();
-  // Independent candidates may stage concurrently. No target parent is created here.
   const content = await platform.stagePublication(
     input.grant,
     prepared.bytes,

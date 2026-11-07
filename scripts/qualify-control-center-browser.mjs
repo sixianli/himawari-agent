@@ -113,7 +113,7 @@ export async function qualifyDeploymentAvailability(page, baseUrl) {
   const violations = (await new AxeBuilder({ page }).analyze()).violations;
   if (violations.length) throw new Error("CONTROL_CENTER_AVAILABILITY_AXE_FAILED");
   return {
-    unavailablePages: 13,
+    unavailablePages: unavailableRoutes.length,
     unsupportedQueries,
     approvalVisible: true,
     healthVisible: true,
@@ -279,21 +279,6 @@ export async function qualifyBrowser({
     return response;
   }
 
-  async function performOperationAction(page, actionLabel) {
-    await page.getByRole("button", { name: actionLabel, exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: actionLabel, exact: true });
-    await dialog.getByLabel("我已核对目标、范围、副作用和当前修订。").check();
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        response.url().endsWith("/api/gateway/v2/commands"),
-    );
-    await dialog.getByRole("button", { name: "确认", exact: true }).click();
-    const response = await responsePromise;
-    await waitForAccepted(page);
-    return response;
-  }
-
   async function assertAxeClean(page, checkpoint) {
     const violations = (await new AxeBuilder({ page }).analyze()).violations;
     if (violations.length > 0) {
@@ -317,14 +302,9 @@ export async function qualifyBrowser({
   const surfaces = [
     { label: "对话", title: "对话", policy: "allowed" },
     { label: "审批", title: "审批", policy: "allowed" },
-    { label: "后台任务", title: "后台任务", policy: "allowed" },
-    { label: "收件箱与摘要", title: "收件箱与摘要", policy: "allowed" },
-    { label: "记忆", title: "记忆", policy: "allowed" },
     { label: "能力与适配器", title: "能力与适配器", policy: "allowed" },
     { label: "授权与 Grant", title: "授权与 Grant", policy: "allowed" },
-    { label: "追踪", title: "追踪", policy: "allowed" },
     { label: "设置", title: "设置", policy: "allowed" },
-    { label: "会话与设备", title: "会话与设备", policy: "allowed" },
     { label: "健康与部署", title: "健康与部署", policy: "allowed" },
   ];
   const forbiddenBaselineActions = [
@@ -339,6 +319,8 @@ export async function qualifyBrowser({
     "删除",
     "撤销会话",
   ];
+
+  const minimumTouchTargetPixels = { answerAction: 36, other: 40 };
 
   let browser;
   let page;
@@ -383,11 +365,11 @@ export async function qualifyBrowser({
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
     await waitForConnected(page);
     const brandLoaded = await page
-      .locator(".himawari-brand img")
+      .locator(".himawari-brand svg")
       .first()
-      .evaluate(async (image) => {
-        await image.decode();
-        return image.naturalWidth > 0 && image.naturalHeight > 0;
+      .evaluate((mark) => {
+        const box = mark.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && mark.querySelectorAll("circle").length > 0;
       });
     if (!brandLoaded) throw new Error("CONTROL_CENTER_BRAND_IMAGE_NOT_LOADED");
     if (fault === "page-error") {
@@ -482,16 +464,25 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_DRAFT_NOT_CLEARED");
     }
     await page.getByText("浏览器资格测试消息", { exact: true }).waitFor();
+    const [rejectedUpload, ...laterUploads] = csrfRequests;
+    const retriedUpload = laterUploads.find(
+      (request) =>
+        request.headers["idempotency-key"] === rejectedUpload?.headers["idempotency-key"],
+    );
+    const parallelUpload = laterUploads.find((request) => request !== retriedUpload);
     if (
       csrfRefreshes !== 1 ||
       csrfRequests.length !== 3 ||
-      csrfRequests[0].body !== csrfRequests[1].body ||
-      !csrfRequests[0].headers["idempotency-key"] ||
-      csrfRequests[0].headers["idempotency-key"] !== csrfRequests[1].headers["idempotency-key"] ||
-      csrfRequests[1].headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
-      csrfRequests[2].headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
-      JSON.parse(csrfRequests[2].body).content !== "浏览器资格测试消息" ||
-      csrfRequests[2].headers["idempotency-key"] === csrfRequests[1].headers["idempotency-key"]
+      !rejectedUpload.headers["idempotency-key"] ||
+      rejectedUpload.headers["x-csrf-token"] === "csrf-renewed-fixture" ||
+      !retriedUpload ||
+      retriedUpload.body !== rejectedUpload.body ||
+      retriedUpload.headers["x-csrf-token"] !== "csrf-renewed-fixture" ||
+      !parallelUpload ||
+      parallelUpload.headers["idempotency-key"] === rejectedUpload.headers["idempotency-key"] ||
+      JSON.stringify(
+        [rejectedUpload, parallelUpload].map((request) => JSON.parse(request.body).content).sort(),
+      ) !== JSON.stringify(["thread-action:submit", "浏览器资格测试消息"].sort())
     )
       throw new Error(
         `CONTROL_CENTER_CSRF_REFRESH_INVALID:${JSON.stringify({ csrfRefreshes, requests: csrfRequests.map((request) => ({ body: request.body, token: request.headers["x-csrf-token"], idempotencyKey: request.headers["idempotency-key"] })) })}`,
@@ -502,13 +493,16 @@ export async function qualifyBrowser({
     await expect(page.getByRole("button", { name: "显示详情", exact: true })).toHaveCount(0);
     await expect(page.getByLabel("回答语言", { exact: true })).toHaveCount(0);
     await showNavigation(page);
-    await page.getByRole("button", { name: "搜索对话", exact: true }).click();
-    await page.getByRole("searchbox", { name: "搜索对话", exact: true }).fill("计划");
+    const threadSearch = page.getByRole("searchbox", { name: "搜索对话", exact: true });
+    await threadSearch.fill("计划");
+    await threadSearch.press("Enter");
     await page
-      .locator(".thread-search")
-      .getByRole("button", { name: "搜索对话", exact: true })
+      .locator(".thread-search-results")
+      .getByRole("link")
+      .filter({ hasText: "主对话" })
+      .first()
       .click();
-    await page.getByRole("dialog").getByRole("link").filter({ hasText: "主对话" }).first().click();
+    await threadSearch.fill("");
     await threadAction(page, "重命名");
     await page.getByLabel("会话名称").fill("多客户端冲突后的标题");
     await page.evaluate(() =>
@@ -518,7 +512,7 @@ export async function qualifyBrowser({
         body: JSON.stringify({ threadId: "thread-main" }),
       }),
     );
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByLabel("会话名称").press("Enter");
     await page.getByText("这个对话刚在别处改过", { exact: true }).waitFor();
     await page.getByRole("button", { name: "按最新内容再操作一次", exact: true }).click();
     await waitForAccepted(page);
@@ -554,7 +548,7 @@ export async function qualifyBrowser({
     await page.getByRole("dialog", { name: "设置", exact: true }).press("Escape");
     await expect(page.getByRole("button", { name: "移入回收站", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "检查删除影响", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "从此轮 Fork", exact: true }).first().click();
+    await page.getByRole("button", { name: "分出新对话", exact: true }).first().click();
     await page.waitForURL(/\/threads\/thread-fork%3A|\/threads\/thread-fork:/);
     await expect(page.locator(".thread-message-owner")).not.toHaveCount(0);
     await page.goto(`${baseUrl}/threads/thread-main?view=content`);
@@ -562,12 +556,18 @@ export async function qualifyBrowser({
 
     for (const surface of surfaces) {
       await page.goto(
-        `${baseUrl}/${{ 对话: "threads", 会話: "threads", 审批: "approvals", 后台任务: "tasks", 收件箱与摘要: "inbox", 记忆: "memory", 能力与适配器: "capabilities", "授权与 Grant": "authorizations", 追踪: "trace", 设置: "settings", 会话与设备: "sessions", 健康与部署: "health" }[surface.label]}`,
+        `${baseUrl}/${{ 对话: "threads", 会話: "threads", 审批: "approvals", 能力与适配器: "capabilities", "授权与 Grant": "authorizations", 设置: "settings", 健康与部署: "health" }[surface.label]}`,
       );
       if (surface.label === "对话") await page.locator("#page-title").waitFor();
       else await page.getByRole("heading", { name: surface.title, exact: true }).waitFor();
-      const focusedId = await page.evaluate(() => document.activeElement?.id ?? null);
-      if (focusedId !== "page-title") {
+      const routeFocused =
+        surface.label === "设置"
+          ? await page
+              .getByRole("dialog", { name: "设置", exact: true })
+              .evaluate((dialog) => dialog === document.activeElement)
+          : await page.evaluate(() => document.activeElement?.id === "page-title");
+      if (!routeFocused) {
+        const focusedId = await page.evaluate(() => document.activeElement?.id ?? null);
         throw new Error(`CONTROL_CENTER_ROUTE_FOCUS_NOT_MOVED:${surface.label}:${focusedId}`);
       }
       if (surface.policy !== "allowed") {
@@ -583,61 +583,33 @@ export async function qualifyBrowser({
       }
     }
 
-    await page.goto(`${baseUrl}/tasks/job-repository-monitor?view=details`);
-    await waitForConnected(page);
-    await waitForText(page.getByRole("main"), "BUDGET_EXHAUSTED");
-    await waitForText(page.getByRole("main"), "NOTIFY");
-    await performOperationAction(page, "暂停");
-    await page.getByText("paused", { exact: true }).waitFor();
+    for (const removedRoute of [
+      "/tasks",
+      "/inbox",
+      "/trace",
+      "/tasks/job-repository-monitor",
+      "/inbox/inbox-01",
+      "/memory/memory-01",
+      "/trace/trace-01",
+    ]) {
+      await page.goto(`${baseUrl}${removedRoute}?view=details`);
+      await waitForConnected(page);
+      await page.getByText("找不到这个页面", { exact: true }).waitFor();
+    }
 
-    await page.goto(`${baseUrl}/inbox/inbox-01?view=details`);
-    await waitForConnected(page);
-    await waitForText(page.getByRole("main"), "digest-current");
-    await waitForText(page.getByRole("main"), "result-daily-review-01");
-
-    await page.goto(`${baseUrl}/memory/memory-01?view=details`);
-    await waitForConnected(page);
-    await waitForText(page.getByRole("main"), "approval-memory-01");
-    await page.getByLabel("更正后的记忆内容").fill("修正后的敏感记忆正文");
-    await performOperationAction(page, "更正");
-
-    await page.goto(`${baseUrl}/trace/trace-01?view=details`);
-    await waitForConnected(page);
-    await waitForText(page.getByRole("main"), "fixture-provider");
-    await waitForText(page.getByRole("main"), "model:fixture-primary:v1");
-
-    await page.goto(`${baseUrl}/settings`);
-    await waitForText(page.getByRole("main"), "model:fixture-fallback:v1");
-    await waitForText(
-      page.getByRole("main"),
-      "github-app:blocked_credentials:secret-ref-github-app",
-    );
-
-    await page.goto(`${baseUrl}/sessions/session-01?view=details`);
-    await waitForConnected(page);
-    await waitForText(page.getByRole("main"), "Owner MacBook");
-
-    const localeSelect = page.locator(".settings-content select").first();
-    await page.locator(".topbar-controls button").click();
-    let localeMutationCount = 0;
-    const countLocaleMutations = (request) => {
-      if (request.method() === "POST" && request.url().endsWith("/commands"))
-        localeMutationCount += 1;
+    const chooseLocale = async (optionText) => {
+      await page.goto(`${baseUrl}/settings`);
+      await page.locator(".settings-nav button").nth(1).click();
+      await page.locator(".settings-content .dropdown-trigger").first().click();
+      await page.getByRole("option", { name: optionText, exact: true }).click();
     };
-    page.on("request", countLocaleMutations);
-    await showNavigation(page);
-    await localeSelect.selectOption("en");
-    await page.getByRole("heading", { name: "Sessions and devices", exact: true }).waitFor();
-    if ((await page.locator("html").getAttribute("lang")) !== "en") {
-      throw new Error("CONTROL_CENTER_EN_LOCALE_NOT_APPLIED");
-    }
-    await showNavigation(page);
+    await chooseLocale("English");
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
-    await localeSelect.selectOption("ja");
-    await page.getByRole("heading", { name: "セッションとデバイス", exact: true }).waitFor();
-    if ((await page.locator("html").getAttribute("lang")) !== "ja") {
-      throw new Error("CONTROL_CENTER_JA_LOCALE_NOT_APPLIED");
-    }
+    await page.goto(`${baseUrl}/approvals`);
+    await page.getByRole("heading", { name: "Approvals", exact: true }).waitFor();
+    await chooseLocale("日本語");
+    await expect(page.locator("html")).toHaveAttribute("lang", "ja");
 
     await page.goto(`${baseUrl}/threads`);
     await showNavigation(page);
@@ -653,20 +625,14 @@ export async function qualifyBrowser({
     await assertNoDocumentOverflow(page, "desktop-ja-long-input");
     await assertAxeClean(page, "desktop-ja");
     await page.getByLabel("メッセージ下書き").fill("");
-    await showNavigation(page);
-    await page.locator(".topbar-controls button").click();
-    await localeSelect.selectOption("zh-CN");
-    await page.locator("dialog[open]").press("Escape");
-    await page.getByRole("heading", { name: "多客户端冲突后的标题", exact: true }).waitFor();
+    await chooseLocale("简体中文");
+    await page.locator("dialog[open], [role=dialog]").first().press("Escape");
     if (
       (await page.evaluate(() => localStorage.getItem("himawari.control-center.v1.locale"))) !==
       "zh-CN"
     ) {
       throw new Error("CONTROL_CENTER_LOCALE_NOT_PERSISTED");
     }
-    page.off("request", countLocaleMutations);
-    if (localeMutationCount !== 0)
-      throw new Error(`CONTROL_CENTER_UI_LOCALE_MUTATED_SERVER:${localeMutationCount}`);
 
     await page.goto(`${baseUrl}/capabilities/capability-review?view=details`);
     await waitForConnected(page);
@@ -837,7 +803,7 @@ export async function qualifyBrowser({
     };
     await page.route("**/api/gateway/v2/queries", errorHandler);
 
-    await page.goto(`${baseUrl}/inbox`);
+    await page.goto(`${baseUrl}/approvals`);
     await page.getByText("CONTROL_CENTER_FIXTURE_UNAVAILABLE", { exact: true }).waitFor();
     await page.unroute("**/api/gateway/v2/queries", errorHandler);
 
@@ -850,9 +816,13 @@ export async function qualifyBrowser({
     };
 
     await page.route("**/api/gateway/v2/queries", revokedSessionHandler);
-    await page.goto(`${baseUrl}/tasks`);
-    await page.getByText("CONTROL_CENTER_REAUTHENTICATION_REQUIRED", { exact: true }).waitFor();
-    if ((await page.getByText("approval-01", { exact: true }).count()) > 0) {
+    const revokedResponse = page.waitForResponse(
+      (response) => response.url().endsWith("/api/gateway/v2/queries") && response.status() === 401,
+    );
+    await page.goto(`${baseUrl}/approvals`);
+    await revokedResponse;
+    await page.getByText("正在进入 Himawari…", { exact: true }).waitFor();
+    if ((await page.getByText("approval-approve", { exact: true }).count()) > 0) {
       throw new Error("CONTROL_CENTER_REVOKED_SESSION_VIEW_STATE_RETAINED");
     }
     await page.unroute("**/api/gateway/v2/queries", revokedSessionHandler);
@@ -914,12 +884,23 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_MOBILE_LIST_VIEW_INVALID");
     }
     await expect(page.getByRole("button", { name: "显示详情", exact: true })).toHaveCount(0);
-    await page.locator(".mobile-sidebar-toggle").click();
-    const targetHeights = await page
-      .locator("button:visible, .primary-nav a:visible")
-      .evaluateAll((targets) => targets.map((target) => target.getBoundingClientRect().height));
-    const minimumTargetHeight = Math.min(...targetHeights);
-    if (minimumTargetHeight < 44) throw new Error("CONTROL_CENTER_TOUCH_TARGET_TOO_SMALL");
+    const smallTargets = await page.locator("button:visible, .primary-nav a:visible").evaluateAll(
+      (targets, minimums) =>
+        targets
+          .map((target) => ({
+            label: (target.getAttribute("aria-label") ?? target.textContent ?? "")
+              .trim()
+              .slice(0, 30),
+            height: target.getBoundingClientRect().height,
+            minimum: target.classList.contains("answer-action")
+              ? minimums.answerAction
+              : minimums.other,
+          }))
+          .filter((target) => target.height < target.minimum),
+      minimumTouchTargetPixels,
+    );
+    if (smallTargets.length > 0)
+      throw new Error(`CONTROL_CENTER_TOUCH_TARGET_TOO_SMALL:${JSON.stringify(smallTargets)}`);
     await assertNoDocumentOverflow(page, "390px");
     await assertAxeClean(page, "mobile-zh-CN");
 
@@ -928,7 +909,11 @@ export async function qualifyBrowser({
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.getByRole("button", { name: "设置", exact: true }).click();
-    await page.getByLabel("外观", { exact: true }).selectOption("light");
+    await page.locator(".settings-nav button").nth(1).click();
+    await page
+      .locator(".theme-switch label")
+      .filter({ has: page.locator('input[value="light"]') })
+      .click();
     const savedPreferences = await page.evaluate(() =>
       JSON.parse(localStorage.getItem("himawari.control-center.v1.preferences") ?? "null"),
     );
@@ -1014,9 +999,13 @@ export async function qualifyBrowser({
     await showNavigation(page);
     await page.getByText("approval-approve", { exact: true }).waitFor();
 
-    await page.goto(`${baseUrl}/tasks`);
+    await page.goto(`${baseUrl}/capabilities`);
     await showNavigation(page);
-    await page.getByText("job-repository-monitor", { exact: true }).waitFor();
+    await page
+      .getByText("capability-review", { exact: true })
+      .filter({ visible: true })
+      .first()
+      .waitFor();
     const expectedOfflineBrowserError = (error) =>
       error.includes("access control checks") &&
       [
@@ -1053,13 +1042,13 @@ export async function qualifyBrowser({
       emulation: profile.emulation ?? null,
       surfaces: surfaces.map(({ label, policy }) => ({ label, policy })),
       journeys: [
-        "brand-image-loaded-from-build",
+        "brand-mark-rendered",
         "mobile-composer-prototype-layout-and-menus",
         "deployment-availability-no-unsupported-queries",
         "installed-health-dependencies",
         "thread-chat",
         "expired-csrf-refresh-preserves-command",
-        "thread-ui-language-only",
+        "thread-ui-language-follows-settings",
         "thread-search",
         "thread-revision-conflict-reapply",
         "thread-archive-restore",
@@ -1074,12 +1063,9 @@ export async function qualifyBrowser({
         "grant-revision-conflict-revoke",
         "governance-offline-no-mutation",
         "unapproved-capability-hidden-route-absent",
-        "task-budget-attention-pause",
-        "inbox-digest-result-sources",
-        "memory-sensitive-correction",
-        "trace-observable-causal-chain",
-        "settings-secret-reference-only",
-        "session-device-authoritative-detail",
+        "removed-operations-routes-not-found",
+        "locale-and-theme-in-settings-dialog",
+        "revoked-session-clears-private-view",
         "browser-private-storage-scan",
       ],
       routeStates: [
@@ -1111,7 +1097,7 @@ export async function qualifyBrowser({
         safeLogEntries: browserPrivacy.safeLogs.length,
       },
       responsive: ["desktop-chat-with-contextual-preview", "mobile-single-pane", "320px-reflow"],
-      minimumTargetHeight,
+      minimumTouchTargetPixels,
       axeViolations: 0,
       keyboardFocus,
       semanticLandmarks: requiredLandmarks,

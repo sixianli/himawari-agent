@@ -1,0 +1,39 @@
+[Unit]
+Description=GitHub Actions runner @NAME@ for sixianli/himawari-agent
+Wants=network-online.target
+After=network-online.target gh-runner-nft.service
+Requires=gh-runner-nft.service
+
+[Service]
+Type=simple
+Slice=gh-runners.slice
+User=@USER@
+Group=@USER@
+WorkingDirectory=@ROOT@/runner
+ExecStart=@ROOT@/runner/bin/runsvc.sh
+Restart=always
+RestartSec=15
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+Environment=HOME=@ROOT@/home
+Environment=ACTIONS_RUNNER_HOOK_JOB_STARTED=@ROOT@/hooks/job-started.sh
+Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=@ROOT@/hooks/job-completed.sh
+UMask=0022
+MemoryHigh=12G
+MemoryMax=13G
+MemorySwapMax=0
+TasksMax=2048
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ReadWritePaths=@ROOT@/runner @ROOT@/home @ROOT@/logs
+InaccessiblePaths=/data -/run/docker.sock -/var/run/docker.sock -@OTHER_ROOT@
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+{"id": "R4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "夹具仍硬编码复制打包清单，下一次加包会重演同样的 ENOENT", "valid": true, "class": "better", "reason": "模型确认两份清单现在集合相等、没有别处要跟着加；本轮修复是正确的。让夹具直接用 package-node-runtime.mjs 导出的清单能避免下次漂移，但要改打包脚本的导出，超出本 PR 范围。列给 Andy。", "modelSeverity": "低"}
+{"id": "R4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "本次上线会一次性改变部分已发请求开头", "valid": true, "class": "better", "reason": "属于合并进来的 PR 268；I-78 已记录 Andy 同意这次修复，只是规则第 11 条没写明上线当次的一次性变化。列给 Andy。", "modelSeverity": "低"}
+{"id": "R4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`trustedSpans` 每个字符串都扫一遍全文", "valid": true, "class": "better", "reason": "与 R3-2 相同，属于 PR 268 代码，影响是推测。", "modelSeverity": "低"}
+{"id": "R4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "固定文字“按内容”信任，用户粘贴的同样文字也被豁免", "valid": true, "class": "better", "reason": "属于 PR 268 代码；被豁免的是公开的提示词原文，不含主人秘密。规则措辞可以写清按内容匹配。列给 Andy。", "modelSeverity": "低"}
+{"id": "R4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "24 字符阈值定义了两份，没有交叉校验", "valid": true, "class": "better", "reason": "与 R3-4 相同，属于 PR 268 代码。", "modelSeverity": "低"}

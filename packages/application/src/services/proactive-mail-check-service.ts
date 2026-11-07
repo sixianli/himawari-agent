@@ -30,6 +30,13 @@ import type {
 } from "../ports/proactive-checks.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import {
+  type EgressRedactionSighting,
+  findSensitiveValues,
+  locateMaskedValues,
+  maskSensitiveText,
+} from "@himawari-agent/sensitive-capture";
+import { mailBodyWindow, plainModelText, windowMailBody } from "./proactive-mail-body.js";
+import {
   applyFloor,
   floorHitIds,
   keepOffReminderPage,
@@ -82,7 +89,22 @@ export interface ProactiveMailCheckOptions {
   readonly outputTokenLimit?: number;
   readonly memory?: ProactiveMemoryRecall;
   readonly memoryLimits?: Partial<ProactiveMemoryLimits>;
+  readonly bodyLimits?: Partial<ProactiveBodyLimits>;
+  readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
 }
+
+export interface ProactiveBodyLimits {
+  readonly perMail: number;
+  readonly perBatch: number;
+}
+
+export const DEFAULT_PROACTIVE_BODY_LIMITS: ProactiveBodyLimits = Object.freeze({
+  perMail: 16_000,
+  perBatch: 64_000,
+});
+
+const RECALL_BODY_CHARACTERS = 300;
+const MAX_ATTACHMENTS_SHOWN = 10;
 
 export interface ProactiveMemoryLimits {
   readonly perMail: number;
@@ -153,14 +175,76 @@ const EMPTY_COUNTS: ProactiveCounts = Object.freeze({
   pushed: 0,
 });
 
-function text(value: unknown, limit: number): string {
-  return typeof value === "string" ? value.replace(/\s+/gu, " ").trim().slice(0, limit) : "";
-}
-
 function instant(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 40) return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+interface ProactiveMailView {
+  readonly json: Record<string, unknown>;
+  readonly size: number;
+}
+
+const mailViews = new WeakMap<ProactiveSourceItem, Map<number, ProactiveMailView>>();
+
+function sentBodyValues(body: string, limit: number): readonly EgressRedactionSighting[] {
+  const located = locateMaskedValues(body);
+  if (located === null) return findSensitiveValues(windowMailBody(body, limit).text);
+  const starts = [0];
+  for (const point of located.text) starts.push((starts.at(-1) ?? 0) + point.length);
+  const pointAt = (unit: number) => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((starts[middle] ?? 0) <= unit) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  };
+  const length = starts.length - 1;
+  const window = mailBodyWindow(length, limit);
+  return located.spans
+    .filter(
+      ({ start, end }) =>
+        window === null || pointAt(start) < window.head || pointAt(end) > length - window.tail,
+    )
+    .map(({ sighting }) => sighting);
+}
+
+function masked(value: string): string {
+  return maskSensitiveText(value);
+}
+
+export function proactiveMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMailView {
+  const byLimit = mailViews.get(item) ?? new Map<number, ProactiveMailView>();
+  const cached = byLimit.get(bodyLimit);
+  if (cached) return cached;
+  const windowed = item.body === null ? undefined : windowMailBody(masked(item.body), bodyLimit);
+  const json: Record<string, unknown> = {
+    id: item.messageId,
+    from: masked(item.from),
+    subject: masked(item.subject),
+    ...(item.sentByOwner ? { sentByOwner: true } : {}),
+    ...(windowed ? { body: windowed.text } : { snippet: masked(item.snippet) }),
+    ...(windowed?.truncated || item.bodyTruncated ? { bodyTruncated: true } : {}),
+    ...(windowed === undefined && item.bodyUnavailable ? { bodyUnavailable: true } : {}),
+    ...(item.attachments.length > 0
+      ? {
+          attachments: item.attachments.slice(0, MAX_ATTACHMENTS_SHOWN).map((attachment) => ({
+            filename: masked(attachment.filename),
+            mimeType: attachment.mimeType,
+            size: attachment.size,
+          })),
+        }
+      : {}),
+    receivedAt: item.receivedAt,
+  };
+  const view = Object.freeze({ json, size: JSON.stringify(json).length });
+  byLimit.set(bodyLimit, view);
+  mailViews.set(item, byLimit);
+  return view;
 }
 
 export function proactivePrompt(
@@ -168,6 +252,7 @@ export function proactivePrompt(
   now: string,
   timeZone: string,
   memories: readonly PromptMemory[] = [],
+  bodyLimit: number = DEFAULT_PROACTIVE_BODY_LIMITS.perMail,
 ): string {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -180,15 +265,7 @@ export function proactivePrompt(
     MAIL_JUDGMENT.text,
     ...(memories.length > 0 ? [MAIL_JUDGMENT_MEMORIES_HEADER.text, JSON.stringify(memories)] : []),
     MAIL_JUDGMENT_ITEMS_HEADER.text,
-    JSON.stringify(
-      items.map((item) => ({
-        id: item.messageId,
-        from: item.from,
-        subject: item.subject,
-        snippet: item.snippet,
-        receivedAt: item.receivedAt,
-      })),
-    ),
+    JSON.stringify(items.map((item) => proactiveMailView(item, bodyLimit).json)),
     renderPrompt(MAIL_JUDGMENT_NOW, { now, timeZone, today }),
   ].join("\n");
 }
@@ -274,8 +351,8 @@ export function parseJudgements(
         : [],
       result: result as ProactiveResult,
       confidence: confidence as ProactiveConfidence,
-      todo: text(entry["todo"], 200),
-      reason: text(entry["reason"], 200),
+      todo: plainModelText(typeof entry["todo"] === "string" ? entry["todo"] : "", 200),
+      reason: plainModelText(typeof entry["reason"] === "string" ? entry["reason"] : "", 200),
       dueAt: instant(entry["dueAt"]),
       priority: ["high", "medium", "low"].includes(priority as string)
         ? (priority as ProactivePriority)
@@ -290,6 +367,26 @@ export class ProactiveMailCheckService {
 
   constructor(options: ProactiveMailCheckOptions) {
     this.#options = options;
+  }
+
+  #reportMasked(batch: readonly ProactiveSourceItem[], bodyLimit: number): void {
+    const onMasked = this.#options.onMasked;
+    if (onMasked === undefined) return;
+    try {
+      const sightings = batch.flatMap((item) =>
+        [
+          item.from,
+          item.subject,
+          ...item.attachments.slice(0, MAX_ATTACHMENTS_SHOWN).map(({ filename }) => filename),
+          ...(item.body === null ? [item.snippet] : []),
+        ]
+          .flatMap((text) => findSensitiveValues(text))
+          .concat(item.body === null ? [] : sentBodyValues(item.body, bodyLimit)),
+      );
+      if (sightings.length > 0) onMasked(sightings);
+    } catch {
+      return;
+    }
   }
 
   async run(): Promise<ProactiveDecision | undefined> {
@@ -393,13 +490,9 @@ export class ProactiveMailCheckService {
     );
     const items = fetched.items.filter(({ messageId }) => fresh.has(messageId));
     const processed: ProactiveCheckProcessed[] = [];
-    const replied: string[] = [];
     const candidates: ProactiveSourceItem[] = [];
     for (const item of items) {
-      if (item.sentByOwner) {
-        replied.push(item.threadId);
-        processed.push(this.#skip(item, "own_mail"));
-      } else if (item.categories.includes("spam")) processed.push(this.#skip(item, "category"));
+      if (item.categories.includes("spam")) processed.push(this.#skip(item, "category"));
       else candidates.push(item);
     }
     const spentToday = await store.costSince({
@@ -413,11 +506,18 @@ export class ProactiveMailCheckService {
     let stop: Stop = null;
     const queue = [...candidates];
     let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
+    const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
     let failure: string | null = null;
     while (queue.length > 0 && stop === null) {
-      const batch = queue.slice(0, batchSize);
+      const batch = this.#fitBatch(queue, batchSize, bodyLimits);
       const promptMemories = this.#batchMemories(batch, recalled.hits);
-      const prompt = proactivePrompt(batch, startedAt, this.#options.timeZone, promptMemories);
+      const prompt = proactivePrompt(
+        batch,
+        startedAt,
+        this.#options.timeZone,
+        promptMemories,
+        bodyLimits.perMail,
+      );
       const estimate = this.#options.limits.estimateCostMicros(prompt);
       if (spentToday + costMicros + estimate > this.#options.limits.dailyCostMicros) {
         stop = "capped_daily";
@@ -427,6 +527,7 @@ export class ProactiveMailCheckService {
         stop = "capped";
         break;
       }
+      this.#reportMasked(batch, bodyLimits.perMail);
       const outcome: JudgeOutcome = await this.#judge(
         batch,
         prompt,
@@ -467,8 +568,9 @@ export class ProactiveMailCheckService {
       skipped: processed.length,
     };
     const floorHits: Record<string, readonly string[]> = {};
+    const settled = new Map<string, { readonly result: ProactiveResult; readonly sure: boolean }>();
     for (const item of candidates) {
-      const floorIds = floorHitIds(item, settings.importantSenders);
+      const floorIds = item.sentByOwner ? [] : floorHitIds(item, settings.importantSenders);
       const floor = floorIds.length > 0;
       if (floor) floorHits[item.messageId] = floorIds;
       const judgement = judged.get(item.messageId);
@@ -510,14 +612,18 @@ export class ProactiveMailCheckService {
       };
       if (final.raised) counts.floorRaised += 1;
       counts[final.result] += 1;
+      settled.set(item.messageId, {
+        result: judgement.result,
+        sure: judgement.confidence === "sure",
+      });
       if (final.result === "ignore") {
         processed.push({
           ...this.#base(item),
           outcome: "ignore",
           skipReason: null,
           headerRef: await this.#seal(trace, {
-            from: item.from,
-            subject: item.subject,
+            from: masked(item.from),
+            subject: masked(item.subject),
             link: item.link,
           }),
         });
@@ -567,19 +673,55 @@ export class ProactiveMailCheckService {
       counts,
       processed,
       insights,
-      replied: [...new Set(replied)].filter((threadId) => {
-        const latestOwn = items
-          .filter((item) => item.sentByOwner && item.threadId === threadId)
-          .reduce((latest, item) => (item.receivedAt > latest ? item.receivedAt : latest), "");
-        return !candidates.some(
-          (item) => item.threadId === threadId && item.receivedAt > latestOwn,
-        );
-      }),
+      replied: this.#repliedThreads(items, candidates, settled),
       costMicros,
       cursor: leftover ? null : fetched.cursor,
       quietHours: settings.quietHours,
       floorHits,
     });
+  }
+
+  #fitBatch(
+    queue: readonly ProactiveSourceItem[],
+    batchSize: number,
+    bodyLimits: ProactiveBodyLimits,
+  ): readonly ProactiveSourceItem[] {
+    const batch: ProactiveSourceItem[] = [];
+    let size = 0;
+    for (const item of queue.slice(0, batchSize)) {
+      const next = proactiveMailView(item, bodyLimits.perMail).size;
+      if (batch.length > 0 && size + next > bodyLimits.perBatch) break;
+      batch.push(item);
+      size += next;
+    }
+    return batch;
+  }
+
+  #repliedThreads(
+    items: readonly ProactiveSourceItem[],
+    candidates: readonly ProactiveSourceItem[],
+    settled: ReadonlyMap<string, { readonly result: ProactiveResult; readonly sure: boolean }>,
+  ): readonly { readonly threadId: string; readonly receivedAt: string }[] {
+    const latestOwn = new Map<string, ProactiveSourceItem>();
+    for (const item of items) {
+      if (!item.sentByOwner || item.categories.includes("spam")) continue;
+      const previous = latestOwn.get(item.threadId);
+      if (
+        !previous ||
+        item.receivedAt > previous.receivedAt ||
+        (item.receivedAt === previous.receivedAt && item.messageId > previous.messageId)
+      )
+        latestOwn.set(item.threadId, item);
+    }
+    return [...latestOwn.entries()]
+      .filter(([threadId, own]) => {
+        const verdict = settled.get(own.messageId);
+        if (verdict?.result !== "ignore" || !verdict.sure) return false;
+        return !candidates.some(
+          (item) => item.threadId === threadId && item.receivedAt > own.receivedAt,
+        );
+      })
+      .map(([threadId, own]) => ({ threadId, receivedAt: own.receivedAt }));
   }
 
   #reason(
@@ -600,7 +742,12 @@ export class ProactiveMailCheckService {
   }
 
   #base(item: ProactiveSourceItem) {
-    return { source: item.source, messageId: item.messageId, threadId: item.threadId };
+    return {
+      source: item.source,
+      messageId: item.messageId,
+      threadId: item.threadId,
+      receivedAt: item.receivedAt,
+    };
   }
 
   #skip(item: ProactiveSourceItem, reason: ProactiveCheckProcessed["skipReason"]) {
@@ -711,7 +858,15 @@ export class ProactiveMailCheckService {
     const limits = { ...DEFAULT_PROACTIVE_MEMORY_LIMITS, ...this.#options.memoryLimits };
     const queries = candidates.slice(0, limits.searchesPerCheck).map((item) => ({
       messageId: item.messageId,
-      query: `${item.from}\n${item.subject}\n${item.snippet}`.slice(0, limits.queryCharacters),
+      query: [
+        ...(item.sentByOwner ? [] : [masked(item.from)]),
+        masked(item.subject),
+        Array.from(masked(item.body ?? item.snippet))
+          .slice(0, RECALL_BODY_CHARACTERS)
+          .join(""),
+      ]
+        .join("\n")
+        .slice(0, limits.queryCharacters),
     }));
     try {
       const result = await recall.recall({ queries, deadlineAt, signal });
@@ -790,7 +945,7 @@ export class ProactiveMailCheckService {
       readonly counts: ProactiveCounts;
       readonly processed: readonly ProactiveCheckProcessed[];
       readonly insights: readonly ProactiveCheckInsight[];
-      readonly replied: readonly string[];
+      readonly replied: readonly { readonly threadId: string; readonly receivedAt: string }[];
       readonly costMicros: number;
       readonly cursor: string | null;
       readonly quietHours: ProactiveSettings["quietHours"];
@@ -819,8 +974,8 @@ export class ProactiveMailCheckService {
           reason: insight.reason,
           basis: insight.basis,
           floorHit: insight.floorHit,
-          from: insight.item.from,
-          subject: insight.item.subject,
+          from: masked(insight.item.from),
+          subject: masked(insight.item.subject),
           link: insight.item.link,
         }),
         dueAt: insight.dueAt,
@@ -858,7 +1013,7 @@ export class ProactiveMailCheckService {
       modelPayloads: trace.payloads,
       processed: input.processed,
       insights: writes,
-      repliedThreadIds: input.replied,
+      repliedThreads: input.replied,
       push,
       cursor: input.cursor,
     });
@@ -872,7 +1027,7 @@ export class ProactiveMailCheckService {
 type ProactiveCheckProcessed = Omit<
   ProactiveProcessedMessage,
   "reviewedAt" | "ownerRating" | "decisionId" | "processedAt"
->;
+> & { readonly receivedAt: string };
 
 interface ProactiveCheckInsight {
   readonly item: ProactiveSourceItem;

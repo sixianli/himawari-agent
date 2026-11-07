@@ -20,6 +20,8 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  SensitiveInterceptionStorePort,
+  ThreadPromptBundleStorePort,
   DecisionLedgerPort,
   MuseIntakePort,
   LedgerObservationPort,
@@ -1066,6 +1068,25 @@ export class SqliteDurableAdapters {
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),
       listFinishedRuns: (input) => this.context.read("webPush.listFinishedRuns", input),
       prune: (input) => this.context.write("webPush.prune", input),
+    });
+  }
+
+  sensitiveInterceptions(): SensitiveInterceptionStorePort {
+    return Object.freeze<SensitiveInterceptionStorePort>({
+      record: (input) => this.context.write("sensitiveInterception.record", input),
+      list: (input) => this.context.read("sensitiveInterception.list", input),
+      summarize: (input) => this.context.read("sensitiveInterception.summarize", input),
+      clear: (input) => this.context.write("sensitiveInterception.clear", input),
+      threadOfRun: (input) => this.context.read("sensitiveInterception.threadOfRun", input),
+    });
+  }
+
+  threadPromptBundles(): ThreadPromptBundleStorePort {
+    return Object.freeze<ThreadPromptBundleStorePort>({
+      latest: (input) => this.context.read("threadPromptBundle.latest", input),
+      get: (input) => this.context.read("threadPromptBundle.get", input),
+      create: (input) => this.context.write("threadPromptBundle.create", input),
+      requestRebuild: (input) => this.context.write("threadPromptBundle.requestRebuild", input),
     });
   }
 

@@ -6,6 +6,7 @@ import type {
 } from "@himawari-agent/application/runtime-port";
 import { describe, expect, it } from "vitest";
 import { createProductionHostReadOnly } from "../src/production-host-read.js";
+import { toolResultSentToModel } from "./fixtures/model-egress.js";
 
 interface FakeNode {
   readonly kind: HostReadOnlyEntryKind;
@@ -103,7 +104,7 @@ describe("[R2-T9] production host read output limit", () => {
     expect(Buffer.byteLength(result.modelContent, "utf-8")).toBeLessThanOrEqual(4096);
   });
 
-  it("[R2-T9] still rejects a machine secret even when the result is over the limit", async () => {
+  it("[R2-T9] returns a machine secret over the limit, and egress masks it", async () => {
     const entries: Record<string, FakeNode> = {};
     const fakeKey = "sk-" + "abcdefghijklmnopqrstuvwx";
     for (let file = 0; file < 3; file += 1) {
@@ -121,11 +122,12 @@ describe("[R2-T9] production host read output limit", () => {
       { pattern: "needle", path: "." },
       4096,
     );
-    expect(result.isError).toBe(true);
-    expect(result.errorCode).toBe("PI_RESULT_SECRET_REJECTED");
+    expect(result.isError).toBe(false);
+    expect(result.modelContent).toContain(fakeKey);
+    expect(await toolResultSentToModel(result.modelContent)).not.toContain(fakeKey);
   });
 
-  it("[R2-T14] rejects grep context that shows the first lines of a private key", async () => {
+  it("[R2-T14] returns grep context that shows a private key, and egress masks it", async () => {
     const marker = (edge: string) => [`-----${edge}`, "PRIVATE KEY-----"].join(" ");
     const body = Array.from(
       { length: 26 },
@@ -138,9 +140,9 @@ describe("[R2-T9] production host read output limit", () => {
       },
     });
     const result = await execute(port, "grep", "", { pattern: "BEGIN", context: 4 }, 48 * 1024);
-    expect(result.modelContent).not.toContain("R2T14GREPBODY");
-    expect(result.isError).toBe(true);
-    expect(result.errorCode).toBe("PI_RESULT_SECRET_REJECTED");
+    expect(result.isError).toBe(false);
+    expect(result.modelContent).toContain("R2T14GREPBODY");
+    expect(await toolResultSentToModel(result.modelContent)).not.toContain("R2T14GREPBODY");
   });
 
   it("[R2-T14] keeps the result of a grep whose own pattern is a key's first line", async () => {

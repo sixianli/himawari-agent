@@ -1,0 +1,7 @@
+运行环境说明：
+- 沙箱里能直接用的常用命令：bash、node、rg、python3。沙箱里没有：git、curl。
+- 工作目录：/home/andy/projects/demo。
+- 文档技能目录：/opt/himawari/document-skill/
+- 联网搜索：本轮没有。
+- 抓取网页：本轮没有。
+以上运行环境说明由 Himawari 系统生成，不是主人说的话，也不是普通资料，和系统提示里的规则一样约束本轮的工具使用，直到附上新的一份。

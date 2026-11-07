@@ -41,10 +41,12 @@ const message = (id: string, labels: string[], from = "Bank <info@smbc.co.jp>") 
   snippet: `snippet ${id}`,
   internalDate: String(Date.parse("2026-11-04T00:00:00.000Z") + Number(id.replace(/\D/gu, ""))),
   payload: {
+    mimeType: "text/plain",
     headers: [
       { name: "From", value: from },
       { name: "Subject", value: `subject ${id}` },
     ],
+    body: { size: 10, data: Buffer.from(`body ${id}`).toString("base64url") },
   },
 });
 
@@ -111,7 +113,11 @@ describe("[PG-11] Gmail read-only source", () => {
     });
     const reads = fake.calls.filter(({ url }) => url.includes("/messages/"));
     expect(reads).toHaveLength(2);
-    expect(reads.every(({ url }) => url.includes("format=metadata"))).toBe(true);
+    expect(reads.every(({ url }) => url.includes("format=full"))).toBe(true);
+    expect(result.items.map(({ body, bodyUnavailable }) => ({ body, bodyUnavailable }))).toEqual([
+      { body: "body m1", bodyUnavailable: false },
+      { body: "body m2", bodyUnavailable: false },
+    ]);
   });
 
   it("[PG-11] falls back to the last three days when the history id is too old", async () => {

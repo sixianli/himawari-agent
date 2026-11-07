@@ -21,6 +21,10 @@ export * from "./sqlite-recovery-point.js";
 export * from "./sqlite-run-diagnostics.js";
 export * from "./sqlite-run-payload-artifact-operations.js";
 export * from "./sqlite-sandbox-unconfirmed-purge.js";
+export {
+  requestThreadPromptRebuild,
+  THREAD_PROMPT_REBUILD_ERROR_CODES,
+} from "./sqlite-thread-prompt-bundle-operations.js";
 export * from "./sqlite-sandbox-reservation-administration.js";
 export * from "./sqlite-run-dispatch-operations.js";
 export * from "./sqlite-model-budget-operations.js";

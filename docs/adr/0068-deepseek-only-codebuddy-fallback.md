@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0059-opencode-model-selection-free-first.md, docs/adr/0061-opencode-model-table.md"
 superseded_by: ""
+amended_by: "docs/adr/0175-cheaper-code-review-rounds.md"
 date: "2026-10-23"
 ---
 

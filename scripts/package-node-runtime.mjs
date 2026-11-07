@@ -5,9 +5,8 @@ import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-
-import { collectArtifactFiles } from "./ci/artifact-files.mjs";
 import { resolveBuildInfo } from "../apps/control-center/build-info.mjs";
+import { collectArtifactFiles } from "./ci/artifact-files.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PI_RUNNER_ENTRY = "pi-coding-main.js";
@@ -26,6 +25,7 @@ const internalRoots = [
   "packages/prompt-catalog",
   "packages/platform-node",
   "packages/runtime-pi",
+  "packages/sensitive-capture",
   "packages/runtime-sandbox",
 ];
 

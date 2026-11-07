@@ -21,7 +21,6 @@ import {
   type SandboxExecutionRecord,
   SandboxResourceRecoveryService,
   SandboxScopeService,
-  scanMachineSecrets,
   type WorkerDelegationAdmissionServiceOptions,
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
@@ -1957,10 +1956,7 @@ export async function createProductionSandboxServices(options: {
         },
       };
       const plaintext = Buffer.from(JSON.stringify(value));
-      if (
-        plaintext.length > plan.resourceCeiling.maxOutputBytes ||
-        scanMachineSecrets(plaintext.toString()).length
-      )
+      if (plaintext.length > plan.resourceCeiling.maxOutputBytes)
         throw new Error("SANDBOX_RECOVERY_OUTPUT_REJECTED");
       verifyPiWriteEvidence({
         bytes: plaintext,

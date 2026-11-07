@@ -1,10 +1,22 @@
+import type { AgentId, OwnerId, ThreadId } from "@himawari-agent/domain";
+import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import {
+  assertMachineSecretFree,
   EGRESS_PLACEHOLDER_PATTERN,
   type EgressPlaceholderKind,
+  EgressRedactionError,
   type EgressRedactionFinding,
+  type EgressRedactionKind,
+  type EgressRedactionRuleId,
+  type EgressRedactionSighting,
   redactForEgress,
-} from "./egress-redaction.js";
-import { assertMachineSecretFree } from "./machine-secret-exclusion.js";
+  redactMachineSecrets,
+  scanMachineSecrets,
+} from "@himawari-agent/sensitive-capture";
+import type {
+  SensitiveInterceptionPart,
+  SensitiveInterceptionSource,
+} from "../ports/sensitive-interceptions.js";
 
 export class ModelEgressRefusedError extends Error {
   readonly code = "MODEL_EGRESS_REFUSED" as const;
@@ -16,9 +28,39 @@ export class ModelEgressRefusedError extends Error {
   }
 }
 
+export interface ModelEgressContext {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId | null;
+  readonly source: SensitiveInterceptionSource;
+  readonly purpose: string | null;
+}
+
+export interface ModelEgressSighting {
+  readonly part: SensitiveInterceptionPart;
+  readonly category: EgressRedactionKind;
+  readonly ruleId: EgressRedactionRuleId;
+  readonly fingerprint: string;
+  readonly outcome?: "withheld";
+}
+
 export interface ModelEgressOptions {
   readonly key: () => Promise<Uint8Array>;
   readonly sign: (key: Uint8Array, message: string) => Uint8Array;
+  readonly trusted?: readonly string[];
+  readonly report?: (
+    context: ModelEgressContext,
+    sightings: readonly ModelEgressSighting[],
+  ) => void;
+}
+
+const FINGERPRINT_LABEL = "himawari.sensitive-interception.fingerprint.v1";
+
+function hex(bytes: Uint8Array): string {
+  let out = "";
+  for (let index = 0; index < 16; index += 1)
+    out += (bytes[index] ?? 0).toString(16).padStart(2, "0");
+  return out;
 }
 
 type Record_ = Record<string, unknown>;
@@ -80,9 +122,21 @@ class Exchange implements ModelEgressExchange {
   readonly #known = new Map<string, string>();
   readonly #counts = new Map<string, number>();
   readonly #options: ModelEgressOptions;
+  readonly #context: ModelEgressContext | undefined;
 
-  constructor(options: ModelEgressOptions) {
+  constructor(options: ModelEgressOptions, context: ModelEgressContext | undefined) {
     this.#options = options;
+    this.#context = context;
+  }
+
+  #report(sightings: ReadonlyMap<string, ModelEgressSighting>): void {
+    const report = this.#options.report;
+    if (report === undefined || this.#context === undefined || sightings.size === 0) return;
+    try {
+      report(this.#context, Object.freeze([...sightings.values()]));
+    } catch {
+      return;
+    }
   }
 
   findings(): readonly EgressRedactionFinding[] {
@@ -136,23 +190,55 @@ class Exchange implements ModelEgressExchange {
       refuse("request body is not JSON");
     }
     const key = await this.#options.key();
-    const text = (value: string): string => {
-      const result = redactForEgress(value, {
+    const sightings = new Map<string, ModelEgressSighting>();
+    const recording = this.#options.report !== undefined && this.#context !== undefined;
+    const sighting = (
+      part: SensitiveInterceptionPart,
+      { kind, ruleId, value: seen }: EgressRedactionSighting,
+    ): readonly [string, ModelEgressSighting] => {
+      const fingerprint = hex(
+        this.#options.sign(key, `${FINGERPRINT_LABEL}\u0000${kind}\u0000${seen}`),
+      );
+      return [
+        `${part}\u0000${kind}\u0000${fingerprint}`,
+        Object.freeze({ part, category: kind, ruleId, fingerprint }),
+      ];
+    };
+    const see = (part: SensitiveInterceptionPart, seen: EgressRedactionSighting): void => {
+      if (!recording) return;
+      const [identity, value] = sighting(part, seen);
+      if (!sightings.has(identity)) sightings.set(identity, value);
+    };
+    const text = (value: string, part: SensitiveInterceptionPart): string => {
+      const result = redactedOrRefused(value, {
         tag: (kind: EgressPlaceholderKind, secret: string) =>
           letters(this.#options.sign(key, `${kind}\u0000${secret}`)),
         known: this.#known,
         table: this.table,
+        trusted: this.#options.trusted ?? TRUSTED_PROMPT_TEXTS,
+        ...(recording ? { observe: (seen: EgressRedactionSighting) => see(part, seen) } : {}),
       });
       for (const finding of result.findings)
         this.#counts.set(finding.kind, (this.#counts.get(finding.kind) ?? 0) + finding.count);
       try {
         assertMachineSecretFree(result.text);
       } catch {
+        if (recording) {
+          const withheld = new Map<string, ModelEgressSighting>();
+          const hold = ([identity, value]: readonly [string, ModelEgressSighting]) =>
+            withheld.set(identity, Object.freeze({ ...value, outcome: "withheld" }));
+          for (const entry of sightings) hold(entry);
+          redactMachineSecrets(result.text, (ruleId, seen) =>
+            hold(sighting(part, { kind: "machine-secret", ruleId, value: seen })),
+          );
+          this.#report(withheld);
+        }
         refuse("sensitive material remained after redaction");
       }
       return result.text;
     };
     const next = redactor(parsed, text);
+    this.#report(sightings);
     if (next === parsed) return { input, init };
     return {
       input,
@@ -215,7 +301,29 @@ function withoutLength(headers: unknown): unknown {
   return headers;
 }
 
-type TextRedactor = (value: string) => string;
+type TextRedactor = (value: string, part: SensitiveInterceptionPart) => string;
+
+function partOf(record: Record_, inherited: SensitiveInterceptionPart): SensitiveInterceptionPart {
+  const type = record["type"];
+  if (typeof type === "string") {
+    if (type.endsWith("tool_use") || type.endsWith("function_call") || type.endsWith("tool_call"))
+      return "tool_call";
+    if (type.endsWith("tool_result") || type.endsWith("_output")) return "tool_result";
+  }
+  switch (record["role"]) {
+    case "system":
+    case "developer":
+      return "system";
+    case "assistant":
+      return "assistant_message";
+    case "tool":
+      return "tool_result";
+    case "user":
+      return "owner_message";
+    default:
+      return inherited;
+  }
+}
 
 function mapArray(
   items: readonly unknown[],
@@ -283,47 +391,62 @@ function isIdentifierKey(key: string): boolean {
   return key.endsWith("_id") || key.endsWith("_ids") || key.endsWith("Id") || key.endsWith("Ids");
 }
 
-function maskArguments(value: unknown, text: TextRedactor): unknown {
-  if (typeof value !== "string") return maskTree(value, text, true);
+function maskArguments(
+  value: unknown,
+  text: TextRedactor,
+  part: SensitiveInterceptionPart,
+): unknown {
+  if (typeof value !== "string") return maskTree(value, text, true, part);
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
   } catch {
-    return text(value);
+    return text(value, part);
   }
-  const next = maskTree(parsed, text, true);
+  const next = maskTree(parsed, text, true, part);
   return next === parsed ? value : JSON.stringify(next);
 }
 
-function maskTree(value: unknown, text: TextRedactor, data: boolean): unknown {
+const BASE64_DATA_URL =
+  /^data:[\w.+-]+\/[\w.+-]+(?:;[\w.+-]+=[\w.+-]+)*;base64,[A-Za-z0-9+/\r\n]*={0,2}$/u;
+
+function maskTree(
+  value: unknown,
+  text: TextRedactor,
+  data: boolean,
+  inherited: SensitiveInterceptionPart,
+): unknown {
   if (typeof value === "string") {
-    if (value.startsWith("data:")) return value;
-    const result = text(value);
+    if (BASE64_DATA_URL.test(value) && scanMachineSecrets(value).length === 0) return value;
+    const result = text(value, inherited);
     return result === value ? value : result;
   }
-  if (Array.isArray(value)) return mapArray(value, (item) => maskTree(item, text, data));
+  if (Array.isArray(value)) return mapArray(value, (item) => maskTree(item, text, data, inherited));
   if (!isRecord(value)) return value;
   if (!data && typeof value["type"] === "string" && OPAQUE_TYPES.has(value["type"])) return value;
+  const part = data ? inherited : partOf(value, inherited);
   let changed = false;
   const next: Record_ = {};
   for (const [key, item] of Object.entries(value)) {
     let result: unknown;
     if (data) {
-      result = maskTree(item, text, true);
+      result = maskTree(item, text, true, part);
     } else if (typeof item === "string" && (SKIPPED_KEYS.has(key) || isIdentifierKey(key))) {
       result = item;
     } else if (OPAQUE_MESSAGE_KEYS.has(key)) {
       result = item;
     } else if (key === "arguments") {
-      result = maskArguments(item, text);
+      result = maskArguments(item, text, part === "tool_result" ? part : "tool_call");
     } else if (
       key === "input" &&
       typeof value["type"] === "string" &&
       value["type"].endsWith("tool_use")
     ) {
-      result = maskTree(item, text, true);
+      result = maskTree(item, text, true, part);
+    } else if (key === "tool_calls") {
+      result = maskTree(item, text, false, "tool_call");
     } else {
-      result = maskTree(item, text, false);
+      result = maskTree(item, text, false, part);
     }
     if (result !== item) changed = true;
     next[key] = result;
@@ -340,7 +463,9 @@ function maskRequest(body: unknown, text: TextRedactor, conversation: string): u
   const next: Record_ = {};
   for (const [key, item] of Object.entries(body)) {
     const result =
-      DEFINITION_KEYS.has(key) || SKIPPED_KEYS.has(key) ? item : maskTree(item, text, false);
+      DEFINITION_KEYS.has(key) || SKIPPED_KEYS.has(key)
+        ? item
+        : maskTree(item, text, false, key === conversation ? "owner_message" : "system");
     if (result !== item) changed = true;
     next[key] = result;
   }
@@ -357,14 +482,26 @@ const redactAnthropicMessages = (body: unknown, text: TextRedactor): unknown =>
 function redactEmbeddings(body: unknown, text: TextRedactor): unknown {
   if (!isRecord(body)) refuse("embeddings request has an unknown shape");
   const input = body["input"];
-  if (typeof input === "string") return withField(body, "input", text(input));
+  if (typeof input === "string") return withField(body, "input", text(input, "embedding_input"));
   if (Array.isArray(input) && input.every((item) => typeof item === "string"))
     return withField(
       body,
       "input",
-      mapArray(input, (item) => text(item as string)),
+      mapArray(input, (item) => text(item as string, "embedding_input")),
     );
   return refuse("embeddings input is not text");
+}
+
+function redactedOrRefused(
+  value: string,
+  options: Parameters<typeof redactForEgress>[1],
+): ReturnType<typeof redactForEgress> {
+  try {
+    return redactForEgress(value, options);
+  } catch (error) {
+    if (error instanceof EgressRedactionError) refuse("trusted text could not be restored");
+    throw error;
+  }
 }
 
 export class ModelEgress {
@@ -374,7 +511,33 @@ export class ModelEgress {
     this.#options = options;
   }
 
-  exchange(): ModelEgressExchange {
-    return new Exchange(this.#options);
+  exchange(context?: ModelEgressContext): ModelEgressExchange {
+    return new Exchange(this.#options, context);
+  }
+
+  async reportMasked(
+    context: ModelEgressContext,
+    part: SensitiveInterceptionPart,
+    sightings: readonly EgressRedactionSighting[],
+  ): Promise<void> {
+    const report = this.#options.report;
+    if (report === undefined || sightings.length === 0) return;
+    try {
+      const key = await this.#options.key();
+      const unique = new Map<string, ModelEgressSighting>();
+      for (const { kind, ruleId, value } of sightings) {
+        const fingerprint = hex(
+          this.#options.sign(key, `${FINGERPRINT_LABEL}\u0000${kind}\u0000${value}`),
+        );
+        if (!unique.has(`${kind}\u0000${fingerprint}`))
+          unique.set(
+            `${kind}\u0000${fingerprint}`,
+            Object.freeze({ part, category: kind, ruleId, fingerprint }),
+          );
+      }
+      report(context, Object.freeze([...unique.values()]));
+    } catch {
+      return;
+    }
   }
 }

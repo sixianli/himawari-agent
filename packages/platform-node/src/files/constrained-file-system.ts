@@ -23,6 +23,7 @@ import type {
   HostFilePlatformPort,
   HostFilePublication,
   HostFilePublishHooks,
+  PermanentDeletionTarget,
 } from "@himawari-agent/application";
 import { identityKey, normalizeRelativePath } from "@himawari-agent/application";
 
@@ -90,9 +91,6 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
         offset += bytesRead;
       }
       const after = await handle.stat();
-      // Atomic replacement unlinks the old inode without changing its bytes.
-      // Only explicitly versioned reads may finish from that opened descriptor;
-      // verification and write baselines still require the current path.
       const openedVersion =
         consistency === "opened_version" && info.nlink === 1 && after.nlink === 0;
       const afterIdentity = identity(target, after);
@@ -149,7 +147,6 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     return this.publishPrepared(grant, relativePath, publication, expected, previousBytes, hooks);
   }
 
-  /** Preparation writes only our private recovery area, never the target or its parents. */
   async stagePublication(grant: HostDirectoryGrant, bytes: Uint8Array, mode = 0o600) {
     return this.#stage(structuredClone(grant), new Uint8Array(bytes), mode);
   }
@@ -166,7 +163,6 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     );
   }
 
-  /** Caller owns commit admission. A prepared inode is never regenerated on conflict. */
   async publishPrepared(
     grant: HostDirectoryGrant,
     relativePath: string,
@@ -214,7 +210,6 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     await hooks?.assertCurrentAuthority?.();
     await hooks?.commitStarting?.();
     await hooks?.assertCurrentAuthority?.();
-    // External uncooperative writers are detected, not a strict filesystem CAS.
     if (expected) await rename(publication.identity.canonicalPath, target);
     else {
       await link(publication.identity.canonicalPath, target);
@@ -257,8 +252,6 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
         staged.ino !== current.ino
       )
         throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
-      // A crash between link and unlink left our private alias. No other alias
-      // may be removed, and bytes alone cannot authorize this recovery.
       await unlink(stage);
       await syncDirectory(path.dirname(stage));
     } else if (current.nlink !== 1) throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
@@ -333,7 +326,6 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     grant = structuredClone(grant);
     expected = { ...expected };
     const source = await this.#resolve(grant, sourceRelativePath, true);
-    // Directory moves must not create parents as a hidden side effect before admission.
     const destination = await this.#resolve(
       grant,
       destinationRelativePath,
@@ -485,9 +477,8 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
 
   async deletePermanently(
     grant: HostDirectoryGrant,
-    targets: readonly import("@himawari-agent/application").PermanentDeletionTarget[],
+    targets: readonly PermanentDeletionTarget[],
   ): Promise<void> {
-    // Detect stale approvals across the complete inventory before the first destructive step.
     for (const target of targets) await this.#verifyDeletionTarget(grant, target);
     for (const target of targets) {
       const absolute = await this.#verifyDeletionTarget(grant, target);
@@ -499,7 +490,7 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
 
   async #verifyDeletionTarget(
     grant: HostDirectoryGrant,
-    target: import("@himawari-agent/application").PermanentDeletionTarget,
+    target: PermanentDeletionTarget,
   ): Promise<string | null> {
     const current = await this.inspect(grant, target.relativePath);
     if (!current) return null;
@@ -649,7 +640,6 @@ function identity(
   });
 }
 
-/** Failure here is an uncertain durability result, never a successful receipt. */
 async function syncDirectory(directory: string): Promise<void> {
   const handle = await open(
     directory,

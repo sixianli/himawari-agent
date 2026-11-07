@@ -74,7 +74,6 @@ function platformArtifacts(value) {
   for (const item of Object.values(value)) artifact(item);
 }
 
-/** Tool identity validation is shared by the installer and policy gate. */
 export function validateToolchainLock(lock) {
   fields(
     lock,
@@ -117,7 +116,6 @@ export function validateToolchainLock(lock) {
   platformArtifacts(lock.python.artifacts);
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
   const expectedActions = [
-    "actions/cache",
     "actions/checkout",
     "actions/setup-node",
     "actions/setup-python",
@@ -259,8 +257,45 @@ export function verifyDownload(bytes, expected) {
   return actual;
 }
 
-/** Verified downloads only; a corrupt existing entry fails instead of becoming a cache hit. */
-export async function downloadArtifact(expected, directory) {
+const downloadAttempts = 3;
+
+function waitBeforeRetry() {
+  return new Promise((resolveWait) => setTimeout(resolveWait, 10_000 + Math.random() * 10_000));
+}
+
+function networkFailure(error) {
+  const cause = error.cause;
+  return [error.message, cause?.code, cause?.message].filter(Boolean).join(": ");
+}
+
+async function fetchArtifact(expected, fetchImplementation, wait) {
+  const host = new URL(expected.url).hostname;
+  for (let attempt = 1; ; attempt += 1) {
+    let reason;
+    let retryable;
+    try {
+      const response = await fetchImplementation(expected.url, {
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      reason = `HTTP ${response.status}`;
+      retryable = response.status >= 500 || response.status === 408 || response.status === 429;
+    } catch (error) {
+      reason = networkFailure(error);
+      retryable = true;
+    }
+    const summary = `${expected.filename} 来自 ${host}，第 ${attempt} 次 (${reason})`;
+    if (!retryable || attempt >= downloadAttempts) throw new Error(`工具下载失败: ${summary}`);
+    console.error(`工具下载重试: ${summary}`);
+    await wait(attempt);
+  }
+}
+
+export async function downloadArtifact(
+  expected,
+  directory,
+  { fetch: fetchImplementation = fetch, wait = waitBeforeRetry } = {},
+) {
   artifact(expected);
   mkdirSync(directory, { recursive: true });
   const path = join(directory, expected.filename);
@@ -268,9 +303,7 @@ export async function downloadArtifact(expected, directory) {
     verifyDownload(readFileSync(path), expected);
     return path;
   }
-  const response = await fetch(expected.url, { signal: AbortSignal.timeout(120_000) });
-  assert(response.ok, `工具下载失败: ${expected.filename} (HTTP ${response.status})`);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = await fetchArtifact(expected, fetchImplementation, wait);
   verifyDownload(bytes, expected);
   writeFileSync(path, bytes, { flag: "wx" });
   return path;
@@ -312,7 +345,6 @@ export function verifyRuleFiles(root = repositoryRoot, lock = loadToolchainLock(
   return lock.rules;
 }
 
-/** Revalidate downloads and executable identities after a policy-only lock change. */
 export function verifyInstalledTools({ directory, root = repositoryRoot }) {
   const prefix = realpathSync(directory);
   const installation = JSON.parse(readFileSync(join(prefix, "installation.json"), "utf8"));
@@ -431,7 +463,6 @@ export function extractArchive(archive, directory) {
   execFileSync("tar", ["-xzf", archive, "--no-same-owner", "-C", directory], { stdio: "pipe" });
 }
 
-/** Installs into a fresh explicit prefix. It does not change global tools or the repository. */
 export async function installTools({
   directory,
   root = repositoryRoot,

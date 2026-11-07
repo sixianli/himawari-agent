@@ -86,6 +86,11 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import { flushSensitiveInterceptions } from "./production-model-egress.js";
+import {
+  PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+  ProductionSensitiveInterceptionsControl,
+} from "./production-sensitive-interceptions-control.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
@@ -660,6 +665,7 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+        ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1085,6 +1091,12 @@ export async function createProductionHttpComposition(
       configuration,
       store: repository.ownerPreferences(),
       clock: { now: clock },
+    }),
+    sensitiveInterceptionsControl: new ProductionSensitiveInterceptionsControl({
+      configuration,
+      store: repository.sensitiveInterceptions(),
+      clock: { now: clock },
+      beforeRead: () => flushSensitiveInterceptions(repository),
     }),
   });
   const app = buildHttpGatewayServer({

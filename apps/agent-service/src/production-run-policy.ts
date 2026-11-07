@@ -13,13 +13,15 @@ import {
   type RunExecutionPolicy,
   type RunExecutionSource,
   type RunPayloadArtifactPort,
+  type WebProviderId,
+  webProviderChain,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CHAT_ANSWER_LANGUAGE,
   CHAT_CAPABILITIES_DOCUMENT_SKILL,
   CHAT_CAPABILITIES_HEADER,
-  CHAT_CAPABILITIES_NO_SEARCH,
+  CHAT_CAPABILITIES_RUNTIME_ENVIRONMENT,
   CHAT_CAPABILITIES_SANDBOX_COMMANDS,
   CHAT_CAPABILITIES_SANDBOX_OFFLINE,
   CHAT_CAPABILITIES_SEARCH,
@@ -27,6 +29,17 @@ import {
   CHAT_CAPABILITIES_WORKSPACE_COMMANDS,
   CHAT_CAPABILITIES_WORKSPACE_FILE_CARDS,
   CHAT_IDENTITY,
+  CHAT_RUNTIME_ENVIRONMENT_DOCUMENT_SKILL,
+  CHAT_RUNTIME_ENVIRONMENT_FETCH,
+  CHAT_RUNTIME_ENVIRONMENT_FOOTER,
+  CHAT_RUNTIME_ENVIRONMENT_HEADER,
+  CHAT_RUNTIME_ENVIRONMENT_NO_CODING,
+  CHAT_RUNTIME_ENVIRONMENT_NO_FETCH,
+  CHAT_RUNTIME_ENVIRONMENT_NO_SEARCH,
+  CHAT_RUNTIME_ENVIRONMENT_NO_WORKSPACE,
+  CHAT_RUNTIME_ENVIRONMENT_SANDBOX_COMMANDS,
+  CHAT_RUNTIME_ENVIRONMENT_SEARCH,
+  CHAT_RUNTIME_ENVIRONMENT_WORKSPACE,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
 import type { SandboxCommandInventory } from "./sandbox-command-inventory.js";
@@ -66,13 +79,24 @@ export function createProductionRunPolicy(options: {
         PORT_ERROR_CODES.INVALID_OPERATION,
         "RUN_POLICY_MODEL_DISCLOSURE_DENIED",
       );
-    const capabilities = runCapabilityNotice({
-      publicSearch: policy.publicSearch !== undefined,
+    const capabilities = runCapabilityNotice({ coding: policy.coding !== undefined });
+    const environment = runtimeEnvironmentNotice({
       coding: policy.coding !== undefined,
       workspaceRoot: policy.coding && options.workspaceRoot ? await options.workspaceRoot() : null,
       documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
       ...(policy.coding && options.sandboxCommands
         ? { sandboxCommands: await options.sandboxCommands() }
+        : {}),
+      ...(policy.publicSearch
+        ? { publicSearch: { providers: policy.publicSearch.providers } }
+        : {}),
+      ...(policy.publicFetch
+        ? {
+            publicFetch: {
+              providers: policy.publicFetch.providers,
+              maximumBytes: policy.publicFetch.maximumBytes,
+            },
+          }
         : {}),
     });
     const identity = {
@@ -97,6 +121,27 @@ export function createProductionRunPolicy(options: {
       });
       instruction = (await options.artifacts.commit({ ...identity, payload })).artifact;
     }
+    const environmentIdentity = {
+      runId: source.runId,
+      purpose: "context" as const,
+      operationKey: `run-runtime-environment:v1:${createHash("sha256")
+        .update(environment)
+        .digest("hex")}`,
+    };
+    let environmentArtifact = await options.artifacts.lookup(environmentIdentity);
+    if (!environmentArtifact) {
+      const payload = await options.protector.protect({
+        ownerId: source.ownerId,
+        agentId: source.agentId,
+        ref: options.ids.next("run-runtime-environment"),
+        plaintext: new TextEncoder().encode(environment),
+        dataClassification: source.dataClassification,
+        contentType: "text/plain",
+        createdAt: options.clock.now(),
+      });
+      environmentArtifact = (await options.artifacts.commit({ ...environmentIdentity, payload }))
+        .artifact;
+    }
     const handles = await listHandles(source.runId, options.clock.now());
     return Object.freeze({
       modelRef: selected.ref,
@@ -105,6 +150,7 @@ export function createProductionRunPolicy(options: {
       policyVersion: policy.version,
       policies: [],
       capabilities: [],
+      runtimeEnvironmentRef: environmentArtifact.payloadRef,
       capabilityHandleRefs: handles.map(({ ref }) => ref),
       memoryLimit: policy.memoryLimit,
       maxSelectedMemories: policy.maxSelectedMemories,
@@ -121,37 +167,75 @@ export const DOCUMENT_SKILL_DIRECTORY = fileURLToPath(
   new URL("./document-skill/", import.meta.url),
 );
 
-export function runCapabilityNotice(input: {
-  readonly publicSearch: boolean;
+export function runCapabilityNotice(input: { readonly coding: boolean }): string {
+  return [
+    CHAT_CAPABILITIES_HEADER.text,
+    CHAT_CAPABILITIES_RUNTIME_ENVIRONMENT.text,
+    ...(input.coding
+      ? [
+          CHAT_CAPABILITIES_SANDBOX_OFFLINE.text,
+          CHAT_CAPABILITIES_SANDBOX_COMMANDS.text,
+          CHAT_CAPABILITIES_WORKSPACE.text,
+          CHAT_CAPABILITIES_WORKSPACE_COMMANDS.text,
+          CHAT_CAPABILITIES_WORKSPACE_FILE_CARDS.text,
+          CHAT_CAPABILITIES_DOCUMENT_SKILL.text,
+        ]
+      : []),
+    CHAT_CAPABILITIES_SEARCH.text,
+  ].join("\n");
+}
+
+export function webProviderNames(providers: readonly WebProviderId[] | undefined): string {
+  const [first, ...rest] = webProviderChain(providers).map((provider) => provider.displayName);
+  return rest.length ? `${first}（失败时依次改用 ${rest.join("、")}）` : `${first}`;
+}
+
+export function runtimeEnvironmentNotice(input: {
   readonly coding: boolean;
   readonly workspaceRoot: string | null;
   readonly documentSkillDirectory?: string;
   readonly sandboxCommands?: SandboxCommandInventory;
+  readonly publicSearch?: { readonly providers?: readonly WebProviderId[] | undefined };
+  readonly publicFetch?: {
+    readonly providers?: readonly WebProviderId[] | undefined;
+    readonly maximumBytes: number;
+  };
 }): string {
-  const lines = [CHAT_CAPABILITIES_HEADER.text];
+  const lines = [CHAT_RUNTIME_ENVIRONMENT_HEADER.text];
   if (input.coding) {
-    lines.push(CHAT_CAPABILITIES_SANDBOX_OFFLINE.text);
     if (input.sandboxCommands)
       lines.push(
-        renderPrompt(CHAT_CAPABILITIES_SANDBOX_COMMANDS, {
+        renderPrompt(CHAT_RUNTIME_ENVIRONMENT_SANDBOX_COMMANDS, {
           available: input.sandboxCommands.available.join("、"),
           unavailable: input.sandboxCommands.unavailable.join("、"),
         }),
       );
-    if (input.workspaceRoot)
-      lines.push(
-        renderPrompt(CHAT_CAPABILITIES_WORKSPACE, { workspaceRoot: input.workspaceRoot }),
-        CHAT_CAPABILITIES_WORKSPACE_COMMANDS.text,
-        CHAT_CAPABILITIES_WORKSPACE_FILE_CARDS.text,
-      );
+    lines.push(
+      input.workspaceRoot
+        ? renderPrompt(CHAT_RUNTIME_ENVIRONMENT_WORKSPACE, { workspaceRoot: input.workspaceRoot })
+        : CHAT_RUNTIME_ENVIRONMENT_NO_WORKSPACE.text,
+    );
     if (input.documentSkillDirectory)
       lines.push(
-        renderPrompt(CHAT_CAPABILITIES_DOCUMENT_SKILL, {
+        renderPrompt(CHAT_RUNTIME_ENVIRONMENT_DOCUMENT_SKILL, {
           documentSkillDirectory: input.documentSkillDirectory,
         }),
       );
-  }
-  lines.push(input.publicSearch ? CHAT_CAPABILITIES_SEARCH.text : CHAT_CAPABILITIES_NO_SEARCH.text);
+  } else lines.push(CHAT_RUNTIME_ENVIRONMENT_NO_CODING.text);
+  lines.push(
+    input.publicSearch
+      ? renderPrompt(CHAT_RUNTIME_ENVIRONMENT_SEARCH, {
+          providers: webProviderNames(input.publicSearch.providers),
+        })
+      : CHAT_RUNTIME_ENVIRONMENT_NO_SEARCH.text,
+    input.publicFetch
+      ? renderPrompt(CHAT_RUNTIME_ENVIRONMENT_FETCH, {
+          providers: webProviderNames(input.publicFetch.providers),
+          maximumKib: String(Math.floor(input.publicFetch.maximumBytes / 1024)),
+        })
+      : CHAT_RUNTIME_ENVIRONMENT_NO_FETCH.text,
+    CHAT_RUNTIME_ENVIRONMENT_FOOTER.text,
+  );
   return lines.join("\n");
 }
 

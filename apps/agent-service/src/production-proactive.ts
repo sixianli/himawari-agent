@@ -9,6 +9,7 @@ import {
   type ProactiveConfiguration,
   type ProactiveDecision,
   ProactiveMailCheckService,
+  type ProactiveMailCheckOptions,
   type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
   type ProactiveOverview,
@@ -142,6 +143,7 @@ export interface ProductionProactiveOptions {
   readonly ids: IdGeneratorPort;
   readonly onDecision?: (decision: ProactiveDecision) => void;
   readonly onFailure: (error: unknown) => void;
+  readonly onMasked?: ProactiveMailCheckOptions["onMasked"];
 }
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
@@ -171,6 +173,11 @@ export class ProductionProactive {
       clock: options.clock,
       ids: options.ids,
       outputTokenLimit: PROACTIVE_MAX_OUTPUT_TOKENS,
+      bodyLimits: {
+        perMail: options.configuration.bodyCharactersPerMail,
+        perBatch: options.configuration.bodyCharactersPerBatch,
+      },
+      ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
   }
 

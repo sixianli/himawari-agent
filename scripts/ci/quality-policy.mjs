@@ -41,7 +41,7 @@ const validate = ajv.compile(
     checks: constant(checks),
     brands: constant(["chrome", "edge"]),
     timeoutsMinutes: constant(timeouts),
-    retentionDays: constant({ reports: 30, diagnostics: 7 }),
+    retentionDays: constant({ reports: 1, diagnostics: 1 }),
     securityFreshnessHours: constant(24),
     container: object({
       images: {
@@ -221,7 +221,6 @@ export function validateQualityWorkflow(policy, source, toolchain) {
     },
     ...(policy.schedule.enabled ? { schedule: [{ cron: policy.schedule.cron }] } : {}),
   };
-  // Names and descriptions are presentation; all execution-bearing fields remain exact.
   for (const input of Object.values(workflow?.on?.workflow_dispatch?.inputs ?? {}))
     delete input.description;
   for (const job of Object.values(workflow?.jobs ?? {}))

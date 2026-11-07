@@ -231,7 +231,7 @@ class FrozenStatePreflightTest(unittest.TestCase):
 
 
 class KernelPreflightTest(unittest.TestCase):
-    TAG = '[I-78]'
+    TAG = '[I-81]'
 
     def failed(self, **changes):
         facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())

@@ -52,6 +52,8 @@ export * from "./runtime-history.js";
 export * from "./sandbox-execution.js";
 export * from "./sandbox-execution-journal.js";
 export * from "./system.js";
+export * from "./sensitive-interceptions.js";
+export * from "./thread-prompt-bundles.js";
 export * from "./threads.js";
 export * from "./web.js";
 export * from "./web-providers.js";

@@ -20,19 +20,22 @@ import {
   ANSWER_LANGUAGE_RULE,
   HIMAWARI_IDENTITY,
   runCapabilityNotice,
+  runtimeEnvironmentNotice,
 } from "../src/production-run-policy.js";
 
 const GOLDEN_DIRECTORY = fileURLToPath(new URL("./__prompt_golden__/", import.meta.url));
 
 const GOLDEN_NAMES = [
   "chat.answer-language",
-  "chat.capabilities.coding-full",
-  "chat.capabilities.coding-without-workspace",
+  "chat.capabilities.coding",
   "chat.capabilities.plain",
-  "chat.capabilities.search",
   "chat.egress-legend",
   "chat.egress-legend-with-restore",
   "chat.identity",
+  "chat.runtime-environment.coding-full",
+  "chat.runtime-environment.coding-without-workspace",
+  "chat.runtime-environment.plain",
+  "chat.runtime-environment.search",
   "mail.judgment",
   "memory.capture",
   "memory.consolidation",
@@ -66,6 +69,10 @@ const mail = (id: string): ProactiveSourceItem => ({
   receivedAt: "2026-11-04T00:10:00.000Z",
   categories: ["CATEGORY_UPDATES"],
   sentByOwner: false,
+  body: "お支払い期限は 11 月 20 日です。",
+  bodyTruncated: false,
+  bodyUnavailable: false,
+  attachments: [],
 });
 
 const SANDBOX = {
@@ -98,24 +105,42 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
   });
 
   it("keeps every capability notice variant", async () => {
+    await expect(runCapabilityNotice({ coding: false })).toMatchFileSnapshot(
+      golden("chat.capabilities.plain"),
+    );
+    await expect(runCapabilityNotice({ coding: true })).toMatchFileSnapshot(
+      golden("chat.capabilities.coding"),
+    );
+  });
+
+  it("keeps every runtime environment variant", async () => {
     await expect(
-      runCapabilityNotice({ publicSearch: false, coding: false, workspaceRoot: null }),
-    ).toMatchFileSnapshot(golden("chat.capabilities.plain"));
+      runtimeEnvironmentNotice({ coding: false, workspaceRoot: null }),
+    ).toMatchFileSnapshot(golden("chat.runtime-environment.plain"));
     await expect(
-      runCapabilityNotice({ publicSearch: true, coding: false, workspaceRoot: null }),
-    ).toMatchFileSnapshot(golden("chat.capabilities.search"));
+      runtimeEnvironmentNotice({
+        coding: false,
+        workspaceRoot: null,
+        publicSearch: { providers: ["exa-public", "deepseek"] },
+        publicFetch: { providers: ["exa-public"], maximumBytes: 512 * 1024 },
+      }),
+    ).toMatchFileSnapshot(golden("chat.runtime-environment.search"));
     await expect(
-      runCapabilityNotice({ publicSearch: true, coding: true, workspaceRoot: null }),
-    ).toMatchFileSnapshot(golden("chat.capabilities.coding-without-workspace"));
+      runtimeEnvironmentNotice({
+        coding: true,
+        workspaceRoot: null,
+        documentSkillDirectory: "/opt/himawari/document-skill/",
+        sandboxCommands: SANDBOX,
+      }),
+    ).toMatchFileSnapshot(golden("chat.runtime-environment.coding-without-workspace"));
     await expect(
-      runCapabilityNotice({
-        publicSearch: false,
+      runtimeEnvironmentNotice({
         coding: true,
         workspaceRoot: "/home/andy/projects/demo",
         documentSkillDirectory: "/opt/himawari/document-skill/",
         sandboxCommands: SANDBOX,
       }),
-    ).toMatchFileSnapshot(golden("chat.capabilities.coding-full"));
+    ).toMatchFileSnapshot(golden("chat.runtime-environment.coding-full"));
   });
 
   it("keeps the tool definitions the model sees", async () => {

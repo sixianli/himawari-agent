@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,15 @@ import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+
+async function latestMigrationSequence() {
+  const names = await readdir(
+    path.join(repositoryRoot, "packages/persistence-sqlite/src/migrations"),
+  );
+  return Math.max(
+    ...names.flatMap((name) => (/^(\d{4})_.*\.sql$/u.exec(name) ? [Number(name.slice(0, 4))] : [])),
+  );
+}
 let testRoot = "";
 let prefix = "";
 let stateRoot = "";
@@ -484,7 +493,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 65,
+      schemaSequence: await latestMigrationSequence(),
       quickCheck: "ok",
     });
 

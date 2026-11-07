@@ -28,6 +28,8 @@ function limitNotice(result: TruncationResult): string {
   return `\n\n[${formatSize(result.maxBytes)} limit reached]`;
 }
 
+const CUT_TOKEN_START = /^[A-Za-z0-9._~+/=-]+/u;
+
 export function fitPiResultOutput(json: string, maxBytes: number): string | null {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) return null;
   if (Buffer.byteLength(json, "utf-8") <= maxBytes) return json;
@@ -64,7 +66,10 @@ export function fitPiResultOutput(json: string, maxBytes: number): string | null
         state.largest = length;
         state.truncation = result;
       }
-      return { ...part, text: `${result.content}${limitNotice(result)}` };
+      const kept = result.lastLinePartial
+        ? result.content.replace(CUT_TOKEN_START, "")
+        : result.content;
+      return { ...part, text: `${kept}${limitNotice(result)}` };
     });
     const clone: Record<string, unknown> = { ...envelope, content: next };
     if (state.truncation !== null) {
