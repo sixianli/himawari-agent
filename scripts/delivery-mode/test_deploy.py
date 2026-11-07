@@ -327,6 +327,11 @@ class KernelPreflightTest(unittest.TestCase):
         self.assertEqual(self.next_boot(config=self.grub_config() + 'set default="0"\n', saved_entry=saved), ('', ''))
         self.assertEqual(self.next_boot(config=self.grub_config() + '# set default="0"\n', saved_entry=saved), ('6.8.0-142-generic',) * 2)
         self.assertEqual(self.next_boot(config='if false; then\n  set default="0"\nfi\n' + self.grub_config(), saved_entry=saved), ('', ''))
+        self.assertEqual(self.next_boot(config=self.grub_config() + 'set  default="0"\n', saved_entry=saved), ('', ''))
+        swapped = self.grub_config().replace('set default="${next_entry}"', 'X').replace('set default="${saved_entry}"', 'set default="${next_entry}"').replace('X', 'set default="${saved_entry}"')
+        self.assertEqual(self.next_boot(config=swapped, saved_entry=saved), ('', ''))
+        self.assertEqual(self.next_boot(config=self.grub_config().replace('   set boot_once=true\nelse\n', '   set boot_once=true\nfi\n'), saved_entry=saved), ('', ''))
+        self.assertEqual(self.next_boot(config=self.grub_config().replace('$menuentry_id_option', '--id'), saved_entry=saved), ('6.8.0-142-generic',) * 2)
 
     def test_entries_that_do_not_boot_an_installed_kernel_give_no_answer(self):
         saved = self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')
@@ -786,6 +791,8 @@ class KernelPreflightHintTest(DeployHarness):
         self.assertIn("owner's approval", log)
         self.assertIn('rollback section of docs/runbooks/production-server-access-runbook.md', log)
         self.assertNotIn('PREFLIGHT_NEXT_BOOT_KERNEL', log)
+        code, result, calls = self.deploy(FAKE_FACTS=GOOD_FACTS.replace('qualifiedKernel=6.8.0-142-generic', 'qualifiedKernel=6.8.0-139-generic').replace('savedBootKernel=6.8.0-142-generic', 'savedBootKernel=6.8.0-147-generic'))
+        self.assertIn('PREFLIGHT_NEXT_BOOT_KERNEL first resolve PREFLIGHT_QUALIFIED_KERNEL below', Path(result['log']).read_text())
 
 
 class SourceCachePreflightTest(unittest.TestCase):
