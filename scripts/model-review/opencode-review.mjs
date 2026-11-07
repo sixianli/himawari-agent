@@ -100,6 +100,7 @@ export const RULE_16_SENTENCE = "列出的方案只是参考，请从问题本�
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export const GATEWAYS = ["magpie"];
+export const GATEWAY_CHOICES = [...GATEWAYS, "direct"];
 export const PASSTHROUGH_PROMPT = "passthrough probe: owner probe-owner@example.com";
 
 export function isLoopbackURL(url) {
@@ -2339,7 +2340,7 @@ export const REPORT_OPTIONS = [
   "--andy-quote",
 ];
 
-export function parseArgs(argv) {
+export function parseArgs(argv, { defaultGateway = "" } = {}) {
   const options = {
     mode: "code-review",
     repo: repoRoot,
@@ -2413,7 +2414,7 @@ export function parseArgs(argv) {
         throw new Error("ARG_INVALID --round");
     } else if (key === "--gateway") {
       options.gateway = take();
-      if (!GATEWAYS.includes(options.gateway)) throw new Error("ARG_INVALID --gateway");
+      if (!GATEWAY_CHOICES.includes(options.gateway)) throw new Error("ARG_INVALID --gateway");
     } else if (key === "--approved-usd") {
       options.approvedUsd = Number(take());
       if (!Number.isFinite(options.approvedUsd) || options.approvedUsd <= 0)
@@ -2432,6 +2433,12 @@ export function parseArgs(argv) {
       throw new Error("ARG_ACCEPT_LOW_AND_UNREVIEWED");
     return options;
   }
+  if (options.gateway === undefined && defaultGateway) {
+    if (!GATEWAY_CHOICES.includes(defaultGateway))
+      throw new Error("ARG_INVALID HIMAWARI_REVIEW_GATEWAY");
+    options.gateway = defaultGateway;
+  }
+  if (options.gateway === "direct") delete options.gateway;
   if (options.acceptUnreviewed !== undefined)
     throw new Error("ARG_ACCEPT_UNREVIEWED_ONLY_WITH_ASSERT");
   if (options.acceptLow !== undefined) throw new Error("ARG_ACCEPT_LOW_ONLY_WITH_ASSERT");
@@ -2601,7 +2608,9 @@ export async function startLiveGateway({
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseArgs(process.argv.slice(2), {
+    defaultGateway: process.env.HIMAWARI_REVIEW_GATEWAY,
+  });
   if (options.report) {
     for (const line of reviewReport(options)) console.log(line);
     return;

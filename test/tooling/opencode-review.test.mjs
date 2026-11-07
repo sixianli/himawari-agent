@@ -1052,7 +1052,12 @@ describe("opencode review installed guard", () => {
         ],
         {
           encoding: "utf8",
-          env: { ...process.env, GITHUB_TOKEN: secret, AWS_SECRET_ACCESS_KEY: secret },
+          env: {
+            ...process.env,
+            GITHUB_TOKEN: secret,
+            AWS_SECRET_ACCESS_KEY: secret,
+            HIMAWARI_REVIEW_GATEWAY: "",
+          },
           timeout: 540000,
         },
       );

@@ -103,6 +103,8 @@ CodeBuddy 会以错误码 11128 拒绝它不认可的系统提示。被拒时，
 - 风险：社区插件的桌面登录文件格式可能随插件升级改变，靠锁版本和联网预检兜住；CodeBuddy 条款风险由 Andy 承担（ADR 0117 已接受同一做法）；积分和生产 Himawari 共用，底线 20 只保证复核不用掉最后 20 积分；云端环境里存的是一份一年有效、能操作整个账号的登录凭证，撤销方法是删掉 himawari-cloud 环境里 `www.workbuddy.ai` 那条网络密钥。
 - 局限：`--gateway magpie` 依赖出口代理代填凭证，现在只适用于云端会话；Mac 上要用还得另做登录，Mac 验证按项目规则暂缓。
 - 后续：Andy 验收后把默认改为开；下一个版本删掉直连方式。
+- 2026-11-07 Andy 验收（原话：“改成默认走 Magpie”）：默认由环境变量 `HIMAWARI_REVIEW_GATEWAY` 决定，himawari-cloud 设成 `magpie`，命令行 `--gateway magpie|direct` 优先，都没有时直连。直连方式不删：Mac 上没有出口代理代填凭证，只能直连。
+- 2026-11-07 Andy 开了 OpenDesign 包月套餐（接口 `https://amr-link.open-design.ai/v1`，密钥在 himawari-cloud 的网络密钥里），加为第三家服务方，排在 CodeBuddy 之后、Go 之前；路由保持 `order`（Andy 原话：“那就把 Magpie 的模式设成按固定顺序，顺序是先 codebuddy，然后是 OpenDesign，然后才是 opencode go”）。试过 Magpie 的默认策略 `smart`：它只读得到 CodeBuddy 的额度，读不到 OpenDesign 和 Go，实测 6 次独立会话三家轮流接到请求，没有按到期时间挑。
 
 <a id="links"></a>
 
