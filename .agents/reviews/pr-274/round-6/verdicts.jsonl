@@ -1,0 +1,3 @@
+{"id": "R6-1", "model": "opencode-go/glm-5.3-flash", "quote": "低（历史重遮盖字节变一次，流程凭证未核实）", "valid": true, "class": "better", "reason": "Andy 2026-11-07 已同意残缺私钥规则带来的一次性缓存失效（原话“同意”），记在 PR 描述里"}
+{"id": "R6-2", "model": "opencode-go/glm-5.3-flash", "quote": "低（多标记交互路径无自动用例）", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人改坏“前面已遮一段、后面的结尾残块也要遮”这条路径", "consequence": "自动检查发现不了", "modelSeverity": "低"}
+{"id": "R6-3", "model": "opencode-go/glm-5.3-flash", "quote": "信息（反向用例的“会失败”靠推理，未实测；墙钟阈值机器敏感）", "valid": true, "class": "better", "reason": "线程已实测反向验证（换回 f2d91d6b 两条新用例失败）；耗时阈值 2 秒，实测 11 到 165 毫秒，余量十倍以上"}

@@ -616,6 +616,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0077_thread_prompt_bundles.sql",
   },
+  {
+    sequence: 78,
+    name: "sensitive_interceptions",
+    changeSet: "sensitive-interceptions",
+    phase: "expand" as const,
+    file: "0078_sensitive_interceptions.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

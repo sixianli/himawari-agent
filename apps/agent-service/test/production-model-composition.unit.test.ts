@@ -1,7 +1,7 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
@@ -11,6 +11,12 @@ import type {
 } from "@himawari-agent/application";
 import { ModelInvocationAdmissionService } from "@himawari-agent/application";
 import type { EmbeddingBoundary, EmbeddingResponse } from "@himawari-agent/memory-engine";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import type {
   ConfiguredPiModelDescriptor,
@@ -29,6 +35,11 @@ import {
   createProductionModelComposition,
   resolveConfiguredModelDescriptorSet,
 } from "../src/production-model-composition.js";
+import {
+  createProductionModelEgress,
+  productionEgressThreadOf,
+  productionSensitiveInterceptionRecorder,
+} from "../src/production-model-egress.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
@@ -1743,3 +1754,201 @@ it.each(["cancel", "deadline"] as const)(
     expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
   },
 );
+
+async function sensitiveInterceptionRepository(ownerId: string, agentId: string) {
+  const stateRoot = path.join(temporaryDirectory, "sensitive-state");
+  const databasePath = path.join(stateRoot, "data", "product.sqlite");
+  await mkdir(path.dirname(databasePath), { recursive: true });
+  const database = openQualifiedDatabase(databasePath);
+  applyMigrations(database, await loadBundledMigrations());
+  const at = "2026-11-06T00:00:00.000Z";
+  database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(ownerId);
+  database
+    .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+    .run(agentId, ownerId);
+  database
+    .prepare(
+      `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+       VALUES ('thread-review', ?, ?, 0, 'open', ?, ?)`,
+    )
+    .run(ownerId, agentId, at, at);
+  database
+    .prepare(
+      `INSERT INTO payloads (ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+         content_digest, lifecycle_state, created_at, content_type)
+       VALUES ('payload-review-trigger', ?, ?, 'private', 'sqlite_blob', X'00',
+         'sha256:review-trigger', 'active', ?, 'application/octet-stream')`,
+    )
+    .run(ownerId, agentId, at);
+  database
+    .prepare(
+      `INSERT INTO triggers (id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+         source_id, payload_ref, source_proof_ref, occurred_at)
+       VALUES ('trigger-review', ?, ?, 'thread-review', 'trigger-review', 'user_message',
+         'fixture-review', 'payload-review-trigger', 'proof-review', ?)`,
+    )
+    .run(ownerId, agentId, at);
+  database
+    .prepare(
+      `INSERT INTO runs (id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+         status, created_at, updated_at)
+       VALUES ('run-review', ?, ?, 'thread-review', 'session-review', 'trigger-review', 1,
+         'running', ?, ?)`,
+    )
+    .run(ownerId, agentId, at, at);
+  database.close();
+  const repository = await SqliteProductStateRepository.open({
+    stateRoot,
+    databasePath,
+    minimumFreeBytes: 0,
+    now: () => at,
+  });
+  return { repository, databasePath };
+}
+
+it("[SI-2] files what an action review masked under its run's conversation, even after the run alone is deleted", async () => {
+  const adapters = createReferenceAdapterSet();
+  const ownerId = "owner-production-model";
+  const agentId = "agent-production-model";
+  const { repository, databasePath } = await sensitiveInterceptionRepository(ownerId, agentId);
+  const sent: string[] = [];
+  class ReviewRuntime extends RecordingRuntime {
+    override getModel(providerId: string, modelId: string): unknown {
+      const value = super.getModel(providerId, modelId);
+      return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+    }
+    stream(
+      _model: unknown,
+      context: { messages: { content: unknown }[] },
+      options: Record<string, unknown>,
+    ) {
+      return (async function* () {
+        await (options["fetch"] as typeof fetch)(
+          "https://ai-gateway.vercel.sh/v1/chat/completions",
+          { method: "POST", body: JSON.stringify({ messages: context.messages }) },
+        );
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "{}" }],
+            api: "openai-completions",
+            provider: "vercel-ai-gateway",
+            model: primaryModel.model,
+            stopReason: "stop",
+            timestamp: Date.now(),
+            usage: {
+              input: 10,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 11,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000001 },
+            },
+          },
+        };
+      })();
+    }
+  }
+  const recorder = productionSensitiveInterceptionRecorder(repository);
+  const egress = createProductionModelEgress(
+    {
+      secretReferences: [{ ref: "payload-key", version: "v1", purpose: "payload-encryption" }],
+    } as never,
+    { keys: { resolve: async () => new TextEncoder().encode("payload-key-material") } } as never,
+    recorder,
+  );
+  const prepared = compositionOptions(adapters, {
+    egress,
+    egressThreadOf: productionEgressThreadOf(repository, {
+      ownerId: ownerId as never,
+      agentId: agentId as never,
+    }),
+    admission: (({ runId }: { readonly runId: string }) => ({
+      context: { ownerId, agentId, runId },
+      begin: async () => ({
+        disposition: "fresh" as const,
+        permit: {
+          assertActive: async () => undefined,
+          markStarted: async () => undefined,
+          releaseReserved: async () => undefined,
+          settle: async () => undefined,
+          markUnknown: async () => undefined,
+        },
+      }),
+    })) as never,
+    runtimeFactory: { create: async () => new ReviewRuntime() as unknown as PiModelRuntime },
+    fetch: vi.fn(async (_input: unknown, init?: RequestInit) => {
+      sent.push(typeof init?.body === "string" ? init.body : "");
+      return new Response(
+        `data: ${JSON.stringify({ id: "generation:review", model: primaryModel.model, usage: { cost: 0.000001 }, choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "generation:review", routing: { finalProvider: "deepinfra" }, cost: 0.000001 } } } }] })}\n\ndata: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    }) as never,
+  });
+  const composition = createProductionModelComposition(prepared.options);
+  try {
+    const invoker = composition.proactiveModel(primaryModel.ref, {
+      maxOutputTokens: 256,
+      requestTimeoutMs: 60_000,
+    });
+    const input = await invoker.prepare({
+      invocationId: "review-masked",
+      prompt: "这次动作要用的验证码 482910",
+      deadlineAt: "2099-01-01T00:00:00.000Z",
+    });
+    await input.release();
+    const handle = await prepared.options.handles.issueHandle({
+      ownerId: ownerId as never,
+      agentId: agentId as never,
+      runId: "run-review" as never,
+      ...primaryModel.secretRequirement,
+      scopeRef: "review-masked",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    const events: string[] = [];
+    for await (const event of composition.model.invoke({
+      invocationId: "review-masked",
+      runId: "run-review" as never,
+      modelRef: primaryModel.ref,
+      inputRef: input.inputRef,
+      dataClassification: "private",
+      allowedDisclosureRef: input.allowedDisclosureRef,
+      secretHandleRefs: [handle.ref],
+      correlationId: "review-masked" as never,
+    }))
+      events.push(event.type);
+    expect(events).toContain("model.completed");
+    expect(sent.join("\n")).not.toContain("482910");
+    const writer = openQualifiedDatabase(databasePath);
+    try {
+      writer.prepare("DELETE FROM runs WHERE id = 'run-review'").run();
+    } finally {
+      writer.close();
+    }
+    await recorder.flush();
+    const page = await repository
+      .sensitiveInterceptions()
+      .list({ ownerId: ownerId as never, agentId: agentId as never, limit: 10, before: null });
+    expect(
+      page.items.map(({ threadId, source, purpose, category, outcome }) => ({
+        threadId,
+        source,
+        purpose,
+        category,
+        outcome,
+      })),
+    ).toEqual([
+      {
+        threadId: "thread-review",
+        source: "background",
+        purpose: "action-review",
+        category: "verification-code",
+        outcome: "masked",
+      },
+    ]);
+  } finally {
+    await composition.close();
+    await repository.close();
+  }
+});

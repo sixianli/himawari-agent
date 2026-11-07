@@ -5,6 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0160-self-hosted-runner-on-hermes.md"
+amended_by: "docs/adr/0176-ci-on-ovh-vps.md"
 date: "2026-11-05"
 ---
 

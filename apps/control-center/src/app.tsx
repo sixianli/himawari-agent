@@ -33,6 +33,10 @@ import {
 import { AutoMemorySetting } from "./components/personalization-settings.js";
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import {
+  SensitiveInterceptionsEntry,
+  SensitiveInterceptionsPage,
+} from "./components/sensitive-interceptions.js";
+import {
   GatewayClient,
   loadRuntimeConfiguration,
   refreshRuntimeConfiguration,
@@ -47,6 +51,7 @@ import {
 } from "./i18n/runtime.js";
 import { useMemory } from "./memory.js";
 import { useMuse } from "./muse.js";
+import { useSensitiveInterceptions } from "./sensitive-interceptions.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
 import { resumedAfterLongAbsence } from "./page-resume.js";
 import {
@@ -400,6 +405,17 @@ function LocalizedControlCenterApp({
     connected: connection !== "offline",
     refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
   });
+  const settingsOpen = route.page === "settings";
+  const [sensitiveOpen, setSensitiveOpen] = useState(false);
+  useEffect(() => {
+    if (!settingsOpen) setSensitiveOpen(false);
+  }, [settingsOpen]);
+  const sensitive = useSensitiveInterceptions({
+    client,
+    configuration,
+    connected: connection !== "offline",
+    active: settingsOpen,
+  });
   const ownerPreferences = useOwnerPreferenceSync({
     client,
     configuration,
@@ -546,11 +562,30 @@ function LocalizedControlCenterApp({
         ) : undefined
       }
       settingsData={
-        <>
-          {threadModel.settingsData}
-          {proactive ? <ProactiveDataSettings proactive={proactive} message={message} /> : null}
-          {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
-        </>
+        sensitive && sensitiveOpen ? (
+          <SensitiveInterceptionsPage
+            model={sensitive}
+            message={message}
+            threadTitle={threadModel.threadTitle}
+            onBack={() => setSensitiveOpen(false)}
+            onOpenThread={(threadId) =>
+              navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
+            }
+          />
+        ) : (
+          <>
+            {threadModel.settingsData}
+            {sensitive ? (
+              <SensitiveInterceptionsEntry
+                model={sensitive}
+                message={message}
+                onOpen={() => setSensitiveOpen(true)}
+              />
+            ) : null}
+            {proactive ? <ProactiveDataSettings proactive={proactive} message={message} /> : null}
+            {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
+          </>
+        )
       }
       settingsNotifications={
         (client && configuration?.installedGatewayV2Operations?.includes("push.status.read")) ||

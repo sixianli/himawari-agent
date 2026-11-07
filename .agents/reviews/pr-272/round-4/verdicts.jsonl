@@ -1,0 +1,2 @@
+{"id": "R4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "docs 不在本次两个 diff 里，属既有漂移，不会让检查失败", "valid": true, "class": "better"}
+{"id": "R4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "登记表指向的文件若不再包含该地址不会被报出来", "valid": true, "class": "better"}

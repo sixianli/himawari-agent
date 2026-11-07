@@ -82,6 +82,7 @@ export * from "./thread-checkpoint-service.js";
 export * from "./thread-command-service.js";
 export * from "./thread-deletion-coordination-service.js";
 export * from "./thread-fork-service.js";
+export * from "./sensitive-interception-recorder.js";
 export * from "./thread-prompt-bundle-service.js";
 export * from "./thread-query-service.js";
 export * from "./trace-redaction.js";

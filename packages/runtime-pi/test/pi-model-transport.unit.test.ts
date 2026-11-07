@@ -18,6 +18,7 @@ import {
   type PiModelBinding,
   type PiModelPayloadBoundary,
   PiModelTransport,
+  type PiModelTransportOptions,
 } from "../src/index.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 
@@ -436,7 +437,12 @@ describe("PiModelTransport", () => {
     });
   });
 
-  async function sentBody(prompt: string): Promise<{
+  async function sentBody(
+    prompt: string,
+    egress: Pick<PiModelTransportOptions, "egress" | "egressContext" | "egressThreadOf"> = {
+      egress: testModelEgress(),
+    },
+  ): Promise<{
     readonly events: ModelInvocationEvent[];
     readonly body: string | undefined;
   }> {
@@ -463,7 +469,7 @@ describe("PiModelTransport", () => {
       },
     };
     const transport = new PiModelTransport({
-      egress: testModelEgress(),
+      ...egress,
       models: {
         resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
       },
@@ -495,6 +501,40 @@ describe("PiModelTransport", () => {
     expect(body).toMatch(/\[验证码#[a-z]{8}\]/u);
     expect(body).toMatch(/\[银行卡 尾号1111#[a-z]{8}\]/u);
     expect(body).toMatch(/\[密码#[a-z]{8}\]/u);
+  });
+
+  it("[SI-2] reports what a background call masked under the conversation its run belongs to when it was sent", async () => {
+    const reports: { context: unknown; sightings: readonly { part: string }[] }[] = [];
+    const egressContext = {
+      ownerId: "owner-background",
+      agentId: "agent-background",
+      threadId: null,
+      source: "background",
+      purpose: "action-review",
+    } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>;
+    const egress = testModelEgress(undefined, (context, sightings) =>
+      reports.push({ context, sightings }),
+    );
+    const asked: unknown[] = [];
+    const egressThreadOf = async (runId: unknown) => {
+      asked.push(runId);
+      return "thread-of-run" as never;
+    };
+    await sentBody("验证码 482910", { egress, egressContext, egressThreadOf });
+    await sentBody("验证码 482910", { egress, egressContext });
+    await sentBody("验证码 482910", {
+      egress,
+      egressContext,
+      egressThreadOf: async () => {
+        throw new Error("database unavailable");
+      },
+    });
+    expect(asked).toEqual([request.runId]);
+    expect(reports).toHaveLength(3);
+    expect(reports[0]?.context).toEqual({ ...egressContext, threadId: "thread-of-run" });
+    expect(reports[1]?.context).toEqual(egressContext);
+    expect(reports[2]?.context).toEqual(egressContext);
+    expect(reports[0]?.sightings.map(({ part }) => part)).toEqual(["owner_message"]);
   });
 
   it("sends a prompt without sensitive values as the original text after the fixed legend", async () => {
@@ -1023,6 +1063,48 @@ it("passes cancellation to the pinned Pi provider API without adding tools", asy
   );
   expect(received?.["signal"]).toBe(controller.signal);
   expect(context?.tools).toBeUndefined();
+});
+
+it("[SI-2] stops waiting for the conversation lookup when the request is cancelled", async () => {
+  const controller = new AbortController();
+  const stream = vi.fn(() => runtimeWithTerminal(assistant("{}")).stream(model, { messages: [] }));
+  const lookups: unknown[] = [];
+  const transport = new PiModelTransport({
+    egress: testModelEgress(),
+    egressContext: {
+      ownerId: "owner-cancel",
+      agentId: "agent-cancel",
+      threadId: null,
+      source: "background",
+      purpose: "action-review",
+    } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>,
+    egressThreadOf: (runId) => {
+      lookups.push(runId);
+      queueMicrotask(() => controller.abort());
+      return new Promise(() => undefined);
+    },
+    models: {
+      resolve: async () => ({ model, modelRuntime: { stream } }) as unknown as PiModelBinding,
+    },
+    payloads: payloadBoundary("判断这个动作").boundary,
+    clock: { now: () => NOW },
+  });
+  const outcome = await Promise.race([
+    collect(
+      transport.invoke({
+        descriptor,
+        request: { ...request, signal: controller.signal },
+        secretValues: [PROVIDER_SECRET],
+      }),
+    ).then(
+      (events) => events.map(({ type }) => type),
+      () => ["thrown"],
+    ),
+    new Promise((resolve) => setTimeout(() => resolve("still waiting"), 1000)),
+  ]);
+  expect(lookups).toEqual([request.runId]);
+  expect(outcome).toEqual(["model.started", "model.failed"]);
+  expect(stream).not.toHaveBeenCalled();
 });
 
 it("does not read model input or resolve a binding after request cancellation", async () => {

@@ -15,7 +15,6 @@ import {
 } from "../ports/index.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { FileOperationService } from "./file-operation-service.js";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 interface WorkspaceCopyDependencies {
   readonly hostId: string;
@@ -29,9 +28,6 @@ interface WorkspaceCopyDependencies {
   readonly ids: IdGeneratorPort;
 }
 
-/** Explicit optional copies reuse the candidate manager and original per-file saving service.
- * This service never executes a command or applies a directory tree. Prepared operations
- * continue through the production save_copy Run/Worker path and durable recovery. */
 export class WorkspaceCopyService {
   readonly #dependencies: WorkspaceCopyDependencies;
   constructor(dependencies: WorkspaceCopyDependencies) {
@@ -71,11 +67,6 @@ export class WorkspaceCopyService {
       if (bytes) {
         remaining -= bytes.byteLength;
         if (remaining < 0) throw new Error("CANDIDATE_SPACE_BUDGET_EXCEEDED");
-        if (scanMachineSecrets(new TextDecoder().decode(bytes)).length)
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
-            "Copy input contains protected machine secrets",
-          );
         files.push({ path: relative, bytes });
       }
       baselineFiles.push({
@@ -122,8 +113,6 @@ export class WorkspaceCopyService {
         );
       return change;
     });
-    // A unique unchanged-content pair preserves move authority and file identity.
-    // Ambiguous or edited pairs remain explicit create/remove operations.
     const moves = new Map<string, string>();
     const additions = selected.filter(
       (change) =>

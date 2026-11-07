@@ -20,6 +20,7 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  SensitiveInterceptionStorePort,
   ThreadPromptBundleStorePort,
   DecisionLedgerPort,
   MuseIntakePort,
@@ -1067,6 +1068,16 @@ export class SqliteDurableAdapters {
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),
       listFinishedRuns: (input) => this.context.read("webPush.listFinishedRuns", input),
       prune: (input) => this.context.write("webPush.prune", input),
+    });
+  }
+
+  sensitiveInterceptions(): SensitiveInterceptionStorePort {
+    return Object.freeze<SensitiveInterceptionStorePort>({
+      record: (input) => this.context.write("sensitiveInterception.record", input),
+      list: (input) => this.context.read("sensitiveInterception.list", input),
+      summarize: (input) => this.context.read("sensitiveInterception.summarize", input),
+      clear: (input) => this.context.write("sensitiveInterception.clear", input),
+      threadOfRun: (input) => this.context.read("sensitiveInterception.threadOfRun", input),
     });
   }
 

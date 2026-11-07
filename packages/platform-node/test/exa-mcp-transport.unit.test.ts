@@ -158,11 +158,11 @@ describe("public search MCP adapter transport contract", () => {
     });
     expect(await search()).toHaveLength(1);
   });
-  it("rejects secret-bearing provider text before displaying it", async () => {
+  it("returns secret-bearing provider text for egress to mask", async () => {
     state.callTool.mockResolvedValueOnce({
       content: [{ type: "text", text: searchText + "\nsk-" + "a".repeat(40) }],
     });
-    await expect(search()).rejects.toThrow("WEB_SEARCH_OUTPUT_REDACTED");
+    expect(JSON.stringify(await search())).toContain("sk-" + "a".repeat(40));
     expect(state.closeProxy).toHaveBeenCalledOnce();
   });
   it("refuses a changed MCP endpoint and non-text request bodies before egress", async () => {
@@ -372,7 +372,7 @@ describe("public page fetch through Exa", () => {
     await expect(fetchPage()).rejects.toThrow("WEB_FETCH_PROVIDER_FAILED");
     expect(state.callTool).not.toHaveBeenCalled();
   });
-  it("caps the page and rejects secret-bearing page text", async () => {
+  it("caps the page and returns secret-bearing page text for egress to mask", async () => {
     state.listTools.mockResolvedValue({ tools: [{ name: "crawling_exa", inputSchema: {} }] });
     state.callTool.mockResolvedValueOnce({
       content: [{ type: "text", text: page + "x".repeat(99) }],
@@ -381,7 +381,7 @@ describe("public page fetch through Exa", () => {
     state.callTool.mockResolvedValueOnce({
       content: [{ type: "text", text: page + "\nsk-" + "a".repeat(40) }],
     });
-    await expect(fetchPage()).rejects.toThrow("WEB_FETCH_OUTPUT_REDACTED");
+    expect((await fetchPage()).markdown).toContain("sk-" + "a".repeat(40));
   });
   it("does not open a connection for a private address", async () => {
     await expect(

@@ -134,6 +134,9 @@ export interface SensitiveMemoryCandidatePort {
 }
 
 export interface MemoryExtractionAuditRecord {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId | null;
   readonly sourceRef: string;
   readonly generationId: MemoryGenerationId;
   readonly policyVersion: string;

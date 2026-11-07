@@ -52,6 +52,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
+  "sensitive.interceptions.read",
+  "sensitive.interceptions.snapshot",
+  "sensitive.interceptions.clear",
   "memory.overview.read",
   "memory.overview.snapshot",
   "memory.approval.respond",
@@ -648,6 +651,67 @@ const museIntakeSetCommandSchema = object({
 });
 const museDataClearCommandSchema = object({
   ...commandEnvelope("muse.data.clear"),
+  payload: object({}),
+});
+
+const sensitiveInterceptionCursorSchema = object({
+  firstSeenAt: timestamp,
+  id: machineString,
+});
+const sensitiveInterceptionsQuerySchema = object({
+  ...envelope("query", "sensitive.interceptions.read"),
+  payload: object({ before: nullable(sensitiveInterceptionCursorSchema) }),
+});
+const sensitiveInterceptionsSnapshotSchema = object({
+  ...envelope("snapshot", "sensitive.interceptions.snapshot"),
+  payload: object({
+    counts: object({ masked: integer(0), withheld: integer(0), notSaved: integer(0) }),
+    items: array(
+      object({
+        id: machineString,
+        threadId: nullable(machineString),
+        source: enumeration([
+          "chat",
+          "background",
+          "embedding",
+          "tool_result",
+          "mail",
+          "memory_capture",
+        ]),
+        purpose: nullable(machineString),
+        part: enumeration([
+          "system",
+          "owner_message",
+          "assistant_message",
+          "tool_call",
+          "tool_result",
+          "embedding_input",
+          "file",
+          "command_output",
+          "web_page",
+          "mail",
+          "memory_candidate",
+          "memory_source",
+        ]),
+        category: enumeration([
+          "machine-secret",
+          "password",
+          "verification-code",
+          "bank-card",
+          "identity-number",
+        ]),
+        outcome: enumeration(["masked", "withheld", "not_saved"]),
+        firstSeenAt: timestamp,
+        lastSeenAt: timestamp,
+        seenCount: integer(1),
+      }),
+    ),
+    next: nullable(sensitiveInterceptionCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const sensitiveInterceptionsClearCommandSchema = object({
+  ...commandEnvelope("sensitive.interceptions.clear"),
   payload: object({}),
 });
 
@@ -2211,6 +2275,9 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
+  "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
+  "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,

@@ -29,8 +29,13 @@ import type {
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import { maskSensitiveText } from "@himawari-agent/sensitive-capture";
-import { plainModelText, windowMailBody } from "./proactive-mail-body.js";
+import {
+  type EgressRedactionSighting,
+  findSensitiveValues,
+  locateMaskedValues,
+  maskSensitiveText,
+} from "@himawari-agent/sensitive-capture";
+import { mailBodyWindow, plainModelText, windowMailBody } from "./proactive-mail-body.js";
 import {
   applyFloor,
   floorHitIds,
@@ -85,6 +90,7 @@ export interface ProactiveMailCheckOptions {
   readonly memory?: ProactiveMemoryRecall;
   readonly memoryLimits?: Partial<ProactiveMemoryLimits>;
   readonly bodyLimits?: Partial<ProactiveBodyLimits>;
+  readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
 }
 
 export interface ProactiveBodyLimits {
@@ -181,6 +187,31 @@ interface ProactiveMailView {
 }
 
 const mailViews = new WeakMap<ProactiveSourceItem, Map<number, ProactiveMailView>>();
+
+function sentBodyValues(body: string, limit: number): readonly EgressRedactionSighting[] {
+  const located = locateMaskedValues(body);
+  if (located === null) return findSensitiveValues(windowMailBody(body, limit).text);
+  const starts = [0];
+  for (const point of located.text) starts.push((starts.at(-1) ?? 0) + point.length);
+  const pointAt = (unit: number) => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((starts[middle] ?? 0) <= unit) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  };
+  const length = starts.length - 1;
+  const window = mailBodyWindow(length, limit);
+  return located.spans
+    .filter(
+      ({ start, end }) =>
+        window === null || pointAt(start) < window.head || pointAt(end) > length - window.tail,
+    )
+    .map(({ sighting }) => sighting);
+}
 
 function masked(value: string): string {
   return maskSensitiveText(value);
@@ -338,6 +369,26 @@ export class ProactiveMailCheckService {
     this.#options = options;
   }
 
+  #reportMasked(batch: readonly ProactiveSourceItem[], bodyLimit: number): void {
+    const onMasked = this.#options.onMasked;
+    if (onMasked === undefined) return;
+    try {
+      const sightings = batch.flatMap((item) =>
+        [
+          item.from,
+          item.subject,
+          ...item.attachments.slice(0, MAX_ATTACHMENTS_SHOWN).map(({ filename }) => filename),
+          ...(item.body === null ? [item.snippet] : []),
+        ]
+          .flatMap((text) => findSensitiveValues(text))
+          .concat(item.body === null ? [] : sentBodyValues(item.body, bodyLimit)),
+      );
+      if (sightings.length > 0) onMasked(sightings);
+    } catch {
+      return;
+    }
+  }
+
   async run(): Promise<ProactiveDecision | undefined> {
     const { store, scope, reader } = this.#options;
     const settings = await store.readSettings(scope);
@@ -476,6 +527,7 @@ export class ProactiveMailCheckService {
         stop = "capped";
         break;
       }
+      this.#reportMasked(batch, bodyLimits.perMail);
       const outcome: JudgeOutcome = await this.#judge(
         batch,
         prompt,

@@ -16,6 +16,7 @@ const scratch = () => {
   temporary.push(root);
   return root;
 };
+const usesGitHubCache = (step) => /^actions\/cache[@/]/u.test(step.uses ?? "");
 
 it("main 确认保留受控失败报告，不把缺少资格写成成功", async () => {
   const root = scratch();
@@ -65,7 +66,7 @@ describe("CI 最小依赖安装", () => {
     expect(() => gateLock(value)).toThrow("GATE_DEPENDENCY_MISSING");
   });
 });
-it("完整 CI 使用缓存与最小汇总依赖，并保留全部检查", () => {
+it("完整 CI 不用 GitHub 缓存、只装最小汇总依赖，并保留全部检查", () => {
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   expect(workflow.on.push).toBeUndefined();
   expect(workflow.on.workflow_call).toBeDefined();
@@ -77,7 +78,22 @@ it("完整 CI 使用缓存与最小汇总依赖，并保留全部检查", () => 
     workflow.jobs.required.steps.some((s) => s.run?.includes("install-dependencies.mjs")),
   ).toBe(false);
   for (const job of Object.values(workflow.jobs)) {
-    expect(job.steps.some((s) => s.uses?.startsWith("actions/cache@"))).toBe(true);
+    expect(job.steps.some(usesGitHubCache)).toBe(false);
+  }
+});
+
+it("所有工作流都不用 GitHub 缓存，artifact 只保存 1 天", () => {
+  for (const uses of ["actions/cache@x", "actions/cache/restore@x", "actions/cache/save@x"])
+    expect(usesGitHubCache({ uses })).toBe(true);
+  for (const uses of ["actions/checkout@x", "actions/cachet@x", undefined])
+    expect(usesGitHubCache({ uses })).toBe(false);
+  for (const name of ["ci.yml", "main.yml", "quality.yml"]) {
+    const workflow = parse(readFileSync(`.github/workflows/${name}`, "utf8"));
+    const steps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
+    expect(steps.filter(usesGitHubCache)).toEqual([]);
+    const uploads = steps.filter((s) => s.uses?.startsWith("actions/upload-artifact@"));
+    expect(uploads.length).toBeGreaterThan(0);
+    for (const upload of uploads) expect(upload.with["retention-days"]).toBe(1);
   }
 });
 
@@ -100,8 +116,8 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
   expect(() =>
     validateMainWorkflow(
       text.replace(
-        "runs-on: hermes-home\n    timeout-minutes: 90",
-        "runs-on: hermes-home\n    timeout-minutes: 45",
+        "runs-on: ci-vps\n    timeout-minutes: 90",
+        "runs-on: ci-vps\n    timeout-minutes: 45",
       ),
       tools,
     ),

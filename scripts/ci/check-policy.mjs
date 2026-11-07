@@ -8,6 +8,7 @@ import {
   activeMembers,
   fileSha256,
   githubExpression,
+  linuxRunnerLabel,
   parseArguments,
   readJson,
   repositoryRoot,
@@ -39,6 +40,9 @@ const jobIds = [
   "required",
 ];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
+export const chromiumInstall =
+  ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
+const chromiumChecks = ["static", "test", "node-floor", "coverage"];
 
 export function timeoutMinutesFor(checkId) {
   if (checkId === "required") return 15;
@@ -67,8 +71,38 @@ export function upgradeHostedRunnerPolicy(policy) {
   for (const check of upgraded.checks)
     for (const member of check.members)
       if (member.key === "macos-arm64") member.paused = true;
-      else member.runner = "hermes-home";
+      else member.runner = linuxRunnerLabel;
   return upgraded;
+}
+
+export function upgradeRunnerLabel(policy) {
+  const checks = policy?.checks ?? [];
+  const members = checks.flatMap((check) => check.members ?? []);
+  const hermes =
+    members.length > 0 &&
+    checks.every((check) => check.timeoutMinutes === timeoutMinutesFor(check.id)) &&
+    members.every((member) =>
+      member.key === "macos-arm64"
+        ? member.runner === "macos-15" && member.paused === true
+        : member.runner === "hermes-home" && !Object.hasOwn(member, "paused"),
+    );
+  if (!hermes) return policy;
+  const upgraded = structuredClone(policy);
+  for (const check of upgraded.checks)
+    for (const member of check.members)
+      if (member.key !== "macos-arm64") member.runner = linuxRunnerLabel;
+  return upgraded;
+}
+
+export function upgradeArtifactRetention(policy) {
+  const retention = policy?.retentionDays;
+  const accepted =
+    retention &&
+    Object.keys(retention).length === 2 &&
+    retention.reports === 30 &&
+    retention.diagnostics === 7;
+  if (!accepted) return policy;
+  return { ...policy, retentionDays: { reports: 1, diagnostics: 1 } };
 }
 
 export function validatePolicy(
@@ -195,7 +229,7 @@ export function validatePolicy(
       assert(
         member.os === (mac ? "darwin" : "linux") &&
           member.arch === (mac ? "arm64" : "x64") &&
-          member.runner === (mac ? "macos-15" : "hermes-home"),
+          member.runner === (mac ? "macos-15" : linuxRunnerLabel),
         `Incorrect platform: ${check.id}/${member.key}`,
       );
       assert(mac || member.paused === undefined, `Only macOS members may pause: ${check.id}`);
@@ -368,6 +402,11 @@ export function validateWorkflow(policy, source, toolchain) {
           );
       }
     }
+    if (chromiumChecks.includes(check.id))
+      assert(
+        job.steps.some((step) => step.run === chromiumInstall),
+        `Job runs browser tests without installing Chromium: ${check.id}`,
+      );
     if (check.id === "coverage") {
       const downloads = job.steps.filter((step) =>
         step.uses?.startsWith("actions/download-artifact@"),
@@ -978,10 +1017,13 @@ export function resolvePolicySource({
   const bytes = hasPolicy
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
-  const policy = validatePolicy(upgradeHostedRunnerPolicy(JSON.parse(bytes)), {
-    allowLegacyCoverage: true,
-    allowLegacyIntegration: true,
-  });
+  const policy = validatePolicy(
+    upgradeArtifactRetention(upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes)))),
+    {
+      allowLegacyCoverage: true,
+      allowLegacyIntegration: true,
+    },
+  );
   const integration = policy.testProjects.find((project) => project.id === "integration");
   if (!integration.fileParallelism && !integration.workerLimits) {
     integration.fileParallelism = true;

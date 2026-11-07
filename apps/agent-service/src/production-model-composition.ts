@@ -36,6 +36,7 @@ import {
   type PiModelBindingPort,
   type PiModelRuntimeFactory,
   PiModelTransport,
+  type PiModelTransportOptions,
   ProtectedPiModelPayloadBoundary,
 } from "@himawari-agent/runtime-pi";
 
@@ -101,6 +102,7 @@ export interface ProductionModelCompositionOptions {
   readonly temperature?: number;
   readonly admission?: ModelInvocationAdmissionResolver;
   readonly usage?: ModelUsageRecording;
+  readonly egressThreadOf?: PiModelTransportOptions["egressThreadOf"];
 }
 
 export interface ModelUsageRecording {
@@ -325,6 +327,14 @@ function modelTransportFor(
   );
   const piTransport = new PiModelTransport({
     egress: options.egress,
+    egressContext: {
+      ownerId: options.ownerId,
+      agentId: options.agentId,
+      threadId: null,
+      source: "background",
+      purpose: "action-review",
+    },
+    ...(options.egressThreadOf === undefined ? {} : { egressThreadOf: options.egressThreadOf }),
     models: new ConfiguredPiModelBindingPort({
       descriptors: piOnly,
       secretSource: options.secretSource,
@@ -442,6 +452,7 @@ export function createProductionModelComposition(
       | "disableThinking"
     >,
     admission: TrustedModelAdmissionResolver,
+    threadId: RuntimeRequest["threadId"] = null,
   ): TrustedModelProviderAdapter =>
     new TrustedModelProviderAdapter({
       ownerId: options.ownerId,
@@ -451,6 +462,13 @@ export function createProductionModelComposition(
       secretSource: options.secretSource,
       transport: new PiModelTransport({
         egress: options.egress,
+        egressContext: {
+          ownerId: options.ownerId,
+          agentId: options.agentId,
+          threadId,
+          source: "background",
+          purpose: text.purpose,
+        },
         models: piModels,
         payloads: payloadBoundary,
         clock: options.clock,
@@ -558,7 +576,12 @@ export function createProductionModelComposition(
     let output = "";
     let completed = false;
     try {
-      const auxiliaryModel = auxiliaryModelFor(descriptor, text, async () => gate);
+      const auxiliaryModel = auxiliaryModelFor(
+        descriptor,
+        text,
+        async () => gate,
+        request.threadId,
+      );
       handle = descriptor.secretRequirement
         ? await options.handles.issueHandle({
             ownerId: options.ownerId,

@@ -61,7 +61,7 @@
                   "minLength": 1
                 },
                 "runner": {
-                  "enum": ["hermes-home", "macos-15"]
+                  "enum": ["ci-vps", "macos-15"]
                 },
                 "paused": {
                   "const": true
@@ -186,10 +186,10 @@
       "required": ["reports", "diagnostics"],
       "properties": {
         "reports": {
-          "const": 30
+          "const": 1
         },
         "diagnostics": {
-          "const": 7
+          "const": 1
         }
       }
     }

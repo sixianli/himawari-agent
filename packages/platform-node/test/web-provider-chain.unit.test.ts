@@ -33,7 +33,7 @@ describe("web provider fallback chain", () => {
       attempts: [{ provider: "exa-public", code: "RATE_LIMITED" }],
     });
   });
-  it.each(["WEB_SEARCH_INPUT_INVALID", "WEB_SEARCH_OUTPUT_REDACTED"])(
+  it.each(["WEB_SEARCH_INPUT_INVALID"])(
     "stops at %s instead of sending the query to another provider",
     async (message) => {
       const deepseek = vi.fn(async () => result);

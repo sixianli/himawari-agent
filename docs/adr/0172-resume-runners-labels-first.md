@@ -28,6 +28,8 @@ date: "2026-11-06"
 
 Hermes（家里的 Linux 服务器）上有两个 GitHub 自托管 runner（替 GitHub 执行 CI 任务的程序），名字是 `hermes-home` 和 `hermes-home-2`。CI 任务只派给带 `hermes-home` 标签（runner 身上的一个名字，任务按它挑选 runner）的 runner。按 [ADR 0169](0169-pause-runners-by-removing-the-label.md) 决定第 5 条，Mac 上的恢复脚本 `resume-runners.sh` 先启动 Hermes 上的服务，等 GitHub 显示 runner `online`（在线），最后才把标签加回去。
 
+[ADR 0176](0176-ci-on-ovh-vps.md) 后来把 runner 搬到 OVH 租的 VPS（虚拟专用服务器），runner 改名 `ci-vps-1`、`ci-vps-2`，标签改为 `ci-vps`，脚本改放 `scripts/operations/ci-runner/`，但恢复脚本的顺序没变，所以本决定改的是 VPS 上的这份脚本。下面的现象是搬家前在 Hermes 上观察到的。
+
 观察到的现象（在 Hermes 和 GitHub 上直接看到）：
 
 - 2026-11-05 恢复后，两个 runner 在线、空闲、标签也在，排队的任务却不派下来。第二次连续 26 分钟没有派任务，当时有 18 个运行在排队。只重启 `gh-runner.service`，8 秒内两个 runner 都接到了任务。
@@ -54,8 +56,8 @@ Hermes（家里的 Linux 服务器）上有两个 GitHub 自托管 runner（替 
 `resume-runners.sh` 的顺序改为：
 
 1. 对账，和以前一样；对不上就什么都不改。
-2. 给每个缺标签的 runner 加回 `hermes-home`，再从 GitHub 读一遍。有任何一个没加上或读不到，打印 `RUNNER_RESUME_INCOMPLETE labels: <每个 runner 的标签状态>; services not started`，不启动服务，以退出码 1 结束。
-3. 在 Hermes 上运行 `runner-resume.sh` 启动已注册的服务。失败时打印 `RUNNER_RESUME_FAILED services=<各服务状态> labels=restored`，以退出码 1 结束。
+2. 给每个缺标签的 runner 加回 `ci-vps`，再从 GitHub 读一遍。有任何一个没加上或读不到，打印 `RUNNER_RESUME_INCOMPLETE labels: <每个 runner 的标签状态>; services not started`，不启动服务，以退出码 1 结束。
+3. 在 VPS 上运行 `runner-resume.sh` 启动已注册的服务。失败时打印 `RUNNER_RESUME_FAILED services=<各服务状态> labels=restored`，以退出码 1 结束。
 4. 等 GitHub 显示所有 runner `online`，最多 5 分钟。到时间还没上线，打印 `RUNNER_RESUME_INCOMPLETE services=<各服务状态> labels=restored offline: <没上线的 runner>`，以退出码 2 结束。
 5. 全部上线后打印 `RUNNER_RESUMED labels=restored`。
 
@@ -89,7 +91,7 @@ Hermes（家里的 Linux 服务器）上有两个 GitHub 自托管 runner（替 
 
 - 好处（待验证）：恢复后不用再手动重启 runner，排队的任务就会派下来。要在下一次真实的暂停和恢复时确认。
 - 原因只是推断。如果新顺序下排队的任务仍然不派，说明原因不在加标签的时机，要回到“加完标签后重启一次”的方案。
-- 测试：`test/tooling/hermes-runner-scripts.test.mjs` 里 `resume-runners.sh` 的用例改为检查两个标签都在启动服务之前加上，并覆盖标签加不上或读不到时不启动、服务起不来或不上线时标签保留、两个时机被打断、标签已在时不重复加。
+- 测试：`test/tooling/ci-runner-scripts.test.mjs` 里 `resume-runners.sh` 的用例改为检查两个标签都在启动服务之前加上，并覆盖标签加不上或读不到时不启动、服务起不来或不上线时标签保留、两个时机被打断、标签已在时不重复加。
 
 [↑ 返回阅读导航](#contents)
 
@@ -98,6 +100,7 @@ Hermes（家里的 Linux 服务器）上有两个 GitHub 自托管 runner（替 
 ## 关联文档
 
 - [ADR 0169：暂停 runner 时先在 Mac 上去掉标签，再在 Hermes 上等空闲后停服务](0169-pause-runners-by-removing-the-label.md)
-- [Hermes 自托管 runner 操作手册](../runbooks/hermes-self-hosted-runner-runbook.md#pause-and-resume)
+- [ADR 0176：CI 搬到 OVH 的 VPS](0176-ci-on-ovh-vps.md)
+- [CI VPS 上的自托管 runner Runbook](../runbooks/ci-vps-runner-runbook.md#pause-and-resume)
 
 [↑ 返回阅读导航](#contents)

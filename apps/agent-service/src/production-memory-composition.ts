@@ -68,6 +68,13 @@ export async function createProductionMemoryCompositionFromConfiguration(
   let apiKey: Promise<string> | undefined;
   const embedder = new GatewayEmbedder({
     egress: options.egress,
+    egressContext: {
+      ownerId: options.configuration.ownerId,
+      agentId: options.configuration.agentId,
+      threadId: null,
+      source: "embedding",
+      purpose: null,
+    },
     baseUrl: AI_GATEWAY_BASE_URL,
     model: embedding.model,
     dimensions: embedding.dimensions,

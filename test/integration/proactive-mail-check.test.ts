@@ -104,6 +104,7 @@ describe("proactive Gmail check acceptance", () => {
       memory?: ProactiveMemoryRecall;
       memoryLimits?: ProactiveMailCheckOptions["memoryLimits"];
       bodyLimits?: ProactiveMailCheckOptions["bodyLimits"];
+      onMasked?: ProactiveMailCheckOptions["onMasked"];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-"));
@@ -321,6 +322,7 @@ describe("proactive Gmail check acceptance", () => {
       ...(options.memory ? { memory: options.memory } : {}),
       ...(options.memoryLimits ? { memoryLimits: options.memoryLimits } : {}),
       ...(options.bodyLimits ? { bodyLimits: options.bodyLimits } : {}),
+      ...(options.onMasked ? { onMasked: options.onMasked } : {}),
       ...(options.batchSize === undefined ? {} : { batchSize: options.batchSize }),
       ...(options.outputTokenLimit === undefined
         ? {}
@@ -440,6 +442,84 @@ describe("proactive Gmail check acceptance", () => {
     ]);
     const second = await h.service.run();
     expect(second?.counts).toMatchObject({ fetched: 2, skipped: 0, judged: 2 });
+  });
+
+  it("[SI-3] reports the code masked in a mail sent for judgment without changing the prompt", async () => {
+    const reported: { kind: string; ruleId: string }[][] = [];
+    const items = [
+      mail("code", { subject: "ログイン", snippet: "認証コードは 482913 です" }),
+      mail("hello", { snippet: "明天一起吃饭吗" }),
+    ];
+    const answers = [
+      { id: "code", result: "ignore" as const },
+      { id: "hello", result: "ignore" as const },
+    ];
+    const watched = await harness({
+      onMasked: (sightings) =>
+        reported.push(sightings.map(({ kind, ruleId }) => ({ kind, ruleId }))),
+    });
+    watched.reader.items = items;
+    watched.script(answers);
+    await watched.service.run();
+    const plain = await harness({
+      onMasked: () => {
+        throw new Error("recorder failed");
+      },
+    });
+    plain.reader.items = items;
+    plain.script(answers);
+    await plain.service.run();
+    expect(reported).toEqual([
+      [{ kind: "verification-code", ruleId: "verification-code-keyword" }],
+    ]);
+    expect(watched.prompts).toEqual(plain.prompts);
+    expect(watched.prompts[0]).not.toContain("482913");
+  });
+
+  it("[SI-3] reports only what the model is shown: the kept part of a long body and the first ten attachment names", async () => {
+    const reported: string[] = [];
+    const h = await harness({
+      bodyLimits: { perMail: 400 },
+      onMasked: (sightings) => reported.push(...sightings.map(({ value }) => value)),
+    });
+    const filler = "これは長いお知らせの本文です。".repeat(60);
+    h.reader.items = [
+      mail("long", {
+        body: `パスワード：headpass99 ${filler}パスワード：middlepass99 ${filler}`,
+        attachments: Array.from({ length: 11 }, (_, index) => ({
+          filename: index === 10 ? "パスワード：lastfile99.txt" : `file-${index}.pdf`,
+          mimeType: "application/pdf",
+          size: 1000,
+        })),
+      }),
+    ];
+    h.script([{ id: "long", result: "ignore" }]);
+    await h.service.run();
+    expect(h.prompts[0]).toContain("bodyTruncated");
+    expect(reported).toContain("headpass99");
+    expect(reported).not.toContain("middlepass99");
+    expect(reported).not.toContain("lastfile99.txt");
+  });
+
+  it("[SI-3] decides what was sent by where values land after masking, not in the original text", async () => {
+    const reported: string[] = [];
+    const h = await harness({
+      bodyLimits: { perMail: 400 },
+      onMasked: (sightings) => reported.push(...sightings.map(({ value }) => value)),
+    });
+    const cards = "カード 4111 1111 1111 1111 ".repeat(15);
+    const filler = "長いお知らせです。".repeat(150);
+    h.reader.items = [
+      mail("shifted", {
+        body: `${cards}パスワード：shiftpass99 ${filler}パスワード：droppedpass99 ${filler}`,
+      }),
+    ];
+    h.script([{ id: "shifted", result: "ignore" }]);
+    await h.service.run();
+    expect(h.prompts[0]).toContain("bodyTruncated");
+    expect(reported).toContain("shiftpass99");
+    expect(reported).not.toContain("droppedpass99");
+    expect(reported.filter((value) => value === "4111111111111111")).toHaveLength(15);
   });
 
   it("[PG-4] pushes an unclear ward office letter but only lists the same text from a friend", async () => {
