@@ -20,7 +20,19 @@ const githubToken = () => {
   return ["gh", "p_", body].join("");
 };
 
+const SYNTHETIC_TOKEN = ["0123456789abcdef", "0123456789abcdef"].join("");
+const CLEAR_KEY = ["sensitive", "interceptions", "clear", "01"].join("-");
+const READBACK_DIGEST = [
+  "0803b00889e1a37bf2645a12f203d89c",
+  "5a695b27538e322db7e962339e6a416a",
+].join("");
+const REVIEWS = ".agents/reviews/pr-273";
+
 const FIXTURES = {
+  [`${REVIEWS}/round-4/deepseek-v4.1-flash.md`]: `- blame → \`tokenValue: "${SYNTHETIC_TOKEN}"\`\n`,
+  [`${REVIEWS}/round-2/deepseek-v4.1-flash.md`]: `- blame → \`tokenValue: "${SYNTHETIC_TOKEN}"\`\n`,
+  "apps/agent-service/test/production-http-composition.unit.test.ts": `const headers = {\n  "idempotency-key": "${CLEAR_KEY}",\n};\n`,
+  "test/tooling/gitleaks-allowlist.test.mjs": `const line = \`p4-save-secrets-final.log": "${READBACK_DIGEST}"\`;\n`,
   [`${EVIDENCE}/input-freeze.json`]: `{\n  "packages/application/src/ports/recent-authentication.ts": "${hex("digest-1")}",\n  "packages/application/src/ports/auth-session.ts": "${hex("digest-2")}"\n}\n`,
   [`${EVIDENCE}/token.json`]: `{\n  "token": "${githubToken()}"\n}\n`,
   [`${EVIDENCE}/api.json`]: `{\n  "apiKey": "${hex("api-key")}"\n}\n`,
@@ -29,6 +41,7 @@ const FIXTURES = {
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
+  `${REVIEWS}/round-2/deepseek-v4.1-flash.md generic-api-key`,
   `${EVIDENCE}/api.json generic-api-key`,
   `${EVIDENCE}/mixed.json generic-api-key`,
   `${EVIDENCE}/token.json github-pat`,
@@ -137,6 +150,9 @@ describe("gitleaks repository configuration", () => {
         [
           ...EXPECTED_WITH_REPOSITORY_CONFIG,
           `${EVIDENCE}/input-freeze.json generic-api-key`,
+          `${REVIEWS}/round-4/deepseek-v4.1-flash.md generic-api-key`,
+          "apps/agent-service/test/production-http-composition.unit.test.ts generic-api-key",
+          "test/tooling/gitleaks-allowlist.test.mjs generic-api-key",
         ].sort(),
       );
   }, 120000);
