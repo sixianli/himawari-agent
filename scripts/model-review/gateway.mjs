@@ -66,6 +66,7 @@ export function readGatewayLock(path = GATEWAY_LOCK_PATH) {
 export const ROUTING_VALUES = ["order", "smart", "rotate", "usage", "pace", "weight", "fast"];
 export const STAYS_VALUES = ["auto", "session", "turn", "off", "strict"];
 export const PROVIDER_KINDS = ["plugin", "preset", "custom"];
+export const RESERVED_PROVIDER_IDS = ["none", "unknown"];
 
 const nonNegative = (value) => Number.isFinite(value) && value >= 0;
 const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
@@ -82,8 +83,19 @@ export function gatewayConfigProblems(config, requiredModels = []) {
   const providers = Array.isArray(config.providers) ? config.providers : [];
   if (providers.length === 0) problems.push("providers");
   const ids = providers.map((provider) => provider?.id);
-  if (new Set(ids).size !== ids.length || ids.some((id) => typeof id !== "string" || !id))
+  if (
+    new Set(ids).size !== ids.length ||
+    ids.some(
+      (id) =>
+        typeof id !== "string" ||
+        !/^[a-z][a-z0-9-]*$/.test(id) ||
+        RESERVED_PROVIDER_IDS.includes(id),
+    )
+  )
     problems.push("providers.id");
+  for (const provider of providers)
+    if (provider?.signIn && provider.kind !== "plugin")
+      problems.push(`providers.${provider.id}.signIn`);
   for (const provider of providers) {
     if (!PROVIDER_KINDS.includes(provider?.kind)) problems.push(`providers.${provider?.id}.kind`);
     if (
@@ -172,7 +184,9 @@ function curlDownload(url, target) {
     encoding: "utf8",
   });
   if (result.status !== 0)
-    throw new Error(`GATEWAY_DOWNLOAD_FAILED ${url} ${result.stderr.trim()}`);
+    throw new Error(
+      `GATEWAY_DOWNLOAD_FAILED ${url} ${(result.stderr ?? result.error?.message ?? "").trim()}`,
+    );
 }
 
 function npmPack(spec, destination) {
@@ -189,7 +203,10 @@ function npmPack(spec, destination) {
 function extractTarball(tarball, destination) {
   mkdirSync(destination, { recursive: true });
   const result = spawnSync("tar", ["-xzf", tarball, "-C", destination], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`GATEWAY_PLUGIN_EXTRACT_FAILED ${result.stderr.trim()}`);
+  if (result.status !== 0)
+    throw new Error(
+      `GATEWAY_PLUGIN_EXTRACT_FAILED ${(result.stderr ?? result.error?.message ?? "").trim()}`,
+    );
 }
 
 export function installGateway({
@@ -332,7 +349,9 @@ export function creditsLeft(quotas, provider) {
   const windows = Array.isArray(entry?.windows) ? entry.windows : [];
   const window =
     windows.find((item) => item?.name === "Total credits" && item?.unit === "credits") ??
-    (windows.length === 1 && windows[0]?.unit === "credits" ? windows[0] : undefined);
+    (windows.length === 1 && windows[0]?.name === "Credits" && windows[0]?.unit === "credits"
+      ? windows[0]
+      : undefined);
   if (!window) return null;
   const { limit, remaining, amount } = window;
   if (!Number.isFinite(limit) || !Number.isFinite(remaining) || limit < 0) return null;
@@ -383,7 +402,7 @@ export function summarizeGatewayUsage(lines, config) {
   const byModel = new Map();
   let unreadable = 0;
   for (const line of lines) {
-    if (!line || typeof line !== "object") {
+    if (!line || typeof line !== "object" || Array.isArray(line)) {
       unreadable += 1;
       continue;
     }
@@ -679,13 +698,16 @@ export async function startGateway({
 
 async function upgrade() {
   const feedText = spawnSync("curl", ["-fsSL", GATEWAY_FEED_URL], { encoding: "utf8" });
-  if (feedText.status !== 0) throw new Error(`GATEWAY_FEED_FAILED ${feedText.stderr.trim()}`);
+  if (feedText.status !== 0)
+    throw new Error(
+      `GATEWAY_FEED_FAILED ${(feedText.stderr ?? feedText.error?.message ?? "").trim()}`,
+    );
   const current = existsSync(GATEWAY_LOCK_PATH) ? readGatewayLock() : null;
   const name = current?.plugin?.name ?? "@magpie-community/opencode-workbuddy-auth";
   const view = spawnSync("npm", ["view", name, "version", "dist.integrity", "--json"], {
     encoding: "utf8",
   });
-  if (view.status !== 0) throw new Error(`GATEWAY_PLUGIN_VIEW_FAILED ${name}`);
+  if (view.status !== 0 || !view.stdout) throw new Error(`GATEWAY_PLUGIN_VIEW_FAILED ${name}`);
   const info = JSON.parse(view.stdout);
   const lock = lockFromRelease({
     feed: JSON.parse(feedText.stdout),

@@ -54,7 +54,10 @@ import {
   passthroughProblems,
   PASSTHROUGH_PROMPT,
   REVIEW_MODELS,
+  gatewayRequested,
+  providerMoneyUsd,
   reserveModels,
+  withProviderMoney,
   reviewConfig,
   startLiveGateway,
 } from "../../scripts/model-review/opencode-review.mjs";
@@ -579,6 +582,68 @@ function probeServer() {
 
 const install = () => installRealGateway();
 
+describe("review gateway round 4 fixes", () => {
+  it("[gateway] records Go's real spending when it exceeds what OpenCode counted", () => {
+    const providers = {
+      "workbuddy-ai": { requests: 30, failed: 1, credits: 9.9 },
+      "opencode-go": { requests: 6, failed: 1, usd: 0.031 },
+      none: { requests: 1, failed: 1 },
+    };
+    expect(providerMoneyUsd(providers, "workbuddy-ai")).toBeCloseTo(0.031, 10);
+    expect(providerMoneyUsd({}, "workbuddy-ai")).toBe(0);
+    const record = { gateway: "magpie", cost: 0.02, providers };
+    expect(withProviderMoney(record, "workbuddy-ai")).toMatchObject({
+      cost: 0.031,
+      costFromProviders: 0.02,
+    });
+    expect(withProviderMoney({ ...record, cost: 0.05 }, "workbuddy-ai")).toEqual({
+      ...record,
+      cost: 0.05,
+    });
+    expect(withProviderMoney({ cost: 0.01 }, "workbuddy-ai")).toEqual({ cost: 0.01 });
+  });
+
+  it("[gateway] counts a run as having made requests when the spend guard let one through, even with no finished step", () => {
+    const review = (steps, allowed) => ({
+      summary: { usage: { steps } },
+      runs: [{ guard: allowed === undefined ? null : { allowed } }],
+    });
+    expect(gatewayRequested(review(0, 1))).toBe(true);
+    expect(gatewayRequested(review(2, 0))).toBe(true);
+    expect(gatewayRequested(review(0, 0))).toBe(false);
+    expect(gatewayRequested(review(0))).toBe(false);
+  });
+
+  it("[gateway] reads a lone credits window only when it is the plan's own Credits card", () => {
+    const one = (name) => [
+      { provider: "workbuddy-ai", windows: [{ name, remaining: 40, limit: 100, unit: "credits" }] },
+    ];
+    expect(creditsLeft(one("Credits"), "workbuddy-ai")).toBe(40);
+    expect(creditsLeft(one("Extra credits"), "workbuddy-ai")).toBeNull();
+  });
+
+  it("[gateway] refuses provider ids that clash with the usage placeholders and sign-ins on non-plugins", () => {
+    const withProviders = (providers) =>
+      gatewayConfigProblems({ ...structuredClone(config), providers }, REVIEW_MODELS);
+    const base = structuredClone(config.providers);
+    expect(withProviders([...base, { id: "none", kind: "preset" }])).toContain("providers.id");
+    expect(withProviders([...base, { id: "Bad Id", kind: "preset" }])).toContain("providers.id");
+    expect(
+      withProviders(
+        base.map((provider) =>
+          provider.id === "opencode-go" ? { ...provider, signIn: "desktop" } : provider,
+        ),
+      ),
+    ).toContain("providers.opencode-go.signIn");
+  });
+
+  it("[gateway] counts a usage line that is a JSON array as unreadable", () => {
+    expect(summarizeGatewayUsage([["group/review-deepseek-v4.1-flash"]], config).unreadable).toBe(
+      1,
+    );
+  });
+});
+
 describe("review gateway round 3 fixes", () => {
   it("[gateway] reserves credits for GLM too when it may stand in for DeepSeek", () => {
     expect(reserveModels({ mode: "code-review", previous: "abc", models: [deepseek] })).toEqual([
@@ -821,7 +886,7 @@ describe("review gateway live start", () => {
         });
         expect(answer.status).toBe(200);
         expect(upstream.hits()).toBe(1);
-        const fields = gatewayRecordFields(live.usage(), gatewayConfig, deepseek);
+        const fields = gatewayRecordFields(await live.stableUsage(), gatewayConfig, deepseek);
         expect(fields.costUnknown).toBeUndefined();
         expect(fields.providers.probe).toMatchObject({ requests: 1, failed: 0 });
         expect(fields.providers["workbuddy-ai"]).toBeUndefined();
@@ -889,36 +954,44 @@ describe("review gateway live start", () => {
 });
 
 describe("review gateway self-check", () => {
-  it("[gateway] passes the real self-check through a local Magpie, including passthrough, failover and the spend guard", () => {
-    const root = mkdtempSync(join(tmpdir(), "gateway-selfcheck-"));
-    try {
-      const brief = join(root, "brief.md");
-      writeFileSync(brief, "self-check\n");
-      const result = spawnSync(
-        process.execPath,
-        [
-          "scripts/model-review/opencode-review.mjs",
-          "--self-check-only",
-          "--mode",
-          "plan",
-          "--head",
-          "HEAD",
-          "--brief",
-          brief,
-          "--out",
-          join(root, "out"),
-          "--gateway",
-          "magpie",
-        ],
-        { encoding: "utf8", timeout: 540000 },
-      );
-      const text = result.stdout + result.stderr;
-      expect(text).toContain("SELF_CHECK_OK");
-      expect(result.status).toBe(0);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  }, 600000);
+  it.each([
+    ["plan", []],
+    ["code-review", ["--base", "HEAD~1"]],
+  ])(
+    "[gateway] passes the real %s self-check through a local Magpie, including passthrough, failover and the spend guard",
+    (mode, extra) => {
+      const root = mkdtempSync(join(tmpdir(), "gateway-selfcheck-"));
+      try {
+        const brief = join(root, "brief.md");
+        writeFileSync(brief, "self-check\n");
+        const result = spawnSync(
+          process.execPath,
+          [
+            "scripts/model-review/opencode-review.mjs",
+            "--self-check-only",
+            "--mode",
+            mode,
+            ...extra,
+            "--head",
+            "HEAD",
+            "--brief",
+            brief,
+            "--out",
+            join(root, "out"),
+            "--gateway",
+            "magpie",
+          ],
+          { encoding: "utf8", timeout: 540000 },
+        );
+        const text = result.stdout + result.stderr;
+        expect(text).toContain("SELF_CHECK_OK");
+        expect(result.status).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    600000,
+  );
 });
 
 function sha256Of(buffer) {

@@ -2477,6 +2477,22 @@ export function gatewayRecordFields(usage, config, model, { requested = false } 
   }
 }
 
+export function providerMoneyUsd(providers, creditProvider) {
+  return Object.entries(providers ?? {})
+    .filter(([provider]) => provider !== creditProvider)
+    .reduce((total, [, slot]) => total + (slot.usd ?? 0), 0);
+}
+
+export function withProviderMoney(record, creditProvider) {
+  if (!record.gateway) return record;
+  const money = providerMoneyUsd(record.providers, creditProvider);
+  return money > record.cost ? { ...record, cost: money, costFromProviders: record.cost } : record;
+}
+
+export function gatewayRequested(review) {
+  return review.summary.usage.steps > 0 || review.runs.some((run) => (run.guard?.allowed ?? 0) > 0);
+}
+
 export function gatewayUsageLine(record) {
   const parts = Object.entries(record.providers ?? {}).map(
     ([provider, slot]) =>
@@ -2516,7 +2532,7 @@ export async function startLiveGateway({
       install: gateway.install,
       config,
       root,
-      models: REVIEW_MODELS,
+      models: reserveFor,
       providers,
       log: (line) => console.log(line),
     });
@@ -2728,7 +2744,7 @@ async function main() {
       writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
       if (summary.thinking)
         writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
-      const record = {
+      const assembled = {
         at: new Date().toISOString(),
         round,
         mode: options.mode,
@@ -2750,13 +2766,16 @@ async function main() {
         ...(liveGateway
           ? {
               ...gatewayRecordFields(await liveGateway.live.stableUsage(), gateway.config, model, {
-                requested: summary.usage.steps > 0,
+                requested: gatewayRequested(review),
               }),
               ...(liveGateway.drop.length ? { gatewayDropped: liveGateway.drop } : {}),
             }
           : {}),
         ...extra,
       };
+      const record = gateway
+        ? withProviderMoney(assembled, gateway.config.creditProvider)
+        : assembled;
       appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
       if (record.outcome !== "ok" && review.stderr.trim()) {
         writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
