@@ -7,7 +7,7 @@ source "$HERE/mac-runners.sh"
 
 take_lock
 upload_runner_scripts || { echo "RUNNER_RESUME_FAILED labels and services untouched"; exit 1; }
-NAMES=$(hermes "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_RESUME_FAILED could not list the runners installed on Hermes; labels and services untouched"; exit 1; }
+NAMES=$(vps "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_RESUME_FAILED could not list the runners installed on $RUNNER_HOST; labels and services untouched"; exit 1; }
 TABLE=$(github_runners) || { echo "RUNNER_RESUME_FAILED could not list runners on GitHub; labels and services untouched"; exit 1; }
 REASON=$(reconcile_runners "$NAMES" "$TABLE") || { echo "RUNNER_RESUME_FAILED $REASON; labels and services untouched"; exit 1; }
 
@@ -17,7 +17,7 @@ interrupted() {
 }
 
 trap interrupted INT TERM HUP
-OUTPUT=$(hermes "bash $REMOTE/runner-resume.sh")
+OUTPUT=$(vps "bash $REMOTE/runner-resume.sh")
 STATUS=$?
 printf '%s\n' "$OUTPUT"
 [ "$STATUS" = 0 ] || { echo "RUNNER_RESUME_FAILED services=$(service_states); labels untouched, queued jobs keep waiting"; exit 1; }

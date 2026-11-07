@@ -1,10 +1,10 @@
 ---
-status: active
+status: "archived"
 document_type: runbook
 execution_risk: critical
 contract_sha256: "sha256:7f5f2ab716eaf0be8eed174d0fbe50ad8dec3b730f836a28c76f6abb5b31cd15"
 supersedes: ""
-superseded_by: ""
+superseded_by: "docs/runbooks/ci-vps-runner-runbook.md"
 date: "2026-11-04"
 ---
 

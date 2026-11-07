@@ -1,4 +1,7 @@
 RUNNER_IDS="1 2"
+RUNNER_HOST=ci-vps
+RUNNER_LABEL=ci-vps
+RUNNER_CONTROLLER=ubuntu
 
 runner_select() {
   case "$1" in
@@ -6,14 +9,14 @@ runner_select() {
       RUNNER_USER=gh-runner
       RUNNER_ROOT=/srv/gh-runner
       RUNNER_UNIT=gh-runner.service
-      RUNNER_NAME=hermes-home
+      RUNNER_NAME=ci-vps-1
       RUNNER_OTHER_ROOT=/srv/gh-runner-2
       ;;
     2)
       RUNNER_USER=gh-runner-2
       RUNNER_ROOT=/srv/gh-runner-2
       RUNNER_UNIT=gh-runner-2.service
-      RUNNER_NAME=hermes-home-2
+      RUNNER_NAME=ci-vps-2
       RUNNER_OTHER_ROOT=/srv/gh-runner
       ;;
     *)
@@ -21,6 +24,10 @@ runner_select() {
       return 64
       ;;
   esac
+}
+
+require_runner_host() {
+  [ "$(hostname)" = "$RUNNER_HOST" ] || { echo "this script only runs on $RUNNER_HOST, not $(hostname)" >&2; exit 68; }
 }
 
 installed_runner_ids() {
@@ -53,8 +60,7 @@ table inet gh_runner {
     type filter hook output priority filter; policy accept;
     meta skuid { $1 } ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } reject
     meta skuid { $1 } ip6 daddr { fc00::/7, fe80::/10 } reject
-    meta skuid { $1 } ip daddr 127.0.0.0/8 tcp dport { $2 } reject
-    meta skuid { $1 } ip6 daddr ::1 tcp dport { $2 } reject
+    meta skuid { $1 } fib daddr type local tcp dport { $2 } reject
   }
 }
 EOF
@@ -68,7 +74,7 @@ runner_sudoers_line() {
       line="${line:+$line, }/usr/bin/systemctl $action $RUNNER_UNIT"
     done
   done
-  printf 'andy ALL=(root) NOPASSWD: %s\n' "$line"
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$RUNNER_CONTROLLER" "$line"
 }
 
 runner_blocked_ports() {

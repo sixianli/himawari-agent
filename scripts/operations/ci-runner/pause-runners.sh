@@ -10,7 +10,7 @@ JOB_SECONDS=$(longest_job_seconds) || { echo "RUNNER_PAUSE_FAILED could not read
 DEADLINE=$(($(date +%s) + JOB_SECONDS + 300))
 
 upload_runner_scripts || { echo "RUNNER_PAUSE_FAILED labels and services untouched"; exit 1; }
-NAMES=$(hermes "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_PAUSE_FAILED could not list the runners installed on Hermes; labels and services untouched"; exit 1; }
+NAMES=$(vps "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_PAUSE_FAILED could not list the runners installed on $RUNNER_HOST; labels and services untouched"; exit 1; }
 TABLE=$(github_runners) || { echo "RUNNER_PAUSE_FAILED could not list runners on GitHub; labels and services untouched"; exit 1; }
 REASON=$(reconcile_runners "$NAMES" "$TABLE") || { echo "RUNNER_PAUSE_FAILED $REASON; labels and services untouched"; exit 1; }
 
@@ -68,7 +68,7 @@ while :; do
     BUSY=" (could not read GitHub)"
   fi
   if [ -z "$BUSY" ]; then
-    OUTPUT=$(hermes "bash $REMOTE/runner-pause.sh --labels-removed 90")
+    OUTPUT=$(vps "bash $REMOTE/runner-pause.sh --labels-removed 90")
     STATUS=$?
     printf '%s\n' "$OUTPUT"
     [ "$STATUS" = 0 ] && break
