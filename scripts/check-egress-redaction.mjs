@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -310,7 +310,7 @@ export function findEgressViolations(root = repositoryRoot) {
 const GATE_NAMES = SENSITIVE_GATE_FUNCTIONS.join("|");
 const GATE_CALL = new RegExp(`\\b(${GATE_NAMES})\\s*(?:\\?\\.\\s*)?\\(`, "gu");
 const GATE_ALIAS = new RegExp(
-  `\\b(?:import|export)\\s+(?:type\\s+)?\\{[^}]*\\b(${GATE_NAMES})\\s+as\\s+[A-Za-z_$][\\w$]*`,
+  `\\b(?:import|export)\\s*(?:type\\s+)?\\{[^}]*\\b(${GATE_NAMES})\\s+as\\s+[A-Za-z_$][\\w$]*`,
   "gu",
 );
 const GATE_DECISIONS = new Set([KEEP, MASK, PASS]);
@@ -371,14 +371,8 @@ export function findSensitiveGateViolations(
   const seen = new Set();
   for (const base of ["packages", "apps"]) {
     const directory = path.join(root, base);
-    let files = [];
-    try {
-      files = sourceFiles(directory);
-    } catch (error) {
-      if (error?.code === "ENOENT") continue;
-      throw error;
-    }
-    for (const full of files) {
+    if (!existsSync(directory)) continue;
+    for (const full of sourceFiles(directory)) {
       const relative = path.relative(root, full).split(path.sep).join("/");
       if (!relative.includes("/src/") || relative.startsWith(SENSITIVE_RULE_PACKAGE)) continue;
       const text = readFileSync(full, "utf8");

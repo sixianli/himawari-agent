@@ -278,6 +278,18 @@ describe("sensitive gate registration", () => {
     expect(report[0]).toContain("给整段拦下的函数 assertMachineSecretFree 起了别名");
   });
 
+  it("catches renamed imports without spaces, rows without a file, and unreadable trees", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts":
+        "import{assertMachineSecretFree as free}from'x'; assertMachineSecretFree(text);",
+    });
+    const report = findSensitiveGateViolations(root, [...registry, { ...registry[0], file: "" }]);
+    expect(report.join("\n")).toContain("给整段拦下的函数 assertMachineSecretFree 起了别名");
+    expect(report.join("\n")).toContain("SENSITIVE_GATE_CALLS 每一行都要写文件路径");
+    const broken = gateFixture({ apps: "not a directory" });
+    expect(() => findSensitiveGateViolations(broken, registry)).toThrow();
+  });
+
   it("fails when a registered call is gone but the registry still lists it", () => {
     const root = gateFixture({
       "packages/application/src/services/model-egress.ts": "redactForEgress(text);",

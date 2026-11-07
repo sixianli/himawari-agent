@@ -41,7 +41,7 @@
     "check:delivery-packet": "python3 -I scripts/delivery-mode/test_make_packet.py",
     "check:admin-schema-range": "vitest run --config vitest.workspace.ts --project integration test/integration/sandbox-reservation-administration.test.ts -t ADMIN-SCHEMA-RANGE",
     "check:memory-relevance": "node scripts/check-memory-relevance.mjs",
-    "check:egress-redaction": "node scripts/check-egress-redaction.mjs",
+    "check:egress-redaction": "node scripts/check-egress-redaction.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/egress-redaction-check.test.mjs",
     "check:prompt-prefix": "node scripts/check-prompt-prefix.mjs",
     "check:prompt-catalog": "vitest run --config vitest.workspace.ts --project node-services apps/agent-service/test/prompt-catalog.unit.test.ts apps/agent-service/test/prompt-rendering-golden.unit.test.ts apps/agent-service/test/prompt-output-contracts.unit.test.ts apps/agent-service/test/prompt-wording.unit.test.ts apps/agent-service/test/trusted-prompt-egress.unit.test.ts && vitest run --config vitest.workspace.ts --project unit packages/sensitive-capture/test/trusted-text.unit.test.ts && vitest run --config vitest.workspace.ts --project browser apps/control-center/test/sensitive-interceptions.unit.test.ts && vitest run --config vitest.workspace.ts --project pi-compat packages/runtime-pi/test/pi-builtin-tool-text.compat.test.ts",
     "check:product-path-configuration": "vitest run --config vitest.workspace.ts --project unit --project tooling test/tooling/product-path-configuration.test.ts test/tooling/walkthrough-selectable-models.test.ts packages/platform-node/test/service-failure-reason.unit.test.ts",
