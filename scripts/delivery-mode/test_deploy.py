@@ -25,7 +25,7 @@ def walkthrough(sha=ARTIFACT_SHA256, statuses=None, answer_ms=None):
     statuses = statuses or {}
     timings = {**TIMED, **(answer_ms or {})}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed'), **({'answerMs': timings[name]} if timings.get(name) is not None else {})} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nsandboxLinks=ok\nscratchScenes=0\nrunningKernel=6.8.0-142-generic\nnextBootKernel=6.8.0-142-generic\nqualifiedKernel=6.8.0-142-generic\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\ndocumentTools=ok\nsandboxLinks=ok\nscratchScenes=0\nrunningKernel=6.8.0-142-generic\nnextBootKernel=6.8.0-142-generic\nsavedBootKernel=6.8.0-142-generic\nqualifiedKernel=6.8.0-142-generic\ntargetPath.' + BINDING['service']['newQualificationEvidenceRoot'] + '=absent\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -243,12 +243,14 @@ class KernelPreflightTest(unittest.TestCase):
         self.assertEqual(self.failed(), [])
 
     def test_production_state_of_november_7_passes(self):
-        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')), '6.8.0-142-generic')
-        self.assertEqual(self.failed(runningKernel='6.8.0-142-generic', nextBootKernel='6.8.0-142-generic', qualifiedKernel='6.8.0-142-generic'), [])
+        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')), ('6.8.0-142-generic',) * 2)
+        self.assertEqual(self.failed(runningKernel='6.8.0-142-generic', nextBootKernel='6.8.0-142-generic', savedBootKernel='6.8.0-142-generic', qualifiedKernel='6.8.0-142-generic'), [])
 
     def test_a_reboot_into_another_kernel_is_refused(self):
         self.assertEqual(self.failed(nextBootKernel='6.8.0-147-generic'), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL'])
         self.assertEqual(self.failed(nextBootKernel=''), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL'])
+        self.assertEqual(self.failed(savedBootKernel='6.8.0-147-generic'), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL'])
+        self.assertEqual(self.failed(savedBootKernel=''), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL'])
         self.assertEqual(self.failed(runningKernel=''), ['NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL', 'RUNNING_KERNEL_MATCHES_QUALIFICATION'])
 
     def test_running_kernel_different_from_the_qualified_one_is_refused(self):
@@ -288,45 +290,54 @@ class KernelPreflightTest(unittest.TestCase):
                 (root / 'grubenv').write_text(block + '#' * (1024 - len(block)))
             for kernel in kernels:
                 (root / ('vmlinuz-' + kernel)).write_bytes(b'k')
-            return subprocess.run(['python3', '-I', '-c', preflight.READ_NEXT_BOOT_KERNEL, str(root / 'grub.cfg'), str(root / 'grubenv'), str(root)], capture_output=True, text=True, check=True).stdout.strip()
+            output = subprocess.run(['python3', '-I', '-c', preflight.READ_NEXT_BOOT_KERNEL, str(root / 'grub.cfg'), str(root / 'grubenv'), str(root)], capture_output=True, text=True, check=True).stdout
+            facts = dict(line.split('=', 1) for line in output.splitlines())
+            return (facts['nextBootKernel'], facts['savedBootKernel'])
 
     def test_saved_entry_pointing_at_the_newer_kernel_gives_that_kernel(self):
-        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-147-generic')), '6.8.0-147-generic')
+        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-147-generic')), ('6.8.0-147-generic',) * 2)
 
     def test_one_time_next_entry_wins_over_saved_entry(self):
         saved = self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')
-        self.assertEqual(self.next_boot(saved_entry=saved, next_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-147-generic')), '6.8.0-147-generic')
-        self.assertEqual(self.next_boot(saved_entry=saved, next_entry=''), '6.8.0-142-generic')
+        self.assertEqual(self.next_boot(saved_entry=saved, next_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-147-generic')), ('6.8.0-147-generic', '6.8.0-142-generic'))
+        self.assertEqual(self.next_boot(saved_entry=saved, next_entry=''), ('6.8.0-142-generic', '6.8.0-142-generic'))
+        self.assertEqual(self.next_boot(saved_entry=saved, next_entry='uefi-firmware'), ('', '6.8.0-142-generic'))
+
+    def test_a_one_time_entry_does_not_hide_the_saved_entry(self):
+        once = self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')
+        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-147-generic'), next_entry=once), ('6.8.0-142-generic', '6.8.0-147-generic'))
+        self.assertEqual(self.next_boot(next_entry=once), ('', ''))
 
     def test_entries_can_be_named_by_number_title_or_id(self):
-        self.assertEqual(self.next_boot(saved_entry='0'), '6.8.0-147-generic')
-        self.assertEqual(self.next_boot(saved_entry='1>2'), '6.8.0-142-generic')
-        self.assertEqual(self.next_boot(saved_entry='Advanced options for Ubuntu>Ubuntu, with Linux 6.8.0-142-generic'), '6.8.0-142-generic')
-        self.assertEqual(self.next_boot(saved_entry='gnulinux-simple-' + self.UUID), '6.8.0-147-generic')
+        self.assertEqual(self.next_boot(saved_entry='0'), ('6.8.0-147-generic',) * 2)
+        self.assertEqual(self.next_boot(saved_entry='1>2'), ('6.8.0-142-generic',) * 2)
+        self.assertEqual(self.next_boot(saved_entry='Advanced options for Ubuntu>Ubuntu, with Linux 6.8.0-142-generic'), ('6.8.0-142-generic',) * 2)
+        self.assertEqual(self.next_boot(saved_entry='gnulinux-simple-' + self.UUID), ('6.8.0-147-generic',) * 2)
 
     def test_grub_not_booting_the_saved_entry_gives_no_answer(self):
-        self.assertEqual(self.next_boot(config=self.grub_config(default='0'), saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')), '')
+        self.assertEqual(self.next_boot(config=self.grub_config(default='0'), saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')), ('', ''))
 
     def test_efi_loader_and_a_separate_boot_partition_are_understood(self):
         saved = self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')
-        self.assertEqual(self.next_boot(config=self.grub_config(linux='linuxefi'), saved_entry=saved), '6.8.0-142-generic')
-        self.assertEqual(self.next_boot(config=self.grub_config(boot=''), saved_entry=saved), '6.8.0-142-generic')
+        self.assertEqual(self.next_boot(config=self.grub_config(linux='linuxefi'), saved_entry=saved), ('6.8.0-142-generic',) * 2)
+        self.assertEqual(self.next_boot(config=self.grub_config(boot=''), saved_entry=saved), ('6.8.0-142-generic',) * 2)
 
     def test_a_later_default_overrides_the_saved_entry(self):
         saved = self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')
-        self.assertEqual(self.next_boot(config=self.grub_config() + 'set default="0"\n', saved_entry=saved), '')
-        self.assertEqual(self.next_boot(config=self.grub_config() + '# set default="0"\n', saved_entry=saved), '6.8.0-142-generic')
+        self.assertEqual(self.next_boot(config=self.grub_config() + 'set default="0"\n', saved_entry=saved), ('', ''))
+        self.assertEqual(self.next_boot(config=self.grub_config() + '# set default="0"\n', saved_entry=saved), ('6.8.0-142-generic',) * 2)
+        self.assertEqual(self.next_boot(config='if false; then\n  set default="0"\nfi\n' + self.grub_config(), saved_entry=saved), ('', ''))
 
     def test_entries_that_do_not_boot_an_installed_kernel_give_no_answer(self):
         saved = self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')
-        self.assertEqual(self.next_boot(kernels=('6.8.0-147-generic',), saved_entry=saved), '')
-        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED), '')
-        self.assertEqual(self.next_boot(saved_entry='uefi-firmware'), '')
-        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-150-generic')), '')
-        self.assertEqual(self.next_boot(saved_entry='9'), '')
-        self.assertEqual(self.next_boot(saved_entry='0>0'), '')
-        self.assertEqual(self.next_boot(), '')
-        self.assertEqual(self.next_boot(environment=False), '')
+        self.assertEqual(self.next_boot(kernels=('6.8.0-147-generic',), saved_entry=saved), ('', ''))
+        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED), ('', ''))
+        self.assertEqual(self.next_boot(saved_entry='uefi-firmware'), ('', ''))
+        self.assertEqual(self.next_boot(saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-150-generic')), ('', ''))
+        self.assertEqual(self.next_boot(saved_entry='9'), ('', ''))
+        self.assertEqual(self.next_boot(saved_entry='0>0'), ('', ''))
+        self.assertEqual(self.next_boot(), ('', ''))
+        self.assertEqual(self.next_boot(environment=False), ('', ''))
 
     def test_remote_script_reads_the_three_kernel_facts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -338,7 +349,7 @@ class KernelPreflightTest(unittest.TestCase):
                 script = preflight.remote_script(BINDING)
             output = subprocess.run(['/bin/bash', '-c', script], capture_output=True, text=True, check=False).stdout
         facts = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
-        self.assertEqual(facts['nextBootKernel'], '6.8.0-142-generic')
+        self.assertEqual((facts['nextBootKernel'], facts['savedBootKernel']), ('6.8.0-142-generic',) * 2)
         self.assertEqual(facts['runningKernel'], os.uname().release)
         self.assertIn('qualifiedKernel', facts)
         self.assertIn('/var/lib/himawari/qualification', preflight.remote_script(BINDING))
@@ -755,6 +766,8 @@ class KernelPreflightHintTest(DeployHarness):
         self.assertEqual((code, result['result'], calls), (4, 'preflight-failed', []))
         log = Path(result['log']).read_text()
         self.assertIn('PREFLIGHT_CHECK NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL failed', log)
+        self.assertIn('would start 6.8.0-147-generic on the next reboot and 6.8.0-142-generic on the reboots after it', log)
+        self.assertLess(log.index('GRUB_DEFAULT=saved'), log.index('grub-set-default'))
         self.assertIn("grub-set-default 'gnulinux-advanced-<uuid>>gnulinux-6.8.0-142-generic-advanced-<uuid>'", log)
         self.assertIn("owner's approval", log)
         self.assertIn('grub-editenv /boot/grub/grubenv unset next_entry', log)

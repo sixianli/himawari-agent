@@ -49,15 +49,21 @@ READ_NEXT_BOOT_KERNEL = (
     '        if node is None:\n'
     '            return ""\n'
     '    return node["kernel"]\n'
+    'def installed(kernel):\n'
+    '    return kernel if kernel and (pathlib.Path(sys.argv[3]) / ("vmlinuz-" + kernel)).is_file() else ""\n'
     'try:\n'
     '    config = pathlib.Path(sys.argv[1]).read_text()\n'
     '    environment = dict(line.split("=", 1) for line in pathlib.Path(sys.argv[2]).read_text(errors="replace").splitlines() if "=" in line and not line.startswith("#"))\n'
-    '    target = environment.get("next_entry") or environment.get("saved_entry", "")\n'
-    '    defaults = [line.strip() for line in config.splitlines() if line.strip().startswith("set default=") and line.strip() != \'set default="${next_entry}"\']\n'
-    '    kernel = resolve(menu(config), target) if target and defaults and defaults[-1] == \'set default="${saved_entry}"\' else ""\n'
-    '    print(kernel if kernel and (pathlib.Path(sys.argv[3]) / ("vmlinuz-" + kernel)).is_file() else "")\n'
+    '    defaults = {line.strip() for line in config.splitlines() if line.strip().startswith("set default=") and line.strip() != \'set default="${next_entry}"\'}\n'
+    '    entries = menu(config) if defaults == {\'set default="${saved_entry}"\'} else []\n'
+    '    saved = installed(resolve(entries, environment["saved_entry"])) if environment.get("saved_entry") else ""\n'
+    '    once = environment.get("next_entry", "")\n'
+    '    following = installed(resolve(entries, once)) if once else saved\n'
+    '    print("nextBootKernel=" + (following if saved else ""))\n'
+    '    print("savedBootKernel=" + saved)\n'
     'except Exception:\n'
-    '    print("")\n'
+    '    print("nextBootKernel=")\n'
+    '    print("savedBootKernel=")\n'
 )
 READ_QUALIFIED_KERNEL = (
     'import json, pathlib, re, sys\n'
@@ -126,7 +132,7 @@ def remote_script(binding, units=(), paths=(), roots=(), base=''):
         'echo "scratchScenes=$(' + SCRATCH_SCENE_COUNT + ')"',
         DOCUMENT_TOOLS_CHECK,
         RUNNING_KERNEL,
-        'echo "nextBootKernel=$(/usr/bin/python3 -I -c ' + shlex.quote(READ_NEXT_BOOT_KERNEL) + ' ' + ' '.join(shlex.quote(path) for path in (GRUB_CONFIG, GRUB_ENVIRONMENT, BOOT_DIRECTORY)) + ')"',
+        '/usr/bin/python3 -I -c ' + shlex.quote(READ_NEXT_BOOT_KERNEL) + ' ' + ' '.join(shlex.quote(path) for path in (GRUB_CONFIG, GRUB_ENVIRONMENT, BOOT_DIRECTORY)),
         'echo "qualifiedKernel=$(/usr/bin/python3 -I -c ' + shlex.quote(READ_QUALIFIED_KERNEL) + ' ' + shlex.quote(str(Path(binding['service']['newQualificationEvidenceRoot']).parent)) + ')"',
         *(['if /usr/bin/git -C ' + shlex.quote(source_cache(binding)) + ' cat-file -e ' + shlex.quote(base + '^{commit}') + ' 2>/dev/null; then echo sourceCacheBase=present; else echo sourceCacheBase=absent; fi'] if base else []),
         '/usr/bin/python3 -I -c ' + shlex.quote(SANDBOX_LINKS_SCRIPT) + ' ' + ' '.join(shlex.quote(root) for root in roots) + ' || echo sandboxLinks=check-failed',
@@ -169,7 +175,7 @@ def checks(binding, facts, size, units=(), paths=(), base=''):
         ('ROOT_FREE_FOR_ACCEPTANCE', room['predictedFreeAfterInstall'] >= room['needAfterInstall']),
         ('TMP_SCRATCH_WITHIN_LIMIT', int(facts.get('scratchScenes') or 0) <= MAX_FAILURE_SCENES),
         ('DOCUMENT_TOOLS_INSTALLED', facts.get('documentTools') == 'ok'),
-        ('NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL', bool(facts.get('runningKernel')) and facts.get('nextBootKernel') == facts.get('runningKernel')),
+        ('NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL', bool(facts.get('runningKernel')) and facts.get('nextBootKernel') == facts.get('runningKernel') == facts.get('savedBootKernel')),
         ('RUNNING_KERNEL_MATCHES_QUALIFICATION', bool(facts.get('runningKernel')) and facts.get('qualifiedKernel') == facts.get('runningKernel')),
         *([('SOURCE_CACHE_HAS_BASE', facts.get('sourceCacheBase') == 'present')] if base else []),
         ('SANDBOX_COMMAND_LINKS_REACHABLE', facts.get('sandboxLinks') == 'ok'),
@@ -204,9 +210,9 @@ def main():
     if any(name == 'DOCUMENT_TOOLS_INSTALLED' and not passed for name, passed in results):
         print('PREFLIGHT_DOCUMENT_TOOLS the model sandbox needs these system packages; with the owner\'s approval run as root: apt-get update && apt-get install --no-install-recommends python3-docx python3-openpyxl python3-pypdf python3-pdfminer weasyprint fonts-noto-cjk pandoc python3-markdown libharfbuzz-subset0 fonts-lxgw-wenkai python3-venv, then install the pinned WeasyPrint 70 into /usr/lib/himawari-document-python as ADR 0118 describes')
     if any(name == 'NEXT_BOOT_KERNEL_IS_RUNNING_KERNEL' and not passed for name, passed in results):
-        print('PREFLIGHT_NEXT_BOOT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but after a reboot GRUB would start ' + (facts.get('nextBootKernel') or 'an unknown kernel (' + GRUB_CONFIG + ' or ' + GRUB_ENVIRONMENT + ' could not be read or parsed, grub.cfg does not boot the saved entry, or the chosen entry boots no kernel in ' + BOOT_DIRECTORY + ')') + '; the sandbox qualification is bound to the running kernel and the service would refuse to start on any other one. Nothing was changed. With the owner\'s approval, as root, follow the rollback section of docs/runbooks/production-server-access-runbook.md: run grub-editenv ' + GRUB_ENVIRONMENT + ' list, then point GRUB at the running kernel with its full quoted entry path, submenu id, then >, then entry id, for example: grub-set-default \'gnulinux-advanced-<uuid>>gnulinux-' + facts.get('runningKernel', '<kernel>') + '-advanced-<uuid>\' (both ids from: grep menuentry_id_option ' + GRUB_CONFIG + '), remove a one-time choice with: grub-editenv ' + GRUB_ENVIRONMENT + ' unset next_entry, run grub-editenv list again and run this check again. If grub.cfg does not boot the saved entry, set GRUB_DEFAULT=saved in /etc/default/grub and run update-grub first. Keep the other installed kernels, they are the fallback')
+        print('PREFLIGHT_NEXT_BOOT_KERNEL the server runs kernel ' + facts.get('runningKernel', '?') + ' but GRUB would start ' + (facts.get('nextBootKernel') or 'an unknown kernel') + ' on the next reboot and ' + (facts.get('savedBootKernel') or 'an unknown kernel') + ' on the reboots after it (unknown means ' + GRUB_CONFIG + ' or ' + GRUB_ENVIRONMENT + ' could not be read or parsed, grub.cfg does not boot only the saved entry, or the entry boots no kernel in ' + BOOT_DIRECTORY + '); the sandbox qualification is bound to the running kernel and the service would refuse to start on any other one. The running release, the service and GRUB were not changed. With the owner\'s approval, as root, follow the rollback section of docs/runbooks/production-server-access-runbook.md: if grub.cfg does not boot the saved entry, first set GRUB_DEFAULT=saved in /etc/default/grub and run update-grub; run grub-editenv ' + GRUB_ENVIRONMENT + ' list; point GRUB at the running kernel with its full quoted entry path, submenu id, then >, then entry id, replacing both ids with the real ones from: grep menuentry_id_option ' + GRUB_CONFIG + ', for example: grub-set-default \'gnulinux-advanced-<uuid>>gnulinux-' + facts.get('runningKernel', '<kernel>') + '-advanced-<uuid>\'; remove a one-time choice with: grub-editenv ' + GRUB_ENVIRONMENT + ' unset next_entry; run grub-editenv list again and run this check again. Keep the other installed kernels, they are the fallback')
     if any(name == 'RUNNING_KERNEL_MATCHES_QUALIFICATION' and not passed for name, passed in results):
-        print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel, and the service would refuse to start on any other one. Nothing was changed. With the owner\'s approval, either boot the kernel the receipt records following the rollback section of docs/runbooks/production-server-access-runbook.md (keep the running kernel as the fallback), or qualify the running kernel first with the sandbox qualification procedure before deploying')
+        print('PREFLIGHT_QUALIFIED_KERNEL the running kernel ' + facts.get('runningKernel', '?') + ' differs from the kernel the latest installation receipt records (' + (facts.get('qualifiedKernel') or 'unreadable') + '); the sandbox qualification is bound to that kernel, and the service would refuse to start on any other one. With the owner\'s approval, either boot the kernel the receipt records following the rollback section of docs/runbooks/production-server-access-runbook.md (keep the running kernel as the fallback), or qualify the running kernel first with the sandbox qualification procedure before deploying; the running release, the service and GRUB were not changed')
     if any(name == 'SANDBOX_COMMAND_LINKS_REACHABLE' and not passed for name, passed in results):
         print('PREFLIGHT_SANDBOX_LINKS these commands in /usr/bin are links to a place the model sandbox is not allowed to read, so the model would get command not found for them (' + facts.get('sandboxLinks', 'no answer') + '); add the missing directory to readOnlyToolchainPaths in signing/cloud-seal.mjs, regenerate the packet and run this check again')
     if any(name == 'ROOT_FREE_FOR_ACCEPTANCE' and not passed for name, passed in results):
