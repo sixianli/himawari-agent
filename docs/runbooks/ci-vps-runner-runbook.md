@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:cc4be7ff3e2c728e6f24637d069a62fcfd302aa6f4f255dfb9c8a0877b64be48"
+contract_sha256: "sha256:30c89bb3f340f62180c433eedc1ee531e681ef3b3a4ee75aaf9ef7b2944fddcf"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -123,7 +123,7 @@ date: "2026-11-07"
 只在新机器上做一次，之后可以重复运行：
 
 1. 把 `scripts/operations/ci-runner/prepare-vps.sh` 用 `scp` 传到 VPS 的 `/home/ubuntu/`。
-2. `sudo bash /home/ubuntu/prepare-vps.sh > /home/ubuntu/prepare-vps.log 2>&1`（要几分钟，放后台）。脚本确认以 root 运行（否则退出码 64）、主机名是 `ci-vps` 或 OVH 给的原名 `vps-482b8c36`（否则 68）、系统是 Ubuntu 24.04（否则 69）；装编译工具、`unzip`、`xz-utils`、`bubblewrap`、`socat`、`ripgrep`、`apparmor-utils`；写 cloud-init 配置并把主机名改成 `ci-vps`；关掉安全更新后的自动重启；写入并加载 `/etc/apparmor.d/bwrap`（已有内容不同的同名文件时以退出码 70 拒绝，不覆盖），确认全局开关仍是 1（否则 71）；下载 Node 22.22.3 并核对 SHA-256（不对时 72），用它装 Playwright 1.62.1 需要的 chromium、firefox、webkit 系统库。成功时最后一行是 `CI_VPS_PREPARED hostname=ci-vps bwrap=<版本> userns_restrict=1 gcc=<版本> playwright_deps=1.62.1`。
+2. `sudo bash /home/ubuntu/prepare-vps.sh > /home/ubuntu/prepare-vps.log 2>&1`（要几分钟，放后台）。脚本确认以 root 运行（否则退出码 64）、主机名是 `ci-vps` 或 OVH 给的原名 `vps-482b8c36`（否则 68）、系统是 Ubuntu 24.04（否则 69）；装编译工具、`unzip`、`xz-utils`、`bubblewrap`、`socat`、`ripgrep`、`apparmor-utils`；写 cloud-init 配置并把主机名改成 `ci-vps`；关掉安全更新后的自动重启；写入 `/etc/needrestart/conf.d/50ci-vps-gh-runner.conf`，让自动安全更新之后不自动重启 `gh-runner` 开头的服务，并当场按 needrestart 的规则核对两个 runner 服务都不会被重启（否则 73）；写入并加载 `/etc/apparmor.d/bwrap`（已有内容不同的同名文件时以退出码 70 拒绝，不覆盖），确认全局开关仍是 1（否则 71）；下载 Node 22.22.3 并核对 SHA-256（不对时 72），用它装 Playwright 1.62.1 需要的 chromium、firefox、webkit 系统库。成功时最后一行是 `CI_VPS_PREPARED hostname=ci-vps bwrap=<版本> userns_restrict=1 gcc=<版本> playwright_deps=1.62.1`。
 3. `sudo systemctl reboot`，重新连上后按 [Live-State Preflight](#live-state-preflight) 第 1、2 项核对主机名和 bwrap。
 
 ### 安装
@@ -252,6 +252,7 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 | GitHub 显示 `offline` | Preflight 第 3、7 项；对应服务的 `journalctl -u` | 服务停着就在 Mac 上运行 `resume-runners.sh`；服务在跑但连不上，看日志里的网络错误，VPS 断网时只能等，或在 OVH 控制台看机器状态。 |
 | 任务报 `below the 16 GiB floor; job refused` | `df -h /`；两个 runner 的 `disk.log` 末尾几行 | 先报告 Andy；只能清 `/srv/gh-runner/runner/_work`、`/srv/gh-runner-2/runner/_work` 下没有任务在用的旧目录，其他东西不删。 |
 | 任务访问本机服务、私有网段或元数据服务地址失败 | `sudo -n nft list table inet gh_runner` | 防火墙按设计拒绝。确实需要时先问 Andy，不自行放开。 |
+| 正在跑的任务日志里出现 `The runner has received a shutdown signal` | `sudo journalctl -u gh-runner -u gh-runner-2 --since <时间>` 里有 `Stopping gh-runner`，同一时段 `/var/log/unattended-upgrades/unattended-upgrades.log` 有升级记录 | 自动安全更新之后 needrestart 重启了 runner。确认 `/etc/needrestart/conf.d/50ci-vps-gh-runner.conf` 还在；不在就重新运行 `prepare-vps.sh`。被杀掉的运行在 GitHub 上重跑。runner 要用上新库时，等两个 runner 都空闲再 `sudo systemctl restart gh-runner gh-runner-2`。 |
 | 任务装浏览器时要 root | 看是否用了 `playwright install --with-deps` | 准备脚本已装好浏览器的系统库，workflow 里去掉 `--with-deps`；Playwright 升级后重新运行 `prepare-vps.sh`（先把里面的版本号改成新的）。 |
 | `gh-runner-nft.service` 失败，runner 服务起不来 | `systemctl status gh-runner-nft.service`；`sudo -n nft -c -f /etc/gh-runner/nft.rules` | 规则文件坏了就重新运行 `install-runner.sh` 生成。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |

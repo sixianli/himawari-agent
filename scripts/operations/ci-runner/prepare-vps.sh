@@ -10,6 +10,7 @@ PLAYWRIGHT_VERSION=1.62.1
 APPARMOR_PROFILE=/etc/apparmor.d/bwrap
 HOSTNAME_CFG=/etc/cloud/cloud.cfg.d/99-ci-vps-hostname.cfg
 NO_REBOOT_CFG=/etc/apt/apt.conf.d/52ci-vps-no-auto-reboot
+NEEDRESTART_CFG=/etc/needrestart/conf.d/50ci-vps-gh-runner.conf
 
 fail() { printf 'CI_VPS_PREPARE_FAILED %s\n' "$*" >&2; exit "${2:-1}"; }
 
@@ -32,6 +33,14 @@ else
 fi
 
 printf 'Unattended-Upgrade::Automatic-Reboot "false";\n' > "$NO_REBOOT_CFG"
+
+printf '%s\n' '$nrconf{override_rc}{qr(^gh-runner)} = 0;' > "$NEEDRESTART_CFG"
+perl -e 'our %nrconf; do "/etc/needrestart/needrestart.conf"; die $@ if $@;
+  for my $unit (qw(gh-runner.service gh-runner-2.service)) {
+    my $restart = 1;
+    for my $re (keys %{$nrconf{override_rc}}) { next unless $unit =~ /$re/; $restart = $nrconf{override_rc}{$re}; last }
+    exit 1 if $restart;
+  }' || fail "needrestart would still restart the runner services" 73
 
 profile_text='abi <abi/4.0>,
 include <tunables/global>
