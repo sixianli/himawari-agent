@@ -1,0 +1,27 @@
+{
+  "routing": "order",
+  "stays": "session",
+  "creditProvider": "workbuddy-ai",
+  "creditFloor": 20,
+  "defaultCreditsPerUsd": 54,
+  "providers": [
+    { "id": "workbuddy-ai", "kind": "plugin", "signIn": "desktop" },
+    { "id": "opencode-go", "kind": "preset", "url": "https://opencode.ai/inference/go/v1" }
+  ],
+  "models": {
+    "opencode-go/deepseek-v4.1-flash": {
+      "name": "DeepSeek V4.1 Flash",
+      "members": ["workbuddy-ai/deepseek-v4.1-flash-sg", "opencode-go/deepseek-v4.1-flash"],
+      "context": 1000000,
+      "output": 128000,
+      "cost": { "input": 0.15, "output": 0.6, "cache_read": 0.003 }
+    },
+    "opencode-go/glm-5.3-flash": {
+      "name": "GLM-5.3-Flash",
+      "members": ["workbuddy-ai/glm-5.3-flash", "opencode-go/glm-5.3-flash"],
+      "context": 1000000,
+      "output": 32000,
+      "cost": { "input": 0.15, "output": 0.5, "cache_read": 0.03 }
+    }
+  }
+}

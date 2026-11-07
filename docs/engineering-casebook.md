@@ -3959,9 +3959,13 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 
 上面“腾讯 CodeBuddy 不接、SuperGrok 接”的结论后来反过来了。我先前以为 Magpie 只能把自己的模型给 CodeBuddy 用，其实社区插件能让 Magpie 调用 CodeBuddy 的模型。主人 18:31 授权在生产机装插件并登录国际版，条款风险由他承担；国际版数据在新加坡保留 14 天，所以排在组里最后。SuperGrok 主人选了先不接。最终顺序是：OpenCode Zen 两个免费模型 → OpenCode Go 两个模型 → CodeBuddy 国际版，组里没有 Vercel。主人还决定私人数据不必特意避开 CodeBuddy。详见 [ADR 0117 晚间修订](adr/0117-magpie-routes-models-through-owned-subscriptions.md#revision-1029-evening)。这件事的教训：判断“某个套餐能不能接”之前，要先查这个网关的插件生态，而不是只看它的主文档。
 
+**后续（2026-11-07）**
+
+开发用的模型复核也改为经 Magpie（[ADR 0178](adr/0178-review-model-calls-through-a-local-magpie.md)）。起因是 OpenCode Go 套餐快用完，主人想改用 CodeBuddy 国际版免费账号，又要求复核脚本和 OpenCode 只关心“哪个模型、什么推理强度”。做法是每次复核在云端容器里自起一个全新的 Magpie，跑完关掉；CodeBuddy 的登录凭证存成云端环境的网络密钥，容器里只放假凭证 `proxy-injected`，由出口代理在请求离开容器后换成真的。实测数字（云端容器，2026-11-07，记录在 `.agents/reviews/topic-review-gateway-magpie/`）：PR 273 第 1 轮的 DeepSeek 复核经 Magpie 跑完 38 步、12.9 分钟，单步最多 5,922 个 token；途中 CodeBuddy 断开一次，Magpie 把 5 次请求转给 Go 后复核照常完成。同一天 OpenCode Go 上的 DeepSeek 超时两次、报服务错误三次。踩过的坑：Go 的网络密钥只对 `/inference/go/` 路径代填，Magpie 默认地址 `/zen/go/v1` 会 401；Magpie 会为多家都有的模型名自动建同名路由组，复核自己的组要加 `review-` 前缀；OpenCode 对自定义服务方不提供网页搜索，要设 `OPENCODE_ENABLE_EXA=1`；Node 默认不走出口代理，代理就补不上凭证。
+
 **相关 ADR/PR**
 
-[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`。
+[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)、[ADR 0178](adr/0178-review-model-calls-through-a-local-magpie.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`，复核改经 Magpie 的 PR 在分支 `claude/laughing-dirac-dfkf3j`。
 
 **面试 30 秒版**
 
