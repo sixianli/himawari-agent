@@ -97,6 +97,7 @@ import {
   SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE,
+  sandboxResourceLimitMessage,
   SANDBOX_WRITE_EFFECT_UNVERIFIED,
   SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE,
   type SandboxToolCompletion,
@@ -890,7 +891,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         key,
         { ref: plan.handleRef, operation: plan.operation },
         completion,
-        plan.resourceCeiling.maxOutputBytes,
+        plan.resourceCeiling,
         true,
         {
           assertDisclosure,
@@ -1531,7 +1532,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             key,
             handle,
             completion,
-            ceiling.maxOutputBytes,
+            ceiling,
             internal,
           );
           await this.#validate(invocation, internal);
@@ -1864,7 +1865,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 key,
                 handle,
                 completion,
-                ceiling.maxOutputBytes,
+                ceiling,
                 internal,
                 resultRecovery
                   ? {
@@ -2026,7 +2027,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     key: string,
     handle: { readonly ref: string; readonly operation: string },
     completion: WorkerToolCompletion | undefined,
-    maxOutputBytes: number,
+    ceiling: CapabilityResourceCeiling,
     internal: boolean,
     recovered?: {
       assertDisclosure(): Promise<void>;
@@ -2071,7 +2072,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     const readOutput = (outputRef: string) =>
       recovered
         ? recovered.readOutput(outputRef)
-        : this.#observedOutput(invocation, key, handle.ref, outputRef, maxOutputBytes, internal);
+        : this.#observedOutput(
+            invocation,
+            key,
+            handle.ref,
+            outputRef,
+            ceiling.maxOutputBytes,
+            internal,
+          );
     if (completion?.outcome === "succeeded") {
       if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
       const output = await readOutput(completion.outputRef);
@@ -2134,15 +2142,17 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             ? `${SANDBOX_TOOL_RESULT_LOST}：${SANDBOX_TOOL_RESULT_LOST_MESSAGE}`
             : completion.errorCode === SANDBOX_TOOL_DEADLINE_EXCEEDED
               ? `${SANDBOX_TOOL_DEADLINE_EXCEEDED}：${SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE}`
-              : completion.errorCode === SANDBOX_HOST_COMPLETION_CONTRADICTED
-                ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
-                : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
-                  ? "工具未启动：准备阶段失败，已确认清理完成。"
-                  : completion.errorCode === SANDBOX_WRITE_EFFECT_UNVERIFIED
-                    ? `${SANDBOX_WRITE_EFFECT_UNVERIFIED}：${SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE}`
-                    : commandEffectUnverified
-                      ? "命令执行失败。Himawari 没有核验这条命令是否改动了工作区；如果它会写入文件，继续前先检查目标文件。"
-                      : "操作未确认成功。",
+              : sandboxResourceLimitMessage(completion.errorCode ?? "", ceiling)
+                ? (sandboxResourceLimitMessage(completion.errorCode ?? "", ceiling) as string)
+                : completion.errorCode === SANDBOX_HOST_COMPLETION_CONTRADICTED
+                  ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
+                  : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
+                    ? "工具未启动：准备阶段失败，已确认清理完成。"
+                    : completion.errorCode === SANDBOX_WRITE_EFFECT_UNVERIFIED
+                      ? `${SANDBOX_WRITE_EFFECT_UNVERIFIED}：${SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE}`
+                      : commandEffectUnverified
+                        ? "命令执行失败。Himawari 没有核验这条命令是否改动了工作区；如果它会写入文件，继续前先检查目标文件。"
+                        : "操作未确认成功。",
       };
     }
   }

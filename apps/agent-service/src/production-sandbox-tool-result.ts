@@ -19,7 +19,10 @@ import type {
 import {
   FILE_WRITE_NOT_STARTED,
   isSandboxToolResultLost,
+  SANDBOX_CPU_TIME_LIMIT,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_MEMORY_LIMIT,
+  SANDBOX_RESOURCE_LIMIT,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_NOT_STARTED,
   SRT_BACKEND_REF,
@@ -111,10 +114,32 @@ export function failedCommandModelContent(
 }
 
 export {
+  SANDBOX_CPU_TIME_LIMIT,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_MEMORY_LIMIT,
+  SANDBOX_RESOURCE_LIMIT,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_WRITE_EFFECT_UNVERIFIED,
 } from "@himawari-agent/execution-contracts";
+
+const limitAmount = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
+
+export function sandboxResourceLimitMessage(
+  reasonCode: string,
+  ceiling: { readonly maxCpuTimeMs: number; readonly maxMemoryBytes: number },
+): string | null {
+  const limits = `本次允许的上限是 CPU 时间 ${limitAmount(ceiling.maxCpuTimeMs / 1000)} 秒、内存 ${limitAmount(ceiling.maxMemoryBytes / 1_000_000)} MB`;
+  const crossed =
+    reasonCode === SANDBOX_CPU_TIME_LIMIT
+      ? "命令使用的 CPU 时间超过上限"
+      : reasonCode === SANDBOX_MEMORY_LIMIT
+        ? "命令使用的内存超过上限"
+        : reasonCode === SANDBOX_RESOURCE_LIMIT
+          ? "命令超过资源上限"
+          : null;
+  if (crossed === null) return null;
+  return `${reasonCode}：${crossed}，已被终止并完成清理，没有重新执行。${limits}。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态，再用更省资源的做法重试，或者说明这件事做不到。`;
+}
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE =
   "工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";
 export const SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE =

@@ -8,6 +8,10 @@ import {
   FILE_WRITE_NOT_STARTED,
   isSandboxBoundedToolFailure,
   isSandboxToolResultLost,
+  SANDBOX_CPU_TIME_LIMIT,
+  SANDBOX_MEMORY_LIMIT,
+  SANDBOX_RESOURCE_LIMIT,
+  sandboxResourceLimitReason,
   SANDBOX_WRITE_EFFECT_UNVERIFIED,
   type SandboxOperationContract,
 } from "../src/sandbox-execution-v2.ts";
@@ -108,5 +112,40 @@ describe("sandboxFileOperationFailureReason", () => {
       sandboxFileOperationFailureReason(plan("save_copy", { verifierRef: "copy-save" }), null),
     ).toBe("SANDBOX_OPERATION_FAILED");
     expect(sandboxFileOperationFailureReason(plan("move"), null)).toBe("SANDBOX_OPERATION_FAILED");
+  });
+});
+
+describe("sandboxResourceLimitReason", () => {
+  const ceiling = { maxCpuTimeMs: 1000, maxMemoryBytes: 2000 };
+
+  it("[I-81] names the limit the command crossed", () => {
+    expect(
+      sandboxResourceLimitReason(ceiling, { observedCpuTimeMs: 1001, peakObservedMemoryBytes: 10 }),
+    ).toBe(SANDBOX_CPU_TIME_LIMIT);
+    expect(
+      sandboxResourceLimitReason(ceiling, { observedCpuTimeMs: 10, peakObservedMemoryBytes: 2001 }),
+    ).toBe(SANDBOX_MEMORY_LIMIT);
+  });
+
+  it("[I-81] falls back to the unnamed limit when the observation is missing or within both limits", () => {
+    expect(sandboxResourceLimitReason(ceiling, null)).toBe(SANDBOX_RESOURCE_LIMIT);
+    expect(
+      sandboxResourceLimitReason(ceiling, {
+        observedCpuTimeMs: 1000,
+        peakObservedMemoryBytes: 2000,
+      }),
+    ).toBe(SANDBOX_RESOURCE_LIMIT);
+  });
+
+  it("[I-81] bounds every resource-limit failure so the turn does not wait for reconciliation", () => {
+    for (const reasonCode of [SANDBOX_CPU_TIME_LIMIT, SANDBOX_MEMORY_LIMIT, SANDBOX_RESOURCE_LIMIT])
+      expect(isSandboxBoundedToolFailure(failure(reasonCode))).toBe(true);
+    expect(
+      isSandboxBoundedToolFailure({
+        kind: "error",
+        reasonCode: SANDBOX_CPU_TIME_LIMIT,
+        termination: { type: "exit", exitCode: 1 },
+      } as never),
+    ).toBe(false);
   });
 });

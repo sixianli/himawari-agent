@@ -468,6 +468,38 @@ describe("ProductionRuntimeTools", () => {
     expect(result.modelContent).not.toBe("操作未确认成功。");
   });
   it.each([
+    ["SANDBOX_CPU_TIME_LIMIT", "CPU 时间"],
+    ["SANDBOX_MEMORY_LIMIT", "内存"],
+    ["SANDBOX_RESOURCE_LIMIT", "资源"],
+  ] as const)(
+    "[I-81] tells the model which resource limit stopped the command and what that limit is (%s)",
+    async (errorCode, limitName) => {
+      const f = fixture();
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        const completion = {
+          outcome: "failed" as const,
+          outputRef: null,
+          errorCode,
+          externalActionId: null,
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject({ dispatchState: "accepted", outcome: "failed", errorCode });
+      expect(result.modelContent).toContain(limitName);
+      expect(result.modelContent).toContain(`${f.options.ceiling.maxCpuTimeMs / 1000} 秒`);
+      expect(result.modelContent).toContain(`${f.options.ceiling.maxMemoryBytes / 1_000_000} MB`);
+      expect(result.modelContent).not.toBe("操作未确认成功。");
+    },
+  );
+  it.each([
     ["output:tools", { outcome: "failed", resultRef: "output:tools", modelContent: "已读取结果" }],
     ["output:unobserved", { outcome: "result_unknown", resultRef: null }],
   ] as const)(

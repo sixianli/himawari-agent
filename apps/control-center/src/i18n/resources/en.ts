@@ -221,8 +221,14 @@ export const messages = {
     "A command's result could not be confirmed, so this Run ended without an answer. Check what the command did before continuing",
   "chat.reason.runDeadlineExceeded":
     "The Run deadline expired; cleanup is complete and this Run has ended",
+  "chat.reason.toolCpuTimeLimit":
+    "The command used more CPU time than its limit; it was terminated and cleanup is complete",
   "chat.reason.toolDeadlineExceeded":
     "The tool timed out; it was terminated and cleanup is complete",
+  "chat.reason.toolMemoryLimit":
+    "The command used more memory than its limit; it was terminated and cleanup is complete",
+  "chat.reason.toolResourceLimit":
+    "The command crossed a resource limit; it was terminated and cleanup is complete",
   "chat.reason.toolNotStarted":
     "The tool did not start: preparation failed and cleanup is confirmed",
   "chat.reason.deadlineExceeded": "Execution deadline expired; the operation was not dispatched",
