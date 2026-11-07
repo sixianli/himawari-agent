@@ -87,7 +87,7 @@ const PRIVATE_KEY_BLOCK = RULES.filter((rule) => rule.id === "private-key-block"
   (rule) => rule.pattern,
 );
 const KEY_HEAD = new RegExp(
-  `-----BEGIN ${KEY_KIND}(?:[ \t]*${KEY_LINE_BREAK}${KEY_LINE_PREFIX}|[ \t]*)${KEY_TEXT}+(?:${KEY_LINE_BREAK}${KEY_SHORT_LINE}){0,${KEY_LINES}}`,
+  `-----BEGIN ${KEY_KIND}(?:[ \t]*${KEY_LINE_BREAK}${KEY_LINE_PREFIX}${KEY_TEXT}+|[ \t]*${KEY_TEXT}{16,})(?:${KEY_LINE_BREAK}${KEY_SHORT_LINE}){0,${KEY_LINES}}`,
   "g",
 );
 const KEY_END = new RegExp(`-----END ${KEY_KIND}`, "g");

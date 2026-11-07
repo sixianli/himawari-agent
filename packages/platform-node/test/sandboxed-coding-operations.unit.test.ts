@@ -258,7 +258,24 @@ describe("Pi output export", () => {
       file,
       Buffer.concat([Buffer.from([0xff]), Buffer.from(`sk-${"a".repeat(24)}`)]),
     );
-    await expect(exportPiOutputFile(file, root, 1024)).rejects.toThrow("PI_OUTPUT_FILE_REJECTED");
+    await expect(exportPiOutputFile(file, root, 1024)).rejects.toThrow("PI_OUTPUT_SECRET_DROPPED");
+    const { output } = await formatForegroundPiResult({
+      tool: "bash",
+      result: {
+        content: [{ type: "text", text: `tail\nFull output: ${file}` }],
+        details: { fullOutputPath: file },
+        isError: false,
+      },
+      commandExitCode: 0,
+      verifiedWrite: null,
+      privateDirectory: root,
+      maxOutputBytes: 48 * 1024,
+      fitOutput: (json, max) => (Buffer.byteLength(json) <= max ? json : null),
+      closing: {},
+      source: {},
+    });
+    expect(output).toContain("完整输出不是文字且含疑似密钥，未保留");
+    expect(output).not.toContain(file);
   });
   it("rejects forged paths, links and oversized files", async () => {
     const { root, file } = await setup("private bytes");

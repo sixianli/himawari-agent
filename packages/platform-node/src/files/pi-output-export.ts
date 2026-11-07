@@ -41,7 +41,7 @@ export async function exportPiOutputFile(
     const text = utf8Text(bytes);
     if (text === null) {
       if (containsToolOutputSecret(bytes.toString("utf8")))
-        throw new Error("PI_OUTPUT_FILE_REJECTED");
+        throw new Error("PI_OUTPUT_SECRET_DROPPED");
       return exportedOutput(bytes, false);
     }
     const masked = redactForEgress(text).text;

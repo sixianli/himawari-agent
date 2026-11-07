@@ -122,6 +122,7 @@ describe("private key fragments", () => {
       `grep -rn -- '${marker("BEGIN")}' .`,
       "docs/keys.md: rotate the PRIVATE KEY yearly",
       `${marker("END")}\nshort`,
+      `${marker("BEGIN")} is the first line of a PEM file`,
     ])
       expect(redactPrivateKeyFragments(text)).toBe(text);
   });

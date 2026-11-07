@@ -45,6 +45,7 @@ export function isPiHostPublication(input: {
 const FULL_OUTPUT_ENVELOPE_RESERVE = 512;
 const FULL_OUTPUT_KEPT = "本次受保护结果的 fullOutput 字段";
 const FULL_OUTPUT_DROPPED = "完整输出超过上限，未保留";
+const FULL_OUTPUT_SECRET_DROPPED = "完整输出不是文字且含疑似密钥，未保留";
 
 function exactFitOutput(json: string, maxBytes: number): string | null {
   return Buffer.byteLength(json) <= maxBytes ? json : null;
@@ -122,6 +123,11 @@ export async function formatForegroundPiResult(input: {
       try {
         exported = await exportPiOutputFile(fullPath as string, input.privateDirectory, fileBudget);
       } catch (error) {
+        if (error instanceof Error && error.message === "PI_OUTPUT_SECRET_DROPPED")
+          return {
+            output: fitBody(serialize(content(FULL_OUTPUT_SECRET_DROPPED), null)),
+            exitCode,
+          };
         if (error instanceof Error && error.message === "PI_OUTPUT_FILE_REJECTED") exported = null;
         else throw error;
       }
