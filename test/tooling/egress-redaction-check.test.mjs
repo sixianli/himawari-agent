@@ -251,6 +251,33 @@ describe("sensitive gate registration", () => {
     ).toContain("SENSITIVE_GATE_CALLS 的调用数要写成");
   });
 
+  it("reports registry rows without call counts or listed twice instead of crashing", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts": "assertMachineSecretFree(text);",
+    });
+    const missing = findSensitiveGateViolations(root, [{ ...registry[0], calls: undefined }]).join(
+      "\n",
+    );
+    expect(missing).toContain("SENSITIVE_GATE_CALLS 的调用数要写成");
+    expect(missing).toContain("整段拦下的调用和登记不一致");
+    expect(findSensitiveGateViolations(root, [registry[0], registry[0]]).join("\n")).toContain(
+      "SENSITIVE_GATE_CALLS 里重复登记了这个文件",
+    );
+  });
+
+  it("only treats renamed imports and exports as renaming", () => {
+    const root = gateFixture({
+      "packages/application/src/services/model-egress.ts": [
+        "assertMachineSecretFree(text);",
+        "const guard = assertMachineSecretFree as unknown as Guard;",
+        "export { assertMachineSecretFree as checkFree } from 'x';",
+      ].join("\n"),
+    });
+    const report = findSensitiveGateViolations(root, registry);
+    expect(report).toHaveLength(1);
+    expect(report[0]).toContain("给整段拦下的函数 assertMachineSecretFree 起了别名");
+  });
+
   it("fails when a registered call is gone but the registry still lists it", () => {
     const root = gateFixture({
       "packages/application/src/services/model-egress.ts": "redactForEgress(text);",

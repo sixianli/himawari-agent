@@ -309,7 +309,10 @@ export function findEgressViolations(root = repositoryRoot) {
 
 const GATE_NAMES = SENSITIVE_GATE_FUNCTIONS.join("|");
 const GATE_CALL = new RegExp(`\\b(${GATE_NAMES})\\s*(?:\\?\\.\\s*)?\\(`, "gu");
-const GATE_ALIAS = new RegExp(`\\b(${GATE_NAMES})\\s+as\\s+[A-Za-z_$][\\w$]*`, "gu");
+const GATE_ALIAS = new RegExp(
+  `\\b(?:import|export)\\s+(?:type\\s+)?\\{[^}]*\\b(${GATE_NAMES})\\s+as\\s+[A-Za-z_$][\\w$]*`,
+  "gu",
+);
 const GATE_DECISIONS = new Set([KEEP, MASK, PASS]);
 
 function gateCallCounts(text) {
@@ -318,16 +321,26 @@ function gateCallCounts(text) {
   return counts;
 }
 
+function gateCalls(entry) {
+  return entry.calls !== null && typeof entry.calls === "object" ? entry.calls : {};
+}
+
 function registryViolations(registry) {
   const violations = [];
+  const files = new Set();
   for (const entry of registry) {
+    if (typeof entry.file !== "string" || entry.file === "")
+      violations.push("SENSITIVE_GATE_CALLS 每一行都要写文件路径");
+    else if (files.has(entry.file))
+      violations.push(`${entry.file}: SENSITIVE_GATE_CALLS 里重复登记了这个文件`);
+    else files.add(entry.file);
     if (!GATE_DECISIONS.has(entry.decision))
       violations.push(
         `${entry.file}: SENSITIVE_GATE_CALLS 的结论只能是 ${[...GATE_DECISIONS].join("、")}`,
       );
     if (typeof entry.reason !== "string" || entry.reason.trim() === "")
       violations.push(`${entry.file}: SENSITIVE_GATE_CALLS 要写明理由`);
-    const calls = entry.calls ?? {};
+    const calls = gateCalls(entry);
     const names = Object.keys(calls);
     if (
       names.length === 0 ||
@@ -361,8 +374,9 @@ export function findSensitiveGateViolations(
     let files = [];
     try {
       files = sourceFiles(directory);
-    } catch {
-      continue;
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
     }
     for (const full of files) {
       const relative = path.relative(root, full).split(path.sep).join("/");
@@ -382,7 +396,7 @@ export function findSensitiveGateViolations(
         );
         continue;
       }
-      if (!sameCounts(counts, entry.calls))
+      if (!sameCounts(counts, gateCalls(entry)))
         violations.push(
           `${relative}: 整段拦下的调用和登记不一致，实际 ${JSON.stringify(counts)}，登记 ${JSON.stringify(entry.calls)}；请同时更新 SENSITIVE_GATE_CALLS`,
         );
