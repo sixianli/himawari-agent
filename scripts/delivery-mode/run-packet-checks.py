@@ -31,6 +31,9 @@ PYTHON_FIXTURES = (
 HERMES_ONLY = ('steps/verify-steps.py',)
 SRT_BOUNDARY = 'packages/runtime-sandbox/scripts/check-srt-boundary.mjs'
 MIGRATE_FIXTURE = 'maintenance/verify-migrate-fixtures.mjs'
+INSTALLED_PROBE = 'acceptance/cloud/adapters/probe-foreground.mjs'
+PRODUCTION_PROBE_RUNNER = 'acceptance/cloud/run-network-preparation.py'
+PI_TOOLS_VARIABLE = 'HIMAWARI_PACKET_PI_TOOLS'
 OLD_CONFIG_PENDING = "OLD_CONFIG_SHA = 'PENDING:s0.service.configurationSha256'\n"
 OLD_CONFIG_HOLDERS = ('systemd/S2-stop-and-inspect.py', 'maintenance/S9-control-files.py')
 
@@ -69,6 +72,69 @@ def audit_script_problem(packet, target):
     return None
 
 
+def expected_probe_count(packet):
+    found = re.findall(r"pi\['passed'\] != ([0-9]+)", (packet / PRODUCTION_PROBE_RUNNER).read_text())
+    if len(found) != 1:
+        raise SystemExit('PACKET_CHECKS_PROBE_COUNT_MISSING ' + PRODUCTION_PROBE_RUNNER)
+    return int(found[0])
+
+
+def installed_probe_problem(packet, stdout):
+    lines = stdout.decode(errors='replace').strip().splitlines()
+    try:
+        report = json.loads(lines[-1])
+    except (IndexError, ValueError):
+        return 'INSTALLED_PROBE_REPORT_MISSING'
+    expected = expected_probe_count(packet)
+    if report.get('passed') != expected:
+        return 'INSTALLED_PROBE_COUNT passed=' + json.dumps(report.get('passed')) + ' expected=' + str(expected)
+    if report.get('qualification') is not False:
+        return 'INSTALLED_PROBE_QUALIFICATION_ISSUED'
+    if not all(row.get('namespaceState') == 'released' for row in report.get('reports', [])):
+        return 'INSTALLED_PROBE_NAMESPACE_NOT_RELEASED'
+    return None
+
+
+def pi_tools(environment):
+    directory = environment.get(PI_TOOLS_VARIABLE)
+    if not directory:
+        return None
+    search = directory + ':/usr/bin:/bin'
+    found = {name: shutil.which(name, path=search) for name in ('bash', 'rg', 'fd')}
+    return found if all(found.values()) else None
+
+
+def install_candidate(command, packet, source, environment, output, prefix):
+    install = [command[0], str(source / 'scripts/install-node-runtime.mjs'), '--prefix', str(prefix), '--artifact', str(candidate_archive(packet)), '--context', str(packet / 'materials/context.json')]
+    return subprocess.run(install, cwd=source, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False, umask=0o022).returncode
+
+
+def run_installed_probe(command, packet, source, environment, output, scratch):
+    tools = pi_tools(environment)
+    if tools is None:
+        output.write(b'INSTALLED_PROBE_PI_TOOLS_MISSING ' + PI_TOOLS_VARIABLE.encode() + b'\n')
+        return 1
+    prefix = scratch / 'prefix'
+    code = install_candidate(command, packet, source, environment, output, prefix)
+    if code != 0:
+        return code
+    runtime = prefix / 'lib/himawari-agent'
+    binaries = runtime / 'pi-tools/bin'
+    binaries.mkdir(parents=True)
+    for name, found in tools.items():
+        shutil.copy(found, binaries / name)
+    probe_environment = {**environment, 'HOME': str(scratch), 'TMPDIR': str(scratch), 'HIMAWARI_TEST_TEMP_ROOT': str(scratch), 'HIMAWARI_LIVE_SANDBOX_PROBE': '1', 'HIMAWARI_PROBE_SCRATCH': str(scratch), 'HIMAWARI_PROBE_RUNTIME': str(runtime), 'NODE_PATH': '', 'NODE_OPTIONS': ''}
+    result = subprocess.run(command, cwd=scratch, env=probe_environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=output, check=False, umask=0o022)
+    output.write(result.stdout)
+    if result.returncode != 0:
+        return result.returncode
+    problem = installed_probe_problem(packet, result.stdout)
+    if problem:
+        output.write(problem.encode() + b'\n')
+        return 1
+    return 0
+
+
 def plan(packet, node, python, include_hermes_only, migrating):
     checks = [(name, [str(node), str(packet / name)], 'source') for name in NODE_FIXTURES]
     checks.append(('systemd/fixtures/verify-doctor-fixtures.mjs', [str(node), '--test', str(packet / 'systemd/fixtures/verify-doctor-fixtures.mjs')], 'source'))
@@ -82,6 +148,7 @@ def plan(packet, node, python, include_hermes_only, migrating):
     if include_hermes_only:
         checks += [(name, [python, '-I', str(packet / name), 'SCRATCH'], None) for name in HERMES_ONLY]
         checks.append((SRT_BOUNDARY, [str(node), SRT_BOUNDARY], 'source'))
+        checks.append((INSTALLED_PROBE, [str(node), str(packet / INSTALLED_PROBE)], 'installed-probe'))
     return checks
 
 
@@ -94,16 +161,17 @@ def candidate_archive(packet):
 
 def run_check(check, packet, source, environment, logs):
     name, command, directory = check
-    scratch = short_scratch() if 'SCRATCH' in command or directory == 'migrate' else None
+    scratch = short_scratch() if 'SCRATCH' in command or directory in ('migrate', 'installed-probe') else None
     command = [str(scratch) if part == 'SCRATCH' else part for part in command]
     log = logs / (name.replace('/', '_') + '.log')
     started = time.monotonic()
     try:
         with log.open('wb') as output:
-            if directory == 'migrate':
+            if directory == 'installed-probe':
+                code = run_installed_probe(command, packet, source, environment, output, scratch)
+            elif directory == 'migrate':
                 prefix = scratch / 'prefix'
-                install = [command[0], str(source / 'scripts/install-node-runtime.mjs'), '--prefix', str(prefix), '--artifact', str(candidate_archive(packet)), '--context', str(packet / 'materials/context.json')]
-                code = subprocess.run(install, cwd=source, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False, umask=0o022).returncode
+                code = install_candidate(command, packet, source, environment, output, prefix)
                 if code == 0:
                     code = subprocess.run(command, cwd=source, env={**environment, 'HIMAWARI_MIGRATE_PREFIX': str(prefix)}, stdout=output, stderr=subprocess.STDOUT, check=False, umask=0o022).returncode
             else:
@@ -122,6 +190,7 @@ def main():
     parser.add_argument('--logs')
     parser.add_argument('--skip-hermes-only', action='store_true')
     parser.add_argument('--record')
+    parser.add_argument('--pi-tools')
     arguments = parser.parse_args()
     packet = Path(arguments.packet).resolve()
     node = Path(arguments.node).resolve()
@@ -145,6 +214,8 @@ def main():
     logs.mkdir(parents=True, exist_ok=True)
     temp_root = short_scratch()
     environment = {**os.environ, 'PATH': str(node.parent) + ':/usr/bin:/bin', 'HIMAWARI_TEST_TEMP_ROOT': str(temp_root), 'PYTHONDONTWRITEBYTECODE': '1'}
+    if arguments.pi_tools:
+        environment[PI_TOOLS_VARIABLE] = arguments.pi_tools
     checks = plan(packet, node, python, not arguments.skip_hermes_only, target != current)
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(checks)) as pool:
