@@ -1,0 +1,2 @@
+{"id": "r5-glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "时限检查只挂在逐封邮件循环里，`history.list` 和每段的 `history.read` 之前不检查", "valid": false, "class": "better"}
+{"id": "r5-glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "测试硬编码 7 小时，不引用 `PROACTIVE_REPLAY_MAX_RUN_MS`", "valid": true, "class": "better"}
