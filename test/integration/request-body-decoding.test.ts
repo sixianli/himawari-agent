@@ -12,6 +12,9 @@ const SENTENCE = "写下一次的日期，其余填 none。";
 const PROVIDER_STUB = fileURLToPath(
   new URL("./production-http-composition-process.test.ts", import.meta.url),
 );
+const PRODUCT_PATH_PROVIDER = fileURLToPath(
+  new URL("../fixtures/product-path-harness.ts", import.meta.url),
+);
 
 function splitInsideCharacter(text: string, character: string): readonly [Buffer, Buffer] {
   const bytes = Buffer.from(text, "utf8");
@@ -19,11 +22,14 @@ function splitInsideCharacter(text: string, character: string): readonly [Buffer
   return [bytes.subarray(0, cut), bytes.subarray(cut)];
 }
 
-function providerStubDecodesChunkwise(source: string): readonly string[] {
+const CHUNKWISE_STRING_DECODING = /\b\w+\s*\+=\s*chunk\s*;/u;
+const READ_REQUEST_BODY_CALL = /\breadRequestBody\s*\(\s*request\b/gu;
+
+function chunkwiseDecodingProblems(source: string, minimumReadCalls: number): readonly string[] {
   const problems: string[] = [];
-  if (/\bbody \+= chunk\b/u.test(source)) problems.push("body += chunk");
-  if (source.split("readRequestBody(request)").length - 1 < 2)
-    problems.push("fewer than two readRequestBody(request) calls");
+  if (CHUNKWISE_STRING_DECODING.test(source)) problems.push("string += chunk");
+  if ((source.match(READ_REQUEST_BODY_CALL) ?? []).length < minimumReadCalls)
+    problems.push(`fewer than ${minimumReadCalls} readRequestBody(request) calls`);
   return problems;
 }
 
@@ -83,16 +89,25 @@ it("[PR-A] keeps the character when a real HTTP request delivers it in two separ
   }
 });
 
-it("[PR-A] the provider stub in production-http-composition-process reads bodies with readRequestBody", () => {
-  expect(providerStubDecodesChunkwise(readFileSync(PROVIDER_STUB, "utf8"))).toEqual([]);
+it("[PR-A] no fake model server decodes request bodies chunk by chunk", () => {
+  expect(chunkwiseDecodingProblems(readFileSync(PROVIDER_STUB, "utf8"), 2)).toEqual([]);
+  expect(chunkwiseDecodingProblems(readFileSync(PRODUCT_PATH_PROVIDER, "utf8"), 0)).toEqual([]);
 });
 
-it("[PR-A] REVERSE: the provider stub guard flags the old chunkwise decoding", () => {
-  const legacy = `request.on("data", (chunk) => {\n  body += chunk;\n});`;
-  expect(providerStubDecodesChunkwise(legacy)).toContain("body += chunk");
-  expect(providerStubDecodesChunkwise("readRequestBody(request)")).toContain(
-    "fewer than two readRequestBody(request) calls",
+it("[PR-A] REVERSE: the guard flags chunk-by-chunk decoding however the variable is named", () => {
+  expect(
+    chunkwiseDecodingProblems(`request.on("data", (chunk) => {\n  body += chunk;\n});`, 0),
+  ).toContain("string += chunk");
+  expect(chunkwiseDecodingProblems(`raw  +=  chunk;`, 0)).toContain("string += chunk");
+  expect(chunkwiseDecodingProblems("readRequestBody(request)", 2)).toContain(
+    "fewer than 2 readRequestBody(request) calls",
   );
+  expect(
+    chunkwiseDecodingProblems(
+      "readRequestBody(\n  request,\n)\nreadRequestBody(request, onChunk)",
+      2,
+    ),
+  ).toEqual([]);
 });
 
 it("[PR-A] counts an agent request but not a background request that carries only the egress legend", () => {
