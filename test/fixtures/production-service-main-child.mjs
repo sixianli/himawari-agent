@@ -127,6 +127,7 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
     if (descriptors.generation.some((model) => model.provider === "magpie") && !magpieUrl)
       throw new Error("LOCAL_MAGPIE_REQUIRED");
     const composition = agent.createProductionModelComposition({
+      egress: agent.createProductionModelEgress(configuration, sources),
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
       descriptors: descriptors.generation.map((model) => ({
