@@ -1,0 +1,3 @@
+{"id": "glm3-1", "model": "opencode-go/glm-5.3-flash", "quote": "I-81 对失败条件的描述不完整", "valid": true, "class": "better"}
+{"id": "glm3-2", "model": "opencode-go/glm-5.3-flash", "quote": "探测超时杀进程时不走生产的清理方式", "valid": true, "class": "better"}
+{"id": "glm3-3", "model": "opencode-go/glm-5.3-flash", "quote": "question-12-inputs.json 内嵌哈希是旧值", "valid": false, "class": "better"}
