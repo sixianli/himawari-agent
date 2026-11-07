@@ -1,7 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { request as requestHttp } from "node:http";
+import { request as requestHttp, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
@@ -13,11 +13,11 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
-import { CHAT_EGRESS_LEGEND } from "@himawari-agent/prompt-catalog";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
+import { isAgentRequest } from "../fixtures/agent-request.ts";
 import { readRequestBody } from "../fixtures/request-body.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -73,17 +73,10 @@ const providerRequests: Array<{
 }> = [];
 type ChatReply = { readonly text: string } | { readonly tool: string; readonly input: object };
 let chatReply: ((input: Readonly<Record<string, unknown>>) => ChatReply) | undefined;
-function isAgentRequest({
-  path: route,
-  body,
-}: {
-  readonly path: string;
-  readonly body?: Readonly<Record<string, unknown>> | undefined;
-}): boolean {
-  if (route !== "/v1/chat/completions" || !Array.isArray(body?.["messages"])) return false;
-  const first = (body["messages"] as Array<{ role?: unknown; content?: unknown }>)[0];
-  return first?.role === "system" && first.content !== CHAT_EGRESS_LEGEND.text;
-}
+const answerFailedRead = (response: ServerResponse) => () => {
+  response.writeHead(500);
+  response.end();
+};
 
 const agentGenerationRequests = () => providerRequests.filter(isAgentRequest).length;
 
@@ -227,7 +220,7 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
               : {}),
           }),
         );
-      });
+      }, answerFailedRead(response));
       return;
     }
     if (requestPath === "/v1/chat/completions") {
@@ -289,7 +282,7 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
           })}\n\n`,
         );
         response.end("data: [DONE]\n\n");
-      });
+      }, answerFailedRead(response));
       return;
     }
     if (requestPath === "/cdn-cgi/access/certs") {
