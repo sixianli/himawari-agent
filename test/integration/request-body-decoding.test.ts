@@ -22,13 +22,15 @@ function splitInsideCharacter(text: string, character: string): readonly [Buffer
   return [bytes.subarray(0, cut), bytes.subarray(cut)];
 }
 
-const CHUNKWISE_STRING_DECODING = /\b\w+\s*\+=\s*chunk\s*;/u;
+const CHUNKWISE_STRING_DECODING = /\brequest\.on\(\s*["']data["'][\s\S]{0,200}?\+=/u;
 const READ_REQUEST_BODY_CALL = /\breadRequestBody\s*\(\s*request\b/gu;
 
 function chunkwiseDecodingProblems(source: string, minimumReadCalls: number): readonly string[] {
   const problems: string[] = [];
   if (CHUNKWISE_STRING_DECODING.test(source)) problems.push("string += chunk");
-  if ((source.match(READ_REQUEST_BODY_CALL) ?? []).length < minimumReadCalls)
+  const reads = (source.match(READ_REQUEST_BODY_CALL) ?? []).length;
+  const joins = source.split("Buffer.concat(").length - 1;
+  if (reads + joins < minimumReadCalls)
     problems.push(`fewer than ${minimumReadCalls} readRequestBody(request) calls`);
   return problems;
 }
@@ -61,9 +63,14 @@ it("[PR-A] keeps the character when a real HTTP request delivers it in two separ
   const [head, tail] = splitInsideCharacter(SENTENCE, "次");
   let received: Promise<string> | undefined;
   let chunkCount = 0;
+  let firstChunk!: () => void;
+  const headArrived = new Promise<void>((resolve) => {
+    firstChunk = resolve;
+  });
   const server = createServer((request, response) => {
     received = readRequestBody(request, () => {
       chunkCount += 1;
+      firstChunk();
     });
     void received.then(() => response.end("ok"));
   });
@@ -80,7 +87,7 @@ it("[PR-A] keeps the character when a real HTTP request delivers it in two separ
       );
       outgoing.on("error", reject);
       outgoing.write(head);
-      setTimeout(() => outgoing.end(tail), 50);
+      void headArrived.then(() => outgoing.end(tail));
     });
     expect(await received).toBe(SENTENCE);
     expect(chunkCount).toBeGreaterThanOrEqual(2);
@@ -91,14 +98,19 @@ it("[PR-A] keeps the character when a real HTTP request delivers it in two separ
 
 it("[PR-A] no fake model server decodes request bodies chunk by chunk", () => {
   expect(chunkwiseDecodingProblems(readFileSync(PROVIDER_STUB, "utf8"), 2)).toEqual([]);
-  expect(chunkwiseDecodingProblems(readFileSync(PRODUCT_PATH_PROVIDER, "utf8"), 0)).toEqual([]);
+  expect(chunkwiseDecodingProblems(readFileSync(PRODUCT_PATH_PROVIDER, "utf8"), 1)).toEqual([]);
 });
 
 it("[PR-A] REVERSE: the guard flags chunk-by-chunk decoding however the variable is named", () => {
   expect(
     chunkwiseDecodingProblems(`request.on("data", (chunk) => {\n  body += chunk;\n});`, 0),
   ).toContain("string += chunk");
-  expect(chunkwiseDecodingProblems(`raw  +=  chunk;`, 0)).toContain("string += chunk");
+  for (const legacy of [
+    `request.on("data", (data) => { body += data; });`,
+    `request.on('data', (chunk) => { raw += chunk.toString("utf8") })`,
+    `request.on("data", (chunk) => {\n  raw  +=  chunk\n})`,
+  ])
+    expect(chunkwiseDecodingProblems(legacy, 0)).toContain("string += chunk");
   expect(chunkwiseDecodingProblems("readRequestBody(request)", 2)).toContain(
     "fewer than 2 readRequestBody(request) calls",
   );

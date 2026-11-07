@@ -1977,7 +1977,8 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     const messages = input["messages"] as { role: string; content: unknown }[];
     if (JSON.stringify(messages.at(-1)).includes("不要说整个任务已经成功"))
       return { text: "已确认的结果：提醒列表是空的；这一步卡住了，我换个办法。" };
-    if (messages[0]?.role !== "system" || !chosen) return { text: "安装后的持久回答" };
+    if (!isAgentRequest({ path: "/v1/chat/completions", body: input }) || !chosen)
+      return { text: "安装后的持久回答" };
     return { tool: chosen, input: {} };
   };
   try {
