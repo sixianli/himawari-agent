@@ -683,7 +683,7 @@ describe("runner units and shared limits", () => {
   const render = (id) => shell(`render_runner_unit ${id} "${template}"`);
   const slice = () => unitSettings(readFileSync(path.join(scripts, "gh-runners.slice"), "utf8"));
 
-  it("gives both runners all cores and 14 GB together with default priority on a CI-only host", () => {
+  it("gives both runners all cores and 20 GB together with default priority on a CI-only host", () => {
     expect(slice()).toMatchObject({
       MemoryHigh: "19G",
       MemoryMax: "20G",
