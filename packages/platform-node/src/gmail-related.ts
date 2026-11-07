@@ -8,7 +8,7 @@ const SUBJECT_PREFIX =
   /^\s*(?:(?:re|fwd?|fw|aw|wg|sv|vs|tr|回复|回覆|答复|转发|返信|転送)\s*[:：]\s*)+/iu;
 const MIN_SUBJECT_CHARACTERS = 6;
 const MAX_REFERENCES_PER_MAIL = 3;
-const SEARCH_RESULTS = 10;
+const SEARCH_RESULTS = 5;
 const FETCH_PARALLEL = 5;
 const REFERENCE_CONTEXT =
   /(?<![A-Za-z])(?:order|booking|reservation|ticket|case|claim|invoice|reference|confirmation|tracking|注文|订单|訂單|予約|预约|預約|案件|受付|申込|申请|お問い合わせ|問い合わせ|番号|編号|编号|No\.?|ID|＃|#)\s*(?:number|no\.?|id|番号|編号|编号|号)?\s*[:：#＃]?\s*((?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{5,39})/giu;

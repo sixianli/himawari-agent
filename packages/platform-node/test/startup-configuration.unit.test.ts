@@ -1357,7 +1357,7 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     relatedMailsPerMail: 6,
     relatedCharactersPerMail: 12_000,
     relatedCharactersPerRelatedMail: 2_000,
-    relatedRequestsPerCheck: 120,
+    relatedRequestsPerCheck: 300,
     memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,

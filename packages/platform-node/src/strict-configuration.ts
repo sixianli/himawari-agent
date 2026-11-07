@@ -1045,7 +1045,7 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     relatedMailsPerMail: optional("relatedMailsPerMail", 6, 0, 50),
     relatedCharactersPerMail,
     relatedCharactersPerRelatedMail,
-    relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 120, 1, 2_000),
+    relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 300, 1, 2_000),
     memoryMinimumSimilarity:
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45

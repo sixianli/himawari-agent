@@ -244,7 +244,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         relatedMailsPerMail: 6,
         relatedCharactersPerMail: 12_000,
         relatedCharactersPerRelatedMail: 2_000,
-        relatedRequestsPerCheck: 120,
+        relatedRequestsPerCheck: 300,
         memoryMinimumSimilarity: 0.45,
         reviewBudgetSeconds: 120,
         reviewSecondsPerItem: 5,
@@ -491,6 +491,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       ),
     ).toEqual([]);
     expect(h.google.calls.some(({ url }) => url.includes("calendar"))).toBe(false);
+    expect(h.google.calls.some(({ url }) => url.includes("/threads/thread-invoice"))).toBe(true);
     expect(h.failures).toEqual([]);
   });
 

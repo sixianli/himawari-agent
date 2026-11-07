@@ -1936,6 +1936,66 @@ describe("proactive Gmail check acceptance", () => {
       expect(entry?.inputs.relatedByMail).toEqual({ closing: ["photo-request"] });
     });
 
+    it("records earlier mails only for the mails that really reached the model", async () => {
+      const h = await harness({
+        batchSize: 1,
+        dailyCostMicros: 1_500,
+        cost: 1_000,
+        estimate: 600,
+      });
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map(
+          items.map((item) => [item.messageId, [mail(`old-${item.messageId}`)]] as const),
+        ),
+        failed: new Map(),
+        requests: 2,
+      });
+      h.reader.items = [mail("a"), mail("b")];
+      h.script([{ id: "a", result: "ignore" }]);
+      const decision = await h.service.run();
+      expect(decision?.reasonCode).toBe("DAILY_LIMIT");
+      expect(h.prompts).toHaveLength(1);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.sourceIds).toEqual(["a"]);
+      expect(entry?.inputs.relatedByMail).toEqual({ a: ["old-a"] });
+      expect(entry?.inputs.relatedStats?.messages).toBe(1);
+    });
+
+    it("does not look up earlier mail once the daily limit is already spent", async () => {
+      const h = await harness({ dailyCostMicros: 1_000, cost: 1_000 });
+      let lookups = 0;
+      h.reader.related = async () => {
+        lookups += 1;
+        return { byMail: new Map(), failed: new Map(), requests: 0 };
+      };
+      h.reader.items = [mail("first", { snippet: "随便聊聊" })];
+      h.script([{ id: "first", result: "ignore" }]);
+      await h.service.run();
+      expect(lookups).toBe(1);
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [mail("second", { snippet: "今度ランチ行こう" })];
+      await h.service.run();
+      expect(lookups).toBe(1);
+    });
+
+    it("tells the model when an earlier mail has no readable body", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map([
+          [
+            items[0]?.messageId ?? "",
+            [mail("old", { snippet: "概要のみ", bodyUnavailable: true })],
+          ],
+        ]),
+        failed: new Map(),
+        requests: 1,
+      });
+      h.reader.items = [today];
+      h.script([{ id: "closing", result: "ignore" }]);
+      await h.service.run();
+      expect(itemsPart(h.prompts[0] ?? "")).toContain('"bodyUnavailable":true');
+    });
+
     it("masks sensitive values inside the earlier mails like in the new mail", async () => {
       const h = await harness();
       h.reader.related = async ({ items }) => ({

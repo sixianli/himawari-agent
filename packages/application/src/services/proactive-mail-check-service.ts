@@ -114,7 +114,7 @@ export interface ProactiveRelatedServiceLimits extends ProactiveRelatedLimits {
 
 export const DEFAULT_PROACTIVE_RELATED_LIMITS: ProactiveRelatedServiceLimits = Object.freeze({
   perMail: 6,
-  requestsPerCheck: 120,
+  requestsPerCheck: 300,
   charactersPerRelated: 2_000,
   charactersPerMail: 12_000,
 });
@@ -174,6 +174,7 @@ interface CheckTrace {
   memoryRecall: ProactiveMemoryRecallStatus;
   readonly relatedByMail: Map<string, string[]>;
   readonly relatedFailedSteps: Set<string>;
+  readonly relatedSent: Set<string>;
   relatedRead: ProactiveRelatedReadStatus;
   relatedStats: ProactiveRelatedStats;
   recorded: boolean;
@@ -250,7 +251,12 @@ function relatedMailView(
 ): RelatedView {
   const chosen: { mail: ProactiveSourceItem; json: Record<string, unknown> }[] = [];
   let total = 0;
-  for (const mail of [...mails].reverse().slice(0, limits.perMail)) {
+  const newestFirst = [...mails].sort(
+    (left, right) =>
+      right.receivedAt.localeCompare(left.receivedAt) ||
+      right.messageId.localeCompare(left.messageId),
+  );
+  for (const mail of newestFirst.slice(0, limits.perMail)) {
     const windowed =
       mail.body === null
         ? undefined
@@ -268,6 +274,7 @@ function relatedMailView(
               .join(""),
           }),
       ...(windowed?.truncated || mail.bodyTruncated ? { bodyTruncated: true } : {}),
+      ...(windowed === undefined && mail.bodyUnavailable ? { bodyUnavailable: true } : {}),
       receivedAt: mail.receivedAt,
     };
     const size = JSON.stringify(json).length;
@@ -537,18 +544,6 @@ export class ProactiveMailCheckService {
         limits,
       );
       views.set(item.messageId, view);
-      if (view.mails.length > 0)
-        trace.relatedByMail.set(
-          item.messageId,
-          view.mails.map(({ messageId }) => messageId),
-        );
-      trace.relatedStats = {
-        ...trace.relatedStats,
-        messages: trace.relatedStats.messages + view.mails.length,
-        characters:
-          trace.relatedStats.characters +
-          view.json.reduce<number>((sum, entry) => sum + JSON.stringify(entry).length, 0),
-      };
     }
     trace.relatedRead =
       failedMails === 0 ? "ok" : failedMails >= candidates.length ? "failed" : "partial";
@@ -596,6 +591,7 @@ export class ProactiveMailCheckService {
       memoryRecall: "off",
       relatedByMail: new Map(),
       relatedFailedSteps: new Set(),
+      relatedSent: new Set(),
       relatedRead: "off",
       relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
       recorded: false,
@@ -676,7 +672,18 @@ export class ProactiveMailCheckService {
     });
     const judged = new Map<string, Judgement>();
     let costMicros = 0;
-    const relatedViews = await this.#related(token, candidates, controller.signal, trace);
+    const relatedViews =
+      spentToday >= this.#options.limits.dailyCostMicros
+        ? new Map<string, RelatedView>()
+        : await this.#related(
+            token,
+            candidates,
+            AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
+            ]),
+            trace,
+          );
     const recalled = await this.#recall(candidates, deadlineAt, controller.signal, trace);
     costMicros += recalled.costMicros;
     let stop: Stop = null;
@@ -712,6 +719,7 @@ export class ProactiveMailCheckService {
         controller.signal,
         trace,
         promptMemories,
+        relatedViews,
       ).catch(() => ({
         judgements: undefined,
         costMicros: 0,
@@ -954,12 +962,30 @@ export class ProactiveMailCheckService {
     signal: AbortSignal,
     trace: CheckTrace,
     promptMemories: readonly PromptMemory[],
+    related: ReadonlyMap<string, RelatedView>,
   ): Promise<JudgeOutcome> {
     const { model } = this.#options;
     const invocationId = this.#options.ids.next("proactive-model");
     const authority = await model.prepare({ invocationId, prompt, deadlineAt });
     trace.payloads.push({ ref: authority.inputRef, role: "model_input" });
-    for (const { messageId } of batch) trace.sourceIds.add(messageId);
+    for (const { messageId } of batch) {
+      trace.sourceIds.add(messageId);
+      const view = related.get(messageId);
+      if (view === undefined || view.mails.length === 0 || trace.relatedSent.has(messageId))
+        continue;
+      trace.relatedSent.add(messageId);
+      trace.relatedByMail.set(
+        messageId,
+        view.mails.map((mail) => mail.messageId),
+      );
+      trace.relatedStats = {
+        ...trace.relatedStats,
+        messages: trace.relatedStats.messages + view.mails.length,
+        characters:
+          trace.relatedStats.characters +
+          view.json.reduce<number>((sum, entry) => sum + JSON.stringify(entry).length, 0),
+      };
+    }
     for (const memory of promptMemories) {
       trace.memoryIds.add(memory.id);
       const list = trace.memoryByMail.get(memory.mailId) ?? [];
