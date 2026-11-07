@@ -827,7 +827,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "muse_intake_items",
     "MuseIntakePort",
-    "one row per Muse reminder or scheduled run received: system-recorded times, state and reason codes; title and text only as protected payload references",
+    "one row per Muse reminder or scheduled run received: system-recorded times, state and reason codes; title and text only as protected payload references; optional Gmail message id that Muse names for pairing",
     "payload_reference",
     "removed with its payloads when the owner clears Muse intake data; cascade with Owner or Agent deletion",
   ),

@@ -43,6 +43,7 @@ Muse 是 Andy 的另一个 Agent。Andy 要对照“Muse 该提醒的有没有�
 5. **幂等和乱序。** 按 `batch_seq` 唯一，整批重发回“重放”；迟到的批照收但不改期望序号；同一自然键、内容不同进冲突表，不覆盖。
 6. **通道中断提醒。** 距上一批 ≥3 小时就推一次“Muse 通道中断”（≥2.5 小时界面标“可能中断”），复用现有“提醒”类别和开关；一次中断只推一次。
 7. **评价与清除。** 评价写入 `muse_reference_entries`（带 `intake_item_key`），时机和内容必须两项都给；“清除 Muse 数据”只删自动收到的条目及其评价，手工记的保留。
+8. **按邮件编号自动配对（2026-11-07 补充，迁移 0079）。** Andy 定配对不要他介入。Muse 已实测能读到 Gmail 邮件编号（Gmail 接口返回的 `id`），和 Himawari 检查邮件时存的编号（`proactive_processed_messages.message_id`）是同一个值。所以提醒条目可以带可选字段 `gmail_message_id`（只允许字母、数字、`_`、`-`，最长 256），存进 `muse_intake_items.gmail_message_id`；评价时自动写进对照条目的 `paired_message_id`，周报就按同一封邮件比较（[ADR 0154](0154-weekly-calibration-report-and-muse-mail-pairing.md)）。没带编号的条目照收，只是不配对。
 
 <a id="options"></a>
 

@@ -47,6 +47,7 @@ function item(
     textRef: `text-${naturalKey}`,
     textWithheld: false,
     options: ["ok"],
+    gmailMessageId: null,
     sources: { occurred_at: "system_record", text: "chat_record" },
     contentDigest: `digest-${naturalKey}`,
     ...overrides,
@@ -301,6 +302,36 @@ describe.each(["worker", "direct"] as const)("Muse intake store through %s", (ex
         await intake.listItems({ ...scope, since: SINCE, limit: 10, unratedOnly: true }),
       ).toHaveLength(1);
       await expect(rate(true, null)).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("pairs the rating with the Gmail message the item names, and leaves it unpaired when none is named", async () => {
+    const { repository, intake } = await fixture();
+    try {
+      await intake.ingestBatch(
+        batch(1, [item("a", { gmailMessageId: "1a1b53d1b88e9acc" }), item("b")]),
+      );
+      const listed = await intake.listItems({ ...scope, since: SINCE, limit: 10 });
+      expect(
+        Object.fromEntries(listed.map((entry) => [entry.naturalKey, entry.gmailMessageId])),
+      ).toEqual({ a: "1a1b53d1b88e9acc", b: null });
+      for (const naturalKey of ["a", "b"])
+        await intake.rate({
+          ...scope,
+          kind: "proactive",
+          naturalKey,
+          timingOk: true,
+          contentOk: true,
+          entryId: `rating-${naturalKey}`,
+          now: at(5000),
+        });
+      const entries = await repository
+        .decisionLedger()
+        .listMuse({ ...scope, since: SINCE, limit: 10 });
+      const byId = Object.fromEntries(entries.map((entry) => [entry.id, entry.pairedMessageId]));
+      expect(byId).toEqual({ "rating-a": "1a1b53d1b88e9acc", "rating-b": null });
     } finally {
       await repository.close();
     }

@@ -47,6 +47,7 @@ const PROACTIVE_KEYS = [
   "options_offered",
   "delivered_text",
   "muse_feedback_kind",
+  "gmail_message_id",
 ];
 const SCHEDULED_KEYS = [
   "type",
@@ -63,6 +64,7 @@ const SCHEDULED_KEYS = [
 ];
 const FIELD_KEYS = ["value", "source", "provenance", "note"];
 const KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const GMAIL_ID_PATTERN = /^[A-Za-z0-9_-]{1,256}$/u;
 const CODE_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/u;
 const TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/u;
 
@@ -228,6 +230,13 @@ function parseProactive(raw: Json, reader: ItemReader): MuseItemDraft | null {
   const eventAt = time(reader, "event_received_at_utc", "event_at");
   const offered = options(reader);
   const body = text(reader, "delivered_text", "text", null, MUSE_INTAKE_MAX_TEXT);
+  const gmailMessageId = text(
+    reader,
+    "gmail_message_id",
+    "gmail_message_id",
+    GMAIL_ID_PATTERN,
+    256,
+  );
   if (
     anyInvalid([
       submissionId,
@@ -243,6 +252,7 @@ function parseProactive(raw: Json, reader: ItemReader): MuseItemDraft | null {
       eventAt,
       offered,
       body,
+      gmailMessageId,
     ]) ||
     submissionId === null ||
     state === null ||
@@ -263,6 +273,7 @@ function parseProactive(raw: Json, reader: ItemReader): MuseItemDraft | null {
     handoffAt: safe(handoffAt),
     eventAt: safe(eventAt),
     options: offered as readonly string[],
+    gmailMessageId: safe(gmailMessageId),
     sources: reader.sources,
     editionId: typeof raw["edition_id"] === "string" ? raw["edition_id"] : null,
   };
@@ -284,6 +295,7 @@ function parseProactive(raw: Json, reader: ItemReader): MuseItemDraft | null {
       handoffAcceptedAt: safe(handoffAt),
       eventAt: safe(eventAt),
       options: offered as readonly string[],
+      gmailMessageId: safe(gmailMessageId),
       sources: reader.sources,
       contentDigest: digestOf("proactive", parts, safe(title), safe(body)),
     },
@@ -336,6 +348,7 @@ function parseScheduled(reader: ItemReader): MuseItemDraft | null {
       handoffAcceptedAt: null,
       eventAt: null,
       options: [],
+      gmailMessageId: null,
       sources: reader.sources,
       contentDigest: digestOf("scheduled", parts, shownTitle, safe(body)),
     },

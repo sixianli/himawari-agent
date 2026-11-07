@@ -307,6 +307,20 @@ describe("Muse intake over HTTP", () => {
     expect(item).toMatchObject({ textWithheld: false });
   });
 
+  it("stores the Gmail message id Muse names and rejects one that is not an id", async () => {
+    const { post, store } = await setup();
+    const accepted = await post(
+      batch(1, [proactive("sub-1", { gmail_message_id: field("1a1b53d1b88e9acc") })]),
+    );
+    expect(accepted.json()).toMatchObject({ accepted: 1 });
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ gmailMessageId: "1a1b53d1b88e9acc" });
+    const rejected = await post(
+      batch(2, [proactive("sub-2", { gmail_message_id: field("not an id; drop table") })]),
+    );
+    expect(rejected.json()).toMatchObject({ accepted: 0 });
+  });
+
   it("keeps ordinary options", async () => {
     const { post, store } = await setup();
     await post(batch(1, [proactive("sub-1")]));

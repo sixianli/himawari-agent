@@ -78,6 +78,7 @@ function itemProblem(item: MuseIntakeItemWrite): string | null {
     !item.options.every((option) => text(option, 1, 80))
   )
     return "options";
+  if (!nullableText(item.gmailMessageId, 256)) return "gmail message id";
   if (typeof item.sources !== "object" || item.sources === null) return "sources";
   const sources = Object.entries(item.sources);
   if (
@@ -208,8 +209,9 @@ export class SqliteMuseIntakeOperations {
         `INSERT INTO muse_intake_items (
           owner_id, agent_id, kind, natural_key, state, reason_code, decision, reason_enum,
           priority, occurred_at, scheduled_for, started_at, prepared_at, handoff_accepted_at, event_at,
-          title_ref, text_ref, text_withheld, options, sources, content_digest, batch_id, received_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          title_ref, text_ref, text_withheld, options, sources, content_digest, batch_id, received_at,
+          gmail_message_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (owner_id, agent_id, kind, natural_key) DO NOTHING`,
       );
       const existingDigest = this.database.prepare(
@@ -248,6 +250,7 @@ export class SqliteMuseIntakeOperations {
           item.contentDigest,
           write.batchId,
           write.receivedAt,
+          item.gmailMessageId,
         );
         if (result.changes === 1) {
           accepted += 1;
@@ -317,7 +320,8 @@ export class SqliteMuseIntakeOperations {
         `SELECT i.kind, i.natural_key AS naturalKey, i.state, i.reason_code AS reasonCode,
            i.decision, i.reason_enum AS reasonEnum, i.priority, i.occurred_at AS occurredAt,
            i.scheduled_for AS scheduledFor, i.event_at AS eventAt, i.title_ref AS titleRef, i.text_ref AS textRef,
-           i.text_withheld AS textWithheld, i.options, i.sources, i.received_at AS receivedAt,
+           i.text_withheld AS textWithheld, i.options, i.gmail_message_id AS gmailMessageId,
+           i.sources, i.received_at AS receivedAt,
            e.timing_ok AS timingOk, e.content_ok AS contentOk, e.recorded_at AS ratedAt
          FROM muse_intake_items i
          LEFT JOIN muse_reference_entries e
@@ -442,11 +446,11 @@ export class SqliteMuseIntakeOperations {
     return this.database.transaction(() => {
       const item = this.database
         .prepare(
-          `SELECT occurred_at AS occurredAt FROM muse_intake_items
+          `SELECT occurred_at AS occurredAt, gmail_message_id AS gmailMessageId FROM muse_intake_items
            WHERE owner_id = ? AND agent_id = ? AND kind = ? AND natural_key = ?`,
         )
         .get(input.ownerId, input.agentId, input.kind, input.naturalKey) as
-        | { occurredAt: string }
+        | { occurredAt: string; gmailMessageId: string | null }
         | undefined;
       if (!item) return false;
       const key = museIntakeItemKey(input.kind, input.naturalKey);
@@ -461,8 +465,8 @@ export class SqliteMuseIntakeOperations {
           .prepare(
             `INSERT INTO muse_reference_entries (
               id, owner_id, agent_id, muse_at, muse_reminded, timing_ok, content_ok, content_ref,
-              note_ref, paired_decision_id, intake_item_key, recorded_at
-            ) VALUES (?, ?, ?, ?, 1, ?, ?, NULL, NULL, NULL, ?, ?)`,
+              note_ref, paired_decision_id, intake_item_key, paired_message_id, recorded_at
+            ) VALUES (?, ?, ?, ?, 1, ?, ?, NULL, NULL, NULL, ?, ?, ?)`,
           )
           .run(
             input.entryId,
@@ -472,6 +476,7 @@ export class SqliteMuseIntakeOperations {
             input.timingOk ? 1 : 0,
             input.contentOk ? 1 : 0,
             key,
+            item.gmailMessageId,
             input.now,
           );
       return true;
