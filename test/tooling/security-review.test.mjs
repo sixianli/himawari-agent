@@ -15,14 +15,23 @@ const roots = [];
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const now = new Date("2026-09-14T12:00:00Z");
 const repository = "sixianli/himawari-agent";
+const isolatedGit = {
+  PATH: process.env.PATH,
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+};
+const gitIn =
+  (root) =>
+  (...args) =>
+    execFileSync("git", ["-C", root, ...args], {
+      encoding: "utf8",
+      env: isolatedGit,
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "himawari-owner-review-"));
   roots.push(root);
-  const git = (...args) =>
-    execFileSync("git", ["-C", root, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+  const git = gitIn(root);
   git("init", "-q");
   git("config", "user.name", "Synthetic Fixture");
   git("config", "user.email", "fixture@example.invalid");
@@ -289,16 +298,6 @@ describe("合入 main 后的审批继承", () => {
 });
 
 describe("仓库里提交的例外清单和 Owner 复核清单", () => {
-  const isolatedGit = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
-  const gitIn =
-    (root) =>
-    (...args) =>
-      execFileSync("git", ["-C", root, ...args], {
-        encoding: "utf8",
-        env: isolatedGit,
-        stdio: ["ignore", "pipe", "pipe"],
-      }).trim();
-
   function committedReview(root) {
     const run = gitIn(root);
     const head = run("rev-parse", "HEAD");
