@@ -103,6 +103,7 @@ CodeBuddy 会以错误码 11128 拒绝它不认可的系统提示。被拒时，
 - 风险：社区插件的桌面登录文件格式可能随插件升级改变，靠锁版本和联网预检兜住；CodeBuddy 条款风险由 Andy 承担（ADR 0117 已接受同一做法）；积分和生产 Himawari 共用，底线 20 只保证复核不用掉最后 20 积分；云端环境里存的是一份一年有效、能操作整个账号的登录凭证，撤销方法是删掉 himawari-cloud 环境里 `www.workbuddy.ai` 那条网络密钥。
 - 局限：`--gateway magpie` 依赖出口代理代填凭证，现在只适用于云端会话；Mac 上要用还得另做登录，Mac 验证按项目规则暂缓。
 - 后续：Andy 验收后把默认改为开；下一个版本删掉直连方式。
+- 2026-11-07 Andy 验收（原话：“改成默认走 Magpie”）：默认由环境变量 `HIMAWARI_REVIEW_GATEWAY` 决定，himawari-cloud 设成 `magpie`，命令行 `--gateway magpie|direct` 优先，都没有时直连。直连方式不删：Mac 上没有出口代理代填凭证，只能直连。
 
 <a id="links"></a>
 

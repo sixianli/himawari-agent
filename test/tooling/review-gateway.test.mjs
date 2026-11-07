@@ -134,6 +134,16 @@ describe("review gateway configuration", () => {
     const base = ["--mode", "plan", "--head", "HEAD", "--brief", "b.md", "--topic", "x"];
     expect(parseArgs([...base, "--gateway", "magpie"]).gateway).toBe("magpie");
     expect(parseArgs(base).gateway).toBeUndefined();
+    expect(parseArgs(base, { defaultGateway: "magpie" }).gateway).toBe("magpie");
+    expect(parseArgs([...base, "--gateway", "direct"], { defaultGateway: "magpie" }).gateway).toBe(
+      undefined,
+    );
+    expect(() => parseArgs(base, { defaultGateway: "litellm" })).toThrow(
+      "ARG_INVALID HIMAWARI_REVIEW_GATEWAY",
+    );
+    expect(
+      parseArgs(["--assert-reviewed", "--pr", "1"], { defaultGateway: "magpie" }).gateway,
+    ).toBeUndefined();
     expect(() => parseArgs([...base, "--gateway", "litellm"])).toThrow("ARG_INVALID --gateway");
     expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--gateway", "magpie"])).toThrow(
       "ARG_NOT_FOR_SUBCOMMAND",
