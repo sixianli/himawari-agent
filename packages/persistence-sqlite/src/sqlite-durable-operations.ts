@@ -98,6 +98,7 @@ import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifac
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
 import { SqliteSensitiveInterceptionOperations } from "./sqlite-sensitive-interception-operations.ts";
+import { SqliteProactiveReplayOperations } from "./sqlite-proactive-replay-operations.ts";
 import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
@@ -368,6 +369,7 @@ export class SqliteDurableOperations {
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
   private readonly sensitiveInterceptions: SqliteSensitiveInterceptionOperations;
+  private readonly proactiveReplays: SqliteProactiveReplayOperations;
   private readonly memoryBook: SqliteMemoryBookOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
@@ -462,6 +464,7 @@ export class SqliteDurableOperations {
       fail,
       assertDiskHeadroom,
     );
+    this.proactiveReplays = new SqliteProactiveReplayOperations(database, fail, assertDiskHeadroom);
     this.memoryBook = new SqliteMemoryBookOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
@@ -579,6 +582,8 @@ export class SqliteDurableOperations {
       return this.threadPromptBundles.execute(operation, payload);
     if (operation.startsWith("sensitiveInterception."))
       return this.sensitiveInterceptions.execute(operation, payload);
+    if (operation.startsWith("proactiveReplay."))
+      return this.proactiveReplays.execute(operation, payload);
     if (operation.startsWith("memoryBook.")) return this.memoryBook.execute(operation, payload);
     switch (operation) {
       case "event.append":

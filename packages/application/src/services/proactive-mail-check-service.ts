@@ -91,6 +91,7 @@ export interface ProactiveMailCheckOptions {
   readonly memoryLimits?: Partial<ProactiveMemoryLimits>;
   readonly bodyLimits?: Partial<ProactiveBodyLimits>;
   readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
+  readonly asOf?: string;
 }
 
 export interface ProactiveBodyLimits {
@@ -143,6 +144,7 @@ type Stop = "capped" | "capped_daily" | "failed" | null;
 const DEFAULT_BATCH_SIZE = 8;
 
 interface CheckTrace {
+  readonly clockAt: string;
   readonly payloads: ProactiveModelPayload[];
   readonly sealed: string[];
   readonly sourceIds: Set<string>;
@@ -395,14 +397,22 @@ export class ProactiveMailCheckService {
     if (!settings.enabled) return undefined;
     const connection = await store.readConnection({ ...scope, source: reader.source });
     if (!connection || connection.status !== "connected") return undefined;
-    const startedAt = this.#options.clock.now();
+    const clockAt = this.#options.clock.now();
+    const startedAt = this.#options.asOf ?? clockAt;
     const deadlineAt = new Date(
-      Date.parse(startedAt) + this.#options.limits.perCheckMs,
+      Date.parse(clockAt) + this.#options.limits.perCheckMs,
     ).toISOString();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.#options.limits.perCheckMs);
     try {
-      return await this.#check(settings, connection.tokenRef, startedAt, deadlineAt, controller);
+      return await this.#check(
+        settings,
+        connection.tokenRef,
+        startedAt,
+        clockAt,
+        deadlineAt,
+        controller,
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -412,10 +422,12 @@ export class ProactiveMailCheckService {
     settings: ProactiveSettings,
     tokenRef: string,
     startedAt: string,
+    clockAt: string,
     deadlineAt: string,
     controller: AbortController,
   ): Promise<ProactiveDecision> {
     const trace: CheckTrace = {
+      clockAt,
       payloads: [],
       sealed: [],
       sourceIds: new Set(),
@@ -992,7 +1004,7 @@ export class ProactiveMailCheckService {
       reasonCode: input.reasonCode,
       pushSourceKey: push ? `proactive:${push.id}` : null,
       costMicros: input.costMicros,
-      durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(input.startedAt)),
+      durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(trace.clockAt)),
       ownerRating: null,
       ratedAt: null,
     });

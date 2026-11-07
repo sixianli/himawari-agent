@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CALENDAR_READONLY_SCOPE,
+  createGmailHistoryReader,
   createGmailReader,
   createGoogleOAuth,
   GMAIL_READONLY_SCOPE,
@@ -203,5 +204,73 @@ describe("[PG-11] Gmail read-only source", () => {
     expect(gmailItem(message("m6", ["CATEGORY_UPDATES"]))).toBeUndefined();
     expect(senderAddress('"区役所" <Info@City.Shinjuku.LG.JP>')).toBe("info@city.shinjuku.lg.jp");
     expect(senderAddress("plain@example.com")).toBe("plain@example.com");
+  });
+});
+
+describe("[PR-2] Gmail history reader", () => {
+  const oauth = { accessToken: async () => "access-1" };
+
+  it("lists only the asked date range, stops at the limit and reads full messages", async () => {
+    const google = fakeGoogle((url) => {
+      if (url.pathname.endsWith("/messages") && url.searchParams.get("pageToken") === null)
+        return json({ messages: [{ id: "m1" }, { id: "m2" }], nextPageToken: "next" });
+      if (url.pathname.endsWith("/messages"))
+        return json({ messages: [{ id: "m3" }, { id: "m4" }] });
+      const id = url.pathname.split("/").at(-1) ?? "";
+      return json(message(id, ["INBOX"]));
+    });
+    const reader = createGmailHistoryReader({ oauth, fetch: google.fetch });
+    const signal = new AbortController().signal;
+    const listed = await reader.list({
+      token: "refresh",
+      from: "2025-11-01T00:00:00.000Z",
+      to: "2025-12-01T00:00:00.000Z",
+      limit: 3,
+      signal,
+    });
+    expect(listed).toEqual({ kind: "ids", ids: ["m1", "m2", "m3"] });
+    const first = new URL(google.calls[0]?.url ?? "");
+    expect(first.searchParams.get("q")).toBe(
+      `after:${Date.parse("2025-11-01T00:00:00.000Z") / 1000} before:${Date.parse("2025-12-01T00:00:00.000Z") / 1000}`,
+    );
+    expect(first.searchParams.get("maxResults")).toBe("3");
+    const read = await reader.read({ token: "refresh", messageIds: ["m1", "m2"], signal });
+    expect(read.kind === "items" && read.items.map(({ messageId }) => messageId)).toEqual([
+      "m1",
+      "m2",
+    ]);
+    expect(google.calls.at(-1)?.url).toContain("format=full");
+  });
+
+  it("reports an unauthorized token and a failed listing without throwing", async () => {
+    const signal = new AbortController().signal;
+    const denied = createGmailHistoryReader({
+      oauth: {
+        accessToken: async () => {
+          const { GoogleUnauthorizedError } = await import("../src/gmail-source.ts");
+          throw new GoogleUnauthorizedError();
+        },
+      },
+      fetch: fakeGoogle(() => undefined).fetch,
+    });
+    expect(
+      await denied.list({
+        token: "t",
+        from: "2025-11-01T00:00:00.000Z",
+        to: "2025-12-01T00:00:00.000Z",
+        limit: 1,
+        signal,
+      }),
+    ).toEqual({ kind: "unauthorized" });
+    const broken = createGmailHistoryReader({ oauth, fetch: fakeGoogle(() => undefined).fetch });
+    expect(
+      await broken.list({
+        token: "t",
+        from: "2025-11-01T00:00:00.000Z",
+        to: "2025-12-01T00:00:00.000Z",
+        limit: 1,
+        signal,
+      }),
+    ).toEqual({ kind: "failed", step: "list" });
   });
 });

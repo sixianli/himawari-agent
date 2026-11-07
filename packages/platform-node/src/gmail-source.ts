@@ -1,5 +1,7 @@
 import type {
   ProactiveFetchResult,
+  ProactiveHistoryFailure,
+  ProactiveHistoryReader,
   ProactiveSourceItem,
   ProactiveSourceReader,
 } from "@himawari-agent/application";
@@ -224,6 +226,85 @@ export async function readGmailAccount(input: {
   return email.toLowerCase();
 }
 
+function gmailGetter(send: Fetch, access: string, signal: AbortSignal) {
+  return async <T>(step: string, url: string): Promise<T | undefined> => {
+    const response = await send(url, {
+      method: "GET",
+      headers: { authorization: `Bearer ${access}`, accept: "application/json" },
+      signal: withTimeout(signal),
+    });
+    if (response.status === 401 || response.status === 403) throw new GoogleUnauthorizedError();
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new GoogleRequestError(step, response.status);
+    return (await response.json()) as T;
+  };
+}
+
+function historyFailure(error: unknown, signal: AbortSignal): ProactiveHistoryFailure {
+  if (error instanceof GoogleUnauthorizedError) return { kind: "unauthorized" };
+  if (error instanceof GoogleRequestError) return { kind: "failed", step: error.step };
+  return { kind: "failed", step: signal.aborted ? "timeout" : "network" };
+}
+
+export function createGmailHistoryReader(options: {
+  readonly oauth: Pick<GoogleOAuth, "accessToken">;
+  readonly fetch?: Fetch;
+}): ProactiveHistoryReader {
+  const send = options.fetch ?? ((url, init) => fetch(url, init));
+  return Object.freeze<ProactiveHistoryReader>({
+    source: "gmail",
+    async list({ token, from, to, limit, signal }) {
+      try {
+        const get = gmailGetter(send, await options.oauth.accessToken(token, signal), signal);
+        const ids: string[] = [];
+        let pageToken: string | undefined;
+        while (ids.length < limit) {
+          const query = new URLSearchParams({
+            q: `after:${Math.floor(Date.parse(from) / 1_000)} before:${Math.ceil(Date.parse(to) / 1_000)}`,
+            maxResults: String(Math.min(500, limit - ids.length)),
+            ...(pageToken ? { pageToken } : {}),
+          });
+          const listed = await get<{ messages?: { id?: string }[]; nextPageToken?: string }>(
+            "list",
+            `${GMAIL_API}/messages?${query}`,
+          );
+          for (const message of listed?.messages ?? []) if (message.id) ids.push(message.id);
+          pageToken = listed?.nextPageToken;
+          if (!pageToken) break;
+        }
+        return { kind: "ids", ids: [...new Set(ids)].slice(0, limit) };
+      } catch (error) {
+        return historyFailure(error, signal);
+      }
+    },
+    async read({ token, messageIds, signal }) {
+      try {
+        const get = gmailGetter(send, await options.oauth.accessToken(token, signal), signal);
+        const items: ProactiveSourceItem[] = [];
+        const queue = [...messageIds];
+        while (queue.length > 0) {
+          const batch = queue.splice(0, PARALLEL_READS);
+          const messages = await Promise.all(
+            batch.map((id) =>
+              get<GmailMessage>(
+                "message",
+                `${GMAIL_API}/messages/${encodeURIComponent(id)}?format=full`,
+              ),
+            ),
+          );
+          for (const message of messages) {
+            const item = message ? gmailItem(message) : undefined;
+            if (item) items.push(item);
+          }
+        }
+        return { kind: "items", items };
+      } catch (error) {
+        return historyFailure(error, signal);
+      }
+    },
+  });
+}
+
 export function createGmailReader(options: {
   readonly oauth: Pick<GoogleOAuth, "accessToken">;
   readonly fetch?: Fetch;
@@ -239,17 +320,7 @@ export function createGmailReader(options: {
         if (error instanceof GoogleUnauthorizedError) return { kind: "unauthorized" };
         return { kind: "failed", step: "token" };
       }
-      const get = async <T>(step: string, url: string): Promise<T | undefined> => {
-        const response = await send(url, {
-          method: "GET",
-          headers: { authorization: `Bearer ${access}`, accept: "application/json" },
-          signal: withTimeout(signal),
-        });
-        if (response.status === 401 || response.status === 403) throw new GoogleUnauthorizedError();
-        if (response.status === 404) return undefined;
-        if (!response.ok) throw new GoogleRequestError(step, response.status);
-        return (await response.json()) as T;
-      };
+      const get = gmailGetter(send, access, signal);
       try {
         let ids: string[] | undefined;
         let next: string | null = null;

@@ -38,6 +38,7 @@ export { usdCostsEqual, usdCostToMicros } from "./model-cost.js";
 export * from "./model-action-reviewer.js";
 export * from "./proactive-mail-body.js";
 export * from "./proactive-mail-check-service.js";
+export * from "./proactive-replay-service.js";
 export * from "./daily-review.js";
 export * from "./ledger-observation.js";
 export * from "./proactive-overview.js";

@@ -8,12 +8,16 @@ import {
   PORT_ERROR_CODES,
   type ProactiveConfiguration,
   type ProactiveDecision,
+  type ProactiveHistoryReader,
   ProactiveMailCheckService,
   type ProactiveMailCheckOptions,
   type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
   type ProactiveOverview,
   type ProactiveRating,
+  type ProactiveReplayRun,
+  ProactiveReplayService,
+  type ProactiveReplayStorePort,
   type ProactiveScope,
   type ProactiveSealPort,
   type ProactiveSourceReader,
@@ -41,6 +45,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.review.read",
   "proactive.review.rate",
   "proactive.source.manage",
+  "proactive.replay.start",
 ] as const);
 
 export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
@@ -144,6 +149,9 @@ export interface ProductionProactiveOptions {
   readonly onDecision?: (decision: ProactiveDecision) => void;
   readonly onFailure: (error: unknown) => void;
   readonly onMasked?: ProactiveMailCheckOptions["onMasked"];
+  readonly replays?: ProactiveReplayStorePort;
+  readonly history?: ProactiveHistoryReader;
+  readonly onReplay?: (run: ProactiveReplayRun) => void;
 }
 
 export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
@@ -151,6 +159,7 @@ export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
 export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
   readonly #service: ProactiveMailCheckService;
+  readonly #replay: ProactiveReplayService | undefined;
   readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
   #timer: ReturnType<typeof setInterval> | undefined;
   #running: Promise<void> | undefined;
@@ -179,10 +188,33 @@ export class ProductionProactive {
       },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
+    this.#replay =
+      options.replays && options.history
+        ? new ProactiveReplayService({
+            scope: options.scope,
+            store: options.store,
+            replays: options.replays,
+            seal: options.seal,
+            history: options.history,
+            model: options.model,
+            perCheckMs: options.configuration.perCheckMs,
+            estimateCostMicros: options.estimateCostMicros,
+            timeZone: options.timeZone,
+            clock: options.clock,
+            ids: options.ids,
+            outputTokenLimit: PROACTIVE_MAX_OUTPUT_TOKENS,
+            bodyLimits: {
+              perMail: options.configuration.bodyCharactersPerMail,
+              perBatch: options.configuration.bodyCharactersPerBatch,
+            },
+            ...(options.onMasked ? { onMasked: options.onMasked } : {}),
+          })
+        : undefined;
   }
 
   start(): void {
     if (this.#timer) return;
+    void this.#replay?.interruptStale().catch(this.#options.onFailure);
     this.#timer = setInterval(() => void this.tick(), this.#options.configuration.intervalMs);
     this.#timer.unref?.();
     void this.tick();
@@ -510,6 +542,18 @@ export class ProductionProactive {
           resultRef: `proactive-review-rated:${ledgerRatings.length + mailRatings.length}`,
           replayed: false,
         };
+      }
+      case "proactive.replay.start": {
+        const replay = this.#replay;
+        if (!replay) throw new Error("PROACTIVE_OPERATION_NOT_INSTALLED");
+        const { runId, done } = await replay.start(command.payload);
+        void done
+          .then(() => replay.readRun(runId))
+          .then((run) => {
+            if (run) this.#options.onReplay?.(run);
+          })
+          .catch(this.#options.onFailure);
+        return { resultRef: `proactive-replay:${runId}`, replayed: false };
       }
       case "proactive.source.manage": {
         if (command.payload.action === "clear_records") {

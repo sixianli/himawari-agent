@@ -37,6 +37,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   assertProductionSecretSource,
+  createGmailHistoryReader,
   createGmailReader,
   createGoogleOAuth,
   createWebPushSender,
@@ -1563,6 +1564,18 @@ export async function runAgentService(
           seal: proactiveSeal,
           oauth,
           reader: createGmailReader({ oauth }),
+          replays: repository.proactiveReplays(),
+          history: createGmailHistoryReader({ oauth }),
+          onReplay: (run) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.replay.finished",
+              status: run.status,
+              code: run.reasonCode ?? "RUNNING",
+              listed: run.listed,
+              judged: run.judged,
+              costMicros: run.costMicros,
+            }),
           readAccount: (accessToken) => readGmailAccount({ accessToken }),
           ledger: repository.decisionLedger(),
           readMemoryText: readReviewText,

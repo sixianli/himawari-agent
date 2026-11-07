@@ -30,6 +30,7 @@ import type {
   ProactiveStorePort,
   ThreadArtifactStorePort,
   SensitiveInterceptionStorePort,
+  ProactiveReplayStorePort,
   ThreadPromptBundleStorePort,
   DecisionLedgerPort,
   MuseIntakePort,
@@ -573,6 +574,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sensitiveInterceptions(): SensitiveInterceptionStorePort {
     return this.durable.sensitiveInterceptions();
+  }
+
+  proactiveReplays(): ProactiveReplayStorePort {
+    return this.durable.proactiveReplays();
   }
 
   memoryBook(): MemoryBookStorePort {

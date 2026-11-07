@@ -489,6 +489,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Thread deletion; payloads removed with the Thread",
   ),
   entry(
+    "proactive_replay_runs",
+    "ProactiveReplayStorePort",
+    "one row per owner-started replay of past mail through the proactive judgment; range, mail limit, budget, status, counts and spent cost; at most one running row per agent",
+    "metadata_only",
+    "cascade with Owner or Agent deletion; removed when the owner deletes the run, clears proactive records or disconnects the source",
+  ),
+  entry(
+    "proactive_replay_results",
+    "ProactiveReplayStorePort",
+    "one row per replayed message with its judgment, floor and push flags, cost and a sealed reference to the shown sender, subject, summary and reason; never read by the live proactive ledger or its hit rate",
+    "payload_reference",
+    "cascade with its replay run; sealed payloads released when the run is removed",
+  ),
+  entry(
     "sensitive_interceptions",
     "SensitiveInterceptionStorePort",
     "one row per place, kind and value fingerprint where sensitive text was masked or kept out; later sightings raise the count and last time; no original value is stored",

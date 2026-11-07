@@ -623,6 +623,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0078_sensitive_interceptions.sql",
   },
+  {
+    sequence: 79,
+    name: "proactive_replays",
+    changeSet: "proactive-replays",
+    phase: "expand" as const,
+    file: "0079_proactive_replays.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

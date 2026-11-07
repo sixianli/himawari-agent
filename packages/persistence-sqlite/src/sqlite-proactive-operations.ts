@@ -15,6 +15,7 @@ import type {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
+import { deleteProactiveReplays } from "./sqlite-proactive-replay-operations.ts";
 
 type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
 
@@ -418,7 +419,10 @@ export class SqliteProactiveOperations {
   private removeSource(input: Input<"removeSource">): readonly string[] {
     this.source(input.source);
     return this.database.transaction(() => {
-      const refs = this.collectRefs(input, input.source);
+      const refs = [
+        ...this.collectRefs(input, input.source),
+        ...deleteProactiveReplays(this.database, input, input.source),
+      ];
       const connection = this.readConnection(input);
       const scope = [input.ownerId, input.agentId, input.source] as const;
       this.deleteModelLinks(input, input.source);
@@ -453,7 +457,10 @@ export class SqliteProactiveOperations {
 
   private clearRecords(scope: ProactiveScope): readonly string[] {
     return this.database.transaction(() => {
-      const refs = this.collectRefs(scope, null);
+      const refs = [
+        ...this.collectRefs(scope, null),
+        ...deleteProactiveReplays(this.database, scope, null),
+      ];
       this.deleteModelLinks(scope, null);
       for (const table of ["source_insights", "proactive_processed_messages", "proactive_pushes"])
         this.database

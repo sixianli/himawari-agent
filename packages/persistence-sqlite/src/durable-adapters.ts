@@ -21,6 +21,7 @@ import type {
   ProactiveStorePort,
   ThreadArtifactStorePort,
   SensitiveInterceptionStorePort,
+  ProactiveReplayStorePort,
   ThreadPromptBundleStorePort,
   DecisionLedgerPort,
   MuseIntakePort,
@@ -1078,6 +1079,19 @@ export class SqliteDurableAdapters {
       summarize: (input) => this.context.read("sensitiveInterception.summarize", input),
       clear: (input) => this.context.write("sensitiveInterception.clear", input),
       threadOfRun: (input) => this.context.read("sensitiveInterception.threadOfRun", input),
+    });
+  }
+
+  proactiveReplays(): ProactiveReplayStorePort {
+    return Object.freeze<ProactiveReplayStorePort>({
+      startRun: (input) => this.context.write("proactiveReplay.startRun", input),
+      markListed: (input) => this.context.write("proactiveReplay.markListed", input),
+      recordResult: (input) => this.context.write("proactiveReplay.recordResult", input),
+      finishRun: (input) => this.context.write("proactiveReplay.finishRun", input),
+      interruptRunning: (input) => this.context.write("proactiveReplay.interruptRunning", input),
+      readRun: (input) => this.context.read("proactiveReplay.readRun", input),
+      listResults: (input) => this.context.read("proactiveReplay.listResults", input),
+      deleteRun: (input) => this.context.write("proactiveReplay.deleteRun", input),
     });
   }
 

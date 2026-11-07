@@ -41,6 +41,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.snapshot",
   "proactive.review.rate",
   "proactive.source.manage",
+  "proactive.replay.start",
   "muse.overview.read",
   "muse.overview.snapshot",
   "muse.item.rate",
@@ -602,6 +603,15 @@ const proactiveSourceManageCommandSchema = object({
   payload: object({
     source: enumeration(["gmail"]),
     action: enumeration(["disconnect", "clear_records"]),
+  }),
+});
+const proactiveReplayStartCommandSchema = object({
+  ...commandEnvelope("proactive.replay.start"),
+  payload: object({
+    from: timestamp,
+    to: timestamp,
+    mailLimit: integer(1, 2000),
+    budgetMicros: integer(1, 5_000_000),
   }),
 });
 const museOverviewQuerySchema = object({
@@ -2263,6 +2273,7 @@ const schemasByType = {
   "proactive.review.read": proactiveReviewQuerySchema,
   "proactive.review.snapshot": proactiveReviewSnapshotSchema,
   "proactive.review.rate": proactiveReviewRateCommandSchema,
+  "proactive.replay.start": proactiveReplayStartCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,
   "muse.overview.snapshot": museOverviewSnapshotSchema,

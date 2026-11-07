@@ -272,6 +272,12 @@ export const governanceMessages = [
     },
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),
+  fixture("command", "proactive.replay.start", {
+    from: "2025-11-01T00:00:00.000Z",
+    to: "2025-12-01T00:00:00.000Z",
+    mailLimit: 50,
+    budgetMicros: 500_000,
+  }),
   fixture("command", "proactive.observation.start", {
     startDay: "2026-11-02",
     recentAuthenticationRef: null,
