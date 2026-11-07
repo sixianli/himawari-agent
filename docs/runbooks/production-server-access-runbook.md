@@ -159,26 +159,29 @@ date: "2026-10-28"
 
 Magpie（装在生产机上的模型路由程序，Himawari 经它调用模型）带一个网页管理页，可以看和改路由组、模型账号和密钥。2026-11-02 用户在 Mac 上只读确认的现场状态：
 
-- `systemctl cat magpie.service` 显示 `ExecStart=/usr/local/bin/magpie serve --web=127.0.0.1:3430`、`Environment=MAGPIE_ADDR=127.0.0.1:3425`、`EnvironmentFile=/etc/magpie/web.env`。
+- `systemctl cat magpie.service` 显示 `ExecStart=/usr/local/bin/magpie serve --web=127.0.0.1:3430`、`Environment=MAGPIE_ADDR=127.0.0.1:3425`、`EnvironmentFile=/etc/magpie/web.env`，服务以 `magpie` 账号运行。[ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md) 记的是 2026-10-29 安装时的程序位置 `/opt/magpie/v0.1.2001/magpie`；`/usr/local/bin/magpie` 和它是什么关系（例如是否是指向它的链接）没有核实，以服务器上 `readlink -f /usr/local/bin/magpie` 的输出为准。
 - `ss -ltnp` 显示同一个 `magpie` 进程监听 `127.0.0.1:3425`（模型接口）和 `127.0.0.1:3430`（管理页），两者都只在回环地址上，公网连不到，[防火墙](#firewall)也只放行 22。
-- 管理页密码在 `/etc/magpie/web.env`，由服务通过 `EnvironmentFile` 读入。不要把它的内容贴进聊天或写进仓库。
 
-管理页拿到密码就能改配置、看全部密钥，所以只经 SSH 端口转发（把 Mac 本机的一个端口经 SSH 接到服务器上的端口）访问，不对外开放。
+管理页的密码：Magpie 源码 `internal/gui/web.go`（[yetone/magpie](https://github.com/yetone/magpie/blob/main/internal/gui/web.go)，2026-11-07 的 main）里，常驻的管理页从环境变量 `MAGPIE_WEB_KEY` 取固定密码；浏览器第一次用 `?k=<密码>` 打开时，页面核对后把密码存进一个只给本站用的 cookie（浏览器保存的小段登录凭据，固定密码时保留 400 天），并跳转到去掉 `k` 的地址。生产服务里这个变量应该来自 `/etc/magpie/web.env`，但文件内容没有读过；用 `ssh root@84.247.157.41 "cut -d= -f1 /etc/magpie/web.env"` 只看变量名、不显示值。不要把密码贴进聊天、写进仓库或存进书签。
 
-**一次性连接**：在 Mac 终端运行 `ssh -L 3430:127.0.0.1:3430 root@84.247.157.41`，保持窗口开着，浏览器打开 `http://127.0.0.1:3430/?k=<密码>`。
+管理页拿到密码就能改配置、看全部密钥，所以只经 SSH 端口转发（把 Mac 本机的一个端口经 SSH 接到服务器上的端口）访问，转发在 Mac 上也只绑 `127.0.0.1`，不对外开放。
 
-**开机自动连接**（2026-11-02 用户已在自己的 Mac 上配好）：
+**一次性连接**：在 Mac 终端运行 `ssh -L 127.0.0.1:3430:127.0.0.1:3430 root@84.247.157.41`，保持窗口开着。下面的自动连接已经在运行时不要再开这一条，它会因本机 3430 已被占用而失败。
+
+**登录后自动连接**（2026-11-02 用户已在自己的 Mac 上配好）：
 
 1. `~/.ssh/config` 里加一个 `Host magpie-prod`，写 `HostName 84.247.157.41`、`User root`、`LocalForward 127.0.0.1:3430 127.0.0.1:3430`、`ServerAliveInterval 30`、`ServerAliveCountMax 3`、`ExitOnForwardFailure yes`、`AddKeysToAgent yes`、`UseKeychain yes`。
-2. `~/Library/LaunchAgents/com.andy.magpie-tunnel.plist` 让 macOS 的 launchd（开机自动启动并看管后台程序的系统服务）运行 `/usr/bin/ssh -N -o BatchMode=yes magpie-prod`，设 `RunAtLoad`、`KeepAlive` 为真，`ThrottleInterval` 为 15 秒；断线后自动重连。
-3. `launchctl load ~/Library/LaunchAgents/com.andy.magpie-tunnel.plist` 启用；`launchctl unload` 同一路径停用。
-4. 验证：`curl -sI http://127.0.0.1:3430/ | head -1` 返回 `HTTP/1.1 401 Unauthorized`，表示请求已经到达生产机的管理页、只是还没带密码；连不上时什么也不返回。之后把带密码的网址存成浏览器书签。
+2. `~/Library/LaunchAgents/com.andy.magpie-tunnel.plist` 让 macOS 的 launchd（自动启动并看管后台程序的系统服务）在用户登录后运行 `/usr/bin/ssh -N -o BatchMode=yes magpie-prod`，`Label` 为 `com.andy.magpie-tunnel`，设 `RunAtLoad`、`KeepAlive` 为真，`ThrottleInterval` 为 15 秒；断线后自动重连。它是用户级的 LaunchAgent，Mac 开机后要用户登录才会运行。
+3. 启用：`launchctl load ~/Library/LaunchAgents/com.andy.magpie-tunnel.plist`；停用：`launchctl unload` 同一路径。看状态：`launchctl list | grep magpie-tunnel`，第一列是进程号，第二列是上次退出码。
+4. 验证：`curl -sS -o /dev/null -w '%{http_code}\n' --noproxy '*' http://127.0.0.1:3430/` 输出 `401`，表示请求已经到达生产机的管理页、只是还没登录；输出 `000` 表示隧道没通。
+
+**登录**：浏览器打开一次 `http://127.0.0.1:3430/?k=<密码>`，跳转后地址栏不再带密码；把这个不带密码的 `http://127.0.0.1:3430/` 存成书签。之后 cookie 有效期内直接点书签就能进；浏览器清了 cookie 时再用 `?k=` 登录一次。
 
 注意：
 
-- 在管理页里改的路由组、账号或密钥立即影响线上对话，算生产配置变更，按[授权、上线和合并](../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)处理。路由组 `group/himawari-main` 的当前顺序见 [ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md)。
-- Hermes 测试环境的 Magpie 管理页也用 3430。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。
-- SSH 密钥设了口令时，后台的 `ssh` 无法弹窗输入，会一直连不上；先运行一次 `ssh-add --apple-use-keychain <私钥文件>` 把口令存进钥匙串。
+- 在管理页里改的路由组、账号或密钥立即影响线上对话，算生产配置变更，按[授权、上线和合并](../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)处理。路由组 `group/himawari-main` 改动的历史见 [ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md)，当前顺序以管理页显示的为准。
+- Hermes 测试环境的 Magpie 管理页也用 3430。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。两边的 cookie 都存在 `127.0.0.1` 名下，切换后可能要重新用 `?k=` 登录。
+- SSH 密钥设了口令时，后台的 `ssh` 无法弹窗输入，会每 15 秒重试一次、一直连不上；先运行一次 `ssh-add --apple-use-keychain <私钥文件>` 把口令存进钥匙串。
 
 [返回导航](#阅读导航)
 
