@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, chmod, chown, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, chown, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   GovernedCodingOperationsPort,
@@ -99,6 +99,21 @@ export async function prepareWorkspace(item: JarvisCase, workspaceRoot: string):
   };
   for (const relative of item.permissions?.readOnly ?? []) await restrict(relative, 0o555);
   for (const relative of item.permissions?.unreadable ?? []) await restrict(relative, 0o000);
+}
+
+async function reopenTree(directory: string): Promise<void> {
+  try {
+    await chmod(directory, 0o700);
+    for (const entry of await readdir(directory, { withFileTypes: true }))
+      if (entry.isDirectory()) await reopenTree(path.join(directory, entry.name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+export async function removeWorkspace(workspaceRoot: string): Promise<void> {
+  await reopenTree(workspaceRoot);
+  await rm(workspaceRoot, { recursive: true, force: true });
 }
 
 function within(target: string, ancestor: string): boolean {
