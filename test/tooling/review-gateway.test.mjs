@@ -160,10 +160,10 @@ describe("review gateway configuration", () => {
       "stays=session",
     ]);
     expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai"] })[3]).toBe(
-      "models=opencode-go/glm-5.3-flash",
+      "models=opendesign/glm-5.3-flash,opencode-go/glm-5.3-flash",
     );
     expect(() =>
-      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opencode-go"] }),
+      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go"] }),
     ).toThrow("GATEWAY_NO_MEMBERS");
   });
 
