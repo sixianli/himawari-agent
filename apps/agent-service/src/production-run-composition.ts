@@ -321,6 +321,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     checkpoints,
     protector,
     clock,
+    ids,
   });
   const continuations = new RuntimeContinuationService({
     artifacts,

@@ -5258,6 +5258,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
   it.each([
     "late",
     "loss-stale-handle",
+    "loss-unverified",
     "loss-coding",
     "loss-cancelled",
     "loss-expired",
@@ -5673,7 +5674,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                     authority: () => authority,
                     now: clock.now,
                     recoverableBackend: async (value) => value.plan.backendRef === "srt",
-                    verifyExited: async () => true,
+                    verifyExited: async () => variant !== "unverified",
                     verifyFresh: async (value) => {
                       const proof = context(value, value.facts).verification;
                       if (!proof) throw new Error("Fixture proof missing");
@@ -5713,7 +5714,11 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             ownerId: OWNER_ID,
             agentId: AGENT_ID,
             concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
-            deadlines: { runMs: 120000, workerRequestMs: 10000, providerRequestMs: 10000 },
+            deadlines: {
+              runMs: variant === "unverified" ? Date.parse(T2) - Date.parse(T1) : 120000,
+              workerRequestMs: 10000,
+              providerRequestMs: 10000,
+            },
           },
           authority: {
             authorityFence: () => authority.product,
@@ -6050,6 +6055,37 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           ).toBe("reconciling_external_result");
           expect(model.observed).toHaveLength(1);
           expect(calls).toBe(1);
+          expect(request).not.toHaveBeenCalled();
+          return;
+        }
+        if (variant === "unverified") {
+          expect(outcomes[0]).toMatchObject({ claimed: 0, settled: 0 });
+          expect(
+            f.database
+              .prepare(
+                "SELECT COUNT(*) AS count FROM run_payload_artifacts WHERE run_id=? AND purpose='trace' AND operation_key LIKE 'sandbox-tool-result-unrecoverable:%'",
+              )
+              .get(runId),
+          ).toEqual({ count: 1 });
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe("reconciling_external_result");
+          expect(await make("settling-consumer").dispatcher.pump()).toMatchObject({
+            reconciled: 1,
+            claimed: 0,
+          });
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe("failed");
+          expect(
+            f.database
+              .prepare(
+                "SELECT phase AS phase,diagnostic_code AS code FROM run_coordination_checkpoints WHERE run_id=?",
+              )
+              .get(runId),
+          ).toEqual({ phase: "failed", code: "RUNTIME_TOOL_RESULT_UNKNOWN" });
           expect(request).not.toHaveBeenCalled();
           return;
         }

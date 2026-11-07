@@ -16,6 +16,11 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
             AND (json_extract(result.plan_json,'$.backendRef')='srt'
               OR json_extract(result.facts_json,'$.environment.kind')='container')
             AND json_extract(result.plan_json,'$.originalDeadlineAt')>@resourceNow
+            AND NOT EXISTS (SELECT 1 FROM run_payload_artifacts attempted
+              WHERE attempted.owner_id=r.owner_id AND attempted.agent_id=r.agent_id AND attempted.run_id=r.id
+                AND attempted.purpose='trace'
+                AND attempted.operation_key='sandbox-tool-result-unrecoverable:'
+                  ||json_extract(result.plan_json,'$.identity.invocationId'))
             AND EXISTS (SELECT 1 FROM sandbox_release_receipts released WHERE released.job_id=result.job_id AND released.accepted_at<=@resourceNow)
             AND (EXISTS (SELECT 1 FROM run_payload_artifacts stream
               WHERE stream.owner_id=r.owner_id AND stream.agent_id=r.agent_id AND stream.run_id=r.id
