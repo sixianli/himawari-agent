@@ -25,7 +25,7 @@ ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
-    'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
+    'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
     'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
@@ -1142,6 +1142,110 @@ class SourceBundleTest(unittest.TestCase):
         child = subprocess.run(['node', str(HERE / 'packet-template/install/verify-source-cache-fixtures.mjs')], capture_output=True, text=True, check=False, env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(self.root)})
         self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
         self.assertTrue(json.loads(child.stdout)['passed'])
+
+
+class InstalledProbeCheckTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.packet = self.root / 'packet'
+        runner = self.packet / checks_runner.PRODUCTION_PROBE_RUNNER
+        runner.parent.mkdir(parents=True)
+        runner.write_text("    if pi['passed'] != 22 or pi['qualification']:\n")
+
+    def report(self, **changes):
+        report = {'passed': 22, 'qualification': False, 'reports': [{'namespaceState': 'released'}] * 22, **changes}
+        return ('noise\n' + json.dumps(report) + '\n').encode()
+
+    def test_the_installed_probe_runs_only_where_the_real_runtime_can_be_installed(self):
+        hermes = {name: (command, directory) for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', True, False)}
+        self.assertEqual(hermes[checks_runner.INSTALLED_PROBE], (['node', '/packet/' + checks_runner.INSTALLED_PROBE], 'installed-probe'))
+        elsewhere = [name for name, command, directory in checks_runner.plan(Path('/packet'), Path('node'), 'python', False, False)]
+        self.assertNotIn(checks_runner.INSTALLED_PROBE, elsewhere)
+
+    def test_the_probe_that_production_runs_is_the_one_in_the_packet(self):
+        template = HERE / 'packet-template'
+        self.assertTrue((template / checks_runner.INSTALLED_PROBE).is_file())
+        self.assertEqual(checks_runner.expected_probe_count(template), 22)
+
+    def test_a_clean_report_passes(self):
+        self.assertIsNone(checks_runner.installed_probe_problem(self.packet, self.report()))
+
+    def test_the_expected_count_is_read_from_the_production_runner(self):
+        (self.packet / checks_runner.PRODUCTION_PROBE_RUNNER).write_text("    if pi['passed'] != 23:\n")
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report()), 'INSTALLED_PROBE_COUNT passed=22 expected=23')
+
+    def test_a_probe_that_fails_an_assertion_or_prints_no_report_is_refused(self):
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, b''), 'INSTALLED_PROBE_REPORT_MISSING')
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, b'not json\n'), 'INSTALLED_PROBE_REPORT_MISSING')
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report(passed=21)), 'INSTALLED_PROBE_COUNT passed=21 expected=22')
+
+    def test_a_report_that_issues_a_qualification_or_keeps_a_namespace_is_refused(self):
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report(qualification=True)), 'INSTALLED_PROBE_QUALIFICATION_ISSUED')
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report(reports=[{'namespaceState': 'held'}] * 22)), 'INSTALLED_PROBE_NAMESPACE_NOT_RELEASED')
+
+    def test_two_runner_counts_are_refused(self):
+        (self.packet / checks_runner.PRODUCTION_PROBE_RUNNER).write_text("pi['passed'] != 22\npi['passed'] != 22\n")
+        with self.assertRaisesRegex(SystemExit, 'PACKET_CHECKS_PROBE_COUNT_MISSING'):
+            checks_runner.expected_probe_count(self.packet)
+
+    def test_fd_comes_from_the_given_directory_and_the_other_tools_from_the_system(self):
+        tools = self.root / 'tools'
+        tools.mkdir()
+        self.assertIsNone(checks_runner.pi_tools({}))
+        self.assertIsNone(checks_runner.pi_tools({checks_runner.PI_TOOLS_VARIABLE: str(self.root / 'missing')}))
+        self.assertIsNone(checks_runner.pi_tools({checks_runner.PI_TOOLS_VARIABLE: str(tools)}))
+        (tools / 'fd').write_text('#!/bin/sh\n')
+        (tools / 'fd').chmod(0o755)
+        found = checks_runner.pi_tools({checks_runner.PI_TOOLS_VARIABLE: str(tools)})
+        if shutil.which('rg', path='/usr/bin:/bin'):
+            self.assertEqual(found['fd'], str(tools / 'fd'))
+            self.assertTrue(found['bash'].startswith(('/usr/bin/', '/bin/')))
+        else:
+            self.assertIsNone(found)
+
+    def test_a_report_without_the_expected_number_of_rows_is_refused(self):
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report(reports=[])), 'INSTALLED_PROBE_REPORT_ROWS expected=22')
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report(reports=None)), 'INSTALLED_PROBE_REPORT_ROWS expected=22')
+        rows = [{'namespaceState': 'released'}] * 22
+        self.assertIsNone(checks_runner.installed_probe_problem(self.packet, self.report(reports=rows)))
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report(reports=rows[:21] + [{'namespaceState': 'held'}])), 'INSTALLED_PROBE_NAMESPACE_NOT_RELEASED')
+        self.assertEqual(checks_runner.installed_probe_problem(self.packet, self.report(reports=rows[:21] + ['x'])), 'INSTALLED_PROBE_NAMESPACE_NOT_RELEASED')
+
+    def test_a_probe_that_never_returns_is_stopped_and_reported(self):
+        tools = self.root / 'tools'
+        tools.mkdir()
+        (tools / 'fd').write_text('#!/bin/sh\n')
+        (tools / 'fd').chmod(0o755)
+        output = self.root / 'out.log'
+        with unittest.mock.patch.object(checks_runner, 'install_candidate', return_value=0), unittest.mock.patch.object(checks_runner, 'INSTALLED_PROBE_TIMEOUT_SECONDS', 1), output.open('wb') as handle:
+            scratch = self.root / 'scratch'
+            scratch.mkdir()
+            (scratch / 'prefix/lib/himawari-agent').mkdir(parents=True)
+            code = checks_runner.run_installed_probe([sys.executable, '-c', 'import time; time.sleep(30)'], self.packet, self.root, {checks_runner.PI_TOOLS_VARIABLE: str(tools)}, handle, scratch)
+        if shutil.which('rg', path='/usr/bin:/bin'):
+            self.assertEqual(code, 1)
+            self.assertIn('INSTALLED_PROBE_TIMEOUT', output.read_text())
+
+    def test_every_adapter_hash_in_the_adaptation_manifest_matches_its_file(self):
+        base = HERE / 'packet-template/acceptance/cloud'
+        entries = re.findall(r'"adapter": "([^"]+)",\s*"adapterSha256": "([0-9a-f]{64})"', (base / 'adaptation-manifest.json').read_text())
+        self.assertGreaterEqual(len(entries), 5)
+        for adapter, digest in entries:
+            self.assertEqual(hashlib.sha256((base / adapter).read_bytes()).hexdigest(), digest, adapter)
+
+    def test_a_run_without_the_tools_directory_fails_before_installing_anything(self):
+        output = self.root / 'out.log'
+        with output.open('wb') as handle:
+            code = checks_runner.run_installed_probe(['node', 'probe.mjs'], self.packet, self.root, {}, handle, self.root)
+        self.assertEqual(code, 1)
+        self.assertIn('INSTALLED_PROBE_PI_TOOLS_MISSING', output.read_text())
+        self.assertFalse((self.root / 'prefix').exists())
+
+    def test_the_packet_checker_passes_the_tools_directory(self):
+        source = (HERE / 'make-packet.py').read_text()
+        self.assertIn("' --pi-tools ' + shlex.quote(self.settings['piToolBin'])", source)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,1 @@
+{"id": "ds5-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "反向验证目前只是作者在 Hermes 上的人工操作，未入库、本环境无法复现，建议把该证据写进提交说明或在仓库内加一个可重复的反向测试。", "valid": true, "class": "better"}
