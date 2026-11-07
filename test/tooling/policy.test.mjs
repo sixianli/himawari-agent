@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
+  chromiumInstall,
   evaluateTestHygiene,
   inspectTestSource,
   parseTestHygieneBaseline,
@@ -133,6 +134,9 @@ function workflow() {
                     },
                   },
                 ]
+              : []),
+            ...(["static", "test", "node-floor", "coverage"].includes(check.id)
+              ? [{ run: chromiumInstall }]
               : []),
           ],
         },
@@ -507,6 +511,16 @@ describe("CI policy contract", () => {
     mutate(value);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
   });
+  it.each(["static", "test", "node-floor", "coverage"])(
+    "rejects a %s job that runs browser tests without installing Chromium",
+    (id) => {
+      const value = workflow();
+      value.jobs[id].steps = value.jobs[id].steps.filter((step) => step.run !== chromiumInstall);
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+        `without installing Chromium: ${id}`,
+      );
+    },
+  );
   it.each([
     "missing option",
     "always measure",

@@ -367,7 +367,7 @@
       "done_when": [
         {
           "type": "doc",
-          "path": "docs/adr/0177-quality-on-ci-vps.md",
+          "path": "docs/adr/0178-quality-on-ci-vps.md",
           "quotes": "G21"
         },
         {

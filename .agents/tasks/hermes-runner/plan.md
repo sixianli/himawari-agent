@@ -39,6 +39,7 @@
 - 2026-11-06 23:54 更正 HR-17 的 done_when：ADR 0168 把 G12 的两句话分在两个问题下引用，不是连续原文；改为由沿用这些时限的 ADR 0176 连续引用 G12。
 - 2026-11-07 00:32 HR-10、HR-12 做完，当前批次换成 HR-13（开 PR 在 VPS 上跑完整 CI）和 HR-15（CI 通过后注销 Hermes 的 runner）。quality.yml（HR-16）照 ADR 0176 决定第 8 条另开 PR。
 - 2026-11-07 00:40 G21：quality.yml 的 container 检查给第三个专用账号用 rootless Docker，记为 durable，由 HR-16 那个 PR 的 ADR 原文承接；HR-16 的 goal_ref 加 G21。
+- 2026-11-07 19:30 合入 main 后 ADR 编号 0177 已被 gitleaks 精确值白名单占用（PR 275），HR-16 的 done_when 里文档路径改为 docs/adr/0178-quality-on-ci-vps.md。
 
 ## 意外和发现
 

@@ -40,6 +40,9 @@ const jobIds = [
   "required",
 ];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
+export const chromiumInstall =
+  ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
+const chromiumChecks = ["static", "test", "node-floor", "coverage"];
 
 export function timeoutMinutesFor(checkId) {
   if (checkId === "required") return 15;
@@ -399,6 +402,11 @@ export function validateWorkflow(policy, source, toolchain) {
           );
       }
     }
+    if (chromiumChecks.includes(check.id))
+      assert(
+        job.steps.some((step) => step.run === chromiumInstall),
+        `Job runs browser tests without installing Chromium: ${check.id}`,
+      );
     if (check.id === "coverage") {
       const downloads = job.steps.filter((step) =>
         step.uses?.startsWith("actions/download-artifact@"),
