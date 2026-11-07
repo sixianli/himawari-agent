@@ -75,7 +75,8 @@ export function gatewayConfigProblems(config, requiredModels = []) {
   if (!config || typeof config !== "object") return ["config"];
   if (!ROUTING_VALUES.includes(config.routing)) problems.push("routing");
   if (!STAYS_VALUES.includes(config.stays)) problems.push("stays");
-  if (!nonNegative(config.creditFloor)) problems.push("creditFloor");
+  if (!(Number.isFinite(config.creditFloor) && config.creditFloor > 0))
+    problems.push("creditFloor");
   if (!(Number.isFinite(config.defaultCreditsPerUsd) && config.defaultCreditsPerUsd > 0))
     problems.push("defaultCreditsPerUsd");
   const providers = Array.isArray(config.providers) ? config.providers : [];
@@ -91,7 +92,9 @@ export function gatewayConfigProblems(config, requiredModels = []) {
     )
       problems.push(`providers.${provider.id}.custom`);
   }
-  if (!ids.includes(config.creditProvider)) problems.push("creditProvider");
+  const creditProvider = providers.find((provider) => provider?.id === config.creditProvider);
+  if (!(creditProvider?.kind === "plugin" && creditProvider.signIn))
+    problems.push("creditProvider");
   const models = config.models && typeof config.models === "object" ? config.models : {};
   for (const model of requiredModels)
     if (!Object.hasOwn(models, model)) problems.push(`models.${model}`);
@@ -373,6 +376,7 @@ export function priceOf(config, model) {
 }
 
 const tokens = (value) => (value === undefined ? 0 : nonNegative(value) ? value : Number.NaN);
+const required = (value) => (nonNegative(value) ? value : Number.NaN);
 
 export function summarizeGatewayUsage(lines, config) {
   const known = new Set(config.providers.map((provider) => provider.id));
@@ -393,16 +397,20 @@ export function summarizeGatewayUsage(lines, config) {
     if (!slots.has(provider)) slots.set(provider, { requests: 0, failed: 0 });
     const slot = slots.get(provider);
     slot.requests += 1;
-    if (!(line.status >= 200 && line.status < 300)) slot.failed += 1;
-    if (provider === config.creditProvider) {
-      const credits = tokens(line.credits);
+    const answered = line.status >= 200 && line.status < 300;
+    if (!answered) slot.failed += 1;
+    const count = answered ? required : tokens;
+    if (!known.has(provider)) {
+      if (provider !== "none" || answered) unreadable += 1;
+    } else if (provider === config.creditProvider) {
+      const credits = count(line.credits);
       if (Number.isNaN(credits)) unreadable += 1;
       else slot.credits = (slot.credits ?? 0) + credits;
     } else {
       const price = priceOf(config, model);
       const usd =
-        (tokens(line.in) * price.input +
-          (tokens(line.out) + tokens(line.reasoning)) * price.output +
+        (count(line.in) * price.input +
+          (count(line.out) + tokens(line.reasoning)) * price.output +
           tokens(line.cache_read) * price.cache_read) /
         1e6;
       if (Number.isNaN(usd)) unreadable += 1;
@@ -417,12 +425,17 @@ export function summarizeGatewayUsage(lines, config) {
 
 export function readGatewayUsage(root) {
   const path = join(root, "config", "magpie", "usage.jsonl");
-  if (!existsSync(path)) return null;
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
   const lines = [];
-  for (const text of readFileSync(path, "utf8").split("\n")) {
-    if (!text.trim()) continue;
+  for (const entry of text.split("\n")) {
+    if (!entry.trim()) continue;
     try {
-      lines.push(JSON.parse(text));
+      lines.push(JSON.parse(entry));
     } catch {
       return null;
     }
@@ -491,10 +504,10 @@ export function postJson(url, payload, timeoutMs = 60000) {
   });
 }
 
-async function waitForGateway(port, child, timeoutMs = 60000) {
+async function waitForGateway(port, child, failed, timeoutMs = 60000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) return false;
+    if (child.exitCode !== null || failed()) return false;
     const { status } = await getJson(`http://127.0.0.1:${port}/v1/models`, 2000);
     if (status === 200) return true;
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
@@ -619,12 +632,18 @@ export async function startGateway({
     });
     runningGateways.add(child);
     let stderr = "";
+    let spawnError = null;
+    child.on("error", (error) => {
+      spawnError = error.message;
+    });
     child.stderr.on("data", (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-4000);
     });
-    if (!(await waitForGateway(port, child))) {
+    if (!(await waitForGateway(port, child, () => spawnError !== null))) {
       stop();
-      throw new Error(`GATEWAY_START_FAILED ${stderr.trim().split("\n").slice(-2).join(" | ")}`);
+      throw new Error(
+        `GATEWAY_START_FAILED ${spawnError ?? stderr.trim().split("\n").slice(-2).join(" | ")}`,
+      );
     }
     log(`GATEWAY_LISTENING 127.0.0.1:${port} magpie=${install.version}`);
   };

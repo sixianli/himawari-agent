@@ -1739,10 +1739,16 @@ export function asDirect(text, model) {
     .join(groupId(model));
 }
 
+export function systemAsDirect(messages, model) {
+  return (messages ?? []).map((message) =>
+    message?.role === "system" ? JSON.parse(asDirect(JSON.stringify(message), model)) : message,
+  );
+}
+
 export function passthroughProblems(direct, via, model) {
   if (!direct || !via) return ["GATEWAY_PASSTHROUGH_NO_REQUEST"];
   const problems = [];
-  if (JSON.stringify(direct.messages) !== asDirect(JSON.stringify(via.messages), model))
+  if (JSON.stringify(direct.messages) !== JSON.stringify(systemAsDirect(via.messages, model)))
     problems.push("GATEWAY_PASSTHROUGH_MESSAGES_CHANGED");
   if (JSON.stringify(direct.tools) !== JSON.stringify(via.tools))
     problems.push("GATEWAY_PASSTHROUGH_TOOLS_CHANGED");
@@ -2457,14 +2463,15 @@ export function parseArgs(argv) {
   return options;
 }
 
-export function gatewayRecordFields(usage, config, model) {
+export function gatewayRecordFields(usage, config, model, { requested = false } = {}) {
   const unknown = { gateway: "magpie", providers: {}, costUnknown: true };
   if (usage === null) return unknown;
   try {
     const { byModel, unreadable } = summarizeGatewayUsage(usage, config);
     const providers = byModel[model] ?? {};
     if (!providersValid(providers)) return unknown;
-    return unreadable > 0 ? { ...unknown, providers } : { gateway: "magpie", providers };
+    const missing = requested && Object.keys(providers).length === 0;
+    return unreadable > 0 || missing ? { ...unknown, providers } : { gateway: "magpie", providers };
   } catch {
     return unknown;
   }
@@ -2475,7 +2482,10 @@ export function gatewayUsageLine(record) {
     ([provider, slot]) =>
       `${provider} requests=${slot.requests} failed=${slot.failed}${slot.credits === undefined ? "" : ` credits=${slot.credits.toFixed(2)}`}${slot.usd === undefined ? "" : ` usd=${slot.usd.toFixed(4)}`}`,
   );
-  return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}`;
+  const dropped = record.gatewayDropped?.length
+    ? ` dropped=${record.gatewayDropped.join(",")}`
+    : "";
+  return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}${dropped}`;
 }
 
 export async function startLiveGateway({
@@ -2493,7 +2503,7 @@ export async function startLiveGateway({
     )
     .filter(Boolean);
   if (!uid) console.log(`GATEWAY_CREDIT_FLOOR ${config.creditProvider} sign-in-unavailable`);
-  const start = (providers, root) =>
+  const startOnce = (providers, root) =>
     startGateway({
       install: gateway.install,
       config,
@@ -2502,6 +2512,15 @@ export async function startLiveGateway({
       providers,
       log: (line) => console.log(line),
     });
+  const start = async (providers, root) => {
+    try {
+      return await startOnce(providers, root);
+    } catch (error) {
+      throw error.message.startsWith("GATEWAY_PREFLIGHT_FAILED")
+        ? error
+        : new Error(`GATEWAY_PREFLIGHT_FAILED ${error.message}`);
+    }
+  };
   let live;
   let drop = uid ? [] : [config.creditProvider];
   try {
@@ -2721,7 +2740,9 @@ async function main() {
         ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
         ...(liveGateway
           ? {
-              ...gatewayRecordFields(liveGateway.live.usage(), gateway.config, model),
+              ...gatewayRecordFields(liveGateway.live.usage(), gateway.config, model, {
+                requested: summary.usage.steps > 0,
+              }),
               ...(liveGateway.drop.length ? { gatewayDropped: liveGateway.drop } : {}),
             }
           : {}),

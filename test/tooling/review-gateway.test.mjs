@@ -31,6 +31,7 @@ import {
   PLACEHOLDER,
   readGatewayConfig,
   readGatewayLock,
+  readGatewayUsage,
   installGateway as installRealGateway,
   postJson,
   runningGatewayCount,
@@ -226,7 +227,7 @@ describe("review gateway ledger", () => {
     expect(unreadable).toBe(0);
     expect(summary[deepseek]["workbuddy-ai"]).toEqual({ requests: 2, failed: 1, credits: 0.3 });
     expect(summary[deepseek]["opencode-go"].usd).toBeCloseTo(0.15 + 0.003, 10);
-    expect(summary[glm]).toEqual({ none: { requests: 1, failed: 1, usd: 0 } });
+    expect(summary[glm]).toEqual({ none: { requests: 1, failed: 1 } });
     expect(gatewayRecordFields(null, config, deepseek)).toEqual({
       gateway: "magpie",
       providers: {},
@@ -468,6 +469,8 @@ describe("review gateway hardening", () => {
     expect(broken({ creditFloor: undefined })).toContain("creditFloor");
     expect(broken({ defaultCreditsPerUsd: Number.NaN })).toContain("defaultCreditsPerUsd");
     expect(broken({ creditProvider: "workbuddy" })).toContain("creditProvider");
+    expect(broken({ creditProvider: "opencode-go" })).toContain("creditProvider");
+    expect(broken({ creditFloor: 0 })).toContain("creditFloor");
     expect(broken({ stays: "forever" })).toContain("stays");
     const models = structuredClone(config.models);
     models[deepseek].members = ["codebuddy/deepseek-v4.1-flash-sg"];
@@ -522,7 +525,7 @@ describe("review gateway hardening", () => {
       { req: { toString: () => "group/review-glm-5.3-flash" }, provider: "opencode-go" },
     ];
     const { byModel, unreadable } = summarizeGatewayUsage(polluted, config);
-    expect(unreadable).toBe(3);
+    expect(unreadable).toBe(4);
     expect({}.requests).toBeUndefined();
     expect(Object.keys(byModel[deepseek]).sort()).toEqual(["unknown", "workbuddy-ai"]);
     const fields = gatewayRecordFields(polluted, config, deepseek);
@@ -572,8 +575,95 @@ function probeServer() {
   );
 }
 
+const install = () => installRealGateway();
+
+describe("review gateway usage gaps", () => {
+  it("[gateway] marks the cost unknown when an answered request lacks its tokens or credits, or names an unknown provider", () => {
+    const answered = (line) => [{ req: "group/review-deepseek-v4.1-flash", status: 200, ...line }];
+    for (const line of [
+      { provider: "workbuddy-ai" },
+      { provider: "opencode-go", out: 3 },
+      { provider: "opencode-go", in: 3 },
+      { provider: "codebuddy", in: 3, out: 1, credits: 0.1 },
+    ])
+      expect(gatewayRecordFields(answered(line), config, deepseek).costUnknown).toBe(true);
+    expect(
+      gatewayRecordFields(answered({ provider: "opencode-go", in: 3, out: 1 }), config, deepseek)
+        .costUnknown,
+    ).toBeUndefined();
+    expect(
+      gatewayRecordFields(
+        [{ req: "group/review-deepseek-v4.1-flash", provider: "workbuddy-ai", status: 502 }],
+        config,
+        deepseek,
+      ).costUnknown,
+    ).toBeUndefined();
+  });
+
+  it("[gateway] marks the cost unknown when OpenCode made requests but Magpie recorded none for the model", () => {
+    expect(gatewayRecordFields([], config, deepseek, { requested: true })).toEqual({
+      gateway: "magpie",
+      providers: {},
+      costUnknown: true,
+    });
+    expect(gatewayRecordFields([], config, deepseek)).toEqual({ gateway: "magpie", providers: {} });
+  });
+
+  it("[gateway] reads a usage file it cannot open as unknown instead of throwing", () => {
+    const root = mkdtempSync(join(tmpdir(), "gateway-usage-"));
+    try {
+      mkdirSync(join(root, "config", "magpie", "usage.jsonl"), { recursive: true });
+      expect(readGatewayUsage(root)).toBeNull();
+      expect(readGatewayUsage(join(root, "absent"))).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("[gateway] compares user messages exactly and normalizes model names only in the system message", () => {
+    const direct = {
+      messages: [
+        { role: "system", content: "named deepseek-v4.1-flash" },
+        { role: "user", content: "about deepseek-v4.1-flash" },
+      ],
+      tools: [],
+    };
+    const via = {
+      messages: [
+        { role: "system", content: "named group/review-deepseek-v4.1-flash" },
+        { role: "user", content: "about group/review-deepseek-v4.1-flash" },
+      ],
+      tools: [],
+    };
+    expect(passthroughProblems(direct, via, deepseek)).toContain(
+      "GATEWAY_PASSTHROUGH_MESSAGES_CHANGED",
+    );
+    via.messages[1].content = "about deepseek-v4.1-flash";
+    expect(passthroughProblems(direct, via, deepseek)).not.toContain(
+      "GATEWAY_PASSTHROUGH_MESSAGES_CHANGED",
+    );
+  });
+
+  it("[gateway] reports a Magpie binary that cannot start instead of crashing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "gateway-spawn-"));
+    try {
+      const real = install();
+      const live = await startGateway({
+        install: { ...real, binary: join(root, "no-such-magpie") },
+        config,
+        root: join(root, "run"),
+        models: [],
+        providers: [],
+      });
+      await expect(live.serve()).rejects.toThrow("GATEWAY_START_FAILED");
+      expect(runningGatewayCount()).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("review gateway live start", () => {
-  const install = () => installRealGateway();
   const liveConfig = (port, members) => ({
     ...structuredClone(config),
     providers: [
