@@ -729,6 +729,23 @@ describe("runner units and shared limits", () => {
     },
   );
 
+  it.each([1, 2])(
+    "runner %s puts no read-only mounts under /proc, so the job sandbox can mount a fresh /proc",
+    (id) => {
+      const result = render(id);
+      expect(result.status).toBe(0);
+      const unit = unitSettings(result.stdout);
+      for (const key of ["ProtectKernelTunables", "ProtectKernelLogs"]) {
+        expect(unit).not.toHaveProperty(key);
+      }
+      for (const key of ["ReadOnlyPaths", "InaccessiblePaths", "TemporaryFileSystem"]) {
+        for (const path of (unit[key] ?? "").split(" ")) {
+          expect(path.replace(/^[-+]/, "")).not.toMatch(/^\/proc(\/|$)/);
+        }
+      }
+    },
+  );
+
   it("gives both runners the same hardening apart from their own paths and names", () => {
     const normalize = (id, text) =>
       text

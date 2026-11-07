@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b009fe9d8e4a2df1c2cae2e88c5b28d42c0199d869f37632ff6e4c457080b1f2"
+contract_sha256: "sha256:edb24e73a3045dcadb993bd80575d8dccd47ed948a21ac581ac5e7a4b2d5b007"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -60,6 +60,7 @@ date: "2026-11-07"
 - 每个 runner 一个系统用户（`gh-runner`、`gh-runner-2`），不能登录，只属于自己的组，不在 sudo 组或 docker 组里。
 - `ProtectHome=yes` 让它看不到 `/home`（包括 ubuntu 的 SSH 密钥），`InaccessiblePaths` 让它碰不到 Docker 的控制接口；`ProtectSystem=strict` 让它只能写自己的三个目录；每个服务还藏起另一个 runner 的目录（`InaccessiblePaths=-/srv/gh-runner-2` 或 `-/srv/gh-runner`）。
 - `ProtectProc=invisible` 让它在 `/proc` 里只看得到自己的进程，看不到本机其他服务的进程和命令行参数。
+- 服务不在 `/proc` 下加任何挂载，所以不设 `ProtectKernelTunables`、`ProtectKernelLogs`，`ReadOnlyPaths`、`InaccessiblePaths` 里也不写 `/proc` 下的路径：项目沙箱要给自己新挂一份 `/proc`，VPS 的内核遇到这类挂载会拒绝，沙箱就起不来（原因和复现见 [ADR 0176](../adr/0176-ci-on-ovh-vps.md#decision) 决定第 6 条）。
 - 防火墙规则只对两个 runner 账号生效（一条规则同时匹配两个账号的 uid）：拒绝它访问私有网段（`10/8`、`100.64/10`、`172.16/12`、`192.168/16`、`fc00::/7`、`fe80::/10`）和 `169.254.0.0/16`（云主机的元数据服务地址），以及本机任何地址（回环地址、公网 IPv4 和 IPv6 都算，规则写作 `fib daddr type local`）上端口名单里的 TCP 端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。这也是两个 runner 都不给 docker 组的原因：docker 组等于 root，一个任务就能拿到整台机器。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
 - VPS 只跑 CI，所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个 runner 内存最多 15 GB（`MemoryHigh=14G`、`MemoryMax=15G`），不用交换分区，最多 2048 个进程。两个服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 20 GB（`MemoryHigh=19G`、`MemoryMax=20G`），最多 4096 个进程；留出的约 2 GB 让 ssh 在 runner 用满自己的内存时仍能登录。
