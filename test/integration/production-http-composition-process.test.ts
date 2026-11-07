@@ -13,6 +13,7 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
+import { CHAT_EGRESS_LEGEND, CHAT_TOOL_LOOP_STOPPED } from "@himawari-agent/prompt-catalog";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -1860,13 +1861,18 @@ type ChatBody = {
   readonly tools?: unknown;
 };
 
+function isAgentRequest(messages: readonly { role?: unknown; content?: unknown }[] | undefined) {
+  const head = messages?.[0];
+  return head?.role === "system" && head.content !== CHAT_EGRESS_LEGEND.text;
+}
+
 function agentRequests(from: number) {
   return providerRequests
     .slice(from)
     .filter(
       ({ path: route, body }) =>
         route === "/v1/chat/completions" &&
-        (body?.["messages"] as Array<{ role?: unknown }> | undefined)?.[0]?.role === "system",
+        isAgentRequest(body?.["messages"] as Array<{ role?: unknown; content?: unknown }>),
     )
     .map(({ raw, body }) => ({ raw: raw ?? "", body: body as unknown as ChatBody }));
 }
@@ -1971,9 +1977,9 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     );
     chosen ||= names.includes("reminder_list") ? "reminder_list" : (names[0] ?? "");
     const messages = input["messages"] as { role: string; content: unknown }[];
-    if (JSON.stringify(messages.at(-1)).includes("Do not claim overall task success"))
+    if (JSON.stringify(messages.at(-1)).includes(CHAT_TOOL_LOOP_STOPPED.text))
       return { text: "已确认的结果：提醒列表是空的；这一步卡住了，我换个办法。" };
-    if (messages[0]?.role !== "system" || !chosen) return { text: "安装后的持久回答" };
+    if (!isAgentRequest(messages) || !chosen) return { text: "安装后的持久回答" };
     return { tool: chosen, input: {} };
   };
   try {
@@ -1995,8 +2001,8 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     expectAppendOnly(before, summary);
     expect(summary.body.messages.length).toBe(before.body.messages.length + 3);
     expect(summary.body.messages.at(-1)?.role).toBe("user");
-    expect(lastMessage(summary)).toContain("Do not claim overall task success");
-    expect(requestHead(summary).prefix).not.toContain("Do not claim overall task success");
+    expect(lastMessage(summary)).toContain(CHAT_TOOL_LOOP_STOPPED.text);
+    expect(requestHead(summary).prefix).not.toContain(CHAT_TOOL_LOOP_STOPPED.text);
     chatReply = undefined;
     expect((await submitTurn(service, threadId, "tool-loop-second", "好的")).run?.status).toBe(
       "completed",
@@ -2008,7 +2014,7 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     expect(
       next.body.messages
         .slice(0, -1)
-        .some((message) => JSON.stringify(message).includes("Do not claim overall task success")),
+        .some((message) => JSON.stringify(message).includes(CHAT_TOOL_LOOP_STOPPED.text)),
     ).toBe(true);
   } finally {
     chatReply = undefined;
