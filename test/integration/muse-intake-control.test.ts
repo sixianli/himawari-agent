@@ -118,6 +118,7 @@ describe("Muse overview and commands", () => {
             textRef,
             textWithheld: false,
             options: [],
+            gmailMessageId: null,
             sources: { occurred_at: "system_record" },
             contentDigest: `digest-${key}`,
             ...overrides,
