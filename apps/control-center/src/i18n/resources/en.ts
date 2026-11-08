@@ -1264,6 +1264,7 @@ export const messages = {
   "weekly.muse.def":
     "Pairing rate = entries matched to the same email ÷ all Muse comparison entries this week.",
   "weekly.implicit.title": "Observed signals · not ratings",
+  "weekly.implicit.notFull": "Week not over yet",
   "weekly.implicit.empty": "No decision sent a reminder this week.",
   "weekly.implicit.signal":
     "{s, select, opened {Opened the push} undone {Marked done or muted, then undid it} other {You replied in the mail thread}}",

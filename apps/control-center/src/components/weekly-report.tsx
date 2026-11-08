@@ -1084,7 +1084,9 @@ export function WeeklyReport({
                           k: format.count(item.decisions),
                           n: format.count(report.implicit.pushedDecisions),
                         })
-                      : message("weekly.few", { n: report.implicit.pushedDecisions })}
+                      : withheld
+                        ? message("weekly.implicit.notFull")
+                        : message("weekly.few", { n: report.implicit.pushedDecisions })}
                   </b>
                   <span>{message("weekly.implicit.signal", { s: item.signal })}</span>
                   <small>

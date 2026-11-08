@@ -646,6 +646,31 @@ describe("[P0-8] calibration report tab", () => {
     expect(text("#page .weekly-today")).toBe("今天");
   });
 
+  it("[P0-11] says the week is not over instead of 'too few' while ratios are withheld", async () => {
+    const observing = observingFixture();
+    weekly = {
+      ...observing,
+      report: {
+        ...observing.report,
+        implicit: {
+          pushedDecisions: 12,
+          otherDecisionEvents: 0,
+          signals: [
+            signalRow("opened", 5, 60_000, 0),
+            signalRow("undone", 1, 60_000, 0),
+            signalRow("replied", 0, null, 0),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("本周尚未结束");
+    expect(card).not.toContain("样本不足");
+    expect(card).not.toMatch(/%/u);
+  });
+
   it("[P0-8] opens a day's checks as plain sentences without raw codes", async () => {
     weekly = observingFixture();
     await render();

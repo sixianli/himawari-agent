@@ -93,6 +93,7 @@ export interface CalibrationDecisionRow {
   readonly kind: string;
   readonly outcome: string | null;
   readonly ownerRating: CalibrationRating | null;
+  readonly delivered: boolean;
 }
 
 export interface MuseEntryRow {
@@ -363,7 +364,10 @@ export function summarizeImplicit(
   minimumSamples = DEFAULT_MINIMUM_SAMPLES,
 ): ImplicitSummary {
   const pushedDecisions = decisions.filter(
-    (row) => row.kind === "proactive" && (row.outcome === "pushed" || row.outcome === "deferred"),
+    (row) =>
+      row.kind === "proactive" &&
+      row.delivered &&
+      (row.outcome === "pushed" || row.outcome === "deferred"),
   ).length;
   const median = (values: readonly number[]): number | null => {
     if (values.length === 0) return null;
@@ -421,10 +425,17 @@ const ISO_PATTERN = "????-??-??T??:??:??.???Z";
 export const CALIBRATION_SQL = Object.freeze({
   badDecisionTimes: `SELECT count(*) AS n FROM decision_ledger WHERE checked_at NOT GLOB '${ISO_PATTERN}'`,
   badMuseTimes: `SELECT count(*) AS n FROM muse_reference_entries WHERE muse_at NOT GLOB '${ISO_PATTERN}'`,
-  decisions: `SELECT kind, COALESCE(outcome, verdict) AS outcome, owner_rating AS ownerRating
-    FROM decision_ledger
-    WHERE owner_id = ? AND agent_id = ? AND checked_at >= ? AND checked_at < ?
-    ORDER BY checked_at, id`,
+  decisions: `SELECT decision.kind AS kind, COALESCE(decision.outcome, decision.verdict) AS outcome,
+      decision.owner_rating AS ownerRating,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM web_push_feedback sent
+        WHERE sent.owner_id = decision.owner_id AND sent.agent_id = decision.agent_id
+          AND sent.source_key = decision.push_source_key
+      ) THEN 1 ELSE 0 END AS delivered
+    FROM decision_ledger decision
+    WHERE decision.owner_id = ? AND decision.agent_id = ?
+      AND decision.checked_at >= ? AND decision.checked_at < ?
+    ORDER BY decision.checked_at, decision.id`,
   museEntries: `SELECT muse_reminded AS museReminded, timing_ok AS timingOk,
       content_ok AS contentOk, paired_message_id AS pairedMessageId
     FROM muse_reference_entries
@@ -433,7 +444,11 @@ export const CALIBRATION_SQL = Object.freeze({
   signals: `SELECT signal.decision_id AS decisionId, signal.signal AS signal,
       signal.delay_ms AS delayMs,
       CASE WHEN decision.kind = 'proactive' AND decision.verdict IN ('pushed', 'deferred')
-        THEN 1 ELSE 0 END AS pushed
+        AND EXISTS (
+        SELECT 1 FROM web_push_feedback sent
+        WHERE sent.owner_id = decision.owner_id AND sent.agent_id = decision.agent_id
+          AND sent.source_key = decision.push_source_key
+      ) THEN 1 ELSE 0 END AS pushed
     FROM decision_signals signal
     JOIN decision_ledger decision ON decision.id = signal.decision_id
     WHERE decision.owner_id = ? AND decision.agent_id = ?
@@ -467,9 +482,14 @@ export function readCalibrationRows(
   },
 ): CalibrationRows {
   assertTimestampFormat(database);
-  const decisions = database
-    .prepare(CALIBRATION_SQL.decisions)
-    .all(ownerId, agentId, start, end) as CalibrationDecisionRow[];
+  const decisions = (
+    database.prepare(CALIBRATION_SQL.decisions).all(ownerId, agentId, start, end) as (Omit<
+      CalibrationDecisionRow,
+      "delivered"
+    > & {
+      delivered: number;
+    })[]
+  ).map((row) => ({ ...row, delivered: row.delivered === 1 }));
   const entries = (
     database.prepare(CALIBRATION_SQL.museEntries).all(ownerId, agentId, start, end) as {
       museReminded: number;

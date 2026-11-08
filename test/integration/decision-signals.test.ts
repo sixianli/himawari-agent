@@ -437,6 +437,72 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
     }
   });
 
+  it("[negative] counts a decision only after its push was really sent, and keeps other signals apart", async () => {
+    const { repository, record, markPushed, addFeedback } = await fixture();
+    try {
+      await record({
+        id: "decision-1",
+        verdict: "pushed",
+        pushSourceKey: "proactive:push-1",
+        insights: [{ id: "insight-1", threadId: "thread-1", contentRef: "content-1" }],
+      });
+      markPushed("insight-1");
+      const database = repository.proactive();
+      const reverse = async (done: string, open: string) => {
+        await database.updateInsight({
+          ...scope,
+          insightId: "insight-1",
+          status: "done",
+          now: done,
+        });
+        await database.updateInsight({
+          ...scope,
+          insightId: "insight-1",
+          status: "open",
+          now: open,
+        });
+      };
+      await reverse("2026-11-02T01:00:00.000Z", "2026-11-02T01:00:10.000Z");
+      const window = resolveWindow({ end: "2026-11-03", days: 7 });
+      const read = async () => {
+        const rows = await repository
+          .decisionLedger()
+          .readCalibrationRows({ ...scope, start: window.start, end: window.end });
+        return summarizeImplicit(rows.decisions, rows.signals, DEFAULT_MINIMUM_SAMPLES);
+      };
+      const queued = await read();
+      expect(queued.pushedDecisions).toBe(0);
+      expect(queued.otherDecisionEvents).toBe(1);
+      expect(queued.signals.map(({ decisions }) => decisions)).toEqual([0, 0, 0]);
+      addFeedback("proactive:push-1", "tag-1");
+      const sent = await read();
+      expect(sent.pushedDecisions).toBe(1);
+      expect(sent.otherDecisionEvents).toBe(0);
+      expect(sent.signals.map(({ decisions }) => decisions)).toEqual([0, 1, 0]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("looks decisions up by push source key through an index", async () => {
+    const { repository, raw } = await fixture();
+    try {
+      const database = raw();
+      const plan = database
+        .prepare(
+          `EXPLAIN QUERY PLAN SELECT id FROM decision_ledger
+           WHERE owner_id = ? AND agent_id = ? AND push_source_key = ?`,
+        )
+        .all(OWNER_ID, AGENT_ID, "proactive:push-1") as { detail: string }[];
+      database.close();
+      expect(plan.map(({ detail }) => detail).join(" ")).toContain(
+        "decision_ledger_push_source_key",
+      );
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("backfills opened signals from earlier push feedback, and only the opened ones", async () => {
     const { repository, raw, record, addFeedback, signals } = await fixture();
     try {
@@ -479,13 +545,13 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
   it("reports observed signals apart from the owner's ratings and never moves the rating shares", async () => {
     const { repository, record, addFeedback } = await fixture();
     try {
-      for (let index = 1; index <= 5; index += 1)
+      for (let index = 1; index <= 6; index += 1)
         await record({
           id: `decision-${index}`,
           verdict: "pushed",
           pushSourceKey: `proactive:push-${index}`,
         });
-      for (let index = 1; index <= 2; index += 1)
+      for (let index = 1; index <= 5; index += 1)
         addFeedback(`proactive:push-${index}`, `tag-${index}`);
       const ratings = (rating: "useful" | "unneeded" | null) =>
         repository.proactive().rateDecision({

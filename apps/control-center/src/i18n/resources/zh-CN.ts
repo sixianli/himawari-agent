@@ -1168,6 +1168,7 @@ export const messages = {
   "weekly.muse.rate": "配对率",
   "weekly.muse.def": "配对率 = 能对上同一封邮件的条目 ÷ 这一周 Muse 对照条目总数。",
   "weekly.implicit.title": "观察信号 · 不是打分",
+  "weekly.implicit.notFull": "本周尚未结束",
   "weekly.implicit.empty": "这一周没有推送过提醒的决策。",
   "weekly.implicit.signal":
     "{s, select, opened {点开了推送} undone {完成或不再提醒后又撤销} other {邮件串里你回复了}}",

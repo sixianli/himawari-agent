@@ -14,6 +14,10 @@ CREATE TABLE decision_signals (
 
 CREATE INDEX decision_signals_decision_index ON decision_signals(decision_id, signal);
 
+CREATE INDEX decision_ledger_push_source_key
+  ON decision_ledger (owner_id, agent_id, push_source_key)
+  WHERE push_source_key IS NOT NULL;
+
 CREATE TRIGGER decision_signals_no_update BEFORE UPDATE ON decision_signals
 BEGIN SELECT RAISE(ABORT, 'DECISION_SIGNAL_IMMUTABLE'); END;
 

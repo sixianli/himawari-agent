@@ -1251,6 +1251,7 @@ export const messages = {
   "weekly.muse.def":
     "対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
   "weekly.implicit.title": "観察シグナル・評価ではありません",
+  "weekly.implicit.notFull": "今週はまだ終わっていません",
   "weekly.implicit.empty": "今週、通知を送った判断はありません。",
   "weekly.implicit.signal":
     "{s, select, opened {通知を開いた} undone {完了またはミュートのあと取り消した} other {メールのやり取りで返信した}}",
