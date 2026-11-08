@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const script = path.resolve(import.meta.dirname, "../../scripts/operations/prod-read.sh");
-const runId = "run:17a4102d-1cb7-4487-ba7d-97074306d1bc";
+const runId = "run:9f2c41d07ab3e5681c0d4b7a2e9f5603";
 const directories = [];
 
 afterEach(() => {
@@ -63,6 +63,9 @@ describe("prod-read.sh", () => {
     ["journal", "valid-pattern", "201"],
     ["journal", "valid-pattern", "5; id"],
     ["run", "run:1; id"],
+    ["run", "run:"],
+    ["run", `run:${"a".repeat(121)}`],
+    ["journal", "bad\u001b[31mpattern"],
     ["run", "17a4102d-1cb7-4487-ba7d-97074306d1bc"],
     ["columns", "runs; DROP TABLE runs"],
     ["columns", "Runs"],
@@ -97,6 +100,26 @@ describe("prod-read.sh", () => {
     expect(result.input).toContain("{ readOnly: true }");
     expect(result.input).toContain("/var/lib/himawari/state/data/product.sqlite");
     expect(result.input).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE)\b/);
+  });
+
+  it("accepts the run id format that production writes (run: plus 32 hex digits)", () => {
+    const result = run("run", runId);
+    expect(result.code).toBe(0);
+    expect(result.calls).toContain(`--no-warnings - run ${runId}`);
+  });
+
+  it("does not echo raw control characters of a refused value", () => {
+    const result = run("journal", "bad\u001b[31mpattern");
+    expect(result.code).toBe(65);
+    expect(result.stderr).not.toContain("\u001b");
+  });
+
+  it("reads columns of one table and uses 40 journal lines by default", () => {
+    const columns = run("columns", "runs");
+    expect(columns.code).toBe(0);
+    expect(columns.calls).toContain("--no-warnings - columns runs");
+    const journal = run("journal", "17a4102d");
+    expect(journal.calls).toContain("-g '17a4102d' -n 40");
   });
 
   it("answers the fixed queries without arguments", () => {

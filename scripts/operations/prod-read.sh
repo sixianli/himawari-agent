@@ -30,7 +30,7 @@ refuse() {
 
 require_match() {
   local value="$1" pattern="$2" what="$3"
-  [[ "$value" =~ $pattern ]] || refuse "$what is not allowed: $value"
+  [[ "$value" =~ $pattern ]] || refuse "$what is not allowed: $(printf '%q' "$value")"
 }
 
 remote() {
@@ -128,7 +128,7 @@ case "$query" in
     ;;
   run)
     [ "$#" -eq 1 ] || usage
-    require_match "$1" '^run:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' "run id"
+    require_match "$1" '^run:[A-Za-z0-9._:-]{1,120}$' "run id"
     database_query run "$1"
     ;;
   tables)
