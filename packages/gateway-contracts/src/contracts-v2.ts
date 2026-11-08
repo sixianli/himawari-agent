@@ -41,12 +41,20 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.snapshot",
   "proactive.review.rate",
   "proactive.source.manage",
+  "muse.overview.read",
+  "muse.overview.snapshot",
+  "muse.item.rate",
+  "muse.intake.set",
+  "muse.data.clear",
   "proactive.weekly.read",
   "proactive.weekly.snapshot",
   "proactive.observation.start",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
+  "sensitive.interceptions.read",
+  "sensitive.interceptions.snapshot",
+  "sensitive.interceptions.clear",
   "memory.overview.read",
   "memory.overview.snapshot",
   "memory.approval.respond",
@@ -595,6 +603,116 @@ const proactiveSourceManageCommandSchema = object({
     source: enumeration(["gmail"]),
     action: enumeration(["disconnect", "clear_records"]),
   }),
+});
+const museOverviewQuerySchema = object({
+  ...envelope("query", "muse.overview.read"),
+  payload: object({}),
+});
+const museItemKindSchema = enumeration(["proactive", "scheduled"]);
+const museOverviewSnapshotSchema = object({
+  ...envelope("snapshot", "muse.overview.snapshot"),
+  payload: object({
+    channel: object({
+      state: enumeration(["never", "ok", "stale", "down", "paused"]),
+      lastBatchAt: nullable(timestamp),
+      gapCount: integer(0),
+    }),
+    receivedWeek: integer(0),
+    suppressedWeek: integer(0),
+    pending: integer(0),
+    delay: nullable(object({ medianMinutes: integer(0), samples: integer(10) })),
+    items: array(
+      object({
+        kind: museItemKindSchema,
+        naturalKey: machineString,
+        occurredAt: timestamp,
+        title: nullable(proactiveTextSchema(300)),
+        text: nullable(proactiveTextSchema(500)),
+        withheld: booleanValue,
+        timingOk: nullable(booleanValue),
+        contentOk: nullable(booleanValue),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const museItemRateCommandSchema = object({
+  ...commandEnvelope("muse.item.rate"),
+  payload: object({
+    kind: museItemKindSchema,
+    naturalKey: machineString,
+    timingOk: nullable(booleanValue),
+    contentOk: nullable(booleanValue),
+  }),
+});
+const museIntakeSetCommandSchema = object({
+  ...commandEnvelope("muse.intake.set"),
+  payload: object({ paused: booleanValue }),
+});
+const museDataClearCommandSchema = object({
+  ...commandEnvelope("muse.data.clear"),
+  payload: object({}),
+});
+
+const sensitiveInterceptionCursorSchema = object({
+  firstSeenAt: timestamp,
+  id: machineString,
+});
+const sensitiveInterceptionsQuerySchema = object({
+  ...envelope("query", "sensitive.interceptions.read"),
+  payload: object({ before: nullable(sensitiveInterceptionCursorSchema) }),
+});
+const sensitiveInterceptionsSnapshotSchema = object({
+  ...envelope("snapshot", "sensitive.interceptions.snapshot"),
+  payload: object({
+    counts: object({ masked: integer(0), withheld: integer(0), notSaved: integer(0) }),
+    items: array(
+      object({
+        id: machineString,
+        threadId: nullable(machineString),
+        source: enumeration([
+          "chat",
+          "background",
+          "embedding",
+          "tool_result",
+          "mail",
+          "memory_capture",
+        ]),
+        purpose: nullable(machineString),
+        part: enumeration([
+          "system",
+          "owner_message",
+          "assistant_message",
+          "tool_call",
+          "tool_result",
+          "embedding_input",
+          "file",
+          "command_output",
+          "web_page",
+          "mail",
+          "memory_candidate",
+          "memory_source",
+        ]),
+        category: enumeration([
+          "machine-secret",
+          "password",
+          "verification-code",
+          "bank-card",
+          "identity-number",
+        ]),
+        outcome: enumeration(["masked", "withheld", "not_saved"]),
+        firstSeenAt: timestamp,
+        lastSeenAt: timestamp,
+        seenCount: integer(1),
+      }),
+    ),
+    next: nullable(sensitiveInterceptionCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const sensitiveInterceptionsClearCommandSchema = object({
+  ...commandEnvelope("sensitive.interceptions.clear"),
+  payload: object({}),
 });
 
 function numberInRange(minimum: number, maximum: number): Schema<number> {
@@ -2146,12 +2264,20 @@ const schemasByType = {
   "proactive.review.snapshot": proactiveReviewSnapshotSchema,
   "proactive.review.rate": proactiveReviewRateCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
+  "muse.overview.read": museOverviewQuerySchema,
+  "muse.overview.snapshot": museOverviewSnapshotSchema,
+  "muse.item.rate": museItemRateCommandSchema,
+  "muse.intake.set": museIntakeSetCommandSchema,
+  "muse.data.clear": museDataClearCommandSchema,
   "proactive.weekly.read": proactiveWeeklyQuerySchema,
   "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
   "proactive.observation.start": proactiveObservationStartCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
+  "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
+  "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,

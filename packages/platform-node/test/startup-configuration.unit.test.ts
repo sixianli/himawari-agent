@@ -1352,6 +1352,8 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     intervalMs: 900_000,
     perCheckMs: 180_000,
     dailyCostMicros: 1_000_000,
+    bodyCharactersPerMail: 16_000,
+    bodyCharactersPerBatch: 64_000,
     memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
@@ -1384,6 +1386,42 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, reviewSecondsPerItem: 0 },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("accepts Muse intake only with a boolean switch and one secret whose purpose is muse-intake", () => {
+  const raw = config("/tmp/himawari-muse-intake-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "muse-intake-secret", version: "v1", purpose: "muse-intake", scope: "agent" },
+    { ref: "other-secret", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const museIntake = { enabled: true, secretRef: "muse-intake-secret" };
+  raw["runPolicy"] = { ...policy, museIntake };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake).toEqual(
+    museIntake,
+  );
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.museIntake,
+  ).toBeUndefined();
+  for (const invalid of [
+    { ...museIntake, enabled: "yes" },
+    { secretRef: "muse-intake-secret" },
+    { ...museIntake, secretRef: "other-secret" },
+    { ...museIntake, secretRef: "missing-secret" },
+    { ...museIntake, secret: "inline" },
+  ]) {
+    raw["runPolicy"] = { ...policy, museIntake: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
 });

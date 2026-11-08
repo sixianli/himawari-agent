@@ -11,12 +11,12 @@ import {
   type RuntimeToolSettledResult,
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
-  scanMachineSecrets,
   type ThreadArtifactSource,
   WEB_FETCH_MAXIMUM_OFFSET,
   webProviderEgress,
   webProviderRecipients,
 } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { validatePublicFetchUrl } from "@himawari-agent/platform-node";
 import type {
   FileReadExecutionContext,

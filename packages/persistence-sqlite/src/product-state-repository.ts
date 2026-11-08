@@ -29,7 +29,10 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  SensitiveInterceptionStorePort,
+  ThreadPromptBundleStorePort,
   DecisionLedgerPort,
+  MuseIntakePort,
   LedgerObservationPort,
   ModelUsageStorePort,
   WebPushStorePort,
@@ -540,6 +543,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.decisionLedger();
   }
 
+  museIntake(): MuseIntakePort {
+    return this.durable.museIntake();
+  }
+
   ledgerObservation(): LedgerObservationPort {
     return this.durable.ledgerObservation();
   }
@@ -558,6 +565,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   threadArtifacts(): ThreadArtifactStorePort {
     return this.durable.threadArtifacts();
+  }
+
+  threadPromptBundles(): ThreadPromptBundleStorePort {
+    return this.durable.threadPromptBundles();
+  }
+
+  sensitiveInterceptions(): SensitiveInterceptionStorePort {
+    return this.durable.sensitiveInterceptions();
   }
 
   memoryBook(): MemoryBookStorePort {

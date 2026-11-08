@@ -7,7 +7,6 @@ import {
   truncateLine,
 } from "@earendil-works/pi-coding-agent";
 import {
-  assertMachineSecretFree,
   firstProtectedDirectoryEntry,
   firstRejectedPathComponent,
   HOST_READ_ONLY_ERROR_CODES,
@@ -139,11 +138,6 @@ async function readHostFile(input: HostReadOnlyToolInput): Promise<HostReadOnlyT
     return errorResult("PI_TEXT_READ_REJECTED", "PI_TEXT_READ_REJECTED");
   }
   if (text.includes("\0")) return errorResult("PI_TEXT_READ_REJECTED", "PI_TEXT_READ_REJECTED");
-  try {
-    assertMachineSecretFree(text);
-  } catch {
-    return errorResult("PI_TEXT_READ_REJECTED", "PI_TEXT_READ_REJECTED");
-  }
   const allLines = text.split("\n");
   const startLine = offset ? Math.max(0, offset - 1) : 0;
   const startLineDisplay = startLine + 1;

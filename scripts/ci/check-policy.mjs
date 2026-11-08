@@ -5,8 +5,10 @@ import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { parseDocument } from "yaml";
 import {
+  activeMembers,
   fileSha256,
   githubExpression,
+  linuxRunnerLabel,
   parseArguments,
   readJson,
   repositoryRoot,
@@ -38,6 +40,70 @@ const jobIds = [
   "required",
 ];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
+export const chromiumInstall =
+  ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
+const chromiumChecks = ["static", "test", "node-floor", "coverage"];
+
+export function timeoutMinutesFor(checkId) {
+  if (checkId === "required") return 15;
+  return ["build", "test", "node-floor", "browser"].includes(checkId) ? 90 : 60;
+}
+
+function hostedTimeoutMinutesFor(checkId) {
+  if (checkId === "required") return 5;
+  return ["build", "test", "node-floor", "browser"].includes(checkId) ? 30 : 15;
+}
+
+export function upgradeHostedRunnerPolicy(policy) {
+  const checks = policy?.checks ?? [];
+  const members = checks.flatMap((check) => check.members ?? []);
+  const hosted =
+    members.length > 0 &&
+    checks.every((check) => check.timeoutMinutes === hostedTimeoutMinutesFor(check.id)) &&
+    members.every(
+      (member) =>
+        !Object.hasOwn(member, "paused") &&
+        member.runner === (member.key === "macos-arm64" ? "macos-15" : "ubuntu-24.04"),
+    );
+  if (!hosted) return policy;
+  const upgraded = structuredClone(policy);
+  for (const check of upgraded.checks) check.timeoutMinutes = timeoutMinutesFor(check.id);
+  for (const check of upgraded.checks)
+    for (const member of check.members)
+      if (member.key === "macos-arm64") member.paused = true;
+      else member.runner = linuxRunnerLabel;
+  return upgraded;
+}
+
+export function upgradeRunnerLabel(policy) {
+  const checks = policy?.checks ?? [];
+  const members = checks.flatMap((check) => check.members ?? []);
+  const hermes =
+    members.length > 0 &&
+    checks.every((check) => check.timeoutMinutes === timeoutMinutesFor(check.id)) &&
+    members.every((member) =>
+      member.key === "macos-arm64"
+        ? member.runner === "macos-15" && member.paused === true
+        : member.runner === "hermes-home" && !Object.hasOwn(member, "paused"),
+    );
+  if (!hermes) return policy;
+  const upgraded = structuredClone(policy);
+  for (const check of upgraded.checks)
+    for (const member of check.members)
+      if (member.key !== "macos-arm64") member.runner = linuxRunnerLabel;
+  return upgraded;
+}
+
+export function upgradeArtifactRetention(policy) {
+  const retention = policy?.retentionDays;
+  const accepted =
+    retention &&
+    Object.keys(retention).length === 2 &&
+    retention.reports === 30 &&
+    retention.diagnostics === 7;
+  if (!accepted) return policy;
+  return { ...policy, retentionDays: { reports: 1, diagnostics: 1 } };
+}
 
 export function validatePolicy(
   policy,
@@ -134,15 +200,7 @@ export function validatePolicy(
     unique(check.projects, `${check.id} project`);
     unique(check.outputs, `${check.id} output`);
     assert(sameSet(check.needs, expectedNeeds[check.id]), `Unexpected policy DAG: ${check.id}`);
-    assert(
-      check.timeoutMinutes ===
-        (check.id === "required"
-          ? 5
-          : ["build", "test", "node-floor", "browser"].includes(check.id)
-            ? 30
-            : 15),
-      `Unexpected timeout: ${check.id}`,
-    );
+    assert(check.timeoutMinutes === timeoutMinutesFor(check.id), `Unexpected timeout: ${check.id}`);
     const requiredProjects = ["test", "node-floor"].includes(check.id)
       ? mainProjects.filter((id) => id !== "tooling")
       : check.id === "coverage"
@@ -165,14 +223,16 @@ export function validatePolicy(
       ),
       `Incomplete matrix: ${check.id}`,
     );
+    assert(activeMembers(check).length > 0, `Every member is paused: ${check.id}`);
     for (const member of check.members) {
       const mac = member.key === "macos-arm64";
       assert(
         member.os === (mac ? "darwin" : "linux") &&
           member.arch === (mac ? "arm64" : "x64") &&
-          member.runner === (mac ? "macos-15" : "ubuntu-24.04"),
+          member.runner === (mac ? "macos-15" : linuxRunnerLabel),
         `Incorrect platform: ${check.id}/${member.key}`,
       );
+      assert(mac || member.paused === undefined, `Only macOS members may pause: ${check.id}`);
       assert(
         check.id === "browser" ? member.browser === member.key : member.browser === undefined,
         `Incorrect browser identity: ${check.id}`,
@@ -312,7 +372,7 @@ export function validateWorkflow(policy, source, toolchain) {
           Object.fromEntries(Object.entries(member).sort(([a], [b]) => a.localeCompare(b))),
         );
       assert(
-        sameSet(matrix.include.map(canonical), check.members.map(canonical)),
+        sameSet(matrix.include.map(canonical), activeMembers(check).map(canonical)),
         `Matrix members differ: ${check.id}`,
       );
     } else
@@ -342,6 +402,11 @@ export function validateWorkflow(policy, source, toolchain) {
           );
       }
     }
+    if (chromiumChecks.includes(check.id))
+      assert(
+        job.steps.some((step) => step.run === chromiumInstall),
+        `Job runs browser tests without installing Chromium: ${check.id}`,
+      );
     if (check.id === "coverage") {
       const downloads = job.steps.filter((step) =>
         step.uses?.startsWith("actions/download-artifact@"),
@@ -952,10 +1017,13 @@ export function resolvePolicySource({
   const bytes = hasPolicy
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
-  const policy = validatePolicy(JSON.parse(bytes), {
-    allowLegacyCoverage: true,
-    allowLegacyIntegration: true,
-  });
+  const policy = validatePolicy(
+    upgradeArtifactRetention(upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes)))),
+    {
+      allowLegacyCoverage: true,
+      allowLegacyIntegration: true,
+    },
+  );
   const integration = policy.testProjects.find((project) => project.id === "integration");
   if (!integration.fileParallelism && !integration.workerLimits) {
     integration.fileParallelism = true;

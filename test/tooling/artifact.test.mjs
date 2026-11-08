@@ -581,8 +581,10 @@ describe("same-artifact verification", () => {
       "packages/memory-engine",
       "packages/persistence-sqlite",
       "packages/platform-node",
+      "packages/prompt-catalog",
       "packages/runtime-pi",
       "packages/runtime-sandbox",
+      "packages/sensitive-capture",
     ];
     await writeFile(
       path.join(temporary, "package.json"),

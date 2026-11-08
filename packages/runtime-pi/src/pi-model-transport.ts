@@ -4,13 +4,13 @@ import type {
   AssistantMessageEvent,
   Context,
   FetchFunction,
-  UserMessage,
 } from "@earendil-works/pi-ai";
 import {
   type ClockPort,
   type DataClassification,
   type ModelDescriptor,
   type ModelEgress,
+  type ModelEgressContext,
   ModelEgressRefusedError,
   type ModelInvocationEvent,
   type ModelInvocationPricing,
@@ -18,10 +18,10 @@ import {
   type PayloadProtectionRequest,
   type PayloadProtectorPort,
   type PayloadStorePort,
-  StreamingMachineSecretRedactor,
 } from "@himawari-agent/application/runtime-port";
+import { StreamingMachineSecretRedactor } from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
-import { withPlaceholderLegendInPrompt } from "./egress-context.js";
+import { backgroundModelContext } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import type { PiModelBindingPort } from "./pi-runtime-adapter.js";
 
@@ -115,6 +115,10 @@ export interface PiModelTransportOptions {
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
   readonly disableThinking?: boolean;
+  readonly egressContext?: ModelEgressContext;
+  readonly egressThreadOf?: (
+    runId: ModelInvocationRequest["runId"],
+  ) => Promise<ModelEgressContext["threadId"]>;
 }
 
 export interface PiModelTransportObservation {
@@ -186,6 +190,10 @@ function pricedCostMicros(
 
 export class PiModelTransport {
   readonly #egress: ModelEgress;
+  readonly #egressContext: ModelEgressContext | undefined;
+  readonly #egressThreadOf:
+    | ((runId: ModelInvocationRequest["runId"]) => Promise<ModelEgressContext["threadId"]>)
+    | undefined;
   readonly #models: PiModelBindingPort;
   readonly #payloads: PiModelPayloadBoundary;
   readonly #clock: ClockPort;
@@ -218,6 +226,8 @@ export class PiModelTransport {
     const fetch = options.fetch ?? globalThis.fetch;
     if (typeof fetch !== "function") throw new TypeError("Pi model transport requires fetch");
     this.#egress = options.egress;
+    this.#egressContext = options.egressContext;
+    this.#egressThreadOf = options.egressThreadOf;
     this.#models = options.models;
     this.#payloads = options.payloads;
     this.#clock = options.clock;
@@ -230,6 +240,31 @@ export class PiModelTransport {
 
   observations(): readonly PiModelTransportObservation[] {
     return structuredClone(this.#observations);
+  }
+
+  async #egressContextFor(
+    request: ModelInvocationRequest,
+  ): Promise<ModelEgressContext | undefined> {
+    const context = this.#egressContext;
+    const threadOf = this.#egressThreadOf;
+    const signal = request.signal;
+    if (context === undefined || threadOf === undefined || signal?.aborted) return context;
+    let stop: (() => void) | undefined;
+    const cancelled = new Promise<null>((resolve) => {
+      stop = () => resolve(null);
+      signal?.addEventListener("abort", stop, { once: true });
+    });
+    try {
+      const found = await Promise.race([
+        threadOf(request.runId).then((threadId) => ({ threadId })),
+        cancelled,
+      ]);
+      return found === null ? context : { ...context, threadId: found.threadId };
+    } catch {
+      return context;
+    } finally {
+      if (stop !== undefined) signal?.removeEventListener("abort", stop);
+    }
   }
 
   async *invoke(input: PiModelTransportInput): AsyncIterable<ModelInvocationEvent> {
@@ -255,7 +290,7 @@ export class PiModelTransport {
 
     let prompt: string;
     try {
-      prompt = withPlaceholderLegendInPrompt(await this.#payloads.readText(request.inputRef));
+      prompt = await this.#payloads.readText(request.inputRef);
     } catch {
       yield failed(request, "AI_GATEWAY_INPUT_REJECTED", false, Date.now() - startedAt, now());
       return;
@@ -272,11 +307,10 @@ export class PiModelTransport {
       yield failed(request, "PI_MODEL_BINDING_MISMATCH", false, Date.now() - startedAt, now());
       return;
     }
-    const message: UserMessage = { role: "user", content: prompt, timestamp: Date.now() };
-    const context: Context = { messages: [message] };
+    const context: Context = backgroundModelContext(prompt, Date.now());
     let responseStatus = 0;
     let egressRefused = false;
-    const exchange = this.#egress.exchange();
+    const exchange = this.#egress.exchange(await this.#egressContextFor(request));
     const redactingFetch = exchange.wrapFetch(this.#fetch);
     const upstreamHeaders: Record<string, string> = {};
     const statusFetch: FetchFunction = async (fetchInput, init) => {

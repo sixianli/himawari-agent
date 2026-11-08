@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv from "ajv";
 
+export const linuxRunnerLabel = "ci-vps";
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const identityFields = [
   "repository",
@@ -48,12 +49,16 @@ export function contextIdentity(context) {
   return Object.fromEntries(identityFields.map((key) => [key, context[key]]));
 }
 
+export function activeMembers(check) {
+  return check.members.filter((member) => member.paused !== true);
+}
+
 export function expectedMembers(policy) {
   validateRecord("CheckPolicy", policy);
   return policy.checks
     .filter((check) => check.id !== "required")
     .flatMap((check) =>
-      check.members.map((member) => ({ check, member, id: memberId(check.id, member.key) })),
+      activeMembers(check).map((member) => ({ check, member, id: memberId(check.id, member.key) })),
     );
 }
 

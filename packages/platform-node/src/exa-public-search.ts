@@ -1,7 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import {
   type PublicWebAdapterPort,
-  scanMachineSecrets,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_FETCH_MAXIMUM_OFFSET,
   WEB_PROVIDERS,
@@ -10,6 +9,7 @@ import {
   type WebSearchCandidate,
   type WebSearchProvider,
 } from "@himawari-agent/application";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { type Dispatcher, ProxyAgent, fetch as proxyFetch } from "undici";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
@@ -248,7 +248,6 @@ export class ExaPublicSearchAdapter
             .filter((item) => item.type === "text")
             .map((item) => item.text)
             .join("\n\n---\n\n");
-          if (scanMachineSecrets(text).length) throw new Error("WEB_SEARCH_OUTPUT_REDACTED");
           return parseExaSearchResults(text, limit);
         };
         try {
@@ -317,7 +316,6 @@ export class ExaPublicSearchAdapter
                 ? "WEB_FETCH_TIMEOUT"
                 : "WEB_FETCH_UNREACHABLE",
           );
-        if (scanMachineSecrets(text).length) throw new Error("WEB_FETCH_OUTPUT_REDACTED");
         return parseExaFetchResult(text, url, input.offset, input.maximumBytes);
       },
     );

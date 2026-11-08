@@ -1,7 +1,6 @@
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { containsToolOutputSecret } from "@himawari-agent/application";
 import {
   firstRejectedPathComponent,
   piRunnerInputSchema,
@@ -57,8 +56,6 @@ export async function runPiCodingRequest(
   )
     throw new Error("PI_RUNNER_SCOPE_INVALID");
   const binaryDirectory = piRunnerBinaryDirectory(input.runtimeRoot);
-  // runtimeDigest covers these regular files. No PATH fallback or downloaded
-  // tool cache may substitute an executable outside that immutable installation.
   for (const name of input.tool === "grep"
     ? ["rg"]
     : input.tool === "find"
@@ -203,8 +200,6 @@ export async function runPiCodingRequest(
   const streamOutput = (final: boolean) => {
     if (input.executionMode === "foreground") return;
     const all = Buffer.concat(commandOutput);
-    const text = all.toString("utf8");
-    if (containsToolOutputSecret(text)) throw new Error("PI_RESULT_SECRET_REJECTED");
     const end = final ? all.length : all.lastIndexOf(10) + 1;
     if (end > emittedBytes) writeStdout(all.subarray(emittedBytes, end));
     emittedBytes = Math.max(emittedBytes, end);

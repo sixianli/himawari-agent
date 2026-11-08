@@ -221,6 +221,31 @@ describe("Task 9 Memory and context formation", () => {
     expect(search).not.toHaveBeenCalled();
   });
 
+  it("places the runtime environment last with a fixed ref and keeps it on replay", async () => {
+    const { service } = createService();
+    const formed = await service.form({
+      ...request("user_message"),
+      runtimeEnvironmentRef: "payload-runtime-environment-01",
+    });
+    expect(formed.envelope.contextBlocks.at(-1)).toEqual({
+      kind: "runtime-environment",
+      ref: "runtime-environment",
+      payloadRef: "payload-runtime-environment-01",
+      dataClassification: "private",
+    });
+    expect(formed.injectedContentRefs).toContain("payload-runtime-environment-01");
+    const replayed = await service.form({
+      ...request("user_message"),
+      runtimeEnvironmentRef: "payload-runtime-environment-01",
+    });
+    expect(replayed.envelope.contextBlocks).toEqual(formed.envelope.contextBlocks);
+    expect(replayed.injectedContentRefs).toContain("payload-runtime-environment-01");
+    const withoutEnvironment = await createService().service.form(request("user_message"));
+    expect(
+      withoutEnvironment.envelope.contextBlocks.some(({ kind }) => kind === "runtime-environment"),
+    ).toBe(false);
+  });
+
   it("selects permitted history deterministically and injects the protected answer locale policy", async () => {
     const { adapters, service } = createService();
     const formed = await service.form({

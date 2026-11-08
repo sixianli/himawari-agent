@@ -6,6 +6,26 @@ import type {
   RuntimeToolExecutionResult,
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
+import {
+  BACKGROUND_AWAITING_APPROVAL,
+  BACKGROUND_DONE_COMMAND,
+  BACKGROUND_DONE_DURATION,
+  BACKGROUND_DONE_OUTPUT_HEADER,
+  BACKGROUND_DONE_OUTPUT_TRUNCATED,
+  BACKGROUND_DONE_RESULT,
+  BACKGROUND_DONE_TITLE,
+  BACKGROUND_FAILED,
+  BACKGROUND_HANDOFF_DEADLINE,
+  BACKGROUND_HANDOFF_GUIDANCE,
+  BACKGROUND_HANDOFF_STARTED,
+  BACKGROUND_HANDOFF_TASK,
+  BACKGROUND_RESULT_UNKNOWN,
+  BACKGROUND_STOP_REQUESTED,
+  BACKGROUND_STOP_RUN_ENDED,
+  BACKGROUND_SUCCEEDED,
+  renderPrompt,
+  TOOL_RESULT_BACKGROUND_RUNNING,
+} from "@himawari-agent/prompt-catalog";
 
 export const BACKGROUND_COMMAND_REF_PREFIX = "background-command:";
 
@@ -167,12 +187,12 @@ export class ProductionBackgroundCommands {
       errorCode: null,
       externalActionId: null,
       modelContent: [
-        `命令运行超过 ${Math.round(this.#limits.waitMs / 1000)} 秒还没结束，已转入后台继续运行，没有被停止。`,
-        `任务编号：${taskRef}`,
-        "命令结束时系统会自动把结果发给你，不需要反复查询状态，也不要为了等它而拖住这一轮：可以直接回答用户，告诉他命令在后台运行、结束后会主动汇报。",
-        "如果命令在你还在回答时结束，结果会马上插进来；如果在你答完之后结束，系统会在这个对话里开新的一轮把结果交给你。",
-        "需要时用 execution_task_status 查看状态，用 execution_task_cancel 停止；命令结束后可用 execution_task_output 分页读取输出。",
-        `这条命令最晚运行到 ${new Date(deadlineAt).toISOString()}，到时还没结束会被停止。`,
+        renderPrompt(BACKGROUND_HANDOFF_STARTED, {
+          seconds: String(Math.round(this.#limits.waitMs / 1000)),
+        }),
+        renderPrompt(BACKGROUND_HANDOFF_TASK, { taskRef }),
+        BACKGROUND_HANDOFF_GUIDANCE.text,
+        renderPrompt(BACKGROUND_HANDOFF_DEADLINE, { deadline: new Date(deadlineAt).toISOString() }),
       ].join("\n"),
     };
   }
@@ -345,16 +365,18 @@ export class ProductionBackgroundCommands {
     const content = task.result?.modelContent ?? "";
     const shown = content.slice(0, NOTICE_OUTPUT_CHARACTERS);
     return [
-      `后台命令已结束（任务编号 ${task.taskRef}）。`,
-      `命令：${task.command.slice(0, COMMAND_PREVIEW_CHARACTERS)}`,
-      `用时：${Math.round(((task.endedAt ?? task.startedAt) - task.startedAt) / 1000)} 秒`,
-      `结果：${outcomeText(task)}`,
-      "输出：",
+      renderPrompt(BACKGROUND_DONE_TITLE, { taskRef: task.taskRef }),
+      renderPrompt(BACKGROUND_DONE_COMMAND, {
+        command: task.command.slice(0, COMMAND_PREVIEW_CHARACTERS),
+      }),
+      renderPrompt(BACKGROUND_DONE_DURATION, {
+        seconds: String(Math.round(((task.endedAt ?? task.startedAt) - task.startedAt) / 1000)),
+      }),
+      renderPrompt(BACKGROUND_DONE_RESULT, { outcome: outcomeText(task) }),
+      BACKGROUND_DONE_OUTPUT_HEADER.text,
       shown,
       ...(content.length > shown.length
-        ? [
-            `输出较长，以上是前 ${shown.length} 个字符；用 execution_task_output 并把 cursor 设为 "${shown.length}" 读取后面的部分。`,
-          ]
+        ? [renderPrompt(BACKGROUND_DONE_OUTPUT_TRUNCATED, { characters: String(shown.length) })]
         : []),
     ].join("\n");
   }
@@ -383,7 +405,7 @@ export class ProductionBackgroundCommands {
         text: "",
         nextCursor: null,
         end: false,
-        note: "命令还在运行。输出要等命令结束后才能读取；结束时系统会自动把结果发给你。",
+        note: TOOL_RESULT_BACKGROUND_RUNNING.text,
       };
     const content = task.result?.modelContent ?? "";
     const text = content.slice(offset, offset + limit);
@@ -439,15 +461,17 @@ function backgroundOutcome(task: BackgroundCommand): RunBackgroundOutcome {
 }
 
 function outcomeText(task: BackgroundCommand): string {
-  if (task.stopReason === "requested") return "已按要求停止，命令可能只执行了一部分。";
-  if (task.stopReason === "run_ended") return "已停止，命令可能只执行了一部分。";
+  if (task.stopReason === "requested") return BACKGROUND_STOP_REQUESTED.text;
+  if (task.stopReason === "run_ended") return BACKGROUND_STOP_RUN_ENDED.text;
   const result = task.result;
   if (!result || result.outcome === "result_unknown")
-    return `结果未知（${result?.errorCode ?? "BACKGROUND_COMMAND_RESULT_UNKNOWN"}），不要直接重复执行，先核实已经产生的效果。`;
-  if (result.outcome === "awaiting_approval") return "等待批准，命令没有执行。";
+    return renderPrompt(BACKGROUND_RESULT_UNKNOWN, {
+      errorCode: result?.errorCode ?? "BACKGROUND_COMMAND_RESULT_UNKNOWN",
+    });
+  if (result.outcome === "awaiting_approval") return BACKGROUND_AWAITING_APPROVAL.text;
   return result.outcome === "succeeded"
-    ? "命令已运行结束"
-    : `失败（${result.errorCode ?? "未知错误"}）`;
+    ? BACKGROUND_SUCCEEDED.text
+    : renderPrompt(BACKGROUND_FAILED, { errorCode: result.errorCode ?? "未知错误" });
 }
 
 function refused(errorCode: string, modelContent: string): RuntimeToolExecutionResult {

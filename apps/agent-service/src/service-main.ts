@@ -48,6 +48,7 @@ import {
   ExecutionUdsError,
   failureReason,
   GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE,
+  MUSE_INTAKE_SECRET_PURPOSE,
   initializeStateRoot,
   JsonFileConfigurationPort,
   MacOsKeychainProviderSecretSource,
@@ -101,7 +102,12 @@ import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
-import { createProductionModelEgress } from "./production-model-egress.js";
+import {
+  createProductionModelEgress,
+  flushSensitiveInterceptions,
+  productionEgressThreadOf,
+  productionSensitiveInterceptionRecorder,
+} from "./production-model-egress.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -110,6 +116,8 @@ import {
   proactiveCostEstimator,
   proactiveRedirectUri,
 } from "./production-proactive.js";
+import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
+import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
@@ -284,7 +292,12 @@ async function createDefaultModelComposition(
   const protector = configuredPayloadProtector(configuration, sources);
   try {
     const created = await createProductionModelCompositionFromConfiguration({
-      egress: createProductionModelEgress(configuration, sources),
+      egress: createProductionModelEgress(
+        configuration,
+        sources,
+        productionSensitiveInterceptionRecorder(repository),
+      ),
+      egressThreadOf: productionEgressThreadOf(repository, configuration),
       configuration,
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
@@ -332,7 +345,11 @@ async function createDefaultMemoryComposition(
 ): Promise<ProductionMemoryComposition> {
   const sources = context.sources ?? hostModelSources(context.configuration);
   return createProductionMemoryCompositionFromConfiguration({
-    egress: createProductionModelEgress(context.configuration, sources),
+    egress: createProductionModelEgress(
+      context.configuration,
+      sources,
+      productionSensitiveInterceptionRecorder(context.repository),
+    ),
     configuration: context.configuration,
     secretSource: sources.provider,
     index: context.repository.memoryIndex(),
@@ -507,6 +524,8 @@ export async function runAgentService(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
+  let museIntake: ProductionMuseIntake | undefined;
+  let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
@@ -545,6 +564,10 @@ export async function runAgentService(
     return reverseStop;
   };
   lifecycle.register({ name: "repository", close: () => repository?.close() });
+  lifecycle.register({
+    name: "sensitive-interceptions",
+    close: () => (repository === undefined ? undefined : flushSensitiveInterceptions(repository)),
+  });
   lifecycle.register({ name: "authority", close: () => authorityLifecycle?.stop() });
   lifecycle.register({ name: "model", close: () => modelComposition?.composition.close() });
   lifecycle.register({ name: "memory", close: () => memoryComposition?.close() });
@@ -1515,7 +1538,24 @@ export async function runAgentService(
             }),
           );
         };
+        const mailEgress = createProductionModelEgress(
+          configuration,
+          sources,
+          productionSensitiveInterceptionRecorder(repository),
+        );
         proactive = new ProductionProactive({
+          onMasked: (sightings) =>
+            void mailEgress.reportMasked(
+              {
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                threadId: null,
+                source: "mail",
+                purpose: "mail-judgment",
+              },
+              "mail",
+              sightings,
+            ),
           scope: proactiveScope,
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
@@ -1596,6 +1636,41 @@ export async function runAgentService(
             }),
         });
       }
+      const museIntakeConfiguration = configuration.runPolicy?.museIntake;
+      const museIntakeSecret =
+        museIntakeConfiguration?.enabled === true
+          ? configuration.secretReferences.find(
+              ({ ref, purpose }) =>
+                ref === museIntakeConfiguration.secretRef && purpose === MUSE_INTAKE_SECRET_PURPOSE,
+            )
+          : undefined;
+      if (museIntakeSecret && protector) {
+        const museSeal = createProactiveSeal({
+          payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+          protector,
+          ids,
+        });
+        museControl = new ProductionMuseControl({
+          scope: proactiveScope,
+          store: repository.museIntake(),
+          seal: museSeal,
+          ids,
+          clock,
+        });
+        museIntake = new ProductionMuseIntake({
+          scope: proactiveScope,
+          store: repository.museIntake(),
+          seal: museSeal,
+          ids,
+          clock,
+          secret: await hostModelSources(configuration).provider.resolve(
+            museIntakeSecret.ref,
+            museIntakeSecret.version,
+          ),
+        });
+      } else if (museIntakeConfiguration?.enabled === true) {
+        throw new Error("MUSE_INTAKE_RUNTIME_UNAVAILABLE");
+      }
       const webPushConfiguration = configuration.runPolicy?.webPush;
       const webPushSecret = webPushConfiguration
         ? configuration.secretReferences.find(
@@ -1639,6 +1714,14 @@ export async function runAgentService(
             pushRepository
               .authorizationStore()
               .listApprovals(configuration.ownerId, configuration.agentId, { status: "pending" }),
+          ...(museIntake
+            ? {
+                museChannel: createMuseChannelPushSource({
+                  scope: proactiveScope,
+                  store: repository.museIntake(),
+                }),
+              }
+            : {}),
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -1713,7 +1796,11 @@ export async function runAgentService(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
-        egress: createProductionModelEgress(configuration, sources),
+        egress: createProductionModelEgress(
+          configuration,
+          sources,
+          productionSensitiveInterceptionRecorder(activeRepository),
+        ),
         live,
         ...(tools.background ? { backgroundCommands: tools.background } : {}),
         modelUsage: {
@@ -1759,6 +1846,14 @@ export async function runAgentService(
             component: "agent-service",
             event: "run.timing",
             ...diagnostic,
+          }),
+        onHandleTools: (request, observation) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "prompt.bundle.handle_tools",
+            runId: request.runId,
+            generation: observation.generation ?? -1,
+            handleTools: observation.handleTools,
           }),
         ...(modelComposition.composition.generateTitle
           ? { generateTitle: modelComposition.composition.generateTitle }
@@ -1834,14 +1929,18 @@ export async function runAgentService(
                     errorPrefix: "MEMORY_CAPTURE",
                   });
                 },
-                onAudit: (record) =>
+                onAudit: (record) => {
+                  productionSensitiveInterceptionRecorder(activeRepository).reportMemoryAudit(
+                    record,
+                  );
                   writeServiceDiagnostic(errorOutput, {
                     component: "agent-service",
                     event: "memory-capture.audit",
                     outcome: record.outcome,
                     candidateOrdinal: record.candidateOrdinal ?? -1,
                     classification: record.classification,
-                  }),
+                  });
+                },
                 onFailure: (error) =>
                   writeServiceDiagnostic(errorOutput, {
                     component: "agent-service",
@@ -1917,17 +2016,21 @@ export async function runAgentService(
         live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
+        ...(museIntake ? { museIntake } : {}),
+        ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
           service: activeDurableMemory,
-          onAudit: (record) =>
+          onAudit: (record) => {
+            productionSensitiveInterceptionRecorder(activeRepository).reportMemoryAudit(record);
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "memory-capture.audit",
               outcome: record.outcome,
               candidateOrdinal: record.candidateOrdinal ?? -1,
               classification: record.classification,
-            }),
+            });
+          },
         },
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation

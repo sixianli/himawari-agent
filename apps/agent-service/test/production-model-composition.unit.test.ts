@@ -1,7 +1,7 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
@@ -11,6 +11,12 @@ import type {
 } from "@himawari-agent/application";
 import { ModelInvocationAdmissionService } from "@himawari-agent/application";
 import type { EmbeddingBoundary, EmbeddingResponse } from "@himawari-agent/memory-engine";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import type {
   ConfiguredPiModelDescriptor,
@@ -21,6 +27,7 @@ import {
   createReferenceAdapterSet,
   inMemoryMemoryIndex,
   type ReferenceAdapterSet,
+  testModelEgress,
 } from "@himawari-agent/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
@@ -28,6 +35,11 @@ import {
   createProductionModelComposition,
   resolveConfiguredModelDescriptorSet,
 } from "../src/production-model-composition.js";
+import {
+  createProductionModelEgress,
+  productionEgressThreadOf,
+  productionSensitiveInterceptionRecorder,
+} from "../src/production-model-egress.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
@@ -38,8 +50,8 @@ import {
   DOCUMENT_SKILL_DIRECTORY,
   HIMAWARI_IDENTITY,
   runCapabilityNotice,
+  runtimeEnvironmentNotice,
 } from "../src/production-run-policy.js";
-import { testModelEgress } from "@himawari-agent/testing";
 
 let temporaryDirectory: string;
 
@@ -680,15 +692,17 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(instructionText).not.toContain("coding assistant");
   expect(instructionText).not.toContain("本轮请求时间");
   expect(instructionText).not.toContain("2026-09-1");
+  expect(instructionText).toContain("联网搜索没开时");
+  expect(instructionText).toContain("运行环境说明");
+  expect(instructionText).not.toContain("联网搜索：本轮没有");
+  const environmentText = new TextDecoder().decode(protect.mock.calls[1]?.[0].plaintext);
+  expect(environmentText).toContain("联网搜索：本轮没有。");
+  expect(environmentText).toContain("本轮没有文件和命令工具。");
+  expect(first.runtimeEnvironmentRef).toEqual(expect.any(String));
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
-    "本轮没有联网搜索工具",
+    "主人本轮明确指定的语言；主人的要求里定下的语言；主人本轮提问用的语言；都没有时用简体中文。主人只是换了一种语言提问，不算明确指定。调用工具之前或之间写给主人看的说明也用这种语言",
   );
-  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
-    "用用户本轮提问所用的语言回答；调用工具之前或之间写给用户看的说明也用这种语言",
-  );
-  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).not.toContain(
-    "使用真实查询",
-  );
+  expect(instructionText).not.toContain("沙箱没有外网");
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
   expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);
   const threadSource = {
@@ -698,7 +712,8 @@ it("selects trusted Run policy and binds instruction content across configuratio
   const threadPolicy = await policy(threadSource);
   expect(threadPolicy.answerLocalePolicy).toBeUndefined();
   expect(threadPolicy.systemInstructionRef).toBe(first.systemInstructionRef);
-  expect(protect).toHaveBeenCalledTimes(1);
+  expect(threadPolicy.runtimeEnvironmentRef).toBe(first.runtimeEnvironmentRef);
+  expect(protect).toHaveBeenCalledTimes(2);
   const changed = await createProductionRunPolicy({
     ...options,
     configuration: {
@@ -720,33 +735,60 @@ it("selects trusted Run policy and binds instruction content across configuratio
 });
 
 describe("Run capability notice", () => {
-  it("tells the model what it cannot reach when no search is configured", () => {
-    const notice = runCapabilityNotice({
-      publicSearch: false,
+  it("keeps only rules in the system prompt and moves every changing value to the runtime environment", () => {
+    const notice = runCapabilityNotice({ coding: true });
+    expect(notice).toContain("沙箱没有外网");
+    expect(notice).toContain("目录之外的路径会被拒绝");
+    expect(notice).toContain("命令可以在工作目录里新建、修改和删除文件");
+    expect(notice).toContain("临时文件放到 $TMPDIR");
+    expect(notice).toContain("不要让主人去配置网络或代理");
+    expect(notice).toContain("见最近附上的运行环境说明");
+    expect(notice).toContain("和本规则一样约束本轮的工具使用");
+    expect(notice).not.toContain("/var/lib/himawari/workspace");
+    expect(notice).not.toContain(DOCUMENT_SKILL_DIRECTORY);
+    const environment = runtimeEnvironmentNotice({
       coding: true,
       workspaceRoot: "/var/lib/himawari/workspace",
     });
-    expect(notice).toContain("沙箱没有外网");
-    expect(notice).toContain("工作目录是 /var/lib/himawari/workspace");
-    expect(notice).toContain("命令可以在工作目录里新建、修改和删除文件");
-    expect(notice).toContain("临时文件放到 $TMPDIR");
-    expect(notice).toContain("本轮没有联网搜索工具");
-    expect(notice).toContain("不要让用户去配置网络或代理");
-    expect(notice).not.toContain("web_search");
+    expect(environment).toContain("工作目录：/var/lib/himawari/workspace。");
+    expect(environment).toContain("联网搜索：本轮没有。");
+    expect(environment).toContain("抓取网页：本轮没有。");
+  });
+
+  it("states in the runtime environment that the workspace is gone after the grant expires", () => {
+    const environment = runtimeEnvironmentNotice({ coding: true, workspaceRoot: null });
+    expect(environment).toContain("工作目录：本轮没有。");
+    expect(environment).not.toContain("/var/lib/himawari/workspace");
+    expect(runCapabilityNotice({ coding: true })).toBe(runCapabilityNotice({ coding: true }));
+  });
+
+  it("names search and fetch providers and the fetch limit only in the runtime environment", () => {
+    const environment = runtimeEnvironmentNotice({
+      coding: false,
+      workspaceRoot: null,
+      publicSearch: { providers: ["exa-public", "deepseek"] },
+      publicFetch: { providers: ["exa-public"], maximumBytes: 512 * 1024 },
+    });
+    expect(environment).toContain("本轮没有文件和命令工具。");
+    expect(environment).toMatch(/联网搜索：已开启，查询发送给 .+（失败时依次改用 .+）。/u);
+    expect(environment).toContain("一次最多返回约 512 KiB。");
+    expect(environment.split("\n").at(-1)).not.toMatch(/\d/u);
   });
 
   it("points the model to the document skill only when it has the coding sandbox", () => {
-    const withSandbox = runCapabilityNotice({
-      publicSearch: false,
-      coding: true,
-      workspaceRoot: "/var/lib/himawari/workspace",
-      documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
-    });
-    expect(withSandbox).toContain(`cat ${DOCUMENT_SKILL_DIRECTORY}SKILL.md`);
+    const withSandbox = runCapabilityNotice({ coding: true });
+    expect(withSandbox).toContain("文档技能目录下的 SKILL.md");
     expect(withSandbox).toContain("不要探测或安装");
     expect(
-      runCapabilityNotice({
-        publicSearch: true,
+      runtimeEnvironmentNotice({
+        coding: true,
+        workspaceRoot: null,
+        documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
+      }),
+    ).toContain(`文档技能目录：${DOCUMENT_SKILL_DIRECTORY}`);
+    expect(runCapabilityNotice({ coding: false })).not.toContain("SKILL.md");
+    expect(
+      runtimeEnvironmentNotice({
         coding: false,
         workspaceRoot: null,
         documentSkillDirectory: DOCUMENT_SKILL_DIRECTORY,
@@ -762,12 +804,12 @@ describe("Run capability notice", () => {
     }
   });
 
-  it("points the model to web_search when search is configured", () => {
-    const notice = runCapabilityNotice({ publicSearch: true, coding: false, workspaceRoot: null });
+  it("keeps the web_search rule in the system prompt whether or not search is configured", () => {
+    const notice = runCapabilityNotice({ coding: false });
     expect(notice).toContain("web_search");
     expect(notice).toContain("核对来源日期");
-    expect(notice).not.toContain("沙箱");
-    expect(notice).not.toContain("工作目录");
+    expect(notice).not.toContain("沙箱没有外网");
+    expect(notice).not.toContain("工作目录：");
   });
 
   it("names the workspace only from a current coding grant", async () => {
@@ -1712,3 +1754,201 @@ it.each(["cancel", "deadline"] as const)(
     expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
   },
 );
+
+async function sensitiveInterceptionRepository(ownerId: string, agentId: string) {
+  const stateRoot = path.join(temporaryDirectory, "sensitive-state");
+  const databasePath = path.join(stateRoot, "data", "product.sqlite");
+  await mkdir(path.dirname(databasePath), { recursive: true });
+  const database = openQualifiedDatabase(databasePath);
+  applyMigrations(database, await loadBundledMigrations());
+  const at = "2026-11-06T00:00:00.000Z";
+  database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(ownerId);
+  database
+    .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+    .run(agentId, ownerId);
+  database
+    .prepare(
+      `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+       VALUES ('thread-review', ?, ?, 0, 'open', ?, ?)`,
+    )
+    .run(ownerId, agentId, at, at);
+  database
+    .prepare(
+      `INSERT INTO payloads (ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+         content_digest, lifecycle_state, created_at, content_type)
+       VALUES ('payload-review-trigger', ?, ?, 'private', 'sqlite_blob', X'00',
+         'sha256:review-trigger', 'active', ?, 'application/octet-stream')`,
+    )
+    .run(ownerId, agentId, at);
+  database
+    .prepare(
+      `INSERT INTO triggers (id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+         source_id, payload_ref, source_proof_ref, occurred_at)
+       VALUES ('trigger-review', ?, ?, 'thread-review', 'trigger-review', 'user_message',
+         'fixture-review', 'payload-review-trigger', 'proof-review', ?)`,
+    )
+    .run(ownerId, agentId, at);
+  database
+    .prepare(
+      `INSERT INTO runs (id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+         status, created_at, updated_at)
+       VALUES ('run-review', ?, ?, 'thread-review', 'session-review', 'trigger-review', 1,
+         'running', ?, ?)`,
+    )
+    .run(ownerId, agentId, at, at);
+  database.close();
+  const repository = await SqliteProductStateRepository.open({
+    stateRoot,
+    databasePath,
+    minimumFreeBytes: 0,
+    now: () => at,
+  });
+  return { repository, databasePath };
+}
+
+it("[SI-2] files what an action review masked under its run's conversation, even after the run alone is deleted", async () => {
+  const adapters = createReferenceAdapterSet();
+  const ownerId = "owner-production-model";
+  const agentId = "agent-production-model";
+  const { repository, databasePath } = await sensitiveInterceptionRepository(ownerId, agentId);
+  const sent: string[] = [];
+  class ReviewRuntime extends RecordingRuntime {
+    override getModel(providerId: string, modelId: string): unknown {
+      const value = super.getModel(providerId, modelId);
+      return value ? { ...(value as Record<string, unknown>), provider: providerId } : undefined;
+    }
+    stream(
+      _model: unknown,
+      context: { messages: { content: unknown }[] },
+      options: Record<string, unknown>,
+    ) {
+      return (async function* () {
+        await (options["fetch"] as typeof fetch)(
+          "https://ai-gateway.vercel.sh/v1/chat/completions",
+          { method: "POST", body: JSON.stringify({ messages: context.messages }) },
+        );
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "{}" }],
+            api: "openai-completions",
+            provider: "vercel-ai-gateway",
+            model: primaryModel.model,
+            stopReason: "stop",
+            timestamp: Date.now(),
+            usage: {
+              input: 10,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 11,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.000001 },
+            },
+          },
+        };
+      })();
+    }
+  }
+  const recorder = productionSensitiveInterceptionRecorder(repository);
+  const egress = createProductionModelEgress(
+    {
+      secretReferences: [{ ref: "payload-key", version: "v1", purpose: "payload-encryption" }],
+    } as never,
+    { keys: { resolve: async () => new TextEncoder().encode("payload-key-material") } } as never,
+    recorder,
+  );
+  const prepared = compositionOptions(adapters, {
+    egress,
+    egressThreadOf: productionEgressThreadOf(repository, {
+      ownerId: ownerId as never,
+      agentId: agentId as never,
+    }),
+    admission: (({ runId }: { readonly runId: string }) => ({
+      context: { ownerId, agentId, runId },
+      begin: async () => ({
+        disposition: "fresh" as const,
+        permit: {
+          assertActive: async () => undefined,
+          markStarted: async () => undefined,
+          releaseReserved: async () => undefined,
+          settle: async () => undefined,
+          markUnknown: async () => undefined,
+        },
+      }),
+    })) as never,
+    runtimeFactory: { create: async () => new ReviewRuntime() as unknown as PiModelRuntime },
+    fetch: vi.fn(async (_input: unknown, init?: RequestInit) => {
+      sent.push(typeof init?.body === "string" ? init.body : "");
+      return new Response(
+        `data: ${JSON.stringify({ id: "generation:review", model: primaryModel.model, usage: { cost: 0.000001 }, choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "generation:review", routing: { finalProvider: "deepinfra" }, cost: 0.000001 } } } }] })}\n\ndata: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    }) as never,
+  });
+  const composition = createProductionModelComposition(prepared.options);
+  try {
+    const invoker = composition.proactiveModel(primaryModel.ref, {
+      maxOutputTokens: 256,
+      requestTimeoutMs: 60_000,
+    });
+    const input = await invoker.prepare({
+      invocationId: "review-masked",
+      prompt: "这次动作要用的验证码 482910",
+      deadlineAt: "2099-01-01T00:00:00.000Z",
+    });
+    await input.release();
+    const handle = await prepared.options.handles.issueHandle({
+      ownerId: ownerId as never,
+      agentId: agentId as never,
+      runId: "run-review" as never,
+      ...primaryModel.secretRequirement,
+      scopeRef: "review-masked",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    const events: string[] = [];
+    for await (const event of composition.model.invoke({
+      invocationId: "review-masked",
+      runId: "run-review" as never,
+      modelRef: primaryModel.ref,
+      inputRef: input.inputRef,
+      dataClassification: "private",
+      allowedDisclosureRef: input.allowedDisclosureRef,
+      secretHandleRefs: [handle.ref],
+      correlationId: "review-masked" as never,
+    }))
+      events.push(event.type);
+    expect(events).toContain("model.completed");
+    expect(sent.join("\n")).not.toContain("482910");
+    const writer = openQualifiedDatabase(databasePath);
+    try {
+      writer.prepare("DELETE FROM runs WHERE id = 'run-review'").run();
+    } finally {
+      writer.close();
+    }
+    await recorder.flush();
+    const page = await repository
+      .sensitiveInterceptions()
+      .list({ ownerId: ownerId as never, agentId: agentId as never, limit: 10, before: null });
+    expect(
+      page.items.map(({ threadId, source, purpose, category, outcome }) => ({
+        threadId,
+        source,
+        purpose,
+        category,
+        outcome,
+      })),
+    ).toEqual([
+      {
+        threadId: "thread-review",
+        source: "background",
+        purpose: "action-review",
+        category: "verification-code",
+        outcome: "masked",
+      },
+    ]);
+  } finally {
+    await composition.close();
+    await repository.close();
+  }
+});

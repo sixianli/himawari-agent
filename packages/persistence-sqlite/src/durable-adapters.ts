@@ -20,7 +20,10 @@ import type {
   OwnerPreferencesStorePort,
   ProactiveStorePort,
   ThreadArtifactStorePort,
+  SensitiveInterceptionStorePort,
+  ThreadPromptBundleStorePort,
   DecisionLedgerPort,
+  MuseIntakePort,
   LedgerObservationPort,
   ModelUsageStorePort,
   WebPushStorePort,
@@ -1029,6 +1032,18 @@ export class SqliteDurableAdapters {
     });
   }
 
+  museIntake(): MuseIntakePort {
+    return Object.freeze<MuseIntakePort>({
+      ingestBatch: (input) => this.context.write("museIntake.ingestBatch", input),
+      listItems: (input) => this.context.read("museIntake.listItems", input),
+      channelStatus: (input) => this.context.read("museIntake.channelStatus", input),
+      checkChannel: (input) => this.context.write("museIntake.checkChannel", input),
+      setPaused: (input) => this.context.write("museIntake.setPaused", input),
+      rate: (input) => this.context.write("museIntake.rate", input),
+      clearAll: (input) => this.context.write("museIntake.clearAll", input),
+    });
+  }
+
   modelUsage(): ModelUsageStorePort {
     return Object.freeze<ModelUsageStorePort>({
       record: (input) => this.context.write("modelUsage.record", input),
@@ -1053,6 +1068,25 @@ export class SqliteDurableAdapters {
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),
       listFinishedRuns: (input) => this.context.read("webPush.listFinishedRuns", input),
       prune: (input) => this.context.write("webPush.prune", input),
+    });
+  }
+
+  sensitiveInterceptions(): SensitiveInterceptionStorePort {
+    return Object.freeze<SensitiveInterceptionStorePort>({
+      record: (input) => this.context.write("sensitiveInterception.record", input),
+      list: (input) => this.context.read("sensitiveInterception.list", input),
+      summarize: (input) => this.context.read("sensitiveInterception.summarize", input),
+      clear: (input) => this.context.write("sensitiveInterception.clear", input),
+      threadOfRun: (input) => this.context.read("sensitiveInterception.threadOfRun", input),
+    });
+  }
+
+  threadPromptBundles(): ThreadPromptBundleStorePort {
+    return Object.freeze<ThreadPromptBundleStorePort>({
+      latest: (input) => this.context.read("threadPromptBundle.latest", input),
+      get: (input) => this.context.read("threadPromptBundle.get", input),
+      create: (input) => this.context.write("threadPromptBundle.create", input),
+      requestRebuild: (input) => this.context.write("threadPromptBundle.requestRebuild", input),
     });
   }
 

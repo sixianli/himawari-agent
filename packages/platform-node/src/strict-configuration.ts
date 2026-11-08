@@ -2,7 +2,6 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  assertMachineSecretFree,
   type CapabilityDeploymentConfiguration,
   isWebProviderId,
   WEB_FETCH_MAXIMUM_BYTES,
@@ -26,6 +25,7 @@ import {
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
 } from "@himawari-agent/application";
+import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
 export const CONFIGURATION_SCHEMA_VERSION = "himawari.configuration.v1" as const;
@@ -974,6 +974,7 @@ function parseAutomaticReview(
 
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
+export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -988,6 +989,8 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "perCheckMs",
       "dailyCostMicros",
       "memoryMinimumSimilarity",
+      "bodyCharactersPerMail",
+      "bodyCharactersPerBatch",
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
     ],
@@ -1003,6 +1006,13 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
   if (input["perCheckCostMicros"] !== undefined)
     integer(input["perCheckCostMicros"], `${field}.perCheckCostMicros`, 1, 10_000_000);
   const dailyCostMicros = optional("dailyCostMicros", 1_000_000, 1, 100_000_000);
+  const bodyCharactersPerMail = optional("bodyCharactersPerMail", 16_000, 500, 200_000);
+  const bodyCharactersPerBatch = optional("bodyCharactersPerBatch", 64_000, 500, 1_000_000);
+  if (bodyCharactersPerBatch < bodyCharactersPerMail)
+    throw invalid(
+      `${field}.bodyCharactersPerBatch`,
+      "must not be smaller than bodyCharactersPerMail",
+    );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1014,10 +1024,23 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
     dailyCostMicros,
+    bodyCharactersPerMail,
+    bodyCharactersPerBatch,
     memoryMinimumSimilarity:
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45
         : unitInterval(input["memoryMinimumSimilarity"], `${field}.memoryMinimumSimilarity`),
+  });
+}
+
+function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["museIntake"]> {
+  const field = "configuration.runPolicy.museIntake";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", "secretRef"], field);
+  if (typeof input["enabled"] !== "boolean") throw invalid(`${field}.enabled`, "must be a boolean");
+  return Object.freeze({
+    enabled: input["enabled"],
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
   });
 }
 
@@ -1050,6 +1073,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "version",
       "timeZone",
       "systemInstruction",
+      "freezeThreadPrompts",
       "memoryLimit",
       "maxSelectedMemories",
       "maxMemoryClassification",
@@ -1060,6 +1084,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "automaticReview",
       "webPush",
       "proactive",
+      "museIntake",
     ],
     "configuration.runPolicy",
   );
@@ -1096,8 +1121,19 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
+    ...(input["museIntake"] === undefined
+      ? {}
+      : { museIntake: parseMuseIntake(input["museIntake"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
+    ...(input["freezeThreadPrompts"] === undefined
+      ? {}
+      : {
+          freezeThreadPrompts: boolean(
+            input["freezeThreadPrompts"],
+            "configuration.runPolicy.freezeThreadPrompts",
+          ),
+        }),
     memoryLimit,
     maxSelectedMemories: integer(
       input["maxSelectedMemories"],
@@ -1341,6 +1377,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.webPush.secretRef,
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
+    );
+  if (runPolicy?.museIntake)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.museIntake.secretRef,
+      MUSE_INTAKE_SECRET_PURPOSE,
+      "configuration.runPolicy.museIntake.secretRef",
     );
   const proactive = runPolicy?.proactive;
   if (proactive) {

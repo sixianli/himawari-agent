@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 import type {
   RuntimeToolDescriptor,
-  RuntimeToolInvocation,
   RuntimeToolExecutionResult,
+  RuntimeToolInvocation,
   SandboxExecutionRecord,
   SandboxResourceOutputPage,
 } from "@himawari-agent/application";
+import {
+  TOOL_TASK_CANCEL,
+  TOOL_TASK_CURSOR,
+  TOOL_TASK_LIMIT,
+  TOOL_TASK_OUTPUT,
+  TOOL_TASK_RESOURCE_REF,
+  TOOL_TASK_STATUS,
+} from "@himawari-agent/prompt-catalog";
 
 export const MANAGED_TASK_ACTIONS = ["status", "output", "cancel"] as const;
 export type ManagedTaskAction = (typeof MANAGED_TASK_ACTIONS)[number];
@@ -19,18 +27,23 @@ export function managedTaskDescriptors(): RuntimeToolDescriptor[] {
     name: `execution_task_${action}`,
     description:
       action === "status"
-        ? "查询本轮转入后台的命令或已启动任务的实际状态。后台命令结束时系统会主动通知，不要反复轮询。"
+        ? TOOL_TASK_STATUS.text
         : action === "output"
-          ? "分页读取本轮后台命令或任务已保存的输出；不会启动或重启任何命令。"
-          : "停止本轮转入后台的命令或已启动的任务，返回实际停止或待核查状态。",
+          ? TOOL_TASK_OUTPUT.text
+          : TOOL_TASK_CANCEL.text,
     parameters: {
       type: "object",
       properties: {
-        resourceRef: { type: "string" },
+        resourceRef: { type: "string", description: TOOL_TASK_RESOURCE_REF.text },
         ...(action === "output"
           ? {
-              cursor: { type: ["string", "null"] },
-              limit: { type: "integer", minimum: 1, maximum: 32768 },
+              cursor: { type: ["string", "null"], description: TOOL_TASK_CURSOR.text },
+              limit: {
+                type: "integer",
+                minimum: 1,
+                maximum: 32768,
+                description: TOOL_TASK_LIMIT.text,
+              },
             }
           : {}),
       },

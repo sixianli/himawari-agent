@@ -11,8 +11,11 @@
     "./action-intent-snapshot": "./src/services/action-intent-snapshot.ts",
     "./workspace-claims": "./src/services/workspace-claims.ts",
     "./thread-artifacts": "./src/ports/thread-artifacts.ts",
+    "./thread-prompt-bundles": "./src/ports/thread-prompt-bundles.ts",
+    "./sensitive-interceptions": "./src/ports/sensitive-interceptions.ts",
     "./model-usage": "./src/ports/model-usage.ts",
     "./decision-ledger": "./src/ports/decision-ledger.ts",
+    "./muse-intake": "./src/ports/muse-intake.ts",
     "./ledger-observation": "./src/ports/ledger-observation.ts"
   },
   "dependencies": {
@@ -20,6 +23,8 @@
     "@himawari-agent/domain": "0.0.0",
     "@himawari-agent/execution-contracts": "0.0.0",
     "@himawari-agent/gateway-contracts": "0.0.0",
+    "@himawari-agent/prompt-catalog": "0.0.0",
+    "@himawari-agent/sensitive-capture": "0.0.0",
     "@noble/hashes": "2.4.0"
   }
 }

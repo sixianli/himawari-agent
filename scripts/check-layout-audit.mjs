@@ -71,6 +71,12 @@ export function findLayoutProblems(locale) {
   };
   if (document.documentElement.scrollWidth > width + 1)
     problems.push(`PAGE_SCROLLS_SIDEWAYS scrollWidth=${document.documentElement.scrollWidth}`);
+  for (const node of document.querySelectorAll("body, body *")) {
+    if (node.scrollLeft <= 0) continue;
+    const overflowX = getComputedStyle(node).overflowX;
+    if (overflowX === "hidden" || overflowX === "clip")
+      problems.push(`CONTENT_PUSHED_SIDEWAYS ${describe(node)} scrollLeft=${node.scrollLeft}`);
+  }
   if (width > 640)
     for (const pane of document.querySelectorAll(".sidebar .list-pane"))
       if (shown(pane.closest(".sidebar")) && !pane.getClientRects().length)
@@ -232,6 +238,7 @@ export function labels(locale) {
     general: value("review.settings.general"),
     tools: value("review.settings.tools"),
     data: value("review.settings.data"),
+    sensitiveOpen: value("sensitive.open"),
   };
 }
 
@@ -312,6 +319,17 @@ export const SCENES = {
   settingsGeneral: { path: "/threads", act: (page, text) => openSettings(page, text, "general") },
   settingsTools: { path: "/threads", act: (page, text) => openSettings(page, text, "tools") },
   settingsData: { path: "/threads", act: (page, text) => openSettings(page, text, "data") },
+  sensitiveInterceptions: {
+    path: "/threads",
+    act: async (page, text) => {
+      await openSettings(page, text, "data");
+      await page
+        .locator(".sensitive-entry")
+        .getByRole("button", { name: text.sensitiveOpen, exact: true })
+        .click();
+      await page.waitForSelector(".sensitive-page .sensitive-item");
+    },
+  },
   memory: {
     path: "/threads",
     act: async (page, text) => {
@@ -417,7 +435,8 @@ body{margin:0;font:14px/1.4 sans-serif} .wide{width:520px;height:20px;background
 <svg data-glyph="memory" viewBox="0 0 24 24" width="20" height="20" style="fill:none"><path data-tone="base" d="M4 4h16v16H4Z"/></svg>
 <button class="action-button-secondary" style="border:1.5px solid #999">描了边的胶囊按钮</button>
 <button aria-label="关闭提示">×</button>
-<script>document.getElementById("focused").focus()</script></body></html>`;
+<div id="pushed" style="overflow:hidden;width:100px"><div style="width:300px">被推开的内容</div></div>
+<script>document.getElementById("focused").focus();document.getElementById("pushed").scrollLeft=60</script></body></html>`;
 
 const CLEAN = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"></head>
@@ -472,6 +491,7 @@ const WEEKLY_KINDS = [
 
 export const REQUIRED_KINDS = [
   "PAGE_SCROLLS_SIDEWAYS",
+  "CONTENT_PUSHED_SIDEWAYS",
   "OUTSIDE_SCREEN",
   "NATIVE_SELECT",
   "TEXT_SQUEEZED",

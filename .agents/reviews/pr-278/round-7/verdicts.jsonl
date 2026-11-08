@@ -1,0 +1,8 @@
+{"id": "m1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档只提醒删除浏览器历史，没有覆盖服务端 Magpie 访问日志/journal", "valid": true, "class": "error", "severity": "medium-high", "trigger": "按 Evidence 一节把 journalctl 片段贴给模型，而 Magpie 记录了请求网址", "consequence": "生产管理页密码离开生产机", "modelSeverity": "中"}
+{"id": "m2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "会把“sudo 执行失败、用户不存在、文件不存在”等错误也归到“测试账号读不到”", "valid": true, "class": "error", "severity": "medium-high", "trigger": "sudo 或账号出错", "consequence": "权限检查假通过", "modelSeverity": "中"}
+{"id": "m3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "权限检查只覆盖 `/etc/magpie/web.env`", "valid": true, "class": "error", "severity": "medium-high", "trigger": "/var/lib/magpie 对其他账号可读", "consequence": "himawari-ci 能读到模型账号密钥", "modelSeverity": "中"}
+{"id": "l1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "Hermes 的证据只证明“容器在运行”和“3425/3430 在监听”", "valid": true, "class": "better"}
+{"id": "l2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "生产和 Hermes 都用本机 `3430`，只能靠卸载生产隧道解决", "valid": true, "class": "better"}
+{"id": "l3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "plist 只描述没有给完整 XML", "valid": true, "class": "better"}
+{"id": "l4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "服务器上的 `cloudflared` 出站隧道也能访问 `127.0.0.1:3430`", "valid": false, "class": "better"}
+{"id": "l5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "没有标明“仅 Andy 本人执行”", "valid": true, "class": "error", "severity": "low", "trigger": "代理线程读到这一节", "consequence": "代理本来就连不上生产机 22 端口，Scope 一节已写明代理不以 root 登录；只是本节没重复提醒", "modelSeverity": "低"}

@@ -59,7 +59,6 @@ export type WebProviderFailureCode =
   | "UNAVAILABLE"
   | "INPUT_UNSUPPORTED"
   | "INPUT_INVALID"
-  | "OUTPUT_REDACTED"
   | "PAGE_UNREACHABLE"
   | "CONTENT_TOO_LARGE";
 

@@ -12,13 +12,14 @@ import type {
   ModelInvocationEvent,
   ModelInvocationRequest,
 } from "@himawari-agent/application/runtime-port";
+import { EGRESS_PLACEHOLDER_LEGEND } from "@himawari-agent/application/runtime-port";
 import { describe, expect, it, vi } from "vitest";
 import {
   type PiModelBinding,
   type PiModelPayloadBoundary,
   PiModelTransport,
+  type PiModelTransportOptions,
 } from "../src/index.js";
-import { withPlaceholderLegendInPrompt } from "../src/egress-context.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 
 const NOW = "2026-08-27T16:00:00.000Z";
@@ -311,11 +312,9 @@ describe("PiModelTransport", () => {
         "model.completed",
       ]);
       expect(payloads.writes).toEqual(["hello", " world"]);
+      expect(observedContext?.systemPrompt).toBe(EGRESS_PLACEHOLDER_LEGEND);
       expect(observedContext?.messages).toEqual([
-        expect.objectContaining({
-          role: "user",
-          content: withPlaceholderLegendInPrompt("Say hello"),
-        }),
+        expect.objectContaining({ role: "user", content: "Say hello" }),
       ]);
       expect(observedOptions).toMatchObject({
         ["apiKey"]: PROVIDER_SECRET,
@@ -438,7 +437,12 @@ describe("PiModelTransport", () => {
     });
   });
 
-  async function sentBody(prompt: string): Promise<{
+  async function sentBody(
+    prompt: string,
+    egress: Pick<PiModelTransportOptions, "egress" | "egressContext" | "egressThreadOf"> = {
+      egress: testModelEgress(),
+    },
+  ): Promise<{
     readonly events: ModelInvocationEvent[];
     readonly body: string | undefined;
   }> {
@@ -452,7 +456,12 @@ describe("PiModelTransport", () => {
             method: "POST",
             body: JSON.stringify({
               model: "m",
-              messages: context.messages.map(({ role, content }) => ({ role, content })),
+              messages: [
+                ...(context.systemPrompt === undefined
+                  ? []
+                  : [{ role: "system", content: context.systemPrompt }]),
+                ...context.messages.map(({ role, content }) => ({ role, content })),
+              ],
             }),
           });
           yield { type: "done", reason: "stop", message: assistant("ok") };
@@ -460,7 +469,7 @@ describe("PiModelTransport", () => {
       },
     };
     const transport = new PiModelTransport({
-      egress: testModelEgress(),
+      ...egress,
       models: {
         resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
       },
@@ -494,12 +503,70 @@ describe("PiModelTransport", () => {
     expect(body).toMatch(/\[密码#[a-z]{8}\]/u);
   });
 
-  it("sends a prompt without sensitive values as the original text plus the fixed legend", async () => {
+  it("[SI-2] reports what a background call masked under the conversation its run belongs to when it was sent", async () => {
+    const reports: { context: unknown; sightings: readonly { part: string }[] }[] = [];
+    const egressContext = {
+      ownerId: "owner-background",
+      agentId: "agent-background",
+      threadId: null,
+      source: "background",
+      purpose: "action-review",
+    } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>;
+    const egress = testModelEgress(undefined, (context, sightings) =>
+      reports.push({ context, sightings }),
+    );
+    const asked: unknown[] = [];
+    const egressThreadOf = async (runId: unknown) => {
+      asked.push(runId);
+      return "thread-of-run" as never;
+    };
+    await sentBody("验证码 482910", { egress, egressContext, egressThreadOf });
+    await sentBody("验证码 482910", { egress, egressContext });
+    await sentBody("验证码 482910", {
+      egress,
+      egressContext,
+      egressThreadOf: async () => {
+        throw new Error("database unavailable");
+      },
+    });
+    expect(asked).toEqual([request.runId]);
+    expect(reports).toHaveLength(3);
+    expect(reports[0]?.context).toEqual({ ...egressContext, threadId: "thread-of-run" });
+    expect(reports[1]?.context).toEqual(egressContext);
+    expect(reports[2]?.context).toEqual(egressContext);
+    expect(reports[0]?.sightings.map(({ part }) => part)).toEqual(["owner_message"]);
+  });
+
+  it("sends a prompt without sensitive values as the original text after the fixed legend", async () => {
     const { events, body } = await sentBody("Say hello");
     expect(events.filter((event) => event.type === "model.failed")).toEqual([]);
-    expect(JSON.parse(body ?? "{}").messages[0].content).toBe(
-      withPlaceholderLegendInPrompt("Say hello"),
-    );
+    expect(JSON.parse(body ?? "{}").messages).toEqual([
+      { role: "system", content: EGRESS_PLACEHOLDER_LEGEND },
+      { role: "user", content: "Say hello" },
+    ]);
+  });
+
+  const legendBeforeTime = (sent: string) => {
+    const legend = sent.indexOf(JSON.stringify(EGRESS_PLACEHOLDER_LEGEND).slice(1, 20));
+    const time = sent.indexOf("当前时间：");
+    return legend >= 0 && time >= 0 && legend < time;
+  };
+
+  it("[W-31] puts the fixed legend before the per-call time of a background prompt", async () => {
+    const prompt =
+      "你是整理器，只看下面的数据。\n数据：主人说他明天去大阪。\n当前时间：2026-11-05T09:00:00+09:00";
+    const { events, body } = await sentBody(prompt);
+    expect(events.filter((event) => event.type === "model.failed")).toEqual([]);
+    expect(legendBeforeTime(body ?? "")).toBe(true);
+    expect(JSON.parse(body ?? "{}").messages.at(-1)).toEqual({ role: "user", content: prompt });
+  });
+
+  it("[W-31] REVERSE: the old layout with the legend appended after the prompt fails the order check", () => {
+    const prompt = "你是整理器。\n当前时间：2026-11-05T09:00:00+09:00";
+    const old = JSON.stringify({
+      messages: [{ role: "user", content: `${prompt}\n\n${EGRESS_PLACEHOLDER_LEGEND}` }],
+    });
+    expect(legendBeforeTime(old)).toBe(false);
   });
 
   it("fails closed when the bound Pi model drifts from the canonical descriptor", async () => {
@@ -996,6 +1063,48 @@ it("passes cancellation to the pinned Pi provider API without adding tools", asy
   );
   expect(received?.["signal"]).toBe(controller.signal);
   expect(context?.tools).toBeUndefined();
+});
+
+it("[SI-2] stops waiting for the conversation lookup when the request is cancelled", async () => {
+  const controller = new AbortController();
+  const stream = vi.fn(() => runtimeWithTerminal(assistant("{}")).stream(model, { messages: [] }));
+  const lookups: unknown[] = [];
+  const transport = new PiModelTransport({
+    egress: testModelEgress(),
+    egressContext: {
+      ownerId: "owner-cancel",
+      agentId: "agent-cancel",
+      threadId: null,
+      source: "background",
+      purpose: "action-review",
+    } as unknown as NonNullable<PiModelTransportOptions["egressContext"]>,
+    egressThreadOf: (runId) => {
+      lookups.push(runId);
+      queueMicrotask(() => controller.abort());
+      return new Promise(() => undefined);
+    },
+    models: {
+      resolve: async () => ({ model, modelRuntime: { stream } }) as unknown as PiModelBinding,
+    },
+    payloads: payloadBoundary("判断这个动作").boundary,
+    clock: { now: () => NOW },
+  });
+  const outcome = await Promise.race([
+    collect(
+      transport.invoke({
+        descriptor,
+        request: { ...request, signal: controller.signal },
+        secretValues: [PROVIDER_SECRET],
+      }),
+    ).then(
+      (events) => events.map(({ type }) => type),
+      () => ["thrown"],
+    ),
+    new Promise((resolve) => setTimeout(() => resolve("still waiting"), 1000)),
+  ]);
+  expect(lookups).toEqual([request.runId]);
+  expect(outcome).toEqual(["model.started", "model.failed"]);
+  expect(stream).not.toHaveBeenCalled();
 });
 
 it("does not read model input or resolve a binding after request cancellation", async () => {

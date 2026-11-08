@@ -1,0 +1,13 @@
+[Unit]
+Description=Network limits for the GitHub Actions runner accounts
+After=network-pre.target
+Before=gh-runner.service gh-runner-2.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/gh-runner/nft.rules
+ExecStop=/usr/sbin/nft delete table inet gh_runner
+
+[Install]
+WantedBy=multi-user.target

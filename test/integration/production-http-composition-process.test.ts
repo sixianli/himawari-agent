@@ -1,7 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { request as requestHttp } from "node:http";
+import { request as requestHttp, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +17,8 @@ import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
+import { isAgentRequest } from "../fixtures/agent-request.ts";
+import { readRequestBody } from "../fixtures/request-body.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(
@@ -67,14 +69,17 @@ const providerRequests: Array<{
   readonly assertion: string | undefined;
   readonly accept: string | undefined;
   body?: Readonly<Record<string, unknown>>;
+  raw?: string;
 }> = [];
-const agentGenerationRequests = () =>
-  providerRequests.filter(
-    ({ path: route, body }) =>
-      route === "/v1/chat/completions" &&
-      Array.isArray(body?.["messages"]) &&
-      (body["messages"] as Array<{ role?: unknown }>)[0]?.role === "system",
-  ).length;
+type ChatReply = { readonly text: string } | { readonly tool: string; readonly input: object };
+let chatReply: ((input: Readonly<Record<string, unknown>>) => ChatReply) | undefined;
+const answerFailedRead = (response: ServerResponse) => () => {
+  if (response.destroyed || response.writableEnded) return;
+  if (!response.headersSent) response.writeHead(500);
+  response.end();
+};
+
+const agentGenerationRequests = () => providerRequests.filter(isAgentRequest).length;
 
 type HttpResult = {
   readonly status: number;
@@ -193,85 +198,106 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
         );
         return;
       }
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk;
-      });
-      request.on("end", () => {
-        const input = JSON.parse(body);
-        capturedRequest.body = input;
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(
-          JSON.stringify({
-            object: "list",
-            model: input.model,
-            data: [{ object: "embedding", index: 0, embedding: Array(input.dimensions).fill(0.1) }],
-            usage: { prompt_tokens: 8, total_tokens: 8 },
-            ...(embeddingCostAvailable
-              ? {
-                  providerMetadata: {
-                    gateway: {
-                      generationId: `embedding-${providerRequests.length}`,
-                      routing: { finalProvider: "deepinfra" },
-                      cost: "0.000033",
+      void readRequestBody(request)
+        .then((body) => {
+          const input = JSON.parse(body);
+          capturedRequest.body = input;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              object: "list",
+              model: input.model,
+              data: [
+                { object: "embedding", index: 0, embedding: Array(input.dimensions).fill(0.1) },
+              ],
+              usage: { prompt_tokens: 8, total_tokens: 8 },
+              ...(embeddingCostAvailable
+                ? {
+                    providerMetadata: {
+                      gateway: {
+                        generationId: `embedding-${providerRequests.length}`,
+                        routing: { finalProvider: "deepinfra" },
+                        cost: "0.000033",
+                      },
                     },
-                  },
-                }
-              : {}),
-          }),
-        );
-      });
+                  }
+                : {}),
+            }),
+          );
+        })
+        .catch(answerFailedRead(response));
       return;
     }
     if (requestPath === "/v1/chat/completions") {
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk;
-      });
-      request.on("end", () => {
-        const input = JSON.parse(body);
-        capturedRequest.body = input;
-        response.writeHead(200, { "content-type": "text/event-stream" });
-        response.write(
-          `data: ${JSON.stringify({
-            id: "completion-installed",
-            object: "chat.completion.chunk",
-            created: Math.floor(Date.now() / 1000),
-            model: input.model,
-            choices: [
-              {
-                index: 0,
-                delta: { role: "assistant", content: "安装后的持久回答" },
-                finish_reason: null,
-              },
-            ],
-          })}\n\n`,
-        );
-        response.write(
-          `data: ${JSON.stringify({
-            id: "completion-installed",
-            object: "chat.completion.chunk",
-            model: input.model,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  provider_metadata: {
-                    gateway: {
-                      generationId: `generation-${providerRequests.length}`,
-                      routing: { finalProvider: "morph" },
-                      cost: "0.000077",
+      void readRequestBody(request)
+        .then((body) => {
+          const input = JSON.parse(body);
+          capturedRequest.body = input;
+          capturedRequest.raw = body;
+          const reply = chatReply?.(input) ?? { text: "安装后的持久回答" };
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.write(
+            `data: ${JSON.stringify({
+              id: "completion-installed",
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: input.model,
+              choices: [
+                {
+                  index: 0,
+                  delta:
+                    "tool" in reply
+                      ? {
+                          role: "assistant",
+                          tool_calls: [
+                            {
+                              index: 0,
+                              id: `call-${providerRequests.length}`,
+                              type: "function",
+                              function: {
+                                name: reply.tool,
+                                arguments: JSON.stringify(reply.input),
+                              },
+                            },
+                          ],
+                        }
+                      : { role: "assistant", content: reply.text },
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
+          );
+          response.write(
+            `data: ${JSON.stringify({
+              id: "completion-installed",
+              object: "chat.completion.chunk",
+              model: input.model,
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    provider_metadata: {
+                      gateway: {
+                        generationId: `generation-${providerRequests.length}`,
+                        routing: { finalProvider: "morph" },
+                        cost: "0.000077",
+                      },
                     },
                   },
+                  finish_reason: "tool" in reply ? "tool_calls" : "stop",
                 },
-                finish_reason: "stop",
+              ],
+              usage: {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cost: "0.000077",
               },
-            ],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: "0.000077" },
-          })}\n\n`,
-        );
-        response.end("data: [DONE]\n\n");
-      });
+            })}\n\n`,
+          );
+          response.end("data: [DONE]\n\n");
+        })
+        .catch(answerFailedRead(response));
       return;
     }
     if (requestPath === "/cdn-cgi/access/certs") {
@@ -1120,7 +1146,12 @@ async function writeServiceCapabilitySnapshot() {
   return { snapshotPath: capabilityDeploymentPath, sha256: capabilityDeploymentSha256 };
 }
 
-async function openInstalledMain() {
+const WORKSPACE_GRANT_ID = "directory-installed";
+const WORKSPACE_PATH = "/srv/himawari/workspace-installed";
+
+async function openInstalledMain(
+  options: { readonly coding?: boolean; readonly runPolicy?: Record<string, unknown> } = {},
+) {
   stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-main-state-`);
   cleanupRoots.push(stateRoot);
   await initializeTestDatabase();
@@ -1145,12 +1176,58 @@ async function openInstalledMain() {
   }));
   raw["memory"] = { ...(raw["memory"] as Record<string, unknown>), dimensions: 4096 };
   raw["runPolicy"] = {
+    ...options.runPolicy,
     version: "installed-policy-v1",
     systemInstruction: "请用中文回答。",
     memoryLimit: 10,
     maxSelectedMemories: 5,
     maxMemoryClassification: "private",
+    ...(options.coding
+      ? {
+          coding: {
+            hostId: "host-installed",
+            workerInstanceId: "worker-installed",
+            grantId: WORKSPACE_GRANT_ID,
+            capabilityRef: "installed.coding",
+            capabilityVersion: "1.0.0",
+            maximumBytes: 4096,
+            enabledTools: ["read"],
+          },
+        }
+      : {}),
   };
+  if (options.coding) {
+    const seeded = openQualifiedDatabase(databasePath);
+    try {
+      seeded
+        .prepare(
+          "INSERT INTO product_state_records (key, owner_id, agent_id, revision, value_json, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+        )
+        .run(
+          `host-workspace:directory-grant:${WORKSPACE_GRANT_ID}`,
+          ownerId,
+          agentId,
+          JSON.stringify({
+            id: WORKSPACE_GRANT_ID,
+            revision: 1,
+            hostId: "host-installed",
+            canonicalRootId: "root-installed",
+            displayPath: WORKSPACE_PATH,
+            operations: ["read"],
+            dataClassification: "private",
+            disclosure: "model",
+            pathPolicy: "same_filesystem_no_links",
+            mountPolicy: "fixed_device",
+            authorizationRef: "authorization-installed",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            revokedAt: null,
+          }),
+          new Date().toISOString(),
+        );
+    } finally {
+      seeded.close();
+    }
+  }
   raw["capabilityDeployment"] = await writeServiceCapabilitySnapshot();
   raw["secretReferences"] = [
     ...(raw["secretReferences"] as object[]),
@@ -1785,3 +1862,312 @@ it.each(["connection loss", "missing cost", "budget exceeded"] as const)(
   },
   90_000,
 );
+
+type ChatBody = {
+  readonly messages: readonly { readonly role: string; readonly content: unknown }[];
+  readonly tools?: unknown;
+};
+
+function agentRequests(from: number) {
+  return providerRequests
+    .slice(from)
+    .filter(isAgentRequest)
+    .map(({ raw, body }) => ({ raw: raw ?? "", body: body as unknown as ChatBody }));
+}
+
+function requestHead(request: { readonly raw: string; readonly body: ChatBody }) {
+  const second = request.body.messages[1];
+  const end = second === undefined ? -1 : request.raw.indexOf(JSON.stringify(second));
+  if (end < 0) throw new Error("REQUEST_HEAD_NOT_FOUND");
+  return { prefix: request.raw.slice(0, end), tools: JSON.stringify(request.body.tools ?? null) };
+}
+
+function expectAppendOnly(
+  previous: { readonly body: ChatBody },
+  next: { readonly body: ChatBody },
+) {
+  expect(next.body.messages.length).toBeGreaterThan(previous.body.messages.length);
+  previous.body.messages.forEach((message, index) => {
+    expect(JSON.stringify(next.body.messages[index])).toBe(JSON.stringify(message));
+  });
+}
+
+const lastMessage = (request: { readonly body: ChatBody }) =>
+  JSON.stringify(request.body.messages.at(-1));
+
+async function submitTurn(
+  service: Awaited<ReturnType<typeof openInstalledMain>>,
+  threadId: string,
+  name: string,
+  content: string,
+) {
+  const detail = await service.query("thread.detail", { threadId, afterSequence: 0, limit: 100 });
+  const revision = (detail.body as { payload: { thread: { revision: number } } }).payload.thread
+    .revision;
+  await service.submit({
+    threadId,
+    expectedRevision: revision,
+    name,
+    runId: `run:${name}`,
+    content,
+  });
+  return waitForRunToLeaveExecution(service, threadId, `run:${name}`);
+}
+
+it("[PR-A] keeps the request head byte-identical when the workspace grant expires and sends the runtime environment only when it changes", async () => {
+  const service = await openInstalledMain({ coding: true });
+  const threadId = "thread-runtime-environment";
+  try {
+    await service.command("thread.create", "runtime-environment-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("runtime-environment-create-payload", "create"),
+    });
+    const start = providerRequests.length;
+    expect((await submitTurn(service, threadId, "environment-first", "第一轮")).run?.status).toBe(
+      "completed",
+    );
+    const first = agentRequests(start);
+    expect((await submitTurn(service, threadId, "environment-second", "第二轮")).run?.status).toBe(
+      "completed",
+    );
+    const second = agentRequests(start).slice(first.length);
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      database
+        .prepare(
+          "UPDATE product_state_records SET value_json = json_set(value_json, '$.expiresAt', ?) WHERE key = ?",
+        )
+        .run("2020-01-01T00:00:00.000Z", `host-workspace:directory-grant:${WORKSPACE_GRANT_ID}`);
+    } finally {
+      database.close();
+    }
+    expect((await submitTurn(service, threadId, "environment-third", "第三轮")).run?.status).toBe(
+      "completed",
+    );
+    const third = agentRequests(start).slice(first.length + second.length);
+    const turns = [first.at(-1), second.at(-1), third.at(-1)];
+    const [one, two, three] = turns;
+    if (!one || !two || !three) throw new Error("AGENT_REQUEST_MISSING");
+    expect(requestHead(two)).toEqual(requestHead(one));
+    expect(requestHead(three)).toEqual(requestHead(one));
+    expect(requestHead(one).prefix).not.toContain(WORKSPACE_PATH);
+    expect(requestHead(one).tools).not.toContain(WORKSPACE_PATH);
+    expectAppendOnly(one, two);
+    expectAppendOnly(two, three);
+    expect(lastMessage(one)).toContain(`工作目录：${WORKSPACE_PATH}。`);
+    expect(lastMessage(two)).not.toContain("以上运行环境说明");
+    expect(lastMessage(two)).not.toContain("工作目录：");
+    expect(lastMessage(three)).toContain("工作目录：本轮没有。");
+    expect(lastMessage(three)).not.toContain(WORKSPACE_PATH);
+  } finally {
+    await service.stop();
+  }
+}, 120_000);
+
+it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged and keeps the message for the next turn", async () => {
+  const service = await openInstalledMain();
+  const threadId = "thread-tool-loop";
+  let chosen = "";
+  chatReply = (input) => {
+    const names = ((input["tools"] as { function: { name: string } }[] | undefined) ?? []).map(
+      (tool) => tool.function.name,
+    );
+    chosen ||= names.includes("reminder_list") ? "reminder_list" : (names[0] ?? "");
+    const messages = input["messages"] as { role: string; content: unknown }[];
+    if (JSON.stringify(messages.at(-1)).includes("不要说整个任务已经成功"))
+      return { text: "已确认的结果：提醒列表是空的；这一步卡住了，我换个办法。" };
+    if (!isAgentRequest({ path: "/v1/chat/completions", body: input }) || !chosen)
+      return { text: "安装后的持久回答" };
+    return { tool: chosen, input: {} };
+  };
+  try {
+    await service.command("thread.create", "tool-loop-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("tool-loop-create-payload", "create"),
+    });
+    const start = providerRequests.length;
+    const stopped = await submitTurn(service, threadId, "tool-loop-first", "列出提醒");
+    expect(chosen).not.toBe("");
+    expect(stopped.run?.status).toBe("failed");
+    const loop = agentRequests(start);
+    expect(loop.length).toBe(5);
+    const [before, summary] = [loop.at(-2), loop.at(-1)];
+    if (!before || !summary) throw new Error("LOOP_REQUESTS_MISSING");
+    expect(requestHead(summary)).toEqual(requestHead(loop[0] as (typeof loop)[number]));
+    expect(JSON.parse(requestHead(summary).tools)).not.toEqual([]);
+    expectAppendOnly(before, summary);
+    expect(summary.body.messages.length).toBe(before.body.messages.length + 3);
+    expect(summary.body.messages.at(-1)?.role).toBe("user");
+    expect(lastMessage(summary)).toContain("不要说整个任务已经成功");
+    expect(requestHead(summary).prefix).not.toContain("不要说整个任务已经成功");
+    chatReply = undefined;
+    expect((await submitTurn(service, threadId, "tool-loop-second", "好的")).run?.status).toBe(
+      "completed",
+    );
+    const next = agentRequests(start).slice(loop.length).at(-1);
+    if (!next) throw new Error("NEXT_TURN_REQUEST_MISSING");
+    expect(requestHead(next)).toEqual(requestHead(summary));
+    expectAppendOnly(summary, next);
+    expect(
+      next.body.messages
+        .slice(0, -1)
+        .some((message) => JSON.stringify(message).includes("不要说整个任务已经成功")),
+    ).toBe(true);
+  } finally {
+    chatReply = undefined;
+    await service.stop();
+  }
+}, 120_000);
+
+async function reconfigure(
+  service: Awaited<ReturnType<typeof openInstalledMain>>,
+  change: (raw: Record<string, unknown> & { runPolicy: Record<string, unknown> }) => void,
+) {
+  const raw = JSON.parse(await readFile(configurationPath, "utf8"));
+  change(raw);
+  await writeFile(configurationPath, JSON.stringify(raw), { mode: 0o600 });
+  await service.restart();
+}
+
+function bundleRows(threadId: string) {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    return database
+      .prepare(
+        `SELECT generation, origin, superseded_at IS NOT NULL AS superseded
+         FROM thread_prompt_bundles WHERE thread_id = ? ORDER BY generation`,
+      )
+      .all(threadId) as Array<{ generation: number; origin: string; superseded: number }>;
+  } finally {
+    database.close();
+  }
+}
+
+function invalidationTraces(threadId: string) {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    return database
+      .prepare(
+        "SELECT run_id AS runId FROM trace_events WHERE thread_id = ? AND event_type = 'prompt.bundle.invalidated' ORDER BY occurred_at, sequence",
+      )
+      .all(threadId) as Array<{ runId: string }>;
+  } finally {
+    database.close();
+  }
+}
+
+const toolNames = (request: { readonly body: ChatBody }) =>
+  ((request.body.tools as { function: { name: string } }[] | undefined) ?? []).map(
+    (tool) => tool.function.name,
+  );
+
+async function systemInstructionChange(runPolicy: Record<string, unknown>) {
+  const service = await openInstalledMain({ runPolicy });
+  const threadId = `thread-frozen-instruction-${Object.keys(runPolicy).length}`;
+  try {
+    await service.command("thread.create", `${threadId}-create`, {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload(`${threadId}-create-payload`, "create"),
+    });
+    const start = providerRequests.length;
+    expect((await submitTurn(service, threadId, `${threadId}-1`, "第一轮")).run?.status).toBe(
+      "completed",
+    );
+    const first = agentRequests(start).at(-1);
+    await reconfigure(service, (raw) => {
+      raw.runPolicy["systemInstruction"] = "请用中文回答，语气更轻松。";
+    });
+    expect((await submitTurn(service, threadId, `${threadId}-2`, "第二轮")).run?.status).toBe(
+      "completed",
+    );
+    const second = agentRequests(start).at(-1);
+    if (!first || !second || first === second) throw new Error("AGENT_REQUEST_MISSING");
+    return { first, second, rows: bundleRows(threadId) };
+  } finally {
+    await service.stop();
+  }
+}
+
+it("[PR-B] keeps the request head byte-identical when the configured system instruction changes between turns", async () => {
+  const { first, second, rows } = await systemInstructionChange({});
+  expect(requestHead(second)).toEqual(requestHead(first));
+  expectAppendOnly(first, second);
+  expect(requestHead(second).prefix).toContain("请用中文回答。");
+  expect(requestHead(second).prefix).not.toContain("语气更轻松");
+  expect(rows).toEqual([{ generation: 1, origin: "new_thread", superseded: 0 }]);
+}, 120_000);
+
+it("[PR-B] REVERSE: with the production switch turning the freeze off, the same change rewrites the request head", async () => {
+  const { first, second, rows } = await systemInstructionChange({ freezeThreadPrompts: false });
+  expect(requestHead(second)).not.toEqual(requestHead(first));
+  expect(requestHead(second).prefix).toContain("语气更轻松");
+  expect(rows).toEqual([]);
+}, 120_000);
+
+it("[PR-B] renews the frozen prompt once when web search is turned on and once when the model changes, and the next turn can call web_search", async () => {
+  const service = await openInstalledMain();
+  const threadId = "thread-frozen-renewal";
+  try {
+    await service.command("thread.create", "frozen-renewal-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("frozen-renewal-create-payload", "create"),
+    });
+    const start = providerRequests.length;
+    expect((await submitTurn(service, threadId, "renewal-first", "第一轮")).run?.status).toBe(
+      "completed",
+    );
+    const first = agentRequests(start).at(-1);
+    await reconfigure(service, (raw) => {
+      raw.runPolicy["publicSearch"] = {
+        hostId: "host-installed",
+        workerInstanceId: "worker-installed",
+        capabilityRef: "installed.search",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        scopeSource: "private_temp",
+      };
+    });
+    expect((await submitTurn(service, threadId, "renewal-second", "第二轮")).run?.status).toBe(
+      "completed",
+    );
+    const second = agentRequests(start).at(-1);
+    expect((await submitTurn(service, threadId, "renewal-third", "第三轮")).run?.status).toBe(
+      "completed",
+    );
+    const third = agentRequests(start).at(-1);
+    if (!first || !second || !third) throw new Error("AGENT_REQUEST_MISSING");
+    expect(toolNames(first)).not.toContain("web_search");
+    expect(toolNames(second)).toContain("web_search");
+    expect(requestHead(second)).not.toEqual(requestHead(first));
+    expect(requestHead(third)).toEqual(requestHead(second));
+    expectAppendOnly(second, third);
+    expect(bundleRows(threadId)).toEqual([
+      { generation: 1, origin: "new_thread", superseded: 1 },
+      { generation: 2, origin: "tool_set_changed", superseded: 0 },
+    ]);
+    await reconfigure(service, (raw) => {
+      const models = raw["modelDescriptors"] as Array<Record<string, unknown>>;
+      raw["modelDescriptors"] = models.map((model) =>
+        model["role"] === "primary" ? { ...model, ref: "model-primary-next" } : model,
+      );
+    });
+    expect((await submitTurn(service, threadId, "renewal-fourth", "第四轮")).run?.status).toBe(
+      "completed",
+    );
+    expect(bundleRows(threadId)).toEqual([
+      { generation: 1, origin: "new_thread", superseded: 1 },
+      { generation: 2, origin: "tool_set_changed", superseded: 1 },
+      { generation: 3, origin: "model_changed", superseded: 0 },
+    ]);
+    expect(invalidationTraces(threadId)).toEqual([
+      { runId: "run:renewal-second" },
+      { runId: "run:renewal-fourth" },
+    ]);
+  } finally {
+    await service.stop();
+  }
+}, 180_000);

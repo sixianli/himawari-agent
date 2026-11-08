@@ -30,8 +30,8 @@ defaults:
 jobs:
   policy:
     name: policy
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    runs-on: ci-vps
+    timeout-minutes: 60
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -45,14 +45,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -73,7 +65,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -81,13 +73,13 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   static:
     name: static
-    runs-on: ubuntu-24.04
+    runs-on: ci-vps
     needs:
       - policy
-    timeout-minutes: 15
+    timeout-minutes: 60
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -101,18 +93,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+      - name: 安装布局检查用的 Chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check static --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -129,7 +115,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -137,26 +123,21 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   build:
     name: build / ${{ matrix.key }}
     runs-on: ${{ matrix.runner }}
     needs:
       - policy
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
           - key: linux-x64
-            runner: ubuntu-24.04
+            runner: ci-vps
             os: linux
             arch: x64
-            node: 22.22.3
-          - key: macos-arm64
-            runner: macos-15
-            os: darwin
-            arch: arm64
             node: 22.22.3
     env:
       CI_NODE: ${{ matrix.node }}
@@ -171,14 +152,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -199,7 +172,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -207,7 +180,7 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
       - name: 按平台传递不可变 artifact ID
         run: .ci-output/tools/bin/node scripts/ci/artifact-output.mjs
         id: identity
@@ -222,20 +195,15 @@ jobs:
     needs:
       - policy
       - build
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
           - key: linux-x64
-            runner: ubuntu-24.04
+            runner: ci-vps
             os: linux
             arch: x64
-            node: 22.22.3
-          - key: macos-arm64
-            runner: macos-15
-            os: darwin
-            arch: arm64
             node: 22.22.3
     env:
       CI_NODE: ${{ matrix.node }}
@@ -250,18 +218,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+      - name: 安装集成测试用的 Chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 下载本次构建返回的归档 ID
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -284,7 +246,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-test-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -292,13 +254,13 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-test-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   node-floor:
     name: node-floor
-    runs-on: ubuntu-24.04
+    runs-on: ci-vps
     needs:
       - policy
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       CI_NODE: 22.19.0
       CI_MATRIX: default
@@ -312,18 +274,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.19.0
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+      - name: 安装集成测试用的 Chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check node-floor --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -340,7 +296,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-node-floor-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -348,31 +304,31 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-node-floor-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   browser:
     name: browser / ${{ matrix.key }}
     runs-on: ${{ matrix.runner }}
     needs:
       - build
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
           - key: chromium
-            runner: ubuntu-24.04
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
             browser: chromium
           - key: firefox
-            runner: ubuntu-24.04
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
             browser: firefox
           - key: webkit
-            runner: ubuntu-24.04
+            runner: ci-vps
             os: linux
             arch: x64
             node: 22.22.3
@@ -390,14 +346,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -409,7 +357,7 @@ jobs:
           path: .ci-output/input
           merge-multiple: true
       - name: 安装锁定 Playwright 对应引擎
-        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --with-deps "$CI_MATRIX"
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install "$CI_MATRIX"
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check browser --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --input .ci-output/input/result.json
       - name: 核验公开输出白名单
@@ -426,7 +374,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -434,14 +382,14 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   coverage:
     name: coverage
-    runs-on: ubuntu-24.04
+    runs-on: ci-vps
     needs:
       - policy
       - build
-    timeout-minutes: 15
+    timeout-minutes: 60
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -455,18 +403,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+      - name: 安装集成测试用的 Chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 下载本次 Linux 构建归档
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -489,7 +431,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-coverage-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -497,13 +439,13 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-coverage-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   security:
     name: security
-    runs-on: ubuntu-24.04
+    runs-on: ci-vps
     needs:
       - policy
-    timeout-minutes: 15
+    timeout-minutes: 60
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -517,14 +459,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -547,7 +481,7 @@ jobs:
           name: report-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
           path: .ci-output/public/reports/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
       - name: 保留失败诊断
         if: ${{ always() && steps.publish.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -555,11 +489,11 @@ jobs:
           name: diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
   required:
     name: ci/required
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ci-vps
     needs:
       - policy
       - static
@@ -569,7 +503,7 @@ jobs:
       - browser
       - coverage
       - security
-    timeout-minutes: 5
+    timeout-minutes: 15
     env:
       CI_NODE: 22.22.3
       CI_MATRIX: default
@@ -583,14 +517,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 缓存已校验工具与 npm 下载
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            .ci-output/tools/downloads
-            .ci-output/tools/wheels
-            .ci-output/npm-cache
-          key: ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_NODE }}-${{ github.job }}-${{ hashFiles('package-lock.json', 'ci/toolchain-lock.json', 'scripts/ci/install-tools.mjs', 'scripts/ci/install-dependencies.mjs') }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE" --without-scanners
       - name: 安装汇总器最小依赖
@@ -611,4 +537,4 @@ jobs:
           name: gate-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ci-output/gate/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1

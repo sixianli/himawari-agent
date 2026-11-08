@@ -1,4 +1,5 @@
 import type { RuntimeHistoryState } from "@himawari-agent/application/runtime-port";
+import { CHAT_TURN_ABORTED_LEGACY } from "@himawari-agent/prompt-catalog";
 import { nativeHistoryMessages } from "./pi-native-history.js";
 
 export interface LegacyPiRunHistory {
@@ -99,8 +100,7 @@ export function qualifyLegacyPiHistory(runs: readonly LegacyPiRunHistory[]): Run
         customType: "himawari.turn_aborted",
         display: false,
         timestamp,
-        content:
-          "<turn_aborted>The user interrupted this turn. The legacy record may omit partial output. Recorded tool results remain authoritative; cancellation does not undo side effects. Handle the new request and resume earlier work only when requested.</turn_aborted>",
+        content: CHAT_TURN_ABORTED_LEGACY.text,
       });
     }
     coveredRunIds.push(run.runId);

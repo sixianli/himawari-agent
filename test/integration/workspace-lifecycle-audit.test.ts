@@ -9,6 +9,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
+import { LATEST_MIGRATION_SEQUENCE } from "../../packages/persistence-sqlite/src/migration-engine.ts";
 import {
   AGENT_ID,
   OWNER_ID,
@@ -203,7 +204,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 74,
+      schemaSequence: LATEST_MIGRATION_SEQUENCE,
       liveHostVerified: false,
       repairEligible: false,
     });

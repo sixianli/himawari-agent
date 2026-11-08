@@ -1,0 +1,6 @@
+[Unit]
+Description=Remove old work directories and logs of the GitHub Actions runners
+
+[Service]
+Type=oneshot
+ExecStart=/srv/gh-runner/hooks/clean-old.sh

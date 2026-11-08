@@ -8,9 +8,9 @@ import { record, role, stage } from "./observe.mjs";
 const preload = fileURLToPath(import.meta.url);
 const helper = new URL("./observe.mjs", import.meta.url).href;
 const originals = {
-  "job-host-main.js": "8abf49b2d46e1a0f885b9bea9006c9fba2daec518c72b963bab9c09905421749",
-  "sandbox-sdk.js": "709171577c8abf28419a96ee1e5c5050e82a47ac69b24d2b137947dd77a346d3",
-  "sandbox-sdk-worker.js": "f7b9c4d0c83fdd22fa573a44704dd522f87c6e6cf871007720a0efa067b50be6",
+  "job-host-main.js": "8e3ad362b65c8cfcff1cfe8819fec375bbd99a4f1fa2975442eee05e5c5048df",
+  "sandbox-sdk.js": "bc9bb997c5c6bd8f0c046c4860ba07ee3ca9fb01d84bd4facfbbc9332b2e96a0",
+  "sandbox-sdk-worker.js": "42d5a4866d36130e49a378661b240cecd67804b01fe03560019701eff4a54936",
 };
 if (isMainThread && role === "caller") {
   const fork = cp.fork;

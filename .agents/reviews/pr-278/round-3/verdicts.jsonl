@@ -1,0 +1,12 @@
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "error", "id": "d1", "quote": "生产与 Hermes 共用 `127.0.0.1` 的 cookie，生产凭据会发给 Hermes", "severity": "medium-high", "trigger": "同一浏览器先登生产、再经 127.0.0.1 打开 Hermes 管理页", "consequence": "生产密码 cookie 发给 Hermes 的 Magpie", "modelSeverity": "中高"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "error", "id": "d2", "quote": "一次性 `ssh -L` 不会因 3430 被占用而“失败”", "severity": "medium-high", "trigger": "常驻隧道在跑时再执行一次性命令", "consequence": "转发没建立却留下已登录生产 root 的命令行，文档说会失败是错的", "modelSeverity": "中"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "error", "id": "d3", "quote": "密码经 `?k=` 进入浏览器历史、同步和代理", "severity": "medium-high", "trigger": "照文档用 ?k= 登录", "consequence": "带密码的地址留在浏览历史和同步数据里", "modelSeverity": "中"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "better", "id": "d4", "quote": "通过管理页改生产配置缺少备份、回退和审计步骤"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": false, "class": "better", "id": "d5", "quote": "“Hermes 测试环境的 Magpie 管理页也用 3430”与现有文档矛盾且无仓库证据"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "error", "id": "d6", "quote": "`KeepAlive` + 每 15 秒重试会无限循环", "severity": "low", "trigger": "密钥或网络长期不可用", "consequence": "每 15 秒重试；文档已写明现象和停用命令，生产 ufw 不用 limit", "modelSeverity": "中低", "reason": "文档已写出重试现象和 unload 停用办法，不会让人做错事"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "better", "id": "d7", "quote": "后台 ssh 没指定 `IdentityFile`，也没处理首次 host key"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "better", "id": "d8", "quote": "只描述了 plist 字段，没有给完整 plist"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "error", "id": "d9", "quote": "`grep` 命令实际打印“变量名=”", "severity": "low", "trigger": "运行该命令", "consequence": "输出带等号，与文字不符，不泄露值", "modelSeverity": "低"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "better", "id": "d10", "quote": "`readlink -f` 不足以证明运行中的二进制"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": false, "class": "better", "id": "d11", "quote": "正文改动不受 `contract_sha256` 保护"}
+{"model": "opencode-go/deepseek-v4.1-flash", "valid": true, "class": "error", "id": "d12", "quote": "`?k=<密码>` 未说明 URL 编码", "severity": "low", "trigger": "密码含 + & # %", "consequence": "登录被拒（401），不会给出错误结果", "modelSeverity": "低"}

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
+  chromiumInstall,
   evaluateTestHygiene,
   inspectTestSource,
   parseTestHygieneBaseline,
@@ -12,6 +13,8 @@ import {
   main as policyMain,
   resolvePolicySource,
   resolveTestHygieneBaseline,
+  upgradeHostedRunnerPolicy,
+  upgradeRunnerLabel,
   validatePolicy,
   validateTestFileSource,
   validateTestHygiene,
@@ -21,7 +24,10 @@ import {
   validateWorkflow,
 } from "../../scripts/ci/check-policy.mjs";
 import {
+  activeMembers,
+  expectedMembers,
   githubExpression,
+  linuxRunnerLabel,
   readJson,
   repositoryRoot,
   sha256,
@@ -104,7 +110,7 @@ function workflow() {
             check.members.length > 1 ? githubExpression("matrix.runner") : check.members[0].runner,
           "timeout-minutes": check.timeoutMinutes,
           ...(check.members.length > 1
-            ? { strategy: { "fail-fast": false, matrix: { include: check.members } } }
+            ? { strategy: { "fail-fast": false, matrix: { include: activeMembers(check) } } }
             : {}),
           ...(check.id === "required"
             ? { name: "ci/required", if: githubExpression("always()") }
@@ -128,6 +134,9 @@ function workflow() {
                     },
                   },
                 ]
+              : []),
+            ...(["static", "test", "node-floor", "coverage"].includes(check.id)
+              ? [{ run: chromiumInstall }]
               : []),
           ],
         },
@@ -359,6 +368,25 @@ describe("CI policy contract", () => {
         value.checks.find((check) => check.id === "test").projects.pop();
       },
     ],
+    [
+      "paused Linux member",
+      (value) => {
+        value.checks.find((check) => check.id === "test").members[0].paused = true;
+      },
+    ],
+    [
+      "every member paused",
+      (value) => {
+        for (const member of value.checks.find((check) => check.id === "build").members)
+          member.paused = true;
+      },
+    ],
+    [
+      "hosted Linux runner",
+      (value) => {
+        value.checks.find((check) => check.id === "static").members[0].runner = "ubuntu-24.04";
+      },
+    ],
   ])("rejects %s", (_name, mutate) => {
     const value = clone();
     mutate(value);
@@ -393,9 +421,9 @@ describe("CI policy contract", () => {
     [
       "matrix omission",
       (value) => {
-        value.jobs.build.strategy.matrix.include = [
-          policy.checks.find((check) => check.id === "build").members[0],
-        ];
+        value.jobs.browser.strategy.matrix.include = activeMembers(
+          policy.checks.find((check) => check.id === "browser"),
+        ).slice(1);
       },
     ],
     [
@@ -483,6 +511,16 @@ describe("CI policy contract", () => {
     mutate(value);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
   });
+  it.each(["static", "test", "node-floor", "coverage"])(
+    "rejects a %s job that runs browser tests without installing Chromium",
+    (id) => {
+      const value = workflow();
+      value.jobs[id].steps = value.jobs[id].steps.filter((step) => step.run !== chromiumInstall);
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+        `without installing Chromium: ${id}`,
+      );
+    },
+  );
   it.each([
     "missing option",
     "always measure",
@@ -628,15 +666,148 @@ describe("CI policy contract", () => {
     git("add", "ci");
     git("commit", "--quiet", "-m", "accepted");
     const proposed = clone();
-    proposed.retentionDays.reports = 1;
+    proposed.retentionDays.reports = 2;
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(proposed));
     writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify({ baseline: 0 }));
     const selected = resolvePolicySource({ root });
     expect(selected.initialization).toBe(false);
-    expect(selected.policy.retentionDays.reports).toBe(30);
+    expect(selected.policy.retentionDays.reports).toBe(1);
     expect(selected.coverage.baseline.groups["scripts/ci"].lines.pct).toBe(80);
     expect(() => resolvePolicySource({ root, base: "--help" })).toThrow();
     expect(() => resolvePolicySource({ root, base: "f".repeat(40) })).toThrow();
+  });
+  it("暂停的 macOS 成员不进矩阵，也不进闸门要等的结果", () => {
+    const withMac = workflow();
+    withMac.jobs.build.strategy.matrix.include = policy.checks.find(
+      (check) => check.id === "build",
+    ).members;
+    expect(() => validateWorkflow(policy, stringify(withMac), lock)).toThrow(
+      "Matrix members differ: build",
+    );
+    const ids = expectedMembers(policy).map((entry) => entry.id);
+    expect(ids).toHaveLength(10);
+    expect(ids.some((id) => id.includes("macos-arm64"))).toBe(false);
+  });
+  it("把已接受的托管 runner 政策升级成 ci-vps 加暂停 macOS 一次", () => {
+    const { root, git } = fixtureRepository();
+    const hosted = clone();
+    for (const check of hosted.checks) {
+      check.timeoutMinutes =
+        check.id === "required"
+          ? 5
+          : ["build", "test", "node-floor", "browser"].includes(check.id)
+            ? 30
+            : 15;
+      for (const member of check.members)
+        if (member.key === "macos-arm64") delete member.paused;
+        else member.runner = "ubuntu-24.04";
+    }
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(hosted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted hosted runners");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(hosted)));
+  });
+  it("把已接受的 30 天和 7 天保存期升级成 1 天一次，别的值照样被拒", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = clone();
+    accepted.retentionDays = { reports: 30, diagnostics: 7 };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted 30/7");
+    expect(resolvePolicySource({ root }).policy).toEqual(policy);
+    accepted.retentionDays = { reports: 14, diagnostics: 7 };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted 14/7");
+    expect(() => resolvePolicySource({ root })).toThrow("retentionDays");
+  });
+  it("只升级完整的托管 runner 写法，混合写法照样被拒", () => {
+    const mixed = clone();
+    mixed.checks.find((check) => check.id === "static").members[0].runner = "ubuntu-24.04";
+    expect(upgradeHostedRunnerPolicy(mixed)).toBe(mixed);
+    expect(upgradeHostedRunnerPolicy(policy)).toBe(policy);
+    const unpausedMac = clone();
+    for (const check of unpausedMac.checks)
+      for (const member of check.members)
+        if (member.key !== "macos-arm64") member.runner = "ubuntu-24.04";
+    expect(upgradeHostedRunnerPolicy(unpausedMac)).toBe(unpausedMac);
+    expect(() => validatePolicy(upgradeHostedRunnerPolicy(mixed))).toThrow();
+    const hostedWithTimeouts = (timeoutFor) => {
+      const value = clone();
+      for (const check of value.checks) {
+        check.timeoutMinutes = timeoutFor(check.id);
+        for (const member of check.members)
+          if (member.key === "macos-arm64") delete member.paused;
+          else member.runner = "ubuntu-24.04";
+      }
+      return value;
+    };
+    const legacyTimeout = (id) =>
+      id === "required" ? 5 : ["build", "test", "node-floor", "browser"].includes(id) ? 30 : 15;
+    const legacy = hostedWithTimeouts(legacyTimeout);
+    expect(upgradeHostedRunnerPolicy(legacy)).not.toBe(legacy);
+    expect(() => validatePolicy(upgradeHostedRunnerPolicy(legacy))).not.toThrow();
+    const wrongTimeout = hostedWithTimeouts((id) => (id === "build" ? 1 : legacyTimeout(id)));
+    expect(upgradeHostedRunnerPolicy(wrongTimeout)).toBe(wrongTimeout);
+    expect(() => validatePolicy(upgradeHostedRunnerPolicy(wrongTimeout))).toThrow();
+  });
+  const hermesPolicy = () => {
+    const value = clone();
+    for (const check of value.checks)
+      for (const member of check.members)
+        if (member.key !== "macos-arm64") member.runner = "hermes-home";
+    return value;
+  };
+  it("[HR-11] 基准上恰好是 hermes-home 的策略升级成 ci-vps，摘要仍按原始字节算", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = hermesPolicy();
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted hermes-home");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
+      jobs: 9,
+      members: 13,
+    });
+  });
+  it("[HR-11] 只升级完整的 hermes-home 写法，混写、未暂停 macOS、时限不对的照样被拒", () => {
+    expect(linuxRunnerLabel).toBe("ci-vps");
+    expect(upgradeRunnerLabel(policy)).toBe(policy);
+    const mixed = hermesPolicy();
+    mixed.checks.find((check) => check.id === "static").members[0].runner = linuxRunnerLabel;
+    expect(upgradeRunnerLabel(mixed)).toBe(mixed);
+    expect(() => validatePolicy(upgradeRunnerLabel(mixed))).toThrow();
+    const unpausedMac = hermesPolicy();
+    for (const check of unpausedMac.checks)
+      for (const member of check.members) if (member.key === "macos-arm64") delete member.paused;
+    expect(upgradeRunnerLabel(unpausedMac)).toBe(unpausedMac);
+    const wrongTimeout = hermesPolicy();
+    wrongTimeout.checks.find((check) => check.id === "build").timeoutMinutes = 1;
+    expect(upgradeRunnerLabel(wrongTimeout)).toBe(wrongTimeout);
+    expect(() => validatePolicy(upgradeRunnerLabel(wrongTimeout))).toThrow();
+    expect(() => validatePolicy(hermesPolicy())).toThrow(
+      "runner must be equal to one of the allowed values",
+    );
+  });
+  it("[HR-11] 工作流里留下一处 hermes-home 就被拒", () => {
+    const value = workflow();
+    const job = Object.values(value.jobs).find((entry) => entry["runs-on"] === linuxRunnerLabel);
+    job["runs-on"] = "hermes-home";
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
+    for (const file of [
+      ".github/workflows/ci.yml",
+      ".github/workflows/main.yml",
+      ".github/workflows/quality.yml",
+      ".github/actionlint.yaml",
+    ])
+      expect(readFileSync(path.join(repositoryRoot, file), "utf8")).not.toContain("hermes-home");
   });
   it("迁移旧采集政策时保留原始来源、阈值和其他要求", () => {
     const { root, git } = fixtureRepository();

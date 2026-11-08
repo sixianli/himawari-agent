@@ -1,7 +1,6 @@
 import {
   HostFileReadService,
   resolveHostFileReadPath,
-  scanMachineSecrets,
   type ClockPort,
   type HostDirectoryGrant,
   type HostFilePlatformPort,
@@ -9,7 +8,6 @@ import {
 } from "@himawari-agent/application";
 import { executeGovernedPiRead } from "@himawari-agent/runtime-pi";
 
-/** Handler for the qualified program capability, after normal Worker Handle admission. */
 export async function executeHostFileReadCapability(
   input: unknown,
   options: {
@@ -143,8 +141,7 @@ export async function executeHostFileReadCapability(
         );
         assertPath(file);
         const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-        if (decoded.includes("\0") || scanMachineSecrets(decoded).length > 0)
-          throw new Error("HOST_FILE_CONTENT_REJECTED");
+        if (decoded.includes("\0")) throw new Error("HOST_FILE_CONTENT_REJECTED");
         return bytes;
       },
       writeFile: forbidden,

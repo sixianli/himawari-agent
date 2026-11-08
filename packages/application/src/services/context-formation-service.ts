@@ -22,6 +22,7 @@ import {
   type ProductContextEnvelopeV1,
   type ProductContextMessageRole,
   type ProductContextRunState,
+  RUNTIME_ENVIRONMENT_BLOCK_REF,
 } from "../ports/context-projection.js";
 import type { DecisionLedgerPort } from "../ports/decision-ledger.js";
 import type { ThreadDistillationStatePort, ThreadSummaryRecord } from "../ports/conversation.js";
@@ -90,6 +91,7 @@ export interface ContextFormationRequest {
   readonly maxSelectedMemories: number;
   readonly maxMemoryClassification: DataClassification;
   readonly capabilities: readonly ContextCapabilitySummary[];
+  readonly runtimeEnvironmentRef?: PayloadRef;
   readonly correlationId: CorrelationId;
   readonly causationId: string;
   readonly parentEventId: TraceEventId | null;
@@ -359,6 +361,7 @@ export class ContextFormationService implements ContextFormationPort {
       ...profile.blocks.map(({ payloadRef }) => payloadRef),
       ...selected.map(({ contentRef }) => contentRef),
       ...request.capabilities.map(({ summaryRef }) => summaryRef),
+      ...(request.runtimeEnvironmentRef ? [request.runtimeEnvironmentRef] : []),
     ]);
     const envelope = this.createEnvelope({
       request,
@@ -635,6 +638,16 @@ export class ContextFormationService implements ContextFormationPort {
         payloadRef: summaryRef,
         dataClassification: request.dataClassification,
       })),
+      ...(request.runtimeEnvironmentRef
+        ? [
+            {
+              kind: "runtime-environment" as const,
+              ref: RUNTIME_ENVIRONMENT_BLOCK_REF,
+              payloadRef: request.runtimeEnvironmentRef,
+              dataClassification: request.dataClassification,
+            },
+          ]
+        : []),
     ];
     return Object.freeze({
       schemaVersion: "context.v1",
@@ -786,7 +799,8 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
           item["kind"] === "owner-rules" ||
           item["kind"] === "owner-profile" ||
           item["kind"] === "owner-agenda" ||
-          item["kind"] === "capability-summary") &&
+          item["kind"] === "capability-summary" ||
+          item["kind"] === "runtime-environment") &&
         isNonEmptyText(item["ref"]) &&
         isNonEmptyText(item["payloadRef"]) &&
         (item["sourceRef"] === undefined || isNonEmptyText(item["sourceRef"])) &&

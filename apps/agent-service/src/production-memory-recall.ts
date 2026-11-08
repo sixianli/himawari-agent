@@ -9,6 +9,11 @@ import type {
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import { type MemoryEpisodeService, parseTimeScope } from "@himawari-agent/memory-engine";
+import {
+  TOOL_RECALL,
+  TOOL_RESULT_RECALL_EMPTY,
+  TOOL_RESULT_RECALL_HISTORY,
+} from "@himawari-agent/prompt-catalog";
 
 export const MEMORY_RECALL_CAPABILITY_REF = "memory.recall";
 const CLASSIFICATIONS: readonly DataClassification[] = [
@@ -25,8 +30,7 @@ export function memoryRecallDescriptor(): RuntimeToolDescriptor {
     name: "recall",
     capabilityRef: MEMORY_RECALL_CAPABILITY_REF,
     capabilityHandleRef: null,
-    description:
-      "查主人的长期记忆和以前的对话摘要。主人问到以前说过的事、某天或某段时间发生过什么、以前的情况（换手机前、搬家前）时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况时 includeHistory 填 true。返回的记忆带有效期，已失效的标为历史；对话摘要按日期给出。只查主人自己的记忆，不会联网。",
+    description: TOOL_RECALL.text,
     parameters: {
       type: "object",
       properties: {
@@ -221,8 +225,8 @@ export class ProductionMemoryRecall {
       })),
       note:
         memories.length === 0 && episodes.length === 0
-          ? "没有找到相关的记忆或对话摘要。不要编造，直接告诉主人没有记录。"
-          : "current 为 false 的记忆是以前的情况，回答时说明时间。",
+          ? TOOL_RESULT_RECALL_EMPTY.text
+          : TOOL_RESULT_RECALL_HISTORY.text,
     };
   }
 }

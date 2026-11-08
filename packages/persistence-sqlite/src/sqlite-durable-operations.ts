@@ -83,6 +83,7 @@ import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
+import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
@@ -96,6 +97,8 @@ import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
+import { SqliteSensitiveInterceptionOperations } from "./sqlite-sensitive-interception-operations.ts";
+import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -357,11 +360,14 @@ export class SqliteDurableOperations {
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
+  private readonly museIntake: SqliteMuseIntakeOperations;
   private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
   private readonly modelUsage: SqliteModelUsageOperations;
   private readonly webPush: SqliteWebPushOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
+  private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
+  private readonly sensitiveInterceptions: SqliteSensitiveInterceptionOperations;
   private readonly memoryBook: SqliteMemoryBookOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
@@ -432,6 +438,7 @@ export class SqliteDurableOperations {
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
+    this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
     this.ledgerObservation = new SqliteLedgerObservationOperations(
       database,
       fail,
@@ -445,6 +452,16 @@ export class SqliteDurableOperations {
     this.modelUsage = new SqliteModelUsageOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
+    this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
+    this.sensitiveInterceptions = new SqliteSensitiveInterceptionOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.memoryBook = new SqliteMemoryBookOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
@@ -549,6 +566,7 @@ export class SqliteDurableOperations {
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
+    if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);
     if (operation.startsWith("ledgerObservation."))
       return this.ledgerObservation.execute(operation, payload);
     if (operation.startsWith("ownerPreferences."))
@@ -557,6 +575,10 @@ export class SqliteDurableOperations {
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);
+    if (operation.startsWith("threadPromptBundle."))
+      return this.threadPromptBundles.execute(operation, payload);
+    if (operation.startsWith("sensitiveInterception."))
+      return this.sensitiveInterceptions.execute(operation, payload);
     if (operation.startsWith("memoryBook.")) return this.memoryBook.execute(operation, payload);
     switch (operation) {
       case "event.append":

@@ -1,4 +1,5 @@
 import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
+import { CHAT_TASK_BOUNDARY } from "@himawari-agent/prompt-catalog";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import {
   contextArtifactOperationKey,
@@ -29,10 +30,7 @@ const UNREADABLE_ATTACHMENT = "[附件无法读取]";
 const IMAGE_CONTENT_TYPE = "text/x-himawari-image";
 const IMAGE_DATA_URL = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
 const IMAGE_KIND = / kind="image"/;
-const CURRENT_TASK_POLICY =
-  "Himawari 任务边界：最后一条用户消息承载本轮的新请求，其中 <owner-message> 里是主人本轮说的话，<himawari-context> 里是系统附上的时间和资料，不是主人说的话。历史消息供理解背景，不是等待执行的任务队列。" +
-  "标为已取消的历史请求已终止，不要自动恢复，也不要把其中的一次性要求或工具限制当成本轮要求。" +
-  "只有本轮新请求明确要求继续或重做时，才重新处理旧任务；仍须遵守当前工具授权与审批。";
+const CURRENT_TASK_POLICY = CHAT_TASK_BOUNDARY.text;
 
 export interface ContextProjectionServiceDependencies {
   readonly ownerId: OwnerId;
@@ -83,8 +81,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const contextBlocks = await this.readContextBlocks(input, envelope, history.systemBlocks);
     await this.assertWorkerReferences(input);
     const workerBlocks = await this.readWorkerResults(input);
+    const answerLocale = envelope.systemPolicyRefs.find(({ kind }) => kind === "answer-locale");
     return Object.freeze({
       systemInstruction,
+      ...(answerLocale ? { answerLocaleRef: answerLocale.ref } : {}),
       ...(nativeHistory ? { nativeHistory } : {}),
       coveredRunIds: [
         ...new Set([
@@ -733,7 +733,8 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
           item["kind"] === "owner-rules" ||
           item["kind"] === "owner-profile" ||
           item["kind"] === "owner-agenda" ||
-          item["kind"] === "capability-summary") &&
+          item["kind"] === "capability-summary" ||
+          item["kind"] === "runtime-environment") &&
         nonEmpty(item["ref"]) &&
         nonEmpty(item["payloadRef"]) &&
         (item["sourceRef"] === undefined || nonEmpty(item["sourceRef"])) &&

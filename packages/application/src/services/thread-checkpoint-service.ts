@@ -17,7 +17,7 @@ import {
   type ThreadDistillationWork,
   type ThreadSummaryRecord,
 } from "../ports/index.js";
-import { scanMachineSecrets } from "./machine-secret-exclusion.js";
+import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
 

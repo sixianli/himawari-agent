@@ -5,12 +5,19 @@ import type {
   RuntimeProjection,
   RuntimeProjectionContextBlock,
   RuntimeProjectionPort,
+  RuntimePromptBundle,
+  RuntimePromptBundlePort,
+  RuntimePromptBundleResolveInput,
   RuntimeRequest,
   RuntimeToolDescriptor,
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { afterEach, describe, expect, it } from "vitest";
-import { ConfiguredPiModelBindingPort, PiAgentRuntimeAdapter } from "../src/index.js";
+import {
+  ConfiguredPiModelBindingPort,
+  PiAgentRuntimeAdapter,
+  type PiAgentRuntimeAdapterDependencies,
+} from "../src/index.js";
 import { allowAdmission, fixtureExecutionLease } from "./helpers/admission.js";
 import { testModelEgress } from "./helpers/model-egress.js";
 import { findConversationBreak, findPrefixBreak } from "./helpers/prompt-prefix.js";
@@ -181,6 +188,23 @@ class SearchTools implements RuntimeToolPort {
   }
 }
 
+class FrozenPromptBundles implements RuntimePromptBundlePort {
+  frozen: (RuntimePromptBundle & { readonly toolNames: string }) | undefined;
+  readonly resolved: RuntimePromptBundleResolveInput[] = [];
+
+  async resolve(input: RuntimePromptBundleResolveInput): Promise<RuntimePromptBundle> {
+    this.resolved.push(input);
+    const toolNames = JSON.stringify(input.identity.toolNames);
+    if (!this.frozen || this.frozen.toolNames !== toolNames)
+      this.frozen = {
+        generation: (this.frozen?.generation ?? 0) + 1,
+        toolNames,
+        ...input.candidate,
+      };
+    return this.frozen;
+  }
+}
+
 function runRequest(runId: string): RuntimeRequest {
   return {
     ownerId: "owner-prefix",
@@ -200,10 +224,39 @@ function runRequest(runId: string): RuntimeRequest {
   } as unknown as RuntimeRequest;
 }
 
+class TaskHandleTools extends SearchTools {
+  override async listAuthorized(runId?: string): Promise<readonly RuntimeToolDescriptor[]> {
+    const [, reminder] = await super.listAuthorized();
+    const task = (action: string): RuntimeToolDescriptor => ({
+      capabilityRef: `execution.task.${action}`,
+      capabilityHandleRef: null,
+      handleBound: true,
+      name: `execution_task_${action}`,
+      description: `Task ${action}`,
+      parameters: {
+        type: "object",
+        properties: { resourceRef: { type: "string" } },
+        required: ["resourceRef"],
+        additionalProperties: false,
+      },
+    });
+    return runId === "run-prefix-2"
+      ? [reminder as RuntimeToolDescriptor]
+      : [
+          reminder as RuntimeToolDescriptor,
+          task("status"),
+          task("output"),
+          task("cancel"),
+          task("start"),
+        ];
+  }
+}
+
 async function conversation(
   turns: readonly Turn[],
   reply: (index: number, body: string) => Reply,
   configure: (projection: ConversationProjection) => void = () => undefined,
+  dependencies: Partial<PiAgentRuntimeAdapterDependencies> = {},
 ) {
   const server = await loopback(reply);
   const models = new ConfiguredPiModelBindingPort({
@@ -243,6 +296,7 @@ async function conversation(
     now: () => NOW,
     admission: async (scope) => allowAdmission(scope),
     logicalSlot: (run, ordinal) => `${run.runId}:prefix:${ordinal}`,
+    ...dependencies,
   });
   const requestsPerTurn: number[] = [];
   for (const [index, turn] of turns.entries()) {
@@ -390,6 +444,39 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(findConversationBreak(bodies)).toBeNull();
   });
 
+  it("[SI-2] records a masked card once per request with the same identity, and sends the same bytes as without recording", async () => {
+    const turns = [
+      { prompt: `我的卡号 ${CARD}，帮我记着`, blocks: [ownerProfile] },
+      { prompt: "刚才那张卡是什么类型？", blocks: [ownerProfile] },
+      { prompt: "谢谢", blocks: [ownerProfile] },
+    ];
+    const reports: { context: unknown; sightings: readonly unknown[] }[] = [];
+    const recorded = await conversation(turns, (index) => ({ text: `回答${index}` }), undefined, {
+      egress: testModelEgress(undefined, (context, sightings) =>
+        reports.push({ context, sightings }),
+      ),
+    });
+    const plain = await conversation(turns, (index) => ({ text: `回答${index}` }));
+    expect(recorded.bodies).toEqual(plain.bodies);
+    expect(reports).toHaveLength(recorded.bodies.length);
+    for (const report of reports) {
+      expect(report.context).toEqual({
+        ownerId: "owner-prefix",
+        agentId: "agent-prefix",
+        threadId: "thread-prefix",
+        source: "chat",
+        purpose: "chat",
+      });
+      expect(report.sightings).toEqual([reports[0]?.sightings[0]]);
+    }
+    expect(reports[0]?.sightings[0]).toMatchObject({
+      part: "owner_message",
+      category: "bank-card",
+      ruleId: "bank-card",
+    });
+    expect(JSON.stringify(reports)).not.toContain(CARD.replaceAll(" ", ""));
+  });
+
   it("keeps long attachment text and many memories append-only", async () => {
     const attachment = `<file name="报告.txt" ref="payload:1"/>\n${"附件正文第一行。\n".repeat(200)}`;
     const memories = Array.from({ length: 30 }, (_, index) =>
@@ -423,6 +510,66 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(broken).toMatchObject({ where: "message-changed", request: 1 });
   });
 
+  it("sends the runtime environment only on the first turn and when it changes, always in the last message", async () => {
+    const environment = (workspace: string): RuntimeProjectionContextBlock => ({
+      authority: "non-authoritative",
+      kind: "runtime-environment",
+      ref: "runtime-environment",
+      content: `运行环境说明：\n- 工作目录：${workspace}\n以上运行环境说明由 Himawari 系统生成，和系统提示里的规则一样约束本轮的工具使用。`,
+      dataClassification: "private",
+    });
+    const { bodies } = await conversation(
+      [
+        { prompt: "看看目录", blocks: [ownerProfile, environment("/home/andy/demo。")] },
+        { prompt: "再看一次", blocks: [ownerProfile, environment("/home/andy/demo。")] },
+        {
+          prompt: "现在呢",
+          blocks: [ownerProfile, environment("本轮没有。")],
+          occurredAt: "2026-11-04T16:00:00.000Z",
+        },
+      ],
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    const parsed = bodies.map(
+      (body) =>
+        JSON.parse(body) as { messages: { role: string; content: unknown }[]; tools?: unknown },
+    );
+    const last = (index: number) => JSON.stringify(parsed[index]?.messages.at(-1));
+    const head = (index: number) =>
+      JSON.stringify([
+        parsed[index]?.messages.filter(({ role }) => role === "system" || role === "developer"),
+        parsed[index]?.tools,
+      ]);
+    expect(last(0)).toContain("工作目录：/home/andy/demo。");
+    expect(last(1)).not.toContain("以上运行环境说明");
+    expect(last(1)).not.toContain("工作目录：");
+    expect(last(2)).toContain("工作目录：本轮没有。");
+    expect(last(2)).toContain("2026-11-05 01:00:00 GMT+09:00，星期四。");
+    expect(last(2).indexOf("工作目录：")).toBeGreaterThan(last(2).indexOf("主人档案"));
+    expect(last(2).indexOf("以上运行环境说明")).toBeLessThan(
+      last(2).indexOf("</himawari-context>"),
+    );
+    expect(head(0)).toBe(head(2));
+    expect(head(0)).not.toContain("/home/andy/demo");
+  });
+
+  it("REVERSE: fails when the workspace is written back into the system prompt", async () => {
+    const { bodies } = await conversation(
+      ["/home/andy/demo", "/home/andy/demo", "没有工作目录"].map((workspace, index) => ({
+        prompt: `第${index}轮`,
+        blocks: [ownerProfile],
+        systemInstruction: `你是 Himawari。工作目录是 ${workspace}。`,
+      })),
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toMatchObject({
+      where: "message-changed",
+      index: 0,
+      request: 2,
+    });
+  });
+
   it("REVERSE: fails when the system prompt carries a value that changes every turn", async () => {
     const { bodies } = await conversation(
       THREE_TURNS.map((turn, index) => ({
@@ -432,6 +579,119 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       (index) => ({ text: `回答${index}` }),
     );
     expect(findConversationBreak(bodies)).toMatchObject({ where: "message-changed", index: 0 });
+  });
+
+  it("keeps the request head byte-identical when the configured system instruction changes, because the conversation's prompt is frozen", async () => {
+    const bundles = new FrozenPromptBundles();
+    const { bodies } = await conversation(
+      ["请用中文回答。", "请用中文回答，语气更轻松。", "请用中文回答，语气更轻松。"].map(
+        (instruction, index) => ({
+          prompt: `第${index}轮`,
+          blocks: [ownerProfile],
+          systemInstruction: `你是 Himawari。${instruction}`,
+        }),
+      ),
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      { promptBundles: bundles },
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    expect(bundles.frozen?.generation).toBe(1);
+    expect(bodies[2]).toContain("你是 Himawari。请用中文回答。");
+    expect(bodies[2]).not.toContain("语气更轻松");
+    expect(bundles.resolved.map(({ identity }) => identity.toolNames)).toEqual([
+      ["reminder_set"],
+      ["reminder_set"],
+      ["reminder_set"],
+    ]);
+  });
+
+  it("REVERSE: the same change breaks the head when the conversation's prompt is not frozen", async () => {
+    const { bodies } = await conversation(
+      ["请用中文回答。", "请用中文回答，语气更轻松。", "请用中文回答，语气更轻松。"].map(
+        (instruction, index) => ({
+          prompt: `第${index}轮`,
+          blocks: [ownerProfile],
+          systemInstruction: `你是 Himawari。${instruction}`,
+        }),
+      ),
+      (index) => ({ text: `回答${index}` }),
+    );
+    expect(findConversationBreak(bodies)).toMatchObject({
+      where: "message-changed",
+      index: 0,
+      request: 1,
+    });
+  });
+
+  it("appends tools granted by a handle after the frozen tools and reports them for measurement", async () => {
+    const bundles = new FrozenPromptBundles();
+    const handles: unknown[] = [];
+    const { bodies } = await conversation(
+      THREE_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      {
+        promptBundles: bundles,
+        onHandleTools: (request, observation) => handles.push([request.runId, observation]),
+      },
+    );
+    expect(findConversationBreak(bodies)).toBeNull();
+    for (const body of bodies) {
+      const names = (JSON.parse(body).tools as { function: { name: string } }[]).map(
+        (tool) => tool.function.name,
+      );
+      expect(names).toEqual(["reminder_set", "web_search"]);
+    }
+    expect(JSON.parse(bundles.frozen?.tools ?? "[]")).toEqual([
+      expect.objectContaining({ name: "reminder_set" }),
+    ]);
+    expect(handles).toEqual([
+      ["run-prefix-1", { generation: 1, handleTools: 1 }],
+      ["run-prefix-2", { generation: 1, handleTools: 1 }],
+      ["run-prefix-3", { generation: 1, handleTools: 1 }],
+    ]);
+  });
+
+  it("keeps the frozen tools unchanged when task tools come and go with a task handle", async () => {
+    const bundles = new FrozenPromptBundles();
+    const handles: unknown[] = [];
+    const { bodies } = await conversation(
+      THREE_TURNS,
+      (index) => ({ text: `回答${index}` }),
+      () => undefined,
+      {
+        tools: new TaskHandleTools(),
+        promptBundles: bundles,
+        onHandleTools: (request, observation) => handles.push([request.runId, observation]),
+      },
+    );
+    expect(bundles.resolved.map(({ identity }) => identity.toolNames)).toEqual([
+      ["reminder_set"],
+      ["reminder_set"],
+      ["reminder_set"],
+    ]);
+    expect(bundles.frozen?.generation).toBe(1);
+    expect(JSON.parse(bundles.frozen?.tools ?? "[]")).toEqual([
+      expect.objectContaining({ name: "reminder_set" }),
+    ]);
+    const names = bodies.map((body) =>
+      (JSON.parse(body).tools as { function: { name: string } }[]).map(
+        (tool) => tool.function.name,
+      ),
+    );
+    expect(names[1]).toEqual(["reminder_set"]);
+    expect(names[2]).toEqual([
+      "reminder_set",
+      "execution_task_status",
+      "execution_task_output",
+      "execution_task_cancel",
+      "execution_task_start",
+    ]);
+    expect(handles).toEqual([
+      ["run-prefix-1", { generation: 1, handleTools: 4 }],
+      ["run-prefix-3", { generation: 1, handleTools: 4 }],
+    ]);
   });
 
   it("REVERSE: the checker reports a deleted, reordered or shortened history", () => {
