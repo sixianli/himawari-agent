@@ -3,6 +3,7 @@ import type {
   ThreadRepositoryPort,
   ThreadUpdateInput,
 } from "@himawari-agent/application";
+import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet, createV02Fixture } from "@himawari-agent/testing";
 import { expect, it, vi } from "vitest";
@@ -224,39 +225,54 @@ it("signals admission separately from the pending model response", async () => {
   expect(f.thread().titleSource).toBe("automatic");
 });
 
-it("[mask-not-block] restores a placeholder the model copied into the title and never refuses a title for holding a secret", async () => {
-  const f = await fixture();
-  const message = "我的密码: hunter2abc 帮我记一下";
-  const payload = await f.adapters.payloadProtector.protect({
-    ownerId: f.request.ownerId,
-    agentId: f.request.agentId,
-    ref: "first-message-secret",
-    dataClassification: "private",
-    contentType: "text/plain",
-    plaintext: new TextEncoder().encode(message),
-    createdAt: f.adapters.clock.now(),
-  });
-  await f.adapters.payload.put(payload);
-  const options = (
-    f.service as unknown as {
-      options: { threads: { listMessages: unknown } };
-    }
-  ).options;
-  options.threads.listMessages = vi.fn(async () => [
-    { role: "owner", status: "committed", contentRef: payload.ref, dataClassification: "private" },
-  ]);
-  f.generate.mockImplementation(async (_request, prompt) => {
-    const masked = redactForEgress(prompt, { known: new Map(), tag: testTag }).text;
-    expect(masked).not.toContain("hunter2abc");
-    const placeholder = masked.match(/\[密码#[^\]]+\]/u)?.[0];
-    if (placeholder === undefined) throw new Error("Expected a masked password");
-    return `${placeholder} 备忘`;
-  });
-  f.service.start(f.request);
-  await f.service.stop();
-  expect(f.onFailure).not.toHaveBeenCalled();
-  expect(await storedTitle(f)).toContain("hunter2abc");
-});
+it.each([
+  ["inside the message", "我的密码: hunter2abc 帮我记一下", "hunter2abc"],
+  ["at the end of the message", "帮我记一下，我的密码是 hunter2abc", "hunter2abc"],
+  ["with quote and backslash at the end", '帮我记一下，我的密码是 ab"c\\d', 'ab"c\\d'],
+])(
+  "[mask-not-block] restores a placeholder the model copied into the title (secret %s)",
+  async (_name, message, secret) => {
+    const f = await fixture();
+    const payload = await f.adapters.payloadProtector.protect({
+      ownerId: f.request.ownerId,
+      agentId: f.request.agentId,
+      ref: "first-message-secret",
+      dataClassification: "private",
+      contentType: "text/plain",
+      plaintext: new TextEncoder().encode(message),
+      createdAt: f.adapters.clock.now(),
+    });
+    await f.adapters.payload.put(payload);
+    const options = (
+      f.service as unknown as {
+        options: { threads: { listMessages: unknown } };
+      }
+    ).options;
+    options.threads.listMessages = vi.fn(async () => [
+      {
+        role: "owner",
+        status: "committed",
+        contentRef: payload.ref,
+        dataClassification: "private",
+      },
+    ]);
+    f.generate.mockImplementation(async (_request, prompt) => {
+      const masked = redactForEgress(prompt, {
+        known: new Map(),
+        tag: testTag,
+        trusted: TRUSTED_PROMPT_TEXTS,
+      }).text;
+      expect(masked).not.toContain("hunter2abc");
+      const placeholder = masked.match(/\[密码#[^\]]+\]/u)?.[0];
+      if (placeholder === undefined) throw new Error("Expected a masked password");
+      return `${placeholder} 备忘`;
+    });
+    f.service.start(f.request);
+    await f.service.stop();
+    expect(f.onFailure).not.toHaveBeenCalled();
+    expect(await storedTitle(f)).toBe(`${secret} 备忘`);
+  },
+);
 
 it("[mask-not-block] stores a model title that carries a secret as written", async () => {
   const f = await fixture();

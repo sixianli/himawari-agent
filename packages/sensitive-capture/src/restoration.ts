@@ -11,12 +11,24 @@ export interface PlaceholderTableOptions {
   readonly jsonEmbedded?: boolean;
 }
 
+function jsonStringContent(value: string): string {
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (escaped) escaped = false;
+    else if (character === "\\") escaped = true;
+    else if (character === '"') return value.slice(0, index);
+  }
+  return value;
+}
+
 function decodedJsonString(value: string): string {
+  const content = jsonStringContent(value);
   try {
-    const decoded: unknown = JSON.parse(`"${value}"`);
-    return typeof decoded === "string" ? decoded : value;
+    const decoded: unknown = JSON.parse(`"${content}"`);
+    return typeof decoded === "string" ? decoded : content;
   } catch {
-    return value;
+    return content;
   }
 }
 

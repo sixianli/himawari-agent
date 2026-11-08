@@ -60,4 +60,26 @@ describe("placeholderTable and restorePlaceholders", () => {
     const table = placeholderTable(prompt, tag, { trusted: [wording] });
     expect([...table.values()]).toEqual(["482910"]);
   });
+
+  it.each([
+    ["plain password", "hunter2abc"],
+    ["password with quote, backslash and newline", 'a"b\\c\nd'],
+  ])(
+    "[mask-not-block] restores a %s the message ends with, without the JSON closing characters",
+    (_name, password) => {
+      const prompt = `说明\n${JSON.stringify({ ownerMessage: `记住我的密码是 ${password}` })}`;
+      const placeholder = redactForEgress(prompt, { tag }).text.match(/\[密码#[^\]]+\]/u)?.[0];
+      if (placeholder === undefined) throw new Error("Expected a masked password");
+      const table = placeholderTable(prompt, tag, { jsonEmbedded: true });
+      expect(restorePlaceholders(placeholder, table)).toBe(password);
+    },
+  );
+
+  it("[mask-not-block] restores a value followed by another JSON field without the quote", () => {
+    const prompt = `说明\n${JSON.stringify({ ownerMessage: "记住我的密码是 hunter2abc", other: "x" })}`;
+    const placeholder = redactForEgress(prompt, { tag }).text.match(/\[密码#[^\]]+\]/u)?.[0];
+    if (placeholder === undefined) throw new Error("Expected a masked password");
+    const table = placeholderTable(prompt, tag, { jsonEmbedded: true });
+    expect(restorePlaceholders(placeholder, table)).toBe("hunter2abc");
+  });
 });

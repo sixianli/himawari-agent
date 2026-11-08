@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -23,6 +24,7 @@ import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
@@ -43,10 +45,24 @@ const AGENT_ID = createAgentId("agent-memory-capture");
 const THREAD_ID = createThreadId("thread-memory-capture");
 const T0 = "2026-10-25T12:00:00.000Z";
 const captureTag = (kind: string, value: string) =>
-  `${kind}${value}`
-    .replace(/[^a-z]/gu, "")
-    .padEnd(8, "x")
-    .slice(0, 8);
+  [...createHash("sha256").update(`${kind}\0${value}`).digest("hex").slice(0, 8)]
+    .map((digit) => String.fromCharCode(97 + Number.parseInt(digit, 16)))
+    .join("");
+
+function placeholderOf(message: string): string {
+  const prompt = memoryCapturePrompt(message, [], null, T0, "Asia/Shanghai", {
+    subCategories: {},
+    people: [],
+  });
+  const masked = redactForEgress(prompt, {
+    known: new Map(),
+    tag: captureTag,
+    trusted: TRUSTED_PROMPT_TEXTS,
+  }).text;
+  const placeholder = masked.match(/\[密码#[^\]]+\]/u)?.[0];
+  if (placeholder === undefined) throw new Error("Expected a masked password");
+  return placeholder;
+}
 const FAKE_OPENAI_KEY = `sk-${"proj"}-abcdefghijklmnopqrstuvwxyz0123456789`;
 
 class RecordingProvider implements MemoryProviderProjectionPort {
@@ -622,9 +638,7 @@ describe("production memory capture", () => {
 
   it("[mask-not-block] restores a placeholder the model copied into the candidate text and quote", async () => {
     const message = "记住我的密码: hunter2abc 这件事。";
-    const masked = redactForEgress(message, { known: new Map(), tag: captureTag }).text;
-    const placeholder = masked.match(/\[密码#[^\]]+\]/u)?.[0];
-    if (placeholder === undefined) throw new Error("Expected a masked password");
+    const placeholder = placeholderOf(message);
     const context = await setup(
       message,
       JSON.stringify({
@@ -649,36 +663,43 @@ describe("production memory capture", () => {
     expect(memory?.text).not.toContain("#");
   });
 
-  it("[mask-not-block] stores a secret with quote and backslash characters byte for byte", async () => {
-    const message = '记住我的密码: ab"c\\d 这件事。';
-    const masked = redactForEgress(JSON.stringify(message).slice(1, -1), {
-      known: new Map(),
-      tag: captureTag,
-    }).text;
-    const placeholder = masked.match(/\[密码#[^\]]+\]/u)?.[0];
-    if (placeholder === undefined) throw new Error("Expected a masked password");
-    const context = await setup(
-      message,
-      JSON.stringify({
-        memories: [
-          {
-            kind: "durable_fact",
-            decision: "create",
-            text: `主人的密码是 ${placeholder}`,
-            classification: "private",
-            confidence: 990,
-            explicit: true,
-            quote: `我的密码: ${placeholder} 这件事`,
-          },
-        ],
-      }),
-    );
-    await context.capture.start(context.request);
-    await context.capture.stop();
-    expect(context.failures).toEqual([]);
-    const [memory] = (await overview(context.control)).memories;
-    expect(memory?.text).toBe('主人的密码是 ab"c\\d');
-  });
+  it.each([
+    ["inside the message", '记住我的密码: ab"c\\d 这件事。', "我的密码: ", " 这件事", 'ab"c\\d'],
+    ["at the end of the message", '记住我的密码是 ab"c\\d', "我的密码是 ", "", 'ab"c\\d'],
+    [
+      "plain at the end of the message",
+      "记住我的密码是 hunter2abc",
+      "我的密码是 ",
+      "",
+      "hunter2abc",
+    ],
+  ])(
+    "[mask-not-block] stores a secret %s byte for byte",
+    async (_name, message, before, after, secret) => {
+      const placeholder = placeholderOf(message);
+      const context = await setup(
+        message,
+        JSON.stringify({
+          memories: [
+            {
+              kind: "durable_fact",
+              decision: "create",
+              text: `主人的密码是 ${placeholder}`,
+              classification: "private",
+              confidence: 990,
+              explicit: true,
+              quote: `${before}${placeholder}${after}`,
+            },
+          ],
+        }),
+      );
+      await context.capture.start(context.request);
+      await context.capture.stop();
+      expect(context.failures).toEqual([]);
+      const [memory] = (await overview(context.control)).memories;
+      expect(memory?.text).toBe(`主人的密码是 ${secret}`);
+    },
+  );
 
   it("[mask-not-block] keeps a placeholder it cannot restore as written, without inventing a value", async () => {
     const context = await setup(
