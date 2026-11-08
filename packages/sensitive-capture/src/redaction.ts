@@ -75,17 +75,23 @@ const PASSWORD_ASSIGNMENT = new RegExp(
   "giu",
 );
 
+const PASSWORD_LOOSE_VALUE = "[^\\s,;\\[\\]\\u0080-\\u{10FFFF}]";
+const PASSWORD_LOOSE_KEYWORDS = `(?<![A-Za-z0-9_])(?:${PASSWORD_KEYWORDS})`;
+
 const PASSWORD_WORDED_ASSIGNMENT = new RegExp(
-  `((?:${PASSWORD_KEYWORDS})(?:\\s*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|\\s+(?:is|are|was)\\b)\\s*)(?!\\[)(?=${PASSWORD_VALUE}*\\d)(${PASSWORD_VALUE}+)`,
+  `(${PASSWORD_LOOSE_KEYWORDS}(?:[ \\t]*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|[ \\t]+(?:is|are|was)\\b)[ \\t]*)(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{4,})`,
   "giu",
 );
 
 const PASSWORD_BARE_VALUE = new RegExp(
-  `((?:${PASSWORD_KEYWORDS})\\s+)(?!\\[)(?=${PASSWORD_VALUE}*\\d)(${PASSWORD_VALUE}{6,})`,
+  `(${PASSWORD_LOOSE_KEYWORDS}[ \\t]+)(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{6,})`,
   "giu",
 );
 
-const NOT_A_PASSWORD_VALUE = /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|v?\d+(?:\.\d+)+)$/iu;
+const PASSWORD_TRAILING_PUNCTUATION = /[.:)'"]+$/u;
+
+const NOT_A_PASSWORD_VALUE =
+  /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T.\d:+\-Z]*)|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|v?\d+(?:\.\d+)+|https?:\/\/\S*|\/\S*)$/iu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
@@ -333,13 +339,12 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
       : maskPassword(lead, value),
   );
   for (const looser of [PASSWORD_WORDED_ASSIGNMENT, PASSWORD_BARE_VALUE])
-    text = text.replace(looser, (match, lead: string, value: string) =>
-      value === MACHINE_SECRET_PLACEHOLDER ||
-      value.startsWith("[") ||
-      NOT_A_PASSWORD_VALUE.test(value)
-        ? match
-        : maskPassword(lead, value),
-    );
+    text = text.replace(looser, (match, lead: string, raw: string) => {
+      const value = raw.replace(PASSWORD_TRAILING_PUNCTUATION, "");
+      if (value.length === 0 || !/\d/u.test(value) || NOT_A_PASSWORD_VALUE.test(value))
+        return match;
+      return `${maskPassword(lead, value)}${raw.slice(value.length)}`;
+    });
 
   text = text.replace(CN_ID_NUMBER, (match) => {
     if (!cnIdChecksumValid(match)) return match;

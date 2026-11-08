@@ -42,6 +42,13 @@ const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["密码改成", "密码改成 Zx9qq88", "密码改成 [密码]"],
   ["日文没有分隔符", "パスワード abc12345", "パスワード [密码]"],
   ["韩文密码是", "비밀번호는 abc12345", "비밀번호는 [密码]"],
+  ["中文后面跟着密码", "我的密码 abc12345", "我的密码 [密码]"],
+  ["句号收尾的值", "password is abc12345.", "password is [密码]."],
+  ["are", "the password are abc12345", "the password are [密码]"],
+  ["was", "my password was abc12345", "my password was [密码]"],
+  ["改为", "密码改为 Zx9qq88", "密码改为 [密码]"],
+  ["韩文은", "비밀번호은 abc12345", "비밀번호은 [密码]"],
+  ["4 个字符的带词值", "password is a123", "password is [密码]"],
   [
     "OpenAI key",
     `key ${["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-")}`,
@@ -82,6 +89,17 @@ const negatives: readonly string[] = [
   "密码 2026-11-08 更新",
   "password v2.0.1 发布",
   "密码 abc 很短",
+  "密码 a1b2c 太短",
+  "password is a1",
+  "密码 我已经用了3年",
+  "密码设为8位以上",
+  "1Password hunter22abc",
+  "notpassword abc12345",
+  "pwd\n/home/user1/project",
+  "密码 https://example.com/reset?token=123456",
+  "password is 2026-11-08T10:30",
+  "密码 11/08/2026",
+  "password was updated on 2026/11/08",
 ];
 
 describe("outbound redaction", () => {
@@ -290,6 +308,21 @@ describe("locating masked values in the masked text", () => {
     const github = ["ghp", "abcdefghijklmnopqrstuvwxyz0123"].join("_");
     const located = locateMaskedValues(`${github} 和 ${github}`);
     expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual([github, github]);
+  });
+
+  it("locates the looser password forms and keeps what followed the value", () => {
+    const input = "Wi-Fi 密码 abc12345，still password is Zx9qq88.";
+    const located = locateMaskedValues(input);
+    expect(located?.text).toBe("Wi-Fi 密码 [密码]，still password is [密码].");
+    expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual(["abc12345", "Zx9qq88"]);
+  });
+
+  it("masks a looser password form the same way whatever came before it", () => {
+    const lines = ["我们聊聊家里的网络", "Wi-Fi 密码 abc12345", "好的，谢谢"];
+    const alone = redactForEgress(lines[1] ?? "").text;
+    const afterOthers = lines.map((line) => redactForEgress(line).text);
+    expect(afterOthers[1]).toBe(alone);
+    expect(afterOthers.slice(0, 1)).toEqual([lines[0]]);
   });
 
   it("gives up instead of guessing when the text already holds a placeholder", () => {
