@@ -2,6 +2,7 @@ import {
   MEMORY_CATEGORY_NAMES,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
+import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { DEFAULT_UI_LOCALE, useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
@@ -2055,7 +2056,10 @@ function AddForm({
   const [picked, setPicked] = useState<MemoryCategory | null>(null);
   const [pinned, setPinned] = useState(false);
   const category = picked ?? guessCategory(text).category;
-  const sensitive = category === "health" || category === "finance";
+  const sensitive =
+    category === "health" ||
+    category === "finance" ||
+    classificationWithIdentifiers(text, "private") === "sensitive";
   const pinnable = PINNABLE.has(category) && !sensitive;
   const save = () =>
     void memory.create(text.trim(), category, sensitive, pinned && pinnable).then((ok) => {

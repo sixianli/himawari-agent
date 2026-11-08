@@ -652,6 +652,19 @@ describe("production memory capture", () => {
     ]);
   });
 
+  it("[mask-not-block] marks a memory sensitive when only its quote holds the card number", async () => {
+    const context = await setup(
+      "记住我绑定了工资的银行卡号 6222020200112233445。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人有一张绑定工资的银行卡","classification":"private","confidence":990,"explicit":true,"quote":"银行卡号 6222020200112233445"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const [memory] = (await overview(context.control)).memories;
+    expect(memory?.text).toBe("主人有一张绑定工资的银行卡");
+    expect(memory?.dataClassification).toBe("sensitive");
+  });
+
   it("[mask-not-block] still stores an ordinary long number the model calls private without asking", async () => {
     const context = await setup(
       "我的订单号是 12345，记得帮我查。",

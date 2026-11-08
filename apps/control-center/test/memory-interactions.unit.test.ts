@@ -1000,13 +1000,26 @@ describe("memory approval and management", () => {
     await render();
     const memoryAdd = "#settings .memory-card[data-kind=add]";
     await click("#settings .memory-search-row", "添加");
-    await type(`${memoryAdd} textarea`, "我的卡号是 6222020200112233445");
-    await act(async () =>
-      document.querySelector<HTMLInputElement>(`${memoryAdd} [role=switch]`)?.click(),
+    await type(`${memoryAdd} textarea`, "今年的目标是还清卡 6222020200112233445");
+    await act(async () => {
+      const select = document.querySelector<HTMLSelectElement>(`${memoryAdd} select`);
+      if (!select) return;
+      select.value = "goal";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(document.querySelector<HTMLInputElement>(`${memoryAdd} [role=switch]`)?.disabled).toBe(
+      true,
     );
     await click(memoryAdd, "保存");
-    expect(protectText).toHaveBeenLastCalledWith("我的卡号是 6222020200112233445", "sensitive");
-    expect(lastCommand()).toMatchObject({ type: "memory.create", payload: { pinned: false } });
+    expect(protectText).toHaveBeenLastCalledWith(
+      "今年的目标是还清卡 6222020200112233445",
+      "sensitive",
+    );
+    expect(lastCommand()).toMatchObject({
+      type: "memory.create",
+      payload: { category: "goal", pinned: false },
+    });
+    expect(text("#settings .memory-notice")).not.toContain("以后每次对话都会带上");
     const reminderAdd = "#reminders-page .memory-card[data-kind=add]";
     await click("#reminders-page", "新建提醒");
     await type(`${reminderAdd} textarea`, "还信用卡 6222020200112233445");

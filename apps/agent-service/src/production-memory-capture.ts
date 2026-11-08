@@ -325,17 +325,20 @@ export function parseMemoryCandidates(input: {
       requestedDecision === "supersede" || existing === null
         ? "create"
         : (requestedDecision as ExtractedMemoryCandidate["decision"]);
+    const quote = typeof value["quote"] === "string" ? restore(value["quote"]) : "";
     const requested = classificationWithIdentifiers(
-      text,
-      value["classification"] === "sensitive" || value["classification"] === "restricted"
-        ? value["classification"]
-        : "private",
+      quote,
+      classificationWithIdentifiers(
+        text,
+        value["classification"] === "sensitive" || value["classification"] === "restricted"
+          ? value["classification"]
+          : "private",
+      ),
     );
     const dataClassification =
       CLASSIFICATION_RANK[requested] >= CLASSIFICATION_RANK[input.sourceClassification]
         ? requested
         : input.sourceClassification;
-    const quote = typeof value["quote"] === "string" ? restore(value["quote"]) : "";
     const evidenceVerified =
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
     const confirmsTentative =
