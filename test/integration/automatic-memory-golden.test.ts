@@ -459,6 +459,9 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       expect(audit.records.map(({ outcome }) => outcome)).not.toContain("source_secret_excluded");
       expect(resultByCase.get("transient-chatter")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.committedMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence")?.tentativeMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence-quoted")?.committedMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence-quoted")?.tentativeMemoryIds).toHaveLength(1);
 
       const ledger = await repository.decisionLedger().list({
         ownerId: OWNER_ID,
@@ -473,7 +476,12 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         audit.records.filter((record) => outcomes.includes(record.outcome)).length;
       const replayedCommits = 1;
       expect(ledgerCount("kept")).toBe(
-        auditCount("auto_committed", "explicitly_approved", "approval_committed") - replayedCommits,
+        auditCount(
+          "auto_committed",
+          "explicitly_approved",
+          "approval_committed",
+          "tentative_kept",
+        ) - replayedCommits,
       );
       expect(ledgerCount("discarded")).toBe(
         auditCount(

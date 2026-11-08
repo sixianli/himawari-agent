@@ -45,6 +45,16 @@ const createCheckpointJobId = (value: string) => value as ThreadDistillationWork
 export const MEMORY_CAPTURE_POLICY_VERSION = "memory-capture:v5";
 const MAXIMUM_SOURCE_CHARACTERS = 6000;
 const MAXIMUM_RECENT_MEMORIES = 20;
+
+export function confirmedFirstByRecency<
+  T extends { readonly updatedAt: string; readonly attributes?: { readonly tentative?: boolean } },
+>(records: readonly T[]): T[] {
+  return [...records].sort(
+    (left, right) =>
+      Number(left.attributes?.tentative === true) - Number(right.attributes?.tentative === true) ||
+      right.updatedAt.localeCompare(left.updatedAt),
+  );
+}
 const MAXIMUM_RELEVANT_MEMORIES = 10;
 const MAXIMUM_CONTEXT_CHARACTERS = 1500;
 const MAXIMUM_CANDIDATES = 8;
@@ -84,6 +94,7 @@ export interface ExistingMemoryText {
   readonly id: MemoryId;
   readonly text: string;
   readonly stance?: string | null;
+  readonly tentative?: boolean;
 }
 
 export interface MemoryCaptureContext {
@@ -120,6 +131,37 @@ export function quoteFromOwnerMessage(quote: string, ownerMessage: string): bool
     [...normalizedQuote].length >= Math.max(1, minimum) &&
     normalizedMessage.includes(normalizedQuote)
   );
+}
+
+const GENERIC_TERMS =
+  /主人|用户|喜欢|偏好|喜爱|好像|可能|经常|一直|比较|觉得|今天|现在|明天|昨天|一下|这个|那个|什么|没有|可以|知道|时候|因为|所以|但是|还是|这样|那样|以后|之前|已经|一定|顺便|帮我|[的了是我你他她它在有和与就也都还很不最想要又]/gu;
+
+function relevanceTokens(text: string): Set<string> {
+  const tokens = new Set<string>();
+  const runs = text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(GENERIC_TERMS, " ")
+    .split(/[^\p{L}\p{N}]+/u);
+  for (const run of runs) {
+    if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(run)) {
+      const chars = [...run];
+      for (let index = 0; index + 1 < chars.length; index += 1) {
+        tokens.add(`${chars[index]}${chars[index + 1]}`);
+      }
+    } else if ([...run].length >= 2) {
+      tokens.add(run);
+    }
+  }
+  return tokens;
+}
+
+export function quoteRelatesToMemory(quote: string, memoryTexts: readonly string[]): boolean {
+  const quoted = relevanceTokens(quote);
+  return memoryTexts.some((text) => {
+    for (const token of relevanceTokens(text)) if (quoted.has(token)) return true;
+    return false;
+  });
 }
 
 export function memoryCapturePrompt(
@@ -207,6 +249,7 @@ export function parseMemoryCandidates(input: {
   readonly sourceRef: string;
   readonly sourceClassification: DataClassification;
   readonly existingIds: ReadonlySet<string>;
+  readonly tentativeTexts?: ReadonlyMap<string, string>;
   readonly ownerMessage?: string;
   readonly sentAt?: string;
   readonly timeZone?: string;
@@ -292,11 +335,18 @@ export function parseMemoryCandidates(input: {
     const quote = typeof value["quote"] === "string" ? restore(value["quote"]) : "";
     const evidenceVerified =
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
+    const confirmsTentative =
+      existing !== null &&
+      input.tentativeTexts?.has(existing) === true &&
+      (decision === "unchanged" || decision === "update" || decision === "merge");
     const evidenceRejected =
-      input.ownerMessage !== undefined &&
-      decision !== "unchanged" &&
-      dataClassification !== "restricted" &&
-      !evidenceVerified;
+      (input.ownerMessage !== undefined &&
+        decision !== "unchanged" &&
+        dataClassification !== "restricted" &&
+        !evidenceVerified) ||
+      (confirmsTentative &&
+        (!evidenceVerified ||
+          !quoteRelatesToMemory(quote, [input.tentativeTexts?.get(existing) ?? ""])));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -689,9 +739,9 @@ export class ProductionMemoryCapture {
       relevantIds.length === 0
         ? []
         : await this.options.state.readMany({ ownerId, agentId, memoryIds: relevantIds });
-    const recent = [...(await this.options.state.listActive(ownerId, agentId))]
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .slice(0, MAXIMUM_RECENT_MEMORIES);
+    const recent = confirmedFirstByRecency(
+      await this.options.state.listActive(ownerId, agentId),
+    ).slice(0, MAXIMUM_RECENT_MEMORIES);
     const seen = new Set<string>();
     const existing: ExistingMemoryText[] = [];
     for (const memory of [...relevant, ...recent]) {
@@ -704,7 +754,13 @@ export class ProductionMemoryCapture {
         continue;
       seen.add(memory.id);
       const text = await this.#readText(memory.contentRef, ownerId, agentId).catch(() => undefined);
-      if (text) existing.push({ id: memory.id, text, stance: memory.attributes?.stance ?? null });
+      if (text)
+        existing.push({
+          id: memory.id,
+          text,
+          stance: memory.attributes?.stance ?? null,
+          tentative: memory.attributes?.tentative === true,
+        });
     }
     const subCategories: Record<string, string[]> = {};
     for (const { category, subCategory } of (await this.options.book?.listSubCategories({
@@ -774,6 +830,9 @@ export class ProductionMemoryCapture {
         sourceRef: source.payloadRef,
         sourceClassification: source.dataClassification,
         existingIds: new Set(existing.map(({ id }) => id)),
+        tentativeTexts: new Map(
+          existing.filter(({ tentative }) => tentative).map(({ id, text }) => [id, text]),
+        ),
         ownerMessage: message,
         ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
         timeZone: this.options.timeZone ?? "UTC",

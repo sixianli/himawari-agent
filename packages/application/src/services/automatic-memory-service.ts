@@ -58,6 +58,7 @@ export interface CommittedRunMemoryInput {
 export interface AutomaticMemoryResult {
   readonly status: "completed" | "source_secret_excluded" | "extraction_failed";
   readonly committedMemoryIds: readonly MemoryId[];
+  readonly tentativeMemoryIds: readonly MemoryId[];
   readonly approvalRequestIds: readonly string[];
   readonly excludedCandidateOrdinals: readonly number[];
 }
@@ -66,7 +67,22 @@ export type SensitiveMemoryResolution =
   | { readonly requestId: string; readonly resolution: "approved" | "rejected" | "expired" }
   | { readonly requestId: string; readonly resolution: "edited"; readonly editedText: string };
 
-type KeptReason = "auto_committed" | "explicitly_approved" | "approval_committed";
+type KeptReason =
+  | "auto_committed"
+  | "explicitly_approved"
+  | "approval_committed"
+  | "kept_tentative";
+
+function canBeKeptTentatively(candidate: ExtractedMemoryCandidate): boolean {
+  return (
+    candidate.decision === "create" &&
+    candidate.quote !== undefined &&
+    candidate.quote.length > 0 &&
+    candidate.reminder === undefined &&
+    (candidate.people?.length ?? 0) === 0 &&
+    (candidate.personLinks?.length ?? 0) === 0
+  );
+}
 
 function ledgerId(key: string): string {
   return `ledger:${bytesToHex(sha256(utf8ToBytes(key))).slice(0, 40)}`;
@@ -103,12 +119,14 @@ export class AutomaticMemoryService {
       return {
         status: "extraction_failed",
         committedMemoryIds: [],
+        tentativeMemoryIds: [],
         approvalRequestIds: [],
         excludedCandidateOrdinals: [],
       };
     }
 
     const committedMemoryIds: MemoryId[] = [];
+    const tentativeMemoryIds: MemoryId[] = [];
     const approvalRequestIds: string[] = [];
     const excludedCandidateOrdinals: number[] = [];
     for (const [candidateOrdinal, candidate] of candidates.entries()) {
@@ -147,6 +165,24 @@ export class AutomaticMemoryService {
         !explicitlyApproved &&
         candidate.confidencePermille < (this.options.automaticConfidencePermille ?? 850)
       ) {
+        if (canBeKeptTentatively(candidate)) {
+          const { supersedes: _dropped, ...rest } = candidate;
+          const tentativeCandidate: ExtractedMemoryCandidate = {
+            ...rest,
+            attributes: { ...(candidate.attributes ?? DEFAULT_MEMORY_ATTRIBUTES), tentative: true },
+          };
+          tentativeMemoryIds.push(
+            await this.commitCandidate(
+              input,
+              tentativeCandidate,
+              candidateOrdinal,
+              undefined,
+              "kept_tentative",
+            ),
+          );
+          await this.audit(input, candidateOrdinal, "tentative_kept", []);
+          continue;
+        }
         await this.audit(input, candidateOrdinal, "confidence_below_threshold", []);
         await this.discard(input, candidate, candidateOrdinal, "confidence_below_threshold", true);
         continue;
@@ -179,6 +215,7 @@ export class AutomaticMemoryService {
     return {
       status: "completed",
       committedMemoryIds,
+      tentativeMemoryIds,
       approvalRequestIds,
       excludedCandidateOrdinals,
     };
@@ -463,12 +500,13 @@ export class AutomaticMemoryService {
     const memoryId = (
       await this.options.product.applyProposal(proposal, input.generationId, ledger)
     ).id;
-    await this.options.onCommitted?.({
-      candidate,
-      memoryId,
-      ownerId: input.ownerId,
-      agentId: input.agentId,
-    });
+    if (keptReason !== "kept_tentative")
+      await this.options.onCommitted?.({
+        candidate,
+        memoryId,
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+      });
     return memoryId;
   }
 
