@@ -1962,6 +1962,7 @@ export async function runAgentService(
           ? {
               resources: sandboxServices.resources,
               recoverMissingToolResult: sandboxServices.recoverMissingToolResult,
+              sandboxResultUnrecoverable: sandboxServices.sandboxResultUnrecoverable,
               prepareQueuedSandboxExecutions: sandboxServices.rebindQueuedRun,
               ...toolCallPrewarm(configuration.runPolicy?.coding, (route) =>
                 toolCallSandboxPrewarm({

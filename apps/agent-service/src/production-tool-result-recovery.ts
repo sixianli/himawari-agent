@@ -1,10 +1,12 @@
 import type {
   AgentId,
   ClockPort,
+  IdGeneratorPort,
   OwnerId,
   PayloadProtectorPort,
   RunCheckpointStore,
   RunDispatchCandidate,
+  RunId,
   RunPayloadArtifactPort,
   RunToolResultRecoveryClaim,
   RuntimeRequest,
@@ -12,7 +14,11 @@ import type {
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import { isSandboxReservationNeverStarted } from "@himawari-agent/application/sandbox-execution-projection";
-import { executionV2MessageSchema } from "@himawari-agent/execution-contracts";
+import {
+  executionV2MessageSchema,
+  SANDBOX_TOOL_RESULT_UNRECOVERABLE,
+  sandboxUnrecoverableResultOperationKey,
+} from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { inspectPiToolBatch } from "@himawari-agent/runtime-pi";
 
@@ -36,12 +42,28 @@ export function createProductionToolResultRecovery(options: {
   readonly checkpoints: RunCheckpointStore;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
+  readonly ids: IdGeneratorPort;
   readonly recoverMissingResult?: (
     record: SandboxExecutionRecord,
   ) => Promise<SandboxExecutionRecord>;
+  readonly resultUnrecoverable?: (record: SandboxExecutionRecord) => Promise<boolean>;
 }) {
   const { ownerId, agentId, repository, artifacts, checkpoints, protector, clock } = options;
   const payloads = repository.payloadStore(ownerId, agentId);
+  const markUnrecoverable = async (runId: RunId, record: SandboxExecutionRecord) => {
+    const operationKey = sandboxUnrecoverableResultOperationKey(record.plan.identity.invocationId);
+    if (await artifacts.lookup({ runId, purpose: "trace", operationKey })) return;
+    const payload = await protector.protect({
+      ownerId,
+      agentId,
+      ref: options.ids.next("sandbox-tool-result-unrecoverable"),
+      dataClassification: "public",
+      contentType: "text/plain",
+      plaintext: Buffer.from(SANDBOX_TOOL_RESULT_UNRECOVERABLE),
+      createdAt: clock.now(),
+    });
+    await artifacts.commit({ runId, purpose: "trace", operationKey, payload });
+  };
   const read = async (ref: string) => {
     const payload = await payloads.get(ref);
     if (!payload || payload.contentType !== "application/json")
@@ -56,6 +78,7 @@ export function createProductionToolResultRecovery(options: {
   };
   return async (
     candidate: Pick<RunDispatchCandidate, "runId" | "ownerId" | "agentId">,
+    purpose?: { readonly recordUnrecoverable?: boolean },
   ): Promise<PreparedToolResultRecovery | undefined> => {
     if (candidate.ownerId !== ownerId || candidate.agentId !== agentId) return undefined;
     const saved = await checkpoints.read(candidate.runId);
@@ -132,6 +155,19 @@ export function createProductionToolResultRecovery(options: {
       ) {
         admission = { ...admission, record: await options.recoverMissingResult(admission.record) };
       }
+      if (
+        purpose?.recordUnrecoverable !== false &&
+        saved.checkpoint.diagnosticCode === "RUNTIME_TOOL_RESULT_UNKNOWN" &&
+        options.resultUnrecoverable &&
+        admission.phase === "bound" &&
+        admission.record.plan.mode === "foreground" &&
+        admission.record.releaseReceipt &&
+        !admission.record.workspaceBlocked &&
+        admission.record.facts.resource.supervision === "released" &&
+        !["result", "error"].includes(admission.record.facts.result?.kind ?? "") &&
+        (await options.resultUnrecoverable(admission.record))
+      )
+        await markUnrecoverable(candidate.runId, admission.record);
       const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
       const known =
         admission.phase === "bound"

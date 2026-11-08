@@ -93,7 +93,10 @@ import { createProductionSandboxControl } from "./production-sandbox-control.js"
 import { createProductionSandboxFileRecovery } from "./production-sandbox-file-recovery.js";
 import { createProductionSandboxLostResultRecovery } from "./production-sandbox-lost-result-recovery.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
-import { createProductionSandboxStream } from "./production-sandbox-stream.js";
+import {
+  createProductionSandboxStream,
+  sandboxStreamResultUnrecoverable,
+} from "./production-sandbox-stream.js";
 import { createProductionSandboxStreamResultRecovery } from "./production-sandbox-stream-result-recovery.js";
 import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
 import {
@@ -2120,6 +2123,8 @@ export async function createProductionSandboxServices(options: {
   });
   const recoverMissingToolResult = async (record: SandboxExecutionRecord) =>
     recoverLostResult(await recoverFileResult(await recoverStreamResult(record)));
+  const sandboxResultUnrecoverable = (record: SandboxExecutionRecord) =>
+    sandboxStreamResultUnrecoverable(stream, record);
   const releaseUnboundInvocation = async (input: { runId: string; invocationId: string }) => {
     const admission = await preparations.readAdmissionByInvocation(input);
     if (
@@ -2615,6 +2620,7 @@ export async function createProductionSandboxServices(options: {
     runtime,
     completeToolResult,
     recoverMissingToolResult,
+    sandboxResultUnrecoverable,
     child,
     managedTasks,
     resources: {
