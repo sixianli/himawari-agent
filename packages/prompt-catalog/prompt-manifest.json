@@ -319,6 +319,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "mail.judgment.tentative-note": {
+    "sha256": "72da4d7216f9b1ee3fe8dd3258d4e3f8882c900d814c4f8fc3e0035a0ae3ac16",
+    "changedIn": "ADR 0179",
+    "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
+  },
   "memory.capture": {
     "sha256": "f2ffd6e1725ee691e472b198090bb10220af97efd924fee33e13aeed3b9d5cb4",
     "changedIn": "ADR 0161",
