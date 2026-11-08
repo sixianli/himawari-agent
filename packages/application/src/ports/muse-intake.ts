@@ -54,6 +54,7 @@ export interface MuseIntakeItemWrite {
   readonly textRef: string | null;
   readonly textWithheld: boolean;
   readonly options: readonly string[];
+  readonly gmailMessageId: string | null;
   readonly sources: Readonly<Record<string, MuseIntakeSource>>;
   readonly contentDigest: string;
 }
@@ -106,6 +107,7 @@ export interface MuseIntakeItem {
   readonly textRef: string | null;
   readonly textWithheld: boolean;
   readonly options: readonly string[];
+  readonly gmailMessageId: string | null;
   readonly sources: Readonly<Record<string, MuseIntakeSource>>;
   readonly receivedAt: string;
   readonly timingOk: boolean | null;
