@@ -8,7 +8,6 @@ import {
   AutomaticMemoryService,
   type CommittedRunMemoryInput,
 } from "../src/services/automatic-memory-service.js";
-import { credentialFindings } from "@himawari-agent/sensitive-capture";
 
 const candidate = (text: string, quote?: string): ExtractedMemoryCandidate => ({
   kind: "durable_fact",
@@ -36,7 +35,10 @@ const input = {
   explicitRememberCandidateOrdinal: null,
 } as unknown as CommittedRunMemoryInput;
 
-async function process(candidates: readonly ExtractedMemoryCandidate[]) {
+async function process(
+  candidates: readonly ExtractedMemoryCandidate[],
+  sourceText = "主人说了一些话。",
+) {
   const audit: MemoryExtractionAuditRecord[] = [];
   const stored: string[] = [];
   const service = new AutomaticMemoryService({
@@ -54,7 +56,7 @@ async function process(candidates: readonly ExtractedMemoryCandidate[]) {
     },
     approvals: {} as never,
     audit: { record: async (record) => void audit.push(record) },
-    readSourceText: async () => "主人说了一些话。",
+    readSourceText: async () => sourceText,
     now: () => "2026-11-05T00:00:00.000Z",
     memoryIdFor: (generation, ordinal) => `memory:${generation}:${ordinal}` as MemoryId,
     approvalIdFor: (generation, ordinal) => `approval:${generation}:${ordinal}`,
@@ -63,46 +65,41 @@ async function process(candidates: readonly ExtractedMemoryCandidate[]) {
   return { result, audit, stored };
 }
 
-describe("[W-07b] passwords, verification codes and keys never become memories", () => {
-  it("finds credentials with the outbound redaction detectors, including masked placeholders", () => {
-    expect(credentialFindings("主人家的 Wi-Fi 密码是 abc12345")).toEqual([
-      { kind: "password", count: 1 },
-    ]);
-    expect(credentialFindings("主人的验证码是 482910")).toEqual([
-      { kind: "verification-code", count: 1 },
-    ]);
-    expect(credentialFindings("主人家的 Wi-Fi 密码是 [密码#abcdefgh]")).toEqual([
-      { kind: "password", count: 1 },
-    ]);
-    expect(credentialFindings("登录用 [验证码#qwertyui]，接口用 [密钥]")).toEqual([
-      { kind: "machine-secret", count: 1 },
-      { kind: "verification-code", count: 1 },
-    ]);
-  });
+const FAKE_KEY = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz0123456789"].join("-");
 
-  it("REVERSE: ordinary facts, card numbers and ID numbers are not credentials", () => {
-    expect(credentialFindings("主人最喜欢的颜色是蓝色")).toEqual([]);
-    expect(credentialFindings("主人想换一个更好记的密码")).toEqual([]);
-    expect(credentialFindings("主人的银行卡号是 4111 1111 1111 1111")).toEqual([]);
-    expect(credentialFindings("主人的卡是 [银行卡 尾号1111#abcdefgh]")).toEqual([]);
-  });
-
-  it("drops a candidate whose text or quote holds a credential before anything is stored", async () => {
+describe("[mask-not-block] credentials in a candidate are stored as written", () => {
+  it("stores a candidate whose text or quote holds a password, a code or a key", async () => {
     const { result, audit, stored } = await process([
-      candidate("主人家的 Wi-Fi 密码是 [密码#abcdefgh]"),
+      candidate("主人家的 Wi-Fi 密码是 abc12345"),
       candidate("主人换了新的 Wi-Fi 密码", "家里 Wi-Fi 密码是 abc12345"),
+      candidate(`主人的接口密钥是 ${FAKE_KEY}`),
       candidate("主人最喜欢的颜色是蓝色"),
     ]);
-    expect(result.excludedCandidateOrdinals).toEqual([0, 1]);
-    expect(
-      audit
-        .filter(({ outcome }) => outcome === "candidate_secret_excluded")
-        .map(({ candidateOrdinal, secretFindings }) => [candidateOrdinal, secretFindings]),
-    ).toEqual([
-      [0, [{ ruleId: "password", count: 1 }]],
-      [1, [{ ruleId: "password", count: 1 }]],
-    ]);
-    expect(stored.join("\n")).not.toContain("密码");
-    expect(stored).toContain("主人最喜欢的颜色是蓝色");
+    expect(result.status).toBe("completed");
+    expect(result.excludedCandidateOrdinals).toEqual([]);
+    expect(result.committedMemoryIds).toHaveLength(4);
+    expect(audit.map(({ outcome }) => outcome)).not.toContain("candidate_secret_excluded");
+    expect(stored).toContain("主人家的 Wi-Fi 密码是 abc12345");
+    expect(stored).toContain(`主人的接口密钥是 ${FAKE_KEY}`);
+  });
+
+  it("reads a source that holds a machine secret instead of skipping the run", async () => {
+    const { result, audit } = await process(
+      [candidate("主人最喜欢的颜色是蓝色")],
+      `token: ${FAKE_KEY}`,
+    );
+    expect(result.status).toBe("completed");
+    expect(result.committedMemoryIds).toHaveLength(1);
+    expect(audit.map(({ outcome }) => outcome)).not.toContain("source_secret_excluded");
+  });
+
+  it("REVERSE: still drops a candidate the model classified as restricted", async () => {
+    const restricted: ExtractedMemoryCandidate = {
+      ...candidate("主人的护照号是 E12345678"),
+      dataClassification: "restricted",
+    };
+    const { result, stored } = await process([restricted]);
+    expect(result.excludedCandidateOrdinals).toEqual([0]);
+    expect(stored).toEqual([]);
   });
 });

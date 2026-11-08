@@ -11,11 +11,6 @@ import {
   type ProactiveScope,
   type ProactiveSealPort,
 } from "@himawari-agent/application";
-import {
-  containsRestrictedIdentifier,
-  containsToolOutputSecret,
-  scanMachineSecrets,
-} from "@himawari-agent/sensitive-capture";
 import type { FastifyInstance } from "fastify";
 import type { MuseChannelPushSource } from "./production-web-push.js";
 
@@ -400,12 +395,7 @@ export function parseMuseBatch(body: unknown): MuseBatchParse {
 }
 
 function storable(value: string | null): boolean {
-  return (
-    value === null ||
-    (value.trim().length > 0 &&
-      scanMachineSecrets(value).length === 0 &&
-      !containsRestrictedIdentifier(value))
-  );
+  return value === null || value.trim().length > 0;
 }
 
 export interface MuseIntakeHttpResult {
@@ -464,12 +454,7 @@ export class ProductionMuseIntake {
     try {
       const items: MuseIntakeItemWrite[] = [];
       for (const draft of batch.drafts) {
-        const keep =
-          storable(draft.title) &&
-          storable(draft.text) &&
-          draft.write.options.every(
-            (option) => !containsToolOutputSecret(option) && !containsRestrictedIdentifier(option),
-          );
+        const keep = storable(draft.title) && storable(draft.text);
         const seal = async (value: string | null) => {
           if (value === null || !keep) return null;
           const ref = await this.seal.seal({ ...this.scope, text: value, at: receivedAt });
