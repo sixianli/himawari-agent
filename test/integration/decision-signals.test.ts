@@ -17,6 +17,7 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { recordDecisionSignal } from "../../packages/persistence-sqlite/src/decision-signals.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-signals");
@@ -404,6 +405,82 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
         n: 0,
       });
       database.close();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("keeps one row when the same signal is replayed on the same decision and source", async () => {
+    const { repository, raw, record, signals } = await fixture();
+    try {
+      await record({ id: "decision-1", verdict: "pushed" });
+      const database = raw();
+      const replay = () =>
+        recordDecisionSignal(database, {
+          ...scope,
+          decisionId: "decision-1",
+          signal: "opened",
+          occurredAt: OPENED,
+          delayMs: 0,
+          detail: {},
+          sourceRef: "proactive:push-1",
+          recordedAt: OPENED,
+        });
+      expect(replay()).toBe(true);
+      expect(replay()).toBe(false);
+      database.close();
+      expect(await signals(["decision-1"])).toHaveLength(1);
+      await repository.proactive().clearRecords(scope);
+      expect(await signals(["decision-1"])).toEqual([]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it.each([
+    ["the Agent", "DELETE FROM agents WHERE id = ?", AGENT_ID],
+    ["the whole account", "DELETE FROM owners WHERE id = ?", OWNER_ID],
+  ])("removes the signals when %s is deleted", async (_name, statement, id) => {
+    const { repository, raw, record, addFeedback } = await fixture();
+    try {
+      await record({ id: "decision-1", verdict: "pushed", pushSourceKey: "proactive:push-1" });
+      addFeedback("proactive:push-1", "tag-1");
+      await repository.webPush().recordReactions({
+        ...scope,
+        reactions: [{ tag: "tag-1", reaction: "opened", occurredAt: OPENED }],
+        now: OPENED,
+      });
+      const database = raw();
+      expect(database.prepare("SELECT count(*) AS n FROM decision_signals").get()).toEqual({
+        n: 1,
+      });
+      database.exec("DELETE FROM payloads");
+      database.prepare(statement).run(id);
+      expect(database.prepare("SELECT count(*) AS n FROM decision_signals").get()).toEqual({
+        n: 0,
+      });
+      database.close();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("keeps one row when the same signal is replayed on the same decision and source", async () => {
+    const { repository, raw, record, signals } = await fixture();
+    try {
+      await record({ id: "decision-1", verdict: "pushed" });
+      const database = raw();
+      const insert = database.prepare(
+        `INSERT INTO decision_signals (
+          id, owner_id, agent_id, decision_id, signal, occurred_at, delay_ms, detail,
+          source_ref, recorded_at
+        ) VALUES (?, ?, ?, 'decision-1', 'opened', ?, 0, '{}', 'proactive:push-1', ?)
+        ON CONFLICT (decision_id, signal, source_ref) DO NOTHING`,
+      );
+      expect(insert.run("signal:a", OWNER_ID, AGENT_ID, OPENED, OPENED).changes).toBe(1);
+      expect(insert.run("signal:b", OWNER_ID, AGENT_ID, OPENED, OPENED).changes).toBe(0);
+      database.close();
+      expect(await signals(["decision-1"])).toHaveLength(1);
     } finally {
       await repository.close();
     }

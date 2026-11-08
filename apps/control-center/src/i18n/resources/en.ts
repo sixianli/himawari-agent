@@ -1276,7 +1276,7 @@ export const messages = {
   "weekly.implicit.other":
     "{n} more signals landed on decisions that sent no reminder and are not counted above.",
   "weekly.implicit.def":
-    "These three signals are what happened when you did not rate anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
+    "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",

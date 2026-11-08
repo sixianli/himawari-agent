@@ -533,6 +533,7 @@ export interface HistoryRecord {
   };
   readonly implicit: {
     readonly pushedDecisions: number;
+    readonly otherDecisionEvents: number;
     readonly signals: readonly {
       readonly signal: ImplicitSignal;
       readonly decisions: number;
@@ -597,7 +598,7 @@ export function buildReport({
   }
   lines.push("## 观察信号（不是打分）", "");
   lines.push(
-    "这一节只记你没动手评价时发生的事：提醒有没有被点开、完成或静音后有没有撤销、邮件串里你有没有回复。它们是弱信号，不当作你的评价，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策。",
+    "这一节记不需要你动手评价就能看到的事：提醒有没有被点开、完成或静音后有没有撤销、邮件串里你有没有回复。它们是弱信号，不当作你的评价，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策。",
     "",
   );
   if (implicit.pushedDecisions === 0) {
@@ -688,6 +689,7 @@ export function historyRecord({
     },
     implicit: {
       pushedDecisions: implicit.pushedDecisions,
+      otherDecisionEvents: implicit.otherDecisionEvents,
       signals: implicit.signals.map(({ signal, decisions: count, events, medianDelayMs }) => ({
         signal,
         decisions: count,
