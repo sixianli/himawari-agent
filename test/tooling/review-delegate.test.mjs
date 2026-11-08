@@ -182,6 +182,7 @@ describe("review delegation prompt", () => {
     expect(parsed.task.brief).toBe(task.brief);
     expect(delegationPrompt(parsed.task)).toBe(delegationPrompt(task));
     expect(() => parseTask(["prompt", "--bogus"])).toThrow("DELEGATE_UNKNOWN --bogus");
+    expect(() => parseTask(["check", "--reply-to", "session_abcdefgh1234"])).not.toThrow();
     expect(() => parseTask(["prompt", "--apply"])).toThrow("DELEGATE_NOT_FOR_COMMAND --apply");
     expect(() => parseTask(["wait", "--branch", "feature", "--mode", "plan"])).toThrow(
       "DELEGATE_NOT_FOR_COMMAND --mode",
@@ -692,6 +693,28 @@ describe("review delegation result check, legitimate edge cases", () => {
       f.run(f.cloud, "rm", "--quiet", `${dir}/${name}.attempt-1.stderr.txt`);
       commitCloud(f, "drop the moved error file");
       expect(checkResult(task, { repo: f.mac }).reason).toContain("DELEGATION_IRREGULAR_FILE");
+    }),
+  );
+
+  it(
+    "[delegate] does not call a result incomplete when a substitute covered the failed model, and survives an odd model name",
+    withFixture((f) => {
+      const task = { ...f.task, previous: f.task.base };
+      const base = { previous: f.task.base };
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek, { ...base, outcome: "api-error" }),
+          f.record(glm, { ...base, substitute: true, substituteFor: deepseek }),
+        ]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "substituted");
+      expect(checkResult(task, { repo: f.mac })).toMatchObject({ status: "ok", notOk: [] });
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([f.record("opencode-go/*")]),
+      });
+      commitCloud(f, "odd model");
+      expect(checkResult(task, { repo: f.mac }).reason).toContain("model=opencode-go/*");
     }),
   );
 

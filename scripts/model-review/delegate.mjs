@@ -293,8 +293,11 @@ export function checkResult(task, { repo, fetch = true }) {
     if ((record.previous ?? null) !== (task.previous ?? null))
       problems.push(`previous=${record.previous ?? null}`);
     if (round !== expectedRound) problems.push(`round=${round} expected=${expectedRound}`);
-    if (!REVIEW_MODELS.includes(record.model)) problems.push(`model=${record.model}`);
-    else if (!expectedModels.includes(record.model) && !record.substitute)
+    if (!REVIEW_MODELS.includes(record.model)) {
+      problems.push(`model=${record.model}`);
+      continue;
+    }
+    if (!expectedModels.includes(record.model) && !record.substitute)
       problems.push(`model=${record.model}`);
     if (record.gateway !== "magpie") problems.push(`gateway=${record.gateway}`);
     for (const provider of Object.keys(record.providers ?? {}))
@@ -323,7 +326,13 @@ export function checkResult(task, { repo, fetch = true }) {
   if (problems.length > 0) return rejected(`DELEGATION_RECORD_MISMATCH ${problems.join(" ")}`);
   const spent = spentOf(added);
   const estimated = added.some((record) => record.costUnknown || record.inFlight);
-  const notOk = added.filter((record) => record.outcome !== "ok").map((record) => record.model);
+  const covered = (model) =>
+    added.some(
+      (record) => record.substitute && record.substituteFor === model && record.outcome === "ok",
+    );
+  const notOk = added
+    .filter((record) => record.outcome !== "ok" && !covered(record.model))
+    .map((record) => record.model);
   return { status: "ok", remote, added, spent, notOk, estimated };
 }
 
@@ -402,6 +411,7 @@ const COMMAND_OPTIONS = {
     "--providers",
     "--branch",
     "--tip",
+    "--reply-to",
     "--repo",
     "--apply",
   ],
