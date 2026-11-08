@@ -239,7 +239,7 @@ const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
 
 const indexScope = `m.owner_id = @ownerId AND m.agent_id = @agentId AND m.status = 'active'
   AND i.memory_revision = m.revision
-  AND m.tentative = 0
+  AND (@includeTentative = 1 OR m.tentative = 0)
   AND (@includeHistory = 1 OR m.valid_to IS NULL OR m.valid_to > @now)`;
 
 const projectionJobSelect = `SELECT id, memory_id AS memoryId,
@@ -394,6 +394,7 @@ export class SqliteMemoryOperations {
             minimumSimilarity: number;
             now: string;
             includeHistory?: boolean;
+            includeTentative?: boolean;
           },
         );
       case "memoryEpisode.upsert":
@@ -1059,6 +1060,7 @@ export class SqliteMemoryOperations {
     minimumSimilarity: number;
     now: string;
     includeHistory?: boolean;
+    includeTentative?: boolean;
   }): MemoryIndexSearchResult {
     if (
       !Number.isSafeInteger(input.limit) ||
@@ -1074,6 +1076,7 @@ export class SqliteMemoryOperations {
       agentId: input.agentId,
       now: input.now,
       includeHistory: input.includeHistory === true ? 1 : 0,
+      includeTentative: input.includeTentative === true ? 1 : 0,
     };
     let vector: MemoryIndexCandidate[] = [];
     let vectorEngine: MemoryIndexSearchResult["vectorEngine"] = "none";

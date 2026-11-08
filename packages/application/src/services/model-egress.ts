@@ -117,6 +117,13 @@ function letters(bytes: Uint8Array): string {
   return out;
 }
 
+function placeholderTag(
+  options: ModelEgressOptions,
+  key: Uint8Array,
+): (kind: EgressPlaceholderKind, value: string) => string {
+  return (kind, value) => letters(options.sign(key, `${kind}\u0000${value}`));
+}
+
 class Exchange implements ModelEgressExchange {
   readonly table = new Map<string, string>();
   readonly #known = new Map<string, string>();
@@ -211,8 +218,7 @@ class Exchange implements ModelEgressExchange {
     };
     const text = (value: string, part: SensitiveInterceptionPart): string => {
       const result = redactedOrRefused(value, {
-        tag: (kind: EgressPlaceholderKind, secret: string) =>
-          letters(this.#options.sign(key, `${kind}\u0000${secret}`)),
+        tag: placeholderTag(this.#options, key),
         known: this.#known,
         table: this.table,
         trusted: this.#options.trusted ?? TRUSTED_PROMPT_TEXTS,
@@ -513,6 +519,10 @@ export class ModelEgress {
 
   exchange(context?: ModelEgressContext): ModelEgressExchange {
     return new Exchange(this.#options, context);
+  }
+
+  async externalTag(): Promise<(kind: EgressPlaceholderKind, value: string) => string> {
+    return placeholderTag(this.#options, await this.#options.key());
   }
 
   async reportMasked(

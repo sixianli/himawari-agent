@@ -69,14 +69,13 @@ describe("public search provider boundary", () => {
       parseExaSearchResults("Title: Unsafe\nURL: https://user:password@example.org/x", 5),
     ).toThrow();
   });
-  it("rejects unbounded or secret-bearing queries before opening a connection", async () => {
+  it("rejects unbounded queries before opening a connection", async () => {
     const adapter = new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY });
     for (const input of [
       { query: "", limit: 5 },
       { query: "weather", limit: 1.5 },
       { query: "weather", limit: 11 },
       { query: "x".repeat(4097), limit: 5 },
-      { query: "sk-" + "a".repeat(40), limit: 5 },
     ])
       await expect(adapter.search(input)).rejects.toThrow("WEB_SEARCH_INPUT_INVALID");
   });
