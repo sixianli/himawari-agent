@@ -1060,6 +1060,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "deadline-code-model-reserved",
     "deadline-code-model-started",
     "deadline-code-model-unknown",
+    "deadline-code-model-unknown-transport",
+    "deadline-code-model-unknown-cancel",
     "deadline-code-future-record",
     "deadline-code-null-record",
     "deadline-code-model-settled",
@@ -1189,6 +1191,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-model-reserved",
           "deadline-code-model-started",
           "deadline-code-model-unknown",
+          "deadline-code-model-unknown-transport",
+          "deadline-code-model-unknown-cancel",
           "deadline-code-model-settled",
           "deadline-code-model-released",
           "deadline-code-environment-released",
@@ -1200,7 +1204,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         f.database.prepare("DELETE FROM sandbox_admission_queue").run();
       }
       if (scenario.startsWith("deadline-code-model-")) {
-        const status = scenario.slice("deadline-code-model-".length);
+        const [status, unknownReason = "provider"] = scenario
+          .slice("deadline-code-model-".length)
+          .split("-");
+        const reasonCode = status === "unknown" ? `${unknownReason}_unresolved` : null;
         const lease = f.database
           .prepare(
             "SELECT id,deployment_id AS deploymentId,authority_epoch AS epoch,fencing_token AS token FROM authority_leases LIMIT 1",
@@ -1208,9 +1215,15 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           .get() as { id: string; deploymentId: string; epoch: number; token: number };
         f.database
           .prepare(
-            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',0,0,'active',1)",
+            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',0,0,?,1)",
           )
-          .run(OWNER_ID, AGENT_ID, `run:${runId}`, runId);
+          .run(
+            OWNER_ID,
+            AGENT_ID,
+            `run:${runId}`,
+            runId,
+            status === "unknown" ? "reconcile_required" : "active",
+          );
         f.database
           .prepare(
             `INSERT INTO model_budget_allocations(owner_id,agent_id,account_id,operation_key,model_ref,
@@ -1228,7 +1241,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             ["reserved", "released"].includes(status) ? null : T1,
             status === "unknown" ? T1 : null,
             status === "settled" ? T1 : null,
-            status === "unknown" ? "provider_unresolved" : null,
+            reasonCode,
           );
         f.database
           .prepare(
@@ -1266,7 +1279,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             status === "settled" ? T1 : null,
             status === "released" ? T1 : null,
             status === "settled" ? 0 : null,
-            status === "unknown" ? "provider_unresolved" : null,
+            reasonCode,
           );
         f.database.pragma("foreign_keys = ON");
       }
@@ -1365,6 +1378,16 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         intents: f.database
           .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents")
           .get(),
+        models: f.database
+          .prepare(
+            "SELECT status,reason_code,settled_at,actual_cost_micros FROM model_invocation_identities ORDER BY invocation_id",
+          )
+          .all(),
+        budgetAccounts: f.database
+          .prepare(
+            "SELECT account_id,status,reserved_cost_micros,spent_cost_micros FROM model_budget_accounts ORDER BY account_id",
+          )
+          .all(),
       });
       const before = state();
       const recovery =
@@ -1413,6 +1436,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-no-records",
           "deadline-code-model-settled",
           "deadline-code-model-released",
+          "deadline-code-model-unknown-cancel",
           "deadline-code-environment-released",
         ].includes(scenario)
       ) {
@@ -1447,6 +1471,12 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         });
         expect(after.journal).toEqual(before.journal);
         expect(after.intents).toEqual(before.intents);
+        expect(after.models).toEqual(before.models);
+        expect(after.budgetAccounts).toEqual(before.budgetAccounts);
+        if (scenario === "deadline-code-model-unknown-cancel")
+          expect(after.models).toEqual([
+            expect.objectContaining({ status: "unknown", reason_code: "cancel_unresolved" }),
+          ]);
         expect.soft(after.thread).toEqual({
           ...before.thread,
           revision: before.thread.revision + 1,
