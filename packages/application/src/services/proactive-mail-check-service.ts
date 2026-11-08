@@ -13,6 +13,8 @@ import type {
   ProactiveConfidence,
   ProactiveCounts,
   ProactiveDecision,
+  ProactiveBackoffSettings,
+  ProactiveBackoffWrite,
   ProactiveInsightWrite,
   ProactiveMemoryHit,
   ProactiveMemoryRecall,
@@ -43,6 +45,7 @@ import { mailBodyWindow, plainModelText, windowMailBody } from "./proactive-mail
 import {
   applyFloor,
   floorHitIds,
+  senderDomain,
   keepOffReminderPage,
   quietUntil,
   startOfZonedDay,
@@ -96,6 +99,24 @@ export interface ProactiveMailCheckOptions {
   readonly bodyLimits?: Partial<ProactiveBodyLimits>;
   readonly relatedLimits?: Partial<ProactiveRelatedServiceLimits>;
   readonly onMasked?: (sightings: readonly EgressRedactionSighting[]) => void;
+  readonly backoff?: Partial<ProactiveBackoffSettings>;
+}
+
+export const DEFAULT_PROACTIVE_BACKOFF: ProactiveBackoffSettings = Object.freeze({
+  threshold: 3,
+  ignoreAfterMs: 24 * 3_600_000,
+  gapMs: 24 * 3_600_000,
+});
+
+export function proactivePushClass(fromAddress: string): string {
+  return `due:${senderDomain(fromAddress)}`.slice(0, 128);
+}
+
+interface BackoffOutcome {
+  readonly insights: readonly ProactiveCheckInsight[];
+  readonly writes: readonly ProactiveBackoffWrite[];
+  readonly steppedUp: boolean;
+  readonly suppressed: number;
 }
 
 export interface ProactiveBodyLimits {
@@ -784,6 +805,7 @@ export class ProactiveMailCheckService {
             dueAt: null,
             priority: null,
             push: true,
+            pushClass: null,
           });
           counts.check += 1;
         }
@@ -828,6 +850,12 @@ export class ProactiveMailCheckService {
       });
       const dueAt = final.result === "act" ? judgement.dueAt : null;
       const priority = final.result === "act" ? (judgement.priority ?? "medium") : null;
+      const dueSoon =
+        final.result === "act" &&
+        priority === "high" &&
+        dueAt !== null &&
+        Date.parse(dueAt) - Date.parse(startedAt) <= PUSH_WINDOW_MS &&
+        Date.parse(startedAt) - Date.parse(dueAt) <= OVERDUE_PUSH_MS;
       insights.push({
         item,
         result: final.result,
@@ -838,16 +866,12 @@ export class ProactiveMailCheckService {
         basis: "model",
         dueAt,
         priority,
-        push:
-          (final.result === "act" &&
-            priority === "high" &&
-            dueAt !== null &&
-            Date.parse(dueAt) - Date.parse(startedAt) <= PUSH_WINDOW_MS &&
-            Date.parse(startedAt) - Date.parse(dueAt) <= OVERDUE_PUSH_MS) ||
-          (final.result === "check" && floor),
+        push: dueSoon || (final.result === "check" && floor),
+        pushClass: dueSoon && !floor ? proactivePushClass(item.fromAddress) : null,
       });
     }
-    counts.pushed = insights.filter(({ push }) => push).length;
+    const gated = await this.#gateBackoff(insights, startedAt);
+    counts.pushed = gated.insights.filter(({ push }) => push).length;
     const leftover = candidates.some(
       (item) => !processed.some(({ messageId }) => messageId === item.messageId),
     );
@@ -860,10 +884,11 @@ export class ProactiveMailCheckService {
     return this.#finish(trace, {
       startedAt,
       verdict,
-      reasonCode: this.#reason(verdict, stop, failure, items.length, counts),
+      reasonCode: this.#reason(verdict, stop, failure, items.length, counts, gated),
       counts,
       processed,
-      insights,
+      insights: gated.insights,
+      backoff: gated.writes,
       replied: this.#repliedThreads(items, candidates, settled),
       costMicros,
       cursor: leftover ? null : fetched.cursor,
@@ -922,15 +947,68 @@ export class ProactiveMailCheckService {
     failure: string | null,
     fetched: number,
     counts: ProactiveCounts,
+    backoff?: BackoffOutcome,
   ) {
     if (stop === "capped_daily") return "DAILY_LIMIT";
     if (stop === "capped") return "CHECK_LIMIT";
     if (stop === "failed") return failure ?? "MODEL_OUTPUT_INVALID";
+    if (backoff?.steppedUp) return "PUSH_BACKED_OFF";
+    if (backoff && backoff.suppressed > 0) return "PUSH_SUPPRESSED";
     if (verdict === "deferred") return "QUIET_HOURS";
     if (verdict === "pushed") return "URGENT";
     if (fetched === 0) return "NO_NEW_MAIL";
     if (counts.floorRaised > 0) return "FLOOR_RAISED";
     return "NOTHING_URGENT";
+  }
+
+  async #gateBackoff(
+    insights: readonly ProactiveCheckInsight[],
+    startedAt: string,
+  ): Promise<BackoffOutcome> {
+    const settings: ProactiveBackoffSettings = {
+      ...DEFAULT_PROACTIVE_BACKOFF,
+      ...this.#options.backoff,
+    };
+    const classKeys = [
+      ...new Set(
+        insights.flatMap(({ push, pushClass }) => (push && pushClass !== null ? [pushClass] : [])),
+      ),
+    ].sort();
+    if (settings.threshold <= 0 || classKeys.length === 0)
+      return { insights, writes: [], steppedUp: false, suppressed: 0 };
+    const previews = await this.#options.store.previewBackoff({
+      ...this.#options.scope,
+      classKeys,
+      settings,
+      now: startedAt,
+    });
+    const byClass = new Map(previews.map((preview) => [preview.classKey, preview]));
+    let suppressed = 0;
+    const gated = insights.map((insight) => {
+      const preview = insight.pushClass === null ? undefined : byClass.get(insight.pushClass);
+      if (!insight.push || preview?.action !== "suppress") return insight;
+      suppressed += 1;
+      return { ...insight, push: false };
+    });
+    const writes = previews
+      .filter(({ stage, steppedUp }) => steppedUp || stage > 0)
+      .map(
+        (preview): ProactiveBackoffWrite => ({
+          classKey: preview.classKey,
+          stage: preview.stage,
+          sinceAt: preview.sinceAt,
+          lastPushAt: preview.lastPushAt,
+          stageChangedAt: preview.stageChangedAt,
+          ignoredCount: preview.ignoredCount,
+          steppedUp: preview.steppedUp,
+        }),
+      );
+    return {
+      insights: gated,
+      writes,
+      steppedUp: previews.some(({ steppedUp }) => steppedUp),
+      suppressed,
+    };
   }
 
   #base(item: ProactiveSourceItem) {
@@ -1162,6 +1240,7 @@ export class ProactiveMailCheckService {
       readonly cursor: string | null;
       readonly quietHours: ProactiveSettings["quietHours"];
       readonly floorHits: Readonly<Record<string, readonly string[]>>;
+      readonly backoff?: readonly ProactiveBackoffWrite[];
     },
   ): Promise<ProactiveDecision> {
     const { store, scope, ids, clock } = this.#options;
@@ -1193,6 +1272,7 @@ export class ProactiveMailCheckService {
         dueAt: insight.dueAt,
         priority: insight.priority,
         push: insight.push,
+        pushClass: insight.push ? insight.pushClass : null,
       });
     const finishedAt = clock.now();
     const decision: ProactiveDecision = Object.freeze({
@@ -1232,6 +1312,7 @@ export class ProactiveMailCheckService {
       insights: writes,
       repliedThreads: input.replied,
       push,
+      backoff: input.backoff ?? [],
       cursor: input.cursor,
     });
     trace.recorded = true;
@@ -1257,4 +1338,5 @@ interface ProactiveCheckInsight {
   readonly dueAt: string | null;
   readonly priority: ProactivePriority | null;
   readonly push: boolean;
+  readonly pushClass: string | null;
 }

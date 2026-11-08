@@ -272,6 +272,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         reviewBudgetSeconds: 120,
         reviewSecondsPerItem: 5,
         reviewSilentSharePermille: 500,
+        backoffThreshold: 3,
       },
       timeZone: "Asia/Tokyo",
       store,
@@ -400,6 +401,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       script,
       sent,
       store,
+      stateRoot,
       webPushStore,
     };
   }
@@ -626,6 +628,47 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(after.insights).toEqual([]);
     await h.command("proactive.source.manage", { source: "gmail", action: "clear_records" });
     expect((await h.overview()).decisions).toEqual([]);
+    expect(h.failures).toEqual([]);
+  });
+
+  it("[PA-6] shows a backed-off class in the overview and restores it through the command, and rejects restoring what is not backed off", async () => {
+    const h = await setup();
+    await connectAndCheck(h);
+    expect((await h.overview()).backoff).toEqual([]);
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+    database
+      .prepare(
+        `INSERT INTO proactive_push_backoff (
+          owner_id, agent_id, class_key, stage, since_at, last_push_at, stage_changed_at,
+          step_decision_id, ignored_count, restored_at, updated_at
+        ) VALUES (?, ?, 'due:service.example.com', 2, ?, NULL, ?, NULL, 3, NULL, ?)`,
+      )
+      .run(
+        OWNER_ID,
+        AGENT_ID,
+        "2026-11-03T00:00:00.000Z",
+        "2026-11-03T00:00:00.000Z",
+        "2026-11-03T00:00:00.000Z",
+      );
+    database.close();
+    expect((await h.overview()).backoff).toEqual([
+      {
+        classKey: "due:service.example.com",
+        domain: "service.example.com",
+        stage: 2,
+        ignoredCount: 3,
+        changedAt: "2026-11-03T00:00:00.000Z",
+      },
+    ]);
+    await expect(
+      h.command("proactive.backoff.restore", { classKey: "due:other.example.org" }),
+    ).rejects.toThrow("PROACTIVE_RECORD_NOT_FOUND");
+    expect((await h.overview()).backoff).toHaveLength(1);
+    await h.command("proactive.backoff.restore", { classKey: "due:service.example.com" });
+    expect((await h.overview()).backoff).toEqual([]);
+    await expect(h.command("proactive.backoff.restore", { classKey: null })).rejects.toThrow(
+      "PROACTIVE_RECORD_NOT_FOUND",
+    );
     expect(h.failures).toEqual([]);
   });
 

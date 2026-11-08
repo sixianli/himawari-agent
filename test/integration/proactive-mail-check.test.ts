@@ -107,6 +107,7 @@ describe("proactive Gmail check acceptance", () => {
       memoryLimits?: ProactiveMailCheckOptions["memoryLimits"];
       bodyLimits?: ProactiveMailCheckOptions["bodyLimits"];
       onMasked?: ProactiveMailCheckOptions["onMasked"];
+      backoff?: ProactiveMailCheckOptions["backoff"];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proactive-"));
@@ -326,6 +327,7 @@ describe("proactive Gmail check acceptance", () => {
       ...(options.memoryLimits ? { memoryLimits: options.memoryLimits } : {}),
       ...(options.bodyLimits ? { bodyLimits: options.bodyLimits } : {}),
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
+      ...(options.backoff ? { backoff: options.backoff } : {}),
       ...(options.batchSize === undefined ? {} : { batchSize: options.batchSize }),
       ...(options.outputTokenLimit === undefined
         ? {}
@@ -365,6 +367,14 @@ describe("proactive Gmail check acceptance", () => {
         const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
         try {
           return database.prepare(sql).all(...parameters) as Record<string, unknown>[];
+        } finally {
+          database.close();
+        }
+      },
+      exec: (sql: string, ...parameters: unknown[]) => {
+        const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+        try {
+          database.prepare(sql).run(...parameters);
         } finally {
           database.close();
         }
@@ -764,6 +774,195 @@ describe("proactive Gmail check acceptance", () => {
     expect(h.invocations()).toBe(2);
     expect(nextDay?.counts).toMatchObject({ judged: 1, ignore: 1, know: 0 });
     expect((await h.overview()).dailyLimitReached).toBe(false);
+  });
+
+  describe("[PA-6] backing off pushes the owner keeps ignoring", () => {
+    const HOUR = 3_600_000;
+    const SENDER = "noreply@service.example.com";
+    const CLASS_KEY = "due:service.example.com";
+
+    async function pushDue(h: Awaited<ReturnType<typeof harness>>, id: string, from = SENDER) {
+      h.reader.items = [
+        mail(id, {
+          from: `Service <${from}>`,
+          fromAddress: from,
+          subject: "Please confirm your booking",
+          snippet: "reply by tomorrow",
+        }),
+      ];
+      h.script([
+        {
+          id,
+          result: "act",
+          todo: "confirm booking",
+          priority: "high",
+          dueAt: new Date(Date.parse(h.clock.now()) + 24 * HOUR).toISOString(),
+        },
+      ]);
+      return h.service.run();
+    }
+
+    let tag = 0;
+    function sent(
+      h: Awaited<ReturnType<typeof harness>>,
+      sourceKey: string | null,
+      openedAt: string | null = null,
+    ) {
+      tag += 1;
+      h.exec(
+        `INSERT INTO web_push_feedback (
+          owner_id, agent_id, source_key, tag, kind, source_ref, thread_id, channel,
+          first_sent_at, devices, opened_at, dismissed_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'reminder', 'insight', NULL, 'web_push', ?, 1, ?, NULL, ?)`,
+        OWNER_ID,
+        AGENT_ID,
+        sourceKey,
+        `tag-${tag}`,
+        h.clock.now(),
+        openedAt,
+        h.clock.now(),
+      );
+    }
+
+    async function ignoredPushes(h: Awaited<ReturnType<typeof harness>>, count: number) {
+      for (let index = 1; index <= count; index += 1) {
+        const decision = await pushDue(h, `ignored-${tag}-${index}`);
+        expect(decision).toMatchObject({ verdict: "pushed", reasonCode: "URGENT" });
+        sent(h, decision?.pushSourceKey ?? null);
+        h.clock.advance(25 * HOUR);
+      }
+    }
+
+    it("pushes the N+1th reminder of a class after N ignored ones as nothing but a reminder-page row, with a decision record", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 3);
+      const fourth = await pushDue(h, "fourth");
+      expect(fourth).toMatchObject({ verdict: "silent", reasonCode: "PUSH_BACKED_OFF" });
+      expect(fourth?.counts).toMatchObject({ act: 1, pushed: 0 });
+      expect(fourth?.pushSourceKey).toBeNull();
+      const overview = await h.overview();
+      expect(overview.insights.find(({ summary }) => summary === "confirm booking")).toBeDefined();
+      expect(overview.insights.filter(({ pushed }) => pushed)).toHaveLength(3);
+      expect(await h.store.listBackoff(scope)).toEqual([
+        expect.objectContaining({
+          classKey: CLASS_KEY,
+          stage: 1,
+          ignoredCount: 3,
+          stepDecisionId: fourth?.id,
+        }),
+      ]);
+      expect(
+        h.query("SELECT reason_code AS reasonCode FROM decision_ledger WHERE id = ?", fourth?.id),
+      ).toEqual([{ reasonCode: "PUSH_BACKED_OFF" }]);
+      const fifth = await pushDue(h, "fifth");
+      expect(fifth).toMatchObject({ verdict: "silent", reasonCode: "PUSH_SUPPRESSED" });
+    });
+
+    it("negative: one reminder short of N, an opened one, or a different sender domain still pushes", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 2);
+      const opened = await pushDue(h, "opened");
+      expect(opened?.verdict).toBe("pushed");
+      sent(h, opened?.pushSourceKey ?? null, h.clock.now());
+      h.clock.advance(25 * HOUR);
+      expect(await pushDue(h, "after-open")).toMatchObject({ verdict: "pushed" });
+      expect(await h.store.listBackoff(scope)).toEqual([]);
+      const other = await harness();
+      await ignoredPushes(other, 3);
+      expect(await pushDue(other, "x", "hello@other.example.org")).toMatchObject({
+        verdict: "pushed",
+        reasonCode: "URGENT",
+      });
+      expect(await pushDue(other, "y")).toMatchObject({ reasonCode: "PUSH_BACKED_OFF" });
+    });
+
+    it("counts a reminder the owner rated unneeded as ignored without waiting a day", async () => {
+      const h = await harness();
+      for (let index = 1; index <= 3; index += 1) {
+        const decision = await pushDue(h, `rated-${index}`);
+        expect(decision?.verdict).toBe("pushed");
+        const insight = (await h.overview()).insights.find(
+          ({ summary, rating }) => summary === "confirm booking" && rating === null,
+        );
+        await h.store.updateInsight({
+          ...scope,
+          insightId: insight?.id as string,
+          rating: "unneeded",
+          now: h.clock.now(),
+        });
+        h.clock.advance(HOUR);
+      }
+      expect(await pushDue(h, "after-rating")).toMatchObject({ reasonCode: "PUSH_BACKED_OFF" });
+    });
+
+    it("never backs off a floor-rule reminder, even when the sender domain is on the owner's list", async () => {
+      const h = await harness({ importantSenders: ["service.example.com"] });
+      await ignoredPushes(h, 4);
+      expect(await pushDue(h, "listed")).toMatchObject({ verdict: "pushed", reasonCode: "URGENT" });
+      expect(await h.store.listBackoff(scope)).toEqual([]);
+      const plain = await harness();
+      await ignoredPushes(plain, 3);
+      expect(await pushDue(plain, "gate")).toMatchObject({ reasonCode: "PUSH_BACKED_OFF" });
+      plain.reader.items = [
+        mail("bank", {
+          fromAddress: "info@smbc.co.jp",
+          subject: "お引落しのお知らせ",
+          snippet: "口座からお引落しします",
+        }),
+      ];
+      plain.script([{ id: "bank", result: "check", confidence: "unsure" }]);
+      expect(await plain.service.run()).toMatchObject({ verdict: "pushed" });
+    });
+
+    it("restoring a class makes the next reminder push at once and clears its count", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 3);
+      await pushDue(h, "backed-off");
+      expect(
+        await h.store.restoreBackoff({
+          ...scope,
+          classKey: "due:unknown.example",
+          now: h.clock.now(),
+        }),
+      ).toBe(0);
+      expect(
+        await h.store.restoreBackoff({ ...scope, classKey: CLASS_KEY, now: h.clock.now() }),
+      ).toBe(1);
+      expect(await pushDue(h, "restored")).toMatchObject({
+        verdict: "pushed",
+        reasonCode: "URGENT",
+      });
+      expect(await h.store.listBackoff(scope)).toEqual([
+        expect.objectContaining({ classKey: CLASS_KEY, stage: 0, ignoredCount: 3 }),
+      ]);
+    });
+
+    it("lets one reminder through per day at the first step and pauses the class after N more ignored ones", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 3);
+      expect(await pushDue(h, "stage-1")).toMatchObject({ reasonCode: "PUSH_BACKED_OFF" });
+      h.clock.advance(25 * HOUR);
+      for (let index = 1; index <= 3; index += 1) {
+        const decision = await pushDue(h, `slow-${index}`);
+        expect(decision).toMatchObject({ verdict: "pushed" });
+        sent(h, decision?.pushSourceKey ?? null);
+        expect(await pushDue(h, `same-day-${index}`)).toMatchObject({
+          reasonCode: "PUSH_SUPPRESSED",
+        });
+        h.clock.advance(25 * HOUR);
+      }
+      expect(await pushDue(h, "paused")).toMatchObject({ reasonCode: "PUSH_BACKED_OFF" });
+      expect((await h.store.listBackoff(scope))[0]).toMatchObject({ stage: 2 });
+      h.clock.advance(100 * HOUR);
+      expect(await pushDue(h, "still-paused")).toMatchObject({ reasonCode: "PUSH_SUPPRESSED" });
+    });
+
+    it("does nothing when the threshold is 0", async () => {
+      const h = await harness({ backoff: { threshold: 0 } });
+      await ignoredPushes(h, 5);
+      expect(await pushDue(h, "off")).toMatchObject({ verdict: "pushed", reasonCode: "URGENT" });
+      expect(await h.store.listBackoff(scope)).toEqual([]);
+    });
   });
 
   it("[PG-10] lists only sender and subject in the audit list and counts it reviewed only after done", async () => {

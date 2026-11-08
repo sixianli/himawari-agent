@@ -41,6 +41,7 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.review.read",
   "proactive.review.rate",
   "proactive.source.manage",
+  "proactive.backoff.restore",
 ] as const);
 
 export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
@@ -173,6 +174,7 @@ export class ProductionProactive {
       clock: options.clock,
       ids: options.ids,
       outputTokenLimit: PROACTIVE_MAX_OUTPUT_TOKENS,
+      backoff: { threshold: options.configuration.backoffThreshold },
       bodyLimits: {
         perMail: options.configuration.bodyCharactersPerMail,
         perBatch: options.configuration.bodyCharactersPerBatch,
@@ -366,6 +368,7 @@ export class ProductionProactive {
         })),
         importantSenders: [...overview.importantSenders],
         dailyLimitReached: overview.dailyLimitReached,
+        backoff: overview.backoff.map((entry) => ({ ...entry })),
         insights: overview.insights.map((insight) => ({
           id: insight.id,
           result: insight.result,
@@ -517,6 +520,15 @@ export class ProductionProactive {
           resultRef: `proactive-review-rated:${ledgerRatings.length + mailRatings.length}`,
           replayed: false,
         };
+      }
+      case "proactive.backoff.restore": {
+        const restored = await store.restoreBackoff({
+          ...scope,
+          classKey: command.payload.classKey,
+          now,
+        });
+        if (restored === 0) throw missing();
+        return { resultRef: `proactive-backoff-restored:${restored}`, replayed: false };
       }
       case "proactive.source.manage": {
         if (command.payload.action === "clear_records") {
