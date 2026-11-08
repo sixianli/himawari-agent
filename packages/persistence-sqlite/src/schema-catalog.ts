@@ -883,7 +883,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "source_insights",
     "ProactiveStorePort",
-    "one row per source thread with a result; a new reply updates the same row; push_class holds the sender domain of a pushed reminder in plain text",
+    "one row per source thread with a result; a new reply updates the same row; push_class holds due:<sender domain> of a pushed reminder in plain text",
     "payload_reference",
     "removed with its payloads when the owner disconnects the source or deletes proactive records",
   ),

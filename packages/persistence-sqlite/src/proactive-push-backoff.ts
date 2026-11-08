@@ -64,8 +64,8 @@ export function countIgnoredPushes(
   const cutoff = Date.parse(now) - ignoreAfterMs;
   let ignored = 0;
   for (const push of pushes.values()) {
-    if (push.unneeded) ignored += 1;
-    else if (push.opened) break;
+    if (push.opened) break;
+    else if (push.unneeded) ignored += 1;
     else if (Date.parse(push.at) <= cutoff) ignored += 1;
   }
   return ignored;

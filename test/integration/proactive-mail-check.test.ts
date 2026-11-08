@@ -1034,8 +1034,52 @@ describe("proactive Gmail check acceptance", () => {
 
     it("does not classify a sender address without an at sign", async () => {
       const h = await harness();
-      await ignoredPushes(h, 3);
-      expect(await pushDue(h, "odd", "not-an-address")).toMatchObject({ verdict: "pushed" });
+      for (let index = 1; index <= 4; index += 1) {
+        const decision = await pushDue(h, `odd-${index}`, "not-an-address");
+        expect(decision).toMatchObject({ verdict: "pushed", reasonCode: "URGENT" });
+        sent(h, decision?.pushSourceKey ?? null);
+        h.clock.advance(25 * HOUR);
+      }
+      expect(
+        h.query("SELECT push_class AS pushClass FROM source_insights WHERE push_class IS NOT NULL"),
+      ).toEqual([]);
+      expect(await h.store.listBackoff(scope)).toEqual([]);
+    });
+
+    it("negative: a push where one reminder was opened and another rated unneeded counts as opened", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 2);
+      h.reader.items = ["a", "b"].map((id) =>
+        mail(`mixed-${id}`, {
+          from: `Service <${SENDER}>`,
+          fromAddress: SENDER,
+          subject: "Please confirm your booking",
+          snippet: "reply by tomorrow",
+        }),
+      );
+      h.script(
+        ["a", "b"].map((id) => ({
+          id: `mixed-${id}`,
+          result: "act" as const,
+          todo: `mixed ${id}`,
+          priority: "high" as const,
+          dueAt: new Date(Date.parse(h.clock.now()) + 24 * HOUR).toISOString(),
+        })),
+      );
+      const mixed = await h.service.run();
+      sent(h, mixed?.pushSourceKey ?? null, h.clock.now());
+      const insights = (await h.overview()).insights.filter(({ summary }) =>
+        summary.startsWith("mixed"),
+      );
+      await h.store.updateInsight({
+        ...scope,
+        insightId: insights[0]?.id as string,
+        rating: "unneeded",
+        now: h.clock.now(),
+      });
+      h.clock.advance(25 * HOUR);
+      expect(await pushDue(h, "after-mixed")).toMatchObject({ verdict: "pushed" });
+      expect(await h.store.listBackoff(scope)).toEqual([]);
     });
 
     it("clears every backed-off class when Gmail is disconnected", async () => {
