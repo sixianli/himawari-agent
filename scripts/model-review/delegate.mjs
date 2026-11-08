@@ -26,6 +26,8 @@ export const WAIT_MINUTES_DEFAULT = 90;
 export const WAIT_INTERVAL_SECONDS_DEFAULT = 120;
 export const WAIT_MINUTES_MAX = 600;
 export const WAIT_GIT_FAILURES_MAX = 3;
+export const GIT_TIMEOUT_MS = 120000;
+export const GATEWAY_JSON_PATH = "scripts/model-review/gateway.json";
 export const ROUND_FILE_PATTERN = /^round-(\d+)\/[a-z0-9][a-z0-9.-]*\.(?:md|stderr\.txt)$/;
 
 const shortModel = (model) => model.split("/").pop();
@@ -167,7 +169,12 @@ ${
 }
 
 function git(args, cwd, { allowFail = false } = {}) {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 1 << 28,
+    timeout: GIT_TIMEOUT_MS,
+  });
   if (result.status !== 0 && !allowFail)
     fail(`DELEGATE_GIT_FAILED git ${args[0]}: ${(result.stderr ?? "").trim()}`);
   return result;
@@ -203,7 +210,7 @@ function roundDirectories(repo, commit, recordsDir) {
 }
 
 function hasControlText(value) {
-  if (typeof value === "string") return hasControlCharacter(value);
+  if (typeof value === "string") return hasControlCharacter(value) || /[\p{Cc}\p{Cf}]/u.test(value);
   if (Array.isArray(value)) return value.some(hasControlText);
   if (value && typeof value === "object")
     return Object.entries(value).some(([key, item]) => hasControlText(key) || hasControlText(item));
@@ -276,14 +283,27 @@ export function checkResult(task, { repo, fetch = true }) {
   } catch (error) {
     return rejected(`DELEGATION_LEDGER_INVALID ${error.message}`);
   }
+  const knownLines = new Set(before.split("\n").filter(Boolean));
+  if (
+    after
+      .slice(before.length)
+      .split("\n")
+      .some((line) => line && knownLines.has(line))
+  )
+    return rejected("DELEGATION_LEDGER_DUPLICATE");
   const added = records.slice(earlier.length);
   if (added.length === 0) return rejected("DELEGATION_NO_NEW_RECORDS");
   if (hasControlText(added)) return rejected("DELEGATION_CONTROL_CHARACTER");
   const expectedRound =
     task.round ?? nextRound(earlier, roundDirectories(repo, task.tip, recordsDir));
   const expectedModels = parseArgs(reviewArgv(task)).models;
+  const tipConfig = showFile(repo, task.tip, GATEWAY_JSON_PATH);
   const allowedProviders =
-    task.providers ?? readGatewayConfig(undefined, REVIEW_MODELS).providers.map((item) => item.id);
+    task.providers ??
+    (tipConfig === null
+      ? fail("DELEGATION_NO_GATEWAY_CONFIG")
+      : JSON.parse(tipConfig)
+    ).providers.map((item) => item.id);
   const problems = [];
   for (const record of added) {
     const round = record.round ?? 1;
@@ -319,20 +339,31 @@ export function checkResult(task, { repo, fetch = true }) {
     const relative = change.path.slice(recordsDir.length);
     const match = ROUND_FILE_PATTERN.exec(relative);
     const file = relative.split("/").pop();
-    const ofAddedModel = added.some((record) => file.startsWith(`${shortModel(record.model)}.`));
+    const ofAddedModel = added.some((record) => {
+      const stem = shortModel(record.model);
+      return [".md", ".prompt.md", ".stderr.txt"].some(
+        (suffix) =>
+          file === `${stem}${suffix}` ||
+          (file.startsWith(`${stem}.attempt-`) &&
+            /^\d+$/.test(file.slice(`${stem}.attempt-`.length, file.length - suffix.length)) &&
+            file.endsWith(suffix)),
+      );
+    });
     if (!match || Number(match[1]) !== expectedRound || !ofAddedModel)
       problems.push(`unexpected-file=${JSON.stringify(change.path)}`);
   }
   if (problems.length > 0) return rejected(`DELEGATION_RECORD_MISMATCH ${problems.join(" ")}`);
   const spent = spentOf(added);
-  const estimated = added.some((record) => record.costUnknown || record.inFlight);
-  const covered = (model) =>
+  const finished = (model) =>
     added.some(
-      (record) => record.substitute && record.substituteFor === model && record.outcome === "ok",
+      (record) =>
+        record.outcome === "ok" &&
+        (record.model === model || (record.substitute && record.substituteFor === model)),
     );
-  const notOk = added
-    .filter((record) => record.outcome !== "ok" && !covered(record.model))
-    .map((record) => record.model);
+  const notOk = [...new Set(added.map((record) => record.model))].filter(
+    (model) => !finished(model),
+  );
+  const estimated = added.some((record) => record.costUnknown || record.inFlight);
   return { status: "ok", remote, added, spent, notOk, estimated };
 }
 

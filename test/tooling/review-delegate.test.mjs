@@ -52,7 +52,16 @@ function fixture() {
     providers: ["workbuddy-ai", "opendesign", "opencode-go"],
   };
   task.brief = briefPathFor(task);
-  const tip = commit(mac, { [task.brief]: "material\n" }, "brief");
+  const tip = commit(
+    mac,
+    {
+      [task.brief]: "material\n",
+      "scripts/model-review/gateway.json": JSON.stringify({
+        providers: task.providers.map((id) => ({ id })),
+      }),
+    },
+    "brief",
+  );
   task.tip = tip;
   run(mac, "push", "--quiet", "origin", "feature");
   const cloud = join(root, "cloud");
@@ -626,6 +635,54 @@ describe("review delegation result check, legitimate edge cases", () => {
       });
       commitCloud(f, "escape");
       expect(checkResult(f.task, { repo: f.mac }).reason).toBe("DELEGATION_CONTROL_CHARACTER");
+    }),
+  );
+
+  it(
+    "[delegate] refuses invisible direction-changing characters in the new records",
+    withFixture((f) => {
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek, { outcome: "ok\u202e" }),
+          f.record(glm),
+        ]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "bidi");
+      expect(checkResult(f.task, { repo: f.mac }).reason).toBe("DELEGATION_CONTROL_CHARACTER");
+    }),
+  );
+
+  it(
+    "[delegate] does not call a model incomplete when a rerun in the same round succeeded",
+    withFixture((f) => {
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek, { outcome: "timeout" }),
+          f.record(deepseek),
+          f.record(glm),
+        ]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "rerun");
+      expect(checkResult(f.task, { repo: f.mac })).toMatchObject({ status: "ok", notOk: [] });
+    }),
+  );
+
+  it(
+    "[delegate] refuses appended ledger lines that repeat a line already in the ledger",
+    withFixture((f) => {
+      const earlier = f.record(deepseek, { round: 1, outcome: "timeout" });
+      f.commit(f.mac, { [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([earlier]) }, "earlier");
+      f.run(f.mac, "push", "--quiet", "origin", "feature");
+      const task = { ...f.task, tip: f.run(f.mac, "rev-parse", "HEAD"), round: 1 };
+      f.run(f.cloud, "pull", "--quiet", "origin", "feature");
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([earlier, earlier]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "replay");
+      expect(checkResult(task, { repo: f.mac }).reason).toBe("DELEGATION_LEDGER_DUPLICATE");
     }),
   );
 
