@@ -127,6 +127,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     readonly scope?: MemoryTimeScope;
     readonly minimumSimilarity?: number;
     readonly includeTentative?: boolean;
+    readonly tentativeOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]> {
     if (input.query.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_QUERY_EMPTY");
@@ -163,6 +164,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       now,
       includeHistory: scope?.includeHistory === true,
       ...(input.includeTentative === true ? { includeTentative: true } : {}),
+      ...(input.tentativeOnly === true ? { tentativeOnly: true } : {}),
     });
     return fuseCandidates(result, {
       now,

@@ -186,6 +186,7 @@ export class ProductionMemoryRecall {
               limit: input.limit * 3,
               scope: searchScope,
               includeTentative: true,
+              tentativeOnly: true,
             }),
           ),
     ]);

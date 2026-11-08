@@ -129,7 +129,7 @@ function recallWith(
   const records = entries.map(({ id, tentative, classification }) =>
     record(id, classification ?? "private", tentative ? { tentative: true } : {}),
   );
-  const search = vi.fn(async (request: { includeTentative?: boolean }) =>
+  const search = vi.fn(async (request: { includeTentative?: boolean; tentativeOnly?: boolean }) =>
     entries
       .map(({ id, score, tentative }) => ({
         productMemoryId: id,
@@ -137,7 +137,11 @@ function recallWith(
         score,
         tentative: tentative === true,
       }))
-      .filter(({ tentative }) => request.includeTentative === true || !tentative)
+      .filter(({ tentative }) =>
+        request.tentativeOnly === true
+          ? tentative
+          : request.includeTentative === true || !tentative,
+      )
       .map(({ tentative: _tentative, ...hit }) => hit),
   );
   const service = new ProductionMemoryRecall({
@@ -164,7 +168,12 @@ it("[PA-2] chat recall returns tentative memories marked as tentative, after con
     { id: "fact", text: "主人住在杭州", score: 1 },
   ]);
   const result = (await f.service.recall(call({ query: "牛奶", limit: 4 }))) as RecallResult;
-  expect(f.search).toHaveBeenCalledWith(expect.objectContaining({ includeTentative: true }));
+  expect(f.search).toHaveBeenCalledTimes(2);
+  expect(f.search.mock.calls[0]?.[0]).not.toHaveProperty("includeTentative");
+  expect(f.search.mock.calls[1]?.[0]).toMatchObject({
+    includeTentative: true,
+    tentativeOnly: true,
+  });
   expect(result.memories.map(({ text }) => text)).toEqual(["主人住在杭州", "主人偏好明治乳制品"]);
   expect(result.memories[1]).toMatchObject({ tentative: true });
   expect(result.memories[0]).not.toHaveProperty("tentative");
@@ -218,6 +227,9 @@ it("[PA-2] REVERSE: tentative memories take at most half of the requested slots 
   const single = (await f.service.recall(call({ query: "x", limit: 1 }))) as RecallResult;
   expect(single.memories.map(({ text }) => text)).toEqual(["事实一"]);
   expect(single).not.toHaveProperty("tentativeNote");
+  const searchCallsBefore = f.search.mock.calls.length;
+  await f.service.recall(call({ query: "x", limit: 1 }));
+  expect(f.search.mock.calls.length - searchCallsBefore).toBe(1);
 });
 
 it("[PA-2] REVERSE: a tentative memory above the run's data classification is not returned", async () => {
