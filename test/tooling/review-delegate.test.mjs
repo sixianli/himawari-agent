@@ -692,10 +692,7 @@ describe("review delegation result check, legitimate edge cases", () => {
       f.run(f.mac, "push", "--quiet", "origin", "feature");
       const task = { ...f.task, providers: undefined, tip: f.run(f.mac, "rev-parse", "HEAD") };
       f.run(f.cloud, "pull", "--quiet", "origin", "feature");
-      cloudFiles(f, {
-        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([f.record(deepseek), f.record(glm)]),
-        ...f.files([deepseek, glm]),
-      });
+      cloudFiles(f, { [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([f.record(deepseek)]) });
       commitCloud(f, "result");
       expect(() => checkResult(task, { repo: f.mac })).toThrow("DELEGATION_NO_GATEWAY_CONFIG");
     }),
