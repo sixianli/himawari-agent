@@ -705,6 +705,67 @@ describe("[P0-8] calibration report tab", () => {
     expect(text("#page .weekly-muse-foot")).toContain("配对率 95.2%（40/42）");
   });
 
+  it("[P0-11] shows observed signals in their own card, apart from the rating rows", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        implicit: {
+          pushedDecisions: 8,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 5, 25 * 60_000, 8),
+            signalRow("undone", 1, 90_000, 8),
+            signalRow("replied", 0, null, 8),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const tiles = [
+      ...document.querySelectorAll("#page .weekly-tiles[data-count='3'] .weekly-tile"),
+    ].map((tile) => tile.textContent);
+    expect(tiles).toEqual([
+      "62.5%（5/8）点开了推送首次发生的中位间隔 25 分钟",
+      "12.5%（1/8）完成或不再提醒后又撤销首次发生的中位间隔 2 分钟",
+      "0.0%（0/8）邮件串里你回复了还没有发生",
+    ]);
+    expect(text('#page [aria-label="观察信号 · 不是打分"]')).toContain("另有 2 条信号");
+    expect(text("#page .weekly-table")).not.toContain("点开了推送");
+  });
+
+  it("[P0-11] [negative] shows no ratio when no decision sent a reminder or the sample is too small", async () => {
+    await render();
+    await openReport();
+    expect(text('#page [aria-label="观察信号 · 不是打分"]')).toBe(
+      "观察信号 · 不是打分这一周没有推送过提醒的决策。",
+    );
+  });
+
+  it("[P0-11] [negative] shows no percentage when too few decisions sent a reminder", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        implicit: {
+          pushedDecisions: 3,
+          otherDecisionEvents: 0,
+          signals: [
+            signalRow("opened", 2, 60_000, 3),
+            signalRow("undone", 0, null, 3),
+            signalRow("replied", 0, null, 3),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("样本不足（3 条）");
+    expect(card).not.toMatch(/%/u);
+  });
+
   it("[P0-8] opens and closes the explanations with Esc and an outside click", async () => {
     await render();
     await openReport();
