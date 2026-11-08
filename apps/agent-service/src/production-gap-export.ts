@@ -107,27 +107,26 @@ export class ProductionGapExport {
     const marks = await this.#marks.list(this.#scope);
     const cases: GapExportCase[] = [];
     for (const mark of marks) {
-      const text = await this.#seal.open({ ...this.#scope, ref: mark.snapshotRef });
-      if (text === undefined) continue;
-      let snapshot: GapCaseSnapshot;
       try {
-        snapshot = JSON.parse(text) as GapCaseSnapshot;
+        const text = await this.#seal.open({ ...this.#scope, ref: mark.snapshotRef });
+        if (text === undefined) continue;
+        const snapshot = JSON.parse(text) as GapCaseSnapshot;
+        const prefill = gapBacklogPrefill(snapshot);
+        cases.push({
+          id: mark.caseId,
+          markedAt: mark.markedAt,
+          week: { start: snapshot.weekStart, end: snapshot.weekEnd },
+          attribution: snapshot.attribution,
+          prefill: {
+            title: mask(prefill.title),
+            summary: mask(prefill.summary),
+            why: mask(prefill.why),
+            origin: mask(prefill.origin),
+          },
+        });
       } catch {
         continue;
       }
-      const prefill = gapBacklogPrefill(snapshot);
-      cases.push({
-        id: mark.caseId,
-        markedAt: mark.markedAt,
-        week: { start: snapshot.weekStart, end: snapshot.weekEnd },
-        attribution: snapshot.attribution,
-        prefill: {
-          title: mask(prefill.title),
-          summary: mask(prefill.summary),
-          why: mask(prefill.why),
-          origin: mask(prefill.origin),
-        },
-      });
     }
     return { schema: GAP_EXPORT_SCHEMA, generatedAt: this.#clock.now(), cases };
   }

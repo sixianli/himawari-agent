@@ -1131,9 +1131,9 @@ export const messages = {
   "muse.settings.paused": "Paused",
   "muse.settings.clear": "Clear Muse data",
   "muse.settings.clearHint":
-    "Deletes the Muse items received automatically and your ratings of them. Muse comparison entries you typed in by hand stay.",
+    "Deletes the Muse items received automatically, your ratings of them and the cases you added to the Backlog. Muse comparison entries you typed in by hand stay.",
   "muse.settings.clearConfirm":
-    "Delete every Muse item received automatically and your ratings of them? This can’t be undone.",
+    "Delete every Muse item received automatically, your ratings of them and the cases you added to the Backlog? This can’t be undone.",
   "muse.settings.cleared": "Cleared.",
   "proactive.when.dueToday": "Due today {time}",
   "proactive.line.allSkipped":

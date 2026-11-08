@@ -506,7 +506,7 @@ export class SqliteDecisionLedgerOperations {
           AND e.intake_item_key = i.kind || ':' || i.natural_key
          WHERE e.owner_id = ? AND e.agent_id = ? AND e.muse_at >= ? AND e.muse_at < ?
            AND e.muse_reminded = 1 AND e.paired_message_id IS NOT NULL
-         ORDER BY e.muse_at, e.id`,
+         ORDER BY e.muse_at, e.id LIMIT 1000`,
       )
       .all(input.ownerId, input.agentId, input.start, input.end) as Record<string, unknown>[];
     return rows.map((row) => {

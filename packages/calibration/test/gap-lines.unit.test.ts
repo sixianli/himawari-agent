@@ -121,6 +121,16 @@ describe("[PA-4] 案例入选和归因", () => {
     expect(opposite.high - opposite.low).toBeGreaterThan(0);
   });
 
+  it("配对差区间在强正相关（修正分支 e 大于 n/2）时给出有限且包住差值的区间", () => {
+    const strong = pairedDifferenceInterval(20, 2, 1, 20);
+    expect(strong).not.toBeNull();
+    if (strong === null) return;
+    expect(Number.isFinite(strong.low) && Number.isFinite(strong.high)).toBe(true);
+    expect(strong.low).toBeLessThanOrEqual(strong.difference);
+    expect(strong.high).toBeGreaterThanOrEqual(strong.difference);
+    expect(strong.high - strong.low).toBeLessThan(0.25);
+  });
+
   it("归因顺序：没读全 > 没取到 > 没记住 > 判断错", () => {
     const base = { relatedRead: "ok", memoryRecall: "ok", memoryHitsForMail: 2 };
     expect(attributeGap({ ...base, relatedRead: "partial" })).toBe("notReadFully");

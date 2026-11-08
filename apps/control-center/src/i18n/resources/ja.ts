@@ -1126,9 +1126,9 @@ export const messages = {
   "muse.settings.paused": "一時停止中",
   "muse.settings.clear": "Muse のデータを消去",
   "muse.settings.clearHint":
-    "自動で受信した Muse の項目と、それらへの評価を削除します。手入力した Muse の比較記録は残ります。",
+    "自動で受信した Muse の項目、それらへの評価、Backlog に追加した事例の印を削除します。手入力した Muse の比較記録は残ります。",
   "muse.settings.clearConfirm":
-    "自動で受信した Muse の項目とそれらへの評価をすべて削除しますか？元に戻せません。",
+    "自動で受信した Muse の項目、それらへの評価、Backlog に追加した事例の印をすべて削除しますか？元に戻せません。",
   "muse.settings.cleared": "消去しました。",
   "proactive.when.dueToday": "本日 {time} 締切",
   "proactive.line.allSkipped":

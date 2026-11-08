@@ -325,7 +325,12 @@ export class ProductionObservation {
     const at = this.#options.clock.now();
     const snapshot: GapCaseSnapshot = { ...found, weekStart: window.start, weekEnd: window.end };
     const ref = await seal.seal({ ...scope, text: JSON.stringify(snapshot), at });
-    const added = await marks.mark({ ...scope, caseId: payload.caseId, snapshotRef: ref, at });
+    const added = await marks
+      .mark({ ...scope, caseId: payload.caseId, snapshotRef: ref, at })
+      .catch(async (error: unknown) => {
+        await seal.release({ ...scope, refs: [ref] });
+        throw error;
+      });
     if (!added) await seal.release({ ...scope, refs: [ref] });
     return { resultRef: `gap-case-mark:${payload.caseId}`, replayed: !added };
   }

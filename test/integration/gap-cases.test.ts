@@ -454,13 +454,15 @@ describe("[PA-4] Muse gap cases", () => {
       const [first] = await h.cases();
       if (!first) throw new Error("no case");
       await h.mark(first.id, true);
-      const damagedRef = await h.seal.seal({ ...scope, text: "{not json", at: IN_WINDOW });
-      await h.marks.mark({
-        ...scope,
-        caseId: "gap_ffffffffffffffffffff",
-        snapshotRef: damagedRef,
-        at: IN_WINDOW,
-      });
+      for (const [index, text] of ["{not json", "null", "{}"].entries()) {
+        const damagedRef = await h.seal.seal({ ...scope, text, at: IN_WINDOW });
+        await h.marks.mark({
+          ...scope,
+          caseId: `gap_${String(index).repeat(20)}`,
+          snapshotRef: damagedRef,
+          at: IN_WINDOW,
+        });
+      }
       const response = await h.app.inject({
         method: "GET",
         url: GAP_EXPORT_PATH,

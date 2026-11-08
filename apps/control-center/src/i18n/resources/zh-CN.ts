@@ -1058,8 +1058,9 @@ export const messages = {
   "muse.settings.paused": "已暂停",
   "muse.settings.clear": "清除 Muse 数据",
   "muse.settings.clearHint":
-    "删除自动收到的 Muse 条目和你对它们的评价；手动录入的 Muse 对照不受影响。",
-  "muse.settings.clearConfirm": "确定清除所有自动收到的 Muse 条目和对它们的评价吗？这不能撤销。",
+    "删除自动收到的 Muse 条目、你对它们的评价和已加入 Backlog 的案例标记；手动录入的 Muse 对照不受影响。",
+  "muse.settings.clearConfirm":
+    "确定清除所有自动收到的 Muse 条目、对它们的评价和已加入 Backlog 的案例标记吗？这不能撤销。",
   "muse.settings.cleared": "已清除。",
   "proactive.when.dueToday": "今天 {time} 截止",
   "proactive.line.allSkipped": "{count} 封新邮件，都是垃圾邮件，按规则跳过，没交给模型",
