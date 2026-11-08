@@ -426,7 +426,10 @@ it.each([
       if (command.kind === "bind") {
         bound = true;
         if (!command.facts) throw new Error("facts missing");
-        facts = command.facts;
+        facts = validateSandboxExecutionFacts(plan, command.facts, {
+          environment: command.facts.environment,
+          operationContract: plan.operationContract,
+        }) as typeof facts;
         if (scenario === "bind-ack-loss") throw new Error("ack lost after commit");
       }
       if (command.kind === "observe_control" && startPending) {
@@ -517,7 +520,7 @@ it.each([
         facts = validateSandboxExecutionFacts(
           plan,
           command.facts,
-          { environment: command.facts.environment, operationContract: plan.operationContract },
+          { environment: facts.environment, operationContract: plan.operationContract },
           command.kind === "append" ? facts : undefined,
         ) as typeof facts;
         if (command.kind === "operation" && scenario === "background-ack-loss")

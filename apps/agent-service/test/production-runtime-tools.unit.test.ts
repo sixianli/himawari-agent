@@ -500,6 +500,9 @@ describe("ProductionRuntimeTools", () => {
       expect(result.modelContent).not.toContain(
         `${f.options.ceiling.maxCpuTimeMs / 1000} 秒、内存 ${f.options.ceiling.maxMemoryBytes / 1_000_000} MB`,
       );
+      expect(result.modelContent).toContain("执行已结束并完成清理");
+      expect(result.modelContent).not.toContain("已被终止");
+      expect(result.modelContent).not.toContain("在终止前");
       expect(result.modelContent).not.toBe("操作未确认成功。");
     },
   );

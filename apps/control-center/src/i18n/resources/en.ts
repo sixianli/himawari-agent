@@ -222,13 +222,13 @@ export const messages = {
   "chat.reason.runDeadlineExceeded":
     "The Run deadline expired; cleanup is complete and this Run has ended",
   "chat.reason.toolCpuTimeLimit":
-    "The command used more CPU time than its limit; it was terminated and cleanup is complete",
+    "The command used more CPU time than its limit; execution has ended and cleanup is complete",
   "chat.reason.toolDeadlineExceeded":
     "The tool timed out; it was terminated and cleanup is complete",
   "chat.reason.toolMemoryLimit":
-    "The command used more memory than its limit; it was terminated and cleanup is complete",
+    "The command used more memory than its limit; execution has ended and cleanup is complete",
   "chat.reason.toolResourceLimit":
-    "The command crossed a resource limit; it was terminated and cleanup is complete",
+    "The command crossed a resource limit; execution has ended and cleanup is complete",
   "chat.reason.toolOutputLimit":
     "The command produced more output than its limit; output capture stopped and cleanup is complete",
   "chat.reason.toolNotStarted":

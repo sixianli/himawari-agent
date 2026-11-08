@@ -170,7 +170,7 @@ export function sandboxCeilingExceededMessage(
           ? "命令超过资源上限"
           : null;
   if (crossed === null) return null;
-  return `${reasonCode}：${crossed}，已被终止并完成清理，没有重新执行。${limits}。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态，再用更省资源的做法重试，或者说明这件事做不到。`;
+  return `${reasonCode}：${crossed}，执行已结束并完成清理，没有重新执行。${limits}。它可能已经修改了工作区，部分输出不可用；请先检查当前状态，再用更省资源的做法重试，或者说明这件事做不到。`;
 }
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE =
   "工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";

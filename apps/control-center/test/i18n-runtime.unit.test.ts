@@ -68,6 +68,35 @@ describe("control-center i18n runtime", () => {
     }
   });
 
+  it("[I-84] never says a ceiling terminated the command, in any locale", async () => {
+    const forbidden = {
+      "zh-CN": ["已终止", "已被终止"],
+      en: ["terminated"],
+      ja: ["停止と後処理"],
+    } as const;
+    const required = {
+      "zh-CN": ["执行已结束并完成清理", "已停止接收并完成清理"],
+      en: [
+        "execution has ended and cleanup is complete",
+        "output capture stopped and cleanup is complete",
+      ],
+      ja: ["実行は終了し、後処理は完了しています", "受信を停止し、後処理は完了しています"],
+    } as const;
+    for (const locale of ["zh-CN", "en", "ja"] as const) {
+      const messages = await catalog(locale);
+      const ceilings = [
+        messages["chat.reason.toolCpuTimeLimit"],
+        messages["chat.reason.toolMemoryLimit"],
+        messages["chat.reason.toolResourceLimit"],
+        messages["chat.reason.toolOutputLimit"],
+      ];
+      for (const text of ceilings)
+        for (const word of forbidden[locale]) expect(text).not.toContain(word);
+      for (const text of required[locale])
+        expect(ceilings.some((message) => message.includes(text))).toBe(true);
+    }
+  });
+
   it("executes plural branches and locale-aware number/date formatting", async () => {
     for (const locale of ["zh-CN", "en", "ja"] as const) {
       const intl = createIntl({ locale, messages: await catalog(locale) }, createIntlCache());
