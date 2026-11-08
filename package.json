@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "npm@11.8.0",
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.22.3"
   },
   "workspaces": [
     "apps/*",
@@ -70,7 +70,7 @@
     "format:check": "biome format .",
     "lint": "biome lint --error-on-warnings --diagnostic-level=warn .",
     "link:local-pi": "node scripts/link-local-pi.mjs",
-    "test": "node scripts/ci/local.mjs --check test",
+    "test": "node scripts/ci/local.mjs --check coverage",
     "test:browser": "vitest run --config vitest.workspace.ts --project browser",
     "test:cli": "vitest run --config vitest.workspace.ts --project admin-cli",
     "test:contracts": "vitest run --config vitest.workspace.ts --project contracts",

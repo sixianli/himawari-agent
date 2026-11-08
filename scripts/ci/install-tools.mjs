@@ -89,13 +89,10 @@ export function validateToolchainLock(lock) {
     "ToolchainLock",
   );
   assert(lock.schemaVersion === 1, "不支持的 ToolchainLock schema");
-  fields(lock.node, ["baseline", "floor", "license", "releases"], "Node");
-  assert(
-    lock.node.baseline === "22.22.3" && lock.node.floor === "22.19.0",
-    "Node 基线或最低版本不符合已确认合同",
-  );
+  fields(lock.node, ["baseline", "license", "releases"], "Node");
+  assert(lock.node.baseline === "22.22.3", "Node 基线不符合已确认合同");
   license(lock.node.license);
-  fields(lock.node.releases, [lock.node.baseline, lock.node.floor], "Node releases");
+  fields(lock.node.releases, [lock.node.baseline], "Node releases");
   for (const release of Object.values(lock.node.releases)) {
     fields(release, ["artifacts", "headers"], "Node release");
     platformArtifacts(release.artifacts);
@@ -335,7 +332,7 @@ export function verifyInstalledTools({ directory, root = repositoryRoot }) {
   const installation = JSON.parse(readFileSync(join(prefix, "installation.json"), "utf8"));
   const lock = loadToolchainLock(root);
   assert(installation.platform === `${process.platform}-${process.arch}`, "已安装工具平台不匹配");
-  assert([lock.node.baseline, lock.node.floor].includes(installation.node), "已安装 Node 不受支持");
+  assert(installation.node === lock.node.baseline, "已安装 Node 不受支持");
   const version = installation.node;
   const platform = installation.platform;
   const expectedDownloads = [
@@ -469,7 +466,7 @@ export async function installTools({
   );
   const lock = loadToolchainLock(root);
   const version = nodeVersion ?? lock.node.baseline;
-  assert([lock.node.baseline, lock.node.floor].includes(version), "不支持的 Node 版本");
+  assert(version === lock.node.baseline, "不支持的 Node 版本");
   const platform = `${process.platform}-${process.arch}`;
   assert(platforms.includes(platform), `不支持的平台: ${platform}`);
   mkdirSync(prefix, { recursive: true });
