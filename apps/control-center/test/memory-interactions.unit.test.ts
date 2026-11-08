@@ -996,6 +996,38 @@ describe("memory approval and management", () => {
     expect(document.querySelector(add)).toBeNull();
   });
 
+  it("[mask-not-block] marks a memory or reminder that holds a card number as sensitive and keeps the text as typed", async () => {
+    await render();
+    const memoryAdd = "#settings .memory-card[data-kind=add]";
+    await click("#settings .memory-search-row", "添加");
+    await type(`${memoryAdd} textarea`, "今年的目标是还清卡 6222020200112233445");
+    await act(async () => {
+      const select = document.querySelector<HTMLSelectElement>(`${memoryAdd} select`);
+      if (!select) return;
+      select.value = "goal";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(document.querySelector<HTMLInputElement>(`${memoryAdd} [role=switch]`)?.disabled).toBe(
+      true,
+    );
+    await click(memoryAdd, "保存");
+    expect(protectText).toHaveBeenLastCalledWith(
+      "今年的目标是还清卡 6222020200112233445",
+      "sensitive",
+    );
+    expect(lastCommand()).toMatchObject({
+      type: "memory.create",
+      payload: { category: "goal", pinned: false },
+    });
+    expect(text("#settings .memory-notice")).not.toContain("以后每次对话都会带上");
+    const reminderAdd = "#reminders-page .memory-card[data-kind=add]";
+    await click("#reminders-page", "新建提醒");
+    await type(`${reminderAdd} textarea`, "还信用卡 6222020200112233445");
+    await type(`${reminderAdd} input[type=datetime-local]`, "2099-01-02T09:30");
+    await click(reminderAdd, "保存");
+    expect(protectText).toHaveBeenLastCalledWith("还信用卡 6222020200112233445", "sensitive");
+  });
+
   it("[REM-1] does not offer a new reminder before the first memory is learned", async () => {
     overview = { ...overview, manualAddReady: false };
     await render();
@@ -1065,18 +1097,27 @@ describe("memory approval and management", () => {
     });
     await click("#settings .memory-import", "拆成一条条");
     const preview = text("#settings .memory-import");
-    expect(preview).toContain("找到 3 条，已勾 1 条");
+    expect(preview).toContain("找到 4 条，已勾 1 条");
     expect(preview).toContain("已经记着，跳过");
     expect(preview).toContain("敏感，默认不导入");
-    expect(preview).toContain("另有 1 条像是密码");
+    expect(preview).not.toContain("已直接丢掉");
+    const boxes = document.querySelectorAll<HTMLInputElement>(
+      "#settings .memory-preview input[type=checkbox]",
+    );
+    await act(async () => boxes[2]?.click());
+    expect(text("#settings .memory-import")).toContain("找到 4 条，已勾 2 条");
     protectText.mockClear();
-    await click("#settings .memory-import", "导入勾选的 1 条");
+    await click("#settings .memory-import", "导入勾选的 2 条");
     expect(protectText).toHaveBeenCalledWith("回答不要用表情符号", "private");
+    expect(protectText).toHaveBeenCalledWith("我的密码是 hunter2", "sensitive");
     expect(lastCommand()).toMatchObject({
       type: "memory.import.commit",
       payload: {
         source: "assistant",
-        items: [{ contentRef: "payload-edit", category: "rule", subCategory: null }],
+        items: [
+          { contentRef: "payload-edit", category: "rule", subCategory: null },
+          { contentRef: "payload-edit" },
+        ],
       },
     });
     expect(lastCommand().payload.batchId).toMatch(/^memory-import-\d+$/);
@@ -1193,7 +1234,7 @@ describe("memory import parsing", () => {
     expect(guessCategory("我喜欢喝咖啡").category).toBe("preference");
   });
 
-  it("[MP-8] reads Codex memory files, drops secrets, skips duplicates and keeps coding notes off", () => {
+  it("[MP-8] reads Codex memory files, marks secrets, skips duplicates and keeps coding notes off", () => {
     const summary = [
       "v1",
       "## User Profile",
@@ -1218,8 +1259,20 @@ describe("memory import parsing", () => {
     expect(parsed.items[2]?.duplicate).toBe(true);
     expect(parsed.items[4]).toMatchObject({ coding: true, subCategory: "Codex" });
     const agents = parseMemoryText("AGENTS.md", "# Global\n- 推送后不要强推\n- token 是 ghp_x", []);
-    expect(agents.items.map((item) => item.text)).toEqual(["推送后不要强推"]);
-    expect(agents.dropped).toBe(1);
+    expect(agents.items.map((item) => [item.text, item.sensitive, item.checked])).toEqual([
+      ["推送后不要强推", false, true],
+      ["token 是 ghp_x", true, false],
+    ]);
+    const forms = parseMemoryText(
+      "answer.md",
+      "- pwd: hunter2abc\n- PIN码是 1234\n- 我最喜欢的颜色是蓝色",
+      [],
+    );
+    expect(forms.items.map((item) => [item.text, item.sensitive, item.checked])).toEqual([
+      ["pwd: hunter2abc", true, false],
+      ["PIN码是 1234", true, false],
+      ["我最喜欢的颜色是蓝色", false, true],
+    ]);
   });
 
   it("[MP-8] reads a Himawari export and keeps only memories that were in use", () => {

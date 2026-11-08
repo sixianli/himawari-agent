@@ -227,6 +227,8 @@ export interface ProactiveConfiguration {
   readonly memoryMinimumSimilarity: number;
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
+  readonly reviewSilentSharePermille: number;
+  readonly backoffThreshold: number;
 }
 
 export interface MuseIntakeConfiguration {

@@ -3,18 +3,21 @@ import {
   type PayloadRef,
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
-import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
+import {
+  piFileRecoveryOperationKey,
+  SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
+} from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
 } from "../src/production-host-read.js";
+import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   type ProductionRuntimeSandbox,
   ProductionRuntimeTools,
   type ProductionRuntimeToolsOptions,
 } from "../src/production-runtime-tools.js";
-import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -307,6 +310,30 @@ describe("ProductionRuntimeTools", () => {
     });
     expect(maximumResourceCeiling).toHaveBeenCalledWith(invocation.capabilityRef, "1.0.0");
   });
+  it("uses the smaller of the tool memory limit and the qualified binding memory ceiling", async () => {
+    for (const [bound, expected] of [
+      [SANDBOX_TOOL_MEMORY_LIMIT_BYTES / 2, SANDBOX_TOOL_MEMORY_LIMIT_BYTES / 2],
+      [SANDBOX_TOOL_MEMORY_LIMIT_BYTES, SANDBOX_TOOL_MEMORY_LIMIT_BYTES],
+      [SANDBOX_TOOL_MEMORY_LIMIT_BYTES * 2, SANDBOX_TOOL_MEMORY_LIMIT_BYTES],
+    ] as const) {
+      const f = fixture();
+      const options = {
+        ...f.options,
+        ceiling: { ...f.options.ceiling, maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES },
+        maximumResourceCeiling: vi.fn(async () => ({
+          ...f.options.ceiling,
+          maxMemoryBytes: bound,
+        })),
+      };
+      const tool = new ProductionRuntimeTools(options);
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      expect((await tool.execute(invocation)).outcome).toBe("succeeded");
+      const execute = f.request.mock.calls.find(
+        ([message]) => message.type === "work.execute",
+      )?.[0];
+      expect(execute).toMatchObject({ payload: { resourceCeiling: { maxMemoryBytes: expected } } });
+    }
+  });
   it("reports a tightened Worker ceiling as a distinct pre-dispatch reason", async () => {
     const f = fixture();
     let reads = 0;
@@ -467,6 +494,116 @@ describe("ProductionRuntimeTools", () => {
     });
     expect(result.modelContent).not.toBe("操作未确认成功。");
   });
+  it.each([
+    ["SANDBOX_CPU_TIME_LIMIT", "CPU 时间"],
+    ["SANDBOX_MEMORY_LIMIT", "内存"],
+    ["SANDBOX_RESOURCE_LIMIT", "资源"],
+  ] as const)(
+    "[I-84] tells the model which resource limit stopped the command and what that limit is (%s)",
+    async (errorCode, limitName) => {
+      const f = fixture();
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        const completion = {
+          outcome: "failed" as const,
+          outputRef: null,
+          errorCode,
+          externalActionId: null,
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const ceiling = { ...f.options.ceiling, maxCpuTimeMs: 12_500, maxMemoryBytes: 268_435_456 };
+      const tool = new ProductionRuntimeTools({ ...f.options, ceiling, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject({ dispatchState: "accepted", outcome: "failed", errorCode });
+      expect(result.modelContent).toContain(limitName);
+      expect(result.modelContent).toContain("CPU 时间 12.5 秒");
+      expect(result.modelContent).toContain("内存 268.4 MB");
+      expect(result.modelContent).not.toContain(
+        `${f.options.ceiling.maxCpuTimeMs / 1000} 秒、内存 ${f.options.ceiling.maxMemoryBytes / 1_000_000} MB`,
+      );
+      expect(result.modelContent).toContain("执行已结束并完成清理");
+      expect(result.modelContent).not.toContain("已终止");
+      expect(result.modelContent).not.toContain("已被终止");
+      expect(result.modelContent).not.toContain("在终止前");
+      expect(result.modelContent).not.toBe("操作未确认成功。");
+    },
+  );
+  it("[I-84] states the limit that stopped this command, not the limit in force now", async () => {
+    const f = fixture();
+    const completeSandboxToolResult = vi.fn<
+      NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+    >(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      const completion = {
+        outcome: "failed" as const,
+        outputRef: null,
+        errorCode: "SANDBOX_CPU_TIME_LIMIT",
+        externalActionId: null,
+        resourceCeiling: { ...f.options.ceiling, maxCpuTimeMs: 7_500, maxMemoryBytes: 134_217_728 },
+      };
+      await delivery.saveReceipt(completion);
+      return completion;
+    });
+    const ceiling = { ...f.options.ceiling, maxCpuTimeMs: 12_500, maxMemoryBytes: 268_435_456 };
+    const tool = new ProductionRuntimeTools({ ...f.options, ceiling, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({ outcome: "failed", errorCode: "SANDBOX_CPU_TIME_LIMIT" });
+    expect(result.modelContent).toContain("CPU 时间 7.5 秒");
+    expect(result.modelContent).toContain("内存 134.2 MB");
+    expect(result.modelContent).not.toContain("12.5 秒");
+    expect(result.modelContent).not.toContain("268.4 MB");
+  });
+  it.each([
+    [2_500_000, "输出 2.5 MB"],
+    [32_768, "输出 32.8 KB"],
+    [800, "输出 800 字节"],
+  ] as const)(
+    "[I-84] tells the model the output a command may produce and that what came back is cut short (%s)",
+    async (maxOutputBytes, limit) => {
+      const f = fixture();
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        const completion = {
+          outcome: "failed" as const,
+          outputRef: null,
+          errorCode: "SANDBOX_OUTPUT_LIMIT",
+          externalActionId: null,
+          resourceCeiling: { ...f.options.ceiling, maxOutputBytes },
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const ceiling = { ...f.options.ceiling, maxOutputBytes: 9_900_000 };
+      const tool = new ProductionRuntimeTools({ ...f.options, ceiling, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject({
+        dispatchState: "accepted",
+        outcome: "failed",
+        errorCode: "SANDBOX_OUTPUT_LIMIT",
+      });
+      expect(result.modelContent).toContain(limit);
+      expect(result.modelContent).toContain("可能已被截断");
+      expect(result.modelContent).toContain("标准输出和标准错误合计");
+      expect(result.modelContent).not.toContain("已终止");
+      expect(result.modelContent).not.toContain("已被终止");
+      expect(result.modelContent).not.toContain("在终止前");
+      expect(result.modelContent).not.toContain("输出 9.9 MB");
+      expect(result.modelContent).not.toContain("CPU 时间");
+      expect(result.modelContent).not.toBe("操作未确认成功。");
+    },
+  );
   it.each([
     ["output:tools", { outcome: "failed", resultRef: "output:tools", modelContent: "已读取结果" }],
     ["output:unobserved", { outcome: "result_unknown", resultRef: null }],

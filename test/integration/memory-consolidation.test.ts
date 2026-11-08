@@ -366,14 +366,18 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         },
       });
     const read = (id: string) => repository.productMemoryState().read(createMemoryId(id));
-    const searchable = async (query: string, includeTentative = false) =>
+    const searchable = async (query: string, includeTentative: boolean | "only" = false) =>
       (
         await provider.search({
           ownerId: OWNER_ID,
           agentId: AGENT_ID,
           query,
           limit: 10,
-          ...(includeTentative ? { includeTentative: true } : {}),
+          ...(includeTentative === "only"
+            ? { includeTentative: true, tentativeOnly: true }
+            : includeTentative
+              ? { includeTentative: true }
+              : {}),
         })
       ).map(({ productMemoryId }) => productMemoryId as string);
     return { repository, memory, consolidation, clock, prompts, run, read, searchable };
@@ -443,6 +447,12 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       await resource.memory.runProjectionBatch(50);
       expect(await resource.searchable("半程马拉松晨跑")).not.toContain(insight?.id);
       expect(await resource.searchable("半程马拉松晨跑", true)).toContain(insight?.id);
+      const only = await resource.searchable("半程马拉松晨跑", "only");
+      expect(only).toContain(insight?.id);
+      expect(only).toHaveLength(
+        (await resource.searchable("半程马拉松晨跑", true)).filter((id) => id === insight?.id)
+          .length,
+      );
       expect(await resource.run()).toBeNull();
       resource.clock.value = "2026-10-26T03:00:00.000Z";
       const quiet = await resource.run(() => {

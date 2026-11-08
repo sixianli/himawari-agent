@@ -9,7 +9,10 @@ import {
   enumerateLockDependencies,
   loadReviewedExceptions,
 } from "../../scripts/ci/security-exceptions.mjs";
-import { applyMachineReview } from "../../scripts/ci/security-owner-review.mjs";
+import {
+  applyMachineReview,
+  loadOwnerReviewManifest,
+} from "../../scripts/ci/security-owner-review.mjs";
 
 const roots = [];
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -272,6 +275,45 @@ describe("批准清单的解析和来源边界", () => {
     });
     f.options.dependencies[0].version = "2.0.0";
     expect(() => reload(f)).toThrow("SECURITY_EXCEPTION_DEPENDENCY_UNKNOWN");
+  });
+});
+
+describe("合并前本地门槛离线读取复核清单", () => {
+  it("不读 GitHub 评论，返回清单里的测试令牌和来源提交，结构不对照样拒绝", () => {
+    const f = fixture();
+    const current = {
+      kind: "secret",
+      id: "generic-api-key",
+      path: "test/example.test.ts",
+      digest: "d".repeat(64),
+      line: 1,
+      scope: "current",
+      commit: null,
+    };
+    f.manifest.entries = [f.entry, current];
+    writeFileSync(f.manifestPath, JSON.stringify(f.manifest));
+    const result = loadOwnerReviewManifest({ root: f.root, context: f.options.context });
+    expect(result.sourceSha).toBe(f.manifest.sourceHead);
+    expect(result.exceptions).toEqual([
+      expect.objectContaining({
+        kind: "synthetic-secret",
+        id: "generic-api-key",
+        path: "test/example.test.ts",
+        count: 1,
+        reviewReference: null,
+      }),
+    ]);
+    f.manifest.entries = [{ ...current, scope: "history", commit: f.manifest.sourceHead }];
+    writeFileSync(f.manifestPath, JSON.stringify(f.manifest));
+    expect(() => loadOwnerReviewManifest({ root: f.root, context: f.options.context })).toThrow(
+      "SECURITY_REVIEW_SECRET_INVALID",
+    );
+  });
+  it("没有复核清单时返回 null", () => {
+    const f = fixture();
+    rmSync(f.manifestPath);
+    rmSync(join(f.root, ".github/security-review-comment.json"));
+    expect(loadOwnerReviewManifest({ root: f.root, context: f.options.context })).toBeNull();
   });
 });
 

@@ -994,6 +994,9 @@ export class SqliteDurableAdapters {
       markPushEnqueued: (input) => this.context.write("proactive.markPushEnqueued", input),
       readPush: (input) => this.context.read("proactive.readPush", input),
       readInsights: (input) => this.context.read("proactive.readInsights", input),
+      previewBackoff: (input) => this.context.read("proactive.previewBackoff", input),
+      listBackoff: (input) => this.context.read("proactive.listBackoff", input),
+      restoreBackoff: (input) => this.context.write("proactive.restoreBackoff", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {
@@ -1012,6 +1015,7 @@ export class SqliteDurableAdapters {
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
+      listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
     });

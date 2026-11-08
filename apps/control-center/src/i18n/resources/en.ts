@@ -173,7 +173,7 @@ export const messages = {
   "chat.model": "Model (next turn)",
   "chat.depth": "Thinking depth (next turn)",
   "chat.search.disclosure":
-    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Credentials detected in a query are redacted before it is sent. Revoking restores confirmation for future searches.",
   "chat.search.remember": "Remember my choice and allow future web searches",
   "chat.search.afterRevoke": "It’s off now, so Himawari asks in the chat before it searches.",
   "chat.search.providersChanged":
@@ -221,8 +221,16 @@ export const messages = {
     "A command's result could not be confirmed, so this Run ended without an answer. Check what the command did before continuing",
   "chat.reason.runDeadlineExceeded":
     "The Run deadline expired; cleanup is complete and this Run has ended",
+  "chat.reason.toolCpuTimeLimit":
+    "The command used more CPU time than its limit; execution has ended and cleanup is complete",
   "chat.reason.toolDeadlineExceeded":
     "The tool timed out; it was terminated and cleanup is complete",
+  "chat.reason.toolMemoryLimit":
+    "The command used more memory than its limit; execution has ended and cleanup is complete",
+  "chat.reason.toolResourceLimit":
+    "The command crossed a resource limit; execution has ended and cleanup is complete",
+  "chat.reason.toolOutputLimit":
+    "The command produced more output than its limit; output capture stopped and cleanup is complete",
   "chat.reason.toolNotStarted":
     "The tool did not start: preparation failed and cleanup is confirmed",
   "chat.reason.deadlineExceeded": "Execution deadline expired; the operation was not dispatched",
@@ -768,8 +776,6 @@ export const messages = {
   "memory.page.importSummary": "{all} found, {on} selected",
   "memory.page.importFlag":
     "{f, select, duplicate {Already remembered} sensitive {Sensitive, off by default} other {Coding notes, off by default}}",
-  "memory.page.importDropped":
-    "{count} more looked like passwords, tokens or ID numbers and were dropped.",
   "memory.page.importCommit": "Import {count} selected",
   "memory.page.importDone": "Imported {count}. Undo the whole import from the timeline.",
   "memory.page.importEmpty":
@@ -926,7 +932,7 @@ export const messages = {
   "chat.search.sentQuery":
     "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
   "chat.search.sentLimits":
-    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
+    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are redacted before they are sent.",
   "chat.search.alwaysOn": "Always on",
   "settings.name": "What should I call you?",
   "settings.version": "Version {revision} · {date}",
@@ -971,6 +977,11 @@ export const messages = {
   "proactive.reconnect.button": "Reconnect",
   "proactive.dailyLimit":
     "Mail checks hit today’s spending limit. The model is paused, but rules still bring in mail from banks, schools and the like. It resumes at 0:00, and chat is unaffected.",
+  "proactive.backoff.stage1":
+    "You skipped {count} reminders in a row from {domain}, so pushes for them are reduced to at most one a day. They still appear on this page.",
+  "proactive.backoff.stage2":
+    "You skipped {count} more reminders from {domain} after pushes were reduced, so pushes for them are paused. They still appear on this page.",
+  "proactive.backoff.restore": "Restore pushes",
   "proactive.paused": "Proactive reminders are off: no mail is read, logged or pushed.",
   "proactive.foot":
     "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
@@ -1263,6 +1274,21 @@ export const messages = {
   "weekly.muse.rate": "Pairing rate",
   "weekly.muse.def":
     "Pairing rate = entries matched to the same email ÷ all Muse comparison entries this week.",
+  "weekly.implicit.title": "Observed signals · not ratings",
+  "weekly.implicit.notFull": "Week not over yet",
+  "weekly.implicit.empty": "No decision sent a reminder this week.",
+  "weekly.implicit.signal":
+    "{s, select, opened {Opened the push} undone {Marked done or muted, then undid it} other {You replied in the mail thread}}",
+  "weekly.implicit.delay": "Median time to first occurrence: {t}",
+  "weekly.implicit.delayNone": "Has not happened yet",
+  "weekly.implicit.underMinute": "under 1 minute",
+  "weekly.implicit.minutes": "{n} min",
+  "weekly.implicit.hours": "{n} h",
+  "weekly.implicit.days": "{n} d",
+  "weekly.implicit.other":
+    "{n} more signals landed on decisions that sent no reminder and are not counted above.",
+  "weekly.implicit.def":
+    "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",

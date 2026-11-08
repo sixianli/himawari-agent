@@ -166,7 +166,7 @@ export const messages = {
   "chat.model": "模型（下一轮）",
   "chat.depth": "思考深度（下一轮）",
   "chat.search.disclosure":
-    "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询仍会拦截。撤销后，后续搜索重新确认。",
+    "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询词会先遮盖再发送。撤销后，后续搜索重新确认。",
   "chat.search.remember": "记住我的选择，之后允许联网搜索",
   "chat.search.afterRevoke": "现在关着，需要联网搜索时会先在对话里问你。",
   "chat.search.providersChanged":
@@ -211,7 +211,11 @@ export const messages = {
   "chat.reason.runDeadlineExceeded": "本轮执行期限已到，清理已完成，本轮已结束",
   "chat.reason.toolResultUnknown":
     "有一条命令的结果没能确认，本轮已结束，没有生成回答。继续前请先核实命令做了什么",
+  "chat.reason.toolCpuTimeLimit": "命令占用的 CPU 时间超过上限，执行已结束并完成清理",
   "chat.reason.toolDeadlineExceeded": "工具执行超时，已终止并完成清理",
+  "chat.reason.toolMemoryLimit": "命令占用的内存超过上限，执行已结束并完成清理",
+  "chat.reason.toolResourceLimit": "命令超过资源上限，执行已结束并完成清理",
+  "chat.reason.toolOutputLimit": "命令的输出超过上限，已停止接收并完成清理",
   "chat.reason.toolNotStarted": "工具未启动：准备阶段失败，已确认清理完成",
   "chat.reason.deadlineExceeded": "执行期限已到，操作未派发",
   "chat.reason.resourceCeilingChanged": "允许的资源上限已变化，操作未派发",
@@ -729,7 +733,6 @@ export const messages = {
   "memory.page.importSummary": "找到 {all} 条，已勾 {on} 条",
   "memory.page.importFlag":
     "{f, select, duplicate {已经记着，跳过} sensitive {敏感，默认不导入} other {写代码的经验，默认不导入}}",
-  "memory.page.importDropped": "另有 {count} 条像是密码、令牌或证件号，已直接丢掉，不会导入。",
   "memory.page.importCommit": "导入勾选的 {count} 条",
   "memory.page.importDone": "已导入 {count} 条；在时间线里可以整批撤销",
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",
@@ -879,7 +882,8 @@ export const messages = {
   "chat.search.whatIsSent": "搜索时会发出什么",
   "chat.search.sentQuery":
     "你的问题会被改写成搜索词，发到下面这些网址；打开网页时，网页地址也会发过去：",
-  "chat.search.sentLimits": "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会被拦下。",
+  "chat.search.sentLimits":
+    "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会先遮盖再发出。",
   "chat.search.alwaysOn": "固定开启",
   "settings.name": "怎么称呼你",
   "settings.version": "版本 {revision} · {date}",
@@ -918,6 +922,11 @@ export const messages = {
   "proactive.reconnect.button": "重新连接",
   "proactive.dailyLimit":
     "今天的邮件检查到了每日费用上限：模型先停，规则照常把银行、学校等来信放进来；0:00 自动恢复，对话不受影响。",
+  "proactive.backoff.stage1":
+    "来自 {domain} 的提醒，你连续 {count} 次没点开，已降频：这一类最多每天推送 1 条，提醒仍然会列在这个页面里。",
+  "proactive.backoff.stage2":
+    "来自 {domain} 的提醒，降频后你又连续 {count} 次没点开，已暂停推送：提醒仍然会列在这个页面里。",
+  "proactive.backoff.restore": "恢复推送",
   "proactive.paused": "系统主动提醒已关：不看邮件、不记录、不推送。",
   "proactive.foot": "到点的提醒和要紧的邮件会推送到你开过通知的设备。",
   "dailyReview.title": "每天打分",
@@ -1167,6 +1176,20 @@ export const messages = {
   "weekly.muse.unpaired": "未配对条数",
   "weekly.muse.rate": "配对率",
   "weekly.muse.def": "配对率 = 能对上同一封邮件的条目 ÷ 这一周 Muse 对照条目总数。",
+  "weekly.implicit.title": "观察信号 · 不是打分",
+  "weekly.implicit.notFull": "本周尚未结束",
+  "weekly.implicit.empty": "这一周没有推送过提醒的决策。",
+  "weekly.implicit.signal":
+    "{s, select, opened {点开了推送} undone {完成或不再提醒后又撤销} other {邮件串里你回复了}}",
+  "weekly.implicit.delay": "首次发生的中位间隔 {t}",
+  "weekly.implicit.delayNone": "还没有发生",
+  "weekly.implicit.underMinute": "不到 1 分钟",
+  "weekly.implicit.minutes": "{n} 分钟",
+  "weekly.implicit.hours": "{n} 小时",
+  "weekly.implicit.days": "{n} 天",
+  "weekly.implicit.other": "另有 {n} 条信号落在没有推送的决策上，不进上面的比例。",
+  "weekly.implicit.def":
+    "这三个信号是不需要你动手评价就能看到的事，只当观察，不当作你的打分，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策；同一条决策出现多次同类信号只算一次。",
   "weekly.goRate": "去「提醒」打分",
   "sensitive.title": "敏感信息拦截记录",
   "sensitive.count": "共 {count} 条记录",

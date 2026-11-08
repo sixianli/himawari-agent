@@ -1093,6 +1093,27 @@ function weeklySnapshot() {
         pairing: rate(40, 42),
         buckets: { both: 5, museOnly: 1, himawariOnly: 2, bothSilent: 31, noHimawariRecord: 1 },
       },
+      implicit: {
+        pushedDecisions: 12,
+        otherDecisionEvents: 1,
+        signals: [
+          {
+            signal: "opened",
+            decisions: 6,
+            events: 7,
+            medianDelayMs: 1_500_000,
+            rate: rate(6, 12),
+          },
+          { signal: "undone", decisions: 1, events: 1, medianDelayMs: 90_000, rate: rate(1, 12) },
+          {
+            signal: "replied",
+            decisions: 2,
+            events: 2,
+            medianDelayMs: 7_200_000,
+            rate: rate(2, 12),
+          },
+        ],
+      },
     },
     generatedAt: now,
   };
@@ -1224,6 +1245,7 @@ function handleOperationsQuery(message, request) {
               quietHours: [],
               importantSenders: [],
               dailyLimitReached: false,
+              backoff: [],
               insights: [],
               audit: { active: false, since: now, items: [], pending: 0 },
               decisions: [],

@@ -3,8 +3,16 @@ import type {
   SandboxOperationContract,
   SandboxOperationResult,
 } from "@himawari-agent/execution-contracts";
+import {
+  SANDBOX_MEMORY_LIMIT,
+  SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
+} from "@himawari-agent/execution-contracts";
 import { describe, expect, it } from "vitest";
-import { sandboxCommandEffectReason } from "../src/production-sandbox-tool-result.js";
+import {
+  sandboxCeilingExceededMessage,
+  sandboxCommandEffectReason,
+  sandboxFailureKeepsOutput,
+} from "../src/production-sandbox-tool-result.js";
 
 const identity = {
   jobId: "job",
@@ -111,5 +119,52 @@ describe("sandbox command effect reason", () => {
         effectKind: "unknown",
       }),
     ).toBeNull();
+  });
+});
+
+describe("sandbox failure output retention", () => {
+  it.each([
+    "SANDBOX_CPU_TIME_LIMIT",
+    "SANDBOX_MEMORY_LIMIT",
+    "SANDBOX_RESOURCE_LIMIT",
+    "SANDBOX_OUTPUT_LIMIT",
+  ] as const)(
+    "[I-84] drops the partial output of a fixed read stopped by one of its ceilings so the model gets the explicit failure (%s)",
+    (reasonCode) => {
+      expect(
+        sandboxFailureKeepsOutput({
+          operationKind: "fixed_read",
+          reasonCode,
+          hostResultRejected: false,
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it("[I-84] keeps the output of an ordinary fixed read failure", () => {
+    expect(
+      sandboxFailureKeepsOutput({
+        operationKind: "fixed_read",
+        reasonCode: "FILE_READ_FAILED",
+        hostResultRejected: false,
+      }),
+    ).toBe(true);
+    expect(
+      sandboxFailureKeepsOutput({
+        operationKind: "command",
+        reasonCode: "FILE_VERSION_CONFLICT",
+        hostResultRejected: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("[I-84] reports the production memory limit to the model in decimal megabytes", () => {
+    expect(
+      sandboxCeilingExceededMessage(SANDBOX_MEMORY_LIMIT, {
+        maxCpuTimeMs: 30_000,
+        maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
+        maxOutputBytes: 2_000_000,
+      }),
+    ).toContain("内存 1073.7 MB");
   });
 });

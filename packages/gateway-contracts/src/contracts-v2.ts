@@ -41,6 +41,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.snapshot",
   "proactive.review.rate",
   "proactive.source.manage",
+  "proactive.backoff.restore",
   "muse.overview.read",
   "muse.overview.snapshot",
   "muse.item.rate",
@@ -415,6 +416,15 @@ const proactiveOverviewSnapshotSchema = object({
     quietHours: proactiveQuietHoursSchema,
     importantSenders: proactiveSendersSchema,
     dailyLimitReached: booleanValue,
+    backoff: array(
+      object({
+        classKey: boundedString(128),
+        domain: boundedString(128),
+        stage: integer(1, 2),
+        ignoredCount: integer(0),
+        changedAt: timestamp,
+      }),
+    ),
     insights: array(
       object({
         id: machineString,
@@ -603,6 +613,10 @@ const proactiveSourceManageCommandSchema = object({
     source: enumeration(["gmail"]),
     action: enumeration(["disconnect", "clear_records"]),
   }),
+});
+const proactiveBackoffRestoreCommandSchema = object({
+  ...commandEnvelope("proactive.backoff.restore"),
+  payload: object({ classKey: nullable(boundedString(128)) }),
 });
 const museOverviewQuerySchema = object({
   ...envelope("query", "muse.overview.read"),
@@ -854,6 +868,19 @@ const proactiveWeeklySnapshotSchema = object({
           bothSilent: integer(0),
           noHimawariRecord: integer(0),
         }),
+      }),
+      implicit: object({
+        pushedDecisions: integer(0),
+        otherDecisionEvents: integer(0),
+        signals: array(
+          object({
+            signal: enumeration(["opened", "undone", "replied"]),
+            decisions: integer(0),
+            events: integer(0),
+            medianDelayMs: nullable(integer(0)),
+            rate: calibrationRateSchema,
+          }),
+        ),
       }),
     }),
     generatedAt: timestamp,
@@ -2264,6 +2291,7 @@ const schemasByType = {
   "proactive.review.snapshot": proactiveReviewSnapshotSchema,
   "proactive.review.rate": proactiveReviewRateCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
+  "proactive.backoff.restore": proactiveBackoffRestoreCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,
   "muse.overview.snapshot": museOverviewSnapshotSchema,
   "muse.item.rate": museItemRateCommandSchema,

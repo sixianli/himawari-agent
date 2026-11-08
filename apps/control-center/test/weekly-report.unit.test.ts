@@ -70,6 +70,7 @@ const overview = {
   quietHours: [],
   importantSenders: [],
   dailyLimitReached: false,
+  backoff: [],
   insights: [],
   audit: { active: false, since: NOW.toISOString(), items: [], pending: 0 },
   decisions: [],
@@ -141,6 +142,28 @@ const muse = {
   buckets: { both: 0, museOnly: 0, himawariOnly: 0, bothSilent: 0, noHimawariRecord: 0 },
 };
 
+const signalRow = (
+  signal: "opened" | "undone" | "replied",
+  decisions: number,
+  medianDelayMs: number | null,
+  pushed: number,
+) => ({
+  signal,
+  decisions,
+  events: decisions,
+  medianDelayMs,
+  rate: pushed >= 5 ? rate(decisions, pushed) : null,
+});
+const implicit = {
+  pushedDecisions: 0,
+  otherDecisionEvents: 0,
+  signals: [
+    signalRow("opened", 0, null, 0),
+    signalRow("undone", 0, null, 0),
+    signalRow("replied", 0, null, 0),
+  ],
+};
+
 function unsetFixture(): ProactiveWeekly {
   return {
     serviceRevision: "41a6ce3",
@@ -165,6 +188,7 @@ function unsetFixture(): ProactiveWeekly {
       minimumSamples: 5,
       groups: [],
       muse,
+      implicit,
     },
     generatedAt: NOW.toISOString(),
   };
@@ -623,6 +647,89 @@ describe("[P0-8] calibration report tab", () => {
     expect(text("#page .weekly-today")).toBe("今天");
   });
 
+  it("[P0-11] [negative] shows no signal numbers before the observation has started", async () => {
+    const unset = unsetFixture();
+    weekly = {
+      ...unset,
+      report: {
+        ...unset.report,
+        ratesWithheld: false,
+        implicit: {
+          pushedDecisions: 12,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 6, 60_000, 12),
+            signalRow("undone", 1, 60_000, 12),
+            signalRow("replied", 2, 60_000, 12),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("还没开始观察");
+    expect(card).not.toMatch(/%/u);
+    expect(card).not.toContain("另有");
+    expect(document.querySelector("#page .weekly-tiles[data-count='3']")).toBeNull();
+  });
+
+  it("[P0-11] [negative] shows no signal numbers while the observation is set but has not begun", async () => {
+    const unset = unsetFixture();
+    weekly = {
+      ...unset,
+      observation: {
+        ...unset.observation,
+        startDay: "2026-11-05",
+        setAt: NOW.toISOString(),
+        startRevision: "41a6ce3",
+      },
+      report: {
+        ...unset.report,
+        implicit: {
+          pushedDecisions: 12,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 6, 60_000, 12),
+            signalRow("undone", 1, 60_000, 12),
+            signalRow("replied", 2, 60_000, 12),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("还没开始观察");
+    expect(card).not.toMatch(/%/u);
+    expect(document.querySelector("#page .weekly-tiles[data-count='3']")).toBeNull();
+  });
+
+  it("[P0-11] says the week is not over instead of 'too few' while ratios are withheld", async () => {
+    const observing = observingFixture();
+    weekly = {
+      ...observing,
+      report: {
+        ...observing.report,
+        implicit: {
+          pushedDecisions: 12,
+          otherDecisionEvents: 0,
+          signals: [
+            signalRow("opened", 5, 60_000, 0),
+            signalRow("undone", 1, 60_000, 0),
+            signalRow("replied", 0, null, 0),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("本周尚未结束");
+    expect(card).not.toContain("样本不足");
+    expect(card).not.toMatch(/%/u);
+  });
+
   it("[P0-8] opens a day's checks as plain sentences without raw codes", async () => {
     weekly = observingFixture();
     await render();
@@ -680,6 +787,91 @@ describe("[P0-8] calibration report tab", () => {
       "1漏提醒（你查过的邮件里）已审 23 封",
     ]);
     expect(text("#page .weekly-muse-foot")).toContain("配对率 95.2%（40/42）");
+  });
+
+  it("[P0-11] shows observed signals in their own card, apart from the rating rows", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        implicit: {
+          pushedDecisions: 8,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 5, 25 * 60_000, 8),
+            signalRow("undone", 1, 90_000, 8),
+            signalRow("replied", 0, null, 8),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const tiles = [
+      ...document.querySelectorAll("#page .weekly-tiles[data-count='3'] .weekly-tile"),
+    ].map((tile) => tile.textContent);
+    expect(tiles).toEqual([
+      "62.5%（5/8）点开了推送首次发生的中位间隔 25 分钟",
+      "12.5%（1/8）完成或不再提醒后又撤销首次发生的中位间隔 2 分钟",
+      "0.0%（0/8）邮件串里你回复了还没有发生",
+    ]);
+    expect(text('#page [aria-label="观察信号 · 不是打分"]')).toContain("另有 2 条信号");
+    expect(text("#page .weekly-table")).not.toContain("点开了推送");
+  });
+
+  it("[P0-11] [negative] shows no ratio when no decision sent a reminder or the sample is too small", async () => {
+    await render();
+    await openReport();
+    expect(text('#page [aria-label="观察信号 · 不是打分"]')).toBe(
+      "观察信号 · 不是打分这一周没有推送过提醒的决策。",
+    );
+  });
+
+  it("[P0-11] still counts signals on undelivered decisions when no decision sent a reminder", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        implicit: {
+          pushedDecisions: 0,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 0, null, 0),
+            signalRow("undone", 0, null, 0),
+            signalRow("replied", 0, null, 0),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("这一周没有推送过提醒的决策。");
+    expect(card).toContain("另有 2 条信号");
+    expect(document.querySelector("#page .weekly-tiles[data-count='3']")).toBeNull();
+  });
+
+  it("[P0-11] [negative] shows no percentage when too few decisions sent a reminder", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        implicit: {
+          pushedDecisions: 3,
+          otherDecisionEvents: 0,
+          signals: [
+            signalRow("opened", 2, 60_000, 3),
+            signalRow("undone", 0, null, 3),
+            signalRow("replied", 0, null, 3),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("样本不足（3 条）");
+    expect(card).not.toMatch(/%/u);
   });
 
   it("[P0-8] opens and closes the explanations with Esc and an outside click", async () => {

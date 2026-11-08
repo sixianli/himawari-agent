@@ -13,7 +13,14 @@ import type {
   ProactiveStorePort,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { recordDecisionSignal } from "./decision-signals.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import {
+  applyBackoffWrites,
+  listBackoff,
+  previewBackoff,
+  restoreBackoff,
+} from "./proactive-push-backoff.ts";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
 type Input<TName extends keyof ProactiveStorePort> = Parameters<ProactiveStorePort[TName]>[0];
@@ -145,6 +152,24 @@ export class SqliteProactiveOperations {
         return this.reviewedCount(payload as ProactiveScope);
       case "proactive.updateInsight":
         return this.updateInsight(payload as Input<"updateInsight">);
+      case "proactive.previewBackoff": {
+        const request = payload as Input<"previewBackoff">;
+        this.time(request.now);
+        return previewBackoff(
+          this.database,
+          request,
+          request.classKeys,
+          request.settings,
+          request.now,
+        );
+      }
+      case "proactive.listBackoff":
+        return listBackoff(this.database, payload as ProactiveScope);
+      case "proactive.restoreBackoff": {
+        const request = payload as Input<"restoreBackoff">;
+        this.time(request.now);
+        return restoreBackoff(this.database, request, request.classKey, request.now);
+      }
       case "proactive.rateDecision":
         return this.rateDecision(payload as Input<"rateDecision">);
       case "proactive.rateProcessed":
@@ -436,6 +461,9 @@ export class SqliteProactiveOperations {
         )
         .run(...scope);
       this.database
+        .prepare("DELETE FROM proactive_push_backoff WHERE owner_id = ? AND agent_id = ?")
+        .run(input.ownerId, input.agentId);
+      this.database
         .prepare(
           "DELETE FROM proactive_pushes WHERE owner_id = ? AND agent_id = ? AND status = 'pending'",
         )
@@ -455,7 +483,12 @@ export class SqliteProactiveOperations {
     return this.database.transaction(() => {
       const refs = this.collectRefs(scope, null);
       this.deleteModelLinks(scope, null);
-      for (const table of ["source_insights", "proactive_processed_messages", "proactive_pushes"])
+      for (const table of [
+        "source_insights",
+        "proactive_processed_messages",
+        "proactive_pushes",
+        "proactive_push_backoff",
+      ])
         this.database
           .prepare(`DELETE FROM ${table} WHERE owner_id = ? AND agent_id = ?`)
           .run(scope.ownerId, scope.agentId);
@@ -749,7 +782,32 @@ export class SqliteProactiveOperations {
                AND later.thread_id = ? AND later.received_at > ?
            )`,
       );
-      for (const { threadId, receivedAt } of input.repliedThreads)
+      const openForReply = this.database.prepare(
+        `SELECT id, decision_id AS decisionId, updated_at AS updatedAt,
+           push_source_key AS pushSourceKey FROM source_insights
+         WHERE owner_id = ? AND agent_id = ? AND source = ? AND thread_id = ? AND status = 'open'
+           AND NOT EXISTS (
+             SELECT 1 FROM proactive_processed_messages later
+             WHERE later.owner_id = ? AND later.agent_id = ? AND later.source = ?
+               AND later.thread_id = ? AND later.received_at > ?
+           )`,
+      );
+      for (const { threadId, receivedAt } of input.repliedThreads) {
+        this.time(receivedAt);
+        const waiting = openForReply.all(
+          ...scope,
+          decision.scenario,
+          threadId,
+          ...scope,
+          decision.scenario,
+          threadId,
+          receivedAt,
+        ) as {
+          id: string;
+          decisionId: string;
+          updatedAt: string;
+          pushSourceKey: string | null;
+        }[];
         markReplied.run(
           decision.checkedAt,
           ...scope,
@@ -760,6 +818,19 @@ export class SqliteProactiveOperations {
           threadId,
           receivedAt,
         );
+        for (const row of waiting.filter((entry) => entry.pushSourceKey !== null))
+          recordDecisionSignal(this.database, {
+            ownerId: String(scope[0]),
+            agentId: String(scope[1]),
+            decisionId: this.pushingDecisionId(scope, row.pushSourceKey as string, row.decisionId),
+            signal: "replied",
+            occurredAt: receivedAt,
+            delayMs: Date.parse(receivedAt) - Date.parse(row.updatedAt),
+            detail: {},
+            sourceRef: `${row.id}@${receivedAt}`,
+            recordedAt: decision.checkedAt,
+          });
+      }
       if (input.push) {
         const pushed = input.insights
           .map((insight, index) => ({ insight, id: insightIds[index] as string }))
@@ -789,8 +860,22 @@ export class SqliteProactiveOperations {
         const setKey = this.database.prepare(
           "UPDATE source_insights SET push_source_key = ? WHERE id = ?",
         );
+        const setClass = this.database.prepare(
+          "UPDATE source_insights SET push_class = ? WHERE id = ?",
+        );
+        input.insights.forEach((insight, index) => {
+          if (insight.push) setClass.run(insight.pushClass ?? null, insightIds[index] as string);
+        });
         for (const id of pushed) setKey.run(`proactive:${input.push.id}`, id);
       }
+      if (input.backoff && input.backoff.length > 0)
+        applyBackoffWrites(
+          this.database,
+          { ownerId: input.ownerId, agentId: input.agentId },
+          decision.id,
+          input.backoff,
+          decision.checkedAt,
+        );
       if (input.cursor !== null)
         this.database
           .prepare(
@@ -874,28 +959,76 @@ export class SqliteProactiveOperations {
     return reviewed.total + rated.total;
   }
 
+  private pushingDecisionId(
+    scope: readonly unknown[],
+    pushSourceKey: string,
+    fallback: string,
+  ): string {
+    const row = this.database
+      .prepare(
+        `SELECT id FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND push_source_key = ?
+         ORDER BY checked_at, id LIMIT 1`,
+      )
+      .get(scope[0], scope[1], pushSourceKey) as { id: string } | undefined;
+    return row?.id ?? fallback;
+  }
+
   private updateInsight(input: Input<"updateInsight">): boolean {
     this.time(input.now);
     if (input.status !== undefined && !includes(INSIGHT_STATUSES, input.status))
       this.invalid("Proactive insight status is invalid");
     if (input.rating !== undefined) this.rating(input.rating);
-    return (
-      this.database
+    return this.database.transaction(() => {
+      const before = this.database
         .prepare(
-          `UPDATE source_insights SET status = COALESCE(?, status),
-            owner_rating = CASE WHEN ? THEN ? ELSE owner_rating END, updated_at = ?
+          `SELECT status, decision_id AS decisionId, updated_at AS updatedAt,
+             push_source_key AS pushSourceKey FROM source_insights
            WHERE owner_id = ? AND agent_id = ? AND id = ?`,
         )
-        .run(
-          input.status ?? null,
-          input.rating === undefined ? 0 : 1,
-          input.rating ?? null,
-          input.now,
-          input.ownerId,
-          input.agentId,
-          input.insightId,
-        ).changes > 0
-    );
+        .get(input.ownerId, input.agentId, input.insightId) as
+        | { status: string; decisionId: string; updatedAt: string; pushSourceKey: string | null }
+        | undefined;
+      const changed =
+        this.database
+          .prepare(
+            `UPDATE source_insights SET status = COALESCE(?, status),
+              owner_rating = CASE WHEN ? THEN ? ELSE owner_rating END, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+          )
+          .run(
+            input.status ?? null,
+            input.rating === undefined ? 0 : 1,
+            input.rating ?? null,
+            input.now,
+            input.ownerId,
+            input.agentId,
+            input.insightId,
+          ).changes > 0;
+      if (
+        changed &&
+        before !== undefined &&
+        before.pushSourceKey !== null &&
+        input.status === "open" &&
+        (before.status === "done" || before.status === "muted")
+      )
+        recordDecisionSignal(this.database, {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          decisionId: this.pushingDecisionId(
+            [input.ownerId, input.agentId],
+            before.pushSourceKey,
+            before.decisionId,
+          ),
+          signal: "undone",
+          occurredAt: input.now,
+          delayMs: Date.parse(input.now) - Date.parse(before.updatedAt),
+          detail: { from: before.status },
+          sourceRef: `${input.insightId}@${input.now}`,
+          recordedAt: input.now,
+        });
+      return changed;
+    })();
   }
 
   private rateDecision(input: Input<"rateDecision">): boolean {

@@ -811,6 +811,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with the ledger row; the payloads are removed when the owner deletes proactive records or disconnects the source",
   ),
   entry(
+    "decision_signals",
+    "ProactiveStorePort, WebPushStorePort, DecisionLedgerPort",
+    "append-only observations of what happened to a proactive decision without the owner rating it: reminder opened, done or muted then undone, mail thread replied; timing and small codes only",
+    "metadata_only",
+    "cascade with the ledger row, Owner or Agent deletion; never changed or deleted on its own",
+  ),
+  entry(
     "muse_reference_entries",
     "DecisionLedgerPort",
     "owner-recorded Muse reminders with timing and content judgments; reminder text and note only as protected payload references",
@@ -876,9 +883,16 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "source_insights",
     "ProactiveStorePort",
-    "one row per source thread with a result; a new reply updates the same row",
+    "one row per source thread with a result; a new reply updates the same row; push_class holds due:<sender domain> of a pushed reminder in plain text",
     "payload_reference",
     "removed with its payloads when the owner disconnects the source or deletes proactive records",
+  ),
+  entry(
+    "proactive_push_backoff",
+    "ProactiveStorePort",
+    "per sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
+    "metadata_only",
+    "removed with its Owner or Agent, when the owner deletes proactive records, or when the source is disconnected",
   ),
   entry(
     "proactive_processed_messages",

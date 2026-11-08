@@ -13,6 +13,7 @@ export const DAILY_REVIEW_MAX_RATINGS = 50;
 
 export type DailyReviewGroup =
   | "proactive"
+  | "proactive_silent"
   | "memory_skipped"
   | "memory_kept"
   | "consolidation"
@@ -55,11 +56,33 @@ function hash(text: string): number {
   return value;
 }
 
+export const SILENT_SHARE_MAX = 1000;
+
+function mixBySilentShare<T>(acted: readonly T[], silent: readonly T[], share: number): T[] {
+  const mixed: T[] = [];
+  let actedAt = 0;
+  let silentAt = 0;
+  for (let slot = 0; actedAt < acted.length || silentAt < silent.length; slot += 1) {
+    const wantSilent =
+      Math.floor(((slot + 1) * share) / SILENT_SHARE_MAX) >
+      Math.floor((slot * share) / SILENT_SHARE_MAX);
+    const next =
+      silentAt < silent.length && (wantSilent || actedAt >= acted.length)
+        ? silent[silentAt++]
+        : actedAt < acted.length
+          ? acted[actedAt++]
+          : silent[silentAt++];
+    mixed.push(next as T);
+  }
+  return mixed;
+}
+
 export function selectDailyReview(input: {
   readonly pool: readonly DailyReviewPoolItem[];
   readonly dayStart: string;
   readonly seed: string;
   readonly capacity: number;
+  readonly silentShare?: number;
 }): DailyReviewSelection {
   const { dayStart, seed, capacity } = input;
   const eligible = input.pool.filter(
@@ -72,9 +95,15 @@ export function selectDailyReview(input: {
         (left.key < right.key ? -1 : left.key > right.key ? 1 : 0),
     );
   const defaults = eligible.filter(({ group }) => group !== "other");
-  const queues = DEFAULT_GROUPS.map((name) =>
-    order(defaults.filter(({ group }) => group === name)),
-  );
+  const queueOf = (name: DailyReviewGroup) => {
+    const own = defaults.filter(({ group }) => group === name);
+    if (name !== "proactive") return order(own);
+    const silent = defaults.filter(({ group }) => group === "proactive_silent");
+    return input.silentShare === undefined
+      ? order([...own, ...silent])
+      : mixBySilentShare(order(own), order(silent), input.silentShare);
+  };
+  const queues = DEFAULT_GROUPS.map(queueOf);
   const taken: DailyReviewPoolItem[] = [];
   for (let round = 0; taken.length < capacity; round += 1) {
     let added = false;
@@ -169,7 +198,8 @@ function clip(text: string): string {
 }
 
 function ledgerGroup(entry: DecisionLedgerEntry): DailyReviewGroup {
-  if (entry.kind === "proactive") return "proactive";
+  if (entry.kind === "proactive")
+    return entry.outcome === "silent" ? "proactive_silent" : "proactive";
   if (entry.kind === "memory_candidate") {
     if (entry.outcome === "discarded") return "memory_skipped";
     return entry.outcome === "kept" ? "memory_kept" : "other";
@@ -216,6 +246,7 @@ export async function readDailyReview(options: {
   readonly now: string;
   readonly budgetSeconds: number;
   readonly secondsPerItem: number;
+  readonly silentShare?: number;
 }): Promise<DailyReview> {
   const { scope, overview, now } = options;
   const dayStart = startOfZonedDay(now, options.timeZone);
@@ -320,6 +351,7 @@ export async function readDailyReview(options: {
     dayStart,
     seed: `${scope.ownerId}:${scope.agentId}`,
     capacity,
+    ...(options.silentShare === undefined ? {} : { silentShare: options.silentShare }),
   });
   const build = (keys: readonly string[]) =>
     Promise.all(keys.map((key) => candidates.get(key)?.build())).then((items) =>

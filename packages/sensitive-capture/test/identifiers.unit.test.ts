@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  classificationWithIdentifiers,
+  containsCredential,
   containsRestrictedIdentifier,
   isSensitiveFieldName,
   isSensitiveQueryParameter,
@@ -67,5 +69,38 @@ describe("trace field names", () => {
   it("REVERSE: matches whole names only, unlike the diagnostic field rule", () => {
     expect(isSensitiveTraceKey("tokenizer")).toBe(false);
     expect(isSensitiveTraceKey("keyboard")).toBe(false);
+  });
+});
+
+describe("classificationWithIdentifiers", () => {
+  it("[mask-not-block] raises private text holding a card or identity number to sensitive", () => {
+    expect(classificationWithIdentifiers("卡号 6222020200112233445", "private")).toBe("sensitive");
+    expect(classificationWithIdentifiers("身份证 110101199003071234", "private")).toBe("sensitive");
+  });
+
+  it("[mask-not-block] raises private text holding a password, a key or a code to sensitive", () => {
+    const key = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz0123456789"].join("-");
+    expect(classificationWithIdentifiers("主人家的 Wi-Fi 密码是 abc12345", "private")).toBe(
+      "sensitive",
+    );
+    expect(classificationWithIdentifiers(`主人的接口密钥是 ${key}`, "private")).toBe("sensitive");
+    expect(classificationWithIdentifiers("482910 是验证码", "public")).toBe("sensitive");
+    expect(containsCredential("我的密码: hunter2abc")).toBe(true);
+  });
+
+  it("REVERSE: ordinary words near the same topics stay private", () => {
+    expect(containsCredential("主人喜欢在咖啡馆改密码管理器的设置")).toBe(false);
+    expect(classificationWithIdentifiers("主人最喜欢的颜色是蓝色", "private")).toBe("private");
+    expect(classificationWithIdentifiers("主人的订单号是 12345", "private")).toBe("private");
+  });
+
+  it("leaves ordinary text and already stricter levels as they are", () => {
+    expect(classificationWithIdentifiers("订单号 12345", "private")).toBe("private");
+    expect(classificationWithIdentifiers("卡号 6222020200112233445", "restricted")).toBe(
+      "restricted",
+    );
+    expect(classificationWithIdentifiers("卡号 6222020200112233445", "sensitive")).toBe(
+      "sensitive",
+    );
   });
 });

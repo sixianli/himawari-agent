@@ -100,6 +100,15 @@ export const governanceMessages = [
     quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
     importantSenders: ["smbc.co.jp", "teacher@example.com"],
     dailyLimitReached: false,
+    backoff: [
+      {
+        classKey: "due:service.example.com",
+        domain: "service.example.com",
+        stage: 1,
+        ignoredCount: 3,
+        changedAt: "2026-11-02T00:00:00.000Z",
+      },
+    ],
     insights: [
       {
         id: "proactive-insight-01",
@@ -205,6 +214,7 @@ export const governanceMessages = [
     ratings: [{ key: "ledger:ledger-01", rating: "useful" }],
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
+  fixture("command", "proactive.backoff.restore", { classKey: "due:service.example.com" }),
   fixture("query", "proactive.weekly.read", { end: null }),
   fixture("snapshot", "proactive.weekly.snapshot", {
     serviceRevision: "rev-01",
@@ -268,6 +278,15 @@ export const governanceMessages = [
         content: null,
         pairing: null,
         buckets: { both: 1, museOnly: 0, himawariOnly: 0, bothSilent: 1, noHimawariRecord: 0 },
+      },
+      implicit: {
+        pushedDecisions: 0,
+        otherDecisionEvents: 0,
+        signals: [
+          { signal: "opened", decisions: 0, events: 0, medianDelayMs: null, rate: null },
+          { signal: "undone", decisions: 0, events: 0, medianDelayMs: null, rate: null },
+          { signal: "replied", decisions: 0, events: 0, medianDelayMs: null, rate: null },
+        ],
       },
     },
     generatedAt: "2026-11-04T01:00:00.000Z",

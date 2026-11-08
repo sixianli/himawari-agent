@@ -10,7 +10,6 @@ import {
   type ReflectionModelPort,
 } from "../ports/index.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
-import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import type { SuggestionService } from "./suggestion-service.js";
 
 const MAX_CAS_ATTEMPTS = 8;
@@ -141,7 +140,6 @@ export class ReflectionService {
           maximumCostMicros: definition.maximumCostMicros,
           timeoutMs: definition.timeoutMs,
         });
-        assertMachineSecretFree(JSON.stringify(output.metadata));
         if (
           output.costMicros < 0 ||
           output.costMicros > definition.maximumCostMicros ||

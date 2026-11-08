@@ -276,7 +276,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
   }
 
   describe("automatic Memory governed golden dataset", () => {
-    it("enforces secret exclusion, per-item sensitive approval and deterministic quality thresholds", async () => {
+    it("[mask-not-block] reads a source holding a machine secret, keeps per-item sensitive approval and deterministic quality thresholds", async () => {
       expect(dataset.schemaVersion).toBe(1);
       expect(dataset.cases.map(({ category }) => category)).toEqual(
         expect.arrayContaining([
@@ -361,7 +361,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       ]);
 
       expect(resultByCase.get("machine-secret")).toMatchObject({
-        status: "source_secret_excluded",
+        status: "completed",
         committedMemoryIds: [],
       });
       expect(resultByCase.get("extraction-failure")).toMatchObject({
@@ -369,7 +369,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         committedMemoryIds: [],
       });
       const machineSecretSource = sourceTexts.get("payload-source-machine-secret") as string;
-      expect(extractor.observedSources).not.toContain(machineSecretSource);
+      expect(extractor.observedSources).toContain(machineSecretSource);
 
       const personalApproval = resultByCase.get("sensitive-personal")?.approvalRequestIds[0];
       if (!personalApproval) throw new Error("personal approval missing");
@@ -456,13 +456,6 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       expect(JSON.stringify(audit.records)).not.toContain(
         "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
       );
-      expect(audit.records).toContainEqual(
-        expect.objectContaining({
-          sourceRef: "payload-source-machine-secret",
-          outcome: "source_secret_excluded",
-          secretFindings: [expect.objectContaining({ ruleId: "openai-api-key", count: 1 })],
-        }),
-      );
       expect(resultByCase.get("transient-chatter")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.tentativeMemoryIds).toEqual([]);
@@ -491,7 +484,6 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       );
       expect(ledgerCount("discarded")).toBe(
         auditCount(
-          "candidate_secret_excluded",
           "restricted_excluded",
           "transient_ignored",
           "confidence_below_threshold",
@@ -524,11 +516,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         expect(entry.inputs.ruleIds).toEqual(["confidence_below_threshold"]);
         expect(content.plaintextByRef.get(entry.contentRef ?? "")).toBeTruthy();
       }
-      for (const entry of ledger.filter(
-        (item) =>
-          item.reasonCode === "restricted_excluded" ||
-          item.reasonCode === "candidate_secret_excluded",
-      ))
+      for (const entry of ledger.filter((item) => item.reasonCode === "restricted_excluded"))
         expect(entry.contentRef).toBeNull();
       expect(
         ledger.some((entry) => entry.subjectRef?.startsWith("generation-machine-secret")),
