@@ -306,6 +306,14 @@ describe("review gateway ledger", () => {
     expect(unknown(lines, 4)).toBe(true);
     expect(unknown(lines, 3)).toBeUndefined();
     expect(unknown(null, 1)).toBe(true);
+    expect(gatewayRecordFields(null, config, deepseek, { requested: 1 }).costUnknownWhy).toBe(
+      "usage-unreadable",
+    );
+    const lopsided = structuredClone(config.models);
+    lopsided[glm].members = lopsided[glm].members.filter((m) => !m.startsWith("opendesign/"));
+    expect(gatewayConfigProblems({ ...config, models: lopsided }, REVIEW_MODELS)).toContain(
+      "models.providers-differ",
+    );
     expect(unknown(null, 0)).toBeUndefined();
     const goFailed = { req: lines[0].req, provider: "opencode-go", status: 502 };
     expect(unknown([...lines, goFailed], 0)).toBe(true);
@@ -555,7 +563,11 @@ describe("review gateway hardening", () => {
     const models = structuredClone(config.models);
     models[deepseek].members = ["codebuddy/deepseek-v4.1-flash-sg"];
     delete models[glm].cost.output;
-    expect(broken({ models })).toEqual([`models.${deepseek}.members`, `models.${glm}.cost`]);
+    expect(broken({ models })).toEqual([
+      "models.providers-differ",
+      `models.${deepseek}.members`,
+      `models.${glm}.cost`,
+    ]);
     const { [glm]: _dropped, ...onlyDeepseek } = config.models;
     expect(broken({ models: onlyDeepseek })).toEqual([`models.${glm}`]);
     expect(() => readGatewayConfig(join(tmpdir(), "missing-gateway.json"))).toThrow();
@@ -621,7 +633,12 @@ describe("review gateway hardening", () => {
         noPrices,
         deepseek,
       ),
-    ).toEqual({ gateway: "magpie", providers: {}, costUnknown: true });
+    ).toEqual({
+      gateway: "magpie",
+      providers: {},
+      costUnknown: true,
+      costUnknownWhy: "usage-invalid",
+    });
   });
 });
 

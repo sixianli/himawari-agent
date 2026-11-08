@@ -115,6 +115,16 @@ export function gatewayConfigProblems(config, requiredModels = []) {
   const models = config.models && typeof config.models === "object" ? config.models : {};
   for (const model of requiredModels)
     if (!Object.hasOwn(models, model)) problems.push(`models.${model}`);
+  const servedBy = Object.values(models).map((entry) =>
+    [
+      ...new Set(
+        (Array.isArray(entry?.members) ? entry.members : []).map((m) => String(m).split("/")[0]),
+      ),
+    ]
+      .sort()
+      .join(","),
+  );
+  if (new Set(servedBy).size > 1) problems.push("models.providers-differ");
   const names = Object.keys(models).map(groupName);
   if (new Set(names).size !== names.length) problems.push("models.groups");
   for (const [model, entry] of Object.entries(models)) {

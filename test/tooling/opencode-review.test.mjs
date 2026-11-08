@@ -2105,8 +2105,8 @@ describe("opencode review wrap-up", () => {
           requestStop();
           const result = await running;
           expect(Date.now() - started).toBeLessThan(45000);
-          expect(result.outcome).toBe("api-error");
-          expect(result.retry).toBeNull();
+          expect(result.outcome).toBe(OWNER_STOPPED);
+          expect(result.retry).toBe(OWNER_STOPPED);
           expect(result.runs).toHaveLength(1);
           expect(requests).toHaveLength(6);
         } finally {
@@ -3059,6 +3059,24 @@ describe("opencode review merge gate", () => {
       expect(report).toContain(
         `REVIEW_OVERRIDE_RECORD head=${f.reviewed} quote=跳过复核，合并 problems=ledger-not-committed`,
       );
+      const odd = {
+        at: "t",
+        mode: "override",
+        cost: 0,
+        head: f.reviewed,
+        quote: "x",
+        problems: "y",
+      };
+      f.writeLedger([odd]);
+      expect(
+        reviewReport({
+          repo: f.repo,
+          pr: 7,
+          mainRef: "origin/main",
+          stop: "andy-decision",
+          andyQuote: "x",
+        }),
+      ).toContain(`REVIEW_OVERRIDE_RECORD head=${f.reviewed} quote=x problems=invalid`);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

@@ -105,7 +105,7 @@ CodeBuddy 会以错误码 11128 拒绝它不认可的系统提示。被拒时，
 - 后续：Andy 验收后把默认改为开；下一个版本删掉直连方式。
 - 2026-11-07 Andy 验收（原话：“改成默认走 Magpie”）：默认由环境变量 `HIMAWARI_REVIEW_GATEWAY` 决定，himawari-cloud 设成 `magpie`，命令行 `--gateway magpie|direct` 优先，都没有时直连。直连方式不删：Mac 上没有出口代理代填凭证，只能直连。
 - 2026-11-07 Andy 开了 OpenDesign 包月套餐（接口 `https://amr-link.open-design.ai/v1`，密钥在 himawari-cloud 的网络密钥里），加为第三家服务方，排在 CodeBuddy 之后、Go 之前；路由保持 `order`（Andy 原话：“那就把 Magpie 的模式设成按固定顺序，顺序是先 codebuddy，然后是 OpenDesign，然后才是 opencode go”）。试过 Magpie 的默认策略 `smart`：它只读得到 CodeBuddy 的额度，读不到 OpenDesign 和 Go，实测 6 次独立会话三家轮流接到请求，没有按到期时间挑。
-- 2026-11-08 Andy 定（原话：“不能因为某一家连不上这次复核就不做了呀……它们多个 provider 之间是主备关系”）：开跑前检查发现某一家的成员不可用时，只去掉这一家，复核继续；所有成员都不可用才停下。
+- 2026-11-08 Andy 定（原话：“不能因为某一家连不上这次复核就不做了呀……它们多个 provider 之间是主备关系”）：开跑前检查发现某一家的成员不可用时，只去掉这一家，复核继续；去掉之后任何一个要跑的模型没有可用成员才停下（每家服务方都必须提供全部复核模型，读入配置时检查）。
 - 2026-11-08 Andy 同意整合后的方案（`.agents/reviews/topic-review-control/proposal.md`）：新增 `--providers` 让这一次只用列出的服务方（积分底线照旧）；复核可以随时叫停（`owner-stopped` 照样记账）；Andy 明确说跳过时任何 PR 都可以不复核合并，原话记进账本。
 
 <a id="links"></a>

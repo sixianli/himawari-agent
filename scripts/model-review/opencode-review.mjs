@@ -888,7 +888,7 @@ export async function reviewModel(options) {
   if (decision !== "retry" || stopRequested)
     return { ...first, retry: decision === "retry" ? null : decision };
   await waitUnlessStopped(retryWaitMs);
-  if (stopRequested) return { ...first, retry: null };
+  if (stopRequested) return { ...first, retry: OWNER_STOPPED, outcome: OWNER_STOPPED };
   const second = await reviewOnce({
     ...options,
     timeoutMs: deadline - Date.now(),
@@ -1437,7 +1437,7 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     .filter((record) => record.mode === "override")
     .map(
       (record) =>
-        `REVIEW_OVERRIDE_RECORD head=${record.head} quote=${printable(record.quote)} problems=${(record.problems ?? []).map(printable).join(",") || "none"}`,
+        `REVIEW_OVERRIDE_RECORD head=${record.head} quote=${printable(record.quote)} problems=${Array.isArray(record.problems) ? record.problems.map(printable).join(",") || "none" : "invalid"}`,
     );
   return [
     `REVIEW_REPORT pr=${pr}`,
@@ -2563,11 +2563,14 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
 
 export function gatewayRecordFields(usage, config, model, { requested = false } = {}) {
   const unknown = { gateway: "magpie", providers: {}, costUnknown: true };
-  if (usage === null) return requested ? unknown : { gateway: "magpie", providers: {} };
+  if (usage === null)
+    return requested
+      ? { ...unknown, costUnknownWhy: "usage-unreadable" }
+      : { gateway: "magpie", providers: {} };
   try {
     const { byModel, unattributed, unreadableByModel } = summarizeGatewayUsage(usage, config);
     const providers = byModel[model] ?? {};
-    if (!providersValid(providers)) return unknown;
+    if (!providersValid(providers)) return { ...unknown, costUnknownWhy: "providers-invalid" };
     const unreadable = unattributed + (unreadableByModel[model] ?? 0);
     const recorded = Object.values(providers).reduce((total, slot) => total + slot.requests, 0);
     const missing = recorded < Number(requested);
@@ -2579,7 +2582,7 @@ export function gatewayRecordFields(usage, config, model, { requested = false } 
         }
       : { gateway: "magpie", providers };
   } catch {
-    return unknown;
+    return { ...unknown, costUnknownWhy: "usage-invalid" };
   }
 }
 
@@ -2616,6 +2619,14 @@ export function reserveModels({ mode, previous, models }) {
   if (mode === "code-review" && previous && models.length === 1 && substitute)
     return [...models, substitute];
   return models;
+}
+
+function tryWrite(path, text) {
+  try {
+    writeFileSync(path, text);
+  } catch (error) {
+    console.log(`REVIEW_DIAGNOSTIC_NOT_SAVED ${error.message}`);
+  }
 }
 
 export function usesCreditProvider(drop, creditProvider) {
@@ -2935,14 +2946,14 @@ async function main() {
       const record = gateway
         ? withProviderMoney(assembled, gateway.config.creditProvider)
         : assembled;
+      appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
       if (record.costUnknownWhy) {
         console.log(`GATEWAY_COST_UNKNOWN ${model} ${record.costUnknownWhy}`);
-        writeFileSync(
+        tryWrite(
           join(roundRawDir, `${name}.magpie-usage.jsonl`),
           (gatewayUsage ?? []).map((line) => `${JSON.stringify(line)}\n`).join(""),
         );
       }
-      appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
       if (record.outcome !== "ok" && review.stderr.trim()) {
         writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
       }
