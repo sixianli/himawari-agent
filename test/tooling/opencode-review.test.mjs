@@ -763,6 +763,12 @@ describe("opencode review self-check", () => {
     expect(
       probeRefused({
         status: "completed",
+        output: "The user has specified a rule which prevents you from doing that",
+      }),
+    ).toBe(true);
+    expect(
+      probeRefused({
+        status: "completed",
         output: [
           "commit 9d1e6de5de7535d8bb73061a702dcf5534747127",
           "",
@@ -772,6 +778,25 @@ describe("opencode review self-check", () => {
           "",
           " .agents/reviews/pr-312/round-3/judgments.md | 60 ++++++",
         ].join("\n"),
+      }),
+    ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: `1f16c11b fix(model-review): 自检只在不缩进的行里找 ${GIT_REFUSED} 这个字样\n`,
+      }),
+    ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: "1f16c11b fix: 别被提交标题里的 : restricted 骗了\n",
+      }),
+    ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output:
+          "1f16c11b fix: The user has specified a rule which prevents you 也可能出现在标题里\n",
       }),
     ).toBe(false);
   });
