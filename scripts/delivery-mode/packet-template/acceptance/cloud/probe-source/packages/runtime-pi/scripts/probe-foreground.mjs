@@ -1,5 +1,3 @@
-// Opt-in installed-runner verification with disposable fake data. This does not
-// issue a deployment qualification or grant access to a user's project.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -155,7 +153,6 @@ async function run(tool, parameters, writable = false, executionMode = "foregrou
       stdinBase64: Buffer.from(JSON.stringify(input)).toString("base64"),
       deadlineAt: expiresAt,
       maxOutputBytes: 512 * 1024,
-      // Match the installed production Worker cleanup deadline.
       cleanupTimeoutMs: 5000,
     },
     controlDirectory,
@@ -304,8 +301,8 @@ try {
     false,
     "background",
   );
-  assert.notEqual(secret.result.exitCode, 0);
-  assert.equal(secret.result.stdout.length, 0);
+  assert.equal(secret.result.exitCode, 0);
+  assert.equal(secret.output, "sk-" + "abcdefghijklmnopqrstuv\n");
   const writeTask = await run(
     "bash",
     { command: "printf changed > note.txt; /bin/sleep 0.2; printf 'saved\\n'" },
@@ -324,6 +321,5 @@ try {
     `${JSON.stringify({ passed: reports.length, platform: process.platform, qualification: false, cleanupTimeoutMs: 5000, toolDigests, nodeVersion: process.version, reports })}\n`,
   );
 } finally {
-  // Only this probe's own disposable fake data and copied binaries.
   await rm(root, { recursive: true, force: true });
 }

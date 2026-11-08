@@ -30,6 +30,7 @@ date: "2026-10-28"
 - [回退](#rollback)
 - [停止条件](#stop-conditions)
 - [防火墙](#firewall)
+- [Magpie 管理页](#magpie-admin)
 - [排障](#troubleshooting)
 
 <a id="scope"></a>
@@ -150,6 +151,38 @@ date: "2026-10-28"
 - **锁在外面时**：等 10 分钟让保险自动关闭防火墙；保险已取消或无效时，按[步骤](#procedure)第 2 步用 Contabo 面板 VNC 控制台以 `root` 登录，执行 `ufw disable`，再按上面的步骤重新启用。
 - **撤销**：`ufw disable`（规则保留，开机不再启用）；需要回到启用前的状态时用备份目录里的 `etc-ufw` 和 `default-ufw` 覆盖 `/etc/ufw` 和 `/etc/default/ufw`。2026-10-28 的备份在 `/root/firewall-backup-20261028T014151Z/`。
 - Contabo 面板另有免费的网络层防火墙（Network Services → Firewall），目前没有启用；启用时入站同样只放行 22/tcp。
+
+[返回导航](#阅读导航)
+
+<a id="magpie-admin"></a>
+
+## Magpie 管理页
+
+Magpie（装在生产机上的模型路由程序，Himawari 经它调用模型）带一个网页管理页，可以看和改路由组、模型账号和密钥。2026-11-02 用户在 Mac 上只读确认的现场状态：
+
+- `systemctl cat magpie.service` 显示 `ExecStart=/usr/local/bin/magpie serve --web=127.0.0.1:3430`、`Environment=MAGPIE_ADDR=127.0.0.1:3425`、`EnvironmentFile=/etc/magpie/web.env`，服务以 `magpie` 账号运行。[ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md) 记的是 2026-10-29 安装时的程序位置 `/opt/magpie/v0.1.2001/magpie`；`/usr/local/bin/magpie` 和它是什么关系（例如是否是指向它的链接）没有核实，以服务器上 `readlink -f /usr/local/bin/magpie` 的输出为准。
+- `ss -ltnp` 显示同一个 `magpie` 进程监听 `127.0.0.1:3425`（模型接口）和 `127.0.0.1:3430`（管理页），两者都只在回环地址上，公网连不到，[防火墙](#firewall)也只放行 22。
+
+管理页的密码：Magpie 源码 `internal/gui/web.go`（[yetone/magpie](https://github.com/yetone/magpie/blob/main/internal/gui/web.go)，2026-11-07 的 main）里，常驻的管理页从环境变量 `MAGPIE_WEB_KEY` 取固定密码；浏览器第一次用 `?k=<密码>` 打开时，页面核对后把密码存进一个只给本站用的 cookie（浏览器保存的小段登录凭据，固定密码时保留 400 天），并跳转到去掉 `k` 的地址。生产装的是更早的版本，源码描述只作参考；生产上的实际表现是：2026-11-02 用户用这个流程登进了生产管理页，之后地址栏是不带 `k` 的 `http://127.0.0.1:3430/?view=settings&tab=general`，与上面的跳转一致。生产服务里这个变量应该来自 `/etc/magpie/web.env`，但文件内容没有读过；用 `ssh root@84.247.157.41 "grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' /etc/magpie/web.env"` 只看变量名（打印成 `名字=` 的样子，注释行不打印）、不显示值。不要把密码贴进聊天、写进仓库或存进书签；把 Magpie 的日志（`journalctl -u magpie.service`）贴给任何人或模型之前，先用 `grep -c 'k='` 确认里面没有带密码的网址。生产机上还有无 sudo 的测试账号 `himawari-ci`，所以要确认它读不到这个文件和 Magpie 的数据目录（里面存着各模型账号的密钥）：`ssh root@84.247.157.41 "stat -c '%a %U:%G %n' /etc/magpie/web.env /var/lib/magpie; for f in /etc/magpie/web.env /var/lib/magpie; do sudo -u himawari-ci test -r \$f; echo \$f \$?; done"`。每个路径后面的数字：`1` 表示测试账号读不到，`0` 表示能读，其他数字表示检查本身失败（例如账号不存在）。两个都是 `1` 才算通过；有 `0` 或其他数字就停下，改权限是生产配置变更，按[授权、上线和合并](../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)处理。
+
+这一节的命令都以 `root` 登录生产机，只由用户本人执行（见[适用范围](#scope)）。管理页拿到密码就能改配置、看全部密钥，所以只经 SSH 端口转发（把 Mac 本机的一个端口经 SSH 接到服务器上的端口）访问，转发在 Mac 上也只绑 `127.0.0.1`，不对外开放。
+
+**一次性连接**：在 Mac 终端运行 `ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:3430:127.0.0.1:3430 root@84.247.157.41`，保持窗口开着（`-N` 表示只做转发、不打开服务器的命令行）。下面的自动连接已经在运行时不要再开这一条：本机 3430 已被占用，它会报错退出。
+
+**登录后自动连接**（2026-11-02 用户已在自己的 Mac 上配好）：
+
+1. `~/.ssh/config` 里加一个 `Host magpie-prod`，写 `HostName 84.247.157.41`、`User root`、`LocalForward 127.0.0.1:3430 127.0.0.1:3430`、`ServerAliveInterval 30`、`ServerAliveCountMax 3`、`ExitOnForwardFailure yes`、`AddKeysToAgent yes`、`UseKeychain yes`。
+2. `~/Library/LaunchAgents/com.andy.magpie-tunnel.plist` 让 macOS 的 launchd（自动启动并看管后台程序的系统服务）在用户登录后运行 `/usr/bin/ssh -N -o BatchMode=yes magpie-prod`，`Label` 为 `com.andy.magpie-tunnel`，设 `RunAtLoad`、`KeepAlive` 为真，`ThrottleInterval` 为 15 秒；断线后自动重连。它是用户级的 LaunchAgent，Mac 开机后要用户登录才会运行。
+3. 启用：`launchctl load ~/Library/LaunchAgents/com.andy.magpie-tunnel.plist`；停用：`launchctl unload` 同一路径。看状态：`launchctl list | grep magpie-tunnel`，第一列是进程号，第二列是上次退出码。
+4. 验证：`curl -sS -o /dev/null -w '%{http_code}\n' --noproxy '*' http://127.0.0.1:3430/` 输出 `401`，表示请求已经到达生产机的管理页、只是还没登录；输出 `000` 表示没拿到网页回应：隧道没通，或生产机上的 Magpie 没在运行。
+
+**登录**：在浏览器里打开一次 `http://127.0.0.1:3430/?k=<密码>`（密码不是纯字母数字时，先对整个密码做网址编码，例如先运行 `read -rs K` 粘贴密码回车（不回显、不进命令历史），再运行 `K="$K" python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["K"],safe=""))'`），跳转后地址栏不再带密码，再到浏览历史里删掉带 `k=` 的那一条（不要用无痕窗口，关窗后 cookie 就没了）；把这个不带密码的 `http://127.0.0.1:3430/` 存成书签。之后 cookie 有效期内直接点书签就能进；浏览器清了 cookie 时再用 `?k=` 登录一次。浏览器的 cookie 按主机名区分、不按端口区分，这个 cookie 里就是生产密码，同一个浏览器打开任何 `http://127.0.0.1:<端口>/` 的页面都会把它发过去；所以生产管理页用一个单独的浏览器（或单独的浏览器用户），这个浏览器里不打开别的本机页面。
+
+注意：
+
+- 在管理页里改的路由组、账号或密钥立即影响线上对话，算生产配置变更，按[授权、上线和合并](../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)处理。路由组 `group/himawari-main` 改动的历史见 [ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md)，当前顺序以管理页显示的为准。
+- Hermes 测试环境的 Magpie 管理页也用 3430：2026-11-01 在 Hermes 装了测试容器 `magpie-test`，只绑 `127.0.0.1:3425` 和 `127.0.0.1:3430`（Hermes 端口快照 `.agents/tasks/hermes-runner/artifacts/hr4-after.txt` 里同时有这个容器和 `127.0.0.1:3430`）；[ADR 0142](../adr/0142-keep-background-memory-capture.md) 写于 2026-10-31，说「Hermes 上没有 Magpie」是安装之前的情况。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。Hermes 的管理页在平时用的浏览器里打开，不要在登过生产管理页的那个浏览器里打开，原因见上面的登录一段。
+- SSH 密钥设了口令时，后台的 `ssh` 无法弹窗输入，会每 15 秒重试一次、一直连不上；先运行一次 `ssh-add --apple-use-keychain <私钥文件>` 把口令存进钥匙串。
 
 [返回导航](#阅读导航)
 

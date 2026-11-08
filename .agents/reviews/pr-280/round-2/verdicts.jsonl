@@ -1,0 +1,5 @@
+{"id": "glm2-1", "model": "opencode-go/glm-5.3-flash", "quote": "超时只杀直接子进程，可能短时间内留下未释放的命名空间容器", "valid": true, "class": "error", "severity": "low", "trigger": "探测挂住到 900 秒被杀，且孙进程仍在清理", "consequence": "最长约 60 秒内命名空间未释放；模型自己标为推测，未在真实 Hermes 验证", "modelSeverity": "低", "reason": "只在探测挂住这种异常路径出现，孤儿进程按各自截止时间自清；不影响通过或失败的判断。接受并列给 Andy"}
+{"id": "glm2-2", "model": "opencode-go/glm-5.3-flash", "quote": "超时恢复时丢弃已读到的部分 stdout", "valid": true, "class": "better"}
+{"id": "glm2-3", "model": "opencode-go/glm-5.3-flash", "quote": "两个新用例在没有 rg 的机器上静默退化", "valid": true, "class": "better"}
+{"id": "glm2-4", "model": "opencode-go/glm-5.3-flash", "quote": "question-12-inputs.json 的 files 映射仍是旧哈希", "valid": false, "class": "better"}
+{"id": "glm2-5", "model": "opencode-go/glm-5.3-flash", "quote": "I-81 对测试覆盖范围的概括偏窄", "valid": false, "class": "better"}

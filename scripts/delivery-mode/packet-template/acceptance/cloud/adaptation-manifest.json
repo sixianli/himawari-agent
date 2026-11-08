@@ -6,9 +6,9 @@
   "adapters": [
     {
       "source": "packages/runtime-pi/scripts/probe-foreground.mjs",
-      "sourceSha256": "c5bc50f2aa391c73c74a6c3e7a2b58363744e42d80e9bd15132745a1dbaee5eb",
+      "sourceSha256": "86870af8d9f589a5f5cf0a136da83d522ec3c8d07b37c63df3bf47b37c0a7015",
       "adapter": "adapters/probe-foreground.mjs",
-      "adapterSha256": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4",
+      "adapterSha256": "45248cdd1054435aa9e308ee411afd0ab717852f07a29e269ea05379afe72df6",
       "oldGuard": "const scratch = process.env.HIMAWARI_PROBE_SCRATCH ?? os.tmpdir();\nif (process.platform === \"linux\" && !scratch.startsWith(\"/data/\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_DATA_DISK\");",
       "newGuard": "const scratch = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false
