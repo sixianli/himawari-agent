@@ -314,6 +314,7 @@ export class ProductionProactive {
       now: this.#options.clock.now(),
       budgetSeconds: this.#options.configuration.reviewBudgetSeconds,
       secondsPerItem: this.#options.configuration.reviewSecondsPerItem,
+      silentShare: this.#options.configuration.reviewSilentSharePermille,
     });
   }
 

@@ -379,32 +379,6 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
   return Object.freeze({ text, findings: Object.freeze(findings) });
 }
 
-const CREDENTIAL_KINDS: ReadonlySet<EgressRedactionKind> = new Set([
-  "password",
-  "verification-code",
-]);
-
-const CREDENTIAL_PLACEHOLDER_KINDS: Readonly<Record<string, EgressRedactionKind>> = {
-  密码: "password",
-  验证码: "verification-code",
-};
-
-export function credentialFindings(input: string): readonly EgressRedactionFinding[] {
-  const counts = new Map<EgressRedactionKind, number>();
-  for (const { kind, count } of redactForEgress(input).findings)
-    if (CREDENTIAL_KINDS.has(kind)) counts.set(kind, (counts.get(kind) ?? 0) + count);
-  for (const match of input.matchAll(EGRESS_PLACEHOLDER_PATTERN)) {
-    const kind = CREDENTIAL_PLACEHOLDER_KINDS[match[1] ?? ""];
-    if (kind !== undefined) tally(counts, kind);
-  }
-  const masked = input.split(MACHINE_SECRET_PLACEHOLDER).length - 1;
-  if (masked > 0) counts.set("machine-secret", masked);
-  return EGRESS_REDACTION_KINDS.flatMap((kind) => {
-    const count = counts.get(kind);
-    return count === undefined ? [] : [{ kind, count }];
-  });
-}
-
 export function findSensitiveValues(input: string): readonly EgressRedactionSighting[] {
   const found: EgressRedactionSighting[] = [];
   redactForEgress(input, { observe: (sighting) => found.push(sighting) });
