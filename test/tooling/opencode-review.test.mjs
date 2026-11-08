@@ -767,6 +767,8 @@ describe("opencode review self-check", () => {
           "commit 9d1e6de5de7535d8bb73061a702dcf5534747127",
           "",
           `    工具以 \`${GIT_REFUSED} records-path\` 拒绝`,
+          `    \`bash -r\` 的 \`: restricted\` 本来就出现在行中`,
+          "    The user has specified a rule which prevents you 这句话也一样",
           "",
           " .agents/reviews/pr-312/round-3/judgments.md | 60 ++++++",
         ].join("\n"),
