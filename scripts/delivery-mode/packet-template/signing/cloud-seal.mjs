@@ -377,7 +377,7 @@ const base = {
   maximumResourceCeiling: {
     maxWallTimeMs: 1800000,
     maxCpuTimeMs: 1800000,
-    maxMemoryBytes: 536870912,
+    maxMemoryBytes: 1073741824,
     maxOutputBytes: 524288,
     maxProgressEvents: 256,
   },
