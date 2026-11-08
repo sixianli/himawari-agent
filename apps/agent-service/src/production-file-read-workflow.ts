@@ -17,6 +17,7 @@ import {
 } from "@himawari-agent/application";
 
 import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
+import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture";
 import type { ProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
 import type { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
@@ -64,6 +65,7 @@ export interface ProductionFileReadServices {
   reconcileDeletedArtifacts?(): Promise<number>;
   readonly hostWeb?: ProductionHostWeb;
   readonly webMemory?: WebToolMemory;
+  externalTag?(): Promise<ExternalRedactionOptions["tag"]>;
 }
 export type WorkflowAuthority = {
   readonly deploymentId: string;

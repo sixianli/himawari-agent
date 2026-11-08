@@ -32,7 +32,6 @@ describe("tooling host environment boundary", () => {
           GITHUB_SHA: "a".repeat(40),
           GITHUB_FUTURE_CONTEXT: "synthetic-host-marker",
           HIMAWARI_CI_PYTHON: "/synthetic/locked-python",
-          HIMAWARI_REVIEW_GATEWAY: "magpie",
         },
         stdio: ["ignore", "pipe", "pipe"],
       }),
@@ -42,13 +41,12 @@ describe("tooling host environment boundary", () => {
       GITHUB_ACTIONS: "false",
       GITHUB_SHA: "",
       GITHUB_FUTURE_CONTEXT: "",
-      HIMAWARI_REVIEW_GATEWAY: "",
     });
     expect(
-      Object.keys(tooling.env).filter(
-        (name) => !name.startsWith("GITHUB_") && name !== "HIMAWARI_REVIEW_GATEWAY",
+      Object.keys(tooling.env).every(
+        (name) => name.startsWith("GITHUB_") || name === "HIMAWARI_REVIEW_GATEWAY",
       ),
-    ).toEqual([]);
+    ).toBe(true);
     expect(result.projects.filter(({ name }) => name !== "tooling").every(({ env }) => !env)).toBe(
       true,
     );

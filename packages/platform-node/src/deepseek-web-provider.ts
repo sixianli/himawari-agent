@@ -6,13 +6,13 @@ import type {
   WebSearchProvider,
 } from "@himawari-agent/application";
 import { WEB_PROVIDERS } from "@himawari-agent/application";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
+import { redactForExternalText } from "@himawari-agent/sensitive-capture";
 import { fetch as proxyFetch } from "undici";
 import {
+  maskedPublicFetchUrl,
   pageWindow,
   providerDispatchers,
   validateFetchWindow,
-  validatePublicFetchUrl,
   type WebProviderDispatcher,
 } from "./exa-public-search.js";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
@@ -67,14 +67,9 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
     readonly limit: number;
     readonly signal?: AbortSignal;
   }): Promise<readonly WebSearchCandidate[]> {
-    const query = input.query.trim();
-    if (
-      !query ||
-      !Number.isInteger(input.limit) ||
-      input.limit < 1 ||
-      input.limit > 10 ||
-      scanMachineSecrets(query).length
-    )
+    if (Buffer.byteLength(input.query) > 4 * 4096) throw new Error("WEB_SEARCH_INPUT_INVALID");
+    const query = redactForExternalText(input.query.trim()).text;
+    if (!query || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 10)
       throw new Error("WEB_SEARCH_INPUT_INVALID");
     if ([...query].length > this.descriptor.maxQueryChars)
       throw new Error("WEB_SEARCH_INPUT_UNSUPPORTED");
@@ -127,7 +122,7 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
     readonly signal?: AbortSignal;
   }): Promise<WebFetchResult> {
     validateFetchWindow(input);
-    const url = validatePublicFetchUrl(input.url);
+    const url = maskedPublicFetchUrl(input.url);
     const body = (await this.#post("/v1/tools/fetch", { url }, "WEB_FETCH", input.signal)) as {
       title?: unknown;
       content?: unknown;
