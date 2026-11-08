@@ -275,7 +275,7 @@ export async function packageNodeRuntime({
     `${JSON.stringify(
       {
         schemaVersion: 1,
-        nodeMinimum: "22.19.0",
+        nodeMinimum: "22.22.3",
         entrypoints: {
           himawari: "node_modules/@himawari-agent/admin-cli/dist/main.js",
           agentService: "node_modules/@himawari-agent/agent-service/dist/main.js",

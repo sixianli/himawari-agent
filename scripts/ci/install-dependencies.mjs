@@ -146,7 +146,6 @@ function platformMatches(entry, platform, arch) {
   return matches(entry.os, platform) && matches(entry.cpu, arch);
 }
 
-/** Checks the actual complete npm tree, including nested shrinkwrap dependencies. */
 export function auditInstalledDependencies(
   root,
   toolchain = loadToolchainLock(root),
@@ -271,7 +270,6 @@ export function probeSqlite(root) {
   }
 }
 
-/** npm scripts remain disabled throughout installation; one reviewed native target is built directly. */
 export async function installDependencies({
   root = repositoryRoot,
   toolsDirectory,
@@ -288,10 +286,7 @@ export async function installDependencies({
       contained(realpathSync(toolsDirectory), realpathSync(executable)),
       "工具 executable 越出安装目录",
     );
-  assert(
-    [lock.node.baseline, lock.node.floor].includes(installation.node),
-    "Node 安装身份不被接受",
-  );
+  assert(installation.node === lock.node.baseline, "Node 安装身份不被接受");
   const evidence = resolve(evidenceDirectory);
   assert(
     !existsSync(evidence) || readdirSync(evidence).length === 0,

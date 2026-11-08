@@ -1061,7 +1061,9 @@ export function WeeklyReport({
 
       <section className="weekly-card" aria-label={message("weekly.implicit.title")}>
         <CardHead title={message("weekly.implicit.title")} infoKey="implicit" info={infoButton} />
-        {report.implicit.pushedDecisions === 0 ? (
+        {!showTable ? (
+          <p className="weekly-empty">{message("weekly.type.notStarted")}</p>
+        ) : report.implicit.pushedDecisions === 0 ? (
           <>
             <p className="weekly-empty">{message("weekly.implicit.empty")}</p>
             {report.implicit.otherDecisionEvents > 0 ? (

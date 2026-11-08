@@ -1,0 +1,2 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "**1. 正则只覆盖两种固定的账本写入写法，新增写入点不会被计数**", "valid": true, "class": "better"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "**2. `maskSecretLike(` 的断言匹配不到实际函数名 `maskSecretLikeDeep(`**", "valid": true, "class": "better"}

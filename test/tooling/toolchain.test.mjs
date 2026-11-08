@@ -1,6 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -206,6 +214,23 @@ describe("固定工具身份", () => {
       expect(readFileSync(path)).toEqual(bytes);
       expect(calls).toEqual([expected.url, expected.url]);
       expect(waits).toEqual([1]);
+    });
+
+    it("下载物先写临时文件再改名，缓存目录里不留半截文件", async () => {
+      const directory = temporary();
+      const { fetch } = scripted({ status: 200, body: bytes });
+      const path = await downloadArtifact(expected, directory, { fetch, cacheDirectory: null });
+      expect(readFileSync(path)).toEqual(bytes);
+      expect(readdirSync(directory)).toEqual([expected.filename]);
+    });
+
+    it("摘要不符的下载物不进缓存目录", async () => {
+      const directory = temporary();
+      const { fetch } = scripted({ status: 200, body: "tampered" });
+      await expect(
+        downloadArtifact(expected, directory, { fetch, cacheDirectory: null }),
+      ).rejects.toThrow("下载摘要不匹配");
+      expect(readdirSync(directory)).toEqual([]);
     });
 
     it("一直连不上时用完重试预算才失败，报错写明主机和底层原因", async () => {

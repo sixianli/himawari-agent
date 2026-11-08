@@ -115,7 +115,6 @@ describe("JSON公开报告的原始字节与脱敏", () => {
   it("候选中的原报告摘要可直接核验发布后的覆盖率JSON字节", async () => {
     const { root, context } = fixture(),
       input = path.join(root, ".ci-output/input");
-    // The installation-failure record supplies only a schema-valid transport fixture, not a measurement.
     const archive = path.join(root, "synthetic.tar.gz");
     write(archive, "synthetic unavailable-toolchain input");
     const result = await runCheck({
@@ -255,7 +254,7 @@ describe("受控检查与公开输出", () => {
     expect(read(path.join(root, ".ci-output/result/result.json"))).toEqual(result);
     await expect(runCheck(options)).rejects.toThrow("EXISTS");
     await expect(
-      runCheck({ ...options, checkId: "test", matrixKey: "linux-x64", output: ".ci-output/test" }),
+      runCheck({ ...options, checkId: "coverage", output: ".ci-output/coverage" }),
     ).rejects.toThrow("ARTIFACT_REQUIRED");
     await expect(
       runCheck({ ...options, artifact: path.join(root, "missing"), output: ".ci-output/bad" }),
@@ -332,7 +331,7 @@ describe("required 失败证据和平台 artifact ID", () => {
       env: {},
     });
     expect(summary.status).toBe("failed");
-    expect(summary.missing).toHaveLength(10);
+    expect(summary.missing).toHaveLength(8);
     expect(read(path.join(root, ".ci-output/gate/summary.json"))).toEqual(summary);
     expect(() =>
       required({ root, reports: root, output: ".ci-output/gate", needs: {}, env: {} }),

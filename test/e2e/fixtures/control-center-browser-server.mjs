@@ -1250,6 +1250,7 @@ function handleOperationsQuery(message, request) {
               quietHours: [],
               importantSenders: [],
               dailyLimitReached: false,
+              backoff: [],
               insights: [],
               audit: { active: false, since: now, items: [], pending: 0 },
               decisions: [],

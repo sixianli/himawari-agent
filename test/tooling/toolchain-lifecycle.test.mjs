@@ -15,7 +15,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// Only process/network boundaries are synthetic; archive bytes, extraction, identity hashes and files are real.
 const boundary = vi.hoisted(() => ({ calls: [], run: undefined }));
 vi.mock("node:child_process", async (original) => {
   const actual = await original();
@@ -274,15 +273,16 @@ describe("合成工具包的安装过程", () => {
       boundary.calls.every((call) => !call.options.env.NODE_OPTIONS && !call.options.env.NODE_PATH),
     ).toBe(true);
   });
-  it("floor Node按自身精确archive身份安装", async () => {
-    const f = fixture({ nodeVersion: "22.19.0" });
-    const r = await installTools({
-      root: f.root,
-      directory: f.toolsDirectory,
-      nodeVersion: f.nodeVersion,
-      includeScanners: false,
-    });
-    expect(r.node).toBe("22.19.0");
+  it("只装锁定的基准 Node，退役的最低版本 22.19.0 被拒绝", async () => {
+    const f = fixture();
+    await expect(
+      installTools({
+        root: f.root,
+        directory: f.toolsDirectory,
+        nodeVersion: "22.19.0",
+        includeScanners: false,
+      }),
+    ).rejects.toThrow("不支持的 Node 版本");
   });
   it("版本输出正确但实际executable内容篡改仍失败", async () => {
     const f = fixture();

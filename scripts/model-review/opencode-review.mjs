@@ -2437,7 +2437,9 @@ function maskSecretLikeDeep(value) {
   if (typeof value === "string") return maskSecretLike(value);
   if (Array.isArray(value)) return value.map(maskSecretLikeDeep);
   if (value && typeof value === "object")
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, maskSecretLikeDeep(item)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, maskSecretLikeDeep(item)]),
+    );
   return value;
 }
 
@@ -3040,10 +3042,7 @@ async function main() {
       const record = gateway
         ? withProviderMoney(assembled, gateway.config.creditProvider)
         : assembled;
-      appendFileSync(
-        join(options.out, "usage.jsonl"),
-        ledgerLine(record),
-      );
+      appendFileSync(join(options.out, "usage.jsonl"), ledgerLine(record));
       if (record.costUnknownWhy) {
         console.log(`GATEWAY_COST_UNKNOWN ${model} ${record.costUnknownWhy}`);
         tryWrite(
