@@ -4,6 +4,7 @@ import type {
   ProactiveSourceReader,
 } from "@himawari-agent/application";
 import { extractGmailBody, type GmailPart } from "./gmail-body.js";
+import { findRelatedMail } from "./gmail-related.js";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 export const CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
@@ -176,11 +177,25 @@ interface GmailMessage {
   readonly payload?: GmailPart;
 }
 
-export function gmailItem(message: GmailMessage): ProactiveSourceItem | undefined {
+const ADDRESS = /[^\s<>"',;()]+@[^\s<>"',;()]+/gu;
+
+function participantsOf(headers: GmailPart["headers"]): readonly string[] {
+  const found = new Set<string>();
+  for (const name of ["From", "To", "Cc"])
+    for (const match of header(headers, name).matchAll(ADDRESS)) found.add(match[0].toLowerCase());
+  return Object.freeze([...found].slice(0, 50));
+}
+
+export function gmailItem(
+  message: GmailMessage,
+  options: { readonly history?: boolean } = {},
+): ProactiveSourceItem | undefined {
   const labels = message.labelIds ?? [];
   if (!message.id || !message.threadId) return undefined;
   if (labels.includes("DRAFT") || labels.includes("CHAT")) return undefined;
-  if (!labels.includes("INBOX") && !labels.includes("SENT")) return undefined;
+  if (options.history) {
+    if (labels.includes("TRASH") || labels.includes("SPAM")) return undefined;
+  } else if (!labels.includes("INBOX") && !labels.includes("SENT")) return undefined;
   const received = Number(message.internalDate);
   const from = header(message.payload?.headers, "From");
   const body = extractGmailBody(message.payload);
@@ -202,6 +217,7 @@ export function gmailItem(message: GmailMessage): ProactiveSourceItem | undefine
     bodyTruncated: body.truncated,
     bodyUnavailable: body.unavailable,
     attachments: body.attachments,
+    participants: participantsOf(message.payload?.headers),
   });
 }
 
@@ -231,6 +247,49 @@ export function createGmailReader(options: {
   const send = options.fetch ?? ((url, init) => fetch(url, init));
   return Object.freeze<ProactiveSourceReader>({
     source: "gmail",
+    async related({ token, items, limits, signal }) {
+      const access = await options.oauth.accessToken(token, signal);
+      const get = async <T>(url: string): Promise<T | undefined> => {
+        const response = await send(url, {
+          method: "GET",
+          headers: { authorization: `Bearer ${access}`, accept: "application/json" },
+          signal: withTimeout(signal),
+        });
+        if (response.status === 404) return undefined;
+        if (!response.ok) throw new GoogleRequestError("related", response.status);
+        return (await response.json()) as T;
+      };
+      return findRelatedMail({
+        items,
+        limits,
+        signal,
+        transport: {
+          async thread(threadId) {
+            const thread = await get<{ messages?: GmailMessage[] }>(
+              `${GMAIL_API}/threads/${encodeURIComponent(threadId)}?format=full`,
+            );
+            if (!thread) return undefined;
+            return (thread.messages ?? []).flatMap((message) => {
+              const item = gmailItem(message, { history: true });
+              return item ? [item] : [];
+            });
+          },
+          async search(query, maxResults) {
+            const listed = await get<{ messages?: { id?: string }[] }>(
+              `${GMAIL_API}/messages?${new URLSearchParams({ q: query, maxResults: String(maxResults) })}`,
+            );
+            if (!listed) return undefined;
+            return (listed.messages ?? []).flatMap((message) => (message.id ? [message.id] : []));
+          },
+          async message(id) {
+            const message = await get<GmailMessage>(
+              `${GMAIL_API}/messages/${encodeURIComponent(id)}?format=full`,
+            );
+            return message ? gmailItem(message, { history: true }) : undefined;
+          },
+        },
+      });
+    },
     async fetch({ token, cursor, since, signal, unseen }): Promise<ProactiveFetchResult> {
       let access: string;
       try {
@@ -242,7 +301,10 @@ export function createGmailReader(options: {
       const get = async <T>(step: string, url: string): Promise<T | undefined> => {
         const response = await send(url, {
           method: "GET",
-          headers: { authorization: `Bearer ${access}`, accept: "application/json" },
+          headers: {
+            authorization: `Bearer ${access}`,
+            accept: "application/json",
+          },
           signal: withTimeout(signal),
         });
         if (response.status === 401 || response.status === 403) throw new GoogleUnauthorizedError();
