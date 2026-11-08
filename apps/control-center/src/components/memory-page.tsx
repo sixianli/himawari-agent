@@ -24,6 +24,7 @@ import {
   stanceChart,
 } from "../memory-history.js";
 import type { MuseModel } from "../muse.js";
+import { memorySourceCounts, memorySourceState } from "../memory-source.js";
 import type { ProactiveGroup, ProactiveModel } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
 import { Glyph } from "./glyphs.js";
@@ -398,7 +399,7 @@ function MemoryDetail({
   memory: MemoryModel;
   message: Message;
   notify: (notice: Notice) => void;
-  onOpenThread: (threadId: string) => void;
+  onOpenThread: (threadId: string, messageId?: string) => void;
   onClose: () => void;
 }) {
   const { moment: time } = useLocaleFormat();
@@ -422,15 +423,11 @@ function MemoryDetail({
       key === item.category ||
       !(MEMORY_SENSITIVE_CATEGORY_NAMES as readonly string[]).includes(key),
   );
-  const origin = item.importBatchId
-    ? "import"
-    : item.memoryId.startsWith("memory:owner:")
-      ? "owner"
-      : item.sourceThreadId
-        ? null
-        : item.history[0]?.sourceDeleted
-          ? "deleted"
-          : "tidy";
+  const [checkedLost, setCheckedLost] = useState(false);
+  const origin = checkedLost ? "unavailable" : memorySourceState(item);
+  const importSource = item.importBatchId
+    ? memory.overview?.imports.find(({ batchId }) => batchId === item.importBatchId)?.source
+    : undefined;
   return (
     <>
       <button
@@ -521,16 +518,52 @@ function MemoryDetail({
           </dd>
           <dt>{message("memory.page.source")}</dt>
           <dd>
-            {origin ? (
-              message("memory.page.origin", { o: origin })
-            ) : (
+            {origin === "jump" && item.sourceThreadId && item.sourceMessageId ? (
               <button
                 type="button"
                 className="memory-link"
-                onClick={() => item.sourceThreadId && onOpenThread(item.sourceThreadId)}
+                onClick={() => {
+                  void memory.checkSource(item.memoryId).then((fresh) => {
+                    if (fresh?.sourceThreadId && fresh.sourceMessageId)
+                      onOpenThread(fresh.sourceThreadId, fresh.sourceMessageId);
+                    else setCheckedLost(true);
+                  });
+                }}
               >
-                {message("memory.source")}
+                {message("memory.page.jumpToQuote")}
               </button>
+            ) : origin === "reminder" && item.sourceThreadId ? (
+              <>
+                {message("memory.page.origin", { o: origin })}
+                {" · "}
+                <button
+                  type="button"
+                  className="memory-link"
+                  onClick={() => item.sourceThreadId && onOpenThread(item.sourceThreadId)}
+                >
+                  {message("memory.source")}
+                </button>
+              </>
+            ) : origin === "unavailable" ? (
+              <>
+                {message("memory.page.sourceUnavailable")}
+                {item.sourceThreadId ? (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="memory-link"
+                      onClick={() => item.sourceThreadId && onOpenThread(item.sourceThreadId)}
+                    >
+                      {message("memory.source")}
+                    </button>
+                  </>
+                ) : null}
+              </>
+            ) : origin === "import" && importSource ? (
+              message("memory.page.originImport", { source: importSource })
+            ) : (
+              message("memory.page.origin", { o: origin })
             )}
             {` · ${time(item.recordedAt)}`}
           </dd>
@@ -1329,7 +1362,7 @@ function MemoryBrowser({
   focus: readonly string[];
   since: string | null;
   initialOpen: string | null;
-  onOpenThread: (threadId: string) => void;
+  onOpenThread: (threadId: string, messageId?: string) => void;
 }) {
   const { moment: time } = useLocaleFormat();
   const [search, setSearch] = useState("");
@@ -1410,6 +1443,7 @@ function MemoryBrowser({
     scope.category === "all"
       ? message("memory.page.allTopics")
       : `${message("memory.cat", { c: scope.category })}${scope.sub ? ` · ${scope.sub}` : ""}`;
+  const sourceCounts = memorySourceCounts(overview.memories);
   const archived = visible.filter((item) => item.status === "archived").length;
   const trashed = visible.filter((item) => item.status === "trashed").length;
   return (
@@ -1427,6 +1461,18 @@ function MemoryBrowser({
           <button type="button" className="memory-link" onClick={() => go({ fresh: true })}>
             {message("memory.page.showNew")}
           </button>
+        </p>
+      ) : null}
+      {sourceCounts.unavailable ? (
+        <p className="memory-banner" data-kind="source-unavailable">
+          {message("memory.page.sourceUnavailableCount", { count: sourceCounts.unavailable })}
+        </p>
+      ) : null}
+      {sourceCounts.importedWithoutQuote ? (
+        <p className="memory-banner" data-kind="import-no-quote">
+          {message("memory.page.importNoQuoteCount", {
+            count: sourceCounts.importedWithoutQuote,
+          })}
         </p>
       ) : null}
       <div className="memory-search-row">
@@ -2128,7 +2174,7 @@ export function MemoryPage({
   memory: MemoryModel | null;
   message: Message;
   focus?: readonly string[];
-  onOpenThread: (threadId: string) => void;
+  onOpenThread: (threadId: string, messageId?: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("memories");
   const [showId, setShowId] = useState<string | null>(null);

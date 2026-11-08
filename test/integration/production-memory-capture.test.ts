@@ -18,6 +18,7 @@ import {
   createRunId,
   createThreadId,
 } from "@himawari-agent/domain";
+import { MEMORY_SOURCE_REF_MAX_LENGTH } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -137,6 +138,16 @@ describe("production memory capture", () => {
         status: "committed",
         committedAt: T0,
       });
+      const rows = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      rows
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'private', ?)`,
+        )
+        .run(`message-${sequence}`, OWNER_ID, AGENT_ID, THREAD_ID, sequence, role, contentRef, T0);
+      rows.close();
       if (role === "owner" && runId !== null) {
         const seed = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
         seed
@@ -317,7 +328,16 @@ describe("production memory capture", () => {
         ? new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }))
         : undefined;
     };
+    const sql = (run: (database: ReturnType<typeof openQualifiedDatabase>) => void) => {
+      const rows = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      try {
+        run(rows);
+      } finally {
+        rows.close();
+      }
+    };
     return {
+      sql,
       clock,
       repository,
       memory,
@@ -1895,6 +1915,158 @@ describe("production memory capture", () => {
         "again",
       ),
     ).rejects.toThrow("MEMORY_PERSON_NOT_FOUND");
+  });
+
+  it("[P1-1] points a captured memory at the Owner's message and says nothing for imported, hand-written or orphaned ones", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-import-1", "回答一律用简体中文");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-codex-2",
+        source: "codex",
+        items: [{ contentRef: "payload-import-1", category: "rule", subCategory: null }],
+      },
+      "import-p11",
+    );
+    const sourceOf = async () =>
+      Object.fromEntries(
+        (await overview(context.control)).memories.map((item) => [
+          item.importBatchId ? "imported" : "captured",
+          item.sourceMessageId,
+        ]),
+      );
+    expect(await sourceOf()).toEqual({ captured: "message-1", imported: null });
+    context.sql((database) =>
+      database.prepare("DELETE FROM thread_messages WHERE thread_id = ?").run(THREAD_ID),
+    );
+    expect(await sourceOf()).toEqual({ captured: null, imported: null });
+  });
+
+  it("[P1-1] only an Owner's committed message in a live conversation counts, the earliest wins, and many references are searched in batches", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const memoryId = (await overview(context.control)).memories[0]?.memoryId as string;
+    const sourceOf = async () =>
+      (await overview(context.control)).memories.find((item) => item.memoryId === memoryId)
+        ?.sourceMessageId;
+    const setReferences = (...refs: string[]) =>
+      context.sql((database) => {
+        database.prepare("DELETE FROM memory_provenance WHERE memory_id = ?").run(memoryId);
+        for (const ref of refs)
+          database
+            .prepare(
+              `INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted)
+              VALUES (?, 'reference', ?, 0)`,
+            )
+            .run(memoryId, ref);
+      });
+    expect(await sourceOf()).toBe("message-1");
+    const agentRef = await context.turn("agent", "好的，记下了", null);
+    const laterOwnerRef = await context.turn("owner", "我再说一遍，我最喜欢蓝色", null);
+    setReferences(agentRef);
+    expect(await sourceOf()).toBeNull();
+    await context.protect("payload-shared", "共用的一句话");
+    context.sql((database) => {
+      database
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES ('message-agent-shared', ?, ?, ?, 0, 90, 'agent', ?, 'private', ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, THREAD_ID, "payload-shared", T0);
+      database
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES ('message-owner-shared', ?, ?, ?, 0, 91, 'owner', ?, 'private', ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, THREAD_ID, "payload-shared", T0);
+    });
+    setReferences("payload-shared");
+    expect(await sourceOf()).toBe("message-owner-shared");
+    context.sql((database) =>
+      database.prepare("DELETE FROM thread_messages WHERE id = 'message-owner-shared'").run(),
+    );
+    expect(await sourceOf()).toBeNull();
+    setReferences(laterOwnerRef, "payload-owner-1");
+    expect(await sourceOf()).toBe("message-1");
+    setReferences(laterOwnerRef);
+    expect(await sourceOf()).toBe("message-3");
+    setReferences(
+      ...Array.from({ length: 450 }, (_, index) => `unmatched-${String(index).padStart(3, "0")}`),
+      "payload-owner-1",
+    );
+    expect(await sourceOf()).toBe("message-1");
+    context.sql((database) =>
+      database.prepare("UPDATE thread_messages SET message_status = 'partial'").run(),
+    );
+    expect(await sourceOf()).toBeNull();
+    context.sql((database) =>
+      database.prepare("UPDATE thread_messages SET message_status = 'committed'").run(),
+    );
+    expect(await sourceOf()).toBe("message-1");
+    for (const status of ["trashed", "deletion_pending", "deleted_verified"]) {
+      context.sql((database) =>
+        database.prepare("UPDATE threads SET status = ? WHERE id = ?").run(status, THREAD_ID),
+      );
+      expect(await sourceOf(), status).toBeNull();
+    }
+  });
+
+  it("[P1-1] a reference longer than the limit is neither listed nor used to find the message", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const memoryId = (await overview(context.control)).memories[0]?.memoryId as string;
+    const longRef = `payload-${"x".repeat(MEMORY_SOURCE_REF_MAX_LENGTH)}`;
+    const exactRef = `payload-${"y".repeat(MEMORY_SOURCE_REF_MAX_LENGTH - "payload-".length)}`;
+    await context.protect(longRef, "超长引用的句子");
+    await context.protect(exactRef, "刚好满限制的句子");
+    context.sql((database) => {
+      for (const [id, sequence, ref] of [
+        ["message-long", 70, longRef],
+        ["message-exact", 71, exactRef],
+      ] as const)
+        database
+          .prepare(
+            `INSERT INTO thread_messages (
+              id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+              classification, committed_at
+            ) VALUES (?, ?, ?, ?, 0, ?, 'owner', ?, 'private', ?)`,
+          )
+          .run(id, OWNER_ID, AGENT_ID, THREAD_ID, sequence, ref, T0);
+      database.prepare("DELETE FROM memory_provenance WHERE memory_id = ?").run(memoryId);
+      for (const ref of [longRef, exactRef])
+        database
+          .prepare(
+            `INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted)
+            VALUES (?, 'reference', ?, 0)`,
+          )
+          .run(memoryId, ref);
+    });
+    const [memory] = (await overview(context.control)).memories;
+    expect(memory?.sourceRefs).toEqual([exactRef]);
+    expect(memory?.sourceMessageId).toBe("message-exact");
+    context.sql((database) =>
+      database.prepare("DELETE FROM thread_messages WHERE id = 'message-exact'").run(),
+    );
+    expect((await overview(context.control)).memories[0]?.sourceMessageId).toBeNull();
   });
 
   it("[MP-7] imports chosen memories as one batch the Owner can undo", async () => {
