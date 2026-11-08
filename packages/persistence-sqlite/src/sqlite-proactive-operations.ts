@@ -13,6 +13,7 @@ import type {
   ProactiveStorePort,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { recordDecisionSignal } from "./decision-signals.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
@@ -747,7 +748,25 @@ export class SqliteProactiveOperations {
                AND later.thread_id = ? AND later.received_at > ?
            )`,
       );
-      for (const { threadId, receivedAt } of input.repliedThreads)
+      const openForReply = this.database.prepare(
+        `SELECT id, decision_id AS decisionId, updated_at AS updatedAt FROM source_insights
+         WHERE owner_id = ? AND agent_id = ? AND source = ? AND thread_id = ? AND status = 'open'
+           AND NOT EXISTS (
+             SELECT 1 FROM proactive_processed_messages later
+             WHERE later.owner_id = ? AND later.agent_id = ? AND later.source = ?
+               AND later.thread_id = ? AND later.received_at > ?
+           )`,
+      );
+      for (const { threadId, receivedAt } of input.repliedThreads) {
+        const waiting = openForReply.all(
+          ...scope,
+          decision.scenario,
+          threadId,
+          ...scope,
+          decision.scenario,
+          threadId,
+          receivedAt,
+        ) as { id: string; decisionId: string; updatedAt: string }[];
         markReplied.run(
           decision.checkedAt,
           ...scope,
@@ -758,6 +777,19 @@ export class SqliteProactiveOperations {
           threadId,
           receivedAt,
         );
+        for (const row of waiting)
+          recordDecisionSignal(this.database, {
+            ownerId: String(scope[0]),
+            agentId: String(scope[1]),
+            decisionId: row.decisionId,
+            signal: "replied",
+            occurredAt: receivedAt,
+            delayMs: Date.parse(receivedAt) - Date.parse(row.updatedAt),
+            detail: {},
+            sourceRef: `${row.id}@${receivedAt}`,
+            recordedAt: decision.checkedAt,
+          });
+      }
       if (input.push) {
         const pushed = input.insights
           .map((insight, index) => ({ insight, id: insightIds[index] as string }))
@@ -877,23 +909,50 @@ export class SqliteProactiveOperations {
     if (input.status !== undefined && !includes(INSIGHT_STATUSES, input.status))
       this.invalid("Proactive insight status is invalid");
     if (input.rating !== undefined) this.rating(input.rating);
-    return (
-      this.database
+    return this.database.transaction(() => {
+      const before = this.database
         .prepare(
-          `UPDATE source_insights SET status = COALESCE(?, status),
-            owner_rating = CASE WHEN ? THEN ? ELSE owner_rating END, updated_at = ?
+          `SELECT status, decision_id AS decisionId, updated_at AS updatedAt FROM source_insights
            WHERE owner_id = ? AND agent_id = ? AND id = ?`,
         )
-        .run(
-          input.status ?? null,
-          input.rating === undefined ? 0 : 1,
-          input.rating ?? null,
-          input.now,
-          input.ownerId,
-          input.agentId,
-          input.insightId,
-        ).changes > 0
-    );
+        .get(input.ownerId, input.agentId, input.insightId) as
+        | { status: string; decisionId: string; updatedAt: string }
+        | undefined;
+      const changed =
+        this.database
+          .prepare(
+            `UPDATE source_insights SET status = COALESCE(?, status),
+              owner_rating = CASE WHEN ? THEN ? ELSE owner_rating END, updated_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+          )
+          .run(
+            input.status ?? null,
+            input.rating === undefined ? 0 : 1,
+            input.rating ?? null,
+            input.now,
+            input.ownerId,
+            input.agentId,
+            input.insightId,
+          ).changes > 0;
+      if (
+        changed &&
+        before !== undefined &&
+        input.status === "open" &&
+        (before.status === "done" || before.status === "muted")
+      )
+        recordDecisionSignal(this.database, {
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          decisionId: before.decisionId,
+          signal: "undone",
+          occurredAt: input.now,
+          delayMs: Date.parse(input.now) - Date.parse(before.updatedAt),
+          detail: { from: before.status },
+          sourceRef: `${input.insightId}@${input.now}`,
+          recordedAt: input.now,
+        });
+      return changed;
+    })();
   }
 
   private rateDecision(input: Input<"rateDecision">): boolean {

@@ -18,7 +18,14 @@ type Group = CalibrationGroupSummary["group"];
 type Rating = CalibrationGroupSummary["applicable"][number];
 type DayStatus = ObservationDay["status"];
 type Phase = "unset" | "waiting" | "observing" | "reported";
-type InfoKey = "obs" | "type" | "stats" | "muse" | "row:proactive_pushed" | "row:proactive_silent";
+type InfoKey =
+  | "obs"
+  | "type"
+  | "stats"
+  | "muse"
+  | "implicit"
+  | "row:proactive_pushed"
+  | "row:proactive_silent";
 interface Info {
   readonly title: string;
   readonly paragraphs: readonly string[];
@@ -136,6 +143,17 @@ function duration(minutes: number, message: Message) {
   return minutes >= 60
     ? message("weekly.duration.hours", { h: Math.floor(minutes / 60), m: minutes % 60 })
     : message("weekly.duration.minutes", { m: minutes });
+}
+
+function implicitDelay(delayMs: number, message: Message, format: Format) {
+  const minutes = delayMs / 60_000;
+  if (minutes < 1) return message("weekly.implicit.underMinute");
+  if (minutes < 120)
+    return message("weekly.implicit.minutes", { n: format.count(Math.round(minutes)) });
+  const hours = minutes / 60;
+  return hours < 48
+    ? message("weekly.implicit.hours", { n: format.count(Math.round(hours)) })
+    : message("weekly.implicit.days", { n: format.count(Math.round(hours / 24)) });
 }
 
 const fact = (item: ObservationCheckItem, key: string) => item.facts[key];
@@ -643,6 +661,13 @@ export function WeeklyReport({
         list: [],
         version: null,
       };
+    if (key === "implicit")
+      return {
+        title: message("weekly.implicit.title"),
+        paragraphs: [message("weekly.implicit.def")],
+        list: [],
+        version: null,
+      };
     if (key === "muse")
       return {
         title: message("weekly.muse.title"),
@@ -1030,6 +1055,46 @@ export function WeeklyReport({
                 </span>
               ) : null}
             </p>
+          </>
+        )}
+      </section>
+
+      <section className="weekly-card" aria-label={message("weekly.implicit.title")}>
+        <CardHead title={message("weekly.implicit.title")} infoKey="implicit" info={infoButton} />
+        {report.implicit.pushedDecisions === 0 ? (
+          <p className="weekly-empty">{message("weekly.implicit.empty")}</p>
+        ) : (
+          <>
+            <div className="weekly-tiles" data-count="3">
+              {report.implicit.signals.map((item) => (
+                <div key={item.signal} className="weekly-tile">
+                  <b>
+                    {item.rate?.enough && item.rate.value !== null
+                      ? message("weekly.ratio", {
+                          pct: format.percent(item.rate.value),
+                          k: format.count(item.decisions),
+                          n: format.count(report.implicit.pushedDecisions),
+                        })
+                      : message("weekly.few", { n: report.implicit.pushedDecisions })}
+                  </b>
+                  <span>{message("weekly.implicit.signal", { s: item.signal })}</span>
+                  <small>
+                    {item.medianDelayMs === null
+                      ? message("weekly.implicit.delayNone")
+                      : message("weekly.implicit.delay", {
+                          t: implicitDelay(item.medianDelayMs, message, format),
+                        })}
+                  </small>
+                </div>
+              ))}
+            </div>
+            {report.implicit.otherDecisionEvents > 0 ? (
+              <p className="weekly-muse-foot">
+                {message("weekly.implicit.other", {
+                  n: format.count(report.implicit.otherDecisionEvents),
+                })}
+              </p>
+            ) : null}
           </>
         )}
       </section>

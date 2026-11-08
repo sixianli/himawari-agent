@@ -141,6 +141,28 @@ const muse = {
   buckets: { both: 0, museOnly: 0, himawariOnly: 0, bothSilent: 0, noHimawariRecord: 0 },
 };
 
+const signalRow = (
+  signal: "opened" | "undone" | "replied",
+  decisions: number,
+  medianDelayMs: number | null,
+  pushed: number,
+) => ({
+  signal,
+  decisions,
+  events: decisions,
+  medianDelayMs,
+  rate: pushed >= 5 ? rate(decisions, pushed) : null,
+});
+const implicit = {
+  pushedDecisions: 0,
+  otherDecisionEvents: 0,
+  signals: [
+    signalRow("opened", 0, null, 0),
+    signalRow("undone", 0, null, 0),
+    signalRow("replied", 0, null, 0),
+  ],
+};
+
 function unsetFixture(): ProactiveWeekly {
   return {
     serviceRevision: "41a6ce3",
@@ -165,6 +187,7 @@ function unsetFixture(): ProactiveWeekly {
       minimumSamples: 5,
       groups: [],
       muse,
+      implicit,
     },
     generatedAt: NOW.toISOString(),
   };

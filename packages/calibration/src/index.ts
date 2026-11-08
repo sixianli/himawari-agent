@@ -1,4 +1,4 @@
-export const HISTORY_SCHEMA = "himawari-calibration-week.v2";
+export const HISTORY_SCHEMA = "himawari-calibration-week.v3";
 export const DEFAULT_MINIMUM_SAMPLES = 5;
 export const WILSON_Z = 1.96;
 export const HIMAWARI_ATTENTION_OUTCOMES: readonly string[] = Object.freeze([
@@ -107,10 +107,35 @@ export interface MailJudgment {
   readonly ownerRating: CalibrationRating | null;
 }
 
+export const IMPLICIT_SIGNALS = ["opened", "undone", "replied"] as const;
+export type ImplicitSignal = (typeof IMPLICIT_SIGNALS)[number];
+
+export interface ImplicitSignalRow {
+  readonly decisionId: string;
+  readonly signal: ImplicitSignal;
+  readonly delayMs: number;
+  readonly pushed: boolean;
+}
+
 export interface CalibrationRows {
   readonly decisions: readonly CalibrationDecisionRow[];
   readonly entries: readonly MuseEntryRow[];
   readonly mailJudgments: ReadonlyMap<string, MailJudgment>;
+  readonly signals: readonly ImplicitSignalRow[];
+}
+
+export interface ImplicitSignalSummary {
+  readonly signal: ImplicitSignal;
+  readonly decisions: number;
+  readonly events: number;
+  readonly medianDelayMs: number | null;
+  readonly rate: Proportion;
+}
+
+export interface ImplicitSummary {
+  readonly pushedDecisions: number;
+  readonly signals: readonly ImplicitSignalSummary[];
+  readonly otherDecisionEvents: number;
 }
 
 export interface GroupSummary {
@@ -332,6 +357,56 @@ export function summarizeMuse(
   };
 }
 
+export function summarizeImplicit(
+  decisions: readonly CalibrationDecisionRow[],
+  signals: readonly ImplicitSignalRow[],
+  minimumSamples = DEFAULT_MINIMUM_SAMPLES,
+): ImplicitSummary {
+  const pushedDecisions = decisions.filter(
+    (row) => row.kind === "proactive" && (row.outcome === "pushed" || row.outcome === "deferred"),
+  ).length;
+  const median = (values: readonly number[]): number | null => {
+    if (values.length === 0) return null;
+    const sorted = [...values].sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1
+      ? (sorted[middle] as number)
+      : Math.round(((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2);
+  };
+  return {
+    pushedDecisions,
+    signals: IMPLICIT_SIGNALS.map((signal) => {
+      const ofKind = signals.filter((row) => row.pushed && row.signal === signal);
+      const first = new Map<string, number>();
+      for (const row of ofKind)
+        if (!first.has(row.decisionId)) first.set(row.decisionId, row.delayMs);
+      return {
+        signal,
+        decisions: first.size,
+        events: ofKind.length,
+        medianDelayMs: median([...first.values()]),
+        rate: proportion(first.size, pushedDecisions, minimumSamples),
+      };
+    }),
+    otherDecisionEvents: signals.filter((row) => !row.pushed).length,
+  };
+}
+
+export const IMPLICIT_SIGNAL_LABELS: Readonly<Record<ImplicitSignal, string>> = Object.freeze({
+  opened: "点开了推送",
+  undone: "点了完成或不再提醒后又撤销",
+  replied: "邮件串里你回复了",
+});
+
+export function formatDelay(delayMs: number | null): string {
+  if (delayMs === null) return "无";
+  const minutes = delayMs / 60_000;
+  if (minutes < 1) return "不到 1 分钟";
+  if (minutes < 120) return `${Math.round(minutes)} 分钟`;
+  const hours = minutes / 60;
+  return hours < 48 ? `${hours.toFixed(1)} 小时` : `${(hours / 24).toFixed(1)} 天`;
+}
+
 export interface CalibrationStatement {
   get(...parameters: unknown[]): unknown;
   all(...parameters: unknown[]): unknown[];
@@ -355,6 +430,15 @@ export const CALIBRATION_SQL = Object.freeze({
     FROM muse_reference_entries
     WHERE owner_id = ? AND agent_id = ? AND muse_at >= ? AND muse_at < ?
     ORDER BY muse_at, id`,
+  signals: `SELECT signal.decision_id AS decisionId, signal.signal AS signal,
+      signal.delay_ms AS delayMs,
+      CASE WHEN decision.kind = 'proactive' AND decision.verdict IN ('pushed', 'deferred')
+        THEN 1 ELSE 0 END AS pushed
+    FROM decision_signals signal
+    JOIN decision_ledger decision ON decision.id = signal.decision_id
+    WHERE decision.owner_id = ? AND decision.agent_id = ?
+      AND decision.checked_at >= ? AND decision.checked_at < ?
+    ORDER BY signal.occurred_at, signal.id`,
   mailJudgment: `SELECT outcome, owner_rating AS ownerRating FROM proactive_processed_messages
     WHERE owner_id = ? AND agent_id = ? AND source = 'gmail' AND message_id = ?`,
 });
@@ -399,6 +483,14 @@ export function readCalibrationRows(
     contentOk: row.contentOk === null ? null : row.contentOk === 1,
     pairedMessageId: row.pairedMessageId,
   }));
+  const signals = (
+    database.prepare(CALIBRATION_SQL.signals).all(ownerId, agentId, start, end) as {
+      decisionId: string;
+      signal: ImplicitSignal;
+      delayMs: number;
+      pushed: number;
+    }[]
+  ).map((row) => ({ ...row, pushed: row.pushed === 1 }));
   const mailJudgments = new Map<string, MailJudgment>();
   const lookup = database.prepare(CALIBRATION_SQL.mailJudgment);
   for (const messageId of new Set(
@@ -407,7 +499,7 @@ export function readCalibrationRows(
     const row = lookup.get(ownerId, agentId, messageId) as MailJudgment | undefined;
     if (row !== undefined) mailJudgments.set(messageId, row);
   }
-  return { decisions, entries, mailJudgments };
+  return { decisions, entries, mailJudgments, signals };
 }
 
 export interface HistoryRecord {
@@ -439,6 +531,15 @@ export interface HistoryRecord {
     readonly paired: number;
     readonly buckets: MuseSummary["buckets"];
   };
+  readonly implicit: {
+    readonly pushedDecisions: number;
+    readonly signals: readonly {
+      readonly signal: ImplicitSignal;
+      readonly decisions: number;
+      readonly events: number;
+      readonly medianDelayMs: number | null;
+    }[];
+  };
 }
 
 export function buildReport({
@@ -446,6 +547,7 @@ export function buildReport({
   scope,
   decisions,
   muse,
+  implicit,
   minimumSamples,
   previous,
 }: {
@@ -453,6 +555,7 @@ export function buildReport({
   readonly scope: { readonly ownerId: string; readonly agentId: string };
   readonly decisions: readonly GroupSummary[];
   readonly muse: MuseSummary;
+  readonly implicit: ImplicitSummary;
   readonly minimumSamples: number;
   readonly previous?: HistoryRecord | undefined;
 }): string {
@@ -492,6 +595,30 @@ export function buildReport({
       "",
     );
   }
+  lines.push("## 观察信号（不是打分）", "");
+  lines.push(
+    "这一节只记你没动手评价时发生的事：提醒有没有被点开、完成或静音后有没有撤销、邮件串里你有没有回复。它们是弱信号，不当作你的评价，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策。",
+    "",
+  );
+  if (implicit.pushedDecisions === 0) lines.push("这一周没有推送过提醒的决策。", "");
+  else {
+    lines.push(
+      `这一周推送过提醒的决策 ${implicit.pushedDecisions} 条。`,
+      "",
+      "| 信号 | 出现过的决策 | 占比 | 事件条数 | 首次发生的中位间隔 |",
+      "| --- | --- | --- | --- | --- |",
+    );
+    for (const row of implicit.signals)
+      lines.push(
+        `| ${IMPLICIT_SIGNAL_LABELS[row.signal]} | ${row.decisions} | ${formatProportion(row.rate)} | ${row.events} | ${formatDelay(row.medianDelayMs)} |`,
+      );
+    lines.push("");
+    if (implicit.otherDecisionEvents > 0)
+      lines.push(
+        `另有 ${implicit.otherDecisionEvents} 条信号落在没有推送的决策上，不进上面的比例。`,
+        "",
+      );
+  }
   lines.push("## 与上一周对比", "");
   if (!previous) lines.push("没有更早的记录可比。", "");
   else {
@@ -518,6 +645,7 @@ export function historyRecord({
   scope,
   decisions,
   muse,
+  implicit,
   minimumSamples,
   commit,
   recordedAt,
@@ -526,6 +654,7 @@ export function historyRecord({
   readonly scope: { readonly ownerId: string; readonly agentId: string };
   readonly decisions: readonly GroupSummary[];
   readonly muse: MuseSummary;
+  readonly implicit: ImplicitSummary;
   readonly minimumSamples: number;
   readonly commit: string;
   readonly recordedAt: string;
@@ -554,6 +683,15 @@ export function historyRecord({
       paired: muse.entries - muse.unpaired,
       buckets: muse.buckets,
     },
+    implicit: {
+      pushedDecisions: implicit.pushedDecisions,
+      signals: implicit.signals.map(({ signal, decisions: count, events, medianDelayMs }) => ({
+        signal,
+        decisions: count,
+        events,
+        medianDelayMs,
+      })),
+    },
   };
 }
 
@@ -565,6 +703,7 @@ export function sameMeasurement(left: HistoryRecord, right: HistoryRecord): bool
     left.window.end === right.window.end &&
     left.minimumSamples === right.minimumSamples &&
     JSON.stringify(left.groups) === JSON.stringify(right.groups) &&
-    JSON.stringify(left.muse) === JSON.stringify(right.muse)
+    JSON.stringify(left.muse) === JSON.stringify(right.muse) &&
+    JSON.stringify(left.implicit) === JSON.stringify(right.implicit)
   );
 }

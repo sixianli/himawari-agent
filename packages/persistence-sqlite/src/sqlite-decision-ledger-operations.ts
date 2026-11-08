@@ -8,6 +8,7 @@ import {
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
+  type DecisionSignalEntry,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
@@ -225,6 +226,8 @@ export class SqliteDecisionLedgerOperations {
         return this.recordMuse(payload as Input<"recordMuse">);
       case "decisionLedger.listMuse":
         return this.listMuse(payload as Input<"listMuse">);
+      case "decisionLedger.listSignals":
+        return this.listSignals(payload as Input<"listSignals">);
       case "decisionLedger.readCalibrationRows":
         return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
       default:
@@ -247,6 +250,7 @@ export class SqliteDecisionLedgerOperations {
           mailJudgments: [...rows.mailJudgments.entries()].map(
             ([id, judgment]) => [id, { ...judgment }] as const,
           ),
+          signals: rows.signals.map((row) => ({ ...row })),
         };
       } catch (error) {
         if (error instanceof Error && error.message.startsWith("CALIBRATION_TIMESTAMP_FORMAT"))
@@ -404,6 +408,26 @@ export class SqliteDecisionLedgerOperations {
         pairedMessageId,
         write.recordedAt,
       );
+  }
+
+  private listSignals(input: Input<"listSignals">): readonly DecisionSignalEntry[] {
+    if (!idList(input.decisionIds)) this.fail("PORT_INVALID_OPERATION", "Decision ids are invalid");
+    const read = this.database.prepare(
+      `SELECT decision_id AS decisionId, signal, occurred_at AS occurredAt, delay_ms AS delayMs,
+        detail FROM decision_signals
+       WHERE owner_id = ? AND agent_id = ? AND decision_id = ?
+       ORDER BY occurred_at, id`,
+    );
+    return input.decisionIds.flatMap((decisionId) =>
+      (
+        read.all(input.ownerId, input.agentId, decisionId) as (Omit<
+          DecisionSignalEntry,
+          "detail"
+        > & {
+          detail: string;
+        })[]
+      ).map((row) => ({ ...row, detail: JSON.parse(row.detail) })),
+    );
   }
 
   private listMuse(input: Input<"listMuse">): readonly MuseReferenceEntry[] {

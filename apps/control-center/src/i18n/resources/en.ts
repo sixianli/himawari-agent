@@ -1263,6 +1263,20 @@ export const messages = {
   "weekly.muse.rate": "Pairing rate",
   "weekly.muse.def":
     "Pairing rate = entries matched to the same email ÷ all Muse comparison entries this week.",
+  "weekly.implicit.title": "Observed signals · not ratings",
+  "weekly.implicit.empty": "No decision sent a reminder this week.",
+  "weekly.implicit.signal":
+    "{s, select, opened {Opened the push} undone {Marked done or muted, then undid it} other {You replied in the mail thread}}",
+  "weekly.implicit.delay": "Median time to first occurrence: {t}",
+  "weekly.implicit.delayNone": "Has not happened yet",
+  "weekly.implicit.underMinute": "under 1 minute",
+  "weekly.implicit.minutes": "{n} min",
+  "weekly.implicit.hours": "{n} h",
+  "weekly.implicit.days": "{n} d",
+  "weekly.implicit.other":
+    "{n} more signals landed on decisions that sent no reminder and are not counted above.",
+  "weekly.implicit.def":
+    "These three signals are what happened when you did not rate anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",
