@@ -1947,4 +1947,30 @@ describe("production memory capture", () => {
       command(context.control, "memory.import.undo", { batchId: "memory-import-codex-1" }, "u2"),
     ).rejects.toThrow("MEMORY_IMPORT_NOT_FOUND");
   });
+
+  it("[MP-7] keeps an imported password line as sensitive and keeps its original text", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-import-pwd", "pwd: hunter2abc", "sensitive");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-sensitive-1",
+        source: "assistant",
+        items: [{ contentRef: "payload-import-pwd", category: "other", subCategory: null }],
+      },
+      "import-sensitive-1",
+    );
+    const imported = await overview(context.control);
+    expect(
+      imported.memories
+        .filter(({ importBatchId }) => importBatchId === "memory-import-sensitive-1")
+        .map(({ dataClassification }) => dataClassification),
+    ).toEqual(["sensitive"]);
+  });
 });
