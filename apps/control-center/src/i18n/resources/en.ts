@@ -173,7 +173,7 @@ export const messages = {
   "chat.model": "Model (next turn)",
   "chat.depth": "Thinking depth (next turn)",
   "chat.search.disclosure":
-    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Credentials detected in a query are redacted before it is sent. Revoking restores confirmation for future searches.",
   "chat.search.remember": "Remember my choice and allow future web searches",
   "chat.search.afterRevoke": "It’s off now, so Himawari asks in the chat before it searches.",
   "chat.search.providersChanged":

@@ -90,6 +90,15 @@ describe("control-center i18n runtime", () => {
     expect(() => storage.saveLocale("fr" as never)).toThrow("CONTROL_CENTER_LOCALE_INVALID");
   });
 
+  it("[mask-not-block] says web-search terms with credentials are redacted before they are sent, not blocked", async () => {
+    for (const locale of ["zh-CN", "en", "ja"] as const) {
+      const messages = await catalog(locale);
+      for (const id of ["chat.search.disclosure", "chat.search.sentLimits"] as const) {
+        expect(messages[id], `${locale}:${id}`).not.toMatch(/拦|blocked|遮断|止められ/u);
+      }
+    }
+  });
+
   it("expands visible text for pseudo-localization without corrupting ICU arguments", () => {
     const source = "There are {count, plural, one {# item} other {# items}}";
     const pseudo = pseudoLocalize(source);
