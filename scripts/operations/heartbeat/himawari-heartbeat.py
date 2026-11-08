@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import argparse
+import http.client
 import re
 import sys
 import urllib.error
@@ -9,6 +10,7 @@ DEFAULT_URL_FILE = "/etc/himawari/healthcheck-url"
 DEFAULT_READY_URL = "http://127.0.0.1:8400/health/ready"
 PING_URL = re.compile(r"https://hc-ping\.com/[A-Za-z0-9_-]{1,64}(?:/[A-Za-z0-9_-]{1,64})?")
 MAXIMUM_URL_FILE_BYTES = 512
+RESERVED_SUFFIXES = {"fail", "start", "log"}
 
 
 class UrlInvalid(Exception):
@@ -28,7 +30,7 @@ def read_ping_url(path):
     except UnicodeDecodeError as error:
         raise UrlInvalid("HEARTBEAT_URL_INVALID") from error
     value = text[:-1] if text.endswith("\n") else text
-    if not PING_URL.fullmatch(value):
+    if not PING_URL.fullmatch(value) or value.rsplit("/", 1)[1] in RESERVED_SUFFIXES:
         raise UrlInvalid("HEARTBEAT_URL_INVALID")
     return value
 
@@ -41,7 +43,7 @@ def probe_ready(opener, ready_url, timeout):
             return "ready answered HTTP " + str(response.status)
     except urllib.error.HTTPError as error:
         return "ready answered HTTP " + str(error.code)
-    except (urllib.error.URLError, OSError, ValueError):
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
         return "ready did not answer"
 
 
@@ -72,9 +74,9 @@ def main(argv, opener=urllib.request.urlopen, output=sys.stdout, errors=sys.stde
             send(opener, url, None, arguments.timeout)
             print("HEARTBEAT ok", file=output)
         else:
-            send(opener, url + "/fail", problem.encode("ascii"), arguments.timeout)
-            print("HEARTBEAT fail " + problem, file=output)
-    except (urllib.error.URLError, OSError, ValueError):
+            send(opener, url + "/log", problem.encode("ascii"), arguments.timeout)
+            print("HEARTBEAT skipped " + problem, file=output)
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
         print("HEARTBEAT_PING_FAILED", file=errors)
         return 1
     return 0

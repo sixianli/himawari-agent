@@ -83,23 +83,23 @@ class HeartbeatScriptTest(unittest.TestCase):
         self.assertEqual(pings.calls, [("GET", PING, None)])
         self.assertEqual(output.strip(), "HEARTBEAT ok")
 
-    def test_not_ready_service_sends_the_failure_signal_with_the_reason(self):
+    def test_not_ready_service_sends_no_heartbeat_and_logs_the_reason(self):
         pings = Pings()
         with ReadyServer(503) as ready:
             code, output, _ = self.run_main(ready.url, pings)
         self.assertEqual(code, 0)
-        self.assertEqual(pings.calls, [("POST", PING + "/fail", b"ready answered HTTP 503")])
-        self.assertEqual(output.strip(), "HEARTBEAT fail ready answered HTTP 503")
+        self.assertEqual(pings.calls, [("POST", PING + "/log", b"ready answered HTTP 503")])
+        self.assertEqual(output.strip(), "HEARTBEAT skipped ready answered HTTP 503")
 
-    def test_a_service_that_does_not_answer_sends_the_failure_signal(self):
+    def test_a_service_that_does_not_answer_sends_no_heartbeat(self):
         with ReadyServer(200) as ready:
             dead = ready.url
         pings = Pings()
         code, _, _ = self.run_main(dead, pings)
         self.assertEqual(code, 0)
-        self.assertEqual(pings.calls, [("POST", PING + "/fail", b"ready did not answer")])
+        self.assertEqual(pings.calls, [("POST", PING + "/log", b"ready did not answer")])
 
-    def test_a_ready_answer_other_than_200_is_a_failure(self):
+    def test_a_ready_answer_other_than_200_is_not_ready(self):
         class Answer(io.BytesIO):
             status = 204
 
@@ -113,7 +113,7 @@ class HeartbeatScriptTest(unittest.TestCase):
         output = io.StringIO()
         code = heartbeat.main(["--url-file", str(self.url_file), "--ready-url", "http://127.0.0.1:9/health/ready"], opener, output, io.StringIO())
         self.assertEqual(code, 0)
-        self.assertEqual(calls, [("POST", PING + "/fail", b"ready answered HTTP 204")])
+        self.assertEqual(calls, [("POST", PING + "/log", b"ready answered HTTP 204")])
 
     def test_a_failed_ping_is_an_error_exit_without_the_url(self):
         pings = Pings(fail=True)
@@ -134,6 +134,9 @@ class HeartbeatScriptTest(unittest.TestCase):
             "",
             "https://hc-ping.com/" + "a" * 600 + "\n",
             "https://hc-ping.com/ab\xe9\n",
+            "https://hc-ping.com/abc/fail\n",
+            "https://hc-ping.com/abc/log\n",
+            "https://hc-ping.com/abc/start\n",
         ]
         for text in bad:
             self.url_file.write_bytes(text.encode("utf-8"))
@@ -158,6 +161,20 @@ class HeartbeatScriptTest(unittest.TestCase):
         with ReadyServer(200) as ready:
             code, _, _ = self.run_main(ready.url, pings)
         self.assertEqual((code, pings.calls[0][1]), (0, "https://hc-ping.com/aBcDeF123/himawari-prod"))
+
+    def test_a_non_http_answer_from_the_local_port_is_not_ready_and_does_not_crash(self):
+        import http.client
+
+        calls = []
+
+        def opener(request, timeout):
+            if request.full_url.startswith("http://127.0.0.1"):
+                raise http.client.BadStatusLine("garbage")
+            calls.append((request.get_method(), request.full_url, request.data))
+            return io.BytesIO(b"OK")
+
+        code = heartbeat.main(["--url-file", str(self.url_file), "--ready-url", "http://127.0.0.1:9/health/ready"], opener, io.StringIO(), io.StringIO())
+        self.assertEqual((code, calls), (0, [("POST", PING + "/log", b"ready did not answer")]))
 
     def test_check_url_file_only_validates(self):
         pings = Pings()
@@ -211,6 +228,19 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual((self.root / "etc/himawari/healthcheck-url").read_text(), PING + "\n")
         self.assertEqual(self.run_script("install", stdin="https://hc-ping.com/newkey\n").returncode, 0)
         self.assertEqual((self.root / "etc/himawari/healthcheck-url").read_text(), "https://hc-ping.com/newkey\n")
+
+    def test_keep_url_repairs_loose_permissions_on_the_stored_url(self):
+        self.run_script("install", stdin=PING + "\n")
+        url = self.root / "etc/himawari/healthcheck-url"
+        url.chmod(0o644)
+        self.assertEqual(self.run_script("install", "--keep-url").returncode, 0)
+        self.assertEqual(stat.S_IMODE(url.stat().st_mode), 0o600)
+
+    def test_status_asks_systemd_and_changes_nothing(self):
+        child = self.run_script("status")
+        self.assertEqual(child.returncode, 0, child.stderr)
+        self.assertEqual(self.calls.read_text().splitlines(), ["is-active himawari-heartbeat.timer", "list-timers himawari-heartbeat.timer --no-pager"])
+        self.assertFalse((self.root / "usr").exists())
 
     def test_keep_url_without_a_stored_url_fails(self):
         child = self.run_script("install", "--keep-url")

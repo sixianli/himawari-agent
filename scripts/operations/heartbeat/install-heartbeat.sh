@@ -57,7 +57,7 @@ fi
 umask 022
 mkdir -p "$(dirname "$script_path")" "$(dirname "$url_path")" "$(dirname "$service_path")"
 install -m 0755 "$here/himawari-heartbeat.py" "$script_path"
-[[ "$keep" == 1 ]] || install -m 0600 "$staging/url" "$url_path"
+if [[ "$keep" == 1 ]]; then chmod 0600 "$url_path"; else install -m 0600 "$staging/url" "$url_path"; fi
 cat > "$service_path" <<'UNIT'
 [Unit]
 Description=Himawari heartbeat to Healthchecks.io
