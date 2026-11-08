@@ -219,6 +219,8 @@ function sleepSync(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+const transientCurlExits = new Set([5, 6, 7, 18, 28, 35, 52, 55, 56]);
+
 export function curlDownload(
   url,
   target,
@@ -241,7 +243,8 @@ export function curlDownload(
     const status = Number((result.stdout ?? "").trim().slice(-3));
     if (result.status === 0 && status >= 200 && status < 300) return;
     const network = result.status !== 0;
-    const retryable = status >= 400 ? retryableStatus(status) : network;
+    const retryable =
+      status >= 400 ? retryableStatus(status) : network && transientCurlExits.has(result.status);
     const reason = network
       ? `${(result.stderr ?? result.error?.message ?? "").trim() || `curl 退出码 ${result.status}`}${status ? ` (HTTP ${status})` : ""}`
       : `HTTP ${status}`;

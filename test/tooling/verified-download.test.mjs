@@ -18,7 +18,6 @@ import { downloadArtifact } from "../../scripts/ci/install-tools.mjs";
 import {
   cacheEntryMaxBytes,
   cacheEnvironment,
-  cacheMarkerName,
   cacheRead,
   cacheWrite,
   downloadVerified,
@@ -90,7 +89,7 @@ describe("verified download cache", () => {
     const cache = temporary();
     const network = answering({ status: 200, body: bytes });
     await downloadVerified(expected, options(cache, { fetch: network.fetch }));
-    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, expected.sha256].sort());
+    expect(readdirSync(cache)).toEqual([expected.sha256]);
     expect(readFileSync(join(cache, expected.sha256))).toEqual(bytes);
     const second = offline();
     await downloadVerified(expected, options(cache, { fetch: second.fetch }));
@@ -302,7 +301,6 @@ describe("cache directory choice and pruning", () => {
     const cache = temporary();
     const fresh = sha256Of("fresh");
     const stale = sha256Of("stale");
-    writeFileSync(join(cache, cacheMarkerName), "");
     writeFileSync(join(cache, fresh), "fresh");
     writeFileSync(join(cache, stale), "stale");
     writeFileSync(join(cache, ".tmp-1-old"), "x");
@@ -311,17 +309,17 @@ describe("cache directory choice and pruning", () => {
     age(join(cache, stale), 31);
     age(join(cache, ".tmp-1-old"), 2);
     pruneCache(cache, { report: quiet });
-    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, ".tmp-2-new", fresh].sort());
+    expect(readdirSync(cache).sort()).toEqual([".tmp-2-new", fresh, "stray.txt"].sort());
   });
 
-  it("deletes nothing in a directory that this tool did not create", () => {
+  it("only ever deletes digest-named files and stale temporary files", () => {
     const directory = temporary();
     writeFileSync(join(directory, "important.txt"), "keep me");
     mkdirSync(join(directory, "sub"));
     writeFileSync(join(directory, ".tmp-old"), "x");
     age(join(directory, ".tmp-old"), 5);
     pruneCache(directory, { report: quiet });
-    expect(readdirSync(directory).sort()).toEqual([".tmp-old", "important.txt", "sub"]);
+    expect(readdirSync(directory).sort()).toEqual(["important.txt", "sub"]);
   });
 
   it("never deletes a directory, even inside a cache directory", () => {
@@ -334,6 +332,13 @@ describe("cache directory choice and pruning", () => {
     expect(existsSync(join(cache, expected.sha256))).toBe(true);
   });
 
+  it("does not store a file above the size limit", () => {
+    const cache = temporary();
+    const big = Buffer.alloc(cacheEntryMaxBytes + 1);
+    expect(cacheWrite(cache, sha256Of(big), big, quiet)).toBe(false);
+    expect(readdirSync(cache)).toEqual([]);
+  });
+
   it("keeps the default size limit at 512 MB", () => {
     expect(cacheEntryMaxBytes).toBe(512 * 1024 ** 2);
   });
@@ -341,13 +346,12 @@ describe("cache directory choice and pruning", () => {
   it("evicts the least recently used entries when over the size cap", () => {
     const cache = temporary();
     const names = ["a", "b", "c"].map((text) => sha256Of(text));
-    writeFileSync(join(cache, cacheMarkerName), "");
     names.forEach((name, index) => {
       writeFileSync(join(cache, name), "x".repeat(100));
       age(join(cache, name), 3 - index);
     });
     pruneCache(cache, { maxBytes: 200, report: quiet });
-    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, names[1], names[2]].sort());
+    expect(readdirSync(cache).sort()).toEqual([names[1], names[2]].sort());
   });
 });
 
@@ -399,6 +403,18 @@ describe("Magpie download", () => {
 
   it("does not retry a 4xx even when curl exits non-zero", () => {
     const script = spawnScript({ exit: 22, stdout: "HTTP/2 404\r\n\r\n404" });
+    expect(() =>
+      curlDownload("https://github.com/x/magpie", join(temporary(), "m"), {
+        spawn: script.spawn,
+        sleep: () => {},
+        budget: { waitedMs: 0 },
+      }),
+    ).toThrow("GATEWAY_DOWNLOAD_FAILED");
+    expect(script.calls).toHaveLength(1);
+  });
+
+  it("does not retry a curl exit that is not a network problem", () => {
+    const script = spawnScript({ exit: 3, stdout: "", stderr: "URL malformed" });
     expect(() =>
       curlDownload("https://github.com/x/magpie", join(temporary(), "m"), {
         spawn: script.spawn,
@@ -496,7 +512,7 @@ describe("Magpie download", () => {
       cacheDirectory: cache,
     });
     expect(downloads).toBe(1);
-    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, sha256Of(good)].sort());
+    expect(readdirSync(cache)).toEqual([sha256Of(good)]);
     expect(readFileSync(first.binary)).toEqual(good);
     installGateway({
       lock,

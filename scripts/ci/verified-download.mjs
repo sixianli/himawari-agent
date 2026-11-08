@@ -15,7 +15,6 @@ export const retryBudgetMs = 15 * 60_000;
 const firstDelayMs = 10_000;
 const longestDelayMs = 300_000;
 const shortestDelayMs = 1_000;
-export const cacheMarkerName = ".himawari-ci-downloads";
 export const processBudget = { waitedMs: 0 };
 export const cacheEntryMaxBytes = 512 * 1024 ** 2;
 const digestPattern = /^[a-f0-9]{64}$/;
@@ -66,7 +65,9 @@ export function cacheRead(directory, sha256, { maxBytes = cacheEntryMaxBytes } =
     return null;
   }
   if (sha256Of(bytes) !== sha256) {
-    rmSync(path, { force: true });
+    try {
+      rmSync(path, { force: true });
+    } catch {}
     return null;
   }
   try {
@@ -77,11 +78,16 @@ export function cacheRead(directory, sha256, { maxBytes = cacheEntryMaxBytes } =
 }
 
 export function cacheWrite(directory, sha256, bytes, report = console.error) {
-  if (!directory || !digestPattern.test(sha256) || sha256Of(bytes) !== sha256) return false;
+  if (
+    !directory ||
+    !digestPattern.test(sha256) ||
+    bytes.length > cacheEntryMaxBytes ||
+    sha256Of(bytes) !== sha256
+  )
+    return false;
   const temporary = join(directory, `.tmp-${process.pid}-${randomBytes(6).toString("hex")}`);
   try {
     mkdirSync(directory, { recursive: true });
-    writeFileSync(join(directory, cacheMarkerName), "himawari download cache\n", { flag: "a" });
     writeFileSync(temporary, bytes, { flag: "wx", mode: 0o644 });
     renameSync(temporary, join(directory, sha256));
     return true;
@@ -187,7 +193,6 @@ export function pruneCache(
   if (!directory) return;
   let names;
   try {
-    lstatSync(join(directory, cacheMarkerName));
     names = readdirSync(directory);
   } catch {
     return;
@@ -202,14 +207,9 @@ export function pruneCache(
       continue;
     }
     const age = now - status.mtimeMs;
-    if (name === cacheMarkerName) continue;
     const temporary = name.startsWith(".tmp-") && status.isFile();
     const entry = digestPattern.test(name) && status.isFile();
-    if (
-      (temporary && age > temporaryMaxAgeMs) ||
-      (!temporary && !entry) ||
-      (entry && age > cacheMaxAgeMs)
-    ) {
+    if ((temporary && age > temporaryMaxAgeMs) || (entry && age > cacheMaxAgeMs)) {
       try {
         rmSync(path, { force: true });
       } catch (error) {
