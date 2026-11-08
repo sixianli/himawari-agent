@@ -211,7 +211,11 @@ export const messages = {
   "chat.reason.runDeadlineExceeded": "本轮执行期限已到，清理已完成，本轮已结束",
   "chat.reason.toolResultUnknown":
     "有一条命令的结果没能确认，本轮已结束，没有生成回答。继续前请先核实命令做了什么",
+  "chat.reason.toolCpuTimeLimit": "命令占用的 CPU 时间超过上限，执行已结束并完成清理",
   "chat.reason.toolDeadlineExceeded": "工具执行超时，已终止并完成清理",
+  "chat.reason.toolMemoryLimit": "命令占用的内存超过上限，执行已结束并完成清理",
+  "chat.reason.toolResourceLimit": "命令超过资源上限，执行已结束并完成清理",
+  "chat.reason.toolOutputLimit": "命令的输出超过上限，已停止接收并完成清理",
   "chat.reason.toolNotStarted": "工具未启动：准备阶段失败，已确认清理完成",
   "chat.reason.deadlineExceeded": "执行期限已到，操作未派发",
   "chat.reason.resourceCeilingChanged": "允许的资源上限已变化，操作未派发",
