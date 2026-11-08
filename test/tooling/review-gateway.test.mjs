@@ -48,6 +48,7 @@ import {
   gatewayProvider,
   gatewayRecordFields,
   gatewayRequested,
+  gatewayRequiredProblem,
   launchModel,
   outputBounds,
   PASSTHROUGH_PROMPT,
@@ -198,6 +199,52 @@ describe("review gateway configuration", () => {
     expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--gateway", "magpie"])).toThrow(
       "ARG_NOT_FOR_SUBCOMMAND",
     );
+  });
+
+  it("[gateway] --require-gateway refuses to run anywhere but through Magpie with a proxy, before reading or spending anything", () => {
+    const base = ["--mode", "plan", "--head", "HEAD", "--brief", "b.md", "--topic", "x"];
+    const need = [...base, "--require-gateway"];
+    expect(() => parseArgs(need)).toThrow("GATEWAY_REQUIRED not-magpie");
+    expect(() => parseArgs([...need, "--gateway", "direct"], { defaultGateway: "magpie" })).toThrow(
+      "GATEWAY_REQUIRED not-magpie",
+    );
+    expect(parseArgs([...need, "--gateway", "magpie"]).requireGateway).toBe(true);
+    expect(parseArgs(need, { defaultGateway: "magpie" }).requireGateway).toBe(true);
+    expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--require-gateway"])).toThrow(
+      "ARG_NOT_FOR_SUBCOMMAND",
+    );
+    const options = { requireGateway: true };
+    const cloud = { HIMAWARI_REVIEW_GATEWAY: "magpie" };
+    expect(gatewayRequiredProblem(options, {})).toBe("not-cloud");
+    expect(gatewayRequiredProblem(options, { HTTPS_PROXY: "http://127.0.0.1:1" })).toBe(
+      "not-cloud",
+    );
+    expect(gatewayRequiredProblem(options, cloud)).toBe("no-proxy");
+    expect(gatewayRequiredProblem(options, { ...cloud, HTTPS_PROXY: "  " })).toBe("no-proxy");
+    expect(
+      gatewayRequiredProblem(options, { ...cloud, https_proxy: "http://127.0.0.1:1" }),
+    ).toBeNull();
+    expect(gatewayRequiredProblem({}, {})).toBeNull();
+    expect(gatewayRequiredProblem({ ...options, selfCheckOnly: true }, {})).toBeNull();
+    const refused = spawnSync(
+      process.execPath,
+      ["scripts/model-review/opencode-review.mjs", ...need, "--gateway", "magpie"],
+      { encoding: "utf8", env: { PATH: process.env.PATH, HIMAWARI_OPENCODE_BIN: "/nonexistent" } },
+    );
+    expect([refused.status, refused.stderr.trim()]).toEqual([2, "GATEWAY_REQUIRED not-cloud"]);
+    const noProxy = spawnSync(
+      process.execPath,
+      ["scripts/model-review/opencode-review.mjs", ...need, "--gateway", "magpie"],
+      {
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          HIMAWARI_REVIEW_GATEWAY: "magpie",
+          HIMAWARI_OPENCODE_BIN: "/nonexistent",
+        },
+      },
+    );
+    expect([noProxy.status, noProxy.stderr.trim()]).toEqual([2, "GATEWAY_REQUIRED no-proxy"]);
   });
 
   it("[gateway] builds groups in the configured order and drops the credit provider when asked", () => {

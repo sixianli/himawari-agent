@@ -1,5 +1,8 @@
 import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
-import { mentionsSensitiveMaterial } from "@himawari-agent/sensitive-capture";
+import {
+  classificationWithIdentifiers,
+  mentionsSensitiveMaterial,
+} from "@himawari-agent/sensitive-capture";
 
 export type MemoryCategory = (typeof MEMORY_CATEGORY_NAMES)[number];
 
@@ -16,7 +19,6 @@ export interface ImportCandidate {
 
 export interface ImportParse {
   readonly items: readonly ImportCandidate[];
-  readonly dropped: number;
 }
 
 const RULE = /不要|别|一律|每次|以后|总是|先.+再|never|always|don't|do not/i;
@@ -75,7 +77,6 @@ export function parseMemoryText(
   let section = agents ? "agents" : "";
   let project = "";
   let skipLevel = 0;
-  let dropped = 0;
   const add = (raw: string, kind: "fact" | "rule" | "project") => {
     const line = raw
       .replace(/\s*\[Task \d+\]\s*/gi, "")
@@ -83,14 +84,14 @@ export function parseMemoryText(
       .trim()
       .slice(0, MAXIMUM_TEXT);
     if (line.length < 2) return;
-    if (mentionsSensitiveMaterial(line)) {
-      dropped += 1;
-      return;
-    }
     const key = normalizeMemoryText(line);
     if (seen.has(key)) return;
     seen.add(key);
     const guess = guessCategory(line);
+    const sensitive =
+      guess.sensitive ||
+      mentionsSensitiveMaterial(line) ||
+      classificationWithIdentifiers(line, "private") === "sensitive";
     const category: MemoryCategory = guess.sensitive
       ? guess.category
       : kind === "rule"
@@ -106,11 +107,11 @@ export function parseMemoryText(
       text: line,
       category,
       subCategory: coding ? (project || "Codex").slice(0, 32) : null,
-      sensitive: guess.sensitive,
+      sensitive,
       duplicate,
       coding,
       from: section && section !== "agents" ? `${name} · ${section}` : name,
-      checked: !duplicate && !guess.sensitive && !coding,
+      checked: !duplicate && !sensitive && !coding,
     });
   };
   for (const rawLine of text.split(/\r?\n/)) {
@@ -144,7 +145,7 @@ export function parseMemoryText(
       if (/^[-*]\s+/.test(line)) add(line, "project");
     } else add(line, "fact");
   }
-  return { items, dropped };
+  return { items };
 }
 
 export function parseMemoryExport(
@@ -178,5 +179,5 @@ export function parseMemoryExport(
       checked: !duplicate && !sensitive,
     });
   }
-  return { items, dropped: 0 };
+  return { items };
 }

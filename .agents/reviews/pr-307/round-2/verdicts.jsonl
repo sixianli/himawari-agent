@@ -1,0 +1,9 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "核心告警路径完全依赖 Healthchecks.io 的 `/log` 语义，仓库内没有任何验证", "valid": false, "class": "better"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "短暂不就绪/崩溃重启循环会被漏报", "valid": true, "class": "better"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "运行手册要求上线/回滚时手动暂停 Healthchecks 检查，忘记恢复就永久静默", "valid": true, "class": "better"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`install` 失败时可能留下半装状态，且没有验证首次运行真的成功", "valid": true, "class": "better"}
+{"id": "r2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`RestrictAddressFamilies=AF_INET AF_INET6` 可能影响域名解析（未在真实 Ubuntu 24.04 验证）", "valid": true, "class": "better"}
+{"id": "r2-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "以 root 安装来自可写目录的脚本（TOCTOU/提权面）", "valid": true, "class": "better"}
+{"id": "r2-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "错误响应对象 `HTTPError` 未关闭", "valid": true, "class": "better"}
+{"id": "r2-8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`install` 静默忽略未知参数", "valid": true, "class": "better"}
+{"id": "r2-9", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档与代码不一致", "valid": true, "class": "error", "severity": "low", "trigger": "读运行手册 196 行：“不写进仓库、配置文件或日志”，而网址就存放在 /etc/himawari/healthcheck-url；199 行把 status 和 HEARTBEAT ok 并列", "consequence": "只是措辞含糊，读的人可能以为 status 会输出 HEARTBEAT ok，不会导致危险操作", "modelSeverity": "低"}

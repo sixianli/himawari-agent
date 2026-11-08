@@ -675,9 +675,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     await h.ledger.append(
       candidate("skipped-1", "discarded", "transient_ignored", "memory-text-1", at),
     );
-    await h.ledger.append(
-      candidate("secret-1", "discarded", "candidate_secret_excluded", null, at),
-    );
+    await h.ledger.append(candidate("secret-1", "discarded", "restricted_excluded", null, at));
     await h.ledger.append(candidate("rejected-1", "discarded", "approval_rejected", null, at));
     await h.ledger.append(candidate("kept-1", "kept", "auto_committed", null, at));
     await h.ledger.append({
