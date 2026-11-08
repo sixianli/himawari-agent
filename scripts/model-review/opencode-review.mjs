@@ -1366,7 +1366,9 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       mkdirSync(dirname(ledgerFile), { recursive: true });
       appendFileSync(
         ledgerFile,
-        `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
+        maskSecretLike(
+          `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
+        ),
       );
       lines.push(`REVIEW_OVERRIDE_WRITTEN quote=${acceptUnreviewed} commit-and-rerun`);
     }
@@ -1611,7 +1613,7 @@ export function roundForRun({
     if (onDisk === null && recordedDigests.length === 0)
       throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
     if (
-      (onDisk !== null && onDisk !== prompts[model]) ||
+      (onDisk !== null && onDisk !== maskSecretLike(prompts[model])) ||
       recordedDigests.some((recorded) => recorded !== digest)
     )
       throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
@@ -2398,6 +2400,7 @@ export const RECORD_SECRET_RULES = Object.freeze([
     "private-key-block",
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
   ],
+  ["private-key-header", /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----/g],
   ["authorization-bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi],
   ["jwt-token", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g],
   ["openai-api-key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/g],
@@ -2432,7 +2435,10 @@ export function recordSecretProblems({ repo, ledgerPath }) {
   const problems = [];
   for (const file of listed.stdout.split("\0").filter(Boolean)) {
     const shown = gitStatus(["show", `HEAD:${file}`], repo);
-    if (shown.status !== 0) continue;
+    if (shown.status !== 0) {
+      problems.push(`record-unreadable ${printable(file)}`);
+      continue;
+    }
     for (const id of secretLikeRules(shown.stdout))
       problems.push(`record-secret-like ${printable(file)} ${id}`);
   }
@@ -2947,7 +2953,7 @@ async function main() {
       const name = model.split("/").pop();
       keepEarlierAttempt(roundDir, name);
       keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
-      writeFileSync(join(roundDir, promptFileName(model)), maskedRecordText(prompt));
+      writeFileSync(join(roundDir, promptFileName(model)), maskSecretLike(prompt));
       const review = await reviewModel({
         binary,
         cwd: copy,
@@ -2997,7 +3003,10 @@ async function main() {
       const record = gateway
         ? withProviderMoney(assembled, gateway.config.creditProvider)
         : assembled;
-      appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
+      appendFileSync(
+        join(options.out, "usage.jsonl"),
+        maskSecretLike(`${JSON.stringify(record)}\n`),
+      );
       if (record.costUnknownWhy) {
         console.log(`GATEWAY_COST_UNKNOWN ${model} ${record.costUnknownWhy}`);
         tryWrite(

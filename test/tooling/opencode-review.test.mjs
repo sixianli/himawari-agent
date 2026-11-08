@@ -2250,6 +2250,7 @@ describe("opencode review record masking", () => {
       "jwt-token": ["eyJ", "a".repeat(10), ".", "b".repeat(10), ".", "c".repeat(10)].join(""),
       "authorization-bearer": ["Bearer", "x".repeat(16)].join(" "),
       "credential-assignment": ["pass", "word: ", "y".repeat(14)].join(""),
+      "private-key-header": `说明 ${["-----BEGIN", "ENCRYPTED PRIVATE KEY-----"].join(" ")} 后面只有文字`,
       "private-key-block": [
         ["-----BEGIN", "PRIVATE KEY-----"].join(" "),
         "z".repeat(20),
@@ -2278,11 +2279,18 @@ describe("opencode review record masking", () => {
       "utf8",
     );
     for (const [id, pattern] of RECORD_SECRET_RULES) {
+      if (id === "private-key-header") continue;
       expect(scan).toContain(`"${id}"`);
       expect(scan).toContain(pattern.toString());
     }
     const scanIds = [...scan.matchAll(/^\s*\[?\s*"([a-z-]+)",/gm)].map((match) => match[1]);
-    expect(scanIds.sort()).toEqual(RECORD_SECRET_RULES.map(([id]) => id).sort());
+    const recordOnly = RECORD_SECRET_RULES.map(([id]) => id).filter((id) => !scanIds.includes(id));
+    expect(recordOnly).toEqual(["private-key-header"]);
+    expect(scanIds.sort()).toEqual(
+      RECORD_SECRET_RULES.map(([id]) => id)
+        .filter((id) => id !== "private-key-header")
+        .sort(),
+    );
   });
 });
 
@@ -3463,6 +3471,29 @@ describe("opencode review spending", () => {
       });
     expect(run("P")).toBe(1);
     expect(() => run("other brief")).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
+  });
+
+  it("[rerun round] accepts the masked prompt file that the run itself wrote, and refuses a changed one", () => {
+    const [, glm] = REVIEW_MODELS;
+    const prompt = `问题里引用了 ${fakeOpenAiKey} 这个值\n`;
+    const digest = createHash("sha256").update(prompt).digest("hex");
+    const records = [
+      { cost: 0.1, round: 1, model: glm, head: "h", outcome: "timeout", promptSha256: digest },
+    ];
+    const run = (onDisk) =>
+      roundForRun({
+        records,
+        rounds: [1],
+        requested: 1,
+        models: [glm],
+        head: "h",
+        prompts: { [glm]: prompt },
+        promptsOnDisk: { [glm]: onDisk },
+      });
+    expect(maskSecretLike(prompt)).not.toBe(prompt);
+    expect(run(maskSecretLike(prompt))).toBe(1);
+    expect(() => run(prompt)).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
+    expect(() => run(`${maskSecretLike(prompt)}\n`)).toThrow(`ROUND_PROMPT_MISMATCH 1 ${glm}`);
   });
 
   it("[rerun round] refuses a round whose records have no commit to compare", () => {
