@@ -733,7 +733,6 @@ export const messages = {
   "memory.page.importSummary": "找到 {all} 条，已勾 {on} 条",
   "memory.page.importFlag":
     "{f, select, duplicate {已经记着，跳过} sensitive {敏感，默认不导入} other {写代码的经验，默认不导入}}",
-  "memory.page.importDropped": "另有 {count} 条像是密码、令牌或证件号，已直接丢掉，不会导入。",
   "memory.page.importCommit": "导入勾选的 {count} 条",
   "memory.page.importDone": "已导入 {count} 条；在时间线里可以整批撤销",
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",
@@ -923,6 +922,11 @@ export const messages = {
   "proactive.reconnect.button": "重新连接",
   "proactive.dailyLimit":
     "今天的邮件检查到了每日费用上限：模型先停，规则照常把银行、学校等来信放进来；0:00 自动恢复，对话不受影响。",
+  "proactive.backoff.stage1":
+    "来自 {domain} 的提醒，你连续 {count} 次没点开，已降频：这一类最多每天推送 1 条，提醒仍然会列在这个页面里。",
+  "proactive.backoff.stage2":
+    "来自 {domain} 的提醒，降频后你又连续 {count} 次没点开，已暂停推送：提醒仍然会列在这个页面里。",
+  "proactive.backoff.restore": "恢复推送",
   "proactive.paused": "系统主动提醒已关：不看邮件、不记录、不推送。",
   "proactive.foot": "到点的提醒和要紧的邮件会推送到你开过通知的设备。",
   "dailyReview.title": "每天打分",

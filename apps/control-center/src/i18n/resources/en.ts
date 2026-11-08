@@ -776,8 +776,6 @@ export const messages = {
   "memory.page.importSummary": "{all} found, {on} selected",
   "memory.page.importFlag":
     "{f, select, duplicate {Already remembered} sensitive {Sensitive, off by default} other {Coding notes, off by default}}",
-  "memory.page.importDropped":
-    "{count} more looked like passwords, tokens or ID numbers and were dropped.",
   "memory.page.importCommit": "Import {count} selected",
   "memory.page.importDone": "Imported {count}. Undo the whole import from the timeline.",
   "memory.page.importEmpty":
@@ -979,6 +977,11 @@ export const messages = {
   "proactive.reconnect.button": "Reconnect",
   "proactive.dailyLimit":
     "Mail checks hit today’s spending limit. The model is paused, but rules still bring in mail from banks, schools and the like. It resumes at 0:00, and chat is unaffected.",
+  "proactive.backoff.stage1":
+    "You skipped {count} reminders in a row from {domain}, so pushes for them are reduced to at most one a day. They still appear on this page.",
+  "proactive.backoff.stage2":
+    "You skipped {count} more reminders from {domain} after pushes were reduced, so pushes for them are paused. They still appear on this page.",
+  "proactive.backoff.restore": "Restore pushes",
   "proactive.paused": "Proactive reminders are off: no mail is read, logged or pushed.",
   "proactive.foot":
     "Due reminders and urgent emails are pushed to devices where you turned on notifications.",
