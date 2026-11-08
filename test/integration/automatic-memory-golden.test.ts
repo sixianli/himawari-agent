@@ -465,6 +465,9 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       );
       expect(resultByCase.get("transient-chatter")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.committedMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence")?.tentativeMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence-quoted")?.committedMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence-quoted")?.tentativeMemoryIds).toHaveLength(1);
 
       const ledger = await repository.decisionLedger().list({
         ownerId: OWNER_ID,

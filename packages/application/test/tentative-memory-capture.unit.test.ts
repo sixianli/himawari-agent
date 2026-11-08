@@ -126,10 +126,12 @@ describe("[PA-2] low-confidence candidates are kept as tentative memories", () =
         reminder: { dueAt: "2026-11-09T00:00:00.000Z" } as never,
       }),
       candidate({ people: [{ name: "小葵", aliases: [] }] as never }),
+      candidate({ personLinks: [{ from: "主人", to: "小葵", relation: "女儿" }] as never }),
     ]);
     expect(result.tentativeMemoryIds).toEqual([]);
     expect(proposals).toEqual([]);
     expect(audit.map(({ outcome }) => outcome)).toEqual([
+      "confidence_below_threshold",
       "confidence_below_threshold",
       "confidence_below_threshold",
     ]);
