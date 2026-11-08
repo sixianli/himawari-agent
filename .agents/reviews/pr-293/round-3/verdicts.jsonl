@@ -1,0 +1,5 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1）中低：不完整周的“观察信号”卡片把“周没结束”显示成“样本不足”", "valid": true, "class": "better"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2）低：第 3 轮引入了重复测试", "valid": true, "class": "error", "severity": "low", "trigger": "运行测试", "consequence": "同一用例重复运行，浪费时间；不影响正确性", "modelSeverity": "低", "reason": "只是重复的测试，已删"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3）低：schema 目录只登记了一个写入端口", "valid": true, "class": "error", "severity": "low", "trigger": "后来的人按目录判断谁可以写这张表", "consequence": "少列两个写入端口，可能误判", "modelSeverity": "低", "reason": "只是目录说明不全，不影响运行；已补"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4）低（性能/资源）：按 `push_source_key` 关联没有索引", "valid": true, "class": "better"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5）低（推测）：回填对历史时间的格式没有防御", "valid": true, "class": "better"}

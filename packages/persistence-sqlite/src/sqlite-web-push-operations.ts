@@ -11,6 +11,7 @@ import type {
   WebPushSubscription,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { recordDecisionSignal } from "./decision-signals.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof WebPushStorePort> = Parameters<WebPushStorePort[TName]>[0];
@@ -471,10 +472,19 @@ export class SqliteWebPushOperations {
          WHERE owner_id = ? AND agent_id = ? AND tag = ? AND dismissed_at IS NULL`,
       ),
     };
+    const openedFeedback = this.database.prepare(
+      `SELECT feedback.source_key AS sourceKey, feedback.opened_at AS openedAt,
+        feedback.first_sent_at AS firstSentAt, decision.id AS decisionId
+       FROM web_push_feedback feedback
+       JOIN decision_ledger decision
+         ON decision.owner_id = feedback.owner_id AND decision.agent_id = feedback.agent_id
+        AND decision.push_source_key = feedback.source_key AND decision.kind = 'proactive'
+       WHERE feedback.owner_id = ? AND feedback.agent_id = ? AND feedback.tag = ?`,
+    );
     return this.database.transaction(() => {
       let recorded = 0;
-      for (const event of input.reactions)
-        recorded += statements[event.reaction].run(
+      for (const event of input.reactions) {
+        const changes = statements[event.reaction].run(
           event.occurredAt,
           input.now,
           input.now,
@@ -482,6 +492,27 @@ export class SqliteWebPushOperations {
           input.agentId,
           event.tag,
         ).changes;
+        recorded += changes;
+        if (event.reaction !== "opened" || changes === 0) continue;
+        const opened = openedFeedback.all(input.ownerId, input.agentId, event.tag) as {
+          sourceKey: string;
+          openedAt: string;
+          firstSentAt: string;
+          decisionId: string;
+        }[];
+        for (const row of opened)
+          recordDecisionSignal(this.database, {
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            decisionId: row.decisionId,
+            signal: "opened",
+            occurredAt: row.openedAt,
+            delayMs: Date.parse(row.openedAt) - Date.parse(row.firstSentAt),
+            detail: {},
+            sourceRef: row.sourceKey,
+            recordedAt: input.now,
+          });
+      }
       return recorded;
     })();
   }
