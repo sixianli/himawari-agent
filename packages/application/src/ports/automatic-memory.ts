@@ -144,8 +144,6 @@ export interface MemoryExtractionAuditRecord {
   readonly candidateOrdinal: number | null;
   readonly classification: DataClassification;
   readonly outcome:
-    | "source_secret_excluded"
-    | "candidate_secret_excluded"
     | "restricted_excluded"
     | "extraction_failed"
     | "evidence_unverified"

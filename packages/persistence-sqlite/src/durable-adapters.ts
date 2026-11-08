@@ -994,6 +994,9 @@ export class SqliteDurableAdapters {
       markPushEnqueued: (input) => this.context.write("proactive.markPushEnqueued", input),
       readPush: (input) => this.context.read("proactive.readPush", input),
       readInsights: (input) => this.context.read("proactive.readInsights", input),
+      previewBackoff: (input) => this.context.read("proactive.previewBackoff", input),
+      listBackoff: (input) => this.context.read("proactive.listBackoff", input),
+      restoreBackoff: (input) => this.context.write("proactive.restoreBackoff", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {
