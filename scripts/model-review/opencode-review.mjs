@@ -3016,6 +3016,7 @@ async function main() {
         base: commits.base ?? null,
         previous: commits.previous ?? null,
         promptSha256: createHash("sha256").update(prompt).digest("hex"),
+        promptFileSha256: createHash("sha256").update(maskSecretLike(prompt)).digest("hex"),
         outcome: review.outcome,
         wrapUp: review.wrapUp,
         wrapUpSkipped: review.wrapUpSkipped,

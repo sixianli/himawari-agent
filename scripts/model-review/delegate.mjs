@@ -332,7 +332,7 @@ export function checkResult(task, { repo, fetch = true }) {
     const prompt = showFile(repo, remote, `${recordsDir}round-${round}/${name}.prompt.md`);
     if (answer === null) problems.push(`missing=round-${round}/${name}.md`);
     if (prompt === null) problems.push(`missing=round-${round}/${name}.prompt.md`);
-    else if (sha256(prompt) !== record.promptSha256)
+    else if (sha256(prompt) !== (record.promptFileSha256 ?? record.promptSha256))
       problems.push(`prompt-hash=round-${round}/${name}`);
   }
   for (const model of expectedModels)

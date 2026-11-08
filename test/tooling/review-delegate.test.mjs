@@ -699,6 +699,31 @@ describe("review delegation result check, legitimate edge cases", () => {
   );
 
   it(
+    "[delegate] checks the stored prompt file against promptFileSha256 when the prompt was masked",
+    withFixture((f) => {
+      const masked = "prompt [masked]\n";
+      const sha = (text) => createHash("sha256").update(text).digest("hex");
+      const attempt = (fileSha) => {
+        cloudFiles(f, {
+          [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+            f.record(deepseek, { promptFileSha256: fileSha }),
+            f.record(glm),
+          ]),
+          ...f.files([deepseek, glm]),
+          [`.agents/reviews/${KEY}/round-1/${deepseek.split("/").pop()}.prompt.md`]: masked,
+        });
+        commitCloud(f, "masked");
+        const result = checkResult(f.task, { repo: f.mac });
+        f.run(f.cloud, "reset", "--hard", "--quiet", f.task.tip);
+        f.push(["--force"]);
+        return result;
+      };
+      expect(attempt(sha(masked)).status).toBe("ok");
+      expect(attempt(sha("other\n")).reason).toContain("prompt-hash=");
+    }),
+  );
+
+  it(
     "[delegate] refuses appended ledger lines that repeat a line already in the ledger",
     withFixture((f) => {
       const earlier = f.record(deepseek, { round: 1, outcome: "timeout" });
