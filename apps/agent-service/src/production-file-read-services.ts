@@ -23,6 +23,7 @@ import type {
 import { createProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture";
 import { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
 import { createProductionWorkspaceLedger } from "./production-workspace-ledger.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
@@ -50,6 +51,7 @@ export function createProductionFileReadServices(options: {
   readonly hostReadOnlyPort?: HostReadOnlyPort;
   readonly workspaceSnapshotPort?: HostReadOnlyPort & HostWorkspaceSnapshotPort;
   readonly hostWeb?: ProductionHostWeb;
+  readonly externalTag?: () => Promise<ExternalRedactionOptions["tag"]>;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
@@ -140,6 +142,7 @@ export function createProductionFileReadServices(options: {
       : {}),
     ...(webMemory && options.hostWeb ? { hostWeb: options.hostWeb } : {}),
     ...(webMemory ? { webMemory } : {}),
+    ...(options.externalTag ? { externalTag: options.externalTag } : {}),
     binding: async (call) => {
       const coding = configuration.runPolicy?.coding;
       const route = coding?.enabledTools.some(

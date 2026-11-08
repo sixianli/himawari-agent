@@ -177,6 +177,12 @@ export class ProductionProactive {
         perMail: options.configuration.bodyCharactersPerMail,
         perBatch: options.configuration.bodyCharactersPerBatch,
       },
+      relatedLimits: {
+        perMail: options.configuration.relatedMailsPerMail,
+        requestsPerCheck: options.configuration.relatedRequestsPerCheck,
+        charactersPerRelated: options.configuration.relatedCharactersPerRelatedMail,
+        charactersPerMail: options.configuration.relatedCharactersPerMail,
+      },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
   }

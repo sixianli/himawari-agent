@@ -153,6 +153,7 @@ export interface MemoryExtractionAuditRecord {
     | "nothing_to_remember"
     | "transient_ignored"
     | "confidence_below_threshold"
+    | "tentative_kept"
     | "approval_requested"
     | "background_reference_queued"
     | "explicitly_approved"
