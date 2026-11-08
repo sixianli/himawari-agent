@@ -885,7 +885,6 @@ export class ProductionSandboxExecutionV2 {
         throw new Error("PI_WRITE_EVIDENCE_INVALID");
       const boundedTermination =
         plan.mode === "foreground" &&
-        !knownExit &&
         !completionContradicted &&
         !authenticatedDeadline &&
         !authenticatedNotStarted &&
@@ -1808,59 +1807,54 @@ export class ProductionSandboxExecutionV2 {
         reasonCode,
         termination: { type: "failure" },
       });
+      const limitTermination =
+        outcome.reason === "output_limit"
+          ? SANDBOX_OUTPUT_LIMIT
+          : outcome.reason === "resource_limit"
+            ? sandboxResourceLimitReason(plan.resourceCeiling, outcome.resources)
+            : null;
       const operation =
-        knownExit && outcome.exitCode !== null
+        limitTermination !== null
           ? {
-              result:
-                command || outcome.exitCode === 0
-                  ? {
-                      ...fields,
-                      kind: "result",
-                      output,
-                      completion: command
-                        ? { type: "exit", exitCode: outcome.exitCode }
-                        : { type: "value" },
-                    }
-                  : failure(sandboxFileOperationFailureReason(plan, fileFailure)),
-              effect:
-                plan.operationContract.kind !== "verified_effect"
-                  ? { kind: "not_asserted" }
-                  : outcome.exitCode === 0 || fileFailure !== null
-                    ? {
-                        kind: "verified",
-                        verifierRef: plan.operationContract.verifierRef,
-                        verifierVersion: plan.operationContract.verifierVersion,
-                        targetRef: plan.operationContract.targetRef,
-                        evidence: { ref: output.ref, digest: output.digest },
-                        occurredAt: this.options.clock.now(),
-                      }
-                    : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" },
+              result: failure(limitTermination),
+              effect: { kind: "unknown", reasonCode: limitTermination },
             }
-          : outcome.reason === "deadline"
+          : knownExit && outcome.exitCode !== null
             ? {
-                result: failure("SANDBOX_TOOL_DEADLINE_EXCEEDED"),
-                effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" },
+                result:
+                  command || outcome.exitCode === 0
+                    ? {
+                        ...fields,
+                        kind: "result",
+                        output,
+                        completion: command
+                          ? { type: "exit", exitCode: outcome.exitCode }
+                          : { type: "value" },
+                      }
+                    : failure(sandboxFileOperationFailureReason(plan, fileFailure)),
+                effect:
+                  plan.operationContract.kind !== "verified_effect"
+                    ? { kind: "not_asserted" }
+                    : outcome.exitCode === 0 || fileFailure !== null
+                      ? {
+                          kind: "verified",
+                          verifierRef: plan.operationContract.verifierRef,
+                          verifierVersion: plan.operationContract.verifierVersion,
+                          targetRef: plan.operationContract.targetRef,
+                          evidence: { ref: output.ref, digest: output.digest },
+                          occurredAt: this.options.clock.now(),
+                        }
+                      : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" },
               }
-            : outcome.reason === "output_limit"
+            : outcome.reason === "deadline"
               ? {
-                  result: failure(SANDBOX_OUTPUT_LIMIT),
-                  effect: { kind: "unknown", reasonCode: SANDBOX_OUTPUT_LIMIT },
+                  result: failure("SANDBOX_TOOL_DEADLINE_EXCEEDED"),
+                  effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" },
                 }
-              : outcome.reason === "resource_limit"
-                ? (() => {
-                    const reasonCode = sandboxResourceLimitReason(
-                      plan.resourceCeiling,
-                      outcome.resources,
-                    );
-                    return {
-                      result: failure(reasonCode),
-                      effect: { kind: "unknown", reasonCode },
-                    };
-                  })()
-                : {
-                    result: { ...fields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
-                    effect: { kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
-                  };
+              : {
+                  result: { ...fields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+                  effect: { kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+                };
       await settle(operation, outcome.namespaceSwept === true);
       return this.unknown(entry);
     } catch (error) {

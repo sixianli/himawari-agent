@@ -84,6 +84,8 @@ it.each([
   "[I-84] resource-limit",
   "[I-84] resource-limit-unobserved",
   "[I-84] output-limit",
+  "[I-84] output-limit-after-exit",
+  "[I-84] resource-limit-after-exit",
 ] as const)("v2 lifecycle: %s", async (scenario) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
@@ -101,8 +103,10 @@ it.each([
   const preBind = preBindResident || preBindContainer;
   const startPending = scenario === "[R2-D26] start-pending";
   const resourceLimit = scenario.startsWith("[I-84] resource-limit");
-  const resourceLimitObserved = scenario === "[I-84] resource-limit";
-  const outputLimit = scenario === "[I-84] output-limit";
+  const resourceLimitObserved =
+    scenario === "[I-84] resource-limit" || scenario === "[I-84] resource-limit-after-exit";
+  const outputLimit = scenario.startsWith("[I-84] output-limit");
+  const limitAfterExit = scenario.endsWith("-after-exit");
   let pendingObservations = 0;
   let streamAttempts = 0;
   const streamChunks = new Map<number, unknown>();
@@ -205,7 +209,7 @@ it.each([
           stdout: new TextEncoder().encode("result"),
           taskStarted: true,
           taskProcessExited: true,
-          exitCode: null,
+          exitCode: limitAfterExit ? 0 : null,
           stdioClosed: true,
           reason: outputLimit ? "output_limit" : "resource_limit",
           ...(resourceLimitObserved
@@ -784,14 +788,22 @@ it.each([
     });
     expect(facts.result).not.toMatchObject({ kind: "unknown" });
     expect(facts.result).not.toMatchObject({ reasonCode: "SANDBOX_EXIT_UNKNOWN" });
-    expect(facts.effect).toEqual({ kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" });
+    expect(facts.result).not.toMatchObject({ kind: "result" });
+    expect(facts.effect).toEqual(
+      limitAfterExit
+        ? { kind: "not_asserted" }
+        : { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" },
+    );
     expect(isSandboxBoundedToolFailure(facts.result)).toBe(true);
   }
   if (resourceLimit) {
     const reasonCode = resourceLimitObserved ? "SANDBOX_CPU_TIME_LIMIT" : "SANDBOX_RESOURCE_LIMIT";
     expect(facts.result).toMatchObject({ kind: "error", reasonCode, output: { ref: "output" } });
     expect(facts.result).not.toMatchObject({ kind: "unknown" });
-    expect(facts.effect).toEqual({ kind: "unknown", reasonCode });
+    expect(facts.result).not.toMatchObject({ kind: "result" });
+    expect(facts.effect).toEqual(
+      limitAfterExit ? { kind: "not_asserted" } : { kind: "unknown", reasonCode },
+    );
     expect(isSandboxBoundedToolFailure(facts.result)).toBe(true);
   }
   if (scenario === "finished-during-check") {

@@ -935,6 +935,7 @@ describe.each([
   "SANDBOX_CPU_TIME_LIMIT",
   "SANDBOX_MEMORY_LIMIT",
   "SANDBOX_RESOURCE_LIMIT",
+  "SANDBOX_OUTPUT_LIMIT",
 ])("bounded failure disclosure %s", (reasonCode) => {
   it.each(["read", "write", "shell"] as const)(
     "delivers a bounded %s failure without inventing its effects",
