@@ -501,6 +501,7 @@ describe("ProductionRuntimeTools", () => {
         `${f.options.ceiling.maxCpuTimeMs / 1000} 秒、内存 ${f.options.ceiling.maxMemoryBytes / 1_000_000} MB`,
       );
       expect(result.modelContent).toContain("执行已结束并完成清理");
+      expect(result.modelContent).not.toContain("已终止");
       expect(result.modelContent).not.toContain("已被终止");
       expect(result.modelContent).not.toContain("在终止前");
       expect(result.modelContent).not.toBe("操作未确认成功。");
@@ -568,7 +569,9 @@ describe("ProductionRuntimeTools", () => {
       expect(result.modelContent).toContain(limit);
       expect(result.modelContent).toContain("可能已被截断");
       expect(result.modelContent).toContain("标准输出和标准错误合计");
+      expect(result.modelContent).not.toContain("已终止");
       expect(result.modelContent).not.toContain("已被终止");
+      expect(result.modelContent).not.toContain("在终止前");
       expect(result.modelContent).not.toContain("输出 9.9 MB");
       expect(result.modelContent).not.toContain("CPU 时间");
       expect(result.modelContent).not.toBe("操作未确认成功。");

@@ -159,7 +159,7 @@ export function sandboxCeilingExceededMessage(
   },
 ): string | null {
   if (isSandboxOutputLimitReason(reasonCode))
-    return `${reasonCode}：命令的输出（标准输出和标准错误合计）超过上限，已停止接收并完成清理，没有重新执行。本次允许的上限是输出 ${limitBytes(ceiling.maxOutputBytes)}。它可能已经修改了工作区，交给你的输出可能已被截断、拿不到完整内容；请改成只输出需要的部分（例如加筛选条件、只取开头几行、或把结果写进文件再分段读）后重试，或者说明这件事做不到。`;
+    return `${reasonCode}：命令的输出（标准输出和标准错误合计）超过上限，已停止接收并完成清理，没有重新执行。本次允许的上限是输出 ${limitBytes(ceiling.maxOutputBytes)}。它可能已经修改了工作区，交给你的输出可能已被截断、拿不到完整内容；请缩小输出范围后重试（例如加筛选条件、只取开头几行、或把结果写进文件再分段读），或者说明这件事做不到。`;
   const limits = `本次允许的上限是 CPU 时间 ${limitAmount(ceiling.maxCpuTimeMs / 1000)} 秒、内存 ${limitAmount(ceiling.maxMemoryBytes / 1_000_000)} MB`;
   const crossed =
     reasonCode === SANDBOX_CPU_TIME_LIMIT
