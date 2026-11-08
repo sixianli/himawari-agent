@@ -28,12 +28,12 @@ import {
   type ThreadDistillationWork,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
+import { localDayStart } from "@himawari-agent/memory-engine";
+import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
 import {
   containsRestrictedIdentifier,
   scanMachineSecrets,
 } from "@himawari-agent/sensitive-capture";
-import { localDayStart } from "@himawari-agent/memory-engine";
-import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
 
 type MemoryId = NonNullable<ExtractedMemoryCandidate["existingMemoryId"]>;
 const createMemoryId = (value: string) => value as MemoryId;
@@ -132,6 +132,37 @@ export function quoteFromOwnerMessage(quote: string, ownerMessage: string): bool
   );
 }
 
+const GENERIC_TERMS =
+  /主人|用户|喜欢|偏好|喜爱|好像|可能|经常|一直|比较|觉得|今天|现在|[的了是我你他她它在有和与就也都还很不最想要又]/gu;
+
+function relevanceTokens(text: string): Set<string> {
+  const tokens = new Set<string>();
+  const runs = text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(GENERIC_TERMS, " ")
+    .split(/[^\p{L}\p{N}]+/u);
+  for (const run of runs) {
+    if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(run)) {
+      const chars = [...run];
+      for (let index = 0; index + 1 < chars.length; index += 1) {
+        tokens.add(`${chars[index]}${chars[index + 1]}`);
+      }
+    } else if ([...run].length >= 2) {
+      tokens.add(run);
+    }
+  }
+  return tokens;
+}
+
+export function quoteRelatesToMemory(quote: string, memoryTexts: readonly string[]): boolean {
+  const quoted = relevanceTokens(quote);
+  return memoryTexts.some((text) => {
+    for (const token of relevanceTokens(text)) if (quoted.has(token)) return true;
+    return false;
+  });
+}
+
 export function memoryCapturePrompt(
   message: string,
   existing: readonly ExistingMemoryText[],
@@ -217,7 +248,7 @@ export function parseMemoryCandidates(input: {
   readonly sourceRef: string;
   readonly sourceClassification: DataClassification;
   readonly existingIds: ReadonlySet<string>;
-  readonly tentativeIds?: ReadonlySet<string>;
+  readonly tentativeTexts?: ReadonlyMap<string, string>;
   readonly ownerMessage?: string;
   readonly sentAt?: string;
   readonly timeZone?: string;
@@ -304,14 +335,16 @@ export function parseMemoryCandidates(input: {
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
     const confirmsTentative =
       existing !== null &&
-      input.tentativeIds?.has(existing) === true &&
+      input.tentativeTexts?.has(existing) === true &&
       (decision === "unchanged" || decision === "update" || decision === "merge");
     const evidenceRejected =
       (input.ownerMessage !== undefined &&
         decision !== "unchanged" &&
         dataClassification !== "restricted" &&
         !evidenceVerified) ||
-      (confirmsTentative && !evidenceVerified);
+      (confirmsTentative &&
+        (!evidenceVerified ||
+          !quoteRelatesToMemory(quote, [text, input.tentativeTexts?.get(existing) ?? ""])));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -792,7 +825,9 @@ export class ProductionMemoryCapture {
           sourceRef: source.payloadRef,
           sourceClassification: source.dataClassification,
           existingIds: new Set(existing.map(({ id }) => id)),
-          tentativeIds: new Set(existing.filter(({ tentative }) => tentative).map(({ id }) => id)),
+          tentativeTexts: new Map(
+            existing.filter(({ tentative }) => tentative).map(({ id, text }) => [id, text]),
+          ),
           ownerMessage: message,
           ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
           timeZone: this.options.timeZone ?? "UTC",

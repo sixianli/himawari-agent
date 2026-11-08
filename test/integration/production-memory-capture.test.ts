@@ -754,6 +754,8 @@ describe("production memory capture", () => {
     await round("run-pa2-2", "今天天气不错", unchanged("明治"));
     expect((await tentativeState()).attributes?.tentative).toBe(true);
     expect(context.audits.map(({ outcome }) => outcome)).toContain("evidence_unverified");
+    await round("run-pa2-unrelated", "明天下午三点开会", unchanged("明天下午三点开会"));
+    expect((await tentativeState()).attributes?.tentative).toBe(true);
     await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
     expect((await tentativeState()).attributes?.tentative).not.toBe(true);
     expect(context.failures).toEqual([]);

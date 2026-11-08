@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseMemoryCandidates,
   quoteFromOwnerMessage,
+  quoteRelatesToMemory,
   reminderSchedule,
 } from "../src/production-memory-capture.js";
 
@@ -103,7 +104,7 @@ describe("memory evidence from the Owner's own words", () => {
         sourceRef: "payload-owner",
         sourceClassification: "private",
         existingIds: new Set(["memory-tentative", "memory-formal"]),
-        tentativeIds: new Set(["memory-tentative"]),
+        tentativeTexts: new Map([["memory-tentative", "主人偏好明治乳制品"]]),
         ownerMessage: "好家里只喝明治的牛奶",
       });
 
@@ -130,6 +131,38 @@ describe("memory evidence from the Owner's own words", () => {
         expect(parsed.rejectedCandidates).toEqual([]);
       },
     );
+
+    it("REVERSE: rejects a real Owner quote that has nothing to do with the tentative memory", () => {
+      const coffee = parseMemoryCandidates({
+        output: JSON.stringify({
+          memories: [
+            {
+              kind: "durable_fact",
+              decision: "unchanged",
+              existingMemoryId: "memory-tentative",
+              text: "主人喜欢喝咖啡",
+              classification: "private",
+              confidence: 950,
+              quote: "明天下午开会",
+            },
+          ],
+        }),
+        sourceRef: "payload-owner",
+        sourceClassification: "private",
+        existingIds: new Set(["memory-tentative"]),
+        tentativeTexts: new Map([["memory-tentative", "主人喜欢喝咖啡"]]),
+        ownerMessage: "明天下午开会，顺便买点咖啡豆",
+      });
+      expect(coffee.candidates).toEqual([]);
+      expect(coffee.rejectedCandidates).toHaveLength(1);
+    });
+
+    it("accepts a related quote and relates quotes by shared words, not by generic ones", () => {
+      expect(quoteRelatesToMemory("我又买了明治的牛奶", ["主人偏好明治乳制品"])).toBe(true);
+      expect(quoteRelatesToMemory("明天下午开会", ["主人喜欢喝咖啡"])).toBe(false);
+      expect(quoteRelatesToMemory("我喜欢开会", ["主人喜欢喝咖啡"])).toBe(false);
+      expect(quoteRelatesToMemory("I drink coffee daily", ["Owner likes coffee"])).toBe(true);
+    });
 
     it("REVERSE: unchanged on a confirmed memory still needs no quote", () => {
       const parsed = parse("unchanged", "", "memory-formal");
