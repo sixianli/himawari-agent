@@ -168,6 +168,28 @@ export interface MuseReferenceEntry {
   readonly recordedAt: string;
 }
 
+export interface GapCandidate {
+  readonly entryId: string;
+  readonly museAt: string;
+  readonly timingOk: boolean | null;
+  readonly contentOk: boolean | null;
+  readonly pairedMessageId: string;
+  readonly museTitleRef: string | null;
+  readonly museTextRef: string | null;
+  readonly museContentRef: string | null;
+  readonly museTextWithheld: boolean;
+  readonly decisionId: string;
+  readonly outcome: string;
+  readonly ownerRating: DecisionRating | null;
+  readonly reasonCode: string;
+  readonly reasonRef: string | null;
+  readonly decidedAt: string;
+  readonly relatedRead: string | null;
+  readonly memoryRecall: string | null;
+  readonly memoryHitsForMail: number;
+  readonly relatedMessagesForMail: number;
+}
+
 export interface DecisionLedgerScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -218,4 +240,10 @@ export interface DecisionLedgerPort {
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;
+  readGapCandidates(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly start: string;
+    readonly end: string;
+  }): Promise<readonly GapCandidate[]>;
 }

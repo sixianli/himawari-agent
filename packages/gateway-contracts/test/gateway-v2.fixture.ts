@@ -269,6 +269,8 @@ export const governanceMessages = [
         pairing: null,
         buckets: { both: 1, museOnly: 0, himawariOnly: 0, bothSilent: 1, noHimawariRecord: 0 },
       },
+      gap: null,
+      gapCases: [],
       implicit: {
         pushedDecisions: 0,
         otherDecisionEvents: 0,

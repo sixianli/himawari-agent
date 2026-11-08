@@ -8,12 +8,12 @@ import {
   integer,
   literal,
   machineString,
+  modelRefString,
   nullable,
   object,
   parseJson,
   type Schema,
   timestamp,
-  modelRefString,
 } from "./validation.js";
 
 export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
@@ -855,6 +855,50 @@ const proactiveWeeklySnapshotSchema = object({
           noHimawariRecord: integer(0),
         }),
       }),
+      gapCases: array(
+        object({
+          id: machineString,
+          museAt: timestamp,
+          museTitle: nullable(proactiveTextSchema(300)),
+          museText: nullable(proactiveTextSchema(500)),
+          museTextWithheld: booleanValue,
+          himawariOutcome: machineString,
+          himawariReasonCode: machineString,
+          himawariReason: nullable(proactiveTextSchema(500)),
+          ownerRating: nullable(enumeration(["useful", "unneeded", "missed"])),
+          attribution: enumeration([
+            "notRemembered",
+            "notRetrieved",
+            "wrongJudgment",
+            "notReadFully",
+          ]),
+          memoryHits: integer(0),
+          relatedMessages: integer(0),
+          decidedAt: timestamp,
+        }),
+      ),
+      gap: nullable(
+        object({
+          pairedMails: integer(0),
+          ratedMails: integer(0),
+          unratedMails: integer(0),
+          lines: array(
+            object({
+              line: enumeration(["hitRate", "disturbanceRate"]),
+              mails: integer(0),
+              museReminded: integer(0),
+              himawariReminded: integer(0),
+              muse: calibrationRateSchema,
+              himawari: calibrationRateSchema,
+              difference: nullable(numberInRange(-1, 1)),
+              low: nullable(numberInRange(-1, 1)),
+              high: nullable(numberInRange(-1, 1)),
+              verdict: enumeration(["insufficient", "inconclusive", "decided"]),
+              direction: enumeration(["museHigher", "himawariHigher", "none"]),
+            }),
+          ),
+        }),
+      ),
       implicit: object({
         pushedDecisions: integer(0),
         otherDecisionEvents: integer(0),

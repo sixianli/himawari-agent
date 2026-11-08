@@ -1263,6 +1263,37 @@ export const messages = {
   "weekly.muse.rate": "Pairing rate",
   "weekly.muse.def":
     "Pairing rate = entries matched to the same email ÷ all Muse comparison entries this week.",
+  "weekly.gap.title": "Gap to Muse",
+  "weekly.gap.notFull": "This week is not over yet. The gap lines appear once it ends.",
+  "weekly.gap.empty":
+    "No email this week is both paired and rated by you, so neither gap line has samples.",
+  "weekly.gap.note":
+    'Uses only emails paired to the same message where you rated Himawari\'s judgment. "Should remind" means a reminder you rated "right" or a silence you rated "missed"; "should not remind" means a reminder you rated "unneeded" or a silence you rated "right". Difference = Muse − Himawari; the interval is the 95% paired-difference interval over the same emails. Samples lean toward emails you chose to rate; memory is not compared with Muse.',
+  "weekly.gap.line":
+    "{l, select, hitRate {Hit rate (share reminded among emails that should be reminded)} other {Unneeded-reminder rate (share reminded among emails that should not be)}}",
+  "weekly.gap.mails": "{n} paired and rated emails",
+  "weekly.gap.few": "Too few ({n} emails). Look at the cases below; no conclusion.",
+  "weekly.gap.rates": "Muse {muse}; Himawari {himawari}",
+  "weekly.gap.diff": "Difference {d} (interval {low} to {high})",
+  "weekly.gap.verdict":
+    "{v, select, museHigher {Muse is higher on this ratio.} himawariHigher {Himawari is higher on this ratio.} other {The interval spans 0, so the two cannot be told apart.}}",
+  "weekly.cases.title": "Muse got it right, Himawari did not",
+  "weekly.cases.empty": "No such cases this week.",
+  "weekly.cases.muse": "What Muse did",
+  "weekly.cases.himawari": "What Himawari did at the time",
+  "weekly.cases.outcome":
+    "{o, select, ignore {Judged it ignorable and did not remind.} skipped {The email was skipped, so no judgment was made.} other {Did not remind.}}",
+  "weekly.cases.attr":
+    "{a, select, notRemembered {Not remembered} notRetrieved {Not retrieved} notReadFully {Not read fully} other {Wrong judgment}}",
+  "weekly.cases.rating":
+    "{r, select, missed {Your rating: missed} useful {Your rating: right} unneeded {Your rating: unneeded} other {Not rated yet}}",
+  "weekly.cases.memory":
+    "{m} related memories retrieved for this email; {r} related earlier emails read.",
+  "weekly.cases.withheld": "Muse's text was not kept, by rule.",
+  "weekly.cases.noText": "No text kept.",
+  "weekly.cases.noReason": "No reason kept.",
+  "weekly.cases.note":
+    'The label is set by a program from the read record of that email, not guessed by a model. "Not remembered" only means retrieval worked but returned nothing; it cannot tell never stored from stored but not matched.',
   "weekly.implicit.title": "Observed signals · not ratings",
   "weekly.implicit.notFull": "Week not over yet",
   "weekly.implicit.empty": "No decision sent a reminder this week.",

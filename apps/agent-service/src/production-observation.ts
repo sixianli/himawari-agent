@@ -13,6 +13,7 @@ import {
   type ObservationScope,
   PORT_ERROR_CODES,
   type ProactiveSchedule,
+  type ProactiveSealPort,
   summarizeObservation,
 } from "@himawari-agent/application";
 import {
@@ -23,6 +24,7 @@ import {
   type MuseSummary,
   resolveWindow,
   summarizeDecisions,
+  summarizeGap,
   summarizeImplicit,
   summarizeMuse,
 } from "@himawari-agent/calibration";
@@ -32,6 +34,7 @@ import {
   type GatewayV2Snapshot,
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
+import { buildGapCases } from "./production-gap-cases.js";
 
 export const PRODUCTION_OBSERVATION_OPERATIONS = Object.freeze([
   "proactive.weekly.read",
@@ -57,7 +60,8 @@ export function readServiceRevision(
 export interface ProductionObservationOptions {
   readonly scope: ObservationScope;
   readonly observation: LedgerObservationPort;
-  readonly ledger: Pick<DecisionLedgerPort, "readCalibrationRows">;
+  readonly ledger: Pick<DecisionLedgerPort, "readCalibrationRows" | "readGapCandidates">;
+  readonly seal?: ProactiveSealPort;
   readonly clock: { now(): string };
   readonly schedule: ProactiveSchedule;
   readonly serviceRevision: string;
@@ -194,6 +198,16 @@ export class ProductionObservation {
       new Map(rows.mailJudgments),
       DEFAULT_MINIMUM_SAMPLES,
     );
+    const gapCases = await buildGapCases({
+      scope: this.#options.scope,
+      candidates: await this.#options.ledger.readGapCandidates({
+        ...scope,
+        start: window.start,
+        end: window.end,
+      }),
+      seal: this.#options.seal,
+    });
+    const gap = summarizeGap(rows.entries, new Map(rows.mailJudgments), DEFAULT_MINIMUM_SAMPLES);
     const implicit = summarizeImplicit(rows.decisions, rows.signals, DEFAULT_MINIMUM_SAMPLES);
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
@@ -245,6 +259,27 @@ export class ProductionObservation {
             pairing: complete ? muse.pairing : null,
             buckets: muse.buckets,
           },
+          gapCases,
+          gap: complete
+            ? {
+                pairedMails: gap.pairedMails,
+                ratedMails: gap.ratedMails,
+                unratedMails: gap.unratedMails,
+                lines: gap.lines.map((line) => ({
+                  line: line.line,
+                  mails: line.mails,
+                  museReminded: line.muse.reminded,
+                  himawariReminded: line.himawari.reminded,
+                  muse: line.muse.rate,
+                  himawari: line.himawari.rate,
+                  difference: line.difference,
+                  low: line.low,
+                  high: line.high,
+                  verdict: line.verdict,
+                  direction: line.direction,
+                })),
+              }
+            : null,
           implicit: {
             pushedDecisions: implicit.pushedDecisions,
             otherDecisionEvents: implicit.otherDecisionEvents,

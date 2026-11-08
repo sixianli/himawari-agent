@@ -405,6 +405,15 @@ function CardHead({
   );
 }
 
+function signedPercent(value: number): string {
+  const text = `${(value * 100).toFixed(1)}%`;
+  return value > 0 ? `+${text}` : text;
+}
+
+function signedFree(value: number | null, format: Format): string {
+  return value === null ? "-" : format.percent(value);
+}
+
 function ratioParts(
   group: CalibrationGroupSummary,
   minimumSamples: number,
@@ -1055,6 +1064,92 @@ export function WeeklyReport({
                 </span>
               ) : null}
             </p>
+          </>
+        )}
+      </section>
+
+      <section className="weekly-card" aria-label={message("weekly.gap.title")}>
+        <CardHead title={message("weekly.gap.title")} infoKey={null} info={infoButton} />
+        {report.gap === null ? (
+          <p className="weekly-empty">{message("weekly.gap.notFull")}</p>
+        ) : report.gap.lines.every((line) => line.mails === 0) ? (
+          <p className="weekly-empty">{message("weekly.gap.empty")}</p>
+        ) : (
+          <>
+            {report.gap.lines.map((line) => (
+              <div key={line.line} className="weekly-gap-line">
+                <b>{message("weekly.gap.line", { l: line.line })}</b>
+                <span>{message("weekly.gap.mails", { n: format.count(line.mails) })}</span>
+                {line.verdict === "insufficient" ? (
+                  <span>{message("weekly.gap.few", { n: line.mails })}</span>
+                ) : (
+                  <>
+                    <span>
+                      {message("weekly.gap.rates", {
+                        muse: signedFree(line.muse?.value ?? null, format),
+                        himawari: signedFree(line.himawari?.value ?? null, format),
+                      })}
+                    </span>
+                    {line.difference !== null && line.low !== null && line.high !== null ? (
+                      <span>
+                        {message("weekly.gap.diff", {
+                          d: signedPercent(line.difference),
+                          low: signedPercent(line.low),
+                          high: signedPercent(line.high),
+                        })}
+                      </span>
+                    ) : null}
+                    <span>
+                      {message("weekly.gap.verdict", {
+                        v: line.verdict === "decided" ? line.direction : "none",
+                      })}
+                    </span>
+                  </>
+                )}
+              </div>
+            ))}
+            <p className="weekly-muse-foot">{message("weekly.gap.note")}</p>
+          </>
+        )}
+      </section>
+
+      <section className="weekly-card" aria-label={message("weekly.cases.title")}>
+        <CardHead title={message("weekly.cases.title")} infoKey={null} info={infoButton} />
+        {report.gapCases.length === 0 ? (
+          <p className="weekly-empty">{message("weekly.cases.empty")}</p>
+        ) : (
+          <>
+            <ul className="weekly-cases">
+              {report.gapCases.map((item) => (
+                <li key={item.id} className="weekly-case" data-case-id={item.id}>
+                  <span className="weekly-case-attr">
+                    {message("weekly.cases.attr", { a: item.attribution })}
+                  </span>
+                  <div>
+                    <b>{message("weekly.cases.muse")}</b>
+                    <p>
+                      {item.museTextWithheld
+                        ? message("weekly.cases.withheld")
+                        : [item.museTitle, item.museText].filter(Boolean).join(" · ") ||
+                          message("weekly.cases.noText")}
+                    </p>
+                  </div>
+                  <div>
+                    <b>{message("weekly.cases.himawari")}</b>
+                    <p>{message("weekly.cases.outcome", { o: item.himawariOutcome })}</p>
+                    <p>{item.himawariReason ?? message("weekly.cases.noReason")}</p>
+                    <p>
+                      {message("weekly.cases.memory", {
+                        m: item.memoryHits,
+                        r: item.relatedMessages,
+                      })}
+                    </p>
+                    <p>{message("weekly.cases.rating", { r: item.ownerRating ?? "none" })}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="weekly-muse-foot">{message("weekly.cases.note")}</p>
           </>
         )}
       </section>

@@ -1015,6 +1015,7 @@ export class SqliteDurableAdapters {
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
+      readGapCandidates: (input) => this.context.read("decisionLedger.readGapCandidates", input),
     });
   }
 

@@ -1,14 +1,15 @@
 import {
+  type CalibrationRowsSnapshot,
   DECISION_CATEGORIES,
   DECISION_KINDS,
   DECISION_OUTCOMES,
   DECISION_RATINGS,
-  type CalibrationRowsSnapshot,
   type DecisionInputs,
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
   type DecisionSignalEntry,
+  type GapCandidate,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
@@ -232,6 +233,8 @@ export class SqliteDecisionLedgerOperations {
         return this.listSignals(payload as Input<"listSignals">);
       case "decisionLedger.readCalibrationRows":
         return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
+      case "decisionLedger.readGapCandidates":
+        return this.readGapCandidates(payload as Input<"readGapCandidates">);
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -430,6 +433,59 @@ export class SqliteDecisionLedgerOperations {
         })[]
       ).map((row) => ({ ...row, detail: JSON.parse(row.detail) })),
     );
+  }
+
+  private readGapCandidates(input: Input<"readGapCandidates">): readonly GapCandidate[] {
+    if (!validTime(input.start) || !validTime(input.end) || input.start >= input.end)
+      this.fail("PORT_INVALID_OPERATION", "Gap window is invalid");
+    const rows = this.database
+      .prepare(
+        `SELECT e.id AS entryId, e.muse_at AS museAt, e.timing_ok AS timingOk,
+           e.content_ok AS contentOk, e.paired_message_id AS pairedMessageId,
+           e.content_ref AS museContentRef, i.title_ref AS museTitleRef, i.text_ref AS museTextRef,
+           COALESCE(i.text_withheld, 0) AS museTextWithheld,
+           d.id AS decisionId, p.outcome AS outcome, p.owner_rating AS ownerRating,
+           d.reason_code AS reasonCode, d.reason_ref AS reasonRef, d.checked_at AS decidedAt,
+           d.inputs AS inputs
+         FROM muse_reference_entries e
+         JOIN proactive_processed_messages p
+           ON p.owner_id = e.owner_id AND p.agent_id = e.agent_id
+          AND p.source = 'gmail' AND p.message_id = e.paired_message_id
+         JOIN decision_ledger d ON d.id = p.decision_id
+         LEFT JOIN muse_intake_items i
+           ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id
+          AND e.intake_item_key = i.kind || ':' || i.natural_key
+         WHERE e.owner_id = ? AND e.agent_id = ? AND e.muse_at >= ? AND e.muse_at < ?
+           AND e.muse_reminded = 1 AND e.paired_message_id IS NOT NULL
+         ORDER BY e.muse_at, e.id`,
+      )
+      .all(input.ownerId, input.agentId, input.start, input.end) as Record<string, unknown>[];
+    return rows.map((row) => {
+      const inputs = JSON.parse(String(row["inputs"])) as DecisionInputs;
+      const messageId = String(row["pairedMessageId"]);
+      const asText = (value: unknown) => (typeof value === "string" ? value : null);
+      return Object.freeze({
+        entryId: String(row["entryId"]),
+        museAt: String(row["museAt"]),
+        timingOk: row["timingOk"] === null ? null : row["timingOk"] === 1,
+        contentOk: row["contentOk"] === null ? null : row["contentOk"] === 1,
+        pairedMessageId: messageId,
+        museTitleRef: asText(row["museTitleRef"]),
+        museTextRef: asText(row["museTextRef"]),
+        museContentRef: asText(row["museContentRef"]),
+        museTextWithheld: row["museTextWithheld"] === 1,
+        decisionId: String(row["decisionId"]),
+        outcome: String(row["outcome"]),
+        ownerRating: asText(row["ownerRating"]) as GapCandidate["ownerRating"],
+        reasonCode: String(row["reasonCode"]),
+        reasonRef: asText(row["reasonRef"]),
+        decidedAt: String(row["decidedAt"]),
+        relatedRead: asText(inputs.relatedRead),
+        memoryRecall: asText(inputs.memoryRecall),
+        memoryHitsForMail: inputs.memoryByMail?.[messageId]?.length ?? 0,
+        relatedMessagesForMail: inputs.relatedByMail?.[messageId]?.length ?? 0,
+      });
+    });
   }
 
   private listMuse(input: Input<"listMuse">): readonly MuseReferenceEntry[] {

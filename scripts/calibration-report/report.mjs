@@ -14,6 +14,7 @@ import {
   resolveWindow,
   sameMeasurement,
   summarizeDecisions,
+  summarizeGap,
   summarizeImplicit,
   summarizeMuse,
 } from "./calibration.mjs";
@@ -95,6 +96,7 @@ export function run(
     const data = readWindow(database, { ...scope, start: window.start, end: window.end });
     const decisions = summarizeDecisions(data.decisions, minimumSamples);
     const muse = summarizeMuse(data.entries, data.mailJudgments, minimumSamples);
+    const gap = summarizeGap(data.entries, data.mailJudgments, minimumSamples);
     const implicit = summarizeImplicit(data.decisions, data.signals, minimumSamples);
     const historyFile = path.resolve(
       root,
@@ -118,6 +120,7 @@ export function run(
       implicit,
       minimumSamples,
       previous,
+      gap,
     });
     output.write(`${markdown}\n`);
     if (!options.has("no-record")) {

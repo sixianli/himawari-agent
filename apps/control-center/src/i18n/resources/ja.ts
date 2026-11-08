@@ -1250,6 +1250,37 @@ export const messages = {
   "weekly.muse.rate": "対応づけ率",
   "weekly.muse.def":
     "対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
+  "weekly.gap.title": "Muse との差",
+  "weekly.gap.notFull": "今週はまだ終わっていません。終了後に差の線が出ます。",
+  "weekly.gap.empty":
+    "今週は、対応づけできて、かつあなたが評価したメールがなく、どちらの線にも件数がありません。",
+  "weekly.gap.note":
+    "同じメールに対応づけできて、Himawari の判断をあなたが評価したメールだけを使います。「通知すべき」は「適切」と評価した通知か「見逃し」と評価した無通知、「通知すべきでない」は「余計」と評価した通知か「適切」と評価した無通知です。差 = Muse − Himawari、区間は同じメールでの対応のある差の 95% 区間です。あなたが評価したいメールに偏ります。記憶は Muse と比べません。",
+  "weekly.gap.line":
+    "{l, select, hitRate {的中率（通知すべきメールのうち通知した割合）} other {余計なリマインダー率（通知すべきでないメールのうち通知した割合）}}",
+  "weekly.gap.mails": "対応づけできて評価済みのメール {n} 件",
+  "weekly.gap.few": "件数不足（{n} 件）。下の事例だけを見て、結論は出しません。",
+  "weekly.gap.rates": "Muse {muse}、Himawari {himawari}",
+  "weekly.gap.diff": "差 {d}（区間 {low} から {high}）",
+  "weekly.gap.verdict":
+    "{v, select, museHigher {この割合は Muse のほうが高いです。} himawariHigher {この割合は Himawari のほうが高いです。} other {区間が 0 をまたぐため、違いは分かりません。}}",
+  "weekly.cases.title": "Muse はできて Himawari はできなかった事例",
+  "weekly.cases.empty": "今週はこうした事例がありません。",
+  "weekly.cases.muse": "Muse がしたこと",
+  "weekly.cases.himawari": "そのとき Himawari がしたこと",
+  "weekly.cases.outcome":
+    "{o, select, ignore {対応不要と判断し、通知しませんでした。} skipped {このメールは読み飛ばされ、判断していません。} other {通知しませんでした。}}",
+  "weekly.cases.attr":
+    "{a, select, notRemembered {覚えていなかった} notRetrieved {取得できなかった} notReadFully {読み切れなかった} other {判断の誤り}}",
+  "weekly.cases.rating":
+    "{r, select, missed {あなたの評価：見逃し} useful {あなたの評価：適切} unneeded {あなたの評価：余計} other {まだ評価していません}}",
+  "weekly.cases.memory":
+    "このメールで取得した関連する記憶は {m} 件、読んだ過去のやり取りは {r} 件です。",
+  "weekly.cases.withheld": "Muse の文章は規則により保存していません。",
+  "weekly.cases.noText": "保存された文章がありません。",
+  "weekly.cases.noReason": "保存された理由がありません。",
+  "weekly.cases.note":
+    "ラベルはそのメールの読み取り記録からプログラムが判定したもので、モデルの推測ではありません。「覚えていなかった」は、検索は正常だったのに 1 件も取得できなかったという意味で、未保存か不一致かは区別できません。",
   "weekly.implicit.title": "観察シグナル・評価ではありません",
   "weekly.implicit.notFull": "今週はまだ終わっていません",
   "weekly.implicit.empty": "今週、通知を送った判断はありません。",

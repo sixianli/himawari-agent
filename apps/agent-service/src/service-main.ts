@@ -1790,6 +1790,15 @@ export async function runAgentService(
         scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
+        ...(protector
+          ? {
+              seal: createProactiveSeal({
+                payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+                protector,
+                ids,
+              }),
+            }
+          : {}),
         clock,
         schedule: {
           configured: proactive !== undefined,

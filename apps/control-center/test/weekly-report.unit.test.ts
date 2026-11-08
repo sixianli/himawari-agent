@@ -187,6 +187,8 @@ function unsetFixture(): ProactiveWeekly {
       minimumSamples: 5,
       groups: [],
       muse,
+      gap: null,
+      gapCases: [],
       implicit,
     },
     generatedAt: NOW.toISOString(),
@@ -644,6 +646,101 @@ describe("[P0-8] calibration report tab", () => {
       4,
     );
     expect(text("#page .weekly-today")).toBe("今天");
+  });
+
+  it("[PA-4] shows the gap lines and the cases, and says 'too few' instead of a verdict", async () => {
+    const observing = observingFixture();
+    const rate = (successes: number, samples: number) => ({
+      successes,
+      samples,
+      enough: samples >= 5,
+      value: samples >= 5 ? successes / samples : null,
+      low: samples >= 5 ? 0.1 : null,
+      high: samples >= 5 ? 0.9 : null,
+    });
+    weekly = {
+      ...observing,
+      report: {
+        ...observing.report,
+        complete: true,
+        gap: {
+          pairedMails: 12,
+          ratedMails: 10,
+          unratedMails: 2,
+          lines: [
+            {
+              line: "hitRate",
+              mails: 3,
+              museReminded: 3,
+              himawariReminded: 1,
+              muse: rate(3, 3),
+              himawari: rate(1, 3),
+              difference: null,
+              low: null,
+              high: null,
+              verdict: "insufficient",
+              direction: "none",
+            },
+            {
+              line: "disturbanceRate",
+              mails: 7,
+              museReminded: 1,
+              himawariReminded: 4,
+              muse: rate(1, 7),
+              himawari: rate(4, 7),
+              difference: -0.4,
+              low: -0.7,
+              high: 0.1,
+              verdict: "inconclusive",
+              direction: "none",
+            },
+          ],
+        },
+        gapCases: [
+          {
+            id: "gap_aaaaaaaaaaaaaaaaaaaa",
+            museAt: "2026-11-01T00:00:00.000Z",
+            museTitle: "发票到期",
+            museText: "明天截止",
+            museTextWithheld: false,
+            himawariOutcome: "ignore",
+            himawariReasonCode: "fixture",
+            himawariReason: "看起来是普通通知",
+            ownerRating: "missed",
+            attribution: "notRemembered",
+            memoryHits: 0,
+            relatedMessages: 2,
+            decidedAt: "2026-11-01T00:00:00.000Z",
+          },
+        ],
+      },
+    };
+    await render();
+    await openReport();
+    const gap = text('#page [aria-label="Muse 差距线"]');
+    expect(gap).toContain("样本不足（3 封），只看下面的案例，不下结论。");
+    expect(gap).toContain("区间跨 0，分不出差别。");
+    expect(gap).not.toMatch(/追平|落后/u);
+    const cases = text('#page [aria-label="Muse 做对而 Himawari 没做到"]');
+    expect(cases).toContain("没记住");
+    expect(cases).toContain("发票到期 · 明天截止");
+    expect(cases).toContain("看起来是普通通知");
+    expect(cases).toContain("你的评价：该做没做");
+  });
+
+  it("[PA-4] [negative] shows no cases and no verdict when nothing qualifies", async () => {
+    const observing = observingFixture();
+    weekly = {
+      ...observing,
+      report: { ...observing.report, complete: true, gap: null, gapCases: [] },
+    };
+    await render();
+    await openReport();
+    expect(text('#page [aria-label="Muse 差距线"]')).toContain("本周尚未结束");
+    expect(text('#page [aria-label="Muse 做对而 Himawari 没做到"]')).toContain(
+      "这一周没有这样的案例。",
+    );
+    expect(document.querySelectorAll("#page .weekly-case")).toHaveLength(0);
   });
 
   it("[P0-11] says the week is not over instead of 'too few' while ratios are withheld", async () => {
