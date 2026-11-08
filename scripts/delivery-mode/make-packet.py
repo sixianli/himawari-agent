@@ -645,7 +645,7 @@ class Hermes:
             'tar -xzf ' + shlex.quote(remote) + ' -C ' + shlex.quote(checks),
             'rmdir ' + shlex.quote(checks + '/packet/materials'),
             'ln -s ' + shlex.quote(self.work + '/materials') + ' ' + shlex.quote(checks + '/packet/materials'),
-            'HIMAWARI_CI_PYTHON=' + shlex.quote(self.settings['tools'] + '/python/python/bin/python3') + ' /usr/bin/python3 -I ' + shlex.quote(self.scripts + '/run-packet-checks.py') + ' ' + shlex.quote(checks + '/packet') + ' --node ' + shlex.quote(self.settings['tools'] + '/bin/node') + ' --source ' + shlex.quote(self.settings['source']) + ' --logs ' + shlex.quote(checks + '/logs') + ' --record ' + shlex.quote(checks + '/record.json'),
+            'HIMAWARI_CI_PYTHON=' + shlex.quote(self.settings['tools'] + '/python/python/bin/python3') + ' /usr/bin/python3 -I ' + shlex.quote(self.scripts + '/run-packet-checks.py') + ' ' + shlex.quote(checks + '/packet') + ' --node ' + shlex.quote(self.settings['tools'] + '/bin/node') + ' --source ' + shlex.quote(self.settings['source']) + ' --logs ' + shlex.quote(checks + '/logs') + ' --record ' + shlex.quote(checks + '/record.json') + ' --pi-tools ' + shlex.quote(self.settings['piToolBin']),
         ]))
 
     def cleanup(self):

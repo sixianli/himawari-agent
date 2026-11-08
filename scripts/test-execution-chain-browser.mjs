@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, expect, webkit } from "@playwright/test";
+import { collectPageErrors } from "./browser-page-errors.mjs";
 
 export async function qualifyExecutionChain(browser, baseUrl, output) {
   const cases = [];
@@ -24,7 +25,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         Object.defineProperty(Navigator.prototype, "onLine", { get: () => false }),
       );
     const page = await context.newPage();
-    const errors = [];
+    const errors = collectPageErrors(page);
     const network = [];
     page.on("request", (req) => {
       network.push({ start: req.url().split("?")[0], type: req.resourceType() });
@@ -36,7 +37,6 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       if (res.url().includes("events"))
         network.push({ url: res.url().split("?")[0], status: res.status() });
     });
-    page.on("pageerror", (error) => errors.push(error.message));
     let sequence = 0;
     const unique = `${locale}-${width}`;
     const seconds = (value) =>
@@ -331,7 +331,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
           ],
         });
         const terminalPage = await context.newPage();
-        terminalPage.on("pageerror", (error) => errors.push(error.message));
+        collectPageErrors(terminalPage, errors);
         try {
           await terminalPage.goto(`${baseUrl}/threads/thread-main`);
           const terminalTools = terminalPage
@@ -395,8 +395,7 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         colorScheme,
       );
       const page = await context.newPage();
-      const errors = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = collectPageErrors(page);
       const state = {
         runRevision: 1,
         revision: "browser-state-1",

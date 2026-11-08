@@ -2654,6 +2654,11 @@ describe("pushed conversation updates", () => {
   let statePhase: ThreadExecutionState["displayPhase"];
 
   beforeEach(() => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
     statePhase = "completed";
     sources = [];
     queue = [];

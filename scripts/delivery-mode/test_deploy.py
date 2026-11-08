@@ -554,6 +554,18 @@ class GeneratedPacketGateTest(DeployHarness):
             code, result, calls = self.deploy()
             self.assertEqual((code, result['result'], calls), (6, 'not-generated', []))
 
+    def test_a_packet_checked_before_the_installed_probe_existed_changes_nothing(self):
+        gate = load('generated_packet_gate', 'generated-packet-gate.py')
+        installed_probe = load('run_packet_checks_names', 'run-packet-checks.py').INSTALLED_PROBE
+        path = self.packet / 'packet-checks.json'
+        record = json.loads(path.read_text())
+        self.assertEqual(gate.problems(self.packet), [])
+        record['checks'] = [item for item in record['checks'] if item['name'] != installed_probe]
+        path.write_text(json.dumps(record))
+        self.assertEqual(gate.problems(self.packet), ['PACKET_CHECK_NOT_PASSED ' + installed_probe + ' null'])
+        code, result, calls = self.deploy()
+        self.assertEqual((code, result['result'], calls), (6, 'not-generated', []))
+
     def test_a_migrating_packet_needs_the_migration_check(self):
         parameters, record = generated_records()
         parameters['TARGET_SCHEMA'] = record['targetSchema'] = 57

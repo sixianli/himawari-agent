@@ -625,10 +625,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 79,
+    name: "muse_intake_gmail_message",
+    changeSet: "muse-intake-gmail-message",
+    phase: "expand" as const,
+    file: "0079_muse_intake_gmail_message.sql",
+  },
+  {
+    sequence: 80,
     name: "proactive_replays",
     changeSet: "proactive-replays",
     phase: "expand" as const,
-    file: "0079_proactive_replays.sql",
+    file: "0080_proactive_replays.sql",
   },
 ] as const;
 

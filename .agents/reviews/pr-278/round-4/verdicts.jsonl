@@ -1,0 +1,8 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新章节与 ADR 0117 对监听端口、鉴权的说法冲突", "valid": true, "class": "better"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "Cookie 按主机名共享，不只 Hermes；文档只警告了 Hermes", "valid": true, "class": "error", "severity": "medium-high", "trigger": "在登过生产管理页的浏览器里打开任何 127.0.0.1 上的本机页面", "consequence": "生产密码 cookie 发给那个本机程序", "modelSeverity": "中"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "密码放在 `?k=` 查询串里，文档只处理了浏览器历史", "valid": true, "class": "error", "severity": "low", "trigger": "Magpie 把带 k 的请求写进生产机日志，或浏览器在删历史前已同步", "consequence": "生产机日志只有 root 能读，而 root 本来就能读 web.env；Magpie 收到 ?k= 后立即 303 跳转，页面加载时地址已不带 k，不会经 Referer 带出", "modelSeverity": "中", "reason": "能看到日志的人本来就能读密码文件；跳转发生在加载任何页面资源之前"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "网址编码只列了 `+ & # %`，不完整", "valid": true, "class": "error", "severity": "low", "trigger": "密码含其他保留字符", "consequence": "登录被拒（401），不给出错误结果", "modelSeverity": "低"}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`UseKeychain` 与裸 `ssh`、`Host *` 覆盖顺序可能导致配置不可用", "valid": true, "class": "better"}
+{"id": "d6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "只看变量名的 `grep` 可能漏掉 `MAGPIE_WEB_KEY`", "valid": true, "class": "better"}
+{"id": "d7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "LaunchAgent 失败路径和 `000` 的解释覆盖不足", "valid": true, "class": "error", "severity": "low", "trigger": "生产 Magpie 没运行时验证", "consequence": "读者以为是隧道问题，查错方向偏，不会造成损害", "modelSeverity": "低"}
+{"id": "d8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`runbook-contract` 未包含新引用的 ADR 0117", "valid": true, "class": "better"}
