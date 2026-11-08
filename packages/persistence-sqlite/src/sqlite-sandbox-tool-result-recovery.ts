@@ -57,5 +57,12 @@ export const RUN_EXPIRED_RECONCILIATION_SQL = `
     WHERE pending.owner_id=r.owner_id AND pending.agent_id=r.agent_id AND pending.run_id=r.id
       AND (json_extract(pending.plan_json,'$.originalDeadlineAt') IS NULL
         OR json_extract(pending.plan_json,'$.originalDeadlineAt')>@resourceNow)))
+    OR (c.diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED'
+      AND NOT EXISTS (SELECT 1 FROM sandbox_execution_records any_record
+        WHERE any_record.owner_id=r.owner_id AND any_record.agent_id=r.agent_id AND any_record.run_id=r.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM model_invocation_identities model
+        WHERE model.owner_id=r.owner_id AND model.agent_id=r.agent_id AND model.run_id=r.id
+          AND model.status IN ('reserved','started','unknown')))
   )
   AND (${RUN_RESOURCES_RELEASED_SQL})`;

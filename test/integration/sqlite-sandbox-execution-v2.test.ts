@@ -1055,6 +1055,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "rollback-gateway",
     "budget-unknown",
     "absent-before-deadline",
+    "deadline-code-no-records",
+    "deadline-code-before-deadline",
   ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
     const f = await openSandboxJournal();
     let repository: SqliteProductStateRepository | undefined;
@@ -1156,12 +1158,19 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       f.database
         .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
         .run(T1, runId);
-      now = ["before-deadline", "unreleased-before-deadline", "absent-before-deadline"].includes(
-        scenario,
-      )
+      now = [
+        "before-deadline",
+        "unreleased-before-deadline",
+        "absent-before-deadline",
+        "deadline-code-before-deadline",
+      ].includes(scenario)
         ? T1
         : T2;
-      if (scenario === "absent-before-deadline") {
+      if (scenario.startsWith("deadline-code"))
+        f.database
+          .prepare("UPDATE run_coordination_checkpoints SET diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED'")
+          .run();
+      if (["absent-before-deadline", "deadline-code-no-records", "deadline-code-before-deadline"].includes(scenario)) {
         f.database.pragma("foreign_keys = OFF");
         f.database.prepare("DELETE FROM sandbox_execution_records").run();
         f.database.prepare("DELETE FROM sandbox_admission_queue").run();
@@ -1294,6 +1303,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "bash-own-deadline",
           "absent-before-deadline",
           "before-deadline",
+          "deadline-code-no-records",
         ].includes(scenario)
       ) {
         const dispatch = opened.runDispatch(
