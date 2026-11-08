@@ -2586,18 +2586,48 @@ export async function startLiveGateway({
       drop = [config.creditProvider];
     }
   }
-  try {
-    live.addGroups(drop);
-    await live.serve();
+  const dropProviders = (missing) => {
+    const unavailable = [...new Set(missing.map((member) => member.split("/")[0]))];
+    for (const provider of unavailable)
+      console.log(
+        `GATEWAY_PROVIDER_DROPPED ${provider} missing=${missing.filter((member) => member.startsWith(`${provider}/`)).join(",")}`,
+      );
+    drop = [...drop, ...unavailable];
+  };
+  const addGroups = () => {
+    for (;;) {
+      try {
+        live.addGroups(drop);
+        return;
+      } catch (error) {
+        const member = error.message.match(/knows no model "([^"]+)"/)?.[1];
+        if (!member || drop.includes(member.split("/")[0])) throw error;
+        dropProviders([member]);
+      }
+    }
+  };
+  const missingMembers = async () => {
     const listed = await getJson(`${live.baseURL}/models`);
+    if (listed.status !== 200) throw new Error(`GATEWAY_PREFLIGHT_FAILED models=${listed.status}`);
     const ids = new Set((listed.json?.data ?? []).map((item) => item.id));
-    const missing = models.flatMap((model) =>
+    return models.flatMap((model) =>
       config.models[model].members.filter(
         (member) => !drop.includes(member.split("/")[0]) && !ids.has(member),
       ),
     );
-    if (listed.status !== 200 || missing.length > 0)
-      throw new Error(`GATEWAY_PREFLIGHT_FAILED missing=${missing.join(",") || listed.status}`);
+  };
+  try {
+    addGroups();
+    await live.serve();
+    const missing = await missingMembers();
+    if (missing.length > 0) {
+      dropProviders(missing);
+      live.stop();
+      addGroups();
+      await live.serve();
+      const still = await missingMembers();
+      if (still.length > 0) throw new Error(`GATEWAY_PREFLIGHT_FAILED missing=${still.join(",")}`);
+    }
   } catch (error) {
     live.stop();
     throw error.message.startsWith("GATEWAY_PREFLIGHT_FAILED")

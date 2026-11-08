@@ -975,6 +975,46 @@ describe("review gateway live start", () => {
     }
   }, 120000);
 
+  it.each([
+    ["is not served by its provider", (port) => `http://localhost:${port}/v1`, ["down"]],
+    ["sits behind a refused port", () => "http://127.0.0.1:9/v1", null],
+  ])(
+    "[gateway] keeps the review on the other providers when a member %s",
+    async (_label, url, dropped) => {
+      const upstream = await probeServer();
+      const root = mkdtempSync(join(tmpdir(), "gateway-drop-"));
+      try {
+        const member = dropped ? (short) => `down/${short}-gone` : (short) => `down/${short}`;
+        const base = liveConfig(upstream.port, (short) => [member(short), `probe/${short}`]);
+        const down = { ...base.providers[1], id: "down", url: url(upstream.port) };
+        const gatewayConfig = { ...base, providers: [...base.providers, down] };
+        const { live, drop } = await startLiveGateway({
+          gateway: { install: install(), config: gatewayConfig },
+          workRoot: root,
+          records: [],
+          models: [deepseek],
+          accountUid: () => null,
+        });
+        try {
+          if (dropped) expect(drop).toEqual(["workbuddy-ai", ...dropped]);
+          const answer = await postJson(`${live.baseURL}/chat/completions`, {
+            model: "group/review-deepseek-v4.1-flash",
+            stream: true,
+            messages: [{ role: "user", content: "hi" }],
+          });
+          expect(answer.status).toBe(200);
+          expect(upstream.hits()).toBeGreaterThan(0);
+        } finally {
+          live.stop();
+        }
+      } finally {
+        upstream.server.close();
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    120000,
+  );
+
   it("[gateway] stops every Magpie it started, including ones nobody kept a handle to", async () => {
     const root = mkdtempSync(join(tmpdir(), "gateway-stop-all-"));
     try {
