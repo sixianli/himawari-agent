@@ -137,6 +137,16 @@ describe("production memory capture", () => {
         status: "committed",
         committedAt: T0,
       });
+      const rows = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      rows
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'private', ?)`,
+        )
+        .run(`message-${sequence}`, OWNER_ID, AGENT_ID, THREAD_ID, sequence, role, contentRef, T0);
+      rows.close();
       if (role === "owner" && runId !== null) {
         const seed = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
         seed
@@ -317,7 +327,13 @@ describe("production memory capture", () => {
         ? new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }))
         : undefined;
     };
+    const deleteThreadMessages = () => {
+      const rows = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      rows.prepare("DELETE FROM thread_messages WHERE thread_id = ?").run(THREAD_ID);
+      rows.close();
+    };
     return {
+      deleteThreadMessages,
       clock,
       repository,
       memory,
@@ -1848,6 +1864,36 @@ describe("production memory capture", () => {
         "again",
       ),
     ).rejects.toThrow("MEMORY_PERSON_NOT_FOUND");
+  });
+
+  it("[P1-1] points a captured memory at the Owner's message and says nothing for imported, hand-written or orphaned ones", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-import-1", "回答一律用简体中文");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-codex-2",
+        source: "codex",
+        items: [{ contentRef: "payload-import-1", category: "rule", subCategory: null }],
+      },
+      "import-p11",
+    );
+    const sourceOf = async () =>
+      Object.fromEntries(
+        (await overview(context.control)).memories.map((item) => [
+          item.importBatchId ? "imported" : "captured",
+          item.sourceMessageId,
+        ]),
+      );
+    expect(await sourceOf()).toEqual({ captured: "message-1", imported: null });
+    context.deleteThreadMessages();
+    expect(await sourceOf()).toEqual({ captured: null, imported: null });
   });
 
   it("[MP-7] imports chosen memories as one batch the Owner can undo", async () => {

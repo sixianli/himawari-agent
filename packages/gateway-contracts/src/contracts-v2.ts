@@ -937,6 +937,7 @@ const memoryOverviewSnapshotSchema = object({
         topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
         inference: booleanValue,
         sourceThreadId: nullable(machineString),
+        sourceMessageId: nullable(machineString),
         sourceRefs: array(boundedString(512)),
         updatedAt: timestamp,
         supersededBy: nullable(machineString),

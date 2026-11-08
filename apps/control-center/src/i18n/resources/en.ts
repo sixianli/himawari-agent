@@ -849,6 +849,14 @@ export const messages = {
     "{k, select, created {Noted} updated {Details added} edited {Edited by you} restored {Switched back} reaffirmed {Said again, same meaning} other {Changed}}",
   "memory.page.quote": "You said: “{quote}”",
   "memory.page.sourceDeleted": "Source conversation deleted",
+  "memory.page.jumpToQuote": "Jump to what you said",
+  "memory.page.sourceUnavailable": "Source can no longer be found",
+  "memory.page.sourceUnavailableCount":
+    "{count, plural, one {# memory has} other {# memories have}} a source that can no longer be found",
+  "memory.page.importNoQuoteCount":
+    "{count, plural, one {# memory was} other {# memories were}} imported and has no original sentence to open",
+  "memory.page.originImport":
+    "Imported from {source, select, codex {Codex} assistant {another AI} other {a Himawari export file}}",
   "memory.page.collapseHistory": "Show less",
   "memory.page.flips":
     "Changed {changes, plural, one {# time} other {# times}}{again, plural, =0 {} one {, said the same thing # more time} other {, said the same thing # more times}}",

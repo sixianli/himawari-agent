@@ -50,6 +50,7 @@ function memoryItem(memoryId: string, text: string, change: Partial<MemoryItem> 
     topic: null,
     inference: false,
     sourceThreadId: "thread-1",
+    sourceMessageId: "message-1",
     sourceRefs: ["payload-1"],
     updatedAt: "2026-10-25T12:00:00.000Z",
     supersededBy: null,
@@ -208,6 +209,7 @@ beforeEach(() => {
       }),
       memoryItem("memory-city", "主人住在上海", {
         sourceThreadId: "thread-2",
+        sourceMessageId: "message-9",
         sourceRefs: ["payload-9"],
         category: "identity",
         updatedAt: "2026-10-24T12:00:00.000Z",
@@ -315,8 +317,8 @@ describe("memory approval and management", () => {
     await click("#settings .memory-list", "主人住在上海");
     expect(text("#settings .memory-drawer")).toContain("还没用到");
     expect(text("#settings .memory-drawer")).toContain("500 / 1000");
-    await click("#settings .memory-drawer", "来源对话");
-    expect(opened).toHaveBeenCalledWith("thread-2");
+    await click("#settings .memory-drawer", "跳到原话");
+    expect(opened).toHaveBeenCalledWith("thread-2", "message-9");
     await click("#settings .memory-drawer", "编辑");
     await type("#settings .memory-drawer textarea", "主人住在杭州");
     await click("#settings .memory-drawer", "保存");
@@ -655,6 +657,77 @@ describe("memory approval and management", () => {
     ).toContain("记忆");
     expect(text("#settings .memory-detail")).toContain("怎么变过来的");
     expect(text("#settings .memory-history-summary")).toBe("变过 4 次，另外有 1 次说了同样的意思");
+  });
+
+  it("[P1-1] a captured memory jumps to the message it came from", async () => {
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [memoryItem("m-jump", "主人喜欢爬山", { sourceMessageId: "message-7" })],
+    };
+    await render();
+    await click("#settings .memory-results", "主人喜欢爬山");
+    expect(text("#settings .memory-detail")).not.toContain("来源已不可查");
+    await click("#settings .memory-detail", "跳到原话");
+    expect(opened).toHaveBeenLastCalledWith("thread-1", "message-7");
+    expect(document.querySelector("#settings [data-kind=source-unavailable]")).toBeNull();
+  });
+
+  it("[P1-1] a memory whose quote cannot be found says so, is counted, and offers no jump", async () => {
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [
+        memoryItem("m-lost-1", "主人喜欢爬山", { sourceMessageId: null }),
+        memoryItem("m-lost-2", "主人喜欢游泳", { sourceMessageId: null }),
+        memoryItem("m-lost-trashed", "主人喜欢跑步", { sourceMessageId: null, status: "trashed" }),
+        memoryItem("m-found", "主人喜欢蓝色"),
+        memoryItem("m-owner", "主人手写的一条", {
+          memoryId: "memory:owner:1",
+          sourceThreadId: null,
+          sourceMessageId: null,
+        }),
+        memoryItem("m-tidy", "整理出来的一条", { sourceThreadId: null, sourceMessageId: null }),
+      ],
+    };
+    await render();
+    expect(text("#settings [data-kind=source-unavailable]")).toBe(
+      "有 2 条记忆的来源已不可查，找不回当初那句话",
+    );
+    await click("#settings .memory-results", "主人喜欢爬山");
+    expect(text("#settings .memory-detail")).toContain("来源已不可查");
+    expect(text("#settings .memory-detail")).not.toContain("跳到原话");
+  });
+
+  it("[P1-1] imported memories name their batch, are counted apart, and offer no jump", async () => {
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [
+        memoryItem("m-import-a", "回答一律用简体中文", {
+          category: "rule",
+          importBatchId: "b1",
+          sourceThreadId: null,
+          sourceMessageId: null,
+        }),
+        memoryItem("m-capture", "主人喜欢蓝色"),
+      ],
+      imports: [
+        {
+          batchId: "b1",
+          source: "codex",
+          itemCount: 1,
+          createdAt: "2026-10-25T13:00:00.000Z",
+          undone: false,
+        },
+      ],
+    };
+    await render();
+    expect(text("#settings [data-kind=import-no-quote]")).toBe("有 1 条记忆是导入的，没有原话可跳");
+    expect(document.querySelector("#settings [data-kind=source-unavailable]")).toBeNull();
+    await click("#settings .memory-results", "回答一律用简体中文");
+    expect(text("#settings .memory-detail")).toContain("导入自 Codex");
+    expect(text("#settings .memory-detail")).not.toContain("跳到原话");
   });
 
   it("[MH-4] says the source conversation was deleted, keeps the quote and never calls it a daily tidy-up", async () => {

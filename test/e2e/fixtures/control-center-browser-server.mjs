@@ -846,6 +846,7 @@ function memoryOverview() {
     topic: null,
     inference: false,
     sourceThreadId: "thread-main",
+    sourceMessageId: "message-01",
     sourceRefs: [],
     updatedAt: "2026-10-28T10:21:00.000Z",
     supersededBy: null,

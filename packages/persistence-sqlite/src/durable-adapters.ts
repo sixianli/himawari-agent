@@ -955,6 +955,7 @@ export class SqliteDurableAdapters {
       createImportBatch: (input) => this.context.write("memoryBook.createImportBatch", input),
       listImportBatches: (input) => this.context.read("memoryBook.listImportBatches", input),
       markImportUndone: (input) => this.context.write("memoryBook.markImportUndone", input),
+      findOwnerMessages: (input) => this.context.read("memoryBook.findOwnerMessages", input),
     });
   }
 

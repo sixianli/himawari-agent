@@ -855,6 +855,13 @@ export const messages = {
     "{k, select, created {記録} updated {詳細を追加} edited {あなたが修正} restored {元に戻した} reaffirmed {同じ内容をもう一度} other {変更}}",
   "memory.page.quote": "あなたの言葉：「{quote}」",
   "memory.page.sourceDeleted": "元の会話は削除済み",
+  "memory.page.jumpToQuote": "元の発言へ移動",
+  "memory.page.sourceUnavailable": "出どころが見つかりません",
+  "memory.page.sourceUnavailableCount": "{count} 件の記憶は、出どころの発言が見つかりません",
+  "memory.page.importNoQuoteCount":
+    "{count} 件の記憶はインポートされたもので、開ける元の発言がありません",
+  "memory.page.originImport":
+    "{source, select, codex {Codex} assistant {別の AI} other {Himawari のエクスポートファイル}} からインポート",
   "memory.page.collapseHistory": "閉じる",
   "memory.page.flips":
     "{changes} 回変わりました{again, plural, =0 {} other {（ほかに同じ内容を # 回）}}",

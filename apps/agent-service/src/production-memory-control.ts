@@ -9,6 +9,7 @@ import {
   type MemoryExtractionAuditRecord,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
+  type MemorySourceMessage,
   type MemoryReminderStorePort,
   type OwnerProfileService,
   type PayloadProtectorPort,
@@ -97,6 +98,20 @@ const singleLine = (text: string) =>
     .join("")
     .trim()
     .slice(0, 2000);
+
+function earliestSourceMessage(
+  memory: Pick<ProductMemoryRecord, "sourceThreadId" | "sourceRefs">,
+  messages: readonly MemorySourceMessage[],
+): string | null {
+  if (!memory.sourceThreadId) return null;
+  const refs = new Set(memory.sourceRefs);
+  const matching = messages
+    .filter(
+      ({ threadId, contentRef }) => threadId === memory.sourceThreadId && refs.has(contentRef),
+    )
+    .toSorted((left, right) => left.sequence - right.sequence);
+  return matching[0]?.messageId ?? null;
+}
 
 export class ProductionMemoryControl {
   private readonly options: {
@@ -290,6 +305,10 @@ export class ProductionMemoryControl {
         memoryIds: records.slice(index, index + HISTORY_BATCH).map(({ id }) => id),
       }))
         history.set(event.memoryId, [...(history.get(event.memoryId) ?? []), event]);
+    const sourceMessages = await this.options.book.findOwnerMessages({
+      ...scope,
+      refs: records.flatMap(({ sourceRefs }) => sourceRefs.filter((ref) => ref.length <= 512)),
+    });
     for (const memory of records) {
       if (memory.status !== "active" && memory.status !== "archived" && memory.status !== "trashed")
         continue;
@@ -317,6 +336,7 @@ export class ProductionMemoryControl {
         topic: memory.attributes?.sensitiveTopic ?? null,
         inference: memory.inference,
         sourceThreadId: memory.sourceThreadId,
+        sourceMessageId: earliestSourceMessage(memory, sourceMessages),
         sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= 512),
         updatedAt: memory.updatedAt,
         supersededBy: memory.attributes?.supersededBy ?? null,

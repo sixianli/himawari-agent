@@ -103,6 +103,8 @@ export class SqliteMemoryBookOperations {
         return this.listImportBatches(payload as Scope & { limit: number });
       case "memoryBook.markImportUndone":
         return this.markImportUndone(payload as Scope & { id: string; undoneAt: string });
+      case "memoryBook.findOwnerMessages":
+        return this.findOwnerMessages(payload as Scope & { refs: readonly string[] });
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Memory book operation ${operation}`);
     }
@@ -545,6 +547,31 @@ export class SqliteMemoryBookOperations {
         ORDER BY created_at DESC, id LIMIT ?`,
       )
       .all(input.ownerId, input.agentId, input.limit) as MemoryImportBatch[];
+  }
+
+  private findOwnerMessages(input: Scope & { refs: readonly string[] }) {
+    const refs = [...new Set(input.refs)];
+    const found: {
+      contentRef: string;
+      threadId: string;
+      messageId: string;
+      sequence: number;
+    }[] = [];
+    for (let index = 0; index < refs.length; index += 200) {
+      const batch = refs.slice(index, index + 200);
+      found.push(
+        ...(this.database
+          .prepare(
+            `SELECT content_ref AS contentRef, thread_id AS threadId, id AS messageId, sequence
+            FROM thread_messages
+            WHERE owner_id = ? AND agent_id = ? AND role = 'owner'
+              AND content_ref IN (${batch.map(() => "?").join(", ")})
+            ORDER BY thread_id, sequence`,
+          )
+          .all(input.ownerId, input.agentId, ...batch) as typeof found),
+      );
+    }
+    return found;
   }
 
   private markImportUndone(input: Scope & { id: string; undoneAt: string }): boolean {
