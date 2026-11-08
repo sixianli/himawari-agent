@@ -15,7 +15,9 @@ export const retryBudgetMs = 15 * 60_000;
 const firstDelayMs = 10_000;
 const longestDelayMs = 300_000;
 const shortestDelayMs = 1_000;
-const cacheEntryMaxBytes = 512 * 1024 ** 2;
+export const cacheMarkerName = ".himawari-ci-downloads";
+export const processBudget = { waitedMs: 0 };
+export const cacheEntryMaxBytes = 512 * 1024 ** 2;
 const digestPattern = /^[a-f0-9]{64}$/;
 
 export const sha256Of = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -52,7 +54,9 @@ export function cacheRead(directory, sha256, { maxBytes = cacheEntryMaxBytes } =
     return null;
   }
   if (!status.isFile() || status.size > maxBytes) {
-    rmSync(path, { recursive: true, force: true });
+    try {
+      rmSync(path, { force: true });
+    } catch {}
     return null;
   }
   let bytes;
@@ -77,6 +81,7 @@ export function cacheWrite(directory, sha256, bytes, report = console.error) {
   const temporary = join(directory, `.tmp-${process.pid}-${randomBytes(6).toString("hex")}`);
   try {
     mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, cacheMarkerName), "himawari download cache\n", { flag: "a" });
     writeFileSync(temporary, bytes, { flag: "wx", mode: 0o644 });
     renameSync(temporary, join(directory, sha256));
     return true;
@@ -130,6 +135,7 @@ export async function downloadVerified(
     wait = (_attempt, delay) => new Promise((resolveWait) => setTimeout(resolveWait, delay)),
     cacheDirectory = null,
     budgetMs = retryBudgetMs,
+    budget = processBudget,
     random = Math.random,
     report = console.error,
   } = {},
@@ -137,7 +143,6 @@ export async function downloadVerified(
   const cached = cacheRead(cacheDirectory, expected.sha256);
   if (cached) return cached;
   const host = new URL(expected.url).hostname;
-  let waited = 0;
   for (let attempt = 1; ; attempt += 1) {
     let reason;
     let retryable;
@@ -166,11 +171,11 @@ export async function downloadVerified(
     }
     const summary = `${expected.filename} 来自 ${host}，第 ${attempt} 次 (${reason})`;
     const delay = retryable
-      ? nextRetryDelay(attempt, waited, { retryAfterMs, random, budgetMs })
+      ? nextRetryDelay(attempt, budget.waitedMs, { retryAfterMs, random, budgetMs })
       : null;
     if (delay === null) throw new Error(`工具下载失败: ${summary}`);
     report(`工具下载重试: ${summary}，${Math.round(delay / 1000)} 秒后重试`);
-    waited += delay;
+    budget.waitedMs += delay;
     await wait(attempt, delay);
   }
 }
@@ -182,6 +187,7 @@ export function pruneCache(
   if (!directory) return;
   let names;
   try {
+    lstatSync(join(directory, cacheMarkerName));
     names = readdirSync(directory);
   } catch {
     return;
@@ -196,7 +202,8 @@ export function pruneCache(
       continue;
     }
     const age = now - status.mtimeMs;
-    const temporary = name.startsWith(".tmp-");
+    if (name === cacheMarkerName) continue;
+    const temporary = name.startsWith(".tmp-") && status.isFile();
     const entry = digestPattern.test(name) && status.isFile();
     if (
       (temporary && age > temporaryMaxAgeMs) ||
@@ -204,7 +211,7 @@ export function pruneCache(
       (entry && age > cacheMaxAgeMs)
     ) {
       try {
-        rmSync(path, { recursive: true, force: true });
+        rmSync(path, { force: true });
       } catch (error) {
         report(`工具缓存清理失败，已忽略: ${error.message}`);
       }

@@ -188,6 +188,7 @@ describe("固定工具身份", () => {
       downloadArtifact(expected, temporary(), {
         cacheDirectory: null,
         random: () => 0.5,
+        budget: { waitedMs: 0 },
         fetch,
         wait: async (attempt) => {
           waits.push(attempt);

@@ -16,7 +16,9 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { downloadArtifact } from "../../scripts/ci/install-tools.mjs";
 import {
+  cacheEntryMaxBytes,
   cacheEnvironment,
+  cacheMarkerName,
   cacheRead,
   cacheWrite,
   downloadVerified,
@@ -70,6 +72,7 @@ const options = (cacheDirectory, extra = {}) => ({
   wait: noWait,
   report: quiet,
   random: () => 0.5,
+  budget: { waitedMs: 0 },
   ...extra,
 });
 
@@ -87,7 +90,7 @@ describe("verified download cache", () => {
     const cache = temporary();
     const network = answering({ status: 200, body: bytes });
     await downloadVerified(expected, options(cache, { fetch: network.fetch }));
-    expect(readdirSync(cache)).toEqual([expected.sha256]);
+    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, expected.sha256].sort());
     expect(readFileSync(join(cache, expected.sha256))).toEqual(bytes);
     const second = offline();
     await downloadVerified(expected, options(cache, { fetch: second.fetch }));
@@ -197,6 +200,22 @@ describe("download retries", () => {
     expect(waits).toEqual([7000]);
   });
 
+  it("shares one retry budget between the downloads of a process", async () => {
+    const budget = { waitedMs: 0 };
+    const waits = [];
+    const run = () =>
+      downloadVerified(expected, {
+        ...options(null, { fetch: answering({ status: 504 }).fetch, budget }),
+        wait: async (_attempt, delay) => waits.push(delay),
+      }).catch((error) => error.message);
+    await run();
+    const first = waits.length;
+    expect(await run()).toContain("工具下载失败");
+    const second = waits.length - first;
+    expect(second).toBeLessThan(first);
+    expect(budget.waitedMs).toBeLessThanOrEqual(900_000);
+  });
+
   it("stops at the budget instead of waiting for ever", async () => {
     const waits = [];
     const network = answering({ status: 504 });
@@ -283,6 +302,7 @@ describe("cache directory choice and pruning", () => {
     const cache = temporary();
     const fresh = sha256Of("fresh");
     const stale = sha256Of("stale");
+    writeFileSync(join(cache, cacheMarkerName), "");
     writeFileSync(join(cache, fresh), "fresh");
     writeFileSync(join(cache, stale), "stale");
     writeFileSync(join(cache, ".tmp-1-old"), "x");
@@ -291,18 +311,43 @@ describe("cache directory choice and pruning", () => {
     age(join(cache, stale), 31);
     age(join(cache, ".tmp-1-old"), 2);
     pruneCache(cache, { report: quiet });
-    expect(readdirSync(cache).sort()).toEqual([".tmp-2-new", fresh].sort());
+    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, ".tmp-2-new", fresh].sort());
+  });
+
+  it("deletes nothing in a directory that this tool did not create", () => {
+    const directory = temporary();
+    writeFileSync(join(directory, "important.txt"), "keep me");
+    mkdirSync(join(directory, "sub"));
+    writeFileSync(join(directory, ".tmp-old"), "x");
+    age(join(directory, ".tmp-old"), 5);
+    pruneCache(directory, { report: quiet });
+    expect(readdirSync(directory).sort()).toEqual([".tmp-old", "important.txt", "sub"]);
+  });
+
+  it("never deletes a directory, even inside a cache directory", () => {
+    const cache = temporary();
+    cacheWrite(cache, expected.sha256, bytes, quiet);
+    mkdirSync(join(cache, "sub"));
+    writeFileSync(join(cache, "sub", "file"), "x");
+    pruneCache(cache, { report: quiet });
+    expect(existsSync(join(cache, "sub", "file"))).toBe(true);
+    expect(existsSync(join(cache, expected.sha256))).toBe(true);
+  });
+
+  it("keeps the default size limit at 512 MB", () => {
+    expect(cacheEntryMaxBytes).toBe(512 * 1024 ** 2);
   });
 
   it("evicts the least recently used entries when over the size cap", () => {
     const cache = temporary();
     const names = ["a", "b", "c"].map((text) => sha256Of(text));
+    writeFileSync(join(cache, cacheMarkerName), "");
     names.forEach((name, index) => {
       writeFileSync(join(cache, name), "x".repeat(100));
       age(join(cache, name), 3 - index);
     });
     pruneCache(cache, { maxBytes: 200, report: quiet });
-    expect(readdirSync(cache).sort()).toEqual([names[1], names[2]].sort());
+    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, names[1], names[2]].sort());
   });
 });
 
@@ -330,6 +375,7 @@ describe("Magpie download", () => {
       spawn: script.spawn,
       sleep: (delay) => sleeps.push(delay),
       random: () => 0.5,
+      budget: { waitedMs: 0 },
     });
     expect(readFileSync(target, "utf8")).toBe("binary");
     expect(sleeps).toEqual([10000, 9000]);
@@ -346,8 +392,21 @@ describe("Magpie download", () => {
       spawn: script.spawn,
       sleep: (delay) => sleeps.push(delay),
       random: () => 0.5,
+      budget: { waitedMs: 0 },
     });
     expect(sleeps).toEqual([10000]);
+  });
+
+  it("does not retry a 4xx even when curl exits non-zero", () => {
+    const script = spawnScript({ exit: 22, stdout: "HTTP/2 404\r\n\r\n404" });
+    expect(() =>
+      curlDownload("https://github.com/x/magpie", join(temporary(), "m"), {
+        spawn: script.spawn,
+        sleep: () => {},
+        budget: { waitedMs: 0 },
+      }),
+    ).toThrow("GATEWAY_DOWNLOAD_FAILED");
+    expect(script.calls).toHaveLength(1);
   });
 
   it("fails at once when curl is not installed", () => {
@@ -374,6 +433,7 @@ describe("Magpie download", () => {
       curlDownload("https://github.com/x/magpie", target, {
         spawn: script.spawn,
         sleep: () => {},
+        budget: { waitedMs: 0 },
       }),
     ).toThrow("GATEWAY_DOWNLOAD_FAILED");
     expect(script.calls).toHaveLength(1);
@@ -389,6 +449,7 @@ describe("Magpie download", () => {
         spawn: script.spawn,
         sleep: (delay) => sleeps.push(delay),
         random: () => 0.5,
+        budget: { waitedMs: 0 },
       }),
     ).toThrow(/GATEWAY_DOWNLOAD_FAILED.*HTTP 504/);
     expect(sleeps.reduce((sum, delay) => sum + delay, 0)).toBeLessThanOrEqual(900_000);
@@ -435,7 +496,7 @@ describe("Magpie download", () => {
       cacheDirectory: cache,
     });
     expect(downloads).toBe(1);
-    expect(readdirSync(cache)).toEqual([sha256Of(good)]);
+    expect(readdirSync(cache).sort()).toEqual([cacheMarkerName, sha256Of(good)].sort());
     expect(readFileSync(first.binary)).toEqual(good);
     installGateway({
       lock,

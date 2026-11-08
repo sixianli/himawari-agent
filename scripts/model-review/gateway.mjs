@@ -21,6 +21,7 @@ import {
   explicitCacheDirectory,
   nextRetryDelay,
   parseRetryAfter,
+  processBudget,
   retryableStatus,
 } from "../ci/verified-download.mjs";
 
@@ -221,9 +222,14 @@ function sleepSync(milliseconds) {
 export function curlDownload(
   url,
   target,
-  { spawn = spawnSync, sleep = sleepSync, random = Math.random, budgetMs } = {},
+  {
+    spawn = spawnSync,
+    sleep = sleepSync,
+    random = Math.random,
+    budgetMs,
+    budget = processBudget,
+  } = {},
 ) {
-  let waited = 0;
   for (let attempt = 1; ; attempt += 1) {
     const result = spawn(
       "curl",
@@ -235,13 +241,13 @@ export function curlDownload(
     const status = Number((result.stdout ?? "").trim().slice(-3));
     if (result.status === 0 && status >= 200 && status < 300) return;
     const network = result.status !== 0;
-    const retryable = network || retryableStatus(status);
+    const retryable = status >= 400 ? retryableStatus(status) : network;
     const reason = network
       ? `${(result.stderr ?? result.error?.message ?? "").trim() || `curl 退出码 ${result.status}`}${status ? ` (HTTP ${status})` : ""}`
       : `HTTP ${status}`;
     const header = /^retry-after:\s*(.+)$/im.exec(result.stdout ?? "");
     const delay = retryable
-      ? nextRetryDelay(attempt, waited, {
+      ? nextRetryDelay(attempt, budget.waitedMs, {
           retryAfterMs: parseRetryAfter(header?.[1]),
           random,
           ...(budgetMs === undefined ? {} : { budgetMs }),
@@ -253,7 +259,7 @@ export function curlDownload(
     console.error(
       `GATEWAY_DOWNLOAD_RETRY ${url} 第 ${attempt} 次 (${reason})，${Math.round(delay / 1000)} 秒后重试`,
     );
-    waited += delay;
+    budget.waitedMs += delay;
     sleep(delay);
   }
 }
