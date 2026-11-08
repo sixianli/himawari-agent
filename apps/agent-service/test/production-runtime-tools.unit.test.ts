@@ -523,10 +523,8 @@ describe("ProductionRuntimeTools", () => {
       expect(result).toMatchObject({ dispatchState: "accepted", outcome: "failed", errorCode });
       expect(result.modelContent).toContain(limitName);
       expect(result.modelContent).toContain("CPU 时间 12.5 秒");
-      expect(result.modelContent).toContain("内存 268.4 MB");
-      expect(result.modelContent).not.toContain(
-        `${f.options.ceiling.maxCpuTimeMs / 1000} 秒、内存 ${f.options.ceiling.maxMemoryBytes / 1_000_000} MB`,
-      );
+      expect(result.modelContent).toContain("内存 256 MB");
+      expect(result.modelContent).not.toContain("CPU 时间 1 秒、内存 1.0 MB");
       expect(result.modelContent).toContain("执行已结束并完成清理");
       expect(result.modelContent).not.toContain("已终止");
       expect(result.modelContent).not.toContain("已被终止");
@@ -557,13 +555,13 @@ describe("ProductionRuntimeTools", () => {
     const result = await tool.execute(invocation);
     expect(result).toMatchObject({ outcome: "failed", errorCode: "SANDBOX_CPU_TIME_LIMIT" });
     expect(result.modelContent).toContain("CPU 时间 7.5 秒");
-    expect(result.modelContent).toContain("内存 134.2 MB");
+    expect(result.modelContent).toContain("内存 128 MB");
     expect(result.modelContent).not.toContain("12.5 秒");
-    expect(result.modelContent).not.toContain("268.4 MB");
+    expect(result.modelContent).not.toContain("256 MB");
   });
   it.each([
-    [2_500_000, "输出 2.5 MB"],
-    [32_768, "输出 32.8 KB"],
+    [2_500_000, "输出 2.4 MB"],
+    [32_768, "输出 32 KB"],
     [800, "输出 800 字节"],
   ] as const)(
     "[I-84] tells the model the output a command may produce and that what came back is cut short (%s)",
@@ -599,7 +597,7 @@ describe("ProductionRuntimeTools", () => {
       expect(result.modelContent).not.toContain("已终止");
       expect(result.modelContent).not.toContain("已被终止");
       expect(result.modelContent).not.toContain("在终止前");
-      expect(result.modelContent).not.toContain("输出 9.9 MB");
+      expect(result.modelContent).not.toContain("输出 9.4 MB");
       expect(result.modelContent).not.toContain("CPU 时间");
       expect(result.modelContent).not.toBe("操作未确认成功。");
     },
