@@ -744,7 +744,7 @@ export const messages = {
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
   "memory.page.origin":
-    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} other {記憶の整理}}",
+    "{o, select, owner {手動で追加} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
@@ -861,6 +861,13 @@ export const messages = {
     "{k, select, created {記録} updated {詳細を追加} edited {あなたが修正} restored {元に戻した} reaffirmed {同じ内容をもう一度} other {変更}}",
   "memory.page.quote": "あなたの言葉：「{quote}」",
   "memory.page.sourceDeleted": "元の会話は削除済み",
+  "memory.page.jumpToQuote": "元の発言へ移動",
+  "memory.page.sourceUnavailable": "出どころが見つかりません",
+  "memory.page.sourceUnavailableCount": "{count} 件の記憶は、出どころの発言が見つかりません",
+  "memory.page.importNoQuoteCount":
+    "{count} 件の記憶はインポートされたもので、開ける元の発言がありません",
+  "memory.page.originImport":
+    "{source, select, codex {Codex} assistant {別の AI} other {Himawari のエクスポートファイル}} からインポート",
   "memory.page.collapseHistory": "閉じる",
   "memory.page.flips":
     "{changes} 回変わりました{again, plural, =0 {} other {（ほかに同じ内容を # 回）}}",

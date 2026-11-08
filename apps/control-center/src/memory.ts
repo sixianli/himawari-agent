@@ -56,6 +56,7 @@ export interface MemoryModel {
     items: readonly ImportCandidate[],
   ) => Promise<boolean>;
   readonly importUndo: (batchId: string) => Promise<boolean>;
+  readonly checkSource: (memoryId: string) => Promise<MemoryItem | null>;
 }
 
 export function useMemory(input: {
@@ -127,6 +128,18 @@ export function useMemory(input: {
     overview,
     failed,
     busy,
+    checkSource: async (memoryId) => {
+      try {
+        const result = await client.query(queryMessage(configuration, "memory.overview.read", {}));
+        if (result.type !== "memory.overview.snapshot") return null;
+        setOverview(result.payload);
+        setFailed(false);
+        return result.payload.memories.find((item) => item.memoryId === memoryId) ?? null;
+      } catch {
+        setFailed(true);
+        return null;
+      }
+    },
     respond: (item, resolution, editedText) =>
       send("memory.approval.respond", () => ({
         requestId: item.requestId,

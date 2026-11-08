@@ -24,8 +24,12 @@ import {
   verifyInstalledTools,
   verifyRuleFiles,
 } from "./install-tools.mjs";
-import { enumerateLockDependencies, loadReviewedExceptions } from "./security-exceptions.mjs";
-import { applyMachineReview } from "./security-owner-review.mjs";
+import {
+  enumerateLockDependencies,
+  loadReviewedExceptions,
+  validateSecurityExceptions,
+} from "./security-exceptions.mjs";
+import { applyMachineReview, loadOwnerReviewManifest } from "./security-owner-review.mjs";
 
 export {
   enumerateLockDependencies,
@@ -55,7 +59,6 @@ function execute(command, args, { root, env, timeout = 120_000 }) {
     maxBuffer: 64 * 1024 * 1024,
     timeout,
   });
-  // Never expose an external command's error object: it can contain captured source or credentials.
   assert(
     !result.error && result.signal === null && Number.isInteger(result.status),
     "SECURITY_COMMAND_UNAVAILABLE",
@@ -220,7 +223,6 @@ function classifiedLiteral(line, entry, baseline) {
   }
 }
 
-/** A test directory is never proof. Reconstruct the exact literal in the immutable reviewed source. */
 export function verifySyntheticProvenance({ root, baseSha, entry, findings }) {
   assert(
     root && /^[a-f0-9]{40}$/.test(baseSha) && entry.provenance,
@@ -353,19 +355,16 @@ function snapshotCurrent(root, directory) {
   return copied.sort();
 }
 
-export function gitleaksHistoryScope({ root, context }) {
-  // Accepted exceptions can refer to fixtures moved or deleted by the PR.
-  // Scan the head's complete ancestry so their reviewed history remains in scope.
-  // Do not pull unrelated refs into a PR; full repository runs retain --all.
-  const pullRequest = context.event === "pull_request";
-  assert(!pullRequest || /^[a-f0-9]{40}$/.test(context.headSha), "GITLEAKS_HEAD_INVALID");
-  const range = pullRequest ? context.headSha : "--all";
+export function gitleaksHistoryScope({ root, context, head }) {
+  const ancestry = head ?? (context.event === "pull_request" ? context.headSha : undefined);
+  assert(ancestry === undefined || /^[a-f0-9]{40}$/.test(ancestry), "GITLEAKS_HEAD_INVALID");
+  const range = ancestry ?? "--all";
   const commits = Number(git(root, ["rev-list", "--count", range]).trim());
   assert(commits > 0, "GITLEAKS_HISTORY_EMPTY");
   return { range, commits };
 }
 
-function scanGitleaks({ executable, root, scratch, env, files, context, config }) {
+function scanGitleaks({ executable, root, scratch, env, files, context, config, head }) {
   const common = [
     "--config",
     config,
@@ -400,7 +399,7 @@ function scanGitleaks({ executable, root, scratch, env, files, context, config }
     git(root, ["rev-parse", "--is-shallow-repository"]).trim() === "false",
     "GITLEAKS_HISTORY_SHALLOW",
   );
-  const { range, commits } = gitleaksHistoryScope({ root, context });
+  const { range, commits } = gitleaksHistoryScope({ root, context, head });
   const historyPath = join(scratch, "history-raw.json");
   const history = execute(
     executable,
@@ -448,8 +447,6 @@ export function scanMachineSecrets({ root, snapshot, env, node, context, machine
     mkdirSync(dirname(join(snapshot, path)), { recursive: true });
     writeFileSync(join(snapshot, path), accepted);
   }
-  // Re-observe owner-reviewed entries even after their baseline has merged.
-  // Only the disposable scan copy changes; exact count/disappearance checks remain.
   const baselinePath = join(snapshot, "scripts/machine-secret-scan-baseline.json");
   const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
   writeFileSync(
@@ -547,7 +544,105 @@ function scanSemgrep({ executable, snapshot, env, files, ruleIds, config }) {
   };
 }
 
-/** Scanners finish independently; failure in one never turns another scanner's absence into success. */
+function semgrepRuleIds(root) {
+  const rules = parse(readFileSync(join(root, "ci/rules/semgrep.yml"), "utf8"));
+  assert(Array.isArray(rules.rules) && rules.rules.length > 0, "SEMGREP_RULES_EMPTY");
+  const ruleIds = rules.rules.map((rule) => rule.id);
+  assert(
+    new Set(ruleIds).size === ruleIds.length &&
+      ruleIds.every((id) => /^himawari\.[a-z0-9-]+$/.test(id)),
+    "SEMGREP_RULE_ID_INVALID",
+  );
+  return ruleIds;
+}
+
+function reviewedExceptions({ root, context, now, ruleIds }) {
+  const dependencies = enumerateLockDependencies(
+    JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")),
+  );
+  return loadReviewedExceptions({ root, context, now, ruleIds, dependencies });
+}
+
+function gitleaksGateExceptions({ root, context, now }) {
+  const exceptionPath = "ci/security-exceptions.json";
+  const accepted =
+    git(root, ["ls-tree", "-r", "--name-only", context.baseSha, "--", exceptionPath]).trim() ===
+    exceptionPath
+      ? validateSecurityExceptions(
+          JSON.parse(git(root, ["show", `${context.baseSha}:${exceptionPath}`])),
+          {
+            now,
+            ruleIds: semgrepRuleIds(root),
+            dependencies: enumerateLockDependencies(
+              JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")),
+            ),
+          },
+        )
+      : [];
+  const ownerReview = loadOwnerReviewManifest({ root, context });
+  return {
+    exceptions: [...accepted, ...(ownerReview?.exceptions ?? [])].filter(
+      (entry) => entry.kind === "synthetic-secret",
+    ),
+    provenanceReview: ownerReview && {
+      sourceSha: ownerReview.sourceSha,
+      entries: ownerReview.exceptions
+        .filter((entry) => entry.kind === "synthetic-secret")
+        .map(({ id, path, digest }) => ({ id, path, digest })),
+    },
+  };
+}
+
+export function runGitleaksGate({ root = repositoryRoot, executable, context, now = new Date() }) {
+  verifyContext(context, { root });
+  verifyRuleFiles(root, loadToolchainLock(root));
+  const reviewed = gitleaksGateExceptions({ root, context, now });
+  const scratch = mkdtempSync(join(tmpdir(), "himawari-gitleaks-gate-"));
+  chmodSync(scratch, 0o700);
+  try {
+    const snapshot = join(scratch, "snapshot");
+    mkdirSync(snapshot);
+    const files = snapshotCurrent(root, snapshot);
+    const env = {
+      ...isolatedEnvironment(scratch, dirname(executable)),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_PAGER: "cat",
+    };
+    const scan = scanGitleaks({
+      executable,
+      root,
+      scratch,
+      env,
+      files,
+      context,
+      config: join(root, "ci/rules/gitleaks.toml"),
+      head: context.testedSha,
+    });
+    const findings = applySecurityExceptions(scan.findings, reviewed.exceptions, {
+      root,
+      baseSha: context.baseSha,
+      provenanceReview: reviewed.provenanceReview ?? undefined,
+    });
+    const blocking = findings.filter((finding) => finding.blocking && !finding.excepted);
+    return {
+      status: blocking.length > 0 ? "failed" : "passed",
+      currentFiles: scan.currentFiles,
+      commits: scan.commits,
+      exceptedCount: findings.filter((finding) => finding.excepted).length,
+      blocking: blocking.map(({ id, path, line, scope, commit }) => ({
+        id,
+        path,
+        line,
+        scope,
+        commit,
+      })),
+    };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 export async function runSecurityChecks({
   root = repositoryRoot,
   toolsDirectory,
@@ -587,18 +682,8 @@ export async function runSecurityChecks({
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_PAGER: "cat",
     };
-    const rules = parse(readFileSync(join(root, "ci/rules/semgrep.yml"), "utf8"));
-    assert(Array.isArray(rules.rules) && rules.rules.length > 0, "SEMGREP_RULES_EMPTY");
-    const ruleIds = rules.rules.map((rule) => rule.id);
-    assert(
-      new Set(ruleIds).size === ruleIds.length &&
-        ruleIds.every((id) => /^himawari\.[a-z0-9-]+$/.test(id)),
-      "SEMGREP_RULE_ID_INVALID",
-    );
-    const dependencies = enumerateLockDependencies(
-      JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")),
-    );
-    reviewed = loadReviewedExceptions({ root, context, now, ruleIds, dependencies });
+    const ruleIds = semgrepRuleIds(root);
+    reviewed = reviewedExceptions({ root, context, now, ruleIds });
     const snapshot = join(scratch, "snapshot");
     mkdirSync(snapshot);
     const files = snapshotCurrent(root, snapshot);

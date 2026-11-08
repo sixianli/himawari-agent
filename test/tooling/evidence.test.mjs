@@ -161,13 +161,22 @@ describe("生产验收 CI 证据交接边界", () => {
       exportEvidence({ ...input, output: ".ci-output/scheduled-evidence.json" }),
     ).toThrow("PUSH_EVIDENCE");
   });
+  it("证据里检查结果条数的上下限等于策略的活跃成员数和全部成员数", () => {
+    const policy = readJson(path.join(repositoryRoot, "ci/policy.json"));
+    const bounds = readJson(path.join(repositoryRoot, "ci/evidence.schema.json")).properties.checks;
+    const members = policy.checks
+      .filter((check) => check.id !== "required")
+      .flatMap((check) => check.members);
+    expect(bounds.minItems).toBe(expectedMembers(policy).length);
+    expect(bounds.maxItems).toBe(members.length);
+  });
   it("完整默认分支对照可导出，但只声明CI证据，仍明确生产资格与持久转存待办", () => {
     const input = fixture();
     const evidence = exportEvidence(input);
     expect(evidence.status).toBe("ci_verified");
     expect(evidence.productQualification).toBe("not_assessed");
     expect(evidence.platforms).toHaveLength(1);
-    expect(evidence.checks).toHaveLength(10);
+    expect(evidence.checks).toHaveLength(8);
     expect(evidence.pending).toHaveLength(5);
     expect(evidence.pending).toContain("双平台运行、故障恢复与核心升级验证");
     expect(evidence.pending).toContain("Mac/Hermes 平台执行隔离验证");

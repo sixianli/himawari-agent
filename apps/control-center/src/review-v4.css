@@ -2815,6 +2815,10 @@ details.step-technical > summary::-webkit-details-marker {
 .owner-turn .thread-message-owner {
   margin: 0;
 }
+.owner-turn[data-focused] .thread-message-owner {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 3px;
+}
 .owner-meta {
   display: flex;
   align-items: center;
