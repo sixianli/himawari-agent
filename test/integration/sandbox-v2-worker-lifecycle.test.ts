@@ -30,6 +30,7 @@ import {
   isSandboxBoundedToolFailure,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
+  validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
 import {
   blockJobHostLaunch,
@@ -513,7 +514,12 @@ it.each([
       }
       if (command.kind === "append" || command.kind === "operation") {
         if (!command.facts) throw new Error("facts missing");
-        facts = command.facts;
+        facts = validateSandboxExecutionFacts(
+          plan,
+          command.facts,
+          { environment: command.facts.environment, operationContract: plan.operationContract },
+          command.kind === "append" ? facts : undefined,
+        ) as typeof facts;
         if (command.kind === "operation" && scenario === "background-ack-loss")
           throw new Error("ack lost");
       }
@@ -789,11 +795,7 @@ it.each([
     expect(facts.result).not.toMatchObject({ kind: "unknown" });
     expect(facts.result).not.toMatchObject({ reasonCode: "SANDBOX_EXIT_UNKNOWN" });
     expect(facts.result).not.toMatchObject({ kind: "result" });
-    expect(facts.effect).toEqual(
-      limitAfterExit
-        ? { kind: "not_asserted" }
-        : { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" },
-    );
+    expect(facts.effect).toEqual({ kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" });
     expect(isSandboxBoundedToolFailure(facts.result)).toBe(true);
   }
   if (resourceLimit) {
@@ -801,9 +803,7 @@ it.each([
     expect(facts.result).toMatchObject({ kind: "error", reasonCode, output: { ref: "output" } });
     expect(facts.result).not.toMatchObject({ kind: "unknown" });
     expect(facts.result).not.toMatchObject({ kind: "result" });
-    expect(facts.effect).toEqual(
-      limitAfterExit ? { kind: "not_asserted" } : { kind: "unknown", reasonCode },
-    );
+    expect(facts.effect).toEqual({ kind: "unknown", reasonCode });
     expect(isSandboxBoundedToolFailure(facts.result)).toBe(true);
   }
   if (scenario === "finished-during-check") {

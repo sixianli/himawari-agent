@@ -907,21 +907,21 @@ export class ProductionSandboxExecutionV2 {
               ? { kind: "unknown", reasonCode: SANDBOX_HOST_COMPLETION_CONTRADICTED }
               : authenticatedDeadline
                 ? { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" }
-                : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
-                  ? { kind: "not_asserted" }
-                  : knownExit &&
-                      (result.exitCode === 0 || fileFailure !== null) &&
-                      plan.operationContract.kind === "verified_effect"
-                    ? {
-                        kind: "verified",
-                        verifierRef: plan.operationContract.verifierRef,
-                        verifierVersion: plan.operationContract.verifierVersion,
-                        targetRef: plan.operationContract.targetRef,
-                        evidence: { ref: output.ref, digest: output.digest },
-                        occurredAt: this.options.clock.now(),
-                      }
-                    : boundedTermination
-                      ? { kind: "unknown", reasonCode: boundedTermination }
+                : boundedTermination
+                  ? { kind: "unknown", reasonCode: boundedTermination }
+                  : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
+                    ? { kind: "not_asserted" }
+                    : knownExit &&
+                        (result.exitCode === 0 || fileFailure !== null) &&
+                        plan.operationContract.kind === "verified_effect"
+                      ? {
+                          kind: "verified",
+                          verifierRef: plan.operationContract.verifierRef,
+                          verifierVersion: plan.operationContract.verifierVersion,
+                          targetRef: plan.operationContract.targetRef,
+                          evidence: { ref: output.ref, digest: output.digest },
+                          occurredAt: this.options.clock.now(),
+                        }
                       : latest.facts.effect,
         result:
           latest.facts.result?.kind === "started"
