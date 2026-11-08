@@ -879,7 +879,8 @@ export const messages = {
   "chat.search.whatIsSent": "搜索时会发出什么",
   "chat.search.sentQuery":
     "你的问题会被改写成搜索词，发到下面这些网址；打开网页时，网页地址也会发过去：",
-  "chat.search.sentLimits": "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会被拦下。",
+  "chat.search.sentLimits":
+    "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会先遮盖再发出。",
   "chat.search.alwaysOn": "固定开启",
   "settings.name": "怎么称呼你",
   "settings.version": "版本 {revision} · {date}",

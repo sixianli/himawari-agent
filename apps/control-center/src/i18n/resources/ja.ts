@@ -930,7 +930,7 @@ export const messages = {
   "chat.search.sentQuery":
     "質問は検索語に書き換えられて下のアドレスに送られます。Web ページを開くときは、その URL も送られます：",
   "chat.search.sentLimits":
-    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
+    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は、マスキングしてから送られます。",
   "chat.search.alwaysOn": "常にオン",
   "settings.name": "お呼びする名前",
   "settings.version": "バージョン {revision} · {date}",
