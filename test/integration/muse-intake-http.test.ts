@@ -251,7 +251,7 @@ describe("Muse intake over HTTP", () => {
     expect(item).toBeDefined();
   });
 
-  it("does not store text that contains a machine secret and marks the item as withheld", async () => {
+  it("[mask-not-block] stores text that contains a machine secret as written", async () => {
     const { post, store, counts } = await setup();
     const response = await post(
       batch(1, [
@@ -265,39 +265,28 @@ describe("Muse intake over HTTP", () => {
     );
     expect(response.json()).toMatchObject({ accepted: 1 });
     const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
-    expect(item).toMatchObject({ textRef: null, titleRef: null, textWithheld: true });
-    expect(counts().payloads).toBe(0);
+    expect(item?.textWithheld).toBe(false);
+    expect(item?.textRef).not.toBeNull();
+    expect(counts().payloads).toBeGreaterThan(0);
   });
 
-  it("withholds the whole item when an offered option contains a machine secret", async () => {
-    const { post, store, counts } = await setup();
+  it("[mask-not-block] keeps an offered option that contains a machine secret", async () => {
+    const { post, store } = await setup();
+    const option = `key: -----BEGIN ${"RSA PRIVATE"} KEY-----\nabc\n-----END ${"RSA PRIVATE"} KEY-----`;
     const response = await post(
-      batch(1, [
-        proactive("sub-1", {
-          options_offered: field(
-            [`key: -----BEGIN ${"RSA PRIVATE"} KEY-----\nabc\n-----END ${"RSA PRIVATE"} KEY-----`],
-            "chat_record",
-          ),
-        }),
-      ]),
+      batch(1, [proactive("sub-1", { options_offered: field([option], "chat_record") })]),
     );
     expect(response.json()).toMatchObject({ accepted: 1 });
     const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
-    expect(item).toMatchObject({ textRef: null, titleRef: null, textWithheld: true, options: [] });
-    expect(counts().payloads).toBe(0);
+    expect(item).toMatchObject({ textWithheld: false, options: [option] });
   });
 
-  it("withholds the item when an offered option holds only a private key header", async () => {
+  it("[mask-not-block] keeps an offered option that is only a private key header", async () => {
     const { post, store } = await setup();
-    await post(
-      batch(1, [
-        proactive("sub-1", {
-          options_offered: field([`-----BEGIN ${"RSA PRIVATE"} KEY-----`], "chat_record"),
-        }),
-      ]),
-    );
+    const option = `-----BEGIN ${"RSA PRIVATE"} KEY-----`;
+    await post(batch(1, [proactive("sub-1", { options_offered: field([option], "chat_record") })]));
     const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
-    expect(item).toMatchObject({ textWithheld: true, options: [] });
+    expect(item).toMatchObject({ textWithheld: false, options: [option] });
   });
 
   it("keeps the item when an offered option is only whitespace", async () => {
@@ -305,6 +294,35 @@ describe("Muse intake over HTTP", () => {
     await post(batch(1, [proactive("sub-1", { options_offered: field([" "], "chat_record") })]));
     const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
     expect(item).toMatchObject({ textWithheld: false });
+  });
+
+  it("stores the Gmail message id Muse names and rejects one that is not an id", async () => {
+    const { post, store } = await setup();
+    const accepted = await post(
+      batch(1, [proactive("sub-1", { gmail_message_id: field("1a1b53d1b88e9acc") })]),
+    );
+    expect(accepted.json()).toMatchObject({ accepted: 1 });
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ gmailMessageId: "1a1b53d1b88e9acc" });
+    const rejected = await post(
+      batch(2, [proactive("sub-2", { gmail_message_id: field("not an id; drop table") })]),
+    );
+    expect(rejected.json()).toMatchObject({ accepted: 0 });
+    const tooLong = await post(
+      batch(3, [proactive("sub-3", { gmail_message_id: field("a".repeat(257)) })]),
+    );
+    expect(tooLong.json()).toMatchObject({ accepted: 0 });
+  });
+
+  it("fills the Gmail message id when Muse sends the same reminder again with it, as a duplicate", async () => {
+    const { post, store } = await setup();
+    await post(batch(1, [proactive("sub-1")]));
+    const again = await post(
+      batch(2, [proactive("sub-1", { gmail_message_id: field("1a1b53d1b88e9acc") })]),
+    );
+    expect(again.json()).toMatchObject({ accepted: 0, duplicate: 1, conflict: 0 });
+    const [item] = await store.listItems({ ...scope, since: SINCE, limit: 10 });
+    expect(item).toMatchObject({ gmailMessageId: "1a1b53d1b88e9acc" });
   });
 
   it("keeps ordinary options", async () => {

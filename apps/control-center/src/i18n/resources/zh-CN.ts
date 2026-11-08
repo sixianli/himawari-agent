@@ -995,7 +995,8 @@ export const messages = {
   "proactive.apps.outcome":
     "{o, select, connected {已连接 Gmail。第一次检查马上开始。} denied {你在 Google 页面没有同意，所以没有连接。} other {连接没有成功，请再试一次。}}",
   "proactive.apps.what": "Himawari 会读什么、发给谁",
-  "proactive.apps.what1": "只读新邮件；不归档、不打标签、不回信",
+  "proactive.apps.what1":
+    "只读邮件；不归档、不打标签、不回信。判断一封新邮件时，还会查同一件事以前的往来邮件（包括已归档和你发出的），一并发给模型",
   "proactive.apps.what2": "垃圾邮件不看；你自己发出的邮件也会读",
   "proactive.apps.what3":
     "把发件人、标题和邮件正文发给模型，附件只发文件名；发出前会遮住认得出的密码、验证码、银行卡号和证件号，其他内容不遮",
@@ -1166,6 +1167,20 @@ export const messages = {
   "weekly.muse.unpaired": "未配对条数",
   "weekly.muse.rate": "配对率",
   "weekly.muse.def": "配对率 = 能对上同一封邮件的条目 ÷ 这一周 Muse 对照条目总数。",
+  "weekly.implicit.title": "观察信号 · 不是打分",
+  "weekly.implicit.notFull": "本周尚未结束",
+  "weekly.implicit.empty": "这一周没有推送过提醒的决策。",
+  "weekly.implicit.signal":
+    "{s, select, opened {点开了推送} undone {完成或不再提醒后又撤销} other {邮件串里你回复了}}",
+  "weekly.implicit.delay": "首次发生的中位间隔 {t}",
+  "weekly.implicit.delayNone": "还没有发生",
+  "weekly.implicit.underMinute": "不到 1 分钟",
+  "weekly.implicit.minutes": "{n} 分钟",
+  "weekly.implicit.hours": "{n} 小时",
+  "weekly.implicit.days": "{n} 天",
+  "weekly.implicit.other": "另有 {n} 条信号落在没有推送的决策上，不进上面的比例。",
+  "weekly.implicit.def":
+    "这三个信号是不需要你动手评价就能看到的事，只当观察，不当作你的打分，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策；同一条决策出现多次同类信号只算一次。",
   "weekly.goRate": "去「提醒」打分",
   "sensitive.title": "敏感信息拦截记录",
   "sensitive.count": "共 {count} 条记录",

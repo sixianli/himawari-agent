@@ -1,4 +1,5 @@
 import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { useCallback, useEffect, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import type { ImportCandidate, MemoryCategory } from "./memory-import.js";
@@ -156,17 +157,21 @@ export function useMemory(input: {
       send("memory.reminder.respond", () => ({ reminderId: item.reminderId, action })),
     createReminder: (text, due, repeat) =>
       send("memory.reminder.create", async () => ({
-        contentRef: await client.protectText(text, "private"),
+        contentRef: await client.protectText(text, classificationWithIdentifiers(text, "private")),
         due,
         repeat,
       })),
-    create: (text, category, sensitive, pinned) =>
-      send("memory.create", async () => ({
-        contentRef: await client.protectText(text, sensitive ? "sensitive" : "private"),
+    create: (text, category, sensitive, pinned) => {
+      const classification = sensitive
+        ? "sensitive"
+        : classificationWithIdentifiers(text, "private");
+      return send("memory.create", async () => ({
+        contentRef: await client.protectText(text, classification),
         category,
         subCategory: null,
-        pinned: pinned && !sensitive,
-      })),
+        pinned: pinned && classification !== "sensitive",
+      }));
+    },
     setPaused: (paused) => send("memory.settings.set", () => ({ capturePaused: paused })),
     respondPerson: (suggestionId, merge) =>
       send("memory.person.respond", () => ({ suggestionId, merge })),

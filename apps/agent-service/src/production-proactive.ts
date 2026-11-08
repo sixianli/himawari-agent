@@ -177,6 +177,12 @@ export class ProductionProactive {
         perMail: options.configuration.bodyCharactersPerMail,
         perBatch: options.configuration.bodyCharactersPerBatch,
       },
+      relatedLimits: {
+        perMail: options.configuration.relatedMailsPerMail,
+        requestsPerCheck: options.configuration.relatedRequestsPerCheck,
+        charactersPerRelated: options.configuration.relatedCharactersPerRelatedMail,
+        charactersPerMail: options.configuration.relatedCharactersPerMail,
+      },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
   }
@@ -308,6 +314,7 @@ export class ProductionProactive {
       now: this.#options.clock.now(),
       budgetSeconds: this.#options.configuration.reviewBudgetSeconds,
       secondsPerItem: this.#options.configuration.reviewSecondsPerItem,
+      silentShare: this.#options.configuration.reviewSilentSharePermille,
     });
   }
 

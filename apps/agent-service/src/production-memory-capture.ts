@@ -28,12 +28,14 @@ import {
   type ThreadDistillationWork,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
-import {
-  containsRestrictedIdentifier,
-  scanMachineSecrets,
-} from "@himawari-agent/sensitive-capture";
 import { localDayStart } from "@himawari-agent/memory-engine";
-import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
+import { MEMORY_CAPTURE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
+import {
+  classificationWithIdentifiers,
+  type EgressPlaceholderKind,
+  placeholderTable,
+  restorePlaceholders,
+} from "@himawari-agent/sensitive-capture";
 
 type MemoryId = NonNullable<ExtractedMemoryCandidate["existingMemoryId"]>;
 const createMemoryId = (value: string) => value as MemoryId;
@@ -44,6 +46,16 @@ const createCheckpointJobId = (value: string) => value as ThreadDistillationWork
 export const MEMORY_CAPTURE_POLICY_VERSION = "memory-capture:v5";
 const MAXIMUM_SOURCE_CHARACTERS = 6000;
 const MAXIMUM_RECENT_MEMORIES = 20;
+
+export function confirmedFirstByRecency<
+  T extends { readonly updatedAt: string; readonly attributes?: { readonly tentative?: boolean } },
+>(records: readonly T[]): T[] {
+  return [...records].sort(
+    (left, right) =>
+      Number(left.attributes?.tentative === true) - Number(right.attributes?.tentative === true) ||
+      right.updatedAt.localeCompare(left.updatedAt),
+  );
+}
 const MAXIMUM_RELEVANT_MEMORIES = 10;
 const MAXIMUM_CONTEXT_CHARACTERS = 1500;
 const MAXIMUM_CANDIDATES = 8;
@@ -83,6 +95,7 @@ export interface ExistingMemoryText {
   readonly id: MemoryId;
   readonly text: string;
   readonly stance?: string | null;
+  readonly tentative?: boolean;
 }
 
 export interface MemoryCaptureContext {
@@ -119,6 +132,37 @@ export function quoteFromOwnerMessage(quote: string, ownerMessage: string): bool
     [...normalizedQuote].length >= Math.max(1, minimum) &&
     normalizedMessage.includes(normalizedQuote)
   );
+}
+
+const GENERIC_TERMS =
+  /主人|用户|喜欢|偏好|喜爱|好像|可能|经常|一直|比较|觉得|今天|现在|明天|昨天|一下|这个|那个|什么|没有|可以|知道|时候|因为|所以|但是|还是|这样|那样|以后|之前|已经|一定|顺便|帮我|[的了是我你他她它在有和与就也都还很不最想要又]/gu;
+
+function relevanceTokens(text: string): Set<string> {
+  const tokens = new Set<string>();
+  const runs = text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(GENERIC_TERMS, " ")
+    .split(/[^\p{L}\p{N}]+/u);
+  for (const run of runs) {
+    if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(run)) {
+      const chars = [...run];
+      for (let index = 0; index + 1 < chars.length; index += 1) {
+        tokens.add(`${chars[index]}${chars[index + 1]}`);
+      }
+    } else if ([...run].length >= 2) {
+      tokens.add(run);
+    }
+  }
+  return tokens;
+}
+
+export function quoteRelatesToMemory(quote: string, memoryTexts: readonly string[]): boolean {
+  const quoted = relevanceTokens(quote);
+  return memoryTexts.some((text) => {
+    for (const token of relevanceTokens(text)) if (quoted.has(token)) return true;
+    return false;
+  });
 }
 
 export function memoryCapturePrompt(
@@ -206,12 +250,15 @@ export function parseMemoryCandidates(input: {
   readonly sourceRef: string;
   readonly sourceClassification: DataClassification;
   readonly existingIds: ReadonlySet<string>;
+  readonly tentativeTexts?: ReadonlyMap<string, string>;
   readonly ownerMessage?: string;
   readonly sentAt?: string;
   readonly timeZone?: string;
   readonly subCategories?: Readonly<Record<string, readonly string[]>>;
   readonly knownPersonIds?: ReadonlySet<string>;
+  readonly restore?: (text: string) => string;
 }): ParsedMemoryCandidates {
+  const restore = input.restore ?? ((text: string) => text);
   const subCategories = new Map(
     Object.entries(input.subCategories ?? {}).map(([category, names]) => [
       category,
@@ -254,7 +301,7 @@ export function parseMemoryCandidates(input: {
       continue;
     }
     const value = item as Record<string, unknown>;
-    const text = typeof value["text"] === "string" ? value["text"].trim() : "";
+    const text = typeof value["text"] === "string" ? restore(value["text"].trim()) : "";
     const kind = value["kind"] as ExtractedMemoryCandidate["kind"];
     const requestedDecision = value["decision"];
     const existing =
@@ -278,23 +325,34 @@ export function parseMemoryCandidates(input: {
       requestedDecision === "supersede" || existing === null
         ? "create"
         : (requestedDecision as ExtractedMemoryCandidate["decision"]);
-    const requested = containsRestrictedIdentifier(text)
-      ? "restricted"
-      : value["classification"] === "sensitive" || value["classification"] === "restricted"
-        ? value["classification"]
-        : "private";
+    const quote = typeof value["quote"] === "string" ? restore(value["quote"]) : "";
+    const requested = classificationWithIdentifiers(
+      quote,
+      classificationWithIdentifiers(
+        text,
+        value["classification"] === "sensitive" || value["classification"] === "restricted"
+          ? value["classification"]
+          : "private",
+      ),
+    );
     const dataClassification =
       CLASSIFICATION_RANK[requested] >= CLASSIFICATION_RANK[input.sourceClassification]
         ? requested
         : input.sourceClassification;
-    const quote = typeof value["quote"] === "string" ? value["quote"] : "";
     const evidenceVerified =
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
+    const confirmsTentative =
+      existing !== null &&
+      input.tentativeTexts?.has(existing) === true &&
+      (decision === "unchanged" || decision === "update" || decision === "merge");
     const evidenceRejected =
-      input.ownerMessage !== undefined &&
-      decision !== "unchanged" &&
-      dataClassification !== "restricted" &&
-      !evidenceVerified;
+      (input.ownerMessage !== undefined &&
+        decision !== "unchanged" &&
+        dataClassification !== "restricted" &&
+        !evidenceVerified) ||
+      (confirmsTentative &&
+        (!evidenceVerified ||
+          !quoteRelatesToMemory(quote, [input.tentativeTexts?.get(existing) ?? ""])));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -575,6 +633,7 @@ export interface ProductionMemoryCaptureOptions {
   >;
   readonly timeZone?: string;
   readonly assertActive: () => Promise<void>;
+  readonly externalTag: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
   readonly generate: (
     request: RuntimeRequest,
     prompt: string,
@@ -686,9 +745,9 @@ export class ProductionMemoryCapture {
       relevantIds.length === 0
         ? []
         : await this.options.state.readMany({ ownerId, agentId, memoryIds: relevantIds });
-    const recent = [...(await this.options.state.listActive(ownerId, agentId))]
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .slice(0, MAXIMUM_RECENT_MEMORIES);
+    const recent = confirmedFirstByRecency(
+      await this.options.state.listActive(ownerId, agentId),
+    ).slice(0, MAXIMUM_RECENT_MEMORIES);
     const seen = new Set<string>();
     const existing: ExistingMemoryText[] = [];
     for (const memory of [...relevant, ...recent]) {
@@ -701,7 +760,13 @@ export class ProductionMemoryCapture {
         continue;
       seen.add(memory.id);
       const text = await this.#readText(memory.contentRef, ownerId, agentId).catch(() => undefined);
-      if (text) existing.push({ id: memory.id, text, stance: memory.attributes?.stance ?? null });
+      if (text)
+        existing.push({
+          id: memory.id,
+          text,
+          stance: memory.attributes?.stance ?? null,
+          tentative: memory.attributes?.tentative === true,
+        });
     }
     const subCategories: Record<string, string[]> = {};
     for (const { category, subCategory } of (await this.options.book?.listSubCategories({
@@ -749,73 +814,80 @@ export class ProductionMemoryCapture {
       invalidCandidates: 0,
       returnedNone: false,
     };
-    if (scanMachineSecrets(message).length === 0) {
-      try {
-        await this.options.assertActive();
-        const output = await this.options.generate(
-          { ...request, dataClassification: source.dataClassification },
-          memoryCapturePrompt(
-            message,
-            existing,
-            previousAssistantMessage,
-            owner.committedAt,
-            this.options.timeZone ?? "UTC",
-            { subCategories, people },
-          ),
-          onAdmitted,
-        );
-        parsed = parseMemoryCandidates({
-          output,
-          sourceRef: source.payloadRef,
-          sourceClassification: source.dataClassification,
-          existingIds: new Set(existing.map(({ id }) => id)),
-          ownerMessage: message,
-          ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
-          timeZone: this.options.timeZone ?? "UTC",
-          subCategories,
-          knownPersonIds: new Set(people.map(({ id }) => id)),
-        });
-      } catch (error) {
-        audit("extraction_failed");
-        throw error;
-      }
-      for (let index = 0; index < parsed.unverifiedEvidence; index += 1)
-        audit("evidence_unverified");
-      for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
-      if (parsed.returnedNone) audit("nothing_to_remember");
-      if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
+    try {
       await this.options.assertActive();
-      if (parsed.candidates.length > 0)
-        await this.options.generations.request({
-          jobId: createCheckpointJobId(`checkpoint:memory-capture:${runId}`),
-          generationId,
-          ownerId,
-          agentId,
-          threadId,
-          sourceWatermark: owner.sequence,
-          policyVersion: MEMORY_CAPTURE_POLICY_VERSION,
-          modelDescriptorRef: request.modelRef,
-          trigger: "controlled_idle",
-          summaryRef: null,
-          summaryClassification: null,
-          status: "pending",
-          revision: 1,
-          attemptCount: 0,
-          nextRetryAt: null,
-          claimedBy: null,
-          claimExpiresAt: null,
-          sources: [
-            {
-              ref: owner.id,
-              sequence: owner.sequence,
-              kind: "message",
-              dataClassification: owner.dataClassification,
-            },
-          ],
-          requestedAt: this.options.clock.now(),
-          errorCode: null,
-        });
+      const prompt = memoryCapturePrompt(
+        message,
+        existing,
+        previousAssistantMessage,
+        owner.committedAt,
+        this.options.timeZone ?? "UTC",
+        { subCategories, people },
+      );
+      const tag = await this.options.externalTag();
+      const output = await this.options.generate(
+        { ...request, dataClassification: source.dataClassification },
+        prompt,
+        onAdmitted,
+      );
+      const table = placeholderTable(prompt, tag, {
+        trusted: TRUSTED_PROMPT_TEXTS,
+        jsonEmbedded: true,
+      });
+      parsed = parseMemoryCandidates({
+        output,
+        sourceRef: source.payloadRef,
+        sourceClassification: source.dataClassification,
+        existingIds: new Set(existing.map(({ id }) => id)),
+        tentativeTexts: new Map(
+          existing.filter(({ tentative }) => tentative).map(({ id, text }) => [id, text]),
+        ),
+        ownerMessage: message,
+        ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
+        timeZone: this.options.timeZone ?? "UTC",
+        subCategories,
+        knownPersonIds: new Set(people.map(({ id }) => id)),
+        restore: (text: string) => restorePlaceholders(text, table),
+      });
+    } catch (error) {
+      audit("extraction_failed");
+      throw error;
     }
+    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
+    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
+    if (parsed.returnedNone) audit("nothing_to_remember");
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
+    await this.options.assertActive();
+    if (parsed.candidates.length > 0)
+      await this.options.generations.request({
+        jobId: createCheckpointJobId(`checkpoint:memory-capture:${runId}`),
+        generationId,
+        ownerId,
+        agentId,
+        threadId,
+        sourceWatermark: owner.sequence,
+        policyVersion: MEMORY_CAPTURE_POLICY_VERSION,
+        modelDescriptorRef: request.modelRef,
+        trigger: "controlled_idle",
+        summaryRef: null,
+        summaryClassification: null,
+        status: "pending",
+        revision: 1,
+        attemptCount: 0,
+        nextRetryAt: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        sources: [
+          {
+            ref: owner.id,
+            sequence: owner.sequence,
+            kind: "message",
+            dataClassification: owner.dataClassification,
+          },
+        ],
+        requestedAt: this.options.clock.now(),
+        errorCode: null,
+      });
     const service = createProductionAutomaticMemory({
       ...this.options,
       extract: async () => parsed.candidates,

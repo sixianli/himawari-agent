@@ -23,6 +23,58 @@ const item = (
   doneAt: string | null = null,
 ): DailyReviewPoolItem => ({ key, group, done, doneAt });
 
+describe("[P0-11] silent share of the proactive sample", () => {
+  const pool = [
+    ...Array.from({ length: 20 }, (_, index) => item(`p${index}`, "proactive")),
+    ...Array.from({ length: 20 }, (_, index) => item(`s${index}`, "proactive_silent")),
+  ];
+  const shownSilent = (silentShare: number | undefined, capacity: number) =>
+    selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity,
+      ...(silentShare === undefined ? {} : { silentShare }),
+    }).shown.filter((key) => key.startsWith("s")).length;
+
+  it("takes the configured share of the sample from silent decisions", () => {
+    expect(shownSilent(500, 10)).toBe(5);
+    expect(shownSilent(250, 8)).toBe(2);
+    expect(shownSilent(1000, 10)).toBe(10);
+  });
+
+  it("[negative] takes none at share 0 while acted-on decisions remain", () => {
+    expect(shownSilent(0, 10)).toBe(0);
+  });
+
+  it("hands slots to the other queue when one runs out", () => {
+    const small = [
+      item("s0", "proactive_silent"),
+      ...Array.from({ length: 6 }, (_, index) => item(`p${index}`, "proactive")),
+    ];
+    const selection = selectDailyReview({
+      pool: small,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 5,
+      silentShare: 800,
+    });
+    expect(selection.shown).toHaveLength(5);
+    expect(selection.shown).toContain("s0");
+  });
+
+  it("still counts silent decisions that did not fit as not sampled", () => {
+    const selection = selectDailyReview({
+      pool,
+      dayStart: DAY,
+      seed: "s",
+      capacity: 10,
+      silentShare: 500,
+    });
+    expect(selection.notSampled).toBe(30);
+  });
+});
+
 describe("[P0-6] daily review sampling", () => {
   it("turns the budget into a whole number of items, at least one", () => {
     expect(reviewCapacity(120, 5)).toBe(24);
@@ -152,8 +204,13 @@ function entry(overrides: Partial<DecisionLedgerEntry>): DecisionLedgerEntry {
       floorHits: {},
       memoryInjected: false,
       usedMemoryIds: [],
+      tentativeMemoryIds: [],
       memoryByMail: {},
       memoryRecall: "off",
+      relatedByMail: {},
+      relatedRead: "off",
+      relatedStats: { requests: 0, messages: 0, characters: 0, durationMs: 0 },
+      relatedFailedSteps: [],
     },
     reasonRef: null,
     contentRef: null,

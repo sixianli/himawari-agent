@@ -1,0 +1,5 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：撤销/回复写入时看的是提醒的 `push_source_key`，周报读取时看的是决策的 `push_source_key`，两者可能不是同一个推送", "valid": true, "class": "error", "severity": "medium-high", "trigger": "旧推送已发出的提醒被后来的静默检查更新（decision_id 换成新决策），之后用户回复或撤销", "consequence": "这条信号落在新决策上，周报按新决策的推送记录归类，被算进“没有推送的决策”，比例偏低", "modelSeverity": "中"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低：新表的 4 位年份 CHECK 比现有时间校验更严，极端时间会让整个反应事务回滚", "valid": true, "class": "error", "severity": "low", "trigger": "客户端上报 5 位年份的 occurredAt", "consequence": "点开反馈整个事务回滚", "modelSeverity": "低", "reason": "正常客户端不会发这种时间，自伤型输入"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：作者说“周报在周未完整时不给比例（null）”，命令行报告并没有这个行为", "valid": true, "class": "better"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：未开始观察时，“观察信号”卡片仍会显示数字/比例，和类型表的“尚未开始”不一致", "valid": true, "class": "better"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低：新测试存在覆盖盲点，不能完全证明第 4 轮的真实路径", "valid": true, "class": "better"}

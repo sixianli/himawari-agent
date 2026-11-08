@@ -17,6 +17,8 @@ export const REQUIRED_REDACTION_CALLS = Object.freeze([
 
 export const REDACTOR_ONLY_FILES = Object.freeze([
   "packages/sensitive-capture/src/redaction.ts",
+  "packages/sensitive-capture/src/external.ts",
+  "packages/sensitive-capture/src/restoration.ts",
   "packages/application/src/services/model-egress.ts",
   "packages/platform-node/src/files/pi-output-export.ts",
 ]);
@@ -79,6 +81,25 @@ export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
   ]),
 );
 
+export const EXTERNAL_REDACTION_FUNCTIONS = Object.freeze([
+  "redactForExternalText",
+  "redactForExternalUrl",
+]);
+
+export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
+  new Map([
+    ["packages/platform-node/src/typesafe-jev-transport.ts", ["redactForExternalText"]],
+    [
+      "packages/platform-node/src/exa-public-search.ts",
+      ["redactForExternalText", "redactForExternalUrl"],
+    ],
+    [
+      "packages/platform-node/src/deepseek-web-provider.ts",
+      ["redactForExternalText", "maskedPublicFetchUrl"],
+    ],
+  ]),
+);
+
 export const SENSITIVE_GATE_FUNCTIONS = Object.freeze([
   "scanMachineSecrets",
   "containsToolOutputSecret",
@@ -110,88 +131,10 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     reason: "配置文件只许放密钥引用，密钥放钥匙串",
   },
   {
-    file: "packages/application/src/services/automatic-memory-service.ts",
-    calls: { scanMachineSecrets: 4 },
-    decision: MASK,
-    reason: "记忆存原文，发给模型时由出口遮盖遮值",
-  },
-  {
-    file: "packages/application/src/services/reflection-service.ts",
-    calls: { assertMachineSecretFree: 1 },
-    decision: MASK,
-    reason: "反思结果存原文",
-  },
-  {
-    file: "packages/application/src/services/thread-checkpoint-service.ts",
-    calls: { scanMachineSecrets: 3 },
-    decision: MASK,
-    reason: "检查点存原文，发给模型时遮值",
-  },
-  {
-    file: "packages/platform-node/src/deepseek-web-provider.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "查询词先遮再发",
-  },
-  {
-    file: "packages/platform-node/src/exa-public-search.ts",
-    calls: { scanMachineSecrets: 2 },
-    decision: MASK,
-    reason: "查询词和网址先遮再发",
-  },
-  {
     file: "packages/platform-node/src/files/pi-output-export.ts",
     calls: { containsToolOutputSecret: 1 },
     decision: MASK,
     reason: "完整输出先遮文字再 base64 编码",
-  },
-  {
-    file: "packages/platform-node/src/typesafe-jev-transport.ts",
-    calls: { assertMachineSecretFree: 2 },
-    decision: MASK,
-    reason: "请求先遮再发；回复存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-coding-workflow.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "搜索词先遮再发",
-  },
-  {
-    file: "apps/agent-service/src/production-memory-capture.ts",
-    calls: { containsRestrictedIdentifier: 1, scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "照常整理记忆，发给模型时遮值",
-  },
-  {
-    file: "apps/agent-service/src/production-memory-control.ts",
-    calls: { scanMachineSecrets: 1, containsRestrictedIdentifier: 1 },
-    decision: MASK,
-    reason: "主人建的记忆存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-muse-intake.ts",
-    calls: { scanMachineSecrets: 1, containsRestrictedIdentifier: 2, containsToolOutputSecret: 1 },
-    decision: MASK,
-    reason: "Muse 条目存原文，只在页面显示",
-  },
-  {
-    file: "apps/agent-service/src/production-reminder-writer.ts",
-    calls: { scanMachineSecrets: 1, containsRestrictedIdentifier: 1 },
-    decision: MASK,
-    reason: "提醒存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-sandbox-control.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "沙箱诊断存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-thread-titles.ts",
-    calls: { assertMachineSecretFree: 2 },
-    decision: MASK,
-    reason: "标题提示由出口遮盖遮值，标题存原文",
   },
 ]);
 
@@ -209,6 +152,11 @@ function sourceFiles(directory) {
 
 export function findEgressViolations(root = repositoryRoot) {
   const violations = [];
+  for (const file of ALLOWED_EXTERNAL_EGRESS_FILES.keys())
+    if (!REQUIRED_EXTERNAL_REDACTION_CALLS.get(file)?.length)
+      violations.push(
+        `${file}: 登记的外部出口要在 REQUIRED_EXTERNAL_REDACTION_CALLS 里写明发出前调用哪个遮盖函数（${EXTERNAL_REDACTION_FUNCTIONS.join("、")}）`,
+      );
   for (const { file, required } of REQUIRED_REDACTION_CALLS) {
     const text = readFileSync(path.join(root, file), "utf8");
     if (!text.includes(required))
@@ -238,7 +186,14 @@ export function findEgressViolations(root = repositoryRoot) {
       }
       for (const { name, pattern } of EXTERNAL_EGRESS_PATTERNS) {
         if (!pattern.test(text)) continue;
-        if (ALLOWED_EXTERNAL_EGRESS_FILES.get(relative)?.includes(name)) continue;
+        if (ALLOWED_EXTERNAL_EGRESS_FILES.get(relative)?.includes(name)) {
+          for (const required of REQUIRED_EXTERNAL_REDACTION_CALLS.get(relative) ?? [])
+            if (!new RegExp(`\\b${required}\\(`, "u").test(text))
+              violations.push(
+                `${relative}: 发往外部服务（${name}）前要先遮敏感值，缺少 ${required}(…) 调用`,
+              );
+          continue;
+        }
         violations.push(
           `${relative}: 出现了没有登记的外部出口（${name}），发出前要遮敏感值，并登记到 scripts/check-egress-redaction.mjs`,
         );

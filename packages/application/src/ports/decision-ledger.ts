@@ -1,5 +1,6 @@
 import type {
   CalibrationDecisionRow,
+  ImplicitSignalRow,
   MailJudgment,
   MuseEntryRow,
 } from "@himawari-agent/calibration";
@@ -9,6 +10,19 @@ export interface CalibrationRowsSnapshot {
   readonly decisions: readonly CalibrationDecisionRow[];
   readonly entries: readonly MuseEntryRow[];
   readonly mailJudgments: readonly (readonly [string, MailJudgment])[];
+  readonly signals: readonly ImplicitSignalRow[];
+}
+
+export const DECISION_SIGNALS = ["opened", "undone", "replied"] as const;
+
+export type DecisionSignalKind = (typeof DECISION_SIGNALS)[number];
+
+export interface DecisionSignalEntry {
+  readonly decisionId: string;
+  readonly signal: DecisionSignalKind;
+  readonly occurredAt: string;
+  readonly delayMs: number;
+  readonly detail: Readonly<Record<string, string | number | boolean>>;
 }
 
 export const DECISION_KINDS = [
@@ -62,8 +76,18 @@ export interface DecisionInputs {
   readonly floorHits?: Readonly<Record<string, readonly string[]>>;
   readonly memoryInjected?: boolean;
   readonly usedMemoryIds?: readonly string[];
+  readonly tentativeMemoryIds?: readonly string[];
   readonly memoryByMail?: Readonly<Record<string, readonly string[]>>;
   readonly memoryRecall?: "off" | "ok" | "partial" | "failed";
+  readonly relatedByMail?: Readonly<Record<string, readonly string[]>>;
+  readonly relatedRead?: "off" | "ok" | "partial" | "failed";
+  readonly relatedStats?: {
+    readonly requests: number;
+    readonly messages: number;
+    readonly characters: number;
+    readonly durationMs: number;
+  };
+  readonly relatedFailedSteps?: readonly string[];
 }
 
 export interface DecisionLedgerWrite {
@@ -181,6 +205,9 @@ export interface DecisionLedgerPort {
       readonly now: string;
     },
   ): Promise<number>;
+  listSignals(
+    input: DecisionLedgerScope & { readonly decisionIds: readonly string[] },
+  ): Promise<readonly DecisionSignalEntry[]>;
   recordMuse(write: MuseReferenceWrite): Promise<void>;
   readCalibrationRows(input: {
     readonly ownerId: OwnerId;

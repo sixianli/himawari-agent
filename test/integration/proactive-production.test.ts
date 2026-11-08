@@ -116,6 +116,29 @@ function fakeGoogle() {
       return json({ emailAddress: "Andy@Example.com", historyId: "777" });
     if (target.pathname.endsWith("/messages"))
       return json({ messages: [{ id: "invoice" }, { id: "sale" }] });
+    if (target.pathname.endsWith("/threads/thread-invoice"))
+      return json({
+        messages: [
+          {
+            id: "invoice-earlier",
+            threadId: "thread-invoice",
+            labelIds: [],
+            snippet: "",
+            internalDate: String(Date.parse("2026-10-30T00:00:00.000Z")),
+            payload: {
+              mimeType: "text/plain",
+              headers: [
+                { name: "From", value: "SMBC <billing@smbc.co.jp>" },
+                { name: "Subject", value: "ご請求のお知らせ(前回)" },
+              ],
+              body: {
+                size: 12,
+                data: Buffer.from("前回の請求は分割払いです").toString("base64url"),
+              },
+            },
+          },
+        ],
+      });
     const id = target.pathname.split("/").at(-1);
     const headers = (from: string, subject: string) => [
       { name: "From", value: from },
@@ -241,9 +264,14 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
         dailyCostMicros: 1_000_000,
         bodyCharactersPerMail: 16_000,
         bodyCharactersPerBatch: 64_000,
+        relatedMailsPerMail: 6,
+        relatedCharactersPerMail: 12_000,
+        relatedCharactersPerRelatedMail: 2_000,
+        relatedRequestsPerCheck: 300,
         memoryMinimumSimilarity: 0.45,
         reviewBudgetSeconds: 120,
         reviewSecondsPerItem: 5,
+        reviewSilentSharePermille: 500,
       },
       timeZone: "Asia/Tokyo",
       store,
@@ -460,6 +488,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(h.prompts).toHaveLength(1);
     expect(h.prompts[0]).toContain("ご請求のお知らせ");
     expect(h.prompts[0]).not.toContain("セール");
+    expect(h.prompts[0]).toContain("前回の請求は分割払いです");
 
     await h.push.tick();
     await h.push.tick();
@@ -487,6 +516,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       ),
     ).toEqual([]);
     expect(h.google.calls.some(({ url }) => url.includes("calendar"))).toBe(false);
+    expect(h.google.calls.some(({ url }) => url.includes("/threads/thread-invoice"))).toBe(true);
     expect(h.failures).toEqual([]);
   });
 

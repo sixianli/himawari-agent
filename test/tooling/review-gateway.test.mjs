@@ -16,25 +16,25 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   binaryProblem,
+  CLIENT_KEY,
   creditReserve,
   creditsLeft,
   creditsPerUsd,
   desktopSignIn,
   floorDecision,
-  gatewayConfigProblems,
-  CLIENT_KEY,
   GATEWAY_PLATFORMS,
+  gatewayConfigProblems,
   groupArgs,
   installGateway,
+  installGateway as installRealGateway,
   lockFromRelease,
   npmIntegrity,
   PLACEHOLDER,
+  postJson,
   readGatewayConfig,
   readGatewayLock,
   readGatewayUsage,
   readStableUsage,
-  installGateway as installRealGateway,
-  postJson,
   runningGatewayCount,
   sha256File,
   startGateway,
@@ -47,19 +47,20 @@ import {
   gatewayOpencodeEnv,
   gatewayProvider,
   gatewayRecordFields,
+  gatewayRequested,
   launchModel,
   outputBounds,
+  PASSTHROUGH_PROMPT,
   parseArgs,
   parseUsage,
   passthroughProblems,
-  PASSTHROUGH_PROMPT,
-  REVIEW_MODELS,
-  gatewayRequested,
   providerMoneyUsd,
+  REVIEW_MODELS,
   reserveModels,
-  withProviderMoney,
   reviewConfig,
   startLiveGateway,
+  usesCreditProvider,
+  withProviderMoney,
 } from "../../scripts/model-review/opencode-review.mjs";
 
 const config = readGatewayConfig();
@@ -134,7 +135,66 @@ describe("review gateway configuration", () => {
     const base = ["--mode", "plan", "--head", "HEAD", "--brief", "b.md", "--topic", "x"];
     expect(parseArgs([...base, "--gateway", "magpie"]).gateway).toBe("magpie");
     expect(parseArgs(base).gateway).toBeUndefined();
+    const wired = spawnSync(
+      process.execPath,
+      ["scripts/model-review/opencode-review.mjs", ...base],
+      {
+        encoding: "utf8",
+        env: { ...process.env, HIMAWARI_REVIEW_GATEWAY: "litellm" },
+      },
+    );
+    expect([wired.status, wired.stderr.trim()]).toEqual([2, "ARG_INVALID HIMAWARI_REVIEW_GATEWAY"]);
+    expect(parseArgs(base, { defaultGateway: "magpie" }).gateway).toBe("magpie");
+    expect(parseArgs([...base, "--gateway", "direct"], { defaultGateway: "magpie" }).gateway).toBe(
+      undefined,
+    );
+    expect(() => parseArgs(base, { defaultGateway: "litellm" })).toThrow(
+      "ARG_INVALID HIMAWARI_REVIEW_GATEWAY",
+    );
+    expect(
+      parseArgs(["--assert-reviewed", "--pr", "1"], { defaultGateway: "magpie" }).gateway,
+    ).toBeUndefined();
     expect(() => parseArgs([...base, "--gateway", "litellm"])).toThrow("ARG_INVALID --gateway");
+    const only = ["--providers", "opendesign,opencode-go,opendesign"];
+    expect(parseArgs([...base, "--gateway", "magpie", ...only]).providers).toEqual([
+      "opendesign",
+      "opencode-go",
+    ]);
+    expect(parseArgs([...base, ...only], { defaultGateway: "magpie" }).gateway).toBe("magpie");
+    expect(() => parseArgs([...base, "--gateway", "direct", ...only])).toThrow(
+      "ARG_PROVIDERS_NEED_GATEWAY",
+    );
+    expect(() => parseArgs([...base, ...only], { defaultGateway: "direct" })).toThrow(
+      "ARG_PROVIDERS_NEED_GATEWAY",
+    );
+    expect(() => parseArgs([...base, ...only])).toThrow("ARG_PROVIDERS_NEED_GATEWAY");
+    expect(() => parseArgs([...base, "--gateway", "magpie", "--providers", "a,,b"])).toThrow(
+      "ARG_INVALID --providers",
+    );
+    expect(() =>
+      parseArgs([...base, "--gateway", "magpie", "--providers", "opendesign\nREVIEW_CURRENT"]),
+    ).toThrow("ARG_INVALID --providers");
+    expect(() =>
+      parseArgs([...base, "--self-check-only", "--out", "o", "--gateway", "magpie", ...only]),
+    ).toThrow("ARG_PROVIDERS_NOT_FOR_SELF_CHECK");
+    expect(() => parseArgs(["--assert-reviewed", "--pr", "1", ...only])).toThrow(
+      "ARG_NOT_FOR_SUBCOMMAND",
+    );
+    const unknown = spawnSync(
+      process.execPath,
+      [
+        "scripts/model-review/opencode-review.mjs",
+        ...base,
+        "--gateway",
+        "magpie",
+        "--providers",
+        "nope",
+      ],
+      { encoding: "utf8", env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" } },
+    );
+    expect([unknown.status, unknown.stderr.trim()]).toEqual([2, "ARG_INVALID --providers nope"]);
+    expect(usesCreditProvider(["opencode-go"], "workbuddy-ai")).toBe(true);
+    expect(usesCreditProvider(["opencode-go", "workbuddy-ai"], "workbuddy-ai")).toBe(false);
     expect(() => parseArgs(["--assert-reviewed", "--pr", "1", "--gateway", "magpie"])).toThrow(
       "ARG_NOT_FOR_SUBCOMMAND",
     );
@@ -145,15 +205,18 @@ describe("review gateway configuration", () => {
       "group",
       "add",
       "review-deepseek-v4.1-flash",
-      `models=${config.models[deepseek].members.join(",")}`,
+      "models=workbuddy-ai/deepseek-v4.1-flash-sg,opendesign/deepseek-v4.1-flash,opencode-go/deepseek-v4.1-flash",
       "routing=order",
       "stays=session",
     ]);
     expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai"] })[3]).toBe(
+      "models=opendesign/glm-5.3-flash,opencode-go/glm-5.3-flash",
+    );
+    expect(groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign"] })[3]).toBe(
       "models=opencode-go/glm-5.3-flash",
     );
     expect(() =>
-      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opencode-go"] }),
+      groupArgs(config, glm, { dropProviders: ["workbuddy-ai", "opendesign", "opencode-go"] }),
     ).toThrow("GATEWAY_NO_MEMBERS");
   });
 
@@ -198,6 +261,11 @@ describe("review gateway ledger", () => {
       },
     });
     expect(parseUsage(ok, "u")[0].providers["workbuddy-ai"].credits).toBe(0.4);
+    const dropped = (gatewayDropped) =>
+      ledgerLine({ gateway: "magpie", providers: {}, gatewayDropped });
+    expect(parseUsage(dropped(["opendesign"]), "u")[0].gatewayDropped).toEqual(["opendesign"]);
+    for (const bad of ["opendesign", [""], [3]])
+      expect(() => parseUsage(dropped(bad), "u")).toThrow("USAGE_LEDGER_INVALID");
   });
 
   it("[gateway] counts usage per review model and provider, credits for CodeBuddy and dollars for Go", () => {
@@ -238,6 +306,14 @@ describe("review gateway ledger", () => {
     expect(unknown(lines, 4)).toBe(true);
     expect(unknown(lines, 3)).toBeUndefined();
     expect(unknown(null, 1)).toBe(true);
+    expect(gatewayRecordFields(null, config, deepseek, { requested: 1 }).costUnknownWhy).toBe(
+      "usage-unreadable",
+    );
+    const lopsided = structuredClone(config.models);
+    lopsided[glm].members = lopsided[glm].members.filter((m) => !m.startsWith("opendesign/"));
+    expect(gatewayConfigProblems({ ...config, models: lopsided }, REVIEW_MODELS)).toContain(
+      "models.providers-differ",
+    );
     expect(unknown(null, 0)).toBeUndefined();
     const goFailed = { req: lines[0].req, provider: "opencode-go", status: 502 };
     expect(unknown([...lines, goFailed], 0)).toBe(true);
@@ -407,11 +483,25 @@ describe("review gateway install", () => {
         return copy;
       };
       const prefix = join(root, "install");
-      const install = installGateway({ lock, prefix, platform: "linux-amd64", download, pack });
+      const install = installGateway({
+        lock,
+        prefix,
+        platform: "linux-amd64",
+        download,
+        pack,
+        cacheDirectory: null,
+      });
       expect(sha256File(install.binary)).toBe(lock.magpie.assets["linux-amd64"].sha256);
       expect(statSync(install.binary).mode & 0o777).toBe(0o555);
       expect(existsSync(join(install.pluginDir, "package.json"))).toBe(true);
-      installGateway({ lock, prefix, platform: "linux-amd64", download, pack });
+      installGateway({
+        lock,
+        prefix,
+        platform: "linux-amd64",
+        download,
+        pack,
+        cacheDirectory: null,
+      });
       expect(downloads).toBe(1);
       expect(binaryProblem(install)).toBeNull();
       chmodSync(install.binary, 0o755);
@@ -426,6 +516,7 @@ describe("review gateway install", () => {
           platform: "linux-amd64",
           download: (_url, target) => writeFileSync(target, "tampered"),
           pack,
+          cacheDirectory: null,
         }),
       ).toThrow("GATEWAY_INTEGRITY_MISMATCH magpie");
       expect(existsSync(join(badPrefix, "magpie"))).toBe(false);
@@ -436,6 +527,7 @@ describe("review gateway install", () => {
           platform: "linux-amd64",
           download,
           pack,
+          cacheDirectory: null,
         }),
       ).toThrow("GATEWAY_INTEGRITY_MISMATCH plugin");
       expect(() =>
@@ -445,6 +537,7 @@ describe("review gateway install", () => {
           platform: "windows-amd64",
           download,
           pack,
+          cacheDirectory: null,
         }),
       ).toThrow("GATEWAY_PLATFORM_UNSUPPORTED");
     } finally {
@@ -487,7 +580,11 @@ describe("review gateway hardening", () => {
     const models = structuredClone(config.models);
     models[deepseek].members = ["codebuddy/deepseek-v4.1-flash-sg"];
     delete models[glm].cost.output;
-    expect(broken({ models })).toEqual([`models.${deepseek}.members`, `models.${glm}.cost`]);
+    expect(broken({ models })).toEqual([
+      "models.providers-differ",
+      `models.${deepseek}.members`,
+      `models.${glm}.cost`,
+    ]);
     const { [glm]: _dropped, ...onlyDeepseek } = config.models;
     expect(broken({ models: onlyDeepseek })).toEqual([`models.${glm}`]);
     expect(() => readGatewayConfig(join(tmpdir(), "missing-gateway.json"))).toThrow();
@@ -553,7 +650,12 @@ describe("review gateway hardening", () => {
         noPrices,
         deepseek,
       ),
-    ).toEqual({ gateway: "magpie", providers: {}, costUnknown: true });
+    ).toEqual({
+      gateway: "magpie",
+      providers: {},
+      costUnknown: true,
+      costUnknownWhy: "usage-invalid",
+    });
   });
 });
 
@@ -641,6 +743,15 @@ describe("review gateway round 4 fixes", () => {
       expect.arrayContaining([`models.${deepseek}.fallback`, "models.groups"]),
     );
     expect(withProviders([...base, { id: "Bad Id", kind: "preset" }])).toContain("providers.id");
+    const emptyCustom = base.map((provider) =>
+      provider.id === "opendesign" ? { ...provider, models: [""] } : provider,
+    );
+    expect(withProviders(emptyCustom)).toContain("providers.opendesign.custom");
+    const typo = structuredClone(config.models);
+    typo[glm].members[1] = "opendesign/glm-5.3-flash-typo";
+    expect(gatewayConfigProblems({ ...config, models: typo }, REVIEW_MODELS)).toContain(
+      `models.${glm}.custom`,
+    );
     expect(
       withProviders(
         base.map((provider) =>
@@ -801,7 +912,26 @@ describe("review gateway usage gaps", () => {
       gateway: "magpie",
       providers: {},
       costUnknown: true,
+      costUnknownWhy: "unreadable=0 recorded=0 requested=1",
     });
+    const glmLine = { req: "group/review-glm-5.3-flash", provider: "opendesign", status: 200 };
+    const deepseekLine = {
+      req: "group/review-deepseek-v4.1-flash",
+      provider: "workbuddy-ai",
+      status: 200,
+      credits: 1,
+    };
+    const both = [glmLine, deepseekLine];
+    expect(
+      gatewayRecordFields(both, config, deepseek, { requested: 1 }).costUnknown,
+    ).toBeUndefined();
+    expect(gatewayRecordFields(both, config, glm, { requested: 1 })).toMatchObject({
+      costUnknown: true,
+      costUnknownWhy: "unreadable=1 recorded=1 requested=1",
+    });
+    expect(
+      gatewayRecordFields([...both, "garbage"], config, deepseek, { requested: 1 }).costUnknown,
+    ).toBe(true);
     expect(gatewayRecordFields([], config, deepseek)).toEqual({ gateway: "magpie", providers: {} });
   });
 
@@ -938,6 +1068,80 @@ describe("review gateway live start", () => {
       ).rejects.toThrow("GATEWAY_PREFLIGHT_FAILED");
       expect(upstream.hits()).toBe(0);
       expect(runningGatewayCount()).toBe(0);
+    } finally {
+      upstream.server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  it.each([
+    ["is not served by its provider", (port) => `http://localhost:${port}/v1`, ["down"]],
+    ["sits behind a refused port", () => "http://127.0.0.1:9/v1", null],
+  ])(
+    "[gateway] keeps the review on the other providers when a member %s",
+    async (_label, url, dropped) => {
+      const upstream = await probeServer();
+      const root = mkdtempSync(join(tmpdir(), "gateway-drop-"));
+      try {
+        const member = dropped ? (short) => `down/${short}-gone` : (short) => `down/${short}`;
+        const base = liveConfig(upstream.port, (short) => [member(short), `probe/${short}`]);
+        const down = { ...base.providers[1], id: "down", url: url(upstream.port) };
+        const gatewayConfig = { ...base, providers: [...base.providers, down] };
+        const { live, drop } = await startLiveGateway({
+          gateway: { install: install(), config: gatewayConfig },
+          workRoot: root,
+          records: [],
+          models: REVIEW_MODELS,
+          accountUid: () => null,
+        });
+        try {
+          if (dropped) expect(drop).toEqual(["workbuddy-ai", ...dropped]);
+          const answer = await postJson(`${live.baseURL}/chat/completions`, {
+            model: "group/review-deepseek-v4.1-flash",
+            stream: true,
+            messages: [{ role: "user", content: "hi" }],
+          });
+          expect(answer.status).toBe(200);
+          expect(upstream.hits()).toBeGreaterThan(0);
+        } finally {
+          live.stop();
+        }
+      } finally {
+        upstream.server.close();
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    120000,
+  );
+
+  it("[gateway] with a list of providers, only those are set up and serve the review", async () => {
+    const upstream = await probeServer();
+    const root = mkdtempSync(join(tmpdir(), "gateway-only-"));
+    try {
+      const base = liveConfig(upstream.port, (short) => [`down/${short}`, `probe/${short}`]);
+      const down = { ...base.providers[1], id: "down" };
+      const gatewayConfig = { ...base, providers: [...base.providers, down] };
+      const { live, drop } = await startLiveGateway({
+        gateway: { install: install(), config: gatewayConfig },
+        workRoot: root,
+        records: [],
+        models: [deepseek],
+        accountUid: () => {
+          throw new Error("credit provider asked although not listed");
+        },
+        only: ["probe"],
+      });
+      try {
+        expect(drop).toEqual(["workbuddy-ai", "down"]);
+        const answer = await postJson(`${live.baseURL}/chat/completions`, {
+          model: "group/review-deepseek-v4.1-flash",
+          stream: true,
+          messages: [{ role: "user", content: "hi" }],
+        });
+        expect([answer.status, upstream.hits()]).toEqual([200, 1]);
+      } finally {
+        live.stop();
+      }
     } finally {
       upstream.server.close();
       rmSync(root, { recursive: true, force: true });

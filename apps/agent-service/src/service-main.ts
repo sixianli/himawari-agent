@@ -25,6 +25,7 @@ import {
 import {
   type ExecutionAdmissionPeerBinding,
   payloadBrokerV1BodyBytes,
+  SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
   type SandboxExecutionSupport,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
@@ -872,6 +873,7 @@ export async function runAgentService(
       secrets: sources.provider,
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
+    let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
     const fileReadServices = createProductionFileReadServices({
       configuration,
       repository,
@@ -881,6 +883,15 @@ export async function runAgentService(
       hostReadOnlyPort,
       workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
+      externalTag: async () => {
+        externalEgress ??= createProductionModelEgress(configuration, sources);
+        try {
+          return await externalEgress.externalTag();
+        } catch (error) {
+          externalEgress = undefined;
+          throw error;
+        }
+      },
       ...(automaticReview ? { automaticReview } : {}),
       ...(workspaceAuto ? { workspaceAuto } : {}),
     });
@@ -1328,7 +1339,7 @@ export async function runAgentService(
         ceiling: {
           maxWallTimeMs: configuration.deadlines.workerRequestMs,
           maxCpuTimeMs: configuration.deadlines.workerRequestMs,
-          maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,
+          maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
           maxOutputBytes: MAXIMUM_PAYLOAD_BYTES,
           maxProgressEvents: 100,
         },

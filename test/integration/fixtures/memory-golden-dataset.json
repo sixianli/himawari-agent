@@ -277,6 +277,26 @@
       ]
     },
     {
+      "id": "low-confidence-quoted",
+      "category": "low_confidence",
+      "turns": ["用户：好家里只喝明治的牛奶。"],
+      "sourceClassification": "private",
+      "expectedCandidates": [
+        {
+          "kind": "durable_fact",
+          "decision": "create",
+          "existingMemoryId": null,
+          "text": "所有者可能偏好明治乳制品",
+          "dataClassification": "private",
+          "confidencePermille": 700,
+          "inference": true,
+          "sourceRefs": ["message-low-confidence-quoted-1"],
+          "quote": "好家里只喝明治的牛奶",
+          "expectedDurable": false
+        }
+      ]
+    },
+    {
       "id": "extraction-failure",
       "category": "failure",
       "turns": ["用户：这条已提交消息用于注入提取失败。"],

@@ -23,6 +23,7 @@ import {
   type MuseSummary,
   resolveWindow,
   summarizeDecisions,
+  summarizeImplicit,
   summarizeMuse,
 } from "@himawari-agent/calibration";
 import {
@@ -193,6 +194,7 @@ export class ProductionObservation {
       new Map(rows.mailJudgments),
       DEFAULT_MINIMUM_SAMPLES,
     );
+    const implicit = summarizeImplicit(rows.decisions, rows.signals, DEFAULT_MINIMUM_SAMPLES);
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
       : null;
@@ -242,6 +244,17 @@ export class ProductionObservation {
             content: complete ? muse.content : null,
             pairing: complete ? muse.pairing : null,
             buckets: muse.buckets,
+          },
+          implicit: {
+            pushedDecisions: implicit.pushedDecisions,
+            otherDecisionEvents: implicit.otherDecisionEvents,
+            signals: implicit.signals.map((item) => ({
+              signal: item.signal,
+              decisions: item.decisions,
+              events: item.events,
+              medianDelayMs: item.medianDelayMs,
+              rate: complete ? item.rate : null,
+            })),
           },
         },
         generatedAt: now,

@@ -9,7 +9,6 @@ import {
   type SandboxReservationReleaseVerification,
   sandboxReconciliationFailureReason,
 } from "@himawari-agent/application";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 import {
   FIXED_FILE_COMPLETION_GUARANTEE,
   PI_COPY_SAVE_CONTRACT,
@@ -30,15 +29,15 @@ import {
 import { writeServiceDiagnostic } from "@himawari-agent/platform-node";
 import {
   blockJobHostLaunch,
-  type JobHostLaunchEvidence,
   type JobHostControlObservation,
+  type JobHostLaunchEvidence,
   processGroupPresent,
   queryJobHostControl,
   readJobHostFinalEvidence,
   readJobHostLaunchDecision,
   readJobHostStartEvidence,
-  readLinuxNamespaceState,
   readLinuxHostGroup,
+  readLinuxNamespaceState,
   readProcessStartToken,
 } from "@himawari-agent/runtime-sandbox/control";
 
@@ -827,10 +826,6 @@ export function createProductionSandboxControl(options: Options) {
     ) {
       const diagnostic = sandboxPreparationDiagnosticSchema.parse(input);
       const controlRef = key(plan);
-      const protectedDiagnostic =
-        diagnostic.hostDetail?.text && scanMachineSecrets(diagnostic.hostDetail.text).length > 0
-          ? { ...diagnostic, hostDetail: { ...diagnostic.hostDetail, text: null } }
-          : diagnostic;
       try {
         writeServiceDiagnostic(options.diagnosticOutput ?? process.stderr, {
           component: "agent-service",
@@ -863,7 +858,7 @@ export function createProductionSandboxControl(options: Options) {
             environmentId: plan.environmentId,
             observedAt: options.now(),
             command: "prepare",
-            ...protectedDiagnostic,
+            ...diagnostic,
           });
       }
     },

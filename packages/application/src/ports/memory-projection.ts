@@ -198,6 +198,8 @@ export interface MemoryProviderProjectionPort {
     readonly limit: number;
     readonly scope?: MemoryTimeScope;
     readonly minimumSimilarity?: number;
+    readonly includeTentative?: boolean;
+    readonly tentativeOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]>;
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
 }
@@ -252,6 +254,8 @@ export interface MemoryIndexStorePort {
     readonly minimumSimilarity: number;
     readonly now: string;
     readonly includeHistory?: boolean;
+    readonly includeTentative?: boolean;
+    readonly tentativeOnly?: boolean;
   }): Promise<MemoryIndexSearchResult>;
   listUnindexed(input: {
     readonly ownerId: OwnerId;

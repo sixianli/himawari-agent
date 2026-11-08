@@ -15,6 +15,15 @@ import http from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  cacheRead,
+  cacheWrite,
+  explicitCacheDirectory,
+  nextRetryDelay,
+  parseRetryAfter,
+  processBudget,
+  retryableStatus,
+} from "../ci/verified-download.mjs";
 
 export const GATEWAY_DIR = dirname(fileURLToPath(import.meta.url));
 export const GATEWAY_LOCK_PATH = join(GATEWAY_DIR, "gateway-lock.json");
@@ -100,7 +109,12 @@ export function gatewayConfigProblems(config, requiredModels = []) {
     if (!PROVIDER_KINDS.includes(provider?.kind)) problems.push(`providers.${provider?.id}.kind`);
     if (
       provider?.kind === "custom" &&
-      !(typeof provider.url === "string" && Array.isArray(provider.models))
+      !(
+        typeof provider.url === "string" &&
+        Array.isArray(provider.models) &&
+        provider.models.length > 0 &&
+        provider.models.every((model) => typeof model === "string" && model.length > 0)
+      )
     )
       problems.push(`providers.${provider.id}.custom`);
   }
@@ -110,6 +124,16 @@ export function gatewayConfigProblems(config, requiredModels = []) {
   const models = config.models && typeof config.models === "object" ? config.models : {};
   for (const model of requiredModels)
     if (!Object.hasOwn(models, model)) problems.push(`models.${model}`);
+  const servedBy = Object.values(models).map((entry) =>
+    [
+      ...new Set(
+        (Array.isArray(entry?.members) ? entry.members : []).map((m) => String(m).split("/")[0]),
+      ),
+    ]
+      .sort()
+      .join(","),
+  );
+  if (new Set(servedBy).size > 1) problems.push("models.providers-differ");
   const names = Object.keys(models).map(groupName);
   if (new Set(names).size !== names.length) problems.push("models.groups");
   for (const [model, entry] of Object.entries(models)) {
@@ -126,6 +150,14 @@ export function gatewayConfigProblems(config, requiredModels = []) {
       )
     )
       problems.push(`models.${model}.members`);
+    const unlisted = members.some((member) => {
+      const id = String(member).split("/")[0];
+      const custom = providers.find(
+        (provider) => provider?.id === id && provider.kind === "custom",
+      );
+      return custom && !(custom.models ?? []).includes(String(member).slice(id.length + 1));
+    });
+    if (unlisted) problems.push(`models.${model}.custom`);
     if (
       typeof entry?.name !== "string" ||
       !positiveInteger(entry?.context) ||
@@ -183,15 +215,56 @@ export function gatewayInstallDir(lock) {
   return join(homedir(), ".cache", `himawari-magpie-${lock.magpie.version}-${digest}`);
 }
 
-function curlDownload(url, target) {
-  const result = spawnSync("curl", ["-fsSL", "--retry", "2", "-o", target, url], {
-    encoding: "utf8",
-    timeout: 300000,
-  });
-  if (result.status !== 0)
-    throw new Error(
-      `GATEWAY_DOWNLOAD_FAILED ${url} ${(result.stderr ?? result.error?.message ?? "").trim()}`,
+function sleepSync(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+const transientCurlExits = new Set([5, 6, 7, 18, 28, 35, 52, 55, 56]);
+
+export function curlDownload(
+  url,
+  target,
+  {
+    spawn = spawnSync,
+    sleep = sleepSync,
+    random = Math.random,
+    budgetMs,
+    budget = processBudget,
+  } = {},
+) {
+  for (let attempt = 1; ; attempt += 1) {
+    const result = spawn(
+      "curl",
+      ["-sSL", "--max-time", "300", "-D", "-", "-o", target, "-w", "%{http_code}", url],
+      { encoding: "utf8", timeout: 330000 },
     );
+    if (result.error?.code === "ENOENT" || result.error?.code === "EACCES")
+      throw new Error(`GATEWAY_DOWNLOAD_FAILED ${url} (${result.error.message})`);
+    const status = Number((result.stdout ?? "").trim().slice(-3));
+    if (result.status === 0 && status >= 200 && status < 300) return;
+    const network = result.status !== 0;
+    const retryable =
+      status >= 400 ? retryableStatus(status) : network && transientCurlExits.has(result.status);
+    const reason = network
+      ? `${(result.stderr ?? result.error?.message ?? "").trim() || `curl 退出码 ${result.status}`}${status ? ` (HTTP ${status})` : ""}`
+      : `HTTP ${status}`;
+    const header = /^retry-after:\s*(.+)$/im.exec(result.stdout ?? "");
+    const delay = retryable
+      ? nextRetryDelay(attempt, budget.waitedMs, {
+          retryAfterMs: parseRetryAfter(header?.[1]),
+          random,
+          ...(budgetMs === undefined ? {} : { budgetMs }),
+        })
+      : null;
+    rmSync(target, { force: true });
+    if (delay === null)
+      throw new Error(`GATEWAY_DOWNLOAD_FAILED ${url} 第 ${attempt} 次 (${reason})`);
+    console.error(
+      `GATEWAY_DOWNLOAD_RETRY ${url} 第 ${attempt} 次 (${reason})，${Math.round(delay / 1000)} 秒后重试`,
+    );
+    budget.waitedMs += delay;
+    sleep(delay);
+  }
 }
 
 function npmPack(spec, destination) {
@@ -226,6 +299,7 @@ export function installGateway({
   platform = platformKey(),
   download = curlDownload,
   pack = npmPack,
+  cacheDirectory = explicitCacheDirectory(),
 } = {}) {
   const asset = lock.magpie.assets[platform];
   if (!asset) throw new Error(`GATEWAY_PLATFORM_UNSUPPORTED ${platform}`);
@@ -235,12 +309,15 @@ export function installGateway({
     rmSync(binary, { force: true });
     const partial = `${binary}.download`;
     rmSync(partial, { force: true });
-    download(asset.url, partial);
+    const cached = cacheRead(cacheDirectory, asset.sha256);
+    if (cached) writeFileSync(partial, cached, { flag: "wx" });
+    else download(asset.url, partial);
     const got = sha256File(partial);
     if (got !== asset.sha256) {
       rmSync(partial, { force: true });
       throw new Error(`GATEWAY_INTEGRITY_MISMATCH magpie expected=${asset.sha256} got=${got}`);
     }
+    if (!cached) cacheWrite(cacheDirectory, asset.sha256, readFileSync(partial));
     chmodSync(partial, 0o555);
     renameSync(partial, binary);
   }
@@ -411,10 +488,11 @@ const required = (value) => (nonNegative(value) ? value : Number.NaN);
 export function summarizeGatewayUsage(lines, config) {
   const known = new Set(config.providers.map((provider) => provider.id));
   const byModel = new Map();
-  let unreadable = 0;
+  const perModel = new Map();
+  let unattributed = 0;
   for (const line of lines) {
     if (!line || typeof line !== "object" || Array.isArray(line)) {
-      unreadable += 1;
+      unattributed += 1;
       continue;
     }
     const requested = typeof line.req === "string" ? line.req : "";
@@ -430,11 +508,12 @@ export function summarizeGatewayUsage(lines, config) {
     const answered = line.status >= 200 && line.status < 300;
     if (!answered) slot.failed += 1;
     const count = answered ? required : tokens;
+    const unreadable = () => perModel.set(model, (perModel.get(model) ?? 0) + 1);
     if (!known.has(provider)) {
-      if (provider !== "none" || answered) unreadable += 1;
+      if (provider !== "none" || answered) unreadable();
     } else if (provider === config.creditProvider) {
       const credits = count(line.credits);
-      if (Number.isNaN(credits)) unreadable += 1;
+      if (Number.isNaN(credits)) unreadable();
       else slot.credits = (slot.credits ?? 0) + credits;
     } else {
       const price = priceOf(config, model);
@@ -443,14 +522,21 @@ export function summarizeGatewayUsage(lines, config) {
           (required(line.out) + tokens(line.reasoning)) * price.output +
           tokens(line.cache_read) * price.cache_read) /
         1e6;
-      if (Number.isNaN(usd)) unreadable += 1;
+      if (Number.isNaN(usd)) unreadable();
       else slot.usd = (slot.usd ?? 0) + usd;
     }
   }
   const summary = Object.fromEntries(
     [...byModel].map(([model, slots]) => [model, Object.fromEntries(slots)]),
   );
-  return { byModel: summary, unreadable };
+  const unreadableByModel = Object.fromEntries(perModel);
+  const attributed = Object.values(unreadableByModel).reduce((total, count) => total + count, 0);
+  return {
+    byModel: summary,
+    unreadable: unattributed + attributed,
+    unattributed,
+    unreadableByModel,
+  };
 }
 
 export function readGatewayUsage(root) {
@@ -633,7 +719,7 @@ export async function startGateway({
           "add",
           provider.id,
           `url=${provider.url}`,
-          "key=probe",
+          `key=${PLACEHOLDER}`,
           `models=${provider.models.join(",")}`,
         ],
         env,

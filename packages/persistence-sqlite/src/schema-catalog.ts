@@ -811,6 +811,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with the ledger row; the payloads are removed when the owner deletes proactive records or disconnects the source",
   ),
   entry(
+    "decision_signals",
+    "ProactiveStorePort, WebPushStorePort, DecisionLedgerPort",
+    "append-only observations of what happened to a proactive decision without the owner rating it: reminder opened, done or muted then undone, mail thread replied; timing and small codes only",
+    "metadata_only",
+    "cascade with the ledger row, Owner or Agent deletion; never changed or deleted on its own",
+  ),
+  entry(
     "muse_reference_entries",
     "DecisionLedgerPort",
     "owner-recorded Muse reminders with timing and content judgments; reminder text and note only as protected payload references",
@@ -827,7 +834,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "muse_intake_items",
     "MuseIntakePort",
-    "one row per Muse reminder or scheduled run received: system-recorded times, state and reason codes; title and text only as protected payload references",
+    "one row per Muse reminder or scheduled run received: system-recorded times, state and reason codes; title and text only as protected payload references; optional Gmail message id that Muse names for pairing",
     "payload_reference",
     "removed with its payloads when the owner clears Muse intake data; cascade with Owner or Agent deletion",
   ),

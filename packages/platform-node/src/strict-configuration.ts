@@ -991,8 +991,13 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "memoryMinimumSimilarity",
       "bodyCharactersPerMail",
       "bodyCharactersPerBatch",
+      "relatedMailsPerMail",
+      "relatedCharactersPerMail",
+      "relatedCharactersPerRelatedMail",
+      "relatedRequestsPerCheck",
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
+      "reviewSilentSharePermille",
     ],
     field,
   );
@@ -1013,6 +1018,18 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       `${field}.bodyCharactersPerBatch`,
       "must not be smaller than bodyCharactersPerMail",
     );
+  const relatedCharactersPerRelatedMail = optional(
+    "relatedCharactersPerRelatedMail",
+    2_000,
+    200,
+    50_000,
+  );
+  const relatedCharactersPerMail = optional("relatedCharactersPerMail", 12_000, 200, 200_000);
+  if (relatedCharactersPerMail < relatedCharactersPerRelatedMail)
+    throw invalid(
+      `${field}.relatedCharactersPerMail`,
+      "must not be smaller than relatedCharactersPerRelatedMail",
+    );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1021,11 +1038,16 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     }),
     reviewBudgetSeconds: optional("reviewBudgetSeconds", 120, 10, 3_600),
     reviewSecondsPerItem: optional("reviewSecondsPerItem", 5, 1, 60),
+    reviewSilentSharePermille: optional("reviewSilentSharePermille", 500, 0, 1_000),
     intervalMs: optional("intervalMs", 900_000, 60_000, 86_400_000),
     perCheckMs: optional("perCheckMs", 180_000, 10_000, 900_000),
     dailyCostMicros,
     bodyCharactersPerMail,
     bodyCharactersPerBatch,
+    relatedMailsPerMail: optional("relatedMailsPerMail", 6, 0, 50),
+    relatedCharactersPerMail,
+    relatedCharactersPerRelatedMail,
+    relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 300, 1, 2_000),
     memoryMinimumSimilarity:
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45

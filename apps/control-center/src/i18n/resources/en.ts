@@ -1060,7 +1060,8 @@ export const messages = {
   "proactive.apps.outcome":
     "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} other {Connecting didn’t work. Please try again.}}",
   "proactive.apps.what": "What Himawari reads and who receives it",
-  "proactive.apps.what1": "Reads new mail only; never archives, labels or replies",
+  "proactive.apps.what1":
+    "Read-only; never archives, labels or replies. To judge a new mail it also looks up earlier mail about the same matter (including archived mail and mail you sent) and sends that to the model too",
   "proactive.apps.what2": "Skips spam; also reads the mail you send yourself",
   "proactive.apps.what3":
     "Sends the sender, subject and full body to the model, with only attachment names; recognisable passwords, verification codes, card numbers and ID numbers are masked first, nothing else is",
@@ -1262,6 +1263,21 @@ export const messages = {
   "weekly.muse.rate": "Pairing rate",
   "weekly.muse.def":
     "Pairing rate = entries matched to the same email ÷ all Muse comparison entries this week.",
+  "weekly.implicit.title": "Observed signals · not ratings",
+  "weekly.implicit.notFull": "Week not over yet",
+  "weekly.implicit.empty": "No decision sent a reminder this week.",
+  "weekly.implicit.signal":
+    "{s, select, opened {Opened the push} undone {Marked done or muted, then undid it} other {You replied in the mail thread}}",
+  "weekly.implicit.delay": "Median time to first occurrence: {t}",
+  "weekly.implicit.delayNone": "Has not happened yet",
+  "weekly.implicit.underMinute": "under 1 minute",
+  "weekly.implicit.minutes": "{n} min",
+  "weekly.implicit.hours": "{n} h",
+  "weekly.implicit.days": "{n} d",
+  "weekly.implicit.other":
+    "{n} more signals landed on decisions that sent no reminder and are not counted above.",
+  "weekly.implicit.def":
+    "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
   "sensitive.title": "Blocked sensitive information",
   "sensitive.count": "{count, plural, one {# record} other {# records}}",

@@ -4,9 +4,11 @@ import {
   DECISION_OUTCOMES,
   DECISION_RATINGS,
   type CalibrationRowsSnapshot,
+  type DecisionInputs,
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
+  type DecisionSignalEntry,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
@@ -136,8 +138,13 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     floorHits?: Record<string, readonly string[]>;
     memoryInjected?: boolean;
     usedMemoryIds?: readonly string[];
+    tentativeMemoryIds?: readonly string[];
     memoryByMail?: Record<string, readonly string[]>;
     memoryRecall?: "off" | "ok" | "partial" | "failed";
+    relatedByMail?: Record<string, readonly string[]>;
+    relatedRead?: "off" | "ok" | "partial" | "failed";
+    relatedStats?: DecisionInputs["relatedStats"];
+    relatedFailedSteps?: readonly string[];
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -158,6 +165,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
       ),
       memoryInjected: inputs.memoryInjected ?? false,
       usedMemoryIds: Object.freeze([...(inputs.usedMemoryIds ?? [])]),
+      tentativeMemoryIds: Object.freeze([...(inputs.tentativeMemoryIds ?? [])]),
       memoryByMail: Object.freeze(
         Object.fromEntries(
           Object.entries(inputs.memoryByMail ?? {}).map(([id, list]) => [
@@ -167,6 +175,24 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
         ),
       ),
       memoryRecall: inputs.memoryRecall ?? "off",
+      relatedByMail: Object.freeze(
+        Object.fromEntries(
+          Object.entries(inputs.relatedByMail ?? {}).map(([id, list]) => [
+            id,
+            Object.freeze([...list]),
+          ]),
+        ),
+      ),
+      relatedRead: inputs.relatedRead ?? "off",
+      relatedStats: Object.freeze(
+        inputs.relatedStats ?? {
+          requests: 0,
+          messages: 0,
+          characters: 0,
+          durationMs: 0,
+        },
+      ),
+      relatedFailedSteps: Object.freeze([...(inputs.relatedFailedSteps ?? [])]),
     }),
   });
 }
@@ -202,6 +228,8 @@ export class SqliteDecisionLedgerOperations {
         return this.recordMuse(payload as Input<"recordMuse">);
       case "decisionLedger.listMuse":
         return this.listMuse(payload as Input<"listMuse">);
+      case "decisionLedger.listSignals":
+        return this.listSignals(payload as Input<"listSignals">);
       case "decisionLedger.readCalibrationRows":
         return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
       default:
@@ -224,6 +252,7 @@ export class SqliteDecisionLedgerOperations {
           mailJudgments: [...rows.mailJudgments.entries()].map(
             ([id, judgment]) => [id, { ...judgment }] as const,
           ),
+          signals: rows.signals.map((row) => ({ ...row })),
         };
       } catch (error) {
         if (error instanceof Error && error.message.startsWith("CALIBRATION_TIMESTAMP_FORMAT"))
@@ -381,6 +410,26 @@ export class SqliteDecisionLedgerOperations {
         pairedMessageId,
         write.recordedAt,
       );
+  }
+
+  private listSignals(input: Input<"listSignals">): readonly DecisionSignalEntry[] {
+    if (!idList(input.decisionIds)) this.fail("PORT_INVALID_OPERATION", "Decision ids are invalid");
+    const read = this.database.prepare(
+      `SELECT decision_id AS decisionId, signal, occurred_at AS occurredAt, delay_ms AS delayMs,
+        detail FROM decision_signals
+       WHERE owner_id = ? AND agent_id = ? AND decision_id = ?
+       ORDER BY occurred_at, id`,
+    );
+    return input.decisionIds.flatMap((decisionId) =>
+      (
+        read.all(input.ownerId, input.agentId, decisionId) as (Omit<
+          DecisionSignalEntry,
+          "detail"
+        > & {
+          detail: string;
+        })[]
+      ).map((row) => ({ ...row, detail: JSON.parse(row.detail) })),
+    );
   }
 
   private listMuse(input: Input<"listMuse">): readonly MuseReferenceEntry[] {

@@ -276,7 +276,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
   }
 
   describe("automatic Memory governed golden dataset", () => {
-    it("enforces secret exclusion, per-item sensitive approval and deterministic quality thresholds", async () => {
+    it("[mask-not-block] reads a source holding a machine secret, keeps per-item sensitive approval and deterministic quality thresholds", async () => {
       expect(dataset.schemaVersion).toBe(1);
       expect(dataset.cases.map(({ category }) => category)).toEqual(
         expect.arrayContaining([
@@ -361,7 +361,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       ]);
 
       expect(resultByCase.get("machine-secret")).toMatchObject({
-        status: "source_secret_excluded",
+        status: "completed",
         committedMemoryIds: [],
       });
       expect(resultByCase.get("extraction-failure")).toMatchObject({
@@ -369,7 +369,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         committedMemoryIds: [],
       });
       const machineSecretSource = sourceTexts.get("payload-source-machine-secret") as string;
-      expect(extractor.observedSources).not.toContain(machineSecretSource);
+      expect(extractor.observedSources).toContain(machineSecretSource);
 
       const personalApproval = resultByCase.get("sensitive-personal")?.approvalRequestIds[0];
       if (!personalApproval) throw new Error("personal approval missing");
@@ -456,15 +456,12 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       expect(JSON.stringify(audit.records)).not.toContain(
         "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
       );
-      expect(audit.records).toContainEqual(
-        expect.objectContaining({
-          sourceRef: "payload-source-machine-secret",
-          outcome: "source_secret_excluded",
-          secretFindings: [expect.objectContaining({ ruleId: "openai-api-key", count: 1 })],
-        }),
-      );
+      expect(audit.records.map(({ outcome }) => outcome)).not.toContain("source_secret_excluded");
       expect(resultByCase.get("transient-chatter")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.committedMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence")?.tentativeMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence-quoted")?.committedMemoryIds).toEqual([]);
+      expect(resultByCase.get("low-confidence-quoted")?.tentativeMemoryIds).toHaveLength(1);
 
       const ledger = await repository.decisionLedger().list({
         ownerId: OWNER_ID,
@@ -479,7 +476,12 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         audit.records.filter((record) => outcomes.includes(record.outcome)).length;
       const replayedCommits = 1;
       expect(ledgerCount("kept")).toBe(
-        auditCount("auto_committed", "explicitly_approved", "approval_committed") - replayedCommits,
+        auditCount(
+          "auto_committed",
+          "explicitly_approved",
+          "approval_committed",
+          "tentative_kept",
+        ) - replayedCommits,
       );
       expect(ledgerCount("discarded")).toBe(
         auditCount(

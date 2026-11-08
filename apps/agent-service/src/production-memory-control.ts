@@ -1,9 +1,8 @@
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
   type ClockPort,
-  type DurableMemoryService,
   type DecisionLedgerPort,
+  type DurableMemoryService,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryConsolidationStorePort,
@@ -14,6 +13,7 @@ import {
   type OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  PORT_ERROR_CODES,
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
@@ -21,20 +21,16 @@ import {
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
 import {
-  containsRestrictedIdentifier,
-  scanMachineSecrets,
-} from "@himawari-agent/sensitive-capture";
-import {
-  MEMORY_SENSITIVE_CATEGORY_NAMES,
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
+  MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
-import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 import {
   createProductionAutomaticMemory,
   protectedMemoryCandidates,
 } from "./production-memory-capture.js";
+import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 
 type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
 type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
@@ -162,11 +158,7 @@ export class ProductionMemoryControl {
   }
 
   private assertStorable(text: string) {
-    if (
-      text.trim().length === 0 ||
-      scanMachineSecrets(text).length > 0 ||
-      containsRestrictedIdentifier(text)
-    )
+    if (text.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
   }
 

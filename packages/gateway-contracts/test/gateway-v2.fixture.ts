@@ -269,6 +269,15 @@ export const governanceMessages = [
         pairing: null,
         buckets: { both: 1, museOnly: 0, himawariOnly: 0, bothSilent: 1, noHimawariRecord: 0 },
       },
+      implicit: {
+        pushedDecisions: 0,
+        otherDecisionEvents: 0,
+        signals: [
+          { signal: "opened", decisions: 0, events: 0, medianDelayMs: null, rate: null },
+          { signal: "undone", decisions: 0, events: 0, medianDelayMs: null, rate: null },
+          { signal: "replied", decisions: 0, events: 0, medianDelayMs: null, rate: null },
+        ],
+      },
     },
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),

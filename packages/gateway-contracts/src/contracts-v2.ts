@@ -855,6 +855,19 @@ const proactiveWeeklySnapshotSchema = object({
           noHimawariRecord: integer(0),
         }),
       }),
+      implicit: object({
+        pushedDecisions: integer(0),
+        otherDecisionEvents: integer(0),
+        signals: array(
+          object({
+            signal: enumeration(["opened", "undone", "replied"]),
+            decisions: integer(0),
+            events: integer(0),
+            medianDelayMs: nullable(integer(0)),
+            rate: calibrationRateSchema,
+          }),
+        ),
+      }),
     }),
     generatedAt: timestamp,
   }),

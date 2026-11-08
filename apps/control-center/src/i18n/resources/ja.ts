@@ -1059,7 +1059,8 @@ export const messages = {
   "proactive.apps.outcome":
     "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} other {接続できませんでした。もう一度お試しください。}}",
   "proactive.apps.what": "Himawari が読むものと送り先",
-  "proactive.apps.what1": "新着メールを読むだけ。アーカイブ・ラベル付け・返信はしません",
+  "proactive.apps.what1":
+    "メールを読むだけ。アーカイブ・ラベル付け・返信はしません。新着メールを判断するとき、同じ件のこれまでのやり取り（アーカイブ済みや自分が送ったメールを含む）も探して、あわせてモデルに送ります",
   "proactive.apps.what2": "迷惑メールは読みません。自分が送ったメールは読みます",
   "proactive.apps.what3":
     "差出人・件名・本文をモデルに送ります。添付ファイルは名前だけです。送る前に、見分けられるパスワード・認証コード・カード番号・証明書番号は伏せ、それ以外は伏せません",
@@ -1249,6 +1250,21 @@ export const messages = {
   "weekly.muse.rate": "対応づけ率",
   "weekly.muse.def":
     "対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
+  "weekly.implicit.title": "観察シグナル・評価ではありません",
+  "weekly.implicit.notFull": "今週はまだ終わっていません",
+  "weekly.implicit.empty": "今週、通知を送った判断はありません。",
+  "weekly.implicit.signal":
+    "{s, select, opened {通知を開いた} undone {完了またはミュートのあと取り消した} other {メールのやり取りで返信した}}",
+  "weekly.implicit.delay": "初めて起きるまでの中央値：{t}",
+  "weekly.implicit.delayNone": "まだ起きていません",
+  "weekly.implicit.underMinute": "1 分未満",
+  "weekly.implicit.minutes": "{n} 分",
+  "weekly.implicit.hours": "{n} 時間",
+  "weekly.implicit.days": "{n} 日",
+  "weekly.implicit.other":
+    "通知を送っていない判断に付いたシグナルが {n} 件あり、上の割合には入れていません。",
+  "weekly.implicit.def":
+    "この 3 つのシグナルは、あなたが評価しなくても観察できることです。観察だけで、あなたの評価としては扱わず、上の評価の割合と混ぜて計算せず、しきい値を自動で変えることにも使いません。分母は今週、通知を送った判断です。同じ判断に同じシグナルが何度あっても 1 回と数えます。",
   "weekly.goRate": "「リマインダー」で採点する",
   "sensitive.title": "機密情報のブロック記録",
   "sensitive.count": "{count} 件の記録",

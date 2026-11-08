@@ -1354,20 +1354,38 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     dailyCostMicros: 1_000_000,
     bodyCharactersPerMail: 16_000,
     bodyCharactersPerBatch: 64_000,
+    relatedMailsPerMail: 6,
+    relatedCharactersPerMail: 12_000,
+    relatedCharactersPerRelatedMail: 2_000,
+    relatedRequestsPerCheck: 300,
     memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
+    reviewSilentSharePermille: 500,
   });
   raw["runPolicy"] = {
     ...policy,
-    proactive: { ...proactive, reviewBudgetSeconds: 300, reviewSecondsPerItem: 10 },
+    proactive: {
+      ...proactive,
+      reviewBudgetSeconds: 300,
+      reviewSecondsPerItem: 10,
+      reviewSilentSharePermille: 200,
+    },
   };
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive,
   ).toMatchObject({
     reviewBudgetSeconds: 300,
     reviewSecondsPerItem: 10,
+    reviewSilentSharePermille: 200,
   });
+  raw["runPolicy"] = {
+    ...policy,
+    proactive: { ...proactive, relatedMailsPerMail: 0, relatedRequestsPerCheck: 40 },
+  };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive,
+  ).toMatchObject({ relatedMailsPerMail: 0, relatedRequestsPerCheck: 40 });
   raw["runPolicy"] = { ...policy, proactive: { ...proactive, perCheckCostMicros: 100_000 } };
   const legacy = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
   expect(legacy).toBeDefined();
@@ -1384,6 +1402,11 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, memoryMinimumSimilarity: 1.5 },
     { ...proactive, reviewBudgetSeconds: 5 },
     { ...proactive, reviewSecondsPerItem: 0 },
+    { ...proactive, reviewSilentSharePermille: 1_001 },
+    { ...proactive, reviewSilentSharePermille: -1 },
+    { ...proactive, relatedMailsPerMail: 51 },
+    { ...proactive, relatedRequestsPerCheck: 0 },
+    { ...proactive, relatedCharactersPerMail: 300, relatedCharactersPerRelatedMail: 400 },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
