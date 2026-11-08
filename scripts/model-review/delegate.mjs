@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { readGatewayConfig } from "./gateway.mjs";
 import {
   COMMIT_PATTERN,
+  hasControlCharacter,
   MODES,
   nextRound,
   parseArgs,
@@ -13,6 +14,7 @@ import {
   REVIEW_MODELS,
   REVIEWS_DIR,
   reviewKey,
+  spentOf,
   TOPIC_PATTERN,
 } from "./opencode-review.mjs";
 
@@ -188,8 +190,24 @@ function rawChanges(repo, from, to) {
 }
 
 function showFile(repo, commit, path) {
-  const result = git(["show", `${commit}:${path}`], repo, { allowFail: true });
-  return result.status === 0 ? result.stdout : null;
+  if (!git(["ls-tree", commit, "--", path], repo).stdout.trim()) return null;
+  return git(["show", `${commit}:${path}`], repo).stdout;
+}
+
+function roundDirectories(repo, commit, recordsDir) {
+  return git(["ls-tree", "-d", "--name-only", commit, recordsDir], repo)
+    .stdout.split("\n")
+    .map((line) => /\/round-(\d+)$/.exec(line)?.[1])
+    .filter(Boolean)
+    .map(Number);
+}
+
+function hasControlText(value) {
+  if (typeof value === "string") return hasControlCharacter(value);
+  if (Array.isArray(value)) return value.some(hasControlText);
+  if (value && typeof value === "object")
+    return Object.entries(value).some(([key, item]) => hasControlText(key) || hasControlText(item));
+  return false;
 }
 
 export function checkResult(task, { repo, fetch = true }) {
@@ -232,7 +250,19 @@ export function checkResult(task, { repo, fetch = true }) {
   const changes = rawChanges(repo, task.tip, remote);
   const outside = changes.find((change) => !change.path.startsWith(recordsDir));
   if (outside) return rejected(`DELEGATION_OUTSIDE_RECORDS ${JSON.stringify(outside.path)}`);
-  const irregular = changes.find((change) => change.status === "D" || change.newMode !== "100644");
+  const renamedAway = (change) =>
+    /^(.*)\.stderr\.txt$/.test(change.path) &&
+    changes.some(
+      (other) =>
+        other.status === "A" &&
+        other.path.startsWith(change.path.replace(/\.stderr\.txt$/, ".attempt-")) &&
+        other.path.endsWith(".stderr.txt"),
+    );
+  const irregular = changes.find(
+    (change) =>
+      (change.status === "D" && !renamedAway(change)) ||
+      (change.status !== "D" && change.newMode !== "100644"),
+  );
   if (irregular) return rejected(`DELEGATION_IRREGULAR_FILE ${JSON.stringify(irregular.path)}`);
   const before = showFile(repo, task.tip, ledgerPath) ?? "";
   const after = showFile(repo, remote, ledgerPath);
@@ -248,8 +278,12 @@ export function checkResult(task, { repo, fetch = true }) {
   }
   const added = records.slice(earlier.length);
   if (added.length === 0) return rejected("DELEGATION_NO_NEW_RECORDS");
-  const expectedRound = task.round ?? nextRound(earlier);
+  if (hasControlText(added)) return rejected("DELEGATION_CONTROL_CHARACTER");
+  const expectedRound =
+    task.round ?? nextRound(earlier, roundDirectories(repo, task.tip, recordsDir));
   const expectedModels = parseArgs(reviewArgv(task)).models;
+  const allowedProviders =
+    task.providers ?? readGatewayConfig(undefined, REVIEW_MODELS).providers.map((item) => item.id);
   const problems = [];
   for (const record of added) {
     const round = record.round ?? 1;
@@ -264,7 +298,7 @@ export function checkResult(task, { repo, fetch = true }) {
       problems.push(`model=${record.model}`);
     if (record.gateway !== "magpie") problems.push(`gateway=${record.gateway}`);
     for (const provider of Object.keys(record.providers ?? {}))
-      if (task.providers && !task.providers.includes(provider) && provider !== "none")
+      if (!allowedProviders.includes(provider) && !["none", "unknown"].includes(provider))
         problems.push(`provider=${provider}`);
     const name = shortModel(record.model);
     const answer = showFile(repo, remote, `${recordsDir}round-${round}/${name}.md`);
@@ -287,15 +321,16 @@ export function checkResult(task, { repo, fetch = true }) {
       problems.push(`unexpected-file=${JSON.stringify(change.path)}`);
   }
   if (problems.length > 0) return rejected(`DELEGATION_RECORD_MISMATCH ${problems.join(" ")}`);
-  const spent = added.reduce((total, record) => total + record.cost, 0);
+  const spent = spentOf(added);
+  const estimated = added.some((record) => record.costUnknown || record.inFlight);
   const notOk = added.filter((record) => record.outcome !== "ok").map((record) => record.model);
-  return { status: "ok", remote, added, spent, notOk };
+  return { status: "ok", remote, added, spent, notOk, estimated };
 }
 
-export function applyResult(task, { repo }) {
+export function applyResult(task, { repo, remote }) {
   const head = git(["rev-parse", "HEAD"], repo).stdout.trim();
   if (head !== task.tip) fail(`DELEGATION_LOCAL_MOVED head=${head} tip=${task.tip}`);
-  git(["merge", "--ff-only", `refs/remotes/origin/${task.branch}`], repo);
+  git(["merge", "--ff-only", remote ?? `refs/remotes/origin/${task.branch}`], repo);
   return git(["rev-parse", "HEAD"], repo).stdout.trim();
 }
 
@@ -312,7 +347,7 @@ export async function waitForBranch({
     "DELEGATE_INVALID minutes",
   );
   requireValue(
-    Number.isFinite(intervalSeconds) && intervalSeconds >= 1,
+    Number.isFinite(intervalSeconds) && intervalSeconds >= 1 && intervalSeconds <= minutes * 60,
     "DELEGATE_INVALID interval",
   );
   const polls = Math.ceil((minutes * 60) / intervalSeconds) + 1;
@@ -436,9 +471,9 @@ async function main() {
       process.exitCode = 5;
       return;
     }
-    const applied = flags.has("apply") ? applyResult(task, { repo }) : null;
+    const applied = flags.has("apply") ? applyResult(task, { repo, remote: result.remote }) : null;
     for (const record of result.added) console.log(resultLine(record));
-    const summary = `remote=${result.remote} records=${result.added.length} spent=${result.spent.toFixed(4)}`;
+    const summary = `remote=${result.remote} records=${result.added.length} spent=${result.spent.toFixed(4)}${result.estimated ? " estimated=true" : ""}`;
     if (result.notOk.length > 0) {
       console.log(`DELEGATION_RESULT_INCOMPLETE ${summary} not-ok=${result.notOk.join(",")}`);
       process.exitCode = 4;

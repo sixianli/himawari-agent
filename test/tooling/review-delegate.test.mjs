@@ -206,7 +206,10 @@ describe("review delegation result check", () => {
       expect(result).toMatchObject({ status: "ok", remote });
       expect(result.added).toHaveLength(2);
       expect(result.spent).toBeCloseTo(0.1);
-      expect(applyResult(f.task, { repo: f.mac })).toBe(remote);
+      f.commit(f.cloud, { [`.agents/reviews/${KEY}/later.md`]: "later\n" }, "after the check");
+      f.push();
+      f.run(f.mac, "fetch", "--quiet", "origin");
+      expect(applyResult(f.task, { repo: f.mac, remote: result.remote })).toBe(remote);
     }),
   );
 
@@ -570,6 +573,146 @@ describe("review delegation result check, odd ledgers and a broken remote", () =
   );
 });
 
+describe("review delegation result check, legitimate edge cases", () => {
+  const cloudFiles = (f, files) => {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(f.cloud, path)), { recursive: true });
+      writeFileSync(join(f.cloud, path), text);
+    }
+  };
+  const commitCloud = (f, message) => {
+    f.run(f.cloud, "add", "-A");
+    f.run(f.cloud, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message);
+    f.push();
+  };
+
+  it(
+    "[delegate] accepts the unknown and none providers, rejects an invented one even without a list",
+    withFixture((f) => {
+      const task = { ...f.task, providers: undefined };
+      const write = (providers) => {
+        cloudFiles(f, {
+          [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+            f.record(deepseek, { providers }),
+            f.record(glm),
+          ]),
+          ...f.files([deepseek, glm]),
+        });
+        commitCloud(f, "providers");
+        const result = checkResult(task, { repo: f.mac });
+        f.run(f.cloud, "reset", "--hard", "--quiet", f.task.tip);
+        f.push(["--force"]);
+        return result;
+      };
+      expect(
+        write({ unknown: { requests: 1, failed: 1 }, none: { requests: 1, failed: 1 } }).status,
+      ).toBe("ok");
+      expect(write({ "made-up": { requests: 1, failed: 0, credits: 1 } }).reason).toContain(
+        "provider=made-up",
+      );
+    }),
+  );
+
+  it(
+    "[delegate] refuses control characters anywhere in the new records",
+    withFixture((f) => {
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek, { outcome: "ok\u001b[2J" }),
+          f.record(glm),
+        ]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "escape");
+      expect(checkResult(f.task, { repo: f.mac }).reason).toBe("DELEGATION_CONTROL_CHARACTER");
+    }),
+  );
+
+  it(
+    "[delegate] counts round folders that already exist at the handover when it expects the next round",
+    withFixture((f) => {
+      f.commit(
+        f.mac,
+        { [`.agents/reviews/${KEY}/round-1/orphan.md`]: "x\n" },
+        "folder without record",
+      );
+      f.run(f.mac, "push", "--quiet", "origin", "feature");
+      const task = { ...f.task, tip: f.run(f.mac, "rev-parse", "HEAD") };
+      f.run(f.cloud, "pull", "--quiet", "--ff-only");
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek, { round: 2 }),
+          f.record(glm, { round: 2 }),
+        ]),
+        ...Object.fromEntries(
+          Object.entries(f.files([deepseek, glm])).map(([path, text]) => [
+            path.replace("round-1", "round-2"),
+            text,
+          ]),
+        ),
+      });
+      commitCloud(f, "round two");
+      expect(checkResult(task, { repo: f.mac })).toMatchObject({ status: "ok" });
+    }),
+  );
+
+  it(
+    "[delegate] lets a re-run move the earlier attempt aside, including its error file",
+    withFixture((f) => {
+      const name = glm.split("/").pop();
+      const dir = `.agents/reviews/${KEY}/round-1`;
+      f.commit(
+        f.mac,
+        {
+          [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+            f.record(deepseek),
+            f.record(glm, { outcome: "timeout" }),
+          ]),
+          ...f.files([deepseek, glm]),
+          [`${dir}/${name}.stderr.txt`]: "failed\n",
+        },
+        "first attempt",
+      );
+      f.run(f.mac, "push", "--quiet", "origin", "feature");
+      const task = { ...f.task, tip: f.run(f.mac, "rev-parse", "HEAD"), round: 1, models: [name] };
+      f.run(f.cloud, "pull", "--quiet", "--ff-only");
+      f.run(f.cloud, "mv", `${dir}/${name}.stderr.txt`, `${dir}/${name}.attempt-1.stderr.txt`);
+      cloudFiles(f, {
+        [`${dir}/${name}.attempt-1.md`]: "answer\n",
+        [`${dir}/${name}.attempt-1.prompt.md`]: "prompt\n",
+        [`${dir}/${name}.md`]: "second answer\n",
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek),
+          f.record(glm, { outcome: "timeout" }),
+          f.record(glm),
+        ]),
+      });
+      commitCloud(f, "re-run");
+      expect(checkResult(task, { repo: f.mac })).toMatchObject({ status: "ok" });
+      f.run(f.cloud, "rm", "--quiet", `${dir}/${name}.attempt-1.stderr.txt`);
+      commitCloud(f, "drop the moved error file");
+      expect(checkResult(task, { repo: f.mac }).reason).toContain("DELEGATION_IRREGULAR_FILE");
+    }),
+  );
+
+  it(
+    "[delegate] prices a result with an unknown cost the way the review script does",
+    withFixture((f) => {
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek, { costUnknown: true }),
+          f.record(glm),
+        ]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "unknown cost");
+      const result = checkResult(f.task, { repo: f.mac });
+      expect(result.estimated).toBe(true);
+      expect(result.spent).toBeGreaterThanOrEqual(0.2);
+    }),
+  );
+});
+
 describe("review delegation wait", () => {
   it("[delegate] stops as soon as the branch moves and gives up after the limit", async () => {
     const seen = [];
@@ -586,6 +729,15 @@ describe("review delegation wait", () => {
     expect(seen).toEqual([120000, 120000]);
     await expect(
       waitForBranch({ branch: "b", tip: "a", lsRemote: () => "a", intervalSeconds: 0 }),
+    ).rejects.toThrow("DELEGATE_INVALID interval");
+    await expect(
+      waitForBranch({
+        branch: "b",
+        tip: "a",
+        lsRemote: () => "a",
+        minutes: 1,
+        intervalSeconds: 600,
+      }),
     ).rejects.toThrow("DELEGATE_INVALID interval");
     await expect(
       waitForBranch({ branch: "b", tip: "a", lsRemote: () => "a", minutes: Number.NaN }),
