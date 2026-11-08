@@ -18,6 +18,24 @@ import http from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  binaryProblem,
+  creditReserve,
+  floorDecision,
+  CLIENT_KEY,
+  GATEWAY_PROVIDER_ID,
+  getJson,
+  groupId,
+  groupName,
+  installGateway,
+  LOOPBACK_NO_PROXY,
+  postJson,
+  readGatewayConfig,
+  startGateway,
+  stopAllGateways,
+  summarizeGatewayUsage,
+  workbuddyAccountUid,
+} from "./gateway.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -70,7 +88,9 @@ export const WRAP_UP_MIN_USD = 0.02;
 export const WRAP_UP_MIN_MS = 15000;
 export const GUARD_GRACE_MAX_MS = 30000;
 export const GUARD_GRACE_DIVISOR = 15;
-export const GUARD_DEFERS_TO_PARENT = ["cost-unknown", "wrap-up-tool-call"];
+export const OWNER_STOPPED = "owner-stopped";
+export const STOP_GRACE_MS = 30000;
+export const GUARD_DEFERS_TO_PARENT = ["cost-unknown", "wrap-up-tool-call", OWNER_STOPPED];
 export const SPEND_GUARD_PATH = join(dirname(fileURLToPath(import.meta.url)), "spend-guard.mjs");
 export const ASK_FIRST_LINE_USD = { "code-review": 1, plan: 0.5, "plan-review": 0.5 };
 export const FOCUS_SENTENCE =
@@ -81,7 +101,69 @@ export const RULE_16_SENTENCE = "列出的方案只是参考，请从问题本�
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
+export const GATEWAYS = ["magpie"];
+export const GATEWAY_CHOICES = [...GATEWAYS, "direct"];
+export const PASSTHROUGH_PROMPT = "passthrough probe: owner probe-owner@example.com";
+
+export function isLoopbackURL(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" && ["127.0.0.1", "localhost"].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function launchModel(model, gateway) {
+  return gateway ? `${GATEWAY_PROVIDER_ID}/group/${groupName(model)}` : model;
+}
+
+export function gatewayProvider({ baseURL, config }) {
+  if (!isLoopbackURL(baseURL)) throw new Error(`GATEWAY_NOT_LOOPBACK ${baseURL}`);
+  const models = Object.fromEntries(
+    REVIEW_MODELS.map((model) => {
+      const entry = config.models[model];
+      if (!entry) throw new Error(`GATEWAY_MODEL_UNKNOWN ${model}`);
+      return [
+        `group/${groupName(model)}`,
+        {
+          name: entry.name,
+          limit: { context: entry.context, output: entry.output },
+          tool_call: true,
+          reasoning: true,
+          attachment: false,
+          modalities: { input: ["text"], output: ["text"] },
+          cost: entry.cost,
+          variants: { [REASONING_VARIANT]: { reasoningEffort: REASONING_VARIANT } },
+        },
+      ];
+    }),
+  );
+  return {
+    npm: "@ai-sdk/openai-compatible",
+    name: GATEWAY_PROVIDER_ID,
+    options: { baseURL, apiKey: CLIENT_KEY },
+    models,
+  };
+}
+
+export function gatewayOpencodeEnv(env = process.env) {
+  const list = (env.NO_PROXY ?? env.no_proxy ?? "").split(",").filter(Boolean);
+  const merged = [...new Set([...list, ...LOOPBACK_NO_PROXY.split(",")])].join(",");
+  return { NO_PROXY: merged, no_proxy: merged, OPENCODE_ENABLE_EXA: "1" };
+}
+
+export function outputBounds(shortName, gateway) {
+  if (gateway) {
+    const model = REVIEW_MODELS.find((name) => groupId(name) === shortName);
+    const output = model ? gateway.config.models[model]?.output : undefined;
+    return output ? { min: output, max: output } : null;
+  }
+  const max = MODEL_OUTPUT_LIMITS[shortName];
+  return max === undefined ? null : { min: MIN_OUTPUT_TOKENS, max };
+}
+
+export function reviewConfig({ mode, baseURL, wrapUp = false, gateway } = {}) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   const bash = { "*": "deny" };
   for (const command of GIT_READ_COMMANDS) {
@@ -93,7 +175,9 @@ export function reviewConfig({ mode, baseURL, wrapUp = false } = {}) {
   const config = {
     $schema: "https://opencode.ai/config.json",
     plugin: [pathToFileURL(SPEND_GUARD_PATH).href],
-    provider: { "opencode-go": provider },
+    provider: gateway
+      ? { [GATEWAY_PROVIDER_ID]: gatewayProvider(gateway) }
+      : { "opencode-go": provider },
     permission: {
       read: { "*": "allow", "*.env": "deny", "*.env.*": "deny" },
       glob: "allow",
@@ -382,6 +466,59 @@ export function opencodeBinary() {
 }
 
 const activeChildren = new Set();
+const activeStops = new Set();
+let stopRequested = null;
+
+export function requestStop(reason = OWNER_STOPPED) {
+  stopRequested = reason;
+  for (const stop of activeStops) stop(reason);
+}
+
+export function waitUnlessStopped(ms) {
+  return new Promise((resolveWait) => {
+    if (stopRequested) return resolveWait();
+    const done = () => {
+      clearTimeout(timer);
+      activeStops.delete(done);
+      resolveWait();
+    };
+    const timer = setTimeout(done, ms);
+    activeStops.add(done);
+  });
+}
+
+export function clearStopRequest() {
+  stopRequested = null;
+}
+
+export function signalHandler({
+  running,
+  requestStop: ask,
+  cleanup,
+  exit,
+  graceMs = STOP_GRACE_MS,
+}) {
+  let received = 0;
+  let timer = null;
+  const handle = (signal) => {
+    received += 1;
+    const code = signal === "SIGINT" ? 130 : 143;
+    if (!running() || received > 1) {
+      clearTimeout(timer);
+      cleanup();
+      exit(code);
+      return;
+    }
+    console.log(`REVIEW_STOPPING ${signal}`);
+    ask(OWNER_STOPPED);
+    timer = setTimeout(() => {
+      cleanup();
+      exit(code);
+    }, graceMs);
+  };
+  handle.dispose = () => clearTimeout(timer);
+  return handle;
+}
 
 export function killProcessGroup(child, signal) {
   try {
@@ -603,6 +740,8 @@ function runOpencode({
       killTimer = setTimeout(() => killProcessGroup(child, "SIGKILL"), 10000);
       killTimer.unref();
     };
+    activeStops.add(stop);
+    if (stopRequested) stop(stopRequested);
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -611,6 +750,7 @@ function runOpencode({
       clearTimeout(killTimer);
       killProcessGroup(child, "SIGKILL");
       activeChildren.delete(child);
+      activeStops.delete(stop);
       const marker = guardFiles ? readGuardMarker(guardFiles.markerPath) : null;
       const inFlight = Boolean(stopReason && marker && marker.allowed > marker.completed);
       if (marker?.reason && !GUARD_DEFERS_TO_PARENT.includes(stopReason))
@@ -745,8 +885,10 @@ export async function reviewModel(options) {
     remainingUsd,
     waitMs: retryWaitMs,
   });
-  if (decision !== "retry") return { ...first, retry: decision };
-  await new Promise((resolveWait) => setTimeout(resolveWait, retryWaitMs));
+  if (decision !== "retry" || stopRequested)
+    return { ...first, retry: decision === "retry" ? null : decision };
+  await waitUnlessStopped(retryWaitMs);
+  if (stopRequested) return { ...first, retry: OWNER_STOPPED, outcome: OWNER_STOPPED };
   const second = await reviewOnce({
     ...options,
     timeoutMs: deadline - Date.now(),
@@ -780,6 +922,7 @@ async function reviewOnce({
   timeoutMs,
   costLimit,
   startingUsd,
+  extraEnv = {},
 }) {
   const deadline = Date.now() + timeoutMs;
   const reserveMs = Math.min(WRAP_UP_RESERVE_MAX_MS, Math.floor(timeoutMs / 5));
@@ -795,6 +938,7 @@ async function reviewOnce({
     costLimit: ownLimit,
     wrapUpCost: ownLimit - WRAP_UP_RESERVE_USD,
     wrapUpMs: timeoutMs - reserveMs,
+    extraEnv,
     guard: { totalUsd: ownLimit, stopAtUsd: ownLimit - WRAP_UP_RESERVE_USD },
   });
   const firstSummary = applyGuardUsage(summarizeEvents(first.stdout), [first]);
@@ -804,15 +948,17 @@ async function reviewOnce({
   const remainingUsd = ownLimit - firstSummary.usage.cost;
   const skipped = !wrapUp
     ? null
-    : !session
-      ? "no-session"
-      : firstSummary.usage.costUnknown
-        ? "cost-unknown"
-        : remainingUsd < WRAP_UP_MIN_USD
-          ? "no-budget"
-          : remainingMs < WRAP_UP_MIN_MS
-            ? "no-time"
-            : null;
+    : stopRequested
+      ? OWNER_STOPPED
+      : !session
+        ? "no-session"
+        : firstSummary.usage.costUnknown
+          ? "cost-unknown"
+          : remainingUsd < WRAP_UP_MIN_USD
+            ? "no-budget"
+            : remainingMs < WRAP_UP_MIN_MS
+              ? "no-time"
+              : null;
   if (!wrapUp || skipped) {
     return {
       runs: [first],
@@ -821,7 +967,7 @@ async function reviewOnce({
       summary: firstSummary,
       wrapUp,
       wrapUpSkipped: skipped,
-      outcome: runOutcome(firstSummary, first),
+      outcome: skipped === OWNER_STOPPED ? OWNER_STOPPED : runOutcome(firstSummary, first),
     };
   }
   const second = await runOpencode({
@@ -835,6 +981,7 @@ async function reviewOnce({
     stopOnToolCall: true,
     timeoutMs: remainingMs,
     costLimit: remainingUsd,
+    extraEnv,
     guard: { totalUsd: ownLimit, startingUsd: firstSummary.usage.cost },
   });
   const stdout = `${first.stdout}${first.stdout.endsWith("\n") ? "" : "\n"}${second.stdout}`;
@@ -1072,7 +1219,14 @@ function gitStatus(args, cwd) {
   return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 }
 
-export const OVERRIDE_MIN_ROUNDS = 3;
+export const OVERRIDABLE_PROBLEMS = [
+  "unreviewed ",
+  "ledger-not-committed",
+  "no-complete-round",
+  "chain-broken ",
+  "not-ancestor ",
+  "low-fix-invalid ",
+];
 
 function changedOutside(repo, from, to, ledgerPath) {
   const result = gitStatus(["diff", "-z", "--no-renames", "--name-only", from, to], repo);
@@ -1140,23 +1294,14 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     problems.length === 0
       ? [`REVIEW_CURRENT ${summary}`, ...chain]
       : [`REVIEW_NOT_CURRENT ${summary}`, ...chain, ...problems.map((problem) => `  ${problem}`)];
-  const reviewRounds = new Set(
-    (records ?? [])
-      .filter((record) => record.mode === "code-review")
-      .map((record) => record.round ?? 1),
-  ).size;
-  const overridable =
-    problems.length > 0 &&
-    problems.every((problem) => problem.startsWith("unreviewed ")) &&
-    reviewRounds >= OVERRIDE_MIN_ROUNDS;
-  if (problems.length > 0 && acceptUnreviewed && !overridable) {
-    const reasons = [];
-    if (reviewRounds < OVERRIDE_MIN_ROUNDS)
-      reasons.push(`rounds=${reviewRounds} needs=${OVERRIDE_MIN_ROUNDS}`);
-    if (!problems.every((problem) => problem.startsWith("unreviewed ")))
-      reasons.push("only-unreviewed-files");
-    lines.push(`REVIEW_OVERRIDE_REFUSED ${reasons.join(" ")}`);
-  }
+  const blocking = problems.filter(
+    (problem) => !OVERRIDABLE_PROBLEMS.some((prefix) => problem.startsWith(prefix)),
+  );
+  const overridable = problems.length > 0 && blocking.length === 0;
+  if (problems.length > 0 && acceptUnreviewed && !overridable)
+    lines.push(
+      `REVIEW_OVERRIDE_REFUSED not-review-problems ${blocking.map((problem) => problem.split(" ")[0]).join(",")}`,
+    );
   const recorded =
     overridable && records
       ? records
@@ -1170,7 +1315,8 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       : undefined;
   const ledgerFile = join(repo, ledgerPath, "usage.jsonl");
   const ledgerMatchesHead = () =>
-    (existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : null) === shown.stdout;
+    (existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "") ===
+    (shown.status === 0 ? shown.stdout : "");
   let lowFixed = false;
   let lowFixRefused = false;
   if (acceptLow !== undefined) {
@@ -1209,18 +1355,19 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       lowFixed = true;
     }
   }
-  let overridden = Boolean(recorded) || lowFixed;
-  if (recorded) lines.push(`REVIEW_OVERRIDE quote=${recorded.quote} recorded=${recorded.head}`);
+  const overridden = Boolean(recorded) || lowFixed;
+  if (recorded)
+    lines.push(`REVIEW_OVERRIDE quote=${printable(recorded.quote)} recorded=${recorded.head}`);
   else if (overridable && acceptUnreviewed) {
-    const onDisk = shown.stdout;
+    const onDisk = shown.status === 0 ? shown.stdout : "";
     if (!ledgerMatchesHead()) lines.push("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
     else {
+      mkdirSync(dirname(ledgerFile), { recursive: true });
       appendFileSync(
         ledgerFile,
         `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
       );
-      lines.push(`REVIEW_OVERRIDE quote=${acceptUnreviewed}`);
-      overridden = true;
+      lines.push(`REVIEW_OVERRIDE_WRITTEN quote=${acceptUnreviewed} commit-and-rerun`);
     }
   }
   return {
@@ -1257,7 +1404,12 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     latest > 0 && gate.accepted.some((point) => point.round === latest && point.by !== "low-fix");
   const consistent = {
     "no-error": latestComplete && gate.problems.length === 0,
-    "three-rounds": rounds.length >= 3,
+    "three-rounds":
+      new Set(
+        reviews
+          .filter((record) => record.outcome !== OWNER_STOPPED)
+          .map((record) => record.round ?? 1),
+      ).size >= 3,
     "andy-decision": Boolean(andyQuote?.trim()),
     "run-failed": latest > 0 && !latestComplete,
   }[stop];
@@ -1282,11 +1434,18 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
         }),
       ];
     });
+  const overrideLines = records
+    .filter((record) => record.mode === "override")
+    .map(
+      (record) =>
+        `REVIEW_OVERRIDE_RECORD head=${record.head} quote=${printable(record.quote)} problems=${(record.problems ?? []).map(printable).join(",") || "none"}`,
+    );
   return [
     `REVIEW_REPORT pr=${pr}`,
     ...reviews.map(resultLine),
     `REVIEW_SPENT_TOTAL ${spentOf(records).toFixed(4)}`,
     ...(lowFixLines.length > 0 ? ["低严重度已改、未复核：", ...lowFixLines] : []),
+    ...(overrideLines.length > 0 ? ["Andy 说跳过复核的记录：", ...overrideLines] : []),
     ...gate.lines,
     `停下的原因：${STOP_REASONS[stop](andyQuote)}`,
     REVIEW_REPORT_DISCLAIMER,
@@ -1311,6 +1470,22 @@ export function hasControlCharacter(text) {
 
 export function printable(text) {
   return hasControlCharacter(text) ? JSON.stringify(text) : text;
+}
+
+export function providersValid(providers) {
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) return false;
+  return Object.values(providers).every(
+    (slot) =>
+      slot &&
+      typeof slot === "object" &&
+      Number.isSafeInteger(slot.requests) &&
+      slot.requests >= 0 &&
+      Number.isSafeInteger(slot.failed) &&
+      slot.failed >= 0 &&
+      ["credits", "usd"].every(
+        (key) => slot[key] === undefined || (Number.isFinite(slot[key]) && slot[key] >= 0),
+      ),
+  );
 }
 
 export function parseUsage(text, path) {
@@ -1355,7 +1530,17 @@ export function parseUsage(text, path) {
         record?.mode !== "override" ||
         (COMMIT_PATTERN.test(record.head ?? "") &&
           typeof record.quote === "string" &&
-          record.quote.trim() !== "");
+          record.quote.trim() !== "" &&
+          (record.problems === undefined ||
+            (Array.isArray(record.problems) &&
+              record.problems.every((problem) => typeof problem === "string"))));
+      const gatewayValid =
+        record?.gateway === undefined ||
+        (GATEWAYS.includes(record.gateway) &&
+          providersValid(record.providers) &&
+          (record.gatewayDropped === undefined ||
+            (Array.isArray(record.gatewayDropped) &&
+              record.gatewayDropped.every((id) => typeof id === "string" && id !== ""))));
       const singleLine = !hasLineBreak(record ?? {});
       if (
         !Number.isFinite(record?.cost) ||
@@ -1366,6 +1551,7 @@ export function parseUsage(text, path) {
         !headValid ||
         !overrideValid ||
         !lowFixValid ||
+        !gatewayValid ||
         !singleLine
       )
         throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
@@ -1433,7 +1619,7 @@ export function roundForRun({
 }
 
 export const KEPT_FILE_SUFFIXES = [".prompt.md", ".md", ".stderr.txt"];
-export const RAW_FILE_SUFFIXES = [".jsonl", ".thinking.md"];
+export const RAW_FILE_SUFFIXES = [".jsonl", ".thinking.md", ".magpie-usage.jsonl"];
 
 export function keepEarlierAttempt(roundDir, name, suffixes = KEPT_FILE_SUFFIXES) {
   if (!existsSync(roundDir)) return null;
@@ -1567,6 +1753,178 @@ function probeKey(tool, args) {
   return `${tool} ${JSON.stringify(args?.command ?? args?.filePath ?? [args?.pattern, args?.path])}`;
 }
 
+export function probeModelList() {
+  return JSON.stringify({
+    object: "list",
+    data: REVIEW_MODELS.map((model) => ({ id: groupId(model), object: "model" })),
+  });
+}
+
+function startStatusServer(status) {
+  let hits = 0;
+  const server = http.createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(request.method === "POST" ? status : 200, {
+        "content-type": "application/json",
+      });
+      if (request.method === "POST") hits += 1;
+      response.end(
+        request.method === "POST" ? '{"error":{"message":"probe down"}}' : probeModelList(),
+      );
+    });
+  });
+  return new Promise((resolveStart) =>
+    server.listen(0, "127.0.0.1", () =>
+      resolveStart({ server, hits: () => hits, port: server.address().port }),
+    ),
+  );
+}
+
+function probeUpstream(id, port) {
+  return {
+    id,
+    kind: "custom",
+    url: `http://127.0.0.1:${port}/v1`,
+    models: REVIEW_MODELS.map(groupId),
+  };
+}
+
+async function probeGateway({ gateway, root, upstreams, members }) {
+  const live = await startGateway({
+    install: gateway.install,
+    config: gateway.config,
+    root,
+    models: Object.keys(members),
+    providers: upstreams,
+    members,
+  });
+  try {
+    live.addGroups([]);
+    await live.serve();
+  } catch (error) {
+    live.stop();
+    throw error;
+  }
+  return live;
+}
+
+function probeMembers(id) {
+  return Object.fromEntries(REVIEW_MODELS.map((model) => [model, [`${id}/${groupId(model)}`]]));
+}
+
+export function asDirect(text, model) {
+  return text
+    .split(`${GATEWAY_PROVIDER_ID}/group/${groupName(model)}`)
+    .join(model)
+    .split(`group/${groupName(model)}`)
+    .join(groupId(model));
+}
+
+export function systemAsDirect(messages, model) {
+  return (messages ?? []).map((message) =>
+    message?.role === "system" ? JSON.parse(asDirect(JSON.stringify(message), model)) : message,
+  );
+}
+
+export function passthroughProblems(direct, via, model) {
+  if (!direct || !via) return ["GATEWAY_PASSTHROUGH_NO_REQUEST"];
+  const problems = [];
+  if (JSON.stringify(direct.messages) !== JSON.stringify(systemAsDirect(via.messages, model)))
+    problems.push("GATEWAY_PASSTHROUGH_MESSAGES_CHANGED");
+  if (JSON.stringify(direct.tools) !== JSON.stringify(via.tools))
+    problems.push("GATEWAY_PASSTHROUGH_TOOLS_CHANGED");
+  if (!JSON.stringify(via.messages ?? []).includes(PASSTHROUGH_PROMPT))
+    problems.push("GATEWAY_PASSTHROUGH_PROMPT_MASKED");
+  return problems;
+}
+
+async function passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gateway }) {
+  const { server, requests, port } = await startProbeServer([]);
+  let live = null;
+  try {
+    const directPath = join(workRoot, "passthrough-direct.json");
+    writeFileSync(
+      directPath,
+      JSON.stringify(reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }), null, 2),
+    );
+    live = await probeGateway({
+      gateway,
+      root: join(workRoot, "gateway-passthrough"),
+      upstreams: [probeUpstream("probe", port)],
+      members: probeMembers("probe"),
+    });
+    const viaPath = join(workRoot, "passthrough-gateway.json");
+    writeFileSync(
+      viaPath,
+      JSON.stringify(
+        reviewConfig({ mode, gateway: { baseURL: live.baseURL, config: gateway.config } }),
+        null,
+        2,
+      ),
+    );
+    const main = (list) =>
+      list.find((request) => Array.isArray(request.tools) && request.tools.length > 0);
+    const model = REVIEW_MODELS[0];
+    await runOpencode({
+      binary,
+      cwd: copy,
+      configPath: directPath,
+      gitGuard,
+      model,
+      prompt: PASSTHROUGH_PROMPT,
+      timeoutMs: 60000,
+    });
+    const direct = main(requests);
+    const before = requests.length;
+    await runOpencode({
+      binary,
+      cwd: copy,
+      configPath: viaPath,
+      gitGuard,
+      model: launchModel(model, gateway),
+      prompt: PASSTHROUGH_PROMPT,
+      timeoutMs: 60000,
+      extraEnv: gatewayOpencodeEnv(),
+    });
+    return passthroughProblems(direct, main(requests.slice(before)), model);
+  } finally {
+    live?.stop();
+    await new Promise((resolveClose) => server.close(resolveClose));
+  }
+}
+
+async function failoverProbe({ workRoot, gateway }) {
+  const down = await startStatusServer(500);
+  const up = await startProbeServer([]);
+  let live = null;
+  try {
+    const model = REVIEW_MODELS[0];
+    live = await probeGateway({
+      gateway,
+      root: join(workRoot, "gateway-failover"),
+      upstreams: [probeUpstream("probe-down", down.port), probeUpstream("probe", up.port)],
+      members: { [model]: [`probe-down/${groupId(model)}`, `probe/${groupId(model)}`] },
+    });
+    const answer = await postJson(`${live.baseURL}/chat/completions`, {
+      model: `group/${groupName(model)}`,
+      stream: true,
+      max_tokens: 16,
+      messages: [{ role: "user", content: "failover probe" }],
+    });
+    const problems = [];
+    if (answer.status !== 200) problems.push(`GATEWAY_FAILOVER_STATUS ${answer.status}`);
+    if (answer.headers["x-magpie-provider"] !== "probe")
+      problems.push(`GATEWAY_FAILOVER_PROVIDER ${answer.headers["x-magpie-provider"] ?? "none"}`);
+    if (down.hits() === 0) problems.push("GATEWAY_FAILOVER_NOT_TRIED");
+    return problems;
+  } finally {
+    live?.stop();
+    await new Promise((resolveClose) => down.server.close(resolveClose));
+    await new Promise((resolveClose) => up.server.close(resolveClose));
+  }
+}
+
 function startProbeServer(probes) {
   const requests = [];
   const served = new Map();
@@ -1578,7 +1936,7 @@ function startProbeServer(probes) {
     request.on("end", () => {
       if (request.method !== "POST") {
         response.writeHead(200, { "content-type": "application/json" });
-        response.end('{"data":[]}');
+        response.end(probeModelList());
         return;
       }
       let parsed;
@@ -1670,6 +2028,7 @@ export function checkProbeRequests({
   writtenFiles,
   shellCalls,
   projectInstructions,
+  gateway,
 }) {
   const problems = [];
   const allowedCount = plan.probes.filter((probe) => probe.kind === "allowed").length;
@@ -1691,9 +2050,9 @@ export function checkProbeRequests({
         .some((message) => JSON.stringify(message.content).includes(projectInstructions))
     )
       problems.push(`PROBE_PROJECT_INSTRUCTIONS_LOADED ${request.model}`);
-    const modelLimit = MODEL_OUTPUT_LIMITS[String(request.model).split("/").pop()];
-    if (modelLimit === undefined) problems.push(`PROBE_MODEL_UNKNOWN ${request.model}`);
-    if (!(request.max_tokens >= MIN_OUTPUT_TOKENS) || !(request.max_tokens <= modelLimit))
+    const bounds = outputBounds(String(request.model).split("/").pop(), gateway);
+    if (!bounds) problems.push(`PROBE_MODEL_UNKNOWN ${request.model}`);
+    if (!(request.max_tokens >= bounds?.min) || !(request.max_tokens <= bounds?.max))
       problems.push(`PROBE_OUTPUT_CAP ${request.model} ${request.max_tokens}`);
     if (request.reasoning_effort !== REASONING_VARIANT) {
       problems.push(`PROBE_REASONING ${request.model} ${request.reasoning_effort}`);
@@ -1727,7 +2086,7 @@ export function checkProbeRequests({
   return problems;
 }
 
-async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) {
+async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, gateway }) {
   const plan = probePlan(
     workRoot,
     git(["ls-files"], copy)
@@ -1736,14 +2095,28 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
   );
   for (const file of plan.outsideFiles) writeFileSync(file, `${plan.marker}\n${file}\n`);
   const { server, requests, port } = await startProbeServer(plan.probes);
-  const configPath = join(workRoot, "probe-opencode.json");
-  writeFileSync(
-    configPath,
-    JSON.stringify(reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }), null, 2),
-  );
+  let live = null;
   const savedCanary = process.env[REVIEW_PARENT_CANARY_ENV];
   process.env[REVIEW_PARENT_CANARY_ENV] = plan.marker;
   try {
+    if (gateway)
+      live = await probeGateway({
+        gateway,
+        root: join(workRoot, "gateway-probe"),
+        upstreams: [probeUpstream("probe", port)],
+        members: probeMembers("probe"),
+      });
+    const configPath = join(workRoot, "probe-opencode.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        live
+          ? reviewConfig({ mode, gateway: { baseURL: live.baseURL, config: gateway.config } })
+          : reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }),
+        null,
+        2,
+      ),
+    );
     const problems = [];
     for (const model of REVIEW_MODELS) {
       const before = requests.length;
@@ -1752,10 +2125,10 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
         cwd: copy,
         configPath,
         gitGuard,
-        model,
+        model: launchModel(model, gateway),
         prompt: "probe",
         timeoutMs,
-        extraEnv: { [REVIEW_CANARY_ENV]: plan.marker },
+        extraEnv: { [REVIEW_CANARY_ENV]: plan.marker, ...(gateway ? gatewayOpencodeEnv() : {}) },
         guard: { totalUsd: GUARD_PROBE_OPEN_USD },
       });
       if (!run.guard?.loaded) problems.push(`${model}: GUARD_NOT_LOADED`);
@@ -1784,12 +2157,24 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs }) 
           writtenFiles,
           shellCalls,
           projectInstructions: projectInstructionLine(copy),
+          gateway,
         }).map((problem) => `${model}: ${problem}`),
       );
     }
-    problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode })));
+    live?.stop();
+    live = null;
+    problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway })));
+    if (gateway) {
+      problems.push(
+        ...(await passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gateway })),
+        ...(await failoverProbe({ workRoot, gateway })),
+      );
+      const changed = binaryProblem(gateway.install);
+      if (changed) problems.push(changed);
+    }
     return problems;
   } finally {
+    live?.stop();
     if (savedCanary === undefined) delete process.env[REVIEW_PARENT_CANARY_ENV];
     else process.env[REVIEW_PARENT_CANARY_ENV] = savedCanary;
     await new Promise((resolveClose) => server.close(resolveClose));
@@ -1809,7 +2194,7 @@ function startLoopServer() {
     request.on("end", () => {
       if (request.method !== "POST") {
         response.writeHead(200, { "content-type": "application/json" });
-        response.end('{"data":[]}');
+        response.end(probeModelList());
         return;
       }
       let parsed = {};
@@ -1849,22 +2234,37 @@ function startLoopServer() {
   );
 }
 
-async function guardProbe({ binary, copy, workRoot, gitGuard, mode }) {
+async function guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway }) {
   const { server, mainRequests, port } = await startLoopServer();
-  const configPath = join(workRoot, "guard-probe-opencode.json");
-  writeFileSync(
-    configPath,
-    JSON.stringify(reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }), null, 2),
-  );
+  let live = null;
   try {
+    if (gateway)
+      live = await probeGateway({
+        gateway,
+        root: join(workRoot, "gateway-guard"),
+        upstreams: [probeUpstream("probe", port)],
+        members: probeMembers("probe"),
+      });
+    const configPath = join(workRoot, "guard-probe-opencode.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        live
+          ? reviewConfig({ mode, gateway: { baseURL: live.baseURL, config: gateway.config } })
+          : reviewConfig({ mode, baseURL: `http://127.0.0.1:${port}/v1` }),
+        null,
+        2,
+      ),
+    );
     const run = await runOpencode({
       binary,
       cwd: copy,
       configPath,
       gitGuard,
-      model: REVIEW_MODELS[0],
+      model: launchModel(REVIEW_MODELS[0], gateway),
       prompt: "probe",
       timeoutMs: 20000,
+      extraEnv: gateway ? gatewayOpencodeEnv() : {},
       guard: { totalUsd: GUARD_PROBE_OPEN_USD, stopAfterRequests: GUARD_PROBE_REQUESTS },
     });
     const problems = [];
@@ -1873,8 +2273,11 @@ async function guardProbe({ binary, copy, workRoot, gitGuard, mode }) {
       problems.push(`GUARD_PROBE_REQUESTS expected=${GUARD_PROBE_REQUESTS} got=${mainRequests()}`);
     else if (run.stopReason !== "request-limit")
       problems.push(`GUARD_PROBE_REASON ${run.stopReason}`);
+    if (gateway && !(summarizeEvents(run.stdout).usage.cost > 0))
+      problems.push("GATEWAY_COST_NOT_COUNTED");
     return problems;
   } finally {
+    live?.stop();
     await new Promise((resolveClose) => server.close(resolveClose));
   }
 }
@@ -2018,7 +2421,7 @@ export const REPORT_OPTIONS = [
   "--andy-quote",
 ];
 
-export function parseArgs(argv) {
+export function parseArgs(argv, { defaultGateway = "" } = {}) {
   const options = {
     mode: "code-review",
     repo: repoRoot,
@@ -2090,6 +2493,19 @@ export function parseArgs(argv) {
       options.round = Number(take());
       if (!Number.isSafeInteger(options.round) || options.round <= 0)
         throw new Error("ARG_INVALID --round");
+    } else if (key === "--gateway") {
+      options.gateway = take();
+      if (!GATEWAY_CHOICES.includes(options.gateway)) throw new Error("ARG_INVALID --gateway");
+    } else if (key === "--providers") {
+      options.providers = [
+        ...new Set(
+          take()
+            .split(",")
+            .map((id) => id.trim()),
+        ),
+      ];
+      if (options.providers.some((id) => !id || hasControlCharacter(id)))
+        throw new Error("ARG_INVALID --providers");
     } else if (key === "--approved-usd") {
       options.approvedUsd = Number(take());
       if (!Number.isFinite(options.approvedUsd) || options.approvedUsd <= 0)
@@ -2108,6 +2524,16 @@ export function parseArgs(argv) {
       throw new Error("ARG_ACCEPT_LOW_AND_UNREVIEWED");
     return options;
   }
+  if (options.gateway === undefined && defaultGateway) {
+    if (!GATEWAY_CHOICES.includes(defaultGateway))
+      throw new Error("ARG_INVALID HIMAWARI_REVIEW_GATEWAY");
+    options.gateway = defaultGateway;
+  }
+  if (options.gateway === "direct") delete options.gateway;
+  if (options.providers && options.gateway !== "magpie")
+    throw new Error("ARG_PROVIDERS_NEED_GATEWAY");
+  if (options.providers && options.selfCheckOnly)
+    throw new Error("ARG_PROVIDERS_NOT_FOR_SELF_CHECK");
   if (options.acceptUnreviewed !== undefined)
     throw new Error("ARG_ACCEPT_UNREVIEWED_ONLY_WITH_ASSERT");
   if (options.acceptLow !== undefined) throw new Error("ARG_ACCEPT_LOW_ONLY_WITH_ASSERT");
@@ -2139,8 +2565,206 @@ export function parseArgs(argv) {
   return options;
 }
 
+export function gatewayRecordFields(usage, config, model, { requested = false } = {}) {
+  const unknown = { gateway: "magpie", providers: {}, costUnknown: true };
+  if (usage === null)
+    return requested
+      ? { ...unknown, costUnknownWhy: "usage-unreadable" }
+      : { gateway: "magpie", providers: {} };
+  try {
+    const { byModel, unattributed, unreadableByModel } = summarizeGatewayUsage(usage, config);
+    const providers = byModel[model] ?? {};
+    if (!providersValid(providers)) return { ...unknown, costUnknownWhy: "providers-invalid" };
+    const unreadable = unattributed + (unreadableByModel[model] ?? 0);
+    const recorded = Object.values(providers).reduce((total, slot) => total + slot.requests, 0);
+    const missing = recorded < Number(requested);
+    return unreadable > 0 || missing
+      ? {
+          ...unknown,
+          providers,
+          costUnknownWhy: `unreadable=${unreadable} recorded=${recorded} requested=${Number(requested)}`,
+        }
+      : { gateway: "magpie", providers };
+  } catch {
+    return { ...unknown, costUnknownWhy: "usage-invalid" };
+  }
+}
+
+export function providerMoneyUsd(providers, creditProvider) {
+  return Object.entries(providers ?? {})
+    .filter(([provider]) => provider !== creditProvider)
+    .reduce((total, [, slot]) => total + (slot.usd ?? 0), 0);
+}
+
+export function withProviderMoney(record, creditProvider) {
+  if (!record.gateway) return record;
+  const money = providerMoneyUsd(record.providers, creditProvider);
+  return money > record.cost ? { ...record, cost: money, costFromProviders: record.cost } : record;
+}
+
+export function gatewayRequested(review) {
+  const allowed = review.runs.reduce((total, run) => total + (run.guard?.allowed ?? 0), 0);
+  return Math.max(review.summary.usage.steps, allowed);
+}
+
+export function gatewayUsageLine(record) {
+  const parts = Object.entries(record.providers ?? {}).map(
+    ([provider, slot]) =>
+      `${provider} requests=${slot.requests} failed=${slot.failed}${slot.credits === undefined ? "" : ` credits=${slot.credits.toFixed(2)}`}${slot.usd === undefined ? "" : ` usd=${slot.usd.toFixed(4)}`}`,
+  );
+  const dropped = record.gatewayDropped?.length
+    ? ` dropped=${record.gatewayDropped.join(",")}`
+    : "";
+  return `GATEWAY_USAGE ${record.model} ${parts.length ? parts.join(" ; ") : "none"}${dropped}`;
+}
+
+export function reserveModels({ mode, previous, models }) {
+  const substitute = SUBSTITUTES[models[0]];
+  if (mode === "code-review" && previous && models.length === 1 && substitute)
+    return [...models, substitute];
+  return models;
+}
+
+function tryWrite(path, text) {
+  try {
+    writeFileSync(path, text);
+  } catch (error) {
+    console.log(`REVIEW_DIAGNOSTIC_NOT_SAVED ${error.message}`);
+  }
+}
+
+export function usesCreditProvider(drop, creditProvider) {
+  return !drop.includes(creditProvider);
+}
+
+export async function startLiveGateway({
+  gateway,
+  workRoot,
+  records,
+  models,
+  reserveFor = models,
+  accountUid = () => workbuddyAccountUid(process.env),
+  only,
+}) {
+  const { config } = gateway;
+  const ids = config.providers.map((provider) => provider.id);
+  const unrequested = ids.filter((id) => only && !only.includes(id));
+  for (const id of unrequested) console.log(`GATEWAY_PROVIDER_DROPPED ${id} requested`);
+  const wantsCredit = !unrequested.includes(config.creditProvider);
+  const uid = wantsCredit ? accountUid() : null;
+  const withCredit = config.providers
+    .filter((provider) => !unrequested.includes(provider.id))
+    .map((provider) =>
+      provider.signIn ? (uid ? { ...provider, signIn: { uid } } : null) : provider,
+    )
+    .filter(Boolean);
+  if (wantsCredit && !uid)
+    console.log(`GATEWAY_CREDIT_FLOOR ${config.creditProvider} sign-in-unavailable`);
+  const startOnce = (providers, root) =>
+    startGateway({
+      install: gateway.install,
+      config,
+      root,
+      models: reserveFor,
+      providers,
+      log: (line) => console.log(line),
+    });
+  const start = async (providers, root) => {
+    try {
+      return await startOnce(providers, root);
+    } catch (error) {
+      throw error.message.startsWith("GATEWAY_PREFLIGHT_FAILED")
+        ? error
+        : new Error(`GATEWAY_PREFLIGHT_FAILED ${error.message}`);
+    }
+  };
+  let live;
+  let drop = [...unrequested, ...(wantsCredit && !uid ? [config.creditProvider] : [])];
+  try {
+    live = await start(withCredit, join(workRoot, "gateway-live"));
+  } catch (error) {
+    if (!withCredit.some((provider) => provider.id === config.creditProvider)) throw error;
+    console.log(`GATEWAY_CREDIT_FLOOR ${config.creditProvider} start-failed ${error.message}`);
+    drop = [...drop, config.creditProvider];
+    live = await start(
+      withCredit.filter((provider) => provider.id !== config.creditProvider),
+      join(workRoot, "gateway-live-fallback"),
+    );
+  }
+  if (usesCreditProvider(drop, config.creditProvider)) {
+    const left = live.quota(config.creditProvider);
+    const reserve = creditReserve({
+      records,
+      models: reserveFor,
+      costLimitUsd: COST_LIMIT_PER_MODEL_USD,
+      provider: config.creditProvider,
+      fallback: config.defaultCreditsPerUsd,
+    });
+    const decision = floorDecision({ left, reserve, floor: config.creditFloor });
+    if (decision.use)
+      console.log(
+        `GATEWAY_CREDITS ${config.creditProvider} left=${left.toFixed(2)} reserve=${reserve.toFixed(2)} floor=${config.creditFloor}`,
+      );
+    else {
+      console.log(`GATEWAY_CREDIT_FLOOR ${config.creditProvider} ${decision.reason}`);
+      drop = [...drop, config.creditProvider];
+    }
+  }
+  const dropProviders = (missing) => {
+    const unavailable = [...new Set(missing.map((member) => member.split("/")[0]))];
+    for (const provider of unavailable)
+      console.log(
+        `GATEWAY_PROVIDER_DROPPED ${provider} missing=${missing.filter((member) => member.startsWith(`${provider}/`)).join(",")}`,
+      );
+    drop = [...drop, ...unavailable];
+  };
+  const addGroups = () => {
+    for (;;) {
+      try {
+        live.addGroups(drop);
+        return;
+      } catch (error) {
+        const member = error.message.match(/knows no model "([^"]+)"/)?.[1];
+        if (!member || drop.includes(member.split("/")[0])) throw error;
+        dropProviders([member]);
+      }
+    }
+  };
+  const missingMembers = async () => {
+    const listed = await getJson(`${live.baseURL}/models`);
+    if (listed.status !== 200) throw new Error(`GATEWAY_PREFLIGHT_FAILED models=${listed.status}`);
+    const ids = new Set((listed.json?.data ?? []).map((item) => item.id));
+    return models.flatMap((model) =>
+      config.models[model].members.filter(
+        (member) => !drop.includes(member.split("/")[0]) && !ids.has(member),
+      ),
+    );
+  };
+  try {
+    addGroups();
+    await live.serve();
+    const missing = await missingMembers();
+    if (missing.length > 0) {
+      dropProviders(missing);
+      live.stop();
+      addGroups();
+      await live.serve();
+      const still = await missingMembers();
+      if (still.length > 0) throw new Error(`GATEWAY_PREFLIGHT_FAILED missing=${still.join(",")}`);
+    }
+  } catch (error) {
+    live.stop();
+    throw error.message.startsWith("GATEWAY_PREFLIGHT_FAILED")
+      ? error
+      : new Error(`GATEWAY_PREFLIGHT_FAILED ${error.message}`);
+  }
+  return { live, drop: ids.filter((id) => drop.includes(id)) };
+}
+
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseArgs(process.argv.slice(2), {
+    defaultGateway: process.env.HIMAWARI_REVIEW_GATEWAY,
+  });
   if (options.report) {
     for (const line of reviewReport(options)) console.log(line);
     return;
@@ -2152,6 +2776,11 @@ async function main() {
       process.exitCode = 5;
     return;
   }
+  const gatewayConfig = options.gateway ? readGatewayConfig(undefined, REVIEW_MODELS) : null;
+  const unknownProvider = (options.providers ?? []).find(
+    (id) => !gatewayConfig.providers.some((provider) => provider.id === id),
+  );
+  if (unknownProvider) throw new Error(`ARG_INVALID --providers ${unknownProvider}`);
   const timeoutMs = options.timeoutMinutes * 60 * 1000;
   const commits = resolveCommits(options.repo, options);
   const questions = reviewQuestions(questionsSource(options.repo, commits, options.questionsRef));
@@ -2196,18 +2825,28 @@ async function main() {
         ),
       });
   const binary = opencodeBinary();
+  const gateway = gatewayConfig ? { install: installGateway(), config: gatewayConfig } : null;
+  if (gateway) {
+    const changed = binaryProblem(gateway.install);
+    if (changed) throw new Error(changed);
+  }
   const workRoot = mkdtempSync(join(tmpdir(), "opencode-review-"));
   const copy = join(workRoot, "repo");
   const cleanup = () => {
+    stopAllGateways();
     for (const child of activeChildren) killProcessGroup(child, "SIGKILL");
     rmSync(workRoot, { recursive: true, force: true });
   };
-  const onSignal = (signal) => {
-    cleanup();
-    process.exit(signal === "SIGINT" ? 130 : 143);
-  };
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
+  let modelsRunning = false;
+  const onSignal = signalHandler({
+    running: () => modelsRunning,
+    requestStop,
+    cleanup,
+    exit: (code) => process.exit(code),
+  });
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  console.log(`REVIEW_PID ${process.pid}`);
   try {
     const removed = prepareCopy({ repo: options.repo, copy, commits, workRoot });
     if (removed.length > 0) console.log(`UNSAFE_PROJECT_FILES_REMOVED ${removed.length}`);
@@ -2219,6 +2858,7 @@ async function main() {
       gitGuard,
       mode: options.mode,
       timeoutMs: 180000,
+      gateway,
     });
     if (problems.length > 0) {
       console.error(`SELF_CHECK_FAILED ${problems.join(" | ")}`);
@@ -2227,12 +2867,29 @@ async function main() {
     }
     console.log("SELF_CHECK_OK");
     if (options.selfCheckOnly) return;
+    let liveGateway = null;
+    if (gateway) {
+      liveGateway = await startLiveGateway({
+        gateway,
+        workRoot,
+        records,
+        models: options.models,
+        reserveFor: reserveModels(options),
+        only: options.providers,
+      });
+    }
+    const routed = liveGateway
+      ? { baseURL: liveGateway.live.baseURL, config: gateway.config }
+      : undefined;
     const configPath = join(workRoot, "opencode.json");
-    writeFileSync(configPath, JSON.stringify(reviewConfig({ mode: options.mode }), null, 2));
+    writeFileSync(
+      configPath,
+      JSON.stringify(reviewConfig({ mode: options.mode, gateway: routed }), null, 2),
+    );
     const wrapUpConfigPath = join(workRoot, "opencode-wrap-up.json");
     writeFileSync(
       wrapUpConfigPath,
-      JSON.stringify(reviewConfig({ mode: options.mode, wrapUp: true }), null, 2),
+      JSON.stringify(reviewConfig({ mode: options.mode, wrapUp: true, gateway: routed }), null, 2),
     );
     const roundDir = join(options.out, `round-${round}`);
     const roundRawDir = rawDir(options, round);
@@ -2250,16 +2907,18 @@ async function main() {
         configPath,
         wrapUpConfigPath,
         gitGuard,
-        model,
+        model: launchModel(model, routed),
         prompt,
         timeoutMs,
+        extraEnv: routed ? gatewayOpencodeEnv() : {},
       });
       writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
+      const gatewayUsage = liveGateway ? await liveGateway.live.stableUsage() : null;
       const { summary } = review;
       writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
       if (summary.thinking)
         writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
-      const record = {
+      const assembled = {
         at: new Date().toISOString(),
         round,
         mode: options.mode,
@@ -2278,17 +2937,36 @@ async function main() {
         ...(summary.apiError ? { apiError: apiErrorText(summary.apiError) } : {}),
         ...(review.retry ? { retry: review.retry } : {}),
         ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
+        ...(liveGateway
+          ? {
+              ...gatewayRecordFields(gatewayUsage, gateway.config, model, {
+                requested: gatewayRequested(review),
+              }),
+              ...(liveGateway.drop.length ? { gatewayDropped: liveGateway.drop } : {}),
+            }
+          : {}),
         ...extra,
       };
+      const record = gateway
+        ? withProviderMoney(assembled, gateway.config.creditProvider)
+        : assembled;
       appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
+      if (record.costUnknownWhy) {
+        console.log(`GATEWAY_COST_UNKNOWN ${model} ${record.costUnknownWhy}`);
+        tryWrite(
+          join(roundRawDir, `${name}.magpie-usage.jsonl`),
+          (gatewayUsage ?? []).map((line) => `${JSON.stringify(line)}\n`).join(""),
+        );
+      }
       if (record.outcome !== "ok" && review.stderr.trim()) {
         writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
       }
       return { record, review };
     };
+    modelsRunning = true;
     const runs = await Promise.all(options.models.map((model) => runOne(model, prompts[model])));
     const results = runs.map((run) => run.record);
-    const substitute = substituteFor({ ...options, ...commits, runs });
+    const substitute = stopRequested ? null : substituteFor({ ...options, ...commits, runs });
     if (substitute) {
       const substitutePrompt = buildPrompt({
         ...options,
@@ -2318,6 +2996,14 @@ async function main() {
     }
     for (const record of results) {
       console.log(resultLine(record));
+      if (record.gateway) console.log(gatewayUsageLine(record));
+    }
+    if (gateway) {
+      const changed = binaryProblem(gateway.install);
+      if (changed) {
+        console.error(changed);
+        process.exitCode = 4;
+      }
     }
     const totalSpent = spentOf(readUsage(options.out));
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
@@ -2328,7 +3014,12 @@ async function main() {
       )
     )
       process.exitCode = 4;
+    if (stopRequested) {
+      console.log(`REVIEW_STOPPED ${OWNER_STOPPED}`);
+      process.exitCode = 130;
+    }
   } finally {
+    onSignal.dispose();
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
     cleanup();

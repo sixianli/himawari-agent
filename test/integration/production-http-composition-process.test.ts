@@ -1,7 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { request as requestHttp } from "node:http";
+import { request as requestHttp, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +17,8 @@ import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
+import { isAgentRequest } from "../fixtures/agent-request.ts";
+import { readRequestBody } from "../fixtures/request-body.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(
@@ -71,13 +73,13 @@ const providerRequests: Array<{
 }> = [];
 type ChatReply = { readonly text: string } | { readonly tool: string; readonly input: object };
 let chatReply: ((input: Readonly<Record<string, unknown>>) => ChatReply) | undefined;
-const agentGenerationRequests = () =>
-  providerRequests.filter(
-    ({ path: route, body }) =>
-      route === "/v1/chat/completions" &&
-      Array.isArray(body?.["messages"]) &&
-      (body["messages"] as Array<{ role?: unknown }>)[0]?.role === "system",
-  ).length;
+const answerFailedRead = (response: ServerResponse) => () => {
+  if (response.destroyed || response.writableEnded) return;
+  if (!response.headersSent) response.writeHead(500);
+  response.end();
+};
+
+const agentGenerationRequests = () => providerRequests.filter(isAgentRequest).length;
 
 type HttpResult = {
   readonly status: number;
@@ -196,100 +198,106 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
         );
         return;
       }
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk;
-      });
-      request.on("end", () => {
-        const input = JSON.parse(body);
-        capturedRequest.body = input;
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(
-          JSON.stringify({
-            object: "list",
-            model: input.model,
-            data: [{ object: "embedding", index: 0, embedding: Array(input.dimensions).fill(0.1) }],
-            usage: { prompt_tokens: 8, total_tokens: 8 },
-            ...(embeddingCostAvailable
-              ? {
-                  providerMetadata: {
-                    gateway: {
-                      generationId: `embedding-${providerRequests.length}`,
-                      routing: { finalProvider: "deepinfra" },
-                      cost: "0.000033",
+      void readRequestBody(request)
+        .then((body) => {
+          const input = JSON.parse(body);
+          capturedRequest.body = input;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              object: "list",
+              model: input.model,
+              data: [
+                { object: "embedding", index: 0, embedding: Array(input.dimensions).fill(0.1) },
+              ],
+              usage: { prompt_tokens: 8, total_tokens: 8 },
+              ...(embeddingCostAvailable
+                ? {
+                    providerMetadata: {
+                      gateway: {
+                        generationId: `embedding-${providerRequests.length}`,
+                        routing: { finalProvider: "deepinfra" },
+                        cost: "0.000033",
+                      },
                     },
-                  },
-                }
-              : {}),
-          }),
-        );
-      });
+                  }
+                : {}),
+            }),
+          );
+        })
+        .catch(answerFailedRead(response));
       return;
     }
     if (requestPath === "/v1/chat/completions") {
-      let body = "";
-      request.on("data", (chunk) => {
-        body += chunk;
-      });
-      request.on("end", () => {
-        const input = JSON.parse(body);
-        capturedRequest.body = input;
-        capturedRequest.raw = body;
-        const reply = chatReply?.(input) ?? { text: "安装后的持久回答" };
-        response.writeHead(200, { "content-type": "text/event-stream" });
-        response.write(
-          `data: ${JSON.stringify({
-            id: "completion-installed",
-            object: "chat.completion.chunk",
-            created: Math.floor(Date.now() / 1000),
-            model: input.model,
-            choices: [
-              {
-                index: 0,
-                delta:
-                  "tool" in reply
-                    ? {
-                        role: "assistant",
-                        tool_calls: [
-                          {
-                            index: 0,
-                            id: `call-${providerRequests.length}`,
-                            type: "function",
-                            function: { name: reply.tool, arguments: JSON.stringify(reply.input) },
-                          },
-                        ],
-                      }
-                    : { role: "assistant", content: reply.text },
-                finish_reason: null,
-              },
-            ],
-          })}\n\n`,
-        );
-        response.write(
-          `data: ${JSON.stringify({
-            id: "completion-installed",
-            object: "chat.completion.chunk",
-            model: input.model,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  provider_metadata: {
-                    gateway: {
-                      generationId: `generation-${providerRequests.length}`,
-                      routing: { finalProvider: "morph" },
-                      cost: "0.000077",
+      void readRequestBody(request)
+        .then((body) => {
+          const input = JSON.parse(body);
+          capturedRequest.body = input;
+          capturedRequest.raw = body;
+          const reply = chatReply?.(input) ?? { text: "安装后的持久回答" };
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.write(
+            `data: ${JSON.stringify({
+              id: "completion-installed",
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: input.model,
+              choices: [
+                {
+                  index: 0,
+                  delta:
+                    "tool" in reply
+                      ? {
+                          role: "assistant",
+                          tool_calls: [
+                            {
+                              index: 0,
+                              id: `call-${providerRequests.length}`,
+                              type: "function",
+                              function: {
+                                name: reply.tool,
+                                arguments: JSON.stringify(reply.input),
+                              },
+                            },
+                          ],
+                        }
+                      : { role: "assistant", content: reply.text },
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
+          );
+          response.write(
+            `data: ${JSON.stringify({
+              id: "completion-installed",
+              object: "chat.completion.chunk",
+              model: input.model,
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    provider_metadata: {
+                      gateway: {
+                        generationId: `generation-${providerRequests.length}`,
+                        routing: { finalProvider: "morph" },
+                        cost: "0.000077",
+                      },
                     },
                   },
+                  finish_reason: "tool" in reply ? "tool_calls" : "stop",
                 },
-                finish_reason: "tool" in reply ? "tool_calls" : "stop",
+              ],
+              usage: {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cost: "0.000077",
               },
-            ],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: "0.000077" },
-          })}\n\n`,
-        );
-        response.end("data: [DONE]\n\n");
-      });
+            })}\n\n`,
+          );
+          response.end("data: [DONE]\n\n");
+        })
+        .catch(answerFailedRead(response));
       return;
     }
     if (requestPath === "/cdn-cgi/access/certs") {
@@ -1863,11 +1871,7 @@ type ChatBody = {
 function agentRequests(from: number) {
   return providerRequests
     .slice(from)
-    .filter(
-      ({ path: route, body }) =>
-        route === "/v1/chat/completions" &&
-        (body?.["messages"] as Array<{ role?: unknown }> | undefined)?.[0]?.role === "system",
-    )
+    .filter(isAgentRequest)
     .map(({ raw, body }) => ({ raw: raw ?? "", body: body as unknown as ChatBody }));
 }
 
@@ -1973,7 +1977,8 @@ it("[PR-A] stops a tool loop by appending one message, keeps the head unchanged 
     const messages = input["messages"] as { role: string; content: unknown }[];
     if (JSON.stringify(messages.at(-1)).includes("不要说整个任务已经成功"))
       return { text: "已确认的结果：提醒列表是空的；这一步卡住了，我换个办法。" };
-    if (messages[0]?.role !== "system" || !chosen) return { text: "安装后的持久回答" };
+    if (!isAgentRequest({ path: "/v1/chat/completions", body: input }) || !chosen)
+      return { text: "安装后的持久回答" };
     return { tool: chosen, input: {} };
   };
   try {

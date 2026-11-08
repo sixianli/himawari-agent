@@ -1,0 +1,61 @@
+你是独立的代码复核者。
+你能用的工具：read、grep、glob，以及 git diff、git log、git show、git blame、git status 这几条 git 命令。不能修改任何文件，不能运行别的命令。不能上网。
+系统的真相在代码里。下面「作者的说法」可能有错，每一条都要对照代码核对；发现说法和代码不一致，要明确指出。
+做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。
+列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。
+必答问题：
+1. 这个改动会不会改变模型已经见过的请求开头？包括系统提示、工具定义、历史消息、遮盖结果。要求回答：发给模型的内容是不是仍然只在末尾追加，每轮会变的值是不是都在最后一条消息里。依据：[发给模型的内容只追加](../../.claude/rules/prompt-prefix.md#rules)。
+2. 这个改动会不会让同一段文字在不同请求里变成不同的字节（例如依赖前后文的遮盖、带时间的字段、无序的集合）？
+3. 改动有没有对应的自动检查，反向用例是否真的会失败？
+4. 改动产生或修改的每个值（标识、字段、配置键、清单项、序列化格式），每一个使用它的地方都能接受吗？逐个找到产生它的地方和使用它的地方，核对两端的校验，只看改动本身不够。依据：[I-73](../../docs/incidents-and-gates.md#incidents)，双模型复核只看了改动，没问“清单里的 id 能通过后端校验吗”。
+你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作，以及规则文件、说明文档和代码是否一致。有时另有一个复核者侧重别的方面，有时只有你一个，所以你都要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。
+输出格式：按严重度从高到低排列，每条写：严重度、文件:行、问题、证据（引用你亲自读到的那几行代码）、建议。把「读代码证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。
+
+---- 本次材料 ----
+仓库就是当前目录，已检出 1bea46f972efca51ac9f188b64aa104df300219e。
+对比基准是 34843f52b7eb856626c1dee94f833e1ea454aa4f，先运行 git diff 34843f52b7eb856626c1dee94f833e1ea454aa4f..1bea46f972efca51ac9f188b64aa104df300219e 看改动。
+上一轮复核到 a4ab2d83e82006bc242e62e291f90255b73c8163，先看 git diff a4ab2d83e82006bc242e62e291f90255b73c8163..1bea46f972efca51ac9f188b64aa104df300219e 的增量，但可以读任何文件。
+作者的说法（可能有错，请核对）：
+# PR 292：一家服务方不可用就跳过；Andy 可叫停复核、指定这一次的服务方、跳过复核合并
+
+## 问题和目标
+
+复核脚本 `scripts/model-review/opencode-review.mjs` 经本机 Magpie 调模型（ADR 0178）。Andy 2026-11-08 要求：一、几家服务方是主备关系，开跑前某一家不可用不能让复核停下；二、他要能随时叫停正在跑的复核、指定这一次用哪家服务方；三、放松合并前必须复核的门槛：任何 PR，只要他明确说跳过，就可以不复核直接合并，并留下他的原话。方案经过两个模型独立出方案和审核，整合后的方案在 `.agents/reviews/topic-review-control/proposal.md`，Andy 已同意。
+
+## 约束
+
+- 花钱上限、积分底线、账本、只读沙箱不能削弱；停掉的复核要记账（宁可多记）。
+- 线程只能凭 Andy 的原话跳过复核。
+- 发给模型的内容只追加；新一节规则不能变成必问问题。不写代码注释；新增行为有测试和反向用例。
+
+## 作者的说法（请逐条核对实现是否符合 proposal.md）
+
+1. `startLiveGateway`：建组时 Magpie 报“knows no model”或起来后的 `/models` 里没有某成员，就去掉这一家、重建组再起；每个模型都没有成员才 `GATEWAY_PREFLIGHT_FAILED`；带 `only`（`--providers`）时没列出的服务方不配置、不登录；积分检查用 `usesCreditProvider(drop, creditProvider)`；返回的 `drop` 按 `gateway.json` 顺序。
+2. `assertReviewed`：删掉 `OVERRIDE_MIN_ROUNDS`，可盖过的问题见 `OVERRIDABLE_PROBLEMS`；账本缺失时新建；写入后不放行（`REVIEW_OVERRIDE_WRITTEN`），提交后认出已提交记录才放行。
+3. 叫停：`signalHandler`、`requestStop`、`activeStops` 登记、`stopRequested` 时不开追问/重试/替补；`owner-stopped` 在 `GUARD_DEFERS_TO_PARENT`；`--report` 的 `three-rounds` 不算只被叫停的轮。
+4. `--providers` 解析、`ARG_PROVIDERS_NEED_GATEWAY`、未知 id 在读材料和安装前报错；`parseUsage` 校验 `gatewayDropped`。
+5. 文档：`model-review.md` 的“Andy 怎样控制复核”一节和第 6 步例外、`AGENTS.md`、`owner-standing-rules.md`、ADR 0178 后续与代码一致。
+
+## 实测
+
+反向验证 7 处；两组测试 194 条通过；`npm run check` 通过；真实 Magpie 下把 OpenDesign 地址改成不存在的主机时请求由 CodeBuddy 回答。
+
+请重点查：叫停时会不会漏记花费或留下 OpenCode/Magpie 进程；跳过复核能不能被线程以外的文字触发、会不会在账本未提交时放行；`--providers` 会不会绕过积分底线；一家不可用时会不会悄悄用到没列出的服务方。
+
+## 第 2 轮：按第 1 轮意见做的修改（请核对这些修改本身对不对、有没有引入新问题）
+
+- `waitUnlessStopped(ms)`：API 报错后等待重试改用它，叫停时立刻结束；结束后 `stopRequested` 为真就不重试，返回第一次运行的结果（`retry: null`），由 `runOne` 照常记账。
+- 因叫停没开追问时 `outcome` 记 `owner-stopped`。
+- `reviewReport` 逐条列出 `mode: "override"` 的记录（`REVIEW_OVERRIDE_RECORD head=… quote=… problems=…`）。
+- `--providers`：拒绝控制字符；和 `--self-check-only` 同用报 `ARG_PROVIDERS_NOT_FOR_SELF_CHECK`。
+- `summarizeGatewayUsage` 另返回 `unattributed`（认不出模型的行）和 `unreadableByModel`；`gatewayRecordFields` 只用本模型的读不懂行数加认不出模型的行数，标“花费未知”时记 `costUnknownWhy`；`runOne` 这时打印 `GATEWAY_COST_UNKNOWN` 并把 Magpie 用量记录存到原始目录。
+- 文档措辞对齐；新增用例见 `test/tooling/`。
+
+## 第 3 轮：按第 2 轮意见做的修改（请核对这些修改本身对不对、有没有引入新问题）
+
+- `gatewayRecordFields`：读不到用量（`usage-unreadable`）、服务方明细不合格（`providers-invalid`）、解析出错（`usage-invalid`）都记 `costUnknownWhy`。
+- 等待重试时叫停：返回 `{ ...first, retry: "owner-stopped", outcome: "owner-stopped" }`。
+- `gatewayConfigProblems`：每个模型的服务方集合必须相同，不同报 `models.providers-differ`。
+- `reviewReport`：覆盖记录的 `problems` 不是数组时打印 `problems=invalid`。
+- `runOne`：先 `appendFileSync` 写账本，再用 `tryWrite` 写 Magpie 诊断文件，失败只打印 `REVIEW_DIAGNOSTIC_NOT_SAVED`。
+- ADR 0178 后续措辞、`model-review.md` 同步。
