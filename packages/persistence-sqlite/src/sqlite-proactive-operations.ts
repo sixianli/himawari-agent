@@ -522,6 +522,33 @@ export class SqliteProactiveOperations {
       this.invalid("Proactive decision is invalid");
   }
 
+  private relatedInputsValid(
+    inputs: Input<"record">["inputs"],
+    ids: (value: unknown, max: number) => boolean,
+  ): boolean {
+    const byMail = inputs.relatedByMail ?? {};
+    const stats = inputs.relatedStats;
+    return (
+      ["off", "ok", "partial", "failed"].includes(inputs.relatedRead ?? "off") &&
+      typeof byMail === "object" &&
+      byMail !== null &&
+      Object.keys(byMail).length <= MAX_INPUT_IDS &&
+      Object.entries(byMail).every(
+        ([messageId, list]) => messageId.length >= 1 && messageId.length <= 256 && ids(list, 64),
+      ) &&
+      (inputs.relatedFailedSteps === undefined ||
+        (Array.isArray(inputs.relatedFailedSteps) &&
+          inputs.relatedFailedSteps.length <= 16 &&
+          inputs.relatedFailedSteps.every(
+            (step) => typeof step === "string" && step.length >= 1 && step.length <= 64,
+          ))) &&
+      (stats === undefined ||
+        [stats.requests, stats.messages, stats.characters, stats.durationMs].every(
+          (value) => Number.isSafeInteger(value) && value >= 0,
+        ))
+    );
+  }
+
   private validateInputs(input: Input<"record">) {
     const { inputs, modelPayloads } = input;
     const ids = (value: unknown, max: number) =>
@@ -543,6 +570,7 @@ export class SqliteProactiveOperations {
       Object.entries(inputs.memoryByMail).some(
         ([messageId, list]) => messageId.length < 1 || messageId.length > 256 || !ids(list, 16),
       ) ||
+      !this.relatedInputsValid(inputs, ids) ||
       typeof floorHits !== "object" ||
       floorHits === null ||
       Object.keys(floorHits).length > MAX_INPUT_IDS ||
@@ -609,6 +637,15 @@ export class SqliteProactiveOperations {
             usedMemoryIds: input.inputs.usedMemoryIds,
             memoryByMail: input.inputs.memoryByMail,
             memoryRecall: input.inputs.memoryRecall,
+            relatedByMail: input.inputs.relatedByMail ?? {},
+            relatedRead: input.inputs.relatedRead ?? "off",
+            relatedStats: input.inputs.relatedStats ?? {
+              requests: 0,
+              messages: 0,
+              characters: 0,
+              durationMs: 0,
+            },
+            relatedFailedSteps: input.inputs.relatedFailedSteps ?? [],
           }),
           decision.pushSourceKey,
           decision.costMicros,
