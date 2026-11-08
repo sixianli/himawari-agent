@@ -647,6 +647,64 @@ describe("[P0-8] calibration report tab", () => {
     expect(text("#page .weekly-today")).toBe("今天");
   });
 
+  it("[P0-11] [negative] shows no signal numbers before the observation has started", async () => {
+    const unset = unsetFixture();
+    weekly = {
+      ...unset,
+      report: {
+        ...unset.report,
+        ratesWithheld: false,
+        implicit: {
+          pushedDecisions: 12,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 6, 60_000, 12),
+            signalRow("undone", 1, 60_000, 12),
+            signalRow("replied", 2, 60_000, 12),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("还没开始观察");
+    expect(card).not.toMatch(/%/u);
+    expect(card).not.toContain("另有");
+    expect(document.querySelector("#page .weekly-tiles[data-count='3']")).toBeNull();
+  });
+
+  it("[P0-11] [negative] shows no signal numbers while the observation is set but has not begun", async () => {
+    const unset = unsetFixture();
+    weekly = {
+      ...unset,
+      observation: {
+        ...unset.observation,
+        startDay: "2026-11-05",
+        setAt: NOW.toISOString(),
+        startRevision: "41a6ce3",
+      },
+      report: {
+        ...unset.report,
+        implicit: {
+          pushedDecisions: 12,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 6, 60_000, 12),
+            signalRow("undone", 1, 60_000, 12),
+            signalRow("replied", 2, 60_000, 12),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("还没开始观察");
+    expect(card).not.toMatch(/%/u);
+    expect(document.querySelector("#page .weekly-tiles[data-count='3']")).toBeNull();
+  });
+
   it("[P0-11] says the week is not over instead of 'too few' while ratios are withheld", async () => {
     const observing = observingFixture();
     weekly = {
