@@ -637,6 +637,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0080_decision_signals.sql",
   },
+  {
+    sequence: 81,
+    name: "proactive_push_backoff",
+    changeSet: "proactive-push-backoff",
+    phase: "expand" as const,
+    file: "0081_proactive_push_backoff.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

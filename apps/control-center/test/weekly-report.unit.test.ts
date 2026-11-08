@@ -70,6 +70,7 @@ const overview = {
   quietHours: [],
   importantSenders: [],
   dailyLimitReached: false,
+  backoff: [],
   insights: [],
   audit: { active: false, since: NOW.toISOString(), items: [], pending: 0 },
   decisions: [],
