@@ -94,7 +94,7 @@ it("marks corrected memories as history and hides classifications above the run"
   expect(f.episodes).toHaveBeenCalledWith(
     expect.objectContaining({ allowedClassifications: ["public", "private"] }),
   );
-  expect(f.slots).toEqual(["memory-recall", "memory-recall-episodes"]);
+  expect(f.slots).toEqual(["memory-recall", "memory-recall-tentative", "memory-recall-episodes"]);
 });
 
 it("turns explicit dates into the owner's local day bounds", async () => {
@@ -118,17 +118,27 @@ it.each([
 });
 
 function recallWith(
-  entries: readonly { id: string; text: string; score: number; tentative?: boolean }[],
+  entries: readonly {
+    id: string;
+    text: string;
+    score: number;
+    tentative?: boolean;
+    classification?: ProductMemoryRecord["dataClassification"];
+  }[],
 ) {
-  const records = entries.map(({ id, tentative }) =>
-    record(id, "private", tentative ? { tentative: true } : {}),
+  const records = entries.map(({ id, tentative, classification }) =>
+    record(id, classification ?? "private", tentative ? { tentative: true } : {}),
   );
-  const search = vi.fn(async () =>
-    entries.map(({ id, score }, index) => ({
-      productMemoryId: records[index]?.id,
-      providerRecordId: `provider-${id}`,
-      score,
-    })),
+  const search = vi.fn(async (request: { includeTentative?: boolean }) =>
+    entries
+      .map(({ id, score, tentative }) => ({
+        productMemoryId: id,
+        providerRecordId: `provider-${id}`,
+        score,
+        tentative: tentative === true,
+      }))
+      .filter(({ tentative }) => request.includeTentative === true || !tentative)
+      .map(({ tentative: _tentative, ...hit }) => hit),
   );
   const service = new ProductionMemoryRecall({
     ownerId,
@@ -148,39 +158,74 @@ type RecallResult = {
   tentativeNote?: string;
 };
 
-it("[PA-2] chat recall returns tentative memories marked as tentative, behind confirmed ones", async () => {
+it("[PA-2] chat recall returns tentative memories marked as tentative, after confirmed ones", async () => {
   const f = recallWith([
-    { id: "guess", text: "主人偏好明治乳制品", score: 1, tentative: true },
+    { id: "guess", text: "主人偏好明治乳制品", score: 2, tentative: true },
     { id: "fact", text: "主人住在杭州", score: 1 },
   ]);
   const result = (await f.service.recall(call({ query: "牛奶", limit: 4 }))) as RecallResult;
   expect(f.search).toHaveBeenCalledWith(expect.objectContaining({ includeTentative: true }));
-  expect(result.memories.map(({ text }) => text)).toEqual(
-    ["主人偏好明治乳制品", "主人住在杭州"].reverse(),
-  );
+  expect(result.memories.map(({ text }) => text)).toEqual(["主人住在杭州", "主人偏好明治乳制品"]);
   expect(result.memories[1]).toMatchObject({ tentative: true });
   expect(result.memories[0]).not.toHaveProperty("tentative");
   expect(result.tentativeNote).toContain("tentative");
 });
 
-it("[PA-2] REVERSE: confirmed memories look exactly as before and add no tentative note", async () => {
-  const f = recallWith([{ id: "fact", text: "主人住在杭州", score: 1 }]);
-  const result = (await f.service.recall(call({ query: "住哪" }))) as RecallResult;
-  expect(result.memories).toHaveLength(1);
-  expect(result.memories[0]).not.toHaveProperty("tentative");
-  expect(result).not.toHaveProperty("tentativeNote");
+it("[PA-2] REVERSE: with no tentative memory the result is exactly what it was before", async () => {
+  const f = recallWith([
+    { id: "a", text: "主人住在杭州", score: 3 },
+    { id: "b", text: "主人用 Pixel 9", score: 2 },
+  ]);
+  const result = (await f.service.recall(call({ query: "x", limit: 5 }))) as RecallResult;
+  expect(result).toEqual({
+    query: "x",
+    window: null,
+    memories: [
+      {
+        text: "主人住在杭州",
+        current: true,
+        recordedAt: "2026-09-01T00:00:00.000Z",
+        validFrom: null,
+        validTo: null,
+      },
+      {
+        text: "主人用 Pixel 9",
+        current: true,
+        recordedAt: "2026-09-01T00:00:00.000Z",
+        validFrom: null,
+        validTo: null,
+      },
+    ],
+    conversations: [],
+    note: expect.any(String),
+  });
+  expect(JSON.stringify(Object.keys(result))).toBe(
+    '["query","window","memories","conversations","note"]',
+  );
 });
 
-it("[PA-2] REVERSE: tentative memories never take more than half of the returned slots", async () => {
+it("[PA-2] REVERSE: tentative memories take at most half of the requested slots and never push out confirmed hits", async () => {
   const f = recallWith([
-    { id: "g1", text: "猜测一", score: 5, tentative: true },
-    { id: "g2", text: "猜测二", score: 4, tentative: true },
-    { id: "g3", text: "猜测三", score: 3, tentative: true },
-    { id: "fact", text: "已确认的事", score: 1 },
+    { id: "g1", text: "猜测一", score: 9, tentative: true },
+    { id: "g2", text: "猜测二", score: 8, tentative: true },
+    { id: "g3", text: "猜测三", score: 7, tentative: true },
+    { id: "f1", text: "事实一", score: 3 },
+    { id: "f2", text: "事实二", score: 2 },
+    { id: "f3", text: "事实三", score: 1 },
   ]);
   const result = (await f.service.recall(call({ query: "x", limit: 4 }))) as RecallResult;
-  expect(result.memories.filter(({ tentative }) => tentative)).toHaveLength(2);
-  expect(result.memories.map(({ text }) => text)).toContain("已确认的事");
+  expect(result.memories.map(({ text }) => text)).toEqual(["事实一", "事实二", "猜测一", "猜测二"]);
   const single = (await f.service.recall(call({ query: "x", limit: 1 }))) as RecallResult;
-  expect(single.memories.filter(({ tentative }) => tentative)).toHaveLength(0);
+  expect(single.memories.map(({ text }) => text)).toEqual(["事实一"]);
+  expect(single).not.toHaveProperty("tentativeNote");
+});
+
+it("[PA-2] REVERSE: a tentative memory above the run's data classification is not returned", async () => {
+  const f = recallWith([
+    { id: "secret", text: "敏感猜测", score: 9, tentative: true, classification: "sensitive" },
+    { id: "fact", text: "事实", score: 1 },
+  ]);
+  const result = (await f.service.recall(call({ query: "x", limit: 4 }))) as RecallResult;
+  expect(result.memories.map(({ text }) => text)).toEqual(["事实"]);
+  expect(result).not.toHaveProperty("tentativeNote");
 });
