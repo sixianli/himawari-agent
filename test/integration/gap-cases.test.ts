@@ -21,7 +21,7 @@ import {
   ProductionGapExport,
   registerGapExportRoute,
 } from "../../apps/agent-service/src/production-gap-export.ts";
-import { buildGapCases } from "../../apps/agent-service/src/production-gap-cases.ts";
+import { buildGapCases, gapCaseId } from "../../apps/agent-service/src/production-gap-cases.ts";
 import { run } from "../../scripts/calibration-report/report.mjs";
 
 const OWNER_ID = createOwnerId("owner-gap");
@@ -326,6 +326,7 @@ describe("[PA-4] Muse gap cases", () => {
       expect(body.cases[0].prefill.title).toContain("Muse title");
       expect(body.cases[0].prefill.summary).toContain("归因");
       expect(body.cases[0].prefill.origin).toContain(first.id);
+      expect(body.cases[0].prefill.origin).toContain("至 2026-11-02）");
       expect(Object.keys(body.cases[0].prefill).sort()).toEqual([
         "origin",
         "summary",
@@ -375,6 +376,98 @@ describe("[PA-4] Muse gap cases", () => {
       const response = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
       expect(response.body).not.toContain("hunter22222");
       expect(response.json().cases).toHaveLength(1);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("keeps the case id when the owner rates the same Muse entry again", async () => {
+    const h = await wired();
+    try {
+      const before = (await h.cases()).map((entry) => entry.id).sort();
+      const target = MAILS[0];
+      if (!target) throw new Error("no mail");
+      await h.repository.museIntake().rate({
+        ...scope,
+        kind: "proactive",
+        naturalKey: target.key,
+        timingOk: true,
+        contentOk: true,
+        entryId: "rating-again",
+        now: IN_WINDOW,
+      });
+      expect((await h.cases()).map((entry) => entry.id).sort()).toEqual(before);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] turns several Muse entries about one mail into one case, and keeps long emoji text inside the contract length", async () => {
+    const h = await wired();
+    try {
+      const candidates = await h.repository
+        .decisionLedger()
+        .readGapCandidates({ ...scope, start: START, end: END });
+      const first = candidates.find((candidate) => candidate.pairedMessageId === "mail-1");
+      if (!first) throw new Error("no candidate");
+      const emojiRef = await h.seal.seal({ ...scope, text: "😀".repeat(400), at: IN_WINDOW });
+      const duplicated = [
+        { ...first, entryId: "another-entry", museTitleRef: emojiRef, museTextRef: emojiRef },
+        ...candidates,
+      ];
+      const built = await buildGapCases({ scope, candidates: duplicated, seal: h.seal });
+      expect(built.filter((entry) => entry.id === gapCaseId("mail-1"))).toHaveLength(1);
+      expect(new Set(built.map((entry) => entry.id)).size).toBe(built.length);
+      for (const entry of built) {
+        expect(entry.museTitle?.length ?? 0).toBeLessThanOrEqual(300);
+        expect(entry.museText?.length ?? 0).toBeLessThanOrEqual(500);
+      }
+      expect(built.some((entry) => entry.museTitle?.startsWith("😀"))).toBe(true);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("removes marked cases and their snapshots when the owner clears the Muse data", async () => {
+    const h = await wired();
+    try {
+      const [first] = await h.cases();
+      if (!first) throw new Error("no case");
+      await h.mark(first.id, true);
+      const [row] = await h.marks.list(scope);
+      expect(row).toBeDefined();
+      const { refs } = await h.repository.museIntake().clearAll(scope);
+      expect(refs).toContain(row?.snapshotRef);
+      expect(await h.marks.list(scope)).toEqual([]);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] skips a damaged snapshot instead of failing the whole export", async () => {
+    const h = await wired();
+    try {
+      const [first] = await h.cases();
+      if (!first) throw new Error("no case");
+      await h.mark(first.id, true);
+      const damagedRef = await h.seal.seal({ ...scope, text: "{not json", at: IN_WINDOW });
+      await h.marks.mark({
+        ...scope,
+        caseId: "gap_ffffffffffffffffffff",
+        snapshotRef: damagedRef,
+        at: IN_WINDOW,
+      });
+      const response = await h.app.inject({
+        method: "GET",
+        url: GAP_EXPORT_PATH,
+        headers: { authorization: `Bearer ${h.secret}` },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().cases.map((entry: { id: string }) => entry.id)).toEqual([first.id]);
     } finally {
       await h.app.close();
       await h.repository.close();

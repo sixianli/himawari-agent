@@ -1304,7 +1304,7 @@ export const messages = {
   "weekly.cases.noText": "No text kept.",
   "weekly.cases.noReason": "No reason kept.",
   "weekly.cases.note":
-    'The label is set by a program from the read record of that email, not guessed by a model. "Not remembered" only means retrieval worked but returned nothing; it cannot tell never stored from stored but not matched.',
+    'The label is set by a program from the read record of the check that covered that email, not guessed by a model. "Not remembered" only means retrieval worked but returned nothing; it cannot tell never stored from stored but not matched.',
   "weekly.cases.mark":
     "{on, select, yes {Added to Backlog. Click again to undo} other {Add to Backlog}}",
   "weekly.cases.markFailed": "That did not work. Please try again.",

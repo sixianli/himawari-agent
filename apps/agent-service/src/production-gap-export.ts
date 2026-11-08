@@ -56,7 +56,7 @@ export function gapBacklogPrefill(snapshot: GapCaseSnapshot): GapBacklogPrefill 
       900,
     ),
     why: "追平 Muse 靠数据指出，不靠猜：这是校准周报“Muse 做对而 Himawari 没做到”的案例，补上这一类才能让命中率差缩小。",
-    origin: `Himawari 校准周报案例 ${snapshot.id}（${jstDay(snapshot.weekStart)} 至 ${jstDay(snapshot.weekEnd)}）`,
+    origin: `Himawari 校准周报案例 ${snapshot.id}（${jstDay(snapshot.weekStart)} 至 ${jstDay(new Date(Date.parse(snapshot.weekEnd) - 1).toISOString())}）`,
   };
 }
 
@@ -109,7 +109,12 @@ export class ProductionGapExport {
     for (const mark of marks) {
       const text = await this.#seal.open({ ...this.#scope, ref: mark.snapshotRef });
       if (text === undefined) continue;
-      const snapshot = JSON.parse(text) as GapCaseSnapshot;
+      let snapshot: GapCaseSnapshot;
+      try {
+        snapshot = JSON.parse(text) as GapCaseSnapshot;
+      } catch {
+        continue;
+      }
       const prefill = gapBacklogPrefill(snapshot);
       cases.push({
         id: mark.caseId,

@@ -28,11 +28,16 @@ export interface GapCase {
 }
 
 function clean(text: string, limit: number): string {
-  return [...text.replace(/\p{Cc}+/gu, " ").trim()].slice(0, limit).join("");
+  let kept = "";
+  for (const character of text.replace(/\p{Cc}+/gu, " ").trim()) {
+    if (kept.length + character.length > limit) break;
+    kept += character;
+  }
+  return kept;
 }
 
-export function gapCaseId(entryId: string, pairedMessageId: string): string {
-  return `gap_${createHash("sha256").update(`${entryId}\n${pairedMessageId}`).digest("hex").slice(0, 20)}`;
+export function gapCaseId(pairedMessageId: string): string {
+  return `gap_${createHash("sha256").update(pairedMessageId).digest("hex").slice(0, 20)}`;
 }
 
 export async function buildGapCases(options: {
@@ -40,7 +45,11 @@ export async function buildGapCases(options: {
   readonly candidates: readonly GapCandidate[];
   readonly seal: ProactiveSealPort | undefined;
 }): Promise<readonly GapCase[]> {
-  const selected = options.candidates
+  const firstPerMail = new Map<string, GapCandidate>();
+  for (const candidate of options.candidates)
+    if (!firstPerMail.has(candidate.pairedMessageId))
+      firstPerMail.set(candidate.pairedMessageId, candidate);
+  const selected = [...firstPerMail.values()]
     .filter((candidate) => {
       const entry: MuseEntryRow = {
         museReminded: true,
@@ -60,7 +69,7 @@ export async function buildGapCases(options: {
     selected.map(async (candidate): Promise<GapCase> => {
       const withheld = candidate.museTextWithheld;
       return {
-        id: gapCaseId(candidate.entryId, candidate.pairedMessageId),
+        id: gapCaseId(candidate.pairedMessageId),
         museAt: candidate.museAt,
         museTitle: withheld ? null : await open(candidate.museTitleRef, TITLE_LIMIT),
         museText: withheld

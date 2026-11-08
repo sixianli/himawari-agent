@@ -1204,7 +1204,7 @@ export const messages = {
   "weekly.cases.noText": "没有留存文字。",
   "weekly.cases.noReason": "没有留存理由。",
   "weekly.cases.note":
-    "归因由程序按这封邮件当时的读取记录判定，不是模型猜的。“没记住”只表示检索正常却一条都没取到，分不清是没存还是没匹配上。",
+    "归因由程序按这封邮件所在那次检查的读取记录判定，不是模型猜的。“没记住”只表示检索正常却一条都没取到，分不清是没存还是没匹配上。",
   "weekly.cases.mark": "{on, select, yes {已加入 Backlog，再点一次取消} other {加入 Backlog}}",
   "weekly.cases.markFailed": "没有成功，请再点一次。",
   "weekly.implicit.title": "观察信号 · 不是打分",

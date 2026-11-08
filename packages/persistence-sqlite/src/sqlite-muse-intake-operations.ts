@@ -525,6 +525,14 @@ export class SqliteMuseIntakeOperations {
         titleRef: string | null;
         textRef: string | null;
       }[];
+      const markRefs = this.database
+        .prepare(
+          `SELECT snapshot_ref AS snapshotRef FROM gap_case_marks WHERE owner_id = ? AND agent_id = ?`,
+        )
+        .all(input.ownerId, input.agentId) as { snapshotRef: string }[];
+      this.database
+        .prepare("DELETE FROM gap_case_marks WHERE owner_id = ? AND agent_id = ?")
+        .run(input.ownerId, input.agentId);
       this.database
         .prepare(
           `DELETE FROM muse_reference_entries
@@ -548,9 +556,10 @@ export class SqliteMuseIntakeOperations {
         )
         .run(input.ownerId, input.agentId);
       return {
-        refs: rows
-          .flatMap((row) => [row.titleRef, row.textRef])
-          .filter((ref): ref is string => !!ref),
+        refs: [
+          ...rows.flatMap((row) => [row.titleRef, row.textRef]),
+          ...markRefs.map((row) => row.snapshotRef),
+        ].filter((ref): ref is string => !!ref),
       };
     })();
   }

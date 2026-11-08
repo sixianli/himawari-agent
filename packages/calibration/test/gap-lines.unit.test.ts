@@ -112,6 +112,15 @@ describe("[PA-4] 案例入选和归因", () => {
     expect(isGapCase(entry("a", true), { outcome: "act", ownerRating: "useful" })).toBe(false);
   });
 
+  it("配对差区间在两种方只在一方有提醒（负相关）时仍包住差值", () => {
+    const opposite = pairedDifferenceInterval(1, 9, 9, 1);
+    expect(opposite).not.toBeNull();
+    if (opposite === null) return;
+    expect(opposite.low).toBeLessThanOrEqual(opposite.difference);
+    expect(opposite.high).toBeGreaterThanOrEqual(opposite.difference);
+    expect(opposite.high - opposite.low).toBeGreaterThan(0);
+  });
+
   it("归因顺序：没读全 > 没取到 > 没记住 > 判断错", () => {
     const base = { relatedRead: "ok", memoryRecall: "ok", memoryHitsForMail: 2 };
     expect(attributeGap({ ...base, relatedRead: "partial" })).toBe("notReadFully");
