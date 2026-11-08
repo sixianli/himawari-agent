@@ -15,6 +15,14 @@ import http from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  cacheRead,
+  cacheWrite,
+  explicitCacheDirectory,
+  nextRetryDelay,
+  parseRetryAfter,
+  retryableStatus,
+} from "../ci/verified-download.mjs";
 
 export const GATEWAY_DIR = dirname(fileURLToPath(import.meta.url));
 export const GATEWAY_LOCK_PATH = join(GATEWAY_DIR, "gateway-lock.json");
@@ -206,15 +214,46 @@ export function gatewayInstallDir(lock) {
   return join(homedir(), ".cache", `himawari-magpie-${lock.magpie.version}-${digest}`);
 }
 
-function curlDownload(url, target) {
-  const result = spawnSync("curl", ["-fsSL", "--retry", "2", "-o", target, url], {
-    encoding: "utf8",
-    timeout: 300000,
-  });
-  if (result.status !== 0)
-    throw new Error(
-      `GATEWAY_DOWNLOAD_FAILED ${url} ${(result.stderr ?? result.error?.message ?? "").trim()}`,
+function sleepSync(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+export function curlDownload(
+  url,
+  target,
+  { spawn = spawnSync, sleep = sleepSync, random = Math.random, budgetMs } = {},
+) {
+  let waited = 0;
+  for (let attempt = 1; ; attempt += 1) {
+    const result = spawn(
+      "curl",
+      ["-sSL", "--max-time", "300", "-D", "-", "-o", target, "-w", "%{http_code}", url],
+      { encoding: "utf8", timeout: 330000 },
     );
+    const status = Number((result.stdout ?? "").trim().slice(-3));
+    if (result.status === 0 && status >= 200 && status < 300) return;
+    const network = result.status !== 0 && !status;
+    const retryable = network || retryableStatus(status);
+    const reason = network
+      ? (result.stderr ?? result.error?.message ?? "").trim()
+      : `HTTP ${status}`;
+    const header = /^retry-after:\s*(.+)$/im.exec(result.stdout ?? "");
+    const delay = retryable
+      ? nextRetryDelay(attempt, waited, {
+          retryAfterMs: parseRetryAfter(header?.[1]),
+          random,
+          ...(budgetMs === undefined ? {} : { budgetMs }),
+        })
+      : null;
+    rmSync(target, { force: true });
+    if (delay === null)
+      throw new Error(`GATEWAY_DOWNLOAD_FAILED ${url} 第 ${attempt} 次 (${reason})`);
+    console.error(
+      `GATEWAY_DOWNLOAD_RETRY ${url} 第 ${attempt} 次 (${reason})，${Math.round(delay / 1000)} 秒后重试`,
+    );
+    waited += delay;
+    sleep(delay);
+  }
 }
 
 function npmPack(spec, destination) {
@@ -249,6 +288,7 @@ export function installGateway({
   platform = platformKey(),
   download = curlDownload,
   pack = npmPack,
+  cacheDirectory = explicitCacheDirectory(),
 } = {}) {
   const asset = lock.magpie.assets[platform];
   if (!asset) throw new Error(`GATEWAY_PLATFORM_UNSUPPORTED ${platform}`);
@@ -258,12 +298,15 @@ export function installGateway({
     rmSync(binary, { force: true });
     const partial = `${binary}.download`;
     rmSync(partial, { force: true });
-    download(asset.url, partial);
+    const cached = cacheRead(cacheDirectory, asset.sha256);
+    if (cached) writeFileSync(partial, cached, { flag: "wx" });
+    else download(asset.url, partial);
     const got = sha256File(partial);
     if (got !== asset.sha256) {
       rmSync(partial, { force: true });
       throw new Error(`GATEWAY_INTEGRITY_MISMATCH magpie expected=${asset.sha256} got=${got}`);
     }
+    if (!cached) cacheWrite(cacheDirectory, asset.sha256, readFileSync(partial));
     chmodSync(partial, 0o555);
     renameSync(partial, binary);
   }
