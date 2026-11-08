@@ -39,6 +39,15 @@ export const MAIL_JUDGMENT_MEMORIES_HEADER = fixedPrompt({
   text: "主人的记忆（mail 是它对应的邮件 id）：",
 });
 
+export const MAIL_JUDGMENT_TENTATIVE_NOTE = fixedPrompt({
+  id: "mail.judgment.tentative-note",
+  purpose: "邮件判断里有待确认记忆时，说明带 tentative 的记忆只是线索",
+  usedBy: ["packages/application/src/services/proactive-mail-check-service.ts"],
+  layer: "background",
+  output: "free-text",
+  text: '上面带 "tentative":true 的记忆是系统根据主人的话推测出来的，主人没有确认过：只能当作线索，不能当作事实，也不能单凭它把邮件判为 "act"；它没有发挥作用就不要写进 "usedMemoryIds"。',
+});
+
 export const MAIL_JUDGMENT_ITEMS_HEADER = fixedPrompt({
   id: "mail.judgment.items-header",
   purpose: "邮件判断里邮件数据段的标题",

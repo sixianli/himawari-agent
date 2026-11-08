@@ -1,0 +1,86 @@
+---
+status: active
+document_type: adr
+decision_status: accepted
+supersedes: ""
+superseded_by: ""
+date: "2026-11-08"
+---
+
+# ADR 0179：分数不够自动存入门槛的记忆候选，存成「待确认」记忆，只给主动检查当线索
+
+<a id="contents"></a>
+
+## 阅读导航
+
+- [背景](#context)
+- [Andy 的原话](#owner-decisions)
+- [决定](#decision)
+- [比较过的方案](#options)
+- [后果](#consequences)
+- [关联文档](#references)
+
+<a id="context"></a>
+
+## 背景
+
+每轮对话结束后，后台抽取（`AutomaticMemoryService`）会让模型提出若干条想记住的候选，每条带一个置信度分数（千分制）：主人亲口说的高，模型推测的低（推测类最高只给 700）。分数低于自动存入门槛 850 的候选，原来直接丢掉，只在决策账本里留一行 `confidence_below_threshold`（`packages/application/src/services/automatic-memory-service.ts`）。
+
+结果是 Himawari 用不上主人没特意强调过的偏好。例子：主人聊天时说过「今天又去抱持服部拿信件」「好家里只喝明治的牛奶」，模型推出「主人偏好明治乳制品」，这是推测，被丢掉；之后收到超市打折邮件，主动检查就没有这条线索。Muse（Andy 每天在用的对照组）会用上这类偏好，这是「追平线」里 PA 组的一个已知差距。
+
+记忆里本来就有「待确认」标记（`attributes.tentative`）：它不进主人档案块（`owner-profile-service.ts` 的 `currentlyValid`）、不进向量检索（`sqlite-memory-operations.ts` 的 `indexScope`，`m.tentative = 0`）、不触发提醒；主人再次说起同一件事（`unchanged`）时自动转正。
+
+对标：OpenAI 的 ChatGPT 把主人明说要记的「已保存记忆」和从聊天历史里推断出的内容分开，推断的部分由「引用聊天记录」开关控制，回答下方的 Sources 按钮显示影响了这次回答的记忆和历史对话（[Memory in ChatGPT](https://help.openai.com/en/articles/8590148-memory-in-chatgpt)）。做法一致的地方是：推测的内容与明说的分开存、能看到用了什么。Claude 一侧我没有查到一手来源，未核实。
+
+<a id="owner-decisions"></a>
+
+## Andy 的原话
+
+任务块 PA-2（2026-10-31 写成，2026-11-07 Andy 交给线程）：「这些候选不丢，存成「待确认」记忆，带上来自 Andy 哪句话和置信度；主动检查可以拿待确认记忆当参考，并在决策账本里记下这次用了哪几条；普通聊天里每轮自动带上的「主人档案」仍不放待确认记忆，避免把猜的当事实说出口；待确认记忆什么时候转成正式记忆，等 Andy 对提醒的评价数据放出来再定，这块不动。」
+
+2026-11-08 Andy 对线程贴的变更清单回复：「同意」。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="decision"></a>
+
+## 决定
+
+依据的原则：愿景原则 3「记忆可靠性」与原则 4「主动性与效率」的权衡，靠来源和决策账本保持可逆。
+
+1. **低分候选改存为待确认记忆。** 同时满足这些条件才存：①候选是新建（`create`）；②抽取时在主人原话里核对到了引用（`quote` 非空，即 `evidenceVerified`）；③不是密钥、不是受限，不是暂时性内容，不是敏感类（敏感类仍走审批）。存下来的记忆带 `tentative: true`、`inference`、置信度、来源线程和原话引用；决策账本记 `kept`，原因码 `kept_tentative`，抽取审计记 `tentative_kept`。自动存入门槛 850 不变。
+2. **其余低分候选照旧丢弃。** 对已有记忆的更新、合并、不变类，低分猜测不得覆盖正式记忆，也不得因「不变」而把已有待确认记忆转正；没有原话引用的说不清来自哪句话，不存。待确认记忆不顶替正式记忆（候选带的 `supersedes` 去掉）；不登记提醒和人物（跳过提交后的副作用）。
+3. **向量检索加一个默认关闭的开关 `includeTentative`。** 只有主动检查的记忆召回（`production-proactive-memory.ts`）打开；聊天检索、档案块、提醒、记忆整理都不变。
+4. **主动检查的提示里，待确认记忆单独标出。** 该条目多一个 `"tentative":true` 字段，并在记忆段后追加一句固定说明（提示词 `mail.judgment.tentative-note`）：这是系统推测、主人没确认过，只能当线索，不能单凭它判 `act`。没有待确认记忆时，提示与原来逐字节相同；确认过的记忆条目的字节也不变。
+5. **账本记引用。** 主动检查的账本输入沿用 `memoryIds`、`usedMemoryIds`、`memoryByMail`（用了哪几条），另加 `tentativeMemoryIds`（本次送给模型的待确认记忆），使以后能单独统计「待确认记忆有没有帮上忙」，记忆转正后这条历史也不丢。
+6. **不动转正逻辑和门槛数值。** 转正的时机等 Andy 对提醒的评价数据出来再定。现有的「主人再次说起就转正」保持原样。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="options"></a>
+
+## 比较过的方案
+
+- **把门槛调低**：低分的猜测直接成为正式记忆，会进档案块，被当成事实说出口，违反原则 3。放弃。
+- **另建一张「线索」表**：要迁移和一套新的读写，而待确认标记已经存在并且已被档案块、检索、提醒排除。放弃。
+- **本方案**：复用现有标记，只给主动检查开一个入口。
+
+<a id="consequences"></a>
+
+## 后果
+
+- 记忆会多出推测类条目，本次不加上限和过期，只靠账本观察数量。
+- 记忆整理产生的「洞察」（`reflect`，本来就标待确认）也会随之被主动检查召回，作为线索使用。
+- 抽取的审计记录多一种结果 `tentative_kept`；账本里 `kept` 的原因码多一种 `kept_tentative`。
+- 主动检查的提示多一段固定说明，只在有待确认记忆时出现，属于后台调用，不改变任何对话已发出的开头。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="references"></a>
+
+## 关联文档
+
+- [ADR 0158](0158-bring-related-memories-into-gmail-checks.md)：主动检查带相关记忆
+- [产品愿景](../product-vision.md)
+- 代码：`packages/application/src/services/automatic-memory-service.ts`、`apps/agent-service/src/production-proactive-memory.ts`、`packages/application/src/services/proactive-mail-check-service.ts`
+- 测试：`packages/application/test/tentative-memory-capture.unit.test.ts`、`test/integration/proactive-mail-check.test.ts` 里的 `[PA-2]` 用例

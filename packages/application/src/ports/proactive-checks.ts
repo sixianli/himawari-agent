@@ -166,6 +166,7 @@ export interface ProactiveMemoryHit {
   readonly id: string;
   readonly text: string;
   readonly score: number;
+  readonly tentative?: boolean;
 }
 
 export interface ProactiveMemoryQuery {
@@ -196,6 +197,7 @@ export interface ProactiveCheckInputs {
   readonly memoryInjected: boolean;
   readonly memoryIds: readonly string[];
   readonly usedMemoryIds: readonly string[];
+  readonly tentativeMemoryIds?: readonly string[];
   readonly memoryByMail: Readonly<Record<string, readonly string[]>>;
   readonly memoryRecall: ProactiveMemoryRecallStatus;
 }

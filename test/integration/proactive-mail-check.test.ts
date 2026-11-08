@@ -1305,7 +1305,10 @@ describe("proactive Gmail check acceptance", () => {
   describe("[P0-5b] related memories reach the judge without being treated as instructions", () => {
     const beefHit = { id: "mem-beef", text: "主人最近想吃牛肉。", score: 0.5 };
     const recallOf = (
-      byMail: Record<string, readonly { id: string; text: string; score: number }[]>,
+      byMail: Record<
+        string,
+        readonly { id: string; text: string; score: number; tentative?: boolean }[]
+      >,
       extra: { costMicros?: number; failedQueries?: number; seen?: string[] } = {},
     ): ProactiveMemoryRecall => ({
       async recall({ queries }) {
@@ -1367,6 +1370,44 @@ describe("proactive Gmail check acceptance", () => {
         memoryInjected: true,
         memoryRecall: "ok",
       });
+    });
+
+    it("[PA-2] marks a tentative memory as a guess and records which injected memories were tentative", async () => {
+      const milk = {
+        id: "mem-milk",
+        text: "主人可能偏好明治乳制品。",
+        score: 0.5,
+        tentative: true,
+      };
+      const h = await harness({ memory: recallOf({ "beef-promo": [beefHit, milk] }) });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "know", todo: "优惠", usedMemoryIds: ["mem-milk"] }]);
+      await h.service.run();
+      const prompt = h.prompts[0] ?? "";
+      expect(prompt).toContain(
+        '{"mailId":"beef-promo","id":"mem-milk","text":"主人可能偏好明治乳制品。","tentative":true}',
+      );
+      expect(prompt).toContain(
+        '{"mailId":"beef-promo","id":"mem-beef","text":"主人最近想吃牛肉。"}',
+      );
+      expect(prompt).toContain("主人没有确认过");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({
+        memoryIds: ["mem-beef", "mem-milk"],
+        usedMemoryIds: ["mem-milk"],
+        tentativeMemoryIds: ["mem-milk"],
+      });
+    });
+
+    it("[PA-2] adds no tentative note and records no tentative ids when every memory is confirmed", async () => {
+      const h = await harness({ memory: recallOf({ "beef-promo": [beefHit] }) });
+      h.reader.items = [promo()];
+      h.script([{ id: "beef-promo", result: "ignore" }]);
+      await h.service.run();
+      expect(h.prompts[0] ?? "").not.toContain("主人没有确认过");
+      expect(h.prompts[0] ?? "").not.toContain("tentative");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.tentativeMemoryIds).toEqual([]);
     });
 
     it("carries no memory block and records an empty injection when nothing is related", async () => {

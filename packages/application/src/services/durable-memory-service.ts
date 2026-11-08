@@ -364,6 +364,7 @@ export class DurableMemoryService {
     readonly minimumSimilarity?: number;
     readonly recordUse?: boolean;
     readonly excludeCategories?: readonly MemoryCategory[];
+    readonly includeTentative?: boolean;
   }): Promise<readonly ProductMemorySearchResult[]> {
     const query = input.queryText ?? (await this.options.content.readText(input.queryRef));
     const providerHits = await this.options.provider.search({
@@ -375,6 +376,7 @@ export class DurableMemoryService {
       ...(input.minimumSimilarity === undefined
         ? {}
         : { minimumSimilarity: input.minimumSimilarity }),
+      ...(input.includeTentative === true ? { includeTentative: true } : {}),
     });
     const productRecords = await this.options.state.readMany({
       ownerId: input.ownerId,

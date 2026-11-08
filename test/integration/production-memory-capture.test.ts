@@ -651,8 +651,11 @@ describe("production memory capture", () => {
     expect(context.failures).toEqual([]);
     expect(context.prompts[0]).toContain("我最喜欢的颜色是蓝色");
     const active = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
-    expect(active).toHaveLength(1);
-    expect(active[0]).toMatchObject({
+    const formal = active.filter(({ attributes }) => attributes?.tentative !== true);
+    const tentative = active.filter(({ attributes }) => attributes?.tentative === true);
+    expect(active).toHaveLength(2);
+    expect(formal).toHaveLength(1);
+    expect(formal[0]).toMatchObject({
       status: "active",
       dataClassification: "private",
       sourceThreadId: THREAD_ID,
@@ -669,16 +672,25 @@ describe("production memory capture", () => {
     });
     expect(context.audits.map(({ outcome }) => outcome)).toEqual([
       "explicitly_approved",
-      "confidence_below_threshold",
+      "tentative_kept",
     ]);
     await context.memory.runProjectionBatch(5);
-    expect(context.provider.upserts.map(({ content }) => content)).toEqual([
+    expect(context.provider.upserts.map(({ content }) => content).sort()).toEqual([
+      "主人好像喜欢海",
       "主人最喜欢的颜色是蓝色",
     ]);
+    expect(tentative).toHaveLength(1);
+    expect(tentative[0]).toMatchObject({
+      inference: true,
+      confidencePermille: 700,
+      sourceThreadId: THREAD_ID,
+      attributes: { tentative: true, evidenceVerified: true },
+    });
+    expect(await context.plaintext(tentative[0]?.contentRef ?? null)).toBe("主人好像喜欢海");
     const ledger = await context.ledgerEntries();
     expect(ledger).toHaveLength(2);
     const kept = ledger.find(({ outcome }) => outcome === "kept");
-    const suppressed = ledger.find(({ outcome }) => outcome === "discarded");
+    const suppressed = ledger.find(({ reasonCode }) => reasonCode === "kept_tentative");
     expect(kept).toMatchObject({
       reasonCode: "explicitly_approved",
       category: "preference",
@@ -686,14 +698,14 @@ describe("production memory capture", () => {
       inferred: false,
     });
     expect(suppressed).toMatchObject({
-      reasonCode: "confidence_below_threshold",
+      outcome: "kept",
+      reasonCode: "kept_tentative",
       category: "other",
       confidencePermille: 700,
       inferred: true,
     });
+    expect(suppressed?.subjectRef).toBe(tentative[0]?.id);
     expect(await context.plaintext(suppressed?.contentRef ?? null)).toBe("主人好像喜欢海");
-    const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
-    expect(stored.map(({ id }) => id)).not.toContain(suppressed?.subjectRef);
   });
 
   it("captures each Run once and offers existing memories for updates", async () => {

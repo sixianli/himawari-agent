@@ -136,6 +136,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     floorHits?: Record<string, readonly string[]>;
     memoryInjected?: boolean;
     usedMemoryIds?: readonly string[];
+    tentativeMemoryIds?: readonly string[];
     memoryByMail?: Record<string, readonly string[]>;
     memoryRecall?: "off" | "ok" | "partial" | "failed";
   };
@@ -158,6 +159,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
       ),
       memoryInjected: inputs.memoryInjected ?? false,
       usedMemoryIds: Object.freeze([...(inputs.usedMemoryIds ?? [])]),
+      tentativeMemoryIds: Object.freeze([...(inputs.tentativeMemoryIds ?? [])]),
       memoryByMail: Object.freeze(
         Object.fromEntries(
           Object.entries(inputs.memoryByMail ?? {}).map(([id, list]) => [

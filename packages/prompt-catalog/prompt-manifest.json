@@ -155,7 +155,9 @@
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": ["必须用到原值"],
+      "phrases": [
+        "必须用到原值"
+      ],
       "reason": "说的是某项操作本身需要原值，不是强调语气"
     }
   },
@@ -165,7 +167,9 @@
     "reason": "W-14：“用户”改“主人”；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线",
     "emphasis": {
       "kind": "not-tone",
-      "phrases": ["必须用到原值"],
+      "phrases": [
+        "必须用到原值"
+      ],
       "reason": "说的是某项操作本身需要原值，不是强调语气"
     }
   },
@@ -319,13 +323,21 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "mail.judgment.tentative-note": {
+    "sha256": "72da4d7216f9b1ee3fe8dd3258d4e3f8882c900d814c4f8fc3e0035a0ae3ac16",
+    "changedIn": "ADR 0179",
+    "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
+  },
   "memory.capture": {
     "sha256": "f2ffd6e1725ee691e472b198090bb10220af97efd924fee33e13aeed3b9d5cb4",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变",
     "emphasis": {
       "kind": "hard-condition",
-      "phrases": ["必须填 existingMemoryId", "每条都必须填"],
+      "phrases": [
+        "必须填 existingMemoryId",
+        "每条都必须填"
+      ],
       "evidence": [
         "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
         "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
@@ -524,7 +536,9 @@
     "reason": "初次登记：从源码原样搬入目录，文字不变",
     "emphasis": {
       "kind": "hard-condition",
-      "phrases": ["目标必须不存在"],
+      "phrases": [
+        "目标必须不存在"
+      ],
       "evidence": [
         "packages/platform-node/src/capabilities/directory-move-scope.ts#HOST_FILE_TARGET_EXISTS"
       ],
