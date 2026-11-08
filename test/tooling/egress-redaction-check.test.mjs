@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  ALLOWED_EXTERNAL_EGRESS_FILES,
   findEgressViolations,
   findSensitiveGateViolations,
+  REQUIRED_EXTERNAL_REDACTION_CALLS,
   REQUIRED_REDACTION_CALLS,
 } from "../../scripts/check-egress-redaction.mjs";
 
@@ -132,9 +134,40 @@ describe("external egress registration", () => {
   it("accepts an external service request in its registered file", () => {
     const root = fixture({
       "packages/platform-node/src/exa-public-search.ts":
-        'const endpoint = "https://mcp.exa.ai/mcp";',
+        'const endpoint = "https://mcp.exa.ai/mcp"; redactForExternalText(query); redactForExternalUrl(url);',
     });
     expect(findEgressViolations(root)).toEqual([]);
+  });
+
+  it("fails when a registered external service file sends without masking first", () => {
+    const root = fixture({
+      "packages/platform-node/src/exa-public-search.ts":
+        'const endpoint = "https://mcp.exa.ai/mcp"; redactForExternalText(query);',
+      "packages/platform-node/src/typesafe-jev-transport.ts":
+        'fetchImpl(base + "/v1/systemone", init);',
+    });
+    const report = findEgressViolations(root).join("\n");
+    expect(report).toContain(
+      "packages/platform-node/src/exa-public-search.ts: 发往外部服务（Exa MCP request）前要先遮敏感值，缺少 redactForExternalUrl(…) 调用",
+    );
+    expect(report).toContain(
+      "packages/platform-node/src/typesafe-jev-transport.ts: 发往外部服务（TypeSafe review request）前要先遮敏感值，缺少 redactForExternalText(…) 调用",
+    );
+  });
+
+  it("fails when the DeepSeek web tool file sends an address without masking it", () => {
+    const root = fixture({
+      "packages/platform-node/src/deepseek-web-provider.ts":
+        'post("/v1/tools/search", body); redactForExternalText(query);',
+    });
+    expect(findEgressViolations(root).join("\n")).toContain(
+      "packages/platform-node/src/deepseek-web-provider.ts: 发往外部服务（DeepSeek web tool request）前要先遮敏感值，缺少 maskedPublicFetchUrl(…) 调用",
+    );
+  });
+
+  it("names the masking call for every registered external service file", () => {
+    for (const file of ALLOWED_EXTERNAL_EGRESS_FILES.keys())
+      expect(REQUIRED_EXTERNAL_REDACTION_CALLS.get(file)?.length ?? 0).toBeGreaterThan(0);
   });
 
   it("leaves nearby strings that are not external requests alone", () => {
