@@ -639,10 +639,17 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 81,
+    name: "proactive_push_backoff",
+    changeSet: "proactive-push-backoff",
+    phase: "expand" as const,
+    file: "0081_proactive_push_backoff.sql",
+  },
+  {
+    sequence: 82,
     name: "gap_case_marks",
     changeSet: "gap-case-marks",
     phase: "expand" as const,
-    file: "0081_gap_case_marks.sql",
+    file: "0082_gap_case_marks.sql",
   },
 ] as const;
 

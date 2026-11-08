@@ -28,6 +28,7 @@ import {
   piContainerRunnerInputSchema,
   piRunnerInputSchema,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_OUTPUT_LIMIT,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_NOT_STARTED,
   type SandboxExecutionBrokerCommand,
@@ -40,6 +41,7 @@ import {
   sandboxExecutionFactsSchema,
   sandboxFileOperationFailureReason,
   sandboxPreparationDiagnosticSchema,
+  sandboxResourceLimitReason,
   sandboxScopeSchema,
   srtTaskEnvironmentSession,
 } from "@himawari-agent/execution-contracts";
@@ -881,6 +883,18 @@ export class ProductionSandboxExecutionV2 {
         verifyPiWriteEvidence(evidence()) !== "published"
       )
         throw new Error("PI_WRITE_EVIDENCE_INVALID");
+      const boundedTermination =
+        plan.mode === "foreground" &&
+        !completionContradicted &&
+        !authenticatedDeadline &&
+        !authenticatedNotStarted &&
+        latest.facts.result?.kind !== "started"
+          ? result.reason === "resource_limit"
+            ? sandboxResourceLimitReason(plan.resourceCeiling, result.resources)
+            : result.reason === "output_limit"
+              ? SANDBOX_OUTPUT_LIMIT
+              : null
+          : null;
       const operation = {
         effect:
           (knownExit ||
@@ -893,20 +907,22 @@ export class ProductionSandboxExecutionV2 {
               ? { kind: "unknown", reasonCode: SANDBOX_HOST_COMPLETION_CONTRADICTED }
               : authenticatedDeadline
                 ? { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" }
-                : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
-                  ? { kind: "not_asserted" }
-                  : knownExit &&
-                      (result.exitCode === 0 || fileFailure !== null) &&
-                      plan.operationContract.kind === "verified_effect"
-                    ? {
-                        kind: "verified",
-                        verifierRef: plan.operationContract.verifierRef,
-                        verifierVersion: plan.operationContract.verifierVersion,
-                        targetRef: plan.operationContract.targetRef,
-                        evidence: { ref: output.ref, digest: output.digest },
-                        occurredAt: this.options.clock.now(),
-                      }
-                    : latest.facts.effect,
+                : boundedTermination
+                  ? { kind: "unknown", reasonCode: boundedTermination }
+                  : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
+                    ? { kind: "not_asserted" }
+                    : knownExit &&
+                        (result.exitCode === 0 || fileFailure !== null) &&
+                        plan.operationContract.kind === "verified_effect"
+                      ? {
+                          kind: "verified",
+                          verifierRef: plan.operationContract.verifierRef,
+                          verifierVersion: plan.operationContract.verifierVersion,
+                          targetRef: plan.operationContract.targetRef,
+                          evidence: { ref: output.ref, digest: output.digest },
+                          occurredAt: this.options.clock.now(),
+                        }
+                      : latest.facts.effect,
         result:
           latest.facts.result?.kind === "started"
             ? latest.facts.result
@@ -934,27 +950,35 @@ export class ProductionSandboxExecutionV2 {
                       reasonCode: SANDBOX_TOOL_NOT_STARTED,
                       termination: { type: "failure" },
                     }
-                  : plan.mode !== "foreground" || !knownExit
-                    ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
-                    : ["command", "network_only"].includes(plan.operationContract.kind) ||
-                        result.exitCode === 0
-                      ? {
-                          ...resultFields,
-                          kind: "result",
-                          output,
-                          completion: ["command", "network_only"].includes(
-                            plan.operationContract.kind,
-                          )
-                            ? { type: "exit", exitCode: result.exitCode }
-                            : { type: "value" },
-                        }
-                      : {
-                          ...resultFields,
-                          kind: "error",
-                          output,
-                          reasonCode: sandboxFileOperationFailureReason(plan, fileFailure),
-                          termination: { type: "failure" },
-                        },
+                  : boundedTermination
+                    ? {
+                        ...resultFields,
+                        kind: "error",
+                        output,
+                        reasonCode: boundedTermination,
+                        termination: { type: "failure" },
+                      }
+                    : plan.mode !== "foreground" || !knownExit
+                      ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
+                      : ["command", "network_only"].includes(plan.operationContract.kind) ||
+                          result.exitCode === 0
+                        ? {
+                            ...resultFields,
+                            kind: "result",
+                            output,
+                            completion: ["command", "network_only"].includes(
+                              plan.operationContract.kind,
+                            )
+                              ? { type: "exit", exitCode: result.exitCode }
+                              : { type: "value" },
+                          }
+                        : {
+                            ...resultFields,
+                            kind: "error",
+                            output,
+                            reasonCode: sandboxFileOperationFailureReason(plan, fileFailure),
+                            termination: { type: "failure" },
+                          },
       };
       await this.recordCompletion(entry, completionRecord, operation, result.taskProcessExited);
       if (authenticatedNotStarted) await this.reportHostLaunchFailure(entry, result);
@@ -1210,7 +1234,7 @@ export class ProductionSandboxExecutionV2 {
               ...resultFields,
               kind: "error",
               output,
-              reasonCode: "SANDBOX_OUTPUT_LIMIT",
+              reasonCode: SANDBOX_OUTPUT_LIMIT,
               termination: { type: "failure" },
             }
           : command || completed.exitCode === 0
@@ -1241,7 +1265,7 @@ export class ProductionSandboxExecutionV2 {
             }
           : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" }
         : completed.truncated
-          ? { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" }
+          ? { kind: "unknown", reasonCode: SANDBOX_OUTPUT_LIMIT }
           : command
             ? { kind: "not_asserted" }
             : { kind: "not_applicable" },
@@ -1783,43 +1807,49 @@ export class ProductionSandboxExecutionV2 {
         reasonCode,
         termination: { type: "failure" },
       });
+      const limitTermination =
+        outcome.reason === "output_limit"
+          ? SANDBOX_OUTPUT_LIMIT
+          : outcome.reason === "resource_limit"
+            ? sandboxResourceLimitReason(plan.resourceCeiling, outcome.resources)
+            : null;
       const operation =
-        knownExit && outcome.exitCode !== null
+        limitTermination !== null
           ? {
-              result:
-                command || outcome.exitCode === 0
-                  ? {
-                      ...fields,
-                      kind: "result",
-                      output,
-                      completion: command
-                        ? { type: "exit", exitCode: outcome.exitCode }
-                        : { type: "value" },
-                    }
-                  : failure(sandboxFileOperationFailureReason(plan, fileFailure)),
-              effect:
-                plan.operationContract.kind !== "verified_effect"
-                  ? { kind: "not_asserted" }
-                  : outcome.exitCode === 0 || fileFailure !== null
-                    ? {
-                        kind: "verified",
-                        verifierRef: plan.operationContract.verifierRef,
-                        verifierVersion: plan.operationContract.verifierVersion,
-                        targetRef: plan.operationContract.targetRef,
-                        evidence: { ref: output.ref, digest: output.digest },
-                        occurredAt: this.options.clock.now(),
-                      }
-                    : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" },
+              result: failure(limitTermination),
+              effect: { kind: "unknown", reasonCode: limitTermination },
             }
-          : outcome.reason === "deadline"
+          : knownExit && outcome.exitCode !== null
             ? {
-                result: failure("SANDBOX_TOOL_DEADLINE_EXCEEDED"),
-                effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" },
+                result:
+                  command || outcome.exitCode === 0
+                    ? {
+                        ...fields,
+                        kind: "result",
+                        output,
+                        completion: command
+                          ? { type: "exit", exitCode: outcome.exitCode }
+                          : { type: "value" },
+                      }
+                    : failure(sandboxFileOperationFailureReason(plan, fileFailure)),
+                effect:
+                  plan.operationContract.kind !== "verified_effect"
+                    ? { kind: "not_asserted" }
+                    : outcome.exitCode === 0 || fileFailure !== null
+                      ? {
+                          kind: "verified",
+                          verifierRef: plan.operationContract.verifierRef,
+                          verifierVersion: plan.operationContract.verifierVersion,
+                          targetRef: plan.operationContract.targetRef,
+                          evidence: { ref: output.ref, digest: output.digest },
+                          occurredAt: this.options.clock.now(),
+                        }
+                      : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" },
               }
-            : outcome.reason === "output_limit"
+            : outcome.reason === "deadline"
               ? {
-                  result: failure("SANDBOX_OUTPUT_LIMIT"),
-                  effect: { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" },
+                  result: failure("SANDBOX_TOOL_DEADLINE_EXCEEDED"),
+                  effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" },
                 }
               : {
                   result: { ...fields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },

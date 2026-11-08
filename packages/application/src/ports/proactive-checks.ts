@@ -146,6 +146,7 @@ export interface ProactivePush {
 
 export interface ProactiveInsightWrite {
   readonly id: string;
+  readonly pushClass?: string | null;
   readonly threadId: string;
   readonly lastMessageId: string;
   readonly result: ProactiveInsight["result"];
@@ -216,6 +217,55 @@ export interface ProactiveCheckInputs {
   readonly relatedFailedSteps?: readonly string[];
 }
 
+export type ProactiveBackoffStage = 0 | 1 | 2;
+
+export interface ProactiveBackoffClass {
+  readonly classKey: string;
+  readonly stage: ProactiveBackoffStage;
+  readonly sinceAt: string;
+  readonly lastPushAt: string | null;
+  readonly stageChangedAt: string | null;
+  readonly stepDecisionId: string | null;
+  readonly ignoredCount: number;
+  readonly restoredAt: string | null;
+  readonly updatedAt: string;
+}
+
+export interface ProactiveBackoffPreview {
+  readonly classKey: string;
+  readonly action: "allow" | "suppress";
+  readonly stage: ProactiveBackoffStage;
+  readonly sinceAt: string;
+  readonly lastPushAt: string | null;
+  readonly stageChangedAt: string | null;
+  readonly ignoredCount: number;
+  readonly steppedUp: boolean;
+  readonly base: ProactiveBackoffBase | null;
+}
+
+export interface ProactiveBackoffBase {
+  readonly stage: ProactiveBackoffStage;
+  readonly sinceAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ProactiveBackoffWrite {
+  readonly classKey: string;
+  readonly stage: ProactiveBackoffStage;
+  readonly sinceAt: string;
+  readonly lastPushAt: string | null;
+  readonly stageChangedAt: string | null;
+  readonly ignoredCount: number;
+  readonly steppedUp: boolean;
+  readonly base: ProactiveBackoffBase | null;
+}
+
+export interface ProactiveBackoffSettings {
+  readonly threshold: number;
+  readonly ignoreAfterMs: number;
+  readonly gapMs: number;
+}
+
 export interface ProactiveCheckRecord extends ProactiveScope {
   readonly decision: ProactiveDecision;
   readonly inputs: ProactiveCheckInputs;
@@ -227,6 +277,7 @@ export interface ProactiveCheckRecord extends ProactiveScope {
   readonly insights: readonly ProactiveInsightWrite[];
   readonly repliedThreads: readonly { readonly threadId: string; readonly receivedAt: string }[];
   readonly push: { readonly id: string; readonly readyAt: string } | null;
+  readonly backoff?: readonly ProactiveBackoffWrite[];
   readonly cursor: string | null;
 }
 
@@ -334,6 +385,17 @@ export interface ProactiveStorePort {
   readInsights(
     input: ProactiveScope & { readonly insightIds: readonly string[] },
   ): Promise<readonly ProactiveInsight[]>;
+  previewBackoff(
+    input: ProactiveScope & {
+      readonly classKeys: readonly string[];
+      readonly settings: ProactiveBackoffSettings;
+      readonly now: string;
+    },
+  ): Promise<readonly ProactiveBackoffPreview[]>;
+  listBackoff(input: ProactiveScope): Promise<readonly ProactiveBackoffClass[]>;
+  restoreBackoff(
+    input: ProactiveScope & { readonly classKey: string | null; readonly now: string },
+  ): Promise<number>;
 }
 
 export interface ProactiveSealPort {

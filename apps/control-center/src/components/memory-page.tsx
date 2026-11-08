@@ -1791,14 +1791,12 @@ function ImportPanel({
   const [source, setSource] = useState<"codex" | "assistant" | "himawari" | null>(null);
   const [pasted, setPasted] = useState("");
   const [items, setItems] = useState<readonly ImportCandidate[]>([]);
-  const [dropped, setDropped] = useState(0);
   const [error, setError] = useState("");
   const existing = (memory.overview?.memories ?? [])
     .filter((item) => item.status !== "trashed")
     .map((item) => item.text);
   const load = (parsed: readonly ImportParse[]) => {
     const all = parsed.flatMap((entry) => entry.items).slice(0, MAXIMUM_IMPORT_ITEMS);
-    setDropped(parsed.reduce((total, entry) => total + entry.dropped, 0));
     setItems(all);
     setError(all.length ? "" : message("memory.page.importEmpty"));
   };
@@ -1816,7 +1814,6 @@ function ImportPanel({
     setSource(null);
     setItems([]);
     setError("");
-    setDropped(0);
     setPasted("");
   };
   const chosen = items.filter((item) => item.checked);
@@ -1878,11 +1875,6 @@ function ImportPanel({
               </li>
             ))}
           </ul>
-          {dropped ? (
-            <p className="settings-note">
-              {message("memory.page.importDropped", { count: dropped })}
-            </p>
-          ) : null}
           <div className="actions">
             <ActionButton
               disabled={memory.busy || !chosen.length || !source}

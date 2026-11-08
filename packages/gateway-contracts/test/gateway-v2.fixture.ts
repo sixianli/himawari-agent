@@ -100,6 +100,15 @@ export const governanceMessages = [
     quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
     importantSenders: ["smbc.co.jp", "teacher@example.com"],
     dailyLimitReached: false,
+    backoff: [
+      {
+        classKey: "due:service.example.com",
+        domain: "service.example.com",
+        stage: 1,
+        ignoredCount: 3,
+        changedAt: "2026-11-02T00:00:00.000Z",
+      },
+    ],
     insights: [
       {
         id: "proactive-insight-01",
@@ -205,6 +214,7 @@ export const governanceMessages = [
     ratings: [{ key: "ledger:ledger-01", rating: "useful" }],
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
+  fixture("command", "proactive.backoff.restore", { classKey: "due:service.example.com" }),
   fixture("query", "proactive.weekly.read", { end: null }),
   fixture("snapshot", "proactive.weekly.snapshot", {
     serviceRevision: "rev-01",
