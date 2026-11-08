@@ -129,6 +129,10 @@ describe("prod-read.sh", () => {
       endpoint: "https://example.test/x",
       embedding: new Uint8Array(4),
       payload: new Uint8Array(3),
+      account_json: "{}",
+      input_tokens: 12,
+      fencing_token: 7,
+      embedding_model: "m",
       note: "x".repeat(200),
     });
     expect(row.id).toBe("a");
@@ -137,6 +141,10 @@ describe("prod-read.sh", () => {
     expect(row.endpoint).toBe("[hidden]");
     expect(row.embedding).toBe("[hidden]");
     expect(row.payload).toBe("[binary 3 bytes]");
+    expect(row.account_json).toBe("[hidden]");
+    expect(row.input_tokens).toBe(12);
+    expect(row.fencing_token).toBe(7);
+    expect(row.embedding_model).toBe("m");
     expect(row.note).toHaveLength(163);
   });
 

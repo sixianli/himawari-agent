@@ -44,7 +44,7 @@ database_query() {
 const { DatabaseSync } = require("node:sqlite");
 const database = new DatabaseSync("$PROD_DATABASE", { readOnly: true });
 const [mode, first, second] = process.argv.slice(2);
-const hiddenColumn = /(^auth$|p256dh|endpoint|ciphertext|embedding|secret|token|password|credential)/i;
+const hiddenColumn = /^(auth|p256dh|endpoint|ciphertext|embedding|secret|password|password_hash|account_json|challenge_json)$/i;
 const shortenValue = (key, value) => {
   if (hiddenColumn.test(key)) return "[hidden]";
   if (typeof value === "string") return value.length > 160 ? value.slice(0, 160) + "..." : value;
