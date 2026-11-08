@@ -178,17 +178,19 @@ export class ProductionMemoryRecall {
       ),
       tentativeLimit === 0
         ? Promise.resolve([])
-        : this.#options.embedWithin(invocation, "memory-recall-tentative", () =>
-            this.#options.provider.search({
-              ownerId: this.#options.ownerId,
-              agentId: this.#options.agentId,
-              query: input.query,
-              limit: input.limit * 3,
-              scope: searchScope,
-              includeTentative: true,
-              tentativeOnly: true,
-            }),
-          ),
+        : this.#options
+            .embedWithin(invocation, "memory-recall-tentative", () =>
+              this.#options.provider.search({
+                ownerId: this.#options.ownerId,
+                agentId: this.#options.agentId,
+                query: input.query,
+                limit: input.limit * 3,
+                scope: searchScope,
+                includeTentative: true,
+                tentativeOnly: true,
+              }),
+            )
+            .catch(() => []),
     ]);
     const records = new Map(
       (

@@ -241,3 +241,14 @@ it("[PA-2] REVERSE: a tentative memory above the run's data classification is no
   expect(result.memories.map(({ text }) => text)).toEqual(["事实"]);
   expect(result).not.toHaveProperty("tentativeNote");
 });
+
+it("[PA-2] REVERSE: a failing tentative search never takes the confirmed results down with it", async () => {
+  const f = recallWith([{ id: "fact", text: "主人住在杭州", score: 1 }]);
+  f.search.mockImplementation(async (request: { tentativeOnly?: boolean }) => {
+    if (request.tentativeOnly === true) throw new Error("INDEX_FAILED");
+    return [{ productMemoryId: "fact", providerRecordId: "provider-fact", score: 1 }];
+  });
+  const result = (await f.service.recall(call({ query: "x", limit: 4 }))) as RecallResult;
+  expect(result.memories.map(({ text }) => text)).toEqual(["主人住在杭州"]);
+  expect(result).not.toHaveProperty("tentativeNote");
+});
