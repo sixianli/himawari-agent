@@ -1,0 +1,5 @@
+{"id": "R2-D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "被新规则标成 sensitive 的导入项不会进入模型召回", "valid": true, "class": "error", "severity": "low", "trigger": "主人勾选并导入“pwd: …”这类行，或明说“记住我的密码”", "consequence": "密码存下了，记忆页看得到，但对话里模型检索不到；ADR 0185 没写这个代价，读的人可能以为模型能用", "modelSeverity": "中", "reason": "这是 sensitive 一直以来的设计（自建记忆引擎设计 sensitive 不进全文和实体索引），不是本 PR 新增；缺的是 ADR 披露，已加“代价”一条；是否另做敏感记忆读取路径列给 Andy"}
+{"id": "R2-D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "导入侧可能误标普通行", "valid": true, "class": "better", "reason": "保守方向、与出口遮盖同一规则，模型自己标“推测”；不泄露数据，只多一次勾选"}
+{"id": "R2-D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "导入交互测试没有覆盖本次新增分支", "valid": true, "class": "better", "reason": "新分支由解析用例覆盖，线程把新分支去掉后该用例确实失败（已实测）；交互用例只管勾选到 sensitive 的链路"}
+{"id": "R2-D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "没有导入 sensitive 的端到端测试", "valid": true, "class": "better", "reason": "线程补了集成用例（导入 sensitive 载荷，存后分类是 sensitive）并运行通过"}
+{"id": "R2-D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "增量确实改了一处“发往模型”的内容，只是不在生产主链", "valid": true, "class": "better", "reason": "评测脚本的工具描述不是生产请求；只是简报措辞不准，没有任何仓库文档或代码陈述受影响"}

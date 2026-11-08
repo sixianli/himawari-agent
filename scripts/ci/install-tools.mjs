@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -287,7 +288,9 @@ export async function downloadArtifact(
     ...(wait ? { wait } : {}),
     ...options,
   });
-  writeFileSync(path, bytes, { flag: "wx" });
+  const partial = `${path}.${process.pid}.partial`;
+  writeFileSync(partial, bytes);
+  renameSync(partial, path);
   return path;
 }
 

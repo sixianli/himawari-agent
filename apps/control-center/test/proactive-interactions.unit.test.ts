@@ -44,6 +44,7 @@ const configuration: ControlCenterRuntimeConfiguration = {
     "proactive.review.read",
     "proactive.review.rate",
     "proactive.source.manage",
+    "proactive.backoff.restore",
   ],
 };
 const catalogs = { "zh-CN": zh, en, ja } as const;
@@ -108,6 +109,7 @@ function overviewFixture(): ProactiveOverview {
     quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
     importantSenders: ["@smbc.co.jp"],
     dailyLimitReached: false,
+    backoff: [],
     insights: [
       insight("rakuten", {
         summary: "11 月账单 ¥38,420，确认后付款",
@@ -492,6 +494,44 @@ describe("[PG-15] proactive reminders page", () => {
     await click("#page .proactive-connect", "连接 Gmail");
     expect(settingsTabOf(opened.mock.calls[0]?.[0])).toBe("tools");
     window.removeEventListener(OPEN_SETTINGS, opened);
+  });
+
+  it("[PA-6] names each backed-off class with a restore button, and shows nothing when none is", async () => {
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    expect(document.querySelector('#page [data-testid^="backoff-"]')).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(container);
+    proactive = {
+      ...proactive,
+      backoff: [
+        {
+          classKey: "due:service.example.com",
+          domain: "service.example.com",
+          stage: 1,
+          ignoredCount: 3,
+          changedAt: "2026-11-03T00:00:00.000Z",
+        },
+        {
+          classKey: "due:shop.example.jp",
+          domain: "shop.example.jp",
+          stage: 2,
+          ignoredCount: 3,
+          changedAt: "2026-11-03T00:00:00.000Z",
+        },
+      ],
+    };
+    await act(async () => root.render(h(Page, { focus: null })));
+    await flush();
+    const first = '#page [data-testid="backoff-due:service.example.com"]';
+    expect(text(first)).toContain("service.example.com");
+    expect(text(first)).toContain("最多每天推送 1 条");
+    expect(text('#page [data-testid="backoff-due:shop.example.jp"]')).toContain("已暂停推送");
+    await click(first, "恢复推送");
+    expect(lastCommand()).toMatchObject({
+      type: "proactive.backoff.restore",
+      payload: { classKey: "due:service.example.com" },
+    });
   });
 
   it("[P0-6] shows one page of the daily rating with the right buttons and no hidden text", async () => {

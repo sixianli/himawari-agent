@@ -2275,7 +2275,12 @@ describe("opencode review record masking", () => {
   });
 
   it("[round-2 R2-1] masks private-key headers of any case and prefix, as gitleaks does", () => {
-    for (const label of ["OPENSSH PRIVATE KEY", "ENCRYPTED PRIVATE KEY", "pgp private key block", "FOO_BAR-BAZ PRIVATE KEY"]) {
+    for (const label of [
+      "OPENSSH PRIVATE KEY",
+      "ENCRYPTED PRIVATE KEY",
+      "pgp private key block",
+      "FOO_BAR-BAZ PRIVATE KEY",
+    ]) {
       const text = `x -----BEGIN ${label}----- y`;
       expect(secretLikeRules(text)).toContain("private-key-header");
       expect(maskSecretLike(text)).toBe("x [已遮盖:private-key-header] y");
@@ -2297,7 +2302,13 @@ describe("opencode review record masking", () => {
 
   it("[round-2 R2-2] a ledger line stays valid JSON when a field ends in secret-like text", () => {
     const tail = ["pass", "word: ", "y".repeat(14)].join("");
-    const record = { mode: "override", quote: tail, problems: [tail, "ok"], nested: { files: [tail] }, cost: 0 };
+    const record = {
+      mode: "override",
+      quote: tail,
+      problems: [tail, "ok"],
+      nested: { files: [tail] },
+      cost: 0,
+    };
     const line = ledgerLine(record);
     expect(line.endsWith("\n")).toBe(true);
     const parsed = JSON.parse(line);
@@ -2313,7 +2324,11 @@ describe("opencode review record masking", () => {
       new URL("../../scripts/model-review/opencode-review.mjs", import.meta.url),
       "utf8",
     );
-    const appends = [...source.matchAll(/appendFileSync\(\s*(?:ledgerFile|join\(options\.out, "usage\.jsonl"\)),([\s\S]*?)\n\s*\);/g)];
+    const appends = [
+      ...source.matchAll(
+        /appendFileSync\(\s*(?:ledgerFile|join\(options\.out, "usage\.jsonl"\)),([\s\S]*?)\)\s*;\s*\n/g,
+      ),
+    ];
     expect(appends.length).toBe(3);
     for (const [, body] of appends) {
       expect(body).toContain("ledgerLine(");
@@ -2428,10 +2443,15 @@ describe("opencode review merge gate", () => {
     const f = fixture();
     try {
       const header = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
-      f.commit({ [`${REVIEWS_DIR}/pr-7/round-1/glm-5.3-flash.md`]: `只有开头 ${header} 后面是文字\n` }, "lone header");
+      f.commit(
+        { [`${REVIEWS_DIR}/pr-7/round-1/glm-5.3-flash.md`]: `只有开头 ${header} 后面是文字\n` },
+        "lone header",
+      );
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
       const problems = f.check({ acceptUnreviewed: "Andy 说跳过" }).problems;
-      expect(problems).toContain(`record-secret-like ${REVIEWS_DIR}/pr-7/round-1/glm-5.3-flash.md private-key-header`);
+      expect(problems).toContain(
+        `record-secret-like ${REVIEWS_DIR}/pr-7/round-1/glm-5.3-flash.md private-key-header`,
+      );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2441,13 +2461,23 @@ describe("opencode review merge gate", () => {
     const f = fixture();
     try {
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
-      f.commit({ [`${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md`]: `${fakeOpenAiKey}\n` }, "other pr record");
+      f.commit(
+        { [`${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md`]: `${fakeOpenAiKey}\n` },
+        "other pr record",
+      );
       const result = f.check({ acceptUnreviewed: "Andy 说跳过" });
       expect(result.problems).toContain(
         `record-secret-like ${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md openai-api-key`,
       );
       expect(result.overridden).toBeFalsy();
-      f.commit({ [`${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md`]: maskedRecordText(`${fakeOpenAiKey}\n`) }, "masked");
+      f.commit(
+        {
+          [`${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md`]: maskedRecordText(
+            `${fakeOpenAiKey}\n`,
+          ),
+        },
+        "masked",
+      );
       expect(f.check().problems.filter((p) => p.startsWith("record-"))).toEqual([]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });

@@ -1,3 +1,5 @@
+import { redactForEgress } from "./redaction.js";
+
 const RESTRICTED_IDENTIFIER =
   /(?<![0-9])(?:[1-9][0-9]{5}(?:19|20)[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])[0-9]{3}[0-9Xx]|[0-9]{16,19})(?![0-9])/u;
 
@@ -5,12 +7,22 @@ export function containsRestrictedIdentifier(text: string): boolean {
   return RESTRICTED_IDENTIFIER.test(text.replace(/[\s-]/gu, ""));
 }
 
+const CREDENTIAL_KINDS: ReadonlySet<string> = new Set([
+  "machine-secret",
+  "password",
+  "verification-code",
+]);
+
+export function containsCredential(text: string): boolean {
+  return redactForEgress(text).findings.some(({ kind }) => CREDENTIAL_KINDS.has(kind));
+}
+
 export function classificationWithIdentifiers<T extends string>(
   text: string,
   classification: T,
 ): T | "sensitive" {
   return (classification === "private" || classification === "public") &&
-    containsRestrictedIdentifier(text)
+    (containsRestrictedIdentifier(text) || containsCredential(text))
     ? "sensitive"
     : classification;
 }

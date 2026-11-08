@@ -52,7 +52,7 @@ date: "2026-11-05"
    - 只放识别和遮盖本身，不依赖 Himawari 的其他包，不做文件、数据库或网络读写，浏览器里也能用。
    - 原来的两个文件原样搬进来，改名为 `src/redaction.ts` 和 `src/machine-secrets.ts`；导出的函数名和行为都不变。
 2. **散在别处的规则也搬进来**，规则本身不变。
-   - `containsRestrictedIdentifier`：记忆、提醒和 Muse 在存储时用它。规则偏宽：16 到 19 位的连续数字，或身份证号的格式，都算受限，不看校验位。
+   - `containsRestrictedIdentifier`：记忆、提醒和 Muse 在存储时用它。规则偏宽：16 到 19 位的连续数字，或身份证号的格式，都算受限，不看校验位。（[ADR 0183](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md) 起，存储这一侧只用它把分类提高到“敏感”，不再拦下。）
    - `mentionsSensitiveMaterial`：网页导入记忆时用它给出提示。
    - `isSensitiveFieldName`、`isSensitiveQueryParameter`：诊断日志打码时判断字段名和网址参数名。
    - `redactWebContentSecrets`（`src/web-content.ts`）：网页抓取内容里的密钥换成 `[REDACTED_MACHINE_SECRET]`。
