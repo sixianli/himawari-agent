@@ -62,13 +62,13 @@ import {
   ManualClock,
   ScriptedAgentRuntime,
   ScriptedWorkerRunPort,
+  testModelEgress,
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
-import { testModelEgress } from "@himawari-agent/testing";
 
 describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", (execution) => {
   useSqliteContractExecution(execution);
@@ -3505,10 +3505,18 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       kind: "status",
       name: "runtime.tool_outcome.preparing",
     });
-    expect(displayed.records[3]?.input).toContain("[REDACTED]");
+    expect(displayed.records[3]?.input).toContain("PRIVATE_CREDENTIAL");
     expect(displayed.records[3]?.itemId).toBe(displayed.records[4]?.itemId);
     expect(displayed.records[4]?.output).toBe("Allowed file content");
-    expect(JSON.stringify(displayed)).not.toContain("PRIVATE_");
+    const displayedText = JSON.stringify(displayed);
+    for (const hidden of [
+      "PRIVATE_REASONING_MUST_NOT_LEAK",
+      "PRIVATE_SIGNATURE",
+      "PRIVATE_PROVIDER_DATA",
+      "PRIVATE_INTERNAL_DATA",
+    ]) {
+      expect(displayedText).not.toContain(hidden);
+    }
     expect(await projection.read(query)).toEqual(displayed);
     await expect(projection.read({ ...query, ownerId: "other-owner" })).rejects.toThrow(
       "THREAD_EXECUTION_NOT_FOUND",
@@ -3556,7 +3564,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       phase: "failed",
       text: "PI_MODEL_RATE_LIMITED",
     });
-    expect(JSON.stringify(failed)).not.toContain("PRIVATE_");
+    expect(JSON.stringify(failed)).not.toContain("PRIVATE_PROVIDER_DATA");
     const callOnlyRef = await capture("call-only", {
       role: "assistant",
       timestamp: 3,
@@ -3581,7 +3589,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     );
     expect(pendingCall).toMatchObject({ phase: "updated" });
     expect(pendingCall?.input).toContain("Tokyo");
-    expect(pendingCall?.input).not.toContain("PRIVATE_CREDENTIAL");
+    expect(pendingCall?.input).toContain("PRIVATE_CREDENTIAL");
     const intentRef = await capture("new-call-intent", {
       toolCallId: "new-call",
       toolName: "web_search",
@@ -3612,7 +3620,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         text: "",
       });
     }
-    expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_");
+    expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_MEMORY_DATA");
     const timedRef = await capture("timed-tool", {
       toolCallId: "timed-call",
       toolName: "read",

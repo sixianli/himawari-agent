@@ -3,6 +3,7 @@ import type {
   ThreadRepositoryPort,
   ThreadUpdateInput,
 } from "@himawari-agent/application";
+import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet, createV02Fixture } from "@himawari-agent/testing";
 import { expect, it, vi } from "vitest";
 import { ProductionThreadTitles } from "../src/production-thread-titles.js";
@@ -214,4 +215,54 @@ it("signals admission separately from the pending model response", async () => {
   finish("日本今日头条");
   await f.service.stop();
   expect(f.thread().titleSource).toBe("automatic");
+});
+
+const testTag = (kind: string, value: string) =>
+  `${kind}${value}`
+    .replace(/[^a-z]/gu, "")
+    .padEnd(8, "x")
+    .slice(0, 8);
+
+it("[mask-not-block] restores a placeholder the model copied into the title and never refuses a title for holding a secret", async () => {
+  const f = await fixture();
+  const message = "我的密码: hunter2abc 帮我记一下";
+  const payload = await f.adapters.payloadProtector.protect({
+    ownerId: f.request.ownerId,
+    agentId: f.request.agentId,
+    ref: "first-message-secret",
+    dataClassification: "private",
+    contentType: "text/plain",
+    plaintext: new TextEncoder().encode(message),
+    createdAt: f.adapters.clock.now(),
+  });
+  await f.adapters.payload.put(payload);
+  const options = (
+    f.service as unknown as {
+      options: { threads: { listMessages: unknown }; externalTag: unknown };
+    }
+  ).options;
+  options.threads.listMessages = vi.fn(async () => [
+    { role: "owner", status: "committed", contentRef: payload.ref, dataClassification: "private" },
+  ]);
+  options.externalTag = async () => testTag;
+  f.generate.mockImplementation(async (_request, prompt) => {
+    const masked = redactForEgress(prompt, { known: new Map(), tag: testTag }).text;
+    expect(masked).not.toContain("hunter2abc");
+    const placeholder = masked.match(/\[密码#[^\]]+\]/u)?.[0];
+    if (placeholder === undefined) throw new Error("Expected a masked password");
+    return `${placeholder} 备忘`;
+  });
+  f.service.start(f.request);
+  await f.service.stop();
+  expect(f.onFailure).not.toHaveBeenCalled();
+  expect(await storedTitle(f)).toContain("hunter2abc");
+});
+
+it("[mask-not-block] stores a model title that carries a secret as written", async () => {
+  const f = await fixture();
+  f.generate.mockResolvedValue("密码 hunter2abc");
+  f.service.start(f.request);
+  await f.service.stop();
+  expect(f.onFailure).not.toHaveBeenCalled();
+  expect(await storedTitle(f)).toBe("密码 hunter2abc");
 });

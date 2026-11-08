@@ -13,10 +13,6 @@ import type {
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import {
-  containsRestrictedIdentifier,
-  scanMachineSecrets,
-} from "@himawari-agent/sensitive-capture";
-import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
   TOOL_REMINDER_SET,
@@ -189,13 +185,7 @@ export class ProductionReminderWriter {
       text = (input.text ?? "").trim();
       contentRef = `memory-content:reminder:${input.key}`;
     }
-    if (
-      text === undefined ||
-      text.trim().length === 0 ||
-      text.length > MAXIMUM_TEXT ||
-      scanMachineSecrets(text).length > 0 ||
-      containsRestrictedIdentifier(text)
-    )
+    if (text === undefined || text.trim().length === 0 || text.length > MAXIMUM_TEXT)
       throw new ReminderInputError(
         text === undefined || text.trim().length === 0
           ? "REMINDER_INPUT_INVALID"

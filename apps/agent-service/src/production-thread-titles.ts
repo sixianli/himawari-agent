@@ -7,8 +7,12 @@ import {
   type ThreadRepositoryPort,
   type ThreadUpdateInput,
 } from "@himawari-agent/application";
-import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { THREAD_TITLE } from "@himawari-agent/prompt-catalog";
+import {
+  type EgressPlaceholderKind,
+  placeholderTable,
+  restorePlaceholders,
+} from "@himawari-agent/sensitive-capture";
 
 export class ProductionThreadTitles {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
@@ -20,6 +24,7 @@ export class ProductionThreadTitles {
     clock: ClockPort;
     authority: () => ThreadUpdateInput["authority"];
     assertActive: () => Promise<void>;
+    externalTag?: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
     generate: (request: RuntimeRequest, prompt: string, onAdmitted: () => void) => Promise<string>;
     onFailure: (error: unknown) => void;
   };
@@ -71,7 +76,6 @@ export class ProductionThreadTitles {
       await this.options.protector.unprotect({ ownerId, agentId, payload: source }),
     );
     if (!text.trim()) return;
-    assertMachineSecretFree(text);
     await this.options.assertActive();
     const prompt = `${THREAD_TITLE.text}\n${JSON.stringify({ userMessage: text.slice(0, 4096) })}`;
     let title: string;
@@ -81,7 +85,12 @@ export class ProductionThreadTitles {
         prompt,
         onAdmitted,
       );
-      title = generated
+      const tag = await this.options.externalTag?.();
+      const restored =
+        tag === undefined
+          ? generated
+          : restorePlaceholders(generated, placeholderTable(prompt, tag));
+      title = restored
         .trim()
         .replace(/^["“「]|["”」]$/gu, "")
         .trim();
@@ -91,7 +100,6 @@ export class ProductionThreadTitles {
       this.options.onFailure(error);
       title = openingWords(text);
     }
-    assertMachineSecretFree(title);
     await this.options.assertActive();
     const current = await this.options.threads.read(ownerId, agentId, threadId);
     if (

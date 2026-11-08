@@ -28,12 +28,13 @@ import {
   type ThreadDistillationWork,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
-import {
-  containsRestrictedIdentifier,
-  scanMachineSecrets,
-} from "@himawari-agent/sensitive-capture";
 import { localDayStart } from "@himawari-agent/memory-engine";
 import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
+import {
+  type EgressPlaceholderKind,
+  placeholderTable,
+  restorePlaceholders,
+} from "@himawari-agent/sensitive-capture";
 
 type MemoryId = NonNullable<ExtractedMemoryCandidate["existingMemoryId"]>;
 const createMemoryId = (value: string) => value as MemoryId;
@@ -211,7 +212,9 @@ export function parseMemoryCandidates(input: {
   readonly timeZone?: string;
   readonly subCategories?: Readonly<Record<string, readonly string[]>>;
   readonly knownPersonIds?: ReadonlySet<string>;
+  readonly restore?: (text: string) => string;
 }): ParsedMemoryCandidates {
+  const restore = input.restore ?? ((text: string) => text);
   const subCategories = new Map(
     Object.entries(input.subCategories ?? {}).map(([category, names]) => [
       category,
@@ -254,7 +257,7 @@ export function parseMemoryCandidates(input: {
       continue;
     }
     const value = item as Record<string, unknown>;
-    const text = typeof value["text"] === "string" ? value["text"].trim() : "";
+    const text = typeof value["text"] === "string" ? restore(value["text"].trim()) : "";
     const kind = value["kind"] as ExtractedMemoryCandidate["kind"];
     const requestedDecision = value["decision"];
     const existing =
@@ -278,16 +281,15 @@ export function parseMemoryCandidates(input: {
       requestedDecision === "supersede" || existing === null
         ? "create"
         : (requestedDecision as ExtractedMemoryCandidate["decision"]);
-    const requested = containsRestrictedIdentifier(text)
-      ? "restricted"
-      : value["classification"] === "sensitive" || value["classification"] === "restricted"
+    const requested =
+      value["classification"] === "sensitive" || value["classification"] === "restricted"
         ? value["classification"]
         : "private";
     const dataClassification =
       CLASSIFICATION_RANK[requested] >= CLASSIFICATION_RANK[input.sourceClassification]
         ? requested
         : input.sourceClassification;
-    const quote = typeof value["quote"] === "string" ? value["quote"] : "";
+    const quote = typeof value["quote"] === "string" ? restore(value["quote"]) : "";
     const evidenceVerified =
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
     const evidenceRejected =
@@ -575,6 +577,7 @@ export interface ProductionMemoryCaptureOptions {
   >;
   readonly timeZone?: string;
   readonly assertActive: () => Promise<void>;
+  readonly externalTag?: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
   readonly generate: (
     request: RuntimeRequest,
     prompt: string,
@@ -749,73 +752,76 @@ export class ProductionMemoryCapture {
       invalidCandidates: 0,
       returnedNone: false,
     };
-    if (scanMachineSecrets(message).length === 0) {
-      try {
-        await this.options.assertActive();
-        const output = await this.options.generate(
-          { ...request, dataClassification: source.dataClassification },
-          memoryCapturePrompt(
-            message,
-            existing,
-            previousAssistantMessage,
-            owner.committedAt,
-            this.options.timeZone ?? "UTC",
-            { subCategories, people },
-          ),
-          onAdmitted,
-        );
-        parsed = parseMemoryCandidates({
-          output,
-          sourceRef: source.payloadRef,
-          sourceClassification: source.dataClassification,
-          existingIds: new Set(existing.map(({ id }) => id)),
-          ownerMessage: message,
-          ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
-          timeZone: this.options.timeZone ?? "UTC",
-          subCategories,
-          knownPersonIds: new Set(people.map(({ id }) => id)),
-        });
-      } catch (error) {
-        audit("extraction_failed");
-        throw error;
-      }
-      for (let index = 0; index < parsed.unverifiedEvidence; index += 1)
-        audit("evidence_unverified");
-      for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
-      if (parsed.returnedNone) audit("nothing_to_remember");
-      if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
+    try {
       await this.options.assertActive();
-      if (parsed.candidates.length > 0)
-        await this.options.generations.request({
-          jobId: createCheckpointJobId(`checkpoint:memory-capture:${runId}`),
-          generationId,
-          ownerId,
-          agentId,
-          threadId,
-          sourceWatermark: owner.sequence,
-          policyVersion: MEMORY_CAPTURE_POLICY_VERSION,
-          modelDescriptorRef: request.modelRef,
-          trigger: "controlled_idle",
-          summaryRef: null,
-          summaryClassification: null,
-          status: "pending",
-          revision: 1,
-          attemptCount: 0,
-          nextRetryAt: null,
-          claimedBy: null,
-          claimExpiresAt: null,
-          sources: [
-            {
-              ref: owner.id,
-              sequence: owner.sequence,
-              kind: "message",
-              dataClassification: owner.dataClassification,
-            },
-          ],
-          requestedAt: this.options.clock.now(),
-          errorCode: null,
-        });
+      const prompt = memoryCapturePrompt(
+        message,
+        existing,
+        previousAssistantMessage,
+        owner.committedAt,
+        this.options.timeZone ?? "UTC",
+        { subCategories, people },
+      );
+      const tag = await this.options.externalTag?.();
+      const output = await this.options.generate(
+        { ...request, dataClassification: source.dataClassification },
+        prompt,
+        onAdmitted,
+      );
+      const table = tag === undefined ? undefined : placeholderTable(prompt, tag);
+      parsed = parseMemoryCandidates({
+        output,
+        sourceRef: source.payloadRef,
+        sourceClassification: source.dataClassification,
+        existingIds: new Set(existing.map(({ id }) => id)),
+        ownerMessage: message,
+        ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
+        timeZone: this.options.timeZone ?? "UTC",
+        subCategories,
+        knownPersonIds: new Set(people.map(({ id }) => id)),
+        ...(table === undefined
+          ? {}
+          : { restore: (text: string) => restorePlaceholders(text, table) }),
+      });
+    } catch (error) {
+      audit("extraction_failed");
+      throw error;
     }
+    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
+    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
+    if (parsed.returnedNone) audit("nothing_to_remember");
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
+    await this.options.assertActive();
+    if (parsed.candidates.length > 0)
+      await this.options.generations.request({
+        jobId: createCheckpointJobId(`checkpoint:memory-capture:${runId}`),
+        generationId,
+        ownerId,
+        agentId,
+        threadId,
+        sourceWatermark: owner.sequence,
+        policyVersion: MEMORY_CAPTURE_POLICY_VERSION,
+        modelDescriptorRef: request.modelRef,
+        trigger: "controlled_idle",
+        summaryRef: null,
+        summaryClassification: null,
+        status: "pending",
+        revision: 1,
+        attemptCount: 0,
+        nextRetryAt: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        sources: [
+          {
+            ref: owner.id,
+            sequence: owner.sequence,
+            kind: "message",
+            dataClassification: owner.dataClassification,
+          },
+        ],
+        requestedAt: this.options.clock.now(),
+        errorCode: null,
+      });
     const service = createProductionAutomaticMemory({
       ...this.options,
       extract: async () => parsed.candidates,
