@@ -872,6 +872,7 @@ export async function runAgentService(
       secrets: sources.provider,
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
+    let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
     const fileReadServices = createProductionFileReadServices({
       configuration,
       repository,
@@ -881,6 +882,15 @@ export async function runAgentService(
       hostReadOnlyPort,
       workspaceSnapshotPort: hostReadOnlyPort,
       ...(hostWeb ? { hostWeb } : {}),
+      externalTag: async () => {
+        externalEgress ??= createProductionModelEgress(configuration, sources);
+        try {
+          return await externalEgress.externalTag();
+        } catch (error) {
+          externalEgress = undefined;
+          throw error;
+        }
+      },
       ...(automaticReview ? { automaticReview } : {}),
       ...(workspaceAuto ? { workspaceAuto } : {}),
     });
