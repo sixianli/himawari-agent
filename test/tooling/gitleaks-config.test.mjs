@@ -32,7 +32,27 @@ const PUSH_TEST = "apps/agent-service/test/production-reminder-push.unit.test.ts
 const PUSH_SIBLING = ["F5u42Bd3HyW8Kxk", "Uqo2gRB"].join("");
 const PUSH_SIBLING_TEST = `sibling/${PUSH_TEST}`;
 
+const REVIEW_274 = ".agents/reviews/pr-274/round-7/deepseek-v4.1-flash.md";
+const REVIEW_274_SIBLING = ".agents/reviews/pr-274/round-8/deepseek-v4.1-flash.md";
+const REVIEW_274_OTHER_TEXT = ".agents/reviews/pr-274/round-9/deepseek-v4.1-flash.md";
+const PEM_BEGIN = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+const PEM_BEGIN_ENCRYPTED = ["-----BEGIN", "ENCRYPTED", "PRIVATE KEY-----"].join(" ");
+const PEM_END = ["-----END", "PRIVATE KEY-----"].join(" ");
+const KEY_TAIL_TEST = "apps/agent-service/test/pi-coding-program.unit.test.ts";
+const KEY_TAIL = ["MIIEvR2T14", "TAILBODY"].join("");
+const KEY_TAIL_OTHER = ["MIIEvR2T14", "TAILBODZ"].join("");
+const PADDING = "\u7701\u7565\u8bf4\u660e".repeat(20);
+const REVIEW_274_PROSE = `1. ${PEM_BEGIN} is used ...\`${PADDING}${PEM_END}\n2. \`${PEM_BEGIN_ENCRYPTED}\`\u3001\`DSA PRIVATE KEY\` ${PADDING}${PEM_END}\n`;
+const keyTailLine = (tail) =>
+  `["[R2-T14] key tail", \`${tail}\\n\${["-----END", "PRIVATE KEY-----\\n"].join(" ")}\`],\n`;
+
 const FIXTURES = {
+  [REVIEW_274]: REVIEW_274_PROSE,
+  [REVIEW_274_SIBLING]: REVIEW_274_PROSE,
+  [REVIEW_274_OTHER_TEXT]: `${PEM_BEGIN} followed by ${PADDING}${PEM_END}\n`,
+  [KEY_TAIL_TEST]: keyTailLine(KEY_TAIL),
+  "apps/agent-service/test/other-key-tail.unit.test.ts": keyTailLine(KEY_TAIL),
+  "apps/agent-service/test/key-tail-variant.unit.test.ts": keyTailLine(KEY_TAIL_OTHER),
   [`${REVIEWS}/round-4/deepseek-v4.1-flash.md`]: `- blame → \`tokenValue: "${SYNTHETIC_TOKEN}"\`\n`,
   [`${REVIEWS}/round-2/deepseek-v4.1-flash.md`]: `- blame → \`tokenValue: "${SYNTHETIC_TOKEN}"\`\n`,
   "apps/agent-service/test/production-http-composition.unit.test.ts": `const headers = {\n  "idempotency-key": "${CLEAR_KEY}",\n};\n`,
@@ -48,6 +68,10 @@ const FIXTURES = {
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
+  `${REVIEW_274_SIBLING} private-key`,
+  `${REVIEW_274_OTHER_TEXT} private-key`,
+  "apps/agent-service/test/other-key-tail.unit.test.ts generic-api-key",
+  "apps/agent-service/test/key-tail-variant.unit.test.ts generic-api-key",
   `${REVIEWS}/round-2/deepseek-v4.1-flash.md generic-api-key`,
   `${EVIDENCE}/api.json generic-api-key`,
   "apps/agent-service/test/other-push.unit.test.ts generic-api-key",
@@ -163,6 +187,8 @@ describe("gitleaks repository configuration", () => {
           "apps/agent-service/test/production-http-composition.unit.test.ts generic-api-key",
           "test/tooling/gitleaks-allowlist.test.mjs generic-api-key",
           `${PUSH_TEST} generic-api-key`,
+          `${REVIEW_274} private-key`,
+          `${KEY_TAIL_TEST} generic-api-key`,
         ].sort(),
       );
   }, 120000);
@@ -182,16 +208,56 @@ describe("gitleaks repository configuration", () => {
       "'''(?:^|/)test/qualification/evidence/workspace-authorization-lifecycle/'''",
       "'''.*'''",
     ],
+    [
+      "pr274 any path",
+      "'''(?:^|/)\\.agents/reviews/pr-274/round-7/deepseek-v4\\.1-flash\\.md$'''",
+      "'''.*'''",
+    ],
+    [
+      "pr274 any text",
+      "'''^-----BEGIN PRIVATE KEY----- is used \\.\\.\\.`'''",
+      "'''^-----BEGIN [A-Z ]*PRIVATE KEY-----''',",
+      [
+        "'''(?:^|/)\\.agents/reviews/pr-274/round-7/deepseek-v4\\.1-flash\\.md$'''",
+        "'''(?:^|/)\\.agents/reviews/pr-274/'''",
+      ],
+    ],
+    [
+      "key tail any path",
+      "'''(?:^|/)apps/agent-service/test/pi-coding-program\\.unit\\.test\\.ts$'''",
+      "'''(?:^|/)apps/agent-service/test/.*\\.ts$'''",
+    ],
+    [
+      "key tail any value",
+      "'''^MIIEvR2T14TAILBODY$'''",
+      "'''^MIIEvR2T14TAILBOD[A-Z]$'''",
+      [
+        "'''(?:^|/)apps/agent-service/test/pi-coding-program\\.unit\\.test\\.ts$'''",
+        "'''(?:^|/)apps/agent-service/test/.*\\.ts$'''",
+      ],
+    ],
     ["push value", "'''^F5u42Bd3HyW8KxkUqo2gRA$'''", "'''^F5u42Bd3HyW8Kxk[A-Za-z0-9_-]{7}$'''"],
   ])(
     "fails the check when the allowlist is widened: %s",
-    (_name, from, to) => {
+    (_name, from, to, pathWidening) => {
       expect(repositoryConfig).toContain(from);
-      const findings = scan(repositoryConfig.replace(from, () => to));
+      let base = repositoryConfig;
+      if (pathWidening) {
+        expect(base).toContain(pathWidening[0]);
+        base = base.replaceAll(pathWidening[0], () => pathWidening[1]);
+      }
+      const findings = scan(base.replaceAll(from, () => to));
       expect([findings.current, findings.history]).not.toEqual([
         EXPECTED_WITH_REPOSITORY_CONFIG,
         EXPECTED_WITH_REPOSITORY_CONFIG,
       ]);
+      if (pathWidening) {
+        const pathOnly = scan(base);
+        expect([findings.current, findings.history]).not.toEqual([
+          pathOnly.current,
+          pathOnly.history,
+        ]);
+      }
     },
     120000,
   );

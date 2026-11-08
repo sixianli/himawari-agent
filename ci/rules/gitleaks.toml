@@ -98,3 +98,27 @@ targetRules = ["generic-api-key"]
 paths = ['''(?:^|/)test/tooling/gitleaks-allowlist\.test\.mjs$''']
 regexTarget = "secret"
 regexes = ['''^0803b00889e1a37bf2645a12f203d89c5a695b27538e322db7e962339e6a416a$''']
+
+[[allowlists]]
+description = "PR 274 第 7 轮复核记录第 37 行：讨论遮盖规则时引用的私钥开头标记，后面是说明文字，没有密钥，只限这一个记录文件"
+condition = "AND"
+targetRules = ["private-key"]
+paths = ['''(?:^|/)\.agents/reviews/pr-274/round-7/deepseek-v4\.1-flash\.md$''']
+regexTarget = "secret"
+regexes = ['''^-----BEGIN PRIVATE KEY----- is used \.\.\.`''']
+
+[[allowlists]]
+description = "PR 274 第 7 轮复核记录第 117 行：列举没覆盖到的私钥开头标记，后面是说明文字，没有密钥，只限这一个记录文件"
+condition = "AND"
+targetRules = ["private-key"]
+paths = ['''(?:^|/)\.agents/reviews/pr-274/round-7/deepseek-v4\.1-flash\.md$''']
+regexTarget = "secret"
+regexes = ['''^-----BEGIN ENCRYPTED PRIVATE KEY-----`、`DSA PRIVATE KEY` ''']
+
+[[allowlists]]
+description = "遮盖测试里用 join 拼出的假私钥结尾（MIIEvR2T14TAILBODY 后接 END 标记），只限这个测试文件"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''(?:^|/)apps/agent-service/test/pi-coding-program\.unit\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^MIIEvR2T14TAILBODY$''']
