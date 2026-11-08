@@ -1339,7 +1339,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     } else {
       appendFileSync(
         ledgerFile,
-        `${shown.stdout && !shown.stdout.endsWith("\n") ? "\n" : ""}${JSON.stringify({
+        `${shown.stdout && !shown.stdout.endsWith("\n") ? "\n" : ""}${ledgerLine({
           at: new Date().toISOString(),
           mode: "low-fix",
           cost: 0,
@@ -1348,7 +1348,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
           from: complete.head,
           files: check.files,
           findings: check.errors.map((verdict) => verdict.id),
-        })}\n`,
+        })}`,
       );
       lines.push(
         `REVIEW_LOW_FIX round=${acceptLow} from=${complete.head} head=${head} files=${check.files.map(printable).join(",")}`,
@@ -1366,9 +1366,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       mkdirSync(dirname(ledgerFile), { recursive: true });
       appendFileSync(
         ledgerFile,
-        maskSecretLike(
-          `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
-        ),
+        `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${ledgerLine({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}`,
       );
       lines.push(`REVIEW_OVERRIDE_WRITTEN quote=${acceptUnreviewed} commit-and-rerun`);
     }
@@ -2400,7 +2398,7 @@ export const RECORD_SECRET_RULES = Object.freeze([
     "private-key-block",
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
   ],
-  ["private-key-header", /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----/g],
+  ["private-key-header", /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/gi],
   ["authorization-bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi],
   ["jwt-token", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g],
   ["openai-api-key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/g],
@@ -2429,9 +2427,21 @@ export function maskedRecordText(text) {
   return maskSecretLike(recordText(text));
 }
 
+function maskSecretLikeDeep(value) {
+  if (typeof value === "string") return maskSecretLike(value);
+  if (Array.isArray(value)) return value.map(maskSecretLikeDeep);
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, maskSecretLikeDeep(item)]));
+  return value;
+}
+
+export function ledgerLine(record) {
+  return `${JSON.stringify(maskSecretLikeDeep(record))}\n`;
+}
+
 export function recordSecretProblems({ repo, ledgerPath }) {
   const listed = gitStatus(["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ledgerPath], repo);
-  if (listed.status !== 0) return [];
+  if (listed.status !== 0) return [`record-unreadable ${printable(ledgerPath)}`];
   const problems = [];
   for (const file of listed.stdout.split("\0").filter(Boolean)) {
     const shown = gitStatus(["show", `HEAD:${file}`], repo);
@@ -3005,7 +3015,7 @@ async function main() {
         : assembled;
       appendFileSync(
         join(options.out, "usage.jsonl"),
-        maskSecretLike(`${JSON.stringify(record)}\n`),
+        ledgerLine(record),
       );
       if (record.costUnknownWhy) {
         console.log(`GATEWAY_COST_UNKNOWN ${model} ${record.costUnknownWhy}`);

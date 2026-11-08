@@ -42,6 +42,7 @@ import {
   LOW_FIX_MAX_LINES_PER_FILE,
   MIN_OUTPUT_TOKENS,
   MODEL_LENSES,
+  ledgerLine,
   maskedRecordText,
   maskSecretLike,
   nextRound,
@@ -72,6 +73,7 @@ import {
   RULE_16_SENTENCE,
   rawDir,
   readUsage,
+  recordSecretProblems,
   recordText,
   resolveCommits,
   resultLine,
@@ -2267,6 +2269,42 @@ describe("opencode review record masking", () => {
     }
   });
 
+  it("[round-2 R2-1] masks private-key headers of any case and prefix, as gitleaks does", () => {
+    for (const label of ["OPENSSH PRIVATE KEY", "ENCRYPTED PRIVATE KEY", "pgp private key block", "FOO_BAR-BAZ PRIVATE KEY"]) {
+      const text = `x -----BEGIN ${label}----- y`;
+      expect(secretLikeRules(text)).toContain("private-key-header");
+      expect(maskSecretLike(text)).toBe("x [已遮盖:private-key-header] y");
+    }
+    expect(secretLikeRules("-----BEGIN CERTIFICATE-----")).toEqual([]);
+  });
+
+  it("[round-2 R2-2] a ledger line stays valid JSON when a field ends in secret-like text", () => {
+    const tail = ["pass", "word: ", "y".repeat(14)].join("");
+    const record = { mode: "override", quote: tail, problems: [tail, "ok"], nested: { files: [tail] }, cost: 0 };
+    const line = ledgerLine(record);
+    expect(line.endsWith("\n")).toBe(true);
+    const parsed = JSON.parse(line);
+    expect(parsed.quote).toBe("[已遮盖:credential-assignment]");
+    expect(parsed.problems).toEqual(["[已遮盖:credential-assignment]", "ok"]);
+    expect(parsed.nested.files).toEqual(["[已遮盖:credential-assignment]"]);
+    expect(parsed.cost).toBe(0);
+    expect(secretLikeRules(line)).toEqual([]);
+  });
+
+  it("[round-2 R2-3] every ledger writer goes through ledgerLine, none stringifies and masks afterwards", () => {
+    const source = readFileSync(
+      new URL("../../scripts/model-review/opencode-review.mjs", import.meta.url),
+      "utf8",
+    );
+    const appends = [...source.matchAll(/appendFileSync\(\s*(?:ledgerFile|join\(options\.out, "usage\.jsonl"\)),([\s\S]*?)\n\s*\);/g)];
+    expect(appends.length).toBe(3);
+    for (const [, body] of appends) {
+      expect(body).toContain("ledgerLine(");
+      expect(body).not.toContain("JSON.stringify");
+      expect(body).not.toContain("maskSecretLike(");
+    }
+  });
+
   it("leaves ordinary review prose alone, including short sk- words and key names", () => {
     const prose = "- 低度：sk-short 太短不算；apiKey 这个字段名没有值；Bearer 后面没有令牌";
     expect(secretLikeRules(prose)).toEqual([]);
@@ -2366,6 +2404,30 @@ describe("opencode review merge gate", () => {
       expect(f.check().problems).toEqual([]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] refuses a lone private-key header in a record that cannot be waived", () => {
+    const f = fixture();
+    try {
+      const header = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+      f.commit({ [`${REVIEWS_DIR}/pr-7/round-1/glm-5.3-flash.md`]: `只有开头 ${header} 后面是文字\n` }, "lone header");
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      const problems = f.check({ acceptUnreviewed: "Andy 说跳过" }).problems;
+      expect(problems).toContain(`record-secret-like ${REVIEWS_DIR}/pr-7/round-1/glm-5.3-flash.md private-key-header`);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] reports record-unreadable when the records cannot be listed", () => {
+    const notARepo = mkdtempSync(join(tmpdir(), "not-a-repo-"));
+    try {
+      expect(recordSecretProblems({ repo: notARepo, ledgerPath: `${REVIEWS_DIR}/pr-7` })).toEqual([
+        `record-unreadable ${REVIEWS_DIR}/pr-7`,
+      ]);
+    } finally {
+      rmSync(notARepo, { recursive: true, force: true });
     }
   });
 

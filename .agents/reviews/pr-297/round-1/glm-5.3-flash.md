@@ -8,7 +8,7 @@
 - 建议：`promptOnDisk` 读盘后过一遍 `maskSecretLike` 再比较，或比较两边都先归一化遮盖；并补一个「提示词含密钥样例 + 磁盘为遮盖版」的 `roundForRun` 用例。现有测试（opencode-review.test.mjs:3448-3482）只测了「文件被删回退到摘要」和「内容不同」，没有任何用例覆盖「磁盘是遮盖版」。
 
 **2. 中低 | scripts/model-review/opencode-review.mjs:2396-2401、ci/rules/gitleaks.toml:103-116 | 遮盖规则不覆盖 gitleaks 的 `private-key` 规则，I-83 的「私钥开头标记」类误报并未根治**
-- 证据（读代码证实）：`RECORD_SECRET_RULES` 的 `private-key-block` 要求 BEGIN…END 成对（`-----BEGIN … PRIVATE KEY-----[\s\S]*?-----END … PRIVATE KEY-----`）；而这次加白名单的两处 PR 274 记录恰恰是**只有 BEGIN 标记、后面跟说明文字**（gitleaks.toml:108、116 的放行值就是证明）。今后复核记录再引用一个孤立的 `-----BEGIN PRIVATE KEY-----`：写盘不遮（规则不命中）、合并门不拦（同一规则集）、`check:secrets` 也不命中，但 gitleaks 照报——I-83 场景复发，还得再手补白名单。
+- 证据（读代码证实）：`RECORD_SECRET_RULES` 的 `private-key-block` 要求 BEGIN…END 成对（`-----BEGIN … PRIVATE KEY-----[\s\S]*?-----END … PRIVATE KEY-----`）；而这次加白名单的两处 PR 274 记录恰恰是**只有 BEGIN 标记、后面跟说明文字**（gitleaks.toml:108、116 的放行值就是证明）。今后复核记录再引用一个孤立的 `[已遮盖:private-key-header]`：写盘不遮（规则不命中）、合并门不拦（同一规则集）、`check:secrets` 也不命中，但 gitleaks 照报——I-83 场景复发，还得再手补白名单。
 - 建议：要么在 `RECORD_SECRET_RULES` 加一条只认孤立 BEGIN 标记的规则（写盘遮掉、门也拦），要么在 ADR/I-83 里写明这个已知盲区。
 - 附带（推测）：`[\s\S]*?` 跨行惰性匹配意味着记录里先出现 BEGIN、很远的地方出现 END 时，中间**无关的整段文字**会被并进一个遮盖块；若这段恰好横跨 low-fix 的 verdict 行，`lowFixProblems`（第 1106 行）读到的就是被压成一行的遮盖文本，verdict 解析可能失败。
 

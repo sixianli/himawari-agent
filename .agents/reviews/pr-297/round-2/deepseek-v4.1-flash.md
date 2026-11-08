@@ -57,7 +57,7 @@
 ### 4. 低（推测，依据 gitleaks 默认规则的一般行为）：新 `private-key-header` 比 gitleaks 的 `private-key` 窄
 `scripts/model-review/opencode-review.mjs:2403`
 
-- 证据：新规则大小写敏感，前缀字符类只有 `[A-Z0-9 ]`。gitleaks 用 `[extend] useDefault = true`（`ci/rules/gitleaks.toml:3-4`），其默认 `private-key` 规则通常大小写不敏感且前缀允许更宽的字符。这样像 `-----BEGIN OpenSSH PRIVATE KEY-----` 或含 `_`/`-` 的前缀，gitleaks 会报、这里不会遮（`private-key-block` 同样大小写敏感）。round-1 的诉求是「遮盖比 gitleaks 窄」，新规则又留下了另一类窄口。
+- 证据：新规则大小写敏感，前缀字符类只有 `[A-Z0-9 ]`。gitleaks 用 `[extend] useDefault = true`（`ci/rules/gitleaks.toml:3-4`），其默认 `private-key` 规则通常大小写不敏感且前缀允许更宽的字符。这样像 `[已遮盖:private-key-header]` 或含 `_`/`-` 的前缀，gitleaks 会报、这里不会遮（`private-key-block` 同样大小写敏感）。round-1 的诉求是「遮盖比 gitleaks 窄」，新规则又留下了另一类窄口。
 - 建议：至少加 `i` 并让前缀类对齐 gitleaks（或直接复用其正则），再用反向用例证明大小写/字符类变体也会遮。
 
 ### 5. 低：`record-unreadable` 没有自动检查，且 `ls-tree` 失败仍然是静默跳过
