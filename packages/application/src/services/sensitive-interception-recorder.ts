@@ -1,10 +1,5 @@
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
-import { MACHINE_SECRET_RULE_IDS } from "@himawari-agent/sensitive-capture";
-import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import type { MemoryExtractionAuditRecord } from "../ports/automatic-memory.js";
 import type {
-  SensitiveInterceptionCategory,
   SensitiveInterceptionObservation,
   SensitiveInterceptionStorePort,
 } from "../ports/sensitive-interceptions.js";
@@ -20,20 +15,6 @@ export interface SensitiveInterceptionRecorderOptions {
   readonly queueLimit?: number;
   readonly onWriteFailed?: (error: unknown) => void;
   readonly onDropped?: (count: number) => void;
-}
-
-const MEMORY_EXCLUSIONS: Readonly<
-  Partial<Record<MemoryExtractionAuditRecord["outcome"], "memory_source" | "memory_candidate">>
-> = {
-  source_secret_excluded: "memory_source",
-  candidate_secret_excluded: "memory_candidate",
-};
-
-function memoryCategory(ruleId: string): SensitiveInterceptionCategory | undefined {
-  if ((MACHINE_SECRET_RULE_IDS as readonly string[]).includes(ruleId)) return "machine-secret";
-  if (ruleId === "machine-secret" || ruleId === "password" || ruleId === "verification-code")
-    return ruleId;
-  return undefined;
 }
 
 interface Pending {
@@ -78,34 +59,6 @@ export class SensitiveInterceptionRecorder {
         occurrences: 1,
       })),
     );
-  };
-
-  readonly reportMemoryAudit = (record: MemoryExtractionAuditRecord): void => {
-    const part = MEMORY_EXCLUSIONS[record.outcome];
-    if (part === undefined) return;
-    const observations: SensitiveInterceptionObservation[] = [];
-    for (const { ruleId } of record.secretFindings) {
-      const category = memoryCategory(ruleId);
-      if (category === undefined) continue;
-      observations.push({
-        threadId: record.threadId,
-        source: "memory_capture",
-        purpose: "memory-capture",
-        part,
-        category,
-        ruleId,
-        fingerprint: bytesToHex(
-          sha256(
-            utf8ToBytes(
-              JSON.stringify([record.generationId, record.candidateOrdinal, part, ruleId]),
-            ),
-          ),
-        ).slice(0, 32),
-        outcome: "not_saved",
-        occurrences: 1,
-      });
-    }
-    this.observe(record, observations);
   };
 
   observe(

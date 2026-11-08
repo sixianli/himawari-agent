@@ -1941,9 +1941,6 @@ export async function runAgentService(
                   });
                 },
                 onAudit: (record) => {
-                  productionSensitiveInterceptionRecorder(activeRepository).reportMemoryAudit(
-                    record,
-                  );
                   writeServiceDiagnostic(errorOutput, {
                     component: "agent-service",
                     event: "memory-capture.audit",
@@ -2034,7 +2031,6 @@ export async function runAgentService(
         memory: {
           service: activeDurableMemory,
           onAudit: (record) => {
-            productionSensitiveInterceptionRecorder(activeRepository).reportMemoryAudit(record);
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "memory-capture.audit",
