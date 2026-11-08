@@ -2324,13 +2324,23 @@ describe("opencode review record masking", () => {
       new URL("../../scripts/model-review/opencode-review.mjs", import.meta.url),
       "utf8",
     );
-    const appends = [
-      ...source.matchAll(
-        /appendFileSync\(\s*(?:ledgerFile|join\(options\.out, "usage\.jsonl"\)),([\s\S]*?)\n\s*\);/g,
-      ),
-    ];
+    const appends = [];
+    for (let at = source.indexOf("appendFileSync("); at >= 0; ) {
+      let depth = 0;
+      let end = at + "appendFileSync".length;
+      do {
+        if (source[end] === "(") depth += 1;
+        if (source[end] === ")") depth -= 1;
+        end += 1;
+      } while (depth > 0);
+      appends.push(source.slice(at, end));
+      at = source.indexOf("appendFileSync(", end);
+    }
     expect(appends.length).toBe(3);
-    for (const [, body] of appends) {
+    for (const body of appends) {
+      expect(body).toMatch(
+        /^appendFileSync\(\s*(?:ledgerFile|join\(options\.out, "usage\.jsonl"\)),/,
+      );
       expect(body).toContain("ledgerLine(");
       expect(body).not.toContain("JSON.stringify");
       expect(body).not.toContain("maskSecretLike(");
