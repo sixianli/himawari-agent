@@ -459,6 +459,35 @@ describe("共享runner的调度、来源和失败传播", () => {
         ).toBe(true);
     },
   );
+  it("覆盖率通过而 e2e、pi-compat 进程非零时记为测试失败并保留它的退出码", async () => {
+    state.pipelineExitCode = 3;
+    const result = await run("coverage");
+    expect(result).toMatchObject({ status: "failed", exitCode: 3 });
+    expect(result.projects.map(({ id }) => id)).toEqual([
+      "unit",
+      "contracts",
+      "tooling",
+      "integration",
+      "e2e",
+      "pi-compat",
+    ]);
+    const details = JSON.parse(
+      readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+    );
+    expect(details.failures).toContain("CI_TEST_INCOMPLETE:e2e,pi-compat");
+  });
+  it("覆盖率进程和 e2e、pi-compat 都失败时保留覆盖率进程的退出码", async () => {
+    state.testReportFailure = "failed";
+    state.pipelineExitCode = 3;
+    const result = await run("coverage");
+    expect(result).toMatchObject({ status: "failed", exitCode: 7 });
+    const details = JSON.parse(
+      readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+    );
+    expect(details.failures).toEqual(
+      expect.arrayContaining(["CI_COMMAND_FAILED:coverage", "CI_TEST_INCOMPLETE:e2e,pi-compat"]),
+    );
+  });
   it("static调用原有检查和actionlint，不执行报告中的shell", async () => {
     const result = await run("static");
     expect(result.status).toBe("passed");

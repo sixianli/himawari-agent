@@ -122,6 +122,34 @@ const retiredTestChecks = [
   },
 ];
 
+const ciVpsDefaultMember = {
+  key: "default",
+  runner: linuxRunnerLabel,
+  os: "linux",
+  arch: "x64",
+  node: "22.22.3",
+};
+
+const retiredShapeChecks = [
+  ...retiredTestChecks,
+  {
+    id: "coverage",
+    needs: ["policy", "build"],
+    timeoutMinutes: 60,
+    members: [ciVpsDefaultMember],
+    projects: ["unit", "contracts", "tooling", "integration"],
+    outputs: ["json", "lcov", "artifact"],
+  },
+  {
+    id: "required",
+    needs: ["policy", "static", "build", "test", "node-floor", "browser", "coverage", "security"],
+    timeoutMinutes: 15,
+    members: [ciVpsDefaultMember],
+    projects: [],
+    outputs: [],
+  },
+];
+
 export function upgradeRetiredTestChecks(policy) {
   const checks = policy?.checks ?? [];
   const retiredIds = retiredTestChecks.map((check) => check.id);
@@ -130,21 +158,16 @@ export function upgradeRetiredTestChecks(policy) {
       checks.map((check) => check.id),
       [...jobIds, ...retiredIds],
     ) &&
-    retiredTestChecks.every(
+    retiredShapeChecks.every(
       (expected) =>
         canonicalJson(checks.find((check) => check.id === expected.id)) === canonicalJson(expected),
-    ) &&
-    sameSet(checks.find((check) => check.id === "required").needs, [
-      ...jobIds.filter((id) => id !== "required"),
-      ...retiredIds,
-    ]);
+    );
   if (!retired) return policy;
   const upgraded = structuredClone(policy);
   upgraded.checks = upgraded.checks.filter((check) => !retiredIds.includes(check.id));
   for (const check of upgraded.checks) {
     check.needs = check.needs.filter((id) => !retiredIds.includes(id));
-    if (check.id === "coverage" && sameSet(check.projects, coverageProjects))
-      check.projects = [...check.projects, "e2e", "pi-compat"];
+    if (check.id === "coverage") check.projects = [...check.projects, "e2e", "pi-compat"];
   }
   return upgraded;
 }
@@ -182,7 +205,7 @@ export function validatePolicy(
       policy.checks.map((check) => check.id),
       jobIds,
     ),
-    "Policy must declare exactly nine required jobs",
+    "Policy must declare exactly seven required jobs",
   );
   unique(
     policy.testProjects.map((project) => project.id),

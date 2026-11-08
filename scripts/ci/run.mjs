@@ -378,7 +378,7 @@ export async function runCheck({
           files.push({ path: comparison, kind: "json" });
         }
       };
-      const runPlainProjects = async () => {
+      const runPlainProjects = async (coverageFailed) => {
         const previous = process.env;
         process.env = env;
         let outcome;
@@ -397,12 +397,21 @@ export async function runCheck({
         result.projects.push(...outcome.projects);
         result.counts = sumCounts(result.projects);
         for (const report of outcome.reports) if (report.kind !== "artifact") files.push(report);
-        if (outcome.exitCode !== 0)
+        if (outcome.exitCode !== 0) {
+          if (!coverageFailed) {
+            result.status = "failed";
+            result.exitCode =
+              Number.isInteger(outcome.exitCode) && outcome.exitCode > 0 ? outcome.exitCode : 1;
+          }
           throw new Error(`CI_TEST_INCOMPLETE:${plainProjects.join(",")}`);
+        }
       };
+      const coverageOutcomes = await Promise.allSettled([collectCoverage(), compareCoverage()]);
       const measured = [
-        ...(await Promise.allSettled([collectCoverage(), compareCoverage()])),
-        ...(await Promise.allSettled([runPlainProjects()])),
+        ...coverageOutcomes,
+        ...(await Promise.allSettled([
+          runPlainProjects(coverageOutcomes.some((outcome) => outcome.status === "rejected")),
+        ])),
       ];
       const failures = measured.filter((outcome) => outcome.status === "rejected");
       if (failures.length)

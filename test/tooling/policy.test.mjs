@@ -886,6 +886,24 @@ describe("CI policy contract", () => {
       },
     ],
     [
+      "coverage 少一种输出",
+      (value) => {
+        value.checks.find((check) => check.id === "coverage").outputs = ["json", "artifact"];
+      },
+    ],
+    [
+      "coverage 多一个项目",
+      (value) => {
+        value.checks.find((check) => check.id === "coverage").projects.push("e2e");
+      },
+    ],
+    [
+      "required 的时限变了",
+      (value) => {
+        value.checks.find((check) => check.id === "required").timeoutMinutes = 30;
+      },
+    ],
+    [
       "多一个作业",
       (value) => {
         value.checks.push({
@@ -899,6 +917,26 @@ describe("CI policy contract", () => {
     mutate(value);
     expect(upgradeRetiredTestChecks(value)).toBe(value);
     expect(() => validatePolicy(upgradeRetiredTestChecks(value))).toThrow();
+  });
+  it("覆盖率基线所在的 5daedc92 托管九作业策略经整条升级链得到现行七作业策略", () => {
+    const { root, git } = fixtureRepository();
+    const fixtures = path.join(repositoryRoot, "test/tooling/fixtures/ci-policy");
+    copyFileSync(
+      path.join(fixtures, "hosted-nine-jobs-5daedc92.json"),
+      path.join(root, "ci/policy.json"),
+    );
+    copyFileSync(
+      path.join(fixtures, "hosted-nine-jobs-5daedc92-coverage.json"),
+      path.join(root, "ci/coverage-policy.json"),
+    );
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "hosted nine jobs");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy.checks.map((check) => check.id)).toEqual(
+      policy.checks.map((check) => check.id),
+    );
+    expect(selected.policy.checks).toEqual(policy.checks);
+    expect(selected.policy.retentionDays).toEqual(policy.retentionDays);
   });
   it("升级保留 coverage 以外作业的原样，现行七作业策略原样返回", () => {
     expect(upgradeRetiredTestChecks(policy)).toBe(policy);
