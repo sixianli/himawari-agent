@@ -476,6 +476,25 @@ describe("共享runner的调度、来源和失败传播", () => {
     );
     expect(details.failures).toContain("CI_TEST_INCOMPLETE:e2e,pi-compat");
   });
+  it("只有覆盖率比较失败而 e2e、pi-compat 进程非零时保留 e2e、pi-compat 的退出码", async () => {
+    const released = () => ({ promise: Promise.resolve(), resolve: () => {} });
+    state.parallel = {
+      started: false,
+      coverageReached: released(),
+      releaseCoverage: released(),
+      releaseComparison: released(),
+      failComparison: true,
+    };
+    state.pipelineExitCode = 3;
+    const result = await run("coverage");
+    expect(result).toMatchObject({ status: "failed", exitCode: 3 });
+    const details = JSON.parse(
+      readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+    );
+    expect(details.failures).toEqual(
+      expect.arrayContaining(["CI_COMPARISON_FIXTURE_FAILED", "CI_TEST_INCOMPLETE:e2e,pi-compat"]),
+    );
+  });
   it("覆盖率进程和 e2e、pi-compat 都失败时保留覆盖率进程的退出码", async () => {
     state.testReportFailure = "failed";
     state.pipelineExitCode = 3;

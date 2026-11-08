@@ -1,0 +1,5 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "coverage 作业 60 分钟预算现在要装下六个项目，存在超时风险", "valid": false}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`coverageFailed` 把 collectCoverage 和 compareCoverage 混在一起，个别组合下丢失 e2e/pi-compat 的真实退出码", "valid": true, "class": "error", "severity": "low", "trigger": "只有覆盖率比较的准备步骤抛错（没有命令以非零退出），同时 e2e 或 pi-compat 有测试失败", "consequence": "result.json 停在初始的 infrastructure_failed、退出码 1，丢掉 e2e、pi-compat 的真实退出码；两边的失败原因仍都写进 details.failures", "modelSeverity": "低"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "environment 测试没有真正证明宿主传入的 `HIMAWARI_REVIEW_GATEWAY` 会被清空", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把 tooling 项目的这个变量改成从宿主环境继承", "consequence": "宿主没设这个变量时测试照样通过，漏报；不影响现在的运行结果", "modelSeverity": "低"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "这次 PR 合并后，main 的 light 确认会退回 full CI", "valid": false}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "退役作业名仍留在升级辅助函数里，是有意为之", "valid": false}

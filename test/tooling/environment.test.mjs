@@ -32,6 +32,7 @@ describe("tooling host environment boundary", () => {
           GITHUB_SHA: "a".repeat(40),
           GITHUB_FUTURE_CONTEXT: "synthetic-host-marker",
           HIMAWARI_CI_PYTHON: "/synthetic/locked-python",
+          HIMAWARI_REVIEW_GATEWAY: "magpie",
         },
         stdio: ["ignore", "pipe", "pipe"],
       }),
