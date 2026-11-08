@@ -31,6 +31,7 @@ date: "2026-10-28"
 - [停止条件](#stop-conditions)
 - [防火墙](#firewall)
 - [Magpie 管理页](#magpie-admin)
+- [心跳告警](#heartbeat)
 - [排障](#troubleshooting)
 
 <a id="scope"></a>
@@ -183,6 +184,23 @@ Magpie（装在生产机上的模型路由程序，Himawari 经它调用模型�
 - 在管理页里改的路由组、账号或密钥立即影响线上对话，算生产配置变更，按[授权、上线和合并](../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)处理。路由组 `group/himawari-main` 改动的历史见 [ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md)，当前顺序以管理页显示的为准。
 - Hermes 测试环境的 Magpie 管理页也用 3430：2026-11-01 在 Hermes 装了测试容器 `magpie-test`，只绑 `127.0.0.1:3425` 和 `127.0.0.1:3430`（Hermes 端口快照 `.agents/tasks/hermes-runner/artifacts/hr4-after.txt` 里同时有这个容器和 `127.0.0.1:3430`）；[ADR 0142](../adr/0142-keep-background-memory-capture.md) 写于 2026-10-31，说「Hermes 上没有 Magpie」是安装之前的情况。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。Hermes 的管理页在平时用的浏览器里打开，不要在登过生产管理页的那个浏览器里打开，原因见上面的登录一段。
 - SSH 密钥设了口令时，后台的 `ssh` 无法弹窗输入，会每 15 秒重试一次、一直连不上；先运行一次 `ssh-add --apple-use-keychain <私钥文件>` 把口令存进钥匙串。
+
+[返回导航](#阅读导航)
+
+<a id="heartbeat"></a>
+
+## 心跳告警
+
+2026-10-19 生产重启后进了新内核，服务停了约 51 小时、没有任何人知道（[BL-20261021-009](../backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md)）。心跳告警补的就是“没人知道”：生产机上一个系统定时任务每分钟先问本机服务是否就绪（`http://127.0.0.1:8400/health/ready`，返回 200 才算就绪），就绪就向 Healthchecks.io（一个“超时没收到心跳就发通知”的外部服务）发一次心跳，不就绪就发失败信号并带上原因；整台机器停了或这个定时任务不跑，Healthchecks.io 因为超时没收到心跳，也会发通知。它不随上线包安装，上线、回滚、重启都不会带走它。
+
+脚本和安装命令在 `scripts/operations/heartbeat/`：`himawari-heartbeat.py` 每次运行一次，`install-heartbeat.sh` 安装、移除和查看状态。专属网址只放在生产机的 `/etc/himawari/healthcheck-url`（root 所有、权限 0600），脚本只接受 `https://hc-ping.com/` 开头、只含字母数字、`_`、`-` 的网址，别的一律拒绝，不写进仓库、配置文件或日志。
+
+- **安装**（root，需要 Andy 对这次生产机写操作的同意）：把本仓库的 `scripts/operations/heartbeat/` 目录拷到生产机，然后 `bash install-heartbeat.sh install < <装有专属网址的文件>`，网址从标准输入读，不出现在命令行里；换网址就再装一次；只重装脚本不换网址用 `install --keep-url`。装完会启用 `himawari-heartbeat.timer`。
+- **查看**：`bash install-heartbeat.sh status`，或 `journalctl -u himawari-heartbeat.service -n 20`，正常时输出 `HEARTBEAT ok`。
+- **移除**：`bash install-heartbeat.sh remove`；连同专属网址一起删用 `remove --purge`。
+- **Healthchecks.io 上的设置**：这条检查的周期 1 分钟、宽限 5 分钟，通知方式选邮件加手机推送。
+- **验收**：装完先看到 `HEARTBEAT ok`，Healthchecks.io 页面显示检查在线；再在不影响用户的时间停服务约 6 分钟（需要 Andy 的同意），确认收到失败通知，起来后恢复在线。
+- **没覆盖**：服务正常、但外部访问入口（Cloudflare）断了的情况，本机心跳发现不了；要盖住它需要外部探测加 Cloudflare 服务令牌，另做。
 
 [返回导航](#阅读导航)
 
