@@ -761,5 +761,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     memoryEpisodes,
     memoryConsolidation,
     background,
+    inspectToolResultRecovery,
   });
 }
