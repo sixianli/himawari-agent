@@ -230,12 +230,14 @@ export function curlDownload(
       ["-sSL", "--max-time", "300", "-D", "-", "-o", target, "-w", "%{http_code}", url],
       { encoding: "utf8", timeout: 330000 },
     );
+    if (result.error?.code === "ENOENT" || result.error?.code === "EACCES")
+      throw new Error(`GATEWAY_DOWNLOAD_FAILED ${url} (${result.error.message})`);
     const status = Number((result.stdout ?? "").trim().slice(-3));
     if (result.status === 0 && status >= 200 && status < 300) return;
-    const network = result.status !== 0 && !status;
+    const network = result.status !== 0;
     const retryable = network || retryableStatus(status);
     const reason = network
-      ? (result.stderr ?? result.error?.message ?? "").trim()
+      ? `${(result.stderr ?? result.error?.message ?? "").trim() || `curl 退出码 ${result.status}`}${status ? ` (HTTP ${status})` : ""}`
       : `HTTP ${status}`;
     const header = /^retry-after:\s*(.+)$/im.exec(result.stdout ?? "");
     const delay = retryable

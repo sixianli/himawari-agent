@@ -12,9 +12,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { downloadArtifact } from "../../scripts/ci/install-tools.mjs";
 import {
+  cacheEnvironment,
   cacheRead,
   cacheWrite,
   downloadVerified,
@@ -216,6 +218,22 @@ describe("download retries", () => {
     expect(network.calls).toHaveLength(1);
   });
 
+  it("never waits less than a second even when the server says Retry-After 0", async () => {
+    const waits = [];
+    const network = answering(
+      { status: 503, headers: { "retry-after": "0" } },
+      { status: 200, body: bytes },
+    );
+    await downloadVerified(expected, {
+      ...options(null, { fetch: network.fetch }),
+      wait: async (_attempt, delay) => waits.push(delay),
+    });
+    expect(waits).toEqual([1000]);
+    expect(
+      retryDelayMs(1, { retryAfterMs: parseRetryAfter("Thu, 01 Jan 1970 00:00:00 GMT") }),
+    ).toBe(1000);
+  });
+
   it("spreads delays with jitter and caps them", () => {
     expect(retryDelayMs(1, { random: () => 0 })).toBe(5000);
     expect(retryDelayMs(1, { random: () => 0.999 })).toBeLessThanOrEqual(15000);
@@ -235,6 +253,25 @@ describe("cache directory choice and pruning", () => {
     );
     expect(runnerCacheDirectory({ HOME: "/Users/andy" })).toBeNull();
     expect(runnerCacheDirectory({ GITHUB_ACTIONS: "true" })).toBeNull();
+  });
+
+  it("refuses to read a cache entry larger than the limit", () => {
+    const cache = temporary();
+    cacheWrite(cache, expected.sha256, bytes, quiet);
+    expect(cacheRead(cache, expected.sha256, { maxBytes: 5 })).toBeNull();
+    expect(existsSync(join(cache, expected.sha256))).toBe(false);
+  });
+
+  it("passes the cache directory to the check subprocess and the CLI sets it", () => {
+    expect(cacheEnvironment({ GITHUB_ACTIONS: "true", HOME: "/srv/gh-runner/home" })).toEqual({
+      HIMAWARI_CI_CACHE_DIR: "/srv/gh-runner/home/.cache/himawari-ci/downloads",
+    });
+    expect(cacheEnvironment({ HOME: "/Users/andy" })).toEqual({});
+    const read = (path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+    expect(read("../../scripts/ci/run.mjs")).toContain("...cacheEnvironment(process.env)");
+    expect(read("../../scripts/ci/install-tools.mjs")).toContain(
+      "process.env[cacheEnvironmentKey] = cacheDirectory",
+    );
   });
 
   const age = (path, days) => {
@@ -296,6 +333,38 @@ describe("Magpie download", () => {
     });
     expect(readFileSync(target, "utf8")).toBe("binary");
     expect(sleeps).toEqual([10000, 9000]);
+  });
+
+  it("retries when curl fails after already reporting a 2xx status", () => {
+    const target = join(temporary(), "magpie");
+    const script = spawnScript(
+      { exit: 28, stdout: "HTTP/2 200\r\n\r\n200", stderr: "timed out" },
+      { stdout: "HTTP/2 200\r\n\r\n200", write: "binary" },
+    );
+    const sleeps = [];
+    curlDownload("https://github.com/x/magpie", target, {
+      spawn: script.spawn,
+      sleep: (delay) => sleeps.push(delay),
+      random: () => 0.5,
+    });
+    expect(sleeps).toEqual([10000]);
+  });
+
+  it("fails at once when curl is not installed", () => {
+    const script = {
+      spawn: () => ({
+        status: null,
+        error: Object.assign(new Error("spawn curl ENOENT"), { code: "ENOENT" }),
+      }),
+    };
+    const sleeps = [];
+    expect(() =>
+      curlDownload("https://github.com/x/magpie", join(temporary(), "m"), {
+        spawn: script.spawn,
+        sleep: (delay) => sleeps.push(delay),
+      }),
+    ).toThrow("GATEWAY_DOWNLOAD_FAILED");
+    expect(sleeps).toEqual([]);
   });
 
   it("does not retry a 404 and leaves no file", () => {

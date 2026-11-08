@@ -14,6 +14,8 @@ import { isAbsolute, join } from "node:path";
 export const retryBudgetMs = 15 * 60_000;
 const firstDelayMs = 10_000;
 const longestDelayMs = 300_000;
+const shortestDelayMs = 1_000;
+const cacheEntryMaxBytes = 512 * 1024 ** 2;
 const digestPattern = /^[a-f0-9]{64}$/;
 
 export const sha256Of = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -28,6 +30,11 @@ export function explicitCacheDirectory(env = process.env) {
   return directory && isAbsolute(directory) ? directory : null;
 }
 
+export function cacheEnvironment(env = process.env) {
+  const directory = runnerCacheDirectory(env);
+  return directory ? { [cacheEnvironmentKey]: directory } : {};
+}
+
 export function runnerCacheDirectory(env = process.env) {
   const explicit = explicitCacheDirectory(env);
   if (explicit) return explicit;
@@ -35,7 +42,7 @@ export function runnerCacheDirectory(env = process.env) {
   return join(env.HOME, ".cache", "himawari-ci", "downloads");
 }
 
-export function cacheRead(directory, sha256) {
+export function cacheRead(directory, sha256, { maxBytes = cacheEntryMaxBytes } = {}) {
   if (!directory || !digestPattern.test(sha256)) return null;
   const path = join(directory, sha256);
   let status;
@@ -44,7 +51,7 @@ export function cacheRead(directory, sha256) {
   } catch {
     return null;
   }
-  if (!status.isFile()) {
+  if (!status.isFile() || status.size > maxBytes) {
     rmSync(path, { recursive: true, force: true });
     return null;
   }
@@ -92,7 +99,8 @@ export function parseRetryAfter(value, now = Date.now()) {
 }
 
 export function retryDelayMs(attempt, { retryAfterMs = null, random = Math.random } = {}) {
-  if (retryAfterMs !== null) return Math.min(retryAfterMs, longestDelayMs);
+  if (retryAfterMs !== null)
+    return Math.max(shortestDelayMs, Math.min(retryAfterMs, longestDelayMs));
   const base = Math.min(firstDelayMs * 2 ** (attempt - 1), longestDelayMs);
   return Math.round(base * (0.5 + random()));
 }
@@ -195,15 +203,24 @@ export function pruneCache(
       (!temporary && !entry) ||
       (entry && age > cacheMaxAgeMs)
     ) {
-      rmSync(path, { recursive: true, force: true });
+      try {
+        rmSync(path, { recursive: true, force: true });
+      } catch (error) {
+        report(`工具缓存清理失败，已忽略: ${error.message}`);
+      }
       continue;
     }
-    if (entry) entries.push({ name, path, size: status.size, time: status.mtimeMs });
+    if (entry || temporary) entries.push({ name, path, size: status.size, time: status.mtimeMs });
   }
   let total = entries.reduce((sum, entry) => sum + entry.size, 0);
   for (const entry of entries.sort((a, b) => a.time - b.time)) {
     if (total <= maxBytes) break;
-    rmSync(entry.path, { force: true });
+    try {
+      rmSync(entry.path, { force: true });
+    } catch (error) {
+      report(`工具缓存清理失败，已忽略: ${error.message}`);
+      continue;
+    }
     total -= entry.size;
     report(`工具缓存超过上限，已删除最久未用的条目: ${entry.name}`);
   }
