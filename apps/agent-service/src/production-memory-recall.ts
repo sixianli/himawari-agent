@@ -13,6 +13,7 @@ import {
   TOOL_RECALL,
   TOOL_RESULT_RECALL_EMPTY,
   TOOL_RESULT_RECALL_HISTORY,
+  TOOL_RESULT_RECALL_TENTATIVE,
 } from "@himawari-agent/prompt-catalog";
 
 export const MEMORY_RECALL_CAPABILITY_REF = "memory.recall";
@@ -160,48 +161,87 @@ export class ProductionMemoryRecall {
       0,
       CLASSIFICATIONS.indexOf(invocation.dataClassification) + 1,
     );
-    const hits = await this.#options.embedWithin(invocation, "memory-recall", () =>
-      this.#options.provider.search({
-        ownerId: this.#options.ownerId,
-        agentId: this.#options.agentId,
-        query: input.query,
-        limit: input.limit * 3,
-        scope: { ...scope, includeHistory: scope.includeHistory || input.includeHistory },
-      }),
-    );
+    const searchScope = {
+      ...scope,
+      includeHistory: scope.includeHistory || input.includeHistory,
+    };
+    const tentativeLimit = Math.floor(input.limit / 2);
+    const [hits, tentativeHits] = await Promise.all([
+      this.#options.embedWithin(invocation, "memory-recall", () =>
+        this.#options.provider.search({
+          ownerId: this.#options.ownerId,
+          agentId: this.#options.agentId,
+          query: input.query,
+          limit: input.limit * 3,
+          scope: searchScope,
+        }),
+      ),
+      tentativeLimit === 0
+        ? Promise.resolve([])
+        : this.#options
+            .embedWithin(invocation, "memory-recall-tentative", () =>
+              this.#options.provider.search({
+                ownerId: this.#options.ownerId,
+                agentId: this.#options.agentId,
+                query: input.query,
+                limit: input.limit * 3,
+                scope: searchScope,
+                includeTentative: true,
+                tentativeOnly: true,
+              }),
+            )
+            .catch(() => []),
+    ]);
     const records = new Map(
       (
         await this.#options.state.readMany({
           ownerId: this.#options.ownerId,
           agentId: this.#options.agentId,
-          memoryIds: hits.map(({ productMemoryId }) => productMemoryId),
+          memoryIds: [...hits, ...tentativeHits].map(({ productMemoryId }) => productMemoryId),
         })
       ).map((record) => [record.id, record]),
     );
-    const memories: Record<string, unknown>[] = [];
-    for (const hit of hits) {
-      if (memories.length >= input.limit) break;
-      const memory = records.get(hit.productMemoryId);
-      if (
-        !memory ||
-        memory.status !== "active" ||
-        memory.providerRecordId !== hit.providerRecordId ||
-        !allowed.includes(memory.dataClassification)
-      )
-        continue;
-      const text = await this.#options.readText(memory).catch(() => undefined);
-      if (!text) continue;
-      const attributes = memory.attributes;
-      const validTo = attributes?.validTo ?? null;
-      memories.push({
-        text,
-        current: validTo === null || validTo > now,
-        ...(attributes?.supersededBy ? { correctedLater: true } : {}),
-        recordedAt: memory.recordedAt ?? memory.updatedAt,
-        validFrom: attributes?.validFrom ?? null,
-        validTo,
-      });
-    }
+    const render = async (
+      candidates: typeof hits,
+      wanted: "confirmed" | "tentative",
+      count: number,
+    ): Promise<Record<string, unknown>[]> => {
+      const rendered: Record<string, unknown>[] = [];
+      for (const hit of candidates) {
+        if (rendered.length >= count) break;
+        const memory = records.get(hit.productMemoryId);
+        if (
+          !memory ||
+          memory.status !== "active" ||
+          memory.providerRecordId !== hit.providerRecordId ||
+          !allowed.includes(memory.dataClassification) ||
+          (memory.attributes?.tentative === true) !== (wanted === "tentative")
+        )
+          continue;
+        const text = await this.#options.readText(memory).catch(() => undefined);
+        if (!text) continue;
+        const attributes = memory.attributes;
+        const validTo = attributes?.validTo ?? null;
+        rendered.push({
+          text,
+          ...(wanted === "tentative" ? { tentative: true } : {}),
+          current: validTo === null || validTo > now,
+          ...(attributes?.supersededBy ? { correctedLater: true } : {}),
+          recordedAt: memory.recordedAt ?? memory.updatedAt,
+          validFrom: attributes?.validFrom ?? null,
+          validTo,
+        });
+      }
+      return rendered;
+    };
+    const tentativeMemories = await render(tentativeHits, "tentative", tentativeLimit);
+    const confirmedMemories = await render(
+      hits,
+      "confirmed",
+      input.limit - tentativeMemories.length,
+    );
+    const memories = [...confirmedMemories, ...tentativeMemories];
+    const tentativeCount = tentativeMemories.length;
     const episodes = this.#options.episodes
       ? await this.#options.embedWithin(invocation, "memory-recall-episodes", () =>
           (this.#options.episodes as Pick<MemoryEpisodeService, "search">).search({
@@ -227,6 +267,7 @@ export class ProductionMemoryRecall {
         memories.length === 0 && episodes.length === 0
           ? TOOL_RESULT_RECALL_EMPTY.text
           : TOOL_RESULT_RECALL_HISTORY.text,
+      ...(tentativeCount > 0 ? { tentativeNote: TOOL_RESULT_RECALL_TENTATIVE.text } : {}),
     };
   }
 }

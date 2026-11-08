@@ -428,6 +428,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "tool-result.recall-tentative": {
+    "sha256": "e7421bd88df36380fef973ec47331df9d9f4e1457227fc77d7456350d498d73b",
+    "changedIn": "ADR 0179",
+    "reason": "聊天检索返回待确认记忆时附一句说明（PA-2）"
+  },
   "tool-result.recall-unavailable": {
     "sha256": "bcd38ff5486a41c8d382801b937786f04703b86ccc08383e21126e5be4364a52",
     "changedIn": "ADR 0161",
