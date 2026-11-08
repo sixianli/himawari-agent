@@ -158,6 +158,7 @@ describe("固定工具身份", () => {
           sha256: sha256("expected"),
         },
         directory,
+        { cacheDirectory: null },
       ),
     ).rejects.toThrow("下载摘要不匹配");
   });
@@ -185,6 +186,9 @@ describe("固定工具身份", () => {
     };
     const download = (fetch, waits = []) =>
       downloadArtifact(expected, temporary(), {
+        cacheDirectory: null,
+        random: () => 0.5,
+        budget: { waitedMs: 0 },
         fetch,
         wait: async (attempt) => {
           waits.push(attempt);
@@ -204,12 +208,14 @@ describe("固定工具身份", () => {
       expect(waits).toEqual([1]);
     });
 
-    it("一直连不上时试满 3 次，报错写明主机和底层原因", async () => {
+    it("一直连不上时用完重试预算才失败，报错写明主机和底层原因", async () => {
       const { calls, fetch } = scripted(networkError());
-      await expect(download(fetch)).rejects.toThrow(
-        /tool\.tar\.gz.*nodejs\.org.*第 3 次.*ECONNRESET/,
+      const waits = [];
+      await expect(download(fetch, waits)).rejects.toThrow(
+        /tool\.tar\.gz.*nodejs\.org.*第 7 次.*ECONNRESET/,
       );
-      expect(calls).toHaveLength(3);
+      expect(calls).toHaveLength(7);
+      expect(waits).toEqual([1, 2, 3, 4, 5, 6]);
     });
 
     it("HTTP 404 不重试", async () => {
