@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-11-08"
 ---
 
-# ADR 0186：校准周报并列 Muse 命中率和多余提醒率两条差距线，每周列出 Muse 做对而 Himawari 没做到的案例
+# ADR 0187：校准周报并列 Muse 命中率和多余提醒率两条差距线，每周列出 Muse 做对而 Himawari 没做到的案例
 
 <a id="contents"></a>
 
