@@ -1356,7 +1356,8 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     }
   }
   const overridden = Boolean(recorded) || lowFixed;
-  if (recorded) lines.push(`REVIEW_OVERRIDE quote=${recorded.quote} recorded=${recorded.head}`);
+  if (recorded)
+    lines.push(`REVIEW_OVERRIDE quote=${printable(recorded.quote)} recorded=${recorded.head}`);
   else if (overridable && acceptUnreviewed) {
     const onDisk = shown.status === 0 ? shown.stdout : "";
     if (!ledgerMatchesHead()) lines.push("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
@@ -1437,7 +1438,7 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     .filter((record) => record.mode === "override")
     .map(
       (record) =>
-        `REVIEW_OVERRIDE_RECORD head=${record.head} quote=${printable(record.quote)} problems=${Array.isArray(record.problems) ? record.problems.map(printable).join(",") || "none" : "invalid"}`,
+        `REVIEW_OVERRIDE_RECORD head=${record.head} quote=${printable(record.quote)} problems=${(record.problems ?? []).map(printable).join(",") || "none"}`,
     );
   return [
     `REVIEW_REPORT pr=${pr}`,
@@ -1529,7 +1530,10 @@ export function parseUsage(text, path) {
         record?.mode !== "override" ||
         (COMMIT_PATTERN.test(record.head ?? "") &&
           typeof record.quote === "string" &&
-          record.quote.trim() !== "");
+          record.quote.trim() !== "" &&
+          (record.problems === undefined ||
+            (Array.isArray(record.problems) &&
+              record.problems.every((problem) => typeof problem === "string"))));
       const gatewayValid =
         record?.gateway === undefined ||
         (GATEWAYS.includes(record.gateway) &&
@@ -1615,7 +1619,7 @@ export function roundForRun({
 }
 
 export const KEPT_FILE_SUFFIXES = [".prompt.md", ".md", ".stderr.txt"];
-export const RAW_FILE_SUFFIXES = [".jsonl", ".thinking.md"];
+export const RAW_FILE_SUFFIXES = [".jsonl", ".thinking.md", ".magpie-usage.jsonl"];
 
 export function keepEarlierAttempt(roundDir, name, suffixes = KEPT_FILE_SUFFIXES) {
   if (!existsSync(roundDir)) return null;

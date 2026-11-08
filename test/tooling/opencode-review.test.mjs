@@ -3067,16 +3067,10 @@ describe("opencode review merge gate", () => {
         quote: "x",
         problems: "y",
       };
-      f.writeLedger([odd]);
-      expect(
-        reviewReport({
-          repo: f.repo,
-          pr: 7,
-          mainRef: "origin/main",
-          stop: "andy-decision",
-          andyQuote: "x",
-        }),
-      ).toContain(`REVIEW_OVERRIDE_RECORD head=${f.reviewed} quote=x problems=invalid`);
+      for (const problems of ["y", [3]]) {
+        f.writeLedger([{ ...odd, problems }]);
+        expect(() => f.check()).toThrow("USAGE_LEDGER_INVALID");
+      }
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -3520,10 +3514,12 @@ describe("opencode review spending", () => {
       writeFileSync(join(dir, "glm-5.3-flash.md"), "second");
       expect(keepEarlierAttempt(dir, "glm-5.3-flash")).toBe(2);
       writeFileSync(join(dir, "glm-5.3-flash.jsonl"), "raw");
+      writeFileSync(join(dir, "glm-5.3-flash.magpie-usage.jsonl"), "usage");
       expect(keepEarlierAttempt(dir, "glm-5.3-flash", RAW_FILE_SUFFIXES)).toBe(1);
       expect(readdirSync(dir).sort()).toEqual([
         "deepseek-v4.1-flash.md",
         "glm-5.3-flash.attempt-1.jsonl",
+        "glm-5.3-flash.attempt-1.magpie-usage.jsonl",
         "glm-5.3-flash.attempt-1.md",
         "glm-5.3-flash.attempt-1.prompt.md",
         "glm-5.3-flash.attempt-1.stderr.txt",
