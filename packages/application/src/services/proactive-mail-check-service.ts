@@ -3,6 +3,7 @@ import {
   MAIL_JUDGMENT,
   MAIL_JUDGMENT_ITEMS_HEADER,
   MAIL_JUDGMENT_MEMORIES_HEADER,
+  MAIL_JUDGMENT_TENTATIVE_NOTE,
   MAIL_JUDGMENT_NOW,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
@@ -148,6 +149,7 @@ interface PromptMemory {
   readonly mailId: string;
   readonly id: string;
   readonly text: string;
+  readonly tentative?: true;
 }
 
 interface Judgement {
@@ -170,6 +172,7 @@ interface CheckTrace {
   readonly sourceIds: Set<string>;
   readonly memoryIds: Set<string>;
   readonly usedMemoryIds: Set<string>;
+  readonly tentativeMemoryIds: Set<string>;
   readonly memoryByMail: Map<string, string[]>;
   memoryRecall: ProactiveMemoryRecallStatus;
   readonly relatedByMail: Map<string, string[]>;
@@ -353,6 +356,7 @@ export function proactivePrompt(
   return [
     MAIL_JUDGMENT.text,
     ...(memories.length > 0 ? [MAIL_JUDGMENT_MEMORIES_HEADER.text, JSON.stringify(memories)] : []),
+    ...(memories.some(({ tentative }) => tentative) ? [MAIL_JUDGMENT_TENTATIVE_NOTE.text] : []),
     MAIL_JUDGMENT_ITEMS_HEADER.text,
     JSON.stringify(
       items.map((item) => proactiveMailView(item, bodyLimit, related.get(item.messageId)).json),
@@ -588,6 +592,7 @@ export class ProactiveMailCheckService {
       sourceIds: new Set(),
       memoryIds: new Set(),
       usedMemoryIds: new Set(),
+      tentativeMemoryIds: new Set(),
       memoryByMail: new Map(),
       memoryRecall: "off",
       relatedByMail: new Map(),
@@ -989,6 +994,7 @@ export class ProactiveMailCheckService {
     }
     for (const memory of promptMemories) {
       trace.memoryIds.add(memory.id);
+      if (memory.tentative) trace.tentativeMemoryIds.add(memory.id);
       const list = trace.memoryByMail.get(memory.mailId) ?? [];
       if (!list.includes(memory.id)) list.push(memory.id);
       trace.memoryByMail.set(memory.mailId, list);
@@ -1110,6 +1116,7 @@ export class ProactiveMailCheckService {
           mailId: messageId,
           id: hit.id,
           text: hit.text.replace(/\s+/gu, " ").trim().slice(0, limits.charactersPerMemory),
+          ...(hit.tentative ? { tentative: true as const } : {}),
         })),
     );
   }
@@ -1208,6 +1215,7 @@ export class ProactiveMailCheckService {
       memoryInjected: trace.memoryIds.size > 0,
       memoryIds: [...trace.memoryIds],
       usedMemoryIds: [...trace.usedMemoryIds],
+      tentativeMemoryIds: [...trace.tentativeMemoryIds],
       memoryByMail: Object.fromEntries(trace.memoryByMail),
       memoryRecall: trace.memoryRecall,
       relatedByMail: Object.fromEntries(trace.relatedByMail),

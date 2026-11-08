@@ -44,6 +44,7 @@ export function createProactiveMemoryRecall(
                 queryText: query.query,
                 minimumSimilarity: options.minimumSimilarity,
                 recordUse: false,
+                includeTentative: true,
                 excludeCategories: ["rule"],
                 policy: {
                   limit: options.hitsPerMail,
@@ -57,6 +58,7 @@ export function createProactiveMemoryRecall(
                 id: memory.id,
                 text: await options.content.readText(memory.contentRef),
                 score,
+                ...(memory.attributes?.tentative === true ? { tentative: true } : {}),
               });
             if (texts.length > 0) hits.set(query.messageId, texts);
           } catch {

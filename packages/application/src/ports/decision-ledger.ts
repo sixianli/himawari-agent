@@ -62,6 +62,7 @@ export interface DecisionInputs {
   readonly floorHits?: Readonly<Record<string, readonly string[]>>;
   readonly memoryInjected?: boolean;
   readonly usedMemoryIds?: readonly string[];
+  readonly tentativeMemoryIds?: readonly string[];
   readonly memoryByMail?: Readonly<Record<string, readonly string[]>>;
   readonly memoryRecall?: "off" | "ok" | "partial" | "failed";
   readonly relatedByMail?: Readonly<Record<string, readonly string[]>>;
