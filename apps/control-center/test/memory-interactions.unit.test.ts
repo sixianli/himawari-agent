@@ -4,13 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryPage, RemindersPage } from "../src/components/memory-page.tsx";
-import { AutoMemorySetting } from "../src/components/personalization-settings.tsx";
 import {
   focusedMemoryIds,
   MemoryReminders,
   MemoryTurnNote,
   OPEN_MEMORY_PAGE,
 } from "../src/components/memory-panel.tsx";
+import { AutoMemorySetting } from "../src/components/personalization-settings.tsx";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/gateway-client.ts";
 import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
@@ -713,6 +713,24 @@ describe("memory approval and management", () => {
     expect(opened).not.toHaveBeenCalled();
     expect(text("#settings .memory-detail")).toContain("来源已不可查");
     expect(text("#settings .memory-detail")).not.toContain("跳到原话");
+  });
+
+  it("[P1-1] a jump whose fresh overview no longer holds the memory closes the detail and does not navigate", async () => {
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [memoryItem("m-gone", "主人喜欢爬山", { sourceMessageId: "message-7" })],
+    };
+    await render();
+    await click("#settings .memory-results", "主人喜欢爬山");
+    overview = { ...overview, memories: [] };
+    opened.mockClear();
+    await click("#settings .memory-detail", "跳到原话");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(opened).not.toHaveBeenCalled();
+    expect(document.querySelector("#settings .memory-detail")).toBeNull();
   });
 
   it("[P1-1] a memory whose quote cannot be found says so, is counted, and offers no jump", async () => {

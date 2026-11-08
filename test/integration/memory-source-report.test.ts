@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { MEMORY_SOURCE_REF_MAX_LENGTH } from "@himawari-agent/gateway-contracts";
@@ -13,6 +13,7 @@ import {
   renderCounts,
   SOURCE_REF_MAX_LENGTH,
 } from "../../scripts/operations/memory-source-report.mjs";
+import { repositoryRoot } from "../fixtures/product-path-harness.ts";
 
 const T0 = "2026-11-08T01:00:00.000Z";
 const directories: string[] = [];
@@ -22,6 +23,20 @@ afterEach(async () => {
 });
 
 describe("[P1-1] memory source report", () => {
+  it("writes the reminder reference prefix the same way in the page, the script and the writer", async () => {
+    const read = (file: string) => readFile(path.join(repositoryRoot, file), "utf8");
+    const REMINDER_SOURCE_PREFIX = /REMINDER_SOURCE_PREFIX = "([^"]+)"/.exec(
+      await read("apps/control-center/src/memory-source.ts"),
+    )?.[1];
+    expect(REMINDER_SOURCE_PREFIX).toBe("memory-content:reminder:");
+    expect(await read("scripts/operations/memory-source-report.mjs")).toContain(
+      `NOT LIKE '${REMINDER_SOURCE_PREFIX}%'`,
+    );
+    expect(await read("apps/agent-service/src/production-reminder-writer.ts")).toContain(
+      `\`${REMINDER_SOURCE_PREFIX}\${input.key}\``,
+    );
+  });
+
   it("uses the same reference length limit as the memory page", () => {
     expect(SOURCE_REF_MAX_LENGTH).toBe(MEMORY_SOURCE_REF_MAX_LENGTH);
   });
