@@ -56,7 +56,7 @@ async function capture(candidates: readonly ExtractedMemoryCandidate[]) {
       },
     } as never,
     content: { store: async (value) => `content:${value.contentKey}` },
-    approvals: {} as never,
+    approvals: { create: async (request: unknown) => request } as never,
     audit: { record: async (record) => void audit.push(record) },
     ledger: { append: async (write: DecisionLedgerWrite) => void ledger.push(write) } as never,
     readSourceText: async () => "好家里只喝明治的牛奶",
@@ -118,6 +118,34 @@ describe("[PA-2] low-confidence candidates are kept as tentative memories", () =
       "transient_ignored",
     ]);
     expect(ledger.every(({ outcome }) => outcome === "discarded")).toBe(true);
+  });
+
+  it("REVERSE: a low-confidence candidate with a reminder or people is discarded, not half-kept", async () => {
+    const { result, audit, proposals } = await capture([
+      candidate({
+        reminder: { dueAt: "2026-11-09T00:00:00.000Z" } as never,
+      }),
+      candidate({ people: [{ name: "小葵", aliases: [] }] as never }),
+    ]);
+    expect(result.tentativeMemoryIds).toEqual([]);
+    expect(proposals).toEqual([]);
+    expect(audit.map(({ outcome }) => outcome)).toEqual([
+      "confidence_below_threshold",
+      "confidence_below_threshold",
+    ]);
+  });
+
+  it("REVERSE: a low-confidence sensitive or restricted candidate with a quote keeps its old path", async () => {
+    const { result, audit, proposals } = await capture([
+      candidate({ dataClassification: "restricted" }),
+      candidate({ dataClassification: "sensitive" }),
+    ]);
+    expect(result.tentativeMemoryIds).toEqual([]);
+    expect(proposals).toEqual([]);
+    expect(audit.map(({ outcome }) => outcome)).toEqual([
+      "restricted_excluded",
+      "approval_requested",
+    ]);
   });
 
   it("REVERSE: a confident candidate is still committed as a formal memory", async () => {

@@ -77,7 +77,12 @@ type KeptReason =
 
 function canBeKeptTentatively(candidate: ExtractedMemoryCandidate): boolean {
   return (
-    candidate.decision === "create" && candidate.quote !== undefined && candidate.quote.length > 0
+    candidate.decision === "create" &&
+    candidate.quote !== undefined &&
+    candidate.quote.length > 0 &&
+    candidate.reminder === undefined &&
+    (candidate.people?.length ?? 0) === 0 &&
+    (candidate.personLinks?.length ?? 0) === 0
   );
 }
 

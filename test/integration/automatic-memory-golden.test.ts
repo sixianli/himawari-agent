@@ -479,7 +479,12 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         audit.records.filter((record) => outcomes.includes(record.outcome)).length;
       const replayedCommits = 1;
       expect(ledgerCount("kept")).toBe(
-        auditCount("auto_committed", "explicitly_approved", "approval_committed") - replayedCommits,
+        auditCount(
+          "auto_committed",
+          "explicitly_approved",
+          "approval_committed",
+          "tentative_kept",
+        ) - replayedCommits,
       );
       expect(ledgerCount("discarded")).toBe(
         auditCount(

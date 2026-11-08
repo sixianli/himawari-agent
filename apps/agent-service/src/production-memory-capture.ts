@@ -44,6 +44,16 @@ const createCheckpointJobId = (value: string) => value as ThreadDistillationWork
 export const MEMORY_CAPTURE_POLICY_VERSION = "memory-capture:v5";
 const MAXIMUM_SOURCE_CHARACTERS = 6000;
 const MAXIMUM_RECENT_MEMORIES = 20;
+
+export function confirmedFirstByRecency<
+  T extends { readonly updatedAt: string; readonly attributes?: { readonly tentative?: boolean } },
+>(records: readonly T[]): T[] {
+  return [...records].sort(
+    (left, right) =>
+      Number(left.attributes?.tentative === true) - Number(right.attributes?.tentative === true) ||
+      right.updatedAt.localeCompare(left.updatedAt),
+  );
+}
 const MAXIMUM_RELEVANT_MEMORIES = 10;
 const MAXIMUM_CONTEXT_CHARACTERS = 1500;
 const MAXIMUM_CANDIDATES = 8;
@@ -686,9 +696,9 @@ export class ProductionMemoryCapture {
       relevantIds.length === 0
         ? []
         : await this.options.state.readMany({ ownerId, agentId, memoryIds: relevantIds });
-    const recent = [...(await this.options.state.listActive(ownerId, agentId))]
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .slice(0, MAXIMUM_RECENT_MEMORIES);
+    const recent = confirmedFirstByRecency(
+      await this.options.state.listActive(ownerId, agentId),
+    ).slice(0, MAXIMUM_RECENT_MEMORIES);
     const seen = new Set<string>();
     const existing: ExistingMemoryText[] = [];
     for (const memory of [...relevant, ...recent]) {
