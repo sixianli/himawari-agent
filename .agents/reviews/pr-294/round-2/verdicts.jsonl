@@ -1,0 +1,6 @@
+{"id": "q1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "通用 `rows` 能读到生产机密，与说明里的“运行状态 / 绝不读取生产机密”冲突", "valid": true, "class": "error", "severity": "medium-high", "trigger": "对 web_push_subscriptions 执行 rows <id>", "consequence": "完整打印 auth 等凭据", "modelSeverity": "中"}
+{"id": "q2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "journal 行数的前导零会按八进制解释", "valid": false, "class": "better"}
+{"id": "q3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`run` 与 `rows` 的 run id 校验不一致", "valid": true, "class": "better"}
+{"id": "q4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“生产格式是 32 位十六进制”这个说法只覆盖了当前主路径", "valid": true, "class": "better"}
+{"id": "q5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新测试没有进入本地必过门槛，数据库查询也没有被执行", "valid": true, "class": "better"}
+{"id": "q6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`DELIVERY_MODE=fast` 的限制只在文档里，脚本不检查", "valid": true, "class": "better"}

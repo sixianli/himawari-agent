@@ -331,6 +331,45 @@ describe("[R2-T13] free MCP rate-limit notices", () => {
   });
 });
 
+describe("[mask-not-block] Exa receives masked queries and addresses", () => {
+  const token = ["sk", "-", "A".repeat(40)].join("");
+  it("masks a secret in the query before the MCP call and sends the same bytes every time", async () => {
+    const adapter = new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY });
+    await adapter.search({ query: `why does ${token} fail`, limit: 2 });
+    await adapter.search({ query: `why does ${token} fail`, limit: 2 });
+    const queries = state.callTool.mock.calls.map(
+      ([call]) => (call as { arguments: { query: string } }).arguments.query,
+    );
+    expect(queries).toEqual(["why does [密钥] fail", "why does [密钥] fail"]);
+  });
+  it("sends an ordinary query unchanged", async () => {
+    await new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).search({
+      query: "Tokyo weather",
+      limit: 2,
+    });
+    expect(state.callTool.mock.calls[0]?.[0]).toMatchObject({
+      arguments: { query: "Tokyo weather" },
+    });
+  });
+  it("removes credentials and signatures from a page address before the MCP call", async () => {
+    state.listTools.mockResolvedValue({
+      tools: [{ name: "crawling_exa", inputSchema: { type: "object", properties: { url: {} } } }],
+    });
+    state.callTool.mockResolvedValue({
+      content: [{ type: "text", text: "Title: Page\nText: body" }],
+    });
+    const page = await new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).fetch({
+      url: "https://user:pw@example.org/a?sig=abcdef123456&page=2",
+      offset: 0,
+      maximumBytes: 1024,
+    });
+    const sent = (state.callTool.mock.calls[0]?.[0] as { arguments: { url: string } }).arguments
+      .url;
+    expect(sent).toBe("https://example.org/a?sig=%5B%E5%AF%86%E7%A0%81%23aaaaaaaa%5D&page=2");
+    expect(page.url).toBe(sent);
+  });
+});
+
 describe("public page fetch through Exa", () => {
   const page = "Title: Example page\nURL: https://example.org/a\nText: Hello world";
   const fetchPage = (maximumBytes = 1024) =>

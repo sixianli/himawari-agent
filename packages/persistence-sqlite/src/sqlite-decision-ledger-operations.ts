@@ -4,6 +4,7 @@ import {
   DECISION_OUTCOMES,
   DECISION_RATINGS,
   type CalibrationRowsSnapshot,
+  type DecisionInputs,
   type DecisionLedgerEntry,
   type DecisionLedgerPort,
   type DecisionLedgerWrite,
@@ -136,8 +137,13 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     floorHits?: Record<string, readonly string[]>;
     memoryInjected?: boolean;
     usedMemoryIds?: readonly string[];
+    tentativeMemoryIds?: readonly string[];
     memoryByMail?: Record<string, readonly string[]>;
     memoryRecall?: "off" | "ok" | "partial" | "failed";
+    relatedByMail?: Record<string, readonly string[]>;
+    relatedRead?: "off" | "ok" | "partial" | "failed";
+    relatedStats?: DecisionInputs["relatedStats"];
+    relatedFailedSteps?: readonly string[];
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -158,6 +164,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
       ),
       memoryInjected: inputs.memoryInjected ?? false,
       usedMemoryIds: Object.freeze([...(inputs.usedMemoryIds ?? [])]),
+      tentativeMemoryIds: Object.freeze([...(inputs.tentativeMemoryIds ?? [])]),
       memoryByMail: Object.freeze(
         Object.fromEntries(
           Object.entries(inputs.memoryByMail ?? {}).map(([id, list]) => [
@@ -167,6 +174,24 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
         ),
       ),
       memoryRecall: inputs.memoryRecall ?? "off",
+      relatedByMail: Object.freeze(
+        Object.fromEntries(
+          Object.entries(inputs.relatedByMail ?? {}).map(([id, list]) => [
+            id,
+            Object.freeze([...list]),
+          ]),
+        ),
+      ),
+      relatedRead: inputs.relatedRead ?? "off",
+      relatedStats: Object.freeze(
+        inputs.relatedStats ?? {
+          requests: 0,
+          messages: 0,
+          characters: 0,
+          durationMs: 0,
+        },
+      ),
+      relatedFailedSteps: Object.freeze([...(inputs.relatedFailedSteps ?? [])]),
     }),
   });
 }

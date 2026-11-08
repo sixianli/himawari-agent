@@ -991,6 +991,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       "memoryMinimumSimilarity",
       "bodyCharactersPerMail",
       "bodyCharactersPerBatch",
+      "relatedMailsPerMail",
+      "relatedCharactersPerMail",
+      "relatedCharactersPerRelatedMail",
+      "relatedRequestsPerCheck",
       "reviewBudgetSeconds",
       "reviewSecondsPerItem",
     ],
@@ -1013,6 +1017,18 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
       `${field}.bodyCharactersPerBatch`,
       "must not be smaller than bodyCharactersPerMail",
     );
+  const relatedCharactersPerRelatedMail = optional(
+    "relatedCharactersPerRelatedMail",
+    2_000,
+    200,
+    50_000,
+  );
+  const relatedCharactersPerMail = optional("relatedCharactersPerMail", 12_000, 200, 200_000);
+  if (relatedCharactersPerMail < relatedCharactersPerRelatedMail)
+    throw invalid(
+      `${field}.relatedCharactersPerMail`,
+      "must not be smaller than relatedCharactersPerRelatedMail",
+    );
   return Object.freeze({
     modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
     gmail: Object.freeze({
@@ -1026,6 +1042,10 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
     dailyCostMicros,
     bodyCharactersPerMail,
     bodyCharactersPerBatch,
+    relatedMailsPerMail: optional("relatedMailsPerMail", 6, 0, 50),
+    relatedCharactersPerMail,
+    relatedCharactersPerRelatedMail,
+    relatedRequestsPerCheck: optional("relatedRequestsPerCheck", 300, 1, 2_000),
     memoryMinimumSimilarity:
       input["memoryMinimumSimilarity"] === undefined
         ? 0.45
