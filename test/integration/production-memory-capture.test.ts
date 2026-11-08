@@ -623,7 +623,7 @@ describe("production memory capture", () => {
     expect(prompt).not.toContain("他人隐私");
   });
 
-  it("[mask-not-block] stores an identity number as written when the model classifies it private", async () => {
+  it("[mask-not-block] stores an identity number the Owner asked to remember as written, marked sensitive", async () => {
     const context = await setup(
       "记住我的身份证号 110101199003071234。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的身份证号是 110101199003071234","classification":"private","confidence":990,"explicit":true,"quote":"我的身份证号 110101199003071234"}]}',
@@ -634,6 +634,36 @@ describe("production memory capture", () => {
     expect(context.audits.map(({ outcome }) => outcome)).not.toContain("restricted_excluded");
     const [memory] = (await overview(context.control)).memories;
     expect(memory?.text).toBe("主人的身份证号是 110101199003071234");
+    expect(memory?.dataClassification).toBe("sensitive");
+  });
+
+  it("[mask-not-block] asks the Owner first when the model calls a card number private and he did not ask to remember it", async () => {
+    const context = await setup(
+      "我的银行卡号 6222020200112233445 绑定了工资。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的银行卡号是 6222020200112233445","classification":"private","confidence":900,"explicit":false,"quote":"我的银行卡号 6222020200112233445"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const snapshot = await overview(context.control);
+    expect(snapshot.memories).toEqual([]);
+    expect(snapshot.pending.map(({ text }) => text)).toEqual([
+      "主人的银行卡号是 6222020200112233445",
+    ]);
+  });
+
+  it("[mask-not-block] still stores an ordinary long number the model calls private without asking", async () => {
+    const context = await setup(
+      "我的订单号是 12345，记得帮我查。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人有一个订单号 12345","classification":"private","confidence":900,"explicit":false,"quote":"我的订单号是 12345"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const snapshot = await overview(context.control);
+    expect(snapshot.pending).toEqual([]);
+    expect(snapshot.memories.map(({ dataClassification }) => dataClassification)).toEqual([
+      "private",
+    ]);
   });
 
   it("[mask-not-block] restores a placeholder the model copied into the candidate text and quote", async () => {
@@ -1198,6 +1228,14 @@ describe("production memory capture", () => {
       { text: "我的卡号是 6222020200112233445", dueAt: "2026-10-30T01:00:00.000Z" },
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
+    const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    const cardMemory = stored.find(({ id }) => id.includes("call-card"));
+    expect(cardMemory?.dataClassification).toBe("sensitive");
+    expect(
+      stored
+        .filter(({ id }) => !id.includes("call-card"))
+        .every(({ dataClassification }) => dataClassification === "private"),
+    ).toBe(true);
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {

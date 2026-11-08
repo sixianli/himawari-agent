@@ -996,6 +996,25 @@ describe("memory approval and management", () => {
     expect(document.querySelector(add)).toBeNull();
   });
 
+  it("[mask-not-block] marks a memory or reminder that holds a card number as sensitive and keeps the text as typed", async () => {
+    await render();
+    const memoryAdd = "#settings .memory-card[data-kind=add]";
+    await click("#settings .memory-search-row", "添加");
+    await type(`${memoryAdd} textarea`, "我的卡号是 6222020200112233445");
+    await act(async () =>
+      document.querySelector<HTMLInputElement>(`${memoryAdd} [role=switch]`)?.click(),
+    );
+    await click(memoryAdd, "保存");
+    expect(protectText).toHaveBeenLastCalledWith("我的卡号是 6222020200112233445", "sensitive");
+    expect(lastCommand()).toMatchObject({ type: "memory.create", payload: { pinned: false } });
+    const reminderAdd = "#reminders-page .memory-card[data-kind=add]";
+    await click("#reminders-page", "新建提醒");
+    await type(`${reminderAdd} textarea`, "还信用卡 6222020200112233445");
+    await type(`${reminderAdd} input[type=datetime-local]`, "2099-01-02T09:30");
+    await click(reminderAdd, "保存");
+    expect(protectText).toHaveBeenLastCalledWith("还信用卡 6222020200112233445", "sensitive");
+  });
+
   it("[REM-1] does not offer a new reminder before the first memory is learned", async () => {
     overview = { ...overview, manualAddReady: false };
     await render();

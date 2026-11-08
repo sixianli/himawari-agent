@@ -31,6 +31,7 @@ import {
 import { localDayStart } from "@himawari-agent/memory-engine";
 import { MEMORY_CAPTURE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import {
+  classificationWithIdentifiers,
   type EgressPlaceholderKind,
   placeholderTable,
   restorePlaceholders,
@@ -324,10 +325,12 @@ export function parseMemoryCandidates(input: {
       requestedDecision === "supersede" || existing === null
         ? "create"
         : (requestedDecision as ExtractedMemoryCandidate["decision"]);
-    const requested =
+    const requested = classificationWithIdentifiers(
+      text,
       value["classification"] === "sensitive" || value["classification"] === "restricted"
         ? value["classification"]
-        : "private";
+        : "private",
+    );
     const dataClassification =
       CLASSIFICATION_RANK[requested] >= CLASSIFICATION_RANK[input.sourceClassification]
         ? requested
