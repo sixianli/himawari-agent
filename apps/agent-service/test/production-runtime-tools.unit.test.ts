@@ -9,12 +9,12 @@ import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
 } from "../src/production-host-read.js";
+import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   type ProductionRuntimeSandbox,
   ProductionRuntimeTools,
   type ProductionRuntimeToolsOptions,
 } from "../src/production-runtime-tools.js";
-import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -472,7 +472,7 @@ describe("ProductionRuntimeTools", () => {
     ["SANDBOX_MEMORY_LIMIT", "内存"],
     ["SANDBOX_RESOURCE_LIMIT", "资源"],
   ] as const)(
-    "[I-83] tells the model which resource limit stopped the command and what that limit is (%s)",
+    "[I-84] tells the model which resource limit stopped the command and what that limit is (%s)",
     async (errorCode, limitName) => {
       const f = fixture();
       const completeSandboxToolResult = vi.fn<
@@ -503,7 +503,7 @@ describe("ProductionRuntimeTools", () => {
       expect(result.modelContent).not.toBe("操作未确认成功。");
     },
   );
-  it("[I-83] states the limit that stopped this command, not the limit in force now", async () => {
+  it("[I-84] states the limit that stopped this command, not the limit in force now", async () => {
     const f = fixture();
     const completeSandboxToolResult = vi.fn<
       NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
@@ -530,6 +530,45 @@ describe("ProductionRuntimeTools", () => {
     expect(result.modelContent).not.toContain("12.5 秒");
     expect(result.modelContent).not.toContain("268.4 MB");
   });
+  it.each([
+    [2_500_000, "输出 2.5 MB"],
+    [32_768, "输出 32.8 KB"],
+    [800, "输出 800 字节"],
+  ] as const)(
+    "[I-84] tells the model the output a command may produce and that what came back is cut short (%s)",
+    async (maxOutputBytes, limit) => {
+      const f = fixture();
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        const completion = {
+          outcome: "failed" as const,
+          outputRef: null,
+          errorCode: "SANDBOX_OUTPUT_LIMIT",
+          externalActionId: null,
+          resourceCeiling: { ...f.options.ceiling, maxOutputBytes },
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const ceiling = { ...f.options.ceiling, maxOutputBytes: 9_900_000 };
+      const tool = new ProductionRuntimeTools({ ...f.options, ceiling, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject({
+        dispatchState: "accepted",
+        outcome: "failed",
+        errorCode: "SANDBOX_OUTPUT_LIMIT",
+      });
+      expect(result.modelContent).toContain(limit);
+      expect(result.modelContent).toContain("已被截断");
+      expect(result.modelContent).not.toContain("输出 9.9 MB");
+      expect(result.modelContent).not.toContain("CPU 时间");
+      expect(result.modelContent).not.toBe("操作未确认成功。");
+    },
+  );
   it.each([
     ["output:tools", { outcome: "failed", resultRef: "output:tools", modelContent: "已读取结果" }],
     ["output:unobserved", { outcome: "result_unknown", resultRef: null }],

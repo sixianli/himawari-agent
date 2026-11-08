@@ -81,9 +81,9 @@ it.each([
   "stream-authority-revoked",
   "stream-environment-changed",
   "stream-repeated-race",
-  "[I-83] resource-limit",
-  "[I-83] resource-limit-unobserved",
-  "[I-83] output-limit",
+  "[I-84] resource-limit",
+  "[I-84] resource-limit-unobserved",
+  "[I-84] output-limit",
 ] as const)("v2 lifecycle: %s", async (scenario) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
@@ -100,9 +100,9 @@ it.each([
   const preBindContainer = scenario === "[R2-P2] bind-pre-failure-container";
   const preBind = preBindResident || preBindContainer;
   const startPending = scenario === "[R2-D26] start-pending";
-  const resourceLimit = scenario.startsWith("[I-83] resource-limit");
-  const resourceLimitObserved = scenario === "[I-83] resource-limit";
-  const outputLimit = scenario === "[I-83] output-limit";
+  const resourceLimit = scenario.startsWith("[I-84] resource-limit");
+  const resourceLimitObserved = scenario === "[I-84] resource-limit";
+  const outputLimit = scenario === "[I-84] output-limit";
   let pendingObservations = 0;
   let streamAttempts = 0;
   const streamChunks = new Map<number, unknown>();
@@ -777,9 +777,15 @@ it.each([
   if (scenario === "command" || scenario === "network")
     expect(facts.effect).toEqual({ kind: "not_asserted" });
   if (outputLimit) {
-    expect(facts.result).toMatchObject({ kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" });
-    expect(facts.effect).toMatchObject({ kind: "unknown" });
-    expect(isSandboxBoundedToolFailure(facts.result)).toBe(false);
+    expect(facts.result).toMatchObject({
+      kind: "error",
+      reasonCode: "SANDBOX_OUTPUT_LIMIT",
+      output: { ref: "output" },
+    });
+    expect(facts.result).not.toMatchObject({ kind: "unknown" });
+    expect(facts.result).not.toMatchObject({ reasonCode: "SANDBOX_EXIT_UNKNOWN" });
+    expect(facts.effect).toEqual({ kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" });
+    expect(isSandboxBoundedToolFailure(facts.result)).toBe(true);
   }
   if (resourceLimit) {
     const reasonCode = resourceLimitObserved ? "SANDBOX_CPU_TIME_LIMIT" : "SANDBOX_RESOURCE_LIMIT";

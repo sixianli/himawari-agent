@@ -118,8 +118,13 @@ describe("sandbox command effect reason", () => {
 });
 
 describe("sandbox failure output retention", () => {
-  it.each(["SANDBOX_CPU_TIME_LIMIT", "SANDBOX_MEMORY_LIMIT", "SANDBOX_RESOURCE_LIMIT"] as const)(
-    "[I-83] drops the partial output of a fixed read stopped by a resource limit so the model gets the explicit failure (%s)",
+  it.each([
+    "SANDBOX_CPU_TIME_LIMIT",
+    "SANDBOX_MEMORY_LIMIT",
+    "SANDBOX_RESOURCE_LIMIT",
+    "SANDBOX_OUTPUT_LIMIT",
+  ] as const)(
+    "[I-84] drops the partial output of a fixed read stopped by one of its ceilings so the model gets the explicit failure (%s)",
     (reasonCode) => {
       expect(
         sandboxFailureKeepsOutput({
@@ -131,7 +136,7 @@ describe("sandbox failure output retention", () => {
     },
   );
 
-  it("[I-83] keeps the output of an ordinary fixed read failure", () => {
+  it("[I-84] keeps the output of an ordinary fixed read failure", () => {
     expect(
       sandboxFailureKeepsOutput({
         operationKind: "fixed_read",

@@ -19,7 +19,8 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import {
   FILE_WRITE_NOT_STARTED,
-  isSandboxResourceLimitReason,
+  isSandboxCeilingExceededReason,
+  isSandboxOutputLimitReason,
   isSandboxToolResultLost,
   SANDBOX_CPU_TIME_LIMIT,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
@@ -120,6 +121,7 @@ export {
   SANDBOX_CPU_TIME_LIMIT,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_MEMORY_LIMIT,
+  SANDBOX_OUTPUT_LIMIT,
   SANDBOX_RESOURCE_LIMIT,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_WRITE_EFFECT_UNVERIFIED,
@@ -136,16 +138,28 @@ export function sandboxFailureKeepsOutput(input: {
     !input.hostResultRejected &&
     input.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
     input.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
-    !isSandboxResourceLimitReason(input.reasonCode) &&
+    !isSandboxCeilingExceededReason(input.reasonCode) &&
     (input.reasonCode === "FILE_VERSION_CONFLICT" ||
       input.reasonCode === FILE_WRITE_NOT_STARTED ||
       input.operationKind === "fixed_read")
   );
 }
-export function sandboxResourceLimitMessage(
+const limitBytes = (value: number) =>
+  value >= 1_000_000
+    ? `${limitAmount(value / 1_000_000)} MB`
+    : value >= 1_000
+      ? `${limitAmount(value / 1_000)} KB`
+      : `${value} 字节`;
+export function sandboxCeilingExceededMessage(
   reasonCode: string,
-  ceiling: { readonly maxCpuTimeMs: number; readonly maxMemoryBytes: number },
+  ceiling: {
+    readonly maxCpuTimeMs: number;
+    readonly maxMemoryBytes: number;
+    readonly maxOutputBytes: number;
+  },
 ): string | null {
+  if (isSandboxOutputLimitReason(reasonCode))
+    return `${reasonCode}：命令输出的内容超过上限，已被终止并完成清理，没有重新执行。本次允许的上限是输出 ${limitBytes(ceiling.maxOutputBytes)}。它在终止前可能已经修改了工作区，输出已被截断、拿不到完整内容；请改成只输出需要的部分（例如加筛选条件、只取开头几行、或把结果写进文件再分段读）后重试，或者说明这件事做不到。`;
   const limits = `本次允许的上限是 CPU 时间 ${limitAmount(ceiling.maxCpuTimeMs / 1000)} 秒、内存 ${limitAmount(ceiling.maxMemoryBytes / 1_000_000)} MB`;
   const crossed =
     reasonCode === SANDBOX_CPU_TIME_LIMIT
@@ -372,7 +386,7 @@ export function createProductionSandboxToolResult(options: {
                   : null,
               errorCode: failureReason,
               externalActionId: null,
-              ...(isSandboxResourceLimitReason(failureReason)
+              ...(isSandboxCeilingExceededReason(failureReason)
                 ? { resourceCeiling: plan.resourceCeiling }
                 : {}),
               ...(processExitCode === undefined ? {} : { processExitCode }),

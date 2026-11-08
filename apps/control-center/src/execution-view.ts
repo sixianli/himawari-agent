@@ -375,6 +375,7 @@ export function executionStateLabel(
     SANDBOX_CPU_TIME_LIMIT: "chat.reason.toolCpuTimeLimit",
     SANDBOX_MEMORY_LIMIT: "chat.reason.toolMemoryLimit",
     SANDBOX_RESOURCE_LIMIT: "chat.reason.toolResourceLimit",
+    SANDBOX_OUTPUT_LIMIT: "chat.reason.toolOutputLimit",
     SANDBOX_TOOL_DEADLINE_EXCEEDED: "chat.reason.toolDeadlineExceeded",
     SANDBOX_TOOL_NOT_STARTED: "chat.reason.toolNotStarted",
     WORKER_RESOURCE_CEILING_CHANGED: "chat.reason.resourceCeilingChanged",

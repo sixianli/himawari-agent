@@ -259,12 +259,19 @@ export const SANDBOX_WRITE_EFFECT_UNVERIFIED = "SANDBOX_WRITE_EFFECT_UNVERIFIED"
 export const SANDBOX_CPU_TIME_LIMIT = "SANDBOX_CPU_TIME_LIMIT";
 export const SANDBOX_MEMORY_LIMIT = "SANDBOX_MEMORY_LIMIT";
 export const SANDBOX_RESOURCE_LIMIT = "SANDBOX_RESOURCE_LIMIT";
+export const SANDBOX_OUTPUT_LIMIT = "SANDBOX_OUTPUT_LIMIT";
 export function isSandboxResourceLimitReason(reasonCode: string) {
   return (
     reasonCode === SANDBOX_CPU_TIME_LIMIT ||
     reasonCode === SANDBOX_MEMORY_LIMIT ||
     reasonCode === SANDBOX_RESOURCE_LIMIT
   );
+}
+export function isSandboxOutputLimitReason(reasonCode: string) {
+  return reasonCode === SANDBOX_OUTPUT_LIMIT;
+}
+export function isSandboxCeilingExceededReason(reasonCode: string) {
+  return isSandboxResourceLimitReason(reasonCode) || isSandboxOutputLimitReason(reasonCode);
 }
 export function sandboxResourceLimitReason(
   ceiling: { readonly maxCpuTimeMs: number; readonly maxMemoryBytes: number },
@@ -310,6 +317,7 @@ export function isSandboxBoundedToolFailure(result: SandboxOperationResult | nul
         result.reasonCode === SANDBOX_CPU_TIME_LIMIT ||
         result.reasonCode === SANDBOX_MEMORY_LIMIT ||
         result.reasonCode === SANDBOX_RESOURCE_LIMIT ||
+        result.reasonCode === SANDBOX_OUTPUT_LIMIT ||
         result.reasonCode === SANDBOX_WRITE_EFFECT_UNVERIFIED))
   );
 }

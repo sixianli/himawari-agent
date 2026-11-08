@@ -97,11 +97,11 @@ import {
   SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE,
-  sandboxResourceLimitMessage,
   SANDBOX_WRITE_EFFECT_UNVERIFIED,
   SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE,
   type SandboxToolCompletion,
   type SandboxToolDelivery,
+  sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
@@ -2100,7 +2100,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       };
     } else {
       const commandEffectUnverified = completion.errorCode === "SANDBOX_COMMAND_EFFECT_UNVERIFIED";
-      const resourceLimitNotice = sandboxResourceLimitMessage(
+      const ceilingNotice = sandboxCeilingExceededMessage(
         completion.errorCode ?? "",
         completion.resourceCeiling ?? ceiling,
       );
@@ -2146,8 +2146,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             ? `${SANDBOX_TOOL_RESULT_LOST}：${SANDBOX_TOOL_RESULT_LOST_MESSAGE}`
             : completion.errorCode === SANDBOX_TOOL_DEADLINE_EXCEEDED
               ? `${SANDBOX_TOOL_DEADLINE_EXCEEDED}：${SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE}`
-              : resourceLimitNotice
-                ? resourceLimitNotice
+              : ceilingNotice
+                ? ceilingNotice
                 : completion.errorCode === SANDBOX_HOST_COMPLETION_CONTRADICTED
                   ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
                   : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"

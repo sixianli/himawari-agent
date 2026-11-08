@@ -229,6 +229,8 @@ export const messages = {
     "The command used more memory than its limit; it was terminated and cleanup is complete",
   "chat.reason.toolResourceLimit":
     "The command crossed a resource limit; it was terminated and cleanup is complete",
+  "chat.reason.toolOutputLimit":
+    "The command produced more output than its limit; it was terminated and cleanup is complete",
   "chat.reason.toolNotStarted":
     "The tool did not start: preparation failed and cleanup is confirmed",
   "chat.reason.deadlineExceeded": "Execution deadline expired; the operation was not dispatched",

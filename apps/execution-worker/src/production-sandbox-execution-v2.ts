@@ -28,6 +28,7 @@ import {
   piContainerRunnerInputSchema,
   piRunnerInputSchema,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_OUTPUT_LIMIT,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_NOT_STARTED,
   type SandboxExecutionBrokerCommand,
@@ -891,7 +892,9 @@ export class ProductionSandboxExecutionV2 {
         latest.facts.result?.kind !== "started"
           ? result.reason === "resource_limit"
             ? sandboxResourceLimitReason(plan.resourceCeiling, result.resources)
-            : null
+            : result.reason === "output_limit"
+              ? SANDBOX_OUTPUT_LIMIT
+              : null
           : null;
       const operation = {
         effect:
@@ -1232,7 +1235,7 @@ export class ProductionSandboxExecutionV2 {
               ...resultFields,
               kind: "error",
               output,
-              reasonCode: "SANDBOX_OUTPUT_LIMIT",
+              reasonCode: SANDBOX_OUTPUT_LIMIT,
               termination: { type: "failure" },
             }
           : command || completed.exitCode === 0
@@ -1263,7 +1266,7 @@ export class ProductionSandboxExecutionV2 {
             }
           : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" }
         : completed.truncated
-          ? { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" }
+          ? { kind: "unknown", reasonCode: SANDBOX_OUTPUT_LIMIT }
           : command
             ? { kind: "not_asserted" }
             : { kind: "not_applicable" },
@@ -1840,8 +1843,8 @@ export class ProductionSandboxExecutionV2 {
               }
             : outcome.reason === "output_limit"
               ? {
-                  result: failure("SANDBOX_OUTPUT_LIMIT"),
-                  effect: { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" },
+                  result: failure(SANDBOX_OUTPUT_LIMIT),
+                  effect: { kind: "unknown", reasonCode: SANDBOX_OUTPUT_LIMIT },
                 }
               : outcome.reason === "resource_limit"
                 ? (() => {

@@ -207,6 +207,7 @@ export const MESSAGE_IDS = [
   "chat.reason.toolDeadlineExceeded",
   "chat.reason.toolMemoryLimit",
   "chat.reason.toolResourceLimit",
+  "chat.reason.toolOutputLimit",
   "chat.reason.toolNotStarted",
   "chat.reason.resourceCeilingChanged",
   "chat.reason.directoryTargetChanged",

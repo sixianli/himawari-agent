@@ -4498,7 +4498,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     ["resource_limit", true, true, "foreground", true, false],
     [null, false, false, "foreground", false, false],
   ] as const)(
-    "[I-83] only treats a stream termination that can never yield a result as unrecoverable: %s/%s/%s/%s/%s",
+    "[I-84] only treats a stream termination that can never yield a result as unrecoverable: %s/%s/%s/%s/%s",
     async (reasonCode, taskProcessExited, hasStream, mode, workspaceBlocked, expected) => {
       const f = await openSandboxJournal();
       let repository: SqliteProductStateRepository | undefined;
@@ -6645,9 +6645,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     ["SANDBOX_CPU_TIME_LIMIT", true],
     ["SANDBOX_MEMORY_LIMIT", true],
     ["SANDBOX_RESOURCE_LIMIT", true],
+    ["SANDBOX_OUTPUT_LIMIT", true],
     ["SANDBOX_OPERATION_FAILED", false],
   ] as const)(
-    "[I-83] records the ceiling in force for this command only on a resource-limit failure (%s)",
+    "[I-84] records the ceiling in force for this command only when a ceiling stopped it (%s)",
     async (reasonCode, carries) => {
       const f = await openSandboxJournal();
       try {

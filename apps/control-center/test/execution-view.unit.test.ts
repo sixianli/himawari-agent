@@ -49,19 +49,17 @@ describe("durable execution presentation", () => {
     ["SANDBOX_CPU_TIME_LIMIT", "chat.reason.toolCpuTimeLimit"],
     ["SANDBOX_MEMORY_LIMIT", "chat.reason.toolMemoryLimit"],
     ["SANDBOX_RESOURCE_LIMIT", "chat.reason.toolResourceLimit"],
-  ] as const)(
-    "[I-83] names the resource limit that stopped the tool (%s)",
-    (reasonCode, expected) => {
-      const failed = record(2, 2, { kind: "tool", name: "bash", phase: "failed" });
-      expect(
-        executionToolPhase(
-          failed,
-          [failed, record(3, 2, { name: `runtime.tool_reason.${reasonCode}` })],
-          { ...run, status: "completed" },
-        ),
-      ).toBe(expected);
-    },
-  );
+    ["SANDBOX_OUTPUT_LIMIT", "chat.reason.toolOutputLimit"],
+  ] as const)("[I-84] names the ceiling that stopped the tool (%s)", (reasonCode, expected) => {
+    const failed = record(2, 2, { kind: "tool", name: "bash", phase: "failed" });
+    expect(
+      executionToolPhase(
+        failed,
+        [failed, record(3, 2, { name: `runtime.tool_reason.${reasonCode}` })],
+        { ...run, status: "completed" },
+      ),
+    ).toBe(expected);
+  });
 
   it.each([
     ["runtime.tool_outcome.failed", "chat.reason.toolDeadlineExceeded"],
