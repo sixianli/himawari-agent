@@ -812,7 +812,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   ),
   entry(
     "decision_signals",
-    "DecisionLedgerPort",
+    "ProactiveStorePort, WebPushStorePort, DecisionLedgerPort",
     "append-only observations of what happened to a proactive decision without the owner rating it: reminder opened, done or muted then undone, mail thread replied; timing and small codes only",
     "metadata_only",
     "cascade with the ledger row, Owner or Agent deletion; never changed or deleted on its own",
