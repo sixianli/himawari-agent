@@ -35,6 +35,13 @@ const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["授权码", "授权码：abcd1234efgh", "授权码：[密码]"],
   ["日文暗証番号", "暗証番号：4829", "暗証番号：[密码]"],
   ["韩文密码", "비밀번호: hunter22", "비밀번호: [密码]"],
+  ["没有分隔符的密码", "Wi-Fi 密码 abc12345", "Wi-Fi 密码 [密码]"],
+  ["英文 is", "my password is abc12345", "my password is [密码]"],
+  ["英文 pwd 没有分隔符", "pwd hunter22abc", "pwd [密码]"],
+  ["纯数字密码", "password 123456", "password [密码]"],
+  ["密码改成", "密码改成 Zx9qq88", "密码改成 [密码]"],
+  ["日文没有分隔符", "パスワード abc12345", "パスワード [密码]"],
+  ["韩文密码是", "비밀번호는 abc12345", "비밀번호는 [密码]"],
   [
     "OpenAI key",
     `key ${["sk", "proj", "abcdefghijklmnopqrstuvwxyz012345"].join("-")}`,
@@ -68,6 +75,13 @@ const negatives: readonly string[] = [
   "口令规则说明见下文",
   "授权码的有效期是多久",
   "12 位数字 123456789012 不是个人番号",
+  "the password is required",
+  "password is incorrect, try again",
+  "密码改成每月一次",
+  "密码管理器 1Password 很好用",
+  "密码 2026-11-08 更新",
+  "password v2.0.1 发布",
+  "密码 abc 很短",
 ];
 
 describe("outbound redaction", () => {

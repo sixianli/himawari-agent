@@ -86,10 +86,14 @@ describe("classificationWithIdentifiers", () => {
     expect(classificationWithIdentifiers(`主人的接口密钥是 ${key}`, "private")).toBe("sensitive");
     expect(classificationWithIdentifiers("482910 是验证码", "public")).toBe("sensitive");
     expect(containsCredential("我的密码: hunter2abc")).toBe(true);
+    expect(classificationWithIdentifiers("Wi-Fi 密码 abc12345", "private")).toBe("sensitive");
+    expect(classificationWithIdentifiers("the password is abc12345", "private")).toBe("sensitive");
   });
 
   it("REVERSE: ordinary words near the same topics stay private", () => {
     expect(containsCredential("主人喜欢在咖啡馆改密码管理器的设置")).toBe(false);
+    expect(containsCredential("the password is required")).toBe(false);
+    expect(containsCredential("密码改成每月一次")).toBe(false);
     expect(classificationWithIdentifiers("主人最喜欢的颜色是蓝色", "private")).toBe("private");
     expect(classificationWithIdentifiers("主人的订单号是 12345", "private")).toBe("private");
   });

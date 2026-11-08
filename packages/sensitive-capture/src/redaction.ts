@@ -65,8 +65,27 @@ const KNOWN_VALUE_MINIMUM_LENGTH = 6;
 const MACHINE_SECRET_MARKER = "[MACHINE_SECRET_REDACTED]";
 const MACHINE_SECRET_PLACEHOLDER = "[密钥]";
 
-const PASSWORD_ASSIGNMENT =
-  /((?:密码|密碼|口令|PIN\s?码|PIN\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd)\s*(?:[:：=＝]|是|为|為|は)\s*)(?!\[)([^\s,，;；]+)/giu;
+const PASSWORD_KEYWORDS =
+  "密码|密碼|口令|PIN\\s?码|PIN\\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd";
+
+const PASSWORD_VALUE = "[^\\s,，;；]";
+
+const PASSWORD_ASSIGNMENT = new RegExp(
+  `((?:${PASSWORD_KEYWORDS})\\s*(?:[:：=＝]|是|为|為|は)\\s*)(?!\\[)(${PASSWORD_VALUE}+)`,
+  "giu",
+);
+
+const PASSWORD_WORDED_ASSIGNMENT = new RegExp(
+  `((?:${PASSWORD_KEYWORDS})(?:\\s*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|\\s+(?:is|are|was)\\b)\\s*)(?!\\[)(?=${PASSWORD_VALUE}*\\d)(${PASSWORD_VALUE}+)`,
+  "giu",
+);
+
+const PASSWORD_BARE_VALUE = new RegExp(
+  `((?:${PASSWORD_KEYWORDS})\\s+)(?!\\[)(?=${PASSWORD_VALUE}*\\d)(${PASSWORD_VALUE}{6,})`,
+  "giu",
+);
+
+const NOT_A_PASSWORD_VALUE = /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|v?\d+(?:\.\d+)+)$/iu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
@@ -303,12 +322,24 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
     tally(counts, "machine-secret");
   text = text.split(MACHINE_SECRET_MARKER).join(MACHINE_SECRET_PLACEHOLDER);
 
-  text = text.replace(PASSWORD_ASSIGNMENT, (_match, lead: string, value: string) => {
-    if (value === MACHINE_SECRET_PLACEHOLDER || value.startsWith("[")) return `${lead}${value}`;
+  const maskPassword = (lead: string, value: string) => {
     tally(counts, "password");
     see("password", "password-keyword", value);
     return `${lead}${mask("password", "密码", value, value, true)}`;
-  });
+  };
+  text = text.replace(PASSWORD_ASSIGNMENT, (_match, lead: string, value: string) =>
+    value === MACHINE_SECRET_PLACEHOLDER || value.startsWith("[")
+      ? `${lead}${value}`
+      : maskPassword(lead, value),
+  );
+  for (const looser of [PASSWORD_WORDED_ASSIGNMENT, PASSWORD_BARE_VALUE])
+    text = text.replace(looser, (match, lead: string, value: string) =>
+      value === MACHINE_SECRET_PLACEHOLDER ||
+      value.startsWith("[") ||
+      NOT_A_PASSWORD_VALUE.test(value)
+        ? match
+        : maskPassword(lead, value),
+    );
 
   text = text.replace(CN_ID_NUMBER, (match) => {
     if (!cnIdChecksumValid(match)) return match;
