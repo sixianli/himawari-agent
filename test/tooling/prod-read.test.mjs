@@ -108,6 +108,38 @@ describe("prod-read.sh", () => {
     expect(result.calls).toContain(`--no-warnings - run ${runId}`);
   });
 
+  it("accepts older run id shapes as well", () => {
+    for (const id of ["run:dcf2075d-1237-4f10-9e81-b427e0a7368f", "run:bafb641b"]) {
+      const result = run("run", id);
+      expect(result.code).toBe(0);
+      expect(result.calls).toContain(`--no-warnings - run ${id}`);
+    }
+  });
+
+  it("masks credential-like columns and binary values in the database script", () => {
+    const script = run("rows", "runs", runId).input;
+    const start = script.indexOf("const hiddenColumn");
+    const end = script.indexOf("const tableNames");
+    const body = script.slice(start, end);
+    const sandbox = new Function(`${body}; return shorten;`)();
+    const row = sandbox({
+      id: "a",
+      auth: "secret-auth",
+      p256dh: "key",
+      endpoint: "https://example.test/x",
+      embedding: new Uint8Array(4),
+      payload: new Uint8Array(3),
+      note: "x".repeat(200),
+    });
+    expect(row.id).toBe("a");
+    expect(row.auth).toBe("[hidden]");
+    expect(row.p256dh).toBe("[hidden]");
+    expect(row.endpoint).toBe("[hidden]");
+    expect(row.embedding).toBe("[hidden]");
+    expect(row.payload).toBe("[binary 3 bytes]");
+    expect(row.note).toHaveLength(163);
+  });
+
   it("does not echo raw control characters of a refused value", () => {
     const result = run("journal", "bad\u001b[31mpattern");
     expect(result.code).toBe(65);

@@ -44,13 +44,15 @@ database_query() {
 const { DatabaseSync } = require("node:sqlite");
 const database = new DatabaseSync("$PROD_DATABASE", { readOnly: true });
 const [mode, first, second] = process.argv.slice(2);
+const hiddenColumn = /(^auth$|p256dh|endpoint|ciphertext|embedding|secret|token|password|credential)/i;
+const shortenValue = (key, value) => {
+  if (hiddenColumn.test(key)) return "[hidden]";
+  if (typeof value === "string") return value.length > 160 ? value.slice(0, 160) + "..." : value;
+  if (value !== null && typeof value === "object") return "[binary " + value.byteLength + " bytes]";
+  return value;
+};
 const shorten = (row) =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [
-      key,
-      typeof value === "string" && value.length > 160 ? value.slice(0, 160) + "..." : value,
-    ]),
-  );
+  Object.fromEntries(Object.entries(row).map(([key, value]) => [key, shortenValue(key, value)]));
 const tableNames = () =>
   database
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
