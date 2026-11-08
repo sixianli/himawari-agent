@@ -7,6 +7,7 @@
 - [合并之前：代码复核](#code-review)
 - [每次都要问的问题](#checklist)
 - [Andy 怎样控制复核](#owner-control)
+- [Mac 线程把复核交给云端线程](#delegate)
 - [怎么跑](#how-to-run)
 
 <a id="plan-discussion"></a>
@@ -78,7 +79,7 @@ Andy 在项目聊天对协调者说、由协调者附原话转来，或者他直
 - 必问问题从 `--base` 提交里的本文件读（方案讨论不传 `--base` 时从 `--head` 提交读），不从被复核的改动或工作区读，免得改动自己改掉要问的问题。要用另一个已提交的版本时（例如在旧提交上做对比实验），传 `--questions-ref <提交>`，仍然只读提交过的内容。
 - 代码复核和方案审核（`--mode plan-review`）里，两个模型除了都回答全部必答问题，还各有一节额外侧重（脚本里的 `MODEL_LENSES`，Andy 2026-11-05 同意）：DeepSeek 先查错误路径、不可信输入、安全、资源耗尽和不可撤销的操作，以及规则文件、说明文档和代码是否一致（Andy 2026-11-06 同意加上后一项，因为第 2 轮起只有它一个，GLM 那份侧重没人看；这句侧重第 1 轮起每轮都带，所以 DeepSeek 的提示词开头每轮仍然逐字节相同）；GLM 先查测试覆盖、文档和规则与代码是否一致，并走一遍最普通的使用流程。侧重写在“本次材料”之前、同一个模型每轮都一样，所以每个模型发出的内容仍然只在末尾追加；两个模型的提示词因此不同，每轮分别存成 `<模型>.prompt.md`。独立出方案（`--mode plan`）不加侧重。依据：Anthropic 官方复核插件把复核分给不同侧重的代理，并在高风险项上让两个代理重复看（https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/plugins/code-review/README.md ）。
 - 第一次运行会联网安装 `opencode-ai@1.19.5` 到 `~/.cache/himawari-opencode-1.19.5-<锁文件摘要前 12 位>`，之后复用；也可以用 `HIMAWARI_OPENCODE_BIN` 指定已装好的程序（这时不做下面的核对）。安装用 `npm ci` 按 `scripts/model-review/opencode-lock/` 里提交的锁文件（`package-lock.json`，逐个记了 `opencode-ai` 和 12 个平台包的 sha512 摘要）进行，下载的包摘要不符时 npm 自己就会拒绝；每次使用前，脚本还会核对 npm 的安装记录（`node_modules/.package-lock.json`）里每个包的摘要和锁文件一致；它不重新计算已装文件的摘要，所以挡的是下载时被替换，不是装好之后有人改了磁盘上的文件。复用已有安装时若核对不一致或安装记录缺失、读不出，脚本删掉这个安装目录、按锁文件重装一次（刚装好就不一致时直接报错，不重装）（打印 `OPENCODE_REINSTALL`），重装后仍不一致以 `OPENCODE_INTEGRITY_MISMATCH` 停下。升级 opencode 时，改 `OPENCODE_VERSION` 和 `opencode-lock/package.json`，在该目录运行 `npm install --package-lock-only --ignore-scripts` 重新生成锁文件，一起提交。
-- 云端会话默认经本次运行自起的本机 Magpie（一个开源的本机模型网关，背后挂多个服务方，一家用不了就换下一家）调模型；Mac 上默认直连 Go。做法和怎样选见[经 Magpie 调用模型](#gateway)。
+- 云端会话默认经本次运行自起的本机 Magpie（一个开源的本机模型网关，背后挂多个服务方，一家用不了就换下一家）调模型；Mac 线程不在本机跑复核，交给云端线程跑，见[Mac 线程把复核交给云端线程](#delegate)。做法和怎样选见[经 Magpie 调用模型](#gateway)。
 - 密钥不写进脚本生成的配置，由 OpenCode 自己找：Mac 上先用这个 1.19.5 执行 `opencode auth login` 选 OpenCode Go 登录，密钥存在 `~/.local/share/opencode/auth.json`（OpenCode 保存登录密钥的文件）；云端不用登录，云端容器的出口代理（所有外发请求经过的那一层）会给发往 opencode.ai 的请求补上密钥。配置里一旦写了 `apiKey`，OpenCode 1.19.5 就不再用 auth.json 里的密钥，真实请求会报 401（[I-76](../../docs/incidents-and-gates.md#incidents)）；直连 OpenCode Go 时，只有自检连本机假服务器才写假密钥；经 Magpie 时配置里的占位密钥只和回环地址一起出现，见[经 Magpie 调用模型](#gateway)。
 - 在 PR 最新提交的一次性副本里运行：副本是干净克隆，只有提交过的文件。历史里任何一个提交（包括合并提交）的文件树里出现过 `.env` 一类文件（`.env.example` 这类模板除外）就拒绝复核，因为 git 命令能从历史里读出它。副本删掉了远程地址、引用日志（reflog，记录分支移动的日志，里面有原仓库路径）和 `FETCH_HEAD`，用完即删，脚本收到中断或结束信号（`SIGINT`、`SIGTERM`）时也会删（模型已经在跑时，先让它们停下、记完账再删，见[Andy 怎样控制复核](#owner-control)）；被强杀（`SIGKILL`）时删不掉。副本里 PR 自带的 `.opencode/`、`opencode.json(c)`、提交进仓库的 `.env*` 文件和指向副本外的符号链接会先删掉，因为 opencode 启动时会执行项目目录里的插件，符号链接能把读文件带出副本；配置改从副本外的文件读。副本里的分支和标签全部删掉，只留 `refs/review/head`、`refs/review/base`、`refs/review/previous` 三个引用；其他提交的对象还在，知道哈希仍能读到。opencode 的全局配置（`~/.config/opencode`）不会被读入，脚本给它一个空的配置目录。
 - 把 opencode 默认写死的 32 000 输出上限调高（`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` 设为 200 000），DeepSeek 高推理时不再被截断。opencode 会再按模型目录里的上限往下调：2026-11-03 抓包实测 DeepSeek 请求是 200 000，GLM 是 131 072（GLM 的模型上限）。
@@ -122,12 +123,29 @@ node scripts/model-review/opencode-review.mjs --mode plan-review \
 
 `--brief` 只写这次的材料：代码复核写问题、目标、约束和作者的说法；`plan` 只写问题、目标、约束和已核对的事实，不写线程的方案；`plan-review` 写线程的方案。脚本会在前面加上各模式的固定说明（上面的必问问题、项目指令第 16 条原话、该模式的任务和输出格式），代码复核还会让模型自己用 `git diff` 看改动。提交可以写分支名，脚本先在原仓库解析成提交哈希。按意见修改后的复核传 `--previous`，模型先看增量，但可以读任何文件。
 
+<a id="delegate"></a>
+## Mac 线程把复核交给云端线程
+
+Andy 2026-11-08 定：Mac 本地线程要做方案讨论或代码复核时，把“跑复核”交给一个跑在 himawari-cloud 环境里的云端线程，Mac 上不配任何模型密钥。方案讨论记录在 `.agents/reviews/topic-review-delegation/`。云端线程自己要复核时照旧直接跑，不用交接。
+
+- 分工：Mac 线程准备材料、问 Andy 要预算、交出任务、收回结果后逐条判断、修改、记账、合并；云端线程只跑一条复核命令、只提交 `.agents/reviews/<目录>/` 下的记录、推回同一个分支，不做判断、不改代码、不合并、不在 PR 上评论。
+- 交出之前：把要复核的代码、这件事的整个记录目录（含 `usage.jsonl` 和已有的逐条判断）都提交并推送；再把材料写进 `.agents/reviews/<目录>/briefs/<要复核的提交前 12 位>-<模式>.md`，提交并推送（材料不要放在 `/tmp`，云端读不到，过后也会没有）。此时的分支头叫“交出点”。预算和服务方先按现行规则问 Andy，写进命令。合并 main 要在最后一轮复核之前做，不要放到复核之后。
+- 生成任务说明：`node scripts/model-review/delegate.mjs prompt --mode <模式> --pr <编号>|--topic <短名> [--base …] --head <提交> [--previous …] [--models …] [--round …] [--approved-usd …] [--providers …] --branch <分支> --tip <交出点> [--reply-to <本会话编号>]`。参数都按固定格式校验，输出不含时间，同样的参数输出逐字节相同。任务说明里的复核命令一律带 `--gateway magpie --require-gateway`，第 0 步要求云端线程先确认 `HIMAWARI_REVIEW_GATEWAY` 是 `magpie`、分支头正好是交出点。
+- 开会话：用桌面应用的 `start_session`（target 为 cloud），环境选 himawari-cloud，把任务说明原样当 prompt。环境选不上、应用读不到环境列表时停下，请 Andy 手动选 himawari-cloud；不要去掉环境参数退到 Default。万一还是落在 Default，复核脚本的 `--require-gateway` 会在读材料、安装、花钱之前以 `GATEWAY_REQUIRED not-magpie` 或 `GATEWAY_REQUIRED no-proxy` 停下。
+- 等结果：云端会话结束时不会通知 Mac 线程，所以交出任务的同时在后台运行 `node scripts/model-review/delegate.mjs wait --branch <分支> --tip <交出点>`，它每 2 分钟查一次远端分支，分支头变了就打印 `DELEGATION_BRANCH_MOVED <提交>` 并结束，90 分钟没变打印 `DELEGATION_WAIT_TIMEOUT` 并以 3 结束（超时就把会话编号告诉 Andy，不再交出第二份）。云端线程如果有给 Mac 线程发消息的工具，会发开始和结束的消息，只当提醒，不依赖它。不要让 Andy 来通知。
+- 收回结果：先运行 `node scripts/model-review/delegate.mjs check` 加交出时的同一组参数（`--apply` 通过后快进合并）。它只 `git fetch`，不检出新提交，用的是 Mac 本地这份脚本，云端改过的脚本不会被执行。它核对：远端分支头是交出点的后续提交（没被强推，否则 `DELEGATION_REWRITTEN`）；交出点之后只改了这次的记录目录（`DELEGATION_OUTSIDE_RECORDS`）；`usage.jsonl` 只在末尾追加（`DELEGATION_LEDGER_REWRITTEN`）；新记录的 `mode`、`head`、`base`、`previous`、模型、服务方都和交出时一致、经 Magpie、每条都有模型答案和提示词文件（`DELEGATION_RECORD_MISMATCH`）。花费以账本为准，不信消息里转抄的数字。没有新提交时打印 `DELEGATION_PENDING` 并以 3 结束，被拒绝时以 5 结束，不要采用、告诉 Andy。通过后 `--apply` 要求本地分支头还是交出点（`DELEGATION_LOCAL_MOVED`），这就是交出期间 Mac 线程对这个分支不做任何提交的原因。
+- 云端线程补跑：某个模型的 `outcome` 是 `timeout` 或 `no-text` 时，云端线程只对那一个模型用 `--round <序号> --models <模型>` 补跑一次，仍受 `--approved-usd` 和先问门槛约束；其他失败不重跑，原样报告，由 Mac 线程决定。
+- 提交前检查：`package.json` 里有 `check:gitleaks` 时，云端线程提交记录之前先运行它，因为模型写出的意见里可能有长得像密钥的文字，会让提交里的密钥扫描报错。
+- 费用：每次交出会多开一个云端会话，按 Claude 标价折算每次约 0.4 到 1.1 美元（PR 291、PR 296 两次实测），算在 Andy 的 Claude 账号额度里，不进复核账本；Andy 2026-11-08 定：每次交出不再单独问，汇报里写明开了哪个会话。复核模型的花费照旧进账本、照旧先问。
+- 叫停和换服务方：Andy 可以直接对那个云端会话说，按[Andy 怎样控制复核](#owner-control)做；也可以对 Mac 线程说，Mac 线程再转给云端会话。
+- 局限：云端线程是另一个 Claude，可能不照任务说明做，所以结果一律先 `check` 再采用；账本记录本身仍被信任（“防误操作，不防有意”）。
+
 <a id="gateway"></a>
 ## 经 Magpie 调用模型
 
 加 `--gateway magpie` 时（[ADR 0178](../../docs/adr/0178-review-model-calls-through-a-local-magpie.md)，Andy 2026-11-07 定），复核脚本和 OpenCode 只认模型名和推理强度，由 Magpie 决定发给哪家服务方。
 
-- 怎样选（Andy 2026-11-07 验收后定）：命令行的 `--gateway magpie` 或 `--gateway direct`（直连 Go）优先；没写时看环境变量 `HIMAWARI_REVIEW_GATEWAY`（只认 `magpie`、`direct`，别的值以 `ARG_INVALID HIMAWARI_REVIEW_GATEWAY` 停下）；都没有就直连 Go。云端环境 himawari-cloud 把这个变量设成 `magpie`，所以云端线程不用加参数；Mac 上没有出口代理代填凭证，不设这个变量，照旧直连。Magpie 装不上或预检失败时，复核以对应的错误码停下，不会悄悄改成直连；要直连就显式加 `--gateway direct`。`vitest.workspace.ts` 给 tooling 测试把这个变量清空，测试的结果不受云端环境影响。
+- 怎样选（Andy 2026-11-07 验收后定）：命令行的 `--gateway magpie` 或 `--gateway direct`（直连 Go）优先；没写时看环境变量 `HIMAWARI_REVIEW_GATEWAY`（只认 `magpie`、`direct`，别的值以 `ARG_INVALID HIMAWARI_REVIEW_GATEWAY` 停下）；都没有就直连 Go。云端环境 himawari-cloud 把这个变量设成 `magpie`，所以云端线程不用加参数；Mac 上没有出口代理代填凭证，不设这个变量；Mac 线程不在本机跑复核，交给云端线程（见[Mac 线程把复核交给云端线程](#delegate)），只有 Andy 说“直连 Go”才在本机直连。Magpie 装不上或预检失败时，复核以对应的错误码停下，不会悄悄改成直连；要直连就显式加 `--gateway direct`。`vitest.workspace.ts` 给 tooling 测试把这个变量清空，测试的结果不受云端环境影响。
 
 - 服务方和顺序写在 `scripts/model-review/gateway.json`（不含任何密钥），读入时逐项校验，缺字段、服务方名拼错、数字不合法、积分底线不大于 0、积分服务方不是带登录的插件，都以 `GATEWAY_CONFIG_INVALID` 停下，不会让积分底线悄悄失效：两个模型的成员都是 CodeBuddy 国际版、OpenDesign（包月，接口 `amr-link.open-design.ai`）、OpenCode Go，按这个顺序排，路由组名是 `review-<模型短名>`，`routing=order`、`stays=session`（Andy 2026-11-07 定：先 CodeBuddy，再 OpenDesign，最后 Go；前一家用不了才换下一家；同一次复核固定在同一个账号，换过去后不再切回）。Magpie 的默认策略 `smart`（在还有余量的套餐里先用最快续费的那家）试过：Magpie 只读得到 CodeBuddy 的额度，读不到 OpenDesign 和 Go（Go 要在网络密钥里放开 `/zen/go/` 路径），实测 6 次独立会话三家轮流接到请求，不是按到期时间挑，所以不用。自定义服务方的 `models` 必须是非空字符串，路由组里写的 `<服务方 id>/<模型名>` 必须在它的 `models` 里，否则报 `models.<模型>.custom`。
 - 新增一家服务方（例如新开一个套餐）分两步，都不用改代码：
