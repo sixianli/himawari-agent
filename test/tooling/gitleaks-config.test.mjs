@@ -32,6 +32,11 @@ const PUSH_TEST = "apps/agent-service/test/production-reminder-push.unit.test.ts
 const PUSH_SIBLING = ["F5u42Bd3HyW8Kxk", "Uqo2gRB"].join("");
 const PUSH_SIBLING_TEST = `sibling/${PUSH_TEST}`;
 
+const DEEPSEEK_TEST = "packages/platform-node/test/deepseek-web-provider.unit.test.ts";
+const DEEPSEEK_SIBLING_TEST = "packages/platform-node/test/other-web-provider.unit.test.ts";
+const DEEPSEEK_URL = (value) =>
+  `await provider().fetch({ url: "https://user:pw@example.org/a?token=${value}" });\n`;
+
 const REVIEW_274 = ".agents/reviews/pr-274/round-7/deepseek-v4.1-flash.md";
 const REVIEW_274_SIBLING = ".agents/reviews/pr-274/round-8/deepseek-v4.1-flash.md";
 const REVIEW_274_OTHER_TEXT = ".agents/reviews/pr-274/round-9/deepseek-v4.1-flash.md";
@@ -47,6 +52,9 @@ const keyTailLine = (tail) =>
   `["[R2-T14] key tail", \`${tail}\\n\${["-----END", "PRIVATE KEY-----\\n"].join(" ")}\`],\n`;
 
 const FIXTURES = {
+  [DEEPSEEK_TEST]: DEEPSEEK_URL("abcdef123456"),
+  [DEEPSEEK_SIBLING_TEST]: DEEPSEEK_URL("abcdef123456"),
+  "packages/platform-node/test/other-value.unit.test.ts": DEEPSEEK_URL("abcdef123457"),
   [REVIEW_274]: REVIEW_274_PROSE,
   [REVIEW_274_SIBLING]: REVIEW_274_PROSE,
   [REVIEW_274_OTHER_TEXT]: `${PEM_BEGIN} followed by ${PADDING}${PEM_END}\n`,
@@ -68,6 +76,8 @@ const FIXTURES = {
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
+  `${DEEPSEEK_SIBLING_TEST} generic-api-key`,
+  "packages/platform-node/test/other-value.unit.test.ts generic-api-key",
   `${REVIEW_274_SIBLING} private-key`,
   `${REVIEW_274_OTHER_TEXT} private-key`,
   "apps/agent-service/test/other-key-tail.unit.test.ts generic-api-key",
@@ -187,6 +197,7 @@ describe("gitleaks repository configuration", () => {
           "apps/agent-service/test/production-http-composition.unit.test.ts generic-api-key",
           "test/tooling/gitleaks-allowlist.test.mjs generic-api-key",
           `${PUSH_TEST} generic-api-key`,
+          `${DEEPSEEK_TEST} generic-api-key`,
           `${REVIEW_274} private-key`,
           `${KEY_TAIL_TEST} generic-api-key`,
         ].sort(),
@@ -237,6 +248,20 @@ describe("gitleaks repository configuration", () => {
       ],
     ],
     ["push value", "'''^F5u42Bd3HyW8KxkUqo2gRA$'''", "'''^F5u42Bd3HyW8Kxk[A-Za-z0-9_-]{7}$'''"],
+    [
+      "deepseek any path",
+      "'''(?:^|/)packages/platform-node/test/deepseek-web-provider\\.unit\\.test\\.ts$'''",
+      "'''(?:^|/)packages/platform-node/test/.*\\.ts$'''",
+    ],
+    [
+      "deepseek any value",
+      "'''^abcdef123456$'''",
+      "'''^abcdef12345[0-9]$'''",
+      [
+        "'''(?:^|/)packages/platform-node/test/deepseek-web-provider\\.unit\\.test\\.ts$'''",
+        "'''(?:^|/)packages/platform-node/test/.*\\.ts$'''",
+      ],
+    ],
   ])(
     "fails the check when the allowlist is widened: %s",
     (_name, from, to, pathWidening) => {

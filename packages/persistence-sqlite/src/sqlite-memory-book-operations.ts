@@ -103,6 +103,12 @@ export class SqliteMemoryBookOperations {
         return this.listImportBatches(payload as Scope & { limit: number });
       case "memoryBook.markImportUndone":
         return this.markImportUndone(payload as Scope & { id: string; undoneAt: string });
+      case "memoryBook.findOwnerMessages":
+        return this.findOwnerMessages(
+          payload as Scope & {
+            lookups: readonly { threadId: string; refs: readonly string[] }[];
+          },
+        );
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Memory book operation ${operation}`);
     }
@@ -545,6 +551,38 @@ export class SqliteMemoryBookOperations {
         ORDER BY created_at DESC, id LIMIT ?`,
       )
       .all(input.ownerId, input.agentId, input.limit) as MemoryImportBatch[];
+  }
+
+  private findOwnerMessages(
+    input: Scope & { lookups: readonly { threadId: string; refs: readonly string[] }[] },
+  ) {
+    const found: {
+      contentRef: string;
+      threadId: string;
+      messageId: string;
+      sequence: number;
+    }[] = [];
+    for (const { threadId, refs: all } of input.lookups) {
+      const refs = [...new Set(all)];
+      for (let index = 0; index < refs.length; index += 200) {
+        const batch = refs.slice(index, index + 200);
+        found.push(
+          ...(this.database
+            .prepare(
+              `SELECT t.content_ref AS contentRef, t.thread_id AS threadId, t.id AS messageId,
+                t.sequence AS sequence
+              FROM thread_messages t JOIN threads h ON h.id = t.thread_id
+              WHERE t.owner_id = ? AND t.agent_id = ? AND t.thread_id = ? AND t.role = 'owner'
+                AND t.message_status = 'committed'
+                AND h.status NOT IN ('trashed', 'deletion_pending', 'deleted_verified')
+                AND t.content_ref IN (${batch.map(() => "?").join(", ")})
+              ORDER BY t.sequence`,
+            )
+            .all(input.ownerId, input.agentId, threadId, ...batch) as typeof found),
+        );
+      }
+    }
+    return found;
   }
 
   private markImportUndone(input: Scope & { id: string; undoneAt: string }): boolean {

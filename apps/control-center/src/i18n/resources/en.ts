@@ -737,7 +737,7 @@ export const messages = {
   "memory.page.changed": "Changed {count}×",
   "memory.page.source": "Source",
   "memory.page.origin":
-    "{o, select, owner {Added by you} import {Imported} deleted {Source conversation deleted} other {Memory tidy-up}}",
+    "{o, select, owner {Added by you} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
   "memory.page.used": "Last used",
   "memory.page.notUsed": "Not used yet",
   "memory.page.history": "How it changed",
@@ -855,6 +855,14 @@ export const messages = {
     "{k, select, created {Noted} updated {Details added} edited {Edited by you} restored {Switched back} reaffirmed {Said again, same meaning} other {Changed}}",
   "memory.page.quote": "You said: “{quote}”",
   "memory.page.sourceDeleted": "Source conversation deleted",
+  "memory.page.jumpToQuote": "Jump to what you said",
+  "memory.page.sourceUnavailable": "Source can no longer be found",
+  "memory.page.sourceUnavailableCount":
+    "{count, plural, one {# memory has} other {# memories have}} a source that can no longer be found",
+  "memory.page.importNoQuoteCount":
+    "{count, plural, one {# memory was} other {# memories were}} imported and has no original sentence to open",
+  "memory.page.originImport":
+    "Imported from {source, select, codex {Codex} assistant {another AI} other {a Himawari export file}}",
   "memory.page.collapseHistory": "Show less",
   "memory.page.flips":
     "Changed {changes, plural, one {# time} other {# times}}{again, plural, =0 {} one {, said the same thing # more time} other {, said the same thing # more times}}",
