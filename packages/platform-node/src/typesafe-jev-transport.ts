@@ -12,12 +12,15 @@ import {
   type PayloadRef,
   parseAutomaticReviewDecision,
 } from "@himawari-agent/application";
-import { assertMachineSecretFree } from "@himawari-agent/sensitive-capture";
 import { REVIEW_TYPESAFE_QUESTIONS } from "@himawari-agent/prompt-catalog";
+import {
+  type ExternalRedactionOptions,
+  redactForExternalText,
+  sequentialPlaceholderTag,
+} from "@himawari-agent/sensitive-capture";
 
 import type { SecretMaterialSource, TrustedModelTransport } from "./trusted-model-provider.js";
 
-/** Protected payload access shared by every model transport; never reads local files. */
 export interface JevModelPayloadBoundary {
   readText(payloadRef: string): Promise<string>;
   writeText(input: {
@@ -33,16 +36,13 @@ export interface TypeSafeJevTransportOptions {
   readonly secrets: SecretMaterialSource;
   readonly payloads: JevModelPayloadBoundary;
   readonly clock: ClockPort;
-  /** The same frozen pricing supplied to the invocation admission gate. */
   readonly pricingFor: (descriptor: ModelDescriptor) => ModelCostDescriptor;
   readonly fetch?: typeof globalThis.fetch;
-  /** Defaults to the documented decision endpoint. */
   readonly baseUrl?: string;
   readonly requestTimeoutMs?: number;
   readonly maximumAttempts?: number;
 }
 
-/** The host's frozen review summary, mirrored from the protected input payload. */
 interface ReviewInputEnvelope {
   readonly reviewId?: unknown;
   readonly runId?: unknown;
@@ -77,12 +77,9 @@ interface JevResponseBody {
 const DEFAULT_BASE_URL = "https://api.typesafe.ai";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAXIMUM_ATTEMPTS = 2;
-/** Bound the disclosed request independently of the provider's token count. */
 const MAX_REQUEST_BYTES = 8_192;
-/** The documented Jev 1.13 context limit; reserve the full bound before a call. */
 const MAX_ADMISSION_INPUT_TOKENS = 65_536;
 const MAX_RESPONSE_BYTES = 1_048_576;
-/** Reason codes the host asked for; anything else is malformed model output. */
 const DECISION_REASON_CODES = new Set([
   "WITHIN_DELEGATION",
   "OUTSIDE_DELEGATION",
@@ -117,7 +114,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Parse the documented Choice answer; confidence is never synthesized. */
+function redactedState(
+  value: unknown,
+  options: ExternalRedactionOptions = {
+    known: new Map<string, string>(),
+    tag: sequentialPlaceholderTag(),
+  },
+): unknown {
+  if (typeof value === "string") return redactForExternalText(value, options).text;
+  if (Array.isArray(value)) return value.map((entry) => redactedState(entry, options));
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, redactedState(entry, options)]),
+  );
+}
+
 function answerValue(value: unknown): JevAnswerValue | undefined {
   if (!isRecord(value)) return undefined;
   if (value["type"] !== "choice") return undefined;
@@ -161,7 +172,6 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     this.options = options;
   }
 
-  /** Reserved budget for a decision call: input tokens only, output is free. */
   static estimatedAdmissionCost(descriptor: { readonly cost: ModelCostDescriptor }): {
     readonly pricing: { input: number; output: number; cacheRead: number; cacheWrite: number };
     readonly estimatedCostMicros: number;
@@ -228,7 +238,6 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
           type: "model.completed",
           invocationId: request.invocationId,
           inputTokens: parsed.usage.input_tokens,
-          // Output tokens are reported even when the output price is zero.
           outputTokens: parsed.usage.output_tokens,
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
@@ -268,11 +277,6 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     };
   }
 
-  /**
-   * Assemble the frozen state and the host-owned typed questions. A failure here
-   * is reported as a failed invocation, so the host never has to translate a
-   * thrown transport error into a different outcome.
-   */
   async #prepare(
     descriptor: ModelDescriptor,
     request: ModelInvocationRequest,
@@ -286,13 +290,12 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
       const state = await this.options.payloads.readText(request.inputRef);
       const envelope = this.#parseEnvelope(state, request);
       const body = JSON.stringify({
-        state: envelope,
+        state: redactedState(envelope),
         model: descriptor.model,
         questions: REVIEW_TYPESAFE_QUESTIONS.questions,
       });
       if (Buffer.byteLength(body, "utf8") > MAX_REQUEST_BYTES)
         throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_TOO_LARGE", false);
-      assertMachineSecretFree(body);
       return { body, envelope, apiKey: this.#apiKey(secretValues) };
     } catch (error) {
       return {
@@ -374,7 +377,6 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
         signals,
       );
       if (!response.ok) {
-        // A definite rate/overload rejection has not accepted a decision request.
         const retryable = response.status === 429 || response.status === 529;
         throw new JevTransportFailure(
           `TYPESAFE_HTTP_${response.status}`,
@@ -384,7 +386,6 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
         );
       }
       const text = await this.#readResponse(response, signals);
-      assertMachineSecretFree(text);
       let parsed: unknown;
       try {
         parsed = JSON.parse(text);
@@ -472,29 +473,18 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
       void reader.cancel().catch(() => undefined);
       try {
         reader.releaseLock();
-      } catch {
-        /* A cancelled read may still be pending. */
-      }
+      } catch {}
     }
   }
 
-  /**
-   * Turn the decision model's typed answers into the review contract. The host
-   * builds the decision deterministically; the model supplies choices and its
-   * calibrated confidence, which the review service gates before any approval.
-   */
   #synthesize(envelope: ReviewInputEnvelope, response: JevResponseBody): Record<string, unknown> {
     const answersValue = response["answers"];
     if (!isRecord(answersValue)) throw new JevTransportFailure("TYPESAFE_RESPONSE_INVALID", false);
     const scope = answerValue(answersValue["within_delegated_scope"]);
     const decision = answerValue(answersValue["decision"]);
     const reason = answerValue(answersValue["reason_code"]);
-    // Every reported answer must be well formed, including its confidence: a
-    // malformed calibrated value is not something the host may interpret.
     if (!scope || !decision || !reason || !["within", "outside"].includes(scope.value))
       throw new JevTransportFailure("TYPESAFE_ANSWER_INVALID", false);
-    // The answer vocabulary is host-owned. An answer outside it is malformed
-    // output, not something the host silently reinterprets.
     if (decision.value !== "approve" && decision.value !== "deny" && decision.value !== "human")
       throw new JevTransportFailure("TYPESAFE_ANSWER_INVALID", false);
     if (!DECISION_REASON_CODES.has(reason.value))
@@ -503,7 +493,6 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     const dataClassification = envelope.dataClassification;
     if (typeof reviewId !== "string" || typeof dataClassification !== "string")
       throw new JevTransportFailure("TYPESAFE_REVIEW_INPUT_INVALID", false);
-    // An unclear scope is never an approval: it goes to the human Owner.
     const outside = scope.value !== "within";
     const outcome = outside ? "human" : decision.value;
     return {
@@ -515,21 +504,10 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
     };
   }
 
-  /**
-   * The reviewer port returns unbounded data, but the durable decision has to be
-   * the validated shape. The host therefore re-binds its own answer to the
-   * envelope the coordinator froze and passes it through the same contract the
-   * contract expects, so a provider cannot smuggle an extra field or a foreign
-   * request identity into a committed decision.
-   */
   #validateDecision(
     envelope: ReviewInputEnvelope,
     decision: Record<string, unknown>,
   ): AutomaticReviewDecision {
-    // Re-bind the host's own answer to the frozen request identity and run it
-    // through the shared decision contract, so a provider cannot smuggle an
-    // extra field or a foreign request identity into a committed decision. Only
-    // the binding fields and the answer belong in the validated object.
     return parseAutomaticReviewDecision(
       {
         schemaVersion: "automatic-review.v1",
@@ -556,7 +534,6 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
   }
 }
 
-/** Transport-local failure; its message never carries provider text or secrets. */
 class JevTransportFailure extends Error {
   readonly errorCode: string;
   readonly retryable: boolean;

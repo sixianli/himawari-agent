@@ -220,6 +220,10 @@ export interface ProactiveConfiguration {
   readonly dailyCostMicros: number;
   readonly bodyCharactersPerMail: number;
   readonly bodyCharactersPerBatch: number;
+  readonly relatedMailsPerMail: number;
+  readonly relatedCharactersPerMail: number;
+  readonly relatedCharactersPerRelatedMail: number;
+  readonly relatedRequestsPerCheck: number;
   readonly memoryMinimumSimilarity: number;
   readonly reviewBudgetSeconds: number;
   readonly reviewSecondsPerItem: number;
