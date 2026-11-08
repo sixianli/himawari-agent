@@ -21,7 +21,7 @@ describe("signed sandbox binding memory ceiling", () => {
     );
   });
 
-  it("is rejected when the manifest still says 512 MiB or 256 MiB", () => {
+  it("helper reads a stale manifest as below the limit", () => {
     const stale = (bytes) =>
       `maximumResourceCeiling: {\n maxWallTimeMs: 1,\n maxMemoryBytes: ${bytes},\n}`;
     expect(signedMemoryCeiling(stale(536870912))).toBeLessThan(SANDBOX_TOOL_MEMORY_LIMIT_BYTES);
