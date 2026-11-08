@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import {
   API_ERROR_MESSAGE_MAX,
   apiErrorText,
+  assertReviewed,
   budgetCheck,
   buildPrompt,
   COST_LIMIT_PER_MODEL_USD,
@@ -31,59 +32,62 @@ import {
   GIT_READ_COMMANDS,
   GIT_REFUSED,
   gitChildEnv,
-  assertReviewed,
-  REVIEW_REPORT_DISCLAIMER,
-  resultLine,
-  reviewReport,
   installedIntegrityProblems,
   installGitGuard,
   installOpencode,
   isTestFile,
   keepEarlierAttempt,
+  killProcessGroup,
   LOW_FIX_MAX_FILES,
   LOW_FIX_MAX_LINES_PER_FILE,
-  promptFileName,
-  printable,
-  prepareRawDir,
-  proxyCredentialProblems,
-  recordText,
-  rawDir,
-  opencodeInstallDir,
-  RAW_FILE_SUFFIXES,
-  REVIEWS_DIR,
-  reviewDir,
-  killProcessGroup,
   MIN_OUTPUT_TOKENS,
   MODEL_LENSES,
+  maskedRecordText,
+  maskSecretLike,
   nextRound,
   OPENCODE_KEPT_ENV,
   OPENCODE_LOCK_DIR,
   OPENCODE_VERSION,
   opencodeBinary,
   opencodeEnv,
+  opencodeInstallDir,
   parseArgs,
   parseUsage,
   parseVerdicts,
   prepareCopy,
+  prepareRawDir,
+  printable,
   probePlan,
   probeRefused,
+  promptFileName,
+  proxyCredentialProblems,
   QUESTIONS_PATH,
   questionsSource,
+  RAW_FILE_SUFFIXES,
+  RECORD_SECRET_RULES,
   REVIEW_MODELS,
   REVIEW_PARENT_CANARY_ENV,
+  REVIEW_REPORT_DISCLAIMER,
+  REVIEWS_DIR,
   RULE_16_SENTENCE,
+  rawDir,
   readUsage,
+  recordText,
   resolveCommits,
+  resultLine,
+  retryAfterApiError,
   reviewConfig,
+  reviewDir,
   reviewModel,
   reviewQuestions,
-  retryAfterApiError,
+  reviewReport,
   roundForRun,
   roundsOnDisk,
   runOutcome,
   SHELL_LOG_NAME,
-  spentOf,
   SUBSTITUTES,
+  secretLikeRules,
+  spentOf,
   substituteFor,
   summarizeEvents,
   WRAP_UP_MIN_USD,
@@ -2235,6 +2239,53 @@ describe("opencode review credentials", () => {
   }, 120000);
 });
 
+const fakeOpenAiKey = ["sk", "abcdefghijklmnopqrstuv"].join("-");
+
+describe("opencode review record masking", () => {
+  it("masks text the machine-secret scan would report, rule by rule", () => {
+    const samples = {
+      "openai-api-key": fakeOpenAiKey,
+      "github-token": ["gh", "p_", "A".repeat(24)].join(""),
+      "aws-access-key": ["AKIA", "B".repeat(16)].join(""),
+      "jwt-token": ["eyJ", "a".repeat(10), ".", "b".repeat(10), ".", "c".repeat(10)].join(""),
+      "authorization-bearer": ["Bearer", "x".repeat(16)].join(" "),
+      "credential-assignment": ["pass", "word: ", "y".repeat(14)].join(""),
+      "private-key-block": [
+        ["-----BEGIN", "PRIVATE KEY-----"].join(" "),
+        "z".repeat(20),
+        ["-----END", "PRIVATE KEY-----"].join(" "),
+      ].join("\n"),
+    };
+    expect(Object.keys(samples).sort()).toEqual(RECORD_SECRET_RULES.map(([id]) => id).sort());
+    for (const [id, sample] of Object.entries(samples)) {
+      expect(secretLikeRules(`说明 ${sample} 结束`)).toContain(id);
+      const masked = maskSecretLike(`说明 ${sample} 结束`);
+      expect(masked).toContain(`[已遮盖:${id}]`);
+      expect(masked).not.toContain(sample);
+      expect(secretLikeRules(masked)).toEqual([]);
+    }
+  });
+
+  it("leaves ordinary review prose alone, including short sk- words and key names", () => {
+    const prose = "- 低度：sk-short 太短不算；apiKey 这个字段名没有值；Bearer 后面没有令牌";
+    expect(secretLikeRules(prose)).toEqual([]);
+    expect(maskedRecordText(prose)).toBe(`${prose}\n`);
+  });
+
+  it("uses exactly the rules of scripts/scan-machine-secrets.mjs, so the two cannot drift apart", () => {
+    const scan = readFileSync(
+      new URL("../../scripts/scan-machine-secrets.mjs", import.meta.url),
+      "utf8",
+    );
+    for (const [id, pattern] of RECORD_SECRET_RULES) {
+      expect(scan).toContain(`"${id}"`);
+      expect(scan).toContain(pattern.toString());
+    }
+    const scanIds = [...scan.matchAll(/^\s*\[?\s*"([a-z-]+)",/gm)].map((match) => match[1]);
+    expect(scanIds.sort()).toEqual(RECORD_SECRET_RULES.map(([id]) => id).sort());
+  });
+});
+
 describe("opencode review merge gate", () => {
   const [deepseek, glm] = REVIEW_MODELS;
   const ok = (round, head, model, extra = {}) => ({
@@ -2286,6 +2337,25 @@ describe("opencode review merge gate", () => {
       expect(result.lines[0]).toMatch(
         new RegExp(`^REVIEW_CURRENT pr=7 round=1 reviewed=${f.reviewed} head=[0-9a-f]{40}$`),
       );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] refuses records that carry secret-like text and accepts the masked form", () => {
+    const f = fixture();
+    try {
+      const note = `${fakeOpenAiKey} is a split fake value\n`;
+      f.commit({ [`${REVIEWS_DIR}/pr-7/round-1/deepseek-v4.1-flash.md`]: note }, "raw record");
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      expect(f.check().problems).toEqual([
+        `record-secret-like ${REVIEWS_DIR}/pr-7/round-1/deepseek-v4.1-flash.md openai-api-key`,
+      ]);
+      f.commit(
+        { [`${REVIEWS_DIR}/pr-7/round-1/deepseek-v4.1-flash.md`]: maskedRecordText(note) },
+        "masked record",
+      );
+      expect(f.check().problems).toEqual([]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

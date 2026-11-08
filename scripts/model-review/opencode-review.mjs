@@ -1281,6 +1281,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
   else
     for (const file of changedOutside(repo, complete.head, head, ledgerPath))
       problems.push(`unreviewed ${printable(file)}`);
+  problems.push(...recordSecretProblems({ repo, ledgerPath }));
   if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
     problems.push(`main-ref-missing ${printable(mainRef)}`);
   else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
@@ -2392,6 +2393,52 @@ export function recordText(text) {
   return `${text.replace(/\r\n?/g, "\n").replace(/[ \t]+$/gm, "")}\n`;
 }
 
+export const RECORD_SECRET_RULES = Object.freeze([
+  [
+    "private-key-block",
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
+  ],
+  ["authorization-bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi],
+  ["jwt-token", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g],
+  ["openai-api-key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/g],
+  ["github-token", /\b(?:gh[opsu]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g],
+  ["aws-access-key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g],
+  [
+    "credential-assignment",
+    /\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|webhook[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{12,}["']?/gi,
+  ],
+]);
+
+export function maskSecretLike(text) {
+  let masked = text;
+  for (const [id, pattern] of RECORD_SECRET_RULES)
+    masked = masked.replace(new RegExp(pattern.source, pattern.flags), `[已遮盖:${id}]`);
+  return masked;
+}
+
+export function secretLikeRules(text) {
+  return RECORD_SECRET_RULES.filter(([, pattern]) =>
+    new RegExp(pattern.source, pattern.flags).test(text),
+  ).map(([id]) => id);
+}
+
+export function maskedRecordText(text) {
+  return maskSecretLike(recordText(text));
+}
+
+export function recordSecretProblems({ repo, ledgerPath }) {
+  const listed = gitStatus(["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ledgerPath], repo);
+  if (listed.status !== 0) return [];
+  const problems = [];
+  for (const file of listed.stdout.split("\0").filter(Boolean)) {
+    const shown = gitStatus(["show", `HEAD:${file}`], repo);
+    if (shown.status !== 0) continue;
+    for (const id of secretLikeRules(shown.stdout))
+      problems.push(`record-secret-like ${printable(file)} ${id}`);
+  }
+  return problems;
+}
+
 export function prepareRawDir(dir, root = join(tmpdir(), "himawari-review-raw")) {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   chmodSync(root, 0o700);
@@ -2900,7 +2947,7 @@ async function main() {
       const name = model.split("/").pop();
       keepEarlierAttempt(roundDir, name);
       keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
-      writeFileSync(join(roundDir, promptFileName(model)), prompt);
+      writeFileSync(join(roundDir, promptFileName(model)), maskedRecordText(prompt));
       const review = await reviewModel({
         binary,
         cwd: copy,
@@ -2915,7 +2962,7 @@ async function main() {
       writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
       const gatewayUsage = liveGateway ? await liveGateway.live.stableUsage() : null;
       const { summary } = review;
-      writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
+      writeFileSync(join(roundDir, `${name}.md`), maskedRecordText(summary.text));
       if (summary.thinking)
         writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
       const assembled = {
@@ -2959,7 +3006,7 @@ async function main() {
         );
       }
       if (record.outcome !== "ok" && review.stderr.trim()) {
-        writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
+        writeFileSync(join(roundDir, `${name}.stderr.txt`), maskedRecordText(review.stderr));
       }
       return { record, review };
     };
