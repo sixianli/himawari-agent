@@ -1062,6 +1062,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "deadline-code-model-unknown",
     "deadline-code-future-record",
     "deadline-code-null-record",
+    "deadline-code-model-settled",
+    "deadline-code-model-released",
+    "deadline-code-environment-released",
+    "deadline-code-environment-unreleased",
   ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
     const f = await openSandboxJournal();
     let repository: SqliteProductStateRepository | undefined;
@@ -1104,7 +1108,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           },
         );
       }
-      if (scenario === "environment")
+      if (scenario === "environment" || scenario.startsWith("deadline-code-environment-"))
         await opened.executionEnvironmentStore(OWNER_ID, AGENT_ID).reserve({
           authority: SERVICE_AUTHORITY,
           now: T1,
@@ -1185,6 +1189,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-model-reserved",
           "deadline-code-model-started",
           "deadline-code-model-unknown",
+          "deadline-code-model-settled",
+          "deadline-code-model-released",
+          "deadline-code-environment-released",
+          "deadline-code-environment-unreleased",
         ].includes(scenario)
       ) {
         f.database.pragma("foreign_keys = OFF");
@@ -1193,6 +1201,35 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       }
       if (scenario.startsWith("deadline-code-model-")) {
         const status = scenario.slice("deadline-code-model-".length);
+        const lease = f.database
+          .prepare(
+            "SELECT id,deployment_id AS deploymentId,authority_epoch AS epoch,fencing_token AS token FROM authority_leases LIMIT 1",
+          )
+          .get() as { id: string; deploymentId: string; epoch: number; token: number };
+        f.database
+          .prepare(
+            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',0,0,'active',1)",
+          )
+          .run(OWNER_ID, AGENT_ID, `run:${runId}`, runId);
+        f.database
+          .prepare(
+            `INSERT INTO model_budget_allocations(owner_id,agent_id,account_id,operation_key,model_ref,
+              data_classification,estimated_cost_micros,actual_cost_micros,status,reserved_at,started_at,
+              observed_at,settled_at,reason_code)
+            VALUES(?,?,?,'expiry-budget-operation','model-ref','private',0,?,?,?,?,?,?,?)`,
+          )
+          .run(
+            OWNER_ID,
+            AGENT_ID,
+            `run:${runId}`,
+            status === "settled" ? 0 : null,
+            status,
+            T1,
+            ["reserved", "released"].includes(status) ? null : T1,
+            status === "unknown" ? T1 : null,
+            status === "settled" ? T1 : null,
+            status === "unknown" ? "provider_unresolved" : null,
+          );
         f.database
           .prepare(
             `INSERT INTO model_invocation_identities (
@@ -1203,23 +1240,42 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               authority_fencing_token,execution_lease_id,execution_expected_lease_revision,
               execution_authority_lease_id,execution_authority_fencing_token,execution_deployment_id,
               execution_authority_epoch,execution_fencing_token,execution_consumer_id,status,
-              reserved_at,started_at,observed_at,reason_code
+              reserved_at,started_at,observed_at,settled_at,released_at,actual_cost_micros,reason_code
             ) VALUES (?,?,?,'main',1,'expiry-model-invocation','model-ref','provider','model',
-              'private','model-port',1,0,0,0,0,'fingerprint',0,'expiry-budget-account',
-              'expiry-budget-operation','lease','deployment',1,1,'expiry-model-lease',0,'lease',1,
-              'deployment',1,1,'expiry-consumer',?,?,?,?,?)`,
+              'private','model-port',1,0,0,0,0,'fingerprint',0,?,'expiry-budget-operation',?,?,?,?,
+              'expiry-model-lease',0,?,?,?,?,?,'expiry-consumer',?,?,?,?,?,?,?,?)`,
           )
           .run(
             OWNER_ID,
             AGENT_ID,
             runId,
+            `run:${runId}`,
+            lease.id,
+            lease.deploymentId,
+            lease.epoch,
+            lease.token,
+            lease.id,
+            lease.token,
+            lease.deploymentId,
+            lease.epoch,
+            lease.token,
             status,
             T1,
-            status === "reserved" ? null : T1,
+            ["reserved", "released"].includes(status) ? null : T1,
             status === "unknown" ? T1 : null,
+            status === "settled" ? T1 : null,
+            status === "released" ? T1 : null,
+            status === "settled" ? 0 : null,
             status === "unknown" ? "provider_unresolved" : null,
           );
+        f.database.pragma("foreign_keys = ON");
       }
+      if (scenario === "deadline-code-environment-released")
+        f.database
+          .prepare(
+            "INSERT INTO execution_environment_release_receipts(environment_id,basis,stop_fence,accepted_at,proof_json,authority_json) SELECT environment_id,'create_not_dispatched',1,?,NULL,'{}' FROM execution_environments",
+          )
+          .run(T1);
       if (scenario === "deadline-code-future-record")
         f.database
           .prepare(
@@ -1355,6 +1411,9 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "absent-before-deadline",
           "before-deadline",
           "deadline-code-no-records",
+          "deadline-code-model-settled",
+          "deadline-code-model-released",
+          "deadline-code-environment-released",
         ].includes(scenario)
       ) {
         const dispatch = opened.runDispatch(
@@ -1451,7 +1510,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               )
               .run();
           expect(await dispatch.listReconciliationRequired({ now, limit: 10 })).toEqual([]);
-          if (scenario === "deadline-code-null-record") return;
+          if (scenario === "deadline-code-null-record") {
+            await expect(recovery.settleExpired(input)).rejects.toThrow();
+            return;
+          }
         }
         await expect(recovery.settleExpired(input)).rejects.toThrow();
         expect(state()).toEqual(before);
