@@ -54,7 +54,7 @@ date: "2026-09-03"
 ### 本 Spec 包含
 
 - 可在本地和 GitHub Actions 执行的同一组检查入口与政策。
-- Linux x64、macOS arm64 和三个浏览器引擎的确定性验证（2026-11-08 起不再单独验证最低 Node 版本，见 [ADR 0181](../../adr/0181-drop-node-floor-and-fold-test-into-coverage.md)）。
+- Linux x64、macOS arm64 和三个浏览器引擎的确定性验证（2026-11-08 起不再单独验证最低 Node 版本，见 [ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）。
 - 精确依赖、原生依赖构建、Pi 发布包、安装产物、证据摘要和输出隔离。
 - 格式、lint、类型、架构、需求映射、文档、覆盖率、安全扫描和门禁自身的负向验证。
 - PR、默认分支、周期检测、手动验证的触发规则和最小权限。
@@ -116,7 +116,7 @@ date: "2026-09-03"
 
 ### 2. 固定工具链并验证干净安装
 
-初始基线 Node 为 `22.22.3`，也是项目支持的最低版本（2026-11-08 起；原最低兼容版本 `22.19.0`，见 [ADR 0181](../../adr/0181-drop-node-floor-and-fold-test-into-coverage.md)），npm 为仓库声明的 `11.8.0`。这些是选定版本，不声明为最新版本。Python 固定一个满足治理校验器要求的 3.10 以上精确版本。工具链变更必须在 PR 中重新验证，不能由 runner 自带版本决定。
+初始基线 Node 为 `22.22.3`，也是项目支持的最低版本（2026-11-08 起；原最低兼容版本 `22.19.0`，见 [ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)），npm 为仓库声明的 `11.8.0`。这些是选定版本，不声明为最新版本。Python 固定一个满足治理校验器要求的 3.10 以上精确版本。工具链变更必须在 PR 中重新验证，不能由 runner 自带版本决定。
 
 主要 runner 使用 `ubuntu-24.04` x64 与 `macos-15` arm64。记录实际 runner image 版本。固定标签仍会收到镜像更新，不等于字节级固定 OS。目标 Mac/Hermes 的真实 OS、签名、权限与隔离由 S9 单独验证。
 
@@ -198,7 +198,7 @@ date: "2026-09-03"
 | `static` | Ubuntu 基线 Node | `policy` | `npm run check`、文档严格校验、actionlint 和差异检查通过 |
 | `build` | Linux x64、macOS arm64，共 2 项 | `policy`，各自干净安装 | 构建、原生探测、现有前端产物预算及内容清单通过 |
 | `browser` | Ubuntu，Chromium/Firefox/WebKit，共 3 项 | Linux `build` | 本次静态产物的关键交互、三语、键盘和自动无障碍检查通过 |
-| `coverage` | Ubuntu 基线 Node | `policy`、同次 Linux `build` | 受控的 unit/contracts/tooling/integration 覆盖率、增量与可比基线策略通过；之后 e2e、pi-compat 两个 project 非空、无失败，安装测试消费本次归档（2026-11-08 起接手原 `test` 作业，原 `node-floor` 作业去掉，见 [ADR 0181](../../adr/0181-drop-node-floor-and-fold-test-into-coverage.md)） |
+| `coverage` | Ubuntu 基线 Node | `policy`、同次 Linux `build` | 受控的 unit/contracts/tooling/integration 覆盖率、增量与可比基线策略通过；之后 e2e、pi-compat 两个 project 非空、无失败，安装测试消费本次归档（2026-11-08 起接手原 `test` 作业，原 `node-floor` 作业去掉，见 [ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)） |
 | `security` | Ubuntu 基线 Node | `policy` | 密钥、依赖与静态安全分析全部完成且满足政策 |
 | `required` | Ubuntu | 上述全部 job 和矩阵结果 | 唯一显示名 `ci/required`，按第 8 节严格汇总 |
 
@@ -210,7 +210,7 @@ fixture browser 验证不是生产 Gateway 测试。WebKit 不是 Safari 品牌�
 
 ### 6. 代码覆盖率与核心安全断言
 
-使用与 Vitest `4.1.9` 精确匹配的 coverage provider。覆盖率 job 对 unit/contracts/tooling/integration 的进程内测试计算门禁，显式 include 全部 `apps/*/src`、`packages/*/src` 的生产 TS/TSX 和 `scripts/ci` 的自有执行代码。排除仅限声明文件、明确生成物、测试夹具和原样引入的第三方工具；`packages/testing` 按测试夹具责任显式登记。独立进程 integration、浏览器与 Pi 上游包另行验证，不假装已合并它们的执行覆盖率。2026-11-08 起，覆盖率 job 在覆盖率调用结束后接着执行 e2e、pi-compat，覆盖率范围不变（[ADR 0181](../../adr/0181-drop-node-floor-and-fold-test-into-coverage.md)）。
+使用与 Vitest `4.1.9` 精确匹配的 coverage provider。覆盖率 job 对 unit/contracts/tooling/integration 的进程内测试计算门禁，显式 include 全部 `apps/*/src`、`packages/*/src` 的生产 TS/TSX 和 `scripts/ci` 的自有执行代码。排除仅限声明文件、明确生成物、测试夹具和原样引入的第三方工具；`packages/testing` 按测试夹具责任显式登记。独立进程 integration、浏览器与 Pi 上游包另行验证，不假装已合并它们的执行覆盖率。2026-11-08 起，覆盖率 job 在覆盖率调用结束后接着执行 e2e、pi-compat，覆盖率范围不变（[ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）。
 
 2026-09-14 用户批准扩大采集项目。coverage 必须核验并消费同次 Linux build 的归档和 context；缺失或身份不符时不得开始采集，最终汇总核对其消费摘要。报告必须包含四个项目的完整执行，缺项、失败或跳过均阻断。旧政策仅迁移这一固定的新增项目、构建依赖和归档报告要求，其他已接受合同保留；增量阈值按下述 2026-09-15 授权调整。旧基线与候选使用同一新策略测量，不能用未更新的三项目数字直接比较。
 

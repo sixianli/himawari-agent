@@ -8,7 +8,7 @@ amends: "docs/adr/0176-ci-on-ovh-vps.md"
 date: "2026-11-08"
 ---
 
-# ADR 0181：去掉 node-floor 作业，把 test 作业并进 coverage 作业
+# ADR 0189：去掉 node-floor 作业，把 test 作业并进 coverage 作业
 
 <a id="contents"></a>
 
