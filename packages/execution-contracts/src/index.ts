@@ -11,6 +11,7 @@ export * from "./sandbox-execution-support.ts";
 export * from "./sandbox-execution-v1.ts";
 export * from "./sandbox-execution-v2.ts";
 export * from "./sandbox-host-binding-v1.ts";
+export * from "./sandbox-memory-limit.ts";
 export * from "./sandbox-operation-binding.ts";
 export * from "./sandbox-preparation-v2.ts";
 export * from "./sandbox-qualification-v1.ts";

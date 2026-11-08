@@ -287,7 +287,7 @@ describe("[P0-7] calibration report", () => {
       .map((line) => JSON.parse(line));
     expect(lines).toHaveLength(2);
     expect(lines[1]).toMatchObject({
-      schema: "himawari-calibration-week.v2",
+      schema: "himawari-calibration-week.v3",
       ownerId: "o",
       window: { start: "2026-10-25T15:00:00.000Z", end: "2026-11-01T15:00:00.000Z" },
       groups: [{ group: "memory_kept", total: 5, rated: 5, useful: 4, unneeded: 1, missed: 0 }],
@@ -427,7 +427,7 @@ describe("[P0-7] calibration report", () => {
     expect(stdout).toContain("| 读完邮件提醒了你 | 5 | 5 | 提醒得对 100.0%（5/5");
     const [line] = (await readFile(history, "utf8")).trim().split("\n");
     expect(JSON.parse(line as string)).toMatchObject({
-      schema: "himawari-calibration-week.v2",
+      schema: "himawari-calibration-week.v3",
       commit: "41a6ce3",
     });
   });
