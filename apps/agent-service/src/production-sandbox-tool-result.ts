@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   type CapabilityInvocationAuthority,
+  type CapabilityResourceCeiling,
   projectSandboxExecution,
   RECOVERY_SETTLE_WAIT_MS,
   type SandboxExecutionJournalPort,
@@ -18,8 +19,13 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import {
   FILE_WRITE_NOT_STARTED,
+  isSandboxCeilingExceededReason,
+  isSandboxOutputLimitReason,
   isSandboxToolResultLost,
+  SANDBOX_CPU_TIME_LIMIT,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_MEMORY_LIMIT,
+  SANDBOX_RESOURCE_LIMIT,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_NOT_STARTED,
   SRT_BACKEND_REF,
@@ -35,6 +41,7 @@ export interface SandboxToolCompletion {
   readonly errorCode: string | null;
   readonly externalActionId: null;
   readonly processExitCode?: number;
+  readonly resourceCeiling?: CapabilityResourceCeiling;
 }
 export interface SandboxToolDelivery {
   readonly resultRecovery?: {
@@ -111,10 +118,60 @@ export function failedCommandModelContent(
 }
 
 export {
+  SANDBOX_CPU_TIME_LIMIT,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_MEMORY_LIMIT,
+  SANDBOX_OUTPUT_LIMIT,
+  SANDBOX_RESOURCE_LIMIT,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_WRITE_EFFECT_UNVERIFIED,
 } from "@himawari-agent/execution-contracts";
+
+const limitAmount = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
+
+export function sandboxFailureKeepsOutput(input: {
+  readonly operationKind: SandboxOperationContract["kind"];
+  readonly reasonCode: string;
+  readonly hostResultRejected: boolean;
+}) {
+  return (
+    !input.hostResultRejected &&
+    input.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
+    input.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
+    !isSandboxCeilingExceededReason(input.reasonCode) &&
+    (input.reasonCode === "FILE_VERSION_CONFLICT" ||
+      input.reasonCode === FILE_WRITE_NOT_STARTED ||
+      input.operationKind === "fixed_read")
+  );
+}
+const limitBytes = (value: number) =>
+  value >= 1_000_000
+    ? `${limitAmount(value / 1_000_000)} MB`
+    : value >= 1_000
+      ? `${limitAmount(value / 1_000)} KB`
+      : `${value} 字节`;
+export function sandboxCeilingExceededMessage(
+  reasonCode: string,
+  ceiling: {
+    readonly maxCpuTimeMs: number;
+    readonly maxMemoryBytes: number;
+    readonly maxOutputBytes: number;
+  },
+): string | null {
+  if (isSandboxOutputLimitReason(reasonCode))
+    return `${reasonCode}：命令的输出（标准输出和标准错误合计）超过上限，已停止接收并完成清理，没有重新执行。本次允许的上限是输出 ${limitBytes(ceiling.maxOutputBytes)}。它可能已经修改了工作区，交给你的输出可能已被截断、拿不到完整内容；请缩小输出范围后重试（例如加筛选条件、只取开头几行、或把结果写进文件再分段读），或者说明这件事做不到。`;
+  const limits = `本次允许的上限是 CPU 时间 ${limitAmount(ceiling.maxCpuTimeMs / 1000)} 秒、内存 ${limitAmount(ceiling.maxMemoryBytes / 1_000_000)} MB`;
+  const crossed =
+    reasonCode === SANDBOX_CPU_TIME_LIMIT
+      ? "命令使用的 CPU 时间超过上限"
+      : reasonCode === SANDBOX_MEMORY_LIMIT
+        ? "命令使用的内存超过上限"
+        : reasonCode === SANDBOX_RESOURCE_LIMIT
+          ? "命令超过资源上限"
+          : null;
+  if (crossed === null) return null;
+  return `${reasonCode}：${crossed}，执行已结束并完成清理，没有重新执行。${limits}。它可能已经修改了工作区，部分输出不可用；请先检查当前状态，再用更省资源的做法重试，或者说明这件事做不到。`;
+}
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE =
   "工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";
 export const SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE =
@@ -304,6 +361,9 @@ export function createProductionSandboxToolResult(options: {
             effectKind: record.facts.effect.kind,
           });
       const processExitCode = commandEffectReason ? commandProcessExitCode(result) : undefined;
+      const failureReason =
+        (hostResultRejected ? result.reasonCode : commandEffectReason) ??
+        (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED");
       const completion: SandboxToolCompletion =
         projection.conclusion === "succeeded"
           ? {
@@ -317,18 +377,18 @@ export function createProductionSandboxToolResult(options: {
               outputRef:
                 processExitCode !== undefined ||
                 (result.kind === "error" &&
-                  !hostResultRejected &&
-                  result.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
-                  result.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
-                  (result.reasonCode === "FILE_VERSION_CONFLICT" ||
-                    result.reasonCode === FILE_WRITE_NOT_STARTED ||
-                    plan.operationContract.kind === "fixed_read"))
+                  sandboxFailureKeepsOutput({
+                    operationKind: plan.operationContract.kind,
+                    reasonCode: result.reasonCode,
+                    hostResultRejected,
+                  }))
                   ? result.output.ref
                   : null,
-              errorCode:
-                (hostResultRejected ? result.reasonCode : commandEffectReason) ??
-                (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED"),
+              errorCode: failureReason,
               externalActionId: null,
+              ...(isSandboxCeilingExceededReason(failureReason)
+                ? { resourceCeiling: plan.resourceCeiling }
+                : {}),
               ...(processExitCode === undefined ? {} : { processExitCode }),
             };
       await delivery.saveReceipt(completion);
