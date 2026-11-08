@@ -628,11 +628,12 @@ export async function installProductPath(options: {
       response.end(JSON.stringify({ user_uuid: subject, iat: Math.floor(Date.now() / 1000) }));
       return;
     }
-    let raw = "";
+    const received: Buffer[] = [];
     request.on("data", (chunk: Buffer | string) => {
-      raw += chunk;
+      received.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk);
     });
     request.on("end", () => {
+      const raw = Buffer.concat(received).toString("utf8");
       const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
       modelRequests.push({
         path: requestPath,

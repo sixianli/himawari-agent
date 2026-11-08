@@ -1,0 +1,28 @@
+{
+  "magpie": {
+    "version": "0.1.3240",
+    "assets": {
+      "linux-amd64": {
+        "url": "https://github.com/yetone/magpie-releases/releases/download/v0.1.3240/magpie-cli-linux-amd64",
+        "sha256": "1641bcef101dda1d6caae3addc126665b17ed540fff6afbcb5b64246233fa231"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/yetone/magpie-releases/releases/download/v0.1.3240/magpie-cli-linux-arm64",
+        "sha256": "8844d9a7771a82bd3a212e185e19ee5f42663658261434feb45db6f17f3b298b"
+      },
+      "darwin-amd64": {
+        "url": "https://github.com/yetone/magpie-releases/releases/download/v0.1.3240/magpie-cli-darwin-amd64",
+        "sha256": "567e37fdf5f2d8c792c890f3090c574a896446d508b112200fa5a015c5ffe086"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/yetone/magpie-releases/releases/download/v0.1.3240/magpie-cli-darwin-arm64",
+        "sha256": "1d559c26acebaa06db931461cfdeabafae5c029e9892ba0d39d8186590bd1114"
+      }
+    }
+  },
+  "plugin": {
+    "name": "@magpie-community/opencode-workbuddy-auth",
+    "version": "0.2.24",
+    "integrity": "sha512-PeKARV6cGE9wC4gnbbTsXcLQQB/hxW3Cm6z4I3SVHvPLgcLNIntbYVW87xuYLrSTrtZ6Ux9jLsCFvIl8IC7lHw=="
+  }
+}

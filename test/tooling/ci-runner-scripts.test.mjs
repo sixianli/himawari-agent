@@ -522,20 +522,26 @@ describe("pause-runners.sh", () => {
 });
 
 describe("resume-runners.sh", () => {
-  it("starts the services, waits for GitHub to see them online, then puts the label back", () => {
+  const startsServices = (line) => line.startsWith("ssh ") && line.includes("runner-resume.sh");
+
+  it("puts the label back before starting the services, then waits for GitHub to see them online", () => {
     const box = macBox({ labelled: false });
-    box.set("online-from", 3);
+    box.set("online-from", 4);
     const result = box.mac("resume-runners.sh");
     expect(result.stdout).toContain("RUNNER_RESUMED labels=restored");
     expect(result.status).toBe(0);
     expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
     const order = box.lines();
-    const start = order.findIndex((line) => line.includes("runner-resume.sh"));
-    const firstAdd = order.findIndex((line) => line.includes("-X POST"));
-    expect(start).toBeLessThan(firstAdd);
+    const start = order.findIndex(startsServices);
+    expect(start).toBeGreaterThan(-1);
+    const adds = order
+      .map((line, index) => (line.includes("-X POST") ? index : -1))
+      .filter((index) => index >= 0);
+    expect(adds).toHaveLength(2);
+    expect(Math.max(...adds)).toBeLessThan(start);
     expect(
-      order.slice(start, firstAdd).filter((line) => line.endsWith("@tsv")).length,
-    ).toBeGreaterThanOrEqual(3);
+      order.slice(start).filter((line) => line.endsWith("@tsv")).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it("changes nothing when the runners on the VPS and GitHub do not match", () => {
@@ -543,15 +549,9 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("RUNNER_RESUME_FAILED GitHub has 0 runners named ci-vps-2");
-    expect(
-      box
-        .lines()
-        .some(
-          (line) =>
-            (line.startsWith("ssh ") && line.includes("runner-resume.sh")) ||
-            line.includes("-X POST"),
-        ),
-    ).toBe(false);
+    expect(box.lines().some((line) => startsServices(line) || line.includes("-X POST"))).toBe(
+      false,
+    );
   });
 
   it("changes nothing when GitHub has two runners with the same name", () => {
@@ -569,38 +569,61 @@ describe("resume-runners.sh", () => {
     expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
   });
 
-  it("leaves the labels off and reports each service when the services do not start", () => {
+  it("does not start the services when a label could not be put back", () => {
+    const box = macBox({ labelled: false });
+    box.set("fail-add-12", "");
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "RUNNER_RESUME_INCOMPLETE labels: ci-vps-1=on ci-vps-2=off; services not started",
+    );
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": false });
+    expect(box.lines().some(startsServices)).toBe(false);
+  });
+
+  it("does not start the services when the labels cannot be read back", () => {
+    const box = macBox({ labelled: false });
+    box.set("fail-list-from", 2);
+    const result = box.mac("resume-runners.sh");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("ci-vps-1=unread ci-vps-2=unread; services not started");
+    expect(box.lines().some(startsServices)).toBe(false);
+  });
+
+  it("keeps the labels on and reports each service when the services do not start", () => {
     const box = macBox({ labelled: false });
     box.set("resume-fail", "");
     box.set("service-states", "gh-runner.service=active\ngh-runner-2.service=failed\n");
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "RUNNER_RESUME_FAILED services=gh-runner.service=active gh-runner-2.service=failed",
+      "RUNNER_RESUME_FAILED services=gh-runner.service=active gh-runner-2.service=failed labels=restored",
     );
-    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
   });
 
-  it("leaves the labels off when the runners never come online", () => {
+  it("keeps the labels on when the runners never come online", () => {
     const box = macBox({ labelled: false });
     box.set("online-from", 9999);
     box.late();
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(2);
     expect(result.stdout).toContain(
-      "RUNNER_RESUME_INCOMPLETE services=gh-runner.service=active gh-runner-2.service=active labels=removed",
+      "RUNNER_RESUME_INCOMPLETE services=gh-runner.service=active gh-runner-2.service=active labels=restored offline: ci-vps-1 ci-vps-2",
     );
-    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": true });
   });
 
   it("reports services and each label when interrupted while putting labels back", () => {
     const box = macBox({ labelled: false });
     box.set("interrupt-after-add-11", "");
+    box.set("service-states", "gh-runner.service=inactive\ngh-runner-2.service=inactive\n");
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(130);
     expect(result.stdout).toContain(
-      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: ci-vps-1=on ci-vps-2=off",
+      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=inactive gh-runner-2.service=inactive labels: ci-vps-1=on ci-vps-2=off",
     );
+    expect(box.lines().some(startsServices)).toBe(false);
   });
 
   it("reports services and labels when interrupted while waiting for the runners to come online", () => {
@@ -610,27 +633,25 @@ describe("resume-runners.sh", () => {
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(130);
     expect(result.stdout).toContain(
-      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: ci-vps-1=off ci-vps-2=off",
+      "RUNNER_RESUME_INCOMPLETE interrupted services=gh-runner.service=active gh-runner-2.service=active labels: ci-vps-1=on ci-vps-2=on",
     );
-    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
   });
 
   it("says GitHub could not be read instead of calling the runners offline", () => {
     const box = macBox({ labelled: false });
-    box.set("fail-list-from", 2);
+    box.set("fail-list-from", 3);
     box.late();
     const result = box.mac("resume-runners.sh");
     expect(result.status).toBe(2);
     expect(result.stdout).toContain("offline: (could not read GitHub)");
   });
 
-  it("reports the runner whose label could not be put back", () => {
-    const box = macBox({ labelled: false });
-    box.set("fail-add-12", "");
+  it("does not add a label that is already there", () => {
+    const box = macBox({ labelled: true });
     const result = box.mac("resume-runners.sh");
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("labels: ci-vps-1=on ci-vps-2=off");
-    expect(box.labelState()).toEqual({ "ci-vps-1": true, "ci-vps-2": false });
+    expect(result.status).toBe(0);
+    expect(box.lines().some((line) => line.includes("-X POST"))).toBe(false);
+    expect(box.lines().some(startsServices)).toBe(true);
   });
 });
 
