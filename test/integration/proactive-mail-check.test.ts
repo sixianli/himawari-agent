@@ -28,7 +28,10 @@ import {
   ScriptedModelPort,
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { applyBackoffWrites } from "../../packages/persistence-sqlite/src/proactive-push-backoff.ts";
+import {
+  applyBackoffWrites,
+  countIgnoredPushes,
+} from "../../packages/persistence-sqlite/src/proactive-push-backoff.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-proactive");
@@ -1137,6 +1140,30 @@ describe("proactive Gmail check acceptance", () => {
           h.clock.now(),
         );
         expect(row()).toEqual([{ stage: 0, ignored: 1000 }]);
+      } finally {
+        database.close();
+      }
+    });
+
+    it("orders pushes sent in the same millisecond by push key, so the count is the same on every read", async () => {
+      const h = await harness();
+      const first = await pushDue(h, "same-ms-1");
+      const second = await pushDue(h, "same-ms-2");
+      sent(h, first?.pushSourceKey ?? null, h.clock.now());
+      sent(h, second?.pushSourceKey ?? null);
+      h.clock.advance(25 * HOUR);
+      const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+      try {
+        const read = () =>
+          countIgnoredPushes(
+            database,
+            { ownerId: OWNER_ID, agentId: AGENT_ID },
+            CLASS_KEY,
+            "1970-01-01T00:00:00.000Z",
+            h.clock.now(),
+            24 * HOUR,
+          );
+        expect([read(), read(), read()]).toEqual([1, 1, 1]);
       } finally {
         database.close();
       }
