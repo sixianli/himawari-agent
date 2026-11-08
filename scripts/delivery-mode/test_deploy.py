@@ -263,15 +263,30 @@ class KernelPreflightTest(unittest.TestCase):
     def entry_id(self, kernel, kind='advanced'):
         return 'gnulinux-' + kernel + '-' + kind + '-' + self.UUID
 
-    def grub_config(self, default='${saved_entry}', linux='linux', boot='/boot'):
+    PRODUCTION_HEADER = [
+        'if [ -s $prefix/grubenv ]; then', '  set have_grubenv=true', '  load_env', 'fi',
+        'if [ "${initrdfail}" = 2 ]; then', '   set initrdfail=', 'elif [ "${initrdfail}" = 1 ]; then',
+        '   set next_entry="${prev_entry}"', '   set prev_entry=', '   save_env prev_entry', '   if [ "${next_entry}" ]; then',
+        '      set initrdfail=2', '   fi', '   save_env initrdfail', 'fi',
+        'if [ "${next_entry}" ] ; then', '   set default="${next_entry}"', '   set next_entry=', '   save_env next_entry', '   set boot_once=true', 'else',
+        '   set default="${saved_entry}"', 'fi',
+        'if [ x"${feature_menuentry_id}" = xy ]; then', '  menuentry_id_option="--id"', 'else', '  menuentry_id_option=""', 'fi',
+        'export menuentry_id_option',
+        'if [ "${prev_saved_entry}" ]; then', '  set saved_entry="${prev_saved_entry}"', '  save_env saved_entry', '  set prev_saved_entry=', '  save_env prev_saved_entry', '  set boot_once=true', 'fi',
+        'function savedefault {', '  if [ -z "${boot_once}" ]; then', '    saved_entry="${chosen}"', '    save_env saved_entry', '  fi', '}']
+
+    def grub_config(self, default='${saved_entry}', linux='linux', boot='/boot', header=None):
         def entry(title, ident, kernel, indent):
             return [indent + "menuentry '" + title + "' --class ubuntu --class gnu-linux --class gnu --class os $menuentry_id_option '" + ident + "' {",
                     indent + '\trecordfail', indent + '\tload_video', indent + "\tif [ x$grub_platform = xxen ]; then insmod xzio; insmod lzopio; fi",
                     indent + '\t' + linux + '\t' + boot + '/vmlinuz-' + kernel + ' root=UUID=' + self.UUID + ' ro console=tty1 console=ttyS0',
                     indent + '\tinitrd\t/boot/initrd.img-' + kernel, indent + '}']
-        lines = ['if [ -s $prefix/grubenv ]; then', '  set have_grubenv=true', '  load_env', 'fi',
-                 'if [ "${next_entry}" ] ; then', '   set default="${next_entry}"', '   set next_entry=', '   save_env next_entry', '   set boot_once=true', 'else', '   set default="' + default + '"', 'fi',
-                 'function savedefault {', '  if [ -z "${boot_once}" ]; then', '    saved_entry="${chosen}"', '    save_env saved_entry', '  fi', '}']
+        if header is None:
+            lines = ['if [ -s $prefix/grubenv ]; then', '  set have_grubenv=true', '  load_env', 'fi',
+                     'if [ "${next_entry}" ] ; then', '   set default="${next_entry}"', '   set next_entry=', '   save_env next_entry', '   set boot_once=true', 'else', '   set default="' + default + '"', 'fi',
+                     'function savedefault {', '  if [ -z "${boot_once}" ]; then', '    saved_entry="${chosen}"', '    save_env saved_entry', '  fi', '}']
+        else:
+            lines = list(header)
         lines += entry('Ubuntu', 'gnulinux-simple-' + self.UUID, '6.8.0-147-generic', '')
         lines.append("submenu 'Advanced options for Ubuntu' $menuentry_id_option '" + self.ADVANCED + "' {")
         for kernel in ('6.8.0-147-generic', '6.8.0-142-generic'):
@@ -313,6 +328,12 @@ class KernelPreflightTest(unittest.TestCase):
         self.assertEqual(self.next_boot(saved_entry='1>2'), ('6.8.0-142-generic',) * 2)
         self.assertEqual(self.next_boot(saved_entry='Advanced options for Ubuntu>Ubuntu, with Linux 6.8.0-142-generic'), ('6.8.0-142-generic',) * 2)
         self.assertEqual(self.next_boot(saved_entry='gnulinux-simple-' + self.UUID), ('6.8.0-147-generic',) * 2)
+
+    def test_the_header_read_from_the_production_grub_cfg_on_november_8_passes(self):
+        saved = self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')
+        config = self.grub_config(header=self.PRODUCTION_HEADER)
+        self.assertEqual(self.next_boot(config=config, saved_entry=saved), ('6.8.0-142-generic',) * 2)
+        self.assertEqual(self.next_boot(config=config, saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-147-generic')), ('6.8.0-147-generic',) * 2)
 
     def test_grub_not_booting_the_saved_entry_gives_no_answer(self):
         self.assertEqual(self.next_boot(config=self.grub_config(default='0'), saved_entry=self.ADVANCED + '>' + self.entry_id('6.8.0-142-generic')), ('', ''))
