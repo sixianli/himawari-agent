@@ -608,6 +608,26 @@ export function opencodeEnv(env) {
 }
 export const SHELL_LOG_NAME = "review-shell.log";
 
+export function opencodeChildEnv({ parentEnv, cwd, configPath, limitsPath, gitGuard, extraEnv }) {
+  return {
+    ...opencodeEnv(parentEnv),
+    ...extraEnv,
+    PWD: cwd,
+    OPENCODE_CONFIG: configPath,
+    OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+    ...(limitsPath ? { [GUARD_ENV]: limitsPath } : {}),
+    XDG_CONFIG_HOME: gitGuard.configHome,
+    OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
+    GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_PAGER: "cat",
+    PAGER: "cat",
+    PATH: `${gitGuard.binDir}${delimiter}${parentEnv.PATH ?? ""}`,
+    SHELL: gitGuard.shell,
+  };
+}
+
 export function gitChildEnv(env) {
   const kept = Object.fromEntries(
     GIT_KEPT_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
@@ -652,6 +672,7 @@ export function installGitGuard(workRoot) {
     [
       "#!/bin/sh",
       `echo "$$" >> ${JSON.stringify(join(workRoot, SHELL_LOG_NAME))}`,
+      "unset LC_ALL",
       "export LC_MESSAGES=C",
       `exec ${JSON.stringify(realBash)} -r "$@"`,
       "",
@@ -711,23 +732,14 @@ function runOpencode({
       ],
       {
         cwd,
-        env: {
-          ...opencodeEnv(process.env),
-          PWD: cwd,
-          OPENCODE_CONFIG: configPath,
-          OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-          ...(guardFiles ? { [GUARD_ENV]: guardFiles.limitsPath } : {}),
-          XDG_CONFIG_HOME: gitGuard.configHome,
-          OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
-          GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_CONFIG_GLOBAL: "/dev/null",
-          GIT_PAGER: "cat",
-          PAGER: "cat",
-          PATH: `${gitGuard.binDir}${delimiter}${process.env.PATH ?? ""}`,
-          SHELL: gitGuard.shell,
-          ...extraEnv,
-        },
+        env: opencodeChildEnv({
+          parentEnv: process.env,
+          cwd,
+          configPath,
+          limitsPath: guardFiles?.limitsPath,
+          gitGuard,
+          extraEnv,
+        }),
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,
       },
