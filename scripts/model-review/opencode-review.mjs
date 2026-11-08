@@ -2006,7 +2006,7 @@ function startProbeServer(probes) {
 export const REFUSAL_PATTERNS = [
   /^The user has specified a rule which prevents you/,
   new RegExp(`^${GIT_REFUSED} \\S`),
-  /^\S+: (line \d+: )?[^\n]*: restricted/,
+  /^(?:\S*\/)?(?:ba)?sh: (line \d+: )?[^\n]*: restricted/,
 ];
 
 export function probeRefused(call) {
@@ -2133,7 +2133,11 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, ga
         model: launchModel(model, gateway),
         prompt: "probe",
         timeoutMs,
-        extraEnv: { [REVIEW_CANARY_ENV]: plan.marker, ...(gateway ? gatewayOpencodeEnv() : {}) },
+        extraEnv: {
+          [REVIEW_CANARY_ENV]: plan.marker,
+          LC_ALL: "C",
+          ...(gateway ? gatewayOpencodeEnv() : {}),
+        },
         guard: { totalUsd: GUARD_PROBE_OPEN_USD },
       });
       if (!run.guard?.loaded) problems.push(`${model}: GUARD_NOT_LOADED`);

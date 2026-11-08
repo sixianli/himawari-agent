@@ -799,6 +799,18 @@ describe("opencode review self-check", () => {
           "1f16c11b fix: The user has specified a rule which prevents you 也可能出现在标题里\n",
       }),
     ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: [
+          "commit aff8e4eebf86989c6d07890c3ad1197379363e2e",
+          "Author: f: restricted <nobody@example.org>",
+          "Date:   Sun Nov 8 16:30:00 2026 +0900",
+          "",
+          "    fix: 作者名也不该被当成 shell 的报错",
+        ].join("\n"),
+      }),
+    ).toBe(false);
   });
 
   it("fails when a write probe failed for an unrelated reason", () => {
@@ -1043,9 +1055,24 @@ describe("opencode review installed guard", () => {
         });
         return { status: result.status, text: result.stdout + result.stderr };
       };
-      expect(viaShell('git log -1 "--output=../written.txt"').text).toContain(GIT_REFUSED);
-      expect(viaShell("git log -1 --oneline > written.txt").text).toContain("restricted");
-      expect(viaShell(`cd ${root}`).text).toContain("restricted");
+      const guardRefused = viaShell('git log -1 "--output=../written.txt"').text;
+      const redirectRefused = viaShell("git log -1 --oneline > written.txt").text;
+      const cdRefused = viaShell(`cd ${root}`).text;
+      expect(guardRefused).toContain(GIT_REFUSED);
+      expect(redirectRefused).toContain("restricted");
+      expect(cdRefused).toContain("restricted");
+      for (const output of [guardRefused, redirectRefused, cdRefused])
+        expect(probeRefused({ status: "completed", output })).toBe(true);
+      for (const command of [
+        "git log -1 --oneline",
+        "git show --stat HEAD",
+        "git blame -L 1,1 -- AGENTS.md",
+        "git status --short",
+      ]) {
+        const allowedRun = viaShell(command);
+        expect(allowedRun.status).toBe(0);
+        expect(probeRefused({ status: "completed", output: allowedRun.text })).toBe(false);
+      }
       viaShell("export GIT_EXTERNAL_DIFF=touch; git diff HEAD~1 HEAD");
       viaShell(
         "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=touch; git diff HEAD~1 HEAD",
@@ -1057,7 +1084,7 @@ describe("opencode review installed guard", () => {
       expect(viaShell("export GIT_EXTERNAL_DIFF=env; git diff HEAD~1 HEAD").text).not.toContain(
         canary,
       );
-      expect(readFileSync(join(root, SHELL_LOG_NAME), "utf8").trim().split("\n").length).toBe(6);
+      expect(readFileSync(join(root, SHELL_LOG_NAME), "utf8").trim().split("\n").length).toBe(10);
       const allowed = viaShell("git log -1 --format=%H");
       expect(allowed.status).toBe(0);
       expect(allowed.text.trim()).toMatch(/^[0-9a-f]{40}$/);
