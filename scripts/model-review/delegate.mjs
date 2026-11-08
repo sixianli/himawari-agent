@@ -297,13 +297,17 @@ export function checkResult(task, { repo, fetch = true }) {
   const expectedRound =
     task.round ?? nextRound(earlier, roundDirectories(repo, task.tip, recordsDir));
   const expectedModels = parseArgs(reviewArgv(task)).models;
-  const tipConfig = showFile(repo, task.tip, GATEWAY_JSON_PATH);
-  const allowedProviders =
-    task.providers ??
-    (tipConfig === null
-      ? fail("DELEGATION_NO_GATEWAY_CONFIG")
-      : JSON.parse(tipConfig)
-    ).providers.map((item) => item.id);
+  const providersFromTip = () => {
+    const text = showFile(repo, task.tip, GATEWAY_JSON_PATH);
+    let ids = null;
+    try {
+      ids = JSON.parse(text).providers.map((item) => item.id);
+    } catch {
+      return fail("DELEGATION_NO_GATEWAY_CONFIG");
+    }
+    return ids.every((id) => typeof id === "string") ? ids : fail("DELEGATION_NO_GATEWAY_CONFIG");
+  };
+  const allowedProviders = task.providers ?? providersFromTip();
   const problems = [];
   for (const record of added) {
     const round = record.round ?? 1;
@@ -358,11 +362,10 @@ export function checkResult(task, { repo, fetch = true }) {
     added.some(
       (record) =>
         record.outcome === "ok" &&
-        (record.model === model || (record.substitute && record.substituteFor === model)),
+        ((record.model === model && !record.substitute) ||
+          (record.substitute && record.substituteFor === model)),
     );
-  const notOk = [...new Set(added.map((record) => record.model))].filter(
-    (model) => !finished(model),
-  );
+  const notOk = expectedModels.filter((model) => !finished(model));
   const estimated = added.some((record) => record.costUnknown || record.inFlight);
   return { status: "ok", remote, added, spent, notOk, estimated };
 }

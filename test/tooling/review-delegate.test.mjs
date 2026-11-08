@@ -670,6 +670,38 @@ describe("review delegation result check, legitimate edge cases", () => {
   );
 
   it(
+    "[delegate] does not let a model's own failure be hidden by its success as a substitute",
+    withFixture((f) => {
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+          f.record(deepseek),
+          f.record(glm, { outcome: "timeout" }),
+          f.record(glm, { substitute: true, substituteFor: deepseek }),
+        ]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "substitute");
+      expect(checkResult(f.task, { repo: f.mac })).toMatchObject({ status: "ok", notOk: [glm] });
+    }),
+  );
+
+  it(
+    "[delegate] stops with a clear code when the handover gateway.json is not valid",
+    withFixture((f) => {
+      f.commit(f.mac, { "scripts/model-review/gateway.json": "{not json" }, "broken config");
+      f.run(f.mac, "push", "--quiet", "origin", "feature");
+      const task = { ...f.task, providers: undefined, tip: f.run(f.mac, "rev-parse", "HEAD") };
+      f.run(f.cloud, "pull", "--quiet", "origin", "feature");
+      cloudFiles(f, {
+        [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([f.record(deepseek), f.record(glm)]),
+        ...f.files([deepseek, glm]),
+      });
+      commitCloud(f, "result");
+      expect(() => checkResult(task, { repo: f.mac })).toThrow("DELEGATION_NO_GATEWAY_CONFIG");
+    }),
+  );
+
+  it(
     "[delegate] refuses appended ledger lines that repeat a line already in the ledger",
     withFixture((f) => {
       const earlier = f.record(deepseek, { round: 1, outcome: "timeout" });
