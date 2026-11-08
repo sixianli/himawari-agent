@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -13,6 +12,14 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  cacheEnvironmentKey,
+  downloadVerified,
+  explicitCacheDirectory,
+  pruneCache,
+  runnerCacheDirectory,
+  sha256Of,
+} from "./verified-download.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const platforms = ["darwin-arm64", "linux-x64"];
@@ -23,7 +30,7 @@ const downloadHosts = new Set([
   "registry.npmjs.org",
   "files.pythonhosted.org",
 ]);
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const sha256 = sha256Of;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -258,44 +265,15 @@ export function verifyDownload(bytes, expected) {
   return actual;
 }
 
-const downloadAttempts = 3;
-
-function waitBeforeRetry() {
-  return new Promise((resolveWait) => setTimeout(resolveWait, 10_000 + Math.random() * 10_000));
-}
-
-function networkFailure(error) {
-  const cause = error.cause;
-  return [error.message, cause?.code, cause?.message].filter(Boolean).join(": ");
-}
-
-async function fetchArtifact(expected, fetchImplementation, wait) {
-  const host = new URL(expected.url).hostname;
-  for (let attempt = 1; ; attempt += 1) {
-    let reason;
-    let retryable;
-    try {
-      const response = await fetchImplementation(expected.url, {
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (response.ok) return Buffer.from(await response.arrayBuffer());
-      reason = `HTTP ${response.status}`;
-      retryable = response.status >= 500 || response.status === 408 || response.status === 429;
-    } catch (error) {
-      reason = networkFailure(error);
-      retryable = true;
-    }
-    const summary = `${expected.filename} 来自 ${host}，第 ${attempt} 次 (${reason})`;
-    if (!retryable || attempt >= downloadAttempts) throw new Error(`工具下载失败: ${summary}`);
-    console.error(`工具下载重试: ${summary}`);
-    await wait(attempt);
-  }
-}
-
 export async function downloadArtifact(
   expected,
   directory,
-  { fetch: fetchImplementation = fetch, wait = waitBeforeRetry } = {},
+  {
+    fetch: fetchImplementation = fetch,
+    wait,
+    cacheDirectory = explicitCacheDirectory(),
+    ...options
+  } = {},
 ) {
   artifact(expected);
   mkdirSync(directory, { recursive: true });
@@ -304,8 +282,12 @@ export async function downloadArtifact(
     verifyDownload(readFileSync(path), expected);
     return path;
   }
-  const bytes = await fetchArtifact(expected, fetchImplementation, wait);
-  verifyDownload(bytes, expected);
+  const bytes = await downloadVerified(expected, {
+    fetch: fetchImplementation,
+    cacheDirectory,
+    ...(wait ? { wait } : {}),
+    ...options,
+  });
   const partial = `${path}.${process.pid}.partial`;
   writeFileSync(partial, bytes);
   renameSync(partial, path);
@@ -617,7 +599,11 @@ if (
         else if (argument === "--node" && args[index + 1]) options.nodeVersion = args[++index];
         else throw new Error(`未知工具安装参数: ${argument}`);
       }
-      console.log(JSON.stringify(await installTools(options), null, 2));
+      const cacheDirectory = runnerCacheDirectory();
+      if (cacheDirectory) process.env[cacheEnvironmentKey] = cacheDirectory;
+      const record = await installTools(options);
+      pruneCache(cacheDirectory);
+      console.log(JSON.stringify(record, null, 2));
     }
   } catch (error) {
     console.error(error.message);

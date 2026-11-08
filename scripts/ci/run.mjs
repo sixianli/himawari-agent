@@ -33,6 +33,7 @@ import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
+import { cacheEnvironment } from "./verified-download.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 const json = (filename, value) =>
@@ -151,6 +152,7 @@ export async function runCheck({
           .filter((key) => process.env[key] !== undefined)
           .map((key) => [key, process.env[key]]),
       ),
+      ...cacheEnvironment(process.env),
       HIMAWARI_CI_PYTHON: tools.python,
       HIMAWARI_CI_NPM: tools.npmCli,
       PLAYWRIGHT_BROWSERS_PATH:

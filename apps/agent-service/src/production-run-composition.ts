@@ -31,41 +31,42 @@ import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/acti
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
+import type { ProductionBackgroundCommands } from "./production-background-commands.js";
+import { ProductionBackgroundRuns } from "./production-background-runs.js";
+import {
+  ProductionMemoryCapture,
+  type ProductionMemoryCaptureOptions,
+} from "./production-memory-capture.js";
 import {
   ProductionRunDispatchLoop,
   type ProductionRunDispatchLoopFailure,
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
-import type { ProductionBackgroundCommands } from "./production-background-commands.js";
-import { ProductionBackgroundRuns } from "./production-background-runs.js";
-import { createProductionRunReconciler } from "./production-run-reconciler.js";
 import { createProductionRunExpiry } from "./production-run-expiry.js";
-import {
-  ProductionMemoryCapture,
-  type ProductionMemoryCaptureOptions,
-} from "./production-memory-capture.js";
+import { createProductionRunReconciler } from "./production-run-reconciler.js";
 
 type ProductionMemoryCaptureRecall = NonNullable<
   ReturnType<NonNullable<ProductionMemoryCaptureOptions["relevantMemoryIds"]>>
 >[number];
-import {
-  ProductionMemoryEpisodes,
-  type ProductionMemoryEpisodesOptions,
-} from "./production-memory-episodes.js";
+
 import {
   ProductionMemoryConsolidation,
   type ProductionMemoryConsolidationOptions,
 } from "./production-memory-consolidation.js";
+import {
+  ProductionMemoryEpisodes,
+  type ProductionMemoryEpisodesOptions,
+} from "./production-memory-episodes.js";
 import type { ModelUsageRecording } from "./production-model-composition.js";
-import { ProductionThreadTitles } from "./production-thread-titles.js";
-import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 import {
   currentRunId,
   ProductionRunTimings,
   type RunTimingDiagnostic,
 } from "./production-run-timing.js";
+import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionTitledRuntime } from "./production-titled-runtime.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
+import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 
 export interface ProductionRunCompositionOptions {
   readonly egress: ModelEgress;
@@ -446,6 +447,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         clock,
         authority: () => authority.authorityFence(),
         assertActive: () => authority.assertActive(),
+        externalTag: () => options.egress.externalTag(),
         generate: async (request, prompt, onAdmitted) => {
           const gate = await admission(request);
           if (!gate || !options.generateTitle)
@@ -493,6 +495,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         protector,
         clock,
         assertActive: () => authority.assertActive(),
+        externalTag: () => options.egress.externalTag(),
         generate: (request, prompt, onAdmitted) =>
           auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-capture"),
         onAudit: memoryCaptureOptions.onAudit,

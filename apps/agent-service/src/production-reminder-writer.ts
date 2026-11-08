@@ -13,16 +13,13 @@ import type {
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import {
-  containsRestrictedIdentifier,
-  scanMachineSecrets,
-} from "@himawari-agent/sensitive-capture";
-import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
   TOOL_REMINDER_SET,
   TOOL_RESULT_REMINDER_SET,
 } from "@himawari-agent/prompt-catalog";
 import { reminderSchedule } from "./production-memory-capture.js";
+import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";
@@ -189,13 +186,7 @@ export class ProductionReminderWriter {
       text = (input.text ?? "").trim();
       contentRef = `memory-content:reminder:${input.key}`;
     }
-    if (
-      text === undefined ||
-      text.trim().length === 0 ||
-      text.length > MAXIMUM_TEXT ||
-      scanMachineSecrets(text).length > 0 ||
-      containsRestrictedIdentifier(text)
-    )
+    if (text === undefined || text.trim().length === 0 || text.length > MAXIMUM_TEXT)
       throw new ReminderInputError(
         text === undefined || text.trim().length === 0
           ? "REMINDER_INPUT_INVALID"
@@ -211,7 +202,7 @@ export class ProductionReminderWriter {
           ...this.#scope(),
           ref: contentRef,
           contentType: "text/plain",
-          dataClassification: "private",
+          dataClassification: classificationWithIdentifiers(text, "private"),
           plaintext: new TextEncoder().encode(text),
           createdAt: now,
         }),

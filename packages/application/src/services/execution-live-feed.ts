@@ -1,6 +1,4 @@
-import { machineSecretHoldStart } from "@himawari-agent/sensitive-capture";
 import { executionMessageItemId } from "./thread-execution-projection.js";
-import { redactTracePayload } from "./trace-redaction.js";
 
 export type ExecutionLiveEvent =
   | {
@@ -43,9 +41,7 @@ export class ExecutionLiveFeed {
   }): void {
     if (!input.threadId) return;
     const itemId = executionMessageItemId(input.runId, input.timestamp);
-    const holdStart = machineSecretHoldStart(input.text);
-    const redacted = redactTracePayload(input.text.slice(0, holdStart ?? input.text.length));
-    const shown = typeof redacted === "string" ? redacted : "";
+    const shown = input.text;
     const prior = this.#texts.get(input.runId);
     const base = prior?.itemId === itemId ? prior.shown : "";
     if (prior && shown === base) return;
