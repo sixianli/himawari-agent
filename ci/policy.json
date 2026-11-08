@@ -60,46 +60,6 @@
       "outputs": ["json", "artifact"]
     },
     {
-      "id": "test",
-      "needs": ["policy", "build"],
-      "timeoutMinutes": 90,
-      "members": [
-        {
-          "key": "linux-x64",
-          "runner": "ci-vps",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.22.3"
-        },
-        {
-          "key": "macos-arm64",
-          "runner": "macos-15",
-          "os": "darwin",
-          "arch": "arm64",
-          "node": "22.22.3",
-          "paused": true
-        }
-      ],
-      "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
-      "outputs": ["json", "junit", "artifact"]
-    },
-    {
-      "id": "node-floor",
-      "needs": ["policy"],
-      "timeoutMinutes": 90,
-      "members": [
-        {
-          "key": "default",
-          "runner": "ci-vps",
-          "os": "linux",
-          "arch": "x64",
-          "node": "22.19.0"
-        }
-      ],
-      "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
-      "outputs": ["json", "junit"]
-    },
-    {
       "id": "browser",
       "needs": ["build"],
       "timeoutMinutes": 90,
@@ -145,7 +105,7 @@
           "node": "22.22.3"
         }
       ],
-      "projects": ["unit", "contracts", "tooling", "integration"],
+      "projects": ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"],
       "outputs": ["json", "lcov", "artifact"]
     },
     {
@@ -166,16 +126,7 @@
     },
     {
       "id": "required",
-      "needs": [
-        "policy",
-        "static",
-        "build",
-        "test",
-        "node-floor",
-        "browser",
-        "coverage",
-        "security"
-      ],
+      "needs": ["policy", "static", "build", "browser", "coverage", "security"],
       "timeoutMinutes": 15,
       "members": [
         {

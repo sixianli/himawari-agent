@@ -194,14 +194,20 @@ vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
   },
 }));
 vi.mock("../../scripts/ci/test.mjs", () => ({
-  runTests: async ({ output, artifact }) => {
+  runTests: async ({ output, artifact, projects }) => {
     const report = path.join(output, "tests.json");
     write(report, { status: "passed" });
     return {
       artifact: { path: artifact },
       exitCode: state.pipelineExitCode,
-      counts: { files: 5, executed: 5, passed: 5, failed: 0, skipped: 0 },
-      projects: ["unit", "contracts", "integration", "e2e", "pi-compat"].map((id) => ({
+      counts: {
+        files: projects.length,
+        executed: projects.length,
+        passed: projects.length,
+        failed: 0,
+        skipped: 0,
+      },
+      projects: projects.map((id) => ({
         id,
         counts: counts(),
       })),
@@ -333,7 +339,6 @@ describe("共享runner的调度、来源和失败传播", () => {
         expect(existsSync(state.parallel.owned)).toBe(true);
         expect(state.calls.some(({ name }) => name === "coverage-policy")).toBe(false);
         state.parallel.releaseCoverage.resolve();
-        // Comparison still owns its directory even if candidate collection failed.
         await new Promise((done) => setImmediate(done));
         expect(existsSync(state.parallel.owned)).toBe(true);
       } finally {
@@ -424,22 +429,22 @@ describe("共享runner的调度、来源和失败传播", () => {
     },
   );
   it.each(["failed", "passed", "missing", "malformed"])(
-    "覆盖率进程失败时保留四组实际测试计数与退出码：%s",
+    "覆盖率进程失败时保留实际测试计数与退出码，e2e 和 pi-compat 照常执行：%s",
     async (report) => {
       state.testReportFailure = report;
       const result = await run("coverage");
       expect(result).toMatchObject({ status: "failed", exitCode: 7 });
       expect(result.counts).toEqual(
         report === "failed"
-          ? { files: 4, executed: 8, passed: 4, failed: 4, skipped: 0 }
+          ? { files: 6, executed: 10, passed: 6, failed: 4, skipped: 0 }
           : report === "passed"
-            ? { files: 4, executed: 4, passed: 4, failed: 0, skipped: 0 }
-            : { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 },
+            ? { files: 6, executed: 6, passed: 6, failed: 0, skipped: 0 }
+            : { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 },
       );
       expect(result.projects.map(({ id }) => id)).toEqual(
         ["failed", "passed"].includes(report)
-          ? ["unit", "contracts", "tooling", "integration"]
-          : [],
+          ? ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"]
+          : ["e2e", "pi-compat"],
       );
       expect(state.calls.map(({ name }) => name)).toEqual(["coverage-snapshot", "coverage"]);
       const details = JSON.parse(
@@ -490,22 +495,15 @@ describe("共享runner的调度、来源和失败传播", () => {
       outcome: "passed",
     });
   });
-  it("同一归档的build、test、browser分别记录produced/consumed身份", async () => {
+  it("同一归档的build、browser分别记录produced/consumed身份", async () => {
     const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
     const build = await run("build", { matrixKey: platform });
     const artifact = path.join(state.root, ".ci-output/build", build.artifacts[0].path);
-    const test = await run("test", { matrixKey: platform, artifact });
     const browser = await run("browser", { matrixKey: "chromium", artifact });
-    expect([build, test, browser].map((result) => result.status)).toEqual([
-      "passed",
-      "passed",
-      "passed",
-    ]);
-    expect(test.artifacts[0].sha256).toBe(build.artifacts[0].sha256);
+    expect([build, browser].map((result) => result.status)).toEqual(["passed", "passed"]);
     expect(browser.artifacts[0].sha256).toBe(build.artifacts[0].sha256);
     expect(build.artifacts[0].role).toBe("produced");
-    expect(test.artifacts[0].role).toBe("consumed");
-    expect(test.projects).toHaveLength(5);
+    expect(browser.artifacts[0].role).toBe("consumed");
   });
   it("coverage先绑定源码快照，四个project合并后再判定覆盖率", async () => {
     const result = await run("coverage");
@@ -515,12 +513,17 @@ describe("共享runner的调度、来源和失败传播", () => {
       "contracts",
       "tooling",
       "integration",
+      "e2e",
+      "pi-compat",
     ]);
     expect(state.calls.map((entry) => entry.name)).toEqual([
       "coverage-snapshot",
       "coverage",
       "coverage-policy",
     ]);
+    expect(
+      state.calls[1].args.filter((_arg, index, args) => args[index - 1] === "--project"),
+    ).toEqual(["unit", "contracts", "tooling", "integration"]);
     const args = state.calls[2].args;
     expect(args).toContain("--snapshot");
     expect(args).toContain("--tests");
@@ -689,11 +692,12 @@ describe("共享runner的调度、来源和失败传播", () => {
       ).status,
     ).not.toBe("passed");
   });
-  it("托管平台与Node floor身份错误直接拒绝", async () => {
+  it("托管平台身份错误直接拒绝，退役的 node-floor 和 test 检查不再受理", async () => {
     const other = process.platform === "darwin" ? "linux-x64" : "macos-arm64";
     const wrong = await run("build", { matrixKey: other, hosted: true });
     expect(wrong.status).toBe("infrastructure_failed");
     expect(state.calls).toEqual([]);
-    expect((await run("node-floor")).status).toBe("infrastructure_failed");
+    await expect(run("node-floor")).rejects.toThrow("CI_CHECK_UNSUPPORTED:node-floor");
+    await expect(run("test")).rejects.toThrow("CI_CHECK_UNSUPPORTED:test");
   });
 });

@@ -38,6 +38,7 @@ const roots = [];
 const files = {
   unit: "packages/example/example.unit.test.ts",
   contracts: "packages/example/example.contract.test.ts",
+  tooling: "test/tooling/example.test.mjs",
   integration: "test/integration/example.test.ts",
   e2e: "test/e2e/example.test.ts",
   "pi-compat": "packages/runtime-pi/example.compat.test.ts",
@@ -79,26 +80,42 @@ describe("test runner timeout environment", () => {
       put(root, "package.json", '{"type":"module"}');
       put(root, "npm.mjs", "process.stdout.write('11.8.0')");
       put(root, "runtime.tar.gz", "immutable transport fixture");
+      put(
+        root,
+        "scripts/ci/check-coverage.mjs",
+        `
+      import { writeFileSync } from 'node:fs';
+      writeFileSync(process.argv[process.argv.indexOf('--output') + 1], '{}');
+    `,
+      );
       for (const file of Object.values(files)) put(root, file, "export {};\n");
       put(
         root,
         "node_modules/vitest/vitest.mjs",
         `
-      import { writeFileSync } from 'node:fs';
+      import { mkdirSync, writeFileSync } from 'node:fs';
       import path from 'node:path';
-      const id = process.argv[process.argv.indexOf('--project') + 1];
       const files = ${JSON.stringify(files)};
-      writeFileSync(path.resolve(id + '-environment.json'), JSON.stringify({
-        timeout: process.env.HIMAWARI_TEST_TIMEOUT_MS ?? null,
-        unrelated: process.env.HIMAWARI_TEST_UNRELATED_ENV ?? null,
-      }));
-      const report = { success: true, testResults: [{
+      const ids = process.argv.flatMap((arg, index) =>
+        process.argv[index - 1] === '--project' ? [arg] : []);
+      for (const id of ids)
+        writeFileSync(path.resolve(id + '-environment.json'), JSON.stringify({
+          timeout: process.env.HIMAWARI_TEST_TIMEOUT_MS ?? null,
+          unrelated: process.env.HIMAWARI_TEST_UNRELATED_ENV ?? null,
+        }));
+      const report = { success: true, testResults: ids.map((id) => ({
         name: path.resolve(files[id]), assertionResults: [{ status: 'passed' }],
-      }] };
-      const output = process.argv.find(arg => arg.startsWith('--outputFile.json=')).split('=')[1];
-      writeFileSync(output, JSON.stringify(report));
-      const junit = process.argv.find(arg => arg.startsWith('--outputFile.junit=')).split('=')[1];
-      writeFileSync(junit, '<testsuites/>');
+      })) };
+      const option = (prefix) => process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+      writeFileSync(option('--outputFile.json=') ?? option('--outputFile='), JSON.stringify(report));
+      const junit = option('--outputFile.junit=');
+      if (junit) writeFileSync(junit, '<testsuites/>');
+      if (process.argv.includes('--coverage')) {
+        const directory = process.argv[process.argv.indexOf('--coverage.reportsDirectory') + 1];
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(path.join(directory, 'coverage-final.json'), '{}');
+        writeFileSync(path.join(directory, 'lcov.info'), 'TN:fixture');
+      }
     `,
       );
       const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
@@ -110,9 +127,8 @@ describe("test runner timeout environment", () => {
       const result = await runCheck({
         root,
         context: createContext({ root }),
-        checkId: "test",
-        matrixKey: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
-        output: ".ci-output/test",
+        checkId: "coverage",
+        output: ".ci-output/coverage",
         toolsDirectory: root,
         artifact: path.join(root, "runtime.tar.gz"),
         hosted: false,

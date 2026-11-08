@@ -27,7 +27,7 @@ import {
   validateRecord,
 } from "./contracts.mjs";
 import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
-import { strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
+import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
 import { observeResources } from "./resources.mjs";
@@ -89,7 +89,7 @@ export async function runCheck({
   if (existsSync(directory)) throw new Error("CI_OUTPUT_ALREADY_EXISTS");
   if (artifact && (!existsSync(artifact) || !statSync(artifact).isFile()))
     throw new Error("CI_ARTIFACT_INVALID");
-  if (["test", "browser", "coverage"].includes(checkId) && !artifact)
+  if (["browser", "coverage"].includes(checkId) && !artifact)
     throw new Error("CI_ARTIFACT_REQUIRED");
   mkdirSync(directory, { recursive: true });
   json(path.join(directory, "context.json"), context);
@@ -193,8 +193,6 @@ export async function runCheck({
       } catch (error) {
         commandError = error;
       }
-      // Failed processes can still produce valid reports. Keep their measurements,
-      // but never let a report override the actual process exit code.
       try {
         collect();
       } catch (error) {
@@ -313,9 +311,8 @@ export async function runCheck({
         "--output",
         snapshot,
       ]);
-      // Candidate collection and historical remeasurement own separate trees.
-      // Await both outcomes before verification or cleanup, including failures.
-      // The existing check budget bounds every child process in both paths.
+      const measuredProjects = check.projects.filter((id) => coverageProjects.includes(id));
+      const plainProjects = check.projects.filter((id) => !coverageProjects.includes(id));
       const collectCoverage = async () => {
         await reportedTestCommand(
           "coverage",
@@ -324,7 +321,7 @@ export async function runCheck({
             "run",
             "--config",
             "vitest.workspace.ts",
-            ...check.projects.flatMap((id) => ["--project", id]),
+            ...measuredProjects.flatMap((id) => ["--project", id]),
             "--maxWorkers",
             "2",
             "--coverage",
@@ -337,7 +334,7 @@ export async function runCheck({
           () => {
             const testReport = readJson(filename);
             vitestCounts(testReport);
-            for (const id of check.projects) {
+            for (const id of measuredProjects) {
               const project = source.policy.testProjects.find((entry) => entry.id === id);
               const subset = testReport.testResults.filter((entry) => {
                 const name = path.relative(root, entry.name).split(path.sep).join("/");
@@ -381,7 +378,32 @@ export async function runCheck({
           files.push({ path: comparison, kind: "json" });
         }
       };
-      const measured = await Promise.allSettled([collectCoverage(), compareCoverage()]);
+      const runPlainProjects = async () => {
+        const previous = process.env;
+        process.env = env;
+        let outcome;
+        try {
+          outcome = await runTests({
+            root,
+            artifact,
+            output: path.join(directory, "tests"),
+            context,
+            projects: plainProjects,
+            remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
+          });
+        } finally {
+          process.env = previous;
+        }
+        result.projects.push(...outcome.projects);
+        result.counts = sumCounts(result.projects);
+        for (const report of outcome.reports) if (report.kind !== "artifact") files.push(report);
+        if (outcome.exitCode !== 0)
+          throw new Error(`CI_TEST_INCOMPLETE:${plainProjects.join(",")}`);
+      };
+      const measured = [
+        ...(await Promise.allSettled([collectCoverage(), compareCoverage()])),
+        ...(await Promise.allSettled([runPlainProjects()])),
+      ];
       const failures = measured.filter((outcome) => outcome.status === "rejected");
       if (failures.length)
         throw new AggregateError(
@@ -416,29 +438,12 @@ export async function runCheck({
       process.env = env;
       try {
         let outcome;
-        if (checkId === "build" || checkId === "node-floor") {
+        if (checkId === "build") {
           outcome = await build({
             root,
             output: path.join(directory, "build"),
             context,
             cleanupCoordinator: resourceObserver.withPausedSampling,
-          });
-          if (checkId === "node-floor") {
-            outcome = await runTests({
-              root,
-              artifact: outcome.archive,
-              output: path.join(directory, "tests"),
-              context,
-              remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
-            });
-          }
-        } else if (checkId === "test") {
-          outcome = await runTests({
-            root,
-            artifact,
-            output: path.join(directory, "tests"),
-            context,
-            remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
           });
         } else {
           outcome = await runBrowser({
@@ -453,7 +458,7 @@ export async function runCheck({
         result.counts = outcome.counts;
         result.projects = outcome.projects ?? [];
         for (const report of outcome.reports) if (report.kind !== "artifact") files.push(report);
-        if (["build", "test", "browser"].includes(checkId)) {
+        if (["build", "browser"].includes(checkId)) {
           const archive = outcome.archive ?? outcome.artifact?.path ?? artifact;
           const retained = path.join(directory, path.basename(archive));
           if (path.resolve(archive) !== retained) copyFileSync(archive, retained);

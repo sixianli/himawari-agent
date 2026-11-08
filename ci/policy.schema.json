@@ -101,7 +101,7 @@
           }
         }
       },
-      "minItems": 9
+      "minItems": 7
     },
     "testProjects": {
       "type": "array",
