@@ -84,6 +84,54 @@ describe("memory evidence from the Owner's own words", () => {
       evidenceVerified: true,
     });
   });
+  describe("[PA-2] a tentative memory is only confirmed by the Owner's own words", () => {
+    const parse = (decision: string, quote: string, existing: string) =>
+      parseMemoryCandidates({
+        output: JSON.stringify({
+          memories: [
+            {
+              kind: "durable_fact",
+              decision,
+              existingMemoryId: existing,
+              text: "主人偏好明治乳制品",
+              classification: "private",
+              confidence: 950,
+              quote,
+            },
+          ],
+        }),
+        sourceRef: "payload-owner",
+        sourceClassification: "private",
+        existingIds: new Set(["memory-tentative", "memory-formal"]),
+        tentativeIds: new Set(["memory-tentative"]),
+        ownerMessage: "好家里只喝明治的牛奶",
+      });
+
+    it.each(["unchanged", "update", "merge"])(
+      "rejects %s on a tentative memory without a verified quote",
+      (decision) => {
+        const parsed = parse(decision, "", "memory-tentative");
+        expect(parsed.candidates).toEqual([]);
+        expect(parsed.rejectedCandidates).toHaveLength(1);
+      },
+    );
+
+    it.each(["unchanged", "update", "merge"])(
+      "keeps %s on a tentative memory when the quote is the Owner's own words",
+      (decision) => {
+        const parsed = parse(decision, "好家里只喝明治的牛奶", "memory-tentative");
+        expect(parsed.candidates).toHaveLength(1);
+        expect(parsed.rejectedCandidates).toEqual([]);
+      },
+    );
+
+    it("REVERSE: unchanged on a confirmed memory still needs no quote", () => {
+      const parsed = parse("unchanged", "", "memory-formal");
+      expect(parsed.candidates).toHaveLength(1);
+      expect(parsed.rejectedCandidates).toEqual([]);
+    });
+  });
+
   it("turns a changed fact into a new memory that supersedes the old one", () => {
     const parsed = parseMemoryCandidates({
       output: JSON.stringify({

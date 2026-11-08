@@ -93,6 +93,7 @@ export interface ExistingMemoryText {
   readonly id: MemoryId;
   readonly text: string;
   readonly stance?: string | null;
+  readonly tentative?: boolean;
 }
 
 export interface MemoryCaptureContext {
@@ -216,6 +217,7 @@ export function parseMemoryCandidates(input: {
   readonly sourceRef: string;
   readonly sourceClassification: DataClassification;
   readonly existingIds: ReadonlySet<string>;
+  readonly tentativeIds?: ReadonlySet<string>;
   readonly ownerMessage?: string;
   readonly sentAt?: string;
   readonly timeZone?: string;
@@ -300,11 +302,16 @@ export function parseMemoryCandidates(input: {
     const quote = typeof value["quote"] === "string" ? value["quote"] : "";
     const evidenceVerified =
       input.ownerMessage !== undefined && quoteFromOwnerMessage(quote, input.ownerMessage);
+    const confirmsTentative =
+      existing !== null &&
+      input.tentativeIds?.has(existing) === true &&
+      (decision === "unchanged" || decision === "update" || decision === "merge");
     const evidenceRejected =
-      input.ownerMessage !== undefined &&
-      decision !== "unchanged" &&
-      dataClassification !== "restricted" &&
-      !evidenceVerified;
+      (input.ownerMessage !== undefined &&
+        decision !== "unchanged" &&
+        dataClassification !== "restricted" &&
+        !evidenceVerified) ||
+      (confirmsTentative && !evidenceVerified);
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -711,7 +718,13 @@ export class ProductionMemoryCapture {
         continue;
       seen.add(memory.id);
       const text = await this.#readText(memory.contentRef, ownerId, agentId).catch(() => undefined);
-      if (text) existing.push({ id: memory.id, text, stance: memory.attributes?.stance ?? null });
+      if (text)
+        existing.push({
+          id: memory.id,
+          text,
+          stance: memory.attributes?.stance ?? null,
+          tentative: memory.attributes?.tentative === true,
+        });
     }
     const subCategories: Record<string, string[]> = {};
     for (const { category, subCategory } of (await this.options.book?.listSubCategories({
@@ -779,6 +792,7 @@ export class ProductionMemoryCapture {
           sourceRef: source.payloadRef,
           sourceClassification: source.dataClassification,
           existingIds: new Set(existing.map(({ id }) => id)),
+          tentativeIds: new Set(existing.filter(({ tentative }) => tentative).map(({ id }) => id)),
           ownerMessage: message,
           ...(owner.committedAt ? { sentAt: owner.committedAt } : {}),
           timeZone: this.options.timeZone ?? "UTC",
