@@ -1,0 +1,2 @@
+{"id": "H1", "quote": "### 1. 中 — 相关度闸门可被常见二字组绕过（误放，不是已接受的“误拦”）", "valid": true, "class": "error", "severity": "medium-high", "trigger": "含常见二字组的无关原话", "consequence": "把待确认记忆转正进档案块", "modelSeverity": "中", "reason": "成立，已补词表和用例", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "H2", "quote": "### 2. 低 — 反向测试覆盖不全", "valid": true, "class": "error", "severity": "low", "trigger": "update、merge 无关原话", "consequence": "新分支对这两种决定没有测试", "modelSeverity": "低", "reason": "成立，已补", "model": "opencode-go/deepseek-v4.1-flash"}

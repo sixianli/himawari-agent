@@ -133,7 +133,7 @@ export function quoteFromOwnerMessage(quote: string, ownerMessage: string): bool
 }
 
 const GENERIC_TERMS =
-  /主人|用户|喜欢|偏好|喜爱|好像|可能|经常|一直|比较|觉得|今天|现在|[的了是我你他她它在有和与就也都还很不最想要又]/gu;
+  /主人|用户|喜欢|偏好|喜爱|好像|可能|经常|一直|比较|觉得|今天|现在|明天|昨天|一下|这个|那个|什么|没有|可以|知道|时候|因为|所以|但是|还是|这样|那样|以后|之前|已经|一定|顺便|帮我|[的了是我你他她它在有和与就也都还很不最想要又]/gu;
 
 function relevanceTokens(text: string): Set<string> {
   const tokens = new Set<string>();

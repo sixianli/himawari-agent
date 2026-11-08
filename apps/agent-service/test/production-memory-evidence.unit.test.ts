@@ -86,7 +86,12 @@ describe("memory evidence from the Owner's own words", () => {
     });
   });
   describe("[PA-2] a tentative memory is only confirmed by the Owner's own words", () => {
-    const parse = (decision: string, quote: string, existing: string) =>
+    const parse = (
+      decision: string,
+      quote: string,
+      existing: string,
+      ownerMessage = "好家里只喝明治的牛奶",
+    ) =>
       parseMemoryCandidates({
         output: JSON.stringify({
           memories: [
@@ -105,7 +110,7 @@ describe("memory evidence from the Owner's own words", () => {
         sourceClassification: "private",
         existingIds: new Set(["memory-tentative", "memory-formal"]),
         tentativeTexts: new Map([["memory-tentative", "主人偏好明治乳制品"]]),
-        ownerMessage: "好家里只喝明治的牛奶",
+        ownerMessage,
       });
 
     it("rejects unchanged on a tentative memory without a verified quote", () => {
@@ -164,8 +169,23 @@ describe("memory evidence from the Owner's own words", () => {
       expect(quoteRelatesToMemory("我又买了明治的牛奶", ["主人偏好明治乳制品"])).toBe(true);
       expect(quoteRelatesToMemory("明天下午开会", ["主人喜欢喝咖啡"])).toBe(false);
       expect(quoteRelatesToMemory("我喜欢开会", ["主人喜欢喝咖啡"])).toBe(false);
+      expect(quoteRelatesToMemory("帮我顺便取一下快递", ["主人想先试一下再决定"])).toBe(false);
       expect(quoteRelatesToMemory("I drink coffee daily", ["Owner likes coffee"])).toBe(true);
     });
+
+    it.each(["update", "merge"])(
+      "REVERSE: rejects %s whose verified Owner quote is unrelated to the tentative memory",
+      (decision) => {
+        const parsed = parse(
+          decision,
+          "明天下午开会，顺便取一下快递",
+          "memory-tentative",
+          "明天下午开会，顺便取一下快递",
+        );
+        expect(parsed.candidates).toEqual([]);
+        expect(parsed.rejectedCandidates).toHaveLength(1);
+      },
+    );
 
     it("REVERSE: unchanged on a confirmed memory still needs no quote", () => {
       const parsed = parse("unchanged", "", "memory-formal");
