@@ -102,7 +102,7 @@ async function fixture() {
   mocks.source.mockResolvedValue("f".repeat(64));
   mocks.policy.mockReturnValue({
     policy: {
-      checks: [{ id: "test", projects: ids, timeoutMinutes: 30 }],
+      checks: [{ id: "coverage", projects: ids, timeoutMinutes: 30 }],
       testProjects: ids.map((id) => ({ id, include: [`test/${id}.test.ts`], exclude: [] })),
     },
   });
@@ -159,7 +159,7 @@ async function fixture() {
       );
     return { exitCode: 0, durationMs: 1 };
   });
-  return { root, artifact, context, output: ".ci-output/check" };
+  return { root, artifact, context, output: ".ci-output/check", projects: ids };
 }
 beforeEach(() => vi.resetAllMocks());
 afterEach(async () => {
@@ -186,6 +186,7 @@ describe("build process contract", () => {
     );
     const args = ["--context", contextFile, "--output", options.output];
     if (name !== "build") args.push("--artifact", options.artifact);
+    if (name === "test") args.push("--projects", ids.join(","));
     if (name === "browser") args.push("--engine", "chromium", "--port", "0");
     expect(await main(args, environment)).toBe(0);
     const result = JSON.parse(stdout.write.mock.calls[0][0]);
@@ -313,6 +314,26 @@ describe("five-project execution contract", () => {
       "CI_TEST_CHECK_TIMEOUT",
     );
     expect(mocks.execute).toHaveBeenCalledOnce();
+  });
+  it.each([
+    ["empty", []],
+    ["missing", undefined],
+    ["outside the coverage check", ["unit", "browser"]],
+  ])("refuses a %s project selection before running anything", async (_name, projects) => {
+    const options = await fixture();
+    await expect(runTests({ ...options, projects })).rejects.toThrow(
+      "CI_TEST_PROJECT_SELECTION_INVALID",
+    );
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+  it("runs only the selected projects in their policy order", async () => {
+    const options = await fixture();
+    const result = await runTests({ ...options, projects: ["e2e", "pi-compat"] });
+    expect(result.exitCode).toBe(0);
+    expect(result.projects.map(({ id }) => id)).toEqual(["e2e", "pi-compat"]);
+    expect(mocks.execute.mock.calls.map(([, args]) => args[args.indexOf("--project") + 1])).toEqual(
+      ["e2e", "pi-compat"],
+    );
   });
   it("reports process termination before attempting to read a missing report", async () => {
     const options = await fixture();

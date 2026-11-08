@@ -12,7 +12,6 @@ const assert = (condition, code) => {
   if (!condition) throw new Error(code);
 };
 
-/** Fixed HTTPS origin; optional Actions read token uses stdin, never argv or redirects. */
 export function readReviewComment(commentId) {
   assert(Number.isSafeInteger(commentId) && commentId > 0, "SECURITY_REVIEW_COMMENT_INVALID");
   const credential = process.env.HIMAWARI_CI_GITHUB_TOKEN;
@@ -70,7 +69,6 @@ export function readReviewComment(commentId) {
         },
       );
     } catch (error) {
-      // Never expose the response body, stderr, or process arguments in public logs.
       const http = String(error.stdout ?? "")
         .trimEnd()
         .slice(-3);
@@ -105,25 +103,19 @@ export function readReviewComment(commentId) {
       throw new Error("SECURITY_REVIEW_INVALID_RESPONSE");
     }
   } finally {
-    // curl truncates this private output file before retrying partial transfers.
     rmSync(directory, { recursive: true, force: true });
   }
 }
 
-/** The checkout only locates evidence; it cannot assert that an owner approved it. */
-export function loadOwnerReview({
-  root,
-  context,
-  now = new Date(),
-  readComment = readReviewComment,
-}) {
+function readOwnerManifest({ root, context }) {
   const path = join(root, ".github/security-review-manifest.json");
   const referencePath = join(root, ".github/security-review-comment.json");
   if (!existsSync(path) && !existsSync(referencePath)) return null;
   assert(existsSync(path) && existsSync(referencePath), "SECURITY_REVIEW_INCOMPLETE");
   const bytes = readFileSync(path);
   const manifest = JSON.parse(bytes);
-  const { commentId } = JSON.parse(readFileSync(referencePath));
+  const referenceBytes = readFileSync(referencePath);
+  const { commentId } = JSON.parse(referenceBytes);
   assert(Number.isSafeInteger(commentId) && commentId > 0, "SECURITY_REVIEW_COMMENT_INVALID");
   assert(
     context.repository === repository &&
@@ -135,6 +127,18 @@ export function loadOwnerReview({
       manifest.entries.length > 0,
     "SECURITY_REVIEW_MANIFEST_INVALID",
   );
+  return { bytes, manifest, referenceBytes, commentId };
+}
+
+export function loadOwnerReview({
+  root,
+  context,
+  now = new Date(),
+  readComment = readReviewComment,
+}) {
+  const located = readOwnerManifest({ root, context });
+  if (!located) return null;
+  const { bytes, manifest, referenceBytes, commentId } = located;
   const acceptedBytes = (relative) => {
     try {
       return execFileSync("git", ["show", `${context.baseSha}:${relative}`], {
@@ -147,9 +151,7 @@ export function loadOwnerReview({
   };
   const inherited =
     bytes.equals(acceptedBytes(".github/security-review-manifest.json") ?? Buffer.alloc(0)) &&
-    readFileSync(referencePath).equals(
-      acceptedBytes(".github/security-review-comment.json") ?? Buffer.alloc(0),
-    );
+    referenceBytes.equals(acceptedBytes(".github/security-review-comment.json") ?? Buffer.alloc(0));
   if (context.event === "pull_request" && !inherited) {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
     assert(
@@ -214,6 +216,30 @@ export function loadOwnerReview({
     expiresAt: approval.expiresAt,
     reason: "仓库所有者批准的精确测试或文档值；源码、内容摘要及数量仍逐项验证。",
   };
+  const { exceptions, machineExceptions } = ownerReviewExceptions({ manifest, bytes, common });
+  return {
+    exceptions,
+    machineExceptions,
+    sourceSha: manifest.sourceHead,
+    sha256: sha256(bytes),
+    reference,
+    expiresAt: approval.expiresAt,
+  };
+}
+
+export function loadOwnerReviewManifest({ root, context }) {
+  const located = readOwnerManifest({ root, context });
+  if (!located) return null;
+  const { bytes, manifest } = located;
+  const { exceptions } = ownerReviewExceptions({
+    manifest,
+    bytes,
+    common: { owner: owner.login, reviewReference: null, expiresAt: null },
+  });
+  return { exceptions, sourceSha: manifest.sourceHead };
+}
+
+function ownerReviewExceptions({ manifest, bytes, common }) {
   const exceptions = [];
   const machineExceptions = [];
   const current = manifest.entries.filter(
@@ -296,17 +322,9 @@ export function loadOwnerReview({
       machineExceptions.length,
     "SECURITY_REVIEW_MACHINE_DUPLICATE",
   );
-  return {
-    exceptions,
-    machineExceptions,
-    sourceSha: manifest.sourceHead,
-    sha256: sha256(bytes),
-    reference,
-    expiresAt: approval.expiresAt,
-  };
+  return { exceptions, machineExceptions };
 }
 
-/** Keep scanner findings visible and require the exact approved count, including disappearance. */
 export function applyMachineReview(findings, entries = []) {
   const consumed = new Set();
   const result = findings.map((finding) => {

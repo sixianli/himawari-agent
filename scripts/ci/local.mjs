@@ -24,7 +24,7 @@ export async function local({
     )
   )
     throw new Error("CI_LOCAL_PLATFORM_UNSUPPORTED");
-  if (check && !["policy", "static", "test", "build", "coverage", "security"].includes(check))
+  if (check && !["policy", "static", "build", "coverage", "security"].includes(check))
     throw new Error("CI_LOCAL_CHECK_UNSUPPORTED");
   if (!existsSync(path.join(toolsDirectory, "installation.json")))
     throw new Error("CI_LOCAL_TOOLS_REQUIRED: npm run ci:tools，然后使用 --tools 指定该目录");
@@ -67,8 +67,7 @@ export async function local({
     return result;
   };
   let built = artifact;
-  const requiresBuild =
-    !check || check === "build" || (["test", "coverage"].includes(check) && !built);
+  const requiresBuild = !check || check === "build" || (check === "coverage" && !built);
   if (!check || check === "policy") await execute("policy");
   if (!check || check === "static") await execute("static");
   if (requiresBuild) {
@@ -76,7 +75,6 @@ export async function local({
     if (result.status === "passed")
       built = path.join(directory, `build-${platform}`, result.artifacts[0].path);
   }
-  if ((!check || check === "test") && built) await execute("test", platform, built);
   if (!check && built)
     for (const engine of ["chromium", "firefox", "webkit"]) await execute("browser", engine, built);
   if ((!check || check === "coverage") && built) await execute("coverage", "default", built);
@@ -103,7 +101,6 @@ export async function local({
     enforcement: "not_configured",
     pending: [
       "真实 GitHub Linux/macOS 完整矩阵",
-      "Linux Node floor",
       "真实取消、fork 审批与 Ruleset 拒绝合并",
       "生产上线验收与 Owner 签署",
     ],

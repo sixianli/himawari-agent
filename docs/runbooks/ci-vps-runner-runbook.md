@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:9d186b6c9c588a04cdd5ae44233274e88d910666563fbaff48d773f0f1d8e444"
+contract_sha256: "sha256:76f46a4fd9d3235d67d7748ca55163d4b948bcdd0b838d7dd6bcb582819f3e51"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -130,7 +130,7 @@ date: "2026-11-07"
 
 1. 把 `scripts/operations/ci-runner/` 下的全部文件（包括 `runners.sh` 和 `gh-runner.service.in`）用 `scp` 传到 VPS 的 `/home/ubuntu/ci-runner/`。
 2. 有 runner 服务在运行时安装脚本以退出码 70 拒绝，所以重装前先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`。
-3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
+3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和两个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner` 和 `gh-runner-2` 两个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建两个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、slice 和服务，按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每日清理定时器。成功时打印 `INSTALL_OK`，同时打印 runner 账号的 uid、拦住的本机端口和备份目录。
 4. 重装时最后在 Mac 上运行 `resume-runners.sh`；第一次安装要先按[注册](#register)注册。
 
 <a id="register"></a>

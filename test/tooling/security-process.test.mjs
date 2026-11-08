@@ -28,7 +28,7 @@ vi.mock("../../scripts/ci/install-tools.mjs", async (original) => ({
   },
 }));
 
-import { runSecurityChecks } from "../../scripts/ci/check-security.mjs";
+import { runGitleaksGate, runSecurityChecks } from "../../scripts/ci/check-security.mjs";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { assertPublicArtifacts } from "../../scripts/ci/security-redaction.mjs";
 
@@ -262,6 +262,50 @@ describe("安全runner的隔离外部边界", () => {
     const r = await runSecurityChecks(f);
     expect(r.status).toBe("infrastructure_failed");
     expect(r.checks[0].error).toBe("SYNTHETIC_IDENTITY_FAILED");
+  });
+});
+
+describe("合并前本地 gitleaks 门槛", () => {
+  const gate = (f) =>
+    runGitleaksGate({ root: f.root, executable: "/synthetic/gitleaks", context: f.context });
+  const historyRange = (f) => {
+    const call = f.calls.find(
+      (entry) => entry.command === "/synthetic/gitleaks" && entry.args[0] === "git",
+    );
+    return call.args[call.args.indexOf("--log-opts") + 1];
+  };
+  it("只跑 gitleaks，扫当前文件和当前提交的全部祖先，不扫其他分支", () => {
+    const f = securityFixture();
+    const result = gate(f);
+    expect(result).toMatchObject({ status: "passed", blocking: [], exceptedCount: 0 });
+    expect(result.currentFiles).toBeGreaterThan(0);
+    expect(new Set(f.calls.map((entry) => entry.command))).toEqual(
+      new Set(["/synthetic/gitleaks"]),
+    );
+    expect(historyRange(f)).toBe(`--full-history --no-ext-diff ${f.context.testedSha}`);
+    expect(historyRange(f)).not.toContain("--all");
+  });
+  it("gitleaks 的发现会拦下，输出只有位置和规则，不带匹配到的原文", () => {
+    const f = securityFixture();
+    f.mode = "gitleaks-finding";
+    const result = gate(f);
+    expect(result.status).toBe("failed");
+    expect(result.blocking).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "generic-api-key",
+          path: "packages/example/src/index.ts",
+          line: 1,
+          scope: "current",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(result)).not.toContain(["probe", "unclassified", "credential"].join(""));
+  });
+  it("gitleaks 报告不可读时抛错，不当作通过", () => {
+    const f = securityFixture();
+    f.mode = "gitleaks-invalid";
+    expect(() => gate(f)).toThrow("GITLEAKS_REPORT_INVALID");
   });
 });
 
