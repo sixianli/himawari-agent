@@ -1059,7 +1059,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "deadline-code-before-deadline",
     "deadline-code-model-reserved",
     "deadline-code-model-started",
-    "deadline-code-model-unknown",
+    "deadline-code-model-unknown-provider",
     "deadline-code-model-unknown-transport",
     "deadline-code-model-unknown-cancel",
     "deadline-code-future-record",
@@ -1190,7 +1190,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-before-deadline",
           "deadline-code-model-reserved",
           "deadline-code-model-started",
-          "deadline-code-model-unknown",
+          "deadline-code-model-unknown-provider",
           "deadline-code-model-unknown-transport",
           "deadline-code-model-unknown-cancel",
           "deadline-code-model-settled",
@@ -1208,6 +1208,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           .slice("deadline-code-model-".length)
           .split("-");
         const reasonCode = status === "unknown" ? `${unknownReason}_unresolved` : null;
+        const estimatedCostMicros = 169661;
         const lease = f.database
           .prepare(
             "SELECT id,deployment_id AS deploymentId,authority_epoch AS epoch,fencing_token AS token FROM authority_leases LIMIT 1",
@@ -1215,13 +1216,14 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           .get() as { id: string; deploymentId: string; epoch: number; token: number };
         f.database
           .prepare(
-            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',0,0,?,1)",
+            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',?,0,?,1)",
           )
           .run(
             OWNER_ID,
             AGENT_ID,
             `run:${runId}`,
             runId,
+            status === "unknown" ? estimatedCostMicros : 0,
             status === "unknown" ? "reconcile_required" : "active",
           );
         f.database
@@ -1229,12 +1231,13 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             `INSERT INTO model_budget_allocations(owner_id,agent_id,account_id,operation_key,model_ref,
               data_classification,estimated_cost_micros,actual_cost_micros,status,reserved_at,started_at,
               observed_at,settled_at,reason_code)
-            VALUES(?,?,?,'expiry-budget-operation','model-ref','private',0,?,?,?,?,?,?,?)`,
+            VALUES(?,?,?,'expiry-budget-operation','model-ref','private',?,?,?,?,?,?,?,?)`,
           )
           .run(
             OWNER_ID,
             AGENT_ID,
             `run:${runId}`,
+            estimatedCostMicros,
             status === "settled" ? 0 : null,
             status,
             T1,
@@ -1255,13 +1258,14 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               execution_authority_epoch,execution_fencing_token,execution_consumer_id,status,
               reserved_at,started_at,observed_at,settled_at,released_at,actual_cost_micros,reason_code
             ) VALUES (?,?,?,'main',1,'expiry-model-invocation','model-ref','provider','model',
-              'private','model-port',1,0,0,0,0,'fingerprint',0,?,'expiry-budget-operation',?,?,?,?,
+              'private','model-port',1,0,0,0,0,'fingerprint',?,?,'expiry-budget-operation',?,?,?,?,
               'expiry-model-lease',0,?,?,?,?,?,'expiry-consumer',?,?,?,?,?,?,?,?)`,
           )
           .run(
             OWNER_ID,
             AGENT_ID,
             runId,
+            estimatedCostMicros,
             `run:${runId}`,
             lease.id,
             lease.deploymentId,
@@ -1380,7 +1384,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           .get(),
         models: f.database
           .prepare(
-            "SELECT status,reason_code,settled_at,actual_cost_micros FROM model_invocation_identities ORDER BY invocation_id",
+            "SELECT status,reason_code,settled_at,actual_cost_micros,estimated_cost_micros FROM model_invocation_identities ORDER BY invocation_id",
           )
           .all(),
         budgetAccounts: f.database
@@ -1436,6 +1440,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-no-records",
           "deadline-code-model-settled",
           "deadline-code-model-released",
+          "deadline-code-model-unknown-provider",
+          "deadline-code-model-unknown-transport",
           "deadline-code-model-unknown-cancel",
           "deadline-code-environment-released",
         ].includes(scenario)
@@ -1473,9 +1479,21 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(after.intents).toEqual(before.intents);
         expect(after.models).toEqual(before.models);
         expect(after.budgetAccounts).toEqual(before.budgetAccounts);
-        if (scenario === "deadline-code-model-unknown-cancel")
+        if (scenario.startsWith("deadline-code-model-unknown"))
           expect(after.models).toEqual([
-            expect.objectContaining({ status: "unknown", reason_code: "cancel_unresolved" }),
+            expect.objectContaining({
+              status: "unknown",
+              reason_code: expect.stringMatching(/^(provider|transport|cancel)_unresolved$/),
+              estimated_cost_micros: 169661,
+            }),
+          ]);
+        if (scenario.startsWith("deadline-code-model-unknown"))
+          expect(after.budgetAccounts).toEqual([
+            expect.objectContaining({
+              status: "reconcile_required",
+              reserved_cost_micros: 169661,
+              spent_cost_micros: 0,
+            }),
           ]);
         expect.soft(after.thread).toEqual({
           ...before.thread,

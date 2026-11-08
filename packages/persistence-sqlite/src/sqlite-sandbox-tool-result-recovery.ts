@@ -63,7 +63,6 @@ export const RUN_EXPIRED_RECONCILIATION_SQL = `
       AND NOT EXISTS (
         SELECT 1 FROM model_invocation_identities model
         WHERE model.owner_id=r.owner_id AND model.agent_id=r.agent_id AND model.run_id=r.id
-          AND (model.status IN ('reserved','started')
-            OR (model.status='unknown' AND COALESCE(model.reason_code,'')<>'cancel_unresolved'))))
+          AND model.status IN ('reserved','started')))
   )
   AND (${RUN_RESOURCES_RELEASED_SQL})`;
