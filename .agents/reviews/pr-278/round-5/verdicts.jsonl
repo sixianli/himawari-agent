@@ -1,0 +1,5 @@
+{"id": "g1", "model": "opencode-go/glm-5.3-flash", "quote": "文档互相矛盾：Hermes 到底有没有 Magpie", "valid": false, "class": "better"}
+{"id": "g2", "model": "opencode-go/glm-5.3-flash", "quote": "密码经命令行传入，留在 shell 历史和进程列表", "valid": true, "class": "error", "severity": "low", "trigger": "照文档在 Mac 终端运行编码命令", "consequence": "密码留在 Mac 的命令历史里，只有 Andy 本人的账号能读，不会给出错误结果", "modelSeverity": "低"}
+{"id": "g3", "model": "opencode-go/glm-5.3-flash", "quote": "全量网址编码依赖 Magpie 端做标准解码", "valid": false, "class": "better"}
+{"id": "g4", "model": "opencode-go/glm-5.3-flash", "quote": "`launchctl load/unload` 已是 deprecated 子命令", "valid": true, "class": "better"}
+{"id": "g5", "model": "opencode-go/glm-5.3-flash", "quote": "文档治理元数据可能过期", "valid": true, "class": "better"}

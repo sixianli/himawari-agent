@@ -7,6 +7,7 @@ import { chromium, devices, expect, firefox, webkit } from "@playwright/test";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+import { watchPageErrors } from "./browser-page-errors.mjs";
 import { createBrowserObservation } from "./ci/browser-observation.mjs";
 import { parseArguments } from "./ci/contracts.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
@@ -153,7 +154,7 @@ export async function qualifyBrowser({
   let phase = "initialization";
   function observePageErrors(page) {
     observation.watchPage(page);
-    page.on("pageerror", (error) => {
+    watchPageErrors(page, (error) => {
       browserErrors.push(error.message);
       pageErrorDetails.push({
         phase,

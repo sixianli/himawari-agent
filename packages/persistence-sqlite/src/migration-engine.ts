@@ -623,6 +623,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0078_sensitive_interceptions.sql",
   },
+  {
+    sequence: 79,
+    name: "muse_intake_gmail_message",
+    changeSet: "muse-intake-gmail-message",
+    phase: "expand" as const,
+    file: "0079_muse_intake_gmail_message.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

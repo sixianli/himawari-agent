@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { RuntimeToolDescriptor } from "@himawari-agent/application";
@@ -14,12 +14,17 @@ import {
   REASONING_JUDGE_MODEL,
 } from "./gateway-judges.ts";
 import type { TranscriptStep } from "./graders.ts";
-import { FixtureRuntimeTools, prepareWorkspace, workspaceOperations } from "./live-harness.ts";
+import {
+  FixtureRuntimeTools,
+  prepareWorkspace,
+  removeWorkspace,
+  workspaceOperations,
+} from "./live-harness.ts";
 
 const dataset = loadDataset();
 const roots: string[] = [];
 afterAll(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map(removeWorkspace));
 });
 
 const descriptors: RuntimeToolDescriptor[] = [
