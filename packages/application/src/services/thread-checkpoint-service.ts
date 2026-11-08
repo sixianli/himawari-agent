@@ -1,13 +1,13 @@
 import {
+  type CheckpointJobId,
   createCheckpointJobId,
   createMemoryGenerationId,
-  type CheckpointJobId,
   type MemoryGenerationId,
 } from "@himawari-agent/domain";
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
   type ApprovedMemoryContentPort,
+  PORT_ERROR_CODES,
   type ThreadCheckpointSourceRef,
   type ThreadCheckpointTrigger,
   type ThreadDerivativeCandidateRecord,
@@ -17,7 +17,6 @@ import {
   type ThreadDistillationWork,
   type ThreadSummaryRecord,
 } from "../ports/index.js";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
 
@@ -188,14 +187,6 @@ export class ThreadCheckpointService {
           text: await this.options.readSourceText(source.ref),
         })),
       );
-      for (const source of sources) {
-        if (scanMachineSecrets(source.text).length > 0) {
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.INVALID_OPERATION,
-            "Thread checkpoint source contains machine-secret material",
-          );
-        }
-      }
       const preparedSummary =
         work.summaryRef === null || work.summaryClassification === null
           ? null
@@ -225,14 +216,12 @@ export class ThreadCheckpointService {
         summaryText === null ||
         summaryClassification === null ||
         summaryText.trim().length === 0 ||
-        scanMachineSecrets(summaryText).length > 0 ||
         CLASSIFICATION_RANK[summaryClassification] < summaryClassificationFloor ||
         (preparedSummary !== null &&
           (result.summaryText !== null || result.summaryClassification !== null)) ||
         result.candidates.some(
           (candidate) =>
             candidate.text.trim().length === 0 ||
-            scanMachineSecrets(candidate.text).length > 0 ||
             candidate.sourceRefs.length === 0 ||
             candidate.sourceRefs.some((ref) => !sourceClassificationByRef.has(ref)) ||
             CLASSIFICATION_RANK[candidate.dataClassification] <

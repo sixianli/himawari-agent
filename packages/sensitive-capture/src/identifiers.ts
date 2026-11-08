@@ -5,6 +5,16 @@ export function containsRestrictedIdentifier(text: string): boolean {
   return RESTRICTED_IDENTIFIER.test(text.replace(/[\s-]/gu, ""));
 }
 
+export function classificationWithIdentifiers<T extends string>(
+  text: string,
+  classification: T,
+): T | "sensitive" {
+  return (classification === "private" || classification === "public") &&
+    containsRestrictedIdentifier(text)
+    ? "sensitive"
+    : classification;
+}
+
 const SENSITIVE_MENTION =
   /密码|口令|password|passwd|token|secret|api[ _-]?key|身份证|银行卡|卡号|ghp_|sk-|\d{15,19}/i;
 
