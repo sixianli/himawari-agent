@@ -214,9 +214,16 @@ describe("review gateway configuration", () => {
       "ARG_NOT_FOR_SUBCOMMAND",
     );
     const options = { requireGateway: true };
-    expect(gatewayRequiredProblem(options, {})).toBe("no-proxy");
-    expect(gatewayRequiredProblem(options, { HTTPS_PROXY: "  " })).toBe("no-proxy");
-    expect(gatewayRequiredProblem(options, { https_proxy: "http://127.0.0.1:1" })).toBeNull();
+    const cloud = { HIMAWARI_REVIEW_GATEWAY: "magpie" };
+    expect(gatewayRequiredProblem(options, {})).toBe("not-cloud");
+    expect(gatewayRequiredProblem(options, { HTTPS_PROXY: "http://127.0.0.1:1" })).toBe(
+      "not-cloud",
+    );
+    expect(gatewayRequiredProblem(options, cloud)).toBe("no-proxy");
+    expect(gatewayRequiredProblem(options, { ...cloud, HTTPS_PROXY: "  " })).toBe("no-proxy");
+    expect(
+      gatewayRequiredProblem(options, { ...cloud, https_proxy: "http://127.0.0.1:1" }),
+    ).toBeNull();
     expect(gatewayRequiredProblem({}, {})).toBeNull();
     expect(gatewayRequiredProblem({ ...options, selfCheckOnly: true }, {})).toBeNull();
     const refused = spawnSync(
@@ -224,7 +231,20 @@ describe("review gateway configuration", () => {
       ["scripts/model-review/opencode-review.mjs", ...need, "--gateway", "magpie"],
       { encoding: "utf8", env: { PATH: process.env.PATH, HIMAWARI_OPENCODE_BIN: "/nonexistent" } },
     );
-    expect([refused.status, refused.stderr.trim()]).toEqual([2, "GATEWAY_REQUIRED no-proxy"]);
+    expect([refused.status, refused.stderr.trim()]).toEqual([2, "GATEWAY_REQUIRED not-cloud"]);
+    const noProxy = spawnSync(
+      process.execPath,
+      ["scripts/model-review/opencode-review.mjs", ...need, "--gateway", "magpie"],
+      {
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          HIMAWARI_REVIEW_GATEWAY: "magpie",
+          HIMAWARI_OPENCODE_BIN: "/nonexistent",
+        },
+      },
+    );
+    expect([noProxy.status, noProxy.stderr.trim()]).toEqual([2, "GATEWAY_REQUIRED no-proxy"]);
   });
 
   it("[gateway] builds groups in the configured order and drops the credit provider when asked", () => {

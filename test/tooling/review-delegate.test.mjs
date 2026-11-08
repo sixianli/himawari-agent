@@ -1,5 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -65,6 +66,7 @@ function fixture() {
     base,
     previous: null,
     outcome: "ok",
+    promptSha256: createHash("sha256").update("prompt\n").digest("hex"),
     cost: 0.05,
     steps: 3,
     input: 10,
@@ -148,6 +150,9 @@ describe("review delegation prompt", () => {
     bad({ mode: "write" }, "DELEGATE_INVALID mode");
     bad({ topic: "x" }, "DELEGATE_INVALID pr-or-topic");
     bad({ providers: ["a b"] }, "DELEGATE_INVALID providers");
+    bad({ providers: ["not-in-gateway-json"] }, "DELEGATE_INVALID providers");
+    bad({ providers: [] }, "DELEGATE_INVALID providers");
+    bad({ models: [] }, "DELEGATE_INVALID models");
     bad({ models: ["not-a-review-model"] }, "DELEGATE_INVALID models");
     bad({ approvedUsd: -1 }, "DELEGATE_INVALID approved-usd");
     bad({ brief: ".agents/reviews/pr-7/briefs/other.md" }, "DELEGATE_INVALID brief");
@@ -177,6 +182,10 @@ describe("review delegation prompt", () => {
     expect(parsed.task.brief).toBe(task.brief);
     expect(delegationPrompt(parsed.task)).toBe(delegationPrompt(task));
     expect(() => parseTask(["prompt", "--bogus"])).toThrow("DELEGATE_UNKNOWN --bogus");
+    expect(() => parseTask(["prompt", "--apply"])).toThrow("DELEGATE_NOT_FOR_COMMAND --apply");
+    expect(() => parseTask(["wait", "--branch", "feature", "--mode", "plan"])).toThrow(
+      "DELEGATE_NOT_FOR_COMMAND --mode",
+    );
   });
 });
 
@@ -318,6 +327,249 @@ describe("review delegation result check", () => {
   );
 });
 
+describe("review delegation result check, hostile results", () => {
+  const stage = (f, files, remove = []) => {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(f.cloud, path)), { recursive: true });
+      writeFileSync(join(f.cloud, path), text);
+    }
+    for (const path of remove) rmSync(join(f.cloud, path));
+  };
+  const record = (f) => ({
+    [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([f.record(deepseek), f.record(glm)]),
+    ...f.files([deepseek, glm]),
+  });
+  const commitAll = (f, message) => {
+    f.run(f.cloud, "add", "-A");
+    f.run(f.cloud, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message);
+  };
+
+  it(
+    "[delegate] refuses symbolic links, deleted files and changes to old files",
+    withFixture((f) => {
+      const old = `.agents/reviews/${KEY}/verdicts.jsonl`;
+      f.commit(f.mac, { [old]: "old\n" }, "old verdicts");
+      f.run(f.mac, "push", "--quiet", "origin", "feature");
+      const task = { ...f.task, tip: f.run(f.mac, "rev-parse", "HEAD") };
+      f.run(f.cloud, "pull", "--quiet", "--ff-only");
+      const base = f.run(f.cloud, "rev-parse", "HEAD");
+      const reset = () => {
+        f.run(f.cloud, "reset", "--hard", "--quiet", base);
+      };
+      stage(f, record(f), []);
+      rmSync(join(f.cloud, `.agents/reviews/${KEY}/round-1/${glm.split("/").pop()}.md`));
+      symlinkSync(
+        "/etc/passwd",
+        join(f.cloud, `.agents/reviews/${KEY}/round-1/${glm.split("/").pop()}.md`),
+      );
+      commitAll(f, "symlink");
+      f.push();
+      expect(checkResult(task, { repo: f.mac }).reason).toContain("DELEGATION_IRREGULAR_FILE");
+      reset();
+      f.push(["--force"]);
+      stage(f, record(f), [old]);
+      commitAll(f, "delete");
+      f.push();
+      expect(checkResult(task, { repo: f.mac }).reason).toContain("DELEGATION_IRREGULAR_FILE");
+      reset();
+      f.push(["--force"]);
+      stage(f, { ...record(f), [old]: "forged\n" });
+      commitAll(f, "forged verdicts");
+      f.push();
+      expect(checkResult(task, { repo: f.mac }).reason).toContain("unexpected-file=");
+    }),
+  );
+
+  it(
+    "[delegate] refuses a merge commit and a history that touched code even if the final tree is clean",
+    withFixture((f) => {
+      stage(f, { "code.txt": "sneaky\n" });
+      commitAll(f, "touch code");
+      f.run(f.cloud, "revert", "--no-edit", "HEAD");
+      stage(f, record(f));
+      commitAll(f, "records");
+      f.push();
+      expect(checkResult(f.task, { repo: f.mac }).reason).toBe(
+        'DELEGATION_OUTSIDE_RECORDS "code.txt"',
+      );
+      f.run(f.cloud, "reset", "--hard", "--quiet", f.task.tip);
+      f.push(["--force"]);
+      f.run(f.cloud, "checkout", "--quiet", "-b", "side");
+      stage(f, record(f));
+      commitAll(f, "side records");
+      f.run(f.cloud, "checkout", "--quiet", "feature");
+      stage(f, { [`.agents/reviews/${KEY}/note.md`]: "n\n" });
+      commitAll(f, "note");
+      f.run(
+        f.cloud,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "merge",
+        "--no-ff",
+        "--quiet",
+        "-m",
+        "merge",
+        "side",
+      );
+      f.push();
+      expect(checkResult(f.task, { repo: f.mac }).reason).toBe("DELEGATION_MERGE_COMMIT");
+    }),
+  );
+
+  it(
+    "[delegate] checks the round, the models, the prompt hash and the outcome",
+    withFixture((f) => {
+      const tryRecords = (records, filesFor = [deepseek, glm]) => {
+        stage(f, {
+          [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger(records),
+          ...f.files(filesFor),
+        });
+        commitAll(f, "attempt");
+        f.push();
+        const result = checkResult(f.task, { repo: f.mac });
+        f.run(f.cloud, "reset", "--hard", "--quiet", f.task.tip);
+        f.push(["--force"]);
+        return result;
+      };
+      expect(
+        tryRecords([f.record(deepseek, { round: 2 }), f.record(glm, { round: 2 })]).reason,
+      ).toContain("round=2 expected=1");
+      expect(tryRecords([f.record(deepseek)], [deepseek]).reason).toContain(`absent=${glm}`);
+      expect(
+        tryRecords([f.record(deepseek, { promptSha256: "0".repeat(64) }), f.record(glm)]).reason,
+      ).toContain("prompt-hash=");
+      const incomplete = tryRecords([f.record(deepseek, { outcome: "timeout" }), f.record(glm)]);
+      expect(incomplete.status).toBe("ok");
+      expect(incomplete.notOk).toEqual([deepseek]);
+    }),
+  );
+
+  it(
+    "[delegate] stops on a git failure instead of calling it a rewritten branch",
+    withFixture((f) => {
+      const task = { ...f.task, tip: "9".repeat(40) };
+      expect(() => checkResult(task, { repo: f.mac })).toThrow("DELEGATE_GIT_FAILED");
+    }),
+  );
+});
+
+describe("review delegation command line", () => {
+  const cli = (f, command, ...extra) => {
+    const t = f.task;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "scripts/model-review/delegate.mjs",
+        command,
+        "--repo",
+        f.mac,
+        "--mode",
+        t.mode,
+        "--pr",
+        String(t.pr),
+        "--base",
+        t.base,
+        "--head",
+        t.head,
+        "--branch",
+        t.branch,
+        "--tip",
+        t.tip,
+        ...extra,
+      ],
+      { encoding: "utf8" },
+    );
+    return { status: result.status, out: result.stdout.trim(), err: result.stderr.trim() };
+  };
+
+  it(
+    "[delegate] exits 3 while waiting, 0 with the results, 5 when it refuses and 2 on bad usage",
+    withFixture((f) => {
+      expect(cli(f, "check")).toMatchObject({ status: 3 });
+      expect(cli(f, "check").out).toMatch(/^DELEGATION_PENDING remote=/);
+      f.cloudCommit({ "code.txt": "sneaky\n" });
+      f.push();
+      expect(cli(f, "check")).toMatchObject({
+        status: 5,
+        out: 'DELEGATION_OUTSIDE_RECORDS "code.txt"',
+      });
+      f.run(f.cloud, "reset", "--hard", "--quiet", f.task.tip);
+      const remote = f.cloudCommit({});
+      f.push(["--force"]);
+      const done = cli(f, "check", "--apply");
+      expect(done.status).toBe(0);
+      expect(done.out).toContain("DELEGATION_RESULT_OK");
+      expect(done.out).toContain(`DELEGATION_APPLIED head=${remote}`);
+      expect(cli(f, "bogus")).toMatchObject({ status: 2, err: "DELEGATE_USAGE prompt|check|wait" });
+      expect(cli(f, "prompt", "--apply")).toMatchObject({
+        status: 2,
+        err: "DELEGATE_NOT_FOR_COMMAND --apply",
+      });
+    }),
+  );
+
+  it(
+    "[delegate] exits 4 and says so when a model did not finish, but still brings the records home",
+    withFixture((f) => {
+      f.commit(
+        f.cloud,
+        {
+          [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([
+            f.record(deepseek, { outcome: "timeout" }),
+            f.record(glm),
+          ]),
+          ...f.files([deepseek, glm]),
+        },
+        "one timed out",
+      );
+      f.push();
+      const done = cli(f, "check", "--apply");
+      expect(done.status).toBe(4);
+      expect(done.out).toContain(`DELEGATION_RESULT_INCOMPLETE`);
+      expect(done.out).toContain(`not-ok=${deepseek}`);
+      expect(done.out).toContain("DELEGATION_APPLIED");
+    }),
+  );
+});
+
+describe("review delegation result check, odd ledgers and a broken remote", () => {
+  it(
+    "[delegate] refuses a result with no new record and one with a broken ledger",
+    withFixture((f) => {
+      f.commit(
+        f.mac,
+        { [`.agents/reviews/${KEY}/usage.jsonl`]: f.ledger([f.record(deepseek)]) },
+        "earlier",
+      );
+      f.run(f.mac, "push", "--quiet", "origin", "feature");
+      const task = { ...f.task, tip: f.run(f.mac, "rev-parse", "HEAD") };
+      f.run(f.cloud, "pull", "--quiet", "--ff-only");
+      f.commit(f.cloud, { [`.agents/reviews/${KEY}/note.md`]: "n\n" }, "note only");
+      f.push();
+      expect(checkResult(task, { repo: f.mac }).reason).toBe("DELEGATION_NO_NEW_RECORDS");
+      f.commit(
+        f.cloud,
+        {
+          [`.agents/reviews/${KEY}/usage.jsonl`]: `${f.ledger([f.record(deepseek)])}{"mode":"plan"}\n`,
+        },
+        "broken line",
+      );
+      f.push();
+      expect(checkResult(task, { repo: f.mac }).reason).toMatch(/^DELEGATION_LEDGER_INVALID/);
+    }),
+  );
+
+  it(
+    "[delegate] stops on an unreachable origin instead of guessing",
+    withFixture((f) => {
+      f.run(f.mac, "remote", "set-url", "origin", join(f.root, "does-not-exist.git"));
+      expect(() => checkResult(f.task, { repo: f.mac })).toThrow("DELEGATE_GIT_FAILED");
+    }),
+  );
+});
+
 describe("review delegation wait", () => {
   it("[delegate] stops as soon as the branch moves and gives up after the limit", async () => {
     const seen = [];
@@ -332,6 +584,37 @@ describe("review delegation wait", () => {
     });
     expect(moved).toEqual({ moved: true, sha: "b" });
     expect(seen).toEqual([120000, 120000]);
+    await expect(
+      waitForBranch({ branch: "b", tip: "a", lsRemote: () => "a", intervalSeconds: 0 }),
+    ).rejects.toThrow("DELEGATE_INVALID interval");
+    await expect(
+      waitForBranch({ branch: "b", tip: "a", lsRemote: () => "a", minutes: Number.NaN }),
+    ).rejects.toThrow("DELEGATE_INVALID minutes");
+    await expect(
+      waitForBranch({ branch: "b", tip: "a", lsRemote: () => "a", minutes: 100000 }),
+    ).rejects.toThrow("DELEGATE_INVALID minutes");
+    let flaky = 0;
+    const survived = await waitForBranch({
+      branch: "b",
+      tip: "a",
+      lsRemote: () => {
+        flaky += 1;
+        if (flaky <= 2) throw new Error("DELEGATE_GIT_FAILED ls-remote");
+        return "z";
+      },
+      sleep: async () => {},
+    });
+    expect(survived).toEqual({ moved: true, sha: "z" });
+    await expect(
+      waitForBranch({
+        branch: "b",
+        tip: "a",
+        lsRemote: () => {
+          throw new Error("DELEGATE_GIT_FAILED ls-remote");
+        },
+        sleep: async () => {},
+      }),
+    ).rejects.toThrow("DELEGATE_GIT_FAILED");
     let polls = 0;
     const gaveUp = await waitForBranch({
       branch: "feature",
@@ -345,6 +628,6 @@ describe("review delegation wait", () => {
       intervalSeconds: 120,
     });
     expect(gaveUp.moved).toBe(false);
-    expect(polls).toBe(5);
+    expect(polls).toBe(6);
   });
 });

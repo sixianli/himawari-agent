@@ -2423,6 +2423,7 @@ export const REPORT_OPTIONS = [
 
 export function gatewayRequiredProblem(options, env) {
   if (!options.requireGateway || options.selfCheckOnly) return null;
+  if (env.HIMAWARI_REVIEW_GATEWAY !== "magpie") return "not-cloud";
   return PROXY_ENV.some((name) => (env[name] ?? "").trim() !== "") ? null : "no-proxy";
 }
 

@@ -1,9 +1,12 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { readGatewayConfig } from "./gateway.mjs";
 import {
   COMMIT_PATTERN,
   MODES,
+  nextRound,
   parseArgs,
   parseUsage,
   resultLine,
@@ -19,6 +22,9 @@ export const PROVIDER_PATTERN = /^[a-z][a-z0-9-]*$/;
 export const RETRYABLE_OUTCOMES = ["timeout", "no-text"];
 export const WAIT_MINUTES_DEFAULT = 90;
 export const WAIT_INTERVAL_SECONDS_DEFAULT = 120;
+export const WAIT_MINUTES_MAX = 600;
+export const WAIT_GIT_FAILURES_MAX = 3;
+export const ROUND_FILE_PATTERN = /^round-(\d+)\/[a-z0-9][a-z0-9.-]*\.(?:md|stderr\.txt)$/;
 
 const shortModel = (model) => model.split("/").pop();
 
@@ -67,13 +73,19 @@ export function validateTask(task) {
     task.approvedUsd === undefined || (Number.isFinite(task.approvedUsd) && task.approvedUsd > 0),
     "DELEGATE_INVALID approved-usd",
   );
+  const known = readGatewayConfig(undefined, REVIEW_MODELS).providers.map(
+    (provider) => provider.id,
+  );
   requireValue(
-    task.providers === undefined || task.providers.every((id) => PROVIDER_PATTERN.test(id)),
+    task.providers === undefined ||
+      (task.providers.length > 0 &&
+        task.providers.every((id) => PROVIDER_PATTERN.test(id) && known.includes(id))),
     "DELEGATE_INVALID providers",
   );
   requireValue(
     task.models === undefined ||
-      task.models.every((name) => REVIEW_MODELS.some((model) => shortModel(model) === name)),
+      (task.models.length > 0 &&
+        task.models.every((name) => REVIEW_MODELS.some((model) => shortModel(model) === name))),
     "DELEGATE_INVALID models",
   );
   requireValue(
@@ -159,6 +171,22 @@ function git(args, cwd, { allowFail = false } = {}) {
   return result;
 }
 
+function sha256(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function rawChanges(repo, from, to) {
+  const tokens = git(["diff", "--raw", "-z", "--no-renames", from, to], repo)
+    .stdout.split("\0")
+    .filter(Boolean);
+  const changes = [];
+  for (let index = 0; index < tokens.length; index += 2) {
+    const [, newMode, , , status] = tokens[index].split(/\s+/);
+    changes.push({ newMode, status, path: tokens[index + 1] });
+  }
+  return changes;
+}
+
 function showFile(repo, commit, path) {
   const result = git(["show", `${commit}:${path}`], repo, { allowFail: true });
   return result.status === 0 ? result.stdout : null;
@@ -167,7 +195,9 @@ function showFile(repo, commit, path) {
 export function checkResult(task, { repo, fetch = true }) {
   validateTask(task);
   const key = reviewKey(task);
-  const ledgerPath = `${REVIEWS_DIR}/${key}/usage.jsonl`;
+  const recordsDir = `${REVIEWS_DIR}/${key}/`;
+  const ledgerPath = `${recordsDir}usage.jsonl`;
+  const rejected = (reason) => ({ status: "rejected", reason });
   if (fetch)
     git(
       [
@@ -182,55 +212,84 @@ export function checkResult(task, { repo, fetch = true }) {
     ["rev-parse", "--verify", `refs/remotes/origin/${task.branch}^{commit}`],
     repo,
   ).stdout.trim();
-  if (
-    git(["merge-base", "--is-ancestor", task.tip, remote], repo, { allowFail: true }).status !== 0
-  )
-    return { status: "rejected", reason: `DELEGATION_REWRITTEN tip=${task.tip} remote=${remote}` };
+  const ancestry = git(["merge-base", "--is-ancestor", task.tip, remote], repo, {
+    allowFail: true,
+  });
+  if (ancestry.status === 1)
+    return rejected(`DELEGATION_REWRITTEN tip=${task.tip} remote=${remote}`);
+  if (ancestry.status !== 0) fail(`DELEGATE_GIT_FAILED merge-base: ${ancestry.stderr.trim()}`);
   if (remote === task.tip) return { status: "pending", remote };
-  const changed = git(["diff", "-z", "--no-renames", "--name-only", task.tip, remote], repo)
+  if (git(["rev-list", "--merges", `${task.tip}..${remote}`], repo).stdout.trim())
+    return rejected("DELEGATION_MERGE_COMMIT");
+  const touched = git(
+    ["log", "-z", "--name-only", "--format=", "--no-renames", `${task.tip}..${remote}`],
+    repo,
+  )
     .stdout.split("\0")
     .filter(Boolean);
-  const outside = changed.find((file) => !file.startsWith(`${REVIEWS_DIR}/${key}/`));
-  if (outside)
-    return { status: "rejected", reason: `DELEGATION_OUTSIDE_RECORDS ${JSON.stringify(outside)}` };
+  const stray = touched.find((file) => !file.startsWith(recordsDir));
+  if (stray) return rejected(`DELEGATION_OUTSIDE_RECORDS ${JSON.stringify(stray)}`);
+  const changes = rawChanges(repo, task.tip, remote);
+  const outside = changes.find((change) => !change.path.startsWith(recordsDir));
+  if (outside) return rejected(`DELEGATION_OUTSIDE_RECORDS ${JSON.stringify(outside.path)}`);
+  const irregular = changes.find((change) => change.status === "D" || change.newMode !== "100644");
+  if (irregular) return rejected(`DELEGATION_IRREGULAR_FILE ${JSON.stringify(irregular.path)}`);
   const before = showFile(repo, task.tip, ledgerPath) ?? "";
   const after = showFile(repo, remote, ledgerPath);
-  if (after === null) return { status: "rejected", reason: "DELEGATION_NO_LEDGER" };
-  if (!after.startsWith(before))
-    return { status: "rejected", reason: "DELEGATION_LEDGER_REWRITTEN" };
+  if (after === null) return rejected("DELEGATION_NO_LEDGER");
+  if (!after.startsWith(before)) return rejected("DELEGATION_LEDGER_REWRITTEN");
   let records;
+  let earlier;
   try {
+    earlier = parseUsage(before, "before");
     records = parseUsage(after, `${remote}:${ledgerPath}`);
   } catch (error) {
-    return { status: "rejected", reason: `DELEGATION_LEDGER_INVALID ${error.message}` };
+    return rejected(`DELEGATION_LEDGER_INVALID ${error.message}`);
   }
-  const added = records.slice(parseUsage(before, "before").length);
-  if (added.length === 0) return { status: "rejected", reason: "DELEGATION_NO_NEW_RECORDS" };
-  const allowedProviders = task.providers;
+  const added = records.slice(earlier.length);
+  if (added.length === 0) return rejected("DELEGATION_NO_NEW_RECORDS");
+  const expectedRound = task.round ?? nextRound(earlier);
+  const expectedModels = parseArgs(reviewArgv(task)).models;
+  const problems = [];
   for (const record of added) {
-    const problems = [];
+    const round = record.round ?? 1;
     if (record.mode !== task.mode) problems.push(`mode=${record.mode}`);
     if (record.head !== task.head) problems.push(`head=${record.head}`);
     if ((record.base ?? null) !== (task.base ?? null)) problems.push(`base=${record.base ?? null}`);
     if ((record.previous ?? null) !== (task.previous ?? null))
       problems.push(`previous=${record.previous ?? null}`);
+    if (round !== expectedRound) problems.push(`round=${round} expected=${expectedRound}`);
     if (!REVIEW_MODELS.includes(record.model)) problems.push(`model=${record.model}`);
-    if (task.models && !record.substitute && !task.models.includes(shortModel(record.model)))
+    else if (!expectedModels.includes(record.model) && !record.substitute)
       problems.push(`model=${record.model}`);
     if (record.gateway !== "magpie") problems.push(`gateway=${record.gateway}`);
     for (const provider of Object.keys(record.providers ?? {}))
-      if (allowedProviders && !allowedProviders.includes(provider) && provider !== "none")
+      if (task.providers && !task.providers.includes(provider) && provider !== "none")
         problems.push(`provider=${provider}`);
-    const round = record.round ?? 1;
     const name = shortModel(record.model);
-    for (const file of [`${name}.md`, `${name}.prompt.md`])
-      if (showFile(repo, remote, `${REVIEWS_DIR}/${key}/round-${round}/${file}`) === null)
-        problems.push(`missing=round-${round}/${file}`);
-    if (problems.length > 0)
-      return { status: "rejected", reason: `DELEGATION_RECORD_MISMATCH ${problems.join(" ")}` };
+    const answer = showFile(repo, remote, `${recordsDir}round-${round}/${name}.md`);
+    const prompt = showFile(repo, remote, `${recordsDir}round-${round}/${name}.prompt.md`);
+    if (answer === null) problems.push(`missing=round-${round}/${name}.md`);
+    if (prompt === null) problems.push(`missing=round-${round}/${name}.prompt.md`);
+    else if (sha256(prompt) !== record.promptSha256)
+      problems.push(`prompt-hash=round-${round}/${name}`);
   }
+  for (const model of expectedModels)
+    if (!added.some((record) => record.model === model && !record.substitute))
+      problems.push(`absent=${model}`);
+  const roundFiles = changes.filter((change) => change.path !== ledgerPath);
+  for (const change of roundFiles) {
+    const relative = change.path.slice(recordsDir.length);
+    const match = ROUND_FILE_PATTERN.exec(relative);
+    const file = relative.split("/").pop();
+    const ofAddedModel = added.some((record) => file.startsWith(`${shortModel(record.model)}.`));
+    if (!match || Number(match[1]) !== expectedRound || !ofAddedModel)
+      problems.push(`unexpected-file=${JSON.stringify(change.path)}`);
+  }
+  if (problems.length > 0) return rejected(`DELEGATION_RECORD_MISMATCH ${problems.join(" ")}`);
   const spent = added.reduce((total, record) => total + record.cost, 0);
-  return { status: "ok", remote, added, spent };
+  const notOk = added.filter((record) => record.outcome !== "ok").map((record) => record.model);
+  return { status: "ok", remote, added, spent, notOk };
 }
 
 export function applyResult(task, { repo }) {
@@ -248,22 +307,75 @@ export async function waitForBranch({
   minutes = WAIT_MINUTES_DEFAULT,
   intervalSeconds = WAIT_INTERVAL_SECONDS_DEFAULT,
 }) {
-  const tries = Math.max(1, Math.ceil((minutes * 60) / intervalSeconds));
-  for (let attempt = 0; attempt < tries; attempt += 1) {
-    const sha = lsRemote(branch);
+  requireValue(
+    Number.isFinite(minutes) && minutes > 0 && minutes <= WAIT_MINUTES_MAX,
+    "DELEGATE_INVALID minutes",
+  );
+  requireValue(
+    Number.isFinite(intervalSeconds) && intervalSeconds >= 1,
+    "DELEGATE_INVALID interval",
+  );
+  const polls = Math.ceil((minutes * 60) / intervalSeconds) + 1;
+  let failures = 0;
+  for (let attempt = 0; attempt < polls; attempt += 1) {
+    let sha = "";
+    try {
+      sha = lsRemote(branch);
+      failures = 0;
+    } catch (error) {
+      failures += 1;
+      if (failures >= WAIT_GIT_FAILURES_MAX) throw error;
+    }
     if (sha && sha !== tip) return { moved: true, sha };
-    if (attempt < tries - 1) await sleep(intervalSeconds * 1000);
+    if (attempt < polls - 1) await sleep(intervalSeconds * 1000);
   }
   return { moved: false, sha: tip };
 }
 
 export function remoteHead(repo, branch) {
-  const result = git(["ls-remote", "origin", `refs/heads/${branch}`], repo, { allowFail: true });
-  return result.status === 0 ? (result.stdout.split("\t")[0] ?? "").trim() : "";
+  const result = git(["ls-remote", "origin", `refs/heads/${branch}`], repo);
+  return (result.stdout.split("\t")[0] ?? "").trim();
 }
+
+const COMMAND_OPTIONS = {
+  prompt: [
+    "--mode",
+    "--pr",
+    "--topic",
+    "--base",
+    "--head",
+    "--previous",
+    "--models",
+    "--round",
+    "--approved-usd",
+    "--providers",
+    "--branch",
+    "--tip",
+    "--reply-to",
+    "--repo",
+  ],
+  check: [
+    "--mode",
+    "--pr",
+    "--topic",
+    "--base",
+    "--head",
+    "--previous",
+    "--models",
+    "--round",
+    "--approved-usd",
+    "--providers",
+    "--branch",
+    "--tip",
+    "--repo",
+    "--apply",
+  ],
+  wait: ["--branch", "--tip", "--repo", "--minutes", "--interval-seconds"],
+};
 
 export function parseTask(argv) {
   const task = {};
+  const given = [];
   let command;
   let repo = process.cwd();
   const flags = new Set();
@@ -278,6 +390,7 @@ export function parseTask(argv) {
       if (argv[index] === undefined) fail(`DELEGATE_MISSING_VALUE ${key}`);
       return argv[index];
     };
+    given.push(key);
     if (key === "--repo") repo = resolve(take());
     else if (key === "--branch") task.branch = take();
     else if (key === "--tip") task.tip = take();
@@ -297,6 +410,9 @@ export function parseTask(argv) {
     else if (key === "--apply") flags.add("apply");
     else fail(`DELEGATE_UNKNOWN ${key}`);
   }
+  if (!Object.hasOwn(COMMAND_OPTIONS, command ?? "")) fail("DELEGATE_USAGE prompt|check|wait");
+  const extra = given.filter((key) => !COMMAND_OPTIONS[command].includes(key));
+  if (extra.length > 0) fail(`DELEGATE_NOT_FOR_COMMAND ${extra.join(" ")}`);
   if (task.mode && !task.brief && task.head)
     task.brief = briefPathFor({ pr: task.pr, topic: task.topic, head: task.head, mode: task.mode });
   return { command, task, repo, flags };
@@ -320,11 +436,14 @@ async function main() {
       process.exitCode = 5;
       return;
     }
+    const applied = flags.has("apply") ? applyResult(task, { repo }) : null;
     for (const record of result.added) console.log(resultLine(record));
-    console.log(
-      `DELEGATION_RESULT_OK remote=${result.remote} records=${result.added.length} spent=${result.spent.toFixed(4)}`,
-    );
-    if (flags.has("apply")) console.log(`DELEGATION_APPLIED head=${applyResult(task, { repo })}`);
+    const summary = `remote=${result.remote} records=${result.added.length} spent=${result.spent.toFixed(4)}`;
+    if (result.notOk.length > 0) {
+      console.log(`DELEGATION_RESULT_INCOMPLETE ${summary} not-ok=${result.notOk.join(",")}`);
+      process.exitCode = 4;
+    } else console.log(`DELEGATION_RESULT_OK ${summary}`);
+    if (applied) console.log(`DELEGATION_APPLIED head=${applied}`);
     return;
   }
   if (command === "wait") {
