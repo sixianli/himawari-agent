@@ -19,6 +19,7 @@ interface StateRow {
   readonly sinceAt: string;
   readonly lastPushAt: string | null;
   readonly stageChangedAt: string | null;
+  readonly updatedAt: string;
 }
 
 interface HistoryRow {
@@ -41,24 +42,31 @@ export function countIgnoredPushes(
 ): number {
   const rows = database
     .prepare(
-      `SELECT COALESCE(feedback.first_sent_at, insight.updated_at) AS at,
+      `SELECT feedback.source_key AS pushKey, feedback.first_sent_at AS at,
          insight.owner_rating AS rating, feedback.opened_at AS openedAt
        FROM source_insights insight
-       LEFT JOIN web_push_feedback feedback
+       JOIN web_push_feedback feedback
          ON feedback.owner_id = insight.owner_id AND feedback.agent_id = insight.agent_id
          AND feedback.source_key = insight.push_source_key
        WHERE insight.owner_id = ? AND insight.agent_id = ? AND insight.push_class = ?
          AND insight.push_source_key IS NOT NULL
-         AND COALESCE(feedback.first_sent_at, insight.updated_at) > ?
-       ORDER BY at DESC, insight.id DESC`,
+         AND feedback.first_sent_at > ?
+       ORDER BY feedback.first_sent_at DESC, insight.id DESC`,
     )
-    .all(scope.ownerId, scope.agentId, classKey, sinceAt) as HistoryRow[];
+    .all(scope.ownerId, scope.agentId, classKey, sinceAt) as (HistoryRow & { pushKey: string })[];
+  const pushes = new Map<string, { at: string; unneeded: boolean; opened: boolean }>();
+  for (const row of rows) {
+    const push = pushes.get(row.pushKey) ?? { at: row.at, unneeded: false, opened: false };
+    push.unneeded ||= row.rating === "unneeded";
+    push.opened ||= row.openedAt !== null;
+    pushes.set(row.pushKey, push);
+  }
   const cutoff = Date.parse(now) - ignoreAfterMs;
   let ignored = 0;
-  for (const row of rows) {
-    if (row.rating === "unneeded") ignored += 1;
-    else if (row.openedAt !== null) break;
-    else if (Date.parse(row.at) <= cutoff) ignored += 1;
+  for (const push of pushes.values()) {
+    if (push.unneeded) ignored += 1;
+    else if (push.opened) break;
+    else if (Date.parse(push.at) <= cutoff) ignored += 1;
   }
   return ignored;
 }
@@ -72,13 +80,14 @@ export function previewBackoff(
 ): readonly ProactiveBackoffPreview[] {
   const read = database.prepare(
     `SELECT stage, since_at AS sinceAt, last_push_at AS lastPushAt,
-       stage_changed_at AS stageChangedAt FROM proactive_push_backoff
+       stage_changed_at AS stageChangedAt, updated_at AS updatedAt FROM proactive_push_backoff
      WHERE owner_id = ? AND agent_id = ? AND class_key = ?`,
   );
   return classKeys.map((classKey): ProactiveBackoffPreview => {
     const row = read.get(scope.ownerId, scope.agentId, classKey) as StateRow | undefined;
     const stage = stageOf(row?.stage ?? 0);
     const sinceAt = row?.sinceAt ?? EPOCH;
+    const baseline = row ? { stage, sinceAt: row.sinceAt, updatedAt: row.updatedAt } : null;
     const ignored =
       stage >= 2
         ? 0
@@ -94,6 +103,7 @@ export function previewBackoff(
         stageChangedAt: now,
         ignoredCount: ignored,
         steppedUp: true,
+        base: baseline,
       };
     }
     const base = {
@@ -103,6 +113,7 @@ export function previewBackoff(
       stageChangedAt: row?.stageChangedAt ?? null,
       ignoredCount: ignored,
       steppedUp: false,
+      base: baseline,
     };
     if (stage === 0) return { ...base, action: "allow", lastPushAt: row?.lastPushAt ?? null };
     if (stage === 2) return { ...base, action: "suppress", lastPushAt: row?.lastPushAt ?? null };
@@ -132,7 +143,22 @@ export function applyBackoffWrites(
        ignored_count = CASE WHEN ? THEN excluded.ignored_count ELSE ignored_count END,
        updated_at = excluded.updated_at`,
   );
-  for (const write of writes)
+  const current = database.prepare(
+    `SELECT stage, since_at AS sinceAt, updated_at AS updatedAt FROM proactive_push_backoff
+     WHERE owner_id = ? AND agent_id = ? AND class_key = ?`,
+  );
+  for (const write of writes) {
+    const row = current.get(scope.ownerId, scope.agentId, write.classKey) as
+      | { stage: number; sinceAt: string; updatedAt: string }
+      | undefined;
+    const unchanged =
+      write.base === null
+        ? row === undefined
+        : row !== undefined &&
+          row.stage === write.base.stage &&
+          row.sinceAt === write.base.sinceAt &&
+          row.updatedAt === write.base.updatedAt;
+    if (!unchanged) continue;
     upsert.run(
       scope.ownerId,
       scope.agentId,
@@ -142,11 +168,12 @@ export function applyBackoffWrites(
       write.lastPushAt,
       write.stageChangedAt,
       write.steppedUp ? decisionId : null,
-      write.steppedUp ? write.ignoredCount : 0,
+      write.steppedUp ? Math.min(write.ignoredCount, 1000) : 0,
       now,
       write.steppedUp ? 1 : 0,
       write.steppedUp ? 1 : 0,
     );
+  }
 }
 
 export function listBackoff(

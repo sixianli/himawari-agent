@@ -28,6 +28,7 @@ import {
   ScriptedModelPort,
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { applyBackoffWrites } from "../../packages/persistence-sqlite/src/proactive-push-backoff.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-proactive");
@@ -881,6 +882,7 @@ describe("proactive Gmail check acceptance", () => {
       for (let index = 1; index <= 3; index += 1) {
         const decision = await pushDue(h, `rated-${index}`);
         expect(decision?.verdict).toBe("pushed");
+        sent(h, decision?.pushSourceKey ?? null);
         const insight = (await h.overview()).insights.find(
           ({ summary, rating }) => summary === "confirm booking" && rating === null,
         );
@@ -955,6 +957,145 @@ describe("proactive Gmail check acceptance", () => {
       expect((await h.store.listBackoff(scope))[0]).toMatchObject({ stage: 2 });
       h.clock.advance(100 * HOUR);
       expect(await pushDue(h, "still-paused")).toMatchObject({ reasonCode: "PUSH_SUPPRESSED" });
+    });
+
+    it("negative: pushes that never reached a device do not count as ignored", async () => {
+      const h = await harness();
+      for (let index = 1; index <= 4; index += 1) {
+        expect(await pushDue(h, `undelivered-${index}`)).toMatchObject({ verdict: "pushed" });
+        h.clock.advance(25 * HOUR);
+      }
+      expect(await h.store.listBackoff(scope)).toEqual([]);
+    });
+
+    it("counts one ignored push once even when it carried several reminders of the same domain", async () => {
+      const h = await harness();
+      for (let index = 1; index <= 1; index += 1) {
+        const decision = await pushDue(h, `single-${index}`);
+        sent(h, decision?.pushSourceKey ?? null);
+        h.clock.advance(25 * HOUR);
+      }
+      h.reader.items = ["a", "b", "c"].map((id) =>
+        mail(`multi-${id}`, {
+          from: `Service <${SENDER}>`,
+          fromAddress: SENDER,
+          subject: "Please confirm your booking",
+          snippet: "reply by tomorrow",
+        }),
+      );
+      h.script(
+        ["a", "b", "c"].map((id) => ({
+          id: `multi-${id}`,
+          result: "act" as const,
+          todo: `confirm ${id}`,
+          priority: "high" as const,
+          dueAt: new Date(Date.parse(h.clock.now()) + 24 * HOUR).toISOString(),
+        })),
+      );
+      const multi = await h.service.run();
+      expect(multi).toMatchObject({ verdict: "pushed" });
+      sent(h, multi?.pushSourceKey ?? null);
+      h.clock.advance(25 * HOUR);
+      expect(await pushDue(h, "after-multi")).toMatchObject({ verdict: "pushed" });
+      expect(await h.store.listBackoff(scope)).toEqual([]);
+    });
+
+    it("keeps the normal reason when another push goes out in the same check", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 3);
+      h.reader.items = [
+        mail("due-again", {
+          from: `Service <${SENDER}>`,
+          fromAddress: SENDER,
+          subject: "Please confirm your booking",
+          snippet: "reply by tomorrow",
+        }),
+        mail("bank", {
+          fromAddress: "info@smbc.co.jp",
+          subject: "お引落しのお知らせ",
+          snippet: "口座からお引落しします",
+        }),
+      ];
+      h.script([
+        {
+          id: "due-again",
+          result: "act",
+          todo: "confirm booking",
+          priority: "high",
+          dueAt: new Date(Date.parse(h.clock.now()) + 24 * HOUR).toISOString(),
+        },
+        { id: "bank", result: "check", confidence: "unsure" },
+      ]);
+      expect(await h.service.run()).toMatchObject({ verdict: "pushed", reasonCode: "URGENT" });
+      expect(await h.store.listBackoff(scope)).toEqual([
+        expect.objectContaining({ classKey: CLASS_KEY, stage: 1 }),
+      ]);
+    });
+
+    it("does not classify a sender address without an at sign", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 3);
+      expect(await pushDue(h, "odd", "not-an-address")).toMatchObject({ verdict: "pushed" });
+    });
+
+    it("clears every backed-off class when Gmail is disconnected", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 3);
+      await pushDue(h, "to-stage-1");
+      expect(await h.store.listBackoff(scope)).toHaveLength(1);
+      await h.store.removeSource({ ...scope, source: "gmail" });
+      expect(await h.store.listBackoff(scope)).toEqual([]);
+    });
+
+    it("lets a restore win over a write prepared before it, and caps the stored ignored count", async () => {
+      const h = await harness();
+      await ignoredPushes(h, 3);
+      const decisionId = String(
+        h.query("SELECT id FROM decision_ledger ORDER BY checked_at DESC LIMIT 1")[0]?.["id"],
+      );
+      const stale = (
+        await h.store.previewBackoff({
+          ...scope,
+          classKeys: [CLASS_KEY],
+          settings: { threshold: 3, ignoreAfterMs: 24 * HOUR, gapMs: 24 * HOUR },
+          now: h.clock.now(),
+        })
+      )[0];
+      expect(stale).toMatchObject({ steppedUp: true });
+      const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+      try {
+        applyBackoffWrites(
+          database,
+          { ownerId: OWNER_ID, agentId: AGENT_ID },
+          decisionId,
+          [{ ...(stale as NonNullable<typeof stale>), ignoredCount: 5_000 }],
+          h.clock.now(),
+        );
+        const row = () =>
+          database
+            .prepare("SELECT stage, ignored_count AS ignored FROM proactive_push_backoff")
+            .all() as { stage: number; ignored: number }[];
+        expect(row()).toEqual([{ stage: 1, ignored: 1000 }]);
+        const second = (
+          await h.store.previewBackoff({
+            ...scope,
+            classKeys: [CLASS_KEY],
+            settings: { threshold: 3, ignoreAfterMs: 24 * HOUR, gapMs: 24 * HOUR },
+            now: h.clock.now(),
+          })
+        )[0];
+        await h.store.restoreBackoff({ ...scope, classKey: CLASS_KEY, now: h.clock.now() });
+        applyBackoffWrites(
+          database,
+          { ownerId: OWNER_ID, agentId: AGENT_ID },
+          decisionId,
+          [{ ...(second as NonNullable<typeof second>), stage: 2, steppedUp: true }],
+          h.clock.now(),
+        );
+        expect(row()).toEqual([{ stage: 0, ignored: 1000 }]);
+      } finally {
+        database.close();
+      }
     });
 
     it("does nothing when the threshold is 0", async () => {

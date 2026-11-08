@@ -240,6 +240,13 @@ export interface ProactiveBackoffPreview {
   readonly stageChangedAt: string | null;
   readonly ignoredCount: number;
   readonly steppedUp: boolean;
+  readonly base: ProactiveBackoffBase | null;
+}
+
+export interface ProactiveBackoffBase {
+  readonly stage: ProactiveBackoffStage;
+  readonly sinceAt: string;
+  readonly updatedAt: string;
 }
 
 export interface ProactiveBackoffWrite {
@@ -250,6 +257,7 @@ export interface ProactiveBackoffWrite {
   readonly stageChangedAt: string | null;
   readonly ignoredCount: number;
   readonly steppedUp: boolean;
+  readonly base: ProactiveBackoffBase | null;
 }
 
 export interface ProactiveBackoffSettings {

@@ -108,8 +108,10 @@ export const DEFAULT_PROACTIVE_BACKOFF: ProactiveBackoffSettings = Object.freeze
   gapMs: 24 * 3_600_000,
 });
 
-export function proactivePushClass(fromAddress: string): string {
-  return `due:${senderDomain(fromAddress)}`.slice(0, 128);
+export function proactivePushClass(fromAddress: string): string | null {
+  if (!fromAddress.includes("@")) return null;
+  const domain = senderDomain(fromAddress);
+  return domain.length === 0 ? null : `due:${domain}`.slice(0, 128);
 }
 
 interface BackoffOutcome {
@@ -952,8 +954,8 @@ export class ProactiveMailCheckService {
     if (stop === "capped_daily") return "DAILY_LIMIT";
     if (stop === "capped") return "CHECK_LIMIT";
     if (stop === "failed") return failure ?? "MODEL_OUTPUT_INVALID";
-    if (backoff?.steppedUp) return "PUSH_BACKED_OFF";
-    if (backoff && backoff.suppressed > 0) return "PUSH_SUPPRESSED";
+    if (counts.pushed === 0 && backoff?.steppedUp) return "PUSH_BACKED_OFF";
+    if (counts.pushed === 0 && backoff && backoff.suppressed > 0) return "PUSH_SUPPRESSED";
     if (verdict === "deferred") return "QUIET_HOURS";
     if (verdict === "pushed") return "URGENT";
     if (fetched === 0) return "NO_NEW_MAIL";
@@ -1001,6 +1003,7 @@ export class ProactiveMailCheckService {
           stageChangedAt: preview.stageChangedAt,
           ignoredCount: preview.ignoredCount,
           steppedUp: preview.steppedUp,
+          base: preview.base,
         }),
       );
     return {

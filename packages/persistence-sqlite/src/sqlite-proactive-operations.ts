@@ -461,6 +461,9 @@ export class SqliteProactiveOperations {
         )
         .run(...scope);
       this.database
+        .prepare("DELETE FROM proactive_push_backoff WHERE owner_id = ? AND agent_id = ?")
+        .run(input.ownerId, input.agentId);
+      this.database
         .prepare(
           "DELETE FROM proactive_pushes WHERE owner_id = ? AND agent_id = ? AND status = 'pending'",
         )
