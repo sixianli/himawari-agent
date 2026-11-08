@@ -708,6 +708,57 @@ describe("production memory capture", () => {
     expect(await context.plaintext(suppressed?.contentRef ?? null)).toBe("主人好像喜欢海");
   });
 
+  it("[PA-2] a tentative memory is confirmed by `unchanged` only with a verified owner quote", async () => {
+    const context = await setup(
+      "好家里只喝明治的牛奶",
+      '{"memories":[{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人偏好明治乳制品","classification":"private","confidence":700,"inference":true,"quote":"好家里只喝明治的牛奶"}]}',
+    );
+    const options = (
+      context.capture as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryCapture>[0];
+      }
+    ).options;
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const tentativeState = async () => {
+      const [record] = (
+        await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)
+      ).filter(({ attributes }) => attributes?.evidenceVerified === true);
+      if (!record) throw new Error("no memory");
+      return record;
+    };
+    const created = await tentativeState();
+    expect(created.attributes?.tentative).toBe(true);
+    const unchanged = (quote: string) =>
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            decision: "unchanged",
+            existingMemoryId: created.id,
+            text: "主人偏好明治乳制品",
+            classification: "private",
+            confidence: 900,
+            inference: false,
+            quote,
+          },
+        ],
+      });
+    const round = async (runId: string, ownerText: string, output: string) => {
+      await context.turn("owner", ownerText, runId);
+      context.outputs.push(output);
+      const capture = new ProductionMemoryCapture(options);
+      await capture.start(context.requestFor(runId));
+      await capture.stop();
+    };
+    await round("run-pa2-2", "今天天气不错", unchanged("明治"));
+    expect((await tentativeState()).attributes?.tentative).toBe(true);
+    expect(context.audits.map(({ outcome }) => outcome)).toContain("evidence_unverified");
+    await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
+    expect((await tentativeState()).attributes?.tentative).not.toBe(true);
+    expect(context.failures).toEqual([]);
+  });
+
   it("captures each Run once and offers existing memories for updates", async () => {
     const context = await setup(
       "我改主意了，现在最喜欢绿色。",

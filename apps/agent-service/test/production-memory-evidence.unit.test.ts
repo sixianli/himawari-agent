@@ -107,8 +107,14 @@ describe("memory evidence from the Owner's own words", () => {
         ownerMessage: "好家里只喝明治的牛奶",
       });
 
-    it.each(["unchanged", "update", "merge"])(
-      "rejects %s on a tentative memory without a verified quote",
+    it("rejects unchanged on a tentative memory without a verified quote", () => {
+      const parsed = parse("unchanged", "", "memory-tentative");
+      expect(parsed.candidates).toEqual([]);
+      expect(parsed.rejectedCandidates).toHaveLength(1);
+    });
+
+    it.each(["update", "merge"])(
+      "rejects %s without a verified quote (also required for any memory)",
       (decision) => {
         const parsed = parse(decision, "", "memory-tentative");
         expect(parsed.candidates).toEqual([]);
