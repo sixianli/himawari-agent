@@ -65,6 +65,15 @@ export interface DecisionInputs {
   readonly tentativeMemoryIds?: readonly string[];
   readonly memoryByMail?: Readonly<Record<string, readonly string[]>>;
   readonly memoryRecall?: "off" | "ok" | "partial" | "failed";
+  readonly relatedByMail?: Readonly<Record<string, readonly string[]>>;
+  readonly relatedRead?: "off" | "ok" | "partial" | "failed";
+  readonly relatedStats?: {
+    readonly requests: number;
+    readonly messages: number;
+    readonly characters: number;
+    readonly durationMs: number;
+  };
+  readonly relatedFailedSteps?: readonly string[];
 }
 
 export interface DecisionLedgerWrite {

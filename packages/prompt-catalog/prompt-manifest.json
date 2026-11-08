@@ -295,9 +295,9 @@
     }
   },
   "mail.judgment": {
-    "sha256": "61aeb26dd4016ec4c85ab341b01f74ca91092efef5bae59759e0be3dfd0e87c2",
-    "changedIn": "ADR 0159",
-    "reason": "邮件判断改为读正文并看主人自己发的邮件（sentByOwner、bodyTruncated、bodyUnavailable 三条说明）",
+    "sha256": "dd071684d7a54f911fc2888ac4fdd2b1aa624d0062e172bf1c961478719d1372",
+    "changedIn": "PA-1",
+    "reason": "邮件判断前给模型同一件事的往来邮件：新增 related、relatedUnavailable 两条说明（相关邮件按时间排在每封邮件的数据里，读取失败时提示证据不足判 check）",
     "emphasis": {
       "kind": "deferred",
       "batch": "第 3 批 W-06、W-11/W-19",

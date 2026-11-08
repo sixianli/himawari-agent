@@ -9,10 +9,12 @@ import {
   ProactiveMailCheckService,
   type ProactiveMemoryRecall,
   type ProactiveSourceItem,
+  type ProactiveSourceReader,
   proactivePrompt,
   readProactiveOverview,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import { findRelatedMail } from "@himawari-agent/platform-node";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -180,6 +182,7 @@ describe("proactive Gmail check acceptance", () => {
       items: [] as ProactiveSourceItem[],
       nextCursor: "history-2",
       calls: [] as (string | null)[],
+      related: undefined as ProactiveSourceReader["related"],
       async fetch(input: { cursor: string | null }) {
         reader.calls.push(input.cursor);
         return { kind: "items" as const, items: reader.items, cursor: reader.nextCursor };
@@ -1815,6 +1818,320 @@ describe("proactive Gmail check acceptance", () => {
       expect(withBody.split("\n").at(-1)).toMatch(/^现在是 /u);
       expect(withBody).toContain("看不到，只列文件名");
       expect(plain).not.toContain("只能看到发件人、标题和 Gmail 的一行摘要");
+    });
+  });
+  describe("[PA-1] the judgment reads the earlier mails about the same matter", () => {
+    const itemsPart = (prompt: string) => prompt.slice(prompt.lastIndexOf("邮件：\n"));
+    const ledgerRows = (h: Awaited<ReturnType<typeof harness>>) =>
+      h.ledger.list({ ...scope, kind: "proactive", since: "2026-11-01T00:00:00.000Z", limit: 50 });
+    const SELLER = "seller@shop.example";
+    const ORDER = "250-1234567-8901234";
+    const archive = [
+      mail("refund-request", {
+        threadId: "t-refund",
+        from: "Andy <andy@example.com>",
+        fromAddress: "andy@example.com",
+        sentByOwner: true,
+        participants: ["andy@example.com", SELLER],
+        subject: `ご注文 ${ORDER} の返金について`,
+        body: `注文番号: ${ORDER} の返金を申請します。商品が壊れていました。`,
+        receivedAt: "2026-10-28T02:00:00.000Z",
+      }),
+      mail("photo-request", {
+        threadId: "t-refund",
+        from: `Shop <${SELLER}>`,
+        fromAddress: SELLER,
+        participants: [SELLER, "andy@example.com"],
+        subject: `Re: ご注文 ${ORDER} の返金について`,
+        body: "返金のため、破損した商品の写真を追加で送ってください。",
+        receivedAt: "2026-11-01T02:00:00.000Z",
+      }),
+      mail("same-sender-other-matter", {
+        threadId: "t-other",
+        from: `Shop <${SELLER}>`,
+        fromAddress: SELLER,
+        participants: [SELLER, "andy@example.com"],
+        subject: "新商品のご案内",
+        body: "新商品が入荷しました。",
+        receivedAt: "2026-10-30T02:00:00.000Z",
+      }),
+    ];
+    const today = mail("closing", {
+      threadId: "t-new",
+      from: `Shop <${SELLER}>`,
+      fromAddress: SELLER,
+      participants: [SELLER, "andy@example.com"],
+      subject: "お客様のご注文について",
+      snippet: "ご返信をお待ちしております…",
+      body: `ご注文番号 ${ORDER} の件、本日中にご返信がない場合はお手続きを終了します。`,
+    });
+    const transport = (counter: { requests: number }) => ({
+      async thread(threadId: string) {
+        counter.requests += 1;
+        return archive.filter((entry) => entry.threadId === threadId);
+      },
+      async search(query: string) {
+        counter.requests += 1;
+        const needle = query.replace(/^.*?"([^"]+)".*$/u, "$1").toLowerCase();
+        return archive
+          .filter((entry) => `${entry.subject}\n${entry.body}`.toLowerCase().includes(needle))
+          .map(({ messageId }) => messageId);
+      },
+      async message(id: string) {
+        counter.requests += 1;
+        return archive.find(({ messageId }) => messageId === id);
+      },
+    });
+
+    it("gives the model the whole earlier history in time order and records which mails were read", async () => {
+      const h = await harness();
+      const counter = { requests: 0 };
+      h.reader.related = (input) => findRelatedMail({ ...input, transport: transport(counter) });
+      h.reader.items = [today];
+      h.script([{ id: "closing", result: "act", todo: "补充破损照片", priority: "high" }]);
+      await h.service.run();
+      const prompt = itemsPart(h.prompts[0] ?? "");
+      expect(prompt).toContain('"related":[');
+      expect(prompt).toContain("返金を申請します");
+      expect(prompt).toContain("写真を追加で送ってください");
+      expect(prompt.indexOf("返金を申請します")).toBeLessThan(
+        prompt.indexOf("写真を追加で送ってください"),
+      );
+      expect(prompt).not.toContain("新商品が入荷");
+      expect(prompt).not.toContain('"relatedUnavailable":true');
+      expect(prompt.split("\n").at(-1)).toMatch(/^现在是 /u);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.relatedByMail).toEqual({
+        closing: ["refund-request", "photo-request"],
+      });
+      expect(entry?.inputs.relatedRead).toBe("ok");
+      expect(entry?.inputs.relatedStats).toMatchObject({
+        requests: counter.requests,
+        messages: 2,
+      });
+      expect(entry?.inputs.relatedStats?.characters).toBeGreaterThan(0);
+      expect(entry?.inputs.relatedFailedSteps).toEqual([]);
+    });
+
+    it("negative: a mail that shares only the sender gets no history and no failure mark", async () => {
+      const h = await harness();
+      h.reader.related = (input) =>
+        findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
+      h.reader.items = [
+        mail("newsletter", {
+          from: `Shop <${SELLER}>`,
+          fromAddress: SELLER,
+          participants: [SELLER],
+          subject: "週末セールのお知らせ",
+          body: "週末セールを開催します。",
+        }),
+      ];
+      h.script([{ id: "newsletter", result: "ignore" }]);
+      await h.service.run();
+      const prompt = itemsPart(h.prompts[0] ?? "");
+      expect(prompt).not.toContain('"related":[');
+      expect(prompt).not.toContain('"relatedUnavailable":true');
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.relatedByMail).toEqual({});
+      expect(entry?.inputs.relatedRead).toBe("ok");
+    });
+
+    it("falls back to the mail alone when the history cannot be read, and says so everywhere", async () => {
+      const h = await harness();
+      h.reader.related = async () => {
+        throw new Error("GMAIL_DOWN");
+      };
+      h.reader.items = [today];
+      h.script([{ id: "closing", result: "check", reason: "没取到前情" }]);
+      const decision = await h.service.run();
+      expect(decision?.verdict).not.toBe("failed");
+      expect(decision?.counts.judged).toBe(1);
+      const prompt = itemsPart(h.prompts[0] ?? "");
+      expect(prompt).toContain('"relatedUnavailable":true');
+      expect(prompt).not.toContain('"related":[');
+      expect(prompt).toContain("本日中にご返信がない場合");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.relatedRead).toBe("failed");
+      expect(entry?.inputs.relatedFailedSteps).toEqual(["read"]);
+      expect(entry?.inputs.relatedByMail).toEqual({});
+    });
+
+    it("keeps the ledger valid when a reader reports odd or too many failure steps", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map(),
+        failed: new Map(
+          items.map((item, index) => [item.messageId, index === 0 ? "" : `step-${index}`]),
+        ),
+        requests: 1,
+      });
+      h.reader.items = Array.from({ length: 20 }, (_, index) => mail(`m${index}`));
+      h.script(h.reader.items.map((item) => ({ id: item.messageId, result: "ignore" as const })));
+      const decision = await h.service.run();
+      expect(decision?.verdict).not.toBe("failed");
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.relatedRead).toBe("failed");
+      expect(entry?.inputs.relatedFailedSteps?.length).toBeLessThanOrEqual(16);
+      expect(entry?.inputs.relatedFailedSteps).toContain("read");
+    });
+
+    it("marks the check partial when only some mails lost their history", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map([[items[0]?.messageId ?? "", [archive[1] as ProactiveSourceItem]]]),
+        failed: new Map([[items[1]?.messageId ?? "", "subject"]]),
+        requests: 3,
+      });
+      h.reader.items = [today, mail("other", { subject: "別件" })];
+      h.script([
+        { id: "closing", result: "act", todo: "回复", priority: "high" },
+        { id: "other", result: "ignore" },
+      ]);
+      await h.service.run();
+      const prompt = itemsPart(h.prompts[0] ?? "");
+      expect(prompt.match(/"relatedUnavailable":true/gu)?.length).toBe(1);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.relatedRead).toBe("partial");
+      expect(entry?.inputs.relatedFailedSteps).toEqual(["subject"]);
+      expect(entry?.inputs.relatedByMail).toEqual({ closing: ["photo-request"] });
+    });
+
+    it("records earlier mails only for the mails that really reached the model", async () => {
+      const h = await harness({
+        batchSize: 1,
+        dailyCostMicros: 1_500,
+        cost: 1_000,
+        estimate: 600,
+      });
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map(
+          items.map((item) => [item.messageId, [mail(`old-${item.messageId}`)]] as const),
+        ),
+        failed: new Map(),
+        requests: 2,
+      });
+      h.reader.items = [mail("a"), mail("b")];
+      h.script([{ id: "a", result: "ignore" }]);
+      const decision = await h.service.run();
+      expect(decision?.reasonCode).toBe("DAILY_LIMIT");
+      expect(h.prompts).toHaveLength(1);
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.sourceIds).toEqual(["a"]);
+      expect(entry?.inputs.relatedByMail).toEqual({ a: ["old-a"] });
+      expect(entry?.inputs.relatedStats?.messages).toBe(1);
+    });
+
+    it("masks sensitive values inside the body of an earlier mail", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map([
+          [
+            items[0]?.messageId ?? "",
+            [
+              mail("old", {
+                subject: "ログイン",
+                body: "認証コードは 482913 です。以前のご案内です。",
+                receivedAt: "2026-11-01T00:00:00.000Z",
+              }),
+            ],
+          ],
+        ]),
+        failed: new Map(),
+        requests: 1,
+      });
+      const reported: string[] = [];
+      const watched = await harness({
+        onMasked: (sightings) => reported.push(...sightings.map(({ kind }) => kind)),
+      });
+      watched.reader.related = h.reader.related;
+      watched.reader.items = [today];
+      watched.script([{ id: "closing", result: "ignore" }]);
+      await watched.service.run();
+      expect(itemsPart(watched.prompts[0] ?? "")).toContain("以前のご案内です");
+      expect(watched.prompts[0]).not.toContain("482913");
+      expect(reported).toContain("verification-code");
+    });
+
+    it("does not look up earlier mail once the daily limit is already spent", async () => {
+      const h = await harness({ dailyCostMicros: 1_000, cost: 1_000 });
+      let lookups = 0;
+      h.reader.related = async () => {
+        lookups += 1;
+        return { byMail: new Map(), failed: new Map(), requests: 0 };
+      };
+      h.reader.items = [mail("first", { snippet: "随便聊聊" })];
+      h.script([{ id: "first", result: "ignore" }]);
+      await h.service.run();
+      expect(lookups).toBe(1);
+      h.clock.advance(15 * 60_000);
+      h.reader.items = [mail("second", { snippet: "今度ランチ行こう" })];
+      await h.service.run();
+      expect(lookups).toBe(1);
+    });
+
+    it("tells the model when an earlier mail has no readable body", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map([
+          [
+            items[0]?.messageId ?? "",
+            [mail("old", { snippet: "概要のみ", bodyUnavailable: true })],
+          ],
+        ]),
+        failed: new Map(),
+        requests: 1,
+      });
+      h.reader.items = [today];
+      h.script([{ id: "closing", result: "ignore" }]);
+      await h.service.run();
+      expect(itemsPart(h.prompts[0] ?? "")).toContain('"bodyUnavailable":true');
+    });
+
+    it("masks sensitive values inside the earlier mails like in the new mail", async () => {
+      const h = await harness();
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map([
+          [
+            items[0]?.messageId ?? "",
+            [
+              mail("old", {
+                subject: "ログイン",
+                snippet: "認証コードは 482913 です",
+                receivedAt: "2026-11-01T00:00:00.000Z",
+              }),
+            ],
+          ],
+        ]),
+        failed: new Map(),
+        requests: 1,
+      });
+      h.reader.items = [today];
+      h.script([{ id: "closing", result: "ignore" }]);
+      await h.service.run();
+      expect(itemsPart(h.prompts[0] ?? "")).toContain('"related":[');
+      expect(h.prompts[0]).not.toContain("482913");
+    });
+
+    it("keeps at most six earlier mails per mail and cuts each body", async () => {
+      const h = await harness();
+      const many = Array.from({ length: 9 }, (_, index) =>
+        mail(`old-${index}`, {
+          body: `${"長".repeat(3_000)}`,
+          receivedAt: `2026-10-0${index + 1}T00:00:00.000Z`,
+        }),
+      );
+      h.reader.related = async ({ items }) => ({
+        byMail: new Map([[items[0]?.messageId ?? "", many]]),
+        failed: new Map(),
+        requests: 1,
+      });
+      h.reader.items = [today];
+      h.script([{ id: "closing", result: "ignore" }]);
+      await h.service.run();
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs.relatedByMail["closing"]?.length).toBeLessThanOrEqual(6);
+      expect(entry?.inputs.relatedByMail["closing"]).not.toContain("old-0");
+      expect(h.prompts[0]).not.toContain("長".repeat(2_100));
     });
   });
 });
