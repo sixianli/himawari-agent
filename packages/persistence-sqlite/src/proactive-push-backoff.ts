@@ -51,7 +51,7 @@ export function countIgnoredPushes(
        WHERE insight.owner_id = ? AND insight.agent_id = ? AND insight.push_class = ?
          AND insight.push_source_key IS NOT NULL
          AND feedback.first_sent_at > ?
-       ORDER BY feedback.first_sent_at DESC, feedback.source_key DESC, insight.id DESC`,
+       ORDER BY feedback.first_sent_at DESC, insight.id DESC`,
     )
     .all(scope.ownerId, scope.agentId, classKey, sinceAt) as (HistoryRow & { pushKey: string })[];
   const pushes = new Map<string, { at: string; unneeded: boolean; opened: boolean }>();
@@ -188,7 +188,7 @@ export function listBackoff(
            ignored_count AS ignoredCount, restored_at AS restoredAt, updated_at AS updatedAt
          FROM proactive_push_backoff
          WHERE owner_id = ? AND agent_id = ?
-         ORDER BY class_key`,
+         ORDER BY class_key LIMIT 500`,
       )
       .all(scope.ownerId, scope.agentId) as (Omit<ProactiveBackoffClass, "stage"> & {
       stage: number;

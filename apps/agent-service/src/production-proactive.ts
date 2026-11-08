@@ -368,7 +368,11 @@ export class ProductionProactive {
         })),
         importantSenders: [...overview.importantSenders],
         dailyLimitReached: overview.dailyLimitReached,
-        backoff: overview.backoff.map((entry) => ({ ...entry })),
+        backoff: overview.backoff.map((entry) => ({
+          ...entry,
+          classKey: clean(entry.classKey, 128),
+          domain: clean(entry.domain, 128),
+        })),
         insights: overview.insights.map((insight) => ({
           id: insight.id,
           result: insight.result,
