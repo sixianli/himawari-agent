@@ -3,16 +3,16 @@ export interface MessageFocusRequest {
   readonly messageId: string;
 }
 
-let pending: MessageFocusRequest | null = null;
+const REQUEST_LIFETIME_MS = 10_000;
+
+let pending: (MessageFocusRequest & { readonly at: number }) | null = null;
 
 export function requestMessageFocus(threadId: string, messageId: string) {
-  pending = { threadId, messageId };
-  window.dispatchEvent(new Event(MESSAGE_FOCUS_EVENT));
+  pending = { threadId, messageId, at: Date.now() };
 }
 
-export const MESSAGE_FOCUS_EVENT = "himawari:message-focus";
-
 export function pendingMessageFocus(): MessageFocusRequest | null {
+  if (pending && Date.now() - pending.at > REQUEST_LIFETIME_MS) pending = null;
   return pending;
 }
 

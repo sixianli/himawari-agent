@@ -327,13 +327,16 @@ describe("production memory capture", () => {
         ? new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }))
         : undefined;
     };
-    const deleteThreadMessages = () => {
+    const sql = (run: (database: ReturnType<typeof openQualifiedDatabase>) => void) => {
       const rows = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
-      rows.prepare("DELETE FROM thread_messages WHERE thread_id = ?").run(THREAD_ID);
-      rows.close();
+      try {
+        run(rows);
+      } finally {
+        rows.close();
+      }
     };
     return {
-      deleteThreadMessages,
+      sql,
       clock,
       repository,
       memory,
@@ -1892,8 +1895,62 @@ describe("production memory capture", () => {
         ]),
       );
     expect(await sourceOf()).toEqual({ captured: "message-1", imported: null });
-    context.deleteThreadMessages();
+    context.sql((database) =>
+      database.prepare("DELETE FROM thread_messages WHERE thread_id = ?").run(THREAD_ID),
+    );
     expect(await sourceOf()).toEqual({ captured: null, imported: null });
+  });
+
+  it("[P1-1] only an Owner's committed message in a live conversation counts, the earliest wins, and many references are searched in batches", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const memoryId = (await overview(context.control)).memories[0]?.memoryId as string;
+    const sourceOf = async () =>
+      (await overview(context.control)).memories.find((item) => item.memoryId === memoryId)
+        ?.sourceMessageId;
+    const setReferences = (...refs: string[]) =>
+      context.sql((database) => {
+        database.prepare("DELETE FROM memory_provenance WHERE memory_id = ?").run(memoryId);
+        for (const ref of refs)
+          database
+            .prepare(
+              `INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted)
+              VALUES (?, 'reference', ?, 0)`,
+            )
+            .run(memoryId, ref);
+      });
+    expect(await sourceOf()).toBe("message-1");
+    const agentRef = await context.turn("agent", "好的，记下了", null);
+    const laterOwnerRef = await context.turn("owner", "我再说一遍，我最喜欢蓝色", null);
+    setReferences(agentRef);
+    expect(await sourceOf()).toBeNull();
+    setReferences(laterOwnerRef, "payload-owner-1");
+    expect(await sourceOf()).toBe("message-1");
+    setReferences(laterOwnerRef);
+    expect(await sourceOf()).toBe("message-3");
+    setReferences(
+      ...Array.from({ length: 450 }, (_, index) => `unmatched-${String(index).padStart(3, "0")}`),
+      "payload-owner-1",
+    );
+    expect(await sourceOf()).toBe("message-1");
+    context.sql((database) =>
+      database.prepare("UPDATE thread_messages SET message_status = 'partial'").run(),
+    );
+    expect(await sourceOf()).toBeNull();
+    context.sql((database) =>
+      database.prepare("UPDATE thread_messages SET message_status = 'committed'").run(),
+    );
+    expect(await sourceOf()).toBe("message-1");
+    for (const status of ["trashed", "deletion_pending", "deleted_verified"]) {
+      context.sql((database) =>
+        database.prepare("UPDATE threads SET status = ? WHERE id = ?").run(status, THREAD_ID),
+      );
+      expect(await sourceOf(), status).toBeNull();
+    }
   });
 
   it("[MP-7] imports chosen memories as one batch the Owner can undo", async () => {

@@ -528,6 +528,18 @@ function MemoryDetail({
               >
                 {message("memory.page.jumpToQuote")}
               </button>
+            ) : origin === "reminder" && item.sourceThreadId ? (
+              <>
+                {message("memory.page.origin", { o: origin })}
+                {" · "}
+                <button
+                  type="button"
+                  className="memory-link"
+                  onClick={() => item.sourceThreadId && onOpenThread(item.sourceThreadId)}
+                >
+                  {message("memory.source")}
+                </button>
+              </>
             ) : origin === "unavailable" ? (
               message("memory.page.sourceUnavailable")
             ) : origin === "import" && importSource ? (

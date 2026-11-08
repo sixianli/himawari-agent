@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 
 export const SOURCE_STATES = Object.freeze([
   "jump",
+  "reminder",
   "unavailable",
   "import",
   "owner",
@@ -20,8 +21,17 @@ const STATE_EXPRESSION = `
       CASE WHEN EXISTS (
         SELECT 1 FROM memory_provenance p
         JOIN thread_messages t ON t.content_ref = p.source_id
+        JOIN threads h ON h.id = t.thread_id
         WHERE p.memory_id = m.id AND t.thread_id = m.source_thread_id AND t.role = 'owner'
-      ) THEN 'jump' ELSE 'unavailable' END
+          AND t.message_status = 'committed' AND length(p.source_id) <= 512
+          AND h.status NOT IN ('trashed', 'deletion_pending', 'deleted_verified')
+      ) THEN 'jump'
+      WHEN EXISTS (SELECT 1 FROM memory_provenance p WHERE p.memory_id = m.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM memory_provenance p
+          WHERE p.memory_id = m.id AND p.source_id NOT LIKE 'memory-content:reminder:%'
+        ) THEN 'reminder'
+      ELSE 'unavailable' END
     WHEN COALESCE((
       SELECT h.source_deleted FROM memory_history_events h
       WHERE h.memory_id = m.id ORDER BY h.occurred_at, h.rowid LIMIT 1
@@ -45,6 +55,7 @@ export function countSources(database) {
 export function renderCounts(counts) {
   const labels = {
     jump: "能跳到原话",
+    reminder: "提醒创建，无原话",
     unavailable: "来源已不可查",
     import: "导入的，没有原话",
     owner: "手动添加的",

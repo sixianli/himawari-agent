@@ -110,6 +110,19 @@ describe("[P1-1] jumping to a message from the memory page", () => {
     expect(pendingMessageFocus()).toBeNull();
   });
 
+  it("forgets a request that nobody picked up within ten seconds", () => {
+    vi.useFakeTimers();
+    try {
+      requestMessageFocus("thread-1", "message-b");
+      vi.advanceTimersByTime(9_000);
+      expect(pendingMessageFocus()).not.toBeNull();
+      vi.advanceTimersByTime(2_000);
+      expect(pendingMessageFocus()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does nothing for another thread, and for a message that is not there", async () => {
     requestMessageFocus("thread-other", "message-b");
     await show("thread-1");

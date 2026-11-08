@@ -1,5 +1,6 @@
 export declare const SOURCE_STATES: readonly [
   "jump",
+  "reminder",
   "unavailable",
   "import",
   "owner",
@@ -9,6 +10,7 @@ export declare const SOURCE_STATES: readonly [
 export interface MemorySourceCounts {
   readonly total: number;
   readonly jump: number;
+  readonly reminder: number;
   readonly unavailable: number;
   readonly import: number;
   readonly owner: number;

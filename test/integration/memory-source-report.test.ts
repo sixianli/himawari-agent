@@ -39,7 +39,7 @@ describe("[P1-1] memory source report", () => {
           VALUES (?, 'o', 'a', 'private', 'sqlite_blob', x'00', 'digest', 'active', ?)`,
         )
         .run(ref, T0);
-    for (const ref of ["c", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8"]) payload(ref);
+    for (const ref of ["c", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9"]) payload(ref);
     database
       .prepare(
         `INSERT INTO memory_import_batches (id, owner_id, agent_id, source, item_count, created_at)
@@ -62,6 +62,7 @@ describe("[P1-1] memory source report", () => {
     memory("memory:lost-thread", "m6", null);
     memory("memory:tidy", "m7", null);
     memory("memory:trashed", "m8", "t1", "trashed");
+    memory("memory:reminder", "m9", "t1");
     database
       .prepare("UPDATE memory_records SET import_batch_id = 'b1' WHERE id = 'memory:import:b1:0'")
       .run();
@@ -84,6 +85,7 @@ describe("[P1-1] memory source report", () => {
     provenance("memory:capture-found", "c");
     provenance("memory:capture-wrong-thread", "c");
     provenance("memory:capture-unmatched", "not-a-message");
+    provenance("memory:reminder", "memory-content:reminder:key-1");
     const event = (id: string, deleted: number) =>
       database
         .prepare(
@@ -96,8 +98,9 @@ describe("[P1-1] memory source report", () => {
     const counts = countSources(database);
     database.close();
     expect(counts).toEqual({
-      total: 7,
+      total: 8,
       jump: 1,
+      reminder: 1,
       unavailable: 2,
       import: 1,
       owner: 1,

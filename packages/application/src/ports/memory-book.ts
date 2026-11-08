@@ -119,6 +119,8 @@ export interface MemoryBookStorePort {
     input: MemoryBookScope & { readonly id: string; readonly undoneAt: string },
   ): Promise<boolean>;
   findOwnerMessages(
-    input: MemoryBookScope & { readonly refs: readonly string[] },
+    input: MemoryBookScope & {
+      readonly lookups: readonly { readonly threadId: string; readonly refs: readonly string[] }[];
+    },
   ): Promise<readonly MemorySourceMessage[]>;
 }

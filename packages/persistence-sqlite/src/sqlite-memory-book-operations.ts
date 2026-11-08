@@ -104,7 +104,11 @@ export class SqliteMemoryBookOperations {
       case "memoryBook.markImportUndone":
         return this.markImportUndone(payload as Scope & { id: string; undoneAt: string });
       case "memoryBook.findOwnerMessages":
-        return this.findOwnerMessages(payload as Scope & { refs: readonly string[] });
+        return this.findOwnerMessages(
+          payload as Scope & {
+            lookups: readonly { threadId: string; refs: readonly string[] }[];
+          },
+        );
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Memory book operation ${operation}`);
     }
@@ -549,27 +553,34 @@ export class SqliteMemoryBookOperations {
       .all(input.ownerId, input.agentId, input.limit) as MemoryImportBatch[];
   }
 
-  private findOwnerMessages(input: Scope & { refs: readonly string[] }) {
-    const refs = [...new Set(input.refs)];
+  private findOwnerMessages(
+    input: Scope & { lookups: readonly { threadId: string; refs: readonly string[] }[] },
+  ) {
     const found: {
       contentRef: string;
       threadId: string;
       messageId: string;
       sequence: number;
     }[] = [];
-    for (let index = 0; index < refs.length; index += 200) {
-      const batch = refs.slice(index, index + 200);
-      found.push(
-        ...(this.database
-          .prepare(
-            `SELECT content_ref AS contentRef, thread_id AS threadId, id AS messageId, sequence
-            FROM thread_messages
-            WHERE owner_id = ? AND agent_id = ? AND role = 'owner'
-              AND content_ref IN (${batch.map(() => "?").join(", ")})
-            ORDER BY thread_id, sequence`,
-          )
-          .all(input.ownerId, input.agentId, ...batch) as typeof found),
-      );
+    for (const { threadId, refs: all } of input.lookups) {
+      const refs = [...new Set(all)];
+      for (let index = 0; index < refs.length; index += 200) {
+        const batch = refs.slice(index, index + 200);
+        found.push(
+          ...(this.database
+            .prepare(
+              `SELECT t.content_ref AS contentRef, t.thread_id AS threadId, t.id AS messageId,
+                t.sequence AS sequence
+              FROM thread_messages t JOIN threads h ON h.id = t.thread_id
+              WHERE t.owner_id = ? AND t.agent_id = ? AND t.thread_id = ? AND t.role = 'owner'
+                AND t.message_status = 'committed'
+                AND h.status NOT IN ('trashed', 'deletion_pending', 'deleted_verified')
+                AND t.content_ref IN (${batch.map(() => "?").join(", ")})
+              ORDER BY t.sequence`,
+            )
+            .all(input.ownerId, input.agentId, threadId, ...batch) as typeof found),
+        );
+      }
     }
     return found;
   }

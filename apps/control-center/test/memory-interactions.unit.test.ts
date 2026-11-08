@@ -699,6 +699,32 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-detail")).not.toContain("跳到原话");
   });
 
+  it("[P1-1] a memory made by the reminder tool is not called lost, and still opens its conversation", async () => {
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [
+        memoryItem("m-reminder", "下周三交报告", {
+          sourceMessageId: null,
+          sourceRefs: ["memory-content:reminder:key-1"],
+        }),
+        memoryItem("m-lost", "主人喜欢爬山", {
+          sourceMessageId: null,
+          sourceRefs: ["memory-content:reminder:key-2", "payload-9"],
+        }),
+      ],
+    };
+    await render();
+    expect(text("#settings [data-kind=source-unavailable]")).toBe(
+      "有 1 条记忆的来源已不可查，找不回当初那句话",
+    );
+    await click("#settings .memory-results", "下周三交报告");
+    expect(text("#settings .memory-detail")).toContain("提醒创建，无原话");
+    expect(text("#settings .memory-detail")).not.toContain("来源已不可查");
+    await click("#settings .memory-detail", "来源对话");
+    expect(opened).toHaveBeenLastCalledWith("thread-1");
+  });
+
   it("[P1-1] imported memories name their batch, are counted apart, and offer no jump", async () => {
     overview = {
       ...overview,

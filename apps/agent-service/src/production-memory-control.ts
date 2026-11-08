@@ -305,9 +305,16 @@ export class ProductionMemoryControl {
         memoryIds: records.slice(index, index + HISTORY_BATCH).map(({ id }) => id),
       }))
         history.set(event.memoryId, [...(history.get(event.memoryId) ?? []), event]);
+    const refsByThread = new Map<string, Set<string>>();
+    for (const { sourceThreadId, sourceRefs } of records) {
+      if (!sourceThreadId) continue;
+      const refs = refsByThread.get(sourceThreadId) ?? new Set<string>();
+      for (const ref of sourceRefs) if (ref.length <= 512) refs.add(ref);
+      refsByThread.set(sourceThreadId, refs);
+    }
     const sourceMessages = await this.options.book.findOwnerMessages({
       ...scope,
-      refs: records.flatMap(({ sourceRefs }) => sourceRefs.filter((ref) => ref.length <= 512)),
+      lookups: [...refsByThread].map(([threadId, refs]) => ({ threadId, refs: [...refs] })),
     });
     for (const memory of records) {
       if (memory.status !== "active" && memory.status !== "archived" && memory.status !== "trashed")
