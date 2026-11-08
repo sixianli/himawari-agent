@@ -697,6 +697,8 @@ describe("memory approval and management", () => {
     await click("#settings .memory-results", "主人喜欢爬山");
     expect(text("#settings .memory-detail")).toContain("来源已不可查");
     expect(text("#settings .memory-detail")).not.toContain("跳到原话");
+    await click("#settings .memory-detail", "来源对话");
+    expect(opened).toHaveBeenLastCalledWith("thread-1");
   });
 
   it("[P1-1] a memory made by the reminder tool is not called lost, and still opens its conversation", async () => {

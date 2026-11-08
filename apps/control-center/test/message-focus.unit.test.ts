@@ -4,7 +4,12 @@ import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatHistory } from "../src/components/chat-history.tsx";
-import { pendingMessageFocus, requestMessageFocus } from "../src/message-focus.ts";
+import {
+  clearMessageFocus,
+  hasPendingMessageFocus,
+  requestMessageFocus,
+  takeMessageFocus,
+} from "../src/message-focus.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -107,17 +112,29 @@ describe("[P1-1] jumping to a message from the memory page", () => {
     expect(
       container.querySelector("[data-message-id=message-a]")?.hasAttribute("data-focused"),
     ).toBe(false);
-    expect(pendingMessageFocus()).toBeNull();
+    expect(hasPendingMessageFocus()).toBe(false);
   });
 
-  it("forgets a request that nobody picked up within ten seconds", () => {
+  it("waits as long as the conversation takes to load, and gives up only after another conversation has been showing for ten seconds", () => {
     vi.useFakeTimers();
     try {
       requestMessageFocus("thread-1", "message-b");
+      vi.advanceTimersByTime(60_000);
+      expect(hasPendingMessageFocus()).toBe(true);
+      expect(takeMessageFocus("thread-other")).toBeNull();
       vi.advanceTimersByTime(9_000);
-      expect(pendingMessageFocus()).not.toBeNull();
+      expect(takeMessageFocus("thread-other")).toBeNull();
+      expect(hasPendingMessageFocus()).toBe(true);
       vi.advanceTimersByTime(2_000);
-      expect(pendingMessageFocus()).toBeNull();
+      expect(takeMessageFocus("thread-other")).toBeNull();
+      expect(hasPendingMessageFocus()).toBe(false);
+      requestMessageFocus("thread-1", "message-b");
+      vi.advanceTimersByTime(60_000);
+      expect(takeMessageFocus("thread-1")).toEqual({
+        threadId: "thread-1",
+        messageId: "message-b",
+      });
+      expect(hasPendingMessageFocus()).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -127,10 +144,11 @@ describe("[P1-1] jumping to a message from the memory page", () => {
     requestMessageFocus("thread-other", "message-b");
     await show("thread-1");
     expect(scrolled).not.toHaveBeenCalled();
+    clearMessageFocus();
     requestMessageFocus("thread-1", "message-gone");
     await show("thread-1");
     expect(scrolled).not.toHaveBeenCalled();
     expect(container.querySelector("[data-focused]")).toBeNull();
-    expect(pendingMessageFocus()).toBeNull();
+    expect(hasPendingMessageFocus()).toBe(false);
   });
 });

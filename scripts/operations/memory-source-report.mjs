@@ -26,10 +26,13 @@ const STATE_EXPRESSION = `
           AND t.message_status = 'committed' AND length(p.source_id) <= 512
           AND h.status NOT IN ('trashed', 'deletion_pending', 'deleted_verified')
       ) THEN 'jump'
-      WHEN EXISTS (SELECT 1 FROM memory_provenance p WHERE p.memory_id = m.id)
-        AND NOT EXISTS (
+      WHEN EXISTS (
+        SELECT 1 FROM memory_provenance p
+        WHERE p.memory_id = m.id AND length(p.source_id) <= 512
+      ) AND NOT EXISTS (
           SELECT 1 FROM memory_provenance p
-          WHERE p.memory_id = m.id AND p.source_id NOT LIKE 'memory-content:reminder:%'
+          WHERE p.memory_id = m.id AND length(p.source_id) <= 512
+            AND p.source_id NOT LIKE 'memory-content:reminder:%'
         ) THEN 'reminder'
       ELSE 'unavailable' END
     WHEN COALESCE((

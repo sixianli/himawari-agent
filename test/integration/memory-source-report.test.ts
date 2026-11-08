@@ -24,7 +24,7 @@ describe("[P1-1] memory source report", () => {
     applyMigrations(database, await loadBundledMigrations());
     database.prepare("INSERT INTO owners (id, revision) VALUES ('o', 0)").run();
     database.prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('a', 'o', 0)").run();
-    for (const thread of ["t1", "t2"])
+    for (const thread of ["t1", "t2", "t3", "t4"])
       database
         .prepare(
           `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
@@ -39,7 +39,25 @@ describe("[P1-1] memory source report", () => {
           VALUES (?, 'o', 'a', 'private', 'sqlite_blob', x'00', 'digest', 'active', ?)`,
         )
         .run(ref, T0);
-    for (const ref of ["c", "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9"]) payload(ref);
+    for (const ref of [
+      "c",
+      "m1",
+      "m2",
+      "m3",
+      "m4",
+      "m5",
+      "m6",
+      "m7",
+      "m8",
+      "m9",
+      "d1",
+      "d2",
+      "d3",
+      "d4",
+      "d5",
+      "d6",
+    ])
+      payload(ref);
     database
       .prepare(
         `INSERT INTO memory_import_batches (id, owner_id, agent_id, source, item_count, created_at)
@@ -63,6 +81,11 @@ describe("[P1-1] memory source report", () => {
     memory("memory:tidy", "m7", null);
     memory("memory:trashed", "m8", "t1", "trashed");
     memory("memory:reminder", "m9", "t1");
+    memory("memory:reminder-long", "d1", "t1");
+    memory("memory:reminder-mixed", "d2", "t1");
+    memory("memory:partial", "d3", "t1");
+    memory("memory:in-trash", "d4", "t3");
+    memory("memory:being-deleted", "d5", "t4");
     database
       .prepare("UPDATE memory_records SET import_batch_id = 'b1' WHERE id = 'memory:import:b1:0'")
       .run();
@@ -75,6 +98,14 @@ describe("[P1-1] memory source report", () => {
         )
         .run(id, thread, sequence, role, ref, T0);
     message("msg-1", "t1", 1, "owner", "c");
+    message("msg-partial", "t1", 2, "owner", "d1");
+    message("msg-trash", "t3", 1, "owner", "d2");
+    message("msg-deleting", "t4", 1, "owner", "d3");
+    database
+      .prepare("UPDATE thread_messages SET message_status = 'partial' WHERE id = 'msg-partial'")
+      .run();
+    database.prepare("UPDATE threads SET status = 'trashed' WHERE id = 't3'").run();
+    database.prepare("UPDATE threads SET status = 'deletion_pending' WHERE id = 't4'").run();
     const provenance = (id: string, ref: string) =>
       database
         .prepare(
@@ -86,6 +117,13 @@ describe("[P1-1] memory source report", () => {
     provenance("memory:capture-wrong-thread", "c");
     provenance("memory:capture-unmatched", "not-a-message");
     provenance("memory:reminder", "memory-content:reminder:key-1");
+    provenance("memory:reminder-long", "memory-content:reminder:key-2");
+    provenance("memory:reminder-long", `x${"y".repeat(600)}`);
+    provenance("memory:reminder-mixed", "memory-content:reminder:key-3");
+    provenance("memory:reminder-mixed", "not-a-reminder");
+    provenance("memory:partial", "d1");
+    provenance("memory:in-trash", "d2");
+    provenance("memory:being-deleted", "d3");
     const event = (id: string, deleted: number) =>
       database
         .prepare(
@@ -98,15 +136,15 @@ describe("[P1-1] memory source report", () => {
     const counts = countSources(database);
     database.close();
     expect(counts).toEqual({
-      total: 8,
+      total: 13,
       jump: 1,
-      reminder: 1,
-      unavailable: 2,
+      reminder: 2,
+      unavailable: 6,
       import: 1,
       owner: 1,
       deleted: 1,
       tidy: 1,
     });
-    expect(renderCounts(counts)).toContain("| 来源已不可查 | 2 |");
+    expect(renderCounts(counts)).toContain("| 来源已不可查 | 6 |");
   });
 });

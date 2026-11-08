@@ -541,7 +541,21 @@ function MemoryDetail({
                 </button>
               </>
             ) : origin === "unavailable" ? (
-              message("memory.page.sourceUnavailable")
+              <>
+                {message("memory.page.sourceUnavailable")}
+                {item.sourceThreadId ? (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="memory-link"
+                      onClick={() => item.sourceThreadId && onOpenThread(item.sourceThreadId)}
+                    >
+                      {message("memory.source")}
+                    </button>
+                  </>
+                ) : null}
+              </>
             ) : origin === "import" && importSource ? (
               message("memory.page.originImport", { source: importSource })
             ) : (

@@ -10,7 +10,7 @@ import { formatBytes, splitDraft } from "../draft-attachments.js";
 import type { RunSummary } from "../execution-view.js";
 import { executionItems, isAnsweredRun, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import { clearMessageFocus, pendingMessageFocus } from "../message-focus.js";
+import { takeMessageFocus } from "../message-focus.js";
 import { turnSources } from "../turn-summary.js";
 import { AnswerActions, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
@@ -113,12 +113,12 @@ export function ChatHistory({
   const focusMessages = detail?.payload.messages;
   useEffect(() => {
     void contentByRef;
-    const request = pendingMessageFocus();
-    if (!request || !focusThreadId || request.threadId !== focusThreadId || !focusMessages) return;
+    if (!focusThreadId || !focusMessages) return;
+    const request = takeMessageFocus(focusThreadId);
+    if (!request) return;
     const target = [
       ...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? []),
     ].find((element) => element.dataset["messageId"] === request.messageId);
-    clearMessageFocus();
     if (!target) return;
     following.current = false;
     setShowLatest(true);

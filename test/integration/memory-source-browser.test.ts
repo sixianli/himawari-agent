@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, type Browser, type Page, expect as uiExpect } from "@playwright/test";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, it } from "vitest";
 import { repositoryRoot } from "../fixtures/product-path-harness.ts";
 
 const APP = path.join(repositoryRoot, "apps/control-center");

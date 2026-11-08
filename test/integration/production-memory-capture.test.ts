@@ -1975,6 +1975,31 @@ describe("production memory capture", () => {
     const laterOwnerRef = await context.turn("owner", "我再说一遍，我最喜欢蓝色", null);
     setReferences(agentRef);
     expect(await sourceOf()).toBeNull();
+    await context.protect("payload-shared", "共用的一句话");
+    context.sql((database) => {
+      database
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES ('message-agent-shared', ?, ?, ?, 0, 90, 'agent', ?, 'private', ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, THREAD_ID, "payload-shared", T0);
+      database
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES ('message-owner-shared', ?, ?, ?, 0, 91, 'owner', ?, 'private', ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, THREAD_ID, "payload-shared", T0);
+    });
+    setReferences("payload-shared");
+    expect(await sourceOf()).toBe("message-owner-shared");
+    context.sql((database) =>
+      database.prepare("DELETE FROM thread_messages WHERE id = 'message-owner-shared'").run(),
+    );
+    expect(await sourceOf()).toBeNull();
     setReferences(laterOwnerRef, "payload-owner-1");
     expect(await sourceOf()).toBe("message-1");
     setReferences(laterOwnerRef);
