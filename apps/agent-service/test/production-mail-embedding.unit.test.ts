@@ -117,6 +117,36 @@ describe("recall for the Gmail check", () => {
       concurrency: 4,
     });
 
+  it("[PA-2] searches with tentative memories included and marks only the tentative hits", async () => {
+    const active = { now: 0, peak: 0 };
+    const seen: Record<string, unknown>[] = [];
+    const recall = recallWith(async (input) => {
+      seen.push(input);
+      return [
+        found("m1", 0.7),
+        {
+          memory: { id: "m2", contentRef: "ref-m2", attributes: { tentative: true } },
+          score: 0.6,
+        },
+        {
+          memory: { id: "m3", contentRef: "ref-m3", attributes: { tentative: false } },
+          score: 0.5,
+        },
+      ];
+    }, active);
+    const result = await recall.recall({
+      queries: [{ messageId: "mail-1", query: "q" }],
+      deadlineAt: LATER,
+      signal: new AbortController().signal,
+    });
+    expect(seen[0]).toMatchObject({ includeTentative: true });
+    expect(result.hits.get("mail-1")).toEqual([
+      { id: "m1", text: "text of ref-m1", score: 0.7 },
+      { id: "m2", text: "text of ref-m2", score: 0.6, tentative: true },
+      { id: "m3", text: "text of ref-m3", score: 0.5 },
+    ]);
+  });
+
   it("searches read-only with the check's threshold, without rules, and runs at most four at a time", async () => {
     const active = { now: 0, peak: 0 };
     const seen: Record<string, unknown>[] = [];

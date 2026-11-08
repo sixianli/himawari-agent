@@ -76,7 +76,7 @@ date: "2026-10-27"
 
 ## Live-State Preflight
 
-生产机上没有 `sqlite3` 和 `node` 命令；只读查库用 `ssh root@84.247.157.41 'sudo -u himawari-prod python3 -I -' < 本地脚本`，脚本里用 `mode=ro` 打开 `/var/lib/himawari/state/data/product.sqlite`。`himawari-prod` 账号读不了 `/root`，脚本要从标准输入喂进去。
+生产机上没有 `sqlite3` 和 `node` 命令；只读查库用 `ssh root@84.247.157.41 'sudo -u himawari-prod python3 -I -' < 本地脚本`，脚本里用 `mode=ro` 打开 `/var/lib/himawari/state/data/product.sqlite`。`himawari-prod` 账号读不了 `/root`，脚本要从标准输入喂进去。Mac 上的固定只读入口 `scripts/operations/prod-read.sh` 用 `/opt/himawari/node/bin/node`（绝对路径，不在 `PATH` 里）查库，两种做法都可用。
 
 1. `systemctl is-active himawari-prod.service cloudflared.service`：两个都是 `active`。
 2. `curl -s -o /dev/null -w '%{http_code}' -H 'Host: himawari.siyi.win' http://127.0.0.1:8400/`：200。不带 Host 头是 403，属正常。

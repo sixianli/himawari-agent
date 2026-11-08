@@ -1068,7 +1068,8 @@ export const messages = {
   "proactive.apps.outcome":
     "{o, select, connected {Gmail connected. The first check starts now.} denied {You didn’t allow access on the Google page, so nothing was connected.} other {Connecting didn’t work. Please try again.}}",
   "proactive.apps.what": "What Himawari reads and who receives it",
-  "proactive.apps.what1": "Reads new mail only; never archives, labels or replies",
+  "proactive.apps.what1":
+    "Read-only; never archives, labels or replies. To judge a new mail it also looks up earlier mail about the same matter (including archived mail and mail you sent) and sends that to the model too",
   "proactive.apps.what2": "Skips spam; also reads the mail you send yourself",
   "proactive.apps.what3":
     "Sends the sender, subject and full body to the model, with only attachment names; recognisable passwords, verification codes, card numbers and ID numbers are masked first, nothing else is",

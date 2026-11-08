@@ -999,7 +999,8 @@ export const messages = {
   "proactive.apps.outcome":
     "{o, select, connected {已连接 Gmail。第一次检查马上开始。} denied {你在 Google 页面没有同意，所以没有连接。} other {连接没有成功，请再试一次。}}",
   "proactive.apps.what": "Himawari 会读什么、发给谁",
-  "proactive.apps.what1": "只读新邮件；不归档、不打标签、不回信",
+  "proactive.apps.what1":
+    "只读邮件；不归档、不打标签、不回信。判断一封新邮件时，还会查同一件事以前的往来邮件（包括已归档和你发出的），一并发给模型",
   "proactive.apps.what2": "垃圾邮件不看；你自己发出的邮件也会读",
   "proactive.apps.what3":
     "把发件人、标题和邮件正文发给模型，附件只发文件名；发出前会遮住认得出的密码、验证码、银行卡号和证件号，其他内容不遮",

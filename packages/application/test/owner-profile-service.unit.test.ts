@@ -48,6 +48,7 @@ const TEXT: Record<string, string> = {
   "memory-trip": "主人这周在东京出差",
   "memory-allergy": "主人对青霉素过敏",
   "memory-public": "主人的博客地址是公开的",
+  "memory-milk": "主人偏好明治乳制品",
 };
 
 function service(
@@ -172,6 +173,26 @@ describe("owner profile composition", () => {
     expect(result.blocks.every(({ dataClassification }) => dataClassification === "private")).toBe(
       true,
     );
+  });
+
+  it("[PA-2] never puts a tentative memory into the profile block, even an important one", async () => {
+    const tentative = memory("memory-milk", "preference", 999);
+    const { profile, stored } = service([
+      ...records,
+      {
+        ...tentative,
+        inference: true,
+        attributes: { ...(tentative.attributes ?? DEFAULT_MEMORY_ATTRIBUTES), tentative: true },
+      },
+    ]);
+    const result = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "sensitive",
+      now: NOW,
+    });
+    expect(result.memoryIds).not.toContain("memory-milk");
+    expect(stored.map(({ text }) => text).join("\n")).not.toContain("明治");
   });
 
   it("leaves private facts out of a public request and marks public-only blocks public", async () => {

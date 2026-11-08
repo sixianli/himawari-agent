@@ -13,6 +13,8 @@ export const MAIL_JUDGMENT = fixedPrompt({
     "这些结论决定邮件会不会出现在主人的提醒页，所以要严格，宁可少报，不要刷屏。",
     '带 "sentByOwner":true 的是主人自己发出的邮件，不是别人发给他的。这类邮件只有主人明确答应了将来要做的事（有交付物或时间）时才判 "act"，"todo" 写清主人答应做什么，有明确时间就写 "dueAt"；回执、致谢、确认、客套话和已经办完的事一律判 "ignore"，不要把它当成需要主人回复的来信。',
     '"bodyTruncated":true 表示正文太长、中间被省略；"bodyUnavailable":true 表示没有取到正文，只有摘要。这两种情况不要假设你看过全文，证据不足时判 "check"，不要臆测。',
+    '邮件里的 "related" 是同一件事以前的往来邮件（同一串对话、同标题同一批人，或同一个订单号/预约号/案件号），按时间从早到晚排列，带 "sentByOwner":true 的是主人自己发的。先读完来龙去脉再判断：以前主人已经办完或对方已经答复的事，这封通常不用再提醒；以前主人提过申请、对方要求补充或限期的事，这封很可能是催办或最后通知。"related" 只是背景，判断的对象仍然是这封邮件本身。',
+    '"relatedUnavailable":true 表示没能取到以前的往来邮件（或只取到一部分），不要假设没有前情，证据不足时判 "check"。',
     "对每封邮件给出一个结论：",
     '- "act"：主人自己不处理就会有实际损失或错过，而且必须由主人本人动手的事：账单和付款、需要回复的真人来信、主人已经报名或预约的事项的时间变更和到场通知、有明确截止日期的申请或报名、官方机构的手续；',
     '- "know"：不用做事，但对主人本人有实际影响的关键信息（例如账户安全、费用变化、重要的状态变更）。提醒页只显示主人要处理的事，所以 "know" 只有涉及账单和金钱、日本的官方机构（go.jp、lg.jp 等）或主人指定的重要发件人时才会显示，其余只进“筛掉”清单；',
@@ -37,6 +39,15 @@ export const MAIL_JUDGMENT_MEMORIES_HEADER = fixedPrompt({
   layer: "background",
   output: "free-text",
   text: "主人的记忆（mail 是它对应的邮件 id）：",
+});
+
+export const MAIL_JUDGMENT_TENTATIVE_NOTE = fixedPrompt({
+  id: "mail.judgment.tentative-note",
+  purpose: "邮件判断里有待确认记忆时，说明带 tentative 的记忆只是线索",
+  usedBy: ["packages/application/src/services/proactive-mail-check-service.ts"],
+  layer: "background",
+  output: "free-text",
+  text: '上面带 "tentative":true 的记忆是系统根据主人的话推测出来的，主人没有确认过：只能当作线索，不能当作事实，也不能单凭它把邮件判为 "act"；它没有发挥作用就不要写进 "usedMemoryIds"。',
 });
 
 export const MAIL_JUDGMENT_ITEMS_HEADER = fixedPrompt({

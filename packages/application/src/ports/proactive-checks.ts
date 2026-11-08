@@ -50,6 +50,7 @@ export interface ProactiveSourceItem {
   readonly bodyTruncated: boolean;
   readonly bodyUnavailable: boolean;
   readonly attachments: readonly ProactiveMailAttachment[];
+  readonly participants?: readonly string[];
 }
 
 export interface ProactiveMailAttachment {
@@ -166,6 +167,7 @@ export interface ProactiveMemoryHit {
   readonly id: string;
   readonly text: string;
   readonly score: number;
+  readonly tentative?: boolean;
 }
 
 export interface ProactiveMemoryQuery {
@@ -189,6 +191,15 @@ export interface ProactiveMemoryRecall {
 
 export type ProactiveMemoryRecallStatus = "off" | "ok" | "partial" | "failed";
 
+export type ProactiveRelatedReadStatus = "off" | "ok" | "partial" | "failed";
+
+export interface ProactiveRelatedStats {
+  readonly requests: number;
+  readonly messages: number;
+  readonly characters: number;
+  readonly durationMs: number;
+}
+
 export interface ProactiveCheckInputs {
   readonly ruleIds: readonly string[];
   readonly sourceIds: readonly string[];
@@ -196,8 +207,13 @@ export interface ProactiveCheckInputs {
   readonly memoryInjected: boolean;
   readonly memoryIds: readonly string[];
   readonly usedMemoryIds: readonly string[];
+  readonly tentativeMemoryIds?: readonly string[];
   readonly memoryByMail: Readonly<Record<string, readonly string[]>>;
   readonly memoryRecall: ProactiveMemoryRecallStatus;
+  readonly relatedByMail?: Readonly<Record<string, readonly string[]>>;
+  readonly relatedRead?: ProactiveRelatedReadStatus;
+  readonly relatedStats?: ProactiveRelatedStats;
+  readonly relatedFailedSteps?: readonly string[];
 }
 
 export interface ProactiveCheckRecord extends ProactiveScope {
@@ -335,8 +351,27 @@ export type ProactiveFetchResult =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "failed"; readonly step: string };
 
+export interface ProactiveRelatedLimits {
+  readonly perMail: number;
+  readonly requestsPerCheck: number;
+}
+
+export interface ProactiveRelatedFetch {
+  readonly byMail: ReadonlyMap<string, readonly ProactiveSourceItem[]>;
+  readonly failed: ReadonlyMap<string, string>;
+  readonly requests: number;
+}
+
 export interface ProactiveSourceReader {
   readonly source: ProactiveSource;
+  related?:
+    | ((input: {
+        readonly token: string;
+        readonly items: readonly ProactiveSourceItem[];
+        readonly limits: ProactiveRelatedLimits;
+        readonly signal: AbortSignal;
+      }) => Promise<ProactiveRelatedFetch>)
+    | undefined;
   fetch(input: {
     readonly token: string;
     readonly cursor: string | null;

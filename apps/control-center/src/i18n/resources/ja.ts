@@ -1065,7 +1065,8 @@ export const messages = {
   "proactive.apps.outcome":
     "{o, select, connected {Gmail に接続しました。最初の確認をすぐに始めます。} denied {Google の画面で許可されなかったため、接続していません。} other {接続できませんでした。もう一度お試しください。}}",
   "proactive.apps.what": "Himawari が読むものと送り先",
-  "proactive.apps.what1": "新着メールを読むだけ。アーカイブ・ラベル付け・返信はしません",
+  "proactive.apps.what1":
+    "メールを読むだけ。アーカイブ・ラベル付け・返信はしません。新着メールを判断するとき、同じ件のこれまでのやり取り（アーカイブ済みや自分が送ったメールを含む）も探して、あわせてモデルに送ります",
   "proactive.apps.what2": "迷惑メールは読みません。自分が送ったメールは読みます",
   "proactive.apps.what3":
     "差出人・件名・本文をモデルに送ります。添付ファイルは名前だけです。送る前に、見分けられるパスワード・認証コード・カード番号・証明書番号は伏せ、それ以外は伏せません",

@@ -684,3 +684,16 @@ describe("reporting what was masked", () => {
     expect(JSON.stringify(reports[1])).not.toContain("482910");
   });
 });
+
+describe("[mask-not-block] external services", () => {
+  it("numbers a value sent to an external service the same way as in a model request", async () => {
+    const { sent } = await send("/chat/completions", {
+      model: "m",
+      messages: [{ role: "user", content: "password: hunter2abc" }],
+    });
+    const modelText = (sent["messages"] as { content: string }[])[0]?.content ?? "";
+    const tag = await egress().externalTag();
+    expect(`password: [密码#${tag("password", "hunter2abc")}]`).toBe(modelText);
+    expect(tag("password", "hunter2abc")).not.toBe(tag("password", "other9xyz"));
+  });
+});
