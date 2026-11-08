@@ -673,6 +673,29 @@ describe("memory approval and management", () => {
     expect(document.querySelector("#settings [data-kind=source-unavailable]")).toBeNull();
   });
 
+  it("[P1-1] a jump to a message deleted since the page loaded says the source is gone instead of doing nothing", async () => {
+    const found = memoryItem("m-stale", "主人喜欢爬山", { sourceMessageId: "message-7" });
+    overview = { ...overview, pending: [], memories: [found] };
+    await render();
+    await click("#settings .memory-results", "主人喜欢爬山");
+    expect(text("#settings .memory-detail")).toContain("跳到原话");
+    overview = {
+      ...overview,
+      memories: [memoryItem("m-stale", "主人喜欢爬山", { sourceMessageId: null })],
+    };
+    opened.mockClear();
+    await click("#settings .memory-detail", "跳到原话");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(opened).not.toHaveBeenCalled();
+    expect(text("#settings .memory-detail")).toContain("来源已不可查");
+    expect(text("#settings .memory-detail")).not.toContain("跳到原话");
+    expect(text("#settings [data-kind=source-unavailable]")).toBe(
+      "有 1 条记忆的来源已不可查，找不回当初那句话",
+    );
+  });
+
   it("[P1-1] a memory whose quote cannot be found says so, is counted, and offers no jump", async () => {
     overview = {
       ...overview,

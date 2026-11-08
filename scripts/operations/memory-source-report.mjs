@@ -13,6 +13,8 @@ export const SOURCE_STATES = Object.freeze([
   "tidy",
 ]);
 
+export const SOURCE_REF_MAX_LENGTH = 512;
+
 const STATE_EXPRESSION = `
   CASE
     WHEN m.import_batch_id IS NOT NULL THEN 'import'
@@ -23,15 +25,15 @@ const STATE_EXPRESSION = `
         JOIN thread_messages t ON t.content_ref = p.source_id
         JOIN threads h ON h.id = t.thread_id
         WHERE p.memory_id = m.id AND t.thread_id = m.source_thread_id AND t.role = 'owner'
-          AND t.message_status = 'committed' AND length(p.source_id) <= 512
+          AND t.message_status = 'committed' AND length(p.source_id) <= ${SOURCE_REF_MAX_LENGTH}
           AND h.status NOT IN ('trashed', 'deletion_pending', 'deleted_verified')
       ) THEN 'jump'
       WHEN EXISTS (
         SELECT 1 FROM memory_provenance p
-        WHERE p.memory_id = m.id AND length(p.source_id) <= 512
+        WHERE p.memory_id = m.id AND length(p.source_id) <= ${SOURCE_REF_MAX_LENGTH}
       ) AND NOT EXISTS (
           SELECT 1 FROM memory_provenance p
-          WHERE p.memory_id = m.id AND length(p.source_id) <= 512
+          WHERE p.memory_id = m.id AND length(p.source_id) <= ${SOURCE_REF_MAX_LENGTH}
             AND p.source_id NOT LIKE 'memory-content:reminder:%'
         ) THEN 'reminder'
       ELSE 'unavailable' END

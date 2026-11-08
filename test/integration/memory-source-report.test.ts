@@ -1,13 +1,18 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { MEMORY_SOURCE_REF_MAX_LENGTH } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { countSources, renderCounts } from "../../scripts/operations/memory-source-report.mjs";
+import {
+  countSources,
+  renderCounts,
+  SOURCE_REF_MAX_LENGTH,
+} from "../../scripts/operations/memory-source-report.mjs";
 
 const T0 = "2026-11-08T01:00:00.000Z";
 const directories: string[] = [];
@@ -17,6 +22,10 @@ afterEach(async () => {
 });
 
 describe("[P1-1] memory source report", () => {
+  it("uses the same reference length limit as the memory page", () => {
+    expect(SOURCE_REF_MAX_LENGTH).toBe(MEMORY_SOURCE_REF_MAX_LENGTH);
+  });
+
   it("counts each memory in exactly one source class, as the memory page does", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "himawari-memory-source-"));
     directories.push(root);

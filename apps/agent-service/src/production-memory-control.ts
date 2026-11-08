@@ -9,8 +9,8 @@ import {
   type MemoryExtractionAuditRecord,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
-  type MemorySourceMessage,
   type MemoryReminderStorePort,
+  type MemorySourceMessage,
   type OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -26,6 +26,7 @@ import {
   type GatewayV2Query,
   type GatewayV2Snapshot,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
+  MEMORY_SOURCE_REF_MAX_LENGTH,
 } from "@himawari-agent/gateway-contracts";
 import {
   createProductionAutomaticMemory,
@@ -309,7 +310,7 @@ export class ProductionMemoryControl {
     for (const { sourceThreadId, sourceRefs } of records) {
       if (!sourceThreadId) continue;
       const refs = refsByThread.get(sourceThreadId) ?? new Set<string>();
-      for (const ref of sourceRefs) if (ref.length <= 512) refs.add(ref);
+      for (const ref of sourceRefs) if (ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH) refs.add(ref);
       refsByThread.set(sourceThreadId, refs);
     }
     const sourceMessages = await this.options.book.findOwnerMessages({
@@ -344,7 +345,7 @@ export class ProductionMemoryControl {
         inference: memory.inference,
         sourceThreadId: memory.sourceThreadId,
         sourceMessageId: earliestSourceMessage(memory, sourceMessages),
-        sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= 512),
+        sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= MEMORY_SOURCE_REF_MAX_LENGTH),
         updatedAt: memory.updatedAt,
         supersededBy: memory.attributes?.supersededBy ?? null,
         validTo: memory.attributes?.validTo ?? null,

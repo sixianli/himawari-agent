@@ -1,3 +1,4 @@
+export declare const SOURCE_REF_MAX_LENGTH: number;
 export declare const SOURCE_STATES: readonly [
   "jump",
   "reminder",

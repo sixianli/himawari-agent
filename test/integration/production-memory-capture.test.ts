@@ -18,6 +18,7 @@ import {
   createRunId,
   createThreadId,
 } from "@himawari-agent/domain";
+import { MEMORY_SOURCE_REF_MAX_LENGTH } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -2023,6 +2024,49 @@ describe("production memory capture", () => {
       );
       expect(await sourceOf(), status).toBeNull();
     }
+  });
+
+  it("[P1-1] a reference longer than the limit is neither listed nor used to find the message", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const memoryId = (await overview(context.control)).memories[0]?.memoryId as string;
+    const longRef = `payload-${"x".repeat(MEMORY_SOURCE_REF_MAX_LENGTH)}`;
+    const exactRef = `payload-${"y".repeat(MEMORY_SOURCE_REF_MAX_LENGTH - "payload-".length)}`;
+    await context.protect(longRef, "超长引用的句子");
+    await context.protect(exactRef, "刚好满限制的句子");
+    context.sql((database) => {
+      for (const [id, sequence, ref] of [
+        ["message-long", 70, longRef],
+        ["message-exact", 71, exactRef],
+      ] as const)
+        database
+          .prepare(
+            `INSERT INTO thread_messages (
+              id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+              classification, committed_at
+            ) VALUES (?, ?, ?, ?, 0, ?, 'owner', ?, 'private', ?)`,
+          )
+          .run(id, OWNER_ID, AGENT_ID, THREAD_ID, sequence, ref, T0);
+      database.prepare("DELETE FROM memory_provenance WHERE memory_id = ?").run(memoryId);
+      for (const ref of [longRef, exactRef])
+        database
+          .prepare(
+            `INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted)
+            VALUES (?, 'reference', ?, 0)`,
+          )
+          .run(memoryId, ref);
+    });
+    const [memory] = (await overview(context.control)).memories;
+    expect(memory?.sourceRefs).toEqual([exactRef]);
+    expect(memory?.sourceMessageId).toBe("message-exact");
+    context.sql((database) =>
+      database.prepare("DELETE FROM thread_messages WHERE id = 'message-exact'").run(),
+    );
+    expect((await overview(context.control)).memories[0]?.sourceMessageId).toBeNull();
   });
 
   it("[MP-7] imports chosen memories as one batch the Owner can undo", async () => {

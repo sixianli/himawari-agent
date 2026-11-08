@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { chromium, type Browser, type Page, expect as uiExpect } from "@playwright/test";
+import { type Browser, chromium, type Page, expect as uiExpect } from "@playwright/test";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { repositoryRoot } from "../fixtures/product-path-harness.ts";
 
@@ -40,7 +40,11 @@ async function build(outDir: string): Promise<void> {
         "--logLevel",
         "error",
       ],
-      { cwd: APP, stdio: ["ignore", "ignore", "inherit"] },
+      {
+        cwd: APP,
+        env: { ...process.env, NODE_ENV: "production" },
+        stdio: ["ignore", "ignore", "inherit"],
+      },
     );
     child.once("error", reject);
     child.once("exit", (code) =>
@@ -100,10 +104,26 @@ describe("[P1-1] memory page jumps to the original message in a real browser", (
       await uiExpect(drawer).not.toContainText("来源已不可查");
       await drawer.getByRole("button", { name: "跳到原话" }).click();
       await page.waitForURL(/\/threads\/thread-main/);
+      await uiExpect(
+        page.locator('[data-message-id="message-01"][data-focused="true"]'),
+      ).toBeVisible();
     } finally {
       await page.close();
     }
-  });
+  }, 30_000);
+
+  it("opens a conversation without highlighting anything when nobody asked for a message", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    try {
+      await openMemory(page);
+      await page.goto(`${base}/threads/thread-main`);
+      await uiExpect(page.locator('[data-message-id="message-01"]')).toBeVisible();
+      await page.waitForTimeout(500);
+      await uiExpect(page.locator("[data-focused]")).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 
   it("says the source can no longer be found for a memory whose message is gone, and offers no jump", async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -119,5 +139,5 @@ describe("[P1-1] memory page jumps to the original message in a real browser", (
     } finally {
       await page.close();
     }
-  });
+  }, 30_000);
 });

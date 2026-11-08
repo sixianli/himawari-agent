@@ -521,10 +521,12 @@ function MemoryDetail({
               <button
                 type="button"
                 className="memory-link"
-                onClick={() =>
-                  item.sourceThreadId &&
-                  onOpenThread(item.sourceThreadId, item.sourceMessageId ?? undefined)
-                }
+                onClick={() => {
+                  void memory.checkSource(item.memoryId).then((fresh) => {
+                    if (fresh?.sourceThreadId && fresh.sourceMessageId)
+                      onOpenThread(fresh.sourceThreadId, fresh.sourceMessageId);
+                  });
+                }}
               >
                 {message("memory.page.jumpToQuote")}
               </button>
