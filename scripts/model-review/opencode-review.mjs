@@ -1251,13 +1251,13 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       to: point.head,
     });
     const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files))
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike)))
       problems.push("files-differ");
     if (
       check.problems.length === 0 &&
       !sameList(
         point.findings,
-        check.errors.map((verdict) => verdict.id),
+        check.errors.map((verdict) => maskSecretLike(verdict.id)),
       )
     )
       problems.push("findings-differ");
@@ -1274,13 +1274,16 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       )
     : [];
   const problems = [];
+  let outsideFiles = [];
   if (!records) problems.push("ledger-not-committed");
   else if (!complete) problems.push("no-complete-round");
   else if (chainProblems.length > 0) problems.push(...chainProblems);
   else if (!isAncestor(complete.head, head)) problems.push(`not-ancestor ${complete.head}`);
-  else
-    for (const file of changedOutside(repo, complete.head, head, ledgerPath))
-      problems.push(`unreviewed ${printable(file)}`);
+  else {
+    outsideFiles = changedOutside(repo, complete.head, head, ledgerPath);
+    for (const file of outsideFiles) problems.push(`unreviewed ${printable(file)}`);
+  }
+  problems.push(...recordSecretProblems({ repo, ledgerPath, otherFiles: outsideFiles }));
   if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
     problems.push(`main-ref-missing ${printable(mainRef)}`);
   else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
@@ -1338,7 +1341,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     } else {
       appendFileSync(
         ledgerFile,
-        `${shown.stdout && !shown.stdout.endsWith("\n") ? "\n" : ""}${JSON.stringify({
+        `${shown.stdout && !shown.stdout.endsWith("\n") ? "\n" : ""}${ledgerLine({
           at: new Date().toISOString(),
           mode: "low-fix",
           cost: 0,
@@ -1347,7 +1350,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
           from: complete.head,
           files: check.files,
           findings: check.errors.map((verdict) => verdict.id),
-        })}\n`,
+        })}`,
       );
       lines.push(
         `REVIEW_LOW_FIX round=${acceptLow} from=${complete.head} head=${head} files=${check.files.map(printable).join(",")}`,
@@ -1365,7 +1368,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       mkdirSync(dirname(ledgerFile), { recursive: true });
       appendFileSync(
         ledgerFile,
-        `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${JSON.stringify({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}\n`,
+        `${onDisk && !onDisk.endsWith("\n") ? "\n" : ""}${ledgerLine({ at: new Date().toISOString(), mode: "override", cost: 0, head, quote: acceptUnreviewed, problems })}`,
       );
       lines.push(`REVIEW_OVERRIDE_WRITTEN quote=${acceptUnreviewed} commit-and-rerun`);
     }
@@ -1610,7 +1613,7 @@ export function roundForRun({
     if (onDisk === null && recordedDigests.length === 0)
       throw new Error(`ROUND_CANNOT_VERIFY ${requested} ${model}`);
     if (
-      (onDisk !== null && onDisk !== prompts[model]) ||
+      (onDisk !== null && onDisk !== maskSecretLike(prompts[model])) ||
       recordedDigests.some((recorded) => recorded !== digest)
     )
       throw new Error(`ROUND_PROMPT_MISMATCH ${requested} ${model}`);
@@ -2392,6 +2395,81 @@ export function recordText(text) {
   return `${text.replace(/\r\n?/g, "\n").replace(/[ \t]+$/gm, "")}\n`;
 }
 
+export const RECORD_SECRET_RULES = Object.freeze([
+  [
+    "private-key-block",
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
+  ],
+  [
+    "private-key-any-block",
+    /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\s\S]{0,8000}?-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/gi,
+  ],
+  ["private-key-header", /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/gi],
+  ["authorization-bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi],
+  ["jwt-token", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g],
+  ["openai-api-key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/g],
+  ["github-token", /\b(?:gh[opsu]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g],
+  ["aws-access-key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g],
+  [
+    "credential-assignment",
+    /\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|webhook[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{12,}["']?/gi,
+  ],
+]);
+
+export function maskSecretLike(text) {
+  let masked = text;
+  for (const [id, pattern] of RECORD_SECRET_RULES)
+    masked = masked.replace(new RegExp(pattern.source, pattern.flags), `[已遮盖:${id}]`);
+  return masked;
+}
+
+export function secretLikeRules(text) {
+  return RECORD_SECRET_RULES.filter(([, pattern]) =>
+    new RegExp(pattern.source, pattern.flags).test(text),
+  ).map(([id]) => id);
+}
+
+export function maskedRecordText(text) {
+  return maskSecretLike(recordText(text));
+}
+
+function maskSecretLikeDeep(value) {
+  if (typeof value === "string") return maskSecretLike(value);
+  if (Array.isArray(value)) return value.map(maskSecretLikeDeep);
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, maskSecretLikeDeep(item)]));
+  return value;
+}
+
+export function ledgerLine(record) {
+  return `${JSON.stringify(maskSecretLikeDeep(record))}\n`;
+}
+
+function recordFileProblems(repo, files) {
+  const problems = [];
+  for (const file of files) {
+    const shown = gitStatus(["show", `HEAD:${file}`], repo);
+    if (shown.status !== 0) {
+      problems.push(`record-unreadable ${printable(file)}`);
+      continue;
+    }
+    for (const id of secretLikeRules(shown.stdout))
+      problems.push(`record-secret-like ${printable(file)} ${id}`);
+  }
+  return problems;
+}
+
+export function recordSecretProblems({ repo, ledgerPath, otherFiles = [] }) {
+  const listed = gitStatus(["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ledgerPath], repo);
+  if (listed.status !== 0) return [`record-unreadable ${printable(ledgerPath)}`];
+  const others = otherFiles.filter(
+    (file) =>
+      file.startsWith(`${REVIEWS_DIR}/`) &&
+      gitStatus(["cat-file", "-e", `HEAD:${file}`], repo).status === 0,
+  );
+  return recordFileProblems(repo, [...listed.stdout.split("\0").filter(Boolean), ...others]);
+}
+
 export function prepareRawDir(dir, root = join(tmpdir(), "himawari-review-raw")) {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   chmodSync(root, 0o700);
@@ -2900,7 +2978,7 @@ async function main() {
       const name = model.split("/").pop();
       keepEarlierAttempt(roundDir, name);
       keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
-      writeFileSync(join(roundDir, promptFileName(model)), prompt);
+      writeFileSync(join(roundDir, promptFileName(model)), maskSecretLike(prompt));
       const review = await reviewModel({
         binary,
         cwd: copy,
@@ -2915,7 +2993,7 @@ async function main() {
       writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
       const gatewayUsage = liveGateway ? await liveGateway.live.stableUsage() : null;
       const { summary } = review;
-      writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
+      writeFileSync(join(roundDir, `${name}.md`), maskedRecordText(summary.text));
       if (summary.thinking)
         writeFileSync(join(roundRawDir, `${name}.thinking.md`), `${summary.thinking}\n`);
       const assembled = {
@@ -2950,7 +3028,10 @@ async function main() {
       const record = gateway
         ? withProviderMoney(assembled, gateway.config.creditProvider)
         : assembled;
-      appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
+      appendFileSync(
+        join(options.out, "usage.jsonl"),
+        ledgerLine(record),
+      );
       if (record.costUnknownWhy) {
         console.log(`GATEWAY_COST_UNKNOWN ${model} ${record.costUnknownWhy}`);
         tryWrite(
@@ -2959,7 +3040,7 @@ async function main() {
         );
       }
       if (record.outcome !== "ok" && review.stderr.trim()) {
-        writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
+        writeFileSync(join(roundDir, `${name}.stderr.txt`), maskedRecordText(review.stderr));
       }
       return { record, review };
     };
