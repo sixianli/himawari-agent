@@ -1012,6 +1012,7 @@ export class SqliteDurableAdapters {
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
+      listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
     });
