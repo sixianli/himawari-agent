@@ -2326,7 +2326,7 @@ describe("opencode review record masking", () => {
     );
     const appends = [
       ...source.matchAll(
-        /appendFileSync\(\s*(?:ledgerFile|join\(options\.out, "usage\.jsonl"\)),([\s\S]*?)\n\s*\);/g,
+        /appendFileSync\(\s*(?:ledgerFile|join\(options\.out, "usage\.jsonl"\)),([\s\S]*?)\)\s*;\s*\n/g,
       ),
     ];
     expect(appends.length).toBe(3);
