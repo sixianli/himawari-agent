@@ -144,7 +144,7 @@ const REMEMBER_TOOL = {
   function: {
     name: "memory_remember",
     description:
-      "把主人说的、以后对话还会用到的长期信息存进长期记忆：身份、偏好、习惯、人际关系、长期目标、决定、对 Himawari 的要求、带时间的计划。不要存一次性的任务内容、提问、寒暄、Himawari 自己的话、密码密钥。text 用第三人称写成一句完整的话。主人纠正或改变了已有记忆时 decision 用 supersede，补充细节用 update，重复用 unchanged，这三种必须填 existingMemoryId，其余用 create。健康、财务、宗教政治、性与亲密关系、他人私事、精确住址、法律纠纷 classification 用 sensitive；证件号、银行卡号、密码用 restricted；其余 private。有具体时间的事填 dueAt（YYYY-MM-DD 或 YYYY-MM-DDTHH:MM，主人当地时间）。一条消息有几件事就调用几次。",
+      "把主人说的、以后对话还会用到的长期信息存进长期记忆：身份、偏好、习惯、人际关系、长期目标、决定、对 Himawari 的要求、带时间的计划。不要存一次性的任务内容、提问、寒暄、Himawari 自己的话、一次性验证码。text 用第三人称写成一句完整的话。主人纠正或改变了已有记忆时 decision 用 supersede，补充细节用 update，重复用 unchanged，这三种必须填 existingMemoryId，其余用 create。健康、财务、宗教政治、性与亲密关系、他人私事、精确住址、法律纠纷 classification 用 sensitive；证件号码、银行卡号、密码、密钥用 sensitive；其余 private。有具体时间的事填 dueAt（YYYY-MM-DD 或 YYYY-MM-DDTHH:MM，主人当地时间）。一条消息有几件事就调用几次。",
     parameters: {
       type: "object",
       properties: {

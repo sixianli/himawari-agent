@@ -41,8 +41,8 @@ date: "2026-11-08"
 ## 决定
 
 1. **提示词。** 记忆整理提示词不再要求把证件号、银行卡号、密码标成 `restricted`，改成与健康、财务等并列的 `sensitive`（topic 填 other）；“不要记录”里去掉“密码密钥等凭据”，换成“一次性验证码”。主人明说“记住”的候选直接存，否则进待批准（原有的 `explicit` 规则）。代码里 `restricted` 的候选仍被丢弃，只是提示词不再主动让模型这样标。
-2. **敏感判断并入密码、密钥、验证码。** `classificationWithIdentifiers`（`packages/sensitive-capture/src/identifiers.ts`）在原来的卡号、证件号之外，用出口遮盖认出的 `machine-secret`、`password`、`verification-code` 三类，把 private 或 public 的文字至少提到 sensitive。自动整理记忆、模型提的提醒、网页手动添加的记忆和提醒都走这个函数，所以含它们的提醒推送正文自动隐藏。
-3. **导入改存原文并标敏感。** `parseMemoryText` 不再丢行；命中 `mentionsSensitiveMaterial` 的行标 `sensitive`、默认不勾选，主人勾了再导入，导入时分类是 sensitive。丢行计数 `dropped` 和界面里“另有 N 条……已直接丢掉”的说明（`memory.page.importDropped`）一并删除。
+2. **敏感判断并入密码、密钥、验证码。** `classificationWithIdentifiers`（`packages/sensitive-capture/src/identifiers.ts`）在原来的卡号、证件号之外，用出口遮盖认出的 `machine-secret`、`password`、`verification-code` 三类，把 private 或 public 的文字至少提到 sensitive。自动整理记忆、模型提的提醒、网页手动添加的记忆和提醒都走这个函数，所以被这样认出来的提醒，推送正文自动隐藏；认不出的写法见“已知缺口”。
+3. **导入改存原文并标敏感。** `parseMemoryText` 不再丢行；命中 `mentionsSensitiveMaterial` 或 `classificationWithIdentifiers` 认出凭据、卡号、证件号的行标 `sensitive`、默认不勾选，主人勾了再导入，导入时分类是 sensitive。丢行计数 `dropped` 和界面里“另有 N 条……已直接丢掉”的说明（`memory.page.importDropped`）一并删除。
 4. **登记。** `identifiers.ts` 调用 `redactForEgress`，登记进 `scripts/check-egress-redaction.mjs` 的 `REDACTOR_ONLY_FILES`。
 
 <a id="options"></a>

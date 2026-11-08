@@ -1,5 +1,8 @@
 import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
-import { mentionsSensitiveMaterial } from "@himawari-agent/sensitive-capture";
+import {
+  classificationWithIdentifiers,
+  mentionsSensitiveMaterial,
+} from "@himawari-agent/sensitive-capture";
 
 export type MemoryCategory = (typeof MEMORY_CATEGORY_NAMES)[number];
 
@@ -85,7 +88,10 @@ export function parseMemoryText(
     if (seen.has(key)) return;
     seen.add(key);
     const guess = guessCategory(line);
-    const sensitive = guess.sensitive || mentionsSensitiveMaterial(line);
+    const sensitive =
+      guess.sensitive ||
+      mentionsSensitiveMaterial(line) ||
+      classificationWithIdentifiers(line, "private") === "sensitive";
     const category: MemoryCategory = guess.sensitive
       ? guess.category
       : kind === "rule"

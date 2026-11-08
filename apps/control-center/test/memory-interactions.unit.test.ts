@@ -1101,14 +1101,23 @@ describe("memory approval and management", () => {
     expect(preview).toContain("已经记着，跳过");
     expect(preview).toContain("敏感，默认不导入");
     expect(preview).not.toContain("已直接丢掉");
+    const boxes = document.querySelectorAll<HTMLInputElement>(
+      "#settings .memory-preview input[type=checkbox]",
+    );
+    await act(async () => boxes[2]?.click());
+    expect(text("#settings .memory-import")).toContain("找到 4 条，已勾 2 条");
     protectText.mockClear();
-    await click("#settings .memory-import", "导入勾选的 1 条");
+    await click("#settings .memory-import", "导入勾选的 2 条");
     expect(protectText).toHaveBeenCalledWith("回答不要用表情符号", "private");
+    expect(protectText).toHaveBeenCalledWith("我的密码是 hunter2", "sensitive");
     expect(lastCommand()).toMatchObject({
       type: "memory.import.commit",
       payload: {
         source: "assistant",
-        items: [{ contentRef: "payload-edit", category: "rule", subCategory: null }],
+        items: [
+          { contentRef: "payload-edit", category: "rule", subCategory: null },
+          { contentRef: "payload-edit" },
+        ],
       },
     });
     expect(lastCommand().payload.batchId).toMatch(/^memory-import-\d+$/);
@@ -1225,7 +1234,7 @@ describe("memory import parsing", () => {
     expect(guessCategory("我喜欢喝咖啡").category).toBe("preference");
   });
 
-  it("[MP-8] reads Codex memory files, drops secrets, skips duplicates and keeps coding notes off", () => {
+  it("[MP-8] reads Codex memory files, marks secrets, skips duplicates and keeps coding notes off", () => {
     const summary = [
       "v1",
       "## User Profile",
@@ -1253,6 +1262,16 @@ describe("memory import parsing", () => {
     expect(agents.items.map((item) => [item.text, item.sensitive, item.checked])).toEqual([
       ["推送后不要强推", false, true],
       ["token 是 ghp_x", true, false],
+    ]);
+    const forms = parseMemoryText(
+      "answer.md",
+      "- pwd: hunter2abc\n- PIN码是 1234\n- 我最喜欢的颜色是蓝色",
+      [],
+    );
+    expect(forms.items.map((item) => [item.text, item.sensitive, item.checked])).toEqual([
+      ["pwd: hunter2abc", true, false],
+      ["PIN码是 1234", true, false],
+      ["我最喜欢的颜色是蓝色", false, true],
     ]);
   });
 
