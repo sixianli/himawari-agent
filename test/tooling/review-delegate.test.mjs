@@ -19,22 +19,39 @@ import { REVIEW_MODELS } from "../../scripts/model-review/opencode-review.mjs";
 const [deepseek, glm] = REVIEW_MODELS;
 const KEY = "pr-7";
 
+const GIT_SETTINGS = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+const GIT_ENV = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_SYSTEM: "/dev/null",
+  GIT_CONFIG_NOSYSTEM: "1",
+};
+
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "review-delegate-"));
   const run = (cwd, ...args) =>
-    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-  const identity = ["-c", "user.name=t", "-c", "user.email=t@t"];
+    execFileSync("git", [...GIT_SETTINGS, ...args], {
+      cwd,
+      env: GIT_ENV,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
   const origin = join(root, "origin.git");
-  execFileSync("git", ["init", "--quiet", "--bare", "-b", "main", origin]);
+  execFileSync("git", [...GIT_SETTINGS, "init", "--quiet", "--bare", "-b", "main", origin], {
+    env: GIT_ENV,
+  });
   const mac = join(root, "mac");
-  execFileSync("git", ["clone", "--quiet", origin, mac], { stdio: "ignore" });
+  execFileSync("git", [...GIT_SETTINGS, "clone", "--quiet", origin, mac], {
+    env: GIT_ENV,
+    stdio: "ignore",
+  });
   const commit = (cwd, files, message) => {
     for (const [path, text] of Object.entries(files)) {
       mkdirSync(dirname(join(cwd, path)), { recursive: true });
       writeFileSync(join(cwd, path), text);
     }
     run(cwd, "add", ".");
-    run(cwd, ...identity, "commit", "--quiet", "-m", message);
+    run(cwd, "commit", "--quiet", "-m", message);
     return run(cwd, "rev-parse", "HEAD");
   };
   commit(mac, { "code.txt": "base\n" }, "base");
@@ -65,7 +82,10 @@ function fixture() {
   task.tip = tip;
   run(mac, "push", "--quiet", "origin", "feature");
   const cloud = join(root, "cloud");
-  execFileSync("git", ["clone", "--quiet", "-b", "feature", origin, cloud], { stdio: "ignore" });
+  execFileSync("git", [...GIT_SETTINGS, "clone", "--quiet", "-b", "feature", origin, cloud], {
+    env: GIT_ENV,
+    stdio: "ignore",
+  });
   const record = (model, extra = {}) => ({
     at: "t",
     round: 1,
