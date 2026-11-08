@@ -98,6 +98,7 @@ export interface ProductionRunCompositionOptions {
   readonly recoverMissingToolResult?: (
     record: SandboxExecutionRecord,
   ) => Promise<SandboxExecutionRecord>;
+  readonly sandboxResultUnrecoverable?: (record: SandboxExecutionRecord) => Promise<boolean>;
   readonly resources?: {
     recoverPending?(signal: AbortSignal, maximum: number): Promise<void>;
     stopRun(
@@ -315,6 +316,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ...(options.recoverMissingToolResult
       ? { recoverMissingResult: options.recoverMissingToolResult }
       : {}),
+    ...(options.sandboxResultUnrecoverable
+      ? { resultUnrecoverable: options.sandboxResultUnrecoverable }
+      : {}),
     ownerId,
     agentId,
     repository,
@@ -322,6 +326,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     checkpoints,
     protector,
     clock,
+    ids,
   });
   const continuations = new RuntimeContinuationService({
     artifacts,
@@ -331,7 +336,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ids,
     authorizeAuthorityChange: async (request, ref, previousAuthority) => {
       if (request.knownToolResult) {
-        const prepared = await prepareToolResultRecovery(request);
+        const prepared = await prepareToolResultRecovery(request, { recordUnrecoverable: false });
         return (
           prepared !== undefined &&
           prepared.binding.continuationRef === ref &&

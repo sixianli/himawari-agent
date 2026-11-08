@@ -69,7 +69,7 @@ const FAKE_KEY = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz0123456789"].join("-"
 
 describe("[mask-not-block] credentials in a candidate are stored as written", () => {
   it("stores a candidate whose text or quote holds a password, a code or a key", async () => {
-    const { result, audit, stored } = await process([
+    const { result, stored } = await process([
       candidate("主人家的 Wi-Fi 密码是 abc12345"),
       candidate("主人换了新的 Wi-Fi 密码", "家里 Wi-Fi 密码是 abc12345"),
       candidate(`主人的接口密钥是 ${FAKE_KEY}`),
@@ -78,19 +78,14 @@ describe("[mask-not-block] credentials in a candidate are stored as written", ()
     expect(result.status).toBe("completed");
     expect(result.excludedCandidateOrdinals).toEqual([]);
     expect(result.committedMemoryIds).toHaveLength(4);
-    expect(audit.map(({ outcome }) => outcome)).not.toContain("candidate_secret_excluded");
     expect(stored).toContain("主人家的 Wi-Fi 密码是 abc12345");
     expect(stored).toContain(`主人的接口密钥是 ${FAKE_KEY}`);
   });
 
   it("reads a source that holds a machine secret instead of skipping the run", async () => {
-    const { result, audit } = await process(
-      [candidate("主人最喜欢的颜色是蓝色")],
-      `token: ${FAKE_KEY}`,
-    );
+    const { result } = await process([candidate("主人最喜欢的颜色是蓝色")], `token: ${FAKE_KEY}`);
     expect(result.status).toBe("completed");
     expect(result.committedMemoryIds).toHaveLength(1);
-    expect(audit.map(({ outcome }) => outcome)).not.toContain("source_secret_excluded");
   });
 
   it("REVERSE: still drops a candidate the model classified as restricted", async () => {

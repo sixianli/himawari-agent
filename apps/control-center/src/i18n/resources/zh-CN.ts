@@ -166,7 +166,7 @@ export const messages = {
   "chat.model": "模型（下一轮）",
   "chat.depth": "思考深度（下一轮）",
   "chat.search.disclosure":
-    "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询仍会拦截。撤销后，后续搜索重新确认。",
+    "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询词会先遮盖再发送。撤销后，后续搜索重新确认。",
   "chat.search.remember": "记住我的选择，之后允许联网搜索",
   "chat.search.afterRevoke": "现在关着，需要联网搜索时会先在对话里问你。",
   "chat.search.providersChanged":
@@ -211,7 +211,11 @@ export const messages = {
   "chat.reason.runDeadlineExceeded": "本轮执行期限已到，清理已完成，本轮已结束",
   "chat.reason.toolResultUnknown":
     "有一条命令的结果没能确认，本轮已结束，没有生成回答。继续前请先核实命令做了什么",
+  "chat.reason.toolCpuTimeLimit": "命令占用的 CPU 时间超过上限，执行已结束并完成清理",
   "chat.reason.toolDeadlineExceeded": "工具执行超时，已终止并完成清理",
+  "chat.reason.toolMemoryLimit": "命令占用的内存超过上限，执行已结束并完成清理",
+  "chat.reason.toolResourceLimit": "命令超过资源上限，执行已结束并完成清理",
+  "chat.reason.toolOutputLimit": "命令的输出超过上限，已停止接收并完成清理",
   "chat.reason.toolNotStarted": "工具未启动：准备阶段失败，已确认清理完成",
   "chat.reason.deadlineExceeded": "执行期限已到，操作未派发",
   "chat.reason.resourceCeilingChanged": "允许的资源上限已变化，操作未派发",
@@ -879,7 +883,8 @@ export const messages = {
   "chat.search.whatIsSent": "搜索时会发出什么",
   "chat.search.sentQuery":
     "你的问题会被改写成搜索词，发到下面这些网址；打开网页时，网页地址也会发过去：",
-  "chat.search.sentLimits": "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会被拦下。",
+  "chat.search.sentLimits":
+    "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会先遮盖再发出。",
   "chat.search.alwaysOn": "固定开启",
   "settings.name": "怎么称呼你",
   "settings.version": "版本 {revision} · {date}",

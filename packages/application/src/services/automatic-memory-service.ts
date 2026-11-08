@@ -56,7 +56,7 @@ export interface CommittedRunMemoryInput {
 }
 
 export interface AutomaticMemoryResult {
-  readonly status: "completed" | "source_secret_excluded" | "extraction_failed";
+  readonly status: "completed" | "extraction_failed";
   readonly committedMemoryIds: readonly MemoryId[];
   readonly tentativeMemoryIds: readonly MemoryId[];
   readonly approvalRequestIds: readonly string[];

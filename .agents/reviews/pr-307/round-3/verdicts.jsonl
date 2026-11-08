@@ -1,0 +1,9 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "材料/提交说明与代码不一致：实际发 `/log`，不是 `/fail`", "valid": true, "class": "error", "severity": "low", "trigger": "PR 描述“做法”写“其他情况发 /fail”、“测试”写“失败信号不带 /fail”“确认收到失败通知”，“没做”写“复核未跑”；代码和运行手册已是 /log 加 5 分钟宽限，复核也已跑", "consequence": "读 PR 描述的人会以为不就绪时立即告警，实际要等 5 分钟；安装和验收照做的运行手册是对的，所以不会做错操作", "modelSeverity": "中", "reason": "不在仓库文件里，只是 PR 描述过期；会照着做的运行手册与代码一致，读者最多对告警时刻的预期偏差"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "安装不是原子的：URL 在 `enable` 之前就被替换，失败会留下“URL 已换、timer 未启用/未生效”的半装状态", "valid": true, "class": "better"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "URL 秘密放在 `/etc/himawari`，该目录对生产账号 `himawari-prod` 可写；root 0600 不能阻止该账号替换/删除，运行时不复核属主/权限/符号链接", "valid": true, "class": "better"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`status` 恒返回 0，并且和 `remove`/`install` 一样强制要求 root", "valid": true, "class": "better"}
+{"id": "r3-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "就绪地址/端口硬编码为 `127.0.0.1:8400`，与生产配置模板是隐式耦合", "valid": true, "class": "better"}
+{"id": "r3-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试没有锁定 systemd 加固项，也没有安装失败路径", "valid": true, "class": "better"}
+{"id": "r3-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "运行手册的安装命令不是可直接执行的写法", "valid": true, "class": "better"}
+{"id": "r3-8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`/health/ready` 在未 Wiring health 模型时“失败开放”（默认 ready=true）", "valid": false, "class": "better"}
+{"id": "r3-9", "model": "opencode-go/deepseek-v4.1-flash", "quote": "心跳范围不覆盖上游模型/Magpie；运行手册的“没覆盖”也没提", "valid": true, "class": "better"}

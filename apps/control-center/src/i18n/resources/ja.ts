@@ -176,7 +176,7 @@ export const messages = {
   "chat.model": "モデル（次のターン）",
   "chat.depth": "思考の深さ（次のターン）",
   "chat.search.disclosure":
-    "生成した検索語を 下記のウェブ検索サービスに送信します（ページを読む場合はその URL も送信します）。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。認証情報は引き続き検出・遮断します。取り消すと以後の検索に確認が必要です。",
+    "生成した検索語を 下記のウェブ検索サービスに送信します（ページを読む場合はその URL も送信します）。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。検索語に認証情報を検出した場合は、マスキングしてから送信します。取り消すと以後の検索に確認が必要です。",
   "chat.search.remember": "選択を記憶して、今後のウェブ検索を許可する",
   "chat.search.afterRevoke": "いまはオフなので、検索が必要なときは会話で先に確認します。",
   "chat.search.providersChanged":
@@ -225,7 +225,15 @@ export const messages = {
     "コマンドの結果を確認できなかったため、回答なしでターンを終了しました。続ける前にコマンドの影響を確認してください",
   "chat.reason.runDeadlineExceeded":
     "このターンの実行期限に達しました。後処理を完了し、ターンを終了しました",
+  "chat.reason.toolCpuTimeLimit":
+    "コマンドの CPU 時間が上限を超えました。実行は終了し、後処理は完了しています",
   "chat.reason.toolDeadlineExceeded": "ツールがタイムアウトしました。停止と後処理は完了しています",
+  "chat.reason.toolMemoryLimit":
+    "コマンドのメモリ使用量が上限を超えました。実行は終了し、後処理は完了しています",
+  "chat.reason.toolResourceLimit":
+    "コマンドが資源の上限を超えました。実行は終了し、後処理は完了しています",
+  "chat.reason.toolOutputLimit":
+    "コマンドの出力が上限を超えました。受信を停止し、後処理は完了しています",
   "chat.reason.toolNotStarted": "ツールは起動しませんでした。準備に失敗し、後処理は完了しています",
   "chat.reason.deadlineExceeded": "実行期限が切れ、操作は派遣されませんでした",
   "chat.reason.resourceCeilingChanged":
@@ -930,7 +938,7 @@ export const messages = {
   "chat.search.sentQuery":
     "質問は検索語に書き換えられて下のアドレスに送られます。Web ページを開くときは、その URL も送られます：",
   "chat.search.sentLimits":
-    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
+    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は、マスキングしてから送られます。",
   "chat.search.alwaysOn": "常にオン",
   "settings.name": "お呼びする名前",
   "settings.version": "バージョン {revision} · {date}",

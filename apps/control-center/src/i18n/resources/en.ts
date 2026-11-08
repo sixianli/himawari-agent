@@ -173,7 +173,7 @@ export const messages = {
   "chat.model": "Model (next turn)",
   "chat.depth": "Thinking depth (next turn)",
   "chat.search.disclosure":
-    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Credentials detected in a query are redacted before it is sent. Revoking restores confirmation for future searches.",
   "chat.search.remember": "Remember my choice and allow future web searches",
   "chat.search.afterRevoke": "It’s off now, so Himawari asks in the chat before it searches.",
   "chat.search.providersChanged":
@@ -221,8 +221,16 @@ export const messages = {
     "A command's result could not be confirmed, so this Run ended without an answer. Check what the command did before continuing",
   "chat.reason.runDeadlineExceeded":
     "The Run deadline expired; cleanup is complete and this Run has ended",
+  "chat.reason.toolCpuTimeLimit":
+    "The command used more CPU time than its limit; execution has ended and cleanup is complete",
   "chat.reason.toolDeadlineExceeded":
     "The tool timed out; it was terminated and cleanup is complete",
+  "chat.reason.toolMemoryLimit":
+    "The command used more memory than its limit; execution has ended and cleanup is complete",
+  "chat.reason.toolResourceLimit":
+    "The command crossed a resource limit; execution has ended and cleanup is complete",
+  "chat.reason.toolOutputLimit":
+    "The command produced more output than its limit; output capture stopped and cleanup is complete",
   "chat.reason.toolNotStarted":
     "The tool did not start: preparation failed and cleanup is confirmed",
   "chat.reason.deadlineExceeded": "Execution deadline expired; the operation was not dispatched",
@@ -926,7 +934,7 @@ export const messages = {
   "chat.search.sentQuery":
     "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
   "chat.search.sentLimits":
-    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
+    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are redacted before they are sent.",
   "chat.search.alwaysOn": "Always on",
   "settings.name": "What should I call you?",
   "settings.version": "Version {revision} · {date}",
