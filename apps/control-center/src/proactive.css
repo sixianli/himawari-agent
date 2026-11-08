@@ -1433,3 +1433,19 @@ button.weekly-day[aria-expanded="true"] {
   background: rgba(127, 127, 127, 0.16);
   font-size: 0.85em;
 }
+
+.weekly-case-mark {
+  justify-self: start;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.4));
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.weekly-case-mark[aria-pressed="true"] {
+  background: rgba(127, 127, 127, 0.16);
+}

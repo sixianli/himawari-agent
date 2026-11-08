@@ -711,6 +711,7 @@ describe("[P0-8] calibration report tab", () => {
             memoryHits: 0,
             relatedMessages: 2,
             decidedAt: "2026-11-01T00:00:00.000Z",
+            marked: false,
           },
         ],
       },
@@ -741,6 +742,80 @@ describe("[P0-8] calibration report tab", () => {
       "这一周没有这样的案例。",
     );
     expect(document.querySelectorAll("#page .weekly-case")).toHaveLength(0);
+  });
+
+  it("[PA-4] sends the mark command for a case and shows the marked state after a reload", async () => {
+    const observing = observingFixture();
+    const gapCase = {
+      id: "gap_aaaaaaaaaaaaaaaaaaaa",
+      museAt: "2026-11-01T00:00:00.000Z",
+      museTitle: "发票到期",
+      museText: "明天截止",
+      museTextWithheld: false,
+      himawariOutcome: "ignore",
+      himawariReasonCode: "fixture",
+      himawariReason: "看起来是普通通知",
+      ownerRating: null,
+      attribution: "notReadFully" as const,
+      memoryHits: 1,
+      relatedMessages: 0,
+      decidedAt: "2026-11-01T00:00:00.000Z",
+      marked: false,
+    };
+    weekly = { ...observing, report: { ...observing.report, gapCases: [gapCase] } };
+    await render();
+    await openReport();
+    expect(text("#page .weekly-case-mark")).toBe("加入 Backlog");
+    weekly = {
+      ...observing,
+      report: { ...observing.report, gapCases: [{ ...gapCase, marked: true }] },
+    };
+    await click(document.querySelector<HTMLButtonElement>("#page .weekly-case-mark"));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "proactive.gapcase.mark",
+      payload: { caseId: "gap_aaaaaaaaaaaaaaaaaaaa", endDay: "2026-11-08", marked: true },
+    });
+    expect(text("#page .weekly-case-mark")).toBe("已加入 Backlog，再点一次取消");
+    await click(document.querySelector<HTMLButtonElement>("#page .weekly-case-mark"));
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      payload: { caseId: "gap_aaaaaaaaaaaaaaaaaaaa", marked: false },
+    });
+  });
+
+  it("[PA-4] [negative] says it did not work when the mark command fails, and keeps the old state", async () => {
+    const observing = observingFixture();
+    weekly = {
+      ...observing,
+      report: {
+        ...observing.report,
+        gapCases: [
+          {
+            id: "gap_bbbbbbbbbbbbbbbbbbbb",
+            museAt: "2026-11-01T00:00:00.000Z",
+            museTitle: null,
+            museText: null,
+            museTextWithheld: true,
+            himawariOutcome: "skipped",
+            himawariReasonCode: "fixture",
+            himawariReason: null,
+            ownerRating: "missed",
+            attribution: "wrongJudgment",
+            memoryHits: 0,
+            relatedMessages: 0,
+            decidedAt: "2026-11-01T00:00:00.000Z",
+            marked: false,
+          },
+        ],
+      },
+    };
+    mutate.mockRejectedValueOnce(new Error("failed"));
+    await render();
+    await openReport();
+    expect(text("#page .weekly-case")).toContain("Muse 的文字按规则没有留存。");
+    await click(document.querySelector<HTMLButtonElement>("#page .weekly-case-mark"));
+    expect(text("#page [role='alert']")).toBe("没有成功，请再点一次。");
+    expect(text("#page .weekly-case-mark")).toBe("加入 Backlog");
   });
 
   it("[P0-11] says the week is not over instead of 'too few' while ratios are withheld", async () => {

@@ -12,6 +12,15 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { DeterministicIdGenerator, DeterministicPayloadProtector } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import Fastify from "fastify";
+import type { GatewayV2Command } from "@himawari-agent/gateway-contracts";
+import { ManualClock } from "@himawari-agent/testing";
+import { ProductionObservation } from "../../apps/agent-service/src/production-observation.ts";
+import {
+  GAP_EXPORT_PATH,
+  ProductionGapExport,
+  registerGapExportRoute,
+} from "../../apps/agent-service/src/production-gap-export.ts";
 import { buildGapCases } from "../../apps/agent-service/src/production-gap-cases.ts";
 import { run } from "../../scripts/calibration-report/report.mjs";
 
@@ -60,6 +69,15 @@ const MAILS: readonly Mail[] = [
     timingOk: true,
     contentOk: true,
     inputs: { memoryRecall: "ok", memoryByMail: {}, relatedRead: "ok" },
+  },
+  {
+    key: "secret-title",
+    gmailId: "mail-5",
+    outcome: "ignore",
+    rating: "missed",
+    timingOk: true,
+    contentOk: true,
+    inputs: { memoryRecall: "ok", memoryByMail: { "mail-5": ["m"] }, relatedRead: "ok" },
   },
   {
     key: "muse-wrong",
@@ -156,7 +174,11 @@ describe("[PA-4] Muse gap cases", () => {
     let seq = 0;
     for (const mail of MAILS) {
       seq += 1;
-      const titleRef = await seal.seal({ ...scope, text: `Muse title ${mail.key}`, at: IN_WINDOW });
+      const titleRef = await seal.seal({
+        ...scope,
+        text: mail.key === "secret-title" ? "密码：hunter22222 到期" : `Muse title ${mail.key}`,
+        at: IN_WINDOW,
+      });
       const textRef = await seal.seal({ ...scope, text: `Muse text ${mail.key}`, at: IN_WINDOW });
       await intake.ingestBatch({
         ...scope,
@@ -193,6 +215,7 @@ describe("[PA-4] Muse gap cases", () => {
       expect(cases.map((entry) => entry.museTitle).sort()).toEqual([
         "Muse title missed-not-remembered",
         "Muse title muse-right-not-read",
+        "密码：hunter22222 到期",
       ]);
       const byTitle = new Map(cases.map((entry) => [entry.museTitle, entry]));
       expect(byTitle.get("Muse title missed-not-remembered")).toMatchObject({
@@ -244,6 +267,118 @@ describe("[PA-4] Muse gap cases", () => {
     expect(report).toContain("## Muse 差距线");
     expect(report).toContain("样本不足");
     expect(report).not.toMatch(/追平|落后/u);
+  });
+
+  async function wired() {
+    const base = await fixture();
+    const clock = new ManualClock("2026-11-02T03:00:00.000Z");
+    const marks = base.repository.gapCaseMarks();
+    const observation = new ProductionObservation({
+      scope,
+      observation: base.repository.ledgerObservation(),
+      ledger: base.repository.decisionLedger(),
+      marks,
+      seal: base.seal,
+      clock,
+      schedule: { configured: false, intervalMs: 0, perCheckMs: 0 },
+      serviceRevision: "test",
+    });
+    const mark = (caseId: string, marked: boolean) =>
+      observation.execute({
+        type: "proactive.gapcase.mark",
+        payload: { caseId, endDay: "2026-11-03", marked },
+      } as unknown as GatewayV2Command);
+    const secret = "gap-export-secret-0123456789abcdef0123456789";
+    const gapExport = new ProductionGapExport({
+      scope,
+      marks,
+      seal: base.seal,
+      clock,
+      secret,
+    });
+    const app = Fastify();
+    registerGapExportRoute(app, gapExport);
+    const cases = async () => {
+      const candidates = await base.repository
+        .decisionLedger()
+        .readGapCandidates({ ...scope, start: START, end: END });
+      return buildGapCases({ scope, candidates, seal: base.seal });
+    };
+    return { ...base, mark, app, secret, cases, marks };
+  }
+
+  it("marks a case, shows it in the export with prefilled Backlog fields and a stable id, and removes it when unmarked", async () => {
+    const h = await wired();
+    try {
+      const [first] = await h.cases();
+      if (!first) throw new Error("no case");
+      const auth = { authorization: `Bearer ${h.secret}` };
+      const empty = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
+      expect(empty.statusCode).toBe(200);
+      expect(empty.json().cases).toEqual([]);
+      expect(await h.mark(first.id, true)).toMatchObject({ replayed: false });
+      expect(await h.mark(first.id, true)).toMatchObject({ replayed: true });
+      const listed = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
+      const body = listed.json();
+      expect(body.schema).toBe("himawari-gap-cases.v1");
+      expect(body.cases).toHaveLength(1);
+      expect(body.cases[0]).toMatchObject({ id: first.id, attribution: first.attribution });
+      expect(body.cases[0].prefill.title).toContain("Muse title");
+      expect(body.cases[0].prefill.summary).toContain("归因");
+      expect(body.cases[0].prefill.origin).toContain(first.id);
+      expect(Object.keys(body.cases[0].prefill).sort()).toEqual([
+        "origin",
+        "summary",
+        "title",
+        "why",
+      ]);
+      expect((await h.cases()).map((entry) => entry.id)).toContain(first.id);
+      await h.mark(first.id, false);
+      const after = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
+      expect(after.json().cases).toEqual([]);
+      expect(await h.marks.list(scope)).toEqual([]);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("[negative] refuses an export request without the right token and cannot mark a case that does not exist", async () => {
+    const h = await wired();
+    try {
+      for (const headers of [
+        {},
+        { authorization: "Bearer wrong" },
+        { authorization: `Basic ${h.secret}` },
+      ]) {
+        const response = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers });
+        expect(response.statusCode).toBe(401);
+        expect(response.body).toBe("");
+      }
+      await expect(h.mark("gap_00000000000000000000", true)).rejects.toThrow("GAP_CASE_NOT_FOUND");
+      expect(await h.marks.list(scope)).toEqual([]);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
+  it("masks passwords in the exported text while the owner's own page still shows the case", async () => {
+    const h = await wired();
+    try {
+      const secretCase = (await h.cases()).find((entry) =>
+        entry.museTitle?.includes("hunter22222"),
+      );
+      if (!secretCase) throw new Error("no secret case");
+      await h.mark(secretCase.id, true);
+      const auth = { authorization: `Bearer ${h.secret}` };
+      const response = await h.app.inject({ method: "GET", url: GAP_EXPORT_PATH, headers: auth });
+      expect(response.body).not.toContain("hunter22222");
+      expect(response.json().cases).toHaveLength(1);
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
   });
 
   it("[negative] a decided line needs enough rated mails whose interval excludes zero", () => {

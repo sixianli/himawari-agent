@@ -10,6 +10,8 @@ import {
   type DecisionLedgerWrite,
   type DecisionSignalEntry,
   type GapCandidate,
+  type GapCaseMarkPort,
+  type GapCaseMarkRow,
   type MuseReferenceEntry,
   type MuseReferenceWrite,
 } from "@himawari-agent/application/decision-ledger";
@@ -18,6 +20,8 @@ import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof DecisionLedgerPort> = Parameters<DecisionLedgerPort[TName]>[0];
+
+type MarkInput<TName extends keyof GapCaseMarkPort> = Parameters<GapCaseMarkPort[TName]>[0];
 
 const MAX_IDS = 200;
 
@@ -233,6 +237,12 @@ export class SqliteDecisionLedgerOperations {
         return this.listSignals(payload as Input<"listSignals">);
       case "decisionLedger.readCalibrationRows":
         return this.readCalibrationRows(payload as Input<"readCalibrationRows">);
+      case "decisionLedger.gapMark":
+        return this.gapMark(payload as MarkInput<"mark">);
+      case "decisionLedger.gapUnmark":
+        return this.gapUnmark(payload as MarkInput<"unmark">);
+      case "decisionLedger.gapMarks":
+        return this.gapMarks(payload as MarkInput<"list">);
       case "decisionLedger.readGapCandidates":
         return this.readGapCandidates(payload as Input<"readGapCandidates">);
       default:
@@ -433,6 +443,45 @@ export class SqliteDecisionLedgerOperations {
         })[]
       ).map((row) => ({ ...row, detail: JSON.parse(row.detail) })),
     );
+  }
+
+  private gapMark(input: MarkInput<"mark">): boolean {
+    return (
+      Number(
+        this.database
+          .prepare(
+            `INSERT OR IGNORE INTO gap_case_marks (owner_id, agent_id, case_id, snapshot_ref, marked_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(input.ownerId, input.agentId, input.caseId, input.snapshotRef, input.at).changes,
+      ) === 1
+    );
+  }
+
+  private gapUnmark(input: MarkInput<"unmark">): string | null {
+    return this.database.transaction(() => {
+      const row = this.database
+        .prepare(
+          `SELECT snapshot_ref AS snapshotRef FROM gap_case_marks
+           WHERE owner_id = ? AND agent_id = ? AND case_id = ?`,
+        )
+        .get(input.ownerId, input.agentId, input.caseId) as { snapshotRef: string } | undefined;
+      if (row === undefined) return null;
+      this.database
+        .prepare("DELETE FROM gap_case_marks WHERE owner_id = ? AND agent_id = ? AND case_id = ?")
+        .run(input.ownerId, input.agentId, input.caseId);
+      return row.snapshotRef;
+    })();
+  }
+
+  private gapMarks(input: MarkInput<"list">): readonly GapCaseMarkRow[] {
+    return this.database
+      .prepare(
+        `SELECT case_id AS caseId, snapshot_ref AS snapshotRef, marked_at AS markedAt
+         FROM gap_case_marks WHERE owner_id = ? AND agent_id = ?
+         ORDER BY marked_at, case_id`,
+      )
+      .all(input.ownerId, input.agentId) as GapCaseMarkRow[];
   }
 
   private readGapCandidates(input: Input<"readGapCandidates">): readonly GapCandidate[] {

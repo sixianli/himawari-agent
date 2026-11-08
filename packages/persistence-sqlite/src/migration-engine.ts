@@ -637,6 +637,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0080_decision_signals.sql",
   },
+  {
+    sequence: 81,
+    name: "gap_case_marks",
+    changeSet: "gap-case-marks",
+    phase: "expand" as const,
+    file: "0081_gap_case_marks.sql",
+  },
 ] as const;
 
 export const LATEST_MIGRATION_SEQUENCE: number =

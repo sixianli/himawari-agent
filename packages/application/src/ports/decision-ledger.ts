@@ -5,6 +5,7 @@ import type {
   MuseEntryRow,
 } from "@himawari-agent/calibration";
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
+import type { ProactiveScope } from "./proactive-checks.js";
 
 export interface CalibrationRowsSnapshot {
   readonly decisions: readonly CalibrationDecisionRow[];
@@ -246,4 +247,22 @@ export interface DecisionLedgerPort {
     readonly start: string;
     readonly end: string;
   }): Promise<readonly GapCandidate[]>;
+}
+
+export interface GapCaseMarkRow {
+  readonly caseId: string;
+  readonly snapshotRef: string;
+  readonly markedAt: string;
+}
+
+export interface GapCaseMarkPort {
+  mark(
+    input: ProactiveScope & {
+      readonly caseId: string;
+      readonly snapshotRef: string;
+      readonly at: string;
+    },
+  ): Promise<boolean>;
+  unmark(input: ProactiveScope & { readonly caseId: string }): Promise<string | null>;
+  list(input: ProactiveScope): Promise<readonly GapCaseMarkRow[]>;
 }

@@ -32,6 +32,7 @@ import type {
   SensitiveInterceptionStorePort,
   ThreadPromptBundleStorePort,
   DecisionLedgerPort,
+  GapCaseMarkPort,
   MuseIntakePort,
   LedgerObservationPort,
   ModelUsageStorePort,
@@ -537,6 +538,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   modelUsage(): ModelUsageStorePort {
     return this.durable.modelUsage();
+  }
+
+  gapCaseMarks(): GapCaseMarkPort {
+    return this.durable.gapCaseMarks();
   }
 
   decisionLedger(): DecisionLedgerPort {

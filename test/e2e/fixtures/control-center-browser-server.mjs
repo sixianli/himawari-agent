@@ -1093,6 +1093,8 @@ function weeklySnapshot() {
         pairing: rate(40, 42),
         buckets: { both: 5, museOnly: 1, himawariOnly: 2, bothSilent: 31, noHimawariRecord: 1 },
       },
+      gap: null,
+      gapCases: [],
       implicit: {
         pushedDecisions: 12,
         otherDecisionEvents: 1,

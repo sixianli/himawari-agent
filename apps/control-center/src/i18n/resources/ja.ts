@@ -1281,6 +1281,9 @@ export const messages = {
   "weekly.cases.noReason": "保存された理由がありません。",
   "weekly.cases.note":
     "ラベルはそのメールの読み取り記録からプログラムが判定したもので、モデルの推測ではありません。「覚えていなかった」は、検索は正常だったのに 1 件も取得できなかったという意味で、未保存か不一致かは区別できません。",
+  "weekly.cases.mark":
+    "{on, select, yes {Backlog に追加済み。もう一度押すと取り消します} other {Backlog に追加}}",
+  "weekly.cases.markFailed": "うまくいきませんでした。もう一度押してください。",
   "weekly.implicit.title": "観察シグナル・評価ではありません",
   "weekly.implicit.notFull": "今週はまだ終わっていません",
   "weekly.implicit.empty": "今週、通知を送った判断はありません。",

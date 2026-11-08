@@ -11,6 +11,7 @@ import type {
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
   ExecutionEnvironmentStorePort,
+  GapCaseMarkPort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
@@ -1000,6 +1001,14 @@ export class SqliteDurableAdapters {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
       write: (input) => this.context.write("ownerPreferences.write", input),
+    });
+  }
+
+  gapCaseMarks(): GapCaseMarkPort {
+    return Object.freeze<GapCaseMarkPort>({
+      mark: (input) => this.context.write("decisionLedger.gapMark", input),
+      unmark: (input) => this.context.write("decisionLedger.gapUnmark", input),
+      list: (input) => this.context.read("decisionLedger.gapMarks", input),
     });
   }
 

@@ -1294,6 +1294,9 @@ export const messages = {
   "weekly.cases.noReason": "No reason kept.",
   "weekly.cases.note":
     'The label is set by a program from the read record of that email, not guessed by a model. "Not remembered" only means retrieval worked but returned nothing; it cannot tell never stored from stored but not matched.',
+  "weekly.cases.mark":
+    "{on, select, yes {Added to Backlog. Click again to undo} other {Add to Backlog}}",
+  "weekly.cases.markFailed": "That did not work. Please try again.",
   "weekly.implicit.title": "Observed signals · not ratings",
   "weekly.implicit.notFull": "Week not over yet",
   "weekly.implicit.empty": "No decision sent a reminder this week.",

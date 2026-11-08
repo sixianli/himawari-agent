@@ -287,6 +287,11 @@ export const governanceMessages = [
     startDay: "2026-11-02",
     recentAuthenticationRef: null,
   }),
+  fixture("command", "proactive.gapcase.mark", {
+    caseId: "gap_0123456789abcdef0123",
+    endDay: "2026-11-09",
+    marked: true,
+  }),
   fixture("query", "muse.overview.read", {}),
   fixture("snapshot", "muse.overview.snapshot", {
     channel: { state: "ok", lastBatchAt: "2026-11-01T08:00:00.000Z", gapCount: 0 },

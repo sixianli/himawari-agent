@@ -216,6 +216,8 @@ export function createProductionApprovalGateway(options: {
           });
           return options.observationControl.execute(command);
         }
+        if (command.type === "proactive.gapcase.mark" && options.observationControl)
+          return options.observationControl.execute(command);
         if (command.type.startsWith("proactive.") && options.proactiveControl)
           return options.proactiveControl.execute(command);
         if (command.type.startsWith("muse.") && options.museControl)

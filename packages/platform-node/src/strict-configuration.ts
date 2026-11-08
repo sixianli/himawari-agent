@@ -975,6 +975,7 @@ function parseAutomaticReview(
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
 export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
+export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
 
 function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["proactive"]> {
   const field = "configuration.runPolicy.proactive";
@@ -1058,11 +1059,19 @@ function parseProactive(value: unknown): NonNullable<RunPolicyConfiguration["pro
 function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["museIntake"]> {
   const field = "configuration.runPolicy.museIntake";
   const input = record(value, field);
-  rejectUnknown(input, ["enabled", "secretRef"], field);
+  rejectUnknown(input, ["enabled", "secretRef", "gapExportSecretRef"], field);
   if (typeof input["enabled"] !== "boolean") throw invalid(`${field}.enabled`, "must be a boolean");
   return Object.freeze({
     enabled: input["enabled"],
     secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    ...(input["gapExportSecretRef"] === undefined
+      ? {}
+      : {
+          gapExportSecretRef: safeReference(
+            input["gapExportSecretRef"],
+            `${field}.gapExportSecretRef`,
+          ),
+        }),
   });
 }
 
@@ -1406,6 +1415,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.museIntake.secretRef,
       MUSE_INTAKE_SECRET_PURPOSE,
       "configuration.runPolicy.museIntake.secretRef",
+    );
+  if (runPolicy?.museIntake?.gapExportSecretRef !== undefined)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.museIntake.gapExportSecretRef,
+      GAP_EXPORT_SECRET_PURPOSE,
+      "configuration.runPolicy.museIntake.gapExportSecretRef",
     );
   const proactive = runPolicy?.proactive;
   if (proactive) {

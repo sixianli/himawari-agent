@@ -476,6 +476,8 @@ export function WeeklyReport({
   const [openInfo, setOpenInfo] = useState<OpenInfo | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [otherOpen, setOtherOpen] = useState(false);
+  const [markBusy, setMarkBusy] = useState<string | null>(null);
+  const [markFailed, setMarkFailed] = useState(false);
   const [pick, setPick] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -747,6 +749,20 @@ export function WeeklyReport({
     } finally {
       startLock.current = succeeded;
       setConfirmBusy(false);
+    }
+  };
+
+  const toggleMark = async (caseId: string, marked: boolean) => {
+    if (markBusy !== null) return;
+    setMarkBusy(caseId);
+    setMarkFailed(false);
+    try {
+      await weekly.markGapCase(caseId, report.endDay, !marked);
+      setReload((value) => value + 1);
+    } catch {
+      setMarkFailed(true);
+    } finally {
+      setMarkBusy(null);
     }
   };
 
@@ -1146,9 +1162,23 @@ export function WeeklyReport({
                     </p>
                     <p>{message("weekly.cases.rating", { r: item.ownerRating ?? "none" })}</p>
                   </div>
+                  <button
+                    type="button"
+                    className="weekly-case-mark"
+                    aria-pressed={item.marked}
+                    disabled={markBusy !== null}
+                    onClick={() => void toggleMark(item.id, item.marked)}
+                  >
+                    {message("weekly.cases.mark", { on: item.marked ? "yes" : "no" })}
+                  </button>
                 </li>
               ))}
             </ul>
+            {markFailed ? (
+              <p className="weekly-muse-foot" role="alert">
+                {message("weekly.cases.markFailed")}
+              </p>
+            ) : null}
             <p className="weekly-muse-foot">{message("weekly.cases.note")}</p>
           </>
         )}

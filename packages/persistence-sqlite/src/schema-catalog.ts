@@ -818,6 +818,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with the ledger row, Owner or Agent deletion; never changed or deleted on its own",
   ),
   entry(
+    "gap_case_marks",
+    "GapCaseMarkPort",
+    "which Muse gap cases the owner marked for the Backlog; one row per case id with a sealed snapshot of the case, removed when the owner unmarks it",
+    "payload_reference",
+    "cascade with Owner or Agent deletion; the snapshot payload is released when the owner unmarks the case",
+  ),
+  entry(
     "muse_reference_entries",
     "DecisionLedgerPort",
     "owner-recorded Muse reminders with timing and content judgments; reminder text and note only as protected payload references",

@@ -233,6 +233,7 @@ export interface ProactiveConfiguration {
 export interface MuseIntakeConfiguration {
   readonly enabled: boolean;
   readonly secretRef: string;
+  readonly gapExportSecretRef?: string;
 }
 
 export interface RunPolicyConfiguration {

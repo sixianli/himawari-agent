@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   ApplicationPortError,
   type DecisionLedgerPort,
+  type GapCaseMarkPort,
   daysDue,
   dayWindow,
   type EarlierDayCounts,
@@ -35,10 +36,12 @@ import {
   gatewayV2MessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import { buildGapCases } from "./production-gap-cases.js";
+import type { GapCaseSnapshot } from "./production-gap-export.js";
 
 export const PRODUCTION_OBSERVATION_OPERATIONS = Object.freeze([
   "proactive.weekly.read",
   "proactive.observation.start",
+  "proactive.gapcase.mark",
 ] as const);
 
 export const OBSERVATION_TICK_MS = 15 * 60 * 1000;
@@ -61,6 +64,7 @@ export interface ProductionObservationOptions {
   readonly scope: ObservationScope;
   readonly observation: LedgerObservationPort;
   readonly ledger: Pick<DecisionLedgerPort, "readCalibrationRows" | "readGapCandidates">;
+  readonly marks?: GapCaseMarkPort;
   readonly seal?: ProactiveSealPort;
   readonly clock: { now(): string };
   readonly schedule: ProactiveSchedule;
@@ -198,15 +202,10 @@ export class ProductionObservation {
       new Map(rows.mailJudgments),
       DEFAULT_MINIMUM_SAMPLES,
     );
-    const gapCases = await buildGapCases({
-      scope: this.#options.scope,
-      candidates: await this.#options.ledger.readGapCandidates({
-        ...scope,
-        start: window.start,
-        end: window.end,
-      }),
-      seal: this.#options.seal,
-    });
+    const gapCases = await this.#gapCases(window);
+    const markedIds = new Set(
+      (await this.#options.marks?.list(scope))?.map((mark) => mark.caseId) ?? [],
+    );
     const gap = summarizeGap(rows.entries, new Map(rows.mailJudgments), DEFAULT_MINIMUM_SAMPLES);
     const implicit = summarizeImplicit(rows.decisions, rows.signals, DEFAULT_MINIMUM_SAMPLES);
     const summary = start
@@ -259,7 +258,7 @@ export class ProductionObservation {
             pairing: complete ? muse.pairing : null,
             buckets: muse.buckets,
           },
-          gapCases,
+          gapCases: gapCases.map((item) => ({ ...item, marked: markedIds.has(item.id) })),
           gap: complete
             ? {
                 pairedMails: gap.pairedMails,
@@ -299,7 +298,40 @@ export class ProductionObservation {
     return snapshot;
   }
 
+  async #gapCases(window: { readonly start: string; readonly end: string }) {
+    const { ledger, scope, seal } = this.#options;
+    return buildGapCases({
+      scope,
+      candidates: await ledger.readGapCandidates({
+        ...scope,
+        start: window.start,
+        end: window.end,
+      }),
+      seal,
+    });
+  }
+
+  async #markGapCase(payload: { caseId: string; endDay: string; marked: boolean }) {
+    const { marks, seal, scope } = this.#options;
+    if (!marks || !seal) invalid("GAP_MARKS_UNAVAILABLE");
+    if (!payload.marked) {
+      const ref = await marks.unmark({ ...scope, caseId: payload.caseId });
+      if (ref !== null) await seal.release({ ...scope, refs: [ref] });
+      return { resultRef: `gap-case-unmark:${payload.caseId}`, replayed: ref === null };
+    }
+    const window = resolveWindow({ end: payload.endDay, days: 7 });
+    const found = (await this.#gapCases(window)).find((item) => item.id === payload.caseId);
+    if (!found) invalid("GAP_CASE_NOT_FOUND");
+    const at = this.#options.clock.now();
+    const snapshot: GapCaseSnapshot = { ...found, weekStart: window.start, weekEnd: window.end };
+    const ref = await seal.seal({ ...scope, text: JSON.stringify(snapshot), at });
+    const added = await marks.mark({ ...scope, caseId: payload.caseId, snapshotRef: ref, at });
+    if (!added) await seal.release({ ...scope, refs: [ref] });
+    return { resultRef: `gap-case-mark:${payload.caseId}`, replayed: !added };
+  }
+
   async execute(command: GatewayV2Command): Promise<{ resultRef: string; replayed: boolean }> {
+    if (command.type === "proactive.gapcase.mark") return this.#markGapCase(command.payload);
     if (command.type !== "proactive.observation.start")
       throw new Error("OBSERVATION_OPERATION_NOT_INSTALLED");
     const { observation, scope, serviceRevision } = this.#options;

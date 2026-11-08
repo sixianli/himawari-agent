@@ -49,6 +49,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.weekly.read",
   "proactive.weekly.snapshot",
   "proactive.observation.start",
+  "proactive.gapcase.mark",
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
@@ -875,6 +876,7 @@ const proactiveWeeklySnapshotSchema = object({
           memoryHits: integer(0),
           relatedMessages: integer(0),
           decidedAt: timestamp,
+          marked: booleanValue,
         }),
       ),
       gap: nullable(
@@ -914,6 +916,14 @@ const proactiveWeeklySnapshotSchema = object({
       }),
     }),
     generatedAt: timestamp,
+  }),
+});
+const proactiveGapCaseMarkCommandSchema = object({
+  ...commandEnvelope("proactive.gapcase.mark"),
+  payload: object({
+    caseId: machineString,
+    endDay: jstDaySchema,
+    marked: booleanValue,
   }),
 });
 const proactiveObservationStartCommandSchema = object({
@@ -2329,6 +2339,7 @@ const schemasByType = {
   "proactive.weekly.read": proactiveWeeklyQuerySchema,
   "proactive.weekly.snapshot": proactiveWeeklySnapshotSchema,
   "proactive.observation.start": proactiveObservationStartCommandSchema,
+  "proactive.gapcase.mark": proactiveGapCaseMarkCommandSchema,
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
