@@ -90,6 +90,10 @@ import {
   WRAP_UP_PROMPT,
   WRAP_UP_RESERVE_USD,
   wrapUpReason,
+  clearStopRequest,
+  OWNER_STOPPED,
+  requestStop,
+  signalHandler,
 } from "../../scripts/model-review/opencode-review.mjs";
 import {
   completedCount,
@@ -224,6 +228,18 @@ describe("opencode review prompt", () => {
     const questions = reviewQuestions(instructions);
     expect(questions).toHaveLength(4);
     expect(questions[3]).toContain("每一个使用它的地方都能接受吗");
+  });
+
+  it("[owner control] the section after the questions never adds a question, a line inside them does", () => {
+    expect(reviewQuestions(instructions)).toHaveLength(4);
+    const control = '<a id="owner-control"></a>';
+    expect(instructions).toContain(control);
+    expect(
+      reviewQuestions(instructions.replace(control, `${control}\n\n1. 不是必问问题`)),
+    ).toHaveLength(4);
+    expect(
+      reviewQuestions(instructions.replace(control, `5. 混进来的问题\n\n${control}`)),
+    ).toHaveLength(5);
   });
 
   it("[model focus] gives each model its own focus and otherwise the same prompt", () => {
@@ -1806,6 +1822,91 @@ describe("opencode review wrap-up", () => {
     expect(spentOf([{ cost: 0.19, inFlight: true }])).toBeCloseTo(0.19 + WRAP_UP_RESERVE_USD);
   }, 60000);
 
+  it("[owner stop] a stop request ends the running model, records what it spent and opens no follow-up", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-owner-stop-"));
+    const ready = join(root, "ready");
+    try {
+      const binary = join(root, "fake-opencode");
+      writeFileSync(
+        binary,
+        [
+          "#!/usr/bin/env node",
+          'const fs = require("node:fs");',
+          'const limits = JSON.parse(fs.readFileSync(process.env.HIMAWARI_SPEND_GUARD, "utf8"));',
+          `fs.writeFileSync(limits.markerPath, JSON.stringify(${JSON.stringify({ loaded: true, reason: null, totalCostUsd: 0.03, allowed: 2, completed: 1, at: 0 })}));`,
+          'console.log(JSON.stringify({ type: "step_finish", sessionID: "ses_x", part: { reason: "tool-calls", tokens: {}, cost: 0.03 } }));',
+          `fs.writeFileSync(${JSON.stringify(ready)}, "1");`,
+          "setInterval(() => {}, 1000);",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(binary, 0o755);
+      const gitGuard = installGitGuard(root);
+      const running = reviewModel({
+        binary,
+        cwd: root,
+        configPath: join(root, "unused.json"),
+        wrapUpConfigPath: join(root, "unused.json"),
+        gitGuard,
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 60000,
+      });
+      while (!existsSync(ready)) await new Promise((wait) => setTimeout(wait, 50));
+      requestStop();
+      const result = await running;
+      expect(result.outcome).toBe(OWNER_STOPPED);
+      expect(result.runs).toHaveLength(1);
+      expect(result.summary.usage.cost).toBeCloseTo(0.03);
+      expect(result.summary.usage.inFlight).toBe(true);
+      const late = await reviewModel({
+        binary,
+        cwd: root,
+        configPath: join(root, "unused.json"),
+        wrapUpConfigPath: join(root, "unused.json"),
+        gitGuard,
+        model: "opencode-go/deepseek-v4.1-flash",
+        prompt: "REVIEW_TASK",
+        timeoutMs: 60000,
+      });
+      expect(late.outcome).toBe(OWNER_STOPPED);
+    } finally {
+      clearStopRequest();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("[owner stop] the first signal asks the models to stop, the second one or the grace period forces the exit", async () => {
+    const calls = [];
+    const make = (running, graceMs = 60000) =>
+      signalHandler({
+        running: () => running,
+        requestStop: (reason) => calls.push(`stop ${reason}`),
+        cleanup: () => calls.push("cleanup"),
+        exit: (code) => calls.push(`exit ${code}`),
+        graceMs,
+      });
+    make(false)("SIGTERM");
+    expect(calls).toEqual(["cleanup", "exit 143"]);
+    calls.length = 0;
+    const handler = make(true);
+    handler("SIGINT");
+    expect(calls).toEqual([`stop ${OWNER_STOPPED}`]);
+    handler("SIGINT");
+    expect(calls).toEqual([`stop ${OWNER_STOPPED}`, "cleanup", "exit 130"]);
+    calls.length = 0;
+    const slow = make(true, 20);
+    slow("SIGTERM");
+    await new Promise((wait) => setTimeout(wait, 100));
+    expect(calls).toEqual([`stop ${OWNER_STOPPED}`, "cleanup", "exit 143"]);
+    calls.length = 0;
+    const settled = make(true, 20);
+    settled("SIGTERM");
+    settled.dispose();
+    await new Promise((wait) => setTimeout(wait, 100));
+    expect(calls).toEqual([`stop ${OWNER_STOPPED}`]);
+  });
+
   it("[I-77] hands the first run's recorded cost to the resumed run as its starting point", async () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-start-"));
     try {
@@ -2197,7 +2298,7 @@ describe("opencode review merge gate", () => {
       );
       expect(f.check().problems).toEqual([]);
       f.commit({ "code.txt": "late\n" }, "late change");
-      expect(f.check({ acceptUnreviewed: "合并" }).overridden).toBe(true);
+      expect(f.check({ acceptUnreviewed: "合并" }).overridden).toBe(false);
       const lines = readFileSync(join(f.repo, f.ledger), "utf8").trim().split("\n");
       expect(lines).toHaveLength(7);
       expect(JSON.parse(lines[6]).mode).toBe("override");
@@ -2207,7 +2308,7 @@ describe("opencode review merge gate", () => {
     }
   });
 
-  it("[merge gate] an override covers only unreviewed files and needs three rounds even when already committed", () => {
+  it("[merge gate] an override never covers an unmerged main, and a committed one is honoured after any number of rounds", () => {
     const f = fixture();
     try {
       const three = [1, 2, 3].flatMap((round) => [
@@ -2221,7 +2322,9 @@ describe("opencode review merge gate", () => {
       f.git("checkout", "--quiet", "feature");
       const refused = f.check({ acceptUnreviewed: "合并" });
       expect(refused.overridden).toBe(false);
-      expect(refused.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED only-unreviewed-files");
+      expect(refused.lines.at(-1)).toBe(
+        "REVIEW_OVERRIDE_REFUSED not-review-problems main-not-merged",
+      );
       f.git(
         "-c",
         "user.name=t",
@@ -2239,10 +2342,10 @@ describe("opencode review merge gate", () => {
         ok(1, f.reviewed, glm),
         { at: "t", mode: "override", cost: 0, head, quote: "合并", problems: [] },
       ]);
-      const forged = f.check();
-      expect(forged.problems).toEqual(["unreviewed code.txt", "unreviewed other.txt"]);
-      expect(forged.overridden).toBe(false);
-      expect(forged.lines[0]).toMatch(/^REVIEW_NOT_CURRENT /);
+      const committed = f.check();
+      expect(committed.problems).toEqual(["unreviewed code.txt", "unreviewed other.txt"]);
+      expect(committed.overridden).toBe(true);
+      expect(committed.lines.at(-1)).toBe(`REVIEW_OVERRIDE quote=合并 recorded=${head}`);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2264,7 +2367,7 @@ describe("opencode review merge gate", () => {
       ]);
       expect(result.lines.filter((line) => line.startsWith("REVIEW_CURRENT"))).toEqual([]);
       expect(result.lines.at(-1)).toBe(
-        "REVIEW_OVERRIDE_REFUSED rounds=1 needs=3 only-unreviewed-files",
+        "REVIEW_OVERRIDE_REFUSED not-review-problems main-not-merged",
       );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
@@ -2417,9 +2520,9 @@ describe("opencode review merge gate", () => {
       ]);
       const result = f.check();
       expect(result.problems).toEqual([`chain-broken round=2 ${rewritten}`]);
-      expect(f.check({ acceptUnreviewed: "合并" }).lines).toContain(
-        "REVIEW_OVERRIDE_REFUSED rounds=2 needs=3 only-unreviewed-files",
-      );
+      const broken = f.check({ acceptUnreviewed: "合并" });
+      expect(broken.overridden).toBe(false);
+      expect(broken.lines.at(-1)).toBe("REVIEW_OVERRIDE_WRITTEN quote=合并 commit-and-rerun");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2848,26 +2951,15 @@ describe("opencode review merge gate", () => {
     }
   });
 
-  it("[merge gate] records an override with Andy's words instead of passing silently", () => {
+  it("[merge gate] records Andy's words after one round and passes only once the record is committed", () => {
     const f = fixture();
     try {
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
       f.commit({ "code.txt": "after one round\n" }, "early fix");
-      const early = f.check({ acceptUnreviewed: "合并" });
-      expect(early.overridden).toBe(false);
-      expect(early.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED rounds=1 needs=3");
-      f.writeLedger([
-        ok(1, f.reviewed, deepseek),
-        ok(1, f.reviewed, glm),
-        ok(2, f.reviewed, deepseek),
-        ok(2, f.reviewed, glm),
-        ok(3, f.reviewed, deepseek),
-        ok(3, f.reviewed, glm),
-      ]);
       const result = f.check({ acceptUnreviewed: "合并" });
       expect(result.problems).toEqual(["unreviewed code.txt"]);
-      expect(result.overridden).toBe(true);
-      expect(result.lines.at(-1)).toBe("REVIEW_OVERRIDE quote=合并");
+      expect(result.overridden).toBe(false);
+      expect(result.lines.at(-1)).toBe("REVIEW_OVERRIDE_WRITTEN quote=合并 commit-and-rerun");
       const written = readFileSync(join(f.repo, f.ledger), "utf8")
         .trim()
         .split("\n")
@@ -2889,6 +2981,35 @@ describe("opencode review merge gate", () => {
       const dirty = f.check({ acceptUnreviewed: "合并" });
       expect(dirty.overridden).toBe(false);
       expect(dirty.lines.at(-1)).toBe("REVIEW_OVERRIDE_REFUSED ledger-differs-from-HEAD");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[merge gate] Andy can skip review on a PR with no review at all, once his words are committed", () => {
+    const f = fixture();
+    try {
+      const bare = f.check();
+      expect(bare.problems).toEqual(["ledger-not-committed"]);
+      const written = f.check({ acceptUnreviewed: "跳过复核，合并" });
+      expect(written.overridden).toBe(false);
+      expect(written.lines.at(-1)).toBe(
+        "REVIEW_OVERRIDE_WRITTEN quote=跳过复核，合并 commit-and-rerun",
+      );
+      expect(JSON.parse(readFileSync(join(f.repo, f.ledger), "utf8"))).toMatchObject({
+        mode: "override",
+        quote: "跳过复核，合并",
+        head: f.reviewed,
+        problems: ["ledger-not-committed"],
+      });
+      f.git("add", ".");
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "override");
+      const later = f.check();
+      expect(later.problems).toEqual(["no-complete-round"]);
+      expect(later.overridden).toBe(true);
+      expect(later.lines.at(-1)).toBe(
+        `REVIEW_OVERRIDE quote=跳过复核，合并 recorded=${f.reviewed}`,
+      );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2969,6 +3090,12 @@ describe("opencode review merge gate", () => {
       expect(report("three-rounds").at(-2)).toBe(
         "停下的原因：连续三轮没过，按规则停下等 Andy 决定",
       );
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(2, f.reviewed, deepseek),
+        ok(3, f.reviewed, deepseek, { outcome: OWNER_STOPPED }),
+      ]);
+      expect(() => report("three-rounds")).toThrow("REPORT_STOP_INCONSISTENT three-rounds");
       f.commit({ "code.txt": "late\n" }, "late change");
       expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
     } finally {
