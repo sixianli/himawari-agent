@@ -3,7 +3,10 @@ import {
   type PayloadRef,
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
-import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
+import {
+  piFileRecoveryOperationKey,
+  SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
+} from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ProductionHostReadOnlyInput,
@@ -306,6 +309,30 @@ describe("ProductionRuntimeTools", () => {
       },
     });
     expect(maximumResourceCeiling).toHaveBeenCalledWith(invocation.capabilityRef, "1.0.0");
+  });
+  it("uses the smaller of the tool memory limit and the qualified binding memory ceiling", async () => {
+    for (const [bound, expected] of [
+      [SANDBOX_TOOL_MEMORY_LIMIT_BYTES / 2, SANDBOX_TOOL_MEMORY_LIMIT_BYTES / 2],
+      [SANDBOX_TOOL_MEMORY_LIMIT_BYTES, SANDBOX_TOOL_MEMORY_LIMIT_BYTES],
+      [SANDBOX_TOOL_MEMORY_LIMIT_BYTES * 2, SANDBOX_TOOL_MEMORY_LIMIT_BYTES],
+    ] as const) {
+      const f = fixture();
+      const options = {
+        ...f.options,
+        ceiling: { ...f.options.ceiling, maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES },
+        maximumResourceCeiling: vi.fn(async () => ({
+          ...f.options.ceiling,
+          maxMemoryBytes: bound,
+        })),
+      };
+      const tool = new ProductionRuntimeTools(options);
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      expect((await tool.execute(invocation)).outcome).toBe("succeeded");
+      const execute = f.request.mock.calls.find(
+        ([message]) => message.type === "work.execute",
+      )?.[0];
+      expect(execute).toMatchObject({ payload: { resourceCeiling: { maxMemoryBytes: expected } } });
+    }
   });
   it("reports a tightened Worker ceiling as a distinct pre-dispatch reason", async () => {
     const f = fixture();
