@@ -2252,6 +2252,11 @@ describe("opencode review record masking", () => {
       "jwt-token": ["eyJ", "a".repeat(10), ".", "b".repeat(10), ".", "c".repeat(10)].join(""),
       "authorization-bearer": ["Bearer", "x".repeat(16)].join(" "),
       "credential-assignment": ["pass", "word: ", "y".repeat(14)].join(""),
+      "private-key-any-block": [
+        ["-----BEGIN", "ENCRYPTED PRIVATE KEY-----"].join(" "),
+        "z".repeat(40),
+        ["-----END", "ENCRYPTED PRIVATE KEY-----"].join(" "),
+      ].join("\n"),
       "private-key-header": `说明 ${["-----BEGIN", "ENCRYPTED PRIVATE KEY-----"].join(" ")} 后面只有文字`,
       "private-key-block": [
         ["-----BEGIN", "PRIVATE KEY-----"].join(" "),
@@ -2276,6 +2281,18 @@ describe("opencode review record masking", () => {
       expect(maskSecretLike(text)).toBe("x [已遮盖:private-key-header] y");
     }
     expect(secretLikeRules("-----BEGIN CERTIFICATE-----")).toEqual([]);
+  });
+
+  it("[round-3 R3-1] masks the body of non-RSA private key blocks, not only the header", () => {
+    const body = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(3);
+    for (const label of ["ENCRYPTED PRIVATE KEY", "DSA PRIVATE KEY", "pgp private key block"]) {
+      const text = `a -----BEGIN ${label}-----\n${body}\n-----END ${label}----- b`;
+      const masked = maskSecretLike(text);
+      expect(masked).not.toContain(body);
+      expect(secretLikeRules(masked)).toEqual([]);
+    }
+    const lone = `-----BEGIN PRIVATE KEY----- ${"说明".repeat(5000)}`;
+    expect(maskSecretLike(lone)).toContain("说明说明");
   });
 
   it("[round-2 R2-2] a ledger line stays valid JSON when a field ends in secret-like text", () => {
@@ -2317,16 +2334,16 @@ describe("opencode review record masking", () => {
       "utf8",
     );
     for (const [id, pattern] of RECORD_SECRET_RULES) {
-      if (id === "private-key-header") continue;
+      if (id === "private-key-header" || id === "private-key-any-block") continue;
       expect(scan).toContain(`"${id}"`);
       expect(scan).toContain(pattern.toString());
     }
     const scanIds = [...scan.matchAll(/^\s*\[?\s*"([a-z-]+)",/gm)].map((match) => match[1]);
     const recordOnly = RECORD_SECRET_RULES.map(([id]) => id).filter((id) => !scanIds.includes(id));
-    expect(recordOnly).toEqual(["private-key-header"]);
+    expect(recordOnly).toEqual(["private-key-any-block", "private-key-header"]);
     expect(scanIds.sort()).toEqual(
       RECORD_SECRET_RULES.map(([id]) => id)
-        .filter((id) => id !== "private-key-header")
+        .filter((id) => !recordOnly.includes(id))
         .sort(),
     );
   });
@@ -2415,6 +2432,23 @@ describe("opencode review merge gate", () => {
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
       const problems = f.check({ acceptUnreviewed: "Andy 说跳过" }).problems;
       expect(problems).toContain(`record-secret-like ${REVIEWS_DIR}/pr-7/round-1/glm-5.3-flash.md private-key-header`);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[round-3 R3-2] a secret-like change to another PR's records is refused even with --accept-unreviewed", () => {
+    const f = fixture();
+    try {
+      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
+      f.commit({ [`${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md`]: `${fakeOpenAiKey}\n` }, "other pr record");
+      const result = f.check({ acceptUnreviewed: "Andy 说跳过" });
+      expect(result.problems).toContain(
+        `record-secret-like ${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md openai-api-key`,
+      );
+      expect(result.overridden).toBeFalsy();
+      f.commit({ [`${REVIEWS_DIR}/pr-9/round-1/deepseek-v4.1-flash.md`]: maskedRecordText(`${fakeOpenAiKey}\n`) }, "masked");
+      expect(f.check().problems.filter((p) => p.startsWith("record-"))).toEqual([]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

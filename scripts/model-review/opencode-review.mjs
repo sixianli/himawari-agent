@@ -1251,13 +1251,13 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       to: point.head,
     });
     const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files))
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike)))
       problems.push("files-differ");
     if (
       check.problems.length === 0 &&
       !sameList(
         point.findings,
-        check.errors.map((verdict) => verdict.id),
+        check.errors.map((verdict) => maskSecretLike(verdict.id)),
       )
     )
       problems.push("findings-differ");
@@ -1274,14 +1274,16 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       )
     : [];
   const problems = [];
+  let outsideFiles = [];
   if (!records) problems.push("ledger-not-committed");
   else if (!complete) problems.push("no-complete-round");
   else if (chainProblems.length > 0) problems.push(...chainProblems);
   else if (!isAncestor(complete.head, head)) problems.push(`not-ancestor ${complete.head}`);
-  else
-    for (const file of changedOutside(repo, complete.head, head, ledgerPath))
-      problems.push(`unreviewed ${printable(file)}`);
-  problems.push(...recordSecretProblems({ repo, ledgerPath }));
+  else {
+    outsideFiles = changedOutside(repo, complete.head, head, ledgerPath);
+    for (const file of outsideFiles) problems.push(`unreviewed ${printable(file)}`);
+  }
+  problems.push(...recordSecretProblems({ repo, ledgerPath, otherFiles: outsideFiles }));
   if (gitStatus(["rev-parse", "--verify", "--quiet", `${mainRef}^{commit}`], repo).status !== 0)
     problems.push(`main-ref-missing ${printable(mainRef)}`);
   else if (gitStatus(["merge-base", "--is-ancestor", mainRef, head], repo).status !== 0)
@@ -2398,6 +2400,10 @@ export const RECORD_SECRET_RULES = Object.freeze([
     "private-key-block",
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
   ],
+  [
+    "private-key-any-block",
+    /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\s\S]{0,8000}?-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/gi,
+  ],
   ["private-key-header", /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/gi],
   ["authorization-bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi],
   ["jwt-token", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g],
@@ -2439,11 +2445,9 @@ export function ledgerLine(record) {
   return `${JSON.stringify(maskSecretLikeDeep(record))}\n`;
 }
 
-export function recordSecretProblems({ repo, ledgerPath }) {
-  const listed = gitStatus(["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ledgerPath], repo);
-  if (listed.status !== 0) return [`record-unreadable ${printable(ledgerPath)}`];
+function recordFileProblems(repo, files) {
   const problems = [];
-  for (const file of listed.stdout.split("\0").filter(Boolean)) {
+  for (const file of files) {
     const shown = gitStatus(["show", `HEAD:${file}`], repo);
     if (shown.status !== 0) {
       problems.push(`record-unreadable ${printable(file)}`);
@@ -2453,6 +2457,17 @@ export function recordSecretProblems({ repo, ledgerPath }) {
       problems.push(`record-secret-like ${printable(file)} ${id}`);
   }
   return problems;
+}
+
+export function recordSecretProblems({ repo, ledgerPath, otherFiles = [] }) {
+  const listed = gitStatus(["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", ledgerPath], repo);
+  if (listed.status !== 0) return [`record-unreadable ${printable(ledgerPath)}`];
+  const others = otherFiles.filter(
+    (file) =>
+      file.startsWith(`${REVIEWS_DIR}/`) &&
+      gitStatus(["cat-file", "-e", `HEAD:${file}`], repo).status === 0,
+  );
+  return recordFileProblems(repo, [...listed.stdout.split("\0").filter(Boolean), ...others]);
 }
 
 export function prepareRawDir(dir, root = join(tmpdir(), "himawari-review-raw")) {
