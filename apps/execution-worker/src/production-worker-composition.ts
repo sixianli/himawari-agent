@@ -13,6 +13,7 @@ import {
   type ExecutionAdmissionPeerBinding,
   payloadBrokerV1BodyBytes,
   type ResourceCeiling,
+  SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -131,7 +132,6 @@ export interface ProductionWorkerComposition {
 
 const DEFAULT_MAXIMUM_BODY_BYTES = 65_536;
 const DEFAULT_MAXIMUM_PAYLOAD_BYTES = 48 * 1024;
-const DEFAULT_MAXIMUM_MEMORY_BYTES = 256 * 1024 * 1024;
 const DEFAULT_MAXIMUM_PROGRESS_EVENTS = 256;
 
 function nonEmpty(value: string | undefined, code: ProductionWorkerCompositionErrorCode): string {
@@ -260,7 +260,7 @@ function maximumCeiling(
   const result = {
     maxWallTimeMs: positiveSafeInteger(configuration.deadlines.runMs, "deadlines.runMs"),
     maxCpuTimeMs: positiveSafeInteger(configuration.deadlines.runMs, "deadlines.runMs"),
-    maxMemoryBytes: DEFAULT_MAXIMUM_MEMORY_BYTES,
+    maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
     maxOutputBytes: maximumPayloadBytes,
     maxProgressEvents: DEFAULT_MAXIMUM_PROGRESS_EVENTS,
   };

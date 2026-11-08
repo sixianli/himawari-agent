@@ -18,6 +18,7 @@ export const REQUIRED_REDACTION_CALLS = Object.freeze([
 export const REDACTOR_ONLY_FILES = Object.freeze([
   "packages/sensitive-capture/src/redaction.ts",
   "packages/sensitive-capture/src/external.ts",
+  "packages/sensitive-capture/src/restoration.ts",
   "packages/application/src/services/model-egress.ts",
   "packages/platform-node/src/files/pi-output-export.ts",
 ]);
@@ -130,66 +131,10 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
     reason: "配置文件只许放密钥引用，密钥放钥匙串",
   },
   {
-    file: "packages/application/src/services/automatic-memory-service.ts",
-    calls: { scanMachineSecrets: 4 },
-    decision: MASK,
-    reason: "记忆存原文，发给模型时由出口遮盖遮值",
-  },
-  {
-    file: "packages/application/src/services/reflection-service.ts",
-    calls: { assertMachineSecretFree: 1 },
-    decision: MASK,
-    reason: "反思结果存原文",
-  },
-  {
-    file: "packages/application/src/services/thread-checkpoint-service.ts",
-    calls: { scanMachineSecrets: 3 },
-    decision: MASK,
-    reason: "检查点存原文，发给模型时遮值",
-  },
-
-  {
     file: "packages/platform-node/src/files/pi-output-export.ts",
     calls: { containsToolOutputSecret: 1 },
     decision: MASK,
     reason: "完整输出先遮文字再 base64 编码",
-  },
-
-  {
-    file: "apps/agent-service/src/production-memory-capture.ts",
-    calls: { containsRestrictedIdentifier: 1, scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "照常整理记忆，发给模型时遮值",
-  },
-  {
-    file: "apps/agent-service/src/production-memory-control.ts",
-    calls: { scanMachineSecrets: 1, containsRestrictedIdentifier: 1 },
-    decision: MASK,
-    reason: "主人建的记忆存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-muse-intake.ts",
-    calls: { scanMachineSecrets: 1, containsRestrictedIdentifier: 2, containsToolOutputSecret: 1 },
-    decision: MASK,
-    reason: "Muse 条目存原文，只在页面显示",
-  },
-  {
-    file: "apps/agent-service/src/production-reminder-writer.ts",
-    calls: { scanMachineSecrets: 1, containsRestrictedIdentifier: 1 },
-    decision: MASK,
-    reason: "提醒存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-sandbox-control.ts",
-    calls: { scanMachineSecrets: 1 },
-    decision: MASK,
-    reason: "沙箱诊断存原文",
-  },
-  {
-    file: "apps/agent-service/src/production-thread-titles.ts",
-    calls: { assertMachineSecretFree: 2 },
-    decision: MASK,
-    reason: "标题提示由出口遮盖遮值，标题存原文",
   },
 ]);
 

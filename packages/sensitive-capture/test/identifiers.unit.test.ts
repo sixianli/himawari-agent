@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classificationWithIdentifiers,
   containsRestrictedIdentifier,
   isSensitiveFieldName,
   isSensitiveQueryParameter,
@@ -67,5 +68,22 @@ describe("trace field names", () => {
   it("REVERSE: matches whole names only, unlike the diagnostic field rule", () => {
     expect(isSensitiveTraceKey("tokenizer")).toBe(false);
     expect(isSensitiveTraceKey("keyboard")).toBe(false);
+  });
+});
+
+describe("classificationWithIdentifiers", () => {
+  it("[mask-not-block] raises private text holding a card or identity number to sensitive", () => {
+    expect(classificationWithIdentifiers("卡号 6222020200112233445", "private")).toBe("sensitive");
+    expect(classificationWithIdentifiers("身份证 110101199003071234", "private")).toBe("sensitive");
+  });
+
+  it("leaves ordinary text and already stricter levels as they are", () => {
+    expect(classificationWithIdentifiers("订单号 12345", "private")).toBe("private");
+    expect(classificationWithIdentifiers("卡号 6222020200112233445", "restricted")).toBe(
+      "restricted",
+    );
+    expect(classificationWithIdentifiers("卡号 6222020200112233445", "sensitive")).toBe(
+      "sensitive",
+    );
   });
 });

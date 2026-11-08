@@ -25,6 +25,7 @@ import {
 import {
   type ExecutionAdmissionPeerBinding,
   payloadBrokerV1BodyBytes,
+  SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
   type SandboxExecutionSupport,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
@@ -1338,7 +1339,7 @@ export async function runAgentService(
         ceiling: {
           maxWallTimeMs: configuration.deadlines.workerRequestMs,
           maxCpuTimeMs: configuration.deadlines.workerRequestMs,
-          maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,
+          maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
           maxOutputBytes: MAXIMUM_PAYLOAD_BYTES,
           maxProgressEvents: 100,
         },

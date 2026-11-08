@@ -16,25 +16,25 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   binaryProblem,
+  CLIENT_KEY,
   creditReserve,
   creditsLeft,
   creditsPerUsd,
   desktopSignIn,
   floorDecision,
-  gatewayConfigProblems,
-  CLIENT_KEY,
   GATEWAY_PLATFORMS,
+  gatewayConfigProblems,
   groupArgs,
   installGateway,
+  installGateway as installRealGateway,
   lockFromRelease,
   npmIntegrity,
   PLACEHOLDER,
+  postJson,
   readGatewayConfig,
   readGatewayLock,
   readGatewayUsage,
   readStableUsage,
-  installGateway as installRealGateway,
-  postJson,
   runningGatewayCount,
   sha256File,
   startGateway,
@@ -47,20 +47,20 @@ import {
   gatewayOpencodeEnv,
   gatewayProvider,
   gatewayRecordFields,
+  gatewayRequested,
   launchModel,
   outputBounds,
+  PASSTHROUGH_PROMPT,
   parseArgs,
   parseUsage,
   passthroughProblems,
-  PASSTHROUGH_PROMPT,
-  REVIEW_MODELS,
-  gatewayRequested,
   providerMoneyUsd,
+  REVIEW_MODELS,
   reserveModels,
-  withProviderMoney,
   reviewConfig,
   startLiveGateway,
   usesCreditProvider,
+  withProviderMoney,
 } from "../../scripts/model-review/opencode-review.mjs";
 
 const config = readGatewayConfig();
@@ -483,11 +483,25 @@ describe("review gateway install", () => {
         return copy;
       };
       const prefix = join(root, "install");
-      const install = installGateway({ lock, prefix, platform: "linux-amd64", download, pack });
+      const install = installGateway({
+        lock,
+        prefix,
+        platform: "linux-amd64",
+        download,
+        pack,
+        cacheDirectory: null,
+      });
       expect(sha256File(install.binary)).toBe(lock.magpie.assets["linux-amd64"].sha256);
       expect(statSync(install.binary).mode & 0o777).toBe(0o555);
       expect(existsSync(join(install.pluginDir, "package.json"))).toBe(true);
-      installGateway({ lock, prefix, platform: "linux-amd64", download, pack });
+      installGateway({
+        lock,
+        prefix,
+        platform: "linux-amd64",
+        download,
+        pack,
+        cacheDirectory: null,
+      });
       expect(downloads).toBe(1);
       expect(binaryProblem(install)).toBeNull();
       chmodSync(install.binary, 0o755);
@@ -502,6 +516,7 @@ describe("review gateway install", () => {
           platform: "linux-amd64",
           download: (_url, target) => writeFileSync(target, "tampered"),
           pack,
+          cacheDirectory: null,
         }),
       ).toThrow("GATEWAY_INTEGRITY_MISMATCH magpie");
       expect(existsSync(join(badPrefix, "magpie"))).toBe(false);
@@ -512,6 +527,7 @@ describe("review gateway install", () => {
           platform: "linux-amd64",
           download,
           pack,
+          cacheDirectory: null,
         }),
       ).toThrow("GATEWAY_INTEGRITY_MISMATCH plugin");
       expect(() =>
@@ -521,6 +537,7 @@ describe("review gateway install", () => {
           platform: "windows-amd64",
           download,
           pack,
+          cacheDirectory: null,
         }),
       ).toThrow("GATEWAY_PLATFORM_UNSUPPORTED");
     } finally {
