@@ -41,8 +41,13 @@ describe("tooling host environment boundary", () => {
       GITHUB_ACTIONS: "false",
       GITHUB_SHA: "",
       GITHUB_FUTURE_CONTEXT: "",
+      HIMAWARI_REVIEW_GATEWAY: "",
     });
-    expect(Object.keys(tooling.env).every((name) => name.startsWith("GITHUB_"))).toBe(true);
+    expect(
+      Object.keys(tooling.env).filter(
+        (name) => !name.startsWith("GITHUB_") && name !== "HIMAWARI_REVIEW_GATEWAY",
+      ),
+    ).toEqual([]);
     expect(result.projects.filter(({ name }) => name !== "tooling").every(({ env }) => !env)).toBe(
       true,
     );
