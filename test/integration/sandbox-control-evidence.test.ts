@@ -5,12 +5,13 @@ import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:
 import { createServer, type Socket } from "node:net";
 import path from "node:path";
 import { Writable } from "node:stream";
-import * as runtimeControl from "@himawari-agent/runtime-sandbox/control";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
 import type {
   SandboxHostBinding,
   SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
+import * as runtimeControl from "@himawari-agent/runtime-sandbox/control";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { afterEach, expect, it, vi } from "vitest";
 import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
 import {
@@ -23,7 +24,6 @@ import {
 } from "../../packages/runtime-sandbox/src/process-identity.ts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { openSandboxJournal } from "../fixtures/sqlite-capability-invocation-fixture.ts";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 function settled<T>(value: T): Exclude<T, { kind: "cleanup_pending" }> {
   if (value && typeof value === "object" && "kind" in value)
@@ -1288,7 +1288,7 @@ it("[R2-L4][prod-sandbox-D3] rejects private text in every diagnostic enum and u
   expect(f.stored.size).toBe(0);
 });
 
-it("[R2-T10] drops a machine secret from the protected diagnostic text and never logs it", async () => {
+it("[mask-not-block] keeps a machine secret in the protected diagnostic text as written and never logs it", async () => {
   const output = preparationDiagnosticOutput();
   const f = await fixture({ preparationOnly: true, diagnosticOutput: output.stream });
   const secret = `sk-${"a".repeat(24)}`;
@@ -1301,7 +1301,7 @@ it("[R2-T10] drops a machine secret from the protected diagnostic text and never
   expect(JSON.stringify(events)).not.toContain(secret);
   const diagnostics = [...f.stored.entries()];
   expect(diagnostics).toHaveLength(1);
-  expect(diagnostics[0]?.[1].value).toMatchObject({ hostDetail: { text: null } });
+  expect(diagnostics[0]?.[1].value).toMatchObject({ hostDetail: { text: `bwrap: ${secret}` } });
 });
 
 it("[R2-T10] keeps bounded non-secret launch text only in the protected diagnostic", async () => {

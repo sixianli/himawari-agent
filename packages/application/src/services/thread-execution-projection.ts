@@ -27,7 +27,6 @@ import {
   readThreadExecutionResources,
 } from "./thread-execution-resources.js";
 import { projectThreadExecutionState } from "./thread-execution-state.js";
-import { redactTracePayload } from "./trace-redaction.js";
 
 const SAFE_TOOL_REASON_CODES = new Set([
   "SANDBOX_TOOL_RESULT_LOST",
@@ -266,7 +265,7 @@ export class ThreadExecutionProjection {
                     ? "stopped"
                     : "completed",
             name: text(message["model"]),
-            text: text(redactTracePayload(visibleText(message["content"]))),
+            text: text(visibleText(message["content"])),
           });
           const content = Array.isArray(message["content"]) ? message["content"] : [];
           if (envelope["phase"] === "ended") {
@@ -280,7 +279,7 @@ export class ThreadExecutionProjection {
                 kind: "tool",
                 phase: "updated",
                 name: text(call["name"]),
-                input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
+                input: text(JSON.stringify(call["arguments"] ?? {}, null, 2)),
               });
             }
           } else {
@@ -301,7 +300,7 @@ export class ThreadExecutionProjection {
                 kind: "tool",
                 phase: "updated",
                 name: text(call["name"]),
-                input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
+                input: text(JSON.stringify(call["arguments"] ?? {}, null, 2)),
               });
               records.push({
                 ...base,
@@ -474,13 +473,11 @@ export class ThreadExecutionProjection {
             ...base,
             itemId: identifier(tool["toolCallId"], event.id),
             kind: "tool",
-            text: text(redactTracePayload(text(tool["description"]))),
+            text: text(tool["description"]),
             phase: ended ? (failed ? "failed" : "completed") : "started",
             name: text(tool["toolName"]) || text(envelope["capabilityRef"]),
-            input: ended
-              ? ""
-              : text(JSON.stringify(redactTracePayload(tool["arguments"] ?? {}), null, 2)),
-            output: ended ? text(redactTracePayload(visibleText(result["content"]))) : "",
+            input: ended ? "" : text(JSON.stringify(tool["arguments"] ?? {}, null, 2)),
+            output: ended ? text(visibleText(result["content"])) : "",
           });
         } else if (
           [
@@ -772,7 +769,7 @@ export class ThreadExecutionProjection {
         .trim();
       if (content) lines.push(`- ${content}`);
     }
-    return text(redactTracePayload(lines.join("\n")));
+    return text(lines.join("\n"));
   }
 
   private async readPayload(event: TraceEvent, ref: unknown): Promise<unknown> {

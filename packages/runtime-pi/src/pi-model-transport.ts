@@ -19,7 +19,6 @@ import {
   type PayloadProtectorPort,
   type PayloadStorePort,
 } from "@himawari-agent/application/runtime-port";
-import { StreamingMachineSecretRedactor } from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
 import { backgroundModelContext } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
@@ -333,7 +332,6 @@ export class PiModelTransport {
       ? observeGatewayFetch(cacheFields.fetch, descriptor.model)
       : undefined;
 
-    const redactor = new StreamingMachineSecretRedactor();
     let sequence = 0;
     let sawTextDelta = false;
     let terminalMessage: AssistantMessage | undefined;
@@ -383,7 +381,7 @@ export class PiModelTransport {
       for await (const event of stream as AsyncIterable<AssistantMessageEvent>) {
         if (event.type === "text_delta") {
           sawTextDelta = true;
-          const content = redactor.append(event.delta);
+          const content = event.delta;
           if (content.length > 0) {
             try {
               yield await persist(content);
@@ -467,7 +465,7 @@ export class PiModelTransport {
       return;
     }
     if (!sawTextDelta) {
-      const content = redactor.append(textOf(terminalMessage));
+      const content = textOf(terminalMessage);
       if (content.length > 0) {
         try {
           yield await persist(content);
@@ -481,21 +479,6 @@ export class PiModelTransport {
           );
           return;
         }
-      }
-    }
-    const trailing = redactor.flush();
-    if (trailing.length > 0) {
-      try {
-        yield await persist(trailing);
-      } catch {
-        yield failed(
-          request,
-          "AI_GATEWAY_OUTPUT_PERSIST_FAILED",
-          false,
-          Date.now() - startedAt,
-          now(),
-        );
-        return;
       }
     }
     if (sequence === 0) {

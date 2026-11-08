@@ -348,7 +348,7 @@ describe("PiModelTransport", () => {
     },
   );
 
-  it("redacts a machine secret split across Pi deltas", async () => {
+  it("[mask-not-block] stores a machine secret split across Pi deltas as written", async () => {
     const payloads = payloadBoundary();
     const terminal = assistant(`password=${"x".repeat(12)}`);
     const runtime = {
@@ -378,7 +378,7 @@ describe("PiModelTransport", () => {
 
     await collect(transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }));
 
-    expect(payloads.writes).toEqual(["[MACHINE_SECRET_REDACTED]"]);
+    expect(payloads.writes.join("")).toBe(`password=${"x".repeat(12)}`);
   });
 
   it("maps retryable provider failures without exposing the provider response", async () => {

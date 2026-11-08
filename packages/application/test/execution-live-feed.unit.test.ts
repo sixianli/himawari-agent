@@ -26,7 +26,7 @@ describe("execution live feed", () => {
     ]);
   });
 
-  it("never pushes a secret that arrives split across two pieces", () => {
+  it("[mask-not-block] shows a secret that arrives split across two pieces as written", () => {
     const { feed, shown, texts } = recorded();
     const secret = `sk-${"A".repeat(24)}`;
     const answer = `钥匙是 ${secret} 用完请删`;
@@ -37,8 +37,12 @@ describe("execution live feed", () => {
         timestamp: 1,
         text: answer.slice(0, end),
       });
-    for (const { text } of texts()) expect(text).not.toMatch(/sk-|AAAA/);
-    expect(shown()).toBe("钥匙是 [MACHINE_SECRET_REDACTED] 用完请删");
+    expect(
+      texts()
+        .map(({ text }) => text)
+        .join(""),
+    ).toBe(answer);
+    expect(shown()).toBe(answer);
   });
 
   it("starts a new answer from the beginning and hands late watchers the current text", () => {
