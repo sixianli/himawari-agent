@@ -14,6 +14,7 @@ import {
   resolveWindow,
   sameMeasurement,
   summarizeDecisions,
+  summarizeImplicit,
   summarizeMuse,
 } from "./calibration.mjs";
 
@@ -94,6 +95,7 @@ export function run(
     const data = readWindow(database, { ...scope, start: window.start, end: window.end });
     const decisions = summarizeDecisions(data.decisions, minimumSamples);
     const muse = summarizeMuse(data.entries, data.mailJudgments, minimumSamples);
+    const implicit = summarizeImplicit(data.decisions, data.signals, minimumSamples);
     const historyFile = path.resolve(
       root,
       options.get("history") ?? "evals/calibration/history.jsonl",
@@ -108,7 +110,15 @@ export function run(
       .filter((entry) => entry.window.end < window.end)
       .sort((a, b) => (a.window.end < b.window.end ? -1 : 1))
       .at(-1);
-    const markdown = buildReport({ window, scope, decisions, muse, minimumSamples, previous });
+    const markdown = buildReport({
+      window,
+      scope,
+      decisions,
+      muse,
+      implicit,
+      minimumSamples,
+      previous,
+    });
     output.write(`${markdown}\n`);
     if (!options.has("no-record")) {
       const record = historyRecord({
@@ -116,6 +126,7 @@ export function run(
         scope,
         decisions,
         muse,
+        implicit,
         minimumSamples,
         commit: options.get("revision") ?? currentCommit(root),
         recordedAt: now.toISOString(),
