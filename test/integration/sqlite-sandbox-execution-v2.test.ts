@@ -1062,6 +1062,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "deadline-code-model-unknown-provider",
     "deadline-code-model-unknown-transport",
     "deadline-code-model-unknown-cancel",
+    "deadline-code-model-unknown-cancel-tool-code",
     "deadline-code-future-record",
     "deadline-code-null-record",
     "deadline-code-model-settled",
@@ -1177,7 +1178,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       ].includes(scenario)
         ? T1
         : T2;
-      if (scenario.startsWith("deadline-code"))
+      if (scenario.startsWith("deadline-code") && !scenario.endsWith("-tool-code"))
         f.database
           .prepare(
             "UPDATE run_coordination_checkpoints SET diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED'",
@@ -1193,6 +1194,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "deadline-code-model-unknown-provider",
           "deadline-code-model-unknown-transport",
           "deadline-code-model-unknown-cancel",
+          "deadline-code-model-unknown-cancel-tool-code",
           "deadline-code-model-settled",
           "deadline-code-model-released",
           "deadline-code-environment-released",
