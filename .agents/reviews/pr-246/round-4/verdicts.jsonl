@@ -1,0 +1,5 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "检查依赖上游文本的逐字匹配，却只用合成 grub.cfg 验证", "valid": true, "class": "error", "severity": "medium-high", "trigger": "生产真实 grub.cfg 的 next_entry 那段和上游文字有一处不同", "consequence": "检查永远读不出内核，每次上线都被拦（不会放过）", "modelSeverity": "中"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "只验 vmlinuz，不验 initrd，也不读 initrdfail", "valid": true, "class": "better"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "两条失败提示同时出现时，前缀说的目标和示例命令不一致", "valid": true, "class": "error", "severity": "low", "trigger": "运行内核和收据内核不同，同时保存项也指向别的内核", "consequence": "示例命令仍指向运行内核", "modelSeverity": "低"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "预检取的收据和服务实际使用的那份不是同一个来源", "valid": true, "class": "better"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者说法与代码/文档不完全一致", "valid": true, "class": "error", "severity": "low", "trigger": "读 I-81 行", "consequence": "以为只有按序号写的启动项受条件菜单项影响", "modelSeverity": "低"}
