@@ -46,6 +46,8 @@ const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["句号收尾的值", "password is abc12345.", "password is [密码]."],
   ["英文紧贴中文关键词", "wifi密码 abc12345", "wifi密码 [密码]"],
   ["引号包住的值", 'password is "hunter22abc"', 'password is "[密码]"'],
+  ["像重定向的值仍要遮", "password is 12<3456", "password is [密码]"],
+  ["混合值只遮到非 ASCII 之前", "密码设为 abc12345中文", "密码设为 [密码]中文"],
   ["are", "the password are abc12345", "the password are [密码]"],
   ["was", "my password was abc12345", "my password was [密码]"],
   ["改为", "密码改为 Zx9qq88", "密码改为 [密码]"],
@@ -97,7 +99,7 @@ const negatives: readonly string[] = [
   "密码设为8位以上",
   "1Password hunter22abc",
   "notpassword abc12345",
-  "pwd\n/home/user1/project",
+  "pwd\nabc12345",
   "密码 https://example.com/reset?token=123456",
   "password is 2026-11-08T10:30",
   "密码 11/08/2026",
@@ -106,6 +108,8 @@ const negatives: readonly string[] = [
   'password is "/home/user1"',
   "pwd 2>/dev/null",
   "password is 123.",
+  'password is "a12',
+  "密码 'abc12",
   "密码 12345.",
 ];
 
@@ -324,12 +328,17 @@ describe("locating masked values in the masked text", () => {
     expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual(["abc12345", "Zx9qq88"]);
   });
 
-  it("keeps the bytes of earlier text when a later message is added", () => {
-    const lines = ["我们聊聊家里的网络", "Wi-Fi 密码 abc12345", "好的，谢谢"];
-    const earlier = redactForEgress(lines.slice(0, 2).join("\n")).text;
-    const all = redactForEgress(lines.join("\n")).text;
-    expect(earlier).toContain("[密码]");
-    expect(all.startsWith(earlier)).toBe(true);
+  it("keeps the bytes of earlier messages when a later one repeats the value", () => {
+    const history = ["我们聊聊家里的网络", "Wi-Fi 密码 abc12345"];
+    const run = (messages: readonly string[]) => {
+      const known = new Map<string, string>();
+      return messages.map((text) => redactForEgress(text, { tag, known }).text);
+    };
+    const earlier = run(history);
+    const later = run([...history, "好的，abc12345 记下了"]);
+    expect(earlier[1]).toContain("[密码#");
+    expect(later.slice(0, 2)).toEqual(earlier);
+    expect(later[2]).not.toContain("abc12345");
   });
 
   it("gives up instead of guessing when the text already holds a placeholder", () => {

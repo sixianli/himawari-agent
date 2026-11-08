@@ -79,22 +79,23 @@ const PASSWORD_ASSIGNMENT = new RegExp(
 
 const PASSWORD_LOOSE_VALUE = "[^\\s,;\\[\\]\\u0080-\\u{10FFFF}]";
 const PASSWORD_LOOSE_KEYWORDS = `(?:(?<![A-Za-z0-9_])(?:${PASSWORD_ASCII_KEYWORDS})|(?:${PASSWORD_NON_ASCII_KEYWORDS}))`;
+const PASSWORD_LOOSE_VALUE_START = "[^\\s,;\\[\\]\\u0080-\\u{10FFFF}\"'(]";
 const PASSWORD_VALUE_OPENING = `["'(]*`;
 
 const PASSWORD_WORDED_ASSIGNMENT = new RegExp(
-  `(${PASSWORD_LOOSE_KEYWORDS}(?:[ \\t]*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|[ \\t]+(?:is|are|was)\\b)[ \\t]*${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{4,})`,
+  `(${PASSWORD_LOOSE_KEYWORDS}(?:[ \\t]*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|[ \\t]+(?:is|are|was)\\b)[ \\t]*${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE_START}${PASSWORD_LOOSE_VALUE}{3,})`,
   "giu",
 );
 
 const PASSWORD_BARE_VALUE = new RegExp(
-  `(${PASSWORD_LOOSE_KEYWORDS}[ \\t]+${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{6,})`,
+  `(${PASSWORD_LOOSE_KEYWORDS}[ \\t]+${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE_START}${PASSWORD_LOOSE_VALUE}{5,})`,
   "giu",
 );
 
 const PASSWORD_TRAILING_PUNCTUATION = /[.:)'"]+$/u;
 
 const NOT_A_PASSWORD_VALUE =
-  /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T.\d:+\-Z]*)|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|v?\d+(?:\.\d+)+|https?:\/\/\S*|\/\S*|\d*[<>]\S*)$/iu;
+  /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T.\d:+\-Z]*)|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|v?\d+(?:\.\d+)+|https?:\/\/\S*|\/\S*|\d?[<>]\S*)$/iu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
