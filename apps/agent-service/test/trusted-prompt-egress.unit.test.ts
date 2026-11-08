@@ -97,10 +97,13 @@ describe("Himawari's own fixed prompt text on the way to the model", () => {
   });
 
   it("[I-78] REVERSE: without the trusted list the same request masks 1000 as a code and records it", async () => {
-    const prompt = memoryCapturePrompt("写一个小游戏", []);
-    const { messages, reports } = await sent(background(prompt), { trusted: [] });
-    expect(messages.at(-1)?.content).not.toContain(CONFIDENCE);
-    expect(messages.at(-1)?.content).toMatch(/confidence 是 0 到 \[验证码#[a-z]{8}\] 的整数/u);
+    const fixed = "验证码说明：Himawari 自己写的固定文字，评分是 0 到 1000 的整数。";
+    const withList = await sent(background(fixed), { trusted: [fixed] });
+    expect(withList.messages.at(-1)?.content).toBe(fixed);
+    expect(withList.reports).toEqual([]);
+    const { messages, reports } = await sent(background(fixed), { trusted: [] });
+    expect(messages.at(-1)?.content).not.toContain("1000");
+    expect(messages.at(-1)?.content).toMatch(/0 到 \[验证码#[a-z]{8}\] 的整数/u);
     expect(reports.map(({ category, part }) => [category, part])).toEqual([
       ["verification-code", "owner_message"],
     ]);

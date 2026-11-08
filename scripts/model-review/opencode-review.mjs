@@ -2499,6 +2499,12 @@ export const REPORT_OPTIONS = [
   "--andy-quote",
 ];
 
+export function gatewayRequiredProblem(options, env) {
+  if (!options.requireGateway || options.selfCheckOnly) return null;
+  if (env.HIMAWARI_REVIEW_GATEWAY !== "magpie") return "not-cloud";
+  return PROXY_ENV.some((name) => (env[name] ?? "").trim() !== "") ? null : "no-proxy";
+}
+
 export function parseArgs(argv, { defaultGateway = "" } = {}) {
   const options = {
     mode: "code-review",
@@ -2531,6 +2537,7 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
       if (!TOPIC_PATTERN.test(options.topic)) throw new Error("ARG_INVALID --topic");
     } else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
+    else if (key === "--require-gateway") options.requireGateway = true;
     else if (key === "--assert-reviewed") options.assertReviewed = true;
     else if (key === "--report") options.report = true;
     else if (key === "--stop") options.stop = take();
@@ -2608,6 +2615,8 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     options.gateway = defaultGateway;
   }
   if (options.gateway === "direct") delete options.gateway;
+  if (options.requireGateway && options.gateway !== "magpie")
+    throw new Error("GATEWAY_REQUIRED not-magpie");
   if (options.providers && options.gateway !== "magpie")
     throw new Error("ARG_PROVIDERS_NEED_GATEWAY");
   if (options.providers && options.selfCheckOnly)
@@ -2854,6 +2863,8 @@ async function main() {
       process.exitCode = 5;
     return;
   }
+  const missingProxy = gatewayRequiredProblem(options, process.env);
+  if (missingProxy) throw new Error(`GATEWAY_REQUIRED ${missingProxy}`);
   const gatewayConfig = options.gateway ? readGatewayConfig(undefined, REVIEW_MODELS) : null;
   const unknownProvider = (options.providers ?? []).find(
     (id) => !gatewayConfig.providers.some((provider) => provider.id === id),
@@ -3005,6 +3016,7 @@ async function main() {
         base: commits.base ?? null,
         previous: commits.previous ?? null,
         promptSha256: createHash("sha256").update(prompt).digest("hex"),
+        promptFileSha256: createHash("sha256").update(maskSecretLike(prompt)).digest("hex"),
         outcome: review.outcome,
         wrapUp: review.wrapUp,
         wrapUpSkipped: review.wrapUpSkipped,
