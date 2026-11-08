@@ -564,6 +564,7 @@ export class SqliteProactiveOperations {
       typeof inputs.memoryInjected !== "boolean" ||
       !ids(inputs.memoryIds, MAX_INPUT_IDS) ||
       !ids(inputs.usedMemoryIds, MAX_INPUT_IDS) ||
+      (inputs.tentativeMemoryIds !== undefined && !ids(inputs.tentativeMemoryIds, MAX_INPUT_IDS)) ||
       !["off", "ok", "partial", "failed"].includes(inputs.memoryRecall) ||
       typeof inputs.memoryByMail !== "object" ||
       inputs.memoryByMail === null ||
@@ -636,6 +637,7 @@ export class SqliteProactiveOperations {
             floorHits: input.inputs.floorHits,
             memoryInjected: input.inputs.memoryInjected,
             usedMemoryIds: input.inputs.usedMemoryIds,
+            tentativeMemoryIds: input.inputs.tentativeMemoryIds ?? [],
             memoryByMail: input.inputs.memoryByMail,
             memoryRecall: input.inputs.memoryRecall,
             relatedByMail: input.inputs.relatedByMail ?? {},

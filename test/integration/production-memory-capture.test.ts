@@ -651,8 +651,11 @@ describe("production memory capture", () => {
     expect(context.failures).toEqual([]);
     expect(context.prompts[0]).toContain("我最喜欢的颜色是蓝色");
     const active = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
-    expect(active).toHaveLength(1);
-    expect(active[0]).toMatchObject({
+    const formal = active.filter(({ attributes }) => attributes?.tentative !== true);
+    const tentative = active.filter(({ attributes }) => attributes?.tentative === true);
+    expect(active).toHaveLength(2);
+    expect(formal).toHaveLength(1);
+    expect(formal[0]).toMatchObject({
       status: "active",
       dataClassification: "private",
       sourceThreadId: THREAD_ID,
@@ -669,16 +672,25 @@ describe("production memory capture", () => {
     });
     expect(context.audits.map(({ outcome }) => outcome)).toEqual([
       "explicitly_approved",
-      "confidence_below_threshold",
+      "tentative_kept",
     ]);
     await context.memory.runProjectionBatch(5);
-    expect(context.provider.upserts.map(({ content }) => content)).toEqual([
+    expect(context.provider.upserts.map(({ content }) => content).sort()).toEqual([
+      "主人好像喜欢海",
       "主人最喜欢的颜色是蓝色",
     ]);
+    expect(tentative).toHaveLength(1);
+    expect(tentative[0]).toMatchObject({
+      inference: true,
+      confidencePermille: 700,
+      sourceThreadId: THREAD_ID,
+      attributes: { tentative: true, evidenceVerified: true },
+    });
+    expect(await context.plaintext(tentative[0]?.contentRef ?? null)).toBe("主人好像喜欢海");
     const ledger = await context.ledgerEntries();
     expect(ledger).toHaveLength(2);
     const kept = ledger.find(({ outcome }) => outcome === "kept");
-    const suppressed = ledger.find(({ outcome }) => outcome === "discarded");
+    const suppressed = ledger.find(({ reasonCode }) => reasonCode === "kept_tentative");
     expect(kept).toMatchObject({
       reasonCode: "explicitly_approved",
       category: "preference",
@@ -686,14 +698,67 @@ describe("production memory capture", () => {
       inferred: false,
     });
     expect(suppressed).toMatchObject({
-      reasonCode: "confidence_below_threshold",
+      outcome: "kept",
+      reasonCode: "kept_tentative",
       category: "other",
       confidencePermille: 700,
       inferred: true,
     });
+    expect(suppressed?.subjectRef).toBe(tentative[0]?.id);
     expect(await context.plaintext(suppressed?.contentRef ?? null)).toBe("主人好像喜欢海");
-    const stored = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
-    expect(stored.map(({ id }) => id)).not.toContain(suppressed?.subjectRef);
+  });
+
+  it("[PA-2] a tentative memory is confirmed by `unchanged` only with a verified owner quote", async () => {
+    const context = await setup(
+      "好家里只喝明治的牛奶",
+      '{"memories":[{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人偏好明治乳制品","classification":"private","confidence":700,"inference":true,"quote":"好家里只喝明治的牛奶"}]}',
+    );
+    const options = (
+      context.capture as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryCapture>[0];
+      }
+    ).options;
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const tentativeState = async () => {
+      const [record] = (
+        await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID)
+      ).filter(({ attributes }) => attributes?.evidenceVerified === true);
+      if (!record) throw new Error("no memory");
+      return record;
+    };
+    const created = await tentativeState();
+    expect(created.attributes?.tentative).toBe(true);
+    const unchanged = (quote: string) =>
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            decision: "unchanged",
+            existingMemoryId: created.id,
+            text: "主人偏好明治乳制品",
+            classification: "private",
+            confidence: 900,
+            inference: false,
+            quote,
+          },
+        ],
+      });
+    const round = async (runId: string, ownerText: string, output: string) => {
+      await context.turn("owner", ownerText, runId);
+      context.outputs.push(output);
+      const capture = new ProductionMemoryCapture(options);
+      await capture.start(context.requestFor(runId));
+      await capture.stop();
+    };
+    await round("run-pa2-2", "今天天气不错", unchanged("明治"));
+    expect((await tentativeState()).attributes?.tentative).toBe(true);
+    expect(context.audits.map(({ outcome }) => outcome)).toContain("evidence_unverified");
+    await round("run-pa2-unrelated", "明天下午三点开会", unchanged("明天下午三点开会"));
+    expect((await tentativeState()).attributes?.tentative).toBe(true);
+    await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
+    expect((await tentativeState()).attributes?.tentative).not.toBe(true);
+    expect(context.failures).toEqual([]);
   });
 
   it("captures each Run once and offers existing memories for updates", async () => {
