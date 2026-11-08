@@ -25,7 +25,7 @@ const READ_ONLY_TOOL_NAMES = new Set([
 ]);
 
 type Interval = readonly [number, number];
-const SAFE_TOOL_REASON_CODES = new Set([
+export const SAFE_TOOL_REASON_CODES = new Set([
   "SANDBOX_TOOL_RESULT_LOST",
   "SANDBOX_TOOL_DEADLINE_EXCEEDED",
   "SANDBOX_TOOL_NOT_STARTED",
