@@ -26,10 +26,11 @@ export function recordDecisionSignal(
     Number(
       database
         .prepare(
-          `INSERT OR IGNORE INTO decision_signals (
+          `INSERT INTO decision_signals (
             id, owner_id, agent_id, decision_id, signal, occurred_at, delay_ms, detail,
             source_ref, recorded_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (decision_id, signal, source_ref) DO NOTHING`,
         )
         .run(
           `signal:${randomUUID()}`,

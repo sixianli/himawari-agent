@@ -743,6 +743,30 @@ describe("[P0-8] calibration report tab", () => {
     );
   });
 
+  it("[P0-11] still counts signals on undelivered decisions when no decision sent a reminder", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        implicit: {
+          pushedDecisions: 0,
+          otherDecisionEvents: 2,
+          signals: [
+            signalRow("opened", 0, null, 0),
+            signalRow("undone", 0, null, 0),
+            signalRow("replied", 0, null, 0),
+          ],
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="观察信号 · 不是打分"]');
+    expect(card).toContain("这一周没有推送过提醒的决策。");
+    expect(card).toContain("另有 2 条信号");
+    expect(document.querySelector("#page .weekly-tiles[data-count='3']")).toBeNull();
+  });
+
   it("[P0-11] [negative] shows no percentage when too few decisions sent a reminder", async () => {
     weekly = {
       ...weekly,

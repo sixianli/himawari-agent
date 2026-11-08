@@ -136,9 +136,18 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
       database.close();
     };
 
+    const markPushed = (...insightIds: string[]) => {
+      const database = raw();
+      for (const id of insightIds)
+        database
+          .prepare("UPDATE source_insights SET push_source_key = ? WHERE id = ?")
+          .run(`proactive:push-${id}`, id);
+      database.close();
+    };
+
     const signals = (decisionIds: readonly string[]) =>
       repository.decisionLedger().listSignals({ ...scope, decisionIds });
-    return { repository, raw, record, addFeedback, signals };
+    return { repository, raw, record, addFeedback, markPushed, signals };
   }
 
   it("records an opened signal on the decision that sent the push, with the delay", async () => {
@@ -204,7 +213,7 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
   });
 
   it("records an undone signal only when done or muted is reversed", async () => {
-    const { repository, record, signals } = await fixture();
+    const { repository, record, markPushed, signals } = await fixture();
     try {
       await record({
         id: "decision-1",
@@ -212,8 +221,10 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
         insights: [
           { id: "insight-1", threadId: "thread-1", contentRef: "content-1" },
           { id: "insight-2", threadId: "thread-2", contentRef: "content-2" },
+          { id: "insight-3", threadId: "thread-3", contentRef: "content-2" },
         ],
       });
+      markPushed("insight-1", "insight-2");
       const proactive = repository.proactive();
       await proactive.updateInsight({
         ...scope,
@@ -253,6 +264,18 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
         rating: "useful",
         now: "2026-11-02T03:00:00.000Z",
       });
+      await proactive.updateInsight({
+        ...scope,
+        insightId: "insight-3",
+        status: "done",
+        now: "2026-11-02T03:30:00.000Z",
+      });
+      await proactive.updateInsight({
+        ...scope,
+        insightId: "insight-3",
+        status: "open",
+        now: "2026-11-02T03:30:05.000Z",
+      });
       expect(
         (await signals(["decision-1"])).map(({ signal, delayMs, detail }) => ({
           signal,
@@ -269,7 +292,7 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
   });
 
   it("records a replied signal once, with the time of the reply, only for a waiting reminder", async () => {
-    const { repository, record, signals } = await fixture();
+    const { repository, record, markPushed, signals } = await fixture();
     try {
       await record({
         id: "decision-1",
@@ -277,8 +300,10 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
         insights: [
           { id: "insight-1", threadId: "thread-1", contentRef: "content-1" },
           { id: "insight-2", threadId: "thread-2", contentRef: "content-2" },
+          { id: "insight-3", threadId: "thread-3", contentRef: "content-2" },
         ],
       });
+      markPushed("insight-1", "insight-2");
       await repository.proactive().updateInsight({
         ...scope,
         insightId: "insight-2",
@@ -289,6 +314,7 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
       const replies = [
         { threadId: "thread-1", receivedAt: repliedAt },
         { threadId: "thread-2", receivedAt: repliedAt },
+        { threadId: "thread-3", receivedAt: repliedAt },
         { threadId: "thread-unknown", receivedAt: repliedAt },
       ];
       await record({
@@ -350,6 +376,73 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
       expect(await signals(["decision-1"])).toHaveLength(1);
       await repository.proactive().clearRecords(scope);
       expect(await signals(["decision-1"])).toEqual([]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it.each([
+    ["the Agent", "DELETE FROM agents WHERE id = ?", AGENT_ID],
+    ["the whole account", "DELETE FROM owners WHERE id = ?", OWNER_ID],
+  ])("removes the signals when %s is deleted", async (_name, statement, id) => {
+    const { repository, raw, record, addFeedback } = await fixture();
+    try {
+      await record({ id: "decision-1", verdict: "pushed", pushSourceKey: "proactive:push-1" });
+      addFeedback("proactive:push-1", "tag-1");
+      await repository.webPush().recordReactions({
+        ...scope,
+        reactions: [{ tag: "tag-1", reaction: "opened", occurredAt: OPENED }],
+        now: OPENED,
+      });
+      const database = raw();
+      expect(database.prepare("SELECT count(*) AS n FROM decision_signals").get()).toEqual({
+        n: 1,
+      });
+      database.exec("DELETE FROM payloads");
+      database.prepare(statement).run(id);
+      expect(database.prepare("SELECT count(*) AS n FROM decision_signals").get()).toEqual({
+        n: 0,
+      });
+      database.close();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("backfills opened signals from earlier push feedback, and only the opened ones", async () => {
+    const { repository, raw, record, addFeedback, signals } = await fixture();
+    try {
+      await record({ id: "decision-1", verdict: "pushed", pushSourceKey: "proactive:push-1" });
+      await record({ id: "decision-2", verdict: "pushed", pushSourceKey: "proactive:push-2" });
+      addFeedback("proactive:push-1", "tag-1");
+      addFeedback("proactive:push-2", "tag-2");
+      const database = raw();
+      database
+        .prepare("UPDATE web_push_feedback SET opened_at = ? WHERE source_key = ?")
+        .run(OPENED, "proactive:push-1");
+      const migration = (await loadBundledMigrations()).find(
+        (entry) => entry.name === "decision_signals",
+      );
+      const backfill = migration?.sql.slice(migration.sql.indexOf("INSERT INTO decision_signals"));
+      expect(backfill).toBeDefined();
+      database.exec(backfill as string);
+      database.close();
+      const rows = await signals(["decision-1", "decision-2"]);
+      expect(
+        rows.map(({ decisionId, signal, delayMs, detail }) => ({
+          decisionId,
+          signal,
+          delayMs,
+          detail,
+        })),
+      ).toEqual([
+        {
+          decisionId: "decision-1",
+          signal: "opened",
+          delayMs: 30 * 60_000,
+          detail: { backfilled: true },
+        },
+      ]);
     } finally {
       await repository.close();
     }

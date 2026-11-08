@@ -751,7 +751,8 @@ export class SqliteProactiveOperations {
            )`,
       );
       const openForReply = this.database.prepare(
-        `SELECT id, decision_id AS decisionId, updated_at AS updatedAt FROM source_insights
+        `SELECT id, decision_id AS decisionId, updated_at AS updatedAt,
+           push_source_key AS pushSourceKey FROM source_insights
          WHERE owner_id = ? AND agent_id = ? AND source = ? AND thread_id = ? AND status = 'open'
            AND NOT EXISTS (
              SELECT 1 FROM proactive_processed_messages later
@@ -760,6 +761,7 @@ export class SqliteProactiveOperations {
            )`,
       );
       for (const { threadId, receivedAt } of input.repliedThreads) {
+        this.time(receivedAt);
         const waiting = openForReply.all(
           ...scope,
           decision.scenario,
@@ -768,7 +770,12 @@ export class SqliteProactiveOperations {
           decision.scenario,
           threadId,
           receivedAt,
-        ) as { id: string; decisionId: string; updatedAt: string }[];
+        ) as {
+          id: string;
+          decisionId: string;
+          updatedAt: string;
+          pushSourceKey: string | null;
+        }[];
         markReplied.run(
           decision.checkedAt,
           ...scope,
@@ -779,7 +786,7 @@ export class SqliteProactiveOperations {
           threadId,
           receivedAt,
         );
-        for (const row of waiting)
+        for (const row of waiting.filter((entry) => entry.pushSourceKey !== null))
           recordDecisionSignal(this.database, {
             ownerId: String(scope[0]),
             agentId: String(scope[1]),
@@ -914,11 +921,12 @@ export class SqliteProactiveOperations {
     return this.database.transaction(() => {
       const before = this.database
         .prepare(
-          `SELECT status, decision_id AS decisionId, updated_at AS updatedAt FROM source_insights
+          `SELECT status, decision_id AS decisionId, updated_at AS updatedAt,
+             push_source_key AS pushSourceKey FROM source_insights
            WHERE owner_id = ? AND agent_id = ? AND id = ?`,
         )
         .get(input.ownerId, input.agentId, input.insightId) as
-        | { status: string; decisionId: string; updatedAt: string }
+        | { status: string; decisionId: string; updatedAt: string; pushSourceKey: string | null }
         | undefined;
       const changed =
         this.database
@@ -939,6 +947,7 @@ export class SqliteProactiveOperations {
       if (
         changed &&
         before !== undefined &&
+        before.pushSourceKey !== null &&
         input.status === "open" &&
         (before.status === "done" || before.status === "muted")
       )

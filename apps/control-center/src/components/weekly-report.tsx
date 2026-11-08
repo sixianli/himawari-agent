@@ -1062,7 +1062,16 @@ export function WeeklyReport({
       <section className="weekly-card" aria-label={message("weekly.implicit.title")}>
         <CardHead title={message("weekly.implicit.title")} infoKey="implicit" info={infoButton} />
         {report.implicit.pushedDecisions === 0 ? (
-          <p className="weekly-empty">{message("weekly.implicit.empty")}</p>
+          <>
+            <p className="weekly-empty">{message("weekly.implicit.empty")}</p>
+            {report.implicit.otherDecisionEvents > 0 ? (
+              <p className="weekly-muse-foot">
+                {message("weekly.implicit.other", {
+                  n: format.count(report.implicit.otherDecisionEvents),
+                })}
+              </p>
+            ) : null}
+          </>
         ) : (
           <>
             <div className="weekly-tiles" data-count="3">

@@ -19,12 +19,14 @@ BEGIN SELECT RAISE(ABORT, 'DECISION_SIGNAL_IMMUTABLE'); END;
 
 CREATE TRIGGER decision_signals_no_delete BEFORE DELETE ON decision_signals
 WHEN EXISTS (SELECT 1 FROM decision_ledger WHERE id = OLD.decision_id)
+  AND EXISTS (SELECT 1 FROM agents WHERE id = OLD.agent_id)
+  AND EXISTS (SELECT 1 FROM owners WHERE id = OLD.owner_id)
 BEGIN SELECT RAISE(ABORT, 'DECISION_SIGNAL_IMMUTABLE'); END;
 
 INSERT INTO decision_signals (
   id, owner_id, agent_id, decision_id, signal, occurred_at, delay_ms, detail, source_ref, recorded_at
 )
-SELECT 'signal:opened:' || decision.id, decision.owner_id, decision.agent_id, decision.id, 'opened',
+SELECT 'signal:backfill:' || lower(hex(randomblob(16))), decision.owner_id, decision.agent_id, decision.id, 'opened',
   feedback.opened_at,
   max(0, CAST(round((julianday(feedback.opened_at) - julianday(feedback.first_sent_at)) * 86400000) AS INTEGER)),
   '{"backfilled":true}', feedback.source_key, feedback.opened_at

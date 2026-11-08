@@ -600,8 +600,11 @@ export function buildReport({
     "这一节只记你没动手评价时发生的事：提醒有没有被点开、完成或静音后有没有撤销、邮件串里你有没有回复。它们是弱信号，不当作你的评价，不和上面的打分比例混在一起算，也不会用来自动改任何门槛。分母是这一周推送过提醒的决策。",
     "",
   );
-  if (implicit.pushedDecisions === 0) lines.push("这一周没有推送过提醒的决策。", "");
-  else {
+  if (implicit.pushedDecisions === 0) {
+    lines.push("这一周没有推送过提醒的决策。", "");
+    if (implicit.otherDecisionEvents > 0)
+      lines.push(`另有 ${implicit.otherDecisionEvents} 条信号落在没有推送的决策上。`, "");
+  } else {
     lines.push(
       `这一周推送过提醒的决策 ${implicit.pushedDecisions} 条。`,
       "",
