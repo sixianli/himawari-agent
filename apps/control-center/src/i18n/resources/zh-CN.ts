@@ -733,7 +733,6 @@ export const messages = {
   "memory.page.importSummary": "找到 {all} 条，已勾 {on} 条",
   "memory.page.importFlag":
     "{f, select, duplicate {已经记着，跳过} sensitive {敏感，默认不导入} other {写代码的经验，默认不导入}}",
-  "memory.page.importDropped": "另有 {count} 条像是密码、令牌或证件号，已直接丢掉，不会导入。",
   "memory.page.importCommit": "导入勾选的 {count} 条",
   "memory.page.importDone": "已导入 {count} 条；在时间线里可以整批撤销",
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",

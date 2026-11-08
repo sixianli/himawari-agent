@@ -1097,10 +1097,10 @@ describe("memory approval and management", () => {
     });
     await click("#settings .memory-import", "拆成一条条");
     const preview = text("#settings .memory-import");
-    expect(preview).toContain("找到 3 条，已勾 1 条");
+    expect(preview).toContain("找到 4 条，已勾 1 条");
     expect(preview).toContain("已经记着，跳过");
     expect(preview).toContain("敏感，默认不导入");
-    expect(preview).toContain("另有 1 条像是密码");
+    expect(preview).not.toContain("已直接丢掉");
     protectText.mockClear();
     await click("#settings .memory-import", "导入勾选的 1 条");
     expect(protectText).toHaveBeenCalledWith("回答不要用表情符号", "private");
@@ -1250,8 +1250,10 @@ describe("memory import parsing", () => {
     expect(parsed.items[2]?.duplicate).toBe(true);
     expect(parsed.items[4]).toMatchObject({ coding: true, subCategory: "Codex" });
     const agents = parseMemoryText("AGENTS.md", "# Global\n- 推送后不要强推\n- token 是 ghp_x", []);
-    expect(agents.items.map((item) => item.text)).toEqual(["推送后不要强推"]);
-    expect(agents.dropped).toBe(1);
+    expect(agents.items.map((item) => [item.text, item.sensitive, item.checked])).toEqual([
+      ["推送后不要强推", false, true],
+      ["token 是 ghp_x", true, false],
+    ]);
   });
 
   it("[MP-8] reads a Himawari export and keeps only memories that were in use", () => {

@@ -776,8 +776,6 @@ export const messages = {
   "memory.page.importSummary": "{all} found, {on} selected",
   "memory.page.importFlag":
     "{f, select, duplicate {Already remembered} sensitive {Sensitive, off by default} other {Coding notes, off by default}}",
-  "memory.page.importDropped":
-    "{count} more looked like passwords, tokens or ID numbers and were dropped.",
   "memory.page.importCommit": "Import {count} selected",
   "memory.page.importDone": "Imported {count}. Undo the whole import from the timeline.",
   "memory.page.importEmpty":

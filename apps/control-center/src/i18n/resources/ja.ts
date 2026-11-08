@@ -783,8 +783,6 @@ export const messages = {
   "memory.page.importSummary": "{all} 件中 {on} 件を選択",
   "memory.page.importFlag":
     "{f, select, duplicate {記憶済み} sensitive {機微な情報のため既定でオフ} other {コーディングのメモのため既定でオフ}}",
-  "memory.page.importDropped":
-    "パスワード・トークン・身分証番号らしい {count} 件は取り込みません。",
   "memory.page.importCommit": "選んだ {count} 件をインポート",
   "memory.page.importDone":
     "{count} 件をインポートしました。タイムラインからまとめて取り消せます。",

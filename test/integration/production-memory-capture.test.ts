@@ -615,6 +615,40 @@ describe("production memory capture", () => {
     expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
+  it("[mask-not-block] tells the model to mark passwords, keys, identity and card numbers sensitive and to skip one-time codes", () => {
+    const prompt = memoryCapturePrompt("记住我的密码是 abc12345", [], null, null, null);
+    expect(prompt).toContain("证件号码、银行卡或账户号码、密码、密钥用 sensitive");
+    expect(prompt).toContain("一次性验证码");
+    expect(prompt).not.toContain("密码和验证码用 restricted");
+    expect(prompt).not.toContain("密码密钥等凭据");
+  });
+
+  it("[mask-not-block] stores a password the Owner asked to remember as written, marked sensitive", async () => {
+    const context = await setup(
+      "记住我家 Wi-Fi 的密码是 abc12345。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人家的 Wi-Fi 密码是 abc12345","classification":"sensitive","topic":"other","confidence":990,"explicit":true,"quote":"我家 Wi-Fi 的密码是 abc12345"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const [memory] = (await overview(context.control)).memories;
+    expect(memory?.text).toBe("主人家的 Wi-Fi 密码是 abc12345");
+    expect(memory?.dataClassification).toBe("sensitive");
+  });
+
+  it("[mask-not-block] asks the Owner first when the model calls a password private and he did not ask to remember it", async () => {
+    const context = await setup(
+      "我家 Wi-Fi 的密码是 abc12345，你帮我看看信号。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人家的 Wi-Fi 密码是 abc12345","classification":"private","confidence":900,"explicit":false,"quote":"我家 Wi-Fi 的密码是 abc12345"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const snapshot = await overview(context.control);
+    expect(snapshot.memories).toEqual([]);
+    expect(snapshot.pending.map(({ text }) => text)).toEqual(["主人家的 Wi-Fi 密码是 abc12345"]);
+  });
+
   it("asks the model to keep who the Owner's family are and the Owner's rules private, and only their private matters sensitive", () => {
     const prompt = memoryCapturePrompt("我老婆叫陈静，在医院当药剂师", [], null, null, null);
     expect(prompt).toContain("主人身边的人是谁（名字、和主人的关系、职业、住在哪个城市）");
@@ -1249,6 +1283,19 @@ describe("production memory capture", () => {
         .filter(({ id }) => !id.includes("call-card"))
         .every(({ dataClassification }) => dataClassification === "private"),
     ).toBe(true);
+    expect(
+      await tool(
+        "set",
+        { text: "到点把 Wi-Fi 密码是 abc12345 告诉访客", due: "2026-10-30T10:00" },
+        "call-password",
+      ),
+    ).toMatchObject({ created: true });
+    const withPassword = await context.repository
+      .productMemoryState()
+      .listActive(OWNER_ID, AGENT_ID);
+    expect(withPassword.find(({ id }) => id.includes("call-password"))?.dataClassification).toBe(
+      "sensitive",
+    );
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {
