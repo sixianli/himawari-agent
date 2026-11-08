@@ -18,8 +18,6 @@ import {
   type SensitiveMemoryApprovalStatePort,
   type SensitiveMemoryCandidatePort,
 } from "../ports/index.js";
-import { credentialFindings } from "@himawari-agent/sensitive-capture";
-import { scanMachineSecrets } from "@himawari-agent/sensitive-capture";
 
 export interface AutomaticMemoryServiceOptions {
   readonly extraction: IncrementalMemoryExtractionPort;
@@ -86,16 +84,6 @@ function canBeKeptTentatively(candidate: ExtractedMemoryCandidate): boolean {
   );
 }
 
-function candidateSecretFindings(
-  candidate: ExtractedMemoryCandidate,
-): MemoryExtractionAuditRecord["secretFindings"] {
-  const text = candidate.quote ? `${candidate.text}\n${candidate.quote}` : candidate.text;
-  return [
-    ...scanMachineSecrets(text),
-    ...credentialFindings(text).map(({ kind, count }) => ({ ruleId: kind, count })),
-  ];
-}
-
 function ledgerId(key: string): string {
   return `ledger:${bytesToHex(sha256(utf8ToBytes(key))).slice(0, 40)}`;
 }
@@ -117,17 +105,6 @@ export class AutomaticMemoryService {
 
   async processCommittedRun(input: CommittedRunMemoryInput): Promise<AutomaticMemoryResult> {
     const sourceText = await this.options.readSourceText(input.sourceRef);
-    const sourceFindings = scanMachineSecrets(sourceText);
-    if (sourceFindings.length > 0) {
-      await this.audit(input, null, "source_secret_excluded", sourceFindings);
-      return {
-        status: "source_secret_excluded",
-        committedMemoryIds: [],
-        tentativeMemoryIds: [],
-        approvalRequestIds: [],
-        excludedCandidateOrdinals: [],
-      };
-    }
     let candidates: readonly ExtractedMemoryCandidate[];
     try {
       candidates = await this.options.extraction.extract({
@@ -153,13 +130,6 @@ export class AutomaticMemoryService {
     const approvalRequestIds: string[] = [];
     const excludedCandidateOrdinals: number[] = [];
     for (const [candidateOrdinal, candidate] of candidates.entries()) {
-      const candidateFindings = candidateSecretFindings(candidate);
-      if (candidateFindings.length > 0) {
-        excludedCandidateOrdinals.push(candidateOrdinal);
-        await this.audit(input, candidateOrdinal, "candidate_secret_excluded", candidateFindings);
-        await this.discard(input, candidate, candidateOrdinal, "candidate_secret_excluded", false);
-        continue;
-      }
       if (candidate.dataClassification === "restricted") {
         excludedCandidateOrdinals.push(candidateOrdinal);
         await this.audit(input, candidateOrdinal, "restricted_excluded", []);
@@ -239,8 +209,7 @@ export class AutomaticMemoryService {
         candidate,
         candidateOrdinal,
         "evidence_unverified",
-        candidateSecretFindings(candidate).length === 0 &&
-          candidate.dataClassification !== "restricted",
+        candidate.dataClassification !== "restricted",
       );
     }
     return {
@@ -313,13 +282,6 @@ export class AutomaticMemoryService {
       );
     }
     const sourceText = await this.options.readSourceText(request.sourceRef);
-    const sourceFindings = scanMachineSecrets(sourceText);
-    if (sourceFindings.length > 0) {
-      throw new ApplicationPortError(
-        PORT_ERROR_CODES.INVALID_OPERATION,
-        "Approved Memory source now contains machine-secret material",
-      );
-    }
     const candidate = this.options.candidates
       ? await this.options.candidates.read(request)
       : (
@@ -338,10 +300,10 @@ export class AutomaticMemoryService {
       );
     }
     const text = input.resolution === "edited" ? input.editedText : candidate.text;
-    if (text.trim().length === 0 || scanMachineSecrets(text).length > 0) {
+    if (text.trim().length === 0) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
-        "Approved Memory content is empty or contains machine-secret material",
+        "Approved Memory content is empty",
       );
     }
     const committed = await this.commitCandidate(
