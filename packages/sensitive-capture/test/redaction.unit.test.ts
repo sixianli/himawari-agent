@@ -44,6 +44,8 @@ const positives: ReadonlyArray<readonly [string, string, string]> = [
   ["韩文密码是", "비밀번호는 abc12345", "비밀번호는 [密码]"],
   ["中文后面跟着密码", "我的密码 abc12345", "我的密码 [密码]"],
   ["句号收尾的值", "password is abc12345.", "password is [密码]."],
+  ["英文紧贴中文关键词", "wifi密码 abc12345", "wifi密码 [密码]"],
+  ["引号包住的值", 'password is "hunter22abc"', 'password is "[密码]"'],
   ["are", "the password are abc12345", "the password are [密码]"],
   ["was", "my password was abc12345", "my password was [密码]"],
   ["改为", "密码改为 Zx9qq88", "密码改为 [密码]"],
@@ -99,7 +101,12 @@ const negatives: readonly string[] = [
   "密码 https://example.com/reset?token=123456",
   "password is 2026-11-08T10:30",
   "密码 11/08/2026",
-  "password was updated on 2026/11/08",
+  "password is (2026-11-08)",
+  'password is "https://example.com"',
+  'password is "/home/user1"',
+  "pwd 2>/dev/null",
+  "password is 123.",
+  "密码 12345.",
 ];
 
 describe("outbound redaction", () => {
@@ -317,12 +324,12 @@ describe("locating masked values in the masked text", () => {
     expect(located?.spans.map(({ sighting }) => sighting.value)).toEqual(["abc12345", "Zx9qq88"]);
   });
 
-  it("masks a looser password form the same way whatever came before it", () => {
+  it("keeps the bytes of earlier text when a later message is added", () => {
     const lines = ["我们聊聊家里的网络", "Wi-Fi 密码 abc12345", "好的，谢谢"];
-    const alone = redactForEgress(lines[1] ?? "").text;
-    const afterOthers = lines.map((line) => redactForEgress(line).text);
-    expect(afterOthers[1]).toBe(alone);
-    expect(afterOthers.slice(0, 1)).toEqual([lines[0]]);
+    const earlier = redactForEgress(lines.slice(0, 2).join("\n")).text;
+    const all = redactForEgress(lines.join("\n")).text;
+    expect(earlier).toContain("[密码]");
+    expect(all.startsWith(earlier)).toBe(true);
   });
 
   it("gives up instead of guessing when the text already holds a placeholder", () => {

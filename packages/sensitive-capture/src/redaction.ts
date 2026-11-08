@@ -65,8 +65,10 @@ const KNOWN_VALUE_MINIMUM_LENGTH = 6;
 const MACHINE_SECRET_MARKER = "[MACHINE_SECRET_REDACTED]";
 const MACHINE_SECRET_PLACEHOLDER = "[密钥]";
 
-const PASSWORD_KEYWORDS =
-  "密码|密碼|口令|PIN\\s?码|PIN\\s?碼|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번|password|passwd|pwd";
+const PASSWORD_ASCII_KEYWORDS = "PIN\\s?码|PIN\\s?碼|password|passwd|pwd";
+const PASSWORD_NON_ASCII_KEYWORDS =
+  "密码|密碼|口令|安全码|安全碼|授权码|授權碼|パスワード|暗証番号|비밀번호|암호|비번";
+const PASSWORD_KEYWORDS = `${PASSWORD_NON_ASCII_KEYWORDS}|${PASSWORD_ASCII_KEYWORDS}`;
 
 const PASSWORD_VALUE = "[^\\s,，;；]";
 
@@ -76,22 +78,23 @@ const PASSWORD_ASSIGNMENT = new RegExp(
 );
 
 const PASSWORD_LOOSE_VALUE = "[^\\s,;\\[\\]\\u0080-\\u{10FFFF}]";
-const PASSWORD_LOOSE_KEYWORDS = `(?<![A-Za-z0-9_])(?:${PASSWORD_KEYWORDS})`;
+const PASSWORD_LOOSE_KEYWORDS = `(?:(?<![A-Za-z0-9_])(?:${PASSWORD_ASCII_KEYWORDS})|(?:${PASSWORD_NON_ASCII_KEYWORDS}))`;
+const PASSWORD_VALUE_OPENING = `["'(]*`;
 
 const PASSWORD_WORDED_ASSIGNMENT = new RegExp(
-  `(${PASSWORD_LOOSE_KEYWORDS}(?:[ \\t]*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|[ \\t]+(?:is|are|was)\\b)[ \\t]*)(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{4,})`,
+  `(${PASSWORD_LOOSE_KEYWORDS}(?:[ \\t]*(?:改成|改为|改為|设为|設為|换成|換成|는|은)|[ \\t]+(?:is|are|was)\\b)[ \\t]*${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{4,})`,
   "giu",
 );
 
 const PASSWORD_BARE_VALUE = new RegExp(
-  `(${PASSWORD_LOOSE_KEYWORDS}[ \\t]+)(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{6,})`,
+  `(${PASSWORD_LOOSE_KEYWORDS}[ \\t]+${PASSWORD_VALUE_OPENING})(?=${PASSWORD_LOOSE_VALUE}*\\d)(${PASSWORD_LOOSE_VALUE}{6,})`,
   "giu",
 );
 
 const PASSWORD_TRAILING_PUNCTUATION = /[.:)'"]+$/u;
 
 const NOT_A_PASSWORD_VALUE =
-  /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T.\d:+\-Z]*)|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|v?\d+(?:\.\d+)+|https?:\/\/\S*|\/\S*)$/iu;
+  /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T.\d:+\-Z]*)|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|v?\d+(?:\.\d+)+|https?:\/\/\S*|\/\S*|\d*[<>]\S*)$/iu;
 
 const VERIFICATION_CODE_KEYWORD =
   /(?:验证码|驗證碼|校验码|認証コード|確認コード|認証番号|ワンタイム|verification code|security code|login code|one[- ]time (?:pass)?(?:code|word)|passcode|\bOTP\b)/iu;
@@ -338,10 +341,13 @@ function redactUntrusted(input: string, options: EgressRedactionOptions): Egress
       ? `${lead}${value}`
       : maskPassword(lead, value),
   );
-  for (const looser of [PASSWORD_WORDED_ASSIGNMENT, PASSWORD_BARE_VALUE])
+  for (const [looser, minimumLength] of [
+    [PASSWORD_WORDED_ASSIGNMENT, 4],
+    [PASSWORD_BARE_VALUE, 6],
+  ] as const)
     text = text.replace(looser, (match, lead: string, raw: string) => {
       const value = raw.replace(PASSWORD_TRAILING_PUNCTUATION, "");
-      if (value.length === 0 || !/\d/u.test(value) || NOT_A_PASSWORD_VALUE.test(value))
+      if (value.length < minimumLength || !/\d/u.test(value) || NOT_A_PASSWORD_VALUE.test(value))
         return match;
       return `${maskPassword(lead, value)}${raw.slice(value.length)}`;
     });
