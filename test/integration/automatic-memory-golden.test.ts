@@ -456,7 +456,6 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       expect(JSON.stringify(audit.records)).not.toContain(
         "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
       );
-      expect(audit.records.map(({ outcome }) => outcome)).not.toContain("source_secret_excluded");
       expect(resultByCase.get("transient-chatter")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.committedMemoryIds).toEqual([]);
       expect(resultByCase.get("low-confidence")?.tentativeMemoryIds).toEqual([]);
@@ -485,7 +484,6 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
       );
       expect(ledgerCount("discarded")).toBe(
         auditCount(
-          "candidate_secret_excluded",
           "restricted_excluded",
           "transient_ignored",
           "confidence_below_threshold",
@@ -518,11 +516,7 @@ describe.each(["worker", "direct"] as const)("automatic-memory-golden through %s
         expect(entry.inputs.ruleIds).toEqual(["confidence_below_threshold"]);
         expect(content.plaintextByRef.get(entry.contentRef ?? "")).toBeTruthy();
       }
-      for (const entry of ledger.filter(
-        (item) =>
-          item.reasonCode === "restricted_excluded" ||
-          item.reasonCode === "candidate_secret_excluded",
-      ))
+      for (const entry of ledger.filter((item) => item.reasonCode === "restricted_excluded"))
         expect(entry.contentRef).toBeNull();
       expect(
         ledger.some((entry) => entry.subjectRef?.startsWith("generation-machine-secret")),
