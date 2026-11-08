@@ -423,7 +423,8 @@ function MemoryDetail({
       key === item.category ||
       !(MEMORY_SENSITIVE_CATEGORY_NAMES as readonly string[]).includes(key),
   );
-  const origin = memorySourceState(item);
+  const [checkedLost, setCheckedLost] = useState(false);
+  const origin = checkedLost ? "unavailable" : memorySourceState(item);
   const importSource = item.importBatchId
     ? memory.overview?.imports.find(({ batchId }) => batchId === item.importBatchId)?.source
     : undefined;
@@ -525,6 +526,7 @@ function MemoryDetail({
                   void memory.checkSource(item.memoryId).then((fresh) => {
                     if (fresh?.sourceThreadId && fresh.sourceMessageId)
                       onOpenThread(fresh.sourceThreadId, fresh.sourceMessageId);
+                    else setCheckedLost(true);
                   });
                 }}
               >

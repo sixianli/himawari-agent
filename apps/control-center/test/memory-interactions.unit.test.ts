@@ -696,6 +696,25 @@ describe("memory approval and management", () => {
     );
   });
 
+  it("[P1-1] a jump whose check cannot be answered does not navigate and says the source cannot be found", async () => {
+    overview = {
+      ...overview,
+      pending: [],
+      memories: [memoryItem("m-fail", "主人喜欢爬山", { sourceMessageId: "message-7" })],
+    };
+    await render();
+    await click("#settings .memory-results", "主人喜欢爬山");
+    query.mockRejectedValueOnce(new Error("offline"));
+    opened.mockClear();
+    await click("#settings .memory-detail", "跳到原话");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(opened).not.toHaveBeenCalled();
+    expect(text("#settings .memory-detail")).toContain("来源已不可查");
+    expect(text("#settings .memory-detail")).not.toContain("跳到原话");
+  });
+
   it("[P1-1] a memory whose quote cannot be found says so, is counted, and offers no jump", async () => {
     overview = {
       ...overview,
