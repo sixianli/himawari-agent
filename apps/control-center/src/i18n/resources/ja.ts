@@ -1250,6 +1250,21 @@ export const messages = {
   "weekly.muse.rate": "対応づけ率",
   "weekly.muse.def":
     "対応づけ率 = 同じメールに対応づけできた項目 ÷ 今週の Muse との対照の項目すべて。",
+  "weekly.implicit.title": "観察シグナル・評価ではありません",
+  "weekly.implicit.notFull": "今週はまだ終わっていません",
+  "weekly.implicit.empty": "今週、通知を送った判断はありません。",
+  "weekly.implicit.signal":
+    "{s, select, opened {通知を開いた} undone {完了またはミュートのあと取り消した} other {メールのやり取りで返信した}}",
+  "weekly.implicit.delay": "初めて起きるまでの中央値：{t}",
+  "weekly.implicit.delayNone": "まだ起きていません",
+  "weekly.implicit.underMinute": "1 分未満",
+  "weekly.implicit.minutes": "{n} 分",
+  "weekly.implicit.hours": "{n} 時間",
+  "weekly.implicit.days": "{n} 日",
+  "weekly.implicit.other":
+    "通知を送っていない判断に付いたシグナルが {n} 件あり、上の割合には入れていません。",
+  "weekly.implicit.def":
+    "この 3 つのシグナルは、あなたが評価しなくても観察できることです。観察だけで、あなたの評価としては扱わず、上の評価の割合と混ぜて計算せず、しきい値を自動で変えることにも使いません。分母は今週、通知を送った判断です。同じ判断に同じシグナルが何度あっても 1 回と数えます。",
   "weekly.goRate": "「リマインダー」で採点する",
   "sensitive.title": "機密情報のブロック記録",
   "sensitive.count": "{count} 件の記録",
