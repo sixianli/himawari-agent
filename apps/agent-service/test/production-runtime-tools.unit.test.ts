@@ -524,7 +524,7 @@ describe("ProductionRuntimeTools", () => {
       expect(result.modelContent).toContain(limitName);
       expect(result.modelContent).toContain("CPU 时间 12.5 秒");
       expect(result.modelContent).toContain("内存 256 MB");
-      expect(result.modelContent).not.toContain("CPU 时间 1 秒、内存 1.0 MB");
+      expect(result.modelContent).not.toContain("1000 字节");
       expect(result.modelContent).toContain("执行已结束并完成清理");
       expect(result.modelContent).not.toContain("已终止");
       expect(result.modelContent).not.toContain("已被终止");
