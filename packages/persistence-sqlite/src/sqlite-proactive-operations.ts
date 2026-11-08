@@ -790,7 +790,7 @@ export class SqliteProactiveOperations {
           recordDecisionSignal(this.database, {
             ownerId: String(scope[0]),
             agentId: String(scope[1]),
-            decisionId: row.decisionId,
+            decisionId: this.pushingDecisionId(scope, row.pushSourceKey as string, row.decisionId),
             signal: "replied",
             occurredAt: receivedAt,
             delayMs: Date.parse(receivedAt) - Date.parse(row.updatedAt),
@@ -913,6 +913,21 @@ export class SqliteProactiveOperations {
     return reviewed.total + rated.total;
   }
 
+  private pushingDecisionId(
+    scope: readonly unknown[],
+    pushSourceKey: string,
+    fallback: string,
+  ): string {
+    const row = this.database
+      .prepare(
+        `SELECT id FROM decision_ledger
+         WHERE owner_id = ? AND agent_id = ? AND kind = 'proactive' AND push_source_key = ?
+         ORDER BY checked_at, id LIMIT 1`,
+      )
+      .get(scope[0], scope[1], pushSourceKey) as { id: string } | undefined;
+    return row?.id ?? fallback;
+  }
+
   private updateInsight(input: Input<"updateInsight">): boolean {
     this.time(input.now);
     if (input.status !== undefined && !includes(INSIGHT_STATUSES, input.status))
@@ -954,7 +969,11 @@ export class SqliteProactiveOperations {
         recordDecisionSignal(this.database, {
           ownerId: input.ownerId,
           agentId: input.agentId,
-          decisionId: before.decisionId,
+          decisionId: this.pushingDecisionId(
+            [input.ownerId, input.agentId],
+            before.pushSourceKey,
+            before.decisionId,
+          ),
           signal: "undone",
           occurredAt: input.now,
           delayMs: Date.parse(input.now) - Date.parse(before.updatedAt),

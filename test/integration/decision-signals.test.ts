@@ -484,6 +484,62 @@ describe.each(["worker", "direct"] as const)("[P0-11] decision signals through %
     }
   });
 
+  it("keeps a reversal on the decision that sent the push when a later check updates the reminder", async () => {
+    const { repository, raw, record, addFeedback, signals } = await fixture();
+    try {
+      const insights = [{ id: "insight-1", threadId: "thread-1", contentRef: "content-1" }];
+      await record({
+        id: "decision-1",
+        verdict: "pushed",
+        pushSourceKey: "proactive:push-1",
+        insights,
+      });
+      const database = raw();
+      database
+        .prepare("UPDATE source_insights SET push_source_key = 'proactive:push-1' WHERE id = ?")
+        .run("insight-1");
+      database.close();
+      addFeedback("proactive:push-1", "tag-1");
+      await record({
+        id: "decision-2",
+        checkedAt: "2026-11-02T00:30:00.000Z",
+        verdict: "silent",
+        insights,
+      });
+      const proactive = repository.proactive();
+      await proactive.updateInsight({
+        ...scope,
+        insightId: "insight-1",
+        status: "done",
+        now: "2026-11-02T01:00:00.000Z",
+      });
+      await proactive.updateInsight({
+        ...scope,
+        insightId: "insight-1",
+        status: "open",
+        now: "2026-11-02T01:00:20.000Z",
+      });
+      const rows = await signals(["decision-1", "decision-2"]);
+      expect(rows.map(({ decisionId, signal }) => ({ decisionId, signal }))).toEqual([
+        { decisionId: "decision-1", signal: "undone" },
+      ]);
+      const window = resolveWindow({ end: "2026-11-03", days: 7 });
+      const snapshot = await repository
+        .decisionLedger()
+        .readCalibrationRows({ ...scope, start: window.start, end: window.end });
+      const implicit = summarizeImplicit(
+        snapshot.decisions,
+        snapshot.signals,
+        DEFAULT_MINIMUM_SAMPLES,
+      );
+      expect(implicit.pushedDecisions).toBe(1);
+      expect(implicit.otherDecisionEvents).toBe(0);
+      expect(implicit.signals.map(({ decisions }) => decisions)).toEqual([0, 1, 0]);
+    } finally {
+      await repository.close();
+    }
+  });
+
   it("looks decisions up by push source key through an index", async () => {
     const { repository, raw } = await fixture();
     try {
