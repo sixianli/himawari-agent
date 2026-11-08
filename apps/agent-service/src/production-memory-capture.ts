@@ -29,7 +29,7 @@ import {
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
 import { localDayStart } from "@himawari-agent/memory-engine";
-import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
+import { MEMORY_CAPTURE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import {
   type EgressPlaceholderKind,
   placeholderTable,
@@ -627,7 +627,7 @@ export interface ProductionMemoryCaptureOptions {
   >;
   readonly timeZone?: string;
   readonly assertActive: () => Promise<void>;
-  readonly externalTag?: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
+  readonly externalTag: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
   readonly generate: (
     request: RuntimeRequest,
     prompt: string,
@@ -818,13 +818,16 @@ export class ProductionMemoryCapture {
         this.options.timeZone ?? "UTC",
         { subCategories, people },
       );
-      const tag = await this.options.externalTag?.();
+      const tag = await this.options.externalTag();
       const output = await this.options.generate(
         { ...request, dataClassification: source.dataClassification },
         prompt,
         onAdmitted,
       );
-      const table = tag === undefined ? undefined : placeholderTable(prompt, tag);
+      const table = placeholderTable(prompt, tag, {
+        trusted: TRUSTED_PROMPT_TEXTS,
+        jsonEmbedded: true,
+      });
       parsed = parseMemoryCandidates({
         output,
         sourceRef: source.payloadRef,
@@ -838,9 +841,7 @@ export class ProductionMemoryCapture {
         timeZone: this.options.timeZone ?? "UTC",
         subCategories,
         knownPersonIds: new Set(people.map(({ id }) => id)),
-        ...(table === undefined
-          ? {}
-          : { restore: (text: string) => restorePlaceholders(text, table) }),
+        restore: (text: string) => restorePlaceholders(text, table),
       });
     } catch (error) {
       audit("extraction_failed");

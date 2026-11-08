@@ -607,7 +607,7 @@ describe("production memory capture", () => {
     expect(prompt).not.toContain("他人隐私");
   });
 
-  it("[mask-not-block] stores an identity number the Owner asked to remember as written", async () => {
+  it("[mask-not-block] stores an identity number as written when the model classifies it private", async () => {
     const context = await setup(
       "记住我的身份证号 110101199003071234。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的身份证号是 110101199003071234","classification":"private","confidence":990,"explicit":true,"quote":"我的身份证号 110101199003071234"}]}',
@@ -649,15 +649,46 @@ describe("production memory capture", () => {
     expect(memory?.text).not.toContain("#");
   });
 
-  it("[mask-not-block] drops a candidate whose placeholder cannot be restored instead of storing it", async () => {
+  it("[mask-not-block] stores a secret with quote and backslash characters byte for byte", async () => {
+    const message = '记住我的密码: ab"c\\d 这件事。';
+    const masked = redactForEgress(JSON.stringify(message).slice(1, -1), {
+      known: new Map(),
+      tag: captureTag,
+    }).text;
+    const placeholder = masked.match(/\[密码#[^\]]+\]/u)?.[0];
+    if (placeholder === undefined) throw new Error("Expected a masked password");
+    const context = await setup(
+      message,
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            decision: "create",
+            text: `主人的密码是 ${placeholder}`,
+            classification: "private",
+            confidence: 990,
+            explicit: true,
+            quote: `我的密码: ${placeholder} 这件事`,
+          },
+        ],
+      }),
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const [memory] = (await overview(context.control)).memories;
+    expect(memory?.text).toBe('主人的密码是 ab"c\\d');
+  });
+
+  it("[mask-not-block] keeps a placeholder it cannot restore as written, without inventing a value", async () => {
     const context = await setup(
       "记住我的密码: hunter2abc 这件事。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的[密码#zzzzzzzz]","classification":"private","confidence":990,"explicit":true,"quote":"我的密码: hunter2abc"}]}',
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人的密码是 [密码#zzzzzzzz]","classification":"private","confidence":990,"explicit":true,"quote":"我的密码: hunter2abc"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
     const [memory] = (await overview(context.control)).memories;
-    expect(memory?.text ?? "").not.toContain("hunter2abc");
+    expect(memory?.text).toBe("主人的密码是 [密码#zzzzzzzz]");
   });
 
   it("[mask-not-block] still drops a candidate the model itself classifies as restricted", async () => {

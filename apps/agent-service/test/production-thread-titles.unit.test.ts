@@ -8,6 +8,12 @@ import { createReferenceAdapterSet, createV02Fixture } from "@himawari-agent/tes
 import { expect, it, vi } from "vitest";
 import { ProductionThreadTitles } from "../src/production-thread-titles.js";
 
+const testTag = (kind: string, value: string) =>
+  `${kind}${value}`
+    .replace(/[^a-z]/gu, "")
+    .padEnd(8, "x")
+    .slice(0, 8);
+
 async function fixture(empty = false) {
   const adapters = createReferenceAdapterSet();
   const { ownerId, agentId, threadId, authority } = createV02Fixture().scope;
@@ -69,6 +75,7 @@ async function fixture(empty = false) {
     clock: adapters.clock,
     authority: () => authority,
     assertActive: async () => {},
+    externalTag: async () => testTag,
     generate,
     onFailure,
   });
@@ -217,12 +224,6 @@ it("signals admission separately from the pending model response", async () => {
   expect(f.thread().titleSource).toBe("automatic");
 });
 
-const testTag = (kind: string, value: string) =>
-  `${kind}${value}`
-    .replace(/[^a-z]/gu, "")
-    .padEnd(8, "x")
-    .slice(0, 8);
-
 it("[mask-not-block] restores a placeholder the model copied into the title and never refuses a title for holding a secret", async () => {
   const f = await fixture();
   const message = "我的密码: hunter2abc 帮我记一下";
@@ -238,13 +239,12 @@ it("[mask-not-block] restores a placeholder the model copied into the title and 
   await f.adapters.payload.put(payload);
   const options = (
     f.service as unknown as {
-      options: { threads: { listMessages: unknown }; externalTag: unknown };
+      options: { threads: { listMessages: unknown } };
     }
   ).options;
   options.threads.listMessages = vi.fn(async () => [
     { role: "owner", status: "committed", contentRef: payload.ref, dataClassification: "private" },
   ]);
-  options.externalTag = async () => testTag;
   f.generate.mockImplementation(async (_request, prompt) => {
     const masked = redactForEgress(prompt, { known: new Map(), tag: testTag }).text;
     expect(masked).not.toContain("hunter2abc");

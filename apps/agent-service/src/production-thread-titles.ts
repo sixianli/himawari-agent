@@ -7,7 +7,7 @@ import {
   type ThreadRepositoryPort,
   type ThreadUpdateInput,
 } from "@himawari-agent/application";
-import { THREAD_TITLE } from "@himawari-agent/prompt-catalog";
+import { THREAD_TITLE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import {
   type EgressPlaceholderKind,
   placeholderTable,
@@ -24,7 +24,7 @@ export class ProductionThreadTitles {
     clock: ClockPort;
     authority: () => ThreadUpdateInput["authority"];
     assertActive: () => Promise<void>;
-    externalTag?: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
+    externalTag: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
     generate: (request: RuntimeRequest, prompt: string, onAdmitted: () => void) => Promise<string>;
     onFailure: (error: unknown) => void;
   };
@@ -85,11 +85,11 @@ export class ProductionThreadTitles {
         prompt,
         onAdmitted,
       );
-      const tag = await this.options.externalTag?.();
-      const restored =
-        tag === undefined
-          ? generated
-          : restorePlaceholders(generated, placeholderTable(prompt, tag));
+      const tag = await this.options.externalTag();
+      const restored = restorePlaceholders(
+        generated,
+        placeholderTable(prompt, tag, { trusted: TRUSTED_PROMPT_TEXTS, jsonEmbedded: true }),
+      );
       title = restored
         .trim()
         .replace(/^["“「]|["”」]$/gu, "")

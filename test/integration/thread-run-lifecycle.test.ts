@@ -3846,6 +3846,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       clock,
       authority: () => authority,
       assertActive: async () => {},
+      externalTag: async () => (kind, value) => `${kind}${value.length}`,
       generate,
       onFailure: (error) => {
         failures.push(error);
