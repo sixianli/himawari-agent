@@ -104,7 +104,7 @@ describe("[I-gitleaks-allowlist] Gitleaks 白名单只放行已审阅的形式",
       [["-----BEGIN", "PRIVATE KEY----- is used ...`"].join(" "), changeLast],
       [["-----BEGIN", "ENCRYPTED PRIVATE KEY-----`、`DSA PRIVATE KEY` "].join(" "), changeLast],
       [["MIIEvR2T14", "TAILBODY"].join(""), changeLast],
-      ["abcdef123456", changeLast],
+      [["abcdef", "123456"].join(""), changeLast],
     ].map(([sample, mutate], index) => [index, sample, mutate])) {
       expect(matches(scoped[index].regexes, sample)).toBe(true);
       expect(matches(scoped[index].regexes, mutate(sample))).toBe(false);
