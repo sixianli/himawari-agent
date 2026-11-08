@@ -1357,16 +1357,23 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     memoryMinimumSimilarity: 0.45,
     reviewBudgetSeconds: 120,
     reviewSecondsPerItem: 5,
+    reviewSilentSharePermille: 500,
   });
   raw["runPolicy"] = {
     ...policy,
-    proactive: { ...proactive, reviewBudgetSeconds: 300, reviewSecondsPerItem: 10 },
+    proactive: {
+      ...proactive,
+      reviewBudgetSeconds: 300,
+      reviewSecondsPerItem: 10,
+      reviewSilentSharePermille: 200,
+    },
   };
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive,
   ).toMatchObject({
     reviewBudgetSeconds: 300,
     reviewSecondsPerItem: 10,
+    reviewSilentSharePermille: 200,
   });
   raw["runPolicy"] = { ...policy, proactive: { ...proactive, perCheckCostMicros: 100_000 } };
   const legacy = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.proactive;
@@ -1384,6 +1391,8 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
     { ...proactive, memoryMinimumSimilarity: 1.5 },
     { ...proactive, reviewBudgetSeconds: 5 },
     { ...proactive, reviewSecondsPerItem: 0 },
+    { ...proactive, reviewSilentSharePermille: 1_001 },
+    { ...proactive, reviewSilentSharePermille: -1 },
   ]) {
     raw["runPolicy"] = { ...policy, proactive: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
