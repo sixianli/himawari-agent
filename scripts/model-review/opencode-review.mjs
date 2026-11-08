@@ -652,6 +652,7 @@ export function installGitGuard(workRoot) {
     [
       "#!/bin/sh",
       `echo "$$" >> ${JSON.stringify(join(workRoot, SHELL_LOG_NAME))}`,
+      "export LC_MESSAGES=C",
       `exec ${JSON.stringify(realBash)} -r "$@"`,
       "",
     ].join("\n"),
@@ -2133,11 +2134,7 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, ga
         model: launchModel(model, gateway),
         prompt: "probe",
         timeoutMs,
-        extraEnv: {
-          [REVIEW_CANARY_ENV]: plan.marker,
-          LC_ALL: "C",
-          ...(gateway ? gatewayOpencodeEnv() : {}),
-        },
+        extraEnv: { [REVIEW_CANARY_ENV]: plan.marker, ...(gateway ? gatewayOpencodeEnv() : {}) },
         guard: { totalUsd: GUARD_PROBE_OPEN_USD },
       });
       if (!run.guard?.loaded) problems.push(`${model}: GUARD_NOT_LOADED`);
