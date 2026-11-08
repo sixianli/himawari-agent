@@ -176,7 +176,7 @@ export const messages = {
   "chat.model": "モデル（次のターン）",
   "chat.depth": "思考の深さ（次のターン）",
   "chat.search.disclosure":
-    "生成した検索語を 下記のウェブ検索サービスに送信します（ページを読む場合はその URL も送信します）。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。認証情報は引き続き検出・遮断します。取り消すと以後の検索に確認が必要です。",
+    "生成した検索語を 下記のウェブ検索サービスに送信します（ページを読む場合はその URL も送信します）。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。検索語に認証情報を検出した場合は、マスキングしてから送信します。取り消すと以後の検索に確認が必要です。",
   "chat.search.remember": "選択を記憶して、今後のウェブ検索を許可する",
   "chat.search.afterRevoke": "いまはオフなので、検索が必要なときは会話で先に確認します。",
   "chat.search.providersChanged":
@@ -783,8 +783,6 @@ export const messages = {
   "memory.page.importSummary": "{all} 件中 {on} 件を選択",
   "memory.page.importFlag":
     "{f, select, duplicate {記憶済み} sensitive {機微な情報のため既定でオフ} other {コーディングのメモのため既定でオフ}}",
-  "memory.page.importDropped":
-    "パスワード・トークン・身分証番号らしい {count} 件は取り込みません。",
   "memory.page.importCommit": "選んだ {count} 件をインポート",
   "memory.page.importDone":
     "{count} 件をインポートしました。タイムラインからまとめて取り消せます。",
@@ -938,7 +936,7 @@ export const messages = {
   "chat.search.sentQuery":
     "質問は検索語に書き換えられて下のアドレスに送られます。Web ページを開くときは、その URL も送られます：",
   "chat.search.sentLimits":
-    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は止められます。",
+    "ファイル、添付、コマンドは渡りません。パスワードや鍵のように見える検索語は、マスキングしてから送られます。",
   "chat.search.alwaysOn": "常にオン",
   "settings.name": "お呼びする名前",
   "settings.version": "バージョン {revision} · {date}",

@@ -325,9 +325,9 @@
     "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
   },
   "memory.capture": {
-    "sha256": "f2ffd6e1725ee691e472b198090bb10220af97efd924fee33e13aeed3b9d5cb4",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变",
+    "sha256": "951c3556271b7e3e72b6aa91f48292aeb7505014e928f56036f5e3c849f8a445",
+    "changedIn": "ADR 0185",
+    "reason": "密码、密钥、证件号码、银行卡号改标 sensitive 而不是 restricted；一次性验证码不记录",
     "emphasis": {
       "kind": "hard-condition",
       "phrases": ["必须填 existingMemoryId", "每条都必须填"],

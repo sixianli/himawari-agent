@@ -173,7 +173,7 @@ export const messages = {
   "chat.model": "Model (next turn)",
   "chat.depth": "Thinking depth (next turn)",
   "chat.search.disclosure":
-    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Credentials detected in a query are redacted before it is sent. Revoking restores confirmation for future searches.",
   "chat.search.remember": "Remember my choice and allow future web searches",
   "chat.search.afterRevoke": "It’s off now, so Himawari asks in the chat before it searches.",
   "chat.search.providersChanged":
@@ -776,8 +776,6 @@ export const messages = {
   "memory.page.importSummary": "{all} found, {on} selected",
   "memory.page.importFlag":
     "{f, select, duplicate {Already remembered} sensitive {Sensitive, off by default} other {Coding notes, off by default}}",
-  "memory.page.importDropped":
-    "{count} more looked like passwords, tokens or ID numbers and were dropped.",
   "memory.page.importCommit": "Import {count} selected",
   "memory.page.importDone": "Imported {count}. Undo the whole import from the timeline.",
   "memory.page.importEmpty":
@@ -934,7 +932,7 @@ export const messages = {
   "chat.search.sentQuery":
     "Your question is turned into search terms and sent to the addresses below. When a web page is opened, its address is sent there too:",
   "chat.search.sentLimits":
-    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are blocked.",
+    "They don’t get your files, attachments or commands, and search terms that look like passwords or keys are redacted before they are sent.",
   "chat.search.alwaysOn": "Always on",
   "settings.name": "What should I call you?",
   "settings.version": "Version {revision} · {date}",

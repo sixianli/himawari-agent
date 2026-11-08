@@ -166,7 +166,7 @@ export const messages = {
   "chat.model": "模型（下一轮）",
   "chat.depth": "思考深度（下一轮）",
   "chat.search.disclosure":
-    "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询仍会拦截。撤销后，后续搜索重新确认。",
+    "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询词会先遮盖再发送。撤销后，后续搜索重新确认。",
   "chat.search.remember": "记住我的选择，之后允许联网搜索",
   "chat.search.afterRevoke": "现在关着，需要联网搜索时会先在对话里问你。",
   "chat.search.providersChanged":
@@ -733,7 +733,6 @@ export const messages = {
   "memory.page.importSummary": "找到 {all} 条，已勾 {on} 条",
   "memory.page.importFlag":
     "{f, select, duplicate {已经记着，跳过} sensitive {敏感，默认不导入} other {写代码的经验，默认不导入}}",
-  "memory.page.importDropped": "另有 {count} 条像是密码、令牌或证件号，已直接丢掉，不会导入。",
   "memory.page.importCommit": "导入勾选的 {count} 条",
   "memory.page.importDone": "已导入 {count} 条；在时间线里可以整批撤销",
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",
@@ -883,7 +882,8 @@ export const messages = {
   "chat.search.whatIsSent": "搜索时会发出什么",
   "chat.search.sentQuery":
     "你的问题会被改写成搜索词，发到下面这些网址；打开网页时，网页地址也会发过去：",
-  "chat.search.sentLimits": "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会被拦下。",
+  "chat.search.sentLimits":
+    "它们拿不到你的文件、附件和命令；看起来像密码或密钥的搜索词会先遮盖再发出。",
   "chat.search.alwaysOn": "固定开启",
   "settings.name": "怎么称呼你",
   "settings.version": "版本 {revision} · {date}",
