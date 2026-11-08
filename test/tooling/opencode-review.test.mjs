@@ -94,6 +94,7 @@ import {
   OWNER_STOPPED,
   requestStop,
   signalHandler,
+  waitUnlessStopped,
 } from "../../scripts/model-review/opencode-review.mjs";
 import {
   completedCount,
@@ -1876,6 +1877,21 @@ describe("opencode review wrap-up", () => {
     }
   }, 60000);
 
+  it("[owner stop] a stop request cuts short the wait before an API-error retry", async () => {
+    try {
+      const started = Date.now();
+      const waiting = waitUnlessStopped(60000);
+      setTimeout(() => requestStop(), 50);
+      await waiting;
+      expect(Date.now() - started).toBeLessThan(5000);
+      const after = Date.now();
+      await waitUnlessStopped(60000);
+      expect(Date.now() - after).toBeLessThan(1000);
+    } finally {
+      clearStopRequest();
+    }
+  });
+
   it("[owner stop] the first signal asks the models to stop, the second one or the grace period forces the exit", async () => {
     const calls = [];
     const make = (running, graceMs = 60000) =>
@@ -2073,6 +2089,29 @@ describe("opencode review wrap-up", () => {
         expect(result.summary.apiError).toMatchObject({ statusCode: 429, retryable: true });
         expect(result.runs).toHaveLength(2);
         expect(requests).toHaveLength(12);
+      },
+    );
+  }, 120000);
+
+  it("[owner stop] a stop during the wait before an API-error retry ends it at once and does not retry", async () => {
+    await withScriptedReview(
+      () => ({ status: 429, retryAfter: 1 }),
+      async ({ review, requests }) => {
+        try {
+          const started = Date.now();
+          const running = review({ retryWaitMs: 60000, timeoutMs: 300000 });
+          while (requests.length < 6) await new Promise((wait) => setTimeout(wait, 50));
+          await new Promise((wait) => setTimeout(wait, 1000));
+          requestStop();
+          const result = await running;
+          expect(Date.now() - started).toBeLessThan(45000);
+          expect(result.outcome).toBe("api-error");
+          expect(result.retry).toBeNull();
+          expect(result.runs).toHaveLength(1);
+          expect(requests).toHaveLength(6);
+        } finally {
+          clearStopRequest();
+        }
       },
     );
   }, 120000);
@@ -3009,6 +3048,16 @@ describe("opencode review merge gate", () => {
       expect(later.overridden).toBe(true);
       expect(later.lines.at(-1)).toBe(
         `REVIEW_OVERRIDE quote=跳过复核，合并 recorded=${f.reviewed}`,
+      );
+      const report = reviewReport({
+        repo: f.repo,
+        pr: 7,
+        mainRef: "origin/main",
+        stop: "andy-decision",
+        andyQuote: "跳过复核，合并",
+      });
+      expect(report).toContain(
+        `REVIEW_OVERRIDE_RECORD head=${f.reviewed} quote=跳过复核，合并 problems=ledger-not-committed`,
       );
     } finally {
       rmSync(f.root, { recursive: true, force: true });

@@ -424,10 +424,11 @@ const required = (value) => (nonNegative(value) ? value : Number.NaN);
 export function summarizeGatewayUsage(lines, config) {
   const known = new Set(config.providers.map((provider) => provider.id));
   const byModel = new Map();
-  let unreadable = 0;
+  const perModel = new Map();
+  let unattributed = 0;
   for (const line of lines) {
     if (!line || typeof line !== "object" || Array.isArray(line)) {
-      unreadable += 1;
+      unattributed += 1;
       continue;
     }
     const requested = typeof line.req === "string" ? line.req : "";
@@ -443,11 +444,12 @@ export function summarizeGatewayUsage(lines, config) {
     const answered = line.status >= 200 && line.status < 300;
     if (!answered) slot.failed += 1;
     const count = answered ? required : tokens;
+    const unreadable = () => perModel.set(model, (perModel.get(model) ?? 0) + 1);
     if (!known.has(provider)) {
-      if (provider !== "none" || answered) unreadable += 1;
+      if (provider !== "none" || answered) unreadable();
     } else if (provider === config.creditProvider) {
       const credits = count(line.credits);
-      if (Number.isNaN(credits)) unreadable += 1;
+      if (Number.isNaN(credits)) unreadable();
       else slot.credits = (slot.credits ?? 0) + credits;
     } else {
       const price = priceOf(config, model);
@@ -456,14 +458,21 @@ export function summarizeGatewayUsage(lines, config) {
           (required(line.out) + tokens(line.reasoning)) * price.output +
           tokens(line.cache_read) * price.cache_read) /
         1e6;
-      if (Number.isNaN(usd)) unreadable += 1;
+      if (Number.isNaN(usd)) unreadable();
       else slot.usd = (slot.usd ?? 0) + usd;
     }
   }
   const summary = Object.fromEntries(
     [...byModel].map(([model, slots]) => [model, Object.fromEntries(slots)]),
   );
-  return { byModel: summary, unreadable };
+  const unreadableByModel = Object.fromEntries(perModel);
+  const attributed = Object.values(unreadableByModel).reduce((total, count) => total + count, 0);
+  return {
+    byModel: summary,
+    unreadable: unattributed + attributed,
+    unattributed,
+    unreadableByModel,
+  };
 }
 
 export function readGatewayUsage(root) {

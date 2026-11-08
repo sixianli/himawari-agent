@@ -171,6 +171,12 @@ describe("review gateway configuration", () => {
     expect(() => parseArgs([...base, "--gateway", "magpie", "--providers", "a,,b"])).toThrow(
       "ARG_INVALID --providers",
     );
+    expect(() =>
+      parseArgs([...base, "--gateway", "magpie", "--providers", "opendesign\nREVIEW_CURRENT"]),
+    ).toThrow("ARG_INVALID --providers");
+    expect(() =>
+      parseArgs([...base, "--self-check-only", "--out", "o", "--gateway", "magpie", ...only]),
+    ).toThrow("ARG_PROVIDERS_NOT_FOR_SELF_CHECK");
     expect(() => parseArgs(["--assert-reviewed", "--pr", "1", ...only])).toThrow(
       "ARG_NOT_FOR_SUBCOMMAND",
     );
@@ -255,6 +261,11 @@ describe("review gateway ledger", () => {
       },
     });
     expect(parseUsage(ok, "u")[0].providers["workbuddy-ai"].credits).toBe(0.4);
+    const dropped = (gatewayDropped) =>
+      ledgerLine({ gateway: "magpie", providers: {}, gatewayDropped });
+    expect(parseUsage(dropped(["opendesign"]), "u")[0].gatewayDropped).toEqual(["opendesign"]);
+    for (const bad of ["opendesign", [""], [3]])
+      expect(() => parseUsage(dropped(bad), "u")).toThrow("USAGE_LEDGER_INVALID");
   });
 
   it("[gateway] counts usage per review model and provider, credits for CodeBuddy and dollars for Go", () => {
@@ -867,7 +878,26 @@ describe("review gateway usage gaps", () => {
       gateway: "magpie",
       providers: {},
       costUnknown: true,
+      costUnknownWhy: "unreadable=0 recorded=0 requested=1",
     });
+    const glmLine = { req: "group/review-glm-5.3-flash", provider: "opendesign", status: 200 };
+    const deepseekLine = {
+      req: "group/review-deepseek-v4.1-flash",
+      provider: "workbuddy-ai",
+      status: 200,
+      credits: 1,
+    };
+    const both = [glmLine, deepseekLine];
+    expect(
+      gatewayRecordFields(both, config, deepseek, { requested: 1 }).costUnknown,
+    ).toBeUndefined();
+    expect(gatewayRecordFields(both, config, glm, { requested: 1 })).toMatchObject({
+      costUnknown: true,
+      costUnknownWhy: "unreadable=1 recorded=1 requested=1",
+    });
+    expect(
+      gatewayRecordFields([...both, "garbage"], config, deepseek, { requested: 1 }).costUnknown,
+    ).toBe(true);
     expect(gatewayRecordFields([], config, deepseek)).toEqual({ gateway: "magpie", providers: {} });
   });
 
@@ -1027,7 +1057,7 @@ describe("review gateway live start", () => {
           gateway: { install: install(), config: gatewayConfig },
           workRoot: root,
           records: [],
-          models: [deepseek],
+          models: REVIEW_MODELS,
           accountUid: () => null,
         });
         try {

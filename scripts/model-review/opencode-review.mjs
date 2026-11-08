@@ -474,6 +474,19 @@ export function requestStop(reason = OWNER_STOPPED) {
   for (const stop of activeStops) stop(reason);
 }
 
+export function waitUnlessStopped(ms) {
+  return new Promise((resolveWait) => {
+    if (stopRequested) return resolveWait();
+    const done = () => {
+      clearTimeout(timer);
+      activeStops.delete(done);
+      resolveWait();
+    };
+    const timer = setTimeout(done, ms);
+    activeStops.add(done);
+  });
+}
+
 export function clearStopRequest() {
   stopRequested = null;
 }
@@ -874,7 +887,8 @@ export async function reviewModel(options) {
   });
   if (decision !== "retry" || stopRequested)
     return { ...first, retry: decision === "retry" ? null : decision };
-  await new Promise((resolveWait) => setTimeout(resolveWait, retryWaitMs));
+  await waitUnlessStopped(retryWaitMs);
+  if (stopRequested) return { ...first, retry: null };
   const second = await reviewOnce({
     ...options,
     timeoutMs: deadline - Date.now(),
@@ -953,7 +967,7 @@ async function reviewOnce({
       summary: firstSummary,
       wrapUp,
       wrapUpSkipped: skipped,
-      outcome: runOutcome(firstSummary, first),
+      outcome: skipped === OWNER_STOPPED ? OWNER_STOPPED : runOutcome(firstSummary, first),
     };
   }
   const second = await runOpencode({
@@ -1419,11 +1433,18 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
         }),
       ];
     });
+  const overrideLines = records
+    .filter((record) => record.mode === "override")
+    .map(
+      (record) =>
+        `REVIEW_OVERRIDE_RECORD head=${record.head} quote=${printable(record.quote)} problems=${(record.problems ?? []).map(printable).join(",") || "none"}`,
+    );
   return [
     `REVIEW_REPORT pr=${pr}`,
     ...reviews.map(resultLine),
     `REVIEW_SPENT_TOTAL ${spentOf(records).toFixed(4)}`,
     ...(lowFixLines.length > 0 ? ["低严重度已改、未复核：", ...lowFixLines] : []),
+    ...(overrideLines.length > 0 ? ["Andy 说跳过复核的记录：", ...overrideLines] : []),
     ...gate.lines,
     `停下的原因：${STOP_REASONS[stop](andyQuote)}`,
     REVIEW_REPORT_DISCLAIMER,
@@ -2479,7 +2500,8 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
             .map((id) => id.trim()),
         ),
       ];
-      if (options.providers.some((id) => !id)) throw new Error("ARG_INVALID --providers");
+      if (options.providers.some((id) => !id || hasControlCharacter(id)))
+        throw new Error("ARG_INVALID --providers");
     } else if (key === "--approved-usd") {
       options.approvedUsd = Number(take());
       if (!Number.isFinite(options.approvedUsd) || options.approvedUsd <= 0)
@@ -2506,6 +2528,8 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
   if (options.gateway === "direct") delete options.gateway;
   if (options.providers && options.gateway !== "magpie")
     throw new Error("ARG_PROVIDERS_NEED_GATEWAY");
+  if (options.providers && options.selfCheckOnly)
+    throw new Error("ARG_PROVIDERS_NOT_FOR_SELF_CHECK");
   if (options.acceptUnreviewed !== undefined)
     throw new Error("ARG_ACCEPT_UNREVIEWED_ONLY_WITH_ASSERT");
   if (options.acceptLow !== undefined) throw new Error("ARG_ACCEPT_LOW_ONLY_WITH_ASSERT");
@@ -2541,12 +2565,19 @@ export function gatewayRecordFields(usage, config, model, { requested = false } 
   const unknown = { gateway: "magpie", providers: {}, costUnknown: true };
   if (usage === null) return requested ? unknown : { gateway: "magpie", providers: {} };
   try {
-    const { byModel, unreadable } = summarizeGatewayUsage(usage, config);
+    const { byModel, unattributed, unreadableByModel } = summarizeGatewayUsage(usage, config);
     const providers = byModel[model] ?? {};
     if (!providersValid(providers)) return unknown;
+    const unreadable = unattributed + (unreadableByModel[model] ?? 0);
     const recorded = Object.values(providers).reduce((total, slot) => total + slot.requests, 0);
     const missing = recorded < Number(requested);
-    return unreadable > 0 || missing ? { ...unknown, providers } : { gateway: "magpie", providers };
+    return unreadable > 0 || missing
+      ? {
+          ...unknown,
+          providers,
+          costUnknownWhy: `unreadable=${unreadable} recorded=${recorded} requested=${Number(requested)}`,
+        }
+      : { gateway: "magpie", providers };
   } catch {
     return unknown;
   }
@@ -2867,6 +2898,7 @@ async function main() {
         extraEnv: routed ? gatewayOpencodeEnv() : {},
       });
       writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
+      const gatewayUsage = liveGateway ? await liveGateway.live.stableUsage() : null;
       const { summary } = review;
       writeFileSync(join(roundDir, `${name}.md`), recordText(summary.text));
       if (summary.thinking)
@@ -2892,7 +2924,7 @@ async function main() {
         ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
         ...(liveGateway
           ? {
-              ...gatewayRecordFields(await liveGateway.live.stableUsage(), gateway.config, model, {
+              ...gatewayRecordFields(gatewayUsage, gateway.config, model, {
                 requested: gatewayRequested(review),
               }),
               ...(liveGateway.drop.length ? { gatewayDropped: liveGateway.drop } : {}),
@@ -2903,6 +2935,13 @@ async function main() {
       const record = gateway
         ? withProviderMoney(assembled, gateway.config.creditProvider)
         : assembled;
+      if (record.costUnknownWhy) {
+        console.log(`GATEWAY_COST_UNKNOWN ${model} ${record.costUnknownWhy}`);
+        writeFileSync(
+          join(roundRawDir, `${name}.magpie-usage.jsonl`),
+          (gatewayUsage ?? []).map((line) => `${JSON.stringify(line)}\n`).join(""),
+        );
+      }
       appendFileSync(join(options.out, "usage.jsonl"), `${JSON.stringify(record)}\n`);
       if (record.outcome !== "ok" && review.stderr.trim()) {
         writeFileSync(join(roundDir, `${name}.stderr.txt`), recordText(review.stderr));
