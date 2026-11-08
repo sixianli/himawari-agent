@@ -140,10 +140,10 @@ describe("memory evidence from the Owner's own words", () => {
               kind: "durable_fact",
               decision: "unchanged",
               existingMemoryId: "memory-tentative",
-              text: "主人喜欢喝咖啡",
               classification: "private",
               confidence: 950,
-              quote: "明天下午开会",
+              quote: "明天下午开会，顺便取一下快递",
+              text: "明天下午开会，顺便取一下快递",
             },
           ],
         }),
@@ -151,10 +151,13 @@ describe("memory evidence from the Owner's own words", () => {
         sourceClassification: "private",
         existingIds: new Set(["memory-tentative"]),
         tentativeTexts: new Map([["memory-tentative", "主人喜欢喝咖啡"]]),
-        ownerMessage: "明天下午开会，顺便买点咖啡豆",
+        ownerMessage: "明天下午开会，顺便取一下快递",
       });
       expect(coffee.candidates).toEqual([]);
       expect(coffee.rejectedCandidates).toHaveLength(1);
+      expect(
+        quoteFromOwnerMessage("明天下午开会，顺便取一下快递", "明天下午开会，顺便取一下快递"),
+      ).toBe(true);
     });
 
     it("accepts a related quote and relates quotes by shared words, not by generic ones", () => {

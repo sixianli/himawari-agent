@@ -344,7 +344,7 @@ export function parseMemoryCandidates(input: {
         !evidenceVerified) ||
       (confirmsTentative &&
         (!evidenceVerified ||
-          !quoteRelatesToMemory(quote, [text, input.tentativeTexts?.get(existing) ?? ""])));
+          !quoteRelatesToMemory(quote, [input.tentativeTexts?.get(existing) ?? ""])));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
