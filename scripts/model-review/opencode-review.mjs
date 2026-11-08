@@ -2003,14 +2003,16 @@ function startProbeServer(probes) {
   });
 }
 
-export const REFUSAL_TEXTS = [
-  "The user has specified a rule which prevents you",
-  GIT_REFUSED,
-  ": restricted",
-];
+export const REFUSAL_TEXTS = ["The user has specified a rule which prevents you", ": restricted"];
+
+export const REFUSAL_PATTERNS = [new RegExp(`^${GIT_REFUSED} `, "m")];
 
 export function probeRefused(call) {
-  return REFUSAL_TEXTS.some((text) => String(call.output ?? "").includes(text));
+  const output = String(call.output ?? "");
+  return (
+    REFUSAL_TEXTS.some((text) => output.includes(text)) ||
+    REFUSAL_PATTERNS.some((pattern) => pattern.test(output))
+  );
 }
 
 export function projectInstructionLine(copy) {

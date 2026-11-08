@@ -760,6 +760,18 @@ describe("opencode review self-check", () => {
     expect(
       probeRefused({ status: "error", output: "/bin/bash: f: No such file or directory" }),
     ).toBe(false);
+    expect(
+      probeRefused({
+        status: "completed",
+        output: [
+          "commit 9d1e6de5de7535d8bb73061a702dcf5534747127",
+          "",
+          `    工具以 \`${GIT_REFUSED} records-path\` 拒绝`,
+          "",
+          " .agents/reviews/pr-312/round-3/judgments.md | 60 ++++++",
+        ].join("\n"),
+      }),
+    ).toBe(false);
   });
 
   it("fails when a write probe failed for an unrelated reason", () => {
