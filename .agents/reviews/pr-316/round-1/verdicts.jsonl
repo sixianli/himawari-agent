@@ -1,0 +1,7 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新白名单的「只限这一个文件」没有被自动测试钉住", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把这条白名单路径放宽到同目录其他 .ts 文件，通用反向用例不会失败", "consequence": "放宽后的白名单会放行同目录别的文件里的同值，没有测试拦下；不影响现有行为", "modelSeverity": "低"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新值也被写进了未被白名单覆盖的测试文件", "valid": true, "class": "better"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "锁文件摘要是否正确无法从工作区核实", "valid": false, "class": "better"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "历史里的私钥字面量可能仍然触发历史扫描", "valid": false, "class": "error"}
+{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "0189 与 `ci/speed-land` 的冲突", "valid": false, "class": "better"}
+{"id": "glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "新白名单块缺少真实 Gitleaks 层的样例，违反 ADR 0177 自己定的规则", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人放宽这条白名单的路径或值，只有 JS 正则层的测试，没有真实 gitleaks 层的样例会失败", "consequence": "放宽不会被真实引擎层的测试拦下；当前白名单本身已被 check:gitleaks 实跑核对为只放行这一个值", "modelSeverity": "中高", "reason": "本次 check:gitleaks 在 main 上实跑通过且 blocking=0，白名单当下只放行目标文件的目标值；缺的只是日后放宽时的防回归样例，不会在现有输入下给出错误结果"}
+{"id": "glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "新块没有路径正例/反例", "valid": true, "class": "better"}

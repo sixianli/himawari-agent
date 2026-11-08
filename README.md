@@ -18,7 +18,7 @@ Himawari Agent 是一个自有优先、数据自持（运行环境和数据由�
 
 - Node.js 要求：`>=22.22.3`
 - npm 锁定工具版本：`11.8.0`
-- CI 基线：Node.js `22.22.3`（也是支持的最低版本，见 [ADR 0181](docs/adr/0181-drop-node-floor-and-fold-test-into-coverage.md)）；Python：`3.12.10`
+- CI 基线：Node.js `22.22.3`（也是支持的最低版本，见 [ADR 0189](docs/adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）；Python：`3.12.10`
 - TypeScript：`5.9.3`
 - Biome：`2.3.5`
 - Vitest：`4.1.9`
@@ -64,7 +64,7 @@ npm run ci:local -- --base "$CI_BASE"
 PLAYWRIGHT_BROWSERS_PATH="$PWD/.ci-output/browsers" .ci-output/tools/bin/node node_modules/playwright/cli.js install chromium firefox webkit
 ```
 
-`npm test` 准备一份当前平台归档，先带覆盖率执行 unit、contracts、tooling、integration，再执行 e2e、pi-compat（2026-11-08 起，见 [ADR 0181](docs/adr/0181-drop-node-floor-and-fold-test-into-coverage.md)）。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
+`npm test` 准备一份当前平台归档，先带覆盖率执行 unit、contracts、tooling、integration，再执行 e2e、pi-compat（2026-11-08 起，见 [ADR 0189](docs/adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）。安装测试从归档安装到临时前缀，在源码目录外验证三个 binary；测试自身不构建。已有归档必须同时传入其 `--context`，来源、平台、ABI、依赖、迁移和内容摘要均重新核验。四类 scale/live 测试有独立资格 project，普通 integration 明确排除它们。
 
 覆盖率采集 unit/contracts/tooling/integration，包含未被导入的生产 TS/TSX 和自有 CI 执行脚本。变更行至少 80%，变更函数的可定位分支至少 70%；各 workspace 四类指标使用目标分支接受的基线。首次引入仅免去不存在的历史基线比较，不放宽增量阈值。安全检查使用原有机器密钥扫描和固定 Gitleaks/Semgrep；缺报告、扫描不可用、到期例外或未豁免阻断发现均失败。按维护者要求，CI 不执行 npm 依赖漏洞查询；安全检查通过不代表依赖无已知漏洞。
 
