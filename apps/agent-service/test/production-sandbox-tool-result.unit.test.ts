@@ -3,8 +3,13 @@ import type {
   SandboxOperationContract,
   SandboxOperationResult,
 } from "@himawari-agent/execution-contracts";
+import {
+  SANDBOX_MEMORY_LIMIT,
+  SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
+} from "@himawari-agent/execution-contracts";
 import { describe, expect, it } from "vitest";
 import {
+  sandboxCeilingExceededMessage,
   sandboxCommandEffectReason,
   sandboxFailureKeepsOutput,
 } from "../src/production-sandbox-tool-result.js";
@@ -151,5 +156,15 @@ describe("sandbox failure output retention", () => {
         hostResultRejected: false,
       }),
     ).toBe(true);
+  });
+
+  it("[I-84] reports the production memory limit to the model in decimal megabytes", () => {
+    expect(
+      sandboxCeilingExceededMessage(SANDBOX_MEMORY_LIMIT, {
+        maxCpuTimeMs: 30_000,
+        maxMemoryBytes: SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
+        maxOutputBytes: 2_000_000,
+      }),
+    ).toContain("内存 1073.7 MB");
   });
 });
