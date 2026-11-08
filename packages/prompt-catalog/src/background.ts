@@ -91,6 +91,15 @@ export const TOOL_RESULT_RECALL_EMPTY = fixedPrompt({
   text: "没有找到相关的记忆或对话摘要。不要编造，直接告诉主人没有记录。",
 });
 
+export const TOOL_RESULT_RECALL_TENTATIVE = fixedPrompt({
+  id: "tool-result.recall-tentative",
+  purpose: "查记忆结果里有待确认记忆时的说明",
+  usedBy: ["apps/agent-service/src/production-memory-recall.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "tentative 为 true 的记忆是系统根据主人的话推测的，主人没有确认过：只能当线索，不能当事实说出口；要用它时先向主人确认。",
+});
+
 export const TOOL_RESULT_RECALL_HISTORY = fixedPrompt({
   id: "tool-result.recall-history",
   purpose: "查记忆结果里有过时记忆时的说明",

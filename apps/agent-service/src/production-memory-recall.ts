@@ -13,6 +13,7 @@ import {
   TOOL_RECALL,
   TOOL_RESULT_RECALL_EMPTY,
   TOOL_RESULT_RECALL_HISTORY,
+  TOOL_RESULT_RECALL_TENTATIVE,
 } from "@himawari-agent/prompt-catalog";
 
 export const MEMORY_RECALL_CAPABILITY_REF = "memory.recall";
@@ -167,6 +168,7 @@ export class ProductionMemoryRecall {
         query: input.query,
         limit: input.limit * 3,
         scope: { ...scope, includeHistory: scope.includeHistory || input.includeHistory },
+        includeTentative: true,
       }),
     );
     const records = new Map(
@@ -179,7 +181,21 @@ export class ProductionMemoryRecall {
       ).map((record) => [record.id, record]),
     );
     const memories: Record<string, unknown>[] = [];
-    for (const hit of hits) {
+    const isTentative = (productMemoryId: string) =>
+      records.get(productMemoryId as never)?.attributes?.tentative === true;
+    const ordered = hits
+      .map((hit, index) => ({ hit, index }))
+      .sort(
+        (left, right) =>
+          right.hit.score - left.hit.score ||
+          Number(isTentative(left.hit.productMemoryId)) -
+            Number(isTentative(right.hit.productMemoryId)) ||
+          left.index - right.index,
+      )
+      .map(({ hit }) => hit);
+    const tentativeLimit = Math.floor(input.limit / 2);
+    let tentativeCount = 0;
+    for (const hit of ordered) {
       if (memories.length >= input.limit) break;
       const memory = records.get(hit.productMemoryId);
       if (
@@ -189,12 +205,16 @@ export class ProductionMemoryRecall {
         !allowed.includes(memory.dataClassification)
       )
         continue;
+      const tentative = memory.attributes?.tentative === true;
+      if (tentative && tentativeCount >= tentativeLimit) continue;
       const text = await this.#options.readText(memory).catch(() => undefined);
       if (!text) continue;
+      if (tentative) tentativeCount += 1;
       const attributes = memory.attributes;
       const validTo = attributes?.validTo ?? null;
       memories.push({
         text,
+        ...(tentative ? { tentative: true } : {}),
         current: validTo === null || validTo > now,
         ...(attributes?.supersededBy ? { correctedLater: true } : {}),
         recordedAt: memory.recordedAt ?? memory.updatedAt,
@@ -227,6 +247,7 @@ export class ProductionMemoryRecall {
         memories.length === 0 && episodes.length === 0
           ? TOOL_RESULT_RECALL_EMPTY.text
           : TOOL_RESULT_RECALL_HISTORY.text,
+      ...(tentativeCount > 0 ? { tentativeNote: TOOL_RESULT_RECALL_TENTATIVE.text } : {}),
     };
   }
 }

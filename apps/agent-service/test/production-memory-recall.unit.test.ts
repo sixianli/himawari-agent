@@ -116,3 +116,71 @@ it.each([
 ])("rejects invalid arguments %j", async (args) => {
   await expect(recall().service.recall(call(args))).rejects.toThrow("MEMORY_RECALL_INPUT_INVALID");
 });
+
+function recallWith(
+  entries: readonly { id: string; text: string; score: number; tentative?: boolean }[],
+) {
+  const records = entries.map(({ id, tentative }) =>
+    record(id, "private", tentative ? { tentative: true } : {}),
+  );
+  const search = vi.fn(async () =>
+    entries.map(({ id, score }, index) => ({
+      productMemoryId: records[index]?.id,
+      providerRecordId: `provider-${id}`,
+      score,
+    })),
+  );
+  const service = new ProductionMemoryRecall({
+    ownerId,
+    agentId,
+    provider: { search } as never,
+    state: { readMany: async () => records },
+    readText: async (memory) => entries.find(({ id }) => `text-${id}` === memory.contentRef)?.text,
+    embedWithin: async (_invocation, _slot, operation) => operation(),
+    now: () => now,
+    timeZone: "Asia/Tokyo",
+  });
+  return { service, search };
+}
+
+type RecallResult = {
+  memories: { text: string; tentative?: boolean }[];
+  tentativeNote?: string;
+};
+
+it("[PA-2] chat recall returns tentative memories marked as tentative, behind confirmed ones", async () => {
+  const f = recallWith([
+    { id: "guess", text: "主人偏好明治乳制品", score: 1, tentative: true },
+    { id: "fact", text: "主人住在杭州", score: 1 },
+  ]);
+  const result = (await f.service.recall(call({ query: "牛奶", limit: 4 }))) as RecallResult;
+  expect(f.search).toHaveBeenCalledWith(expect.objectContaining({ includeTentative: true }));
+  expect(result.memories.map(({ text }) => text)).toEqual(
+    ["主人偏好明治乳制品", "主人住在杭州"].reverse(),
+  );
+  expect(result.memories[1]).toMatchObject({ tentative: true });
+  expect(result.memories[0]).not.toHaveProperty("tentative");
+  expect(result.tentativeNote).toContain("tentative");
+});
+
+it("[PA-2] REVERSE: confirmed memories look exactly as before and add no tentative note", async () => {
+  const f = recallWith([{ id: "fact", text: "主人住在杭州", score: 1 }]);
+  const result = (await f.service.recall(call({ query: "住哪" }))) as RecallResult;
+  expect(result.memories).toHaveLength(1);
+  expect(result.memories[0]).not.toHaveProperty("tentative");
+  expect(result).not.toHaveProperty("tentativeNote");
+});
+
+it("[PA-2] REVERSE: tentative memories never take more than half of the returned slots", async () => {
+  const f = recallWith([
+    { id: "g1", text: "猜测一", score: 5, tentative: true },
+    { id: "g2", text: "猜测二", score: 4, tentative: true },
+    { id: "g3", text: "猜测三", score: 3, tentative: true },
+    { id: "fact", text: "已确认的事", score: 1 },
+  ]);
+  const result = (await f.service.recall(call({ query: "x", limit: 4 }))) as RecallResult;
+  expect(result.memories.filter(({ tentative }) => tentative)).toHaveLength(2);
+  expect(result.memories.map(({ text }) => text)).toContain("已确认的事");
+  const single = (await f.service.recall(call({ query: "x", limit: 1 }))) as RecallResult;
+  expect(single.memories.filter(({ tentative }) => tentative)).toHaveLength(0);
+});
