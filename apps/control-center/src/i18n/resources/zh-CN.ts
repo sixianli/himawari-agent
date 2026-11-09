@@ -991,7 +991,7 @@ export const messages = {
     "{s, select, off {找记忆：没开启} ok {找记忆：正常} partial {找记忆：只找到一部分} failed {找记忆：失败} other {找记忆：无记录}}",
   "decision.chain.memoriesCut": "只显示前 {shown} 条，共 {total} 条",
   "decision.chain.memoryState":
-    "{s, select, hidden {敏感记忆，内容不在这里显示} missing {这条记忆已不存在} other {无记录}}",
+    "{s, select, hidden {受限记忆，模型也看不到，内容不在这里显示} missing {这条记忆已不存在} other {无记录}}",
   "decision.chain.status": "{s, select, archived {已归档} trashed {已删除} other {正常}}",
   "decision.chain.used": "模型用到了",
   "decision.chain.tentative": "待你确认",

@@ -27,7 +27,7 @@ date: "2026-11-09"
 
 动手前核对的现状：决策记录已经保存了规则编号、命中记忆、记忆召回状态、关联邮件读取状态等输入（`DecisionInputs`），记忆、变更记录和依据行也已存在，所以不需要新增表或迁移，也不重新计算任何东西。
 
-产品愿景的取舍依据：用户主权优先于其他原则：Andy 必须能看到每个判断的依据；记忆可靠性次之：敏感记忆的内容仍按现有的可见性规则隐藏。
+产品愿景的取舍依据：用户主权优先于其他原则：Andy 必须能看到每个判断的依据；记忆可靠性次之：模型也看不到的那档记忆（数据分级里的受限档，`reviewMemoryVisible` 判为不可见）的内容仍然隐藏；敏感档随 [ADR 0192](0192-memory-is-visible-to-the-model.md) 已对模型可见，这里照常显示。
 
 <a id="decision"></a>
 
@@ -35,7 +35,7 @@ date: "2026-11-09"
 
 1. **新增只读查询 `decision.chain.read`**：入参是决策记录编号，返回判断、各节状态（`recorded`、`none`、`not_recorded`、`not_applicable`）、规则、邮件计数和记忆列表。名下没有这条记录时返回“未找到”，不返回空链。
 2. **只读已存的记录**：不重算、不改发给模型的任何内容，不加迁移。判断前的原文（`decision_ledger_payloads`）这一版不显示，避免把未遮盖的内容带到界面。
-3. **记忆显示现在的内容**：每条记忆给出 `changedSinceDecision`（决策之后改过），界面标注“显示的是现在的内容”。敏感记忆（和 `reviewMemoryVisible` 的规则一致）的正文类字段（记忆正文、原话、取代它的记忆的正文、推断依据节点的正文）都不返回；记忆编号、来源对话和消息编号这类标识符仍然返回，因为它们不是正文。
+3. **记忆显示现在的内容**：每条记忆给出 `changedSinceDecision`（决策之后改过），界面标注“显示的是现在的内容”。受限记忆（和 `reviewMemoryVisible` 的规则一致）的正文类字段（记忆正文、原话、取代它的记忆的正文、推断依据节点的正文）都不返回；记忆编号、来源对话和消息编号这类标识符仍然返回，因为它们不是正文。
 4. **规则出处登记在 `DECISION_RULE_CATALOG`**：编号、来源（你设定的 / 内置）和依据文档；未登记的编号显示“未登记的规则”，不猜。
 5. **体量上限**：记忆最多 100 条，推断依据节点合计最多 200 个，超出时标明被截断；排序固定，同一条记录每次返回相同。
 6. **控制中心**：提醒检查记录每一行有“依据”按钮，点开侧边抽屉，抽屉里只显示这条链。记录已被清除时关闭抽屉并提示。
@@ -54,7 +54,7 @@ date: "2026-11-09"
 ## 后果
 
 - 门槛：
-  - `test/integration/decision-chain.test.ts`：Gmail 记录的完整链、缺项显示无记录、敏感记忆隐藏、他人记录和不存在的记录被拒、截断上限。
+  - `test/integration/decision-chain.test.ts`：Gmail 记录的完整链、缺项显示无记录、受限记忆隐藏、他人记录和不存在的记录被拒、截断上限。
   - `packages/application/test/decision-rule-catalog.unit.test.ts`：规则登记表。
   - `apps/control-center/test/proactive-interactions.unit.test.ts` 的 `[P1-3]` 用例和 `test/integration/decision-chain-browser.test.ts`（真实浏览器，含正向、缺项、记录已清除、手机宽度）。
   - `npm run check:operations`：新操作有后端实现、前端调用和测试。

@@ -1051,7 +1051,7 @@ export const messages = {
     "{s, select, off {記憶検索：オフ} ok {記憶検索：正常} partial {記憶検索：一部のみ} failed {記憶検索：失敗} other {記憶検索：記録なし}}",
   "decision.chain.memoriesCut": "{total} 件のうち先頭の {shown} 件を表示",
   "decision.chain.memoryState":
-    "{s, select, hidden {機微な記憶のため、ここには内容を表示しません} missing {この記憶はもう存在しません} other {記録なし}}",
+    "{s, select, hidden {制限付きの記憶（モデルにも見えません）のため、ここには内容を表示しません} missing {この記憶はもう存在しません} other {記録なし}}",
   "decision.chain.status": "{s, select, archived {アーカイブ済み} trashed {削除済み} other {有効}}",
   "decision.chain.used": "モデルが使用",
   "decision.chain.tentative": "確認待ち",

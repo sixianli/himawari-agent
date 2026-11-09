@@ -1051,7 +1051,7 @@ export const messages = {
     "{s, select, off {Memory lookup: off} ok {Memory lookup: normal} partial {Memory lookup: partial} failed {Memory lookup: failed} other {Memory lookup: no record}}",
   "decision.chain.memoriesCut": "Showing the first {shown} of {total}",
   "decision.chain.memoryState":
-    "{s, select, hidden {Sensitive memory; content is not shown here} missing {This memory no longer exists} other {No record}}",
+    "{s, select, hidden {Restricted memory (the model cannot see it either); content is not shown here} missing {This memory no longer exists} other {No record}}",
   "decision.chain.status": "{s, select, archived {Archived} trashed {Deleted} other {Active}}",
   "decision.chain.used": "Used by the model",
   "decision.chain.tentative": "Awaiting your confirmation",

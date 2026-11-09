@@ -110,7 +110,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
         ref,
         OWNER_ID,
         AGENT_ID,
-        ref.includes("sensitive") ? "sensitive" : "private",
+        ref.includes("sensitive") ? "restricted" : "private",
         `sha256:${ref}`,
         T0,
       );
@@ -209,7 +209,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
   const proposal = (
     id: string,
     contentRef: string,
-    extra: { classification?: "private" | "sensitive"; quoteRef?: string; refs?: string[] } = {},
+    extra: { classification?: "private" | "restricted"; quoteRef?: string; refs?: string[] } = {},
   ) =>
     ({
       decision: "create",
@@ -298,7 +298,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     if (options.sensitive)
       await memory.applyProposal(
         proposal("memory-sensitive", "payload-sensitive", {
-          classification: "sensitive",
+          classification: "restricted",
           quoteRef: "payload-quote-sensitive",
         }),
         GENERATION_ID,
@@ -517,7 +517,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
-  it("[P1-3] hides every text of a sensitive memory, including its original words, and nothing leaks into the snapshot", async () => {
+  it("[P1-3] hides every text of a restricted memory, including its original words, and nothing leaks into the snapshot", async () => {
     const f = await fixture();
     try {
       await seedMemories(f, { sensitive: true });
@@ -591,7 +591,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
-  it("[P1-3] hides the text of a sensitive memory that supersedes a visible one and of a sensitive basis node", async () => {
+  it("[P1-3] hides the text of a restricted memory that supersedes a visible one and of a restricted basis node", async () => {
     const f = await fixture();
     try {
       await seedMemories(f, { sensitive: true });
@@ -602,7 +602,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
           )
           .run();
         database
-          .prepare("UPDATE memory_records SET classification = 'sensitive' WHERE id = 'memory-b'")
+          .prepare("UPDATE memory_records SET classification = 'restricted' WHERE id = 'memory-b'")
           .run();
       });
       await recordGmail(
@@ -645,7 +645,7 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
-  it("[P1-3] hides the text of a visible memory that supersedes a sensitive one, and shows a control character in a rule id as a space", async () => {
+  it("[P1-3] hides the text of a visible memory that supersedes a restricted one, and shows a control character in a rule id as a space", async () => {
     const f = await fixture();
     try {
       await seedMemories(f, { sensitive: true });

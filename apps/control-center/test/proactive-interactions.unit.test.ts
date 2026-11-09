@@ -1036,7 +1036,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(drawer).toContain("我搬到东京了");
     expect(drawer).toContain("推断依据");
     expect(drawer).toContain("周五吃了拉面");
-    expect(drawer).toContain("敏感记忆，内容不在这里显示");
+    expect(drawer).toContain("受限记忆，模型也看不到，内容不在这里显示");
     expect(drawer).toContain("这条记忆已不存在");
     expect(drawer).toContain("做对了");
     await act(async () => {

@@ -119,7 +119,7 @@ describe("[P1-3] the basis drawer of a decision record in a real browser", () =>
       await uiExpect(drawer).toContainText("主人的房租每月 27 日从三井住友扣款");
       await uiExpect(drawer).toContainText("房租每月 27 号扣");
       await uiExpect(drawer).toContainText("周五晚上吃了拉面");
-      await uiExpect(drawer).toContainText("敏感记忆，内容不在这里显示");
+      await uiExpect(drawer).toContainText("受限记忆，模型也看不到，内容不在这里显示");
       await uiExpect(drawer).toContainText("做对了");
       await drawer.getByRole("button", { name: "看来源对话" }).click();
       await page.waitForURL(/\/threads\/thread-main/);
