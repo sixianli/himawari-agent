@@ -53,6 +53,14 @@ export interface DecisionChainDependencies {
   readonly visible: (classification: string) => boolean;
 }
 
+const displayRuleId = (ruleId: string) =>
+  [...ruleId]
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return code < 0x20 || code === 0x7f ? " " : character;
+    })
+    .join("");
+
 function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort();
 }
@@ -97,7 +105,7 @@ export async function readDecisionChain(
         items: sortedUnique(inputs.ruleIds).map((ruleId) => {
           const definition = decisionRuleDefinition(ruleId);
           return {
-            ruleId,
+            ruleId: displayRuleId(ruleId),
             origin: definition?.origin ?? null,
             document: definition?.document ?? null,
             mailCount: floorMailCounts.get(ruleId) ?? 0,
@@ -217,7 +225,7 @@ export async function readDecisionChain(
       supersededBy: item.supersededBy
         ? {
             memoryId: item.supersededBy,
-            text: texts.get(item.supersededBy)?.text || null,
+            text: visible ? texts.get(item.supersededBy)?.text || null : null,
           }
         : null,
       source: {

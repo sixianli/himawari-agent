@@ -1003,7 +1003,7 @@ export const messages = {
   "decision.chain.sourceDeleted": "来源对话已删除",
   "decision.chain.openSource": "看来源对话",
   "decision.chain.basis": "推断依据",
-  "decision.chain.basisCut": "依据太多，只显示了一部分",
+  "decision.chain.basisCut": "依据没读全（太多或读取出错），只显示了一部分",
   "decision.chain.action":
     "{a, select, merge {合并} supersede {取代} archive {归档} reflect {归纳} other {整理}}",
   "decision.chain.repeated": "重复出现",

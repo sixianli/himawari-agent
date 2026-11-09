@@ -1112,7 +1112,7 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     await act(async () => rowButton("1")?.click());
     await flush();
     const entry = text(".decision-chain-basis");
-    expect(entry).toContain("依据太多");
+    expect(entry).toContain("依据没读全");
     expect(entry).not.toContain("无记录");
   });
 

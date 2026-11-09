@@ -645,6 +645,41 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
     }
   });
 
+  it("[P1-3] hides the text of a visible memory that supersedes a sensitive one, and shows a control character in a rule id as a space", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f, { sensitive: true });
+      f.sql((database) =>
+        database
+          .prepare(
+            "UPDATE memory_records SET superseded_by = 'memory-b' WHERE id = 'memory-sensitive'",
+          )
+          .run(),
+      );
+      const odd = "rule\nwith\tcontrol";
+      await recordGmail(
+        f.repository,
+        "gmail-reverse-supersede",
+        gmailInputs({
+          ruleIds: [odd],
+          floorHits: {},
+          memoryIds: ["memory-sensitive"],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-reverse-supersede");
+      expect(chain.memories.items[0]).toMatchObject({
+        state: "hidden",
+        supersededBy: { memoryId: "memory-b", text: null },
+      });
+      expect(JSON.stringify(chain)).not.toContain(TEXTS["payload-b"] as string);
+      expect(chain.rules.items[0]?.ruleId).toBe("rule with control");
+    } finally {
+      await f.repository.close();
+    }
+  });
+
   it("[P1-3] is reachable through the real approval gateway, and an unknown record is refused there too", async () => {
     const f = await fixture();
     try {
