@@ -270,7 +270,7 @@ export class MemoryEpisodeService {
     readonly agentId: AgentId;
     readonly limit: number;
     readonly within?: <T>(
-      dataClassification: DataClassification,
+      episode: Pick<MemoryEpisode, "id" | "dataClassification">,
       operation: () => Promise<T>,
     ) => Promise<T>;
   }): Promise<number> {
@@ -297,9 +297,8 @@ export class MemoryEpisodeService {
         embedding: {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await (input.within ?? ((_, operation) => operation()))(
-            episode.dataClassification,
-            () => embedder.embed(`${episode.day}\n${text}`),
+          vector: await (input.within ?? ((_, operation) => operation()))(episode, () =>
+            embedder.embed(`${episode.day}\n${text}`),
           ),
         },
       });
@@ -335,7 +334,7 @@ export class MemoryEpisodeService {
     });
     let embedding = null;
     const embedder = this.#options.embedder;
-    if (embedder && input.indexed) {
+    if (embedder && input.indexed && isModelVisible(input.dataClassification)) {
       try {
         embedding = {
           model: embedder.model,

@@ -56,7 +56,7 @@ Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
 1. **两套分级分开。**“模型能看到什么”由固定的模型可见上限决定，上限是 sensitive，写在代码里（`packages/application/src/services/model-visibility.ts` 的 `modelVisibleCeiling()`），不再可配置；restricted 永远不给模型。运行分级（run 的 `dataClassification`）仍只管工具、推送和日志，聊天运行照旧是 private。
 2. **配置项 `maxMemoryClassification` 退役。**配置里写了也接受但不生效，服务启动时记一行 `configuration.key_retired`。生产配置模板删掉这一项。
 3. **按实际送出的内容定请求的分级。**同一次运行里，发给模型的请求分级取这三者的最高值：运行分级、本轮上下文投影实际含有的最高分级（`RuntimeProjection.contentClassification`）、本轮工具结果报告的最高分级（`RuntimeToolSettledResult.contentClassification`，例如记忆检索工具返回了敏感记忆）。这个分级同时用于准入检查、存历史、存最终回答、存压缩摘要和运行记录（模型请求、回答、工具结果的留档），所以只含 private 内容的对话仍按 private 发送，能继续用名单只到 private 的服务方；含敏感内容的那一刻起按 sensitive 发送，名单不含 sensitive 的服务方会被拒绝，请求不发出。
-4. **派生内容取来源的最高分级。**记忆整理的推断、事件段和它的摘要、Gmail 检查带入的记忆、记忆检索工具的输出、档案块，都按它们所用记忆的最高分级标注和发送。主人消息里的附件（文件、图片）同样最多读到 sensitive，附件的分级算进这一轮的内容分级，不再因为高于运行分级显示成“读不出来”。Gmail 检查根据敏感记忆写出的提醒，按这次判断的分级存档。事件段补算向量时，每一段按它自己的分级发给嵌入模型，restricted 的不算向量。遇到不认识的分级值时直接报错，不当作低分级处理。
+4. **派生内容取来源的最高分级。**记忆整理的推断、事件段和它的摘要、Gmail 检查带入的记忆、记忆检索工具的输出、档案块，都按它们所用记忆的最高分级标注和发送。主人消息里的附件（文件、图片）同样最多读到 sensitive，附件的分级算进这一轮的内容分级，不再因为高于运行分级显示成“读不出来”。Gmail 检查根据敏感记忆写出的提醒，按这次判断的分级存档。事件段补算向量时，每一段按它自己的分级发给嵌入模型，restricted 的不算向量。取几个分级中的最高值时（`highestClassification`），遇到不认识的分级值直接报错，不当作低分级处理；判断模型能不能看（`isModelVisible`）时，不认识的值按看不到处理。
 5. **固定显示（置顶）只看类别。**敏感记忆不再因为敏感而不能置顶；健康、财务、事件、其他四类仍不能置顶（[ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 的类别规则不变）。
 6. **生产的对话模型和嵌入模型名单加 sensitive**（Andy 的 A）。发出前的出口遮盖不变：密码、验证码等仍按 [ADR 0183](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md) 遮盖后再发。
 

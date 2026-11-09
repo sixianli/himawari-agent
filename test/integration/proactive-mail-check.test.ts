@@ -2079,7 +2079,7 @@ describe("proactive Gmail check acceptance", () => {
           receivedAt: "2026-11-04T01:00:00.000Z",
         }),
       ];
-      h.script([{ id: "promise", result: "act", todo: "来月連絡する", priority: "medium" }]);
+      h.script([{ id: "promise", result: "act", todo: "来月連絡する", priority: "low" }]);
       await h.service.run();
       const insights = (await h.overview()).insights;
       expect(insights.find((entry) => entry.status === "replied")).toBeUndefined();

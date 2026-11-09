@@ -79,8 +79,12 @@ export class ProductionMemoryEpisodes {
         ownerId: request.ownerId,
         agentId: request.agentId,
         limit: 1,
-        within: (dataClassification, operation) =>
-          this.#within({ ...request, dataClassification }, "memory-episode-backfill", operation),
+        within: ({ id, dataClassification }, operation) =>
+          this.#within(
+            { ...request, dataClassification },
+            `memory-episode-backfill:${id}`,
+            operation,
+          ),
       })
       .catch(this.#options.onFailure);
     const segments = await this.#options.service.dueSegments({

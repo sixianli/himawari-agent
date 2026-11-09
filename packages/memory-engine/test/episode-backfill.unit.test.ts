@@ -58,13 +58,13 @@ describe("[RULE-memory-visible] episode embedding backfill", () => {
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
       limit: 5,
-      within: (dataClassification, operation) => {
-        scopes.push(dataClassification);
+      within: ({ id, dataClassification }, operation) => {
+        scopes.push(`${id}:${dataClassification}`);
         return operation();
       },
     });
     expect(count).toBe(2);
-    expect(scopes).toEqual(["sensitive", "private"]);
+    expect(scopes).toEqual(["ep-health:sensitive", "ep-coffee:private"]);
     expect(attached).toEqual(["ep-health", "ep-coffee"]);
     expect(embedded.some((text) => text.includes("ep-secret"))).toBe(false);
   });
