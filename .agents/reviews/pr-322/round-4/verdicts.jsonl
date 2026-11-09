@@ -1,8 +1,8 @@
-{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "脚本读本地 origin/main，复核运行前没有 fetch", "valid": true, "class": "error", "severity": "low", "trigger": "本地 origin/main 落后时，分支点之后新登记的值没被遮", "consequence": "Gitleaks 报红，按 ADR 0177 加一块；不产生错误结果", "modelSeverity": "中", "reason": "行为是噪声失败不是错误结果；ADR 已写明先 fetch"}
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "清单只读本地 `origin/main`，复核运行前没有 fetch", "valid": true, "class": "error", "severity": "low", "trigger": "本地 origin/main 落后时，分支点之后新登记的值没被遮", "consequence": "Gitleaks 报红，按 ADR 0177 加一块；不产生错误结果", "modelSeverity": "中", "reason": "行为是噪声失败不是错误结果；ADR 已写明先 fetch"}
 {"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "材料“已核对的事实”与当前代码矛盾", "valid": true, "class": "better"}
-{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提取器不区分 regexTarget/targetRules，多行单元素数组也会命中", "valid": true, "class": "better"}
-{"id": "r4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "非密钥的精确值白名单也会被遮成 registered-test-value", "valid": true, "class": "better"}
-{"id": "r4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "--self-check-only 也会加载清单", "valid": true, "class": "better"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "提取器不区分 `regexTarget`/`targetRules`，多行单元素数组也会命中", "valid": true, "class": "better"}
+{"id": "r4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "非密钥的精确值白名单也会被遮成 `registered-test-value`", "valid": true, "class": "better"}
+{"id": "r4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`--self-check-only` 也会加载清单", "valid": true, "class": "better"}
 {"id": "r4-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "几处关键接线/反向用例没覆盖", "valid": true, "class": "better"}
 {"id": "r4-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "low-fix 文档与代码在“PR 和 main 都动过的文件”上说法含糊", "valid": true, "class": "better"}
-{"id": "r4-8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "登记值恰好是 [已遮盖:<规则>] 中规则 id 的子串时，可能破坏真密钥的遮盖标记", "valid": true, "class": "better"}
+{"id": "r4-8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "登记值恰好是 `[已遮盖:<规则>]` 中规则 id 的子串时，可能破坏真密钥的遮盖标记", "valid": true, "class": "better"}
