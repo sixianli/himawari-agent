@@ -109,9 +109,9 @@ function MemoryEntry({
             <ul>
               <BasisNodes tree={tree} message={message} />
             </ul>
-          ) : (
+          ) : item.basis.complete ? (
             <small>{message("decision.chain.noRecord")}</small>
-          )}
+          ) : null}
           {!item.basis.complete ? <small>{message("decision.chain.basisCut")}</small> : null}
         </div>
       ) : null}
@@ -141,6 +141,8 @@ export function DecisionChainDrawer({
   close.current = onClose;
   const gone = useRef(onGone);
   gone.current = onGone;
+  const read = useRef(readChain);
+  read.current = readChain;
   useEffect(() => {
     panel.current?.focus?.();
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && close.current();
@@ -150,7 +152,8 @@ export function DecisionChainDrawer({
   useEffect(() => {
     let disposed = false;
     setLoaded({ kind: "loading" });
-    void readChain(decisionId)
+    void read
+      .current(decisionId)
       .then((chain) => {
         if (!disposed) setLoaded({ kind: "ready", chain });
       })
@@ -162,7 +165,7 @@ export function DecisionChainDrawer({
     return () => {
       disposed = true;
     };
-  }, [decisionId, readChain]);
+  }, [decisionId]);
   const chain = loaded.kind === "ready" ? loaded.chain : null;
   return (
     <>

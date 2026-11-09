@@ -121,7 +121,6 @@ describe("[P1-3] the basis drawer of a decision record in a real browser", () =>
       await uiExpect(drawer).toContainText("周五晚上吃了拉面");
       await uiExpect(drawer).toContainText("敏感记忆，内容不在这里显示");
       await uiExpect(drawer).toContainText("做对了");
-      await page.screenshot({ path: process.env["DECISION_CHAIN_SCREENSHOT"] ?? "/dev/null" });
       await drawer.getByRole("button", { name: "看来源对话" }).click();
       await page.waitForURL(/\/threads\/thread-main/);
       await uiExpect(

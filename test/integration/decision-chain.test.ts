@@ -22,6 +22,7 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.js";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.js";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -585,6 +586,95 @@ describe.each(["worker", "direct"] as const)("decision chain through %s", (execu
       expect(chain.memories.truncated).toBe(true);
       expect(chain.memories.items).toHaveLength(100);
       expect(chain.memories.items[0]?.memoryId).toBe("memory-x000");
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P1-3] hides the text of a sensitive memory that supersedes a visible one and of a sensitive basis node", async () => {
+    const f = await fixture();
+    try {
+      await seedMemories(f, { sensitive: true });
+      f.sql((database) => {
+        database
+          .prepare(
+            "UPDATE memory_records SET superseded_by = 'memory-sensitive' WHERE id = 'memory-a'",
+          )
+          .run();
+        database
+          .prepare("UPDATE memory_records SET classification = 'sensitive' WHERE id = 'memory-b'")
+          .run();
+      });
+      await recordGmail(
+        f.repository,
+        "gmail-hidden-links",
+        gmailInputs({
+          memoryIds: ["memory-a", "memory-insight"],
+          memoryByMail: {},
+          usedMemoryIds: [],
+        }),
+      );
+      const chain = await chainOf(f.control, "gmail-hidden-links");
+      const memoryA = chain.memories.items.find((item) => item.memoryId === "memory-a");
+      expect(memoryA?.supersededBy).toEqual({ memoryId: "memory-sensitive", text: null });
+      const insight = chain.memories.items.find((item) => item.memoryId === "memory-insight");
+      expect(insight?.basis.nodes.some((node) => node.memoryId === "memory-b")).toBe(true);
+      const serialized = JSON.stringify(chain);
+      expect(serialized).not.toContain(TEXTS["payload-sensitive"] as string);
+      expect(serialized).not.toContain(TEXTS["payload-b"] as string);
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P1-3] shows a rule id that is not a machine string as an unregistered rule instead of failing the whole read", async () => {
+    const f = await fixture();
+    try {
+      const odd = `规则 with spaces/${"x".repeat(200)}`;
+      await recordGmail(
+        f.repository,
+        "gmail-odd-rule",
+        gmailInputs({ ruleIds: [odd], floorHits: { "mail-1": [odd] }, memoryIds: [] }),
+      );
+      const chain = await chainOf(f.control, "gmail-odd-rule");
+      expect(chain.rules.items).toEqual([
+        { ruleId: odd, origin: null, document: null, mailCount: 1 },
+      ]);
+    } finally {
+      await f.repository.close();
+    }
+  });
+
+  it("[P1-3] is reachable through the real approval gateway, and an unknown record is refused there too", async () => {
+    const f = await fixture();
+    try {
+      await recordGmail(f.repository, "gmail-gateway", gmailInputs({ memoryIds: [] }));
+      const fence = { deploymentId: "deployment", authorityEpoch: 1, fencingToken: 1 };
+      const gateway = createProductionApprovalGateway({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        repository: f.repository,
+        authority: () => fence as never,
+        executionAuthority: () => fence as never,
+        clock: { now: () => DECIDED_AT },
+        access: { authorize: async () => ({ allowed: true, reasonCode: "TEST_OWNER" }) },
+        recentAuthentication: { assertRecentAuthentication: async () => ({}) as never },
+        memoryControl: f.control,
+      });
+      const authentication = {
+        ownerId: OWNER_ID,
+        subjectId: OWNER_ID,
+        deviceId: "device-01",
+        authenticatedAt: DECIDED_AT,
+        authenticationRef: "auth-01",
+      };
+      const found = await gateway.request(authentication as never, query("gmail-gateway"));
+      expect(found).toMatchObject({
+        type: "decision.chain.snapshot",
+        payload: { decisionId: "gmail-gateway" },
+      });
+      await expect(
+        gateway.request(authentication as never, query("gmail-missing")),
+      ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
     } finally {
       await f.repository.close();
     }

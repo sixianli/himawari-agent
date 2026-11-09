@@ -41,7 +41,7 @@ export interface DecisionChainMemoryText {
 }
 
 export interface DecisionChainDependencies {
-  readonly scope: { readonly ownerId: string; readonly agentId: string };
+  readonly scope: Pick<Parameters<DecisionLedgerPort["read"]>[0], "ownerId" | "agentId">;
   readonly ledger: Pick<DecisionLedgerPort, "read">;
   readonly readBasisChain: (memoryId: string) => Promise<MemoryBasisChainNode>;
   readonly views: (
@@ -76,8 +76,8 @@ export async function readDecisionChain(
 ): Promise<GatewayV2Snapshot> {
   const { decisionId } = query.payload;
   const found = await dependencies.ledger.read({
-    ownerId: dependencies.scope.ownerId as never,
-    agentId: dependencies.scope.agentId as never,
+    ownerId: dependencies.scope.ownerId,
+    agentId: dependencies.scope.agentId,
     decisionId,
   });
   if (!found)
@@ -217,7 +217,7 @@ export async function readDecisionChain(
       supersededBy: item.supersededBy
         ? {
             memoryId: item.supersededBy,
-            text: visible ? texts.get(item.supersededBy)?.text || null : null,
+            text: texts.get(item.supersededBy)?.text || null,
           }
         : null,
       source: {

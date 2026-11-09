@@ -1084,6 +1084,38 @@ describe("[P1-3] the basis drawer of a decision record", () => {
     expect(document.querySelector(".decision-chain-memory")).toBeNull();
   });
 
+  it("does not read the chain again, nor reset the drawer, when the page refreshes underneath it", async () => {
+    chainResult = chain();
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const reads = () =>
+      query.mock.calls.filter(([request]) => request.type === "decision.chain.read").length;
+    expect(reads()).toBe(1);
+    await click("#apps .proactive-log-row:nth-of-type(1)", "不该做");
+    expect(commands().some((command) => command.type === "proactive.decision.rate")).toBe(true);
+    expect(reads()).toBe(1);
+    expect(text(".decision-chain")).toContain("命中的规则");
+  });
+
+  it("does not say no record for a memory whose basis was cut off", async () => {
+    chainResult = chain({
+      memories: {
+        state: "recorded",
+        recall: "ok",
+        total: 1,
+        truncated: false,
+        items: [memoryItem({ inference: true, basis: { nodes: [], complete: false } })],
+      },
+    });
+    await openLog();
+    await act(async () => rowButton("1")?.click());
+    await flush();
+    const entry = text(".decision-chain-basis");
+    expect(entry).toContain("依据太多");
+    expect(entry).not.toContain("无记录");
+  });
+
   it("offers no basis button when the service does not install the read", async () => {
     await act(async () => root.render(h(Settings, { outcome: null })));
     await flush();

@@ -29,13 +29,17 @@ date: "2026-11-09"
 
 ## 必须写的字段
 
-`DecisionInputs`（`packages/application/src/ports/decision-ledger.ts`）里，按种类：
+`DecisionInputs`（`packages/application/src/ports/decision-ledger.ts`）有两条写入路径，落盘的字段不同：
 
-| 字段 | 谁必须写 | 含义 |
+- **系统主动提醒的检查**（`kind` 为 `proactive`，`sqlite-proactive-operations.ts` 的写入路径）：落盘完整字段。
+- **其他种类**（`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`，经 `DecisionLedgerPort.append`，`sqlite-decision-ledger-operations.ts` 的 `insertLedgerRow`）：目前只落 `memoryIds`、`ruleIds`、`batchId`、`resultMemoryIds` 四个键，其余字段在入库前被丢掉。要让这些种类也记下别的字段，先改 `insertLedgerRow` 和它的校验，再改这份约定。
+
+| 字段 | 谁写 | 含义 |
 | --- | --- | --- |
-| `ruleIds` | `proactive` | 这次判断中命中的规则编号，必须登记在 `DECISION_RULE_CATALOG` |
+| `ruleIds` | `proactive` 写命中的规则编号；其他种类现在写的是原因代码，抽屉对它们显示“这类记录不涉及” | 规则编号必须登记在 `DECISION_RULE_CATALOG` |
 | `floorHits` | `proactive` | 每封邮件命中的规则编号 |
-| `memoryIds`、`memoryByMail`、`usedMemoryIds`、`tentativeMemoryIds` | 用到记忆的所有种类 | 实际放进上下文的记忆编号，不得只写数量 |
+| `memoryIds` | 所有种类 | 实际放进上下文或被这次判断用到的记忆编号，不得只写数量 |
+| `memoryByMail`、`usedMemoryIds`、`tentativeMemoryIds` | `proactive` | 每封邮件对应的记忆、模型实际用到的记忆、待确认的记忆；其他种类现在没有这三个键，所以不会显示“模型用到了” |
 | `memoryRecall` | `proactive` | 找记忆的状态：`off`、`ok`、`partial`、`failed` |
 | `sourceIds`、`relatedByMail`、`relatedRead` | `proactive` | 判断了哪些邮件、关联了哪些邮件、读关联邮件是否完整 |
 

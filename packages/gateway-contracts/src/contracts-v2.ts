@@ -1021,7 +1021,7 @@ const decisionChainSnapshotSchema = object({
       state: decisionChainSectionState,
       items: array(
         object({
-          ruleId: machineString,
+          ruleId: boundedString(256),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
           document: nullable(boundedString(64)),
           mailCount: integer(0),
