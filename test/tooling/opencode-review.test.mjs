@@ -968,17 +968,10 @@ describe("opencode install integrity", () => {
     }
   });
 
-  it.each([
-    ["fresh", false],
-    ["leftover", true],
-  ])("[opencode lock] two processes installing into the same %s prefix both end up with a working binary", async (_name, leftover) => {
+  it("[opencode lock] two processes installing into the same fresh prefix both end up with a working binary", async () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-install-race-"));
     try {
       const prefix = join(root, "shared");
-      if (leftover) {
-        mkdirSync(join(prefix, "node_modules"), { recursive: true });
-        writeFileSync(join(prefix, "node_modules", "partial"), "half-installed");
-      }
       const script = fileURLToPath(
         new URL("../../scripts/model-review/opencode-review.mjs", import.meta.url),
       );
@@ -1015,6 +1008,30 @@ describe("opencode install integrity", () => {
       expect(execFileSync(binary, ["--version"], { encoding: "utf8" }).trim()).toBe(
         OPENCODE_VERSION,
       );
+      expect(readdirSync(root)).toEqual(["shared"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 300000);
+
+  it("[opencode lock] two processes healing the same leftover prefix both end up with a working binary", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-install-heal-race-"));
+    try {
+      const prefix = join(root, "shared");
+      mkdirSync(join(prefix, "node_modules"), { recursive: true });
+      writeFileSync(join(prefix, "node_modules", "partial"), "half-installed");
+      const script = pathToFileURL(
+        fileURLToPath(new URL("../../scripts/model-review/opencode-review.mjs", import.meta.url)),
+      ).href;
+      const code = `import { installOpencode } from ${JSON.stringify(script)}; installOpencode({ prefix: ${JSON.stringify(prefix)} });`;
+      const run = () =>
+        new Promise((done) => {
+          spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: "ignore" }).on(
+            "close",
+            done,
+          );
+        });
+      expect(await Promise.all([run(), run()])).toEqual([0, 0]);
       expect(readdirSync(root)).toEqual(["shared"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
