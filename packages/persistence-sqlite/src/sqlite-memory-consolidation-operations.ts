@@ -17,6 +17,7 @@ export function consolidationLedgerId(changeId: string): string {
 }
 
 const MEMORY_BASIS_CHAIN_MAX_DEPTH = 8;
+const MEMORY_BASIS_CHAIN_MAX_NODES = 200;
 const ACTIONS = new Set(["merge", "supersede", "archive", "reflect"]);
 
 const runSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, day,
@@ -37,7 +38,7 @@ export function insertConsolidationWrite(
   write: MemoryConsolidationWrite,
   fail: SqliteApplicationFailure,
 ): void {
-  const { change, basisMemoryIds, ledgerMemories } = write;
+  const { change, basisMemoryIds, resultMemoryIds } = write;
   if (!ACTIONS.has(change.action) || change.undoneAt !== null)
     fail("PORT_INVALID_OPERATION", "Memory consolidation change is invalid");
   const basis = [...new Set(basisMemoryIds)];
@@ -49,6 +50,14 @@ export function insertConsolidationWrite(
     )
     .get(change.consolidationId, change.ownerId, change.agentId) as { status: string } | undefined;
   if (run?.status !== "running") fail("PORT_CONFLICT", "Memory consolidation run is not running");
+  const owned = database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM memory_records
+       WHERE owner_id = ? AND agent_id = ? AND id IN (${basis.map(() => "?").join(", ")})`,
+    )
+    .get(change.ownerId, change.agentId, ...basis) as { count: number };
+  if (owned.count !== basis.length)
+    fail("PORT_INVALID_OPERATION", "Memory consolidation basis is not in the change scope");
   database
     .prepare(
       `INSERT INTO memory_consolidation_changes (
@@ -90,10 +99,10 @@ export function insertConsolidationWrite(
     reasonCode: `consolidation_${change.action}`,
     subjectRef: change.memoryId,
     inputs: {
-      memoryIds: [...new Set(ledgerMemories.memoryIds)],
+      memoryIds: basis,
       ruleIds: [],
       batchId: change.consolidationId,
-      resultMemoryIds: [...new Set(ledgerMemories.resultMemoryIds)],
+      resultMemoryIds: [...new Set(resultMemoryIds)],
     },
     reasonRef: null,
     contentRef: null,
@@ -276,6 +285,7 @@ export class SqliteMemoryConsolidationOperations {
     memoryId: MemoryId;
   }): MemoryBasisChainNode {
     const seen = new Set<string>();
+    let nodes = 0;
     const walk = (memoryId: MemoryId, depth: number): MemoryBasisChainNode => {
       const change = this.database
         .prepare(
@@ -303,7 +313,11 @@ export class SqliteMemoryConsolidationOperations {
           truncated: false,
         });
       seen.add(memoryId);
-      const truncated = depth >= MEMORY_BASIS_CHAIN_MAX_DEPTH && parents.length > 0;
+      nodes += 1;
+      const truncated =
+        (depth >= MEMORY_BASIS_CHAIN_MAX_DEPTH ||
+          nodes + parents.length > MEMORY_BASIS_CHAIN_MAX_NODES) &&
+        parents.length > 0;
       return Object.freeze({
         memoryId,
         change: Object.freeze(change),

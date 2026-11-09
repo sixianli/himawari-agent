@@ -310,6 +310,7 @@ export class ProductionMemoryControl {
       });
       queued.push(...node.basis);
     }
+    if (nodes.some(({ truncated }) => truncated)) complete = false;
     return {
       ...query,
       kind: "snapshot",

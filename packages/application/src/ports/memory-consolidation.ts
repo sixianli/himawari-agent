@@ -35,15 +35,10 @@ export interface MemoryConsolidationChange {
   readonly undoneAt: string | null;
 }
 
-export interface MemoryConsolidationLedgerMemories {
-  readonly memoryIds: readonly MemoryId[];
-  readonly resultMemoryIds: readonly MemoryId[];
-}
-
 export interface MemoryConsolidationWrite {
   readonly change: MemoryConsolidationChange;
   readonly basisMemoryIds: readonly MemoryId[];
-  readonly ledgerMemories: MemoryConsolidationLedgerMemories;
+  readonly resultMemoryIds: readonly MemoryId[];
 }
 
 export interface MemoryBasisChainNode {

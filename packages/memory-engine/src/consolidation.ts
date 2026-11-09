@@ -486,10 +486,7 @@ export class MemoryConsolidationService {
           return {
             change: recorded,
             basisMemoryIds,
-            ledgerMemories: {
-              memoryIds: basisMemoryIds,
-              resultMemoryIds: relatedMemoryId ? [relatedMemoryId] : [],
-            },
+            resultMemoryIds: relatedMemoryId ? [relatedMemoryId] : [],
           };
         },
       });
@@ -588,7 +585,7 @@ export class MemoryConsolidationService {
         return {
           change: recorded,
           basisMemoryIds,
-          ledgerMemories: { memoryIds: basisMemoryIds, resultMemoryIds: [saved.id] },
+          resultMemoryIds: [saved.id],
         };
       },
     );

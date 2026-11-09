@@ -747,10 +747,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           consolidation: (saved) => ({
             change: { ...change, consolidationId, afterRevision: saved.revision },
             basisMemoryIds: [createMemoryId("memory-a"), createMemoryId("memory-b")],
-            ledgerMemories: {
-              memoryIds: [createMemoryId("memory-a"), createMemoryId("memory-b")],
-              resultMemoryIds: [createMemoryId("memory-b")],
-            },
+            resultMemoryIds: [createMemoryId("memory-b")],
           }),
         });
       await expect(revise("consolidation-missing")).rejects.toThrow();
@@ -835,7 +832,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           consolidation: (saved) => ({
             change: { ...change(1, memoryId, "memory-a", "merge"), afterRevision: saved.revision },
             basisMemoryIds: ids(...basis),
-            ledgerMemories: { memoryIds: ids(...basis), resultMemoryIds: ids("memory-a") },
+            resultMemoryIds: ids("memory-a"),
           }),
         });
       await expect(archive(["memory-b", "memory-missing"])).rejects.toThrow();
@@ -850,23 +847,28 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       await archive(["memory-b", "memory-a"]);
       expect(await list("consolidation")).toHaveLength(1);
       expect(await store.readBasis("consolidation-1:c1")).toEqual(ids("memory-b", "memory-a"));
-      await memory.applyProposal(
-        proposal("memory-insight", "payload-4"),
-        GENERATION_ID,
-        undefined,
-        (saved) => ({
-          change: {
-            ...change(2, "memory-insight", "memory-b", "reflect"),
-            beforeRevision: null,
-            afterRevision: saved.revision,
-          },
-          basisMemoryIds: ids("memory-b", "memory-c"),
-          ledgerMemories: {
-            memoryIds: ids("memory-b", "memory-c"),
+      const reflect = (basis: readonly string[]) =>
+        memory.applyProposal(
+          proposal("memory-insight", "payload-4"),
+          GENERATION_ID,
+          undefined,
+          (saved) => ({
+            change: {
+              ...change(2, "memory-insight", "memory-b", "reflect"),
+              beforeRevision: null,
+              afterRevision: saved.revision,
+            },
+            basisMemoryIds: ids(...basis),
             resultMemoryIds: ids("memory-insight"),
-          },
-        }),
-      );
+          }),
+        );
+      await expect(reflect(["memory-b", "memory-missing"])).rejects.toThrow();
+      expect(
+        await repository.productMemoryState().read(createMemoryId("memory-insight")),
+      ).toBeUndefined();
+      expect(await store.readChange("consolidation-1:c2")).toBeUndefined();
+      expect(await list("consolidation")).toHaveLength(1);
+      await reflect(["memory-b", "memory-c"]);
       expect(await store.readBasis("consolidation-1:c2")).toEqual(ids("memory-b", "memory-c"));
       const chain = await store.readBasisChain({
         ...scope,

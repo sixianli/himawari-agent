@@ -39,7 +39,7 @@ Gmail 主动检查的记录在表 `proactive_decisions`（迁移 0062）。它�
 4. **`inputs` 的含义：** 这条决策涉及的记忆。记忆候选和整理写被决策的记忆；上下文截断写被截掉的记忆；检索降级和外部读取没有对应记忆时为空。规则编号目前只用于被规则丢弃的候选（写丢弃原因），规则手册落地后再接。
 5. **写入和记忆变更在同一个数据库事务里：**
    - 候选被保留时，账本行随 `saveWithProjection`（记忆记录、投影任务、历史三者的同一个事务）一起写入；账本行写失败，记忆也不会保存。
-   - 整理的每条变更，账本行随 `recordChange` 在同一个事务里写入。整理对记忆本身的修改发生在这一步之前、是单独的一步，这一点没有改变（见[后果](#consequences)）。
+   - 整理的每条变更，账本行随改记忆的那一次 `saveWithProjection` 在同一个事务里写入（[ADR 0191](0191-record-the-whole-basis-chain-of-a-memory-tidy-up.md) 把原来的 `recordChange` 并了进来；原先整理对记忆本身的修改是事务之前的单独一步）。
    - 候选被丢弃或进入待审批时没有记忆变更，账本行单独写入。
 6. **正文只存加密引用。** 被丢弃的候选（低置信度、临时内容）的正文用已有的加密存储方式存成引用；含机密或受限的候选不存正文，`content_ref` 为空。
 7. **上下文截断和检索降级只在真正发生时写**，不是每轮都写。写失败不影响对话本身。
@@ -74,7 +74,7 @@ Gmail 主动检查的记录在表 `proactive_decisions`（迁移 0062）。它�
   - `packages/persistence-sqlite/test/decision-ledger-migration.contract.test.ts`：旧版本数据迁移后逐列一致、外键仍有效，结果值不属于该类型时写入失败（反向）。
   - `test/integration/decision-ledger.test.ts`：每类写入并读回、三值评价和清除、非法评价被拒、候选和记忆同事务回滚、整理变更被拒时没有账本行、清除 Gmail 记录不误删、检索降级只在降级时写。
   - `test/integration/automatic-memory-golden.test.ts`、`test/integration/memory-consolidation.test.ts`、`test/integration/context-formation.test.ts`：每条审计结果、每条整理变更都有账本行；没有被截断时没有行。
-- 整理对记忆的修改（合并、作废、归档、推断）经由 `DurableMemoryService` 单独完成，之后才写 `recordChange`；这两步不在同一个事务里，崩溃时可能有记忆变更而无账本行。要消除它需要把账本行并进每一种整理写入，留给后续。
+- 已由 [ADR 0191](0191-record-the-whole-basis-chain-of-a-memory-tidy-up.md) 消除：整理对记忆的修改（合并、作废、归档、推断）和账本行、变更行、依据行在同一个事务里写；原先崩溃时可能有记忆变更而无账本行。
 - 候选被判为“未变化”（只是确认已有记忆）时，账本行在记忆历史追加之后单独写，不在同一个事务里。
 - “外部 agent 读取”这一类已定义并可写入，但代码里没有外部程序读取记忆的入口，现在没有写入点。
 - 账本没有评价界面：Gmail 的评价界面不变，其他类型的评价目前只有接口。

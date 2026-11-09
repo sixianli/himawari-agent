@@ -136,3 +136,15 @@ it("[P1-2] refuses the read when tidy-up is not installed", async () => {
     "MEMORY_OPERATION_NOT_INSTALLED",
   );
 });
+
+it("[P1-2] reports the chain as incomplete when the store cut a branch short", async () => {
+  const cutShort: MemoryBasisChainNode = {
+    ...leaf("root"),
+    change: change("c1", "root", "reflect"),
+    basis: [{ ...leaf("deep"), truncated: true }],
+  };
+  const snapshot = await control(async () => cutShort).query(read("root"));
+  if (snapshot.type !== "memory.basis.snapshot") throw new Error("snapshot");
+  expect(snapshot.payload.complete).toBe(false);
+  expect(snapshot.payload.nodes).toHaveLength(2);
+});
