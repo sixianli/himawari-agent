@@ -547,7 +547,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "memory_search_terms",
     "MemoryIndexStorePort",
-    "contentless FTS5 terms for public and private Memory",
+    "contentless FTS5 terms for model-visible Memory, masked before indexing",
     "metadata_only",
     "removed with its memory_search_index row by trigger",
   ),
@@ -596,7 +596,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "memory_episode_terms",
     "MemoryEpisodeStorePort",
-    "contentless FTS5 terms for public and private episode summaries",
+    "contentless FTS5 terms for model-visible episode summaries, masked before indexing",
     "metadata_only",
     "removed with its memory_episodes row by trigger",
   ),

@@ -1,0 +1,104 @@
+---
+status: active
+document_type: adr
+decision_status: accepted
+supersedes: ""
+superseded_by: ""
+date: "2026-11-09"
+---
+
+# ADR 0196：敏感记忆遮盖后进检索目录，停掉“久不用就归档”
+
+<a id="contents"></a>
+
+## 阅读导航
+
+- [背景](#context)
+- [前提](#premises)
+- [决定](#decision)
+- [业界怎么做](#industry)
+- [放弃的做法](#options)
+- [后果](#consequences)
+- [关联文档](#references)
+
+<a id="context"></a>
+
+## 背景
+
+[ADR 0193](0193-memory-is-visible-to-the-model.md) 让模型能看到 sensitive（敏感）记忆，但留了两处没做：
+
+1. 检索目录不收敏感记忆。记忆检索有两条路：按意思找（向量，即把文字算成一串数字后比相似度）和按词找（全文检索，把文字拆成词存进一张词表）。敏感记忆只有向量，没有词表条目，也不存实体（记忆里提到的人名、地名等名字）；敏感的事件段（某天某段对话的摘要）同样没有词表条目，因此第一次算向量失败后永远补不上。
+2. 记忆整理会把“半年没用、重要度低、不属于规则/身份/关系/健康/财务”的记忆自动归档，归档后模型就看不到了。这和 Andy 2026-11-09 定的原则“存入记忆的内容必须能被模型看到”冲突。
+
+Andy 在方案 v3 上同意的 C：“上线时一次性恢复因闲置被归档的记忆并重建索引，先报数量、先备份。”
+
+<a id="premises"></a>
+
+## 前提
+
+1. 词表只收 public 和 private：`packages/memory-engine/src/hybrid-memory-provider.ts:18`，`const LEXICAL_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);`（本决定之前的 main）。
+2. 实体和事件段词表同样只收这两档：`packages/persistence-sqlite/src/sqlite-memory-operations.ts:148`，`const INDEXED_ENTITY_CLASSIFICATIONS = new Set(["public", "private"]);`。
+3. 事件段补算向量只挑有词表条目的段：同一文件第 1398 行，`JOIN memory_episode_terms t ON t.rowid = e.rowid`。
+4. 闲置归档：`packages/memory-engine/src/consolidation.ts:47`，`const DECAY_IDLE_DAYS = 180;`；第 453 行，`return this.#revise(id, "archive", memory, null, { status: "archived" });`。
+5. 服务启动时会把没有索引或索引版本落后的记忆重新排队建索引：`packages/persistence-sqlite/src/sqlite-memory-operations.ts:1483`，`AND (i.memory_id IS NULL OR i.memory_revision != m.revision`；`apps/agent-service/src/service-main.ts:1197`，`await memory.requeueProjection(unindexed);`（这段循环在配了嵌入模型时运行，生产配了 Qwen 嵌入模型）。
+6. 建索引的后台每秒处理一条：`apps/agent-service/src/production-memory-worker.ts:44`，`await this.#service.runProjectionBatch(1);`。
+7. 词表是明文的 SQLite 全文表，记忆正文是加密存的；所以进词表的词等于把这部分内容以明文写到磁盘上。
+8. 界面上的“撤销”会把这条整理决定记成主人评价“不需要”：`packages/persistence-sqlite/src/sqlite-memory-consolidation-operations.ts:347`，`UPDATE decision_ledger SET owner_rating = 'unneeded', rated_at = ?`。
+
+<a id="decision"></a>
+
+## 决定
+
+1. **词表、实体、事件段词表收 public、private、sensitive 三档**，restricted（受限）仍不收。
+2. **建词表之前先遮盖，再丢掉像密钥的词。**
+   - 遮盖用出口遮盖的固定规则集、不带对话上下文（`maskSensitiveText`），认得出的密码、验证码、卡号、证件号、密钥先换成“[密码]”这类占位文字，再拆词。
+   - 拆完的词再过一道 `looksLikeSecretToken`（`packages/sensitive-capture/src/secret-like.ts`）：6 位以上的纯数字、24 个字符以上的英文数字串、16 个字符以上同时有字母和数字的串、8 个字符以上且含 3 个以上数字的字母数字串，一律不进词表。这道是给“规则没认出来的密钥格式”兜底，代价是手机号、订单号这类词按词搜不到，按意思仍能搜到。
+   - 这两步对三档都做，不只对 sensitive：词表是明文，private 记忆里的秘密同样不该写成明文。
+3. **实体在记忆提取时过滤。**模型给出的实体名，如果遮盖规则会改动它，或者其中某一段像密钥，就丢掉（`isSafeToIndex`，在 `apps/agent-service/src/production-memory-capture.ts`）。存储层不做这一步：SQLite 在独立线程里直接跑源码，`@himawari-agent/sensitive-capture` 的入口在那里加载不了（`check:source-mode-imports` 管的同一类问题）。
+4. **停掉闲置归档。**记忆整理不再因为久没用到就归档；合并重复、新事实取代旧事实这两种归档保留。“归档”这个动作类型留在库里，因为旧记录还在用它。
+5. **一次性维护命令 `himawari-admin memory reindex --config <路径> --operator <人>`**，上线时在服务停止状态下运行：
+   - 不带 `--confirm` 时只报数：要恢复的闲置归档条数、现有索引条数、在用记忆条数，并提示先备份（`himawari-admin backup create`）。
+   - 带 `--confirm REINDEX_MEMORY_<agentId>` 时，在一个事务里：恢复“动作是闲置归档、没撤销过、之后没被改过（版本号仍等于归档后的版本）”的记忆，并把那条整理改动标为已撤销；合并重复产生的归档不动；然后清空这个 Agent 的记忆索引。
+   - 服务再启动时，按前提 5 的现有逻辑把所有没有索引的记忆重新排队，按新规则建词表和向量。重跑这个命令是安全的：第二次恢复 0 条，索引再清一次再建一次。
+   - 恢复不写“主人评价不需要”：这是 Andy 对整个功能的决定，不是他对某一条的评价。
+
+<a id="industry"></a>
+
+## 业界怎么做
+
+GitHub 的密钥扫描在“已知服务方格式”之外另加两层兜底：“Expand detection to secrets that aren't tied to a specific service provider”（通用模式）和 “Use AI to detect unstructured secrets like passwords”（[About secret scanning](https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning)）。本决定照这个思路：先用已知格式规则遮盖，再用“长得像密钥”的通用规则兜底；不用模型判断，因为建索引在后台批量跑，每条都调模型太贵。
+
+<a id="options"></a>
+
+## 放弃的做法
+
+- **敏感记忆仍只靠向量。**按词找能找到向量找不到的专有名词（人名、药名），而敏感记忆里正多这类词（例如“青霉素”）。只靠向量会让敏感记忆比普通记忆更难被找到。
+- **只对 sensitive 遮盖。**private 记忆里也可能出现规则能认出的秘密，词表又是明文，分档处理没有好处。
+- **服务启动时自动恢复归档。**Andy 要求“先报数量、先备份”，所以做成要人确认的命令。
+- **在维护命令里直接重算词表。**维护命令不带模型和解密能力，重算要读加密正文、调嵌入模型；交给服务启动后已有的重建流程，不另写一套。
+- **旧的敏感实体补回。**旧代码根本没存敏感记忆的实体，没有东西可补；新提取的记忆会带上。按 Andy“不用管以前的聊天记录”，不为旧数据另想办法。旧的敏感事件段同理，没有词表条目，不补。
+
+<a id="consequences"></a>
+
+## 后果
+
+- 门槛（会自动拦下的测试）：
+  - `test/integration/memory-consolidation.test.ts` 的 `[RULE-memory-visible]`：真实 SQLite 里敏感记忆按词“青霉素”能查到，正文里规则认不出的口令 `x9Kq2mVb7Lp4Wz` 查不到，敏感记忆的实体能读回；整理不再归档半年没用的记忆。
+  - `test/integration/memory-episodes.test.ts` 的 `[RULE-memory-visible]`：敏感事件段按词能找到、只放行 private 时找不到、嵌入失败后能补算向量。
+  - `packages/memory-engine/test/hybrid-memory-provider.unit.test.ts`、`packages/sensitive-capture/test/secret-like.unit.test.ts`、`apps/agent-service/test/production-memory-evidence.unit.test.ts`：遮盖和兜底规则、实体过滤。
+  - `apps/admin-cli/test/memory-reindex-cli.unit.test.ts`：先报数、不确认不改；只恢复没被改过的闲置归档、不动合并归档；清空索引后这些记忆都在“待建索引”名单里；重跑恢复 0 条。
+- 上线步骤：停服务 → `himawari-admin backup create` → `himawari-admin memory reindex`（报数，把数量报给 Andy）→ 带 `--confirm` 再跑一次 → 启动服务。重建期间（约每秒一条）检索结果会少，几百条记忆约几分钟建完；重建要重算全部向量，嵌入费用按几百条短文本计，远低于 0.5 美元。
+- 词表里不再有手机号、长订单号这类词，按词搜不到它们；按意思搜不受影响。
+- 记忆页“已归档”的说明改为“整理时判断为过时或重复，回答时不再用”。
+- 记忆的日期给模型（第 3 个 PR）、凭证占位符编号（第 4 个 PR）另做。
+
+<a id="references"></a>
+
+## 关联文档
+
+- [ADR 0193：存入记忆的内容必须能被模型看到](0193-memory-is-visible-to-the-model.md)
+- [ADR 0183：只在数据离开时遮盖](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)
+- [ADR 0185：密码、密钥标敏感而不是丢弃](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
+- 代码：`packages/sensitive-capture/src/secret-like.ts`、`packages/memory-engine/src/segmentation.ts`、`packages/persistence-sqlite/src/sqlite-memory-maintenance.ts`、`apps/admin-cli/src/memory-command.ts`
+
+[返回目录](#contents)

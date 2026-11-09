@@ -33,6 +33,7 @@ import { MEMORY_CAPTURE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-cat
 import {
   classificationWithIdentifiers,
   type EgressPlaceholderKind,
+  isSafeToIndex,
   placeholderTable,
   restorePlaceholders,
 } from "@himawari-agent/sensitive-capture";
@@ -368,7 +369,9 @@ export function parseMemoryCandidates(input: {
             value["entities"]
               .filter((entity): entity is string => typeof entity === "string")
               .map((entity) => entity.normalize("NFKC").trim())
-              .filter((entity) => entity.length > 0 && entity.length <= 64),
+              .filter(
+                (entity) => entity.length > 0 && entity.length <= 64 && isSafeToIndex(entity),
+              ),
           ),
         ].slice(0, MAXIMUM_ENTITIES)
       : [];

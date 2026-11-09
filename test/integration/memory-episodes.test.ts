@@ -237,6 +237,44 @@ describe.each(["worker", "direct"] as const)("memory episodes through %s", (exec
     }
   });
 
+  it("[RULE-memory-visible] indexes the words of a sensitive day's summary and backfills its vector", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      resource.embedder.fail = true;
+      const [segment] = await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      });
+      if (segment?.dataClassification !== "sensitive") throw new Error("sensitive segment");
+      await resource.service.summarize(segment, resource.summarize);
+      const ask = (allowedClassifications: ("public" | "private" | "sensitive")[]) =>
+        resource.service.search({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          query: "烤肉",
+          scope: null,
+          allowedClassifications,
+          limit: 3,
+        });
+      expect((await ask(["sensitive"])).map(({ episode }) => episode.threadId)).toEqual([
+        SENSITIVE_THREAD_ID,
+      ]);
+      expect(await ask(["public", "private"])).toEqual([]);
+      resource.embedder.fail = false;
+      expect(
+        await resource.service.backfillEmbeddings({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          limit: 5,
+        }),
+      ).toBe(1);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("stores a summary without a vector when embedding fails and backfills it later", async () => {
     const now = { value: "2026-10-25T02:30:00.000Z" };
     const resource = await fixture(now);

@@ -90,10 +90,10 @@ const MEMORIES: ReadonlyArray<{
   },
   {
     id: "allergy",
-    text: "主人对青霉素过敏",
+    text: "主人对青霉素过敏，医保卡备用口令 x9Kq2mVb7Lp4Wz",
     at: "2026-10-20T00:00:00.000Z",
     classification: "sensitive",
-    attributes: { category: "health", importancePermille: 950 },
+    attributes: { category: "health", importancePermille: 950, entities: ["青霉素"] },
   },
   {
     id: "coffee-new",
@@ -382,17 +382,42 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
               : {}),
         })
       ).map(({ productMemoryId }) => productMemoryId as string);
-    return { repository, memory, consolidation, clock, prompts, labels, run, read, searchable };
+    const indexed = (match: string) => {
+      const connection = openQualifiedDatabase(databasePath);
+      try {
+        return connection
+          .prepare(
+            `SELECT i.memory_id FROM memory_search_terms t
+            JOIN memory_search_index i ON i.rowid = t.rowid
+            WHERE memory_search_terms MATCH ? ORDER BY i.memory_id`,
+          )
+          .pluck()
+          .all(match) as string[];
+      } finally {
+        connection.close();
+      }
+    };
+    return {
+      repository,
+      memory,
+      consolidation,
+      clock,
+      prompts,
+      labels,
+      run,
+      read,
+      searchable,
+      indexed,
+    };
   }
 
-  it("[RULE-memory-visible] merges duplicates, supersedes old facts, archives idle trivia, keeps insights tentative and reviews sensitive memories too", async () => {
+  it("[RULE-memory-visible] merges duplicates, supersedes old facts, keeps idle trivia active, keeps insights tentative and reviews sensitive memories too", async () => {
     const resource = await fixture();
     try {
       const result = await resource.run();
       expect(result?.modelCalled).toBe(true);
       expect(result?.changes.map(({ action, memoryId }) => [action, memoryId]).sort()).toEqual(
         [
-          ["archive", "onigiri"],
           ["merge", "daughter-old"],
           ["reflect", `${result?.id}:insight:0`],
           ["supersede", "coffee-old"],
@@ -407,7 +432,6 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       });
       expect(ledger.map(({ outcome, subjectRef }) => [outcome, subjectRef]).sort()).toEqual(
         [
-          ["archive", "onigiri"],
           ["merge", "daughter-old"],
           ["reflect", `${result?.id}:insight:0`],
           ["supersede", "coffee-old"],
@@ -427,10 +451,6 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         memoryIds: ["coffee-old", "coffee-new"],
         resultMemoryIds: ["coffee-new"],
       });
-      expect(byOutcome.get("archive")?.inputs).toMatchObject({
-        memoryIds: ["onigiri"],
-        resultMemoryIds: [],
-      });
       expect([...(byOutcome.get("reflect")?.inputs.memoryIds ?? [])].sort()).toEqual([
         "run-a",
         "run-b",
@@ -445,7 +465,6 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       };
       expect(await basisOf("merge")).toEqual(["daughter-old", "daughter-new"]);
       expect(await basisOf("supersede")).toEqual(["coffee-old", "coffee-new"]);
-      expect(await basisOf("archive")).toEqual(["onigiri"]);
       expect((await basisOf("reflect")).sort()).toEqual(["run-a", "run-b"]);
       const reflectChain = await store.readBasisChain({
         ownerId: OWNER_ID,
@@ -456,7 +475,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       expect(reflectChain.ledgerId).toBe(byOutcome.get("reflect")?.id);
       expect(resource.prompts[0]).toContain("青霉素");
       expect(resource.labels[0]).toBe("sensitive");
-      expect((await resource.read("onigiri"))?.status).toBe("archived");
+      expect((await resource.read("onigiri"))?.status).toBe("active");
       expect((await resource.read("daughter-old"))?.status).toBe("archived");
       expect((await resource.read("coffee-old"))?.attributes).toMatchObject({
         supersededBy: "coffee-new",
@@ -488,7 +507,18 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           since: "1970-01-01T00:00:00.000Z",
           limit: 50,
         }),
-      ).toHaveLength(4);
+      ).toHaveLength(3);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[RULE-memory-visible] puts a sensitive memory's words and names in the search index after masking and leaves an unrecognised secret out", async () => {
+    const resource = await fixture();
+    try {
+      expect(resource.indexed('"青霉素"')).toEqual(["allergy"]);
+      expect(resource.indexed('"x9kq2mvb7lp4wz"')).toEqual([]);
+      expect((await resource.read("allergy"))?.attributes?.entities).toEqual(["青霉素"]);
     } finally {
       await resource.repository.close();
     }
@@ -550,7 +580,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       const changes = await resource.repository
         .memoryConsolidation()
         .listChanges({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 10 });
-      expect(changes).toHaveLength(4);
+      expect(changes).toHaveLength(3);
       for (const change of changes.filter(({ action }) => action !== "reflect"))
         await resource.consolidation.undo(change.id);
       expect((await resource.read("onigiri"))?.status).toBe("active");
@@ -567,7 +597,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       await expect(resource.consolidation.undo(reflect.id)).rejects.toThrow(
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
       );
-      const undone = changes.find(({ action }) => action === "archive");
+      const undone = changes.find(({ action }) => action === "merge");
       await expect(resource.consolidation.undo(undone?.id ?? "")).rejects.toThrow("undone");
       const ledger = await resource.repository.decisionLedger().list({
         ownerId: OWNER_ID,
@@ -576,10 +606,9 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
         since: "1970-01-01T00:00:00.000Z",
         limit: 50,
       });
-      expect(ledger).toHaveLength(4);
+      expect(ledger).toHaveLength(3);
       expect(ledger.map(({ outcome, ownerRating }) => [outcome, ownerRating]).sort()).toEqual(
         [
-          ["archive", "unneeded"],
           ["merge", "unneeded"],
           ["reflect", null],
           ["supersede", "unneeded"],
@@ -620,7 +649,7 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
           insights: [],
         });
       });
-      expect(result?.changes.map(({ action }) => action)).toEqual(["archive"]);
+      expect(result?.changes.map(({ action }) => action)).toEqual([]);
       expect((await resource.read("coffee-old"))?.attributes?.supersededBy).toBeNull();
     } finally {
       await resource.repository.close();

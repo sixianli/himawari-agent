@@ -32,19 +32,9 @@ import { localDay } from "./episodes.js";
 import { indexTerms } from "./segmentation.js";
 
 export const MEMORY_CONSOLIDATION_POLICY_VERSION = "memory-consolidation:v1";
-const DAY_MS = 86_400_000;
-const KEPT_FROM_DECAY: ReadonlySet<MemoryCategory> = new Set([
-  "rule",
-  "identity",
-  "relationship",
-  "health",
-  "finance",
-]);
 const MAXIMUM_FRESH = 20;
 const MAXIMUM_NEIGHBOURS = 3;
 const MAXIMUM_INSIGHTS = 3;
-const DECAY_IMPORTANCE = 400;
-const DECAY_IDLE_DAYS = 180;
 const MINIMUM_OVERLAP = 0.5;
 const MAXIMUM_QUOTE_CHARACTERS = 300;
 
@@ -245,14 +235,8 @@ export class MemoryConsolidationService {
       const active = (await this.#options.state.listActive(ownerId, agentId)).filter(
         (memory) => memory.status === "active",
       );
-      for (const memory of active) {
-        const change = await this.#decay(id, memory, startedAt);
-        if (change) changes.push(change);
-      }
-      const decayed = new Set(changes.map(({ memoryId }) => memoryId));
       const reviewable = active.filter(
         (memory) =>
-          !decayed.has(memory.id) &&
           isModelVisible(memory.dataClassification) &&
           (memory.attributes?.supersededBy ?? null) === null &&
           memory.attributes?.tentative !== true,
@@ -437,20 +421,6 @@ export class MemoryConsolidationService {
     if (!(await this.#options.store.markUndone({ id: change.id, undoneAt })))
       throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Consolidation change undone");
     return Object.freeze({ ...change, undoneAt });
-  }
-
-  async #decay(id: string, memory: ProductMemoryRecord, now: string) {
-    const attributes = memory.attributes;
-    if (
-      !attributes ||
-      attributes.tentative === true ||
-      KEPT_FROM_DECAY.has(attributes.category) ||
-      attributes.importancePermille >= DECAY_IMPORTANCE ||
-      (memory.useCount ?? 0) > 0 ||
-      Date.parse(now) - Date.parse(memory.lastUsedAt ?? memory.updatedAt) < DECAY_IDLE_DAYS * DAY_MS
-    )
-      return undefined;
-    return this.#revise(id, "archive", memory, null, { status: "archived" });
   }
 
   #supersede(id: string, older: ProductMemoryRecord, newer: ProductMemoryRecord) {

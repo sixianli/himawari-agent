@@ -16,7 +16,7 @@ import {
 } from "@himawari-agent/prompt-catalog";
 import type { Embedder } from "./embedding.js";
 import { instructedQuery } from "./embedding.js";
-import { indexTerms, queryTerms } from "./segmentation.js";
+import { indexableTerms, queryTerms } from "./segmentation.js";
 
 const DEFAULT_IDLE_MS = 2 * 3_600_000;
 const MAXIMUM_SEGMENT_MESSAGES = 120;
@@ -362,7 +362,8 @@ export class MemoryEpisodeService {
     });
     await this.#options.store.upsert({
       ...episode,
-      terms: input.indexed ? indexTerms(input.text) : [],
+      terms:
+        input.indexed && isModelVisible(input.dataClassification) ? indexableTerms(input.text) : [],
       embedding,
     });
     return episode;

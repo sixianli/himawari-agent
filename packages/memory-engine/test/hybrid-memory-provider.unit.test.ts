@@ -107,7 +107,7 @@ describe("hybrid Memory provider", () => {
     ]);
   });
 
-  it("keeps sensitive Memory out of the full-text index", async () => {
+  it("[RULE-memory-visible] indexes sensitive Memory words after masking and drops words that look like secrets", async () => {
     const { port, upserts } = index();
     const provider = new HybridMemoryProvider({
       index: port,
@@ -117,10 +117,29 @@ describe("hybrid Memory provider", () => {
     });
     await provider.upsert({
       memory: memory({ dataClassification: "sensitive" }),
+      content:
+        "主人对青霉素过敏，网银密码是 Abc12345xyz，备用口令 x9Kq2mVb7Lp4Wz，手机号 13800138000，iPhone15 很好用",
+    });
+    const terms = upserts[0]?.terms ?? [];
+    expect(terms).toEqual(expect.arrayContaining(["青霉素", "过敏", "iphone15"]));
+    expect(terms.join(" ")).not.toMatch(/abc12345xyz|x9kq2mvb7lp4wz|13800138000/u);
+    expect(upserts[0]?.embedding).not.toBeNull();
+  });
+
+  it("keeps restricted Memory out of the full-text index", async () => {
+    const { port, upserts } = index();
+    const provider = new HybridMemoryProvider({
+      index: port,
+      embedder: embedder(),
+      embeddableClassifications: ["public", "private", "sensitive"],
+      now: () => now,
+    });
+    await provider.upsert({
+      memory: memory({ dataClassification: "restricted" }),
       content: "主人对青霉素过敏",
     });
     expect(upserts[0]?.terms).toEqual([]);
-    expect(upserts[0]?.embedding).not.toBeNull();
+    expect(upserts[0]?.embedding).toBeNull();
   });
 
   it("writes the lexical index before reporting an embedding failure", async () => {

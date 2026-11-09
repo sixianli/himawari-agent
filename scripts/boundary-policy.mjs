@@ -38,6 +38,7 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/memory-engine",
     new Set([
+      "@himawari-agent/sensitive-capture",
       "@himawari-agent/prompt-catalog",
       "@himawari-agent/application",
       "@himawari-agent/domain",
