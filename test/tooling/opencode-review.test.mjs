@@ -448,6 +448,29 @@ describe("opencode review output", () => {
     expect(summary.usage.output).toBe(32000);
   });
 
+  it("reads a refusal out of the error field when the command printed nothing", () => {
+    const events = [
+      {
+        type: "tool_use",
+        part: {
+          tool: "bash",
+          state: {
+            input: { command: "git log -1 --output=../written.txt" },
+            status: "error",
+            output: "",
+            error: `${GIT_REFUSED} --output`,
+          },
+        },
+      },
+      { type: "text", part: { text: "done" } },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+    const [call] = summarizeEvents(events).toolCalls;
+    expect(call.output).toBe(`${GIT_REFUSED} --output`);
+    expect(probeRefused(call)).toBe(true);
+  });
+
   it("adds up tokens across tool steps and keeps the final text", () => {
     const events = [
       {
@@ -1096,11 +1119,11 @@ describe("opencode review installed guard", () => {
         expect(probeRefused({ status: "completed", output })).toBe(true);
       const localized = viaShell(`cd ${root}`, { LC_ALL: "ja_JP.UTF-8", LANG: "ja_JP.UTF-8" });
       expect(probeRefused({ status: "completed", output: localized.text })).toBe(true);
-      const locale = viaShell("echo ${LC_ALL-unset}/${LC_MESSAGES-unset}", {
+      const locale = viaShell('echo "[$LC_ALL]/[$LC_MESSAGES]"', {
         LC_ALL: "ja_JP.UTF-8",
         LC_MESSAGES: "ja_JP.UTF-8",
       });
-      expect(locale.text.trim()).toBe("unset/C");
+      expect(locale.text.trim()).toBe("[]/[C]");
       for (const command of [
         "git log -1 --oneline",
         "git show --stat HEAD",
@@ -1186,6 +1209,39 @@ describe("opencode review installed guard", () => {
     expect(env.GIT_CONFIG_GLOBAL).toBe("/dev/null");
     expect(env[GUARD_ENV]).toBe("/work/limits.json");
     expect(env.REVIEW_TEST_MARKER).toBe("kept");
+  });
+
+  it("[review env] extraEnv cannot supply the spend guard when the run has none", () => {
+    const env = opencodeChildEnv({
+      parentEnv: { PATH: "/usr/bin" },
+      cwd: "/work",
+      configPath: "/work/opencode.json",
+      limitsPath: undefined,
+      gitGuard: { binDir: "/guard/bin", shell: "/guard/shell/bash", configHome: "/guard/home" },
+      extraEnv: { [GUARD_ENV]: "/attacker/limits.json" },
+    });
+    expect(GUARD_ENV in env).toBe(false);
+  });
+
+  it("[review env] opencode and everything it starts report errors in English", () => {
+    const env = opencodeChildEnv({
+      parentEnv: {
+        PATH: "/usr/bin",
+        LANG: "ja_JP.UTF-8",
+        LC_ALL: "ja_JP.UTF-8",
+        LC_CTYPE: "ja_JP.UTF-8",
+      },
+      cwd: "/work",
+      configPath: "/work/opencode.json",
+      limitsPath: "/work/limits.json",
+      gitGuard: { binDir: "/guard/bin", shell: "/guard/shell/bash", configHome: "/guard/home" },
+      extraEnv: { LC_ALL: "ja_JP.UTF-8", LC_MESSAGES: "ja_JP.UTF-8", LANGUAGE: "ja_JP" },
+    });
+    expect("LC_ALL" in env).toBe(false);
+    expect(env.LC_MESSAGES).toBe("C");
+    expect(env.LANGUAGE).toBe("C");
+    expect(env.LANG).toBe("ja_JP.UTF-8");
+    expect(env.LC_CTYPE).toBe("ja_JP.UTF-8");
   });
 
   it("[review env] the real self-check passes with secrets in the script's environment", () => {

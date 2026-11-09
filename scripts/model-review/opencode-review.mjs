@@ -364,7 +364,7 @@ export function summarizeEvents(jsonl) {
         tool: part.tool,
         input: part.state?.input,
         status: part.state?.status,
-        output: String(part.state?.output ?? part.state?.error ?? ""),
+        output: String(part.state?.output || part.state?.error || ""),
       });
     }
     if (event.type === "step_finish") {
@@ -609,13 +609,13 @@ export function opencodeEnv(env) {
 export const SHELL_LOG_NAME = "review-shell.log";
 
 export function opencodeChildEnv({ parentEnv, cwd, configPath, limitsPath, gitGuard, extraEnv }) {
-  return {
+  const env = {
     ...opencodeEnv(parentEnv),
     ...extraEnv,
     PWD: cwd,
     OPENCODE_CONFIG: configPath,
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-    ...(limitsPath ? { [GUARD_ENV]: limitsPath } : {}),
+    [GUARD_ENV]: limitsPath,
     XDG_CONFIG_HOME: gitGuard.configHome,
     OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(OUTPUT_TOKEN_MAX),
     GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: "true",
@@ -623,9 +623,14 @@ export function opencodeChildEnv({ parentEnv, cwd, configPath, limitsPath, gitGu
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_PAGER: "cat",
     PAGER: "cat",
+    LC_MESSAGES: "C",
+    LANGUAGE: "C",
     PATH: `${gitGuard.binDir}${delimiter}${parentEnv.PATH ?? ""}`,
     SHELL: gitGuard.shell,
   };
+  delete env.LC_ALL;
+  if (!limitsPath) delete env[GUARD_ENV];
+  return env;
 }
 
 export function gitChildEnv(env) {

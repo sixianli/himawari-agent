@@ -374,7 +374,7 @@ describe("review delegation result check, hostile results", () => {
   });
   const commitAll = (f, message) => {
     f.run(f.cloud, "add", "-A");
-    f.run(f.cloud, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message);
+    f.run(f.cloud, "commit", "--quiet", "-m", message);
   };
 
   it(
@@ -433,19 +433,7 @@ describe("review delegation result check, hostile results", () => {
       f.run(f.cloud, "checkout", "--quiet", "feature");
       stage(f, { [`.agents/reviews/${KEY}/note.md`]: "n\n" });
       commitAll(f, "note");
-      f.run(
-        f.cloud,
-        "-c",
-        "user.name=t",
-        "-c",
-        "user.email=t@t",
-        "merge",
-        "--no-ff",
-        "--quiet",
-        "-m",
-        "merge",
-        "side",
-      );
+      f.run(f.cloud, "merge", "--no-ff", "--quiet", "-m", "merge", "side");
       f.push();
       expect(checkResult(f.task, { repo: f.mac }).reason).toBe("DELEGATION_MERGE_COMMIT");
     }),
@@ -612,7 +600,7 @@ describe("review delegation result check, legitimate edge cases", () => {
   };
   const commitCloud = (f, message) => {
     f.run(f.cloud, "add", "-A");
-    f.run(f.cloud, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", message);
+    f.run(f.cloud, "commit", "--quiet", "-m", message);
     f.push();
   };
 
