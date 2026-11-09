@@ -25,7 +25,7 @@ date: "2026-09-29"
 
 Himawari 在一台机器上由两个常驻进程组成：Agent Service（下称 Agent，负责对话、权限和数据库）和 Execution Worker（下称 Worker，负责实际执行工具）。两者通过本机 UDS（Unix domain socket，同一台机器上进程之间传数据的通道）通信。
 
-2026-09-28 的工具执行排查发现：Worker 单独退出、Agent 继续运行时，业务接口一律返回 `SERVICE_NOT_READY`，页面连“停止本轮”都点不了；工具结果如果还没来得及保存，就只能一直等下去（证据见 [stop-5](../../.ci-output/handoff/2026-09-28-codex-round2-stop-5.md)）。反过来，两个进程一起重启后，新的授权代次会让旧 Worker 失去提交权，恢复流程能明确地接着处理或结束原来的工具调用。
+2026-09-28 的工具执行排查发现：Worker 单独退出、Agent 继续运行时，业务接口一律返回 `SERVICE_NOT_READY`，页面连“停止本轮”都点不了；工具结果如果还没来得及保存，就只能一直等下去（证据见 stop-5（`.ci-output/handoff/2026-09-28-codex-round2-stop-5.md`））。反过来，两个进程一起重启后，新的授权代次会让旧 Worker 失去提交权，恢复流程能明确地接着处理或结束原来的工具调用。
 
 Hermes（局域网里运行 Himawari 的 Linux 服务器）上的启动脚本 `scripts/operations/hermes-ui-session-start.mjs` 已经这样做：任一子进程退出时，先停 Agent，再停仍在运行的 Worker，然后以非零状态退出，由 systemd（Linux 的服务管理程序）把整对进程重新拉起。Mac 上还没有常驻启动方式；[可移植耐久 Web Agent 计划](../execution/plans/2026-08-26-portable-durable-web-agent-plan.md)里规划了 launchd（macOS 负责开机启动和自动重启程序的服务管理机制）配置。这个规则要在做 Mac 启动方式之前定下来。
 

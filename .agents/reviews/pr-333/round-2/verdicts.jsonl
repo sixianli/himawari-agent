@@ -1,0 +1,7 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "只查行内 Markdown 链接，漏掉改号后同样会静默失效的两类 ADR 引用", "valid": true, "class": "error", "severity": "medium-high", "trigger": "改号后 superseded_by 字段或 [SOURCE: docs/adr/…] 里写的旧路径", "consequence": "这些旧路径断了检查仍通过，正是要防的漏改", "modelSeverity": "中"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`docs/adr` 自身没有沿用第 2 轮的“跳过符号链接”，不可信输入可拖住 `npm run check`", "valid": true, "class": "error", "severity": "medium-high", "trigger": "docs/adr 下放指向 /dev/zero 的 .md 符号链接", "consequence": "检查读不完而卡住；按拿不准处理为中高", "modelSeverity": "中"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档描述的范围比实现窄", "valid": true, "class": "error", "severity": "low", "trigger": "后来的人按文档措辞判断检查范围", "consequence": "范围措辞偏差，不会让人做错事", "modelSeverity": "低"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "第 2 轮新加的硬化没有自动检查，反向用例不覆盖", "valid": true, "class": "error", "severity": "low", "trigger": "把符号链接跳过改回去，测试仍全绿", "consequence": "缺能证明已确认错误的回归测试", "modelSeverity": "低"}
+{"id": "r2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "Markdown 链接正则覆盖不全，且会把代码块/行内代码里的示例当真链接", "valid": true, "class": "better"}
+{"id": "r2-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "以 `/` 开头的仓库内链接会被解析到文件系统根，产生误报", "valid": true, "class": "better"}
+{"id": "r2-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "锚点规则与 GitHub 不完全一致，且与 `check-instruction-links` 的同一逻辑重复", "valid": true, "class": "better"}

@@ -70,6 +70,7 @@ describe("npm run check", () => {
     expect(manifest.scripts["check:security-review"]).toBe(
       "vitest run --config vitest.workspace.ts --project tooling test/tooling/security-review.test.mjs",
     );
+    expect(names).toContain("check:docs-links");
     for (const name of names) expect(manifest.scripts[name], name).toBeTypeOf("string");
   });
 

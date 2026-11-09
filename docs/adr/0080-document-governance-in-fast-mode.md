@@ -68,7 +68,7 @@ ADR 0073 的决定 1、2、4、5、6 不变，照原文继续有效（生产机�
 
 - [ADR 0073：用 `DELIVERY_MODE` 开关切换快速交付和完整流程](0073-fast-delivery-mode.md)（被本 ADR 取代）
 - [ADR 0074：快速模式下由 Claude 直接执行生产上线、回滚和诊断](0074-claude-runs-production-deployments.md)
-- [快速模式规则](../../.agents/instructions/delivery-mode.md)、[文档治理规则](../../.claude/rules/document-governance.md)
+- [快速模式规则](../../.agents/instructions/delivery-mode.md)、文档治理规则（`.claude/rules/document-governance.md`，现已不在仓库里）
 - [工程案例库案例 13：快速交付模式](../engineering-casebook.md#case-fast-mode)
 
 [↑ 返回阅读导航](#contents)

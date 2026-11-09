@@ -22,7 +22,7 @@ date: "2026-09-28"
 - [reply-46：准备与心跳计时取证](#2026-10-02-reply-46准备与心跳计时取证)
 - [reply-06：D13 未复现的 Job Host 启动失败](#2026-10-03-reply-06d13-未复现的-job-host-启动失败)
 - [reply-47：D17 夹具前缀与短临时根](#2026-10-02-reply-47d17-夹具前缀与短临时根)
-- [D21：期限后交付测试的受控计时器](#d21-期限后交付测试的受控计时器)
+- [D21：期限后交付测试的受控计时器](#d21期限后交付测试的受控计时器)
 - [D13、D2：2026-10-03 取证未复现与用户决定](#d13d22026-10-03-取证未复现与用户决定)
 - [上线前修复范围与两个 Codex 并行（用户 2026-10-03 决定）](#上线前修复范围与两个-codex-并行用户-2026-10-03-决定)
 - [Linux 产品路径夹具的平台路径](#2026-10-04linux-产品路径夹具的平台路径)
@@ -38,9 +38,9 @@ date: "2026-09-28"
 
 ## 目标与边界
 
-2026-09-29 R1/B3/B6 批次：依据 [ADR 0033 决定第 2、5 条](../../adr/0033-process-sandbox-default-and-optional-containers.md#decision)，修正 Mac 资源观察器把脱离进程组本身判为 `host_failure` 的旧策略；只移除该分支及无用标记，保留资源上限、采样失败、PID 身份、期限和释放证明。先红后绿及测试层级见 [R1 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r1-verification.md)。B3 已在真实 Mac 确认更内层 Bash 等待继承管道的问题；按 [ADR 0040](../../adr/0040-background-output-closed-after-bash-returns.md#decision) 和 reply-27 改为主进程退出后输出连续安静 100ms 正常返回，保留已读输出与退出码；返回时关闭读端，说明明确晚写原通道可能使后台退出并建议重定向到文件，不实现 SANDBOX_OUTPUT_INCOMPLETE。说明不占命令字节额度，但计入整份结果上限，超限沿用 PI_RESULT_OUTPUT_LIMIT，不另设或放宽额度。测试先行、Pi 复用边界及真实 Mac 验收见 [B3 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b3-r27-verification.md)。现有后台列表不能列出前台 Bash 自行脱离进程组的后代，按裁定留为待办；本批只核对释放后的“停止未经严格确认”。本批不含 Linux/Hermes 或无筛选资格。
+2026-09-29 R1/B3/B6 批次：依据 [ADR 0033 决定第 2、5 条](../../adr/0033-process-sandbox-default-and-optional-containers.md#decision)，修正 Mac 资源观察器把脱离进程组本身判为 `host_failure` 的旧策略；只移除该分支及无用标记，保留资源上限、采样失败、PID 身份、期限和释放证明。先红后绿及测试层级见 R1 验证（`.ci-output/tool-execution-audit/2026-09-28/round2/r1-verification.md`）。B3 已在真实 Mac 确认更内层 Bash 等待继承管道的问题；按 [ADR 0040](../../adr/0040-background-output-closed-after-bash-returns.md#decision) 和 reply-27 改为主进程退出后输出连续安静 100ms 正常返回，保留已读输出与退出码；返回时关闭读端，说明明确晚写原通道可能使后台退出并建议重定向到文件，不实现 SANDBOX_OUTPUT_INCOMPLETE。说明不占命令字节额度，但计入整份结果上限，超限沿用 PI_RESULT_OUTPUT_LIMIT，不另设或放宽额度。测试先行、Pi 复用边界及真实 Mac 验收见 B3 验证（`.ci-output/tool-execution-audit/2026-09-28/round2/b3-r27-verification.md`）。现有后台列表不能列出前台 Bash 自行脱离进程组的后代，按裁定留为待办；本批只核对释放后的“停止未经严格确认”。本批不含 Linux/Hermes 或无筛选资格。
 
-按 `.ci-output/handoff/2026-09-28-codex-tool-execution-brief.md` 系统检查工具执行、停止、释放与结果交付，逐项复现并修复。初始版本为 `fc2b318`，分支为 `claude/isolated-tool-execution`，开始时工作区干净。本文是开放的排查计划，不代表全量验收完成。第一轮 TE-01 至 TE-06 的局部修复已完成，历史结果见[第五份回复后的诊断与测量](#第五份回复后的诊断与测量)。第二轮按新交接继续：TE-07 已提交；收尾阶段重启发现 TE-08；Claude 已拒绝宿主保存完整输出的提案，批准在原尝试失效且有签名退出和释放证明时写入 `SANDBOX_TOOL_RESULT_LOST` 并唯一交付。已按[前台输出恢复设计](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)完成本地修复验证，提交与报告见[TE-08 交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json)。LOST 提交 `77fb033` 保留；用户于 2026-09-29 追加批准方案 B，前台复用既有加密分块，恢复时导入普通 Payload。reply-4 撤回单副本优化，reply-5/6 明确成对重启及 Worker 离线时业务 HTTP 不可用的合同。方案 B 已通过本机定向验证和全量测试，提交记录见[方案 B 交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-delivery.json)；reply-7 的矛盾失败正文已通过真实回归，终态 pending 时间修复已通过组件测试，上一轮成对重启矩阵因主机名不一致的状态目录锁中止；[reply-8](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-8.md) 已将其裁定为环境启动阻塞，允许新隔离安装继续，并要求记录每次启动的主机名与锁身份。旧锁接管风险记录为独立 Backlog，待方案 B 后单独提交。reply-8 后 B7 的 22 项完整定向矩阵全部通过，包含真实 before-result 两种重启和六个宿主崩溃位置；48 条启动身份记录没有主机名变化或启动失败。原30对30性能增量288ms超门槛后已按 stop-8 停止；[reply-9](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-9.md) 批准先清理运行时副本再拆分诊断。10对10详细探针中位增量15.5ms，清理环境后原探针正式30对30为7976→7954.5ms，增量−21.5ms，满足100ms门槛。生产代码未改，原超标的具体原因仍不确定，全部测量及限制见[性能诊断](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-r9-performance-analysis.md)。完整 check 与第二次完整 npm test（4697项、零失败/跳过）已通过，四份Runbook已核对并显式封存；历史失败和当前进展见[第二轮证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/README.md)。完整审计尚未完成。
+按 `.ci-output/handoff/2026-09-28-codex-tool-execution-brief.md` 系统检查工具执行、停止、释放与结果交付，逐项复现并修复。初始版本为 `fc2b318`，分支为 `claude/isolated-tool-execution`，开始时工作区干净。本文是开放的排查计划，不代表全量验收完成。第一轮 TE-01 至 TE-06 的局部修复已完成，历史结果见[第五份回复后的诊断与测量](#第五份回复后的诊断与测量)。第二轮按新交接继续：TE-07 已提交；收尾阶段重启发现 TE-08；Claude 已拒绝宿主保存完整输出的提案，批准在原尝试失效且有签名退出和释放证明时写入 `SANDBOX_TOOL_RESULT_LOST` 并唯一交付。已按[前台输出恢复设计](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)完成本地修复验证，提交与报告见TE-08 交付记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json`）。LOST 提交 `77fb033` 保留；用户于 2026-09-29 追加批准方案 B，前台复用既有加密分块，恢复时导入普通 Payload。reply-4 撤回单副本优化，reply-5/6 明确成对重启及 Worker 离线时业务 HTTP 不可用的合同。方案 B 已通过本机定向验证和全量测试，提交记录见方案 B 交付记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-delivery.json`）；reply-7 的矛盾失败正文已通过真实回归，终态 pending 时间修复已通过组件测试，上一轮成对重启矩阵因主机名不一致的状态目录锁中止；reply-8（`.ci-output/handoff/2026-09-28-round2-claude-reply-8.md`） 已将其裁定为环境启动阻塞，允许新隔离安装继续，并要求记录每次启动的主机名与锁身份。旧锁接管风险记录为独立 Backlog，待方案 B 后单独提交。reply-8 后 B7 的 22 项完整定向矩阵全部通过，包含真实 before-result 两种重启和六个宿主崩溃位置；48 条启动身份记录没有主机名变化或启动失败。原30对30性能增量288ms超门槛后已按 stop-8 停止；reply-9（`.ci-output/handoff/2026-09-28-round2-claude-reply-9.md`） 批准先清理运行时副本再拆分诊断。10对10详细探针中位增量15.5ms，清理环境后原探针正式30对30为7976→7954.5ms，增量−21.5ms，满足100ms门槛。生产代码未改，原超标的具体原因仍不确定，全部测量及限制见性能诊断（`.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-r9-performance-analysis.md`）。完整 check 与第二次完整 npm test（4697项、零失败/跳过）已通过，四份Runbook已核对并显式封存；历史失败和当前进展见第二轮证据（`.ci-output/tool-execution-audit/2026-09-28/round2/README.md`）。完整审计尚未完成。
 
 来源：[隔离工具执行设计](../specs/2026-09-24-isolated-tool-execution-design.md) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]、[既有实施计划](2026-09-24-isolated-tool-execution-plan.md) [SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]、[ADR 0033](../../adr/0033-process-sandbox-default-and-optional-containers.md#decision) [SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]。
 
@@ -48,9 +48,9 @@ date: "2026-09-28"
 
 不下载依赖，不操作 Hermes，不修改交接中特别保护的部署证据目录。Claude 已通过第一份回复批准 `/tmp/hma-pp-*` 自动测试隔离安装的服务重启。其他重启仍须批准。需要改变状态所有权、外部合同或持久数据形状时，先交付设计提案供 Claude 审阅。2026-09-28 第二份回复通知部署结束，HEAD 已增加只涉及部署证据的 `20e60b6`；不因此获得 Hermes 操作授权。
 
-2026-09-29 reply-26 将旧程序执行器丢失末尾输出记为 B6，并入 R1/B3 批次。`runSandboxedProcess()` 不再把主进程 exit 直接当作输出收集完成；统一使用 platform-node 内部等待函数，读取到输出流结束，或主进程退出后连续安静 100ms。新输出重新计时，期限、取消和输出上限在等待期间继续有效；结构化字节结果不追加说明。真实同组后代延迟输出连续三次红测试及后续验证见 [B6 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b6-r26-verification.md)。B6 已独立提交 06cf5b5 并由 reply-27 审核通过；B3 共用该等待函数。晚到输出导致退出、说明导致整份结果超限的实测已由 ADR 0040 接受；新回归同时要求重定向到文件的后台程序在调用返回后继续写入且仍存活。最终第 3、4 层结果由 B3 验证记录给出，未执行前不声称批次完成。
+2026-09-29 reply-26 将旧程序执行器丢失末尾输出记为 B6，并入 R1/B3 批次。`runSandboxedProcess()` 不再把主进程 exit 直接当作输出收集完成；统一使用 platform-node 内部等待函数，读取到输出流结束，或主进程退出后连续安静 100ms。新输出重新计时，期限、取消和输出上限在等待期间继续有效；结构化字节结果不追加说明。真实同组后代延迟输出连续三次红测试及后续验证见 B6 验证（`.ci-output/tool-execution-audit/2026-09-28/round2/b6-r26-verification.md`）。B6 已独立提交 06cf5b5 并由 reply-27 审核通过；B3 共用该等待函数。晚到输出导致退出、说明导致整份结果超限的实测已由 ADR 0040 接受；新回归同时要求重定向到文件的后台程序在调用返回后继续写入且仍存活。最终第 3、4 层结果由 B3 验证记录给出，未执行前不声称批次完成。
 
-2026-10-02 reply-49 登记 R2-D20：云端完整验证中的 B6 期限测试已收到父进程退出后的 3 行输出，且期限分类正确，却因固定“大于 64 字节”断言失败。测试夹具改用 `/bin/sh`，同步旁路文件只在父进程退出后、每次 stdout 写入之后计数；断言要求至少有一行被确认写出，收到的行数等于计数或比计数多 1（终止发生在两次写之间），并核对完整输出内容。保留子进程启动延迟 500ms 的 `[R2-D20]` 回归，为父进程退出后到 1000ms 期限之间留出约 0.4 秒余量；原 1000ms 产品期限、退出码 7、期限分类、输出上限、取消和 tail 合同保持。可控延迟下旧断言先以 `expected 49 to be greater than 64` 失败，新的逐行核对与后续第 0–3 层原始报告见 [R2-D20 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r49-verification.md)。这项测试修正不改变 B6 产品实现；整轮完成与否仍由长任务证据计算。
+2026-10-02 reply-49 登记 R2-D20：云端完整验证中的 B6 期限测试已收到父进程退出后的 3 行输出，且期限分类正确，却因固定“大于 64 字节”断言失败。测试夹具改用 `/bin/sh`，同步旁路文件只在父进程退出后、每次 stdout 写入之后计数；断言要求至少有一行被确认写出，收到的行数等于计数或比计数多 1（终止发生在两次写之间），并核对完整输出内容。保留子进程启动延迟 500ms 的 `[R2-D20]` 回归，为父进程退出后到 1000ms 期限之间留出约 0.4 秒余量；原 1000ms 产品期限、退出码 7、期限分类、输出上限、取消和 tail 合同保持。可控延迟下旧断言先以 `expected 49 to be greater than 64` 失败，新的逐行核对与后续第 0–3 层原始报告见 R2-D20 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r49-verification.md`）。这项测试修正不改变 B6 产品实现；整轮完成与否仍由长任务证据计算。
 
 ## 必须成立的规则
 
@@ -82,7 +82,7 @@ date: "2026-09-28"
 
 ## 交错组合
 
-2026-09-29 已逐对核对 45 个组合，并补充控制观察、候选排期、文件结果恢复、恢复事务收尾与前台交付的可控竞争测试。完整的正反顺序、测试名、证据范围及限制见[45 对写者审计](../../../.ci-output/tool-execution-audit/2026-09-28/round2/writers-matrix.md)。这里的“已有保护”指该报告列出的实现和测试，不代表穷举所有调度排列；真实 Mac 产品资格另计。
+2026-09-29 已逐对核对 45 个组合，并补充控制观察、候选排期、文件结果恢复、恢复事务收尾与前台交付的可控竞争测试。完整的正反顺序、测试名、证据范围及限制见45 对写者审计（`.ci-output/tool-execution-audit/2026-09-28/round2/writers-matrix.md`）。这里的“已有保护”指该报告列出的实现和测试，不代表穷举所有调度排列；真实 Mac 产品资格另计。
 
 | 组合 | 当前结论 |
 | --- | --- |
@@ -141,12 +141,12 @@ date: "2026-09-28"
 | TE-03 | confirmed，局部修复完成：前台先进入 verifyFresh，后台完成核查/释放，旧序号导致 Observation replay changed，前台丢失交付机会 | `refreshes a foreground handoff overtaken during verification`：修改前 4 失败、2 通过，修改后 6 通过。`te03-before.log`、`te03-focused-after.log`；仅在派发前、版本确有改变时重新读取和核验，原 35 秒上限不变；相关回归、check、完整 npm test 通过，提交 `20377db` |
 | TE-04 | confirmed，局部修复已验证：Run 遇到 `runtime.result_unknown` 后保存 `RUNTIME_TOOL_RESULT_UNKNOWN` 且 output=null。自动恢复仅接受已有最终回答；资源释放不会自动消费工具结果 | 已核对 RunCoordinator、SQLite discovery、Pi 的 capture/restore 工具批次入口。既有测试明确拒绝重启时自动重放未知调用。Claude 已批准[恢复合同](../specs/2026-09-28-sandbox-tool-result-resumption-design.md)。已实现只交付入口；真实 SQLite 与生产调度/Pi 联合回归覆盖迟到结果、原进程中断、交付中断、批次恢复及拒绝边界，完整 npm test 4574 条通过，Mac 读取及写入交付中断恢复分别通过；完整任务验收仍待完成 |
 | TE-06 | partially confirmed：原现场首次准备失败的触发原因仍 uncertain；准备失败后丢失控制关联的恢复缺口 confirmed | 原现场 reserved、未 bind，控制关联缺失。真实 Job Host 受控 SDK 初始化失败探针复现：任务未启动、已签名结束文件可由原密钥核验，但 Agent 未持久保存控制关联，登记 ENOENT，恢复 SANDBOX_CONTROL_BINDING_UNAVAILABLE。已按第四、五份回复完成重点、真实安装、完整 npm test/check 与两版各30成功样本的性能验收；历史首次触发原因仍 uncertain，见[已批准的数据与顺序提案](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md) |
-| TE-07 | confirmed，局部修复已验证：真实 Mac 运行中停止后 Run 已取消、宿主和原进程组已退出，但签名终态保存的 `taskProcessGroupGone: false` 遮住后续进程身份核验，恢复结束为 unresolved，目录占用未释放 | `round2/stop-running-4` 为真实产品失败现场；可控认证 socket/真实进程用例 `verifies the original group after its signed final observation could not confirm cleanup` 在 inspect/stop 两路径先失败。沿用原签名开始记录、同开机身份检查和既有释放证明形状补核验；不延长期限、无迁移。控制证据 81 条、真实 Mac 停止回归、check 与完整 npm test 4608 条通过，4 份受影响 Runbook 已核对封存，修复提交 `f1519e7`；完整任务仍开放。进展见[第二轮证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/README.md) |
-| TE-08 | confirmed，已修复并通过本地验证：真实 SRT reset 后重启 Agent/Worker，完整 read 输出已从宿主到达 Worker，但只保存在 Worker 内存；重启后资源释放成功，result=null、intent=0、Run 停在 reconciling_external_result。签名控制终态不保存原输出与退出结果，既有结果发现又要求 result/error 已存在 | `round2/restart-1`：运行中重启和收尾不重启对照通过，收尾重启失败（2 通过、1 失败、15 未执行）。失败安装 `/private/tmp/hma-pp-Vp0WPJ`；`te08-red-readback.json` 为独立数据库和控制文件读回。完整原始输出不等于已被 Agent 认证接纳的成功结果。[先前 LOST 修复及后来批准的分块恢复补充](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)，测试和证据见[TE-08 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-verification.md)；该历史提交仅在已接受释放、原签名任务退出、无确定结果且原 fence 已失效时，用 operation revision 保存确定的 SANDBOX_TOOL_RESULT_LOST，再沿原 Pi 批次唯一交付；效果未知不改写，原输出保存前退出仍是明确保证边界。相关集成 469 条、旧写者 16 条、预算 2 条、Mac 定向 9 条及 IPC 接收补验 2 条通过；完整 npm test 4651 条通过，Runbook 已封存。提交见[TE-08 交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json)，整轮最终无筛选资格待后续执行 |
-| TE-11 | confirmed：累计事件单响应超过65,536字节；有界分页与A1轮询推进修复按reply-16独立交付 | 30项UDS矩阵、7项A1测试和73项相邻回归通过；原前置场景加连续30读8项通过。完整check通过，te11-full-2的4883项全通过且命令退出0；新[分页设计](../specs/2026-09-29-execution-event-pagination-design.md)和两份Runbook同步。A2失败测试与钩子不进入本提交，A2及最终无筛选资格仍未完成；[完整证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md) |
-| TE-10 | confirmed（可控 Host/Worker 边界）：主进程退出但输出管道未关闭，Host 如实报告 stdioClosed=false；Worker 却把传输结束当完整输出并保存成功结果 | `round2/te10-pipe-red-2` 为有效红测试：Host 证明测试通过，Worker 的 end=false 与非成功断言均失败。修复要求最终 flush 和 knownExit 明确 stdioClosed=true，保留前缀、未知结果、原清理与恢复边界；同测试 `te10-pipe-green-1` 2项通过，相邻首轮106项通过。完整check、重新构建、4855项npm test全部通过，四份Runbook重新封存、严格文档校验零警告。独立提交见[TE-10交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te10-delivery.json)；[TE-10 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te10-verification.md)。这不是实际 OS 管道泄漏或 Linux 平台验收 |
-| TE-09 | confirmed，已提交 `ac094b9`：两次真实300秒场景均按期限退出并认证释放，Run仍待核查。细分复验确认Agent未留清理汇报余量，Worker将deadline且exitCode:null的退出归为未知；本次结束块和普通Payload保存成功，旧场景缺块的具体RPC原因仍uncertain。原900秒后的无候选仅有SQL投影和源码证据 | `round2/deadline-1`及`round2/te09-r10-diagnostic-1`各为1失败、40筛选未执行。reply-10已批准工具超时错误一次交付并继续Run；仅到原Run期限才作failed兜底。reply-11已批准最小内部收尾端口及原子租约事务，见[到期收尾设计](../specs/2026-09-29-sandbox-deadline-settlement-design.md)。本机专项验证已通过；Worker真实300秒与Run90秒场景已通过。结束块保存后重启另确认普通恢复入口拒绝已过工具期限，reply-13批准限定期限用途并沿用Agent验签/SQLite绑定分工；相关SQLite整文件478项通过，第六版真实300秒恢复及22项受影响矩阵通过，补充边界10项通过；依赖边界检查发现新helper越层导入，复用既有application身份工厂后第七版90秒Run复验通过。完整check及npm test 4827项通过，四份Runbook已显式封存，严格文档校验零警告；[TE-09交付与提交记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-delivery.json)。整轮无筛选验收仍待后续执行。见[TE-09验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md#reply-10-细分诊断)及[stop-10](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-10.md) |
-| TE-08 方案 B | 已批准并完成本机实现验证，提交 `81a9fd2`：前台输出复用加密分块，结束块后服务退出可以在释放后恢复原字节；保留77fb033的合法LOST边界 | [方案 B 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-verification.md)保留早期失败、三方事务竞争、矛盾正文与终态pending时间红/绿证据。B7真实22项矩阵通过；reply-9原探针30对30中位增量−21.5ms通过，原288ms超标及因果不确定性保留。完整check通过；首次完整npm test的10项失败来自旧JobHost夹具缺completed，补齐后同文件17通过，第二次完整npm test为4697项全部通过、零失败与跳过。交付与提交见[方案 B 记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-delivery.json)。整轮无筛选资格仍待后续执行 |
+| TE-07 | confirmed，局部修复已验证：真实 Mac 运行中停止后 Run 已取消、宿主和原进程组已退出，但签名终态保存的 `taskProcessGroupGone: false` 遮住后续进程身份核验，恢复结束为 unresolved，目录占用未释放 | `round2/stop-running-4` 为真实产品失败现场；可控认证 socket/真实进程用例 `verifies the original group after its signed final observation could not confirm cleanup` 在 inspect/stop 两路径先失败。沿用原签名开始记录、同开机身份检查和既有释放证明形状补核验；不延长期限、无迁移。控制证据 81 条、真实 Mac 停止回归、check 与完整 npm test 4608 条通过，4 份受影响 Runbook 已核对封存，修复提交 `f1519e7`；完整任务仍开放。进展见第二轮证据（`.ci-output/tool-execution-audit/2026-09-28/round2/README.md`） |
+| TE-08 | confirmed，已修复并通过本地验证：真实 SRT reset 后重启 Agent/Worker，完整 read 输出已从宿主到达 Worker，但只保存在 Worker 内存；重启后资源释放成功，result=null、intent=0、Run 停在 reconciling_external_result。签名控制终态不保存原输出与退出结果，既有结果发现又要求 result/error 已存在 | `round2/restart-1`：运行中重启和收尾不重启对照通过，收尾重启失败（2 通过、1 失败、15 未执行）。失败安装 `/private/tmp/hma-pp-Vp0WPJ`；`te08-red-readback.json` 为独立数据库和控制文件读回。完整原始输出不等于已被 Agent 认证接纳的成功结果。[先前 LOST 修复及后来批准的分块恢复补充](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)，测试和证据见TE-08 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te08-verification.md`）；该历史提交仅在已接受释放、原签名任务退出、无确定结果且原 fence 已失效时，用 operation revision 保存确定的 SANDBOX_TOOL_RESULT_LOST，再沿原 Pi 批次唯一交付；效果未知不改写，原输出保存前退出仍是明确保证边界。相关集成 469 条、旧写者 16 条、预算 2 条、Mac 定向 9 条及 IPC 接收补验 2 条通过；完整 npm test 4651 条通过，Runbook 已封存。提交见TE-08 交付记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json`），整轮最终无筛选资格待后续执行 |
+| TE-11 | confirmed：累计事件单响应超过65,536字节；有界分页与A1轮询推进修复按reply-16独立交付 | 30项UDS矩阵、7项A1测试和73项相邻回归通过；原前置场景加连续30读8项通过。完整check通过，te11-full-2的4883项全通过且命令退出0；新[分页设计](../specs/2026-09-29-execution-event-pagination-design.md)和两份Runbook同步。A2失败测试与钩子不进入本提交，A2及最终无筛选资格仍未完成；完整证据（`.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md`） |
+| TE-10 | confirmed（可控 Host/Worker 边界）：主进程退出但输出管道未关闭，Host 如实报告 stdioClosed=false；Worker 却把传输结束当完整输出并保存成功结果 | `round2/te10-pipe-red-2` 为有效红测试：Host 证明测试通过，Worker 的 end=false 与非成功断言均失败。修复要求最终 flush 和 knownExit 明确 stdioClosed=true，保留前缀、未知结果、原清理与恢复边界；同测试 `te10-pipe-green-1` 2项通过，相邻首轮106项通过。完整check、重新构建、4855项npm test全部通过，四份Runbook重新封存、严格文档校验零警告。独立提交见TE-10交付记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te10-delivery.json`）；TE-10 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te10-verification.md`）。这不是实际 OS 管道泄漏或 Linux 平台验收 |
+| TE-09 | confirmed，已提交 `ac094b9`：两次真实300秒场景均按期限退出并认证释放，Run仍待核查。细分复验确认Agent未留清理汇报余量，Worker将deadline且exitCode:null的退出归为未知；本次结束块和普通Payload保存成功，旧场景缺块的具体RPC原因仍uncertain。原900秒后的无候选仅有SQL投影和源码证据 | `round2/deadline-1`及`round2/te09-r10-diagnostic-1`各为1失败、40筛选未执行。reply-10已批准工具超时错误一次交付并继续Run；仅到原Run期限才作failed兜底。reply-11已批准最小内部收尾端口及原子租约事务，见[到期收尾设计](../specs/2026-09-29-sandbox-deadline-settlement-design.md)。本机专项验证已通过；Worker真实300秒与Run90秒场景已通过。结束块保存后重启另确认普通恢复入口拒绝已过工具期限，reply-13批准限定期限用途并沿用Agent验签/SQLite绑定分工；相关SQLite整文件478项通过，第六版真实300秒恢复及22项受影响矩阵通过，补充边界10项通过；依赖边界检查发现新helper越层导入，复用既有application身份工厂后第七版90秒Run复验通过。完整check及npm test 4827项通过，四份Runbook已显式封存，严格文档校验零警告；TE-09交付与提交记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te09-delivery.json`）。整轮无筛选验收仍待后续执行。见TE-09验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md#reply-10-细分诊断`）及stop-10（`.ci-output/handoff/2026-09-28-codex-round2-stop-10.md`） |
+| TE-08 方案 B | 已批准并完成本机实现验证，提交 `81a9fd2`：前台输出复用加密分块，结束块后服务退出可以在释放后恢复原字节；保留77fb033的合法LOST边界 | 方案 B 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-verification.md`）保留早期失败、三方事务竞争、矛盾正文与终态pending时间红/绿证据。B7真实22项矩阵通过；reply-9原探针30对30中位增量−21.5ms通过，原288ms超标及因果不确定性保留。完整check通过；首次完整npm test的10项失败来自旧JobHost夹具缺completed，补齐后同文件17通过，第二次完整npm test为4697项全部通过、零失败与跳过。交付与提交见方案 B 记录（`.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-delivery.json`）。整轮无筛选资格仍待后续执行 |
 | TE-05 | confirmed（本机可控延迟），Hermes 当次因果仍 uncertain：finish 在异步清理前停止心跳，2 秒正常 reset/control.finish 等待期间心跳为 0，会触发 Worker 的 1.5 秒失联判断 | `te05-before.log` 两条失败；修复后心跳保持到清理结束，退出期限仍有效。`te05-after.log` 及 `te03-te05-regression.log`。使用真实 Job Host 入口、受控 OS/IPC/SRT 边界；不是磁盘满载实测，不推断 Hermes 历史失败根因；相关回归、check、完整 npm test 通过，提交 `266715d` |
 
 交接中的五个历史缺陷只作为线索；本轮不能把历史通过日志记成本轮验证。关于“后台核查导致所有故障”的说法目前仅 partially confirmed，仍需检查退出、停止及投递各自的窗口。
@@ -257,9 +257,9 @@ TE-04 已在本地提交 `58e6c48`，完整任务仍开放。按 Claude 第三�
 
 ### 第二轮剩余写者与诊断
 
-TE-09 已独立提交 `ac094b9`。其后补充的测试没有改变产品状态、协议或持久结构；验证操作结果竞争不会撤销释放、资源候选和观察受版本校验、前台只交付获胜的不可变结果。新增测试和诊断验证汇总见[写者与诊断报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/writers-verification.md)。
+TE-09 已独立提交 `ac094b9`。其后补充的测试没有改变产品状态、协议或持久结构；验证操作结果竞争不会撤销释放、资源候选和观察受版本校验、前台只交付获胜的不可变结果。新增测试和诊断验证汇总见写者与诊断报告（`.ci-output/tool-execution-audit/2026-09-28/round2/writers-verification.md`）。
 
-历史样本 13 的 `worker.rpc.reconcile` 仍缺少内部原因，真实 SQLite 已重现“已释放后旧序号请求被拒”的候选路径，但不能倒推为历史唯一根因。`resolve` 的内部异常会统一包装为 `SANDBOX_SCOPE_UNAVAILABLE`；新增测试探针只记录白名单原因，已通过核验前到期、核验中到期和私有异常脱敏测试。真实 300 秒复验通过，未出现 RPC 异常，因此旧 `resolve / UNKNOWN` 的确切触发原因仍未确认。完整证据见[诊断分析](../../../.ci-output/tool-execution-audit/2026-09-28/round2/unknown-diagnostics.md)。
+历史样本 13 的 `worker.rpc.reconcile` 仍缺少内部原因，真实 SQLite 已重现“已释放后旧序号请求被拒”的候选路径，但不能倒推为历史唯一根因。`resolve` 的内部异常会统一包装为 `SANDBOX_SCOPE_UNAVAILABLE`；新增测试探针只记录白名单原因，已通过核验前到期、核验中到期和私有异常脱敏测试。真实 300 秒复验通过，未出现 RPC 异常，因此旧 `resolve / UNKNOWN` 的确切触发原因仍未确认。完整证据见诊断分析（`.ci-output/tool-execution-audit/2026-09-28/round2/unknown-diagnostics.md`）。
 
 本阶段完整 check 通过；匹配当前提交的重新构建及完整 npm test 4853 项通过、零失败/跳过。该结果未包含随后静态发现的 W/H 管道未关闭候选缺口；其复现与处理将独立记录，不将整轮标为完成。
 
@@ -269,15 +269,15 @@ TE-09 已独立提交 `ac094b9`。其后补充的测试没有改变产品状态�
 
 ### 最终无筛选资格发现 TE-11
 
-TE-10已提交 `f635513`，4855项完整测试及check通过。随后从该HEAD重建，无筛选运行全部43项Mac产品资格（启用原性能基线），在同一服务累计作业后的第29次读取失败，7通过、1失败、35未执行，不能归档或宣称最终验收完成。详见[两轮总报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/round2-final-report.md)和[TE-11证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md)。该次停止时新增真实UDS红测试未提交、生产代码保持f635513；后续获批实现及A2新停止点见下一节。
+TE-10已提交 `f635513`，4855项完整测试及check通过。随后从该HEAD重建，无筛选运行全部43项Mac产品资格（启用原性能基线），在同一服务累计作业后的第29次读取失败，7通过、1失败、35未执行，不能归档或宣称最终验收完成。详见两轮总报告（`.ci-output/tool-execution-audit/2026-09-28/round2/round2-final-report.md`）和TE-11证据（`.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md`）。该次停止时新增真实UDS红测试未提交、生产代码保持f635513；后续获批实现及A2新停止点见下一节。
 
 ### reply-15 A2 恢复阻塞与后续审核
 
 TE-11有界分页及A1轮询推进已先红后绿，原连续30读在同一服务保留前置调用后通过。修复前本次前28读成功、第29读失败，阈值取决于累计事件大小，且之前还有前置工具调用；不能泛化为固定28次工具上限。
 
-A2真实安装故障注入确认：准备resolve的UDS响应断开后，预约reserved、无准备控制artifact、无释放回执，恢复停在unresolved；成对重启和原90秒Run期限后约40秒仍未进入终态。未放宽释放守卫或清占用，按[stop-14](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-14.md)提交准备封锁/释放证明提案。该段记录当时停止状态；reply-16裁定与独立提交范围见下节。
+A2真实安装故障注入确认：准备resolve的UDS响应断开后，预约reserved、无准备控制artifact、无释放回执，恢复停在unresolved；成对重启和原90秒Run期限后约40秒仍未进入终态。未放宽释放守卫或清占用，按stop-14（`.ci-output/handoff/2026-09-28-codex-round2-stop-14.md`）提交准备封锁/释放证明提案。该段记录当时停止状态；reply-16裁定与独立提交范围见下节。
 
-B1期限后撤销检查、B2终态通知、B3真实脱离进程组输出场景按reply-15顺序待做；B4非沙箱UNKNOWN无到期路径只记录不修。事件历史内存/重复读取Backlog尚待独立创建提交。性能历史+288ms未通过与清理后−21.5ms通过并列保留，新最终30对30尚未运行。详见[总报告待决与验收范围](../../../.ci-output/tool-execution-audit/2026-09-28/round2/round2-final-report.md#reply-15-待决与验收范围)。
+B1期限后撤销检查、B2终态通知、B3真实脱离进程组输出场景按reply-15顺序待做；B4非沙箱UNKNOWN无到期路径只记录不修。事件历史内存/重复读取Backlog尚待独立创建提交。性能历史+288ms未通过与清理后−21.5ms通过并列保留，新最终30对30尚未运行。详见总报告待决与验收范围（`.ci-output/tool-execution-audit/2026-09-28/round2/round2-final-report.md#reply-15-待决与验收范围`）。
 
 ### reply-16 TE-11 独立交付与 A2 前置检查
 
@@ -292,21 +292,21 @@ TE-11独立提交前，当前源码的73项相邻测试、完整npm run check通
 
 reply-17 已撤回 reply-16 的旧 unresolved 额外尝试；前节描述保留为历史要求，不再实施。新 SRT 计划带固定准备协议字段，旧计划缺省读取不回填，历史 Worker 在建宿主前由严格解析拒绝新字段。设计与静态历史证明见 [A2 准备封锁设计](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#第二轮-a2准备登记之前的封锁) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
 
-真实 SQLite 竞争、回滚、权限和旧计划矩阵已经通过。新版真实安装在原 Run 期限前接受 preparation_not_authorized，释放占用，持久结果为 SANDBOX_TOOL_NOT_STARTED，模型只收到一次固定中文说明并继续；成对重启无重复。单独的旧格式安装在重启及原期限后仍未释放、不产生模型工具回复。完整过程、测试夹具缺陷、数据库独立读回、检查及提交状态见 [A2 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-verification.md)。本段记录的历史协议在登记成功但 ACK 丢失时仍无终点；新协议另见下方 R2-D4，历史资格不因此扩大；D、E、B1 至 B3、Backlog 和最终无筛选资格尚待继续，不把 A2 定向通过当作整轮完成。
+真实 SQLite 竞争、回滚、权限和旧计划矩阵已经通过。新版真实安装在原 Run 期限前接受 preparation_not_authorized，释放占用，持久结果为 SANDBOX_TOOL_NOT_STARTED，模型只收到一次固定中文说明并继续；成对重启无重复。单独的旧格式安装在重启及原期限后仍未释放、不产生模型工具回复。完整过程、测试夹具缺陷、数据库独立读回、检查及提交状态见 A2 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-verification.md`）。本段记录的历史协议在登记成功但 ACK 丢失时仍无终点；新协议另见下方 R2-D4，历史资格不因此扩大；D、E、B1 至 B3、Backlog 和最终无筛选资格尚待继续，不把 A2 定向通过当作整轮完成。
 
 A2 提交前完整 `npm run check` 与 `npm test` 均退出 0，4,924 项全部通过、零失败/跳过。四份受影响 Runbook 语义核对后重新封存，严格校验零错误/警告。真实新旧安装的数据库以只读 immutable 方式独立复核，原文件摘要不变。
 
 
 ### D 准备失败诊断的断连恢复
 
-A2 已独立提交 `b97aae8`。其后确认 D：Payload UDS 传输异常清除连接状态，Worker catch 未握手就发诊断，诊断再次被拒。新增组件测试先有 2 条失败，复用原 peer 握手后完整生命周期 27 条通过；新旧真实安装的同一断连注入都通过 CLI 读回一条受保护 prepare / SANDBOX_PREPARATION_FAILED，且 A2 的新旧释放边界不变。只重建诊断通道，不重发 resolve 或原工具。握手/权限仍失败时不能保证诊断持久，未增加新接口或备用日志。完整验证与提交状态见 [D 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/d-verification.md)。
+A2 已独立提交 `b97aae8`。其后确认 D：Payload UDS 传输异常清除连接状态，Worker catch 未握手就发诊断，诊断再次被拒。新增组件测试先有 2 条失败，复用原 peer 握手后完整生命周期 27 条通过；新旧真实安装的同一断连注入都通过 CLI 读回一条受保护 prepare / SANDBOX_PREPARATION_FAILED，且 A2 的新旧释放边界不变。只重建诊断通道，不重发 resolve 或原工具。握手/权限仍失败时不能保证诊断持久，未增加新接口或备用日志。完整验证与提交状态见 D 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/d-verification.md`）。
 
 D 提交前完整 check、4,926 项 npm test、两项实际安装回归和四份 Runbook 封存均通过；严格文档校验零错误/警告。未增加接口或恢复用途。
 
 
 ### E container 预约自动恢复分流
 
-D 已独立提交 `33c1590`。E 的有效红测试先用 TaskEnvironmentCoordinator 产生真实环境释放回执，再由自动预约恢复读取；旧实现错误调用本机控制，独立 SQL 仍读到未释放占用。分流到现有 environments.releaseReservation 后，释放及重复 pump 幂等通过；环境仍运行与伪造回执的拒绝检查保留。定向容器路线与 SRT 封锁矩阵 39 项通过，完整 check 通过；构建与完整项目验证、提交状态见 [E 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/e-verification.md)。未新增接口、持久形状或重新调度规则，未执行 Docker/Linux 资格。
+D 已独立提交 `33c1590`。E 的有效红测试先用 TaskEnvironmentCoordinator 产生真实环境释放回执，再由自动预约恢复读取；旧实现错误调用本机控制，独立 SQL 仍读到未释放占用。分流到现有 environments.releaseReservation 后，释放及重复 pump 幂等通过；环境仍运行与伪造回执的拒绝检查保留。定向容器路线与 SRT 封锁矩阵 39 项通过，完整 check 通过；构建与完整项目验证、提交状态见 E 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/e-verification.md`）。未新增接口、持久形状或重新调度规则，未执行 Docker/Linux 资格。
 
 E 提交前完整 check、构建、4,928 项 npm test 全部通过，零失败/跳过；四份 Runbook 完成 dry-run、确认封存及 check，严格文档校验零错误/警告。被测源码与提交前源码逐文件相同。
 
@@ -317,7 +317,7 @@ E `cd276c3` 已获 Claude 独立审核通过；文档提交 `e0bce8e` 修正 A2 
 
 F 红测试确认同一生产 Worker 装配首次写输出断连后，第二次正常调用被 HANDSHAKE_REQUIRED 拒绝而 readiness 仍为 true；Admission 同样不能继续。现两个客户端共享内部并发握手机制，保留原身份、认证和握手校验，不重发失败业务。Worker 就绪探测可启动有界共享重握手，关闭仍拒绝迟到成功。D 的显式重连特例已删除，其两项回归使用真实 UDS 与通用生产客户端，诊断成功/握手失败及无原操作重发仍成立。
 
-定向 81 项已通过，包括原认证合同、8 项通道恢复矩阵、12 项 Worker 装配及 27 项生命周期；其中 Worker endpoint 依赖仍为测试 fetch，不是完整 SRT 资格。完整 check、build、npm test 和提交证据见 [F 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/f-verification.md)。实现与限制见 [F 设计说明](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#f通用-uds-断连恢复) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
+定向 81 项已通过，包括原认证合同、8 项通道恢复矩阵、12 项 Worker 装配及 27 项生命周期；其中 Worker endpoint 依赖仍为测试 fetch，不是完整 SRT 资格。完整 check、build、npm test 和提交证据见 F 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/f-verification.md`）。实现与限制见 [F 设计说明](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#f通用-uds-断连恢复) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
 
 2026-09-29，E 留下的终态 Run / 未绑定 container 环境停止缺口已按只读调用链确认并记录 [BL-20260929-004](../../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)，本轮不实现；期限恢复本身要求资源释放，不能把该缺口描述成已复现的到期后错误终态。整轮仍待 B1、B2、B3、其余 Backlog 与最终无筛选 Mac 资格。
 
@@ -328,18 +328,18 @@ F 红测试确认同一生产 Worker 装配首次写输出断连后，第二次�
 
 B1 已确认：真实交付意图提交后撤销 Grant/Handle，工具期限后的普通结果和固定期限错误仍可交付；解密期间撤权同样存在窗口。按 reply-21 批准新增只读 `assertResultAuthority`，在同一 SQLite 读快照复用原回执授权核验，持久回执期限加 35000ms 与原 Run 期限限制上界，调用方不能扩大。期限前路径及解密后检查保留，不改通信协议或数据库结构。合同见 [期限后的交付授权](../specs/2026-09-29-sandbox-foreground-result-durability-design.md#期限后的交付授权) [SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#期限后的交付授权]。
 
-第 0 层最终 80 项通过、第 1 层 check 通过；第 2 层首次 4471 项通过，两个安装测试文件因缺少构建输入未进入正文；补齐当前版本安装包及锁定 Python 后 7 项全部通过，最终覆盖 unit 2120 项与 integration 2358 项。证据、复跑命令及最终提交状态见 [B1 实施验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b1-r21-verification.md)。按 ADR 0038 和 reply-20，B1、B2、B3 各自第 0–2 层后独立提交，批次末执行第 3 层；B3 另须真实 Mac 定向验证。当前结果不代表本批或整轮验收完成。
+第 0 层最终 80 项通过、第 1 层 check 通过；第 2 层首次 4471 项通过，两个安装测试文件因缺少构建输入未进入正文；补齐当前版本安装包及锁定 Python 后 7 项全部通过，最终覆盖 unit 2120 项与 integration 2358 项。证据、复跑命令及最终提交状态见 B1 实施验证（`.ci-output/tool-execution-audit/2026-09-28/round2/b1-r21-verification.md`）。按 ADR 0038 和 reply-20，B1、B2、B3 各自第 0–2 层后独立提交，批次末执行第 3 层；B3 另须真实 Mac 定向验证。当前结果不代表本批或整轮验收完成。
 
 
 ### reply-21 B2：Run 到期标准通知
 
 B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉标准终态通知。现在与普通状态转换共用回执和网关事件写入函数，在同一个事务内保存命令回执、待发布 run.failed、线程版本与网关事件；稳定幂等键与原 Run/期限绑定，重复调用不重复写入。独立构造 dispatcher 的既有用法保持。没有表结构、迁移或外部端口变化，合同见 [Run 到期](../specs/2026-09-29-sandbox-deadline-settlement-design.md#run-到期) [SOURCE: docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md#run-到期]。
 
-第 0 层 54 项、第 1 层 check、第 2 层 unit 2120 项与 integration 2368 项全部通过；真实 SQLite 独立读回证明通知关联、重复调用及四处写入故障的整体回滚。失败记录、自查修正、最终提交与复跑方式见 [B2 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b2-r21-verification.md)。当前构建仅用于第 2 层安装测试并供 B3 复用，批次第 3 层及整轮资格未运行；下一项为真实 Mac 脱离进程组输出管道验证。
+第 0 层 54 项、第 1 层 check、第 2 层 unit 2120 项与 integration 2368 项全部通过；真实 SQLite 独立读回证明通知关联、重复调用及四处写入故障的整体回滚。失败记录、自查修正、最终提交与复跑方式见 B2 验证（`.ci-output/tool-execution-audit/2026-09-28/round2/b2-r21-verification.md`）。当前构建仅用于第 2 层安装测试并供 B3 复用，批次第 3 层及整轮资格未运行；下一项为真实 Mac 脱离进程组输出管道验证。
 
 ### reply-24 R2：合法结束原因不关闭 Agent
 
-当前批次改为 B1、B2、R2；R1 与 B3 留到下一会话。R2 按 Job Host 的实际六种结束原因划分恢复语义：exited/deadline 保持原条件，cancelled/output_limit/resource_limit/host_failure 完整校验后返回不可恢复，不导入输出、不重放，也不因合法原因触发 Agent authority loss。非法原因、矛盾字段、未退出、绑定/摘要/分块损坏继续拒绝。源码依据、测试失败原因和验证范围见 [R2 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r2-r24-verification.md)。
+当前批次改为 B1、B2、R2；R1 与 B3 留到下一会话。R2 按 Job Host 的实际六种结束原因划分恢复语义：exited/deadline 保持原条件，cancelled/output_limit/resource_limit/host_failure 完整校验后返回不可恢复，不导入输出、不重放，也不因合法原因触发 Agent authority loss。非法原因、矛盾字段、未退出、绑定/摘要/分块损坏继续拒绝。源码依据、测试失败原因和验证范围见 R2 验证（`.ci-output/tool-execution-audit/2026-09-28/round2/r2-r24-verification.md`）。
 
 已完成有效红测试和两个相关集成文件的回归，check 通过；随后运行第 2 层并独立提交，在 B3 补丁暂移开的已提交版本上执行本批第 3 层。实际运行结果及最终版本由验证报告记录。R1 尚未修改；B3 的旧“脱离后代存活即释放缺陷”判断已被 reply-23 撤销，当前未提交测试及 hma-pp-Vvii2j 现场继续保留，下一批按 ADR 0033 验证进程组释放与界面提示。
 
@@ -361,7 +361,7 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 
 2026-09-30 在 Hermes 上第一次跑整组单元测试，共 67 项失败，其中 64 项超时、3 项被权限检查拒绝：`/data` 是慢速机械硬盘，每次同步写入约 70 毫秒，根盘 NVMe 约 3 毫秒。用户决定测试运行中的临时数据改放根盘的任务目录，并加空间保护，其余内容仍放 `/data`，见 [ADR 0043](../../adr/0043-push-every-commit-full-test-before-merge.md#storage) [SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]。
 
-reply-32 将临时根解析集中到 `@himawari-agent/testing/temporary-root`，应用测试、根夹具和 CI 均通过包名导入。Hermes 使用短路径 `/tmp/h32`，每次运行前确认不存在并以 0700 创建；记录器采样根盘余量和临时目录占用，低于 10 GiB 停止，先保留现场再清理。三项权限失败已在 NVMe、`umask 0002` 下重现，均由测试夹具未指定权限造成；修正配置文件、绑定文件和运行时目录权限，生产检查保持严格。运行命令、报告、临时根核查、包解析检查和完整验证进度见[本次验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r32-verification.md)。
+reply-32 将临时根解析集中到 `@himawari-agent/testing/temporary-root`，应用测试、根夹具和 CI 均通过包名导入。Hermes 使用短路径 `/tmp/h32`，每次运行前确认不存在并以 0700 创建；记录器采样根盘余量和临时目录占用，低于 10 GiB 停止，先保留现场再清理。三项权限失败已在 NVMe、`umask 0002` 下重现，均由测试夹具未指定权限造成；修正配置文件、绑定文件和运行时目录权限，生产检查保持严格。运行命令、报告、临时根核查、包解析检查和完整验证进度见本次验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r32-verification.md`）。
 
 NVMe 上整组 unit 首次复验为 2,143 通过、1 失败，原 67 项均已通过。新增失败来自测试把文件权限迅速改回原值，却假定状态变更时间一定不同；真实元数据诊断证实这个假定不稳定。夹具改为保留不可读权限，直接验证仅元数据读取和指纹变化，保留原断言；生产验证器未修改。定向的 Worker 与安装核验 45 项已通过，整组和最终验证结果由上述验证记录更新。
 
@@ -370,20 +370,20 @@ NVMe 上整组 unit 首次复验为 2,143 通过、1 失败，原 67 项均已�
 
 ### reply-33：Job Host 加载期间的启动监督
 
-本批按 [reply-33](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-33.md) 先修 Job Host 启动，再为 MCP 连接与 Agent 子测试接受超时各取 20 次证据；后两项不得先改产品或放宽期限。第 3 层与 Linux 无筛选资格等两项归因及获准修复完成后，在批次最终版本统一运行。本轮不运行 Mac 测试，用户已无限期推迟包括共享 Job Host 代码在内的 Mac 验证，不再排期，Mac 行为未验证。
+本批按 reply-33（`.ci-output/handoff/2026-09-28-round2-claude-reply-33.md`） 先修 Job Host 启动，再为 MCP 连接与 Agent 子测试接受超时各取 20 次证据；后两项不得先改产品或放宽期限。第 3 层与 Linux 无筛选资格等两项归因及获准修复完成后，在批次最终版本统一运行。本轮不运行 Mac 测试，用户已无限期推迟包括共享 Job Host 代码在内的 Mac 验证，不再排期，Mac 行为未验证。
 
-Job Host 修复保留全部认证、消息类型、签名格式及原期限：先处理 IPC 和发送认证心跳，再动态加载 SRT 与策略模块；消息新鲜度按到达时判断，加载失败记录 dependencies 阶段。固定 2.5 秒加载延迟的集成红测试在 `4eeac7e` 上复现 `JOB_HOST_HEARTBEAT_EXPIRED` 与 `srtReset=false`。设计见[启动监督合同](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)；实际各层结果、输入补丁和停止边界见[本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r33-verification.md)。
+Job Host 修复保留全部认证、消息类型、签名格式及原期限：先处理 IPC 和发送认证心跳，再动态加载 SRT 与策略模块；消息新鲜度按到达时判断，加载失败记录 dependencies 阶段。固定 2.5 秒加载延迟的集成红测试在 `4eeac7e` 上复现 `JOB_HOST_HEARTBEAT_EXPIRED` 与 `srtReset=false`。设计见[启动监督合同](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)；实际各层结果、输入补丁和停止边界见本批验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r33-verification.md`）。
 第 0 层准备监督 6 项与入口 82 项通过；第 1 层 `npm run check` 通过。第 2 层相关 integration 为 19 个文件、437 项通过；unit 整组为 2143 通过、1 失败，失败是本批另一项 MCP active 连接超时，因此暂不能提交 Job Host 修复。已继续执行原授权的测试侧阶段取证，保留失败现场，不为求绿重复整组；准确输入与逐次结果见上述验证记录。
 
-固定取证已完成：MCP 冷缓存 9/10 通过、热缓存 10/10 通过；唯一失败保留 probe 发出 server/discover 后 3 秒到期、测试服务模块尚未加载完成的时间线。该 3 秒来自原请求资源上限，尚未改产品期限或夹具。Agent 冷、热各 10 次及一次相关并发对照均通过，原 15 秒失败的根因仍 uncertain，不标为修复或接受为限制。附加并发对照 436/437 通过，新出现 prepared-file-runner 准备子进程 20 秒超时，尚不能区分模块导入和 prepare 逻辑；按 brief 第 5 节停止扩展诊断并交 Claude 决定。无新提交，第 3 层和无筛选资格未运行。详细分类、未验证部分及下一步范围见 [stop-30](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-30.md)。
+固定取证已完成：MCP 冷缓存 9/10 通过、热缓存 10/10 通过；唯一失败保留 probe 发出 server/discover 后 3 秒到期、测试服务模块尚未加载完成的时间线。该 3 秒来自原请求资源上限，尚未改产品期限或夹具。Agent 冷、热各 10 次及一次相关并发对照均通过，原 15 秒失败的根因仍 uncertain，不标为修复或接受为限制。附加并发对照 436/437 通过，新出现 prepared-file-runner 准备子进程 20 秒超时，尚不能区分模块导入和 prepare 逻辑；按 brief 第 5 节停止扩展诊断并交 Claude 决定。无新提交，第 3 层和无筛选资格未运行。详细分类、未验证部分及下一步范围见 stop-30（`.ci-output/handoff/2026-09-28-codex-round2-stop-30.md`）。
 
 ### reply-34：MCP 测试夹具的准备成本
 
-按 [reply-34](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-34.md) 保留请求资源上限中的 3000ms 连接期限。此前 Hermes 冷缓存失败发生在 echo 夹具从机械盘加载官方 SDK 和 zod 期间，没有进入工具调用；这是已复现的测试夹具加载问题，不能解释所有缺少阶段记录的历史失败。
+按 reply-34（`.ci-output/handoff/2026-09-28-round2-claude-reply-34.md`） 保留请求资源上限中的 3000ms 连接期限。此前 Hermes 冷缓存失败发生在 echo 夹具从机械盘加载官方 SDK 和 zod 期间，没有进入工具调用；这是已复现的测试夹具加载问题，不能解释所有缺少阶段记录的历史失败。
 
 测试使用仓库已安装的 Vite 8.2.2，将 echo 夹具和官方 SDK 依赖打成一个临时模块，再启动真实 Node stdio 子进程。产物位于测试 TMPDIR；Hermes 的记录器同时把 TMPDIR 和 HIMAWARI_TEST_TEMP_ROOT 指向根盘的任务自有 0700 目录。无需下载或新增依赖，不更改产品构建与 MCP 协议。测试继续核对服务身份、版本、当前权限和受保护输出，并用 preload 注入 4000ms 启动延迟，断言原 3000ms 连接失败且没有工具调用或输出写入。
 
-冷、热各 10 次验收以及第 0–2 层的实际命令、版本和结果保留在[reply-34 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r34-verification.md)。冷/热标签描述运行之前对任务文件缓存的控制；测试准备阶段生成的新 bundle 自然经过写入，不宣称它是完全未驻留的冷文件。此项没有改变产品能力，也没有取得新的平台隔离资格。
+冷、热各 10 次验收以及第 0–2 层的实际命令、版本和结果保留在reply-34 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r34-verification.md`）。冷/热标签描述运行之前对任务文件缓存的控制；测试准备阶段生成的新 bundle 自然经过写入，不宣称它是完全未驻留的冷文件。此项没有改变产品能力，也没有取得新的平台隔离资格。
 
 Hermes 验收已完成：冷、热各10次，每次成功、撤权、固定超时三个场景，合计60/60通过；正常连接冷缓存中位303.90ms、最大338.33ms，热缓存中位333.11ms、最大411.54ms。包含待提交 Job Host 修复的组合补丁（基座 `5df887e`，第2层补丁 `fdfa46f4…`）通过定向86项、`npm run check`、unit 2145项及相关 integration 439项。严格文档校验0警告；没有运行第3层或完整产品资格。
 
@@ -393,7 +393,7 @@ contracts 导入失败时，Worker 原来只能看到 host_failure，无法从�
 
 Hermes 返工回归8/8通过：慢导入、同步准备、原30秒准备上限、SRT与contracts导入失败、准备期间任务到期、过期消息、签名终态和释放依据读回。MCP 已先以 `f1af23f` 提交并推送；随后在同一代码补丁上重跑整组 unit，2145/2145通过，提交前 `npm run check` 再次通过；相关19文件 integration 的439/439结果因代码未变继续有效。架构、准备控制 Spec 与四份 Runbook 同步更新并封存；Mac 验证无限期推迟，仍未验证。
 
-本批随后仅为 prepared-file-runner 的20秒子进程期限增加失败阶段和工作根留存，在原19文件并发冷5次以及单文件冷5/热5中取证；判定和建议修法交 Claude 审阅后才能实施。Agent 原15秒失败继续开放，不再单独重复，等待后续第3层的失败证据。第3层与 Linux 无筛选资格此时均未运行。实际版本、命令和结果见[reply-34 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r34-verification.md)。
+本批随后仅为 prepared-file-runner 的20秒子进程期限增加失败阶段和工作根留存，在原19文件并发冷5次以及单文件冷5/热5中取证；判定和建议修法交 Claude 审阅后才能实施。Agent 原15秒失败继续开放，不再单独重复，等待后续第3层的失败证据。第3层与 Linux 无筛选资格此时均未运行。实际版本、命令和结果见reply-34 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r34-verification.md`）。
 
 ## 2026-09-30 用户暂停
 
@@ -401,30 +401,30 @@ Hermes 返工回归8/8通过：慢导入、同步准备、原30秒准备上限�
 
 ## 2026-10-01 恢复：reply-35 期限分类与 prepared 夹具
 
-[reply-35](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-35.md) 明确批准两个修复，原期限和断言全部保留。当前工作顺序为：
+reply-35（`.ci-output/handoff/2026-09-28-round2-claude-reply-35.md`） 明确批准两个修复，原期限和断言全部保留。当前工作顺序为：
 
 1. 期限分类先确认红测试，再修复；通过第 0–2 层、同步文档并复核封存受影响 Runbook 后独立提交、立即推送。相等边界必须归任务期限，取消/结束后不再分类，见[期限诊断合同](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#deadline-classification)。
-2. prepared 原失败仅在 Hermes 机械盘上确认；云端原基线冷 5 次、热 5 次合计 110/0，19 文件并发中也是 11/0，未复现这项失败。按 [reply-46 撤回复制候选](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-46.md#4-preparedd2撤回复制候选保留取证)，撤回开发模式的 `statfs` 检查及完整运行时复制，保留失败现场、子进程 `process_started`、`module_imported`、`prepare_started`、`prepare_finished` 阶段记录和产物模式的 `testTemporaryRoot()`。原 20000ms 包装期限与 10000ms 资源上限保留。这不是 D2 已修复的证明；stop-37 曾有一次 19 文件并发导入超时，剩余风险由 Pi 准备线程冷 5 次、热 5 次测量跟进。证据仍保留在 `/srv/himawari-test/round2/evidence/r36/`，每次云端测试的独占根改按 [ADR 0045 存放规则](../../adr/0045-short-test-temp-root.md#storage)通过 `mktemp -d /tmp/hXXXX` 创建，核对 10 字节、UID 1001、0700 和真实路径；失败现场先保留再删除精确运行根。新主机只有固态盘，云端结果不能证明历史机械盘失败已解决，也不能证明产品安装在机械盘上的启动速度合适。
-3. 保存已有失败阶段及工作根取证。按 [reply-37](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-37.md)，MCP 夹具保留 `os.tmpdir()`，由记录器将 `TMPDIR` 指向本次scratch；不新增testing依赖，不改锁文件和边界规则。只读审查产品子进程/线程的时限起点、模块加载和准备预算，明确区分静态时序与真实缺陷；不自动修复审查发现的新问题。
+2. prepared 原失败仅在 Hermes 机械盘上确认；云端原基线冷 5 次、热 5 次合计 110/0，19 文件并发中也是 11/0，未复现这项失败。按 reply-46 撤回复制候选（`.ci-output/handoff/2026-09-28-round2-claude-reply-46.md#4-preparedd2撤回复制候选保留取证`），撤回开发模式的 `statfs` 检查及完整运行时复制，保留失败现场、子进程 `process_started`、`module_imported`、`prepare_started`、`prepare_finished` 阶段记录和产物模式的 `testTemporaryRoot()`。原 20000ms 包装期限与 10000ms 资源上限保留。这不是 D2 已修复的证明；stop-37 曾有一次 19 文件并发导入超时，剩余风险由 Pi 准备线程冷 5 次、热 5 次测量跟进。证据仍保留在 `/srv/himawari-test/round2/evidence/r36/`，每次云端测试的独占根改按 [ADR 0045 存放规则](../../adr/0045-short-test-temp-root.md#storage)通过 `mktemp -d /tmp/hXXXX` 创建，核对 10 字节、UID 1001、0700 和真实路径；失败现场先保留再删除精确运行根。新主机只有固态盘，云端结果不能证明历史机械盘失败已解决，也不能证明产品安装在机械盘上的启动速度合适。
+3. 保存已有失败阶段及工作根取证。按 reply-37（`.ci-output/handoff/2026-09-28-round2-claude-reply-37.md`），MCP 夹具保留 `os.tmpdir()`，由记录器将 `TMPDIR` 指向本次scratch；不新增testing依赖，不改锁文件和边界规则。只读审查产品子进程/线程的时限起点、模块加载和准备预算，明确区分静态时序与真实缺陷；不自动修复审查发现的新问题。
 4. 在批次最终版本完成第 3 层构建与完整 `npm test`，逐条读取报告；如 Agent 15 秒接受期限再次失败，保留阶段和工作根现场。Mac 验证仍无限期推迟。
 
-用户先说明开发 Mac 的 Tailscale 已停止，并明确允许等待期间先在本地编写红测试及修复；随后更新指示：Hermes 不再可用，禁止连接或运行命令；测试改到 `84.247.157.41`，Claude 将在新 reply 文件提供访问方式和测试目录规则。在收到该文件前只做本地编辑和只读审查，不连接云服务器，不在 Mac 上运行测试、构建或 `npm run check`。收到规则后再重放原代码的红测试和 prepared 对照，再运行候选；不得将新测试主机的结果直接替代旧 Hermes 机械盘对照。开始版本为 `86e0f66`，新测试补丁与 prepared 原文件已独立保存，以免候选覆盖修复前输入；恢复之初的准备记录见[本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r35-verification.md)，当时尚未验证或提交；后续实际结果见下文。
+用户先说明开发 Mac 的 Tailscale 已停止，并明确允许等待期间先在本地编写红测试及修复；随后更新指示：Hermes 不再可用，禁止连接或运行命令；测试改到 `84.247.157.41`，Claude 将在新 reply 文件提供访问方式和测试目录规则。在收到该文件前只做本地编辑和只读审查，不连接云服务器，不在 Mac 上运行测试、构建或 `npm run check`。收到规则后再重放原代码的红测试和 prepared 对照，再运行候选；不得将新测试主机的结果直接替代旧 Hermes 机械盘对照。开始版本为 `86e0f66`，新测试补丁与 prepared 原文件已独立保存，以免候选覆盖修复前输入；恢复之初的准备记录见本批验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r35-verification.md`），当时尚未验证或提交；后续实际结果见下文。
 
-reply-36 已提供云端环境和目录规则，当前从 `64b3b8d` 重放红测试并验证候选。普通测试账号、10GiB 空间门槛、失败现场先保留再清理和每次提交立即推送目前遵循 [ADR 0045](../../adr/0045-short-test-temp-root.md#storage)。第 0–2 层之后、第 3 层之前，另用真实构建运行时测量 Pi Worker 从创建到 `started` 的冷 5 次、热 5 次耗时；中位数超过 2000ms 时仅提出复现思路，交 Claude 裁定，不自行修改产品预算。证据写入[云端本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r36-verification.md)。
+reply-36 已提供云端环境和目录规则，当前从 `64b3b8d` 重放红测试并验证候选。普通测试账号、10GiB 空间门槛、失败现场先保留再清理和每次提交立即推送目前遵循 [ADR 0045](../../adr/0045-short-test-temp-root.md#storage)。第 0–2 层之后、第 3 层之前，另用真实构建运行时测量 Pi Worker 从创建到 `started` 的冷 5 次、热 5 次耗时；中位数超过 2000ms 时仅提出复现思路，交 Claude 裁定，不自行修改产品预算。证据写入云端本批验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r36-verification.md`）。
 
-reply-37 已裁定撤销MCP helper候选，恢复第1–2层验证。系统bwrap0.9.0用于本批SRT/Job Host路径；不升级或下载0.11.2，不放宽program/MCP隔离后端的版本门槛。如果实际测试出现 `BACKEND_VERSION_UNSUPPORTED`，保留现场后交Claude裁定。本次后续结果见[reply-37验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r37-verification.md)。
+reply-37 已裁定撤销MCP helper候选，恢复第1–2层验证。系统bwrap0.9.0用于本批SRT/Job Host路径；不升级或下载0.11.2，不放宽program/MCP隔离后端的版本门槛。如果实际测试出现 `BACKEND_VERSION_UNSUPPORTED`，保留现场后交Claude裁定。本次后续结果见reply-37验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r37-verification.md`）。
 
-reply-37 后云端第1层通过；完整unit组2150项中2134通过、16失败，Job Host 30项全部通过。失败位于5个文件，都是原5000ms测试期限；保持配置与断言不变的定向检查仍有4个文件15项失败，另外有超时后的目录清理错误。根因未确认，没有归因于bwrap版本或内存不足。按brief的范围边界写[stop-34](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-34.md)，由Claude裁定这些范围外超时的调查范围；第2层未通过，不提交或推送，不把Runbook封存或后续prepared/Pi/第3层标为完成。失败现场已保留，每次scratch均清理。
+reply-37 后云端第1层通过；完整unit组2150项中2134通过、16失败，Job Host 30项全部通过。失败位于5个文件，都是原5000ms测试期限；保持配置与断言不变的定向检查仍有4个文件15项失败，另外有超时后的目录清理错误。根因未确认，没有归因于bwrap版本或内存不足。按brief的范围边界写stop-34（`.ci-output/handoff/2026-09-28-codex-round2-stop-34.md`），由Claude裁定这些范围外超时的调查范围；第2层未通过，不提交或推送，不把Runbook封存或后续prepared/Pi/第3层标为完成。失败现场已保留，每次scratch均清理。
 
-reply-38按用户决定批准`HIMAWARI_TEST_TIMEOUT_MS=30000`只替换没有自设时限的项目默认值，integration、hook、用例显式时限和产品期限不变。配置及tooling合同测试已独立提交并推送`cc57e0e`：红测16项中15失败，绿测16/16通过，第1层通过，tooling整组41文件1132项通过；配置提交的严格文档校验0错误/0警告，相关Hermes历史Runbook已复核封存。Job Host完整unit在同一30000ms条件下144文件中143通过/1失败、2150项中2149通过/1失败；Job Host30项与旧16项超时全部通过，16项耗时均低于15000ms。新失败是原MCP/HTTP能力测试的Retry-After发送间隔985.293ms小于原990ms断言，根因uncertain；原19文件integration没有启动。另静态确认正式npm test的隔离env未透传新变量，直接Vitest通过不能代替此入口验证。按brief边界写[stop-35](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-35.md)，不改断言或再放宽；Job Host提交及4份Runbook封存、prepared campaign、Pi测量、提前和最终第3层均未完成。结果见[reply-38验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r38-verification.md)，Mac仍未验证。
+reply-38按用户决定批准`HIMAWARI_TEST_TIMEOUT_MS=30000`只替换没有自设时限的项目默认值，integration、hook、用例显式时限和产品期限不变。配置及tooling合同测试已独立提交并推送`cc57e0e`：红测16项中15失败，绿测16/16通过，第1层通过，tooling整组41文件1132项通过；配置提交的严格文档校验0错误/0警告，相关Hermes历史Runbook已复核封存。Job Host完整unit在同一30000ms条件下144文件中143通过/1失败、2150项中2149通过/1失败；Job Host30项与旧16项超时全部通过，16项耗时均低于15000ms。新失败是原MCP/HTTP能力测试的Retry-After发送间隔985.293ms小于原990ms断言，根因uncertain；原19文件integration没有启动。另静态确认正式npm test的隔离env未透传新变量，直接Vitest通过不能代替此入口验证。按brief边界写stop-35（`.ci-output/handoff/2026-09-28-codex-round2-stop-35.md`），不改断言或再放宽；Job Host提交及4份Runbook封存、prepared campaign、Pi测量、提前和最终第3层均未完成。结果见reply-38验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r38-verification.md`），Mac仍未验证。
 
 ## 2026-10-01 reply-39：D11 与正式测试入口
 
-[reply-39](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-39.md) 批准新增 D11：能力 GET 不能早于服务器要求的重试时刻。单次 985.293ms 失败的具体时钟滞后仍 uncertain；确定性回归已确认旧代码缺少等待后的单调时钟复核。修复保持原总期限、取消信号、两次发送上限、250ms 下限及原 990ms 断言，合同见[只读 HTTP 重试时刻](../specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry]。
+reply-39（`.ci-output/handoff/2026-09-28-round2-claude-reply-39.md`） 批准新增 D11：能力 GET 不能早于服务器要求的重试时刻。单次 985.293ms 失败的具体时钟滞后仍 uncertain；确定性回归已确认旧代码缺少等待后的单调时钟复核。修复保持原总期限、取消信号、两次发送上限、250ms 下限及原 990ms 断言，合同见[只读 HTTP 重试时刻](../specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry]。
 
 正式测试入口的变量透传已提交、推送 `98b3822`：真实入口调用链的合同探针在修复前 3 项中 2 项失败，修复后与相邻配置检查共 21 项通过，第 1 层通过。该探针独立读回 5 个真实子进程的环境，不代表完整产品测试已经通过。
 
-D11 的 3 项确定性回归已先失败再通过；完整能力测试文件 32 项通过。第 2 层按 ruling 延后到包含入口、D11 和 Job Host 三个提交的合并版本，运行完整 unit 与原 19 个 integration 文件；随后通过正式 `npm test` 入口提前执行第 3 层，最后仍在本批最终版本重复第 3 层。prepared 对照、取证提交与 Pi 冷热测量继续按 reply-36 执行，不在 Mac 上运行测试。实际命令、版本、补丁和报告见[reply-39 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md)。
+D11 的 3 项确定性回归已先失败再通过；完整能力测试文件 32 项通过。第 2 层按 ruling 延后到包含入口、D11 和 Job Host 三个提交的合并版本，运行完整 unit 与原 19 个 integration 文件；随后通过正式 `npm test` 入口提前执行第 3 层，最后仍在本批最终版本重复第 3 层。prepared 对照、取证提交与 Pi 冷热测量继续按 reply-36 执行，不在 Mac 上运行测试。实际命令、版本、补丁和报告见reply-39 验证记录（`.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md`）。
 
 D11已独立提交并推送 `3217e4b`，其第1层通过，4份Runbook针对该提交复核封存，严格检查0错误/0警告。Job Host候选生产代码与已审核红绿输入保持一致，复用同次第1层结果；本次随期限合同、当前云端测试规则及4份Runbook核对封存一起提交。按reply-39，前三项的第2层将在合并版本运行，不能把此前失败的完整unit报告描述为本次已通过。
 
@@ -439,23 +439,23 @@ D14 将父测试的子 Vitest 改为直接执行两个测试侧 `.mjs`，继续�
 
 ## 2026-10-02 reply-47：D17 夹具前缀与短临时根
 
-[reply-47](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-47.md) 接受产品路径夹具的套接字长度检查，测试临时根改为 [ADR 0045 存放规则](../../adr/0045-short-test-temp-root.md#storage)规定的 10 字节 `/tmp/hXXXX`，由普通测试账号运行 `mktemp -d` 创建并核对 UID 1001、0700 和真实路径。D17 仅将 SQLite 夹具的 `himawari-sqlite-capability-invocation-` 改为 `h-`，保留所有断言、产品路径上限和其他前缀。完整控制目录在旧 35 字节根下最多 99 字节，新根下为 74 字节；其他夹具控制路径最多 77 字节，SRT 最长 105 字节，逐行静态核算见[新根路径审计](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r47-socket-path-audit.json)。任意调用方指定的绝对根需要另行计算，这份表不证明任意配置都安全。
+reply-47（`.ci-output/handoff/2026-09-28-round2-claude-reply-47.md`） 接受产品路径夹具的套接字长度检查，测试临时根改为 [ADR 0045 存放规则](../../adr/0045-short-test-temp-root.md#storage)规定的 10 字节 `/tmp/hXXXX`，由普通测试账号运行 `mktemp -d` 创建并核对 UID 1001、0700 和真实路径。D17 仅将 SQLite 夹具的 `himawari-sqlite-capability-invocation-` 改为 `h-`，保留所有断言、产品路径上限和其他前缀。完整控制目录在旧 35 字节根下最多 99 字节，新根下为 74 字节；其他夹具控制路径最多 77 字节，SRT 最长 105 字节，逐行静态核算见新根路径审计（`.ci-output/tool-execution-audit/2026-09-28/round2/r47-socket-path-audit.json`）。任意调用方指定的绝对根需要另行计算，这份表不证明任意配置都安全。
 
-D17 改前在旧根下两个生产停止/恢复用例因 `JOB_HOST_CONTROL_PATH_TOO_LONG` 失败，证据保留在[红测试报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r46/r36/r46-D17-red-vitest.json)。改后在旧根 `/srv/himawari-test/scratch/58ee6504` 仅做一次前后对照，[2 项均通过](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-old-root-green-vitest.json)，另 25 项由定向筛选未运行；新根 `/tmp/hYeze` 下整个文件 [27 项均通过](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-new-root-file-vitest.json)。这两次及通过的第 1 层 `npm run check` 均使用 `HIMAWARI_TEST_TIMEOUT_MS=30000`；实际根及资源采样保留在对应元数据，不把这些结果视为完整第 3 层验收。生产 `privateRoot` 的 27 字节限制由 Claude 登记为 [D18 后续缺陷](../../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)，本批不修。
+D17 改前在旧根下两个生产停止/恢复用例因 `JOB_HOST_CONTROL_PATH_TOO_LONG` 失败，证据保留在红测试报告（`.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r46/r36/r46-D17-red-vitest.json`）。改后在旧根 `/srv/himawari-test/scratch/58ee6504` 仅做一次前后对照，2 项均通过（`.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-old-root-green-vitest.json`），另 25 项由定向筛选未运行；新根 `/tmp/hYeze` 下整个文件 27 项均通过（`.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-new-root-file-vitest.json`）。这两次及通过的第 1 层 `npm run check` 均使用 `HIMAWARI_TEST_TIMEOUT_MS=30000`；实际根及资源采样保留在对应元数据，不把这些结果视为完整第 3 层验收。生产 `privateRoot` 的 27 字节限制由 Claude 登记为 [D18 后续缺陷](../../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)，本批不修。
 
 ## 2026-10-02 reply-46：准备与心跳计时取证
 
-prepared 开发模式恢复直接使用真实构建目录，复制候选撤回；测试失败时仍保存工作根和准备阶段。Job Host 测试保留同步命令耗时、事件循环最长间隔与心跳时间线，原 1150ms 人为阻塞及心跳期限不变。这两部分以一个测试诊断提交交付；在已完成的 [reply-45 原 19 文件运行](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r45/r36/r45-integration-19-vitest.json)中，prepared 11/0、准备控制 8/0，心跳用例通过；该次 437/2 的两项失败均为随后修复的 D17 路径过长。事件循环最长间隔 1185ms 包含人为阻塞，阻塞结束后 34ms 发出心跳，D13 仍为 uncertain。本次撤回复制并保留统一临时根之后，新根下这两个文件合计 19/0，第 1 层 `npm run check` 也通过，严格文档校验 0 错误、0 警告；这些云端结果均在 `HIMAWARI_TEST_TIMEOUT_MS=30000` 下得到。结果见[诊断定向报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-diagnostics-focused-vitest.json)。失败归因以证据为准，不把增加诊断视为产品修复。
+prepared 开发模式恢复直接使用真实构建目录，复制候选撤回；测试失败时仍保存工作根和准备阶段。Job Host 测试保留同步命令耗时、事件循环最长间隔与心跳时间线，原 1150ms 人为阻塞及心跳期限不变。这两部分以一个测试诊断提交交付；在已完成的 reply-45 原 19 文件运行（`.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r45/r36/r45-integration-19-vitest.json`）中，prepared 11/0、准备控制 8/0，心跳用例通过；该次 437/2 的两项失败均为随后修复的 D17 路径过长。事件循环最长间隔 1185ms 包含人为阻塞，阻塞结束后 34ms 发出心跳，D13 仍为 uncertain。本次撤回复制并保留统一临时根之后，新根下这两个文件合计 19/0，第 1 层 `npm run check` 也通过，严格文档校验 0 错误、0 警告；这些云端结果均在 `HIMAWARI_TEST_TIMEOUT_MS=30000` 下得到。结果见诊断定向报告（`.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-diagnostics-focused-vitest.json`）。失败归因以证据为准，不把增加诊断视为产品修复。
 
 ### 2026-10-03 reply-06：D13 未复现的 Job Host 启动失败
 
-旧失败发生在 **2026-10-02 22:43:22.999–22:46:25.999 CST** 的四文件第 2 层运行，模式为产物模式（同时设置 `HIMAWARI_TEST_ARTIFACT` 和 `HIMAWARI_TEST_CONTEXT`），基座 `7ce0b57` 加当时的 D16 补丁。运行自然结束，183.001 秒、72 通过／1 失败。`test/integration/sandbox-preparation-control.test.ts` 的准确失败用例为 `rejects 'import failure' without starting the user task`，整个用例耗时 **4402.588572999994ms**；失败在导入错误的诊断分类断言，未达到该用例原有的 45000ms 测试期限。原始报告是 [d16-layer2-vitest.json](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-layer2-vitest.json)，时间、环境和退出码见[原始运行记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-layer2-run.json)。
+旧失败发生在 **2026-10-02 22:43:22.999–22:46:25.999 CST** 的四文件第 2 层运行，模式为产物模式（同时设置 `HIMAWARI_TEST_ARTIFACT` 和 `HIMAWARI_TEST_CONTEXT`），基座 `7ce0b57` 加当时的 D16 补丁。运行自然结束，183.001 秒、72 通过／1 失败。`test/integration/sandbox-preparation-control.test.ts` 的准确失败用例为 `rejects 'import failure' without starting the user task`，整个用例耗时 **4402.588572999994ms**；失败在导入错误的诊断分类断言，未达到该用例原有的 45000ms 测试期限。原始报告是 d16-layer2-vitest.json（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-layer2-vitest.json`），时间、环境和退出码见原始运行记录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-layer2-run.json`）。
 
-[原失败摘要与消息时间线](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-failure-summary.json)显示 Job Host 启动后约 3.75 秒没有输出，随后出现 `JOB_HOST_SYSTEM_UNKNOWN` 和 `JOB_HOST_WORKER_LEASE_INVALID`；原停止文件保留在 [stop-02-before-d18-rework.md](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/stop-02-before-d18-rework.md)。当时没有每条 IPC 消息的实际接收时间和完整诊断对象，不能证明首条消息过期的具体原因。
+原失败摘要与消息时间线（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-failure-summary.json`）显示 Job Host 启动后约 3.75 秒没有输出，随后出现 `JOB_HOST_SYSTEM_UNKNOWN` 和 `JOB_HOST_WORKER_LEASE_INVALID`；原停止文件保留在 stop-02-before-d18-rework.md（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/stop-02-before-d18-rework.md`）。当时没有每条 IPC 消息的实际接收时间和完整诊断对象，不能证明首条消息过期的具体原因。
 
-二十次单文件运行（产物、开发各 10 次）全部执行 `sandbox-preparation-control.test.ts` 的 9 个用例，合计 **180/180**，原 Job Host 失败未复现，见[停止文件 03 的逐次报告](../../../.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-03.md#复用的20条测试证据)和[单文件原始数据汇总](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-diagnostic-distribution.json)。随后十次四文件对照（产物、开发各 5 次）每次 73/73，合计 **730/730**，原 Job Host 失败和两例 Pi 准备失败均未复现，见[停止文件 04 的十次结果](../../../.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-04.md#十次结果)和[四文件原始数据汇总](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/reply05-summary.json)。二十次单文件不包含 `production-sandbox-lineage.test.ts`，因此不提供两个 Pi 并发用例的复跑证据；对应 Pi 失败另记在 [R2-D19 Backlog](../../backlog/BL-20261002-003-pi-准-备-线-程-每-次-都.md#hermes-旧失败与-reply-06-裁定)。
+二十次单文件运行（产物、开发各 10 次）全部执行 `sandbox-preparation-control.test.ts` 的 9 个用例，合计 **180/180**，原 Job Host 失败未复现，见停止文件 03 的逐次报告（`.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-03.md#复用的20条测试证据`）和单文件原始数据汇总（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-diagnostic-distribution.json`）。随后十次四文件对照（产物、开发各 5 次）每次 73/73，合计 **730/730**，原 Job Host 失败和两例 Pi 准备失败均未复现，见停止文件 04 的十次结果（`.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-04.md#十次结果`）和四文件原始数据汇总（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/reply05-summary.json`）。二十次单文件不包含 `production-sandbox-lineage.test.ts`，因此不提供两个 Pi 并发用例的复跑证据；对应 Pi 失败另记在 [R2-D19 Backlog](../../backlog/BL-20261002-003-pi-准-备-线-程-每-次-都.md#hermes-旧失败与-reply-06-裁定)。
 
-[Claude reply-06](../../../.ci-output/handoff/2026-10-02-round2-claude-reply-06.md)将这次 Job Host 启动失败的现象归入 R2-D13，裁定为负载下偶发启动慢，并指出没有证据归因于 D16 安装方式。此处记录该归属裁定，保留原始失败报告；旧失败缺少可比负载数据，后续未复现不能证明具体根因或问题已修复，D13 的根因仍为 `uncertain`。
+Claude reply-06（`.ci-output/handoff/2026-10-02-round2-claude-reply-06.md`）将这次 Job Host 启动失败的现象归入 R2-D13，裁定为负载下偶发启动慢，并指出没有证据归因于 D16 安装方式。此处记录该归属裁定，保留原始失败报告；旧失败缺少可比负载数据，后续未复现不能证明具体根因或问题已修复，D13 的根因仍为 `uncertain`。
 
 [返回阅读导航](#阅读导航)
 
@@ -463,7 +463,7 @@ prepared 开发模式恢复直接使用真实构建目录，复制候选撤回�
 
 `thread-run-lifecycle` 的期限后交付矩阵保留原 `maximumRunDurationMs: 1000` 和 `ManualClock`，仅在初次协调执行期间控制 `setTimeout` / `clearTimeout`。原来的真实期限回调会在 SQL 操作耗时超过 1 秒时先触发，而测试逻辑时钟仍停在起点，导致测试没有走到预设的输出持久化崩溃点。现在用受控计时器保持两者一致，初次执行结束后恢复真实计时器，再把逻辑时钟明确推进到原期限之后，验证已保存答复交付一次、模型及策略均不重跑。
 
-`[R2-D21]` 的两个崩溃场景在 worker 和 direct 路径都保留第一次检查点读取的 1100ms 真实延迟。修复前这四例均因期限中断失败，其他八例通过；这项测试设计修正不改变产品期限计算、生产计时器或 Pi 的运行循环。取消、恢复输入拒绝、检查点冲突及正常交付断言继续保留。Hermes 默认时限下的原始报告、补丁和复跑环境见[本批证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/)，各层实际结果和提交号由[停止文件](../../../.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-02.md)给出；Mac 未在本批运行验证。
+`[R2-D21]` 的两个崩溃场景在 worker 和 direct 路径都保留第一次检查点读取的 1100ms 真实延迟。修复前这四例均因期限中断失败，其他八例通过；这项测试设计修正不改变产品期限计算、生产计时器或 Pi 的运行循环。取消、恢复输入拒绝、检查点冲突及正常交付断言继续保留。Hermes 默认时限下的原始报告、补丁和复跑环境见本批证据目录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52`），各层实际结果和提交号由停止文件（`.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-02.md`）给出；Mac 未在本批运行验证。
 
 [返回阅读导航](#阅读导航)
 
@@ -471,7 +471,7 @@ prepared 开发模式恢复直接使用真实构建目录，复制候选撤回�
 
 本节记录 D13（准备期 Job Host 心跳过期）和 D2（prepared 测试夹具 20 秒超时）在 2026-10-03 专项取证中的结果，以及用户据此做的决定。
 
-**取证范围**：Hermes，源码 `5add8eb` 加冻结补丁，默认时限，Codex 在第二轮 D19/D13/D2 批次第一阶段一共跑了 35 次直接 Vitest。原始数据、逐次同步命令记录和 CPU 剖析见[停止文件 02](../../../.ci-output/handoff/2026-10-03-codex-round2-hermes-stop-02.md#d13-数据与候选)和 Mac 证据目录 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r53/`。
+**取证范围**：Hermes，源码 `5add8eb` 加冻结补丁，默认时限，Codex 在第二轮 D19/D13/D2 批次第一阶段一共跑了 35 次直接 Vitest。原始数据、逐次同步命令记录和 CPU 剖析见停止文件 02（`.ci-output/handoff/2026-10-03-codex-round2-hermes-stop-02.md#d13-数据与候选`）和 Mac 证据目录 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r53/`。
 
 - **D13**：共 128 个真正 fork 出来的 Job Host。没有人为同步阻塞的组里，事件循环最长间隔是 255ms；历史记录是 2.76 秒（其中 1150ms 是测试故意加的阻塞）和 3.75 秒。曾被怀疑的 SRT 同步 `which` 一共 240 次，中位数约 2.4–3.3ms，最长 38ms。根因仍为 `uncertain`。
 - **D2**：共 198 个 prepared 包装进程，四个阶段都完成，总耗时最长 4.66 秒；历史上三次都在模块导入阶段超过 20 秒。根因仍为 `uncertain`。把运行时放到 `/tmp` 固态盘上并没有更快，所以不支持“换到固态盘就能修好”的判断。
@@ -621,7 +621,7 @@ node_modules/.bin/vitest run --config vitest.workspace.ts --project qualificatio
 
 本次资格临时根`/tmp/hd1Qp`和普通完整入口临时根`/tmp/hi51C`均在进程检查后删除。分别核对1211和306个观察到的任务身份，没有存活子孙。资格采样峰值1393428272字节，最低根盘8918888448字节；普通入口采样峰值613842206字节，最低根盘9446584320字节。浏览器或测试并发删除条目时分别有4次和13次du采样错误，原日志保留；这些峰值是采样所得，不是精确瞬时峰值。
 
-报告、原命令、环境、安装包摘要、SQLite、日志和trace见[资格证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-product-06/)及[最终完整入口证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-product-final-02/)；Hermes原件位于`/data/hermes/himawari/tool-audit-round2/r30/evidence/r64/`的同名目录。测试结果支持该Linux测试环境和确定性模型夹具，不证明真实付费服务商质量、Mac运行或生产服务器行为。
+报告、原命令、环境、安装包摘要、SQLite、日志和trace见资格证据目录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-product-06`）及最终完整入口证据（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-product-final-02`）；Hermes原件位于`/data/hermes/himawari/tool-audit-round2/r30/evidence/r64/`的同名目录。测试结果支持该Linux测试环境和确定性模型夹具，不证明真实付费服务商质量、Mac运行或生产服务器行为。
 
 本节是验证后追加的文档记录。测试源码及其依赖未改变，可以复用68a1716的测试；长任务中的精确命令检查仍按原指纹计算，文档修改后会显示旧版本，不能把它们伪记为本节新指纹上的运行。后续R2-L5迁移完成后须在最终版本重新执行规定命令及所有尚缺当前指纹的独立检查。此批通过不代表第二轮40项全部完成。
 
@@ -633,7 +633,7 @@ node_modules/.bin/vitest run --config vitest.workspace.ts --project qualificatio
 
 本批依据用户G34–G38、G46及[网关决定](../../adr/0048-vercel-ai-gateway-replaces-openrouter.md)，实施[迁移设计](../specs/2026-10-06-vercel-gateway-migration-design.md)。文本只用DeepSeek V4.1 Flash，嵌入用Qwen3 Embedding 8B、4096维；Mem0从3.1.7升级至核对过的npm正式latest 3.3.1，Pi及其他直接依赖版本不变。SDK实际源码检查与官方包字节核验在Hermes执行，未以版本字串代替安装证据。
 
-实际SDK先复现实体索引混入产品向量库，再以独立实体库修复。安装后HTTP测试经真实服务入口逐条核对物理调用身份、预算账户和费用；标题拥有独立账户，不能仅统计Run主账户。正常场景的三次调用结算为77、77和33微美元，Run账户110、标题账户77；重启前后完整读回相同。连接中断与费用缺失的调用保留unknown及预约，重启不重发，随后新Run可以恢复使用。对应报告及账本读回见[HTTP资格原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/l5-migration-01/http-installed-02/http-installed-02-vitest.json)，长任务证据E20261006T210337-4ac707。
+实际SDK先复现实体索引混入产品向量库，再以独立实体库修复。安装后HTTP测试经真实服务入口逐条核对物理调用身份、预算账户和费用；标题拥有独立账户，不能仅统计Run主账户。正常场景的三次调用结算为77、77和33微美元，Run账户110、标题账户77；重启前后完整读回相同。连接中断与费用缺失的调用保留unknown及预约，重启不重发，随后新Run可以恢复使用。对应报告及账本读回见HTTP资格原件（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/l5-migration-01/http-installed-02/http-installed-02-vitest.json`），长任务证据E20261006T210337-4ac707。
 
 相关集成七文件90项通过（E20261006T210956-3c0fe2）；不筛选真实容器后端15项通过，包括R2-D6（E20261006T211022-8016b2）。它们使用任务独有临时目录和既有固定镜像，不改Hermes服务。后续最终报告须列出最终第1–3层、Linux不筛选资格的实际指纹、全部断言和未验证范围；当前的定向结果不能代替这些验收。完成状态只从longtask.py status读取。
 
@@ -645,7 +645,7 @@ G44/G45的真实付费探测在G46升级前执行，只证明当时的模型响�
 
 ## R2-L6 的系统 Python 前提与有限探针验证边界
 
-依据 [reply-03 的实施顺序](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-03.md)和 [reply-04 的 pidfd 裁定](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-04.md)，新增 `[R2-L6]` 测试位于原 `test/integration/product-path-browser.test.ts`，由 `qualification-product-path` 项目驱动独立安装恢复探针。第五组已在 Hermes 上同一代码连续三次通过有限验收；报告仍为非生产证据，不能直接当作正式主机资格或云端签署依据。
+依据 reply-03 的实施顺序（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-03.md`）和 reply-04 的 pidfd 裁定（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-04.md`），新增 `[R2-L6]` 测试位于原 `test/integration/product-path-browser.test.ts`，由 `qualification-product-path` 项目驱动独立安装恢复探针。第五组已在 Hermes 上同一代码连续三次通过有限验收；报告仍为非生产证据，不能直接当作正式主机资格或云端签署依据。
 
 这个测试增加一项运行前提：系统自带的 `/usr/bin/python3` 必须为 3.9 或更新，并提供标准库 `os.pidfd_open` 和 `signal.pidfd_send_signal`。pidfd 是绑定原进程身份的内核句柄，控制器用它发信号并等待原进程退出，避免 PID 被重新分配后控制错进程。控制器固定用 `/usr/bin/python3 -I`；启动时核对 `sys.executable`、隔离模式和两个 API，缺失即失败，不改用 ctypes、锁定 CI Python 或裸 PID。其它开发与 CI 步骤仍使用原锁定工具链，Vitest 配置、`ci/policy.json`、`scripts/ci/` 和工具链锁没有改动。
 
@@ -659,9 +659,9 @@ Hermes 上的实际预检为 Python 3.10.12，路径与隔离模式符合要求�
 | probe-02 | 0 通过、1 失败、48 项因名称筛选跳过 | `E20261007T193841-0fbd1d` |
 | probe-03 | 0 通过、1 失败、48 项因名称筛选跳过 | `E20261007T193841-97f5c3` |
 
-三次均在真实 Agent/Worker 发出 `service.ready` 后，因探针漏传 `StateRootLayout.agentServiceBootBindingFile` 而报 `Agent Service boot binding is missing or unsafe`。这是探针的调用错误；尚未执行 HTTP 登录、根 Run、冻结、真实重启、未知占用或可信释放，不能从这些报告判断产品恢复行为。原始报告、命令、指纹、服务日志、清理与磁盘采样见 [首组 R2-L6 证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r65/l6/)；当时依裁定交 [stop-05](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-05.md)审核。
+三次均在真实 Agent/Worker 发出 `service.ready` 后，因探针漏传 `StateRootLayout.agentServiceBootBindingFile` 而报 `Agent Service boot binding is missing or unsafe`。这是探针的调用错误；尚未执行 HTTP 登录、根 Run、冻结、真实重启、未知占用或可信释放，不能从这些报告判断产品恢复行为。原始报告、命令、指纹、服务日志、清理与磁盘采样见 首组 R2-L6 证据目录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r65/l6`）；当时依裁定交 stop-05（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-05.md`）审核。
 
-[reply-05](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-05.md)批准修正完整布局调用及控制器 `exit`/`close` 回复顺序，也允许修本批探针自身错误后跑新的一组完整三次；所有失败组保留，产品、门槛、期限和验收断言不变。探针另补了失败时的门槛实测记录。
+reply-05（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-05.md`）批准修正完整布局调用及控制器 `exit`/`close` 回复顺序，也允许修本批探针自身错误后跑新的一组完整三次；所有失败组保留，产品、门槛、期限和验收断言不变。探针另补了失败时的门槛实测记录。
 
 | 组 | 每次完整运行的结果 | 失败原因与随后处理 | 长任务证据（按 01、02、03 顺序） |
 | --- | --- | --- | --- |
@@ -670,33 +670,33 @@ Hermes 上的实际预检为 Python 3.10.12，路径与隔离模式符合要求�
 
 第 3 组冻结前观察年龄分别为 976、1043、899 ms（原门槛 ≤250 ms）；剩余期限分别为 279467、284053、283799 ms（原门槛 ≥1500 ms）。失败发生在发送冻结请求前，没有 SIGSTOP/SIGKILL 或真实重启，冻结耗时没有实测值。HTTP 登录、二步验证、cookie/CSRF、受保护文本、真实根 Run、准入/调用回执和原 Job Host/Bash 已取得运行证据；未知占用、同库真实重启恢复、不重放与重启后的可信释放仍未验证。首次安装清单不能使用这些失败报告签署。
 
-两组全部命令自然结束后保留报告、日志、marker 和源码补丁；每轮删除临时安装、scratch、输出与本轮创建的 Vitest 缓存，独立读回自有进程和任务树为空。证据见[后两组 R2-L6 原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r66/l6/)。当时第 1–2 层与 R2-L4 尚未开始，因为裁定要求最后一组三次全部通过后才继续；候选和产品未改，第 3 层沿用原完整证据。[stop-06](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-06.md)保存这次停止和读取耗时证据。
+两组全部命令自然结束后保留报告、日志、marker 和源码补丁；每轮删除临时安装、scratch、输出与本轮创建的 Vitest 缓存，独立读回自有进程和任务树为空。证据见后两组 R2-L6 原件（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r66/l6`）。当时第 1–2 层与 R2-L4 尚未开始，因为裁定要求最后一组三次全部通过后才继续；候选和产品未改，第 3 层沿用原完整证据。stop-06（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-06.md`）保存这次停止和读取耗时证据。
 
-[reply-06](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-06.md)取消设计自定的观察年龄 ≤250 ms 门槛。观察年龄只作实测记录；Worker 每轮等待 250 ms 后还要执行 RPC 和确认，因此该间隔不是产品保证。新检查在第一个 SIGSTOP 前直接核对原 Host 与 Bash 的 pidfd、`/proc` 身份、活存及 marker 内容和 inode；冻结后、SIGKILL 前通过原 audit/diagnose 读回 `bound/controlled`、有效占用、无释放回执、未读到终态和无新增非 `running` 观察。冻结动作到 `T` 确认仍须 ≤250 ms，确认时剩余期限仍须 ≥1500 ms。预加载诊断模块和常驻取证进程未获批准。具体替代要求及证据范围见 [Backlog 的 reply-06 说明](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#claude-reply-06-的直接证据要求)。
+reply-06（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-06.md`）取消设计自定的观察年龄 ≤250 ms 门槛。观察年龄只作实测记录；Worker 每轮等待 250 ms 后还要执行 RPC 和确认，因此该间隔不是产品保证。新检查在第一个 SIGSTOP 前直接核对原 Host 与 Bash 的 pidfd、`/proc` 身份、活存及 marker 内容和 inode；冻结后、SIGKILL 前通过原 audit/diagnose 读回 `bound/controlled`、有效占用、无释放回执、未读到终态和无新增非 `running` 观察。冻结动作到 `T` 确认仍须 ≤250 ms，确认时剩余期限仍须 ≥1500 ms。预加载诊断模块和常驻取证进程未获批准。具体替代要求及证据范围见 [Backlog 的 reply-06 说明](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#claude-reply-06-的直接证据要求)。
 
-第四组三次冻结直接证据和实际动作门槛均通过，但新 Agent 都以 `PORT_CONFLICT` 退出；未知占用、恢复、不重放及可信释放尚未验证。证据分别为 `E20261007T210707-47ec4f`、`E20261007T210707-509229`、`E20261007T210707-176919`，见[第四组完整失败原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r67/l6/group-04/)。探针漏等旧 Agent 被 SIGKILL 后仍有效的固定 30 秒权限租约；下一组先核对冻结安装包中的原常量，再在原阶段预算内等待双时钟达到上界，只启动一次新服务对。不会直接读取或修改数据库。清理也须刷新进程和任务树的最终读回，保留初次快照和全部错误。推导前提与错误码判断限制见[Backlog 的租约前提](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#第四组结果与旧-agent-租约的重启前提)。
+第四组三次冻结直接证据和实际动作门槛均通过，但新 Agent 都以 `PORT_CONFLICT` 退出；未知占用、恢复、不重放及可信释放尚未验证。证据分别为 `E20261007T210707-47ec4f`、`E20261007T210707-509229`、`E20261007T210707-176919`，见第四组完整失败原件（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r67/l6/group-04`）。探针漏等旧 Agent 被 SIGKILL 后仍有效的固定 30 秒权限租约；下一组先核对冻结安装包中的原常量，再在原阶段预算内等待双时钟达到上界，只启动一次新服务对。不会直接读取或修改数据库。清理也须刷新进程和任务树的最终读回，保留初次快照和全部错误。推导前提与错误码判断限制见[Backlog 的租约前提](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#第四组结果与旧-agent-租约的重启前提)。
 
-第五组三次自然退出 0，同指纹 `917a56ed4111…`，每次 1 通过、0 失败、48 项名称筛选跳过，全部十项恢复断言通过。证据为 `E20261007T212423-52cd4d`、`E20261007T212423-f607ce`、`E20261007T212423-4bd625`。三次冻结耗时 0.602420、0.626730、0.569958 ms，剩余期限 283238.967、282991.122、284230.114 ms；观察年龄 2507.426、2738.247、110.311 ms 不作门槛。已取得同库真实重启、未知占用下冲突排队未准入、原工具不重放、可信释放后新准入与最终任务树为空的运行证据。原件见[第五组证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r67/l6/group-05/)，具体断言与非生产限制见[Backlog 通过记录](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#第五组三次有限恢复通过)。
+第五组三次自然退出 0，同指纹 `917a56ed4111…`，每次 1 通过、0 失败、48 项名称筛选跳过，全部十项恢复断言通过。证据为 `E20261007T212423-52cd4d`、`E20261007T212423-f607ce`、`E20261007T212423-4bd625`。三次冻结耗时 0.602420、0.626730、0.569958 ms，剩余期限 283238.967、282991.122、284230.114 ms；观察年龄 2507.426、2738.247、110.311 ms 不作门槛。已取得同库真实重启、未知占用下冲突排队未准入、原工具不重放、可信释放后新准入与最终任务树为空的运行证据。原件见第五组证据目录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r67/l6/group-05`），具体断言与非生产限制见[Backlog 通过记录](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#第五组三次有限恢复通过)。
 
-后续 P8 只读核查发现，冻结探针要求 scratch 内新安装并新写 Bash，正式 runtime 的只读安装不能直接使用该入口。reply-03 已允许组合全部原始报告，当前缺少的是临时报告与正式 runtime、privateRoot 和 workspace 身份的充分关联规则，详见 [BL-20261007-003](../../backlog/BL-20261007-003-首-次-部-署-的-有-限-恢.md)。按原简报停止清单扩展；第 1、2 层与提交尚未开始，不声称全部交付检查通过，下一裁定见 [stop-07](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-07.md)。
+后续 P8 只读核查发现，冻结探针要求 scratch 内新安装并新写 Bash，正式 runtime 的只读安装不能直接使用该入口。reply-03 已允许组合全部原始报告，当前缺少的是临时报告与正式 runtime、privateRoot 和 workspace 身份的充分关联规则，详见 [BL-20261007-003](../../backlog/BL-20261007-003-首-次-部-署-的-有-限-恢.md)。按原简报停止清单扩展；第 1、2 层与提交尚未开始，不声称全部交付检查通过，下一裁定见 stop-07（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-07.md`）。
 
 [返回阅读导航](#阅读导航)
 
 ### 第六组只读已有安装模式
 
-reply-07/08 批准唯一 --runtime 入口。测试外层先安装候选、准备 Bash 并 chmod 只读，再运行同一独立探针；探针不写 runtime。Hermes 完整三次每次 1 通过/0 失败/48 名称筛选跳过，指纹 `4315ea9d7820…`，全部十项断言及 before/after 真实 runtime 摘要一致通过。证据 `E20261007T223012-715563`、`E20261007T223012-7cc7f4`、`E20261007T223012-183a50`，见[第六组报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/l6/group-06/)。先红实际拒绝 --runtime，原报告不改；最后组结果不能由历史第五组代替。
+reply-07/08 批准唯一 --runtime 入口。测试外层先安装候选、准备 Bash 并 chmod 只读，再运行同一独立探针；探针不写 runtime。Hermes 完整三次每次 1 通过/0 失败/48 名称筛选跳过，指纹 `4315ea9d7820…`，全部十项断言及 before/after 真实 runtime 摘要一致通过。证据 `E20261007T223012-715563`、`E20261007T223012-7cc7f4`、`E20261007T223012-183a50`，见第六组报告（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/l6/group-06`）。先红实际拒绝 --runtime，原报告不改；最后组结果不能由历史第五组代替。
 
 外层保留报告并确认 ownedProcesses/taskTrees 为空后，仅恢复自有 scratch 安装写权限以清理；正式探针不改 runtime 权限。系统 Python/pidfd/OpenSSL 前提、冻结≤250ms、剩余期限≥1500ms、固定30秒租约上界和600000ms测试期限不变。云端仍未运行或签署。第1/2层与文档封存结果由实际命令及 longtask 证据另行记录，不手写长任务状态。
 
 ### reply-08 独立材料准备与清单检查
 
-六份安装核对材料已从 Hermes 现有输入收集并逐份核摘要，运输索引保留在 [P5 证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/p5/preparation-01/)。实际 wrapper 退出 1，仅因清理不能排除同 UID 不可读进程；完整安装器未执行，不能称材料足够。P8 原组合控制层仍需 Vite 与 fixture 闭包，安装器依赖不能替代它。各问题见 [BL005](../../backlog/BL-20261007-005-首-次-云-组-合-验-收-控.md)、[BL006](../../backlog/BL-20261007-006-长-任-务-json-被-格-式-检.md)、[BL007](../../backlog/BL-20261007-007-首-次-部-署-清-单-的-bwrap.md)、[BL008](../../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)。
+六份安装核对材料已从 Hermes 现有输入收集并逐份核摘要，运输索引保留在 P5 证据目录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/p5/preparation-01`）。实际 wrapper 退出 1，仅因清理不能排除同 UID 不可读进程；完整安装器未执行，不能称材料足够。P8 原组合控制层仍需 Vite 与 fixture 闭包，安装器依赖不能替代它。各问题见 [BL005](../../backlog/BL-20261007-005-首-次-云-组-合-验-收-控.md)、[BL006](../../backlog/BL-20261007-006-长-任-务-json-被-格-式-检.md)、[BL007](../../backlog/BL-20261007-007-首-次-部-署-清-单-的-bwrap.md)、[BL008](../../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)。
 
 Hermes 上 87 项脚本/JSON 语法检查和 31 项入口摘要检查通过，但没有执行 P8 外层验收，compositionReady 当时仍为 false。systemd 249 的离线 `--root ... verify` 命令在参数支持阶段退出 1，错误为 `Option --root is only supported for cat-config right now.`；不能将脚本语法通过写成 unit 解析通过，见[BL009](../../backlog/BL-20261007-009-hermes-systemd249-不-支-持-首-次-部.md)。两失败 scratch 保留。stop-09 尚未写出时，Claude 已通过 reply-09 裁定这些问题；用户要求继续并改交 stop-10。本轮未做云端操作或付费请求。
 
 ### reply-09 后的交付检查
 
-[reply-09](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-09.md)取消四小时停止限制，要求完成第 1、2 层、提交推送、Hermes 空目录安装及完整 P8 演练后写 stop-10。第七组三次使用最终 HTTP 文件，每次 1 通过、0 失败、48 项名称筛选跳过，十项恢复断言与完整 runtime before/after 一致均通过。证据为 `E20261008T004832-6fd70a`、`E20261008T004832-e9c079`、`E20261008T004832-70cc50`。
+reply-09（`.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-09.md`）取消四小时停止限制，要求完成第 1、2 层、提交推送、Hermes 空目录安装及完整 P8 演练后写 stop-10。第七组三次使用最终 HTTP 文件，每次 1 通过、0 失败、48 项名称筛选跳过，十项恢复断言与完整 runtime before/after 一致均通过。证据为 `E20261008T004832-6fd70a`、`E20261008T004832-e9c079`、`E20261008T004832-70cc50`。
 
 上一轮完整产品路径文件自然结束，48 通过、1 跳过，证据 `E20261008T004832-acd8bd`；它使用改名前的 HTTP 文件，不作为最终 HTTP 文件的完整第 2 层证据。原始失败和完整报告保留。最终版本完整检查与第 2 层报告另列在 stop-10，之后的 Hermes 空目录演练不签发生产资格。
 
@@ -708,11 +708,11 @@ G64 取消 Hermes 和云端的 `systemd-analyze verify`，不在别处补做；N
 
 第八组于 2026-10-08 在 Hermes 自然结束，GROUP 总退出码 0。三轮分别 2 通过、48 名称筛选跳过、0 失败；独立已安装 validator 每轮退出 0，十项恢复断言全为真。实际前后源码检查绑定测试文件 `fd09d2a1d192c0f0419286be88e12085df1da1e0b3080eeaef2ad6405e25bb10`、控制器 `d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3`、主探针 `3bcc3faefbc9a43cbd6b59f0440132109495dd9c169a58999e3c26944afac710`。三轮均独立读回原登记进程退出、清理许可通过及 scratch/output 不存在；完整报告和日志保留在 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r72/group08-probe-01`、`02`、`03`。另有 gate-only 检查 50 项全部跳过、0 执行，不是恢复运行证明。
 
-GROUP 结束后，Cloudflare Access 曾短时返回 `websocket: bad handshake`。同一连接命令随后恢复，实际主机名仍为 `hermes-home`，没有改变连接配置。主代理带回原报告和运行前指纹，逐项核对 393 项运输文件的大小和 SHA。三轮证据依次为 `E20261008T030437-54176d`、`E20261008T030437-e4a033`、`E20261008T030437-98f9f1`，共同指纹为 `ee6ea56c6635f782396fb143236c4a4b9d8edab4dedbb228f6631e54118436d6`，对应 `dff2174` 加实际冻结补丁。gate-only 仅开关检查为 `E20261008T030437-abfd36`。完整第 1、2 层和空目录安装、完整 P8 演练仍待执行。本轮操作、完整原件与资源采样边界见[本轮记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r72/README.md)。
+GROUP 结束后，Cloudflare Access 曾短时返回 `websocket: bad handshake`。同一连接命令随后恢复，实际主机名仍为 `hermes-home`，没有改变连接配置。主代理带回原报告和运行前指纹，逐项核对 393 项运输文件的大小和 SHA。三轮证据依次为 `E20261008T030437-54176d`、`E20261008T030437-e4a033`、`E20261008T030437-98f9f1`，共同指纹为 `ee6ea56c6635f782396fb143236c4a4b9d8edab4dedbb228f6631e54118436d6`，对应 `dff2174` 加实际冻结补丁。gate-only 仅开关检查为 `E20261008T030437-abfd36`。完整第 1、2 层和空目录安装、完整 P8 演练仍待执行。本轮操作、完整原件与资源采样边界见本轮记录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r72/README.md`）。
 
 2026-10-08，r72完整第1层自然失败于既有CI策略：新增 `skipIf` 不在该文件允许的 `skip` 登记内，证据 `E20261008T035327-ec5178`。原格式、类型、边界和秘密扫描均通过；第2层没有启动。只修探针为条件别名 `recoveryDescribe`，保留 Linux/opt-in 和全部期限，Hermes格式与策略定向检查随后退出0，没有修改CI策略。
 
-最终第九组三次自然通过，每轮2项R2-L6通过、48项名称筛选跳过、十项恢复断言与独立安装摘要validator全成功。证据为 `E20261008T040802-9441b7`、`E20261008T040802-80798e`、`E20261008T040802-23a8a3`，共同指纹 `b8735cf1222342dd50f50b560aeeaf7c6c5aab65f6f96a4456eeb3dcb33f1425`；gate-only证据 `E20261008T040802-a4a8e0` 仅证明50项全部跳过、0执行。393项运输元数据已逐项核字节/SHA，完整原件保留在Hermes `evidence/r73/`。运行脚本前后相同，各轮scratch/output已依原登记、引用和独立不存在读回清理。目录大小采样的短暂失败原件保留，不称连续覆盖或完整峰值。完整最终第1/2层和空目录P5/P8仍待运行，见[第九组记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r73/README.md)。
+最终第九组三次自然通过，每轮2项R2-L6通过、48项名称筛选跳过、十项恢复断言与独立安装摘要validator全成功。证据为 `E20261008T040802-9441b7`、`E20261008T040802-80798e`、`E20261008T040802-23a8a3`，共同指纹 `b8735cf1222342dd50f50b560aeeaf7c6c5aab65f6f96a4456eeb3dcb33f1425`；gate-only证据 `E20261008T040802-a4a8e0` 仅证明50项全部跳过、0执行。393项运输元数据已逐项核字节/SHA，完整原件保留在Hermes `evidence/r73/`。运行脚本前后相同，各轮scratch/output已依原登记、引用和独立不存在读回清理。目录大小采样的短暂失败原件保留，不称连续覆盖或完整峰值。完整最终第1/2层和空目录P5/P8仍待运行，见第九组记录（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r73/README.md`）。
 
 <a id="r74-final-validation"></a>
 
@@ -722,12 +722,12 @@ GROUP 结束后，Cloudflare Access 曾短时返回 `websocket: bad handshake`�
 
 第十组三次分别记录 `E20261008T063948-f44ca1`、`E20261008T063948-056b22`、`E20261008T063948-0d869a`，每轮2通过、48名称筛选跳过、十项断言和独立安装 validator 通过。完整第1层退出0，规范命令记录为 `E20261008T070045-c561cc`。无名称筛选的 whole 文件49通过、0失败、1原比较基线跳过，Vitest退出0、耗时5841.67秒，记录 `E20261008T082216-597ebc`。未新增 skip 以隐藏失败；主会话 live raw trace 和 service-first 控制层修正没有进入 helper/legacy/baseline，旧 helper cold 超时原因仍 uncertain。
 
-主 raw trace 为699842290B；99720文件、99717资源引用与固定 Playwright1.62.1四读取命令全部读回，整树 manifest SHA `8341ced049ddd3316493239a202963ebba634d626aba13f47c5cb78f61efdaed`。主结束 report/installation/trace/browser 四阶段 passed，耗时1.207264/6619.66807/690.601867/912.700343ms；其和不是精确 hook walltime，原120000ms由 Vitest实际通过支持。原外层 checks/wrapper 因晚于 scratch 的同UID不可读 sshd `2048766/stat22=768711023` 拒绝删除并退出1，记录 `E20261008T082216-185bcf`。12614个原登记 payload 全退出、原 controller 自然 gone；`/tmp/hvzhv`298341007B和 source/.ci-output/r74-layer2-01 输出789542053B按原读回保留，不冒充当前 live 大小。[BL008](../../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)保持open。原件见[whole运输副本](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/layer2-failure-metadata-transport-01/extracted/layer2-01/)。
+主 raw trace 为699842290B；99720文件、99717资源引用与固定 Playwright1.62.1四读取命令全部读回，整树 manifest SHA `8341ced049ddd3316493239a202963ebba634d626aba13f47c5cb78f61efdaed`。主结束 report/installation/trace/browser 四阶段 passed，耗时1.207264/6619.66807/690.601867/912.700343ms；其和不是精确 hook walltime，原120000ms由 Vitest实际通过支持。原外层 checks/wrapper 因晚于 scratch 的同UID不可读 sshd `2048766/stat22=768711023` 拒绝删除并退出1，记录 `E20261008T082216-185bcf`。12614个原登记 payload 全退出、原 controller 自然 gone；`/tmp/hvzhv`298341007B和 source/.ci-output/r74-layer2-01 输出789542053B按原读回保留，不冒充当前 live 大小。[BL008](../../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)保持open。原件见whole运输副本（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/layer2-failure-metadata-transport-01/extracted/layer2-01`）。
 
 按 reply09 保留旧现场、提交后继续独立 P5。真实 whole 材料准备 `E20261008T093050-165170` 有 npm ls0、逐lock版本/workspace链接、包含 `.vite` 的完整树及46470个 tar 成员。SourceNM before/collector/after 只证明采样点和逐条读取期身份/字节，不承诺全系统无 opaque writer。原三次 red 依次为 `E20261008T093050-7006fd`（300000ms gzip乱序读取超时）、`E20261008T093050-121933`（原产品拒绝构建输入 mode 不匹配）、`E20261008T093050-408b33`（10个 resolver 与11文件 capture 集合混用）。原7次边界前后分别为 `E20261008T093050-a363da`、`E20261008T093050-b37869`，实际615mode capture 为 `E20261008T093050-60df4d`。这些失败、采样和未知空间差额全部保留。
 
 rehearsal04 原 wrapper/P5/P8退出0，记录 `E20261008T094449-48ed2b`。相同真实运输材料在新空目录使用原 `--artifact` 完整安装及 UI/checker，七报告、14入口命令、Pi22/network10、十项 R2 断言与独立 validator 全部通过。实际只读 runtime `123a662488556a9fb48118a757d9c721b55439d3263a5da8d11aed57163ffd01` 前后与 fresh 摘要一致；freeze0.570921ms、确认时剩余275767.6960449219ms，probe cleanup207.32981897890568ms，任务树 released。composition 固定10直接解析路径与11候选匹配安装文件独立取证均通过，domain 仅是额外字节证据，不称直接解析或执行。
 
-独立原清理读回记录 outer793、inner785身份全部 gone，`/tmp/hmpit`、`/tmp/hp9x8`不存在；原 guard/removal/sampler0，无忽略 opaque 或补造 registry。outer1040384B、inner1269760B的未知根盘差额属于不同阶段，不相加；prepare2813952B和旧 rehearsal02 81920B短差也不撤销。[完整110份原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/rehearsal-04-full/)、[独立报告读回](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/rehearsal-04-independent-report-readback-01.json)及[独立清理读回](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/rehearsal-04-independent-cleanup-readback-01.json)保留。
+独立原清理读回记录 outer793、inner785身份全部 gone，`/tmp/hmpit`、`/tmp/hp9x8`不存在；原 guard/removal/sampler0，无忽略 opaque 或补造 registry。outer1040384B、inner1269760B的未知根盘差额属于不同阶段，不相加；prepare2813952B和旧 rehearsal02 81920B短差也不撤销。完整110份原件（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/rehearsal-04-full`）、独立报告读回（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/rehearsal-04-independent-report-readback-01.json`）及独立清理读回（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/rehearsal-04-independent-cleanup-readback-01.json`）保留。
 
-本轮关闭的是有限恢复准备及控制层/材料缺项，全部报告为 Hermes nonproduction、未签资格。原作业可信释放后仍 `effect=unknown/result=null`；仅恢复新 admission，随后取消新请求，没有第二次 Bash 执行。Hermes SRT实际0.6.1不证明 program/stdio>=0.11.2或云 AppArmor。P6 第二次候选 CLI doctor 严格配置加载实际退出0，记录 `E20261008T100042-26d55a`；返回 `configurationSchema=himawari.configuration.v1`、`configurationLoaded=true`、`ready=false`，没有init、服务、模型请求或生产资格。原配置草稿 `8d6512ca…` 只在新 scratch 派生为 `d8b2f404…`，实际 runtime `a796a630978446edc335db42e4eb4b81ce50200b8f56bebffb8756d60866cdd2` 前后相同。原 helper/removal/sampler0，26个原身份gone、`/tmp/hyzh3`不存在，225280B根盘短差原因未知；[完整原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full/)及[独立清理读回](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-independent-cleanup-readback-01.json)保留。第一次控制run漏helper且未产生fresh BEFORE，随后漏传runtime环境在doctor前失败，不计为产品配置检查通过。旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001](../../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)的准备缺口按reply-01关闭。这次严格加载和冻结不批准用户的生产参数。R2-L3/L4决定、正式Node官方SUMS、现场有限验收、签署、云服务、生产秘密和付费请求均仍待具体授权。长任务状态只读取 longtask status，不按此段手写。
+本轮关闭的是有限恢复准备及控制层/材料缺项，全部报告为 Hermes nonproduction、未签资格。原作业可信释放后仍 `effect=unknown/result=null`；仅恢复新 admission，随后取消新请求，没有第二次 Bash 执行。Hermes SRT实际0.6.1不证明 program/stdio>=0.11.2或云 AppArmor。P6 第二次候选 CLI doctor 严格配置加载实际退出0，记录 `E20261008T100042-26d55a`；返回 `configurationSchema=himawari.configuration.v1`、`configurationLoaded=true`、`ready=false`，没有init、服务、模型请求或生产资格。原配置草稿 `8d6512ca…` 只在新 scratch 派生为 `d8b2f404…`，实际 runtime `a796a630978446edc335db42e4eb4b81ce50200b8f56bebffb8756d60866cdd2` 前后相同。原 helper/removal/sampler0，26个原身份gone、`/tmp/hyzh3`不存在，225280B根盘短差原因未知；完整原件（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full`）及独立清理读回（`.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-independent-cleanup-readback-01.json`）保留。第一次控制run漏helper且未产生fresh BEFORE，随后漏传runtime环境在doctor前失败，不计为产品配置检查通过。旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001](../../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)的准备缺口按reply-01关闭。这次严格加载和冻结不批准用户的生产参数。R2-L3/L4决定、正式Node官方SUMS、现场有限验收、签署、云服务、生产秘密和付费请求均仍待具体授权。长任务状态只读取 longtask status，不按此段手写。
