@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,8 @@ function fixture(names) {
   const root = mkdtempSync(join(tmpdir(), "adr-numbers-"));
   roots.push(root);
   mkdirSync(join(root, "docs/adr"), { recursive: true });
-  for (const name of names) writeFileSync(join(root, "docs/adr", name), "# ADR\n");
+  for (const name of names)
+    writeFileSync(join(root, "docs/adr", name), `# ADR ${name.slice(0, 4)}：标题\n\n## 结论\n`);
   return root;
 }
 
@@ -75,6 +76,72 @@ describe("ADR number check", () => {
       expect(run.status, args.join(" ")).toBe(2);
       expect(run.stderr).toContain("ADR_NUMBER_ROOT_MISSING");
     }
+  });
+
+  it("reports an ADR whose title number differs from its file name number", () => {
+    const root = fixture(["0001-a.md", "0002-b.md"]);
+    writeFileSync(join(root, "docs/adr/0002-b.md"), "# ADR 0003：改过号忘了改标题\n");
+    const { errors } = checkAdrNumbers({ root });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^ADR_NUMBER_TITLE docs\/adr\/0002-b\.md .*0003.*0002/);
+    writeFileSync(join(root, "docs/adr/0002-b.md"), "# 没有编号的标题\n");
+    expect(checkAdrNumbers({ root }).errors[0]).toMatch(/^ADR_NUMBER_TITLE /);
+  });
+
+  it("reports a docs link that still points at an old ADR file name or a missing heading", () => {
+    const root = fixture(["0001-a.md", "0002-b.md"]);
+    mkdirSync(join(root, "docs/execution/specs"), { recursive: true });
+    mkdirSync(join(root, "docs/archive"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/execution/specs/s.md"),
+      "[好](../../adr/0001-a.md#结论) [旧名](../../adr/0003-old.md) [锚点](../../adr/0001-a.md#不存在) [错层](../adr/0001-a.md)\n",
+    );
+    writeFileSync(
+      join(root, "docs/adr/0002-b.md"),
+      "# ADR 0002：标题\n\n[旧](0003-old.md) [好](0001-a.md#结论)\n",
+    );
+    writeFileSync(join(root, "docs/archive/old.md"), "[旧](../adr/0009-gone.md)\n");
+    const { errors } = checkAdrNumbers({ root });
+    expect(errors).toEqual([
+      "ADR_LINK_MISSING docs/adr/0002-b.md -> 0003-old.md",
+      "ADR_LINK_MISSING docs/execution/specs/s.md -> ../../adr/0003-old.md",
+      "ADR_LINK_ANCHOR_MISSING docs/execution/specs/s.md -> ../../adr/0001-a.md#不存在",
+      "ADR_LINK_MISSING docs/execution/specs/s.md -> ../adr/0001-a.md",
+    ]);
+  });
+
+  it("reports a written-out docs/adr path (superseded_by, SOURCE marker) that no longer exists", () => {
+    const root = fixture(["0001-a.md"]);
+    writeFileSync(
+      join(root, "docs/adr/0001-a.md"),
+      '---\nsuperseded_by: "docs/adr/0009-old.md"\n---\n# ADR 0001：a\n[SOURCE: docs/adr/0001-a.md] [SOURCE: docs/adr/0008-gone.md]\n',
+    );
+    expect(checkAdrNumbers({ root }).errors).toEqual([
+      "ADR_PATH_MISSING docs/adr/0001-a.md -> docs/adr/0009-old.md",
+      "ADR_PATH_MISSING docs/adr/0001-a.md -> docs/adr/0008-gone.md",
+    ]);
+  });
+
+  it("does not follow symbolic links in docs: skips a dangling or looping one instead of crashing", () => {
+    const root = fixture(["0001-a.md"]);
+    symlinkSync(join(root, "docs/missing"), join(root, "docs/dangling.md"));
+    symlinkSync(join(root, "docs"), join(root, "docs/loop"));
+    symlinkSync("/dev/zero", join(root, "docs/adr/0002-zero.md"));
+    const { errors } = checkAdrNumbers({ root });
+    expect(errors.some((error) => error.includes("0002-zero"))).toBe(false);
+  });
+
+  it("treats a symlink to a regular file as no ADR and a link to it as missing; ignores URLs", () => {
+    const root = fixture(["0001-a.md"]);
+    writeFileSync(join(root, "docs/real.md"), "# ADR 0009：故意写错\n");
+    symlinkSync(join(root, "docs/real.md"), join(root, "docs/adr/0002-b.md"));
+    writeFileSync(
+      join(root, "docs/n.md"),
+      "[软链](adr/0002-b.md) https://github.com/x/y/blob/main/docs/adr/0077-away.md\n",
+    );
+    expect(checkAdrNumbers({ root }).errors).toEqual([
+      "ADR_LINK_MISSING docs/n.md -> adr/0002-b.md",
+    ]);
   });
 
   it("passes on this repository", () => {

@@ -1,0 +1,9 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "断链不会被这道门拦住", "valid": true, "class": "error", "severity": "medium-high", "trigger": "改号后其它 ADR 正文用裸文件名互链（如 [ADR 0038](0038-….md)）的人", "consequence": "这些链接改号后断了，检查仍通过，正是本检查要防的场景", "modelSeverity": "高"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "规则/说明文档仍在描述旧行为，和代码不一致", "valid": true, "class": "error", "severity": "medium-high", "trigger": "按 document-governance.md 或 lessons.md 了解这一步检查范围的人", "consequence": "以为只查文件名和重复编号，不知道还查标题号和链接", "modelSeverity": "中"}
+{"id": "glm-1", "model": "opencode-go/glm-5.3-flash", "quote": "文档/规则与代码不一致（本次侧重项）", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同 ds-2", "consequence": "同 ds-2", "modelSeverity": "中"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "标题错误输出顺序依赖文件系统 `readdir` 顺序", "valid": true, "class": "error", "severity": "low", "trigger": "多份 ADR 同时标题错且文件系统返回顺序不同", "consequence": "只是报错行先后不同，不影响判定", "modelSeverity": "低"}
+{"id": "glm-2", "model": "opencode-go/glm-5.3-flash", "quote": "标题错误输出顺序不确定", "valid": true, "class": "error", "severity": "low", "trigger": "同 ds-3", "consequence": "同 ds-3", "modelSeverity": "低"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "错误路径缺少保护，异常输入会让检查以未捕获异常崩溃", "valid": true, "class": "error", "severity": "low", "trigger": "docs 下出现断掉的符号链接或符号链接环", "consequence": "检查以堆栈退出而不是结构化错误，不给出错误结果", "modelSeverity": "低"}
+{"id": "ds-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`所有 Markdown 链接` 的说法比实现宽", "valid": true, "class": "better"}
+{"id": "glm-3", "model": "opencode-go/glm-5.3-flash", "quote": "门禁覆盖面比声称的窄", "valid": true, "class": "better"}
+{"id": "glm-4", "model": "opencode-go/glm-5.3-flash", "quote": "新错误码没走 CLI 出口路径的反向用例", "valid": true, "class": "better"}

@@ -230,11 +230,11 @@ Pi 复用边界：依赖固定 `@earendil-works/pi-* 0.84.2`；检查了 canonic
 
 [↑ 返回已确认方案摘要](#review-summary)
 
-用户 2026-10-13 决定让 Himawari 像 Codex `Auto` 模式一样，把授权工作目录内的编码操作默认放行（[ADR 0053](../adr/0053-workspace-auto-approval-like-codex.md)）。规则如下：
+用户 2026-10-13 决定让 Himawari 像 Codex `Auto` 模式一样，把授权工作目录内的编码操作默认放行（[ADR 0053](../../adr/0053-workspace-auto-approval-like-codex.md)）。规则如下：
 
 - 授权工作目录指用户通过目录授权（例如 `directory:himawari-prod-workspace-20261012`）交给 Agent 的目录。在这个目录内，**默认自动允许**（判定为 `ALLOW`，不逐次征求人工批准）的动作是：`read`、`ls`、`find`、`grep`、`write`、`edit`，以及**不联网**的沙箱 `bash` 命令。
 - **仍然询问（`ASK`）**的动作：写入或修改授权目录以外的位置；执行需要联网的命令；`move_directory`、`save_copy`（含删除类 `actionKind: DELETE`）和 `web_search`；以及既有设计中独立检查的高风险动作与数据披露，例如 GitHub 推送、发送消息、读取秘密。越界和凭据变化仍按原文拒绝规则处理。
-- **判定仍由确定性组件完成**，见 [ADR 0004](../adr/0004-deterministic-authorization.md)；模型不能批准自己，工作流不能绕过统一的授权入口。自动批准**复用既有的 Approval/Grant 通道**：宿主策略在条件全部满足时派生一条精确绑定本次 intent 的一次性 Grant，最终 `ALLOW` 仍由 `ActionPolicyService` 因 Grant 覆盖给出，Workers/沙箱的授权路径不变。已有人工待批或拒绝的审批不被覆盖。
+- **判定仍由确定性组件完成**，见 [ADR 0004](../../adr/0004-deterministic-authorization.md)；模型不能批准自己，工作流不能绕过统一的授权入口。自动批准**复用既有的 Approval/Grant 通道**：宿主策略在条件全部满足时派生一条精确绑定本次 intent 的一次性 Grant，最终 `ALLOW` 仍由 `ActionPolicyService` 因 Grant 覆盖给出，Workers/沙箱的授权路径不变。已有人工待批或拒绝的审批不被覆盖。
 - 自动批准的条件（任一不满足即回到原 `ASK`）：capability 与版本等于配置 `runPolicy.coding`；操作属于上述七个；`actionKind` 非 `DELETE`；意图带有等于配置 `grantId` 的 `directory-grant` 目标；目录授权在**判断时**重新读回并核对未撤销、未过期、覆盖该工具需要的目录操作；`dataClassification` 为 `private`；`recipients` 只有一个且是本轮的配置模型身份；`credentialOrAccessChange` 为 `false`；`estimatedCostMicros` 为 0；`bash` 还要求签名沙箱绑定不允许联网（操作绑定的 `network` 为 `disabled`，且允许域名列表为空）。
 - **配置项** `runPolicy.coding.approval`：取值 `"workspace_auto"` 或 `"ask"`，不写时等于 `"workspace_auto"`。`"ask"` 保持原有逐次人工批准。策略状态在服务启动时按该配置同步；绑定（`grantId`、`hostId`、`capabilityRef`/`capabilityVersion`、七个操作、允许的模型身份、各操作的离线判定）变化会推进状态 revision，使更早的策略授权及已批准未执行的调用失效。
 - **留痕**：自动批准写审计 `workspace.authorization.policy_applied`（目标为对应审批 id），状态变更写 `workspace.authorization.enabled` / `workspace.authorization.revoked`；自动执行的工具调用照常显示在本轮执行过程中。
