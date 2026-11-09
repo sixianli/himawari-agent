@@ -1431,7 +1431,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                   runId: request.runId,
                   kind: "provider_request",
                   value: redactObservation(event.payload),
-                  dataClassification: request.dataClassification,
+                  dataClassification: this.#visibleOf(request),
                 });
                 await enqueue(() => {
                   emit({
@@ -1450,7 +1450,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                   runId: request.runId,
                   kind: "provider_response",
                   value: redactObservation({ status: event.status, headers: event.headers }),
-                  dataClassification: request.dataClassification,
+                  dataClassification: this.#visibleOf(request),
                 });
                 await enqueue(() => {
                   emit({
@@ -1809,7 +1809,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         const contentRef = await this.#dependencies.projection.captureFinalAnswer({
           runId: request.runId,
           text: redactMachineSecrets(text),
-          dataClassification: request.dataClassification,
+          dataClassification: this.#visibleOf(request),
         });
         if (this.#cancelledRuns.has(request.runId)) {
           emit({
@@ -2133,7 +2133,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               : {}),
             ...answeredBy,
           },
-          dataClassification: request.dataClassification,
+          dataClassification: this.#visibleOf(request),
         });
         const sequence = nextMessageSequence();
         const phase =
@@ -2193,7 +2193,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             description: "description" in descriptor ? descriptor.description : "",
             arguments: event.args,
           }),
-          dataClassification: request.dataClassification,
+          dataClassification: this.#visibleOf(request),
         });
         mapped.push({
           type: "runtime.tool_intent",
@@ -2216,7 +2216,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             result: event.result,
             isError: event.isError,
           }),
-          dataClassification: request.dataClassification,
+          dataClassification: this.#visibleOf(request),
         });
         mapped.push({
           type: "runtime.tool_result",
@@ -2235,7 +2235,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             summary: event.result.summary,
             firstKeptEntryId: event.result.firstKeptEntryId,
             tokensBefore: event.result.tokensBefore,
-            dataClassification: request.dataClassification,
+            dataClassification: this.#visibleOf(request),
           });
           mapped.push({
             type: "runtime.compaction_proposed",

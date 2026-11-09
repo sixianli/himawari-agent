@@ -1218,7 +1218,7 @@ export class ProactiveMailCheckService {
           id: hit.id,
           text: hit.text.replace(/\s+/gu, " ").trim().slice(0, limits.charactersPerMemory),
           ...(hit.tentative ? { tentative: true as const } : {}),
-          dataClassification: hit.dataClassification ?? "private",
+          dataClassification: hit.dataClassification,
         })),
     );
   }

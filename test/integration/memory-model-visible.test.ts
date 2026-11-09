@@ -271,6 +271,7 @@ async function runChat(input: {
   const server = await loopback(input.reply ?? (() => ({ text: "不能吃，你对青霉素过敏。" })));
   const admitted: ModelInvocationAdmissionInput["dataClassification"][] = [];
   const saved: DataClassification[] = [];
+  const answers: DataClassification[] = [];
   const adapter = new PiAgentRuntimeAdapter({
     egress: testModelEgress(),
     projection: {
@@ -285,7 +286,10 @@ async function runChat(input: {
         };
       },
       capture: async () => "captured",
-      captureFinalAnswer: async () => "final-answer",
+      captureFinalAnswer: async (answer) => {
+        answers.push(answer.dataClassification);
+        return "final-answer";
+      },
       proposeCompaction: async () => "compaction",
     },
     tools: input.tools ?? new RecallTools(undefined),
@@ -353,7 +357,7 @@ async function runChat(input: {
     dataClassification: "private",
   } as unknown as RuntimeRequest))
     events.push(event);
-  return { events, bodies: server.bodies, admitted, saved };
+  return { events, bodies: server.bodies, admitted, saved, answers };
 }
 
 describe("[RULE-memory-visible] what is stored as memory reaches the model", () => {
@@ -417,6 +421,45 @@ describe("[RULE-memory-visible] what is stored as memory reaches the model", () 
     });
     expect(chat.events.at(-1)?.type).toBe("runtime.completed");
     expect(chat.admitted).toEqual(["private"]);
+    expect(chat.answers).toEqual(["private"]);
+  });
+
+  it("reads a sensitive attachment into the model's view and raises the call, instead of showing it as unreadable", async () => {
+    const adapters = world();
+    const store = async (
+      ref: string,
+      text: string,
+      dataClassification: DataClassification,
+      contentType: string,
+    ) =>
+      adapters.payload.put(
+        await adapters.payloadProtector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref,
+          dataClassification,
+          contentType,
+          plaintext: new TextEncoder().encode(text),
+          createdAt: NOW,
+        }),
+      );
+    await store(
+      "payload-report",
+      "体检报告：主人对青霉素过敏",
+      "sensitive",
+      "text/x-himawari-attachment",
+    );
+    await store(
+      "payload-trigger",
+      '帮我看看这份报告 <file name="report.txt" ref="payload-report"/>',
+      "private",
+      "text/plain",
+    );
+    const runId = createRunId("run-visible-attachment");
+    const run = await formedRun(runId, [], adapters);
+    const projected = await run.projection.resolveProjection(run.request);
+    expect(projected.contentClassification).toBe("sensitive");
+    expect(JSON.stringify(projected)).toContain("体检报告：主人对青霉素过敏");
   });
 
   it("raises the next model call to sensitive once recall returns a sensitive memory, and saves the history at that level", async () => {
@@ -437,6 +480,7 @@ describe("[RULE-memory-visible] what is stored as memory reaches the model", () 
     expect(chat.events.at(-1)?.type).toBe("runtime.completed");
     expect(chat.admitted).toEqual(["private", "sensitive"]);
     expect(chat.saved.at(-1)).toBe("sensitive");
+    expect(chat.answers).toEqual(["sensitive"]);
     expect(chat.bodies[1]).toContain(HEALTH);
   });
 

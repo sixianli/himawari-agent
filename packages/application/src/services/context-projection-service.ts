@@ -60,11 +60,18 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const nativeHistory = envelope.runtimeHistory
       ? await this.#history.load(envelope.runtimeHistory.reference, modelVisibleCeiling())
       : undefined;
-    const history = await this.readHistory(input, envelope, nativeHistory?.coveredRunIds);
+    const attachmentClassifications: DataClassification[] = [];
+    const history = await this.readHistory(
+      input,
+      envelope,
+      attachmentClassifications,
+      nativeHistory?.coveredRunIds,
+    );
     const images: { readonly mimeType: string; readonly data: string }[] = [];
     const prompt = await this.expandAttachments(
       input,
       await this.readText(input, envelope.prompt.payloadRef, "context prompt"),
+      attachmentClassifications,
       images,
     );
     const policyTexts = await Promise.all(
@@ -88,6 +95,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       ...envelope.history.map(({ dataClassification }) => dataClassification),
       ...contextBlocks.map(({ dataClassification }) => dataClassification),
       ...workerBlocks.map(({ dataClassification }) => dataClassification),
+      ...attachmentClassifications,
     ]);
     return Object.freeze({
       systemInstruction,
@@ -283,6 +291,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
   private async readHistory(
     input: RuntimeProjectionRequest,
     envelope: ProductContextEnvelopeV1,
+    attachmentClassifications: DataClassification[],
     coveredRunIds: readonly RunId[] = [],
   ): Promise<{
     readonly messages: readonly RuntimeProjectionMessage[];
@@ -356,7 +365,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         item.dataClassification,
         modelVisibleCeiling(),
       );
-      const content = item.role === "owner" ? await this.expandAttachments(input, stored) : stored;
+      const content =
+        item.role === "owner"
+          ? await this.expandAttachments(input, stored, attachmentClassifications)
+          : stored;
       if (item.role === "owner" || item.role === "agent") {
         projected.push({
           id: item.messageId,
@@ -481,6 +493,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
   private async expandAttachments(
     input: RuntimeProjectionRequest,
     text: string,
+    classifications: DataClassification[],
     images?: { readonly mimeType: string; readonly data: string }[],
   ): Promise<string> {
     const tags = [...text.matchAll(ATTACHMENT_TAG)];
@@ -488,12 +501,23 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     const expanded = await Promise.all(
       tags.map(async ([tag, name, ref]) => {
         const payload = ref ? await this.#dependencies.payloads.get(ref as PayloadRef) : null;
+        const read = async (label: string) => {
+          const text = await this.readText(
+            input,
+            ref as PayloadRef,
+            label,
+            undefined,
+            modelVisibleCeiling(),
+          );
+          if (payload) classifications.push(payload.dataClassification);
+          return text;
+        };
         if (IMAGE_KIND.test(tag)) {
           if (!images) return `<image name="${name}"/>`;
           const image =
             payload?.contentType === IMAGE_CONTENT_TYPE
               ? IMAGE_DATA_URL.exec(
-                  await this.readText(input, ref as PayloadRef, "image").catch((error: unknown) => {
+                  await read("image").catch((error: unknown) => {
                     if (error instanceof ApplicationPortError) return "";
                     throw error;
                   }),
@@ -504,12 +528,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         }
         const content =
           payload?.contentType === ATTACHMENT_CONTENT_TYPE
-            ? await this.readText(input, ref as PayloadRef, "attachment").catch(
-                (error: unknown) => {
-                  if (error instanceof ApplicationPortError) return UNREADABLE_ATTACHMENT;
-                  throw error;
-                },
-              )
+            ? await read("attachment").catch((error: unknown) => {
+                if (error instanceof ApplicationPortError) return UNREADABLE_ATTACHMENT;
+                throw error;
+              })
             : UNREADABLE_ATTACHMENT;
         return `<file name="${name}">\n${content}\n</file>`;
       }),

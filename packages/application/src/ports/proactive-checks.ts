@@ -170,7 +170,7 @@ export interface ProactiveMemoryHit {
   readonly text: string;
   readonly score: number;
   readonly tentative?: boolean;
-  readonly dataClassification?: DataClassification;
+  readonly dataClassification: DataClassification;
 }
 
 export interface ProactiveMemoryQuery {

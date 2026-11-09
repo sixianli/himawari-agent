@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   createProactiveSeal,
+  type DataClassification,
   type ModelDescriptor,
   type ModelInvocationEvent,
   type ProactiveMailCheckOptions,
@@ -1697,14 +1698,25 @@ describe("proactive Gmail check acceptance", () => {
     const recallOf = (
       byMail: Record<
         string,
-        readonly { id: string; text: string; score: number; tentative?: boolean }[]
+        readonly {
+          id: string;
+          text: string;
+          score: number;
+          tentative?: boolean;
+          dataClassification?: DataClassification;
+        }[]
       >,
       extra: { costMicros?: number; failedQueries?: number; seen?: string[] } = {},
     ): ProactiveMemoryRecall => ({
       async recall({ queries }) {
         extra.seen?.push(...queries.map(({ query }) => query));
         return {
-          hits: new Map(Object.entries(byMail)),
+          hits: new Map(
+            Object.entries(byMail).map(([mailId, hits]) => [
+              mailId,
+              hits.map((hit) => ({ dataClassification: "private" as const, ...hit })),
+            ]),
+          ),
           costMicros: extra.costMicros ?? 0,
           failedQueries: extra.failedQueries ?? 0,
         };
