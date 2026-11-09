@@ -1642,7 +1642,7 @@ describe("production memory capture", () => {
     expect((await overview(context.control)).lastViewedAt).toBe(context.clock.value);
   });
 
-  it("[MEM-PIN] refuses to bring a sensitive memory into every conversation", async () => {
+  it("[MEM-PIN][RULE-memory-visible] pins by category, so a sensitive relationship memory can be pinned but health cannot", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
@@ -1673,6 +1673,37 @@ describe("production memory capture", () => {
         "pin-mood",
       ),
     ).rejects.toThrow("MEMORY_NOT_PINNABLE");
+    await context.protect("payload-sister", "主人的妹妹在大阪做护士", "sensitive");
+    await command(
+      context.control,
+      "memory.create",
+      {
+        contentRef: "payload-sister",
+        category: "relationship",
+        subCategory: null,
+        pinned: false,
+      },
+      "manual-sister",
+    );
+    const sister = (await overview(context.control)).memories.find(({ text }) =>
+      text.includes("妹妹"),
+    );
+    if (!sister) throw new Error("missing sister");
+    await command(
+      context.control,
+      "memory.mutate",
+      {
+        memoryId: sister.memoryId,
+        action: "pin",
+        expectedRevision: sister.revision,
+        contentRef: null,
+      },
+      "pin-sister",
+    );
+    expect(
+      (await overview(context.control)).memories.find(({ text }) => text.includes("妹妹"))
+        ?.profilePin,
+    ).toBe("on");
   });
 
   it("[MEM-CAT] moves a memory to another topic and keeps everything else", async () => {

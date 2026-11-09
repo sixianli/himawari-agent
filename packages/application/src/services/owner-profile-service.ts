@@ -8,13 +8,13 @@ import type {
   ProductMemoryRecord,
   ProductMemoryStatePort,
 } from "../ports/index.js";
+import { highestClassification, modelVisibleCeiling } from "./model-visibility.js";
 
 export const OWNER_PROFILE_CHARACTER_BUDGET = 2000;
 const AGENDA_CHARACTER_BUDGET = 800;
 const AGENDA_HORIZON_MS = 7 * 24 * 3_600_000;
 const AGENDA_LIMIT = 10;
 const PROFILE_MINIMUM_IMPORTANCE = 600;
-const PROFILE_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);
 const CLASSIFICATION_RANK: Record<DataClassification, number> = {
   public: 0,
   private: 1,
@@ -148,7 +148,7 @@ export class OwnerProfileService implements OwnerProfilePort {
   }) {
     const ceiling = Math.min(
       CLASSIFICATION_RANK[input.maxClassification],
-      CLASSIFICATION_RANK.private,
+      CLASSIFICATION_RANK[modelVisibleCeiling()],
     );
     const choices = new Map(
       (
@@ -162,7 +162,6 @@ export class OwnerProfileService implements OwnerProfilePort {
     const valid = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
       (memory) =>
         memory.status === "active" &&
-        PROFILE_CLASSIFICATIONS.has(memory.dataClassification) &&
         CLASSIFICATION_RANK[memory.dataClassification] <= ceiling &&
         currentlyValid(memory, input.now),
     );
@@ -325,11 +324,10 @@ export class OwnerProfileService implements OwnerProfilePort {
     memories: readonly ProductMemoryRecord[],
     floor?: DataClassification,
   ): Promise<OwnerProfileBlock> {
-    const dataClassification =
-      floor === "private" ||
-      memories.some(({ dataClassification }) => dataClassification === "private")
-        ? "private"
-        : "public";
+    const dataClassification = highestClassification(
+      floor ?? "public",
+      memories.map(({ dataClassification }) => dataClassification),
+    );
     const digest = this.#options.digest(
       JSON.stringify([kind, input.ownerId, input.agentId, dataClassification, text]),
     );

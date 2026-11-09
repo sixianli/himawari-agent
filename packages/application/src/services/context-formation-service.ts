@@ -32,10 +32,12 @@ import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
 import type { OwnerProfile, OwnerProfilePort } from "./owner-profile-service.js";
+import { modelVisibleCeiling } from "./model-visibility.js";
 import { isRuntimeHistoryReference } from "./runtime-history-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
+const VISIBLE_RANK = CLASSIFICATION_RANK[modelVisibleCeiling()];
 
 export type ContextTriggerSource = "user_message" | "schedule" | "external_event";
 
@@ -89,7 +91,6 @@ export interface ContextFormationRequest {
   readonly memoryQueryTerms: readonly string[];
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
-  readonly maxMemoryClassification: DataClassification;
   readonly capabilities: readonly ContextCapabilitySummary[];
   readonly runtimeEnvironmentRef?: PayloadRef;
   readonly correlationId: CorrelationId;
@@ -145,11 +146,7 @@ export class ContextFormationService implements ContextFormationPort {
     const snapshot = await this.readSnapshot(request);
     if (
       snapshot?.runtimeHistory &&
-      CLASSIFICATION_RANK[snapshot.runtimeHistory.reference.dataClassification] >
-        Math.min(
-          CLASSIFICATION_RANK[request.dataClassification],
-          CLASSIFICATION_RANK[request.maxMemoryClassification],
-        )
+      CLASSIFICATION_RANK[snapshot.runtimeHistory.reference.dataClassification] > VISIBLE_RANK
     )
       throw new Error("RUNTIME_HISTORY_CLASSIFICATION_DENIED");
     const runStates = new Map(snapshot?.runStates.map((state) => [state.runId, state]));
@@ -179,8 +176,7 @@ export class ContextFormationService implements ContextFormationPort {
         (sourceWatermark !== null &&
           latestSummary.sourceWatermark <= sourceWatermark &&
           latestSummary.sourceEndSequence <= sourceWatermark)) &&
-      CLASSIFICATION_RANK[latestSummary.dataClassification] <=
-        CLASSIFICATION_RANK[request.maxMemoryClassification]
+      CLASSIFICATION_RANK[latestSummary.dataClassification] <= VISIBLE_RANK
         ? latestSummary
         : undefined;
     const historyCandidates = snapshot
@@ -193,8 +189,7 @@ export class ContextFormationService implements ContextFormationPort {
       )
       .filter(
         ({ dataClassification = request.dataClassification }) =>
-          CLASSIFICATION_RANK[dataClassification] <=
-          CLASSIFICATION_RANK[request.maxMemoryClassification],
+          CLASSIFICATION_RANK[dataClassification] <= VISIBLE_RANK,
       );
     const historyLimit = request.maxThreadMessages ?? eligibleHistory.length;
     if (!Number.isSafeInteger(historyLimit) || historyLimit < 0) {
@@ -233,11 +228,7 @@ export class ContextFormationService implements ContextFormationPort {
         ? this.dependencies.profile.compose({
             ownerId: request.ownerId,
             agentId: request.agentId,
-            maxClassification:
-              CLASSIFICATION_RANK[request.maxMemoryClassification] <
-              CLASSIFICATION_RANK[request.dataClassification]
-                ? request.maxMemoryClassification
-                : request.dataClassification,
+            maxClassification: modelVisibleCeiling(),
             now: this.dependencies.clock.now(),
           })
         : Promise.resolve<OwnerProfile>({ blocks: [], memoryIds: [] }),
@@ -279,10 +270,7 @@ export class ContextFormationService implements ContextFormationPort {
     const allowed = candidates.filter(
       (candidate) =>
         !profileMemoryIds.has(candidate.id) &&
-        CLASSIFICATION_RANK[candidate.dataClassification] <=
-          CLASSIFICATION_RANK[request.maxMemoryClassification] &&
-        CLASSIFICATION_RANK[candidate.dataClassification] <=
-          CLASSIFICATION_RANK[request.dataClassification],
+        CLASSIFICATION_RANK[candidate.dataClassification] <= VISIBLE_RANK,
     );
     const selected: readonly SelectedMemory[] = allowed
       .slice(0, request.maxSelectedMemories)
@@ -309,11 +297,7 @@ export class ContextFormationService implements ContextFormationPort {
           .map((candidate) => ({
             id: candidate.id,
             reasonCode:
-              CLASSIFICATION_RANK[candidate.dataClassification] >
-              Math.min(
-                CLASSIFICATION_RANK[request.maxMemoryClassification],
-                CLASSIFICATION_RANK[request.dataClassification],
-              )
+              CLASSIFICATION_RANK[candidate.dataClassification] > VISIBLE_RANK
                 ? "classification_exceeds_context"
                 : "selection_limit_reached",
           })),
@@ -324,11 +308,7 @@ export class ContextFormationService implements ContextFormationPort {
       .filter(
         (candidate) =>
           !selectedIds.has(candidate.id) &&
-          CLASSIFICATION_RANK[candidate.dataClassification] <=
-            Math.min(
-              CLASSIFICATION_RANK[request.maxMemoryClassification],
-              CLASSIFICATION_RANK[request.dataClassification],
-            ),
+          CLASSIFICATION_RANK[candidate.dataClassification] <= VISIBLE_RANK,
       )
       .map(({ id }) => id);
     if (this.dependencies.ledger && truncated.length > 0) {
@@ -423,8 +403,7 @@ export class ContextFormationService implements ContextFormationPort {
               id,
               sourceRef: sourceRef ?? id,
               reasonCode:
-                CLASSIFICATION_RANK[dataClassification] >
-                CLASSIFICATION_RANK[request.maxMemoryClassification]
+                CLASSIFICATION_RANK[dataClassification] > VISIBLE_RANK
                   ? "classification_exceeds_context"
                   : "history_selection_limit_reached",
             })),

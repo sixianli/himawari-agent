@@ -1181,7 +1181,6 @@ async function openInstalledMain(
     systemInstruction: "请用中文回答。",
     memoryLimit: 10,
     maxSelectedMemories: 5,
-    maxMemoryClassification: "private",
     ...(options.coding
       ? {
           coding: {

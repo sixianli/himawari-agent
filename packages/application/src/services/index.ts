@@ -45,6 +45,7 @@ export * from "./proactive-rules.js";
 export * from "./proactive-seal.js";
 export * from "./model-invocation-admission-service.js";
 export * from "./model-router-service.js";
+export * from "./model-visibility.js";
 export * from "./owner-profile-service.js";
 export * from "./permission-service.js";
 export * from "./product-thread-gateway-adapter.js";

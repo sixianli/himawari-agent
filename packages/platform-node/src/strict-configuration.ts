@@ -1174,10 +1174,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       0,
       memoryLimit,
     ),
-    maxMemoryClassification: classifications(
-      [input["maxMemoryClassification"]],
-      "configuration.runPolicy.maxMemoryClassification",
-    )[0] as DataClassification,
+    ...(input["maxMemoryClassification"] === undefined
+      ? {}
+      : { retiredKeys: Object.freeze(["maxMemoryClassification"]) }),
   });
 }
 

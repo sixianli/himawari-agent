@@ -166,7 +166,6 @@ async function fixture(
       memoryQueryTerms: ["dinner"],
       memoryLimit: 5,
       maxSelectedMemories: 2,
-      maxMemoryClassification: "private" as const,
       capabilities: [],
       correlationId: `correlation-${suffix}`,
       causationId: `trigger-event-${suffix}`,

@@ -108,7 +108,6 @@ function configuration(
       systemInstruction: "fixture",
       memoryLimit: 1,
       maxSelectedMemories: 0,
-      maxMemoryClassification: "private",
       coding: codingRoute(approval),
     },
   };

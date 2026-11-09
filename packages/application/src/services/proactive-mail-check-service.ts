@@ -35,6 +35,8 @@ import type {
   ProactiveVerdict,
 } from "../ports/proactive-checks.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
+import type { DataClassification } from "../ports/common.js";
+import { highestClassification } from "./model-visibility.js";
 import {
   type EgressRedactionSighting,
   findSensitiveValues,
@@ -71,6 +73,7 @@ export interface ProactiveModelInvoker {
     readonly invocationId: string;
     readonly prompt: string;
     readonly deadlineAt: string;
+    readonly dataClassification: DataClassification;
   }): Promise<ProactiveModelAuthority>;
   readOutput(payloadRef: string): Promise<string>;
   release(payloadRefs: readonly string[]): Promise<void>;
@@ -173,6 +176,7 @@ interface PromptMemory {
   readonly id: string;
   readonly text: string;
   readonly tentative?: true;
+  readonly dataClassification: DataClassification;
 }
 
 interface Judgement {
@@ -210,6 +214,7 @@ interface JudgeOutcome {
   readonly judgements: ReadonlyMap<string, Judgement> | undefined;
   readonly costMicros: number;
   readonly failure: string | null;
+  readonly dataClassification?: DataClassification;
 }
 
 function failureCode(prefix: string, detail: string): string {
@@ -378,7 +383,19 @@ export function proactivePrompt(
   }).format(new Date(now));
   return [
     MAIL_JUDGMENT.text,
-    ...(memories.length > 0 ? [MAIL_JUDGMENT_MEMORIES_HEADER.text, JSON.stringify(memories)] : []),
+    ...(memories.length > 0
+      ? [
+          MAIL_JUDGMENT_MEMORIES_HEADER.text,
+          JSON.stringify(
+            memories.map(({ mailId, id, text, tentative }) => ({
+              mailId,
+              id,
+              text,
+              ...(tentative ? { tentative } : {}),
+            })),
+          ),
+        ]
+      : []),
     ...(memories.some(({ tentative }) => tentative) ? [MAIL_JUDGMENT_TENTATIVE_NOTE.text] : []),
     MAIL_JUDGMENT_ITEMS_HEADER.text,
     JSON.stringify(
@@ -700,6 +717,7 @@ export class ProactiveMailCheckService {
       since: startOfZonedDay(startedAt, this.#options.timeZone),
     });
     const judged = new Map<string, Judgement>();
+    const judgedClassification = new Map<string, DataClassification>();
     let costMicros = 0;
     const relatedViews =
       spentToday >= this.#options.limits.dailyCostMicros
@@ -772,7 +790,10 @@ export class ProactiveMailCheckService {
         failure = outcome.failure ?? "MODEL_OUTPUT_INVALID";
         break;
       }
-      for (const [id, judgement] of outcome.judgements) judged.set(id, judgement);
+      for (const [id, judgement] of outcome.judgements) {
+        judged.set(id, judgement);
+        judgedClassification.set(id, outcome.dataClassification ?? "private");
+      }
       queue.splice(0, batch.length);
     }
     const insights: ProactiveCheckInsight[] = [];
@@ -808,6 +829,7 @@ export class ProactiveMailCheckService {
             priority: null,
             push: true,
             pushClass: null,
+            dataClassification: "private",
           });
           counts.check += 1;
         }
@@ -870,6 +892,7 @@ export class ProactiveMailCheckService {
         priority,
         push: dueSoon || (final.result === "check" && floor),
         pushClass: dueSoon && !floor ? proactivePushClass(item.fromAddress) : null,
+        dataClassification: judgedClassification.get(item.messageId) ?? "private",
       });
     }
     const gated = await this.#gateBackoff(insights, startedAt);
@@ -1032,9 +1055,14 @@ export class ProactiveMailCheckService {
     };
   }
 
-  async #seal(trace: CheckTrace, value: Record<string, string | boolean>): Promise<string> {
+  async #seal(
+    trace: CheckTrace,
+    value: Record<string, string | boolean>,
+    dataClassification: DataClassification = "private",
+  ): Promise<string> {
     const ref = await this.#options.seal.seal({
       ...this.#options.scope,
+      dataClassification,
       text: JSON.stringify(value),
       at: this.#options.clock.now(),
     });
@@ -1053,7 +1081,11 @@ export class ProactiveMailCheckService {
   ): Promise<JudgeOutcome> {
     const { model } = this.#options;
     const invocationId = this.#options.ids.next("proactive-model");
-    const authority = await model.prepare({ invocationId, prompt, deadlineAt });
+    const dataClassification = highestClassification(
+      "private",
+      promptMemories.map((memory) => memory.dataClassification),
+    );
+    const authority = await model.prepare({ invocationId, prompt, deadlineAt, dataClassification });
     trace.payloads.push({ ref: authority.inputRef, role: "model_input" });
     for (const { messageId } of batch) {
       trace.sourceIds.add(messageId);
@@ -1092,7 +1124,7 @@ export class ProactiveMailCheckService {
         runId: authority.runId,
         modelRef: model.modelRef,
         inputRef: authority.inputRef,
-        dataClassification: "private",
+        dataClassification,
         allowedDisclosureRef: authority.allowedDisclosureRef,
         secretHandleRefs: [...authority.secretHandleRefs],
         correlationId: invocationId as ModelInvocationRequest["correlationId"],
@@ -1126,7 +1158,7 @@ export class ProactiveMailCheckService {
       const injected = new Set(promptMemories.map(({ id }) => id));
       for (const { usedMemoryIds } of judgements.values())
         for (const id of usedMemoryIds) if (injected.has(id)) trace.usedMemoryIds.add(id);
-      return { judgements, costMicros, failure: null };
+      return { judgements, costMicros, failure: null, dataClassification };
     }
     return {
       judgements: undefined,
@@ -1198,6 +1230,7 @@ export class ProactiveMailCheckService {
           id: hit.id,
           text: hit.text.replace(/\s+/gu, " ").trim().slice(0, limits.charactersPerMemory),
           ...(hit.tentative ? { tentative: true as const } : {}),
+          dataClassification: hit.dataClassification,
         })),
     );
   }
@@ -1263,15 +1296,19 @@ export class ProactiveMailCheckService {
         lastMessageId: insight.item.messageId,
         result: insight.result as ProactiveInsightWrite["result"],
         floorRaised: insight.floorRaised,
-        contentRef: await this.#seal(trace, {
-          summary: insight.summary,
-          reason: insight.reason,
-          basis: insight.basis,
-          floorHit: insight.floorHit,
-          from: masked(insight.item.from),
-          subject: masked(insight.item.subject),
-          link: insight.item.link,
-        }),
+        contentRef: await this.#seal(
+          trace,
+          {
+            summary: insight.summary,
+            reason: insight.reason,
+            basis: insight.basis,
+            floorHit: insight.floorHit,
+            from: masked(insight.item.from),
+            subject: masked(insight.item.subject),
+            link: insight.item.link,
+          },
+          insight.dataClassification,
+        ),
         dueAt: insight.dueAt,
         priority: insight.priority,
         push: insight.push,
@@ -1342,4 +1379,5 @@ interface ProactiveCheckInsight {
   readonly priority: ProactivePriority | null;
   readonly push: boolean;
   readonly pushClass: string | null;
+  readonly dataClassification: DataClassification;
 }

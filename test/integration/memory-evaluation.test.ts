@@ -404,6 +404,7 @@ describe("memory retrieval evaluation", () => {
             lastSequence: index + 1,
             startedAt: at,
             endedAt: at,
+            dataClassification: "private",
             lines: [{ role: "owner", text: episode.text, committedAt: at }],
           },
           async () => episode.text,

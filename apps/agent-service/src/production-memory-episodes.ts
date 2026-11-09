@@ -74,13 +74,19 @@ export class ProductionMemoryEpisodes {
   }
 
   async #summarize(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
-    await this.#within(request, "memory-episode-backfill", () =>
-      this.#options.service.backfillEmbeddings({
+    await this.#options.service
+      .backfillEmbeddings({
         ownerId: request.ownerId,
         agentId: request.agentId,
         limit: 1,
-      }),
-    ).catch(this.#options.onFailure);
+        within: ({ id, dataClassification }, operation) =>
+          this.#within(
+            { ...request, dataClassification },
+            `memory-episode-backfill:${id}`,
+            operation,
+          ),
+      })
+      .catch(this.#options.onFailure);
     const segments = await this.#options.service.dueSegments({
       ownerId: request.ownerId,
       agentId: request.agentId,
@@ -89,10 +95,11 @@ export class ProductionMemoryEpisodes {
     for (const [index, segment] of segments.entries()) {
       if (this.#stopping) return;
       await this.#options.assertActive();
-      await this.#within(request, `memory-episode-embed-${index}`, () =>
-        this.#options.service.summarize(segment, (prompt) =>
+      const scoped = { ...request, dataClassification: segment.dataClassification };
+      await this.#within(scoped, `memory-episode-embed-${index}`, () =>
+        this.#options.service.summarize(segment, (prompt, dataClassification) =>
           this.#options.generate(
-            { ...request, dataClassification: "private" },
+            { ...request, dataClassification },
             prompt,
             onAdmitted,
             `memory-episode-${index}`,

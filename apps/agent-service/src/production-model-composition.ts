@@ -518,12 +518,14 @@ export function createProductionModelComposition(
     return Object.freeze<ProactiveModelInvoker>({
       model,
       modelRef,
-      async prepare({ invocationId, prompt, deadlineAt }) {
+      async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
+        if (!descriptor.allowedDataClassifications.includes(dataClassification))
+          throw new Error("PROACTIVE_MODEL_DISCLOSURE_DENIED");
         const runId = `proactive:${invocationId}` as RunId;
         const inputRef = await payloadBoundary.writeText({
           invocationId,
           sequence: 0,
-          dataClassification: "private",
+          dataClassification,
           content: prompt,
           occurredAt: options.clock.now(),
         });

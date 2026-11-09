@@ -428,6 +428,41 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     expect(bodies[2]).toContain("搜索结果：傍晚阴天");
   });
 
+  it("[RULE-memory-visible] keeps a sensitive memory and a sensitive recall result in later turns, append-only", async () => {
+    class SensitiveRecallTools extends SearchTools {
+      override async execute(invocation: { readonly capabilityRef: string }) {
+        return {
+          ...(await super.execute(invocation)),
+          modelContent: '{"memories":[{"text":"主人对青霉素过敏","current":true}]}',
+          contentClassification: "sensitive" as const,
+        };
+      }
+    }
+    const sensitive: RuntimeProjectionContextBlock = {
+      ...memoryBlock("主人有高血压，每天吃药。", "memory-health"),
+      dataClassification: "sensitive",
+    };
+    const { bodies, requestsPerTurn } = await conversation(
+      THREE_TURNS.map((turn, index) =>
+        index === 0 ? { ...turn, blocks: [...(turn.blocks ?? []), sensitive] } : turn,
+      ),
+      (index, body) => {
+        const lastRole = (JSON.parse(body).messages as { role: string }[]).at(-1)?.role;
+        return lastRole === "tool" || index > 1
+          ? { text: `回答${index}` }
+          : { tool: "web_search", input: JSON.stringify({ query: "过敏" }) };
+      },
+      () => undefined,
+      { tools: new SensitiveRecallTools() },
+    );
+    expect(requestsPerTurn).toEqual([2, 1, 1]);
+    expect(findConversationBreak(bodies)).toBeNull();
+    for (const body of bodies.slice(2)) {
+      expect(body).toContain("主人有高血压");
+      expect(body).toContain("主人对青霉素过敏");
+    }
+  });
+
   it("keeps turns that set a reminder append-only, with the reminder tool listed in every request", async () => {
     const { bodies, requestsPerTurn } = await conversation(THREE_TURNS, (index, body) => {
       const lastRole = (JSON.parse(body).messages as { role: string }[]).at(-1)?.role;

@@ -893,7 +893,7 @@ export const messages = {
   "memory.page.pinDone":
     "{on, select, true {This memory is now brought into every conversation} other {This memory now comes up only when relevant}}",
   "memory.page.pinHint":
-    "{r, select, sensitive {Sensitive memories are never brought into every conversation; they come up only when relevant} category {Events, health, money and other memories come up only when relevant} on {You turned this on, so it goes before the automatic picks} off {You turned this off, so it comes up only when relevant} add {Turn on to bring it into every conversation; otherwise its importance decides} other {Its importance decides for now; once you change it, your choice wins}}",
+    "{r, select, category {Events, health, money and other memories come up only when relevant} on {You turned this on, so it goes before the automatic picks} off {You turned this off, so it comes up only when relevant} add {Turn on to bring it into every conversation; otherwise its importance decides} other {Its importance decides for now; once you change it, your choice wins}}",
   "memory.page.detail": "Memory details",
   "memory.page.topic": "Topic",
   "memory.page.topicChange": "Change topic",

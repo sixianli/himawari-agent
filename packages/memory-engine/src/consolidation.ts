@@ -2,6 +2,8 @@ import {
   ApplicationPortError,
   type DataClassification,
   type DurableMemoryService,
+  highestClassification,
+  isModelVisible,
   MEMORY_CATEGORIES,
   type MemoryCategory,
   type MemoryConsolidationAction,
@@ -31,7 +33,6 @@ import { indexTerms } from "./segmentation.js";
 
 export const MEMORY_CONSOLIDATION_POLICY_VERSION = "memory-consolidation:v1";
 const DAY_MS = 86_400_000;
-const REVIEWABLE: ReadonlySet<DataClassification> = new Set(["public", "private"]);
 const KEPT_FROM_DECAY: ReadonlySet<MemoryCategory> = new Set([
   "rule",
   "identity",
@@ -204,8 +205,12 @@ export class MemoryConsolidationService {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly triggerRunId: string;
-    readonly search: (query: string, limit: number) => Promise<readonly MemoryConsolidationHit[]>;
-    readonly generate: (prompt: string) => Promise<string>;
+    readonly search: (
+      query: string,
+      limit: number,
+      dataClassification: DataClassification,
+    ) => Promise<readonly MemoryConsolidationHit[]>;
+    readonly generate: (prompt: string, dataClassification: DataClassification) => Promise<string>;
   }): Promise<MemoryConsolidationResult | null> {
     const { ownerId, agentId } = input;
     const startedAt = this.#options.now();
@@ -248,7 +253,7 @@ export class MemoryConsolidationService {
       const reviewable = active.filter(
         (memory) =>
           !decayed.has(memory.id) &&
-          REVIEWABLE.has(memory.dataClassification) &&
+          isModelVisible(memory.dataClassification) &&
           (memory.attributes?.supersededBy ?? null) === null &&
           memory.attributes?.tentative !== true,
       );
@@ -315,7 +320,11 @@ export class MemoryConsolidationService {
         }
         for (const hit of neighbours.length >= MAXIMUM_NEIGHBOURS
           ? []
-          : await input.search(current.text, MAXIMUM_NEIGHBOURS + 2)) {
+          : await input.search(
+              current.text,
+              MAXIMUM_NEIGHBOURS + 2,
+              current.memory.dataClassification,
+            )) {
           const neighbour = byId.get(hit.productMemoryId);
           if (!neighbour || neighbour.id === memory.id) continue;
           const pair = [memory.id, neighbour.id].sort().join("\n");
@@ -336,7 +345,15 @@ export class MemoryConsolidationService {
       if (groups.size > 0 || freshReviewed.length >= 3) {
         modelCalled = true;
         const { decisions, insights } = parse(
-          await input.generate(consolidationPrompt([...groups.values()], freshReviewed)),
+          await input.generate(
+            consolidationPrompt([...groups.values()], freshReviewed),
+            highestClassification("private", [
+              ...freshReviewed.map(({ memory }) => memory.dataClassification),
+              ...[...groups.values()].flatMap(({ neighbours }) =>
+                neighbours.map(({ memory }) => memory.dataClassification),
+              ),
+            ]),
+          ),
           groups,
           labels,
         );
@@ -520,11 +537,10 @@ export class MemoryConsolidationService {
     const generationId = await this.#options.generationFor(first.id);
     if (!generationId) return undefined;
     const createdAt = this.#options.now();
-    const dataClassification: DataClassification = basis.every(
-      ({ dataClassification }) => dataClassification === "public",
-    )
-      ? "public"
-      : "private";
+    const dataClassification = highestClassification(
+      "public",
+      basis.map(({ dataClassification }) => dataClassification),
+    );
     const memoryId = createMemoryId(`${id}:insight:${index}`);
     const contentRef = await this.#options.storeText({
       key: memoryId,

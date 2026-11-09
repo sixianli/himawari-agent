@@ -56,7 +56,6 @@ describe("Jarvis Test fixed today", () => {
           systemInstruction: "可信系统指令",
           memoryLimit: MEMORY_LIMIT,
           maxSelectedMemories: MAX_SELECTED_MEMORIES,
-          maxMemoryClassification: "private" as const,
         },
       };
       const protect = vi.spyOn(adapters.payloadProtector, "protect");

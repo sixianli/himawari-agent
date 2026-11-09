@@ -183,7 +183,6 @@ async function runJourney() {
     memoryQueryTerms: ["beef", "restaurant", "tokyo"],
     memoryLimit: 5,
     maxSelectedMemories: 2,
-    maxMemoryClassification: "private",
     capabilities: [
       {
         ref: "restaurant-search",
@@ -304,7 +303,6 @@ async function runJourney() {
     memoryQueryTerms: ["beef", "restaurant", "tokyo"],
     memoryLimit: 5,
     maxSelectedMemories: 2,
-    maxMemoryClassification: "private",
     capabilities: [
       {
         ref: "restaurant-search",
