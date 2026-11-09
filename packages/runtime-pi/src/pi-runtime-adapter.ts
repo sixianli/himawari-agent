@@ -10,11 +10,14 @@ import type {
   SimpleStreamOptions,
   Tool,
   ToolResultMessage,
+  TranscriptContext,
   UserMessage,
 } from "@earendil-works/pi-ai";
 import {
   createAssistantMessageEventStream,
+  getCurrentTools,
   getSupportedThinkingLevels,
+  normalizeContext,
 } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 import {
@@ -87,6 +90,7 @@ import { nativeHistoryMessages } from "./pi-native-history.js";
 import {
   capturePiToolBatch,
   type PiToolBatchContinuation,
+  piToolBatchSessionManager,
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
@@ -134,7 +138,7 @@ function previousFileConflict(
 type RuntimeTurnId = Extract<RuntimeEvent, { readonly type: "runtime.turn_completed" }>["turnId"];
 type PiStreamFunction = (
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream | Promise<AssistantMessageEventStream>;
 
@@ -375,6 +379,7 @@ function toolProgressOutput(
 }
 
 const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
+const PI_REQUEST_TOOLS_DIVERGED = "PI_REQUEST_TOOLS_DIVERGED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
 
@@ -428,7 +433,8 @@ function loggableModelFailure(errorMessage: string | undefined): string {
   const message = errorMessage ?? "";
   if (
     message.startsWith("Model invocation ") ||
-    message === "Model budget accounting is unavailable"
+    message === "Model budget accounting is unavailable" ||
+    message === PI_REQUEST_TOOLS_DIVERGED
   )
     return message;
   const status = /^(\d{3})(?:\s|:)/.exec(message)?.[1];
@@ -635,13 +641,25 @@ function sessionModelRuntime(binding: PiModelBinding): ModelRuntime {
   });
 }
 
-function prehydrateSession(
-  request: RuntimeRequest,
-  projection: RuntimeProjection,
-  model: Model<Api>,
-  cwd: string,
-): SessionManager {
-  const piSessionId = `himawari-${createHash("sha256")
+function himawariRequestContext(
+  requested: TranscriptContext,
+  systemPrompt: string,
+  frozenTools: Tool[] | undefined,
+): Context | undefined {
+  const piTools = getCurrentTools(requested.messages);
+  const tools = frozenTools ?? piTools.map(providerTool);
+  const declared = new Set(tools.map(({ name }) => name));
+  if (piTools.length !== declared.size || piTools.some(({ name }) => !declared.has(name)))
+    return undefined;
+  return {
+    systemPrompt,
+    tools,
+    messages: requested.messages.filter((message) => message.role !== "system"),
+  };
+}
+
+function piSessionId(request: RuntimeRequest): string {
+  return `himawari-${createHash("sha256")
     .update(
       JSON.stringify([
         "pi-session.v1",
@@ -652,7 +670,15 @@ function prehydrateSession(
       ]),
     )
     .digest("hex")}`;
-  const sessionManager = SessionManager.inMemory(cwd, { id: piSessionId });
+}
+
+function prehydrateSession(
+  request: RuntimeRequest,
+  projection: RuntimeProjection,
+  model: Model<Api>,
+  cwd: string,
+): SessionManager {
+  const sessionManager = SessionManager.inMemory(cwd, { id: piSessionId(request) });
   if (projection.nativeHistory) {
     for (const message of nativeHistoryMessages(projection.nativeHistory.messages))
       sessionManager.appendMessage(message);
@@ -926,8 +952,9 @@ async function admitPiStream(
   };
   try {
     const desiredMaxTokens = options?.maxTokens ?? model.maxTokens;
+    const transcript = normalizeContext(withPlaceholderLegend(context));
     if (
-      clampMaxTokensToContext(model, context, desiredMaxTokens) <
+      clampMaxTokensToContext(model, transcript, desiredMaxTokens) <
       Math.min(desiredMaxTokens, MIN_CONTEXT_ANSWER_TOKENS)
     )
       return failedPiStream(model, PI_CONTEXT_WINDOW_EXHAUSTED);
@@ -1036,7 +1063,7 @@ async function admitPiStream(
       return failedPiStream(model, "Model invocation was cancelled");
     }
     const stream = restoreModelStream(
-      await original(model, withPlaceholderLegend(context), {
+      await original(model, transcript, {
         ...withoutAmbientApiKey,
         ...(secret === undefined ? {} : { apiKey: secret }),
         maxRetries: 0,
@@ -1468,12 +1495,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       });
       await resourceLoader.reload();
 
-      const sessionManager = prehydrateSession(
-        request,
-        projection,
-        binding.model,
-        this.#dependencies.cwd,
-      );
+      const sessionManager = continuation
+        ? piToolBatchSessionManager(continuation.batch, systemPrompt, this.#dependencies.cwd, {
+            id: piSessionId(request),
+          })
+        : prehydrateSession(request, projection, binding.model, this.#dependencies.cwd);
       const sessionFactory = this.#dependencies.createSession ?? createAgentSession;
       let restored: ReturnType<typeof restorePiToolBatch> | undefined;
       if (!getSupportedThinkingLevels(binding.model).includes(request.thinkingLevel ?? "off"))
@@ -1487,7 +1513,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         const continuations = this.#dependencies.continuations;
         if (!active || !continuations) throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
         await this.#measure(request.runId, "tool.checkpoint.drain", () => eventChain);
-        const batch = capturePiToolBatch(active, invocation.toolCallId, streamOrdinal);
+        const batch = capturePiToolBatch(
+          active,
+          invocation.toolCallId,
+          streamOrdinal,
+          systemPrompt,
+        );
         const ref = await this.#measure(request.runId, "tool.checkpoint.save", () =>
           continuations.save(request, {
             identity,
@@ -1567,12 +1598,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       restored = continuation ? restorePiToolBatch(session, continuation.batch) : undefined;
       let loopSummaryAttempted = false;
       session.agent.streamFunction = async (model, requested, options) => {
-        const context = Array.isArray(requested.tools)
-          ? { ...requested, systemPrompt, ...(requestTools ? { tools: requestTools } : {}) }
-          : requested;
+        const context = himawariRequestContext(requested, systemPrompt, requestTools);
         await this.#historyWrites.get(request.runId);
         const replay = restored?.takeReplay();
         if (replay) return replay;
+        if (!context) return failedPiStream(model, PI_REQUEST_TOOLS_DIVERGED);
         if (suspended || unknownTool)
           return failedPiStream(model, "Runtime tool reconciliation is required");
         if (toolProgress.blocked) {
@@ -1613,7 +1643,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           this.#dependencies.projection.captureHistory &&
           (event.type === "message_end" || event.type === "compaction_end")
         ) {
-          const messages = structuredClone(session.agent.state.messages);
+          const messages = structuredClone(
+            session.agent.state.messages.filter((message) => message.role !== "system"),
+          );
           const pending = (this.#historyWrites.get(request.runId) ?? Promise.resolve()).then(() =>
             this.#dependencies.projection.captureHistory?.({
               runId: request.runId,

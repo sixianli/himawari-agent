@@ -224,6 +224,7 @@ export function createProductionToolResultRecovery(options: {
       const scope = object(continuation["scope"]);
       const value = object(continuation["value"]);
       const batch = inspectPiToolBatch(value["batch"]);
+      if (!batch) continue;
       const previousAuthority = {
         deploymentId: original.scope.deploymentId,
         authorityEpoch: original.scope.authorityEpoch,

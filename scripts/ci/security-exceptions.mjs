@@ -187,6 +187,31 @@ export function validateSecurityExceptions(
   return value.exceptions;
 }
 
+function dependencyLockPath(entry) {
+  if (entry?.kind === "advisory") return entry.path;
+  if (entry?.kind === "published-synthetic-fixture") return entry.packageLockPath;
+  return undefined;
+}
+
+export function withoutRemovedDependencies(document, dependencies) {
+  if (!Array.isArray(document?.exceptions)) return document;
+  return {
+    ...document,
+    exceptions: document.exceptions.filter((entry) => {
+      const path = dependencyLockPath(entry);
+      return (
+        path === undefined ||
+        dependencies.some(
+          (dependency) =>
+            dependency.path === path &&
+            dependency.name === entry.package &&
+            dependency.version === entry.version,
+        )
+      );
+    }),
+  };
+}
+
 export function loadReviewedExceptions({
   root = repositoryRoot,
   context,
@@ -205,7 +230,7 @@ export function loadReviewedExceptions({
   validateSecurityExceptions(JSON.parse(candidate), { now, ruleIds, dependencies });
   assert(available || source.initialization, "SECURITY_ACCEPTED_EXCEPTIONS_MISSING");
   const bytes = available ? git(root, ["show", `${context.baseSha}:${exceptionPath}`]) : candidate;
-  const document = JSON.parse(bytes);
+  const document = withoutRemovedDependencies(JSON.parse(bytes), dependencies);
   const exceptions = validateSecurityExceptions(document, { now, ruleIds, dependencies });
   assert(
     available ||

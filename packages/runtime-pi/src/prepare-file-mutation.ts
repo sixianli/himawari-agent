@@ -2,10 +2,8 @@ import { Worker } from "node:worker_threads";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.ts";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.ts";
+import { jsonToolArguments } from "./json-tool-arguments.ts";
 
-/** Only write/edit definitions, bound to an immutable in-memory snapshot. No
- * filesystem mutation, search process or model call is available through this adapter.
- * Pi owns argument normalization, edit matching, line endings and result shaping. */
 export type PiFilePreparationInput = {
   readonly tool: "write" | "edit";
   readonly toolCallId: string;
@@ -16,7 +14,6 @@ export type PiFilePreparationInput = {
   readonly signal?: AbortSignal;
 };
 
-/** Internal computation, executed only by the bounded preparation worker. */
 export async function computePiFileMutation(input: PiFilePreparationInput) {
   input = { ...input, parameters: structuredClone(input.parameters) };
   const before = input.before === null ? null : new Uint8Array(input.before);
@@ -61,7 +58,7 @@ export async function computePiFileMutation(input: PiFilePreparationInput) {
     type: "toolCall",
     id: input.toolCallId,
     name: input.tool,
-    arguments: normalized as Record<string, unknown>,
+    arguments: jsonToolArguments(normalized),
   });
   const result = await tool.execute(
     input.toolCallId,
@@ -91,11 +88,6 @@ export async function computePiFileMutation(input: PiFilePreparationInput) {
   };
 }
 
-/** The worker isolates synchronous Pi matching/diff work from the Agent loop.
- * Heap limits are V8 limits, not an OS RSS/sandbox qualification. Buffers and
- * published candidates have separate byte limits. A wall bound no greater than
- * the requested CPU allowance conservatively bounds this single JS computation.
- */
 export type PiFilePreparationRequest = PiFilePreparationInput & {
   readonly limits: {
     readonly maxWallTimeMs: number;
@@ -152,7 +144,6 @@ export function handoffPiPreparationWorker(
   });
 }
 
-/** Internal lifecycle seam: tests use a real busy worker to observe stop proof. */
 export function awaitPiPreparationWorker(
   worker: Worker,
   milliseconds: number,

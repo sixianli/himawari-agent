@@ -1,0 +1,8 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新单测用的 custom 消息不是生产形状，可能掩盖“正常路径误拒”", "valid": true, "class": "error", "severity": "low", "trigger": "生产里的 custom 消息带 details，测试里的不带", "consequence": "测试不能证明真实形状不会误拒", "modelSeverity": "中", "reason": "读 Pi 源码：convertToLlm 对 custom 消息只取 role、content、timestamp（dist/core/messages.js），details 不参与比较，所以没有误拒；测试已改成生产的类型和 details 并通过"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“entries 少了/多了一条 custom 消息仍会拒绝”缺少反向用例", "valid": true, "class": "error", "severity": "low", "trigger": "convertToLlm 漏掉某类 custom 消息", "consequence": "真正的不一致漏检", "modelSeverity": "低"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "Gitleaks 新用例没有覆盖本 PR 实际删除的 `published-synthetic-fixture` 分支，也没有断言合成密钥例外被保留", "valid": true, "class": "error", "severity": "low", "trigger": "改坏 packageLockPath 分支", "consequence": "门禁路径用例不失败", "modelSeverity": "低"}
+{"id": "r3-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文件预演测试标题与调用顺序不完全一致", "valid": true, "class": "error", "severity": "low", "trigger": "读测试名", "consequence": "以为检查在 prepareArguments 之前", "modelSeverity": "低"}
+{"id": "r3-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "资源：每个工具检查点把整段前缀序列化两次", "valid": true, "class": "better"}
+{"id": "r3-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`convertToLlm` 丢弃某类消息会导致漏检", "valid": false, "class": "error"}
+{"id": "r3-7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`JSON.stringify` 的键序/`undefined` 语义可能误拒或漏检", "valid": false, "class": "error"}
+{"id": "r3-8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档“改适配器设置打开自动重试”是否足够", "valid": false, "class": "error"}

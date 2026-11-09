@@ -1,4 +1,5 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
+import { normalizeContext } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -173,7 +174,7 @@ describe("ConfiguredPiModelBindingPort", () => {
     for (const level of ["off", "low", "high", "max"] as const) {
       const stream = streamSimple(
         primary.model as Parameters<typeof streamSimple>[0],
-        { messages: [{ role: "user", content: "ping", timestamp: 0 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 0 }] }),
         {
           apiKey: SECRET,
           ...(level === "off" ? {} : { reasoning: level }),

@@ -128,3 +128,21 @@ it("[R2-T14] explains the output ceiling even when the command printed nothing i
   const text = part?.type === "text" ? part.text : "";
   expect(text.startsWith("输出超过命令输出上限")).toBe(true);
 });
+
+it("[ADR-0198] refuses tool arguments that are not plain JSON before Pi runs the tool", async () => {
+  const commands: string[] = [];
+  for (const extra of [undefined, 1n, new Map()])
+    await expect(
+      executeSandboxedPiCodingTool({
+        name: "bash",
+        toolCallId: "fixture:not-json",
+        cwd: "/workspace",
+        parameters: { command: "echo hi", extra },
+        operations: commandOperations(async ({ command }) => {
+          commands.push(command);
+          return { exitCode: 0 };
+        }),
+      }),
+    ).rejects.toThrow("PI_TOOL_ARGUMENTS_INVALID");
+  expect(commands).toEqual([]);
+});

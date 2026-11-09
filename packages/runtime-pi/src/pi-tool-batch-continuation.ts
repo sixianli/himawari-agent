@@ -1,36 +1,76 @@
+import { isDeepStrictEqual } from "node:util";
 import { type AssistantMessage, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import {
+  type AgentSession,
+  type NewSessionOptions,
+  convertToLlm,
+  type SessionEntry,
+  SessionManager,
+} from "@earendil-works/pi-coding-agent";
 
 type PiMessages = AgentSession["agent"]["state"]["messages"];
+type PiToolResult = Extract<PiMessages[number], { role: "toolResult" }>;
+
+export const PI_TOOL_BATCH_VERSION = "pi-tool-batch.v3";
 
 export interface PiToolBatchContinuation {
-  readonly version: "pi-tool-batch.v2";
-  readonly prefix: PiMessages;
+  readonly version: typeof PI_TOOL_BATCH_VERSION;
+  readonly entries: SessionEntry[];
   readonly systemPrompt: string;
   readonly assistant: AssistantMessage;
-  readonly completedResults: Extract<PiMessages[number], { role: "toolResult" }>[];
+  readonly completedResults: PiToolResult[];
   readonly waitingToolCallId: string;
   readonly completedStreamOrdinal: number;
   readonly parallel?: true;
 }
 
+type BatchSession = Pick<AgentSession, "sessionManager"> & {
+  readonly agent: Pick<AgentSession["agent"], "state">;
+};
+
 export function capturePiToolBatch(
-  session: AgentSession,
+  session: BatchSession,
   waitingToolCallId: string,
   completedStreamOrdinal: number,
+  systemPrompt: string,
 ): PiToolBatchContinuation {
   const messages = session.agent.state.messages;
-  const assistant = messages.findLast((message) => message.role === "assistant");
-  return freezeBatch(
-    messages,
+  const index = messages.findLastIndex((message) => message.role === "assistant");
+  const assistant = messages[index];
+  if (!assistant || assistant.role !== "assistant")
+    throw new Error("PI_CONTINUATION_BATCH_INVALID");
+  const branch = session.sessionManager.getBranch();
+  const entryIndex = branch.findLastIndex(
+    (entry) => entry.type === "message" && isDeepStrictEqual(entry.message, assistant),
+  );
+  if (entryIndex < 0) throw new Error("PI_CONTINUATION_BATCH_INVALID");
+  const entries = branch.slice(0, entryIndex);
+  if (
+    modelVisible(batchSessionManager(entries, "/").buildSessionContext().messages) !==
+    modelVisible(messages.slice(0, index))
+  )
+    throw new Error("PI_CONTINUATION_PREFIX_INVALID");
+  return checkedBatch({
+    version: PI_TOOL_BATCH_VERSION,
+    entries,
+    systemPrompt,
+    assistant,
+    completedResults: messages.slice(index + 1) as PiToolResult[],
     waitingToolCallId,
     completedStreamOrdinal,
-    session.agent.state.systemPrompt,
-    assistant?.role === "assistant" && runsInParallel(session, assistant),
+    ...(runsInParallel(session, assistant) ? { parallel: true as const } : {}),
+  });
+}
+
+function modelVisible(messages: PiMessages): string {
+  return JSON.stringify(
+    convertToLlm(messages)
+      .filter((message) => message.role !== "system")
+      .map(({ timestamp: _timestamp, ...message }) => message),
   );
 }
 
-function runsInParallel(session: AgentSession, assistant: AssistantMessage): boolean {
+function runsInParallel(session: BatchSession, assistant: AssistantMessage): boolean {
   const tools = session.agent.state.tools;
   return assistant.content
     .filter((part) => part.type === "toolCall")
@@ -40,29 +80,44 @@ function runsInParallel(session: AgentSession, assistant: AssistantMessage): boo
     });
 }
 
-function freezeBatch(
-  messages: PiMessages,
-  waitingToolCallId: string,
-  completedStreamOrdinal: number,
-  systemPrompt: string,
-  parallel: boolean,
-): PiToolBatchContinuation {
-  const index = messages.findLastIndex((message) => message.role === "assistant");
-  const assistant = messages[index];
+function batchSessionManager(
+  entries: readonly SessionEntry[],
+  cwd: string,
+  options?: NewSessionOptions,
+): SessionManager {
+  if (
+    !Array.isArray(entries) ||
+    entries.some(
+      (entry) =>
+        entry === null ||
+        typeof entry !== "object" ||
+        entry.type === ("session" as string) ||
+        typeof entry.type !== "string" ||
+        typeof entry.id !== "string",
+    )
+  )
+    throw new Error("PI_CONTINUATION_PREFIX_INVALID");
+  return SessionManager.inMemory(cwd, options, structuredClone([...entries]));
+}
+
+function checkedBatch(saved: PiToolBatchContinuation): PiToolBatchContinuation {
+  if (saved?.version !== PI_TOOL_BATCH_VERSION) throw new Error("PI_CONTINUATION_VERSION_INVALID");
+  const { assistant, waitingToolCallId, completedStreamOrdinal, completedResults } = saved;
+  const parallel = saved.parallel === true;
   if (
     !Number.isSafeInteger(completedStreamOrdinal) ||
     completedStreamOrdinal < 1 ||
+    typeof saved.systemPrompt !== "string" ||
     !assistant ||
     assistant.role !== "assistant" ||
     assistant.stopReason !== "toolUse" ||
     !assistant.content.some((part) => part.type === "toolCall" && part.id === waitingToolCallId)
   )
     throw new Error("PI_CONTINUATION_BATCH_INVALID");
-  const prefix = messages.slice(0, index);
   const calls = assistant.content.filter((part) => part.type === "toolCall");
   const waitingIndex = calls.findIndex((call) => call.id === waitingToolCallId);
-  const completedResults = messages.slice(index + 1);
   if (
+    !Array.isArray(completedResults) ||
     completedResults.length !== (parallel ? 0 : waitingIndex) ||
     new Set(calls.map((call) => call.id)).size !== calls.length ||
     completedResults.some(
@@ -75,26 +130,37 @@ function freezeBatch(
     )
   )
     throw new Error("PI_CONTINUATION_RESULTS_INVALID");
+  const prefix = batchSessionManager(saved.entries, "/").buildSessionContext().messages;
   const last = prefix.at(-1);
   if (!last || last.role === "assistant") throw new Error("PI_CONTINUATION_PREFIX_INVALID");
   return structuredClone({
-    version: "pi-tool-batch.v2",
-    systemPrompt,
-    prefix,
+    version: PI_TOOL_BATCH_VERSION,
+    entries: saved.entries,
+    systemPrompt: saved.systemPrompt,
     assistant,
-    completedResults: completedResults as PiToolBatchContinuation["completedResults"],
+    completedResults,
     waitingToolCallId,
     completedStreamOrdinal,
     ...(parallel ? { parallel: true as const } : {}),
   });
 }
 
-export function restorePiToolBatch(session: AgentSession, saved: PiToolBatchContinuation) {
-  const checked = validateSavedBatch(saved);
+export function piToolBatchSessionManager(
+  saved: PiToolBatchContinuation,
+  systemPrompt: string,
+  cwd: string,
+  options?: NewSessionOptions,
+): SessionManager {
+  const checked = checkedBatch(saved);
+  if (checked.systemPrompt !== systemPrompt)
+    throw new Error("PI_CONTINUATION_SYSTEM_PROMPT_CHANGED");
+  return batchSessionManager(checked.entries, cwd, options);
+}
+
+export function restorePiToolBatch(session: BatchSession, saved: PiToolBatchContinuation) {
+  const checked = checkedBatch(saved);
   if (checked.parallel && !runsInParallel(session, checked.assistant))
     throw new Error("PI_CONTINUATION_PARALLEL_BATCH_INVALID");
-  session.agent.state.messages = checked.prefix;
-  session.agent.state.systemPrompt = checked.systemPrompt;
   let consumed = false;
   const restoredResults = new Set<string>();
   return {
@@ -119,21 +185,9 @@ export function restorePiToolBatch(session: AgentSession, saved: PiToolBatchCont
   };
 }
 
-function validateSavedBatch(saved: PiToolBatchContinuation): PiToolBatchContinuation {
-  if (saved.version !== "pi-tool-batch.v2") throw new Error("PI_CONTINUATION_VERSION_INVALID");
-  const transcript = [...saved.prefix, saved.assistant, ...saved.completedResults];
-  const checked = freezeBatch(
-    transcript,
-    saved.waitingToolCallId,
-    saved.completedStreamOrdinal,
-    saved.systemPrompt,
-    saved.parallel === true,
-  );
-  return checked;
-}
-
 export function inspectPiToolBatch(value: unknown) {
-  const saved = validateSavedBatch(value as PiToolBatchContinuation);
+  if ((value as { version?: unknown } | null)?.version !== PI_TOOL_BATCH_VERSION) return undefined;
+  const saved = checkedBatch(value as PiToolBatchContinuation);
   const waiting = saved.assistant.content.find(
     (part) => part.type === "toolCall" && part.id === saved.waitingToolCallId,
   );
