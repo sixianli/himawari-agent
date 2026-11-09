@@ -2696,7 +2696,6 @@ describe("opencode review merge gate", () => {
     const value = ["abcdef", "123456"].join("");
     const f = fixture(`regexes = [${quote}^${value}$${quote}]\n`);
     try {
-      registerTestValuesFromRefs(f.repo, ["origin/main"]);
       const path = `${REVIEWS_DIR}/pr-7/round-1/deepseek-v4.1-flash.md`;
       f.commit(
         { [path]: `- 命中 token=${value}\n` },
@@ -2704,6 +2703,21 @@ describe("opencode review merge gate", () => {
       );
       f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)]);
       expect(f.check().problems).toEqual([]);
+      for (const args of [["--assert-reviewed"]]) {
+        const run = spawnSync(
+          process.execPath,
+          ["scripts/model-review/opencode-review.mjs", ...args, "--pr", "7", "--repo", f.repo],
+          {
+            encoding: "utf8",
+            env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+          },
+        );
+        expect(run.stdout).toMatch(/REVIEW_CURRENT pr=7 /);
+        expect(run.stdout).not.toContain("record-secret-like");
+      }
+      setRegisteredTestValues(
+        registeredTestValuesFromToml(`regexes = [${quote}^${value}$${quote}]\n`),
+      );
       expect(maskedRecordText(`token=${value}`)).toBe("token=[已遮盖:registered-test-value]\n");
     } finally {
       setRegisteredTestValues([]);
@@ -4468,7 +4482,7 @@ describe("[registered test values] records never carry the fixture values gitlea
     );
   });
 
-  it("masks the registered value in records and reports it, but not near misses or unregistered text", () => {
+  it("masks the registered value in records, but not near misses or unregistered text, and the merge gate does not report it", () => {
     setRegisteredTestValues(registeredTestValuesFromToml(toml));
     const text = `- 命中 \`token=${fakeValue}\`，另一个 token=${nearMiss}，还有 ${fakeValue} 两次`;
     expect(secretLikeRules(text)).toEqual([]);
