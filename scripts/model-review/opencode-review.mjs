@@ -2558,7 +2558,7 @@ export function setRegisteredTestValues(values) {
 
 export function registeredTestValuesFromToml(text) {
   const values = new Set();
-  for (const match of text.matchAll(/^regexes\s*=\s*\[\s*\'\'\'\^([^\n]*?)\$\'\'\'\s*\]\s*$/gm)) {
+  for (const match of text.matchAll(/^regexes\s*=\s*\[\s*'''\^([^\n]*?)\$'''\s*\]\s*$/gm)) {
     const literal = match[1].replaceAll("\\.", ".");
     if (literal.length >= REGISTERED_VALUE_MIN_LENGTH && /^[A-Za-z0-9_\-=.:/ ]+$/.test(literal))
       values.add(literal);
