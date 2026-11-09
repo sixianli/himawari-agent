@@ -1,0 +1,2 @@
+{"id": "r5-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档内的 ADR 交叉链接与“标题编号”没有自动检查", "valid": true, "class": "better"}
+{"id": "r5-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`inputs` 的 JSON 解析没有兜底", "valid": false, "class": "error"}

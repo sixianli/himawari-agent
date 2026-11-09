@@ -61,6 +61,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.overview.snapshot",
   "memory.basis.read",
   "memory.basis.snapshot",
+  "decision.chain.read",
+  "decision.chain.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.reminder.respond",
@@ -982,6 +984,100 @@ const memoryBasisSnapshotSchema = object({
       }),
     ),
     complete: booleanValue,
+  }),
+});
+const decisionChainQuerySchema = object({
+  ...envelope("query", "decision.chain.read"),
+  payload: object({ decisionId: machineString }),
+});
+const decisionChainSectionState = enumeration([
+  "recorded",
+  "none",
+  "not_recorded",
+  "not_applicable",
+]);
+const decisionChainReadState = enumeration(["off", "ok", "partial", "failed", "not_recorded"]);
+const decisionChainSnapshotSchema = object({
+  ...envelope("snapshot", "decision.chain.snapshot"),
+  payload: object({
+    decisionId: machineString,
+    decision: object({
+      kind: enumeration([
+        "proactive",
+        "memory_candidate",
+        "consolidation",
+        "context_truncation",
+        "retrieval_degrade",
+        "external_read",
+      ]),
+      decidedAt: timestamp,
+      outcome: boundedString(64),
+      reasonCode: boundedString(64),
+      rating: nullable(enumeration(["useful", "unneeded", "missed"])),
+      ratedAt: nullable(timestamp),
+    }),
+    inputs: enumeration(["recorded", "not_recorded"]),
+    rules: object({
+      state: decisionChainSectionState,
+      items: array(
+        object({
+          ruleId: boundedString(256),
+          origin: nullable(enumeration(["owner_setting", "built_in"])),
+          document: nullable(boundedString(64)),
+          mailCount: integer(0),
+        }),
+      ),
+    }),
+    mails: nullable(
+      object({
+        judged: nullable(integer(0)),
+        related: nullable(integer(0)),
+        relatedRead: decisionChainReadState,
+      }),
+    ),
+    memories: object({
+      state: decisionChainSectionState,
+      recall: nullable(decisionChainReadState),
+      total: integer(0),
+      truncated: booleanValue,
+      items: array(
+        object({
+          memoryId: machineString,
+          state: enumeration(["visible", "hidden", "missing"]),
+          text: nullable(boundedString(2000)),
+          status: nullable(enumeration(["active", "archived", "trashed"])),
+          inference: booleanValue,
+          tentative: booleanValue,
+          usedByModel: booleanValue,
+          changedSinceDecision: booleanValue,
+          supersededBy: nullable(
+            object({ memoryId: machineString, text: nullable(boundedString(2000)) }),
+          ),
+          source: object({
+            threadId: nullable(machineString),
+            messageId: nullable(machineString),
+            quote: nullable(boundedString(2000)),
+            refs: array(boundedString(MEMORY_SOURCE_REF_MAX_LENGTH)),
+            importBatchId: nullable(machineString),
+            firstSourceDeleted: booleanValue,
+          }),
+          basis: object({
+            nodes: array(
+              object({
+                memoryId: machineString,
+                text: nullable(boundedString(500)),
+                action: nullable(enumeration(["merge", "supersede", "archive", "reflect"])),
+                changedAt: nullable(timestamp),
+                basisMemoryIds: array(machineString),
+                repeated: booleanValue,
+                truncated: booleanValue,
+              }),
+            ),
+            complete: booleanValue,
+          }),
+        }),
+      ),
+    }),
   }),
 });
 const memoryOverviewSnapshotSchema = object({
@@ -2053,6 +2149,8 @@ const schemasByType = {
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.basis.read": memoryBasisQuerySchema,
   "memory.basis.snapshot": memoryBasisSnapshotSchema,
+  "decision.chain.read": decisionChainQuerySchema,
+  "decision.chain.snapshot": decisionChainSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,

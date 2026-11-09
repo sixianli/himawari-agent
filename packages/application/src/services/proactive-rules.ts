@@ -34,6 +34,35 @@ export const FLOOR_RULE_IDS = Object.freeze({
 
 export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
 
+export type DecisionRuleOrigin = "owner_setting" | "built_in";
+
+export interface DecisionRuleDefinition {
+  readonly origin: DecisionRuleOrigin;
+  readonly document: string;
+}
+
+export const DECISION_RULE_CATALOG: Readonly<Record<FloorRuleId, DecisionRuleDefinition>> =
+  Object.freeze({
+    [FLOOR_RULE_IDS.importantSender]: Object.freeze({
+      origin: "owner_setting",
+      document: "ADR 0106 第 4 条",
+    }),
+    [FLOOR_RULE_IDS.publicDomain]: Object.freeze({
+      origin: "built_in",
+      document: "ADR 0106 第 4 条",
+    }),
+    [FLOOR_RULE_IDS.moneyWords]: Object.freeze({
+      origin: "built_in",
+      document: "ADR 0106 第 4 条",
+    }),
+  });
+
+export function decisionRuleDefinition(ruleId: string): DecisionRuleDefinition | undefined {
+  return Object.hasOwn(DECISION_RULE_CATALOG, ruleId)
+    ? DECISION_RULE_CATALOG[ruleId as FloorRuleId]
+    : undefined;
+}
+
 export function floorHitIds(
   item: ProactiveSourceItem,
   senders: readonly string[],

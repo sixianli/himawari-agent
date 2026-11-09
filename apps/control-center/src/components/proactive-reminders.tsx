@@ -14,6 +14,7 @@ import {
   proactiveGroup,
 } from "../proactive.js";
 import { LineIcon } from "./answer-footer.js";
+import { DecisionChainDrawer } from "./decision-chain-drawer.js";
 import { Glyph } from "./glyphs.js";
 import { openNotificationSettings } from "./memory-panel.js";
 import { ActionMenu } from "./overlays.js";
@@ -543,12 +544,17 @@ export function ProactiveDecisionLog({
   proactive,
   message,
   locale,
+  onOpenThread,
 }: {
   locale?: string | undefined;
   proactive: ProactiveModel;
   message: Message;
+  onOpenThread?: ((threadId: string, messageId?: string) => void) | undefined;
 }) {
   const overview = proactive.overview;
+  const [chainFor, setChainFor] = useState<string | null>(null);
+  const [cleared, setCleared] = useState(false);
+  const readChain = proactive.readChain;
   const now = new Date();
   const today = localDay(now.toISOString());
   const dayLabel = (value: string) => {
@@ -574,6 +580,9 @@ export function ProactiveDecisionLog({
           <p className="proactive-summary">
             <span>{message("proactive.log.range", { days })}</span>
           </p>
+          {cleared ? (
+            <output className="decision-chain-note">{message("decision.chain.gone")}</output>
+          ) : null}
           {decisions.length === 0 ? <EmptyState title={message("proactive.log.empty")} /> : null}
           {decisions.map((decision) => {
             const label = dayLabel(decision.checkedAt);
@@ -622,6 +631,18 @@ export function ProactiveDecisionLog({
                         onRate={(rating) => void proactive.rateDecision(decision, rating)}
                       />
                     ) : null}
+                    {readChain ? (
+                      <button
+                        type="button"
+                        className="memory-link"
+                        onClick={() => {
+                          setCleared(false);
+                          setChainFor(decision.id);
+                        }}
+                      >
+                        {message("decision.chain.open")}
+                      </button>
+                    ) : null}
                     {decision.verdict === "needs_owner" &&
                     overview.connection.status === "needs_reconnect" ? (
                       <ActionButton variant="primary" onClick={proactive.connect}>
@@ -635,6 +656,22 @@ export function ProactiveDecisionLog({
           })}
         </>
       )}
+      {chainFor && readChain ? (
+        <DecisionChainDrawer
+          decisionId={chainFor}
+          readChain={readChain}
+          message={message}
+          onOpenThread={(threadId, messageId) => {
+            setChainFor(null);
+            onOpenThread?.(threadId, messageId);
+          }}
+          onGone={() => {
+            setChainFor(null);
+            setCleared(true);
+          }}
+          onClose={() => setChainFor(null)}
+        />
+      ) : null}
     </section>
   );
 }

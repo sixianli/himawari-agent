@@ -1,0 +1,4 @@
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`docs/agent-rulebook-inventory.md:146` 仍把 sensitive 当作不可见", "valid": false, "class": "error"}
+{"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "受限档的“推断依据节点”被显示成“内容已不在”", "valid": true, "class": "error", "severity": "low", "trigger": "推断依据节点本身是受限记忆", "consequence": "节点显示「内容已不在」，实际是受限不显示，没有错误数据", "modelSeverity": "低", "reason": "只影响提示文字，只在依据节点是受限记忆时出现"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "缺少“sensitive 仍可见”的反向用例", "valid": true, "class": "error", "severity": "low", "trigger": "将来有人把可见规则改成隐藏敏感档", "consequence": "决策链用例仍全绿，敏感档记忆在抽屉里被错误隐藏；当前代码没有这个错", "modelSeverity": "低", "reason": "当前实现正确，只是测试没锁住"}
+{"id": "r4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`sqlite-decision-ledger-operations.ts:325` 的 `JSON.parse` 没有保护", "valid": false, "class": "error"}
